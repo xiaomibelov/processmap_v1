@@ -21,6 +21,7 @@ from .resources import build_resources_report
 from .storage import get_storage
 from .validators.coverage import build_questions
 from .validators.disposition import build_disposition_questions
+from .validators.loss import build_loss_questions, loss_report
 
 
 app = FastAPI(title="Food Process Copilot MVP")
@@ -154,7 +155,9 @@ def _recompute_session(s: Session) -> Session:
 
     base_questions = build_questions(s.nodes)
     disp_questions = build_disposition_questions(s.nodes)
-    new_questions = base_questions + conflict_questions + disp_questions
+    loss_questions = build_loss_questions(s.nodes)
+
+    new_questions = base_questions + conflict_questions + disp_questions + loss_questions
     s.questions = _merge_question_states(s.questions, new_questions)
 
     s.mermaid_simple = render_mermaid(s.nodes, s.edges, roles=s.roles, mode="simple")
@@ -261,6 +264,15 @@ def _map_disposition_answer(answer: str) -> Optional[str]:
     return None
 
 
+def _ensure_loss_dict(node: Node) -> Dict[str, Any]:
+    node.parameters = dict(node.parameters or {})
+    loss = node.parameters.get("loss")
+    if not isinstance(loss, dict):
+        loss = {}
+    node.parameters["loss"] = loss
+    return loss
+
+
 @app.post("/api/sessions/{session_id}/answer")
 def answer(session_id: str, inp: AnswerIn) -> Dict[str, Any]:
     st = get_storage()
@@ -279,7 +291,32 @@ def answer(session_id: str, inp: AnswerIn) -> Dict[str, Any]:
     if node:
         lowq = (q.question or "").lower()
 
-        if inp.question_id.startswith("disp_"):
+        if inp.question_id.startswith("loss_reason_"):
+            loss = _ensure_loss_dict(node)
+            loss["reason"] = inp.answer.strip()
+            node.parameters["_manual_parameters"] = True
+
+        elif inp.question_id.startswith("loss_volume_"):
+            loss = _ensure_loss_dict(node)
+            loss["volume"] = inp.answer.strip()
+            node.parameters["_manual_parameters"] = True
+
+        elif inp.question_id.startswith("loss_approved_by_"):
+            loss = _ensure_loss_dict(node)
+            loss["approved_by"] = inp.answer.strip()
+            node.parameters["_manual_parameters"] = True
+
+        elif inp.question_id.startswith("loss_recorded_in_"):
+            loss = _ensure_loss_dict(node)
+            loss["recorded_in"] = inp.answer.strip()
+            node.parameters["_manual_parameters"] = True
+
+        elif inp.question_id.startswith("loss_evidence_"):
+            loss = _ensure_loss_dict(node)
+            loss["evidence"] = inp.answer.strip()
+            node.parameters["_manual_parameters"] = True
+
+        elif inp.question_id.startswith("disp_"):
             action = _map_disposition_answer(inp.answer)
             node.disposition = dict(node.disposition or {})
             node.disposition.setdefault("equipment_actions", {})
@@ -389,5 +426,8 @@ def export(session_id: str) -> Dict[str, Any]:
 
     disp_rep = _disposition_report(s)
     (out_dir / "disposition.yml").write_text(dump_yaml(disp_rep), encoding="utf-8")
+
+    lr = loss_report(s.nodes)
+    (out_dir / "losses.yml").write_text(dump_yaml(lr), encoding="utf-8")
 
     return {"ok": True, "exported_to": str(out_dir)}

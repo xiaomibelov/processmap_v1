@@ -160,6 +160,52 @@ function _renderDispositionQuickUI(equipList, dispObj) {
   `;
 }
 
+function _renderLossQuickUI(nodeType, paramsObj) {
+  if (nodeType !== "loss_event") return "";
+  const loss = (paramsObj && paramsObj.loss && typeof paramsObj.loss === "object") ? paramsObj.loss : {};
+  const reason = loss.reason ? String(loss.reason) : "";
+  const volume = loss.volume ? String(loss.volume) : "";
+  const approved = loss.approved_by ? String(loss.approved_by) : "";
+  const recorded = loss.recorded_in ? String(loss.recorded_in) : "";
+  const evidence = loss.evidence ? String(loss.evidence) : "";
+
+  return `
+    <div style="padding:8px;border:1px solid rgba(0,0,0,.08);border-radius:10px;margin-top:10px;">
+      <div class="small"><b>Списание/потеря (loss)</b></div>
+
+      <div class="insRow" style="margin-top:8px;">
+        <label>reason</label>
+        <input id="loss_reason" class="grow" value="${reason.replace(/"/g, "&quot;")}" placeholder="причина (можно текстом)" />
+      </div>
+
+      <div class="insRow">
+        <label>volume</label>
+        <input id="loss_volume" class="grow" value="${volume.replace(/"/g, "&quot;")}" placeholder="пример: 3 л, 1.5 кг, 2 шт" />
+      </div>
+
+      <div class="insRow">
+        <label>approved</label>
+        <input id="loss_approved" class="grow" value="${approved.replace(/"/g, "&quot;")}" placeholder="кто утвердил (роль/ФИО)" />
+      </div>
+
+      <div class="insRow">
+        <label>recorded</label>
+        <input id="loss_recorded" class="grow" value="${recorded.replace(/"/g, "&quot;")}" placeholder="где фиксируется (журнал/1C/...)"/>
+      </div>
+
+      <div class="insRow">
+        <label>evidence</label>
+        <input id="loss_evidence" class="grow" value="${evidence.replace(/"/g, "&quot;")}" placeholder="фото/акт/номер записи"/>
+      </div>
+
+      <div class="row" style="margin-top:8px;gap:8px;">
+        <button id="loss_apply">Применить loss</button>
+        <button id="loss_clear">Очистить loss</button>
+      </div>
+    </div>
+  `;
+}
+
 function renderInspector(s) {
   const wrap = el("inspector");
   if (!s || !s.nodes) {
@@ -194,6 +240,7 @@ function renderInspector(s) {
   const equipCsv = (n.equipment || []).join(", ");
   const equipList = _parseEquipList(equipCsv);
   const dispObj = (n.disposition && typeof n.disposition === "object") ? n.disposition : {};
+  const paramsObj = (n.parameters && typeof n.parameters === "object") ? n.parameters : {};
 
   wrap.innerHTML = `
     <div class="small">ID: <b>${n.id}</b></div>
@@ -230,6 +277,7 @@ function renderInspector(s) {
     </div>
 
     ${_renderDispositionQuickUI(equipList, dispObj)}
+    ${_renderLossQuickUI(n.type, paramsObj)}
 
     <div class="small" style="margin-top:10px;">parameters (JSON)</div>
     <textarea id="ins_params" class="insTextarea">${params}</textarea>
@@ -311,6 +359,41 @@ function renderInspector(s) {
     clearBtn.addEventListener("click", async () => {
       document.getElementById("ins_disp").value = "{}";
       document.getElementById("disp_note").value = "";
+      await saveNode();
+    });
+  }
+
+  const lossApply = document.getElementById("loss_apply");
+  if (lossApply) {
+    lossApply.addEventListener("click", async () => {
+      const pText = document.getElementById("ins_params").value;
+      const pObj = _safeJsonParse(pText);
+      if (pObj === null) {
+        alert("JSON ошибка в parameters");
+        return;
+      }
+      pObj.loss = pObj.loss && typeof pObj.loss === "object" ? pObj.loss : {};
+      pObj.loss.reason = document.getElementById("loss_reason").value || "";
+      pObj.loss.volume = document.getElementById("loss_volume").value || "";
+      pObj.loss.approved_by = document.getElementById("loss_approved").value || "";
+      pObj.loss.recorded_in = document.getElementById("loss_recorded").value || "";
+      pObj.loss.evidence = document.getElementById("loss_evidence").value || "";
+      document.getElementById("ins_params").value = JSON.stringify(pObj, null, 2);
+      await saveNode();
+    });
+  }
+
+  const lossClear = document.getElementById("loss_clear");
+  if (lossClear) {
+    lossClear.addEventListener("click", async () => {
+      const pText = document.getElementById("ins_params").value;
+      const pObj = _safeJsonParse(pText);
+      if (pObj === null) {
+        alert("JSON ошибка в parameters");
+        return;
+      }
+      delete pObj.loss;
+      document.getElementById("ins_params").value = JSON.stringify(pObj, null, 2);
       await saveNode();
     });
   }

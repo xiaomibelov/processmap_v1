@@ -97,6 +97,19 @@ def _is_loss(n: Node) -> bool:
     return any(w in t for w in LOSS_WORDS)
 
 
+def _loss_filled(n: Node) -> bool:
+    p = n.parameters or {}
+    loss = p.get("loss") or {}
+    if not isinstance(loss, dict):
+        return False
+    ok = True
+    ok = ok and bool((loss.get("reason") or "").strip())
+    ok = ok and bool((loss.get("volume") or "").strip())
+    ok = ok and bool((loss.get("approved_by") or "").strip())
+    ok = ok and bool((loss.get("recorded_in") or "").strip())
+    return ok
+
+
 def _is_marking(n: Node) -> bool:
     t = (n.title or "").lower()
     return any(w in t for w in MARKING_WORDS)
@@ -110,15 +123,14 @@ def _is_wash(n: Node) -> bool:
 def _severity(n: Node) -> str:
     if (n.parameters or {}).get("_res_conflict"):
         return "ambig"
+    if _is_loss(n) and not _loss_filled(n):
+        return "critical"
     if n.type == "timer" and n.duration_min is None:
         return "critical"
     if _needs_heat_params(n.title) and not (n.parameters or {}).get("heat"):
         return "critical"
     if _needs_disposition(n):
         return "critical"
-    if _is_loss(n):
-        if not (n.disposition or {}).get("note"):
-            return "critical"
     if not n.actor_role and n.type not in ("join",):
         return "missing"
     if _needs_equipment(n):
