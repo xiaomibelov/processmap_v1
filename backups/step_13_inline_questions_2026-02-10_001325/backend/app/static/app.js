@@ -1,11 +1,6 @@
 let sessionId = null;
 let sessionCache = null;
 
-let overlayOpenNodeId = null;
-let overlayOpenEl = null;
-let overlayOpenAnchor = null;
-let overlayOpenByNode = {};
-
 function el(id) { return document.getElementById(id); }
 
 function getLastSessionId() {
@@ -93,239 +88,17 @@ function mermaidCodeForSession(s) {
   return s.mermaid_lanes || s.mermaid || "";
 }
 
-function _graphEls() {
-  const wrap = el("graphWrap") || document.querySelector(".graphWrap");
-  const inner = el("graphInner") || (wrap ? wrap.querySelector(".graphInner") : null);
-  const overlay = el("graphOverlay") || (inner ? inner.querySelector(".graphOverlay") : null);
-  return { wrap, inner, overlay };
-}
-
-function _getGraphSvg() {
-  const { inner } = _graphEls();
-  if (!inner) return null;
-  const svg = inner.querySelector("svg");
-  return svg || null;
-}
-
-function _closeOverlayPopover() {
-  overlayOpenNodeId = null;
-  overlayOpenAnchor = null;
-  if (overlayOpenEl && overlayOpenEl.parentNode) overlayOpenEl.parentNode.removeChild(overlayOpenEl);
-  overlayOpenEl = null;
-}
-
-function _groupOpenQuestionsByNode(s) {
-  const by = {};
-  (s && s.questions ? s.questions : []).forEach(q => {
-    if (!q || q.status !== "open") return;
-    const nid = (q.node_id || "").toString().trim();
-    if (!nid) return;
-    if (!by[nid]) by[nid] = [];
-    by[nid].push(q);
-  });
-  return by;
-}
-
-function _toneForNodeQuestions(qs) {
-  const types = (qs || []).map(q => (q.issue_type || "").toString().toLowerCase());
-  if (types.includes("critical")) return "critical";
-  if (types.includes("missing")) return "missing";
-  if (types.includes("ambig")) return "ambig";
-  return "ambig";
-}
-
-function _findAnchorForNode(svg, nodeId) {
-  const wanted = `#node=${nodeId}`;
-  const links = svg.querySelectorAll("a");
-  for (const a of links) {
-    const href = a.getAttribute("href") || a.getAttribute("xlink:href") || "";
-    if (href === wanted) return a;
-  }
-  return null;
-}
-
-function _rectWithinInner(elem, inner) {
-  const r = elem.getBoundingClientRect();
-  const ir = inner.getBoundingClientRect();
-  return {
-    x: r.left - ir.left,
-    y: r.top - ir.top,
-    w: r.width,
-    h: r.height,
-    r
-  };
-}
-
-function _clamp(v, a, b) {
-  if (v < a) return a;
-  if (v > b) return b;
-  return v;
-}
-
-function _openOverlayPopover(nodeId, qs, anchorRect) {
-  const { overlay, inner } = _graphEls();
-  if (!overlay || !inner) return;
-
-  _closeOverlayPopover();
-
-  overlayOpenNodeId = nodeId;
-  overlayOpenAnchor = anchorRect;
-
-  const pop = document.createElement("div");
-  pop.className = "qPopover";
-
-  const title = `Узел ${nodeId}: вопросы (${qs.length})`;
-  pop.innerHTML = `
-    <div class="qPopoverTop">
-      <div class="qPopoverTitle">${title}</div>
-      <button class="qPopoverClose" id="qPopClose">Закрыть</button>
-    </div>
-    <div id="qPopList"></div>
-  `;
-
-  const list = pop.querySelector("#qPopList");
-
-  (qs || []).slice(0, 40).forEach(q => {
-    const opts = (q.options && q.options.length)
-      ? `<select data-qid="${q.id}">
-           <option value="">—</option>
-           ${q.options.map(o => `<option value="${o}">${o}</option>`).join("")}
-         </select>`
-      : "";
-
-    const item = document.createElement("div");
-    item.className = "qPopItem";
-    item.innerHTML = `
-      <div class="qTop">
-        <div>${badge(q.issue_type)} <span class="small" style="opacity:.85;">${q.id}</span></div>
-        <div class="small" style="opacity:.65;">open</div>
-      </div>
-      <div class="qText">${q.question}</div>
-      <div class="qActions">
-        ${opts}
-        <input data-qid="${q.id}" placeholder="ответ..." />
-        <button data-act="answer" data-qid="${q.id}">Ответить</button>
-      </div>
-    `;
-    list.appendChild(item);
-  });
-
-  overlay.appendChild(pop);
-  overlayOpenEl = pop;
-
-  const ow = overlay.clientWidth || 600;
-  const oh = overlay.clientHeight || 400;
-
-  const px = anchorRect ? (anchorRect.x + anchorRect.w + 14) : 20;
-  const py = anchorRect ? (anchorRect.y - 6) : 20;
-
-  const left = _clamp(px, 8, Math.max(8, ow - 340));
-  const top = _clamp(py, 8, Math.max(8, oh - 380));
-
-  pop.style.left = `${left}px`;
-  pop.style.top = `${top}px`;
-
-  const closeBtn = pop.querySelector("#qPopClose");
-  closeBtn.addEventListener("click", () => _closeOverlayPopover());
-
-  pop.querySelectorAll('button[data-act="answer"]').forEach(btn => {
-    btn.addEventListener("click", async () => {
-      const qid = btn.getAttribute("data-qid");
-      const inp = pop.querySelector(`input[data-qid="${qid}"]`);
-      const sel = pop.querySelector(`select[data-qid="${qid}"]`);
-      const val = (sel && sel.value) ? sel.value : (inp ? inp.value : "");
-      if (!val) return;
-
-      await api(`/api/sessions/${sessionId}/answer`, "POST", { question_id: qid, answer: val });
-      await refresh();
-
-      const selected = selectedNodeIdFromHash() || nodeId;
-      if (selected && overlayOpenByNode[selected] && overlayOpenByNode[selected].length) {
-        const svg = _getGraphSvg();
-        const { inner } = _graphEls();
-        const a = svg && _findAnchorForNode(svg, selected);
-        const tgt = a ? (a.querySelector("g") || a) : null;
-        const ar = (tgt && inner) ? _rectWithinInner(tgt, inner) : null;
-        _openOverlayPopover(selected, overlayOpenByNode[selected], ar);
-      } else {
-        _closeOverlayPopover();
-      }
-    });
-  });
-}
-
-function _renderInlineQuestions(s) {
-  const { overlay, inner } = _graphEls();
-  if (!overlay || !inner) return;
-
-  overlay.innerHTML = "";
-  overlayOpenByNode = _groupOpenQuestionsByNode(s);
-
-  const svg = _getGraphSvg();
-  if (!svg) return;
-
-  const keys = Object.keys(overlayOpenByNode).slice(0, 200);
-  for (const nodeId of keys) {
-    const qs = overlayOpenByNode[nodeId] || [];
-    if (!qs.length) continue;
-
-    const a = _findAnchorForNode(svg, nodeId);
-    if (!a) continue;
-
-    const tgt = a.querySelector("g") || a;
-    const rect = _rectWithinInner(tgt, inner);
-
-    const tone = _toneForNodeQuestions(qs);
-
-    const holder = document.createElement("div");
-    holder.className = "nodeBadge";
-    holder.style.left = `${rect.x + rect.w - 10}px`;
-    holder.style.top = `${rect.y - 10}px`;
-
-    holder.innerHTML = `<button class="nodeBadgeBtn tone-${tone}" data-node="${nodeId}" title="Открытых вопросов: ${qs.length}">${qs.length}</button>`;
-    overlay.appendChild(holder);
-
-    const btn = holder.querySelector("button");
-    btn.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      _openOverlayPopover(nodeId, qs, rect);
-      setSelectedNodeId(nodeId);
-    });
-  }
-
-  const selected = selectedNodeIdFromHash();
-  if (selected && overlayOpenByNode[selected] && overlayOpenByNode[selected].length) {
-    const a = _findAnchorForNode(svg, selected);
-    const tgt = a ? (a.querySelector("g") || a) : null;
-    if (tgt) {
-      const rect = _rectWithinInner(tgt, inner);
-      _openOverlayPopover(selected, overlayOpenByNode[selected], rect);
-    }
-  }
-}
-
-async function renderMermaid(code) {
+function renderMermaid(code) {
   const m = el("mermaid");
-  const { inner } = _graphEls();
-  if (inner) inner.scrollTop = inner.scrollTop;
-
   m.removeAttribute("data-processed");
   m.textContent = code || "flowchart TD\n  A[Нет данных] --> B[Начни вводить заметки]\n";
   mermaid.initialize({ startOnLoad: false, securityLevel: "loose" });
-
-  try {
-    const res = mermaid.run({ nodes: [m] });
-    if (res && typeof res.then === "function") await res;
-  } catch (e) {
-    console.error(e);
-  }
+  try { mermaid.run({ nodes: [m] }); } catch (e) { console.error(e); }
 }
 
 function renderResources(s) {
   const wrap = el("resources");
   const r = (s && s.resources) ? s.resources : null;
-  if (!wrap) return;
   if (!r) {
     wrap.innerHTML = `<div class="small">Нет данных</div>`;
     return;
@@ -476,8 +249,6 @@ function _renderLossQuickUI(nodeType, paramsObj) {
 
 function renderInspector(s) {
   const wrap = el("inspector");
-  if (!wrap) return;
-
   if (!s || !s.nodes) {
     wrap.innerHTML = `<div class="small">Нет данных</div>`;
     return;
@@ -669,16 +440,55 @@ function renderInspector(s) {
   }
 }
 
+function renderQuestions(qs) {
+  const wrap = el("questions");
+  wrap.innerHTML = "";
+  (qs || []).filter(q => q.status === "open").slice(0, 60).forEach(q => {
+    const div = document.createElement("div");
+    div.className = "q";
+    const opts = (q.options && q.options.length)
+      ? `<select data-qid="${q.id}">
+           <option value="">—</option>
+           ${q.options.map(o => `<option value="${o}">${o}</option>`).join("")}
+         </select>`
+      : "";
+    div.innerHTML = `
+      <div class="qTop">
+        <div>${badge(q.issue_type)} <a class="link" href="#node=${q.node_id}">узел ${q.node_id}</a></div>
+        <div style="opacity:.7;font-size:12px;">${q.id}</div>
+      </div>
+      <div class="qText">${q.question}</div>
+      <div class="qActions">
+        ${opts}
+        <input data-qid="${q.id}" placeholder="ответ..." />
+        <button data-act="answer" data-qid="${q.id}">Ответить</button>
+      </div>
+    `;
+    wrap.appendChild(div);
+  });
+
+  wrap.querySelectorAll('button[data-act="answer"]').forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const qid = btn.getAttribute("data-qid");
+      const inp = wrap.querySelector(`input[data-qid="${qid}"]`);
+      const sel = wrap.querySelector(`select[data-qid="${qid}"]`);
+      const val = (sel && sel.value) ? sel.value : (inp ? inp.value : "");
+      if (!val) return;
+
+      await api(`/api/sessions/${sessionId}/answer`, "POST", { question_id: qid, answer: val });
+      await refresh();
+    });
+  });
+}
+
 async function refresh() {
-  const { overlay } = _graphEls();
   if (!sessionId) {
     setTopbarError("нет sessionId");
     sessionCache = null;
-    _closeOverlayPopover();
-    if (overlay) overlay.innerHTML = "";
-    await renderMermaid(mermaidCodeForSession(null));
+    renderMermaid(mermaidCodeForSession(null));
     renderResources(null);
     renderInspector(null);
+    renderQuestions([]);
     return;
   }
 
@@ -687,11 +497,10 @@ async function refresh() {
     sessionCache = s;
     el("sessionMeta").textContent = `session: ${s.id} • ${s.title} • v${s.version}`;
     updateViewBtn();
-
-    await renderMermaid(mermaidCodeForSession(s));
+    renderMermaid(mermaidCodeForSession(s));
     renderResources(s);
     renderInspector(s);
-    _renderInlineQuestions(s);
+    renderQuestions(s.questions || []);
   } catch (e) {
     setTopbarError(e.message || String(e));
     throw e;
@@ -724,7 +533,6 @@ async function newSession() {
 
   const s = await api("/api/sessions", "POST", { title: t, roles: roles.length ? roles : undefined });
   setSessionId(s.id);
-  _closeOverlayPopover();
   await refresh();
 }
 
@@ -735,7 +543,6 @@ async function sendNotes() {
   const notes = el("notes").value || "";
   if (!notes.trim()) return;
   await api(`/api/sessions/${sessionId}/notes`, "POST", { notes });
-  _closeOverlayPopover();
   await refresh();
 }
 
@@ -755,32 +562,11 @@ el("btnView").addEventListener("click", () => {
   const v = getView();
   setView(v === "lanes" ? "simple" : "lanes");
   updateViewBtn();
-  if (sessionCache) {
-    renderMermaid(mermaidCodeForSession(sessionCache)).then(() => _renderInlineQuestions(sessionCache));
-  }
+  if (sessionCache) renderMermaid(mermaidCodeForSession(sessionCache));
 });
 
 window.addEventListener("hashchange", () => {
-  if (sessionCache) {
-    renderInspector(sessionCache);
-    _renderInlineQuestions(sessionCache);
-  }
-});
-
-document.addEventListener("click", (e) => {
-  if (!overlayOpenEl) return;
-  if (overlayOpenEl.contains(e.target)) return;
-  const btn = e.target && e.target.closest ? e.target.closest(".nodeBadgeBtn") : null;
-  if (btn) return;
-  _closeOverlayPopover();
-});
-
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") _closeOverlayPopover();
-});
-
-window.addEventListener("resize", () => {
-  if (sessionCache) _renderInlineQuestions(sessionCache);
+  if (sessionCache) renderInspector(sessionCache);
 });
 
 (async () => {
