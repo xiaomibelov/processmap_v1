@@ -53,6 +53,51 @@ class NodePatchIn(BaseModel):
     disposition: Optional[Dict[str, Any]] = None
 
 
+def _merge_nodes(existing: List[Node], extracted: List[Node]) -> List[Node]:
+    by_id = {n.id: n for n in existing}
+    merged: List[Node] = []
+    for nn in extracted:
+        old = by_id.get(nn.id)
+        if not old:
+            merged.append(nn)
+            continue
+
+        p = dict(old.parameters or {})
+        if p.get("_manual_title"):
+            nn.title = old.title
+        if p.get("_manual_type"):
+            nn.type = old.type
+        if p.get("_manual_actor"):
+            nn.actor_role = old.actor_role
+        if p.get("_manual_recipient"):
+            nn.recipient_role = old.recipient_role
+        if p.get("_manual_equipment"):
+            nn.equipment = list(old.equipment or [])
+        if p.get("_manual_duration"):
+            nn.duration_min = old.duration_min
+        if p.get("_manual_parameters"):
+            nn.parameters = dict(old.parameters or {})
+        if p.get("_manual_disposition"):
+            nn.disposition = dict(old.disposition or {})
+
+        if not p.get("_manual_equipment") and old.equipment and not nn.equipment:
+            nn.equipment = list(old.equipment)
+        if not p.get("_manual_actor") and old.actor_role and not nn.actor_role:
+            nn.actor_role = old.actor_role
+        if not p.get("_manual_duration") and old.duration_min is not None and nn.duration_min is None:
+            nn.duration_min = old.duration_min
+        if not p.get("_manual_disposition") and old.disposition and not nn.disposition:
+            nn.disposition = dict(old.disposition)
+
+        if old.qc:
+            nn.qc = list(old.qc)
+        if old.exceptions:
+            nn.exceptions = list(old.exceptions)
+
+        merged.append(nn)
+    return merged
+
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(str(STATIC_DIR / "index.html"))
@@ -66,7 +111,7 @@ def favicon() -> FileResponse:
 @app.post("/api/sessions")
 def create_session(inp: CreateSessionIn) -> Dict[str, Any]:
     sid = uuid.uuid4().hex[:10]
-    roles = inp.roles or ["cook_1", "cook_2", "brigadir"]
+    roles = inp.roles or ["cook_1", "cook_2", "brigadir", "technolog"]
     s = Session(id=sid, title=inp.title, roles=roles, version=1)
     st = get_storage()
     st.save(s)
@@ -92,16 +137,16 @@ def post_notes(session_id: str, inp: NotesIn) -> Dict[str, Any]:
     s.notes = inp.notes
 
     extracted = extract_process(s.notes)
-    nodes_raw = extracted.get("nodes", [])
-    edges_raw = extracted.get("edges", [])
+    nodes_raw = extracted.get("nodes", []) or []
+    edges_raw = extracted.get("edges", []) or []
     roles = extracted.get("roles", []) or s.roles
 
-    nodes = [Node.model_validate(nr) for nr in nodes_raw]
-    edges = [Edge.model_validate(er) for er in edges_raw]
+    extracted_nodes = [Node.model_validate(nr) for nr in nodes_raw]
+    extracted_edges = [Edge.model_validate(er) for er in edges_raw]
 
     s.roles = roles
-    s.nodes = nodes
-    s.edges = edges
+    s.nodes = _merge_nodes(s.nodes, extracted_nodes)
+    s.edges = extracted_edges
 
     s.questions = build_questions(s.nodes)
     s.mermaid = render_mermaid(s.nodes, s.edges, roles=s.roles)
@@ -130,14 +175,17 @@ def answer(session_id: str, inp: AnswerIn) -> Dict[str, Any]:
         lowq = (q.question or "").lower()
         if "куда" in lowq or "после" in lowq:
             node.disposition = {"note": inp.answer}
+            node.parameters["_manual_disposition"] = True
         elif "кто" in lowq:
             node.actor_role = inp.answer.strip()
+            node.parameters["_manual_actor"] = True
         elif "оборуд" in lowq:
             node.equipment = [x.strip() for x in re.split(r"[,\n;]+", inp.answer) if x.strip()]
-        elif q.issue_type in ("CRITICAL", "MISSING"):
-            node.parameters["note"] = inp.answer
+            node.parameters["_manual_equipment"] = True
         else:
-            node.exceptions.append({"note": inp.answer})
+            node.parameters.setdefault("notes", [])
+            if isinstance(node.parameters["notes"], list):
+                node.parameters["notes"].append(inp.answer)
 
     s.questions = build_questions(s.nodes)
     s.mermaid = render_mermaid(s.nodes, s.edges, roles=s.roles)
@@ -159,22 +207,31 @@ def patch_node(session_id: str, node_id: str, inp: NodePatchIn) -> Dict[str, Any
         return {"error": "node not found"}
 
     data = inp.model_dump(exclude_unset=True)
+
     if "title" in data:
-        node.title = data["title"]
+        node.title = data["title"] or node.title
+        node.parameters["_manual_title"] = True
     if "type" in data:
-        node.type = data["type"]
+        node.type = data["type"] or node.type
+        node.parameters["_manual_type"] = True
     if "actor_role" in data:
         node.actor_role = data["actor_role"] or None
+        node.parameters["_manual_actor"] = True
     if "recipient_role" in data:
         node.recipient_role = data["recipient_role"] or None
+        node.parameters["_manual_recipient"] = True
     if "equipment" in data and data["equipment"] is not None:
         node.equipment = data["equipment"]
+        node.parameters["_manual_equipment"] = True
     if "duration_min" in data:
         node.duration_min = data["duration_min"]
+        node.parameters["_manual_duration"] = True
     if "parameters" in data and data["parameters"] is not None:
         node.parameters = data["parameters"]
+        node.parameters["_manual_parameters"] = True
     if "disposition" in data and data["disposition"] is not None:
         node.disposition = data["disposition"]
+        node.parameters["_manual_disposition"] = True
 
     s.questions = build_questions(s.nodes)
     s.mermaid = render_mermaid(s.nodes, s.edges, roles=s.roles)
@@ -198,21 +255,5 @@ def export(session_id: str) -> Dict[str, Any]:
     proc_yml = dump_yaml(session_to_process_dict(s))
     (out_dir / "process.yml").write_text(proc_yml, encoding="utf-8")
     (out_dir / "diagram.mmd").write_text(s.mermaid or "", encoding="utf-8")
-
-    equipment = {
-        "kitchen_id": "kitchen_1",
-        "equipment": [
-            {"id": "kotel_1", "title": "Котёл"},
-            {"id": "pot_1", "title": "Кастрюля"},
-            {"id": "scale_1", "title": "Весы"},
-            {"id": "pan_1", "title": "Сковорода"},
-            {"id": "blast_chiller_1", "title": "Камера интенсивного охлаждения"},
-        ],
-    }
-    import yaml
-    (out_dir / "equipment.yml").write_text(yaml.safe_dump(equipment, allow_unicode=True, sort_keys=False), encoding="utf-8")
-
-    glossary = {"terms": [{"term": "котёл", "canon": "kotel_1"}, {"term": "кастрюля", "canon": "pot_1"}]}
-    (out_dir / "glossary.yml").write_text(yaml.safe_dump(glossary, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
     return {"ok": True, "exported_to": str(out_dir)}
