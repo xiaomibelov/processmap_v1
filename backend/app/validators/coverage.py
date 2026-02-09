@@ -10,7 +10,7 @@ HEAT_VERBS = ("включ", "нагр", "кип", "довести до кип", 
 TRANSFER_VERBS = ("перел", "слить", "налить", "долить", "перемест", "перелож")
 MARKING_WORDS = ("маркир", "этикет", "наклей", "стикер")
 LOSS_WORDS = ("списан", "списание", "потер", "брак", "утилиз")
-WASH_WORDS = ("помыть", "мойка", "помыть", "протереть", "санобработ", "дезинфек")
+WASH_WORDS = ("помыть", "мойка", "протереть", "санобработ", "дезинфек")
 
 
 def _needs_heat_params(title: str) -> bool:
@@ -66,6 +66,16 @@ def build_questions(nodes: List[Node]) -> List[Question]:
         qs.append(Question(id=qid, node_id=node_id, issue_type=issue_type, question=question, options=options or []))
 
     for n in nodes:
+        norm = (n.parameters or {}).get("_norm") or {}
+        unknown_terms = norm.get("unknown_terms") or []
+        if unknown_terms:
+            add(
+                n.id,
+                "AMBIG",
+                "Нормализатор: найдены неизвестные термины. Что это за объект/ресурс/оборудование? Приведи каноническое название/ID.",
+                options=[],
+            )
+
         if n.type == "timer":
             if n.duration_min is None:
                 add(n.id, "CRITICAL", "Таймер: сколько минут/часов ждать? Укажи длительность (мин).")
@@ -85,11 +95,11 @@ def build_questions(nodes: List[Node]) -> List[Question]:
         if _needs_equipment(n):
             add(n.id, "MISSING", "Какое оборудование/инвентарь задействовано? (ID или название)")
 
-        if _needs_heat_params(n.title) and not n.parameters:
+        if _needs_heat_params(n.title) and not n.parameters.get("heat"):
             add(
                 n.id,
                 "CRITICAL",
-                "Нагрев/варка: какой режим/уровень (например 1–9), целевая температура/признак, время, критерий готовности?",
+                "Нагрев/варка: какой режим/уровень (1–9), целевая температура/признак, время, критерий готовности?",
             )
 
         if _needs_disposition(n):

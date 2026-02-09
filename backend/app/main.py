@@ -15,6 +15,7 @@ from .ai.deepseek_client import extract_process
 from .exporters.mermaid import render_mermaid
 from .exporters.yaml_export import dump_yaml, session_to_process_dict
 from .models import Node, Edge, Session
+from .normalizer import load_seed_glossary, normalize_nodes
 from .storage import get_storage
 from .validators.coverage import build_questions
 
@@ -24,6 +25,7 @@ app = FastAPI(title="Food Process Copilot MVP")
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 WORKSPACE = Path(os.environ.get("PROCESS_WORKSPACE", "workspace/processes"))
+GLOSSARY_SEED = BASE_DIR / "knowledge" / "glossary_seed.yml"
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -148,6 +150,9 @@ def post_notes(session_id: str, inp: NotesIn) -> Dict[str, Any]:
     s.nodes = _merge_nodes(s.nodes, extracted_nodes)
     s.edges = extracted_edges
 
+    seed = load_seed_glossary(GLOSSARY_SEED)
+    s.normalized = normalize_nodes(s.nodes, seed)
+
     s.questions = build_questions(s.nodes)
     s.mermaid = render_mermaid(s.nodes, s.edges, roles=s.roles)
     s.version += 1
@@ -186,6 +191,9 @@ def answer(session_id: str, inp: AnswerIn) -> Dict[str, Any]:
             node.parameters.setdefault("notes", [])
             if isinstance(node.parameters["notes"], list):
                 node.parameters["notes"].append(inp.answer)
+
+    seed = load_seed_glossary(GLOSSARY_SEED)
+    s.normalized = normalize_nodes(s.nodes, seed)
 
     s.questions = build_questions(s.nodes)
     s.mermaid = render_mermaid(s.nodes, s.edges, roles=s.roles)
@@ -233,6 +241,9 @@ def patch_node(session_id: str, node_id: str, inp: NodePatchIn) -> Dict[str, Any
         node.disposition = data["disposition"]
         node.parameters["_manual_disposition"] = True
 
+    seed = load_seed_glossary(GLOSSARY_SEED)
+    s.normalized = normalize_nodes(s.nodes, seed)
+
     s.questions = build_questions(s.nodes)
     s.mermaid = render_mermaid(s.nodes, s.edges, roles=s.roles)
     s.version += 1
@@ -255,5 +266,9 @@ def export(session_id: str) -> Dict[str, Any]:
     proc_yml = dump_yaml(session_to_process_dict(s))
     (out_dir / "process.yml").write_text(proc_yml, encoding="utf-8")
     (out_dir / "diagram.mmd").write_text(s.mermaid or "", encoding="utf-8")
+
+    seed = load_seed_glossary(GLOSSARY_SEED)
+    (out_dir / "glossary.yml").write_text(dump_yaml(seed), encoding="utf-8")
+    (out_dir / "normalized.yml").write_text(dump_yaml(s.normalized or {}), encoding="utf-8")
 
     return {"ok": True, "exported_to": str(out_dir)}

@@ -35,10 +35,40 @@ function renderMermaid(code) {
   mermaid.run({ querySelector: ".mermaid" });
 }
 
+function renderNormalized(s) {
+  const wrap = el("normalized");
+  const n = (s && s.normalized) ? s.normalized : null;
+  if (!n) {
+    wrap.innerHTML = `<div class="small">Нет данных</div>`;
+    return;
+  }
+
+  const eq = (n.equipment || []).slice(0, 30);
+  const res = (n.resources || []).slice(0, 30);
+  const unk = (n.unknown_terms || []).slice(0, 30);
+  const units = (n.units || []).slice(0, 20);
+
+  wrap.innerHTML = `
+    <div class="small"><b>Оборудование</b>: ${eq.length}</div>
+    <div class="small">${eq.map(x => `${x.title} <span style="opacity:.7">(${x.canon})</span>`).join(", ") || "—"}</div>
+
+    <div class="small" style="margin-top:10px;"><b>Ресурсы</b>: ${res.length}</div>
+    <div class="small">${res.map(x => `${x.title} <span style="opacity:.7">(${x.canon})</span>`).join(", ") || "—"}</div>
+
+    <div class="small" style="margin-top:10px;"><b>Единицы</b>: ${units.length}</div>
+    <div class="small">${units.map(u => `${u.raw} → ${u.unit_canon}`).join(", ") || "—"}</div>
+
+    <div class="small" style="margin-top:10px;"><b>Unknown</b>: ${unk.length}</div>
+    <div class="small">${unk.map(x => `${x.term} <span style="opacity:.7">x${x.count}</span>`).join(", ") || "—"}</div>
+
+    <div class="small" style="margin-top:10px;opacity:.7;">Seed-словарь: backend/app/knowledge/glossary_seed.yml</div>
+  `;
+}
+
 function renderQuestions(qs) {
   const wrap = el("questions");
   wrap.innerHTML = "";
-  qs.filter(q => q.status === "open").slice(0, 40).forEach(q => {
+  qs.filter(q => q.status === "open").slice(0, 50).forEach(q => {
     const div = document.createElement("div");
     div.className = "q";
     const opts = (q.options && q.options.length)
@@ -148,7 +178,7 @@ function renderInspector(s) {
 
     <div class="insRow" style="margin-top:8px;">
       <button id="ins_save">Сохранить узел</button>
-      <span class="small">клик по узлу в схеме тоже выбирает</span>
+      <span class="small">узлы кликаются в схеме</span>
     </div>
   `;
 
@@ -184,6 +214,7 @@ async function refresh() {
   sessionCache = s;
   el("sessionMeta").textContent = `session: ${s.id} • ${s.title} • v${s.version}`;
   renderMermaid(s.mermaid);
+  renderNormalized(s);
   renderInspector(s);
   renderQuestions(s.questions || []);
 }
@@ -192,7 +223,7 @@ async function newSession() {
   const title = prompt("Название процесса (например: Бульон Фо Бо / Борщ):", "Бульон Фо Бо");
   if (!title) return;
 
-  const rolesStr = prompt("Роли (через запятую, IDs). Пример: cook_1,cook_2,brigadir", "cook_1,cook_2,brigadir");
+  const rolesStr = prompt("Роли (через запятую, IDs). Пример: cook_1,cook_2,brigadir,technolog", "cook_1,cook_2,brigadir,technolog");
   const roles = (rolesStr || "")
     .split(",")
     .map(x => x.trim())
@@ -211,8 +242,8 @@ async function sendNotes() {
 }
 
 async function exportSession() {
-  await api(`/api/sessions/${sessionId}/export`, "POST", {});
-  alert("Экспортировано в workspace/processes (смотри git diff)");
+  const r = await api(`/api/sessions/${sessionId}/export`, "POST", {});
+  alert(`Экспортировано: ${r.exported_to}`);
 }
 
 el("btnNew").addEventListener("click", newSession);
