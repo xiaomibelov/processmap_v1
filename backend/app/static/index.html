@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Food Process Copilot (MVP)</title>
+    <link rel="icon" href="/favicon.ico" />
     <link rel="stylesheet" href="/static/styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
   </head>
@@ -20,10 +21,10 @@
     <div class="layout">
       <div class="panel">
         <div class="panelTitle">Заметки (в звонке)</div>
-        <textarea id="notes" placeholder="Пиши тезисно. Можно с 'если/иначе', 'масса?', 'растворилось?'."></textarea>
+        <textarea id="notes" placeholder="Пиши тезисно. Можно с 'если/иначе', 'масса?', 'растворилось?', 'параллельно:'"></textarea>
         <div class="row">
           <button id="btnSend">Отправить заметки</button>
-          <span class="hint">Проект в ~/PycharmProjects</span>
+          <span class="hint">Клик по узлу в схеме открывает инспектор</span>
         </div>
       </div>
 
@@ -35,7 +36,9 @@
       </div>
 
       <div class="panel">
-        <div class="panelTitle">AI Copilot: вопросы</div>
+        <div class="panelTitle">Инспектор узла</div>
+        <div id="inspector" class="inspector"></div>
+        <div class="panelTitle" style="margin-top:10px;">AI Copilot: вопросы</div>
         <div id="questions" class="questions"></div>
       </div>
     </div>
