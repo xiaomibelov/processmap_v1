@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Food Process Copilot (MVP)</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  </head>
+  <body>
+    <div class="topbar">
+      <div class="brand">Food Process Copilot (MVP)</div>
+      <div class="meta">
+        <span id="sessionMeta">session: —</span>
+        <button id="btnNew">Новая сессия</button>
+        <button id="btnExport">Экспорт как код</button>
+      </div>
+    </div>
+
+    <div class="layout">
+      <div class="panel">
+        <div class="panelTitle">Заметки (в звонке)</div>
+        <textarea id="notes" placeholder="Пиши тезисно. Можно с 'если/иначе', 'масса?', 'растворилось?'."></textarea>
+        <div class="row">
+          <button id="btnSend">Отправить заметки</button>
+          <span class="hint">Проект в ~/PycharmProjects</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panelTitle">Процесс (Mermaid)</div>
+        <div class="graphWrap">
+          <pre class="mermaid" id="mermaid"></pre>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panelTitle">AI Copilot: вопросы</div>
+        <div id="questions" class="questions"></div>
+      </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
