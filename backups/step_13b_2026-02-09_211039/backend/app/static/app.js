@@ -44,17 +44,15 @@ function updateViewBtn() {
 
 function mermaidCodeForSession(s) {
   const v = getView();
-  if (!s || !s.nodes || !s.nodes.length) return "flowchart TD\n  A[Нет шагов] --> B[Добавь заметки слева]\n";
   if (v === "simple") return s.mermaid_simple || s.mermaid || "";
   return s.mermaid_lanes || s.mermaid || "";
 }
 
 function renderMermaid(code) {
   const m = el("mermaid");
-  m.removeAttribute("data-processed");
   m.textContent = code || "flowchart TD\n  A[Нет данных] --> B[Начни вводить заметки]\n";
   mermaid.initialize({ startOnLoad: false, securityLevel: "loose" });
-  try { mermaid.run({ nodes: [m] }); } catch (e) { console.error(e); }
+  mermaid.run({ querySelector: ".mermaid" });
 }
 
 function renderResources(s) {
