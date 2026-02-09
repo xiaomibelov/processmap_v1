@@ -3,54 +3,15 @@ let sessionCache = null;
 
 function el(id) { return document.getElementById(id); }
 
-function getLastSessionId() {
-  const v = (localStorage.getItem("last_session_id") || "").trim();
-  return v ? v : null;
-}
-
-function setSessionId(id) {
-  sessionId = id || null;
-  if (sessionId) localStorage.setItem("last_session_id", sessionId);
-}
-
-function clearSessionId() {
-  sessionId = null;
-  localStorage.removeItem("last_session_id");
-}
-
-function setTopbarError(msg) {
-  const s = (msg || "").toString().trim();
-  const meta = el("sessionMeta");
-  if (meta) meta.textContent = s ? `error: ${s}` : "session: —";
-}
-
 async function api(path, method = "GET", body = null) {
   const opt = { method, headers: { "Content-Type": "application/json" } };
   if (body) opt.body = JSON.stringify(body);
-
   const r = await fetch(path, opt);
-
-  const ct = (r.headers.get("content-type") || "").toLowerCase();
-  let data = null;
-
-  if (ct.includes("application/json")) {
-    data = await r.json();
-  } else {
-    const t = await r.text();
-    if (!r.ok) throw new Error(t || r.statusText);
-    return t;
-  }
-
   if (!r.ok) {
-    const msg = (data && (data.detail || data.error)) ? (data.detail || data.error) : r.statusText;
-    throw new Error(msg);
+    const t = await r.text();
+    throw new Error(t || r.statusText);
   }
-
-  if (data && typeof data === "object" && data.error) {
-    throw new Error(data.error);
-  }
-
-  return data;
+  return r.json();
 }
 
 function badge(type) {
@@ -482,64 +443,29 @@ function renderQuestions(qs) {
 }
 
 async function refresh() {
-  if (!sessionId) {
-    setTopbarError("нет sessionId");
-    sessionCache = null;
-    renderMermaid(mermaidCodeForSession(null));
-    renderResources(null);
-    renderInspector(null);
-    renderQuestions([]);
-    return;
-  }
-
-  try {
-    const s = await api(`/api/sessions/${sessionId}`);
-    sessionCache = s;
-    el("sessionMeta").textContent = `session: ${s.id} • ${s.title} • v${s.version}`;
-    updateViewBtn();
-    renderMermaid(mermaidCodeForSession(s));
-    renderResources(s);
-    renderInspector(s);
-    renderQuestions(s.questions || []);
-  } catch (e) {
-    setTopbarError(e.message || String(e));
-    throw e;
-  }
-}
-
-async function autoBootstrapSession() {
-  const last = getLastSessionId();
-  if (last) {
-    setSessionId(last);
-    try {
-      await refresh();
-      return;
-    } catch (e) {
-      clearSessionId();
-    }
-  }
-
-  const s = await api("/api/sessions", "POST", { title: "Новый процесс", roles: ["cook_1","cook_2","brigadir","technolog"] });
-  setSessionId(s.id);
-  await refresh();
+  const s = await api(`/api/sessions/${sessionId}`);
+  sessionCache = s;
+  el("sessionMeta").textContent = `session: ${s.id} • ${s.title} • v${s.version}`;
+  updateViewBtn();
+  renderMermaid(mermaidCodeForSession(s));
+  renderResources(s);
+  renderInspector(s);
+  renderQuestions(s.questions || []);
 }
 
 async function newSession() {
-  const title = prompt("Название процесса:", "Новый процесс");
-  const t = (title || "").trim() || "Новый процесс";
+  const title = prompt("Название процесса:", "Бульон Фо Бо");
+  if (!title) return;
 
   const rolesStr = prompt("Роли (через запятую):", "cook_1,cook_2,brigadir,technolog");
   const roles = (rolesStr || "").split(",").map(x => x.trim()).filter(Boolean);
 
-  const s = await api("/api/sessions", "POST", { title: t, roles: roles.length ? roles : undefined });
-  setSessionId(s.id);
+  const s = await api("/api/sessions", "POST", { title, roles: roles.length ? roles : undefined });
+  sessionId = s.id;
   await refresh();
 }
 
 async function sendNotes() {
-  if (!sessionId) {
-    await autoBootstrapSession();
-  }
   const notes = el("notes").value || "";
   if (!notes.trim()) return;
   await api(`/api/sessions/${sessionId}/notes`, "POST", { notes });
@@ -547,18 +473,15 @@ async function sendNotes() {
 }
 
 async function exportSession() {
-  if (!sessionId) {
-    await autoBootstrapSession();
-  }
   const r = await api(`/api/sessions/${sessionId}/export`, "POST", {});
   alert(`Экспортировано: ${r.exported_to}`);
 }
 
-el("btnNew").addEventListener("click", () => newSession().catch(e => alert(e.message || String(e))));
-el("btnSend").addEventListener("click", () => sendNotes().catch(e => alert(e.message || String(e))));
-el("btnExport").addEventListener("click", () => exportSession().catch(e => alert(e.message || String(e))));
+el("btnNew").addEventListener("click", newSession);
+el("btnSend").addEventListener("click", sendNotes);
+el("btnExport").addEventListener("click", exportSession);
 
-el("btnView").addEventListener("click", () => {
+el("btnView").addEventListener("click", async () => {
   const v = getView();
   setView(v === "lanes" ? "simple" : "lanes");
   updateViewBtn();
@@ -572,9 +495,5 @@ window.addEventListener("hashchange", () => {
 (async () => {
   if (!localStorage.getItem("mermaid_view")) setView("lanes");
   updateViewBtn();
-  try {
-    await autoBootstrapSession();
-  } catch (e) {
-    setTopbarError(e.message || String(e));
-  }
+  await newSession();
 })();
