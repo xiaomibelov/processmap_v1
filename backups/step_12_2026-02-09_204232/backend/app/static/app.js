@@ -105,61 +105,6 @@ function renderResources(s) {
   `;
 }
 
-function _parseEquipList(equipStr) {
-  return (equipStr || "")
-    .split(",")
-    .map(x => x.trim())
-    .filter(Boolean);
-}
-
-function _safeJsonParse(s) {
-  try {
-    return JSON.parse((s || "").trim() || "{}");
-  } catch (e) {
-    return null;
-  }
-}
-
-function _renderDispositionQuickUI(equipList, dispObj) {
-  const actions = [
-    ["leave", "Оставить"],
-    ["return_storage", "Вернуть"],
-    ["wash", "Мойка"],
-    ["sanitize", "Санобработка"],
-    ["dispose", "Утилизация"],
-  ];
-
-  const current = (dispObj && dispObj.equipment_actions && typeof dispObj.equipment_actions === "object")
-    ? dispObj.equipment_actions
-    : {};
-
-  const rows = equipList.slice(0, 8).map(eq => {
-    const cur = current[eq] || "";
-    const btns = actions.map(([code, label]) => {
-      const active = (cur === code) ? `style="opacity:1;border:1px solid rgba(0,0,0,.25)"` : `style="opacity:.85"`;
-      return `<button data-eq="${eq}" data-act="${code}" ${active}>${label}</button>`;
-    }).join("");
-    return `<div class="small" style="margin-top:6px;">
-              <b>${eq}</b>
-              <div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap;">${btns}</div>
-            </div>`;
-  }).join("");
-
-  return `
-    <div style="padding:8px;border:1px solid rgba(0,0,0,.08);border-radius:10px;margin-top:8px;">
-      <div class="small"><b>После шага: оборудование</b> (быстрое действие)</div>
-      <div class="small" style="opacity:.75;">Клик по действию заполнит disposition.equipment_actions</div>
-      ${rows || `<div class="small">Оборудование не задано</div>`}
-      <div class="small" style="margin-top:10px;"><b>Комментарий</b></div>
-      <input id="disp_note" class="grow" placeholder="например: протереть и оставить рядом" value="${(dispObj && dispObj.note ? String(dispObj.note) : "").replace(/"/g, "&quot;")}" />
-      <div class="row" style="margin-top:8px;gap:8px;">
-        <button id="disp_apply_note">Применить комментарий</button>
-        <button id="disp_clear">Очистить disposition</button>
-      </div>
-    </div>
-  `;
-}
-
 function renderInspector(s) {
   const wrap = el("inspector");
   if (!s || !s.nodes) {
@@ -191,10 +136,6 @@ function renderInspector(s) {
   const params = JSON.stringify(n.parameters || {}, null, 2);
   const disp = JSON.stringify(n.disposition || {}, null, 2);
 
-  const equipCsv = (n.equipment || []).join(", ");
-  const equipList = _parseEquipList(equipCsv);
-  const dispObj = (n.disposition && typeof n.disposition === "object") ? n.disposition : {};
-
   wrap.innerHTML = `
     <div class="small">ID: <b>${n.id}</b></div>
     ${schedLine}
@@ -221,7 +162,7 @@ function renderInspector(s) {
 
     <div class="insRow">
       <label>equip</label>
-      <input id="ins_equip" class="grow" value="${equipCsv.replace(/"/g, "&quot;")}" placeholder="kotel_1, skovoroda_1" />
+      <input id="ins_equip" class="grow" value="${(n.equipment || []).join(", ").replace(/"/g, "&quot;")}" placeholder="kotel_1, skovoroda_1" />
     </div>
 
     <div class="insRow">
@@ -229,9 +170,7 @@ function renderInspector(s) {
       <input id="ins_dur" class="grow" value="${n.duration_min ?? ""}" placeholder="минуты" />
     </div>
 
-    ${_renderDispositionQuickUI(equipList, dispObj)}
-
-    <div class="small" style="margin-top:10px;">parameters (JSON)</div>
+    <div class="small">parameters (JSON)</div>
     <textarea id="ins_params" class="insTextarea">${params}</textarea>
 
     <div class="small">disposition (JSON)</div>
@@ -243,77 +182,31 @@ function renderInspector(s) {
     </div>
   `;
 
-  const saveNode = async () => {
+  const btn = document.getElementById("ins_save");
+  btn.addEventListener("click", async () => {
     const payload = {};
     payload.title = document.getElementById("ins_title").value;
     payload.type = document.getElementById("ins_type").value;
     payload.actor_role = document.getElementById("ins_actor").value || null;
 
     const equipStr = document.getElementById("ins_equip").value || "";
-    payload.equipment = _parseEquipList(equipStr);
+    payload.equipment = equipStr.split(",").map(x => x.trim()).filter(Boolean);
 
     const durStr = (document.getElementById("ins_dur").value || "").trim();
     payload.duration_min = durStr ? parseInt(durStr, 10) : null;
 
-    const pObj = _safeJsonParse(document.getElementById("ins_params").value);
-    const dObj = _safeJsonParse(document.getElementById("ins_disp").value);
-    if (pObj === null || dObj === null) {
+    try {
+      payload.parameters = JSON.parse((document.getElementById("ins_params").value || "").trim() || "{}");
+      payload.disposition = JSON.parse((document.getElementById("ins_disp").value || "").trim() || "{}");
+    } catch (e) {
       alert("JSON ошибка в parameters/disposition");
       return;
     }
-    payload.parameters = pObj;
-    payload.disposition = dObj;
 
     await api(`/api/sessions/${sessionId}/nodes/${n.id}`, "POST", payload);
     await refresh();
     setSelectedNodeId(n.id);
-  };
-
-  document.getElementById("ins_save").addEventListener("click", saveNode);
-
-  wrap.querySelectorAll('button[data-eq][data-act]').forEach(btn => {
-    btn.addEventListener("click", async () => {
-      const eq = btn.getAttribute("data-eq");
-      const act = btn.getAttribute("data-act");
-      const dispText = document.getElementById("ins_disp").value;
-      const dObj = _safeJsonParse(dispText);
-      if (dObj === null) {
-        alert("JSON ошибка в disposition");
-        return;
-      }
-      dObj.equipment_actions = dObj.equipment_actions && typeof dObj.equipment_actions === "object" ? dObj.equipment_actions : {};
-      dObj.equipment_actions[eq] = act;
-      const note = document.getElementById("disp_note").value || "";
-      if (note.trim()) dObj.note = note.trim();
-      document.getElementById("ins_disp").value = JSON.stringify(dObj, null, 2);
-      await saveNode();
-    });
   });
-
-  const noteBtn = document.getElementById("disp_apply_note");
-  if (noteBtn) {
-    noteBtn.addEventListener("click", async () => {
-      const dispText = document.getElementById("ins_disp").value;
-      const dObj = _safeJsonParse(dispText);
-      if (dObj === null) {
-        alert("JSON ошибка в disposition");
-        return;
-      }
-      const note = document.getElementById("disp_note").value || "";
-      if (note.trim()) dObj.note = note.trim();
-      document.getElementById("ins_disp").value = JSON.stringify(dObj, null, 2);
-      await saveNode();
-    });
-  }
-
-  const clearBtn = document.getElementById("disp_clear");
-  if (clearBtn) {
-    clearBtn.addEventListener("click", async () => {
-      document.getElementById("ins_disp").value = "{}";
-      document.getElementById("disp_note").value = "";
-      await saveNode();
-    });
-  }
 }
 
 function renderQuestions(qs) {

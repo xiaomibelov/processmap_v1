@@ -20,7 +20,6 @@ from .normalizer import load_seed_glossary, normalize_nodes
 from .resources import build_resources_report
 from .storage import get_storage
 from .validators.coverage import build_questions
-from .validators.disposition import build_disposition_questions
 
 
 app = FastAPI(title="Food Process Copilot MVP")
@@ -110,41 +109,6 @@ def _merge_nodes(existing: List[Node], extracted: List[Node]) -> List[Node]:
     return merged
 
 
-def _merge_question_states(old_questions, new_questions):
-    old_by_id = {q.id: q for q in (old_questions or [])}
-    for q in new_questions:
-        old = old_by_id.get(q.id)
-        if not old:
-            continue
-        q.status = old.status
-        q.answer = old.answer
-    return new_questions
-
-
-def _disposition_report(s: Session) -> Dict[str, Any]:
-    nodes = []
-    open_nodes = []
-    for n in s.nodes:
-        eq = list(n.equipment or [])
-        if not eq:
-            continue
-        disp = n.disposition or {}
-        eq_actions = disp.get("equipment_actions") or {}
-        note = disp.get("note")
-        row = {
-            "id": n.id,
-            "title": n.title,
-            "actor_role": n.actor_role,
-            "equipment": eq,
-            "equipment_actions": eq_actions,
-            "note": note,
-        }
-        nodes.append(row)
-        if not isinstance(eq_actions, dict) or len(eq_actions) == 0:
-            open_nodes.append({"id": n.id, "title": n.title, "equipment": eq})
-    return {"nodes": nodes, "open": open_nodes, "open_count": len(open_nodes)}
-
-
 def _recompute_session(s: Session) -> Session:
     seed = load_seed_glossary(GLOSSARY_SEED)
     s.normalized = normalize_nodes(s.nodes, seed)
@@ -153,9 +117,7 @@ def _recompute_session(s: Session) -> Session:
     s.resources = resources_report
 
     base_questions = build_questions(s.nodes)
-    disp_questions = build_disposition_questions(s.nodes)
-    new_questions = base_questions + conflict_questions + disp_questions
-    s.questions = _merge_question_states(s.questions, new_questions)
+    s.questions = base_questions + conflict_questions
 
     s.mermaid_simple = render_mermaid(s.nodes, s.edges, roles=s.roles, mode="simple")
     s.mermaid_lanes = render_mermaid(s.nodes, s.edges, roles=s.roles, mode="lanes")
@@ -242,25 +204,6 @@ def post_notes(session_id: str, inp: NotesIn) -> Dict[str, Any]:
     return s.model_dump()
 
 
-def _map_disposition_answer(answer: str) -> Optional[str]:
-    a = (answer or "").strip().lower()
-    if not a:
-        return None
-    if "остав" in a:
-        return "leave"
-    if "вернут" in a or "хран" in a:
-        return "return_storage"
-    if "мойк" in a:
-        return "wash"
-    if "сан" in a or "дез" in a:
-        return "sanitize"
-    if "утилиз" in a or "спис" in a:
-        return "dispose"
-    if "друго" in a:
-        return "other"
-    return None
-
-
 @app.post("/api/sessions/{session_id}/answer")
 def answer(session_id: str, inp: AnswerIn) -> Dict[str, Any]:
     st = get_storage()
@@ -278,39 +221,21 @@ def answer(session_id: str, inp: AnswerIn) -> Dict[str, Any]:
     node = next((n for n in s.nodes if n.id == q.node_id), None)
     if node:
         lowq = (q.question or "").lower()
-
-        if inp.question_id.startswith("disp_"):
-            action = _map_disposition_answer(inp.answer)
-            node.disposition = dict(node.disposition or {})
-            node.disposition.setdefault("equipment_actions", {})
-            if isinstance(node.disposition["equipment_actions"], dict) and action and action != "other":
-                for eq in (node.equipment or []):
-                    eqid = (eq or "").strip()
-                    if eqid:
-                        node.disposition["equipment_actions"][eqid] = action
-            if action == "other" or not action:
-                node.disposition["note"] = inp.answer
-            node.parameters["_manual_disposition"] = True
-
-        elif "куда" in lowq or "после" in lowq:
+        if "куда" in lowq or "после" in lowq:
             node.disposition = {"note": inp.answer}
             node.parameters["_manual_disposition"] = True
-
         elif "кто" in lowq:
             node.actor_role = inp.answer.strip()
             node.parameters["_manual_actor"] = True
-
         elif "оборуд" in lowq:
             node.equipment = [x.strip() for x in re.split(r"[,\n;]+", inp.answer) if x.strip()]
             node.parameters["_manual_equipment"] = True
-
         elif "длитель" in lowq or "мин" in lowq:
             try:
                 node.duration_min = int(re.findall(r"\d+", inp.answer)[0])
                 node.parameters["_manual_duration"] = True
             except Exception:
                 pass
-
         else:
             node.parameters.setdefault("notes", [])
             if isinstance(node.parameters["notes"], list):
@@ -386,8 +311,5 @@ def export(session_id: str) -> Dict[str, Any]:
     (out_dir / "glossary.yml").write_text(dump_yaml(seed), encoding="utf-8")
     (out_dir / "normalized.yml").write_text(dump_yaml(s.normalized or {}), encoding="utf-8")
     (out_dir / "resources.yml").write_text(dump_yaml(s.resources or {}), encoding="utf-8")
-
-    disp_rep = _disposition_report(s)
-    (out_dir / "disposition.yml").write_text(dump_yaml(disp_rep), encoding="utf-8")
 
     return {"ok": True, "exported_to": str(out_dir)}
