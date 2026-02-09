@@ -35,6 +35,17 @@ function renderMermaid(code) {
   mermaid.run({ querySelector: ".mermaid" });
 }
 
+async function addUnknownToGlossary(term) {
+  const kind = (prompt("Куда добавить термин? (equipment/resources/units)", "resources") || "").trim();
+  if (!kind) return;
+
+  const title = (prompt("Название (человеческое)", term) || "").trim() || term;
+  const canon = (prompt("Canon ID (можно латиницей). Если пусто — авто", "") || "").trim();
+
+  await api("/api/glossary/add", "POST", { kind, term, title, canon });
+  await api(`/api/sessions/${sessionId}/recompute`, "POST", {});
+}
+
 function renderNormalized(s) {
   const wrap = el("normalized");
   const n = (s && s.normalized) ? s.normalized : null;
@@ -45,8 +56,20 @@ function renderNormalized(s) {
 
   const eq = (n.equipment || []).slice(0, 30);
   const res = (n.resources || []).slice(0, 30);
-  const unk = (n.unknown_terms || []).slice(0, 30);
+  const unk = (n.unknown_terms || []).slice(0, 40);
   const units = (n.units || []).slice(0, 20);
+
+  const unkHtml = unk.length
+    ? unk.map(x => {
+        const t = String(x.term || "");
+        const c = String(x.count || 0);
+        const safe = t.replace(/"/g, "&quot;");
+        return `<div class="insRow" style="margin-bottom:6px;">
+                  <div class="grow small"><b>${safe}</b> <span style="opacity:.7">x${c}</span></div>
+                  <button data-act="glossary" data-term="${safe}">В словарь</button>
+                </div>`;
+      }).join("")
+    : `<div class="small">—</div>`;
 
   wrap.innerHTML = `
     <div class="small"><b>Оборудование</b>: ${eq.length}</div>
@@ -59,10 +82,23 @@ function renderNormalized(s) {
     <div class="small">${units.map(u => `${u.raw} → ${u.unit_canon}`).join(", ") || "—"}</div>
 
     <div class="small" style="margin-top:10px;"><b>Unknown</b>: ${unk.length}</div>
-    <div class="small">${unk.map(x => `${x.term} <span style="opacity:.7">x${x.count}</span>`).join(", ") || "—"}</div>
+    ${unkHtml}
 
     <div class="small" style="margin-top:10px;opacity:.7;">Seed-словарь: backend/app/knowledge/glossary_seed.yml</div>
   `;
+
+  wrap.querySelectorAll('button[data-act="glossary"]').forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const term = btn.getAttribute("data-term");
+      if (!term) return;
+      try {
+        await addUnknownToGlossary(term);
+        await refresh();
+      } catch (e) {
+        alert("Ошибка добавления в словарь");
+      }
+    });
+  });
 }
 
 function renderQuestions(qs) {

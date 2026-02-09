@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from .ai.deepseek_client import extract_process
 from .exporters.mermaid import render_mermaid
 from .exporters.yaml_export import dump_yaml, session_to_process_dict
+from .glossary import normalize_kind, slugify_canon, upsert_term
 from .models import Node, Edge, Session
 from .normalizer import load_seed_glossary, normalize_nodes
 from .storage import get_storage
@@ -53,6 +54,13 @@ class NodePatchIn(BaseModel):
     duration_min: Optional[int] = None
     parameters: Optional[Dict[str, Any]] = None
     disposition: Optional[Dict[str, Any]] = None
+
+
+class GlossaryAddIn(BaseModel):
+    kind: str
+    term: str
+    canon: Optional[str] = None
+    title: Optional[str] = None
 
 
 def _merge_nodes(existing: List[Node], extracted: List[Node]) -> List[Node]:
@@ -100,6 +108,15 @@ def _merge_nodes(existing: List[Node], extracted: List[Node]) -> List[Node]:
     return merged
 
 
+def _recompute_session(s: Session) -> Session:
+    seed = load_seed_glossary(GLOSSARY_SEED)
+    s.normalized = normalize_nodes(s.nodes, seed)
+    s.questions = build_questions(s.nodes)
+    s.mermaid = render_mermaid(s.nodes, s.edges, roles=s.roles)
+    s.version += 1
+    return s
+
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(str(STATIC_DIR / "index.html"))
@@ -127,6 +144,27 @@ def get_session(session_id: str) -> Dict[str, Any]:
     if not s:
         return {"error": "not found"}
     return s.model_dump()
+
+
+@app.post("/api/sessions/{session_id}/recompute")
+def recompute(session_id: str) -> Dict[str, Any]:
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return {"error": "not found"}
+    s = _recompute_session(s)
+    st.save(s)
+    return s.model_dump()
+
+
+@app.post("/api/glossary/add")
+def glossary_add(inp: GlossaryAddIn) -> Dict[str, Any]:
+    kind = normalize_kind(inp.kind)
+    term = (inp.term or "").strip()
+    canon = (inp.canon or "").strip() or slugify_canon(term)
+    title = (inp.title or "").strip() or term
+    res = upsert_term(GLOSSARY_SEED, kind, term, canon, title)
+    return res
 
 
 @app.post("/api/sessions/{session_id}/notes")

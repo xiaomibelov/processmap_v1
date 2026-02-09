@@ -50,9 +50,7 @@ def _extract_terms(text: str, alias_idx: Dict[str, Dict[str, Any]]) -> Tuple[Lis
         if not alias:
             continue
         if alias in t:
-            found.append(
-                {"raw": alias, "canon": meta["canon"], "title": meta["title"], "confidence": 0.8}
-            )
+            found.append({"raw": alias, "canon": meta["canon"], "title": meta["title"], "confidence": 0.8})
     found = sorted(found, key=lambda x: (-len(x["raw"]), x["canon"]))
     dedup: List[Dict[str, Any]] = []
     seen = set()
@@ -134,14 +132,9 @@ def normalize_nodes(nodes: List[Node], seed: Dict[str, Any]) -> Dict[str, Any]:
                     meta = eq_idx[rr]
                     session_equipment[meta["canon"]] = {"raw": rr, "canon": meta["canon"], "title": meta["title"], "confidence": 0.9}
 
-        node_report = {
-            "equipment": eq_found,
-            "resources": res_found,
-            "units": units,
-            "unknown_terms": unknown_terms,
-        }
+        node_report = {"equipment": eq_found, "resources": res_found, "units": units, "unknown_terms": unknown_terms}
         by_node[n.id] = node_report
-        n.parameters.setdefault("_norm", node_report)
+        n.parameters["_norm"] = node_report
 
     unknown_sorted = sorted(session_unknown.items(), key=lambda x: (-x[1], x[0]))
     report = {
