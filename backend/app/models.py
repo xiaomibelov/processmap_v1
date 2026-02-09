@@ -48,5 +48,7 @@ class Session(BaseModel):
     edges: List[Edge] = Field(default_factory=list)
     questions: List[Question] = Field(default_factory=list)
     mermaid: str = ""
+    mermaid_simple: str = ""
+    mermaid_lanes: str = ""
     normalized: Dict[str, Any] = Field(default_factory=dict)
     version: int = 0

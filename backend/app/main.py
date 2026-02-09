@@ -112,7 +112,9 @@ def _recompute_session(s: Session) -> Session:
     seed = load_seed_glossary(GLOSSARY_SEED)
     s.normalized = normalize_nodes(s.nodes, seed)
     s.questions = build_questions(s.nodes)
-    s.mermaid = render_mermaid(s.nodes, s.edges, roles=s.roles)
+    s.mermaid_simple = render_mermaid(s.nodes, s.edges, roles=s.roles, mode="simple")
+    s.mermaid_lanes = render_mermaid(s.nodes, s.edges, roles=s.roles, mode="lanes")
+    s.mermaid = s.mermaid_lanes
     s.version += 1
     return s
 
@@ -132,6 +134,7 @@ def create_session(inp: CreateSessionIn) -> Dict[str, Any]:
     sid = uuid.uuid4().hex[:10]
     roles = inp.roles or ["cook_1", "cook_2", "brigadir", "technolog"]
     s = Session(id=sid, title=inp.title, roles=roles, version=1)
+    s = _recompute_session(s)
     st = get_storage()
     st.save(s)
     return s.model_dump()
@@ -188,13 +191,7 @@ def post_notes(session_id: str, inp: NotesIn) -> Dict[str, Any]:
     s.nodes = _merge_nodes(s.nodes, extracted_nodes)
     s.edges = extracted_edges
 
-    seed = load_seed_glossary(GLOSSARY_SEED)
-    s.normalized = normalize_nodes(s.nodes, seed)
-
-    s.questions = build_questions(s.nodes)
-    s.mermaid = render_mermaid(s.nodes, s.edges, roles=s.roles)
-    s.version += 1
-
+    s = _recompute_session(s)
     st.save(s)
     return s.model_dump()
 
@@ -230,13 +227,7 @@ def answer(session_id: str, inp: AnswerIn) -> Dict[str, Any]:
             if isinstance(node.parameters["notes"], list):
                 node.parameters["notes"].append(inp.answer)
 
-    seed = load_seed_glossary(GLOSSARY_SEED)
-    s.normalized = normalize_nodes(s.nodes, seed)
-
-    s.questions = build_questions(s.nodes)
-    s.mermaid = render_mermaid(s.nodes, s.edges, roles=s.roles)
-    s.version += 1
-
+    s = _recompute_session(s)
     st.save(s)
     return s.model_dump()
 
@@ -279,13 +270,7 @@ def patch_node(session_id: str, node_id: str, inp: NodePatchIn) -> Dict[str, Any
         node.disposition = data["disposition"]
         node.parameters["_manual_disposition"] = True
 
-    seed = load_seed_glossary(GLOSSARY_SEED)
-    s.normalized = normalize_nodes(s.nodes, seed)
-
-    s.questions = build_questions(s.nodes)
-    s.mermaid = render_mermaid(s.nodes, s.edges, roles=s.roles)
-    s.version += 1
-
+    s = _recompute_session(s)
     st.save(s)
     return s.model_dump()
 
@@ -303,6 +288,9 @@ def export(session_id: str) -> Dict[str, Any]:
 
     proc_yml = dump_yaml(session_to_process_dict(s))
     (out_dir / "process.yml").write_text(proc_yml, encoding="utf-8")
+
+    (out_dir / "diagram_simple.mmd").write_text(s.mermaid_simple or "", encoding="utf-8")
+    (out_dir / "diagram_lanes.mmd").write_text(s.mermaid_lanes or "", encoding="utf-8")
     (out_dir / "diagram.mmd").write_text(s.mermaid or "", encoding="utf-8")
 
     seed = load_seed_glossary(GLOSSARY_SEED)

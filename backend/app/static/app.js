@@ -4,6 +4,7 @@ let sessionCache = null;
 function el(id) { return document.getElementById(id); }
 
 async function api(path, method = "GET", body = null) {
+  const key = (localStorage.getItem("ai_view") || "lanes").trim();
   const opt = { method, headers: { "Content-Type": "application/json" } };
   if (body) opt.body = JSON.stringify(body);
   const r = await fetch(path, opt);
@@ -26,6 +27,26 @@ function selectedNodeIdFromHash() {
 
 function setSelectedNodeId(nodeId) {
   window.location.hash = `node=${nodeId}`;
+}
+
+function getView() {
+  const v = (localStorage.getItem("mermaid_view") || "lanes").trim();
+  return (v === "simple") ? "simple" : "lanes";
+}
+
+function setView(v) {
+  localStorage.setItem("mermaid_view", v);
+}
+
+function updateViewBtn() {
+  const v = getView();
+  el("btnView").textContent = (v === "lanes") ? "Вид: роли" : "Вид: простой";
+}
+
+function mermaidCodeForSession(s) {
+  const v = getView();
+  if (v === "simple") return s.mermaid_simple || s.mermaid || "";
+  return s.mermaid_lanes || s.mermaid || "";
 }
 
 function renderMermaid(code) {
@@ -214,7 +235,7 @@ function renderInspector(s) {
 
     <div class="insRow" style="margin-top:8px;">
       <button id="ins_save">Сохранить узел</button>
-      <span class="small">узлы кликаются в схеме</span>
+      <span class="small">клик по узлу на схеме открывает инспектор</span>
     </div>
   `;
 
@@ -249,7 +270,8 @@ async function refresh() {
   const s = await api(`/api/sessions/${sessionId}`);
   sessionCache = s;
   el("sessionMeta").textContent = `session: ${s.id} • ${s.title} • v${s.version}`;
-  renderMermaid(s.mermaid);
+  updateViewBtn();
+  renderMermaid(mermaidCodeForSession(s));
   renderNormalized(s);
   renderInspector(s);
   renderQuestions(s.questions || []);
@@ -286,10 +308,19 @@ el("btnNew").addEventListener("click", newSession);
 el("btnSend").addEventListener("click", sendNotes);
 el("btnExport").addEventListener("click", exportSession);
 
+el("btnView").addEventListener("click", async () => {
+  const v = getView();
+  setView(v === "lanes" ? "simple" : "lanes");
+  updateViewBtn();
+  if (sessionCache) renderMermaid(mermaidCodeForSession(sessionCache));
+});
+
 window.addEventListener("hashchange", () => {
   if (sessionCache) renderInspector(sessionCache);
 });
 
 (async () => {
+  if (!localStorage.getItem("mermaid_view")) setView("lanes");
+  updateViewBtn();
   await newSession();
 })();
