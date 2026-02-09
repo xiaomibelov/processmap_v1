@@ -17,6 +17,3 @@ workspace/.session_store/**
 node_modules/
 dist/
 build/
-
-workspace/processes/*
-!workspace/processes/.keep
