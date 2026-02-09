@@ -22,12 +22,18 @@
     <div class="layout">
       <div class="panel">
         <div class="panelTitle">Заметки (в звонке)</div>
-        <textarea id="notes" placeholder="Пиши тезисно. Можно с 'если/иначе', 'масса?', 'растворилось?'.
-Добавляй оборудование через инспектор: kotel_1, skovoroda_1.
-Добавляй длительности (мин) — тогда конфликты будут точнее."></textarea>
+        <textarea id="notes" placeholder="Формат:
+П1: включить плиту (режим?)
+П2: подготовить кости 5 кг
+Если масса < 5кг -> долить воду 2 л
+Параллельно: П1: снять пену | П2: подготовить тару
+Ждать 30-40 минут
+Маркировка: наклеить этикетку
+Списание: бульон списан (почему?)
+Сообщить технологу: уточнить норму соли"></textarea>
         <div class="row">
           <button id="btnSend">Отправить заметки</button>
-          <span class="hint">Красный=критично, жёлтый=не хватает, синий=неясно/вариативно</span>
+          <span class="hint">Красный=критично, жёлтый=не хватает данных, синий=неясно/вариативно</span>
         </div>
       </div>
 
@@ -41,9 +47,6 @@
       <div class="panel">
         <div class="panelTitle">Нормализатор</div>
         <div id="normalized" class="inspector"></div>
-
-        <div class="panelTitle" style="margin-top:10px;">Оборудование и конфликты</div>
-        <div id="resources" class="inspector"></div>
 
         <div class="panelTitle" style="margin-top:10px;">Инспектор узла</div>
         <div id="inspector" class="inspector"></div>

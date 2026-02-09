@@ -51,5 +51,4 @@ class Session(BaseModel):
     mermaid_simple: str = ""
     mermaid_lanes: str = ""
     normalized: Dict[str, Any] = Field(default_factory=dict)
-    resources: Dict[str, Any] = Field(default_factory=dict)
     version: int = 0

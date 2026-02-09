@@ -17,7 +17,6 @@ from .exporters.yaml_export import dump_yaml, session_to_process_dict
 from .glossary import normalize_kind, slugify_canon, upsert_term
 from .models import Node, Edge, Session
 from .normalizer import load_seed_glossary, normalize_nodes
-from .resources import build_resources_report
 from .storage import get_storage
 from .validators.coverage import build_questions
 
@@ -112,17 +111,10 @@ def _merge_nodes(existing: List[Node], extracted: List[Node]) -> List[Node]:
 def _recompute_session(s: Session) -> Session:
     seed = load_seed_glossary(GLOSSARY_SEED)
     s.normalized = normalize_nodes(s.nodes, seed)
-
-    resources_report, conflict_questions = build_resources_report(s.nodes, s.edges)
-    s.resources = resources_report
-
-    base_questions = build_questions(s.nodes)
-    s.questions = base_questions + conflict_questions
-
+    s.questions = build_questions(s.nodes)
     s.mermaid_simple = render_mermaid(s.nodes, s.edges, roles=s.roles, mode="simple")
     s.mermaid_lanes = render_mermaid(s.nodes, s.edges, roles=s.roles, mode="lanes")
     s.mermaid = s.mermaid_lanes
-
     s.version += 1
     return s
 
@@ -230,12 +222,6 @@ def answer(session_id: str, inp: AnswerIn) -> Dict[str, Any]:
         elif "оборуд" in lowq:
             node.equipment = [x.strip() for x in re.split(r"[,\n;]+", inp.answer) if x.strip()]
             node.parameters["_manual_equipment"] = True
-        elif "длитель" in lowq or "мин" in lowq:
-            try:
-                node.duration_min = int(re.findall(r"\d+", inp.answer)[0])
-                node.parameters["_manual_duration"] = True
-            except Exception:
-                pass
         else:
             node.parameters.setdefault("notes", [])
             if isinstance(node.parameters["notes"], list):
@@ -310,6 +296,5 @@ def export(session_id: str) -> Dict[str, Any]:
     seed = load_seed_glossary(GLOSSARY_SEED)
     (out_dir / "glossary.yml").write_text(dump_yaml(seed), encoding="utf-8")
     (out_dir / "normalized.yml").write_text(dump_yaml(s.normalized or {}), encoding="utf-8")
-    (out_dir / "resources.yml").write_text(dump_yaml(s.resources or {}), encoding="utf-8")
 
     return {"ok": True, "exported_to": str(out_dir)}

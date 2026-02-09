@@ -108,8 +108,6 @@ def _is_wash(n: Node) -> bool:
 
 
 def _severity(n: Node) -> str:
-    if (n.parameters or {}).get("_res_conflict"):
-        return "ambig"
     if n.type == "timer" and n.duration_min is None:
         return "critical"
     if _needs_heat_params(n.title) and not (n.parameters or {}).get("heat"):
