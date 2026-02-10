@@ -662,9 +662,10 @@ function mermaidCodeForSession(s) {
       const startRole = step18b1_getStartRole(sid);
       return step18b1_emptyLanesMermaid(roles, startRole);
     }
-    return "flowchart TD
+    return `flowchart TD
   A[Нет шагов] --> B[Добавь заметки слева]
-";
+`;
+
   }
   if (v === "simple") return s.mermaid_simple || s.mermaid || "";
   return s.mermaid_lanes || s.mermaid || "";
