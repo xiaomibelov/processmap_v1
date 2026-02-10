@@ -231,12 +231,445 @@ function updateViewBtn() {
   el("btnView").textContent = (v === "lanes") ? "Вид: роли" : "Вид: простой";
 }
 
+const STEP18B1_DEFAULT_TITLE = "Новый процесс";
+
+function step18b1_lsKey(base, sid) {
+  const s = (sid || "").trim();
+  return s ? `${base}_${s}` : base;
+}
+
+function step18b1_getStartRole(sid) {
+  const v = (localStorage.getItem(step18b1_lsKey("session_start_role", sid)) || "").trim();
+  return v ? v : null;
+}
+
+function step18b1_setStartRole(sid, role) {
+  const r = (role || "").trim();
+  if (!sid) return;
+  if (r) localStorage.setItem(step18b1_lsKey("session_start_role", sid), r);
+  else localStorage.removeItem(step18b1_lsKey("session_start_role", sid));
+}
+
+function step18b1_getSelectedActor(sid) {
+  const v = (localStorage.getItem(step18b1_lsKey("session_selected_actor", sid)) || "").trim();
+  return v ? v : null;
+}
+
+function step18b1_setSelectedActor(sid, role) {
+  const r = (role || "").trim();
+  if (!sid) return;
+  if (r) localStorage.setItem(step18b1_lsKey("session_selected_actor", sid), r);
+  else localStorage.removeItem(step18b1_lsKey("session_selected_actor", sid));
+}
+
+function step18b1_prefixNotes(raw, actor) {
+  const a = (actor || "").trim();
+  if (!a) return raw;
+  const lines = (raw || "").split("\n");
+  const out = [];
+  for (const line of lines) {
+    const t = (line || "");
+    if (!t.trim()) { out.push(t); continue; }
+    if (/^\s*[^:]{1,80}:\s+/.test(t)) { out.push(t); continue; }
+    out.push(`${a}: ${t.trim()}`);
+  }
+  return out.join("\n");
+}
+
+function step18b1_emptyLanesMermaid(roles, startRole) {
+  const rs = (roles || []).map(r => (r || "").trim()).filter(Boolean);
+  const uniq = [];
+  const seen = new Set();
+  for (const r of rs) {
+    if (!seen.has(r)) { seen.add(r); uniq.push(r); }
+  }
+  const sr = (startRole || "").trim();
+  const lines = [];
+  lines.push("flowchart TD");
+  lines.push('  classDef lanePh fill:transparent,stroke:transparent,color:transparent;');
+
+  lines.push('  subgraph pool_1["Процесс"]');
+  lines.push("    direction LR");
+
+  let i = 1;
+  for (const r of uniq) {
+    const laneId = `lane_${i}`;
+    const phId = `ph_${i}`;
+    const label = (r === sr) ? `${r} • START` : r;
+    lines.push(`    subgraph ${laneId}["${label.replaceAll('"', "'")}"]`);
+    lines.push("      direction TB");
+    lines.push(`      ${phId}[" "]`);
+    lines.push("    end");
+    lines.push(`    class ${phId} lanePh;`);
+    i += 1;
+  }
+
+  lines.push("  end");
+  return lines.join("\n") + "\n";
+}
+
+let step18b1_modalEl = null;
+
+function step18b1_initUi() {
+  try {
+    const layout = document.querySelector(".layout");
+    if (layout) layout.style.gridTemplateColumns = "0.9fr 1.9fr 1fr";
+
+    const notes = el("notes");
+    if (notes) notes.style.minHeight = "160px";
+
+    const meta = document.querySelector(".topbar .meta");
+    if (meta && !el("btnActors")) {
+      const b = document.createElement("button");
+      b.id = "btnActors";
+      b.textContent = "Акторы";
+      b.addEventListener("click", () => step18b1_openActorsWizard({ mode: "edit" }).catch(e => alert(e.message || String(e))));
+      meta.insertBefore(b, el("btnNew"));
+    }
+
+    step18b1_ensureActorChips();
+  } catch (e) {}
+}
+
+function step18b1_ensureActorChips() {
+  const notes = el("notes");
+  if (!notes) return;
+  const panel = notes.closest(".panel");
+  if (!panel) return;
+  if (el("actorChips")) return;
+
+  const box = document.createElement("div");
+  box.id = "actorChips";
+  box.style.display = "flex";
+  box.style.flexWrap = "wrap";
+  box.style.gap = "8px";
+  box.style.margin = "8px 0 8px 0";
+
+  panel.insertBefore(box, notes);
+
+  step18b1_renderActorChips();
+}
+
+function step18b1_renderActorChips() {
+  const box = el("actorChips");
+  if (!box) return;
+
+  const roles = (sessionCache && Array.isArray(sessionCache.roles)) ? sessionCache.roles.filter(Boolean) : [];
+  const sid = (sessionCache && sessionCache.id) ? sessionCache.id : sessionId;
+  const selected = step18b1_getSelectedActor(sid);
+
+  box.innerHTML = "";
+
+  const makeChip = (label, value) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = label;
+    btn.style.padding = "6px 10px";
+    btn.style.borderRadius = "999px";
+    btn.style.border = "1px solid rgba(255,255,255,.18)";
+    btn.style.background = (value && selected === value) ? "rgba(59,130,246,.28)" : "rgba(255,255,255,.06)";
+    btn.addEventListener("click", () => {
+      step18b1_setSelectedActor(sid, value || "");
+      step18b1_renderActorChips();
+    });
+    return btn;
+  };
+
+  box.appendChild(makeChip("Без актора", ""));
+
+  for (const r of roles) {
+    box.appendChild(makeChip(r, r));
+  }
+}
+
+function step18b1_syncUiFromSession() {
+  step18b1_renderActorChips();
+}
+
+function step18b1_ensureModal() {
+  if (step18b1_modalEl) return step18b1_modalEl;
+
+  const ov = document.createElement("div");
+  ov.id = "actorsModalOverlay";
+  ov.style.position = "fixed";
+  ov.style.left = "0";
+  ov.style.top = "0";
+  ov.style.right = "0";
+  ov.style.bottom = "0";
+  ov.style.background = "rgba(0,0,0,.55)";
+  ov.style.display = "none";
+  ov.style.alignItems = "center";
+  ov.style.justifyContent = "center";
+  ov.style.zIndex = "9999";
+
+  const card = document.createElement("div");
+  card.style.width = "min(720px, calc(100vw - 24px))";
+  card.style.background = "rgba(15, 20, 36, .98)";
+  card.style.border = "1px solid rgba(255,255,255,.12)";
+  card.style.borderRadius = "16px";
+  card.style.padding = "14px";
+
+  card.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+      <div style="font-weight:700;">Акторы и старт</div>
+      <button id="actorsModalClose" type="button">Закрыть</button>
+    </div>
+
+    <div style="margin-top:10px;display:grid;grid-template-columns:1fr;gap:10px;">
+      <div>
+        <div style="opacity:.8;font-size:12px;margin-bottom:6px;">Название процесса</div>
+        <input id="actorsTitle" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.25);color:#e8eefc;" />
+      </div>
+
+      <div>
+        <div style="opacity:.8;font-size:12px;margin-bottom:6px;">Акторы</div>
+        <div id="actorsList" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <input id="actorsAddInput" placeholder="например: Оператор" style="flex:1;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.25);color:#e8eefc;" />
+          <button id="actorsAddBtn" type="button">Добавить</button>
+        </div>
+      </div>
+
+      <div>
+        <div style="opacity:.8;font-size:12px;margin-bottom:6px;">Кто задаёт начало</div>
+        <select id="actorsStartSelect" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.25);color:#e8eefc;"></select>
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:6px;">
+        <button id="actorsSaveBtn" type="button" style="background:rgba(59,130,246,.28);border-color:rgba(59,130,246,.35);">Сохранить</button>
+      </div>
+    </div>
+  `;
+
+  ov.appendChild(card);
+  document.body.appendChild(ov);
+
+  step18b1_modalEl = ov;
+  return ov;
+}
+
+function step18b1_setModalVisible(vis) {
+  const ov = step18b1_ensureModal();
+  ov.style.display = vis ? "flex" : "none";
+}
+
+function step18b1_modalState() {
+  const roles = [];
+  const st = {
+    title: STEP18B1_DEFAULT_TITLE,
+    roles,
+    startRole: null,
+  };
+
+  if (sessionCache && sessionCache.title) st.title = sessionCache.title;
+  if (sessionCache && Array.isArray(sessionCache.roles)) {
+    for (const r of sessionCache.roles) {
+      const t = (r || "").trim();
+      if (t) roles.push(t);
+    }
+  }
+
+  if (!roles.length) {
+    const draft = (localStorage.getItem("draft_roles") || "").trim();
+    if (draft) {
+      for (const r of draft.split(",")) {
+        const t = (r || "").trim();
+        if (t) roles.push(t);
+      }
+    }
+  }
+
+  if (!roles.length) roles.push("Оператор");
+
+  const sid = (sessionCache && sessionCache.id) ? sessionCache.id : sessionId;
+  const sr = step18b1_getStartRole(sid) || (localStorage.getItem("draft_start_role") || "").trim();
+  st.startRole = sr && roles.includes(sr) ? sr : roles[0];
+
+  return st;
+}
+
+function step18b1_renderActorsList(roles) {
+  const list = el("actorsList");
+  if (!list) return;
+
+  list.innerHTML = "";
+  for (const r of roles) {
+    const chip = document.createElement("div");
+    chip.style.display = "inline-flex";
+    chip.style.alignItems = "center";
+    chip.style.gap = "8px";
+    chip.style.padding = "6px 10px";
+    chip.style.borderRadius = "999px";
+    chip.style.border = "1px solid rgba(255,255,255,.16)";
+    chip.style.background = "rgba(255,255,255,.06)";
+
+    const txt = document.createElement("div");
+    txt.textContent = r;
+
+    const rm = document.createElement("button");
+    rm.type = "button";
+    rm.textContent = "×";
+    rm.style.padding = "2px 8px";
+    rm.style.borderRadius = "10px";
+
+    rm.addEventListener("click", () => {
+      const next = roles.filter(x => x !== r);
+      if (!next.length) return;
+      step18b1_renderActorsWizard(next);
+    });
+
+    chip.appendChild(txt);
+    chip.appendChild(rm);
+    list.appendChild(chip);
+  }
+}
+
+function step18b1_renderStartSelect(roles, startRole) {
+  const sel = el("actorsStartSelect");
+  if (!sel) return;
+
+  sel.innerHTML = "";
+  for (const r of roles) {
+    const opt = document.createElement("option");
+    opt.value = r;
+    opt.textContent = r;
+    if (r === startRole) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
+function step18b1_renderActorsWizard(rolesOverride) {
+  const ov = step18b1_ensureModal();
+  const st = step18b1_modalState();
+
+  const roles = (rolesOverride && rolesOverride.length) ? rolesOverride : st.roles.slice();
+
+  el("actorsTitle").value = st.title || STEP18B1_DEFAULT_TITLE;
+
+  step18b1_renderActorsList(roles);
+  step18b1_renderStartSelect(roles, st.startRole);
+
+  const addBtn = el("actorsAddBtn");
+  const addInput = el("actorsAddInput");
+  const closeBtn = el("actorsModalClose");
+  const saveBtn = el("actorsSaveBtn");
+
+  if (addBtn && !addBtn._step18b1_bound) {
+    addBtn._step18b1_bound = true;
+    addBtn.addEventListener("click", () => {
+      const t = (addInput.value || "").trim();
+      if (!t) return;
+      if (roles.includes(t)) { addInput.value = ""; return; }
+      roles.push(t);
+      addInput.value = "";
+      step18b1_renderActorsWizard(roles);
+    });
+  }
+
+  if (addInput && !addInput._step18b1_bound) {
+    addInput._step18b1_bound = true;
+    addInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        addBtn && addBtn.click();
+      }
+    });
+  }
+
+  if (closeBtn && !closeBtn._step18b1_bound) {
+    closeBtn._step18b1_bound = true;
+    closeBtn.addEventListener("click", () => step18b1_setModalVisible(false));
+  }
+
+  if (saveBtn && !saveBtn._step18b1_bound) {
+    saveBtn._step18b1_bound = true;
+    saveBtn.addEventListener("click", () => step18b1_saveActors(roles).catch(e => alert(e.message || String(e))));
+  }
+}
+
+async function step18b1_openActorsWizard(opts) {
+  const o = opts || {};
+  if (o.forceNew) {
+    clearSessionId();
+    sessionCache = null;
+  }
+  step18b1_renderActorsWizard();
+  step18b1_setModalVisible(true);
+}
+
+async function step18b1_saveActors(roles) {
+  const title = (el("actorsTitle").value || "").trim() || STEP18B1_DEFAULT_TITLE;
+
+  const rs = [];
+  const seen = new Set();
+  for (const r of (roles || [])) {
+    const t = (r || "").trim();
+    if (!t) continue;
+    if (seen.has(t)) continue;
+    seen.add(t);
+    rs.push(t);
+  }
+  if (!rs.length) throw new Error("Нужен хотя бы один актор.");
+
+  const startRole = (el("actorsStartSelect").value || "").trim() || rs[0];
+  if (!rs.includes(startRole)) throw new Error("Стартовый актор должен быть среди акторов.");
+
+  localStorage.setItem("draft_roles", rs.join(","));
+  localStorage.setItem("draft_start_role", startRole);
+  localStorage.setItem("draft_title", title);
+
+  let sid = sessionId;
+
+  if (sid) {
+    let ok = false;
+    try {
+      await api(`/api/sessions/${sid}`, "PATCH", { title, roles: rs });
+      ok = true;
+    } catch (e) {
+      ok = false;
+    }
+    if (!ok) {
+      const s2 = await api("/api/sessions", "POST", { title, roles: rs });
+      sid = s2.id;
+      setSessionId(sid);
+    }
+  } else {
+    const s = await api("/api/sessions", "POST", { title, roles: rs });
+    sid = s.id;
+    setSessionId(sid);
+  }
+
+  step18b1_setStartRole(sid, startRole);
+
+  const selected = step18b1_getSelectedActor(sid);
+  if (!selected || !rs.includes(selected)) {
+    step18b1_setSelectedActor(sid, startRole);
+  }
+
+  step18b1_setModalVisible(false);
+  _closeOverlayPopover();
+  await refresh();
+  step18b1_syncUiFromSession();
+}
+
+
 function mermaidCodeForSession(s) {
   const v = getView();
-  if (!s || !s.nodes || !s.nodes.length) return "flowchart TD\n  A[Нет шагов] --> B[Добавь заметки слева]\n";
+  const sid = (s && s.id) ? s.id : sessionId;
+  const roles = (s && Array.isArray(s.roles)) ? s.roles.filter(Boolean) : [];
+  if (!s || !Array.isArray(s.nodes) || s.nodes.length === 0) {
+    if (roles.length) {
+      const startRole = step18b1_getStartRole(sid);
+      return step18b1_emptyLanesMermaid(roles, startRole);
+    }
+    return "flowchart TD
+  A[Нет шагов] --> B[Добавь заметки слева]
+";
+  }
   if (v === "simple") return s.mermaid_simple || s.mermaid || "";
   return s.mermaid_lanes || s.mermaid || "";
 }
+
 
 function _graphEls() {
   const wrap = el("graphWrap") || document.querySelector(".graphWrap");
@@ -928,40 +1361,40 @@ async function autoBootstrapSession() {
     setSessionId(last);
     try {
       await refresh();
+      step18b1_syncUiFromSession();
       return;
     } catch (e) {
       clearSessionId();
     }
   }
 
-  const s = await api("/api/sessions", "POST", { title: "Новый процесс", roles: ["cook_1","cook_2","brigadir","technolog"] });
-  setSessionId(s.id);
-  await refresh();
+  step18b1_openActorsWizard({ mode: "create" });
 }
+
 
 async function newSession() {
-  const title = prompt("Название процесса:", "Новый процесс");
-  const t = (title || "").trim() || "Новый процесс";
-
-  const rolesStr = prompt("Роли (через запятую):", "cook_1,cook_2,brigadir,technolog");
-  const roles = (rolesStr || "").split(",").map(x => x.trim()).filter(Boolean);
-
-  const s = await api("/api/sessions", "POST", { title: t, roles: roles.length ? roles : undefined });
-  setSessionId(s.id);
   _closeOverlayPopover();
-  await refresh();
+  step18b1_openActorsWizard({ mode: "create", forceNew: true });
 }
+
 
 async function sendNotes() {
   if (!sessionId) {
     await autoBootstrapSession();
+    if (!sessionId) return;
   }
-  const notes = el("notes").value || "";
+  let notes = el("notes").value || "";
   if (!notes.trim()) return;
+
+  const actor = step18b1_getSelectedActor(sessionId);
+  if (actor) notes = step18b1_prefixNotes(notes, actor);
+
   await api(`/api/sessions/${sessionId}/notes`, "POST", { notes });
   _closeOverlayPopover();
   await refresh();
+  step18b1_syncUiFromSession();
 }
+
 
 async function exportSession() {
   if (!sessionId) {
@@ -1088,6 +1521,7 @@ window.addEventListener("resize", () => {
 (async () => {
   if (!localStorage.getItem("mermaid_view")) setView("lanes");
   updateViewBtn();
+  step18b1_initUi();
   try {
     await autoBootstrapSession();
   } catch (e) {
