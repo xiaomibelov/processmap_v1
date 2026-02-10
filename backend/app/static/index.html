@@ -13,11 +13,28 @@
       <div class="brand">Food Process Copilot (MVP)</div>
       <div class="meta">
         <span id="sessionMeta">session: —</span>
-        <span id="llmMeta" class="llmMeta">DeepSeek: —</span>
-        <button id="btnLLM">DeepSeek</button>
+        <button id="btnSessions">Сессии</button>
         <button id="btnView">Вид: роли</button>
         <button id="btnNew">Новая сессия</button>
         <button id="btnExport">Экспорт как код</button>
+      </div>
+    </div>
+
+    <div id="sessionModal" class="modal hidden" aria-hidden="true">
+      <div class="modalBackdrop" data-act="close"></div>
+      <div class="modalCard">
+        <div class="modalTop">
+          <div class="modalTitle">Сессии</div>
+          <button id="sessClose" class="btnGhost" data-act="close">Закрыть</button>
+        </div>
+        <div class="modalBody">
+          <div class="sessControls">
+            <input id="sessSearch" placeholder="Поиск по названию / заметкам" />
+            <button id="sessReload" class="btnGhost">Обновить</button>
+          </div>
+          <div id="sessList" class="sessList"></div>
+          <div id="sessEmpty" class="hint" style="display:none; margin-top:10px;">Нет сохранённых сессий</div>
+        </div>
       </div>
     </div>
 
@@ -59,24 +76,5 @@
     </div>
 
     <script src="/static/app.js"></script>
-    <div id="llmPanel" class="llmPanel hidden">
-      <div class="llmTitle">DeepSeek API</div>
-      <div class="llmBody">
-        <div class="row">
-          <input id="llmApiKey" type="password" placeholder="DEEPSEEK_API_KEY (будет сохранён на сервере)" />
-        </div>
-        <div class="row">
-          <input id="llmBaseUrl" type="text" placeholder="DEEPSEEK_BASE_URL (опционально)" />
-        </div>
-        <div class="row">
-          <button id="btnLLMSave">Сохранить</button>
-          <button id="btnLLMClear">Очистить</button>
-          <button id="btnLLMClose">Закрыть</button>
-        </div>
-        <div id="llmStatus" class="small"></div>
-        <div class="small">Ключ не возвращается в API-ответах. Хранение: workspace/.session_store/_llm_settings.json</div>
-      </div>
-    </div>
-
   </body>
 </html>

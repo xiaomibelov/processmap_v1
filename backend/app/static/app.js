@@ -6,6 +6,9 @@ let overlayOpenEl = null;
 let overlayOpenAnchor = null;
 let overlayOpenByNode = {};
 
+let sessionsModalOpen = false;
+let sessionsSearchTimer = null;
+
 function el(id) { return document.getElementById(id); }
 
 function getLastSessionId() {
@@ -29,59 +32,71 @@ function setTopbarError(msg) {
   if (meta) meta.textContent = s ? `error: ${s}` : "session: —";
 }
 
-async function refreshLLMStatus() {
-  const meta = el("llmMeta");
-  if (!meta) return;
+function _fmtDate(iso) {
   try {
-    const d = await api("/api/settings/llm");
-    const has = !!(d && d.has_key);
-    const baseUrl = (d && d.base_url) ? String(d.base_url) : "";
-    meta.textContent = has ? "DeepSeek: key ✓" : "DeepSeek: —";
-    meta.classList.remove("ok");
-    meta.classList.remove("bad");
-    meta.classList.add(has ? "ok" : "bad");
-
-    const inpBase = el("llmBaseUrl");
-    if (inpBase && baseUrl && !inpBase.value) inpBase.value = baseUrl;
+    return new Date(iso).toLocaleString();
   } catch (e) {
-    meta.textContent = "DeepSeek: ошибка";
-    meta.classList.remove("ok");
-    meta.classList.add("bad");
+    return iso || "";
   }
 }
 
-function _setLLMStatus(msg) {
-  const s = el("llmStatus");
-  if (s) s.textContent = (msg || "").toString();
+function _openSessionsModal() {
+  const modal = el("sessionModal");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden", "false");
+  sessionsModalOpen = true;
+  _loadSessionsList().catch(e => alert(e.message || String(e)));
+  const inp = el("sessSearch");
+  if (inp) inp.focus();
 }
 
-function toggleLLMPanel(forceOpen = null) {
-  const p = el("llmPanel");
-  if (!p) return;
-  const isHidden = p.classList.contains("hidden");
-  const open = (forceOpen === null) ? isHidden : !!forceOpen;
-  if (open) {
-    p.classList.remove("hidden");
-  } else {
-    p.classList.add("hidden");
-  }
+function _closeSessionsModal() {
+  const modal = el("sessionModal");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  modal.setAttribute("aria-hidden", "true");
+  sessionsModalOpen = false;
 }
 
-async function saveLLMSettings(mode) {
-  const apiKeyEl = el("llmApiKey");
-  const baseUrlEl = el("llmBaseUrl");
-  const apiKey = (mode === "clear") ? "" : ((apiKeyEl ? apiKeyEl.value : "") || "").trim();
-  const baseUrl = ((baseUrlEl ? baseUrlEl.value : "") || "").trim();
+async function _loadSessionsList() {
+  const list = el("sessList");
+  const empty = el("sessEmpty");
+  if (!list) return;
+  const q = (el("sessSearch") ? el("sessSearch").value : "").trim();
+  const url = q ? `/api/sessions?q=${encodeURIComponent(q)}&limit=200` : `/api/sessions?limit=200`;
+  const data = await api(url);
+  const items = (data && data.items) ? data.items : [];
+  list.innerHTML = "";
+  if (empty) empty.style.display = items.length ? "none" : "block";
 
-  try {
-    await api("/api/settings/llm", "POST", { provider: "deepseek", api_key: apiKey, base_url: baseUrl });
-    if (apiKeyEl) apiKeyEl.value = "";
-    _setLLMStatus(mode === "clear" ? "Ключ очищен" : "Ключ сохранён");
-    await refreshLLMStatus();
-    if (mode !== "clear") toggleLLMPanel(false);
-  } catch (e) {
-    _setLLMStatus(`Ошибка: ${e.message || String(e)}`);
-  }
+  items.forEach(it => {
+    const sid = (it.id || "").toString();
+    const title = (it.title || "(без названия)").toString();
+    const upd = _fmtDate(it.updated_at);
+    const openN = Number(it.open_questions || 0);
+    const ansN = Number(it.answered_questions || 0);
+    const v = it.version || 0;
+    const preview = (it.notes_preview || "").toString();
+    const isCur = sessionId && sid === sessionId;
+
+    const row = document.createElement("div");
+    row.className = "sessItem";
+    row.innerHTML = `
+      <div class="sessLeft">
+        <div class="sessTitle">${isCur ? "▶ " : ""}${title}</div>
+        <div class="sessMeta">id: ${sid} • v${v} • ${upd}</div>
+        <div class="sessPreview">${preview.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
+      </div>
+      <div class="sessRight">
+        <span class="pill">answered: ${ansN}</span>
+        <span class="pill">open: ${openN}</span>
+        <button class="btnGhost" data-act="open" data-id="${sid}">Открыть</button>
+        <button class="btnGhost" data-act="rename" data-id="${sid}">Переименовать</button>
+      </div>
+    `;
+    list.appendChild(row);
+  });
 }
 
 async function api(path, method = "GET", body = null) {
@@ -882,19 +897,60 @@ async function exportSession() {
 }
 
 el("btnNew").addEventListener("click", () => newSession().catch(e => alert(e.message || String(e))));
+el("btnSessions").addEventListener("click", () => _openSessionsModal());
 el("btnSend").addEventListener("click", () => sendNotes().catch(e => alert(e.message || String(e))));
 el("btnExport").addEventListener("click", () => exportSession().catch(e => alert(e.message || String(e))));
 
-if (el("btnLLM")) {
-  el("btnLLM").addEventListener("click", () => {
-    _closeOverlayPopover();
-    toggleLLMPanel();
-    refreshLLMStatus();
+if (el("sessClose")) el("sessClose").addEventListener("click", () => _closeSessionsModal());
+if (el("sessReload")) el("sessReload").addEventListener("click", () => _loadSessionsList().catch(e => alert(e.message || String(e))));
+if (el("sessSearch")) {
+  el("sessSearch").addEventListener("input", () => {
+    if (sessionsSearchTimer) clearTimeout(sessionsSearchTimer);
+    sessionsSearchTimer = setTimeout(() => {
+      _loadSessionsList().catch(e => alert(e.message || String(e)));
+    }, 250);
   });
 }
-if (el("btnLLMSave")) el("btnLLMSave").addEventListener("click", () => saveLLMSettings("save"));
-if (el("btnLLMClear")) el("btnLLMClear").addEventListener("click", () => saveLLMSettings("clear"));
-if (el("btnLLMClose")) el("btnLLMClose").addEventListener("click", () => toggleLLMPanel(false));
+
+if (el("sessionModal")) {
+  el("sessionModal").addEventListener("click", (e) => {
+    const actEl = e.target && e.target.closest ? e.target.closest("[data-act]") : null;
+    const act = actEl ? actEl.getAttribute("data-act") : null;
+    if (act === "close") {
+      _closeSessionsModal();
+      return;
+    }
+  });
+}
+
+if (el("sessList")) {
+  el("sessList").addEventListener("click", async (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest("button[data-act]") : null;
+    if (!btn) return;
+    const act = btn.getAttribute("data-act");
+    const sid = btn.getAttribute("data-id");
+    if (!sid) return;
+
+    if (act === "open") {
+      setSessionId(sid);
+      _closeSessionsModal();
+      _closeOverlayPopover();
+      await refresh();
+      return;
+    }
+
+    if (act === "rename") {
+      const cur = btn.closest(".sessItem") ? (btn.closest(".sessItem").querySelector(".sessTitle")?.textContent || "") : "";
+      const newTitle = prompt("Новое название:", cur.replace(/^▶\s*/, "").trim());
+      const t = (newTitle || "").trim();
+      if (!t) return;
+      await api(`/api/sessions/${sid}`, "PATCH", { title: t });
+      if (sessionId && sessionId === sid) await refresh();
+      await _loadSessionsList();
+      return;
+    }
+  });
+}
 
 el("btnView").addEventListener("click", () => {
   const v = getView();
@@ -922,8 +978,11 @@ document.addEventListener("click", (e) => {
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
+    if (sessionsModalOpen) {
+      _closeSessionsModal();
+      return;
+    }
     _closeOverlayPopover();
-    toggleLLMPanel(false);
   }
 });
 

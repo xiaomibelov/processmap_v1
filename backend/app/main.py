@@ -40,20 +40,12 @@ class CreateSessionIn(BaseModel):
     roles: Optional[List[str]] = None
 
 
+class UpdateSessionIn(BaseModel):
+    title: Optional[str] = None
+
+
 class NotesIn(BaseModel):
     notes: str
-
-class LLMSettingsIn(BaseModel):
-    provider: str = "deepseek"
-    api_key: str = ""
-    base_url: str = ""
-
-
-class LLMSettingsOut(BaseModel):
-    provider: str
-    has_key: bool
-    base_url: str = ""
-
 
 
 class AnswerIn(BaseModel):
@@ -220,10 +212,28 @@ def create_session(inp: CreateSessionIn) -> Dict[str, Any]:
     return s.model_dump()
 
 
+@app.get("/api/sessions")
+def list_sessions(q: Optional[str] = None, limit: int = 200) -> Dict[str, Any]:
+    st = get_storage()
+    items = st.list(query=q, limit=min(max(int(limit), 1), 500))
+    return {"items": items, "count": len(items)}
+
+
 @app.get("/api/sessions/{session_id}")
 def get_session(session_id: str) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
+    if not s:
+        return {"error": "not found"}
+    return s.model_dump()
+
+
+@app.patch("/api/sessions/{session_id}")
+def patch_session(session_id: str, inp: UpdateSessionIn) -> Dict[str, Any]:
+    st = get_storage()
+    if inp.title is None:
+        return {"error": "no changes"}
+    s = st.rename(session_id, inp.title)
     if not s:
         return {"error": "not found"}
     return s.model_dump()
@@ -238,28 +248,6 @@ def recompute(session_id: str) -> Dict[str, Any]:
     s = _recompute_session(s)
     st.save(s)
     return s.model_dump()
-
-@app.get("/api/settings/llm")
-def get_llm_settings() -> Dict[str, Any]:
-    st = get_storage()
-    provider = st.load_llm_settings().get("provider") or "deepseek"
-    base_url = st.get_llm_base_url() or (st.load_llm_settings().get("base_url") or "")
-    has_key = bool(st.get_llm_api_key())
-    return LLMSettingsOut(provider=provider, has_key=has_key, base_url=base_url).model_dump()
-
-
-@app.post("/api/settings/llm")
-def set_llm_settings(inp: LLMSettingsIn) -> Dict[str, Any]:
-    st = get_storage()
-    provider = (inp.provider or "deepseek").strip() or "deepseek"
-    api_key = (inp.api_key or "").strip()
-    base_url = (inp.base_url or "").strip()
-    st.save_llm_settings(provider=provider, api_key=api_key, base_url=base_url)
-    provider_out = st.load_llm_settings().get("provider") or "deepseek"
-    base_url_out = st.get_llm_base_url() or (st.load_llm_settings().get("base_url") or "")
-    has_key = bool(st.get_llm_api_key())
-    return LLMSettingsOut(provider=provider_out, has_key=has_key, base_url=base_url_out).model_dump()
-
 
 
 @app.post("/api/glossary/add")
@@ -281,9 +269,7 @@ def post_notes(session_id: str, inp: NotesIn) -> Dict[str, Any]:
 
     s.notes = inp.notes
 
-    api_key = st.get_llm_api_key()
-    base_url = st.get_llm_base_url()
-    extracted = extract_process(s.notes, api_key=api_key, base_url=base_url)
+    extracted = extract_process(s.notes)
     nodes_raw = extracted.get("nodes", []) or []
     edges_raw = extracted.get("edges", []) or []
     roles = extracted.get("roles", []) or s.roles

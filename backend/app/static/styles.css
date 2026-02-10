@@ -5,6 +5,8 @@ body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI
 .meta { display: flex; gap: 10px; align-items: center; }
 button { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); color: #e8eefc; padding: 8px 10px; border-radius: 10px; cursor: pointer; }
 button:hover { background: rgba(255,255,255,.12); }
+.btnGhost { background: transparent; border-color: rgba(255,255,255,.16); }
+.btnGhost:hover { background: rgba(255,255,255,.08); }
 .layout { display: grid; grid-template-columns: 1.1fr 1.4fr 1fr; gap: 12px; padding: 12px; }
 .panel { background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.10); border-radius: 16px; padding: 10px; min-height: calc(100vh - 70px); display: flex; flex-direction: column; }
 .panelTitle { font-weight: 650; margin-bottom: 8px; opacity: .95; }
@@ -49,12 +51,20 @@ select { padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,255,
 .qOptBtn { padding: 6px 8px; border-radius: 10px; font-size: 12px; line-height: 1; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.06); }
 .qOptBtn:hover { background: rgba(255,255,255,.10); }
 
-.hidden { display: none; }
+.modal { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; }
+.modal.hidden { display: none; }
+.modalBackdrop { position: absolute; inset: 0; background: rgba(0,0,0,.55); }
+.modalCard { position: relative; width: min(820px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: hidden; border-radius: 18px; border: 1px solid rgba(255,255,255,.12); background: rgba(8,10,14,.94); box-shadow: 0 22px 60px rgba(0,0,0,.55); }
+.modalTop { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 12px; border-bottom: 1px solid rgba(255,255,255,.10); }
+.modalTitle { font-weight: 700; letter-spacing: .2px; }
+.modalBody { padding: 12px; overflow: auto; max-height: calc(100vh - 120px); }
 
-.llmMeta { font-size: 12px; opacity: .85; padding: 4px 8px; border-radius: 999px; border: 1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.18); }
-.llmMeta.ok { border-color: rgba(34,197,94,.45); background: rgba(34,197,94,.10); }
-.llmMeta.bad { border-color: rgba(255,184,0,.45); background: rgba(255,184,0,.10); }
-
-.llmPanel { position: fixed; top: 62px; right: 12px; width: 380px; z-index: 20; border-radius: 16px; padding: 10px; border: 1px solid rgba(255,255,255,.12); background: rgba(8,10,14,.94); box-shadow: 0 16px 44px rgba(0,0,0,.55); }
-.llmTitle { font-weight: 700; margin-bottom: 8px; }
-.llmBody { display: flex; flex-direction: column; gap: 8px; }
+.sessControls { display: flex; gap: 10px; align-items: center; }
+.sessList { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.sessItem { border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.03); border-radius: 14px; padding: 10px; display: flex; justify-content: space-between; gap: 12px; }
+.sessLeft { min-width: 0; }
+.sessTitle { font-weight: 650; }
+.sessMeta { font-size: 12px; opacity: .75; margin-top: 4px; }
+.sessPreview { font-size: 12px; opacity: .7; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 520px; }
+.sessRight { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.pill { font-size: 11px; padding: 3px 8px; border-radius: 999px; border: 1px solid rgba(255,255,255,.16); opacity: .9; }
