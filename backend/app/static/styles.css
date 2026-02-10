@@ -188,3 +188,69 @@ select { padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,255,
   .layout > .panel:has(#mermaid) { min-height: 520px; }
 }
 
+/* STEP18C3B_PROCESS_FULLWIDTH_FIX
+   Goals:
+   1) Process (Mermaid) truly spans full width and SVG scales up
+   2) Bottom row: Notes (left) + Tools (right)
+   3) Tools panel does NOT become a tall column; keep it compact with internal scroll
+   Uses :has() to bind panels by content (Chrome OK).
+*/
+.layout {
+  grid-template-columns: 1.25fr 1.00fr !important;
+  grid-template-rows: minmax(640px, 1fr) auto !important;
+  grid-template-areas: "process process" "notes tools" !important;
+}
+
+.layout > .panel:has(#mermaid) {
+  grid-area: process !important;
+  width: 100% !important;
+  min-height: 640px !important;
+}
+
+/* Make Mermaid SVG fill available width */
+.layout > .panel:has(#mermaid) #mermaid {
+  width: 100% !important;
+  max-width: none !important;
+  min-height: 560px !important;
+}
+.layout > .panel:has(#mermaid) #mermaid svg {
+  width: 100% !important;
+  max-width: none !important;
+  height: auto !important;
+}
+
+.layout > .panel:has(textarea#notes) {
+  grid-area: notes !important;
+  min-height: 0 !important;
+}
+.layout > .panel:has(textarea#notes) textarea#notes {
+  flex: none !important;
+  height: 160px !important;
+  min-height: 160px !important;
+  max-height: 220px !important;
+}
+
+/* Tools panel = everything that is not Mermaid and not Notes */
+.layout > .panel:not(:has(#mermaid)):not(:has(textarea#notes)) {
+  grid-area: tools !important;
+  min-height: 0 !important;
+  max-height: 260px !important;
+  overflow-y: auto !important;
+}
+
+/* Prevent inner tool blocks from forcing huge heights */
+.layout > .panel:not(:has(#mermaid)):not(:has(textarea#notes)) > * {
+  min-height: 0 !important;
+}
+
+@media (max-width: 1200px) {
+  .layout {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto !important;
+    grid-template-areas: "process" "notes" "tools" !important;
+  }
+  .layout > .panel:not(:has(#mermaid)):not(:has(textarea#notes)) {
+    max-height: none !important;
+  }
+}
+
