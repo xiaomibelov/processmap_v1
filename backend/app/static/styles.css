@@ -254,3 +254,25 @@ select { padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,255,
   }
 }
 
+/* STEP18C3C_MERMAID_SCALE_FIX
+   Fix Mermaid becoming overly zoomed-in.
+   We keep Process panel full-width, but do NOT force SVG to width:100% (which upscales small diagrams).
+   Instead: max-width:100% + width:auto, and enable scrolling/panning inside the diagram viewport.
+*/
+.layout > .panel:has(#mermaid) #mermaid {
+  overflow: auto !important;
+}
+
+.layout > .panel:has(#mermaid) #mermaid svg {
+  width: auto !important;
+  max-width: 100% !important;
+  height: auto !important;
+}
+
+/* Keep the diagram visually centered when it is smaller than the viewport */
+.layout > .panel:has(#mermaid) #mermaid {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: flex-start !important;
+}
+
