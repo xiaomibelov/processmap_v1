@@ -170,10 +170,15 @@ def _classes(nodes: List[Node]) -> Tuple[List[str], List[str], List[str]]:
     return critical, missing, ambig
 
 
-def render_mermaid(nodes: List[Node], edges: List[Edge], roles: Optional[List[str]] = None, mode: str = "lanes") -> str:
+def render_mermaid(nodes: List[Node], edges: List[Edge], roles: Optional[List[str]] = None, start_role=None, mode: str = "lanes") -> str:
     if not nodes:
         return _PLACEHOLDER_MERMAID
     mode = (mode or "lanes").strip().lower()
+
+    if not nodes:
+        if mode == \"lanes\" and roles:
+            return _render_empty_pool_lanes(roles, start_role)
+        return _PLACEHOLDER_MERMAID
     if mode not in ("lanes", "simple"):
         mode = "lanes"
     if mode == "simple":
@@ -267,4 +272,21 @@ def _render_lanes(nodes: List[Node], edges: List[Edge], roles: Optional[List[str
     if ambig:
         lines.append(f"  class {','.join(ambig)} todoAmbig;")
 
+    return "\n".join(lines) + "\n"
+
+
+def _render_empty_pool_lanes(roles, start_role):
+    lines = []
+    lines.append("flowchart LR")
+    lines.append("  subgraph pool_1[\"Процесс\"]")
+    lines.append("    direction LR")
+    for r in roles:
+        label = _esc(r)
+        if start_role and r == start_role:
+            label = f"{label} • START"
+        lane_id = _lane_id(r)
+        lines.append(f"    subgraph {lane_id}[\"{label}\"]")
+        lines.append("      direction TB")
+        lines.append("    end")
+    lines.append("  end")
     return "\n".join(lines) + "\n"

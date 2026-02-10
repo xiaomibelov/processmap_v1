@@ -40,6 +40,7 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 class CreateSessionIn(BaseModel):
     title: str
     roles: Optional[List[str]] = None
+    start_role: Optional[str] = None
 
 
 class UpdateSessionIn(BaseModel):
@@ -210,8 +211,8 @@ def _recompute_session(s: Session) -> Session:
 
     s.questions = _merge_question_states(s.questions, new_questions)
 
-    s.mermaid_simple = render_mermaid(s.nodes, s.edges, roles=s.roles, mode="simple")
-    s.mermaid_lanes = render_mermaid(s.nodes, s.edges, roles=s.roles, mode="lanes")
+    s.mermaid_simple = render_mermaid(s.nodes, s.edges, roles=s.roles, start_role=getattr(s, "start_role", None), mode="simple")
+    s.mermaid_lanes = render_mermaid(s.nodes, s.edges, roles=s.roles, start_role=getattr(s, "start_role", None), mode="lanes")
     s.mermaid = s.mermaid_lanes
 
     s.version += 1
@@ -232,7 +233,8 @@ def favicon() -> FileResponse:
 def create_session(inp: CreateSessionIn) -> Dict[str, Any]:
     sid = uuid.uuid4().hex[:10]
     roles = inp.roles or ["cook_1", "cook_2", "brigadir", "technolog"]
-    s = Session(id=sid, title=inp.title, roles=roles, version=1)
+    start_role = (inp.start_role or (roles[0] if roles else None))
+    s = Session(id=sid, title=inp.title, roles=roles, start_role=start_role, version=1)
     s = _recompute_session(s)
     st = get_storage()
     st.save(s)
