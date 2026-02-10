@@ -47,6 +47,7 @@ def build_disposition_questions(nodes: List[Node]) -> List[Question]:
                 issue_type="CRITICAL",
                 question=qtext,
                 options=list(DISPOSITION_OPTIONS),
+                target={"field": "disposition.equipment_actions", "mode": "set", "transform": "disposition_equipment_action"},
             )
         )
     return out

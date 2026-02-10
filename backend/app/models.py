@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -13,8 +14,10 @@ class Question(BaseModel):
     issue_type: IssueType
     question: str
     options: List[str] = Field(default_factory=list)
+    target: Optional[Dict[str, Any]] = None
     status: Literal["open", "answered", "skipped"] = "open"
     answer: Optional[str] = None
+    orphaned: bool = False
 
 
 class Node(BaseModel):

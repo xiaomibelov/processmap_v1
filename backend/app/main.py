@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import re
 import uuid
@@ -46,6 +47,7 @@ class NotesIn(BaseModel):
 class AnswerIn(BaseModel):
     question_id: str
     answer: str
+    node_id: Optional[str] = None
 
 
 class NodePatchIn(BaseModel):
@@ -113,13 +115,30 @@ def _merge_nodes(existing: List[Node], extracted: List[Node]) -> List[Node]:
 
 def _merge_question_states(old_questions, new_questions):
     old_by_id = {q.id: q for q in (old_questions or [])}
+
+    merged = []
     for q in new_questions:
         old = old_by_id.get(q.id)
-        if not old:
+        if old:
+            q.status = old.status
+            q.answer = old.answer
+        q.orphaned = False
+        merged.append(q)
+
+    seen_ids = {q.id for q in merged}
+
+    orphans = []
+    for old in (old_questions or []):
+        if old.id in seen_ids:
             continue
-        q.status = old.status
-        q.answer = old.answer
-    return new_questions
+        if old.status != "answered":
+            continue
+        keep = old.model_copy(deep=True)
+        keep.orphaned = True
+        orphans.append(keep)
+
+    merged.extend(orphans[:300])
+    return merged[:900]
 
 
 def _disposition_report(s: Session) -> Dict[str, Any]:
@@ -273,6 +292,208 @@ def _ensure_loss_dict(node: Node) -> Dict[str, Any]:
     return loss
 
 
+def _parse_equipment_list(answer: str) -> List[str]:
+    items = [x.strip() for x in re.split(r"[\n,;]+", (answer or "")) if x.strip()]
+    out = []
+    seen = set()
+    for x in items:
+        if x in seen:
+            continue
+        seen.add(x)
+        out.append(x)
+    return out
+
+
+def _parse_minutes(answer: str) -> Optional[int]:
+    t = (answer or "").strip().lower()
+    if not t:
+        return None
+
+    m = re.match(r"^\s*(\d+)\s*:\s*(\d+)\s*$", t)
+    if m:
+        mm = int(m.group(1))
+        ss = int(m.group(2))
+        return int(math.ceil(mm + (ss / 60.0)))
+
+    nums = re.findall(r"(\d+(?:[\.,]\d+)?)", t)
+    if not nums:
+        return None
+
+    try:
+        v = float(nums[0].replace(",", "."))
+    except Exception:
+        return None
+
+    if "час" in t or "ч." in t:
+        return int(math.ceil(v * 60.0))
+    if "сек" in t or "s" in t:
+        return int(math.ceil(v / 60.0))
+    return int(math.ceil(v))
+
+
+def _normalize_choice(answer: str, allowed: List[str]) -> str:
+    a = (answer or "").strip()
+    if not a:
+        return ""
+    low = a.lower()
+    for opt in allowed or []:
+        if (opt or "").strip().lower() == low:
+            return opt
+    return a
+
+
+def _ensure_dict_at_path(root: Dict[str, Any], keys: List[str]) -> Dict[str, Any]:
+    cur = root
+    for k in keys:
+        v = cur.get(k)
+        if not isinstance(v, dict):
+            v = {}
+            cur[k] = v
+        cur = v
+    return cur
+
+
+def _apply_target_to_node(s: Session, node: Node, q, answer: str) -> None:
+    target = q.target or {}
+    field = (target.get("field") or "").strip()
+    mode = (target.get("mode") or "set").strip().lower()
+    transform = (target.get("transform") or "text").strip().lower()
+
+    if not field:
+        node.parameters = dict(node.parameters or {})
+        node.parameters.setdefault("notes", [])
+        if isinstance(node.parameters.get("notes"), list):
+            node.parameters["notes"].append(answer)
+        node.parameters["_manual_parameters"] = True
+        return
+
+    if field == "actor_role":
+        node.actor_role = _normalize_choice(answer, s.roles)
+        node.parameters["_manual_actor"] = True
+        return
+
+    if field == "recipient_role":
+        node.recipient_role = _normalize_choice(answer, s.roles)
+        node.parameters["_manual_recipient"] = True
+        return
+
+    if field == "equipment":
+        new_items = _parse_equipment_list(answer)
+        if mode == "merge":
+            merged = list(node.equipment or [])
+            for x in new_items:
+                if x not in merged:
+                    merged.append(x)
+            node.equipment = merged
+        else:
+            node.equipment = new_items
+        node.parameters["_manual_equipment"] = True
+        return
+
+    if field == "duration_min":
+        mins = _parse_minutes(answer)
+        if mins is not None:
+            node.duration_min = mins
+            node.parameters["_manual_duration"] = True
+        return
+
+    if field.startswith("disposition.") or field == "disposition":
+        node.disposition = dict(node.disposition or {})
+        node.parameters["_manual_disposition"] = True
+
+        if transform == "disposition_equipment_action":
+            action = _map_disposition_answer(answer)
+            node.disposition.setdefault("equipment_actions", {})
+            if isinstance(node.disposition.get("equipment_actions"), dict) and action and action != "other":
+                for eq in (node.equipment or []):
+                    eqid = (eq or "").strip()
+                    if eqid:
+                        node.disposition["equipment_actions"][eqid] = action
+            if action == "other" or not action:
+                node.disposition["note"] = answer
+            return
+
+        if field == "disposition":
+            node.disposition["note"] = answer
+            return
+
+        path = field.split(".")[1:]
+        if not path:
+            node.disposition["note"] = answer
+            return
+
+        cur = _ensure_dict_at_path(node.disposition, path[:-1]) if len(path) > 1 else node.disposition
+        key = path[-1]
+
+        if mode == "append":
+            lst = cur.get(key)
+            if not isinstance(lst, list):
+                lst = []
+            lst.append(answer)
+            cur[key] = lst
+        else:
+            cur[key] = answer
+        return
+
+    if field.startswith("parameters."):
+        node.parameters = dict(node.parameters or {})
+        node.parameters["_manual_parameters"] = True
+        path = field.split(".")[1:]
+        if not path:
+            return
+
+        if path and path[0] == "loss":
+            loss = _ensure_loss_dict(node)
+            if len(path) >= 2:
+                loss[path[1]] = answer
+            return
+
+        cur = _ensure_dict_at_path(node.parameters, path[:-1]) if len(path) > 1 else node.parameters
+        key = path[-1]
+
+        if transform == "minutes":
+            v = _parse_minutes(answer)
+            if v is None:
+                v = answer
+        else:
+            v = answer
+
+        if mode == "append":
+            lst = cur.get(key)
+            if not isinstance(lst, list):
+                lst = []
+            lst.append(v)
+            cur[key] = lst
+        else:
+            cur[key] = v
+        return
+
+    node.parameters = dict(node.parameters or {})
+    node.parameters.setdefault("notes", [])
+    if isinstance(node.parameters.get("notes"), list):
+        node.parameters["notes"].append(answer)
+    node.parameters["_manual_parameters"] = True
+
+
+def _apply_answer(s: Session, inp: AnswerIn) -> None:
+    q = next((x for x in s.questions if x.id == inp.question_id), None)
+    if not q:
+        raise KeyError("question not found")
+
+    q.status = "answered"
+    q.answer = inp.answer
+
+    node_id = (inp.node_id or q.node_id or "").strip()
+    if not node_id:
+        return
+
+    node = next((n for n in s.nodes if n.id == node_id), None)
+    if not node:
+        return
+
+    _apply_target_to_node(s, node, q, inp.answer)
+
+
 @app.post("/api/sessions/{session_id}/answer")
 def answer(session_id: str, inp: AnswerIn) -> Dict[str, Any]:
     st = get_storage()
@@ -280,82 +501,19 @@ def answer(session_id: str, inp: AnswerIn) -> Dict[str, Any]:
     if not s:
         return {"error": "not found"}
 
-    q = next((x for x in s.questions if x.id == inp.question_id), None)
-    if not q:
+    try:
+        _apply_answer(s, inp)
+    except KeyError:
         return {"error": "question not found"}
-
-    q.status = "answered"
-    q.answer = inp.answer
-
-    node = next((n for n in s.nodes if n.id == q.node_id), None)
-    if node:
-        lowq = (q.question or "").lower()
-
-        if inp.question_id.startswith("loss_reason_"):
-            loss = _ensure_loss_dict(node)
-            loss["reason"] = inp.answer.strip()
-            node.parameters["_manual_parameters"] = True
-
-        elif inp.question_id.startswith("loss_volume_"):
-            loss = _ensure_loss_dict(node)
-            loss["volume"] = inp.answer.strip()
-            node.parameters["_manual_parameters"] = True
-
-        elif inp.question_id.startswith("loss_approved_by_"):
-            loss = _ensure_loss_dict(node)
-            loss["approved_by"] = inp.answer.strip()
-            node.parameters["_manual_parameters"] = True
-
-        elif inp.question_id.startswith("loss_recorded_in_"):
-            loss = _ensure_loss_dict(node)
-            loss["recorded_in"] = inp.answer.strip()
-            node.parameters["_manual_parameters"] = True
-
-        elif inp.question_id.startswith("loss_evidence_"):
-            loss = _ensure_loss_dict(node)
-            loss["evidence"] = inp.answer.strip()
-            node.parameters["_manual_parameters"] = True
-
-        elif inp.question_id.startswith("disp_"):
-            action = _map_disposition_answer(inp.answer)
-            node.disposition = dict(node.disposition or {})
-            node.disposition.setdefault("equipment_actions", {})
-            if isinstance(node.disposition["equipment_actions"], dict) and action and action != "other":
-                for eq in (node.equipment or []):
-                    eqid = (eq or "").strip()
-                    if eqid:
-                        node.disposition["equipment_actions"][eqid] = action
-            if action == "other" or not action:
-                node.disposition["note"] = inp.answer
-            node.parameters["_manual_disposition"] = True
-
-        elif "куда" in lowq or "после" in lowq:
-            node.disposition = {"note": inp.answer}
-            node.parameters["_manual_disposition"] = True
-
-        elif "кто" in lowq:
-            node.actor_role = inp.answer.strip()
-            node.parameters["_manual_actor"] = True
-
-        elif "оборуд" in lowq:
-            node.equipment = [x.strip() for x in re.split(r"[,\n;]+", inp.answer) if x.strip()]
-            node.parameters["_manual_equipment"] = True
-
-        elif "длитель" in lowq or "мин" in lowq:
-            try:
-                node.duration_min = int(re.findall(r"\d+", inp.answer)[0])
-                node.parameters["_manual_duration"] = True
-            except Exception:
-                pass
-
-        else:
-            node.parameters.setdefault("notes", [])
-            if isinstance(node.parameters["notes"], list):
-                node.parameters["notes"].append(inp.answer)
 
     s = _recompute_session(s)
     st.save(s)
     return s.model_dump()
+
+
+@app.post("/api/sessions/{session_id}/answers")
+def answer_v2(session_id: str, inp: AnswerIn) -> Dict[str, Any]:
+    return answer(session_id, inp)
 
 
 @app.post("/api/sessions/{session_id}/nodes/{node_id}")

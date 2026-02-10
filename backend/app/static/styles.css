@@ -44,3 +44,7 @@ select { padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,255,
 .small { font-size: 12px; opacity: .7; }
 .link { color: #b8c7ff; text-decoration: none; }
 .link:hover { text-decoration: underline; }
+
+.qOptRow { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.qOptBtn { padding: 6px 8px; border-radius: 10px; font-size: 12px; line-height: 1; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.06); }
+.qOptBtn:hover { background: rgba(255,255,255,.10); }

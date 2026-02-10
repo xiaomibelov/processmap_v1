@@ -114,14 +114,26 @@ function _closeOverlayPopover() {
   overlayOpenEl = null;
 }
 
-function _groupOpenQuestionsByNode(s) {
-  const by = {};
+function _buildQuestionIndex(s) {
+  const idx = {};
   (s && s.questions ? s.questions : []).forEach(q => {
-    if (!q || q.status !== "open") return;
-    const nid = (q.node_id || "").toString().trim();
+    if (!q) return;
+    const nid = (q.node_id || '').toString().trim();
     if (!nid) return;
-    if (!by[nid]) by[nid] = [];
-    by[nid].push(q);
+    if (!idx[nid]) idx[nid] = { open: [], answered: [] };
+    const orphaned = !!q.orphaned;
+    if (q.status === 'open' && !orphaned) idx[nid].open.push(q);
+    if (q.status === 'answered') idx[nid].answered.push(q);
+  });
+  return idx;
+}
+
+function _groupOpenQuestionsByNode(s) {
+  const idx = _buildQuestionIndex(s);
+  const by = {};
+  Object.keys(idx).forEach(nid => {
+    const open = idx[nid].open || [];
+    if (open.length) by[nid] = open;
   });
   return by;
 }
@@ -162,7 +174,7 @@ function _clamp(v, a, b) {
   return v;
 }
 
-function _openOverlayPopover(nodeId, qs, anchorRect) {
+function _openOverlayPopover(nodeId, stats, anchorRect) {
   const { overlay, inner } = _graphEls();
   if (!overlay || !inner) return;
 
@@ -171,10 +183,14 @@ function _openOverlayPopover(nodeId, qs, anchorRect) {
   overlayOpenNodeId = nodeId;
   overlayOpenAnchor = anchorRect;
 
-  const pop = document.createElement("div");
-  pop.className = "qPopover";
+  const openQs = (stats && stats.open) ? stats.open : [];
+  const answeredN = (stats && stats.answered) ? stats.answered.length : 0;
 
-  const title = `Узел ${nodeId}: вопросы (${qs.length})`;
+  const pop = document.createElement('div');
+  pop.className = 'qPopover';
+  pop.style.visibility = 'hidden';
+
+  const title = `Узел ${nodeId}: open ${openQs.length}${answeredN ? ` • answered ${answeredN}` : ''}`;
   pop.innerHTML = `
     <div class="qPopoverTop">
       <div class="qPopoverTitle">${title}</div>
@@ -183,26 +199,36 @@ function _openOverlayPopover(nodeId, qs, anchorRect) {
     <div id="qPopList"></div>
   `;
 
-  const list = pop.querySelector("#qPopList");
+  const list = pop.querySelector('#qPopList');
 
-  (qs || []).slice(0, 40).forEach(q => {
-    const opts = (q.options && q.options.length)
+  (openQs || []).slice(0, 40).forEach(q => {
+    const opts = (q.options && q.options.length) ? q.options.slice(0, 12) : [];
+    const useButtons = opts.length > 0 && opts.length <= 6;
+
+    const optButtons = useButtons
+      ? `<div class="qOptRow">
+          ${opts.map(o => `<button class="qOptBtn" data-act="opt" data-qid="${q.id}" data-val="${o.replace(/"/g, '&quot;')}">${o}</button>`).join('')}
+         </div>`
+      : '';
+
+    const optSelect = (!useButtons && opts.length)
       ? `<select data-qid="${q.id}">
            <option value="">—</option>
-           ${q.options.map(o => `<option value="${o}">${o}</option>`).join("")}
+           ${opts.map(o => `<option value="${o}">${o}</option>`).join('')}
          </select>`
-      : "";
+      : '';
 
-    const item = document.createElement("div");
-    item.className = "qPopItem";
+    const item = document.createElement('div');
+    item.className = 'qPopItem';
     item.innerHTML = `
       <div class="qTop">
         <div>${badge(q.issue_type)} <span class="small" style="opacity:.85;">${q.id}</span></div>
         <div class="small" style="opacity:.65;">open</div>
       </div>
       <div class="qText">${q.question}</div>
+      ${optButtons}
       <div class="qActions">
-        ${opts}
+        ${optSelect}
         <input data-qid="${q.id}" placeholder="ответ..." />
         <button data-act="answer" data-qid="${q.id}">Ответить</button>
       </div>
@@ -216,94 +242,147 @@ function _openOverlayPopover(nodeId, qs, anchorRect) {
   const ow = overlay.clientWidth || 600;
   const oh = overlay.clientHeight || 400;
 
-  const px = anchorRect ? (anchorRect.x + anchorRect.w + 14) : 20;
-  const py = anchorRect ? (anchorRect.y - 6) : 20;
+  const pw = pop.offsetWidth || 320;
+  const ph = pop.offsetHeight || 260;
 
-  const left = _clamp(px, 8, Math.max(8, ow - 340));
-  const top = _clamp(py, 8, Math.max(8, oh - 380));
+  const pad = 8;
+
+  const ax = anchorRect ? anchorRect.x : 20;
+  const ay = anchorRect ? anchorRect.y : 20;
+  const aw = anchorRect ? anchorRect.w : 0;
+  const ah = anchorRect ? anchorRect.h : 0;
+
+  const cand = [
+    { x: ax + aw + 12, y: ay - 6 },
+    { x: ax - pw - 12, y: ay - 6 },
+    { x: ax + aw + 12, y: ay + ah - 22 },
+    { x: ax - pw - 12, y: ay + ah - 22 },
+  ];
+
+  let chosen = null;
+  for (const c of cand) {
+    const okX = c.x >= pad && (c.x + pw) <= (ow - pad);
+    const okY = c.y >= pad && (c.y + ph) <= (oh - pad);
+    if (okX && okY) { chosen = c; break; }
+  }
+
+  let left = chosen ? chosen.x : (anchorRect ? (ax + aw + 12) : 20);
+  let top = chosen ? chosen.y : (anchorRect ? (ay - 6) : 20);
+
+  left = _clamp(left, pad, Math.max(pad, ow - pw - pad));
+  top = _clamp(top, pad, Math.max(pad, oh - ph - pad));
 
   pop.style.left = `${left}px`;
   pop.style.top = `${top}px`;
+  pop.style.visibility = 'visible';
 
-  const closeBtn = pop.querySelector("#qPopClose");
-  closeBtn.addEventListener("click", () => _closeOverlayPopover());
+  const closeBtn = pop.querySelector('#qPopClose');
+  closeBtn.addEventListener('click', () => _closeOverlayPopover());
 
-  pop.querySelectorAll('button[data-act="answer"]').forEach(btn => {
-    btn.addEventListener("click", async () => {
-      const qid = btn.getAttribute("data-qid");
-      const inp = pop.querySelector(`input[data-qid="${qid}"]`);
-      const sel = pop.querySelector(`select[data-qid="${qid}"]`);
-      const val = (sel && sel.value) ? sel.value : (inp ? inp.value : "");
+  pop.querySelectorAll('button[data-act="opt"]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const qid = btn.getAttribute('data-qid');
+      const val = btn.getAttribute('data-val') || '';
       if (!val) return;
 
-      await api(`/api/sessions/${sessionId}/answer`, "POST", { question_id: qid, answer: val });
-      await refresh();
-
-      const selected = selectedNodeIdFromHash() || nodeId;
-      if (selected && overlayOpenByNode[selected] && overlayOpenByNode[selected].length) {
-        const svg = _getGraphSvg();
-        const { inner } = _graphEls();
-        const a = svg && _findAnchorForNode(svg, selected);
-        const tgt = a ? (a.querySelector("g") || a) : null;
-        const ar = (tgt && inner) ? _rectWithinInner(tgt, inner) : null;
-        _openOverlayPopover(selected, overlayOpenByNode[selected], ar);
-      } else {
-        _closeOverlayPopover();
-      }
+      await api(`/api/sessions/${sessionId}/answers`, 'POST', { node_id: nodeId, question_id: qid, answer: val });
+      await refresh({ keepPopoverFor: nodeId });
     });
   });
+
+  pop.querySelectorAll('button[data-act="answer"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const qid = btn.getAttribute('data-qid');
+      const inp = pop.querySelector(`input[data-qid="${qid}"]`);
+      const sel = pop.querySelector(`select[data-qid="${qid}"]`);
+      const val = (sel && sel.value) ? sel.value : (inp ? inp.value : '');
+      if (!val) return;
+
+      await api(`/api/sessions/${sessionId}/answers`, 'POST', { node_id: nodeId, question_id: qid, answer: val });
+      await refresh({ keepPopoverFor: nodeId });
+    });
+  });
+
+  setTimeout(() => {
+    const onDoc = (e) => {
+      if (!overlayOpenEl) return;
+      const t = e.target;
+      if (!t) return;
+      if (overlayOpenEl.contains(t)) return;
+      if (t.closest && t.closest('.nodeBadgeBtn')) return;
+      _closeOverlayPopover();
+      document.removeEventListener('mousedown', onDoc, true);
+    };
+    document.addEventListener('mousedown', onDoc, true);
+  }, 0);
 }
+
 
 function _renderInlineQuestions(s) {
   const { overlay, inner } = _graphEls();
   if (!overlay || !inner) return;
 
-  overlay.innerHTML = "";
-  overlayOpenByNode = _groupOpenQuestionsByNode(s);
+  overlay.innerHTML = '';
+
+  const idx = _buildQuestionIndex(s);
+  overlayOpenByNode = {};
+  Object.keys(idx).forEach(nid => {
+    if (idx[nid] && idx[nid].open && idx[nid].open.length) overlayOpenByNode[nid] = idx[nid].open;
+  });
 
   const svg = _getGraphSvg();
   if (!svg) return;
 
   const keys = Object.keys(overlayOpenByNode).slice(0, 200);
   for (const nodeId of keys) {
-    const qs = overlayOpenByNode[nodeId] || [];
-    if (!qs.length) continue;
+    const openQs = overlayOpenByNode[nodeId] || [];
+    if (!openQs.length) continue;
+
+    const stats = idx[nodeId] || { open: openQs, answered: [] };
+    const answeredN = (stats.answered || []).length;
 
     const a = _findAnchorForNode(svg, nodeId);
     if (!a) continue;
 
-    const tgt = a.querySelector("g") || a;
+    const tgt = a.querySelector('g') || a;
     const rect = _rectWithinInner(tgt, inner);
 
-    const tone = _toneForNodeQuestions(qs);
+    const tone = _toneForNodeQuestions(openQs);
 
-    const holder = document.createElement("div");
-    holder.className = "nodeBadge";
+    const holder = document.createElement('div');
+    holder.className = 'nodeBadge';
     holder.style.left = `${rect.x + rect.w - 10}px`;
     holder.style.top = `${rect.y - 10}px`;
 
-    holder.innerHTML = `<button class="nodeBadgeBtn tone-${tone}" data-node="${nodeId}" title="Открытых вопросов: ${qs.length}">${qs.length}</button>`;
+    const label = answeredN ? `${answeredN}/${openQs.length}` : `${openQs.length}`;
+    const title = answeredN
+      ? `answered: ${answeredN} • open: ${openQs.length}`
+      : `open: ${openQs.length}`;
+
+    holder.innerHTML = `<button class="nodeBadgeBtn tone-${tone}" data-node="${nodeId}" title="${title}">${label}</button>`;
     overlay.appendChild(holder);
 
-    const btn = holder.querySelector("button");
-    btn.addEventListener("click", (e) => {
+    const btn = holder.querySelector('button');
+    btn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      _openOverlayPopover(nodeId, qs, rect);
+      _openOverlayPopover(nodeId, stats, rect);
       setSelectedNodeId(nodeId);
     });
   }
 
   const selected = selectedNodeIdFromHash();
-  if (selected && overlayOpenByNode[selected] && overlayOpenByNode[selected].length) {
+  if (selected && idx[selected] && idx[selected].open && idx[selected].open.length) {
     const a = _findAnchorForNode(svg, selected);
-    const tgt = a ? (a.querySelector("g") || a) : null;
+    const tgt = a ? (a.querySelector('g') || a) : null;
     if (tgt) {
       const rect = _rectWithinInner(tgt, inner);
-      _openOverlayPopover(selected, overlayOpenByNode[selected], rect);
+      _openOverlayPopover(selected, idx[selected], rect);
     }
   }
 }
+
 
 async function renderMermaid(code) {
   const m = el("mermaid");

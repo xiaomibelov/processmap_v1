@@ -72,6 +72,7 @@ def build_loss_questions(nodes: List[Node]) -> List[Question]:
                     issue_type="CRITICAL",
                     question=f"Списание/потеря: «{n.title}». Укажи причину (и при необходимости уточни).",
                     options=list(LOSS_REASON_OPTIONS),
+                    target={"field": "parameters.loss.reason", "mode": "set", "transform": "text"},
                 )
             )
 
@@ -83,6 +84,7 @@ def build_loss_questions(nodes: List[Node]) -> List[Question]:
                     issue_type="CRITICAL",
                     question=f"Списание/потеря: «{n.title}». Сколько списали? (пример: 3 л, 1.5 кг, 2 шт)",
                     options=[],
+                    target={"field": "parameters.loss.volume", "mode": "set", "transform": "text"},
                 )
             )
 
@@ -94,6 +96,7 @@ def build_loss_questions(nodes: List[Node]) -> List[Question]:
                     issue_type="CRITICAL",
                     question=f"Списание/потеря: «{n.title}». Кто утвердил списание? (роль/ФИО/должность)",
                     options=[],
+                    target={"field": "parameters.loss.approved_by", "mode": "set", "transform": "text"},
                 )
             )
 
@@ -105,6 +108,7 @@ def build_loss_questions(nodes: List[Node]) -> List[Question]:
                     issue_type="CRITICAL",
                     question=f"Списание/потеря: «{n.title}». Где фиксируется списание?",
                     options=list(RECORDED_IN_OPTIONS),
+                    target={"field": "parameters.loss.recorded_in", "mode": "set", "transform": "text"},
                 )
             )
 
@@ -116,6 +120,7 @@ def build_loss_questions(nodes: List[Node]) -> List[Question]:
                     issue_type="MISSING",
                     question=f"Списание/потеря: «{n.title}». Какие доказательства/артефакты есть? (фото/акт/номер записи)",
                     options=[],
+                    target={"field": "parameters.loss.evidence", "mode": "set", "transform": "text"},
                 )
             )
 
