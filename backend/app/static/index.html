@@ -13,6 +13,8 @@
       <div class="brand">Food Process Copilot (MVP)</div>
       <div class="meta">
         <span id="sessionMeta">session: —</span>
+        <span id="llmMeta" class="llmMeta">DeepSeek: —</span>
+        <button id="btnLLM">DeepSeek</button>
         <button id="btnView">Вид: роли</button>
         <button id="btnNew">Новая сессия</button>
         <button id="btnExport">Экспорт как код</button>
@@ -57,5 +59,24 @@
     </div>
 
     <script src="/static/app.js"></script>
+    <div id="llmPanel" class="llmPanel hidden">
+      <div class="llmTitle">DeepSeek API</div>
+      <div class="llmBody">
+        <div class="row">
+          <input id="llmApiKey" type="password" placeholder="DEEPSEEK_API_KEY (будет сохранён на сервере)" />
+        </div>
+        <div class="row">
+          <input id="llmBaseUrl" type="text" placeholder="DEEPSEEK_BASE_URL (опционально)" />
+        </div>
+        <div class="row">
+          <button id="btnLLMSave">Сохранить</button>
+          <button id="btnLLMClear">Очистить</button>
+          <button id="btnLLMClose">Закрыть</button>
+        </div>
+        <div id="llmStatus" class="small"></div>
+        <div class="small">Ключ не возвращается в API-ответах. Хранение: workspace/.session_store/_llm_settings.json</div>
+      </div>
+    </div>
+
   </body>
 </html>

@@ -29,6 +29,61 @@ function setTopbarError(msg) {
   if (meta) meta.textContent = s ? `error: ${s}` : "session: —";
 }
 
+async function refreshLLMStatus() {
+  const meta = el("llmMeta");
+  if (!meta) return;
+  try {
+    const d = await api("/api/settings/llm");
+    const has = !!(d && d.has_key);
+    const baseUrl = (d && d.base_url) ? String(d.base_url) : "";
+    meta.textContent = has ? "DeepSeek: key ✓" : "DeepSeek: —";
+    meta.classList.remove("ok");
+    meta.classList.remove("bad");
+    meta.classList.add(has ? "ok" : "bad");
+
+    const inpBase = el("llmBaseUrl");
+    if (inpBase && baseUrl && !inpBase.value) inpBase.value = baseUrl;
+  } catch (e) {
+    meta.textContent = "DeepSeek: ошибка";
+    meta.classList.remove("ok");
+    meta.classList.add("bad");
+  }
+}
+
+function _setLLMStatus(msg) {
+  const s = el("llmStatus");
+  if (s) s.textContent = (msg || "").toString();
+}
+
+function toggleLLMPanel(forceOpen = null) {
+  const p = el("llmPanel");
+  if (!p) return;
+  const isHidden = p.classList.contains("hidden");
+  const open = (forceOpen === null) ? isHidden : !!forceOpen;
+  if (open) {
+    p.classList.remove("hidden");
+  } else {
+    p.classList.add("hidden");
+  }
+}
+
+async function saveLLMSettings(mode) {
+  const apiKeyEl = el("llmApiKey");
+  const baseUrlEl = el("llmBaseUrl");
+  const apiKey = (mode === "clear") ? "" : ((apiKeyEl ? apiKeyEl.value : "") || "").trim();
+  const baseUrl = ((baseUrlEl ? baseUrlEl.value : "") || "").trim();
+
+  try {
+    await api("/api/settings/llm", "POST", { provider: "deepseek", api_key: apiKey, base_url: baseUrl });
+    if (apiKeyEl) apiKeyEl.value = "";
+    _setLLMStatus(mode === "clear" ? "Ключ очищен" : "Ключ сохранён");
+    await refreshLLMStatus();
+    if (mode !== "clear") toggleLLMPanel(false);
+  } catch (e) {
+    _setLLMStatus(`Ошибка: ${e.message || String(e)}`);
+  }
+}
+
 async function api(path, method = "GET", body = null) {
   const opt = { method, headers: { "Content-Type": "application/json" } };
   if (body) opt.body = JSON.stringify(body);
@@ -830,6 +885,17 @@ el("btnNew").addEventListener("click", () => newSession().catch(e => alert(e.mes
 el("btnSend").addEventListener("click", () => sendNotes().catch(e => alert(e.message || String(e))));
 el("btnExport").addEventListener("click", () => exportSession().catch(e => alert(e.message || String(e))));
 
+if (el("btnLLM")) {
+  el("btnLLM").addEventListener("click", () => {
+    _closeOverlayPopover();
+    toggleLLMPanel();
+    refreshLLMStatus();
+  });
+}
+if (el("btnLLMSave")) el("btnLLMSave").addEventListener("click", () => saveLLMSettings("save"));
+if (el("btnLLMClear")) el("btnLLMClear").addEventListener("click", () => saveLLMSettings("clear"));
+if (el("btnLLMClose")) el("btnLLMClose").addEventListener("click", () => toggleLLMPanel(false));
+
 el("btnView").addEventListener("click", () => {
   const v = getView();
   setView(v === "lanes" ? "simple" : "lanes");
@@ -855,7 +921,10 @@ document.addEventListener("click", (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") _closeOverlayPopover();
+  if (e.key === "Escape") {
+    _closeOverlayPopover();
+    toggleLLMPanel(false);
+  }
 });
 
 window.addEventListener("resize", () => {

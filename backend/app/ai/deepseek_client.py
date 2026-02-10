@@ -324,12 +324,13 @@ def _stub_extract_v2(notes: str) -> Dict[str, Any]:
     return {"nodes": nodes, "edges": edges, "roles": roles}
 
 
-def _try_deepseek(notes: str) -> Optional[Dict[str, Any]]:
-    api_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+def _try_deepseek(notes: str, api_key_override: str = "", base_url_override: str = "") -> Optional[Dict[str, Any]]:
+    api_key = (api_key_override or "").strip() or os.environ.get("DEEPSEEK_API_KEY", "").strip()
     if not api_key:
         return None
 
-    base_url = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
+    base_url = (base_url_override or "").strip() or os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    base_url = base_url.rstrip("/")
     payload = {
         "model": "deepseek-chat",
         "messages": [
@@ -360,9 +361,9 @@ def _try_deepseek(notes: str) -> Optional[Dict[str, Any]]:
     return obj
 
 
-def extract_process(notes: str) -> Dict[str, Any]:
+def extract_process(notes: str, api_key: str = "", base_url: str = "") -> Dict[str, Any]:
     try:
-        obj = _try_deepseek(notes)
+        obj = _try_deepseek(notes, api_key_override=api_key, base_url_override=base_url)
         if obj:
             return obj
     except Exception:

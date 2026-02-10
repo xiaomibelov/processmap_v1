@@ -48,3 +48,13 @@ select { padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,255,
 .qOptRow { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .qOptBtn { padding: 6px 8px; border-radius: 10px; font-size: 12px; line-height: 1; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.06); }
 .qOptBtn:hover { background: rgba(255,255,255,.10); }
+
+.hidden { display: none; }
+
+.llmMeta { font-size: 12px; opacity: .85; padding: 4px 8px; border-radius: 999px; border: 1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.18); }
+.llmMeta.ok { border-color: rgba(34,197,94,.45); background: rgba(34,197,94,.10); }
+.llmMeta.bad { border-color: rgba(255,184,0,.45); background: rgba(255,184,0,.10); }
+
+.llmPanel { position: fixed; top: 62px; right: 12px; width: 380px; z-index: 20; border-radius: 16px; padding: 10px; border: 1px solid rgba(255,255,255,.12); background: rgba(8,10,14,.94); box-shadow: 0 16px 44px rgba(0,0,0,.55); }
+.llmTitle { font-weight: 700; margin-bottom: 8px; }
+.llmBody { display: flex; flex-direction: column; gap: 8px; }
