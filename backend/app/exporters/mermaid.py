@@ -12,6 +12,9 @@ MARKING_WORDS = ("маркир", "этикет", "наклей", "стикер")
 WASH_WORDS = ("помыть", "мойка", "протереть", "санобработ", "дезинфек")
 LOSS_WORDS = ("списан", "списание", "потер", "брак", "утилиз")
 
+_PLACEHOLDER_MERMAID = "flowchart TD\n  A[Нет шагов] --> B[Добавь заметки слева]\n"
+
+
 
 def _esc(s: str) -> str:
     t = (s or "").strip()
@@ -168,6 +171,8 @@ def _classes(nodes: List[Node]) -> Tuple[List[str], List[str], List[str]]:
 
 
 def render_mermaid(nodes: List[Node], edges: List[Edge], roles: Optional[List[str]] = None, mode: str = "lanes") -> str:
+    if not nodes:
+        return _PLACEHOLDER_MERMAID
     mode = (mode or "lanes").strip().lower()
     if mode not in ("lanes", "simple"):
         mode = "lanes"
@@ -212,6 +217,9 @@ def _render_lanes(nodes: List[Node], edges: List[Edge], roles: Optional[List[str
     if "unassigned" not in role_list:
         role_list = role_list + ["unassigned"]
 
+    seen = set()
+    role_list = [r for r in role_list if not (r in seen or seen.add(r))]
+
     grouped: Dict[str, List[Node]] = {r: [] for r in role_list}
     for n in nodes:
         r = (n.actor_role or "").strip()
@@ -229,9 +237,16 @@ def _render_lanes(nodes: List[Node], edges: List[Edge], roles: Optional[List[str
     lines.append('  classDef todoAmbig fill:#e9f2ff,stroke:#3b82f6,stroke-width:2px;')
     lines.append('  classDef ok fill:#f7f7f7,stroke:#c9c9c9;')
 
+    lane_ids: Dict[str, str] = {}
+    lane_i = 1
     for r in role_list:
-        rr = _esc(r)
-        lines.append(f'  subgraph lane_{rr}["{rr}"]')
+        lane_ids[r] = f"lane_{lane_i}"
+        lane_i += 1
+
+    for r in role_list:
+        lane_id = lane_ids[r]
+        label = _esc(r)
+        lines.append(f'  subgraph {lane_id}["{label}"]')
         lines.append("    direction TB")
         for n in grouped.get(r, []):
             lines.append(f"    {_node_def(n)}")

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import List
+from typing import List, Optional
 
 from ..models import Node, Question
 
@@ -55,9 +55,20 @@ def _is_wash(node: Node) -> bool:
     return any(w in t for w in WASH_WORDS)
 
 
-def build_questions(nodes: List[Node]) -> List[Question]:
+def build_questions(nodes: List[Node], roles: Optional[List[str]] = None) -> List[Question]:
     qs: List[Question] = []
     qidx = 1
+
+    role_opts = []
+    seen_roles = set()
+    for r in roles or []:
+        rr = (r or "").strip()
+        if not rr:
+            continue
+        if rr in seen_roles:
+            continue
+        seen_roles.add(rr)
+        role_opts.append(rr)
 
     def add(node_id: str, issue_type: str, question: str, options=None) -> None:
         nonlocal qidx
@@ -80,17 +91,17 @@ def build_questions(nodes: List[Node]) -> List[Question]:
             if n.duration_min is None:
                 add(n.id, "CRITICAL", "Таймер: сколько минут/часов ждать? Укажи длительность (мин).")
             if _needs_actor(n):
-                add(n.id, "MISSING", "Кто отвечает за таймер/контроль? (роль: cook_1 / cook_2 / brigadir)")
+                add(n.id, "MISSING", "Кто отвечает за таймер/контроль? (actor_role)", options=role_opts)
             continue
 
         if n.type == "message":
             if not n.recipient_role:
-                add(n.id, "MISSING", "Сообщение: кому адресовано? (recipient_role: brigadir/technolog/...)")
+                add(n.id, "MISSING", "Сообщение: кому адресовано? (recipient_role)", options=role_opts)
             add(n.id, "VARIANT", "Сообщение: что именно спросить/сообщить (текст/формулировка)?")
             continue
 
         if _needs_actor(n):
-            add(n.id, "MISSING", "Кто выполняет этот шаг? (роль: cook_1 / cook_2 / brigadir)")
+            add(n.id, "MISSING", "Кто выполняет этот шаг? (actor_role)", options=role_opts)
 
         if _needs_equipment(n):
             add(n.id, "MISSING", "Какое оборудование/инвентарь задействовано? (ID или название)")

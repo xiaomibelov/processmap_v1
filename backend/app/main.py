@@ -153,7 +153,7 @@ def _recompute_session(s: Session) -> Session:
     resources_report, conflict_questions = build_resources_report(s.nodes, s.edges)
     s.resources = resources_report
 
-    base_questions = build_questions(s.nodes)
+    base_questions = build_questions(s.nodes, roles=s.roles)
     disp_questions = build_disposition_questions(s.nodes)
     loss_questions = build_loss_questions(s.nodes)
 
