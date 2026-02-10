@@ -96,43 +96,36 @@ select { padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,255,
   .layout { grid-template-columns: 1fr; }
   .panel { min-height: auto; }
 }
-
 /* STEP18C2_WORKSPACE_GRID
-   Workspace-first layout:
-   - Mermaid (process) dominates
-   - Notes panel becomes a compact bottom composer
-   - Right tools stay visible in a fixed column
+   Workspace-first layout (fixed mapping):
+   DOM order is: 1) Process (Mermaid), 2) Tools, 3) Notes.
+   Desired layout:
+     - Process dominates (left)
+     - Tools on the right (narrow column)
+     - Notes as compact bottom composer under Process
 */
 .layout {
-  grid-template-columns: 2.35fr minmax(360px, 0.95fr);
-  grid-template-rows: minmax(460px, 1fr) auto;
+  grid-template-columns: 2.85fr minmax(360px, 0.90fr);
+  grid-template-rows: minmax(520px, 1fr) auto;
   grid-template-areas: "process tools" "notes tools";
   align-items: stretch;
 }
 
-.layout > .panel:nth-child(1) { grid-area: notes; }
-.layout > .panel:nth-child(2) { grid-area: process; }
-.layout > .panel:nth-child(3) { grid-area: tools; }
+/* Process panel (1st) */
+.layout > .panel:nth-child(1) { grid-area: process; min-height: 520px; }
 
-/* Notes panel becomes composer-like */
-.layout > .panel:nth-child(1) {
-  min-height: 0;
-}
-.layout > .panel:nth-child(1) textarea#notes {
+/* Tools panel (2nd) */
+.layout > .panel:nth-child(2) { grid-area: tools; min-height: 520px; }
+
+/* Notes panel (3rd) becomes composer */
+.layout > .panel:nth-child(3) { grid-area: notes; min-height: 0; }
+.layout > .panel:nth-child(3) textarea#notes {
   flex: none;
   height: 150px;
   min-height: 150px;
   max-height: 190px;
 }
-.layout > .panel:nth-child(1) .hint {
-  font-size: 12px;
-  opacity: .85;
-}
-
-/* Keep Mermaid panel roomy */
-.layout > .panel:nth-child(2) {
-  min-height: 460px;
-}
+.layout > .panel:nth-child(3) .hint { font-size: 12px; opacity: .85; }
 
 @media (max-width: 1200px) {
   .layout {
@@ -144,10 +137,8 @@ select { padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,255,
   .layout > .panel:nth-child(2),
   .layout > .panel:nth-child(3) {
     grid-area: auto;
+    min-height: auto;
   }
-  .layout > .panel:nth-child(1) textarea#notes {
-    height: 180px;
-    min-height: 180px;
-  }
+  .layout > .panel:nth-child(3) textarea#notes { height: 180px; min-height: 180px; }
 }
 
