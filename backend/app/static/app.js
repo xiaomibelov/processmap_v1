@@ -1539,9 +1539,12 @@ window.addEventListener("resize", () => {
 
     function fitMermaid(opts){
       opts = opts || {};
-      var pad = typeof opts.pad === 'number' ? opts.pad : 48;
-      var maxScale = typeof opts.maxScale === 'number' ? opts.maxScale : 0.85;
+      var pad = typeof opts.pad === 'number' ? opts.pad : 96;
+      var maxScale = typeof opts.maxScale === 'number' ? opts.maxScale : 0.62;
 
+
+      // STEP18C3E_TUNED_DEFAULTS
+      // You can override at runtime: window.fpcMermaidFitCfg = {pad: 120, maxScale: 0.55}; window.fpcFitMermaid(window.fpcMermaidFitCfg);
       var wrap = document.getElementById('mermaid');
       if (!wrap) return;
       var svg = wrap.querySelector('svg');
@@ -1587,7 +1590,7 @@ window.addEventListener("resize", () => {
     function schedule(){
       if (window.__fpcMermaidAutofitTimer) clearTimeout(window.__fpcMermaidAutofitTimer);
       window.__fpcMermaidAutofitTimer = setTimeout(function(){
-        try { fitMermaid(); } catch(e) {}
+        try { fitMermaid({pad: 96, maxScale: 0.62}); } catch(e) {}
       }, 60);
     }
 
