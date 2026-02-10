@@ -7,7 +7,7 @@ button { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.
 button:hover { background: rgba(255,255,255,.12); }
 .btnGhost { background: transparent; border-color: rgba(255,255,255,.16); }
 .btnGhost:hover { background: rgba(255,255,255,.08); }
-.layout { display: grid; grid-template-columns: 1.1fr 1.4fr 1fr; gap: 12px; padding: 12px; }
+.layout { display: grid; grid-template-columns: minmax(280px, 0.80fr) 2.20fr minmax(320px, 0.90fr); gap: 12px; padding: 12px; }
 .panel { background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.10); border-radius: 16px; padding: 10px; min-height: calc(100vh - 70px); display: flex; flex-direction: column; }
 .panelTitle { font-weight: 650; margin-bottom: 8px; opacity: .95; }
 textarea { width: 100%; flex: 1; min-height: 280px; resize: vertical; padding: 10px; border-radius: 14px; border: 1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.25); color: #e8eefc; outline: none; }
@@ -75,3 +75,24 @@ select { padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,255,
 .llmRow .grow { flex: 1; }
 .llmNote { font-size: 12px; opacity: .72; line-height: 1.35; }
 .llmHint { margin-top: 6px; font-size: 12px; opacity: .7; }
+
+/* STEP18C1_DIAGRAM_FIRST
+   Make Mermaid panel dominant; shrink notes input.
+*/
+.layout { grid-template-columns: minmax(280px, 0.80fr) 2.20fr minmax(320px, 0.90fr); }
+
+.layout > .panel:first-child textarea#notes {
+  flex: none;
+  height: 220px;
+  min-height: 220px;
+}
+
+.layout > .panel:first-child .hint {
+  font-size: 12px;
+  opacity: .85;
+}
+
+@media (max-width: 1200px) {
+  .layout { grid-template-columns: 1fr; }
+  .panel { min-height: auto; }
+}
