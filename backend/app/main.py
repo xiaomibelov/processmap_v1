@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .ai.deepseek_client import extract_process
+from .ai.deepseek_questions import generate_llm_questions
 from .exporters.mermaid import render_mermaid
 from .exporters.yaml_export import dump_yaml, session_to_process_dict
 from .glossary import normalize_kind, slugify_canon, upsert_term
@@ -20,6 +21,7 @@ from .models import Node, Edge, Session
 from .normalizer import load_seed_glossary, normalize_nodes
 from .resources import build_resources_report
 from .storage import get_storage
+from .settings import load_llm_settings, llm_status, save_llm_settings
 from .validators.coverage import build_questions
 from .validators.disposition import build_disposition_questions
 from .validators.loss import build_loss_questions, loss_report
@@ -71,6 +73,17 @@ class GlossaryAddIn(BaseModel):
     canon: Optional[str] = None
     title: Optional[str] = None
 
+
+
+
+class LlmSettingsIn(BaseModel):
+    api_key: str = ""
+    base_url: str = ""
+
+
+class AiQuestionsIn(BaseModel):
+    limit: int = 12
+    mode: str = "strict"
 
 def _merge_nodes(existing: List[Node], extracted: List[Node]) -> List[Node]:
     by_id = {n.id: n for n in existing}
@@ -181,6 +194,20 @@ def _recompute_session(s: Session) -> Session:
     loss_questions = build_loss_questions(s.nodes)
 
     new_questions = base_questions + conflict_questions + disp_questions + loss_questions
+
+    keep_llm = [q for q in (s.questions or []) if (getattr(q, 'id', '') or '').startswith('llm_')]
+    new_questions = new_questions + keep_llm
+
+    seen = set()
+    dedup = []
+    for q in new_questions:
+        qid = getattr(q, 'id', None)
+        if not qid or qid in seen:
+            continue
+        seen.add(qid)
+        dedup.append(q)
+    new_questions = dedup
+
     s.questions = _merge_question_states(s.questions, new_questions)
 
     s.mermaid_simple = render_mermaid(s.nodes, s.edges, roles=s.roles, mode="simple")
@@ -250,6 +277,47 @@ def recompute(session_id: str) -> Dict[str, Any]:
     return s.model_dump()
 
 
+
+@app.post("/api/sessions/{session_id}/ai/questions")
+def ai_questions(session_id: str, inp: AiQuestionsIn) -> Dict[str, Any]:
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return {"error": "not found"}
+
+    llm = load_llm_settings()
+    api_key = (llm.get("api_key") or "").strip()
+    base_url = (llm.get("base_url") or "").strip()
+    if not api_key:
+        return {"error": "deepseek api_key is not set"}
+
+    limit = int(inp.limit or 12)
+    if limit < 1:
+        limit = 1
+    if limit > 40:
+        limit = 40
+
+    mode = (inp.mode or "strict").strip().lower()
+    if mode not in ("strict", "soft"):
+        mode = "strict"
+
+    try:
+        new_qs = generate_llm_questions(s, api_key=api_key, base_url=base_url, limit=limit, mode=mode)
+    except Exception as e:
+        return {"error": f"deepseek failed: {e}"}
+
+    if new_qs:
+        existing_ids = {q.id for q in (s.questions or []) if getattr(q, 'id', None)}
+        for q in new_qs:
+            if q.id not in existing_ids:
+                (s.questions or []).append(q)
+                existing_ids.add(q.id)
+
+    s = _recompute_session(s)
+    st.save(s)
+    return s.model_dump()
+
+
 @app.post("/api/glossary/add")
 def glossary_add(inp: GlossaryAddIn) -> Dict[str, Any]:
     kind = normalize_kind(inp.kind)
@@ -258,6 +326,17 @@ def glossary_add(inp: GlossaryAddIn) -> Dict[str, Any]:
     title = (inp.title or "").strip() or term
     res = upsert_term(GLOSSARY_SEED, kind, term, canon, title)
     return res
+
+
+
+@app.get("/api/settings/llm")
+def get_llm_settings() -> Dict[str, Any]:
+    return llm_status()
+
+
+@app.post("/api/settings/llm")
+def post_llm_settings(inp: LlmSettingsIn) -> Dict[str, Any]:
+    return save_llm_settings(api_key=inp.api_key, base_url=inp.base_url)
 
 
 @app.post("/api/sessions/{session_id}/notes")
@@ -269,7 +348,8 @@ def post_notes(session_id: str, inp: NotesIn) -> Dict[str, Any]:
 
     s.notes = inp.notes
 
-    extracted = extract_process(s.notes)
+    llm = load_llm_settings()
+    extracted = extract_process(s.notes, api_key=llm.get("api_key", ""), base_url=llm.get("base_url", ""))
     nodes_raw = extracted.get("nodes", []) or []
     edges_raw = extracted.get("edges", []) or []
     roles = extracted.get("roles", []) or s.roles

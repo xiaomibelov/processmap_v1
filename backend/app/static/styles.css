@@ -68,3 +68,10 @@ select { padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,255,
 .sessPreview { font-size: 12px; opacity: .7; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 520px; }
 .sessRight { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 .pill { font-size: 11px; padding: 3px 8px; border-radius: 999px; border: 1px solid rgba(255,255,255,.16); opacity: .9; }
+
+.llmForm { display: flex; flex-direction: column; gap: 10px; }
+.llmRow { display: flex; gap: 10px; align-items: center; }
+.llmRow label { width: 120px; font-size: 12px; opacity: .8; }
+.llmRow .grow { flex: 1; }
+.llmNote { font-size: 12px; opacity: .72; line-height: 1.35; }
+.llmHint { margin-top: 6px; font-size: 12px; opacity: .7; }

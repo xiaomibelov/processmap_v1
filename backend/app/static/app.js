@@ -9,6 +9,10 @@ let overlayOpenByNode = {};
 let sessionsModalOpen = false;
 let sessionsSearchTimer = null;
 
+let llmModalOpen = false;
+let llmStatusCache = null;
+
+
 function el(id) { return document.getElementById(id); }
 
 function getLastSessionId() {
@@ -57,6 +61,67 @@ function _closeSessionsModal() {
   modal.classList.add("hidden");
   modal.setAttribute("aria-hidden", "true");
   sessionsModalOpen = false;
+}
+
+function _setLlmMeta(status) {
+  const elMeta = el("llmMeta");
+  if (!elMeta) return;
+  const has = status && status.has_api_key;
+  elMeta.textContent = has ? "ds: key ✓" : "ds: —";
+}
+
+async function _loadLlmStatus() {
+  try {
+    const st = await api("/api/settings/llm");
+    llmStatusCache = st;
+    _setLlmMeta(st);
+    const baseInp = el("llmBaseUrl");
+    if (baseInp && st && st.base_url) baseInp.value = st.base_url;
+    const modeSel = el("llmMode");
+    if (modeSel) modeSel.value = getLlmStrictMode();
+  } catch (e) {
+    _setLlmMeta({ has_api_key: false });
+  }
+}
+
+function _openLlmModal() {
+  const modal = el("llmModal");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden", "false");
+  llmModalOpen = true;
+  _loadLlmStatus().catch(() => {});
+  const inp = el("llmApiKey");
+  if (inp) inp.focus();
+}
+
+function _closeLlmModal() {
+  const modal = el("llmModal");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  modal.setAttribute("aria-hidden", "true");
+  llmModalOpen = false;
+}
+
+async function _saveLlmSettings() {
+  const apiKey = (el("llmApiKey") ? el("llmApiKey").value : "").trim();
+  const baseUrl = (el("llmBaseUrl") ? el("llmBaseUrl").value : "").trim();
+  const mode = (el("llmMode") ? el("llmMode").value : "strict").trim();
+  setLlmStrictMode(mode);
+  await api("/api/settings/llm", "POST", { api_key: apiKey, base_url: baseUrl });
+  if (el("llmApiKey")) el("llmApiKey").value = "";
+  await _loadLlmStatus();
+}
+
+async function generateAiQuestions() {
+  if (!sessionId) {
+    await autoBootstrapSession();
+  }
+  const mode = getLlmStrictMode();
+  const r = await api(`/api/sessions/${sessionId}/ai/questions`, "POST", { limit: 12, mode });
+  if (r && r.error) throw new Error(r.error);
+  _closeOverlayPopover();
+  await refresh();
 }
 
 async function _loadSessionsList() {
@@ -149,6 +214,16 @@ function getView() {
 
 function setView(v) {
   localStorage.setItem("mermaid_view", v);
+}
+
+function getLlmStrictMode() {
+  const v = (localStorage.getItem("llm_strict_mode") || "strict").trim();
+  return v === "soft" ? "soft" : "strict";
+}
+
+function setLlmStrictMode(mode) {
+  const m = (mode || "strict").toString().trim().toLowerCase();
+  localStorage.setItem("llm_strict_mode", m === "soft" ? "soft" : "strict");
 }
 
 function updateViewBtn() {
@@ -901,7 +976,12 @@ el("btnSessions").addEventListener("click", () => _openSessionsModal());
 el("btnSend").addEventListener("click", () => sendNotes().catch(e => alert(e.message || String(e))));
 el("btnExport").addEventListener("click", () => exportSession().catch(e => alert(e.message || String(e))));
 
+if (el("btnDeepseek")) el("btnDeepseek").addEventListener("click", () => _openLlmModal());
+if (el("btnAiQuestions")) el("btnAiQuestions").addEventListener("click", () => generateAiQuestions().catch(e => alert(e.message || String(e))));
+
 if (el("sessClose")) el("sessClose").addEventListener("click", () => _closeSessionsModal());
+if (el("llmClose")) el("llmClose").addEventListener("click", () => _closeLlmModal());
+if (el("llmSave")) el("llmSave").addEventListener("click", () => _saveLlmSettings().catch(e => alert(e.message || String(e))));
 if (el("sessReload")) el("sessReload").addEventListener("click", () => _loadSessionsList().catch(e => alert(e.message || String(e))));
 if (el("sessSearch")) {
   el("sessSearch").addEventListener("input", () => {
@@ -923,6 +1003,17 @@ if (el("sessionModal")) {
   });
 }
 
+
+if (el("llmModal")) {
+  el("llmModal").addEventListener("click", (e) => {
+    const actEl = e.target && e.target.closest ? e.target.closest("[data-act]") : null;
+    const act = actEl ? actEl.getAttribute("data-act") : null;
+    if (act === "close-llm") {
+      _closeLlmModal();
+      return;
+    }
+  });
+}
 if (el("sessList")) {
   el("sessList").addEventListener("click", async (e) => {
     const btn = e.target && e.target.closest ? e.target.closest("button[data-act]") : null;
@@ -978,6 +1069,10 @@ document.addEventListener("click", (e) => {
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
+    if (llmModalOpen) {
+      _closeLlmModal();
+      return;
+    }
     if (sessionsModalOpen) {
       _closeSessionsModal();
       return;

@@ -13,6 +13,8 @@
       <div class="brand">Food Process Copilot (MVP)</div>
       <div class="meta">
         <span id="sessionMeta">session: —</span>
+        <span id="llmMeta" class="llmMeta">ds: —</span>
+        <button id="btnDeepseek">DeepSeek</button>
         <button id="btnSessions">Сессии</button>
         <button id="btnView">Вид: роли</button>
         <button id="btnNew">Новая сессия</button>
@@ -38,6 +40,44 @@
       </div>
     </div>
 
+    <div id="llmModal" class="modal hidden" aria-hidden="true">
+      <div class="modalBackdrop" data-act="close"></div>
+      <div class="modalCard" style="width: min(720px, calc(100vw - 24px));">
+        <div class="modalTop">
+          <div class="modalTitle">DeepSeek настройки</div>
+          <button id="llmClose" class="btnGhost" data-act="close">Закрыть</button>
+        </div>
+        <div class="modalBody">
+          <div class="hint">Ключ хранится локально в workspace (server-side). В API не возвращается.</div>
+          <div style="height:10px;"></div>
+
+          <div class="formGrid">
+            <label>Base URL</label>
+            <input id="llmBaseUrl" placeholder="https://api.deepseek.com" />
+
+            <label>API key</label>
+            <input id="llmApiKey" type="password" placeholder="sk-..." />
+
+            <label>Режим</label>
+            <select id="llmMode">
+              <option value="strict">строгий технолог (дожимает пропуски)</option>
+              <option value="soft">мягкий (больше вариативности)</option>
+            </select>
+          </div>
+
+          <div class="row" style="margin-top:12px;">
+            <button id="llmSave">Сохранить</button>
+            <button id="llmClear" class="btnGhost">Очистить ключ</button>
+            <span id="llmSaved" class="hint"></span>
+          </div>
+
+          <div class="hint" style="margin-top:10px;">
+            Для генерации вопросов: кнопка «AI: докопать» под заметками.
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="layout">
       <div class="panel">
         <div class="panelTitle">Заметки (в звонке)</div>
@@ -46,6 +86,7 @@
 Добавляй длительности (мин) — тогда конфликты будут точнее."></textarea>
         <div class="row">
           <button id="btnSend">Отправить заметки</button>
+          <button id="btnAiQuestions" class="btnGhost">AI: докопать</button>
           <span class="hint">Красный=критично, жёлтый=не хватает, синий=неясно/вариативно</span>
         </div>
       </div>
