@@ -279,45 +279,6 @@ select { padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,255,
 
 /* STEP18C3F_ZOOM_CONTROLS_CSS */
 .mermaid-wrap { position: relative; }
-.mermaid-zoomctl {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-  padding: 8px 10px;
-  border-radius: 12px;
-  background: rgba(10, 12, 16, 0.55);
-  border: 1px solid rgba(255,255,255,0.12);
-  backdrop-filter: blur(10px);
-  z-index: 20;
-  user-select: none;
-}
-.mermaid-zoomctl .mz-btn {
-  appearance: none;
-  border: 1px solid rgba(255,255,255,0.16);
-  background: rgba(255,255,255,0.06);
-  color: rgba(255,255,255,0.92);
-  font-size: 12px;
-  padding: 6px 8px;
-  border-radius: 10px;
-  cursor: pointer;
-}
-.mermaid-zoomctl .mz-btn:hover { background: rgba(255,255,255,0.10); }
-.mermaid-zoomctl .mz-btn:active { transform: translateY(1px); }
-.mermaid-zoomctl .mz-sep { width: 1px; height: 18px; background: rgba(255,255,255,0.12); margin: 0 4px; }
-.mermaid-zoomctl .mz-label {
-  font-size: 12px;
-  color: rgba(255,255,255,0.92);
-  padding-left: 2px;
-}
-.mermaid-zoomctl .mz-rel {
-  font-size: 11px;
-  color: rgba(255,255,255,0.70);
-  padding-left: 2px;
-}
-
 /* STEP18C3G_WORKBENCH_LAYOUT */
 :root{
   --fpc-gap: 14px;
@@ -464,3 +425,7 @@ select { padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,255,
   text-align: right;
 }
 /* FPC_ZOOM_V3_END */
+
+/* STEP20A: zoom+notes stabilization */
+.panelMermaid { position: relative; }
+#mermaid svg { max-width: none; }
