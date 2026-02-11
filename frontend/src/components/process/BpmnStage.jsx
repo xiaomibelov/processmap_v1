@@ -5,6 +5,8 @@ import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-js.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn.css";
 
+import GraphEditorOverlay from "./GraphEditorOverlay";
+
 const MOCK_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
@@ -46,51 +48,6 @@ const MOCK_XML = `<?xml version="1.0" encoding="UTF-8"?>
     <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_1" targetRef="Task_2" />
     <bpmn:sequenceFlow id="Flow_3" sourceRef="Task_2" targetRef="EndEvent_1" />
   </bpmn:process>
-
-  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
-    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Process_1">
-
-      <bpmndi:BPMNShape id="Lane_hot_di" bpmnElement="Lane_hot" isHorizontal="true">
-        <dc:Bounds x="80" y="80" width="980" height="170" />
-      </bpmndi:BPMNShape>
-
-      <bpmndi:BPMNShape id="Lane_pack_di" bpmnElement="Lane_pack" isHorizontal="true">
-        <dc:Bounds x="80" y="250" width="980" height="170" />
-      </bpmndi:BPMNShape>
-
-      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
-        <dc:Bounds x="140" y="146" width="36" height="36" />
-      </bpmndi:BPMNShape>
-
-      <bpmndi:BPMNShape id="Task_1_di" bpmnElement="Task_1">
-        <dc:Bounds x="240" y="124" width="150" height="80" />
-      </bpmndi:BPMNShape>
-
-      <bpmndi:BPMNShape id="Task_2_di" bpmnElement="Task_2">
-        <dc:Bounds x="460" y="294" width="150" height="80" />
-      </bpmndi:BPMNShape>
-
-      <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1">
-        <dc:Bounds x="680" y="316" width="36" height="36" />
-      </bpmndi:BPMNShape>
-
-      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
-        <di:waypoint x="176" y="164" />
-        <di:waypoint x="240" y="164" />
-      </bpmndi:BPMNEdge>
-
-      <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2">
-        <di:waypoint x="390" y="164" />
-        <di:waypoint x="460" y="334" />
-      </bpmndi:BPMNEdge>
-
-      <bpmndi:BPMNEdge id="Flow_3_di" bpmnElement="Flow_3">
-        <di:waypoint x="610" y="334" />
-        <di:waypoint x="680" y="334" />
-      </bpmndi:BPMNEdge>
-
-    </bpmndi:BPMNPlane>
-  </bpmndi:BPMNDiagram>
 </bpmn:definitions>
 `;
 
@@ -98,8 +55,6 @@ function isLocalSessionId(id) {
   return typeof id === "string" && id.startsWith("local_");
 }
 
-// Only for nodes that make sense for "copilot questions".
-// Avoid opening copilot on whitespace/process/lane/flow/labels.
 function isCopilotTarget(el) {
   if (!el || !el.type) return false;
   if (el.labelTarget) return false;
@@ -151,6 +106,16 @@ export default forwardRef(function BpmnStage(
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
 
+  const importXml = useMemo(() => {
+    return async (fit = true) => {
+      const v = viewerRef.current;
+      if (!v) return;
+      const xml = await fetchBpmnXml(sessionId);
+      await v.importXML(xml);
+      if (fit) v.get("canvas").zoom("fit-viewport");
+    };
+  }, [sessionId]);
+
   const api = useMemo(
     () => ({
       zoomIn() {
@@ -170,8 +135,17 @@ export default forwardRef(function BpmnStage(
         if (!v) return;
         v.get("canvas").zoom("fit-viewport");
       },
+      async reload() {
+        try {
+          setError("");
+          await importXml(true);
+          setReady(true);
+        } catch (e) {
+          setError(String(e?.message || e));
+        }
+      },
     }),
-    []
+    [importXml]
   );
 
   useImperativeHandle(ref, () => api, [api]);
@@ -189,11 +163,9 @@ export default forwardRef(function BpmnStage(
       viewerRef.current = viewer;
 
       try {
-        const xml = await fetchBpmnXml(sessionId);
-        await viewer.importXML(xml);
+        await importXml(true);
         if (!alive) return;
 
-        viewer.get("canvas").zoom("fit-viewport");
         setReady(true);
 
         const eventBus = viewer.get("eventBus");
@@ -221,8 +193,6 @@ export default forwardRef(function BpmnStage(
 
         eventBus.on("element.click", onClick);
         eventBus.on("canvas.viewbox.changed", onVB);
-
-        // bpmn-js emits canvas.* events; this is a safe no-op if not.
         try {
           eventBus.on("canvas.click", onCanvas);
         } catch {}
@@ -241,18 +211,25 @@ export default forwardRef(function BpmnStage(
       } catch {}
       viewerRef.current = null;
     };
-  }, [sessionId, enabled, onElementClick, onViewportChange, onBackgroundClick]);
+  }, [sessionId, enabled, onElementClick, onViewportChange, onBackgroundClick, importXml]);
+
+  useEffect(() => {
+    const onSaved = () => {
+      api.reload().catch(() => {});
+    };
+    window.addEventListener("fpc:graph-saved", onSaved);
+    return () => window.removeEventListener("fpc:graph-saved", onSaved);
+  }, [api]);
 
   return (
     <div style={{ position: "absolute", inset: 0 }}>
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
-
+      <GraphEditorOverlay sessionId={sessionId} />
       {enabled && !ready && !error ? (
         <div style={{ position: "absolute", left: 12, bottom: 12 }} className="card">
           <div className="small muted">Loading BPMN…</div>
         </div>
       ) : null}
-
       {enabled && error ? (
         <div style={{ position: "absolute", left: 12, bottom: 12 }} className="card">
           <div style={{ fontWeight: 900, marginBottom: 6 }}>BPMN import error</div>
