@@ -70,6 +70,26 @@ class NodePatchIn(BaseModel):
     disposition: Optional[Dict[str, Any]] = None
 
 
+
+
+class CreateNodeIn(BaseModel):
+    id: Optional[str] = None
+    title: str
+    type: str = "step"
+    actor_role: Optional[str] = None
+    recipient_role: Optional[str] = None
+    equipment: Optional[List[str]] = None
+    duration_min: Optional[int] = None
+    parameters: Optional[Dict[str, Any]] = None
+    disposition: Optional[Dict[str, Any]] = None
+
+
+class CreateEdgeIn(BaseModel):
+    from_id: str
+    to_id: str
+    when: Optional[str] = None
+
+
 class GlossaryAddIn(BaseModel):
     kind: str
     term: str
@@ -697,6 +717,103 @@ def patch_node(session_id: str, node_id: str, inp: NodePatchIn) -> Dict[str, Any
     s = _recompute_session(s)
     st.save(s)
     return s.model_dump()
+
+
+@app.post("/api/sessions/{session_id}/nodes")
+def add_node(session_id: str, inp: CreateNodeIn) -> Dict[str, Any]:
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return {"error": "not found"}
+
+    node_id = (inp.id or "").strip() or f"n_{uuid.uuid4().hex[:8]}"
+    if any(n.id == node_id for n in s.nodes):
+        return {"error": "node already exists", "node_id": node_id}
+
+    node = Node(
+        id=node_id,
+        title=inp.title,
+        type=inp.type or "step",
+        actor_role=inp.actor_role,
+        recipient_role=inp.recipient_role,
+        equipment=list(inp.equipment or []),
+        parameters=dict(inp.parameters or {}),
+        duration_min=inp.duration_min,
+        disposition=dict(inp.disposition or {}),
+        qc=[],
+        exceptions=[],
+        evidence=[],
+        confidence=0.0,
+    )
+    s.nodes.append(node)
+
+    s = _recompute_session(s)
+    st.save(s)
+    return s.model_dump()
+
+
+@app.delete("/api/sessions/{session_id}/nodes/{node_id}")
+def delete_node(session_id: str, node_id: str) -> Dict[str, Any]:
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return {"error": "not found"}
+
+    before_n = len(s.nodes)
+    s.nodes = [n for n in s.nodes if n.id != node_id]
+    if len(s.nodes) == before_n:
+        return {"error": "node not found"}
+
+    s.edges = [e for e in s.edges if e.from_id != node_id and e.to_id != node_id]
+
+    s = _recompute_session(s)
+    st.save(s)
+    return s.model_dump()
+
+
+@app.post("/api/sessions/{session_id}/edges")
+def add_edge(session_id: str, inp: CreateEdgeIn) -> Dict[str, Any]:
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return {"error": "not found"}
+
+    if not any(n.id == inp.from_id for n in s.nodes):
+        return {"error": "from_id not found", "from_id": inp.from_id}
+    if not any(n.id == inp.to_id for n in s.nodes):
+        return {"error": "to_id not found", "to_id": inp.to_id}
+
+    exists = any((e.from_id == inp.from_id and e.to_id == inp.to_id and (e.when or None) == (inp.when or None)) for e in s.edges)
+    if exists:
+        return {"error": "edge already exists"}
+
+    s.edges.append(Edge(from_id=inp.from_id, to_id=inp.to_id, when=inp.when))
+
+    s = _recompute_session(s)
+    st.save(s)
+    return s.model_dump()
+
+
+@app.delete("/api/sessions/{session_id}/edges")
+def delete_edge(session_id: str, inp: CreateEdgeIn) -> Dict[str, Any]:
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return {"error": "not found"}
+
+    before = len(s.edges)
+    s.edges = [
+        e for e in s.edges
+        if not (e.from_id == inp.from_id and e.to_id == inp.to_id and (e.when or None) == (inp.when or None))
+    ]
+    if len(s.edges) == before:
+        return {"error": "edge not found"}
+
+    s = _recompute_session(s)
+    st.save(s)
+    return s.model_dump()
+
+
 
 
 
