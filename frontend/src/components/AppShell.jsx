@@ -21,7 +21,7 @@ export default function AppShell({
 
       <div className="workspace">
         {left}
-        <ProcessStage mode={mode} />
+        <ProcessStage mode={mode} sessionId={sessionId} />
       </div>
 
       <BottomDock locked={locked} notes={notes} onAddNote={onAddNote} />
