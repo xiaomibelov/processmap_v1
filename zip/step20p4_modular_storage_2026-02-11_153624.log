@@ -1,0 +1,104 @@
+== git state (before) ==
+## fix/step20p1-modular-zoom-v1
+?? zip/foodproc_step20p3_modular_mermaid_changed_files_2026-02-11_151926.zip
+?? zip/step20p4_modular_storage_2026-02-11_153624.log
+2026-02-11 15:19:26 +0300 10bec98  (HEAD -> fix/step20p1-modular-zoom-v1, tag: cp/foodproc_step20p3_modular_mermaid_after_2026-02-11_151926) refactor(step20p3): extract mermaid view module (render + inline questions)
+
+== write patcher ==
+
+== run patcher ==
+Traceback (most recent call last):
+  File "/Users/mac/PycharmProjects/foodproc_process_copilot/scripts/step20p4_patch_storage_module.py", line 266, in <module>
+    main()
+  File "/Users/mac/PycharmProjects/foodproc_process_copilot/scripts/step20p4_patch_storage_module.py", line 260, in main
+    patch_index_html()
+  File "/Users/mac/PycharmProjects/foodproc_process_copilot/scripts/step20p4_patch_storage_module.py", line 129, in patch_index_html
+    raise RuntimeError("index.html: cannot find app.js script include")
+RuntimeError: index.html: cannot find app.js script include
+
+== quick sanity ==
+
+== diff stat ==
+
+== commit ==
+[feat/step20p4-modular-storage-v1 d7131ac] chore(step20p4): extract storage helpers into module
+ 2 files changed, 354 insertions(+)
+ create mode 100644 backend/app/static/modules/storage.js
+ create mode 100644 scripts/step20p4_patch_storage_module.py
+
+== zip changed files ==
+-rw-r--r--  1 mac  staff    18K 11 фев 15:36 zip/foodproc_step20p4_modular_storage_changed_files_2026-02-11_153624.zip
+
+== docker compose up (optional) ==
+#1 [internal] load local bake definitions
+#1 reading from stdin 577B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 412B 0.0s done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/python:3.11-slim
+#3 ...
+
+#4 [auth] library/python:pull token for registry-1.docker.io
+#4 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/python:3.11-slim
+#3 DONE 2.0s
+
+#5 [internal] load .dockerignore
+#5 transferring context: 2B done
+#5 DONE 0.0s
+
+#6 [1/6] FROM docker.io/library/python:3.11-slim@sha256:0b23cfb7425d065008b778022a17b1551c82f8b4866ee5a7a200084b7e2eafbf
+#6 resolve docker.io/library/python:3.11-slim@sha256:0b23cfb7425d065008b778022a17b1551c82f8b4866ee5a7a200084b7e2eafbf 0.0s done
+#6 DONE 0.0s
+
+#7 [internal] load build context
+#7 transferring context: 101.17kB 0.0s done
+#7 DONE 0.0s
+
+#8 [2/6] WORKDIR /app
+#8 CACHED
+
+#9 [3/6] COPY backend/requirements.txt /app/backend/requirements.txt
+#9 CACHED
+
+#10 [4/6] RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+#10 CACHED
+
+#11 [5/6] COPY backend /app/backend
+#11 DONE 0.1s
+
+#12 [6/6] RUN mkdir -p /app/workspace/processes /app/workspace/.session_store
+#12 DONE 0.2s
+
+#13 exporting to image
+#13 exporting layers 0.1s done
+#13 exporting manifest sha256:42c916ec72bdad38f8442091756bdfc3fc9760c74ee1d54d8870581538fc6d79 0.0s done
+#13 exporting config sha256:d71715eac1fc0ce0d8b3b55394e93a30fc4da8a42405afed031a5854eaf51bb1
+#13 exporting config sha256:d71715eac1fc0ce0d8b3b55394e93a30fc4da8a42405afed031a5854eaf51bb1 done
+#13 exporting attestation manifest sha256:c52b0e1ac8964b4413bbe49a9aec62304c92bcae9f94804f025717f2f8532c87 0.0s done
+#13 exporting manifest list sha256:000c1d77115570a55052b3db98e16dfac3d03df393e0bcc8494fd35eb9f31feb 0.0s done
+#13 naming to docker.io/library/foodproc_process_copilot-app:latest done
+#13 unpacking to docker.io/library/foodproc_process_copilot-app:latest 0.1s done
+#13 DONE 0.3s
+
+#14 resolving provenance for metadata file
+#14 DONE 0.0s
+ foodproc_process_copilot-app  Built
+ Container foodproc_process_copilot-app-1  Recreate
+ Container foodproc_process_copilot-app-1  Recreated
+ Container foodproc_process_copilot-app-1  Starting
+ Container foodproc_process_copilot-app-1  Started
+
+== probe ==
+000
+
+== done ==
+## feat/step20p4-modular-storage-v1
+?? zip/foodproc_step20p3_modular_mermaid_changed_files_2026-02-11_151926.zip
+?? zip/foodproc_step20p4_modular_storage_changed_files_2026-02-11_153624.zip
+?? zip/step20p4_modular_storage_2026-02-11_153624.log
+2026-02-11 15:36:25 +0300 d7131ac  (HEAD -> feat/step20p4-modular-storage-v1, tag: cp/foodproc_step20p4_modular_storage_after_2026-02-11_153624) chore(step20p4): extract storage helpers into module

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from .exporters.bpmn import render_bpmn_xml
 
 import math
 import os
@@ -10,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI
+from fastapi.responses import Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -666,12 +666,27 @@ def patch_node(session_id: str, node_id: str, inp: NodePatchIn) -> Dict[str, Any
 
 
 @app.get("/api/sessions/{session_id}/bpmn")
-def api_get_bpmn(session_id: str):
-    s = get_session(session_id)
-    xml = render_bpmn_xml(s)
-    return Response(content=xml, media_type="application/xml")
+def session_bpmn_export(session_id: str):
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return Response(content="not found", media_type="text/plain", status_code=404)
 
-@app.post("/api/sessions/{session_id}/export")
+    from .exporters.bpmn import export_session_to_bpmn_xml
+
+    xml = export_session_to_bpmn_xml(s)
+
+    title = getattr(s, "title", None) or getattr(s, "name", None) or "process"
+    title = re.sub(r"[^a-zA-Z0-9_\-]+", "_", str(title)).strip("_")
+    if not title:
+        title = "process"
+    filename = f"{title}.bpmn"
+    return Response(
+        content=xml,
+        media_type="application/xml",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
 def export(session_id: str) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
