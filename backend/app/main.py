@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .exporters.bpmn import render_bpmn_xml
+
 import math
 import os
 import re
@@ -660,6 +662,14 @@ def patch_node(session_id: str, node_id: str, inp: NodePatchIn) -> Dict[str, Any
     st.save(s)
     return s.model_dump()
 
+
+
+
+@app.get("/api/sessions/{session_id}/bpmn")
+def api_get_bpmn(session_id: str):
+    s = get_session(session_id)
+    xml = render_bpmn_xml(s)
+    return Response(content=xml, media_type="application/xml")
 
 @app.post("/api/sessions/{session_id}/export")
 def export(session_id: str) -> Dict[str, Any]:
