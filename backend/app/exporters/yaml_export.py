@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Dict, Any
+from typing import Dict, Any, Optional, List
 import yaml
 from ..models import Session
 def session_to_process_dict(s: Session) -> Dict[str, Any]:

@@ -317,96 +317,49 @@ def get_session(session_id: str) -> Dict[str, Any]:
 @app.patch("/api/sessions/{session_id}")
 def patch_session(session_id: str, inp: UpdateSessionIn) -> Dict[str, Any]:
     st = get_storage()
-    s = st.load(session_id)
-    if not s:
+    sess = st.load(session_id)
+    if not sess:
         return {"error": "not found"}
 
-    changed = False
+    data = inp.model_dump(exclude_unset=True)
+    if not data:
+        return {"error": "no changes"}
 
-    if inp.title is not None:
-        new_title = (inp.title or "").strip()
-        if not new_title:
-            return {"error": "title is empty"}
-        if new_title != s.title:
-            renamed = st.rename(session_id, new_title)
-            if not renamed:
+    if "title" in data and data["title"] is not None:
+        title = str(data["title"]).strip()
+        if title:
+            sess2 = st.rename(session_id, title)
+            if not sess2:
                 return {"error": "not found"}
-            s = renamed
-            changed = True
+            sess = sess2
 
-    if inp.roles is not None:
-        raw = inp.roles or []
-        roles: List[str] = []
+    if "roles" in data:
+        roles_in = data.get("roles") or []
+        clean = []
         seen = set()
-        for r in raw:
-            rr = (r or "").strip()
+        for r in roles_in:
+            rr = str(r).strip()
             if not rr or rr in seen:
                 continue
             seen.add(rr)
-            roles.append(rr)
-        if not roles:
-            return {"error": "roles is empty"}
-        s.roles = roles
-        if s.start_role and s.start_role not in roles:
-            s.start_role = None
-        changed = True
+            clean.append(rr)
+        sess.roles = clean
+        if sess.start_role and sess.roles and sess.start_role not in sess.roles:
+            sess.start_role = None
 
-    if inp.start_role is not None:
-        sr = (inp.start_role or "").strip() or None
-        if sr and sr not in (s.roles or []):
-            return {"error": "start_role must be one of roles", "roles": list(s.roles or [])}
-        s.start_role = sr
-        changed = True
+    if "start_role" in data:
+        sr = data.get("start_role")
+        if sr is None or str(sr).strip() == "":
+            sess.start_role = None
+        else:
+            sr = str(sr).strip()
+            if sess.roles and sr not in sess.roles:
+                return {"error": "start_role must be one of roles", "start_role": sr, "roles": sess.roles}
+            sess.start_role = sr
 
-    node_ids: Optional[set] = None
-    if inp.nodes is not None:
-        nodes_in = inp.nodes or []
-        nodes: List[Node] = []
-        seen = set()
-        for nr in nodes_in:
-            n = Node.model_validate(nr)
-            if n.id in seen:
-                return {"error": "duplicate node id", "node_id": n.id}
-            seen.add(n.id)
-            nodes.append(n)
-        s.nodes = nodes
-        node_ids = set(seen)
-        changed = True
-
-    if inp.edges is not None:
-        edges_in = inp.edges or []
-        edges: List[Edge] = []
-        seen = set()
-        if node_ids is None:
-            node_ids = {n.id for n in (s.nodes or [])}
-        for er in edges_in:
-            e = Edge.model_validate(er)
-            if e.from_id not in node_ids:
-                return {"error": "from_id not found", "from_id": e.from_id}
-            if e.to_id not in node_ids:
-                return {"error": "to_id not found", "to_id": e.to_id}
-            key = (e.from_id, e.to_id, (e.when or "").strip())
-            if key in seen:
-                continue
-            seen.add(key)
-            e.when = (e.when or "").strip() or None
-            edges.append(e)
-        s.edges = edges
-        changed = True
-    else:
-        if node_ids is not None:
-            before = len(s.edges or [])
-            s.edges = [e for e in (s.edges or []) if e.from_id in node_ids and e.to_id in node_ids]
-            if len(s.edges) != before:
-                changed = True
-
-    if not changed:
-        return {"error": "no changes"}
-
-    s = _recompute_session(s)
-    st.save(s)
-    return s.model_dump()
-
+    sess = _recompute_session(sess)
+    st.save(sess)
+    return sess.model_dump()
 
 @app.post("/api/sessions/{session_id}/recompute")
 def recompute(session_id: str) -> Dict[str, Any]:
