@@ -18,7 +18,7 @@ export default function BottomDock({ locked, notes, onAddNote }) {
   return (
     <div className="bottomDock">
       <div className="dockHead">
-        <div style={{ fontWeight: 800, color: "#0f172a" }}>Сообщения / Заметки</div>
+        <div style={{ fontWeight: 900, color: "#0f172a" }}>Сообщения / Заметки</div>
         <div className="spacer" />
         <button className="btn" disabled>Expand</button>
       </div>
@@ -27,12 +27,14 @@ export default function BottomDock({ locked, notes, onAddNote }) {
         <div className="small muted">
           {locked
             ? "Actors-first: сначала роли и start_role. Потом — интервью и заметки."
-            : "Заметки сохраняются в localStorage (не теряются при F5). Позже: синхронизация с /api/sessions/{id}/notes."}
+            : "Заметки сохраняются в localStorage (не теряются при F5). Далее подключим /api/sessions/{id}/notes."}
         </div>
 
         {!locked && last.length > 0 ? (
           <div className="card">
-            <div className="small muted" style={{ fontWeight: 800, marginBottom: 6 }}>Последние заметки</div>
+            <div className="small muted" style={{ fontWeight: 900, marginBottom: 6 }}>
+              Последние заметки
+            </div>
             <div style={{ display: "grid", gap: 6 }}>
               {last.map((n) => (
                 <div key={n.note_id} className="small">

@@ -25,10 +25,10 @@ export default function ProcessStage({ mode }) {
 
         {!isInterview ? (
           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
-            <div className="card" style={{ maxWidth: 520 }}>
-              <div style={{ fontWeight: 900, marginBottom: 6 }}>Actors-first</div>
+            <div className="card" style={{ maxWidth: 560 }}>
+              <div style={{ fontWeight: 950, marginBottom: 6 }}>Actors-first</div>
               <div className="small muted">
-                Сначала нужно заполнить роли и start_role. После этого включается режим интервью и активируется док заметок.
+                Заполни роли и start_role. После этого включится режим интервью и активируется док заметок.
               </div>
             </div>
           </div>
@@ -37,7 +37,7 @@ export default function ProcessStage({ mode }) {
         {isInterview ? (
           <>
             <div className="mockCircle mockStart" style={{ position: "absolute", left: 56, top: 78 }}>●</div>
-            <div className="small muted" style={{ position: "absolute", left: 58, top: 128, fontWeight: 700 }}>Старт</div>
+            <div className="small muted" style={{ position: "absolute", left: 58, top: 128, fontWeight: 800 }}>Старт</div>
 
             <div className="mockNode" style={{ left: 140, top: 66, width: 170 }}>
               Подготовка<br />ингредиентов
@@ -83,7 +83,7 @@ export default function ProcessStage({ mode }) {
             <div className="arrow" style={{ left: 838, top: 396, width: 2, height: 56, background: "rgba(16,24,40,0.55)" }} />
 
             <div className="mockCircle mockEnd" style={{ position: "absolute", left: 816, top: 450 }}>●</div>
-            <div className="small muted" style={{ position: "absolute", left: 808, top: 500, fontWeight: 700 }}>Финиш</div>
+            <div className="small muted" style={{ position: "absolute", left: 808, top: 500, fontWeight: 800 }}>Финиш</div>
 
             <CopilotOverlay />
           </>

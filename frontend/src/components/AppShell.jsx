@@ -9,10 +9,15 @@ export default function AppShell({
   locked,
   notes,
   onAddNote,
+  onNewLocalSession,
 }) {
   return (
     <div className="shell">
-      <TopBar sessionId={sessionId} onNewSession={() => {}} onOpenSession={() => {}} />
+      <TopBar
+        sessionId={sessionId}
+        onNewSession={onNewLocalSession}
+        onOpenSession={() => {}}
+      />
 
       <div className="workspace">
         {left}

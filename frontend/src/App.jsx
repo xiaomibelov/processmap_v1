@@ -41,8 +41,7 @@ export default function App() {
       author: "user",
       text,
     };
-    const next = { ...draft, notes: [...(draft.notes || []), note] };
-    updateDraft(next);
+    updateDraft({ ...draft, notes: [...(draft.notes || []), note] });
   }
 
   const left =
@@ -62,6 +61,7 @@ export default function App() {
       locked={locked}
       notes={draft.notes || []}
       onAddNote={addNote}
+      onNewLocalSession={createLocalSession}
     />
   );
 }

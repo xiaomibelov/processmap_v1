@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { uid } from "../../lib/ids";
 
-function normalizeRoleId(n) {
-  const s = String(n || "").trim();
-  if (!s) return "";
-  return s
+function normalizeRoleId(s) {
+  const v = String(s || "").trim();
+  if (!v) return "";
+  return v
     .toLowerCase()
     .replace(/\s+/g, "_")
     .replace(/[^a-z0-9_]+/g, "")
@@ -16,14 +16,17 @@ export default function ActorsSetup({ draft, onSaveActors }) {
   const [roles, setRoles] = useState(Array.isArray(draft.roles) ? draft.roles : []);
   const [startRole, setStartRole] = useState(typeof draft.start_role === "string" ? draft.start_role : "");
 
-  const roleOptions = useMemo(() => roles.map((r) => ({ value: r.role_id, label: r.label })), [roles]);
+  const options = useMemo(
+    () => roles.map((r) => ({ value: r.role_id, label: r.label })),
+    [roles]
+  );
 
   function addRole() {
     const v = label.trim();
     if (!v) return;
 
-    const proposed = normalizeRoleId(v);
-    let role_id = proposed || `role_${roles.length + 1}`;
+    const base = normalizeRoleId(v);
+    let role_id = base || `role_${roles.length + 1}`;
     if (roles.some((r) => r.role_id === role_id)) {
       role_id = `${role_id}_${uid("r").slice(-4)}`;
     }
@@ -46,21 +49,21 @@ export default function ActorsSetup({ draft, onSaveActors }) {
     <div className="panel">
       <div className="panelHead">Actors-first</div>
       <div className="panelBody">
-        <div style={{ fontWeight: 800, marginBottom: 6 }}>Настройка акторов</div>
+        <div style={{ fontWeight: 900, marginBottom: 6 }}>Настройка акторов</div>
         <div className="small muted" style={{ marginBottom: 12 }}>
-          Добавь роли/акторов (cook_1, operator_hot_shop и т.д.) и выбери <strong>start_role</strong>.
+          Добавь роли (cook_1, hot_shop_operator и т.д.) и выбери <strong>start_role</strong>.
           Пока это не заполнено — интервью/заметки блокируются.
         </div>
 
         <div style={{ display: "grid", gap: 10 }}>
           <div className="card">
-            <div style={{ fontWeight: 800, marginBottom: 8 }}>Роли</div>
+            <div style={{ fontWeight: 900, marginBottom: 8 }}>Роли</div>
 
             <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
               <input
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
-                placeholder="Напр: Горячий цех / Повар 1"
+                placeholder="Напр: Повар 1 / Горячий цех"
                 className="textarea"
                 style={{ minHeight: 40, height: 40, resize: "none" }}
               />
@@ -77,7 +80,7 @@ export default function ActorsSetup({ draft, onSaveActors }) {
               <div style={{ display: "grid", gap: 8 }}>
                 {roles.map((r) => (
                   <div key={r.role_id} style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                    <div style={{ fontWeight: 800 }}>{r.label}</div>
+                    <div style={{ fontWeight: 900 }}>{r.label}</div>
                     <div className="small muted">({r.role_id})</div>
                     <div style={{ flex: 1 }} />
                     <button className="btn" onClick={() => removeRole(r.role_id)}>
@@ -90,7 +93,7 @@ export default function ActorsSetup({ draft, onSaveActors }) {
           </div>
 
           <div className="card">
-            <div style={{ fontWeight: 800, marginBottom: 8 }}>Start role</div>
+            <div style={{ fontWeight: 900, marginBottom: 8 }}>Start role</div>
 
             <select
               className="textarea"
@@ -100,7 +103,7 @@ export default function ActorsSetup({ draft, onSaveActors }) {
               disabled={roles.length === 0}
             >
               <option value="">— выбрать —</option>
-              {roleOptions.map((o) => (
+              {options.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label} ({o.value})
                 </option>
@@ -108,7 +111,7 @@ export default function ActorsSetup({ draft, onSaveActors }) {
             </select>
 
             <div className="small muted" style={{ marginTop: 8 }}>
-              Это тот, кто начинает процесс.
+              Это актор, который начинает процесс.
             </div>
           </div>
 
