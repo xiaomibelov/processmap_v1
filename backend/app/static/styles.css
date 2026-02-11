@@ -385,3 +385,41 @@ select { padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,255,
     grid-template-columns: 1fr;
   }
 }
+
+/* STEP19B_MERMAID_ZOOM */
+
+#graphWrap{ position:relative; }
+#graphWrap{ height: clamp(380px, 62vh, 740px); }
+
+.mz-bar{
+  position:absolute;
+  top:12px;
+  right:16px;
+  display:flex;
+  gap:8px;
+  align-items:center;
+  padding:8px 10px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.10);
+  background: rgba(20,22,28,.55);
+  backdrop-filter: blur(10px);
+  z-index: 30;
+}
+.mz-btn{
+  border:1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.90);
+  padding:6px 10px;
+  border-radius:10px;
+  cursor:pointer;
+  font-size:12px;
+  line-height:1;
+}
+.mz-btn:hover{ background: rgba(255,255,255,.10); }
+.mz-label{
+  margin-left:6px;
+  font-size:12px;
+  color: rgba(255,255,255,.75);
+  white-space:nowrap;
+}
+
