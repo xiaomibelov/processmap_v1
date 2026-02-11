@@ -90,7 +90,7 @@ export default function ProcessStage({ mode, sessionId, roles, onAddNote }) {
         <div className="spacer" />
         <button className="btn" onClick={() => { bpmnRef.current?.zoomOut?.(); onViewportChange(); }} disabled={!isInterview}>−</button>
         <button className="btn" onClick={() => { bpmnRef.current?.zoomIn?.(); onViewportChange(); }} disabled={!isInterview}>+</button>
-        <button className="btn" onClick={() => { bpmnRef.current?.fit?.(); onViewportChange(); }} disabled={!isInterview}>Fit</button>
+        <button className="btn" onClick={() => { bpmnRef.current?.fit?.(); onViewportChange(); }} disabled={!isInterview}>Вписать</button>
       </div>
 
       <div className="processCanvas" ref={stageRef}>

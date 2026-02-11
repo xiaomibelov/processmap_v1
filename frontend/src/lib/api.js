@@ -64,3 +64,25 @@ export async function apiPostNote(sessionId, { text, ts, author } = {}) {
     return { ok: false, status: 0 };
   }
 }
+
+/**
+ * R11: save session patch (Graph Editor)
+ * Sends partial session shape to backend. Backend may treat as merge/upsert.
+ */
+export async function apiSaveSession(sessionId, patch) {
+  if (!sessionId) throw new Error("sessionId is required");
+
+  const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(patch || {}),
+  });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`apiSaveSession failed: ${res.status} ${txt}`);
+  }
+
+  return res.json();
+}

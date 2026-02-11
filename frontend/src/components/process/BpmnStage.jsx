@@ -1,241 +1,185 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import NavigatedViewer from "bpmn-js/lib/NavigatedViewer";
 
 import "bpmn-js/dist/assets/diagram-js.css";
-import "bpmn-js/dist/assets/bpmn-js.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn.css";
-
-import GraphEditorOverlay from "./GraphEditorOverlay";
-
-const MOCK_XML = `<?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
-  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
-  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
-  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
-  id="Definitions_1" targetNamespace="http://example.com/bpmn">
-  <bpmn:process id="Process_1" isExecutable="false">
-    <bpmn:laneSet id="LaneSet_1">
-      <bpmn:lane id="Lane_hot" name="Горячий цех">
-        <bpmn:flowNodeRef>StartEvent_1</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_1</bpmn:flowNodeRef>
-      </bpmn:lane>
-      <bpmn:lane id="Lane_pack" name="Упаковка">
-        <bpmn:flowNodeRef>Task_2</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>EndEvent_1</bpmn:flowNodeRef>
-      </bpmn:lane>
-    </bpmn:laneSet>
-
-    <bpmn:startEvent id="StartEvent_1" name="Старт">
-      <bpmn:outgoing>Flow_1</bpmn:outgoing>
-    </bpmn:startEvent>
-
-    <bpmn:task id="Task_1" name="Обжарка">
-      <bpmn:incoming>Flow_1</bpmn:incoming>
-      <bpmn:outgoing>Flow_2</bpmn:outgoing>
-    </bpmn:task>
-
-    <bpmn:task id="Task_2" name="Упаковка">
-      <bpmn:incoming>Flow_2</bpmn:incoming>
-      <bpmn:outgoing>Flow_3</bpmn:outgoing>
-    </bpmn:task>
-
-    <bpmn:endEvent id="EndEvent_1" name="Финиш">
-      <bpmn:incoming>Flow_3</bpmn:incoming>
-    </bpmn:endEvent>
-
-    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="Task_1" />
-    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_1" targetRef="Task_2" />
-    <bpmn:sequenceFlow id="Flow_3" sourceRef="Task_2" targetRef="EndEvent_1" />
-  </bpmn:process>
-</bpmn:definitions>
-`;
 
 function isLocalSessionId(id) {
   return typeof id === "string" && id.startsWith("local_");
 }
 
-function isCopilotTarget(el) {
-  if (!el || !el.type) return false;
-  if (el.labelTarget) return false;
+// Минимальная "пустая" диаграмма (не демо процесса): старт → финиш.
+// Нужна, чтобы viewer не падал с "no diagram to display".
+const EMPTY_BPMN_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+  id="Definitions_Empty" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_1" isExecutable="false">
+    <bpmn:startEvent id="StartEvent_1" name="Старт"/>
+    <bpmn:endEvent id="EndEvent_1" name="Финиш"/>
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="EndEvent_1"/>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Process_1">
+      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
+        <dc:Bounds x="160" y="160" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1">
+        <dc:Bounds x="360" y="160" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
+        <di:waypoint x="196" y="178" />
+        <di:waypoint x="360" y="178" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>`;
 
-  const t = el.type;
-
-  if (
-    t === "bpmn:Process" ||
-    t === "bpmn:Lane" ||
-    t === "bpmn:Participant" ||
-    t === "bpmn:SequenceFlow" ||
-    t === "bpmn:MessageFlow" ||
-    t === "bpmn:Association"
-  ) {
-    return false;
-  }
-
-  return Boolean(
-    t.endsWith("Task") ||
-      t.endsWith("Event") ||
-      t.endsWith("Gateway") ||
-      t === "bpmn:SubProcess" ||
-      t === "bpmn:CallActivity"
-  );
-}
-
-async function fetchBpmnXml(sessionId) {
-  if (!sessionId) return MOCK_XML;
-  if (isLocalSessionId(sessionId)) return MOCK_XML;
-
-  const url = `/api/sessions/${encodeURIComponent(sessionId)}/bpmn`;
-  try {
-    const res = await fetch(url, { credentials: "include" });
-    if (!res.ok) return MOCK_XML;
-    const xml = await res.text();
-    if (!xml || !xml.includes("<bpmn:definitions")) return MOCK_XML;
-    return xml;
-  } catch {
-    return MOCK_XML;
-  }
-}
-
-export default forwardRef(function BpmnStage(
-  { sessionId, enabled = true, onElementClick, onViewportChange, onBackgroundClick },
-  ref
-) {
-  const containerRef = useRef(null);
+export default function BpmnStage({ sessionId }) {
+  const hostRef = useRef(null);
   const viewerRef = useRef(null);
-  const [ready, setReady] = useState(false);
+
+  const [status, setStatus] = useState("");
   const [error, setError] = useState("");
 
-  const importXml = useMemo(() => {
-    return async (fit = true) => {
-      const v = viewerRef.current;
-      if (!v) return;
-      const xml = await fetchBpmnXml(sessionId);
-      await v.importXML(xml);
-      if (fit) v.get("canvas").zoom("fit-viewport");
-    };
-  }, [sessionId]);
+  async function importXml(xml) {
+    const viewer = viewerRef.current;
+    if (!viewer) return;
 
-  const api = useMemo(
-    () => ({
-      zoomIn() {
-        const v = viewerRef.current;
-        if (!v) return;
-        const canvas = v.get("canvas");
-        canvas.zoom(canvas.zoom() + 0.2);
-      },
-      zoomOut() {
-        const v = viewerRef.current;
-        if (!v) return;
-        const canvas = v.get("canvas");
-        canvas.zoom(Math.max(0.2, canvas.zoom() - 0.2));
-      },
-      fit() {
-        const v = viewerRef.current;
-        if (!v) return;
-        v.get("canvas").zoom("fit-viewport");
-      },
-      async reload() {
-        try {
-          setError("");
-          await importXml(true);
-          setReady(true);
-        } catch (e) {
-          setError(String(e?.message || e));
-        }
-      },
-    }),
-    [importXml]
-  );
-
-  useImperativeHandle(ref, () => api, [api]);
-
-  useEffect(() => {
-    let alive = true;
-
-    async function boot() {
-      setReady(false);
+    try {
       setError("");
+      await viewer.importXML(xml || EMPTY_BPMN_XML);
+      const canvas = viewer.get("canvas");
+      canvas.zoom("fit-viewport");
+    } catch (e) {
+      setError("Ошибка импорта BPMN. Проверь данные сессии и экспорт.");
+    }
+  }
 
-      if (!enabled || !containerRef.current) return;
+  async function loadBpmn() {
+    const id = typeof sessionId === "string" ? sessionId : "";
 
-      const viewer = new NavigatedViewer({ container: containerRef.current });
-      viewerRef.current = viewer;
-
-      try {
-        await importXml(true);
-        if (!alive) return;
-
-        setReady(true);
-
-        const eventBus = viewer.get("eventBus");
-
-        const onClick = (e) => {
-          if (!alive) return;
-          const el = e?.element || null;
-          if (!el) return;
-
-          if (typeof onElementClick === "function") {
-            if (!isCopilotTarget(el)) return;
-            onElementClick(el);
-          }
-        };
-
-        const onVB = () => {
-          if (!alive) return;
-          if (typeof onViewportChange === "function") onViewportChange();
-        };
-
-        const onCanvas = () => {
-          if (!alive) return;
-          if (typeof onBackgroundClick === "function") onBackgroundClick();
-        };
-
-        eventBus.on("element.click", onClick);
-        eventBus.on("canvas.viewbox.changed", onVB);
-        try {
-          eventBus.on("canvas.click", onCanvas);
-        } catch {}
-      } catch (e) {
-        if (!alive) return;
-        setError(String(e?.message || e));
-      }
+    if (!id) {
+      setStatus("Нет активной сессии");
+      await importXml(EMPTY_BPMN_XML);
+      return;
     }
 
-    boot();
+    if (isLocalSessionId(id)) {
+      setStatus("Локальная сессия: BPMN с сервера недоступен. Создай “Новая (API)”.");
+      await importXml(EMPTY_BPMN_XML);
+      return;
+    }
 
-    return () => {
-      alive = false;
-      try {
-        viewerRef.current?.destroy();
-      } catch {}
-      viewerRef.current = null;
-    };
-  }, [sessionId, enabled, onElementClick, onViewportChange, onBackgroundClick, importXml]);
+    setStatus("Загрузка BPMN…");
+
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/bpmn`, {
+        method: "GET",
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        setStatus("BPMN недоступен");
+        await importXml(EMPTY_BPMN_XML);
+        return;
+      }
+
+      const xml = await res.text();
+      setStatus("");
+      await importXml(xml || EMPTY_BPMN_XML);
+    } catch {
+      setStatus("Ошибка сети при загрузке BPMN");
+      await importXml(EMPTY_BPMN_XML);
+    }
+  }
+
+  function zoomIn() {
+    const v = viewerRef.current;
+    if (!v) return;
+    const c = v.get("canvas");
+    const z = c.zoom();
+    c.zoom(z + 0.2);
+  }
+
+  function zoomOut() {
+    const v = viewerRef.current;
+    if (!v) return;
+    const c = v.get("canvas");
+    const z = c.zoom();
+    c.zoom(Math.max(0.2, z - 0.2));
+  }
+
+  function fit() {
+    const v = viewerRef.current;
+    if (!v) return;
+    const c = v.get("canvas");
+    c.zoom("fit-viewport");
+  }
 
   useEffect(() => {
-    const onSaved = () => {
-      api.reload().catch(() => {});
-    };
+    if (!hostRef.current) return;
+
+    viewerRef.current = new NavigatedViewer({ container: hostRef.current });
+
+    loadBpmn();
+
+    const onSaved = () => loadBpmn();
     window.addEventListener("fpc:graph-saved", onSaved);
-    return () => window.removeEventListener("fpc:graph-saved", onSaved);
-  }, [api]);
+
+    return () => {
+      window.removeEventListener("fpc:graph-saved", onSaved);
+      try {
+        viewerRef.current && viewerRef.current.destroy();
+      } catch {
+        // ignore
+      }
+      viewerRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    loadBpmn();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
 
   return (
-    <div style={{ position: "absolute", inset: 0 }}>
-      <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
-      <GraphEditorOverlay sessionId={sessionId} />
-      {enabled && !ready && !error ? (
-        <div style={{ position: "absolute", left: 12, bottom: 12 }} className="card">
-          <div className="small muted">Loading BPMN…</div>
+    <div style={{ position: "relative", width: "100%", height: "100%" }}>
+      <div style={{ position: "absolute", right: 12, top: 10, zIndex: 5, display: "flex", gap: 8 }}>
+        <button className="ghostBtn" onClick={zoomOut} title="Уменьшить">
+          −
+        </button>
+        <button className="ghostBtn" onClick={zoomIn} title="Увеличить">
+          +
+        </button>
+        <button className="ghostBtn" onClick={fit} title="Вписать">
+          Вписать
+        </button>
+      </div>
+
+      <div ref={hostRef} style={{ width: "100%", height: "100%", background: "#fff" }} />
+
+      {status ? (
+        <div style={{ position: "absolute", left: 12, bottom: 12, zIndex: 6, maxWidth: 520 }}>
+          <div className="card">
+            <div style={{ fontWeight: 900, marginBottom: 4 }}>Статус</div>
+            <div className="small muted">{status}</div>
+          </div>
         </div>
       ) : null}
-      {enabled && error ? (
-        <div style={{ position: "absolute", left: 12, bottom: 12 }} className="card">
-          <div style={{ fontWeight: 900, marginBottom: 6 }}>BPMN import error</div>
-          <div className="small muted">{error}</div>
+
+      {error ? (
+        <div style={{ position: "absolute", left: 12, bottom: 12, zIndex: 7, maxWidth: 520 }}>
+          <div className="card">
+            <div style={{ fontWeight: 900, marginBottom: 4 }}>Ошибка</div>
+            <div className="small muted">{error}</div>
+          </div>
         </div>
       ) : null}
     </div>
   );
-});
+}

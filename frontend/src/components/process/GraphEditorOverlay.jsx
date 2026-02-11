@@ -40,7 +40,7 @@ async function saveSessionViaApi(sessionId, payload) {
     try {
       const r = await candidates[0](sessionId, payload);
       if (r && typeof r.ok === "boolean") return r;
-      return { ok: true, status: 200, method: "api" };
+      return { ok: true, статус: 200, method: "api" };
     } catch {
       // fall through to fetch
     }
@@ -57,8 +57,8 @@ async function saveSessionViaApi(sessionId, payload) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload ?? {}),
     });
-    if (res.ok) return { ok: true, status: res.status, method };
-    return { ok: false, status: res.status, method };
+    if (res.ok) return { ok: true, статус: res.status, method };
+    return { ok: false, статус: res.status, method };
   }
 
   try {
@@ -70,7 +70,7 @@ async function saveSessionViaApi(sessionId, payload) {
     }
     return r1;
   } catch {
-    return { ok: false, status: 0, method: "PATCH" };
+    return { ok: false, статус: 0, method: "PATCH" };
   }
 }
 
@@ -203,7 +203,7 @@ export default function GraphEditorOverlay({ sessionId }) {
     <div style={{ position: "absolute", right: 12, top: 12, zIndex: 30, width: 360 }}>
       <div className="card">
         <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
-          <div style={{ fontWeight: 900 }}>Graph editor</div>
+          <div style={{ fontWeight: 900 }}>Редактор графа</div>
           <button className="ghostBtn" onClick={() => setOpen(false)} title="Close">
             ✕
           </button>
@@ -215,16 +215,16 @@ export default function GraphEditorOverlay({ sessionId }) {
 
         <div className="hr" />
 
-        <div style={{ fontWeight: 900, marginBottom: 6 }}>Add node</div>
+        <div style={{ fontWeight: 900, marginBottom: 6 }}>Добавить шаг</div>
         <div style={{ display: "grid", gap: 8 }}>
           <div style={{ display: "grid", gridTemplateColumns: "110px 1fr", gap: 8, alignItems: "center" }}>
             <div className="small muted">type</div>
             <select value={nodeType} onChange={(e) => setNodeType(e.target.value)} className="input">
-              <option value="step">step</option>
-              <option value="decision">decision</option>
-              <option value="fork">fork</option>
-              <option value="join">join</option>
-              <option value="end">end</option>
+              <option value="step">Шаг</option>
+              <option value="decision">Решение</option>
+              <option value="fork">Развилка</option>
+              <option value="join">Слияние</option>
+              <option value="end">Финиш</option>
             </select>
           </div>
 
@@ -244,20 +244,20 @@ export default function GraphEditorOverlay({ sessionId }) {
             className="input"
             value={nodeLabel}
             onChange={(e) => setNodeLabel(e.target.value)}
-            placeholder="label (например: Подготовка ингредиентов)"
+            placeholder="название (например: Подготовка ингредиентов)"
           />
 
           <button className="primaryBtn" onClick={addNode} disabled={!nodeLabel.trim()}>
-            + Add node
+            + Добавить шаг
           </button>
         </div>
 
         <div className="hr" />
 
-        <div style={{ fontWeight: 900, marginBottom: 6 }}>Add edge</div>
+        <div style={{ fontWeight: 900, marginBottom: 6 }}>Добавить связь</div>
         <div style={{ display: "grid", gap: 8 }}>
           <select value={edgeFrom} onChange={(e) => setEdgeFrom(e.target.value)} className="input">
-            <option value="">from…</option>
+            <option value="">от…</option>
             {nodes.map((n) => (
               <option key={nodeIdOf(n)} value={nodeIdOf(n)}>
                 {n.label || nodeIdOf(n)}
@@ -266,7 +266,7 @@ export default function GraphEditorOverlay({ sessionId }) {
           </select>
 
           <select value={edgeTo} onChange={(e) => setEdgeTo(e.target.value)} className="input">
-            <option value="">to…</option>
+            <option value="">в…</option>
             {nodes.map((n) => (
               <option key={nodeIdOf(n)} value={nodeIdOf(n)}>
                 {n.label || nodeIdOf(n)}
@@ -275,7 +275,7 @@ export default function GraphEditorOverlay({ sessionId }) {
           </select>
 
           <button className="primaryBtn" onClick={addEdge} disabled={!edgeFrom || !edgeTo || edgeFrom === edgeTo}>
-            + Add edge
+            + Добавить связь
           </button>
         </div>
 
@@ -283,15 +283,15 @@ export default function GraphEditorOverlay({ sessionId }) {
 
         <div style={{ display: "flex", gap: 10 }}>
           <button className="dangerBtn" onClick={clearGraph}>
-            Clear graph
+            Очистить граф
           </button>
           <button className="ghostBtn" onClick={() => window.dispatchEvent(new Event("fpc:graph-saved"))}>
-            Reload BPMN
+            Обновить BPMN
           </button>
         </div>
 
         <div className="small muted" style={{ marginTop: 10 }}>
-          status: <b>{status || "—"}</b>
+          статус: <b>{status || "—"}</b>
         </div>
 
         {sessionId && isLocalSessionId(sessionId) ? (
