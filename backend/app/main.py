@@ -5,6 +5,8 @@ import math
 import os
 import re
 import uuid
+import io
+import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -721,6 +723,7 @@ def session_bpmn_export(session_id: str):
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
+@app.get("/api/sessions/{session_id}/export")
 def export(session_id: str) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
@@ -759,3 +762,36 @@ def export(session_id: str) -> Dict[str, Any]:
     (out_dir / "losses.yml").write_text(dump_yaml(lr), encoding="utf-8")
 
     return {"ok": True, "exported_to": str(out_dir)}
+
+
+@app.get("/api/sessions/{session_id}/export.zip")
+def export_zip(session_id: str):
+    res = export(session_id)
+    if not isinstance(res, dict) or res.get("error"):
+        msg = str(res.get("error") if isinstance(res, dict) else "not found")
+        return Response(content=msg, media_type="text/plain", status_code=404)
+
+    out_dir = Path(res.get("exported_to") or "")
+    if not out_dir.exists():
+        return Response(content="export dir not found", media_type="text/plain", status_code=500)
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for p in sorted(out_dir.glob("*"), key=lambda x: x.name):
+            if p.is_file():
+                zf.write(p, arcname=p.name)
+
+    buf.seek(0)
+
+    st = get_storage()
+    s = st.load(session_id)
+    title = getattr(s, "title", None) if s else None
+    title = re.sub(r"[^a-zA-Z0-9_\-]+", "_", str(title or "process")).strip("_") or "process"
+    filename = f"{title}.zip"
+
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=\"{filename}\""},
+    )
+
