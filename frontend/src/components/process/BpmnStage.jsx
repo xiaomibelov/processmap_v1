@@ -109,31 +109,49 @@ async function fetchBpmnXml(sessionId) {
   }
 }
 
-export default forwardRef(function BpmnStage({ sessionId, enabled }, ref) {
+export default forwardRef(function BpmnStage(
+  { sessionId, enabled, onElementClick, onViewportChange },
+  ref
+) {
   const containerRef = useRef(null);
   const viewerRef = useRef(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
 
-  const api = useMemo(() => ({
-    zoomIn() {
-      const v = viewerRef.current;
-      if (!v) return;
-      const canvas = v.get("canvas");
-      canvas.zoom(canvas.zoom() + 0.2);
-    },
-    zoomOut() {
-      const v = viewerRef.current;
-      if (!v) return;
-      const canvas = v.get("canvas");
-      canvas.zoom(Math.max(0.2, canvas.zoom() - 0.2));
-    },
-    fit() {
-      const v = viewerRef.current;
-      if (!v) return;
-      v.get("canvas").zoom("fit-viewport");
-    },
-  }), []);
+  const api = useMemo(
+    () => ({
+      zoomIn() {
+        const v = viewerRef.current;
+        if (!v) return;
+        const canvas = v.get("canvas");
+        canvas.zoom(canvas.zoom() + 0.2);
+      },
+      zoomOut() {
+        const v = viewerRef.current;
+        if (!v) return;
+        const canvas = v.get("canvas");
+        canvas.zoom(Math.max(0.2, canvas.zoom() - 0.2));
+      },
+      fit() {
+        const v = viewerRef.current;
+        if (!v) return;
+        v.get("canvas").zoom("fit-viewport");
+      },
+      getViewbox() {
+        const v = viewerRef.current;
+        if (!v) return null;
+        return v.get("canvas").viewbox();
+      },
+      getElementBox(id) {
+        const v = viewerRef.current;
+        if (!v || !id) return null;
+        const el = v.get("elementRegistry").get(id);
+        if (!el) return null;
+        return { x: el.x, y: el.y, width: el.width, height: el.height, id: el.id, type: el.type, businessObject: el.businessObject };
+      },
+    }),
+    []
+  );
 
   useImperativeHandle(ref, () => api, [api]);
 
@@ -153,8 +171,27 @@ export default forwardRef(function BpmnStage({ sessionId, enabled }, ref) {
         const xml = await fetchBpmnXml(sessionId);
         await viewer.importXML(xml);
         if (!alive) return;
+
         viewer.get("canvas").zoom("fit-viewport");
         setReady(true);
+
+        const eventBus = viewer.get("eventBus");
+
+        const onClick = (e) => {
+          if (!alive) return;
+          if (typeof onElementClick === "function" && e && e.element) {
+            onElementClick(e.element);
+          }
+        };
+
+        const onVB = () => {
+          if (!alive) return;
+          if (typeof onViewportChange === "function") onViewportChange();
+        };
+
+        eventBus.on("element.click", onClick);
+        eventBus.on("canvas.viewbox.changed", onVB);
+
       } catch (e) {
         if (!alive) return;
         setError(String(e?.message || e));
@@ -165,10 +202,12 @@ export default forwardRef(function BpmnStage({ sessionId, enabled }, ref) {
 
     return () => {
       alive = false;
-      try { viewerRef.current?.destroy(); } catch {}
+      try {
+        viewerRef.current?.destroy();
+      } catch {}
       viewerRef.current = null;
     };
-  }, [sessionId, enabled]);
+  }, [sessionId, enabled, onElementClick, onViewportChange]);
 
   return (
     <div style={{ position: "absolute", inset: 0 }}>

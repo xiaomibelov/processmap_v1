@@ -56,6 +56,7 @@ export default function App() {
   return (
     <AppShell
       sessionId={draft.session_id}
+      roles={draft.roles || []}
       mode={phase}
       left={left}
       locked={locked}
