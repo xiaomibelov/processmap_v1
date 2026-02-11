@@ -279,171 +279,41 @@ select { padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,255,
 
 /* STEP18C3F_ZOOM_CONTROLS_CSS */
 .mermaid-wrap { position: relative; }
-/* STEP18C3G_WORKBENCH_LAYOUT */
-:root{
-  --fpc-gap: 14px;
-  --fpc-topbar-h: 58px;
-}
-
-.layout.layoutWorkBench{
-  display: flex;
-  flex-direction: column;
-  gap: var(--fpc-gap);
-  padding: 12px;
-  height: calc(100dvh - var(--fpc-topbar-h));
-}
-
-.layout.layoutWorkBench .panel{
-  min-height: 0 !important;
-}
-
-.layout.layoutWorkBench .panel.panelProcess{
-  flex: 0 0 min(62vh, 700px);
-  display: flex;
-  flex-direction: column;
-}
-
-.layout.layoutWorkBench .panel.panelProcess .graphWrap{
-  flex: 1 1 auto;
-  min-height: 0;
-}
-
-.layout.layoutWorkBench .bottomRow{
-  flex: 1 1 auto;
-  min-height: 220px;
-  display: grid;
-  grid-template-columns: minmax(320px, 420px) 1fr;
-  gap: var(--fpc-gap);
-  align-items: stretch;
-}
-
-.layout.layoutWorkBench .bottomRow .panel{
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.layout.layoutWorkBench .bottomRow textarea{
-  flex: 0 0 auto;
-  min-height: 120px !important;
-  max-height: 160px;
-}
-
-.layout.layoutWorkBench .bottomRow .panel .panelBody,
-.layout.layoutWorkBench .bottomRow .panel .box,
-.layout.layoutWorkBench .bottomRow .panel .inspector,
-.layout.layoutWorkBench .bottomRow .panel .scroll,
-.layout.layoutWorkBench .bottomRow .panel .content{
-  min-height: 0;
-  overflow: auto;
-}
-
-@media (max-width: 1100px){
-  .layout.layoutWorkBench{
-    height: auto;
-  }
-  .layout.layoutWorkBench .bottomRow{
-    grid-template-columns: 1fr;
-  }
-}
-
-/* STEP19B_MERMAID_ZOOM */
-
-#graphWrap{ position:relative; }
-#graphWrap{ height: clamp(380px, 62vh, 740px); }
-
-.mz-bar{
-  position:absolute;
-  top:12px;
-  right:16px;
-  display:flex;
-  gap:8px;
-  align-items:center;
-  padding:8px 10px;
-  border-radius:12px;
-  border:1px solid rgba(255,255,255,.10);
-  background: rgba(20,22,28,.55);
-  backdrop-filter: blur(10px);
-  z-index: 30;
-}
-.mz-btn{
-  border:1px solid rgba(255,255,255,.12);
-  background: rgba(255,255,255,.06);
-  color: rgba(255,255,255,.90);
-  padding:6px 10px;
-  border-radius:10px;
-  cursor:pointer;
-  font-size:12px;
-  line-height:1;
-}
-.mz-btn:hover{ background: rgba(255,255,255,.10); }
-.mz-label{
-  margin-left:6px;
-  font-size:12px;
-  color: rgba(255,255,255,.75);
-  white-space:nowrap;
-}
-
-/* FPC_ZOOM_V3_START */
-.fpc-zoom-host { position: relative; }
-
-.fpc-zoom-bar {
+.mermaid-zoomctl {
   position: absolute;
-  top: 14px;
-  right: 18px;
-  display: flex;
-  align-items: center;
+  top: 12px;
+  right: 12px;
+  display: inline-flex;
   gap: 6px;
+  align-items: center;
   padding: 8px 10px;
   border-radius: 12px;
-  border: 1px solid rgba(255,255,255,0.10);
-  background: rgba(20,24,32,0.72);
+  background: rgba(10, 12, 16, 0.55);
+  border: 1px solid rgba(255,255,255,0.12);
   backdrop-filter: blur(10px);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
   z-index: 20;
+  user-select: none;
 }
-
-.fpc-zoom-btn {
+.mermaid-zoomctl .mz-btn {
   appearance: none;
+  border: 1px solid rgba(255,255,255,0.16);
   background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.10);
   color: rgba(255,255,255,0.92);
+  font-size: 12px;
+  padding: 6px 8px;
   border-radius: 10px;
-  padding: 7px 10px;
-  font-size: 13px;
-  line-height: 1;
   cursor: pointer;
 }
-
-.fpc-zoom-btn:hover { background: rgba(255,255,255,0.10); }
-
-.fpc-zoom-label {
-  margin-left: 6px;
+.mermaid-zoomctl .mz-btn:hover { background: rgba(255,255,255,0.10); }
+.mermaid-zoomctl .mz-btn:active { transform: translateY(1px); }
+.mermaid-zoomctl .mz-sep { width: 1px; height: 18px; background: rgba(255,255,255,0.12); margin: 0 4px; }
+.mermaid-zoomctl .mz-label {
   font-size: 12px;
-  color: rgba(255,255,255,0.72);
-  min-width: 44px;
-  text-align: right;
+  color: rgba(255,255,255,0.92);
+  padding-left: 2px;
 }
-/* FPC_ZOOM_V3_END */
-
-/* STEP20A: zoom+notes stabilization */
-.panelMermaid { position: relative; }
-#mermaid svg { max-width: none; }
-
-/* STEP20P2_NOTES_LOG_BEGIN */
-.notes-log{
-  width: 100%;
-  min-height: 86px;
-  max-height: 260px;
-  overflow: auto;
-  padding: 10px 10px;
-  margin: 8px 0 10px;
-  border-radius: 12px;
-  border: 1px solid rgba(255,255,255,.10);
-  background: rgba(0,0,0,.18);
-  color: rgba(255,255,255,.86);
-  font-size: 12.5px;
-  line-height: 1.35;
-  white-space: pre-wrap;
+.mermaid-zoomctl .mz-rel {
+  font-size: 11px;
+  color: rgba(255,255,255,0.70);
+  padding-left: 2px;
 }
-/* STEP20P2_NOTES_LOG_END */

@@ -1,0 +1,95 @@
+== ts ==
+2026-02-11_125415
+
+== git branch/status ==
+## fix/step19c-zoom-userflow-stable-v1
+?? foodproc_step15_applyanswers.sh
+?? fpc_step_14_patch_bundle.zip
+?? scripts/fix_mermaid_py_quotes_v1.py
+?? scripts/step18b2_patch_backend_start_role.py
+?? scripts/step18c3f_patch_zoom_controls.py
+?? scripts/step18c3f_patch_zoom_controls_v2.py
+?? scripts/step19_patch_userflow_zoom_stable.py
+?? scripts/step_14_apply_patch_bundle_v1.sh
+?? scripts/step_14_pack_current_sources_v1.sh
+?? scripts/step_14_pack_for_patch_v1.sh
+?? scripts/step_14_retry_apply_patch_bundle_v2.sh
+?? workspace/_bak_step14_2026-02-10_104335/
+?? workspace/_bak_step18c3g_2026-02-11_111219/
+?? zip/
+
+== git head ==
+2026-02-11 12:41:40 +0300 0af8424  (HEAD -> fix/step19c-zoom-userflow-stable-v1, tag: cp/foodproc_step20_pack_debug_before_2026-02-11_125415, tag: cp/foodproc_step19c_zoom_userflow_after_2026-02-11_124140) fix(step19c): stable zoom controls + userflow guards
+
+== git last 30 ==
+0af8424 (HEAD -> fix/step19c-zoom-userflow-stable-v1, tag: cp/foodproc_step20_pack_debug_before_2026-02-11_125415, tag: cp/foodproc_step19c_zoom_userflow_after_2026-02-11_124140) fix(step19c): stable zoom controls + userflow guards
+3106c17 (tag: cp/foodproc_step19c_zoom_userflow_before_2026-02-11_124140, tag: cp/foodproc_step19b_userflow_zoom_stable_after_2026-02-11_121917, fix/step19b-userflow-zoom-stable-v1) fix(step19b): stable mermaid zoom + userflow refresh guards
+0a1a8f8 (tag: cp/foodproc_step19b_userflow_zoom_stable_before_2026-02-11_121917, tag: cp/foodproc_step19_userflow_zoom_stable_before_2026-02-11_120842, tag: cp/foodproc_step18c3g_after_2026-02-11_111219, fix/step19-userflow-zoom-stable-v1, fix/step18c3g-layout-zoom-default-v1) fix(step18c3g): workbench layout (process top) + zoom default prime
+9eead1e (tag: cp/foodproc_step18c3g_before_2026-02-11_111219, tag: cp/foodproc_step18c3f_hotfix_subtree_false_after_2026-02-11_105449, fix/step18c3f-zoom-subtree-false-v1) fix(step18c3f): prevent mermaid zoom observer freeze (subtree false)
+90c684c (tag: cp/foodproc_step18c3f_zoom_controls_fix2_after_2026-02-11_104803, tag: cp/foodproc_step18c3f_hotfix_subtree_false_before_2026-02-11_105449, feat/step18c3f-zoom-controls-v1) feat(step18c3f): mermaid zoom controls overlay
+faf864b (tag: cp/foodproc_step18c3f_zoom_controls_fix_before_2026-02-11_013542, tag: cp/foodproc_step18c3f_zoom_controls_fix2_before_2026-02-11_104803, tag: cp/foodproc_step18c3f_zoom_controls_before_2026-02-11_012635, tag: cp/foodproc_step18c3f_zoom_controls_before_2026-02-11_012610, tag: cp/foodproc_step18c3e_mermaid_fit_tune_after_2026-02-11_011846, fix/step18c3e-mermaid-fit-tune-v1) fix(step18c3e): tune mermaid autofit (smaller default scale)
+1ae465a (tag: cp/foodproc_step18c3e_mermaid_fit_tune_before_2026-02-11_011846, tag: cp/foodproc_step18c3d_mermaid_fit_after_2026-02-11_011454, fix/step18c3d-mermaid-fit-v1) fix(step18c3d): auto-fit mermaid diagram; prevent gigantic zoom
+321ce67 (tag: cp/foodproc_step18c3d_mermaid_fit_before_2026-02-11_011454, tag: cp/foodproc_step18c3c_mermaid_scale_fix_before_2026-02-11_010747, tag: cp/foodproc_step18c3c_mermaid_scale_fix_after_2026-02-11_010747, tag: cp/foodproc_step18c3c_mermaid_scale_fix_after_2026-02-11_010703, fix/step18c3c-mermaid-scale-v1) fix(step18c3c): prevent mermaid svg from upscaling; enable scroll
+21e49f0 (tag: cp/foodproc_step18c3c_mermaid_scale_fix_before_2026-02-11_010703, tag: cp/foodproc_step18c3b_process_fullwidth_fix_after_2026-02-11_005337, fix/step18c3b-process-fullwidth-fix-v1) fix(step18c3b): process full width + scale svg; compact tools row
+8f471cb (tag: cp/foodproc_step18c3b_process_fullwidth_fix_before_2026-02-11_005337, tag: cp/foodproc_step18c3_process_fullwidth_after_2026-02-11_004623, feat/step18c3-process-fullwidth-v1) chore(step18c3): process full width; move other panels down
+2e41151 (tag: cp/foodproc_step18c3_process_fullwidth_before_2026-02-11_004623, tag: cp/foodproc_step18c2_fix_layout_after_2026-02-11_004151, fix/step18c2-layout-map-v1) fix(step18c2): correct grid mapping; make diagram dominant
+16bf4ae (tag: cp/foodproc_step18c2_workspace_grid_after_2026-02-11_003713, tag: cp/foodproc_step18c2_fix_layout_before_2026-02-11_004151, feat/step18c2-workspace-grid-v1) chore(step18c2): workspace grid (diagram-first + bottom composer)
+f938fb1 (tag: cp/foodproc_step18c2_workspace_grid_before_2026-02-11_003713, tag: cp/foodproc_step18c1_layout_css_after_2026-02-11_003200, feat/step18c1-layout-diagram-first-v1) chore(step18c1): emphasize diagram; reduce notes panel
+bfea16d (tag: cp/foodproc_step18c1_layout_css_before_2026-02-11_003200, tag: cp/foodproc_step18b2_v3_after_2026-02-11_002049, feat/step18b2-backend-start-role-v3) feat(step18b2): start_role + lanes-only mermaid on backend
+e340b45 (tag: cp/foodproc_step18b2_v3_before_2026-02-11_002049, tag: cp/foodproc_step18b2_retry_v2_before_2026-02-11_000154, tag: cp/foodproc_step18b2_backend_start_role_before_2026-02-10_234604, tag: cp/foodproc_step18b1_fix_js_parse_after_2026-02-10_233150, tag: cp/foodproc_fix_mermaid_py_syntax_before_2026-02-11_001614, rollback/step18b2_2026-02-11_001042, fix/step18b1-js-parse-v1, fix/mermaid-py-syntax-v1, feat/step18b2-backend-start-role-v1) fix(step18b1): repair JS parse error in mermaid placeholder
+920226f (tag: cp/foodproc_step18b1_fix_js_parse_before_2026-02-10_233150, tag: cp/foodproc_step18b1_after_2026-02-10_232611, feat/step18b1-actors-first-js-v1) feat(step18b1): actors wizard + actor chips + empty lanes mermaid
+c699297 (tag: cp/foodproc_step18b1_before_2026-02-10_232611, tag: cp/foodproc_step17_done_2026-02-10_165650, feat/step17-deepseek-qgen-v1) feat(step17): deepseek question generator + llm settings
+118f18c (tag: cp/foodproc_step17_start_2026-02-10_165650, tag: cp/foodproc_step16_session_manager_after_2026-02-10_131057, feat/step16-session-manager-v1) feat(step16): session manager list/search/rename/open
+d1b4d35 (tag: cp/foodproc_step16_session_manager_before_2026-02-10_131057, tag: cp/foodproc_step15_deepseek_ui_after_2026-02-10_121938, feat/deepseek-ui-settings-v1) feat(step15): deepseek settings ui + server-side storage
+79d1439 (tag: cp/foodproc_step15_deepseek_ui_before_2026-02-10_121938, tag: cp/foodproc_step15_applyanswers_after_2026-02-10_120015, feat/step15-answers-autofill-v1) feat(step15): apply answers to node fields; inline UX v2
+c041839 (tag: cp/step_14_done_2026-02-10_104342, tag: cp/foodproc_step15_start_2026-02-10_112612, tag: cp/foodproc_step15_applyanswers_before_2026-02-10_120015, feat/inline-questions-v1) fix: stabilize mermaid lanes ids, placeholders and role options
+6148282 (tag: cp/step_14_start_2026-02-10_103721, tag: cp/step_14_retry_start_2026-02-10_104335, tag: cp/step_14_pack_start_2026-02-10_085911, tag: cp/step_14_pack_for_patch_2026-02-10_101856, tag: cp/step_14_pack_done_2026-02-10_085911, tag: cp/step_13_inline_questions_done_2026-02-10_001326) feat: inline copilot questions near mermaid nodes
+af1fa70 (tag: cp/step_14_pack_start_2026-02-09_215740, tag: cp/step_13c_done_2026-02-09_214652, tag: cp/step_13_inline_questions_start_2026-02-10_001325, fix/session-init-v1) fix: auto-create session, handle api errors and guard actions
+c76dcf8 (tag: cp/step_13c_start_2026-02-09_214651, tag: cp/step_13b_done_2026-02-09_211039, fix/mermaid-rerender-v1) fix: rerender mermaid and show placeholder on empty session
+3fb8078 (tag: cp/step_13b_start_2026-02-09_211039, tag: cp/step_13_done_2026-02-09_205906, feat/mvp-loss-v1) feat: add loss events questions, inspector quick fill and export
+7a04af5 chore: ignore generated process exports
+746aaf4 (tag: cp/step_13_start_2026-02-09_205905, tag: cp/step_12_done_2026-02-09_204233, feat/mvp-disposition-v1) feat: disposition checklist+notes and persist answered questions
+a519d81 (tag: cp/step_12_start_2026-02-09_204232, tag: cp/step_11_done_2026-02-09_202624, feat/mvp-resources-v1) feat: equipment resources report, conflicts and variant questions
+73fc2f7 (tag: cp/step_11_start_2026-02-09_202624, tag: cp/step_10_done_2026-02-09_200440, feat/mvp-lanes-coverage-v1) feat: lanes view by roles and coverage styling in mermaid
+502f6ae (tag: cp/step_10_start_2026-02-09_200439, tag: cp/step_09_done_2026-02-09_194504, feat/mvp-glossary-train-v1) feat: train glossary from UI and recompute normalization
+
+== git diff stat ==
+
+== docker compose ps ==
+NAME                             IMAGE                          COMMAND                  SERVICE   CREATED          STATUS          PORTS
+foodproc_process_copilot-app-1   foodproc_process_copilot-app   "uvicorn backend.app…"   app       12 minutes ago   Up 12 minutes   0.0.0.0:8011->8000/tcp, [::]:8011->8000/tcp
+
+== probe ==
+200
+
+== app logs tail 300 ==
+app-1  | INFO:     Started server process [1]
+app-1  | INFO:     Waiting for application startup.
+app-1  | INFO:     Application startup complete.
+app-1  | INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+app-1  | INFO:     149.154.166.110:44077 - "GET / HTTP/1.1" 200 OK
+app-1  | INFO:     149.154.166.110:27120 - "GET / HTTP/1.1" 200 OK
+app-1  | INFO:     149.154.166.110:36329 - "GET /static/styles.css HTTP/1.1" 200 OK
+app-1  | INFO:     149.154.166.110:27120 - "GET /static/app.js HTTP/1.1" 200 OK
+app-1  | INFO:     149.154.166.110:27120 - "GET /api/sessions/f275440760 HTTP/1.1" 200 OK
+app-1  | INFO:     149.154.166.110:27120 - "GET /favicon.ico HTTP/1.1" 200 OK
+app-1  | INFO:     149.154.166.110:49316 - "GET /static/app.js HTTP/1.1" 304 Not Modified
+app-1  | INFO:     149.154.166.110:60616 - "GET /static/styles.css HTTP/1.1" 304 Not Modified
+app-1  | INFO:     149.154.166.110:60616 - "GET /api/sessions/f275440760 HTTP/1.1" 200 OK
+app-1  | INFO:     149.154.166.110:36947 - "GET / HTTP/1.1" 200 OK
+
+== all logs tail 200 ==
+app-1  | INFO:     Started server process [1]
+app-1  | INFO:     Waiting for application startup.
+app-1  | INFO:     Application startup complete.
+app-1  | INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+app-1  | INFO:     149.154.166.110:44077 - "GET / HTTP/1.1" 200 OK
+app-1  | INFO:     149.154.166.110:27120 - "GET / HTTP/1.1" 200 OK
+app-1  | INFO:     149.154.166.110:36329 - "GET /static/styles.css HTTP/1.1" 200 OK
+app-1  | INFO:     149.154.166.110:27120 - "GET /static/app.js HTTP/1.1" 200 OK
+app-1  | INFO:     149.154.166.110:27120 - "GET /api/sessions/f275440760 HTTP/1.1" 200 OK
+app-1  | INFO:     149.154.166.110:27120 - "GET /favicon.ico HTTP/1.1" 200 OK
+app-1  | INFO:     149.154.166.110:49316 - "GET /static/app.js HTTP/1.1" 304 Not Modified
+app-1  | INFO:     149.154.166.110:60616 - "GET /static/styles.css HTTP/1.1" 304 Not Modified
+app-1  | INFO:     149.154.166.110:60616 - "GET /api/sessions/f275440760 HTTP/1.1" 200 OK
+app-1  | INFO:     149.154.166.110:36947 - "GET / HTTP/1.1" 200 OK
