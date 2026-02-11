@@ -131,15 +131,29 @@ If not found:
 {"error": "not found"}
 ```
 
-#### Rename (patch)
+#### Update session (patch)
 - `PATCH /api/sessions/{session_id}`
 
-Request:
+Request (any subset):
 ```json
-{"title": "Новое имя"}
+{
+  "title": "Новое имя",
+  "roles": ["cook_1", "technolog"],
+  "start_role": "cook_1",
+  "nodes": [
+    {"id": "n_10", "title": "Шаг 1", "type": "step", "actor_role": "cook_1"}
+  ],
+  "edges": [
+    {"from_id": "n_10", "to_id": "n_11", "when": "далее"}
+  ]
+}
 ```
 
 Response: full `Session` JSON (or `{ "error": "..." }`).
+
+Notes:
+- If `nodes` are provided without `edges`, the backend prunes edges that reference missing nodes.
+- `start_role` (if set) must be one of `roles`.
 
 #### Recompute derived fields
 - `POST /api/sessions/{session_id}/recompute`
