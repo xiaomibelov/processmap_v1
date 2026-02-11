@@ -14,8 +14,6 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .ai.deepseek_client import extract_process
-from .ai.deepseek_questions import generate_llm_questions
 from .exporters.mermaid import render_mermaid
 from .exporters.yaml_export import dump_yaml, session_to_process_dict
 from .glossary import normalize_kind, slugify_canon, upsert_term
@@ -36,7 +34,8 @@ STATIC_DIR = BASE_DIR / "static"
 WORKSPACE = Path(os.environ.get("PROCESS_WORKSPACE", "workspace/processes"))
 GLOSSARY_SEED = BASE_DIR / "knowledge" / "glossary_seed.yml"
 
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 class CreateSessionIn(BaseModel):
@@ -221,13 +220,24 @@ def _recompute_session(s: Session) -> Session:
 
 
 @app.get("/")
-def index() -> FileResponse:
-    return FileResponse(str(STATIC_DIR / "index.html"))
+def index():
+    idx_file = STATIC_DIR / "index.html"
+    if idx_file.exists():
+        return FileResponse(str(idx_file))
+    return {"ok": True, "service": "foodproc_process_copilot"}
 
 
 @app.get("/favicon.ico")
-def favicon() -> FileResponse:
-    return FileResponse(str(STATIC_DIR / "favicon.ico"))
+def favicon():
+    ico = STATIC_DIR / "favicon.ico"
+    if ico.exists():
+        return FileResponse(str(ico))
+    return Response(status_code=204)
+
+
+@app.get("/health")
+def health():
+    return {"ok": True}
 
 
 @app.post("/api/sessions")
@@ -304,6 +314,11 @@ def ai_questions(session_id: str, inp: AiQuestionsIn) -> Dict[str, Any]:
         mode = "strict"
 
     try:
+        from .ai.deepseek_questions import generate_llm_questions
+    except Exception as e:
+        return {"error": f"deepseek questions module not available: {e}"}
+
+    try:
         new_qs = generate_llm_questions(s, api_key=api_key, base_url=base_url, limit=limit, mode=mode)
     except Exception as e:
         return {"error": f"deepseek failed: {e}"}
@@ -351,6 +366,11 @@ def post_notes(session_id: str, inp: NotesIn) -> Dict[str, Any]:
     s.notes = inp.notes
 
     llm = load_llm_settings()
+    try:
+        from .ai.deepseek_client import extract_process
+    except Exception as e:
+        return {"error": f"deepseek client module not available: {e}"}
+
     extracted = extract_process(s.notes, api_key=llm.get("api_key", ""), base_url=llm.get("base_url", ""))
     nodes_raw = extracted.get("nodes", []) or []
     edges_raw = extracted.get("edges", []) or []
@@ -703,6 +723,12 @@ def export(session_id: str) -> Dict[str, Any]:
     (out_dir / "diagram_simple.mmd").write_text(s.mermaid_simple or "", encoding="utf-8")
     (out_dir / "diagram_lanes.mmd").write_text(s.mermaid_lanes or "", encoding="utf-8")
     (out_dir / "diagram.mmd").write_text(s.mermaid or "", encoding="utf-8")
+
+    try:
+        from .exporters.bpmn import export_session_to_bpmn_xml
+        (out_dir / "process.bpmn").write_text(export_session_to_bpmn_xml(s), encoding="utf-8")
+    except Exception as e:
+        (out_dir / "process.bpmn").write_text(f'<?xml version="1.0" encoding="UTF-8"?><error>{e}</error>', encoding="utf-8")
 
     seed = load_seed_glossary(GLOSSARY_SEED)
     (out_dir / "glossary.yml").write_text(dump_yaml(seed), encoding="utf-8")
