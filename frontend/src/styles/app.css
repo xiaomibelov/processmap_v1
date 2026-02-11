@@ -341,3 +341,11 @@ html, body { height: 100%; margin: 0; background: #eef2f6; }
   gap: 10px;
   align-items: center;
 }
+
+.card {
+  background: #fff;
+  border: 1px solid rgba(16,24,40,0.10);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(16,24,40,0.06);
+  padding: 12px;
+}

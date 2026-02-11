@@ -50,7 +50,7 @@ export default function App() {
     ) : phase === "actors_setup" ? (
       <ActorsSetup draft={draft} onSaveActors={saveActors} />
     ) : (
-      <NotesPanel locked={false} />
+      <NotesPanel draft={draft} />
     );
 
   return (

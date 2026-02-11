@@ -1,58 +1,68 @@
-export default function NotesPanel({ locked }) {
+export default function NotesPanel({ draft }) {
+  const roles = Array.isArray(draft?.roles) ? draft.roles : [];
+  const notes = Array.isArray(draft?.notes) ? draft.notes : [];
+  const startRole = typeof draft?.start_role === "string" ? draft.start_role : "";
+
   return (
     <div className="panel">
-      <div className="panelHead">Заметки с производства</div>
+      <div className="panelHead">Сессия</div>
 
       <div className="panelBody">
-        <div className="list">
-          <div>
-            <div className="listItemTitle">1. Подготовка ингредиентов</div>
-            <ul className="bullets">
-              <li>Нарезать овощи</li>
-              <li>Взвесить мясо</li>
-            </ul>
-          </div>
+        <div className="card" style={{ marginBottom: 12 }}>
+          <div style={{ fontWeight: 900, marginBottom: 6 }}>Actors</div>
 
-          <div>
-            <div className="listItemTitle">2. Готовка в горячем цехе</div>
-            <ul className="bullets">
-              <li>Обжарить на сковороде</li>
-              <li>Довести до готовности</li>
-            </ul>
-          </div>
+          {roles.length === 0 ? (
+            <div className="small muted">Пока нет ролей.</div>
+          ) : (
+            <div style={{ display: "grid", gap: 6 }}>
+              {roles.map((r) => (
+                <div key={r.role_id} className="small">
+                  <span style={{ fontWeight: 900 }}>{r.label}</span>{" "}
+                  <span className="muted">({r.role_id})</span>
+                </div>
+              ))}
+            </div>
+          )}
 
-          <div>
-            <div className="listItemTitle">3. Упаковка блюда</div>
-            <ul className="bullets">
-              <li>Упаковать в контейнер</li>
-              <li>Герметично запечатать</li>
-            </ul>
-          </div>
+          <div className="hr" />
 
-          <div>
-            <div className="listItemTitle">4. Контроль качества</div>
-            <ul className="bullets">
-              <li>Проверить температуру</li>
-              <li>Визуальный осмотр</li>
-            </ul>
-          </div>
-
-          <div>
-            <div className="listItemTitle">5. Отправка на доставку</div>
+          <div className="small">
+            <span className="muted">start_role:</span>{" "}
+            <span style={{ fontWeight: 900 }}>{startRole || "—"}</span>
           </div>
         </div>
 
-        <div className="hr" />
+        <div className="card" style={{ marginBottom: 12 }}>
+          <div style={{ fontWeight: 900, marginBottom: 6 }}>Заметки</div>
+          <div className="small muted" style={{ marginBottom: 8 }}>
+            Кол-во: <span style={{ fontWeight: 900 }}>{notes.length}</span>
+          </div>
 
-        <button className="primaryBtn" disabled={locked}>
+          {notes.length === 0 ? (
+            <div className="small muted">Пока заметок нет. Добавляй через нижний dock.</div>
+          ) : (
+            <div style={{ display: "grid", gap: 8, maxHeight: 360, overflow: "auto" }}>
+              {notes
+                .slice()
+                .reverse()
+                .map((n) => (
+                  <div key={n.note_id} className="small">
+                    <div className="muted" style={{ fontSize: 11 }}>
+                      {new Date(n.ts).toLocaleString()}
+                    </div>
+                    <div>{n.text}</div>
+                  </div>
+                ))}
+            </div>
+          )}
+        </div>
+
+        <button className="primaryBtn" disabled>
           Сгенерировать процесс
         </button>
-
-        {locked ? (
-          <div className="small muted" style={{ marginTop: 10 }}>
-            Actors-first: сначала роли и start_role (на следующем шаге сделаем экран).
-          </div>
-        ) : null}
+        <div className="small muted" style={{ marginTop: 10 }}>
+          Кнопка активируется после подключения “normalize → nodes/edges → bpmn export”.
+        </div>
       </div>
     </div>
   );
