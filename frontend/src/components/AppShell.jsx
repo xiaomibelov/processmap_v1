@@ -1,19 +1,25 @@
 import TopBar from "./TopBar";
-import NotesPanel from "./NotesPanel";
 import ProcessStage from "./ProcessStage";
 import BottomDock from "./BottomDock";
 
-export default function AppShell({ sessionId, locked }) {
+export default function AppShell({
+  sessionId,
+  mode,
+  left,
+  locked,
+  notes,
+  onAddNote,
+}) {
   return (
     <div className="shell">
       <TopBar sessionId={sessionId} onNewSession={() => {}} onOpenSession={() => {}} />
 
       <div className="workspace">
-        <NotesPanel locked={locked} />
-        <ProcessStage />
+        {left}
+        <ProcessStage mode={mode} />
       </div>
 
-      <BottomDock locked={locked} />
+      <BottomDock locked={locked} notes={notes} onAddNote={onAddNote} />
     </div>
   );
 }
