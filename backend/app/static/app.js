@@ -1793,3 +1793,109 @@ window.addEventListener("resize", () => {
     }
   } catch(e) {}
 })();
+
+/* STEP18C3G_LAYOUT_AND_ZOOM_JS */
+(function(){
+  try {
+    if (window.__fpcStep18c3gInstalled) return;
+    window.__fpcStep18c3gInstalled = true;
+
+    function closestPanel(el){
+      try { return el ? el.closest(".panel") : null; } catch(e){ return null; }
+    }
+
+    function ensureWorkbenchLayout(){
+      try {
+        var layout = document.querySelector(".layout");
+        if (!layout) return;
+
+        if (!layout.classList.contains("layoutWorkBench")) layout.classList.add("layoutWorkBench");
+
+        var procAnchor =
+          document.getElementById("graphWrap") ||
+          document.getElementById("mermaid") ||
+          document.querySelector(".graphWrap") ||
+          document.querySelector("#graphInner") ||
+          null;
+
+        var notesAnchor =
+          document.getElementById("notes") ||
+          document.querySelector("textarea") ||
+          null;
+
+        var procPanel = closestPanel(procAnchor);
+        var notesPanel = closestPanel(notesAnchor);
+
+        if (procPanel) procPanel.classList.add("panelProcess");
+        if (notesPanel) notesPanel.classList.add("panelNotes");
+
+        var panels = Array.prototype.slice.call(layout.querySelectorAll(".panel"));
+        var rightPanel = null;
+        for (var i=0;i<panels.length;i++){
+          var p = panels[i];
+          if (p === procPanel) continue;
+          if (p === notesPanel) continue;
+          rightPanel = p;
+          break;
+        }
+        if (rightPanel) rightPanel.classList.add("panelRight");
+
+        if (!layout.querySelector(".bottomRow") && procPanel && notesPanel && rightPanel){
+          var bottom = document.createElement("div");
+          bottom.className = "bottomRow";
+          procPanel.insertAdjacentElement("afterend", bottom);
+          bottom.appendChild(notesPanel);
+          bottom.appendChild(rightPanel);
+        }
+      } catch(e){}
+    }
+
+    function ensureZoomDefault(){
+      try {
+        var attempts = 0;
+        var t = setInterval(function(){
+          attempts++;
+
+          var svg =
+            document.querySelector("#mermaid svg") ||
+            document.querySelector("#graphInner svg") ||
+            document.querySelector("#graphWrap svg") ||
+            document.querySelector("svg[id^='mermaid']") ||
+            null;
+
+          var ctl = document.querySelector(".mermaid-zoomctl");
+          var btnFit = ctl ? ctl.querySelector("[data-act='fit']") : null;
+          var btn100 = ctl ? ctl.querySelector("[data-pct='100']") : null;
+
+          if (svg && btnFit){
+            if (!window.__fpcStep18c3gZoomPrimed){
+              window.__fpcStep18c3gZoomPrimed = true;
+              try { btnFit.click(); } catch(e){}
+              try { if (btn100) btn100.click(); } catch(e){}
+            }
+            clearInterval(t);
+            return;
+          }
+
+          if (attempts > 24){
+            clearInterval(t);
+          }
+        }, 150);
+      } catch(e){}
+    }
+
+    if (document.readyState === "loading"){
+      document.addEventListener("DOMContentLoaded", function(){
+        ensureWorkbenchLayout();
+        ensureZoomDefault();
+        setTimeout(ensureWorkbenchLayout, 250);
+        setTimeout(ensureWorkbenchLayout, 900);
+      });
+    } else {
+      ensureWorkbenchLayout();
+      ensureZoomDefault();
+      setTimeout(ensureWorkbenchLayout, 250);
+      setTimeout(ensureWorkbenchLayout, 900);
+    }
+  } catch(e){}
+})();

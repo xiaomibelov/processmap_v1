@@ -317,3 +317,71 @@ select { padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,255,
   color: rgba(255,255,255,0.70);
   padding-left: 2px;
 }
+
+/* STEP18C3G_WORKBENCH_LAYOUT */
+:root{
+  --fpc-gap: 14px;
+  --fpc-topbar-h: 58px;
+}
+
+.layout.layoutWorkBench{
+  display: flex;
+  flex-direction: column;
+  gap: var(--fpc-gap);
+  padding: 12px;
+  height: calc(100dvh - var(--fpc-topbar-h));
+}
+
+.layout.layoutWorkBench .panel{
+  min-height: 0 !important;
+}
+
+.layout.layoutWorkBench .panel.panelProcess{
+  flex: 0 0 min(62vh, 700px);
+  display: flex;
+  flex-direction: column;
+}
+
+.layout.layoutWorkBench .panel.panelProcess .graphWrap{
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.layout.layoutWorkBench .bottomRow{
+  flex: 1 1 auto;
+  min-height: 220px;
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) 1fr;
+  gap: var(--fpc-gap);
+  align-items: stretch;
+}
+
+.layout.layoutWorkBench .bottomRow .panel{
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.layout.layoutWorkBench .bottomRow textarea{
+  flex: 0 0 auto;
+  min-height: 120px !important;
+  max-height: 160px;
+}
+
+.layout.layoutWorkBench .bottomRow .panel .panelBody,
+.layout.layoutWorkBench .bottomRow .panel .box,
+.layout.layoutWorkBench .bottomRow .panel .inspector,
+.layout.layoutWorkBench .bottomRow .panel .scroll,
+.layout.layoutWorkBench .bottomRow .panel .content{
+  min-height: 0;
+  overflow: auto;
+}
+
+@media (max-width: 1100px){
+  .layout.layoutWorkBench{
+    height: auto;
+  }
+  .layout.layoutWorkBench .bottomRow{
+    grid-template-columns: 1fr;
+  }
+}
