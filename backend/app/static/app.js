@@ -1610,3 +1610,186 @@ window.addEventListener("resize", () => {
     }
   } catch(e) {}
 })();
+
+// STEP18C3F_ZOOM_CONTROLS
+// Zoom controller for Mermaid: Fit / - / + / presets, implemented as a wrapper around window.fpcFitMermaid.
+(function(){
+  try {
+    if (window.__fpcMermaidZoomCtlInstalled) return;
+    window.__fpcMermaidZoomCtlInstalled = true;
+
+    function qs(sel, root){ return (root||document).querySelector(sel); }
+    function clamp(x, a, b){ return Math.max(a, Math.min(b, x)); }
+
+    function parseScale(transform){
+      try {
+        if (!transform) return null;
+        var m = /scale\(([^)]+)\)/.exec(transform);
+        if (!m) return null;
+        var v = parseFloat(m[1]);
+        return isFinite(v) && v > 0 ? v : null;
+      } catch(e) { return null; }
+    }
+
+    function getWrap(){ return document.getElementById('mermaid'); }
+    function getSvg(){ var w=getWrap(); return w ? w.querySelector('svg') : null; }
+
+    function ensureCfg(){
+      if (!window.fpcMermaidZoomCfg) {
+        window.fpcMermaidZoomCfg = { zoom: 1.0, minZoom: 0.25, maxZoom: 2.50, step: 0.10 };
+      }
+      return window.fpcMermaidZoomCfg;
+    }
+
+    function updateLabel(){
+      var el = qs('.mermaid-zoomctl .mz-label');
+      if (!el) return;
+      var cfg = ensureCfg();
+      var svg = getSvg();
+      var current = svg ? (parseScale(svg.style.transform) || 1.0) : 1.0;
+      el.textContent = Math.round(current * 100) + '%';
+      var rel = qs('.mermaid-zoomctl .mz-rel');
+      if (rel) rel.textContent = '×' + (cfg.zoom || 1).toFixed(2);
+    }
+
+    function applyZoom(){
+      var cfg = ensureCfg();
+      var svg = getSvg();
+      if (!svg) return;
+
+      var base = window.__fpcMermaidBaseScale;
+      if (!(base > 0)) {
+        base = parseScale(svg.style.transform) || 1.0;
+        window.__fpcMermaidBaseScale = base;
+      }
+
+      var z = clamp(cfg.zoom || 1.0, cfg.minZoom || 0.25, cfg.maxZoom || 2.50);
+      cfg.zoom = z;
+
+      var finalScale = base * z;
+      svg.style.transformOrigin = '0 0';
+      svg.style.transform = 'scale(' + finalScale.toFixed(4) + ')';
+      updateLabel();
+    }
+
+    function setZoomRel(z){
+      var cfg = ensureCfg();
+      cfg.zoom = z;
+      applyZoom();
+    }
+
+    function stepZoom(dir){
+      var cfg = ensureCfg();
+      var step = cfg.step || 0.10;
+      setZoomRel((cfg.zoom || 1.0) + (dir * step));
+    }
+
+    function setAbsPercent(pct){
+      var svg = getSvg();
+      if (!svg) return;
+
+      var base = window.__fpcMermaidBaseScale;
+      if (!(base > 0)) {
+        base = parseScale(svg.style.transform) || 1.0;
+        window.__fpcMermaidBaseScale = base;
+      }
+
+      var target = (pct/100.0);
+      var z = target / base;
+      setZoomRel(z);
+    }
+
+    function buildCtl(){
+      var wrap = getWrap();
+      if (!wrap) return null;
+      if (qs('.mermaid-zoomctl', wrap)) return qs('.mermaid-zoomctl', wrap);
+
+      wrap.classList.add('mermaid-wrap');
+
+      var ctl = document.createElement('div');
+      ctl.className = 'mermaid-zoomctl';
+      ctl.innerHTML = `
+        <button type="button" class="mz-btn" data-act="fit">Fit</button>
+        <button type="button" class="mz-btn" data-act="minus">−</button>
+        <button type="button" class="mz-btn" data-act="plus">+</button>
+        <button type="button" class="mz-btn" data-act="p50">50%</button>
+        <button type="button" class="mz-btn" data-act="p75">75%</button>
+        <button type="button" class="mz-btn" data-act="p100">100%</button>
+        <span class="mz-sep"></span>
+        <span class="mz-label">—</span>
+        <span class="mz-rel">×1.00</span>
+      `;
+
+      ctl.addEventListener('click', function(ev){
+        var t = ev.target;
+        if (!t || !t.getAttribute) return;
+        var act = t.getAttribute('data-act');
+        if (!act) return;
+
+        ev.preventDefault();
+
+        if (act === 'fit') {
+          ensureCfg().zoom = 1.0;
+          if (typeof window.fpcFitMermaid === 'function') {
+            try { window.fpcFitMermaid(window.fpcMermaidFitCfg || undefined); } catch(e) {}
+          } else {
+            try {
+              var svg = getSvg();
+              if (svg) window.__fpcMermaidBaseScale = parseScale(svg.style.transform) || 1.0;
+            } catch(e) {}
+            applyZoom();
+          }
+          return;
+        }
+
+        if (act === 'minus') return stepZoom(-1);
+        if (act === 'plus') return stepZoom(+1);
+        if (act === 'p50') return setAbsPercent(50);
+        if (act === 'p75') return setAbsPercent(75);
+        if (act === 'p100') return setAbsPercent(100);
+      });
+
+      wrap.appendChild(ctl);
+      updateLabel();
+      return ctl;
+    }
+
+    function wrapFitMermaid(){
+      if (typeof window.fpcFitMermaid !== 'function') return;
+      if (window.__fpcFitMermaidOrig) return;
+
+      window.__fpcFitMermaidOrig = window.fpcFitMermaid;
+      window.fpcFitMermaid = function(cfg){
+        try { window.__fpcFitMermaidOrig(cfg); } catch(e) {}
+        try {
+          var svg = getSvg();
+          if (svg) window.__fpcMermaidBaseScale = parseScale(svg.style.transform) || 1.0;
+          buildCtl();
+          applyZoom();
+        } catch(e) {}
+      };
+    }
+
+    function install(){
+      ensureCfg();
+      wrapFitMermaid();
+
+      var wrap = getWrap();
+      if (!wrap) return;
+
+      var obs = new MutationObserver(function(){
+        try { buildCtl(); applyZoom(); } catch(e) {}
+      });
+      obs.observe(wrap, { childList: true, subtree: true });
+
+      buildCtl();
+      setTimeout(function(){ try { applyZoom(); } catch(e) {} }, 140);
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', install);
+    } else {
+      install();
+    }
+  } catch(e) {}
+})();
