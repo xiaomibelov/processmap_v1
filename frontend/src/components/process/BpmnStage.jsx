@@ -94,8 +94,41 @@ const MOCK_XML = `<?xml version="1.0" encoding="UTF-8"?>
 </bpmn:definitions>
 `;
 
+function isLocalSessionId(id) {
+  return typeof id === "string" && id.startsWith("local_");
+}
+
+// Only for nodes that make sense for "copilot questions".
+// Avoid opening copilot on whitespace/process/lane/flow/labels.
+function isCopilotTarget(el) {
+  if (!el || !el.type) return false;
+  if (el.labelTarget) return false;
+
+  const t = el.type;
+
+  if (
+    t === "bpmn:Process" ||
+    t === "bpmn:Lane" ||
+    t === "bpmn:Participant" ||
+    t === "bpmn:SequenceFlow" ||
+    t === "bpmn:MessageFlow" ||
+    t === "bpmn:Association"
+  ) {
+    return false;
+  }
+
+  return Boolean(
+    t.endsWith("Task") ||
+      t.endsWith("Event") ||
+      t.endsWith("Gateway") ||
+      t === "bpmn:SubProcess" ||
+      t === "bpmn:CallActivity"
+  );
+}
+
 async function fetchBpmnXml(sessionId) {
   if (!sessionId) return MOCK_XML;
+  if (isLocalSessionId(sessionId)) return MOCK_XML;
 
   const url = `/api/sessions/${encodeURIComponent(sessionId)}/bpmn`;
   try {
@@ -110,7 +143,7 @@ async function fetchBpmnXml(sessionId) {
 }
 
 export default forwardRef(function BpmnStage(
-  { sessionId, enabled, onElementClick, onViewportChange },
+  { sessionId, enabled = true, onElementClick, onViewportChange, onBackgroundClick },
   ref
 ) {
   const containerRef = useRef(null);
@@ -136,18 +169,6 @@ export default forwardRef(function BpmnStage(
         const v = viewerRef.current;
         if (!v) return;
         v.get("canvas").zoom("fit-viewport");
-      },
-      getViewbox() {
-        const v = viewerRef.current;
-        if (!v) return null;
-        return v.get("canvas").viewbox();
-      },
-      getElementBox(id) {
-        const v = viewerRef.current;
-        if (!v || !id) return null;
-        const el = v.get("elementRegistry").get(id);
-        if (!el) return null;
-        return { x: el.x, y: el.y, width: el.width, height: el.height, id: el.id, type: el.type, businessObject: el.businessObject };
       },
     }),
     []
@@ -179,8 +200,12 @@ export default forwardRef(function BpmnStage(
 
         const onClick = (e) => {
           if (!alive) return;
-          if (typeof onElementClick === "function" && e && e.element) {
-            onElementClick(e.element);
+          const el = e?.element || null;
+          if (!el) return;
+
+          if (typeof onElementClick === "function") {
+            if (!isCopilotTarget(el)) return;
+            onElementClick(el);
           }
         };
 
@@ -189,9 +214,18 @@ export default forwardRef(function BpmnStage(
           if (typeof onViewportChange === "function") onViewportChange();
         };
 
+        const onCanvas = () => {
+          if (!alive) return;
+          if (typeof onBackgroundClick === "function") onBackgroundClick();
+        };
+
         eventBus.on("element.click", onClick);
         eventBus.on("canvas.viewbox.changed", onVB);
 
+        // bpmn-js emits canvas.* events; this is a safe no-op if not.
+        try {
+          eventBus.on("canvas.click", onCanvas);
+        } catch {}
       } catch (e) {
         if (!alive) return;
         setError(String(e?.message || e));
@@ -207,7 +241,7 @@ export default forwardRef(function BpmnStage(
       } catch {}
       viewerRef.current = null;
     };
-  }, [sessionId, enabled, onElementClick, onViewportChange]);
+  }, [sessionId, enabled, onElementClick, onViewportChange, onBackgroundClick]);
 
   return (
     <div style={{ position: "absolute", inset: 0 }}>
