@@ -4,26 +4,26 @@ import { ensureDraftShape, readDraft, writeDraft } from "../../lib/draft";
 import * as api from "../../lib/api";
 
 function isLocalSessionId(id) {
-  return typeof id === "string" && id.startsWith("local_");
+  return типof id === "string" && id.startsWith("local_");
 }
 
 function draftRoles(draft) {
   const roles = Array.isArray(draft?.roles) ? draft.roles : [];
-  return roles.filter((r) => r && typeof r.role_id === "string");
+  return roles.filter((r) => r && типof r.role_id === "string");
 }
 
 function safeNodes(draft) {
   const arr = Array.isArray(draft?.nodes) ? draft.nodes : [];
-  return arr.filter((n) => n && (typeof n.id === "string" || typeof n.node_id === "string"));
+  return arr.filter((n) => n && (типof n.id === "string" || типof n.node_id === "string"));
 }
 
 function safeEdges(draft) {
   const arr = Array.isArray(draft?.edges) ? draft.edges : [];
-  return arr.filter((e) => e && (typeof e.id === "string" || typeof e.edge_id === "string"));
+  return arr.filter((e) => e && (типof e.id === "string" || типof e.edge_id === "string"));
 }
 
 function nodeIdOf(n) {
-  return (typeof n?.node_id === "string" && n.node_id) || (typeof n?.id === "string" && n.id) || "";
+  return (типof n?.node_id === "string" && n.node_id) || (типof n?.id === "string" && n.id) || "";
 }
 
 async function saveSessionViaApi(sessionId, payload) {
@@ -34,12 +34,12 @@ async function saveSessionViaApi(sessionId, payload) {
     api.updateSession,
     api.patchSession,
     api.putSession,
-  ].filter((fn) => typeof fn === "function");
+  ].filter((fn) => типof fn === "function");
 
   if (candidates.length > 0) {
     try {
       const r = await candidates[0](sessionId, payload);
-      if (r && typeof r.ok === "boolean") return r;
+      if (r && типof r.ok === "boolean") return r;
       return { ok: true, статус: 200, method: "api" };
     } catch {
       // fall through to fetch
@@ -103,7 +103,7 @@ export default function GraphEditorOverlay({ sessionId }) {
 
   useEffect(() => {
     if (nodeActor) return;
-    const sr = typeof draft?.start_role === "string" ? draft.start_role : "";
+    const sr = типof draft?.start_role === "string" ? draft.start_role : "";
     if (sr) setNodeActor(sr);
   }, [draft, nodeActor]);
 
@@ -133,17 +133,17 @@ export default function GraphEditorOverlay({ sessionId }) {
     const node = {
       id,
       node_id: id,
-      type: nodeType,
+      тип: nodeType,
       label,
-      actor_role: role || undefined,
+      роль: role || undefined,
       recipient_role: undefined,
     };
 
     const next = {
       ...draft,
       session_id: draft?.session_id || sessionId || "",
-      nodes: [...nodes, node],
-      edges: edges,
+      узлы: [...nodes, node],
+      связи: edges,
     };
 
     setNodeLabel("");
@@ -164,14 +164,14 @@ export default function GraphEditorOverlay({ sessionId }) {
       target: edgeTo,
       source_id: edgeFrom,
       target_id: edgeTo,
-      type: "sequence",
+      тип: "sequence",
     };
 
     const next = {
       ...draft,
       session_id: draft?.session_id || sessionId || "",
-      nodes: nodes,
-      edges: [...edges, edge],
+      узлы: nodes,
+      связи: [...edges, edge],
     };
 
     await persist(next);
@@ -181,8 +181,8 @@ export default function GraphEditorOverlay({ sessionId }) {
     const next = {
       ...draft,
       session_id: draft?.session_id || sessionId || "",
-      nodes: [],
-      edges: [],
+      узлы: [],
+      связи: [],
     };
     setEdgeFrom("");
     setEdgeTo("");
@@ -210,7 +210,7 @@ export default function GraphEditorOverlay({ sessionId }) {
         </div>
 
         <div className="small muted" style={{ marginTop: 6 }}>
-          nodes: <b>{nodes.length}</b> · edges: <b>{edges.length}</b>
+          узлы: <b>{nodes.length}</b> · связи: <b>{edges.length}</b>
         </div>
 
         <div className="hr" />
@@ -218,7 +218,7 @@ export default function GraphEditorOverlay({ sessionId }) {
         <div style={{ fontWeight: 900, marginBottom: 6 }}>Добавить шаг</div>
         <div style={{ display: "grid", gap: 8 }}>
           <div style={{ display: "grid", gridTemplateColumns: "110px 1fr", gap: 8, alignItems: "center" }}>
-            <div className="small muted">type</div>
+            <div className="small muted">тип</div>
             <select value={nodeType} onChange={(e) => setNodeType(e.target.value)} className="input">
               <option value="step">Шаг</option>
               <option value="decision">Решение</option>
@@ -229,7 +229,7 @@ export default function GraphEditorOverlay({ sessionId }) {
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "110px 1fr", gap: 8, alignItems: "center" }}>
-            <div className="small muted">actor_role</div>
+            <div className="small muted">роль</div>
             <select value={nodeActor} onChange={(e) => setNodeActor(e.target.value)} className="input">
               <option value="">—</option>
               {roles.map((r) => (

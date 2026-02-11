@@ -415,3 +415,54 @@ html, body { height: 100%; margin: 0; background: #eef2f6; }
 .topbarSelect { min-width: 280px; max-width: 520px; }
 .topbarIconBtn { padding: 6px 10px; min-width: 40px; }
 .topbarNewBtn { padding: 8px 12px; font-weight: 900; width: auto; }
+
+/* R12: UI polish (blue header, calmer highlights) */
+.topBar {
+  background: linear-gradient(180deg, #1f5ea8 0%, #174a87 100%);
+  color: #fff;
+  border-bottom: 1px solid rgba(255,255,255,0.15);
+}
+.topBar .brand { color: #fff; }
+.topBar .small, .topBar .muted { color: rgba(255,255,255,0.85); }
+
+.topBar .input {
+  background: rgba(255,255,255,0.14);
+  border: 1px solid rgba(255,255,255,0.22);
+  color: #fff;
+}
+.topBar .input:focus { outline: 2px solid rgba(255,255,255,0.35); outline-offset: 2px; }
+.topBar select option { color: #111; }
+
+.topBar .ghostBtn {
+  background: rgba(255,255,255,0.14);
+  border: 1px solid rgba(255,255,255,0.22);
+  color: #fff;
+}
+.topBar .ghostBtn:hover { background: rgba(255,255,255,0.18); }
+
+.topBar .primaryBtn {
+  background: rgba(255,255,255,0.92);
+  color: #0b2b53;
+  border: 1px solid rgba(255,255,255,0.35);
+}
+.topBar .primaryBtn:hover { background: #fff; }
+
+.pill {
+  background: rgba(255,255,255,0.14);
+  border: 1px solid rgba(255,255,255,0.22);
+  color: #fff;
+}
+.pillOk { color: #d1fae5; }
+.pillFail { color: #fee2e2; }
+
+/* calmer highlight (no infinite pulse) */
+.attention { animation: none !important; box-shadow: 0 0 0 3px rgba(255,255,255,0.18); }
+.attentionRing { outline: 2px solid rgba(255,255,255,0.35); outline-offset: 2px; }
+
+/* process stage background */
+.processStage {
+  background: rgba(255,255,255,0.72);
+  border: 1px solid rgba(16,24,40,0.10);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(16,24,40,0.06);
+}

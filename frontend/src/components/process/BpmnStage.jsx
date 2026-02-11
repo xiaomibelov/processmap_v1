@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import NavigatedViewer from "bpmn-js/lib/NavigatedViewer";
 
 import "bpmn-js/dist/assets/diagram-js.css";
@@ -8,7 +8,7 @@ function isLocalSessionId(id) {
   return typeof id === "string" && id.startsWith("local_");
 }
 
-// Минимальная "пустая" диаграмма (не демо процесса): старт → финиш.
+// Минимальная диаграмма: старт → финиш.
 // Нужна, чтобы viewer не падал с "no diagram to display".
 const EMPTY_BPMN_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -38,96 +38,123 @@ const EMPTY_BPMN_XML = `<?xml version="1.0" encoding="UTF-8"?>
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>`;
 
-export default function BpmnStage({ sessionId }) {
+const BpmnStage = forwardRef(function BpmnStage({ sessionId }, ref) {
   const hostRef = useRef(null);
   const viewerRef = useRef(null);
+  const queueRef = useRef(Promise.resolve());
 
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
 
-  async function importXml(xml) {
-    const viewer = viewerRef.current;
-    if (!viewer) return;
-
+  function getCanvas() {
+    const v = viewerRef.current;
+    if (!v) return null;
     try {
-      setError("");
-      await viewer.importXML(xml || EMPTY_BPMN_XML);
-      const canvas = viewer.get("canvas");
-      canvas.zoom("fit-viewport");
-    } catch (e) {
-      setError("Ошибка импорта BPMN. Проверь данные сессии и экспорт.");
-    }
-  }
-
-  async function loadBpmn() {
-    const id = typeof sessionId === "string" ? sessionId : "";
-
-    if (!id) {
-      setStatus("Нет активной сессии");
-      await importXml(EMPTY_BPMN_XML);
-      return;
-    }
-
-    if (isLocalSessionId(id)) {
-      setStatus("Локальная сессия: BPMN с сервера недоступен. Создай “Новая (API)”.");
-      await importXml(EMPTY_BPMN_XML);
-      return;
-    }
-
-    setStatus("Загрузка BPMN…");
-
-    try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/bpmn`, {
-        method: "GET",
-        credentials: "include",
-      });
-
-      if (!res.ok) {
-        setStatus("BPMN недоступен");
-        await importXml(EMPTY_BPMN_XML);
-        return;
-      }
-
-      const xml = await res.text();
-      setStatus("");
-      await importXml(xml || EMPTY_BPMN_XML);
+      return v.get("canvas");
     } catch {
-      setStatus("Ошибка сети при загрузке BPMN");
-      await importXml(EMPTY_BPMN_XML);
+      return null;
     }
   }
 
   function zoomIn() {
-    const v = viewerRef.current;
-    if (!v) return;
-    const c = v.get("canvas");
+    const c = getCanvas();
+    if (!c) return;
     const z = c.zoom();
     c.zoom(z + 0.2);
   }
 
   function zoomOut() {
-    const v = viewerRef.current;
-    if (!v) return;
-    const c = v.get("canvas");
+    const c = getCanvas();
+    if (!c) return;
     const z = c.zoom();
     c.zoom(Math.max(0.2, z - 0.2));
   }
 
   function fit() {
-    const v = viewerRef.current;
-    if (!v) return;
-    const c = v.get("canvas");
+    const c = getCanvas();
+    if (!c) return;
     c.zoom("fit-viewport");
   }
+
+  async function importXml(xml) {
+    const v = viewerRef.current;
+    if (!v) return;
+    try {
+      setError("");
+      await v.importXML(xml || EMPTY_BPMN_XML);
+      fit();
+    } catch {
+      setError("Ошибка импорта BPMN. Проверь данные сессии и экспорт.");
+    }
+  }
+
+  function enqueue(task) {
+    queueRef.current = queueRef.current.then(task).catch(() => {});
+    return queueRef.current;
+  }
+
+  function reload() {
+    const id = typeof sessionId === "string" ? sessionId : "";
+    return enqueue(async () => {
+      if (!viewerRef.current) return;
+
+      if (!id) {
+        setError("");
+        setStatus("Нет активной сессии");
+        await importXml(EMPTY_BPMN_XML);
+        return;
+      }
+
+      if (isLocalSessionId(id)) {
+        setError("");
+        setStatus("Локальная сессия: для реального BPMN создай “Новая (API)”.");
+        await importXml(EMPTY_BPMN_XML);
+        return;
+      }
+
+      setError("");
+      setStatus("Загрузка BPMN…");
+
+      try {
+        const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/bpmn`, {
+          method: "GET",
+          credentials: "include",
+        });
+
+        if (!res.ok) {
+          setStatus("BPMN недоступен");
+          await importXml(EMPTY_BPMN_XML);
+          return;
+        }
+
+        const xml = await res.text();
+        setStatus("");
+        await importXml(xml || EMPTY_BPMN_XML);
+      } catch {
+        setStatus("Ошибка сети при загрузке BPMN");
+        await importXml(EMPTY_BPMN_XML);
+      }
+    });
+  }
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      zoomIn,
+      zoomOut,
+      fit,
+      reload,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sessionId]
+  );
 
   useEffect(() => {
     if (!hostRef.current) return;
 
     viewerRef.current = new NavigatedViewer({ container: hostRef.current });
 
-    loadBpmn();
-
-    const onSaved = () => loadBpmn();
+    const onSaved = () => reload();
     window.addEventListener("fpc:graph-saved", onSaved);
 
     return () => {
@@ -143,24 +170,12 @@ export default function BpmnStage({ sessionId }) {
   }, []);
 
   useEffect(() => {
-    loadBpmn();
+    reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
-      <div style={{ position: "absolute", right: 12, top: 10, zIndex: 5, display: "flex", gap: 8 }}>
-        <button className="ghostBtn" onClick={zoomOut} title="Уменьшить">
-          −
-        </button>
-        <button className="ghostBtn" onClick={zoomIn} title="Увеличить">
-          +
-        </button>
-        <button className="ghostBtn" onClick={fit} title="Вписать">
-          Вписать
-        </button>
-      </div>
-
       <div ref={hostRef} style={{ width: "100%", height: "100%", background: "#fff" }} />
 
       {status ? (
@@ -182,4 +197,6 @@ export default function BpmnStage({ sessionId }) {
       ) : null}
     </div>
   );
-}
+});
+
+export default BpmnStage;

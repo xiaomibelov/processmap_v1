@@ -85,7 +85,7 @@ export default function ProcessStage({ mode, sessionId, roles, onAddNote }) {
     <div className="panel processPanel">
       <div className="processHead">
         <div className="title">
-          Процесс <span className="muted" style={{ fontWeight: 600 }}>(Workflow)</span>
+          Процесс <span className="muted" style={{ fontWeight: 600 }}></span>
         </div>
         <div className="spacer" />
         <button className="btn" onClick={() => { bpmnRef.current?.zoomOut?.(); onViewportChange(); }} disabled={!isInterview}>−</button>
