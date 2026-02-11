@@ -319,12 +319,18 @@ def ai_questions(session_id: str, inp: AiQuestionsIn) -> Dict[str, Any]:
         return {"error": f"deepseek questions module not available: {e}"}
 
     try:
-        new_qs = generate_llm_questions(s, api_key=api_key, base_url=base_url, limit=limit, mode=mode)
+        new_qs = generate_llm_questions(
+            s,
+            api_key=api_key,
+            base_url=base_url,
+            limit=limit,
+            mode=mode,
+        )
     except Exception as e:
         return {"error": f"deepseek failed: {e}"}
 
     if new_qs:
-        existing_ids = {q.id for q in (s.questions or []) if getattr(q, 'id', None)}
+        existing_ids = {q.id for q in (s.questions or []) if getattr(q, "id", None)}
         for q in new_qs:
             if q.id not in existing_ids:
                 (s.questions or []).append(q)
@@ -371,7 +377,15 @@ def post_notes(session_id: str, inp: NotesIn) -> Dict[str, Any]:
     except Exception as e:
         return {"error": f"deepseek client module not available: {e}"}
 
-    extracted = extract_process(s.notes, api_key=llm.get("api_key", ""), base_url=llm.get("base_url", ""))
+    try:
+        extracted = extract_process(
+            s.notes,
+            api_key=llm.get("api_key", ""),
+            base_url=llm.get("base_url", ""),
+        )
+    except Exception as e:
+        return {"error": f"deepseek failed: {e}"}
+
     nodes_raw = extracted.get("nodes", []) or []
     edges_raw = extracted.get("edges", []) or []
     roles = extracted.get("roles", []) or s.roles
@@ -728,7 +742,10 @@ def export(session_id: str) -> Dict[str, Any]:
         from .exporters.bpmn import export_session_to_bpmn_xml
         (out_dir / "process.bpmn").write_text(export_session_to_bpmn_xml(s), encoding="utf-8")
     except Exception as e:
-        (out_dir / "process.bpmn").write_text(f'<?xml version="1.0" encoding="UTF-8"?><error>{e}</error>', encoding="utf-8")
+        (out_dir / "process.bpmn").write_text(
+            f'<?xml version="1.0" encoding="UTF-8"?><error>{e}</error>',
+            encoding="utf-8",
+        )
 
     seed = load_seed_glossary(GLOSSARY_SEED)
     (out_dir / "glossary.yml").write_text(dump_yaml(seed), encoding="utf-8")
