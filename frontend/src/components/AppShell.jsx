@@ -11,13 +11,21 @@ export default function AppShell({
   notes,
   onAddNote,
   onNewLocalSession,
+  sessions,
+  backendStatus,
+  onRefreshSessions,
+  onNewBackendSession,
+  onOpenSession,
 }) {
   return (
     <div className="shell">
       <TopBar
         sessionId={sessionId}
-        onNewSession={onNewLocalSession}
-        onOpenSession={() => {}}
+        sessions={sessions}
+        backendStatus={backendStatus}
+        onRefreshSessions={onRefreshSessions}
+        onNewBackendSession={onNewBackendSession}
+        onOpenSession={onOpenSession}
       />
 
       <div className="workspace">
