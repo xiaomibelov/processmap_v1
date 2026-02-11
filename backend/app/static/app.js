@@ -1598,7 +1598,7 @@ window.addEventListener("resize", () => {
       var wrap = document.getElementById('mermaid');
       if (!wrap) return;
       var obs = new MutationObserver(schedule);
-      obs.observe(wrap, { childList: true, subtree: true });
+      obs.observe(wrap, { childList: true, subtree: false });
       window.addEventListener('resize', schedule);
       schedule();
     }
@@ -1780,7 +1780,7 @@ window.addEventListener("resize", () => {
       var obs = new MutationObserver(function(){
         try { buildCtl(); applyZoom(); } catch(e) {}
       });
-      obs.observe(wrap, { childList: true, subtree: true });
+      obs.observe(wrap, { childList: true, subtree: false });
 
       buildCtl();
       setTimeout(function(){ try { applyZoom(); } catch(e) {} }, 140);
