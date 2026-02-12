@@ -1,108 +1,33 @@
-import React from "react";
+import { useMemo } from "react";
 
-function isLocalSessionId(id) {
-  return typeof id === "string" && id.startsWith("local_");
-}
-
-function getSessionId(s) {
-  if (!s) return "";
-  if (typeof s.session_id === "string") return s.session_id;
-  if (typeof s.id === "string") return s.id;
-  return "";
-}
-
-function getSessionTitle(s) {
-  if (!s) return "";
-  if (typeof s.title === "string" && s.title.trim()) return s.title.trim();
-  const id = getSessionId(s);
-  return id ? id : "Без названия";
-}
-
-export default function TopBar(props) {
-  const apiOk = Boolean(
-    (props.api && props.api.ok) ||
-      (props.apiStatus && props.apiStatus.ok) ||
-      props.apiOk === true
-  );
-
-  const sessionId = typeof props.sessionId === "string" ? props.sessionId : "";
-
-  const sessions = Array.isArray(props.sessions)
-    ? props.sessions
-    : Array.isArray(props.sessionList)
-    ? props.sessionList
-    : [];
-
-  const onOpenSession =
-    props.onOpenSession ||
-    props.onSelectSession ||
-    props.onOpen ||
-    (() => {});
-
-  const onRefreshSessions = props.onRefreshSessions || props.onRefresh || (() => {});
-
-  const onNewApiSession =
-    props.onNewApiSession || props.onCreateApiSession || props.onNewApi || (() => {});
-
-  const isLocal = isLocalSessionId(sessionId);
+export default function TopBar({ sessionId, sessions, backendStatus, backendHint, onRefresh, onNewLocal, onNewBackend, onOpen }) {
+  const badge = useMemo(() => {
+    if (backendStatus === "ok") return <span className="badge ok">API OK</span>;
+    if (backendStatus === "fail") return <span className="badge err">API FAIL</span>;
+    return <span className="badge">API …</span>;
+  }, [backendStatus]);
 
   return (
-    <div className="topBar">
-      <div className="topBarInner">
-        <div className="brand">
-          <div style={{ fontWeight: 900, letterSpacing: 0.2 }}>Food Process Copilot</div>
-        </div>
+    <div className="topbar">
+      <div className="topLeft">
+        <div className="brand">Food Process Copilot</div>
+        {badge}
+        {backendHint ? <div className="hint">{backendHint}</div> : null}
+      </div>
 
-        <div
-          className={"pill " + (apiOk ? "pillOk" : "pillFail")}
-          title={
-            apiOk
-              ? "API доступно (cookie-сессия; ключ не нужен)"
-              : "API недоступно. Проверь backend: http://127.0.0.1:8011/health"
-          }
-        >
-          API: {apiOk ? "ок" : "нет"}
-        </div>
-
-        <div className="small" style={{ marginLeft: 6 }}>
-          <span className="muted">Сессия:</span>{" "}
-          <span style={{ fontWeight: 900 }}>{sessionId || "—"}</span>
-        </div>
-
-        <select
-          className={"input topbarSelect " + (isLocal ? "attentionRing" : "")}
-          value=""
-          onChange={(e) => {
-            const id = e.target.value;
-            if (!id) return;
-            onOpenSession(id);
-          }}
-          title="Открыть сессию с сервера"
-        >
-          <option value="">— открыть сессию —</option>
-          {sessions.map((s) => {
-            const id = getSessionId(s);
-            if (!id) return null;
-            const label = getSessionTitle(s);
-            return (
-              <option key={id} value={id}>
-                {label}
-              </option>
-            );
+      <div className="topRight">
+        <select className="select" value={sessionId || ""} onChange={(e) => onOpen?.(e.target.value)}>
+          <option value="">— выбрать сессию —</option>
+          {(sessions || []).map((s) => {
+            const id = s.session_id || s.id;
+            const title = s.title || id;
+            return <option key={id} value={id}>{title}</option>;
           })}
         </select>
 
-        <button className="ghostBtn topbarIconBtn" onClick={onRefreshSessions} title="Обновить список сессий">
-          ↻
-        </button>
-
-        <button
-          className={"primaryBtn topbarNewBtn " + (isLocal ? "attention" : "")}
-          onClick={onNewApiSession}
-          title="Создать новую серверную сессию (для реального workflow)"
-        >
-          Новая (API)
-        </button>
+        <button className="secondaryBtn" onClick={onRefresh} title="Обновить список сессий">Обновить</button>
+        <button className="secondaryBtn" onClick={onNewLocal} title="Создать локальный черновик">Новая (Local)</button>
+        <button className="primaryBtn smallBtn" onClick={onNewBackend} title="Создать backend-сессию">Новая (API)</button>
       </div>
     </div>
   );

@@ -172,3 +172,11 @@ textarea:focus{
   background: linear-gradient(180deg, rgba(124,92,255,.42), rgba(124,92,255,.22));
   border-color: rgba(124,92,255,.35);
 }
+
+/* R18_PROCESS_TITLE */
+.processTitle,
+.stageTitle,
+.panelHead,
+.panelTitle {
+  color: var(--text) !important;
+}
