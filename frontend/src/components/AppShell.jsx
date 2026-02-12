@@ -1,36 +1,48 @@
 import TopBar from "./TopBar";
+import BottomDock from "./BottomDock";
 import ProcessStage from "./ProcessStage";
 
 export default function AppShell({
   sessionId,
-  roles,
-  mode,
+  apiOk,
+  apiBase,
+  sessions,
+  onSelectSession,
+  onNewLocalSession,
+  onNewApiSession,
   left,
   locked,
-  notes,
-  onAddNote,
-  onNewLocalSession,
-  sessions,
-  backendStatus,
-  onRefreshSessions,
-  onNewBackendSession,
-  onOpenSession,
+  draft,
+  onPatchDraft,
+  bpmnReloadKey,
 }) {
   return (
-    <div className="shell">
+    <div className="app">
       <TopBar
-        sessionId={sessionId}
+        apiOk={apiOk}
+        apiBase={apiBase}
         sessions={sessions}
-        backendStatus={backendStatus}
-        onRefreshSessions={onRefreshSessions}
-        onNewBackendSession={onNewBackendSession}
-        onOpenSession={onOpenSession}
+        sessionId={sessionId}
+        onSelectSession={onSelectSession}
+        onNewLocalSession={onNewLocalSession}
+        onNewApiSession={onNewApiSession}
       />
 
       <div className="workspace">
-        {left}
-        <ProcessStage mode={mode} sessionId={sessionId} roles={roles} onAddNote={onAddNote} />
+        <div className="leftCol">{left}</div>
+
+        <div className="stage">
+          <ProcessStage
+            sessionId={sessionId}
+            locked={locked}
+            draft={draft}
+            onPatchDraft={onPatchDraft}
+            reloadKey={bpmnReloadKey}
+          />
+        </div>
       </div>
+
+      <BottomDock />
     </div>
   );
 }

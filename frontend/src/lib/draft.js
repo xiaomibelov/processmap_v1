@@ -15,6 +15,9 @@ export function ensureDraftShape(d) {
 
   const roles = Array.isArray(d.roles) ? d.roles : [];
   const notes = Array.isArray(d.notes) ? d.notes : [];
+  const nodes = Array.isArray(d.nodes) ? d.nodes : [];
+  const edges = Array.isArray(d.edges) ? d.edges : [];
+  const questions = Array.isArray(d.questions) ? d.questions : [];
 
   return {
     session_id: typeof d.session_id === "string" ? d.session_id : "",
@@ -22,6 +25,28 @@ export function ensureDraftShape(d) {
     roles,
     start_role: typeof d.start_role === "string" ? d.start_role : "",
     notes,
+    nodes,
+    edges,
+    questions,
+    ai_open: typeof d.ai_open === "boolean" ? d.ai_open : true,
+    mode: typeof d.mode === "string" ? d.mode : "deep_audit",
+    version: typeof d.version === "number" ? d.version : 0,
+  };
+}
+
+export function defaultDraft() {
+  return {
+    session_id: "",
+    title: "",
+    roles: [],
+    start_role: "",
+    notes: [],
+    nodes: [],
+    edges: [],
+    questions: [],
+    ai_open: true,
+    mode: "deep_audit",
+    version: 0,
   };
 }
 
