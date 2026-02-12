@@ -1,6 +1,5 @@
 import TopBar from "./TopBar";
 import ProcessStage from "./ProcessStage";
-import BottomDock from "./BottomDock";
 
 export default function AppShell({
   sessionId,
@@ -32,8 +31,6 @@ export default function AppShell({
         {left}
         <ProcessStage mode={mode} sessionId={sessionId} roles={roles} onAddNote={onAddNote} />
       </div>
-
-      <BottomDock locked={locked} notes={notes} onAddNote={onAddNote} />
     </div>
   );
 }

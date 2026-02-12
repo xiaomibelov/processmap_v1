@@ -466,3 +466,26 @@ html, body { height: 100%; margin: 0; background: #eef2f6; }
   border-radius: 12px;
   box-shadow: 0 1px 2px rgba(16,24,40,0.06);
 }
+
+/* R13 fix: reduce glare — cards follow graphite glass */
+.card{
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  padding: 12px;
+}
+
+.notesDockHead{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:10px;
+}
+
+.notesDockActions{
+  display:flex;
+  justify-content:flex-end;
+  margin-top:10px;
+}
