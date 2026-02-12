@@ -195,3 +195,41 @@ h1, h2, h3, h4,
 .djs-container .djs-visual .djs-connection path {
   stroke: rgba(255,255,255,.48) !important;
 }
+
+/* R16: readability fixes (titles + BPMN canvas) */
+.panelHead,
+.panelTitle,
+.stageTitle,
+.stageHead,
+.sectionTitle,
+h1, h2, h3 {
+  color: var(--text) !important;
+}
+
+.panelHead .muted,
+.panelTitle .muted,
+.stageTitle .muted,
+.small.muted {
+  color: var(--muted) !important;
+}
+
+/* BPMN canvas: reduce glare (not pure white), keep high readability */
+.bpmnHost,
+.djs-container,
+.bjs-container,
+.bjs-container .djs-container {
+  background: rgba(255,255,255,0.86) !important;
+  border-radius: var(--r-lg);
+}
+
+/* subtle frame to separate from glass */
+.bpmnHost {
+  border: 1px solid rgba(255,255,255,0.10);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05);
+}
+
+/* labels in SVG (bpmn-js) */
+.djs-container .djs-visual text,
+.djs-container .djs-visual .djs-label {
+  fill: rgba(16,24,40,0.88) !important;
+}

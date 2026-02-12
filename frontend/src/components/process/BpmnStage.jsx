@@ -115,7 +115,7 @@ const BpmnStage = forwardRef(function BpmnStage({ sessionId, reloadKey = 0 }, re
 
   return (
     <div style={{ position: "relative", height: "100%" }}>
-      <div ref={hostRef} style={{ height: "100%", background: "transparent" }} />
+      <div ref={hostRef} className="bpmnHost" style={{ height: "100%" }} />
       {err ? (
         <div className="panel" style={{ position: "absolute", left: 14, bottom: 14, width: 420, padding: 12 }}>
           <div style={{ fontWeight: 900, marginBottom: 6 }}>Ошибка</div>
