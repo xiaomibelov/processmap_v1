@@ -1,88 +1,77 @@
-async function apiFetch(path, opts = {}) {
+async function parseResponse(res, path, method) {
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`${method} ${path} -> ${res.status} ${text}`);
+  }
+  const ct = res.headers.get("content-type") || "";
+  if (ct.includes("application/json")) return res.json();
+  return res.text();
+}
+
+export async function apiGet(path) {
+  const res = await fetch(path, { credentials: "include" });
+  return parseResponse(res, path, "GET");
+}
+
+export async function apiPost(path, body) {
   const res = await fetch(path, {
+    method: "POST",
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(opts.headers || {}),
-    },
-    ...opts,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body ?? {}),
   });
-  return res;
+  return parseResponse(res, path, "POST");
+}
+
+export async function apiPatch(path, body) {
+  const res = await fetch(path, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+  });
+  return parseResponse(res, path, "PATCH");
+}
+
+export async function apiPut(path, body) {
+  const res = await fetch(path, {
+    method: "PUT",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+  });
+  return parseResponse(res, path, "PUT");
+}
+
+/* ---- Named exports consumed by the app (stable surface) ---- */
+
+export async function apiMeta() {
+  return apiGet("/api/meta");
 }
 
 export async function apiListSessions() {
-  try {
-    const res = await apiFetch("/api/sessions", { method: "GET" });
-    if (!res.ok) return { ok: false, sessions: [], status: res.status };
-    const data = await res.json();
-    return { ok: true, sessions: Array.isArray(data) ? data : [], status: res.status };
-  } catch {
-    return { ok: false, sessions: [], status: 0 };
-  }
+  return apiGet("/api/sessions");
 }
 
-export async function apiCreateSession({ title } = {}) {
-  try {
-    const res = await apiFetch("/api/sessions", {
-      method: "POST",
-      body: JSON.stringify({ title: title || "" }),
-    });
-    if (!res.ok) return { ok: false, session_id: "", status: res.status };
-    const data = await res.json().catch(() => ({}));
-    const session_id = typeof data.session_id === "string" ? data.session_id : "";
-    return { ok: Boolean(session_id), session_id, status: res.status };
-  } catch {
-    return { ok: false, session_id: "", status: 0 };
-  }
+export async function apiCreateSession(payload) {
+  return apiPost("/api/sessions", payload ?? {});
 }
 
 export async function apiGetSession(sessionId) {
-  if (!sessionId) return { ok: false, session: null, status: 0 };
-  try {
-    const res = await apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: "GET" });
-    if (!res.ok) return { ok: false, session: null, status: res.status };
-    const data = await res.json().catch(() => null);
-    return { ok: true, session: data, status: res.status };
-  } catch {
-    return { ok: false, session: null, status: 0 };
-  }
+  const id = encodeURIComponent(sessionId);
+  return apiGet(`/api/sessions/${id}`);
 }
 
-export async function apiPostNote(sessionId, { text, ts, author } = {}) {
-  if (!sessionId) return { ok: false, status: 0 };
-  try {
-    const res = await apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}/notes`, {
-      method: "POST",
-      body: JSON.stringify({
-        text: text || "",
-        ts: ts || undefined,
-        author: author || undefined,
-      }),
-    });
-    return { ok: res.ok, status: res.status };
-  } catch {
-    return { ok: false, status: 0 };
-  }
+export async function apiPostNote(sessionId, text) {
+  const id = encodeURIComponent(sessionId);
+  return apiPost(`/api/sessions/${id}/notes`, { text: String(text ?? "") });
 }
 
 /**
- * R11: save session patch (Graph Editor)
- * Sends partial session shape to backend. Backend may treat as merge/upsert.
+ * Write-path used by Graph Editor and later Copilot.
+ * Backend supports PATCH today; for "replace whole session" we'll converge to PUT later.
  */
-export async function apiSaveSession(sessionId, patch) {
-  if (!sessionId) throw new Error("sessionId is required");
-
-  const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify(patch || {}),
-  });
-
-  if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    throw new Error(`apiSaveSession failed: ${res.status} ${txt}`);
-  }
-
-  return res.json();
+export async function apiSaveSession(sessionId, partial) {
+  const id = encodeURIComponent(sessionId);
+  return apiPatch(`/api/sessions/${id}`, partial ?? {});
 }
