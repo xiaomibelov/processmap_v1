@@ -1,0 +1,86 @@
+:root{
+  --bg0:#070A14;
+  --bg1:#0B1020;
+
+  --panel:rgba(255,255,255,.06);
+  --panel2:rgba(255,255,255,.04);
+  --border:rgba(255,255,255,.12);
+
+  --text:rgba(255,255,255,.92);
+  --muted:rgba(255,255,255,.66);
+
+  --ok:#2FE58C;
+  --warn:#FFBF3F;
+  --err:#FF4D4D;
+  --info:#7C5CFF;
+
+  --ring:rgba(124,92,255,.55);
+  --shadow:0 18px 55px rgba(0,0,0,.55);
+
+  --r-lg:18px;
+  --r-md:14px;
+
+  /* "paper" for BPMN canvas (keep diagram readable, but not retina-burning white) */
+  --paper0: rgba(255,255,255,.74);
+  --paper1: rgba(245,248,255,.70);
+  --paperBorder: rgba(16,24,40,.14);
+  --ink: rgba(16,24,40,.92);
+}
+
+html, body { height: 100%; }
+
+body{
+  color:var(--text);
+  background:
+    radial-gradient(1100px 650px at 18% 12%, rgba(124,92,255,.18), transparent 60%),
+    radial-gradient(900px 500px  at 80% 18%, rgba(47,229,140,.10), transparent 55%),
+    linear-gradient(180deg,var(--bg0),var(--bg1));
+  margin:0;
+}
+
+.panel{
+  background:var(--panel);
+  border:1px solid var(--border);
+  border-radius:var(--r-lg);
+  box-shadow:var(--shadow);
+  backdrop-filter: blur(14px);
+}
+
+.panelHead{
+  font-weight: 900;
+  letter-spacing: .2px;
+  color: var(--text);
+}
+
+.small{ font-size: 12px; line-height: 1.35; }
+.muted{ color: var(--muted); }
+.hr{ height:1px; background: rgba(255,255,255,.10); margin: 10px 0; border-radius: 999px; }
+
+.input{
+  width:100%;
+  padding:10px 12px;
+  border-radius:12px;
+  background: rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.12);
+  color:var(--text);
+}
+.input:focus{
+  outline:2px solid var(--ring);
+  outline-offset:2px;
+  border-color: rgba(255,255,255,.18);
+}
+
+.btn{
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.06);
+  color: var(--text);
+  padding: 10px 12px;
+  font-weight: 800;
+}
+.btn:hover{ border-color: rgba(255,255,255,.22); }
+.btn:focus{ outline:2px solid var(--ring); outline-offset:2px; }
+.btn.primary{
+  background: linear-gradient(180deg, rgba(124,92,255,.92), rgba(124,92,255,.62));
+  border-color: rgba(124,92,255,.65);
+}

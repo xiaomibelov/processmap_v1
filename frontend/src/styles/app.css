@@ -489,3 +489,61 @@ html, body { height: 100%; margin: 0; background: #eef2f6; }
   justify-content:flex-end;
   margin-top:10px;
 }
+
+/* R14_GRAPHITE_PAPER_OVERRIDES */
+
+/* left column cards: stop using bright white in dark theme */
+.card{
+  background: var(--panel2) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 14px !important;
+  box-shadow: none !important;
+  color: var(--text) !important;
+}
+
+/* strengthen text visibility */
+.panelBody, .panelBody * { color: var(--text); }
+.panelBody .muted, .panelBody .small.muted { color: var(--muted) !important; }
+
+/* primary button: premium look + readable */
+.primaryBtn{
+  background: linear-gradient(180deg, rgba(124,92,255,.92), rgba(124,92,255,.62)) !important;
+  border: 1px solid rgba(124,92,255,.65) !important;
+  color: var(--text) !important;
+  border-radius: 14px !important;
+  font-weight: 900 !important;
+}
+.primaryBtn:disabled{
+  opacity: .55 !important;
+  filter: saturate(.8) !important;
+}
+
+/* BPMN stage: avoid pure white, keep labels readable */
+.bpmnStage, .processStage, .stage{
+  background: rgba(255,255,255,.02) !important;
+}
+
+.bpmnStage .djs-container{
+  background:
+    radial-gradient(900px 500px at 22% 18%, rgba(124,92,255,.10), transparent 62%),
+    linear-gradient(180deg, var(--paper0), var(--paper1)) !important;
+  border: 1px solid var(--paperBorder) !important;
+  border-radius: 16px !important;
+}
+
+/* make sure svg doesn't paint its own harsh background */
+.bpmnStage svg{ background: transparent !important; }
+
+/* diagram text is drawn inside SVG; ensure it's not washed out */
+.bpmnStage .djs-label,
+.bpmnStage .djs-label tspan{
+  fill: var(--ink) !important;
+}
+
+/* reduce glare of controls on the canvas */
+.bpmnStage .bpmnControls button,
+.bpmnStage button{
+  background: rgba(255,255,255,.08) !important;
+  border: 1px solid rgba(255,255,255,.14) !important;
+  color: var(--text) !important;
+}
