@@ -7,7 +7,7 @@
   --border:rgba(255,255,255,.12);
 
   --text:rgba(255,255,255,.92);
-  --muted:rgba(255,255,255,.66);
+  --muted:rgba(255,255,255,.62);
 
   --ok:#2FE58C;
   --warn:#FFBF3F;
@@ -20,14 +20,13 @@
   --r-lg:18px;
   --r-md:14px;
 
-  /* "paper" for BPMN canvas (keep diagram readable, but not retina-burning white) */
-  --paper0: rgba(255,255,255,.74);
-  --paper1: rgba(245,248,255,.70);
-  --paperBorder: rgba(16,24,40,.14);
-  --ink: rgba(16,24,40,.92);
+  --paper0:#F1F3F7;
+  --paper1:#E7EBF2;
+  --ink:rgba(7,10,20,.92);
+  --inkMuted:rgba(7,10,20,.62);
 }
 
-html, body { height: 100%; }
+html, body{ height:100%; }
 
 body{
   color:var(--text);
@@ -35,10 +34,13 @@ body{
     radial-gradient(1100px 650px at 18% 12%, rgba(124,92,255,.18), transparent 60%),
     radial-gradient(900px 500px  at 80% 18%, rgba(47,229,140,.10), transparent 55%),
     linear-gradient(180deg,var(--bg0),var(--bg1));
-  margin:0;
 }
 
-.panel{
+a{ color:inherit; }
+
+.panel,
+.leftCol,
+.processWrap{
   background:var(--panel);
   border:1px solid var(--border);
   border-radius:var(--r-lg);
@@ -46,17 +48,29 @@ body{
   backdrop-filter: blur(14px);
 }
 
-.panelHead{
-  font-weight: 900;
-  letter-spacing: .2px;
-  color: var(--text);
+.panelHead,
+.panelBody,
+.card,
+.small,
+.muted{
+  color:var(--text);
 }
 
-.small{ font-size: 12px; line-height: 1.35; }
-.muted{ color: var(--muted); }
-.hr{ height:1px; background: rgba(255,255,255,.10); margin: 10px 0; border-radius: 999px; }
+.muted{ color:var(--muted); }
 
-.input{
+.card{
+  background:var(--panel2);
+  border:1px solid var(--border);
+  border-radius:var(--r-md);
+}
+
+.hr{
+  border:0;
+  border-top:1px solid rgba(255,255,255,.10);
+}
+
+.input,
+textarea{
   width:100%;
   padding:10px 12px;
   border-radius:12px;
@@ -64,172 +78,97 @@ body{
   border:1px solid rgba(255,255,255,.12);
   color:var(--text);
 }
-.input:focus{
+
+.input:focus,
+textarea:focus{
   outline:2px solid var(--ring);
   outline-offset:2px;
   border-color: rgba(255,255,255,.18);
 }
 
-.btn{
-  border-radius: 12px;
-  border: 1px solid rgba(255,255,255,.14);
+.btn,
+.primaryBtn,
+.dangerBtn,
+.smallBtn{
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.14);
+  color:var(--text);
   background: rgba(255,255,255,.06);
-  color: var(--text);
-  padding: 10px 12px;
-  font-weight: 800;
-}
-.btn:hover{ border-color: rgba(255,255,255,.22); }
-.btn:focus{ outline:2px solid var(--ring); outline-offset:2px; }
-.btn.primary{
-  background: linear-gradient(180deg, rgba(124,92,255,.92), rgba(124,92,255,.62));
-  border-color: rgba(124,92,255,.65);
 }
 
-/* R15: contrast fixes + BPMN dark canvas (reduce white glare) */
-
-/* Titles / headers: always visible on graphite */
-.stageTitle, .stageHead, .stageHeader,
-.panelHead, .panelTitle, .sectionTitle,
-h1, h2, h3 {
-  color: var(--text);
+.primaryBtn{
+  background: linear-gradient(180deg, rgba(124,92,255,.42), rgba(124,92,255,.22));
+  border-color: rgba(124,92,255,.35);
 }
 
-/* Cards should not be pure white in graphite */
-.card {
-  background: var(--panel2) !important;
-  border: 1px solid var(--border) !important;
-  color: var(--text) !important;
+.dangerBtn{
+  background: linear-gradient(180deg, rgba(255,77,77,.34), rgba(255,77,77,.18));
+  border-color: rgba(255,77,77,.28);
 }
 
-/* Inputs and placeholders: readable */
-.input, textarea, select, option {
-  color: var(--text);
-}
-.input::placeholder, textarea::placeholder {
-  color: rgba(255,255,255,.45);
+.btn:focus,
+.primaryBtn:focus,
+.dangerBtn:focus,
+.smallBtn:focus{
+  outline:2px solid var(--ring);
+  outline-offset:2px;
 }
 
-/* BPMN-js: make canvas dark and invert strokes/text for readability */
-.djs-container {
+.topBar{
+  background:
+    linear-gradient(180deg, rgba(20,86,150,.72), rgba(9,22,40,.72));
+  border-bottom:1px solid rgba(255,255,255,.10);
+}
+
+.topBar .brand{ color:var(--text); }
+
+.pill{
+  background: rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.12);
+  color:var(--text);
+}
+
+.badgeOk{ color:var(--ok); }
+.badgeWarn{ color:var(--warn); }
+.badgeErr{ color:var(--err); }
+
+.processHead{
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+  border-bottom:1px solid rgba(255,255,255,.10);
+}
+
+.processHead .title{
+  color:var(--text) !important;
+  background: transparent !important;
+  text-shadow: 0 1px 0 rgba(0,0,0,.35);
+}
+
+.processCanvas{
+  background: linear-gradient(180deg, var(--paper0), var(--paper1));
+  border:1px solid rgba(255,255,255,.10);
+}
+
+.processCanvas .djs-container{
   background: transparent !important;
 }
 
-.djs-container .djs-background {
-  fill: rgba(255,255,255,.035) !important;
+.processCanvas .djs-container .djs-background{
+  fill: transparent !important;
 }
 
-.djs-container svg {
-  background: transparent !important;
+.processCanvas .bjs-powered-by,
+.processCanvas .bjs-powered-by a{
+  color: rgba(7,10,20,.55) !important;
 }
 
-/* Node shapes: subtle translucent fill, light strokes */
-.djs-container .djs-visual rect,
-.djs-container .djs-visual circle,
-.djs-container .djs-visual polygon {
-  fill: rgba(255,255,255,.03) !important;
+.bpmnToolBtn,
+.bpmnToolBtnPrimary{
+  background: rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.14);
+  color:var(--text);
 }
 
-.djs-container .djs-visual path,
-.djs-container .djs-visual rect,
-.djs-container .djs-visual circle,
-.djs-container .djs-visual polygon,
-.djs-container .djs-visual polyline,
-.djs-container .djs-visual line {
-  stroke: rgba(255,255,255,.78) !important;
-}
-
-/* Text labels: light */
-.djs-container .djs-visual text {
-  fill: rgba(255,255,255,.88) !important;
-}
-
-/* Selection ring */
-.djs-container .djs-outline,
-.djs-container .djs-visual .djs-hit {
-  stroke: rgba(124,92,255,.75) !important;
-}
-
-/* R16_TITLES: make section titles readable on dark */
-h1, h2, h3, h4,
-.panelHead, .panelTitle, .sectionTitle, .stageTitle, .processTitle,
-.stageHeader, .panelHeader, .processHeader {
-  color: var(--text);
-}
-.muted { color: var(--muted); }
-.small { color: var(--text); }
-.small.muted { color: var(--muted); }
-
-/* Reduce glare on large white BPMN canvas container (in case bpmn-js CSS sets white bg) */
-.bpmnStage, .bpmnCanvas, .bpmnWrap, .workflowCanvas, .processCanvas {
-  background: rgba(255,255,255,.03);
-}
-
-/* R16_BPMN_CANVAS_BG: bpmn-js light theme overrides */
-.djs-container,
-.djs-container .djs-canvas,
-.djs-container .djs-canvas > svg {
-  background: #0b1020 !important;
-}
-
-/* Slightly dimmer fills, softer strokes (avoid pure white) */
-.djs-container .djs-visual rect,
-.djs-container .djs-visual circle,
-.djs-container .djs-visual polygon,
-.djs-container .djs-visual path {
-  fill: rgba(255,255,255,.06) !important;
-  stroke: rgba(255,255,255,.35) !important;
-}
-
-.djs-container .djs-visual text,
-.djs-container .djs-label {
-  fill: rgba(255,255,255,.86) !important;
-}
-
-/* Lanes / pool borders */
-.djs-container .djs-visual .djs-outline,
-.djs-container .djs-visual .djs-lane {
-  stroke: rgba(255,255,255,.22) !important;
-}
-
-/* Sequence flows a bit brighter */
-.djs-container .djs-visual .djs-connection path {
-  stroke: rgba(255,255,255,.48) !important;
-}
-
-/* R16: readability fixes (titles + BPMN canvas) */
-.panelHead,
-.panelTitle,
-.stageTitle,
-.stageHead,
-.sectionTitle,
-h1, h2, h3 {
-  color: var(--text) !important;
-}
-
-.panelHead .muted,
-.panelTitle .muted,
-.stageTitle .muted,
-.small.muted {
-  color: var(--muted) !important;
-}
-
-/* BPMN canvas: reduce glare (not pure white), keep high readability */
-.bpmnHost,
-.djs-container,
-.bjs-container,
-.bjs-container .djs-container {
-  background: rgba(255,255,255,0.86) !important;
-  border-radius: var(--r-lg);
-}
-
-/* subtle frame to separate from glass */
-.bpmnHost {
-  border: 1px solid rgba(255,255,255,0.10);
-  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05);
-}
-
-/* labels in SVG (bpmn-js) */
-.djs-container .djs-visual text,
-.djs-container .djs-visual .djs-label {
-  fill: rgba(16,24,40,0.88) !important;
+.bpmnToolBtnPrimary{
+  background: linear-gradient(180deg, rgba(124,92,255,.42), rgba(124,92,255,.22));
+  border-color: rgba(124,92,255,.35);
 }
