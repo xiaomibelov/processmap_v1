@@ -7,6 +7,7 @@ import re
 import uuid
 import io
 import zipfile
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -15,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from .exporters.mermaid import render_mermaid
 from .exporters.yaml_export import dump_yaml, session_to_process_dict
@@ -31,6 +32,149 @@ from .validators.loss import build_loss_questions, loss_report
 
 
 app = FastAPI(title="Food Process Copilot MVP")
+# --- Frontend contract helpers (Vite dev 5174) ---
+def _role_id_from_any(x: Any) -> Optional[str]:
+    if x is None:
+        return None
+    if isinstance(x, str):
+        v = x.strip()
+        return v or None
+    if isinstance(x, dict):
+        for k in ("role_id", "roleId", "id", "value", "name", "key"):
+            if k in x and x[k] is not None:
+                v = str(x[k]).strip()
+                if v:
+                    return v
+    return None
+
+
+def _norm_roles(v: Any) -> List[str]:
+    if v is None:
+        return []
+    if isinstance(v, list):
+        out: List[str] = []
+        seen = set()
+        for it in v:
+            rid = _role_id_from_any(it)
+            if not rid or rid in seen:
+                continue
+            seen.add(rid)
+            out.append(rid)
+        return out
+    rid = _role_id_from_any(v)
+    return [rid] if rid else []
+
+
+def _notes_decode(raw: Any) -> List[Dict[str, Any]]:
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, dict):
+        return [raw]
+    if isinstance(raw, str):
+        txt = raw.strip()
+        if not txt:
+            return []
+        try:
+            j = json.loads(txt)
+            if isinstance(j, list):
+                return j
+            if isinstance(j, dict):
+                return [j]
+        except Exception:
+            pass
+        return [{"note_id": "legacy", "ts": None, "author": None, "text": txt}]
+    return []
+
+
+def _notes_encode(v: Any) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, str):
+        return v
+    if isinstance(v, dict):
+        return json.dumps([v], ensure_ascii=False)
+    if isinstance(v, list):
+        return json.dumps(v, ensure_ascii=False)
+    return ""
+
+
+def _pick(d: Dict[str, Any], *keys: str) -> Any:
+    for k in keys:
+        if k in d and d[k] is not None:
+            return d[k]
+    return None
+
+
+def _norm_nodes(v: Any) -> List[Node]:
+    if v is None:
+        return []
+    if not isinstance(v, list):
+        return []
+    out: List[Node] = []
+    for it in v:
+        if not isinstance(it, dict):
+            continue
+        nid = _pick(it, "id", "node_id", "nodeId")
+        title = _pick(it, "title", "label", "name")
+        if nid is None or title is None:
+            continue
+        payload = dict(it)
+        payload["id"] = str(nid)
+        payload["title"] = str(title)
+        if "actor_role" not in payload and "actorRole" in payload:
+            payload["actor_role"] = payload.get("actorRole")
+        if "recipient_role" not in payload and "recipientRole" in payload:
+            payload["recipient_role"] = payload.get("recipientRole")
+        out.append(Node.model_validate(payload))
+    return out
+
+
+def _norm_edges(v: Any) -> List[Edge]:
+    if v is None:
+        return []
+    if not isinstance(v, list):
+        return []
+    out: List[Edge] = []
+    for it in v:
+        if not isinstance(it, dict):
+            continue
+        fr = _pick(it, "from_id", "from", "source_id", "sourceId")
+        to = _pick(it, "to_id", "to", "target_id", "targetId")
+        if fr is None or to is None:
+            continue
+        payload = dict(it)
+        payload["from_id"] = str(fr)
+        payload["to_id"] = str(to)
+        out.append(Edge.model_validate(payload))
+    return out
+
+
+def _norm_questions(v: Any) -> List[Any]:
+    if v is None:
+        return []
+    if not isinstance(v, list):
+        return []
+    out: List[Any] = []
+    for it in v:
+        if not isinstance(it, dict):
+            continue
+        payload = dict(it)
+        if "question" not in payload and "text" in payload:
+            payload["question"] = payload.get("text")
+        if "node_id" not in payload and "nodeId" in payload:
+            payload["node_id"] = payload.get("nodeId")
+        out.append(payload)
+    return out
+
+
+def _session_api_dump(sess: Session) -> Dict[str, Any]:
+    d = sess.model_dump()
+    d["notes"] = _notes_decode(d.get("notes"))
+    return d
+
+
 # CORS (local frontend integration)
 cors_env = os.getenv("CORS_ORIGINS", "").strip()
 if cors_env:
@@ -63,15 +207,26 @@ if STATIC_DIR.exists():
 
 class CreateSessionIn(BaseModel):
     title: str
-    roles: Optional[List[str]] = None
+    roles: Optional[Any] = None
+    start_role: Optional[str] = None
+
+    model_config = ConfigDict(extra="allow")
+
 
 
 class UpdateSessionIn(BaseModel):
     title: Optional[str] = None
-    roles: Optional[List[str]] = None
+    roles: Optional[Any] = None
     start_role: Optional[str] = None
-    nodes: Optional[List[Dict[str, Any]]] = None
-    edges: Optional[List[Dict[str, Any]]] = None
+    notes: Optional[Any] = None
+    nodes: Optional[Any] = None
+    edges: Optional[Any] = None
+    questions: Optional[Any] = None
+
+    # frontend часто шлёт derived поля (mermaid*, normalized, resources, version)
+    # бек имеет право игнорировать и пересчитывать их.
+    model_config = ConfigDict(extra="allow")
+
 
 
 class NotesIn(BaseModel):
@@ -289,14 +444,40 @@ def health():
 
 @app.post("/api/sessions")
 def create_session(inp: CreateSessionIn) -> Dict[str, Any]:
-    sid = uuid.uuid4().hex[:10]
-    roles = inp.roles or ["cook_1", "cook_2", "brigadir", "technolog"]
-    s = Session(id=sid, title=inp.title, roles=roles, version=1)
-    s = _recompute_session(s)
     st = get_storage()
-    st.save(s)
-    return s.model_dump()
 
+    roles = _norm_roles(getattr(inp, "roles", None))
+    if not roles:
+        roles = ["cook_1", "technolog"]
+
+    sr = getattr(inp, "start_role", None)
+    if sr is not None and str(sr).strip() != "":
+        sr = str(sr).strip()
+        if sr not in roles:
+            return {"error": "start_role must be one of roles", "start_role": sr, "roles": roles}
+    else:
+        sr = None
+
+    sid = uuid.uuid4().hex[:10]
+    sess = Session(
+        id=sid,
+        title=inp.title,
+        roles=roles,
+        start_role=sr,
+        notes=_notes_encode([]),
+        nodes=[],
+        edges=[],
+        questions=[],
+        mermaid="",
+        mermaid_simple="",
+        mermaid_lanes="",
+        normalized={},
+        resources={},
+        version=1,
+    )
+    sess = _recompute_session(sess)
+    st.save(sess)
+    return _session_api_dump(sess)
 
 @app.get("/api/sessions")
 def list_sessions(q: Optional[str] = None, limit: int = 200) -> Dict[str, Any]:
@@ -308,11 +489,10 @@ def list_sessions(q: Optional[str] = None, limit: int = 200) -> Dict[str, Any]:
 @app.get("/api/sessions/{session_id}")
 def get_session(session_id: str) -> Dict[str, Any]:
     st = get_storage()
-    s = st.load(session_id)
-    if not s:
+    sess = st.load(session_id)
+    if not sess:
         return {"error": "not found"}
-    return s.model_dump()
-
+    return _session_api_dump(sess)
 
 @app.patch("/api/sessions/{session_id}")
 def patch_session(session_id: str, inp: UpdateSessionIn) -> Dict[str, Any]:
@@ -322,8 +502,8 @@ def patch_session(session_id: str, inp: UpdateSessionIn) -> Dict[str, Any]:
         return {"error": "not found"}
 
     data = inp.model_dump(exclude_unset=True)
-    if not data:
-        return {"error": "no changes"}
+
+    handled = False
 
     if "title" in data and data["title"] is not None:
         title = str(data["title"]).strip()
@@ -332,20 +512,13 @@ def patch_session(session_id: str, inp: UpdateSessionIn) -> Dict[str, Any]:
             if not sess2:
                 return {"error": "not found"}
             sess = sess2
+            handled = True
 
     if "roles" in data:
-        roles_in = data.get("roles") or []
-        clean = []
-        seen = set()
-        for r in roles_in:
-            rr = str(r).strip()
-            if not rr or rr in seen:
-                continue
-            seen.add(rr)
-            clean.append(rr)
-        sess.roles = clean
+        sess.roles = _norm_roles(data.get("roles"))
         if sess.start_role and sess.roles and sess.start_role not in sess.roles:
             sess.start_role = None
+        handled = True
 
     if "start_role" in data:
         sr = data.get("start_role")
@@ -356,10 +529,66 @@ def patch_session(session_id: str, inp: UpdateSessionIn) -> Dict[str, Any]:
             if sess.roles and sr not in sess.roles:
                 return {"error": "start_role must be one of roles", "start_role": sr, "roles": sess.roles}
             sess.start_role = sr
+        handled = True
+
+    if "notes" in data:
+        sess.notes = _notes_encode(data.get("notes"))
+        handled = True
+
+    if "nodes" in data:
+        sess.nodes = _norm_nodes(data.get("nodes"))
+        handled = True
+
+    if "edges" in data:
+        sess.edges = _norm_edges(data.get("edges"))
+        handled = True
+
+    if "questions" in data:
+        sess.questions = _norm_questions(data.get("questions"))
+        handled = True
+
+    # игнорируем любые extra поля без ошибки
+    sess = _recompute_session(sess)
+    st.save(sess)
+    return _session_api_dump(sess)
+
+
+@app.put("/api/sessions/{session_id}")
+def put_session(session_id: str, inp: UpdateSessionIn) -> Dict[str, Any]:
+    st = get_storage()
+    sess = st.load(session_id)
+    if not sess:
+        return {"error": "not found"}
+
+    data = inp.model_dump()
+
+    if data.get("title") is not None:
+        title = str(data["title"]).strip()
+        if title:
+            sess2 = st.rename(session_id, title)
+            if not sess2:
+                return {"error": "not found"}
+            sess = sess2
+
+    sess.roles = _norm_roles(data.get("roles"))
+
+    sr = data.get("start_role")
+    if sr is None or str(sr).strip() == "":
+        sess.start_role = None
+    else:
+        sr = str(sr).strip()
+        if sess.roles and sr not in sess.roles:
+            return {"error": "start_role must be one of roles", "start_role": sr, "roles": sess.roles}
+        sess.start_role = sr
+
+    sess.notes = _notes_encode(data.get("notes"))
+    sess.nodes = _norm_nodes(data.get("nodes"))
+    sess.edges = _norm_edges(data.get("edges"))
+    sess.questions = _norm_questions(data.get("questions"))
 
     sess = _recompute_session(sess)
     st.save(sess)
-    return sess.model_dump()
+    return _session_api_dump(sess)
 
 @app.post("/api/sessions/{session_id}/recompute")
 def recompute(session_id: str) -> Dict[str, Any]:
