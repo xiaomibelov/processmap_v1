@@ -84,3 +84,67 @@ body{
   background: linear-gradient(180deg, rgba(124,92,255,.92), rgba(124,92,255,.62));
   border-color: rgba(124,92,255,.65);
 }
+
+/* R15: contrast fixes + BPMN dark canvas (reduce white glare) */
+
+/* Titles / headers: always visible on graphite */
+.stageTitle, .stageHead, .stageHeader,
+.panelHead, .panelTitle, .sectionTitle,
+h1, h2, h3 {
+  color: var(--text);
+}
+
+/* Cards should not be pure white in graphite */
+.card {
+  background: var(--panel2) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text) !important;
+}
+
+/* Inputs and placeholders: readable */
+.input, textarea, select, option {
+  color: var(--text);
+}
+.input::placeholder, textarea::placeholder {
+  color: rgba(255,255,255,.45);
+}
+
+/* BPMN-js: make canvas dark and invert strokes/text for readability */
+.djs-container {
+  background: transparent !important;
+}
+
+.djs-container .djs-background {
+  fill: rgba(255,255,255,.035) !important;
+}
+
+.djs-container svg {
+  background: transparent !important;
+}
+
+/* Node shapes: subtle translucent fill, light strokes */
+.djs-container .djs-visual rect,
+.djs-container .djs-visual circle,
+.djs-container .djs-visual polygon {
+  fill: rgba(255,255,255,.03) !important;
+}
+
+.djs-container .djs-visual path,
+.djs-container .djs-visual rect,
+.djs-container .djs-visual circle,
+.djs-container .djs-visual polygon,
+.djs-container .djs-visual polyline,
+.djs-container .djs-visual line {
+  stroke: rgba(255,255,255,.78) !important;
+}
+
+/* Text labels: light */
+.djs-container .djs-visual text {
+  fill: rgba(255,255,255,.88) !important;
+}
+
+/* Selection ring */
+.djs-container .djs-outline,
+.djs-container .djs-visual .djs-hit {
+  stroke: rgba(124,92,255,.75) !important;
+}
