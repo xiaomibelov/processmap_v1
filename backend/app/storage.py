@@ -2,19 +2,32 @@ from __future__ import annotations
 
 import json
 import os
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .models import Session
+
+
 @dataclass
 class Storage:
     base_dir: Path
+
     def __post_init__(self) -> None:
         self.base_dir.mkdir(parents=True, exist_ok=True)
+
     def session_path(self, session_id: str) -> Path:
         return self.base_dir / f"{session_id}.json"
+
+    def create(self, title: str, roles: Optional[List[str]] = None) -> str:
+        sid = uuid.uuid4().hex[:10]
+        r = roles or ["cook_1", "cook_2", "brigadir", "technolog"]
+        t = (title or "").strip() or sid
+        s = Session(id=sid, title=t, roles=r, version=1)
+        self.save(s)
+        return sid
 
     def list(self, query: Optional[str] = None, limit: int = 200) -> List[Dict[str, Any]]:
         q = (query or "").strip().lower()
@@ -76,15 +89,19 @@ class Storage:
         s.title = (title or "").strip() or s.title
         self.save(s)
         return s
+
     def load(self, session_id: str) -> Optional[Session]:
         p = self.session_path(session_id)
         if not p.exists():
             return None
         return Session.model_validate(json.loads(p.read_text(encoding="utf-8")))
+
     def save(self, s: Session) -> None:
         p = self.session_path(s.id)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(s.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def get_storage() -> Storage:
     base = os.environ.get("PROCESS_STORAGE_DIR", "workspace/.session_store")
     return Storage(base_dir=Path(base))
