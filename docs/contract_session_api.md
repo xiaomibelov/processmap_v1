@@ -58,3 +58,10 @@ Derived fields (`mermaid*`, `normalized`, `resources`, `version`) may be ignored
 1) `POST /api/sessions` -> get `{id}`  
 2) Use that `{id}` everywhere (avoid `local_*` ids).  
 3) On graph edits: `PATCH /api/sessions/{id}` (or `PUT` fallback) -> then reload BPMN: `GET /api/sessions/{id}/bpmn`.
+
+
+### Extra fields
+
+Sessions may include optional fields:
+- `project_id`: if the session is bound to a project
+- `mode`: `quick_skeleton` or `deep_audit`

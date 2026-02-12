@@ -44,28 +44,10 @@ Notes:
 - Frontend can send full passport via PUT to replace it.
 
 
-## Project sessions
+## Project ↔ Sessions
 
-### GET /api/projects/{project_id}/sessions
+- `GET /api/projects/{project_id}/sessions` -> list of session summaries for a project
+- `POST /api/projects/{project_id}/sessions` -> create session in a project (forces `project_id`)
 
-Returns a lightweight list of sessions belonging to the project.
-
-Query params:
-- `q` (optional): substring filter by title
-- `limit` (optional, default 200)
-
-Response: array of session list items.
-
-Each item includes at least: `id`, `title`, `roles`, `start_role`, `project_id`, `mode`, `updated_at`.
-
-### POST /api/projects/{project_id}/sessions
-
-Creates a new session bound to the project.
-
-Body (same shape as `POST /api/sessions`, plus optional `mode`):
-- `title`: string
-- `roles`: array of role ids
-- `start_role` (optional)
-- `mode` (optional): `quick_skeleton` or `deep_audit` (default `quick_skeleton`)
-
-Response: full session object.
+Also:
+- `GET /api/sessions` accepts optional `project_id` query param for filtering.

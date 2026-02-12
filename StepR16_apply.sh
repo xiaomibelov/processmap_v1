@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 TS="$(date +%F_%H%M%S)"
-BR="fix/frontend-r16-contrast-bpmn-v1"
+BR="fix/frontend-r16-process-title-bpmn-bg-v1"
 TAG_START="cp/foodproc_frontend_r16_start_${TS}"
 TAG_DONE="cp/foodproc_frontend_r16_done_${TS}"
 ZIP_DIR="artifacts"
@@ -26,76 +26,94 @@ git switch -c "$BR" >/dev/null 2>&1 || git switch "$BR" >/dev/null
 git status -sb || true
 
 echo
-echo "== unstage helper scripts/artifacts if any =="
-git restore --staged Run_StepR*.sh StepR*.sh artifacts 2>/dev/null || true
-git restore --staged artifacts/* 2>/dev/null || true
+echo "== unstage helper scripts/artifacts/backend if any =="
+git restore --staged Run_StepR*.sh 2>/dev/null || true
+git restore --staged StepR*.sh 2>/dev/null || true
+git restore --staged artifacts 2>/dev/null || true
+git restore --staged backend 2>/dev/null || true
 
+echo
+echo "== ensure .tools dir =="
+mkdir -p .tools
+
+echo
+echo "== theme: force white titles + soften BPMN canvas =="
 THEME="frontend/src/styles/theme_graphite.css"
 if [ ! -f "$THEME" ]; then
-  echo "ERROR: not found: $THEME"
-  false
+  echo "WARN: $THEME not found; fallback to frontend/src/styles/app.css"
+  THEME="frontend/src/styles/app.css"
 fi
 
-echo
-echo "== theme: ensure titles + muted are readable on dark =="
-if ! grep -q "R16_TITLES" "$THEME"; then
-  cat >> "$THEME" <<'EOF'
+cat >> "$THEME" <<'EOF'
 
-/* R16_TITLES: make section titles readable on dark */
-h1, h2, h3, h4,
-.panelHead, .panelTitle, .sectionTitle, .stageTitle, .processTitle,
-.stageHeader, .panelHeader, .processHeader {
-  color: var(--text);
+/* R16: readability fixes (titles + BPMN canvas) */
+.panelHead,
+.panelTitle,
+.stageTitle,
+.stageHead,
+.sectionTitle,
+h1, h2, h3 {
+  color: var(--text) !important;
 }
-.muted { color: var(--muted); }
-.small { color: var(--text); }
-.small.muted { color: var(--muted); }
 
-/* Reduce glare on large white BPMN canvas container (in case bpmn-js CSS sets white bg) */
-.bpmnStage, .bpmnCanvas, .bpmnWrap, .workflowCanvas, .processCanvas {
-  background: rgba(255,255,255,.03);
+.panelHead .muted,
+.panelTitle .muted,
+.stageTitle .muted,
+.small.muted {
+  color: var(--muted) !important;
 }
-EOF
-fi
 
-echo
-echo "== theme: BPMN canvas background + node colors (override bpmn-js light defaults) =="
-if ! grep -q "R16_BPMN_CANVAS_BG" "$THEME"; then
-  cat >> "$THEME" <<'EOF'
-
-/* R16_BPMN_CANVAS_BG: bpmn-js light theme overrides */
+/* BPMN canvas: reduce glare (not pure white), keep high readability */
+.bpmnHost,
 .djs-container,
-.djs-container .djs-canvas,
-.djs-container .djs-canvas > svg {
-  background: #0b1020 !important;
+.bjs-container,
+.bjs-container .djs-container {
+  background: rgba(255,255,255,0.86) !important;
+  border-radius: var(--r-lg);
 }
 
-/* Slightly dimmer fills, softer strokes (avoid pure white) */
-.djs-container .djs-visual rect,
-.djs-container .djs-visual circle,
-.djs-container .djs-visual polygon,
-.djs-container .djs-visual path {
-  fill: rgba(255,255,255,.06) !important;
-  stroke: rgba(255,255,255,.35) !important;
+/* subtle frame to separate from glass */
+.bpmnHost {
+  border: 1px solid rgba(255,255,255,0.10);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05);
 }
 
+/* labels in SVG (bpmn-js) */
 .djs-container .djs-visual text,
-.djs-container .djs-label {
-  fill: rgba(255,255,255,.86) !important;
-}
-
-/* Lanes / pool borders */
-.djs-container .djs-visual .djs-outline,
-.djs-container .djs-visual .djs-lane {
-  stroke: rgba(255,255,255,.22) !important;
-}
-
-/* Sequence flows a bit brighter */
-.djs-container .djs-visual .djs-connection path {
-  stroke: rgba(255,255,255,.48) !important;
+.djs-container .djs-visual .djs-label {
+  fill: rgba(16,24,40,0.88) !important;
 }
 EOF
-fi
+
+echo
+echo "== BpmnStage.jsx: add .bpmnHost class to container div =="
+cat > .tools/patch_r16_bpmn_stage.py <<'PY'
+from pathlib import Path
+
+p = Path("frontend/src/components/process/BpmnStage.jsx")
+if not p.exists():
+    raise SystemExit("BpmnStage.jsx not found at frontend/src/components/process/BpmnStage.jsx")
+
+s = p.read_text(encoding="utf-8")
+
+old = '<div ref={hostRef} style={{ height: "100%", background: "transparent" }} />'
+new = '<div ref={hostRef} className="bpmnHost" style={{ height: "100%" }} />'
+
+if old in s:
+    s = s.replace(old, new)
+else:
+    s2 = s
+    s2 = s2.replace('ref={hostRef} style={{ height: "100%", background: "transparent" }}',
+                    'ref={hostRef} className="bpmnHost" style={{ height: "100%" }}')
+    if s2 == s:
+        s2 = s2.replace('ref={hostRef}', 'ref={hostRef} className="bpmnHost"', 1)
+    s = s2
+
+p.write_text(s, encoding="utf-8")
+print("patched:", p)
+PY
+
+python .tools/patch_r16_bpmn_stage.py
 
 echo
 echo "== build smoke =="
@@ -106,10 +124,10 @@ echo "== diff stat =="
 git diff --stat || true
 
 echo
-echo "== commit (theme only) =="
-git add "$THEME"
+echo "== commit (frontend only) =="
+git add "$THEME" frontend/src/components/process/BpmnStage.jsx .tools/patch_r16_bpmn_stage.py
 git status -sb || true
-git commit -m "fix(frontend): improve contrast (titles) + dark BPMN canvas overrides" >/dev/null 2>&1 || true
+git commit -m "fix(ui): make Process title readable + soften BPMN canvas (graphite glass)" >/dev/null 2>&1 || true
 
 echo
 echo "== checkpoint tag (done) =="
@@ -119,7 +137,7 @@ echo "$TAG_DONE"
 echo
 echo "== zip artifact (exclude node_modules/dist) =="
 mkdir -p "$ZIP_DIR"
-zip -r "$ZIP_PATH" frontend/src/styles/theme_graphite.css -x "frontend/node_modules/*" -x "frontend/dist/*" >/dev/null
+zip -r "$ZIP_PATH" frontend .tools -x "frontend/node_modules/*" -x "frontend/dist/*" >/dev/null
 ls -la "$ZIP_PATH" || true
 
 echo

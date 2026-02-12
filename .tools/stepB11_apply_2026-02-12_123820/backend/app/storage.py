@@ -21,42 +21,77 @@ class Storage:
     def session_path(self, session_id: str) -> Path:
         return self.base_dir / f"{session_id}.json"
 
-def create(
-    self,
-    title: str,
-    roles: List[str],
-    *,
-    start_role: Optional[str] = None,
-    project_id: Optional[str] = None,
-    mode: Optional[str] = None,
-) -> str:
-    sid = uuid.uuid4().hex[:10]
-    r = [str(x).strip() for x in (roles or []) if str(x).strip()]
-    r = list(dict.fromkeys(r))  # unique, preserve order
+    def create(self, title: str, roles: Optional[List[str]] = None) -> str:
+        sid = uuid.uuid4().hex[:10]
+        r = roles or ["cook_1", "cook_2", "brigadir", "technolog"]
+        t = (title or "").strip() or sid
+        s = Session(id=sid, title=t, roles=r, version=1)
+        self.save(s)
+        return sid
 
-    sr = (start_role or "").strip() or None
-    if sr and sr not in r:
-        r = [sr] + r
-    if not sr and r:
-        sr = r[0]
+    def list(self, query: Optional[str] = None, limit: int = 200) -> List[Dict[str, Any]]:
+        q = (query or "").strip().lower()
+        items: List[Dict[str, Any]] = []
+        if not self.base_dir.exists():
+            return items
 
-    sess = Session(
-        id=sid,
-        title=title or "process",
-        roles=r,
-        start_role=sr,
-        project_id=project_id,
-        mode=mode,
-        notes="[]",
-        nodes=[],
-        edges=[],
-        questions=[],
-        version=2,
-    )
-    self.save(sess)
-    return sid
+        files = sorted(self.base_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
 
+        for p in files:
+            if len(items) >= limit:
+                break
+            try:
+                raw = json.loads(p.read_text(encoding="utf-8"))
+            if project_id is not None and raw.get(\"project_id\") != project_id:
+                continue
+            except Exception:
+                continue
 
+            sid = (raw.get("id") or p.stem or "").strip()
+            title = (raw.get("title") or "").strip()
+            notes = (raw.get("notes") or "").strip()
+            roles = raw.get("roles") or []
+            version = int(raw.get("version") or 0)
+
+            qs = raw.get("questions") or []
+            open_n = 0
+            ans_n = 0
+            for qq in qs:
+                st = (qq or {}).get("status")
+                if st == "answered":
+                    ans_n += 1
+                elif st == "open":
+                    open_n += 1
+
+            mtime = datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc).isoformat()
+
+            hay = f"{sid} {title} {notes}".lower()
+            if q and q not in hay:
+                continue
+
+            items.append(
+                {
+                    "id": sid,
+                    "title": title,
+            "project_id": project_id,
+                    "updated_at": mtime,
+                    "version": version,
+                    "roles": roles,
+                    "open_questions": open_n,
+                    "answered_questions": ans_n,
+                    "notes_preview": notes[:140],
+                }
+            )
+
+        return items
+
+    def rename(self, session_id: str, title: str) -> Optional[Session]:
+        s = self.load(session_id)
+        if not s:
+            return None
+        s.title = (title or "").strip() or s.title
+        self.save(s)
+        return s
 
     def load(self, session_id: str) -> Optional[Session]:
         p = self.session_path(session_id)

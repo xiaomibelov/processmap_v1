@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.responses import FileResponse
@@ -208,6 +208,7 @@ if STATIC_DIR.exists():
 class CreateSessionIn(BaseModel):
     title: str
     roles: Optional[Any] = None
+    project_id: Optional[str] = None
     start_role: Optional[str] = None
 
     model_config = ConfigDict(extra="allow")
@@ -217,6 +218,7 @@ class CreateSessionIn(BaseModel):
 class UpdateSessionIn(BaseModel):
     title: Optional[str] = None
     roles: Optional[Any] = None
+    project_id: Optional[str] = None
     start_role: Optional[str] = None
     notes: Optional[Any] = None
     nodes: Optional[Any] = None
@@ -479,65 +481,6 @@ def create_session(inp: CreateSessionIn) -> Dict[str, Any]:
     st.save(sess)
     return _session_api_dump(sess)
 
-
-
-
-@app.get("/api/projects/{project_id}/sessions")
-def list_project_sessions(project_id: str, mode: str | None = None):
-    ps = get_project_storage()
-    if ps.load(project_id) is None:
-        raise HTTPException(status_code=404, detail="project not found")
-
-    st = get_storage()
-    out = []
-    for item in st.list():
-        sess = item
-        # allow storage.list() to return ids or dicts defensively
-        if isinstance(item, str):
-            sess = st.load(item)
-        elif isinstance(item, dict):
-            try:
-                # best-effort parse via pydantic model
-                sess = Session.model_validate(item)
-            except Exception:
-                sess = None
-        if sess is None:
-            continue
-
-        if getattr(sess, "project_id", None) != project_id:
-            continue
-        if mode is not None and (getattr(sess, "mode", None) or None) != mode:
-            continue
-        out.append(_session_api_dump(sess))
-    return out
-@app.post("/api/projects/{project_id}/sessions")
-def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | None = Query(default=None)):
-    ps = get_project_storage()
-    if ps.load(project_id) is None:
-        raise HTTPException(status_code=404, detail="project not found")
-
-    st = get_storage()
-    title = getattr(inp, "title", None) or "process"
-    roles = _norm_roles(getattr(inp, "roles", None))
-    # prefer storage-native create signature if it supports project_id/mode
-    try:
-        sid = st.create(title=title, roles=roles, project_id=project_id, mode=mode)
-        sess = st.load(sid)
-        if sess is None:
-            raise HTTPException(status_code=500, detail="session not persisted")
-        return _session_api_dump(sess)
-    except TypeError:
-        # fallback: create base session then attach fields
-        sid = st.create(title=title, roles=roles)
-        sess = st.load(sid)
-        if sess is None:
-            raise HTTPException(status_code=500, detail="session not persisted")
-        if hasattr(sess, "project_id"):
-            sess.project_id = project_id
-        if hasattr(sess, "mode"):
-            sess.mode = mode
-        st.save(sess)
-        return _session_api_dump(sess)
 @app.get("/api/sessions")
 def list_sessions(q: Optional[str] = None, limit: int = 200) -> Dict[str, Any]:
     st = get_storage()
@@ -592,6 +535,10 @@ def patch_session(session_id: str, inp: UpdateSessionIn) -> Dict[str, Any]:
 
     if "notes" in data:
         sess.notes = _notes_encode(data.get("notes"))
+
+    if "project_id" in payload:
+        v = payload.get("project_id")
+        sess.project_id = str(v).strip() if v not in (None, "") else None
         handled = True
 
     if "nodes" in data:
@@ -641,6 +588,9 @@ def put_session(session_id: str, inp: UpdateSessionIn) -> Dict[str, Any]:
         sess.start_role = sr
 
     sess.notes = _notes_encode(data.get("notes"))
+
+    v = payload.get("project_id")
+    sess.project_id = str(v).strip() if v not in (None, "") else None
     sess.nodes = _norm_nodes(data.get("nodes"))
     sess.edges = _norm_edges(data.get("edges"))
     sess.questions = _norm_questions(data.get("questions"))
@@ -1269,7 +1219,8 @@ def api_meta():
             "bpmn": True,
             "export_zip": True,
             "graph_edit": True,
-            "projects": True, "project_sessions": True,
+            "projects": True,
+            "project_sessions": True,
         },
     }
 
@@ -1303,6 +1254,38 @@ def get_project(project_id: str) -> dict:
         raise HTTPException(status_code=404, detail="not found")
     return proj.model_dump()
 
+
+
+
+# -----------------------------
+# Project ↔ Sessions (Epic #2)
+# -----------------------------
+
+@app.get("/api/projects/{project_id}/sessions")
+def list_project_sessions(project_id: str, q: Optional[str] = None, limit: int = 50) -> Dict[str, Any]:
+    pst = get_project_storage()
+    if not pst.load(project_id):
+        return {"error": "project not found", "project_id": project_id}
+    st = get_storage()
+    items = st.list(q=q, limit=limit, project_id=project_id)
+    return {"project_id": project_id, "items": items, "count": len(items)}
+
+
+@app.post("/api/projects/{project_id}/sessions")
+def create_project_session(project_id: str, inp: CreateSessionIn) -> Dict[str, Any]:
+    pst = get_project_storage()
+    if not pst.load(project_id):
+        return {"error": "project not found", "project_id": project_id}
+    st = get_storage()
+    roles = _norm_roles(getattr(inp, "roles", None))
+    sid = st.create(title=inp.title, roles=roles, project_id=project_id)
+    sess = st.load(sid)
+    if not sess:
+        return {"error": "create failed"}
+    if getattr(sess, "notes", None) in (None, ""):
+        sess.notes = _notes_encode([])
+        st.save(sess)
+    return _session_api_dump(sess)
 
 @app.patch("/api/projects/{project_id}")
 def patch_project(project_id: str, inp: UpdateProjectIn) -> dict:

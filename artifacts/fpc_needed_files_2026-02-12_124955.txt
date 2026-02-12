@@ -1,0 +1,10 @@
+frontend/src
+frontend/index.html
+frontend/vite.config.js
+frontend/package.json
+frontend/package-lock.json
+docs/contract_session_api.md
+backend/app/main.py
+backend/app/models.py
+backend/app/settings.py
+backend/requirements.txt

@@ -47,8 +47,6 @@ class Session(BaseModel):
     title: str
     roles: List[str] = Field(default_factory=list)
     start_role: Optional[str] = None
-    project_id: Optional[str] = None
-    mode: Optional[str] = None
     notes: str = ""
     nodes: List[Node] = Field(default_factory=list)
     edges: List[Edge] = Field(default_factory=list)
