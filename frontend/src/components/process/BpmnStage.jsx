@@ -1,217 +1,230 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import BpmnJS from "bpmn-js/lib/NavigatedViewer";
-import { apiGetBpmn } from "../../lib/api";
 
 function isLocalSessionId(id) {
   return typeof id === "string" && id.startsWith("local_");
 }
 
-const LOCAL_BPMN_XML = `<?xml version="1.0" encoding="UTF-8"?>
+function buildFallbackBpmn() {
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
- xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
- xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
- xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
- xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
- id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
+  xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+  id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
   <bpmn:process id="Process_1" isExecutable="false">
-    <bpmn:startEvent id="StartEvent_1" name="Старт"/>
-    <bpmn:task id="n_demo_1" name="Шаг (пример)"/>
-    <bpmn:endEvent id="EndEvent_1" name="Конец"/>
-    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="n_demo_1"/>
-    <bpmn:sequenceFlow id="Flow_2" sourceRef="n_demo_1" targetRef="EndEvent_1"/>
+    <bpmn:startEvent id="StartEvent_1" name="Старт" />
+    <bpmn:endEvent id="EndEvent_1" name="Финиш" />
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="EndEvent_1" />
   </bpmn:process>
   <bpmndi:BPMNDiagram id="BPMNDiagram_1">
     <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Process_1">
       <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
-        <dc:Bounds x="200" y="140" width="36" height="36"/>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_1_di" bpmnElement="n_demo_1">
-        <dc:Bounds x="300" y="120" width="160" height="80"/>
+        <dc:Bounds x="160" y="240" width="36" height="36"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1">
-        <dc:Bounds x="500" y="140" width="36" height="36"/>
+        <dc:Bounds x="420" y="240" width="36" height="36"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
-        <di:waypoint x="236" y="158"/>
-        <di:waypoint x="300" y="160"/>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2">
-        <di:waypoint x="460" y="160"/>
-        <di:waypoint x="500" y="158"/>
+        <di:waypoint x="196" y="258"/>
+        <di:waypoint x="420" y="258"/>
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
-</bpmn:definitions>
-`;
+</bpmn:definitions>`;
+}
 
-function isFlowNode(el) {
-  const t = el?.type || "";
-  return (
-    t === "bpmn:Task" ||
-    t === "bpmn:UserTask" ||
-    t === "bpmn:ManualTask" ||
-    t === "bpmn:ServiceTask" ||
-    t === "bpmn:ScriptTask" ||
-    t === "bpmn:BusinessRuleTask" ||
-    t === "bpmn:SendTask" ||
-    t === "bpmn:ReceiveTask" ||
-    t === "bpmn:CallActivity" ||
-    t === "bpmn:SubProcess"
-  );
+function norm(s) {
+  return String(s || "").trim().toLowerCase();
+}
+
+function resolveNodeIdForElement(el, session) {
+  const nodes = Array.isArray(session?.nodes) ? session.nodes : [];
+  if (!el) return null;
+
+  const eid = String(el.id || "");
+  if (eid && nodes.some((n) => n && n.id === eid)) return eid;
+
+  const name = norm(el?.businessObject?.name);
+  if (!name) return null;
+
+  const hits = nodes.filter((n) => norm(n?.title) === name);
+  if (hits.length === 1) return hits[0].id;
+
+  return null;
 }
 
 const BpmnStage = forwardRef(function BpmnStage(
-  { sessionId, reloadKey = 0, aiEnabled = true, questions = [], selectedNodeId = "", onElementClick },
+  { sessionId, reloadKey = 0, session = null, onElementClick = null },
   ref
 ) {
   const hostRef = useRef(null);
   const viewerRef = useRef(null);
-  const overlayIdsRef = useRef([]);
-  const [ready, setReady] = useState(false);
+  const [status, setStatus] = useState("");
 
-  const openCountByNodeId = useMemo(() => {
-    const map = new Map();
-    (questions || []).forEach((q) => {
-      const nodeId = q?.node_id;
-      if (!nodeId) return;
-      const st = q?.status || "open";
-      const isOpen = st !== "answered" && st !== "skipped";
-      if (!isOpen) return;
-      map.set(nodeId, (map.get(nodeId) || 0) + 1);
-    });
-    return map;
-  }, [questions]);
+  const fallbackXml = useMemo(() => buildFallbackBpmn(), []);
 
   useImperativeHandle(ref, () => ({
     zoomIn() {
       const v = viewerRef.current;
       if (!v) return;
       const canvas = v.get("canvas");
-      const z = canvas.zoom() || 1;
-      canvas.zoom(z * 1.15);
+      const z = canvas.zoom();
+      canvas.zoom(z + 0.2);
     },
     zoomOut() {
       const v = viewerRef.current;
       if (!v) return;
       const canvas = v.get("canvas");
-      const z = canvas.zoom() || 1;
-      canvas.zoom(z / 1.15);
+      const z = canvas.zoom();
+      canvas.zoom(Math.max(0.2, z - 0.2));
     },
     fit() {
       const v = viewerRef.current;
       if (!v) return;
-      v.get("canvas").zoom("fit-viewport");
+      const canvas = v.get("canvas");
+      canvas.zoom("fit-viewport");
     },
   }));
 
-  // init viewer once
+  const syncBadges = useCallback(() => {
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+
+    let overlays = null;
+    let registry = null;
+    try {
+      overlays = viewer.get("overlays");
+      registry = viewer.get("elementRegistry");
+    } catch (_) {
+      return;
+    }
+    if (!overlays || !registry) return;
+
+    try { overlays.clear(); } catch (_) {}
+
+    const questions = Array.isArray(session?.questions) ? session.questions : [];
+    if (!questions.length) return;
+
+    const els = registry.filter((el) => {
+      const t = el?.type || "";
+      return t === "bpmn:Task" || t === "bpmn:UserTask" || t === "bpmn:ServiceTask";
+    });
+
+    for (const el of els) {
+      const nodeId = resolveNodeIdForElement(el, session) || el.id;
+      const open = questions.filter((q) => q && q.node_id === nodeId && q.state !== "done");
+      if (!open.length) continue;
+
+      const root = document.createElement("div");
+      root.className = "bpmnBadge";
+      root.textContent = `AI ${open.length}`;
+
+      overlays.add(el, "note", {
+        position: { top: 6, right: 6 },
+        html: root,
+      });
+    }
+  }, [session]);
+
   useEffect(() => {
     if (!hostRef.current) return;
 
-    const viewer = new BpmnJS({ container: hostRef.current });
-    viewerRef.current = viewer;
-
-    viewer.on("element.click", (e) => {
-      const el = e?.element;
-      if (!el || !isFlowNode(el)) return;
-      onElementClick?.(e);
-    });
+    const v = new BpmnJS({ container: hostRef.current });
+    viewerRef.current = v;
 
     return () => {
-      try {
-        viewer.destroy();
-      } catch {}
+      try { v.destroy(); } catch (_) {}
       viewerRef.current = null;
     };
-  }, [onElementClick]);
+  }, []);
 
-  // import XML when sessionId/reloadKey changes
   useEffect(() => {
-    const v = viewerRef.current;
-    if (!v) return;
+    const viewer = viewerRef.current;
+    if (!viewer) return;
 
+    let offClick = null;
+    let offViewbox = null;
+
+    try {
+      const eventBus = viewer.get("eventBus");
+
+      const onClick = (event) => {
+        const el = event?.element;
+        if (!el?.id) return;
+
+        const mapped = resolveNodeIdForElement(el, session);
+        if (typeof onElementClick === "function") onElementClick(mapped || el.id);
+      };
+
+      const onViewboxChanged = () => syncBadges();
+
+      eventBus.on("element.click", onClick);
+      eventBus.on("canvas.viewbox.changed", onViewboxChanged);
+
+      offClick = () => eventBus.off("element.click", onClick);
+      offViewbox = () => eventBus.off("canvas.viewbox.changed", onViewboxChanged);
+    } catch (_) {}
+
+    return () => {
+      try { offClick && offClick(); } catch (_) {}
+      try { offViewbox && offViewbox(); } catch (_) {}
+    };
+  }, [onElementClick, session, syncBadges]);
+
+  useEffect(() => {
     let cancelled = false;
-    setReady(false);
 
-    async function run() {
+    async function load() {
+      const v = viewerRef.current;
+      if (!v) return;
+
+      setStatus("");
+
       try {
-        const xml = !sessionId
-          ? LOCAL_BPMN_XML
-          : isLocalSessionId(sessionId)
-          ? LOCAL_BPMN_XML
-          : await apiGetBpmn(sessionId);
+        let xml = fallbackXml;
 
-        if (cancelled) return;
+        if (sessionId && !isLocalSessionId(sessionId)) {
+          const id = encodeURIComponent(sessionId);
+          const res = await fetch(`/api/sessions/${id}/bpmn`, { credentials: "include" });
+          if (!res.ok) {
+            const t = await res.text().catch(() => "");
+            throw new Error(`BPMN: ${res.status} ${t}`);
+          }
+          xml = await res.text();
+        }
 
         await v.importXML(xml);
         v.get("canvas").zoom("fit-viewport");
-        setReady(true);
-      } catch (err) {
-        console.warn("bpmn import failed:", err);
-        setReady(true);
+
+        if (!cancelled) syncBadges();
+      } catch (e) {
+        if (cancelled) return;
+        setStatus(String(e?.message || e));
       }
     }
 
-    run();
+    load();
+    return () => { cancelled = true; };
+  }, [sessionId, reloadKey, fallbackXml, syncBadges]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId, reloadKey]);
-
-  // overlays: AI badges + selected marker
   useEffect(() => {
-    const v = viewerRef.current;
-    if (!v || !ready) return;
+    syncBadges();
+  }, [syncBadges]);
 
-    const overlays = v.get("overlays");
-    const elementRegistry = v.get("elementRegistry");
-    const canvas = v.get("canvas");
-
-    // cleanup old overlays
-    overlayIdsRef.current.forEach((id) => {
-      try {
-        overlays.remove(id);
-      } catch {}
-    });
-    overlayIdsRef.current = [];
-
-    // markers
-    try {
-      canvas.removeMarker(selectedNodeId, "is-selected");
-    } catch {}
-    if (selectedNodeId) {
-      try {
-        canvas.addMarker(selectedNodeId, "is-selected");
-      } catch {}
-    }
-
-    if (!aiEnabled) return;
-
-    const elements = elementRegistry.getAll().filter(isFlowNode);
-
-    elements.forEach((el) => {
-      const count = openCountByNodeId.get(el.id) || 0;
-
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "bpmnAiBadge";
-      btn.textContent = count > 0 ? `AI ${count}` : "AI";
-      btn.title = count > 0 ? `Открытых вопросов: ${count}` : "AI Copilot";
-      btn.addEventListener("click", (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        onElementClick?.({ element: el });
-      });
-
-      try {
-        const oid = overlays.add(el.id, { position: { top: -10, right: -10 }, html: btn });
-        overlayIdsRef.current.push(oid);
-      } catch {}
-    });
-  }, [ready, aiEnabled, openCountByNodeId, selectedNodeId, onElementClick]);
-
-  return <div className="bpmnStage" ref={hostRef} />;
+  return (
+    <div style={{ position: "relative", height: "100%" }}>
+      <div className="bpmnStage" ref={hostRef} />
+      {status ? (
+        <div className="panel" style={{ position: "absolute", left: 14, bottom: 14, width: 460, padding: 12 }}>
+          <div style={{ fontWeight: 900, marginBottom: 6 }}>Ошибка BPMN</div>
+          <div className="small muted">Импорт BPMN не удался. Проверь /api/sessions/&lt;id&gt;/bpmn.</div>
+          <div className="small" style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>{status}</div>
+        </div>
+      ) : null}
+    </div>
+  );
 });
 
 export default BpmnStage;
