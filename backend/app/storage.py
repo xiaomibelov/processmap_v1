@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .models import Session
+from .models import Session, Project
 
 
 @dataclass
@@ -101,6 +101,71 @@ class Storage:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(s.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8")
 
+def gen_project_id() -> str:
+    return uuid.uuid4().hex[:10]
+
+
+class ProjectStorage:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.root.mkdir(parents=True, exist_ok=True)
+
+    def _path(self, project_id: str) -> Path:
+        return self.root / f"{project_id}.json"
+
+    def create(self, title: str, passport: Dict[str, Any] | None = None) -> str:
+        pid = gen_project_id()
+        now = int(datetime.now(timezone.utc).timestamp())
+        proj = Project(
+            id=pid,
+            title=title,
+            passport=passport or {},
+            created_at=now,
+            updated_at=now,
+            version=1,
+        )
+        self.save(proj)
+        return pid
+
+    def list(self) -> list[Project]:
+        out: list[Project] = []
+        for p in sorted(self.root.glob("*.json")):
+            try:
+                out.append(Project.model_validate_json(p.read_text(encoding="utf-8")))
+            except Exception:
+                continue
+        # newest first
+        out.sort(key=lambda x: x.updated_at or x.created_at or 0, reverse=True)
+        return out
+
+    def load(self, project_id: str) -> Project | None:
+        p = self._path(project_id)
+        if not p.exists():
+            return None
+        try:
+            return Project.model_validate_json(p.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+
+    def save(self, proj: Project) -> None:
+        now = int(datetime.now(timezone.utc).timestamp())
+        if not proj.created_at:
+            proj.created_at = now
+        proj.updated_at = now
+        # version bump on each save
+        try:
+            proj.version = int(getattr(proj, "version", 0) or 0) + 1
+        except Exception:
+            proj.version = 1
+        self._path(proj.id).write_text(json.dumps(proj.model_dump(), ensure_ascii=False), encoding="utf-8")
+
+
+def get_project_storage() -> ProjectStorage:
+    root = os.getenv("PROJECT_STORAGE_DIR", "").strip()
+    if root:
+        return ProjectStorage(Path(root))
+    # default workspace/projects
+    return ProjectStorage(Path("/app/workspace/projects"))
 
 def get_storage() -> Storage:
     base = os.environ.get("PROCESS_STORAGE_DIR", "workspace/.session_store")

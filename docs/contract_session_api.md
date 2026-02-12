@@ -7,6 +7,8 @@ CORS must allow origin `http://localhost:5174` and `allow-credentials: true`.
 
 ## Required endpoints
 
+Note: `GET /api/meta` exposes feature flags; as of Epic #1 it also includes `features.projects=true`.
+
 - `GET /api/meta` -> `200 application/json`
 - `GET /api/sessions` -> `{ items: SessionListItem[], count: number }`
 - `POST /api/sessions` -> `Session`

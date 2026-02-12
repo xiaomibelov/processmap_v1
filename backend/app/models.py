@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 IssueType = Literal["CRITICAL", "MISSING", "VARIANT", "AMBIG", "LOSS"]
@@ -57,3 +57,38 @@ class Session(BaseModel):
     normalized: Dict[str, Any] = Field(default_factory=dict)
     resources: Dict[str, Any] = Field(default_factory=dict)
     version: int = 0
+# -----------------------------
+# Epic #1: Project (process passport)
+# -----------------------------
+
+class Project(BaseModel):
+    """Top-level container for a production process discovery project.
+
+    For MVP we keep `passport` flexible (dict) so the frontend can iterate without backend migrations.
+    """
+
+    id: str
+    title: str
+
+    # “Паспорт процесса” (onboarding fields): site_type, language/terms, units, standards, KPI, owner, etc.
+    passport: Dict[str, Any] = Field(default_factory=dict)
+
+    created_at: int = 0
+    updated_at: int = 0
+    version: int = 1
+
+    model_config = ConfigDict(extra="allow")
+
+
+class CreateProjectIn(BaseModel):
+    title: str
+    passport: Dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="allow")
+
+
+class UpdateProjectIn(BaseModel):
+    title: str | None = None
+    passport: Dict[str, Any] | None = None
+
+    model_config = ConfigDict(extra="allow")

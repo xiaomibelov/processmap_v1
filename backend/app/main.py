@@ -21,10 +21,10 @@ from pydantic import BaseModel, ConfigDict
 from .exporters.mermaid import render_mermaid
 from .exporters.yaml_export import dump_yaml, session_to_process_dict
 from .glossary import normalize_kind, slugify_canon, upsert_term
-from .models import Node, Edge, Session
+from .models import Node, Edge, Session, Project, CreateProjectIn, UpdateProjectIn
 from .normalizer import load_seed_glossary, normalize_nodes
 from .resources import build_resources_report
-from .storage import get_storage
+from .storage import get_storage, get_project_storage
 from .settings import load_llm_settings, llm_status, save_llm_settings
 from .validators.coverage import build_questions
 from .validators.disposition import build_disposition_questions
@@ -1210,6 +1210,80 @@ def api_meta():
             "bpmn": True,
             "export_zip": True,
             "graph_edit": True,
+            "projects": True,
         },
     }
 
+
+# -----------------------------
+# Epic #1: Projects + Process Passport
+# -----------------------------
+
+@app.get("/api/projects")
+def list_projects() -> list[dict]:
+    st = get_project_storage()
+    items = st.list()
+    return [p.model_dump() for p in items]
+
+
+@app.post("/api/projects")
+def create_project(inp: CreateProjectIn) -> dict:
+    st = get_project_storage()
+    pid = st.create(title=inp.title, passport=inp.passport)
+    proj = st.load(pid)
+    if not proj:
+        raise HTTPException(status_code=500, detail="create failed")
+    return proj.model_dump()
+
+
+@app.get("/api/projects/{project_id}")
+def get_project(project_id: str) -> dict:
+    st = get_project_storage()
+    proj = st.load(project_id)
+    if not proj:
+        raise HTTPException(status_code=404, detail="not found")
+    return proj.model_dump()
+
+
+@app.patch("/api/projects/{project_id}")
+def patch_project(project_id: str, inp: UpdateProjectIn) -> dict:
+    st = get_project_storage()
+    proj = st.load(project_id)
+    if not proj:
+        raise HTTPException(status_code=404, detail="not found")
+
+    payload = inp.model_dump(exclude_unset=True)
+
+    if "title" in payload and payload["title"] is not None:
+        t = str(payload["title"]).strip()
+        if t:
+            proj.title = t
+
+    if "passport" in payload and payload["passport"] is not None:
+        if not isinstance(payload["passport"], dict):
+            raise HTTPException(status_code=400, detail="passport must be an object")
+        merged = dict(proj.passport or {})
+        merged.update(payload["passport"])
+        proj.passport = merged
+
+    st.save(proj)
+    return proj.model_dump()
+
+
+@app.put("/api/projects/{project_id}")
+def put_project(project_id: str, inp: CreateProjectIn) -> dict:
+    st = get_project_storage()
+    proj = st.load(project_id)
+    if not proj:
+        raise HTTPException(status_code=404, detail="not found")
+
+    t = str(inp.title).strip()
+    if not t:
+        raise HTTPException(status_code=400, detail="title required")
+    if not isinstance(inp.passport, dict):
+        raise HTTPException(status_code=400, detail="passport must be an object")
+
+    proj.title = t
+    proj.passport = inp.passport or {}
+    st.save(proj)
+    return proj.model_dump()
