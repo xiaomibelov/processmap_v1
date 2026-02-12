@@ -148,3 +148,50 @@ h1, h2, h3 {
 .djs-container .djs-visual .djs-hit {
   stroke: rgba(124,92,255,.75) !important;
 }
+
+/* R16_TITLES: make section titles readable on dark */
+h1, h2, h3, h4,
+.panelHead, .panelTitle, .sectionTitle, .stageTitle, .processTitle,
+.stageHeader, .panelHeader, .processHeader {
+  color: var(--text);
+}
+.muted { color: var(--muted); }
+.small { color: var(--text); }
+.small.muted { color: var(--muted); }
+
+/* Reduce glare on large white BPMN canvas container (in case bpmn-js CSS sets white bg) */
+.bpmnStage, .bpmnCanvas, .bpmnWrap, .workflowCanvas, .processCanvas {
+  background: rgba(255,255,255,.03);
+}
+
+/* R16_BPMN_CANVAS_BG: bpmn-js light theme overrides */
+.djs-container,
+.djs-container .djs-canvas,
+.djs-container .djs-canvas > svg {
+  background: #0b1020 !important;
+}
+
+/* Slightly dimmer fills, softer strokes (avoid pure white) */
+.djs-container .djs-visual rect,
+.djs-container .djs-visual circle,
+.djs-container .djs-visual polygon,
+.djs-container .djs-visual path {
+  fill: rgba(255,255,255,.06) !important;
+  stroke: rgba(255,255,255,.35) !important;
+}
+
+.djs-container .djs-visual text,
+.djs-container .djs-label {
+  fill: rgba(255,255,255,.86) !important;
+}
+
+/* Lanes / pool borders */
+.djs-container .djs-visual .djs-outline,
+.djs-container .djs-visual .djs-lane {
+  stroke: rgba(255,255,255,.22) !important;
+}
+
+/* Sequence flows a bit brighter */
+.djs-container .djs-visual .djs-connection path {
+  stroke: rgba(255,255,255,.48) !important;
+}
