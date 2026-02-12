@@ -1,84 +1,168 @@
-const API_BASE = "/api";
+/**
+ * Minimal API client for Food Process Copilot.
+ *
+ * Notes:
+ * - Uses native fetch() to avoid extra deps (axios).
+ * - All functions return a uniform shape:
+ *   { ok: true, status, data } OR { ok: false, status, error }.
+ * - BASE_URL can be set via VITE_API_BASE (default: same origin).
+ */
 
-async function safeJson(res) {
-  const text = await res.text();
-  if (!text) return null;
-  try { return JSON.parse(text); } catch { return { _raw: text }; }
+function okResult(data, status) {
+  return { ok: true, status, ...data };
 }
 
-function okResult(data, status) { return { ok: true, status, ...data }; }
-function failResult(status, message, details) { return { ok: false, status, message, details }; }
+function errResult(error, status = 0) {
+  return { ok: false, status, error: String(error || "error") };
+}
 
-async function requestJson(method, path, body) {
+function _baseUrl() {
+  const v = import.meta?.env?.VITE_API_BASE;
+  if (typeof v === "string" && v.trim()) return v.trim();
+  return "";
+}
+
+async function requestJson(method, url, body) {
   try {
-    const res = await fetch(`${API_BASE}${path}`, {
+    const init = {
       method,
+      headers: { "Content-Type": "application/json" },
       credentials: "include",
-      headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    const data = await safeJson(res);
-    if (!res.ok) return failResult(res.status, (data && (data.message || data.error?.message)) || `HTTP ${res.status}`, data);
-    return okResult({ data }, res.status);
+    };
+
+    if (body !== undefined && body !== null && method !== "GET") {
+      init.body = JSON.stringify(body);
+    }
+
+    const r = await fetch(url, init);
+    const text = await r.text();
+    let data = null;
+
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch (_e) {
+        data = text;
+      }
+    }
+
+    if (r.ok) return okResult({ data }, r.status);
+
+    const msg =
+      (data && typeof data === "object" && (data.detail || data.error)) ||
+      text ||
+      "request failed";
+    return errResult(msg, r.status);
   } catch (e) {
-    return failResult(0, "Сеть/прокси недоступны (проверь backend и Vite proxy).", String(e));
+    return errResult(e?.message || e, 0);
   }
 }
 
-async function requestText(method, path) {
+async function requestText(method, url, body) {
   try {
-    const res = await fetch(`${API_BASE}${path}`, {
+    const init = {
       method,
+      headers: { "Content-Type": "application/json" },
       credentials: "include",
-      headers: { "Accept": "text/plain, application/xml, text/xml, */*" },
-    });
-    const text = await res.text();
-    if (!res.ok) return failResult(res.status, `HTTP ${res.status}`, text);
-    return okResult({ text }, res.status);
+    };
+
+    if (body !== undefined && body !== null && method !== "GET") {
+      init.body = JSON.stringify(body);
+    }
+
+    const r = await fetch(url, init);
+    const text = await r.text();
+
+    if (r.ok) return okResult({ data: text }, r.status);
+
+    return errResult(text || "request failed", r.status);
   } catch (e) {
-    return failResult(0, "Сеть/прокси недоступны (проверь backend и Vite proxy).", String(e));
+    return errResult(e?.message || e, 0);
   }
+}
+
+function _asArray(maybe) {
+  if (Array.isArray(maybe)) return maybe;
+  if (maybe && typeof maybe === "object") {
+    if (Array.isArray(maybe.items)) return maybe.items;
+    if (Array.isArray(maybe.sessions)) return maybe.sessions;
+    if (Array.isArray(maybe.projects)) return maybe.projects;
+  }
+  return [];
 }
 
 export async function apiMeta() {
-  const r = await requestJson("GET", "/meta");
-  return r.ok ? okResult({ meta: r.data }, r.status) : r;
+  const base = _baseUrl();
+  return requestJson("GET", `${base}/api/meta`);
+}
+
+export async function apiListProjects() {
+  const base = _baseUrl();
+  return requestJson("GET", `${base}/api/projects`);
+}
+
+export async function apiCreateProject(payload) {
+  const base = _baseUrl();
+  return requestJson("POST", `${base}/api/projects`, payload || {});
+}
+
+export async function apiGetProject(projectId) {
+  const base = _baseUrl();
+  return requestJson("GET", `${base}/api/projects/${projectId}`);
+}
+
+export async function apiPatchProject(projectId, payload) {
+  const base = _baseUrl();
+  return requestJson("PATCH", `${base}/api/projects/${projectId}`, payload || {});
+}
+
+export async function apiListProjectSessions(projectId, mode) {
+  const base = _baseUrl();
+  const qs = mode ? `?mode=${encodeURIComponent(mode)}` : "";
+  return requestJson("GET", `${base}/api/projects/${projectId}/sessions${qs}`);
+}
+
+export async function apiCreateProjectSession(projectId, mode, payload) {
+  const base = _baseUrl();
+  const qs = mode ? `?mode=${encodeURIComponent(mode)}` : "";
+  return requestJson("POST", `${base}/api/projects/${projectId}/sessions${qs}`, payload || {});
 }
 
 export async function apiListSessions() {
-  const r = await requestJson("GET", "/sessions");
+  const base = _baseUrl();
+  const r = await requestJson("GET", `${base}/api/sessions`);
   if (!r.ok) return r;
-  const sessions = Array.isArray(r.data) ? r.data : (r.data?.sessions || []);
-  return okResult({ sessions }, r.status);
+  return okResult({ data: _asArray(r.data) }, r.status);
 }
 
 export async function apiCreateSession(payload) {
-  const r = await requestJson("POST", "/sessions", payload || {});
-  if (!r.ok) return r;
-  const s = r.data;
-  const session_id = s?.session_id || s?.id || s?.session?.session_id || s?.session?.id || null;
-  return okResult({ session: s, session_id }, r.status);
+  const base = _baseUrl();
+  return requestJson("POST", `${base}/api/sessions`, payload || {});
 }
 
 export async function apiGetSession(id) {
-  const r = await requestJson("GET", `/sessions/${encodeURIComponent(id)}`);
-  return r.ok ? okResult({ session: r.data }, r.status) : r;
+  const base = _baseUrl();
+  return requestJson("GET", `${base}/api/sessions/${id}`);
 }
 
-export async function apiSaveSession(id, sessionShape) {
-  const r = await requestJson("PATCH", `/sessions/${encodeURIComponent(id)}`, sessionShape || {});
-  return r.ok ? okResult({ session: r.data }, r.status) : r;
+export async function apiPatchSession(id, payload) {
+  const base = _baseUrl();
+  return requestJson("PATCH", `${base}/api/sessions/${id}`, payload || {});
 }
 
-export async function apiPostNote(id, note) {
-  const payload =
-    typeof note === "string" ? { text: note } :
-    (note && typeof note === "object" ? note : { text: String(note || "") });
-
-  const r = await requestJson("POST", `/sessions/${encodeURIComponent(id)}/notes`, payload);
-  return r.ok ? okResult({ note_result: r.data }, r.status) : r;
+export async function apiNormalize(id) {
+  const base = _baseUrl();
+  // Optional: backend may not expose /normalize yet. UI should tolerate 404.
+  return requestJson("POST", `${base}/api/sessions/${id}/normalize`, {});
 }
 
 export async function apiGetBpmn(id) {
-  return requestText("GET", `/sessions/${encodeURIComponent(id)}/bpmn`);
+  const base = _baseUrl();
+  // /bpmn returns XML text
+  return requestText("GET", `${base}/api/sessions/${id}/bpmn`);
+}
+
+export async function apiExportZip(id) {
+  const base = _baseUrl();
+  return requestJson("GET", `${base}/api/sessions/${id}/export_zip`);
 }
