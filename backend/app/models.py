@@ -58,6 +58,7 @@ class Session(BaseModel):
     mermaid_lanes: str = ""
     normalized: Dict[str, Any] = Field(default_factory=dict)
     resources: Dict[str, Any] = Field(default_factory=dict)
+    analytics: Dict[str, Any] = Field(default_factory=dict)
     version: int = 0
 # -----------------------------
 # Epic #1: Project (process passport)

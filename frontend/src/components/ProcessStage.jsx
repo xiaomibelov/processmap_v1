@@ -1,214 +1,145 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import BpmnStage from "./process/BpmnStage";
-import NodeCopilotCard from "./process/NodeCopilotCard";
-import { uid } from "../lib/ids";
+import { apiRecompute } from "../lib/api";
 
 function isLocalSessionId(id) {
   return typeof id === "string" && (id === "local" || id.startsWith("local_"));
 }
 
-function isFlowNode(el) {
-  const t = el?.type || "";
-  return (
-    t === "bpmn:Task" ||
-    t === "bpmn:UserTask" ||
-    t === "bpmn:ManualTask" ||
-    t === "bpmn:ServiceTask" ||
-    t === "bpmn:ScriptTask" ||
-    t === "bpmn:BusinessRuleTask" ||
-    t === "bpmn:SendTask" ||
-    t === "bpmn:ReceiveTask" ||
-    t === "bpmn:CallActivity" ||
-    t === "bpmn:SubProcess"
-  );
+function shortErr(x) {
+  const s = String(x || "").trim();
+  if (!s) return "";
+  return s.length > 160 ? s.slice(0, 160) + "…" : s;
 }
 
-export default function ProcessStage({ sessionId, locked, draft, onPatchDraft, reloadKey }) {
+export default function ProcessStage({ sessionId, locked, draft, reloadKey }) {
+  const sid = String(sessionId || "");
   const bpmnRef = useRef(null);
-  const stageRef = useRef(null);
 
-  const roles = Array.isArray(draft?.roles) ? draft.roles : [];
-  const questions = Array.isArray(draft?.questions) ? draft.questions : [];
-  const nodes = Array.isArray(draft?.nodes) ? draft.nodes : [];
-
-  const [selected, setSelected] = useState(null); // { id,title, bbox, el }
-  const [pos, setPos] = useState({ left: 18, top: 18 });
-  const [busy, setBusy] = useState(false);
-
-  const aiEnabled = !!draft?.ai_open;
-
-  const questionsForSelected = useMemo(() => {
-    const id = selected?.id;
-    if (!id) return [];
-    return questions.filter((q) => q.node_id === id);
-  }, [questions, selected]);
-
-  const metaForSelected = useMemo(() => {
-    const id = selected?.id;
-    if (!id) return null;
-    return nodes.find((n) => n.id === id) || { id };
-  }, [nodes, selected]);
+  const [tab, setTab] = useState("diagram"); // diagram|xml|editor
+  const [genBusy, setGenBusy] = useState(false);
+  const [genErr, setGenErr] = useState("");
 
   useEffect(() => {
-    if (!selected?.id) return;
-    const host = stageRef.current;
-    if (!host) return;
+    setTab("diagram");
+    setGenBusy(false);
+    setGenErr("");
+  }, [sid]);
 
-    const bbox = selected?.bbox;
-    if (!bbox) return;
+  const hasSession = !!sid;
+  const isLocal = isLocalSessionId(sid);
+  const canEdit = hasSession && !isLocal;
+  const canGenerate = hasSession && !isLocal && !locked && !genBusy;
 
-    const rect = host.getBoundingClientRect();
-    const left = Math.min(Math.max(18, bbox.x + bbox.width + 18), rect.width - 380);
-    const top = Math.min(Math.max(18, bbox.y - 6), rect.height - 420);
-    setPos({ left, top });
-  }, [selected]);
+  const title = useMemo(() => {
+    if (!sid) return "Процесс";
+    return `BPMN · ${sid}`;
+  }, [sid]);
 
-  function patchDraft(mutator) {
-    if (!onPatchDraft) return;
-    setBusy(true);
+  async function doGenerate() {
+    if (!canGenerate) return;
+
+    setGenErr("");
+    setGenBusy(true);
+
     try {
-      const next = mutator(structuredClone(draft || {}));
-      Promise.resolve(onPatchDraft(next)).finally(() => setBusy(false));
-    } catch {
-      setBusy(false);
+      setTab("diagram");
+      const r = await apiRecompute(sid);
+      if (!r.ok) {
+        setGenErr(shortErr(r.error || `recompute failed (${r.status})`));
+        return;
+      }
+
+      await Promise.resolve(bpmnRef.current?.resetBackend?.());
+      await Promise.resolve(bpmnRef.current?.fit?.());
+    } catch (e) {
+      setGenErr(shortErr(e?.message || e));
+    } finally {
+      setGenBusy(false);
     }
   }
 
-  function ensureNode(d, nodeId, fallbackTitle) {
-    if (!Array.isArray(d.nodes)) d.nodes = [];
-    const hit = d.nodes.find((x) => x && x.id === nodeId);
-    if (hit) return hit;
-
-    const node = {
-      id: nodeId,
-      title: fallbackTitle || nodeId,
-      role_id: "",
-      kind: "task",
-      enabled: true,
-      params: {},
-      disposition: {},
-    };
-    d.nodes.push(node);
-    return node;
-  }
-
-  function ensureQuestions(d) {
-    if (!Array.isArray(d.questions)) d.questions = [];
-    return d.questions;
-  }
-
-  const canWriteApi = !!sessionId && !isLocalSessionId(sessionId);
-
   return (
-    <div className="stageInner" ref={stageRef}>
-      <div className="stageHead">
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div className="processTitle">Процесс</div>
-          {!canWriteApi ? (
-            <span className="badge muted">local</span>
-          ) : (
-            <span className="badge ok">api</span>
-          )}
+    <div className="processShell">
+      <div className="processHeader">
+        <div className="processHeaderLeft">
+          <div className="paneTitle">Процесс</div>
+          <div className="muted">{title}</div>
         </div>
 
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button className="iconBtn" onClick={() => bpmnRef.current?.zoomOut()} title="Zoom out">
-            −
-          </button>
-          <button className="iconBtn" onClick={() => bpmnRef.current?.fit()} title="Fit">
-            ⤢
-          </button>
-          <button className="iconBtn" onClick={() => bpmnRef.current?.zoomIn()} title="Zoom in">
-            +
+        <div className="processHeaderRight">
+          <button className="primaryBtn smallBtn genBtn" onClick={doGenerate} disabled={!canGenerate} title={isLocal ? "recompute доступен только для API-сессий" : locked ? "Сначала настрой акторов" : "recompute → подтянуть BPMN → fit"}>
+            {genBusy ? "Генерация…" : "Сгенерировать процесс"}
           </button>
 
-          <button
-            className={"btn" + (aiEnabled ? " btnOn" : "")}
-            onClick={() => {
-              patchDraft((d) => {
-                d.ai_open = !aiEnabled;
-                return d;
-              });
-              if (aiEnabled) setSelected(null);
-            }}
-            disabled={locked}
-            title="Показывать AI-бейджи на узлах"
-          >
-            ✦ AI
-          </button>
+          {genErr ? <span className="badge err">{genErr}</span> : null}
+
+          {tab === "editor" ? (
+            <div className="bpmnTopActions">
+              <button className="secondaryBtn smallBtn" onClick={() => bpmnRef.current?.seedFromActors?.()} title="Создать pool + lanes из акторов">
+                Seed
+              </button>
+              <button className="primaryBtn smallBtn" onClick={() => bpmnRef.current?.saveLocal?.()} title="Сохранить XML локально">
+                Save
+              </button>
+              <button className="secondaryBtn smallBtn" onClick={() => bpmnRef.current?.resetBackend?.()} title="Перезагрузить XML с бэка">
+                Reset
+              </button>
+              <button className="secondaryBtn smallBtn" onClick={() => bpmnRef.current?.clearLocal?.()} title="Удалить локальную версию и вернуться к бэку">
+                Clear
+              </button>
+            </div>
+          ) : null}
+
+          <div className="seg">
+            <button className={"segBtn " + (tab === "diagram" ? "on" : "")} onClick={() => setTab("diagram")}>
+              Diagram
+            </button>
+            <button className={"segBtn " + (tab === "xml" ? "on" : "")} onClick={() => setTab("xml")}>
+              XML
+            </button>
+            <button
+              className={"segBtn " + (tab === "editor" ? "on" : "")}
+              onClick={() => setTab("editor")}
+              disabled={!canEdit || !!locked}
+              title={!canEdit ? "Editor доступен только для API-сессий" : locked ? "Сначала настрой акторов" : "Редактировать BPMN"}
+            >
+              Edit
+            </button>
+          </div>
+
+          <div className="iconBtns">
+            <button className="iconBtn" onClick={() => bpmnRef.current?.zoomOut?.()} title="Zoom out">
+              –
+            </button>
+            <button className="iconBtn" onClick={() => bpmnRef.current?.fit?.()} title="Fit">
+              ↔
+            </button>
+            <button className="iconBtn" onClick={() => bpmnRef.current?.zoomIn?.()} title="Zoom in">
+              +
+            </button>
+            <button className="iconBtn" onClick={() => {}} title="AI (later)">
+              ✦ AI
+            </button>
+          </div>
         </div>
       </div>
 
-      <BpmnStage
-        ref={bpmnRef}
-        sessionId={sessionId}
-        reloadKey={reloadKey}
-        aiEnabled={aiEnabled}
-        questions={questions}
-        selectedNodeId={selected?.id || ""}
-        onElementClick={(e) => {
-          if (locked) return;
-          const el = e?.element;
-          if (!el || !isFlowNode(el)) return;
-
-          if (!aiEnabled) return;
-
-          const title = el.businessObject?.name || el.id;
-
-          const bbox = el?.di?.bounds
-            ? {
-                x: el.di.bounds.x || 0,
-                y: el.di.bounds.y || 0,
-                width: el.di.bounds.width || 0,
-                height: el.di.bounds.height || 0,
-              }
-            : null;
-
-          setSelected({ id: el.id, title, bbox, el });
-        }}
-      />
-
-      {selected?.id && aiEnabled ? (
-        <div style={{ position: "absolute", left: pos.left, top: pos.top, width: 360, zIndex: 80 }}>
-          <NodeCopilotCard
-            nodeId={selected.id}
-            title={selected.title}
-            roles={roles}
-            meta={metaForSelected}
-            questions={questionsForSelected}
-            busy={busy || !canWriteApi}
-            onClose={() => setSelected(null)}
-            onSetRole={(roleId) => {
-              patchDraft((d) => {
-                const node = ensureNode(d, selected.id, selected.title);
-                node.role_id = roleId || "";
-                return d;
-              });
-            }}
-            onAddQuestion={(text) => {
-              patchDraft((d) => {
-                const qs = ensureQuestions(d);
-                qs.push({
-                  id: uid("q"),
-                  node_id: selected.id,
-                  text: String(text || "").trim(),
-                  state: "open",
-                });
-                return d;
-              });
-            }}
-            onUpdateQuestion={(qid, patch) => {
-              patchDraft((d) => {
-                const qs = ensureQuestions(d);
-                const q = qs.find((x) => x && x.id === qid);
-                if (!q) return d;
-                Object.assign(q, patch || {});
-                return d;
-              });
-            }}
+      <div className="processBody">
+        {!hasSession ? (
+          <div className="muted" style={{ padding: 14 }}>
+            Выбери сессию, затем нажми «Сгенерировать процесс».
+          </div>
+        ) : (
+          <BpmnStage
+            ref={bpmnRef}
+            sessionId={sid}
+            view={tab === "editor" ? "editor" : tab === "xml" ? "xml" : "diagram"}
+            draft={draft}
+            reloadKey={reloadKey}
           />
-        </div>
-      ) : null}
+        )}
+      </div>
     </div>
   );
 }

@@ -74,3 +74,46 @@ Derived fields (`mermaid*`, `normalized`, `resources`, `version`) may be ignored
 Sessions may include optional fields:
 - `project_id`: if the session is bound to a project
 - `mode`: `quick_skeleton` or `deep_audit`
+
+
+## Analytics (backend computed)
+
+### GET /api/sessions/{id}/analytics
+
+Returns backend-computed analytics summary for a session.
+
+Response:
+
+```json
+{
+  "session_id": "abc123",
+  "analytics": {
+    "version": 1,
+    "timing": {
+      "total_duration_min": 45,
+      "critical_path_min": 38,
+      "by_role": {"cook_1": 30, "technolog": 15},
+      "unknown_duration_nodes": ["n3"]
+    },
+    "actions": {
+      "total": 12,
+      "by_type": {"step": 10, "decision": 1, "timer": 1},
+      "by_role": {"cook_1": 7, "technolog": 3, "unassigned": 2},
+      "by_section": {"prep": 4, "cook": 3, "qc": 2, "pack": 1, "clean": 1, "other": 1}
+    },
+    "handoffs": {"count": 2, "edges": []},
+    "coverage": {"open_questions": 5, "critical_questions": 2},
+    "summary": [
+      "Оценка длительности: 45 мин (критический путь 38 мин).",
+      "Действий: 12 (prep=4, cook=3, qc=2).",
+      "Передач между ролями: 2. Узлов без длительности: 1.",
+      "Открытых вопросов: 5 (критических: 2)."
+    ]
+  }
+}
+```
+
+Notes:
+- Analytics is computed on PATCH/PUT (session recompute) and persisted into `session.analytics`.
+- For older sessions without analytics, GET will trigger recompute once and save.
+

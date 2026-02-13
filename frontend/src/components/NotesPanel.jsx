@@ -1,97 +1,166 @@
 import { useMemo, useState } from "react";
 
-function safeArr(v) {
-  return Array.isArray(v) ? v : [];
+function asArray(x) {
+  return Array.isArray(x) ? x : [];
 }
 
-export default function NotesPanel({
-  draft,
-  sessionId,
-  onNewLocal,
-  onGenerate,
-  onAddNote,
-  generating,
-  errorText,
-  onEditActors,
-}) {
+function str(v) {
+  return String(v || "").trim();
+}
+
+function roleObj(r, idx) {
+  if (!r) return null;
+  if (typeof r === "string") {
+    const label = str(r);
+    if (!label) return null;
+    return { role_id: `role_${idx + 1}`, label };
+  }
+  if (typeof r === "object") {
+    const role_id = str(r.role_id || r.id || `role_${idx + 1}`);
+    const label = str(r.label || r.title || role_id);
+    if (!role_id && !label) return null;
+    return { role_id: role_id || `role_${idx + 1}`, label: label || role_id };
+  }
+  const label = str(r);
+  if (!label) return null;
+  return { role_id: `role_${idx + 1}`, label };
+}
+
+function normalizeRoles(roles) {
+  const arr = asArray(roles);
+  const out = [];
+  for (let i = 0; i < arr.length; i++) {
+    const x = roleObj(arr[i], out.length);
+    if (x) out.push(x);
+  }
+  return out;
+}
+
+function startRoleLabel(start_role, roles) {
+  const sr = str(start_role);
+  if (!sr) return "—";
+  const rr = normalizeRoles(roles);
+  const hit = rr.find((r) => r.role_id === sr) || rr.find((r) => r.label === sr);
+  return hit ? `${hit.label} (${hit.role_id})` : sr;
+}
+
+export default function NotesPanel({ draft, onAddNote, onGenerate, disabled }) {
   const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
 
-  const roles = useMemo(() => safeArr(draft?.roles), [draft]);
-  const startRole = String(draft?.start_role || "").trim();
+  const roles = useMemo(() => normalizeRoles(draft?.roles), [draft]);
+  const notes = useMemo(() => {
+    const arr = asArray(draft?.notes);
+    return [...arr].slice(-3).reverse();
+  }, [draft]);
 
-  function add() {
-    const t = String(text || "").trim();
+  async function send() {
+    const t = str(text);
     if (!t) return;
-    onAddNote?.(t);
-    setText("");
+    if (disabled || busy) return;
+
+    setBusy(true);
+    setErr("");
+    try {
+      const r = onAddNote?.(t);
+      const rr = r && typeof r.then === "function" ? await r : r;
+
+      if (rr && rr.ok === false) {
+        setErr(String(rr.error || "API error"));
+        return;
+      }
+
+      setText("");
+    } catch (e) {
+      setErr(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function generate() {
+    if (disabled || busy) return;
+    setBusy(true);
+    setErr("");
+    try {
+      const r = onGenerate?.();
+      const rr = r && typeof r.then === "function" ? await r : r;
+      if (rr && rr.ok === false) setErr(String(rr.error || "API error"));
+    } catch (e) {
+      setErr(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
-    <div className="notesPanel">
-      <div className="panelTitleRow">
-        <div className="panelTitle">Заметки</div>
-        <div className="panelSub">
-          {sessionId ? <span className="muted">session: {sessionId}</span> : null}
+    <div className="leftPanel">
+      <div className="paneTitle">Сессия</div>
+
+      <div className="card">
+        <div className="cardTitle">Акторы</div>
+        <div className="muted">
+          roles: {roles.length ? roles.map((r) => r.label).join(", ") : "—"}
         </div>
+        <div className="muted">start_role: {startRoleLabel(draft?.start_role, roles)}</div>
       </div>
 
-      <div className="panelBlock">
-        <div className="rowBetween">
-          <div className="blockTitle">Акторы</div>
-          <button className="secondaryBtn" onClick={() => onEditActors?.()} title="Редактировать акторов">
-            Редактировать
-          </button>
-        </div>
-
-        <div className="muted small">
-          {roles.length ? (
-            <>
-              <div>Всего: {roles.length}</div>
-              <div>Стартовая роль: {startRole || "—"}</div>
-            </>
-          ) : (
-            <div>Акторы не заданы — добавь роли, чтобы собирать процесс по лайнам.</div>
-          )}
-        </div>
-
-        {roles.length ? (
-          <div className="chips">
-            {roles.map((r, idx) => (
-              <span className="chip" key={`${r}_${idx}`}>
-                {r}
-              </span>
+      <div className="card">
+        <div className="cardTitle">Заметки</div>
+        <div className="muted">Кол-во: {asArray(draft?.notes).length}</div>
+        {asArray(draft?.notes).length === 0 ? <div className="muted">Пока заметок нет.</div> : null}
+        {notes.length ? (
+          <div className="muted" style={{ marginTop: 8 }}>
+            {notes.map((n, i) => (
+              <div key={n?.id || i} style={{ marginTop: i ? 6 : 0 }}>
+                {String(n?.text || n?.notes || n || "").slice(0, 140)}
+              </div>
             ))}
           </div>
         ) : null}
       </div>
 
-      <div className="panelBlock">
-        <div className="blockTitle">Добавить заметку</div>
-        <textarea
-          className="textarea"
-          rows={6}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Пиши заметки по шагам. Потом будем превращать их в узлы процесса и AI-вопросы."
-        />
-        <div className="row">
-          <button className="primaryBtn" onClick={add} title="Добавить">
-            Добавить
-          </button>
-          <button
-            className="secondaryBtn"
-            onClick={onGenerate}
-            disabled={generating}
-            title="Сгенерировать/обновить процесс из текущих данных"
-          >
-            {generating ? "Генерация…" : "Обновить процесс"}
-          </button>
-          <button className="secondaryBtn" onClick={onNewLocal} title="Перейти в локальный черновик">
-            Local draft
-          </button>
+      <button className="primaryBtn" onClick={generate} disabled={!!disabled || busy || !onGenerate}>
+        {busy ? "Генерирую..." : "Сгенерировать процесс"}
+      </button>
+
+      <div className="muted" style={{ marginTop: 10 }}>
+        Делает: recompute → bpmn export → обновляет BPMN stage.
+      </div>
+
+      <div className="card" style={{ marginTop: 12 }}>
+        <div className="cardTitle">Сообщения / заметки</div>
+
+        <div className="muted" style={{ marginTop: 6 }}>
+          Ctrl/⌘ + Enter — отправить
         </div>
 
-        {errorText ? <div className="errBox">{errorText}</div> : null}
+        {err ? (
+          <div className="badge err" style={{ marginTop: 10 }}>
+            {err}
+          </div>
+        ) : null}
+
+        <textarea
+          className="input"
+          placeholder="Пиши заметку по процессу: условия, исключения, оборудование, контроль качества..."
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={5}
+          style={{ marginTop: 10, resize: "vertical" }}
+          onKeyDown={(e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+              e.preventDefault();
+              send();
+            }
+          }}
+          disabled={!!disabled || busy}
+        />
+
+        <button className="primaryBtn" onClick={send} disabled={!!disabled || busy} style={{ marginTop: 10 }}>
+          {busy ? "Отправляю..." : "Отправить"}
+        </button>
       </div>
     </div>
   );

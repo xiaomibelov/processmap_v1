@@ -1,385 +1,327 @@
 import { useEffect, useMemo, useState } from "react";
+
 import AppShell from "./components/AppShell";
+import NotesPanel from "./components/NotesPanel";
+import NoSession from "./components/stages/NoSession";
+import ActorsSetup from "./components/stages/ActorsSetup";
 import ProjectWizardModal from "./components/ProjectWizardModal";
+
+import { uid } from "./lib/ids";
 import {
+  apiMeta,
+  apiListProjects,
   apiCreateProject,
+  apiListProjectSessions,
   apiCreateProjectSession,
+  apiListSessions,
   apiCreateSession,
   apiGetSession,
-  apiListProjectSessions,
-  apiListProjects,
-  apiListSessions,
-  apiMeta,
   apiPatchSession,
+  apiPostNote,
+  apiDeleteProject,
+  apiDeleteSession,
 } from "./lib/api";
-import { ensureDraftShape } from "./lib/draft";
-import "./styles/app.css";
-
-const LS_PROJECT_ID = "fpc.project_id";
-const LS_MODE_FILTER = "fpc.mode_filter";
-const LS_SELECTED_ID = "fpc.selected_id";
-const LS_LOCAL_DRAFT = "fpc.local_draft_v1";
 
 function isLocalSessionId(id) {
   return typeof id === "string" && (id === "local" || id.startsWith("local_"));
 }
 
-function safeJsonParse(s) {
-  try {
-    return JSON.parse(String(s || ""));
-  } catch {
-    return null;
-  }
+function ensureArray(x) {
+  return Array.isArray(x) ? x : [];
 }
 
-function suggestSessionTitle(sessions, mode) {
-  const m = String(mode || "").trim();
-  const base = m ? (m === "deep_audit" ? "Audit" : "Interview") : "Interview";
-  const n = (Array.isArray(sessions) ? sessions.length : 0) + 1;
-  return `${base} #${n}`;
+function ensureDraftShape(sessionId) {
+  return {
+    session_id: sessionId || null,
+    title: "",
+    roles: [],
+    start_role: "",
+    nodes: [],
+    edges: [],
+    notes: [],
+    questions: [],
+  };
+}
+
+function hasActors(draft) {
+  const roles = ensureArray(draft?.roles).map((x) => String(x || "").trim()).filter(Boolean);
+  const start = String(draft?.start_role || "").trim();
+  return roles.length > 0 && !!start;
 }
 
 export default function App() {
-  const [backendStatus, setBackendStatus] = useState("checking");
+  const [backendStatus, setBackendStatus] = useState("idle"); // idle|ok|fail
   const [backendHint, setBackendHint] = useState("");
-  const [apiOk, setApiOk] = useState(false);
-  const [features, setFeatures] = useState({});
 
   const [projects, setProjects] = useState([]);
-  const [projectId, setProjectId] = useState(() => localStorage.getItem(LS_PROJECT_ID) || "");
-  const [modeFilter, setModeFilter] = useState(
-    () => localStorage.getItem(LS_MODE_FILTER) || "quick_skeleton"
-  );
+  const [projectId, setProjectId] = useState("");
+  const [modeFilter, setModeFilter] = useState("quick_skeleton");
 
   const [sessions, setSessions] = useState([]);
-  const [selectedId, setSelectedId] = useState(() => localStorage.getItem(LS_SELECTED_ID) || "local");
-
-  const [draft, setDraft] = useState(() => {
-    const sid = localStorage.getItem(LS_SELECTED_ID) || "local";
-    if (isLocalSessionId(sid)) {
-      const raw = localStorage.getItem(LS_LOCAL_DRAFT);
-      const j = safeJsonParse(raw);
-      return ensureDraftShape(j || {});
-    }
-    return ensureDraftShape({});
-  });
-
-  const [bpmnReloadKey, setBpmnReloadKey] = useState(0);
-  const [generating, setGenerating] = useState(false);
-  const [errorText, setErrorText] = useState("");
+  const [draft, setDraft] = useState(ensureDraftShape(null));
 
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
-  const projectsEnabled = !!features?.projects;
-  const projectSessionsEnabled = !!features?.project_sessions;
+  const [leftHidden, setLeftHidden] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      const r = await apiMeta();
-      if (!r.ok) {
-        setApiOk(false);
-        setBackendStatus("offline");
-        setBackendHint(r.error || "backend not reachable");
-        return;
-      }
-      setApiOk(true);
-      setBackendStatus("ok");
-      setBackendHint("");
-      setFeatures(r.meta?.features || {});
-    })();
-  }, []);
+  function markOk(hint) {
+    setBackendStatus("ok");
+    setBackendHint(String(hint || ""));
+  }
 
-  useEffect(() => {
-    localStorage.setItem(LS_PROJECT_ID, projectId || "");
-  }, [projectId]);
+  function markFail(err) {
+    setBackendStatus("fail");
+    setBackendHint(String(err || "API error"));
+  }
 
-  useEffect(() => {
-    localStorage.setItem(LS_MODE_FILTER, modeFilter || "");
-  }, [modeFilter]);
-
-  useEffect(() => {
-    localStorage.setItem(LS_SELECTED_ID, selectedId || "local");
-  }, [selectedId]);
-
-  useEffect(() => {
-    if (isLocalSessionId(selectedId)) {
-      try {
-        localStorage.setItem(LS_LOCAL_DRAFT, JSON.stringify(draft || {}));
-      } catch {
-        // ignore
-      }
+  async function refreshMeta() {
+    const r = await apiMeta();
+    if (r.ok) {
+      markOk("API OK");
+      return true;
     }
-  }, [draft, selectedId]);
+    markFail(r.error);
+    return false;
+  }
 
   async function refreshProjects() {
-    if (!apiOk || !projectsEnabled) return;
+    const ok = await refreshMeta();
+    if (!ok) return;
     const r = await apiListProjects();
-    if (!r.ok) return;
+    if (!r.ok) return markFail(r.error);
+    setProjects(ensureArray(r.items));
+    if (!projectId && ensureArray(r.items).length) {
+      setProjectId(String(r.items[0].id || ""));
+    }
+  }
 
-    const items = r.items || [];
-    setProjects(items);
+  async function refreshSessions(pid) {
+    const p = String(pid || "");
+    if (!p) {
+      setSessions([]);
+      return;
+    }
+    const r = await apiListProjectSessions(p, modeFilter);
+    if (!r.ok) {
+      markFail(r.error);
+      setSessions([]);
+      return;
+    }
+    markOk("API OK");
+    setSessions(ensureArray(r.items));
+  }
 
-    if (!projectId) {
-      if (items[0]?.id) setProjectId(items[0].id);
+  async function openSession(sessionId) {
+    const sid = String(sessionId || "");
+    if (!sid) return;
+
+    if (isLocalSessionId(sid)) {
+      setDraft(ensureDraftShape(sid));
       return;
     }
 
-    const exists = items.some((p) => p?.id === projectId);
-    if (!exists) setProjectId(items[0]?.id || "");
+    const r = await apiGetSession(sid);
+    if (!r.ok) return markFail(r.error);
+
+    const next = r.session || ensureDraftShape(sid);
+    setDraft({
+      ...ensureDraftShape(sid),
+      ...next,
+      session_id: sid,
+      roles: ensureArray(next.roles),
+      nodes: ensureArray(next.nodes),
+      edges: ensureArray(next.edges),
+      notes: ensureArray(next.notes),
+      questions: ensureArray(next.questions),
+    });
+    markOk("API OK");
   }
 
-  async function refreshSessions() {
-    if (!apiOk) return;
+  function createLocalSession() {
+    const sid = `local_${uid()}`;
+    setDraft(ensureDraftShape(sid));
+  }
 
-    if (projectSessionsEnabled && projectId) {
-      const r = await apiListProjectSessions(projectId, modeFilter || null);
-      if (!r.ok) return;
+  async function createBackendSession(mode) {
+    const pid = String(projectId || "");
+    if (!pid) return;
 
-      const items = r.items || [];
-      setSessions(items);
+    const create = await apiCreateProjectSession(pid, mode);
+    if (!create.ok) return markFail(create.error);
 
-      if (selectedId && !isLocalSessionId(selectedId)) {
-        const ok = items.some((s) => (s?.id || s?.session_id) === selectedId);
-        if (!ok) setSelectedId(items[0]?.id || items[0]?.session_id || "local");
-      }
+    const sid = String(create.session?.id || "");
+    if (!sid) return markFail("create session: empty id");
+
+    await refreshSessions(pid);
+    await openSession(sid);
+  }
+
+  async function createProjectFromWizard({ name }) {
+    const title = String(name || "").trim() || `Проект ${new Date().toLocaleString()}`;
+    const r = await apiCreateProject(title);
+    if (!r.ok) return markFail(r.error);
+
+    const pid = String(r.project?.id || "");
+    if (!pid) return markFail("create project: empty id");
+
+    await refreshProjects();
+    setProjectId(pid);
+    await refreshSessions(pid);
+    markOk("API OK");
+  }
+
+  async function patchDraft(partial) {
+    const sid = String(draft?.session_id || "");
+    if (!sid || isLocalSessionId(sid)) {
+      setDraft((d) => ({ ...d, ...partial }));
       return;
     }
 
-    const r = await apiListSessions();
-    if (!r.ok) return;
+    const r = await apiPatchSession(sid, partial);
+    if (!r.ok) return markFail(r.error);
 
-    const items = r.items || [];
-    setSessions(items);
-
-    if (selectedId && !isLocalSessionId(selectedId)) {
-      const ok = items.some((s) => (s?.id || s?.session_id) === selectedId);
-      if (!ok) setSelectedId(items[0]?.id || items[0]?.session_id || "local");
-    }
+    setDraft((d) => ({ ...d, ...partial }));
+    markOk("API OK");
   }
+
+  async function saveActors({ roles, start_role }) {
+    const cleanRoles = ensureArray(roles).map((x) => String(x || "").trim()).filter(Boolean);
+    const start = String(start_role || "").trim();
+
+    await patchDraft({ roles: cleanRoles, start_role: start });
+  }
+
+  async function addNote(text) {
+    const sid = String(draft?.session_id || "");
+    const t = String(text || "").trim();
+    if (!sid || !t) return;
+
+    if (isLocalSessionId(sid)) {
+      setDraft((d) => ({ ...d, notes: [...ensureArray(d.notes), { id: uid(), text: t, ts: Date.now() }] }));
+      return;
+    }
+
+    const r = await apiPostNote(sid, t);
+    if (!r.ok) return markFail(r.error);
+
+    setDraft((d) => ({ ...d, notes: ensureArray(r.notes || d.notes) }));
+    markOk("API OK");
+  }
+
+  async function deleteCurrentProject() {
+    const pid = String(projectId || "");
+    if (!pid) return;
+    const ok = confirm("Удалить проект и все сессии?");
+    if (!ok) return;
+
+    const r = await apiDeleteProject(pid);
+    if (!r.ok) return markFail(r.error);
+
+    setProjectId("");
+    setSessions([]);
+    setDraft(ensureDraftShape(null));
+    await refreshProjects();
+    markOk("API OK");
+  }
+
+  async function deleteCurrentSession() {
+    const sid = String(draft?.session_id || "");
+    if (!sid || isLocalSessionId(sid)) {
+      setDraft(ensureDraftShape(null));
+      return;
+    }
+    const ok = confirm("Удалить сессию?");
+    if (!ok) return;
+
+    const r = await apiDeleteSession(sid);
+    if (!r.ok) return markFail(r.error);
+
+    setDraft(ensureDraftShape(null));
+    await refreshSessions(projectId);
+    markOk("API OK");
+  }
+
+  const locked = useMemo(() => !hasActors(draft), [draft]);
+
+  const phase = useMemo(() => {
+    const sid = String(draft?.session_id || "");
+    if (!sid) return "no_session";
+    if (locked) return "actors_setup";
+    return "notes";
+  }, [draft, locked]);
+
+  const left = useMemo(() => {
+    if (phase === "no_session") {
+      return (
+        <NoSession
+          mode={modeFilter}
+          backendStatus={backendStatus}
+          backendHint={backendHint}
+          onNewBackendSession={() => createBackendSession(modeFilter)}
+          onNewLocalSession={createLocalSession}
+        />
+      );
+    }
+
+    if (phase === "actors_setup") {
+      return <ActorsSetup draft={draft} onSaveActors={saveActors} />;
+    }
+
+    return <NotesPanel draft={draft} onAddNote={addNote} disabled={locked} />;
+  }, [phase, backendStatus, backendHint, draft, modeFilter, locked]);
 
   useEffect(() => {
     refreshProjects();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiOk, projectsEnabled]);
+  }, []);
 
   useEffect(() => {
-    refreshSessions();
+    if (!projectId) return;
+    refreshSessions(projectId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiOk, projectId, modeFilter, projectSessionsEnabled]);
-
-  useEffect(() => {
-    if (!apiOk) return;
-
-    if (!selectedId || isLocalSessionId(selectedId)) {
-      const raw = localStorage.getItem(LS_LOCAL_DRAFT);
-      const j = safeJsonParse(raw);
-      setDraft(ensureDraftShape(j || {}));
-      return;
-    }
-
-    (async () => {
-      const r = await apiGetSession(selectedId);
-      if (r.ok && r.session) setDraft(ensureDraftShape(r.session));
-    })();
-  }, [selectedId, apiOk]);
-
-  const currentTitle = useMemo(() => {
-    if (isLocalSessionId(selectedId)) return "Local draft";
-    const s = sessions.find((x) => (x?.id || x?.session_id) === selectedId);
-    return s?.title || selectedId;
-  }, [selectedId, sessions]);
-
-  async function createProjectAndFirstSession({ title, passport, mode }) {
-    if (!apiOk || !projectsEnabled) return;
-
-    const r = await apiCreateProject({ title, passport });
-    if (!r.ok || !r.project?.id) {
-      setErrorText(String(r.error || "create project failed"));
-      return;
-    }
-
-    const pid = r.project.id;
-
-    setProjects((prev) => [r.project, ...(prev || [])]);
-    setProjectId(pid);
-
-    const chosenMode = String(mode || "").trim() || "quick_skeleton";
-    setModeFilter(chosenMode);
-
-    if (projectSessionsEnabled) {
-      const title2 = suggestSessionTitle([], chosenMode);
-      const r2 = await apiCreateProjectSession(pid, chosenMode, {
-        title: title2,
-        roles: ["cook_1", "technolog"],
-      });
-
-      if (r2.ok && r2.session?.id) {
-        setSelectedId(r2.session.id);
-        setDraft(ensureDraftShape(r2.session));
-        setBpmnReloadKey((x) => x + 1);
-      } else {
-        setErrorText(String(r2.error || "create session failed"));
-      }
-
-      await refreshSessions();
-      return;
-    }
-
-    await refreshSessions();
-  }
-
-  function onNewProject() {
-    setWizardOpen(true);
-  }
-
-  async function onNewLocal() {
-    setSelectedId("local");
-    setDraft(ensureDraftShape({}));
-    setBpmnReloadKey((x) => x + 1);
-  }
-
-  async function onNewApiSession(modeOverride) {
-    if (!apiOk) return;
-
-    const mode = (modeOverride ?? modeFilter ?? "").trim() || "quick_skeleton";
-
-    if (projectSessionsEnabled && projectId) {
-      const title = suggestSessionTitle(sessions, mode);
-      const r = await apiCreateProjectSession(projectId, mode, { title, roles: ["cook_1", "technolog"] });
-      if (r.ok && r.session?.id) {
-        setSelectedId(r.session.id);
-        setDraft(ensureDraftShape(r.session));
-        setBpmnReloadKey((x) => x + 1);
-        await refreshSessions();
-      }
-      return;
-    }
-
-    const title = suggestSessionTitle(sessions, "");
-    const r = await apiCreateSession({ title });
-    if (r.ok && r.session?.id) {
-      setSelectedId(r.session.id);
-      setDraft(ensureDraftShape(r.session));
-      setBpmnReloadKey((x) => x + 1);
-      await refreshSessions();
-    }
-  }
-
-  async function onOpen(id) {
-    const sid = String(id || "");
-    if (!sid) return;
-    setSelectedId(sid);
-    setBpmnReloadKey((x) => x + 1);
-  }
-
-  async function patchDraftToBackend(sessionId, newDraft) {
-    if (!sessionId || isLocalSessionId(sessionId)) return;
-
-    const payload = {
-      title: newDraft.title,
-      roles: newDraft.roles,
-      start_role: newDraft.start_role,
-      notes: newDraft.notes,
-      nodes: newDraft.nodes,
-      edges: newDraft.edges,
-      questions: newDraft.questions,
-    };
-
-    await apiPatchSession(sessionId, payload);
-  }
-
-  async function onGenerate() {
-    if (!selectedId || isLocalSessionId(selectedId)) return;
-
-    setGenerating(true);
-    setErrorText("");
-
-    try {
-      await patchDraftToBackend(selectedId, draft);
-      setBpmnReloadKey((x) => x + 1);
-    } catch (e) {
-      setErrorText(String(e?.message || e));
-    } finally {
-      setGenerating(false);
-    }
-  }
-
-  function onAddNote(text) {
-    const t = String(text || "").trim();
-    if (!t) return;
-
-    const note = { note_id: `note_${Date.now()}`, text: t, ts: new Date().toISOString() };
-
-    const next = ensureDraftShape({
-      ...(draft || {}),
-      notes: [...(Array.isArray(draft?.notes) ? draft.notes : []), note],
-    });
-
-    setDraft(next);
-
-    if (!isLocalSessionId(selectedId)) {
-      patchDraftToBackend(selectedId, next).catch((e) => setErrorText(String(e?.message || e)));
-    }
-  }
-
-  const needsProject = apiOk && projectsEnabled && !projectId;
+  }, [projectId, modeFilter]);
 
   return (
     <>
-      <ProjectWizardModal
-        open={wizardOpen || needsProject}
-        onClose={() => setWizardOpen(false)}
-        onCreate={async (payload) => {
-          setErrorText("");
-          await createProjectAndFirstSession(payload);
-          setWizardOpen(false);
+      <AppShell
+        draft={draft}
+        locked={locked}
+        left={left}
+        leftHidden={leftHidden}
+        onToggleLeft={() => setLeftHidden((x) => !x)}
+        onPatchDraft={patchDraft}
+        reloadKey={reloadKey}
+        backendStatus={backendStatus}
+        backendHint={backendHint}
+        projects={projects}
+        projectId={projectId}
+        onProjectChange={async (pid) => {
+          const next = String(pid || "");
+          setProjectId(next);
+          await refreshSessions(next);
         }}
+        onDeleteProject={deleteCurrentProject}
+        modeFilter={modeFilter}
+        onModeFilterChange={async (m) => {
+          const next = String(m || "");
+          setModeFilter(next);
+          await refreshSessions(projectId);
+        }}
+        sessions={sessions}
+        sessionId={String(draft?.session_id || "")}
+        onOpenSession={openSession}
+        onDeleteSession={deleteCurrentSession}
+        onRefresh={async () => {
+          await refreshProjects();
+          await refreshSessions(projectId);
+        }}
+        onNewProject={() => setWizardOpen(true)}
+        onNewLocalSession={createLocalSession}
+        onNewBackendSession={() => createBackendSession(modeFilter)}
       />
 
-      {!needsProject ? (
-        <AppShell
-          backendStatus={backendStatus}
-          backendHint={backendHint}
-          projects={projects}
-          projectId={projectId}
-          onProjectChange={setProjectId}
-          modeFilter={modeFilter}
-          onModeFilterChange={setModeFilter}
-          sessions={sessions}
-          selectedId={selectedId}
-          onOpen={onOpen}
-          onRefreshSessions={async () => {
-            await refreshProjects();
-            await refreshSessions();
-          }}
-          onNewProject={onNewProject}
-          onNewLocal={onNewLocal}
-          onNewApiSession={onNewApiSession}
-          draft={draft}
-          setDraft={setDraft}
-          bpmnReloadKey={bpmnReloadKey}
-          patchDraftToBackend={patchDraftToBackend}
-          onGenerate={onGenerate}
-          generating={generating}
-          onAddNote={onAddNote}
-          errorText={errorText}
-          currentTitle={currentTitle}
-        />
-      ) : (
-        <div className="app" style={{ padding: 16 }}>
-          <div className="panel" style={{ maxWidth: 720, margin: "0 auto" }}>
-            <div className="panelHeader">
-              <div className="panelTitle">Проект</div>
-              <div className="panelSub">Создай первый проект, чтобы начать интервью и генерацию процесса.</div>
-            </div>
-            <div className="panelBody">
-              <div style={{ opacity: 0.75 }}>
-                {backendStatus === "ok" ? "backend ok" : backendHint}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <ProjectWizardModal open={wizardOpen} onClose={() => setWizardOpen(false)} onCreate={createProjectFromWizard} />
     </>
   );
 }

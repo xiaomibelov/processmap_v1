@@ -1,10 +1,8 @@
 import { useMemo } from "react";
 
-const MODE_OPTIONS = [
-  { value: "", label: "Все режимы" },
-  { value: "quick_skeleton", label: "Quick" },
-  { value: "deep_audit", label: "Deep audit" },
-];
+function asArray(x) {
+  return Array.isArray(x) ? x : [];
+}
 
 export default function TopBar({
   backendStatus,
@@ -12,95 +10,103 @@ export default function TopBar({
   projects,
   projectId,
   onProjectChange,
+  onDeleteProject,
   modeFilter,
   onModeFilterChange,
-  sessionId,
   sessions,
-  onOpen,
+  sessionId,
+  onOpenSession,
+  onDeleteSession,
   onRefresh,
   onNewProject,
-  onNewLocal,
-  onNewBackend,
+  onNewLocalSession,
+  onNewBackendSession,
+  leftHidden,
+  onToggleLeft,
 }) {
-  const badge = useMemo(() => {
-    if (backendStatus === "ok") return <span className="badge ok">API OK</span>;
-    if (backendStatus === "fail") return <span className="badge err">API FAIL</span>;
-    return <span className="badge">API …</span>;
-  }, [backendStatus]);
+  const projList = useMemo(() => asArray(projects), [projects]);
+  const sessList = useMemo(() => asArray(sessions), [sessions]);
 
-  const hasProjects = (projects || []).length > 0;
-  const canCreateApiSession = Boolean(projectId);
+  const modeOptions = [
+    { v: "quick_skeleton", t: "Quick" },
+    { v: "deep_audit", t: "Deep" },
+  ];
 
   return (
-    <div className="topbar">
-      <div className="topLeft">
-        <div className="brand">Food Process Copilot</div>
-        {badge}
-        {backendHint ? <div className="hint">{backendHint}</div> : null}
+    <div className="topBar">
+      <div className="topBarLeft">
+        <div className="brand">
+          <b>Food Process Copilot</b>
+          <span className={"apiPill " + (backendStatus ? "ok" : "fail")} title={backendHint || ""}>
+            {backendStatus ? "API OK" : "API FAIL"}
+          </span>
+        </div>
       </div>
 
-      <div className="topRight">
-        <select
-          className="select"
-          value={projectId || ""}
-          onChange={(e) => onProjectChange?.(e.target.value || "")}
-          title="Проект"
-        >
-          <option value="">— проект —</option>
-          {(projects || []).map((p, idx) => (
-            <option key={`${p?.id || "p"}_${idx}`} value={p?.id || ""}>
-              {p?.title || p?.id || "—"}
-            </option>
-          ))}
-        </select>
+      <div className="topBarMain">
+        <div className="iconBtns" style={{ marginRight: 10 }}>
+          <button className="iconBtn" onClick={onToggleLeft} title={leftHidden ? "Показать меню" : "Скрыть меню"}>
+            {leftHidden ? "⟩" : "⟨"}
+          </button>
+        </div>
 
-        <select
-          className="select"
-          value={modeFilter || ""}
-          onChange={(e) => onModeFilterChange?.(e.target.value || "")}
-          title="Фильтр по режиму"
-          disabled={!hasProjects}
-        >
-          {MODE_OPTIONS.map((m, idx) => (
-            <option key={`${m.value}_${idx}`} value={m.value}>
-              {m.label}
-            </option>
-          ))}
-        </select>
-
-        <select
-          className="select"
-          value={sessionId || ""}
-          onChange={(e) => onOpen?.(e.target.value)}
-          title="Сессия"
-        >
-          <option value="">— выбрать сессию —</option>
-          {(sessions || []).map((s, idx) => {
-            const id = s?.session_id || s?.id || "";
-            const title = s?.title || id || "—";
-            return (
-              <option key={`${id || "s"}_${idx}`} value={id}>
-                {title}
+        <div className="selectWrap">
+          <select className="select" value={projectId || ""} onChange={(e) => onProjectChange?.(e.target.value)}>
+            <option value="">{projList.length ? "— выбрать проект —" : "Нет проектов"}</option>
+            {projList.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.title || p.id}
               </option>
-            );
-          })}
-        </select>
+            ))}
+          </select>
+        </div>
 
-        <button className="secondaryBtn" onClick={onRefresh} title="Обновить список проектов/сессий">
+        <div className="iconBtns">
+          <button className="iconBtn" onClick={() => onDeleteProject?.()} title="Удалить проект" disabled={!projectId}>
+            🗑
+          </button>
+        </div>
+
+        <div className="selectWrap">
+          <select className="select" value={modeFilter || "quick_skeleton"} onChange={(e) => onModeFilterChange?.(e.target.value)}>
+            {modeOptions.map((m) => (
+              <option key={m.v} value={m.v}>
+                {m.t}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="selectWrap">
+          <select className="select" value={sessionId || ""} onChange={(e) => onOpenSession?.(e.target.value)}>
+            <option value="">{sessList.length ? "— выбрать сессию —" : "Нет сессий"}</option>
+            {sessList.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.title || s.id}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="iconBtns">
+          <button className="iconBtn" onClick={() => onDeleteSession?.()} title="Удалить сессию" disabled={!sessionId}>
+            🗑
+          </button>
+        </div>
+
+        <button className="secondaryBtn smallBtn" onClick={onRefresh} title="Обновить списки">
           Обновить
         </button>
-        <button className="secondaryBtn" onClick={onNewProject} title="Создать проект">
+
+        <button className="secondaryBtn smallBtn" onClick={onNewProject}>
           Новый проект
         </button>
-        <button className="secondaryBtn" onClick={onNewLocal} title="Создать локальный черновик">
+
+        <button className="secondaryBtn smallBtn" onClick={onNewLocalSession} title="Локальная сессия без API">
           Новая (Local)
         </button>
-        <button
-          className="primaryBtn smallBtn"
-          onClick={() => onNewBackend?.(modeFilter || "quick_skeleton")}
-          disabled={!canCreateApiSession}
-          title={canCreateApiSession ? "Создать сессию в проекте" : "Сначала выбери или создай проект"}
-        >
+
+        <button className="primaryBtn smallBtn" onClick={onNewBackendSession} disabled={!projectId} title={!projectId ? "Сначала выбери проект" : "Создать API-сессию"}>
           Новая (API)
         </button>
       </div>

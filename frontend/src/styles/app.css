@@ -14,10 +14,6 @@ html, body { height: 100%; margin: 0; background: #eef2f6; }
 }
 
 .topbar {
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  pointer-events: auto;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -69,7 +65,7 @@ html, body { height: 100%; margin: 0; background: #eef2f6; }
 }
 
 .panel {
-  background: #fff;
+  background: var(--panel, #fff);
   border: 1px solid rgba(16,24,40,0.10);
   border-radius: 10px;
   box-shadow: 0 1px 2px rgba(16,24,40,0.06);
@@ -156,7 +152,7 @@ html, body { height: 100%; margin: 0; background: #eef2f6; }
   padding: 8px 10px;
   border-radius: 10px;
   border: 1px solid rgba(16,24,40,0.12);
-  background: #fff;
+  background: var(--panel, #fff);
   color: #0f172a;
   cursor: pointer;
 }
@@ -167,7 +163,7 @@ html, body { height: 100%; margin: 0; background: #eef2f6; }
   position: relative;
   min-height: 0;
   overflow: hidden;
-  background: #fff;
+  background: var(--panel, #fff);
 }
 
 .lanesBg {
@@ -201,7 +197,7 @@ html, body { height: 100%; margin: 0; background: #eef2f6; }
   padding: 10px 12px;
   border-radius: 8px;
   border: 2px solid rgba(60,110,180,0.55);
-  background: #fff;
+  background: var(--panel, #fff);
   color: #0f172a;
   font-weight: 700;
   font-size: 13px;
@@ -251,7 +247,7 @@ html, body { height: 100%; margin: 0; background: #eef2f6; }
   width: 320px;
   border-radius: 10px;
   border: 1px solid rgba(16,24,40,0.10);
-  background: #fff;
+  background: var(--panel, #fff);
   box-shadow: 0 6px 18px rgba(16,24,40,0.12);
   overflow: hidden;
 }
@@ -303,7 +299,7 @@ html, body { height: 100%; margin: 0; background: #eef2f6; }
 
 .bottomDock {
   margin: 0 12px 12px 12px;
-  background: #fff;
+  background: var(--panel, #fff);
   border: 1px solid rgba(16,24,40,0.10);
   border-radius: 10px;
   box-shadow: 0 1px 2px rgba(16,24,40,0.06);
@@ -327,27 +323,19 @@ html, body { height: 100%; margin: 0; background: #eef2f6; }
   gap: 10px;
 }
 
-.textarea{
+.textarea {
   width: 100%;
-  padding: 10px 12px;
-  border-radius: 12px;
-  min-height: 110px;
-
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.14);
-  color: rgba(255,255,255,0.92);
-
-  outline: none;
-  box-shadow: none;
+  min-height: 44px;
+  max-height: 120px;
   resize: vertical;
+  border-radius: 10px;
+  border: 1px solid rgba(16,24,40,0.12);
+  background: var(--panel, #fff);
+  color: #0f172a;
+  padding: 10px 12px;
+  outline: none;
 }
 
-.textarea::placeholder{ color: rgba(255,255,255,0.45); }
-
-.textarea:focus{
-  border-color: rgba(124,92,255,0.55);
-  box-shadow: 0 0 0 3px rgba(124,92,255,0.16);
-}
 .inputRow {
   display: flex;
   gap: 10px;
@@ -355,7 +343,7 @@ html, body { height: 100%; margin: 0; background: #eef2f6; }
 }
 
 .card {
-  background: #fff;
+  background: var(--panel, #fff);
   border: 1px solid rgba(16,24,40,0.10);
   border-radius: 10px;
   box-shadow: 0 1px 2px rgba(16,24,40,0.06);
@@ -372,25 +360,14 @@ html, body { height: 100%; margin: 0; background: #eef2f6; }
 /* graph_editor_inputs_v1 */
 .input {
   width: 100%;
-  padding: 10px 12px;
-  border-radius: 12px;
-
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.14);
-  color: rgba(255,255,255,0.92);
-
+  background: var(--panel, #fff);
+  border: 1px solid rgba(16,24,40,0.12);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 13px;
   outline: none;
-  box-shadow: none;
 }
 
-.input::placeholder{
-  color: rgba(255,255,255,0.45);
-}
-
-.input:focus{
-  border-color: rgba(124,92,255,0.55);
-  box-shadow: 0 0 0 3px rgba(124,92,255,0.16);
-}
 .dangerBtn {
   background: rgba(220,38,38,0.10);
   border: 1px solid rgba(220,38,38,0.25);
@@ -454,7 +431,7 @@ html, body { height: 100%; margin: 0; background: #eef2f6; }
   color: #fff;
 }
 .topBar .input:focus { outline: 2px solid rgba(255,255,255,0.35); outline-offset: 2px; }
-.topBar select option { color: #111; }
+.topBar select option { color: var(--fg, #111); }
 
 .topBar .ghostBtn {
   background: rgba(255,255,255,0.14);
@@ -468,7 +445,7 @@ html, body { height: 100%; margin: 0; background: #eef2f6; }
   color: #0b2b53;
   border: 1px solid rgba(255,255,255,0.35);
 }
-.topBar .primaryBtn:hover { background: #fff; }
+.topBar .primaryBtn:hover { background: var(--panel, #fff); }
 
 .pill {
   background: rgba(255,255,255,0.14);
@@ -513,307 +490,2285 @@ html, body { height: 100%; margin: 0; background: #eef2f6; }
   margin-top:10px;
 }
 
-/* R14_GRAPHITE_PAPER_OVERRIDES */
-
-/* left column cards: stop using bright white in dark theme */
-.card{
-  background: var(--panel2) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 14px !important;
-  box-shadow: none !important;
-  color: var(--text) !important;
+/* fpc: graphite form controls */
+.graphite .input,
+.graphite .textarea,
+.graphite .select {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+  color: var(--ink);
 }
 
-/* strengthen text visibility */
-.panelBody, .panelBody * { color: var(--text); }
-.panelBody .muted, .panelBody .small.muted { color: var(--muted) !important; }
-
-/* primary button: premium look + readable */
-.primaryBtn{
-  background: linear-gradient(180deg, rgba(124,92,255,.92), rgba(124,92,255,.62)) !important;
-  border: 1px solid rgba(124,92,255,.65) !important;
-  color: var(--text) !important;
-  border-radius: 14px !important;
-  font-weight: 900 !important;
-}
-.primaryBtn:disabled{
-  opacity: .55 !important;
-  filter: saturate(.8) !important;
+.graphite .input::placeholder,
+.graphite .textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
 }
 
-/* BPMN stage: avoid pure white, keep labels readable */
-.bpmnStage, .processStage, .stage{
-  background: rgba(255,255,255,.02) !important;
+.graphite .input:focus,
+.graphite .textarea:focus,
+.graphite .select:focus {
+  outline: none;
+  border-color: rgba(160,210,255,0.35);
+  box-shadow: 0 0 0 3px rgba(120,180,255,0.12);
 }
 
-.bpmnStage .djs-container{
-  background:
-    radial-gradient(900px 500px at 22% 18%, rgba(124,92,255,.10), transparent 62%),
-    linear-gradient(180deg, var(--paper0), var(--paper1)) !important;
-  border: 1px solid var(--paperBorder) !important;
-  border-radius: 16px !important;
+/* fpc: bpmn viewer helpers */
+.bpmnStage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
 }
 
-/* make sure svg doesn't paint its own harsh background */
-.bpmnStage svg{ background: transparent !important; }
-
-/* diagram text is drawn inside SVG; ensure it's not washed out */
-.bpmnStage .djs-label,
-.bpmnStage .djs-label tspan{
-  fill: var(--ink) !important;
-}
-
-/* reduce glare of controls on the canvas */
-.bpmnStage .bpmnControls button,
-.bpmnStage button{
-  background: rgba(255,255,255,.08) !important;
-  border: 1px solid rgba(255,255,255,.14) !important;
-  color: var(--text) !important;
-}
-
-/* R18_STAGE_LAYOUT */
-.app { min-height: 100vh; }
-.topbar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 14px; }
-.topLeft { display:flex; align-items:center; gap:10px; }
-.brand { font-weight:900; letter-spacing:.2px; }
-.hint { font-size:12px; color:var(--muted); max-width:520px; }
-.topRight { display:flex; align-items:center; gap:10px; }
-.select { padding:9px 10px; border-radius:12px; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.12); color:var(--text); }
-.select option { color:#111; }
-.appBody { display:grid; grid-template-columns:380px 1fr; gap:14px; padding:14px; }
-.stage { height: calc(100vh - 80px); display:flex; flex-direction:column; }
-.stageHead { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; }
-.processTitle { font-weight:900; font-size:14px; }
-.stageActions { display:flex; align-items:center; gap:8px; }
-.iconBtn { width:36px; height:34px; border-radius:12px; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.12); color:var(--text); }
-.iconBtn.active { outline:2px solid var(--ring); outline-offset:2px; }
-.stageBody { position:relative; flex:1; min-height:0; }
-.bpmnWrap { height:100%; border-radius:var(--r-lg); overflow:hidden; }
-.bpmnHost { height:100%; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.10); border-radius:var(--r-lg); }
-
-.copilotPanel {
-  position:absolute; top:12px; right:12px; width:360px;
-  max-height:calc(100% - 24px); overflow:auto; z-index:20;
-  background:var(--panel); border:1px solid var(--border);
-  border-radius:var(--r-lg); box-shadow:var(--shadow); backdrop-filter: blur(14px);
-}
-.copilotHead { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,.08); }
-.copilotBody { padding:12px; }
-
-.badge { font-size:11px; padding:5px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.05); }
-.badge.ok { border-color: rgba(47,229,140,.35); background: rgba(47,229,140,.10); }
-.badge.err { border-color: rgba(255,77,77,.35); background: rgba(255,77,77,.10); }
-
-.smallBtn { padding:9px 10px; font-size:13px; }
-.inputRow { display:flex; gap:10px; align-items:center; }
-
-.modalOverlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.55);
-  backdrop-filter: blur(6px);
+.bpmnTitle {
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 18px;
-  z-index: 200;
+  gap: 10px;
+  font-weight: 900;
 }
 
-.modalCard {
-  width: min(980px, 100%);
-  max-height: calc(100vh - 36px);
+.bpmnCanvas {
+  flex: 1;
   overflow: auto;
-  border-radius: 18px;
-  background: rgba(20,20,24,0.88);
-  border: 1px solid rgba(255,255,255,0.12);
-  box-shadow: 0 20px 80px rgba(0,0,0,0.55);
+  border-radius: 14px;
+  padding: 10px;
 }
 
-.modalHeader {
+.graphite .bpmnCanvas {
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+}
+
+.bpmnPre {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre;
+}
+
+.graphite .bpmnPre {
+  color: var(--ink);
+}
+
+/* fpc: topbar_layout_v2 */
+.topBar {
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  min-height: 56px;
+}
+
+.topBarInner {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+}
+
+.topBarBrand {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.1;
+}
+
+.topBarControls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+
+.topBarControls .input,
+.topBarControls select {
+  height: 34px;
+}
+
+.topbarSelectSm { min-width: 160px; max-width: 220px; }
+.topbarSelectLg { min-width: 280px; max-width: 520px; }
+
+/* fpc: modal_projects_v1 */
+.modalOverlay{
+  position:fixed;
+  inset:0;
+  z-index:999;
+  display:flex;
+  justify-content:center;
+  align-items:flex-start;
+  padding:64px 16px 16px;
+  overflow:auto;
+  background:rgba(0,0,0,.45);
+  backdrop-filter: blur(10px);
+}
+
+.modalCard{
+  width:min(980px, 100%);
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,.10);
+  background:linear-gradient(180deg, rgba(20,30,55,.92), rgba(10,14,26,.92));
+  box-shadow: 0 18px 60px rgba(0,0,0,.55);
+}
+
+.modalHeader{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:14px 14px;
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+
+.modalTitle{ font-weight: 900; }
+
+.modalBody{
+  padding:14px;
+}
+
+.modalFooter{
+  display:flex;
+  justify-content:flex-end;
+  gap:10px;
+  padding:14px;
+  border-top:1px solid rgba(255,255,255,.08);
+}
+
+.grid2{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:12px;
+}
+
+.grid3{
+  display:grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap:12px;
+}
+
+@media (max-width: 900px){
+  .grid2{ grid-template-columns: 1fr; }
+  .grid3{ grid-template-columns: 1fr; }
+}
+
+.field .label{
+  font-size:12px;
+  opacity:.85;
+  margin-bottom:6px;
+}
+
+.select{
+  width:100%;
+  height:34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border:1px solid rgba(255,255,255,.10);
+  background: rgba(0,0,0,.25);
+  color: inherit;
+}
+
+.divider{
+  height:1px;
+  background: rgba(255,255,255,.08);
+  margin:14px 0;
+}
+
+.check{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin:6px 0;
+  user-select:none;
+}
+
+.secondaryBtn{
+  height:34px;
+  padding:0 12px;
+  border-radius:10px;
+  border:1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.22);
+  color: inherit;
+}
+
+.secondaryBtn:disabled{
+  opacity:.55;
+}
+
+.badge{
+  display:inline-block;
+  margin-left:10px;
+  padding:2px 8px;
+  border-radius:999px;
+  font-size:12px;
+  border:1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.22);
+}
+
+.badge.err{
+  border-color: rgba(255,120,120,.35);
+}
+
+/* fpc: modal_shell_v1 */
+.modalOverlay{
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 64px 16px 16px;
+  overflow: auto;
+  background: rgba(0,0,0,.45);
+  backdrop-filter: blur(10px);
+}
+
+.modalCard{
+  width: min(980px, 100%);
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.10);
+  background: linear-gradient(180deg, rgba(20,30,55,.92), rgba(10,14,26,.92));
+  box-shadow: 0 18px 60px rgba(0,0,0,.55);
+}
+
+.modalHeader{
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 14px 10px 14px;
-  border-bottom: 1px solid rgba(255,255,255,0.10);
-}
-
-.modalTitle {
-  font-weight: 900;
-  letter-spacing: 0.2px;
-}
-
-.modalBody {
+  gap: 10px;
   padding: 14px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
 }
 
-.modalFooter {
+.modalTitle{ font-weight: 900; }
+
+.modalBody{
+  padding: 14px;
+  max-height: calc(100vh - 180px);
+  overflow: auto;
+}
+
+.modalFooter{
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  padding: 12px 14px 14px 14px;
-  border-top: 1px solid rgba(255,255,255,0.10);
+  padding: 14px;
+  border-top: 1px solid rgba(255,255,255,.08);
 }
 
-.grid2 {
+.grid2{
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
 
-.grid3 {
+.grid3{
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   gap: 12px;
 }
 
-.field .label {
+@media (max-width: 900px){
+  .grid2{ grid-template-columns: 1fr; }
+  .grid3{ grid-template-columns: 1fr; }
+}
+
+.field .label{
   font-size: 12px;
-  opacity: 0.75;
+  opacity: .85;
   margin-bottom: 6px;
 }
 
-.field .input {
+.modalCard .input{
   width: 100%;
-  margin-bottom: 8px;
+  box-sizing: border-box;
 }
 
-.check {
+.divider{
+  height: 1px;
+  background: rgba(255,255,255,.08);
+  margin: 14px 0;
+}
+
+.check{
   display: flex;
   align-items: center;
   gap: 8px;
   margin: 6px 0;
+  user-select: none;
 }
 
-.divider {
-  height: 1px;
-  background: rgba(255,255,255,0.10);
-  margin: 14px 0;
+/* fpc: layout_topbar_fix_v1 */
+html, body, #root { min-height: 100%; }
+.shell { min-height: 100vh; }
+
+.topbar{
+  justify-content: space-between;
+  flex-wrap: wrap;
+  row-gap: 8px;
 }
 
-@media (max-width: 860px) {
-  .grid2 { grid-template-columns: 1fr; }
-  .grid3 { grid-template-columns: 1fr; }
-}
-/* fpc: fullscreen stage (managed) BEGIN */
-/*
-  Goal: process (center) area must occupy full viewport height under TopBar.
-  Key: flex parents must have min-height:0 so children can stretch/scroll.
-*/
-
-html, body, #root { height: 100%; }
-
-/* If AppShell uses a wrapper, enforce full height + column layout */
-.appShell, .AppShell, .shell { height: 100vh; display: flex; flex-direction: column; }
-
-/* Main content under TopBar must be flexible */
-.appMain, .main, .content { flex: 1 1 auto; min-height: 0; display: flex; }
-
-/* Common layout: left panel + stage */
-.layout, .appLayout { flex: 1 1 auto; min-height: 0; display: flex; }
-
-/* Center stage must grow and allow internal scroll */
-.stage, .processStage, .stageWrap { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-
-/* The actual canvas/container area (BPMN/Mermaid) */
-.stageBody, .stageContent, .bpmnWrap, .bpmnStage { flex: 1 1 auto; min-height: 0; }
-
-/* If there is a card-like container inside stage, make it stretch */
-.stageCard, .processCard, .panelCard { flex: 1 1 auto; min-height: 0; }
-
-/* Defensive: allow embedded viewers to use available space */
-.bpmnViewport, .mermaidViewport, .diagramViewport, .viewer { height: 100%; min-height: 0; }
-
-/* fpc: fullscreen stage (managed) END */
-
-/* FPC_FULLSCREEN_LAYOUT_BEGIN */
-/* цель: процесс/канвас занимает всё доступное пространство экрана */
-
-html, body, #root { height: 100%; }
-
-.app {
-  min-height: 100vh;
-  height: 100vh;
+.topLeft{
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 360px;
+  min-width: 280px;
+}
+
+.topRight{
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+}
+
+.topbarSelect{
+  min-width: 220px;
+  max-width: 520px;
+}
+
+.brand{ white-space: nowrap; }
+
+.nowrap{ white-space: nowrap; }
+
+.truncate{
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topLeft .hint{
+  max-width: 520px;
+  opacity: .85;
+}
+
+@media (max-width: 1100px){
+  .topLeft .hint{
+    max-width: 100%;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+  .workspace{
+    grid-template-columns: 1fr;
+  }
+}
+
+.workspace{
+  min-height: 0;
   overflow: hidden;
 }
 
-/* TopBar должен быть "шапкой", а рабочая зона — занимать остаток */
-.topbar { flex: 0 0 auto; }
-
-.workspace {
-  flex: 1 1 auto;
+.panel{
   min-height: 0;
-  height: auto;
-  overflow: hidden;
 }
 
-/* колонки */
-.leftCol, .mainCol {
-  min-height: 0;
-  height: 100%;
+
+/* fpc: topbar_row_auto_v1 */
+/* Root cause of 'topbar moved/overlaps': shell row was fixed 56px, but topbar can wrap. */
+.shell{
+  grid-template-rows: auto 1fr auto;
 }
 
-/* главная панель процесса — на всю высоту колонки */
-.processPanel {
-  min-height: 0;
-  height: 100%;
+/* keep topbar visually stable when wrapped */
+.topbar{
+  padding-top: 8px;
+  padding-bottom: 8px;
+  min-height: 56px;
 }
 
-/* ProcessStage.jsx использует эти классы — фиксируем их, чтобы канвас не схлопывался */
-.stageInner {
-  flex: 1;
-  width: 100%;
-  max-width: none;
+/* small helpers for decomposed notes */
+.cardHeadRow{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+
+.notesTextarea{
+  line-height: 1.35;
+}
+
+/* fpc: topbar_rows_and_contrast_v1 */
+
+/* 1) topbar: force predictable 2-row layout on the right */
+.topRightCols{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-end;
+  gap:8px;
+}
+
+.topRow{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  flex-wrap:wrap;
+  gap:8px;
+}
+
+.topbarSelect{
+  width: clamp(180px, 24vw, 520px);
+  min-width: 180px;
+}
+
+.sessionSelect{
+  width: clamp(240px, 34vw, 760px);
+  min-width: 240px;
+}
+
+/* 2) contrast: fix "black on dark" for headings/labels/muted */
+.panel,
+.card,
+.topbar,
+.bpmnStage{
+  color: rgba(240,248,255,.92);
+}
+
+.panelHead,
+.modalTitle,
+.bpmnTitle,
+.bpmnHint,
+.label,
+.cardHeadRow,
+.cardHeadRow *{
+  color: rgba(240,248,255,.92) !important;
+}
+
+.small{
+  color: rgba(240,248,255,.86) !important;
+}
+
+.muted{
+  color: rgba(240,248,255,.62) !important;
+}
+
+/* inputs/selects */
+.input,
+.select,
+.topbar select{
+  color: rgba(240,248,255,.92);
+}
+
+.input::placeholder,
+textarea::placeholder{
+  color: rgba(240,248,255,.45);
+}
+
+/* options readability (best-effort, browser dependent) */
+select option{
+  background: rgba(10,14,26,.98);
+  color: rgba(240,248,255,.92);
+}
+
+/* fpc: topbar_single_row_compact_v1 */
+
+.topbarSingleRow{
+  flex-wrap: nowrap !important;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.topControls{
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: nowrap !important;
+  white-space: nowrap;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 12px;
+}
+
+.topControls > *{
+  flex: 0 0 auto;
+}
+
+.topLeft{
+  min-width: 260px;
+  max-width: 520px;
+  flex: 0 0 auto;
+}
+
+.topLeft .hint{
+  max-width: 260px;
+}
+
+.topbarSelect{
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 12px;
+}
+
+.projectSelect{
+  width: 220px;
+  max-width: 220px;
+}
+
+.modeSelect{
+  width: 120px;
+  max-width: 120px;
+}
+
+.sessionSelect{
+  width: 260px;
+  max-width: 260px;
+}
+
+.btnSm{
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 12px;
+  font-size: 13px;
+}
+
+@media (max-width: 1220px){
+  .topLeft .hint{ display:none; }
+}
+
+@media (max-width: 980px){
+  .topControls{
+    overflow-x: auto;
+    padding-bottom: 6px;
+  }
+}
+
+/* keep contrast safe */
+.topbarSingleRow, .topbarSingleRow *{
+  color: rgba(240,248,255,.92);
+}
+
+/* fpc: step13_contrast_norm_v1 */
+
+/* Micro-fix: select text baseline (prevent 'text drops down') */
+.topbarSelect{
+  line-height: 34px;
+  padding-top: 0;
+  padding-bottom: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-clip: padding-box;
+}
+
+/* Keep the arrow visible while using appearance:none (best-effort) */
+.topbarSelect{
+  background-image:
+    linear-gradient(45deg, transparent 50%, rgba(240,248,255,.85) 50%),
+    linear-gradient(135deg, rgba(240,248,255,.85) 50%, transparent 50%),
+    linear-gradient(to right, rgba(255,255,255,.10), rgba(255,255,255,.10));
+  background-position:
+    calc(100% - 18px) 50%,
+    calc(100% - 12px) 50%,
+    calc(100% - 36px) 50%;
+  background-size:
+    6px 6px,
+    6px 6px,
+    1px 18px;
+  background-repeat: no-repeat;
+  padding-right: 44px;
+}
+
+/* Step 13: Contrast normalization without global !important blanket.
+   We set a stable text palette for core containers & common text helpers. */
+:root{
+  --ink-hi: rgba(240,248,255,.92);
+  --ink: rgba(240,248,255,.86);
+  --ink-muted: rgba(240,248,255,.62);
+  --ink-faint: rgba(240,248,255,.45);
+}
+
+.shell, .panel, .card, .topbar, .bpmnStage, .modalCard{
+  color: var(--ink);
+}
+
+.panelHead, .card .title, .modalTitle, .bpmnTitle, .brand{
+  color: var(--ink-hi);
+}
+
+.small{ color: var(--ink); }
+.muted{ color: var(--ink-muted); }
+
+.label{ color: var(--ink); }
+
+/* Inputs/selects/placeholders */
+.input, .select, textarea, select{
+  color: var(--ink-hi);
+}
+
+.input::placeholder, textarea::placeholder{
+  color: var(--ink-faint);
+}
+
+/* Dropdown options (browser-dependent) */
+select option{
+  background: rgba(10,14,26,.98);
+  color: var(--ink-hi);
+}
+
+/* fpc: topbar_select_text_visible_v1 */
+/* Fix: selected value must be visible in topbar selects */
+.uiSelect,
+.topbarSelect{
+  color: var(--ink-hi) !important;
+  -webkit-text-fill-color: var(--ink-hi) !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+  text-indent: 0 !important;
+  letter-spacing: normal !important;
+}
+
+.uiSelect{
+  height: 34px;
+  line-height: 34px;
+  padding-top: 0;
+  padding-bottom: 0;
+  background-color: rgba(0,0,0,.22);
+}
+
+/* Ensure option text visible (browser-dependent) */
+.uiSelect option,
+.topbarSelect option{
+  color: var(--ink-hi) !important;
+  -webkit-text-fill-color: var(--ink-hi) !important;
+}
+
+/* fpc: step_api2_topbar_select_visible_v1 */
+
+/* Stable select styling (no dependency on .input hacks) */
+.uiSelect{
+  height: 36px;
+  line-height: 36px;
+  padding: 0 44px 0 14px;
   border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.08);
-  background: rgba(0,0,0,0.18);
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(0,0,0,.18);
+  color: rgba(240,248,255,.92);
+  -webkit-text-fill-color: rgba(240,248,255,.92);
+  font-weight: 800;
+  letter-spacing: .2px;
+  outline: none;
+}
+
+/* Ensure selected text is visible even if some global rule tries to "mask" */
+.topbarSelect{
+  color: rgba(240,248,255,.92) !important;
+  -webkit-text-fill-color: rgba(240,248,255,.92) !important;
+  opacity: 1 !important;
+}
+
+/* Keep a visible arrow + separator */
+.topbarSelect{
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, rgba(240,248,255,.85) 50%),
+    linear-gradient(135deg, rgba(240,248,255,.85) 50%, transparent 50%),
+    linear-gradient(to right, rgba(255,255,255,.10), rgba(255,255,255,.10));
+  background-position:
+    calc(100% - 18px) 50%,
+    calc(100% - 12px) 50%,
+    calc(100% - 36px) 50%;
+  background-size:
+    6px 6px,
+    6px 6px,
+    1px 18px;
+  background-repeat: no-repeat;
+}
+
+/* Reasonable widths (one row) */
+.projectSelect{ width: 260px; max-width: 30vw; }
+.modeSelect{ width: 160px; max-width: 20vw; }
+.sessionSelect{ width: 360px; max-width: 40vw; }
+
+@media (max-width: 1100px){
+  .projectSelect{ width: 220px; }
+  .sessionSelect{ width: 300px; }
+}
+
+/* Options palette (browser-dependent) */
+.uiSelect option{
+  background: rgba(10,14,26,.98);
+  color: rgba(240,248,255,.92);
+}
+
+/* fpc: graphite_vars_and_topbar_v1 */
+.graphite{
+  --ink: rgba(255,255,255,.92);
+  --muted: rgba(255,255,255,.68);
+  --border: rgba(255,255,255,.14);
+  --panel: rgba(255,255,255,.06);
+}
+
+.graphite .btn{
+  background: rgba(0,0,0,.22);
+  color: var(--ink);
+  border: 1px solid var(--border);
+}
+
+.topbar{
+  height: 56px;
+}
+
+.topbar .topLeft{
+  min-width: 260px;
+}
+
+.topbar .topRight{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:10px;
+  flex-wrap:nowrap;
+  overflow:hidden;
+}
+
+.topbar .topSelect{
+  height: 34px;
+  line-height: 34px;
+  padding: 0 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.10);
+  color: var(--ink);
+}
+
+.topbar .topSelect option{
+  background: #0d1326;
+  color: #fff;
+}
+
+.topbar .topSelect--project{ width: 220px; max-width: 220px; }
+.topbar .topSelect--mode{ width: 150px; max-width: 150px; }
+.topbar .topSelect--session{ width: 280px; max-width: 280px; }
+
+.topbar .smallBtn{
+  height: 34px;
+  line-height: 34px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+@media (max-width: 1100px){
+  .topbar .topSelect--session{ width: 220px; max-width: 220px; }
+}
+
+@media (max-width: 900px){
+  .topbar{ height: auto; }
+  .topbar .topRight{ flex-wrap: wrap; overflow: visible; justify-content:flex-start; }
+  .topbar .topSelect--project,
+  .topbar .topSelect--mode,
+  .topbar .topSelect--session{
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
+/* fpc: step17_text_visibility_v1 */
+.graphite input,
+.graphite textarea,
+.graphite select{
+  color: var(--ink);
+}
+
+.graphite input::placeholder,
+.graphite textarea::placeholder{
+  color: rgba(255,255,255,.45);
+}
+
+.topbar .topSelect{
+  color: var(--ink) !important;
+  font-weight: 700;
+  line-height: 34px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.topbar .topSelect:focus{
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(120,170,255,.20);
+}
+
+.bpmnSub{
+  opacity: .78;
+  font-size: 12px;
+  padding: 0 14px 10px;
+}
+
+/* fpc: bpmn_viewer_v1 */
+.bpmnCanvas{
+  position: relative;
+  width: 100%;
+  height: 520px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(0,0,0,.18);
   overflow: hidden;
 }
 
-.stageHead { flex: 0 0 auto; }
+.bpmnViewer{
+  width: 100%;
+  height: 100%;
+  padding: 10px;
+}
 
-.stageBody {
+.bpmnHost{
+  width: 100%;
+  height: 100%;
+  border-radius: 10px;
+  background: rgba(255,255,255,.03);
+}
+
+/* bpmn-js creates its own SVG; keep it readable on dark */
+.bpmnHost .djs-container,
+.bpmnHost .djs-container svg{
+  background: transparent !important;
+}
+
+.bpmnViewerFallback{
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  padding: 10px;
+}
+
+/* micro-fix: select text baseline on mac */
+.topbar .topSelect{
+  padding-top: 0;
+  padding-bottom: 0;
+  vertical-align: middle;
+}
+
+/* fpc: bpmn_viewer_dark_v1 */
+.topbar select.topSelect{
+  color: var(--ink) !important;
+}
+
+.bpmnStage .bpmnCanvas{
+  position: relative;
+  width: 100%;
+  min-height: 420px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,.12);
+  overflow: hidden;
+}
+
+.bpmnStage .bpmnViewer{
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+}
+
+.bpmnStage .bpmnOverlay{
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+  background: rgba(0,0,0,.20);
+  z-index: 5;
+  pointer-events: none;
+}
+
+.bpmnStage .bpmnXml{
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  margin: 0;
+  padding: 12px;
+  color: rgba(255,255,255,.90);
+  background: rgba(0,0,0,.18);
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.bpmnStage .djs-container,
+.bpmnStage .djs-container svg{
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.bpmnStage .djs-container .djs-label{
+  fill: rgba(255,255,255,.92) !important;
+}
+
+.bpmnStage .djs-container .djs-visual > :nth-child(1){
+  stroke: rgba(255,255,255,.55) !important;
+}
+
+.bpmnStage .djs-container .djs-visual > :nth-child(2){
+  stroke: rgba(255,255,255,.40) !important;
+}
+
+.bpmnStage .djs-container .djs-connection path{
+  stroke: rgba(255,255,255,.45) !important;
+}
+
+.bpmnStage .djs-container .djs-visual rect,
+.bpmnStage .djs-container .djs-visual circle,
+.bpmnStage .djs-container .djs-visual path{
+  fill: rgba(255,255,255,.06);
+}
+
+
+/* fpc: bpmn_tabs_warn_v1 */
+.bpmnStage .tabGroup{
+  display:inline-flex;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.16);
+  overflow:hidden;
+  background: rgba(0,0,0,.16);
+}
+
+.bpmnStage .tabBtn{
+  height: 30px;
+  line-height: 30px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: rgba(255,255,255,.75);
+  cursor: pointer;
+}
+
+.bpmnStage .tabBtn.active{
+  background: rgba(255,255,255,.10);
+  color: rgba(255,255,255,.95);
+}
+
+.bpmnStage .warnBox{
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.12);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.bpmnStage .warnTitle{
+  font-weight: 800;
+  margin-bottom: 6px;
+  color: rgba(255,255,255,.90);
+}
+
+.bpmnStage .warnList{
+  margin: 0;
+  padding-left: 18px;
+  color: rgba(255,255,255,.72);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.badge.warn{
+  border-color: rgba(255,210,120,.30);
+}
+
+
+/* fpc: bpmn_viewer_ref_fix_v1 */
+.bpmnStage{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  height: 100%;
+  min-height: 420px;
+}
+
+.bpmnTitleRow{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+
+.bpmnTools{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.chip{
+  height:28px;
+  padding:0 10px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.14);
+  background: rgba(0,0,0,.18);
+  color: var(--ink, rgba(255,255,255,.92));
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  line-height: 28px;
+}
+
+.chip.on{
+  border-color: rgba(120,160,255,.35);
+  background: rgba(90,130,255,.22);
+}
+
+.bpmnErr{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  color: var(--ink, rgba(255,255,255,.92));
+  opacity:.92;
+}
+
+.bpmnErrText{
+  opacity:.9;
+  font-size: 13px;
+}
+
+.bpmnViewerWrap{
+  flex:1;
+  min-height: 420px;
+  border-radius: 16px;
+  border:1px solid rgba(255,255,255,.10);
+  background: rgba(0,0,0,.18);
+  overflow:hidden;
+}
+
+.bpmnViewer{
+  width:100%;
+  height:100%;
+}
+
+.bpmnXmlWrap{
+  flex:1;
+  min-height: 420px;
+  border-radius: 16px;
+  border:1px solid rgba(255,255,255,.10);
+  background: rgba(0,0,0,.18);
+  overflow:auto;
+}
+
+.bpmnPre{
+  color: var(--ink, rgba(255,255,255,.92));
+  white-space: pre;
+}
+
+.bjs-container, .djs-container{
+  background: transparent !important;
+}
+
+.djs-outline{
+  display:none;
+}
+
+/* fpc: bpmn_stage_forwardref_fit_v1 */
+.bpmnStageRoot{
+  position: relative;
+  /* гарантируем высоту, чтобы fit-viewport не ужимал диаграмму в “полоску” */
+  height: calc(100vh - 240px);
+  min-height: 420px;
+}
+
+.bpmnToggle{
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  display: inline-flex;
+  gap: 8px;
+  z-index: 5;
+}
+
+.pillBtn{
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(0,0,0,.18);
+  color: rgba(255,255,255,.88);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+}
+
+.pillBtn.active{
+  background: rgba(255,255,255,.14);
+  border-color: rgba(255,255,255,.28);
+  color: rgba(255,255,255,.96);
+}
+
+.bpmnViewport{
+  height: 100%;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.90);
+  overflow: hidden;
+}
+
+.bpmnCanvas{
+  height: 100%;
+  width: 100%;
+}
+
+.bpmnOverlay{
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(0,0,0,.55);
+  color: rgba(255,255,255,.92);
+  border: 1px solid rgba(255,255,255,.18);
+  max-width: calc(100% - 28px);
+  z-index: 6;
+  white-space: pre-wrap;
+}
+
+.bpmnOverlay.err{
+  background: rgba(120,20,20,.72);
+}
+
+.bpmnXml{
+  height: 100%;
+  margin: 0;
+  padding: 14px 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.20);
+  color: rgba(255,255,255,.88);
+  overflow: auto;
+  white-space: pre;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+@media (max-width: 900px){
+  .bpmnStageRoot{
+    height: calc(100vh - 300px);
+    min-height: 360px;
+  }
+}
+
+/* fpc: processstage_actions_right_v1 */
+.stageCard{
+  position: relative;
+}
+
+.processHeaderRow{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding: 10px 12px 6px;
+}
+
+.processHeaderLeft{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width: 140px;
+}
+
+.processHeaderRight{
+  display:flex;
+  align-items:center;
+  margin-left:auto;
+}
+
+.processActions{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.iconBtn{
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(0,0,0,.18);
+  color: rgba(255,255,255,.92);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.iconBtn:disabled{
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.iconBtn.aiBtn{
+  width: auto;
+  padding: 0 12px;
+  font-weight: 700;
+}
+
+.iconBtn.aiBtn.active{
+  background: rgba(255,255,255,.14);
+  border-color: rgba(255,255,255,.28);
+}
+
+.viewPills{
+  display:inline-flex;
+  gap: 8px;
+  margin-left: 10px;
+}
+
+.stageTitleRow{
+  padding: 0 12px 10px;
+}
+
+.stageTitle{
+  color: rgba(255,255,255,.90);
+  font-weight: 800;
+}
+
+@media (max-width: 900px){
+  .processHeaderRow{
+    flex-wrap: wrap;
+    align-items:flex-start;
+  }
+  .processHeaderRight{
+    width: 100%;
+    justify-content:flex-start;
+  }
+}
+
+/* fpc: bpmn_xml_linenumbers_v1 */
+.bpmnStageRoot{
+  width: 100%;
+}
+
+.bpmnDiagramWrap,
+.bpmnXmlWrap{
+  padding: 0 12px 12px;
+}
+
+.bpmnCanvas{
+  width: 100%;
+  height: 360px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  overflow: hidden;
+}
+
+.bpmnDiagramWrap.isHidden,
+.bpmnXmlWrap.isHidden{
+  display: none;
+}
+
+.xmlCode{
+  width: 100%;
+  max-height: 420px;
+  overflow: auto;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.22);
+  padding: 10px 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 18px;
+  color: rgba(255,255,255,.92);
+}
+
+.xmlLine{
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 0 12px;
+}
+
+.xmlNo{
+  flex: 0 0 auto;
+  width: 46px;
+  text-align: right;
+  padding: 0 8px;
+  border-radius: 10px;
+  color: rgba(255,255,255,.70);
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.10);
+  user-select: none;
+}
+
+.xmlText{
+  flex: 1 1 auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* fpc: process_toolbar_and_xml_view_v1 */
+.processStageRoot{
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.04);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 10px 40px rgba(0,0,0,.28);
+}
+
+.processStageHeader{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.03);
+}
+
+.processStageHeaderLeft{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  min-width: 220px;
+}
+
+.processStageTitle{
+  font-weight: 700;
+  color: rgba(255,255,255,.92);
+}
+
+.processStageSub{
+  color: rgba(255,255,255,.70);
+  font-size: 13px;
+}
+
+.processStageHeaderRight{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:10px;
+  flex-wrap: nowrap;
+}
+
+.seg{
+  display:inline-flex;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(255,255,255,.06);
+  border-radius: 12px;
+  overflow:hidden;
+}
+
+.segBtn{
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: rgba(255,255,255,.78);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.segBtn.active{
+  background: rgba(0,0,0,.22);
+  color: rgba(255,255,255,.92);
+}
+
+.iconBtn{
+  height: 30px;
+  min-width: 34px;
+  padding: 0 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.90);
+  font-weight: 700;
+  cursor: pointer;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  white-space:nowrap;
+}
+
+.iconBtn.on{
+  background: rgba(79, 110, 255, .32);
+  border-color: rgba(120,160,255,.38);
+}
+
+.iconBtn:disabled,
+.segBtn:disabled{
+  opacity: .45;
+  cursor: default;
+}
+
+.processStageBody{
+  padding: 12px;
+}
+
+.processStageEmpty{
+  color: rgba(255,255,255,.78);
+  padding: 20px;
+}
+
+.bpmnStageRoot{
+  width: 100%;
+}
+
+.bpmnCanvas{
+  width: 100%;
+  height: 420px;
+  border-radius: 12px;
+  border: 1px solid rgba(120,160,255,.22);
+  background: rgba(0,0,0,.14);
+  overflow: hidden;
+}
+
+.xmlPane{
+  width: 100%;
+}
+
+.xmlViewer{
+  margin-top: 10px;
+  width: 100%;
+  height: 420px;
+  overflow: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(120,160,255,.22);
+  background: rgba(0,0,0,.18);
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.xmlRow{
+  display:flex;
+  align-items:flex-start;
+  white-space: pre;
+}
+
+.xmlIdx{
+  width: 56px;
+  flex: 0 0 56px;
+  color: rgba(255,255,255,.45);
+  text-align:right;
+  padding-right: 12px;
+  user-select:none;
+}
+
+.xmlCode{
+  flex: 1 1 auto;
+  color: rgba(255,255,255,.90);
+  overflow: visible;
+}
+
+.fpcAiBadge{
+  max-width: 260px;
+  background: rgba(0,0,0,.62);
+  border: 1px solid rgba(120,160,255,.30);
+  border-radius: 12px;
+  padding: 8px 10px;
+  color: rgba(255,255,255,.92);
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+}
+
+.fpcAiBadgeTitle{
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: .02em;
+  color: rgba(255,255,255,.82);
+  margin-bottom: 6px;
+}
+
+.fpcAiBadgeQ{
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgba(255,255,255,.90);
+  margin-top: 4px;
+}
+
+/* fpc: xml_wrap_fix_v1 */
+.xmlViewer{
+  overflow-x: hidden;
+}
+
+.xmlRow{
+  white-space: normal;
+}
+
+.xmlCode{
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
+}
+
+/* protects header buttons even if some browser tries to expand */
+.processStageRoot,
+.processStageHeader,
+.processStageBody{
+  max-width: 100%;
+}
+
+/* fpc: bpmn_modeler_and_delete_v1 */
+
+.topbar .topGroup{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.iconBtn{
+  height: 34px;
+  min-width: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.10);
+  color: rgba(255,255,255,.92);
+  cursor: pointer;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  user-select:none;
+}
+
+.iconBtn:disabled{
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.stageRoot{
+  display:flex;
+  flex-direction:column;
+  height: 100%;
+}
+
+.stageHeader{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255,255,255,.10);
+}
+
+.stageSubTitle{
+  margin-top: 2px;
+  color: rgba(255,255,255,.72);
+  font-size: 13px;
+}
+
+.stageHeaderRight{
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+
+.toolbarRight{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.segmented{
+  display:flex;
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.08);
+  border-radius: 12px;
+  overflow:hidden;
+}
+
+.segBtn{
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: rgba(255,255,255,.78);
+  cursor:pointer;
+  font-weight: 600;
+}
+
+.segBtn.on{
+  background: rgba(255,255,255,.14);
+  color: rgba(255,255,255,.92);
+}
+
+.stageBody{
   flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
+  padding: 12px;
 }
 
-.stageCanvas {
+.bpmnStage{
   height: 100%;
-  min-height: 0;
-  overflow: hidden;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
 }
 
-.bpmnWrap {
+.bpmnMetaRow{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+}
+
+.bpmnEditorBar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+
+.bpmnEditorBtns{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap: wrap;
+  justify-content:flex-end;
+}
+
+.bpmnCanvas{
+  flex: 1 1 auto;
+  min-height: 320px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(0,0,0,.10);
+}
+
+/* XML view: wrap + line numbers */
+.xmlWrap{
+  flex: 1 1 auto;
+  min-height: 320px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(0,0,0,.10);
+}
+
+.xmlScroller{
   height: 100%;
-  min-height: 0;
-  overflow: hidden;
-}
-/* FPC_FULLSCREEN_LAYOUT_END */
-
-/* FPC_FULLWIDTH_WORKSPACE_MANAGED */
-/*
-  Goal: on wide screens, right (main) column must NOT disappear.
-  Force workspace/appBody to stretch full viewport width.
-*/
-.workspace,
-.appBody{
-  width: 100%;
-  max-width: none;
-  margin-left: 0;
-  margin-right: 0;
-  justify-self: stretch;
+  overflow: auto;
+  padding: 10px;
 }
 
-/* Grid/flex children must be allowed to shrink/expand correctly */
-.mainCol,
-.stage,
-.processStage{
+.xmlGrid{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+
+.xmlRow{
+  display:flex;
+  align-items:flex-start;
+  gap:10px;
+}
+
+.xmlLn{
+  width: 30px;
+  text-align:right;
+  color: rgba(255,255,255,.40);
+  font-variant-numeric: tabular-nums;
+  user-select:none;
+}
+
+.xmlCode{
+  margin:0;
+  color: rgba(255,255,255,.92);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  flex: 1 1 auto;
   min-width: 0;
+}
+
+/* Make bpmn-js palette look acceptable on dark */
+.djs-palette, .djs-context-pad{
+  filter: invert(1) hue-rotate(180deg);
+  opacity: .92;
+}
+
+
+/* fpc: bpmn_n8n_bg_v1 */
+
+/* override diagram-js default white background */
+.bpmnCanvas .djs-container{
+  background: transparent !important;
+}
+
+/* n8n-like canvas: subtle grid on dark */
+.bpmnCanvas{
+  background-color: rgba(255,255,255,.04);
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,.06) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* dim the BPMN drawing a bit to avoid 'pure white' glare */
+.bpmnCanvas .djs-container .djs-viewport{
+  filter: brightness(.88) contrast(.96);
+}
+
+/* palette/context pad already inverted in prior css; keep it readable */
+.djs-palette, .djs-context-pad{
+  filter: invert(1) hue-rotate(180deg);
+  opacity: .92;
+}
+
+/* fpc: bpmn_toolbar_fullwidth_lefttoggle_v1 */
+
+/* left panel collapse */
+.appRoot.leftHidden .workspaceLeft{
+  display: none;
+}
+.appRoot.leftHidden .workspaceMain{
+  width: 100%;
+}
+
+/* make main truly fill */
+.workspace{
+  display:flex;
+  gap: 14px;
+}
+.workspaceMain{
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.workspaceLeft{
+  flex: 0 0 340px;
+}
+
+/* process shell uses full available space */
+.processShell{
+  height: calc(100vh - 56px - 38px);
+  display:flex;
+  flex-direction:column;
+  min-width: 0;
+}
+.processHeader{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255,255,255,.10);
+}
+.processHeaderRight{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap: 10px;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+.processBody{
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 10px 12px 12px;
+}
+
+/* segmented tabs */
+.seg{
+  display:flex;
+  align-items:center;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(255,255,255,.06);
+  border-radius: 12px;
+  overflow:hidden;
+}
+.segBtn{
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: rgba(255,255,255,.78);
+  cursor: pointer;
+}
+.segBtn.on{
+  background: rgba(255,255,255,.12);
+  color: rgba(255,255,255,.95);
+}
+.segBtn:disabled{
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+/* bpmn editor actions (placed left of tabs) */
+.bpmnTopActions{
+  display:flex;
+  align-items:center;
+  gap: 8px;
+}
+
+/* icons right */
+.iconBtns{
+  display:flex;
+  align-items:center;
+  gap: 8px;
+}
+.iconBtn{
+  height: 32px;
+  width: 40px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.92);
+  cursor:pointer;
+}
+.iconBtn:hover{
+  background: rgba(255,255,255,.10);
+}
+
+/* bpmn fills full panel */
+.bpmnStage{
+  height: 100%;
+  display:flex;
+  flex-direction:column;
+  min-height: 0;
+}
+.bpmnMetaRow{
+  margin-bottom: 10px;
+}
+.bpmnCanvas{
+  flex: 1 1 auto;
+  min-height: 0;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.12);
+  overflow: hidden;
+}
+
+/* IMPORTANT: bpmn-js adds .djs-container to the SAME element, so we override that */
+.bpmnCanvas,
+.bpmnCanvas.djs-container{
+  background-color: rgba(255,255,255,.04) !important;
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,.06) 1px, transparent 1px) !important;
+  background-size: 24px 24px !important;
+}
+
+/* dim the drawing slightly (reduce glare) */
+.bpmnCanvas .djs-container .djs-viewport,
+.bpmnCanvas .djs-viewport{
+  filter: brightness(.88) contrast(.96);
+}
+
+/* palette readable on dark */
+.djs-palette, .djs-context-pad{
+  filter: invert(1) hue-rotate(180deg);
+  opacity: .92;
+}
+
+/* topbar menu button spacing */
+.topbar .topMenuBtn{
+  margin-left: 8px;
+}
+
+@media (max-width: 1200px){
+  .processHeaderRight{ flex-wrap: wrap; justify-content:flex-end; }
+}
+
+/* fpc: topbar_delete_buttons_v1 */
+.topbar .topGroup{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+}
+
+.iconBtn{
+  height: 34px;
+  width: 34px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.08);
+  color: rgba(255,255,255,.92);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  cursor: pointer;
+  user-select:none;
+}
+
+.iconBtn:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+}
+
+.iconBtn.danger{
+  background: rgba(255, 80, 80, .10);
+  border-color: rgba(255, 120, 120, .22);
+}
+
+/* fpc: topbar_delete_and_wipe_dev_v1 */
+.topbar .topGroup{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+}
+
+.iconBtn{
+  height: 34px;
+  width: 34px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.08);
+  color: rgba(255,255,255,.92);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  cursor: pointer;
+  user-select:none;
+}
+
+.iconBtn:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+}
+
+.iconBtn.danger{
+  background: rgba(255, 80, 80, .10);
+  border-color: rgba(255, 120, 120, .22);
+}
+
+.dangerBtn{
+  background: rgba(255, 80, 80, .12);
+  border-color: rgba(255, 120, 120, .22);
+}
+
+/* fpc: topbar_layout_stable_v1 */
+/* цель: ничего не "уезжает" и не скрывается — переносим строки вместо overflow:hidden */
+
+.topbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  height: auto;
+}
+
+.topbar .topLeft{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  flex: 0 0 auto;
+  min-width: 220px;
+}
+
+.topbar .topRight{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  flex: 1 1 auto;
+  justify-content:flex-end;
+  flex-wrap: wrap;
+  overflow: visible !important;
+  min-width: 0;
+}
+
+.topbar .topGroup{
+  display:inline-flex;
+  align-items:center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.topbar .topSelect{
+  min-width: 0;
+}
+
+.topbar .topSelect--project{ width: 220px; max-width: min(420px, 40vw); }
+.topbar .topSelect--mode{ width: 140px; max-width: min(240px, 22vw); }
+.topbar .topSelect--session{ width: 280px; max-width: min(520px, 44vw); }
+
+.topbar .smallBtn{
+  white-space: nowrap;
+}
+
+@media (max-width: 1100px){
+  .topbar .topSelect--project{ width: 200px; }
+  .topbar .topSelect--session{ width: 240px; }
+}
+
+@media (max-width: 900px){
+  .topbar .topRight{
+    justify-content:flex-start;
+  }
+  .topbar .topSelect--project,
+  .topbar .topSelect--mode,
+  .topbar .topSelect--session{
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
+/* fpc:bpmn-dark-v1 */
+.bpmnStage .bpmnStack {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+}
+
+.bpmnStage .bpmnLayer {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+}
+
+.bpmnStage .bpmnLayer.off {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.bpmnStage .bpmnLayer.on {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.bpmnStage .bpmnLayer--diagram,
+.bpmnStage .bpmnLayer--editor {
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.bpmnStage .bpmnLayer--diagram,
+.bpmnStage .bpmnLayer--editor {
+  background:
+    radial-gradient(circle at 25% 25%, rgba(255,255,255,0.06), rgba(255,255,255,0.00) 45%),
+    radial-gradient(circle at 80% 35%, rgba(255,255,255,0.04), rgba(255,255,255,0.00) 40%),
+    linear-gradient(180deg, rgba(3,7,18,0.82), rgba(3,7,18,0.62));
+}
+
+.bpmnStage .djs-container,
+.bpmnStage .djs-container svg {
+  background: transparent !important;
+}
+
+.bpmnStage .djs-container .djs-visual .djs-element[data-element-id^="Participant"] .djs-visual > rect,
+.bpmnStage .djs-container .djs-visual .djs-element[data-element-id^="Lane"] .djs-visual > rect {
+  fill: rgba(255,255,255,0.04) !important;
+  stroke: rgba(255,255,255,0.22) !important;
+}
+
+.bpmnStage .djs-container .djs-visual .djs-element[data-element-id^="Participant"] .djs-visual > rect + rect {
+  fill: rgba(255,255,255,0.02) !important;
+}
+
+.bpmnStage .djs-label,
+.bpmnStage .djs-visual text,
+.bpmnStage .djs-outline text {
+  fill: rgba(255,255,255,0.86) !important;
+}
+
+.bpmnStage .djs-visual path,
+.bpmnStage .djs-visual circle,
+.bpmnStage .djs-visual polygon,
+.bpmnStage .djs-visual rect {
+  shape-rendering: geometricPrecision;
+}
+
+
+/* fpc:bpmn-dark-v2 */
+.bpmnCanvas{
+  padding: 0 !important;
+  overflow: hidden !important;
+  position: relative;
+}
+
+.bpmnStage .djs-container,
+.bpmnStage .djs-container svg{
+  background: transparent !important;
+}
+
+.bpmnStage .djs-container .djs-background{
+  fill: transparent !important;
+}
+
+.bpmnStage .djs-element[data-element-id^="Participant_"] .djs-visual > rect,
+.bpmnStage .djs-element[data-element-id^="Participant"] .djs-visual > rect{
+  fill: rgba(255,255,255,0.03) !important;
+  stroke: rgba(255,255,255,0.18) !important;
+}
+
+.bpmnStage .djs-element[data-element-id^="Lane_"] .djs-visual > rect,
+.bpmnStage .djs-element[data-element-id^="Lane"] .djs-visual > rect{
+  fill: rgba(255,255,255,0.02) !important;
+  stroke: rgba(255,255,255,0.16) !important;
+}
+
+/* second rect inside participant (label box) */
+.bpmnStage .djs-element[data-element-id^="Participant_"] .djs-visual > rect + rect,
+.bpmnStage .djs-element[data-element-id^="Participant"] .djs-visual > rect + rect{
+  fill: rgba(255,255,255,0.01) !important;
+}
+
+.bpmnStage .djs-label,
+.bpmnStage .djs-visual text{
+  fill: rgba(255,255,255,0.86) !important;
+}
+
+/* fpc:bpmn-dark-v3 */
+/* Dark theme for BPMN shapes (tasks/events/gateways) without breaking pool/lane */
+.bpmnStage .djs-element:not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual > rect,
+.bpmnStage .djs-element:not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual > polygon,
+.bpmnStage .djs-element:not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual > circle {
+  fill: rgba(255,255,255,0.03) !important;
+  stroke: rgba(255,255,255,0.28) !important;
+}
+
+.bpmnStage .djs-connection path {
+  stroke: rgba(255,255,255,0.32) !important;
+}
+
+.bpmnStage .djs-visual path {
+  stroke: rgba(255,255,255,0.32);
+}
+
+.bpmnStage .djs-outline {
+  stroke: rgba(120,170,255,0.9) !important;
+}
+
+/* Context pad / popup menu styling */
+.bpmnStage .djs-context-pad .entry,
+.bpmnStage .djs-popup .entry {
+  background: rgba(10,16,30,0.88) !important;
+  border: 1px solid rgba(255,255,255,0.14) !important;
+  box-shadow: 0 8px 26px rgba(0,0,0,0.38) !important;
+}
+
+.bpmnStage .djs-context-pad .entry:hover,
+.bpmnStage .djs-popup .entry:hover {
+  background: rgba(30,50,90,0.72) !important;
+}
+
+.bpmnStage .djs-context-pad .entry:before,
+.bpmnStage .djs-popup .entry:before {
+  color: rgba(255,255,255,0.9) !important;
+}
+
+/* Palette (left tools) */
+.bpmnStage .djs-palette {
+  background: rgba(10,16,30,0.78) !important;
+  border: 1px solid rgba(255,255,255,0.14) !important;
+  border-radius: 12px !important;
+}
+
+.bpmnStage .djs-palette .entry:before {
+  color: rgba(255,255,255,0.9) !important;
+}
+
+/* fpc:bpmn-dark-v4 */
+/* Make BPMN elements (tasks/events/gateways) dark; keep pools/lanes handled separately */
+.bpmnStage .djs-element:not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual rect,
+.bpmnStage .djs-element:not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual circle,
+.bpmnStage .djs-element:not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual polygon {
+  fill: rgba(255,255,255,0.04) !important;
+  stroke: rgba(255,255,255,0.30) !important;
+}
+
+.bpmnStage .djs-element:not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual path {
+  stroke: rgba(255,255,255,0.34) !important;
+}
+
+.bpmnStage .djs-connection path {
+  stroke: rgba(255,255,255,0.34) !important;
+}
+
+/* Icons/menu/palette should render as font glyphs, not squares */
+.bpmnStage .djs-context-pad .entry:before,
+.bpmnStage .djs-popup .entry:before,
+.bpmnStage .djs-palette .entry:before {
+  color: rgba(255,255,255,0.92) !important;
+}
+
+/* fpc:bpmn_dark_shapes_and_smallbtn_v1 */
+
+/* small buttons outside topbar */
+.smallBtn{
+  height: 32px;
+  line-height: 32px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding: 0 12px;
+  white-space: nowrap;
+  width: auto;
+}
+
+.primaryBtn.smallBtn{
+  width: auto;
+  padding: 0 12px;
+}
+
+.secondaryBtn.smallBtn{
+  height: 32px;
+  line-height: 32px;
+}
+
+/* generate button in process toolbar */
+.genBtn{
+  min-width: 190px;
+}
+
+/* highlight left toggle state */
+.topbar .iconBtn.on{
+  background: rgba(255,255,255,.18);
+}
+
+/* make BPMN shapes dark (reduce "white filled" look) */
+.bpmnCanvas .djs-visual > rect,
+.bpmnCanvas .djs-visual > circle,
+.bpmnCanvas .djs-visual > polygon,
+.bpmnCanvas .djs-visual > path{
+  fill: rgba(0,0,0,.26) !important;
+  stroke: rgba(255,255,255,.32) !important;
+}
+
+/* labels readable on dark */
+.bpmnCanvas text,
+.bpmnCanvas .djs-label{
+  fill: rgba(255,255,255,.84) !important;
+}
+
+/* connections on dark */
+.bpmnCanvas .djs-connection path{
+  stroke: rgba(255,255,255,.28) !important;
+}
+.bpmnCanvas marker path{
+  fill: rgba(255,255,255,.28) !important;
+}
+
+/* selection/resize handles: avoid "black squares" on dark */
+.bpmnCanvas .djs-resizer{
+  fill: rgba(180,200,255,.92) !important;
+  stroke: rgba(0,0,0,.35) !important;
+}
+.bpmnCanvas .djs-outline{
+  stroke: rgba(160,190,255,.55) !important;
+}
+
+/* fpc: bpmn_dark_shapes_v2 */
+/* цель: убрать белые заливки фигур и "квадраты" (иконки грузятся через bpmn-embedded.css) */
+.bpmnCanvas .djs-visual > rect,
+.bpmnCanvas .djs-visual > circle,
+.bpmnCanvas .djs-visual > ellipse,
+.bpmnCanvas .djs-visual > polygon{
+  fill: rgba(0,0,0,.22) !important;
+  stroke: rgba(255,255,255,.30) !important;
+}
+
+.bpmnCanvas .djs-visual > path{
+  stroke: rgba(255,255,255,.45) !important;
+}
+
+.bpmnCanvas text,
+.bpmnCanvas .djs-label{
+  fill: rgba(255,255,255,.86) !important;
+}
+
+.bpmnCanvas .djs-outline{
+  stroke: rgba(120,160,255,.60) !important;
 }

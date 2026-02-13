@@ -22,6 +22,7 @@ from .exporters.mermaid import render_mermaid
 from .exporters.yaml_export import dump_yaml, session_to_process_dict
 from .glossary import normalize_kind, slugify_canon, upsert_term
 from .models import Node, Edge, Session, Project, CreateProjectIn, UpdateProjectIn
+from .analytics import compute_analytics
 from .normalizer import load_seed_glossary, normalize_nodes
 from .resources import build_resources_report
 from .storage import get_storage, get_project_storage
@@ -219,6 +220,80 @@ app.add_middleware(
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 WORKSPACE = Path(os.environ.get("PROCESS_WORKSPACE", "workspace/processes"))
+
+# == delete helpers (projects/sessions) ==
+def _ws_path(*parts: str) -> Path:
+    # workspace is mounted to /app/workspace in docker; on host it is ./workspace
+    return Path("workspace").joinpath(*parts)
+
+def _safe_unlink(p: Path) -> bool:
+    try:
+        if p.exists():
+            p.unlink()
+            return True
+    except Exception:
+        return False
+    return False
+
+def _iter_session_files() -> list[Path]:
+    out: list[Path] = []
+    base = _ws_path("sessions")
+    if base.exists() and base.is_dir():
+        out.extend(sorted(base.glob("*.json")))
+    return out
+
+def _delete_session_files(session_id: str) -> int:
+    deleted = 0
+    p = _ws_path("sessions", str(session_id) + ".json")
+    if _safe_unlink(p):
+        deleted += 1
+
+    for fp in _iter_session_files():
+        if fp.name == str(session_id) + ".json":
+            continue
+        try:
+            txt = fp.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        if ('"id":"%s"' % session_id) not in txt and ('"id": "%s"' % session_id) not in txt:
+            continue
+        try:
+            import json
+            d = json.loads(txt)
+        except Exception:
+            continue
+        if isinstance(d, dict) and str(d.get("id")) == str(session_id):
+            if _safe_unlink(fp):
+                deleted += 1
+    return deleted
+
+def _delete_project_files(project_id: str) -> int:
+    deleted = 0
+    p = _ws_path("projects", str(project_id) + ".json")
+    if _safe_unlink(p):
+        deleted += 1
+    return deleted
+
+def _delete_sessions_by_project(project_id: str) -> list[str]:
+    deleted_ids: list[str] = []
+    for fp in _iter_session_files():
+        try:
+            import json
+            d = json.loads(fp.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(d, dict):
+            continue
+        if str(d.get("project_id")) != str(project_id):
+            continue
+        sid = d.get("id")
+        if sid is None:
+            continue
+        sid = str(sid)
+        _delete_session_files(sid)
+        deleted_ids.append(sid)
+    return deleted_ids
+
 GLOSSARY_SEED = BASE_DIR / "knowledge" / "glossary_seed.yml"
 
 if STATIC_DIR.exists():
@@ -463,6 +538,9 @@ def _recompute_session(s: Session) -> Session:
     s.mermaid_lanes = render_mermaid(s.nodes, s.edges, roles=s.roles, mode="lanes")
     s.mermaid = s.mermaid_lanes
 
+
+    s.analytics = compute_analytics(s)
+
     s.version += 1
     return s
 
@@ -608,6 +686,17 @@ def get_session(session_id: str) -> Dict[str, Any]:
         return {"error": "not found"}
     return _session_api_dump(sess)
 
+
+@app.get("/api/sessions/{session_id}/analytics")
+def get_session_analytics(session_id: str) -> dict:
+    st = get_storage()
+    sess = st.load(session_id)
+    if not sess:
+        return {"error": "not found"}
+    if not getattr(sess, "analytics", None):
+        sess = _recompute_session(sess)
+        st.save(sess)
+    return {"session_id": sess.id, "analytics": getattr(sess, "analytics", {})}
 @app.patch("/api/sessions/{session_id}")
 def patch_session(session_id: str, inp: UpdateSessionIn) -> Dict[str, Any]:
     st = get_storage()
@@ -665,6 +754,22 @@ def patch_session(session_id: str, inp: UpdateSessionIn) -> Dict[str, Any]:
     sess = _recompute_session(sess)
     st.save(sess)
     return _session_api_dump(sess)
+
+
+@app.delete("/api/projects/{project_id}")
+def delete_project_api(project_id: str):
+    deleted_sessions = _delete_sessions_by_project(project_id)
+    deleted_projects = _delete_project_files(project_id)
+    if deleted_projects == 0:
+        return {"ok": False, "error": "project_not_found", "project_id": str(project_id), "deleted_sessions": deleted_sessions}
+    return {"ok": True, "project_id": str(project_id), "deleted_sessions": deleted_sessions}
+
+@app.delete("/api/sessions/{session_id}")
+def delete_session_api(session_id: str):
+    deleted = _delete_session_files(session_id)
+    if deleted == 0:
+        return {"ok": False, "error": "session_not_found", "session_id": str(session_id)}
+    return {"ok": True, "session_id": str(session_id), "deleted_files": deleted}
 
 
 @app.put("/api/sessions/{session_id}")
