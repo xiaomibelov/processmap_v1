@@ -1,32 +1,55 @@
 /**
  * Minimal API client for Food Process Copilot.
  *
+ * Contract:
+ * - All functions return a uniform shape that UI expects:
+ *   { ok:true, status, meta? , items? , project? , session? , data? }
+ *   OR { ok:false, status, error }
+ *
  * Notes:
- * - Uses native fetch() to avoid extra deps (axios).
- * - All functions return a uniform shape:
- *   { ok: true, status, data } OR { ok: false, status, error }.
- * - BASE_URL can be set via VITE_API_BASE (default: same origin).
+ * - Uses native fetch().
+ * - Paths start with /api/...
+ * - VITE_API_BASE is treated as an ORIGIN (e.g. "http://127.0.0.1:8011") or empty.
+ * - If someone sets VITE_API_BASE=/api (or .../api), treat as "same origin".
  */
 
 function okResult(data, status) {
-  return { ok: true, status, ...data };
+  return { ok: true, status, ...(data || {}) };
 }
 
-function errResult(error, status = 0) {
-  return { ok: false, status, error: String(error || "error") };
+function errResult(error, status) {
+  return { ok: false, status, error: String(error || "request failed") };
 }
 
 function _baseUrl() {
-  const v = import.meta?.env?.VITE_API_BASE;
-  if (typeof v === "string" && v.trim()) return v.trim();
-  return "";
+  const raw = import.meta?.env?.VITE_API_BASE;
+  if (typeof raw !== "string") return "";
+  let v = raw.trim();
+  if (!v) return "";
+
+  v = v.replace(/\/+$/g, "");
+
+  if (v === "/api") return "";
+  if (v.endsWith("/api")) v = v.slice(0, -4);
+
+  if (v === "/" || v === "") return "";
+  return v;
 }
 
-async function requestJson(method, url, body) {
+function apiUrl(path) {
+  const base = _baseUrl();
+  if (!base) return path;
+  return `${base}${path}`;
+}
+
+async function request(method, url, body, accept) {
   try {
     const init = {
       method,
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        Accept: accept || "application/json",
+        "Content-Type": "application/json",
+      },
       credentials: "include",
     };
 
@@ -36,133 +59,146 @@ async function requestJson(method, url, body) {
 
     const r = await fetch(url, init);
     const text = await r.text();
-    let data = null;
 
-    if (text) {
+    let data = null;
+    if ((accept || "").includes("application/json")) {
       try {
-        data = JSON.parse(text);
-      } catch (_e) {
-        data = text;
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = null;
       }
+    } else {
+      data = text;
     }
 
     if (r.ok) return okResult({ data }, r.status);
 
-    const msg =
-      (data && typeof data === "object" && (data.detail || data.error)) ||
-      text ||
-      "request failed";
-    return errResult(msg, r.status);
+    // backend might return {error:"..."} or plain text
+    const errMsg =
+      (typeof data === "object" && data && (data.error || data.detail)) ? (data.error || data.detail)
+      : (typeof data === "string" && data ? data : text || "request failed");
+
+    return errResult(errMsg, r.status);
   } catch (e) {
     return errResult(e?.message || e, 0);
   }
 }
 
-async function requestText(method, url, body) {
-  try {
-    const init = {
-      method,
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-    };
-
-    if (body !== undefined && body !== null && method !== "GET") {
-      init.body = JSON.stringify(body);
-    }
-
-    const r = await fetch(url, init);
-    const text = await r.text();
-
-    if (r.ok) return okResult({ data: text }, r.status);
-
-    return errResult(text || "request failed", r.status);
-  } catch (e) {
-    return errResult(e?.message || e, 0);
-  }
-}
-
-function _asArray(maybe) {
-  if (Array.isArray(maybe)) return maybe;
-  if (maybe && typeof maybe === "object") {
-    if (Array.isArray(maybe.items)) return maybe.items;
-    if (Array.isArray(maybe.sessions)) return maybe.sessions;
-    if (Array.isArray(maybe.projects)) return maybe.projects;
-  }
-  return [];
-}
+/* META */
 
 export async function apiMeta() {
-  const base = _baseUrl();
-  return requestJson("GET", `${base}/api/meta`);
+  const r = await request("GET", apiUrl(`/api/meta`), null, "application/json");
+  if (!r.ok) return r;
+  // UI expects r.meta.features
+  const meta = r.data || {};
+  return okResult({ meta }, r.status);
 }
 
+/* PROJECTS */
+
 export async function apiListProjects() {
-  const base = _baseUrl();
-  return requestJson("GET", `${base}/api/projects`);
+  const r = await request("GET", apiUrl(`/api/projects`), null, "application/json");
+  if (!r.ok) return r;
+  const items = Array.isArray(r.data) ? r.data : (r.data?.items || []);
+  return okResult({ items }, r.status);
 }
 
 export async function apiCreateProject(payload) {
-  const base = _baseUrl();
-  return requestJson("POST", `${base}/api/projects`, payload || {});
+  const r = await request("POST", apiUrl(`/api/projects`), payload || {}, "application/json");
+  if (!r.ok) return r;
+  // backend returns the created project object
+  const project = r.data?.project || r.data;
+  return okResult({ project }, r.status);
 }
 
-export async function apiGetProject(projectId) {
-  const base = _baseUrl();
-  return requestJson("GET", `${base}/api/projects/${projectId}`);
+export async function apiGetProject(id) {
+  const r = await request("GET", apiUrl(`/api/projects/${id}`), null, "application/json");
+  if (!r.ok) return r;
+  const project = r.data?.project || r.data;
+  return okResult({ project }, r.status);
 }
 
-export async function apiPatchProject(projectId, payload) {
-  const base = _baseUrl();
-  return requestJson("PATCH", `${base}/api/projects/${projectId}`, payload || {});
+export async function apiPatchProject(id, payload) {
+  const r = await request("PATCH", apiUrl(`/api/projects/${id}`), payload || {}, "application/json");
+  if (!r.ok) return r;
+  const project = r.data?.project || r.data;
+  return okResult({ project }, r.status);
 }
+
+/* PROJECT SESSIONS */
 
 export async function apiListProjectSessions(projectId, mode) {
-  const base = _baseUrl();
   const qs = mode ? `?mode=${encodeURIComponent(mode)}` : "";
-  return requestJson("GET", `${base}/api/projects/${projectId}/sessions${qs}`);
+  const r = await request("GET", apiUrl(`/api/projects/${projectId}/sessions${qs}`), null, "application/json");
+  if (!r.ok) return r;
+  const items = Array.isArray(r.data) ? r.data : (r.data?.items || []);
+  return okResult({ items }, r.status);
 }
 
 export async function apiCreateProjectSession(projectId, mode, payload) {
-  const base = _baseUrl();
   const qs = mode ? `?mode=${encodeURIComponent(mode)}` : "";
-  return requestJson("POST", `${base}/api/projects/${projectId}/sessions${qs}`, payload || {});
+  const r = await request("POST", apiUrl(`/api/projects/${projectId}/sessions${qs}`), payload || {}, "application/json");
+  if (!r.ok) return r;
+  const session = r.data?.session || r.data;
+  return okResult({ session }, r.status);
 }
 
+/* SESSIONS (legacy / fallback) */
+
 export async function apiListSessions() {
-  const base = _baseUrl();
-  const r = await requestJson("GET", `${base}/api/sessions`);
+  const r = await request("GET", apiUrl(`/api/sessions`), null, "application/json");
   if (!r.ok) return r;
-  return okResult({ data: _asArray(r.data) }, r.status);
+  const items = Array.isArray(r.data) ? r.data : (r.data?.items || []);
+  return okResult({ items }, r.status);
 }
 
 export async function apiCreateSession(payload) {
-  const base = _baseUrl();
-  return requestJson("POST", `${base}/api/sessions`, payload || {});
+  const r = await request("POST", apiUrl(`/api/sessions`), payload || {}, "application/json");
+  if (!r.ok) return r;
+  const session = r.data?.session || r.data;
+  return okResult({ session }, r.status);
 }
 
 export async function apiGetSession(id) {
-  const base = _baseUrl();
-  return requestJson("GET", `${base}/api/sessions/${id}`);
+  const r = await request("GET", apiUrl(`/api/sessions/${id}`), null, "application/json");
+  if (!r.ok) return r;
+  const session = r.data?.session || r.data;
+  return okResult({ session }, r.status);
 }
 
 export async function apiPatchSession(id, payload) {
-  const base = _baseUrl();
-  return requestJson("PATCH", `${base}/api/sessions/${id}`, payload || {});
+  const r = await request("PATCH", apiUrl(`/api/sessions/${id}`), payload || {}, "application/json");
+  if (!r.ok) return r;
+  const session = r.data?.session || r.data;
+  return okResult({ session }, r.status);
 }
 
+/* OPTIONAL helpers */
+
 export async function apiNormalize(id) {
-  const base = _baseUrl();
-  // Optional: backend may not expose /normalize yet. UI should tolerate 404.
-  return requestJson("POST", `${base}/api/sessions/${id}/normalize`, {});
+  return request("POST", apiUrl(`/api/sessions/${id}/normalize`), {}, "application/json");
+}
+
+/* BPMN */
+
+async function getBpmnText(path) {
+  return request("GET", apiUrl(path), null, "text/plain, application/xml, */*");
 }
 
 export async function apiGetBpmn(id) {
-  const base = _baseUrl();
-  // /bpmn returns XML text
-  return requestText("GET", `${base}/api/sessions/${id}/bpmn`);
+  // Prefer new endpoint for project sessions; fallback to legacy sessions endpoint.
+  // IMPORTANT: no trailing slash (avoid redirects).
+  const r1 = await getBpmnText(`/api/project-sessions/${id}/bpmn`);
+  if (r1.ok) return okResult({ data: r1.data }, r1.status);
+
+  const r2 = await getBpmnText(`/api/sessions/${id}/bpmn`);
+  if (r2.ok) return okResult({ data: r2.data }, r2.status);
+
+  return r1.status ? r1 : r2;
 }
 
+/* EXPORTS */
+
 export async function apiExportZip(id) {
-  const base = _baseUrl();
-  return requestJson("GET", `${base}/api/sessions/${id}/export_zip`);
+  return request("GET", apiUrl(`/api/sessions/${id}/export.zip`), null, "application/zip, application/octet-stream, */*");
 }

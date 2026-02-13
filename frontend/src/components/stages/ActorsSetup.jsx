@@ -64,8 +64,8 @@ export default function ActorsSetup({ draft, onSaveActors }) {
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
                 placeholder="Напр: Повар 1 / Горячий цех"
-                className="textarea"
-                style={{ minHeight: 40, height: 40, resize: "none" }}
+                className="input"
+                style={{ minHeight: 40, height: 40 }}
               />
               <button className="btn" onClick={addRole} disabled={!label.trim()}>
                 Добавить
@@ -96,8 +96,8 @@ export default function ActorsSetup({ draft, onSaveActors }) {
             <div style={{ fontWeight: 900, marginBottom: 8 }}>Start role</div>
 
             <select
-              className="textarea"
-              style={{ minHeight: 40, height: 40, resize: "none" }}
+              className="select"
+              style={{ minHeight: 40, height: 40 }}
               value={startRole}
               onChange={(e) => setStartRole(e.target.value)}
               disabled={roles.length === 0}

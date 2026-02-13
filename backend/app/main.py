@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from .exporters.mermaid import render_mermaid
 from .exporters.yaml_export import dump_yaml, session_to_process_dict
@@ -127,7 +127,27 @@ def _norm_nodes(v: Any) -> List[Node]:
             payload["actor_role"] = payload.get("actorRole")
         if "recipient_role" not in payload and "recipientRole" in payload:
             payload["recipient_role"] = payload.get("recipientRole")
-        out.append(Node.model_validate(payload))
+        # node_type_alias: accept some client synonyms (avoid 500 on PATCH)
+        t = payload.get("type")
+        if isinstance(t, str):
+            tt = t.strip().lower()
+            alias = {
+                "task": "step",
+                "action": "step",
+                "activity": "step",
+                "gateway": "decision",
+                "xor": "decision",
+                "and": "fork",
+                "parallel": "fork",
+            }.get(tt)
+            if alias:
+                payload["type"] = alias
+
+        try:
+            out.append(Node.model_validate(payload))
+        except ValidationError as e:
+            raise HTTPException(status_code=422, detail=e.errors())
+
     return out
 
 
@@ -226,6 +246,32 @@ class UpdateSessionIn(BaseModel):
     # frontend часто шлёт derived поля (mermaid*, normalized, resources, version)
     # бек имеет право игнорировать и пересчитывать их.
     model_config = ConfigDict(extra="allow")
+
+# -----------------------------
+# Project Sessions: mode contract
+# -----------------------------
+ALLOWED_PROJECT_SESSION_MODES = ("quick_skeleton", "deep_audit")
+
+def _norm_project_session_mode(mode: str | None) -> str | None:
+    if mode is None:
+        return None
+    m = str(mode).strip().lower()
+    if not m:
+        return None
+    aliases = {
+        "quick": "quick_skeleton",
+        "qs": "quick_skeleton",
+        "skeleton": "quick_skeleton",
+        "deep": "deep_audit",
+        "da": "deep_audit",
+        "audit": "deep_audit",
+    }
+    m = aliases.get(m, m)
+    if m not in ALLOWED_PROJECT_SESSION_MODES:
+        return None
+    return m
+
+
 
 
 
@@ -484,9 +530,18 @@ def create_session(inp: CreateSessionIn) -> Dict[str, Any]:
 
 @app.get("/api/projects/{project_id}/sessions")
 def list_project_sessions(project_id: str, mode: str | None = None):
+    raw_mode = mode
+    mode = _norm_project_session_mode(mode)
+    if raw_mode is not None and mode is None:
+        raise HTTPException(status_code=422, detail="invalid mode; allowed: quick_skeleton, deep_audit")
     ps = get_project_storage()
     if ps.load(project_id) is None:
         raise HTTPException(status_code=404, detail="project not found")
+
+    raw_mode = mode
+    mode = _norm_project_session_mode(mode)
+    if raw_mode is not None and mode is None:
+        raise HTTPException(status_code=422, detail="invalid mode; allowed: quick_skeleton, deep_audit")
 
     st = get_storage()
     out = []
@@ -511,7 +566,7 @@ def list_project_sessions(project_id: str, mode: str | None = None):
         out.append(_session_api_dump(sess))
     return out
 @app.post("/api/projects/{project_id}/sessions")
-def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | None = Query(default=None)):
+def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | None = Query(default="quick_skeleton")):
     ps = get_project_storage()
     if ps.load(project_id) is None:
         raise HTTPException(status_code=404, detail="project not found")

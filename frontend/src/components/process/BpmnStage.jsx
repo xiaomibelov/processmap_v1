@@ -1,230 +1,107 @@
-import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import BpmnJS from "bpmn-js/lib/NavigatedViewer";
+import { useEffect, useMemo, useState } from "react";
+import { apiGetBpmn } from "../../lib/api";
 
-function isLocalSessionId(id) {
-  return typeof id === "string" && id.startsWith("local_");
+const MAX_TEXT = 200000;
+
+function normText(x) {
+  if (x == null) return "";
+  const s = typeof x === "string" ? x : String(x);
+  if (s.length <= MAX_TEXT) return s;
+  return s.slice(0, MAX_TEXT) + "\n<!-- truncated -->\n";
 }
 
-function buildFallbackBpmn() {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
-  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
-  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
-  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
-  id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
-  <bpmn:process id="Process_1" isExecutable="false">
-    <bpmn:startEvent id="StartEvent_1" name="Старт" />
-    <bpmn:endEvent id="EndEvent_1" name="Финиш" />
-    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="EndEvent_1" />
-  </bpmn:process>
-  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
-    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Process_1">
-      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
-        <dc:Bounds x="160" y="240" width="36" height="36"/>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1">
-        <dc:Bounds x="420" y="240" width="36" height="36"/>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
-        <di:waypoint x="196" y="258"/>
-        <di:waypoint x="420" y="258"/>
-      </bpmndi:BPMNEdge>
-    </bpmndi:BPMNPlane>
-  </bpmndi:BPMNDiagram>
-</bpmn:definitions>`;
-}
+export default function BpmnStage({ sessionId, reloadKey = 0, isApi = false }) {
+  const [status, setStatus] = useState("idle"); // idle|loading|ok|error
+  const [err, setErr] = useState("");
+  const [xml, setXml] = useState("");
 
-function norm(s) {
-  return String(s || "").trim().toLowerCase();
-}
-
-function resolveNodeIdForElement(el, session) {
-  const nodes = Array.isArray(session?.nodes) ? session.nodes : [];
-  if (!el) return null;
-
-  const eid = String(el.id || "");
-  if (eid && nodes.some((n) => n && n.id === eid)) return eid;
-
-  const name = norm(el?.businessObject?.name);
-  if (!name) return null;
-
-  const hits = nodes.filter((n) => norm(n?.title) === name);
-  if (hits.length === 1) return hits[0].id;
-
-  return null;
-}
-
-const BpmnStage = forwardRef(function BpmnStage(
-  { sessionId, reloadKey = 0, session = null, onElementClick = null },
-  ref
-) {
-  const hostRef = useRef(null);
-  const viewerRef = useRef(null);
-  const [status, setStatus] = useState("");
-
-  const fallbackXml = useMemo(() => buildFallbackBpmn(), []);
-
-  useImperativeHandle(ref, () => ({
-    zoomIn() {
-      const v = viewerRef.current;
-      if (!v) return;
-      const canvas = v.get("canvas");
-      const z = canvas.zoom();
-      canvas.zoom(z + 0.2);
-    },
-    zoomOut() {
-      const v = viewerRef.current;
-      if (!v) return;
-      const canvas = v.get("canvas");
-      const z = canvas.zoom();
-      canvas.zoom(Math.max(0.2, z - 0.2));
-    },
-    fit() {
-      const v = viewerRef.current;
-      if (!v) return;
-      const canvas = v.get("canvas");
-      canvas.zoom("fit-viewport");
-    },
-  }));
-
-  const syncBadges = useCallback(() => {
-    const viewer = viewerRef.current;
-    if (!viewer) return;
-
-    let overlays = null;
-    let registry = null;
-    try {
-      overlays = viewer.get("overlays");
-      registry = viewer.get("elementRegistry");
-    } catch (_) {
-      return;
-    }
-    if (!overlays || !registry) return;
-
-    try { overlays.clear(); } catch (_) {}
-
-    const questions = Array.isArray(session?.questions) ? session.questions : [];
-    if (!questions.length) return;
-
-    const els = registry.filter((el) => {
-      const t = el?.type || "";
-      return t === "bpmn:Task" || t === "bpmn:UserTask" || t === "bpmn:ServiceTask";
-    });
-
-    for (const el of els) {
-      const nodeId = resolveNodeIdForElement(el, session) || el.id;
-      const open = questions.filter((q) => q && q.node_id === nodeId && q.state !== "done");
-      if (!open.length) continue;
-
-      const root = document.createElement("div");
-      root.className = "bpmnBadge";
-      root.textContent = `AI ${open.length}`;
-
-      overlays.add(el, "note", {
-        position: { top: 6, right: 6 },
-        html: root,
-      });
-    }
-  }, [session]);
+  const title = useMemo(() => {
+    if (!sessionId) return "BPMN: нет sessionId";
+    return isApi ? "BPMN: api" : "BPMN: local";
+  }, [sessionId, isApi]);
 
   useEffect(() => {
-    if (!hostRef.current) return;
-
-    const v = new BpmnJS({ container: hostRef.current });
-    viewerRef.current = v;
-
-    return () => {
-      try { v.destroy(); } catch (_) {}
-      viewerRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer) return;
-
-    let offClick = null;
-    let offViewbox = null;
-
-    try {
-      const eventBus = viewer.get("eventBus");
-
-      const onClick = (event) => {
-        const el = event?.element;
-        if (!el?.id) return;
-
-        const mapped = resolveNodeIdForElement(el, session);
-        if (typeof onElementClick === "function") onElementClick(mapped || el.id);
-      };
-
-      const onViewboxChanged = () => syncBadges();
-
-      eventBus.on("element.click", onClick);
-      eventBus.on("canvas.viewbox.changed", onViewboxChanged);
-
-      offClick = () => eventBus.off("element.click", onClick);
-      offViewbox = () => eventBus.off("canvas.viewbox.changed", onViewboxChanged);
-    } catch (_) {}
-
-    return () => {
-      try { offClick && offClick(); } catch (_) {}
-      try { offViewbox && offViewbox(); } catch (_) {}
-    };
-  }, [onElementClick, session, syncBadges]);
-
-  useEffect(() => {
-    let cancelled = false;
+    let alive = true;
 
     async function load() {
-      const v = viewerRef.current;
-      if (!v) return;
-
-      setStatus("");
-
-      try {
-        let xml = fallbackXml;
-
-        if (sessionId && !isLocalSessionId(sessionId)) {
-          const id = encodeURIComponent(sessionId);
-          const res = await fetch(`/api/sessions/${id}/bpmn`, { credentials: "include" });
-          if (!res.ok) {
-            const t = await res.text().catch(() => "");
-            throw new Error(`BPMN: ${res.status} ${t}`);
-          }
-          xml = await res.text();
-        }
-
-        await v.importXML(xml);
-        v.get("canvas").zoom("fit-viewport");
-
-        if (!cancelled) syncBadges();
-      } catch (e) {
-        if (cancelled) return;
-        setStatus(String(e?.message || e));
+      if (!sessionId) {
+        setStatus("idle");
+        setErr("");
+        setXml("");
+        return;
       }
+
+      setStatus("loading");
+      setErr("");
+      setXml("");
+
+      const r = await apiGetBpmn(sessionId);
+
+      if (!alive) return;
+
+      if (!r.ok) {
+        setStatus("error");
+        setErr(r.error || `HTTP ${r.status || "?"}`);
+        setXml("");
+        return;
+      }
+
+      const text = normText(r.data || "");
+      const trimmed = String(text || "").trim();
+
+      if (!trimmed) {
+        setStatus("ok");
+        setErr("");
+        setXml("");
+        return;
+      }
+
+      setStatus("ok");
+      setErr("");
+      setXml(text);
     }
 
     load();
-    return () => { cancelled = true; };
-  }, [sessionId, reloadKey, fallbackXml, syncBadges]);
 
-  useEffect(() => {
-    syncBadges();
-  }, [syncBadges]);
+    return () => {
+      alive = false;
+    };
+  }, [sessionId, reloadKey]);
 
   return (
-    <div style={{ position: "relative", height: "100%" }}>
-      <div className="bpmnStage" ref={hostRef} />
-      {status ? (
-        <div className="panel" style={{ position: "absolute", left: 14, bottom: 14, width: 460, padding: 12 }}>
-          <div style={{ fontWeight: 900, marginBottom: 6 }}>Ошибка BPMN</div>
-          <div className="small muted">Импорт BPMN не удался. Проверь /api/sessions/&lt;id&gt;/bpmn.</div>
-          <div className="small" style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>{status}</div>
+    <div className="stage">
+      <div className="stageHeader">
+        <div className="stageTitle">
+          Процесс {isApi ? <span className="badge ok">api</span> : <span className="badge">local</span>}
         </div>
-      ) : null}
+      </div>
+
+      <div className="stageBody">
+        <div className="bpmnHeader">
+          <div className="bpmnTitle">{title}</div>
+          {status === "loading" ? <span className="badge">loading</span> : null}
+          {status === "error" ? <span className="badge err">error</span> : null}
+          {status === "ok" && !xml ? <span className="badge">пусто</span> : null}
+        </div>
+
+        {status === "error" ? (
+          <div className="errorBox">
+            <div className="errorTitle">BPMN load failed</div>
+            <div className="errorText">{err || "unknown error"}</div>
+            <div className="hint">
+              Ожидаемый эндпоинт для проекта: <code>/api/project-sessions/&lt;id&gt;/bpmn</code> (через Vite proxy).
+            </div>
+          </div>
+        ) : null}
+
+        {!xml ? (
+          <div className="hint">
+            Навигация: мышь — пан/зум на схеме • ✦ AI — включить вопросы на узлах
+          </div>
+        ) : (
+          <pre className="bpmnText">{xml}</pre>
+        )}
+      </div>
     </div>
   );
-});
-
-export default BpmnStage;
+}

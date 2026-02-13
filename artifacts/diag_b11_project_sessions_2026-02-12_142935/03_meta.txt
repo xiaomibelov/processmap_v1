@@ -1,0 +1,9 @@
+
+== /api/meta (backend) ==
+HTTP/1.1 200 OK
+date: Thu, 12 Feb 2026 11:29:35 GMT
+server: uvicorn
+content-length: 118
+content-type: application/json
+
+{"api_version":2,"features":{"bpmn":true,"export_zip":true,"graph_edit":true,"projects":true,"project_sessions":true}}

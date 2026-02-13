@@ -1,0 +1,252 @@
+
+== docker compose logs (app tail) ==
+app-1  | Traceback (most recent call last):
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/protocols/http/httptools_impl.py", line 411, in run_asgi
+app-1  |     result = await app(  # type: ignore[func-returns-value]
+app-1  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 69, in __call__
+app-1  |     return await self.app(scope, receive, send)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/fastapi/applications.py", line 1054, in __call__
+app-1  |     await super().__call__(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/applications.py", line 123, in __call__
+app-1  |     await self.middleware_stack(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 186, in __call__
+app-1  |     raise exc
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+app-1  |     await self.app(scope, receive, _send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/cors.py", line 83, in __call__
+app-1  |     await self.app(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 62, in __call__
+app-1  |     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
+app-1  |     raise exc
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+app-1  |     await app(scope, receive, sender)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 758, in __call__
+app-1  |     await self.middleware_stack(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 778, in app
+app-1  |     await route.handle(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 299, in handle
+app-1  |     await self.app(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 79, in app
+app-1  |     await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
+app-1  |     raise exc
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+app-1  |     await app(scope, receive, sender)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 74, in app
+app-1  |     response = await func(request)
+app-1  |                ^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 278, in app
+app-1  |     raw_response = await run_endpoint_function(
+app-1  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 193, in run_endpoint_function
+app-1  |     return await run_in_threadpool(dependant.call, **values)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/concurrency.py", line 42, in run_in_threadpool
+app-1  |     return await anyio.to_thread.run_sync(func, *args)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/anyio/to_thread.py", line 63, in run_sync
+app-1  |     return await get_async_backend().run_sync_in_worker_thread(
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 2502, in run_sync_in_worker_thread
+app-1  |     return await future
+app-1  |            ^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 986, in run
+app-1  |     result = context.run(func, *args)
+app-1  |              ^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/app/backend/app/main.py", line 524, in create_project_session
+app-1  |     sid = st.create(title=title, roles=roles, project_id=project_id, mode=mode)
+app-1  |           ^^^^^^^^^
+app-1  | AttributeError: 'Storage' object has no attribute 'create'
+app-1  | INFO:     149.154.166.110:62014 - "GET /api/projects/a0dccae3bf/sessions?mode=quick HTTP/1.1" 500 Internal Server Error
+app-1  | ERROR:    Exception in ASGI application
+app-1  | Traceback (most recent call last):
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/protocols/http/httptools_impl.py", line 411, in run_asgi
+app-1  |     result = await app(  # type: ignore[func-returns-value]
+app-1  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 69, in __call__
+app-1  |     return await self.app(scope, receive, send)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/fastapi/applications.py", line 1054, in __call__
+app-1  |     await super().__call__(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/applications.py", line 123, in __call__
+app-1  |     await self.middleware_stack(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 186, in __call__
+app-1  |     raise exc
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+app-1  |     await self.app(scope, receive, _send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/cors.py", line 83, in __call__
+app-1  |     await self.app(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 62, in __call__
+app-1  |     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
+app-1  |     raise exc
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+app-1  |     await app(scope, receive, sender)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 758, in __call__
+app-1  |     await self.middleware_stack(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 778, in app
+app-1  |     await route.handle(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 299, in handle
+app-1  |     await self.app(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 79, in app
+app-1  |     await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
+app-1  |     raise exc
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+app-1  |     await app(scope, receive, sender)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 74, in app
+app-1  |     response = await func(request)
+app-1  |                ^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 278, in app
+app-1  |     raw_response = await run_endpoint_function(
+app-1  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 193, in run_endpoint_function
+app-1  |     return await run_in_threadpool(dependant.call, **values)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/concurrency.py", line 42, in run_in_threadpool
+app-1  |     return await anyio.to_thread.run_sync(func, *args)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/anyio/to_thread.py", line 63, in run_sync
+app-1  |     return await get_async_backend().run_sync_in_worker_thread(
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 2502, in run_sync_in_worker_thread
+app-1  |     return await future
+app-1  |            ^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 986, in run
+app-1  |     result = context.run(func, *args)
+app-1  |              ^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/app/backend/app/main.py", line 493, in list_project_sessions
+app-1  |     for item in st.list():
+app-1  |                 ^^^^^^^
+app-1  | AttributeError: 'Storage' object has no attribute 'list'
+app-1  | INFO:     149.154.166.110:31864 - "GET /health HTTP/1.1" 200 OK
+app-1  | INFO:     149.154.166.110:27261 - "GET /api/meta HTTP/1.1" 200 OK
+app-1  | INFO:     149.154.166.110:22405 - "GET /api/meta HTTP/1.1" 200 OK
+app-1  | INFO:     149.154.166.110:52079 - "POST /api/projects HTTP/1.1" 200 OK
+app-1  | INFO:     149.154.166.110:30061 - "POST /api/projects/812bfeea53/sessions HTTP/1.1" 500 Internal Server Error
+app-1  | ERROR:    Exception in ASGI application
+app-1  | Traceback (most recent call last):
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/protocols/http/httptools_impl.py", line 411, in run_asgi
+app-1  |     result = await app(  # type: ignore[func-returns-value]
+app-1  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 69, in __call__
+app-1  |     return await self.app(scope, receive, send)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/fastapi/applications.py", line 1054, in __call__
+app-1  |     await super().__call__(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/applications.py", line 123, in __call__
+app-1  |     await self.middleware_stack(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 186, in __call__
+app-1  |     raise exc
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+app-1  |     await self.app(scope, receive, _send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/cors.py", line 83, in __call__
+app-1  |     await self.app(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 62, in __call__
+app-1  |     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
+app-1  |     raise exc
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+app-1  |     await app(scope, receive, sender)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 758, in __call__
+app-1  |     await self.middleware_stack(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 778, in app
+app-1  |     await route.handle(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 299, in handle
+app-1  |     await self.app(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 79, in app
+app-1  |     await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
+app-1  |     raise exc
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+app-1  |     await app(scope, receive, sender)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 74, in app
+app-1  |     response = await func(request)
+app-1  |                ^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 278, in app
+app-1  |     raw_response = await run_endpoint_function(
+app-1  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 193, in run_endpoint_function
+app-1  |     return await run_in_threadpool(dependant.call, **values)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/concurrency.py", line 42, in run_in_threadpool
+app-1  |     return await anyio.to_thread.run_sync(func, *args)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/anyio/to_thread.py", line 63, in run_sync
+app-1  |     return await get_async_backend().run_sync_in_worker_thread(
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 2502, in run_sync_in_worker_thread
+app-1  |     return await future
+app-1  |            ^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 986, in run
+app-1  |     result = context.run(func, *args)
+app-1  |              ^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/app/backend/app/main.py", line 524, in create_project_session
+app-1  |     sid = st.create(title=title, roles=roles, project_id=project_id, mode=mode)
+app-1  |           ^^^^^^^^^
+app-1  | AttributeError: 'Storage' object has no attribute 'create'
+app-1  | INFO:     149.154.166.110:29128 - "GET /api/projects/812bfeea53/sessions HTTP/1.1" 500 Internal Server Error
+app-1  | ERROR:    Exception in ASGI application
+app-1  | Traceback (most recent call last):
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/protocols/http/httptools_impl.py", line 411, in run_asgi
+app-1  |     result = await app(  # type: ignore[func-returns-value]
+app-1  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 69, in __call__
+app-1  |     return await self.app(scope, receive, send)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/fastapi/applications.py", line 1054, in __call__
+app-1  |     await super().__call__(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/applications.py", line 123, in __call__
+app-1  |     await self.middleware_stack(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 186, in __call__
+app-1  |     raise exc
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+app-1  |     await self.app(scope, receive, _send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/cors.py", line 83, in __call__
+app-1  |     await self.app(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 62, in __call__
+app-1  |     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
+app-1  |     raise exc
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+app-1  |     await app(scope, receive, sender)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 758, in __call__
+app-1  |     await self.middleware_stack(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 778, in app
+app-1  |     await route.handle(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 299, in handle
+app-1  |     await self.app(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 79, in app
+app-1  |     await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
+app-1  |     raise exc
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+app-1  |     await app(scope, receive, sender)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 74, in app
+app-1  |     response = await func(request)
+app-1  |                ^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 278, in app
+app-1  |     raw_response = await run_endpoint_function(
+app-1  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 193, in run_endpoint_function
+app-1  |     return await run_in_threadpool(dependant.call, **values)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/starlette/concurrency.py", line 42, in run_in_threadpool
+app-1  |     return await anyio.to_thread.run_sync(func, *args)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/anyio/to_thread.py", line 63, in run_sync
+app-1  |     return await get_async_backend().run_sync_in_worker_thread(
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 2502, in run_sync_in_worker_thread
+app-1  |     return await future
+app-1  |            ^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 986, in run
+app-1  |     result = context.run(func, *args)
+app-1  |              ^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/app/backend/app/main.py", line 493, in list_project_sessions
+app-1  |     for item in st.list():
+app-1  |                 ^^^^^^^
+app-1  | AttributeError: 'Storage' object has no attribute 'list'

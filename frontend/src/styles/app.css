@@ -14,6 +14,10 @@ html, body { height: 100%; margin: 0; background: #eef2f6; }
 }
 
 .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  pointer-events: auto;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -323,19 +327,27 @@ html, body { height: 100%; margin: 0; background: #eef2f6; }
   gap: 10px;
 }
 
-.textarea {
+.textarea{
   width: 100%;
-  min-height: 44px;
-  max-height: 120px;
-  resize: vertical;
-  border-radius: 10px;
-  border: 1px solid rgba(16,24,40,0.12);
-  background: #fff;
-  color: #0f172a;
   padding: 10px 12px;
+  border-radius: 12px;
+  min-height: 110px;
+
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: rgba(255,255,255,0.92);
+
   outline: none;
+  box-shadow: none;
+  resize: vertical;
 }
 
+.textarea::placeholder{ color: rgba(255,255,255,0.45); }
+
+.textarea:focus{
+  border-color: rgba(124,92,255,0.55);
+  box-shadow: 0 0 0 3px rgba(124,92,255,0.16);
+}
 .inputRow {
   display: flex;
   gap: 10px;
@@ -360,14 +372,25 @@ html, body { height: 100%; margin: 0; background: #eef2f6; }
 /* graph_editor_inputs_v1 */
 .input {
   width: 100%;
-  background: #fff;
-  border: 1px solid rgba(16,24,40,0.12);
-  border-radius: 10px;
-  padding: 8px 10px;
-  font-size: 13px;
+  padding: 10px 12px;
+  border-radius: 12px;
+
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: rgba(255,255,255,0.92);
+
   outline: none;
+  box-shadow: none;
 }
 
+.input::placeholder{
+  color: rgba(255,255,255,0.45);
+}
+
+.input:focus{
+  border-color: rgba(124,92,255,0.55);
+  box-shadow: 0 0 0 3px rgba(124,92,255,0.16);
+}
 .dangerBtn {
   background: rgba(220,38,38,0.10);
   border: 1px solid rgba(220,38,38,0.25);
@@ -583,3 +606,214 @@ html, body { height: 100%; margin: 0; background: #eef2f6; }
 
 .smallBtn { padding:9px 10px; font-size:13px; }
 .inputRow { display:flex; gap:10px; align-items:center; }
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  z-index: 200;
+}
+
+.modalCard {
+  width: min(980px, 100%);
+  max-height: calc(100vh - 36px);
+  overflow: auto;
+  border-radius: 18px;
+  background: rgba(20,20,24,0.88);
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 20px 80px rgba(0,0,0,0.55);
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 14px 10px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.10);
+}
+
+.modalTitle {
+  font-weight: 900;
+  letter-spacing: 0.2px;
+}
+
+.modalBody {
+  padding: 14px;
+}
+
+.modalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 14px 14px 14px;
+  border-top: 1px solid rgba(255,255,255,0.10);
+}
+
+.grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.grid3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+
+.field .label {
+  font-size: 12px;
+  opacity: 0.75;
+  margin-bottom: 6px;
+}
+
+.field .input {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.divider {
+  height: 1px;
+  background: rgba(255,255,255,0.10);
+  margin: 14px 0;
+}
+
+@media (max-width: 860px) {
+  .grid2 { grid-template-columns: 1fr; }
+  .grid3 { grid-template-columns: 1fr; }
+}
+/* fpc: fullscreen stage (managed) BEGIN */
+/*
+  Goal: process (center) area must occupy full viewport height under TopBar.
+  Key: flex parents must have min-height:0 so children can stretch/scroll.
+*/
+
+html, body, #root { height: 100%; }
+
+/* If AppShell uses a wrapper, enforce full height + column layout */
+.appShell, .AppShell, .shell { height: 100vh; display: flex; flex-direction: column; }
+
+/* Main content under TopBar must be flexible */
+.appMain, .main, .content { flex: 1 1 auto; min-height: 0; display: flex; }
+
+/* Common layout: left panel + stage */
+.layout, .appLayout { flex: 1 1 auto; min-height: 0; display: flex; }
+
+/* Center stage must grow and allow internal scroll */
+.stage, .processStage, .stageWrap { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+
+/* The actual canvas/container area (BPMN/Mermaid) */
+.stageBody, .stageContent, .bpmnWrap, .bpmnStage { flex: 1 1 auto; min-height: 0; }
+
+/* If there is a card-like container inside stage, make it stretch */
+.stageCard, .processCard, .panelCard { flex: 1 1 auto; min-height: 0; }
+
+/* Defensive: allow embedded viewers to use available space */
+.bpmnViewport, .mermaidViewport, .diagramViewport, .viewer { height: 100%; min-height: 0; }
+
+/* fpc: fullscreen stage (managed) END */
+
+/* FPC_FULLSCREEN_LAYOUT_BEGIN */
+/* цель: процесс/канвас занимает всё доступное пространство экрана */
+
+html, body, #root { height: 100%; }
+
+.app {
+  min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* TopBar должен быть "шапкой", а рабочая зона — занимать остаток */
+.topbar { flex: 0 0 auto; }
+
+.workspace {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  overflow: hidden;
+}
+
+/* колонки */
+.leftCol, .mainCol {
+  min-height: 0;
+  height: 100%;
+}
+
+/* главная панель процесса — на всю высоту колонки */
+.processPanel {
+  min-height: 0;
+  height: 100%;
+}
+
+/* ProcessStage.jsx использует эти классы — фиксируем их, чтобы канвас не схлопывался */
+.stageInner {
+  flex: 1;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.18);
+  overflow: hidden;
+}
+
+.stageHead { flex: 0 0 auto; }
+
+.stageBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.stageCanvas {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.bpmnWrap {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+/* FPC_FULLSCREEN_LAYOUT_END */
+
+/* FPC_FULLWIDTH_WORKSPACE_MANAGED */
+/*
+  Goal: on wide screens, right (main) column must NOT disappear.
+  Force workspace/appBody to stretch full viewport width.
+*/
+.workspace,
+.appBody{
+  width: 100%;
+  max-width: none;
+  margin-left: 0;
+  margin-right: 0;
+  justify-self: stretch;
+}
+
+/* Grid/flex children must be allowed to shrink/expand correctly */
+.mainCol,
+.stage,
+.processStage{
+  min-width: 0;
+}

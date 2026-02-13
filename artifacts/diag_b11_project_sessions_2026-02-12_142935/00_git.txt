@@ -1,0 +1,4 @@
+== git ==
+## fix/frontend-r17-process-title-canvas-v1
+?? artifacts/diag_b11_project_sessions_2026-02-12_142935/
+2026-02-12 14:14:27 +0300 4ab2ead  (HEAD -> fix/frontend-r17-process-title-canvas-v1, tag: cp/fpc_stepB11_project_sessions_mode_fix_v7_done_2026-02-12_141427) fix(backend): project sessions endpoints use storage.create + safe filtering

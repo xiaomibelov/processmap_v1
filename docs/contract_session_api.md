@@ -1,5 +1,14 @@
 # Session API contract (frontend bridge)
 
+## UI contract: «Сгенерировать процесс»
+
+Текущий контракт (вариант **A**) при нажатии кнопки:
+
+1) **PATCH** `/api/sessions/{id}` — сохранить любые изменения (notes/nodes/edges/questions).
+2) **GET** `/api/sessions/{id}/bpmn` — получить актуальный BPMN.
+
+Примечание: нормализация/пересчёт (mermaid/lanes/normalized) выполняется сервером на **PATCH** (через серверную recompute-логику). Отдельного стабильного `/generate`-эндпоинта пока нет.
+
 Frontend dev: http://localhost:5174
 
 All frontend requests go to `/api/*` with `credentials: "include"` (cookie session).

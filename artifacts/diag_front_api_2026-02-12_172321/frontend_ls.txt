@@ -1,0 +1,11 @@
+total 160
+drwxr-xr-x  10 mac  staff   320B 12 фев 17:12 .
+drwxr-xr-x  84 mac  staff   2,6K 12 фев 17:21 ..
+-rw-r--r--   1 mac  staff    28B 11 фев 19:41 .gitignore
+drwxr-xr-x   4 mac  staff   128B 12 фев 17:07 dist
+-rw-r--r--   1 mac  staff   307B 11 фев 19:41 index.html
+drwxr-xr-x  62 mac  staff   1,9K 11 фев 20:17 node_modules
+-rw-r--r--   1 mac  staff    63K 11 фев 20:17 package-lock.json
+-rw-r--r--   1 mac  staff   410B 11 фев 20:17 package.json
+drwxr-xr-x   7 mac  staff   224B 12 фев 17:12 src
+-rw-r--r--   1 mac  staff   286B 11 фев 19:41 vite.config.js

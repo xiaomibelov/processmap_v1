@@ -1,150 +1,97 @@
 import { useMemo, useState } from "react";
 
-function isLocalSessionId(id) {
-  return typeof id === "string" && id.startsWith("local_");
+function safeArr(v) {
+  return Array.isArray(v) ? v : [];
 }
 
 export default function NotesPanel({
   draft,
+  sessionId,
+  onNewLocal,
   onGenerate,
-  generating,
   onAddNote,
-  addNoteDisabled,
+  generating,
   errorText,
+  onEditActors,
 }) {
-  const roles = Array.isArray(draft?.roles) ? draft.roles : [];
-  const notes = Array.isArray(draft?.notes) ? draft.notes : [];
-  const startRole = typeof draft?.start_role === "string" ? draft.start_role : "";
-  const sessionId = typeof draft?.session_id === "string" ? draft.session_id : "";
-
-  const canGenerate = !!sessionId && !isLocalSessionId(sessionId);
-
   const [text, setText] = useState("");
 
-  const notesRev = useMemo(() => notes.slice().reverse(), [notes]);
+  const roles = useMemo(() => safeArr(draft?.roles), [draft]);
+  const startRole = String(draft?.start_role || "").trim();
+
+  function add() {
+    const t = String(text || "").trim();
+    if (!t) return;
+    onAddNote?.(t);
+    setText("");
+  }
 
   return (
-    <div className="panel">
-      <div className="panelHead">Сессия</div>
+    <div className="notesPanel">
+      <div className="panelTitleRow">
+        <div className="panelTitle">Заметки</div>
+        <div className="panelSub">
+          {sessionId ? <span className="muted">session: {sessionId}</span> : null}
+        </div>
+      </div>
 
-      <div className="panelBody">
-        <div className="card" style={{ marginBottom: 12 }}>
-          <div style={{ fontWeight: 900, marginBottom: 6 }}>Акторы</div>
-
-          {roles.length === 0 ? (
-            <div className="small muted">Пока нет ролей.</div>
-          ) : (
-            <div style={{ display: "grid", gap: 6 }}>
-              {roles.map((r) => (
-                <div key={r.role_id} className="small">
-                  <span style={{ fontWeight: 900 }}>{r.label}</span>{" "}
-                  <span className="muted">({r.role_id})</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="hr" />
-
-          <div className="small">
-            <span className="muted">start_role:</span>{" "}
-            <span style={{ fontWeight: 900 }}>{startRole || "—"}</span>
-          </div>
+      <div className="panelBlock">
+        <div className="rowBetween">
+          <div className="blockTitle">Акторы</div>
+          <button className="secondaryBtn" onClick={() => onEditActors?.()} title="Редактировать акторов">
+            Редактировать
+          </button>
         </div>
 
-        <button
-          className="primaryBtn"
-          disabled={!canGenerate || generating}
-          onClick={canGenerate ? onGenerate : undefined}
-          title={
-            !canGenerate
-              ? "Создай API-сессию (кнопка “New API”), чтобы генерировать процесс на бэке"
-              : ""
-          }
-        >
-          {generating ? "Генерация…" : "Сгенерировать процесс"}
-        </button>
+        <div className="muted small">
+          {roles.length ? (
+            <>
+              <div>Всего: {roles.length}</div>
+              <div>Стартовая роль: {startRole || "—"}</div>
+            </>
+          ) : (
+            <div>Акторы не заданы — добавь роли, чтобы собирать процесс по лайнам.</div>
+          )}
+        </div>
 
-        {errorText ? (
-          <div
-            className="card"
-            style={{
-              marginTop: 10,
-              borderColor: "rgba(255,77,77,.35)",
-              background: "rgba(255,77,77,.08)",
-            }}
+        {roles.length ? (
+          <div className="chips">
+            {roles.map((r, idx) => (
+              <span className="chip" key={`${r}_${idx}`}>
+                {r}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="panelBlock">
+        <div className="blockTitle">Добавить заметку</div>
+        <textarea
+          className="textarea"
+          rows={6}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Пиши заметки по шагам. Потом будем превращать их в узлы процесса и AI-вопросы."
+        />
+        <div className="row">
+          <button className="primaryBtn" onClick={add} title="Добавить">
+            Добавить
+          </button>
+          <button
+            className="secondaryBtn"
+            onClick={onGenerate}
+            disabled={generating}
+            title="Сгенерировать/обновить процесс из текущих данных"
           >
-            <div className="small" style={{ fontWeight: 900, marginBottom: 4 }}>
-              Ошибка
-            </div>
-            <div className="small">{errorText}</div>
-          </div>
-        ) : null}
-
-        <div className="card" style={{ marginTop: 12 }}>
-          <div style={{ fontWeight: 900, marginBottom: 6 }}>Заметки</div>
-
-          <div className="inputRow" style={{ alignItems: "stretch" }}>
-            <textarea
-              className="input"
-              rows={3}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Коротко: что важно уточнить, что проверить, какие допуски…"
-              style={{ resize: "vertical" }}
-            />
-          </div>
-
-          <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
-            <button
-              className="btn"
-              disabled={addNoteDisabled || !text.trim()}
-              onClick={() => {
-                const t = text.trim();
-                if (!t) return;
-                onAddNote?.(t);
-                setText("");
-              }}
-            >
-              Добавить
-            </button>
-
-            <div className="small muted" style={{ alignSelf: "center" }}>
-              Кол-во: <span style={{ fontWeight: 900 }}>{notes.length}</span>
-            </div>
-          </div>
-
-          {notes.length === 0 ? (
-            <div className="small muted" style={{ marginTop: 10 }}>
-              Пока заметок нет.
-            </div>
-          ) : (
-            <div
-              style={{
-                display: "grid",
-                gap: 10,
-                marginTop: 12,
-                maxHeight: 340,
-                overflow: "auto",
-              }}
-            >
-              {notesRev.slice(0, 20).map((n) => (
-                <div key={n.note_id} className="noteLine">
-                  <div className="muted" style={{ fontSize: 11 }}>
-                    {n?.ts ? new Date(n.ts).toLocaleString() : "—"}
-                  </div>
-                  <div className="small">{n.text}</div>
-                </div>
-              ))}
-            </div>
-          )}
+            {generating ? "Генерация…" : "Обновить процесс"}
+          </button>
+          <button className="secondaryBtn" onClick={onNewLocal} title="Перейти в локальный черновик">
+            Local draft
+          </button>
         </div>
 
-        {!canGenerate ? (
-          <div className="small muted" style={{ marginTop: 12 }}>
-            Подсказка: для генерации процесса нужна API-сессия (TopBar → “New API”).
-          </div>
-        ) : null}
+        {errorText ? <div className="errBox">{errorText}</div> : null}
       </div>
     </div>
   );

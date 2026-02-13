@@ -1,0 +1,114 @@
+== git head ==
+2026-02-12 17:30:49 +0300 3cd4ae6  (HEAD -> fix/frontend-r20-bpmn-contrast-v1, tag: cp/fpc_uvicorn_api_contract_probe_v1_2026-02-12_183750, tag: cp/fpc_stepR19_frontend_fetch_fix_v2_done_2026-02-12_173047, tag: cp/fpc_run_vite_5177_v1_2026-02-12_191137, tag: cp/fpc_run_frontend_dev_and_verify_proxy_v1_2026-02-12_190333, tag: cp/fpc_restore_stage_sidebar_buttons_v1_2026-02-12_174054, tag: cp/fpc_restore_left_panel_persist_local_v1_2026-02-12_175947, tag: cp/fpc_frontend_debug_pack_2026-02-12_192143, tag: cp/fpc_front_proxy_probe_v1_2026-02-12_180518, tag: cp/fpc_fix_api_base_to_proxy_v1_2026-02-12_181054, tag: cp/fpc_fix_api_base_and_bpmn_redirect_v1_2026-02-12_185154, tag: cp/fpc_diag_topbar_projects_and_proxy_v1_2026-02-12_190056, tag: cp/fpc_diag_topbar_projects_and_proxy_v1_2026-02-12_190023, tag: cp/fpc_diag_new_project_button_v1_2026-02-12_191841, tag: cp/fpc_backend_probe_v1_2026-02-12_180442) fix(frontend): use fetch in api client (no axios)
+
+== git status -sb ==
+## fix/frontend-r20-bpmn-contrast-v1
+ M frontend/src/App.jsx
+ M frontend/src/components/AppShell.jsx
+ M frontend/src/components/NotesPanel.jsx
+ M frontend/src/components/ProcessStage.jsx
+ M frontend/src/components/TopBar.jsx
+ M frontend/src/components/process/BpmnStage.jsx
+ M frontend/src/lib/api.js
+?? Run_StepR18.sh
+?? Run_StepR19.sh
+?? Run_StepR20.sh
+?? StepR18_apply.sh
+?? StepR19_apply.sh
+?? StepR20_apply.sh
+?? artifacts/diag_b11_project_sessions_2026-02-12_142935.zip
+?? artifacts/diag_b11_project_sessions_2026-02-12_142935/
+?? artifacts/diag_front_api_2026-02-12_172321.zip
+?? artifacts/diag_front_api_2026-02-12_172321/
+?? artifacts/foodproc_frontend_r18_2026-02-12_160236.zip
+?? artifacts/foodproc_frontend_r19_2026-02-12_163650.zip
+?? artifacts/foodproc_frontend_r20_2026-02-12_170739.zip
+?? artifacts/fpc_frontend_debug_pack_2026-02-12_192143/
+?? artifacts/fpc_r18_inputs_2026-02-12_164027.zip
+?? vestnik_debug_pack_2026-02-12_172105.zip
+?? workspace/projects/044fd504fe.json
+?? workspace/projects/1db7eba080.json
+?? workspace/projects/7322fd59fa.json
+?? workspace/projects/812bfeea53.json
+?? workspace/projects/a27a537670.json
+
+== vite config ==
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:8011",
+        changeOrigin: true,
+        secure: false
+      }
+    }
+  }
+});
+
+== api usage grep ==
+frontend/src/components/process/BpmnStage.jsx:164:          const url = `/api/sessions/${id}/bpmn`;
+frontend/src/components/process/BpmnStage.jsx:199:          <div className="small muted">Импорт BPMN не удался. Проверь /api/sessions/&lt;id&gt;/bpmn.</div>
+frontend/src/components/stages/NoSession.jsx:10:            Создай сессию через API — и фронт начнёт ходить в /api/sessions/&lt;id&gt;/bpmn и /notes.
+frontend/src/lib/api.js:108:export async function apiMeta() {
+frontend/src/lib/api.js:115:  return requestJson("GET", apiUrl(`/api/projects`));
+frontend/src/lib/api.js:118:export async function apiCreateProject(payload) {
+frontend/src/lib/api.js:119:  return requestJson("POST", apiUrl(`/api/projects`), payload || {});
+frontend/src/lib/api.js:123:  return requestJson("GET", apiUrl(`/api/projects/${id}`));
+frontend/src/lib/api.js:127:  return requestJson("PATCH", apiUrl(`/api/projects/${id}`), payload || {});
+frontend/src/lib/api.js:134:  return requestJson("GET", apiUrl(`/api/projects/${projectId}/sessions${qs}`));
+frontend/src/lib/api.js:137:export async function apiCreateProjectSession(projectId, mode, payload) {
+frontend/src/lib/api.js:139:  return requestJson("POST", apiUrl(`/api/projects/${projectId}/sessions${qs}`), payload || {});
+frontend/src/lib/api.js:146:  const r = await requestJson("GET", apiUrl(`/api/sessions`));
+frontend/src/lib/api.js:156:  return requestJson("POST", apiUrl(`/api/sessions`), payload || {});
+frontend/src/lib/api.js:160:  return requestJson("GET", apiUrl(`/api/sessions/${id}`));
+frontend/src/lib/api.js:164:  return requestJson("PATCH", apiUrl(`/api/sessions/${id}`), payload || {});
+frontend/src/lib/api.js:170:  return requestJson("POST", apiUrl(`/api/sessions/${id}/normalize`), {});
+frontend/src/lib/api.js:175:export async function apiGetBpmn(id) {
+frontend/src/lib/api.js:177:  return requestText("GET", apiUrl(`/api/sessions/${id}/bpmn`));
+frontend/src/lib/api.js:184:  return requestText("GET", apiUrl(`/api/sessions/${id}/export.zip`));
+frontend/src/App.jsx:4:  apiCreateProject,
+frontend/src/App.jsx:5:  apiCreateProjectSession,
+frontend/src/App.jsx:11:  apiMeta,
+frontend/src/App.jsx:88:      const r = await apiMeta();
+frontend/src/App.jsx:209:    const r = await apiCreateProject({ title: t, passport: defaultPassport(t) });
+frontend/src/App.jsx:221:      const r2 = await apiCreateProjectSession(pid, mode, { title: title2, roles: ["cook_1", "technolog"] });
+frontend/src/App.jsx:245:      const r = await apiCreateProjectSession(projectId, mode, { title, roles: ["cook_1", "technolog"] });
+frontend/src/components/process/GraphEditorOverlay.jsx:51:  const url = `/api/sessions/${id}`;
+
+== css pointer-events suspects ==
+frontend/src/styles/theme_graphite.css:64:.btn, .primaryBtn, .iconBtn{
+frontend/src/styles/theme_graphite.css:70:.btn:hover, .primaryBtn:hover, .iconBtn:hover{
+frontend/src/styles/theme_graphite.css:74:.primaryBtn{
+frontend/src/styles/theme_graphite.css:78:.primaryBtn:disabled{ opacity: .55; }
+frontend/src/styles/app.css:16:.topbar {
+frontend/src/styles/app.css:26:.topbar .brand {
+frontend/src/styles/app.css:34:.topbar .brandBadge {
+frontend/src/styles/app.css:42:.topbar .spacer { flex: 1; }
+frontend/src/styles/app.css:57:.iconBtn:disabled { opacity: 0.55; cursor: not-allowed; }
+frontend/src/styles/app.css:94:.primaryBtn {
+frontend/src/styles/app.css:109:.primaryBtn:disabled {
+frontend/src/styles/app.css:111:  cursor: not-allowed;
+frontend/src/styles/app.css:160:.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+frontend/src/styles/app.css:170:  position: absolute;
+frontend/src/styles/app.css:184:  position: absolute;
+frontend/src/styles/app.css:196:  position: absolute;
+frontend/src/styles/app.css:223:  position: absolute;
+frontend/src/styles/app.css:230:  position: absolute;
+frontend/src/styles/app.css:240:  position: absolute;
+frontend/src/styles/app.css:242:  pointer-events: none;
+frontend/src/styles/app.css:246:  pointer-events: auto;
+frontend/src/styles/app.css:354:.topbar .primaryBtn {
+frontend/src/styles/app.css:383:  cursor: not-allowed;
+frontend/src/styles/app.css:415:.topbarSelect { min-width: 280px; max-width: 520px; }
+frontend/src/styles/app.css:416:.topbarIconBtn { padding: 6px 10px; min-width: 40px; }
+frontend/src/styles/app.css:417:.topbarNewBtn { padding: 8px 12px; font-weight: 900; width: auto; }
+frontend/src/styles/app.css:443:.topBar .primaryBtn {
+frontend/src/styles/app.css:448:.topBar .primaryBtn:hover { background: #fff; }
+frontend/src/styles/app.css:509:.primaryBtn{
+frontend/src/styles/app.css:516:.primaryBtn:disabled{
+frontend/src/styles/app.css:553:.topbar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 14px; }
+frontend/src/styles/app.css:573:  max-height:calc(100% - 24px); overflow:auto; z-index:20;

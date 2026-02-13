@@ -1,0 +1,46 @@
+-- apiCreateSession usage --
+frontend/src/lib/api.js:78:export async function apiCreateSession(payload) {
+frontend/src/App.jsx:6:  apiCreateSession,
+frontend/src/App.jsx:228:    const r = await apiCreateSession({ title });
+
+-- apiSaveSession / PATCH usage --
+frontend/src/lib/api.js:67:  const r = await requestJson("PATCH", `/api/projects/${projectId}`, patch);
+frontend/src/lib/api.js:91:  const r = await requestJson("PATCH", `/api/sessions/${sessionId}`, patch);
+frontend/src/components/process/GraphEditorOverlay.jsx:29:async function saveSessionViaApi(sessionId, payload) {
+frontend/src/components/process/GraphEditorOverlay.jsx:31:    api.apiSaveSession,
+frontend/src/components/process/GraphEditorOverlay.jsx:32:    api.saveSession,
+frontend/src/components/process/GraphEditorOverlay.jsx:49:  // Fallback: direct fetch (PATCH -> PUT on 405)
+frontend/src/components/process/GraphEditorOverlay.jsx:65:    const r1 = await send("PATCH");
+frontend/src/components/process/GraphEditorOverlay.jsx:73:    return { ok: false, статус: 0, method: "PATCH" };
+frontend/src/components/process/GraphEditorOverlay.jsx:120:    const r = await saveSessionViaApi(sessionId, next);
+
+-- apiGetBpmn / importXML usage --
+frontend/src/lib/api.js:96:export async function apiGetBpmn(sessionId) {
+frontend/src/components/process/BpmnStage.jsx:87:      canvas.zoom("fit-viewport");
+frontend/src/components/process/BpmnStage.jsx:198:        await v.importXML(xml);
+frontend/src/components/process/BpmnStage.jsx:199:        v.get("canvas").zoom("fit-viewport");
+
+-- local_ / local mode gating --
+frontend/src/components/stages/NoSession.jsx:9:            Чтобы BPMN грузился с бэка, нужен реальный session_id (не local_*).
+frontend/src/components/process/BpmnStage.jsx:4:function isLocalSessionId(id) {
+frontend/src/components/process/BpmnStage.jsx:5:  return typeof id === "string" && id.startsWith("local_");
+frontend/src/components/process/BpmnStage.jsx:188:        if (sessionId && !isLocalSessionId(sessionId)) {
+frontend/src/components/process/GraphEditorOverlay.jsx:6:function isLocalSessionId(id) {
+frontend/src/components/process/GraphEditorOverlay.jsx:7:  return типof id === "string" && id.startsWith("local_");
+frontend/src/components/process/GraphEditorOverlay.jsx:114:    if (!sessionId || isLocalSessionId(sessionId)) {
+frontend/src/components/process/GraphEditorOverlay.jsx:297:        {sessionId && isLocalSessionId(sessionId) ? (
+frontend/src/components/process/GraphEditorOverlay.jsx:299:            Сейчас <b>local_*</b> — BPMN берётся из mock. Для реального workflow создай сессию через <b>+ New (API)</b>.
+frontend/src/components/ProcessStage.jsx:6:function isLocalSessionId(id) {
+frontend/src/components/ProcessStage.jsx:7:  return typeof id === "string" && id.startsWith("local_");
+frontend/src/components/ProcessStage.jsx:102:  const canWriteApi = !!sessionId && !isLocalSessionId(sessionId);
+frontend/src/components/NotesPanel.jsx:3:function isLocalSessionId(id) {
+frontend/src/components/NotesPanel.jsx:4:  return typeof id === "string" && id.startsWith("local_");
+frontend/src/components/NotesPanel.jsx:20:  const canGenerate = !!sessionId && !isLocalSessionId(sessionId);
+
+-- fetch/axios baseURL/credentials --
+frontend/src/lib/api.js:1:import axios from "axios";
+frontend/src/lib/api.js:13:    const r = await axios({
+frontend/src/lib/api.js:18:      withCredentials: true,
+frontend/src/components/process/BpmnStage.jsx:190:          const res = await fetch(`/api/sessions/${id}/bpmn`, { credentials: "include" });
+frontend/src/components/process/GraphEditorOverlay.jsx:54:    const res = await fetch(url, {
+frontend/src/components/process/GraphEditorOverlay.jsx:56:      credentials: "include",

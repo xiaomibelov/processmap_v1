@@ -5,6 +5,8 @@
 - `deep_audit` — глубокий аудит
 
 ## Create session under project
+По умолчанию, если `mode` не передан — используется `quick_skeleton`.
+
 `POST /api/projects/{project_id}/sessions?mode=quick_skeleton|deep_audit`
 
 Body:
