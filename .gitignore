@@ -20,3 +20,8 @@ build/
 
 workspace/processes/*
 !workspace/processes/.keep
+artifacts/
+test-results/
+frontend/test-results/
+workspace/projects/*.json
+.env
