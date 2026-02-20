@@ -1,9 +1,0 @@
-
-== /health (backend) ==
-HTTP/1.1 200 OK
-date: Thu, 12 Feb 2026 11:29:35 GMT
-server: uvicorn
-content-length: 11
-content-type: application/json
-
-{"ok":true}
