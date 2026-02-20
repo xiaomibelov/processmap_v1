@@ -1,0 +1,214 @@
+/* fpc: bpmn_modeler_and_delete_v1 */
+
+.iconBtn{
+  height: 34px;
+  min-width: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.10);
+  color: rgba(255,255,255,.92);
+  cursor: pointer;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  user-select:none;
+}
+
+.iconBtn:disabled{
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.stageRoot{
+  display:flex;
+  flex-direction:column;
+  height: 100%;
+}
+
+.stageHeader{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255,255,255,.10);
+}
+
+.stageSubTitle{
+  margin-top: 2px;
+  color: rgba(255,255,255,.72);
+  font-size: 13px;
+}
+
+.stageHeaderRight{
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+
+.toolbarRight{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.segmented{
+  display:flex;
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.08);
+  border-radius: 12px;
+  overflow:hidden;
+}
+
+.segBtn{
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: rgba(255,255,255,.78);
+  cursor:pointer;
+  font-weight: 600;
+}
+
+.segBtn.on{
+  background: rgba(255,255,255,.14);
+  color: rgba(255,255,255,.92);
+}
+
+.stageBody{
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 12px;
+}
+
+.bpmnStage{
+  height: 100%;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+.bpmnMetaRow{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+}
+
+.bpmnEditorBar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+
+.bpmnEditorBtns{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap: wrap;
+  justify-content:flex-end;
+}
+
+/* XML view: wrap + line numbers */
+.xmlWrap{
+  flex: 1 1 auto;
+  min-height: 320px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(0,0,0,.10);
+}
+
+.xmlScroller{
+  height: 100%;
+  overflow: auto;
+  padding: 10px;
+}
+
+.xmlGrid{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+
+.xmlRow{
+  display:flex;
+  align-items:flex-start;
+  gap:10px;
+}
+
+.xmlLn{
+  width: 30px;
+  text-align:right;
+  color: rgba(255,255,255,.40);
+  font-variant-numeric: tabular-nums;
+  user-select:none;
+}
+
+.xmlCode{
+  margin:0;
+  color: rgba(255,255,255,.92);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.xmlEditorToolbar{
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 10px 0;
+}
+
+.xmlEditorStatus{
+  margin-right: auto;
+  font-size: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.18);
+  padding: 4px 8px;
+  background: rgba(255,255,255,.06);
+  color: rgba(226,240,255,.9);
+}
+
+.xmlEditorStatus.dirty{
+  border-color: rgba(245,158,11,.44);
+  color: rgba(254,240,138,.95);
+}
+
+.xmlEditorStatus.saved{
+  border-color: rgba(34,197,94,.42);
+  color: rgba(187,247,208,.92);
+}
+
+.xmlEditorTextarea{
+  width: 100%;
+  min-height: 520px;
+  resize: vertical;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(2,6,23,.55);
+  color: rgba(241,245,255,.96);
+  padding: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  outline: none;
+}
+
+.xmlEditorTextarea:focus{
+  border-color: rgba(96,165,250,.46);
+  box-shadow: 0 0 0 2px rgba(59,130,246,.2);
+}
+
+/* Make bpmn-js palette look acceptable on dark */
+.djs-palette, .djs-context-pad{
+  filter: invert(1) hue-rotate(180deg);
+  opacity: .92;
+}

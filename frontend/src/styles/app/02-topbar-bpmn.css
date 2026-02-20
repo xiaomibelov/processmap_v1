@@ -1,0 +1,11 @@
+/*
+  Decomposed from legacy app.css section: topbar + BPMN + process toolbar.
+  Keep strict import order to preserve cascade.
+*/
+
+@import "./02/02-01-topbar-foundation.css";
+@import "./02/02-02-bpmn-viewer-core.css";
+@import "./02/02-03-process-toolbar-xml.css";
+@import "./02/02-04-stage-modeler.css";
+@import "./02/02-05-layout-shell-topbar.css";
+@import "./02/02-06-bpmn-dark-theme.css";

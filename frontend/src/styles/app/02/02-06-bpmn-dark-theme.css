@@ -1,0 +1,257 @@
+/* fpc:bpmn-dark-v1 */
+.bpmnStage .bpmnStack {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+}
+
+.bpmnStage .bpmnLayer {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+}
+
+.bpmnStage .bpmnLayer.off {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.bpmnStage .bpmnLayer.on {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.bpmnStage .bpmnLayer--diagram,
+.bpmnStage .bpmnLayer--editor {
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.bpmnStage .bpmnLayer--diagram,
+.bpmnStage .bpmnLayer--editor {
+  background:
+    radial-gradient(circle at 25% 25%, rgba(255,255,255,0.06), rgba(255,255,255,0.00) 45%),
+    radial-gradient(circle at 80% 35%, rgba(255,255,255,0.04), rgba(255,255,255,0.00) 40%),
+    linear-gradient(180deg, rgba(3,7,18,0.82), rgba(3,7,18,0.62));
+}
+
+.bpmnStage .djs-container,
+.bpmnStage .djs-container svg {
+  background: transparent !important;
+}
+
+.bpmnStage .djs-container .djs-visual .djs-element[data-element-id^="Participant"] .djs-visual > rect,
+.bpmnStage .djs-container .djs-visual .djs-element[data-element-id^="Lane"] .djs-visual > rect {
+  fill: rgba(255,255,255,0.04) !important;
+  stroke: rgba(255,255,255,0.22) !important;
+}
+
+.bpmnStage .djs-container .djs-visual .djs-element[data-element-id^="Participant"] .djs-visual > rect + rect {
+  fill: rgba(255,255,255,0.02) !important;
+}
+
+.bpmnStage .djs-label,
+.bpmnStage .djs-visual text,
+.bpmnStage .djs-outline text {
+  fill: rgba(255,255,255,0.86) !important;
+}
+
+.bpmnStage .djs-visual path,
+.bpmnStage .djs-visual circle,
+.bpmnStage .djs-visual polygon,
+.bpmnStage .djs-visual rect {
+  shape-rendering: geometricPrecision;
+}
+
+
+/* fpc:bpmn-dark-v2 */
+.bpmnStage .djs-container,
+.bpmnStage .djs-container svg{
+  background: transparent !important;
+}
+
+.bpmnStage .djs-container .djs-background{
+  fill: transparent !important;
+}
+
+.bpmnStage .djs-element[data-element-id^="Participant_"] .djs-visual > rect,
+.bpmnStage .djs-element[data-element-id^="Participant"] .djs-visual > rect{
+  fill: rgba(255,255,255,0.03) !important;
+  stroke: rgba(255,255,255,0.18) !important;
+}
+
+.bpmnStage .djs-element[data-element-id^="Lane_"] .djs-visual > rect,
+.bpmnStage .djs-element[data-element-id^="Lane"] .djs-visual > rect{
+  fill: rgba(255,255,255,0.02) !important;
+  stroke: rgba(255,255,255,0.16) !important;
+}
+
+/* second rect inside participant (label box) */
+.bpmnStage .djs-element[data-element-id^="Participant_"] .djs-visual > rect + rect,
+.bpmnStage .djs-element[data-element-id^="Participant"] .djs-visual > rect + rect{
+  fill: rgba(255,255,255,0.01) !important;
+}
+
+.bpmnStage .djs-label,
+.bpmnStage .djs-visual text{
+  fill: rgba(255,255,255,0.86) !important;
+}
+
+/* fpc:bpmn-dark-v3 */
+/* Dark theme for BPMN shapes (tasks/events/gateways) without breaking pool/lane */
+.bpmnStage .djs-element:not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual > rect,
+.bpmnStage .djs-element:not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual > polygon,
+.bpmnStage .djs-element:not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual > circle {
+  fill: rgba(255,255,255,0.03) !important;
+  stroke: rgba(255,255,255,0.28) !important;
+}
+
+.bpmnStage .djs-connection path {
+  stroke: rgba(255,255,255,0.32) !important;
+}
+
+.bpmnStage .djs-visual path {
+  stroke: rgba(255,255,255,0.32);
+}
+
+.bpmnStage .djs-outline {
+  stroke: rgba(120,170,255,0.9) !important;
+}
+
+/* Context pad / popup menu styling */
+.bpmnStage .djs-context-pad .entry,
+.bpmnStage .djs-popup .entry {
+  background: rgba(10,16,30,0.88) !important;
+  border: 1px solid rgba(255,255,255,0.14) !important;
+  box-shadow: 0 8px 26px rgba(0,0,0,0.38) !important;
+}
+
+.bpmnStage .djs-context-pad .entry:hover,
+.bpmnStage .djs-popup .entry:hover {
+  background: rgba(30,50,90,0.72) !important;
+}
+
+.bpmnStage .djs-context-pad .entry:before,
+.bpmnStage .djs-popup .entry:before {
+  color: rgba(255,255,255,0.9) !important;
+}
+
+/* Palette (left tools) */
+.bpmnStage .djs-palette {
+  background: rgba(10,16,30,0.78) !important;
+  border: 1px solid rgba(255,255,255,0.14) !important;
+  border-radius: 12px !important;
+}
+
+.bpmnStage .djs-palette .entry:before {
+  color: rgba(255,255,255,0.9) !important;
+}
+
+/* fpc:bpmn-dark-v4 */
+/* Make BPMN elements (tasks/events/gateways) dark; keep pools/lanes handled separately */
+.bpmnStage .djs-element:not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual rect,
+.bpmnStage .djs-element:not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual circle,
+.bpmnStage .djs-element:not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual polygon {
+  fill: rgba(255,255,255,0.04) !important;
+  stroke: rgba(255,255,255,0.30) !important;
+}
+
+.bpmnStage .djs-element:not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual path {
+  stroke: rgba(255,255,255,0.34) !important;
+}
+
+.bpmnStage .djs-connection path {
+  stroke: rgba(255,255,255,0.34) !important;
+}
+
+/* Icons/menu/palette should render as font glyphs, not squares */
+.bpmnStage .djs-context-pad .entry:before,
+.bpmnStage .djs-popup .entry:before,
+.bpmnStage .djs-palette .entry:before {
+  color: rgba(255,255,255,0.92) !important;
+}
+
+/* fpc:bpmn_dark_shapes_and_smallbtn_v1 */
+
+/* small buttons outside topbar */
+.smallBtn{
+  height: 32px;
+  line-height: 32px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding: 0 12px;
+  white-space: nowrap;
+  width: auto;
+}
+
+.primaryBtn.smallBtn{
+  width: auto;
+  padding: 0 12px;
+}
+
+.secondaryBtn.smallBtn{
+  height: 32px;
+  line-height: 32px;
+}
+
+/* generate button in process toolbar */
+.genBtn{
+  min-width: 190px;
+}
+
+/* highlight left toggle state */
+.topbar .iconBtn.on{
+  background: rgba(255,255,255,.18);
+}
+
+/* make BPMN shapes dark (reduce "white filled" look) */
+.bpmnCanvas .djs-visual > rect,
+.bpmnCanvas .djs-visual > circle,
+.bpmnCanvas .djs-visual > polygon,
+.bpmnCanvas .djs-visual > path{
+  fill: rgba(0,0,0,.26) !important;
+  stroke: rgba(255,255,255,.32) !important;
+}
+
+/* labels readable on dark */
+.bpmnCanvas text,
+.bpmnCanvas .djs-label{
+  fill: rgba(255,255,255,.84) !important;
+}
+
+/* connections on dark */
+.bpmnCanvas .djs-connection path{
+  stroke: rgba(255,255,255,.28) !important;
+}
+.bpmnCanvas marker path{
+  fill: rgba(255,255,255,.28) !important;
+}
+
+/* selection/resize handles: avoid "black squares" on dark */
+.bpmnCanvas .djs-resizer{
+  fill: rgba(180,200,255,.92) !important;
+  stroke: rgba(0,0,0,.35) !important;
+}
+.bpmnCanvas .djs-outline{
+  stroke: rgba(160,190,255,.55) !important;
+}
+
+/* fpc: bpmn_dark_shapes_v2 */
+/* цель: убрать белые заливки фигур и "квадраты" (иконки грузятся через bpmn-embedded.css) */
+.bpmnCanvas .djs-visual > rect,
+.bpmnCanvas .djs-visual > circle,
+.bpmnCanvas .djs-visual > ellipse,
+.bpmnCanvas .djs-visual > polygon{
+  fill: rgba(0,0,0,.22) !important;
+  stroke: rgba(255,255,255,.30) !important;
+}
+
+.bpmnCanvas text,
+.bpmnCanvas .djs-label{
+  fill: rgba(255,255,255,.86) !important;
+}
+
+.bpmnCanvas .djs-outline{
+  stroke: rgba(120,160,255,.60) !important;
+}

@@ -1,5 +1,4 @@
 import { useMemo } from "react";
-import { MODE_OPTIONS } from "./constants";
 
 function projectIdFrom(p) {
   return (p && (p.id || p.project_id || p.slug)) || "";
@@ -24,8 +23,6 @@ export default function TopBar({
   projects,
   projectId,
   onProjectChange,
-  modeFilter,
-  onModeFilterChange,
   sessionId,
   sessions,
   onOpen,
@@ -47,7 +44,7 @@ export default function TopBar({
     <div className="topBar">
       <div className="topBarInner">
         <div className="topBarBrand">
-          <div className="brand">Food Process Copilot</div>
+          <div className="brand">ProcessMap</div>
           <div className="small">{statusLine}</div>
           {backendHint ? <div className="small muted">{backendHint}</div> : null}
         </div>
@@ -70,20 +67,6 @@ export default function TopBar({
                 </option>
               );
             })}
-          </select>
-
-          <select
-            className="input topbarSelectSm"
-            value={modeFilter || ""}
-            onChange={(e) => onModeFilterChange?.(e.target.value || "")}
-            title="Фильтр по режиму"
-            disabled={!hasProjects}
-          >
-            {MODE_OPTIONS.map((m, idx) => (
-              <option key={`${m.value}_${idx}`} value={m.value}>
-                {m.label}
-              </option>
-            ))}
           </select>
 
           <select
@@ -114,7 +97,7 @@ export default function TopBar({
           </button>
           <button
             className="primaryBtn smallBtn"
-            onClick={() => onNewBackend?.(modeFilter || "quick_skeleton")}
+            onClick={() => onNewBackend?.()}
             disabled={!canCreateApiSession}
             title={canCreateApiSession ? "Создать сессию в проекте" : "Сначала выбери или создай проект"}
           >

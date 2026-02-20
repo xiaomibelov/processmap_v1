@@ -2,14 +2,17 @@ from __future__ import annotations
 
 
 import math
+import hashlib
 import os
 import re
 import uuid
 import io
 import zipfile
 import json
+import time
+import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,12 +24,12 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from .exporters.mermaid import render_mermaid
 from .exporters.yaml_export import dump_yaml, session_to_process_dict
 from .glossary import normalize_kind, slugify_canon, upsert_term
-from .models import Node, Edge, Session, Project, CreateProjectIn, UpdateProjectIn
+from .models import Node, Edge, Question, Session, Project, CreateProjectIn, UpdateProjectIn
 from .analytics import compute_analytics
 from .normalizer import load_seed_glossary, normalize_nodes
 from .resources import build_resources_report
 from .storage import get_storage, get_project_storage
-from .settings import load_llm_settings, llm_status, save_llm_settings
+from .settings import load_llm_settings, llm_status, save_llm_settings, verify_llm_settings
 from .validators.coverage import build_questions
 from .validators.disposition import build_disposition_questions
 from .validators.loss import build_loss_questions, loss_report
@@ -101,6 +104,50 @@ def _notes_encode(v: Any) -> str:
     return ""
 
 
+def _norm_notes_by_element(value: Any) -> Dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+
+    out: Dict[str, Any] = {}
+    for raw_key, raw_entry in value.items():
+        key = str(raw_key or "").strip()
+        if not key:
+            continue
+        entry = raw_entry if isinstance(raw_entry, dict) else {}
+        raw_items = entry.get("items")
+        if not isinstance(raw_items, list):
+            raw_items = entry.get("notes") if isinstance(entry.get("notes"), list) else []
+
+        items: List[Dict[str, Any]] = []
+        for idx, raw_item in enumerate(raw_items):
+            item = raw_item if isinstance(raw_item, dict) else {"text": str(raw_item or "")}
+            text = str(item.get("text") or item.get("note") or "").strip()
+            if not text:
+                continue
+            created_at = item.get("createdAt") or item.get("created_at") or item.get("ts") or int(time.time() * 1000)
+            updated_at = item.get("updatedAt") or item.get("updated_at") or created_at
+            note_id = str(item.get("id") or item.get("note_id") or f"note_{created_at}_{idx + 1}").strip()
+            items.append(
+                {
+                    "id": note_id or f"note_{created_at}_{idx + 1}",
+                    "text": text,
+                    "createdAt": int(created_at) if str(created_at).isdigit() else created_at,
+                    "updatedAt": int(updated_at) if str(updated_at).isdigit() else updated_at,
+                }
+            )
+
+        if not items:
+            continue
+
+        updated_at_entry = entry.get("updatedAt") or entry.get("updated_at") or items[-1].get("updatedAt")
+        out[key] = {
+            "items": items,
+            "updatedAt": int(updated_at_entry) if str(updated_at_entry).isdigit() else updated_at_entry,
+        }
+
+    return out
+
+
 def _pick(d: Dict[str, Any], *keys: str) -> Any:
     for k in keys:
         if k in d and d[k] is not None:
@@ -172,13 +219,16 @@ def _norm_edges(v: Any) -> List[Edge]:
     return out
 
 
-def _norm_questions(v: Any) -> List[Any]:
+def _norm_questions(v: Any) -> List[Question]:
     if v is None:
         return []
     if not isinstance(v, list):
         return []
-    out: List[Any] = []
+    out: List[Question] = []
     for it in v:
+        if isinstance(it, Question):
+            out.append(it.model_copy(deep=True))
+            continue
         if not isinstance(it, dict):
             continue
         payload = dict(it)
@@ -186,14 +236,383 @@ def _norm_questions(v: Any) -> List[Any]:
             payload["question"] = payload.get("text")
         if "node_id" not in payload and "nodeId" in payload:
             payload["node_id"] = payload.get("nodeId")
-        out.append(payload)
+        try:
+            out.append(Question.model_validate(payload))
+        except ValidationError:
+            continue
     return out
+
+def _norm_prep_questions(value: Any) -> List[Dict[str, Any]]:
+    if value is None:
+        return []
+    items = []
+    if isinstance(value, list):
+        items = value
+    elif isinstance(value, dict):
+        items = [value]
+    else:
+        return []
+
+    out = []
+    for idx, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        question = str(item.get("question") or item.get("text") or "").strip()
+        if not question:
+            continue
+        out.append(
+            {
+                "id": str(item.get("id") or f"Q{idx + 1}").strip() or f"Q{idx + 1}",
+                "block": str(item.get("block") or "").strip(),
+                "question": question,
+                "ask_to": str(item.get("ask_to") or item.get("role") or item.get("askTo") or "").strip(),
+                "answer_type": str(item.get("answer_type") or item.get("answerType") or "").strip(),
+                "follow_up": str(item.get("follow_up") or item.get("followUp") or "").strip(),
+                "answer": str(item.get("answer") or "").strip(),
+            }
+        )
+    return out
+
+
+def _norm_interview(v: Any) -> Dict[str, Any]:
+    if isinstance(v, dict):
+        return dict(v)
+    return {}
+
+
+def _is_legacy_seed_bpmn(xml_text: str) -> bool:
+    raw = (xml_text or "").strip()
+    if not raw:
+        return False
+    try:
+        root = ET.fromstring(raw)
+    except Exception:
+        return False
+
+    def _ln(tag: str) -> str:
+        if "}" in tag:
+            return tag.rsplit("}", 1)[-1].lower()
+        return tag.lower()
+
+    counts: Dict[str, int] = {}
+    for el in root.iter():
+        name = _ln(str(getattr(el, "tag", "") or ""))
+        counts[name] = counts.get(name, 0) + 1
+
+    start_n = counts.get("startevent", 0)
+    end_n = counts.get("endevent", 0)
+    flow_n = counts.get("sequenceflow", 0)
+    task_n = sum(counts.get(k, 0) for k in ("task", "usertask", "servicetask", "manualtask", "scripttask", "businessruletask", "sendtask", "receivetask"))
+    gw_n = sum(counts.get(k, 0) for k in ("exclusivegateway", "parallelgateway", "inclusivegateway", "eventbasedgateway"))
+    sub_n = counts.get("subprocess", 0) + counts.get("callactivity", 0)
+
+    if start_n == 1 and end_n == 1 and gw_n == 0 and sub_n == 0:
+        if task_n == 0 and flow_n <= 1:
+            return True
+        # Old frontend seed: Start -> "Опишите первый шаг процесса" -> End.
+        if task_n == 1 and flow_n <= 2 and "опишите первый шаг процесса" in raw.lower():
+            return True
+    return False
+
+
+def _overlay_interview_annotations_on_bpmn_xml(sess: Session, xml_text: str) -> str:
+    raw = str(xml_text or "").strip()
+    if not raw:
+        return ""
+
+    try:
+        root = ET.fromstring(raw)
+    except Exception:
+        return raw
+
+    def _ln(tag: str) -> str:
+        if "}" in tag:
+            return tag.rsplit("}", 1)[-1].lower()
+        return tag.lower()
+
+    def _ns(tag: str, fallback: str) -> str:
+        t = str(tag or "")
+        if t.startswith("{") and "}" in t:
+            return t[1 : t.index("}")]
+        return fallback
+
+    def _safe_id(v: str) -> str:
+        s = re.sub(r"[^a-zA-Z0-9_\-]", "_", str(v or ""))
+        if not s:
+            s = "id"
+        if not re.match(r"^[A-Za-z_]", s):
+            s = f"id_{s}"
+        return s
+
+    def _norm(v: Any) -> str:
+        return re.sub(r"\s+", " ", str(v or "").strip().lower())
+
+    def _iter_local(el: ET.Element, local: str):
+        q = str(local or "").lower()
+        for x in el.iter():
+            if _ln(str(getattr(x, "tag", "") or "")) == q:
+                yield x
+
+    proc = next((x for x in root.iter() if _ln(str(getattr(x, "tag", "") or "")) == "process"), None)
+    if proc is None:
+        return raw
+
+    plane = next((x for x in root.iter() if _ln(str(getattr(x, "tag", "") or "")) == "bpmnplane"), None)
+
+    ns_bpmn = _ns(str(getattr(proc, "tag", "") or ""), "http://www.omg.org/spec/BPMN/20100524/MODEL")
+    ns_bpmndi = _ns(str(getattr(plane, "tag", "") or ""), "http://www.omg.org/spec/BPMN/20100524/DI")
+    any_bounds = next(_iter_local(root, "bounds"), None)
+    any_waypoint = next(_iter_local(root, "waypoint"), None)
+    ns_dc = _ns(str(getattr(any_bounds, "tag", "") or ""), "http://www.omg.org/spec/DD/20100524/DC")
+    ns_di = _ns(str(getattr(any_waypoint, "tag", "") or ""), "http://www.omg.org/spec/DD/20100524/DI")
+
+    model = sess.model_dump() if hasattr(sess, "model_dump") else {}
+    from .exporters.bpmn import _collect_interview_comments
+
+    comments_raw = _collect_interview_comments(model, model.get("nodes") or [])
+
+    node_ids: Set[str] = set()
+    start_ids: List[str] = []
+    end_ids: List[str] = []
+    name_to_ids: Dict[str, List[str]] = {}
+    allowed = {
+        "startevent",
+        "endevent",
+        "boundaryevent",
+        "intermediatecatchevent",
+        "intermediatethrowevent",
+        "task",
+        "usertask",
+        "servicetask",
+        "manualtask",
+        "scripttask",
+        "businessruletask",
+        "sendtask",
+        "receivetask",
+        "callactivity",
+        "subprocess",
+        "adhocsubprocess",
+        "exclusivegateway",
+        "inclusivegateway",
+        "parallelgateway",
+        "eventbasedgateway",
+    }
+
+    for el in root.iter():
+        local = _ln(str(getattr(el, "tag", "") or ""))
+        if local not in allowed:
+            continue
+        nid = str(el.attrib.get("id") or "").strip()
+        if not nid:
+            continue
+        node_ids.add(nid)
+        if local == "startevent":
+            start_ids.append(nid)
+        elif local == "endevent":
+            end_ids.append(nid)
+        nm = _norm(el.attrib.get("name"))
+        if nm:
+            name_to_ids.setdefault(nm, []).append(nid)
+
+    comment_by_node: Dict[str, str] = {}
+    for k, v in (comments_raw or {}).items():
+        txt = str(v or "").strip()
+        if not txt:
+            continue
+        key = str(k or "").strip()
+        if key in node_ids:
+            comment_by_node[key] = txt
+    start_note = str((comments_raw or {}).get("__start__") or "").strip()
+    if start_note and start_ids:
+        comment_by_node[start_ids[0]] = start_note
+    end_note = str((comments_raw or {}).get("__end__") or "").strip()
+    if end_note and end_ids:
+        comment_by_node[end_ids[0]] = end_note
+
+    interview = model.get("interview") if isinstance(model.get("interview"), dict) else {}
+    steps = interview.get("steps") if isinstance(interview.get("steps"), list) else []
+    for st in steps:
+        if not isinstance(st, dict):
+            continue
+        txt = str(st.get("comment") or st.get("note") or "").strip()
+        if not txt:
+            continue
+        explicit = str(st.get("node_id") or st.get("nodeId") or "").strip()
+        if explicit and explicit in node_ids:
+            comment_by_node[explicit] = txt
+            continue
+        action_key = _norm(st.get("action"))
+        if not action_key:
+            continue
+        ids = name_to_ids.get(action_key) or []
+        if len(ids) == 1:
+            comment_by_node[ids[0]] = txt
+
+    # Remove previously generated FPC annotations before adding current ones.
+    ann_prefix = "FPC_TextAnnotation_"
+    assoc_prefix = "FPC_Association_"
+    removed_ids: Set[str] = set()
+    for child in list(proc):
+        local = _ln(str(getattr(child, "tag", "") or ""))
+        cid = str(child.attrib.get("id") or "")
+        if local == "textannotation" and cid.startswith(ann_prefix):
+            removed_ids.add(cid)
+            proc.remove(child)
+            continue
+        if local == "association" and cid.startswith(assoc_prefix):
+            removed_ids.add(cid)
+            proc.remove(child)
+            continue
+
+    if plane is not None:
+        for child in list(plane):
+            local = _ln(str(getattr(child, "tag", "") or ""))
+            cid = str(child.attrib.get("id") or "")
+            bpmn_el = str(child.attrib.get("bpmnElement") or "")
+            if local in ("bpmnshape", "bpmnedge") and (cid.startswith(ann_prefix) or cid.startswith(assoc_prefix) or bpmn_el in removed_ids):
+                plane.remove(child)
+
+    if not comment_by_node:
+        try:
+            return ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8", errors="replace")
+        except Exception:
+            return raw
+
+    used_ids = {str(el.attrib.get("id") or "").strip() for el in root.iter() if str(el.attrib.get("id") or "").strip()}
+
+    def _alloc(prefix: str, node_id: str) -> str:
+        base = f"{prefix}{_safe_id(node_id)}"
+        cand = base
+        n = 2
+        while cand in used_ids:
+            cand = f"{base}_{n}"
+            n += 1
+        used_ids.add(cand)
+        return cand
+
+    node_bounds: Dict[str, Dict[str, float]] = {}
+    if plane is not None:
+        for sh in plane:
+            if _ln(str(getattr(sh, "tag", "") or "")) != "bpmnshape":
+                continue
+            node_id = str(sh.attrib.get("bpmnElement") or "").strip()
+            if not node_id:
+                continue
+            bounds = next((x for x in sh if _ln(str(getattr(x, "tag", "") or "")) == "bounds"), None)
+            if bounds is None:
+                continue
+            try:
+                x = float(bounds.attrib.get("x", "0") or 0)
+                y = float(bounds.attrib.get("y", "0") or 0)
+                w = float(bounds.attrib.get("width", "0") or 0)
+                h = float(bounds.attrib.get("height", "0") or 0)
+            except Exception:
+                continue
+            node_bounds[node_id] = {"x": x, "y": y, "w": w, "h": h}
+
+    for node_id, note in comment_by_node.items():
+        if node_id not in node_ids:
+            continue
+        ann_id = _alloc(ann_prefix, node_id)
+        assoc_id = _alloc(assoc_prefix, node_id)
+
+        ann = ET.SubElement(proc, f"{{{ns_bpmn}}}textAnnotation", attrib={"id": ann_id})
+        ET.SubElement(ann, f"{{{ns_bpmn}}}text").text = note
+        ET.SubElement(proc, f"{{{ns_bpmn}}}association", attrib={"id": assoc_id, "sourceRef": node_id, "targetRef": ann_id})
+
+        if plane is None:
+            continue
+        nb = node_bounds.get(node_id)
+        if not nb:
+            continue
+        text_len = max(len(note), 12)
+        ann_w = float(min(max(text_len * 6.8, 180.0), 420.0))
+        ann_h = 56.0
+        ann_x = nb["x"] + nb["w"] + 40.0
+        ann_y = max(nb["y"] - 6.0, 24.0)
+
+        ashape = ET.SubElement(
+            plane,
+            f"{{{ns_bpmndi}}}BPMNShape",
+            attrib={"id": f"{ann_id}_di", "bpmnElement": ann_id},
+        )
+        ET.SubElement(
+            ashape,
+            f"{{{ns_dc}}}Bounds",
+            attrib={"x": f"{ann_x:.1f}", "y": f"{ann_y:.1f}", "width": f"{ann_w:.1f}", "height": f"{ann_h:.1f}"},
+        )
+
+        e_di = ET.SubElement(
+            plane,
+            f"{{{ns_bpmndi}}}BPMNEdge",
+            attrib={"id": f"{assoc_id}_di", "bpmnElement": assoc_id},
+        )
+        sx = nb["x"] + nb["w"]
+        sy = nb["y"] + nb["h"] / 2.0
+        dx = ann_x
+        dy = ann_y + ann_h / 2.0
+        ET.SubElement(e_di, f"{{{ns_di}}}waypoint", attrib={"x": f"{sx:.1f}", "y": f"{sy:.1f}"})
+        ET.SubElement(e_di, f"{{{ns_di}}}waypoint", attrib={"x": f"{dx:.1f}", "y": f"{dy:.1f}"})
+
+    try:
+        return ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8", errors="replace")
+    except Exception:
+        return raw
 
 
 def _session_api_dump(sess: Session) -> Dict[str, Any]:
     d = sess.model_dump()
     d["notes"] = _notes_decode(d.get("notes"))
     return d
+
+
+def _session_graph_fingerprint(sess: Session) -> str:
+    nodes = []
+    for n in (getattr(sess, "nodes", None) or []):
+        nid = str(getattr(n, "id", "") or "").strip()
+        if not nid:
+            continue
+        params = getattr(n, "parameters", None) or {}
+        if not isinstance(params, dict):
+            params = {}
+        nodes.append(
+            {
+                "id": nid,
+                "type": str(getattr(n, "type", "") or "").strip().lower(),
+                "title": str(getattr(n, "title", "") or "").strip(),
+                "actor_role": str(getattr(n, "actor_role", "") or "").strip(),
+                "recipient_role": str(getattr(n, "recipient_role", "") or "").strip(),
+                "duration_min": getattr(n, "duration_min", None),
+                "interview_step_type": str(params.get("interview_step_type") or "").strip().lower(),
+            }
+        )
+    nodes.sort(key=lambda x: str(x.get("id") or ""))
+
+    edges = []
+    for e in (getattr(sess, "edges", None) or []):
+        src = str(getattr(e, "from_id", "") or "").strip()
+        dst = str(getattr(e, "to_id", "") or "").strip()
+        if not src or not dst:
+            continue
+        edges.append(
+            {
+                "from_id": src,
+                "to_id": dst,
+                "when": str(getattr(e, "when", "") or "").strip(),
+            }
+        )
+    edges.sort(key=lambda x: (str(x.get("from_id") or ""), str(x.get("to_id") or ""), str(x.get("when") or "")))
+
+    roles = [str(r or "").strip() for r in (getattr(sess, "roles", None) or []) if str(r or "").strip()]
+    payload = {
+        "title": str(getattr(sess, "title", "") or "").strip(),
+        "roles": roles,
+        "start_role": str(getattr(sess, "start_role", "") or "").strip(),
+        "nodes": nodes,
+        "edges": edges,
+    }
+    packed = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha1(packed.encode("utf-8")).hexdigest()
 
 
 # CORS (local frontend integration)
@@ -206,6 +625,8 @@ else:
         "http://127.0.0.1:5173",
         "http://localhost:5174",
         "http://127.0.0.1:5174",
+        "http://localhost:5177",
+        "http://127.0.0.1:5177",
     ]
 
 app.add_middleware(
@@ -226,6 +647,54 @@ def _ws_path(*parts: str) -> Path:
     # workspace is mounted to /app/workspace in docker; on host it is ./workspace
     return Path("workspace").joinpath(*parts)
 
+def _canon_path(p: Path) -> str:
+    try:
+        return str(p.resolve())
+    except Exception:
+        return str(p)
+
+def _session_storage_dirs() -> list[Path]:
+    out: list[Path] = []
+    try:
+        st = get_storage()
+        base = getattr(st, "base_dir", None)
+        if isinstance(base, Path):
+            out.append(base)
+    except Exception:
+        pass
+    out.append(_ws_path("sessions"))  # legacy fallback
+
+    uniq: list[Path] = []
+    seen = set()
+    for p in out:
+        k = _canon_path(p)
+        if k in seen:
+            continue
+        seen.add(k)
+        uniq.append(p)
+    return uniq
+
+def _project_storage_dirs() -> list[Path]:
+    out: list[Path] = []
+    try:
+        ps = get_project_storage()
+        root = getattr(ps, "root", None)
+        if isinstance(root, Path):
+            out.append(root)
+    except Exception:
+        pass
+    out.append(_ws_path("projects"))  # legacy fallback
+
+    uniq: list[Path] = []
+    seen = set()
+    for p in out:
+        k = _canon_path(p)
+        if k in seen:
+            continue
+        seen.add(k)
+        uniq.append(p)
+    return uniq
+
 def _safe_unlink(p: Path) -> bool:
     try:
         if p.exists():
@@ -237,61 +706,90 @@ def _safe_unlink(p: Path) -> bool:
 
 def _iter_session_files() -> list[Path]:
     out: list[Path] = []
-    base = _ws_path("sessions")
-    if base.exists() and base.is_dir():
-        out.extend(sorted(base.glob("*.json")))
+    seen = set()
+    for base in _session_storage_dirs():
+        if not base.exists() or not base.is_dir():
+            continue
+        for fp in sorted(base.glob("*.json")):
+            k = _canon_path(fp)
+            if k in seen:
+                continue
+            seen.add(k)
+            out.append(fp)
     return out
 
 def _delete_session_files(session_id: str) -> int:
     deleted = 0
-    p = _ws_path("sessions", str(session_id) + ".json")
-    if _safe_unlink(p):
-        deleted += 1
+    sid = str(session_id)
+
+    try:
+        if get_storage().delete(sid):
+            deleted += 1
+    except Exception:
+        pass
+
+    for base in _session_storage_dirs():
+        p = base / f"{sid}.json"
+        if _safe_unlink(p):
+            deleted += 1
 
     for fp in _iter_session_files():
-        if fp.name == str(session_id) + ".json":
+        if fp.name == f"{sid}.json":
             continue
         try:
             txt = fp.read_text(encoding="utf-8")
         except Exception:
             continue
-        if ('"id":"%s"' % session_id) not in txt and ('"id": "%s"' % session_id) not in txt:
+        if (f'"id":"{sid}"' not in txt) and (f'"id": "{sid}"' not in txt):
             continue
         try:
-            import json
             d = json.loads(txt)
         except Exception:
             continue
-        if isinstance(d, dict) and str(d.get("id")) == str(session_id):
+        if isinstance(d, dict) and str(d.get("id")) == sid:
             if _safe_unlink(fp):
                 deleted += 1
     return deleted
 
 def _delete_project_files(project_id: str) -> int:
     deleted = 0
-    p = _ws_path("projects", str(project_id) + ".json")
-    if _safe_unlink(p):
-        deleted += 1
+    pid = str(project_id)
+    for base in _project_storage_dirs():
+        p = base / f"{pid}.json"
+        if _safe_unlink(p):
+            deleted += 1
     return deleted
 
 def _delete_sessions_by_project(project_id: str) -> list[str]:
-    deleted_ids: list[str] = []
+    pid = str(project_id)
+    session_ids: set[str] = set()
+
     for fp in _iter_session_files():
         try:
-            import json
             d = json.loads(fp.read_text(encoding="utf-8"))
         except Exception:
             continue
         if not isinstance(d, dict):
             continue
-        if str(d.get("project_id")) != str(project_id):
+        if str(d.get("project_id")) != pid:
             continue
         sid = d.get("id")
-        if sid is None:
-            continue
-        sid = str(sid)
-        _delete_session_files(sid)
-        deleted_ids.append(sid)
+        if sid is not None:
+            session_ids.add(str(sid))
+
+    try:
+        st = get_storage()
+        for raw in st.list(limit=500, project_id=pid):
+            sid = raw.get("id")
+            if sid is not None:
+                session_ids.add(str(sid))
+    except Exception:
+        pass
+
+    deleted_ids: list[str] = []
+    for sid in sorted(session_ids):
+        if _delete_session_files(sid) > 0:
+            deleted_ids.append(sid)
     return deleted_ids
 
 GLOSSARY_SEED = BASE_DIR / "knowledge" / "glossary_seed.yml"
@@ -304,6 +802,7 @@ class CreateSessionIn(BaseModel):
     title: str
     roles: Optional[Any] = None
     start_role: Optional[str] = None
+    ai_prep_questions: Optional[List[Dict[str, Any]]] = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -314,6 +813,8 @@ class UpdateSessionIn(BaseModel):
     roles: Optional[Any] = None
     start_role: Optional[str] = None
     notes: Optional[Any] = None
+    notes_by_element: Optional[Any] = None
+    interview: Optional[Any] = None
     nodes: Optional[Any] = None
     edges: Optional[Any] = None
     questions: Optional[Any] = None
@@ -405,9 +906,28 @@ class LlmSettingsIn(BaseModel):
     base_url: str = ""
 
 
+class LlmVerifyIn(BaseModel):
+    api_key: str = ""
+    base_url: str = ""
+
+
 class AiQuestionsIn(BaseModel):
-    limit: int = 12
+    limit: int = 10
     mode: str = "strict"
+    reset: bool = False
+    node_id: Optional[str] = None
+    step_id: Optional[str] = None
+
+
+class SessionTitleQuestionsIn(BaseModel):
+    title: str
+    prompt: str = ""
+    min_questions: int = 15
+    max_questions: int = 20
+
+
+class BpmnXmlIn(BaseModel):
+    xml: str = ""
 
 def _merge_nodes(existing: List[Node], extracted: List[Node]) -> List[Node]:
     by_id = {n.id: n for n in existing}
@@ -582,13 +1102,17 @@ def create_session(inp: CreateSessionIn) -> Dict[str, Any]:
     else:
         sr = None
 
+    prep_questions = _norm_prep_questions(getattr(inp, "ai_prep_questions", None))
+
     sid = uuid.uuid4().hex[:10]
     sess = Session(
         id=sid,
         title=inp.title,
         roles=roles,
         start_role=sr,
+        interview={"prep_questions": prep_questions},
         notes=_notes_encode([]),
+        notes_by_element={},
         nodes=[],
         edges=[],
         questions=[],
@@ -652,16 +1176,27 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
     st = get_storage()
     title = getattr(inp, "title", None) or "process"
     roles = _norm_roles(getattr(inp, "roles", None))
+    sr = getattr(inp, "start_role", None)
+    if sr is not None and str(sr).strip() != "":
+        sr = str(sr).strip()
+        if roles and sr not in roles:
+            return {"error": "start_role must be one of roles", "start_role": sr, "roles": roles}
+    else:
+        sr = None
+    prep_questions = _norm_prep_questions(getattr(inp, "ai_prep_questions", None))
     # prefer storage-native create signature if it supports project_id/mode
     try:
-        sid = st.create(title=title, roles=roles, project_id=project_id, mode=mode)
+        sid = st.create(title=title, roles=roles, start_role=sr, project_id=project_id, mode=mode)
         sess = st.load(sid)
         if sess is None:
             raise HTTPException(status_code=500, detail="session not persisted")
+        if prep_questions:
+            sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
+            st.save(sess)
         return _session_api_dump(sess)
     except TypeError:
         # fallback: create base session then attach fields
-        sid = st.create(title=title, roles=roles)
+        sid = st.create(title=title, roles=roles, start_role=sr)
         sess = st.load(sid)
         if sess is None:
             raise HTTPException(status_code=500, detail="session not persisted")
@@ -669,6 +1204,8 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
             sess.project_id = project_id
         if hasattr(sess, "mode"):
             sess.mode = mode
+        if prep_questions:
+            sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
         st.save(sess)
         return _session_api_dump(sess)
 @app.get("/api/sessions")
@@ -707,6 +1244,7 @@ def patch_session(session_id: str, inp: UpdateSessionIn) -> Dict[str, Any]:
     data = inp.model_dump(exclude_unset=True)
 
     handled = False
+    need_recompute = False
 
     if "title" in data and data["title"] is not None:
         title = str(data["title"]).strip()
@@ -722,6 +1260,7 @@ def patch_session(session_id: str, inp: UpdateSessionIn) -> Dict[str, Any]:
         if sess.start_role and sess.roles and sess.start_role not in sess.roles:
             sess.start_role = None
         handled = True
+        need_recompute = True
 
     if "start_role" in data:
         sr = data.get("start_role")
@@ -733,25 +1272,39 @@ def patch_session(session_id: str, inp: UpdateSessionIn) -> Dict[str, Any]:
                 return {"error": "start_role must be one of roles", "start_role": sr, "roles": sess.roles}
             sess.start_role = sr
         handled = True
+        need_recompute = True
 
     if "notes" in data:
         sess.notes = _notes_encode(data.get("notes"))
+        handled = True
+        need_recompute = True
+
+    if "notes_by_element" in data:
+        sess.notes_by_element = _norm_notes_by_element(data.get("notes_by_element"))
+        handled = True
+
+    if "interview" in data:
+        sess.interview = _norm_interview(data.get("interview"))
         handled = True
 
     if "nodes" in data:
         sess.nodes = _norm_nodes(data.get("nodes"))
         handled = True
+        need_recompute = True
 
     if "edges" in data:
         sess.edges = _norm_edges(data.get("edges"))
         handled = True
+        need_recompute = True
 
     if "questions" in data:
         sess.questions = _norm_questions(data.get("questions"))
         handled = True
+        need_recompute = True
 
     # игнорируем любые extra поля без ошибки
-    sess = _recompute_session(sess)
+    if need_recompute:
+        sess = _recompute_session(sess)
     st.save(sess)
     return _session_api_dump(sess)
 
@@ -801,6 +1354,8 @@ def put_session(session_id: str, inp: UpdateSessionIn) -> Dict[str, Any]:
         sess.start_role = sr
 
     sess.notes = _notes_encode(data.get("notes"))
+    sess.notes_by_element = _norm_notes_by_element(data.get("notes_by_element"))
+    sess.interview = _norm_interview(data.get("interview"))
     sess.nodes = _norm_nodes(data.get("nodes"))
     sess.edges = _norm_edges(data.get("edges"))
     sess.questions = _norm_questions(data.get("questions"))
@@ -821,6 +1376,150 @@ def recompute(session_id: str) -> Dict[str, Any]:
 
 
 
+def _collect_node_llm_questions(s: Session, node_id: str) -> List[Question]:
+    nid = str(node_id or "").strip()
+    if not nid:
+        return []
+    return [
+        q
+        for q in (s.questions or [])
+        if str(getattr(q, "id", "") or "").startswith("llm_")
+        and str(getattr(q, "node_id", "") or "").strip() == nid
+    ]
+
+
+def _prune_node_llm_questions(s: Session, node_id: str, keep_max: int = 5) -> List[Question]:
+    nid = str(node_id or "").strip()
+    if not nid:
+        return []
+    keep = max(int(keep_max or 0), 1)
+    kept_for_node: List[Question] = []
+    next_questions: List[Question] = []
+    for q in (s.questions or []):
+        is_node_llm = str(getattr(q, "id", "") or "").startswith("llm_") and str(getattr(q, "node_id", "") or "").strip() == nid
+        if not is_node_llm:
+            next_questions.append(q)
+            continue
+        if len(kept_for_node) < keep:
+            kept_for_node.append(q)
+            next_questions.append(q)
+    s.questions = next_questions
+    return kept_for_node
+
+
+def _llm_question_status_to_interview(status: Any) -> str:
+    s = str(status or "").strip().lower()
+    if s == "answered":
+        return "подтверждено"
+    if s == "open":
+        return "уточнить"
+    return "неизвестно"
+
+
+def _sync_interview_ai_questions_for_node(
+    s: Session,
+    node_id: str,
+    *,
+    preferred_step_id: str = "",
+    keep_max: int = 5,
+) -> Dict[str, Any]:
+    nid = str(node_id or "").strip()
+    preferred_sid = str(preferred_step_id or "").strip()
+    keep = max(int(keep_max or 0), 1)
+
+    iv = dict(getattr(s, "interview", {}) or {})
+    steps = iv.get("steps")
+    if not isinstance(steps, list):
+        steps = []
+
+    step_ids: List[str] = []
+    seen_sid: Set[str] = set()
+
+    def _add_step_id(sid: str) -> None:
+        sid = str(sid or "").strip()
+        if not sid or sid in seen_sid:
+            return
+        seen_sid.add(sid)
+        step_ids.append(sid)
+
+    if preferred_sid:
+        _add_step_id(preferred_sid)
+
+    for st in steps:
+        if not isinstance(st, dict):
+            continue
+        sid = str(st.get("id") or "").strip()
+        st_node = str(st.get("node_id") or st.get("nodeId") or "").strip()
+        if not sid:
+            continue
+        if nid and st_node == nid:
+            _add_step_id(sid)
+
+    llm_for_node = _collect_node_llm_questions(s, nid)[:keep]
+    normalized_items: List[Dict[str, Any]] = []
+    for q in llm_for_node:
+        txt = str(getattr(q, "question", "") or "").strip()
+        if not txt:
+            continue
+        normalized_items.append(
+            {
+                "id": str(getattr(q, "id", "") or "").strip(),
+                "text": txt,
+                "status": _llm_question_status_to_interview(getattr(q, "status", "")),
+                "on_diagram": False,
+            }
+        )
+
+    ai_map_raw = iv.get("ai_questions")
+    ai_map: Dict[str, List[Dict[str, Any]]] = dict(ai_map_raw) if isinstance(ai_map_raw, dict) else {}
+
+    for sid in step_ids:
+        existing = ai_map.get(sid)
+        if not isinstance(existing, list):
+            existing = []
+        keep_on_diagram: Dict[str, bool] = {}
+        keep_status: Dict[str, str] = {}
+        for it in existing:
+            if not isinstance(it, dict):
+                continue
+            iid = str(it.get("id") or "").strip()
+            itxt = str(it.get("text") or it.get("question") or "").strip()
+            key = iid or itxt.lower()
+            if not key:
+                continue
+            keep_on_diagram[key] = bool(it.get("on_diagram"))
+            stxt = str(it.get("status") or "").strip()
+            if stxt:
+                keep_status[key] = stxt
+
+        merged: List[Dict[str, Any]] = []
+        for it in normalized_items:
+            iid = str(it.get("id") or "").strip()
+            itxt = str(it.get("text") or "").strip()
+            key = iid or itxt.lower()
+            row = dict(it)
+            if key in keep_on_diagram:
+                row["on_diagram"] = keep_on_diagram[key]
+            if key in keep_status and row.get("status") == "уточнить":
+                row["status"] = keep_status[key]
+            merged.append(row)
+        ai_map[sid] = merged[:keep]
+
+    iv["ai_questions"] = ai_map
+    s.interview = iv
+
+    primary_sid = step_ids[0] if step_ids else ""
+    step_questions = ai_map.get(primary_sid) if primary_sid else []
+    if not isinstance(step_questions, list):
+        step_questions = []
+    return {
+        "step_id": primary_sid or None,
+        "step_ids": step_ids,
+        "step_questions": step_questions[:keep],
+        "node_questions_count": len(normalized_items),
+    }
+
+
 @app.post("/api/sessions/{session_id}/ai/questions")
 def ai_questions(session_id: str, inp: AiQuestionsIn) -> Dict[str, Any]:
     st = get_storage()
@@ -834,20 +1533,208 @@ def ai_questions(session_id: str, inp: AiQuestionsIn) -> Dict[str, Any]:
     if not api_key:
         return {"error": "deepseek api_key is not set"}
 
-    limit = int(inp.limit or 12)
+    limit = int(inp.limit or 10)
     if limit < 1:
         limit = 1
-    if limit > 40:
-        limit = 40
+    if limit > 10:
+        limit = 10
 
     mode = (inp.mode or "strict").strip().lower()
-    if mode not in ("strict", "soft"):
+    if mode not in ("strict", "soft", "sequential", "node_step", "one_by_one"):
         mode = "strict"
 
     try:
-        from .ai.deepseek_questions import generate_llm_questions
+        from .ai.deepseek_questions import (
+            generate_llm_questions,
+            generate_llm_questions_for_node,
+            collect_node_ids_in_bpmn_order,
+            extract_node_xml_snippet,
+        )
     except Exception as e:
         return {"error": f"deepseek questions module not available: {e}"}
+
+    if mode in ("sequential", "node_step", "one_by_one"):
+        known = {str(getattr(n, "id", "") or "").strip() for n in (s.nodes or []) if str(getattr(n, "id", "") or "").strip()}
+        ordered = collect_node_ids_in_bpmn_order(str(getattr(s, "bpmn_xml", "") or ""), known)
+        for n in (s.nodes or []):
+            nid = str(getattr(n, "id", "") or "").strip()
+            if nid and nid not in ordered:
+                ordered.append(nid)
+
+        state = dict(getattr(s, "ai_llm_state", {}) or {})
+        if bool(getattr(inp, "reset", False)):
+            state = {}
+        processed_old = [str(x).strip() for x in (state.get("processed_node_ids") or []) if str(x).strip()]
+        processed_set = set(processed_old)
+        requested_node_id = str(getattr(inp, "node_id", "") or "").strip()
+        requested_step_id = str(getattr(inp, "step_id", "") or "").strip()
+
+        llm_count_by_node: Dict[str, int] = {}
+        for q in (s.questions or []):
+            if not str(getattr(q, "id", "") or "").startswith("llm_"):
+                continue
+            qnid = str(getattr(q, "node_id", "") or "").strip()
+            if not qnid:
+                continue
+            llm_count_by_node[qnid] = int(llm_count_by_node.get(qnid, 0)) + 1
+
+        skipped_existing = 0
+        selected_node = None
+        if requested_node_id:
+            selected_node = next((n for n in (s.nodes or []) if str(getattr(n, "id", "") or "").strip() == requested_node_id), None)
+            if selected_node is None:
+                return {"error": "node not found", "node_id": requested_node_id}
+            if requested_node_id not in ordered:
+                ordered.append(requested_node_id)
+            existing_requested = _prune_node_llm_questions(s, requested_node_id, keep_max=5)
+            if len(existing_requested) >= 5:
+                processed_set.add(requested_node_id)
+                processed_order = [nid for nid in ordered if nid in processed_set]
+                remaining = len([x for x in ordered if x not in processed_set])
+                sync = _sync_interview_ai_questions_for_node(
+                    s,
+                    requested_node_id,
+                    preferred_step_id=requested_step_id,
+                    keep_max=5,
+                )
+                state["processed_node_ids"] = processed_order
+                state["last_node_id"] = requested_node_id
+                state["last_status"] = "processed"
+                state["updated_at"] = int(time.time())
+                s.ai_llm_state = state
+                st.save(s)
+                out = _session_api_dump(s)
+                questions_for_step = sync.get("step_questions") if isinstance(sync, dict) else []
+                if not isinstance(questions_for_step, list):
+                    questions_for_step = []
+                out["llm_step"] = {
+                    "status": "processed",
+                    "node_id": requested_node_id,
+                    "node_title": str(getattr(selected_node, "title", "") or requested_node_id),
+                    "requested_node_id": requested_node_id,
+                    "step_id": sync.get("step_id") if isinstance(sync, dict) else None,
+                    "step_ids": sync.get("step_ids") if isinstance(sync, dict) else [],
+                    "generated": 0,
+                    "reused": True,
+                    "questions": questions_for_step,
+                    "new_questions": [],
+                    "existing_questions_returned": len(questions_for_step),
+                    "processed": len(processed_order),
+                    "total": len(ordered),
+                    "remaining": remaining,
+                    "skipped_existing": skipped_existing,
+                }
+                return out
+        else:
+            for nid in ordered:
+                if nid in processed_set:
+                    continue
+                if int(llm_count_by_node.get(nid, 0)) >= 5:
+                    processed_set.add(nid)
+                    skipped_existing += 1
+                    continue
+                selected_node = next((n for n in (s.nodes or []) if str(getattr(n, "id", "") or "").strip() == nid), None)
+                if selected_node is not None:
+                    break
+
+        if selected_node is None:
+            processed_order = [nid for nid in ordered if nid in processed_set]
+            state["processed_node_ids"] = processed_order
+            state["last_status"] = "completed"
+            state["updated_at"] = int(time.time())
+            s.ai_llm_state = state
+            st.save(s)
+            out = _session_api_dump(s)
+            out["llm_step"] = {
+                "status": "completed",
+                "processed": len(processed_order),
+                "total": len(ordered),
+                "remaining": 0,
+                "skipped_existing": skipped_existing,
+            }
+            return out
+
+        node_xml = extract_node_xml_snippet(str(getattr(s, "bpmn_xml", "") or ""), str(getattr(selected_node, "id", "") or ""))
+        existing_for_node_before = _collect_node_llm_questions(s, str(getattr(selected_node, "id", "") or ""))
+        remain_for_node = max(0, 5 - len(existing_for_node_before))
+        if remain_for_node <= 0:
+            new_qs = []
+        else:
+            try:
+                new_qs = generate_llm_questions_for_node(
+                    s,
+                    selected_node,
+                    api_key=api_key,
+                    base_url=base_url,
+                    limit=min(limit, remain_for_node, 5),
+                    node_xml=node_xml,
+                )
+            except Exception as e:
+                return {"error": f"deepseek failed: {e}"}
+        generated = 0
+        added_questions: List[Dict[str, Any]] = []
+        existing_ids = {q.id for q in (s.questions or []) if getattr(q, "id", None)}
+        for q in (new_qs or []):
+            if q.id in existing_ids:
+                continue
+            (s.questions or []).append(q)
+            existing_ids.add(q.id)
+            generated += 1
+            added_questions.append(q.model_dump())
+
+        nid = str(getattr(selected_node, "id", "") or "").strip()
+        _prune_node_llm_questions(s, nid, keep_max=5)
+        if nid:
+            processed_set.add(nid)
+        processed_order = [x for x in ordered if x in processed_set]
+        remaining = len([x for x in ordered if x not in processed_set])
+
+        node_results = state.get("node_results")
+        if not isinstance(node_results, dict):
+            node_results = {}
+        node_results[nid] = {
+            "node_title": str(getattr(selected_node, "title", "") or nid),
+            "generated": generated,
+            "ts": int(time.time()),
+            "mode": "node_step" if requested_node_id else "sequential",
+        }
+        state["node_results"] = node_results
+        state["processed_node_ids"] = processed_order
+        state["last_node_id"] = nid
+        state["last_status"] = "processed"
+        state["updated_at"] = int(time.time())
+        s.ai_llm_state = state
+
+        s = _recompute_session(s)
+        sync = _sync_interview_ai_questions_for_node(
+            s,
+            nid,
+            preferred_step_id=requested_step_id,
+            keep_max=5,
+        )
+        st.save(s)
+        out = _session_api_dump(s)
+        llm_questions_for_step = sync.get("step_questions") if isinstance(sync, dict) else []
+        if not isinstance(llm_questions_for_step, list):
+            llm_questions_for_step = []
+        out["llm_step"] = {
+            "status": "processed",
+            "node_id": nid,
+            "node_title": str(getattr(selected_node, "title", "") or nid),
+            "requested_node_id": requested_node_id or None,
+            "step_id": sync.get("step_id") if isinstance(sync, dict) else None,
+            "step_ids": sync.get("step_ids") if isinstance(sync, dict) else [],
+            "generated": generated,
+            "reused": generated == 0,
+            "questions": llm_questions_for_step,
+            "new_questions": added_questions,
+            "existing_questions_returned": max(len(llm_questions_for_step) - generated, 0),
+            "processed": len(processed_order),
+            "total": len(ordered),
+            "remaining": remaining,
+            "skipped_existing": skipped_existing,
+        }
+        return out
 
     try:
         new_qs = generate_llm_questions(
@@ -872,6 +1759,41 @@ def ai_questions(session_id: str, inp: AiQuestionsIn) -> Dict[str, Any]:
     return s.model_dump()
 
 
+@app.post("/api/llm/session-title/questions")
+def llm_session_title_questions(inp: SessionTitleQuestionsIn) -> Dict[str, Any]:
+    title = str(inp.title or "").strip()
+    if not title:
+        return {"error": "title is required"}
+
+    llm = load_llm_settings()
+    api_key = (llm.get("api_key") or "").strip()
+    base_url = (llm.get("base_url") or "").strip()
+    if not api_key:
+        return {"error": "deepseek api_key is not set"}
+
+    min_questions = min(max(int(inp.min_questions or 15), 1), 25)
+    max_questions = min(max(int(inp.max_questions or 20), 1), 25)
+    if min_questions > max_questions:
+        min_questions = max_questions
+
+    try:
+        from .ai.deepseek_questions import generate_session_title_questions
+    except Exception as e:
+        return {"error": f"deepseek questions module not available: {e}"}
+
+    try:
+        return generate_session_title_questions(
+            title=title,
+            api_key=api_key,
+            base_url=base_url,
+            prompt_template=str(inp.prompt or ""),
+            min_questions=min_questions,
+            max_questions=max_questions,
+        )
+    except Exception as e:
+        return {"error": f"deepseek failed: {e}"}
+
+
 @app.post("/api/glossary/add")
 def glossary_add(inp: GlossaryAddIn) -> Dict[str, Any]:
     kind = normalize_kind(inp.kind)
@@ -891,6 +1813,11 @@ def get_llm_settings() -> Dict[str, Any]:
 @app.post("/api/settings/llm")
 def post_llm_settings(inp: LlmSettingsIn) -> Dict[str, Any]:
     return save_llm_settings(api_key=inp.api_key, base_url=inp.base_url)
+
+
+@app.post("/api/settings/llm/verify")
+def post_llm_verify(inp: LlmVerifyIn) -> Dict[str, Any]:
+    return verify_llm_settings(api_key=inp.api_key, base_url=inp.base_url)
 
 
 @app.post("/api/sessions/{session_id}/notes")
@@ -919,12 +1846,21 @@ def post_notes(session_id: str, inp: NotesIn) -> Dict[str, Any]:
 
     nodes_raw = extracted.get("nodes", []) or []
     edges_raw = extracted.get("edges", []) or []
-    roles = extracted.get("roles", []) or s.roles
+    existing_roles = _norm_roles(getattr(s, "roles", None))
+    extracted_roles = _norm_roles(extracted.get("roles", []))
+    roles = existing_roles if existing_roles else extracted_roles
 
     extracted_nodes = [Node.model_validate(nr) for nr in nodes_raw]
     extracted_edges = [Edge.model_validate(er) for er in edges_raw]
 
     s.roles = roles
+    sr = str(getattr(s, "start_role", "") or "").strip()
+    if roles:
+        if not sr or sr not in roles:
+            s.start_role = roles[0]
+    else:
+        s.start_role = None
+
     s.nodes = _merge_nodes(s.nodes, extracted_nodes)
     s.edges = extracted_edges
 
@@ -1328,15 +2264,68 @@ def delete_edge(session_id: str, inp: CreateEdgeIn) -> Dict[str, Any]:
 
 
 @app.get("/api/sessions/{session_id}/bpmn")
-def session_bpmn_export(session_id: str):
+def session_bpmn_export(
+    session_id: str,
+    raw: int = Query(0, description="1 = return stored bpmn_xml as-is (no regenerate/overlay)"),
+    include_overlay: int = Query(1, description="1 = overlay interview annotations (ignored when raw=1)"),
+):
     st = get_storage()
     s = st.load(session_id)
     if not s:
         return Response(content="not found", media_type="text/plain", status_code=404)
 
-    from .exporters.bpmn import export_session_to_bpmn_xml
+    xml_stored = str(getattr(s, "bpmn_xml", "") or "")
+    has_graph = len(getattr(s, "nodes", []) or []) > 0 or len(getattr(s, "edges", []) or []) > 0
+    current_graph_fp = _session_graph_fingerprint(s)
+    stored_graph_fp = str(getattr(s, "bpmn_graph_fingerprint", "") or "").strip()
+    raw_mode = bool(int(raw or 0))
+    overlay_mode = bool(int(include_overlay or 0))
 
-    xml = export_session_to_bpmn_xml(s)
+    def _persist_regenerated(xml_text: str) -> None:
+        s.bpmn_xml = str(xml_text or "")
+        s.bpmn_xml_version = int(getattr(s, "version", 0) or 0)
+        s.bpmn_graph_fingerprint = current_graph_fp
+        st.save(s)
+
+    if raw_mode:
+        if xml_stored.strip():
+            xml = xml_stored
+        elif not has_graph:
+            xml = ""
+        else:
+            from .exporters.bpmn import export_session_to_bpmn_xml
+            xml = export_session_to_bpmn_xml(s)
+            _persist_regenerated(xml)
+    else:
+        if xml_stored.strip():
+            # Auto-upgrade old start->end skeletons for fresh sessions with empty graph.
+            should_regenerate = False
+            if _is_legacy_seed_bpmn(xml_stored) and len(getattr(s, "nodes", []) or []) == 0 and len(getattr(s, "edges", []) or []) == 0:
+                should_regenerate = True
+            # Keep XML consistent with Interview graph updates:
+            # if graph fingerprint changed, regenerate XML from nodes/edges.
+            elif has_graph and (not stored_graph_fp or stored_graph_fp != current_graph_fp):
+                should_regenerate = True
+
+            if should_regenerate:
+                from .exporters.bpmn import export_session_to_bpmn_xml
+                xml = export_session_to_bpmn_xml(s)
+                _persist_regenerated(xml)
+            else:
+                xml = xml_stored
+        else:
+            # Do not auto-generate a starter BPMN for brand-new empty sessions.
+            # The user creates the first diagram manually (or imports BPMN).
+            if not has_graph:
+                xml = ""
+            else:
+                from .exporters.bpmn import export_session_to_bpmn_xml
+                xml = export_session_to_bpmn_xml(s)
+                _persist_regenerated(xml)
+
+    # Keep imported BPMN layout intact, but overlay Interview annotations only when requested.
+    if (not raw_mode) and overlay_mode:
+        xml = _overlay_interview_annotations_on_bpmn_xml(s, xml)
 
     title = getattr(s, "title", None) or getattr(s, "name", None) or "process"
     title = re.sub(r"[^a-zA-Z0-9_\-]+", "_", str(title)).strip("_")
@@ -1346,8 +2335,45 @@ def session_bpmn_export(session_id: str):
     return Response(
         content=xml,
         media_type="application/xml",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
     )
+
+
+@app.put("/api/sessions/{session_id}/bpmn")
+def session_bpmn_save(session_id: str, inp: BpmnXmlIn) -> Dict[str, Any]:
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return {"error": "not found"}
+
+    xml = str(inp.xml or "")
+    if not xml.strip():
+        return {"error": "xml is empty"}
+
+    s.bpmn_xml = xml
+    s.bpmn_xml_version = int(getattr(s, "version", 0) or 0)
+    s.bpmn_graph_fingerprint = _session_graph_fingerprint(s)
+    st.save(s)
+    return {"ok": True, "session_id": s.id, "bytes": len(xml), "version": s.bpmn_xml_version}
+
+
+@app.delete("/api/sessions/{session_id}/bpmn")
+def session_bpmn_clear(session_id: str) -> Dict[str, Any]:
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return {"error": "not found"}
+
+    s.bpmn_xml = ""
+    s.bpmn_xml_version = 0
+    s.bpmn_graph_fingerprint = ""
+    st.save(s)
+    return {"ok": True, "session_id": s.id}
 
 @app.get("/api/sessions/{session_id}/export")
 def export(session_id: str) -> Dict[str, Any]:

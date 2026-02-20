@@ -6,7 +6,7 @@ import ProjectWizardForm from "./ProjectWizardForm";
 function defaultModel() {
   return {
     title: "Новый проект",
-    mode: "quick_skeleton",
+    first_session_title: "",
     passport: {
       process_name: "",
       site_type: "dark_kitchen",
@@ -50,8 +50,9 @@ export default function ProjectWizardModal({ open, onClose, onCreate }) {
 
       await onCreate?.({
         title: resolved.title,
+        first_session_title: str(model.first_session_title) || resolved.process || resolved.title,
         passport,
-        mode: str(model.mode) || "quick_skeleton",
+        mode: "quick_skeleton",
       });
     } finally {
       setBusy(false);
@@ -60,10 +61,10 @@ export default function ProjectWizardModal({ open, onClose, onCreate }) {
 
   const footer = (
     <>
-      <button className="secondaryBtn" onClick={onClose} disabled={busy}>
+      <button type="button" className="secondaryBtn" onClick={onClose} disabled={busy}>
         Отмена
       </button>
-      <button className="primaryBtn" onClick={submit} disabled={busy}>
+      <button type="button" className="primaryBtn" onClick={submit} disabled={busy}>
         {busy ? "Создаю..." : "Создать"}
       </button>
     </>

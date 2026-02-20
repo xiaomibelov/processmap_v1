@@ -1,0 +1,637 @@
+function asText(value) {
+  return String(value || "");
+}
+
+function asNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function fnv1aHex(input) {
+  const src = asText(input);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < src.length; i += 1) {
+    hash ^= src.charCodeAt(i);
+    hash = Math.imul(hash >>> 0, 0x01000193) >>> 0;
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+const SNAPSHOT_DB_NAME = "fpc_bpmn_snapshots_db";
+const SNAPSHOT_DB_STORE = "session_snapshots";
+const SNAPSHOT_DB_VERSION = 1;
+const SNAPSHOT_LOCAL_PREFIX = "fpc_bpmn_snapshots:";
+const SNAPSHOT_SCOPE_PREFIX = "snapshots:";
+const SNAPSHOT_DEFAULT_LIMIT = 20;
+
+let dbPromise = null;
+
+function shouldLogSnapshotTrace() {
+  if (typeof window === "undefined") return false;
+  try {
+    return String(window.localStorage?.getItem("fpc_debug_snapshots") || "").trim() === "1";
+  } catch {
+    return false;
+  }
+}
+
+function logSnapshotTrace(tag, payload = {}) {
+  if (!shouldLogSnapshotTrace()) return;
+  const suffix = Object.entries(payload || {})
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .join(" ");
+  // eslint-disable-next-line no-console
+  console.debug(`[SNAPSHOT] ${String(tag || "trace")} ${suffix}`.trim());
+}
+
+function scopeParts(projectId, sessionId) {
+  const pid = asText(projectId).trim() || "no_project";
+  const sid = asText(sessionId).trim();
+  return { pid, sid };
+}
+
+function scopeKey(projectId, sessionId) {
+  const { pid, sid } = scopeParts(projectId, sessionId);
+  return `${SNAPSHOT_SCOPE_PREFIX}${pid}:${sid}`;
+}
+
+function legacyScopeKey(projectId, sessionId) {
+  const { pid, sid } = scopeParts(projectId, sessionId);
+  return `${pid}:${sid}`;
+}
+
+export function buildSnapshotStorageKey({ projectId, sessionId } = {}) {
+  const sid = asText(sessionId).trim();
+  if (!sid) return "";
+  return scopeKey(projectId, sid);
+}
+
+function localStorageKey(key) {
+  return `${SNAPSHOT_LOCAL_PREFIX}${key}`;
+}
+
+function normalizeReason(reason) {
+  const raw = asText(reason).trim().toLowerCase();
+  if (!raw) return "autosave";
+  if (raw.includes("manual_restore")) return "manual_restore";
+  if (raw.includes("manual_checkpoint")) return "manual_checkpoint";
+  if (raw.includes("tab_switch")) return "tab_switch";
+  if (raw.includes("interview")) return "interview_change";
+  if (raw.includes("import")) return "import";
+  if (raw.includes("seed")) return "seed";
+  if (raw.includes("persist")) return "persist_ok";
+  if (raw.includes("autosave")) return "autosave";
+  return raw;
+}
+
+function snapshotMode(reason) {
+  const raw = asText(reason).trim().toLowerCase();
+  if (raw === "manual_checkpoint") return "manual";
+  return "auto";
+}
+
+function snapshotBackendHint() {
+  if (typeof window === "undefined") return "none";
+  try {
+    return typeof window.indexedDB === "undefined"
+      ? "localStorage"
+      : "indexedDB+localStorage";
+  } catch {
+    return "localStorage";
+  }
+}
+
+function logSnapshotDecision(payload = {}) {
+  // eslint-disable-next-line no-console
+  console.debug(
+    `SNAPSHOT_DECISION sid=${asText(payload?.sid || "-")} rev=${asNumber(payload?.rev, 0)} `
+    + `hash=${asText(payload?.hash || "")} len=${asNumber(payload?.len, 0)} `
+    + `existingCount=${asNumber(payload?.existingCount, 0)} lastSnapshotId=${asText(payload?.lastSnapshotId || "-")} `
+    + `lastHash=${asText(payload?.lastHash || "-")} reason=${asText(payload?.reason || "read_fail")} `
+    + `key="${asText(payload?.key || "")}" mode=${asText(payload?.mode || "auto")} force=${payload?.force ? 1 : 0}`,
+  );
+}
+
+function normalizeSnapshot(raw) {
+  const xml = asText(raw?.xml);
+  const hash = asText(raw?.hash || fnv1aHex(xml));
+  const id = asText(raw?.id || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
+  const ts = asNumber(raw?.ts, Date.now());
+  const rev = asNumber(raw?.rev, 0);
+  const reason = normalizeReason(raw?.reason);
+  const len = asNumber(raw?.len, xml.length);
+  const label = asText(raw?.label).trim();
+  return {
+    id,
+    ts,
+    reason,
+    xml,
+    hash,
+    len,
+    rev,
+    ...(label ? { label } : {}),
+  };
+}
+
+function normalizeRecord(raw) {
+  const items = Array.isArray(raw?.items) ? raw.items.map(normalizeSnapshot) : [];
+  const sorted = items
+    .filter((item) => asText(item?.xml).trim())
+    .sort((a, b) => {
+      const t = asNumber(b?.ts, 0) - asNumber(a?.ts, 0);
+      if (t !== 0) return t;
+      return asText(b?.id).localeCompare(asText(a?.id));
+    });
+  return {
+    key: asText(raw?.key),
+    updatedAt: asNumber(raw?.updatedAt, Date.now()),
+    items: sorted,
+  };
+}
+
+async function openSnapshotsDb() {
+  if (typeof window === "undefined" || typeof window.indexedDB === "undefined") return null;
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((resolve) => {
+    try {
+      const req = window.indexedDB.open(SNAPSHOT_DB_NAME, SNAPSHOT_DB_VERSION);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(SNAPSHOT_DB_STORE)) {
+          db.createObjectStore(SNAPSHOT_DB_STORE, { keyPath: "key" });
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+  return dbPromise;
+}
+
+async function readRecordFromIdb(key) {
+  const db = await openSnapshotsDb();
+  if (!db) return null;
+  return await new Promise((resolve) => {
+    try {
+      const tx = db.transaction(SNAPSHOT_DB_STORE, "readonly");
+      const store = tx.objectStore(SNAPSHOT_DB_STORE);
+      const req = store.get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+async function writeRecordToIdb(record) {
+  const db = await openSnapshotsDb();
+  if (!db) return false;
+  return await new Promise((resolve) => {
+    try {
+      const tx = db.transaction(SNAPSHOT_DB_STORE, "readwrite");
+      const store = tx.objectStore(SNAPSHOT_DB_STORE);
+      store.put(record);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+      tx.onabort = () => resolve(false);
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+function readRecordFromLocalStorageRaw(key) {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage?.getItem(localStorageKey(key));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeRecordToLocalStorage(record) {
+  if (typeof window === "undefined") return false;
+  try {
+    window.localStorage?.setItem(localStorageKey(record.key), JSON.stringify(record));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readRawRecord(key) {
+  const fromDb = await readRecordFromIdb(key);
+  if (fromDb && typeof fromDb === "object") return fromDb;
+  const fromLs = readRecordFromLocalStorageRaw(key);
+  if (fromLs && typeof fromLs === "object") return fromLs;
+  return null;
+}
+
+async function readRecordWithFallback(primaryKey, fallbackKey = "") {
+  const primaryRaw = await readRawRecord(primaryKey);
+  if (primaryRaw && typeof primaryRaw === "object") {
+    return {
+      record: normalizeRecord(primaryRaw),
+      fromLegacy: false,
+      sourceKey: primaryKey,
+    };
+  }
+
+  const fallback = asText(fallbackKey).trim();
+  if (fallback && fallback !== primaryKey) {
+    const legacyRaw = await readRawRecord(fallback);
+    if (legacyRaw && typeof legacyRaw === "object") {
+      return {
+        record: normalizeRecord({ ...legacyRaw, key: primaryKey }),
+        fromLegacy: true,
+        sourceKey: fallback,
+      };
+    }
+  }
+
+  return {
+    record: normalizeRecord({ key: primaryKey, items: [] }),
+    fromLegacy: false,
+    sourceKey: primaryKey,
+  };
+}
+
+async function writeRecord(record) {
+  const normalized = normalizeRecord(record);
+  normalized.updatedAt = Date.now();
+  if (!normalized.key) return false;
+  const idbOk = await writeRecordToIdb(normalized);
+  const lsOk = writeRecordToLocalStorage(normalized);
+  return idbOk || lsOk;
+}
+
+function createSnapshotId(ts, rev, hash, existingIds = new Set()) {
+  const stamp = asNumber(ts, Date.now());
+  const short = asText(hash).slice(0, 8) || "00000000";
+  const base = `${stamp}_${asNumber(rev, 0)}_${short}`;
+  if (!existingIds.has(base)) return base;
+  let idx = 1;
+  while (existingIds.has(`${base}_${idx}`)) idx += 1;
+  return `${base}_${idx}`;
+}
+
+export async function listBpmnSnapshots({ projectId, sessionId }) {
+  const sid = asText(sessionId).trim();
+  if (!sid) return [];
+  const key = scopeKey(projectId, sid);
+  const legacyKey = legacyScopeKey(projectId, sid);
+  const { record, fromLegacy } = await readRecordWithFallback(key, legacyKey);
+  if (fromLegacy) {
+    await writeRecord({ key, updatedAt: Date.now(), items: record.items });
+    logSnapshotTrace("migrate_legacy", { sid, key, legacy_key: legacyKey, kept: record.items.length });
+  }
+  logSnapshotTrace("list", {
+    sid,
+    key,
+    count: Array.isArray(record?.items) ? record.items.length : 0,
+    backend: snapshotBackendHint(),
+  });
+  return Array.isArray(record?.items) ? record.items : [];
+}
+
+export async function getLatestBpmnSnapshot({ projectId, sessionId }) {
+  const list = await listBpmnSnapshots({ projectId, sessionId });
+  return list.length ? list[0] : null;
+}
+
+export async function saveBpmnSnapshot(payload = {}) {
+  const sid = asText(payload?.sessionId).trim();
+  const xml = asText(payload?.xml);
+  const forceRequested = payload?.force === true;
+  const limit = Math.max(1, asNumber(payload?.limit, SNAPSHOT_DEFAULT_LIMIT));
+  const reason = normalizeReason(payload?.reason || (forceRequested ? "manual_checkpoint" : "autosave"));
+  const mode = snapshotMode(reason);
+  const force = forceRequested || mode === "manual";
+  const rev = asNumber(payload?.rev, 0);
+  const hash = fnv1aHex(xml);
+  const backend = snapshotBackendHint();
+
+  if (!sid) {
+    const response = {
+      ok: false,
+      saved: false,
+      error: "missing_session_id",
+      decisionReason: "wrong_key",
+      key: "",
+      existingCount: 0,
+      lastSnapshotId: "",
+      lastHash: "",
+      hash,
+      len: xml.length,
+    };
+    logSnapshotDecision({
+      sid,
+      rev,
+      hash,
+      len: xml.length,
+      existingCount: 0,
+      lastSnapshotId: "",
+      lastHash: "",
+      reason: response.decisionReason,
+      key: "",
+      mode,
+      force,
+    });
+    return response;
+  }
+  if (!xml.trim()) {
+    const response = {
+      ok: false,
+      saved: false,
+      error: "empty_xml",
+      decisionReason: "read_fail",
+      key: scopeKey(payload?.projectId, sid),
+      existingCount: 0,
+      lastSnapshotId: "",
+      lastHash: "",
+      hash,
+      len: xml.length,
+    };
+    logSnapshotDecision({
+      sid,
+      rev,
+      hash,
+      len: xml.length,
+      existingCount: 0,
+      lastSnapshotId: "",
+      lastHash: "",
+      reason: response.decisionReason,
+      key: scopeKey(payload?.projectId, sid),
+      mode,
+      force,
+    });
+    return response;
+  }
+
+  const key = scopeKey(payload?.projectId, sid);
+  const legacyKey = legacyScopeKey(payload?.projectId, sid);
+  if (!key) {
+    const response = {
+      ok: false,
+      saved: false,
+      error: "invalid_storage_key",
+      decisionReason: "wrong_key",
+      key,
+      existingCount: 0,
+      lastSnapshotId: "",
+      lastHash: "",
+      hash,
+      len: xml.length,
+    };
+    logSnapshotDecision({
+      sid,
+      rev,
+      hash,
+      len: xml.length,
+      existingCount: 0,
+      lastSnapshotId: "",
+      lastHash: "",
+      reason: response.decisionReason,
+      key,
+      mode,
+      force,
+    });
+    return response;
+  }
+
+  let readMeta;
+  try {
+    readMeta = await readRecordWithFallback(key, legacyKey);
+  } catch {
+    const response = {
+      ok: false,
+      saved: false,
+      error: "snapshot_read_failed",
+      decisionReason: "read_fail",
+      key,
+      existingCount: 0,
+      lastSnapshotId: "",
+      lastHash: "",
+      hash,
+      len: xml.length,
+    };
+    logSnapshotDecision({
+      sid,
+      rev,
+      hash,
+      len: xml.length,
+      existingCount: 0,
+      lastSnapshotId: "",
+      lastHash: "",
+      reason: response.decisionReason,
+      key,
+      mode,
+      force,
+    });
+    return response;
+  }
+
+  const current = Array.isArray(readMeta?.record?.items) ? readMeta.record.items : [];
+  const existingCount = current.length;
+  const latest = current[0] || null;
+  const lastSnapshotId = asText(latest?.id || "");
+  const lastHash = asText(latest?.hash || "");
+
+  if (!force && latest && rev > 0 && asNumber(latest?.rev, 0) === rev && lastHash === hash) {
+    logSnapshotTrace("save_skip_same_rev", { sid, key, rev, hash, len: xml.length, existing: existingCount });
+    const response = {
+      ok: true,
+      saved: false,
+      deduped: true,
+      decisionReason: "skip_same_rev",
+      key,
+      existingCount,
+      lastSnapshotId,
+      lastHash,
+      hash,
+      len: xml.length,
+      snapshot: latest,
+    };
+    logSnapshotDecision({
+      sid,
+      rev,
+      hash,
+      len: xml.length,
+      existingCount,
+      lastSnapshotId,
+      lastHash,
+      reason: response.decisionReason,
+      key,
+      mode,
+      force,
+    });
+    return response;
+  }
+
+  if (!force && latest && lastHash === hash) {
+    logSnapshotTrace("save_skip_same_hash", { sid, key, rev, hash, len: xml.length, existing: existingCount });
+    const response = {
+      ok: true,
+      saved: false,
+      deduped: true,
+      decisionReason: "skip_same_hash",
+      key,
+      existingCount,
+      lastSnapshotId,
+      lastHash,
+      hash,
+      len: xml.length,
+      snapshot: latest,
+    };
+    logSnapshotDecision({
+      sid,
+      rev,
+      hash,
+      len: xml.length,
+      existingCount,
+      lastSnapshotId,
+      lastHash,
+      reason: response.decisionReason,
+      key,
+      mode,
+      force,
+    });
+    return response;
+  }
+
+  const now = Date.now();
+  const existingIds = new Set(current.map((item) => asText(item?.id)));
+  const nextItem = normalizeSnapshot({
+    id: createSnapshotId(now, rev, hash, existingIds),
+    ts: now,
+    reason,
+    xml,
+    hash,
+    len: xml.length,
+    rev,
+    label: asText(payload?.label).trim(),
+  });
+
+  const mergedRaw = [nextItem, ...current];
+  const pruned = mergedRaw.length > limit;
+  const merged = mergedRaw.slice(0, limit);
+  const ok = await writeRecord({
+    key,
+    updatedAt: now,
+    items: merged,
+  });
+
+  if (!ok) {
+    const response = {
+      ok: false,
+      saved: false,
+      error: "snapshot_write_failed",
+      decisionReason: "read_fail",
+      key,
+      existingCount,
+      lastSnapshotId,
+      lastHash,
+      hash,
+      len: xml.length,
+    };
+    logSnapshotDecision({
+      sid,
+      rev,
+      hash,
+      len: xml.length,
+      existingCount,
+      lastSnapshotId,
+      lastHash,
+      reason: response.decisionReason,
+      key,
+      mode,
+      force,
+    });
+    return response;
+  }
+
+  if (pruned) {
+    // eslint-disable-next-line no-console
+    console.debug(`SNAPSHOT_PRUNE before=${mergedRaw.length} after=${merged.length} key="${key}" sid=${sid}`);
+  }
+
+  const decisionReason = pruned ? "pruned" : "saved_new";
+  logSnapshotTrace("save", {
+    sid,
+    key,
+    reason,
+    rev,
+    len: xml.length,
+    hash,
+    kept: merged.length,
+    from_legacy: readMeta?.fromLegacy ? 1 : 0,
+    mode,
+    force: force ? 1 : 0,
+    backend,
+  });
+
+  const response = {
+    ok: true,
+    saved: true,
+    snapshot: nextItem,
+    decisionReason,
+    key,
+    existingCount,
+    lastSnapshotId,
+    lastHash,
+    hash,
+    len: xml.length,
+  };
+  // eslint-disable-next-line no-console
+  console.debug(
+    `SNAPSHOT_SAVED sid=${sid} id=${nextItem.id} rev=${rev} hash=${hash} len=${xml.length} `
+    + `reason=${reason} key="${key}" mode=${mode} force=${force ? 1 : 0} backend=${backend}`,
+  );
+  logSnapshotDecision({
+    sid,
+    rev,
+    hash,
+    len: xml.length,
+    existingCount,
+    lastSnapshotId,
+    lastHash,
+    reason: decisionReason,
+    key,
+    mode,
+    force,
+  });
+  return response;
+}
+
+export async function clearBpmnSnapshots({ projectId, sessionId }) {
+  const sid = asText(sessionId).trim();
+  if (!sid) return { ok: false };
+  const key = scopeKey(projectId, sid);
+  const legacyKey = legacyScopeKey(projectId, sid);
+  const ok1 = await writeRecord({ key, updatedAt: Date.now(), items: [] });
+  const ok2 = legacyKey !== key
+    ? await writeRecord({ key: legacyKey, updatedAt: Date.now(), items: [] })
+    : true;
+  const ok = ok1 || ok2;
+  logSnapshotTrace("clear", { sid, key, legacy_key: legacyKey, ok: ok ? 1 : 0 });
+  return { ok };
+}
+
+export async function getBpmnSnapshotById({ projectId, sessionId, snapshotId }) {
+  const id = asText(snapshotId).trim();
+  if (!id) return null;
+  const list = await listBpmnSnapshots({ projectId, sessionId });
+  return list.find((item) => asText(item?.id) === id) || null;
+}
+
+export function shortSnapshotHash(xmlOrHash) {
+  const raw = asText(xmlOrHash).trim();
+  const hash = raw.length === 8 ? raw : fnv1aHex(raw);
+  return hash.slice(0, 8);
+}

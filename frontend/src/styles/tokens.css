@@ -1,0 +1,75 @@
+:root,
+.light {
+  --bg: 220 24% 93%;
+  --bg-soft: 219 25% 90%;
+  --panel: 220 22% 97%;
+  --panel2: 219 20% 94%;
+  --text: 222 46% 16%;
+  --muted: 219 19% 38%;
+  --border: 217 22% 78%;
+  --border-strong: 217 20% 66%;
+  --accent: 234 89% 60%;
+  --accent2: 219 84% 58%;
+  --accent-hover: 234 84% 55%;
+  --accent-soft: 227 76% 92%;
+  --danger: 0 73% 52%;
+  --success: 142 74% 32%;
+  --warning: 35 91% 43%;
+  --info: 200 90% 38%;
+  --ring: 220 86% 56%;
+  --focus: 220 90% 52%;
+  --shadow: 0 8px 22px rgba(15, 23, 42, 0.11);
+  --accent-ink: 0 0% 100%;
+  --ink: hsl(var(--text));
+  --bpmn-bg: hsl(216 35% 96%);
+  --bpmn-grid-major: hsl(216 24% 79% / 0.2);
+  --bpmn-grid-minor: hsl(216 20% 85% / 0.14);
+  --bpmn-glow-a: hsl(223 88% 66% / 0.1);
+  --bpmn-glow-b: hsl(196 84% 60% / 0.08);
+
+  /* compatibility aliases for legacy rules */
+  --c-bg: hsl(var(--bg));
+  --c-bg-soft: hsl(var(--bg-soft));
+  --c-panel: hsl(var(--panel));
+  --c-panel-2: hsl(var(--panel2));
+  --c-border: hsl(var(--border));
+  --c-border-strong: hsl(var(--border-strong));
+  --c-text: hsl(var(--text));
+  --c-text-muted: hsl(var(--muted));
+  --c-accent: hsl(var(--accent));
+  --c-accent-hover: hsl(var(--accent-hover));
+  --c-accent-soft: hsl(var(--accent-soft));
+  --c-focus: hsl(var(--focus));
+  --c-success: hsl(var(--success));
+  --c-warning: hsl(var(--warning));
+  --c-danger: hsl(var(--danger));
+  --c-info: hsl(var(--info));
+}
+
+.dark {
+  --bg: 223 47% 8%;
+  --bg-soft: 222 43% 12%;
+  --panel: 223 41% 15%;
+  --panel2: 223 37% 18%;
+  --text: 220 56% 95%;
+  --muted: 221 38% 74%;
+  --border: 222 35% 26%;
+  --border-strong: 222 33% 38%;
+  --accent: 234 93% 64%;
+  --accent2: 210 94% 64%;
+  --accent-hover: 235 92% 70%;
+  --accent-soft: 226 37% 28%;
+  --danger: 0 85% 61%;
+  --success: 142 71% 45%;
+  --warning: 38 92% 55%;
+  --info: 199 88% 59%;
+  --ring: 213 100% 69%;
+  --focus: 213 100% 69%;
+  --shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
+  --accent-ink: 0 0% 100%;
+  --bpmn-bg: hsl(222 43% 11%);
+  --bpmn-grid-major: hsl(220 30% 30% / 0.28);
+  --bpmn-grid-minor: hsl(220 24% 22% / 0.18);
+  --bpmn-glow-a: hsl(232 94% 66% / 0.16);
+  --bpmn-glow-b: hsl(199 93% 62% / 0.12);
+}

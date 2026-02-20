@@ -1,0 +1,205 @@
+import { useCallback, useEffect, useRef } from "react";
+import { apiPatchSession } from "../../../lib/api/sessionApi";
+import useAutosaveQueue from "./useAutosaveQueue";
+import { parseAndProjectBpmnToInterview } from "./useInterviewProjection";
+import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
+import { traceProcess } from "../lib/processDebugTrace";
+import {
+  asArray,
+  asObject,
+  safeJson,
+  buildInterviewPatchPayload,
+} from "../lib/processStageDomain";
+
+function shortErr(x) {
+  const s = String(x || "").trim();
+  if (!s) return "";
+  return s.length > 160 ? `${s.slice(0, 160)}…` : s;
+}
+
+export default function useDiagramMutationLifecycle({
+  sid,
+  isLocal,
+  draft,
+  bpmnSync,
+  projectionHelpers,
+  onSessionSync,
+  onError,
+}) {
+  const draftRef = useRef(draft);
+
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
+  const commitDiagramAutosave = useCallback(
+    async (job, { isStale }) => {
+      if (!sid) return true;
+
+      const mutationKind = String(job?.mutation?.kind || "").trim().toLowerCase();
+      traceProcess("diagram.autosave_start", { sid, mutation_kind: mutationKind });
+      const saveRes = mutationKind.startsWith("xml.")
+        ? await bpmnSync.saveFromXmlDraft()
+        : await bpmnSync.saveFromModeler();
+      traceProcess("diagram.autosave_saved", {
+        sid,
+        mutation_kind: mutationKind,
+        ok: !!saveRes?.ok,
+        xml_len: String(saveRes?.xml || "").length,
+      });
+      if (!saveRes?.ok) {
+        const errLabel = mutationKind.startsWith("xml.") ? "XML" : "BPMN";
+        onError?.(shortErr(saveRes?.error || `Не удалось сохранить ${errLabel} после изменения.`));
+        return false;
+      }
+
+      const xmlFromSave = String(saveRes?.xml || "");
+      const draftNow = asObject(draftRef.current);
+      const fallbackXml = String(draftNow?.bpmn_xml || "");
+      const xml = xmlFromSave.trim() ? xmlFromSave : fallbackXml;
+      if (!xmlFromSave.trim() && fallbackXml.trim()) {
+        traceProcess("diagram.autosave_xml_fallback", {
+          sid,
+          mutation_kind: mutationKind,
+          fallback_len: fallbackXml.length,
+          pending: saveRes?.pending ? 1 : 0,
+        });
+      }
+      const baseOptimistic = {
+        ...draftNow,
+        id: sid,
+        session_id: sid,
+        bpmn_xml: xml,
+      };
+
+      let optimisticSession = baseOptimistic;
+      let patch = {};
+      let derivedActors = [];
+
+      if (xml.trim()) {
+        derivedActors = deriveActorsFromBpmn(xml);
+        const projected = parseAndProjectBpmnToInterview({
+          xmlText: xml,
+          draft: baseOptimistic,
+          helpers: projectionHelpers,
+          preferBpmn: true,
+          forceTimelineFromBpmn: true,
+        });
+
+        if (projected.ok) {
+          const nextInterview = asObject(projected.nextInterview);
+          const nextNodes = asArray(projected.nextNodes);
+          const nextEdges = asArray(projected.nextEdges);
+
+          const savePlan = buildInterviewPatchPayload(
+            nextInterview,
+            nextNodes,
+            draftNow?.nodes,
+            nextEdges,
+            draftNow?.edges,
+          );
+          const interviewChanged = safeJson(nextInterview) !== safeJson(draftNow?.interview);
+
+          if (interviewChanged) patch.interview = nextInterview;
+          if (savePlan.nodesChanged) patch.nodes = nextNodes;
+          if (savePlan.edgesChanged) patch.edges = nextEdges;
+
+          optimisticSession = {
+            ...baseOptimistic,
+            interview: nextInterview,
+            nodes: nextNodes,
+            edges: nextEdges,
+            actors_derived: derivedActors,
+          };
+        }
+      }
+
+      if (!xml.trim()) {
+        derivedActors = [];
+      }
+
+      if (!optimisticSession.actors_derived) {
+        optimisticSession = {
+          ...optimisticSession,
+          actors_derived: derivedActors,
+        };
+      }
+
+      onSessionSync?.(optimisticSession);
+      traceProcess("diagram.autosave_optimistic_sync", {
+        sid,
+        patch_keys: Object.keys(patch),
+      });
+      if (isLocal || isStale?.()) return true;
+      if (Object.keys(patch).length === 0) return true;
+
+      const patchRes = await apiPatchSession(sid, patch);
+      traceProcess("diagram.autosave_patch_backend", {
+        sid,
+        ok: !!patchRes.ok,
+        patch_keys: Object.keys(patch),
+      });
+      if (!patchRes.ok) {
+        onError?.(shortErr(patchRes.error || "Не удалось синхронизировать Interview после изменения диаграммы."));
+        return false;
+      }
+
+      if (isStale?.()) return true;
+      const patchedSession = patchRes.session && typeof patchRes.session === "object"
+        ? patchRes.session
+        : optimisticSession;
+      onSessionSync?.({
+        ...patchedSession,
+        actors_derived: asArray(optimisticSession?.actors_derived),
+      });
+      return true;
+    },
+    [sid, bpmnSync, projectionHelpers, onSessionSync, isLocal, onError],
+  );
+
+  const {
+    schedule: scheduleDiagramAutosave,
+    flush: flushDiagramAutosave,
+    cancel: cancelDiagramAutosave,
+    hasPending: hasPendingDiagramAutosave,
+  } = useAutosaveQueue({
+    enabled: !!sid,
+    debounceMs: 150,
+    onSave: commitDiagramAutosave,
+  });
+
+  useEffect(() => {
+    cancelDiagramAutosave();
+  }, [sid, cancelDiagramAutosave]);
+
+  const queueDiagramMutation = useCallback(
+    (mutation) => {
+      if (!sid) return;
+      const mutationKind = String(mutation?.kind || mutation || "diagram.change");
+      traceProcess("diagram.queue_mutation", { sid, mutation_kind: mutationKind });
+      scheduleDiagramAutosave({
+        mutation: mutation && typeof mutation === "object" ? mutation : { kind: String(mutation || "diagram.change") },
+        at: Date.now(),
+      });
+    },
+    [sid, scheduleDiagramAutosave],
+  );
+
+  const flushDiagramBeforeTabSwitch = useCallback(
+    async (currentTab, targetTab) => {
+      const current = String(currentTab || "").toLowerCase();
+      const target = String(targetTab || "").toLowerCase();
+      if (!sid) return true;
+      if (!["diagram", "xml"].includes(current)) return true;
+      if (target === current) return true;
+      if (!hasPendingDiagramAutosave()) return true;
+      return flushDiagramAutosave();
+    },
+    [sid, hasPendingDiagramAutosave, flushDiagramAutosave],
+  );
+
+  return {
+    queueDiagramMutation,
+    flushDiagramBeforeTabSwitch,
+  };
+}

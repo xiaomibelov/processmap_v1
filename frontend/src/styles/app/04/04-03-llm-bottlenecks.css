@@ -1,0 +1,398 @@
+/* fpc: llm_verify_and_bottlenecks_v1 */
+.aiHealthPill{
+  font-weight: 700;
+}
+
+.aiHealthPill.state-ok{
+  color: #dcfce7;
+  border-color: rgba(34,197,94,.44);
+}
+
+.aiHealthPill.state-fail{
+  color: #fee2e2;
+  border-color: rgba(248,113,113,.52);
+}
+
+.aiHealthPill.state-checking{
+  color: #fef3c7;
+  border-color: rgba(245,158,11,.45);
+}
+
+.aiHealthPill.state-unknown{
+  color: #dbeafe;
+  border-color: rgba(96,165,250,.45);
+}
+
+.aiHealthLine{
+  padding: 2px 0;
+}
+
+.aiHealthLine.state-ok{
+  color: #d1fae5;
+}
+
+.aiHealthLine.state-fail{
+  color: #fecaca;
+}
+
+.aiHealthLine.state-checking{
+  color: #fde68a;
+}
+
+.aiBottleneckPanel{
+  margin: 0 12px 10px;
+  border: 1px solid rgba(248,113,113,.35);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(248,113,113,.12), rgba(30,41,59,.24));
+  padding: 10px 12px;
+}
+
+.aiBottleneckHead{
+  font-weight: 800;
+  color: #fecaca;
+  margin-bottom: 6px;
+}
+
+.aiBottleneckList{
+  display: grid;
+  gap: 6px;
+}
+
+.aiBottleneckItem{
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.12);
+  padding: 6px 8px;
+  color: rgba(248,250,252,.95);
+  background: rgba(15,23,42,.42);
+}
+
+.aiBottleneckItem.sev-high{
+  border-color: rgba(248,113,113,.45);
+}
+
+.aiBottleneckItem.sev-medium{
+  border-color: rgba(245,158,11,.40);
+}
+
+.aiBottleneckItem.sev-low{
+  border-color: rgba(96,165,250,.34);
+}
+
+.apiClarifyPanel{
+  margin: 0 12px 10px;
+  border: 1px solid rgba(96,165,250,.35);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(59,130,246,.10), rgba(15,23,42,.24));
+  padding: 10px 12px;
+}
+
+.apiClarifyHead{
+  font-weight: 800;
+  color: #dbeafe;
+  margin-bottom: 6px;
+}
+
+.apiClarifyList{
+  display: grid;
+  gap: 6px;
+}
+
+.apiClarifyInfo{
+  display: grid;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding: 8px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 8px;
+  background: rgba(15,23,42,.38);
+  color: rgba(226,232,240,.92);
+}
+
+.apiClarifyActions{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.apiClarifyItem{
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: rgba(15,23,42,.42);
+  color: rgba(248,250,252,.95);
+}
+
+.apiClarifyBanner{
+  margin: 0 12px 10px;
+  border: 1px solid rgba(96,165,250,.35);
+  border-radius: 10px;
+  background: rgba(15,23,42,.42);
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.apiReviewPage{
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid rgba(96,165,250,.3);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(59,130,246,.1), rgba(15,23,42,.26));
+  padding: 10px 12px;
+}
+
+.llmReviewPage{
+  border-color: rgba(34,211,238,.35);
+  background: linear-gradient(180deg, rgba(34,211,238,.08), rgba(15,23,42,.26));
+}
+
+.apiReviewHead{
+  display: grid;
+  gap: 8px;
+}
+
+.apiReviewTitle{
+  font-weight: 800;
+  color: #dbeafe;
+}
+
+.apiReviewMeta{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: rgba(226,232,240,.95);
+  font-size: 12px;
+}
+
+.apiReviewActions{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.apiReviewInfo{
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 8px;
+  background: rgba(15,23,42,.4);
+  color: rgba(226,232,240,.92);
+}
+
+.apiReviewList{
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+  padding-right: 2px;
+}
+
+.apiReviewEmpty{
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 8px;
+  padding: 10px;
+  color: rgba(226,232,240,.86);
+  background: rgba(15,23,42,.4);
+}
+
+.apiReviewItem{
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(15,23,42,.42);
+  color: rgba(248,250,252,.95);
+}
+
+.apiReviewItemHead{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.djs-element.fpcBottleneckHigh .djs-visual > :is(rect, circle, ellipse, polygon, path){
+  stroke: #ff6b6b !important;
+  stroke-width: 3px !important;
+}
+
+.djs-element.fpcBottleneckMedium .djs-visual > :is(rect, circle, ellipse, polygon, path){
+  stroke: #f59e0b !important;
+  stroke-width: 3px !important;
+}
+
+.djs-element.fpcBottleneckLow .djs-visual > :is(rect, circle, ellipse, polygon, path){
+  stroke: #60a5fa !important;
+  stroke-width: 3px !important;
+}
+
+.fpcBottleneckTag{
+  min-width: 42px;
+  text-align: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 800;
+  border: 1px solid transparent;
+  color: #fff;
+  box-shadow: 0 1px 6px rgba(2,6,23,.45);
+  letter-spacing: .02em;
+}
+
+.fpcBottleneckTag.hint{
+  min-width: 0;
+  max-width: 180px;
+  padding: 4px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  line-height: 1.15;
+  letter-spacing: 0;
+  text-align: left;
+  white-space: normal;
+}
+
+.fpcBottleneckTag.high{
+  background: rgba(220,38,38,.92);
+  border-color: rgba(254,202,202,.55);
+}
+
+.fpcBottleneckTag.medium{
+  background: rgba(217,119,6,.92);
+  border-color: rgba(253,230,138,.55);
+}
+
+.fpcBottleneckTag.low{
+  background: rgba(37,99,235,.9);
+  border-color: rgba(191,219,254,.55);
+}
+
+.djs-element.fpcNodeFocus .djs-visual > :is(rect, circle, ellipse, polygon, path){
+  stroke: #22d3ee !important;
+  stroke-width: 4px !important;
+  filter: drop-shadow(0 0 8px rgba(34,211,238,.5));
+}
+
+.djs-element.fpcElementSelected .djs-visual > :is(rect, circle, ellipse, polygon, path, line, polyline){
+  stroke: #38bdf8 !important;
+  stroke-width: 3px !important;
+  filter: drop-shadow(0 0 8px rgba(56,189,248,.42));
+}
+
+.djs-connection.fpcElementSelected path{
+  stroke: #38bdf8 !important;
+  stroke-width: 3px !important;
+  filter: drop-shadow(0 0 8px rgba(56,189,248,.42));
+}
+
+.djs-element.fpcInterviewNode .djs-visual > :is(rect, circle, ellipse, polygon){
+  stroke: rgba(125,211,252,.88) !important;
+  stroke-width: 2.4px !important;
+}
+
+.djs-element.fpcSendTask .djs-visual > rect{
+  fill: rgba(248,250,252,.16) !important;
+  stroke: rgba(241,245,249,.96) !important;
+  stroke-width: 1.7px !important;
+}
+
+.djs-element.fpcReceiveTask .djs-visual > rect{
+  fill: rgba(15,23,42,.42) !important;
+  stroke: rgba(148,163,184,.86) !important;
+  stroke-width: 1.45px !important;
+}
+
+.djs-element.fpcTaskLightBg .djs-visual > rect{
+  fill: rgba(219,234,254,.18) !important;
+  stroke: rgba(226,232,240,.95) !important;
+}
+
+.djs-element.fpcTaskLightBg .djs-visual [fill="#000000"],
+.djs-element.fpcTaskLightBg .djs-visual [fill="#000"],
+.djs-element.fpcTaskLightBg .djs-visual [fill="black"]{
+  fill: #eef6ff !important;
+}
+
+.djs-element.fpcTaskLightBg .djs-visual [stroke="#000000"],
+.djs-element.fpcTaskLightBg .djs-visual [stroke="#000"],
+.djs-element.fpcTaskLightBg .djs-visual [stroke="black"]{
+  stroke: #eef6ff !important;
+}
+
+.djs-element.fpcStartEvent .djs-visual circle{
+  stroke-width: 2.2px !important;
+}
+
+.djs-element.fpcEndEvent .djs-visual circle{
+  stroke-width: 4px !important;
+}
+
+.fpcInterviewChip{
+  min-width: 130px;
+  max-width: 280px;
+  border-radius: 10px;
+  border: 1px solid rgba(125,211,252,.42);
+  background: linear-gradient(180deg, rgba(15,23,42,.92), rgba(15,23,42,.78));
+  box-shadow: 0 4px 14px rgba(2,6,23,.45);
+  padding: 6px 8px;
+  color: rgba(236,246,255,.97);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.fpcInterviewChipSub{
+  display: inline-block;
+  border-radius: 999px;
+  padding: 1px 7px;
+  margin-bottom: 4px;
+  border: 1px solid rgba(59,130,246,.48);
+  background: rgba(30,64,175,.30);
+  font-weight: 800;
+  color: rgba(219,234,254,.98);
+}
+
+.fpcInterviewChipComment{
+  color: rgba(226,242,255,.94);
+  margin-bottom: 3px;
+}
+
+.fpcInterviewChipLane{
+  color: rgba(167,199,235,.84);
+  font-weight: 700;
+}
+
+.fpcInterviewSubprocessBox{
+  box-sizing: border-box;
+  border-radius: 12px;
+  border: 1.8px dashed var(--sp-color, rgba(56,189,248,.85));
+  background: color-mix(in srgb, var(--sp-color, rgba(56,189,248,.2)) 14%, rgba(15,23,42,.08));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sp-color, rgba(56,189,248,.45)) 34%, transparent);
+  pointer-events: none;
+  position: relative;
+}
+
+.fpcInterviewSubprocessLabel{
+  position: absolute;
+  top: -11px;
+  left: 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--sp-color, rgba(56,189,248,.45)) 42%, transparent);
+  background: linear-gradient(180deg, rgba(15,23,42,.94), rgba(15,23,42,.76));
+  padding: 1px 9px;
+  color: rgba(236,246,255,.96);
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+  line-height: 1.5;
+  letter-spacing: .01em;
+}
+

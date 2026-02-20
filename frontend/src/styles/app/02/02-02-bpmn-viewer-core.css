@@ -1,0 +1,315 @@
+/* fpc: bpmn_viewer_v1 */
+.bpmnViewer{
+  width: 100%;
+  height: 100%;
+  padding: 10px;
+}
+
+.bpmnHost{
+  width: 100%;
+  height: 100%;
+  border-radius: 10px;
+  background: rgba(255,255,255,.03);
+}
+
+/* bpmn-js creates its own SVG; keep it readable on dark */
+.bpmnHost .djs-container,
+.bpmnHost .djs-container svg{
+  background: transparent !important;
+}
+
+.bpmnViewerFallback{
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  padding: 10px;
+}
+
+/* fpc: bpmn_viewer_dark_v1 */
+.topbar select.topSelect{
+  color: var(--ink) !important;
+}
+
+.bpmnStage .bpmnViewer{
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+}
+
+.bpmnStage .bpmnOverlay{
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+  background: rgba(0,0,0,.20);
+  z-index: 5;
+  pointer-events: none;
+}
+
+.bpmnStage .bpmnXml{
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  margin: 0;
+  padding: 12px;
+  color: rgba(255,255,255,.90);
+  background: rgba(0,0,0,.18);
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.bpmnStage .djs-container,
+.bpmnStage .djs-container svg{
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.bpmnStage .djs-container .djs-label{
+  fill: rgba(255,255,255,.92) !important;
+}
+
+.bpmnStage .djs-container .djs-visual > :nth-child(1){
+  stroke: rgba(255,255,255,.55) !important;
+}
+
+.bpmnStage .djs-container .djs-visual > :nth-child(2){
+  stroke: rgba(255,255,255,.40) !important;
+}
+
+.bpmnStage .djs-container .djs-connection path{
+  stroke: rgba(255,255,255,.45) !important;
+}
+
+.bpmnStage .djs-container .djs-visual rect,
+.bpmnStage .djs-container .djs-visual circle,
+.bpmnStage .djs-container .djs-visual path{
+  fill: rgba(255,255,255,.06);
+}
+
+
+/* fpc: bpmn_tabs_warn_v1 */
+.bpmnStage .tabGroup{
+  display:inline-flex;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.16);
+  overflow:hidden;
+  background: rgba(0,0,0,.16);
+}
+
+.bpmnStage .tabBtn{
+  height: 30px;
+  line-height: 30px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: rgba(255,255,255,.75);
+  cursor: pointer;
+}
+
+.bpmnStage .tabBtn.active{
+  background: rgba(255,255,255,.10);
+  color: rgba(255,255,255,.95);
+}
+
+.bpmnStage .warnBox{
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.12);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.bpmnStage .warnTitle{
+  font-weight: 800;
+  margin-bottom: 6px;
+  color: rgba(255,255,255,.90);
+}
+
+.bpmnStage .warnList{
+  margin: 0;
+  padding-left: 18px;
+  color: rgba(255,255,255,.72);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.badge.warn{
+  border-color: rgba(255,210,120,.30);
+}
+
+
+/* fpc: bpmn_viewer_ref_fix_v1 */
+.bpmnStage{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  height: 100%;
+  min-height: 420px;
+}
+
+.bpmnTitleRow{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+
+.bpmnTools{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.chip{
+  height:28px;
+  padding:0 10px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.14);
+  background: rgba(0,0,0,.18);
+  color: var(--ink, rgba(255,255,255,.92));
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  line-height: 28px;
+}
+
+.chip.on{
+  border-color: rgba(120,160,255,.35);
+  background: rgba(90,130,255,.22);
+}
+
+.bpmnErr{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  color: var(--ink, rgba(255,255,255,.92));
+  opacity:.92;
+}
+
+.bpmnErrText{
+  opacity:.9;
+  font-size: 13px;
+}
+
+.bpmnViewerWrap{
+  flex:1;
+  min-height: 420px;
+  border-radius: 16px;
+  border:1px solid rgba(255,255,255,.10);
+  background: rgba(0,0,0,.18);
+  overflow:hidden;
+}
+
+.bpmnViewer{
+  width:100%;
+  height:100%;
+}
+
+.bpmnXmlWrap{
+  flex:1;
+  min-height: 420px;
+  border-radius: 16px;
+  border:1px solid rgba(255,255,255,.10);
+  background: rgba(0,0,0,.18);
+  overflow:auto;
+}
+
+.bpmnPre{
+  color: var(--ink, rgba(255,255,255,.92));
+  white-space: pre;
+}
+
+.bjs-container, .djs-container{
+  background: transparent !important;
+}
+
+.djs-outline{
+  display:none;
+}
+
+/* fpc: bpmn_stage_forwardref_fit_v1 */
+.bpmnStageRoot{
+  position: relative;
+  /* гарантируем высоту, чтобы fit-viewport не ужимал диаграмму в “полоску” */
+  height: calc(100vh - 240px);
+  min-height: 420px;
+}
+
+.bpmnToggle{
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  display: inline-flex;
+  gap: 8px;
+  z-index: 5;
+}
+
+.pillBtn{
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(0,0,0,.18);
+  color: rgba(255,255,255,.88);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+}
+
+.pillBtn.active{
+  background: rgba(255,255,255,.14);
+  border-color: rgba(255,255,255,.28);
+  color: rgba(255,255,255,.96);
+}
+
+.bpmnViewport{
+  height: 100%;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.90);
+  overflow: hidden;
+}
+
+.bpmnOverlay{
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(0,0,0,.55);
+  color: rgba(255,255,255,.92);
+  border: 1px solid rgba(255,255,255,.18);
+  max-width: calc(100% - 28px);
+  z-index: 6;
+  white-space: pre-wrap;
+}
+
+.bpmnOverlay.err{
+  background: rgba(120,20,20,.72);
+}
+
+.bpmnXml{
+  height: 100%;
+  margin: 0;
+  padding: 14px 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.20);
+  color: rgba(255,255,255,.88);
+  overflow: auto;
+  white-space: pre;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+@media (max-width: 900px){
+  .bpmnStageRoot{
+    height: calc(100vh - 300px);
+    min-height: 360px;
+  }
+}

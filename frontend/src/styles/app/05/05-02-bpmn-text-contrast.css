@@ -1,0 +1,446 @@
+.bpmnStage .djs-direct-editing-parent,
+.bpmnStage .djs-direct-editing-content{
+  background: rgba(15,23,42,.84) !important;
+  color: rgba(235,243,255,.96) !important;
+  border: 1px solid rgba(96,165,250,.34) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 6px 20px rgba(2,6,23,.45) !important;
+}
+
+.bpmnStage .djs-direct-editing-content::selection{
+  background: rgba(96,165,250,.34);
+  color: #f8fbff;
+}
+
+.bpmnCanvas .djs-element:not(.fpcBottleneckHigh):not(.fpcBottleneckMedium):not(.fpcBottleneckLow):not(.fpcElementSelected):not(.fpcTaskLightBg):not(.fpcSendTask):not(.fpcReceiveTask):not(.fpcStartEvent):not(.fpcEndEvent) .djs-visual > :is(rect, circle, ellipse, polygon){
+  fill: rgba(223,232,248,.08) !important;
+  stroke: rgba(214,226,244,.72) !important;
+  stroke-width: 1.35px !important;
+}
+
+.bpmnCanvas .djs-connection:not(.fpcElementSelected) path{
+  stroke: rgba(222,231,246,.72) !important;
+  stroke-width: 1.4px !important;
+}
+
+/* keep native send/receive icon contrast from bpmn-js renderer */
+.bpmnCanvas .djs-shape:not(.fpcTaskLightBg) .djs-visual > path{
+  fill: initial !important;
+  stroke: initial !important;
+}
+
+.interviewStage .input::placeholder,
+.interviewStage .textarea::placeholder,
+.interviewStage textarea::placeholder{
+  color: rgba(191,206,232,.24) !important;
+}
+
+/* fpc: bpmn_ux_readability_v1 */
+.dark .bpmnStage {
+  --bpmn-task-fill: rgba(15, 22, 38, 0.72);
+  --bpmn-task-stroke: rgba(236, 245, 255, 0.78);
+  --bpmn-task-text: rgba(240, 247, 255, 0.95);
+  --bpmn-flow-stroke: rgba(226, 236, 252, 0.9);
+  --bpmn-flow-hover: rgba(148, 191, 255, 0.98);
+  --bpmn-lane-fill: rgba(154, 192, 255, 0.06);
+  --bpmn-lane-stroke: rgba(194, 214, 246, 0.52);
+  --bpmn-pool-fill: rgba(163, 199, 255, 0.09);
+  --bpmn-pool-stroke: rgba(214, 228, 248, 0.68);
+  --bpmn-gateway-stroke: rgba(249, 195, 96, 0.95);
+  --bpmn-gateway-fill: rgba(249, 195, 96, 0.2);
+  --bpmn-start-stroke: rgba(52, 211, 153, 0.96);
+  --bpmn-start-fill: rgba(22, 163, 74, 0.46);
+  --bpmn-end-stroke: rgba(248, 113, 113, 0.98);
+  --bpmn-end-fill: rgba(185, 28, 28, 0.48);
+  --bpmn-hover-stroke: rgba(140, 196, 255, 0.96);
+  --bpmn-selected-stroke: rgba(111, 162, 255, 1);
+  --bpmn-selected-glow: rgba(82, 132, 255, 0.44);
+  --bpmn-note-accent: rgba(250, 204, 21, 0.98);
+  --bpmn-label-outline: rgba(6, 12, 24, 0.82);
+}
+
+.light .bpmnStage {
+  --bpmn-task-fill: rgba(255, 255, 255, 0.9);
+  --bpmn-task-stroke: rgba(48, 75, 118, 0.7);
+  --bpmn-task-text: rgba(21, 36, 58, 0.96);
+  --bpmn-flow-stroke: rgba(51, 79, 122, 0.82);
+  --bpmn-flow-hover: rgba(29, 103, 216, 0.96);
+  --bpmn-lane-fill: rgba(95, 130, 184, 0.08);
+  --bpmn-lane-stroke: rgba(77, 106, 150, 0.46);
+  --bpmn-pool-fill: rgba(91, 125, 182, 0.11);
+  --bpmn-pool-stroke: rgba(57, 84, 129, 0.62);
+  --bpmn-gateway-stroke: rgba(180, 111, 18, 0.92);
+  --bpmn-gateway-fill: rgba(245, 158, 11, 0.18);
+  --bpmn-start-stroke: rgba(22, 163, 74, 0.96);
+  --bpmn-start-fill: rgba(34, 197, 94, 0.34);
+  --bpmn-end-stroke: rgba(220, 38, 38, 0.95);
+  --bpmn-end-fill: rgba(248, 113, 113, 0.36);
+  --bpmn-hover-stroke: rgba(37, 99, 235, 0.95);
+  --bpmn-selected-stroke: rgba(37, 99, 235, 1);
+  --bpmn-selected-glow: rgba(96, 165, 250, 0.38);
+  --bpmn-note-accent: rgba(217, 119, 6, 0.98);
+  --bpmn-label-outline: rgba(236, 243, 252, 0.86);
+}
+
+.bpmnCanvas .djs-element[data-element-id^="Participant"] .djs-visual > rect {
+  fill: var(--bpmn-pool-fill) !important;
+  stroke: var(--bpmn-pool-stroke) !important;
+  stroke-width: 1.65px !important;
+}
+
+.bpmnCanvas .djs-element[data-element-id^="Participant"] .djs-visual > rect + rect {
+  fill: color-mix(in srgb, var(--bpmn-pool-fill) 72%, transparent) !important;
+}
+
+.bpmnCanvas .djs-element[data-element-id^="Lane"] .djs-visual > rect {
+  fill: var(--bpmn-lane-fill) !important;
+  stroke: var(--bpmn-lane-stroke) !important;
+  stroke-width: 1.35px !important;
+}
+
+.bpmnCanvas .djs-element[data-element-id^="Participant"] .djs-label,
+.bpmnCanvas .djs-element[data-element-id^="Lane"] .djs-label {
+  fill: var(--bpmn-task-text) !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  paint-order: stroke fill;
+  stroke: var(--bpmn-label-outline);
+  stroke-width: 2px;
+  stroke-linejoin: round;
+}
+
+.bpmnCanvas .djs-shape.fpcTaskLightBg .djs-visual > rect {
+  fill: var(--bpmn-task-fill) !important;
+  stroke: var(--bpmn-task-stroke) !important;
+  stroke-width: 1.55px !important;
+}
+
+.bpmnCanvas .djs-shape.fpcTaskLightBg .djs-label,
+.bpmnCanvas .djs-shape.fpcTaskLightBg text {
+  fill: var(--bpmn-task-text) !important;
+  font-weight: 600 !important;
+}
+
+.bpmnCanvas .djs-shape[data-element-id*="Gateway"] .djs-visual > polygon {
+  fill: var(--bpmn-gateway-fill) !important;
+  stroke: var(--bpmn-gateway-stroke) !important;
+  stroke-width: 2px !important;
+}
+
+.bpmnCanvas .djs-shape[data-element-id*="Gateway"] .djs-visual > path {
+  stroke: var(--bpmn-gateway-stroke) !important;
+  stroke-width: 1.5px !important;
+}
+
+.bpmnCanvas .djs-shape.fpcStartEvent .djs-visual > circle:first-child {
+  fill: var(--bpmn-start-fill) !important;
+  stroke: var(--bpmn-start-stroke) !important;
+  stroke-width: 2.4px !important;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--bpmn-start-stroke) 44%, transparent));
+}
+
+.bpmnCanvas .djs-shape.fpcStartEvent .djs-visual > circle + circle {
+  fill: transparent !important;
+  stroke: color-mix(in srgb, var(--bpmn-start-stroke) 84%, #ffffff) !important;
+  stroke-width: 1.5px !important;
+}
+
+.bpmnCanvas .djs-shape.fpcEndEvent .djs-visual > circle:first-child {
+  fill: var(--bpmn-end-fill) !important;
+  stroke: var(--bpmn-end-stroke) !important;
+  stroke-width: 2.8px !important;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--bpmn-end-stroke) 40%, transparent));
+}
+
+.bpmnCanvas .djs-shape.fpcEndEvent .djs-visual > circle + circle {
+  fill: transparent !important;
+  stroke: color-mix(in srgb, var(--bpmn-end-stroke) 90%, #fff) !important;
+  stroke-width: 2px !important;
+}
+
+.bpmnCanvas .djs-connection path {
+  stroke: var(--bpmn-flow-stroke) !important;
+  stroke-width: 1.8px !important;
+}
+
+.bpmnCanvas .djs-connection.hover path {
+  stroke: var(--bpmn-flow-hover) !important;
+  stroke-width: 2.2px !important;
+}
+
+.bpmnCanvas .djs-element.hover:not(.fpcElementSelected) .djs-visual > :is(rect, circle, ellipse, polygon) {
+  stroke: var(--bpmn-hover-stroke) !important;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--bpmn-hover-stroke) 32%, transparent));
+}
+
+.bpmnCanvas .djs-element.fpcElementSelected .djs-visual > :is(rect, circle, ellipse, polygon) {
+  stroke: var(--bpmn-selected-stroke) !important;
+  stroke-width: 2.2px !important;
+  filter: drop-shadow(0 0 8px var(--bpmn-selected-glow));
+}
+
+.bpmnCanvas .djs-element.fpcElementSelected .djs-connection path,
+.bpmnCanvas .djs-connection.fpcElementSelected path {
+  stroke: var(--bpmn-selected-stroke) !important;
+  stroke-width: 2.3px !important;
+}
+
+.bpmnCanvas marker path {
+  fill: var(--bpmn-flow-stroke) !important;
+  stroke: var(--bpmn-flow-stroke) !important;
+}
+
+.bpmnCanvas .djs-element.fpcHasNote .djs-visual > :is(rect, circle, ellipse, polygon) {
+  stroke: var(--bpmn-note-accent) !important;
+}
+
+.fpcNoteDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  pointer-events: none;
+  background: var(--bpmn-note-accent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--bpmn-note-accent) 26%, transparent),
+    0 0 10px color-mix(in srgb, var(--bpmn-note-accent) 42%, transparent);
+}
+
+.bpmnCanvas .djs-element.fpcHasUserNote .djs-visual > :is(rect, circle, ellipse, polygon) {
+  stroke: color-mix(in srgb, var(--bpmn-note-accent) 74%, #60a5fa) !important;
+}
+
+.bpmnCanvas .djs-element.fpcHasAiQuestion .djs-visual > :is(rect, circle, ellipse, polygon) {
+  stroke: color-mix(in srgb, var(--bpmn-note-accent) 44%, #f59e0b) !important;
+}
+
+.fpcUserNoteDot {
+  min-width: 13px;
+  height: 13px;
+  padding: 0 3px;
+  border-radius: 999px;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  background: color-mix(in srgb, var(--bpmn-note-accent) 68%, #2563eb);
+  border: 1px solid color-mix(in srgb, #fff 24%, transparent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--bpmn-note-accent) 20%, transparent),
+    0 0 10px color-mix(in srgb, var(--bpmn-note-accent) 36%, transparent);
+}
+
+.fpcAiQuestionDot {
+  min-width: 13px;
+  height: 13px;
+  padding: 0 3px;
+  border-radius: 999px;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  background: #f59e0b;
+  border: 1px solid color-mix(in srgb, #fff 24%, transparent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, #f59e0b 18%, transparent),
+    0 0 10px color-mix(in srgb, #f59e0b 30%, transparent);
+}
+
+.fpcAiQuestionIndicator {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 18px;
+  min-width: 64px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--bpmn-note-accent) 46%, rgba(255, 255, 255, 0.25));
+  background: color-mix(in srgb, var(--bpmn-note-accent) 26%, rgba(12, 18, 28, 0.84));
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--bpmn-note-accent) 14%, transparent),
+    0 4px 12px rgba(2, 8, 20, 0.26);
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease, background-color .12s ease;
+}
+
+.fpcAiQuestionIndicator:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--bpmn-note-accent) 24%, transparent),
+    0 8px 16px rgba(2, 8, 20, 0.3);
+}
+
+.fpcAiQuestionIndicator.warn {
+  border-color: color-mix(in srgb, #f59e0b 74%, rgba(255, 255, 255, 0.28));
+  background: color-mix(in srgb, #f59e0b 34%, rgba(18, 24, 36, 0.92));
+}
+
+.fpcAiQuestionIndicator.ok {
+  border-color: color-mix(in srgb, #10b981 52%, rgba(255, 255, 255, 0.24));
+  background: color-mix(in srgb, #10b981 22%, rgba(12, 18, 28, 0.86));
+}
+
+.fpcAiQuestionIndicator:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, #fff 16%, transparent),
+    0 0 0 4px color-mix(in srgb, #3b82f6 46%, transparent);
+}
+
+.fpcAiQuestionPanel {
+  width: min(340px, calc(100vw - 48px));
+  max-height: min(56vh, 460px);
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--bpmn-task-stroke) 52%, rgba(255, 255, 255, 0.2));
+  background: color-mix(in srgb, var(--bpmn-bg) 86%, rgba(10, 18, 32, 0.92));
+  box-shadow:
+    0 10px 30px rgba(2, 8, 20, 0.38),
+    0 0 0 1px color-mix(in srgb, var(--bpmn-selected-stroke) 22%, transparent);
+  backdrop-filter: blur(6px);
+  overflow: hidden;
+}
+
+.fpcAiQuestionPanelHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 10px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--bpmn-task-stroke) 30%, transparent);
+}
+
+.fpcAiQuestionPanelHeadText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fpcAiQuestionPanelTitle {
+  color: var(--bpmn-task-text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.fpcAiQuestionPanelMeta {
+  color: color-mix(in srgb, var(--bpmn-task-text) 78%, transparent);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.fpcAiQuestionPanelClose {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, var(--bpmn-task-stroke) 46%, transparent);
+  background: color-mix(in srgb, var(--bpmn-task-fill) 86%, transparent);
+  color: var(--bpmn-task-text);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.fpcAiQuestionList {
+  padding: 8px;
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+}
+
+.fpcAiQuestionRow {
+  border: 1px solid color-mix(in srgb, var(--bpmn-task-stroke) 38%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bpmn-task-fill) 88%, transparent);
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.fpcAiQuestionRow.done {
+  border-color: color-mix(in srgb, #10b981 46%, transparent);
+}
+
+.fpcAiQuestionLine {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.fpcAiQuestionCheck {
+  margin-top: 2px;
+  accent-color: #22c55e;
+}
+
+.fpcAiQuestionText {
+  color: var(--bpmn-task-text);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.32;
+}
+
+.fpcAiQuestionComment {
+  width: 100%;
+  min-height: 50px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--bpmn-task-stroke) 40%, transparent);
+  background: color-mix(in srgb, var(--bpmn-bg) 78%, transparent);
+  color: var(--bpmn-task-text);
+  font-size: 11px;
+  line-height: 1.35;
+  resize: vertical;
+  padding: 7px 8px;
+}
+
+.fpcAiQuestionComment:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--bpmn-selected-stroke) 72%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--bpmn-selected-stroke) 26%, transparent);
+}
+
+.fpcAiQuestionRowFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fpcAiQuestionSave {
+  border: 1px solid color-mix(in srgb, var(--bpmn-task-stroke) 48%, transparent);
+  background: color-mix(in srgb, var(--bpmn-task-fill) 82%, transparent);
+  color: var(--bpmn-task-text);
+  border-radius: 8px;
+  min-height: 24px;
+  padding: 0 8px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.fpcAiQuestionSave:hover {
+  background: color-mix(in srgb, var(--bpmn-selected-stroke) 20%, var(--bpmn-task-fill));
+}
+
+.fpcAiQuestionState {
+  min-height: 14px;
+  color: color-mix(in srgb, #10b981 80%, var(--bpmn-task-text));
+  font-size: 10px;
+  line-height: 1.2;
+}

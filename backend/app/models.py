@@ -50,6 +50,8 @@ class Session(BaseModel):
     project_id: Optional[str] = None
     mode: Optional[str] = None
     notes: str = ""
+    notes_by_element: Dict[str, Any] = Field(default_factory=dict)
+    interview: Dict[str, Any] = Field(default_factory=dict)
     nodes: List[Node] = Field(default_factory=list)
     edges: List[Edge] = Field(default_factory=list)
     questions: List[Question] = Field(default_factory=list)
@@ -59,6 +61,10 @@ class Session(BaseModel):
     normalized: Dict[str, Any] = Field(default_factory=dict)
     resources: Dict[str, Any] = Field(default_factory=dict)
     analytics: Dict[str, Any] = Field(default_factory=dict)
+    ai_llm_state: Dict[str, Any] = Field(default_factory=dict)
+    bpmn_xml: str = ""
+    bpmn_xml_version: int = 0
+    bpmn_graph_fingerprint: str = ""
     version: int = 0
 # -----------------------------
 # Epic #1: Project (process passport)

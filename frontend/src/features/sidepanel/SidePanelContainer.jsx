@@ -9,7 +9,7 @@ export default function SidePanelContainer({ ctl }) {
     return (
       <NoSession
         backendHint={ctl.backendHint}
-        onCreateBackend={() => ctl.createBackendSession?.(ctl.modeFilter)}
+        onCreateBackend={() => ctl.createBackendSession?.()}
         onCreateLocal={() => ctl.createLocalSession?.()}
       />
     );

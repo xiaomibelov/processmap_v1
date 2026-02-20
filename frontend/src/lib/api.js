@@ -27,6 +27,21 @@ function isPlainObject(x) {
   return !!x && typeof x === "object" && !Array.isArray(x) && !(x instanceof FormData) && !(x instanceof Blob);
 }
 
+function normalizeNotes(value) {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object") return [value];
+  const text = String(value || "").trim();
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === "object") return [parsed];
+  } catch {
+    // keep as plain legacy text note
+  }
+  return [{ note_id: "legacy", ts: null, author: null, text }];
+}
+
 function okOrError(r) {
   if (!r.ok) return r;
   if (r.data && typeof r.data === "object" && !Array.isArray(r.data) && r.data.error) {
@@ -81,6 +96,26 @@ async function request(path, opts = {}) {
   }
 
   return { ok: true, status, data, text };
+}
+
+function shouldLogBpmnTrace() {
+  if (typeof window === "undefined") return false;
+  if (window.__FPC_DEBUG_BPMN__) return true;
+  try {
+    return String(window.localStorage?.getItem("fpc_debug_bpmn") || "").trim() === "1";
+  } catch {
+    return false;
+  }
+}
+
+function fnv1aHex(input) {
+  const src = String(input || "");
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < src.length; i += 1) {
+    hash ^= src.charCodeAt(i);
+    hash = Math.imul(hash >>> 0, 0x01000193) >>> 0;
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 // ------- Meta -------
@@ -175,16 +210,25 @@ export async function apiListProjectSessions(projectId, mode) {
   return r.ok ? { ok: true, status: r.status, sessions: list } : r;
 }
 
-export async function apiCreateProjectSession(projectId, mode, title) {
+export async function apiCreateProjectSession(projectId, mode, title, roles, start_role, ai_prep_questions) {
   const pid = String(projectId || "").trim();
   if (!pid) return { ok: false, status: 0, error: "missing project_id" };
 
   const m = String(mode || "").trim();
   const qs = m ? `?mode=${encodeURIComponent(m)}` : "";
   const t = String(title || "process").trim() || "process";
+  const roleList = Array.isArray(roles) ? roles : undefined;
+  const startRole = start_role === undefined ? undefined : String(start_role || "").trim();
 
   // backend expects CreateSessionIn: { title: string, roles?: any, start_role?: string }
-  const r = okOrError(await request(`/api/projects/${encodeURIComponent(pid)}/sessions${qs}`, { method: "POST", body: { title: t } }));
+  const body = { title: t };
+  if (roleList !== undefined) body.roles = roleList;
+  if (startRole !== undefined) body.start_role = startRole;
+  if (Array.isArray(ai_prep_questions)) {
+    body.ai_prep_questions = ai_prep_questions;
+  }
+
+  const r = okOrError(await request(`/api/projects/${encodeURIComponent(pid)}/sessions${qs}`, { method: "POST", body }));
   if (!r.ok) return r;
 
   const session_id = String(r.data?.id || r.data?.session_id || "").trim();
@@ -216,14 +260,46 @@ export async function apiGetSession(sessionId) {
   const id = String(sessionId || "").trim();
   if (!id) return { ok: false, status: 0, error: "missing session_id" };
   const r = okOrError(await request(`/api/sessions/${encodeURIComponent(id)}`));
-  return r.ok ? { ok: true, status: r.status, session: r.data } : r;
+  return r.ok
+    ? {
+        ok: true,
+        status: r.status,
+        session: {
+          ...(r.data && typeof r.data === "object" ? r.data : {}),
+          _sync_source: "get_session",
+        },
+      }
+    : r;
 }
 
 export async function apiPatchSession(sessionId, patch) {
   const id = String(sessionId || "").trim();
   if (!id) return { ok: false, status: 0, error: "missing session_id" };
+  const patchKeys = patch && typeof patch === "object" ? Object.keys(patch) : [];
+  if (shouldLogBpmnTrace()) {
+    // eslint-disable-next-line no-console
+    console.debug(`[PATCH_SESSION] start sid=${id} payloadKeys=${patchKeys.join(",") || "-"}`);
+  }
   const r = okOrError(await request(`/api/sessions/${encodeURIComponent(id)}`, { method: "PATCH", body: patch || {} }));
-  return r.ok ? { ok: true, status: r.status, session: r.data } : r;
+  if (shouldLogBpmnTrace()) {
+    const xml = String(r?.data?.bpmn_xml || "");
+    // eslint-disable-next-line no-console
+    console.debug(
+      `[PATCH_SESSION] done sid=${id} status=${Number(r?.status || 0)} ok=${r.ok ? 1 : 0} `
+      + `resp.bpmn_xml.len=${xml.length} respHash=${fnv1aHex(xml)}`,
+    );
+  }
+  return r.ok
+    ? {
+        ok: true,
+        status: r.status,
+        session: {
+          ...(r.data && typeof r.data === "object" ? r.data : {}),
+          _sync_source: "patch_session",
+          _patch_payload_keys: patchKeys,
+        },
+      }
+    : r;
 }
 
 export async function apiPutSession(sessionId, body) {
@@ -282,8 +358,19 @@ export async function apiDeleteEdge(sessionId, payload) {
 export async function apiPostNote(sessionId, payload) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
-  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/notes`, { method: "POST", body: payload || {} }));
-  return r.ok ? { ok: true, status: r.status, result: r.data } : r;
+  let body = payload;
+  if (typeof payload === "string") {
+    body = { notes: payload };
+  } else if (!isPlainObject(payload)) {
+    body = {};
+  }
+  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/notes`, { method: "POST", body }));
+  if (!r.ok) return r;
+  const session = isPlainObject(r.data) ? { ...r.data } : r.data;
+  if (isPlainObject(session) && "notes" in session) {
+    session.notes = normalizeNotes(session.notes);
+  }
+  return { ok: true, status: r.status, session, result: session };
 }
 
 export async function apiPostAnswer(sessionId, payload) {
@@ -307,6 +394,14 @@ export async function apiAiQuestions(sessionId, payload) {
   return r.ok ? { ok: true, status: r.status, result: r.data } : r;
 }
 
+export async function apiSessionTitleQuestions(payload) {
+  const body = isPlainObject(payload) ? payload : {};
+  const title = String(body.title || "").trim();
+  if (!title) return { ok: false, status: 0, error: "title is required" };
+  const r = okOrError(await request("/api/llm/session-title/questions", { method: "POST", body }));
+  return r.ok ? { ok: true, status: r.status, result: r.data } : r;
+}
+
 // ------- Derived / Export / Analytics -------
 export async function apiRecompute(sessionId) {
   const sid = String(sessionId || "").trim();
@@ -322,11 +417,47 @@ export async function apiGetAnalytics(sessionId) {
   return r.ok ? { ok: true, status: r.status, analytics: r.data } : r;
 }
 
-export async function apiGetBpmnXml(sessionId) {
+export async function apiGetBpmnXml(sessionId, options = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
-  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/bpmn`));
+  const params = new URLSearchParams();
+  if (options?.raw === true) params.set("raw", "1");
+  if (options?.includeOverlay === false) params.set("include_overlay", "0");
+  if (options?.cacheBust === true) params.set("_ts", String(Date.now()));
+  const qs = params.toString();
+  const url = `/api/sessions/${encodeURIComponent(sid)}/bpmn${qs ? `?${qs}` : ""}`;
+  const r = okOrError(await request(url));
   return r.ok ? { ok: true, status: r.status, xml: r.text || "" } : r;
+}
+
+export async function apiPutBpmnXml(sessionId, xml, options = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const body = { xml: String(xml || "") };
+  const rev = Number(options?.rev);
+  if (Number.isFinite(rev) && rev >= 0) {
+    body.rev = rev;
+  }
+  const headers = {};
+  if (options?.ifMatch !== undefined && options?.ifMatch !== null) {
+    headers["If-Match"] = String(options.ifMatch);
+  }
+  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/bpmn`, { method: "PUT", body, headers }));
+  if (!r.ok) return r;
+  const storedRev = Number(r?.data?.version);
+  return {
+    ok: true,
+    status: r.status,
+    result: r.data,
+    storedRev: Number.isFinite(storedRev) ? storedRev : (Number.isFinite(rev) ? rev : 0),
+  };
+}
+
+export async function apiDeleteBpmnXml(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/bpmn`, { method: "DELETE" }));
+  return r.ok ? { ok: true, status: r.status, result: r.data } : r;
 }
 
 export async function apiGetExport(sessionId) {
@@ -345,6 +476,19 @@ export async function apiGetLlmSettings() {
 export async function apiPostLlmSettings(payload) {
   const r = okOrError(await request("/api/settings/llm", { method: "POST", body: payload || {} }));
   return r.ok ? { ok: true, status: r.status, settings: r.data } : r;
+}
+
+export async function apiVerifyLlmSettings(payload) {
+  const r = okOrError(await request("/api/settings/llm/verify", { method: "POST", body: payload || {} }));
+  if (!r.ok && Number(r.status) === 404) {
+    return {
+      ok: false,
+      status: 404,
+      error: "Endpoint /api/settings/llm/verify не найден. Перезапустите backend с последними изменениями.",
+      needs_backend_restart: true,
+    };
+  }
+  return r.ok ? { ok: true, status: r.status, result: r.data } : r;
 }
 
 // ------- DEV helpers -------

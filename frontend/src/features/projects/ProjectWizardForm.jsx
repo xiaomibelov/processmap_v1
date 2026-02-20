@@ -4,7 +4,6 @@ import {
   UNITS_MASS,
   UNITS_TEMP,
   UNITS_TIME,
-  MODES,
 } from "./constants";
 
 function setPassport(setModel, patch) {
@@ -94,6 +93,16 @@ export default function ProjectWizardForm({ model, setModel }) {
             className="input"
             value={passport.process_name || ""}
             onChange={(e) => setPassport(setModel, { process_name: e.target.value })}
+          />
+        </div>
+
+        <div className="field">
+          <div className="label">Название первой сессии</div>
+          <input
+            className="input"
+            placeholder="Напр.: Интервью — Приготовление бульона"
+            value={model.first_session_title || ""}
+            onChange={(e) => setModel((p) => ({ ...p, first_session_title: e.target.value }))}
           />
         </div>
 
@@ -274,25 +283,6 @@ export default function ProjectWizardForm({ model, setModel }) {
         </div>
       </div>
 
-      <div className="divider" />
-
-      <div className="field">
-        <div className="label">Режим старта</div>
-        <select
-          className="input"
-          value={model.mode || "quick_skeleton"}
-          onChange={(e) => setModel((p) => ({ ...p, mode: e.target.value }))}
-        >
-          {MODES.map((x) => (
-            <option key={x.value} value={x.value}>
-              {x.label}
-            </option>
-          ))}
-        </select>
-        <div className="small muted" style={{ marginTop: 6 }}>
-          После создания проекта мы сразу создадим первую сессию выбранного режима.
-        </div>
-      </div>
     </div>
   );
 }

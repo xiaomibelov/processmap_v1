@@ -1,0 +1,526 @@
+/* fpc: interview_mode_v1 */
+.interviewStage{
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.interviewBlock{
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.05);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.interviewBlockHead{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.interviewBlockTitle{
+  font-weight: 800;
+  color: rgba(255,255,255,.94);
+}
+
+.interviewBlockTools{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.interviewCollapseBtn{
+  min-width: 96px;
+}
+
+.interviewGrid{
+  display: grid;
+  gap: 10px;
+}
+
+.interviewGrid3{
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.interviewField{
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: rgba(255,255,255,.82);
+}
+
+.interviewActions{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.interviewTimelineToolbar{
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.interviewTimelineToolbarTop{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.interviewTimelineFilters{
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(240px, 2fr) repeat(5, minmax(170px, 1fr));
+}
+
+.interviewColsMenuWrap{
+  position: relative;
+  margin-left: auto;
+}
+
+.interviewColsMenu{
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 20;
+  width: min(360px, 78vw);
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 12px;
+  background: rgba(10,16,28,.96);
+  box-shadow: 0 12px 32px rgba(2,6,23,.45);
+  padding: 10px;
+}
+
+.interviewColsMenuHead{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: rgba(235,245,255,.94);
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.interviewColsMenuList{
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
+}
+
+.interviewColsItem{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(220,234,255,.9);
+  font-size: 12px;
+}
+
+.interviewColsItem input{
+  accent-color: #60a5fa;
+}
+
+.interviewTableWrap{
+  width: 100%;
+  overflow: auto;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 12px;
+  background: rgba(0,0,0,.16);
+}
+
+.interviewTable{
+  width: 100%;
+  min-width: 1160px;
+  border-collapse: collapse;
+}
+
+.interviewTable th,
+.interviewTable td{
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.interviewTable th{
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(16,24,40,.88);
+  font-size: 12px;
+  font-weight: 800;
+  color: rgba(255,255,255,.92);
+}
+
+.interviewTable td{
+  font-size: 13px;
+  color: rgba(240,248,255,.90);
+}
+
+.interviewEmpty{
+  text-align: center;
+  padding: 14px !important;
+}
+
+.interviewTimeCell{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 150px;
+}
+
+.interviewBadge{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  border: 1px solid rgba(255,255,255,.18);
+}
+
+.interviewBadge.dur.low{
+  background: rgba(34,197,94,.16);
+  border-color: rgba(34,197,94,.35);
+  color: #bef4cc;
+}
+
+.interviewBadge.dur.mid{
+  background: rgba(245,158,11,.16);
+  border-color: rgba(245,158,11,.35);
+  color: #ffe1a8;
+}
+
+.interviewBadge.dur.hi{
+  background: rgba(239,68,68,.16);
+  border-color: rgba(239,68,68,.35);
+  color: #ffc7c7;
+}
+
+.interviewBadge.wait{
+  background: rgba(56,189,248,.18);
+  border-color: rgba(56,189,248,.34);
+  color: #b8ebff;
+}
+
+.interviewRowActions{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.interviewSubprocessInput{
+  min-width: 220px;
+}
+
+.interviewQuickStepInput{
+  min-width: 340px;
+  flex: 1 1 340px;
+}
+
+.interviewNodeBindSelect{
+  min-width: 240px;
+}
+
+.interviewNodeBindSelect.isBound{
+  border-color: rgba(34,197,94,.36);
+}
+
+.interviewNodeBindSelect.isMissing{
+  border-color: rgba(245,158,11,.38);
+}
+
+.interviewNodeBindHint{
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.interviewNodeBindHint.ok{
+  color: rgba(134,239,172,.92);
+}
+
+.interviewNodeBindHint.warn{
+  color: rgba(252,211,77,.92);
+}
+
+.interviewStepRow{
+  border-left: 3px solid color-mix(in srgb, var(--lane-accent, rgba(255,255,255,.22)) 74%, transparent);
+}
+
+.interviewLaneBadge{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--lane-accent, rgba(255,255,255,.22)) 64%, transparent);
+  background: color-mix(in srgb, var(--lane-accent, rgba(255,255,255,.08)) 14%, rgba(15,23,42,.62));
+  color: rgba(236,246,255,.96);
+  font-weight: 700;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.interviewLaneCell{
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 190px;
+}
+
+.interviewLaneFlow{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.interviewLaneFlowBadge{
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 1px 8px;
+  border: 1px solid color-mix(in srgb, var(--lane-accent, rgba(255,255,255,.24)) 64%, transparent);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.interviewLaneFlowBadge.in{
+  background: color-mix(in srgb, var(--lane-accent, rgba(34,197,94,.22)) 18%, rgba(15,23,42,.62));
+  color: rgba(187,247,208,.95);
+}
+
+.interviewLaneFlowBadge.out{
+  background: color-mix(in srgb, var(--lane-accent, rgba(56,189,248,.22)) 18%, rgba(15,23,42,.62));
+  color: rgba(186,230,253,.95);
+}
+
+.interviewLaneDot{
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--lane-accent, rgba(255,255,255,.5));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--lane-accent, rgba(255,255,255,.2)) 22%, transparent);
+}
+
+.interviewBoundaryLanePicker{
+  display: grid;
+  gap: 8px;
+}
+
+.interviewBoundaryLaneList{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 88px;
+  overflow: auto;
+  padding: 2px 0;
+}
+
+.interviewBoundaryLaneBtn{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, var(--lane-accent, rgba(255,255,255,.2)) 52%, rgba(255,255,255,.18));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--lane-accent, rgba(255,255,255,.08)) 12%, rgba(255,255,255,.05));
+  color: rgba(236,246,255,.94);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.interviewBoundaryLaneBtn.selected{
+  border-color: color-mix(in srgb, var(--lane-accent, rgba(56,189,248,.42)) 68%, rgba(56,189,248,.42));
+  background: color-mix(in srgb, var(--lane-accent, rgba(56,189,248,.2)) 24%, rgba(56,189,248,.16));
+  color: rgba(236,246,255,.98);
+}
+
+.interviewAnnotationNotice{
+  margin: 8px 0 10px;
+  border: 1px solid rgba(96,165,250,.36);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(226,240,255,.95);
+  background: linear-gradient(180deg, rgba(37,99,235,.16), rgba(30,64,175,.08));
+}
+
+.interviewAnnotationNotice.pending{
+  border-color: rgba(56,189,248,.42);
+  color: rgba(191,235,255,.98);
+}
+
+.interviewAnnotationNotice.ok{
+  border-color: rgba(34,197,94,.44);
+  color: rgba(187,247,208,.98);
+  background: linear-gradient(180deg, rgba(21,128,61,.16), rgba(21,128,61,.08));
+}
+
+.interviewAnnotationNotice.warn{
+  border-color: rgba(245,158,11,.42);
+  color: rgba(254,240,181,.98);
+  background: linear-gradient(180deg, rgba(180,83,9,.16), rgba(180,83,9,.08));
+}
+
+.interviewAnnotationNotice.err{
+  border-color: rgba(239,68,68,.42);
+  color: rgba(254,202,202,.98);
+  background: linear-gradient(180deg, rgba(185,28,28,.16), rgba(185,28,28,.08));
+}
+
+.interviewAnnotationCell{
+  min-width: 260px;
+  display: grid;
+  gap: 5px;
+}
+
+.interviewAnnotationMain{
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.interviewAnnotationAddBtn{
+  min-width: 34px;
+  height: 34px;
+  line-height: 1;
+  padding: 0 10px;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.interviewAnnotationState{
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.interviewAnnotationState.synced{
+  color: rgba(134,239,172,.95);
+}
+
+.interviewAnnotationState.pending{
+  color: rgba(125,211,252,.95);
+}
+
+.interviewAnnotationState.mismatch{
+  color: rgba(251,191,36,.95);
+}
+
+.interviewAnnotationState.missing_node{
+  color: rgba(252,211,77,.95);
+}
+
+.interviewAnnotationState.empty{
+  color: rgba(148,163,184,.88);
+}
+
+.interviewSubprocessRow td{
+  background: linear-gradient(90deg, rgba(59,130,246,.14), rgba(59,130,246,.03));
+  border-bottom: 1px solid rgba(96,165,250,.25);
+  padding: 6px 10px !important;
+}
+
+.interviewSubprocessTag{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(96,165,250,.42);
+  background: rgba(30,64,175,.20);
+  color: rgba(223,240,255,.96);
+  font-weight: 800;
+  font-size: 12px;
+  padding: 3px 10px;
+}
+
+.interviewSummaryRow{
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.interviewSummaryCard{
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(255,255,255,.04);
+}
+
+.interviewSummaryValue{
+  margin-top: 4px;
+  font-weight: 800;
+  font-size: 18px;
+}
+
+.interviewTopWaits{
+  margin-top: 10px;
+}
+
+.interviewAnalyticsGrid{
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.interviewList{
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.interviewList li{
+  margin: 4px 0;
+}
+
+.interviewStatus.ok{
+  border-color: rgba(34,197,94,.35);
+}
+
+.interviewStatus.warn{
+  border-color: rgba(245,158,11,.35);
+}
+
+.interviewStatus.muted{
+  border-color: rgba(255,255,255,.18);
+}
+
+.interviewMarkdown{
+  margin-top: 10px;
+  min-height: 220px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.badge.ok{
+  border-color: rgba(34,197,94,.35);
+}
+
+.badge.warn{
+  border-color: rgba(245,158,11,.35);
+}
+

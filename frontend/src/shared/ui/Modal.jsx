@@ -33,7 +33,7 @@ export default function Modal({ open, title, onClose, children, footer }) {
       <div className="modalCard">
         <div className="modalHeader">
           <div className="modalTitle">{title || ""}</div>
-          <button className="iconBtn" onClick={onClose} title="Закрыть">
+          <button type="button" className="iconBtn" onClick={onClose} title="Закрыть">
             ✕
           </button>
         </div>

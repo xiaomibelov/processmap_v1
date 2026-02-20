@@ -49,6 +49,7 @@ class Storage:
             project_id=project_id,
             mode=mode,
             notes="[]",
+            interview={},
             nodes=[],
             edges=[],
             questions=[],
@@ -57,6 +58,9 @@ class Storage:
             mermaid_lanes="",
             normalized={},
             resources={},
+            ai_llm_state={},
+            bpmn_xml="",
+            bpmn_xml_version=0,
             version=2,
         )
         self.save(sess)
