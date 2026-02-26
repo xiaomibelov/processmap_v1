@@ -347,7 +347,8 @@ export function emptyInterview() {
 
 export function normalizeInterviewOrderMode(raw) {
   const mode = toText(raw).toLowerCase();
-  return mode === "interview" ? "interview" : "bpmn";
+  if (mode === "interview" || mode === "creation" || mode === "manual") return "interview";
+  return "bpmn";
 }
 
 function toOptionalNonNegativeInt(value) {
@@ -900,6 +901,25 @@ export function computeNodeOrder(nodes, edges) {
   return ordered;
 }
 
+function normalizeNodePositionById(rawPositions) {
+  const src = rawPositions && typeof rawPositions === "object" ? rawPositions : {};
+  const out = {};
+  Object.keys(src).forEach((rawId) => {
+    const id = toText(rawId);
+    if (!id) return;
+    const value = src[rawId] && typeof src[rawId] === "object" ? src[rawId] : {};
+    const x = Number(value?.x);
+    const y = Number(value?.y);
+    const cx = Number(value?.cx);
+    const cy = Number(value?.cy);
+    const nx = Number.isFinite(cx) ? cx : x;
+    const ny = Number.isFinite(cy) ? cy : y;
+    if (!Number.isFinite(nx) || !Number.isFinite(ny)) return;
+    out[id] = { x: nx, y: ny };
+  });
+  return out;
+}
+
 export function orderNodeIdsByFlow(nodeIds, edges, options = {}) {
   const list = toArray(nodeIds).map((x) => toText(x)).filter(Boolean);
   if (!list.length) return [];
@@ -923,6 +943,24 @@ export function orderNodeIdsByFlow(nodeIds, edges, options = {}) {
   Object.keys(parentKindByIdRaw).forEach((id) => {
     parentKindById[toText(id)] = toText(parentKindByIdRaw[id]).toLowerCase();
   });
+  const nodePositionById = normalizeNodePositionById(options?.nodePositionById);
+
+  function compareNodeIds(aRaw, bRaw) {
+    const a = toText(aRaw);
+    const b = toText(bRaw);
+    const ap = nodePositionById[a];
+    const bp = nodePositionById[b];
+    if (ap && bp) {
+      if (ap.x !== bp.x) return ap.x - bp.x;
+      if (ap.y !== bp.y) return ap.y - bp.y;
+    } else if (ap || bp) {
+      return ap ? -1 : 1;
+    }
+    const ai = Number(indexById[a]);
+    const bi = Number(indexById[b]);
+    if (ai !== bi) return ai - bi;
+    return a.localeCompare(b, "ru");
+  }
 
   const indeg = {};
   const out = {};
@@ -937,14 +975,31 @@ export function orderNodeIdsByFlow(nodeIds, edges, options = {}) {
     if (!from || !to || from === to) return;
     if (!Object.prototype.hasOwnProperty.call(indeg, from)) return;
     if (!Object.prototype.hasOwnProperty.call(indeg, to)) return;
-    out[from].push(to);
+    out[from].push({
+      toId: to,
+      flowId: toText(edge?.id || edge?.flow_id || edge?.flowId || edge?.edgeKey),
+      flowOrder: Number(edge?.flow_order ?? edge?.flowOrder),
+    });
     indeg[to] += 1;
   });
 
   Object.keys(out).forEach((id) => {
-    out[id] = toArray(out[id]).sort((a, b) => Number(indexById[a] || 0) - Number(indexById[b] || 0));
+    out[id] = toArray(out[id]).sort((a, b) => {
+      const byPos = compareNodeIds(a?.toId, b?.toId);
+      if (byPos !== 0) return byPos;
+      const ao = Number.isFinite(a?.flowOrder) ? Number(a.flowOrder) : Number.MAX_SAFE_INTEGER;
+      const bo = Number.isFinite(b?.flowOrder) ? Number(b.flowOrder) : Number.MAX_SAFE_INTEGER;
+      if (ao !== bo) return ao - bo;
+      const af = toText(a?.flowId);
+      const bf = toText(b?.flowId);
+      if (af || bf) return af.localeCompare(bf, "ru");
+      return 0;
+    });
   });
 
+  const explicitStartNodes = toArray(options?.startNodeIds)
+    .map((id) => toText(id))
+    .filter((id) => !!id && Object.prototype.hasOwnProperty.call(indeg, id));
   const topLevelStartNodes = list.filter((id) => {
     if (String(kindById[id] || "") !== "startevent") return false;
     const parentKind = String(parentKindById[id] || "");
@@ -954,7 +1009,9 @@ export function orderNodeIdsByFlow(nodeIds, edges, options = {}) {
     ? topLevelStartNodes
     : list.filter((id) => String(kindById[id] || "") === "startevent");
   const fallbackZeroIn = list.filter((id) => indeg[id] === 0);
-  const seed = startNodes.length ? startNodes : fallbackZeroIn;
+  const seed = explicitStartNodes.length
+    ? explicitStartNodes
+    : (startNodes.length ? startNodes : fallbackZeroIn);
 
   const ordered = [];
   const visited = new Set();
@@ -964,25 +1021,29 @@ export function orderNodeIdsByFlow(nodeIds, edges, options = {}) {
     if (!id || visited.has(id)) return;
     visited.add(id);
     ordered.push(id);
-    toArray(out[id]).forEach((nextId) => {
+    toArray(out[id]).forEach((edge) => {
+      const nextId = toText(edge?.toId);
       if (!visited.has(nextId)) walk(nextId);
     });
   }
 
   toArray(seed)
-    .sort((a, b) => Number(indexById[a] || 0) - Number(indexById[b] || 0))
+    .sort((a, b) => compareNodeIds(a, b))
     .forEach((id) => walk(id));
 
   // Include disconnected roots while preserving deterministic order.
   list
     .filter((id) => !visited.has(id) && Number(indeg[id] || 0) === 0)
-    .sort((a, b) => Number(indexById[a] || 0) - Number(indexById[b] || 0))
+    .sort((a, b) => compareNodeIds(a, b))
     .forEach((id) => walk(id));
 
   if (ordered.length < list.length) {
-    list.forEach((id) => {
+    list
+      .filter((id) => !visited.has(id))
+      .sort((a, b) => compareNodeIds(a, b))
+      .forEach((id) => {
       if (!visited.has(id)) ordered.push(id);
-    });
+      });
   }
 
   return ordered;
@@ -1498,17 +1559,48 @@ export function buildTimelineBetweenBranchesItem({
   };
 }
 
-export function collectNodeIdsInBpmnOrder(xmlText) {
+export function collectBpmnTraversalOrderMeta(xmlText) {
   const raw = String(xmlText || "").trim();
-  if (!raw || typeof DOMParser === "undefined") return [];
+  if (!raw) {
+    return {
+      nodeIds: [],
+      hasStartEvent: false,
+      hasSequenceFlow: false,
+      usedFallback: true,
+      fallbackReason: "empty_xml",
+    };
+  }
+  if (typeof DOMParser === "undefined") {
+    return {
+      nodeIds: [],
+      hasStartEvent: false,
+      hasSequenceFlow: false,
+      usedFallback: true,
+      fallbackReason: "dom_parser_unavailable",
+    };
+  }
 
   let doc;
   try {
     doc = new DOMParser().parseFromString(raw, "application/xml");
   } catch {
-    return [];
+    return {
+      nodeIds: [],
+      hasStartEvent: false,
+      hasSequenceFlow: false,
+      usedFallback: true,
+      fallbackReason: "xml_parse_error",
+    };
   }
-  if (!doc || doc.getElementsByTagName("parsererror").length > 0) return [];
+  if (!doc || doc.getElementsByTagName("parsererror").length > 0) {
+    return {
+      nodeIds: [],
+      hasStartEvent: false,
+      hasSequenceFlow: false,
+      usedFallback: true,
+      fallbackReason: "xml_parse_error",
+    };
+  }
 
   const allowed = new Set([
     "startevent",
@@ -1537,6 +1629,7 @@ export function collectNodeIdsInBpmnOrder(xmlText) {
   const domOrder = [];
   const nodeKindById = {};
   const nodeParentKindById = {};
+  const boundaryAttachedToById = {};
   const seen = new Set();
   Array.from(doc.getElementsByTagName("*")).forEach((el) => {
     const local = String(el.localName || "").toLowerCase();
@@ -1547,20 +1640,148 @@ export function collectNodeIdsInBpmnOrder(xmlText) {
     domOrder.push(id);
     nodeKindById[id] = local;
     nodeParentKindById[id] = String(el.parentElement?.localName || "").toLowerCase();
+    if (local === "boundaryevent") {
+      boundaryAttachedToById[id] = toText(el.getAttribute("attachedToRef"));
+    }
   });
-  if (!domOrder.length) return [];
+  if (!domOrder.length) {
+    return {
+      nodeIds: [],
+      hasStartEvent: false,
+      hasSequenceFlow: false,
+      usedFallback: true,
+      fallbackReason: "no_flow_nodes",
+    };
+  }
 
   const sequenceEdges = [];
+  let flowOrder = 0;
   Array.from(doc.getElementsByTagName("*")).forEach((el) => {
     const local = String(el.localName || "").toLowerCase();
     if (local !== "sequenceflow") return;
     const fromId = toText(el.getAttribute("sourceRef"));
     const toId = toText(el.getAttribute("targetRef"));
     if (!fromId || !toId || fromId === toId) return;
-    sequenceEdges.push({ from_id: fromId, to_id: toId });
+    flowOrder += 1;
+    sequenceEdges.push({
+      id: toText(el.getAttribute("id")) || `Flow_${flowOrder}`,
+      from_id: fromId,
+      to_id: toId,
+      flow_order: flowOrder,
+    });
+  });
+  const hasSequenceFlow = sequenceEdges.length > 0;
+  if (!hasSequenceFlow) {
+    return {
+      nodeIds: [],
+      hasStartEvent: false,
+      hasSequenceFlow: false,
+      usedFallback: true,
+      fallbackReason: "no_sequence_flow",
+    };
+  }
+
+  const nodePositionById = {};
+  Array.from(doc.getElementsByTagName("*")).forEach((el) => {
+    const local = String(el.localName || "").toLowerCase();
+    if (local !== "bpmnshape") return;
+    const nodeId = toText(el.getAttribute("bpmnElement") || el.getAttribute("bpmnelement"));
+    if (!nodeId) return;
+    const bounds = Array.from(el.children || []).find((child) => String(child.localName || "").toLowerCase() === "bounds");
+    if (!bounds) return;
+    const x = Number(bounds.getAttribute("x"));
+    const y = Number(bounds.getAttribute("y"));
+    const w = Number(bounds.getAttribute("width"));
+    const h = Number(bounds.getAttribute("height"));
+    if (![x, y, w, h].every((n) => Number.isFinite(n))) return;
+    nodePositionById[nodeId] = { x, y, cx: x + w / 2, cy: y + h / 2 };
   });
 
-  return orderNodeIdsByFlow(domOrder, sequenceEdges, { nodeKindById, nodeParentKindById });
+  const syntheticEdges = [];
+  Object.keys(boundaryAttachedToById).forEach((boundaryId) => {
+    const hostId = toText(boundaryAttachedToById[boundaryId]);
+    if (!hostId || !seen.has(hostId) || !seen.has(boundaryId) || hostId === boundaryId) return;
+    syntheticEdges.push({
+      id: `BoundaryAttach_${hostId}__${boundaryId}`,
+      from_id: hostId,
+      to_id: boundaryId,
+      flow_order: Number.MAX_SAFE_INTEGER,
+    });
+  });
+
+  const catchEventsByLinkName = {};
+  const throwEventsByLinkName = {};
+  Array.from(doc.getElementsByTagName("*")).forEach((el) => {
+    const local = String(el.localName || "").toLowerCase();
+    if (local !== "intermediatecatchevent" && local !== "intermediatethrowevent") return;
+    const nodeId = toText(el.getAttribute("id"));
+    if (!nodeId || !seen.has(nodeId)) return;
+    const linkDef = Array.from(el.children || []).find((child) => String(child.localName || "").toLowerCase() === "linkeventdefinition");
+    if (!linkDef) return;
+    const linkName = toText(linkDef.getAttribute("name") || linkDef.getAttribute("id"));
+    if (!linkName) return;
+    if (local === "intermediatethrowevent") {
+      if (!throwEventsByLinkName[linkName]) throwEventsByLinkName[linkName] = [];
+      throwEventsByLinkName[linkName].push(nodeId);
+      return;
+    }
+    if (!catchEventsByLinkName[linkName]) catchEventsByLinkName[linkName] = [];
+    catchEventsByLinkName[linkName].push(nodeId);
+  });
+  const sortedLinkNames = Object.keys(throwEventsByLinkName).sort((a, b) => a.localeCompare(b, "ru"));
+  sortedLinkNames.forEach((linkName) => {
+    const throwIds = toArray(throwEventsByLinkName[linkName]).sort((a, b) => a.localeCompare(b, "ru"));
+    const catchIds = toArray(catchEventsByLinkName[linkName]).sort((a, b) => a.localeCompare(b, "ru"));
+    if (!throwIds.length || !catchIds.length) return;
+    throwIds.forEach((fromId, tIdx) => {
+      catchIds.forEach((toId, cIdx) => {
+        if (!fromId || !toId || fromId === toId) return;
+        syntheticEdges.push({
+          id: `Link_${normalizeLoose(linkName) || "link"}_${tIdx + 1}_${cIdx + 1}`,
+          from_id: fromId,
+          to_id: toId,
+          flow_order: Number.MAX_SAFE_INTEGER - 50000 + tIdx * 1000 + cIdx,
+        });
+      });
+    });
+  });
+
+  const topLevelStartNodes = domOrder.filter((id) => {
+    if (String(nodeKindById[id] || "") !== "startevent") return false;
+    const parentKind = String(nodeParentKindById[id] || "");
+    return parentKind !== "subprocess" && parentKind !== "adhocsubprocess";
+  });
+  const startNodeIds = topLevelStartNodes.length
+    ? topLevelStartNodes
+    : domOrder.filter((id) => String(nodeKindById[id] || "") === "startevent");
+  if (!startNodeIds.length) {
+    return {
+      nodeIds: [],
+      hasStartEvent: false,
+      hasSequenceFlow,
+      usedFallback: true,
+      fallbackReason: "no_start_event",
+    };
+  }
+
+  const nodeIds = orderNodeIdsByFlow(domOrder, [...sequenceEdges, ...syntheticEdges], {
+    nodeKindById,
+    nodeParentKindById,
+    nodePositionById,
+    startNodeIds,
+  });
+  return {
+    nodeIds,
+    hasStartEvent: true,
+    hasSequenceFlow,
+    usedFallback: false,
+    fallbackReason: "",
+  };
+}
+
+export function collectNodeIdsInBpmnOrder(xmlText) {
+  const meta = collectBpmnTraversalOrderMeta(xmlText);
+  return toArray(meta?.nodeIds);
 }
 
 export function getElementsByLocalNames(root, names) {
