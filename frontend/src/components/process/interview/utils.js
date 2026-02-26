@@ -21,10 +21,13 @@ export const SHOW_AI_QUESTIONS_BLOCK = false;
 export const DEFAULT_TIMELINE_FILTERS = {
   query: "",
   lane: "all",
+  lanes: [],
   type: "all",
   subprocess: "all",
   bind: "all", // all|bound|missing
   annotation: "all", // all|with|without
+  ai: "all", // all|with|without
+  tiers: ["P0", "P1", "P2", "None"],
 };
 export const TIMELINE_OPTIONAL_COLUMNS = [
   { key: "t_plus", label: "T+" },
@@ -35,7 +38,7 @@ export const TIMELINE_OPTIONAL_COLUMNS = [
   { key: "node", label: "Узел BPMN" },
   { key: "comment", label: "Аннотация BPMN" },
   { key: "role", label: "Роль" },
-  { key: "duration", label: "Длительность (мин)" },
+  { key: "duration", label: "Время шага" },
   { key: "wait", label: "Ожидание (мин)" },
   { key: "output", label: "Выход шага (физически)" },
 ];
@@ -67,6 +70,23 @@ export function toArray(x) {
 
 export function toText(v) {
   return String(v || "").trim();
+}
+
+const DISPLAY_NULLISH_TAIL_RE = /\s*(?:none|null|undefined)\s*$/i;
+const DISPLAY_NULLISH_EXACT_RE = /^(?:none|null|undefined)$/i;
+
+export function sanitizeDisplayText(value, fallback = "") {
+  let text = toText(value);
+  if (!text) return toText(fallback);
+  while (DISPLAY_NULLISH_TAIL_RE.test(text)) {
+    text = text.replace(DISPLAY_NULLISH_TAIL_RE, "").trim();
+  }
+  if (!text || DISPLAY_NULLISH_EXACT_RE.test(text)) return toText(fallback);
+  return text;
+}
+
+export function isDisplayNullishText(value) {
+  return DISPLAY_NULLISH_EXACT_RE.test(toText(value));
 }
 
 export function shortErr(v) {
@@ -299,6 +319,7 @@ export function isLocalSessionId(id) {
 
 export function emptyInterview() {
   return {
+    order_mode: "interview",
     boundaries: {
       trigger: "",
       start_shop: "",
@@ -309,6 +330,12 @@ export function emptyInterview() {
       output_physical: "",
     },
     steps: [],
+    path_spec: {
+      mode: "manual",
+      steps: [],
+    },
+    path_reports: {},
+    report_versions: {},
     transitions: [],
     subprocesses: [],
     exceptions: [],
@@ -318,126 +345,230 @@ export function emptyInterview() {
   };
 }
 
-export function emptyStep(type = "operation") {
-  if (type === "movement") {
-    return {
-      id: uid("step"),
-      node_id: "",
-      area: "",
-      type,
-      action: "Переместить полуфабрикат",
-      subprocess: "",
-      comment: "",
-      role: "",
-      duration_min: "5",
-      wait_min: "0",
-      output: "",
-    };
+export function normalizeInterviewOrderMode(raw) {
+  const mode = toText(raw).toLowerCase();
+  return mode === "interview" ? "interview" : "bpmn";
+}
+
+function toOptionalNonNegativeInt(value) {
+  const raw = String(value ?? "").replace(",", ".").trim();
+  if (!raw) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n);
+}
+
+function parseOrderIndex(valueRaw) {
+  const n = Number(valueRaw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.floor(n);
+}
+
+function parseMinutesToSeconds(valueRaw) {
+  const min = toOptionalNonNegativeInt(valueRaw);
+  if (!Number.isFinite(min) || min === null) return null;
+  return Math.max(0, Math.round(min * 60));
+}
+
+export function parseStepWorkDurationSec(stepRaw) {
+  const step = stepRaw && typeof stepRaw === "object" ? stepRaw : {};
+  const secCandidates = [
+    step.work_duration_sec,
+    step.workDurationSec,
+    step.duration_sec,
+    step.durationSec,
+    step.step_time_sec,
+    step.stepTimeSec,
+  ];
+  for (let i = 0; i < secCandidates.length; i += 1) {
+    const parsed = toOptionalNonNegativeInt(secCandidates[i]);
+    if (parsed !== null) return parsed;
   }
-  if (type === "waiting") {
-    return {
-      id: uid("step"),
-      node_id: "",
-      area: "",
-      type,
-      action: "Ожидание очереди/ресурса",
-      subprocess: "",
-      comment: "",
-      role: "",
-      duration_min: "0",
-      wait_min: "20",
-      output: "",
-    };
+  const minCandidates = [
+    step.duration_min,
+    step.durationMin,
+    step.step_time_min,
+    step.stepTimeMin,
+  ];
+  for (let i = 0; i < minCandidates.length; i += 1) {
+    const parsed = parseMinutesToSeconds(minCandidates[i]);
+    if (parsed !== null) return parsed;
   }
-  if (type === "qc") {
-    return {
-      id: uid("step"),
-      node_id: "",
-      area: "",
-      type,
-      action: "Проверить качество партии",
-      subprocess: "",
-      comment: "",
-      role: "",
-      duration_min: "10",
-      wait_min: "0",
-      output: "",
-    };
+  return null;
+}
+
+export function parseStepWaitDurationSec(stepRaw) {
+  const step = stepRaw && typeof stepRaw === "object" ? stepRaw : {};
+  const secCandidates = [
+    step.wait_duration_sec,
+    step.waitDurationSec,
+    step.wait_sec,
+    step.waitSec,
+  ];
+  for (let i = 0; i < secCandidates.length; i += 1) {
+    const parsed = toOptionalNonNegativeInt(secCandidates[i]);
+    if (parsed !== null) return parsed;
   }
-  if (type === "subprocess_collapsed") {
-    return {
-      id: uid("step"),
-      node_id: "",
-      area: "",
-      type,
-      action: "Подпроцесс",
-      subprocess: "",
-      comment: "",
-      role: "",
-      duration_min: "20",
-      wait_min: "0",
-      output: "",
-    };
+  const minCandidates = [
+    step.wait_min,
+    step.waitMin,
+  ];
+  for (let i = 0; i < minCandidates.length; i += 1) {
+    const parsed = parseMinutesToSeconds(minCandidates[i]);
+    if (parsed !== null) return parsed;
   }
-  if (type === "subprocess_expanded") {
-    return {
-      id: uid("step"),
-      node_id: "",
-      area: "",
-      type,
-      action: "Подпроцесс (детализированный)",
-      subprocess: "",
-      comment: "",
-      role: "",
-      duration_min: "25",
-      wait_min: "0",
-      output: "",
+  return null;
+}
+
+function normalizeStepTimeFields(stepRaw) {
+  const step = stepRaw && typeof stepRaw === "object" ? stepRaw : {};
+  const workSec = parseStepWorkDurationSec(step);
+  const waitSec = parseStepWaitDurationSec(step);
+  const workMin = workSec === null ? "" : String(Math.round(workSec / 60));
+  const waitMin = waitSec === null ? "" : String(Math.round(waitSec / 60));
+  return {
+    work_duration_sec: workSec,
+    wait_duration_sec: waitSec,
+    duration_sec: workSec,
+    step_time_sec: workSec,
+    duration_min: workMin,
+    step_time_min: workSec === null ? "" : String(Math.round(workSec / 60)),
+    wait_min: waitMin,
+  };
+}
+
+function normalizePathSpec(rawPathSpec, stepsRaw) {
+  const source = rawPathSpec && typeof rawPathSpec === "object" && !Array.isArray(rawPathSpec)
+    ? rawPathSpec
+    : {};
+  const rawSteps = toArray(source.steps);
+  const pathEntryByStepId = {};
+  rawSteps.forEach((entryRaw, idx) => {
+    const entry = entryRaw && typeof entryRaw === "object" ? entryRaw : {};
+    const stepId = toText(entry.step_id || entry.stepId || entry.id);
+    if (!stepId || pathEntryByStepId[stepId]) return;
+    pathEntryByStepId[stepId] = {
+      order_index: parseOrderIndex(entry.order_index ?? entry.order) ?? idx + 1,
+      bpmn_ref: toText(entry.bpmn_ref || entry.node_id || entry.nodeId),
+      title: toText(entry.title),
+      lane_id: toText(entry.lane_id || entry.laneId),
+      work_duration_sec: toOptionalNonNegativeInt(entry.work_duration_sec ?? entry.workDurationSec),
+      wait_duration_sec: toOptionalNonNegativeInt(entry.wait_duration_sec ?? entry.waitDurationSec),
     };
-  }
-  if (type === "adhoc_subprocess_collapsed") {
+  });
+
+  const prepared = toArray(stepsRaw).map((stepRaw, idx) => {
+    const step = stepRaw && typeof stepRaw === "object" ? stepRaw : {};
+    const stepId = toText(step?.id) || uid("step");
+    const pathEntry = pathEntryByStepId[stepId];
+    const order_index = parseOrderIndex(pathEntry?.order_index)
+      ?? parseOrderIndex(step?.order_index ?? step?.order)
+      ?? idx + 1;
+    const time = normalizeStepTimeFields({
+      ...step,
+      ...(pathEntry?.work_duration_sec !== null && pathEntry?.work_duration_sec !== undefined
+        ? { work_duration_sec: pathEntry.work_duration_sec }
+        : {}),
+      ...(pathEntry?.wait_duration_sec !== null && pathEntry?.wait_duration_sec !== undefined
+        ? { wait_duration_sec: pathEntry.wait_duration_sec }
+        : {}),
+    });
+    const bpmnRef = toText(pathEntry?.bpmn_ref || step?.bpmn_ref || step?.node_id || step?.nodeId);
     return {
-      id: uid("step"),
-      node_id: "",
-      area: "",
-      type,
-      action: "Ad-hoc подпроцесс",
-      subprocess: "",
-      comment: "",
-      role: "",
-      duration_min: "20",
-      wait_min: "0",
-      output: "",
+      ...step,
+      id: stepId,
+      node_id: toText(step?.node_id || step?.nodeId || bpmnRef),
+      bpmn_ref: bpmnRef,
+      order_index,
+      ...time,
+      __stable_idx: idx,
     };
-  }
-  if (type === "adhoc_subprocess_expanded") {
+  });
+
+  prepared.sort((a, b) => {
+    const ao = Number(a?.order_index || 0);
+    const bo = Number(b?.order_index || 0);
+    if (ao !== bo) return ao - bo;
+    return Number(a?.__stable_idx || 0) - Number(b?.__stable_idx || 0);
+  });
+
+  const orderedSteps = prepared.map((step, idx) => {
+    const order_index = idx + 1;
+    const { __stable_idx, ...rest } = step;
     return {
-      id: uid("step"),
-      node_id: "",
-      area: "",
-      type,
-      action: "Ad-hoc подпроцесс (детализированный)",
-      subprocess: "",
-      comment: "",
-      role: "",
-      duration_min: "25",
-      wait_min: "0",
-      output: "",
+      ...rest,
+      order_index,
+      order: order_index,
+      bpmn_ref: toText(step?.bpmn_ref || step?.node_id),
     };
-  }
+  });
+
+  const pathSteps = orderedSteps.map((step) => ({
+    step_id: toText(step?.id),
+    order_index: Number(step?.order_index || 0),
+    title: toText(step?.action || step?.title),
+    lane_id: toText(step?.lane_id || step?.laneId || step?.lane_key || step?.role || step?.area),
+    bpmn_ref: toText(step?.bpmn_ref || step?.node_id) || null,
+    work_duration_sec: Number.isFinite(Number(step?.work_duration_sec)) ? Number(step?.work_duration_sec) : null,
+    wait_duration_sec: Number.isFinite(Number(step?.wait_duration_sec)) ? Number(step?.wait_duration_sec) : null,
+  }));
 
   return {
-    id: uid("step"),
-    node_id: "",
-    area: "",
-    type,
-    action: "",
-    subprocess: "",
-    comment: "",
-    role: "",
-    duration_min: "15",
-    wait_min: "0",
-    output: "",
+    steps: orderedSteps,
+    path_spec: {
+      mode: "manual",
+      steps: pathSteps,
+    },
   };
+}
+
+export function emptyStep(type = "operation") {
+  function build(typeValue, action, workMin, waitMin) {
+    const workSec = Math.max(0, Math.round(Number(workMin || 0) * 60));
+    const waitSec = Math.max(0, Math.round(Number(waitMin || 0) * 60));
+    return {
+      id: uid("step"),
+      node_id: "",
+      bpmn_ref: "",
+      order_index: 0,
+      area: "",
+      type: typeValue,
+      action,
+      subprocess: "",
+      comment: "",
+      role: "",
+      work_duration_sec: workSec,
+      wait_duration_sec: waitSec,
+      duration_min: String(Math.round(workSec / 60)),
+      wait_min: String(Math.round(waitSec / 60)),
+      duration_sec: workSec,
+      step_time_sec: workSec,
+      output: "",
+    };
+  }
+  if (type === "movement") {
+    return build(type, "Переместить полуфабрикат", 5, 0);
+  }
+  if (type === "waiting") {
+    return build(type, "Ожидание очереди/ресурса", 0, 20);
+  }
+  if (type === "qc") {
+    return build(type, "Проверить качество партии", 10, 0);
+  }
+  if (type === "subprocess_collapsed") {
+    return build(type, "Подпроцесс", 20, 0);
+  }
+  if (type === "subprocess_expanded") {
+    return build(type, "Подпроцесс (детализированный)", 25, 0);
+  }
+  if (type === "adhoc_subprocess_collapsed") {
+    return build(type, "Ad-hoc подпроцесс", 20, 0);
+  }
+  if (type === "adhoc_subprocess_expanded") {
+    return build(type, "Ad-hoc подпроцесс (детализированный)", 25, 0);
+  }
+
+  return build(type, "", 15, 0);
 }
 
 export function emptyException(stepSeq = "") {
@@ -536,6 +667,7 @@ export function dedupNames(list) {
 export function normalizeInterview(raw) {
   const src = raw && typeof raw === "object" ? raw : {};
   const base = emptyInterview();
+  const order_mode = normalizeInterviewOrderMode(src.order_mode || src.orderMode || base.order_mode);
 
   const boundaries = {
     ...base.boundaries,
@@ -544,28 +676,33 @@ export function normalizeInterview(raw) {
   const subprocesses = dedupNames(src.subprocesses);
   const aiLinesByStepId = {};
 
-  const steps = toArray(src.steps)
+  const normalizedStepsRaw = toArray(src.steps)
     .map((step) => {
       if (!step || typeof step !== "object") return null;
       const sid = toText(step.id) || uid("step");
       const commentRaw = String(step.comment || step.note || "");
       const split = splitCommentAndAiBlock(commentRaw);
       aiLinesByStepId[sid] = new Set(split.aiLines.map((x) => normalizeLoose(x)));
+      const time = normalizeStepTimeFields(step);
       return {
         id: sid,
-        node_id: toText(step.node_id || step.nodeId || ""),
+        node_id: toText(step.node_id || step.nodeId || step.bpmn_ref || step.bpmnRef || ""),
+        bpmn_ref: toText(step.bpmn_ref || step.bpmnRef || step.node_id || step.nodeId || ""),
+        order_index: parseOrderIndex(step.order_index ?? step.order) ?? 0,
         area: String(step.area || ""),
         type: STEP_TYPES.some((x) => x.value === step.type) ? step.type : "operation",
         action: String(step.action || ""),
         subprocess: String(step.subprocess || step.subprocess_name || step.group || ""),
         comment: split.manual,
         role: String(step.role || ""),
-        duration_min: String(step.duration_min ?? ""),
-        wait_min: String(step.wait_min ?? ""),
+        ...time,
         output: String(step.output || ""),
       };
     })
     .filter(Boolean);
+  const pathSource = src.path_spec || src.pathSpec || base.path_spec;
+  const normalizedPath = normalizePathSpec(pathSource, normalizedStepsRaw);
+  const steps = normalizedPath.steps;
 
   const exceptions = toArray(src.exceptions)
     .map((x) => {
@@ -637,34 +774,88 @@ export function normalizeInterview(raw) {
     })
     .filter(Boolean);
 
+  const path_reports = {};
+  if (src.path_reports && typeof src.path_reports === "object" && !Array.isArray(src.path_reports)) {
+    Object.keys(src.path_reports).forEach((pathIdRaw) => {
+      const pathId = toText(pathIdRaw);
+      if (!pathId) return;
+      const entry = src.path_reports[pathIdRaw];
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return;
+      path_reports[pathId] = {
+        ...entry,
+      };
+    });
+  }
+
+  const report_versions = {};
+  if (src.report_versions && typeof src.report_versions === "object" && !Array.isArray(src.report_versions)) {
+    Object.keys(src.report_versions).forEach((pathIdRaw) => {
+      const pathId = toText(pathIdRaw);
+      if (!pathId) return;
+      const rows = toArray(src.report_versions[pathIdRaw]).filter((item) => item && typeof item === "object" && !Array.isArray(item));
+      report_versions[pathId] = rows.map((item) => ({ ...item }));
+    });
+  }
+
   return {
+    order_mode,
     boundaries,
     steps,
+    path_spec: normalizedPath.path_spec,
     transitions,
     subprocesses,
     exceptions,
     ai_questions,
     ai_questions_by_element,
     prep_questions,
+    path_reports,
+    report_versions,
   };
 }
 
 export function computeTimeline(steps) {
-  let cursor = 0;
-  return toArray(steps).map((step, idx) => {
-    const duration = toNonNegativeInt(step.duration_min);
-    const wait = toNonNegativeInt(step.wait_min);
-    const start = cursor;
-    const end = cursor + duration + wait;
-    cursor = end;
+  let cursorSec = 0;
+  const ordered = toArray(steps)
+    .map((step, idx) => ({
+      ...(step && typeof step === "object" ? step : {}),
+      __idx: idx,
+      __order_index: parseOrderIndex(step?.order_index ?? step?.order) ?? idx + 1,
+    }))
+    .sort((a, b) => {
+      if (a.__order_index !== b.__order_index) return a.__order_index - b.__order_index;
+      return a.__idx - b.__idx;
+    });
+  return ordered.map((step, idx) => {
+    const durationSec = parseStepWorkDurationSec(step) || 0;
+    const waitSec = parseStepWaitDurationSec(step) || 0;
+    const duration = Math.round(durationSec / 60);
+    const wait = Math.round(waitSec / 60);
+    const startSec = cursorSec;
+    const endSec = cursorSec + durationSec + waitSec;
+    cursorSec = endSec;
+    const { __idx, __order_index, ...rest } = step;
     return {
-      ...step,
+      ...rest,
       seq: idx + 1,
+      order_index: idx + 1,
+      work_duration_sec: durationSec,
+      wait_duration_sec: waitSec,
+      duration_sec: durationSec,
+      step_time_sec: durationSec,
+      duration_min: String(duration),
+      wait_min: String(wait),
       duration,
       wait,
-      t_plus: `T+${start}→${end}`,
+      t_plus: `T+${Math.round(startSec / 60)}→${Math.round(endSec / 60)}`,
     };
   });
+}
+
+export function formatHHMMFromSeconds(totalSecRaw) {
+  const totalSec = Math.max(0, Math.round(Number(totalSecRaw || 0)));
+  const hh = Math.floor(totalSec / 3600);
+  const mm = Math.floor((totalSec % 3600) / 60);
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
 }
 
 export function computeNodeOrder(nodes, edges) {
@@ -709,6 +900,604 @@ export function computeNodeOrder(nodes, edges) {
   return ordered;
 }
 
+export function orderNodeIdsByFlow(nodeIds, edges, options = {}) {
+  const list = toArray(nodeIds).map((x) => toText(x)).filter(Boolean);
+  if (!list.length) return [];
+
+  const indexById = {};
+  list.forEach((id, idx) => {
+    indexById[id] = idx;
+  });
+
+  const kindByIdRaw = options?.nodeKindById && typeof options.nodeKindById === "object"
+    ? options.nodeKindById
+    : {};
+  const parentKindByIdRaw = options?.nodeParentKindById && typeof options.nodeParentKindById === "object"
+    ? options.nodeParentKindById
+    : {};
+  const kindById = {};
+  Object.keys(kindByIdRaw).forEach((id) => {
+    kindById[toText(id)] = toText(kindByIdRaw[id]).toLowerCase();
+  });
+  const parentKindById = {};
+  Object.keys(parentKindByIdRaw).forEach((id) => {
+    parentKindById[toText(id)] = toText(parentKindByIdRaw[id]).toLowerCase();
+  });
+
+  const indeg = {};
+  const out = {};
+  list.forEach((id) => {
+    indeg[id] = 0;
+    out[id] = [];
+  });
+
+  toArray(edges).forEach((edge) => {
+    const from = toText(edge?.from_id || edge?.from || edge?.source_id || edge?.sourceId);
+    const to = toText(edge?.to_id || edge?.to || edge?.target_id || edge?.targetId);
+    if (!from || !to || from === to) return;
+    if (!Object.prototype.hasOwnProperty.call(indeg, from)) return;
+    if (!Object.prototype.hasOwnProperty.call(indeg, to)) return;
+    out[from].push(to);
+    indeg[to] += 1;
+  });
+
+  Object.keys(out).forEach((id) => {
+    out[id] = toArray(out[id]).sort((a, b) => Number(indexById[a] || 0) - Number(indexById[b] || 0));
+  });
+
+  const topLevelStartNodes = list.filter((id) => {
+    if (String(kindById[id] || "") !== "startevent") return false;
+    const parentKind = String(parentKindById[id] || "");
+    return parentKind !== "subprocess" && parentKind !== "adhocsubprocess";
+  });
+  const startNodes = topLevelStartNodes.length
+    ? topLevelStartNodes
+    : list.filter((id) => String(kindById[id] || "") === "startevent");
+  const fallbackZeroIn = list.filter((id) => indeg[id] === 0);
+  const seed = startNodes.length ? startNodes : fallbackZeroIn;
+
+  const ordered = [];
+  const visited = new Set();
+
+  function walk(nodeId) {
+    const id = toText(nodeId);
+    if (!id || visited.has(id)) return;
+    visited.add(id);
+    ordered.push(id);
+    toArray(out[id]).forEach((nextId) => {
+      if (!visited.has(nextId)) walk(nextId);
+    });
+  }
+
+  toArray(seed)
+    .sort((a, b) => Number(indexById[a] || 0) - Number(indexById[b] || 0))
+    .forEach((id) => walk(id));
+
+  // Include disconnected roots while preserving deterministic order.
+  list
+    .filter((id) => !visited.has(id) && Number(indeg[id] || 0) === 0)
+    .sort((a, b) => Number(indexById[a] || 0) - Number(indexById[b] || 0))
+    .forEach((id) => walk(id));
+
+  if (ordered.length < list.length) {
+    list.forEach((id) => {
+      if (!visited.has(id)) ordered.push(id);
+    });
+  }
+
+  return ordered;
+}
+
+export function buildGatewayBranchPreviews({
+  gatewayNodeId,
+  outgoing,
+  outgoingByNode,
+  nodeMetaById,
+  mainlineNodeIds,
+  graphNoByNodeId,
+  maxDepth = 25,
+}) {
+  const gatewayId = toText(gatewayNodeId);
+  const branchSeeds = toArray(outgoing).filter((x) => toText(x?.toId || x?.to_id || x?.targetId));
+  if (!gatewayId || !branchSeeds.length) return [];
+
+  const edgesByNode = outgoingByNode && typeof outgoingByNode === "object" ? outgoingByNode : {};
+  const metaById = nodeMetaById && typeof nodeMetaById === "object" ? nodeMetaById : {};
+  const mainline = toArray(mainlineNodeIds).map((id) => toText(id)).filter(Boolean);
+  const graphNoMap = graphNoByNodeId && typeof graphNoByNodeId === "object" ? graphNoByNodeId : {};
+
+  const mainlineIndexByNode = {};
+  mainline.forEach((id, idx) => {
+    if (!mainlineIndexByNode[id]) mainlineIndexByNode[id] = idx;
+  });
+  const gatewayIndexRaw = Number(mainlineIndexByNode[gatewayId]);
+  const gatewayIndex = Number.isFinite(gatewayIndexRaw) ? gatewayIndexRaw : -1;
+  const nextMainlineNodeId = gatewayIndex >= 0 ? toText(mainline[gatewayIndex + 1]) : "";
+  const decisionKinds = new Set(["exclusivegateway", "inclusivegateway", "eventbasedgateway"]);
+  const terminalKinds = new Set(["endevent"]);
+
+  function normalizeBranchLabel(raw, fallbackIdx) {
+    const txt = toText(raw);
+    if (!txt) {
+      if (fallbackIdx === 0) return "Да";
+      if (fallbackIdx === 1) return "Нет";
+      return `Ветка ${fallbackIdx + 1}`;
+    }
+    const low = txt.toLowerCase();
+    if (low === "да" || low.startsWith("да ")) return "Да";
+    if (low === "нет" || low.startsWith("нет ")) return "Нет";
+    return txt;
+  }
+
+  function resolveNodeMeta(nodeIdRaw) {
+    const nodeId = toText(nodeIdRaw);
+    return {
+      nodeId,
+      graphNo: toText(graphNoMap[nodeId]),
+      title: toText(metaById[nodeId]?.title) || nodeId,
+      lane: toText(metaById[nodeId]?.lane),
+      kind: toText(metaById[nodeId]?.kind).toLowerCase(),
+    };
+  }
+
+  function isMainlineAfter(nodeIdRaw) {
+    const nodeId = toText(nodeIdRaw);
+    const idx = Number(mainlineIndexByNode[nodeId]);
+    return Number.isFinite(idx) && idx > gatewayIndex;
+  }
+
+  function isMainlineBeforeOrEqual(nodeIdRaw) {
+    const nodeId = toText(nodeIdRaw);
+    const idx = Number(mainlineIndexByNode[nodeId]);
+    return Number.isFinite(idx) && idx <= gatewayIndex;
+  }
+
+  function normalizeOutgoingForNode(nodeIdRaw) {
+    const nodeId = toText(nodeIdRaw);
+    const edges = toArray(edgesByNode[nodeId]).map((edge, idx) => ({
+      edgeKey: toText(edge?.edgeKey) || `${nodeId}__${toText(edge?.toId || edge?.to_id || edge?.targetId) || idx + 1}`,
+      toId: toText(edge?.toId || edge?.to_id || edge?.targetId),
+      when: toText(edge?.when || edge?.label),
+      toGraphRank: Number(edge?.graphRank),
+      toTitle: toText(edge?.toTitle),
+    }));
+    return edges
+      .filter((edge) => !!edge.toId)
+      .sort((a, b) => {
+        const ar = Number.isFinite(a?.toGraphRank) ? Number(a.toGraphRank) : Number.MAX_SAFE_INTEGER;
+        const br = Number.isFinite(b?.toGraphRank) ? Number(b.toGraphRank) : Number.MAX_SAFE_INTEGER;
+        if (ar !== br) return ar - br;
+        return String(a?.toTitle || a?.toId || "").localeCompare(String(b?.toTitle || b?.toId || ""), "ru");
+      });
+  }
+
+  function chooseNextEdge(edges, isPrimary, visitedPath) {
+    const list = toArray(edges).filter((e) => toText(e?.toId));
+    if (!list.length) return null;
+
+    const toNextMainline = nextMainlineNodeId
+      ? list.find((e) => toText(e?.toId) === nextMainlineNodeId)
+      : null;
+    const toMainlineAfter = list.find((e) => isMainlineAfter(e?.toId));
+    const toDetached = list.find((e) => !Object.prototype.hasOwnProperty.call(mainlineIndexByNode, toText(e?.toId)));
+    const toFreshDetached = list.find((e) => {
+      const toId = toText(e?.toId);
+      if (!toId || visitedPath.has(toId)) return false;
+      return !Object.prototype.hasOwnProperty.call(mainlineIndexByNode, toId);
+    });
+    const toFresh = list.find((e) => {
+      const toId = toText(e?.toId);
+      return !!toId && !visitedPath.has(toId) && !isMainlineBeforeOrEqual(toId);
+    });
+    const toLoop = list.find((e) => {
+      const toId = toText(e?.toId);
+      return toId === gatewayId || isMainlineBeforeOrEqual(toId) || visitedPath.has(toId);
+    });
+
+    if (isPrimary) return toNextMainline || toMainlineAfter || toFresh || toDetached || toLoop || list[0];
+    return toFreshDetached || toFresh || toDetached || toLoop || toMainlineAfter || toNextMainline || list[0];
+  }
+
+  function buildBranchNodes(startNodeIdRaw, options) {
+    const startNodeId = toText(startNodeIdRaw);
+    const isPrimary = !!options?.isPrimary;
+    const depth = Number(options?.depth) || 0;
+    const visitedPath = options?.visitedPath instanceof Set ? options.visitedPath : new Set();
+    if (!startNodeId) return [];
+    if (depth >= maxDepth) return [];
+
+    if (visitedPath.has(startNodeId) || isMainlineBeforeOrEqual(startNodeId)) {
+      const loopMeta = resolveNodeMeta(startNodeId);
+      return [{
+        kind: "loop",
+        targetNodeId: loopMeta.nodeId,
+        targetGraphNo: loopMeta.graphNo,
+        targetTitle: loopMeta.title,
+      }];
+    }
+
+    if (isMainlineAfter(startNodeId)) {
+      const continueMeta = resolveNodeMeta(startNodeId);
+      return [{
+        kind: "continue",
+        targetNodeId: continueMeta.nodeId,
+        targetGraphNo: continueMeta.graphNo,
+        targetTitle: continueMeta.title,
+      }];
+    }
+
+    const meta = resolveNodeMeta(startNodeId);
+    const nextVisited = new Set(visitedPath);
+    nextVisited.add(startNodeId);
+
+    if (terminalKinds.has(meta.kind)) {
+      return [{
+        kind: "terminal",
+        nodeId: meta.nodeId,
+        graphNo: meta.graphNo,
+        title: meta.title,
+        lane: meta.lane,
+        nodeKind: meta.kind,
+      }];
+    }
+
+    if (decisionKinds.has(meta.kind)) {
+      const decisionOutgoing = normalizeOutgoingForNode(startNodeId);
+      const branches = decisionOutgoing.map((edge, idx) => ({
+        key: String.fromCharCode(65 + idx),
+        label: normalizeBranchLabel(edge?.when, idx),
+        edgeKey: toText(edge?.edgeKey),
+        children: buildBranchNodes(edge?.toId, {
+          depth: depth + 1,
+          visitedPath: new Set(nextVisited),
+          isPrimary: isPrimary && toText(edge?.toId) === nextMainlineNodeId,
+        }),
+      }));
+      return [{
+        kind: "decision",
+        nodeId: meta.nodeId,
+        graphNo: meta.graphNo,
+        title: meta.title,
+        lane: meta.lane,
+        nodeKind: meta.kind,
+        branches,
+      }];
+    }
+
+    const node = {
+      kind: "step",
+      nodeId: meta.nodeId,
+      graphNo: meta.graphNo,
+      title: meta.title,
+      lane: meta.lane,
+      nodeKind: meta.kind,
+    };
+
+    const outgoingEdges = normalizeOutgoingForNode(startNodeId);
+    if (!outgoingEdges.length) return [node];
+
+    const nextEdge = chooseNextEdge(outgoingEdges, isPrimary, nextVisited);
+    if (!nextEdge) return [node];
+
+    return [
+      node,
+      ...buildBranchNodes(nextEdge.toId, {
+        depth: depth + 1,
+        visitedPath: nextVisited,
+        isPrimary,
+      }),
+    ];
+  }
+
+  function collectSummaryFromNodes(nodes) {
+    const summary = {
+      continuesToNodeId: "",
+      continuesToGraphNo: "",
+      continuesToTitle: "",
+      loopTargetNodeId: "",
+      loopTargetGraphNo: "",
+      loopTargetTitle: "",
+      previewSteps: [],
+    };
+
+    function walk(list) {
+      toArray(list).forEach((node) => {
+        const kind = toText(node?.kind).toLowerCase();
+        if (kind === "step") {
+          summary.previewSteps.push({
+            nodeId: toText(node?.nodeId),
+            graphNo: toText(node?.graphNo),
+            title: toText(node?.title),
+            lane: toText(node?.lane),
+            kind: toText(node?.nodeKind),
+          });
+        }
+        if (!summary.continuesToNodeId && kind === "continue") {
+          summary.continuesToNodeId = toText(node?.targetNodeId);
+          summary.continuesToGraphNo = toText(node?.targetGraphNo);
+          summary.continuesToTitle = toText(node?.targetTitle) || summary.continuesToNodeId;
+        }
+        if (!summary.loopTargetNodeId && kind === "loop") {
+          summary.loopTargetNodeId = toText(node?.targetNodeId);
+          summary.loopTargetGraphNo = toText(node?.targetGraphNo);
+          summary.loopTargetTitle = toText(node?.targetTitle) || summary.loopTargetNodeId;
+        }
+        if (kind === "decision") {
+          toArray(node?.branches).forEach((branch) => walk(branch?.children));
+        }
+      });
+    }
+
+    walk(nodes);
+    return summary;
+  }
+
+  function deriveStopReason(summary, nodes, nextMainline) {
+    const row = summary && typeof summary === "object" ? summary : {};
+    if (toText(row.loopTargetNodeId)) return "loop";
+    if (toText(row.continuesToNodeId)) {
+      const targetId = toText(row.continuesToNodeId);
+      return targetId === toText(nextMainline) ? "nextMainline" : "continue";
+    }
+    let hasTerminal = false;
+    function walk(list) {
+      toArray(list).forEach((node) => {
+        const kind = toText(node?.kind).toLowerCase();
+        if (kind === "terminal") hasTerminal = true;
+        if (kind === "decision" || kind === "parallel") {
+          toArray(node?.branches).forEach((branch) => walk(branch?.children));
+        }
+      });
+    }
+    walk(nodes);
+    if (hasTerminal) return "end";
+    return "unknown";
+  }
+
+  const primaryByNextMainline = branchSeeds.findIndex((b) => toText(b?.toId || b?.to_id || b?.targetId) === nextMainlineNodeId);
+  const primaryIndex = primaryByNextMainline >= 0 ? primaryByNextMainline : 0;
+  const previews = branchSeeds.map((branch, idx) => {
+    const toId = toText(branch?.toId || branch?.to_id || branch?.targetId);
+    const label = normalizeBranchLabel(branch?.when || branch?.label, idx);
+    const isPrimary = idx === primaryIndex;
+    const nodes = buildBranchNodes(toId, {
+      depth: 0,
+      visitedPath: new Set([gatewayId]),
+      isPrimary,
+    });
+    const summary = collectSummaryFromNodes(nodes);
+
+    return {
+      id: `${gatewayId}_branch_${idx + 1}`,
+      label,
+      condition: toText(branch?.when || branch?.label),
+      flowId: toText(branch?.edgeKey || ""),
+      firstNodeId: toId,
+      isPrimary,
+      edgeKey: toText(branch?.edgeKey || ""),
+      stopReason: deriveStopReason(summary, nodes, nextMainlineNodeId),
+      nodes,
+      continuesToMainline: !!summary.continuesToNodeId,
+      continuesToNodeId: summary.continuesToNodeId,
+      continuesToGraphNo: summary.continuesToGraphNo,
+      continuesToTitle: summary.continuesToTitle,
+      loop: !!summary.loopTargetNodeId,
+      loopTargetNodeId: summary.loopTargetNodeId,
+      loopTargetGraphNo: summary.loopTargetGraphNo,
+      loopTargetTitle: summary.loopTargetTitle,
+      previewSteps: summary.previewSteps,
+    };
+  });
+
+  if (nextMainlineNodeId) {
+    const primaryByContinue = previews.findIndex((branch) => toText(branch?.continuesToNodeId) === nextMainlineNodeId);
+    if (primaryByContinue >= 0) {
+      return previews.map((branch, idx) => ({
+        ...branch,
+        isPrimary: idx === primaryByContinue,
+      }));
+    }
+  }
+
+  return previews;
+}
+
+export function buildTimelineBetweenBranchesItem({
+  anchorStep,
+  nextMainlineStep,
+  branchPreviews,
+  allowedContinueNodeIds,
+}) {
+  const fromSeq = toText(anchorStep?.seq_label || anchorStep?.seq);
+  const toSeq = toText(nextMainlineStep?.seq_label || nextMainlineStep?.seq);
+  const gatewayNodeId = toText(anchorStep?.node_bind_id || anchorStep?.node_id);
+  const nextNodeId = toText(nextMainlineStep?.node_bind_id || nextMainlineStep?.node_id);
+  function normalizeTier(raw) {
+    const tier = toText(raw).toUpperCase();
+    if (tier === "P0" || tier === "P1" || tier === "P2") return tier;
+    return "";
+  }
+  function tierRank(raw) {
+    const tier = normalizeTier(raw);
+    if (tier === "P0") return 0;
+    if (tier === "P1") return 1;
+    if (!tier) return 2;
+    return 3; // P2
+  }
+  const previews = [...toArray(branchPreviews)].sort((a, b) => {
+    const ar = tierRank(a?.tier || (a?.isHappy ? "P0" : ""));
+    const br = tierRank(b?.tier || (b?.isHappy ? "P0" : ""));
+    if (ar !== br) return ar - br;
+    if (!!a?.isPrimary !== !!b?.isPrimary) return a?.isPrimary ? -1 : 1;
+    const af = toText(a?.flowId || a?.edgeKey || "");
+    const bf = toText(b?.flowId || b?.edgeKey || "");
+    return af.localeCompare(bf, "ru");
+  });
+  if (!gatewayNodeId || !nextNodeId || !fromSeq || !toSeq || previews.length < 2) return null;
+  const allowedContinueSet = new Set(
+    toArray(allowedContinueNodeIds).map((nodeId) => toText(nodeId)).filter(Boolean),
+  );
+  if (!allowedContinueSet.size) allowedContinueSet.add(nextNodeId);
+  else allowedContinueSet.add(nextNodeId);
+
+  function fallbackBranchNodes(preview) {
+    const nodes = toArray(preview?.previewSteps).map((step) => ({
+      kind: "step",
+      nodeId: toText(step?.nodeId),
+      graphNo: toText(step?.graphNo),
+      title: toText(step?.title),
+      lane: toText(step?.lane),
+      nodeKind: toText(step?.kind),
+    }));
+    if (preview?.loop) {
+      nodes.push({
+        kind: "loop",
+        targetNodeId: toText(preview?.loopTargetNodeId),
+        targetGraphNo: toText(preview?.loopTargetGraphNo),
+        targetTitle: toText(preview?.loopTargetTitle),
+      });
+    }
+    if (preview?.continuesToMainline && allowedContinueSet.has(toText(preview?.continuesToNodeId))) {
+      nodes.push({
+        kind: "continue",
+        targetNodeId: toText(preview?.continuesToNodeId),
+        targetGraphNo: toText(preview?.continuesToGraphNo),
+        targetTitle: toText(preview?.continuesToTitle),
+      });
+    }
+    return nodes;
+  }
+
+  function stripInvalidContinue(list, allowedTargetNodeSet) {
+    const allowedSet = allowedTargetNodeSet instanceof Set
+      ? allowedTargetNodeSet
+      : new Set(toArray(allowedTargetNodeSet).map((nodeId) => toText(nodeId)).filter(Boolean));
+    return toArray(list)
+      .map((node) => {
+        const kind = toText(node?.kind).toLowerCase();
+        if (kind === "continue") {
+          const targetNodeId = toText(node?.targetNodeId);
+          if (!targetNodeId || !allowedSet.has(targetNodeId)) return null;
+          return node;
+        }
+        if (kind === "decision" || kind === "parallel") {
+          const branches = toArray(node?.branches).map((branch, idx) => ({
+            key: toText(branch?.key) || String.fromCharCode(65 + idx),
+            label: toText(branch?.label) || `Ветка ${idx + 1}`,
+            children: stripInvalidContinue(branch?.children, allowedSet),
+          }));
+          return {
+            ...node,
+            branches,
+          };
+        }
+        return node;
+      })
+      .filter(Boolean);
+  }
+
+  function deriveStopReasonFromChildren(children, fallback = "unknown", nextMainlineTarget = "") {
+    const nodes = toArray(children);
+    if (!nodes.length) return fallback;
+    const nextTarget = toText(nextMainlineTarget);
+    function walk(list) {
+      const items = toArray(list);
+      for (let i = 0; i < items.length; i += 1) {
+        const node = items[i];
+        const kind = toText(node?.kind).toLowerCase();
+        if (kind === "continue") {
+          const targetNodeId = toText(node?.targetNodeId);
+          if (nextTarget && targetNodeId === nextTarget) return "nextMainline";
+          return "continue";
+        }
+        if (kind === "loop") return "loop";
+        if (kind === "terminal") return "end";
+        if (kind === "decision" || kind === "parallel") {
+          const branches = toArray(node?.branches);
+          for (let b = 0; b < branches.length; b += 1) {
+            const nested = walk(branches[b]?.children);
+            if (nested) return nested;
+          }
+        }
+      }
+      return "";
+    }
+    return walk(nodes) || fallback;
+  }
+
+  const branches = previews.map((preview, idx) => {
+    const key = String.fromCharCode(65 + (idx % 26));
+    const label = toText(preview?.label) || `Ветка ${idx + 1}`;
+    const rawNodes = toArray(preview?.nodes);
+    const fallbackNodes = fallbackBranchNodes(preview);
+    let children = rawNodes.length ? rawNodes : fallbackNodes;
+
+    if (preview?.isPrimary) {
+      if (toText(preview?.continuesToNodeId) === nextNodeId) {
+        children = [{
+          kind: "continue",
+          targetNodeId: nextNodeId,
+          targetGraphNo: toSeq,
+          targetTitle: toText(nextMainlineStep?.action) || toText(nextMainlineStep?.node_bind_title) || nextNodeId,
+        }];
+      } else {
+        children = stripInvalidContinue(children, allowedContinueSet);
+      }
+    } else {
+      children = stripInvalidContinue(children, allowedContinueSet);
+      if (!children.length) {
+        const fallbackWithAllowed = stripInvalidContinue(fallbackNodes, allowedContinueSet);
+        children = fallbackWithAllowed.length
+          ? fallbackWithAllowed
+          : fallbackNodes.filter((node) => toText(node?.kind).toLowerCase() !== "continue");
+      }
+    }
+
+    const continueRestricted = !preview?.isPrimary
+      && !!toText(preview?.continuesToNodeId)
+      && !allowedContinueSet.has(toText(preview?.continuesToNodeId));
+
+    return {
+      key,
+      label,
+      tier: normalizeTier(preview?.tier || (preview?.isHappy ? "P0" : "")),
+      isPrimary: !!preview?.isPrimary,
+      primaryReasonCode: toText(preview?.primaryReasonCode || ""),
+      primaryReasonLabel: toText(preview?.primaryReasonLabel || ""),
+      nonPrimaryReasonCode: toText(preview?.nonPrimaryReasonCode || ""),
+      nonPrimaryReasonLabel: toText(preview?.nonPrimaryReasonLabel || ""),
+      stopReason: toText(preview?.stopReason) || deriveStopReasonFromChildren(children, "unknown", nextNodeId),
+      continueRestricted,
+      continueRestrictionText: continueRestricted
+        ? "Continue возможно только на шаги mainline ниже текущего gateway."
+        : "",
+      children,
+    };
+  });
+
+  const primaryBranch = branches.find((branch) => !!branch?.isPrimary) || null;
+  const tiers = branches
+    .map((branch) => toText(branch?.tier).toUpperCase())
+    .filter(Boolean);
+  const uniqueTiers = Array.from(new Set(tiers));
+
+  return {
+    kind: "between_branches",
+    anchorGatewayId: gatewayNodeId,
+    nextMainlineNodeId: nextNodeId,
+    fromGraphNo: fromSeq,
+    toGraphNo: toSeq,
+    summary: {
+      branchCount: branches.length,
+      tierLabels: uniqueTiers,
+      primaryLabel: toText(primaryBranch?.label),
+      primaryTier: toText(primaryBranch?.tier).toUpperCase(),
+      primaryReasonLabel: toText(primaryBranch?.primaryReasonLabel),
+    },
+    branches,
+  };
+}
+
 export function collectNodeIdsInBpmnOrder(xmlText) {
   const raw = String(xmlText || "").trim();
   if (!raw || typeof DOMParser === "undefined") return [];
@@ -746,6 +1535,8 @@ export function collectNodeIdsInBpmnOrder(xmlText) {
   ]);
 
   const domOrder = [];
+  const nodeKindById = {};
+  const nodeParentKindById = {};
   const seen = new Set();
   Array.from(doc.getElementsByTagName("*")).forEach((el) => {
     const local = String(el.localName || "").toLowerCase();
@@ -754,50 +1545,22 @@ export function collectNodeIdsInBpmnOrder(xmlText) {
     if (!id || seen.has(id)) return;
     seen.add(id);
     domOrder.push(id);
+    nodeKindById[id] = local;
+    nodeParentKindById[id] = String(el.parentElement?.localName || "").toLowerCase();
   });
   if (!domOrder.length) return [];
 
-  const indeg = {};
-  const out = {};
-  const idxById = {};
-  domOrder.forEach((id, idx) => {
-    indeg[id] = 0;
-    out[id] = [];
-    idxById[id] = idx;
-  });
-
+  const sequenceEdges = [];
   Array.from(doc.getElementsByTagName("*")).forEach((el) => {
     const local = String(el.localName || "").toLowerCase();
     if (local !== "sequenceflow") return;
     const fromId = toText(el.getAttribute("sourceRef"));
     const toId = toText(el.getAttribute("targetRef"));
     if (!fromId || !toId || fromId === toId) return;
-    if (!Object.prototype.hasOwnProperty.call(indeg, fromId)) return;
-    if (!Object.prototype.hasOwnProperty.call(indeg, toId)) return;
-    out[fromId].push(toId);
-    indeg[toId] += 1;
+    sequenceEdges.push({ from_id: fromId, to_id: toId });
   });
 
-  const queue = domOrder.filter((id) => indeg[id] === 0).sort((a, b) => idxById[a] - idxById[b]);
-  const ordered = [];
-  while (queue.length) {
-    const cur = queue.shift();
-    if (!cur) break;
-    ordered.push(cur);
-    toArray(out[cur]).forEach((nextId) => {
-      indeg[nextId] -= 1;
-      if (indeg[nextId] === 0) queue.push(nextId);
-    });
-    queue.sort((a, b) => idxById[a] - idxById[b]);
-  }
-
-  if (ordered.length < domOrder.length) {
-    const used = new Set(ordered);
-    domOrder.forEach((id) => {
-      if (!used.has(id)) ordered.push(id);
-    });
-  }
-  return ordered;
+  return orderNodeIdsByFlow(domOrder, sequenceEdges, { nodeKindById, nodeParentKindById });
 }
 
 export function getElementsByLocalNames(root, names) {
@@ -954,6 +1717,92 @@ export function parseLaneMapFromBpmnXml(xmlText) {
     laneByNode[nodeId] = toText(laneMetaByNode[nodeId]?.name);
   });
   return laneByNode;
+}
+
+export function parseSubprocessMetaByNodeFromBpmnXml(xmlText) {
+  const raw = String(xmlText || "").trim();
+  if (!raw || typeof DOMParser === "undefined") return {};
+
+  let doc;
+  try {
+    doc = new DOMParser().parseFromString(raw, "application/xml");
+  } catch {
+    return {};
+  }
+  if (!doc || doc.getElementsByTagName("parsererror").length > 0) return {};
+
+  const flowNodeTags = [
+    "task",
+    "usertask",
+    "servicetask",
+    "manualtask",
+    "scripttask",
+    "businessruletask",
+    "sendtask",
+    "receivetask",
+    "callactivity",
+    "subprocess",
+    "adhocsubprocess",
+    "exclusivegateway",
+    "inclusivegateway",
+    "parallelgateway",
+    "eventbasedgateway",
+    "startevent",
+    "endevent",
+    "intermediatecatchevent",
+    "intermediatethrowevent",
+    "boundaryevent",
+  ];
+
+  const subprocessById = {};
+  getElementsByLocalNames(doc, ["subprocess", "adhocsubprocess"]).forEach((el) => {
+    const id = toText(el.getAttribute("id"));
+    if (!id) return;
+    subprocessById[id] = {
+      id,
+      name: toText(el.getAttribute("name")) || id,
+      kind: String(el.localName || "").toLowerCase(),
+    };
+  });
+
+  const metaByNode = {};
+  getElementsByLocalNames(doc, flowNodeTags).forEach((el) => {
+    const nodeId = toText(el.getAttribute("id"));
+    if (!nodeId) return;
+
+    let parent = el.parentElement;
+    let parentSubprocessId = "";
+    let parentSubprocessName = "";
+    let depth = 0;
+    while (parent) {
+      const local = String(parent.localName || "").toLowerCase();
+      if (local === "subprocess" || local === "adhocsubprocess") {
+        const pid = toText(parent.getAttribute("id"));
+        if (pid) {
+          depth += 1;
+          if (!parentSubprocessId) {
+            parentSubprocessId = pid;
+            parentSubprocessName = toText(parent.getAttribute("name")) || subprocessById[pid]?.name || pid;
+          }
+        }
+      }
+      parent = parent.parentElement;
+    }
+
+    const ownSubprocess = subprocessById[nodeId];
+    metaByNode[nodeId] = {
+      nodeId,
+      nodeKind: String(el.localName || "").toLowerCase(),
+      isSubprocessContainer: !!ownSubprocess,
+      subprocessId: ownSubprocess?.id || "",
+      subprocessName: ownSubprocess?.name || "",
+      parentSubprocessId,
+      parentSubprocessName,
+      depth,
+    };
+  });
+
+  return metaByNode;
 }
 
 export function parseNodeKindMapFromBpmnXml(xmlText) {
@@ -1355,7 +2204,7 @@ export function asMarkdown(data, timeline, transitions, summary, topWaits, analy
   if (!timeline.length) {
     lines.push("- Шаги пока не добавлены.");
   } else {
-    lines.push("| № | T+ | Цех/участок | Лайн | Подпроцесс | Тип | Шаг | Узел BPMN | Комментарий | Роль | Длительность (мин) | Ожидание (мин) | Выход |\n|---:|---|---|---|---|---|---|---|---|---|---:|---:|---|");
+    lines.push("| № | T+ | Цех/участок | Лайн | Подпроцесс | Тип | Шаг | Узел BPMN | Комментарий | Роль | Время шага (мин) | Ожидание (мин) | Выход |\n|---:|---|---|---|---|---|---|---|---|---|---:|---:|---|");
     timeline.forEach((step) => {
       lines.push(
         `| ${step.seq} | ${step.t_plus} | ${toText(step.area) || "—"} | ${toText(step.lane_name) || "—"} | ${toText(step.subprocess) || "—"} | ${typeLabel(step.type)} | ${toText(step.action) || "—"} | ${toText(step.node_bind_id || step.node_id) || "—"} | ${toText(step.comment) || "—"} | ${toText(step.role) || "—"} | ${step.duration} | ${step.wait} | ${toText(step.output) || "—"} |`,

@@ -1,10 +1,71 @@
 // Single source of truth for API calls (FPC)
 // Uses Vite proxy: /api -> backend, so API_BASE is empty.
-const API_BASE = "";
+function readApiBase() {
+  const raw = String(import.meta?.env?.VITE_API_BASE || "").trim();
+  if (!raw) return "";
+  return raw.endsWith("/") ? raw.slice(0, -1) : raw;
+}
+
+const API_BASE = readApiBase();
+const ACCESS_TOKEN_KEY = "fpc_auth_access_token";
+const AUTH_RETRY_BLOCKLIST = new Set(["/api/auth/login", "/api/auth/refresh", "/api/auth/logout"]);
+const authFailureListeners = new Set();
+
+let accessToken = "";
+let refreshInFlight = null;
+let refreshWaiters = 0;
+let requestSeq = 0;
+
+function readStoredAccessToken() {
+  if (typeof window === "undefined") return "";
+  try {
+    return String(window.localStorage?.getItem(ACCESS_TOKEN_KEY) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+accessToken = readStoredAccessToken();
+
+function emitAuthFailure(reason = "unauthorized") {
+  authFailureListeners.forEach((fn) => {
+    try {
+      fn(String(reason || "unauthorized"));
+    } catch {
+      // ignore listener errors
+    }
+  });
+}
+
+function shouldLogAuthTrace() {
+  if (typeof window === "undefined") return false;
+  try {
+    const ls = window.localStorage;
+    return String(ls?.getItem("fpc_debug_trace") || "").trim() === "1"
+      || String(ls?.getItem("DEBUG_LOOP") || "").trim() === "1";
+  } catch {
+    return false;
+  }
+}
+
+function logAuthTrace(tag, payload = {}) {
+  if (!shouldLogAuthTrace()) return;
+  const suffix = Object.entries(payload || {})
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .join(" ");
+  // eslint-disable-next-line no-console
+  console.debug(`[AUTH_TRACE] ${String(tag || "trace")} ${suffix}`.trim());
+}
 
 function joinUrl(path) {
   const p = String(path || "");
-  return `${API_BASE}${p}`;
+  if (!p) return API_BASE || "";
+  if (/^https?:\/\//i.test(p)) return p;
+  if (!API_BASE) return p;
+  if (API_BASE.endsWith("/api") && p === "/api") return API_BASE;
+  if (API_BASE.endsWith("/api") && p.startsWith("/api/")) return `${API_BASE}${p.slice(4)}`;
+  if (p.startsWith("/")) return `${API_BASE}${p}`;
+  return `${API_BASE}/${p}`;
 }
 
 function normalizeErrorPayload(payload) {
@@ -45,33 +106,213 @@ function normalizeNotes(value) {
 function okOrError(r) {
   if (!r.ok) return r;
   if (r.data && typeof r.data === "object" && !Array.isArray(r.data) && r.data.error) {
-    return { ok: false, status: r.status || 200, error: String(r.data.error), data: r.data };
+    return {
+      ok: false,
+      status: r.status || 200,
+      error: String(r.data.error),
+      data: r.data,
+      method: r.method,
+      endpoint: r.endpoint,
+      url: r.url,
+      text: r.text,
+      response_text: r.response_text || r.text,
+    };
   }
   return r;
 }
 
-async function request(path, opts = {}) {
+export function getAccessToken() {
+  return String(accessToken || "");
+}
+
+export function setAccessToken(token, options = {}) {
+  const next = String(token || "").trim();
+  accessToken = next;
+  const persist = options?.persist !== false;
+  if (typeof window !== "undefined" && persist) {
+    try {
+      if (next) window.localStorage?.setItem(ACCESS_TOKEN_KEY, next);
+      else window.localStorage?.removeItem(ACCESS_TOKEN_KEY);
+    } catch {
+      // ignore storage errors
+    }
+  }
+  return accessToken;
+}
+
+export function clearAccessToken() {
+  return setAccessToken("");
+}
+
+export function onAuthFailure(listener) {
+  if (typeof listener !== "function") return () => {};
+  authFailureListeners.add(listener);
+  return () => authFailureListeners.delete(listener);
+}
+
+async function fetchWithRawResponse(path, opts = {}) {
   const url = joinUrl(path);
   const method = String(opts.method || "GET").toUpperCase();
-
   const headers = new Headers(opts.headers || {});
   const hasBody = opts.body !== undefined && opts.body !== null;
-
   let body = opts.body;
   if (hasBody && isPlainObject(body)) {
     if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     body = JSON.stringify(body);
   }
+  if (opts.auth !== false) {
+    const token = getAccessToken();
+    if (token && !headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+  }
+  return fetch(url, {
+    method,
+    headers,
+    body: hasBody ? body : undefined,
+    credentials: "include",
+  });
+}
 
+async function refreshAccessTokenLocked(meta = {}) {
+  if (refreshInFlight) {
+    refreshWaiters += 1;
+    logAuthTrace("refresh_wait", {
+      requestId: Number(meta?.requestId || 0),
+      reason: String(meta?.reason || "unknown"),
+      waiters: refreshWaiters,
+    });
+    try {
+      return await refreshInFlight;
+    } finally {
+      refreshWaiters = Math.max(0, refreshWaiters - 1);
+    }
+  }
+  logAuthTrace("refresh_start", {
+    requestId: Number(meta?.requestId || 0),
+    reason: String(meta?.reason || "unknown"),
+  });
+  refreshInFlight = (async () => {
+    let res;
+    try {
+      res = await fetch(joinUrl("/api/auth/refresh"), {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch (e) {
+      clearAccessToken();
+      return { ok: false, status: 0, error: String(e?.message || e || "network error") };
+    }
+
+    let payload = null;
+    try {
+      payload = await res.json();
+    } catch {
+      payload = null;
+    }
+
+    if (!res.ok) {
+      clearAccessToken();
+      logAuthTrace("refresh_fail", {
+        requestId: Number(meta?.requestId || 0),
+        status: Number(res.status || 0),
+      });
+      return {
+        ok: false,
+        status: res.status,
+        error: normalizeErrorPayload(payload) || `HTTP ${res.status}`,
+      };
+    }
+
+    const token = String(payload?.access_token || "").trim();
+    if (!token) {
+      clearAccessToken();
+      logAuthTrace("refresh_fail_missing_token", {
+        requestId: Number(meta?.requestId || 0),
+      });
+      return { ok: false, status: 500, error: "missing access_token" };
+    }
+    setAccessToken(token);
+    logAuthTrace("refresh_ok", {
+      requestId: Number(meta?.requestId || 0),
+      status: Number(res.status || 0),
+      waiters: refreshWaiters,
+    });
+    return { ok: true, status: res.status, access_token: token, token_type: "bearer" };
+  })();
+  try {
+    return await refreshInFlight;
+  } finally {
+    refreshInFlight = null;
+  }
+}
+
+async function request(path, opts = {}) {
+  const requestId = Number(opts.__requestId || (++requestSeq));
+  const authAttempts = Number(opts.__authAttempts || 0);
+  const method = String(opts.method || "GET").toUpperCase();
+  const endpoint = String(path || "");
+  const url = joinUrl(endpoint);
   let res;
   try {
-    res = await fetch(url, {
-      method,
-      headers,
-      body: hasBody ? body : undefined,
-    });
+    res = await fetchWithRawResponse(path, opts);
   } catch (e) {
-    return { ok: false, status: 0, error: String(e?.message || e || "network error") };
+    return {
+      ok: false,
+      status: 0,
+      error: String(e?.message || e || "network error"),
+      method,
+      endpoint,
+      url,
+      response_text: "",
+      data: null,
+    };
+  }
+
+  if (
+    res.status === 401
+    && opts.auth !== false
+    && opts.retryAuth !== false
+    && !opts.__didRetryAuth
+    && !AUTH_RETRY_BLOCKLIST.has(String(path || ""))
+  ) {
+    logAuthTrace("401", {
+      requestId,
+      path: String(path || ""),
+      authAttempts,
+      retryAuth: opts.retryAuth === false ? 0 : 1,
+    });
+    if (authAttempts >= 1) {
+      logAuthTrace("401_abort_max_attempts", {
+        requestId,
+        path: String(path || ""),
+      });
+      emitAuthFailure("refresh_failed");
+    } else {
+      const refreshRes = await refreshAccessTokenLocked({
+        requestId,
+        reason: "response_401",
+      });
+      if (refreshRes?.ok) {
+        logAuthTrace("retry_after_refresh", {
+          requestId,
+          path: String(path || ""),
+          authAttempts: authAttempts + 1,
+        });
+        return request(path, {
+          ...opts,
+          __didRetryAuth: true,
+          __authAttempts: authAttempts + 1,
+          __requestId: requestId,
+        });
+      }
+      logAuthTrace("refresh_chain_failed", {
+        requestId,
+        path: String(path || ""),
+        status: Number(refreshRes?.status || 0),
+      });
+      emitAuthFailure("refresh_failed");
+    }
   }
 
   const status = res.status;
@@ -92,10 +333,28 @@ async function request(path, opts = {}) {
 
   if (!res.ok) {
     const err = normalizeErrorPayload(data) || text || `HTTP ${status}`;
-    return { ok: false, status, error: err, data };
+    if (status === 401) {
+      logAuthTrace("401_final", {
+        requestId,
+        path: String(path || ""),
+        didRetry: opts.__didRetryAuth ? 1 : 0,
+        authAttempts,
+      });
+    }
+    return {
+      ok: false,
+      status,
+      error: err,
+      data,
+      text,
+      method,
+      endpoint,
+      url,
+      response_text: text,
+    };
   }
 
-  return { ok: true, status, data, text };
+  return { ok: true, status, data, text, method, endpoint, url };
 }
 
 function shouldLogBpmnTrace() {
@@ -116,6 +375,46 @@ function fnv1aHex(input) {
     hash = Math.imul(hash >>> 0, 0x01000193) >>> 0;
   }
   return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+// ------- Auth -------
+export async function apiAuthLogin(email, password) {
+  const body = {
+    email: String(email || "").trim(),
+    password: String(password || ""),
+  };
+  const r = okOrError(await request("/api/auth/login", { method: "POST", body, auth: false, retryAuth: false }));
+  if (!r.ok) return r;
+  const token = String(r.data?.access_token || "").trim();
+  if (!token) return { ok: false, status: r.status, error: "missing access_token" };
+  setAccessToken(token);
+  return { ok: true, status: r.status, access_token: token, token_type: "bearer" };
+}
+
+export async function apiAuthRefresh(options = {}) {
+  const r = await refreshAccessTokenLocked();
+  if (!r.ok && options?.silent !== true) emitAuthFailure("refresh_failed");
+  return r;
+}
+
+export async function apiAuthLogout() {
+  const r = okOrError(await request("/api/auth/logout", { method: "POST", auth: false, retryAuth: false }));
+  clearAccessToken();
+  return r.ok ? { ok: true, status: r.status, result: r.data || { ok: true } } : r;
+}
+
+export async function apiAuthMe() {
+  const r = okOrError(await request("/api/auth/me", { method: "GET", retryAuth: true }));
+  if (!r.ok) return r;
+  return {
+    ok: true,
+    status: r.status,
+    user: {
+      id: String(r.data?.id || ""),
+      email: String(r.data?.email || ""),
+      is_admin: Boolean(r.data?.is_admin),
+    },
+  };
 }
 
 // ------- Meta -------
@@ -394,6 +693,41 @@ export async function apiAiQuestions(sessionId, payload) {
   return r.ok ? { ok: true, status: r.status, result: r.data } : r;
 }
 
+export async function apiAiCommandOps(sessionId, payload) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const body = isPlainObject(payload) ? payload : {};
+  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/ai/ops`, { method: "POST", body }));
+  return r.ok ? { ok: true, status: r.status, result: r.data } : r;
+}
+
+export async function apiCreatePathReportVersion(sessionId, pathId, payload) {
+  const sid = String(sessionId || "").trim();
+  const pid = String(pathId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  if (!pid) return { ok: false, status: 0, error: "missing path_id" };
+  const body = isPlainObject(payload) ? payload : {};
+  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/paths/${encodeURIComponent(pid)}/reports`, { method: "POST", body }));
+  return r.ok ? { ok: true, status: r.status, report: r.data?.report || {}, result: r.data } : r;
+}
+
+export async function apiListPathReportVersions(sessionId, pathId) {
+  const sid = String(sessionId || "").trim();
+  const pid = String(pathId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  if (!pid) return { ok: false, status: 0, error: "missing path_id" };
+  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/paths/${encodeURIComponent(pid)}/reports`));
+  const items = Array.isArray(r.data) ? r.data : [];
+  return r.ok ? { ok: true, status: r.status, items } : r;
+}
+
+export async function apiGetReportVersion(reportId) {
+  const rid = String(reportId || "").trim();
+  if (!rid) return { ok: false, status: 0, error: "missing report_id" };
+  const r = okOrError(await request(`/api/reports/${encodeURIComponent(rid)}`));
+  return r.ok ? { ok: true, status: r.status, report: r.data || {} } : r;
+}
+
 export async function apiSessionTitleQuestions(payload) {
   const body = isPlainObject(payload) ? payload : {};
   const title = String(body.title || "").trim();
@@ -458,6 +792,21 @@ export async function apiDeleteBpmnXml(sessionId) {
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
   const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/bpmn`, { method: "DELETE" }));
   return r.ok ? { ok: true, status: r.status, result: r.data } : r;
+}
+
+export async function apiGetBpmnMeta(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/bpmn_meta`));
+  return r.ok ? { ok: true, status: r.status, meta: r.data || { version: 1, flow_meta: {} } } : r;
+}
+
+export async function apiPatchBpmnMeta(sessionId, payload = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const body = isPlainObject(payload) ? payload : {};
+  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/bpmn_meta`, { method: "PATCH", body }));
+  return r.ok ? { ok: true, status: r.status, meta: r.data || { version: 1, flow_meta: {} } } : r;
 }
 
 export async function apiGetExport(sessionId) {

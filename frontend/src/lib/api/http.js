@@ -1,4 +1,21 @@
-const API_BASE = ""; // use Vite proxy: /api -> backend
+function readApiBase() {
+  const raw = String(import.meta?.env?.VITE_API_BASE || "").trim();
+  if (!raw) return "";
+  return raw.endsWith("/") ? raw.slice(0, -1) : raw;
+}
+
+const API_BASE = readApiBase(); // default: Vite proxy /api -> backend
+
+function joinUrl(path) {
+  const p = String(path || "");
+  if (!p) return API_BASE || "";
+  if (/^https?:\/\//i.test(p)) return p;
+  if (!API_BASE) return p;
+  if (API_BASE.endsWith("/api") && p === "/api") return API_BASE;
+  if (API_BASE.endsWith("/api") && p.startsWith("/api/")) return `${API_BASE}${p.slice(4)}`;
+  if (p.startsWith("/")) return `${API_BASE}${p}`;
+  return `${API_BASE}/${p}`;
+}
 
 function isJsonResponse(res) {
   const ct = res.headers.get("content-type") || "";
@@ -26,7 +43,7 @@ async function readError(res) {
 }
 
 export async function requestJson(path, { method = "GET", body = null, headers = {} } = {}) {
-  const url = `${API_BASE}${path}`;
+  const url = joinUrl(path);
   const opts = {
     method,
     headers: {
@@ -56,7 +73,7 @@ export async function requestJson(path, { method = "GET", body = null, headers =
 }
 
 export async function requestText(path, { method = "GET", headers = {} } = {}) {
-  const url = `${API_BASE}${path}`;
+  const url = joinUrl(path);
   try {
     const res = await fetch(url, { method, headers });
     if (!res.ok) return { ok: false, status: res.status, error: await readError(res) };
