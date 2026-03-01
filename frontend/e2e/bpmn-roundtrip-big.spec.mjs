@@ -1,10 +1,17 @@
 import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
-import { fnv1aHex, hasDiMarkers, makeBigDiagramXml } from "./helpers/bpmnFixtures.mjs";
+import { fnv1aHex, hasDiMarkers, makeBigDiagramXmlOptional } from "./helpers/bpmnFixtures.mjs";
+import { apiLogin, setUiToken } from "./helpers/e2eAuth.mjs";
 
 const API_BASE = process.env.E2E_API_BASE_URL || "http://127.0.0.1:8011";
 
-async function apiJson(res, opLabel) {
+function payloadKeys(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return "-";
+  const keys = Object.keys(payload);
+  return keys.length ? keys.join(",") : "-";
+}
+
+async function apiJson(res, opLabel, meta = {}) {
   const txt = await res.text();
   let body = {};
   try {
@@ -12,36 +19,56 @@ async function apiJson(res, opLabel) {
   } catch {
     body = { raw: txt };
   }
-  expect(res.ok(), `${opLabel}: ${txt}`).toBeTruthy();
+  const url = String(meta?.url || res.url?.() || "-");
+  const keys = payloadKeys(meta?.payload);
+  expect(
+    res.ok(),
+    `${opLabel}: status=${res.status()} endpoint=${url} payloadKeys=${keys} body=${txt}`,
+  ).toBeTruthy();
   return body;
 }
 
-async function createFixture(request, runId, xmlText) {
+async function createFixture(request, runId, xmlText, authHeaders) {
+  const projectPayload = { title: `E2E roundtrip project ${runId}`, passport: {} };
   const projectRes = await request.post(`${API_BASE}/api/projects`, {
-    data: { title: `E2E roundtrip project ${runId}`, passport: {} },
+    headers: authHeaders,
+    data: projectPayload,
   });
-  const project = await apiJson(projectRes, "create project");
+  const project = await apiJson(projectRes, "create project", {
+    url: `${API_BASE}/api/projects`,
+    payload: projectPayload,
+  });
   const projectId = String(project.id || project.project_id || "").trim();
   expect(projectId).not.toBe("");
 
+  const sessionPayload = {
+    title: `E2E roundtrip session ${runId}`,
+    roles: ["Lane 1", "Lane 2", "Lane 3"],
+    start_role: "Lane 1",
+  };
   const sessionRes = await request.post(
     `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/sessions?mode=quick_skeleton`,
     {
-      data: {
-        title: `E2E roundtrip session ${runId}`,
-        roles: ["Lane 1", "Lane 2", "Lane 3"],
-        start_role: "Lane 1",
-      },
+      headers: authHeaders,
+      data: sessionPayload,
     },
   );
-  const session = await apiJson(sessionRes, "create session");
+  const session = await apiJson(sessionRes, "create session", {
+    url: `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/sessions?mode=quick_skeleton`,
+    payload: sessionPayload,
+  });
   const sessionId = String(session.id || session.session_id || "").trim();
   expect(sessionId).not.toBe("");
 
+  const bpmnPayload = { xml: xmlText };
   const putRes = await request.put(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/bpmn`, {
-    data: { xml: xmlText },
+    headers: authHeaders,
+    data: bpmnPayload,
   });
-  await apiJson(putRes, "seed bpmn");
+  await apiJson(putRes, "seed bpmn", {
+    url: `${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/bpmn`,
+    payload: bpmnPayload,
+  });
 
   return { projectId, sessionId };
 }
@@ -52,15 +79,23 @@ async function switchTab(page, title) {
   await btn.click();
 }
 
-async function openFixture(page, fixture) {
+async function openFixture(page, fixture, accessToken) {
+  const projectSelect = page.locator(".topbar .topSelect--project");
   await page.addInitScript(() => {
     window.__FPC_E2E__ = true;
     window.localStorage.setItem("fpc_debug_bpmn", "1");
     window.localStorage.setItem("fpc_debug_tabs", "1");
     window.localStorage.setItem("fpc_debug_trace", "1");
   });
-  await page.goto("/");
-  await expect(page.locator(".topbar .topSelect--project")).toBeVisible();
+  await page.goto("/app");
+  const hasWorkspace = await projectSelect.isVisible({ timeout: 3000 }).catch(() => false);
+  if (!hasWorkspace) {
+    await page.evaluate((token) => {
+      window.localStorage.setItem("fpc_auth_access_token", String(token || ""));
+    }, accessToken);
+    await page.reload({ waitUntil: "domcontentloaded" });
+  }
+  await expect(projectSelect).toBeVisible();
   await page.selectOption(".topbar .topSelect--project", fixture.projectId);
   await page.getByRole("button", { name: "Обновить" }).click();
   await expect(page.locator(`.topbar .topSelect--session option[value="${fixture.sessionId}"]`)).toHaveCount(1);
@@ -162,7 +197,8 @@ function countToken(xml, pattern) {
 test("big BPMN round-trip keeps DI and stable payload after export/import", async ({ page, request }) => {
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const marker = `ROUNDTRIP_${runId.slice(-6)}`;
-  const seedXml = makeBigDiagramXml({
+  const auth = await apiLogin(request, { apiBase: API_BASE });
+  const fixturePayload = await makeBigDiagramXmlOptional({
     seed: 20260220,
     pools: 2,
     lanes: 3,
@@ -170,7 +206,12 @@ test("big BPMN round-trip keeps DI and stable payload after export/import", asyn
     edges: 12,
     annotations: 3,
   });
-  const fixture = await createFixture(request, runId, seedXml);
+  const seedXml = String(fixturePayload?.xml || "");
+  // eslint-disable-next-line no-console
+  console.log(
+    `[FIXTURE] source=${String(fixturePayload?.source || "unknown")} xmlLen=${seedXml.length} hasDI=${hasDiMarkers(seedXml) ? "true" : "false"} hash=${fnv1aHex(seedXml)}`,
+  );
+  const fixture = await createFixture(request, runId, seedXml, auth.headers);
 
   const putPayloads = [];
   page.on("request", (req) => {
@@ -185,7 +226,8 @@ test("big BPMN round-trip keeps DI and stable payload after export/import", asyn
     }
   });
 
-  await openFixture(page, fixture);
+  await setUiToken(page, auth.accessToken);
+  await openFixture(page, fixture, auth.accessToken);
   await assertDiagramHealthy(page, "diagram_initial_ready");
 
   const initialXml = await readXml(page);

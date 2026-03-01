@@ -1,14 +1,32 @@
 import { formatPercent, toText } from "./utils";
 
+function toMinutes(value) {
+  const sec = Number(value);
+  if (!Number.isFinite(sec) || sec <= 0) return 0;
+  return Math.round(sec / 60);
+}
+
 export default function SummaryBlock({
   collapsed,
   toggleBlock,
-  summary,
   extendedAnalytics,
-  timelineViewLength,
   topWaits,
   exceptionsCount,
+  dodSnapshot,
 }) {
+  const snapshotCounts = dodSnapshot?.counts?.interview || {};
+  const snapshotTime = dodSnapshot?.time || {};
+  const totalSteps = Number(snapshotCounts?.stepsTotal || 0);
+  const boundSteps = Number(snapshotCounts?.stepsBoundToBpmn || 0);
+  const activeMin = toMinutes(snapshotTime?.processTotalSec);
+  const mainlineMin = toMinutes(snapshotTime?.mainlineTotalSec);
+  const waitMin = toMinutes(snapshotTime?.waitTotalSec);
+  const leadMin = activeMin + waitMin;
+  const aiTotal = Number(snapshotCounts?.aiQuestionsTotal || 0);
+  const aiDone = Number(snapshotCounts?.aiQuestionsDoneTotal || 0);
+  const aiOpen = Number(snapshotCounts?.aiQuestionsOpenTotal || Math.max(0, aiTotal - aiDone));
+  const tiers = dodSnapshot?.counts?.tiers || {};
+
   return (
     <div className="interviewBlock">
       <div className="interviewBlockHead">
@@ -22,37 +40,37 @@ export default function SummaryBlock({
           <div className="interviewSummaryRow">
             <div className="interviewSummaryCard">
               <div className="muted small">Сумма активного времени</div>
-              <div className="interviewSummaryValue">{summary.active} мин</div>
+              <div className="interviewSummaryValue">{activeMin} мин</div>
             </div>
             <div className="interviewSummaryCard">
-              <div className="muted small">Сумма ожиданий</div>
-              <div className="interviewSummaryValue">{summary.wait} мин</div>
+              <div className="muted small">Mainline время</div>
+              <div className="interviewSummaryValue">{mainlineMin} мин</div>
             </div>
             <div className="interviewSummaryCard">
               <div className="muted small">Lead time (итого)</div>
-              <div className="interviewSummaryValue">{summary.lead} мин</div>
+              <div className="interviewSummaryValue">{leadMin} мин</div>
             </div>
             <div className="interviewSummaryCard">
               <div className="muted small">Средняя длительность шага</div>
-              <div className="interviewSummaryValue">{extendedAnalytics.avgLeadPerStepMin} мин</div>
+              <div className="interviewSummaryValue">{totalSteps > 0 ? Math.round(leadMin / totalSteps) : 0} мин</div>
             </div>
           </div>
 
           <div className="interviewSummaryRow" style={{ marginTop: 10 }}>
             <div className="interviewSummaryCard">
               <div className="muted small">Привязка к BPMN</div>
-              <div className="interviewSummaryValue">{extendedAnalytics.boundStepCount}/{timelineViewLength}</div>
-              <div className="muted small">{formatPercent(extendedAnalytics.bindCoveragePct)}</div>
+              <div className="interviewSummaryValue">{boundSteps}/{totalSteps}</div>
+              <div className="muted small">{formatPercent(totalSteps > 0 ? (boundSteps / totalSteps) * 100 : 0)}</div>
             </div>
             <div className="interviewSummaryCard">
-              <div className="muted small">Заполненность границ</div>
-              <div className="interviewSummaryValue">{extendedAnalytics.boundariesFilled}/{extendedAnalytics.boundariesTotal}</div>
-              <div className="muted small">{formatPercent(extendedAnalytics.boundariesCoveragePct)}</div>
+              <div className="muted small">Tiers (flows)</div>
+              <div className="interviewSummaryValue">P0:{Number(tiers?.P0 || 0)} P1:{Number(tiers?.P1 || 0)} P2:{Number(tiers?.P2 || 0)}</div>
+              <div className="muted small">None: {Number(tiers?.None || 0)}</div>
             </div>
             <div className="interviewSummaryCard">
               <div className="muted small">AI-покрытие шагов</div>
-              <div className="interviewSummaryValue">{extendedAnalytics.aiStepCoverageCount}/{timelineViewLength}</div>
-              <div className="muted small">{formatPercent(extendedAnalytics.aiStepCoveragePct)}</div>
+              <div className="interviewSummaryValue">{aiTotal}</div>
+              <div className="muted small">open: {aiOpen} · done: {aiDone}</div>
             </div>
             <div className="interviewSummaryCard">
               <div className="muted small">Пропускная способность</div>
@@ -107,11 +125,11 @@ export default function SummaryBlock({
             <div className="interviewSummaryCard">
               <div className="muted small">AI и исключения</div>
               <ul className="interviewList">
-                <li>AI-вопросы: {extendedAnalytics.aiTotal}</li>
-                <li>Подтверждено: {extendedAnalytics.aiConfirmed}</li>
-                <li>Уточнить: {extendedAnalytics.aiClarify}</li>
-                <li>Неизвестно: {extendedAnalytics.aiUnknown}</li>
-                <li>Исключений: {exceptionsCount}</li>
+                <li>AI-вопросы: {aiTotal}</li>
+                <li>Подтверждено: {aiDone}</li>
+                <li>Уточнить: {aiOpen}</li>
+                <li>Неизвестно: {Math.max(0, aiTotal - aiDone - aiOpen)}</li>
+                <li>Исключений: {Number(snapshotCounts?.exceptionsTotal || exceptionsCount || 0)}</li>
                 <li>Суммарно добавляет: +{extendedAnalytics.exceptionAddMinTotal} мин</li>
               </ul>
             </div>

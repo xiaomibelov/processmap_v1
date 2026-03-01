@@ -1,8 +1,8 @@
 /* fpc: bpmn_n8n_bg_v1 */
-/* palette/context pad already inverted in prior css; keep it readable */
+/* keep icon rendering natural; theme files handle contrast */
 .djs-palette, .djs-context-pad{
-  filter: invert(1) hue-rotate(180deg);
-  opacity: .92;
+  filter: none !important;
+  opacity: 1 !important;
 }
 
 /* fpc: bpmn_toolbar_fullwidth_lefttoggle_v1 */
@@ -104,10 +104,10 @@
   margin-bottom: 10px;
 }
 
-/* palette readable on dark */
+/* palette readable on dark is controlled by dark theme overrides */
 .djs-palette, .djs-context-pad{
-  filter: invert(1) hue-rotate(180deg);
-  opacity: .92;
+  filter: none !important;
+  opacity: 1 !important;
 }
 
 /* topbar menu button spacing */

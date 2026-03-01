@@ -40,6 +40,7 @@ function projectInterviewNodes(nodesRaw) {
         type: String(n?.type || ""),
         title: String(n?.title || n?.name || ""),
         actor_role: String(n?.actor_role || ""),
+        step_time_min: n?.step_time_min ?? n?.duration_min ?? null,
         duration_min: n?.duration_min ?? null,
         interview_comment: String(params.interview_comment || ""),
         interview_subprocess: String(params.interview_subprocess || ""),
@@ -98,6 +99,11 @@ function normalizeLoose(v) {
     .trim();
 }
 
+function normalizeInterviewOrderMode(v) {
+  const mode = String(v || "").trim().toLowerCase();
+  return mode === "interview" ? "interview" : "bpmn";
+}
+
 function isBpmnEventShadowNode(node) {
   const kind = normalizeLoose(node?.parameters?.bpmn_kind);
   return kind === "startevent" || kind === "endevent";
@@ -136,8 +142,12 @@ function safeNodeGraphId(raw, fallback = "iv_step") {
 
 function enrichInterviewWithNodeBindings(interviewRaw, nodesRaw) {
   const interview = asObject(interviewRaw);
+  const pruneNodeIds = collectInterviewPruneNodeIds(interview);
+  const pruneNodeIdSet = new Set(pruneNodeIds);
   const steps = asArray(interview.steps).map((s) => ({ ...asObject(s) }));
-  const nodes = asArray(nodesRaw).map((n) => ({ ...asObject(n), parameters: { ...asObject(n?.parameters) } }));
+  const nodes = asArray(nodesRaw)
+    .map((n) => ({ ...asObject(n), parameters: { ...asObject(n?.parameters) } }))
+    .filter((n) => !pruneNodeIdSet.has(toNodeId(n?.id)));
 
   const byId = {};
   const titleBuckets = {};
@@ -197,7 +207,7 @@ function enrichInterviewWithNodeBindings(interviewRaw, nodesRaw) {
         nid = `${safeNodeGraphId(preferredId, `iv_step_${idx + 1}`)}_${k}`;
         k += 1;
       }
-      const durationNum = Number(step?.duration_min);
+      const durationNum = Number(step?.step_time_min ?? step?.duration_min);
       resolvedNode = {
         id: nid,
         type: mapInterviewStepTypeToNodeType(step?.type),
@@ -205,7 +215,8 @@ function enrichInterviewWithNodeBindings(interviewRaw, nodesRaw) {
         actor_role: role || null,
         equipment: [],
         parameters: {},
-        duration_min: Number.isFinite(durationNum) && durationNum > 0 ? Math.round(durationNum) : null,
+        step_time_min: Number.isFinite(durationNum) && durationNum >= 0 ? Math.round(durationNum) : null,
+        duration_min: Number.isFinite(durationNum) && durationNum >= 0 ? Math.round(durationNum) : null,
         qc: [],
         exceptions: [],
         disposition: {},
@@ -243,6 +254,7 @@ function enrichInterviewWithNodeBindings(interviewRaw, nodesRaw) {
       const fromId = toNodeId(tr?.from_node_id || tr?.from || tr?.source_id || tr?.sourceId);
       const toId = toNodeId(tr?.to_node_id || tr?.to || tr?.target_id || tr?.targetId);
       if (!fromId || !toId) return null;
+      if (pruneNodeIdSet.has(fromId) || pruneNodeIdSet.has(toId)) return null;
       if (!byId[fromId] || !byId[toId]) return null;
       return {
         id: String(tr?.id || `tr_${idx + 1}`),
@@ -266,8 +278,17 @@ function enrichInterviewWithNodeBindings(interviewRaw, nodesRaw) {
   asArray(interview.subprocesses).forEach(addSub);
   nextSteps.forEach((s) => addSub(s?.subprocess));
 
+  const nextInterview = { ...interview, steps: nextSteps, subprocesses, transitions };
+  if (pruneNodeIds.length) {
+    nextInterview.__deleted_node_ids = [...pruneNodeIds];
+  } else {
+    delete nextInterview.__deleted_node_ids;
+  }
+  delete nextInterview.deleted_node_ids;
+  delete nextInterview.deletedNodeIds;
+
   return {
-    interview: { ...interview, steps: nextSteps, subprocesses, transitions },
+    interview: nextInterview,
     nodes,
   };
 }
@@ -309,6 +330,10 @@ function mergeInterviewData(baseRaw, extraRaw, options = {}) {
   const preferBpmn = !!options?.preferBpmn;
   const base = asObject(baseRaw);
   const extra = asObject(extraRaw);
+  const pruneNodeIdSet = new Set([
+    ...collectInterviewPruneNodeIds(base),
+    ...collectInterviewPruneNodeIds(extra),
+  ]);
   const normName = (v) => String(v || "").trim().toLowerCase().replace(/\s+/g, " ");
   const isBlank = (v) => v == null || (typeof v === "string" && !v.trim());
 
@@ -353,7 +378,23 @@ function mergeInterviewData(baseRaw, extraRaw, options = {}) {
 
     if (matchedIdx >= 0) {
       const merged = { ...baseSteps[matchedIdx] };
-      const keysFillIfMissing = ["area", "type", "action", "subprocess", "comment", "role", "duration_min", "wait_min", "output"];
+      const keysFillIfMissing = [
+        "area",
+        "type",
+        "action",
+        "subprocess",
+        "comment",
+        "role",
+        "order_index",
+        "order",
+        "bpmn_ref",
+        "work_duration_sec",
+        "wait_duration_sec",
+        "step_time_min",
+        "duration_min",
+        "wait_min",
+        "output",
+      ];
       keysFillIfMissing.forEach((k) => {
         if (isBlank(merged[k]) && !isBlank(s[k])) merged[k] = s[k];
       });
@@ -402,6 +443,13 @@ function mergeInterviewData(baseRaw, extraRaw, options = {}) {
       ordered.push(s);
     });
     steps = ordered;
+  }
+  if (pruneNodeIdSet.size) {
+    steps = steps.filter((step) => {
+      const stepId = toNodeId(step?.id);
+      const nodeId = toNodeId(step?.node_id || step?.nodeId);
+      return !pruneNodeIdSet.has(stepId) && !pruneNodeIdSet.has(nodeId);
+    });
   }
 
   const baseExceptions = asArray(base.exceptions).map((x) => ({ ...x }));
@@ -541,16 +589,29 @@ function mergeInterviewData(baseRaw, extraRaw, options = {}) {
   }
   asArray(base.transitions).forEach((x) => addTransition(x, true));
   asArray(extra.transitions).forEach((x) => addTransition(x, true));
-  const transitions = Object.values(transitionsByKey);
+  let transitions = Object.values(transitionsByKey);
+  if (pruneNodeIdSet.size) {
+    transitions = transitions.filter((tr) => {
+      const fromId = toNodeId(tr?.from_node_id || tr?.from || tr?.source_id || tr?.sourceId);
+      const toId = toNodeId(tr?.to_node_id || tr?.to || tr?.target_id || tr?.targetId);
+      return !pruneNodeIdSet.has(fromId) && !pruneNodeIdSet.has(toId);
+    });
+  }
+  const orderMode = normalizeInterviewOrderMode(
+    extra.order_mode || extra.orderMode || base.order_mode || base.orderMode || "bpmn",
+  );
+  const pathSpecRaw = extra.path_spec || extra.pathSpec || base.path_spec || base.pathSpec || { mode: "manual", steps: [] };
 
   return {
     boundaries,
     steps,
+    path_spec: pathSpecRaw,
     subprocesses,
     exceptions,
     ai_questions: aiQuestions,
     ai_questions_by_element: aiQuestionsByElement,
     transitions,
+    order_mode: orderMode,
   };
 }
 
@@ -563,40 +624,94 @@ function toNodeId(v) {
   return String(v || "").trim();
 }
 
+function collectInterviewPruneNodeIds(interviewRaw) {
+  const interview = asObject(interviewRaw);
+  const out = [];
+  const seen = new Set();
+  const add = (v) => {
+    const id = toNodeId(v);
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    out.push(id);
+  };
+  asArray(interview.__deleted_node_ids).forEach(add);
+  asArray(interview.deleted_node_ids).forEach(add);
+  asArray(interview.deletedNodeIds).forEach(add);
+  return out;
+}
+
+function consumeInterviewPruneNodeIds(interviewRaw) {
+  const interview = asObject(interviewRaw);
+  const ids = collectInterviewPruneNodeIds(interview);
+  if (interview && typeof interview === "object") {
+    delete interview.__deleted_node_ids;
+    delete interview.deleted_node_ids;
+    delete interview.deletedNodeIds;
+  }
+  return ids;
+}
+
 function applyInterviewTransitionsToEdges(interviewRaw, edgesRaw) {
   const interview = asObject(interviewRaw);
+  const pruneNodeIds = consumeInterviewPruneNodeIds(interview);
+  const pruneNodeIdSet = new Set(pruneNodeIds);
   const edgeList = asArray(edgesRaw).map((e) => ({ ...e }));
-  if (!edgeList.length) return edgeList;
+
+  const out = [];
+  const edgeByKey = {};
+
+  edgeList.forEach((edgeRaw) => {
+    const fromId = toNodeId(edgeRaw?.from_id || edgeRaw?.from);
+    const toId = toNodeId(edgeRaw?.to_id || edgeRaw?.to);
+    if (!fromId || !toId) return;
+    if (pruneNodeIdSet.has(fromId) || pruneNodeIdSet.has(toId)) return;
+    const key = `${fromId}__${toId}`;
+    const normalized = {
+      ...edgeRaw,
+      from_id: fromId,
+      to_id: toId,
+      when: String(edgeRaw?.when || "").trim() || null,
+    };
+    if (!edgeByKey[key]) {
+      edgeByKey[key] = normalized;
+      out.push(normalized);
+      return;
+    }
+    const cur = edgeByKey[key];
+    if (!cur.when && normalized.when) {
+      cur.when = normalized.when;
+    }
+  });
 
   const transitionByKey = {};
   asArray(interview.transitions).forEach((tr) => {
     const fromId = toNodeId(tr?.from_node_id || tr?.from || tr?.source_id || tr?.sourceId);
     const toId = toNodeId(tr?.to_node_id || tr?.to || tr?.target_id || tr?.targetId);
     if (!fromId || !toId) return;
+    if (pruneNodeIdSet.has(fromId) || pruneNodeIdSet.has(toId)) return;
     const key = `${fromId}__${toId}`;
     transitionByKey[key] = String(tr?.when || tr?.label || "").trim();
   });
 
-  return edgeList.map((e) => {
-    const fromId = toNodeId(e?.from_id || e?.from);
-    const toId = toNodeId(e?.to_id || e?.to);
-    if (!fromId || !toId) return e;
-    const key = `${fromId}__${toId}`;
-    if (!Object.prototype.hasOwnProperty.call(transitionByKey, key)) {
-      return {
-        ...e,
-        from_id: fromId,
-        to_id: toId,
-      };
-    }
+  Object.keys(transitionByKey).forEach((key) => {
+    const [fromId, toId] = key.split("__");
+    if (!fromId || !toId) return;
     const when = transitionByKey[key];
-    return {
-      ...e,
+    const existing = edgeByKey[key];
+    if (existing) {
+      existing.when = when || null;
+      return;
+    }
+    const next = {
       from_id: fromId,
       to_id: toId,
       when: when || null,
     };
+    edgeByKey[key] = next;
+    out.push(next);
   });
+
+  return out;
 }
 
 function mergeNodesById(baseNodesRaw, parsedNodesRaw) {
@@ -630,6 +745,7 @@ function mergeNodesById(baseNodesRaw, parsedNodesRaw) {
     } else {
       cur.actor_role = cur.actor_role || null;
     }
+    cur.step_time_min = cur.step_time_min ?? parsed.step_time_min ?? parsed.duration_min ?? null;
     cur.duration_min = cur.duration_min ?? parsed.duration_min ?? null;
     cur.parameters = { ...asObject(parsed.parameters), ...asObject(cur.parameters) };
   });
@@ -686,9 +802,13 @@ function safeBpmnId(raw) {
 }
 
 function nodeDurationMin(node) {
+  const stepDirect = toInt(node?.step_time_min);
+  if (stepDirect !== null) return Math.max(stepDirect, 0);
   const direct = toInt(node?.duration_min);
   if (direct !== null) return Math.max(direct, 0);
   const sched = node?.parameters?._sched || {};
+  const fromStepSched = toInt(sched.step_time_min);
+  if (fromStepSched !== null) return Math.max(fromStepSched, 0);
   const fromSched = toInt(sched.duration_min);
   return fromSched === null ? null : Math.max(fromSched, 0);
 }
@@ -854,6 +974,7 @@ function buildBpmnLogicHints(xmlText, interviewRaw = null, nodesRaw = null) {
 
   const nodeTypeById = {};
   const nodeNameById = {};
+  const nodeRawNameById = {};
   const laneNameByNodeId = {};
   const laneInfoByKey = {};
   const allNodeIds = [];
@@ -862,8 +983,10 @@ function buildBpmnLogicHints(xmlText, interviewRaw = null, nodesRaw = null) {
     if (!allowed.has(local)) return;
     const id = toNodeId(el.getAttribute("id"));
     if (!id || nodeTypeById[id]) return;
+    const rawName = String(el.getAttribute("name") || "").trim();
     nodeTypeById[id] = local;
-    nodeNameById[id] = String(el.getAttribute("name") || "").trim() || id;
+    nodeRawNameById[id] = rawName;
+    nodeNameById[id] = rawName || id;
     allNodeIds.push(id);
   });
   if (!allNodeIds.length) return [];
@@ -897,6 +1020,12 @@ function buildBpmnLogicHints(xmlText, interviewRaw = null, nodesRaw = null) {
 
   const outgoingFlowsByNode = {};
   const defaultFlowByGateway = {};
+  const nodeMetaById = {};
+  asArray(nodesRaw).forEach((node) => {
+    const nid = toNodeId(node?.id);
+    if (!nid) return;
+    nodeMetaById[nid] = node && typeof node === "object" ? { ...node } : {};
+  });
   getElementsByLocalNames(doc, ["exclusivegateway", "inclusivegateway", "eventbasedgateway", "parallelgateway"]).forEach((el) => {
     const id = toNodeId(el.getAttribute("id"));
     if (!id) return;
@@ -965,6 +1094,26 @@ function buildBpmnLogicHints(xmlText, interviewRaw = null, nodesRaw = null) {
     const type = String(nodeTypeById[id] || "");
     const indeg = Number(inDeg[id] || 0);
     const outdeg = Number(outDeg[id] || 0);
+    const rawName = String(nodeRawNameById[id] || "").trim();
+    const labelLen = rawName.length;
+    const isTaskLike = (
+      type === "task"
+      || type === "usertask"
+      || type === "servicetask"
+      || type === "manualtask"
+      || type === "scripttask"
+      || type === "businessruletask"
+      || type === "sendtask"
+      || type === "receivetask"
+      || type === "callactivity"
+      || type === "subprocess"
+      || type === "adhocsubprocess"
+    );
+    if ((isTaskLike || type.includes("gateway")) && !rawName) {
+      addIssue(id, "low", "Элемент не подписан: добавьте понятное имя.");
+    } else if ((isTaskLike || type.includes("gateway")) && labelLen > 72) {
+      addIssue(id, "low", `Слишком длинное имя элемента (${labelLen} символов).`);
+    }
 
     if (type === "startevent") {
       if (indeg > 0) addIssue(id, "high", "У startEvent не должно быть входящих sequenceFlow.");
@@ -991,6 +1140,9 @@ function buildBpmnLogicHints(xmlText, interviewRaw = null, nodesRaw = null) {
       if ((type === "exclusivegateway" || type === "inclusivegateway" || type === "eventbasedgateway") && indeg <= 1 && outdeg <= 1) {
         addIssue(id, "medium", "Gateway не выполняет развилку/слияние (только 1 вход и 1 выход).");
       }
+      if (outdeg === 1) {
+        addIssue(id, "low", "Gateway имеет только 1 исходящую связь.");
+      }
       if ((type === "exclusivegateway" || type === "inclusivegateway") && outdeg > 1) {
         const outs = asArray(outgoingFlowsByNode[id]);
         const named = outs.filter((f) => String(f?.name || "").trim());
@@ -1004,6 +1156,47 @@ function buildBpmnLogicHints(xmlText, interviewRaw = null, nodesRaw = null) {
 
     if (indeg === 0) addIssue(id, "high", "Узел недостижим: нет входящих sequenceFlow.");
     if (outdeg === 0) addIssue(id, "high", "Узел обрывает процесс: нет исходящих sequenceFlow.");
+
+    if (isTaskLike) {
+      const fallbackLane = String(
+        nodeMetaById[id]?.actor_role
+        || nodeMetaById[id]?.actorRole
+        || nodeMetaById[id]?.lane
+        || nodeMetaById[id]?.laneName
+        || "",
+      ).trim();
+      if (!String(laneNameByNodeId[id] || "").trim() && !fallbackLane) {
+        addIssue(id, "medium", "Task не привязан к lane/actor.");
+      }
+    }
+  });
+
+  const taskNameToIds = {};
+  allNodeIds.forEach((id) => {
+    const type = String(nodeTypeById[id] || "");
+    const isTaskLike = (
+      type === "task"
+      || type === "usertask"
+      || type === "servicetask"
+      || type === "manualtask"
+      || type === "scripttask"
+      || type === "businessruletask"
+      || type === "sendtask"
+      || type === "receivetask"
+      || type === "callactivity"
+      || type === "subprocess"
+      || type === "adhocsubprocess"
+    );
+    if (!isTaskLike) return;
+    const key = normalizeLoose(nodeRawNameById[id] || "");
+    if (!key) return;
+    if (!taskNameToIds[key]) taskNameToIds[key] = [];
+    taskNameToIds[key].push(id);
+  });
+  Object.keys(taskNameToIds).forEach((key) => {
+    const ids = asArray(taskNameToIds[key]).filter(Boolean);
+    if (ids.length <= 1) return;
+    addIssue(ids[0], "low", `Дублирующиеся имена task: «${String(nodeNameById[ids[0]] || key)}».`);
   });
 
   if (startIds.length > 0) {
@@ -1022,6 +1215,43 @@ function buildBpmnLogicHints(xmlText, interviewRaw = null, nodesRaw = null) {
       addIssue(id, "high", "Узел недостижим от startEvent по sequenceFlow.");
     });
   }
+
+  const visited = new Set();
+  const active = new Set();
+  const stack = [];
+  const cycleSet = new Set();
+  const walk = (nodeId) => {
+    const nid = toNodeId(nodeId);
+    if (!nid || visited.has(nid)) return;
+    visited.add(nid);
+    active.add(nid);
+    stack.push(nid);
+    asArray(nextByNode[nid]).forEach((nextIdRaw) => {
+      const nextId = toNodeId(nextIdRaw);
+      if (!nextId || !Object.prototype.hasOwnProperty.call(nodeTypeById, nextId)) return;
+      if (!visited.has(nextId)) {
+        walk(nextId);
+        return;
+      }
+      if (!active.has(nextId)) return;
+      const pivot = stack.lastIndexOf(nextId);
+      const cycle = pivot >= 0 ? stack.slice(pivot) : [nid, nextId];
+      if (cycle.length < 2) return;
+      const canonical = `${cycle.length}::${[...cycle].sort((a, b) => String(a).localeCompare(String(b), "ru")).join("|")}`;
+      if (cycleSet.has(canonical)) return;
+      cycleSet.add(canonical);
+      if (cycle.length === 2) {
+        addIssue(cycle[0], "medium", "Обнаружен цикл 2-узла (A→B→A).");
+      } else if (cycle.length >= 5) {
+        addIssue(cycle[0], "medium", `Обнаружен длинный цикл (${cycle.length} узл.).`);
+      } else {
+        addIssue(cycle[0], "low", "Обнаружен цикл sequenceFlow.");
+      }
+    });
+    stack.pop();
+    active.delete(nid);
+  };
+  allNodeIds.forEach((id) => walk(id));
 
   const iv = interviewRaw && typeof interviewRaw === "object" && !Array.isArray(interviewRaw) ? interviewRaw : {};
   const interviewSteps = asArray(iv.steps);
@@ -1236,11 +1466,11 @@ function buildInterviewFromGraph(nodes, edges, startEvents, endEvents, commentBy
 
   let steps = timelineNodes.map((n, i) => {
     const type = inferInterviewType(n);
-    const duration = Number(n?.duration_min);
+    const duration = Number(n?.step_time_min ?? n?.duration_min);
     const actor = String(n?.actor_role || "").trim();
     const bpmnKind = String(n?.parameters?.bpmn_kind || "").toLowerCase();
     const isStartEvent = bpmnKind === "startevent";
-    const baseDuration = Number.isFinite(duration) && duration > 0
+    const baseDuration = Number.isFinite(duration) && duration >= 0
       ? Math.round(duration)
       : isStartEvent
         ? 0
@@ -1261,6 +1491,7 @@ function buildInterviewFromGraph(nodes, edges, startEvents, endEvents, commentBy
       subprocess: String(n?.parameters?.interview_subprocess || ""),
       comment: String(commentByNode[String(n?.id || "")] || n?.parameters?.interview_comment || "").trim(),
       role: actor,
+      step_time_min: type === "waiting" ? 0 : baseDuration,
       duration_min: String(type === "waiting" ? 0 : baseDuration),
       wait_min: String(waitDuration),
       output: "",
@@ -1516,6 +1747,7 @@ function parseBpmnToSessionGraph(xmlText) {
       actor_role: actorRole,
       equipment: [],
       parameters: params,
+      step_time_min: null,
       duration_min: null,
       qc: [],
       exceptions: [],

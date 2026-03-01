@@ -47,7 +47,11 @@
   }
 
   .workspace--leftHidden {
-    @apply gap-0 lg:grid-cols-[minmax(0,1fr)];
+    @apply grid-cols-[56px_minmax(0,1fr)] gap-2 lg:grid-cols-[56px_minmax(0,1fr)];
+  }
+
+  .workspace--leftCompact {
+    @apply lg:grid-cols-[72px_minmax(0,1fr)];
   }
 
   .workspaceLeft {
@@ -56,6 +60,22 @@
 
   .workspaceLeft--hidden {
     @apply hidden w-0 min-w-0 max-w-0 overflow-hidden p-0 opacity-0 pointer-events-none;
+  }
+
+  .workspaceLeft--compact {
+    @apply h-full min-h-0 min-w-0 overflow-hidden;
+  }
+
+  .workspaceLeft--rail {
+    @apply flex h-full min-h-0 min-w-0 items-start justify-center overflow-hidden pt-2;
+  }
+
+  .workspaceLeftContent {
+    @apply h-full min-h-0 min-w-0;
+  }
+
+  .workspaceLeftContent--hidden {
+    @apply hidden;
   }
 
   .workspaceMain {
@@ -81,6 +101,111 @@
 
   .processHeaderRight {
     @apply flex min-w-0 flex-1 items-center gap-1.5 justify-end overflow-x-auto;
+  }
+
+  .diagramToolbarHeader {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 8px;
+    min-height: 46px;
+    overflow: visible;
+  }
+
+  .diagramToolbarSlot {
+    @apply min-w-0;
+  }
+
+  .diagramToolbarSlot--left {
+    @apply flex items-center;
+  }
+
+  .diagramToolbarSlot--center {
+    @apply flex min-w-0 items-center justify-center;
+  }
+
+  .diagramToolbarSlot--center .seg {
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    white-space: nowrap;
+  }
+
+  .diagramToolbarSlot--right {
+    @apply flex items-center gap-1.5;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .diagramToolbarContext {
+    @apply items-center gap-1 rounded-lg border border-border bg-panel2/65 px-2 py-1 text-[11px] text-muted;
+  }
+
+  .diagramToolbarOverlay {
+    @apply absolute right-2 top-[calc(100%+8px)] z-[70] w-[min(520px,calc(100vw-48px))] max-h-[68vh] overflow-auto rounded-xl border border-border bg-panel p-2 shadow-panel backdrop-blur;
+    background-color: hsl(var(--panel) / 0.97);
+    box-shadow:
+      inset 0 1px 0 hsl(var(--border) / 0.24),
+      0 16px 34px hsl(var(--bg) / 0.34);
+    animation: diagramToolbarOverlayIn 150ms ease-out;
+  }
+
+  .diagramToolbarOverlaySection {
+    @apply rounded-lg border border-border/70 bg-panel2/40 p-2;
+  }
+
+  .diagramToolbarOverlaySection + .diagramToolbarOverlaySection {
+    margin-top: 8px;
+  }
+
+  .diagramToolbarOverlayTitle {
+    @apply mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted;
+  }
+
+  .diagramToolbarOverlayRow {
+    @apply flex items-center justify-between gap-2 rounded-md border border-border/40 bg-panel/50 px-2 py-1.5 text-xs text-fg;
+  }
+
+  .diagramToolbarOverlayRow + .diagramToolbarOverlayRow {
+    margin-top: 6px;
+  }
+
+  .diagramToolbarOverlayActions {
+    @apply flex flex-wrap items-center gap-1.5;
+  }
+
+  .toolbarSwitch {
+    @apply relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border border-border/70 bg-panel2/70 p-0 transition-colors;
+  }
+
+  .toolbarSwitch:disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+
+  .toolbarSwitch.on {
+    border-color: hsl(var(--accent) / 0.52);
+    background-color: hsl(var(--accent) / 0.24);
+  }
+
+  .toolbarSwitchKnob {
+    @apply pointer-events-none inline-block h-4 w-4 translate-x-1 rounded-full bg-muted transition-transform;
+  }
+
+  .toolbarSwitch.on .toolbarSwitchKnob {
+    transform: translateX(1.2rem);
+    background-color: hsl(var(--accent) / 0.98);
+  }
+
+  @keyframes diagramToolbarOverlayIn {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   .processBody {
@@ -123,6 +248,129 @@
 
   .bpmnCanvasTools {
     @apply absolute right-3 top-3 z-10 flex items-center gap-2 rounded-lg border border-border bg-panel/95 p-1.5 shadow-panel backdrop-blur;
+    z-index: 72;
+    pointer-events: auto;
+  }
+
+  .bpmnCanvasTools > * {
+    pointer-events: auto;
+  }
+
+  .diagramActionBar {
+    @apply max-w-[calc(100%-24px)] min-w-0;
+  }
+
+  .diagramActionBarSpacer {
+    @apply mx-0.5 h-6 w-px bg-border;
+  }
+
+  .diagramActionChip {
+    @apply inline-flex max-w-[120px] min-w-0 items-center rounded-full border border-border bg-panel2 px-2 py-0.5 text-[10px] font-semibold text-muted;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .diagramActionPopover {
+    @apply absolute z-[74] min-w-[280px] max-w-[420px] rounded-xl border border-border bg-panel px-3 py-2 shadow-panel;
+    right: 12px;
+    top: 52px;
+  }
+
+  .diagramActionPopover--path {
+    width: min(420px, calc(100% - 24px));
+  }
+
+  .diagramActionPopover--quality {
+    width: min(440px, calc(100% - 24px));
+    max-height: min(68vh, 620px);
+    overflow: auto;
+  }
+
+  .diagramActionPopover--overflow {
+    width: min(280px, calc(100% - 24px));
+  }
+
+  .diagramActionPopoverHead {
+    @apply mb-2 flex items-center justify-between gap-2 text-xs font-semibold text-fg;
+  }
+
+  .diagramActionPopoverActions {
+    @apply mt-2 flex flex-wrap items-center gap-1.5;
+  }
+
+  .diagramActionPopoverEmpty {
+    @apply rounded-md border border-dashed border-border px-2 py-2 text-xs text-muted;
+  }
+
+  .diagramActionCheckboxRow {
+    @apply flex min-w-0 items-center gap-2 text-xs text-fg;
+  }
+
+  .diagramActionCheckboxRow input {
+    @apply h-3.5 w-3.5;
+  }
+
+  .diagramActionField {
+    @apply mt-2 space-y-1 text-xs text-muted;
+  }
+
+  .diagramActionTierList {
+    @apply mt-2 space-y-1;
+  }
+
+  .diagramActionTierBtn {
+    @apply flex w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-border bg-panel2 px-2 py-1 text-left text-xs text-fg transition-colors;
+  }
+
+  .diagramActionTierBtn:hover {
+    @apply border-borderStrong bg-accentSoft;
+  }
+
+  .diagramActionTierBtn.isActive {
+    @apply border-accent/60 bg-accentSoft;
+  }
+
+  .diagramActionTierMeta {
+    @apply min-w-0 truncate text-[10px] text-muted;
+  }
+
+  .diagramIssueRows {
+    @apply mt-2 space-y-1.5;
+  }
+
+  .diagramIssueRow {
+    @apply flex min-w-0 items-center justify-between gap-2 rounded-md border border-border/70 bg-panel2/45 px-2 py-1.5;
+  }
+
+  .diagramIssueListWrap {
+    @apply mt-2 space-y-1.5;
+  }
+
+  .diagramIssueList {
+    @apply max-h-[32vh] space-y-1 overflow-auto pr-1;
+  }
+
+  .diagramIssueListItem {
+    @apply flex w-full min-w-0 items-center justify-between gap-2 rounded-md border border-border bg-panel2 px-2 py-1 text-left text-xs;
+  }
+
+  .diagramIssueListItem:hover {
+    @apply border-borderStrong bg-accentSoft;
+  }
+
+  .diagramIssueListItemTitle {
+    @apply min-w-0 flex-1 truncate text-fg;
+  }
+
+  .diagramIssueListItemMeta {
+    @apply max-w-[48%] truncate font-mono text-[10px] text-muted;
+  }
+
+  @media (max-width: 1320px) {
+    .diagramActionSecondary {
+      display: none;
+    }
   }
 
   .bpmnStage {
@@ -166,15 +414,321 @@
   }
 
   .docToolbar {
-    @apply sticky top-0 z-20 flex flex-wrap items-center justify-between gap-2 border-b border-border bg-panel/95 px-4 py-3 backdrop-blur;
+    @apply sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-b border-border bg-panel/95 px-4 py-3 backdrop-blur;
   }
 
   .docPreview {
     @apply min-h-[68vh] flex-1 overflow-auto px-5 py-4;
   }
 
-  .docProse {
-    @apply mx-0 max-w-none space-y-3;
+  .docToolbarTitle {
+    @apply min-w-0 flex-1;
+  }
+
+  .docToolbarHeading {
+    @apply text-sm font-semibold text-fg;
+  }
+
+  .docToolbarSubTitle {
+    @apply truncate text-xs text-muted;
+    max-width: min(52vw, 640px);
+  }
+
+  .docToolbarActions {
+    @apply flex flex-wrap items-center justify-end gap-2;
+  }
+
+  .docSegmented {
+    @apply inline-flex items-center rounded-lg border border-border bg-panel2/60 p-0.5;
+  }
+
+  .docSegmentBtn {
+    @apply h-8 rounded-md px-2.5 text-xs text-muted transition-colors;
+  }
+
+  .docSegmentBtn.isActive {
+    @apply bg-accentSoft text-fg;
+  }
+
+  .docNotice {
+    @apply mx-4 mt-2 rounded-lg border px-3 py-1.5 text-xs;
+  }
+
+  .docNotice.ok {
+    @apply border-success/45 bg-success/10 text-success;
+  }
+
+  .docNotice.err {
+    @apply border-danger/45 bg-danger/10 text-danger;
+  }
+
+  .docExportMenuWrap {
+    @apply relative;
+  }
+
+  .docExportMenu {
+    @apply absolute right-0 top-10 z-30 grid min-w-[160px] gap-1 rounded-lg border border-border bg-panel p-1.5 shadow-panel;
+  }
+
+  .docExportItem {
+    @apply rounded-md px-2.5 py-1.5 text-left text-xs text-fg transition-colors;
+  }
+
+  .docExportItem:hover:not(:disabled) {
+    @apply bg-panel2;
+  }
+
+  .docExportItem:disabled {
+    @apply cursor-not-allowed opacity-55;
+  }
+
+  .docHero {
+    @apply rounded-xl border border-border bg-panel2/35 p-4;
+  }
+
+  .docHeroTitle {
+    @apply text-lg font-semibold text-fg;
+  }
+
+  .docHeroMeta {
+    @apply mt-1 text-xs text-muted;
+  }
+
+  .docCardsGrid {
+    @apply mt-3 grid gap-2;
+  }
+
+  .docCardsGrid.cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .docCardsGrid.cols-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .docCard {
+    @apply rounded-lg border border-border/80 bg-panel px-3 py-2.5;
+  }
+
+  .docCard.metric {
+    @apply text-left;
+  }
+
+  .docCardLabel {
+    @apply text-[11px] text-muted;
+  }
+
+  .docCardValue {
+    @apply mt-1 text-sm font-semibold text-fg;
+  }
+
+  .docCardHint {
+    @apply mt-1 text-[11px] text-muted;
+  }
+
+  .docReportLayout {
+    @apply mt-4 grid gap-4;
+    grid-template-columns: 230px minmax(0, 1fr);
+  }
+
+  .docToc {
+    @apply sticky top-2 h-fit rounded-xl border border-border bg-panel2/45 p-3;
+  }
+
+  .docTocLink {
+    @apply block rounded-md px-2 py-1 text-xs text-muted transition-colors;
+  }
+
+  .docTocLink:hover {
+    @apply bg-accentSoft text-fg;
+  }
+
+  .docReportContent {
+    @apply min-w-0 space-y-4;
+  }
+
+  .docSection {
+    @apply rounded-xl border border-border bg-panel/80 p-3;
+  }
+
+  .docSectionHead {
+    @apply flex flex-wrap items-center justify-between gap-2;
+  }
+
+  .docSectionTitle {
+    @apply text-sm font-semibold text-fg;
+  }
+
+  .docInlineControls {
+    @apply inline-flex flex-wrap items-center gap-1.5;
+  }
+
+  .docTabs {
+    @apply mt-2 flex flex-wrap items-center gap-1.5;
+  }
+
+  .docTab {
+    @apply h-8 rounded-md border border-border px-2.5 text-xs text-muted transition-colors;
+  }
+
+  .docTab.isActive {
+    @apply text-fg;
+    box-shadow: inset 0 0 0 1px hsl(var(--border));
+  }
+
+  .docTab.tier-p0.isActive {
+    border-color: color-mix(in srgb, var(--bpmn-flow-tier-p0, #3d8f62) 62%, transparent);
+    background: color-mix(in srgb, var(--bpmn-flow-tier-p0, #3d8f62) 20%, transparent);
+  }
+
+  .docTab.tier-p1.isActive {
+    border-color: color-mix(in srgb, var(--bpmn-flow-tier-p1, #b38a46) 62%, transparent);
+    background: color-mix(in srgb, var(--bpmn-flow-tier-p1, #b38a46) 20%, transparent);
+  }
+
+  .docTab.tier-p2.isActive {
+    border-color: color-mix(in srgb, var(--bpmn-flow-tier-p2, #b45353) 62%, transparent);
+    background: color-mix(in srgb, var(--bpmn-flow-tier-p2, #b45353) 20%, transparent);
+  }
+
+  .docScenarioSummary {
+    @apply mt-2 flex flex-wrap items-center gap-1.5;
+  }
+
+  .docTableWrap {
+    @apply mt-2 overflow-auto rounded-lg border border-border/80;
+  }
+
+  .docTable {
+    @apply min-w-full border-collapse text-xs;
+  }
+
+  .docTable thead th {
+    @apply sticky top-0 z-10 border-b border-border bg-panel2 px-2.5 py-2 text-left font-semibold text-fg;
+  }
+
+  .docTable tbody td {
+    @apply border-b border-border/60 px-2.5 py-2 align-top text-muted;
+  }
+
+  .docTable tbody tr:nth-child(even) {
+    background: hsl(var(--panel2) / 0.24);
+  }
+
+  .docTable tbody tr.isActive {
+    background: hsl(var(--accent2) / 0.16);
+  }
+
+  .docStepsTable.compact tbody td {
+    @apply py-1.5;
+  }
+
+  .docPills {
+    @apply flex flex-wrap items-center gap-1;
+  }
+
+  .docPill {
+    @apply inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[11px] text-fg;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .docPill.tier-p0 {
+    border-color: color-mix(in srgb, var(--bpmn-flow-tier-p0, #3d8f62) 60%, transparent);
+    background: color-mix(in srgb, var(--bpmn-flow-tier-p0, #3d8f62) 18%, transparent);
+  }
+
+  .docPill.tier-p1 {
+    border-color: color-mix(in srgb, var(--bpmn-flow-tier-p1, #b38a46) 60%, transparent);
+    background: color-mix(in srgb, var(--bpmn-flow-tier-p1, #b38a46) 18%, transparent);
+  }
+
+  .docPill.tier-p2 {
+    border-color: color-mix(in srgb, var(--bpmn-flow-tier-p2, #b45353) 60%, transparent);
+    background: color-mix(in srgb, var(--bpmn-flow-tier-p2, #b45353) 18%, transparent);
+  }
+
+  .docPill.tier-none {
+    @apply border-border bg-panel2/40 text-muted;
+  }
+
+  .docStepBtn {
+    @apply max-w-[340px] truncate text-left text-fg underline-offset-2 hover:underline;
+  }
+
+  .docStepDetailsRow td {
+    @apply bg-panel2/25;
+  }
+
+  .docStepDetails {
+    @apply grid gap-1.5 text-xs text-muted;
+  }
+
+  .docDensityBtn {
+    @apply h-7 rounded-md border border-border px-2 text-[11px] text-muted;
+  }
+
+  .docDensityBtn.isActive {
+    @apply border-accent/50 bg-accentSoft text-fg;
+  }
+
+  .docIssueColumns {
+    @apply grid gap-2;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .docIssueCol {
+    @apply rounded-lg border border-border/80 bg-panel2/30 p-2.5;
+  }
+
+  .docIssueHead {
+    @apply mb-2 text-xs font-semibold;
+  }
+
+  .docIssueHead.err {
+    @apply text-danger;
+  }
+
+  .docIssueHead.warn {
+    @apply text-warning;
+  }
+
+  .docIssueCard {
+    @apply mb-2 rounded-md border border-border bg-panel px-2.5 py-2;
+  }
+
+  .docIssueCard.err {
+    @apply border-danger/35;
+  }
+
+  .docIssueCard.warn {
+    @apply border-warning/35;
+  }
+
+  .docIssueTitle {
+    @apply text-xs font-medium text-fg;
+  }
+
+  .docIssueHint {
+    @apply mt-1 text-[11px] text-muted;
+  }
+
+  .docTechnicalDetails {
+    @apply rounded-lg border border-border bg-panel2/35 p-2;
+  }
+
+  .docTechnicalDetails > summary {
+    @apply cursor-pointer text-xs font-semibold text-fg;
+  }
+
+  .docTechnicalPre {
+    @apply mt-2 overflow-auto rounded-md border border-border bg-bgSoft p-2 text-[11px] leading-5 text-muted;
+  }
+
+  .docMuted {
+    @apply text-xs text-muted;
   }
 
   .docRawWrap {
@@ -185,12 +739,789 @@
     @apply h-full min-h-[68vh] w-full rounded-xl border border-border bg-bgSoft p-4 font-mono text-sm leading-6 text-fg;
   }
 
+  @media (max-width: 1200px) {
+    .docReportLayout {
+      grid-template-columns: 1fr;
+    }
+
+    .docToc {
+      position: static;
+    }
+
+    .docCardsGrid.cols-4 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 760px) {
+    .docCardsGrid.cols-3,
+    .docCardsGrid.cols-4 {
+      grid-template-columns: 1fr;
+    }
+
+    .docIssueColumns {
+      grid-template-columns: 1fr;
+    }
+  }
+
   .leftPanel {
-    @apply flex h-full min-h-0 flex-col gap-3 overflow-auto p-3;
+    @apply h-full min-h-0 min-w-0;
   }
 
   .leftPanelCard {
     @apply p-3;
+  }
+
+  .leftSidebarShell {
+    box-shadow:
+      inset 0 1px 0 hsl(var(--border) / 0.3),
+      0 12px 28px hsl(var(--bg) / 0.28);
+    background-image: linear-gradient(180deg, hsl(var(--panel) / 0.98), hsl(var(--panel2) / 0.92));
+  }
+
+  .leftSidebarSticky {
+    @apply relative z-10;
+  }
+
+  .leftSidebarBody {
+    scrollbar-width: thin;
+  }
+
+  .leftSidebarBottom {
+    @apply relative z-10;
+  }
+
+  .leftSidebarHeader {
+    @apply min-w-0;
+  }
+
+  .sidebarBreadcrumbRow {
+    @apply mb-1 flex min-w-0 items-center gap-1 text-[10px] uppercase tracking-wide text-muted;
+  }
+
+  .sidebarBreadcrumbBtn {
+    @apply min-w-0 truncate rounded px-1 py-0.5 text-left transition-colors hover:bg-panel2/70 hover:text-fg;
+  }
+
+  .sidebarBreadcrumbSep {
+    @apply opacity-70;
+  }
+
+  .sidebarHeaderMenu {
+    @apply absolute right-0 top-[calc(100%+6px)] z-30 grid min-w-[190px] gap-1 rounded-lg border border-border bg-panel p-1.5 shadow-panel;
+  }
+
+  .sidebarHeaderMenuItem {
+    @apply rounded-md px-2 py-1.5 text-left text-xs text-fg transition-colors hover:bg-panel2;
+  }
+
+  .sidebarHeaderMenuItem.isDanger {
+    @apply text-danger hover:bg-danger/15;
+  }
+
+  .sidebarSection {
+    @apply relative;
+  }
+
+  .sidebarSectionsStack {
+    @apply grid gap-3.5 px-2.5 py-2.5;
+  }
+
+  .sidebarSectionPanel {
+    @apply overflow-hidden rounded-xl border border-border/80 bg-panel/90;
+    border-color: hsl(var(--sidebar-accent, var(--accent2)) / 0.56);
+    border-left-width: 2px;
+    box-shadow:
+      inset 0 1px 0 hsl(var(--sidebar-accent, var(--accent2)) / 0.22),
+      0 8px 16px hsl(var(--bg) / 0.16);
+    background-image:
+      radial-gradient(130% 90% at 100% 0, hsl(var(--sidebar-accent, var(--accent2)) / 0.18), transparent 64%),
+      linear-gradient(165deg, hsl(var(--sidebar-accent, var(--accent2)) / 0.08), transparent 42%);
+  }
+
+  .sidebarSectionStripe {
+    @apply h-[2px] w-full;
+    background: hsl(var(--sidebar-accent, var(--accent2)) / 0.92);
+    box-shadow: 0 0 0 1px hsl(var(--sidebar-accent, var(--accent2)) / 0.42) inset;
+  }
+
+  .sidebarSectionIcon {
+    @apply inline-flex h-5 min-w-5 items-center justify-center rounded-md border border-border text-[11px];
+    color: hsl(var(--sidebar-accent, var(--text)) / 0.96);
+    background: hsl(var(--sidebar-accent, var(--accent2)) / 0.18);
+    border-color: hsl(var(--sidebar-accent, var(--accent2)) / 0.54);
+  }
+
+  .sidebarSectionHead {
+    @apply transition-colors;
+    background-image:
+      linear-gradient(180deg, hsl(var(--sidebar-accent, var(--accent2)) / 0.2), transparent 72%),
+      linear-gradient(180deg, hsl(var(--panel2) / 0.56), transparent 70%);
+  }
+
+  .sidebarSectionHead:hover {
+    background-image:
+      linear-gradient(180deg, hsl(var(--sidebar-accent, var(--accent2)) / 0.28), transparent 72%),
+      linear-gradient(180deg, hsl(var(--panel2) / 0.72), transparent 70%);
+  }
+
+  .sidebarSectionTitle {
+    color: hsl(var(--text));
+  }
+
+  .sidebarSectionTitle--selected {
+    color: hsl(172 78% 66%);
+  }
+
+  .sidebarSectionTitle--ai {
+    color: hsl(258 92% 74%);
+  }
+
+  .sidebarSectionTitle--notes {
+    color: hsl(204 94% 74%);
+  }
+
+  .sidebarSectionTitle--actors {
+    color: hsl(154 72% 66%);
+  }
+
+  .sidebarSectionTitle--templates {
+    color: hsl(36 92% 72%);
+  }
+
+  .sidebarSummaryDot {
+    @apply inline-block h-1.5 w-1.5 rounded-full;
+    background: hsl(var(--sidebar-accent, var(--accent2)) / 0.95);
+    box-shadow: 0 0 8px hsl(var(--sidebar-accent, var(--accent2)) / 0.45);
+  }
+
+  .sidebarSummaryDot--selected {
+    --sidebar-accent: hsl(188 75% 58%);
+  }
+
+  .sidebarSummaryDot--ai {
+    --sidebar-accent: hsl(258 86% 66%);
+  }
+
+  .sidebarSummaryDot--notes {
+    --sidebar-accent: hsl(200 84% 62%);
+  }
+
+  .sidebarSummaryDot--actors {
+    --sidebar-accent: hsl(154 62% 48%);
+  }
+
+  .sidebarSummaryDot--templates {
+    --sidebar-accent: hsl(32 78% 59%);
+  }
+
+  .sidebarSectionBody {
+    border-top: 1px solid hsl(var(--sidebar-accent, var(--accent2)) / 0.42);
+    background-image: linear-gradient(180deg, hsl(var(--sidebar-accent, var(--accent2)) / 0.12), transparent 46%);
+  }
+
+  .sidebarDragHandle {
+    @apply ml-1 inline-flex h-5 w-5 items-center justify-center rounded-md border text-muted transition-colors;
+    border-color: hsl(var(--sidebar-accent, var(--accent2)) / 0.4);
+    background: hsl(var(--sidebar-accent, var(--accent2)) / 0.14);
+    cursor: grab;
+  }
+
+  .sidebarDragHandle:hover {
+    color: hsl(var(--sidebar-accent, var(--text)) / 0.96);
+    border-color: hsl(var(--sidebar-accent, var(--accent2)) / 0.62);
+    background: hsl(var(--sidebar-accent, var(--accent2)) / 0.2);
+  }
+
+  .sidebarDragHandle:active {
+    cursor: grabbing;
+  }
+
+  .sidebarSectionDraggable {
+    @apply relative transition-transform duration-150 ease-out;
+  }
+
+  .sidebarSectionDraggable.isDragging {
+    opacity: 0.72;
+    transform: scale(0.992);
+  }
+
+  .sidebarSectionDraggable.dropBefore::before,
+  .sidebarSectionDraggable.dropAfter::after {
+    content: "";
+    @apply pointer-events-none absolute left-2 right-2 h-[2px] rounded-full;
+    background: hsl(var(--accent2) / 0.9);
+    box-shadow: 0 0 12px hsl(var(--accent2) / 0.42);
+  }
+
+  .sidebarSectionDraggable.dropBefore::before {
+    top: -5px;
+  }
+
+  .sidebarSectionDraggable.dropAfter::after {
+    bottom: -5px;
+  }
+
+  .sidebarSectionPanel--selected {
+    --sidebar-accent: 188 78% 56%;
+    background-image:
+      linear-gradient(180deg, hsl(var(--panel) / 0.9), hsl(var(--panel2) / 0.76)),
+      linear-gradient(165deg, hsl(var(--sidebar-accent, var(--accent2)) / 0.08), transparent 46%);
+    box-shadow:
+      inset 3px 0 0 hsl(var(--sidebar-accent, var(--accent2)) / 0.62),
+      inset 0 1px 0 hsl(var(--sidebar-accent, var(--accent2)) / 0.18),
+      0 8px 18px hsl(var(--bg) / 0.14);
+  }
+
+  .sidebarSectionPanel--ai {
+    --sidebar-accent: 262 86% 66%;
+  }
+
+  .sidebarSectionPanel--notes {
+    --sidebar-accent: 198 88% 60%;
+  }
+
+  .sidebarSectionPanel--actors {
+    --sidebar-accent: 146 62% 46%;
+  }
+
+  .sidebarSectionPanel--templates {
+    --sidebar-accent: 35 86% 58%;
+  }
+
+  .sidebarSectionPanel--default {
+    --sidebar-accent: hsl(var(--accent2));
+  }
+
+  .sidebarBadge {
+    @apply inline-flex h-5 items-center rounded-full border border-border bg-panel2 px-2 text-[10px] font-semibold tracking-wide text-muted;
+    border-color: hsl(var(--sidebar-accent, var(--accent2)) / 0.48);
+    background: hsl(var(--sidebar-accent, var(--accent2)) / 0.16);
+    color: hsl(var(--sidebar-accent, var(--text)) / 0.95);
+  }
+
+  .sidebarBadge--selected {
+    --sidebar-accent: hsl(188 75% 58%);
+  }
+
+  .sidebarBadge--ai {
+    --sidebar-accent: hsl(258 86% 66%);
+  }
+
+  .sidebarBadge--notes {
+    --sidebar-accent: hsl(200 84% 62%);
+  }
+
+  .sidebarBadge--actors {
+    --sidebar-accent: hsl(154 62% 48%);
+  }
+
+  .sidebarBadge--templates {
+    --sidebar-accent: hsl(32 78% 59%);
+  }
+
+  .sidebarIconBtn {
+    @apply inline-flex h-6 min-w-6 items-center justify-center rounded-md border border-border bg-panel2/70 px-1 text-[10px] text-muted transition-colors hover:border-borderStrong hover:text-fg;
+  }
+
+  .sidebarRailBtn {
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-panel2/75 text-xs font-semibold text-fg transition-colors hover:border-borderStrong hover:bg-panel2;
+    border-color: color-mix(in srgb, var(--sidebar-accent, var(--c-border)) 38%, var(--c-border));
+    color: color-mix(in srgb, var(--sidebar-accent, hsl(var(--text))) 68%, hsl(var(--text)));
+    background: color-mix(in srgb, var(--sidebar-accent, var(--c-panel2)) 14%, hsl(var(--panel2) / 0.75));
+  }
+
+  .sidebarRailBtn:disabled {
+    @apply cursor-not-allowed opacity-45;
+  }
+
+  .sidebarRailBtn.isActive {
+    border-color: color-mix(in srgb, var(--sidebar-accent, hsl(var(--accent2))) 60%, var(--c-border));
+    background: color-mix(in srgb, var(--sidebar-accent, var(--c-panel2)) 22%, hsl(var(--panel2) / 0.85));
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--sidebar-accent, hsl(var(--accent2))) 34%, transparent),
+      0 4px 10px hsl(var(--bg) / 0.24);
+  }
+
+  .sidebarRailBtn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 14px hsl(var(--bg) / 0.22);
+  }
+
+  .sidebarRailItem {
+    @apply relative;
+  }
+
+  .sidebarRailItem.isMuted {
+    @apply opacity-55;
+  }
+
+  .sidebarRailActiveStripe {
+    @apply pointer-events-none absolute -left-1 top-1/2 hidden h-5 w-0.5 -translate-y-1/2 rounded-full;
+    background: color-mix(in srgb, var(--sidebar-accent, hsl(var(--accent2))) 78%, transparent);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--sidebar-accent, hsl(var(--accent2))) 40%, transparent);
+  }
+
+  .sidebarRailItem.isActive .sidebarRailActiveStripe {
+    display: inline-block;
+  }
+
+  .sidebarRailBtn--selected, .sidebarRailActiveStripe--selected {
+    --sidebar-accent: hsl(188 75% 58%);
+  }
+
+  .sidebarRailBtn--ai, .sidebarRailActiveStripe--ai {
+    --sidebar-accent: hsl(258 86% 66%);
+  }
+
+  .sidebarRailBtn--notes, .sidebarRailActiveStripe--notes {
+    --sidebar-accent: hsl(200 84% 62%);
+  }
+
+  .sidebarRailBtn--actors, .sidebarRailActiveStripe--actors {
+    --sidebar-accent: hsl(154 62% 48%);
+  }
+
+  .sidebarRailBtn--templates, .sidebarRailActiveStripe--templates {
+    --sidebar-accent: hsl(32 78% 59%);
+  }
+
+  .sidebarRailBadge {
+    @apply absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-border bg-accentSoft px-1 text-[9px] font-semibold text-fg;
+    box-shadow: 0 1px 4px hsl(var(--bg) / 0.25);
+  }
+
+  .sidebarRailBadge--selected {
+    border-color: color-mix(in srgb, hsl(188 75% 58%) 50%, var(--c-border));
+    background: color-mix(in srgb, hsl(188 75% 58%) 26%, hsl(var(--panel)));
+  }
+
+  .sidebarRailBadge--ai {
+    border-color: color-mix(in srgb, hsl(258 86% 66%) 50%, var(--c-border));
+    background: color-mix(in srgb, hsl(258 86% 66%) 26%, hsl(var(--panel)));
+  }
+
+  .sidebarRailBadge--notes {
+    border-color: color-mix(in srgb, hsl(200 84% 62%) 50%, var(--c-border));
+    background: color-mix(in srgb, hsl(200 84% 62%) 26%, hsl(var(--panel)));
+  }
+
+  .sidebarRailBadge--actors {
+    border-color: color-mix(in srgb, hsl(154 62% 48%) 50%, var(--c-border));
+    background: color-mix(in srgb, hsl(154 62% 48%) 26%, hsl(var(--panel)));
+  }
+
+  .sidebarRailBadge--templates {
+    border-color: color-mix(in srgb, hsl(32 78% 59%) 50%, var(--c-border));
+    background: color-mix(in srgb, hsl(32 78% 59%) 26%, hsl(var(--panel)));
+  }
+
+  .stickyNodeCard {
+    @apply rounded-lg border border-border/75 bg-panel2/65 px-2.5 py-2;
+  }
+
+  .selectedNodeCard {
+    @apply relative overflow-hidden rounded-lg border border-border/90 bg-panel/90 px-2.5 py-2;
+    border-color: color-mix(in srgb, hsl(188 75% 58%) 34%, var(--c-border));
+    box-shadow:
+      inset 3px 0 0 color-mix(in srgb, hsl(188 75% 58%) 62%, transparent),
+      0 8px 16px hsl(var(--bg) / 0.2);
+  }
+
+  .selectedNodeHeader {
+    @apply flex items-start justify-between gap-2;
+  }
+
+  .selectedNodeTitle {
+    @apply truncate text-sm font-semibold text-fg;
+  }
+
+  .selectedNodeSecondary {
+    @apply mt-0.5 truncate text-[11px] text-muted;
+  }
+
+  .selectedNodeMetaRow {
+    @apply mt-2 flex items-center gap-1.5 overflow-x-auto pb-0.5;
+    scrollbar-width: thin;
+  }
+
+  .selectedNodeMetaGrid {
+    @apply mt-2 flex flex-wrap items-center gap-1.5;
+  }
+
+  .selectedNodeTemplateRow {
+    @apply mt-2;
+  }
+
+  .selectedNodeChip {
+    @apply inline-flex h-6 shrink-0 items-center rounded-md border px-2 text-[11px] font-medium text-fg;
+    border-color: color-mix(in srgb, hsl(188 75% 58%) 38%, var(--c-border));
+    background: color-mix(in srgb, hsl(188 75% 58%) 12%, hsl(var(--panel2) / 0.76));
+  }
+
+  .selectedNodeChipLabel {
+    @apply mr-1 text-[10px] font-semibold uppercase tracking-wide text-muted;
+  }
+
+  .selectedNodeChip--id {
+    @apply max-w-[220px];
+  }
+
+  .selectedNodeChipValue {
+    @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[10px] text-muted;
+  }
+
+  .selectedNodeChip--template {
+    @apply max-w-full;
+  }
+
+  .selectedNodeCopyBtn {
+    @apply h-6 min-w-6;
+  }
+
+  .selectedNodeFields {
+    @apply mt-2.5 grid gap-2;
+  }
+
+  .selectedNodeTierTabs {
+    @apply inline-flex items-center gap-1 rounded-md border border-border/70 bg-panel2/45 p-1;
+  }
+
+  .selectedNodeTierTab {
+    @apply h-7 rounded px-2.5 text-[11px] font-semibold text-muted transition-colors;
+  }
+
+  .selectedNodeTierTab.isActive {
+    @apply bg-accent/20 text-fg;
+  }
+
+  .selectedNodeAdvanced {
+    @apply rounded-md border border-border/70 bg-panel2/35 px-2 py-1;
+  }
+
+  .selectedNodeAdvancedSummary {
+    @apply cursor-pointer list-none text-[11px] font-semibold text-muted;
+  }
+
+  .selectedNodeField {
+    @apply rounded-md border border-border/70 bg-panel2/55 p-2;
+  }
+
+  .selectedNodeFieldLabel {
+    @apply mb-1.5 block text-[11px] font-semibold text-fg;
+  }
+
+  .selectedNodeTimeRow {
+    @apply flex items-center gap-2;
+  }
+
+  .selectedNodeTimeRow--compact {
+    @apply flex-wrap;
+  }
+
+  .selectedNodeTimeInput {
+    @apply h-8 min-h-0 w-24;
+  }
+
+  .selectedNodePresetWrap {
+    @apply relative inline-flex;
+  }
+
+  .selectedNodePresetPopover {
+    @apply absolute right-0 top-[calc(100%+6px)] z-20 grid gap-1 rounded-md border border-border bg-panel p-1.5 shadow-panel;
+    min-width: 112px;
+  }
+
+  .selectedNodeFieldUnit {
+    @apply text-[11px] text-muted;
+  }
+
+  .selectedNodeFieldError {
+    @apply mt-1.5 text-[11px] text-danger;
+  }
+
+  .stickyNodeCard.isEmpty {
+    @apply border-dashed;
+  }
+
+  .stickyNodeHead {
+    @apply flex items-start justify-between gap-2;
+  }
+
+  .stickyNodeTitle {
+    @apply text-sm font-semibold text-fg;
+  }
+
+  .stickyNodeSub {
+    @apply mt-1 text-[11px] text-muted;
+  }
+
+  .stickyNodeStats {
+    @apply mt-2 flex items-center gap-1.5;
+  }
+
+  .stickyNodeActions {
+    @apply mt-2 flex flex-wrap items-center gap-1.5;
+  }
+
+  .stickyNodeEmptyHint {
+    @apply mt-1 text-xs text-muted;
+  }
+
+  .sidebarNodeEmptyCard {
+    @apply flex items-start gap-2 rounded-lg border px-2.5 py-2 text-xs;
+    border-color: color-mix(in srgb, hsl(188 75% 58%) 54%, var(--c-border));
+    background:
+      linear-gradient(165deg, color-mix(in srgb, hsl(188 75% 58%) 12%, transparent), transparent 65%),
+      hsl(var(--panel2) / 0.62);
+  }
+
+  .sidebarNodeEmptyIcon {
+    @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border;
+    color: hsl(188 75% 64%);
+    border-color: color-mix(in srgb, hsl(188 75% 58%) 52%, var(--c-border));
+    background: color-mix(in srgb, hsl(188 75% 58%) 16%, transparent);
+  }
+
+  .sidebarNotesBody {
+    @apply pt-1;
+  }
+
+  .sidebarBottomBar {
+    @apply flex items-center gap-1.5;
+  }
+
+  .sidebarBottomMenu {
+    @apply absolute bottom-[calc(100%+6px)] right-0 z-20 grid min-w-[170px] gap-1 rounded-lg border border-border bg-panel p-1.5 shadow-panel;
+  }
+
+  .sidebarBottomMenuItem {
+    @apply rounded-md border border-transparent px-2 py-1.5 text-left text-xs text-fg transition-colors hover:border-border hover:bg-panel2/65;
+  }
+
+  .leftSidebarHandleHost {
+    @apply pointer-events-none absolute left-2 top-1/2 z-[86] -translate-y-1/2;
+  }
+
+  .leftSidebarHandleHost > * {
+    pointer-events: auto;
+  }
+
+  .leftSidebarHandleRail {
+    @apply rounded-xl border border-border/80 bg-panel/95 p-1.5 shadow-panel backdrop-blur;
+    box-shadow:
+      inset 0 1px 0 hsl(var(--border) / 0.24),
+      0 10px 24px hsl(var(--bg) / 0.32);
+    background-image:
+      linear-gradient(180deg, hsl(var(--panel) / 0.96), hsl(var(--panel2) / 0.88)),
+      radial-gradient(80px 44px at 50% -8%, hsl(var(--accent2) / 0.14), transparent 70%);
+  }
+
+  .leftSidebarHandleOpenBtn {
+    @apply inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border/70 bg-panel2/65 text-[10px] text-fg transition-colors hover:border-borderStrong hover:bg-panel2;
+    box-shadow: inset 0 1px 0 hsl(var(--border) / 0.22);
+  }
+
+  .leftSidebarHandleIcon {
+    @apply inline-flex h-6 w-6 items-center justify-center rounded-md border border-border bg-panel text-[10px] text-muted;
+  }
+
+  .leftSidebarHandleList {
+    @apply mt-2 grid gap-1.5;
+  }
+
+  .leftSidebarHandleMini {
+    @apply relative inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border/70 bg-panel2/55 text-[10px] text-muted transition-colors hover:border-borderStrong hover:bg-panel2 hover:text-fg;
+    border-color: color-mix(in srgb, var(--sidebar-accent, var(--c-border)) 40%, var(--c-border));
+    color: color-mix(in srgb, var(--sidebar-accent, hsl(var(--text))) 68%, hsl(var(--text)));
+    background: color-mix(in srgb, var(--sidebar-accent, var(--c-panel2)) 14%, hsl(var(--panel2) / 0.58));
+  }
+
+  .leftSidebarHandleMini.isMuted {
+    @apply cursor-not-allowed opacity-45;
+  }
+
+  .leftSidebarHandleMini.isActive {
+    border-color: color-mix(in srgb, var(--sidebar-accent, hsl(var(--accent2))) 62%, var(--c-border));
+    background: color-mix(in srgb, var(--sidebar-accent, var(--c-panel2)) 22%, hsl(var(--panel2) / 0.8));
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--sidebar-accent, hsl(var(--accent2))) 36%, transparent),
+      0 4px 10px hsl(var(--bg) / 0.25);
+  }
+
+  .leftSidebarHandleMiniLabel {
+    @apply inline-flex items-center justify-center;
+  }
+
+  .leftSidebarHandleMini:hover:not(.isMuted) {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 14px hsl(var(--bg) / 0.24);
+  }
+
+  .leftSidebarHandleMiniStripe {
+    @apply pointer-events-none absolute -left-[5px] top-1/2 hidden h-5 w-0.5 -translate-y-1/2 rounded-full;
+    background: color-mix(in srgb, var(--sidebar-accent, hsl(var(--accent2))) 78%, transparent);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--sidebar-accent, hsl(var(--accent2))) 40%, transparent);
+  }
+
+  .leftSidebarHandleMini.isActive .leftSidebarHandleMiniStripe {
+    display: inline-block;
+  }
+
+  .leftSidebarHandleMiniCount {
+    @apply absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-border bg-panel px-1 text-[9px] font-semibold text-fg;
+    box-shadow: 0 1px 4px hsl(var(--bg) / 0.25);
+  }
+
+  .leftSidebarHandleMiniCount--selected {
+    border-color: color-mix(in srgb, hsl(188 75% 58%) 50%, var(--c-border));
+    background: color-mix(in srgb, hsl(188 75% 58%) 26%, hsl(var(--panel)));
+  }
+
+  .leftSidebarHandleMiniCount--ai {
+    border-color: color-mix(in srgb, hsl(258 86% 66%) 50%, var(--c-border));
+    background: color-mix(in srgb, hsl(258 86% 66%) 26%, hsl(var(--panel)));
+  }
+
+  .leftSidebarHandleMiniCount--notes {
+    border-color: color-mix(in srgb, hsl(200 84% 62%) 50%, var(--c-border));
+    background: color-mix(in srgb, hsl(200 84% 62%) 26%, hsl(var(--panel)));
+  }
+
+  .leftSidebarHandleMiniCount--actors {
+    border-color: color-mix(in srgb, hsl(154 62% 48%) 50%, var(--c-border));
+    background: color-mix(in srgb, hsl(154 62% 48%) 26%, hsl(var(--panel)));
+  }
+
+  .leftSidebarHandleMiniCount--templates {
+    border-color: color-mix(in srgb, hsl(32 78% 59%) 50%, var(--c-border));
+    background: color-mix(in srgb, hsl(32 78% 59%) 26%, hsl(var(--panel)));
+  }
+
+  .leftSidebarHandleMini--selected, .leftSidebarHandleMiniStripe--selected {
+    --sidebar-accent: hsl(188 75% 58%);
+  }
+
+  .leftSidebarHandleMini--ai, .leftSidebarHandleMiniStripe--ai {
+    --sidebar-accent: hsl(258 86% 66%);
+  }
+
+  .leftSidebarHandleMini--notes, .leftSidebarHandleMiniStripe--notes {
+    --sidebar-accent: hsl(200 84% 62%);
+  }
+
+  .leftSidebarHandleMini--actors, .leftSidebarHandleMiniStripe--actors {
+    --sidebar-accent: hsl(154 62% 48%);
+  }
+
+  .leftSidebarHandleMini--templates, .leftSidebarHandleMiniStripe--templates {
+    --sidebar-accent: hsl(32 78% 59%);
+  }
+
+  .sidebarQuickNav {
+    @apply flex flex-wrap items-center gap-1;
+  }
+
+  .sidebarQuickNavBtn {
+    @apply inline-flex h-6 items-center gap-1 rounded-md border border-border bg-panel2/60 px-1.5 text-[10px] font-semibold text-muted transition-colors hover:text-fg;
+    border-color: hsl(var(--sidebar-accent, var(--accent2)) / 0.42);
+    background: hsl(var(--sidebar-accent, var(--accent2)) / 0.12);
+  }
+
+  .sidebarQuickNavBtn.isActive {
+    border-color: color-mix(in srgb, var(--sidebar-accent, hsl(var(--accent2))) 52%, var(--c-border));
+    color: color-mix(in srgb, var(--sidebar-accent, hsl(var(--text))) 70%, hsl(var(--text)));
+    background: color-mix(in srgb, var(--sidebar-accent, var(--c-panel2)) 18%, hsl(var(--panel2) / 0.7));
+  }
+
+  .sidebarQuickNavBtn--selected {
+    --sidebar-accent: hsl(188 75% 58%);
+  }
+
+  .sidebarQuickNavBtn--ai {
+    --sidebar-accent: hsl(258 86% 66%);
+  }
+
+  .sidebarQuickNavBtn--notes {
+    --sidebar-accent: hsl(200 84% 62%);
+  }
+
+  .sidebarQuickNavBtn--actors {
+    --sidebar-accent: hsl(154 62% 48%);
+  }
+
+  .sidebarQuickNavBtn--templates {
+    --sidebar-accent: hsl(32 78% 59%);
+  }
+
+  .sidebarQuickNavBadge {
+    @apply inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-border bg-panel px-1 text-[9px] font-semibold text-fg;
+  }
+
+  .sidebarTabs {
+    @apply inline-flex rounded-lg border border-border bg-panel2/70 p-0.5;
+  }
+
+  .sidebarTabBtn {
+    @apply inline-flex h-7 items-center rounded-md px-2.5 text-xs text-muted transition-colors;
+  }
+
+  .sidebarTabBtn.isActive {
+    @apply border border-accent/45 bg-accentSoft text-fg;
+  }
+
+  .sidebarMiniList {
+    @apply max-h-36 space-y-1.5 overflow-auto pr-1;
+  }
+
+  .sidebarMiniItem {
+    @apply rounded-md border border-border/70 bg-panel2/60 px-2 py-1.5 text-xs text-fg;
+  }
+
+  .sidebarMiniItemText {
+    @apply whitespace-pre-wrap leading-relaxed;
+  }
+
+  .sidebarMiniItemMeta {
+    @apply mt-1 text-[10px] text-muted;
+  }
+
+  .sidebarEmptyHint {
+    @apply rounded-md border border-dashed border-border px-2 py-2 text-xs text-muted;
+  }
+
+  .sidebarDetails {
+    @apply rounded-md border border-border/65 bg-panel/45 p-1.5;
+  }
+
+  .sidebarDetailsSummary {
+    @apply flex cursor-pointer list-none items-center justify-between gap-2 rounded-md px-1.5 py-1 text-xs text-fg;
+  }
+
+  .sidebarActorRow {
+    @apply flex items-center justify-between gap-2 rounded-md border border-border/70 bg-panel2/60 px-2 py-1.5 text-xs text-fg;
+  }
+
+  .sidebarActorMain {
+    @apply flex min-w-0 items-center gap-1.5;
+  }
+
+  .sidebarActorName {
+    @apply min-w-0;
+  }
+
+  .sidebarActorIndex {
+    @apply font-mono text-[10px] text-muted;
+  }
+
+  .sidebarActorCount {
+    @apply inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full border border-border bg-panel px-1.5 text-[10px] font-semibold text-fg;
+    box-shadow: inset 0 1px 0 hsl(var(--border) / 0.2);
+  }
+
+  .sidebarActorCount.isZero {
+    @apply text-muted;
+    opacity: 0.78;
   }
 
   .cardTitle {
@@ -241,6 +1572,18 @@
     @apply flex flex-wrap items-center gap-2;
   }
 
+  .interviewOrderToggle {
+    @apply inline-flex items-center gap-1 rounded-lg border border-border bg-panel2/70 p-1;
+  }
+
+  .interviewOrderBtn {
+    @apply border-transparent;
+  }
+
+  .interviewOrderBtn.isActive {
+    @apply border-accent/45 bg-accentSoft text-fg;
+  }
+
   .interviewCollapseBtn {
     @apply min-w-24;
   }
@@ -270,9 +1613,33 @@
     @apply mb-2 flex flex-wrap items-center gap-2;
   }
 
+  .interviewTimelinePrimaryRow {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .interviewTimelinePrimarySearch {
+    @apply min-w-[240px] flex-1;
+  }
+
+  .interviewSortSelect {
+    min-width: 160px;
+  }
+
+  .interviewTimelinePrimaryRow .interviewColsMenuWrap {
+    margin-left: auto;
+  }
+
+  .interviewActiveFiltersRow {
+    @apply mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-panel/60 px-2.5 py-2;
+  }
+
+  .tinyBtn {
+    @apply min-h-7 rounded-lg px-2 py-1 text-[11px] leading-none;
+  }
+
   .interviewTimelineFilters {
     @apply grid gap-2;
-    grid-template-columns: minmax(220px, 2fr) repeat(5, minmax(150px, 1fr));
+    grid-template-columns: minmax(220px, 2fr) repeat(6, minmax(150px, 1fr));
   }
 
   .interviewFilterControl {
@@ -341,6 +1708,150 @@
     background: color-mix(in srgb, var(--lane-accent, hsl(var(--accent2))) 18%, var(--c-accent-soft));
   }
 
+  .interviewBoundsPanel {
+    @apply p-0;
+    overflow: clip;
+  }
+
+  .interviewBoundsHead {
+    @apply flex flex-wrap items-start justify-between gap-2 border-b border-border bg-panel/95 px-3 py-3 backdrop-blur;
+  }
+
+  .interviewBoundsSubTitle {
+    @apply mt-1 text-xs text-muted;
+  }
+
+  .interviewBoundsSummaryRow {
+    @apply flex flex-wrap items-center gap-2 border-b border-border/70 px-3 py-2;
+  }
+
+  .interviewBoundsSummaryItem {
+    @apply inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-border bg-panel2/60 px-2.5 text-xs transition-colors;
+  }
+
+  .interviewBoundsSummaryItem:hover {
+    @apply border-borderStrong bg-panel2 text-fg;
+  }
+
+  .interviewBoundsSummaryKey {
+    @apply text-muted;
+  }
+
+  .interviewBoundsSummaryValue {
+    @apply font-semibold text-fg;
+  }
+
+  .interviewBoundsSaveNotice {
+    @apply mx-3 mt-2 rounded-md border border-success/40 bg-success/10 px-2 py-1.5 text-xs text-success;
+  }
+
+  .interviewBoundsCollapsedLine {
+    @apply mx-3 mb-3 mt-2 rounded-md border border-border bg-panel2/55 px-3 py-2 text-xs text-muted;
+  }
+
+  .interviewBoundsGrid {
+    @apply grid gap-3 p-3;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  @screen xl {
+    .interviewBoundsGrid {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr);
+    }
+  }
+
+  .interviewBoundsCard {
+    @apply relative rounded-xl border border-border bg-panel2/60 p-3;
+    box-shadow: inset 0 1px 0 hsl(var(--border) / 0.18);
+    border-top-width: 3px;
+    border-top-color: var(--bounds-accent, hsl(var(--accent2)));
+    min-height: 290px;
+  }
+
+  .interviewBoundsCard--start {
+    --bounds-accent: hsl(168 70% 46%);
+  }
+
+  .interviewBoundsCard--intermediate {
+    --bounds-accent: hsl(248 80% 64%);
+  }
+
+  .interviewBoundsCard--finish {
+    --bounds-accent: hsl(205 85% 58%);
+  }
+
+  .interviewBoundsCard.isMissing {
+    @apply border-warning/45;
+  }
+
+  .interviewBoundsCard.isFilled {
+    @apply border-success/30;
+  }
+
+  .interviewBoundsCard.isFocus {
+    box-shadow:
+      inset 0 1px 0 hsl(var(--border) / 0.18),
+      0 0 0 2px color-mix(in srgb, var(--bounds-accent) 35%, transparent);
+  }
+
+  .interviewBoundsCardHead {
+    @apply mb-2 flex items-center justify-between gap-2;
+  }
+
+  .interviewBoundsMiniPill {
+    @apply inline-flex h-5 items-center rounded-full border px-2 text-[10px] font-bold tracking-wide;
+  }
+
+  .interviewBoundsMiniPill.start {
+    border-color: color-mix(in srgb, hsl(168 70% 46%) 58%, var(--c-border));
+    background: color-mix(in srgb, hsl(168 70% 46%) 18%, transparent);
+    color: color-mix(in srgb, hsl(168 70% 46%) 72%, var(--c-text));
+  }
+
+  .interviewBoundsMiniPill.intermediate {
+    border-color: color-mix(in srgb, hsl(248 80% 64%) 58%, var(--c-border));
+    background: color-mix(in srgb, hsl(248 80% 64%) 18%, transparent);
+    color: color-mix(in srgb, hsl(248 80% 64%) 72%, var(--c-text));
+  }
+
+  .interviewBoundsMiniPill.finish {
+    border-color: color-mix(in srgb, hsl(205 85% 58%) 58%, var(--c-border));
+    background: color-mix(in srgb, hsl(205 85% 58%) 18%, transparent);
+    color: color-mix(in srgb, hsl(205 85% 58%) 72%, var(--c-text));
+  }
+
+  .interviewBoundsState {
+    @apply text-[11px] font-semibold;
+  }
+
+  .interviewBoundsState.ok {
+    @apply text-success;
+  }
+
+  .interviewBoundsState.warn {
+    @apply text-warning;
+  }
+
+  .interviewBoundsCardTitle {
+    @apply mb-2 text-sm font-semibold text-fg;
+  }
+
+  .interviewBoundsHint {
+    @apply mt-2 text-[11px] text-muted;
+  }
+
+  .interviewBoundsSelectionRow {
+    @apply mt-2 flex items-center justify-between gap-2;
+  }
+
+  .interviewBoundsSelectionLabel {
+    @apply text-xs text-muted;
+  }
+
+  .interviewBoundsSelectedChips {
+    @apply mt-2 flex flex-wrap items-center gap-1.5;
+  }
+
   .interviewColsMenuWrap {
     @apply relative ml-auto;
   }
@@ -355,6 +1866,10 @@
 
   .interviewColsMenuList {
     @apply grid grid-cols-2 gap-x-2.5 gap-y-1.5;
+  }
+
+  .interviewMoreSection {
+    @apply col-span-2 mt-1 flex items-center justify-between gap-2 rounded-lg border border-border bg-panel2/55 px-2 py-1.5;
   }
 
   .interviewColsItem {
@@ -382,6 +1897,14 @@
     @apply border-b border-border px-2.5 py-2.5 align-top text-fg/95;
   }
 
+  .interviewRowSelectHead {
+    @apply inline-flex items-center gap-2;
+  }
+
+  .interviewRowSelectCell {
+    @apply inline-flex items-center gap-2;
+  }
+
   .interviewTable tbody tr:hover td {
     background: color-mix(in srgb, hsl(var(--accent2) / 0.2), transparent);
   }
@@ -399,10 +1922,32 @@
     @apply inline-flex items-center rounded-full border border-accent/45 bg-accentSoft px-2.5 py-1 text-xs font-extrabold text-fg;
   }
 
+  .interviewSubprocessTagInline {
+    @apply px-2 py-0.5 text-[10px];
+    border-color: color-mix(in srgb, var(--c-accent) 28%, var(--c-border));
+    background: color-mix(in srgb, var(--c-accent-soft) 45%, transparent);
+  }
+
   .interviewStepRow {
     border-left: 3px solid color-mix(in srgb, var(--lane-accent, hsl(var(--accent2))) 72%, transparent);
     background: color-mix(in srgb, var(--lane-accent, hsl(var(--accent2))) 4%, transparent);
     transition: background-color 140ms ease, box-shadow 140ms ease;
+  }
+
+  .interviewStepRow.isSubprocessChild {
+    border-left-style: dashed;
+  }
+
+  .interviewStepRow.isParallelGatewayRow td {
+    background: color-mix(in srgb, var(--c-warning) 10%, var(--c-panel));
+  }
+
+  .interviewStepRowCompact td {
+    @apply py-2;
+  }
+
+  .interviewStepRow.isSelected td {
+    background: color-mix(in srgb, var(--lane-accent, hsl(var(--accent2))) 22%, var(--c-accent-soft));
   }
 
   .interviewStepRow.isLaneActive td {
@@ -423,6 +1968,10 @@
     background: color-mix(in srgb, var(--lane-accent, hsl(var(--accent2))) 20%, var(--c-panel));
   }
 
+  .interviewLaneBadge--primary {
+    @apply text-xs font-bold;
+  }
+
   .interviewLaneDot {
     @apply h-2 w-2 rounded-full;
     background: var(--lane-accent, hsl(var(--accent2)));
@@ -434,18 +1983,426 @@
   }
 
   .interviewLaneFlowBadge {
-    @apply inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold;
+    @apply inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-semibold;
     border-color: color-mix(in srgb, var(--lane-accent, hsl(var(--accent2))) 62%, var(--c-border));
   }
 
+  .interviewLaneFlowBadge.secondary {
+    @apply text-[10px] font-medium;
+    opacity: 0.88;
+    border-width: 1px;
+  }
+
   .interviewLaneFlowBadge.in {
-    color: color-mix(in srgb, var(--c-success) 80%, var(--c-text));
-    background: color-mix(in srgb, var(--lane-accent, hsl(var(--success))) 18%, transparent);
+    color: color-mix(in srgb, var(--c-success) 86%, var(--c-text));
+    background: color-mix(in srgb, var(--lane-accent, hsl(var(--success))) 22%, transparent);
   }
 
   .interviewLaneFlowBadge.out {
-    color: color-mix(in srgb, var(--c-info) 80%, var(--c-text));
-    background: color-mix(in srgb, var(--lane-accent, hsl(var(--info))) 18%, transparent);
+    color: color-mix(in srgb, var(--c-info) 86%, var(--c-text));
+    background: color-mix(in srgb, var(--lane-accent, hsl(var(--info))) 22%, transparent);
+  }
+
+  .interviewLaneCrossBadge {
+    @apply inline-flex w-fit items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium text-muted;
+    border-color: color-mix(in srgb, var(--lane-accent, hsl(var(--accent2))) 54%, var(--c-border));
+    background: color-mix(in srgb, var(--lane-accent, hsl(var(--accent2))) 8%, transparent);
+  }
+
+  .interviewLaneFlowMore {
+    @apply inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] text-muted transition-colors;
+    border-color: var(--c-border);
+    background: color-mix(in srgb, var(--c-panel2) 72%, transparent);
+  }
+
+  .interviewLaneFlowMore:hover {
+    border-color: var(--c-border-strong);
+    color: hsl(var(--text) / 0.92);
+  }
+
+  .interviewStepTitleBtn {
+    @apply inline-flex w-full items-start rounded-md px-1 py-0.5 text-left text-sm font-semibold text-fg transition-colors;
+  }
+
+  .interviewStepTitleBtn:hover {
+    @apply bg-accentSoft;
+  }
+
+  .interviewStepTitleLine {
+    @apply flex items-center gap-2;
+    padding-left: calc(var(--step-depth, 0) * 14px);
+  }
+
+  .interviewSubprocessChildArrow {
+    @apply text-sm leading-none text-muted;
+  }
+
+  .interviewSubprocessToggleBtn {
+    @apply inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold;
+    border-color: color-mix(in srgb, var(--c-accent) 32%, var(--c-border));
+    background: color-mix(in srgb, var(--c-accent-soft) 65%, transparent);
+    color: color-mix(in srgb, var(--c-text) 88%, white);
+  }
+
+  .interviewSubprocessToggleBtn:hover {
+    border-color: color-mix(in srgb, var(--c-accent) 52%, var(--c-border-strong));
+    background: color-mix(in srgb, var(--c-accent-soft) 78%, transparent);
+  }
+
+  .interviewStepMeta {
+    @apply mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-muted;
+  }
+
+  .interviewGatewayBranches {
+    @apply mt-1 flex flex-wrap gap-1.5;
+  }
+
+  .interviewGatewayBranches.parallel {
+    @apply mt-1.5;
+  }
+
+  .interviewGatewayBranchChip {
+    @apply inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium;
+    border-color: color-mix(in srgb, var(--c-accent) 30%, var(--c-border));
+    background: color-mix(in srgb, var(--c-accent-soft) 55%, transparent);
+    color: color-mix(in srgb, var(--c-text) 86%, white);
+  }
+
+  .interviewGatewayBranchChip.loop {
+    border-color: color-mix(in srgb, var(--c-warning) 48%, var(--c-border));
+    background: color-mix(in srgb, var(--c-warning) 14%, transparent);
+    color: color-mix(in srgb, var(--c-warning) 78%, var(--c-text));
+  }
+
+  .interviewGatewayPreviewWrap {
+    @apply mt-1 grid gap-1.5;
+  }
+
+  .interviewBetweenBranchesRow td {
+    background: color-mix(in srgb, var(--c-panel-2) 58%, transparent);
+    border-bottom: 1px dashed color-mix(in srgb, var(--c-border-strong) 52%, transparent);
+  }
+
+  .interviewBetweenBranchesWrap {
+    @apply mt-0;
+  }
+
+  .interviewGatewayPreviewToggle {
+    @apply inline-flex w-fit items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold;
+    border-color: color-mix(in srgb, var(--c-accent) 32%, var(--c-border));
+    background: color-mix(in srgb, var(--c-accent-soft) 55%, transparent);
+    color: color-mix(in srgb, var(--c-text) 90%, white);
+  }
+
+  .interviewGatewayPreviewToggle:hover {
+    border-color: color-mix(in srgb, var(--c-accent) 54%, var(--c-border-strong));
+    background: color-mix(in srgb, var(--c-accent-soft) 76%, transparent);
+  }
+
+  .interviewGatewayPreviewList {
+    @apply grid gap-1.5;
+  }
+
+  .interviewGatewayPreviewBranch {
+    @apply grid gap-1 rounded-lg border px-2 py-1.5;
+    border-color: color-mix(in srgb, var(--c-accent) 30%, var(--c-border));
+    background: color-mix(in srgb, var(--c-accent-soft) 44%, transparent);
+  }
+
+  .interviewGatewayPreviewBranch.primary {
+    border-color: color-mix(in srgb, var(--c-success) 40%, var(--c-border));
+    background: color-mix(in srgb, var(--c-success) 10%, transparent);
+  }
+
+  .interviewGatewayPreviewBranch.loop {
+    border-color: color-mix(in srgb, var(--c-warning) 50%, var(--c-border));
+    background: color-mix(in srgb, var(--c-warning) 14%, transparent);
+  }
+
+  .interviewGatewayPreviewHead {
+    @apply inline-flex items-center gap-1.5;
+  }
+
+  .interviewGatewayPreviewLabel {
+    @apply text-[11px] font-semibold text-fg;
+  }
+
+  .interviewGatewayPreviewTag {
+    @apply inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-semibold;
+    border-color: color-mix(in srgb, var(--c-border-strong) 65%, var(--c-border));
+    background: color-mix(in srgb, var(--c-panel-2) 80%, transparent);
+    color: color-mix(in srgb, var(--c-text) 84%, white);
+  }
+
+  .interviewGatewayPreviewTag.loop {
+    border-color: color-mix(in srgb, var(--c-warning) 56%, var(--c-border));
+    background: color-mix(in srgb, var(--c-warning) 22%, transparent);
+    color: color-mix(in srgb, var(--c-warning) 86%, var(--c-text));
+  }
+
+  .interviewGatewayPreviewSteps {
+    @apply m-0 grid list-none gap-0.5 p-0;
+  }
+
+  .interviewGatewayPreviewSteps li {
+    @apply flex items-baseline gap-1.5 text-[11px];
+  }
+
+  .interviewGatewayPreviewNode {
+    @apply flex items-baseline gap-1.5;
+  }
+
+  .interviewGatewayPreviewNodeDecision {
+    @apply grid w-full items-stretch gap-1;
+  }
+
+  .interviewGatewayPreviewDecisionTitle {
+    @apply text-[11px] font-semibold text-fg;
+  }
+
+  .interviewGatewayPreviewDecisionBranches {
+    @apply ml-2 grid gap-1.5 pl-2;
+    border-left: 1px dashed color-mix(in srgb, var(--c-border-strong) 64%, transparent);
+  }
+
+  .interviewGatewayPreviewDecisionBranch {
+    @apply grid gap-0.5;
+  }
+
+  .interviewGatewayPreviewDecisionBranchLabel {
+    @apply inline-flex w-fit items-center rounded-full border px-2 py-0 text-[10px] font-semibold;
+    border-color: color-mix(in srgb, var(--c-accent) 40%, var(--c-border));
+    background: color-mix(in srgb, var(--c-accent-soft) 62%, transparent);
+    color: color-mix(in srgb, var(--c-text) 86%, white);
+  }
+
+  .interviewGatewayPreviewStepNo {
+    @apply min-w-7 font-mono text-[11px] text-muted;
+  }
+
+  .interviewGatewayPreviewStepTitle {
+    @apply text-fg;
+  }
+
+  .interviewGatewayPreviewContinue,
+  .interviewGatewayPreviewLoop {
+    @apply text-[11px] leading-tight text-muted;
+  }
+
+  .interviewGatewayPreviewLoop {
+    color: color-mix(in srgb, var(--c-warning) 84%, var(--c-text));
+  }
+
+  .interviewGatewayGroupRow {
+    @apply grid gap-2 rounded-lg border border-border/80 bg-panel/70 p-2.5;
+  }
+
+  .interviewGatewayHeaderRow {
+    @apply grid gap-2;
+    grid-template-columns: minmax(220px, 1fr) minmax(420px, auto);
+  }
+
+  .interviewGatewayHeaderMain {
+    @apply flex min-w-0 items-center gap-2;
+  }
+
+  .interviewGatewayIcon {
+    @apply inline-flex h-6 w-6 items-center justify-center rounded-md border border-border bg-panel2 text-sm text-fg;
+  }
+
+  .interviewGatewayLabel {
+    @apply truncate text-sm font-semibold text-fg;
+  }
+
+  .interviewGatewayHeaderMeta {
+    @apply flex flex-wrap items-center justify-end gap-1.5;
+  }
+
+  .interviewGatewayBranchesTable {
+    @apply grid gap-2 rounded-lg border border-border/70 bg-panel2/45 p-2;
+  }
+
+  .interviewGatewayBranchesControls {
+    @apply relative flex items-center justify-end;
+  }
+
+  .interviewGatewayControlsMenu {
+    @apply absolute right-0 top-[calc(100%+6px)] z-20 grid min-w-[220px] gap-0.5 rounded-lg border border-border bg-panel p-1 shadow-panel;
+  }
+
+  .interviewGatewayControlsItem {
+    @apply rounded-md px-2 py-1 text-left text-xs text-fg hover:bg-panel2;
+  }
+
+  .interviewGatewayBranchesHead,
+  .interviewGatewayBranchRow {
+    @apply grid items-center gap-2;
+    grid-template-columns: minmax(180px, 2fr) minmax(72px, 0.6fr) minmax(180px, 1.4fr) minmax(56px, 0.5fr) minmax(220px, 1.8fr) minmax(120px, 1fr) minmax(90px, 0.8fr);
+  }
+
+  .interviewGatewayBranchesHead {
+    @apply rounded-md border border-border/60 bg-panel/65 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted;
+  }
+
+  .interviewGatewayBranchesBody {
+    @apply grid gap-1.5;
+  }
+
+  .interviewGatewayBranchRow {
+    @apply rounded-md border border-border/60 bg-panel/45 px-2 py-1.5;
+  }
+
+  .interviewGatewayBranchRow.isSelected {
+    @apply border-accent/60 bg-accentSoft;
+  }
+
+  .interviewGatewayBranchCell {
+    @apply min-w-0 text-xs text-fg;
+  }
+
+  .interviewGatewayBranchCell.time {
+    @apply text-[11px] text-muted;
+  }
+
+  .interviewGatewayBranchCell.actions {
+    @apply flex justify-end;
+  }
+
+  .interviewGatewayBranchLink {
+    @apply max-w-full truncate text-left text-xs font-semibold text-fg hover:underline;
+  }
+
+  .interviewGatewayComparePopover {
+    @apply grid gap-2 rounded-lg border border-border/80 bg-panel2/85 p-2;
+  }
+
+  .interviewGatewayCompareHead {
+    @apply flex items-center justify-between gap-2;
+  }
+
+  .interviewGatewayCompareSelectors {
+    @apply grid items-center gap-2;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+
+  .interviewGatewayCompareStats {
+    @apply grid gap-1 text-xs text-fg;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .interviewGatewayCompareList {
+    @apply grid gap-2;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .interviewGatewayCompareCol {
+    @apply rounded-md border border-border/70 bg-panel/60 p-2 text-xs;
+  }
+
+  .interviewGatewayCompareCol ul {
+    @apply m-0 mt-1 list-disc pl-4;
+  }
+
+  .interviewGatewayEmptyHint {
+    @apply rounded-md border border-border/60 bg-panel2/45 px-2 py-1.5;
+  }
+
+  .interviewBranchPanelOverlay {
+    @apply fixed inset-0 z-[89] flex justify-end bg-black/35;
+  }
+
+  .interviewBranchPanel {
+    @apply flex h-full w-[min(560px,92vw)] flex-col border-l border-border bg-panel p-3 shadow-panel;
+  }
+
+  .interviewBranchPanelHead {
+    @apply flex items-center justify-between gap-2 border-b border-border pb-2;
+  }
+
+  .interviewBranchPanelTitle {
+    @apply text-sm font-semibold text-fg;
+  }
+
+  .interviewBranchPanelMeta {
+    @apply mt-1;
+  }
+
+  .interviewBranchPanelBody {
+    @apply mt-2 min-h-0 flex-1 overflow-auto pr-1;
+  }
+
+  .interviewBranchPanelFoot {
+    @apply mt-2 flex flex-wrap items-center gap-2 border-t border-border pt-2;
+  }
+
+  .interviewBranchStepsList {
+    @apply grid gap-1;
+    margin-left: calc(var(--branch-depth, 0) * 10px);
+  }
+
+  .interviewBranchStepRow {
+    @apply flex min-w-0 items-center gap-2 rounded-md border border-border/65 bg-panel2/45 px-2 py-1.5 text-xs;
+  }
+
+  .interviewBranchStepRow.step .interviewBranchStepOrder {
+    @apply min-w-8 text-[11px] font-mono text-muted;
+  }
+
+  .interviewBranchStepRow.step .interviewBranchStepTitle {
+    @apply min-w-0 flex-1 truncate text-fg;
+  }
+
+  .interviewBranchStepRow.continue {
+    @apply border-success/45 bg-success/10;
+  }
+
+  .interviewBranchStepRow.loop {
+    @apply border-warning/45 bg-warning/10;
+  }
+
+  .interviewBranchStepRow.fail {
+    @apply border-danger/45 bg-danger/10;
+  }
+
+  .interviewNestedDecision {
+    @apply grid gap-1 rounded-md border border-border/70 bg-panel/55 p-2;
+  }
+
+  .interviewNestedDecisionHead {
+    @apply flex flex-wrap items-center gap-1.5;
+  }
+
+  .interviewNestedDecisionTitle {
+    @apply text-xs font-semibold text-fg;
+  }
+
+  .interviewNestedDecisionBody {
+    @apply grid gap-1.5 pl-2;
+    border-left: 1px dashed color-mix(in srgb, var(--c-border-strong) 55%, transparent);
+  }
+
+  .interviewNestedDecisionBranch {
+    @apply flex flex-wrap items-center gap-1.5 rounded-md border border-border/65 bg-panel2/45 px-2 py-1;
+  }
+
+  .interviewNestedDecisionBranchMain {
+    @apply flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-xs;
+  }
+
+  .interviewNodeCompact {
+    @apply grid gap-1;
+  }
+
+  .interviewNodeMain {
+    @apply flex min-w-0 items-center gap-1.5;
+  }
+
+  .interviewNodeTypeIcon {
+    @apply inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border border-border/70 bg-panel2/75 text-[11px] leading-none text-muted;
+  }
+
+  .interviewRowStatus {
+    @apply flex flex-wrap items-center gap-1.5;
   }
 
   .interviewBoundaryLanePicker {
@@ -454,6 +2411,10 @@
 
   .interviewBoundaryLaneList {
     @apply flex max-h-24 flex-wrap gap-1.5 overflow-auto;
+  }
+
+  .interviewBoundaryLaneList--compact {
+    @apply mt-2 max-h-32;
   }
 
   .interviewBoundaryLaneBtn {
@@ -476,6 +2437,124 @@
 
   .interviewBoundaryLaneSelect {
     @apply min-h-10;
+  }
+
+  .interviewBranchesPanel {
+    @apply p-0;
+    overflow: clip;
+  }
+
+  .interviewBranchesHead {
+    @apply flex flex-wrap items-start justify-between gap-2 border-b border-border bg-panel/95 px-3 py-3 backdrop-blur;
+  }
+
+  .interviewBranchesCollapsedLine {
+    @apply w-full rounded-md border border-border bg-panel2/55 px-2.5 py-1.5 text-xs text-muted;
+  }
+
+  .interviewBranchesFilters {
+    @apply grid gap-2 border-b border-border/70 bg-panel2 px-3 py-2.5;
+    grid-template-columns: minmax(180px, 1.3fr) minmax(140px, 1fr) minmax(140px, 1fr) minmax(160px, 1fr);
+  }
+
+  .interviewTransitionSourceHint {
+    @apply mx-3 mt-2 rounded-md border px-2 py-1 text-[11px] font-medium text-muted;
+    border-color: color-mix(in srgb, var(--c-accent) 26%, var(--c-border));
+    background: color-mix(in srgb, var(--c-accent-soft) 40%, transparent);
+  }
+
+  .interviewBranchesFilterToggles {
+    @apply col-span-2 flex items-center gap-3;
+  }
+
+  .interviewBranchesFilterActions {
+    @apply col-span-2 ml-auto flex items-center gap-2;
+  }
+
+  @media (max-width: 1100px) {
+    .interviewBranchesFilters {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .interviewBranchesFilterToggles,
+    .interviewBranchesFilterActions {
+      @apply col-span-2 ml-0;
+    }
+  }
+
+  .interviewBranchesTable thead th {
+    @apply z-10;
+  }
+
+  .interviewBranchRow td {
+    @apply align-middle;
+  }
+
+  .interviewBranchWhenCell {
+    @apply flex items-center gap-2;
+  }
+
+  .interviewBranchWhenText {
+    @apply text-xs text-muted;
+  }
+
+  .interviewBranchWhenText.hasWhen {
+    @apply font-mono text-fg;
+  }
+
+  .interviewBranchActions {
+    @apply flex items-center gap-1 opacity-90 transition-opacity;
+  }
+
+  .interviewBranchActionBtn {
+    @apply h-7 w-7 min-w-7 px-0 text-[12px];
+  }
+
+  .interviewBranchRow:hover .interviewBranchActions {
+    @apply opacity-100;
+  }
+
+  .interviewBranchEditWrap {
+    @apply grid gap-1.5;
+  }
+
+  .interviewBranchEditActions {
+    @apply flex items-center justify-end gap-1.5;
+  }
+
+  .interviewBranchInsertRow {
+    @apply rounded-lg border border-border bg-panel2/35 p-2;
+    grid-template-columns: minmax(220px, 1fr) minmax(190px, 220px) auto;
+  }
+
+  .interviewBranchInsertActions {
+    @apply flex items-end gap-1.5 pb-[2px];
+  }
+
+  @media (max-width: 960px) {
+    .interviewBranchInsertRow {
+      grid-template-columns: 1fr;
+    }
+
+    .interviewBranchInsertActions {
+      @apply justify-end;
+    }
+  }
+
+  .interviewBranchesGrouped {
+    @apply space-y-2 p-2;
+  }
+
+  .interviewBranchesGroup {
+    @apply rounded-lg border border-border bg-panel2/45;
+  }
+
+  .interviewBranchesGroup > summary {
+    @apply cursor-pointer list-none border-b border-border/70 px-2.5 py-2 text-xs text-muted;
+  }
+
+  .interviewBranchesPager {
+    @apply flex items-center justify-end gap-2 border-t border-border/70 px-3 py-2;
   }
 
   .interviewTimeCell {
@@ -508,6 +2587,75 @@
 
   .interviewRowActions {
     @apply flex flex-wrap items-center gap-1.5;
+  }
+
+  .interviewStepAiBadge {
+    @apply inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold;
+  }
+
+  .interviewStepAiBadge.on {
+    @apply border-accent/45 bg-accentSoft text-fg;
+  }
+
+  .interviewStepAiBadge.off {
+    @apply border-border text-muted;
+  }
+
+  .interviewRowMenu {
+    @apply relative;
+  }
+
+  .interviewRowMenuBtn {
+    @apply min-w-9 px-2;
+  }
+
+  .interviewRowMenuList {
+    @apply absolute right-0 top-[calc(100%+6px)] z-20 grid min-w-[220px] gap-1 rounded-lg border border-border bg-panel p-1.5 shadow-panel;
+  }
+
+  .interviewRowMenuItem {
+    @apply inline-flex items-center justify-between gap-2 rounded-md border border-transparent px-2 py-1.5 text-left text-xs text-fg transition-colors;
+  }
+
+  .interviewRowMenuItem:hover {
+    @apply border-border bg-panel2/70;
+  }
+
+  .interviewRowMenuItem:disabled {
+    @apply cursor-not-allowed text-muted;
+  }
+
+  .interviewSelectionActions {
+    @apply mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-panel2/70 px-3 py-2;
+  }
+
+  .interviewSelectionTitle {
+    @apply text-xs font-semibold text-fg;
+  }
+
+  .interviewSelectionMeta {
+    @apply text-xs text-muted;
+  }
+
+  .interviewStepDetailsRow td {
+    background: color-mix(in srgb, var(--c-panel2) 86%, transparent);
+  }
+
+  .interviewStepDetailsPanel {
+    @apply grid gap-3 rounded-lg border border-border bg-panel/55 p-3;
+  }
+
+  .interviewStepDetailsGrid {
+    @apply grid gap-2;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .interviewStepDetailsNodeField {
+    @apply col-span-2;
+  }
+
+  .interviewRowsMoreWrap {
+    @apply flex items-center justify-center py-2;
   }
 
   .interviewQuickStepInput {
@@ -670,6 +2818,18 @@
   .interviewAnnotationNotice.err {
     @apply border-danger/45 text-danger;
     background: color-mix(in srgb, var(--c-danger) 16%, transparent);
+  }
+
+  .interviewApiErrorDetails {
+    @apply mt-1.5 grid gap-1;
+  }
+
+  .interviewApiErrorDetails > summary {
+    @apply cursor-pointer text-xs font-medium text-muted;
+  }
+
+  .interviewApiErrorDetailsBody {
+    @apply max-h-40 overflow-auto whitespace-pre-wrap rounded-md border border-border/70 bg-panel px-2 py-1 text-[11px] text-fg;
   }
 
   .interviewSummaryRow {
@@ -1266,11 +3426,952 @@
   .small {
     @apply text-xs;
   }
+
+  .interviewDiagramMode,
+  .interviewPathsMode {
+    @apply rounded-xl border border-border bg-panel2/55 p-2.5;
+  }
+
+  .interviewPathsWorkbench {
+    @apply mt-2 grid gap-2;
+    grid-template-columns: minmax(300px, 360px) minmax(0, 1fr) minmax(320px, 420px);
+  }
+
+  .interviewPathsWorkbench.isNoSelection {
+    grid-template-columns: minmax(300px, 360px) minmax(0, 1fr) minmax(220px, 280px);
+  }
+
+  .interviewPathsPane {
+    @apply rounded-xl border border-border/75 bg-panel/45 p-2;
+    min-height: 240px;
+    min-width: 0;
+  }
+
+  .interviewPathsPane--nav {
+    @apply sticky top-0 self-start;
+    max-height: calc(100vh - 260px);
+    overflow: hidden;
+  }
+
+  .interviewPathsPane--content {
+    @apply min-h-0;
+  }
+
+  .interviewPathsPane--details {
+    @apply min-h-0;
+  }
+
+  .interviewPathsPaneHead {
+    @apply mb-1.5 flex items-center justify-between gap-2;
+  }
+
+  .interviewPathsMainColumn {
+    @apply grid gap-2;
+    min-height: 0;
+  }
+
+  .interviewScenarioNav {
+    @apply grid gap-1.5;
+    min-height: 0;
+  }
+
+  .interviewScenarioNavControls {
+    @apply grid gap-1.5;
+  }
+
+  .interviewPathsScenarioRail {
+    @apply grid gap-1.5 overflow-auto pr-1;
+    max-height: calc(100vh - 360px);
+  }
+
+  .interviewPathsScenarioSection {
+    @apply grid gap-1;
+  }
+
+  .interviewPathsScenarioSectionToggle {
+    @apply flex items-center justify-between rounded-lg border border-border/65 bg-panel2/65 px-2 py-1 text-left text-[11px] font-semibold text-fg;
+  }
+
+  .interviewPathsScenarioRailItem {
+    @apply grid gap-0.5 rounded-lg border border-border/75 bg-panel2/45 px-2 py-1.5 text-left transition-colors;
+  }
+
+  .interviewPathsScenarioRailItem:hover {
+    @apply border-borderStrong bg-panel2/75;
+  }
+
+  .interviewPathsScenarioRailItem.isActive {
+    @apply border-accent/55 bg-accentSoft;
+    box-shadow: inset 0 0 0 1px hsl(var(--accent) / 0.25);
+  }
+
+  .interviewScenarioName {
+    @apply inline-flex min-w-0 items-center gap-1.5;
+  }
+
+  .interviewPathsScenarioRailMain {
+    @apply flex min-w-0 items-center justify-between gap-1.5;
+  }
+
+  .interviewPathsScenarioRailMain .badge {
+    @apply shrink-0;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .interviewPathsScenarioRailMain .interviewScenarioName > span:last-child {
+    @apply min-w-0 truncate;
+  }
+
+  .interviewPathsScenarioRailMeta {
+    @apply text-[11px] text-muted;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .interviewScenarioDot {
+    @apply inline-block h-2.5 w-2.5 rounded-full border border-border;
+  }
+
+  .interviewScenarioDot.ok {
+    @apply border-success bg-success;
+  }
+
+  .interviewScenarioDot.danger {
+    @apply border-danger bg-danger;
+  }
+
+  .interviewScenarioDot.warn {
+    @apply border-warning bg-warning;
+  }
+
+  .interviewPathHeader {
+    @apply sticky top-0 z-10 grid gap-1.5 rounded-xl border border-border/75 bg-panel/95 p-2 backdrop-blur;
+  }
+
+  .interviewPathHeaderMain {
+    @apply flex min-w-0 flex-wrap items-center gap-1;
+  }
+
+  .interviewPathHeaderMain .badge {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .interviewPathHeaderMain .tier {
+    max-width: 90px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .interviewPathHeaderActions {
+    @apply flex flex-wrap items-center gap-1.5;
+  }
+
+  .interviewPathHeaderMenu {
+    @apply relative;
+  }
+
+  .interviewPathHeaderMenuTrigger {
+    @apply min-w-8 px-2 text-base;
+  }
+
+  .interviewPathHeaderMenuPopover {
+    @apply absolute right-0 top-[calc(100%+6px)] z-20 grid min-w-[190px] gap-1 rounded-lg border border-border/70 bg-panel p-1 shadow-panel;
+  }
+
+  .interviewPathHeaderMenuItem {
+    @apply inline-flex w-full items-center justify-start rounded-md px-2 py-1.5 text-xs text-fg transition-colors;
+    border: 1px solid transparent;
+  }
+
+  .interviewPathHeaderMenuItem:hover {
+    @apply border-border/70 bg-accentSoft;
+  }
+
+  .interviewPathHeaderMenuItem:disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+
+  .interviewPathHeaderMetrics {
+    @apply rounded-lg border border-border/60 bg-panel2/55 px-2 py-1 text-[11px];
+    overflow-wrap: anywhere;
+  }
+
+  .interviewPathSteps {
+    @apply grid gap-1.5 rounded-xl border border-border/75 bg-panel/55 p-2;
+    min-height: 0;
+  }
+
+  .interviewPathStepsHead {
+    @apply sticky top-[72px] z-[1] border-b border-border/70 pb-1;
+    background: hsl(var(--panel) / 0.88);
+  }
+
+  .interviewPathsRouteStack {
+    @apply grid gap-1.5 overflow-auto pr-1;
+    max-height: calc(100vh - 420px);
+  }
+
+  .interviewRouteNode {
+    @apply grid items-center gap-2 rounded-lg border border-border/70 bg-panel2/55 px-2 py-1.5 transition-colors;
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-height: 62px;
+    cursor: pointer;
+  }
+
+  .interviewRouteNode:hover {
+    @apply border-borderStrong;
+  }
+
+  .interviewRouteNode.isSelected {
+    @apply border-accent/60 bg-accentSoft;
+    box-shadow: inset 0 0 0 1px hsl(var(--accent) / 0.22);
+  }
+
+  .interviewRouteNode.isRecommendationActive {
+    @apply border-warning/70;
+    box-shadow: inset 0 0 0 1px hsl(var(--warning) / 0.28);
+  }
+
+  .interviewRouteNode.isDecision {
+    border-color: hsl(var(--accent2) / 0.5);
+    background: color-mix(in srgb, var(--c-accent2) 16%, var(--c-panel2));
+  }
+
+  .interviewRouteNode.isDecisionDiff {
+    @apply border-warning/70;
+  }
+
+  .interviewRouteNodeHead,
+  .interviewRouteNodeMeta,
+  .interviewRouteGroupHead,
+  .interviewRouteBranchHead {
+    @apply flex min-w-0 flex-wrap items-center gap-1;
+  }
+
+  .interviewRouteRowMain {
+    @apply grid min-w-0 gap-0.5;
+  }
+
+  .interviewRouteNodeControls {
+    @apply flex min-w-0 items-center justify-end;
+  }
+
+  .interviewRouteNodeNo {
+    @apply min-w-8 text-xs font-bold text-muted;
+  }
+
+  .interviewRouteNodeTitle {
+    @apply max-w-full truncate text-sm font-semibold text-fg;
+  }
+
+  .interviewRouteNodeSubtitle {
+    @apply block max-w-full truncate;
+  }
+
+  .interviewRouteNodeMeta .badge {
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .interviewRouteGroup {
+    @apply grid gap-2 rounded-lg border border-dashed border-border bg-panel2/45 p-2;
+  }
+
+  .interviewRouteGroup.gateway {
+    border-style: solid;
+    border-color: hsl(var(--accent) / 0.45);
+  }
+
+  .interviewRouteGroup.parallel {
+    border-color: hsl(var(--accent2) / 0.48);
+  }
+
+  .interviewRouteGroup.loop {
+    border-color: hsl(var(--warning) / 0.5);
+  }
+
+  .interviewRouteGroupBody,
+  .interviewRouteBranchBody,
+  .interviewRouteDecisionAlt,
+  .interviewRouteParallelBlock,
+  .interviewRouteLoopBody {
+    @apply grid gap-1.5;
+  }
+
+  .interviewRouteDecisionPrimary,
+  .interviewRouteBranchAlt,
+  .interviewRouteParallelBranch {
+    @apply grid gap-1.5 rounded-lg border border-border/70 bg-panel/55 p-1.5;
+  }
+
+  .interviewRouteParallelBranches {
+    @apply grid gap-2;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .interviewRouteParallelSplit,
+  .interviewRouteParallelJoin {
+    @apply text-xs font-semibold text-fg;
+  }
+
+  .interviewRouteLoopBlock {
+    @apply rounded-lg border border-warning/40 bg-warning/10 p-1.5;
+  }
+
+  .interviewPathsInlineTimeEditor {
+    @apply relative inline-grid items-center gap-1;
+    grid-template-columns: minmax(0, 88px) minmax(0, 88px) auto;
+    min-width: 0;
+  }
+
+  .interviewPathsInlineTimeEditor.isDetailed {
+    @apply grid w-full;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  }
+
+  .interviewPathsTimeField {
+    @apply grid gap-1;
+  }
+
+  .interviewPathsTimeField.compact {
+    @apply gap-0.5;
+  }
+
+  .interviewPathsTimeField > span {
+    @apply text-[11px] text-muted;
+  }
+
+  .interviewPathsTimeInputWrap {
+    @apply flex items-center gap-1;
+  }
+
+  .interviewPathsTimeInputWrap.compact {
+    @apply gap-0.5;
+  }
+
+  .interviewPathsTimeCompactInput {
+    @apply min-h-8 rounded-lg px-2 py-1 text-xs;
+  }
+
+  .interviewPathsTimeClearBtn {
+    @apply min-h-7 px-1.5;
+  }
+
+  .interviewPathsTimePresets {
+    @apply flex flex-wrap items-center gap-1;
+  }
+
+  .interviewPathsPresetWrap {
+    @apply relative flex items-center justify-end;
+  }
+
+  .interviewPathsPresetTrigger {
+    @apply min-h-8 min-w-8 px-1.5;
+  }
+
+  .interviewPathsPresetPopover {
+    @apply absolute right-0 top-[calc(100%+6px)] z-20 grid gap-1 rounded-lg border border-border/70 bg-panel p-1.5 shadow-panel;
+    min-width: 188px;
+  }
+
+  .interviewPathsPresetGroup {
+    @apply grid gap-1;
+  }
+
+  .interviewPathsPresetTitle {
+    @apply text-[10px] font-semibold uppercase tracking-wide text-muted;
+  }
+
+  .interviewPathsPresetButtons {
+    @apply flex flex-wrap gap-1;
+  }
+
+  .interviewPathsDetailsCard {
+    @apply grid gap-1.5 rounded-xl border border-border/75 bg-panel2/55 p-2;
+  }
+
+  .interviewPathsDetailsEmpty {
+    @apply rounded-lg border border-dashed border-border/60 bg-panel2/35 p-2;
+  }
+
+  .interviewPathsDetailsTitle {
+    @apply text-sm font-semibold text-fg;
+  }
+
+  .interviewPathsDetailsMeta {
+    @apply rounded-lg border border-border/70 bg-panel/50 px-2 py-1;
+  }
+
+  .interviewPathsDetailsList {
+    @apply grid gap-1 text-xs text-fg;
+  }
+
+  .interviewPathsDetailsActions {
+    @apply flex flex-wrap items-center gap-1.5;
+  }
+
+  .interviewPathsDetailsTime {
+    @apply grid gap-1 rounded-lg border border-border/65 bg-panel/45 p-1.5;
+  }
+
+  .interviewPathsDetailsSubTitle {
+    @apply text-[11px] font-semibold uppercase tracking-wide text-muted;
+  }
+
+  .interviewPathsDetailsLinkGroup {
+    @apply border-t border-dashed border-border/70 pt-2;
+  }
+
+  .interviewReportsDrawerOverlay {
+    @apply fixed inset-0 z-[88] flex justify-end bg-black/35 backdrop-blur-[1px];
+  }
+
+  .interviewReportsDrawer {
+    @apply flex h-full min-h-0 w-[min(1240px,96vw)] flex-col overflow-hidden border-l border-border bg-panel p-3;
+    box-shadow: -8px 0 24px hsl(var(--bg) / 0.35);
+  }
+
+  .interviewReportsDrawerHead {
+    @apply sticky top-0 z-10 mb-2 flex flex-wrap items-center gap-2 border-b border-border bg-panel/95 pb-2 backdrop-blur;
+  }
+
+  .interviewReportsDashboard {
+    @apply grid min-h-0 min-w-0 flex-1 gap-3;
+    grid-template-columns: clamp(320px, 30vw, 360px) minmax(0, 1fr);
+  }
+
+  .interviewReportsListPane {
+    @apply grid min-h-0 min-w-0 content-start gap-2 overflow-auto border-r border-border/70 pr-3;
+  }
+
+  .interviewReportsViewerPane {
+    @apply min-h-0 min-w-0 overflow-auto pl-1;
+  }
+
+  .interviewPathReportViewerHeader {
+    @apply sticky top-[44px] z-[2] rounded-lg border border-border/70 bg-panel/95 p-2 backdrop-blur;
+  }
+
+  .interviewPathReportPanelHead {
+    @apply flex w-full min-w-0 flex-wrap items-center gap-2;
+  }
+
+  .interviewPathReportTechlog {
+    @apply rounded-lg border border-border/70 bg-panel2/35 p-2;
+  }
+
+  .interviewPathReportTechlogCompact {
+    @apply flex items-center justify-between gap-2;
+  }
+
+  .interviewPathReportVersions {
+    @apply grid gap-1.5;
+  }
+
+  .interviewPathReportVersionItem {
+    @apply grid gap-1.5 rounded-lg border border-border bg-panel2/50 p-2;
+    cursor: pointer;
+  }
+
+  .interviewPathReportVersionItem.isSelected {
+    @apply border-accent/55;
+  }
+
+  .interviewPathReportVersionItem.isLatestActual {
+    box-shadow: inset 0 0 0 1px hsl(var(--success) / 0.35);
+  }
+
+  .interviewPathReportVersionMeta,
+  .interviewPathReportVersionActions {
+    @apply flex min-w-0 flex-wrap items-center gap-1.5;
+  }
+
+  .interviewPathReportVersionView {
+    @apply mt-1 grid w-full min-w-0 gap-2;
+  }
+
+  .interviewPathReportVersionView > * {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .interviewPathReportPanelHead .badge,
+  .interviewPathReportVersionMeta .badge {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .interviewPathReportKpiGrid {
+    @apply grid gap-1.5;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .interviewPathReportKpiCard {
+    @apply rounded-lg border border-border/75 bg-panel2/55 p-2;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .interviewPathReportKpiValue {
+    @apply text-base font-semibold text-fg;
+    min-width: 0;
+  }
+
+  .interviewPathReportKpiValue.isNode {
+    @apply text-sm font-medium;
+  }
+
+  .interviewPathReportKpiLabel {
+    @apply text-[11px] text-muted;
+    overflow-wrap: anywhere;
+  }
+
+  .interviewPathReportIssueChips {
+    @apply flex flex-wrap items-center gap-1;
+    min-width: 0;
+  }
+
+  .interviewPathReportIssueChip {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .interviewPathReportKpiCard.isSkeleton {
+    @apply animate-pulse;
+  }
+
+  .interviewPathReportKpiSkeletonValue {
+    @apply mb-1 h-4 w-16 rounded bg-border/70;
+  }
+
+  .interviewPathReportKpiSkeletonLabel {
+    @apply h-3 w-24 rounded bg-border/60;
+  }
+
+  .interviewPathReportAccordion {
+    @apply rounded-lg border border-border/75 bg-panel2/45;
+  }
+
+  .interviewPathReportAccordionSummary {
+    @apply flex cursor-pointer list-none items-center justify-between gap-2 px-2 py-1.5 text-xs font-semibold text-fg;
+  }
+
+  .interviewPathReportAccordionBody {
+    @apply border-t border-border/60 p-2;
+  }
+
+  .interviewReportStateCard {
+    @apply flex items-start gap-2 rounded-lg border border-border/75 bg-panel2/50 p-2;
+  }
+
+  .interviewReportStateCard.isRunning {
+    @apply border-accent/45;
+  }
+
+  .interviewReportStateCard.isError {
+    @apply items-center justify-between border-danger/55 bg-danger/10;
+  }
+
+  .interviewReportStateText {
+    @apply grid gap-0.5;
+  }
+
+  .interviewReportSpinner {
+    @apply mt-0.5 inline-block h-4 w-4 rounded-full border-2 border-accent/35 border-t-accent;
+    animation: interviewReportSpin .9s linear infinite;
+  }
+
+  .interviewPathReportMarkdown {
+    @apply max-h-[280px] min-w-0 overflow-hidden rounded-lg border border-border bg-panel2/55 p-2;
+  }
+
+  .interviewPathReportMarkdownBody {
+    @apply min-w-0 max-w-[900px];
+    max-height: 260px;
+    overflow: auto;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .interviewPathReportMarkdownBody :where(p, li, span, strong, em, code, pre, td, th, h1, h2, h3, h4) {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .interviewPathReportMarkdownBody :where(pre) {
+    white-space: pre-wrap;
+  }
+
+  .interviewPathReportSection {
+    @apply grid gap-1.5;
+  }
+
+  .interviewPathReportSectionTitle {
+    @apply text-xs font-semibold uppercase tracking-wide text-muted;
+  }
+
+  .interviewPathReportList {
+    @apply grid gap-1.5;
+  }
+
+  .interviewPathReportListItem {
+    @apply grid gap-1 rounded-lg border border-border/75 bg-panel/60 p-2 text-xs;
+  }
+
+  .interviewPathReportListItem.isActive {
+    @apply border-warning/65 bg-warning/10;
+  }
+
+  .interviewPathReportListItemHead {
+    @apply flex flex-wrap items-center justify-between gap-2;
+  }
+
+  .interviewPathReportStructuredSummary {
+    @apply grid min-w-0 gap-1.5 rounded-lg border border-border/75 bg-panel2/45 p-2;
+    overflow-wrap: anywhere;
+  }
+
+  .interviewPathReportStructuredTitle {
+    @apply text-sm font-semibold text-fg;
+  }
+
+  .interviewPathReportStructuredBullets {
+    @apply m-0 grid gap-1 pl-4 text-sm text-fg;
+  }
+
+  .interviewPathReportRecSection {
+    @apply grid gap-2 rounded-lg border border-border/75 bg-panel2/45 p-2;
+  }
+
+  .interviewPathReportRecGroups {
+    @apply grid gap-2;
+  }
+
+  .interviewPathReportRecGroup {
+    @apply grid gap-1.5 rounded-lg border border-border/75 bg-panel/55 p-2;
+  }
+
+  .interviewPathReportRecGroupHead {
+    @apply flex items-center justify-between gap-2;
+  }
+
+  .interviewPathReportRecTable {
+    @apply grid min-w-0 gap-1;
+    width: 100%;
+  }
+
+  .interviewPathReportRecHead,
+  .interviewPathReportRecRow {
+    @apply grid items-start gap-2;
+    grid-template-columns: minmax(0, 0.6fr) minmax(0, 0.7fr) minmax(0, 1.2fr) minmax(0, 2.2fr) minmax(0, 1.4fr) minmax(0, 1fr);
+    min-width: 0;
+  }
+
+  .interviewPathReportRecHead {
+    @apply rounded-md border border-border/60 bg-panel2/65 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted;
+  }
+
+  .interviewPathReportRecRow {
+    @apply rounded-md border border-border/70 bg-panel/70 px-2 py-1.5 text-xs;
+  }
+
+  .interviewPathReportRecRow.isActive {
+    @apply border-warning/70 bg-warning/10;
+  }
+
+  .interviewPathReportRecHead > *,
+  .interviewPathReportRecRow > * {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .interviewPathReportRecStepRef {
+    @apply flex min-w-0 flex-col gap-0.5;
+  }
+
+  .interviewPathReportRecTextCell,
+  .interviewPathReportRecEffectCell {
+    @apply grid min-w-0 gap-0.5;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .interviewPathReportRecTextClamp {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .interviewPathReportRecExpand > summary {
+    @apply cursor-pointer text-[11px] text-accent;
+  }
+
+  .interviewReportsViewerPane .interviewPathReportVersionView :where(.interviewPathReportListItem, .interviewPathReportAccordionBody, .interviewReportStateCard, .interviewPathReportRecGroup, .interviewPathReportRecSection) {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  @keyframes interviewReportSpin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .interviewRecChipPriority.p-p0 {
+    @apply border-success/65 bg-success/15 text-success;
+  }
+
+  .interviewRecChipPriority.p-p1 {
+    @apply border-warning/65 bg-warning/15 text-warning;
+  }
+
+  .interviewRecChipPriority.p-p2 {
+    @apply border-danger/65 bg-danger/15 text-danger;
+  }
+
+  .interviewDiagramModeHead,
+  .interviewPathsHead {
+    @apply mb-2 flex items-center justify-between gap-2;
+  }
+
+  .interviewDiagramModeTitle,
+  .interviewPathsTitle {
+    @apply text-sm font-semibold text-fg;
+  }
+
+  .interviewDiagramLinkGroups {
+    @apply mb-2 flex flex-wrap items-center gap-1.5;
+  }
+
+  .interviewDiagramLinkChip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-border bg-panel px-2 py-0.5 text-xs text-fg;
+  }
+
+  .interviewDiagramLinkChip.error {
+    border-color: hsl(var(--danger) / 0.6);
+  }
+
+  .interviewDiagramLinkChip.warn {
+    border-color: hsl(var(--warning) / 0.6);
+  }
+
+  .interviewDiagramLinkDot {
+    @apply inline-block h-2 w-2 rounded-full;
+  }
+
+  .interviewDiagramNodeList {
+    @apply grid gap-2;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  }
+
+  .interviewDiagramNodeRow {
+    @apply grid gap-1.5 rounded-lg border border-border bg-panel/70 p-2 text-left transition-colors;
+  }
+
+  .interviewDiagramNodeRow:hover {
+    border-color: hsl(var(--accent) / 0.55);
+  }
+
+  .interviewDiagramNodeRow.isSelected {
+    border-color: hsl(var(--accent) / 0.8);
+    box-shadow: inset 0 0 0 1px hsl(var(--accent) / 0.35);
+  }
+
+  .interviewDiagramNodeMain,
+  .interviewDiagramNodeMeta {
+    @apply flex flex-wrap items-center gap-1.5;
+  }
+
+  .interviewDiagramNodeName {
+    @apply font-medium text-fg;
+  }
+
+  .interviewPathsItems {
+    @apply grid gap-2;
+  }
+
+  .interviewPathsStep {
+    @apply flex items-center gap-2 rounded-lg border border-border bg-panel/70 px-2 py-1.5 text-left;
+  }
+
+  .interviewPathsStep.isSelected {
+    border-color: hsl(var(--accent) / 0.8);
+    box-shadow: inset 0 0 0 1px hsl(var(--accent) / 0.35);
+  }
+
+  .interviewPathsStepNo {
+    @apply min-w-10 text-xs font-semibold text-muted;
+  }
+
+  .interviewPathsStepTitle {
+    @apply text-sm font-medium text-fg;
+  }
+
+  .interviewPathsBetween {
+    @apply rounded-lg border border-dashed border-border bg-panel/45 p-2;
+  }
+
+  .interviewPathsBetweenHead {
+    @apply mb-1 text-xs font-semibold text-muted;
+  }
+
+  .interviewPathsBranch {
+    @apply mb-1.5 rounded-md border border-border/70 bg-panel2/45 p-1.5;
+  }
+
+  .interviewPathsBranch:last-child {
+    margin-bottom: 0;
+  }
+
+  .interviewPathsBranchHead {
+    @apply mb-1 flex items-center gap-1.5;
+  }
+
+  .interviewPathsBranchLabel {
+    @apply text-xs font-medium text-fg;
+  }
+
+  .interviewPathsBranchList {
+    @apply m-0 grid gap-0.5 pl-4;
+  }
+
+  .interviewPathsBranchNode {
+    @apply text-sm text-fg;
+  }
+
+  .interviewPathsBranchNode.loop {
+    color: hsl(var(--warning));
+  }
+
+  .interviewPathsBranchNode.continue {
+    color: hsl(var(--accent2));
+  }
+
+  .interviewPathsBranchNode.terminal {
+    color: hsl(var(--danger));
+  }
+
+  .interviewPathsBranchNode.nested {
+    @apply list-none -ml-3;
+  }
+
+  .interviewPathsBranchNestedTitle {
+    @apply mb-0.5 text-xs font-semibold text-fg;
+  }
+
+  .interviewPathsNestedBranch {
+    @apply ml-2 mt-1;
+  }
+
+  .interviewPathsNestedBranchLabel {
+    @apply mb-0.5 text-xs text-muted;
+  }
 }
 
 @media (max-width: 1200px) {
+  .interviewReportsDashboard {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .interviewReportsListPane {
+    @apply border-r-0 border-b border-border/70 pb-2 pr-0;
+  }
+
+  .interviewReportsViewerPane {
+    @apply pl-0;
+  }
+
+  .interviewPathReportKpiGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .interviewPathReportRecHead,
+  .interviewPathReportRecRow {
+    grid-template-columns: minmax(0, 0.7fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1.8fr);
+  }
+
+  .interviewPathReportRecHead > :nth-child(5),
+  .interviewPathReportRecHead > :nth-child(6),
+  .interviewPathReportRecRow > :nth-child(5),
+  .interviewPathReportRecRow > :nth-child(6) {
+    grid-column: span 2 / span 2;
+  }
+
+  .interviewPathReportIssueChips {
+    align-items: flex-start;
+  }
+
+  .interviewTimelinePrimaryRow {
+    align-items: stretch;
+  }
+
+  .interviewTimelinePrimarySearch,
+  .interviewSortSelect {
+    min-width: 0;
+  }
+
+  .interviewTimelinePrimaryRow .interviewColsMenuWrap {
+    margin-left: 0;
+  }
+
   .interviewTimelineFilters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .interviewPathsWorkbench {
+    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  }
+
+  .interviewPathsWorkbench.isNoSelection {
+    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  }
+
+  .interviewPathsPane--details {
+    position: fixed;
+    right: 12px;
+    top: 86px;
+    bottom: 14px;
+    z-index: 87;
+    width: min(420px, 92vw);
+    box-shadow: -12px 0 28px hsl(var(--bg) / 0.35);
+    background: hsl(var(--panel) / 0.98);
+  }
+
+  .interviewPathsPane--details.isCollapsed {
+    display: none;
+  }
+
+  .interviewRouteNode {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .interviewRouteNodeControls {
+    justify-content: flex-start;
+  }
+
+  .interviewPathStepsHead {
+    top: 0;
   }
 
   .interviewSummaryRow {
@@ -1280,9 +4381,68 @@
   .interviewAnalyticsGrid {
     grid-template-columns: 1fr;
   }
+
+  .interviewGatewayHeaderRow {
+    grid-template-columns: 1fr;
+  }
+
+  .interviewGatewayHeaderMeta {
+    justify-content: flex-start;
+  }
+
+  .interviewGatewayBranchesHead,
+  .interviewGatewayBranchRow {
+    grid-template-columns: minmax(160px, 1.5fr) minmax(64px, 0.6fr) minmax(140px, 1.2fr) minmax(56px, 0.5fr) minmax(180px, 1.5fr) minmax(100px, 0.8fr) minmax(74px, 0.6fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .interviewPathReportRecHead,
+  .interviewPathReportRecRow {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  }
+
+  .interviewPathReportRecHead > :nth-child(n+3),
+  .interviewPathReportRecRow > :nth-child(n+3) {
+    grid-column: span 2 / span 2;
+  }
+
+  .interviewPathReportKpiGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 820px) {
+  .interviewPathsWorkbench {
+    grid-template-columns: 1fr;
+  }
+
+  .interviewPathsWorkbench.isNoSelection {
+    grid-template-columns: 1fr;
+  }
+
+  .interviewPathsPane--nav {
+    position: static;
+    max-height: none;
+  }
+
+  .interviewPathsScenarioRail,
+  .interviewPathsRouteStack {
+    max-height: none;
+  }
+
+  .interviewPathHeaderMain .badge {
+    max-width: 120px;
+  }
+
+  .interviewPathsInlineTimeEditor {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  }
+
+  .interviewRouteParallelBranches {
+    grid-template-columns: 1fr;
+  }
+
   .interviewGrid3 {
     grid-template-columns: 1fr;
   }
@@ -1303,5 +4463,30 @@
 
   .interviewColsMenuList {
     grid-template-columns: 1fr;
+  }
+
+  .interviewStepDetailsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .interviewStepDetailsNodeField {
+    @apply col-span-1;
+  }
+
+  .interviewGatewayCompareList {
+    grid-template-columns: 1fr;
+  }
+
+  .interviewGatewayBranchesHead,
+  .interviewGatewayBranchRow {
+    grid-template-columns: 1fr;
+  }
+
+  .interviewGatewayBranchCell.actions {
+    justify-content: flex-start;
+  }
+
+  .interviewBranchPanel {
+    width: min(680px, 100vw);
   }
 }

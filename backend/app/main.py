@@ -10,13 +10,15 @@ import io
 import zipfile
 import json
 import time
+import threading
+from datetime import datetime, timezone
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -24,7 +26,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from .exporters.mermaid import render_mermaid
 from .exporters.yaml_export import dump_yaml, session_to_process_dict
 from .glossary import normalize_kind, slugify_canon, upsert_term
-from .models import Node, Edge, Question, Session, Project, CreateProjectIn, UpdateProjectIn
+from .models import Node, Edge, Question, ReportVersion, Session, Project, CreateProjectIn, UpdateProjectIn
 from .analytics import compute_analytics
 from .normalizer import load_seed_glossary, normalize_nodes
 from .resources import build_resources_report
@@ -33,9 +35,100 @@ from .settings import load_llm_settings, llm_status, save_llm_settings, verify_l
 from .validators.coverage import build_questions
 from .validators.disposition import build_disposition_questions
 from .validators.loss import build_loss_questions, loss_report
+from .rtiers import infer_rtiers, parse_bpmn_sequence_graph, resolve_inference_inputs
+from .auth import (
+    AuthError,
+    authenticate_user,
+    issue_login_tokens,
+    refresh_cookie_samesite,
+    refresh_cookie_secure,
+    revoke_refresh_from_token,
+    rotate_refresh_token,
+    seed_admin_user_if_enabled,
+    user_from_bearer_header,
+)
 
 
 app = FastAPI(title="Food Process Copilot MVP")
+
+AUTH_PUBLIC_PATHS = {
+    "/api/auth/login",
+    "/api/auth/refresh",
+    "/api/auth/logout",
+}
+
+_REPORT_LOCKS_GUARD = threading.RLock()
+_REPORT_LOCKS_BY_SESSION: Dict[str, threading.RLock] = {}
+_PATH_REPORT_STALE_RUNNING_SEC = max(30, int(os.environ.get("PATH_REPORT_STALE_RUNNING_SEC", "180")))
+_REPORT_ACTIVE_GUARD = threading.RLock()
+_REPORT_ACTIVE_IDS: Set[str] = set()
+
+
+def _report_session_lock(session_id: str) -> threading.RLock:
+    sid = str(session_id or "").strip()
+    with _REPORT_LOCKS_GUARD:
+        lock = _REPORT_LOCKS_BY_SESSION.get(sid)
+        if lock is None:
+            lock = threading.RLock()
+            _REPORT_LOCKS_BY_SESSION[sid] = lock
+        return lock
+
+
+def _set_report_active(report_id: str, is_active: bool) -> None:
+    rid = str(report_id or "").strip()
+    if not rid:
+        return
+    with _REPORT_ACTIVE_GUARD:
+        if is_active:
+            _REPORT_ACTIVE_IDS.add(rid)
+        else:
+            _REPORT_ACTIVE_IDS.discard(rid)
+
+
+def _is_report_active(report_id: str) -> bool:
+    rid = str(report_id or "").strip()
+    if not rid:
+        return False
+    with _REPORT_ACTIVE_GUARD:
+        return rid in _REPORT_ACTIVE_IDS
+
+
+def _set_refresh_cookie(resp: Response, refresh_token: str, max_age_seconds: int) -> None:
+    resp.set_cookie(
+        key="refresh_token",
+        value=str(refresh_token or ""),
+        httponly=True,
+        secure=refresh_cookie_secure(),
+        samesite=refresh_cookie_samesite(),
+        max_age=max(1, int(max_age_seconds)),
+        path="/api/auth/",
+    )
+
+
+def _clear_refresh_cookie(resp: Response) -> None:
+    resp.delete_cookie(
+        key="refresh_token",
+        path="/api/auth/",
+        secure=refresh_cookie_secure(),
+        samesite=refresh_cookie_samesite(),
+    )
+
+
+def _request_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return str(forwarded).split(",")[0].strip()[:120]
+    if request.client and request.client.host:
+        return str(request.client.host)[:120]
+    return ""
+
+
+def _auth_error_response(detail: str = "unauthorized") -> JSONResponse:
+    return JSONResponse(status_code=401, content={"detail": str(detail or "unauthorized")})
+
+
+seed_admin_user_if_enabled()
+
 # --- Frontend contract helpers (Vite dev 5174) ---
 def _role_id_from_any(x: Any) -> Optional[str]:
     if x is None:
@@ -563,7 +656,833 @@ def _overlay_interview_annotations_on_bpmn_xml(sess: Session, xml_text: str) -> 
 def _session_api_dump(sess: Session) -> Dict[str, Any]:
     d = sess.model_dump()
     d["notes"] = _notes_decode(d.get("notes"))
+    d["bpmn_meta"] = _normalize_bpmn_meta(d.get("bpmn_meta"))
     return d
+
+
+def _get_report_versions_by_path(interview_raw: Any) -> Dict[str, List[Dict[str, Any]]]:
+    interview = interview_raw if isinstance(interview_raw, dict) else {}
+    raw = interview.get("report_versions")
+    if not isinstance(raw, dict):
+        return {}
+    out: Dict[str, List[Dict[str, Any]]] = {}
+    for path_id_raw, versions_raw in raw.items():
+        path_id = str(path_id_raw or "").strip()
+        if not path_id:
+            continue
+        rows: List[Dict[str, Any]] = []
+        for item_raw in (versions_raw or []):
+            if not isinstance(item_raw, dict):
+                continue
+            try:
+                model = ReportVersion.model_validate(item_raw)
+            except Exception:
+                continue
+            rows.append(model.model_dump())
+        rows.sort(key=lambda x: int(x.get("version") or 0))
+        out[path_id] = rows
+    return out
+
+
+def _set_report_versions_by_path(sess: Session, by_path: Dict[str, List[Dict[str, Any]]]) -> None:
+    interview = dict(getattr(sess, "interview", {}) or {})
+    interview["report_versions"] = by_path
+    sess.interview = interview
+
+
+def _merge_interview_with_server_fields(existing_raw: Any, incoming_raw: Any) -> Dict[str, Any]:
+    existing = existing_raw if isinstance(existing_raw, dict) else {}
+    incoming = _norm_interview(incoming_raw)
+    out = dict(incoming)
+    for key in ("report_versions", "path_reports"):
+        current_value = existing.get(key)
+        incoming_value = incoming.get(key)
+        if isinstance(current_value, dict) and current_value:
+            out[key] = current_value
+            continue
+        if isinstance(current_value, dict) and not current_value:
+            if isinstance(incoming_value, dict):
+                out[key] = incoming_value
+            else:
+                out.pop(key, None)
+            continue
+        if isinstance(incoming_value, dict):
+            out[key] = incoming_value
+        else:
+            out.pop(key, None)
+    return out
+
+
+def _next_report_version(by_path: Dict[str, List[Dict[str, Any]]], path_id: str) -> int:
+    rows = by_path.get(path_id) or []
+    max_ver = 0
+    for row in rows:
+        try:
+            max_ver = max(max_ver, int(row.get("version") or 0))
+        except Exception:
+            continue
+    return max_ver + 1
+
+
+def _set_latest_path_report_pointer(sess: Session, path_id: str, row_raw: Any) -> None:
+    pid = str(path_id or "").strip()
+    row = row_raw if isinstance(row_raw, dict) else {}
+    if not pid:
+        return
+    interview = dict(getattr(sess, "interview", {}) or {})
+    latest_raw = interview.get("path_reports")
+    latest_by_path = dict(latest_raw) if isinstance(latest_raw, dict) else {}
+    latest_by_path[pid] = {
+        "id": str(row.get("id") or ""),
+        "version": int(row.get("version") or 0),
+        "steps_hash": str(row.get("steps_hash") or ""),
+        "created_at": int(row.get("created_at") or 0),
+        "status": str(row.get("status") or "error"),
+        "model": str(row.get("model") or "deepseek-chat"),
+        "prompt_template_version": str(row.get("prompt_template_version") or "v2"),
+        "report_json": row.get("report_json") or {},
+        "raw_json": row.get("raw_json") or {},
+        "report_markdown": str(row.get("report_markdown") or row.get("raw_text") or ""),
+        "recommendations": row.get("recommendations_json") or [],
+        "missing_data": row.get("missing_data_json") or [],
+        "risks": row.get("risks_json") or [],
+        "warnings": row.get("warnings_json") or [],
+    }
+    interview["path_reports"] = latest_by_path
+    sess.interview = interview
+
+
+def _is_retryable_report_generation_error(exc: Exception) -> bool:
+    msg = str(exc or "").strip().lower()
+    if not msg:
+        return False
+    tokens = (
+        "response ended prematurely",
+        "incomplete read",
+        "connection aborted",
+        "connection reset",
+        "timed out",
+        "temporarily unavailable",
+        "remote disconnected",
+        "chunkedencodingerror",
+        "read timed out",
+    )
+    return any(tok in msg for tok in tokens)
+
+
+def _compact_path_report_payload(payload_raw: Any, *, max_steps: int = 90, notes_limit: int = 240) -> Tuple[Dict[str, Any], bool]:
+    payload = payload_raw if isinstance(payload_raw, dict) else {}
+    out = dict(payload)
+    steps_raw = list(payload.get("steps") or []) if isinstance(payload.get("steps"), list) else []
+    if not steps_raw:
+        return out, False
+
+    trimmed: List[Dict[str, Any]] = []
+    for step_raw in steps_raw[:max(1, int(max_steps or 1))]:
+        step = step_raw if isinstance(step_raw, dict) else {}
+        item: Dict[str, Any] = {
+            "order_index": int(step.get("order_index") or 0),
+            "title": str(step.get("title") or "").strip(),
+            "lane_name": str(step.get("lane_name") or "").strip() or None,
+            "work_duration_sec": step.get("work_duration_sec"),
+            "wait_duration_sec": step.get("wait_duration_sec"),
+            "is_decision": bool(step.get("is_decision")),
+        }
+        decision = step.get("decision")
+        if isinstance(decision, dict):
+            item["decision"] = {
+                "selected_label": str(decision.get("selected_label") or "").strip() or None,
+                "condition": str(decision.get("condition") or "").strip() or None,
+                "selected_flow_id": str(decision.get("selected_flow_id") or "").strip() or None,
+            }
+        notes = str(step.get("notes") or "").strip()
+        if notes:
+            item["notes"] = notes[: max(16, int(notes_limit or 16))]
+        trimmed.append(item)
+
+    changed = len(trimmed) != len(steps_raw) or any(
+        str((a or {}).get("notes") or "").strip() != str((b or {}).get("notes") or "").strip()
+        for a, b in zip(trimmed, steps_raw[: len(trimmed)])
+    )
+    if not changed:
+        return out, False
+
+    out["steps"] = trimmed
+    meta = dict(out.get("_meta") or {}) if isinstance(out.get("_meta"), dict) else {}
+    meta["compacted_for_llm"] = True
+    meta["original_steps_count"] = len(steps_raw)
+    meta["sent_steps_count"] = len(trimmed)
+    out["_meta"] = meta
+    return out, True
+
+
+def _mark_stale_running_reports(sess: Session, now_ts: Optional[int] = None) -> bool:
+    current_ts = int(now_ts or time.time())
+    stale_after = max(30, int(_PATH_REPORT_STALE_RUNNING_SEC))
+    by_path = _get_report_versions_by_path(getattr(sess, "interview", {}))
+    changed = False
+
+    for pid, rows_raw in list(by_path.items()):
+        rows = list(rows_raw or [])
+        path_changed = False
+        for idx, row_raw in enumerate(rows):
+            row = dict(row_raw or {})
+            if str(row.get("status") or "").strip().lower() != "running":
+                continue
+            if _is_report_active(str(row.get("id") or "")):
+                continue
+            created_at = int(row.get("created_at") or 0)
+            age_sec = (current_ts - created_at) if created_at > 0 else stale_after + 1
+            if age_sec < stale_after:
+                continue
+            has_markdown = bool(str(row.get("report_markdown") or row.get("raw_text") or "").strip())
+            has_structured = isinstance(row.get("report_json"), dict) and bool(row.get("report_json"))
+            if has_markdown or has_structured:
+                row["status"] = "ok"
+                row["error_message"] = None
+            else:
+                row["status"] = "error"
+                if not str(row.get("error_message") or "").strip():
+                    row["error_message"] = "report generation interrupted (stale running state)"
+            rows[idx] = row
+            changed = True
+            path_changed = True
+        if path_changed:
+            by_path[pid] = rows
+
+    if not changed:
+        return False
+
+    _set_report_versions_by_path(sess, by_path)
+    for pid, rows in by_path.items():
+        ordered = sorted(rows or [], key=lambda x: int((x or {}).get("version") or 0), reverse=True)
+        if ordered:
+            _set_latest_path_report_pointer(sess, pid, ordered[0])
+    return True
+
+
+def _patch_report_version_row(
+    session_id: str,
+    path_id: str,
+    report_id: str,
+    patch_fn: Callable[[Dict[str, Any]], None],
+) -> Optional[Dict[str, Any]]:
+    sid = str(session_id or "").strip()
+    pid = str(path_id or "").strip()
+    rid = str(report_id or "").strip()
+    if not sid or not pid or not rid:
+        return None
+
+    st = get_storage()
+    lock = _report_session_lock(sid)
+    with lock:
+        sess = st.load(sid)
+        if not sess:
+            return None
+
+        by_path = _get_report_versions_by_path(getattr(sess, "interview", {}))
+        rows = list(by_path.get(pid) or [])
+        target_idx = -1
+        target_row: Dict[str, Any] = {}
+        for idx, row in enumerate(rows):
+            if str((row or {}).get("id") or "").strip() == rid:
+                target_idx = idx
+                target_row = dict(row or {})
+                break
+        if target_idx < 0:
+            return None
+
+        patch_fn(target_row)
+        rows[target_idx] = target_row
+        by_path[pid] = rows
+        _set_report_versions_by_path(sess, by_path)
+        _set_latest_path_report_pointer(sess, pid, target_row)
+        st.save(sess)
+        return target_row
+
+
+def _run_path_report_generation_async(
+    session_id: str,
+    path_id: str,
+    report_id: str,
+    request_payload_json: Dict[str, Any],
+    prompt_template_version: str,
+    model_name: str,
+) -> None:
+    sid = str(session_id or "").strip()
+    pid = str(path_id or "").strip()
+    rid = str(report_id or "").strip()
+    payload = request_payload_json if isinstance(request_payload_json, dict) else {}
+    prompt_ver = str(prompt_template_version or "v2").strip() or "v2"
+    fallback_model = str(model_name or "deepseek-chat").strip() or "deepseek-chat"
+    if not sid or not pid or not rid:
+        return
+    _set_report_active(rid, True)
+
+    try:
+        def _finish_error(message: str) -> None:
+            text = str(message or "deepseek failed")
+
+            def _apply(row: Dict[str, Any]) -> None:
+                row["status"] = "error"
+                row["error_message"] = text
+                row["warnings_json"] = row.get("warnings_json") or []
+
+            _patch_report_version_row(sid, pid, rid, _apply)
+
+        llm = load_llm_settings()
+        api_key = str(llm.get("api_key") or "").strip()
+        base_url = str(llm.get("base_url") or "").strip()
+        if not api_key:
+            _finish_error("deepseek api_key is not set")
+            return
+
+        try:
+            from .ai.deepseek_questions import generate_path_report
+        except Exception as e:
+            _finish_error(f"deepseek questions module not available: {e}")
+            return
+
+        try:
+            report_result = generate_path_report(
+                payload=payload,
+                api_key=api_key,
+                base_url=base_url,
+                prompt_template_version=prompt_ver,
+            )
+            used_compact_retry = False
+        except Exception as first_error:
+            report_result = None
+            used_compact_retry = False
+            compact_payload, compact_changed = _compact_path_report_payload(payload)
+            if _is_retryable_report_generation_error(first_error) and compact_changed:
+                try:
+                    report_result = generate_path_report(
+                        payload=compact_payload,
+                        api_key=api_key,
+                        base_url=base_url,
+                        prompt_template_version=prompt_ver,
+                    )
+                    used_compact_retry = True
+                except Exception as second_error:
+                    _finish_error(f"deepseek failed: {second_error}")
+                    return
+            else:
+                _finish_error(f"deepseek failed: {first_error}")
+                return
+
+        if used_compact_retry and isinstance(report_result, dict):
+            warnings = list(report_result.get("warnings") or [])
+            if "payload_compacted_retry" not in warnings:
+                warnings.append("payload_compacted_retry")
+            report_result = {**report_result, "warnings": warnings}
+
+        def _apply_success(row: Dict[str, Any]) -> None:
+            row["status"] = "ok"
+            row["model"] = str(report_result.get("model") or fallback_model)
+            row["prompt_template_version"] = str(report_result.get("prompt_template_version") or prompt_ver)
+            row["report_markdown"] = str(report_result.get("report_markdown") or report_result.get("raw_text") or "")
+            row["report_json"] = report_result.get("report_json") or {}
+            row["raw_json"] = report_result.get("raw_json") or {}
+            row["recommendations_json"] = report_result.get("recommendations") or []
+            row["missing_data_json"] = report_result.get("missing_data") or []
+            row["risks_json"] = report_result.get("risks") or []
+            row["warnings_json"] = report_result.get("warnings") or []
+            row["error_message"] = None
+            row["raw_text"] = str(report_result.get("raw_text") or "")
+
+        _patch_report_version_row(sid, pid, rid, _apply_success)
+    finally:
+        _set_report_active(rid, False)
+
+
+def _find_report_version(sess: Session, report_id: str) -> Optional[Dict[str, Any]]:
+    rid = str(report_id or "").strip()
+    if not rid:
+        return None
+    by_path = _get_report_versions_by_path(getattr(sess, "interview", {}))
+    for versions in by_path.values():
+        for row in versions:
+            if str(row.get("id") or "").strip() == rid:
+                return row
+    return None
+
+
+def _find_report_version_global(report_id: str) -> Optional[Dict[str, Any]]:
+    rid = str(report_id or "").strip()
+    if not rid:
+        return None
+
+    st = get_storage()
+    for fp in _iter_session_files():
+        try:
+            raw = json.loads(fp.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(raw, dict):
+            continue
+        sid = str(raw.get("id") or "").strip()
+        if not sid:
+            continue
+        sess = st.load(sid)
+        if not sess:
+            continue
+        if _mark_stale_running_reports(sess):
+            st.save(sess)
+        found = _find_report_version(sess, rid)
+        if found:
+            return found
+    return None
+
+
+def _ln_tag(tag: str) -> str:
+    if "}" in str(tag or ""):
+        return str(tag).rsplit("}", 1)[-1].lower()
+    return str(tag or "").lower()
+
+
+def _collect_sequence_flow_meta(xml_text: str) -> Dict[str, Any]:
+    raw = str(xml_text or "").strip()
+    if not raw:
+        return {
+            "flow_ids": set(),
+            "node_ids": set(),
+            "flow_source_by_id": {},
+            "flow_target_by_id": {},
+            "outgoing_by_source": {},
+            "gateway_mode_by_node": {},
+        }
+
+    try:
+        root = ET.fromstring(raw)
+    except Exception:
+        return {
+            "flow_ids": set(),
+            "node_ids": set(),
+            "flow_source_by_id": {},
+            "flow_target_by_id": {},
+            "outgoing_by_source": {},
+            "gateway_mode_by_node": {},
+        }
+
+    flow_node_kinds = {
+        "startevent",
+        "endevent",
+        "boundaryevent",
+        "task",
+        "usertask",
+        "servicetask",
+        "manualtask",
+        "scripttask",
+        "businessruletask",
+        "sendtask",
+        "receivetask",
+        "callactivity",
+        "subprocess",
+        "adhocsubprocess",
+        "exclusivegateway",
+        "inclusivegateway",
+        "eventbasedgateway",
+        "parallelgateway",
+        "intermediatecatchevent",
+        "intermediatethrowevent",
+        "intermediateevent",
+    }
+    node_ids: Set[str] = set()
+    gateway_mode_by_node: Dict[str, str] = {}
+    gateway_type_map = {
+        "exclusivegateway": "xor",
+        "inclusivegateway": "inclusive",
+        "parallelgateway": "parallel",
+        "eventbasedgateway": "event",
+    }
+    for el in root.iter():
+        local = _ln_tag(str(getattr(el, "tag", "") or ""))
+        if local in flow_node_kinds:
+            node_id = str(el.attrib.get("id") or "").strip()
+            if node_id:
+                node_ids.add(node_id)
+        mode = gateway_type_map.get(local)
+        if not mode:
+            continue
+        node_id = str(el.attrib.get("id") or "").strip()
+        if not node_id:
+            continue
+        gateway_mode_by_node[node_id] = mode
+
+    flow_ids: Set[str] = set()
+    flow_source_by_id: Dict[str, str] = {}
+    flow_target_by_id: Dict[str, str] = {}
+    outgoing_by_source: Dict[str, List[str]] = {}
+    for el in root.iter():
+        if _ln_tag(str(getattr(el, "tag", "") or "")) != "sequenceflow":
+            continue
+        flow_id = str(el.attrib.get("id") or "").strip()
+        source_id = str(el.attrib.get("sourceRef") or "").strip()
+        target_id = str(el.attrib.get("targetRef") or "").strip()
+        if not flow_id or not source_id or not target_id:
+            continue
+        flow_ids.add(flow_id)
+        flow_source_by_id[flow_id] = source_id
+        flow_target_by_id[flow_id] = target_id
+        outgoing_by_source.setdefault(source_id, []).append(flow_id)
+
+    return {
+        "flow_ids": flow_ids,
+        "node_ids": node_ids,
+        "flow_source_by_id": flow_source_by_id,
+        "flow_target_by_id": flow_target_by_id,
+        "outgoing_by_source": outgoing_by_source,
+        "gateway_mode_by_node": gateway_mode_by_node,
+    }
+
+
+_FLOW_TIERS: Set[str] = {"P0", "P1", "P2"}
+_R_FLOW_TIERS: Set[str] = {"R0", "R1", "R2"}
+_NODE_PATH_CODES: Tuple[str, ...] = ("P0", "P1", "P2")
+_NODE_PATH_CODE_SET: Set[str] = set(_NODE_PATH_CODES)
+_NODE_PATH_SOURCE_SET: Set[str] = {"manual", "color_auto"}
+_FLOW_META_R_SOURCE_SET: Set[str] = {"manual", "inferred"}
+
+
+def _normalize_flow_tier(value: Any) -> Optional[str]:
+    txt = str(value or "").strip().upper()
+    if txt in _FLOW_TIERS:
+        return txt
+    return None
+
+
+def _normalize_r_flow_tier(value: Any) -> Optional[str]:
+    txt = str(value or "").strip().upper()
+    if txt in _R_FLOW_TIERS:
+        return txt
+    return None
+
+
+def _normalize_flow_meta_r_source(value: Any) -> str:
+    src = str(value or "").strip().lower()
+    if src in _FLOW_META_R_SOURCE_SET:
+        return src
+    return ""
+
+
+def _normalize_flow_meta_entry(entry_raw: Any) -> Optional[Dict[str, Any]]:
+    entry = entry_raw if isinstance(entry_raw, dict) else {}
+    tier = _entry_to_flow_tier(entry_raw)
+    rtier = _normalize_r_flow_tier(entry.get("rtier"))
+
+    out: Dict[str, Any] = {}
+    if tier:
+        out["tier"] = tier
+    if rtier:
+        out["rtier"] = rtier
+        source = _normalize_flow_meta_r_source(entry.get("source"))
+        out["source"] = source or "manual"
+
+        scope_start_id = str(entry.get("scopeStartId", entry.get("scope_start_id")) or "").strip()
+        if scope_start_id:
+            out["scopeStartId"] = scope_start_id
+
+        algo_version = str(entry.get("algoVersion", entry.get("algo_version")) or "").strip()
+        if algo_version:
+            out["algoVersion"] = algo_version
+
+        computed_at_iso = str(entry.get("computedAtIso", entry.get("computed_at_iso")) or "").strip()
+        if computed_at_iso:
+            out["computedAtIso"] = computed_at_iso
+
+        reason = str(entry.get("reason") or "").strip()
+        if reason:
+            out["reason"] = reason
+
+    return out or None
+
+
+def _normalize_node_path_code(value: Any) -> Optional[str]:
+    code = str(value or "").strip().upper()
+    if code in _NODE_PATH_CODE_SET:
+        return code
+    return None
+
+
+def _normalize_node_paths(value: Any) -> List[str]:
+    raw_list = value if isinstance(value, list) else [value]
+    seen: Set[str] = set()
+    out: List[str] = []
+    for item in raw_list:
+        code = _normalize_node_path_code(item)
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        out.append(code)
+    order_index = {code: idx for idx, code in enumerate(_NODE_PATH_CODES)}
+    out.sort(key=lambda code: order_index.get(code, 99))
+    return out
+
+
+def _normalize_sequence_key(value: Any) -> str:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return ""
+    compact = re.sub(r"\s+", "_", raw)
+    compact = re.sub(r"[^a-z0-9_\-]+", "_", compact)
+    compact = re.sub(r"_+", "_", compact).strip("_")
+    return compact[:64]
+
+
+def _normalize_node_path_source(value: Any) -> str:
+    src = str(value or "").strip().lower()
+    if src in _NODE_PATH_SOURCE_SET:
+        return src
+    return "manual"
+
+
+def _normalize_node_path_entry(entry_raw: Any) -> Optional[Dict[str, Any]]:
+    entry = entry_raw if isinstance(entry_raw, dict) else {}
+    paths = _normalize_node_paths(entry.get("paths", entry.get("path")))
+    if not paths:
+        tier_as_path = _normalize_node_path_code(entry.get("tier"))
+        if tier_as_path:
+            paths = [tier_as_path]
+    if not paths:
+        return None
+    sequence_key = _normalize_sequence_key(entry.get("sequence_key", entry.get("sequenceKey")))
+    source = _normalize_node_path_source(entry.get("source"))
+    out: Dict[str, Any] = {
+        "paths": paths,
+        "source": source,
+    }
+    if sequence_key:
+        out["sequence_key"] = sequence_key
+    return out
+
+
+def _robot_meta_as_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _robot_meta_as_nullable_text(value: Any) -> Optional[str]:
+    text = _robot_meta_as_text(value)
+    return text or None
+
+
+def _robot_meta_as_non_negative_int(value: Any, fallback: int) -> int:
+    try:
+        num = int(round(float(value)))
+    except Exception:
+        num = int(fallback)
+    return max(num, 0)
+
+
+def _robot_meta_as_nullable_non_negative_int(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    try:
+        num = int(round(float(value)))
+    except Exception:
+        return None
+    return max(num, 0)
+
+
+def _stable_robot_meta_value(value: Any) -> Any:
+    if isinstance(value, list):
+        return [_stable_robot_meta_value(item) for item in value]
+    if isinstance(value, dict):
+        out: Dict[str, Any] = {}
+        for key in sorted(value.keys(), key=lambda x: str(x)):
+            out[str(key)] = _stable_robot_meta_value(value[key])
+        return out
+    return value
+
+
+def _normalize_robot_meta_v1(entry_raw: Any) -> Optional[Dict[str, Any]]:
+    entry = entry_raw if isinstance(entry_raw, dict) else {}
+    exec_raw = entry.get("exec") if isinstance(entry.get("exec"), dict) else {}
+    retry_raw = exec_raw.get("retry") if isinstance(exec_raw.get("retry"), dict) else {}
+    mat_raw = entry.get("mat") if isinstance(entry.get("mat"), dict) else {}
+    qc_raw = entry.get("qc") if isinstance(entry.get("qc"), dict) else {}
+
+    mode = str(exec_raw.get("mode") or "").strip().lower()
+    if mode not in {"human", "machine", "hybrid"}:
+        mode = "human"
+
+    executor = _robot_meta_as_text(exec_raw.get("executor") or "manual_ui") or "manual_ui"
+    action_key = _robot_meta_as_nullable_text(exec_raw.get("action_key"))
+    timeout_sec = _robot_meta_as_nullable_non_negative_int(exec_raw.get("timeout_sec"))
+    max_attempts = _robot_meta_as_non_negative_int(retry_raw.get("max_attempts"), 1)
+    backoff_sec = _robot_meta_as_non_negative_int(retry_raw.get("backoff_sec"), 0)
+
+    inputs = entry_raw.get("mat", {}).get("inputs") if isinstance(entry_raw, dict) and isinstance(entry_raw.get("mat"), dict) else None
+    outputs = entry_raw.get("mat", {}).get("outputs") if isinstance(entry_raw, dict) and isinstance(entry_raw.get("mat"), dict) else None
+    checks = qc_raw.get("checks")
+
+    return {
+        "robot_meta_version": "v1",
+        "exec": {
+            "mode": mode,
+            "executor": executor,
+            "action_key": action_key,
+            "timeout_sec": timeout_sec,
+            "retry": {
+                "max_attempts": max_attempts,
+                "backoff_sec": backoff_sec,
+            },
+        },
+        "mat": {
+            "from_zone": _robot_meta_as_nullable_text(mat_raw.get("from_zone")),
+            "to_zone": _robot_meta_as_nullable_text(mat_raw.get("to_zone")),
+            "inputs": _stable_robot_meta_value(inputs) if isinstance(inputs, list) else [],
+            "outputs": _stable_robot_meta_value(outputs) if isinstance(outputs, list) else [],
+        },
+        "qc": {
+            "critical": bool(qc_raw.get("critical")),
+            "checks": _stable_robot_meta_value(checks) if isinstance(checks, list) else [],
+        },
+    }
+
+
+def _normalize_robot_meta_map(
+    value: Any,
+    *,
+    allowed_node_ids: Optional[Set[str]] = None,
+) -> Dict[str, Dict[str, Any]]:
+    raw = value if isinstance(value, dict) else {}
+    out: Dict[str, Dict[str, Any]] = {}
+    for element_id_raw in sorted(raw.keys(), key=lambda x: str(x)):
+        element_id = str(element_id_raw or "").strip()
+        if not element_id:
+            continue
+        if allowed_node_ids is not None and element_id not in allowed_node_ids:
+            continue
+        normalized_entry = _normalize_robot_meta_v1(raw.get(element_id_raw))
+        if not normalized_entry:
+            continue
+        out[element_id] = normalized_entry
+    return out
+
+
+def _entry_to_flow_tier(entry_raw: Any) -> Optional[str]:
+    if isinstance(entry_raw, dict):
+        tier = _normalize_flow_tier(entry_raw.get("tier"))
+        if tier:
+            return tier
+        happy_raw = entry_raw.get("happy")
+        if happy_raw is True:
+            return "P0"
+        if isinstance(happy_raw, (int, float)) and bool(happy_raw):
+            return "P0"
+        if isinstance(happy_raw, str) and str(happy_raw).strip().lower() in {"1", "true", "yes", "on"}:
+            return "P0"
+        return None
+    if isinstance(entry_raw, bool):
+        return "P0" if entry_raw else None
+    if isinstance(entry_raw, (int, float)):
+        return "P0" if bool(entry_raw) else None
+    return None
+
+
+def _normalize_bpmn_meta(
+    value: Any,
+    *,
+    allowed_flow_ids: Optional[Set[str]] = None,
+    allowed_node_ids: Optional[Set[str]] = None,
+) -> Dict[str, Any]:
+    raw = value if isinstance(value, dict) else {}
+    version_raw = raw.get("version")
+    try:
+        version = int(version_raw) if version_raw is not None else 1
+    except Exception:
+        version = 1
+    if version <= 0:
+        version = 1
+
+    flow_meta_raw = raw.get("flow_meta")
+    if not isinstance(flow_meta_raw, dict):
+        flow_meta_raw = {}
+
+    flow_meta: Dict[str, Dict[str, Any]] = {}
+    for flow_id_raw, entry_raw in flow_meta_raw.items():
+        flow_id = str(flow_id_raw or "").strip()
+        if not flow_id:
+            continue
+        if allowed_flow_ids is not None and flow_id not in allowed_flow_ids:
+            continue
+        normalized_flow_entry = _normalize_flow_meta_entry(entry_raw)
+        if not normalized_flow_entry:
+            continue
+        flow_meta[flow_id] = normalized_flow_entry
+
+    node_meta_raw = raw.get("node_path_meta")
+    if not isinstance(node_meta_raw, dict):
+        node_meta_raw = {}
+    node_path_meta: Dict[str, Dict[str, Any]] = {}
+    for node_id_raw, entry_raw in node_meta_raw.items():
+        node_id = str(node_id_raw or "").strip()
+        if not node_id:
+            continue
+        if allowed_node_ids is not None and node_id not in allowed_node_ids:
+            continue
+        normalized_entry = _normalize_node_path_entry(entry_raw)
+        if not normalized_entry:
+            continue
+        node_path_meta[node_id] = normalized_entry
+
+    robot_meta_by_element_id = _normalize_robot_meta_map(
+        raw.get("robot_meta_by_element_id"),
+        allowed_node_ids=allowed_node_ids,
+    )
+
+    return {
+        "version": version,
+        "flow_meta": flow_meta,
+        "node_path_meta": node_path_meta,
+        "robot_meta_by_element_id": robot_meta_by_element_id,
+    }
+
+
+def _enforce_gateway_tier_constraints(
+    flow_meta: Dict[str, Dict[str, Any]],
+    *,
+    outgoing_by_source: Optional[Dict[str, List[str]]] = None,
+    gateway_mode_by_node: Optional[Dict[str, str]] = None,
+) -> Dict[str, Dict[str, Any]]:
+    base: Dict[str, Dict[str, Any]] = {}
+    for flow_id_raw, entry_raw in (flow_meta or {}).items():
+        flow_id = str(flow_id_raw or "").strip()
+        if not flow_id:
+            continue
+        normalized_entry = _normalize_flow_meta_entry(entry_raw)
+        if not normalized_entry:
+            continue
+        base[flow_id] = normalized_entry
+
+    outgoing_map = outgoing_by_source or {}
+    mode_map = gateway_mode_by_node or {}
+    if not outgoing_map or not mode_map:
+        return base
+
+    for source_id, siblings_raw in outgoing_map.items():
+        if str(mode_map.get(source_id) or "") != "xor":
+            continue
+        siblings = [str(fid or "").strip() for fid in (siblings_raw or []) if str(fid or "").strip()]
+        if not siblings:
+            continue
+        for tier_key in ("P0", "P1"):
+            matched = [fid for fid in siblings if _normalize_flow_tier((base.get(fid) or {}).get("tier")) == tier_key]
+            if len(matched) <= 1:
+                continue
+            keep = sorted(matched)[0]
+            for fid in matched:
+                if fid != keep:
+                    existing = dict(base.get(fid) or {})
+                    existing.pop("tier", None)
+                    if existing.get("rtier"):
+                        base[fid] = existing
+                    else:
+                        base.pop(fid, None)
+    return base
 
 
 def _session_graph_fingerprint(sess: Session) -> str:
@@ -636,6 +1555,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def auth_guard_middleware(request: Request, call_next):
+    path = str(request.url.path or "")
+    if request.method.upper() == "OPTIONS":
+        return await call_next(request)
+    if not path.startswith("/api"):
+        return await call_next(request)
+    if path in AUTH_PUBLIC_PATHS:
+        return await call_next(request)
+
+    try:
+        user = user_from_bearer_header(request.headers.get("authorization", ""))
+        request.state.auth_user = user
+    except AuthError as e:
+        return _auth_error_response(str(e))
+
+    return await call_next(request)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -798,6 +1736,22 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
+class AuthLoginIn(BaseModel):
+    email: str
+    password: str
+
+
+class AuthTokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class AuthMeOut(BaseModel):
+    id: str
+    email: str
+    is_admin: bool = False
+
+
 class CreateSessionIn(BaseModel):
     title: str
     roles: Optional[Any] = None
@@ -818,6 +1772,7 @@ class UpdateSessionIn(BaseModel):
     nodes: Optional[Any] = None
     edges: Optional[Any] = None
     questions: Optional[Any] = None
+    bpmn_meta: Optional[Any] = None
 
     # frontend часто шлёт derived поля (mermaid*, normalized, resources, version)
     # бек имеет право игнорировать и пересчитывать их.
@@ -928,6 +1883,44 @@ class SessionTitleQuestionsIn(BaseModel):
 
 class BpmnXmlIn(BaseModel):
     xml: str = ""
+    bpmn_meta: Optional[Dict[str, Any]] = None
+
+
+class BpmnMetaPatchIn(BaseModel):
+    flowId: Optional[str] = None
+    happy: Optional[bool] = None
+    tier: Optional[str] = None
+    rtier: Optional[str] = None
+    updates: Optional[List[Dict[str, Any]]] = None
+    flow_meta: Optional[Dict[str, Any]] = None
+    node_id: Optional[str] = None
+    paths: Optional[List[str]] = None
+    sequence_key: Optional[str] = None
+    source: Optional[str] = None
+    node_updates: Optional[List[Dict[str, Any]]] = None
+    node_path_meta: Optional[Dict[str, Any]] = None
+    robot_element_id: Optional[str] = None
+    robot_meta: Optional[Dict[str, Any]] = None
+    remove_robot_meta: Optional[bool] = None
+    robot_updates: Optional[List[Dict[str, Any]]] = None
+    robot_meta_by_element_id: Optional[Dict[str, Any]] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class InferRtiersIn(BaseModel):
+    scopeStartId: Optional[str] = None
+    successEndIds: Optional[List[str]] = None
+    failEndIds: Optional[List[str]] = None
+
+
+class CreatePathReportVersionIn(BaseModel):
+    steps_hash: str
+    request_payload_json: Dict[str, Any]
+    prompt_template_version: str = "v2"
+
+    model_config = ConfigDict(extra="allow")
+
 
 def _merge_nodes(existing: List[Node], extracted: List[Node]) -> List[Node]:
     by_id = {n.id: n for n in existing}
@@ -1084,6 +2077,82 @@ def favicon():
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+@app.post("/api/auth/login", response_model=AuthTokenOut)
+def auth_login(inp: AuthLoginIn, request: Request):
+    try:
+        user = authenticate_user(inp.email, inp.password)
+    except AuthError:
+        raise HTTPException(status_code=401, detail="invalid_credentials")
+
+    issued = issue_login_tokens(
+        user=user,
+        user_agent=request.headers.get("user-agent", ""),
+        ip=_request_client_ip(request),
+    )
+    max_age = max(1, int(issued.get("refresh_expires_at", 0)) - int(time.time()))
+    payload = {
+        "access_token": str(issued.get("access_token") or ""),
+        "token_type": "bearer",
+    }
+    resp = JSONResponse(status_code=200, content=payload)
+    _set_refresh_cookie(resp, str(issued.get("refresh_token") or ""), max_age)
+    return resp
+
+
+@app.post("/api/auth/refresh", response_model=AuthTokenOut)
+def auth_refresh(request: Request):
+    refresh_token = str(request.cookies.get("refresh_token") or "").strip()
+    if not refresh_token:
+        resp = JSONResponse(status_code=401, content={"detail": "missing_refresh_token"})
+        _clear_refresh_cookie(resp)
+        return resp
+
+    try:
+        rotated = rotate_refresh_token(
+            refresh_token,
+            user_agent=request.headers.get("user-agent", ""),
+            ip=_request_client_ip(request),
+        )
+    except AuthError as e:
+        resp = JSONResponse(status_code=401, content={"detail": str(e)})
+        _clear_refresh_cookie(resp)
+        return resp
+
+    max_age = max(1, int(rotated.get("refresh_expires_at", 0)) - int(time.time()))
+    payload = {
+        "access_token": str(rotated.get("access_token") or ""),
+        "token_type": "bearer",
+    }
+    resp = JSONResponse(status_code=200, content=payload)
+    _set_refresh_cookie(resp, str(rotated.get("refresh_token") or ""), max_age)
+    return resp
+
+
+@app.post("/api/auth/logout")
+def auth_logout(request: Request):
+    refresh_token = str(request.cookies.get("refresh_token") or "").strip()
+    if refresh_token:
+        revoke_refresh_from_token(refresh_token)
+    resp = JSONResponse(status_code=200, content={"ok": True})
+    _clear_refresh_cookie(resp)
+    return resp
+
+
+@app.get("/api/auth/me", response_model=AuthMeOut)
+def auth_me(request: Request):
+    user = getattr(request.state, "auth_user", None)
+    if not isinstance(user, dict):
+        try:
+            user = user_from_bearer_header(request.headers.get("authorization", ""))
+        except AuthError:
+            raise HTTPException(status_code=401, detail="unauthorized")
+    return {
+        "id": str(user.get("id") or ""),
+        "email": str(user.get("email") or ""),
+        "is_admin": bool(user.get("is_admin", False)),
+    }
 
 
 @app.post("/api/sessions")
@@ -1284,7 +2353,7 @@ def patch_session(session_id: str, inp: UpdateSessionIn) -> Dict[str, Any]:
         handled = True
 
     if "interview" in data:
-        sess.interview = _norm_interview(data.get("interview"))
+        sess.interview = _merge_interview_with_server_fields(sess.interview, data.get("interview"))
         handled = True
 
     if "nodes" in data:
@@ -1301,6 +2370,24 @@ def patch_session(session_id: str, inp: UpdateSessionIn) -> Dict[str, Any]:
         sess.questions = _norm_questions(data.get("questions"))
         handled = True
         need_recompute = True
+
+    if "bpmn_meta" in data:
+        sess_xml = str(getattr(sess, "bpmn_xml", "") or "")
+        flow_ctx = _collect_sequence_flow_meta(sess_xml)
+        flow_ids = flow_ctx.get("flow_ids")
+        node_ids = flow_ctx.get("node_ids")
+        normalized_meta = _normalize_bpmn_meta(
+            data.get("bpmn_meta"),
+            allowed_flow_ids=flow_ids if sess_xml.strip() else None,
+            allowed_node_ids=node_ids if sess_xml.strip() else None,
+        )
+        normalized_meta["flow_meta"] = _enforce_gateway_tier_constraints(
+            dict(normalized_meta.get("flow_meta") or {}),
+            outgoing_by_source=flow_ctx.get("outgoing_by_source"),
+            gateway_mode_by_node=flow_ctx.get("gateway_mode_by_node"),
+        )
+        sess.bpmn_meta = normalized_meta
+        handled = True
 
     # игнорируем любые extra поля без ошибки
     if need_recompute:
@@ -1355,10 +2442,26 @@ def put_session(session_id: str, inp: UpdateSessionIn) -> Dict[str, Any]:
 
     sess.notes = _notes_encode(data.get("notes"))
     sess.notes_by_element = _norm_notes_by_element(data.get("notes_by_element"))
-    sess.interview = _norm_interview(data.get("interview"))
+    sess.interview = _merge_interview_with_server_fields(sess.interview, data.get("interview"))
     sess.nodes = _norm_nodes(data.get("nodes"))
     sess.edges = _norm_edges(data.get("edges"))
     sess.questions = _norm_questions(data.get("questions"))
+    sess_xml = str(getattr(sess, "bpmn_xml", "") or "")
+    flow_ctx = _collect_sequence_flow_meta(sess_xml)
+    flow_ids = flow_ctx.get("flow_ids")
+    node_ids = flow_ctx.get("node_ids")
+    raw_bpmn_meta = data.get("bpmn_meta") if data.get("bpmn_meta") is not None else getattr(sess, "bpmn_meta", {})
+    normalized_meta = _normalize_bpmn_meta(
+        raw_bpmn_meta,
+        allowed_flow_ids=flow_ids if sess_xml.strip() else None,
+        allowed_node_ids=node_ids if sess_xml.strip() else None,
+    )
+    normalized_meta["flow_meta"] = _enforce_gateway_tier_constraints(
+        dict(normalized_meta.get("flow_meta") or {}),
+        outgoing_by_source=flow_ctx.get("outgoing_by_source"),
+        gateway_mode_by_node=flow_ctx.get("gateway_mode_by_node"),
+    )
+    sess.bpmn_meta = normalized_meta
 
     sess = _recompute_session(sess)
     st.save(sess)
@@ -1757,6 +2860,202 @@ def ai_questions(session_id: str, inp: AiQuestionsIn) -> Dict[str, Any]:
     s = _recompute_session(s)
     st.save(s)
     return s.model_dump()
+
+
+def _report_version_summary(row_raw: Any) -> Dict[str, Any]:
+    row = row_raw if isinstance(row_raw, dict) else {}
+    error_message = str(row.get("error_message") or "").strip()
+    return {
+        "id": str(row.get("id") or ""),
+        "version": int(row.get("version") or 0),
+        "created_at": int(row.get("created_at") or 0),
+        "status": str(row.get("status") or "error"),
+        "steps_hash": str(row.get("steps_hash") or ""),
+        "provider": "deepseek",
+        "error": error_message or None,
+        "model": str(row.get("model") or "deepseek-chat"),
+        "prompt_template_version": str(row.get("prompt_template_version") or "v2"),
+    }
+
+
+def _report_version_detail_payload(row_raw: Any) -> Dict[str, Any]:
+    found = row_raw if isinstance(row_raw, dict) else {}
+    return {
+        "id": str(found.get("id") or ""),
+        "session_id": str(found.get("session_id") or ""),
+        "path_id": str(found.get("path_id") or ""),
+        "version": int(found.get("version") or 0),
+        "steps_hash": str(found.get("steps_hash") or ""),
+        "created_at": int(found.get("created_at") or 0),
+        "status": str(found.get("status") or "error"),
+        "model": str(found.get("model") or "deepseek-chat"),
+        "prompt_template_version": str(found.get("prompt_template_version") or "v2"),
+        "request_payload_json": found.get("request_payload_json") or {},
+        "report_json": found.get("report_json") or {},
+        "raw_json": found.get("raw_json") or {},
+        "report_markdown": str(found.get("report_markdown") or found.get("raw_text") or ""),
+        "recommendations_json": found.get("recommendations_json") or [],
+        "missing_data_json": found.get("missing_data_json") or [],
+        "risks_json": found.get("risks_json") or [],
+        "warnings_json": found.get("warnings_json") or [],
+        "error_message": found.get("error_message"),
+    }
+
+
+@app.post("/api/sessions/{session_id}/paths/{path_id}/reports")
+@app.post("/api/sessions/{session_id}/paths/{path_id}/reports/")
+@app.post("/api/sessions/{session_id}/path/{path_id}/reports")
+@app.post("/api/sessions/{session_id}/path/{path_id}/reports/")
+def create_path_report_version(
+    session_id: str,
+    path_id: str,
+    inp: CreatePathReportVersionIn,
+    request: Request = None,
+) -> Dict[str, Any]:
+    st = get_storage()
+    sid = str(session_id or "").strip()
+    s = st.load(sid)
+    if not s:
+        return {"error": "not found"}
+
+    pid = str(path_id or "").strip()
+    if not pid:
+        return {"error": "path_id is required"}
+
+    steps_hash = str(getattr(inp, "steps_hash", "") or "").strip()
+    if not steps_hash:
+        return {"error": "steps_hash is required"}
+
+    request_payload_json = inp.request_payload_json if isinstance(inp.request_payload_json, dict) else {}
+    prompt_template_version = str(getattr(inp, "prompt_template_version", "") or "v2").strip() or "v2"
+
+    llm = load_llm_settings()
+    model_name = str(llm.get("model") or "deepseek-chat").strip() or "deepseek-chat"
+    lock = _report_session_lock(sid)
+    with lock:
+        s = st.load(sid)
+        if not s:
+            return {"error": "not found"}
+        by_path = _get_report_versions_by_path(getattr(s, "interview", {}))
+        version_no = _next_report_version(by_path, pid)
+        report_id = f"rpt_{uuid.uuid4().hex[:12]}"
+        created_at = int(time.time())
+        running_row = ReportVersion(
+            id=report_id,
+            session_id=str(s.id),
+            path_id=pid,
+            version=version_no,
+            steps_hash=steps_hash,
+            created_at=created_at,
+            status="running",
+            model=model_name,
+            prompt_template_version=prompt_template_version,
+            request_payload_json=request_payload_json,
+            report_json={},
+            raw_json={},
+            report_markdown="",
+            recommendations_json=[],
+            missing_data_json=[],
+            risks_json=[],
+            warnings_json=[],
+            error_message=None,
+        ).model_dump()
+        by_path.setdefault(pid, []).append(running_row)
+        _set_report_versions_by_path(s, by_path)
+        _set_latest_path_report_pointer(s, pid, running_row)
+        st.save(s)
+
+    sync_mode_env = str(os.environ.get("PATH_REPORT_SYNC_MODE") or "").strip().lower() in {"1", "true", "yes"}
+    sync_mode = bool(sync_mode_env and request is None)
+    if sync_mode:
+        _run_path_report_generation_async(
+            session_id=str(sid),
+            path_id=pid,
+            report_id=report_id,
+            request_payload_json=request_payload_json,
+            prompt_template_version=prompt_template_version,
+            model_name=model_name,
+        )
+    else:
+        worker = threading.Thread(
+            target=_run_path_report_generation_async,
+            kwargs={
+                "session_id": str(sid),
+                "path_id": pid,
+                "report_id": report_id,
+                "request_payload_json": request_payload_json,
+                "prompt_template_version": prompt_template_version,
+                "model_name": model_name,
+            },
+            daemon=True,
+            name=f"path-report-{report_id}",
+        )
+        worker.start()
+
+    return {
+        "ok": True,
+        "report": running_row,
+        "summary": _report_version_summary(running_row),
+        "queued": True,
+    }
+
+
+@app.get("/api/sessions/{session_id}/paths/{path_id}/reports")
+@app.get("/api/sessions/{session_id}/paths/{path_id}/reports/")
+@app.get("/api/sessions/{session_id}/path/{path_id}/reports")
+@app.get("/api/sessions/{session_id}/path/{path_id}/reports/")
+def list_path_report_versions(
+    session_id: str,
+    path_id: str,
+    steps_hash: str = "",
+) -> List[Dict[str, Any]]:
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return []
+    if _mark_stale_running_reports(s):
+        st.save(s)
+    pid = str(path_id or "").strip()
+    if not pid:
+        return []
+    by_path = _get_report_versions_by_path(getattr(s, "interview", {}))
+    rows = list(by_path.get(pid) or [])
+    hash_filter = str(steps_hash or "").strip()
+    if hash_filter:
+        rows = [row for row in rows if str((row or {}).get("steps_hash") or "").strip() == hash_filter]
+    rows.sort(key=lambda x: int(x.get("version") or 0), reverse=True)
+    return [_report_version_summary(row) for row in rows]
+
+
+@app.get("/api/reports/{report_id}")
+def get_report_version(report_id: str) -> Dict[str, Any]:
+    found = _find_report_version_global(report_id)
+    if not found:
+        return {"error": "not found"}
+    return _report_version_detail_payload(found)
+
+
+@app.get("/api/sessions/{session_id}/paths/{path_id}/reports/{report_id}")
+@app.get("/api/sessions/{session_id}/paths/{path_id}/reports/{report_id}/")
+@app.get("/api/sessions/{session_id}/path/{path_id}/reports/{report_id}")
+@app.get("/api/sessions/{session_id}/path/{path_id}/reports/{report_id}/")
+def get_path_report_version_detail(session_id: str, path_id: str, report_id: str) -> Dict[str, Any]:
+    st = get_storage()
+    sess = st.load(str(session_id or "").strip())
+    if not sess:
+        return {"error": "not found"}
+    if _mark_stale_running_reports(sess):
+        st.save(sess)
+    pid = str(path_id or "").strip()
+    rid = str(report_id or "").strip()
+    if not pid or not rid:
+        return {"error": "not found"}
+    by_path = _get_report_versions_by_path(getattr(sess, "interview", {}))
+    for row in list(by_path.get(pid) or []):
+        if str((row or {}).get("id") or "").strip() != rid:
+            continue
+        return _report_version_detail_payload(row)
+    return {"error": "not found"}
 
 
 @app.post("/api/llm/session-title/questions")
@@ -2259,6 +3558,465 @@ def delete_edge(session_id: str, inp: CreateEdgeIn) -> Dict[str, Any]:
     return s.model_dump()
 
 
+def _coerce_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    txt = str(value or "").strip().lower()
+    if txt in {"1", "true", "yes", "on"}:
+        return True
+    if txt in {"0", "false", "no", "off", ""}:
+        return False
+    return bool(value)
+
+
+_R_TIER_ALGO_VERSION = "rtier_v1"
+
+
+def _infer_and_merge_rtiers(
+    *,
+    sess: Session,
+    scope_start_id: str,
+    success_end_ids: Any,
+    fail_end_ids: Any,
+) -> Dict[str, Any]:
+    xml_text = str(getattr(sess, "bpmn_xml", "") or "")
+    has_xml = bool(xml_text.strip())
+    flow_ctx = _collect_sequence_flow_meta(xml_text)
+    flow_ids = set(flow_ctx.get("flow_ids") or set()) if isinstance(flow_ctx, dict) else set()
+    node_ids = set(flow_ctx.get("node_ids") or set()) if isinstance(flow_ctx, dict) else set()
+    if not has_xml or not flow_ids:
+        return {
+            "meta": _normalize_bpmn_meta(getattr(sess, "bpmn_meta", {})),
+            "inference": {
+                "applied": False,
+                "reason": "missing_bpmn_xml",
+                "scopeStartId": "",
+                "successEndIds": [],
+                "failEndIds": [],
+                "updatedFlowIds": [],
+                "manualPreservedFlowIds": [],
+                "inferredFlowCount": 0,
+            },
+        }
+
+    graph = parse_bpmn_sequence_graph(xml_text)
+    resolved = resolve_inference_inputs(
+        graph,
+        scope_start_id=scope_start_id,
+        success_end_ids=success_end_ids,
+        fail_end_ids=fail_end_ids,
+    )
+    resolved_scope_start_id = str(resolved.get("scope_start_id") or "").strip()
+    resolved_success_end_ids = [str(x or "").strip() for x in (resolved.get("success_end_ids") or []) if str(x or "").strip()]
+    resolved_fail_end_ids = [str(x or "").strip() for x in (resolved.get("fail_end_ids") or []) if str(x or "").strip()]
+
+    inferred = infer_rtiers(
+        {
+            "bpmnXml": xml_text,
+            "scopeStartId": resolved_scope_start_id,
+            "successEndIds": resolved_success_end_ids,
+            "failEndIds": resolved_fail_end_ids,
+        }
+    )
+
+    current = _normalize_bpmn_meta(
+        getattr(sess, "bpmn_meta", {}),
+        allowed_flow_ids=flow_ids,
+        allowed_node_ids=node_ids,
+    )
+    flow_meta = dict(current.get("flow_meta") or {})
+    node_path_meta = dict(current.get("node_path_meta") or {})
+    robot_meta_by_element_id = dict(current.get("robot_meta_by_element_id") or {})
+    now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+    manual_preserved_flow_ids: List[str] = []
+    updated_flow_ids: List[str] = []
+    for flow_id in sorted(flow_ids):
+        existing = dict(flow_meta.get(flow_id) or {})
+        existing_rtier = _normalize_r_flow_tier(existing.get("rtier"))
+        existing_source = _normalize_flow_meta_r_source(existing.get("source"))
+
+        if existing_rtier and existing_source == "manual":
+            manual_preserved_flow_ids.append(flow_id)
+            normalized_existing = _normalize_flow_meta_entry(existing)
+            if normalized_existing:
+                flow_meta[flow_id] = normalized_existing
+            else:
+                flow_meta.pop(flow_id, None)
+            continue
+
+        inferred_row = inferred.get(flow_id) if isinstance(inferred, dict) else None
+        if isinstance(inferred_row, dict):
+            rtier = _normalize_r_flow_tier(inferred_row.get("rtier"))
+            if rtier:
+                existing["rtier"] = rtier
+                existing["source"] = "inferred"
+                if resolved_scope_start_id:
+                    existing["scopeStartId"] = resolved_scope_start_id
+                else:
+                    existing.pop("scopeStartId", None)
+                existing["algoVersion"] = _R_TIER_ALGO_VERSION
+                existing["computedAtIso"] = now_iso
+                reason = str(inferred_row.get("reason") or "").strip()
+                if reason:
+                    existing["reason"] = reason
+                else:
+                    existing.pop("reason", None)
+                updated_flow_ids.append(flow_id)
+        elif existing_source == "inferred":
+            existing.pop("rtier", None)
+            existing.pop("source", None)
+            existing.pop("scopeStartId", None)
+            existing.pop("algoVersion", None)
+            existing.pop("computedAtIso", None)
+            existing.pop("reason", None)
+            updated_flow_ids.append(flow_id)
+
+        normalized_entry = _normalize_flow_meta_entry(existing)
+        if normalized_entry:
+            flow_meta[flow_id] = normalized_entry
+        else:
+            flow_meta.pop(flow_id, None)
+
+    flow_meta = _enforce_gateway_tier_constraints(
+        flow_meta,
+        outgoing_by_source=flow_ctx.get("outgoing_by_source"),
+        gateway_mode_by_node=flow_ctx.get("gateway_mode_by_node"),
+    )
+    normalized_meta = _normalize_bpmn_meta(
+        {
+            "version": current.get("version", 1),
+            "flow_meta": flow_meta,
+            "node_path_meta": node_path_meta,
+            "robot_meta_by_element_id": robot_meta_by_element_id,
+        },
+        allowed_flow_ids=flow_ids,
+        allowed_node_ids=node_ids,
+    )
+    normalized_meta["flow_meta"] = _enforce_gateway_tier_constraints(
+        dict(normalized_meta.get("flow_meta") or {}),
+        outgoing_by_source=flow_ctx.get("outgoing_by_source"),
+        gateway_mode_by_node=flow_ctx.get("gateway_mode_by_node"),
+    )
+
+    return {
+        "meta": normalized_meta,
+        "inference": {
+            "applied": True,
+            "scopeStartId": resolved_scope_start_id,
+            "successEndIds": resolved_success_end_ids,
+            "failEndIds": resolved_fail_end_ids,
+            "updatedFlowIds": sorted(set(updated_flow_ids)),
+            "manualPreservedFlowIds": sorted(set(manual_preserved_flow_ids)),
+            "inferredFlowCount": len([fid for fid, row in (inferred or {}).items() if _normalize_r_flow_tier((row or {}).get("rtier"))]),
+            "algoVersion": _R_TIER_ALGO_VERSION,
+            "computedAtIso": now_iso,
+        },
+    }
+
+
+@app.get("/api/sessions/{session_id}/bpmn_meta")
+def session_bpmn_meta_get(session_id: str) -> Dict[str, Any]:
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return {"error": "not found"}
+
+    has_xml = bool(str(getattr(s, "bpmn_xml", "") or "").strip())
+    flow_ctx = _collect_sequence_flow_meta(str(getattr(s, "bpmn_xml", "") or ""))
+    flow_ids = flow_ctx.get("flow_ids") if isinstance(flow_ctx, dict) else set()
+    node_ids = flow_ctx.get("node_ids") if isinstance(flow_ctx, dict) else set()
+    normalized = _normalize_bpmn_meta(
+        getattr(s, "bpmn_meta", {}),
+        allowed_flow_ids=flow_ids if has_xml else None,
+        allowed_node_ids=node_ids if has_xml else None,
+    )
+    normalized["flow_meta"] = _enforce_gateway_tier_constraints(
+        dict(normalized.get("flow_meta") or {}),
+        outgoing_by_source=flow_ctx.get("outgoing_by_source"),
+        gateway_mode_by_node=flow_ctx.get("gateway_mode_by_node"),
+    )
+    if normalized != getattr(s, "bpmn_meta", {}):
+        s.bpmn_meta = normalized
+        st.save(s)
+    return normalized
+
+
+@app.patch("/api/sessions/{session_id}/bpmn_meta")
+def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn) -> Dict[str, Any]:
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return {"error": "not found"}
+
+    has_xml = bool(str(getattr(s, "bpmn_xml", "") or "").strip())
+    flow_ctx = _collect_sequence_flow_meta(str(getattr(s, "bpmn_xml", "") or ""))
+    flow_ids = flow_ctx.get("flow_ids") if isinstance(flow_ctx, dict) else set()
+    node_ids = flow_ctx.get("node_ids") if isinstance(flow_ctx, dict) else set()
+    flow_source_by_id = flow_ctx.get("flow_source_by_id") if isinstance(flow_ctx, dict) else {}
+    outgoing_by_source = flow_ctx.get("outgoing_by_source") if isinstance(flow_ctx, dict) else {}
+    gateway_mode_by_node = flow_ctx.get("gateway_mode_by_node") if isinstance(flow_ctx, dict) else {}
+
+    current = _normalize_bpmn_meta(
+        getattr(s, "bpmn_meta", {}),
+        allowed_flow_ids=flow_ids if has_xml else None,
+        allowed_node_ids=node_ids if has_xml else None,
+    )
+    flow_meta = dict(current.get("flow_meta") or {})
+    node_path_meta = dict(current.get("node_path_meta") or {})
+    robot_meta_by_element_id = dict(current.get("robot_meta_by_element_id") or {})
+
+    if isinstance(inp.flow_meta, dict):
+        replaced = _normalize_bpmn_meta(
+            {"version": current.get("version", 1), "flow_meta": inp.flow_meta},
+            allowed_flow_ids=flow_ids if has_xml else None,
+            allowed_node_ids=node_ids if has_xml else None,
+        )
+        flow_meta = dict(replaced.get("flow_meta") or {})
+
+    if isinstance(inp.node_path_meta, dict):
+        replaced = _normalize_bpmn_meta(
+            {"version": current.get("version", 1), "node_path_meta": inp.node_path_meta},
+            allowed_flow_ids=flow_ids if has_xml else None,
+            allowed_node_ids=node_ids if has_xml else None,
+        )
+        node_path_meta = dict(replaced.get("node_path_meta") or {})
+
+    if isinstance(inp.robot_meta_by_element_id, dict):
+        replaced = _normalize_bpmn_meta(
+            {"version": current.get("version", 1), "robot_meta_by_element_id": inp.robot_meta_by_element_id},
+            allowed_flow_ids=flow_ids if has_xml else None,
+            allowed_node_ids=node_ids if has_xml else None,
+        )
+        robot_meta_by_element_id = dict(replaced.get("robot_meta_by_element_id") or {})
+
+    def apply_update(update_raw: Dict[str, Any]) -> None:
+        update = update_raw if isinstance(update_raw, dict) else {}
+        flow_id = str(update.get("flowId", update.get("flow_id")) or "").strip()
+        if not flow_id:
+            return
+        if has_xml and flow_id not in flow_ids:
+            return
+        existing = dict(flow_meta.get(flow_id) or {})
+
+        has_tier = "tier" in update
+        has_happy = "happy" in update
+        if has_tier or has_happy:
+            tier_raw = update.get("tier")
+            happy_raw = update.get("happy")
+            tier = _normalize_flow_tier(tier_raw)
+            if tier is None:
+                if has_tier and tier_raw is None and not has_happy:
+                    tier = None
+                elif has_happy:
+                    tier = "P0" if _coerce_bool(happy_raw) else None
+                elif has_tier:
+                    tier = None
+
+            source_id = str((flow_source_by_id or {}).get(flow_id) or "").strip()
+            if tier in {"P0", "P1"} and source_id and str((gateway_mode_by_node or {}).get(source_id) or "") == "xor":
+                for sibling_flow_id in (outgoing_by_source or {}).get(source_id, []) or []:
+                    fid = str(sibling_flow_id or "").strip()
+                    if not fid:
+                        continue
+                    sibling = dict(flow_meta.get(fid) or {})
+                    existing_tier = _normalize_flow_tier(sibling.get("tier"))
+                    if existing_tier != tier:
+                        continue
+                    sibling.pop("tier", None)
+                    normalized_sibling = _normalize_flow_meta_entry(sibling)
+                    if normalized_sibling:
+                        flow_meta[fid] = normalized_sibling
+                    else:
+                        flow_meta.pop(fid, None)
+
+            if tier:
+                existing["tier"] = tier
+            else:
+                existing.pop("tier", None)
+
+        has_rtier = "rtier" in update
+        if has_rtier:
+            rtier = _normalize_r_flow_tier(update.get("rtier"))
+            if rtier:
+                existing["rtier"] = rtier
+                src = _normalize_flow_meta_r_source(update.get("source")) or _normalize_flow_meta_r_source(existing.get("source")) or "manual"
+                existing["source"] = src
+            else:
+                existing.pop("rtier", None)
+                existing.pop("source", None)
+                existing.pop("scopeStartId", None)
+                existing.pop("algoVersion", None)
+                existing.pop("computedAtIso", None)
+                existing.pop("reason", None)
+
+        if "source" in update and existing.get("rtier"):
+            src = _normalize_flow_meta_r_source(update.get("source"))
+            if src:
+                existing["source"] = src
+            else:
+                existing.pop("source", None)
+        if "scopeStartId" in update or "scope_start_id" in update:
+            val = str(update.get("scopeStartId", update.get("scope_start_id")) or "").strip()
+            if val and existing.get("rtier"):
+                existing["scopeStartId"] = val
+            else:
+                existing.pop("scopeStartId", None)
+        if "algoVersion" in update or "algo_version" in update:
+            val = str(update.get("algoVersion", update.get("algo_version")) or "").strip()
+            if val and existing.get("rtier"):
+                existing["algoVersion"] = val
+            else:
+                existing.pop("algoVersion", None)
+        if "computedAtIso" in update or "computed_at_iso" in update:
+            val = str(update.get("computedAtIso", update.get("computed_at_iso")) or "").strip()
+            if val and existing.get("rtier"):
+                existing["computedAtIso"] = val
+            else:
+                existing.pop("computedAtIso", None)
+        if "reason" in update:
+            val = str(update.get("reason") or "").strip()
+            if val and existing.get("rtier"):
+                existing["reason"] = val
+            else:
+                existing.pop("reason", None)
+
+        normalized_entry = _normalize_flow_meta_entry(existing)
+        if normalized_entry:
+            flow_meta[flow_id] = normalized_entry
+        else:
+            flow_meta.pop(flow_id, None)
+
+    for update in (inp.updates or []):
+        if not isinstance(update, dict):
+            continue
+        apply_update(update)
+
+    inp_payload = inp.model_dump(exclude_unset=True)
+    direct_update: Dict[str, Any] = {}
+    for key in ("flowId", "flow_id", "tier", "happy", "rtier", "source", "scopeStartId", "scope_start_id", "algoVersion", "algo_version", "computedAtIso", "computed_at_iso", "reason"):
+        if key in inp_payload:
+            direct_update[key] = inp_payload.get(key)
+    if direct_update and str(direct_update.get("flowId", direct_update.get("flow_id")) or "").strip():
+        apply_update(direct_update)
+
+    def apply_node_update(node_id_raw: Any, paths_raw: Any, sequence_key_raw: Any, source_raw: Any) -> None:
+        node_id = str(node_id_raw or "").strip()
+        if not node_id:
+            return
+        if has_xml and node_id not in node_ids:
+            return
+        existing = node_path_meta.get(node_id) if isinstance(node_path_meta.get(node_id), dict) else {}
+        candidate = {
+            "paths": existing.get("paths") if paths_raw is None else paths_raw,
+            "sequence_key": existing.get("sequence_key") if sequence_key_raw is None else sequence_key_raw,
+            "source": existing.get("source") if source_raw is None else source_raw,
+        }
+        normalized_entry = _normalize_node_path_entry(candidate)
+        if not normalized_entry:
+            node_path_meta.pop(node_id, None)
+            return
+        node_path_meta[node_id] = normalized_entry
+
+    for node_update in (inp.node_updates or []):
+        if not isinstance(node_update, dict):
+            continue
+        apply_node_update(
+            node_update.get("node_id", node_update.get("nodeId")),
+            node_update.get("paths"),
+            node_update.get("sequence_key", node_update.get("sequenceKey")),
+            node_update.get("source"),
+        )
+
+    if inp.node_id is not None or inp.paths is not None or inp.sequence_key is not None or inp.source is not None:
+        apply_node_update(inp.node_id, inp.paths, inp.sequence_key, inp.source)
+
+    def apply_robot_update(element_id_raw: Any, robot_meta_raw: Any, remove_raw: Any = False) -> None:
+        element_id = str(element_id_raw or "").strip()
+        if not element_id:
+            return
+        if has_xml and element_id not in node_ids:
+            return
+        remove = bool(remove_raw)
+        if remove or robot_meta_raw is None:
+            robot_meta_by_element_id.pop(element_id, None)
+            return
+        normalized_entry = _normalize_robot_meta_v1(robot_meta_raw)
+        if not normalized_entry:
+            robot_meta_by_element_id.pop(element_id, None)
+            return
+        robot_meta_by_element_id[element_id] = normalized_entry
+
+    for robot_update in (inp.robot_updates or []):
+        if not isinstance(robot_update, dict):
+            continue
+        apply_robot_update(
+            robot_update.get("element_id", robot_update.get("elementId")),
+            robot_update.get("robot_meta", robot_update.get("robotMeta")),
+            robot_update.get("remove", robot_update.get("delete")),
+        )
+
+    if inp.robot_element_id is not None or inp.robot_meta is not None or inp.remove_robot_meta is not None:
+        apply_robot_update(inp.robot_element_id, inp.robot_meta, inp.remove_robot_meta)
+
+    if "robotElementId" in inp_payload or "robot_element_id" in inp_payload:
+        apply_robot_update(
+            inp_payload.get("robotElementId", inp_payload.get("robot_element_id")),
+            inp_payload.get("robotMeta", inp_payload.get("robot_meta")),
+            inp_payload.get("removeRobotMeta", inp_payload.get("remove_robot_meta")),
+        )
+
+    flow_meta = _enforce_gateway_tier_constraints(
+        flow_meta,
+        outgoing_by_source=outgoing_by_source,
+        gateway_mode_by_node=gateway_mode_by_node,
+    )
+
+    normalized = _normalize_bpmn_meta(
+        {
+            "version": current.get("version", 1),
+            "flow_meta": flow_meta,
+            "node_path_meta": node_path_meta,
+            "robot_meta_by_element_id": robot_meta_by_element_id,
+        },
+        allowed_flow_ids=flow_ids if has_xml else None,
+        allowed_node_ids=node_ids if has_xml else None,
+    )
+    normalized["flow_meta"] = _enforce_gateway_tier_constraints(
+        dict(normalized.get("flow_meta") or {}),
+        outgoing_by_source=outgoing_by_source,
+        gateway_mode_by_node=gateway_mode_by_node,
+    )
+    if normalized != getattr(s, "bpmn_meta", {}):
+        s.bpmn_meta = normalized
+        st.save(s)
+    return normalized
+
+
+@app.post("/api/sessions/{session_id}/bpmn_meta/infer_rtiers")
+def session_bpmn_meta_infer_rtiers(session_id: str, inp: InferRtiersIn) -> Dict[str, Any]:
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return {"error": "not found"}
+
+    merged = _infer_and_merge_rtiers(
+        sess=s,
+        scope_start_id=str(inp.scopeStartId or "").strip(),
+        success_end_ids=inp.successEndIds,
+        fail_end_ids=inp.failEndIds,
+    )
+    meta = merged.get("meta") if isinstance(merged, dict) else {}
+    inference = merged.get("inference") if isinstance(merged, dict) else {}
+    normalized_meta = _normalize_bpmn_meta(meta)
+    if normalized_meta != getattr(s, "bpmn_meta", {}):
+        s.bpmn_meta = normalized_meta
+        st.save(s)
+    return {"meta": normalized_meta, "inference": inference}
+
+
 
 
 
@@ -2355,9 +4113,24 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn) -> Dict[str, Any]:
     if not xml.strip():
         return {"error": "xml is empty"}
 
+    flow_ctx = _collect_sequence_flow_meta(xml)
+    flow_ids = flow_ctx.get("flow_ids") if isinstance(flow_ctx, dict) else set()
+    node_ids = flow_ctx.get("node_ids") if isinstance(flow_ctx, dict) else set()
+    raw_bpmn_meta = inp.bpmn_meta if isinstance(inp.bpmn_meta, dict) else getattr(s, "bpmn_meta", {})
     s.bpmn_xml = xml
     s.bpmn_xml_version = int(getattr(s, "version", 0) or 0)
     s.bpmn_graph_fingerprint = _session_graph_fingerprint(s)
+    normalized_meta = _normalize_bpmn_meta(
+        raw_bpmn_meta,
+        allowed_flow_ids=flow_ids,
+        allowed_node_ids=node_ids,
+    )
+    normalized_meta["flow_meta"] = _enforce_gateway_tier_constraints(
+        dict(normalized_meta.get("flow_meta") or {}),
+        outgoing_by_source=flow_ctx.get("outgoing_by_source"),
+        gateway_mode_by_node=flow_ctx.get("gateway_mode_by_node"),
+    )
+    s.bpmn_meta = normalized_meta
     st.save(s)
     return {"ok": True, "session_id": s.id, "bytes": len(xml), "version": s.bpmn_xml_version}
 
@@ -2372,6 +4145,7 @@ def session_bpmn_clear(session_id: str) -> Dict[str, Any]:
     s.bpmn_xml = ""
     s.bpmn_xml_version = 0
     s.bpmn_graph_fingerprint = ""
+    s.bpmn_meta = _normalize_bpmn_meta({})
     st.save(s)
     return {"ok": True, "session_id": s.id}
 
@@ -2402,6 +4176,13 @@ def export(session_id: str) -> Dict[str, Any]:
             encoding="utf-8",
         )
 
+    sidecar_name = f"session_{s.id}.bpmnmeta.json"
+    sidecar_payload = _normalize_bpmn_meta(getattr(s, "bpmn_meta", {}))
+    (out_dir / sidecar_name).write_text(
+        json.dumps(sidecar_payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
     seed = load_seed_glossary(GLOSSARY_SEED)
     (out_dir / "glossary.yml").write_text(dump_yaml(seed), encoding="utf-8")
     (out_dir / "normalized.yml").write_text(dump_yaml(s.normalized or {}), encoding="utf-8")
@@ -2413,7 +4194,7 @@ def export(session_id: str) -> Dict[str, Any]:
     lr = loss_report(s.nodes)
     (out_dir / "losses.yml").write_text(dump_yaml(lr), encoding="utf-8")
 
-    return {"ok": True, "exported_to": str(out_dir)}
+    return {"ok": True, "exported_to": str(out_dir), "bpmn_meta_file": sidecar_name}
 
 
 @app.get("/api/sessions/{session_id}/export.zip")

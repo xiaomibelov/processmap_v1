@@ -17,6 +17,33 @@ function headingClass(level) {
   return "text-base font-semibold text-fg";
 }
 
+function renderInlineMarkdown(textRaw, keyPrefix = "md_inline") {
+  const text = String(textRaw || "");
+  if (!text) return "";
+  const out = [];
+  const re = /(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g;
+  let last = 0;
+  let match;
+  let idx = 0;
+  while ((match = re.exec(text)) !== null) {
+    const start = Number(match.index || 0);
+    const token = String(match[0] || "");
+    if (start > last) out.push(text.slice(last, start));
+    if (token.startsWith("**") && token.endsWith("**")) {
+      out.push(<strong key={`${keyPrefix}_b_${idx++}`}>{token.slice(2, -2)}</strong>);
+    } else if (token.startsWith("`") && token.endsWith("`")) {
+      out.push(<code key={`${keyPrefix}_c_${idx++}`} className="rounded bg-panel2 px-1 py-0.5 text-[0.95em]">{token.slice(1, -1)}</code>);
+    } else if (token.startsWith("*") && token.endsWith("*")) {
+      out.push(<em key={`${keyPrefix}_i_${idx++}`}>{token.slice(1, -1)}</em>);
+    } else {
+      out.push(token);
+    }
+    last = start + token.length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+
 export function renderMarkdownPreview(markdown) {
   const lines = String(markdown || "").split(/\r?\n/);
   const blocks = [];
@@ -39,7 +66,7 @@ export function renderMarkdownPreview(markdown) {
       const Tag = `h${Math.min(6, level)}`;
       blocks.push(
         <Tag key={`doc_h_${key++}`} className={headingClass(level)}>
-          {text}
+          {renderInlineMarkdown(text, `doc_h_in_${key}`)}
         </Tag>,
       );
       i += 1;
@@ -97,7 +124,7 @@ export function renderMarkdownPreview(markdown) {
       blocks.push(
         <ol key={`doc_ol_${key++}`} className="list-decimal space-y-1 pl-6 text-sm text-fg/95">
           {items.map((item, idx) => (
-            <li key={`doc_ol_i_${idx}`}>{item}</li>
+            <li key={`doc_ol_i_${idx}`}>{renderInlineMarkdown(item, `doc_ol_i_in_${idx}`)}</li>
           ))}
         </ol>,
       );
@@ -114,7 +141,7 @@ export function renderMarkdownPreview(markdown) {
       blocks.push(
         <ul key={`doc_ul_${key++}`} className="list-disc space-y-1 pl-6 text-sm text-fg/95">
           {items.map((item, idx) => (
-            <li key={`doc_ul_i_${idx}`}>{item}</li>
+            <li key={`doc_ul_i_${idx}`}>{renderInlineMarkdown(item, `doc_ul_i_in_${idx}`)}</li>
           ))}
         </ul>,
       );
@@ -123,7 +150,7 @@ export function renderMarkdownPreview(markdown) {
 
     blocks.push(
       <p key={`doc_p_${key++}`} className="text-sm leading-6 text-fg/95">
-        {trimmed}
+        {renderInlineMarkdown(trimmed, `doc_p_in_${key}`)}
       </p>,
     );
     i += 1;

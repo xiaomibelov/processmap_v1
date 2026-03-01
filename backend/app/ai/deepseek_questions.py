@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
 from typing import Any, Dict, List, Optional, Set
 import xml.etree.ElementTree as ET
 
@@ -139,6 +140,91 @@ F) Исключения и фиксация данных (топ-5 сбоев и
 
 Выведи вопросы сразу, без вступлений и без текста вне заданного формата."""
 
+_PATH_REPORT_PROMPT_TEMPLATE_V1 = """Ты — аналитик операционных процессов пищевого производства.
+Твоя задача: по входному payload (ручной путь шагов) сформировать структурированный AI-отчёт.
+
+ОГРАНИЧЕНИЯ
+- Используй только данные из payload. Не придумывай отсутствующие шаги.
+- Порядок шагов интерпретируй строго по order_index.
+- Не сортируй шаги по времени или названию.
+- Не ссылайся на BPMN XML целиком; работай только с переданным списком шагов.
+
+ЧТО НУЖНО ВЫДАТЬ
+1) report_markdown: структурированный отчёт (кратко и по делу)
+2) recommendations: рекомендации по процессу
+   - scope=\"global\" для общих
+   - scope=\"step\" для рекомендаций к конкретному шагу (обязательно укажи order_index)
+3) missing_data: каких данных не хватает (например work/wait/input/output/notes)
+4) risks: риски и контрольные точки, при наличии — привяжи к шагам через step_order_indexes
+
+ФОРМАТ ОТВЕТА
+Верни СТРОГО JSON-объект БЕЗ текста снаружи:
+{
+  "report_markdown": "...",
+  "recommendations": [
+    { "scope": "global", "text": "...", "expected_effect": "..." },
+    { "scope": "step", "order_index": 12, "text": "...", "expected_effect": "..." }
+  ],
+  "missing_data": [
+    { "order_index": 5, "missing": ["work_duration_sec", "wait_duration_sec"] }
+  ],
+  "risks": [
+    { "text": "...", "step_order_indexes": [30, 31] }
+  ]
+}
+"""
+
+_PATH_REPORT_PROMPT_TEMPLATE_V2 = """Ты — аналитик операционных процессов пищевого производства.
+Сформируй СТРУКТУРИРОВАННЫЙ отчёт только на основе входного payload.
+
+ОГРАНИЧЕНИЯ
+- Нельзя придумывать отсутствующие шаги и данные.
+- Порядок шагов строго по order_index.
+- Если данных нет — ставь null или пустые массивы.
+- Верни только JSON, без пояснений вне JSON.
+
+ФОРМАТ (строго):
+{
+  "title": "Короткий заголовок отчёта",
+  "summary": ["Ключевое наблюдение 1", "Ключевое наблюдение 2"],
+  "kpis": {
+    "steps_count": 0,
+    "work_total_sec": 0,
+    "wait_total_sec": 0,
+    "total_sec": 0,
+    "coverage": {
+      "missing_work_duration_pct": 0,
+      "missing_wait_duration_pct": 0,
+      "missing_notes_pct": 0
+    }
+  },
+  "bottlenecks": [
+    { "order_index": 0, "title": "Шаг", "reason": "Причина", "impact": "Влияние" }
+  ],
+  "recommendations": [
+    {
+      "scope": "global",
+      "priority": "P0",
+      "text": "Рекомендация",
+      "effect": "Ожидаемый эффект",
+      "effort": "Сложность/затраты"
+    },
+    {
+      "scope": "step",
+      "priority": "P1",
+      "order_index": 12,
+      "text": "Рекомендация к шагу",
+      "effect": "Ожидаемый эффект",
+      "effort": "Сложность/затраты"
+    }
+  ],
+  "missing_data": [
+    { "order_index": 12, "missing": ["work_duration_sec", "notes"] }
+  ],
+  "report_markdown": "необязательно, можно пусто"
+}
+"""
+
 
 def _sha12(s: str) -> str:
     h = hashlib.sha1(s.encode("utf-8")).hexdigest()[:12]
@@ -174,27 +260,118 @@ def _extract_json_candidate(text: str) -> Optional[str]:
     return None
 
 
-def _deepseek_chat_json(api_key: str, base_url: str, messages: List[Dict[str, str]], timeout: int = 30) -> Any:
+def _extract_json_string_field_loose(text: str, field_name: str) -> str:
+    raw = str(text or "")
+    key = f"\"{str(field_name or '').strip()}\""
+    if not raw or not key:
+        return ""
+    idx = raw.find(key)
+    if idx < 0:
+        return ""
+    colon = raw.find(":", idx + len(key))
+    if colon < 0:
+        return ""
+    quote = raw.find("\"", colon + 1)
+    if quote < 0:
+        return ""
+    i = quote + 1
+    buf: List[str] = []
+    escaped = False
+    while i < len(raw):
+        ch = raw[i]
+        if escaped:
+            buf.append(ch)
+            escaped = False
+            i += 1
+            continue
+        if ch == "\\":
+            buf.append(ch)
+            escaped = True
+            i += 1
+            continue
+        if ch == "\"":
+            tail = raw[i + 1:]
+            tail_trim = tail.lstrip()
+            if tail_trim.startswith(",") or tail_trim.startswith("}") or tail_trim.startswith("```"):
+                break
+            buf.append(ch)
+            i += 1
+            continue
+        buf.append(ch)
+        i += 1
+    payload = "".join(buf)
+    if not payload:
+        return ""
+    try:
+        return str(json.loads(f"\"{payload}\"") or "").strip()
+    except Exception:
+        return (
+            payload
+            .replace("\\n", "\n")
+            .replace("\\r", "\r")
+            .replace("\\t", "\t")
+            .replace("\\\"", "\"")
+        ).strip()
+
+
+def _extract_report_markdown_from_raw_text(raw_text: str) -> str:
+    raw = str(raw_text or "").strip()
+    if not raw:
+        return ""
+    candidate = _extract_json_candidate(raw)
+    if candidate:
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                md = str(parsed.get("report_markdown") or "").strip()
+                if md:
+                    return md
+        except Exception:
+            pass
+    fenced = _strip_fences(raw)
+    md = _extract_json_string_field_loose(fenced, "report_markdown")
+    if md:
+        return md
+    return ""
+
+
+def _kpis_fallback_from_payload(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    src = payload if isinstance(payload, dict) else {}
+    totals = src.get("totals") if isinstance(src.get("totals"), dict) else {}
+    coverage_src = src.get("missing_fields_coverage") if isinstance(src.get("missing_fields_coverage"), dict) else {}
+    return {
+        "steps_count": _to_non_negative_int(totals.get("steps_count")),
+        "work_total_sec": _to_non_negative_int(totals.get("work_total_sec")),
+        "wait_total_sec": _to_non_negative_int(totals.get("wait_total_sec")),
+        "total_sec": _to_non_negative_int(totals.get("total_sec")),
+        "coverage": {
+            "missing_work_duration_pct": _to_percent_or_none(coverage_src.get("missing_work_duration_pct")),
+            "missing_wait_duration_pct": _to_percent_or_none(coverage_src.get("missing_wait_duration_pct")),
+            "missing_notes_pct": _to_percent_or_none(coverage_src.get("missing_notes_pct")),
+        },
+    }
+
+
+def _deepseek_chat_json(
+    api_key: str,
+    base_url: str,
+    messages: List[Dict[str, str]],
+    timeout: int = 30,
+    max_tokens: Optional[int] = None,
+) -> Any:
     api_key = (api_key or "").strip()
     if not api_key:
         raise ValueError("no api key")
     base = (base_url or "https://api.deepseek.com").strip().rstrip("/")
 
-    payload = {
-        "model": "deepseek-chat",
-        "messages": messages,
-        "temperature": 0.0,
-    }
-
-    url = f"{base}/v1/chat/completions"
-    r = requests.post(
-        url,
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        json=payload,
+    data = _deepseek_chat_request(
+        api_key=api_key,
+        base_url=base,
+        messages=messages,
+        temperature=0.0,
         timeout=timeout,
+        max_tokens=max_tokens,
     )
-    r.raise_for_status()
-    data = r.json()
     content = data["choices"][0]["message"]["content"]
 
     cand = _extract_json_candidate(content)
@@ -204,29 +381,106 @@ def _deepseek_chat_json(api_key: str, base_url: str, messages: List[Dict[str, st
     return json.loads(cand)
 
 
-def _deepseek_chat_text(api_key: str, base_url: str, messages: List[Dict[str, str]], timeout: int = 30) -> str:
+def _deepseek_chat_text(
+    api_key: str,
+    base_url: str,
+    messages: List[Dict[str, str]],
+    timeout: int = 30,
+    max_tokens: Optional[int] = None,
+) -> str:
     api_key = (api_key or "").strip()
     if not api_key:
         raise ValueError("no api key")
     base = (base_url or "https://api.deepseek.com").strip().rstrip("/")
 
+    data = _deepseek_chat_request(
+        api_key=api_key,
+        base_url=base,
+        messages=messages,
+        temperature=0.2,
+        timeout=timeout,
+        max_tokens=max_tokens,
+    )
+    content = str((((data.get("choices") or [{}])[0] or {}).get("message") or {}).get("content") or "")
+    return content.strip()
+
+
+def _is_retryable_deepseek_error(exc: Exception) -> bool:
+    if isinstance(exc, (requests.exceptions.Timeout, requests.exceptions.ConnectionError, requests.exceptions.ChunkedEncodingError)):
+        return True
+    if isinstance(exc, requests.exceptions.HTTPError):
+        status = int(getattr(getattr(exc, "response", None), "status_code", 0) or 0)
+        if status in {408, 409, 425, 429, 500, 502, 503, 504}:
+            return True
+    msg = str(exc or "").strip().lower()
+    if not msg:
+        return False
+    retry_tokens = (
+        "response ended prematurely",
+        "incomplete read",
+        "connection aborted",
+        "connection reset",
+        "timed out",
+        "temporarily unavailable",
+        "remote disconnected",
+    )
+    return any(tok in msg for tok in retry_tokens)
+
+
+def _deepseek_chat_request(
+    *,
+    api_key: str,
+    base_url: str,
+    messages: List[Dict[str, str]],
+    temperature: float,
+    timeout: int,
+    max_tokens: Optional[int] = None,
+    max_attempts: int = 3,
+    retry_backoff_sec: float = 0.8,
+) -> Dict[str, Any]:
     payload = {
         "model": "deepseek-chat",
         "messages": messages,
-        "temperature": 0.2,
+        "temperature": float(temperature),
     }
-
-    url = f"{base}/v1/chat/completions"
-    r = requests.post(
-        url,
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        json=payload,
-        timeout=timeout,
-    )
-    r.raise_for_status()
-    data = r.json()
-    content = str((((data.get("choices") or [{}])[0] or {}).get("message") or {}).get("content") or "")
-    return content.strip()
+    mt = int(max_tokens or 0)
+    if mt > 0:
+        payload["max_tokens"] = mt
+    url = f"{base_url}/v1/chat/completions"
+    attempts = max(1, int(max_attempts or 1))
+    backoff = max(0.0, float(retry_backoff_sec or 0.0))
+    last_exc: Optional[Exception] = None
+    read_timeout = max(10, int(timeout or 0))
+    connect_timeout = max(3, min(15, read_timeout))
+    for attempt in range(1, attempts + 1):
+        try:
+            r = requests.post(
+                url,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "Accept-Encoding": "identity",
+                    "Connection": "close",
+                },
+                json=payload,
+                timeout=(connect_timeout, read_timeout),
+            )
+            r.raise_for_status()
+            data = r.json()
+            if isinstance(data, dict):
+                return data
+            raise ValueError("invalid_json_root")
+        except Exception as exc:
+            last_exc = exc
+            if attempt >= attempts or not _is_retryable_deepseek_error(exc):
+                raise
+            sleep_for = backoff * attempt
+            if sleep_for > 0:
+                time.sleep(sleep_for)
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("deepseek request failed")
 
 
 def _build_session_title_prompt(title: str, prompt_template: str = "") -> str:
@@ -396,6 +650,400 @@ def generate_session_title_questions(
         "questions": questions,
         "count": len(questions),
         "raw": raw,
+    }
+
+
+def _normalize_path_report_result(obj: Any, *, raw_text: str = "") -> Dict[str, Any]:
+    warnings: List[str] = []
+    status = "ok"
+
+    if not isinstance(obj, dict):
+        warnings.append("invalid_json_object")
+        salvaged_md = _extract_report_markdown_from_raw_text(raw_text)
+        if salvaged_md:
+            warnings.append("report_markdown_salvaged_from_raw")
+        return {
+            "status": status,
+            "report_markdown": salvaged_md or str(raw_text or "").strip(),
+            "report_json": {},
+            "raw_json": {},
+            "recommendations": [],
+            "missing_data": [],
+            "risks": [],
+            "warnings": warnings,
+        }
+
+    report_markdown = str(obj.get("report_markdown") or "").strip()
+    recommendations_raw = obj.get("recommendations")
+    missing_data_raw = obj.get("missing_data")
+    risks_raw = obj.get("risks")
+
+    recommendations: List[Dict[str, Any]] = []
+    if isinstance(recommendations_raw, list):
+        for item in recommendations_raw:
+            if not isinstance(item, dict):
+                continue
+            scope = str(item.get("scope") or "").strip().lower()
+            if scope not in {"global", "step"}:
+                continue
+            text = str(item.get("text") or "").strip()
+            expected_effect = str(item.get("expected_effect") or "").strip()
+            if not text:
+                continue
+            row: Dict[str, Any] = {
+                "scope": scope,
+                "text": text,
+                "expected_effect": expected_effect,
+            }
+            if scope == "step":
+                try:
+                    order_index = int(item.get("order_index"))
+                    if order_index > 0:
+                        row["order_index"] = order_index
+                except Exception:
+                    warnings.append("step_recommendation_missing_order_index")
+            recommendations.append(row)
+    elif recommendations_raw is not None:
+        warnings.append("recommendations_not_array")
+
+    missing_data: List[Dict[str, Any]] = []
+    if isinstance(missing_data_raw, list):
+        for item in missing_data_raw:
+            if not isinstance(item, dict):
+                continue
+            row: Dict[str, Any] = {}
+            try:
+                order_index = int(item.get("order_index"))
+                if order_index > 0:
+                    row["order_index"] = order_index
+            except Exception:
+                pass
+            miss = item.get("missing")
+            if isinstance(miss, list):
+                row["missing"] = [str(x).strip() for x in miss if str(x).strip()]
+            else:
+                row["missing"] = []
+            missing_data.append(row)
+    elif missing_data_raw is not None:
+        warnings.append("missing_data_not_array")
+
+    risks: List[Dict[str, Any]] = []
+    if isinstance(risks_raw, list):
+        for item in risks_raw:
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("text") or "").strip()
+            if not text:
+                continue
+            indexes: List[int] = []
+            for raw_idx in (item.get("step_order_indexes") or []):
+                try:
+                    i = int(raw_idx)
+                    if i > 0:
+                        indexes.append(i)
+                except Exception:
+                    continue
+            risks.append(
+                {
+                    "text": text,
+                    "step_order_indexes": indexes,
+                }
+            )
+    elif risks_raw is not None:
+        warnings.append("risks_not_array")
+
+    if not report_markdown:
+        report_markdown = str(raw_text or "").strip()
+        warnings.append("missing_report_markdown")
+
+    return {
+        "status": status,
+        "report_markdown": report_markdown,
+        "report_json": {},
+        "raw_json": obj if isinstance(obj, dict) else {},
+        "recommendations": recommendations,
+        "missing_data": missing_data,
+        "risks": risks,
+        "warnings": warnings,
+    }
+
+
+def _to_non_negative_int(value: Any) -> Optional[int]:
+    try:
+        n = int(float(value))
+    except Exception:
+        return None
+    if n < 0:
+        return None
+    return n
+
+
+def _to_percent_or_none(value: Any) -> Optional[float]:
+    try:
+        n = float(value)
+    except Exception:
+        return None
+    if n < 0:
+        return None
+    return round(n, 3)
+
+
+def _normalize_path_report_result_v2(obj: Any, *, raw_text: str = "", payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    warnings: List[str] = []
+    payload = payload if isinstance(payload, dict) else {}
+    totals = payload.get("totals") if isinstance(payload.get("totals"), dict) else {}
+    coverage_src = payload.get("missing_fields_coverage") if isinstance(payload.get("missing_fields_coverage"), dict) else {}
+    status = "ok"
+
+    if not isinstance(obj, dict):
+        warnings.append("invalid_json_object")
+        salvaged_md = _extract_report_markdown_from_raw_text(raw_text)
+        if salvaged_md:
+            warnings.append("report_markdown_salvaged_from_raw")
+        kpis_fallback = _kpis_fallback_from_payload(payload)
+        return {
+            "status": status,
+            "report_markdown": salvaged_md or str(raw_text or "").strip(),
+            "report_json": {
+                "title": "",
+                "summary": [],
+                "kpis": kpis_fallback,
+                "bottlenecks": [],
+                "recommendations": [],
+                "missing_data": [],
+            },
+            "raw_json": {},
+            "recommendations": [],
+            "missing_data": [],
+            "risks": [],
+            "warnings": warnings,
+        }
+
+    title = str(obj.get("title") or "").strip()
+    summary_raw = obj.get("summary")
+    summary: List[str] = []
+    if isinstance(summary_raw, list):
+        for item in summary_raw:
+            text = str(item or "").strip()
+            if text:
+                summary.append(text)
+    elif summary_raw is not None:
+        warnings.append("summary_not_array")
+
+    kpis_raw = obj.get("kpis") if isinstance(obj.get("kpis"), dict) else {}
+    coverage_raw = kpis_raw.get("coverage") if isinstance(kpis_raw.get("coverage"), dict) else {}
+    kpis = {
+        "steps_count": _to_non_negative_int(kpis_raw.get("steps_count")),
+        "work_total_sec": _to_non_negative_int(kpis_raw.get("work_total_sec")),
+        "wait_total_sec": _to_non_negative_int(kpis_raw.get("wait_total_sec")),
+        "total_sec": _to_non_negative_int(kpis_raw.get("total_sec")),
+        "coverage": {
+            "missing_work_duration_pct": _to_percent_or_none(coverage_raw.get("missing_work_duration_pct")),
+            "missing_wait_duration_pct": _to_percent_or_none(coverage_raw.get("missing_wait_duration_pct")),
+            "missing_notes_pct": _to_percent_or_none(coverage_raw.get("missing_notes_pct")),
+        },
+    }
+    if kpis["steps_count"] is None:
+        kpis["steps_count"] = _to_non_negative_int(totals.get("steps_count"))
+    if kpis["work_total_sec"] is None:
+        kpis["work_total_sec"] = _to_non_negative_int(totals.get("work_total_sec"))
+    if kpis["wait_total_sec"] is None:
+        kpis["wait_total_sec"] = _to_non_negative_int(totals.get("wait_total_sec"))
+    if kpis["total_sec"] is None:
+        kpis["total_sec"] = _to_non_negative_int(totals.get("total_sec"))
+    for key in ("missing_work_duration_pct", "missing_wait_duration_pct", "missing_notes_pct"):
+        if kpis["coverage"][key] is None:
+            kpis["coverage"][key] = _to_percent_or_none(coverage_src.get(key))
+
+    bottlenecks: List[Dict[str, Any]] = []
+    bottlenecks_raw = obj.get("bottlenecks")
+    if isinstance(bottlenecks_raw, list):
+        for item in bottlenecks_raw[:5]:
+            if isinstance(item, dict):
+                row = {
+                    "order_index": _to_non_negative_int(item.get("order_index")),
+                    "title": str(item.get("title") or "").strip(),
+                    "reason": str(item.get("reason") or "").strip(),
+                    "impact": str(item.get("impact") or "").strip(),
+                }
+            else:
+                row = {
+                    "order_index": None,
+                    "title": str(item or "").strip(),
+                    "reason": "",
+                    "impact": "",
+                }
+            if row["title"] or row["reason"] or row["impact"]:
+                bottlenecks.append(row)
+    elif bottlenecks_raw is not None:
+        warnings.append("bottlenecks_not_array")
+
+    recommendations: List[Dict[str, Any]] = []
+    recommendations_raw = obj.get("recommendations")
+    if isinstance(recommendations_raw, list):
+        for item in recommendations_raw:
+            if not isinstance(item, dict):
+                continue
+            scope = str(item.get("scope") or "").strip().lower()
+            if scope not in {"global", "step"}:
+                continue
+            priority = str(item.get("priority") or "P1").strip().upper()
+            if priority not in {"P0", "P1", "P2"}:
+                priority = "P1"
+            text = str(item.get("text") or "").strip()
+            if not text:
+                continue
+            row: Dict[str, Any] = {
+                "scope": scope,
+                "priority": priority,
+                "text": text,
+                "expected_effect": str(item.get("effect") or item.get("expected_effect") or "").strip(),
+                "effect": str(item.get("effect") or item.get("expected_effect") or "").strip(),
+                "effort": str(item.get("effort") or "").strip(),
+            }
+            if scope == "step":
+                order_index = _to_non_negative_int(item.get("order_index"))
+                if order_index and order_index > 0:
+                    row["order_index"] = int(order_index)
+                else:
+                    warnings.append("step_recommendation_missing_order_index")
+            recommendations.append(row)
+    elif recommendations_raw is not None:
+        warnings.append("recommendations_not_array")
+
+    missing_data: List[Dict[str, Any]] = []
+    missing_data_raw = obj.get("missing_data")
+    if isinstance(missing_data_raw, list):
+        for item in missing_data_raw:
+            if not isinstance(item, dict):
+                continue
+            row: Dict[str, Any] = {}
+            order_index = _to_non_negative_int(item.get("order_index"))
+            if order_index and order_index > 0:
+                row["order_index"] = int(order_index)
+            miss = item.get("missing")
+            if isinstance(miss, list):
+                row["missing"] = [str(x).strip() for x in miss if str(x).strip()]
+            else:
+                row["missing"] = []
+            if row["missing"] or ("order_index" in row):
+                missing_data.append(row)
+    elif missing_data_raw is not None:
+        warnings.append("missing_data_not_array")
+
+    risks: List[Dict[str, Any]] = []
+    risks_raw = obj.get("risks")
+    if isinstance(risks_raw, list):
+        for item in risks_raw:
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("text") or "").strip()
+            if not text:
+                continue
+            indexes: List[int] = []
+            for raw_idx in (item.get("step_order_indexes") or []):
+                idx = _to_non_negative_int(raw_idx)
+                if idx and idx > 0:
+                    indexes.append(idx)
+            risks.append({"text": text, "step_order_indexes": indexes})
+    elif risks_raw is not None:
+        warnings.append("risks_not_array")
+
+    report_json = {
+        "title": title,
+        "summary": summary,
+        "kpis": kpis,
+        "bottlenecks": bottlenecks,
+        "recommendations": recommendations,
+        "missing_data": missing_data,
+    }
+
+    report_markdown = str(obj.get("report_markdown") or "").strip()
+    if not report_markdown:
+        lines: List[str] = []
+        if title:
+            lines.append(f"## {title}")
+            lines.append("")
+        if summary:
+            lines.append("### Summary")
+            lines.extend([f"- {s}" for s in summary])
+            lines.append("")
+        lines.append("### KPIs")
+        lines.append(f"- steps_count: {kpis.get('steps_count') if kpis.get('steps_count') is not None else '—'}")
+        lines.append(f"- work_total_sec: {kpis.get('work_total_sec') if kpis.get('work_total_sec') is not None else '—'}")
+        lines.append(f"- wait_total_sec: {kpis.get('wait_total_sec') if kpis.get('wait_total_sec') is not None else '—'}")
+        lines.append(f"- total_sec: {kpis.get('total_sec') if kpis.get('total_sec') is not None else '—'}")
+        report_markdown = "\n".join(lines).strip()
+        warnings.append("report_markdown_generated_from_json")
+
+    return {
+        "status": status,
+        "report_markdown": report_markdown,
+        "report_json": report_json,
+        "raw_json": obj,
+        "recommendations": recommendations,
+        "missing_data": missing_data,
+        "risks": risks,
+        "warnings": warnings,
+    }
+
+
+def generate_path_report(
+    *,
+    payload: Dict[str, Any],
+    api_key: str,
+    base_url: str,
+    prompt_template_version: str = "v2",
+) -> Dict[str, Any]:
+    version = str(prompt_template_version or "v2").strip().lower() or "v2"
+    warnings: List[str] = []
+    if version not in {"v1", "v2"}:
+        warnings.append("unsupported_prompt_template_version_fallback_v2")
+        version = "v2"
+
+    system_prompt = _PATH_REPORT_PROMPT_TEMPLATE_V2 if version == "v2" else _PATH_REPORT_PROMPT_TEMPLATE_V1
+    user_payload = payload if isinstance(payload, dict) else {}
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
+    ]
+
+    raw = _deepseek_chat_text(
+        api_key=api_key,
+        base_url=base_url,
+        messages=messages,
+        timeout=90,
+        max_tokens=1800,
+    )
+    parsed: Any = None
+    candidate = _extract_json_candidate(raw)
+    if candidate:
+        try:
+            parsed = json.loads(candidate)
+        except Exception:
+            warnings.append("json_parse_failed")
+    else:
+        warnings.append("json_candidate_not_found")
+
+    if version == "v2":
+        normalized = _normalize_path_report_result_v2(parsed, raw_text=raw, payload=user_payload)
+    else:
+        normalized = _normalize_path_report_result(parsed, raw_text=raw)
+    merged_warnings = [*warnings, *list(normalized.get("warnings") or [])]
+    status = str(normalized.get("status") or "ok")
+
+    return {
+        "status": status,
+        "model": "deepseek-chat",
+        "prompt_template_version": version,
+        "report_markdown": str(normalized.get("report_markdown") or ""),
+        "report_json": normalized.get("report_json") or {},
+        "raw_json": normalized.get("raw_json") or (parsed if isinstance(parsed, dict) else {}),
+        "recommendations": normalized.get("recommendations") or [],
+        "missing_data": normalized.get("missing_data") or [],
+        "risks": normalized.get("risks") or [],
+        "warnings": merged_warnings,
+        "raw_text": str(raw or ""),
     }
 
 

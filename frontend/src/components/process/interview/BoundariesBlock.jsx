@@ -1,4 +1,25 @@
+import { useEffect, useMemo, useRef, useState } from "react";
 import { laneColor, laneLabel, normalizeLoose, toText } from "./utils";
+import BoundsSummaryRow from "./BoundsSummaryRow";
+import BoundsCardStart from "./BoundsCardStart";
+import BoundsCardIntermediateMultiSelect from "./BoundsCardIntermediateMultiSelect";
+import BoundsCardFinish from "./BoundsCardFinish";
+
+function parseCsvList(raw) {
+  const out = [];
+  const seen = new Set();
+  String(raw || "")
+    .split(",")
+    .map((item) => toText(item))
+    .filter(Boolean)
+    .forEach((name) => {
+      const key = normalizeLoose(name);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push(name);
+    });
+  return out;
+}
 
 export default function BoundariesBlock({
   boundariesComplete,
@@ -15,39 +36,131 @@ export default function BoundariesBlock({
   setBoundariesLaneFilter,
   setUiPrefsDirty,
   intermediateRolesAuto,
-  toggleIntermediateBoundaryLane,
+  resetBoundaries,
 }) {
-  const laneByName = {};
-  const allBoundaryLaneOptions = Array.isArray(boundaryLaneOptions) ? boundaryLaneOptions : [];
-  allBoundaryLaneOptions.forEach((lane, idx) => {
-    const key = normalizeLoose(lane?.name);
-    if (!key || laneByName[key]) return;
-    laneByName[key] = {
-      label: toText(lane?.label) || laneLabel(lane?.name, lane?.idx),
-      color: toText(lane?.color) || laneColor(key, Number(lane?.idx) || idx + 1),
-      idx: Number(lane?.idx) || idx + 1,
-    };
-  });
+  const [showAllOptions, setShowAllOptions] = useState(false);
+  const [saveNotice, setSaveNotice] = useState("");
+  const [focusCard, setFocusCard] = useState("");
+  const startRef = useRef(null);
+  const intermediateRef = useRef(null);
+  const finishRef = useRef(null);
 
-  const startShop = toText(boundaries.start_shop);
-  const finishShop = toText(boundaries.finish_shop);
+  useEffect(() => {
+    if (!saveNotice) return undefined;
+    const timer = window.setTimeout(() => setSaveNotice(""), 1800);
+    return () => window.clearTimeout(timer);
+  }, [saveNotice]);
+
+  useEffect(() => {
+    if (!focusCard) return undefined;
+    const timer = window.setTimeout(() => setFocusCard(""), 1100);
+    return () => window.clearTimeout(timer);
+  }, [focusCard]);
+
+  const laneByName = useMemo(() => {
+    const map = {};
+    const options = Array.isArray(boundaryLaneOptions) ? boundaryLaneOptions : [];
+    options.forEach((lane, idx) => {
+      const key = normalizeLoose(lane?.name);
+      if (!key || map[key]) return;
+      map[key] = {
+        label: toText(lane?.label) || laneLabel(lane?.name, lane?.idx),
+        color: toText(lane?.color) || laneColor(key, Number(lane?.idx) || idx + 1),
+      };
+    });
+    return map;
+  }, [boundaryLaneOptions]);
+
+  const startShop = toText(boundaries?.start_shop);
+  const finishShop = toText(boundaries?.finish_shop);
+  const trigger = toText(boundaries?.trigger);
+  const finishState = toText(boundaries?.finish_state);
+  const intermediateList = useMemo(
+    () => parseCsvList(toText(boundaries?.intermediate_roles) || intermediateRolesAuto),
+    [boundaries?.intermediate_roles, intermediateRolesAuto],
+  );
+
   const startMeta = laneByName[normalizeLoose(startShop)] || null;
   const finishMeta = laneByName[normalizeLoose(finishShop)] || null;
-  const intermediateList = toText(boundaries.intermediate_roles || intermediateRolesAuto)
-    .split(",")
-    .map((x) => toText(x))
-    .filter(Boolean);
+  const startFilled = !!trigger && !!startShop;
+  const finishFilled = !!finishState && !!finishShop;
+  const intermediateFilled = intermediateList.length > 0;
+
+  function setIntermediateList(nextList) {
+    patchBoundary("intermediate_roles", parseCsvList(nextList.join(", ")).join(", "));
+  }
+
+  function toggleIntermediateLane(laneName) {
+    const lane = toText(laneName);
+    if (!lane) return;
+    const has = intermediateList.some((item) => normalizeLoose(item) === normalizeLoose(lane));
+    const next = has
+      ? intermediateList.filter((item) => normalizeLoose(item) !== normalizeLoose(lane))
+      : [...intermediateList, lane];
+    setIntermediateList(next);
+  }
+
+  function selectAllIntermediate() {
+    const all = (Array.isArray(boundaryLaneOptions) ? boundaryLaneOptions : [])
+      .map((lane) => toText(lane?.name))
+      .filter(Boolean);
+    setIntermediateList(all);
+  }
+
+  function clearIntermediate() {
+    patchBoundary("intermediate_roles", "");
+  }
+
+  function scrollToCard(kind) {
+    const key = toText(kind);
+    const ref = key === "start" ? startRef : key === "finish" ? finishRef : intermediateRef;
+    if (collapsed) {
+      toggleBlock("boundaries");
+      window.setTimeout(() => {
+        ref.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        setFocusCard(key);
+      }, 80);
+      return;
+    }
+    ref.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    setFocusCard(key);
+  }
+
+  function handleSaveBoundaries() {
+    saveUiPrefs?.();
+    setSaveNotice("Границы сохранены");
+  }
+
+  function handleResetBoundaries() {
+    resetBoundaries?.();
+    setBoundariesLaneFilter("");
+    setShowAllOptions(false);
+    setSaveNotice("Границы сброшены");
+  }
 
   return (
-    <div className="interviewBlock">
-      <div className="interviewBlockHead">
+    <div className="interviewBlock interviewBoundsPanel">
+      <div className="interviewBoundsHead sticky top-0 z-20">
         <div>
           <div className="interviewBlockTitle">A. Границы процесса</div>
+          <div className="interviewBoundsSubTitle">
+            Определите старт, промежуточные роли и финиш процесса
+          </div>
         </div>
         <div className="interviewBlockTools">
-          <span className={"badge " + (boundariesComplete ? "ok" : "warn")}>{boundariesComplete ? "Границы заполнены" : "Границы неполные (можно продолжать)"}</span>
-          <button type="button" className="secondaryBtn smallBtn" onClick={saveUiPrefs} title={uiPrefsSavedAt ? `Сохранено: ${new Date(uiPrefsSavedAt).toLocaleTimeString()}` : ""}>
-            {uiPrefsDirty ? "Сохранить фильтры*" : "Сохранить фильтры"}
+          <span className={`badge ${boundariesComplete ? "ok" : "warn"}`}>
+            {boundariesComplete ? "Границы заполнены" : "Не заполнено"}
+          </span>
+          <button
+            type="button"
+            className="primaryBtn smallBtn"
+            onClick={handleSaveBoundaries}
+            title={uiPrefsSavedAt ? `Сохранено: ${new Date(uiPrefsSavedAt).toLocaleTimeString()}` : ""}
+          >
+            {uiPrefsDirty ? "Сохранить границы*" : "Сохранить границы"}
+          </button>
+          <button type="button" className="secondaryBtn smallBtn" onClick={handleResetBoundaries}>
+            Сбросить
           </button>
           <button type="button" className="secondaryBtn smallBtn interviewCollapseBtn" onClick={() => toggleBlock("boundaries")}>
             {collapsed ? "Показать" : "Скрыть"}
@@ -55,115 +168,67 @@ export default function BoundariesBlock({
         </div>
       </div>
 
-      {!collapsed ? (
-        <div className="interviewGrid interviewGrid3">
-          <div className="interviewBoundaryStatusRow md:col-span-2 xl:col-span-3">
-            <span
-              className={"interviewBoundaryStatusChip " + (startShop ? "on" : "")}
-              style={startMeta ? { "--lane-accent": startMeta.color } : undefined}
-            >
-              <span className="interviewLaneDot" />
-              Start: {startMeta?.label || startShop || "не задан"}
-            </span>
-            <span
-              className={"interviewBoundaryStatusChip " + (finishShop ? "on" : "")}
-              style={finishMeta ? { "--lane-accent": finishMeta.color } : undefined}
-            >
-              <span className="interviewLaneDot" />
-              Finish: {finishMeta?.label || finishShop || "не задан"}
-            </span>
-            {intermediateList.length ? (
-              intermediateList.map((name, idx) => {
-                const meta = laneByName[normalizeLoose(name)] || null;
-                return (
-                  <span
-                    key={`mid_status_${normalizeLoose(name) || idx}`}
-                    className="interviewBoundaryStatusChip on"
-                    style={{ "--lane-accent": meta?.color || laneColor(name, idx + 1) }}
-                  >
-                    <span className="interviewLaneDot" />
-                    Intermediate: {meta?.label || name}
-                  </span>
-                );
-              })
-            ) : (
-              <span className="interviewBoundaryStatusChip">Intermediate: не заданы</span>
-            )}
-          </div>
-          <label className="interviewField">
-            <span>Стартовое событие (trigger)</span>
-            <input className="input" value={boundaries.trigger} onChange={(e) => patchBoundary("trigger", e.target.value)} placeholder="Напр.: поступила партия сырья" />
-          </label>
-          <label className="interviewField">
-            <span>Стартовый цех</span>
-            {/* Keep this exact select class stack to prevent value clipping in Interview boundaries. */}
-            <select className="select interviewBoundaryLaneSelect" value={toText(boundaries.start_shop)} onChange={(e) => patchBoundary("start_shop", e.target.value)}>
-              <option value="">Выберите лайн</option>
-              {boundaryLaneOptionsFiltered.map((lane) => (
-                <option key={`start_${lane.name}`} value={lane.name}>
-                  ● {lane.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="interviewField">
-            <span>Финишное состояние (готово)</span>
-            <input className="input" value={boundaries.finish_state} onChange={(e) => patchBoundary("finish_state", e.target.value)} placeholder="Напр.: упакованная партия" />
-          </label>
-          <label className="interviewField">
-            <span>Финишный цех</span>
-            {/* Keep this exact select class stack to prevent value clipping in Interview boundaries. */}
-            <select className="select interviewBoundaryLaneSelect" value={toText(boundaries.finish_shop)} onChange={(e) => patchBoundary("finish_shop", e.target.value)}>
-              <option value="">Выберите лайн</option>
-              {boundaryLaneOptionsFiltered.map((lane) => (
-                <option key={`finish_${lane.name}`} value={lane.name}>
-                  ● {lane.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="interviewField">
-            <span>Промежуточные роли/участки</span>
-            <div className="interviewBoundaryLanePicker">
-              <input
-                className="input"
-                value={boundariesLaneFilter}
-                onChange={(e) => {
-                  setBoundariesLaneFilter(e.target.value);
-                  setUiPrefsDirty(true);
-                }}
-                placeholder="Фильтр лайнов: L1, Бригадир..."
-              />
-              <div className="interviewBoundaryLaneList">
-                {boundaryLaneOptionsFiltered.map((lane) => {
-                  const selected = toText(boundaries.intermediate_roles || intermediateRolesAuto)
-                    .split(",")
-                    .map((x) => normalizeLoose(x))
-                    .includes(normalizeLoose(lane.name));
-                  return (
-                    <button
-                      key={`mid_${lane.name}`}
-                      type="button"
-                      className={"interviewBoundaryLaneBtn " + (selected ? "selected" : "")}
-                      style={{ "--lane-accent": lane.color }}
-                      onClick={() => toggleIntermediateBoundaryLane(lane.name)}
-                    >
-                      <span className="interviewLaneDot" />
-                      {lane.label}
-                    </button>
-                  );
-                })}
-              </div>
-              <input
-                className="input"
-                value={toText(boundaries.intermediate_roles) || intermediateRolesAuto}
-                onChange={(e) => patchBoundary("intermediate_roles", e.target.value)}
-                placeholder="Авто по BPMN-лайнам"
-              />
-            </div>
-          </label>
+      <BoundsSummaryRow
+        startLabel={startMeta?.label || startShop || "не выбрано"}
+        intermediateCount={intermediateList.length}
+        finishLabel={finishMeta?.label || finishShop || "не выбрано"}
+        onFocusStart={() => scrollToCard("start")}
+        onFocusIntermediate={() => scrollToCard("intermediate")}
+        onFocusFinish={() => scrollToCard("finish")}
+        onEdit={() => scrollToCard("intermediate")}
+      />
+
+      {saveNotice ? <div className="interviewBoundsSaveNotice">{saveNotice}</div> : null}
+
+      {collapsed ? (
+        <div className="interviewBoundsCollapsedLine">
+          Start: {startMeta?.label || startShop || "—"} • Intermediate: {intermediateList.length || 0} • Finish: {finishMeta?.label || finishShop || "—"}
         </div>
-      ) : null}
+      ) : (
+        <div className="interviewBoundsGrid">
+          <BoundsCardStart
+            cardRef={startRef}
+            missing={!startFilled}
+            focused={focusCard === "start"}
+            startShop={startShop}
+            trigger={trigger}
+            laneOptions={boundaryLaneOptionsFiltered}
+            onStartShopChange={(value) => patchBoundary("start_shop", value)}
+            onTriggerChange={(value) => patchBoundary("trigger", value)}
+          />
+
+          <BoundsCardIntermediateMultiSelect
+            cardRef={intermediateRef}
+            missing={!intermediateFilled}
+            focused={focusCard === "intermediate"}
+            laneFilter={boundariesLaneFilter}
+            onLaneFilterChange={(value) => {
+              setBoundariesLaneFilter(value);
+              setUiPrefsDirty(true);
+            }}
+            laneOptions={boundaryLaneOptionsFiltered}
+            selectedList={intermediateList}
+            onToggleLane={toggleIntermediateLane}
+            onSelectAll={selectAllIntermediate}
+            onClear={clearIntermediate}
+            rawValue={toText(boundaries?.intermediate_roles) || intermediateRolesAuto}
+            onRawValueChange={(value) => patchBoundary("intermediate_roles", value)}
+            showAllOptions={showAllOptions}
+            onToggleShowAllOptions={setShowAllOptions}
+          />
+
+          <BoundsCardFinish
+            cardRef={finishRef}
+            missing={!finishFilled}
+            focused={focusCard === "finish"}
+            finishShop={finishShop}
+            finishState={finishState}
+            laneOptions={boundaryLaneOptionsFiltered}
+            onFinishShopChange={(value) => patchBoundary("finish_shop", value)}
+            onFinishStateChange={(value) => patchBoundary("finish_state", value)}
+          />
+        </div>
+      )}
     </div>
   );
 }

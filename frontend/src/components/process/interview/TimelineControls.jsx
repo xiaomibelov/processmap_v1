@@ -53,6 +53,8 @@ export default function TimelineControls({
   branchViewMode = "tree",
   onSetBranchViewMode,
   onToggleCollapse,
+  devDebugEnabled = false,
+  onToggleDebug,
 }) {
   const FILTER_QUERY_DEBOUNCE_MS = 180;
   const [showMoreActions, setShowMoreActions] = useState(false);
@@ -150,6 +152,24 @@ export default function TimelineControls({
     };
   }, [dodSnapshot]);
 
+  const activeFilterChips = useMemo(() => {
+    const chips = [];
+    const query = toText(timelineFilters?.query);
+    if (query) chips.push(`Поиск: ${query}`);
+    if (selectedLanes.length) chips.push(`Лайны: ${selectedLanes.length}`);
+    if (toText(timelineFilters?.type) && timelineFilters.type !== "all") chips.push(`Тип: ${timelineFilters.type}`);
+    if (toText(timelineFilters?.subprocess) && timelineFilters.subprocess !== "all") chips.push(`Подпроцесс: ${timelineFilters.subprocess}`);
+    if (toText(timelineFilters?.bind) && timelineFilters.bind !== "all") chips.push(`Привязки: ${timelineFilters.bind}`);
+    if (toText(timelineFilters?.annotation) && timelineFilters.annotation !== "all") chips.push(`Аннотации: ${timelineFilters.annotation}`);
+    if (toText(timelineFilters?.ai) && timelineFilters.ai !== "all") chips.push(`AI: ${timelineFilters.ai}`);
+    const tiers = selectedTiers.filter((tier) => tier !== "None");
+    if (tiers.length && tiers.length < 3) chips.push(`Tier: ${tiers.join(",")}`);
+    if (selectedTiers.includes("None") && selectedTiers.length < 4) chips.push("Без tier");
+    return chips;
+  }, [timelineFilters, selectedLanes.length, selectedTiers]);
+
+  const activeFiltersCount = activeFilterChips.length;
+
   function applyLaneSelection(nextList) {
     const cleaned = dedupList(nextList);
     patchTimelineFilter("lanes", cleaned);
@@ -194,66 +214,25 @@ export default function TimelineControls({
 
   return (
     <div className="interviewTimelineToolbar rounded-xl border border-border bg-panel2/55 p-2.5">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="badge">Шаги: {filteredTimelineCount}/{timelineCount}</span>
-        <button
-          type="button"
-          className="secondaryBtn smallBtn"
-          data-testid="binding-assistant-open"
-          onClick={() => onOpenBindingAssistant?.()}
-        >
-          Привязки ({Number(bindingIssueCount || 0)})
-        </button>
+      <div className="interviewTimelinePrimaryRow">
         <button type="button" className="primaryBtn smallBtn" onClick={() => addStep("operation")} data-testid="interview-add-step-primary">
           + Добавить шаг
         </button>
-        <div className="interviewOrderToggle ml-auto inline-flex items-center gap-1" role="group" aria-label="Режим порядка шагов">
-          <button
-            type="button"
-            className={"secondaryBtn smallBtn interviewOrderBtn " + (orderMode === "bpmn" ? "isActive" : "")}
-            data-testid="interview-order-bpmn-btn"
-            onClick={() => onSetOrderMode?.("bpmn")}
-          >
-            BPMN
-          </button>
-          <button
-            type="button"
-            className={"secondaryBtn smallBtn interviewOrderBtn " + (orderMode === "interview" ? "isActive" : "")}
-            data-testid="interview-order-interview-btn"
-            onClick={() => onSetOrderMode?.("interview")}
-          >
-            Creation
-          </button>
-          <button
-            type="button"
-            className="secondaryBtn smallBtn interviewOrderBtn"
-            disabled
-            title="Manual order будет доступен отдельным режимом"
-          >
-            Manual
-          </button>
-          <span className={"badge " + (graphOrderLocked ? "ok" : "warn")} title={graphOrderLocked ? "Reorder заблокирован (порядок из BPMN)" : "Reorder доступен"}>
-            {graphOrderLocked ? "🔒" : "🔓"}
-          </span>
-          <button type="button" className="secondaryBtn smallBtn" onClick={() => setFiltersOpen((prev) => !prev)}>
-            Фильтр
-          </button>
-        </div>
-        {orderMode === "bpmn" ? (
-          <span className={`muted small ${bpmnOrderFallback ? "text-amber-700" : ""}`}>
-            {toText(bpmnOrderHint) || "Порядок вычислен по графу диаграммы."}
-          </span>
-        ) : (
-          <span className="muted small">Creation order: порядок шага = order_index.</span>
-        )}
-        <div className="interviewBranchViewToggle" role="group" aria-label="Режим отображения веток">
-          <span className="muted small">Вид:</span>
+
+        <input
+          className="input interviewTimelinePrimarySearch"
+          value={queryDraft}
+          onChange={(e) => setQueryDraft(e.target.value)}
+          placeholder="Поиск: шаг, аннотация, узел, роль..."
+          aria-label="Поиск шагов"
+        />
+
+        <div className="interviewBranchViewToggle" role="group" aria-label="Режим отображения">
           <button
             type="button"
             className={`secondaryBtn smallBtn interviewBranchViewBtn ${timelineViewMode === "diagram" ? "isActive" : ""}`}
             data-testid="interview-view-mode-diagram-btn"
             onClick={() => onSetTimelineViewMode?.("diagram")}
-            title="Diagram — фокус на BPMN-узлах, tiers и link groups"
           >
             Diagram
           </button>
@@ -262,7 +241,6 @@ export default function TimelineControls({
             className={`secondaryBtn smallBtn interviewBranchViewBtn ${timelineViewMode === "matrix" ? "isActive" : ""}`}
             data-testid="interview-view-mode-matrix-btn"
             onClick={() => onSetTimelineViewMode?.("matrix")}
-            title="Matrix — табличный режим шагов"
           >
             Matrix
           </button>
@@ -271,31 +249,27 @@ export default function TimelineControls({
             className={`secondaryBtn smallBtn interviewBranchViewBtn ${timelineViewMode === "paths" ? "isActive" : ""}`}
             data-testid="interview-view-mode-paths-btn"
             onClick={() => onSetTimelineViewMode?.("paths")}
-            title="Paths — ветки и варианты прохождения"
           >
             Paths
           </button>
-          <span className="muted small">|</span>
-          <span className="muted small">Ветки:</span>
-          <button
-            type="button"
-            className={`secondaryBtn smallBtn interviewBranchViewBtn ${branchViewMode === "tree" ? "isActive" : ""}`}
-            data-testid="interview-branch-view-tree-btn"
-            onClick={() => onSetBranchViewMode?.("tree")}
-            title="Дерево — удобнее читать вложенность"
-          >
-            Дерево
-          </button>
-          <button
-            type="button"
-            className={`secondaryBtn smallBtn interviewBranchViewBtn ${branchViewMode === "cards" ? "isActive" : ""}`}
-            data-testid="interview-branch-view-cards-btn"
-            onClick={() => onSetBranchViewMode?.("cards")}
-            title="Карточки — удобнее сравнивать ветки"
-          >
-            Карточки
-          </button>
         </div>
+
+        <select
+          className="select interviewSortSelect"
+          value={orderMode === "bpmn" ? "bpmn" : "interview"}
+          onChange={(e) => onSetOrderMode?.(e.target.value)}
+          aria-label="Сортировка шагов"
+          data-testid="interview-order-select"
+        >
+          <option value="bpmn">Сортировка: BPMN</option>
+          <option value="interview">Сортировка: Creation</option>
+          <option value="manual" disabled>Сортировка: Manual (скоро)</option>
+        </select>
+
+        <button type="button" className="secondaryBtn smallBtn" onClick={() => setFiltersOpen((prev) => !prev)}>
+          Фильтры ({activeFiltersCount})
+        </button>
+
         <div className="interviewColsMenuWrap">
           <button
             type="button"
@@ -303,12 +277,12 @@ export default function TimelineControls({
             data-testid="interview-step-more-btn"
             onClick={() => setShowMoreActions((v) => !v)}
           >
-            ⋯ Ещё
+            Действия ▾
           </button>
           {showMoreActions ? (
-            <div className="interviewColsMenu" style={{ minWidth: 290 }}>
+            <div className="interviewColsMenu" style={{ minWidth: 300 }}>
               <div className="interviewColsMenuHead">
-                <span>Редкие действия</span>
+                <span>Действия</span>
                 <button type="button" className="secondaryBtn smallBtn" onClick={() => setShowMoreActions(false)}>
                   Закрыть
                 </button>
@@ -317,9 +291,33 @@ export default function TimelineControls({
                 <button type="button" className="secondaryBtn smallBtn" onClick={() => addStep("movement")}>+ Перемещение</button>
                 <button type="button" className="secondaryBtn smallBtn" onClick={() => addStep("waiting")}>+ Ожидание</button>
                 <button type="button" className="secondaryBtn smallBtn" onClick={() => addStep("qc")}>+ QC</button>
-                <button type="button" className="secondaryBtn smallBtn" onClick={saveUiPrefs} title={uiPrefsSavedAt ? `Сохранено: ${new Date(uiPrefsSavedAt).toLocaleTimeString()}` : ""}>
-                  {uiPrefsDirty ? "Сохранить фильтры*" : "Сохранить фильтры"}
+                <button
+                  type="button"
+                  className="secondaryBtn smallBtn"
+                  data-testid="binding-assistant-open"
+                  onClick={() => onOpenBindingAssistant?.()}
+                >
+                  Привязки ({Number(bindingIssueCount || 0)})
                 </button>
+                <div className="col-span-2 flex flex-wrap items-center gap-2">
+                  <span className="muted small">Ветки:</span>
+                  <button
+                    type="button"
+                    className={`secondaryBtn smallBtn interviewBranchViewBtn ${branchViewMode === "tree" ? "isActive" : ""}`}
+                    data-testid="interview-branch-view-tree-btn"
+                    onClick={() => onSetBranchViewMode?.("tree")}
+                  >
+                    Дерево
+                  </button>
+                  <button
+                    type="button"
+                    className={`secondaryBtn smallBtn interviewBranchViewBtn ${branchViewMode === "cards" ? "isActive" : ""}`}
+                    data-testid="interview-branch-view-cards-btn"
+                    onClick={() => onSetBranchViewMode?.("cards")}
+                  >
+                    Карточки
+                  </button>
+                </div>
                 <div className="inputRow col-span-2" style={{ alignItems: "center", gap: 8 }}>
                   <input
                     className="input interviewSubprocessInput"
@@ -353,7 +351,7 @@ export default function TimelineControls({
                 </div>
                 <div className="interviewMoreSection" style={{ alignItems: "flex-start" }}>
                   <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <span className="muted small">Видимость полей редактирования</span>
+                    <span className="muted small">Видимость колонок</span>
                     <div className="interviewColsMenuList !grid-cols-1">
                       {TIMELINE_OPTIONAL_COLUMNS.map((col) => (
                         <label key={col.key} className="interviewColsItem">
@@ -369,49 +367,59 @@ export default function TimelineControls({
                   </div>
                   <button type="button" className="secondaryBtn smallBtn" onClick={resetTimelineColumns}>Сброс</button>
                 </div>
+                <button
+                  type="button"
+                  className="secondaryBtn smallBtn"
+                  onClick={saveUiPrefs}
+                  title={uiPrefsSavedAt ? `Сохранено: ${new Date(uiPrefsSavedAt).toLocaleTimeString()}` : ""}
+                >
+                  {uiPrefsDirty ? "Сохранить фильтры*" : "Сохранить фильтры"}
+                </button>
+                <div className="col-span-2 mt-1 flex flex-wrap items-center gap-2">
+                  <span className={"badge " + (graphOrderLocked ? "ok" : "warn")} title={graphOrderLocked ? "Reorder заблокирован (порядок из BPMN)" : "Reorder доступен"}>
+                    {graphOrderLocked ? "🔒 Reorder lock" : "🔓 Reorder unlock"}
+                  </span>
+                  <span className="badge">Шаги: {filteredTimelineCount}/{timelineCount}</span>
+                  <span className="badge">AI: {Number(statusCounts?.withAi || 0)}</span>
+                  <button type="button" className="secondaryBtn smallBtn" onClick={() => onToggleCollapse?.()}>
+                    Скрыть блок
+                  </button>
+                  {devDebugEnabled ? (
+                    <button
+                      type="button"
+                      className="secondaryBtn smallBtn"
+                      data-testid="interview-debug-toggle"
+                      onClick={() => onToggleDebug?.()}
+                    >
+                      Debug
+                    </button>
+                  ) : null}
+                </div>
               </div>
             </div>
           ) : null}
         </div>
-        <button type="button" className="secondaryBtn smallBtn" onClick={() => onToggleCollapse?.()}>
-          Скрыть
-        </button>
       </div>
 
-      <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-border/70 pt-2">
-        <button type="button" className="badge" onClick={() => patchTimelineFilter("bind", timelineFilters.bind === "missing" ? "all" : "missing")}>
-          Привязки: {Number(statusCounts?.missingBindings || 0)}
-        </button>
-        <button type="button" className="badge" onClick={() => patchTimelineFilter("annotation", timelineFilters.annotation === "with" ? "all" : "with")}>
-          Аннотации: {Number(statusCounts?.withAnnotations || 0)}
-        </button>
-        <button type="button" className="badge" onClick={() => patchTimelineFilter("ai", timelineFilters.ai === "with" ? "all" : "with")}>
-          AI: {Number(statusCounts?.withAi || 0)}
-        </button>
-        <span className="muted small">Tier:</span>
-        {["P0", "P1", "P2", "None"].map((tier) => {
-          const active = selectedTiers.includes(tier);
-          const count = Number(tierCounts?.[tier] || 0);
-          return (
-            <button
-              key={`tier_filter_${tier}`}
-              type="button"
-              className={`badge interviewTierFilterBtn ${active ? "active" : ""} tier-${tier.toLowerCase()}`}
-              data-testid={`interview-tier-filter-${tier.toLowerCase()}`}
-              onClick={() => toggleTierValue(tier)}
-              title="Фильтр влияет только на отображение веток/tiers, mainline не скрывается"
-            >
-              {tier}: {count}
-            </button>
-          );
-        })}
-        <span className="muted small">
-          P0 основной · P1 восстановление · P2 эскалация
+      {activeFiltersCount > 0 ? (
+        <div className="interviewActiveFiltersRow">
+          <span className="muted small">Активные фильтры:</span>
+          {activeFilterChips.map((chip, idx) => (
+            <span key={`active_filter_chip_${idx + 1}`} className="interviewFilterChip on">{chip}</span>
+          ))}
+          <button type="button" className="secondaryBtn tinyBtn ml-auto" onClick={resetTimelineFilters}>
+            Очистить
+          </button>
+        </div>
+      ) : null}
+
+      {orderMode === "bpmn" ? (
+        <span className={`muted small ${bpmnOrderFallback ? "text-amber-700" : ""}`}>
+          {toText(bpmnOrderHint) || "Порядок вычислен по графу диаграммы."}
         </span>
-        <button type="button" className="badge" onClick={() => applyLaneSelection(selectedLanes.length === 1 && selectedLanes[0] === "unassigned" ? [] : ["unassigned"])}>
-          Без лайна: {Number(statusCounts?.withoutLane || 0)}
-        </button>
-      </div>
+      ) : (
+        <span className="muted small">Creation order: порядок шага = order_index.</span>
+      )}
 
       {!filtersOpen ? (
         <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-panel/60 px-2.5 py-2 text-xs">
@@ -500,23 +508,30 @@ export default function TimelineControls({
           </div>
 
           <div className="interviewFilterChips">
+            <span className="muted small">Tier:</span>
+            {["P0", "P1", "P2", "None"].map((tier) => {
+              const active = selectedTiers.includes(tier);
+              const count = Number(tierCounts?.[tier] || 0);
+              return (
+                <button
+                  key={`tier_filter_${tier}`}
+                  type="button"
+                  className={`badge interviewTierFilterBtn ${active ? "active" : ""} tier-${tier.toLowerCase()}`}
+                  data-testid={`interview-tier-filter-${tier.toLowerCase()}`}
+                  onClick={() => toggleTierValue(tier)}
+                >
+                  {tier}: {count}
+                </button>
+              );
+            })}
             <button type="button" className={"interviewFilterChip " + (timelineFilters.bind === "bound" ? "on" : "")} onClick={() => patchTimelineFilter("bind", timelineFilters.bind === "bound" ? "all" : "bound")}>
-              Только привязанные
+              Привязки: да
             </button>
             <button type="button" className={"interviewFilterChip " + (timelineFilters.bind === "missing" ? "on" : "")} onClick={() => setQuickPreset("missing_bind")}>
-              Только без привязки
-            </button>
-            <button type="button" className={"interviewFilterChip " + (timelineFilters.annotation === "with" ? "on" : "")} onClick={() => patchTimelineFilter("annotation", timelineFilters.annotation === "with" ? "all" : "with")}>
-              С аннотацией
-            </button>
-            <button type="button" className={"interviewFilterChip " + (timelineFilters.annotation === "without" ? "on" : "")} onClick={() => setQuickPreset("without_annotation")}>
-              Без аннотации
+              Привязки: нет
             </button>
             <button type="button" className={"interviewFilterChip " + (timelineFilters.ai === "with" ? "on" : "")} data-testid="interview-filter-ai-with" onClick={() => setQuickPreset("with_ai")}>
-              Только с AI
-            </button>
-            <button type="button" className="interviewFilterChip" onClick={resetTimelineFilters}>
-              Сбросить
+              AI: да
             </button>
             <button type="button" className="interviewFilterChip" onClick={() => setFiltersOpen(false)}>
               Свернуть фильтры

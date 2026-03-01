@@ -1,14 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AppShell from "./components/AppShell";
 import NotesPanel from "./components/NotesPanel";
 import NoSession from "./components/stages/NoSession";
 import ProjectWizardModal from "./components/ProjectWizardModal";
 import SessionFlowModal from "./components/SessionFlowModal";
+import Modal from "./shared/ui/Modal";
 import useSessionStore from "./features/sessions/hooks/useSessionStore";
 import {
   normalizeElementNotesMap,
   withAddedElementNote,
+  withElementNoteSummary,
   withRemappedElementNotes,
 } from "./features/notes/elementNotes";
 import { deriveActorsFromBpmn } from "./features/process/lib/deriveActorsFromBpmn";
@@ -33,10 +35,17 @@ import {
   apiVerifyLlmSettings,
   apiRecompute,
   apiPutBpmnXml,
+  apiPatchBpmnMeta,
+  apiInferBpmnRtiers,
 } from "./lib/api";
 import {
   getLatestBpmnSnapshot,
 } from "./features/process/bpmn/snapshots/bpmnSnapshots";
+import {
+  canonicalRobotMetaMapString,
+  extractRobotMetaMapFromBpmnXml,
+  normalizeRobotMetaMap,
+} from "./features/process/robotmeta/robotMeta";
 
 function isLocalSessionId(id) {
   return typeof id === "string" && (id === "local" || id.startsWith("local_"));
@@ -48,6 +57,150 @@ function ensureArray(x) {
 
 function ensureObject(x) {
   return x && typeof x === "object" && !Array.isArray(x) ? x : {};
+}
+
+function normalizeStepTimeMinutes(raw) {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw === "string" && !raw.trim()) return null;
+  const num = Number(raw);
+  if (!Number.isFinite(num) || num < 0) return null;
+  return Math.round(num);
+}
+
+function normalizeStepTimeSeconds(raw) {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw === "string" && !raw.trim()) return null;
+  const num = Number(raw);
+  if (!Number.isFinite(num) || num < 0) return null;
+  return Math.round(num);
+}
+
+function readNodeStepTimeMinutes(nodeRaw) {
+  const node = ensureObject(nodeRaw);
+  const params = ensureObject(node.parameters);
+  const candidates = [
+    node.step_time_min,
+    node.stepTimeMin,
+    node.duration_min,
+    node.durationMin,
+    params.step_time_min,
+    params.stepTimeMin,
+    params.duration_min,
+    params.durationMin,
+    params.duration,
+  ];
+  for (let i = 0; i < candidates.length; i += 1) {
+    const parsed = normalizeStepTimeMinutes(candidates[i]);
+    if (parsed !== null) return parsed;
+  }
+  const secondsCandidates = [
+    node.step_time_sec,
+    node.stepTimeSec,
+    node.duration_sec,
+    node.durationSec,
+    params.step_time_sec,
+    params.stepTimeSec,
+    params.duration_sec,
+    params.durationSec,
+  ];
+  for (let i = 0; i < secondsCandidates.length; i += 1) {
+    const sec = normalizeStepTimeSeconds(secondsCandidates[i]);
+    if (sec !== null) return Math.round(sec / 60);
+  }
+  return null;
+}
+
+function readNodeStepTimeSeconds(nodeRaw) {
+  const node = ensureObject(nodeRaw);
+  const params = ensureObject(node.parameters);
+  const secondsCandidates = [
+    node.step_time_sec,
+    node.stepTimeSec,
+    node.duration_sec,
+    node.durationSec,
+    params.step_time_sec,
+    params.stepTimeSec,
+    params.duration_sec,
+    params.durationSec,
+  ];
+  for (let i = 0; i < secondsCandidates.length; i += 1) {
+    const parsed = normalizeStepTimeSeconds(secondsCandidates[i]);
+    if (parsed !== null) return parsed;
+  }
+  const fallbackMinutes = readNodeStepTimeMinutes(node);
+  if (fallbackMinutes === null) return null;
+  return Math.round(fallbackMinutes * 60);
+}
+
+function normalizeGlobalNoteItem(raw, fallbackIndex = 0) {
+  const obj = raw && typeof raw === "object" ? raw : {};
+  const text = String(obj.text || obj.note || obj.notes || obj.message || raw || "").trim();
+  if (!text) return null;
+  const rawTs = obj.ts ?? obj.createdAt ?? obj.created_at ?? obj.updatedAt ?? obj.updated_at;
+  let ts = Number(rawTs);
+  if (!Number.isFinite(ts) || ts <= 0) {
+    const parsedDate = Date.parse(String(rawTs || "").trim());
+    ts = Number.isFinite(parsedDate) && parsedDate > 0 ? parsedDate : Date.now();
+  }
+  const author = String(obj.author || obj.user || obj.created_by || obj.by || "you").trim() || "you";
+  const id = String(obj.id || obj.note_id || obj.noteId || "").trim() || `note_${ts}_${fallbackIndex + 1}`;
+  return { id, text, ts, author };
+}
+
+function normalizeGlobalNotes(value) {
+  let source = [];
+  if (Array.isArray(value)) {
+    source = value;
+  } else if (value && typeof value === "object") {
+    source = [value];
+  } else {
+    const text = String(value || "").trim();
+    if (!text) source = [];
+    else {
+      try {
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) source = parsed;
+        else if (parsed && typeof parsed === "object") source = [parsed];
+        else source = [{ text }];
+      } catch {
+        source = [{ text }];
+      }
+    }
+  }
+  const normalized = source
+    .map((item, idx) => normalizeGlobalNoteItem(item, idx))
+    .filter(Boolean);
+  normalized.sort((a, b) => {
+    const dt = Number(a?.ts || 0) - Number(b?.ts || 0);
+    if (dt !== 0) return dt;
+    return String(a?.id || "").localeCompare(String(b?.id || ""), "ru");
+  });
+  return normalized;
+}
+
+function mergeGlobalNotesLists(baseRaw, incomingRaw) {
+  const out = [];
+  const byId = new Set();
+  const bySignature = new Set();
+  function add(rawItem, idx) {
+    const item = normalizeGlobalNoteItem(rawItem, idx);
+    if (!item) return;
+    const id = String(item.id || "").trim();
+    const signature = `${String(item.text || "").trim().toLowerCase()}|${Number(item.ts || 0)}|${String(item.author || "").trim().toLowerCase()}`;
+    if (id && byId.has(id)) return;
+    if (signature && bySignature.has(signature)) return;
+    if (id) byId.add(id);
+    if (signature) bySignature.add(signature);
+    out.push(item);
+  }
+  normalizeGlobalNotes(baseRaw).forEach((item, idx) => add(item, idx));
+  normalizeGlobalNotes(incomingRaw).forEach((item, idx) => add(item, idx));
+  out.sort((a, b) => {
+    const dt = Number(a?.ts || 0) - Number(b?.ts || 0);
+    if (dt !== 0) return dt;
+    return String(a?.id || "").localeCompare(String(b?.id || ""), "ru");
+  });
+  return out;
 }
 
 function hasOwn(obj, key) {
@@ -132,6 +285,36 @@ function logSnapshotTrace(tag, payload = {}) {
   console.debug(`[SNAPSHOT] ${String(tag || "trace")} ${suffix}`.trim());
 }
 
+function readSelectionFromUrl() {
+  if (typeof window === "undefined") return { projectId: "", sessionId: "" };
+  try {
+    const params = new URLSearchParams(window.location.search || "");
+    return {
+      projectId: String(params.get("project") || "").trim(),
+      sessionId: String(params.get("session") || "").trim(),
+    };
+  } catch {
+    return { projectId: "", sessionId: "" };
+  }
+}
+
+function writeSelectionToUrl({ projectId, sessionId }) {
+  if (typeof window === "undefined") return;
+  try {
+    const url = new URL(window.location.href);
+    if (projectId) url.searchParams.set("project", String(projectId || "").trim());
+    else url.searchParams.delete("project");
+    if (sessionId) url.searchParams.set("session", String(sessionId || "").trim());
+    else url.searchParams.delete("session");
+    const nextHref = `${url.pathname}${url.search}${url.hash}`;
+    const currentHref = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (nextHref !== currentHref) {
+      window.history.replaceState(window.history.state, "", nextHref);
+    }
+  } catch {
+  }
+}
+
 function projectIdOf(p) {
   return String((p && (p.id || p.project_id || p.slug)) || "").trim();
 }
@@ -144,15 +327,216 @@ function projectTitleOf(p) {
   return String((p && (p.title || p.name || p.id || p.project_id || p.slug)) || "").trim();
 }
 
-const LEFT_PANEL_HIDDEN_KEY = "fpc_leftpanel_hidden";
+const LEFT_PANEL_OPEN_KEY = "ui.sidebar.left.open";
+const LEFT_PANEL_COMPACT_KEY = "fpc_leftpanel_compact";
+const STEP_TIME_UNIT_KEY = "fpc_step_time_unit_v1";
+const BPMN_META_LOCAL_KEY_PREFIX = "fpc_bpmn_meta_v1:";
+const FLOW_TIER_SET = new Set(["P0", "P1", "P2"]);
+const R_FLOW_TIER_SET = new Set(["R0", "R1", "R2"]);
+const FLOW_R_SOURCE_SET = new Set(["manual", "inferred"]);
+const NODE_PATH_TAG_ORDER = ["P0", "P1", "P2"];
+const NODE_PATH_TAG_SET = new Set(NODE_PATH_TAG_ORDER);
 
-function readLeftPanelHidden() {
+function normalizeStepTimeUnit(raw) {
+  return String(raw || "").trim().toLowerCase() === "sec" ? "sec" : "min";
+}
+
+function readStepTimeUnit() {
+  if (typeof window === "undefined") return "min";
+  try {
+    return normalizeStepTimeUnit(window.localStorage?.getItem(STEP_TIME_UNIT_KEY) || "min");
+  } catch {
+    return "min";
+  }
+}
+
+function writeStepTimeUnit(unit) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage?.setItem(STEP_TIME_UNIT_KEY, normalizeStepTimeUnit(unit));
+  } catch {
+  }
+}
+
+function bpmnMetaLocalStorageKey(sessionId) {
+  const sid = String(sessionId || "").trim();
+  return sid ? `${BPMN_META_LOCAL_KEY_PREFIX}${sid}` : "";
+}
+
+function normalizeFlowTier(value) {
+  const tier = String(value || "").trim().toUpperCase();
+  return FLOW_TIER_SET.has(tier) ? tier : "";
+}
+
+function normalizeRFlowTier(value) {
+  const tier = String(value || "").trim().toUpperCase();
+  return R_FLOW_TIER_SET.has(tier) ? tier : "";
+}
+
+function normalizeFlowRSource(value) {
+  const source = String(value || "").trim().toLowerCase();
+  return FLOW_R_SOURCE_SET.has(source) ? source : "";
+}
+
+function normalizeFlowMetaEntry(rawEntry) {
+  const entry = ensureObject(rawEntry);
+  const directTier = normalizeFlowTier(entry.tier);
+  const tier = directTier || (entry.happy === true ? "P0" : (typeof rawEntry === "boolean" && rawEntry ? "P0" : ""));
+  const rtier = normalizeRFlowTier(entry.rtier);
+  if (!tier && !rtier) return null;
+  const out = {};
+  if (tier) out.tier = tier;
+  if (rtier) {
+    out.rtier = rtier;
+    const source = normalizeFlowRSource(entry.source) || "manual";
+    out.source = source;
+    const scopeStartId = String(entry.scopeStartId || entry.scope_start_id || "").trim();
+    if (scopeStartId) out.scopeStartId = scopeStartId;
+    const algoVersion = String(entry.algoVersion || entry.algo_version || "").trim();
+    if (algoVersion) out.algoVersion = algoVersion;
+    const computedAtIso = String(entry.computedAtIso || entry.computed_at_iso || "").trim();
+    if (computedAtIso) out.computedAtIso = computedAtIso;
+    const reason = String(entry.reason || "").trim();
+    if (reason) out.reason = reason;
+  }
+  return out;
+}
+
+function normalizeFlowMetaMap(rawMap) {
+  const src = ensureObject(rawMap);
+  const out = {};
+  Object.keys(src).forEach((rawFlowId) => {
+    const flowId = String(rawFlowId || "").trim();
+    if (!flowId) return;
+    const normalizedEntry = normalizeFlowMetaEntry(src[rawFlowId]);
+    if (!normalizedEntry) return;
+    out[flowId] = normalizedEntry;
+  });
+  return out;
+}
+
+function normalizeNodePathTag(value) {
+  const tag = String(value || "").trim().toUpperCase();
+  return NODE_PATH_TAG_SET.has(tag) ? tag : "";
+}
+
+function normalizeSequenceKey(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "";
+  const compact = raw
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_-]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return compact.slice(0, 64);
+}
+
+function normalizeNodePathEntry(rawEntry) {
+  const entry = ensureObject(rawEntry);
+  const pathValues = Array.isArray(entry.paths)
+    ? entry.paths
+    : (entry.path ? [entry.path] : (entry.tier ? [entry.tier] : []));
+  const seen = new Set();
+  const paths = pathValues
+    .map((item) => normalizeNodePathTag(item))
+    .filter((item) => {
+      if (!item || seen.has(item)) return false;
+      seen.add(item);
+      return true;
+    })
+    .sort((a, b) => NODE_PATH_TAG_ORDER.indexOf(a) - NODE_PATH_TAG_ORDER.indexOf(b));
+  if (!paths.length) return null;
+  const sourceRaw = String(entry.source || "").trim().toLowerCase();
+  const source = sourceRaw === "color_auto" ? "color_auto" : "manual";
+  const sequenceKey = normalizeSequenceKey(entry.sequence_key || entry.sequenceKey);
+  const out = { paths, source };
+  if (sequenceKey) out.sequence_key = sequenceKey;
+  return out;
+}
+
+function normalizeNodePathMetaMap(rawMap) {
+  const src = ensureObject(rawMap);
+  const out = {};
+  Object.keys(src).forEach((rawNodeId) => {
+    const nodeId = String(rawNodeId || "").trim();
+    if (!nodeId) return;
+    const entry = normalizeNodePathEntry(src[rawNodeId]);
+    if (!entry) return;
+    out[nodeId] = entry;
+  });
+  return out;
+}
+
+function readLocalBpmnMeta(sessionId) {
+  if (typeof window === "undefined") return { version: 1, flow_meta: {}, node_path_meta: {}, robot_meta_by_element_id: {} };
+  const key = bpmnMetaLocalStorageKey(sessionId);
+  if (!key) return { version: 1, flow_meta: {}, node_path_meta: {}, robot_meta_by_element_id: {} };
+  try {
+    const raw = String(window.localStorage?.getItem(key) || "").trim();
+    if (!raw) return { version: 1, flow_meta: {}, node_path_meta: {}, robot_meta_by_element_id: {} };
+    const parsed = JSON.parse(raw);
+    const obj = ensureObject(parsed);
+    const flowMeta = normalizeFlowMetaMap(obj.flow_meta);
+    const nodePathMeta = normalizeNodePathMetaMap(obj.node_path_meta);
+    const robotMetaByElementId = normalizeRobotMetaMap(obj.robot_meta_by_element_id);
+    return {
+      version: Number(obj.version) > 0 ? Number(obj.version) : 1,
+      flow_meta: flowMeta,
+      node_path_meta: nodePathMeta,
+      robot_meta_by_element_id: robotMetaByElementId,
+    };
+  } catch {
+    return { version: 1, flow_meta: {}, node_path_meta: {}, robot_meta_by_element_id: {} };
+  }
+}
+
+function writeLocalBpmnMeta(sessionId, meta) {
+  if (typeof window === "undefined") return;
+  const key = bpmnMetaLocalStorageKey(sessionId);
+  if (!key) return;
+  try {
+    const obj = ensureObject(meta);
+    const flowMeta = normalizeFlowMetaMap(obj.flow_meta);
+    const nodePathMeta = normalizeNodePathMetaMap(obj.node_path_meta);
+    const robotMetaByElementId = normalizeRobotMetaMap(obj.robot_meta_by_element_id);
+    const payload = {
+      version: Number(obj.version) > 0 ? Number(obj.version) : 1,
+      flow_meta: flowMeta,
+      node_path_meta: nodePathMeta,
+      robot_meta_by_element_id: robotMetaByElementId,
+    };
+    window.localStorage?.setItem(key, JSON.stringify(payload));
+  } catch {
+  }
+}
+
+function isHardReloadNavigation() {
   if (typeof window === "undefined") return false;
   try {
-    return String(window.localStorage?.getItem(LEFT_PANEL_HIDDEN_KEY) || "").trim() === "1";
+    const nav = window.performance?.getEntriesByType?.("navigation")?.[0];
+    const navType = String(nav?.type || "").toLowerCase();
+    return navType === "reload";
   } catch {
     return false;
   }
+}
+
+function readLeftPanelHidden() {
+  if (typeof window === "undefined") return true;
+  // Hard reload always starts with closed sidebar.
+  if (isHardReloadNavigation()) return true;
+  try {
+    const openRaw = String(window.sessionStorage?.getItem(LEFT_PANEL_OPEN_KEY) || "").trim();
+    if (openRaw === "0") return true;
+    if (openRaw === "1") return false;
+    return true;
+  } catch {
+    return true;
+  }
+}
+
+function readLeftPanelCompact() {
+  return false;
 }
 
 function ensureDraftShape(sessionId) {
@@ -166,6 +550,7 @@ function ensureDraftShape(sessionId) {
     edges: [],
     notes: [],
     notes_by_element: {},
+    bpmn_meta: { version: 1, flow_meta: {}, node_path_meta: {}, robot_meta_by_element_id: {} },
     interview: {},
     questions: [],
   };
@@ -173,6 +558,39 @@ function ensureDraftShape(sessionId) {
 
 function sessionToDraft(sid, session) {
   const next = session || ensureDraftShape(sid);
+  const xmlRobotMeta = normalizeRobotMetaMap(extractRobotMetaMapFromBpmnXml(next?.bpmn_xml || ""));
+  const rawBpmnMeta = {
+    version: Number(ensureObject(next.bpmn_meta).version) > 0 ? Number(ensureObject(next.bpmn_meta).version) : 1,
+    flow_meta: {
+      ...normalizeFlowMetaMap(ensureObject(ensureObject(next.bpmn_meta).flow_meta)),
+      ...normalizeFlowMetaMap(ensureObject(readLocalBpmnMeta(sid).flow_meta)),
+    },
+    node_path_meta: {
+      ...normalizeNodePathMetaMap(ensureObject(ensureObject(next.bpmn_meta).node_path_meta)),
+      ...normalizeNodePathMetaMap(ensureObject(readLocalBpmnMeta(sid).node_path_meta)),
+    },
+    robot_meta_by_element_id: {
+      ...normalizeRobotMetaMap(ensureObject(ensureObject(next.bpmn_meta).robot_meta_by_element_id)),
+      ...normalizeRobotMetaMap(ensureObject(readLocalBpmnMeta(sid).robot_meta_by_element_id)),
+    },
+  };
+  const normalizedFlowMeta = normalizeFlowMetaMap(rawBpmnMeta.flow_meta);
+  const normalizedNodePathMeta = normalizeNodePathMetaMap(rawBpmnMeta.node_path_meta);
+  const normalizedRobotMeta = normalizeRobotMetaMap(rawBpmnMeta.robot_meta_by_element_id);
+  const hasSessionRobotMeta = Object.keys(normalizeRobotMetaMap(ensureObject(ensureObject(next.bpmn_meta).robot_meta_by_element_id))).length > 0;
+  const hasXmlRobotMeta = Object.keys(xmlRobotMeta).length > 0;
+  let effectiveRobotMeta = normalizedRobotMeta;
+  if (!Object.keys(effectiveRobotMeta).length && hasXmlRobotMeta) {
+    effectiveRobotMeta = xmlRobotMeta;
+  }
+  if (hasSessionRobotMeta && hasXmlRobotMeta) {
+    const sessionRobotCanonical = canonicalRobotMetaMapString(ensureObject(ensureObject(next.bpmn_meta).robot_meta_by_element_id));
+    const xmlRobotCanonical = canonicalRobotMetaMapString(xmlRobotMeta);
+    if (sessionRobotCanonical !== xmlRobotCanonical && typeof window !== "undefined") {
+      // eslint-disable-next-line no-console
+      console.warn("[ROBOT_META] BPMN robotMeta differs; session meta wins", { sessionId: String(sid || "") });
+    }
+  }
   return {
     ...ensureDraftShape(sid),
     ...next,
@@ -181,8 +599,14 @@ function sessionToDraft(sid, session) {
     actors_derived: ensureArray(next.actors_derived),
     nodes: ensureArray(next.nodes),
     edges: ensureArray(next.edges),
-    notes: ensureArray(next.notes),
+    notes: normalizeGlobalNotes(next.notes),
     notes_by_element: normalizeElementNotesMap(next.notes_by_element || next.notesByElementId),
+    bpmn_meta: {
+      version: Number(rawBpmnMeta.version) > 0 ? Number(rawBpmnMeta.version) : 1,
+      flow_meta: normalizedFlowMeta,
+      node_path_meta: normalizedNodePathMeta,
+      robot_meta_by_element_id: effectiveRobotMeta,
+    },
     interview: ensureObject(next.interview),
     questions: ensureArray(next.questions),
   };
@@ -437,6 +861,31 @@ function mergeSessionDraft(prevDraft, sid, session, source = "session_sync") {
     }
   }
 
+  const prevNotes = normalizeGlobalNotes(prev?.notes);
+  const incomingHasNotes = hasOwn(incoming, "notes");
+  const incomingNotes = normalizeGlobalNotes(incoming?.notes);
+  if (incomingHasNotes && incomingNotes.length === 0 && prevNotes.length > 0) {
+    next = {
+      ...next,
+      notes: prevNotes,
+    };
+    logDraftTrace("MERGE_SKIP_EMPTY_NOTES", {
+      sid: sid || "-",
+      source,
+      prevCount: prevNotes.length,
+    });
+  } else if (incomingHasNotes && prevNotes.length > 0) {
+    next = {
+      ...next,
+      notes: mergeGlobalNotesLists(prevNotes, incomingNotes),
+    };
+  } else {
+    next = {
+      ...next,
+      notes: normalizeGlobalNotes(next?.notes),
+    };
+  }
+
   const prevInterview = ensureObject(prev?.interview);
   const nextInterview = ensureObject(next?.interview);
   const prevAiQuestionsByElement = normalizeAiQuestionsByElementForMerge(
@@ -498,10 +947,22 @@ export default function App() {
   const [reloadKey, setReloadKey] = useState(0);
   const openSessionReqSeqRef = useRef(0);
   const activeSessionIdRef = useRef("");
+  const suppressProjectAutoselectRef = useRef(false);
+  const initialSelectionRef = useRef(readSelectionFromUrl());
+  const requestedSessionIdRef = useRef(String(initialSelectionRef.current?.sessionId || "").trim());
   const [snapshotRestoreNotice, setSnapshotRestoreNotice] = useState(null);
+  const [sessionNavNotice, setSessionNavNotice] = useState(null);
+  const [renameDialog, setRenameDialog] = useState({ open: false, scope: "", value: "", error: "", busy: false });
+  const [deleteDialog, setDeleteDialog] = useState({ open: false, scope: "", error: "", busy: false });
 
   const [leftHidden, setLeftHidden] = useState(() => readLeftPanelHidden());
+  const [leftCompact, setLeftCompact] = useState(() => readLeftPanelCompact());
+  const [stepTimeUnit, setStepTimeUnit] = useState(() => readStepTimeUnit());
+  const [sidebarActiveSection, setSidebarActiveSection] = useState("selected");
+  const [sidebarShortcutRequest, setSidebarShortcutRequest] = useState("");
   const [selectedBpmnElement, setSelectedBpmnElement] = useState(null);
+  const [processUiState, setProcessUiState] = useState(null);
+  const [aiGenerateIntent, setAiGenerateIntent] = useState(null);
   const [elementNotesFocusKey, setElementNotesFocusKey] = useState(0);
   const [llmHasApiKey, setLlmHasApiKey] = useState(false);
   const [llmBaseUrl, setLlmBaseUrl] = useState("https://api.deepseek.com");
@@ -522,21 +983,122 @@ export default function App() {
     setBackendHint(String(err || "API error"));
   }
 
+  function logNav(reason, payload = {}) {
+    if (typeof window === "undefined") return;
+    const isDev = Boolean(import.meta?.env?.DEV) || window.__FPC_DEBUG_NAV__;
+    if (!isDev) return;
+    const sid = String(payload?.sessionId ?? draft?.session_id ?? "").trim() || "-";
+    const pid = String(payload?.projectId ?? projectId ?? "").trim() || "-";
+    const route = `${window.location.pathname || ""}${window.location.search || ""}${window.location.hash || ""}`;
+    const extra = Object.entries(payload || {})
+      .filter(([k]) => k !== "sessionId" && k !== "projectId")
+      .map(([k, v]) => `${k}=${String(v)}`)
+      .join(" ");
+    // eslint-disable-next-line no-console
+    console.debug(`[NAV] session=${sid} project=${pid} route=${route} reason=${String(reason || "-")}${extra ? ` ${extra}` : ""}`);
+  }
+
+  const handleStepTimeUnitChange = useCallback((nextUnitRaw) => {
+    const nextUnit = normalizeStepTimeUnit(nextUnitRaw);
+    setStepTimeUnit((prev) => {
+      if (prev === nextUnit) return prev;
+      writeStepTimeUnit(nextUnit);
+      return nextUnit;
+    });
+  }, []);
+
   function handleToggleLeft(source = "button") {
+    const rawSource = String(source || "button");
+    const shortcutPrefix = "global_handle:";
+    const shortcutId = rawSource.startsWith(shortcutPrefix)
+      ? String(rawSource.slice(shortcutPrefix.length) || "").trim()
+      : "";
     setLeftHidden((prev) => {
       const next = !prev;
       let persisted = 0;
       try {
-        window.localStorage?.setItem(LEFT_PANEL_HIDDEN_KEY, next ? "1" : "0");
+        window.sessionStorage?.setItem(LEFT_PANEL_OPEN_KEY, next ? "0" : "1");
         persisted = 1;
       } catch {
         persisted = 0;
       }
+      if (prev && !next) {
+        setLeftCompact(false);
+        try {
+          window.localStorage?.setItem(LEFT_PANEL_COMPACT_KEY, "0");
+        } catch {
+        }
+      }
+      if (prev && !next && shortcutId && shortcutId !== "open") {
+        setSidebarShortcutRequest(shortcutId);
+        setSidebarActiveSection(shortcutId);
+      }
       // eslint-disable-next-line no-console
-      console.debug(`[UI] sidebar.toggle next=${next ? 1 : 0} source=${String(source || "button")} persisted=${persisted}`);
+      console.debug(`[UI] sidebar.toggle next=${next ? 1 : 0} source=${rawSource} persisted=${persisted}`);
       return next;
     });
   }
+
+  function handleSidebarCompact(nextValue, source = "sidebar") {
+    const next = typeof nextValue === "boolean" ? nextValue : !leftCompact;
+    setLeftCompact(next);
+    try {
+      window.localStorage?.setItem(LEFT_PANEL_COMPACT_KEY, next ? "1" : "0");
+    } catch {
+    }
+    // eslint-disable-next-line no-console
+    console.debug(`[UI] sidebar.compact next=${next ? 1 : 0} source=${String(source || "sidebar")}`);
+  }
+
+  const sidebarHandleSections = useMemo(() => {
+    const selectedElementId = String(selectedBpmnElement?.id || "").trim();
+    const notesMap = normalizeElementNotesMap(draft?.notes_by_element || draft?.notesByElementId);
+    const aiMapRaw = draft?.interview?.ai_questions_by_element || draft?.interview?.aiQuestionsByElementId || {};
+    const selectedAiRaw = aiMapRaw && typeof aiMapRaw === "object" ? aiMapRaw[selectedElementId] : null;
+    const selectedAiCount = Array.isArray(selectedAiRaw)
+      ? selectedAiRaw.length
+      : (Array.isArray(selectedAiRaw?.items) ? selectedAiRaw.items.length : 0);
+    const actorsCount = Array.isArray(draft?.actors_derived) && draft.actors_derived.length
+      ? draft.actors_derived.length
+      : (Array.isArray(draft?.roles) ? draft.roles.length : 0);
+    const hasSummary = !!String(notesMap?.[selectedElementId]?.summary || notesMap?.[selectedElementId]?.meta?.summary || "").trim();
+    return [
+      {
+        id: "selected",
+        title: selectedElementId ? "Выбранный узел" : "Узел не выбран",
+        count: selectedElementId ? 1 : 0,
+        active: sidebarActiveSection === "selected",
+        muted: !selectedElementId,
+      },
+      {
+        id: "ai",
+        title: "AI-вопросы",
+        count: selectedAiCount,
+        active: sidebarActiveSection === "ai",
+      },
+      {
+        id: "actors",
+        title: "Акторы",
+        count: actorsCount,
+        active: sidebarActiveSection === "actors",
+      },
+      {
+        id: "templates",
+        title: "Шаблоны / TL;DR",
+        count: hasSummary ? 1 : 0,
+        active: sidebarActiveSection === "templates",
+      },
+    ];
+  }, [
+    selectedBpmnElement?.id,
+    draft?.notes_by_element,
+    draft?.notesByElementId,
+    draft?.interview?.ai_questions_by_element,
+    draft?.interview?.aiQuestionsByElementId,
+    draft?.actors_derived,
+    draft?.roles,
+    sidebarActiveSection,
+  ]);
 
   useEffect(() => {
     activeSessionIdRef.current = String(draft?.session_id || "").trim();
@@ -550,6 +1112,10 @@ export default function App() {
 
   useEffect(() => {
     setSelectedBpmnElement(null);
+    setProcessUiState(null);
+    setAiGenerateIntent(null);
+    setSidebarActiveSection("selected");
+    setSidebarShortcutRequest("");
   }, [draft?.session_id]);
 
   async function refreshMeta() {
@@ -569,8 +1135,25 @@ export default function App() {
     if (!r.ok) return markFail(r.error);
     const list = ensureArray(r.projects || r.items);
     setProjects(list);
-    if (!projectId && list.length) {
-      setProjectId(projectIdOf(list[0]));
+    const preferredFromUrl = String(initialSelectionRef.current?.projectId || "").trim();
+    const suppressAutoselect = !!suppressProjectAutoselectRef.current;
+    if (suppressAutoselect) {
+      suppressProjectAutoselectRef.current = false;
+    }
+    const current = String(projectId || "").trim();
+    if (current) return;
+    if (!list.length) return;
+    const preferred = preferredFromUrl && list.some((p) => projectIdOf(p) === preferredFromUrl)
+      ? preferredFromUrl
+      : "";
+    if (!preferred && suppressAutoselect) {
+      logNav("project_autoselect_suppressed", {});
+      return;
+    }
+    const nextProjectId = preferred || projectIdOf(list[0]);
+    if (nextProjectId) {
+      setProjectId(nextProjectId);
+      logNav("project_autoselect", { projectId: nextProjectId, fromUrl: preferredFromUrl ? 1 : 0 });
     }
   }
 
@@ -710,10 +1293,11 @@ export default function App() {
       setSessions([]);
       return;
     }
+    logNav("sessions_refresh_start", { projectId: p });
     const r = await apiListProjectSessions(p);
     if (!r.ok) {
       markFail(r.error);
-      setSessions([]);
+      logNav("sessions_refresh_error", { projectId: p, status: Number(r?.status || 0), error: String(r?.error || "api_error") });
       return;
     }
     markOk("API OK");
@@ -724,15 +1308,35 @@ export default function App() {
     if (currentSid && !isLocalSessionId(currentSid)) {
       const stillExists = nextSessions.some((s) => sessionIdOf(s) === currentSid);
       if (!stillExists) {
-        resetDraft(ensureDraftShape(null));
+        setSessionNavNotice({
+          code: "MISSING_IN_LIST",
+          status: 404,
+          projectId: p,
+          sessionId: currentSid,
+          message: `Сессия ${currentSid} не найдена в текущем проекте.`,
+        });
+        logNav("session_missing_in_list", { projectId: p, sessionId: currentSid });
+      } else if (String(sessionNavNotice?.sessionId || "") === currentSid) {
+        setSessionNavNotice(null);
       }
+    }
+
+    const requestedSid = String(requestedSessionIdRef.current || "").trim();
+    if (!requestedSid || isLocalSessionId(requestedSid)) return;
+    if (requestedSid === currentSid) return;
+    const existsRequested = nextSessions.some((s) => sessionIdOf(s) === requestedSid);
+    if (existsRequested) {
+      void openSession(requestedSid, { source: "url_restore" });
     }
   }
 
-  async function openSession(sessionId) {
+  async function openSession(sessionId, options = {}) {
     const reqSeq = openSessionReqSeqRef.current + 1;
     openSessionReqSeqRef.current = reqSeq;
     const sid = String(sessionId || "");
+    const source = String(options?.source || "manual_select");
+    requestedSessionIdRef.current = sid;
+    logNav("open_session_start", { sessionId: sid || "-", source });
     logCreateTrace("OPEN_SESSION", {
       phase: "start",
       sid: sid || "-",
@@ -740,7 +1344,9 @@ export default function App() {
       reqSeq,
     });
     if (!sid) {
+      setSessionNavNotice(null);
       resetDraft(ensureDraftShape(null));
+      logNav("open_session_empty", { source });
       logCreateTrace("OPEN_SESSION", {
         phase: "done",
         sid: "-",
@@ -753,7 +1359,9 @@ export default function App() {
     }
 
     if (isLocalSessionId(sid)) {
+      setSessionNavNotice(null);
       resetDraft(ensureDraftShape(sid));
+      logNav("open_session_local", { sessionId: sid, source });
       logCreateTrace("OPEN_SESSION", {
         phase: "done",
         sid,
@@ -768,6 +1376,7 @@ export default function App() {
     const r = await apiGetSession(sid);
     if (reqSeq !== openSessionReqSeqRef.current) return;
     if (!r.ok) {
+      const status = Number(r?.status || 0);
       logCreateTrace("OPEN_SESSION", {
         phase: "done",
         sid,
@@ -776,7 +1385,17 @@ export default function App() {
         error: String(r.error || "api_get_session_failed"),
       });
       markFail(r.error);
-      resetDraft(ensureDraftShape(null));
+      const isUnavailable = status === 401 || status === 403 || status === 404;
+      if (isUnavailable) {
+        setSessionNavNotice({
+          code: `HTTP_${status || "ERR"}`,
+          status,
+          projectId: String(projectId || ""),
+          sessionId: sid,
+          message: `Сессия недоступна: ${String(r.error || "request failed")}`,
+        });
+      }
+      logNav("open_session_error", { sessionId: sid, source, status, error: String(r?.error || "api_error") });
       return;
     }
 
@@ -828,6 +1447,7 @@ export default function App() {
       stack: shortStack(),
     });
     setDraftPersisted(sessionToDraft(sid, next));
+    setSessionNavNotice(null);
     if (restoredFromSnapshot && restoredSnapshot) {
       const ts = Number(restoredSnapshot?.ts || Date.now()) || Date.now();
       setSnapshotRestoreNotice({ sid, ts, nonce: Date.now() });
@@ -852,6 +1472,7 @@ export default function App() {
       bpmnHash: fnv1aHex(xml),
       ok: 1,
     });
+    logNav("open_session_done", { sessionId: sid, projectId: sidProject || projectId, source });
     markOk("API OK");
   }
 
@@ -1025,14 +1646,18 @@ export default function App() {
     const sid = String(draft?.session_id || "");
     if (!sid || isLocalSessionId(sid)) {
       setDraft((d) => ({ ...d, ...partial }));
-      return;
+      return { ok: true, local: true };
     }
 
     const r = await apiPatchSession(sid, partial);
-    if (!r.ok) return markFail(r.error);
+    if (!r.ok) {
+      markFail(r.error);
+      return { ok: false, error: String(r.error || "patch_failed") };
+    }
 
     setDraftPersisted((d) => ({ ...d, ...partial }));
     markOk("API OK");
+    return { ok: true };
   }
 
   async function saveActors({ roles, start_role }) {
@@ -1040,6 +1665,11 @@ export default function App() {
     const start = String(start_role || "").trim();
 
     await patchDraft({ roles: cleanRoles, start_role: start });
+  }
+
+  async function setStartRole(startRoleId) {
+    const start = String(startRoleId || "").trim();
+    return patchDraft({ start_role: start });
   }
 
   async function addNote(text) {
@@ -1063,24 +1693,53 @@ export default function App() {
       mode: "live",
       run: () => apiPostNote(sid, { notes: t }),
     });
-    if (!noteExec.ok) return markFail(noteExec?.error?.message || "Не удалось обработать заметку.");
+    if (!noteExec.ok) {
+      const error = String(noteExec?.error?.message || "Не удалось обработать заметку.");
+      markFail(error);
+      return { ok: false, error };
+    }
     if (noteExec.cached) {
-      return markFail("AI недоступен: показан cached ответ. Повторите отправку заметки.");
+      const error = "AI недоступен: показан cached ответ. Повторите отправку заметки.";
+      markFail(error);
+      return { ok: false, error };
     }
     const r = noteExec.result;
-    if (!r?.ok) return markFail(r?.error);
+    if (!r?.ok) {
+      const error = String(r?.error || "Не удалось сохранить заметку.");
+      markFail(error);
+      return { ok: false, error };
+    }
 
     const sessionFromResp = r.session || r.result || {};
-    setDraftPersisted((d) => ({ ...d, notes: ensureArray(sessionFromResp.notes || d.notes) }));
+    setDraftPersisted((d) => {
+      const pendingItem = {
+        text: t,
+        ts: Date.now(),
+        author: "you",
+      };
+      const optimistic = mergeGlobalNotesLists(d?.notes, [pendingItem]);
+      const merged = mergeGlobalNotesLists(optimistic, sessionFromResp.notes);
+      return { ...d, notes: merged };
+    });
     markOk("API OK");
+    return { ok: true };
   }
 
   function focusElementNotes(element, source = "diagram_click", options = {}) {
+    const selectedIds = ensureArray(element?.selectedIds)
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
     const next = element && typeof element === "object"
       ? {
           id: String(element.id || "").trim(),
           name: String(element.name || element.id || "").trim(),
           type: String(element.type || "").trim(),
+          laneName: String(element.laneName || element.lane || element.actorRole || "").trim(),
+          selectedIds,
+          selectedCount: Number(element.selectedCount || selectedIds.length || 1),
+          insertBetween: element?.insertBetween && typeof element.insertBetween === "object"
+            ? { ...element.insertBetween }
+            : null,
         }
       : null;
     if (!next?.id) {
@@ -1088,16 +1747,25 @@ export default function App() {
       return;
     }
     setSelectedBpmnElement(next);
-    const shouldOpenSidebar = options?.openSidebar === true || source === "header_open_notes";
+    const shouldOpenSidebar = (
+      options?.openSidebar === true
+      || source === "header_open_notes"
+      || source === "header_open_ai"
+    );
     if (shouldOpenSidebar) {
       setLeftHidden((prev) => {
         if (!prev) return false;
         try {
-          window.localStorage?.setItem(LEFT_PANEL_HIDDEN_KEY, "0");
+          window.sessionStorage?.setItem(LEFT_PANEL_OPEN_KEY, "1");
         } catch {
         }
         return false;
       });
+    }
+    if (source === "header_open_ai") {
+      setSidebarActiveSection("ai");
+    } else {
+      setSidebarActiveSection("selected");
     }
     setElementNotesFocusKey((x) => x + 1);
     if (shouldLogDraftTrace()) {
@@ -1107,11 +1775,20 @@ export default function App() {
   }
 
   function handleBpmnElementSelect(element) {
+    const selectedIds = ensureArray(element?.selectedIds)
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
     const next = element && typeof element === "object"
       ? {
           id: String(element.id || "").trim(),
           name: String(element.name || element.id || "").trim(),
           type: String(element.type || "").trim(),
+          laneName: String(element.laneName || element.lane || element.actorRole || "").trim(),
+          selectedIds,
+          selectedCount: Number(element.selectedCount || selectedIds.length || 1),
+          insertBetween: element?.insertBetween && typeof element.insertBetween === "object"
+            ? { ...element.insertBetween }
+            : null,
         }
       : null;
     if (!next?.id) {
@@ -1119,6 +1796,45 @@ export default function App() {
       return;
     }
     focusElementNotes(next, "diagram_select", { openSidebar: false });
+  }
+
+  const handleProcessUiStateChange = useCallback((nextState) => {
+    const next = nextState && typeof nextState === "object" ? nextState : null;
+    if (!next) return;
+    setProcessUiState((prev) => {
+      if (
+        prev
+        && prev.sid === next.sid
+        && prev.tab === next.tab
+        && prev.diagramMode === next.diagramMode
+        && prev.selectedElementId === next.selectedElementId
+        && prev.hasSession === next.hasSession
+        && prev.isLocal === next.isLocal
+        && prev.aiQuestionsBusy === next.aiQuestionsBusy
+        && prev.canGenerateAiQuestions === next.canGenerateAiQuestions
+        && prev.aiGenerateBlockReason === next.aiGenerateBlockReason
+        && prev.aiGenerateBlockReasonCode === next.aiGenerateBlockReasonCode
+      ) {
+        return prev;
+      }
+      return next;
+    });
+  }, []);
+
+  const requestGenerateAiQuestionsFromSidebar = useCallback(() => {
+    const sid = String(draft?.session_id || "").trim();
+    if (!sid) return;
+    setAiGenerateIntent({
+      sid,
+      nonce: Date.now(),
+      source: "notes_panel",
+    });
+  }, [draft?.session_id]);
+
+  function emitDiagramFlash(detail = {}) {
+    if (typeof window === "undefined") return;
+    const payload = detail && typeof detail === "object" ? detail : {};
+    window.dispatchEvent(new CustomEvent("fpc:diagram_flash", { detail: payload }));
   }
 
   async function addElementNote(elementId, text) {
@@ -1133,6 +1849,13 @@ export default function App() {
     if (!sid || isLocalSessionId(sid)) {
       setDraftPersisted((d) => ({ ...d, notes_by_element: nextMap }));
       markOk("Локальная заметка сохранена.");
+      emitDiagramFlash({
+        sid,
+        elementId: eid,
+        type: "notes",
+        badgeKind: "notes",
+        label: "Note added",
+      });
       return { ok: true };
     }
 
@@ -1144,7 +1867,653 @@ export default function App() {
     const serverMap = normalizeElementNotesMap(r.session?.notes_by_element || nextMap);
     setDraftPersisted((d) => ({ ...d, notes_by_element: serverMap }));
     markOk("API OK");
+    emitDiagramFlash({
+      sid,
+      elementId: eid,
+      type: "notes",
+      badgeKind: "notes",
+      label: "Note added",
+    });
     return { ok: true };
+  }
+
+  async function setElementNoteSummary(elementId, summaryText, options = {}) {
+    const sid = String(draft?.session_id || "");
+    const eid = String(elementId || "").trim();
+    if (!eid) return { ok: false, error: "Элемент не выбран." };
+    const summary = String(summaryText || "").trim();
+
+    const current = normalizeElementNotesMap(draft?.notes_by_element || draft?.notesByElementId);
+    const nextMap = withElementNoteSummary(current, eid, summary, {
+      templateKey: String(options?.templateKey || "").trim(),
+    });
+
+    if (!sid || isLocalSessionId(sid)) {
+      setDraftPersisted((d) => ({ ...d, notes_by_element: nextMap }));
+      markOk("Локальный TL;DR сохранён.");
+      emitDiagramFlash({
+        sid,
+        elementId: eid,
+        type: "notes",
+        badgeKind: "notes",
+        label: "Updated",
+      });
+      return { ok: true };
+    }
+
+    const r = await apiPatchSession(sid, { notes_by_element: nextMap });
+    if (!r.ok) {
+      markFail(r.error);
+      return { ok: false, error: String(r.error || "Не удалось сохранить TL;DR.") };
+    }
+    const serverMap = normalizeElementNotesMap(r.session?.notes_by_element || nextMap);
+    setDraftPersisted((d) => ({ ...d, notes_by_element: serverMap }));
+    markOk("API OK");
+    emitDiagramFlash({
+      sid,
+      elementId: eid,
+      type: "notes",
+      badgeKind: "notes",
+      label: "Updated",
+    });
+    return { ok: true };
+  }
+
+  async function setElementStepTime(elementId, stepTimeMinutes, options = {}) {
+    const sid = String(draft?.session_id || "");
+    const eid = String(elementId || "").trim();
+    if (!eid) return { ok: false, error: "Элемент не выбран." };
+
+    const requestedUnit = normalizeStepTimeUnit(options?.unit || "min");
+    if (stepTimeMinutes !== null && stepTimeMinutes !== undefined && String(stepTimeMinutes).trim() !== "") {
+      const num = Number(stepTimeMinutes);
+      if (!Number.isFinite(num) || num < 0 || !Number.isInteger(num)) {
+        return {
+          ok: false,
+          error: `Время шага должно быть целым числом ${requestedUnit === "sec" ? "секунд" : "минут"} (0 или больше).`,
+        };
+      }
+    }
+    if (options?.stepTimeSeconds !== null && options?.stepTimeSeconds !== undefined && String(options.stepTimeSeconds).trim() !== "") {
+      const secondsRaw = Number(options.stepTimeSeconds);
+      if (!Number.isFinite(secondsRaw) || secondsRaw < 0 || !Number.isInteger(secondsRaw)) {
+        return { ok: false, error: "Время шага в секундах должно быть целым числом (0 или больше)." };
+      }
+    }
+    const nextStepTime = normalizeStepTimeMinutes(stepTimeMinutes);
+    const nextStepTimeSec = nextStepTime === null
+      ? null
+      : normalizeStepTimeSeconds(
+        options?.stepTimeSeconds !== undefined
+          ? options.stepTimeSeconds
+          : nextStepTime * 60,
+      );
+
+    const baseNodes = ensureArray(draft?.nodes).map((node) => ({
+      ...ensureObject(node),
+      parameters: { ...ensureObject(node?.parameters) },
+    }));
+    let nodeFound = false;
+    let nodesChanged = false;
+    const nextNodes = baseNodes.map((node) => {
+      if (String(node?.id || "").trim() !== eid) return node;
+      nodeFound = true;
+      const nextNode = {
+        ...node,
+        parameters: { ...ensureObject(node?.parameters) },
+      };
+      const prevStepTime = readNodeStepTimeMinutes(node);
+      const prevStepTimeSec = readNodeStepTimeSeconds(node);
+      if (prevStepTime === nextStepTime && prevStepTimeSec === nextStepTimeSec) return nextNode;
+      nodesChanged = true;
+      if (nextStepTime === null) {
+        delete nextNode.step_time_min;
+        delete nextNode.stepTimeMin;
+        nextNode.duration_min = null;
+        delete nextNode.durationMin;
+        delete nextNode.step_time_sec;
+        delete nextNode.stepTimeSec;
+        nextNode.duration_sec = null;
+        delete nextNode.durationSec;
+        delete nextNode.parameters.step_time_min;
+        delete nextNode.parameters.stepTimeMin;
+        delete nextNode.parameters.duration_min;
+        delete nextNode.parameters.durationMin;
+        delete nextNode.parameters.step_time_sec;
+        delete nextNode.parameters.stepTimeSec;
+        delete nextNode.parameters.duration_sec;
+        delete nextNode.parameters.durationSec;
+        delete nextNode.parameters.duration;
+      } else {
+        nextNode.step_time_min = nextStepTime;
+        nextNode.duration_min = nextStepTime;
+        nextNode.step_time_sec = nextStepTimeSec;
+        nextNode.duration_sec = nextStepTimeSec;
+        nextNode.parameters.step_time_min = nextStepTime;
+        nextNode.parameters.duration_min = nextStepTime;
+        nextNode.parameters.step_time_sec = nextStepTimeSec;
+        nextNode.parameters.duration_sec = nextStepTimeSec;
+        nextNode.parameters.duration = nextStepTime;
+      }
+      return nextNode;
+    });
+    if (!nodeFound) return { ok: false, error: "Выбранный элемент не найден в списке BPMN-узлов." };
+
+    const baseInterview = ensureObject(draft?.interview);
+    const baseSteps = ensureArray(baseInterview.steps).map((step) => ({ ...ensureObject(step) }));
+    let stepsChanged = false;
+    const nextSteps = baseSteps.map((step) => {
+      const stepNodeId = String(step?.node_bind_id || step?.node_id || step?.nodeId || "").trim();
+      if (stepNodeId !== eid) return step;
+      const nextStep = { ...step };
+      const nextDurationValue = nextStepTime === null ? "" : String(nextStepTime);
+      const nextDurationSecValue = nextStepTimeSec === null ? "" : String(nextStepTimeSec);
+      if (String(nextStep.duration_min ?? "").trim() !== nextDurationValue) {
+        nextStep.duration_min = nextDurationValue;
+        stepsChanged = true;
+      }
+      if (String(nextStep.duration_sec ?? "").trim() !== nextDurationSecValue) {
+        nextStep.duration_sec = nextDurationSecValue;
+        stepsChanged = true;
+      }
+      if (nextStepTime === null) {
+        if (Object.prototype.hasOwnProperty.call(nextStep, "step_time_min")) {
+          delete nextStep.step_time_min;
+          stepsChanged = true;
+        }
+        if (Object.prototype.hasOwnProperty.call(nextStep, "step_time_sec")) {
+          delete nextStep.step_time_sec;
+          stepsChanged = true;
+        }
+      } else {
+        if (Number(nextStep.step_time_min) !== nextStepTime) {
+          nextStep.step_time_min = nextStepTime;
+          stepsChanged = true;
+        }
+        if (Number(nextStep.step_time_sec) !== nextStepTimeSec) {
+          nextStep.step_time_sec = nextStepTimeSec;
+          stepsChanged = true;
+        }
+      }
+      return nextStep;
+    });
+    const nextInterview = stepsChanged ? { ...baseInterview, steps: nextSteps } : baseInterview;
+
+    if (!nodesChanged && !stepsChanged) return { ok: true, skipped: true };
+
+    setDraftPersisted((prev) => ({
+      ...prev,
+      nodes: nextNodes,
+      ...(stepsChanged ? { interview: nextInterview } : {}),
+    }));
+    emitDiagramFlash({
+      sid,
+      elementId: eid,
+      type: "sync",
+      label: "Время шага обновлено",
+    });
+
+    if (!sid || isLocalSessionId(sid)) {
+      markOk("Локальное время шага сохранено.");
+      return { ok: true };
+    }
+
+    const payload = {
+      nodes: nextNodes,
+      ...(stepsChanged ? { interview: nextInterview } : {}),
+    };
+    const r = await apiPatchSession(sid, payload);
+    if (!r.ok) {
+      setDraftPersisted((prev) => ({
+        ...prev,
+        nodes: baseNodes,
+        ...(stepsChanged ? { interview: baseInterview } : {}),
+      }));
+      markFail(r.error);
+      return { ok: false, error: String(r.error || "Не удалось сохранить время шага.") };
+    }
+
+    if (r.session && typeof r.session === "object") {
+      onSessionSync({
+        ...r.session,
+        _sync_source: "notespanel_step_time_update",
+      });
+    } else {
+      setDraftPersisted((prev) => ({
+        ...prev,
+        nodes: nextNodes,
+        ...(stepsChanged ? { interview: nextInterview } : {}),
+      }));
+    }
+    markOk("API OK");
+    return { ok: true };
+  }
+
+  async function setFlowHappyPath(flowIdRaw, tierRaw, options = {}) {
+    const sid = String(draft?.session_id || "");
+    const flowId = String(flowIdRaw || "").trim();
+    if (!flowId) return { ok: false, error: "Переход не выбран." };
+    const tier = normalizeFlowTier(tierRaw);
+    const xorConflictFlowIds = ensureArray(options?.xorConflictFlowIds)
+      .map((id) => String(id || "").trim())
+      .filter((id) => id && id !== flowId);
+    const xorTier = normalizeFlowTier(options?.xorTier || tier);
+
+    const currentMeta = ensureObject(draft?.bpmn_meta);
+    const currentFlowMeta = normalizeFlowMetaMap(currentMeta?.flow_meta);
+    const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta?.node_path_meta);
+    const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id);
+    const nextFlowMeta = { ...currentFlowMeta };
+    if (xorConflictFlowIds.length && (xorTier === "P0" || xorTier === "P1")) {
+      xorConflictFlowIds.forEach((conflictFlowId) => {
+        const prev = ensureObject(nextFlowMeta[conflictFlowId]);
+        const next = { ...prev };
+        delete next.tier;
+        if (next.rtier) nextFlowMeta[conflictFlowId] = next;
+        else delete nextFlowMeta[conflictFlowId];
+      });
+    }
+    if (tier) {
+      const prev = ensureObject(nextFlowMeta[flowId]);
+      nextFlowMeta[flowId] = { ...prev, tier };
+    } else {
+      const prev = ensureObject(nextFlowMeta[flowId]);
+      const next = { ...prev };
+      delete next.tier;
+      if (next.rtier) nextFlowMeta[flowId] = next;
+      else delete nextFlowMeta[flowId];
+    }
+    const optimisticMeta = {
+      version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: nextFlowMeta,
+      node_path_meta: currentNodePathMeta,
+      robot_meta_by_element_id: currentRobotMetaByElementId,
+    };
+
+    setDraftPersisted((prev) => ({
+      ...prev,
+      bpmn_meta: optimisticMeta,
+    }));
+    writeLocalBpmnMeta(sid, optimisticMeta);
+
+    if (!sid || isLocalSessionId(sid)) {
+      markOk("Локальный уровень пути обновлён.");
+      return {
+        ok: true,
+        normalizedConflicts: xorConflictFlowIds,
+      };
+    }
+
+    const updates = xorConflictFlowIds.length && (xorTier === "P0" || xorTier === "P1")
+      ? [
+          ...xorConflictFlowIds.map((conflictFlowId) => ({ flowId: conflictFlowId, tier: null })),
+          { flowId, tier: tier || null },
+        ]
+      : [];
+    const patchPayload = updates.length
+      ? { updates }
+      : { flowId, tier: tier || null };
+    const result = await apiPatchBpmnMeta(sid, patchPayload);
+    if (!result.ok) {
+      const isMissingMetaEndpoint = Number(result?.status || 0) === 404
+        || /not found/i.test(String(result?.error || ""));
+      if (isMissingMetaEndpoint) {
+        const compat = await apiPatchSession(sid, { bpmn_meta: optimisticMeta });
+        if (compat?.ok) {
+          if (compat.session && typeof compat.session === "object") {
+            onSessionSync({
+              ...compat.session,
+              _sync_source: "happy_path_session_patch_fallback",
+            });
+          } else {
+            setDraftPersisted((prev) => ({
+              ...prev,
+              bpmn_meta: optimisticMeta,
+            }));
+          }
+          writeLocalBpmnMeta(sid, optimisticMeta);
+          markOk("Уровень пути сохранён");
+          return { ok: true, via: "session_patch_fallback" };
+        }
+      }
+      setDraftPersisted((prev) => ({
+        ...prev,
+        bpmn_meta: {
+          version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
+          flow_meta: currentFlowMeta,
+          node_path_meta: currentNodePathMeta,
+          robot_meta_by_element_id: currentRobotMetaByElementId,
+        },
+      }));
+      writeLocalBpmnMeta(sid, {
+        version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
+        flow_meta: currentFlowMeta,
+        node_path_meta: currentNodePathMeta,
+        robot_meta_by_element_id: currentRobotMetaByElementId,
+      });
+      markFail(result.error);
+      return { ok: false, error: String(result.error || "Не удалось сохранить happy-path.") };
+    }
+
+    const serverMeta = ensureObject(result.meta);
+    const normalizedFlowMeta = normalizeFlowMetaMap(serverMeta?.flow_meta);
+    const normalizedNodePathMeta = normalizeNodePathMetaMap(serverMeta?.node_path_meta);
+    const normalizedRobotMetaByElementId = normalizeRobotMetaMap(serverMeta?.robot_meta_by_element_id);
+    const requestedTier = tier;
+    let normalizationNotice = "";
+    if (requestedTier && normalizedFlowMeta[flowId]?.tier !== requestedTier) {
+      const competingFlowIds = [flowId, ...xorConflictFlowIds];
+      const keptFlowId = Object.keys(normalizedFlowMeta).find((id) => (
+        competingFlowIds.includes(id) && normalizeFlowTier(normalizedFlowMeta[id]?.tier) === requestedTier
+      ));
+      normalizationNotice = keptFlowId
+        ? `Нормализация: ${requestedTier} оставлен на ${keptFlowId}.`
+        : `Нормализация: ${requestedTier} скорректирован по правилам XOR.`;
+    } else if (xorConflictFlowIds.length && requestedTier) {
+      normalizationNotice = `Нормализация: ${requestedTier} оставлен на ${flowId}, конфликтующие значения сняты.`;
+    }
+    setDraftPersisted((prev) => ({
+      ...prev,
+      bpmn_meta: {
+        version: Number(serverMeta?.version) > 0 ? Number(serverMeta.version) : 1,
+        flow_meta: normalizedFlowMeta,
+        node_path_meta: normalizedNodePathMeta,
+        robot_meta_by_element_id: normalizedRobotMetaByElementId,
+      },
+    }));
+    writeLocalBpmnMeta(sid, {
+      version: Number(serverMeta?.version) > 0 ? Number(serverMeta.version) : 1,
+      flow_meta: normalizedFlowMeta,
+      node_path_meta: normalizedNodePathMeta,
+      robot_meta_by_element_id: normalizedRobotMetaByElementId,
+    });
+    markOk(normalizationNotice || "API OK");
+    return {
+      ok: true,
+      normalizedConflicts: xorConflictFlowIds,
+      normalizationNotice,
+    };
+  }
+
+  async function setNodePathAssignments(updatesRaw, options = {}) {
+    const sid = String(draft?.session_id || "");
+    const updatesInput = ensureArray(updatesRaw);
+    if (!updatesInput.length) return { ok: false, error: "Нет изменений для path-тегов." };
+
+    const currentMeta = ensureObject(draft?.bpmn_meta);
+    const currentFlowMeta = normalizeFlowMetaMap(currentMeta?.flow_meta);
+    const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta?.node_path_meta);
+    const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id);
+    const nextNodePathMeta = { ...currentNodePathMeta };
+    const apiUpdates = [];
+
+    updatesInput.forEach((rawUpdate) => {
+      const update = ensureObject(rawUpdate);
+      const nodeId = String(update.node_id || update.nodeId || "").trim();
+      if (!nodeId) return;
+      const normalizedEntry = normalizeNodePathEntry({
+        paths: Object.prototype.hasOwnProperty.call(update, "paths") ? update.paths : currentNodePathMeta[nodeId]?.paths,
+        sequence_key: Object.prototype.hasOwnProperty.call(update, "sequence_key") ? update.sequence_key : (
+          Object.prototype.hasOwnProperty.call(update, "sequenceKey") ? update.sequenceKey : currentNodePathMeta[nodeId]?.sequence_key
+        ),
+        source: Object.prototype.hasOwnProperty.call(update, "source") ? update.source : (options?.source || "manual"),
+      });
+
+      if (normalizedEntry) {
+        nextNodePathMeta[nodeId] = normalizedEntry;
+        apiUpdates.push({
+          node_id: nodeId,
+          paths: normalizedEntry.paths,
+          sequence_key: normalizedEntry.sequence_key || null,
+          source: normalizedEntry.source,
+        });
+      } else {
+        delete nextNodePathMeta[nodeId];
+        apiUpdates.push({
+          node_id: nodeId,
+          paths: [],
+          sequence_key: null,
+          source: String(update.source || options?.source || "manual"),
+        });
+      }
+    });
+
+    if (!apiUpdates.length) return { ok: false, error: "Нет валидных узлов для обновления." };
+
+    const optimisticMeta = {
+      version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: currentFlowMeta,
+      node_path_meta: nextNodePathMeta,
+      robot_meta_by_element_id: currentRobotMetaByElementId,
+    };
+    setDraftPersisted((prev) => ({
+      ...prev,
+      bpmn_meta: optimisticMeta,
+    }));
+    writeLocalBpmnMeta(sid, optimisticMeta);
+
+    if (!sid || isLocalSessionId(sid)) {
+      markOk("Локальная разметка Paths обновлена.");
+      return { ok: true, applied: apiUpdates.length };
+    }
+
+    const result = await apiPatchBpmnMeta(sid, { node_updates: apiUpdates });
+    if (!result.ok) {
+      const isMissingMetaEndpoint = Number(result?.status || 0) === 404
+        || /not found/i.test(String(result?.error || ""));
+      if (isMissingMetaEndpoint) {
+        const compat = await apiPatchSession(sid, { bpmn_meta: optimisticMeta });
+        if (compat?.ok) {
+          if (compat.session && typeof compat.session === "object") {
+            onSessionSync({
+              ...compat.session,
+              _sync_source: "node_path_meta_session_patch_fallback",
+            });
+          } else {
+            setDraftPersisted((prev) => ({ ...prev, bpmn_meta: optimisticMeta }));
+          }
+          writeLocalBpmnMeta(sid, optimisticMeta);
+          markOk("Разметка Paths сохранена");
+          return { ok: true, via: "session_patch_fallback", applied: apiUpdates.length };
+        }
+      }
+      setDraftPersisted((prev) => ({
+        ...prev,
+        bpmn_meta: {
+          version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
+          flow_meta: currentFlowMeta,
+          node_path_meta: currentNodePathMeta,
+          robot_meta_by_element_id: currentRobotMetaByElementId,
+        },
+      }));
+      writeLocalBpmnMeta(sid, {
+        version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
+        flow_meta: currentFlowMeta,
+        node_path_meta: currentNodePathMeta,
+        robot_meta_by_element_id: currentRobotMetaByElementId,
+      });
+      markFail(result.error);
+      return { ok: false, error: String(result.error || "Не удалось сохранить разметку Paths.") };
+    }
+
+    const serverMeta = ensureObject(result.meta);
+    const normalizedFlowMeta = normalizeFlowMetaMap(serverMeta?.flow_meta);
+    const normalizedNodePathMeta = normalizeNodePathMetaMap(serverMeta?.node_path_meta);
+    const normalizedRobotMetaByElementId = normalizeRobotMetaMap(serverMeta?.robot_meta_by_element_id);
+    const nextMeta = {
+      version: Number(serverMeta?.version) > 0 ? Number(serverMeta.version) : 1,
+      flow_meta: normalizedFlowMeta,
+      node_path_meta: normalizedNodePathMeta,
+      robot_meta_by_element_id: normalizedRobotMetaByElementId,
+    };
+    setDraftPersisted((prev) => ({
+      ...prev,
+      bpmn_meta: nextMeta,
+    }));
+    writeLocalBpmnMeta(sid, nextMeta);
+    markOk("API OK");
+    return { ok: true, applied: apiUpdates.length };
+  }
+
+  async function setElementRobotMeta(elementIdRaw, robotMetaRaw, options = {}) {
+    const sid = String(draft?.session_id || "").trim();
+    const elementId = String(elementIdRaw || "").trim();
+    if (!elementId) return { ok: false, error: "Не выбран BPMN-элемент." };
+
+    const currentMeta = ensureObject(draft?.bpmn_meta);
+    const currentFlowMeta = normalizeFlowMetaMap(currentMeta?.flow_meta);
+    const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta?.node_path_meta);
+    const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id);
+    const nextRobotMetaByElementId = { ...currentRobotMetaByElementId };
+    const shouldRemove = options?.remove === true || robotMetaRaw === null;
+    if (shouldRemove) {
+      delete nextRobotMetaByElementId[elementId];
+    } else {
+      const normalizedEntry = normalizeRobotMetaMap({ [elementId]: robotMetaRaw })[elementId];
+      if (!normalizedEntry) {
+        return { ok: false, error: "Некорректные поля Robot Meta." };
+      }
+      nextRobotMetaByElementId[elementId] = normalizedEntry;
+    }
+
+    const optimisticMeta = {
+      version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: currentFlowMeta,
+      node_path_meta: currentNodePathMeta,
+      robot_meta_by_element_id: nextRobotMetaByElementId,
+    };
+    setDraftPersisted((prev) => ({
+      ...prev,
+      bpmn_meta: optimisticMeta,
+    }));
+    writeLocalBpmnMeta(sid, optimisticMeta);
+
+    if (!sid || isLocalSessionId(sid)) {
+      markOk(shouldRemove ? "Robot Meta удалена локально." : "Robot Meta сохранена локально.");
+      return { ok: true };
+    }
+
+    const patchPayload = {
+      robot_updates: [
+        {
+          element_id: elementId,
+          robot_meta: shouldRemove ? null : nextRobotMetaByElementId[elementId],
+          remove: shouldRemove,
+        },
+      ],
+    };
+    const result = await apiPatchBpmnMeta(sid, patchPayload);
+    if (!result.ok) {
+      const isMissingMetaEndpoint = Number(result?.status || 0) === 404
+        || /not found/i.test(String(result?.error || ""));
+      if (isMissingMetaEndpoint) {
+        const compat = await apiPatchSession(sid, { bpmn_meta: optimisticMeta });
+        if (compat?.ok) {
+          if (compat.session && typeof compat.session === "object") {
+            onSessionSync({
+              ...compat.session,
+              _sync_source: "robot_meta_session_patch_fallback",
+            });
+          } else {
+            setDraftPersisted((prev) => ({ ...prev, bpmn_meta: optimisticMeta }));
+          }
+          writeLocalBpmnMeta(sid, optimisticMeta);
+          markOk(shouldRemove ? "Robot Meta удалена." : "Robot Meta сохранена.");
+          return { ok: true, via: "session_patch_fallback" };
+        }
+      }
+      const rollbackMeta = {
+        version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
+        flow_meta: currentFlowMeta,
+        node_path_meta: currentNodePathMeta,
+        robot_meta_by_element_id: currentRobotMetaByElementId,
+      };
+      setDraftPersisted((prev) => ({
+        ...prev,
+        bpmn_meta: rollbackMeta,
+      }));
+      writeLocalBpmnMeta(sid, rollbackMeta);
+      markFail(result.error);
+      return { ok: false, error: String(result.error || "Не удалось сохранить Robot Meta.") };
+    }
+
+    const serverMeta = ensureObject(result.meta);
+    const nextMeta = {
+      version: Number(serverMeta?.version) > 0 ? Number(serverMeta.version) : 1,
+      flow_meta: normalizeFlowMetaMap(serverMeta?.flow_meta),
+      node_path_meta: normalizeNodePathMetaMap(serverMeta?.node_path_meta),
+      robot_meta_by_element_id: normalizeRobotMetaMap(serverMeta?.robot_meta_by_element_id),
+    };
+    setDraftPersisted((prev) => ({
+      ...prev,
+      bpmn_meta: nextMeta,
+    }));
+    writeLocalBpmnMeta(sid, nextMeta);
+    markOk(shouldRemove ? "Robot Meta удалена." : "Robot Meta сохранена.");
+    return { ok: true };
+  }
+
+  function guessScopeStartIdFromDraft(draftRaw) {
+    const interview = ensureObject(draftRaw?.interview);
+    const steps = ensureArray(interview.steps)
+      .map((step, idx) => {
+        const row = ensureObject(step);
+        const orderIndex = Number(row.order_index || row.order || idx + 1);
+        const nodeId = String(
+          row.bpmn_ref
+            || row.bpmnRef
+            || row.node_bind_id
+            || row.nodeBindId
+            || row.node_id
+            || row.nodeId
+            || "",
+        ).trim();
+        return {
+          nodeId,
+          orderIndex: Number.isFinite(orderIndex) && orderIndex > 0 ? Math.floor(orderIndex) : idx + 1,
+          idx,
+        };
+      })
+      .filter((row) => row.nodeId);
+    if (!steps.length) return "";
+    steps.sort((a, b) => Number(a.orderIndex || 0) - Number(b.orderIndex || 0) || Number(a.idx || 0) - Number(b.idx || 0));
+    return String(steps[0]?.nodeId || "").trim();
+  }
+
+  async function recalculateRtiers(options = {}) {
+    const sid = String(draft?.session_id || "").trim();
+    if (!sid || isLocalSessionId(sid)) {
+      return { ok: false, error: "Пересчёт R-tier доступен только для backend-сессии." };
+    }
+    const scopeStartId = String(options?.scopeStartId || guessScopeStartIdFromDraft(draft) || "").trim();
+    const payload = {};
+    if (scopeStartId) payload.scopeStartId = scopeStartId;
+    if (Array.isArray(options?.successEndIds) && options.successEndIds.length) payload.successEndIds = options.successEndIds;
+    if (Array.isArray(options?.failEndIds) && options.failEndIds.length) payload.failEndIds = options.failEndIds;
+
+    const result = await apiInferBpmnRtiers(sid, payload);
+    if (!result?.ok) {
+      markFail(result?.error || "Не удалось пересчитать R-tier.");
+      return { ok: false, error: String(result?.error || "Не удалось пересчитать R-tier.") };
+    }
+
+    const serverMeta = ensureObject(result.meta);
+    const normalizedFlowMeta = normalizeFlowMetaMap(serverMeta?.flow_meta);
+    const normalizedNodePathMeta = normalizeNodePathMetaMap(serverMeta?.node_path_meta);
+    const normalizedRobotMetaByElementId = normalizeRobotMetaMap(serverMeta?.robot_meta_by_element_id);
+    const nextMeta = {
+      version: Number(serverMeta?.version) > 0 ? Number(serverMeta.version) : 1,
+      flow_meta: normalizedFlowMeta,
+      node_path_meta: normalizedNodePathMeta,
+      robot_meta_by_element_id: normalizedRobotMetaByElementId,
+    };
+    setDraftPersisted((prev) => ({
+      ...prev,
+      bpmn_meta: nextMeta,
+    }));
+    writeLocalBpmnMeta(sid, nextMeta);
+    markOk("R-tier пересчитан и сохранён.");
+    return { ok: true, inference: ensureObject(result.inference), meta: nextMeta };
   }
 
   async function updateElementAiQuestion(elementId, questionId, patch = {}) {
@@ -1394,37 +2763,124 @@ export default function App() {
     return { ok: true };
   }
 
-  async function deleteCurrentProject() {
-    const pid = String(projectId || "");
-    if (!pid) return;
-    const ok = confirm("Удалить проект и все сессии?");
-    if (!ok) return;
-
-    const r = await apiDeleteProject(pid);
-    if (!r.ok) return markFail(r.error);
-
-    setProjectId("");
-    setSessions([]);
+  function returnToSessionList(reason = "manual_return") {
+    logNav("return_to_session_list", { reason });
+    setSessionNavNotice(null);
+    requestedSessionIdRef.current = "";
     resetDraft(ensureDraftShape(null));
-    await refreshProjects();
-    markOk("API OK");
   }
 
-  async function deleteCurrentSession() {
+  async function deleteCurrentProject(options = {}) {
+    const pid = String(projectId || "");
+    if (!pid) return { ok: false, error: "Проект не выбран." };
+    const skipConfirm = !!options?.skipConfirm;
+    if (!skipConfirm) {
+      const ok = confirm("Удалить проект и все сессии?");
+      if (!ok) return { ok: false, cancelled: true };
+    }
+
+    const r = await apiDeleteProject(pid);
+    if (!r.ok) {
+      markFail(r.error);
+      return { ok: false, error: String(r.error || "delete_project_failed") };
+    }
+
+    suppressProjectAutoselectRef.current = true;
+    setProjectId("");
+    setSessions([]);
+    returnToSessionList("project_deleted");
+    await refreshProjects();
+    markOk("API OK");
+    return { ok: true };
+  }
+
+  async function deleteCurrentSession(options = {}) {
     const sid = String(draft?.session_id || "");
     if (!sid || isLocalSessionId(sid)) {
-      resetDraft(ensureDraftShape(null));
-      return;
+      returnToSessionList("local_session_clear");
+      return { ok: true };
     }
-    const ok = confirm("Удалить сессию?");
-    if (!ok) return;
+    const skipConfirm = !!options?.skipConfirm;
+    if (!skipConfirm) {
+      const ok = confirm("Удалить сессию?");
+      if (!ok) return { ok: false, cancelled: true };
+    }
 
     const r = await apiDeleteSession(sid);
-    if (!r.ok) return markFail(r.error);
+    if (!r.ok) {
+      markFail(r.error);
+      return { ok: false, error: String(r.error || "delete_session_failed") };
+    }
 
-    resetDraft(ensureDraftShape(null));
+    returnToSessionList("session_deleted");
     await refreshSessions(projectId);
     markOk("API OK");
+    return { ok: true };
+  }
+
+  function openRenameDialog(scope) {
+    const kind = String(scope || "").trim();
+    if (!(kind === "project" || kind === "session")) return;
+    const currentValue = kind === "project"
+      ? String(projects.find((p) => projectIdOf(p) === String(projectId || ""))?.title || "").trim()
+      : String(draft?.title || sessions.find((s) => sessionIdOf(s) === String(draft?.session_id || ""))?.title || "").trim();
+    setRenameDialog({ open: true, scope: kind, value: currentValue, error: "", busy: false });
+  }
+
+  function openDeleteDialog(scope) {
+    const kind = String(scope || "").trim();
+    if (!(kind === "project" || kind === "session")) return;
+    setDeleteDialog({ open: true, scope: kind, error: "", busy: false });
+  }
+
+  async function submitRenameDialog() {
+    const scope = String(renameDialog?.scope || "").trim();
+    const nextTitle = String(renameDialog?.value || "").trim();
+    if (!nextTitle) {
+      setRenameDialog((prev) => ({ ...prev, error: "Введите название." }));
+      return;
+    }
+    setRenameDialog((prev) => ({ ...prev, busy: true, error: "" }));
+    try {
+      if (scope === "project") {
+        const pid = String(projectId || "").trim();
+        if (!pid) throw new Error("Проект не выбран.");
+        const r = await apiPatchProject(pid, { title: nextTitle });
+        if (!r.ok) throw new Error(String(r.error || "Не удалось переименовать проект."));
+        await refreshProjects();
+      } else if (scope === "session") {
+        const sid = String(draft?.session_id || "").trim();
+        if (!sid || isLocalSessionId(sid)) throw new Error("Сессия не выбрана.");
+        const r = await apiPatchSession(sid, { title: nextTitle });
+        if (!r.ok) throw new Error(String(r.error || "Не удалось переименовать сессию."));
+        onSessionSync(r.session || { id: sid, title: nextTitle, _sync_source: "rename_session" });
+        await refreshSessions(projectId);
+      }
+      setRenameDialog({ open: false, scope: "", value: "", error: "", busy: false });
+      markOk("API OK");
+    } catch (error) {
+      setRenameDialog((prev) => ({ ...prev, busy: false, error: String(error?.message || error || "rename_failed") }));
+    }
+  }
+
+  async function submitDeleteDialog() {
+    const scope = String(deleteDialog?.scope || "").trim();
+    setDeleteDialog((prev) => ({ ...prev, busy: true, error: "" }));
+    try {
+      let result = { ok: false, error: "unknown_scope" };
+      if (scope === "project") {
+        result = await deleteCurrentProject({ skipConfirm: true });
+      } else if (scope === "session") {
+        result = await deleteCurrentSession({ skipConfirm: true });
+      }
+      if (!result?.ok) {
+        setDeleteDialog((prev) => ({ ...prev, busy: false, error: String(result?.error || "delete_failed") }));
+        return;
+      }
+      setDeleteDialog({ open: false, scope: "", error: "", busy: false });
+    } catch (error) {
+      setDeleteDialog((prev) => ({ ...prev, busy: false, error: String(error?.message || error || "delete_failed") }));
+    }
   }
 
   // Sessions are valid even without predefined actors; keep editing flow open.
@@ -1435,6 +2891,20 @@ export default function App() {
     if (!sid) return "no_session";
     return "notes";
   }, [draft]);
+
+  const currentProjectTitle = useMemo(() => {
+    const pid = String(projectId || "").trim();
+    if (!pid) return "";
+    const found = projects.find((item) => projectIdOf(item) === pid);
+    return String(found?.title || found?.name || "").trim();
+  }, [projects, projectId]);
+
+  const currentSessionTitle = useMemo(() => {
+    const sid = String(draft?.session_id || "").trim();
+    if (!sid) return "";
+    const found = sessions.find((item) => sessionIdOf(item) === sid);
+    return String(found?.title || found?.name || draft?.title || "").trim();
+  }, [sessions, draft?.session_id, draft?.title]);
 
   const left = useMemo(() => {
     if (phase === "no_session") {
@@ -1451,21 +2921,114 @@ export default function App() {
     return (
       <NotesPanel
         draft={draft}
+        projectId={projectId}
+        projectTitle={currentProjectTitle}
+        sessionTitle={currentSessionTitle}
         selectedElement={selectedBpmnElement}
         elementNotesFocusKey={elementNotesFocusKey}
         onAddNote={addNote}
         onAddElementNote={addElementNote}
+        onSetElementStepTime={setElementStepTime}
+        onSetElementNoteSummary={setElementNoteSummary}
         onUpdateElementAiQuestion={updateElementAiQuestion}
+        onSetStartRole={setStartRole}
+        processUiState={processUiState}
+        onRequestGenerateAiQuestions={requestGenerateAiQuestionsFromSidebar}
+        onSetFlowPathTier={setFlowHappyPath}
+        onSetNodePathAssignments={setNodePathAssignments}
+        onSetElementRobotMeta={setElementRobotMeta}
+        onGoToDiagram={() => {
+          const sid = String(draft?.session_id || "").trim();
+          if (!sid) return;
+          setProcessTabIntent({ sid, tab: "diagram", nonce: Date.now() });
+        }}
+        onProjectBreadcrumbClick={() => returnToSessionList("breadcrumb_project")}
+        onSessionBreadcrumbClick={() => {
+          const sid = String(draft?.session_id || "").trim();
+          if (!sid) return;
+          void openSession(sid, { source: "breadcrumb_session" });
+        }}
+        sidebarHidden={leftHidden}
+        sidebarCompact={leftCompact}
+        onToggleSidebarCompact={handleSidebarCompact}
+        onToggleSidebarHidden={() => handleToggleLeft("sidebar_header")}
+        activeSectionId={sidebarActiveSection}
+        onActiveSectionChange={(sectionId) => {
+          const next = String(sectionId || "").trim();
+          if (!next) return;
+          setSidebarActiveSection(next);
+        }}
+        sidebarShortcutRequest={sidebarShortcutRequest}
+        onSidebarShortcutHandled={() => setSidebarShortcutRequest("")}
+        stepTimeUnit={stepTimeUnit}
+        onStepTimeUnitChange={handleStepTimeUnitChange}
+        onRenameProject={() => openRenameDialog("project")}
+        onDeleteProject={() => openDeleteDialog("project")}
+        onRenameSession={() => openRenameDialog("session")}
+        onDeleteSession={() => openDeleteDialog("session")}
         disabled={locked}
       />
     );
-  }, [phase, backendHint, draft, locked, projectId, selectedBpmnElement, elementNotesFocusKey]);
+  }, [
+    phase,
+    backendHint,
+    draft,
+    locked,
+    projectId,
+    currentProjectTitle,
+    currentSessionTitle,
+    selectedBpmnElement,
+    processUiState,
+    elementNotesFocusKey,
+    leftCompact,
+    leftHidden,
+    sidebarActiveSection,
+    sidebarShortcutRequest,
+    stepTimeUnit,
+    handleStepTimeUnitChange,
+    requestGenerateAiQuestionsFromSidebar,
+    setFlowHappyPath,
+    setNodePathAssignments,
+    setElementRobotMeta,
+    openSession,
+    returnToSessionList,
+    openRenameDialog,
+    openDeleteDialog,
+  ]);
 
   useEffect(() => {
     refreshProjects();
     refreshLlmSettings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    function onPopState() {
+      const fromUrl = readSelectionFromUrl();
+      logNav("popstate", {
+        projectId: fromUrl.projectId || "-",
+        sessionId: fromUrl.sessionId || "-",
+      });
+      if (fromUrl.projectId && fromUrl.projectId !== String(projectId || "").trim()) {
+        setProjectId(fromUrl.projectId);
+      }
+      if (fromUrl.sessionId) {
+        requestedSessionIdRef.current = fromUrl.sessionId;
+      }
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  useEffect(() => {
+    const pid = String(projectId || "").trim();
+    const sid = String(draft?.session_id || "").trim();
+    writeSelectionToUrl({ projectId: pid, sessionId: sid });
+    logNav("selection_sync", { projectId: pid || "-", sessionId: sid || "-" });
+    if (sid) requestedSessionIdRef.current = sid;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, draft?.session_id]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -1480,9 +3043,14 @@ export default function App() {
         locked={locked}
         left={left}
         leftHidden={leftHidden}
+        leftCompact={phase === "notes" ? leftCompact : false}
+        sidebarHandleSections={sidebarHandleSections}
         onToggleLeft={handleToggleLeft}
         onPatchDraft={patchDraft}
         processTabIntent={processTabIntent}
+        aiGenerateIntent={aiGenerateIntent}
+        onProcessUiStateChange={handleProcessUiStateChange}
+        stepTimeUnit={stepTimeUnit}
         reloadKey={reloadKey}
         backendStatus={backendStatus}
         backendHint={backendHint}
@@ -1490,8 +3058,9 @@ export default function App() {
         projectId={projectId}
         onProjectChange={async (pid) => {
           const next = String(pid || "");
+          logNav("project_change", { projectId: next || "-" });
           setProjectId(next);
-          await refreshSessions(next);
+          setSessionNavNotice(null);
         }}
         onDeleteProject={deleteCurrentProject}
         sessions={sessions}
@@ -1520,7 +3089,11 @@ export default function App() {
         onOpenElementNotes={focusElementNotes}
         onElementNotesRemap={remapElementNotes}
         onSessionSync={onSessionSync}
+        onRecalculateRtiers={recalculateRtiers}
         snapshotRestoreNotice={snapshotRestoreNotice}
+        sessionNavNotice={sessionNavNotice}
+        onDismissSessionNavNotice={() => setSessionNavNotice(null)}
+        onReturnToSessionList={() => returnToSessionList("banner_action")}
       />
 
       <ProjectWizardModal open={wizardOpen} onClose={() => setWizardOpen(false)} onCreate={createProjectFromWizard} />
@@ -1531,6 +3104,80 @@ export default function App() {
         onClose={() => setSessionFlowOpen(false)}
         onSubmit={runSessionFlow}
       />
+
+      <Modal
+        open={!!renameDialog.open}
+        title={renameDialog.scope === "project" ? "Переименовать проект" : "Переименовать сессию"}
+        onClose={() => setRenameDialog({ open: false, scope: "", value: "", error: "", busy: false })}
+        footer={(
+          <>
+            <button
+              type="button"
+              className="secondaryBtn"
+              onClick={() => setRenameDialog({ open: false, scope: "", value: "", error: "", busy: false })}
+              disabled={renameDialog.busy}
+            >
+              Отмена
+            </button>
+            <button
+              type="button"
+              className="primaryBtn"
+              onClick={() => {
+                void submitRenameDialog();
+              }}
+              disabled={renameDialog.busy || !String(renameDialog.value || "").trim()}
+            >
+              {renameDialog.busy ? "Сохраняю..." : "Сохранить"}
+            </button>
+          </>
+        )}
+      >
+        <label htmlFor="rename-dialog-input" className="text-sm text-muted">Новое название</label>
+        <input
+          id="rename-dialog-input"
+          className="input mt-2 w-full"
+          value={renameDialog.value}
+          onChange={(event) => setRenameDialog((prev) => ({ ...prev, value: event.target.value, error: "" }))}
+          maxLength={120}
+          autoFocus
+        />
+        {renameDialog.error ? <div className="mt-2 text-xs text-danger">{renameDialog.error}</div> : null}
+      </Modal>
+
+      <Modal
+        open={!!deleteDialog.open}
+        title={deleteDialog.scope === "project" ? "Удалить проект" : "Удалить сессию"}
+        onClose={() => setDeleteDialog({ open: false, scope: "", error: "", busy: false })}
+        footer={(
+          <>
+            <button
+              type="button"
+              className="secondaryBtn"
+              onClick={() => setDeleteDialog({ open: false, scope: "", error: "", busy: false })}
+              disabled={deleteDialog.busy}
+            >
+              Отмена
+            </button>
+            <button
+              type="button"
+              className="primaryBtn danger"
+              onClick={() => {
+                void submitDeleteDialog();
+              }}
+              disabled={deleteDialog.busy}
+            >
+              {deleteDialog.busy ? "Удаляю..." : "Удалить"}
+            </button>
+          </>
+        )}
+      >
+        <div className="text-sm text-muted">
+          {deleteDialog.scope === "project"
+            ? "Удаление проекта необратимо. Связанные сессии будут удалены."
+            : "Удаление сессии необратимо."}
+        </div>
+        {deleteDialog.error ? <div className="mt-2 text-xs text-danger">{deleteDialog.error}</div> : null}
+      </Modal>
     </>
   );
 }

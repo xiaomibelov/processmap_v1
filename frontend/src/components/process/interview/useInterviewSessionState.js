@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { traceProcess } from "../../../features/process/lib/processDebugTrace";
 import {
   DEFAULT_TIMELINE_FILTERS,
@@ -12,9 +12,37 @@ import {
   normalizeInterview,
 } from "./utils";
 
+function normalizeBranchViewMode(raw) {
+  return String(raw || "").trim().toLowerCase() === "cards" ? "cards" : "tree";
+}
+
+function normalizeTimelineViewMode(raw) {
+  const mode = String(raw || "").trim().toLowerCase();
+  if (mode === "diagram" || mode === "paths") return mode;
+  return "matrix";
+}
+
+function normalizeBranchExpandMap(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out = {};
+  Object.keys(raw).forEach((gatewayIdRaw) => {
+    const gatewayId = toText(gatewayIdRaw);
+    if (!gatewayId) return;
+    const branchMapRaw = raw[gatewayIdRaw];
+    if (!branchMapRaw || typeof branchMapRaw !== "object" || Array.isArray(branchMapRaw)) return;
+    const branchMap = {};
+    Object.keys(branchMapRaw).forEach((branchKeyRaw) => {
+      const branchKey = toText(branchKeyRaw);
+      if (!branchKey) return;
+      branchMap[branchKey] = !!branchMapRaw[branchKeyRaw];
+    });
+    if (Object.keys(branchMap).length) out[gatewayId] = branchMap;
+  });
+  return out;
+}
+
 export default function useInterviewSessionState({ sid, interview, onChange }) {
-  const [data, setData] = useState(emptyInterview());
-  const [copyState, setCopyState] = useState("");
+  const [data, setDataRaw] = useState(emptyInterview());
   const [aiCue, setAiCue] = useState(null);
   const [aiBusyStepId, setAiBusyStepId] = useState("");
   const [subprocessDraft, setSubprocessDraft] = useState("");
@@ -23,15 +51,18 @@ export default function useInterviewSessionState({ sid, interview, onChange }) {
   const [hiddenTimelineCols, setHiddenTimelineCols] = useState(DEFAULT_HIDDEN_TIMELINE_COLUMNS);
   const [showTimelineColsMenu, setShowTimelineColsMenu] = useState(false);
   const [boundariesLaneFilter, setBoundariesLaneFilter] = useState("");
+  const [timelineViewMode, setTimelineViewMode] = useState("matrix");
+  const [branchViewMode, setBranchViewMode] = useState("tree");
+  const [branchExpandByGateway, setBranchExpandByGateway] = useState({});
   const [uiPrefsSavedAt, setUiPrefsSavedAt] = useState(0);
   const [uiPrefsDirty, setUiPrefsDirty] = useState(false);
   const [collapsed, setCollapsed] = useState({
-    boundaries: false,
+    boundaries: true,
     timeline: false,
-    transitions: false,
-    summary: false,
-    exceptions: false,
-    ai: false,
+    transitions: true,
+    summary: true,
+    exceptions: true,
+    ai: true,
     markdown: false,
   });
 
@@ -40,6 +71,15 @@ export default function useInterviewSessionState({ sid, interview, onChange }) {
   const dataHashRef = useRef(stableJson(emptyInterview()));
   const emittedHashRef = useRef("");
   const uiPrefsHydratedRef = useRef(false);
+  const setData = useCallback((updater) => {
+    setDataRaw((prevRaw) => {
+      const prev = normalizeInterview(prevRaw);
+      const nextCandidate = typeof updater === "function" ? updater(prev) : updater;
+      const next = normalizeInterview(nextCandidate);
+      if (stableJson(prev) === stableJson(next)) return prevRaw;
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     setAiCue(null);
@@ -50,16 +90,19 @@ export default function useInterviewSessionState({ sid, interview, onChange }) {
     setHiddenTimelineCols(DEFAULT_HIDDEN_TIMELINE_COLUMNS);
     setShowTimelineColsMenu(false);
     setBoundariesLaneFilter("");
+    setTimelineViewMode("matrix");
+    setBranchViewMode("tree");
+    setBranchExpandByGateway({});
     setUiPrefsSavedAt(0);
     setUiPrefsDirty(false);
     uiPrefsHydratedRef.current = false;
     setCollapsed({
-      boundaries: false,
+      boundaries: true,
       timeline: false,
-      transitions: false,
-      summary: false,
-      exceptions: false,
-      ai: false,
+      transitions: true,
+      summary: true,
+      exceptions: true,
+      ai: true,
       markdown: false,
     });
   }, [sid]);
@@ -82,6 +125,9 @@ export default function useInterviewSessionState({ sid, interview, onChange }) {
       setTimelineFilters(nextFilters);
       setHiddenTimelineCols(nextCols);
       setBoundariesLaneFilter(toText(parsed.boundariesLaneFilter));
+      setTimelineViewMode(normalizeTimelineViewMode(parsed.timelineViewMode));
+      setBranchViewMode(normalizeBranchViewMode(parsed.branchViewMode));
+      setBranchExpandByGateway(normalizeBranchExpandMap(parsed.branchExpandByGateway));
       setUiPrefsSavedAt(Number(parsed.savedAt || 0) || 0);
       setUiPrefsDirty(false);
     } catch {
@@ -90,7 +136,7 @@ export default function useInterviewSessionState({ sid, interview, onChange }) {
 
   useEffect(() => {
     if (!sid) {
-      setData(emptyInterview());
+      setDataRaw(emptyInterview());
       setAiCue(null);
       setAiBusyStepId("");
       return;
@@ -103,7 +149,7 @@ export default function useInterviewSessionState({ sid, interview, onChange }) {
       if (nextHash !== dataHashRef.current) {
         applyingExternalRef.current = true;
         dataHashRef.current = nextHash;
-        setData(next);
+        setDataRaw(next);
       }
       return;
     }
@@ -115,7 +161,7 @@ export default function useInterviewSessionState({ sid, interview, onChange }) {
         if (nextHash !== dataHashRef.current) {
           applyingExternalRef.current = true;
           dataHashRef.current = nextHash;
-          setData(next);
+          setDataRaw(next);
         }
         return;
       }
@@ -126,7 +172,7 @@ export default function useInterviewSessionState({ sid, interview, onChange }) {
         if (nextHash !== dataHashRef.current) {
           applyingExternalRef.current = true;
           dataHashRef.current = nextHash;
-          setData(next);
+          setDataRaw(next);
         }
         return;
       }
@@ -136,7 +182,7 @@ export default function useInterviewSessionState({ sid, interview, onChange }) {
       if (nextHash !== dataHashRef.current) {
         applyingExternalRef.current = true;
         dataHashRef.current = nextHash;
-        setData(next);
+        setDataRaw(next);
       }
     } catch {
       const next = emptyInterview();
@@ -144,7 +190,7 @@ export default function useInterviewSessionState({ sid, interview, onChange }) {
       if (nextHash !== dataHashRef.current) {
         applyingExternalRef.current = true;
         dataHashRef.current = nextHash;
-        setData(next);
+        setDataRaw(next);
       }
     }
   }, [sid, interview]);
@@ -195,8 +241,6 @@ export default function useInterviewSessionState({ sid, interview, onChange }) {
     data,
     setData,
     applyInterviewMutation,
-    copyState,
-    setCopyState,
     aiCue,
     setAiCue,
     aiBusyStepId,
@@ -213,6 +257,12 @@ export default function useInterviewSessionState({ sid, interview, onChange }) {
     setShowTimelineColsMenu,
     boundariesLaneFilter,
     setBoundariesLaneFilter,
+    timelineViewMode,
+    setTimelineViewMode,
+    branchViewMode,
+    setBranchViewMode,
+    branchExpandByGateway,
+    setBranchExpandByGateway,
     uiPrefsSavedAt,
     setUiPrefsSavedAt,
     uiPrefsDirty,

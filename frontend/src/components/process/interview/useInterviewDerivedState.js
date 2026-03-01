@@ -21,7 +21,7 @@ import {
   nodeKindIcon,
   laneColor,
   laneLabel,
-  typeLabel,
+  typeLabelRuWithOriginal,
   toNonNegativeInt,
   parseStepWorkDurationSec,
   parseStepWaitDurationSec,
@@ -101,9 +101,11 @@ export default function useInterviewDerivedState({
   hiddenTimelineCols,
   processTitle,
   sid,
+  timelineViewMode = "matrix",
 }) {
   const recalcCountRef = useRef(0);
   const recalcWindowRef = useRef({ ts: 0, count: 0 });
+  const enableInterviewVM = String(timelineViewMode || "").toLowerCase() === "paths";
 
   recalcCountRef.current += 1;
 
@@ -275,11 +277,41 @@ export default function useInterviewDerivedState({
       if (!flowId) return;
       const entry = asObject(rawFlowMeta[rawFlowId]);
       const tier = toText(entry?.tier).toUpperCase();
+      const rtier = toText(entry?.rtier).toUpperCase();
       if (tier === "P0" || tier === "P1" || tier === "P2") {
-        out[flowId] = { tier };
-        return;
+        out[flowId] = { ...(out[flowId] || {}), tier };
       }
-      if (entry?.happy) out[flowId] = { tier: "P0" };
+      if (rtier === "R0" || rtier === "R1" || rtier === "R2") {
+        out[flowId] = { ...(out[flowId] || {}), rtier };
+      }
+      if (entry?.happy) out[flowId] = { ...(out[flowId] || {}), tier: "P0" };
+    });
+    return out;
+  }, [sessionDraft?.bpmn_meta]);
+
+  const nodePathMetaByNodeId = useMemo(() => {
+    const rawMeta = asObject(sessionDraft?.bpmn_meta);
+    const rawNodeMeta = asObject(rawMeta?.node_path_meta);
+    const out = {};
+    Object.keys(rawNodeMeta).forEach((rawNodeId) => {
+      const nodeId = toText(rawNodeId);
+      if (!nodeId) return;
+      const entry = asObject(rawNodeMeta[rawNodeId]);
+      const seen = new Set();
+      const paths = toArray(entry?.paths)
+        .map((tag) => toText(tag).toUpperCase())
+        .filter((tag) => {
+          if (!(tag === "P0" || tag === "P1" || tag === "P2")) return false;
+          if (seen.has(tag)) return false;
+          seen.add(tag);
+          return true;
+        });
+      if (!paths.length) return;
+      out[nodeId] = {
+        paths,
+        sequence_key: toText(entry?.sequence_key || entry?.sequenceKey),
+        source: toText(entry?.source || "manual").toLowerCase() === "color_auto" ? "color_auto" : "manual",
+      };
     });
     return out;
   }, [sessionDraft?.bpmn_meta]);
@@ -415,17 +447,33 @@ export default function useInterviewDerivedState({
   const graphNodeCount = useMemo(() => Object.keys(asObject(interviewGraph?.nodesById)).length, [interviewGraph]);
   const graphFlowCount = useMemo(() => Object.keys(asObject(interviewGraph?.flowsById)).length, [interviewGraph]);
   const snapshotStepCount = useMemo(() => toArray(dodSnapshot?.steps).length, [dodSnapshot]);
+  const nodePathMetaHash = useMemo(() => {
+    const entries = Object.keys(asObject(nodePathMetaByNodeId))
+      .sort((a, b) => a.localeCompare(b, "ru"))
+      .map((nodeId) => {
+        const entry = asObject(nodePathMetaByNodeId[nodeId]);
+        return {
+          node_id: nodeId,
+          paths: toArray(entry?.paths).map((tag) => toText(tag).toUpperCase()).filter(Boolean).sort((a, b) => a.localeCompare(b, "ru")),
+          sequence_key: toText(entry?.sequence_key),
+          source: toText(entry?.source),
+        };
+      });
+    return quickHash(JSON.stringify(entries));
+  }, [nodePathMetaByNodeId]);
   const interviewVMHash = useMemo(() => {
     return quickHash(
-      `${sid}|${timelineViewHash}|g:${graphNodeCount}/${graphFlowCount}|s:${snapshotStepCount}`,
+      `${sid}|${timelineViewHash}|g:${graphNodeCount}/${graphFlowCount}|s:${snapshotStepCount}|np:${nodePathMetaHash}`,
     );
-  }, [sid, timelineViewHash, graphNodeCount, graphFlowCount, snapshotStepCount]);
+  }, [sid, timelineViewHash, graphNodeCount, graphFlowCount, snapshotStepCount, nodePathMetaHash]);
   const interviewVMInputRef = useRef({
     timelineView: [],
     dodSnapshot: null,
     graphModel: null,
     graphNodeRank: {},
     nodeMetaById: {},
+    nodePathMetaByNodeId: {},
+    bpmnTraversalOrder: [],
   });
   interviewVMInputRef.current = {
     timelineView,
@@ -433,6 +481,8 @@ export default function useInterviewDerivedState({
     graphModel: interviewGraph,
     graphNodeRank,
     nodeMetaById,
+    nodePathMetaByNodeId,
+    bpmnTraversalOrder: xmlNodeOrder,
   };
   const interviewCanonicalModel = interviewModel.canonicalNodes;
   const timelineItems = useMemo(
@@ -442,23 +492,68 @@ export default function useInterviewDerivedState({
       })),
     [timelineView],
   );
-  const interviewVM = useMemo(
-    () =>
-      measureInterviewPerf("computeInterviewVM", () => buildInterviewVM({
-        timelineView: interviewVMInputRef.current.timelineView,
-        dodSnapshot: interviewVMInputRef.current.dodSnapshot,
-        graphModel: interviewVMInputRef.current.graphModel,
-        graphNodeRank: interviewVMInputRef.current.graphNodeRank,
-        nodeMetaById: interviewVMInputRef.current.nodeMetaById,
-      }), () => ({
-        hash: interviewVMHash,
-        timelineSteps: toArray(interviewVMInputRef.current.timelineView).length,
-      })),
-    [sid, interviewVMHash],
-  );
+  const interviewVM = useMemo(() => {
+    if (!enableInterviewVM) {
+      return {
+        version: "InterviewVM.v1",
+        scenarios: [],
+        steps: [],
+        groups: [],
+        metrics: {
+          counts: {
+            steps_total: 0,
+            groups_total: 0,
+            ai_total: 0,
+            notes_total: 0,
+            coverage_bound_steps: 0,
+            tiers: { P0: 0, P1: 0, P2: 0, None: 0 },
+          },
+          time: {
+            process_total_sec: 0,
+            mainline_total_sec: 0,
+            by_lane_sec: [],
+            by_tier_sec: [],
+          },
+        },
+        path_metrics: {
+          steps_count: 0,
+          work_time_total_sec: 0,
+          wait_time_total_sec: 0,
+          total_time_sec: 0,
+        },
+        quality: {
+          errors_total: 0,
+          warnings_total: 0,
+          items: [],
+        },
+        linear: {
+          has_cycle: false,
+          edges: [],
+        },
+        display_policy: {
+          rows_sort: "order_index",
+          ui_sort_by_time_or_title: false,
+        },
+        path_source: "deferred",
+        warnings: ["deferred_until_paths_mode"],
+      };
+    }
+    return measureInterviewPerf("computeInterviewVM", () => buildInterviewVM({
+      timelineView: interviewVMInputRef.current.timelineView,
+      dodSnapshot: interviewVMInputRef.current.dodSnapshot,
+      graphModel: interviewVMInputRef.current.graphModel,
+      graphNodeRank: interviewVMInputRef.current.graphNodeRank,
+      nodeMetaById: interviewVMInputRef.current.nodeMetaById,
+      nodePathMetaByNodeId: interviewVMInputRef.current.nodePathMetaByNodeId,
+      bpmnTraversalOrder: interviewVMInputRef.current.bpmnTraversalOrder,
+    }), () => ({
+      hash: interviewVMHash,
+      timelineSteps: toArray(interviewVMInputRef.current.timelineView).length,
+    }));
+  }, [enableInterviewVM, sid, interviewVMHash]);
   const interviewVMWarnings = useMemo(
-    () => assertInterviewVMInvariants(interviewVM, { devMode: !!import.meta.env.DEV }),
-    [interviewVM],
+    () => (enableInterviewVM ? assertInterviewVMInvariants(interviewVM, { devMode: !!import.meta.env.DEV }) : []),
+    [enableInterviewVM, interviewVM],
   );
   const interviewDebug = useMemo(() => {
     if (!import.meta.env.DEV) {
@@ -856,7 +951,15 @@ export default function useInterviewDerivedState({
     snapshotSteps.forEach((step) => {
       const typeKey = toText(step?.bpmn?.nodeType || step?.type || "operation");
       if (!byType[typeKey]) {
-        byType[typeKey] = { key: typeKey, label: typeLabel(typeKey), count: 0, active: 0, wait: 0, lead: 0, sharePct: 0 };
+        byType[typeKey] = {
+          key: typeKey,
+          label: typeLabelRuWithOriginal(typeKey),
+          count: 0,
+          active: 0,
+          wait: 0,
+          lead: 0,
+          sharePct: 0,
+        };
       }
       const durMin = Math.round(Number(step?.durationSec || 0) / 60);
       const waitMin = Math.round(Number(step?.waitSec || 0) / 60);

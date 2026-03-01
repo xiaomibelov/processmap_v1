@@ -3,6 +3,9 @@ import {
   apiPutBpmnXml,
   apiDeleteBpmnXml,
   apiGetExport,
+  apiGetBpmnMeta,
+  apiPatchBpmnMeta,
+  apiInferBpmnRtiers,
 } from "../api";
 
 export {
@@ -10,5 +13,7 @@ export {
   apiPutBpmnXml,
   apiDeleteBpmnXml,
   apiGetExport,
+  apiGetBpmnMeta,
+  apiPatchBpmnMeta,
+  apiInferBpmnRtiers,
 };
-

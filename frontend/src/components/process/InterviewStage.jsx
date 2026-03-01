@@ -1,4 +1,4 @@
-import { Profiler, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { Profiler, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import * as InterviewUtils from "./interview/utils";
 import useInterviewDerivedState from "./interview/useInterviewDerivedState";
 import useInterviewActions from "./interview/useInterviewActions";
@@ -7,7 +7,6 @@ import BoundariesBlock from "./interview/BoundariesBlock";
 import TimelineControls from "./interview/TimelineControls";
 import TimelineTable from "./interview/TimelineTable";
 import InterviewDiagramView from "./interview/InterviewDiagramView";
-import InterviewPathsView from "./interview/InterviewPathsView";
 import TransitionsBlock from "./interview/TransitionsBlock";
 import SummaryBlock from "./interview/SummaryBlock";
 import ExceptionsBlock from "./interview/ExceptionsBlock";
@@ -15,6 +14,7 @@ import AiQuestionsBlock from "./interview/AiQuestionsBlock";
 import BindingAssistantModal from "./interview/BindingAssistantModal";
 import InterviewDebugOverlay from "./interview/InterviewDebugOverlay";
 import { buildBindingAssistantModel } from "./interview/bindingAssistant";
+import { markInterviewPerf, measureInterviewSpan } from "./interview/perf";
 
 const {
   SHOW_AI_QUESTIONS_BLOCK,
@@ -79,6 +79,7 @@ function recordReactProfile(id, phase, actualDuration, baseDuration) {
 }
 
 const IS_DEV_BUILD = !!import.meta.env.DEV;
+const LazyInterviewPathsView = lazy(() => import("./interview/InterviewPathsView"));
 
 export default function InterviewStage({
   sessionId,
@@ -93,6 +94,7 @@ export default function InterviewStage({
   onChange,
   selectedDiagramElement,
   stepTimeUnit = "min",
+  pathsUiIntent = null,
 }) {
   const sid = String(sessionId || "");
   const processTitle = toText(sessionTitle) || `Процесс ${sid || "—"}`;
@@ -144,6 +146,7 @@ export default function InterviewStage({
     bpmnOrderHint,
     dodSnapshot,
     subprocessCatalog,
+    interviewGraph,
     interviewDebug,
     interviewVM,
     interviewVMWarnings,
@@ -181,6 +184,7 @@ export default function InterviewStage({
     hiddenTimelineCols,
     processTitle,
     sid,
+    timelineViewMode,
   });
 
   const [annotationNotice, setAnnotationNotice] = useState(null);
@@ -195,6 +199,7 @@ export default function InterviewStage({
   const [isUiTransitionPending, startUiTransition] = useTransition();
   const renderCountRef = useRef(0);
   const renderWindowRef = useRef({ ts: 0, count: 0 });
+  const firstMeaningfulMarkedRef = useRef(false);
 
   renderCountRef.current += 1;
 
@@ -214,12 +219,46 @@ export default function InterviewStage({
     setTimelineOperationNotice(null);
     setDebugOverlayOpen(false);
     setDebugOverlayTab("graph");
+    firstMeaningfulMarkedRef.current = false;
+    markInterviewPerf(`interview.mount.start:${sid || "unknown"}`);
     branchPrefsHydratedRef.current = false;
     if (branchPrefsAutoSaveTimerRef.current) {
       window.clearTimeout(branchPrefsAutoSaveTimerRef.current);
       branchPrefsAutoSaveTimerRef.current = 0;
     }
   }, [sid]);
+
+  useEffect(() => {
+    const intent = pathsUiIntent && typeof pathsUiIntent === "object" ? pathsUiIntent : null;
+    if (!intent) return;
+    const intentSid = toText(intent?.sid);
+    if (intentSid && intentSid !== sid) return;
+    const action = toText(intent?.action).toLowerCase();
+    if (action !== "open_reports" && action !== "open_paths") return;
+    if (timelineViewMode !== "paths") {
+      setTimelineViewMode("paths");
+    }
+  }, [pathsUiIntent, sid, timelineViewMode, setTimelineViewMode]);
+
+  useEffect(() => {
+    if (firstMeaningfulMarkedRef.current) return;
+    const rows = Number(filteredTimelineView?.length || timelineView?.length || 0);
+    if (rows < 0) return;
+    const startMark = `interview.mount.start:${sid || "unknown"}`;
+    const endMark = `interview.first.meaningful:${sid || "unknown"}`;
+    markInterviewPerf(endMark);
+    measureInterviewSpan({
+      name: `interview.mount_to_first_meaningful:${sid || "unknown"}`,
+      startMark,
+      endMark,
+      meta: () => ({
+        sid: sid || "",
+        mode: toText(timelineViewMode || ""),
+        rows,
+      }),
+    });
+    firstMeaningfulMarkedRef.current = true;
+  }, [sid, timelineViewMode, filteredTimelineView?.length, timelineView?.length]);
 
   useEffect(() => {
     const knownIds = new Set((Array.isArray(timelineView) ? timelineView : []).map((step) => toText(step?.id)).filter(Boolean));
@@ -301,6 +340,29 @@ export default function InterviewStage({
   });
   const branchPrefsHydratedRef = useRef(false);
   const branchPrefsAutoSaveTimerRef = useRef(0);
+  const handleReportBuildDebug = useCallback((debugRaw) => {
+    const debug = debugRaw && typeof debugRaw === "object" ? debugRaw : null;
+    if (!debug || !toText(debug?.path_id_used)) return;
+    applyInterviewMutation((prevRaw) => {
+      const prev = prevRaw && typeof prevRaw === "object" ? prevRaw : {};
+      const prevDebug = prev?.report_build_debug && typeof prev.report_build_debug === "object"
+        ? prev.report_build_debug
+        : null;
+      const nextDebug = {
+        ...debug,
+        path_id_used: toText(debug?.path_id_used),
+        selectedScenarioLabel: toText(debug?.selectedScenarioLabel),
+      };
+      try {
+        if (JSON.stringify(prevDebug || {}) === JSON.stringify(nextDebug)) return prev;
+      } catch {
+      }
+      return {
+        ...prev,
+        report_build_debug: nextDebug,
+      };
+    }, { type: "paths.report_build_debug.update" });
+  }, [applyInterviewMutation]);
 
   useEffect(() => {
     const stepId = toText(pendingAnnotationStepId);
@@ -554,6 +616,26 @@ export default function InterviewStage({
     });
   }
 
+  useEffect(() => {
+    if (timelineViewMode !== "paths") return;
+    markInterviewPerf(`interview.paths.calc.start:${sid || "unknown"}`);
+  }, [timelineViewMode, sid]);
+
+  const handlePathsPerfReady = useCallback((meta = {}) => {
+    const startMark = `interview.paths.calc.start:${sid || "unknown"}`;
+    const endMark = `interview.paths.calc.done:${sid || "unknown"}`;
+    markInterviewPerf(endMark);
+    measureInterviewSpan({
+      name: `interview.paths.calc_span:${sid || "unknown"}`,
+      startMark,
+      endMark,
+      meta: () => ({
+        sid: sid || "",
+        ...meta,
+      }),
+    });
+  }, [sid]);
+
   const handleProfilerRender = (id, phase, actualDuration, baseDuration) => {
     recordReactProfile(id, phase, actualDuration, baseDuration);
   };
@@ -617,16 +699,6 @@ export default function InterviewStage({
           <div>
             <div className="interviewBlockTitle">B. Таймлайн шагов</div>
           </div>
-          {IS_DEV_BUILD ? (
-            <button
-              type="button"
-              className="secondaryBtn smallBtn"
-              onClick={() => setDebugOverlayOpen((prev) => !prev)}
-              data-testid="interview-debug-toggle"
-            >
-              Debug: Graph/Interview
-            </button>
-          ) : null}
         </div>
 
         {!collapsed.timeline ? (
@@ -674,6 +746,8 @@ export default function InterviewStage({
           branchViewMode={branchViewMode}
           onSetBranchViewMode={handleSetBranchViewMode}
           onToggleCollapse={() => toggleBlock("timeline")}
+          devDebugEnabled={IS_DEV_BUILD}
+          onToggleDebug={() => setDebugOverlayOpen((prev) => !prev)}
         />
 
         {timelineOperationNotice ? (
@@ -762,23 +836,31 @@ export default function InterviewStage({
         ) : null}
         {timelineViewMode === "paths" ? (
           <Profiler id="InterviewPathsView" onRender={handleProfilerRender}>
-            <InterviewPathsView
-              sessionId={sid}
-              interviewData={data}
-              interviewVM={interviewVM}
-              tierFilters={timelineFilters?.tiers}
-              selectedStepIds={selectedTimelineStepIds}
-              onSelectStep={handleToggleStepSelection}
-              onSetTimelineViewMode={handleSetTimelineViewMode}
-              dodSnapshot={dodSnapshot}
-              pathMetrics={pathMetrics}
-              patchStep={patchStep}
-            />
+            <Suspense fallback={<div className="interviewAnnotationNotice pending">Загружаю Paths View…</div>}>
+              <LazyInterviewPathsView
+                active
+                sessionId={sid}
+                interviewData={data}
+                interviewVM={interviewVM}
+                interviewGraph={interviewGraph}
+                tierFilters={timelineFilters?.tiers}
+                selectedStepIds={selectedTimelineStepIds}
+                onSelectStep={handleToggleStepSelection}
+                onSetTimelineViewMode={handleSetTimelineViewMode}
+                dodSnapshot={dodSnapshot}
+                pathMetrics={pathMetrics}
+                patchStep={patchStep}
+                onReportBuildDebug={handleReportBuildDebug}
+                onPerfReady={handlePathsPerfReady}
+                externalIntent={pathsUiIntent}
+              />
+            </Suspense>
           </Profiler>
         ) : null}
         {timelineViewMode === "matrix" ? (
           <Profiler id="InterviewTimelineTable" onRender={handleProfilerRender}>
             <TimelineTable
+              sessionId={sid}
               hiddenTimelineCols={hiddenTimelineCols}
               timelineLaneFilter={timelineFilters.lane}
               filteredTimelineView={filteredTimelineView}
@@ -818,6 +900,7 @@ export default function InterviewStage({
               branchViewMode={branchViewMode}
               branchExpandByGateway={branchExpandByGateway}
               onPatchBranchExpand={handlePatchBranchExpand}
+              onSetTimelineViewMode={handleSetTimelineViewMode}
               pathMetrics={pathMetrics}
             />
           </Profiler>

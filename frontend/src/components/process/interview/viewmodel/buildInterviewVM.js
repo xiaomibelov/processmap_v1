@@ -150,6 +150,248 @@ function buildScenarioDefs() {
   ];
 }
 
+function normalizeNodePathMetaByNodeId(rawMeta) {
+  const src = asObject(rawMeta);
+  const out = {};
+  Object.keys(src).forEach((rawNodeId) => {
+    const nodeId = toText(rawNodeId);
+    if (!nodeId) return;
+    const entry = asObject(src[rawNodeId]);
+    const seen = new Set();
+    const paths = toArray(entry?.paths)
+      .map((tag) => toText(tag).toUpperCase())
+      .filter((tag) => {
+        if (!(tag === "P0" || tag === "P1" || tag === "P2")) return false;
+        if (seen.has(tag)) return false;
+        seen.add(tag);
+        return true;
+      });
+    if (!paths.length) return;
+    out[nodeId] = {
+      paths,
+      sequence_key: toText(entry?.sequence_key || entry?.sequenceKey),
+      source: toText(entry?.source || "manual").toLowerCase() === "color_auto" ? "color_auto" : "manual",
+    };
+  });
+  return out;
+}
+
+function defaultSequenceKeyForTier(tier) {
+  if (tier === "P0") return "primary";
+  if (tier === "P1") return "mitigated_1";
+  if (tier === "P2") return "fail_1";
+  return "primary";
+}
+
+function scenarioDurationSec(sequence, durationSecByNodeId) {
+  return toArray(sequence).reduce((acc, step) => {
+    const nodeId = toText(step?.node_id);
+    const n = Number(asObject(durationSecByNodeId)[nodeId] || 0);
+    return acc + (Number.isFinite(n) && n > 0 ? n : 0);
+  }, 0);
+}
+
+function buildScenariosFromNodePathMeta({
+  graphModel,
+  rankByNodeId,
+  nodeMetaById,
+  durationSecByNodeId,
+  scenarioDefs,
+  nodePathMetaByNodeId,
+  bpmnTraversalOrder,
+}) {
+  const normalizedNodeMeta = normalizeNodePathMetaByNodeId(nodePathMetaByNodeId);
+  if (!Object.keys(normalizedNodeMeta).length) return [];
+  const graph = asObject(graphModel);
+  const nodesById = asObject(graph?.nodesById);
+  const outgoingByNode = asObject(graph?.outgoingByNode);
+  const incomingByNode = asObject(graph?.incomingByNode);
+  const orderByBpmn = {};
+  toArray(bpmnTraversalOrder).forEach((nodeId, idx) => {
+    const id = toText(nodeId);
+    if (!id) return;
+    orderByBpmn[id] = idx;
+  });
+
+  function compareNodeIds(aRaw, bRaw) {
+    const a = toText(aRaw);
+    const b = toText(bRaw);
+    const ao = Number(orderByBpmn[a]);
+    const bo = Number(orderByBpmn[b]);
+    if (Number.isFinite(ao) && Number.isFinite(bo) && ao !== bo) return ao - bo;
+    if (Number.isFinite(ao) !== Number.isFinite(bo)) return Number.isFinite(ao) ? -1 : 1;
+    const ar = Number(asObject(rankByNodeId)[a]);
+    const br = Number(asObject(rankByNodeId)[b]);
+    const av = Number.isFinite(ar) ? ar : Number.MAX_SAFE_INTEGER;
+    const bv = Number.isFinite(br) ? br : Number.MAX_SAFE_INTEGER;
+    if (av !== bv) return av - bv;
+    return a.localeCompare(b, "ru");
+  }
+
+  function orderedNodeIdsForSet(nodeIdsRaw) {
+    const allowed = new Set(toArray(nodeIdsRaw).map((nodeId) => toText(nodeId)).filter((nodeId) => !!nodesById[nodeId]));
+    if (!allowed.size) return [];
+    const visited = new Set();
+    const ordered = [];
+
+    function walk(nodeIdRaw) {
+      const nodeId = toText(nodeIdRaw);
+      if (!nodeId || visited.has(nodeId) || !allowed.has(nodeId)) return;
+      visited.add(nodeId);
+      ordered.push(nodeId);
+      const outgoing = toArray(outgoingByNode[nodeId])
+        .map((flow) => toText(flow?.targetId))
+        .filter((targetId) => allowed.has(targetId))
+        .sort((a, b) => compareNodeIds(a, b));
+      outgoing.forEach((targetId) => walk(targetId));
+    }
+
+    const startCandidates = toArray(graph?.startNodeIds)
+      .map((nodeId) => toText(nodeId))
+      .filter((nodeId) => allowed.has(nodeId))
+      .sort((a, b) => compareNodeIds(a, b));
+    startCandidates.forEach((nodeId) => walk(nodeId));
+
+    Array.from(allowed)
+      .filter((nodeId) => !visited.has(nodeId) && toArray(incomingByNode[nodeId]).every((flow) => !allowed.has(toText(flow?.sourceId))))
+      .sort((a, b) => compareNodeIds(a, b))
+      .forEach((nodeId) => walk(nodeId));
+
+    Array.from(allowed)
+      .filter((nodeId) => !visited.has(nodeId))
+      .sort((a, b) => compareNodeIds(a, b))
+      .forEach((nodeId) => walk(nodeId));
+
+    return ordered;
+  }
+
+  const groupedByTierAndSeq = {};
+  Object.keys(normalizedNodeMeta).forEach((nodeId) => {
+    const entry = asObject(normalizedNodeMeta[nodeId]);
+    const sequenceKey = toText(entry?.sequence_key) || "";
+    toArray(entry?.paths).forEach((tierRaw) => {
+      const tier = toText(tierRaw).toUpperCase();
+      if (!(tier === "P0" || tier === "P1" || tier === "P2")) return;
+      const seq = sequenceKey || defaultSequenceKeyForTier(tier);
+      const key = `${tier}::${seq}`;
+      if (!groupedByTierAndSeq[key]) groupedByTierAndSeq[key] = { tier, sequence_key: seq, nodeIds: [] };
+      groupedByTierAndSeq[key].nodeIds.push(nodeId);
+    });
+  });
+
+  const defsByTier = {};
+  toArray(scenarioDefs).forEach((def) => {
+    const tier = toText(def?.tier).toUpperCase();
+    if (tier) defsByTier[tier] = def;
+  });
+  const bucketsByTier = { P0: [], P1: [], P2: [] };
+  Object.keys(groupedByTierAndSeq).forEach((key) => {
+    const group = asObject(groupedByTierAndSeq[key]);
+    const tier = toText(group?.tier).toUpperCase();
+    if (!(tier === "P0" || tier === "P1" || tier === "P2")) return;
+    bucketsByTier[tier].push(group);
+  });
+  Object.keys(bucketsByTier).forEach((tier) => {
+    bucketsByTier[tier].sort((a, b) => {
+      const sa = toText(a?.sequence_key || defaultSequenceKeyForTier(tier));
+      const sb = toText(b?.sequence_key || defaultSequenceKeyForTier(tier));
+      if (tier === "P0") {
+        if (sa === "primary" && sb !== "primary") return -1;
+        if (sb === "primary" && sa !== "primary") return 1;
+      }
+      return sa.localeCompare(sb, "ru");
+    });
+  });
+
+  const scenarios = [];
+  let p0AltCounter = 0;
+  let p1Counter = 0;
+  let p2Counter = 0;
+
+  ["P0", "P1", "P2"].forEach((tier) => {
+    toArray(bucketsByTier[tier]).forEach((group) => {
+      const def = asObject(defsByTier[tier]);
+      const orderedNodeIds = orderedNodeIdsForSet(group?.nodeIds);
+      if (!orderedNodeIds.length) return;
+      const sequence = orderedNodeIds.map((nodeId) => {
+        const node = asObject(nodesById[nodeId]);
+        const meta = asObject(nodeMetaById?.[nodeId]);
+        return {
+          kind: "step",
+          node_id: nodeId,
+          node_type: toText(node?.type),
+          title: sanitizeDisplayText(meta?.title || node?.name || nodeId, nodeId),
+          lane_id: toText(meta?.lane_id || node?.laneId),
+          lane_name: toText(meta?.lane || meta?.lane_name),
+          tier,
+        };
+      });
+      const sequenceKey = toText(group?.sequence_key || defaultSequenceKeyForTier(tier));
+      let id = "";
+      let label = "";
+      let rankClass = "";
+      if (tier === "P0" && sequenceKey === "primary") {
+        id = "primary";
+        label = toText(def?.label || "P0 (Ideal)");
+        rankClass = "ideal";
+      } else if (tier === "P0") {
+        p0AltCounter += 1;
+        id = `p0_alt_${p0AltCounter}`;
+        label = `P0 Alt #${p0AltCounter}`;
+        rankClass = "alt_happy";
+      } else if (tier === "P1") {
+        p1Counter += 1;
+        id = `p1_mitigated_${p1Counter}`;
+        label = `P1 Mitigated #${p1Counter}`;
+        rankClass = "mitigated";
+      } else {
+        p2Counter += 1;
+        id = `p2_fail_${p2Counter}`;
+        label = `P2 Fail #${p2Counter}`;
+        rankClass = "fail";
+      }
+      scenarios.push({
+        id,
+        label,
+        tier,
+        rank_class: rankClass || toText(def?.rank_class || ""),
+        outcome: tier === "P2" ? "fail" : "success",
+        start_node_id: toText(sequence?.[0]?.node_id),
+        sequence,
+        groups: [],
+        sequence_key: sequenceKey,
+        source: "node_path_meta",
+      });
+    });
+  });
+
+  const primary = scenarios.find((scenario) => toText(scenario?.id) === "primary") || null;
+  if (primary) {
+    const idealSet = new Set(toArray(primary?.sequence).map((step) => toText(step?.node_id)).filter(Boolean));
+    const idealTotal = scenarioDurationSec(primary?.sequence, durationSecByNodeId);
+    scenarios.forEach((scenario) => {
+      if (!scenario || toText(scenario?.id) === "primary") return;
+      const additionalSteps = toArray(scenario?.sequence)
+        .filter((step) => !idealSet.has(toText(step?.node_id)))
+        .map((step) => ({
+          node_id: toText(step?.node_id),
+          title: toText(step?.title),
+          node_type: toText(step?.node_type),
+        }));
+      const scenarioTotal = scenarioDurationSec(scenario?.sequence, durationSecByNodeId);
+      scenario.diff_from_ideal = {
+        differing_gateway_decisions: [],
+        additional_steps: additionalSteps,
+        additional_time_sec: Math.max(0, scenarioTotal - idealTotal),
+        ideal_total_time_sec: idealTotal,
+        scenario_total_time_sec: scenarioTotal,
+      };
+    });
+  }
+
+  return scenarios;
+}
+
 function buildDurationSecByNodeId(timelineView) {
   const out = {};
   toArray(timelineView).forEach((step) => {
@@ -241,18 +483,34 @@ export function buildInterviewVM({
   graphModel,
   graphNodeRank,
   nodeMetaById,
+  nodePathMetaByNodeId,
+  bpmnTraversalOrder,
 }) {
   return measureInterviewPerf("buildInterviewVM", () => {
     const steps = buildStepsFromTimeline(timelineView);
     const quality = buildQuality(dodSnapshot);
     const normalizedNodeMetaById = buildNodeMetaById(nodeMetaById, timelineView);
     const durationSecByNodeId = buildDurationSecByNodeId(timelineView);
-    const scenarios = enrichScenariosWithRows(buildScenarios(graphModel, {
+    const scenarioDefs = buildScenarioDefs();
+    const taggedScenarios = buildScenariosFromNodePathMeta({
+      graphModel,
       rankByNodeId: asObject(graphNodeRank),
       nodeMetaById: normalizedNodeMetaById,
       durationSecByNodeId,
-      scenarioDefs: buildScenarioDefs(),
-    }));
+      scenarioDefs,
+      nodePathMetaByNodeId: asObject(nodePathMetaByNodeId),
+      bpmnTraversalOrder: toArray(bpmnTraversalOrder),
+    });
+    const scenarioSource = taggedScenarios.length ? "node_path_meta" : "flow_tier";
+    const baseScenarios = taggedScenarios.length
+      ? taggedScenarios
+      : buildScenarios(graphModel, {
+        rankByNodeId: asObject(graphNodeRank),
+        nodeMetaById: normalizedNodeMetaById,
+        durationSecByNodeId,
+        scenarioDefs,
+      });
+    const scenarios = enrichScenariosWithRows(baseScenarios);
     const primaryScenario = scenarios.find((scenario) => toText(scenario?.id) === "primary") || null;
     const groups = extractGroupsFromPrimaryScenario(primaryScenario);
     const metrics = measureInterviewPerf(
@@ -286,6 +544,7 @@ export function buildInterviewVM({
         rows_sort: "order_index",
         ui_sort_by_time_or_title: false,
       },
+      path_source: scenarioSource,
       warnings,
     };
   }, () => ({

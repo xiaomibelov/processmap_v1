@@ -186,9 +186,7 @@ export default function useBpmnSync({
           + `stack=${shortStack()}`,
         );
       }
-      const base = asObject(draftRef.current);
       onSessionSync?.({
-        ...base,
         id: sid,
         session_id: sid,
         bpmn_xml: xml,

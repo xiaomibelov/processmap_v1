@@ -42,6 +42,27 @@ class Edge(BaseModel):
     when: Optional[str] = None
 
 
+class ReportVersion(BaseModel):
+    id: str
+    session_id: str
+    path_id: str
+    version: int
+    steps_hash: str
+    created_at: int
+    status: Literal["running", "ok", "error"] = "running"
+    model: str = "deepseek-chat"
+    prompt_template_version: str = "v2"
+    request_payload_json: Dict[str, Any] = Field(default_factory=dict)
+    report_json: Dict[str, Any] = Field(default_factory=dict)
+    raw_json: Dict[str, Any] = Field(default_factory=dict)
+    report_markdown: str = ""
+    recommendations_json: List[Dict[str, Any]] = Field(default_factory=list)
+    missing_data_json: List[Dict[str, Any]] = Field(default_factory=list)
+    risks_json: List[Dict[str, Any]] = Field(default_factory=list)
+    warnings_json: List[str] = Field(default_factory=list)
+    error_message: Optional[str] = None
+
+
 class Session(BaseModel):
     id: str
     title: str
@@ -65,6 +86,7 @@ class Session(BaseModel):
     bpmn_xml: str = ""
     bpmn_xml_version: int = 0
     bpmn_graph_fingerprint: str = ""
+    bpmn_meta: Dict[str, Any] = Field(default_factory=dict)
     version: int = 0
 # -----------------------------
 # Epic #1: Project (process passport)
@@ -101,3 +123,24 @@ class UpdateProjectIn(BaseModel):
     passport: Dict[str, Any] | None = None
 
     model_config = ConfigDict(extra="allow")
+
+
+class User(BaseModel):
+    id: str
+    email: str
+    password_hash: str
+    is_active: bool = True
+    is_admin: bool = False
+    created_at: int
+
+
+class RefreshTokenRecord(BaseModel):
+    id: str
+    user_id: str
+    jti: str
+    issued_at: int
+    expires_at: int
+    revoked_at: Optional[int] = None
+    replaced_by_jti: Optional[str] = None
+    user_agent: Optional[str] = None
+    ip: Optional[str] = None

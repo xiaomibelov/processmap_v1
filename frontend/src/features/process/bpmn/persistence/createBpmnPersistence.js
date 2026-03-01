@@ -17,6 +17,89 @@ function fnv1aHex(input) {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
+const RUNTIME_CACHE_PREFIX = "fpc_bpmn_runtime_cache:";
+const RUNTIME_CACHE_MAX_AGE_MS = 1000 * 60 * 60 * 24;
+
+function runtimeCacheKey(sessionId) {
+  const sid = asText(sessionId).trim();
+  if (!sid) return "";
+  return `${RUNTIME_CACHE_PREFIX}${sid}`;
+}
+
+function readRuntimeCache(sessionId) {
+  if (typeof window === "undefined") return null;
+  const key = runtimeCacheKey(sessionId);
+  if (!key) return null;
+  try {
+    const raw = String(window.localStorage?.getItem(key) || "");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const xml = asText(parsed?.xml || "");
+    const ts = asNumber(parsed?.ts, 0);
+    if (!xml.trim()) return null;
+    if (ts > 0 && (Date.now() - ts) > RUNTIME_CACHE_MAX_AGE_MS) return null;
+    return {
+      source: "runtime_cache",
+      xml,
+      rev: asNumber(parsed?.rev, 0),
+      ts,
+      hash: asText(parsed?.hash || fnv1aHex(xml)),
+      reason: asText(parsed?.reason || "runtime_change"),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeRuntimeCache(sessionId, xmlText, rev = 0, reason = "runtime_change") {
+  if (typeof window === "undefined") return null;
+  const sid = asText(sessionId).trim();
+  const key = runtimeCacheKey(sid);
+  const xml = asText(xmlText);
+  if (!sid || !key || !xml.trim()) return null;
+  const payload = {
+    xml,
+    rev: asNumber(rev, 0),
+    ts: Date.now(),
+    hash: fnv1aHex(xml),
+    reason: asText(reason || "runtime_change"),
+  };
+  try {
+    window.localStorage?.setItem(key, JSON.stringify(payload));
+    return {
+      source: "runtime_cache",
+      xml: payload.xml,
+      rev: payload.rev,
+      ts: payload.ts,
+      hash: payload.hash,
+      reason: payload.reason,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function pickFreshestCandidate(candidates = []) {
+  const list = (Array.isArray(candidates) ? candidates : [])
+    .filter((item) => asText(item?.xml).trim())
+    .map((item) => ({
+      source: asText(item?.source || "unknown"),
+      xml: asText(item?.xml),
+      rev: asNumber(item?.rev, 0),
+      ts: asNumber(item?.ts, 0),
+      hash: asText(item?.hash || fnv1aHex(item?.xml || "")),
+      reason: asText(item?.reason || ""),
+    }));
+  if (!list.length) return null;
+  list.sort((a, b) => {
+    if (a.rev !== b.rev) return b.rev - a.rev;
+    if (a.ts !== b.ts) return b.ts - a.ts;
+    if (a.xml.length !== b.xml.length) return b.xml.length - a.xml.length;
+    return String(a.hash).localeCompare(String(b.hash));
+  });
+  return list[0];
+}
+
 function snapshotStorageKey(projectId, sessionId) {
   const pid = asText(projectId).trim() || "no_project";
   const sid = asText(sessionId).trim();
@@ -143,6 +226,7 @@ export default function createBpmnPersistence(options = {}) {
   async function loadRaw(sessionId, optionsForLoad = {}) {
     const sid = asText(sessionId).trim();
     if (!sid) return { ok: false, status: 0, error: "missing session id" };
+    const forceRemote = optionsForLoad?.forceRemote === true;
 
     if (isLocalSessionId(sid)) {
       const xml = asText(window.localStorage?.getItem(getLocalStorageKey(sid)) || "");
@@ -159,18 +243,31 @@ export default function createBpmnPersistence(options = {}) {
     const draft = getSessionDraft?.() || {};
     const draftXml = asText(draft?.bpmn_xml || "");
     const rev = draftRevision();
-    if (draftXml.trim()) {
-      emit("PERSISTENCE_LOAD_DRAFT", {
+    const runtimeCache = !forceRemote ? readRuntimeCache(sid) : null;
+    const draftCandidate = draftXml.trim()
+      ? {
+          source: "draft",
+          xml: draftXml,
+          rev,
+          hash: fnv1aHex(draftXml),
+          ts: 0,
+        }
+      : null;
+    const localWinner = pickFreshestCandidate([draftCandidate, runtimeCache]);
+    if (localWinner) {
+      emit("PERSISTENCE_LOAD_LOCAL_WINNER", {
         sid,
-        rev,
+        source: localWinner.source,
+        rev: localWinner.rev,
+        hash: localWinner.hash,
       });
       return {
         ok: true,
         status: 200,
-        source: "draft",
-        xml: draftXml,
-        rev,
-        hash: fnv1aHex(draftXml),
+        source: localWinner.source,
+        xml: localWinner.xml,
+        rev: localWinner.rev,
+        hash: localWinner.hash,
       };
     }
 
@@ -200,6 +297,21 @@ export default function createBpmnPersistence(options = {}) {
         } catch {
         }
       }
+      if (runtimeCache?.xml?.trim()) {
+        emit("PERSISTENCE_LOAD_RUNTIME_ONLY", {
+          sid,
+          rev: runtimeCache.rev,
+          hash: runtimeCache.hash,
+        });
+        return {
+          ok: true,
+          status: 200,
+          source: runtimeCache.source,
+          xml: runtimeCache.xml,
+          rev: runtimeCache.rev,
+          hash: runtimeCache.hash,
+        };
+      }
       return { ok: false, status: 0, error: "apiGetBpmnXml unavailable" };
     }
     const loaded = await apiGetBpmnXml(sid);
@@ -211,6 +323,14 @@ export default function createBpmnPersistence(options = {}) {
       };
     }
     const xml = asText(loaded?.xml || "");
+    const backendCandidate = {
+      source: "backend",
+      xml,
+      rev,
+      hash: fnv1aHex(xml),
+      ts: 0,
+    };
+    let snapshotCandidate = null;
     if (!xml.trim() && typeof loadLatestSnapshot === "function") {
       try {
         const snap = await loadLatestSnapshot({
@@ -219,22 +339,40 @@ export default function createBpmnPersistence(options = {}) {
         });
         const snapXml = asText(snap?.xml || "");
         if (snapXml.trim()) {
-          emit("PERSISTENCE_LOAD_SNAPSHOT_RECOVER", {
-            sid,
-            rev: asNumber(snap?.rev, rev),
-            hash: asText(snap?.hash || fnv1aHex(snapXml)),
-          });
-          return {
-            ok: true,
-            status: asNumber(loaded?.status, 200),
+          snapshotCandidate = {
             source: "snapshot",
             xml: snapXml,
             rev: asNumber(snap?.rev, rev),
             hash: asText(snap?.hash || fnv1aHex(snapXml)),
+            ts: asNumber(snap?.ts, 0),
           };
         }
       } catch {
       }
+    }
+    const winner = pickFreshestCandidate([backendCandidate, snapshotCandidate, runtimeCache]);
+    if (winner?.source === "runtime_cache") {
+      emit("PERSISTENCE_LOAD_RUNTIME_RECOVER", {
+        sid,
+        rev: winner.rev,
+        hash: winner.hash,
+      });
+    } else if (winner?.source === "snapshot") {
+      emit("PERSISTENCE_LOAD_SNAPSHOT_RECOVER", {
+        sid,
+        rev: winner.rev,
+        hash: winner.hash,
+      });
+    }
+    if (winner) {
+      return {
+        ok: true,
+        status: asNumber(loaded?.status, 200),
+        source: winner.source,
+        xml: winner.xml,
+        rev: winner.rev,
+        hash: winner.hash,
+      };
     }
     return {
       ok: true,
@@ -296,6 +434,7 @@ export default function createBpmnPersistence(options = {}) {
     } catch {
       // no-op
     }
+    writeRuntimeCache(sid, xml, storedRev, reason);
     await maybeSaveSnapshot(sid, xml, reason, storedRev, false);
     return {
       ok: true,
@@ -310,5 +449,14 @@ export default function createBpmnPersistence(options = {}) {
   return {
     loadRaw,
     saveRaw,
+    cacheRaw: (sessionId, xmlText, rev = 0, reason = "runtime_change") => {
+      const cached = writeRuntimeCache(sessionId, xmlText, rev, reason);
+      return {
+        ok: !!cached,
+        source: cached?.source || "runtime_cache",
+        rev: asNumber(cached?.rev, 0),
+        hash: asText(cached?.hash || ""),
+      };
+    },
   };
 }

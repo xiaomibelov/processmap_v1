@@ -41,6 +41,21 @@ export default function createBpmnRuntime(options = {}) {
   const statusSubs = new Set();
   const changeSubs = new Set();
 
+  function resolveCtorOptions(runtimeMode) {
+    const modeName = asMode(runtimeMode || mode);
+    try {
+      if (typeof options?.getCtorOptions === "function") {
+        const out = options.getCtorOptions(modeName);
+        if (out && typeof out === "object" && !Array.isArray(out)) return out;
+      }
+    } catch {
+      // no-op
+    }
+    const direct = options?.ctorOptions;
+    if (direct && typeof direct === "object" && !Array.isArray(direct)) return direct;
+    return {};
+  }
+
   function emitTrace(event, payload = {}) {
     if (!trace) return;
     try {
@@ -146,7 +161,8 @@ export default function createBpmnRuntime(options = {}) {
     destroyed = false;
     initPromise = (async () => {
       const RuntimeCtor = await importCtor(mode);
-      const next = new RuntimeCtor({ container });
+      const ctorOptions = resolveCtorOptions(mode);
+      const next = new RuntimeCtor({ container, ...ctorOptions });
       instance = next;
       containerEl = container;
       ready = false;

@@ -121,6 +121,7 @@ function normalizeSnapshot(raw) {
   const reason = normalizeReason(raw?.reason);
   const len = asNumber(raw?.len, xml.length);
   const label = asText(raw?.label).trim();
+  const pinned = raw?.pinned === true;
   return {
     id,
     ts,
@@ -129,6 +130,7 @@ function normalizeSnapshot(raw) {
     hash,
     len,
     rev,
+    pinned,
     ...(label ? { label } : {}),
   };
 }
@@ -138,6 +140,8 @@ function normalizeRecord(raw) {
   const sorted = items
     .filter((item) => asText(item?.xml).trim())
     .sort((a, b) => {
+      const pinnedDelta = (b?.pinned === true ? 1 : 0) - (a?.pinned === true ? 1 : 0);
+      if (pinnedDelta !== 0) return pinnedDelta;
       const t = asNumber(b?.ts, 0) - asNumber(a?.ts, 0);
       if (t !== 0) return t;
       return asText(b?.id).localeCompare(asText(a?.id));
@@ -279,6 +283,15 @@ function createSnapshotId(ts, rev, hash, existingIds = new Set()) {
   let idx = 1;
   while (existingIds.has(`${base}_${idx}`)) idx += 1;
   return `${base}_${idx}`;
+}
+
+function defaultCheckpointLabel(ts = Date.now()) {
+  const stamp = asNumber(ts, Date.now());
+  try {
+    return `Checkpoint ${new Date(stamp).toLocaleString("ru-RU")}`;
+  } catch {
+    return `Checkpoint ${stamp}`;
+  }
 }
 
 export async function listBpmnSnapshots({ projectId, sessionId }) {
@@ -628,6 +641,77 @@ export async function getBpmnSnapshotById({ projectId, sessionId, snapshotId }) 
   if (!id) return null;
   const list = await listBpmnSnapshots({ projectId, sessionId });
   return list.find((item) => asText(item?.id) === id) || null;
+}
+
+export async function updateBpmnSnapshotMeta(payload = {}) {
+  const sid = asText(payload?.sessionId).trim();
+  const snapshotId = asText(payload?.snapshotId).trim();
+  if (!sid || !snapshotId) {
+    return { ok: false, updated: false, error: "invalid_args" };
+  }
+
+  const key = scopeKey(payload?.projectId, sid);
+  const legacyKey = legacyScopeKey(payload?.projectId, sid);
+  let readMeta;
+  try {
+    readMeta = await readRecordWithFallback(key, legacyKey);
+  } catch {
+    return { ok: false, updated: false, error: "snapshot_read_failed" };
+  }
+
+  const items = Array.isArray(readMeta?.record?.items) ? [...readMeta.record.items] : [];
+  const idx = items.findIndex((item) => asText(item?.id) === snapshotId);
+  if (idx < 0) {
+    return { ok: false, updated: false, error: "snapshot_not_found" };
+  }
+
+  const current = normalizeSnapshot(items[idx]);
+  const next = { ...current };
+  const hasPinned = Object.prototype.hasOwnProperty.call(payload || {}, "pinned");
+  const hasLabel = Object.prototype.hasOwnProperty.call(payload || {}, "label");
+
+  if (hasPinned) {
+    next.pinned = payload?.pinned === true;
+  }
+  if (hasLabel) {
+    const txt = asText(payload?.label).trim();
+    if (txt) next.label = txt;
+    else delete next.label;
+  }
+  if (next.pinned && !asText(next?.label).trim()) {
+    next.label = defaultCheckpointLabel(next.ts || Date.now());
+  }
+
+  items[idx] = next;
+  const ok = await writeRecord({
+    key,
+    updatedAt: Date.now(),
+    items,
+  });
+  if (!ok) {
+    return { ok: false, updated: false, error: "snapshot_write_failed" };
+  }
+
+  const normalized = normalizeRecord({
+    key,
+    updatedAt: Date.now(),
+    items,
+  });
+  const updated = normalized.items.find((item) => asText(item?.id) === snapshotId) || next;
+  logSnapshotTrace("meta_update", {
+    sid,
+    key,
+    snapshot_id: snapshotId,
+    pinned: updated?.pinned ? 1 : 0,
+    label: asText(updated?.label || ""),
+  });
+
+  return {
+    ok: true,
+    updated: true,
+    snapshot: updated,
+    items: normalized.items,
+  };
 }
 
 export function shortSnapshotHash(xmlOrHash) {

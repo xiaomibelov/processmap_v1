@@ -92,6 +92,115 @@ test("buildInterviewVM recomputes work/wait totals when a single step changes", 
   assert.equal(vmChanged.path_metrics.total_time_sec, 780);
 });
 
+test("buildInterviewVM prefers explicit node_path_meta scenarios over flow-tier", () => {
+  const timeline = [
+    makeStep({ id: "s1", seq: 1, title: "Start", nodeId: "N_start", tier: "None" }),
+    makeStep({ id: "s2", seq: 2, title: "Mitigated 1", nodeId: "N_m1", tier: "None" }),
+    makeStep({ id: "s3", seq: 3, title: "Mitigated 2", nodeId: "N_m2", tier: "None" }),
+  ];
+  const graphModel = {
+    nodesById: {
+      N_start: { id: "N_start", type: "startevent", name: "Start" },
+      N_m1: { id: "N_m1", type: "task", name: "Mitigated 1" },
+      N_m2: { id: "N_m2", type: "task", name: "Mitigated 2" },
+    },
+    outgoingByNode: {
+      N_start: [{ id: "F1", sourceId: "N_start", targetId: "N_m1" }],
+      N_m1: [{ id: "F2", sourceId: "N_m1", targetId: "N_m2" }],
+      N_m2: [],
+    },
+    incomingByNode: {
+      N_start: [],
+      N_m1: [{ id: "F1", sourceId: "N_start", targetId: "N_m1" }],
+      N_m2: [{ id: "F2", sourceId: "N_m1", targetId: "N_m2" }],
+    },
+    startNodeIds: ["N_start"],
+  };
+  const vm = buildInterviewVM({
+    timelineView: timeline,
+    dodSnapshot: {},
+    graphModel,
+    graphNodeRank: { N_start: 0, N_m1: 1, N_m2: 2 },
+    nodePathMetaByNodeId: {
+      N_m2: { paths: ["P1"], sequence_key: "mitigated_1", source: "manual" },
+      N_start: { paths: ["P1"], sequence_key: "mitigated_1", source: "manual" },
+      N_m1: { paths: ["P1"], sequence_key: "mitigated_1", source: "manual" },
+    },
+    bpmnTraversalOrder: ["N_start", "N_m1", "N_m2"],
+  });
+  assert.equal(vm.path_source, "node_path_meta");
+  const p1 = vm.scenarios.find((item) => String(item?.tier || "").toUpperCase() === "P1");
+  assert.ok(p1);
+  assert.deepEqual(
+    p1.sequence.map((step) => step.node_id),
+    ["N_start", "N_m1", "N_m2"],
+  );
+});
+
+test("buildInterviewVM keeps scenarios stable after explicit node_path_meta import even if tier hints change", () => {
+  const timelineBase = [
+    makeStep({ id: "s1", seq: 1, title: "Start", nodeId: "N_start", tier: "P0" }),
+    makeStep({ id: "s2", seq: 2, title: "Task A", nodeId: "N_a", tier: "P0" }),
+    makeStep({ id: "s3", seq: 3, title: "Task B", nodeId: "N_b", tier: "P2" }),
+  ];
+  const timelineChangedTiers = [
+    makeStep({ id: "s1", seq: 1, title: "Start", nodeId: "N_start", tier: "P2" }),
+    makeStep({ id: "s2", seq: 2, title: "Task A", nodeId: "N_a", tier: "P2" }),
+    makeStep({ id: "s3", seq: 3, title: "Task B", nodeId: "N_b", tier: "P0" }),
+  ];
+  const graphModel = {
+    nodesById: {
+      N_start: { id: "N_start", type: "startevent", name: "Start" },
+      N_a: { id: "N_a", type: "task", name: "Task A" },
+      N_b: { id: "N_b", type: "task", name: "Task B" },
+    },
+    outgoingByNode: {
+      N_start: [{ id: "F1", sourceId: "N_start", targetId: "N_a" }],
+      N_a: [{ id: "F2", sourceId: "N_a", targetId: "N_b" }],
+      N_b: [],
+    },
+    incomingByNode: {
+      N_start: [],
+      N_a: [{ id: "F1", sourceId: "N_start", targetId: "N_a" }],
+      N_b: [{ id: "F2", sourceId: "N_a", targetId: "N_b" }],
+    },
+    startNodeIds: ["N_start"],
+  };
+  const nodePathMetaByNodeId = {
+    N_start: { paths: ["P0"], sequence_key: "primary", source: "color_auto" },
+    N_a: { paths: ["P0"], sequence_key: "primary", source: "color_auto" },
+    N_b: { paths: ["P0"], sequence_key: "primary", source: "color_auto" },
+  };
+
+  const vmBase = buildInterviewVM({
+    timelineView: timelineBase,
+    dodSnapshot: {},
+    graphModel,
+    graphNodeRank: { N_start: 0, N_a: 1, N_b: 2 },
+    nodePathMetaByNodeId,
+    bpmnTraversalOrder: ["N_start", "N_a", "N_b"],
+  });
+  const vmChanged = buildInterviewVM({
+    timelineView: timelineChangedTiers,
+    dodSnapshot: {},
+    graphModel,
+    graphNodeRank: { N_start: 0, N_a: 1, N_b: 2 },
+    nodePathMetaByNodeId,
+    bpmnTraversalOrder: ["N_start", "N_a", "N_b"],
+  });
+
+  assert.equal(vmBase.path_source, "node_path_meta");
+  assert.equal(vmChanged.path_source, "node_path_meta");
+  const p0Base = vmBase.scenarios.find((item) => item?.id === "primary");
+  const p0Changed = vmChanged.scenarios.find((item) => item?.id === "primary");
+  assert.ok(p0Base);
+  assert.ok(p0Changed);
+  assert.deepEqual(
+    p0Base.sequence.map((step) => step.node_id),
+    p0Changed.sequence.map((step) => step.node_id),
+  );
+});
+
 test("buildInterviewVM strips nullish suffix from step titles", () => {
   const timeline = [
     makeStep({ id: "s1", seq: 1, title: "заказ на супNone", nodeId: "N1" }),

@@ -443,7 +443,9 @@ export default function useProcessTabs({
   useEffect(() => {
     if (!focusRequest || tab !== "diagram") return undefined;
     const timer = window.setTimeout(async () => {
-      const ok = await Promise.resolve(bpmnRef?.current?.focusNode?.(focusRequest.nodeId));
+      const ok = await Promise.resolve(
+        bpmnRef?.current?.focusNode?.(focusRequest.nodeId, focusRequest.options || {}),
+      );
       if (ok) {
         setFocusRequest(null);
         return;
@@ -462,15 +464,23 @@ export default function useProcessTabs({
     if (!sid) return undefined;
     const flushByLifecycle = (reason) => {
       const current = String(currentTabRef.current || "").toLowerCase();
-      if (!["diagram", "xml"].includes(current)) return;
-      void bpmnSync.flushFromActiveTab(current, {
-        force: current === "diagram",
-        source: reason,
-        reason,
-      });
+      if (["diagram", "xml"].includes(current)) {
+        void bpmnSync.flushFromActiveTab(current, {
+          force: current === "diagram",
+          source: reason,
+          reason,
+        });
+        return;
+      }
+      if (current === "interview") {
+        void flushInterviewBeforeTabSwitch("interview", "diagram");
+      }
     };
     const onBeforeUnload = () => {
       flushByLifecycle("beforeunload");
+    };
+    const onPageHide = () => {
+      flushByLifecycle("pagehide");
     };
     const onVisibility = () => {
       if (document.visibilityState === "hidden") {
@@ -478,12 +488,14 @@ export default function useProcessTabs({
       }
     };
     window.addEventListener("beforeunload", onBeforeUnload);
+    window.addEventListener("pagehide", onPageHide);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.removeEventListener("beforeunload", onBeforeUnload);
+      window.removeEventListener("pagehide", onPageHide);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [sid, bpmnSync]);
+  }, [sid, bpmnSync, flushInterviewBeforeTabSwitch]);
 
   const switchTab = useCallback(
     async (nextTab) => {
@@ -763,7 +775,6 @@ export default function useProcessTabs({
                 if (projected.ok) {
                   const derivedActors = deriveActorsFromBpmn(xmlForSync);
                   onSessionSync?.({
-                    ...draftNow,
                     id: sid,
                     session_id: sid,
                     bpmn_xml: xmlForSync,
@@ -771,6 +782,7 @@ export default function useProcessTabs({
                     nodes: projected.nextNodes,
                     edges: projected.nextEdges,
                     actors_derived: derivedActors,
+                    _sync_source: "tabs.sync_interview_from_bpmn.optimistic",
                   });
 
                   if (!isLocal) {
@@ -792,7 +804,6 @@ export default function useProcessTabs({
                           ? syncRes.session
                           : {};
                       onSessionSync?.({
-                        ...draftNow,
                         ...serverSession,
                         id: sid,
                         session_id: sid,
@@ -801,6 +812,7 @@ export default function useProcessTabs({
                         nodes: projected.nextNodes,
                         edges: projected.nextEdges,
                         actors_derived: derivedActors,
+                        _sync_source: "tabs.sync_interview_from_bpmn.server",
                       });
                       markHydrateDoneForSession?.();
                     } else {
@@ -898,11 +910,12 @@ export default function useProcessTabs({
     ],
   );
 
-  const requestDiagramFocus = useCallback((nodeId) => {
+  const requestDiagramFocus = useCallback((nodeId, options = {}) => {
     const id = toNodeIdRaw(nodeId);
     if (!id) return false;
     setTabWithReason("diagram", "request_focus", { allow: true });
-    setFocusRequest({ nodeId: id, attempt: 0 });
+    const opts = options && typeof options === "object" ? options : {};
+    setFocusRequest({ nodeId: id, attempt: 0, options: opts });
     return true;
   }, []);
 

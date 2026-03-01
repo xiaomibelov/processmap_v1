@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import GatewayBranchesTree from "./GatewayBranchesTree";
-import GatewayBranchesCards from "./GatewayBranchesCards";
+import GatewayGroupRow from "./matrix/GatewayGroupRow";
+import BranchStepsPanel from "./matrix/BranchStepsPanel";
 import {
   STEP_TYPES,
   toArray,
@@ -15,12 +15,23 @@ import {
   durationLabel,
 } from "./utils";
 import { measureInterviewPerf } from "./perf";
+import {
+  branchOutcomeLabel,
+  collectBranchMetrics,
+  findFirstStepNodeId,
+} from "./matrix/gatewayUtils";
 
 const INITIAL_VISIBLE_ROWS = 80;
 const VISIBLE_ROWS_INCREMENT = 80;
 const VIRTUALIZE_ROWS_THRESHOLD = 200;
 const VIRTUAL_ROW_HEIGHT = 64;
 const VIRTUAL_OVERSCAN = 8;
+const GATEWAY_UI_STORAGE_VERSION = 1;
+
+function matrixGatewayUiKey(sessionIdRaw) {
+  const sid = toText(sessionIdRaw) || "local";
+  return `fpc.interview.matrix.gateway_ui.v${GATEWAY_UI_STORAGE_VERSION}:${sid}`;
+}
 
 function normalizeStepTimeUnit(raw) {
   return String(raw || "").trim().toLowerCase() === "sec" ? "sec" : "min";
@@ -127,30 +138,6 @@ function normalizeTier(value) {
   return "None";
 }
 
-function summarizeBranchOutcome(nodesRaw) {
-  let hasContinue = false;
-  let hasLoop = false;
-  let hasTerminal = false;
-  let stepCount = 0;
-  function walk(itemsRaw) {
-    toArray(itemsRaw).forEach((node) => {
-      const kind = toText(node?.kind).toLowerCase();
-      if (kind === "step") stepCount += 1;
-      if (kind === "continue") hasContinue = true;
-      if (kind === "loop") hasLoop = true;
-      if (kind === "terminal") hasTerminal = true;
-      if (kind === "decision" || kind === "parallel") {
-        toArray(node?.branches).forEach((branch) => walk(branch?.children));
-      }
-    });
-  }
-  walk(nodesRaw);
-  if (hasLoop) return { outcome: "Loop", stepsCount: stepCount };
-  if (hasContinue) return { outcome: "Continue", stepsCount: stepCount };
-  if (hasTerminal) return { outcome: "End", stepsCount: stepCount };
-  return { outcome: stepCount > 0 ? "Steps" : "—", stepsCount: stepCount };
-}
-
 function splitAnnotationText(textRaw, titleRaw, index = 1) {
   const text = String(textRaw || "");
   const textTrimmed = toText(text);
@@ -180,96 +167,8 @@ function splitAnnotationText(textRaw, titleRaw, index = 1) {
   };
 }
 
-function renderGatewayPreviewNodes(nodesRaw, options = {}) {
-  const nodes = toArray(nodesRaw);
-  if (!nodes.length) return null;
-  const keyPrefix = toText(options?.keyPrefix) || "branch";
-  const pathPrefix = toText(options?.pathPrefix);
-  return (
-    <ul className="interviewGatewayPreviewSteps">
-      {nodes.map((node, idx) => {
-        const kind = toText(node?.kind).toLowerCase();
-        const graphNo = toText(node?.graphNo || node?.targetGraphNo);
-        const title = toText(node?.title || node?.targetTitle || node?.nodeId || node?.targetNodeId);
-        const timeLabel = toText(node?.time?.label || node?.time_label || node?.step_time_label);
-        const nodeKey = `${keyPrefix}_${idx}_${toText(node?.nodeId || node?.targetNodeId || kind)}`;
-        const branchNo = pathPrefix ? `${pathPrefix}.${idx + 1}` : String(idx + 1);
-
-        if (kind === "decision" || kind === "parallel") {
-          return (
-            <li
-              key={nodeKey}
-              className={[
-                "interviewGatewayPreviewNode interviewGatewayPreviewNodeDecision",
-                kind === "parallel" ? "interviewGatewayPreviewNodeParallel" : "",
-              ].filter(Boolean).join(" ")}
-            >
-              <div className="interviewGatewayPreviewDecisionTitle">
-                <span className="interviewGatewayPreviewStepNo">{branchNo}</span>
-                <span className="interviewGatewayPreviewStepTitle">{title || (kind === "parallel" ? "Параллельно" : "Проверка")}</span>
-              </div>
-              <div className="interviewGatewayPreviewDecisionBranches">
-                {toArray(node?.branches).map((branch, branchIdx) => (
-                  <div
-                    key={`${nodeKey}_b_${toText(branch?.key) || branchIdx + 1}`}
-                    className="interviewGatewayPreviewDecisionBranch"
-                  >
-                    <div className="interviewGatewayPreviewDecisionBranchLabel">
-                      {toText(branch?.label) || `Ветка ${branchIdx + 1}`}
-                    </div>
-                    {renderGatewayPreviewNodes(branch?.children, {
-                      keyPrefix: `${nodeKey}_b${branchIdx + 1}`,
-                      pathPrefix: `${branchNo}.${toText(branch?.key) || String.fromCharCode(65 + branchIdx)}`,
-                    })}
-                  </div>
-                ))}
-              </div>
-            </li>
-          );
-        }
-
-        if (kind === "continue") {
-          return (
-            <li key={nodeKey} className="interviewGatewayPreviewNode interviewGatewayPreviewNodeContinue">
-              <span className="interviewGatewayPreviewContinue">
-                {branchNo} → Continue: Дальше по сценарию: {graphNo ? `#${graphNo} ` : ""}{title || "—"} (mainline)
-              </span>
-            </li>
-          );
-        }
-
-        if (kind === "loop") {
-          return (
-            <li key={nodeKey} className="interviewGatewayPreviewNode interviewGatewayPreviewNodeLoop">
-              <span className="interviewGatewayPreviewLoop">
-                {branchNo} ↩ Возврат к шагу {graphNo ? `#${graphNo} ` : ""}{title || "—"}
-              </span>
-            </li>
-          );
-        }
-
-        if (kind === "terminal") {
-          return (
-            <li key={nodeKey} className="interviewGatewayPreviewNode interviewGatewayPreviewNodeTerminal">
-              <span className="interviewGatewayPreviewStepNo">{branchNo}</span>
-              <span className="interviewGatewayPreviewStepTitle">{title || "Завершение"}</span>
-            </li>
-          );
-        }
-
-        return (
-          <li key={nodeKey} className="interviewGatewayPreviewNode">
-            <span className="interviewGatewayPreviewStepNo">{branchNo}</span>
-            <span className="interviewGatewayPreviewStepTitle">{title || "—"}</span>
-            {timeLabel && timeLabel !== "—" ? <span className="badge">⏱ {timeLabel}</span> : null}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
 export default function TimelineTable({
+  sessionId = "",
   hiddenTimelineCols,
   timelineLaneFilter,
   filteredTimelineView,
@@ -308,12 +207,21 @@ export default function TimelineTable({
   branchViewMode = "tree",
   branchExpandByGateway = {},
   onPatchBranchExpand,
+  onSetTimelineViewMode,
 }) {
   const DEBOUNCE_MS = 180;
   const [expandedLongAnnotationById, setExpandedLongAnnotationById] = useState({});
   const [expandedLaneTransitionsByStepId, setExpandedLaneTransitionsByStepId] = useState({});
   const [collapsedSubprocessByStepId, setCollapsedSubprocessByStepId] = useState({});
-  const [collapsedGatewayBranchesByStepId, setCollapsedGatewayBranchesByStepId] = useState({});
+  const [expandedGatewayById, setExpandedGatewayById] = useState({});
+  const [selectedBranchByGatewayId, setSelectedBranchByGatewayId] = useState({});
+  const [showGatewayIdsById, setShowGatewayIdsById] = useState({});
+  const [branchStepsPanelState, setBranchStepsPanelState] = useState({
+    open: false,
+    gatewayId: "",
+    branchKey: "",
+    context: null,
+  });
   const [rowMenuStepId, setRowMenuStepId] = useState("");
   const [detailsStepId, setDetailsStepId] = useState("");
   const [visibleLimit, setVisibleLimit] = useState(INITIAL_VISIBLE_ROWS);
@@ -446,6 +354,35 @@ export default function TimelineTable({
     });
     return { byStepId, byNodeId };
   }, [dodSnapshot]);
+  const branchStepMetaByNodeId = useMemo(() => {
+    const out = {};
+    toArray(timelineView).forEach((step) => {
+      const nodeId = toText(step?.node_bind_id || step?.node_id);
+      if (!nodeId || out[nodeId]) return;
+      const workSec = readStepDurationSeconds(step);
+      const waitSec = readStepWaitSeconds(step);
+      out[nodeId] = {
+        nodeId,
+        stepId: toText(step?.id),
+        graphNo: toText(step?._order_index || step?.order_index || step?.seq || ""),
+        title: toText(step?.action || step?.node_bind_title || nodeId),
+        workSec,
+        waitSec,
+        totalSec: Math.max(0, Number(workSec || 0)) + Math.max(0, Number(waitSec || 0)),
+      };
+    });
+    return out;
+  }, [timelineView]);
+  const firstStepIdByNodeId = useMemo(() => {
+    const out = {};
+    toArray(timelineView).forEach((step) => {
+      const nodeId = toText(step?.node_bind_id || step?.node_id);
+      const stepId = toText(step?.id);
+      if (!nodeId || !stepId || out[nodeId]) return;
+      out[nodeId] = stepId;
+    });
+    return out;
+  }, [timelineView]);
 
   useEffect(() => {
     patchStepRef.current = patchStep;
@@ -685,9 +622,13 @@ export default function TimelineTable({
     setExpandedLongAnnotationById({});
     setExpandedLaneTransitionsByStepId({});
     setCollapsedSubprocessByStepId({});
-    setCollapsedGatewayBranchesByStepId({});
     setRowMenuStepId("");
     setDetailsStepId("");
+    setBranchStepsPanelState((prev) => ({
+      ...prev,
+      open: false,
+      context: null,
+    }));
     setVisibleLimit(INITIAL_VISIBLE_ROWS);
     Object.values(draftTimersRef.current).forEach((timerId) => {
       if (timerId) window.clearTimeout(timerId);
@@ -735,43 +676,164 @@ export default function TimelineTable({
     }));
   }, []);
 
-  const toggleGatewayBranches = useCallback((stepId) => {
-    const key = toText(stepId);
-    if (!key) return;
-    setCollapsedGatewayBranchesByStepId((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
+  useEffect(() => {
+    const sid = toText(sessionId);
+    if (!sid || typeof window === "undefined") {
+      setExpandedGatewayById({});
+      setSelectedBranchByGatewayId({});
+      setShowGatewayIdsById({});
+      setBranchStepsPanelState({
+        open: false,
+        gatewayId: "",
+        branchKey: "",
+        context: null,
+      });
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(matrixGatewayUiKey(sid));
+      if (!raw) {
+        setExpandedGatewayById({});
+        setSelectedBranchByGatewayId({});
+        setShowGatewayIdsById({});
+        setBranchStepsPanelState({
+          open: false,
+          gatewayId: "",
+          branchKey: "",
+          context: null,
+        });
+        return;
+      }
+      const parsed = JSON.parse(raw) || {};
+      const expanded = parsed?.expandedGatewayById && typeof parsed.expandedGatewayById === "object" ? parsed.expandedGatewayById : {};
+      const selected = parsed?.selectedBranchByGatewayId && typeof parsed.selectedBranchByGatewayId === "object" ? parsed.selectedBranchByGatewayId : {};
+      const showIds = parsed?.showGatewayIdsById && typeof parsed.showGatewayIdsById === "object" ? parsed.showGatewayIdsById : {};
+      const panel = parsed?.branchStepsPanelState && typeof parsed.branchStepsPanelState === "object"
+        ? parsed.branchStepsPanelState
+        : null;
+      setExpandedGatewayById(expanded);
+      setSelectedBranchByGatewayId(selected);
+      setShowGatewayIdsById(showIds);
+      setBranchStepsPanelState({
+        open: !!panel?.open,
+        gatewayId: toText(panel?.gatewayId),
+        branchKey: toText(panel?.branchKey),
+        context: null,
+      });
+    } catch {
+      setExpandedGatewayById({});
+      setSelectedBranchByGatewayId({});
+      setShowGatewayIdsById({});
+      setBranchStepsPanelState({
+        open: false,
+        gatewayId: "",
+        branchKey: "",
+        context: null,
+      });
+    }
+  }, [sessionId]);
+
+  useEffect(() => {
+    const sid = toText(sessionId);
+    if (!sid || typeof window === "undefined") return;
+    const payload = {
+      version: GATEWAY_UI_STORAGE_VERSION,
+      expandedGatewayById,
+      selectedBranchByGatewayId,
+      showGatewayIdsById,
+      branchStepsPanelState: {
+        open: !!branchStepsPanelState?.open,
+        gatewayId: toText(branchStepsPanelState?.gatewayId),
+        branchKey: toText(branchStepsPanelState?.branchKey),
+      },
+    };
+    try {
+      window.localStorage.setItem(matrixGatewayUiKey(sid), JSON.stringify(payload));
+    } catch {
+    }
+  }, [
+    sessionId,
+    expandedGatewayById,
+    selectedBranchByGatewayId,
+    showGatewayIdsById,
+    branchStepsPanelState?.open,
+    branchStepsPanelState?.gatewayId,
+    branchStepsPanelState?.branchKey,
+  ]);
+
+  useEffect(() => {
+    if (!branchStepsPanelState?.open || branchStepsPanelState?.context) return;
+    const gatewayId = toText(branchStepsPanelState?.gatewayId);
+    const branchKey = toText(branchStepsPanelState?.branchKey);
+    if (!gatewayId || !branchKey) return;
+    let foundContext = null;
+    toArray(timelineView).some((step) => {
+      const between = step?.between_branches_item;
+      const stepGatewayId = toText(between?.anchorNodeId || step?.node_bind_id || step?.id);
+      if (stepGatewayId !== gatewayId) return false;
+      const branch = toArray(between?.branches).find((item, idx) => {
+        const key = toText(item?.key) || String.fromCharCode(65 + (idx % 26));
+        return key === branchKey;
+      });
+      if (!branch) return false;
+      const metrics = collectBranchMetrics(branch?.children, branchStepMetaByNodeId);
+      const firstNodeId = toText(metrics?.firstStepNodeId || findFirstStepNodeId(branch?.children));
+      const firstStepId = toText(firstStepIdByNodeId[firstNodeId]);
+      foundContext = {
+        gatewayId,
+        gatewayLabel: toText(step?.action || step?.node_bind_title || gatewayId),
+        branchKey,
+        branchLabel: toText(branch?.label) || branchKey,
+        branchTier: normalizeTier(branch?.tier),
+        nodes: toArray(branch?.children),
+        metrics,
+        outcomeLabel: branchOutcomeLabel(branch, metrics),
+        firstStepId,
+      };
+      return true;
+    });
+    if (!foundContext) {
+      setBranchStepsPanelState((prev) => ({ ...prev, open: false, context: null }));
+      return;
+    }
+    setBranchStepsPanelState((prev) => ({ ...prev, context: foundContext }));
+  }, [
+    branchStepsPanelState?.open,
+    branchStepsPanelState?.gatewayId,
+    branchStepsPanelState?.branchKey,
+    branchStepsPanelState?.context,
+    timelineView,
+    branchStepMetaByNodeId,
+    firstStepIdByNodeId,
+  ]);
+
+  const toggleGatewayExpanded = useCallback((gatewayIdRaw) => {
+    const gatewayId = toText(gatewayIdRaw);
+    if (!gatewayId) return;
+    setExpandedGatewayById((prev) => ({ ...prev, [gatewayId]: !prev?.[gatewayId] }));
   }, []);
 
-  const resolveBranchViewMode = branchViewMode === "cards" ? "cards" : "tree";
+  const toggleGatewayShowIds = useCallback((gatewayIdRaw) => {
+    const gatewayId = toText(gatewayIdRaw);
+    if (!gatewayId) return;
+    setShowGatewayIdsById((prev) => ({ ...prev, [gatewayId]: !prev?.[gatewayId] }));
+  }, []);
 
-  const getBranchExpansion = useCallback((gatewayKey, branch) => {
-    const branchKey = toText(branch?.key);
-    if (!gatewayKey || !branchKey) return true;
-    const saved = branchExpandByGateway && typeof branchExpandByGateway === "object"
-      ? branchExpandByGateway[gatewayKey]
-      : null;
-    if (saved && typeof saved === "object" && Object.prototype.hasOwnProperty.call(saved, branchKey)) {
-      return !!saved[branchKey];
+  const setSelectedBranch = useCallback((gatewayIdRaw, branchKeyRaw) => {
+    const gatewayId = toText(gatewayIdRaw);
+    const branchKey = toText(branchKeyRaw);
+    if (!gatewayId || !branchKey) return;
+    setSelectedBranchByGatewayId((prev) => ({ ...prev, [gatewayId]: branchKey }));
+  }, []);
+
+  const copyGatewaySummary = useCallback(async (gatewayIdRaw, summaryText) => {
+    const gatewayId = toText(gatewayIdRaw);
+    const text = toText(summaryText);
+    if (!gatewayId || !text) return;
+    try {
+      if (navigator?.clipboard?.writeText) await navigator.clipboard.writeText(text);
+    } catch {
     }
-    const outcome = summarizeBranchOutcome(branch?.children);
-    if (branch?.isPrimary && outcome.outcome === "Continue") return false;
-    return true;
-  }, [branchExpandByGateway]);
-
-  const patchBranchExpand = useCallback((gatewayKey, branchKey, expanded) => {
-    const gKey = toText(gatewayKey);
-    const bKey = toText(branchKey);
-    if (!gKey || !bKey) return;
-    onPatchBranchExpand?.(gKey, bKey, !!expanded);
-  }, [onPatchBranchExpand]);
-
-  const renderBranchNodes = useCallback((nodesRaw, pathPrefix, keyPrefix) => {
-    return renderGatewayPreviewNodes(nodesRaw, {
-      pathPrefix,
-      keyPrefix,
-    });
   }, []);
 
   function openStepDetails(stepId, select = true) {
@@ -780,6 +842,49 @@ export default function TimelineTable({
     setDetailsStepId((prev) => (prev === key ? "" : key));
     if (select) onToggleStepSelection?.(key, true);
   }
+
+  function jumpToMatrixStep(stepIdRaw) {
+    const stepId = toText(stepIdRaw);
+    if (!stepId) return;
+    openStepDetails(stepId, true);
+    if (typeof document !== "undefined") {
+      const row = document.querySelector(`[data-step-id="${stepId}"]`);
+      if (row && typeof row.scrollIntoView === "function") row.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }
+
+  function openBranchInDiagram(stepIdRaw) {
+    const stepId = toText(stepIdRaw);
+    if (!stepId) return;
+    onToggleStepSelection?.(stepId, true);
+    onSetTimelineViewMode?.("diagram");
+  }
+
+  const openNestedBranchPanel = useCallback((payloadRaw) => {
+    const payload = payloadRaw && typeof payloadRaw === "object" ? payloadRaw : {};
+    const gatewayId = toText(payload?.gatewayId || branchStepsPanelState?.gatewayId);
+    const branchKey = toText(payload?.branchKey);
+    const nodes = toArray(payload?.nodes);
+    if (!gatewayId || !branchKey || !nodes.length) return;
+    const firstNodeId = toText(payload?.metrics?.firstStepNodeId || findFirstStepNodeId(nodes));
+    const firstStepId = toText(firstStepIdByNodeId[firstNodeId]);
+    setBranchStepsPanelState({
+      open: true,
+      gatewayId,
+      branchKey,
+      context: {
+        gatewayId,
+        gatewayLabel: toText(payload?.gatewayLabel || branchStepsPanelState?.context?.gatewayLabel),
+        branchKey,
+        branchLabel: toText(payload?.branchLabel || branchKey),
+        branchTier: toText(payload?.branchTier || ""),
+        nodes,
+        metrics: payload?.metrics || collectBranchMetrics(nodes, branchStepMetaByNodeId),
+        outcomeLabel: toText(payload?.outcomeLabel || ""),
+        firstStepId,
+      },
+    });
+  }, [branchStepsPanelState, firstStepIdByNodeId, branchStepMetaByNodeId]);
 
   return (
     <div className="interviewTableWrap" ref={tableScrollRef}>
@@ -910,7 +1015,6 @@ export default function TimelineTable({
               const betweenBranchesItem = step?.between_branches_item;
               const betweenBranches = toArray(betweenBranchesItem?.branches);
               const visibleBetweenBranches = betweenBranches.filter((branch) => tierFilterSet.has(normalizeTier(branch?.tier)));
-              const betweenBranchesCollapsed = !!collapsedGatewayBranchesByStepId[stepId];
               const betweenSummary = betweenBranchesItem?.summary && typeof betweenBranchesItem.summary === "object"
                 ? betweenBranchesItem.summary
                 : {};
@@ -921,24 +1025,56 @@ export default function TimelineTable({
               const betweenPrimaryLabel = toText(betweenSummary?.primaryLabel);
               const betweenPrimaryTier = toText(betweenSummary?.primaryTier).toUpperCase();
               const betweenPrimaryReasonLabel = toText(betweenSummary?.primaryReasonLabel);
+              const rawAction = toText(step.action) || "Без названия";
+              const stepActionTitle = isDecisionGateway
+                ? (rawAction.toLowerCase().startsWith("проверка:") ? rawAction : `Проверка: ${rawAction}`)
+                : (isParallelGateway ? `Параллельно: ${rawAction}` : rawAction);
               const gatewayPrefsKey = toText(betweenBranchesItem?.anchorNodeId || step?.node_bind_id || stepId) || stepId;
-              const currentBranchCandidate = visibleBetweenBranches.find((branch) => !branch?.isPrimary) || visibleBetweenBranches[0] || null;
-              const currentBranchKey = toText(currentBranchCandidate?.key);
-              const collapseAllBetweenBranches = () => {
-                visibleBetweenBranches.forEach((branch, branchIdx) => {
-                  const branchKey = toText(branch?.key) || String.fromCharCode(65 + (branchIdx % 26));
-                  patchBranchExpand(gatewayPrefsKey, branchKey, false);
+              const gatewayLabel = stepActionTitle;
+              const gatewaySubtitle = toText(betweenBranchesItem?.fromGraphNo) && toText(betweenBranchesItem?.toGraphNo)
+                ? `${toText(betweenBranchesItem?.fromGraphNo)} → ${toText(betweenBranchesItem?.toGraphNo)}`
+                : "";
+              const gatewayExpanded = !!expandedGatewayById[gatewayPrefsKey];
+              const gatewayShowIds = !!showGatewayIdsById[gatewayPrefsKey];
+              const resolveBranchKey = (branch, branchIdx) => toText(branch?.key) || String.fromCharCode(65 + (branchIdx % 26));
+              const branchMetricsByKey = {};
+              visibleBetweenBranches.forEach((branch, branchIdx) => {
+                const branchKey = resolveBranchKey(branch, branchIdx);
+                branchMetricsByKey[branchKey] = collectBranchMetrics(branch?.children, branchStepMetaByNodeId);
+              });
+              const selectedBranchKey = toText(selectedBranchByGatewayId[gatewayPrefsKey]
+                || resolveBranchKey(
+                  visibleBetweenBranches.find((branch) => !!branch?.isPrimary) || visibleBetweenBranches[0] || {},
+                  Math.max(0, visibleBetweenBranches.findIndex((branch) => !!branch?.isPrimary)),
+                ));
+              const openBranchPanel = (branchKeyRaw) => {
+                const branchKey = toText(branchKeyRaw);
+                const branch = visibleBetweenBranches.find((item, idx) => {
+                  const key = resolveBranchKey(item, idx);
+                  return key === branchKey;
+                });
+                if (!branch) return;
+                const metrics = branchMetricsByKey[branchKey] || collectBranchMetrics(branch?.children, branchStepMetaByNodeId);
+                const firstNodeId = toText(metrics?.firstStepNodeId || findFirstStepNodeId(branch?.children));
+                const firstStepId = toText(firstStepIdByNodeId[firstNodeId]);
+                setSelectedBranchByGatewayId((prev) => ({ ...prev, [gatewayPrefsKey]: branchKey }));
+                setBranchStepsPanelState({
+                  open: true,
+                  gatewayId: gatewayPrefsKey,
+                  branchKey,
+                  context: {
+                    gatewayId: gatewayPrefsKey,
+                    gatewayLabel,
+                    branchKey,
+                    branchLabel: toText(branch?.label) || branchKey,
+                    branchTier: normalizeTier(branch?.tier),
+                    nodes: toArray(branch?.children),
+                    metrics,
+                    outcomeLabel: branchOutcomeLabel(branch, metrics),
+                    firstStepId,
+                  },
                 });
               };
-              const expandCurrentBetweenBranch = (branchKeyRaw = "") => {
-                const preferred = toText(branchKeyRaw) || currentBranchKey;
-                if (!preferred && !visibleBetweenBranches.length) return;
-                visibleBetweenBranches.forEach((branch, branchIdx) => {
-                  const branchKey = toText(branch?.key) || String.fromCharCode(65 + (branchIdx % 26));
-                  patchBranchExpand(gatewayPrefsKey, branchKey, branchKey === preferred);
-                });
-              };
-              const getBranchExpandedForGateway = (branch) => getBranchExpansion(gatewayPrefsKey, branch);
               const hasSubprocessChildren = Number(step?.subprocess_children_count || 0) > 0;
               const subprocessCollapsed = !!collapsedSubprocessByStepId[stepId];
               const stepDurationMinutes = readStepDurationMinutes(step);
@@ -952,10 +1088,6 @@ export default function TimelineTable({
               const stepTimeLabel = toText(step?.step_time_label || step?.step_time_model?.label);
               const cumulativeMainlineLabel = toText(step?.mainline_time_cumulative_label);
               const totalMainlineLabel = toText(step?.mainline_time_total_label);
-              const rawAction = toText(step.action) || "Без названия";
-              const stepActionTitle = isDecisionGateway
-                ? (rawAction.toLowerCase().startsWith("проверка:") ? rawAction : `Проверка: ${rawAction}`)
-                : (isParallelGateway ? `Параллельно: ${rawAction}` : rawAction);
               const actionValue = getStepFieldValue(step.id, "action", step.action);
               const subprocessValue = getStepFieldValue(step.id, "subprocess", step.subprocess || "");
               const areaValue = getStepFieldValue(step.id, "area", step.area || "");
@@ -1580,99 +1712,40 @@ export default function TimelineTable({
                   {betweenBranches.length ? (
                     <tr className="interviewBetweenBranchesRow">
                       <td colSpan={compactColSpan}>
-                        <div className="interviewGatewayPreviewWrap interviewBetweenBranchesWrap">
-                          <button
-                            type="button"
-                            className="interviewGatewayPreviewToggle"
-                            onClick={() => toggleGatewayBranches(stepId)}
-                            title={betweenBranchesCollapsed ? "Развернуть ветки" : "Свернуть ветки"}
-                          >
-                            {betweenBranchesCollapsed
-                              ? `Ветки ${toText(betweenBranchesItem?.fromGraphNo)}→${toText(betweenBranchesItem?.toGraphNo)}: развернуть`
-                              : `Ветки ${toText(betweenBranchesItem?.fromGraphNo)}→${toText(betweenBranchesItem?.toGraphNo)}: свернуть`}
-                          </button>
-                          <span className="interviewGatewayPreviewSummary">
-                            {betweenBranchCount ? `${betweenBranchCount} ветки` : ""}
-                            {betweenTierSummary ? ` · ${betweenTierSummary}` : ""}
-                            {betweenPrimaryLabel ? ` · primary: ${betweenPrimaryLabel}` : ""}
-                            {betweenPrimaryTier ? ` (${betweenPrimaryTier})` : ""}
-                          </span>
-                          {betweenPrimaryReasonLabel ? (
-                            <span className="interviewGatewayPreviewSummaryReason" title={betweenPrimaryReasonLabel}>
-                              {betweenPrimaryReasonLabel}
-                            </span>
-                          ) : null}
-                          {toText(betweenBranchesItem?.time_summary?.label_with_loop || betweenBranchesItem?.time_summary?.label)
-                            && toText(betweenBranchesItem?.time_summary?.label_with_loop || betweenBranchesItem?.time_summary?.label) !== "—" ? (
-                            <span className="badge">
-                              ⏱ {toText(betweenBranchesItem?.time_summary?.label_with_loop || betweenBranchesItem?.time_summary?.label)}
-                            </span>
-                          ) : null}
-                          {!betweenBranchesCollapsed ? (
-                            <div className="interviewGatewayPreviewList">
-                              {visibleBetweenBranches.length ? (
-                                <div className="interviewGatewayTierTableWrap">
-                                  <table className="interviewGatewayTierTable" data-testid="interview-between-tier-table">
-                                    <thead>
-                                      <tr>
-                                        <th>Tier</th>
-                                        <th>Label</th>
-                                        <th>Outcome</th>
-                                        <th>Steps</th>
-                                        <th>Time</th>
-                                        <th>Primary</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {visibleBetweenBranches.map((branch, branchIdx) => {
-                                        const outcome = summarizeBranchOutcome(branch?.children);
-                                        const branchTier = normalizeTier(branch?.tier);
-                                        return (
-                                          <tr key={`${stepId}_between_table_${branchIdx + 1}`}>
-                                            <td><span className={`interviewGatewayPreviewTag tier tier-${branchTier.toLowerCase()}`}>{branchTier}</span></td>
-                                            <td>{toText(branch?.label) || `Ветка ${branchIdx + 1}`}</td>
-                                            <td>{outcome.outcome}</td>
-                                            <td>{Number(outcome.stepsCount || 0)}</td>
-                                            <td>{toText(branch?.time_summary?.label_with_loop || branch?.time_summary?.label || "—")}</td>
-                                            <td>{branch?.isPrimary ? "yes" : "no"}</td>
-                                          </tr>
-                                        );
-                                      })}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              ) : (
-                                <div className="interviewGatewayPreviewHint">
-                                  По текущему фильтру tiers ветки скрыты.
-                                </div>
-                              )}
-                              {resolveBranchViewMode === "cards" ? (
-                                <GatewayBranchesCards
-                                  step={step}
-                                  betweenItem={betweenBranchesItem}
-                                  branches={visibleBetweenBranches}
-                                  summarizeBranchOutcome={summarizeBranchOutcome}
-                                  getBranchExpanded={getBranchExpandedForGateway}
-                                  onPatchBranchExpand={(branchKey, expanded) => patchBranchExpand(gatewayPrefsKey, branchKey, expanded)}
-                                  onCollapseAllBranches={collapseAllBetweenBranches}
-                                  onExpandCurrentBranch={expandCurrentBetweenBranch}
-                                  renderNodes={renderBranchNodes}
-                                />
-                              ) : (
-                                <GatewayBranchesTree
-                                  step={step}
-                                  betweenItem={betweenBranchesItem}
-                                  branches={visibleBetweenBranches}
-                                  getBranchExpanded={getBranchExpandedForGateway}
-                                  onPatchBranchExpand={(branchKey, expanded) => patchBranchExpand(gatewayPrefsKey, branchKey, expanded)}
-                                  onCollapseAllBranches={collapseAllBetweenBranches}
-                                  onExpandCurrentBranch={expandCurrentBetweenBranch}
-                                  renderNodes={renderBranchNodes}
-                                />
-                              )}
-                            </div>
-                          ) : null}
-                        </div>
+                        {visibleBetweenBranches.length ? (
+                          <GatewayGroupRow
+                            gatewayId={gatewayPrefsKey}
+                            gatewayLabel={gatewayLabel}
+                            gatewaySubtitle={gatewaySubtitle}
+                            branches={visibleBetweenBranches}
+                            metricsByBranchKey={branchMetricsByKey}
+                            expanded={gatewayExpanded}
+                            showIds={gatewayShowIds}
+                            selectedBranchKey={selectedBranchKey}
+                            onToggleExpanded={toggleGatewayExpanded}
+                            onToggleShowIds={toggleGatewayShowIds}
+                            onSelectBranch={(branchKey) => setSelectedBranch(gatewayPrefsKey, branchKey)}
+                            onOpenBranchSteps={openBranchPanel}
+                            onSetPrimaryBranch={null}
+                            onCollapseAllBranches={() => setExpandedGatewayById((prev) => ({ ...prev, [gatewayPrefsKey]: false }))}
+                            onExpandAllBranches={() => setExpandedGatewayById((prev) => ({ ...prev, [gatewayPrefsKey]: true }))}
+                            onCopySummary={(gatewayId) => {
+                              const summaryText = [
+                                `Gateway: ${gatewayLabel}`,
+                                `id: ${gatewayId}`,
+                                `branches: ${betweenBranchCount}`,
+                                betweenTierSummary ? `tiers: ${betweenTierSummary}` : "",
+                                betweenPrimaryLabel ? `primary: ${betweenPrimaryLabel} (${betweenPrimaryTier || "—"})` : "",
+                                betweenPrimaryReasonLabel ? `reason: ${betweenPrimaryReasonLabel}` : "",
+                              ].filter(Boolean).join("\n");
+                              void copyGatewaySummary(gatewayId, summaryText);
+                            }}
+                          />
+                        ) : (
+                          <div className="interviewGatewayEmptyHint muted small">
+                            По текущему фильтру tiers ветки скрыты.
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ) : null}
@@ -1703,6 +1776,20 @@ export default function TimelineTable({
           ) : null}
         </tbody>
       </table>
+      <BranchStepsPanel
+        open={!!branchStepsPanelState?.open}
+        panelState={branchStepsPanelState?.context}
+        stepMetaByNodeId={branchStepMetaByNodeId}
+        onClose={() => setBranchStepsPanelState({
+          open: false,
+          gatewayId: "",
+          branchKey: "",
+          context: null,
+        })}
+        onJumpToStep={jumpToMatrixStep}
+        onOpenDiagram={openBranchInDiagram}
+        onOpenNestedBranch={openNestedBranchPanel}
+      />
       <datalist id="interviewSubprocesses">
         {toArray(subprocessCatalog).map((sp) => (
           <option key={sp} value={sp} />

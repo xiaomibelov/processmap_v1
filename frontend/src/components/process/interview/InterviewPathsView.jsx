@@ -1,6 +1,5 @@
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { formatHHMMFromSeconds, isLocalSessionId, sanitizeDisplayText, toArray, toText } from "./utils";
-import { renderMarkdownPreview } from "../../../features/process/lib/markdownPreview.jsx";
+import { isLocalSessionId, sanitizeDisplayText, toArray, toText } from "./utils";
 import {
   apiCreatePathReportVersion,
   apiGetReportVersion,
@@ -12,11 +11,22 @@ import {
   validateScenarioRowOrder,
 } from "./services/scenarios/buildScenarioMatrixRows.js";
 import {
+  buildScenarioSequenceForReport,
+  buildManualPathReportSteps,
+  buildReportBuildDebug,
   buildDecisionHintsByNodeIdFromScenarioRows,
   buildPathReportRequest,
   decorateReportVersionsWithActuality,
+  normalizeReportMarkdown,
   resolveStepIdForRecommendation,
 } from "./services/pathReport.js";
+import { markInterviewPerf, measureInterviewSpan, scheduleInterviewIdle } from "./perf";
+import PathsLayout from "./paths/PathsLayout";
+import ScenarioNav from "./paths/ScenarioNav";
+import PathHeader from "./paths/PathHeader";
+import PathStepList from "./paths/PathStepList";
+import StepDetailsPanel from "./paths/StepDetailsPanel";
+import ReportsDrawer from "./paths/ReportsDrawer";
 
 function normalizeTier(raw) {
   const tier = toText(raw).toUpperCase();
@@ -82,6 +92,148 @@ function scenarioContainsNodeId(scenario, nodeIdRaw) {
 
 function scenarioOutcomeIcon(scenario) {
   return toText(scenario?.outcome).toLowerCase() === "fail" ? "⛔" : "✅";
+}
+
+function resolveScenarioPathId(scenarioRaw) {
+  const scenario = asObject(scenarioRaw);
+  return toText(scenario?.sequence_key || scenario?.sequenceKey)
+    || toText(scenario?.path_id || scenario?.pathId)
+    || toText(scenario?.id);
+}
+
+function findScenarioByIntent(scenariosRaw, intentRaw) {
+  const scenarios = toArray(scenariosRaw);
+  const intent = asObject(intentRaw);
+  if (!scenarios.length) return null;
+  const scenarioId = toText(intent?.scenarioId);
+  if (scenarioId) {
+    const byId = scenarios.find((scenario) => toText(scenario?.id) === scenarioId);
+    if (byId) return byId;
+  }
+  const pathId = toText(intent?.pathId);
+  if (pathId) {
+    const byPath = scenarios.find((scenario) => resolveScenarioPathId(scenario) === pathId);
+    if (byPath) return byPath;
+  }
+  const sequenceKey = toText(intent?.sequenceKey);
+  if (sequenceKey) {
+    const bySeq = scenarios.find((scenario) => toText(scenario?.sequence_key || scenario?.sequenceKey) === sequenceKey);
+    if (bySeq) return bySeq;
+  }
+  const tier = normalizeTier(intent?.tier);
+  if (tier && tier !== "ALL") {
+    const byTier = scenarios.find((scenario) => normalizeTier(scenario?.tier) === tier);
+    if (byTier) return byTier;
+  }
+  return null;
+}
+
+function buildReportNodeStub(graphModelRaw, nodeIdRaw) {
+  const graphModel = asObject(graphModelRaw);
+  const nodesById = asObject(graphModel?.nodesById);
+  const nodeId = toText(nodeIdRaw);
+  const node = asObject(nodesById[nodeId]);
+  return {
+    node_id: nodeId,
+    bpmn_ref: nodeId,
+    title: toText(node?.name || nodeId) || nodeId,
+    lane_id: toText(node?.laneId || ""),
+    lane_name: "",
+  };
+}
+
+function buildLinkThrowToCatchMap(dodSnapshotRaw) {
+  const out = {};
+  toArray(dodSnapshotRaw?.link_groups).forEach((groupRaw) => {
+    const group = asObject(groupRaw);
+    const catches = toArray(group?.catch_ids).map((id) => toText(id)).filter(Boolean);
+    if (!catches.length) return;
+    const target = catches[0];
+    toArray(group?.throw_ids)
+      .map((id) => toText(id))
+      .filter(Boolean)
+      .forEach((throwId) => {
+        if (!out[throwId]) out[throwId] = target;
+      });
+  });
+  return out;
+}
+
+function flowPriorityForReport(flowRaw) {
+  const flow = asObject(flowRaw);
+  const tier = toText(flow?.tier || flow?.rtier).toUpperCase();
+  if (tier === "P0" || tier === "R0") return 0;
+  if (tier === "P1" || tier === "R1") return 1;
+  if (tier === "P2" || tier === "R2") return 3;
+  return 2;
+}
+
+function stitchScenarioSequenceByLinkEvents({
+  scenarioSequence,
+  graphModel,
+  dodSnapshot,
+  maxAppend = 96,
+}) {
+  const base = toArray(scenarioSequence).map((stepRaw) => {
+    const step = asObject(stepRaw);
+    const nodeId = toText(step?.node_id || step?.bpmn_ref || step?.nodeId);
+    if (!nodeId) return null;
+    return {
+      ...step,
+      node_id: nodeId,
+      bpmn_ref: toText(step?.bpmn_ref || nodeId),
+      title: toText(step?.title || nodeId) || nodeId,
+    };
+  }).filter(Boolean);
+  if (!base.length) return { sequence: [], stitched: false };
+  const graph = asObject(graphModel);
+  const outgoingByNode = asObject(graph?.outgoingByNode);
+  const nodesById = asObject(graph?.nodesById);
+  const throwToCatch = buildLinkThrowToCatchMap(dodSnapshot);
+  if (!Object.keys(throwToCatch).length) return { sequence: base, stitched: false };
+
+  const next = [...base];
+  const seenNodeIds = new Set(next.map((step) => toText(step?.node_id)).filter(Boolean));
+  let stitched = false;
+  let appendBudget = Math.max(8, Number(maxAppend || 96));
+  let tailNodeId = toText(next[next.length - 1]?.node_id);
+  while (appendBudget > 0 && tailNodeId) {
+    const outgoing = toArray(outgoingByNode[tailNodeId]);
+    if (outgoing.length) break;
+    const jumpNodeId = toText(throwToCatch[tailNodeId]);
+    if (!jumpNodeId || seenNodeIds.has(jumpNodeId)) break;
+    stitched = true;
+    next.push(buildReportNodeStub(nodesById ? graph : null, jumpNodeId));
+    seenNodeIds.add(jumpNodeId);
+    appendBudget -= 1;
+    let cursor = jumpNodeId;
+    let guard = 0;
+    while (appendBudget > 0 && guard < 120) {
+      guard += 1;
+      const edges = [...toArray(outgoingByNode[cursor])].sort((aRaw, bRaw) => {
+        const a = asObject(aRaw);
+        const b = asObject(bRaw);
+        const ap = flowPriorityForReport(a);
+        const bp = flowPriorityForReport(b);
+        if (ap !== bp) return ap - bp;
+        return toText(a?.id).localeCompare(toText(b?.id), "ru");
+      });
+      const first = asObject(edges[0]);
+      const targetId = toText(first?.targetId);
+      if (!targetId || seenNodeIds.has(targetId)) break;
+      next.push(buildReportNodeStub(nodesById ? graph : null, targetId));
+      seenNodeIds.add(targetId);
+      appendBudget -= 1;
+      cursor = targetId;
+      const nodeType = toText(asObject(nodesById[targetId])?.type).toLowerCase();
+      if (nodeType === "endevent") break;
+    }
+    tailNodeId = toText(next[next.length - 1]?.node_id);
+  }
+  return {
+    sequence: next,
+    stitched,
+  };
 }
 
 function scenarioBucket(scenarioRaw) {
@@ -158,30 +310,6 @@ function filterScenariosByTierView(scenariosRaw, selectedTier) {
     return list.filter((scenario) => scenarioBucket(scenario) === "P2_FAIL");
   }
   return list;
-}
-
-function scenarioDiffPreview(scenarioRaw) {
-  const scenario = asObject(scenarioRaw);
-  const diff = asObject(scenario?.diff_from_ideal);
-  const decisions = toArray(diff?.differing_gateway_decisions);
-  const additionalSteps = Number(toArray(diff?.additional_steps).length || 0);
-  const additionalTimeSec = Number(diff?.additional_time_sec || 0);
-  const decisionPreview = decisions
-    .slice(0, 2)
-    .map((item) => {
-      const decision = asObject(item);
-      const gw = toText(decision?.gateway_id);
-      const label = toText(decision?.alt_label || decision?.alt_flow_id || "—");
-      return `${gw}: ${label}`;
-    })
-    .filter(Boolean)
-    .join("; ");
-  return {
-    decisionsCount: decisions.length,
-    additionalSteps,
-    additionalTimeSec: Number.isFinite(additionalTimeSec) ? additionalTimeSec : 0,
-    decisionPreview,
-  };
 }
 
 function makeStepIdMaps(vmStepsRaw) {
@@ -403,26 +531,6 @@ function toMinutesInputFromSeconds(secondsRaw) {
   return String(Math.round((sec / 60) * 10) / 10);
 }
 
-function formatReportCreatedAt(createdAtRaw) {
-  const ts = Number(createdAtRaw || 0);
-  if (!Number.isFinite(ts) || ts <= 0) return "—";
-  try {
-    return new Date(ts * 1000).toLocaleString("ru-RU");
-  } catch {
-    return "—";
-  }
-}
-
-function shortHash(hashRaw) {
-  return toText(hashRaw).slice(0, 8) || "—";
-}
-
-function reportHasUnstructuredWarning(reportRaw) {
-  const report = asObject(reportRaw);
-  const warnings = toArray(report?.warnings_json || report?.warnings).map((item) => toText(item));
-  return warnings.some((code) => code === "json_parse_failed" || code === "json_candidate_not_found" || code === "invalid_json_object");
-}
-
 function safeStringify(value) {
   try {
     return JSON.stringify(value);
@@ -470,8 +578,51 @@ function formatErrorClipboard(metaRaw) {
   return lines.join("\n").trim();
 }
 
+function makeReportTraceEntry(seq, eventRaw, fallbackScope = "") {
+  const event = asObject(eventRaw);
+  const statusNum = Number(event?.status || 0);
+  return {
+    seq: Number(seq || 0),
+    at_iso: new Date().toISOString(),
+    phase: toText(event?.phase || "progress"),
+    title: toText(event?.title || event?.message || "Шаг"),
+    detail: toText(event?.detail),
+    method: toText(event?.method || ""),
+    endpoint: toText(event?.endpoint || ""),
+    status: Number.isFinite(statusNum) && statusNum > 0 ? Math.floor(statusNum) : 0,
+    report_id: toText(event?.report_id || event?.reportId),
+    report_status: toText(event?.report_status || event?.reportStatus),
+    scope: toText(event?.scope || fallbackScope),
+  };
+}
+
+function applyReportTerminalOverrides(versionsRaw, overridesRaw) {
+  const overrides = asObject(overridesRaw);
+  return toArray(versionsRaw).map((rowRaw) => {
+    const row = asObject(rowRaw);
+    const reportId = toText(row?.id);
+    const override = asObject(overrides[reportId]);
+    if (!reportId || !toText(override?.status)) return row;
+    return {
+      ...row,
+      status: toText(override?.status),
+      error: toText(override?.error_message || row?.error),
+    };
+  });
+}
+
 const DURATION_COMMIT_DEBOUNCE_MS = 250;
 const STEP_HIGHLIGHT_MS = 2600;
+const REPORT_POLL_MAX_ATTEMPTS = 20;
+const REPORT_POLL_MAX_MS = 120000;
+
+function reportPollDelayMs(attemptRaw) {
+  const attempt = Math.max(1, Number(attemptRaw || 1));
+  if (attempt <= 1) return 1000;
+  if (attempt === 2) return 2000;
+  if (attempt === 3) return 3000;
+  return 5000;
+}
 
 function parseMinutesToNullableSeconds(valueRaw) {
   const raw = String(valueRaw ?? "").trim();
@@ -481,15 +632,26 @@ function parseMinutesToNullableSeconds(valueRaw) {
   return Math.round(minutes * 60);
 }
 
+function isAbortLikeError(error) {
+  if (!error) return false;
+  const name = String(error?.name || "").toLowerCase();
+  const code = String(error?.code || "").toLowerCase();
+  const msg = String(error?.message || error || "").toLowerCase();
+  return name === "aborterror" || code === "abort_err" || msg.includes("aborted");
+}
+
 const StepDurationEditor = memo(function StepDurationEditor({
   stepId,
   workSec,
   waitSec,
   onCommitSeconds,
+  variant = "compact",
 }) {
   const [workInput, setWorkInput] = useState(() => toMinutesInputFromSeconds(workSec));
   const [waitInput, setWaitInput] = useState(() => toMinutesInputFromSeconds(waitSec));
+  const [presetsOpen, setPresetsOpen] = useState(false);
   const timersRef = useRef({ work: 0, wait: 0 });
+  const presetsRef = useRef(null);
 
   useEffect(() => {
     setWorkInput(toMinutesInputFromSeconds(workSec));
@@ -506,6 +668,17 @@ const StepDurationEditor = memo(function StepDurationEditor({
       timersRef.current = { work: 0, wait: 0 };
     };
   }, []);
+
+  useEffect(() => {
+    if (!presetsOpen) return undefined;
+    function handleMouseDown(event) {
+      const node = presetsRef.current;
+      if (!node || node.contains(event.target)) return;
+      setPresetsOpen(false);
+    }
+    window.addEventListener("mousedown", handleMouseDown);
+    return () => window.removeEventListener("mousedown", handleMouseDown);
+  }, [presetsOpen]);
 
   const commitNow = useCallback((kind, inputValue) => {
     if (!toText(stepId)) return;
@@ -562,17 +735,24 @@ const StepDurationEditor = memo(function StepDurationEditor({
     onCommitSeconds?.(stepId, kind, null);
   }
 
+  const presets = [
+    { sec: 30, label: "+30s" },
+    { sec: 60, label: "+1m" },
+    { sec: 120, label: "+2m" },
+    { sec: 300, label: "+5m" },
+  ];
+
   return (
     <div
-      className="interviewPathsInlineTimeEditor"
+      className={`interviewPathsInlineTimeEditor ${variant === "detailed" ? "isDetailed" : "isCompact"}`}
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => e.stopPropagation()}
     >
-      <label className="interviewPathsTimeField">
-        <span title="Работа = активное действие">Work, мин</span>
-        <div className="interviewPathsTimeInputWrap">
+      <label className="interviewPathsTimeField compact">
+        <span title="Работа = активное действие">{variant === "detailed" ? "Work, мин" : "W"}</span>
+        <div className="interviewPathsTimeInputWrap compact">
           <input
-            className="input"
+            className="input interviewPathsTimeCompactInput"
             type="number"
             min="0"
             step="0.5"
@@ -587,22 +767,18 @@ const StepDurationEditor = memo(function StepDurationEditor({
               if (e.key === "Enter") flushCommit("work", workInput);
             }}
           />
-          <button type="button" className="secondaryBtn tinyBtn" onClick={() => clearField("work")} title="Очистить">
-            ×
-          </button>
+          {toText(workInput) ? (
+            <button type="button" className="secondaryBtn tinyBtn interviewPathsTimeClearBtn" onClick={() => clearField("work")} title="Очистить">
+              ×
+            </button>
+          ) : null}
         </div>
       </label>
-      <div className="interviewPathsTimePresets">
-        <button type="button" className="secondaryBtn tinyBtn" onClick={() => applyPreset("work", 30)}>+30с</button>
-        <button type="button" className="secondaryBtn tinyBtn" onClick={() => applyPreset("work", 60)}>+1м</button>
-        <button type="button" className="secondaryBtn tinyBtn" onClick={() => applyPreset("work", 120)}>+2м</button>
-        <button type="button" className="secondaryBtn tinyBtn" onClick={() => applyPreset("work", 300)}>+5м</button>
-      </div>
-      <label className="interviewPathsTimeField">
-        <span title="Ожидание = очередь/таймер/ожидание устройства/курьера">Wait, мин</span>
-        <div className="interviewPathsTimeInputWrap">
+      <label className="interviewPathsTimeField compact">
+        <span title="Ожидание = очередь/таймер/ожидание устройства/курьера">{variant === "detailed" ? "Wait, мин" : "Q"}</span>
+        <div className="interviewPathsTimeInputWrap compact">
           <input
-            className="input"
+            className="input interviewPathsTimeCompactInput"
             type="number"
             min="0"
             step="0.5"
@@ -617,25 +793,106 @@ const StepDurationEditor = memo(function StepDurationEditor({
               if (e.key === "Enter") flushCommit("wait", waitInput);
             }}
           />
-          <button type="button" className="secondaryBtn tinyBtn" onClick={() => clearField("wait")} title="Очистить">
-            ×
-          </button>
+          {toText(waitInput) ? (
+            <button type="button" className="secondaryBtn tinyBtn interviewPathsTimeClearBtn" onClick={() => clearField("wait")} title="Очистить">
+              ×
+            </button>
+          ) : null}
         </div>
       </label>
-      <div className="interviewPathsTimePresets">
-        <button type="button" className="secondaryBtn tinyBtn" onClick={() => applyPreset("wait", 30)}>+30с</button>
-        <button type="button" className="secondaryBtn tinyBtn" onClick={() => applyPreset("wait", 60)}>+1м</button>
-        <button type="button" className="secondaryBtn tinyBtn" onClick={() => applyPreset("wait", 120)}>+2м</button>
-        <button type="button" className="secondaryBtn tinyBtn" onClick={() => applyPreset("wait", 300)}>+5м</button>
+      <div ref={presetsRef} className="interviewPathsPresetWrap">
+        <button
+          type="button"
+          className="secondaryBtn tinyBtn interviewPathsPresetTrigger"
+          onClick={() => setPresetsOpen((prev) => !prev)}
+          title="Пресеты времени"
+          aria-haspopup="menu"
+          aria-expanded={presetsOpen}
+        >
+          {variant === "detailed" ? "Presets" : "+"}
+        </button>
+        {presetsOpen ? (
+          <div className="interviewPathsPresetPopover" role="menu">
+            <div className="interviewPathsPresetGroup">
+              <div className="interviewPathsPresetTitle">Work</div>
+              <div className="interviewPathsPresetButtons">
+                {presets.map((preset) => (
+                  <button
+                    key={`work_${preset.sec}`}
+                    type="button"
+                    className="secondaryBtn tinyBtn"
+                    onClick={() => applyPreset("work", preset.sec)}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="interviewPathsPresetGroup">
+              <div className="interviewPathsPresetTitle">Wait</div>
+              <div className="interviewPathsPresetButtons">
+                {presets.map((preset) => (
+                  <button
+                    key={`wait_${preset.sec}`}
+                    type="button"
+                    className="secondaryBtn tinyBtn"
+                    onClick={() => applyPreset("wait", preset.sec)}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
 });
 
+const ReportApiErrorNotice = memo(function ReportApiErrorNotice({
+  title,
+  meta,
+  tone = "warn",
+  onCopyDetails,
+}) {
+  const message = toText(title);
+  if (!message) return null;
+  const clipboard = formatErrorClipboard(meta);
+  const status = Number(meta?.status || 0);
+  const method = toText(meta?.method || "GET");
+  const endpoint = toText(meta?.endpoint || "—");
+  return (
+    <div className={`interviewAnnotationNotice ${tone}`}>
+      <div>{message}</div>
+      {(status > 0 || endpoint) ? (
+        <div className="muted small">
+          HTTP {status || "?"} · {method || "GET"} {endpoint || "—"}
+        </div>
+      ) : null}
+      {clipboard ? (
+        <details className="interviewApiErrorDetails">
+          <summary>Показать детали</summary>
+          <pre className="interviewApiErrorDetailsBody">{clipboard}</pre>
+          <button
+            type="button"
+            className="secondaryBtn tinyBtn"
+            onClick={() => onCopyDetails?.(meta)}
+          >
+            Copy details
+          </button>
+        </details>
+      ) : null}
+    </div>
+  );
+});
+
 export default function InterviewPathsView({
+  active = false,
   sessionId,
   interviewData,
   interviewVM,
+  interviewGraph,
   tierFilters,
   selectedStepIds,
   onSelectStep,
@@ -643,17 +900,28 @@ export default function InterviewPathsView({
   dodSnapshot,
   pathMetrics,
   patchStep,
+  onReportBuildDebug,
+  onPerfReady,
+  externalIntent = null,
 }) {
   const vm = interviewVM && typeof interviewVM === "object" ? interviewVM : {};
-  const scenarioPresentation = useMemo(() => buildScenarioPresentation(vm?.scenarios), [vm?.scenarios]);
-  const scenarios = scenarioPresentation.all;
-  const stepMetaByNodeId = useMemo(() => buildStepMetaByNodeId(vm?.steps), [vm?.steps]);
-  const { stepById, firstStepIdByNodeId } = useMemo(() => makeStepIdMaps(vm?.steps), [vm?.steps]);
+  const [pathsCalcReady, setPathsCalcReady] = useState(false);
+  const [scenarioPresentation, setScenarioPresentation] = useState(() => buildScenarioPresentation([]));
+  const [stepMetaByNodeId, setStepMetaByNodeId] = useState({});
+  const [stepIdMaps, setStepIdMaps] = useState({ stepById: {}, firstStepIdByNodeId: {} });
+  const calcRunRef = useRef(0);
+  const { stepById, firstStepIdByNodeId } = stepIdMaps;
   const selectedNodeIds = useMemo(() => makeSelectedNodeIdSet(selectedStepIds, stepById), [selectedStepIds, stepById]);
+  const scenarios = scenarioPresentation.all;
+  const legacyColorSource = toText(vm?.path_source).toLowerCase() === "flow_tier";
 
   const [selectedTier, setSelectedTier] = useState(() => getInitialTierFilter(tierFilters));
+  const [scenarioSearch, setScenarioSearch] = useState("");
+  const [scenarioSortMode, setScenarioSortMode] = useState("bpmn");
+  const [collapsedScenarioGroups, setCollapsedScenarioGroups] = useState({});
   const [selectedScenarioId, setSelectedScenarioId] = useState("");
   const [selectedRouteKey, setSelectedRouteKey] = useState("");
+  const [detailsCollapsed, setDetailsCollapsed] = useState(true);
   const [collapseByGroupId, setCollapseByGroupId] = useState({});
   const [showAltByGroupId, setShowAltByGroupId] = useState({});
   const [hoveredLinkKey, setHoveredLinkKey] = useState("");
@@ -673,9 +941,103 @@ export default function InterviewPathsView({
   const [reportFilterActualOnly, setReportFilterActualOnly] = useState(false);
   const [reportFilterErrorsOnly, setReportFilterErrorsOnly] = useState(false);
   const [activeRecommendationOrderIndex, setActiveRecommendationOrderIndex] = useState(0);
+  const [reportGenerationTrace, setReportGenerationTrace] = useState([]);
+  const [latestReportBuildDebugByPath, setLatestReportBuildDebugByPath] = useState({});
+  const [reportTerminalOverrides, setReportTerminalOverrides] = useState({});
+  const [isReportsDrawerOpen, setIsReportsDrawerOpen] = useState(false);
   const recommendationHighlightTimerRef = useRef(0);
+  const reportListAbortRef = useRef(null);
+  const reportDetailsAbortRef = useRef(null);
+  const reportListReqIdRef = useRef(0);
+  const reportDetailsReqIdRef = useRef(0);
+  const reportScopeRef = useRef("");
+  const reportTraceSeqRef = useRef(0);
+  const reportTraceStatusByReportRef = useRef({});
+  const reportTracePersistByReportRef = useRef({});
+  const reportTraceInterruptedByReportRef = useRef({});
+  const reportTraceHideTimerRef = useRef(0);
+  const externalIntentHandledRef = useRef("");
+  useEffect(() => {
+    const persisted = asObject(interviewData?.report_build_debug);
+    const pathId = toText(persisted?.path_id_used);
+    if (!pathId) return;
+    setLatestReportBuildDebugByPath((prev) => {
+      const current = asObject(prev);
+      const existing = asObject(current[pathId]);
+      if (JSON.stringify(existing || {}) === JSON.stringify(persisted || {})) return current;
+      return {
+        ...current,
+        [pathId]: persisted,
+      };
+    });
+  }, [interviewData?.report_build_debug]);
+  useEffect(() => {
+    externalIntentHandledRef.current = "";
+  }, [sessionId]);
   const deferredSelectedTier = useDeferredValue(selectedTier);
   const reportLoading = reportLoadingCount > 0;
+
+  useEffect(() => {
+    return () => {
+      try {
+        reportListAbortRef.current?.abort();
+      } catch {
+        // ignore abort errors
+      }
+      try {
+        reportDetailsAbortRef.current?.abort();
+      } catch {
+        // ignore abort errors
+      }
+      if (reportTraceHideTimerRef.current) {
+        window.clearTimeout(reportTraceHideTimerRef.current);
+        reportTraceHideTimerRef.current = 0;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!active) {
+      setPathsCalcReady(false);
+      return undefined;
+    }
+    const runId = ++calcRunRef.current;
+    const startMark = `interview.paths.vm.start:${runId}`;
+    const endMark = `interview.paths.vm.done:${runId}`;
+    markInterviewPerf(startMark);
+    setPathsCalcReady(false);
+    const cancelIdle = scheduleInterviewIdle(() => {
+      if (runId !== calcRunRef.current) return;
+      const nextScenarioPresentation = buildScenarioPresentation(vm?.scenarios);
+      const nextStepMetaByNodeId = buildStepMetaByNodeId(vm?.steps);
+      const nextStepIdMaps = makeStepIdMaps(vm?.steps);
+      if (runId !== calcRunRef.current) return;
+      setScenarioPresentation(nextScenarioPresentation);
+      setStepMetaByNodeId(nextStepMetaByNodeId);
+      setStepIdMaps(nextStepIdMaps);
+      setPathsCalcReady(true);
+      markInterviewPerf(endMark);
+      const durationMs = measureInterviewSpan({
+        name: `interview.paths.vm:${toText(sessionId) || "unknown"}`,
+        startMark,
+        endMark,
+        meta: () => ({
+          sid: toText(sessionId),
+          scenarios: toArray(vm?.scenarios).length,
+          steps: toArray(vm?.steps).length,
+        }),
+      });
+      onPerfReady?.({
+        phase: "paths_vm",
+        duration_ms: durationMs,
+        scenarios: toArray(vm?.scenarios).length,
+        steps: toArray(vm?.steps).length,
+      });
+    }, { timeout: 320 });
+    return () => {
+      cancelIdle?.();
+    };
+  }, [active, sessionId, vm?.scenarios, vm?.steps, onPerfReady]);
 
   const commitDurationSeconds = useCallback((stepIdRaw, kindRaw, nextSecRaw) => {
     const stepId = toText(stepIdRaw);
@@ -703,22 +1065,57 @@ export default function InterviewPathsView({
   }, [tierFilters]);
 
   const visibleScenarios = useMemo(() => {
-    return filterScenariosByTierView(scenarios, deferredSelectedTier);
-  }, [deferredSelectedTier, scenarios]);
+    const base = filterScenariosByTierView(scenarios, deferredSelectedTier);
+    const query = toText(scenarioSearch).toLowerCase();
+    const filtered = query
+      ? base.filter((scenario) => (
+        toText(scenarioPresentation.scenarioDisplayTitle(scenario)).toLowerCase().includes(query)
+        || toText(scenario?.label).toLowerCase().includes(query)
+        || toText(scenario?.id).toLowerCase().includes(query)
+      ))
+      : base;
 
-  const visibleScenarioIdSet = useMemo(
-    () => new Set(toArray(visibleScenarios).map((scenario) => toText(scenario?.id)).filter(Boolean)),
-    [visibleScenarios],
-  );
+    const withTime = filtered.map((scenario) => ({
+      scenario,
+      durationSec: scenarioDurationSec(scenario, stepMetaByNodeId),
+      failRank: toText(scenario?.outcome).toLowerCase() === "fail" ? 1 : 0,
+      bpmnOrder: Number(toArray(scenario?.sequence)?.[0]?.order_index || 0),
+    }));
+
+    withTime.sort((a, b) => {
+      if (scenarioSortMode === "time") {
+        if (b.durationSec !== a.durationSec) return b.durationSec - a.durationSec;
+      } else if (scenarioSortMode === "errors") {
+        if (b.failRank !== a.failRank) return b.failRank - a.failRank;
+        const da = Number(toArray(a.scenario?.diff_from_ideal?.differing_gateway_decisions).length || 0);
+        const db = Number(toArray(b.scenario?.diff_from_ideal?.differing_gateway_decisions).length || 0);
+        if (db !== da) return db - da;
+      } else if (a.bpmnOrder !== b.bpmnOrder) {
+        return a.bpmnOrder - b.bpmnOrder;
+      }
+      return toText(scenarioPresentation.scenarioDisplayTitle(a.scenario)).localeCompare(
+        toText(scenarioPresentation.scenarioDisplayTitle(b.scenario)),
+        "ru",
+      );
+    });
+    return withTime.map((item) => item.scenario);
+  }, [deferredSelectedTier, scenarios, scenarioSearch, scenarioSortMode, scenarioPresentation, stepMetaByNodeId]);
 
   const visibleSections = useMemo(() => {
-    return toArray(scenarioPresentation.sections)
-      .map((section) => ({
-        ...section,
-        items: toArray(section?.items).filter((scenario) => visibleScenarioIdSet.has(toText(scenario?.id))),
-      }))
-      .filter((section) => section.items.length > 0 && section.key !== "OTHER");
-  }, [scenarioPresentation.sections, visibleScenarioIdSet]);
+    const byKey = {
+      P0_IDEAL: { key: "P0_IDEAL", title: "P0 (Ideal)", items: [] },
+      P0_ALT: { key: "P0_ALT", title: "P0 (Alt)", items: [] },
+      P1_MITIGATED: { key: "P1_MITIGATED", title: "P1 (Mitigated)", items: [] },
+      P2_FAIL: { key: "P2_FAIL", title: "P2 (Fail)", items: [] },
+    };
+    toArray(visibleScenarios).forEach((scenario) => {
+      const bucket = scenarioBucket(scenario);
+      if (byKey[bucket]) byKey[bucket].items.push(scenario);
+    });
+    return ["P0_IDEAL", "P0_ALT", "P1_MITIGATED", "P2_FAIL"]
+      .map((key) => byKey[key])
+      .filter((section) => toArray(section?.items).length > 0);
+  }, [visibleScenarios]);
 
   useEffect(() => {
     const list = visibleScenarios;
@@ -735,6 +1132,32 @@ export default function InterviewPathsView({
       return toText(list[0]?.id);
     });
   }, [deferredSelectedTier, visibleScenarios]);
+
+  useEffect(() => {
+    const intent = asObject(externalIntent);
+    const intentKey = toText(intent?.key);
+    if (!active || !intentKey) return;
+    if (externalIntentHandledRef.current === intentKey) return;
+    const intentSid = toText(intent?.sid);
+    if (intentSid && intentSid !== toText(sessionId)) return;
+    if (!pathsCalcReady || !scenarios.length) return;
+
+    const intentTier = normalizeTier(intent?.tier);
+    if (intentTier && intentTier !== "ALL") {
+      setSelectedTier(intentTier);
+    }
+    const matchedScenario = findScenarioByIntent(scenarios, intent);
+    if (matchedScenario) {
+      setSelectedScenarioId(toText(matchedScenario?.id));
+    }
+    const action = toText(intent?.action).toLowerCase();
+    if (action === "open_reports") {
+      setIsReportsDrawerOpen(true);
+    } else if (action === "open_paths") {
+      setIsReportsDrawerOpen(false);
+    }
+    externalIntentHandledRef.current = intentKey;
+  }, [externalIntent, active, sessionId, pathsCalcReady, scenarios]);
 
   const activeScenario = useMemo(() => {
     const list = visibleScenarios;
@@ -775,11 +1198,14 @@ export default function InterviewPathsView({
     [routeRows],
   );
   const activePathId = useMemo(() => {
-    return toText(activeScenario?.id)
-      || toText(vm?.path_id || vm?.pathId)
-      || toText(interviewData?.path_spec?.id || interviewData?.pathSpec?.id)
-      || "manual_path";
-  }, [activeScenario, vm?.path_id, vm?.pathId, interviewData?.path_spec, interviewData?.pathSpec]);
+    return resolveScenarioPathId(activeScenario);
+  }, [
+    activeScenario?.sequence_key,
+    activeScenario?.sequenceKey,
+    activeScenario?.path_id,
+    activeScenario?.pathId,
+    activeScenario?.id,
+  ]);
   const activePathName = useMemo(() => {
     return toText(scenarioPresentation?.scenarioDisplayTitle?.(activeScenario))
       || toText(activeScenario?.label)
@@ -807,14 +1233,14 @@ export default function InterviewPathsView({
   }, [selectedRouteKey, flatRouteRows]);
 
   const matrixRowsForValidation = useMemo(() => {
-    if (!import.meta.env.DEV) return [];
+    if (!import.meta.env.DEV || !active || !pathsCalcReady) return [];
     return buildScenarioMatrixRows({
       scenario: activeScenario,
       vmSteps: vm?.steps,
       collapseById: {},
       p0Mode: selectedTier === "P0",
     });
-  }, [activeScenario, vm?.steps, selectedTier]);
+  }, [active, pathsCalcReady, activeScenario, vm?.steps, selectedTier]);
   const orderValidation = useMemo(() => {
     if (!import.meta.env.DEV) return { ok: true, firstNotStart: false };
     return validateScenarioRowOrder(matrixRowsForValidation);
@@ -864,17 +1290,83 @@ export default function InterviewPathsView({
       total_time_sec: work + wait,
     };
   }, [activeScenario, stepTimeByNodeId, pathMetrics]);
+  const reportScenarioSequence = useMemo(
+    () => buildScenarioSequenceForReport(activeScenario),
+    [activeScenario],
+  );
+  const reportScenarioSequenceBuild = useMemo(() => {
+    return stitchScenarioSequenceByLinkEvents({
+      scenarioSequence: reportScenarioSequence,
+      graphModel: interviewGraph,
+      dodSnapshot,
+    });
+  }, [reportScenarioSequence, interviewGraph, dodSnapshot]);
+  const reportScenarioSequenceForReport = useMemo(
+    () => toArray(reportScenarioSequenceBuild?.sequence),
+    [reportScenarioSequenceBuild],
+  );
+  const reportScenarioLabel = useMemo(() => {
+    return toText(scenarioPresentation?.scenarioDisplayTitle?.(activeScenario))
+      || toText(activeScenario?.label)
+      || "Scenario";
+  }, [scenarioPresentation, activeScenario]);
   const reportApiAvailable = !!toText(sessionId) && !isLocalSessionId(toText(sessionId));
-  const canGenerateReport = Number(activePathMetrics?.steps_count || 0) >= 1 && reportApiAvailable;
+  const canGenerateReport = reportApiAvailable
+    && !!toText(activePathId)
+    && pathsCalcReady
+    && Number(reportScenarioSequenceForReport.length || activePathMetrics?.steps_count || 0) >= 1;
+  const reportBuildPreviewSteps = useMemo(() => {
+    return buildManualPathReportSteps(interviewData, {
+      decisionByNodeId,
+      decisionByOrderIndex,
+      scenarioSequence: reportScenarioSequenceForReport,
+    });
+  }, [interviewData, decisionByNodeId, decisionByOrderIndex, reportScenarioSequenceForReport]);
+  const reportBuildDebugPreview = useMemo(() => {
+    return buildReportBuildDebug({
+      sessionId,
+      selectedScenarioLabel: reportScenarioLabel,
+      pathIdUsed: activePathId,
+      scenarioRaw: activeScenario,
+      scenarioSequence: reportScenarioSequenceForReport,
+      steps: reportBuildPreviewSteps,
+      graphModel: interviewGraph,
+      dodSnapshot,
+    });
+  }, [
+    sessionId,
+    reportScenarioLabel,
+    activePathId,
+    activeScenario,
+    reportScenarioSequenceForReport,
+    reportBuildPreviewSteps,
+    interviewGraph,
+    dodSnapshot,
+  ]);
+  const activeReportBuildDebug = useMemo(() => {
+    const byPath = asObject(latestReportBuildDebugByPath);
+    const pid = toText(activePathId);
+    return asObject(byPath[pid] || reportBuildDebugPreview);
+  }, [latestReportBuildDebugByPath, activePathId, reportBuildDebugPreview]);
   const reportsEndpoint = useMemo(() => {
     const sid = encodeURIComponent(toText(sessionId));
     const pid = encodeURIComponent(toText(activePathId));
     if (!sid || !pid) return "/api/sessions/:sessionId/paths/:pathId/reports";
     return `/api/sessions/${sid}/paths/${pid}/reports`;
   }, [sessionId, activePathId]);
+  const reportRequestScope = useMemo(
+    () => `${toText(sessionId)}|${toText(activePathId)}|${toText(currentStepsHash)}`,
+    [sessionId, activePathId, currentStepsHash],
+  );
+  useEffect(() => {
+    reportScopeRef.current = reportRequestScope;
+  }, [reportRequestScope]);
   const reportVersionsView = useMemo(
-    () => decorateReportVersionsWithActuality(reportVersions, currentStepsHash),
-    [reportVersions, currentStepsHash],
+    () => decorateReportVersionsWithActuality(
+      applyReportTerminalOverrides(reportVersions, reportTerminalOverrides),
+      currentStepsHash,
+    ),
+    [reportVersions, reportTerminalOverrides, currentStepsHash],
   );
   const visibleReportVersions = useMemo(() => {
     const sorted = [...toArray(reportVersionsView)].sort(
@@ -897,26 +1389,165 @@ export default function InterviewPathsView({
     return asObject(reportDetailsById[toText(selectedReportId)]);
   }, [reportDetailsById, selectedReportId]);
   const selectedReportView = useMemo(() => {
+    const selectedId = toText(selectedReportSummary?.id || selectedReportDetails?.id);
+    const localOverride = asObject(reportTerminalOverrides[selectedId]);
     return {
-      id: toText(selectedReportSummary?.id || selectedReportDetails?.id),
+      id: selectedId,
       version: Number(selectedReportSummary?.version || selectedReportDetails?.version || 0),
       created_at: Number(selectedReportSummary?.created_at || selectedReportDetails?.created_at || 0),
-      status: toText(selectedReportSummary?.status || selectedReportDetails?.status || "running"),
+      status: toText(localOverride?.status || selectedReportSummary?.status || selectedReportDetails?.status || "running"),
       steps_hash: toText(selectedReportSummary?.steps_hash || selectedReportDetails?.steps_hash),
       model: toText(selectedReportSummary?.model || selectedReportDetails?.model),
       prompt_template_version: toText(selectedReportSummary?.prompt_template_version || selectedReportDetails?.prompt_template_version),
-      report_markdown: toText(selectedReportDetails?.report_markdown || selectedReportDetails?.raw_text),
+      report_json: asObject(selectedReportDetails?.report_json || selectedReportSummary?.report_json),
+      raw_json: asObject(selectedReportDetails?.raw_json || selectedReportSummary?.raw_json),
+      report_markdown: normalizeReportMarkdown(
+        selectedReportDetails?.report_markdown,
+        selectedReportDetails?.raw_text,
+      ),
       recommendations: toArray(selectedReportDetails?.recommendations_json || selectedReportDetails?.recommendations),
       missing_data: toArray(selectedReportDetails?.missing_data_json || selectedReportDetails?.missing_data),
       risks: toArray(selectedReportDetails?.risks_json || selectedReportDetails?.risks),
+      request_payload_json: asObject(selectedReportDetails?.request_payload_json),
+      steps: toArray(
+        selectedReportDetails?.steps_json
+        || selectedReportDetails?.steps
+        || asObject(selectedReportDetails?.request_payload_json)?.steps,
+      ),
       warnings: toArray(selectedReportDetails?.warnings_json || selectedReportDetails?.warnings),
-      error_message: toText(selectedReportDetails?.error_message),
+      error_message: toText(localOverride?.error_message || selectedReportDetails?.error_message || selectedReportSummary?.error),
       is_actual: !!selectedReportSummary?.is_actual,
     };
-  }, [selectedReportSummary, selectedReportDetails]);
+  }, [selectedReportSummary, selectedReportDetails, reportTerminalOverrides]);
+  const appendReportTrace = useCallback((eventRaw = {}) => {
+    reportTraceSeqRef.current += 1;
+    const entry = makeReportTraceEntry(reportTraceSeqRef.current, eventRaw, reportRequestScope);
+    setReportGenerationTrace((prev) => [...toArray(prev), entry].slice(-80));
+  }, [reportRequestScope]);
+  const appendReportStatusTrace = useCallback((reportIdRaw, statusRaw, reportRaw = {}) => {
+    const reportId = toText(reportIdRaw);
+    const reportStatus = toText(statusRaw).toLowerCase();
+    if (!reportId || !reportStatus) return;
+    if (toText(reportTraceStatusByReportRef.current?.[reportId]).toLowerCase() === reportStatus) return;
+    reportTraceStatusByReportRef.current = {
+      ...asObject(reportTraceStatusByReportRef.current),
+      [reportId]: reportStatus,
+    };
+    appendReportTrace({
+      phase: "status",
+      title: `Статус версии v${Number(asObject(reportRaw)?.version || 0)}: ${reportStatus}`,
+      report_id: reportId,
+      report_status: reportStatus,
+      detail: reportStatus === "error" ? toText(asObject(reportRaw)?.error_message) : "",
+    });
+  }, [appendReportTrace]);
+  const appendReportPersistTrace = useCallback((reportRaw = {}) => {
+    const report = asObject(reportRaw);
+    const reportId = toText(report?.id);
+    const reportStatus = toText(report?.status).toLowerCase();
+    if (!reportId || (reportStatus !== "ok" && reportStatus !== "error")) return;
+    if (toText(reportTracePersistByReportRef.current?.[reportId]).toLowerCase() === reportStatus) return;
+    reportTracePersistByReportRef.current = {
+      ...asObject(reportTracePersistByReportRef.current),
+      [reportId]: reportStatus,
+    };
+    appendReportTrace({
+      phase: "save_status",
+      title: `Сохранение версии v${Number(report?.version || 0)}: ${reportStatus === "ok" ? "успешно" : "с ошибкой"}`,
+      report_id: reportId,
+      report_status: reportStatus,
+      detail: reportStatus === "ok"
+        ? "Версия сохранена в session storage."
+        : (toText(report?.error_message) || "Версия сохранена со статусом ошибки."),
+    });
+  }, [appendReportTrace]);
+  const markReportAsInterrupted = useCallback((reportIdRaw, sourceRaw = {}, options = {}) => {
+    const reportId = toText(reportIdRaw);
+    if (!reportId) return;
+    const source = asObject(sourceRaw);
+    const status = Number(source?.status || 0);
+    const fallbackReportId = toText(options?.fallbackReportId);
+    const message = toText(options?.message)
+      || (status === 404
+        ? "Не удалось загрузить данные отчёта"
+        : (status === 401 || status === 403)
+          ? "Нет доступа к данным отчёта"
+          : "Генерация отчёта прервана");
+
+    setReportTerminalOverrides((prev) => {
+      const current = asObject(prev);
+      const prevEntry = asObject(current[reportId]);
+      if (
+        toText(prevEntry?.status) === "error"
+        && toText(prevEntry?.error_message) === message
+      ) {
+        return current;
+      }
+      return {
+        ...current,
+        [reportId]: {
+          status: "error",
+          error_message: message,
+          http_status: status || 0,
+        },
+      };
+    });
+    setReportVersions((prev) => toArray(prev).map((rowRaw) => {
+      const row = asObject(rowRaw);
+      if (toText(row?.id) !== reportId) return row;
+      return {
+        ...row,
+        status: "error",
+        error: message,
+      };
+    }));
+    setReportDetailsById((prev) => ({
+      ...asObject(prev),
+      [reportId]: {
+        ...asObject(asObject(prev)[reportId]),
+        id: reportId,
+        status: "error",
+        error_message: message,
+      },
+    }));
+    if (toText(selectedReportId) === reportId) {
+      setSelectedReportId((prev) => {
+        if (toText(prev) !== reportId) return prev;
+        if (fallbackReportId && fallbackReportId !== reportId) return fallbackReportId;
+        const nextFromList = toText(
+          toArray(reportVersions)
+            .map((rowRaw) => toText(asObject(rowRaw)?.id))
+            .find((id) => id && id !== reportId),
+        );
+        return nextFromList || "";
+      });
+      setReportDetailsError(message);
+      setReportDetailsErrorMeta(buildApiErrorMeta(source, {
+        method: "GET",
+        endpoint: toText(options?.endpoint || source?.endpoint || `/api/reports/${encodeURIComponent(reportId)}`),
+      }));
+    }
+    if (!reportTraceInterruptedByReportRef.current[reportId]) {
+      reportTraceInterruptedByReportRef.current = {
+        ...asObject(reportTraceInterruptedByReportRef.current),
+        [reportId]: true,
+      };
+      appendReportTrace({
+        phase: "status",
+        title: `Статус версии: error`,
+        report_id: reportId,
+        report_status: "error",
+        status: status > 0 ? status : 0,
+        detail: message,
+      });
+    }
+  }, [appendReportTrace, selectedReportId, reportVersions]);
 
   async function buildRequestForActivePath() {
-    return buildPathReportRequest({
+    if (!toText(activePathId)) {
+      throw new Error("active_path_id_required");
+    }
+    const request = await buildPathReportRequest({
       sessionId,
       pathId: activePathId,
       pathName: activePathName,
@@ -927,13 +1558,29 @@ export default function InterviewPathsView({
       generatedAt: new Date().toISOString(),
       decisionByNodeId,
       decisionByOrderIndex,
+      scenarioSequence: reportScenarioSequenceForReport,
     });
+    const reportBuildDebug = buildReportBuildDebug({
+      sessionId,
+      selectedScenarioLabel: reportScenarioLabel,
+      pathIdUsed: activePathId,
+      scenarioRaw: activeScenario,
+      scenarioSequence: reportScenarioSequenceForReport,
+      steps: request?.steps,
+      graphModel: interviewGraph,
+      dodSnapshot,
+    });
+    return {
+      ...request,
+      reportBuildDebug,
+    };
   }
 
   useEffect(() => {
     let cancelled = false;
-    async function run() {
-      if (!canGenerateReport) {
+    const cancelIdle = scheduleInterviewIdle(async () => {
+      if (cancelled) return;
+      if (!active || !pathsCalcReady || !canGenerateReport) {
         if (!cancelled) setCurrentStepsHash("");
         return;
       }
@@ -943,23 +1590,41 @@ export default function InterviewPathsView({
       } catch {
         if (!cancelled) setCurrentStepsHash("");
       }
-    }
-    run();
+    }, { timeout: 320 });
     return () => {
       cancelled = true;
+      cancelIdle?.();
     };
   }, [
+    active,
+    pathsCalcReady,
     canGenerateReport,
     sessionId,
     activePathId,
     activePathName,
     interviewData,
     activePathMetrics,
+    activeScenario,
     decisionByNodeId,
     decisionByOrderIndex,
+    dodSnapshot,
+    interviewGraph,
+    interviewVM?.quality,
+    reportScenarioLabel,
+    reportScenarioSequenceForReport,
   ]);
 
   useEffect(() => {
+    try {
+      reportListAbortRef.current?.abort();
+    } catch {
+      // ignore abort errors
+    }
+    try {
+      reportDetailsAbortRef.current?.abort();
+    } catch {
+      // ignore abort errors
+    }
     setReportError("");
     setReportErrorMeta(null);
     setReportDetailsError("");
@@ -970,6 +1635,16 @@ export default function InterviewPathsView({
     setSelectedReportId("");
     setPendingGenerationVersions([]);
     setReportLoadingCount(0);
+    setReportGenerationTrace([]);
+    reportTraceSeqRef.current = 0;
+    reportTraceStatusByReportRef.current = {};
+    reportTracePersistByReportRef.current = {};
+    reportTraceInterruptedByReportRef.current = {};
+    setReportTerminalOverrides({});
+    if (reportTraceHideTimerRef.current) {
+      window.clearTimeout(reportTraceHideTimerRef.current);
+      reportTraceHideTimerRef.current = 0;
+    }
   }, [activePathId]);
 
   useEffect(() => {
@@ -980,24 +1655,38 @@ export default function InterviewPathsView({
     };
   }, []);
 
-  async function reloadReportVersions(preferReportId = "") {
+  async function reloadReportVersions(preferReportId = "", options = {}) {
+    const force = !!options?.force;
+    if (!active || (!isReportsDrawerOpen && !force)) return { skipped: true };
     if (!reportApiAvailable || !toText(activePathId)) {
       setReportVersions([]);
       setSelectedReportId("");
       setReportError("");
       setReportErrorMeta(null);
-      return;
+      return { ok: false, status: 0, error: "reports api unavailable" };
     }
+    const requestScope = String(options?.requestScope || reportRequestScope);
+    const requestId = Number(reportListReqIdRef.current || 0) + 1;
+    reportListReqIdRef.current = requestId;
+    try {
+      reportListAbortRef.current?.abort();
+    } catch {
+      // ignore abort errors
+    }
+    const controller = new AbortController();
+    reportListAbortRef.current = controller;
     setReportVersionsLoading(true);
     setReportError("");
     setReportErrorMeta(null);
     try {
-      const response = await apiListPathReportVersions(sessionId, activePathId);
+      const response = await apiListPathReportVersions(sessionId, activePathId, { signal: controller.signal });
+      if (controller.signal.aborted || requestId !== reportListReqIdRef.current || requestScope !== reportScopeRef.current) return;
+      if (response?.aborted) return;
       if (!response?.ok) {
         setReportVersions([]);
         setReportError(buildApiErrorTitle(response, "Не удалось загрузить список отчётов."));
         setReportErrorMeta(buildApiErrorMeta(response, { method: "GET", endpoint: reportsEndpoint }));
-        return;
+        return response;
       }
       const items = toArray(response?.items);
       setReportVersions(items);
@@ -1007,18 +1696,23 @@ export default function InterviewPathsView({
         if (prev && items.some((item) => toText(item?.id) === prev)) return prev;
         return toText(items[0]?.id);
       });
+      return response;
     } catch (error) {
+      if (isAbortLikeError(error)) return;
       setReportVersions([]);
       setReportError(buildApiErrorTitle(error, "Не удалось загрузить список отчётов."));
       setReportErrorMeta(buildApiErrorMeta(error, { method: "GET", endpoint: reportsEndpoint }));
+      return { ok: false, status: Number(error?.status || 0), error: buildApiErrorTitle(error, "Не удалось загрузить список отчётов.") };
     } finally {
-      setReportVersionsLoading(false);
+      if (requestId === reportListReqIdRef.current) setReportVersionsLoading(false);
     }
+    return { ok: false, status: 0, error: "unknown list reload error" };
   }
 
   useEffect(() => {
     let cancelled = false;
     async function run() {
+      if (!active || !isReportsDrawerOpen) return;
       if (!toText(sessionId) || !toText(activePathId)) {
         if (!cancelled) {
           setReportVersions([]);
@@ -1027,18 +1721,18 @@ export default function InterviewPathsView({
         return;
       }
       if (cancelled) return;
-      await reloadReportVersions("");
+      await reloadReportVersions("", { requestScope: reportRequestScope });
     }
     run();
     return () => {
       cancelled = true;
     };
-  }, [sessionId, activePathId, reportApiAvailable]);
+  }, [active, isReportsDrawerOpen, sessionId, activePathId, reportApiAvailable, reportRequestScope]);
 
   useEffect(() => {
     let cancelled = false;
     const reportId = toText(selectedReportId);
-    if (!reportApiAvailable) return () => {
+    if (!active || !isReportsDrawerOpen || !reportApiAvailable) return () => {
       cancelled = true;
     };
     if (!reportId) {
@@ -1049,18 +1743,56 @@ export default function InterviewPathsView({
         cancelled = true;
       };
     }
-    if (reportDetailsById[reportId]) return () => {
+    const cached = asObject(reportDetailsById[reportId]);
+    const summaryStatus = toText(selectedReportSummary?.status).toLowerCase();
+    const cachedStatus = toText(cached?.status).toLowerCase();
+    const cachedMarkdown = toText(cached?.report_markdown || cached?.raw_text);
+    const shouldRefetchStaleDetail = !!toText(cached?.id) && (
+      (summaryStatus === "ok" && !cachedMarkdown)
+      || (summaryStatus && cachedStatus && summaryStatus !== cachedStatus)
+    );
+    if (toText(cached?.id) && !shouldRefetchStaleDetail) return () => {
       cancelled = true;
     };
 
     async function run() {
+      const requestScope = reportRequestScope;
+      const requestId = Number(reportDetailsReqIdRef.current || 0) + 1;
+      reportDetailsReqIdRef.current = requestId;
+      try {
+        reportDetailsAbortRef.current?.abort();
+      } catch {
+        // ignore abort errors
+      }
+      const controller = new AbortController();
+      reportDetailsAbortRef.current = controller;
       setReportDetailsLoadingId(reportId);
       setReportDetailsError("");
       setReportDetailsErrorMeta(null);
       try {
-        const response = await apiGetReportVersion(reportId);
+        const response = await apiGetReportVersion(reportId, {
+          signal: controller.signal,
+          sessionId,
+          pathId: activePathId,
+        });
         if (cancelled) return;
+        if (controller.signal.aborted || requestId !== reportDetailsReqIdRef.current || requestScope !== reportScopeRef.current) return;
+        if (response?.aborted) return;
         if (!response?.ok) {
+          const status = Number(response?.status || 0);
+          if (status === 404 || status === 401 || status === 403) {
+            const fallbackReportId = toText(
+              toArray(reportVersionsView).find((row) => {
+                const id = toText(asObject(row)?.id);
+                return id && id !== reportId;
+              })?.id,
+            );
+            markReportAsInterrupted(reportId, response, {
+              endpoint: toText(response?.endpoint || `/api/reports/${encodeURIComponent(reportId)}`),
+              fallbackReportId,
+            });
+            return;
+          }
           setReportDetailsError(buildApiErrorTitle(response, "Не удалось загрузить отчёт."));
           setReportDetailsErrorMeta(buildApiErrorMeta(response, {
             method: "GET",
@@ -1070,63 +1802,282 @@ export default function InterviewPathsView({
         }
         const report = asObject(response?.report);
         setReportDetailsById((prev) => ({ ...prev, [reportId]: report }));
+        appendReportStatusTrace(reportId, report?.status, report);
       } catch (error) {
+        if (isAbortLikeError(error)) return;
         if (!cancelled) {
           setReportDetailsError(buildApiErrorTitle(error, "Не удалось загрузить отчёт."));
           setReportDetailsErrorMeta(buildApiErrorMeta(error, {
             method: "GET",
             endpoint: `/api/reports/${encodeURIComponent(reportId)}`,
           }));
+          appendReportTrace({
+            phase: "details_error",
+            title: "Ошибка загрузки деталей отчёта",
+            detail: buildApiErrorTitle(error, "Не удалось загрузить отчёт."),
+            method: "GET",
+            endpoint: `/api/reports/${encodeURIComponent(reportId)}`,
+          });
         }
       } finally {
-        if (!cancelled) setReportDetailsLoadingId("");
+        if (!cancelled && requestId === reportDetailsReqIdRef.current) setReportDetailsLoadingId("");
       }
     }
     run();
     return () => {
       cancelled = true;
     };
-  }, [selectedReportId, reportDetailsById, reportApiAvailable]);
+  }, [
+    active,
+    isReportsDrawerOpen,
+    sessionId,
+    activePathId,
+    selectedReportId,
+    selectedReportSummary?.status,
+    reportDetailsById,
+    reportVersionsView,
+    reportApiAvailable,
+    reportRequestScope,
+    appendReportStatusTrace,
+    appendReportTrace,
+    markReportAsInterrupted,
+  ]);
 
   const hasRunningReports = useMemo(() => {
     if (toArray(pendingGenerationVersions).length > 0) return true;
     if (toText(selectedReportView?.status) === "running") return true;
     return toArray(reportVersionsView).some((row) => toText(row?.status) === "running");
   }, [pendingGenerationVersions, selectedReportView?.status, reportVersionsView]);
+  const hasRecentSaveStatusTrace = useMemo(() => {
+    const items = toArray(reportGenerationTrace);
+    if (!items.length) return false;
+    const last = asObject(items[items.length - 1]);
+    if (toText(last?.phase).toLowerCase() !== "save_status") return false;
+    const ts = Date.parse(toText(last?.at_iso));
+    if (!Number.isFinite(ts) || ts <= 0) return true;
+    return (Date.now() - ts) <= 15000;
+  }, [reportGenerationTrace]);
+  const showReportGenerationTrace = useMemo(() => {
+    if (!toArray(reportGenerationTrace).length) return false;
+    if (reportLoading) return true;
+    if (hasRunningReports) return true;
+    if (toText(reportError) || toText(reportDetailsError)) return true;
+    if (hasRecentSaveStatusTrace) return true;
+    return toText(selectedReportView?.status).toLowerCase() !== "ok";
+  }, [reportGenerationTrace, reportLoading, hasRunningReports, reportError, reportDetailsError, selectedReportView?.status, hasRecentSaveStatusTrace]);
 
   useEffect(() => {
-    if (!reportApiAvailable || !hasRunningReports || !toText(sessionId) || !toText(activePathId)) return undefined;
+    const reportId = toText(selectedReportView?.id || selectedReportId);
+    const status = toText(selectedReportView?.status).toLowerCase();
+    if (!reportId || (status !== "ok" && status !== "error")) return;
+    const listed = toArray(reportVersionsView).find((row) => toText(row?.id) === reportId);
+    if (!listed) return;
+    if (toText(listed?.status).toLowerCase() !== status) return;
+    const detail = asObject(reportDetailsById[reportId]);
+    const snapshot = {
+      ...asObject(listed),
+      ...detail,
+      id: reportId,
+      status,
+      version: Number(selectedReportView?.version || listed?.version || detail?.version || 0),
+      error_message: toText(detail?.error_message || selectedReportView?.error_message || listed?.error),
+    };
+    appendReportPersistTrace(snapshot);
+  }, [
+    selectedReportView?.id,
+    selectedReportView?.status,
+    selectedReportView?.version,
+    selectedReportView?.error_message,
+    selectedReportId,
+    reportVersionsView,
+    reportDetailsById,
+    appendReportPersistTrace,
+  ]);
+
+  useEffect(() => {
+    if (!active || !isReportsDrawerOpen || !reportApiAvailable || !hasRunningReports || !toText(sessionId) || !toText(activePathId)) return undefined;
     let cancelled = false;
-    async function tick() {
+    let tickInFlight = false;
+    let timerId = 0;
+    let attempts = 0;
+    const startedAt = Date.now();
+
+    function stopPolling(reasonRaw) {
+      const reason = toText(reasonRaw || "unknown");
       if (cancelled) return;
-      await reloadReportVersions(toText(selectedReportId));
-      const reportId = toText(selectedReportId);
-      if (!reportId) return;
-      try {
-        const response = await apiGetReportVersion(reportId);
-        if (cancelled || !response?.ok) return;
-        const report = asObject(response?.report);
-        setReportDetailsById((prev) => ({ ...prev, [reportId]: report }));
-      } catch {
+      cancelled = true;
+      if (timerId) {
+        window.clearTimeout(timerId);
+        timerId = 0;
+      }
+      if (import.meta.env.DEV) {
+        // eslint-disable-next-line no-console
+        console.info(`[REPORTS_POLL] stop reason=${reason}`);
       }
     }
-    const timerId = window.setInterval(tick, 2500);
+
+    function scheduleNext() {
+      if (cancelled) return;
+      if (attempts >= REPORT_POLL_MAX_ATTEMPTS || (Date.now() - startedAt) > REPORT_POLL_MAX_MS) {
+        setReportDetailsError("Не удалось загрузить данные отчёта");
+        setReportDetailsErrorMeta({
+          status: 0,
+          method: "GET",
+          endpoint: `/api/reports/${encodeURIComponent(toText(selectedReportId) || ":reportId")}`,
+          detail: "Polling timeout",
+        });
+        stopPolling("timeout");
+        return;
+      }
+      const delayMs = reportPollDelayMs(attempts + 1);
+      timerId = window.setTimeout(tick, delayMs);
+    }
+
+    async function tick() {
+      if (cancelled || tickInFlight) return;
+      tickInFlight = true;
+      attempts += 1;
+      const requestScope = reportRequestScope;
+      try {
+        const listResponse = await reloadReportVersions(toText(selectedReportId), { requestScope });
+        if (cancelled || requestScope !== reportScopeRef.current) return;
+
+        const listStatus = Number(listResponse?.status || 0);
+        if (listResponse && listResponse.ok === false) {
+          if (listStatus === 401 || listStatus === 403 || listStatus === 404) {
+            stopPolling(String(listStatus));
+            return;
+          }
+          if (listStatus >= 500) {
+            scheduleNext();
+            return;
+          }
+          stopPolling(`list_error_${listStatus || "unknown"}`);
+          return;
+        }
+
+        const reportId = toText(selectedReportId);
+        if (!reportId) {
+          scheduleNext();
+          return;
+        }
+
+        const response = await apiGetReportVersion(reportId, {
+          sessionId,
+          pathId: activePathId,
+        });
+        if (cancelled || requestScope !== reportScopeRef.current || response?.aborted) return;
+        if (!response?.ok) {
+          const status = Number(response?.status || 0);
+          if (status === 404 || status === 401 || status === 403) {
+            const fallbackReportId = toText(
+              toArray(reportVersionsView).find((row) => {
+                const id = toText(asObject(row)?.id);
+                return id && id !== reportId;
+              })?.id,
+            );
+            markReportAsInterrupted(reportId, response, {
+              endpoint: toText(response?.endpoint || `/api/reports/${encodeURIComponent(reportId)}`),
+              fallbackReportId,
+            });
+            stopPolling(String(status));
+            return;
+          }
+          if (status >= 500) {
+            scheduleNext();
+            return;
+          }
+          stopPolling(`detail_error_${status || "unknown"}`);
+          return;
+        }
+        const report = asObject(response?.report);
+        setReportDetailsById((prev) => ({ ...prev, [reportId]: report }));
+        appendReportStatusTrace(reportId, report?.status, report);
+        const reportStatus = toText(report?.status).toLowerCase();
+        if (reportStatus === "ok" || reportStatus === "error") {
+          stopPolling(reportStatus === "ok" ? "ok_done" : "error_done");
+          return;
+        }
+        scheduleNext();
+      } catch (error) {
+        const status = Number(error?.status || 0);
+        if (status >= 500 || status === 0) {
+          scheduleNext();
+        } else {
+          stopPolling(`exception_${status || "unknown"}`);
+        }
+      } finally {
+        tickInFlight = false;
+      }
+    }
+
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.info(
+        `[REPORTS_POLL] start sid=${toText(sessionId)} path=${toText(activePathId)} interval=${reportPollDelayMs(1)}..5000`,
+      );
+    }
     tick();
     return () => {
-      cancelled = true;
-      window.clearInterval(timerId);
+      stopPolling("cleanup");
     };
-  }, [hasRunningReports, sessionId, activePathId, selectedReportId, reportApiAvailable]);
+  }, [active, isReportsDrawerOpen, hasRunningReports, sessionId, activePathId, selectedReportId, reportApiAvailable, reportRequestScope, appendReportStatusTrace, markReportAsInterrupted, reportVersionsView]);
+
+  useEffect(() => {
+    const selectedStatus = toText(selectedReportView?.status).toLowerCase();
+    const hasMarkdown = !!toText(selectedReportView?.report_markdown);
+    if (!toArray(reportGenerationTrace).length) return;
+    if (selectedStatus === "ok" && hasMarkdown && !reportLoading && !hasRunningReports) {
+      if (reportTraceHideTimerRef.current) {
+        window.clearTimeout(reportTraceHideTimerRef.current);
+      }
+      reportTraceHideTimerRef.current = window.setTimeout(() => {
+        setReportGenerationTrace([]);
+        reportTraceSeqRef.current = 0;
+        reportTraceStatusByReportRef.current = {};
+        reportTracePersistByReportRef.current = {};
+        reportTraceHideTimerRef.current = 0;
+      }, 7000);
+      return () => {
+        if (reportTraceHideTimerRef.current) {
+          window.clearTimeout(reportTraceHideTimerRef.current);
+          reportTraceHideTimerRef.current = 0;
+        }
+      };
+    }
+    return undefined;
+  }, [selectedReportView?.status, selectedReportView?.report_markdown, reportGenerationTrace, reportLoading, hasRunningReports]);
 
   async function handleGenerateReport() {
     if (!reportApiAvailable) {
       setReportError("Отчёты недоступны в локальной сессии. Сохраните/откройте серверную сессию.");
       setReportErrorMeta(null);
+      setReportGenerationTrace([]);
+      reportTraceSeqRef.current = 0;
+      reportTraceStatusByReportRef.current = {};
       return;
     }
     if (!canGenerateReport) return;
+    if (!toText(activePathId)) {
+      setReportError("Не выбран активный сценарий для генерации отчёта.");
+      return;
+    }
     setReportError("");
     setReportErrorMeta(null);
+    setReportGenerationTrace([]);
+    reportTraceSeqRef.current = 0;
+    reportTraceStatusByReportRef.current = {};
+    reportTracePersistByReportRef.current = {};
+    if (reportTraceHideTimerRef.current) {
+      window.clearTimeout(reportTraceHideTimerRef.current);
+      reportTraceHideTimerRef.current = 0;
+    }
+    appendReportTrace({
+      phase: "start",
+      title: "Старт генерации отчёта",
+      method: "POST",
+      endpoint: reportsEndpoint,
+    });
     const expectedVersion = Math.max(
       0,
       ...toArray(reportVersions).map((row) => Number(row?.version || 0)).filter((x) => Number.isFinite(x)),
@@ -1136,31 +2087,102 @@ export default function InterviewPathsView({
     setPendingGenerationVersions((prev) => [...toArray(prev), { id: requestId, version: expectedVersion }]);
     setReportLoadingCount((prev) => prev + 1);
     try {
+      appendReportTrace({ phase: "request_build", title: "Сбор payload для генерации" });
       const request = await buildRequestForActivePath();
       setCurrentStepsHash(toText(request?.steps_hash));
+      const reportBuildDebug = asObject(request?.reportBuildDebug);
+      const stopReason = toText(reportBuildDebug?.stop_reason || "UNKNOWN");
+      const lastStep = asObject(reportBuildDebug?.last_step);
+      const lastNo = Number(lastStep?.order_index || 0);
+      const lastTitle = toText(lastStep?.title || "—");
+      const lastBpmn = toText(lastStep?.bpmn_ref || reportBuildDebug?.stop_at_bpmn_id || "—");
+      if (import.meta.env.DEV) {
+        // eslint-disable-next-line no-console
+        console.info(
+          `[REPORT_BUILD] scenario=${toText(reportBuildDebug?.selectedScenarioLabel || reportScenarioLabel)} `
+          + `path=${toText(reportBuildDebug?.path_id_used || activePathId)} steps=${Number(reportBuildDebug?.steps_count || 0)} `
+          + `reason=${stopReason} last=#${lastNo || "?"} ${lastTitle} bpmn=${lastBpmn}`,
+        );
+      }
+      setLatestReportBuildDebugByPath((prev) => ({
+        ...asObject(prev),
+        [toText(activePathId)]: reportBuildDebug,
+      }));
+      onReportBuildDebug?.(reportBuildDebug);
+      appendReportTrace({
+        phase: "request_ready",
+        title: "Payload подготовлен",
+        detail: `steps_hash=${toText(request?.steps_hash) || "—"}`,
+      });
+      appendReportTrace({
+        phase: "request_send",
+        title: "Отправка запроса генерации",
+        method: "POST",
+        endpoint: reportsEndpoint,
+      });
       const response = await apiCreatePathReportVersion(sessionId, activePathId, {
         steps_hash: request?.steps_hash,
-        request_payload_json: request?.payload || {},
-        prompt_template_version: "v1",
+        request_payload_json: import.meta.env.DEV
+          ? {
+            ...asObject(request?.payload),
+            report_build_debug: asObject(request?.reportBuildDebug),
+          }
+          : (request?.payload || {}),
+        prompt_template_version: "v2",
+        ...(import.meta.env.DEV ? { report_build_debug: asObject(request?.reportBuildDebug) } : {}),
       });
       if (!response?.ok) {
-        setReportError(buildApiErrorTitle(response, "Не удалось сгенерировать отчёт."));
-        setReportErrorMeta(buildApiErrorMeta(response, { method: "POST", endpoint: reportsEndpoint }));
+        const title = buildApiErrorTitle(response, "Не удалось сгенерировать отчёт.");
+        const meta = buildApiErrorMeta(response, { method: "POST", endpoint: reportsEndpoint });
+        setReportError(title);
+        setReportErrorMeta(meta);
+        appendReportTrace({
+          phase: "request_error",
+          title,
+          detail: toText(meta?.detail),
+          method: toText(meta?.method || "POST"),
+          endpoint: toText(meta?.endpoint || reportsEndpoint),
+          status: Number(meta?.status || 0),
+        });
         return;
       }
       const reportEntry = asObject(response?.report);
       const reportId = toText(reportEntry?.id);
+      appendReportTrace({
+        phase: "request_ok",
+        title: `Версия принята сервером: v${Number(reportEntry?.version || expectedVersion)}`,
+        report_id: reportId,
+        report_status: toText(reportEntry?.status || "running"),
+        status: Number(response?.status || 0),
+      });
+      appendReportStatusTrace(reportId, reportEntry?.status, reportEntry);
       if (reportId) {
         setReportDetailsById((prev) => ({ ...prev, [reportId]: reportEntry }));
         setSelectedReportId(reportId);
       }
       if (toText(response?.result?.deepseek_error)) {
         setReportError(`DeepSeek: ${toText(response?.result?.deepseek_error)}`);
+        appendReportTrace({
+          phase: "provider_error",
+          title: "Ошибка провайдера DeepSeek",
+          detail: toText(response?.result?.deepseek_error),
+        });
       }
-      await reloadReportVersions(reportId);
+      await reloadReportVersions(reportId, { force: true });
+      appendReportTrace({ phase: "versions_reload", title: "Список версий обновлён" });
     } catch (error) {
-      setReportError(buildApiErrorTitle(error, "Не удалось сгенерировать отчёт."));
-      setReportErrorMeta(buildApiErrorMeta(error, { method: "POST", endpoint: reportsEndpoint }));
+      const title = buildApiErrorTitle(error, "Не удалось сгенерировать отчёт.");
+      const meta = buildApiErrorMeta(error, { method: "POST", endpoint: reportsEndpoint });
+      setReportError(title);
+      setReportErrorMeta(meta);
+      appendReportTrace({
+        phase: "request_error",
+        title,
+        detail: toText(meta?.detail),
+        method: toText(meta?.method || "POST"),
+        endpoint: toText(meta?.endpoint || reportsEndpoint),
+        status: Number(meta?.status || 0),
+      });
     } finally {
       setPendingGenerationVersions((prev) => toArray(prev).filter((item) => toText(item?.id) !== requestId));
       setReportLoadingCount((prev) => Math.max(0, Number(prev || 0) - 1));
@@ -1171,7 +2193,7 @@ export default function InterviewPathsView({
     const reportId = toText(reportIdRaw);
     if (!reportId) return;
     const detail = asObject(reportDetailsById[reportId]);
-    const markdown = toText(detail?.report_markdown || detail?.raw_text);
+    const markdown = normalizeReportMarkdown(detail?.report_markdown, detail?.raw_text);
     if (!markdown) return;
     try {
       if (navigator?.clipboard?.writeText) {
@@ -1194,9 +2216,25 @@ export default function InterviewPathsView({
   }
 
   function handleRecommendationClick(recommendation) {
-    const stepId = resolveStepIdForRecommendation(recommendation, vm?.steps);
-    const orderIndex = Number(recommendation?.order_index || 0);
-    if (!stepId || !Number.isFinite(orderIndex) || orderIndex <= 0) return;
+    const orderIndex = Number(recommendation?.order_index || recommendation?._orderIndex || 0);
+    if (!Number.isFinite(orderIndex) || orderIndex <= 0) return;
+    const matchedRow = flatRouteRows.find((row) => Number(row?.order_index || 0) === Math.floor(orderIndex));
+    let stepId = "";
+    if (matchedRow) {
+      const nodeId = toText(matchedRow?.node_id);
+      stepId = toText(firstStepIdByNodeId[nodeId]);
+    }
+    if (!stepId) {
+      stepId = resolveStepIdForRecommendation(
+        { ...asObject(recommendation), order_index: orderIndex },
+        vm?.steps,
+      );
+    }
+    if (matchedRow) {
+      const key = `route_${Number(matchedRow?.order_index || 0)}_${toText(matchedRow?.node_id || matchedRow?.id || matchedRow?.key)}`;
+      setSelectedRouteKey(key);
+      setDetailsCollapsed(false);
+    }
     if (recommendationHighlightTimerRef.current) {
       window.clearTimeout(recommendationHighlightTimerRef.current);
       recommendationHighlightTimerRef.current = 0;
@@ -1212,12 +2250,13 @@ export default function InterviewPathsView({
       setActiveRecommendationOrderIndex(0);
       recommendationHighlightTimerRef.current = 0;
     }, STEP_HIGHLIGHT_MS);
-    onSelectStep?.(stepId, true);
+    if (stepId) onSelectStep?.(stepId, true);
   }
 
   function pickRow(row) {
     const key = `route_${Number(row?.order_index || 0)}_${toText(row?.node_id || row?.id || row?.key)}`;
     setSelectedRouteKey(key);
+    setDetailsCollapsed(false);
     const nodeId = toText(row?.node_id);
     if (!nodeId) return;
     const stepId = toText(firstStepIdByNodeId[nodeId]);
@@ -1294,38 +2333,36 @@ export default function InterviewPathsView({
               if (e.key === "Enter" || e.key === " ") pickRow(row);
             }}
           >
-            <div className="interviewRouteNodeHead">
-              <span className="interviewRouteNodeNo">#{Number(row?.order_index || 0)}</span>
-              <span className="interviewRouteNodeTitle">{rowTitle}</span>
-              {rowType === "decision" ? <span className="badge warn">Decision</span> : null}
-              {isDecisionDiff ? <span className="badge warn">Δ vs Ideal</span> : null}
-              {rowTier !== "None" ? <span className={`tier tier-${rowTier.toLowerCase()}`}>{rowTier}</span> : null}
+            <div className="interviewRouteRowMain">
+              <div className="interviewRouteNodeHead">
+                <span className="interviewRouteNodeNo">#{Number(row?.order_index || 0)}</span>
+                <span className="interviewRouteNodeTitle" title={rowTitle}>{rowTitle}</span>
+                {rowType === "decision" ? <span className="badge warn">Decision</span> : null}
+                {isDecisionDiff ? <span className="badge warn">Δ</span> : null}
+                {rowTier !== "None" ? <span className={`tier tier-${rowTier.toLowerCase()}`}>{rowTier}</span> : null}
+              </div>
+              <div className="interviewRouteNodeMeta">
+                <span className="muted small interviewRouteNodeSubtitle" title={`${prevTitle} → ${nextTitle}`}>
+                  {prevTitle} → {nextTitle}
+                </span>
+                {toText(row?.lane_name) ? <span className="badge muted">{toText(row?.lane_name)}</span> : null}
+                {rowType === "decision" ? (
+                  <span className="badge ok">
+                    {toText(row?.decision?.selected_label || row?.decision?.selected_flow_id || "selected")}
+                  </span>
+                ) : null}
+                {counterpartIds.length ? (
+                  <span
+                    className="badge"
+                    onMouseEnter={() => setHoveredLinkKey(linkKey)}
+                    onMouseLeave={() => setHoveredLinkKey("")}
+                  >
+                    Link: {counterpartIds.length}
+                  </span>
+                ) : null}
+              </div>
             </div>
-            <div className="interviewRouteNodeMeta">
-              <span className="muted small">
-                {prevTitle} → {nextTitle}
-              </span>
-              {rowType === "decision" ? (
-                <span className="badge ok">
-                  {toText(row?.decision?.selected_label || row?.decision?.selected_flow_id || "selected")}
-                </span>
-              ) : null}
-              {toText(row?.lane_name) ? <span className="badge muted">{toText(row?.lane_name)}</span> : null}
-              {toText(nodeId) && Number(stepMetaByNodeId?.[nodeId]?.ai_count || 0) > 0 ? (
-                <span className="badge ok">AI {Number(stepMetaByNodeId?.[nodeId]?.ai_count || 0)}</span>
-              ) : null}
-              {toText(nodeId) && Number(stepMetaByNodeId?.[nodeId]?.notes_count || 0) > 0 ? (
-                <span className="badge muted">Notes {Number(stepMetaByNodeId?.[nodeId]?.notes_count || 0)}</span>
-              ) : null}
-              {counterpartIds.length ? (
-                <span
-                  className="badge"
-                  onMouseEnter={() => setHoveredLinkKey(linkKey)}
-                  onMouseLeave={() => setHoveredLinkKey("")}
-                >
-                  Link: {counterpartIds.length}
-                </span>
-              ) : null}
+            <div className="interviewRouteNodeControls">
               {linkedStepId ? (
                 <StepDurationEditor
                   stepId={linkedStepId}
@@ -1490,24 +2527,102 @@ export default function InterviewPathsView({
     return toArray(dodMissingByNodeId?.[nodeId]);
   }, [activeRouteRow, dodMissingByNodeId]);
 
+  const activeStepDetails = useMemo(() => {
+    if (!activeRouteRow) return null;
+    return {
+      type: toText(activeRouteRow?.node_type || activeRouteRow?.row_type || "—"),
+      lane: sanitizeDisplayText(activeRouteRow?.lane_name || stepMetaByNodeId[toText(activeRouteRow?.node_id)]?.lane_name, "—"),
+      inTitle: sanitizeDisplayText(activeNodeSeqMeta?.prev?.title, "—"),
+      outTitle: sanitizeDisplayText(activeNodeSeqMeta?.next?.title, "—"),
+      selected: sanitizeDisplayText(activeRouteRow?.decision?.selected_label, "—"),
+      aiCount: Number(stepMetaByNodeId[toText(activeRouteRow?.node_id)]?.ai_count || 0),
+      notesCount: Number(stepMetaByNodeId[toText(activeRouteRow?.node_id)]?.notes_count || 0),
+      dodMissing: activeDodMissing.length ? activeDodMissing.join(", ") : "—",
+      inputs: activeIncomingFlows.length
+        ? activeIncomingFlows.map((flow) => `${flow.id}${flow.label ? ` (${flow.label})` : ""}`).join("; ")
+        : "—",
+      outputs: activeOutgoingFlows.length
+        ? activeOutgoingFlows.map((flow) => `${flow.id}${flow.label ? ` (${flow.label})` : ""}`).join("; ")
+        : "—",
+      linkGroup: toText(activeLinkGroup?.link_key || ""),
+      counterparts: activeCounterparts,
+    };
+  }, [
+    activeRouteRow,
+    stepMetaByNodeId,
+    activeNodeSeqMeta,
+    activeDodMissing,
+    activeIncomingFlows,
+    activeOutgoingFlows,
+    activeLinkGroup,
+    activeCounterparts,
+  ]);
+  const activeStepTiming = useMemo(() => {
+    const nodeId = toText(activeRouteRow?.node_id);
+    if (!nodeId) return null;
+    const linkedStepId = toText(firstStepIdByNodeId[nodeId]);
+    if (!linkedStepId) return null;
+    const linkedStep = asObject(stepById[linkedStepId]);
+    return {
+      stepId: linkedStepId,
+      workSec: Math.max(0, Number(linkedStep?.work_duration_sec || linkedStep?.duration_sec || 0)),
+      waitSec: Math.max(0, Number(linkedStep?.wait_duration_sec || 0)),
+    };
+  }, [activeRouteRow, firstStepIdByNodeId, stepById]);
+
+  const hasSelectedMarkdown = useMemo(() => {
+    const selectedId = toText(selectedReportId || visibleReportVersions?.[0]?.id);
+    if (!selectedId) return false;
+    const detail = asObject(reportDetailsById[selectedId]);
+    return !!normalizeReportMarkdown(detail?.report_markdown, detail?.raw_text);
+  }, [selectedReportId, visibleReportVersions, reportDetailsById]);
+
+  async function handleCopyActiveMarkdown() {
+    const selectedId = toText(selectedReportId || visibleReportVersions?.[0]?.id);
+    if (!selectedId) return;
+    await handleCopyMarkdown(selectedId);
+  }
+
+  async function handleCopyStepLink() {
+    const nodeId = toText(activeRouteRow?.node_id);
+    const orderIndex = Number(activeRouteRow?.order_index || 0);
+    const link = [
+      toText(sessionId || "local"),
+      toText(activePathId || "path"),
+      Number.isFinite(orderIndex) && orderIndex > 0 ? `#${Math.floor(orderIndex)}` : "",
+      nodeId,
+    ].filter(Boolean).join(":");
+    if (!link) return;
+    try {
+      if (navigator?.clipboard?.writeText) await navigator.clipboard.writeText(link);
+    } catch {
+      // no-op
+    }
+  }
+
+  function toggleScenarioGroup(groupKeyRaw) {
+    const groupKey = toText(groupKeyRaw);
+    if (!groupKey) return;
+    setCollapsedScenarioGroups((prev) => ({ ...asObject(prev), [groupKey]: !prev?.[groupKey] }));
+  }
+
   return (
     <div className="interviewPathsMode interviewPathsRouteMode" data-testid="interview-paths-mode">
       <div className="interviewPathsHead">
         <div className="interviewPathsTitle">Paths View</div>
-        <div className="interviewScenarioTabs">
-          {["ALL", "P0", "P1", "P2"].map((tier) => (
-            <button
-              key={tier}
-              type="button"
-              className={`secondaryBtn smallBtn ${selectedTier === tier ? "isActive" : ""}`}
-              onClick={() => startTransition(() => setSelectedTier(tier))}
-            >
-              {tier}
-            </button>
-          ))}
-          {isPendingTransition ? <span className="muted small">Обновляю…</span> : null}
-        </div>
+        {isPendingTransition ? <span className="muted small">Обновляю…</span> : null}
       </div>
+
+      {!pathsCalcReady ? (
+        <div className="interviewAnnotationNotice pending">
+          Подготавливаю расчёты paths/diff/aggregation в фоне…
+        </div>
+      ) : null}
+      {pathsCalcReady && legacyColorSource ? (
+        <div className="interviewAnnotationNotice warn">
+          Legacy source: Paths построены из flow tier/цветов. Для стабильной модели выполните «Импорт из цветов» в панели выбранного BPMN-узла.
+        </div>
+      ) : null}
 
       {showDevOrderWarning ? (
         <div className="interviewAnnotationNotice warn">
@@ -1523,443 +2638,151 @@ export default function InterviewPathsView({
         </div>
       ) : null}
 
-      <div className="interviewPathsRouteLayout" data-testid="interview-paths-layout">
-        <aside className="interviewPathsRouteLeft" data-testid="interview-paths-left-rail">
-          <div className="interviewPathsRailTitle">Scenarios</div>
-          <div className="interviewPathsScenarioRail">
-            {toArray(visibleSections).map((section) => (
-              <div key={`scenario_section_${toText(section?.key)}`} className="interviewPathsScenarioSection">
-                <div className="interviewPathsScenarioSectionTitle">{toText(section?.title)}</div>
-                {toArray(section?.items).map((scenario) => {
-                  const scenarioId = toText(scenario?.id);
-                  const isActive = scenarioId === selectedScenarioId;
-                  const diffPreview = scenarioDiffPreview(scenario);
-                  const isP0Alt = scenarioBucket(scenario) === "P0_ALT";
-                  return (
-                    <button
-                      key={`scenario_rail_${scenarioId}`}
-                      type="button"
-                      data-testid={`paths-scenario-item-${scenarioId}`}
-                      className={`interviewPathsScenarioRailItem ${isActive ? "isActive" : ""}`}
-                      onClick={() => startTransition(() => setSelectedScenarioId(scenarioId))}
-                    >
-                      <div className="interviewPathsScenarioRailMain">
-                        <span>{scenarioOutcomeIcon(scenario)} {scenarioPresentation.scenarioDisplayTitle(scenario)}</span>
-                        <span className={`badge ${scenarioStatusClass(scenario)}`}>{scenarioStatusLabel(scenario)}</span>
-                      </div>
-                      <div className="interviewPathsScenarioRailMeta muted small">
-                        steps {toArray(scenario?.sequence).length} · time {formatSeconds(scenarioDurationSec(scenario, stepMetaByNodeId))}
-                      </div>
-                      {isP0Alt ? (
-                        <div className="interviewPathsScenarioDiffInline muted small">
-                          <div>
-                            Δ gateway decisions: {Number(diffPreview.decisionsCount || 0)}
-                            {diffPreview.decisionPreview ? ` · ${diffPreview.decisionPreview}` : ""}
-                          </div>
-                          <div>
-                            +steps {Number(diffPreview.additionalSteps || 0)} · +time {formatSeconds(diffPreview.additionalTimeSec)}
-                          </div>
-                        </div>
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-        </aside>
+      <PathsLayout
+        detailsCollapsed={detailsCollapsed}
+        onToggleDetails={setDetailsCollapsed}
+        hasActiveStep={!!activeRouteRow}
+        left={(
+          <ScenarioNav
+            selectedTier={selectedTier}
+            onSelectTier={(tier) => startTransition(() => setSelectedTier(tier))}
+            search={scenarioSearch}
+            onSearch={setScenarioSearch}
+            sortMode={scenarioSortMode}
+            onSortMode={setScenarioSortMode}
+            sections={visibleSections}
+            collapsedGroups={collapsedScenarioGroups}
+            onToggleGroup={toggleScenarioGroup}
+            selectedScenarioId={selectedScenarioId}
+            onSelectScenario={(scenarioId) => startTransition(() => setSelectedScenarioId(scenarioId))}
+            scenarioTitle={scenarioPresentation.scenarioDisplayTitle}
+            scenarioStatusClass={scenarioStatusClass}
+            scenarioStatusLabel={scenarioStatusLabel}
+            scenarioStatusIcon={scenarioOutcomeIcon}
+            scenarioDurationLabel={(scenario) => formatSeconds(scenarioDurationSec(scenario, stepMetaByNodeId))}
+          />
+        )}
+        center={(
+          <div className="interviewPathsMainColumn">
+            <PathHeader
+              scenario={activeScenario}
+              scenarioTitle={scenarioPresentation.scenarioDisplayTitle}
+              scenarioStatusClass={scenarioStatusClass}
+              scenarioStatusLabel={scenarioStatusLabel}
+              tier={normalizeTier(activeScenario?.tier) !== "None" ? normalizeTier(activeScenario?.tier) : ""}
+              sequenceKey={toText(activeScenario?.sequence_key || activeScenario?.sequenceKey)}
+              pathIdUsed={toText(activePathId)}
+              reportBuildDebug={activeReportBuildDebug}
+              stepsHash={currentStepsHash}
+              metrics={activePathMetrics}
+              canGenerateReport={canGenerateReport}
+              reportApiAvailable={reportApiAvailable}
+              reportLoading={reportLoading}
+              onGenerateReport={handleGenerateReport}
+              onOpenReports={() => setIsReportsDrawerOpen(true)}
+              onCopyMarkdown={handleCopyActiveMarkdown}
+              hasMarkdown={hasSelectedMarkdown}
+            />
 
-        <section className="interviewPathsRouteCenter" data-testid="interview-paths-center-route">
-          <div className="interviewPathsRouteCenterHead">
-            <strong>{toText(activeScenario?.label || "Scenario")}</strong>
-            {normalizeTier(activeScenario?.tier) !== "None" ? (
-              <span className={`tier tier-${normalizeTier(activeScenario?.tier).toLowerCase()}`}>{normalizeTier(activeScenario?.tier)}</span>
-            ) : null}
-            <span className={`badge ${scenarioStatusClass(activeScenario)}`}>{scenarioStatusLabel(activeScenario)}</span>
-            <button
-              type="button"
-              className="primaryBtn smallBtn"
-              data-testid="interview-paths-generate-report"
-              onClick={handleGenerateReport}
-              disabled={!canGenerateReport}
-              title={!reportApiAvailable
-                ? "Отчёты недоступны в локальной сессии"
-                : !canGenerateReport
-                  ? "Нужен хотя бы 1 шаг в активном пути"
-                  : "Сгенерировать отчёт по активному PathSpec"}
-            >
-              {reportLoading ? "Генерация..." : "Сгенерировать AI-отчёт (DeepSeek)"}
-            </button>
-          </div>
-          <div className="muted small">
-            Шагов: {Number(activePathMetrics?.steps_count || 0)}, Работа: {formatHHMMFromSeconds(activePathMetrics?.work_time_total_sec || 0)}, Ожидание: {formatHHMMFromSeconds(activePathMetrics?.wait_time_total_sec || 0)}, Итого: {formatHHMMFromSeconds(activePathMetrics?.total_time_sec || 0)}.
-          </div>
-          {toText(currentStepsHash) ? (
-            <div className="muted small">current steps_hash: {shortHash(currentStepsHash)}</div>
-          ) : null}
-          {reportError ? (
-            <div className="interviewAnnotationNotice err">
-              <div>{reportError}</div>
-              {(Number(reportErrorMeta?.status || 0) > 0 || toText(reportErrorMeta?.endpoint)) ? (
-                <div className="muted small">
-                  HTTP {Number(reportErrorMeta?.status || 0) || "?"} · {toText(reportErrorMeta?.method || "GET")} {toText(reportErrorMeta?.endpoint || "—")}
-                </div>
-              ) : null}
-              {toText(reportErrorMeta?.detail) ? (
-                <div className="muted small">{toText(reportErrorMeta?.detail)}</div>
-              ) : null}
-              {formatErrorClipboard(reportErrorMeta) ? (
-                <button
-                  type="button"
-                  className="secondaryBtn tinyBtn"
-                  onClick={() => handleCopyErrorDetails(reportErrorMeta)}
-                >
-                  Copy details
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-          {reportDetailsError ? (
-            <div className="interviewAnnotationNotice warn">
-              <div>{reportDetailsError}</div>
-              {(Number(reportDetailsErrorMeta?.status || 0) > 0 || toText(reportDetailsErrorMeta?.endpoint)) ? (
-                <div className="muted small">
-                  HTTP {Number(reportDetailsErrorMeta?.status || 0) || "?"} · {toText(reportDetailsErrorMeta?.method || "GET")} {toText(reportDetailsErrorMeta?.endpoint || "—")}
-                </div>
-              ) : null}
-              {toText(reportDetailsErrorMeta?.detail) ? (
-                <div className="muted small">{toText(reportDetailsErrorMeta?.detail)}</div>
-              ) : null}
-              {formatErrorClipboard(reportDetailsErrorMeta) ? (
-                <button
-                  type="button"
-                  className="secondaryBtn tinyBtn"
-                  onClick={() => handleCopyErrorDetails(reportDetailsErrorMeta)}
-                >
-                  Copy details
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-          {!reportApiAvailable ? (
-            <div className="interviewAnnotationNotice warn">
-              Отчёты версии DeepSeek доступны только для серверной сессии (не local).
-            </div>
-          ) : null}
-          {toArray(pendingGenerationVersions).length ? (
-            <div className="interviewAnnotationNotice pending">
-              Уже идёт генерация: {toArray(pendingGenerationVersions).map((row) => `v${Number(row?.version || 0)}`).join(", ")}
-            </div>
-          ) : null}
-          {activeScenario?.diff_from_ideal ? (
-            <div className="interviewScenarioDiff muted small">
-              Отличия от Ideal:
-              {" "}
-              {Number(toArray(activeScenario?.diff_from_ideal?.differing_gateway_decisions).length || 0)} решений,
-              {" +"}
-              {Number(toArray(activeScenario?.diff_from_ideal?.additional_steps).length || 0)} шагов,
-              {" +"}
-              {formatSeconds(activeScenario?.diff_from_ideal?.additional_time_sec)}
-            </div>
-          ) : null}
-          <div className="interviewPathReportPanel" data-testid="interview-path-report-panel">
-            <div className="interviewPathReportPanelHead">
-              <strong>Отчёты</strong>
-              {reportVersionsLoading ? <span className="muted small">Загрузка версий...</span> : null}
-              {reportLoading ? <span className="muted small">Генерация новой версии...</span> : null}
-              <label className="muted small">
-                <input type="checkbox" checked={reportFilterActualOnly} onChange={(e) => setReportFilterActualOnly(!!e.target.checked)} />
-                {" "}только актуальные
-              </label>
-              <label className="muted small">
-                <input type="checkbox" checked={reportFilterErrorsOnly} onChange={(e) => setReportFilterErrorsOnly(!!e.target.checked)} />
-                {" "}только ошибки
-              </label>
-            </div>
-
-            <div className="interviewPathReportVersions">
-              {visibleReportVersions.length ? (
-                toArray(visibleReportVersions).map((itemRaw) => {
-                  const item = asObject(itemRaw);
-                  const reportId = toText(item?.id);
-                  const reportDetail = asObject(reportDetailsById[reportId]);
-                  const canCopy = !!toText(reportDetail?.report_markdown || reportDetail?.raw_text);
-                  const isSelected = reportId && reportId === toText(selectedReportId);
-                  return (
-                    <div
-                      key={`report_version_${reportId || shortHash(item?.steps_hash)}`}
-                      className={`interviewPathReportVersionItem ${isSelected ? "isSelected" : ""} ${item?.is_latest_actual ? "isLatestActual" : ""}`}
-                    >
-                      <div className="interviewPathReportVersionMeta">
-                        <strong>v{Number(item?.version || 0)}</strong>
-                        <span className="muted small">{formatReportCreatedAt(item?.created_at)}</span>
-                        <span className={`badge ${toText(item?.status) === "ok" ? "ok" : toText(item?.status) === "error" ? "danger" : "warn"}`}>
-                          {toText(item?.status || "running")}
-                        </span>
-                        <span className="badge muted">hash {shortHash(item?.steps_hash)}</span>
-                        <span className={`badge ${item?.is_actual ? "ok" : "warn"}`}>
-                          {item?.is_actual ? "актуален" : "устарел"}
-                        </span>
-                        {item?.is_latest_actual ? <span className="badge ok">последний актуальный</span> : null}
-                      </div>
-                      <div className="interviewPathReportVersionActions">
-                        <button type="button" className="secondaryBtn tinyBtn" onClick={() => setSelectedReportId(reportId)}>
-                          Открыть
-                        </button>
-                        <button type="button" className="secondaryBtn tinyBtn" onClick={handleGenerateReport} disabled={!canGenerateReport}>
-                          Повторить генерацию
-                        </button>
-                        <button type="button" className="secondaryBtn tinyBtn" onClick={() => handleCopyMarkdown(reportId)} disabled={!canCopy}>
-                          Скопировать markdown
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="muted small">Версий отчёта пока нет.</div>
-              )}
-            </div>
-
-            {toText(selectedReportId) ? (
-              <div className="interviewPathReportVersionView">
-                <div className="interviewPathReportPanelHead">
-                  <strong>v{Number(selectedReportView?.version || 0)}</strong>
-                  <span className={`badge ${toText(selectedReportView?.status) === "ok" ? "ok" : toText(selectedReportView?.status) === "error" ? "danger" : "warn"}`}>
-                    {toText(selectedReportView?.status || "running")}
-                  </span>
-                  <span className="muted small">{formatReportCreatedAt(selectedReportView?.created_at)}</span>
-                  <span className="badge muted">hash {shortHash(selectedReportView?.steps_hash)}</span>
-                  {toText(selectedReportView?.prompt_template_version) ? (
-                    <span className="badge muted">tpl {toText(selectedReportView?.prompt_template_version)}</span>
-                  ) : null}
-                  {toText(selectedReportView?.model) ? (
-                    <span className="badge muted">model {toText(selectedReportView?.model)}</span>
-                  ) : null}
-                  <span className={`badge ${selectedReportView?.is_actual ? "ok" : "warn"}`}>
-                    {selectedReportView?.is_actual ? "актуален" : "устарел"}
-                  </span>
-                  {toText(selectedReportId) === latestActualReportId ? <span className="badge ok">последний актуальный</span> : null}
-                </div>
-
-                {toText(selectedReportId) === toText(reportDetailsLoadingId) ? (
-                  <div className="muted small">Загружаю детали версии...</div>
-                ) : null}
-                {reportHasUnstructuredWarning(selectedReportView) ? (
-                  <div className="interviewAnnotationNotice warn">DeepSeek ответ неструктурирован.</div>
-                ) : null}
-                {toText(selectedReportView?.status) === "error" ? (
-                  <div className="interviewAnnotationNotice err">
-                    {toText(selectedReportView?.error_message) || "Ошибка генерации отчёта."}
-                  </div>
-                ) : null}
-
-                {toText(selectedReportView?.report_markdown) ? (
-                  <div className="interviewPathReportMarkdown docProse">
-                    {renderMarkdownPreview(selectedReportView?.report_markdown)}
-                  </div>
-                ) : (
-                  <div className="muted small">Markdown отчёта отсутствует.</div>
-                )}
-
-                <div className="interviewPathReportSection">
-                  <div className="interviewPathReportSectionTitle">Рекомендации</div>
-                  {toArray(selectedReportView?.recommendations).length ? (
-                    <div className="interviewPathReportList">
-                      {toArray(selectedReportView?.recommendations).map((recRaw, idx) => {
-                        const rec = asObject(recRaw);
-                        const scope = toText(rec?.scope).toLowerCase();
-                        const orderIndex = Number(rec?.order_index || 0);
-                        const isStep = scope === "step" && Number.isFinite(orderIndex) && orderIndex > 0;
-                        const isActive = isStep && orderIndex === activeRecommendationOrderIndex;
-                        return (
-                          <div key={`path_report_rec_${idx + 1}`} className={`interviewPathReportListItem ${isActive ? "isActive" : ""}`}>
-                            <div className="interviewPathReportListItemHead">
-                              <span className={`badge ${isStep ? "warn" : "muted"}`}>
-                                {isStep ? `step #${orderIndex}` : "global"}
-                              </span>
-                              {isStep ? (
-                                <button
-                                  type="button"
-                                  className="secondaryBtn tinyBtn"
-                                  onClick={() => handleRecommendationClick(rec)}
-                                >
-                                  Подсветить шаг в Matrix
-                                </button>
-                              ) : null}
-                            </div>
-                            <div>{toText(rec?.text) || "—"}</div>
-                            {toText(rec?.expected_effect) ? (
-                              <div className="muted small">Эффект: {toText(rec?.expected_effect)}</div>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="muted small">Рекомендации отсутствуют.</div>
-                  )}
-                </div>
-
-                <div className="interviewPathReportSection">
-                  <div className="interviewPathReportSectionTitle">План улучшений (Top 5)</div>
-                  {(() => {
-                    const list = toArray(selectedReportView?.recommendations);
-                    if (!list.length) return <div className="muted small">Нет данных для плана.</div>;
-                    const hasEffect = list.some((item) => toText(item?.expected_effect));
-                    const ranked = hasEffect
-                      ? [...list].sort((a, b) => toText(b?.expected_effect).length - toText(a?.expected_effect).length)
-                      : list;
-                    return (
-                      <div className="interviewPathReportList">
-                        {ranked.slice(0, 5).map((itemRaw, idx) => {
-                          const item = asObject(itemRaw);
-                          const orderIndex = Number(item?.order_index || 0);
-                          const isStep = toText(item?.scope).toLowerCase() === "step" && orderIndex > 0;
-                          return (
-                            <div key={`path_plan_${idx + 1}`} className="interviewPathReportListItem">
-                              <div className="interviewPathReportListItemHead">
-                                <span className={`badge ${isStep ? "warn" : "muted"}`}>
-                                  {isStep ? `step #${orderIndex}` : "global"}
-                                </span>
-                              </div>
-                              <div>{toText(item?.text) || "—"}</div>
-                              {toText(item?.expected_effect) ? (
-                                <div className="muted small">Эффект: {toText(item?.expected_effect)}</div>
-                              ) : null}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                <div className="interviewPathReportSection">
-                  <div className="interviewPathReportSectionTitle">Missing data</div>
-                  {toArray(selectedReportView?.missing_data).length ? (
-                    <div className="interviewPathReportList">
-                      {toArray(selectedReportView?.missing_data).map((itemRaw, idx) => {
-                        const item = asObject(itemRaw);
-                        const orderIndex = Number(item?.order_index || 0);
-                        const missing = toArray(item?.missing).map((x) => toText(x)).filter(Boolean);
-                        return (
-                          <div key={`path_report_missing_${idx + 1}`} className="interviewPathReportListItem">
-                            <div className="interviewPathReportListItemHead">
-                              <span className="badge muted">
-                                {orderIndex > 0 ? `step #${orderIndex}` : "global"}
-                              </span>
-                            </div>
-                            <div>{missing.length ? missing.join(", ") : "—"}</div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="muted small">Пробелов в данных не обнаружено.</div>
-                  )}
-                </div>
-
-                <div className="interviewPathReportSection">
-                  <div className="interviewPathReportSectionTitle">Риски</div>
-                  {toArray(selectedReportView?.risks).length ? (
-                    <div className="interviewPathReportList">
-                      {toArray(selectedReportView?.risks).map((riskRaw, idx) => {
-                        const risk = asObject(riskRaw);
-                        const indexes = toArray(risk?.step_order_indexes)
-                          .map((x) => Number(x))
-                          .filter((x) => Number.isFinite(x) && x > 0);
-                        return (
-                          <div key={`path_report_risk_${idx + 1}`} className="interviewPathReportListItem">
-                            <div>{toText(risk?.text) || "—"}</div>
-                            <div className="muted small">
-                              {indexes.length ? `Шаги: ${indexes.join(", ")}` : "Без привязки к шагам"}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="muted small">Риски не перечислены.</div>
-                  )}
-                </div>
+            <ReportApiErrorNotice
+              title={reportError}
+              meta={reportErrorMeta}
+              tone="err"
+              onCopyDetails={handleCopyErrorDetails}
+            />
+            <ReportApiErrorNotice
+              title={reportDetailsError}
+              meta={reportDetailsErrorMeta}
+              tone="err"
+              onCopyDetails={handleCopyErrorDetails}
+            />
+            {!reportApiAvailable ? (
+              <div className="interviewAnnotationNotice warn">
+                Отчёты версии DeepSeek доступны только для серверной сессии (не local).
               </div>
             ) : null}
-          </div>
-          <div className="interviewPathsRouteStack" data-testid="interview-paths-route-stack">
-            {renderRouteRows(routeRows, 0)}
-          </div>
-        </section>
+            {toArray(pendingGenerationVersions).length ? (
+              <div className="interviewAnnotationNotice pending">
+                Уже идёт генерация: {toArray(pendingGenerationVersions).map((row) => `v${Number(row?.version || 0)}`).join(", ")}
+              </div>
+            ) : null}
+            {activeScenario?.diff_from_ideal ? (
+              <div className="interviewScenarioDiff muted small">
+                Отличия от Ideal:
+                {" "}
+                {Number(toArray(activeScenario?.diff_from_ideal?.differing_gateway_decisions).length || 0)} решений,
+                {" +"}
+                {Number(toArray(activeScenario?.diff_from_ideal?.additional_steps).length || 0)} шагов,
+                {" +"}
+                {formatSeconds(activeScenario?.diff_from_ideal?.additional_time_sec)}
+              </div>
+            ) : null}
 
-        <aside className="interviewPathsRouteRight" data-testid="interview-paths-right-details">
-          <div className="interviewPathsRailTitle">Details</div>
-          {activeRouteRow ? (
-            <div className="interviewPathsDetailsCard">
-              <div className="interviewPathsDetailsTitle">{sanitizeDisplayText(activeRouteRow?.title, "—")}</div>
-              <div className="interviewPathsDetailsMeta muted small">
-                type: {toText(activeRouteRow?.node_type || activeRouteRow?.row_type || "—")}
-                {" · "}
-                lane: {sanitizeDisplayText(activeRouteRow?.lane_name || stepMetaByNodeId[toText(activeRouteRow?.node_id)]?.lane_name, "—")}
-              </div>
-              <div className="interviewPathsDetailsList">
-                <div>in: {sanitizeDisplayText(activeNodeSeqMeta?.prev?.title, "—")}</div>
-                <div>out: {sanitizeDisplayText(activeNodeSeqMeta?.next?.title, "—")}</div>
-                <div>selected: {sanitizeDisplayText(activeRouteRow?.decision?.selected_label, "—")}</div>
-                <div>AI: {Number(stepMetaByNodeId[toText(activeRouteRow?.node_id)]?.ai_count || 0)}</div>
-                <div>Notes: {Number(stepMetaByNodeId[toText(activeRouteRow?.node_id)]?.notes_count || 0)}</div>
-                <div>DoD missing: {activeDodMissing.length ? activeDodMissing.join(", ") : "—"}</div>
-                <div>
-                  inputs: {activeIncomingFlows.length
-                    ? activeIncomingFlows.map((flow) => `${flow.id}${flow.label ? ` (${flow.label})` : ""}`).join("; ")
-                    : "—"}
-                </div>
-                <div>
-                  outputs: {activeOutgoingFlows.length
-                    ? activeOutgoingFlows.map((flow) => `${flow.id}${flow.label ? ` (${flow.label})` : ""}`).join("; ")
-                    : "—"}
-                </div>
-              </div>
-              <div className="interviewPathsDetailsActions">
-                <button
-                  type="button"
-                  className="secondaryBtn smallBtn"
-                  data-testid="interview-paths-jump-diagram"
-                  onClick={() => jumpToMode("diagram")}
-                >
-                  show on diagram
-                </button>
-                <button
-                  type="button"
-                  className="secondaryBtn smallBtn"
-                  data-testid="interview-paths-jump-matrix"
-                  onClick={() => jumpToMode("matrix")}
-                >
-                  scroll in matrix
-                </button>
-              </div>
-              {activeLinkGroup ? (
-                <div className="interviewPathsDetailsLinkGroup">
-                  <div className="muted small">link group: {toText(activeLinkGroup?.link_key || "—")}</div>
-                  <div className="interviewDiagramLinkGroups">
-                    {activeCounterparts.map((nodeId) => (
-                      <span
-                        key={`counterpart_${nodeId}`}
-                        className="interviewDiagramLinkChip"
-                        onMouseEnter={() => setHoveredLinkKey(toText(activeLinkGroup?.link_key))}
-                        onMouseLeave={() => setHoveredLinkKey("")}
-                      >
-                        {nodeId}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <div className="muted small">Выберите узел/группу в маршруте.</div>
-          )}
-        </aside>
-      </div>
+            <PathStepList title="Маршрут выбранного сценария">
+              {renderRouteRows(routeRows, 0)}
+            </PathStepList>
+          </div>
+        )}
+        right={(
+          <StepDetailsPanel
+            active={activeRouteRow ? { title: sanitizeDisplayText(activeRouteRow?.title, "—") } : null}
+            details={activeStepDetails}
+            timeEditor={activeStepTiming ? (
+              <StepDurationEditor
+                stepId={activeStepTiming.stepId}
+                workSec={activeStepTiming.workSec}
+                waitSec={activeStepTiming.waitSec}
+                onCommitSeconds={commitDurationSeconds}
+                variant="detailed"
+              />
+            ) : null}
+            onJumpDiagram={() => jumpToMode("diagram")}
+            onJumpMatrix={() => jumpToMode("matrix")}
+            onCopyStepLink={handleCopyStepLink}
+          />
+        )}
+      />
+
+      <ReportsDrawer
+        open={isReportsDrawerOpen}
+        onClose={() => setIsReportsDrawerOpen(false)}
+        reportVersionsLoading={reportVersionsLoading}
+        reportLoading={reportLoading}
+        reportFilterActualOnly={reportFilterActualOnly}
+        onToggleActualOnly={setReportFilterActualOnly}
+        reportFilterErrorsOnly={reportFilterErrorsOnly}
+        onToggleErrorsOnly={setReportFilterErrorsOnly}
+        visibleReportVersions={visibleReportVersions}
+        selectedReportId={selectedReportId}
+        onSelectReport={setSelectedReportId}
+        onRetryGenerate={handleGenerateReport}
+        canGenerateReport={canGenerateReport}
+        onCopyMarkdown={handleCopyMarkdown}
+        selectedReportView={selectedReportView}
+        reportDetailsById={reportDetailsById}
+        reportDetailsLoadingId={reportDetailsLoadingId}
+        latestActualReportId={latestActualReportId}
+        onRecommendationClick={handleRecommendationClick}
+        activeRecommendationOrderIndex={activeRecommendationOrderIndex}
+        reportGenerationTrace={reportGenerationTrace}
+        showReportGenerationTrace={showReportGenerationTrace}
+        reportErrorNotice={(
+          <ReportApiErrorNotice
+            title={reportError}
+            meta={reportErrorMeta}
+            tone="err"
+            onCopyDetails={handleCopyErrorDetails}
+          />
+        )}
+        reportDetailsErrorNotice={(
+          <ReportApiErrorNotice
+            title={reportDetailsError}
+            meta={reportDetailsErrorMeta}
+            tone="err"
+            onCopyDetails={handleCopyErrorDetails}
+          />
+        )}
+      />
     </div>
   );
 }

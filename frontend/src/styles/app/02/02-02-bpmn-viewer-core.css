@@ -72,21 +72,21 @@
   fill: rgba(255,255,255,.92) !important;
 }
 
-.bpmnStage .djs-container .djs-visual > :nth-child(1){
+.bpmnStage .djs-container .djs-shape .djs-visual > :nth-child(1){
   stroke: rgba(255,255,255,.55) !important;
 }
 
-.bpmnStage .djs-container .djs-visual > :nth-child(2){
+.bpmnStage .djs-container .djs-shape .djs-visual > :nth-child(2){
   stroke: rgba(255,255,255,.40) !important;
 }
 
-.bpmnStage .djs-container .djs-connection path{
+.bpmnStage .djs-container .djs-connection .djs-visual > path {
   stroke: rgba(255,255,255,.45) !important;
 }
 
 .bpmnStage .djs-container .djs-visual rect,
 .bpmnStage .djs-container .djs-visual circle,
-.bpmnStage .djs-container .djs-visual path{
+.bpmnStage .djs-container .djs-shape .djs-visual > path{
   fill: rgba(255,255,255,.06);
 }
 
@@ -226,8 +226,9 @@
   background: transparent !important;
 }
 
-.djs-outline{
-  display:none;
+/* Keep shape resize outlines alive; hide only helper outline for connections */
+.bpmnCanvas .djs-connection > .djs-outline{
+  display:none !important;
 }
 
 /* fpc: bpmn_stage_forwardref_fit_v1 */

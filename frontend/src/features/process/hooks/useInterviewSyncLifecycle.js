@@ -202,10 +202,11 @@ export default function useInterviewSyncLifecycle({
       const skipRecomputeForAiQuestions =
         mutationType === "diagram.ai_questions_by_element.update"
         || onlyAiQuestionsByElementPatch;
-      if (skipRecomputeForAiQuestions) {
+      const skipRecomputeForReportBuildDebug = mutationType === "paths.report_build_debug.update";
+      if (skipRecomputeForAiQuestions || skipRecomputeForReportBuildDebug) {
         logInterviewTrace("save", {
           sid,
-          phase: "recompute_skip_ai_questions",
+          phase: skipRecomputeForReportBuildDebug ? "recompute_skip_report_build_debug" : "recompute_skip_ai_questions",
           mutation: mutationType || "unknown",
           patchKeys: patchKeys.join(",") || "-",
         });
@@ -213,7 +214,7 @@ export default function useInterviewSyncLifecycle({
           sid,
           edit_seq: editSeq,
           mutation_type: mutationType,
-          reason: "ai_questions_by_element",
+          reason: skipRecomputeForReportBuildDebug ? "report_build_debug" : "ai_questions_by_element",
         });
         return true;
       }
@@ -610,7 +611,17 @@ export default function useInterviewSyncLifecycle({
         editSeq,
         mutation: mutationMeta && typeof mutationMeta === "object" ? mutationMeta : null,
       });
-      if (String(mutationMeta?.type || "") === "interview.add_step") {
+      const mutationType = String(mutationMeta?.type || "").trim().toLowerCase();
+      if (
+        mutationType === "interview.add_step"
+        || mutationType === "interview.delete_step"
+        || mutationType === "interview.add_transition"
+        || mutationType === "interview.update_transition"
+        || mutationType === "interview.insert_between_transition"
+        || mutationType === "interview.reorder_steps"
+        || mutationType === "interview.group_subprocess"
+        || mutationType === "interview.order_mode"
+      ) {
         void flushInterviewAutosave();
       }
     },

@@ -108,6 +108,7 @@ export default function createBpmnCoordinator(options = {}) {
       if (xmlRes?.ok) nextXml = asText(xmlRes.xml);
     }
     const nextState = store.setXml(nextXml, "runtime_change", { bumpRev: true, dirty: true });
+    cacheRaw(sid, nextXml, asNumber(nextState?.rev, 0), "runtime_change");
     emit("REV_BUMP", {
       sid,
       rev: asNumber(nextState?.rev, 0),
@@ -134,6 +135,16 @@ export default function createBpmnCoordinator(options = {}) {
       return { ok: false, error: "saveRaw unavailable", status: 0 };
     }
     return await saveRaw(sid, xml, rev, reason);
+  }
+
+  function cacheRaw(sid, xml, rev, reason) {
+    const cacheRawFn = persistence?.cacheRaw;
+    if (typeof cacheRawFn !== "function") return { ok: false, source: "runtime_cache" };
+    try {
+      return cacheRawFn(sid, xml, rev, reason);
+    } catch {
+      return { ok: false, source: "runtime_cache" };
+    }
   }
 
   async function loadRaw(sid, optionsForLoad = {}) {
@@ -259,6 +270,7 @@ export default function createBpmnCoordinator(options = {}) {
     }
     const storedRev = asNumber(persisted?.storedRev, targetRev);
     const xmlHash = asText(persisted?.hash || fnv1aHex(xml));
+    cacheRaw(sid, xml, storedRev, reason);
     store.markSaved(storedRev, xmlHash);
     if (pendingSave && pendingSave.sessionId === sid && pendingSave.targetRev <= targetRev) {
       clearPendingSave();

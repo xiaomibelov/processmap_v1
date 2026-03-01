@@ -106,11 +106,11 @@
   stroke: rgba(255,255,255,0.28) !important;
 }
 
-.bpmnStage .djs-connection path {
+.bpmnStage .djs-connection .djs-visual > path {
   stroke: rgba(255,255,255,0.32) !important;
 }
 
-.bpmnStage .djs-visual path {
+.bpmnStage .djs-shape .djs-visual > path {
   stroke: rgba(255,255,255,0.32);
 }
 
@@ -118,22 +118,21 @@
   stroke: rgba(120,170,255,0.9) !important;
 }
 
-/* Context pad / popup menu styling */
+/* Context pad / popup menu base styling */
 .bpmnStage .djs-context-pad .entry,
 .bpmnStage .djs-popup .entry {
-  background: rgba(10,16,30,0.88) !important;
-  border: 1px solid rgba(255,255,255,0.14) !important;
-  box-shadow: 0 8px 26px rgba(0,0,0,0.38) !important;
+  border: 1px solid rgba(148, 163, 184, 0.45) !important;
+  box-shadow: 0 8px 26px rgba(0,0,0,0.22) !important;
 }
 
-.bpmnStage .djs-context-pad .entry:hover,
-.bpmnStage .djs-popup .entry:hover {
-  background: rgba(30,50,90,0.72) !important;
+.bpmnStage .djs-popup .entry,
+.bpmnStage .djs-popup .entry * {
+  color: hsl(var(--text) / 0.96) !important;
 }
 
-.bpmnStage .djs-context-pad .entry:before,
-.bpmnStage .djs-popup .entry:before {
-  color: rgba(255,255,255,0.9) !important;
+.bpmnStage .djs-popup .entry .djs-label {
+  color: hsl(var(--text) / 0.96) !important;
+  fill: currentColor !important;
 }
 
 /* Palette (left tools) */
@@ -156,11 +155,11 @@
   stroke: rgba(255,255,255,0.30) !important;
 }
 
-.bpmnStage .djs-element:not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual path {
+.bpmnStage .djs-element:not(.djs-connection):not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual > path {
   stroke: rgba(255,255,255,0.34) !important;
 }
 
-.bpmnStage .djs-connection path {
+.bpmnStage .djs-connection .djs-visual > path {
   stroke: rgba(255,255,255,0.34) !important;
 }
 
@@ -168,7 +167,7 @@
 .bpmnStage .djs-context-pad .entry:before,
 .bpmnStage .djs-popup .entry:before,
 .bpmnStage .djs-palette .entry:before {
-  color: rgba(255,255,255,0.92) !important;
+  color: hsl(var(--text) / 0.9) !important;
 }
 
 /* fpc:bpmn_dark_shapes_and_smallbtn_v1 */
@@ -190,6 +189,68 @@
   padding: 0 12px;
 }
 
+/* Context pad and replace popup must stay readable in dark mode */
+.dark .bpmnStage .djs-context-pad .entry,
+.dark .bpmnStage .djs-popup .entry {
+  background: hsl(220 35% 96% / 0.96) !important;
+  border: 1px solid hsl(220 26% 72% / 0.88) !important;
+  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.3) !important;
+  color: hsl(220 45% 20%) !important;
+}
+
+.dark .bpmnStage .djs-context-pad .entry:hover,
+.dark .bpmnStage .djs-popup .entry:hover {
+  background: hsl(220 48% 92% / 0.98) !important;
+  border-color: hsl(225 68% 58% / 0.64) !important;
+}
+
+.dark .bpmnStage .djs-popup .djs-popup-header,
+.dark .bpmnStage .djs-popup .djs-popup-title,
+.dark .bpmnStage .djs-popup .entry,
+.dark .bpmnStage .djs-popup .entry * {
+  color: hsl(220 45% 20%) !important;
+}
+
+.dark .bpmnStage .djs-popup .entry .djs-label {
+  color: hsl(220 45% 20%) !important;
+  fill: currentColor !important;
+}
+
+.dark .bpmnStage .djs-context-pad .entry:before,
+.dark .bpmnStage .djs-popup .entry:before,
+.dark .bpmnStage .djs-palette .entry:before {
+  color: hsl(220 45% 20%) !important;
+}
+
+.dark .bpmnStage .djs-context-pad .entry svg [fill]:not([fill="none"]),
+.dark .bpmnStage .djs-popup .entry svg [fill]:not([fill="none"]),
+.dark .bpmnStage .djs-palette .entry svg [fill]:not([fill="none"]) {
+  fill: hsl(220 45% 20%) !important;
+}
+
+.dark .bpmnStage .djs-context-pad .entry svg [stroke]:not([stroke="none"]),
+.dark .bpmnStage .djs-popup .entry svg [stroke]:not([stroke="none"]),
+.dark .bpmnStage .djs-palette .entry svg [stroke]:not([stroke="none"]) {
+  stroke: hsl(220 45% 20%) !important;
+}
+
+.light .bpmnStage .djs-context-pad .entry,
+.light .bpmnStage .djs-popup .entry {
+  background: hsl(220 40% 98% / 0.96) !important;
+  border: 1px solid hsl(220 20% 72% / 0.82) !important;
+  color: hsl(220 45% 16%) !important;
+}
+
+.light .bpmnStage .djs-context-pad .entry:hover,
+.light .bpmnStage .djs-popup .entry:hover {
+  background: hsl(218 46% 95% / 0.98) !important;
+}
+
+.light .bpmnStage .djs-popup .entry,
+.light .bpmnStage .djs-popup .entry * {
+  color: hsl(220 45% 16%) !important;
+}
+
 .secondaryBtn.smallBtn{
   height: 32px;
   line-height: 32px;
@@ -209,7 +270,7 @@
 .bpmnCanvas .djs-visual > rect,
 .bpmnCanvas .djs-visual > circle,
 .bpmnCanvas .djs-visual > polygon,
-.bpmnCanvas .djs-visual > path{
+.bpmnCanvas .djs-element:not(.djs-connection) .djs-visual > path{
   fill: rgba(0,0,0,.26) !important;
   stroke: rgba(255,255,255,.32) !important;
 }
@@ -221,7 +282,7 @@
 }
 
 /* connections on dark */
-.bpmnCanvas .djs-connection path{
+.bpmnCanvas .djs-connection .djs-visual > path {
   stroke: rgba(255,255,255,.28) !important;
 }
 .bpmnCanvas marker path{
@@ -254,4 +315,63 @@
 
 .bpmnCanvas .djs-outline{
   stroke: rgba(120,160,255,.60) !important;
+}
+
+/* Final palette contrast guard (left tool panel) */
+.dark .bpmnStage .djs-palette {
+  background: hsl(222 36% 11% / 0.96) !important;
+  border: 1px solid hsl(220 32% 72% / 0.34) !important;
+  box-shadow:
+    0 10px 28px hsl(220 50% 4% / 0.48),
+    inset 0 1px 0 hsl(220 35% 95% / 0.08) !important;
+}
+
+.dark .bpmnStage .djs-palette .entry,
+.dark .bpmnStage .djs-palette .entry:before {
+  color: hsl(218 28% 91%) !important;
+}
+
+.dark .bpmnStage .djs-palette .entry:hover {
+  background: hsl(224 44% 22% / 0.72) !important;
+}
+
+.dark .bpmnStage .djs-palette .separator {
+  border-color: hsl(220 26% 70% / 0.28) !important;
+}
+
+.dark .bpmnStage .djs-palette .entry svg [fill]:not([fill="none"]) {
+  fill: hsl(218 28% 91%) !important;
+}
+
+.dark .bpmnStage .djs-palette .entry svg [stroke]:not([stroke="none"]) {
+  stroke: hsl(218 28% 91%) !important;
+}
+
+.light .bpmnStage .djs-palette {
+  background: hsl(0 0% 100% / 0.97) !important;
+  border: 1px solid hsl(220 24% 64% / 0.52) !important;
+  box-shadow:
+    0 10px 24px hsl(220 30% 22% / 0.16),
+    inset 0 1px 0 hsl(0 0% 100% / 0.72) !important;
+}
+
+.light .bpmnStage .djs-palette .entry,
+.light .bpmnStage .djs-palette .entry:before {
+  color: hsl(220 36% 24%) !important;
+}
+
+.light .bpmnStage .djs-palette .entry:hover {
+  background: hsl(220 42% 92% / 0.84) !important;
+}
+
+.light .bpmnStage .djs-palette .separator {
+  border-color: hsl(220 22% 55% / 0.34) !important;
+}
+
+.light .bpmnStage .djs-palette .entry svg [fill]:not([fill="none"]) {
+  fill: hsl(220 36% 24%) !important;
+}
+
+.light .bpmnStage .djs-palette .entry svg [stroke]:not([stroke="none"]) {
+  stroke: hsl(220 36% 24%) !important;
 }

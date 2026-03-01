@@ -595,6 +595,37 @@ export function typeLabel(type) {
   return hit ? hit.label : type;
 }
 
+const BPMN_TYPE_LABELS_RU = {
+  task: "Задача",
+  usertask: "Пользовательская задача",
+  servicetask: "Сервисная задача",
+  manualtask: "Ручная задача",
+  scripttask: "Скриптовая задача",
+  businessruletask: "Бизнес-правило",
+  sendtask: "Отправка сообщения",
+  receivetask: "Получение сообщения",
+  callactivity: "Вызов активности",
+  subprocess: "Подпроцесс",
+  adhocsubprocess: "Ad-hoc подпроцесс",
+  startevent: "Стартовое событие",
+  endevent: "Конечное событие",
+  intermediatecatchevent: "Промежуточное ловящее событие",
+  intermediatethrowevent: "Промежуточное инициирующее событие",
+  boundaryevent: "Граничное событие",
+  exclusivegateway: "Эксклюзивный шлюз",
+  inclusivegateway: "Инклюзивный шлюз",
+  parallelgateway: "Параллельный шлюз",
+  eventbasedgateway: "Шлюз по событию",
+};
+
+export function typeLabelRuWithOriginal(typeRaw) {
+  const source = toText(typeRaw);
+  const key = source.replace(/^bpmn:/i, "").toLowerCase();
+  const labelRu = toText(BPMN_TYPE_LABELS_RU[key]);
+  if (labelRu) return `${labelRu}(${key})`;
+  return typeLabel(source);
+}
+
 export function durationClass(min) {
   if (min > 30) return "hi";
   if (min >= 10) return "mid";

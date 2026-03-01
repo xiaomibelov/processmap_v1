@@ -1,15 +1,21 @@
 import { useEffect } from "react";
 import TopBar from "./TopBar";
 import ProcessStage from "./ProcessStage";
+import SidebarHandle from "./sidebar/SidebarHandle";
 
 export default function AppShell({
   draft,
   locked,
   left,
   leftHidden,
+  leftCompact,
+  sidebarHandleSections,
   onToggleLeft,
   onPatchDraft,
   processTabIntent,
+  aiGenerateIntent,
+  onProcessUiStateChange,
+  stepTimeUnit,
   reloadKey,
   backendStatus,
   backendHint,
@@ -21,7 +27,6 @@ export default function AppShell({
   sessionId,
   onOpenSession,
   onDeleteSession,
-  onRefresh,
   onNewProject,
   onNewBackendSession,
   llmHasApiKey,
@@ -39,17 +44,31 @@ export default function AppShell({
   onOpenElementNotes,
   onElementNotesRemap,
   onSessionSync,
+  onRecalculateRtiers,
   snapshotRestoreNotice,
+  sessionNavNotice,
+  onDismissSessionNavNotice,
+  onReturnToSessionList,
 }) {
-  const sid = String(sessionId || draft?.session_id || "").trim();
-  const sessionTitle = String(draft?.title || draft?.name || "").trim();
-  const hasSession = !!sid;
-  const workspaceClass = `workspace ${leftHidden ? "workspace--leftHidden" : ""}`.trim();
+  const workspaceClass = `workspace ${leftHidden ? "workspace--leftHidden" : leftCompact ? "workspace--leftCompact" : ""}`.trim();
 
   useEffect(() => {
     // eslint-disable-next-line no-console
     console.debug(`[UI] sidebar.render collapsed=${leftHidden ? 1 : 0} class=${workspaceClass}`);
   }, [leftHidden, workspaceClass]);
+
+  useEffect(() => {
+    function onKeyDown(event) {
+      const isHotkey = (event.ctrlKey || event.metaKey) && String(event.key || "") === "\\";
+      if (!isHotkey) return;
+      event.preventDefault();
+      onToggleLeft?.("hotkey");
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onToggleLeft]);
 
   return (
     <div className={"appRoot graphite " + (leftHidden ? "leftHidden" : "")}>
@@ -64,7 +83,6 @@ export default function AppShell({
         sessionId={sessionId}
         onDeleteSession={onDeleteSession}
         onOpenSession={onOpenSession}
-        onRefresh={onRefresh}
         onNewProject={onNewProject}
         onNewBackendSession={onNewBackendSession}
         llmHasApiKey={llmHasApiKey}
@@ -77,38 +95,56 @@ export default function AppShell({
         llmVerifyBusy={llmVerifyBusy}
         onSaveLlmSettings={onSaveLlmSettings}
         onVerifyLlmSettings={onVerifyLlmSettings}
-        leftHidden={leftHidden}
-        onToggleLeft={onToggleLeft}
       />
 
-      <div className={workspaceClass}>
-        <div className={leftHidden ? "workspaceLeft workspaceLeft--hidden" : "workspaceLeft flex min-w-0 flex-col gap-3"}>
-          {hasSession ? (
-            <div className="workspaceLeftProcessTitle rounded-xl2 border border-border bg-panel px-3 py-2">
-              <div className="workspaceLeftProcessMain truncate text-sm font-semibold text-fg" title={sessionTitle || "—"}>
-                Процесс: {sessionTitle || "—"}
-              </div>
-              <div className="workspaceLeftSessionAccent mt-1 truncate text-xs text-muted" title={sid}>
-                Сессия: {sid}
-              </div>
-            </div>
-          ) : null}
-          {left}
+      {sessionNavNotice ? (
+        <div className="mx-3 mt-2 rounded-lg border border-warning/45 bg-warning/10 px-3 py-2 text-xs text-warning">
+          <div className="flex flex-wrap items-center gap-2">
+            <strong>Сессия недоступна</strong>
+            <span className="text-warning/90">{String(sessionNavNotice?.message || "Не удалось открыть текущую сессию.")}</span>
+            {Number(sessionNavNotice?.status || 0) > 0 ? (
+              <span className="badge warn">HTTP {Number(sessionNavNotice?.status || 0)}</span>
+            ) : null}
+            <button type="button" className="secondaryBtn tinyBtn" onClick={() => onReturnToSessionList?.()}>
+              Вернуться к списку
+            </button>
+            <button type="button" className="secondaryBtn tinyBtn" onClick={() => onDismissSessionNavNotice?.()}>
+              Скрыть
+            </button>
+          </div>
         </div>
-        <div className="workspaceMain rounded-xl2 border border-border bg-panel">
+      ) : null}
+
+      <div className={workspaceClass}>
+        <div className={leftHidden ? "workspaceLeft workspaceLeft--rail" : `workspaceLeft ${leftCompact ? "workspaceLeft--compact" : "flex min-w-0 flex-col"}`.trim()}>
+          <div className={leftHidden ? "workspaceLeftContent workspaceLeftContent--hidden" : "workspaceLeftContent"}>
+            {left}
+          </div>
+          {leftHidden ? (
+            <SidebarHandle
+              sections={sidebarHandleSections}
+              onClick={(sectionId) => onToggleLeft?.(`global_handle:${String(sectionId || "open")}`)}
+            />
+          ) : null}
+        </div>
+        <div className="workspaceMain relative rounded-xl2 border border-border bg-panel">
           <ProcessStage
             sessionId={sessionId}
             locked={locked}
             draft={draft}
             onPatchDraft={onPatchDraft}
             onSessionSync={onSessionSync}
+            onUiStateChange={onProcessUiStateChange}
             processTabIntent={processTabIntent}
+            aiGenerateIntent={aiGenerateIntent}
+            stepTimeUnit={stepTimeUnit}
             reloadKey={reloadKey}
             selectedBpmnElement={selectedBpmnElement}
             onBpmnElementSelect={onBpmnElementSelect}
             onOpenElementNotes={onOpenElementNotes}
             onElementNotesRemap={onElementNotesRemap}
             snapshotRestoreNotice={snapshotRestoreNotice}
+            onRecalculateRtiers={onRecalculateRtiers}
           />
         </div>
       </div>

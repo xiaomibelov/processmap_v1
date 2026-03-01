@@ -41,11 +41,19 @@ export function normalizeElementNotesMap(value) {
     const items = asArray(entry.items || entry.notes)
       .map((item, idx) => normalizeNoteItem(item, idx))
       .filter(Boolean);
-    if (!items.length) return;
-    const updatedAt = toNumber(entry.updatedAt || entry.updated_at) || items[items.length - 1].updatedAt || Date.now();
+    const summary = toText(entry.summary || entry.tldr || entry.summary_text);
+    const templateKey = toText(entry.templateKey || entry.template_key);
+    if (!items.length && !summary) return;
+    const fallbackUpdatedAt = items.length ? toNumber(items[items.length - 1]?.updatedAt) : 0;
+    const updatedAt = toNumber(entry.updatedAt || entry.updated_at) || fallbackUpdatedAt || Date.now();
+    const summaryUpdatedAt = toNumber(entry.summaryUpdatedAt || entry.summary_updated_at || entry.tldr_updated_at)
+      || (summary ? updatedAt : 0);
     out[elementId] = {
       items,
       updatedAt,
+      summary,
+      summaryUpdatedAt,
+      templateKey,
     };
   });
   return out;
@@ -62,6 +70,13 @@ export function elementNotesCount(notesMap, elementId) {
   return elementNotesForId(notesMap, elementId).length;
 }
 
+export function elementNoteSummaryForId(notesMap, elementId) {
+  const map = normalizeElementNotesMap(notesMap);
+  const id = toText(elementId);
+  if (!id) return "";
+  return toText(map[id]?.summary);
+}
+
 export function withAddedElementNote(notesMap, elementId, text) {
   const id = toText(elementId);
   const noteText = toText(text);
@@ -74,10 +89,32 @@ export function withAddedElementNote(notesMap, elementId, text) {
     updatedAt: now,
   };
   const next = normalizeElementNotesMap(notesMap);
-  const prevItems = asArray(next[id]?.items);
+  const prev = asObject(next[id]);
+  const prevItems = asArray(prev.items);
   next[id] = {
     items: [...prevItems, note],
     updatedAt: now,
+    summary: toText(prev.summary),
+    summaryUpdatedAt: toNumber(prev.summaryUpdatedAt || prev.summary_updated_at),
+    templateKey: toText(prev.templateKey || prev.template_key),
+  };
+  return next;
+}
+
+export function withElementNoteSummary(notesMap, elementId, summary, options = {}) {
+  const id = toText(elementId);
+  if (!id) return normalizeElementNotesMap(notesMap);
+  const next = normalizeElementNotesMap(notesMap);
+  const prev = asObject(next[id]);
+  const now = Date.now();
+  const nextSummary = toText(summary);
+  const nextTemplateKey = toText(options?.templateKey || prev.templateKey || prev.template_key);
+  next[id] = {
+    items: asArray(prev.items),
+    updatedAt: toNumber(prev.updatedAt || prev.updated_at) || now,
+    summary: nextSummary,
+    summaryUpdatedAt: nextSummary ? now : 0,
+    templateKey: nextTemplateKey,
   };
   return next;
 }
@@ -94,6 +131,11 @@ export function withRemappedElementNotes(notesMap, oldElementId, newElementId) {
   const targetEntry = asObject(next[newId]);
   const targetItems = asArray(targetEntry.items);
   const mergedItems = [...targetItems, ...oldItems];
+  const oldSummary = toText(oldEntry.summary || oldEntry.tldr || oldEntry.summary_text);
+  const targetSummary = toText(targetEntry.summary || targetEntry.tldr || targetEntry.summary_text);
+  const mergedSummary = targetSummary || oldSummary;
+  const oldTemplateKey = toText(oldEntry.templateKey || oldEntry.template_key);
+  const targetTemplateKey = toText(targetEntry.templateKey || targetEntry.template_key);
   const updatedAt = Math.max(
     toNumber(targetEntry.updatedAt || targetEntry.updated_at),
     toNumber(oldEntry.updatedAt || oldEntry.updated_at),
@@ -102,6 +144,13 @@ export function withRemappedElementNotes(notesMap, oldElementId, newElementId) {
   next[newId] = {
     items: mergedItems,
     updatedAt,
+    summary: mergedSummary,
+    summaryUpdatedAt: Math.max(
+      toNumber(targetEntry.summaryUpdatedAt || targetEntry.summary_updated_at),
+      toNumber(oldEntry.summaryUpdatedAt || oldEntry.summary_updated_at),
+      mergedSummary ? Date.now() : 0,
+    ),
+    templateKey: targetTemplateKey || oldTemplateKey,
   };
   delete next[oldId];
   return next;

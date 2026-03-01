@@ -207,8 +207,8 @@
   box-shadow: 0 0 0 2px rgba(59,130,246,.2);
 }
 
-/* Make bpmn-js palette look acceptable on dark */
+/* Keep original bpmn-js icon colors; dark/light contrast is handled in theme-specific rules */
 .djs-palette, .djs-context-pad{
-  filter: invert(1) hue-rotate(180deg);
-  opacity: .92;
+  filter: none !important;
+  opacity: 1 !important;
 }

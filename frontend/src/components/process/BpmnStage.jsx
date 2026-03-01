@@ -1,15 +1,24 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { apiDeleteBpmnXml, apiGetBpmnXml, apiPutBpmnXml } from "../../lib/api/bpmnApi";
 import { traceProcess } from "../../features/process/lib/processDebugTrace";
 import createBpmnRuntime from "../../features/process/bpmn/runtime/createBpmnRuntime";
 import createBpmnStore from "../../features/process/bpmn/store/createBpmnStore";
 import createBpmnCoordinator from "../../features/process/bpmn/coordinator/createBpmnCoordinator";
 import createBpmnPersistence from "../../features/process/bpmn/persistence/createBpmnPersistence";
+import forceTaskResizeRulesModule from "../../features/process/bpmn/runtime/modules/forceTaskResizeRules";
 import {
   saveBpmnSnapshot,
   getLatestBpmnSnapshot,
 } from "../../features/process/bpmn/snapshots/bpmnSnapshots";
+import { applyOpsToModeler } from "../../features/process/bpmn/ops/applyOps";
 import { elementNotesCount, normalizeElementNotesMap } from "../../features/notes/elementNotes";
+import { measureInterviewPerf } from "./interview/perf";
+import pmModdleDescriptor from "../../features/process/robotmeta/pmModdleDescriptor";
+import {
+  canonicalRobotMetaString,
+  isRobotMetaIncomplete,
+  normalizeRobotMetaMap,
+} from "../../features/process/robotmeta/robotMeta";
 
 import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-js.css";
@@ -26,6 +35,59 @@ function asObject(x) {
 
 function toText(v) {
   return String(v || "").trim();
+}
+
+function readStepTimeMinutes(nodeRaw) {
+  const node = asObject(nodeRaw);
+  const params = asObject(node.parameters);
+  const candidates = [
+    node.step_time_min,
+    node.stepTimeMin,
+    node.duration_min,
+    node.durationMin,
+    params.step_time_min,
+    params.stepTimeMin,
+    params.duration_min,
+    params.durationMin,
+    params.duration,
+  ];
+  for (let i = 0; i < candidates.length; i += 1) {
+    const raw = candidates[i];
+    if (raw === null || raw === undefined || (typeof raw === "string" && !raw.trim())) continue;
+    const num = Number(raw);
+    if (!Number.isFinite(num) || num < 0) continue;
+    return Math.round(num);
+  }
+  return null;
+}
+
+function readStepTimeSeconds(nodeRaw) {
+  const node = asObject(nodeRaw);
+  const params = asObject(node.parameters);
+  const candidates = [
+    node.step_time_sec,
+    node.stepTimeSec,
+    node.duration_sec,
+    node.durationSec,
+    params.step_time_sec,
+    params.stepTimeSec,
+    params.duration_sec,
+    params.durationSec,
+  ];
+  for (let i = 0; i < candidates.length; i += 1) {
+    const raw = candidates[i];
+    if (raw === null || raw === undefined || (typeof raw === "string" && !raw.trim())) continue;
+    const num = Number(raw);
+    if (!Number.isFinite(num) || num < 0) continue;
+    return Math.round(num);
+  }
+  const minutes = readStepTimeMinutes(node);
+  if (minutes === null) return null;
+  return Math.round(minutes * 60);
+}
+
+function normalizeStepTimeUnit(raw) {
+  return String(raw || "").trim().toLowerCase() === "sec" ? "sec" : "min";
 }
 
 function normalizeLoose(v) {
@@ -78,6 +140,52 @@ function normalizeAiQuestionsByElementMap(rawMap) {
   return out;
 }
 
+function normalizeFlowTierMetaMap(rawMap) {
+  if (!rawMap || typeof rawMap !== "object" || Array.isArray(rawMap)) return {};
+  const out = {};
+  Object.keys(rawMap).forEach((rawFlowId) => {
+    const flowId = toText(rawFlowId);
+    if (!flowId) return;
+    const entry = asObject(rawMap[rawFlowId]);
+    const tier = toText(entry?.tier).toUpperCase();
+    if (tier === "P0" || tier === "P1" || tier === "P2") {
+      out[flowId] = { tier };
+      return;
+    }
+    if (entry?.happy) {
+      out[flowId] = { tier: "P0" };
+    }
+  });
+  return out;
+}
+
+function normalizeNodePathMetaMap(rawMap) {
+  if (!rawMap || typeof rawMap !== "object" || Array.isArray(rawMap)) return {};
+  const out = {};
+  Object.keys(rawMap).forEach((rawNodeId) => {
+    const nodeId = toText(rawNodeId);
+    if (!nodeId) return;
+    const entry = asObject(rawMap[rawNodeId]);
+    const seen = new Set();
+    const paths = asArray(entry?.paths)
+      .map((item) => toText(item).toUpperCase())
+      .filter((tag) => {
+        if (!(tag === "P0" || tag === "P1" || tag === "P2")) return false;
+        if (seen.has(tag)) return false;
+        seen.add(tag);
+        return true;
+      });
+    if (!paths.length) return;
+    const sourceRaw = toText(entry?.source).toLowerCase();
+    out[nodeId] = {
+      paths: paths.sort((a, b) => (a > b ? 1 : -1)),
+      source: sourceRaw === "color_auto" ? "color_auto" : "manual",
+      sequence_key: toText(entry?.sequence_key || entry?.sequenceKey),
+    };
+  });
+  return out;
+}
+
 function aiQuestionStats(rawItems) {
   const items = normalizeAiQuestionItems(rawItems);
   const total = items.length;
@@ -117,6 +225,16 @@ function colorFromKey(key) {
     h = (h * 31 + src.charCodeAt(i)) % 360;
   }
   return `hsl(${h} 88% 74%)`;
+}
+
+const DIAGRAM_FLASH_EVENT = "fpc:diagram_flash";
+
+function createFlashRuntimeState() {
+  return {
+    node: {},
+    badge: {},
+    pill: {},
+  };
 }
 
 function localKey(sessionId) {
@@ -172,6 +290,56 @@ function fnv1aHex(input) {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
+function buildInterviewDecorSignature(draftRaw, aiModeEnabled, displayModeRaw) {
+  const draft = asObject(draftRaw);
+  const interview = asObject(draft?.interview);
+  const steps = asArray(interview?.steps);
+  const stepSig = steps
+    .map((step, idx) => {
+      const stepObj = asObject(step);
+      const stepId = toText(stepObj?.id) || `#${idx}`;
+      const nodeId = toText(stepObj?.node_bind_id || stepObj?.node_id || stepObj?.nodeId);
+      const duration = toText(stepObj?.step_time_sec || stepObj?.duration_sec || stepObj?.step_time_min || stepObj?.duration_min);
+      return `${stepId}:${nodeId}:${duration}`;
+    })
+    .join("|");
+
+  const aiMap = asObject(interview?.ai_questions_by_element || interview?.aiQuestionsByElementId);
+  const aiSig = Object.keys(aiMap)
+    .map((nodeId) => toText(nodeId))
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, "ru"))
+    .map((nodeId) => {
+      const list = asArray(aiMap[nodeId]);
+      const done = list.reduce((acc, item) => acc + Number(asObject(item)?.status === "done"), 0);
+      return `${nodeId}:${list.length}:${done}`;
+    })
+    .join("|");
+
+  const notesMap = normalizeElementNotesMap(draft?.notes_by_element || draft?.notesByElementId);
+  const notesSig = Object.keys(notesMap)
+    .map((nodeId) => toText(nodeId))
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, "ru"))
+    .map((nodeId) => `${nodeId}:${asArray(asObject(notesMap[nodeId])?.items).length}`)
+    .join("|");
+
+  const nodes = asArray(draft?.nodes);
+  const nodeSig = nodes
+    .map((rawNode, idx) => {
+      const node = asObject(rawNode);
+      const nodeId = toText(node?.id) || `node_${idx + 1}`;
+      const stepSeconds = readStepTimeSeconds(node);
+      return `${nodeId}:${Number.isFinite(stepSeconds) ? stepSeconds : ""}`;
+    })
+    .join("|");
+
+  return fnv1aHex(
+    `${toText(displayModeRaw)}|${aiModeEnabled ? 1 : 0}|s:${steps.length}:${fnv1aHex(stepSig)}|`
+    + `a:${fnv1aHex(aiSig)}|n:${fnv1aHex(notesSig)}|d:${nodes.length}:${fnv1aHex(nodeSig)}`,
+  );
+}
+
 function shouldLogBpmnTrace() {
   if (typeof window === "undefined") return false;
   if (window.__FPC_DEBUG_BPMN__) return true;
@@ -180,6 +348,24 @@ function shouldLogBpmnTrace() {
   } catch {
     return false;
   }
+}
+
+function shouldLogPackDebug() {
+  if (typeof window === "undefined") return false;
+  try {
+    return String(window.localStorage?.getItem("fpc_debug_packs") || "").trim() === "1";
+  } catch {
+    return false;
+  }
+}
+
+function logPackDebug(tag, payload = {}) {
+  if (!shouldLogPackDebug()) return;
+  const suffix = Object.entries(payload || {})
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .join(" ");
+  // eslint-disable-next-line no-console
+  console.debug(`[PACKS] ${String(tag || "trace")} ${suffix}`.trim());
 }
 
 function logBpmnTrace(tag, xmlText, meta = null) {
@@ -960,6 +1146,10 @@ const BpmnStage = forwardRef(function BpmnStage({
   onElementSelectionChange,
   onElementNotesRemap,
   onAiQuestionsByElementChange,
+  aiQuestionsModeEnabled,
+  diagramDisplayMode = "normal",
+  stepTimeUnit = "min",
+  robotMetaOverlayEnabled = false,
 }, ref) {
   const viewerEl = useRef(null);
   const editorEl = useRef(null);
@@ -990,9 +1180,18 @@ const BpmnStage = forwardRef(function BpmnStage({
   const overlayStateRef = useRef({ viewer: [], editor: [] });
   const interviewMarkerStateRef = useRef({ viewer: [], editor: [] });
   const interviewOverlayStateRef = useRef({ viewer: [], editor: [] });
+  const interviewDecorSignatureRef = useRef({ viewer: "", editor: "" });
   const taskTypeMarkerStateRef = useRef({ viewer: [], editor: [] });
+  const linkEventMarkerStateRef = useRef({ viewer: [], editor: [] });
+  const linkEventStyledStateRef = useRef({ viewer: [], editor: [] });
+  const happyFlowMarkerStateRef = useRef({ viewer: [], editor: [] });
+  const happyFlowStyledStateRef = useRef({ viewer: [], editor: [] });
   const userNotesMarkerStateRef = useRef({ viewer: [], editor: [] });
   const userNotesOverlayStateRef = useRef({ viewer: [], editor: [] });
+  const stepTimeOverlayStateRef = useRef({ viewer: [], editor: [] });
+  const robotMetaMarkerStateRef = useRef({ viewer: [], editor: [] });
+  const robotMetaOverlayStateRef = useRef({ viewer: [], editor: [] });
+  const focusMarkerStateRef = useRef({ viewer: [], editor: [] });
   const aiQuestionPanelStateRef = useRef({
     viewer: { overlayId: null, elementId: "" },
     editor: { overlayId: null, elementId: "" },
@@ -1003,6 +1202,10 @@ const BpmnStage = forwardRef(function BpmnStage({
   const onElementSelectionChangeRef = useRef(onElementSelectionChange);
   const onElementNotesRemapRef = useRef(onElementNotesRemap);
   const onAiQuestionsByElementChangeRef = useRef(onAiQuestionsByElementChange);
+  const aiQuestionsModeEnabledRef = useRef(!!aiQuestionsModeEnabled);
+  const diagramDisplayModeRef = useRef(String(diagramDisplayMode || "normal").trim().toLowerCase() || "normal");
+  const stepTimeUnitRef = useRef(normalizeStepTimeUnit(stepTimeUnit));
+  const robotMetaOverlayEnabledRef = useRef(!!robotMetaOverlayEnabled);
   const replaceCommandStateRef = useRef({
     oldId: "",
     oldType: "",
@@ -1048,9 +1251,14 @@ const BpmnStage = forwardRef(function BpmnStage({
     store_updated: 0,
   });
   const focusStateRef = useRef({
-    viewer: { elementId: "", timer: 0 },
-    editor: { elementId: "", timer: 0 },
+    viewer: { elementId: "", timer: 0, markerClass: "fpcNodeFocus" },
+    editor: { elementId: "", timer: 0, markerClass: "fpcNodeFocus" },
   });
+  const flashStateRef = useRef({
+    viewer: createFlashRuntimeState(),
+    editor: createFlashRuntimeState(),
+  });
+  const prefersReducedMotionRef = useRef(false);
 
   useEffect(() => {
     onDiagramMutationRef.current = onDiagramMutation;
@@ -1069,8 +1277,51 @@ const BpmnStage = forwardRef(function BpmnStage({
   }, [onAiQuestionsByElementChange]);
 
   useEffect(() => {
+    aiQuestionsModeEnabledRef.current = !!aiQuestionsModeEnabled;
+  }, [aiQuestionsModeEnabled]);
+
+  useEffect(() => {
+    diagramDisplayModeRef.current = String(diagramDisplayMode || "normal").trim().toLowerCase() || "normal";
+  }, [diagramDisplayMode]);
+
+  useEffect(() => {
+    stepTimeUnitRef.current = normalizeStepTimeUnit(stepTimeUnit);
+  }, [stepTimeUnit]);
+
+  useEffect(() => {
+    robotMetaOverlayEnabledRef.current = !!robotMetaOverlayEnabled;
+  }, [robotMetaOverlayEnabled]);
+
+  useEffect(() => {
     draftRef.current = draft;
   }, [draft]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      prefersReducedMotionRef.current = false;
+      return undefined;
+    }
+    let mql;
+    try {
+      mql = window.matchMedia("(prefers-reduced-motion: reduce)");
+    } catch {
+      prefersReducedMotionRef.current = false;
+      return undefined;
+    }
+    const apply = () => {
+      prefersReducedMotionRef.current = !!mql.matches;
+    };
+    apply();
+    if (typeof mql.addEventListener === "function") {
+      mql.addEventListener("change", apply);
+      return () => mql.removeEventListener("change", apply);
+    }
+    if (typeof mql.addListener === "function") {
+      mql.addListener(apply);
+      return () => mql.removeListener(apply);
+    }
+    return undefined;
+  }, []);
 
   function ensureBpmnStore() {
     if (bpmnStoreRef.current) return bpmnStoreRef.current;
@@ -1227,6 +1478,11 @@ const BpmnStage = forwardRef(function BpmnStage({
       persistence: {
         saveRaw: (sid, xmlText, rev, reason) => persistence.saveRaw(sid, xmlText, rev, reason),
         loadRaw: (sid, optionsForLoad) => persistence.loadRaw(sid, optionsForLoad),
+        cacheRaw: (sid, xmlText, rev, reason) => (
+          typeof persistence.cacheRaw === "function"
+            ? persistence.cacheRaw(sid, xmlText, rev, reason)
+            : { ok: false, source: "runtime_cache" }
+        ),
       },
       onTrace: onCoordinatorTrace,
       onRuntimeChange: (ev) => {
@@ -1267,6 +1523,13 @@ const BpmnStage = forwardRef(function BpmnStage({
     if (modelerRuntimeRef.current) return modelerRuntimeRef.current;
     const runtime = createBpmnRuntime({
       mode: "modeler",
+      getCtorOptions: (runtimeMode) => {
+        if (String(runtimeMode || "").toLowerCase() !== "modeler") return {};
+        return {
+          additionalModules: [forceTaskResizeRulesModule],
+          moddleExtensions: { pm: pmModdleDescriptor },
+        };
+      },
     });
     modelerRuntimeRef.current = runtime;
     try {
@@ -1392,13 +1655,232 @@ const BpmnStage = forwardRef(function BpmnStage({
     return !!el && !Array.isArray(el?.waypoints) && el.type !== "label";
   }
 
+  function isConnectionElement(el) {
+    return !!el && Array.isArray(el?.waypoints);
+  }
+
+  function isContainerElement(el) {
+    if (!el) return false;
+    const rawType = String(el?.businessObject?.$type || el?.type || "").trim().toLowerCase();
+    if (!rawType) return false;
+    const simpleType = String(rawType.split(":").pop() || rawType).trim();
+    return simpleType === "lane"
+      || simpleType === "participant"
+      || simpleType === "process"
+      || simpleType === "collaboration"
+      || simpleType === "laneset";
+  }
+
   function isSelectableElement(el) {
-    return !!el && el.type !== "label";
+    if (!el) return false;
+    if (String(el?.type || "").trim().toLowerCase() === "label") return false;
+    if (isContainerElement(el)) return false;
+    return true;
+  }
+
+  function isTemplateNodeType(typeRaw) {
+    const type = String(typeRaw || "").trim().toLowerCase();
+    if (!type) return false;
+    if (type.includes("participant") || type.includes("lane") || type.includes("process")) return false;
+    if (type.includes("label")) return false;
+    return true;
+  }
+
+  function isTemplateConnectionType(typeRaw) {
+    const type = String(typeRaw || "").trim().toLowerCase();
+    if (!type) return false;
+    return type.includes("sequenceflow");
+  }
+
+  function hasLinkEventDefinition(boRaw) {
+    const bo = asObject(boRaw);
+    const defs = asArray(bo.eventDefinitions);
+    return defs.some((def) => String(def?.$type || "").trim() === "bpmn:LinkEventDefinition");
+  }
+
+  function readLinkEventRole(el) {
+    const type = String(el?.businessObject?.$type || el?.type || "").trim();
+    if (type === "bpmn:IntermediateCatchEvent") return "catch";
+    if (type === "bpmn:IntermediateThrowEvent") return "throw";
+    return "";
+  }
+
+  function normalizeLinkPairKey(raw) {
+    return String(raw || "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function readLinkEventPairName(el) {
+    const bo = asObject(el?.businessObject);
+    const defs = asArray(bo.eventDefinitions);
+    for (let i = 0; i < defs.length; i += 1) {
+      const def = defs[i];
+      if (String(def?.$type || "").trim() !== "bpmn:LinkEventDefinition") continue;
+      const byDef = String(def?.name || "").trim();
+      if (byDef) return byDef;
+    }
+    return String(bo?.name || "").trim();
+  }
+
+  function linkPairColorFromName(pairKeyRaw) {
+    const pairKey = normalizeLinkPairKey(pairKeyRaw);
+    if (!pairKey) {
+      return "#94a3b8";
+    }
+    const palette = [
+      "#8b5cf6",
+      "#0ea5e9",
+      "#22c55e",
+      "#f59e0b",
+      "#ec4899",
+      "#14b8a6",
+      "#eab308",
+      "#6366f1",
+      "#10b981",
+      "#f97316",
+      "#06b6d4",
+      "#a855f7",
+    ];
+    const hashHex = fnv1aHex(pairKey);
+    const hashNum = Number.parseInt(hashHex.slice(0, 8), 16);
+    if (!Number.isFinite(hashNum)) return palette[0];
+    return palette[Math.abs(hashNum) % palette.length];
+  }
+
+  function readLaneNameForElement(el) {
+    let cur = el?.parent || null;
+    while (cur) {
+      const bo = asObject(cur?.businessObject);
+      const type = String(bo?.$type || cur?.type || "").trim().toLowerCase();
+      if (type.includes("lane")) {
+        return String(bo?.name || cur?.id || "").trim();
+      }
+      cur = cur?.parent || null;
+    }
+    return "";
+  }
+
+  function readLaneIdForElement(el) {
+    let cur = el?.parent || null;
+    while (cur) {
+      const bo = asObject(cur?.businessObject);
+      const type = String(bo?.$type || cur?.type || "").trim().toLowerCase();
+      if (type.includes("lane")) {
+        return String(cur?.id || "").trim();
+      }
+      cur = cur?.parent || null;
+    }
+    return "";
+  }
+
+  function sequenceFlowsBetween(fromElement, toElement) {
+    return asArray(fromElement?.outgoing).filter((conn) => {
+      if (!isConnectionElement(conn)) return false;
+      const type = String(conn?.businessObject?.$type || conn?.type || "").toLowerCase();
+      if (!type.includes("sequenceflow")) return false;
+      return String(conn?.target?.id || "") === String(toElement?.id || "");
+    });
+  }
+
+  function buildInsertBetweenCandidate(inst, selectedRaw = []) {
+    const selected = asArray(selectedRaw).filter((el) => isSelectableElement(el));
+    if (!selected.length) return null;
+
+    if (selected.length === 1 && isConnectionElement(selected[0])) {
+      const flow = selected[0];
+      const from = flow?.source || null;
+      const to = flow?.target || null;
+      if (!from || !to) return null;
+      const laneId = readLaneIdForElement(to) || readLaneIdForElement(from);
+      const laneName = readLaneNameForElement(to) || readLaneNameForElement(from);
+      return {
+        available: true,
+        fromId: String(from?.id || ""),
+        toId: String(to?.id || ""),
+        flowId: String(flow?.id || ""),
+        when: String(flow?.businessObject?.name || ""),
+        laneId,
+        laneName,
+        source: "flow_selection",
+      };
+    }
+
+    const shapes = selected.filter((el) => isShapeElement(el));
+    if (shapes.length !== 2) return null;
+    const [a, b] = shapes;
+    const ab = sequenceFlowsBetween(a, b);
+    const ba = sequenceFlowsBetween(b, a);
+
+    let from = null;
+    let to = null;
+    let flows = [];
+    if (ab.length && !ba.length) {
+      from = a;
+      to = b;
+      flows = ab;
+    } else if (ba.length && !ab.length) {
+      from = b;
+      to = a;
+      flows = ba;
+    } else {
+      return null;
+    }
+
+    if (!from || !to || !flows.length) return null;
+
+    const laneId = readLaneIdForElement(to) || readLaneIdForElement(from);
+    const laneName = readLaneNameForElement(to) || readLaneNameForElement(from);
+    if (flows.length > 1) {
+      return {
+        available: false,
+        fromId: String(from?.id || ""),
+        toId: String(to?.id || ""),
+        flowId: "",
+        when: "",
+        laneId,
+        laneName,
+        source: "two_nodes_selection",
+        error: "multiple_edges_ambiguous",
+      };
+    }
+    return {
+      available: true,
+      fromId: String(from?.id || ""),
+      toId: String(to?.id || ""),
+      flowId: String(flows[0]?.id || ""),
+      when: String(flows[0]?.businessObject?.name || ""),
+      laneId,
+      laneName,
+      source: "two_nodes_selection",
+    };
+  }
+
+  function readLaneMap(inst) {
+    const map = new Map();
+    if (!inst) return map;
+    try {
+      const registry = inst.get("elementRegistry");
+      const all = asArray(registry?.getAll?.());
+      all.forEach((item) => {
+        if (!isShapeElement(item)) return;
+        const bo = asObject(item?.businessObject);
+        const type = String(bo?.$type || item?.type || "").trim().toLowerCase();
+        if (!type.includes("lane")) return;
+        const laneName = String(bo?.name || item?.id || "").trim().toLowerCase();
+        if (!laneName) return;
+        map.set(laneName, item);
+      });
+    } catch {
+    }
+    return map;
   }
 
   function clearSelectedDecor(inst, kind) {
     if (!inst) return;
     const id = String(selectedMarkerStateRef.current[kind] || "");
+    clearSelectionFocusDecor(inst, kind);
     if (!id) return;
     try {
       const canvas = inst.get("canvas");
@@ -1406,6 +1888,92 @@ const BpmnStage = forwardRef(function BpmnStage({
     } catch {
     }
     selectedMarkerStateRef.current[kind] = "";
+  }
+
+  function clearSelectionFocusDecor(inst, kind) {
+    if (!inst) return;
+    try {
+      const canvas = inst.get("canvas");
+      asArray(focusMarkerStateRef.current[kind]).forEach((entry) => {
+        const elementId = String(entry?.elementId || "").trim();
+        const className = String(entry?.className || "").trim();
+        if (!elementId || !className) return;
+        canvas.removeMarker(elementId, className);
+      });
+    } catch {
+    }
+    focusMarkerStateRef.current[kind] = [];
+  }
+
+  function markFocusDecor(canvas, kind, elementId, className) {
+    const eid = String(elementId || "").trim();
+    const cls = String(className || "").trim();
+    if (!eid || !cls) return;
+    try {
+      canvas.addMarker(eid, cls);
+      focusMarkerStateRef.current[kind].push({ elementId: eid, className: cls });
+    } catch {
+    }
+  }
+
+  function applySelectionFocusDecor(inst, kind, selectedEl) {
+    if (!inst || !selectedEl) return;
+    clearSelectionFocusDecor(inst, kind);
+    try {
+      const canvas = inst.get("canvas");
+      const registry = inst.get("elementRegistry");
+      const selectedId = String(selectedEl?.id || "").trim();
+      if (!selectedId) return;
+
+      const focusNodes = new Set();
+      const primaryEdges = new Set();
+      const allSelectableIds = new Set();
+      const all = asArray(registry?.getAll?.());
+      all.forEach((item) => {
+        if (!isSelectableElement(item)) return;
+        const id = String(item?.id || "").trim();
+        if (!id) return;
+        allSelectableIds.add(id);
+      });
+
+      const enqueueNeighborEdge = (connRaw) => {
+        const conn = connRaw && isConnectionElement(connRaw) ? connRaw : null;
+        if (!conn) return;
+        const connId = String(conn.id || "").trim();
+        if (connId) primaryEdges.add(connId);
+        const srcId = String(conn?.source?.id || "").trim();
+        const tgtId = String(conn?.target?.id || "").trim();
+        if (srcId && srcId !== selectedId) focusNodes.add(srcId);
+        if (tgtId && tgtId !== selectedId) focusNodes.add(tgtId);
+      };
+
+      if (isConnectionElement(selectedEl)) {
+        const sourceId = String(selectedEl?.source?.id || "").trim();
+        const targetId = String(selectedEl?.target?.id || "").trim();
+        if (sourceId) focusNodes.add(sourceId);
+        if (targetId) focusNodes.add(targetId);
+        const selectedConnId = String(selectedEl.id || "").trim();
+        if (selectedConnId) primaryEdges.add(selectedConnId);
+      } else {
+        asArray(selectedEl?.outgoing).forEach(enqueueNeighborEdge);
+        asArray(selectedEl?.incoming).forEach(enqueueNeighborEdge);
+      }
+
+      focusNodes.forEach((nodeId) => {
+        markFocusDecor(canvas, kind, nodeId, "fpcFocusNeighbor");
+      });
+      primaryEdges.forEach((edgeId) => {
+        markFocusDecor(canvas, kind, edgeId, "fpcFocusEdgePrimary");
+      });
+
+      allSelectableIds.forEach((id) => {
+        if (id === selectedId) return;
+        if (focusNodes.has(id)) return;
+        if (primaryEdges.has(id)) return;
+        markFocusDecor(canvas, kind, id, "fpcFocusDim");
+      });
+    } catch {
+    }
   }
 
   function setSelectedDecor(inst, kind, elementId) {
@@ -1419,6 +1987,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       if (!isSelectableElement(el)) return;
       const canvas = inst.get("canvas");
       canvas.addMarker(eid, "fpcElementSelected");
+      applySelectionFocusDecor(inst, kind, el);
       selectedMarkerStateRef.current[kind] = eid;
     } catch {
     }
@@ -1457,6 +2026,110 @@ const BpmnStage = forwardRef(function BpmnStage({
     if (!eid) return [];
     const map = getAiQuestionsByElementMap();
     return normalizeAiQuestionItems(map[eid]);
+  }
+
+  function getFlowTierMetaMap() {
+    const d = asObject(draftRef.current);
+    const meta = asObject(d.bpmn_meta);
+    return normalizeFlowTierMetaMap(meta.flow_meta);
+  }
+
+  function getNodePathMetaMap() {
+    const d = asObject(draftRef.current);
+    const meta = asObject(d.bpmn_meta);
+    return normalizeNodePathMetaMap(meta.node_path_meta);
+  }
+
+  function getRobotMetaMap() {
+    const d = asObject(draftRef.current);
+    const meta = asObject(d.bpmn_meta);
+    return normalizeRobotMetaMap(meta.robot_meta_by_element_id);
+  }
+
+  function syncRobotMetaToModeler(inst) {
+    if (!inst) return { ok: false, changed: 0, reason: "no_instance" };
+    try {
+      const registry = inst.get("elementRegistry");
+      const moddle = inst.get("moddle");
+      if (!registry || !moddle || typeof moddle.create !== "function") {
+        return { ok: false, changed: 0, reason: "missing_services" };
+      }
+
+      const robotMetaByElementId = getRobotMetaMap();
+      const shapeIds = new Set(
+        asArray(registry.getAll?.())
+          .filter((el) => isShapeElement(el) && isSelectableElement(el))
+          .map((el) => toText(el?.businessObject?.id || el?.id))
+          .filter(Boolean),
+      );
+      const candidates = new Set([
+        ...shapeIds,
+        ...Object.keys(robotMetaByElementId || {}).map((id) => toText(id)).filter(Boolean),
+      ]);
+
+      const setProp = (target, key, value) => {
+        if (!target) return;
+        if (typeof target.set === "function") {
+          target.set(key, value);
+        } else {
+          target[key] = value;
+        }
+      };
+
+      let changed = 0;
+      candidates.forEach((elementId) => {
+        const el = registry.get(elementId);
+        if (!el || !isShapeElement(el) || !isSelectableElement(el)) return;
+        const bo = el.businessObject;
+        if (!bo) return;
+        const ext = bo.extensionElements || null;
+        const values = asArray(ext?.values);
+        const nonRobotValues = values.filter((item) => String(item?.$type || "") !== "pm:RobotMeta");
+        const hasRobotValue = nonRobotValues.length !== values.length;
+
+        const robotMeta = robotMetaByElementId[elementId];
+        if (!robotMeta) {
+          if (!hasRobotValue) return;
+          if (nonRobotValues.length === 0) {
+            setProp(bo, "extensionElements", undefined);
+          } else if (ext) {
+            setProp(ext, "values", nonRobotValues);
+          }
+          changed += 1;
+          return;
+        }
+
+        const canonical = canonicalRobotMetaString(robotMeta);
+        const existingRobot = values.find((item) => String(item?.$type || "") === "pm:RobotMeta");
+        const samePayload = existingRobot
+          && String(existingRobot.version || "") === "v1"
+          && String(existingRobot.json || "") === canonical
+          && hasRobotValue
+          && nonRobotValues.length + 1 === values.length;
+        if (samePayload) return;
+
+        const nextExt = ext || moddle.create("bpmn:ExtensionElements", { values: [] });
+        const pmRobotMeta = moddle.create("pm:RobotMeta", {
+          version: "v1",
+          json: canonical,
+        });
+        setProp(nextExt, "values", [...nonRobotValues, pmRobotMeta]);
+        setProp(bo, "extensionElements", nextExt);
+        changed += 1;
+      });
+
+      return { ok: true, changed };
+    } catch (error) {
+      return { ok: false, changed: 0, reason: String(error?.message || error || "sync_failed") };
+    }
+  }
+
+  function isAiQuestionsModeOn() {
+    return !!aiQuestionsModeEnabledRef.current;
+  }
+
+  function isInterviewDecorModeOn() {
+    return String(diagramDisplayModeRef.current || "normal") === "interview";
   }
 
   function getAiPanelInstance(kind) {
@@ -1591,9 +2264,15 @@ const BpmnStage = forwardRef(function BpmnStage({
     const panel = document.createElement("div");
     panel.className = "fpcAiQuestionPanel";
     panel.dataset.elementId = eid;
-    panel.addEventListener("mousedown", (ev) => ev.stopPropagation());
-    panel.addEventListener("click", (ev) => ev.stopPropagation());
-    panel.addEventListener("dblclick", (ev) => ev.stopPropagation());
+    const stopPanelEvent = (ev) => {
+      ev.stopPropagation();
+    };
+    panel.addEventListener("pointerdown", stopPanelEvent);
+    panel.addEventListener("pointerup", stopPanelEvent);
+    panel.addEventListener("mousedown", stopPanelEvent);
+    panel.addEventListener("mouseup", stopPanelEvent);
+    panel.addEventListener("click", stopPanelEvent);
+    panel.addEventListener("dblclick", stopPanelEvent);
 
     const head = document.createElement("div");
     head.className = "fpcAiQuestionPanelHead";
@@ -1608,11 +2287,14 @@ const BpmnStage = forwardRef(function BpmnStage({
     closeBtn.className = "fpcAiQuestionPanelClose";
     closeBtn.textContent = "×";
     closeBtn.title = "Закрыть";
-    closeBtn.addEventListener("click", (ev) => {
+    const closePanel = (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
+      if (typeof ev.stopImmediatePropagation === "function") ev.stopImmediatePropagation();
       clearAiQuestionPanel(inst, mode);
-    });
+    };
+    closeBtn.addEventListener("pointerdown", closePanel);
+    closeBtn.addEventListener("click", closePanel);
 
     const headText = document.createElement("div");
     headText.className = "fpcAiQuestionPanelHeadText";
@@ -1682,12 +2364,17 @@ const BpmnStage = forwardRef(function BpmnStage({
         }
       };
 
+      checkbox.addEventListener("pointerdown", stopPanelEvent);
+      checkbox.addEventListener("click", stopPanelEvent);
       checkbox.addEventListener("change", () => commit("overlay_toggle_status"));
       saveBtn.addEventListener("click", (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
         commit("overlay_save_click");
       });
+      saveBtn.addEventListener("pointerdown", stopPanelEvent);
+      textarea.addEventListener("pointerdown", stopPanelEvent);
+      textarea.addEventListener("click", stopPanelEvent);
       textarea.addEventListener("blur", () => commit("overlay_comment_blur"));
       textarea.addEventListener("keydown", (ev) => {
         if ((ev.metaKey || ev.ctrlKey) && ev.key === "Enter") {
@@ -1730,8 +2417,22 @@ const BpmnStage = forwardRef(function BpmnStage({
       clearAiQuestionPanel(inst, mode);
       return;
     }
+    const panelState = asObject(aiQuestionPanelStateRef.current[mode]);
+    const panelElementId = toText(panelState?.elementId);
+    const keepCurrentPanelOpen = !!panelState?.overlayId && panelElementId === eid;
     const questions = getAiQuestionsForElement(eid);
     if (!questions.length) {
+      clearAiQuestionPanel(inst, mode);
+      return;
+    }
+    const sourceText = toText(source).toLowerCase();
+    const explicitOpenSource = (
+      !sourceText
+      || sourceText.includes("ai_indicator_click")
+      || sourceText.includes("ai_badge_click")
+      || sourceText.includes("interview_ai_badge")
+    );
+    if (!explicitOpenSource && !keepCurrentPanelOpen) {
       clearAiQuestionPanel(inst, mode);
       return;
     }
@@ -1748,7 +2449,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     cb(payload);
   }
 
-  function emitElementSelection(el, source = "diagram_click") {
+  function emitElementSelection(el, source = "diagram_click", extra = {}) {
     if (!isSelectableElement(el)) {
       emitElementSelectionChange(null);
       return;
@@ -1761,11 +2462,20 @@ const BpmnStage = forwardRef(function BpmnStage({
     const bo = asObject(el?.businessObject);
     const name = String(bo?.name || elementId).trim() || elementId;
     const type = String(bo?.$type || el?.type || "").trim();
+    const laneName = readLaneNameForElement(el);
     const aiStats = aiQuestionStats(getAiQuestionsForElement(elementId));
+    const selectedIds = asArray(extra?.selectedIds).map((x) => String(x || "").trim()).filter(Boolean);
+    const insertBetween = extra?.insertBetween && typeof extra.insertBetween === "object"
+      ? { ...extra.insertBetween }
+      : null;
     emitElementSelectionChange({
       id: elementId,
       name,
       type,
+      laneName,
+      selectedIds,
+      selectedCount: selectedIds.length || 1,
+      insertBetween,
       noteCount: getElementNoteCount(elementId),
       aiQuestionCount: aiStats.total,
       aiQuestionDoneCount: aiStats.done,
@@ -1790,7 +2500,338 @@ const BpmnStage = forwardRef(function BpmnStage({
     return /task$/i.test(t);
   }
 
-function logChangeElementTrace(stage, payload = {}) {
+  function createTemplateTitle(selectedNodes) {
+    const first = selectedNodes[0] || null;
+    const firstName = String(first?.businessObject?.name || first?.id || "").trim();
+    if (firstName) return `Шаблон: ${firstName}`;
+    return `Шаблон ${new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`;
+  }
+
+  function selectTemplateNodes(inst) {
+    if (!inst) return [];
+    try {
+      const selection = inst.get("selection");
+      const selected = asArray(selection?.get?.());
+      return selected.filter((el) => {
+        if (!isShapeElement(el)) return false;
+        const type = String(el?.businessObject?.$type || el?.type || "");
+        return isTemplateNodeType(type);
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  function captureTemplatePackOnModeler(inst, options = {}) {
+    if (!inst) return { ok: false, error: "modeler_not_ready" };
+    const selectedNodes = selectTemplateNodes(inst);
+    if (!selectedNodes.length) {
+      return { ok: false, error: "no_selection" };
+    }
+
+    const selectedIds = new Set(selectedNodes.map((el) => String(el?.id || "").trim()).filter(Boolean));
+    const registry = inst.get("elementRegistry");
+    const all = asArray(registry?.getAll?.());
+    const selectedEdges = all
+      .filter((el) => {
+        if (!isConnectionElement(el)) return false;
+        const type = String(el?.businessObject?.$type || el?.type || "");
+        if (!isTemplateConnectionType(type)) return false;
+        const sourceId = String(el?.source?.id || "").trim();
+        const targetId = String(el?.target?.id || "").trim();
+        return selectedIds.has(sourceId) && selectedIds.has(targetId);
+      })
+      .sort((a, b) => String(a?.id || "").localeCompare(String(b?.id || "")));
+
+    const nodeItems = selectedNodes
+      .map((el) => {
+        const type = String(el?.businessObject?.$type || el?.type || "bpmn:Task");
+        const bounds = readShapeBounds(el) || { x: 0, y: 0, width: 140, height: 80 };
+        return {
+          id: String(el?.id || ""),
+          type,
+          name: String(el?.businessObject?.name || "").trim(),
+          laneHint: readLaneNameForElement(el),
+          propsMinimal: {},
+          di: {
+            x: Number(bounds.x || 0),
+            y: Number(bounds.y || 0),
+            w: Number(bounds.width || 140),
+            h: Number(bounds.height || 80),
+          },
+        };
+      })
+      .filter((item) => item.id)
+      .sort((a, b) => Number(a.di.x || 0) - Number(b.di.x || 0) || Number(a.di.y || 0) - Number(b.di.y || 0));
+
+    const edgeItems = selectedEdges.map((edge) => ({
+      id: String(edge?.id || ""),
+      sourceId: String(edge?.source?.id || ""),
+      targetId: String(edge?.target?.id || ""),
+      when: String(edge?.businessObject?.name || "").trim(),
+    }));
+
+    const incomingCount = new Map();
+    const outgoingCount = new Map();
+    nodeItems.forEach((node) => {
+      incomingCount.set(node.id, 0);
+      outgoingCount.set(node.id, 0);
+    });
+    edgeItems.forEach((edge) => {
+      incomingCount.set(edge.targetId, Number(incomingCount.get(edge.targetId) || 0) + 1);
+      outgoingCount.set(edge.sourceId, Number(outgoingCount.get(edge.sourceId) || 0) + 1);
+    });
+
+    const entryCandidates = nodeItems.filter((node) => Number(incomingCount.get(node.id) || 0) === 0);
+    const exitCandidates = nodeItems.filter((node) => Number(outgoingCount.get(node.id) || 0) === 0);
+    const entryNode = entryCandidates[0] || nodeItems[0] || null;
+    const exitNode = exitCandidates[0] || nodeItems[nodeItems.length - 1] || null;
+
+    const laneHint = String(entryNode?.laneHint || exitNode?.laneHint || "").trim();
+    const tags = new Set();
+    nodeItems.forEach((node) => {
+      const normalizedType = String(node.type || "").toLowerCase();
+      if (normalizedType.includes("task")) tags.add("task");
+      if (normalizedType.includes("event")) tags.add("event");
+      if (node.laneHint) tags.add(String(node.laneHint).trim().toLowerCase());
+    });
+
+    const pack = {
+      title: String(options?.title || "").trim() || createTemplateTitle(selectedNodes),
+      tags: Array.from(tags),
+      fragment: {
+        nodes: nodeItems,
+        edges: edgeItems,
+        annotations: [],
+      },
+      entryNodeId: String(entryNode?.id || ""),
+      exitNodeId: String(exitNode?.id || ""),
+      hints: {
+        defaultLaneName: laneHint,
+        defaultActor: laneHint,
+        suggestedInsertMode: "after",
+      },
+    };
+
+    logPackDebug("capture", {
+      sid: String(sessionId || "-"),
+      selectedNodes: nodeItems.length,
+      selectedEdges: edgeItems.length,
+      entry: pack.entryNodeId || "-",
+      exit: pack.exitNodeId || "-",
+    });
+    return { ok: true, pack };
+  }
+
+  function connectSequenceFlow(modeling, source, target, when = "") {
+    if (!modeling || !source || !target) return null;
+    try {
+      const conn = modeling.connect(source, target, { type: "bpmn:SequenceFlow" });
+      const label = String(when || "").trim();
+      if (conn && label) modeling.updateLabel(conn, label);
+      return conn || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function insertTemplatePackOnModeler(payload = {}) {
+    const inst = modelerRef.current || await ensureModeler();
+    if (!inst) return { ok: false, error: "modeler_not_ready" };
+    const pack = payload?.pack && typeof payload.pack === "object" ? payload.pack : null;
+    if (!pack) return { ok: false, error: "missing_pack" };
+
+    const nodes = asArray(pack?.fragment?.nodes).filter((node) => String(node?.id || "").trim());
+    const edges = asArray(pack?.fragment?.edges).filter((edge) => String(edge?.sourceId || "").trim() && String(edge?.targetId || "").trim());
+    if (!nodes.length) return { ok: false, error: "empty_pack" };
+
+    const selectedNodes = selectTemplateNodes(inst);
+    const anchor = selectedNodes[0] || null;
+    if (!anchor) return { ok: false, error: "anchor_required" };
+
+    const modeling = inst.get("modeling");
+    const elementFactory = inst.get("elementFactory");
+    const canvas = inst.get("canvas");
+    const laneMap = readLaneMap(inst);
+    const anchorParent = anchor?.parent || canvas?.getRootElement?.() || null;
+    if (!anchorParent) return { ok: false, error: "anchor_parent_missing" };
+
+    const mode = String(payload?.mode || "after").trim() === "between" ? "between" : "after";
+    const minX = Math.min(...nodes.map((node) => Number(node?.di?.x || 0)));
+    const minY = Math.min(...nodes.map((node) => Number(node?.di?.y || 0)));
+    const offsetX = Number(anchor?.x || 0) + Number(anchor?.width || 0) + 220;
+    const offsetY = Number(anchor?.y || 0) - 16;
+
+    const createdNodeMap = {};
+    const remap = {};
+    const createdNodes = [];
+
+    for (const node of nodes) {
+      const type = String(node?.type || "bpmn:Task").trim() || "bpmn:Task";
+      if (!isTemplateNodeType(type)) continue;
+      const laneHint = String(node?.laneHint || "").trim().toLowerCase();
+      const parent = laneHint && laneMap.get(laneHint) ? laneMap.get(laneHint) : anchorParent;
+      const relX = Number(node?.di?.x || 0) - minX;
+      const relY = Number(node?.di?.y || 0) - minY;
+      const shape = modeling.createShape(
+        elementFactory.createShape({ type }),
+        {
+          x: Math.round(offsetX + relX),
+          y: Math.round(offsetY + relY),
+        },
+        parent,
+      );
+      const label = String(node?.name || "").trim();
+      if (label) modeling.updateLabel(shape, label);
+      const oldId = String(node?.id || "");
+      createdNodeMap[oldId] = shape;
+      remap[oldId] = String(shape?.id || "");
+      createdNodes.push(shape);
+    }
+
+    if (!createdNodes.length) return { ok: false, error: "nothing_created" };
+
+    const createdEdges = [];
+    for (const edge of edges) {
+      const source = createdNodeMap[String(edge?.sourceId || "")];
+      const target = createdNodeMap[String(edge?.targetId || "")];
+      if (!source || !target) continue;
+      const conn = connectSequenceFlow(modeling, source, target, edge?.when);
+      if (!conn) continue;
+      const oldId = String(edge?.id || "");
+      remap[oldId] = String(conn?.id || "");
+      createdEdges.push(conn);
+    }
+
+    const firstNode = createdNodes[0] || null;
+    const lastNode = createdNodes[createdNodes.length - 1] || null;
+    const entryShape = createdNodeMap[String(pack?.entryNodeId || "")] || firstNode;
+    const exitShape = createdNodeMap[String(pack?.exitNodeId || "")] || lastNode;
+    if (!entryShape || !exitShape) return { ok: false, error: "entry_or_exit_missing" };
+
+    let nextTarget = null;
+    if (mode === "between") {
+      const outgoing = asArray(anchor?.outgoing).find((conn) => {
+        if (!isConnectionElement(conn)) return false;
+        const type = String(conn?.businessObject?.$type || conn?.type || "");
+        if (!isTemplateConnectionType(type)) return false;
+        return !!conn?.target && String(conn?.target?.id || "") !== String(entryShape?.id || "");
+      });
+      if (outgoing?.target) {
+        nextTarget = outgoing.target;
+        try {
+          modeling.removeConnection(outgoing);
+        } catch {
+        }
+      }
+    }
+
+    connectSequenceFlow(modeling, anchor, entryShape);
+    if (mode === "between" && nextTarget) {
+      connectSequenceFlow(modeling, exitShape, nextTarget);
+    }
+
+    logPackDebug("insert", {
+      sid: String(sessionId || "-"),
+      mode,
+      packId: String(pack?.packId || "-"),
+      anchorId: String(anchor?.id || "-"),
+      createdNodes: createdNodes.length,
+      createdEdges: createdEdges.length,
+      rewiredNext: nextTarget ? 1 : 0,
+    });
+    emitDiagramMutation("diagram.template_insert", {
+      mode,
+      pack_id: String(pack?.packId || ""),
+      created_nodes: createdNodes.length,
+      created_edges: createdEdges.length,
+    });
+
+    return {
+      ok: true,
+      mode,
+      remap,
+      createdNodes: createdNodes.length,
+      createdEdges: createdEdges.length,
+      entryNodeId: String(entryShape?.id || ""),
+      exitNodeId: String(exitShape?.id || ""),
+      anchorId: String(anchor?.id || ""),
+    };
+  }
+
+  function highlightChangedElements(inst, ids = []) {
+    if (!inst) return;
+    const uniqueIds = Array.from(new Set(asArray(ids).map((id) => String(id || "").trim()).filter(Boolean)));
+    if (!uniqueIds.length) return;
+    try {
+      const registry = inst.get("elementRegistry");
+      const selection = inst.get("selection");
+      const canvas = inst.get("canvas");
+      const selected = uniqueIds
+        .map((id) => registry.get(id))
+        .filter(Boolean);
+      if (selected.length) selection.select(selected);
+      uniqueIds.forEach((id) => {
+        try {
+          canvas.addMarker(id, "fpcElementSelected");
+        } catch {
+        }
+      });
+      window.setTimeout(() => {
+        uniqueIds.forEach((id) => {
+          try {
+            canvas.removeMarker(id, "fpcElementSelected");
+          } catch {
+          }
+        });
+      }, 1200);
+    } catch {
+    }
+  }
+
+  async function applyCommandOpsOnModeler(payload = {}) {
+    const inst = modelerRef.current || await ensureModeler();
+    if (!inst) {
+      return {
+        ok: false,
+        applied: 0,
+        failed: 0,
+        changedIds: [],
+        results: [],
+        error: "modeler_not_ready",
+      };
+    }
+    const ops = asArray(payload?.ops);
+    if (!ops.length) {
+      return {
+        ok: false,
+        applied: 0,
+        failed: 0,
+        changedIds: [],
+        results: [],
+        error: "empty_ops",
+      };
+    }
+
+    const result = await applyOpsToModeler(inst, ops, {
+      selectedElementId: toText(payload?.selectedElementId || ""),
+    });
+
+    if (result?.changedIds?.length) {
+      highlightChangedElements(inst, result.changedIds);
+    }
+
+    if (result?.applied > 0) {
+      emitDiagramMutation("diagram.ai_command_ops", {
+        applied: Number(result?.applied || 0),
+        failed: Number(result?.failed || 0),
+      });
+    }
+
+    return result;
+  }
+
+  function logChangeElementTrace(stage, payload = {}) {
     try {
       if (typeof window !== "undefined" && (window.__FPC_E2E__ || shouldLogBpmnTrace())) {
         const prev = Array.isArray(window.__FPC_CHANGE_ELEMENT_LOG__) ? window.__FPC_CHANGE_ELEMENT_LOG__ : [];
@@ -1930,7 +2971,10 @@ function logChangeElementTrace(stage, payload = {}) {
       syncAiQuestionPanelWithSelection(inst, "editor", newShape, "editor.shape_replace");
     }
     applyTaskTypeDecor(inst, "editor");
+    applyLinkEventDecor(inst, "editor");
+    applyHappyFlowDecor(inst, "editor");
     applyUserNotesDecor(inst, "editor");
+    applyStepTimeDecor(inst, "editor");
   }
 
   function findShapeForHint(registry, hint) {
@@ -1959,6 +3003,28 @@ function logChangeElementTrace(stage, payload = {}) {
       return n && n === t;
     });
     return byName[0] || null;
+  }
+
+  function findDiagramElementForHint(registry, hint) {
+    const ids = new Set();
+    asArray(hint?.elementIds)
+      .map((x) => String(x || "").trim())
+      .filter(Boolean)
+      .forEach((x) => ids.add(x));
+
+    const nodeId = String(hint?.nodeId || "").trim();
+    if (nodeId) {
+      ids.add(nodeId);
+      ids.add(safeBpmnId(nodeId));
+    }
+
+    for (const id of ids) {
+      const el = registry.get(id);
+      if (!el || String(el?.type || "").toLowerCase() === "label") continue;
+      if (isShapeElement(el) || isConnectionElement(el)) return el;
+    }
+
+    return findShapeForHint(registry, hint);
   }
 
   function findShapeByNodeId(registry, nodeId) {
@@ -2047,12 +3113,205 @@ function logChangeElementTrace(stage, payload = {}) {
     }
   }
 
+  function clearLinkEventDecor(inst, kind) {
+    if (!inst) return;
+    try {
+      const canvas = inst.get("canvas");
+      const registry = inst.get("elementRegistry");
+      asArray(linkEventMarkerStateRef.current[kind]).forEach((m) => {
+        canvas.removeMarker(m.elementId, m.className);
+      });
+      asArray(linkEventStyledStateRef.current[kind]).forEach((elementId) => {
+        const gfx = registry?.getGraphics?.(elementId);
+        if (!gfx || !gfx.style) return;
+        gfx.style.removeProperty("--fpc-link-accent");
+        gfx.removeAttribute("data-fpc-link-role");
+        gfx.removeAttribute("data-fpc-link-key");
+      });
+      linkEventMarkerStateRef.current[kind] = [];
+      linkEventStyledStateRef.current[kind] = [];
+    } catch {
+    }
+  }
+
+  function applyLinkEventDecor(inst, kind) {
+    if (!inst) return;
+    clearLinkEventDecor(inst, kind);
+    try {
+      const canvas = inst.get("canvas");
+      const registry = inst.get("elementRegistry");
+      const elements = registry.filter((el) => isShapeElement(el));
+      const addMarker = (elementId, className) => {
+        canvas.addMarker(elementId, className);
+        linkEventMarkerStateRef.current[kind].push({ elementId, className });
+      };
+
+      elements.forEach((el) => {
+        const bo = asObject(el?.businessObject);
+        if (!hasLinkEventDefinition(bo)) return;
+        const role = readLinkEventRole(el);
+        if (role !== "catch" && role !== "throw") return;
+
+        const pairNameRaw = readLinkEventPairName(el);
+        const pairKey = normalizeLinkPairKey(pairNameRaw);
+        const pairHash = fnv1aHex(pairKey || `link_${el.id}`).slice(0, 8);
+        const pairClass = `fpcLinkPair_${pairHash}`;
+        const accent = linkPairColorFromName(pairKey);
+
+        addMarker(el.id, "fpcLinkEvent");
+        addMarker(el.id, role === "catch" ? "fpcLinkEventCatch" : "fpcLinkEventThrow");
+        addMarker(el.id, pairClass);
+
+        const gfx = registry?.getGraphics?.(el.id);
+        if (gfx?.style) {
+          gfx.style.setProperty("--fpc-link-accent", accent);
+          if (pairKey) gfx.setAttribute("data-fpc-link-key", pairKey);
+          gfx.setAttribute("data-fpc-link-role", role);
+          linkEventStyledStateRef.current[kind].push(el.id);
+        }
+      });
+    } catch {
+    }
+  }
+
+  function clearHappyFlowDecor(inst, kind) {
+    if (!inst) return;
+    try {
+      const canvas = inst.get("canvas");
+      const registry = inst.get("elementRegistry");
+      asArray(happyFlowMarkerStateRef.current[kind]).forEach((m) => {
+        canvas.removeMarker(m.elementId, m.className);
+      });
+      asArray(happyFlowStyledStateRef.current[kind]).forEach((elementId) => {
+        const gfx = registry?.getGraphics?.(elementId);
+        if (!gfx || !gfx.style) return;
+        gfx.style.removeProperty("--fpc-flow-tier-accent");
+        gfx.style.removeProperty("--fpc-happy-flow-accent");
+        gfx.style.removeProperty("--fpc-node-path-accent");
+        gfx.removeAttribute("data-fpc-happy-flow");
+        gfx.removeAttribute("data-fpc-flow-tier");
+        gfx.removeAttribute("data-fpc-node-path");
+        gfx.removeAttribute("data-fpc-sequence-key");
+      });
+      happyFlowMarkerStateRef.current[kind] = [];
+      happyFlowStyledStateRef.current[kind] = [];
+    } catch {
+    }
+  }
+
+  function applyHappyFlowDecor(inst, kind) {
+    if (!inst) return;
+    clearHappyFlowDecor(inst, kind);
+    try {
+      const flowMeta = getFlowTierMetaMap();
+      const canvas = inst.get("canvas");
+      const registry = inst.get("elementRegistry");
+      if (flowMeta && Object.keys(flowMeta).length) {
+        const elements = registry.filter((el) => isConnectionElement(el));
+        elements.forEach((el) => {
+          const flowId = toText(el?.businessObject?.id || el?.id);
+          const tier = toText(flowMeta[flowId]?.tier).toUpperCase();
+          if (!flowId || !(tier === "P0" || tier === "P1" || tier === "P2")) return;
+          const tierClass = tier === "P1"
+            ? "fpcFlowTierP1"
+            : (tier === "P2" ? "fpcFlowTierP2" : "fpcFlowTierP0");
+          canvas.addMarker(el.id, tierClass);
+          happyFlowMarkerStateRef.current[kind].push({ elementId: el.id, className: tierClass });
+          if (tier === "P0") {
+            canvas.addMarker(el.id, "fpcHappyFlow");
+            happyFlowMarkerStateRef.current[kind].push({ elementId: el.id, className: "fpcHappyFlow" });
+          }
+          const gfx = registry?.getGraphics?.(el.id);
+          if (gfx?.style) {
+            const accentVar = tier === "P1"
+              ? "var(--bpmn-flow-tier-p1, #b38a46)"
+              : (tier === "P2" ? "var(--bpmn-flow-tier-p2, #b45353)" : "var(--bpmn-flow-tier-p0, #3d8f62)");
+            gfx.style.setProperty("--fpc-flow-tier-accent", accentVar);
+            gfx.style.setProperty("--fpc-happy-flow-accent", accentVar);
+            gfx.setAttribute("data-fpc-happy-flow", "1");
+            gfx.setAttribute("data-fpc-flow-tier", tier);
+            happyFlowStyledStateRef.current[kind].push(el.id);
+          }
+        });
+      }
+
+      const nodePathMeta = getNodePathMetaMap();
+      if (nodePathMeta && Object.keys(nodePathMeta).length) {
+        const shapes = registry.filter((el) => isShapeElement(el) && isSelectableElement(el));
+        shapes.forEach((el) => {
+          const nodeId = toText(el?.businessObject?.id || el?.id);
+          const entry = asObject(nodePathMeta[nodeId]);
+          const paths = asArray(entry?.paths).map((tag) => toText(tag).toUpperCase()).filter(Boolean);
+          if (!nodeId || !paths.length) return;
+          if (paths.includes("P0")) {
+            canvas.addMarker(el.id, "fpcNodePathP0");
+            happyFlowMarkerStateRef.current[kind].push({ elementId: el.id, className: "fpcNodePathP0" });
+          }
+          if (paths.includes("P1")) {
+            canvas.addMarker(el.id, "fpcNodePathP1");
+            happyFlowMarkerStateRef.current[kind].push({ elementId: el.id, className: "fpcNodePathP1" });
+          }
+          if (paths.includes("P2")) {
+            canvas.addMarker(el.id, "fpcNodePathP2");
+            happyFlowMarkerStateRef.current[kind].push({ elementId: el.id, className: "fpcNodePathP2" });
+          }
+
+          const gfx = registry?.getGraphics?.(el.id);
+          if (gfx?.style) {
+            const accentVar = paths.includes("P0")
+              ? "var(--bpmn-flow-tier-p0, #3d8f62)"
+              : (paths.includes("P1")
+                ? "var(--bpmn-flow-tier-p1, #b38a46)"
+                : "var(--bpmn-flow-tier-p2, #b45353)");
+            gfx.style.setProperty("--fpc-node-path-accent", accentVar);
+            gfx.setAttribute("data-fpc-node-path", paths.join(","));
+            const sequenceKey = toText(entry?.sequence_key || entry?.sequenceKey);
+            if (sequenceKey) gfx.setAttribute("data-fpc-sequence-key", sequenceKey);
+            happyFlowStyledStateRef.current[kind].push(el.id);
+          }
+        });
+      }
+    } catch {
+    }
+  }
+
   function buildInterviewDecorPayload() {
-    const iv = asObject(draft?.interview);
+    const draftNow = asObject(draftRef.current);
+    const iv = asObject(draftNow?.interview);
     const steps = asArray(iv.steps);
-    const nodesList = asArray(draft?.nodes);
+    const nodesList = asArray(draftNow?.nodes);
+    const notesByElement = getElementNotesMap();
     const aiQuestionsByElement = normalizeAiQuestionsByElementMap(iv.ai_questions_by_element || iv.aiQuestionsByElementId);
-    if (!steps.length && !Object.keys(aiQuestionsByElement).length) return { items: [], groups: [], noteItems: [], aiQuestionItems: [] };
+    if (!steps.length && !Object.keys(aiQuestionsByElement).length && !Object.keys(notesByElement).length) {
+      return {
+        items: [],
+        groups: [],
+        noteItems: [],
+        aiQuestionItems: [],
+        dodItems: [],
+      };
+    }
+
+    const hasDurationQuality = (nodeRaw) => {
+      const node = asObject(nodeRaw);
+      const params = asObject(node?.parameters);
+      const duration = Number(
+        node?.step_time_min
+        ?? node?.duration_min
+        ?? params?.step_time_min
+        ?? params?.duration_min
+        ?? params?.duration
+        ?? 0,
+      );
+      const hasDuration = Number.isFinite(duration) && duration > 0;
+      const hasQuality = (
+        asArray(node?.qc).length > 0
+        || asArray(params?.qc).length > 0
+        || !!toText(params?.quality)
+        || !!toText(params?.quality_gate)
+      );
+      return hasDuration && hasQuality;
+    };
 
     const byId = {};
     const byTitle = {};
@@ -2067,7 +3326,6 @@ function logChangeElementTrace(stage, payload = {}) {
     });
 
     const byNode = {};
-    const notesByNode = {};
     const aiByNode = {};
     const groupsByKey = {};
     steps.forEach((s) => {
@@ -2092,23 +3350,28 @@ function logChangeElementTrace(stage, payload = {}) {
       const nodeId = toText(node?.id);
       if (!nodeId) return;
       const nodeTitle = toText(node?.title || node?.name || nodeId);
-      const hasNote = !!toText(s?.comment);
+
+      const item = byNode[nodeId] || {
+        nodeId,
+        title: nodeTitle,
+        subprocess: "",
+        hasStepComment: false,
+        hasRole: false,
+        hasDurationQuality: false,
+      };
+      item.hasStepComment = item.hasStepComment || !!toText(s?.comment || s?.notes || s?.note);
+      item.hasRole = item.hasRole || !!toText(
+        s?.role
+        || s?.actor
+        || s?.lane
+        || node?.actor_role
+        || node?.laneName,
+      );
+      item.hasDurationQuality = item.hasDurationQuality || hasDurationQuality(node);
+      byNode[nodeId] = item;
 
       if (subprocess) {
-        const item = byNode[nodeId] || {
-          nodeId,
-          title: nodeTitle,
-          subprocess: "",
-        };
         item.subprocess = subprocess;
-        byNode[nodeId] = item;
-      }
-
-      if (hasNote) {
-        notesByNode[nodeId] = {
-          nodeId,
-          title: nodeTitle,
-        };
       }
 
       if (subprocess) {
@@ -2138,6 +3401,57 @@ function logChangeElementTrace(stage, payload = {}) {
         count: stats.total,
         withoutComment: stats.withoutComment,
         done: stats.done,
+        open: stats.open,
+      };
+    });
+
+    const noteItemsByNode = {};
+    const dodItemsByNode = {};
+    const allNodeIds = new Set([
+      ...Object.keys(byNode),
+      ...Object.keys(aiByNode),
+      ...Object.keys(notesByElement),
+    ]);
+
+    allNodeIds.forEach((nodeIdRaw) => {
+      const nodeId = toText(nodeIdRaw);
+      if (!nodeId) return;
+      const node = asObject(byId[nodeId]);
+      const nodeTitle = toText(
+        byNode[nodeId]?.title
+        || aiByNode[nodeId]?.title
+        || node?.title
+        || node?.name
+        || nodeId,
+      );
+      const noteEntry = asObject(notesByElement[nodeId]);
+      const noteCount = asArray(noteEntry?.items).length;
+      const stepCommentCount = byNode[nodeId]?.hasStepComment ? 1 : 0;
+      const notesTotal = noteCount + stepCommentCount;
+      if (notesTotal > 0) {
+        noteItemsByNode[nodeId] = {
+          nodeId,
+          title: nodeTitle,
+          count: notesTotal,
+        };
+      }
+
+      const aiMeta = asObject(aiByNode[nodeId]);
+      const aiTotal = Number(aiMeta?.count || 0);
+      const aiDone = Number(aiMeta?.done || 0);
+      const hasRole = !!(byNode[nodeId]?.hasRole || toText(node?.actor_role || node?.laneName || node?.lane));
+      const hasDocs = notesTotal > 0;
+      const aiReady = aiTotal > 0 && aiDone >= aiTotal;
+      const dqReady = !!(byNode[nodeId]?.hasDurationQuality || hasDurationQuality(node));
+      const total = 4;
+      const done = Number(hasRole) + Number(hasDocs) + Number(aiReady) + Number(dqReady);
+      const percent = Math.round((done / total) * 100);
+      dodItemsByNode[nodeId] = {
+        nodeId,
+        title: nodeTitle,
+        done,
+        total,
+        percent,
       };
     });
 
@@ -2152,160 +3466,275 @@ function logChangeElementTrace(stage, payload = {}) {
     return {
       items: Object.values(byNode),
       groups,
-      noteItems: Object.values(notesByNode),
+      noteItems: Object.values(noteItemsByNode),
       aiQuestionItems: Object.values(aiByNode),
+      dodItems: Object.values(dodItemsByNode),
     };
   }
 
-  function applyInterviewDecor(inst, kind) {
+  function applyInterviewDecor(inst, kind, options = {}) {
     if (!inst) return;
-    clearInterviewDecor(inst, kind);
+    const signature = toText(options?.signature);
+    if (signature && toText(interviewDecorSignatureRef.current?.[kind]) === signature) return;
+    const interviewMode = isInterviewDecorModeOn();
     const payload = buildInterviewDecorPayload();
     const items = asArray(payload?.items);
     const groups = asArray(payload?.groups);
     const noteItems = asArray(payload?.noteItems);
     const aiQuestionItems = asArray(payload?.aiQuestionItems);
-    if (!items.length && !groups.length && !noteItems.length && !aiQuestionItems.length) {
-      aiQuestionPanelTargetRef.current[kind] = "";
-      clearAiQuestionPanel(inst, kind);
-      return;
-    }
+    const dodItems = asArray(payload?.dodItems);
+    const hasInterviewPayload = items.length || groups.length || noteItems.length || aiQuestionItems.length || dodItems.length;
 
-    try {
-      const canvas = inst.get("canvas");
-      const overlays = inst.get("overlays");
-      const registry = inst.get("elementRegistry");
+    measureInterviewPerf("diagram.updateInterviewOverlays", () => {
+      clearInterviewDecor(inst, kind);
+      if (interviewMode && !hasInterviewPayload) {
+        aiQuestionPanelTargetRef.current[kind] = "";
+        clearAiQuestionPanel(inst, kind);
+        interviewDecorSignatureRef.current[kind] = signature;
+        return;
+      }
+      if (!interviewMode && !aiQuestionItems.length) {
+        aiQuestionPanelTargetRef.current[kind] = "";
+        clearAiQuestionPanel(inst, kind);
+        interviewDecorSignatureRef.current[kind] = signature;
+        return;
+      }
 
-      items.forEach((it) => {
-        const el = findShapeByNodeId(registry, it.nodeId) || findShapeForHint(registry, { nodeId: it.nodeId, title: it.title });
-        if (!el) return;
+      try {
+        const canvas = inst.get("canvas");
+        const overlays = inst.get("overlays");
+        const registry = inst.get("elementRegistry");
 
-        canvas.addMarker(el.id, "fpcInterviewNode");
-        interviewMarkerStateRef.current[kind].push({ elementId: el.id, className: "fpcInterviewNode" });
-      });
+      if (interviewMode) {
+        items.forEach((it) => {
+          const el = findShapeByNodeId(registry, it.nodeId) || findShapeForHint(registry, { nodeId: it.nodeId, title: it.title });
+          if (!el) return;
 
-      noteItems.forEach((it) => {
-        const el = findShapeByNodeId(registry, it.nodeId) || findShapeForHint(registry, { nodeId: it.nodeId, title: it.title });
-        if (!el) return;
-        canvas.addMarker(el.id, "fpcHasNote");
-        interviewMarkerStateRef.current[kind].push({ elementId: el.id, className: "fpcHasNote" });
-
-        const dot = document.createElement("div");
-        dot.className = "fpcNoteDot";
-        dot.title = "Есть заметка в Interview";
-        const oid = overlays.add(el.id, {
-          position: { top: -7, right: -7 },
-          html: dot,
+          canvas.addMarker(el.id, "fpcInterviewNode");
+          interviewMarkerStateRef.current[kind].push({ elementId: el.id, className: "fpcInterviewNode" });
         });
-        interviewOverlayStateRef.current[kind].push(oid);
+      }
+
+      const noteByNode = {};
+      if (interviewMode) {
+        noteItems.forEach((item) => {
+          const nodeId = toText(item?.nodeId);
+          if (!nodeId) return;
+          noteByNode[nodeId] = item;
+        });
+      }
+      const aiByNode = {};
+      aiQuestionItems.forEach((item) => {
+        const nodeId = toText(item?.nodeId);
+        if (!nodeId) return;
+        aiByNode[nodeId] = item;
       });
+      const dodByNode = {};
+      if (interviewMode) {
+        dodItems.forEach((item) => {
+          const nodeId = toText(item?.nodeId);
+          if (!nodeId) return;
+          dodByNode[nodeId] = item;
+        });
+      }
 
-      aiQuestionItems.forEach((it) => {
-        const el = findShapeByNodeId(registry, it.nodeId) || findShapeForHint(registry, { nodeId: it.nodeId, title: it.title });
-        if (!el) return;
-        canvas.addMarker(el.id, "fpcHasAiQuestion");
-        interviewMarkerStateRef.current[kind].push({ elementId: el.id, className: "fpcHasAiQuestion" });
+      const badgeNodeIds = new Set([
+        ...(interviewMode ? Object.keys(noteByNode) : []),
+        ...Object.keys(aiByNode),
+        ...(interviewMode ? Object.keys(dodByNode) : []),
+      ]);
 
-        const indicator = document.createElement("button");
-        indicator.type = "button";
-        indicator.className = `fpcAiQuestionIndicator ${Number(it?.withoutComment || 0) > 0 ? "warn" : "ok"}`;
-        indicator.textContent = `AI ${Number(it?.count || 0)} ▼`;
-        indicator.title = `AI-вопросов: ${Number(it?.count || 0)} · без комментария: ${Number(it?.withoutComment || 0)}`;
-        indicator.addEventListener("mousedown", (ev) => ev.stopPropagation());
-        indicator.addEventListener("click", (ev) => {
+      const bindBadgeClick = (btn, onClick) => {
+        btn.addEventListener("mousedown", (ev) => ev.stopPropagation());
+        btn.addEventListener("click", (ev) => {
           ev.preventDefault();
           ev.stopPropagation();
-          setSelectedDecor(inst, kind, el.id);
-          emitElementSelection(el, `${kind}.ai_indicator_click`);
-          openAiQuestionPanel(inst, kind, el.id, { source: "indicator_click", toggle: true });
+          onClick?.();
         });
-        const oid = overlays.add(el.id, {
-          position: {
-            top: Number(el?.height || 0) + 8,
-            left: Math.max(6, Math.round(Number(el?.width || 0) / 2 - 34)),
-          },
-          html: indicator,
-        });
-        interviewOverlayStateRef.current[kind].push(oid);
+      };
+
+      badgeNodeIds.forEach((nodeId) => {
+        const noteMeta = asObject(noteByNode[nodeId]);
+        const aiMeta = asObject(aiByNode[nodeId]);
+        const dodMeta = asObject(dodByNode[nodeId]);
+        const title = toText(noteMeta?.title || aiMeta?.title || dodMeta?.title || nodeId);
+        const el = findShapeByNodeId(registry, nodeId) || findShapeForHint(registry, { nodeId, title });
+        if (!el) return;
+
+        const noteCount = Number(noteMeta?.count || 0);
+        if (interviewMode && noteCount > 0) {
+          canvas.addMarker(el.id, "fpcHasNote");
+          interviewMarkerStateRef.current[kind].push({ elementId: el.id, className: "fpcHasNote" });
+        }
+        const aiCount = Number(aiMeta?.count || 0);
+        if (aiCount > 0) {
+          canvas.addMarker(el.id, "fpcHasAiQuestion");
+          interviewMarkerStateRef.current[kind].push({ elementId: el.id, className: "fpcHasAiQuestion" });
+        }
+
+        const rightStack = document.createElement("div");
+        rightStack.className = "fpcNodeBadgeStack";
+        rightStack.dataset.nodeId = nodeId;
+        rightStack.style.transform = "translateX(-100%)";
+
+        const leftStack = document.createElement("div");
+        leftStack.className = "fpcNodeBadgeStack";
+        leftStack.dataset.nodeId = nodeId;
+        leftStack.style.alignItems = "flex-start";
+
+        if (aiCount > 0) {
+          const aiBadge = document.createElement("button");
+          aiBadge.type = "button";
+          aiBadge.className = `fpcNodeBadge fpcNodeBadge--ai ${Number(aiMeta?.withoutComment || 0) > 0 ? "warn" : "ok"}`;
+          aiBadge.dataset.badgeKind = "ai";
+          aiBadge.textContent = `AI:${aiCount}`;
+          aiBadge.title = `AI-вопросов: ${aiCount} · done: ${Number(aiMeta?.done || 0)}`;
+          bindBadgeClick(aiBadge, () => {
+            setSelectedDecor(inst, kind, el.id);
+            emitElementSelection(el, `${kind}.ai_badge_click`);
+            openAiQuestionPanel(inst, kind, el.id, { source: "interview_ai_badge", toggle: true });
+          });
+          rightStack.appendChild(aiBadge);
+        }
+
+        if (interviewMode && noteCount > 0) {
+          const noteBadge = document.createElement("button");
+          noteBadge.type = "button";
+          noteBadge.className = "fpcNodeBadge fpcNodeBadge--notes";
+          noteBadge.dataset.badgeKind = "notes";
+          noteBadge.textContent = `N:${noteCount}`;
+          noteBadge.title = `Заметок: ${noteCount}`;
+          bindBadgeClick(noteBadge, () => {
+            setSelectedDecor(inst, kind, el.id);
+            emitElementSelection(el, `${kind}.notes_badge_click`);
+          });
+          leftStack.appendChild(noteBadge);
+        }
+
+        const dodTotal = interviewMode ? Number(dodMeta?.total || 0) : 0;
+        if (interviewMode && dodTotal > 0) {
+          const dodDone = Number(dodMeta?.done || 0);
+          const dodPercent = Number(dodMeta?.percent || 0);
+          const dodBadge = document.createElement("button");
+          dodBadge.type = "button";
+          dodBadge.className = `fpcNodeBadge fpcNodeBadge--dod ${dodDone >= dodTotal ? "ok" : ""}`;
+          dodBadge.dataset.badgeKind = "dod";
+          dodBadge.textContent = `DoD:${dodDone}/${dodTotal}`;
+          dodBadge.title = `DoD readiness: ${dodPercent}% (${dodDone}/${dodTotal})`;
+          bindBadgeClick(dodBadge, () => {
+            setSelectedDecor(inst, kind, el.id);
+            emitElementSelection(el, `${kind}.dod_badge_click`);
+          });
+          rightStack.appendChild(dodBadge);
+        }
+
+        const shapeWidth = Number(el?.width || 0);
+        const rightAnchorLeft = Number.isFinite(shapeWidth) && shapeWidth > 0 ? shapeWidth - 2 : 96;
+        if (rightStack.childNodes.length) {
+          const rightOverlayId = overlays.add(el.id, {
+            position: { top: -18, left: rightAnchorLeft },
+            html: rightStack,
+          });
+          interviewOverlayStateRef.current[kind].push(rightOverlayId);
+        }
+        if (leftStack.childNodes.length) {
+          const leftOverlayId = overlays.add(el.id, {
+            position: { top: -18, left: 2 },
+            html: leftStack,
+          });
+          interviewOverlayStateRef.current[kind].push(leftOverlayId);
+        }
       });
 
-      groups.forEach((g) => {
-        const groupName = toText(g?.name);
-        const rawIds = asArray(g?.nodeIds).map((x) => toText(x)).filter(Boolean);
-        if (!groupName || !rawIds.length) return;
+      if (interviewMode) {
+        groups.forEach((g) => {
+          const groupName = toText(g?.name);
+          const rawIds = asArray(g?.nodeIds).map((x) => toText(x)).filter(Boolean);
+          if (!groupName || !rawIds.length) return;
 
-        const shapes = [];
-        const usedShapeIds = new Set();
-        rawIds.forEach((nid) => {
-          const el = findShapeByNodeId(registry, nid) || findShapeForHint(registry, { nodeId: nid, title: nid });
-          if (!isShapeElement(el) || usedShapeIds.has(el.id)) return;
-          usedShapeIds.add(el.id);
-          shapes.push(el);
+          const shapes = [];
+          const usedShapeIds = new Set();
+          rawIds.forEach((nid) => {
+            const el = findShapeByNodeId(registry, nid) || findShapeForHint(registry, { nodeId: nid, title: nid });
+            if (!isShapeElement(el) || usedShapeIds.has(el.id)) return;
+            usedShapeIds.add(el.id);
+            shapes.push(el);
+          });
+          if (!shapes.length) return;
+
+          let minX = Number.POSITIVE_INFINITY;
+          let minY = Number.POSITIVE_INFINITY;
+          let maxX = 0;
+          let maxY = 0;
+
+          shapes.forEach((el) => {
+            const x = Number(el.x || 0);
+            const y = Number(el.y || 0);
+            const w = Number(el.width || 0);
+            const h = Number(el.height || 0);
+            if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) return;
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x + w);
+            maxY = Math.max(maxY, y + h);
+          });
+
+          if (!Number.isFinite(minX) || !Number.isFinite(minY) || maxX <= minX || maxY <= minY) return;
+
+          const padX = 22;
+          const padY = 16;
+          const boxX = minX - padX;
+          const boxY = minY - padY;
+          const boxW = Math.max(maxX - minX + padX * 2, 120);
+          const boxH = Math.max(maxY - minY + padY * 2, 70);
+
+          let anchor = shapes[0];
+          shapes.forEach((el) => {
+            if (Number(el.x || 0) < Number(anchor.x || 0)) anchor = el;
+          });
+
+          const box = document.createElement("div");
+          box.className = "fpcInterviewSubprocessBox";
+          box.style.width = `${boxW.toFixed(1)}px`;
+          box.style.height = `${boxH.toFixed(1)}px`;
+          box.style.setProperty("--sp-color", colorFromKey(groupName));
+
+          const lbl = document.createElement("div");
+          lbl.className = "fpcInterviewSubprocessLabel";
+          lbl.textContent = `Подпроцесс: ${groupName}`;
+          box.appendChild(lbl);
+
+          const oid = overlays.add(anchor.id, {
+            position: {
+              left: Number((boxX - Number(anchor.x || 0)).toFixed(1)),
+              top: Number((boxY - Number(anchor.y || 0)).toFixed(1)),
+            },
+            html: box,
+          });
+          interviewOverlayStateRef.current[kind].push(oid);
         });
-        if (!shapes.length) return;
-
-        let minX = Number.POSITIVE_INFINITY;
-        let minY = Number.POSITIVE_INFINITY;
-        let maxX = 0;
-        let maxY = 0;
-
-        shapes.forEach((el) => {
-          const x = Number(el.x || 0);
-          const y = Number(el.y || 0);
-          const w = Number(el.width || 0);
-          const h = Number(el.height || 0);
-          if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) return;
-          minX = Math.min(minX, x);
-          minY = Math.min(minY, y);
-          maxX = Math.max(maxX, x + w);
-          maxY = Math.max(maxY, y + h);
-        });
-
-        if (!Number.isFinite(minX) || !Number.isFinite(minY) || maxX <= minX || maxY <= minY) return;
-
-        const padX = 22;
-        const padY = 16;
-        const boxX = minX - padX;
-        const boxY = minY - padY;
-        const boxW = Math.max(maxX - minX + padX * 2, 120);
-        const boxH = Math.max(maxY - minY + padY * 2, 70);
-
-        let anchor = shapes[0];
-        shapes.forEach((el) => {
-          if (Number(el.x || 0) < Number(anchor.x || 0)) anchor = el;
-        });
-
-        const box = document.createElement("div");
-        box.className = "fpcInterviewSubprocessBox";
-        box.style.width = `${boxW.toFixed(1)}px`;
-        box.style.height = `${boxH.toFixed(1)}px`;
-        box.style.setProperty("--sp-color", colorFromKey(groupName));
-
-        const lbl = document.createElement("div");
-        lbl.className = "fpcInterviewSubprocessLabel";
-        lbl.textContent = `Подпроцесс: ${groupName}`;
-        box.appendChild(lbl);
-
-        const oid = overlays.add(anchor.id, {
-          position: {
-            left: Number((boxX - Number(anchor.x || 0)).toFixed(1)),
-            top: Number((boxY - Number(anchor.y || 0)).toFixed(1)),
-          },
-          html: box,
-        });
-        interviewOverlayStateRef.current[kind].push(oid);
-      });
+      }
 
       const currentTarget = toText(aiQuestionPanelTargetRef.current[kind]);
-      if (currentTarget) {
-        openAiQuestionPanel(inst, kind, currentTarget, {
-          source: "interview_decor_refresh",
-        });
-      } else {
-        clearAiQuestionPanel(inst, kind, { keepTarget: true });
+        if (currentTarget) {
+          openAiQuestionPanel(inst, kind, currentTarget, {
+            source: "interview_decor_refresh",
+          });
+        } else {
+          clearAiQuestionPanel(inst, kind, { keepTarget: true });
+        }
+      } catch {
       }
-    } catch {
-    }
+      interviewDecorSignatureRef.current[kind] = signature;
+    }, () => ({
+      kind,
+      interviewMode: interviewMode ? 1 : 0,
+      items: items.length,
+      groups: groups.length,
+      notes: noteItems.length,
+      ai: aiQuestionItems.length,
+      dod: dodItems.length,
+    }));
   }
 
   function clearUserNotesDecor(inst, kind) {
@@ -2340,30 +3769,495 @@ function logChangeElementTrace(stage, payload = {}) {
   function applyUserNotesDecor(inst, kind) {
     if (!inst) return;
     clearUserNotesDecor(inst, kind);
+    // Notes in Interview mode are rendered via unified interview badges (AI/Notes/DoD).
+    if (isInterviewDecorModeOn()) return;
     const payload = buildUserNotesDecorPayload();
     if (!payload.length) return;
     try {
       const canvas = inst.get("canvas");
       const overlays = inst.get("overlays");
       const registry = inst.get("elementRegistry");
-      payload.forEach((it) => {
-        const el = registry.get(it.elementId);
-        if (!isShapeElement(el)) return;
+
+      const bindBadgeClick = (btn, onClick) => {
+        btn.addEventListener("mousedown", (ev) => ev.stopPropagation());
+        btn.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          onClick?.();
+        });
+      };
+
+      payload.forEach((item) => {
+        const nodeId = toText(item?.elementId);
+        const count = Number(item?.count || 0);
+        if (!nodeId || count <= 0) return;
+        const el = findShapeByNodeId(registry, nodeId) || findShapeForHint(registry, { nodeId, title: nodeId });
+        if (!el) return;
+
         canvas.addMarker(el.id, "fpcHasUserNote");
         userNotesMarkerStateRef.current[kind].push({ elementId: el.id, className: "fpcHasUserNote" });
 
-        const dot = document.createElement("div");
-        dot.className = "fpcUserNoteDot";
-        dot.textContent = it.count > 9 ? "9+" : String(it.count);
-        dot.title = `Заметок: ${it.count}`;
-        const oid = overlays.add(el.id, {
-          position: { top: -8, right: -8 },
-          html: dot,
+        const stack = document.createElement("div");
+        stack.className = "fpcNodeBadgeStack";
+        stack.dataset.nodeId = nodeId;
+        stack.style.alignItems = "flex-start";
+
+        const badge = document.createElement("button");
+        badge.type = "button";
+        badge.className = "fpcNodeBadge fpcNodeBadge--notes";
+        badge.dataset.badgeKind = "notes";
+        badge.textContent = `N:${count}`;
+        badge.title = `Заметок: ${count}`;
+        bindBadgeClick(badge, () => {
+          setSelectedDecor(inst, kind, el.id);
+          emitElementSelection(el, `${kind}.notes_badge_click`);
         });
-        userNotesOverlayStateRef.current[kind].push(oid);
+        stack.appendChild(badge);
+
+        const overlayId = overlays.add(el.id, {
+          position: { top: -18, left: 2 },
+          html: stack,
+        });
+        userNotesOverlayStateRef.current[kind].push(overlayId);
       });
     } catch {
     }
+  }
+
+  function clearStepTimeDecor(inst, kind) {
+    if (!inst) return;
+    try {
+      const overlays = inst.get("overlays");
+      asArray(stepTimeOverlayStateRef.current[kind]).forEach((id) => {
+        overlays.remove(id);
+      });
+      stepTimeOverlayStateRef.current[kind] = [];
+    } catch {
+    }
+  }
+
+  function buildStepTimeDecorPayload() {
+    return asArray(draftRef.current?.nodes)
+      .map((rawNode) => {
+        const node = asObject(rawNode);
+        const nodeId = toText(node?.id);
+        if (!nodeId) return null;
+        const minutes = readStepTimeMinutes(node);
+        if (minutes === null) return null;
+        const seconds = readStepTimeSeconds(node);
+        return { nodeId, minutes, seconds: seconds === null ? Math.round(minutes * 60) : seconds };
+      })
+      .filter(Boolean);
+  }
+
+  function applyStepTimeDecor(inst, kind) {
+    if (!inst) return;
+    const payload = buildStepTimeDecorPayload();
+    measureInterviewPerf("diagram.updateStepTimeOverlays", () => {
+      clearStepTimeDecor(inst, kind);
+      if (!payload.length) return;
+      try {
+        const overlays = inst.get("overlays");
+        const registry = inst.get("elementRegistry");
+
+      const bindBadgeClick = (btn, onClick) => {
+        btn.addEventListener("mousedown", (ev) => ev.stopPropagation());
+        btn.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          onClick?.();
+        });
+      };
+
+        payload.forEach((item) => {
+        const nodeId = toText(item?.nodeId);
+        const minutes = Number(item?.minutes);
+        const seconds = Number(item?.seconds);
+        if (!nodeId || !Number.isFinite(minutes) || minutes < 0) return;
+        const el = findShapeByNodeId(registry, nodeId) || findShapeForHint(registry, { nodeId, title: nodeId });
+        if (!el) return;
+        const unit = normalizeStepTimeUnit(stepTimeUnitRef.current);
+        const value = unit === "sec"
+          ? (Number.isFinite(seconds) && seconds >= 0 ? Math.round(seconds) : Math.round(minutes * 60))
+          : Math.round(minutes);
+        const unitLabel = unit === "sec" ? "сек" : "мин";
+
+        const badge = document.createElement("button");
+        badge.type = "button";
+        badge.className = "fpcNodeBadge fpcNodeBadge--time";
+        badge.dataset.badgeKind = "time";
+        badge.textContent = `${value} ${unitLabel}`;
+        badge.title = `Время шага: ${value} ${unitLabel}`;
+        badge.style.transform = "translateX(-100%)";
+        bindBadgeClick(badge, () => {
+          setSelectedDecor(inst, kind, el.id);
+          emitElementSelection(el, `${kind}.step_time_badge_click`);
+        });
+
+        const shapeWidth = Number(el?.width || 0);
+        const shapeHeight = Number(el?.height || 0);
+        const anchorLeft = Number.isFinite(shapeWidth) && shapeWidth > 0 ? shapeWidth - 2 : 96;
+        const anchorTop = Number.isFinite(shapeHeight) && shapeHeight > 0 ? shapeHeight + 1 : 81;
+
+        const overlayId = overlays.add(el.id, {
+          position: { left: anchorLeft, top: anchorTop },
+          html: badge,
+        });
+        stepTimeOverlayStateRef.current[kind].push(overlayId);
+        });
+      } catch {
+      }
+    }, () => ({ kind, items: payload.length }));
+  }
+
+  function clearRobotMetaDecor(inst, kind) {
+    if (!inst) return;
+    try {
+      const canvas = inst.get("canvas");
+      const overlays = inst.get("overlays");
+      asArray(robotMetaMarkerStateRef.current[kind]).forEach((m) => {
+        canvas.removeMarker(m.elementId, m.className);
+      });
+      asArray(robotMetaOverlayStateRef.current[kind]).forEach((id) => {
+        overlays.remove(id);
+      });
+    } catch {
+    }
+    robotMetaMarkerStateRef.current[kind] = [];
+    robotMetaOverlayStateRef.current[kind] = [];
+  }
+
+  function buildRobotMetaDecorPayload() {
+    const map = getRobotMetaMap();
+    return Object.keys(map)
+      .map((elementId) => {
+        const meta = map[elementId];
+        const mode = toText(meta?.exec?.mode).toLowerCase();
+        if (mode === "human") return null;
+        const incomplete = isRobotMetaIncomplete(meta);
+        const missingActionKey = !toText(meta?.exec?.action_key);
+        const tooltip = incomplete
+          ? `Robot meta incomplete: ${missingActionKey ? "missing action_key" : "check fields"}`
+          : `Robot meta ready: ${mode}`;
+        return {
+          elementId,
+          mode,
+          incomplete,
+          tooltip,
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function applyRobotMetaDecor(inst, kind) {
+    if (!inst) return;
+    clearRobotMetaDecor(inst, kind);
+    if (!robotMetaOverlayEnabledRef.current) return;
+    const payload = buildRobotMetaDecorPayload();
+    if (!payload.length) return;
+
+    try {
+      const canvas = inst.get("canvas");
+      const overlays = inst.get("overlays");
+      const registry = inst.get("elementRegistry");
+      payload.forEach((item) => {
+        const nodeId = toText(item?.elementId);
+        const el = findShapeByNodeId(registry, nodeId) || findShapeForHint(registry, { nodeId, title: nodeId });
+        if (!el) return;
+        const markerClass = item?.incomplete ? "fpcRobotMetaIncomplete" : "fpcRobotMetaReady";
+        canvas.addMarker(el.id, markerClass);
+        robotMetaMarkerStateRef.current[kind].push({ elementId: el.id, className: markerClass });
+
+        const badge = document.createElement("div");
+        badge.className = `fpcNodeBadge fpcNodeBadge--robot ${item?.incomplete ? "warn" : "ok"}`;
+        badge.textContent = item?.incomplete ? "R!" : "R";
+        badge.title = toText(item?.tooltip);
+
+        const overlayId = overlays.add(el.id, {
+          position: { top: -18, left: 2 },
+          html: badge,
+        });
+        robotMetaOverlayStateRef.current[kind].push(overlayId);
+      });
+    } catch {
+    }
+  }
+
+  function resolveFlashNodeClass(typeRaw) {
+    const type = toText(typeRaw).toLowerCase();
+    if (type === "ai") return "fpcNodeFlashAi";
+    if (type === "notes") return "fpcNodeFlashNotes";
+    if (type === "sync" || type === "xml") return "fpcNodeFlashSync";
+    if (type === "flow" || type === "transition") return "fpcNodeFlashFlow";
+    return "fpcNodeFlashAccent";
+  }
+
+  function resolveFlashBadgeClass(kindRaw) {
+    const kind = toText(kindRaw).toLowerCase();
+    if (kind === "notes") return "fpcNodeBadge--notes";
+    if (kind === "dod") return "fpcNodeBadge--dod";
+    return "fpcNodeBadge--ai";
+  }
+
+  function resolveFlashBadgeLabel(kindRaw) {
+    const kind = toText(kindRaw).toLowerCase();
+    if (kind === "notes") return "NOTES";
+    if (kind === "dod") return "DoD";
+    return "AI";
+  }
+
+  function resolveFlashPillLabel(typeRaw) {
+    const type = toText(typeRaw).toLowerCase();
+    if (type === "ai") return "AI added";
+    if (type === "notes") return "Note added";
+    if (type === "sync" || type === "xml") return "Synced";
+    if (type === "flow" || type === "transition") return "Branch added";
+    return "Updated";
+  }
+
+  function resolveShapeForNode(registry, nodeId) {
+    const nid = toText(nodeId);
+    if (!nid) return null;
+    return findShapeByNodeId(registry, nid) || findShapeForHint(registry, { nodeId: nid, title: nid });
+  }
+
+  function clearFlashDecor(inst, kind) {
+    const mode = kind === "editor" ? "editor" : "viewer";
+    const state = asObject(flashStateRef.current[mode]);
+    const canvas = inst?.get?.("canvas");
+    const overlays = inst?.get?.("overlays");
+
+    Object.keys(asObject(state.node)).forEach((key) => {
+      const entry = asObject(state.node[key]);
+      if (entry.timer) window.clearTimeout(entry.timer);
+      if (canvas && entry.elementId && entry.className) {
+        try {
+          canvas.removeMarker(entry.elementId, entry.className);
+        } catch {
+        }
+      }
+    });
+
+    Object.keys(asObject(state.badge)).forEach((key) => {
+      const entry = asObject(state.badge[key]);
+      if (entry.timer) window.clearTimeout(entry.timer);
+      if (entry.node && entry.className) {
+        try {
+          entry.node.classList.remove(entry.className);
+        } catch {
+        }
+      }
+      if (overlays && entry.overlayId) {
+        try {
+          overlays.remove(entry.overlayId);
+        } catch {
+        }
+      }
+    });
+
+    Object.keys(asObject(state.pill)).forEach((key) => {
+      const entry = asObject(state.pill[key]);
+      if (entry.timer) window.clearTimeout(entry.timer);
+      if (overlays && entry.overlayId) {
+        try {
+          overlays.remove(entry.overlayId);
+        } catch {
+        }
+      }
+    });
+
+    flashStateRef.current[mode] = createFlashRuntimeState();
+  }
+
+  function flashNodeOnInstance(inst, kind, nodeId, type = "accent", options = {}) {
+    if (!inst || prefersReducedMotionRef.current) return false;
+    const mode = kind === "editor" ? "editor" : "viewer";
+    const nid = toText(nodeId);
+    if (!nid) return false;
+    try {
+      const registry = inst.get("elementRegistry");
+      const canvas = inst.get("canvas");
+      const overlays = inst.get("overlays");
+      const el = resolveShapeForNode(registry, nid);
+      if (!isShapeElement(el)) return false;
+
+      const cls = resolveFlashNodeClass(type);
+      const durationRaw = Number(options?.durationMs);
+      const durationMs = Number.isFinite(durationRaw) ? Math.max(300, Math.min(3000, durationRaw)) : 820;
+      const nodeKey = `${nid}:${cls}`;
+      const nodeState = asObject(flashStateRef.current[mode].node[nodeKey]);
+      if (nodeState.timer) {
+        window.clearTimeout(nodeState.timer);
+      }
+      if (nodeState.elementId && nodeState.className) {
+        try {
+          canvas.removeMarker(nodeState.elementId, nodeState.className);
+        } catch {
+        }
+      }
+      canvas.addMarker(el.id, cls);
+      const timer = window.setTimeout(() => {
+        try {
+          canvas.removeMarker(el.id, cls);
+        } catch {
+        }
+        delete flashStateRef.current[mode].node[nodeKey];
+      }, durationMs);
+      flashStateRef.current[mode].node[nodeKey] = {
+        timer,
+        elementId: el.id,
+        className: cls,
+      };
+
+      const showPill = options?.showPill !== false;
+      if (!showPill) return true;
+      const pillKey = `${nid}:${toText(type).toLowerCase() || "accent"}`;
+      const pillPrev = asObject(flashStateRef.current[mode].pill[pillKey]);
+      if (pillPrev.timer) window.clearTimeout(pillPrev.timer);
+      if (pillPrev.overlayId) {
+        try {
+          overlays.remove(pillPrev.overlayId);
+        } catch {
+        }
+      }
+
+      const pill = document.createElement("div");
+      const typeClass = toText(type).toLowerCase() || "accent";
+      pill.className = `fpcNodeFlashPill is-${typeClass}`;
+      pill.textContent = String(options?.label || resolveFlashPillLabel(type));
+      const overlayId = overlays.add(el.id, {
+        position: { top: -34, right: -20 },
+        html: pill,
+      });
+      const pillDurationRaw = Number(options?.pillDurationMs);
+      const pillDuration = Number.isFinite(pillDurationRaw) ? Math.max(500, Math.min(4000, pillDurationRaw)) : 1800;
+      const pillTimer = window.setTimeout(() => {
+        try {
+          overlays.remove(overlayId);
+        } catch {
+        }
+        delete flashStateRef.current[mode].pill[pillKey];
+      }, pillDuration);
+      flashStateRef.current[mode].pill[pillKey] = {
+        timer: pillTimer,
+        overlayId,
+      };
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function flashBadgeOnInstance(inst, kind, nodeId, badgeKind = "ai", options = {}) {
+    if (!inst || prefersReducedMotionRef.current) return false;
+    const mode = kind === "editor" ? "editor" : "viewer";
+    const nid = toText(nodeId);
+    const bkind = toText(badgeKind).toLowerCase() || "ai";
+    if (!nid) return false;
+    const key = `${nid}:${bkind}`;
+    try {
+      const canvas = inst.get("canvas");
+      const overlays = inst.get("overlays");
+      const registry = inst.get("elementRegistry");
+      const el = resolveShapeForNode(registry, nid);
+      if (!isShapeElement(el)) return false;
+
+      const state = asObject(flashStateRef.current[mode].badge[key]);
+      if (state.timer) window.clearTimeout(state.timer);
+      if (state.overlayId) {
+        try {
+          overlays.remove(state.overlayId);
+        } catch {
+        }
+      }
+      if (state.node && state.className) {
+        try {
+          state.node.classList.remove(state.className);
+        } catch {
+        }
+      }
+
+      const container = canvas?._container || canvas?.getContainer?.();
+      let targetBadge = null;
+      if (container) {
+        const stacks = container.querySelectorAll(".fpcNodeBadgeStack[data-node-id]");
+        stacks.forEach((stackEl) => {
+          if (targetBadge) return;
+          if (toText(stackEl?.dataset?.nodeId) !== nid) return;
+          const badges = stackEl.querySelectorAll(".fpcNodeBadge[data-badge-kind]");
+          badges.forEach((badgeEl) => {
+            if (targetBadge) return;
+            if (toText(badgeEl?.dataset?.badgeKind).toLowerCase() === bkind) {
+              targetBadge = badgeEl;
+            }
+          });
+        });
+      }
+
+      const flashClass = "fpcNodeBadgeFlash";
+      const durationRaw = Number(options?.durationMs);
+      const durationMs = Number.isFinite(durationRaw) ? Math.max(300, Math.min(3000, durationRaw)) : 820;
+
+      if (targetBadge) {
+        targetBadge.classList.remove(flashClass);
+        // Force reflow to replay animation.
+        // eslint-disable-next-line no-unused-expressions
+        targetBadge.offsetHeight;
+        targetBadge.classList.add(flashClass);
+        const timer = window.setTimeout(() => {
+          try {
+            targetBadge.classList.remove(flashClass);
+          } catch {
+          }
+          delete flashStateRef.current[mode].badge[key];
+        }, durationMs);
+        flashStateRef.current[mode].badge[key] = {
+          timer,
+          node: targetBadge,
+          className: flashClass,
+        };
+        return true;
+      }
+
+      const ghost = document.createElement("div");
+      ghost.className = `fpcNodeBadge ${resolveFlashBadgeClass(bkind)} fpcNodeBadgeGhost ${flashClass}`;
+      ghost.textContent = String(options?.label || resolveFlashBadgeLabel(bkind));
+      const topOffset = bkind === "notes" ? 14 : (bkind === "dod" ? 32 : -12);
+      const overlayId = overlays.add(el.id, {
+        position: { top: topOffset, right: -20 },
+        html: ghost,
+      });
+      const timer = window.setTimeout(() => {
+        try {
+          overlays.remove(overlayId);
+        } catch {
+        }
+        delete flashStateRef.current[mode].badge[key];
+      }, durationMs);
+      flashStateRef.current[mode].badge[key] = {
+        timer,
+        overlayId,
+      };
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function flashNode(nodeId, type = "accent", options = {}) {
+    const nid = toText(nodeId);
+    if (!nid) return false;
+    const viewerOk = flashNodeOnInstance(viewerRef.current, "viewer", nid, type, options);
+    const editorOk = flashNodeOnInstance(modelerRef.current, "editor", nid, type, options);
+    return viewerOk || editorOk;
+  }
+
+  function flashBadge(nodeId, kind = "ai", options = {}) {
+    const nid = toText(nodeId);
+    if (!nid) return false;
+    const viewerOk = flashBadgeOnInstance(viewerRef.current, "viewer", nid, kind, options);
+    const editorOk = flashBadgeOnInstance(modelerRef.current, "editor", nid, kind, options);
+    return viewerOk || editorOk;
   }
 
   function clearFocusDecor(inst, kind) {
@@ -2376,45 +4270,64 @@ function logChangeElementTrace(stage, payload = {}) {
     if (inst && state.elementId) {
       try {
         const canvas = inst.get("canvas");
-        canvas.removeMarker(state.elementId, "fpcNodeFocus");
+        canvas.removeMarker(state.elementId, String(state.markerClass || "fpcNodeFocus"));
       } catch {
       }
     }
     state.elementId = "";
+    state.markerClass = "fpcNodeFocus";
   }
 
-  function focusNodeOnInstance(inst, kind, nodeId) {
+  function focusNodeOnInstance(inst, kind, nodeId, options = {}) {
     if (!inst) return false;
     try {
       const registry = inst.get("elementRegistry");
       const canvas = inst.get("canvas");
       const el = findShapeByNodeId(registry, nodeId);
       if (!el) return false;
+      const markerClass = String(options?.markerClass || "fpcNodeFocus").trim() || "fpcNodeFocus";
+      const durationRaw = Number(options?.durationMs);
+      const durationMs = Number.isFinite(durationRaw) ? Math.max(800, Math.min(8000, durationRaw)) : 1900;
+      const targetZoomRaw = Number(options?.targetZoom);
+      const targetZoom = Number.isFinite(targetZoomRaw)
+        ? Math.max(0.45, Math.min(1.6, targetZoomRaw))
+        : null;
+      const clearExistingSelection = options?.clearExistingSelection === true;
 
       const center = {
         x: Number(el.x || 0) + Number(el.width || 0) / 2,
         y: Number(el.y || 0) + Number(el.height || 0) / 2,
       };
 
-      if (typeof canvas.scrollToElement === "function") {
-        canvas.scrollToElement(el, { top: 120, bottom: 120, left: 180, right: 180 });
+      if (clearExistingSelection) {
+        clearSelectedDecor(inst, kind);
       }
-      const z = canvas.zoom();
-      if (!Number.isFinite(z) || z < 0.8) {
-        canvas.zoom(1, center);
+
+      if (typeof canvas.scrollToElement === "function") {
+        canvas.scrollToElement(el, { top: 170, bottom: 170, left: 250, right: 250 });
+      }
+      if (targetZoom !== null) {
+        canvas.zoom(targetZoom, center);
+      } else {
+        const z = canvas.zoom();
+        if (!Number.isFinite(z) || z < 0.8) {
+          canvas.zoom(1, center);
+        }
       }
 
       clearFocusDecor(inst, kind);
-      canvas.addMarker(el.id, "fpcNodeFocus");
+      canvas.addMarker(el.id, markerClass);
       focusStateRef.current[kind].elementId = el.id;
+      focusStateRef.current[kind].markerClass = markerClass;
       focusStateRef.current[kind].timer = window.setTimeout(() => {
         try {
-          canvas.removeMarker(el.id, "fpcNodeFocus");
+          canvas.removeMarker(el.id, markerClass);
         } catch {
         }
         focusStateRef.current[kind].elementId = "";
         focusStateRef.current[kind].timer = 0;
-      }, 1900);
+        focusStateRef.current[kind].markerClass = "fpcNodeFocus";
+      }, durationMs);
       return true;
     } catch {
       return false;
@@ -2451,13 +4364,15 @@ function logChangeElementTrace(stage, payload = {}) {
       const used = new Set();
 
       hints.forEach((hint) => {
-        const el = findShapeForHint(registry, hint);
+        const el = findDiagramElementForHint(registry, hint);
         if (!el || used.has(el.id)) return;
         used.add(el.id);
 
-        const cls = severityClass(hint?.severity);
+        const cls = String(hint?.markerClass || "").trim() || severityClass(hint?.severity);
         canvas.addMarker(el.id, cls);
         markerStateRef.current[kind].push({ elementId: el.id, className: cls });
+
+        if (hint?.hideTag) return;
 
         const tag = document.createElement("div");
         const aiHint = String(hint?.aiHint || hint?.ai_hint || "").trim();
@@ -2512,8 +4427,16 @@ function logChangeElementTrace(stage, payload = {}) {
     clearInterviewDecor(modelerRef.current, "editor");
     clearTaskTypeDecor(viewerRef.current, "viewer");
     clearTaskTypeDecor(modelerRef.current, "editor");
+    clearHappyFlowDecor(viewerRef.current, "viewer");
+    clearHappyFlowDecor(modelerRef.current, "editor");
     clearUserNotesDecor(viewerRef.current, "viewer");
     clearUserNotesDecor(modelerRef.current, "editor");
+    clearStepTimeDecor(viewerRef.current, "viewer");
+    clearStepTimeDecor(modelerRef.current, "editor");
+    clearRobotMetaDecor(viewerRef.current, "viewer");
+    clearRobotMetaDecor(modelerRef.current, "editor");
+    clearFlashDecor(viewerRef.current, "viewer");
+    clearFlashDecor(modelerRef.current, "editor");
     try {
       viewerRef.current?.destroy?.();
     } catch {
@@ -2526,9 +4449,16 @@ function logChangeElementTrace(stage, payload = {}) {
     overlayStateRef.current = { viewer: [], editor: [] };
     interviewMarkerStateRef.current = { viewer: [], editor: [] };
     interviewOverlayStateRef.current = { viewer: [], editor: [] };
+    interviewDecorSignatureRef.current = { viewer: "", editor: "" };
     taskTypeMarkerStateRef.current = { viewer: [], editor: [] };
+    happyFlowMarkerStateRef.current = { viewer: [], editor: [] };
+    happyFlowStyledStateRef.current = { viewer: [], editor: [] };
     userNotesMarkerStateRef.current = { viewer: [], editor: [] };
     userNotesOverlayStateRef.current = { viewer: [], editor: [] };
+    stepTimeOverlayStateRef.current = { viewer: [], editor: [] };
+    robotMetaMarkerStateRef.current = { viewer: [], editor: [] };
+    robotMetaOverlayStateRef.current = { viewer: [], editor: [] };
+    focusMarkerStateRef.current = { viewer: [], editor: [] };
     aiQuestionPanelStateRef.current = {
       viewer: { overlayId: null, elementId: "" },
       editor: { overlayId: null, elementId: "" },
@@ -2536,8 +4466,12 @@ function logChangeElementTrace(stage, payload = {}) {
     aiQuestionPanelTargetRef.current = { viewer: "", editor: "" };
     selectedMarkerStateRef.current = { viewer: "", editor: "" };
     focusStateRef.current = {
-      viewer: { elementId: "", timer: 0 },
-      editor: { elementId: "", timer: 0 },
+      viewer: { elementId: "", timer: 0, markerClass: "fpcNodeFocus" },
+      editor: { elementId: "", timer: 0, markerClass: "fpcNodeFocus" },
+    };
+    flashStateRef.current = {
+      viewer: createFlashRuntimeState(),
+      editor: createFlashRuntimeState(),
     };
     viewerRef.current = null;
     modelerRef.current = null;
@@ -2663,7 +4597,10 @@ function logChangeElementTrace(stage, payload = {}) {
       }
       const mod = await import("bpmn-js/lib/NavigatedViewer");
       const Viewer = mod.default || mod;
-      const v = new Viewer({ container: viewerEl.current });
+      const v = new Viewer({
+        container: viewerEl.current,
+        moddleExtensions: { pm: pmModdleDescriptor },
+      });
       runtimeInstanceSeq += 1;
       viewerInstanceMetaRef.current = {
         id: runtimeInstanceSeq,
@@ -2679,20 +4616,9 @@ function logChangeElementTrace(stage, payload = {}) {
       viewerReadyRef.current = false;
       try {
         const eventBus = v.get("eventBus");
-        eventBus.on("element.click", 2000, (ev) => {
-          const el = ev?.element;
-          if (!isSelectableElement(el)) return;
-          setSelectedDecor(v, "viewer", el.id);
-          emitElementSelection(el, "viewer.element_click");
-          syncAiQuestionPanelWithSelection(v, "viewer", el, "viewer.element_click");
-        });
-        eventBus.on("canvas.click", 2000, () => {
-          clearSelectedDecor(v, "viewer");
-          emitElementSelectionChange(null);
-          clearAiQuestionPanel(v, "viewer");
-        });
         eventBus.on("selection.changed", 2000, (ev) => {
-          const selected = asArray(ev?.newSelection)[0];
+          const selectedList = asArray(ev?.newSelection).filter((el) => isSelectableElement(el));
+          const selected = selectedList[0];
           if (!isSelectableElement(selected)) {
             clearSelectedDecor(v, "viewer");
             emitElementSelectionChange(null);
@@ -2700,7 +4626,11 @@ function logChangeElementTrace(stage, payload = {}) {
             return;
           }
           setSelectedDecor(v, "viewer", selected.id);
-          emitElementSelection(selected, "viewer.selection_changed");
+          const candidate = buildInsertBetweenCandidate(v, selectedList);
+          emitElementSelection(selected, "viewer.selection_changed", {
+            selectedIds: selectedList.map((item) => String(item?.id || "")),
+            insertBetween: candidate,
+          });
           syncAiQuestionPanelWithSelection(v, "viewer", selected, "viewer.selection_changed");
         });
         eventBus.on("canvas.viewbox.changed", 1200, () => {
@@ -2774,28 +4704,23 @@ function logChangeElementTrace(stage, payload = {}) {
       runtimeTokenRef.current = Number(runtimeStatus?.token || runtimeTokenRef.current || 0);
       modelerReadyRef.current = !!runtimeStatus?.ready && !!runtimeStatus?.defs;
       try {
-        if (m && modelerDecorBoundInstanceRef.current !== m) {
-          const eventBus = m.get("eventBus");
+          if (m && modelerDecorBoundInstanceRef.current !== m) {
+            const eventBus = m.get("eventBus");
           eventBus.on("commandStack.shape.replace.preExecute", 2200, (ev) => {
             captureShapeReplacePre(ev, "commandStack.shape.replace.preExecute");
           });
           eventBus.on("commandStack.shape.replace.postExecute", 2200, (ev) => {
             applyShapeReplacePost(m, ev, "commandStack.shape.replace.postExecute");
           });
-          eventBus.on("element.click", 2000, (ev) => {
-            const el = ev?.element;
-            if (!isSelectableElement(el)) return;
-            setSelectedDecor(m, "editor", el.id);
-            emitElementSelection(el, "editor.element_click");
-            syncAiQuestionPanelWithSelection(m, "editor", el, "editor.element_click");
-          });
-          eventBus.on("canvas.click", 2000, () => {
-            clearSelectedDecor(m, "editor");
-            emitElementSelectionChange(null);
-            clearAiQuestionPanel(m, "editor");
+          eventBus.on("commandStack.changed", 900, () => {
+            applyTaskTypeDecor(m, "editor");
+            applyLinkEventDecor(m, "editor");
+            applyHappyFlowDecor(m, "editor");
+            applyRobotMetaDecor(m, "editor");
           });
           eventBus.on("selection.changed", 2000, (ev) => {
-            const selected = asArray(ev?.newSelection)[0];
+            const selectedList = asArray(ev?.newSelection).filter((el) => isSelectableElement(el));
+            const selected = selectedList[0];
             if (!isSelectableElement(selected)) {
               clearSelectedDecor(m, "editor");
               emitElementSelectionChange(null);
@@ -2803,7 +4728,11 @@ function logChangeElementTrace(stage, payload = {}) {
               return;
             }
             setSelectedDecor(m, "editor", selected.id);
-            emitElementSelection(selected, "editor.selection_changed");
+            const candidate = buildInsertBetweenCandidate(m, selectedList);
+            emitElementSelection(selected, "editor.selection_changed", {
+              selectedIds: selectedList.map((item) => String(item?.id || "")),
+              insertBetween: candidate,
+            });
             syncAiQuestionPanelWithSelection(m, "editor", selected, "editor.selection_changed");
           });
           eventBus.on("canvas.viewbox.changed", 1200, () => {
@@ -2915,9 +4844,13 @@ function logChangeElementTrace(stage, payload = {}) {
       });
     }
     applyTaskTypeDecor(v, "viewer");
+    applyLinkEventDecor(v, "viewer");
+    applyHappyFlowDecor(v, "viewer");
+    applyRobotMetaDecor(v, "viewer");
     applyBottleneckDecor(v, "viewer");
     applyInterviewDecor(v, "viewer");
     applyUserNotesDecor(v, "viewer");
+    applyStepTimeDecor(v, "viewer");
   }
 
   async function renderModeler(nextXml) {
@@ -3060,9 +4993,13 @@ function logChangeElementTrace(stage, payload = {}) {
         });
       }
       applyTaskTypeDecor(m, "editor");
+      applyLinkEventDecor(m, "editor");
+      applyHappyFlowDecor(m, "editor");
+      applyRobotMetaDecor(m, "editor");
       applyBottleneckDecor(m, "editor");
       applyInterviewDecor(m, "editor");
       applyUserNotesDecor(m, "editor");
+      applyStepTimeDecor(m, "editor");
     })();
 
     modelerImportInFlightRef.current = { sid: sidNow, xmlHash, promise: importPromise };
@@ -3166,9 +5103,13 @@ function logChangeElementTrace(stage, payload = {}) {
       });
     }
     applyTaskTypeDecor(m, "editor");
+    applyLinkEventDecor(m, "editor");
+    applyHappyFlowDecor(m, "editor");
+    applyRobotMetaDecor(m, "editor");
     applyBottleneckDecor(m, "editor");
     applyInterviewDecor(m, "editor");
     applyUserNotesDecor(m, "editor");
+    applyStepTimeDecor(m, "editor");
   }
 
   function getRecoveryXmlCandidate() {
@@ -3208,9 +5149,13 @@ function logChangeElementTrace(stage, payload = {}) {
         cycleIndex,
       });
       applyTaskTypeDecor(inst, "editor");
+      applyLinkEventDecor(inst, "editor");
+      applyHappyFlowDecor(inst, "editor");
+      applyRobotMetaDecor(inst, "editor");
       applyBottleneckDecor(inst, "editor");
       applyInterviewDecor(inst, "editor");
       applyUserNotesDecor(inst, "editor");
+      applyStepTimeDecor(inst, "editor");
       return true;
     }
 
@@ -3235,9 +5180,13 @@ function logChangeElementTrace(stage, payload = {}) {
         cycleIndex,
       });
       applyTaskTypeDecor(inst, "viewer");
+      applyLinkEventDecor(inst, "viewer");
+      applyHappyFlowDecor(inst, "viewer");
+      applyRobotMetaDecor(inst, "viewer");
       applyBottleneckDecor(inst, "viewer");
       applyInterviewDecor(inst, "viewer");
       applyUserNotesDecor(inst, "viewer");
+      applyStepTimeDecor(inst, "viewer");
       return true;
     }
 
@@ -3285,9 +5234,13 @@ function logChangeElementTrace(stage, payload = {}) {
         cycleIndex,
       });
       applyTaskTypeDecor(m, "editor");
+      applyLinkEventDecor(m, "editor");
+      applyHappyFlowDecor(m, "editor");
+      applyRobotMetaDecor(m, "editor");
       applyBottleneckDecor(m, "editor");
       applyInterviewDecor(m, "editor");
       applyUserNotesDecor(m, "editor");
+      applyStepTimeDecor(m, "editor");
       return true;
     }
 
@@ -3323,9 +5276,13 @@ function logChangeElementTrace(stage, payload = {}) {
         cycleIndex,
       });
       applyTaskTypeDecor(v, "viewer");
+      applyLinkEventDecor(v, "viewer");
+      applyHappyFlowDecor(v, "viewer");
+      applyRobotMetaDecor(v, "viewer");
       applyBottleneckDecor(v, "viewer");
       applyInterviewDecor(v, "viewer");
       applyUserNotesDecor(v, "viewer");
+      applyStepTimeDecor(v, "viewer");
       return true;
     }
 
@@ -3692,6 +5649,13 @@ function logChangeElementTrace(stage, payload = {}) {
         runtimeTokenRef.current = Number(status?.token || runtimeTokenRef.current || 0);
       }
 
+      const activeModeler = modelerRef.current || runtime.getInstance?.();
+      const robotSync = syncRobotMetaToModeler(activeModeler);
+      if (!robotSync?.ok && shouldLogBpmnTrace()) {
+        // eslint-disable-next-line no-console
+        console.warn(`[ROBOT_META] sync_before_save_failed sid=${sid} reason=${String(robotSync?.reason || "unknown")}`);
+      }
+
       const flushed = await coordinator.flushSave(source, { force, trigger });
       const nextState = bpmnStoreRef.current?.getState?.() || {};
       const out = String(nextState.xml || fallbackXml || "");
@@ -3847,30 +5811,21 @@ function logChangeElementTrace(stage, payload = {}) {
       const resolvedHash = fnv1aHex(resolvedXml);
       const storeEvent = lastStoreEventRef.current || {};
       try {
-        if (view === "diagram") {
-          if (!resolvedXml || !resolvedXml.trim() || isStale("diagram.no_xml")) return;
-          if ((!xml || !xml.trim()) && draftXml.trim()) {
-            applyXmlSnapshot(draftXml, srcHint || "draft");
-          }
-          if (isStale("diagram.before_render")) return;
-          await renderViewer(resolvedXml);
-          if (isStale("diagram.after_render")) return;
-        }
-        if (view === "editor") {
+        if (view === "editor" || view === "diagram") {
           const localSession = isLocalSessionId(sid);
           if (!resolvedXml || !resolvedXml.trim()) {
             // Wait until load source is resolved to avoid creating a transient empty diagram
             // before backend/draft XML arrives.
-            if (!srcHint || isStale("editor.no_xml")) return;
+            if (!srcHint || isStale("modeler.no_xml")) return;
             if (localSession) {
-              if (isStale("editor.create_local.before")) return;
+              if (isStale("modeler.create_local.before")) return;
               await renderNewDiagramInModeler();
-              if (isStale("editor.create_local.after")) return;
+              if (isStale("modeler.create_local.after")) return;
               return;
             }
-            if (isStale("editor.create_remote.before")) return;
+            if (isStale("modeler.create_remote.before")) return;
             await renderNewDiagramInModeler();
-            if (isStale("editor.create_remote.after")) return;
+            if (isStale("modeler.create_remote.after")) return;
             return;
           }
           if ((!xml || !xml.trim()) && draftXml.trim()) {
@@ -3888,7 +5843,7 @@ function logChangeElementTrace(stage, payload = {}) {
             );
           if (modelerReady && isInternalModelerUpdate) {
             lastModelerXmlHashRef.current = resolvedHash;
-            if (isStale("editor.keep_view.before")) return;
+            if (isStale("modeler.keep_view.before")) return;
             await ensureCanvasVisibleAndFit(modelerRef.current, "renderModeler.keep_view", sid, {
               reason: "editor_internal_update",
               tab: "diagram",
@@ -3896,11 +5851,11 @@ function logChangeElementTrace(stage, payload = {}) {
               allowFit: false,
               suppressViewbox: suppressViewboxEvents,
             });
-            if (isStale("editor.keep_view.after")) return;
+            if (isStale("modeler.keep_view.after")) return;
             return;
           }
           if (modelerReady && lastModelerXmlHashRef.current === resolvedHash) {
-            if (isStale("editor.same_hash.before")) return;
+            if (isStale("modeler.same_hash.before")) return;
             await ensureCanvasVisibleAndFit(modelerRef.current, "renderModeler.same_hash", sid, {
               reason: "editor_same_hash",
               tab: "diagram",
@@ -3908,13 +5863,13 @@ function logChangeElementTrace(stage, payload = {}) {
               allowFit: false,
               suppressViewbox: suppressViewboxEvents,
             });
-            if (isStale("editor.same_hash.after")) return;
+            if (isStale("modeler.same_hash.after")) return;
             return;
           }
           userViewportTouchedRef.current = false;
-          if (isStale("editor.render.before")) return;
+          if (isStale("modeler.render.before")) return;
           await renderModeler(resolvedXml);
-          if (isStale("editor.render.after")) return;
+          if (isStale("modeler.render.after")) return;
         }
       } catch (e) {
         if (isStale("catch")) return;
@@ -3998,15 +5953,46 @@ function logChangeElementTrace(stage, payload = {}) {
     }
   }, [view, xmlDraft, xml, sessionId]);
 
-  useEffect(() => {
-    applyInterviewDecor(viewerRef.current, "viewer");
-    applyInterviewDecor(modelerRef.current, "editor");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft?.interview, draft?.nodes]);
+  const interviewDecorSignature = useMemo(
+    () => buildInterviewDecorSignature(draft, aiQuestionsModeEnabled, diagramDisplayMode),
+    [
+      draft?.interview?.steps,
+      draft?.interview?.ai_questions_by_element,
+      draft?.interview?.aiQuestionsByElementId,
+      draft?.nodes,
+      draft?.notes_by_element,
+      draft?.notesByElementId,
+      aiQuestionsModeEnabled,
+      diagramDisplayMode,
+    ],
+  );
 
   useEffect(() => {
-    applyUserNotesDecor(viewerRef.current, "viewer");
-    applyUserNotesDecor(modelerRef.current, "editor");
+    applyInterviewDecor(viewerRef.current, "viewer", { signature: interviewDecorSignature });
+    applyInterviewDecor(modelerRef.current, "editor", { signature: interviewDecorSignature });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    interviewDecorSignature,
+  ]);
+
+  useEffect(() => {
+    applyHappyFlowDecor(viewerRef.current, "viewer");
+    applyHappyFlowDecor(modelerRef.current, "editor");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft?.bpmn_meta, view]);
+
+  useEffect(() => {
+    if (isInterviewDecorModeOn()) {
+      clearUserNotesDecor(viewerRef.current, "viewer");
+      clearUserNotesDecor(modelerRef.current, "editor");
+    } else {
+      applyUserNotesDecor(viewerRef.current, "viewer");
+      applyUserNotesDecor(modelerRef.current, "editor");
+    }
+    applyStepTimeDecor(viewerRef.current, "viewer");
+    applyStepTimeDecor(modelerRef.current, "editor");
+    applyRobotMetaDecor(viewerRef.current, "viewer");
+    applyRobotMetaDecor(modelerRef.current, "editor");
     const kind = view === "editor" ? "editor" : "viewer";
     const inst = kind === "editor" ? modelerRef.current : viewerRef.current;
     const selectedId = String(selectedMarkerStateRef.current[kind] || "");
@@ -4019,7 +6005,54 @@ function logChangeElementTrace(stage, payload = {}) {
     } catch {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft?.notes_by_element, draft?.notesByElementId, view]);
+  }, [draft?.notes_by_element, draft?.notesByElementId, draft?.nodes, draft?.bpmn_meta, view, diagramDisplayMode, stepTimeUnit, robotMetaOverlayEnabled]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onFlash = (event) => {
+      const detail = event?.detail && typeof event.detail === "object" ? event.detail : {};
+      const sid = toText(detail?.sid || detail?.sessionId);
+      const activeSid = toText(activeSessionRef.current || sessionId);
+      if (sid && activeSid && sid !== activeSid) return;
+      const nodeId = toText(detail?.elementId || detail?.nodeId || detail?.stepId);
+      if (!nodeId) return;
+      const type = toText(detail?.type || "accent") || "accent";
+      flashNode(nodeId, type, {
+        label: toText(detail?.label),
+      });
+      const badgeKind = toText(detail?.badgeKind || detail?.kind);
+      if (badgeKind) {
+        flashBadge(nodeId, badgeKind, {
+          label: toText(detail?.badgeLabel),
+        });
+      }
+    };
+    window.addEventListener(DIAGRAM_FLASH_EVENT, onFlash);
+    return () => window.removeEventListener(DIAGRAM_FLASH_EVENT, onFlash);
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onEsc = (event) => {
+      if (String(event?.key || "") !== "Escape") return;
+      const target = event?.target;
+      const tag = String(target?.tagName || "").toLowerCase();
+      const editable = (
+        tag === "input"
+        || tag === "textarea"
+        || String(target?.getAttribute?.("contenteditable") || "").toLowerCase() === "true"
+      );
+      if (editable) return;
+      clearSelectedDecor(viewerRef.current, "viewer");
+      clearSelectedDecor(modelerRef.current, "editor");
+      clearAiQuestionPanel(viewerRef.current, "viewer");
+      clearAiQuestionPanel(modelerRef.current, "editor");
+      emitElementSelectionChange(null);
+    };
+    window.addEventListener("keydown", onEsc);
+    return () => window.removeEventListener("keydown", onEsc);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -4225,16 +6258,55 @@ function logChangeElementTrace(stage, payload = {}) {
         clearBottleneckDecor(viewerRef.current, "viewer");
         clearBottleneckDecor(modelerRef.current, "editor");
       },
-      focusNode: (nodeId) => {
+      focusNode: (nodeId, options = {}) => {
         const nid = String(nodeId || "").trim();
         if (!nid) return false;
+        const markerClass = String(options?.markerClass || "").trim();
         if (view === "editor") {
-          const direct = modelerRuntimeRef.current?.focus?.(nid);
+          const direct = markerClass ? false : modelerRuntimeRef.current?.focus?.(nid);
           if (direct) return true;
         }
-        const viewerOk = focusNodeOnInstance(viewerRef.current, "viewer", nid);
-        const editorOk = focusNodeOnInstance(modelerRef.current, "editor", nid);
+        const viewerOk = focusNodeOnInstance(viewerRef.current, "viewer", nid, options);
+        const editorOk = focusNodeOnInstance(modelerRef.current, "editor", nid, options);
         return viewerOk || editorOk;
+      },
+      flashNode: (nodeId, type = "accent", options = {}) => flashNode(nodeId, type, options),
+      flashBadge: (nodeId, kind = "ai", options = {}) => flashBadge(nodeId, kind, options),
+      captureTemplatePack: async (options = {}) => {
+        let inst = modelerRef.current;
+        if (!inst) {
+          try {
+            inst = await ensureModeler();
+          } catch {
+            inst = null;
+          }
+        }
+        if (!inst) return { ok: false, error: "modeler_not_ready" };
+        return captureTemplatePackOnModeler(inst, options);
+      },
+      insertTemplatePack: async (payload = {}) => {
+        try {
+          return await insertTemplatePackOnModeler(payload);
+        } catch (error) {
+          return {
+            ok: false,
+            error: String(error?.message || error || "insert_failed"),
+          };
+        }
+      },
+      applyCommandOps: async (payload = {}) => {
+        try {
+          return await applyCommandOpsOnModeler(payload);
+        } catch (error) {
+          return {
+            ok: false,
+            applied: 0,
+            failed: 0,
+            changedIds: [],
+            results: [],
+            error: String(error?.message || error || "apply_ops_failed"),
+          };
+        }
       },
       importXmlText: async (xmlText) => {
         const raw = String(xmlText || "");
@@ -4257,10 +6329,10 @@ function logChangeElementTrace(stage, payload = {}) {
         }
 
         try {
-          if (view === "editor") {
+          if (view === "editor" || view === "diagram") {
             await renderModeler(raw);
           }
-          if (view === "diagram") {
+          if (view === "viewer") {
             await renderViewer(raw);
           }
           return true;
@@ -4293,14 +6365,14 @@ function logChangeElementTrace(stage, payload = {}) {
 
       <div className={view === "xml" ? "bpmnStack hidden" : "bpmnStack"}>
         <div
-          className={"bpmnLayer bpmnLayer--diagram " + (view === "diagram" ? "on" : "off")}
-          style={{ position: "absolute", inset: 0, display: view === "diagram" ? "block" : "none" }}
+          className={"bpmnLayer bpmnLayer--diagram " + (view === "viewer" ? "on" : "off")}
+          style={{ position: "absolute", inset: 0, display: view === "viewer" ? "block" : "none" }}
         >
           <div className="bpmnCanvas" ref={viewerEl} style={{ width: "100%", height: "100%" }} />
         </div>
         <div
-          className={"bpmnLayer bpmnLayer--editor " + (view === "editor" ? "on" : "off")}
-          style={{ position: "absolute", inset: 0, display: view === "editor" ? "block" : "none" }}
+          className={"bpmnLayer bpmnLayer--editor " + ((view === "editor" || view === "diagram") ? "on" : "off")}
+          style={{ position: "absolute", inset: 0, display: (view === "editor" || view === "diagram") ? "block" : "none" }}
         >
           <div className="bpmnCanvas" ref={editorEl} style={{ width: "100%", height: "100%" }} />
         </div>

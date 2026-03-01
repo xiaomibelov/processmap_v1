@@ -1,9 +1,16 @@
 import { expect, test } from "@playwright/test";
-import { fnv1aHex, hasDiMarkers, makeBigDiagramXml, makeMatrixCases } from "./helpers/bpmnFixtures.mjs";
+import { fnv1aHex, hasDiMarkers, makeBigDiagramXmlOptional, makeMatrixCases } from "./helpers/bpmnFixtures.mjs";
+import { apiLogin, setUiToken } from "./helpers/e2eAuth.mjs";
 
 const API_BASE = process.env.E2E_API_BASE_URL || "http://127.0.0.1:8011";
 
-async function apiJson(res, opLabel) {
+function payloadKeys(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return "-";
+  const keys = Object.keys(payload);
+  return keys.length ? keys.join(",") : "-";
+}
+
+async function apiJson(res, opLabel, meta = {}) {
   const txt = await res.text();
   let body = {};
   try {
@@ -11,36 +18,56 @@ async function apiJson(res, opLabel) {
   } catch {
     body = { raw: txt };
   }
-  expect(res.ok(), `${opLabel}: ${txt}`).toBeTruthy();
+  const url = String(meta?.url || res.url?.() || "-");
+  const keys = payloadKeys(meta?.payload);
+  expect(
+    res.ok(),
+    `${opLabel}: status=${res.status()} endpoint=${url} payloadKeys=${keys} body=${txt}`,
+  ).toBeTruthy();
   return body;
 }
 
-async function createFixture(request, runId, xmlText) {
+async function createFixture(request, runId, xmlText, authHeaders) {
+  const projectPayload = { title: `E2E big matrix project ${runId}`, passport: {} };
   const projectRes = await request.post(`${API_BASE}/api/projects`, {
-    data: { title: `E2E big matrix project ${runId}`, passport: {} },
+    headers: authHeaders,
+    data: projectPayload,
   });
-  const project = await apiJson(projectRes, "create project");
+  const project = await apiJson(projectRes, "create project", {
+    url: `${API_BASE}/api/projects`,
+    payload: projectPayload,
+  });
   const projectId = String(project.id || project.project_id || "").trim();
   expect(projectId).not.toBe("");
 
+  const sessionPayload = {
+    title: `E2E big matrix session ${runId}`,
+    roles: ["Lane 1", "Lane 2", "Lane 3"],
+    start_role: "Lane 1",
+  };
   const sessionRes = await request.post(
     `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/sessions?mode=quick_skeleton`,
     {
-      data: {
-        title: `E2E big matrix session ${runId}`,
-        roles: ["Lane 1", "Lane 2", "Lane 3"],
-        start_role: "Lane 1",
-      },
+      headers: authHeaders,
+      data: sessionPayload,
     },
   );
-  const session = await apiJson(sessionRes, "create session");
+  const session = await apiJson(sessionRes, "create session", {
+    url: `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/sessions?mode=quick_skeleton`,
+    payload: sessionPayload,
+  });
   const sessionId = String(session.id || session.session_id || "").trim();
   expect(sessionId).not.toBe("");
 
+  const bpmnPayload = { xml: xmlText };
   const putRes = await request.put(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/bpmn`, {
-    data: { xml: xmlText },
+    headers: authHeaders,
+    data: bpmnPayload,
   });
-  await apiJson(putRes, "seed bpmn");
+  await apiJson(putRes, "seed bpmn", {
+    url: `${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/bpmn`,
+    payload: bpmnPayload,
+  });
 
   return { projectId, sessionId };
 }
@@ -51,7 +78,8 @@ async function switchTab(page, title) {
   await btn.click();
 }
 
-async function openFixture(page, fixture, options = {}) {
+async function openFixture(page, fixture, accessToken, options = {}) {
+  const projectSelect = page.locator(".topbar .topSelect--project");
   if (!options?.skipInit) {
     await page.addInitScript(() => {
       window.__FPC_E2E__ = true;
@@ -61,8 +89,15 @@ async function openFixture(page, fixture, options = {}) {
       window.localStorage.setItem("fpc_debug_snapshots", "1");
     });
   }
-  if (!options?.skipGoto) await page.goto("/");
-  await expect(page.locator(".topbar .topSelect--project")).toBeVisible();
+  if (!options?.skipGoto) await page.goto("/app");
+  const hasWorkspace = await projectSelect.isVisible({ timeout: 3000 }).catch(() => false);
+  if (!hasWorkspace) {
+    await page.evaluate((token) => {
+      window.localStorage.setItem("fpc_auth_access_token", String(token || ""));
+    }, accessToken);
+    await page.reload({ waitUntil: "domcontentloaded" });
+  }
+  await expect(projectSelect).toBeVisible();
   await page.selectOption(".topbar .topSelect--project", fixture.projectId);
   await page.getByRole("button", { name: "Обновить" }).click();
   await expect(page.locator(`.topbar .topSelect--session option[value="${fixture.sessionId}"]`)).toHaveCount(1);
@@ -181,11 +216,21 @@ async function openVersionsModal(page) {
   await expect(trigger).toBeVisible();
   await trigger.evaluate((node) => node.click());
   await expect(page.getByTestId("bpmn-versions-modal")).toBeVisible();
+  const emptyState = page.getByText("История пуста.");
+  const firstCard = page.getByTestId("bpmn-version-item").first();
+  await expect
+    .poll(async () => {
+      const emptyVisible = await emptyState.isVisible().catch(() => false);
+      const cardVisible = await firstCard.isVisible().catch(() => false);
+      return emptyVisible || cardVisible;
+    })
+    .toBeTruthy();
 }
 
 test("big tab transition matrix keeps diagram stable across tab chains, reload, and snapshot restore", async ({ page, request }) => {
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const seedXml = makeBigDiagramXml({
+  const auth = await apiLogin(request, { apiBase: API_BASE });
+  const fixturePayload = await makeBigDiagramXmlOptional({
     seed: 20260221,
     pools: 2,
     lanes: 3,
@@ -193,12 +238,73 @@ test("big tab transition matrix keeps diagram stable across tab chains, reload, 
     edges: 14,
     annotations: 3,
   });
-  const fixture = await createFixture(request, runId, seedXml);
+  const seedXml = String(fixturePayload?.xml || "");
+  // eslint-disable-next-line no-console
+  console.log(
+    `[FIXTURE] source=${String(fixturePayload?.source || "unknown")} xmlLen=${seedXml.length} hasDI=${hasDiMarkers(seedXml) ? "true" : "false"} hash=${fnv1aHex(seedXml)}`,
+  );
+  const fixture = await createFixture(request, runId, seedXml, auth.headers);
 
   const putStatuses = [];
+  const putPayloads = [];
+  const telemetry = {
+    persistOkCount: 0,
+    snapshotDecisionCount: 0,
+    snapshotSavedCount: 0,
+    snapshotPruneCount: 0,
+    lastPersistHash: "",
+    lastPersistLen: 0,
+    lastSnapshotKey: "",
+    decisionReasons: {},
+  };
   const matrixCases = makeMatrixCases();
 
-  await openFixture(page, fixture);
+  page.on("request", (req) => {
+    if (req.method() !== "PUT") return;
+    if (!/\/api\/sessions\/[^/]+\/bpmn(?:\?|$)/.test(req.url())) return;
+    try {
+      const body = req.postDataJSON?.() || {};
+      const xml = String(body?.xml || "");
+      putPayloads.push({ hash: fnv1aHex(xml), len: xml.length });
+    } catch {
+      putPayloads.push({ hash: "", len: 0 });
+    }
+  });
+  page.on("console", (msg) => {
+    const text = String(msg?.text?.() || "");
+    if (!text) return;
+    if (text.includes("PERSIST_OK")) {
+      telemetry.persistOkCount += 1;
+      const hashMatch = text.match(/\bhash=([0-9a-f]{8})\b/i);
+      const lenMatch = text.match(/\blen=(\d+)\b/i);
+      const keyMatch = text.match(/key="([^"]*)"/);
+      if (hashMatch) telemetry.lastPersistHash = String(hashMatch[1] || "");
+      if (lenMatch) telemetry.lastPersistLen = Number(lenMatch[1] || 0);
+      if (keyMatch) telemetry.lastSnapshotKey = String(keyMatch[1] || "");
+      return;
+    }
+    if (text.includes("SNAPSHOT_DECISION")) {
+      telemetry.snapshotDecisionCount += 1;
+      const reasonMatch = text.match(/\breason=([a-z_]+)/i);
+      const keyMatch = text.match(/key="([^"]*)"/);
+      const reason = String((reasonMatch && reasonMatch[1]) || "unknown");
+      telemetry.decisionReasons[reason] = Number(telemetry.decisionReasons[reason] || 0) + 1;
+      if (keyMatch) telemetry.lastSnapshotKey = String(keyMatch[1] || telemetry.lastSnapshotKey);
+      return;
+    }
+    if (text.includes("SNAPSHOT_SAVED")) {
+      telemetry.snapshotSavedCount += 1;
+      const keyMatch = text.match(/key="([^"]*)"/);
+      if (keyMatch) telemetry.lastSnapshotKey = String(keyMatch[1] || telemetry.lastSnapshotKey);
+      return;
+    }
+    if (text.includes("SNAPSHOT_PRUNE")) {
+      telemetry.snapshotPruneCount += 1;
+    }
+  });
+
+  await setUiToken(page, auth.accessToken);
+  await openFixture(page, fixture, auth.accessToken);
   await assertDiagramVisible(page, "diagram_initial");
 
   let currentTab = "Diagram";
@@ -271,7 +377,7 @@ test("big tab transition matrix keeps diagram stable across tab chains, reload, 
         const beforeReload = await readXmlFromDiagram(page);
         const latestMarker = diagramMarkers[diagramMarkers.length - 1] || "";
         await page.reload({ waitUntil: "domcontentloaded" });
-        await openFixture(page, fixture, { skipGoto: true, skipInit: true });
+        await openFixture(page, fixture, auth.accessToken, { skipGoto: true, skipInit: true });
         currentTab = "Diagram";
         await assertDiagramVisible(page, "diagram_after_reload");
         const afterReload = await readXmlFromDiagram(page);
@@ -294,6 +400,24 @@ test("big tab transition matrix keeps diagram stable across tab chains, reload, 
   await openVersionsModal(page);
   const cards = page.getByTestId("bpmn-version-item");
   const cardCount = await cards.count();
+  const debugFlags = await page.evaluate(() => {
+    try {
+      return {
+        snapshots: String(window.localStorage?.getItem("fpc_debug_snapshots") || ""),
+      };
+    } catch {
+      return { snapshots: "" };
+    }
+  });
+  // eslint-disable-next-line no-console
+  console.log(
+    `[E2E_SUMMARY] persistOkCount=${telemetry.persistOkCount} putCount=${putStatuses.length} `
+    + `putPayloadCount=${putPayloads.length} lastPutHash=${putPayloads[putPayloads.length - 1]?.hash || ""} `
+    + `lastPutLen=${Number(putPayloads[putPayloads.length - 1]?.len || 0)} `
+    + `snapshotDecisionCount=${telemetry.snapshotDecisionCount} snapshotSavedCount=${telemetry.snapshotSavedCount} `
+    + `snapshotPruneCount=${telemetry.snapshotPruneCount} decisionReasons=${JSON.stringify(telemetry.decisionReasons)} `
+    + `lastSnapshotKey="${telemetry.lastSnapshotKey}" debugSnapshots=${String(debugFlags?.snapshots || "")} uiCardCount=${cardCount}`,
+  );
   expect(cardCount).toBeGreaterThanOrEqual(2);
 
   let restored = false;
