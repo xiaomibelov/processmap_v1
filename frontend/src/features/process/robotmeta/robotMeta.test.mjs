@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  getRobotMetaStatus,
   extractRobotMetaFromBpmn,
   hydrateRobotMetaFromBpmn,
   canonicalizeRobotMeta,
@@ -79,6 +80,40 @@ test("upsert/remove robot meta by element id writes and deletes keys", () => {
 
   const removed = removeRobotMetaByElementId(inserted, "Task_1");
   assert.equal(Object.prototype.hasOwnProperty.call(removed, "Task_1"), false);
+});
+
+test("getRobotMetaStatus resolves none/ready/incomplete with trim", () => {
+  assert.equal(getRobotMetaStatus(null), "none");
+  assert.equal(
+    getRobotMetaStatus({
+      exec: { mode: "human", executor: "manual_ui", action_key: "" },
+    }),
+    "none",
+  );
+  assert.equal(
+    getRobotMetaStatus({
+      exec: { mode: "machine", executor: "node_red", action_key: "" },
+    }),
+    "incomplete",
+  );
+  assert.equal(
+    getRobotMetaStatus({
+      exec: { mode: "machine", executor: "", action_key: "robot.mix" },
+    }),
+    "incomplete",
+  );
+  assert.equal(
+    getRobotMetaStatus({
+      exec: { mode: "machine", executor: "node_red", action_key: "robot.mix" },
+    }),
+    "ready",
+  );
+  assert.equal(
+    getRobotMetaStatus({
+      exec: { mode: "machine", executor: "node_red", action_key: "robot.mix " },
+    }),
+    "ready",
+  );
 });
 
 function createMockModeler(elements = []) {

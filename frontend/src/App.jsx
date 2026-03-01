@@ -2445,11 +2445,19 @@ export default function App() {
     }
 
     const serverMeta = ensureObject(result.meta);
+    const normalizedServerRobotMeta = normalizeRobotMetaMap(serverMeta?.robot_meta_by_element_id);
+    const effectiveRobotMeta = shouldRemove
+      ? normalizedServerRobotMeta
+      : (Object.keys(normalizedServerRobotMeta).length ? normalizedServerRobotMeta : nextRobotMetaByElementId);
+    if (!shouldRemove && !Object.keys(normalizedServerRobotMeta).length && Object.keys(nextRobotMetaByElementId).length) {
+      // eslint-disable-next-line no-console
+      console.warn("[ROBOT_META] backend response has empty robot_meta_by_element_id; keeping optimistic map");
+    }
     const nextMeta = {
       version: Number(serverMeta?.version) > 0 ? Number(serverMeta.version) : 1,
       flow_meta: normalizeFlowMetaMap(serverMeta?.flow_meta),
       node_path_meta: normalizeNodePathMetaMap(serverMeta?.node_path_meta),
-      robot_meta_by_element_id: normalizeRobotMetaMap(serverMeta?.robot_meta_by_element_id),
+      robot_meta_by_element_id: effectiveRobotMeta,
     };
     setDraftPersisted((prev) => ({
       ...prev,

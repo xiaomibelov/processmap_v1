@@ -57,6 +57,8 @@ import {
 } from "../features/process/bpmn/lint/bpmnLint";
 import { computeDodSnapshotFromDraft } from "../features/process/dod/computeDodSnapshot";
 import {
+  buildRobotMetaStatusByElementId,
+  getRobotMetaStatus,
   normalizeRobotMetaMap,
   toRobotMetaExecutionPlanStep,
 } from "../features/process/robotmeta/robotMeta";
@@ -731,6 +733,8 @@ export default function ProcessStage({
   const toolbarMenuButtonRef = useRef(null);
   const diagramActionBarRef = useRef(null);
   const diagramPathPopoverRef = useRef(null);
+  const diagramRobotMetaPopoverRef = useRef(null);
+  const diagramRobotMetaListRef = useRef(null);
   const diagramQualityPopoverRef = useRef(null);
   const diagramOverflowPopoverRef = useRef(null);
   const lastDraftXmlHashRef = useRef("");
@@ -785,12 +789,20 @@ export default function ProcessStage({
     notes: false,
   });
   const [diagramActionPathOpen, setDiagramActionPathOpen] = useState(false);
+  const [diagramActionRobotMetaOpen, setDiagramActionRobotMetaOpen] = useState(false);
   const [diagramActionQualityOpen, setDiagramActionQualityOpen] = useState(false);
   const [diagramActionOverflowOpen, setDiagramActionOverflowOpen] = useState(false);
   const [pathHighlightEnabled, setPathHighlightEnabled] = useState(false);
   const [pathHighlightTier, setPathHighlightTier] = useState("P0");
   const [pathHighlightSequenceKey, setPathHighlightSequenceKey] = useState("");
   const [robotMetaOverlayEnabled, setRobotMetaOverlayEnabled] = useState(false);
+  const [robotMetaOverlayFilters, setRobotMetaOverlayFilters] = useState({
+    ready: true,
+    incomplete: true,
+  });
+  const [robotMetaListOpen, setRobotMetaListOpen] = useState(false);
+  const [robotMetaListTab, setRobotMetaListTab] = useState("ready");
+  const [robotMetaListSearch, setRobotMetaListSearch] = useState("");
   const [qualityOverlayFilters, setQualityOverlayFilters] = useState({
     orphan: false,
     dead_end: false,
@@ -850,12 +862,20 @@ export default function ProcessStage({
       notes: false,
     });
     setDiagramActionPathOpen(false);
+    setDiagramActionRobotMetaOpen(false);
     setDiagramActionQualityOpen(false);
     setDiagramActionOverflowOpen(false);
     setPathHighlightEnabled(false);
     setPathHighlightTier("P0");
     setPathHighlightSequenceKey("");
     setRobotMetaOverlayEnabled(false);
+    setRobotMetaOverlayFilters({
+      ready: true,
+      incomplete: true,
+    });
+    setRobotMetaListOpen(false);
+    setRobotMetaListTab("ready");
+    setRobotMetaListSearch("");
     setQualityOverlayFilters({
       orphan: false,
       dead_end: false,
@@ -1050,6 +1070,67 @@ export default function ProcessStage({
     () => normalizeRobotMetaMap(asObject(asObject(draft?.bpmn_meta).robot_meta_by_element_id)),
     [draft?.bpmn_meta],
   );
+  const robotMetaStatusByElementId = useMemo(
+    () => buildRobotMetaStatusByElementId(robotMetaByElementId),
+    [robotMetaByElementId],
+  );
+  const robotMetaCounts = useMemo(() => {
+    const summary = { ready: 0, incomplete: 0 };
+    Object.values(robotMetaStatusByElementId).forEach((statusRaw) => {
+      const status = toText(statusRaw).toLowerCase();
+      if (status === "ready") summary.ready += 1;
+      if (status === "incomplete") summary.incomplete += 1;
+    });
+    return summary;
+  }, [robotMetaStatusByElementId]);
+  const robotMetaNodeCatalogById = useMemo(() => {
+    const out = {};
+    asArray(draft?.nodes).forEach((nodeRaw) => {
+      const node = asObject(nodeRaw);
+      const nodeId = toNodeId(node?.id);
+      if (!nodeId) return;
+      out[nodeId] = {
+        id: nodeId,
+        title: toText(node?.name || node?.title || nodeId) || nodeId,
+        type: toText(node?.type),
+      };
+    });
+    return out;
+  }, [draft?.nodes]);
+  const robotMetaListItems = useMemo(() => {
+    const tab = toText(robotMetaListTab).toLowerCase() === "incomplete" ? "incomplete" : "ready";
+    const query = toText(robotMetaListSearch).toLowerCase();
+    return Object.keys(robotMetaStatusByElementId)
+      .map((elementId) => {
+        const status = toText(robotMetaStatusByElementId[elementId]).toLowerCase();
+        if (status !== tab) return null;
+        const meta = asObject(robotMetaByElementId[elementId]);
+        const node = asObject(robotMetaNodeCatalogById[elementId]);
+        const mode = toText(meta?.exec?.mode).toLowerCase();
+        const executor = toText(meta?.exec?.executor);
+        const actionKey = toText(meta?.exec?.action_key);
+        const title = toText(node?.title || elementId) || elementId;
+        const searchText = [title, elementId, mode, executor, actionKey].join(" ").toLowerCase();
+        if (query && !searchText.includes(query)) return null;
+        return {
+          nodeId: elementId,
+          title,
+          type: toText(node?.type),
+          mode: mode || "human",
+          executor,
+          actionKey,
+          status: getRobotMetaStatus(meta),
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => String(a.title || "").localeCompare(String(b.title || ""), "ru") || String(a.nodeId || "").localeCompare(String(b.nodeId || ""), "ru"));
+  }, [
+    robotMetaStatusByElementId,
+    robotMetaByElementId,
+    robotMetaNodeCatalogById,
+    robotMetaListTab,
+    robotMetaListSearch,
+  ]);
   const executionPlanPayload = useMemo(() => {
     const rawSteps = asArray(asObject(draft?.interview).steps)
       .map((stepRaw, idx) => {
@@ -2306,6 +2387,64 @@ export default function ProcessStage({
     }
   }
 
+  function toggleRobotMetaOverlayFilter(keyRaw) {
+    const key = toText(keyRaw).toLowerCase();
+    if (key !== "ready" && key !== "incomplete") return;
+    setRobotMetaOverlayFilters((prev) => ({
+      ...prev,
+      [key]: !prev?.[key],
+    }));
+    setRobotMetaOverlayEnabled(true);
+  }
+
+  function showRobotMetaOverlay() {
+    setRobotMetaOverlayEnabled(true);
+    setRobotMetaOverlayFilters((prev) => {
+      const next = {
+        ready: !!prev?.ready,
+        incomplete: !!prev?.incomplete,
+      };
+      if (!next.ready && !next.incomplete) {
+        return { ready: true, incomplete: true };
+      }
+      return next;
+    });
+  }
+
+  function resetRobotMetaOverlay() {
+    setRobotMetaOverlayEnabled(false);
+    setRobotMetaOverlayFilters({ ready: true, incomplete: true });
+    setRobotMetaListOpen(false);
+    setRobotMetaListSearch("");
+    setRobotMetaListTab("ready");
+  }
+
+  function focusRobotMetaItem(itemRaw, source = "robot_meta_list") {
+    const item = asObject(itemRaw);
+    const nodeId = toNodeId(item?.nodeId || item?.id);
+    if (!nodeId) return;
+    requestDiagramFocus(nodeId, {
+      markerClass: "fpcAttentionJumpFocus",
+      durationMs: 3000,
+      targetZoom: 0.92,
+      clearExistingSelection: true,
+    });
+    window.setTimeout(() => {
+      bpmnRef.current?.flashNode?.(nodeId, "accent", { label: "Robot Meta" });
+    }, 120);
+    const title = toText(item?.title || robotMetaNodeCatalogById?.[nodeId]?.title || nodeId) || nodeId;
+    onOpenElementNotes?.({
+      id: nodeId,
+      name: title,
+      type: toText(item?.type || robotMetaNodeCatalogById?.[nodeId]?.type),
+    }, "header_open_notes");
+    setInfoMsg(`Robot Meta: ${title}`);
+    setGenErr("");
+    if (source === "robot_meta_list" && tab !== "diagram") {
+      setTab("diagram");
+    }
+  }
+
   function focusCoverageIssue(item, source = "coverage_panel") {
     const nodeId = toNodeId(item?.id || item?.nodeId);
     if (!nodeId) return;
@@ -2709,6 +2848,8 @@ export default function ProcessStage({
   useEffect(() => {
     setToolbarMenuOpen(false);
     setDiagramActionPathOpen(false);
+    setDiagramActionRobotMetaOpen(false);
+    setRobotMetaListOpen(false);
     setDiagramActionQualityOpen(false);
     setDiagramActionOverflowOpen(false);
   }, [tab, sid]);
@@ -2772,24 +2913,30 @@ export default function ProcessStage({
   }, [toolbarMenuOpen]);
 
   useEffect(() => {
-    if (!diagramActionPathOpen && !diagramActionQualityOpen && !diagramActionOverflowOpen) return undefined;
+    if (!diagramActionPathOpen && !diagramActionRobotMetaOpen && !diagramActionQualityOpen && !diagramActionOverflowOpen && !robotMetaListOpen) return undefined;
     const onPointerDown = (event) => {
       const target = event?.target;
       const refs = [
         diagramActionBarRef.current,
         diagramPathPopoverRef.current,
+        diagramRobotMetaPopoverRef.current,
+        diagramRobotMetaListRef.current,
         diagramQualityPopoverRef.current,
         diagramOverflowPopoverRef.current,
       ];
       const inside = refs.some((node) => !!(node && target instanceof Node && node.contains(target)));
       if (inside) return;
       setDiagramActionPathOpen(false);
+      setDiagramActionRobotMetaOpen(false);
+      setRobotMetaListOpen(false);
       setDiagramActionQualityOpen(false);
       setDiagramActionOverflowOpen(false);
     };
     const onKeyDown = (event) => {
       if (event.key !== "Escape") return;
       setDiagramActionPathOpen(false);
+      setDiagramActionRobotMetaOpen(false);
+      setRobotMetaListOpen(false);
       setDiagramActionQualityOpen(false);
       setDiagramActionOverflowOpen(false);
     };
@@ -2799,7 +2946,13 @@ export default function ProcessStage({
       window.removeEventListener("mousedown", onPointerDown);
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [diagramActionPathOpen, diagramActionQualityOpen, diagramActionOverflowOpen]);
+  }, [diagramActionPathOpen, diagramActionRobotMetaOpen, robotMetaListOpen, diagramActionQualityOpen, diagramActionOverflowOpen]);
+
+  useEffect(() => {
+    if (diagramActionRobotMetaOpen) return;
+    setRobotMetaListOpen(false);
+    setRobotMetaListSearch("");
+  }, [diagramActionRobotMetaOpen]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -3273,6 +3426,8 @@ export default function ProcessStage({
     };
     setDiagramPathsIntent(intent);
     setDiagramActionPathOpen(false);
+    setDiagramActionRobotMetaOpen(false);
+    setRobotMetaListOpen(false);
     setDiagramActionQualityOpen(false);
     setTab("interview");
     setDiagramActionOverflowOpen(false);
@@ -3302,6 +3457,8 @@ export default function ProcessStage({
       source: "diagram_action_bar",
     };
     setDiagramPathsIntent(intent);
+    setDiagramActionRobotMetaOpen(false);
+    setRobotMetaListOpen(false);
     setDiagramActionQualityOpen(false);
     setDiagramActionOverflowOpen(false);
     setTab("interview");
@@ -3959,6 +4116,8 @@ export default function ProcessStage({
                         className={`primaryBtn h-8 min-w-[124px] px-2.5 text-xs ${pathHighlightEnabled ? "" : "opacity-95"}`}
                         onClick={() => {
                           setDiagramActionPathOpen((prev) => !prev);
+                          setDiagramActionRobotMetaOpen(false);
+                          setRobotMetaListOpen(false);
                           setDiagramActionQualityOpen(false);
                           setDiagramActionOverflowOpen(false);
                         }}
@@ -4000,11 +4159,28 @@ export default function ProcessStage({
                       <button
                         type="button"
                         className={`secondaryBtn h-8 px-2 text-[11px] ${robotMetaOverlayEnabled ? "ring-1 ring-accent/60" : ""}`}
-                        onClick={() => setRobotMetaOverlayEnabled((prev) => !prev)}
-                        title="Показать узлы с Robot Meta (exec.mode != human)"
+                        onClick={() => {
+                          setDiagramActionRobotMetaOpen((prev) => !prev);
+                          setDiagramActionPathOpen(false);
+                          setRobotMetaListOpen(false);
+                          setDiagramActionQualityOpen(false);
+                          setDiagramActionOverflowOpen(false);
+                          setRobotMetaOverlayEnabled(true);
+                          setRobotMetaOverlayFilters((prev) => {
+                            const next = {
+                              ready: !!prev?.ready,
+                              incomplete: !!prev?.incomplete,
+                            };
+                            if (!next.ready && !next.incomplete) {
+                              return { ready: true, incomplete: true };
+                            }
+                            return next;
+                          });
+                        }}
+                        title="Подсветка готовности Robot Meta"
                         data-testid="diagram-action-robotmeta"
                       >
-                        Robot Meta {robotMetaOverlayEnabled ? "on" : "off"}
+                        Robot Meta {robotMetaOverlayEnabled ? `(${robotMetaCounts.ready}/${robotMetaCounts.incomplete})` : "off"}
                       </button>
                       <button
                         type="button"
@@ -4012,6 +4188,8 @@ export default function ProcessStage({
                         onClick={() => {
                           setDiagramActionQualityOpen((prev) => !prev);
                           setDiagramActionPathOpen(false);
+                          setDiagramActionRobotMetaOpen(false);
+                          setRobotMetaListOpen(false);
                           setDiagramActionOverflowOpen(false);
                         }}
                         title="Проблемы на диаграмме"
@@ -4025,6 +4203,8 @@ export default function ProcessStage({
                         onClick={() => {
                           setDiagramActionOverflowOpen((prev) => !prev);
                           setDiagramActionPathOpen(false);
+                          setDiagramActionRobotMetaOpen(false);
+                          setRobotMetaListOpen(false);
                           setDiagramActionQualityOpen(false);
                         }}
                         aria-label="Открыть дополнительные действия Diagram"
@@ -4146,6 +4326,129 @@ export default function ProcessStage({
                             Открыть Reports
                           </button>
                         </div>
+                      </div>
+                    ) : null}
+
+                    {diagramActionRobotMetaOpen ? (
+                      <div className="diagramActionPopover diagramActionPopover--robotmeta" ref={diagramRobotMetaPopoverRef} data-testid="diagram-action-robotmeta-popover">
+                        <div className="diagramActionPopoverHead">
+                          <span>Robot Meta</span>
+                          <button
+                            type="button"
+                            className="secondaryBtn h-7 px-2 text-[11px]"
+                            onClick={() => setDiagramActionRobotMetaOpen(false)}
+                          >
+                            Закрыть
+                          </button>
+                        </div>
+                        <div className="diagramIssueRows">
+                          <div className="diagramIssueRow">
+                            <label className="diagramActionCheckboxRow">
+                              <input
+                                type="checkbox"
+                                checked={!!robotMetaOverlayFilters?.ready}
+                                onChange={() => toggleRobotMetaOverlayFilter("ready")}
+                                data-testid="diagram-action-robotmeta-filter-ready"
+                              />
+                              <span>Ready ({Number(robotMetaCounts.ready || 0)})</span>
+                            </label>
+                          </div>
+                          <div className="diagramIssueRow">
+                            <label className="diagramActionCheckboxRow">
+                              <input
+                                type="checkbox"
+                                checked={!!robotMetaOverlayFilters?.incomplete}
+                                onChange={() => toggleRobotMetaOverlayFilter("incomplete")}
+                                data-testid="diagram-action-robotmeta-filter-incomplete"
+                              />
+                              <span>Incomplete ({Number(robotMetaCounts.incomplete || 0)})</span>
+                            </label>
+                          </div>
+                        </div>
+                        <div className="diagramActionPopoverActions">
+                          <button
+                            type="button"
+                            className="secondaryBtn h-7 px-2 text-[11px]"
+                            onClick={showRobotMetaOverlay}
+                            data-testid="diagram-action-robotmeta-show"
+                          >
+                            Показать
+                          </button>
+                          <button
+                            type="button"
+                            className="secondaryBtn h-7 px-2 text-[11px]"
+                            onClick={resetRobotMetaOverlay}
+                            data-testid="diagram-action-robotmeta-reset"
+                          >
+                            Сбросить
+                          </button>
+                          <button
+                            type="button"
+                            className="secondaryBtn h-7 px-2 text-[11px]"
+                            onClick={() => setRobotMetaListOpen((prev) => !prev)}
+                            data-testid="diagram-action-robotmeta-list-toggle"
+                          >
+                            Список…
+                          </button>
+                        </div>
+                        {robotMetaListOpen ? (
+                          <div className="diagramIssueListWrap mt-2 border-t border-border/70 pt-2" ref={diagramRobotMetaListRef} data-testid="diagram-action-robotmeta-list">
+                            <input
+                              type="text"
+                              className="input h-8 min-h-0 text-xs"
+                              value={robotMetaListSearch}
+                              onChange={(event) => setRobotMetaListSearch(toText(event.target.value))}
+                              placeholder="Поиск по названию / bpmn_id / executor"
+                              data-testid="diagram-action-robotmeta-search"
+                            />
+                            <div className="diagramActionTabRow">
+                              <button
+                                type="button"
+                                className={`diagramActionTabBtn ${robotMetaListTab === "ready" ? "isActive" : ""}`}
+                                onClick={() => setRobotMetaListTab("ready")}
+                                data-testid="diagram-action-robotmeta-tab-ready"
+                              >
+                                Ready
+                              </button>
+                              <button
+                                type="button"
+                                className={`diagramActionTabBtn ${robotMetaListTab === "incomplete" ? "isActive" : ""}`}
+                                onClick={() => setRobotMetaListTab("incomplete")}
+                                data-testid="diagram-action-robotmeta-tab-incomplete"
+                              >
+                                Incomplete
+                              </button>
+                            </div>
+                            <div className="diagramIssueList">
+                              {robotMetaListItems.length === 0 ? (
+                                <div className="diagramActionPopoverEmpty">Ничего не найдено.</div>
+                              ) : (
+                                robotMetaListItems.slice(0, 120).map((itemRaw) => {
+                                  const item = asObject(itemRaw);
+                                  const nodeId = toText(item?.nodeId);
+                                  const title = toText(item?.title || nodeId) || nodeId;
+                                  return (
+                                    <button
+                                      key={`robotmeta_item_${robotMetaListTab}_${nodeId}`}
+                                      type="button"
+                                      className="diagramIssueListItem"
+                                      onClick={() => focusRobotMetaItem(item, "robot_meta_list")}
+                                      title={`${title} · ${nodeId}`}
+                                      data-testid="diagram-action-robotmeta-item"
+                                    >
+                                      <span className="diagramIssueListItemTitle">{title}</span>
+                                      <span className="diagramIssueListItemMeta">{nodeId}</span>
+                                      <span className="diagramIssueListItemChips">
+                                        <span className="diagramIssueChip">{toText(item?.mode) || "human"}</span>
+                                        <span className="diagramIssueChip">{toText(item?.executor) || "executor:—"}</span>
+                                      </span>
+                                    </button>
+                                  );
+                                })
+                              )}
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
 
@@ -4300,6 +4603,9 @@ export default function ProcessStage({
                   aiQuestionsModeEnabled={isInterviewMode}
                   diagramDisplayMode={diagramMode}
                   stepTimeUnit={stepTimeUnit}
+                  robotMetaOverlayEnabled={robotMetaOverlayEnabled}
+                  robotMetaOverlayFilters={robotMetaOverlayFilters}
+                  robotMetaStatusByElementId={robotMetaStatusByElementId}
                 />
                 {tab === "diagram" && isCoverageMode ? (
                   <div className="coverageMiniMap" data-testid="coverage-minimap">

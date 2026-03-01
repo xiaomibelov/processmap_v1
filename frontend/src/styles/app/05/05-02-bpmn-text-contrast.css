@@ -469,16 +469,16 @@
 }
 
 .fpcNodeBadge--robot {
-  border-color: hsl(var(--diagram-ai) / 0.6);
-  background: color-mix(in srgb, hsl(var(--diagram-ai)) 18%, hsl(var(--diagram-badge-bg) / 0.95));
+  border-color: hsl(var(--success) / 0.66);
+  background: color-mix(in srgb, hsl(var(--success)) 16%, hsl(var(--diagram-badge-bg) / 0.95));
   font-size: 8.5px;
   min-height: 14px;
   padding: 0 5px;
 }
 
 .fpcNodeBadge--robot.warn {
-  border-color: hsl(var(--danger) / 0.7);
-  background: color-mix(in srgb, hsl(var(--danger)) 20%, hsl(var(--diagram-badge-bg) / 0.95));
+  border-color: hsl(var(--warning) / 0.74);
+  background: color-mix(in srgb, hsl(var(--warning)) 22%, hsl(var(--diagram-badge-bg) / 0.95));
 }
 
 .fpcNodeBadgeFlash {
@@ -896,16 +896,16 @@
 }
 
 .bpmnCanvas .djs-shape.fpcRobotMetaReady:not(.fpcElementSelected):not(.fpcQualityIssueFocus):not(.fpcQualityProblem) .djs-visual > *:first-child {
-  stroke: hsl(var(--diagram-ai) / 0.9) !important;
+  stroke: hsl(var(--success) / 0.9) !important;
   stroke-width: 2.1px !important;
-  filter: drop-shadow(0 0 1px hsl(var(--diagram-ai) / 0.28)) !important;
+  filter: drop-shadow(0 0 1px hsl(var(--success) / 0.28)) !important;
 }
 
 .bpmnCanvas .djs-shape.fpcRobotMetaIncomplete:not(.fpcElementSelected):not(.fpcQualityIssueFocus):not(.fpcQualityProblem) .djs-visual > *:first-child {
-  stroke: hsl(var(--danger) / 0.94) !important;
+  stroke: hsl(var(--warning) / 0.94) !important;
   stroke-width: 2.3px !important;
   stroke-dasharray: 4 2 !important;
-  filter: drop-shadow(0 0 1px hsl(var(--danger) / 0.34)) !important;
+  filter: drop-shadow(0 0 1px hsl(var(--warning) / 0.34)) !important;
 }
 
 .bpmnCanvas .djs-shape.fpcPathHighlightNode:not(.fpcElementSelected):not(.fpcQualityIssueFocus):not(.fpcQualityProblem) .djs-visual > *:first-child {

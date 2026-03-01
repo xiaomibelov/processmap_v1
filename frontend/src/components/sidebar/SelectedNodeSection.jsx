@@ -7,6 +7,7 @@ import {
 } from "./selectedNodeUi";
 import {
   canonicalizeRobotMeta,
+  getRobotMetaStatus,
   ROBOT_EXECUTOR_OPTIONS,
   robotMetaMissingFields,
 } from "../../features/process/robotmeta/robotMeta";
@@ -234,8 +235,11 @@ export default function SelectedNodeSection({
   const canonicalRobotMeta = canonicalizeRobotMeta(robotMeta);
   const robotMetaJson = JSON.stringify(canonicalRobotMeta, null, 2);
   const missingRobotFields = robotMetaMissingFields(robotMeta);
-  const showMissingActionKeyWarning = String(robotMeta.exec?.mode || "human").toLowerCase() !== "human"
-    && missingRobotFields.includes("action_key");
+  const robotMetaStatus = getRobotMetaStatus(robotMeta);
+  const showRobotMetaIncompleteWarning = robotMetaStatus === "incomplete" && missingRobotFields.length > 0;
+  const robotMetaStatusLabel = robotMetaStatus === "ready"
+    ? "ready"
+    : (robotMetaStatus === "incomplete" ? "incomplete" : "none");
 
   return (
     <SidebarSection
@@ -519,7 +523,15 @@ export default function SelectedNodeSection({
 
               {robotMetaEditable ? (
                 <div className="selectedNodeField">
-                  <div className="selectedNodeFieldLabel">Robot Meta</div>
+                  <div className="selectedNodeFieldLabel selectedNodeFieldLabel--withChip">
+                    <span>Robot Meta</span>
+                    <span
+                      className={`selectedNodeChip selectedNodeChip--robotmeta ${robotMetaStatus === "ready" ? "is-ready" : ""} ${robotMetaStatus === "incomplete" ? "is-incomplete" : ""}`}
+                      data-testid="robotmeta-status-chip"
+                    >
+                      {robotMetaStatusLabel}
+                    </span>
+                  </div>
                   <div className="selectedNodeTimeRow">
                     <select
                       className="input h-8 min-h-0 w-full"
@@ -616,9 +628,9 @@ export default function SelectedNodeSection({
                     />
                     QC critical
                   </label>
-                  {showMissingActionKeyWarning ? (
+                  {showRobotMetaIncompleteWarning ? (
                     <div className="selectedNodeFieldWarn" data-testid="robotmeta-incomplete-warning">
-                      incomplete: missing action_key
+                      incomplete: missing {missingRobotFields.join(", ")}
                     </div>
                   ) : null}
                   <div className="mt-1.5 flex flex-wrap items-center gap-1">

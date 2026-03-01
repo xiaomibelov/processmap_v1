@@ -3,6 +3,7 @@ import { PM_ROBOT_META_NAMESPACE } from "./pmModdleDescriptor.js";
 export const ROBOT_META_VERSION = "v1";
 export const ROBOT_EXEC_MODES = ["human", "machine", "hybrid"];
 export const ROBOT_EXECUTOR_OPTIONS = ["manual_ui", "node_red", "robot_cell"];
+export const ROBOT_META_STATUSES = ["none", "ready", "incomplete"];
 
 /**
  * RobotMetaV1 schema shape (JSON contract).
@@ -117,12 +118,16 @@ export function normalizeRobotMetaV1(rawValue) {
   const retry = asObject(exec.retry);
   const mat = asObject(value.mat);
   const qc = asObject(value.qc);
+  const rawExecutor = exec.executor;
+  const normalizedExecutor = rawExecutor === undefined
+    ? base.exec.executor
+    : asNullableText(rawExecutor);
 
   return {
     robot_meta_version: ROBOT_META_VERSION,
     exec: {
       mode: normalizeExecMode(exec.mode),
-      executor: asNullableText(exec.executor) || base.exec.executor,
+      executor: normalizedExecutor,
       action_key: asNullableText(exec.action_key),
       timeout_sec: asNullableInt(exec.timeout_sec),
       retry: {
@@ -251,15 +256,42 @@ export function parseRobotMetaJson(rawText) {
 
 export function robotMetaMissingFields(metaRaw) {
   const meta = normalizeRobotMetaV1(metaRaw);
+  const rawExec = asObject(asObject(metaRaw).exec);
+  const executorRaw = rawExec.executor === undefined ? meta.exec?.executor : rawExec.executor;
   const missing = [];
   if (meta.exec.mode !== "human" && !asText(meta.exec.action_key)) {
     missing.push("action_key");
+  }
+  if (meta.exec.mode !== "human" && !asText(executorRaw)) {
+    missing.push("executor");
   }
   return missing;
 }
 
 export function isRobotMetaIncomplete(metaRaw) {
   return robotMetaMissingFields(metaRaw).length > 0;
+}
+
+export function getRobotMetaStatus(metaRaw) {
+  if (!metaRaw || typeof metaRaw !== "object") return "none";
+  const exec = asObject(asObject(metaRaw).exec);
+  const mode = asText(exec.mode).toLowerCase();
+  if (!mode || mode === "human") return "none";
+  const actionKey = asText(exec.action_key);
+  const executor = asText(exec.executor);
+  if (actionKey && executor) return "ready";
+  return "incomplete";
+}
+
+export function buildRobotMetaStatusByElementId(rawMap) {
+  const map = asObject(rawMap);
+  const out = {};
+  Object.keys(map).forEach((rawElementId) => {
+    const elementId = asText(rawElementId);
+    if (!elementId) return;
+    out[elementId] = getRobotMetaStatus(map[rawElementId]);
+  });
+  return out;
 }
 
 function readPmRobotMetaEntriesFromDoc(doc) {

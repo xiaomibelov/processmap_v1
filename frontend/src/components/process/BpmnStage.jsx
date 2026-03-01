@@ -17,9 +17,10 @@ import pmModdleDescriptor from "../../features/process/robotmeta/pmModdleDescrip
 import {
   canonicalRobotMetaMapString,
   extractRobotMetaFromBpmn,
+  getRobotMetaStatus,
   hydrateRobotMetaFromBpmn,
-  isRobotMetaIncomplete,
   normalizeRobotMetaMap,
+  robotMetaMissingFields,
   syncRobotMetaToBpmn,
 } from "../../features/process/robotmeta/robotMeta";
 
@@ -1154,6 +1155,8 @@ const BpmnStage = forwardRef(function BpmnStage({
   diagramDisplayMode = "normal",
   stepTimeUnit = "min",
   robotMetaOverlayEnabled = false,
+  robotMetaOverlayFilters = { ready: true, incomplete: true },
+  robotMetaStatusByElementId = {},
 }, ref) {
   const viewerEl = useRef(null);
   const editorEl = useRef(null);
@@ -1193,8 +1196,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const userNotesMarkerStateRef = useRef({ viewer: [], editor: [] });
   const userNotesOverlayStateRef = useRef({ viewer: [], editor: [] });
   const stepTimeOverlayStateRef = useRef({ viewer: [], editor: [] });
-  const robotMetaMarkerStateRef = useRef({ viewer: [], editor: [] });
-  const robotMetaOverlayStateRef = useRef({ viewer: [], editor: [] });
+  const robotMetaDecorStateRef = useRef({ viewer: {}, editor: {} });
   const focusMarkerStateRef = useRef({ viewer: [], editor: [] });
   const aiQuestionPanelStateRef = useRef({
     viewer: { overlayId: null, elementId: "" },
@@ -1211,6 +1213,8 @@ const BpmnStage = forwardRef(function BpmnStage({
   const diagramDisplayModeRef = useRef(String(diagramDisplayMode || "normal").trim().toLowerCase() || "normal");
   const stepTimeUnitRef = useRef(normalizeStepTimeUnit(stepTimeUnit));
   const robotMetaOverlayEnabledRef = useRef(!!robotMetaOverlayEnabled);
+  const robotMetaOverlayFiltersRef = useRef(asObject(robotMetaOverlayFilters));
+  const robotMetaStatusByElementIdRef = useRef(asObject(robotMetaStatusByElementId));
   const replaceCommandStateRef = useRef({
     oldId: "",
     oldType: "",
@@ -1301,6 +1305,14 @@ const BpmnStage = forwardRef(function BpmnStage({
   useEffect(() => {
     robotMetaOverlayEnabledRef.current = !!robotMetaOverlayEnabled;
   }, [robotMetaOverlayEnabled]);
+
+  useEffect(() => {
+    robotMetaOverlayFiltersRef.current = asObject(robotMetaOverlayFilters);
+  }, [robotMetaOverlayFilters]);
+
+  useEffect(() => {
+    robotMetaStatusByElementIdRef.current = asObject(robotMetaStatusByElementId);
+  }, [robotMetaStatusByElementId]);
 
   useEffect(() => {
     draftRef.current = draft;
@@ -3921,37 +3933,55 @@ const BpmnStage = forwardRef(function BpmnStage({
 
   function clearRobotMetaDecor(inst, kind) {
     if (!inst) return;
+    const state = asObject(robotMetaDecorStateRef.current[kind]);
     try {
       const canvas = inst.get("canvas");
       const overlays = inst.get("overlays");
-      asArray(robotMetaMarkerStateRef.current[kind]).forEach((m) => {
-        canvas.removeMarker(m.elementId, m.className);
-      });
-      asArray(robotMetaOverlayStateRef.current[kind]).forEach((id) => {
-        overlays.remove(id);
+      Object.values(state).forEach((entryRaw) => {
+        const entry = asObject(entryRaw);
+        const elementId = toText(entry?.elementId);
+        const markerClass = toText(entry?.markerClass);
+        const overlayId = entry?.overlayId;
+        if (elementId && markerClass) {
+          canvas.removeMarker(elementId, markerClass);
+        }
+        if (overlayId !== null && overlayId !== undefined) {
+          overlays.remove(overlayId);
+        }
       });
     } catch {
     }
-    robotMetaMarkerStateRef.current[kind] = [];
-    robotMetaOverlayStateRef.current[kind] = [];
+    robotMetaDecorStateRef.current[kind] = {};
   }
 
   function buildRobotMetaDecorPayload() {
     const map = getRobotMetaMap();
+    const statusById = asObject(robotMetaStatusByElementIdRef.current);
+    const filters = asObject(robotMetaOverlayFiltersRef.current);
+    const showReady = !!filters.ready;
+    const showIncomplete = !!filters.incomplete;
     return Object.keys(map)
       .map((elementId) => {
         const meta = map[elementId];
-        const mode = toText(meta?.exec?.mode).toLowerCase();
-        if (mode === "human") return null;
-        const incomplete = isRobotMetaIncomplete(meta);
-        const missingActionKey = !toText(meta?.exec?.action_key);
-        const tooltip = incomplete
-          ? `Robot meta incomplete: ${missingActionKey ? "missing action_key" : "check fields"}`
-          : `Robot meta ready: ${mode}`;
+        const statusRaw = toText(statusById[elementId]).toLowerCase();
+        const status = statusRaw || getRobotMetaStatus(meta);
+        if (status === "ready" && !showReady) return null;
+        if (status === "incomplete" && !showIncomplete) return null;
+        if (status !== "ready" && status !== "incomplete") return null;
+        const missingFields = robotMetaMissingFields(meta);
+        const executor = toText(meta?.exec?.executor);
+        const actionKey = toText(meta?.exec?.action_key);
+        const qcCritical = !!meta?.qc?.critical;
+        const tooltip = status === "ready"
+          ? `Robot ready · executor=${executor || "—"} · action=${actionKey || "—"}${qcCritical ? " · QC critical step" : ""}`
+          : `Robot meta incomplete: ${missingFields.length ? missingFields.map((name) => `missing ${name}`).join(" / ") : "missing action_key / missing executor"}${qcCritical ? " · QC critical step" : ""}`;
         return {
           elementId,
-          mode,
-          incomplete,
+          status,
+          markerClass: status === "incomplete" ? "fpcRobotMetaIncomplete" : "fpcRobotMetaReady",
+          badgeClass: status === "incomplete" ? "warn" : "ok",
+          badgeText: status === "incomplete" ? "!" : "R",
+          signature: `${status}|${executor}|${actionKey}|${missingFields.join(",")}|${qcCritical ? 1 : 0}|${tooltip}`,
           tooltip,
         };
       })
@@ -3960,34 +3990,80 @@ const BpmnStage = forwardRef(function BpmnStage({
 
   function applyRobotMetaDecor(inst, kind) {
     if (!inst) return;
-    clearRobotMetaDecor(inst, kind);
-    if (!robotMetaOverlayEnabledRef.current) return;
+    if (!robotMetaOverlayEnabledRef.current) {
+      clearRobotMetaDecor(inst, kind);
+      return;
+    }
     const payload = buildRobotMetaDecorPayload();
-    if (!payload.length) return;
+    if (!payload.length) {
+      clearRobotMetaDecor(inst, kind);
+      return;
+    }
 
     try {
       const canvas = inst.get("canvas");
       const overlays = inst.get("overlays");
       const registry = inst.get("elementRegistry");
+      const currentState = { ...asObject(robotMetaDecorStateRef.current[kind]) };
+      const nextState = {};
+
       payload.forEach((item) => {
         const nodeId = toText(item?.elementId);
         const el = findShapeByNodeId(registry, nodeId) || findShapeForHint(registry, { nodeId, title: nodeId });
         if (!el) return;
-        const markerClass = item?.incomplete ? "fpcRobotMetaIncomplete" : "fpcRobotMetaReady";
-        canvas.addMarker(el.id, markerClass);
-        robotMetaMarkerStateRef.current[kind].push({ elementId: el.id, className: markerClass });
+        const elementId = toText(el?.id);
+        if (!elementId) return;
+        const markerClass = toText(item?.markerClass);
+        const signature = `${markerClass}|${toText(item?.badgeClass)}|${toText(item?.badgeText)}|${toText(item?.signature)}`;
+        const prev = asObject(currentState[elementId]);
+        const prevSignature = toText(prev?.signature);
+
+        if (prevSignature && prevSignature === signature) {
+          nextState[elementId] = prev;
+          delete currentState[elementId];
+          return;
+        }
+
+        const prevMarkerClass = toText(prev?.markerClass);
+        if (prevMarkerClass) {
+          canvas.removeMarker(elementId, prevMarkerClass);
+        }
+        if (prev?.overlayId !== null && prev?.overlayId !== undefined) {
+          overlays.remove(prev.overlayId);
+        }
 
         const badge = document.createElement("div");
-        badge.className = `fpcNodeBadge fpcNodeBadge--robot ${item?.incomplete ? "warn" : "ok"}`;
-        badge.textContent = item?.incomplete ? "R!" : "R";
+        badge.className = `fpcNodeBadge fpcNodeBadge--robot ${toText(item?.badgeClass)}`;
+        badge.textContent = toText(item?.badgeText);
         badge.title = toText(item?.tooltip);
 
-        const overlayId = overlays.add(el.id, {
+        canvas.addMarker(elementId, markerClass);
+        const overlayId = overlays.add(elementId, {
           position: { top: -18, left: 2 },
           html: badge,
         });
-        robotMetaOverlayStateRef.current[kind].push(overlayId);
+        nextState[elementId] = {
+          elementId,
+          markerClass,
+          overlayId,
+          signature,
+        };
+        delete currentState[elementId];
       });
+
+      Object.values(currentState).forEach((entryRaw) => {
+        const entry = asObject(entryRaw);
+        const elementId = toText(entry?.elementId);
+        const markerClass = toText(entry?.markerClass);
+        if (elementId && markerClass) {
+          canvas.removeMarker(elementId, markerClass);
+        }
+        if (entry?.overlayId !== null && entry?.overlayId !== undefined) {
+          overlays.remove(entry.overlayId);
+        }
+      });
+
+      robotMetaDecorStateRef.current[kind] = nextState;
     } catch {
     }
   }
@@ -4465,8 +4541,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     userNotesMarkerStateRef.current = { viewer: [], editor: [] };
     userNotesOverlayStateRef.current = { viewer: [], editor: [] };
     stepTimeOverlayStateRef.current = { viewer: [], editor: [] };
-    robotMetaMarkerStateRef.current = { viewer: [], editor: [] };
-    robotMetaOverlayStateRef.current = { viewer: [], editor: [] };
+    robotMetaDecorStateRef.current = { viewer: {}, editor: {} };
     focusMarkerStateRef.current = { viewer: [], editor: [] };
     aiQuestionPanelStateRef.current = {
       viewer: { overlayId: null, elementId: "" },
@@ -6016,7 +6091,18 @@ const BpmnStage = forwardRef(function BpmnStage({
     } catch {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft?.notes_by_element, draft?.notesByElementId, draft?.nodes, draft?.bpmn_meta, view, diagramDisplayMode, stepTimeUnit, robotMetaOverlayEnabled]);
+  }, [
+    draft?.notes_by_element,
+    draft?.notesByElementId,
+    draft?.nodes,
+    draft?.bpmn_meta,
+    view,
+    diagramDisplayMode,
+    stepTimeUnit,
+    robotMetaOverlayEnabled,
+    robotMetaOverlayFilters,
+    robotMetaStatusByElementId,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;

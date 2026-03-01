@@ -3,6 +3,7 @@ import { apiLogin } from "./helpers/e2eAuth.mjs";
 import {
   API_BASE,
   createFixture,
+  seedXml,
   switchTab,
 } from "./helpers/processFixture.mjs";
 
@@ -139,6 +140,24 @@ async function selectElementForDetails(page, elementId = "Task_1") {
   expect(selected.ok, JSON.stringify(selected)).toBeTruthy();
 }
 
+async function readRobotMetaMarkerState(page, elementId = "Task_1") {
+  return await page.evaluate((targetId) => {
+    const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
+    if (!modeler) return { ok: false, reason: "modeler_missing", ready: false, incomplete: false };
+    try {
+      const canvas = modeler.get("canvas");
+      const nodeId = String(targetId || "Task_1");
+      return {
+        ok: true,
+        ready: !!canvas?.hasMarker?.(nodeId, "fpcRobotMetaReady"),
+        incomplete: !!canvas?.hasMarker?.(nodeId, "fpcRobotMetaIncomplete"),
+      };
+    } catch (error) {
+      return { ok: false, reason: String(error?.message || error), ready: false, incomplete: false };
+    }
+  }, elementId);
+}
+
 test("robot meta: hydrate from BPMN extension on import with trim normalization", async ({ page, request }) => {
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const auth = await apiLogin(request, { apiBase: API_BASE });
@@ -174,4 +193,75 @@ test("robot meta: hydrate from BPMN extension on import with trim normalization"
   await selectElementForDetails(page, "Task_1");
   await expect(page.getByTestId("robotmeta-mode")).toHaveValue("machine");
   await expect(page.getByTestId("robotmeta-action-key")).toHaveValue("robot.import");
+});
+
+test("robot meta overlay switches from incomplete to ready without reload", async ({ page, request }) => {
+  const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const auth = await apiLogin(request, { apiBase: API_BASE });
+  const fixture = await createFixture(
+    request,
+    `${runId}_overlay`,
+    auth.headers,
+    seedXml({ processName: `RobotMeta overlay ${runId}`, taskName: "Robot Overlay Task" }),
+  );
+  const sid = String(fixture.sessionId || "").trim();
+  expect(sid).not.toBe("");
+
+  let patchRobotMetaOkCount = 0;
+  page.on("response", (res) => {
+    try {
+      const url = new URL(res.url());
+      if (
+        res.request().method() === "PATCH"
+        && url.pathname === `/api/sessions/${sid}/bpmn_meta`
+        && res.status() === 200
+      ) {
+        const postData = String(res.request().postData() || "");
+        if (postData.includes("\"robot_updates\"")) {
+          patchRobotMetaOkCount += 1;
+        }
+      }
+    } catch {
+      // ignore parse issues
+    }
+  });
+
+  await uiLogin(page);
+  await openFixtureInTopbar(page, fixture);
+  await switchTab(page, "Diagram");
+  await waitForModelerReady(page);
+  await ensureSidebarOpen(page);
+  await selectElementForDetails(page, "Task_1");
+
+  await page.getByTestId("robotmeta-mode").selectOption("machine");
+  await page.getByTestId("robotmeta-executor").selectOption("node_red");
+  await page.getByTestId("robotmeta-action-key").fill("");
+  await expect(page.getByTestId("robotmeta-mode")).toHaveValue("machine");
+  await expect(page.getByTestId("robotmeta-executor")).toHaveValue("node_red");
+  await expect(page.getByTestId("robotmeta-incomplete-warning")).toBeVisible();
+  await page.getByTestId("robotmeta-save").click();
+  await expect.poll(() => patchRobotMetaOkCount).toBeGreaterThan(0);
+
+  await page.getByTestId("diagram-action-robotmeta").click();
+  await expect(page.getByTestId("diagram-action-robotmeta-popover")).toBeVisible();
+  await expect(page.getByTestId("diagram-action-robotmeta-filter-ready")).toBeChecked();
+  await expect(page.getByTestId("diagram-action-robotmeta-filter-incomplete")).toBeChecked();
+
+  await expect
+    .poll(async () => {
+      const status = await readRobotMetaMarkerState(page, "Task_1");
+      return status.ok && status.incomplete && !status.ready;
+    })
+    .toBeTruthy();
+
+  await page.getByTestId("robotmeta-action-key").fill("robot.mix");
+  await page.getByTestId("robotmeta-save").click();
+  await expect.poll(() => patchRobotMetaOkCount).toBeGreaterThan(1);
+
+  await expect
+    .poll(async () => {
+      const status = await readRobotMetaMarkerState(page, "Task_1");
+      return status.ok && status.ready && !status.incomplete;
+    })
+    .toBeTruthy();
 });

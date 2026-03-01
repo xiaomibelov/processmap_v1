@@ -281,6 +281,12 @@
     width: min(420px, calc(100% - 24px));
   }
 
+  .diagramActionPopover--robotmeta {
+    width: min(420px, calc(100% - 24px));
+    max-height: min(72vh, 660px);
+    overflow: auto;
+  }
+
   .diagramActionPopover--quality {
     width: min(440px, calc(100% - 24px));
     max-height: min(68vh, 620px);
@@ -365,6 +371,26 @@
 
   .diagramIssueListItemMeta {
     @apply max-w-[48%] truncate font-mono text-[10px] text-muted;
+  }
+
+  .diagramActionTabRow {
+    @apply mt-1.5 inline-flex items-center gap-1 rounded-md border border-border/70 bg-panel2/45 p-1;
+  }
+
+  .diagramActionTabBtn {
+    @apply h-7 rounded px-2 text-[11px] font-semibold text-muted;
+  }
+
+  .diagramActionTabBtn.isActive {
+    @apply bg-accent/20 text-fg;
+  }
+
+  .diagramIssueListItemChips {
+    @apply flex max-w-[42%] items-center gap-1;
+  }
+
+  .diagramIssueChip {
+    @apply inline-flex max-w-[120px] truncate rounded border border-border/70 bg-panel px-1.5 py-0.5 font-mono text-[10px] text-muted;
   }
 
   @media (max-width: 1320px) {
@@ -1209,6 +1235,24 @@
 
   .selectedNodeFieldLabel {
     @apply mb-1.5 block text-[11px] font-semibold text-fg;
+  }
+
+  .selectedNodeFieldLabel--withChip {
+    @apply flex items-center justify-between gap-2;
+  }
+
+  .selectedNodeChip--robotmeta {
+    @apply h-5 px-1.5 text-[10px] uppercase tracking-wide;
+  }
+
+  .selectedNodeChip--robotmeta.is-ready {
+    border-color: color-mix(in srgb, hsl(var(--success)) 48%, var(--c-border));
+    background: color-mix(in srgb, hsl(var(--success)) 16%, hsl(var(--panel2) / 0.76));
+  }
+
+  .selectedNodeChip--robotmeta.is-incomplete {
+    border-color: color-mix(in srgb, hsl(var(--warning)) 55%, var(--c-border));
+    background: color-mix(in srgb, hsl(var(--warning)) 16%, hsl(var(--panel2) / 0.76));
   }
 
   .selectedNodeTimeRow {
