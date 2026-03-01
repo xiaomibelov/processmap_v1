@@ -3,6 +3,7 @@ import { apiLogin, withAuthHeaders } from "./helpers/e2eAuth.mjs";
 import {
   API_BASE,
   createFixture,
+  renameTask,
   seedXml,
   switchTab,
 } from "./helpers/processFixture.mjs";
@@ -20,6 +21,30 @@ async function readSessionBpmnMeta(request, accessToken, sessionId) {
   }
   expect(res.ok(), `read bpmn_meta failed: ${text}`).toBeTruthy();
   return body;
+}
+
+async function readSessionBpmnRaw(request, accessToken, sessionId) {
+  const res = await request.get(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/bpmn?raw=1`, {
+    headers: withAuthHeaders(accessToken),
+  });
+  const xml = await res.text();
+  expect(res.ok(), `read bpmn raw failed: ${xml}`).toBeTruthy();
+  return String(xml || "");
+}
+
+function extractPmRobotMetaEntries(xmlText) {
+  const xml = String(xmlText || "");
+  const entries = [];
+  const re = /<pm:RobotMeta\b([^>]*)>([\s\S]*?)<\/pm:RobotMeta>/g;
+  let match = re.exec(xml);
+  while (match) {
+    const attrs = String(match[1] || "");
+    const version = ((attrs.match(/\bversion="([^"]*)"/) || [])[1] || "").trim();
+    const json = String(match[2] || "").trim();
+    entries.push({ version, json, raw: match[0] });
+    match = re.exec(xml);
+  }
+  return entries;
 }
 
 function e2eUiCreds() {
@@ -97,6 +122,7 @@ test("robot meta: save and survive reload", async ({ page, request }) => {
   expect(sid).not.toBe("");
 
   let patchMetaOkCount = 0;
+  let putBpmnOkCount = 0;
   page.on("response", (res) => {
     try {
       const url = new URL(res.url());
@@ -106,6 +132,13 @@ test("robot meta: save and survive reload", async ({ page, request }) => {
         && res.status() === 200
       ) {
         patchMetaOkCount += 1;
+      }
+      if (
+        res.request().method() === "PUT"
+        && url.pathname === `/api/sessions/${sid}/bpmn`
+        && res.status() === 200
+      ) {
+        putBpmnOkCount += 1;
       }
     } catch {
       // ignore parse issues
@@ -146,6 +179,20 @@ test("robot meta: save and survive reload", async ({ page, request }) => {
   expect(row?.mat?.to_zone).toBe("heat");
   expect(Boolean(row?.qc?.critical)).toBeTruthy();
 
+  await renameTask(page, "Task_1", `Robot Task ${runId.slice(-6)} A`);
+  await expect.poll(() => putBpmnOkCount).toBeGreaterThan(0);
+  const xmlAfterFirstSave = await readSessionBpmnRaw(request, auth.accessToken, sid);
+  const robotEntriesAfterFirstSave = extractPmRobotMetaEntries(xmlAfterFirstSave);
+  expect(robotEntriesAfterFirstSave.length).toBe(1);
+  expect(robotEntriesAfterFirstSave[0]?.version).toBe("v1");
+  expect(robotEntriesAfterFirstSave[0]?.json.includes("\n")).toBeFalsy();
+  const jsonAfterFirstSave = robotEntriesAfterFirstSave[0]?.json || "";
+  const parsedJsonAfterFirstSave = JSON.parse(jsonAfterFirstSave);
+  expect(parsedJsonAfterFirstSave?.robot_meta_version).toBe("v1");
+  expect(parsedJsonAfterFirstSave?.exec?.mode).toBe("machine");
+  expect(parsedJsonAfterFirstSave?.exec?.executor).toBe("node_red");
+  expect(parsedJsonAfterFirstSave?.exec?.action_key).toBe("robot.mix");
+
   await page.reload();
   await openFixtureInTopbar(page, fixture);
   await switchTab(page, "Diagram");
@@ -162,4 +209,13 @@ test("robot meta: save and survive reload", async ({ page, request }) => {
   await expect(page.getByTestId("robotmeta-from-zone")).toHaveValue("cold");
   await expect(page.getByTestId("robotmeta-to-zone")).toHaveValue("heat");
   await expect(page.getByTestId("robotmeta-qc-critical")).toBeChecked();
+
+  const putCountBeforeSecondSave = putBpmnOkCount;
+  await renameTask(page, "Task_1", `Robot Task ${runId.slice(-6)} B`);
+  await expect.poll(() => putBpmnOkCount).toBeGreaterThan(putCountBeforeSecondSave);
+  const xmlAfterSecondSave = await readSessionBpmnRaw(request, auth.accessToken, sid);
+  const robotEntriesAfterSecondSave = extractPmRobotMetaEntries(xmlAfterSecondSave);
+  expect(robotEntriesAfterSecondSave.length).toBe(1);
+  expect(robotEntriesAfterSecondSave[0]?.version).toBe("v1");
+  expect(robotEntriesAfterSecondSave[0]?.json || "").toBe(jsonAfterFirstSave);
 });

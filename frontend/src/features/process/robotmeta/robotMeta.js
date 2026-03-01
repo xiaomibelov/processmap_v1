@@ -335,6 +335,100 @@ export function toRobotMetaExecutionPlanStep(stepRaw, robotMetaMapRaw) {
   };
 }
 
+function setBpmnProperty(target, key, value) {
+  if (!target) return;
+  if (typeof target.set === "function") {
+    target.set(key, value);
+    return;
+  }
+  target[key] = value;
+}
+
+function isPmRobotMetaEntry(entry) {
+  return String(entry?.$type || "") === "pm:RobotMeta";
+}
+
+export function syncRobotMetaToBpmn({ modeler, robotMetaByElementId } = {}) {
+  if (!modeler || typeof modeler.get !== "function") {
+    return { ok: false, changed: 0, reason: "missing_modeler" };
+  }
+
+  try {
+    const registry = modeler.get("elementRegistry");
+    const moddle = modeler.get("moddle");
+    if (!registry || !moddle || typeof moddle.create !== "function") {
+      return { ok: false, changed: 0, reason: "missing_services" };
+    }
+
+    const normalizedMap = normalizeRobotMetaMap(robotMetaByElementId);
+    const candidateIds = new Set(
+      Object.keys(normalizedMap)
+        .map((value) => asText(value))
+        .filter(Boolean),
+    );
+
+    asArray(registry.getAll?.()).forEach((element) => {
+      const bo = element?.businessObject;
+      const elementId = asText(bo?.id || element?.id);
+      if (!elementId) return;
+      const values = asArray(bo?.extensionElements?.values);
+      if (values.some((value) => isPmRobotMetaEntry(value))) {
+        candidateIds.add(elementId);
+      }
+    });
+
+    let changed = 0;
+    candidateIds.forEach((elementId) => {
+      const element = registry.get?.(elementId);
+      const bo = element?.businessObject;
+      if (!bo) return;
+
+      const ext = bo.extensionElements || null;
+      const values = asArray(ext?.values);
+      const robotEntries = values.filter((entry) => isPmRobotMetaEntry(entry));
+      const nonRobotValues = values.filter((entry) => !isPmRobotMetaEntry(entry));
+      const nextMeta = normalizedMap[elementId] || null;
+
+      if (!nextMeta) {
+        if (!robotEntries.length) return;
+        if (ext) {
+          if (nonRobotValues.length) {
+            setBpmnProperty(ext, "values", nonRobotValues);
+          } else {
+            setBpmnProperty(bo, "extensionElements", undefined);
+          }
+        }
+        changed += 1;
+        return;
+      }
+
+      const canonicalJson = JSON.stringify(canonicalizeRobotMeta(nextMeta));
+      const existing = robotEntries[0] || null;
+      const alreadySynced = robotEntries.length === 1
+        && String(existing?.version || "") === ROBOT_META_VERSION
+        && String(existing?.json || "") === canonicalJson;
+      if (alreadySynced) return;
+
+      const nextExt = ext || moddle.create("bpmn:ExtensionElements", { values: [] });
+      const pmRobotMeta = moddle.create("pm:RobotMeta", {
+        version: ROBOT_META_VERSION,
+        json: canonicalJson,
+      });
+      setBpmnProperty(nextExt, "values", [...nonRobotValues, pmRobotMeta]);
+      setBpmnProperty(bo, "extensionElements", nextExt);
+      changed += 1;
+    });
+
+    return { ok: true, changed, candidates: candidateIds.size };
+  } catch (error) {
+    return {
+      ok: false,
+      changed: 0,
+      reason: String(error?.message || error || "sync_failed"),
+    };
+  }
+}
+
 export function isEmptyRobotMetaMap(rawMap) {
   return Object.keys(normalizeRobotMetaMap(rawMap)).length === 0;
 }

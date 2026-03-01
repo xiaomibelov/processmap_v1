@@ -15,9 +15,9 @@ import { elementNotesCount, normalizeElementNotesMap } from "../../features/note
 import { measureInterviewPerf } from "./interview/perf";
 import pmModdleDescriptor from "../../features/process/robotmeta/pmModdleDescriptor";
 import {
-  canonicalRobotMetaString,
   isRobotMetaIncomplete,
   normalizeRobotMetaMap,
+  syncRobotMetaToBpmn,
 } from "../../features/process/robotmeta/robotMeta";
 
 import "bpmn-js/dist/assets/diagram-js.css";
@@ -2047,81 +2047,10 @@ const BpmnStage = forwardRef(function BpmnStage({
   }
 
   function syncRobotMetaToModeler(inst) {
-    if (!inst) return { ok: false, changed: 0, reason: "no_instance" };
-    try {
-      const registry = inst.get("elementRegistry");
-      const moddle = inst.get("moddle");
-      if (!registry || !moddle || typeof moddle.create !== "function") {
-        return { ok: false, changed: 0, reason: "missing_services" };
-      }
-
-      const robotMetaByElementId = getRobotMetaMap();
-      const shapeIds = new Set(
-        asArray(registry.getAll?.())
-          .filter((el) => isShapeElement(el) && isSelectableElement(el))
-          .map((el) => toText(el?.businessObject?.id || el?.id))
-          .filter(Boolean),
-      );
-      const candidates = new Set([
-        ...shapeIds,
-        ...Object.keys(robotMetaByElementId || {}).map((id) => toText(id)).filter(Boolean),
-      ]);
-
-      const setProp = (target, key, value) => {
-        if (!target) return;
-        if (typeof target.set === "function") {
-          target.set(key, value);
-        } else {
-          target[key] = value;
-        }
-      };
-
-      let changed = 0;
-      candidates.forEach((elementId) => {
-        const el = registry.get(elementId);
-        if (!el || !isShapeElement(el) || !isSelectableElement(el)) return;
-        const bo = el.businessObject;
-        if (!bo) return;
-        const ext = bo.extensionElements || null;
-        const values = asArray(ext?.values);
-        const nonRobotValues = values.filter((item) => String(item?.$type || "") !== "pm:RobotMeta");
-        const hasRobotValue = nonRobotValues.length !== values.length;
-
-        const robotMeta = robotMetaByElementId[elementId];
-        if (!robotMeta) {
-          if (!hasRobotValue) return;
-          if (nonRobotValues.length === 0) {
-            setProp(bo, "extensionElements", undefined);
-          } else if (ext) {
-            setProp(ext, "values", nonRobotValues);
-          }
-          changed += 1;
-          return;
-        }
-
-        const canonical = canonicalRobotMetaString(robotMeta);
-        const existingRobot = values.find((item) => String(item?.$type || "") === "pm:RobotMeta");
-        const samePayload = existingRobot
-          && String(existingRobot.version || "") === "v1"
-          && String(existingRobot.json || "") === canonical
-          && hasRobotValue
-          && nonRobotValues.length + 1 === values.length;
-        if (samePayload) return;
-
-        const nextExt = ext || moddle.create("bpmn:ExtensionElements", { values: [] });
-        const pmRobotMeta = moddle.create("pm:RobotMeta", {
-          version: "v1",
-          json: canonical,
-        });
-        setProp(nextExt, "values", [...nonRobotValues, pmRobotMeta]);
-        setProp(bo, "extensionElements", nextExt);
-        changed += 1;
-      });
-
-      return { ok: true, changed };
-    } catch (error) {
-      return { ok: false, changed: 0, reason: String(error?.message || error || "sync_failed") };
-    }
+    return syncRobotMetaToBpmn({
+      modeler: inst,
+      robotMetaByElementId: getRobotMetaMap(),
+    });
   }
 
   function isAiQuestionsModeOn() {

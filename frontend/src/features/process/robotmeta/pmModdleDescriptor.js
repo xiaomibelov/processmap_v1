@@ -5,9 +5,6 @@ const pmModdleDescriptor = {
   name: "ProcessMap",
   uri: PM_ROBOT_META_NAMESPACE,
   prefix: PM_ROBOT_META_PREFIX,
-  xml: {
-    tagAlias: "lowerCase",
-  },
   types: [
     {
       name: "RobotMeta",
