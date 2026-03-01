@@ -239,7 +239,11 @@ export function parseRobotMetaJson(rawText) {
   if (!text) return null;
   try {
     const parsed = JSON.parse(text);
-    return normalizeRobotMetaV1(parsed);
+    const rawVersion = asText(asObject(parsed).robot_meta_version);
+    if (rawVersion && rawVersion !== ROBOT_META_VERSION) return null;
+    const validation = validateRobotMetaV1(parsed);
+    if (!validation.ok) return null;
+    return canonicalizeRobotMeta(validation.value);
   } catch {
     return null;
   }
@@ -335,6 +339,16 @@ export function toRobotMetaExecutionPlanStep(stepRaw, robotMetaMapRaw) {
   };
 }
 
+function warnRobotMetaIssue(onWarning, code, detail = {}) {
+  if (typeof onWarning === "function") {
+    try {
+      onWarning(code, detail);
+    } catch {
+      // no-op
+    }
+  }
+}
+
 function setBpmnProperty(target, key, value) {
   if (!target) return;
   if (typeof target.set === "function") {
@@ -346,6 +360,110 @@ function setBpmnProperty(target, key, value) {
 
 function isPmRobotMetaEntry(entry) {
   return String(entry?.$type || "") === "pm:RobotMeta";
+}
+
+export function extractRobotMetaFromBpmn({ modeler, onWarning } = {}) {
+  if (!modeler || typeof modeler.get !== "function") return {};
+
+  try {
+    const registry = modeler.get("elementRegistry");
+    if (!registry || typeof registry.getAll !== "function") return {};
+
+    const out = {};
+    asArray(registry.getAll()).forEach((element) => {
+      const bo = element?.businessObject;
+      const elementId = asText(bo?.id || element?.id);
+      if (!elementId) return;
+      const values = asArray(bo?.extensionElements?.values);
+      const robotEntry = values.find((entry) => isPmRobotMetaEntry(entry));
+      if (!robotEntry) return;
+
+      const versionAttr = asText(robotEntry?.version);
+      if (versionAttr && versionAttr !== ROBOT_META_VERSION) {
+        warnRobotMetaIssue(onWarning, "unsupported_version", {
+          elementId,
+          version: versionAttr,
+        });
+        return;
+      }
+
+      const jsonText = String(robotEntry?.json || "").trim();
+      if (!jsonText) {
+        warnRobotMetaIssue(onWarning, "empty_json", { elementId });
+        return;
+      }
+
+      let parsed = null;
+      try {
+        parsed = JSON.parse(jsonText);
+      } catch {
+        warnRobotMetaIssue(onWarning, "invalid_json", { elementId });
+        return;
+      }
+
+      const jsonVersion = asText(asObject(parsed).robot_meta_version);
+      if (jsonVersion && jsonVersion !== ROBOT_META_VERSION) {
+        warnRobotMetaIssue(onWarning, "unsupported_version", {
+          elementId,
+          version: jsonVersion,
+        });
+        return;
+      }
+
+      const validation = validateRobotMetaV1(parsed);
+      if (!validation.ok) {
+        warnRobotMetaIssue(onWarning, "invalid_meta", {
+          elementId,
+          errors: validation.errors.slice(),
+        });
+        return;
+      }
+
+      const normalized = canonicalizeRobotMeta(validation.value);
+      if (asText(normalized.robot_meta_version) !== ROBOT_META_VERSION) {
+        warnRobotMetaIssue(onWarning, "unsupported_version", {
+          elementId,
+          version: asText(normalized.robot_meta_version),
+        });
+        return;
+      }
+
+      out[elementId] = normalized;
+    });
+    return out;
+  } catch {
+    warnRobotMetaIssue(onWarning, "extract_failed");
+    return {};
+  }
+}
+
+export function hydrateRobotMetaFromBpmn({ extractedMap, sessionMetaMap } = {}) {
+  const extracted = normalizeRobotMetaMap(extractedMap);
+  const session = normalizeRobotMetaMap(sessionMetaMap);
+  const conflicts = [];
+
+  if (Object.keys(session).length === 0) {
+    return {
+      nextSessionMetaMap: extracted,
+      conflicts,
+      adoptedFromBpmn: Object.keys(extracted).length > 0,
+      source: "bpmn_seed",
+    };
+  }
+
+  Object.keys(extracted).forEach((elementId) => {
+    if (!session[elementId]) return;
+    const sessionValue = canonicalRobotMetaString(session[elementId]);
+    const extractedValue = canonicalRobotMetaString(extracted[elementId]);
+    if (sessionValue !== extractedValue) conflicts.push(elementId);
+  });
+
+  return {
+    nextSessionMetaMap: session,
+    conflicts,
+    adoptedFromBpmn: false,
+    source: "session_wins",
+  };
 }
 
 export function syncRobotMetaToBpmn({ modeler, robotMetaByElementId } = {}) {

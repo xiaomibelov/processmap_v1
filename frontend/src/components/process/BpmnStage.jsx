@@ -15,6 +15,9 @@ import { elementNotesCount, normalizeElementNotesMap } from "../../features/note
 import { measureInterviewPerf } from "./interview/perf";
 import pmModdleDescriptor from "../../features/process/robotmeta/pmModdleDescriptor";
 import {
+  canonicalRobotMetaMapString,
+  extractRobotMetaFromBpmn,
+  hydrateRobotMetaFromBpmn,
   isRobotMetaIncomplete,
   normalizeRobotMetaMap,
   syncRobotMetaToBpmn,
@@ -1146,6 +1149,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   onElementSelectionChange,
   onElementNotesRemap,
   onAiQuestionsByElementChange,
+  onSessionSync,
   aiQuestionsModeEnabled,
   diagramDisplayMode = "normal",
   stepTimeUnit = "min",
@@ -1202,6 +1206,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const onElementSelectionChangeRef = useRef(onElementSelectionChange);
   const onElementNotesRemapRef = useRef(onElementNotesRemap);
   const onAiQuestionsByElementChangeRef = useRef(onAiQuestionsByElementChange);
+  const onSessionSyncRef = useRef(onSessionSync);
   const aiQuestionsModeEnabledRef = useRef(!!aiQuestionsModeEnabled);
   const diagramDisplayModeRef = useRef(String(diagramDisplayMode || "normal").trim().toLowerCase() || "normal");
   const stepTimeUnitRef = useRef(normalizeStepTimeUnit(stepTimeUnit));
@@ -1234,6 +1239,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const ensureEpochRef = useRef(0);
   const renderRunRef = useRef(0);
   const modelerImportInFlightRef = useRef({ sid: "", xmlHash: "", promise: null });
+  const robotMetaHydrateStateRef = useRef({ key: "" });
   const prevViewRef = useRef(view);
   const runtimeTokenRef = useRef(0);
   const runtimeStatusRef = useRef({
@@ -1275,6 +1281,10 @@ const BpmnStage = forwardRef(function BpmnStage({
   useEffect(() => {
     onAiQuestionsByElementChangeRef.current = onAiQuestionsByElementChange;
   }, [onAiQuestionsByElementChange]);
+
+  useEffect(() => {
+    onSessionSyncRef.current = onSessionSync;
+  }, [onSessionSync]);
 
   useEffect(() => {
     aiQuestionsModeEnabledRef.current = !!aiQuestionsModeEnabled;
@@ -2051,6 +2061,76 @@ const BpmnStage = forwardRef(function BpmnStage({
       modeler: inst,
       robotMetaByElementId: getRobotMetaMap(),
     });
+  }
+
+  function hydrateRobotMetaFromImportedBpmn(inst, xmlText, source = "import_xml") {
+    const sid = String(activeSessionRef.current || sessionId || "").trim();
+    if (!sid || !inst) return { ok: false, reason: "missing_context" };
+
+    const currentSessionMap = getRobotMetaMap();
+    const xmlHash = fnv1aHex(String(xmlText || ""));
+    const currentSessionHash = fnv1aHex(canonicalRobotMetaMapString(currentSessionMap));
+    const preflightKey = `${sid}|${xmlHash}|${currentSessionHash}`;
+    if (robotMetaHydrateStateRef.current.key === preflightKey) {
+      return { ok: true, skipped: true, reason: "dedup" };
+    }
+
+    const warnings = [];
+    const extractedMap = extractRobotMetaFromBpmn({
+      modeler: inst,
+      onWarning: (code, detail = {}) => {
+        warnings.push({ code: String(code || ""), detail: asObject(detail) });
+      },
+    });
+
+    const hydration = hydrateRobotMetaFromBpmn({
+      extractedMap,
+      sessionMetaMap: currentSessionMap,
+    });
+    const nextMap = normalizeRobotMetaMap(hydration?.nextSessionMetaMap);
+    const nextHash = fnv1aHex(canonicalRobotMetaMapString(nextMap));
+    robotMetaHydrateStateRef.current.key = `${sid}|${xmlHash}|${nextHash}`;
+
+    warnings.forEach((warning) => {
+      // eslint-disable-next-line no-console
+      console.warn("[ROBOT_META] BPMN extract warning", {
+        sid,
+        source,
+        code: warning.code,
+        ...warning.detail,
+      });
+    });
+
+    const conflicts = asArray(hydration?.conflicts)
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+    if (conflicts.length > 0) {
+      // eslint-disable-next-line no-console
+      console.warn("[ROBOT_META] BPMN robotMeta differs; session meta wins", {
+        sid,
+        source,
+        conflicts: conflicts.slice(0, 20),
+      });
+    }
+
+    if (!hydration?.adoptedFromBpmn || !Object.keys(nextMap).length) {
+      return { ok: true, adopted: false, extractedCount: Object.keys(extractedMap).length, conflicts: conflicts.length };
+    }
+
+    const currentMeta = asObject(asObject(draftRef.current).bpmn_meta);
+    const nextMeta = {
+      version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: normalizeFlowTierMetaMap(currentMeta?.flow_meta),
+      node_path_meta: normalizeNodePathMetaMap(currentMeta?.node_path_meta),
+      robot_meta_by_element_id: nextMap,
+    };
+    onSessionSyncRef.current?.({
+      id: sid,
+      session_id: sid,
+      bpmn_meta: nextMeta,
+      _sync_source: "robot_meta_bpmn_hydrate",
+    });
+    return { ok: true, adopted: true, extractedCount: Object.keys(extractedMap).length, conflicts: conflicts.length };
   }
 
   function isAiQuestionsModeOn() {
@@ -4857,6 +4937,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         throw new Error(String(loaded.error || loaded.reason || "importXML failed"));
       }
       if (!m || m !== modelerRef.current) return;
+      hydrateRobotMetaFromImportedBpmn(m, nextXml, "renderModeler");
       try {
         const canvas = m.get("canvas");
         await waitAnimationFrame();
@@ -5677,6 +5758,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     }
     activeSessionRef.current = sid;
     ensureEpochRef.current += 1;
+    robotMetaHydrateStateRef.current = { key: "" };
     destroyRuntime();
     setErr("");
     const draftNow = asObject(draftRef.current);

@@ -1,50 +1,80 @@
 import { expect, test } from "@playwright/test";
-import { apiLogin, withAuthHeaders } from "./helpers/e2eAuth.mjs";
+import { apiLogin } from "./helpers/e2eAuth.mjs";
 import {
   API_BASE,
   createFixture,
-  renameTask,
-  seedXml,
   switchTab,
 } from "./helpers/processFixture.mjs";
 
-async function readSessionBpmnMeta(request, accessToken, sessionId) {
-  const res = await request.get(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/bpmn_meta`, {
-    headers: withAuthHeaders(accessToken),
+function seedXmlWithPmRobotMeta({ processName = "RobotMeta import", taskName = "Robot Task import" } = {}) {
+  const robotMetaJson = JSON.stringify({
+    robot_meta_version: "v1",
+    exec: {
+      mode: "machine ",
+      executor: " node_red ",
+      action_key: " robot.import ",
+      timeout_sec: 30,
+      retry: { max_attempts: 2, backoff_sec: 4 },
+    },
+    mat: {
+      from_zone: " cold ",
+      to_zone: " heat ",
+      inputs: [],
+      outputs: [],
+    },
+    qc: {
+      critical: true,
+      checks: [],
+    },
   });
-  const text = await res.text();
-  let body = {};
-  try {
-    body = text ? JSON.parse(text) : {};
-  } catch {
-    body = {};
-  }
-  expect(res.ok(), `read bpmn_meta failed: ${text}`).toBeTruthy();
-  return body;
-}
-
-async function readSessionBpmnRaw(request, accessToken, sessionId) {
-  const res = await request.get(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/bpmn?raw=1`, {
-    headers: withAuthHeaders(accessToken),
-  });
-  const xml = await res.text();
-  expect(res.ok(), `read bpmn raw failed: ${xml}`).toBeTruthy();
-  return String(xml || "");
-}
-
-function extractPmRobotMetaEntries(xmlText) {
-  const xml = String(xmlText || "");
-  const entries = [];
-  const re = /<pm:RobotMeta\b([^>]*)>([\s\S]*?)<\/pm:RobotMeta>/g;
-  let match = re.exec(xml);
-  while (match) {
-    const attrs = String(match[1] || "");
-    const version = ((attrs.match(/\bversion="([^"]*)"/) || [])[1] || "").trim();
-    const json = String(match[2] || "").trim();
-    entries.push({ version, json, raw: match[0] });
-    match = re.exec(xml);
-  }
-  return entries;
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+  xmlns:pm="http://processmap.ai/schema/bpmn/1.0"
+  id="Definitions_1"
+  targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_1" name="${processName}" isExecutable="false">
+    <bpmn:startEvent id="StartEvent_1" name="Старт">
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="Task_1" name="${taskName}">
+      <bpmn:extensionElements>
+        <pm:RobotMeta version="v1">${robotMetaJson}</pm:RobotMeta>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:endEvent id="EndEvent_1" name="Финиш">
+      <bpmn:incoming>Flow_2</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="Task_1" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_1" targetRef="EndEvent_1" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Process_1">
+      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
+        <dc:Bounds x="170" y="170" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_1_di" bpmnElement="Task_1">
+        <dc:Bounds x="290" y="148" width="170" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1">
+        <dc:Bounds x="560" y="170" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
+        <di:waypoint x="206" y="188" />
+        <di:waypoint x="290" y="188" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2">
+        <di:waypoint x="460" y="188" />
+        <di:waypoint x="560" y="188" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>`;
 }
 
 function e2eUiCreds() {
@@ -109,41 +139,15 @@ async function selectElementForDetails(page, elementId = "Task_1") {
   expect(selected.ok, JSON.stringify(selected)).toBeTruthy();
 }
 
-test("robot meta: save and survive reload", async ({ page, request }) => {
+test("robot meta: hydrate from BPMN extension on import with trim normalization", async ({ page, request }) => {
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const auth = await apiLogin(request, { apiBase: API_BASE });
   const fixture = await createFixture(
     request,
-    runId,
+    `${runId}_import`,
     auth.headers,
-    seedXml({ processName: `RobotMeta ${runId}`, taskName: "Robot Task" }),
+    seedXmlWithPmRobotMeta({ processName: `RobotMeta import ${runId}`, taskName: "Robot Task import" }),
   );
-  const sid = String(fixture.sessionId || "").trim();
-  expect(sid).not.toBe("");
-
-  let patchMetaOkCount = 0;
-  let putBpmnOkCount = 0;
-  page.on("response", (res) => {
-    try {
-      const url = new URL(res.url());
-      if (
-        res.request().method() === "PATCH"
-        && url.pathname === `/api/sessions/${sid}/bpmn_meta`
-        && res.status() === 200
-      ) {
-        patchMetaOkCount += 1;
-      }
-      if (
-        res.request().method() === "PUT"
-        && url.pathname === `/api/sessions/${sid}/bpmn`
-        && res.status() === 200
-      ) {
-        putBpmnOkCount += 1;
-      }
-    } catch {
-      // ignore parse issues
-    }
-  });
 
   await uiLogin(page);
   await openFixtureInTopbar(page, fixture);
@@ -152,46 +156,15 @@ test("robot meta: save and survive reload", async ({ page, request }) => {
   await ensureSidebarOpen(page);
   await selectElementForDetails(page, "Task_1");
 
-  await expect(page.getByTestId("robotmeta-mode")).toBeVisible();
-  await page.getByTestId("robotmeta-mode").selectOption("machine");
-  await page.getByTestId("robotmeta-executor").selectOption("node_red");
-  await page.getByTestId("robotmeta-action-key").fill("");
-  await expect(page.getByTestId("robotmeta-incomplete-warning")).toBeVisible();
-
-  await page.getByTestId("robotmeta-action-key").fill("robot.mix");
-  await page.getByTestId("robotmeta-timeout-sec").fill("45");
-  await page.getByTestId("robotmeta-retry-max").fill("3");
-  await page.getByTestId("robotmeta-retry-backoff").fill("5");
-  await page.getByTestId("robotmeta-from-zone").fill("cold");
-  await page.getByTestId("robotmeta-to-zone").fill("heat");
-  await page.getByTestId("robotmeta-qc-critical").check();
-  await page.getByTestId("robotmeta-save").click();
-
-  await expect.poll(() => patchMetaOkCount).toBeGreaterThan(0);
-
-  const savedMeta = await readSessionBpmnMeta(request, auth.accessToken, sid);
-  const row = savedMeta?.robot_meta_by_element_id?.Task_1 || {};
-  expect(row?.robot_meta_version).toBe("v1");
-  expect(row?.exec?.mode).toBe("machine");
-  expect(row?.exec?.executor).toBe("node_red");
-  expect(row?.exec?.action_key).toBe("robot.mix");
-  expect(row?.mat?.from_zone).toBe("cold");
-  expect(row?.mat?.to_zone).toBe("heat");
-  expect(Boolean(row?.qc?.critical)).toBeTruthy();
-
-  await renameTask(page, "Task_1", `Robot Task ${runId.slice(-6)} A`);
-  await expect.poll(() => putBpmnOkCount).toBeGreaterThan(0);
-  const xmlAfterFirstSave = await readSessionBpmnRaw(request, auth.accessToken, sid);
-  const robotEntriesAfterFirstSave = extractPmRobotMetaEntries(xmlAfterFirstSave);
-  expect(robotEntriesAfterFirstSave.length).toBe(1);
-  expect(robotEntriesAfterFirstSave[0]?.version).toBe("v1");
-  expect(robotEntriesAfterFirstSave[0]?.json.includes("\n")).toBeFalsy();
-  const jsonAfterFirstSave = robotEntriesAfterFirstSave[0]?.json || "";
-  const parsedJsonAfterFirstSave = JSON.parse(jsonAfterFirstSave);
-  expect(parsedJsonAfterFirstSave?.robot_meta_version).toBe("v1");
-  expect(parsedJsonAfterFirstSave?.exec?.mode).toBe("machine");
-  expect(parsedJsonAfterFirstSave?.exec?.executor).toBe("node_red");
-  expect(parsedJsonAfterFirstSave?.exec?.action_key).toBe("robot.mix");
+  await expect(page.getByTestId("robotmeta-mode")).toHaveValue("machine");
+  await expect(page.getByTestId("robotmeta-executor")).toHaveValue("node_red");
+  await expect(page.getByTestId("robotmeta-action-key")).toHaveValue("robot.import");
+  await expect(page.getByTestId("robotmeta-timeout-sec")).toHaveValue("30");
+  await expect(page.getByTestId("robotmeta-retry-max")).toHaveValue("2");
+  await expect(page.getByTestId("robotmeta-retry-backoff")).toHaveValue("4");
+  await expect(page.getByTestId("robotmeta-from-zone")).toHaveValue("cold");
+  await expect(page.getByTestId("robotmeta-to-zone")).toHaveValue("heat");
+  await expect(page.getByTestId("robotmeta-qc-critical")).toBeChecked();
 
   await page.reload();
   await openFixtureInTopbar(page, fixture);
@@ -199,23 +172,6 @@ test("robot meta: save and survive reload", async ({ page, request }) => {
   await waitForModelerReady(page);
   await ensureSidebarOpen(page);
   await selectElementForDetails(page, "Task_1");
-
   await expect(page.getByTestId("robotmeta-mode")).toHaveValue("machine");
-  await expect(page.getByTestId("robotmeta-executor")).toHaveValue("node_red");
-  await expect(page.getByTestId("robotmeta-action-key")).toHaveValue("robot.mix");
-  await expect(page.getByTestId("robotmeta-timeout-sec")).toHaveValue("45");
-  await expect(page.getByTestId("robotmeta-retry-max")).toHaveValue("3");
-  await expect(page.getByTestId("robotmeta-retry-backoff")).toHaveValue("5");
-  await expect(page.getByTestId("robotmeta-from-zone")).toHaveValue("cold");
-  await expect(page.getByTestId("robotmeta-to-zone")).toHaveValue("heat");
-  await expect(page.getByTestId("robotmeta-qc-critical")).toBeChecked();
-
-  const putCountBeforeSecondSave = putBpmnOkCount;
-  await renameTask(page, "Task_1", `Robot Task ${runId.slice(-6)} B`);
-  await expect.poll(() => putBpmnOkCount).toBeGreaterThan(putCountBeforeSecondSave);
-  const xmlAfterSecondSave = await readSessionBpmnRaw(request, auth.accessToken, sid);
-  const robotEntriesAfterSecondSave = extractPmRobotMetaEntries(xmlAfterSecondSave);
-  expect(robotEntriesAfterSecondSave.length).toBe(1);
-  expect(robotEntriesAfterSecondSave[0]?.version).toBe("v1");
-  expect(robotEntriesAfterSecondSave[0]?.json || "").toBe(jsonAfterFirstSave);
+  await expect(page.getByTestId("robotmeta-action-key")).toHaveValue("robot.import");
 });

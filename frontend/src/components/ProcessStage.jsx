@@ -4296,6 +4296,7 @@ export default function ProcessStage({
                   onElementSelectionChange={handleBpmnSelectionChange}
                   onElementNotesRemap={onElementNotesRemap}
                   onAiQuestionsByElementChange={handleAiQuestionsByElementChange}
+                  onSessionSync={onSessionSync}
                   aiQuestionsModeEnabled={isInterviewMode}
                   diagramDisplayMode={diagramMode}
                   stepTimeUnit={stepTimeUnit}

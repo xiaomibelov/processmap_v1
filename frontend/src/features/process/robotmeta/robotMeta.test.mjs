@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  extractRobotMetaFromBpmn,
+  hydrateRobotMetaFromBpmn,
   canonicalizeRobotMeta,
   createDefaultRobotMetaV1,
   removeRobotMetaByElementId,
@@ -195,4 +197,103 @@ test("syncRobotMetaToBpmn removes only pm:RobotMeta when meta is absent", () => 
   assert.equal(res.changed, 1);
   assert.equal(taskBusinessObject.extensionElements.values.filter((v) => v.$type === "pm:RobotMeta").length, 0);
   assert.equal(taskBusinessObject.extensionElements.values.filter((v) => v.$type === "camunda:Properties").length, 1);
+});
+
+test("extractRobotMetaFromBpmn trims strings and skips unsupported/bad entries", () => {
+  const warnings = [];
+  const modeler = createMockModeler([
+    {
+      id: "Task_1",
+      businessObject: {
+        id: "Task_1",
+        extensionElements: {
+          values: [
+            {
+              $type: "pm:RobotMeta",
+              version: "v1",
+              json: JSON.stringify({
+                robot_meta_version: "v1",
+                exec: {
+                  mode: "machine ",
+                  executor: " node_red ",
+                  action_key: " robot.mix ",
+                },
+                mat: {
+                  from_zone: " cold ",
+                  to_zone: " heat ",
+                },
+              }),
+            },
+          ],
+        },
+      },
+    },
+    {
+      id: "Task_2",
+      businessObject: {
+        id: "Task_2",
+        extensionElements: {
+          values: [{ $type: "pm:RobotMeta", version: "v2", json: "{\"robot_meta_version\":\"v2\"}" }],
+        },
+      },
+    },
+    {
+      id: "Task_3",
+      businessObject: {
+        id: "Task_3",
+        extensionElements: {
+          values: [{ $type: "pm:RobotMeta", version: "v1", json: "{bad json" }],
+        },
+      },
+    },
+  ]);
+
+  const extracted = extractRobotMetaFromBpmn({
+    modeler,
+    onWarning: (code, detail) => warnings.push({ code, detail }),
+  });
+
+  assert.equal(Object.keys(extracted).length, 1);
+  assert.equal(extracted.Task_1.exec.mode, "machine");
+  assert.equal(extracted.Task_1.exec.executor, "node_red");
+  assert.equal(extracted.Task_1.exec.action_key, "robot.mix");
+  assert.equal(extracted.Task_1.mat.from_zone, "cold");
+  assert.equal(extracted.Task_1.mat.to_zone, "heat");
+  assert.equal(
+    warnings.some((w) => String(w.code) === "unsupported_version" && String(w?.detail?.elementId) === "Task_2"),
+    true,
+  );
+  assert.equal(
+    warnings.some((w) => String(w.code) === "invalid_json" && String(w?.detail?.elementId) === "Task_3"),
+    true,
+  );
+});
+
+test("hydrateRobotMetaFromBpmn keeps session map when non-empty and reports conflicts", () => {
+  const hydrated = hydrateRobotMetaFromBpmn({
+    sessionMetaMap: {
+      Task_1: { exec: { mode: "machine", executor: "node_red", action_key: "session.win" } },
+      Task_2: { exec: { mode: "human", executor: "manual_ui" } },
+    },
+    extractedMap: {
+      Task_1: { exec: { mode: "machine", executor: "node_red", action_key: "xml.value" } },
+      Task_3: { exec: { mode: "machine", executor: "robot_cell", action_key: "from.xml" } },
+    },
+  });
+
+  assert.equal(hydrated.adoptedFromBpmn, false);
+  assert.equal(hydrated.nextSessionMetaMap.Task_1.exec.action_key, "session.win");
+  assert.equal(typeof hydrated.nextSessionMetaMap.Task_3, "undefined");
+  assert.deepEqual(hydrated.conflicts, ["Task_1"]);
+});
+
+test("hydrateRobotMetaFromBpmn seeds session map from BPMN when session map is empty", () => {
+  const hydrated = hydrateRobotMetaFromBpmn({
+    sessionMetaMap: {},
+    extractedMap: {
+      Task_1: { exec: { mode: "machine", executor: "node_red", action_key: "from.xml" } },
+    },
+  });
+  assert.equal(hydrated.adoptedFromBpmn, true);
+  assert.equal(hydrated.nextSessionMetaMap.Task_1.exec.action_key, "from.xml");
 });
