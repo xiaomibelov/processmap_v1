@@ -1240,6 +1240,10 @@
     @apply mt-1.5 text-[11px] text-danger;
   }
 
+  .selectedNodeFieldWarn {
+    @apply mt-1.5 text-[11px] text-warning;
+  }
+
   .stickyNodeCard.isEmpty {
     @apply border-dashed;
   }

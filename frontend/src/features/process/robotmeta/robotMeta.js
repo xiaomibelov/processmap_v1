@@ -1,7 +1,41 @@
-import { PM_ROBOT_META_NAMESPACE } from "./pmModdleDescriptor";
+import { PM_ROBOT_META_NAMESPACE } from "./pmModdleDescriptor.js";
 
 export const ROBOT_META_VERSION = "v1";
 export const ROBOT_EXEC_MODES = ["human", "machine", "hybrid"];
+export const ROBOT_EXECUTOR_OPTIONS = ["manual_ui", "node_red", "robot_cell"];
+
+/**
+ * RobotMetaV1 schema shape (JSON contract).
+ * @typedef {Object} RobotMetaV1
+ * @property {"v1"} robot_meta_version
+ * @property {{mode:"human"|"machine"|"hybrid", executor:string, action_key:string|null, timeout_sec:number|null, retry:{max_attempts:number, backoff_sec:number}}} exec
+ * @property {{from_zone:string|null, to_zone:string|null, inputs:any[], outputs:any[]}} mat
+ * @property {{critical:boolean, checks:any[]}} qc
+ */
+
+export const ROBOT_META_V1_SHAPE = Object.freeze({
+  robot_meta_version: "v1",
+  exec: {
+    mode: "human",
+    executor: "manual_ui",
+    action_key: null,
+    timeout_sec: null,
+    retry: {
+      max_attempts: 1,
+      backoff_sec: 0,
+    },
+  },
+  mat: {
+    from_zone: null,
+    to_zone: null,
+    inputs: [],
+    outputs: [],
+  },
+  qc: {
+    critical: false,
+    checks: [],
+  },
+});
 
 const EXEC_MODE_SET = new Set(ROBOT_EXEC_MODES);
 
@@ -110,12 +144,41 @@ export function normalizeRobotMetaV1(rawValue) {
 }
 
 export function validateRobotMetaV1(rawValue) {
+  const raw = asObject(rawValue);
+  const execRaw = asObject(raw.exec);
+  const retryRaw = asObject(execRaw.retry);
   const errors = [];
+  const rawMode = asText(execRaw.mode).toLowerCase();
+  const rawTimeout = execRaw.timeout_sec;
+  const rawMaxAttempts = retryRaw.max_attempts;
+  const rawBackoff = retryRaw.backoff_sec;
   const value = normalizeRobotMetaV1(rawValue);
-  if (!EXEC_MODE_SET.has(value.exec.mode)) errors.push("exec.mode must be human|machine|hybrid");
-  if (value.exec.timeout_sec !== null && value.exec.timeout_sec < 0) errors.push("exec.timeout_sec must be >= 0");
-  if (Number(value.exec.retry.max_attempts) < 0) errors.push("exec.retry.max_attempts must be >= 0");
-  if (Number(value.exec.retry.backoff_sec) < 0) errors.push("exec.retry.backoff_sec must be >= 0");
+
+  if (rawMode && !EXEC_MODE_SET.has(rawMode)) {
+    errors.push("exec.mode must be human|machine|hybrid");
+  }
+
+  if (rawTimeout !== null && rawTimeout !== undefined && rawTimeout !== "") {
+    const timeoutNum = Number(rawTimeout);
+    if (!Number.isFinite(timeoutNum) || timeoutNum < 0) {
+      errors.push("exec.timeout_sec must be >= 0");
+    }
+  }
+
+  if (rawMaxAttempts !== null && rawMaxAttempts !== undefined && rawMaxAttempts !== "") {
+    const maxAttemptsNum = Number(rawMaxAttempts);
+    if (!Number.isFinite(maxAttemptsNum) || maxAttemptsNum < 0) {
+      errors.push("exec.retry.max_attempts must be >= 0");
+    }
+  }
+
+  if (rawBackoff !== null && rawBackoff !== undefined && rawBackoff !== "") {
+    const backoffNum = Number(rawBackoff);
+    if (!Number.isFinite(backoffNum) || backoffNum < 0) {
+      errors.push("exec.retry.backoff_sec must be >= 0");
+    }
+  }
+
   return {
     ok: errors.length === 0,
     errors,
@@ -150,6 +213,10 @@ export function stableSortValue(input) {
 
 export function canonicalizeRobotMetaV1(rawValue) {
   return stableSortValue(normalizeRobotMetaV1(rawValue));
+}
+
+export function canonicalizeRobotMeta(rawValue) {
+  return canonicalizeRobotMetaV1(rawValue);
 }
 
 export function canonicalRobotMetaString(rawValue) {
@@ -270,4 +337,23 @@ export function toRobotMetaExecutionPlanStep(stepRaw, robotMetaMapRaw) {
 
 export function isEmptyRobotMetaMap(rawMap) {
   return Object.keys(normalizeRobotMetaMap(rawMap)).length === 0;
+}
+
+export function upsertRobotMetaByElementId(rawMap, elementIdRaw, metaRaw) {
+  const elementId = asText(elementIdRaw);
+  if (!elementId) return normalizeRobotMetaMap(rawMap);
+  const base = normalizeRobotMetaMap(rawMap);
+  const next = { ...base };
+  const normalized = normalizeRobotMetaV1(metaRaw);
+  next[elementId] = normalized;
+  return next;
+}
+
+export function removeRobotMetaByElementId(rawMap, elementIdRaw) {
+  const elementId = asText(elementIdRaw);
+  const base = normalizeRobotMetaMap(rawMap);
+  if (!elementId || !Object.prototype.hasOwnProperty.call(base, elementId)) return base;
+  const next = { ...base };
+  delete next[elementId];
+  return next;
 }

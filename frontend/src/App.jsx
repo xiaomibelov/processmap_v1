@@ -45,6 +45,9 @@ import {
   canonicalRobotMetaMapString,
   extractRobotMetaMapFromBpmnXml,
   normalizeRobotMetaMap,
+  removeRobotMetaByElementId,
+  upsertRobotMetaByElementId,
+  validateRobotMetaV1,
 } from "./features/process/robotmeta/robotMeta";
 
 function isLocalSessionId(id) {
@@ -2364,16 +2367,20 @@ export default function App() {
     const currentFlowMeta = normalizeFlowMetaMap(currentMeta?.flow_meta);
     const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta?.node_path_meta);
     const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id);
-    const nextRobotMetaByElementId = { ...currentRobotMetaByElementId };
     const shouldRemove = options?.remove === true || robotMetaRaw === null;
+    let nextRobotMetaByElementId = currentRobotMetaByElementId;
     if (shouldRemove) {
-      delete nextRobotMetaByElementId[elementId];
+      nextRobotMetaByElementId = removeRobotMetaByElementId(currentRobotMetaByElementId, elementId);
     } else {
-      const normalizedEntry = normalizeRobotMetaMap({ [elementId]: robotMetaRaw })[elementId];
-      if (!normalizedEntry) {
-        return { ok: false, error: "Некорректные поля Robot Meta." };
+      const validation = validateRobotMetaV1(robotMetaRaw);
+      if (!validation.ok) {
+        return { ok: false, error: `Некорректные поля Robot Meta: ${validation.errors.join("; ")}` };
       }
-      nextRobotMetaByElementId[elementId] = normalizedEntry;
+      nextRobotMetaByElementId = upsertRobotMetaByElementId(
+        currentRobotMetaByElementId,
+        elementId,
+        validation.value,
+      );
     }
 
     const optimisticMeta = {

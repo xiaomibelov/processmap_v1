@@ -5,6 +5,11 @@ import {
   normalizeSecondaryLine,
   normalizeTemplateLabel,
 } from "./selectedNodeUi";
+import {
+  canonicalizeRobotMeta,
+  ROBOT_EXECUTOR_OPTIONS,
+  robotMetaMissingFields,
+} from "../../features/process/robotmeta/robotMeta";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -226,7 +231,11 @@ export default function SelectedNodeSection({
     });
   }
 
-  const robotMetaJson = JSON.stringify(robotMeta, null, 2);
+  const canonicalRobotMeta = canonicalizeRobotMeta(robotMeta);
+  const robotMetaJson = JSON.stringify(canonicalRobotMeta, null, 2);
+  const missingRobotFields = robotMetaMissingFields(robotMeta);
+  const showMissingActionKeyWarning = String(robotMeta.exec?.mode || "human").toLowerCase() !== "human"
+    && missingRobotFields.includes("action_key");
 
   return (
     <SidebarSection
@@ -517,18 +526,24 @@ export default function SelectedNodeSection({
                       value={String(robotMeta.exec?.mode || "human")}
                       onChange={(event) => updateRobotExecField("mode", event.target.value)}
                       disabled={!!disabled || !!robotMetaBusy}
+                      data-testid="robotmeta-mode"
                     >
                       <option value="human">human</option>
                       <option value="machine">machine</option>
                       <option value="hybrid">hybrid</option>
                     </select>
-                    <input
+                    <select
                       className="input h-8 min-h-0 w-full"
-                      placeholder="executor"
                       value={String(robotMeta.exec?.executor || "")}
                       onChange={(event) => updateRobotExecField("executor", event.target.value)}
                       disabled={!!disabled || !!robotMetaBusy}
-                    />
+                      data-testid="robotmeta-executor"
+                    >
+                      <option value="">executor</option>
+                      {ROBOT_EXECUTOR_OPTIONS.map((option) => (
+                        <option key={`robot_executor_${option}`} value={option}>{option}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="selectedNodeTimeRow selectedNodeTimeRow--compact">
                     <input
@@ -537,6 +552,7 @@ export default function SelectedNodeSection({
                       value={String(robotMeta.exec?.action_key || "")}
                       onChange={(event) => updateRobotExecField("action_key", event.target.value)}
                       disabled={!!disabled || !!robotMetaBusy}
+                      data-testid="robotmeta-action-key"
                     />
                     <input
                       className="input h-8 min-h-0 w-24"
@@ -547,6 +563,7 @@ export default function SelectedNodeSection({
                       value={robotMeta.exec?.timeout_sec ?? ""}
                       onChange={(event) => updateRobotExecField("timeout_sec", event.target.value)}
                       disabled={!!disabled || !!robotMetaBusy}
+                      data-testid="robotmeta-timeout-sec"
                     />
                   </div>
                   <div className="selectedNodeTimeRow selectedNodeTimeRow--compact">
@@ -559,6 +576,7 @@ export default function SelectedNodeSection({
                       value={robotMeta.exec?.retry?.max_attempts ?? ""}
                       onChange={(event) => updateRobotRetryField("max_attempts", event.target.value)}
                       disabled={!!disabled || !!robotMetaBusy}
+                      data-testid="robotmeta-retry-max"
                     />
                     <input
                       className="input h-8 min-h-0 w-24"
@@ -569,6 +587,7 @@ export default function SelectedNodeSection({
                       value={robotMeta.exec?.retry?.backoff_sec ?? ""}
                       onChange={(event) => updateRobotRetryField("backoff_sec", event.target.value)}
                       disabled={!!disabled || !!robotMetaBusy}
+                      data-testid="robotmeta-retry-backoff"
                     />
                     <input
                       className="input h-8 min-h-0 flex-1"
@@ -576,6 +595,7 @@ export default function SelectedNodeSection({
                       value={String(robotMeta.mat?.from_zone || "")}
                       onChange={(event) => updateRobotMatField("from_zone", event.target.value)}
                       disabled={!!disabled || !!robotMetaBusy}
+                      data-testid="robotmeta-from-zone"
                     />
                     <input
                       className="input h-8 min-h-0 flex-1"
@@ -583,6 +603,7 @@ export default function SelectedNodeSection({
                       value={String(robotMeta.mat?.to_zone || "")}
                       onChange={(event) => updateRobotMatField("to_zone", event.target.value)}
                       disabled={!!disabled || !!robotMetaBusy}
+                      data-testid="robotmeta-to-zone"
                     />
                   </div>
                   <label className="mt-1 inline-flex items-center gap-2 text-[11px] text-muted">
@@ -591,35 +612,44 @@ export default function SelectedNodeSection({
                       checked={!!robotMeta.qc?.critical}
                       onChange={(event) => updateRobotQcField("critical", !!event.target.checked)}
                       disabled={!!disabled || !!robotMetaBusy}
+                      data-testid="robotmeta-qc-critical"
                     />
                     QC critical
                   </label>
+                  {showMissingActionKeyWarning ? (
+                    <div className="selectedNodeFieldWarn" data-testid="robotmeta-incomplete-warning">
+                      incomplete: missing action_key
+                    </div>
+                  ) : null}
                   <div className="mt-1.5 flex flex-wrap items-center gap-1">
                     <button
                       type="button"
-                      className="primaryBtn h-8 px-2.5 text-[11px]"
+                      className="secondaryBtn h-7 px-2 text-[11px]"
                       onClick={() => {
                         void onSaveRobotMeta?.();
                       }}
                       disabled={!!disabled || !!robotMetaBusy}
+                      data-testid="robotmeta-save"
                     >
                       {robotMetaBusy ? "Сохраняю..." : "Сохранить"}
                     </button>
                     <button
                       type="button"
-                      className="secondaryBtn h-8 px-2.5 text-[11px]"
+                      className="secondaryBtn h-7 px-2 text-[11px]"
                       onClick={() => {
                         void onResetRobotMeta?.();
                       }}
                       disabled={!!disabled || !!robotMetaBusy}
+                      data-testid="robotmeta-clear"
                     >
-                      Удалить
+                      Clear Robot Meta
                     </button>
                   </div>
                   <details
                     className="selectedNodeAdvanced mt-1.5"
                     open={robotMetaAdvancedOpen}
                     onToggle={(event) => setRobotMetaAdvancedOpen(!!event.currentTarget.open)}
+                    data-testid="robotmeta-advanced"
                   >
                     <summary className="selectedNodeAdvancedSummary">Advanced</summary>
                     <div className="mt-1.5">
@@ -629,10 +659,11 @@ export default function SelectedNodeSection({
                         onClick={() => {
                           void copyText(robotMetaJson);
                         }}
+                        data-testid="robotmeta-copy-json"
                       >
                         Копировать JSON
                       </button>
-                      <pre className="mt-2 max-h-44 overflow-auto rounded-md border border-border/60 bg-panel2/40 p-2 text-[10px] text-fg">
+                      <pre className="mt-2 max-h-44 overflow-auto rounded-md border border-border/60 bg-panel2/40 p-2 text-[10px] text-fg" data-testid="robotmeta-json-readonly">
                         {robotMetaJson}
                       </pre>
                     </div>
