@@ -281,6 +281,12 @@
     width: min(420px, calc(100% - 24px));
   }
 
+  .diagramActionPopover--plan {
+    width: min(500px, calc(100% - 24px));
+    max-height: min(76vh, 720px);
+    overflow: auto;
+  }
+
   .diagramActionPopover--robotmeta {
     width: min(420px, calc(100% - 24px));
     max-height: min(72vh, 660px);
@@ -391,6 +397,11 @@
 
   .diagramIssueChip {
     @apply inline-flex max-w-[120px] truncate rounded border border-border/70 bg-panel px-1.5 py-0.5 font-mono text-[10px] text-muted;
+  }
+
+  .diagramActionJsonPreview {
+    @apply max-h-[24vh] overflow-auto rounded border border-border bg-panel2 p-2 text-[10px] leading-4 text-fg;
+    white-space: pre;
   }
 
   @media (max-width: 1320px) {

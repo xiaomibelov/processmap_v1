@@ -23,6 +23,7 @@ import {
   robotMetaMissingFields,
   syncRobotMetaToBpmn,
 } from "../../features/process/robotmeta/robotMeta";
+import { normalizeExecutionPlanVersionList } from "../../features/process/robotmeta/executionPlan";
 
 import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-js.css";
@@ -2135,6 +2136,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       flow_meta: normalizeFlowTierMetaMap(currentMeta?.flow_meta),
       node_path_meta: normalizeNodePathMetaMap(currentMeta?.node_path_meta),
       robot_meta_by_element_id: nextMap,
+      execution_plans: normalizeExecutionPlanVersionList(currentMeta?.execution_plans),
     };
     onSessionSyncRef.current?.({
       id: sid,

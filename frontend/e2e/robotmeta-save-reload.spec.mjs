@@ -228,6 +228,8 @@ test("robot meta overlay switches from incomplete to ready without reload", asyn
 
   await uiLogin(page);
   await openFixtureInTopbar(page, fixture);
+  await switchTab(page, "Interview");
+  await page.waitForTimeout(600);
   await switchTab(page, "Diagram");
   await waitForModelerReady(page);
   await ensureSidebarOpen(page);
@@ -264,4 +266,46 @@ test("robot meta overlay switches from incomplete to ready without reload", asyn
       return status.ok && status.ready && !status.incomplete;
     })
     .toBeTruthy();
+});
+
+test("execution plan export reflects incomplete/ready coverage and includes robot status in JSON", async ({ page, request }) => {
+  const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const auth = await apiLogin(request, { apiBase: API_BASE });
+  const fixture = await createFixture(
+    request,
+    `${runId}_execplan`,
+    auth.headers,
+    seedXml({ processName: `RobotMeta exec plan ${runId}`, taskName: "Robot Plan Task" }),
+  );
+  const sid = String(fixture.sessionId || "").trim();
+  expect(sid).not.toBe("");
+
+  await uiLogin(page);
+  await openFixtureInTopbar(page, fixture);
+  await switchTab(page, "Interview");
+  await page.waitForTimeout(600);
+  await switchTab(page, "Diagram");
+  await waitForModelerReady(page);
+  await ensureSidebarOpen(page);
+  await selectElementForDetails(page, "Task_1");
+
+  await page.getByTestId("robotmeta-mode").selectOption("machine");
+  await page.getByTestId("robotmeta-executor").selectOption("node_red");
+  await page.getByTestId("robotmeta-action-key").fill("");
+  await page.getByTestId("robotmeta-save").click();
+
+  await page.getByTestId("diagram-action-export-plan").click();
+  await expect(page.getByTestId("diagram-action-plan-popover")).toBeVisible();
+  await expect(page.getByTestId("diagram-action-plan-summary-incomplete")).toHaveText("1");
+  await expect(page.getByTestId("diagram-action-plan-json-preview")).toContainText("\"Task_1\"");
+  await expect(page.getByTestId("diagram-action-plan-json-preview")).toContainText("\"robot_status\": \"incomplete\"");
+  await page.getByTestId("diagram-action-plan-copy").click();
+  await page.getByTestId("diagram-action-plan-popover").getByRole("button", { name: "Закрыть" }).click();
+
+  await page.getByTestId("robotmeta-action-key").fill("robot.mix");
+  await page.getByTestId("robotmeta-save").click();
+  await page.getByTestId("diagram-action-export-plan").click();
+  await expect(page.getByTestId("diagram-action-plan-popover")).toBeVisible();
+  await expect(page.getByTestId("diagram-action-plan-summary-incomplete")).toHaveText("0");
+  await expect(page.getByTestId("diagram-action-plan-json-preview")).toContainText("\"robot_status\": \"ready\"");
 });

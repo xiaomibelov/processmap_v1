@@ -49,6 +49,7 @@ import {
   upsertRobotMetaByElementId,
   validateRobotMetaV1,
 } from "./features/process/robotmeta/robotMeta";
+import { normalizeExecutionPlanVersionList } from "./features/process/robotmeta/executionPlan";
 
 function isLocalSessionId(id) {
   return typeof id === "string" && (id === "local" || id.startsWith("local_"));
@@ -470,26 +471,42 @@ function normalizeNodePathMetaMap(rawMap) {
   return out;
 }
 
+function normalizeExecutionPlans(rawList) {
+  return normalizeExecutionPlanVersionList(rawList);
+}
+
+function emptyBpmnMeta() {
+  return {
+    version: 1,
+    flow_meta: {},
+    node_path_meta: {},
+    robot_meta_by_element_id: {},
+    execution_plans: [],
+  };
+}
+
 function readLocalBpmnMeta(sessionId) {
-  if (typeof window === "undefined") return { version: 1, flow_meta: {}, node_path_meta: {}, robot_meta_by_element_id: {} };
+  if (typeof window === "undefined") return emptyBpmnMeta();
   const key = bpmnMetaLocalStorageKey(sessionId);
-  if (!key) return { version: 1, flow_meta: {}, node_path_meta: {}, robot_meta_by_element_id: {} };
+  if (!key) return emptyBpmnMeta();
   try {
     const raw = String(window.localStorage?.getItem(key) || "").trim();
-    if (!raw) return { version: 1, flow_meta: {}, node_path_meta: {}, robot_meta_by_element_id: {} };
+    if (!raw) return emptyBpmnMeta();
     const parsed = JSON.parse(raw);
     const obj = ensureObject(parsed);
     const flowMeta = normalizeFlowMetaMap(obj.flow_meta);
     const nodePathMeta = normalizeNodePathMetaMap(obj.node_path_meta);
     const robotMetaByElementId = normalizeRobotMetaMap(obj.robot_meta_by_element_id);
+    const executionPlans = normalizeExecutionPlans(obj.execution_plans);
     return {
       version: Number(obj.version) > 0 ? Number(obj.version) : 1,
       flow_meta: flowMeta,
       node_path_meta: nodePathMeta,
       robot_meta_by_element_id: robotMetaByElementId,
+      execution_plans: executionPlans,
     };
   } catch {
-    return { version: 1, flow_meta: {}, node_path_meta: {}, robot_meta_by_element_id: {} };
+    return emptyBpmnMeta();
   }
 }
 
@@ -502,11 +519,13 @@ function writeLocalBpmnMeta(sessionId, meta) {
     const flowMeta = normalizeFlowMetaMap(obj.flow_meta);
     const nodePathMeta = normalizeNodePathMetaMap(obj.node_path_meta);
     const robotMetaByElementId = normalizeRobotMetaMap(obj.robot_meta_by_element_id);
+    const executionPlans = normalizeExecutionPlans(obj.execution_plans);
     const payload = {
       version: Number(obj.version) > 0 ? Number(obj.version) : 1,
       flow_meta: flowMeta,
       node_path_meta: nodePathMeta,
       robot_meta_by_element_id: robotMetaByElementId,
+      execution_plans: executionPlans,
     };
     window.localStorage?.setItem(key, JSON.stringify(payload));
   } catch {
@@ -553,7 +572,7 @@ function ensureDraftShape(sessionId) {
     edges: [],
     notes: [],
     notes_by_element: {},
-    bpmn_meta: { version: 1, flow_meta: {}, node_path_meta: {}, robot_meta_by_element_id: {} },
+    bpmn_meta: emptyBpmnMeta(),
     interview: {},
     questions: [],
   };
@@ -561,25 +580,30 @@ function ensureDraftShape(sessionId) {
 
 function sessionToDraft(sid, session) {
   const next = session || ensureDraftShape(sid);
+  const localMeta = readLocalBpmnMeta(sid);
   const xmlRobotMeta = normalizeRobotMetaMap(extractRobotMetaMapFromBpmnXml(next?.bpmn_xml || ""));
+  const sessionExecutionPlans = normalizeExecutionPlans(ensureObject(next.bpmn_meta).execution_plans);
+  const localExecutionPlans = normalizeExecutionPlans(localMeta.execution_plans);
   const rawBpmnMeta = {
     version: Number(ensureObject(next.bpmn_meta).version) > 0 ? Number(ensureObject(next.bpmn_meta).version) : 1,
     flow_meta: {
       ...normalizeFlowMetaMap(ensureObject(ensureObject(next.bpmn_meta).flow_meta)),
-      ...normalizeFlowMetaMap(ensureObject(readLocalBpmnMeta(sid).flow_meta)),
+      ...normalizeFlowMetaMap(ensureObject(localMeta.flow_meta)),
     },
     node_path_meta: {
       ...normalizeNodePathMetaMap(ensureObject(ensureObject(next.bpmn_meta).node_path_meta)),
-      ...normalizeNodePathMetaMap(ensureObject(readLocalBpmnMeta(sid).node_path_meta)),
+      ...normalizeNodePathMetaMap(ensureObject(localMeta.node_path_meta)),
     },
     robot_meta_by_element_id: {
       ...normalizeRobotMetaMap(ensureObject(ensureObject(next.bpmn_meta).robot_meta_by_element_id)),
-      ...normalizeRobotMetaMap(ensureObject(readLocalBpmnMeta(sid).robot_meta_by_element_id)),
+      ...normalizeRobotMetaMap(ensureObject(localMeta.robot_meta_by_element_id)),
     },
+    execution_plans: sessionExecutionPlans.length ? sessionExecutionPlans : localExecutionPlans,
   };
   const normalizedFlowMeta = normalizeFlowMetaMap(rawBpmnMeta.flow_meta);
   const normalizedNodePathMeta = normalizeNodePathMetaMap(rawBpmnMeta.node_path_meta);
   const normalizedRobotMeta = normalizeRobotMetaMap(rawBpmnMeta.robot_meta_by_element_id);
+  const normalizedExecutionPlans = normalizeExecutionPlans(rawBpmnMeta.execution_plans);
   const hasSessionRobotMeta = Object.keys(normalizeRobotMetaMap(ensureObject(ensureObject(next.bpmn_meta).robot_meta_by_element_id))).length > 0;
   const hasXmlRobotMeta = Object.keys(xmlRobotMeta).length > 0;
   let effectiveRobotMeta = normalizedRobotMeta;
@@ -609,6 +633,7 @@ function sessionToDraft(sid, session) {
       flow_meta: normalizedFlowMeta,
       node_path_meta: normalizedNodePathMeta,
       robot_meta_by_element_id: effectiveRobotMeta,
+      execution_plans: normalizedExecutionPlans,
     },
     interview: ensureObject(next.interview),
     questions: ensureArray(next.questions),
@@ -2106,6 +2131,7 @@ export default function App() {
     const currentFlowMeta = normalizeFlowMetaMap(currentMeta?.flow_meta);
     const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta?.node_path_meta);
     const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id);
+    const currentExecutionPlans = normalizeExecutionPlans(currentMeta?.execution_plans);
     const nextFlowMeta = { ...currentFlowMeta };
     if (xorConflictFlowIds.length && (xorTier === "P0" || xorTier === "P1")) {
       xorConflictFlowIds.forEach((conflictFlowId) => {
@@ -2131,6 +2157,7 @@ export default function App() {
       flow_meta: nextFlowMeta,
       node_path_meta: currentNodePathMeta,
       robot_meta_by_element_id: currentRobotMetaByElementId,
+      execution_plans: currentExecutionPlans,
     };
 
     setDraftPersisted((prev) => ({
@@ -2186,6 +2213,7 @@ export default function App() {
           flow_meta: currentFlowMeta,
           node_path_meta: currentNodePathMeta,
           robot_meta_by_element_id: currentRobotMetaByElementId,
+          execution_plans: currentExecutionPlans,
         },
       }));
       writeLocalBpmnMeta(sid, {
@@ -2193,6 +2221,7 @@ export default function App() {
         flow_meta: currentFlowMeta,
         node_path_meta: currentNodePathMeta,
         robot_meta_by_element_id: currentRobotMetaByElementId,
+        execution_plans: currentExecutionPlans,
       });
       markFail(result.error);
       return { ok: false, error: String(result.error || "Не удалось сохранить happy-path.") };
@@ -2202,6 +2231,8 @@ export default function App() {
     const normalizedFlowMeta = normalizeFlowMetaMap(serverMeta?.flow_meta);
     const normalizedNodePathMeta = normalizeNodePathMetaMap(serverMeta?.node_path_meta);
     const normalizedRobotMetaByElementId = normalizeRobotMetaMap(serverMeta?.robot_meta_by_element_id);
+    const normalizedExecutionPlans = normalizeExecutionPlans(serverMeta?.execution_plans);
+    const effectiveExecutionPlans = normalizedExecutionPlans.length ? normalizedExecutionPlans : currentExecutionPlans;
     const requestedTier = tier;
     let normalizationNotice = "";
     if (requestedTier && normalizedFlowMeta[flowId]?.tier !== requestedTier) {
@@ -2222,6 +2253,7 @@ export default function App() {
         flow_meta: normalizedFlowMeta,
         node_path_meta: normalizedNodePathMeta,
         robot_meta_by_element_id: normalizedRobotMetaByElementId,
+        execution_plans: effectiveExecutionPlans,
       },
     }));
     writeLocalBpmnMeta(sid, {
@@ -2229,6 +2261,7 @@ export default function App() {
       flow_meta: normalizedFlowMeta,
       node_path_meta: normalizedNodePathMeta,
       robot_meta_by_element_id: normalizedRobotMetaByElementId,
+      execution_plans: effectiveExecutionPlans,
     });
     markOk(normalizationNotice || "API OK");
     return {
@@ -2247,6 +2280,7 @@ export default function App() {
     const currentFlowMeta = normalizeFlowMetaMap(currentMeta?.flow_meta);
     const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta?.node_path_meta);
     const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id);
+    const currentExecutionPlans = normalizeExecutionPlans(currentMeta?.execution_plans);
     const nextNodePathMeta = { ...currentNodePathMeta };
     const apiUpdates = [];
 
@@ -2288,6 +2322,7 @@ export default function App() {
       flow_meta: currentFlowMeta,
       node_path_meta: nextNodePathMeta,
       robot_meta_by_element_id: currentRobotMetaByElementId,
+      execution_plans: currentExecutionPlans,
     };
     setDraftPersisted((prev) => ({
       ...prev,
@@ -2327,6 +2362,7 @@ export default function App() {
           flow_meta: currentFlowMeta,
           node_path_meta: currentNodePathMeta,
           robot_meta_by_element_id: currentRobotMetaByElementId,
+          execution_plans: currentExecutionPlans,
         },
       }));
       writeLocalBpmnMeta(sid, {
@@ -2334,6 +2370,7 @@ export default function App() {
         flow_meta: currentFlowMeta,
         node_path_meta: currentNodePathMeta,
         robot_meta_by_element_id: currentRobotMetaByElementId,
+        execution_plans: currentExecutionPlans,
       });
       markFail(result.error);
       return { ok: false, error: String(result.error || "Не удалось сохранить разметку Paths.") };
@@ -2343,11 +2380,14 @@ export default function App() {
     const normalizedFlowMeta = normalizeFlowMetaMap(serverMeta?.flow_meta);
     const normalizedNodePathMeta = normalizeNodePathMetaMap(serverMeta?.node_path_meta);
     const normalizedRobotMetaByElementId = normalizeRobotMetaMap(serverMeta?.robot_meta_by_element_id);
+    const normalizedExecutionPlans = normalizeExecutionPlans(serverMeta?.execution_plans);
+    const effectiveExecutionPlans = normalizedExecutionPlans.length ? normalizedExecutionPlans : currentExecutionPlans;
     const nextMeta = {
       version: Number(serverMeta?.version) > 0 ? Number(serverMeta.version) : 1,
       flow_meta: normalizedFlowMeta,
       node_path_meta: normalizedNodePathMeta,
       robot_meta_by_element_id: normalizedRobotMetaByElementId,
+      execution_plans: effectiveExecutionPlans,
     };
     setDraftPersisted((prev) => ({
       ...prev,
@@ -2367,6 +2407,7 @@ export default function App() {
     const currentFlowMeta = normalizeFlowMetaMap(currentMeta?.flow_meta);
     const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta?.node_path_meta);
     const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id);
+    const currentExecutionPlans = normalizeExecutionPlans(currentMeta?.execution_plans);
     const shouldRemove = options?.remove === true || robotMetaRaw === null;
     let nextRobotMetaByElementId = currentRobotMetaByElementId;
     if (shouldRemove) {
@@ -2388,6 +2429,7 @@ export default function App() {
       flow_meta: currentFlowMeta,
       node_path_meta: currentNodePathMeta,
       robot_meta_by_element_id: nextRobotMetaByElementId,
+      execution_plans: currentExecutionPlans,
     };
     setDraftPersisted((prev) => ({
       ...prev,
@@ -2434,6 +2476,7 @@ export default function App() {
         flow_meta: currentFlowMeta,
         node_path_meta: currentNodePathMeta,
         robot_meta_by_element_id: currentRobotMetaByElementId,
+        execution_plans: currentExecutionPlans,
       };
       setDraftPersisted((prev) => ({
         ...prev,
@@ -2446,6 +2489,8 @@ export default function App() {
 
     const serverMeta = ensureObject(result.meta);
     const normalizedServerRobotMeta = normalizeRobotMetaMap(serverMeta?.robot_meta_by_element_id);
+    const normalizedExecutionPlans = normalizeExecutionPlans(serverMeta?.execution_plans);
+    const effectiveExecutionPlans = normalizedExecutionPlans.length ? normalizedExecutionPlans : currentExecutionPlans;
     const effectiveRobotMeta = shouldRemove
       ? normalizedServerRobotMeta
       : (Object.keys(normalizedServerRobotMeta).length ? normalizedServerRobotMeta : nextRobotMetaByElementId);
@@ -2458,6 +2503,7 @@ export default function App() {
       flow_meta: normalizeFlowMetaMap(serverMeta?.flow_meta),
       node_path_meta: normalizeNodePathMetaMap(serverMeta?.node_path_meta),
       robot_meta_by_element_id: effectiveRobotMeta,
+      execution_plans: effectiveExecutionPlans,
     };
     setDraftPersisted((prev) => ({
       ...prev,
@@ -2513,14 +2559,19 @@ export default function App() {
     }
 
     const serverMeta = ensureObject(result.meta);
+    const currentMeta = ensureObject(draft?.bpmn_meta);
+    const currentExecutionPlans = normalizeExecutionPlans(currentMeta?.execution_plans);
     const normalizedFlowMeta = normalizeFlowMetaMap(serverMeta?.flow_meta);
     const normalizedNodePathMeta = normalizeNodePathMetaMap(serverMeta?.node_path_meta);
     const normalizedRobotMetaByElementId = normalizeRobotMetaMap(serverMeta?.robot_meta_by_element_id);
+    const normalizedExecutionPlans = normalizeExecutionPlans(serverMeta?.execution_plans);
+    const effectiveExecutionPlans = normalizedExecutionPlans.length ? normalizedExecutionPlans : currentExecutionPlans;
     const nextMeta = {
       version: Number(serverMeta?.version) > 0 ? Number(serverMeta.version) : 1,
       flow_meta: normalizedFlowMeta,
       node_path_meta: normalizedNodePathMeta,
       robot_meta_by_element_id: normalizedRobotMetaByElementId,
+      execution_plans: effectiveExecutionPlans,
     };
     setDraftPersisted((prev) => ({
       ...prev,

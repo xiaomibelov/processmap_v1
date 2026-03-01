@@ -60,8 +60,13 @@ import {
   buildRobotMetaStatusByElementId,
   getRobotMetaStatus,
   normalizeRobotMetaMap,
-  toRobotMetaExecutionPlanStep,
 } from "../features/process/robotmeta/robotMeta";
+import {
+  appendExecutionPlanVersionEntry,
+  buildExecutionPlan,
+  normalizeExecutionPlanVersionList,
+} from "../features/process/robotmeta/executionPlan";
+import { buildManualPathReportSteps } from "./process/interview/services/pathReport";
 
 function toText(value) {
   return String(value || "").trim();
@@ -158,6 +163,33 @@ async function copyText(textRaw) {
     }
   }
   return false;
+}
+
+function shortHash(value) {
+  const text = toText(value);
+  if (!text) return "—";
+  return text.slice(0, 10);
+}
+
+function downloadJsonFile(filenameRaw, payloadRaw) {
+  if (typeof window === "undefined" || typeof document === "undefined") return false;
+  const filename = toText(filenameRaw) || "execution_plan.json";
+  const payload = payloadRaw && typeof payloadRaw === "object" ? payloadRaw : {};
+  try {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.rel = "noopener";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function parseSequenceFlowsFromXml(xmlText) {
@@ -733,6 +765,7 @@ export default function ProcessStage({
   const toolbarMenuButtonRef = useRef(null);
   const diagramActionBarRef = useRef(null);
   const diagramPathPopoverRef = useRef(null);
+  const diagramPlanPopoverRef = useRef(null);
   const diagramRobotMetaPopoverRef = useRef(null);
   const diagramRobotMetaListRef = useRef(null);
   const diagramQualityPopoverRef = useRef(null);
@@ -789,6 +822,7 @@ export default function ProcessStage({
     notes: false,
   });
   const [diagramActionPathOpen, setDiagramActionPathOpen] = useState(false);
+  const [diagramActionPlanOpen, setDiagramActionPlanOpen] = useState(false);
   const [diagramActionRobotMetaOpen, setDiagramActionRobotMetaOpen] = useState(false);
   const [diagramActionQualityOpen, setDiagramActionQualityOpen] = useState(false);
   const [diagramActionOverflowOpen, setDiagramActionOverflowOpen] = useState(false);
@@ -815,6 +849,10 @@ export default function ProcessStage({
   const [qualityOverlayListKey, setQualityOverlayListKey] = useState("");
   const [qualityOverlaySearch, setQualityOverlaySearch] = useState("");
   const [diagramPathsIntent, setDiagramPathsIntent] = useState(null);
+  const [executionPlanPreview, setExecutionPlanPreview] = useState(null);
+  const [executionPlanBusy, setExecutionPlanBusy] = useState(false);
+  const [executionPlanSaveBusy, setExecutionPlanSaveBusy] = useState(false);
+  const [executionPlanError, setExecutionPlanError] = useState("");
 
   useEffect(() => {
     setGenBusy(false);
@@ -862,6 +900,7 @@ export default function ProcessStage({
       notes: false,
     });
     setDiagramActionPathOpen(false);
+    setDiagramActionPlanOpen(false);
     setDiagramActionRobotMetaOpen(false);
     setDiagramActionQualityOpen(false);
     setDiagramActionOverflowOpen(false);
@@ -888,6 +927,10 @@ export default function ProcessStage({
     setQualityOverlayListKey("");
     setQualityOverlaySearch("");
     setDiagramPathsIntent(null);
+    setExecutionPlanPreview(null);
+    setExecutionPlanBusy(false);
+    setExecutionPlanSaveBusy(false);
+    setExecutionPlanError("");
   }, [sid]);
 
   const hasSession = !!sid;
@@ -1131,28 +1174,98 @@ export default function ProcessStage({
     robotMetaListTab,
     robotMetaListSearch,
   ]);
-  const executionPlanPayload = useMemo(() => {
-    const rawSteps = asArray(asObject(draft?.interview).steps)
-      .map((stepRaw, idx) => {
-        const step = asObject(stepRaw);
-        const orderIndex = Number(step.order_index || step.order || idx + 1);
+  const executionPlanVersions = useMemo(
+    () => normalizeExecutionPlanVersionList(asObject(asObject(draft?.bpmn_meta).execution_plans)),
+    [draft?.bpmn_meta],
+  );
+  const executionPlanNodeTypeById = useMemo(() => {
+    const out = {};
+    asArray(draft?.nodes).forEach((nodeRaw) => {
+      const node = asObject(nodeRaw);
+      const nodeId = toNodeId(node?.id);
+      if (!nodeId) return;
+      out[nodeId] = toText(node?.type) || null;
+    });
+    return out;
+  }, [draft?.nodes]);
+  const executionPlanSource = useMemo(() => {
+    const interview = asObject(draft?.interview);
+    const debug = asObject(interview?.report_build_debug);
+    const highlightedTier = normalizePathTier(pathHighlightTier);
+    const highlightedSeq = normalizePathSequenceKey(pathHighlightSequenceKey);
+    const useHighlightScope = !!pathHighlightEnabled && !!(highlightedTier || highlightedSeq);
+    const manualSteps = asArray(buildManualPathReportSteps(interview, {}));
+    const sourceSteps = manualSteps.length
+      ? manualSteps
+      : asArray(draft?.nodes).map((nodeRaw, idx) => {
+        const node = asObject(nodeRaw);
+        const workSec = Number(
+          node?.step_time_sec
+          ?? node?.stepTimeSec
+          ?? node?.duration_sec
+          ?? node?.durationSec
+          ?? 0,
+        );
         return {
-          ...step,
-          order_index: Number.isFinite(orderIndex) ? Math.max(1, Math.round(orderIndex)) : idx + 1,
+          order_index: idx + 1,
+          step_id: toText(node?.id) || `node_step_${idx + 1}`,
+          title: toText(node?.name || node?.title || node?.id) || `Step ${idx + 1}`,
+          bpmn_ref: toText(node?.id),
+          lane_name: toText(node?.laneName || node?.role || node?.area),
+          work_duration_sec: Number.isFinite(workSec) && workSec >= 0 ? Math.round(workSec) : 0,
+          wait_duration_sec: 0,
         };
-      })
-      .sort((a, b) => Number(a.order_index || 0) - Number(b.order_index || 0));
-    const steps = rawSteps.map((step) => toRobotMetaExecutionPlanStep(step, robotMetaByElementId));
+      });
+    const readStepBpmnId = (stepRaw) => toText(
+      asObject(stepRaw)?.bpmn_ref
+      || asObject(stepRaw)?.bpmnRef
+      || asObject(stepRaw)?.node_bind_id
+      || asObject(stepRaw)?.nodeBindId
+      || asObject(stepRaw)?.node_id
+      || asObject(stepRaw)?.nodeId,
+    );
+    let filteredSteps = sourceSteps;
+    if (useHighlightScope && highlightedTier) {
+      const scoped = sourceSteps.filter((stepRaw) => {
+        const bpmnId = readStepBpmnId(stepRaw);
+        if (!bpmnId) return false;
+        const nodeMeta = asObject(nodePathMetaMap[bpmnId]);
+        const paths = asArray(nodeMeta?.paths)
+          .map((item) => normalizePathTier(item))
+          .filter(Boolean);
+        if (!paths.includes(highlightedTier)) return false;
+        if (!highlightedSeq) return true;
+        const seq = normalizePathSequenceKey(nodeMeta?.sequence_key || nodeMeta?.sequenceKey);
+        return seq === highlightedSeq;
+      });
+      if (scoped.length > 0) filteredSteps = scoped;
+    }
+    const debugPathId = toText(debug?.path_id_used);
+    const pathId = toText(
+      useHighlightScope
+        ? (highlightedSeq || highlightedTier || debugPathId || "primary")
+        : (debugPathId || highlightedSeq || highlightedTier || "primary"),
+    );
+    let scenarioLabel = toText(debug?.selectedScenarioLabel);
+    if (!scenarioLabel && useHighlightScope && highlightedTier) {
+      scenarioLabel = highlightedSeq ? `${highlightedTier} (${highlightedSeq})` : `${highlightedTier} Ideal`;
+    }
+    if (!scenarioLabel) scenarioLabel = highlightedTier ? `${highlightedTier} Ideal` : "P0 Ideal";
     return {
-      version: "robot_execution_plan_v1",
-      session_id: sid,
-      source: {
-        tier: normalizePathTier(pathHighlightTier) || null,
-        sequence_key: normalizePathSequenceKey(pathHighlightSequenceKey) || null,
-      },
-      steps,
+      pathId,
+      scenarioLabel,
+      steps: filteredSteps,
+      source: useHighlightScope ? "diagram_path_highlight" : "interview_path_spec",
     };
-  }, [draft?.interview, robotMetaByElementId, sid, pathHighlightTier, pathHighlightSequenceKey]);
+  }, [
+    draft?.interview,
+    draft?.nodes,
+    nodePathMetaMap,
+    pathHighlightEnabled,
+    pathHighlightTier,
+    pathHighlightSequenceKey,
+  ]);
+  const canExportExecutionPlan = asArray(executionPlanSource?.steps).length > 0;
   const pathHighlightCatalog = useMemo(() => {
     const tiers = {
       P0: { id: "P0", nodes: 0, flows: 0, sequenceKeys: [] },
@@ -2913,12 +3026,13 @@ export default function ProcessStage({
   }, [toolbarMenuOpen]);
 
   useEffect(() => {
-    if (!diagramActionPathOpen && !diagramActionRobotMetaOpen && !diagramActionQualityOpen && !diagramActionOverflowOpen && !robotMetaListOpen) return undefined;
+    if (!diagramActionPathOpen && !diagramActionPlanOpen && !diagramActionRobotMetaOpen && !diagramActionQualityOpen && !diagramActionOverflowOpen && !robotMetaListOpen) return undefined;
     const onPointerDown = (event) => {
       const target = event?.target;
       const refs = [
         diagramActionBarRef.current,
         diagramPathPopoverRef.current,
+        diagramPlanPopoverRef.current,
         diagramRobotMetaPopoverRef.current,
         diagramRobotMetaListRef.current,
         diagramQualityPopoverRef.current,
@@ -2927,6 +3041,7 @@ export default function ProcessStage({
       const inside = refs.some((node) => !!(node && target instanceof Node && node.contains(target)));
       if (inside) return;
       setDiagramActionPathOpen(false);
+      setDiagramActionPlanOpen(false);
       setDiagramActionRobotMetaOpen(false);
       setRobotMetaListOpen(false);
       setDiagramActionQualityOpen(false);
@@ -2935,6 +3050,7 @@ export default function ProcessStage({
     const onKeyDown = (event) => {
       if (event.key !== "Escape") return;
       setDiagramActionPathOpen(false);
+      setDiagramActionPlanOpen(false);
       setDiagramActionRobotMetaOpen(false);
       setRobotMetaListOpen(false);
       setDiagramActionQualityOpen(false);
@@ -2946,13 +3062,31 @@ export default function ProcessStage({
       window.removeEventListener("mousedown", onPointerDown);
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [diagramActionPathOpen, diagramActionRobotMetaOpen, robotMetaListOpen, diagramActionQualityOpen, diagramActionOverflowOpen]);
+  }, [diagramActionPathOpen, diagramActionPlanOpen, diagramActionRobotMetaOpen, robotMetaListOpen, diagramActionQualityOpen, diagramActionOverflowOpen]);
 
   useEffect(() => {
     if (diagramActionRobotMetaOpen) return;
     setRobotMetaListOpen(false);
     setRobotMetaListSearch("");
   }, [diagramActionRobotMetaOpen]);
+
+  useEffect(() => {
+    if (!diagramActionPlanOpen) return;
+    void buildExecutionPlanNow({ suppressError: true });
+  }, [
+    diagramActionPlanOpen,
+    sid,
+    draft?.project_id,
+    draft?.projectId,
+    executionPlanSource,
+    robotMetaByElementId,
+    executionPlanNodeTypeById,
+  ]);
+
+  useEffect(() => {
+    if (diagramActionPlanOpen) return;
+    setExecutionPlanError("");
+  }, [diagramActionPlanOpen]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -3426,6 +3560,7 @@ export default function ProcessStage({
     };
     setDiagramPathsIntent(intent);
     setDiagramActionPathOpen(false);
+    setDiagramActionPlanOpen(false);
     setDiagramActionRobotMetaOpen(false);
     setRobotMetaListOpen(false);
     setDiagramActionQualityOpen(false);
@@ -3433,17 +3568,135 @@ export default function ProcessStage({
     setDiagramActionOverflowOpen(false);
   }
 
+  async function buildExecutionPlanNow(options = {}) {
+    const suppressError = options?.suppressError === true;
+    if (!suppressError) setExecutionPlanError("");
+    setExecutionPlanBusy(true);
+    try {
+      const plan = await buildExecutionPlan({
+        sessionId: sid,
+        projectId: toText(draft?.project_id || draft?.projectId),
+        pathId: toText(executionPlanSource?.pathId),
+        scenarioLabel: toText(executionPlanSource?.scenarioLabel) || "P0 Ideal",
+        steps: asArray(executionPlanSource?.steps),
+        robotMetaByElementId,
+        bpmnTypeById: executionPlanNodeTypeById,
+      });
+      setExecutionPlanPreview(plan);
+      return plan;
+    } catch (error) {
+      const msg = shortErr(error?.message || error || "Не удалось собрать Execution Plan.");
+      if (!suppressError) {
+        setExecutionPlanError(msg);
+        setGenErr(msg);
+      }
+      return null;
+    } finally {
+      setExecutionPlanBusy(false);
+    }
+  }
+
   async function copyExecutionPlanFromDiagram() {
-    const payload = executionPlanPayload;
+    const payload = await buildExecutionPlanNow();
+    if (!payload) return;
     const serialized = JSON.stringify(payload, null, 2);
     const copied = await copyText(serialized);
     if (copied) {
       setInfoMsg(`Execution plan скопирован (${Number(asArray(payload?.steps).length)} шагов).`);
       setGenErr("");
+      setExecutionPlanError("");
     } else {
-      setGenErr("Не удалось скопировать Execution plan.");
+      setExecutionPlanError("Не удалось скопировать Execution Plan.");
+      setGenErr("Не удалось скопировать Execution Plan.");
     }
-    setDiagramActionOverflowOpen(false);
+  }
+
+  async function downloadExecutionPlanFromDiagram() {
+    const payload = executionPlanPreview || await buildExecutionPlanNow();
+    if (!payload) return;
+    const sidText = toText(payload?.session_id || sid) || "session";
+    const pathText = toText(payload?.path_id) || "path";
+    const stamp = toText(payload?.generated_at).replace(/[^0-9]/g, "").slice(0, 14) || Date.now();
+    const ok = downloadJsonFile(`execution_plan_${sidText}_${pathText}_${stamp}.json`, payload);
+    if (ok) {
+      setInfoMsg("Execution Plan выгружен в .json.");
+      setGenErr("");
+      setExecutionPlanError("");
+    } else {
+      setExecutionPlanError("Не удалось скачать Execution Plan.");
+      setGenErr("Не удалось скачать Execution Plan.");
+    }
+  }
+
+  async function saveExecutionPlanVersionFromDiagram() {
+    const payload = executionPlanPreview || await buildExecutionPlanNow();
+    if (!payload) return;
+    const currentMeta = asObject(draft?.bpmn_meta);
+    const nextVersions = appendExecutionPlanVersionEntry(
+      executionPlanVersions,
+      payload,
+    );
+    const optimisticMeta = {
+      version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: flowTierMetaMap,
+      node_path_meta: nodePathMetaMap,
+      robot_meta_by_element_id: robotMetaByElementId,
+      execution_plans: nextVersions,
+    };
+    const optimisticSession = {
+      id: sid,
+      session_id: sid,
+      bpmn_meta: optimisticMeta,
+      _sync_source: "execution_plan_save_optimistic",
+    };
+    onSessionSync?.(optimisticSession);
+
+    if (!sid || isLocal) {
+      setInfoMsg(`Execution Plan сохранён: v${nextVersions.length}.`);
+      setGenErr("");
+      setExecutionPlanError("");
+      return;
+    }
+
+    setExecutionPlanSaveBusy(true);
+    try {
+      const syncRes = await apiPatchSession(sid, { bpmn_meta: optimisticMeta });
+      if (!syncRes?.ok) {
+        onSessionSync?.({
+          id: sid,
+          session_id: sid,
+          bpmn_meta: {
+            version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
+            flow_meta: flowTierMetaMap,
+            node_path_meta: nodePathMetaMap,
+            robot_meta_by_element_id: robotMetaByElementId,
+            execution_plans: executionPlanVersions,
+          },
+          _sync_source: "execution_plan_save_rollback",
+        });
+        const msg = shortErr(syncRes?.error || "Не удалось сохранить версию Execution Plan.");
+        setExecutionPlanError(msg);
+        setGenErr(msg);
+        return;
+      }
+
+      if (syncRes.session && typeof syncRes.session === "object") {
+        onSessionSync?.({
+          ...syncRes.session,
+          _sync_source: "execution_plan_save_session_patch",
+        });
+      } else {
+        onSessionSync?.({
+          ...optimisticSession,
+          _sync_source: "execution_plan_save_session_patch_fallback",
+        });
+      }
+      setInfoMsg(`Execution Plan сохранён: v${nextVersions.length}.`);
+      setGenErr("");
+      setExecutionPlanError("");
+    } finally {
+      setExecutionPlanSaveBusy(false);
+    }
   }
 
   function openPathsFromDiagram() {
@@ -3457,6 +3710,7 @@ export default function ProcessStage({
       source: "diagram_action_bar",
     };
     setDiagramPathsIntent(intent);
+    setDiagramActionPlanOpen(false);
     setDiagramActionRobotMetaOpen(false);
     setRobotMetaListOpen(false);
     setDiagramActionQualityOpen(false);
@@ -4116,6 +4370,7 @@ export default function ProcessStage({
                         className={`primaryBtn h-8 min-w-[124px] px-2.5 text-xs ${pathHighlightEnabled ? "" : "opacity-95"}`}
                         onClick={() => {
                           setDiagramActionPathOpen((prev) => !prev);
+                          setDiagramActionPlanOpen(false);
                           setDiagramActionRobotMetaOpen(false);
                           setRobotMetaListOpen(false);
                           setDiagramActionQualityOpen(false);
@@ -4158,10 +4413,27 @@ export default function ProcessStage({
                       </button>
                       <button
                         type="button"
+                        className={`secondaryBtn h-8 px-2 text-[11px] ${diagramActionPlanOpen ? "ring-1 ring-accent/60" : ""}`}
+                        onClick={() => {
+                          setDiagramActionPlanOpen((prev) => !prev);
+                          setDiagramActionPathOpen(false);
+                          setDiagramActionRobotMetaOpen(false);
+                          setRobotMetaListOpen(false);
+                          setDiagramActionQualityOpen(false);
+                          setDiagramActionOverflowOpen(false);
+                        }}
+                        title={`Экспорт плана: ${toText(executionPlanSource?.scenarioLabel) || "Scenario"}`}
+                        data-testid="diagram-action-export-plan"
+                      >
+                        Export Plan
+                      </button>
+                      <button
+                        type="button"
                         className={`secondaryBtn h-8 px-2 text-[11px] ${robotMetaOverlayEnabled ? "ring-1 ring-accent/60" : ""}`}
                         onClick={() => {
                           setDiagramActionRobotMetaOpen((prev) => !prev);
                           setDiagramActionPathOpen(false);
+                          setDiagramActionPlanOpen(false);
                           setRobotMetaListOpen(false);
                           setDiagramActionQualityOpen(false);
                           setDiagramActionOverflowOpen(false);
@@ -4188,6 +4460,7 @@ export default function ProcessStage({
                         onClick={() => {
                           setDiagramActionQualityOpen((prev) => !prev);
                           setDiagramActionPathOpen(false);
+                          setDiagramActionPlanOpen(false);
                           setDiagramActionRobotMetaOpen(false);
                           setRobotMetaListOpen(false);
                           setDiagramActionOverflowOpen(false);
@@ -4203,6 +4476,7 @@ export default function ProcessStage({
                         onClick={() => {
                           setDiagramActionOverflowOpen((prev) => !prev);
                           setDiagramActionPathOpen(false);
+                          setDiagramActionPlanOpen(false);
                           setDiagramActionRobotMetaOpen(false);
                           setRobotMetaListOpen(false);
                           setDiagramActionQualityOpen(false);
@@ -4326,6 +4600,134 @@ export default function ProcessStage({
                             Открыть Reports
                           </button>
                         </div>
+                      </div>
+                    ) : null}
+
+                    {diagramActionPlanOpen ? (
+                      <div className="diagramActionPopover diagramActionPopover--plan" ref={diagramPlanPopoverRef} data-testid="diagram-action-plan-popover">
+                        <div className="diagramActionPopoverHead">
+                          <span>Execution Plan</span>
+                          <button
+                            type="button"
+                            className="secondaryBtn h-7 px-2 text-[11px]"
+                            onClick={() => setDiagramActionPlanOpen(false)}
+                          >
+                            Закрыть
+                          </button>
+                        </div>
+                        <div className="diagramActionField">
+                          <span>Экспорт плана:</span>
+                          <b>{toText(executionPlanSource?.scenarioLabel) || "Scenario"}</b>
+                          <span className="muted small">path: {toText(executionPlanSource?.pathId) || "—"}</span>
+                        </div>
+                        {!canExportExecutionPlan ? (
+                          <div className="diagramActionPopoverEmpty">Нет шагов для экспорта в текущем source.</div>
+                        ) : executionPlanBusy && !executionPlanPreview ? (
+                          <div className="diagramActionPopoverEmpty">Сбор Execution Plan…</div>
+                        ) : (
+                          <>
+                            <div className="diagramIssueRows">
+                              <div className="diagramIssueRow">
+                                Steps: <b>{Number(asObject(executionPlanPreview?.stats).steps_total || 0)}</b>
+                                {" · "}
+                                Ready: <b>{Number(asObject(executionPlanPreview?.stats).robot_ready || 0)}</b>
+                                {" · "}
+                                Incomplete: <b data-testid="diagram-action-plan-summary-incomplete">{Number(asObject(executionPlanPreview?.stats).robot_incomplete || 0)}</b>
+                                {" · "}
+                                Human: <b>{Number(asObject(executionPlanPreview?.stats).human_only || 0)}</b>
+                              </div>
+                              <div className="diagramIssueRow muted small">
+                                hash: {shortHash(executionPlanPreview?.steps_hash)}
+                              </div>
+                            </div>
+                            {Number(asObject(executionPlanPreview?.stats).robot_incomplete || 0) > 0 ? (
+                              <div className="rounded-md border border-warning/40 bg-warning/10 px-2 py-1 text-[11px] text-warning">
+                                План не полностью роботизируем: incomplete {Number(asObject(executionPlanPreview?.stats).robot_incomplete || 0)}
+                              </div>
+                            ) : null}
+                            <div className="diagramIssueListWrap mt-2 border-t border-border/70 pt-2">
+                              <div className="muted mb-1 text-[11px]">Issues (top 10)</div>
+                              <div className="diagramIssueList">
+                                {asArray(executionPlanPreview?.issues).slice(0, 10).length === 0 ? (
+                                  <div className="diagramActionPopoverEmpty">Нет issues.</div>
+                                ) : (
+                                  asArray(executionPlanPreview?.issues).slice(0, 10).map((issueRaw, idx) => {
+                                    const issue = asObject(issueRaw);
+                                    return (
+                                      <div key={`plan_issue_${idx}_${toText(issue?.code)}`} className="diagramIssueListItem">
+                                        <span className="diagramIssueListItemTitle">{toText(issue?.code) || "ISSUE"}</span>
+                                        <span className="diagramIssueListItemMeta">
+                                          #{Number(issue?.order_index || 0)} · {toText(issue?.bpmn_id) || "—"} · {toText(issue?.severity) || "warn"}
+                                        </span>
+                                      </div>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                        {executionPlanError ? (
+                          <div className="mt-2 text-[11px] text-danger">{executionPlanError}</div>
+                        ) : null}
+                        <div className="diagramActionPopoverActions">
+                          <button
+                            type="button"
+                            className="secondaryBtn h-7 px-2 text-[11px]"
+                            onClick={() => void copyExecutionPlanFromDiagram()}
+                            disabled={!canExportExecutionPlan || executionPlanBusy}
+                            data-testid="diagram-action-plan-copy"
+                          >
+                            Copy JSON
+                          </button>
+                          <button
+                            type="button"
+                            className="secondaryBtn h-7 px-2 text-[11px]"
+                            onClick={() => void downloadExecutionPlanFromDiagram()}
+                            disabled={!canExportExecutionPlan || executionPlanBusy}
+                            data-testid="diagram-action-plan-download"
+                          >
+                            Download .json
+                          </button>
+                          <button
+                            type="button"
+                            className="secondaryBtn h-7 px-2 text-[11px]"
+                            onClick={() => void saveExecutionPlanVersionFromDiagram()}
+                            disabled={!canExportExecutionPlan || executionPlanBusy || executionPlanSaveBusy}
+                            data-testid="diagram-action-plan-save"
+                          >
+                            {executionPlanSaveBusy ? "Saving…" : "Save version"}
+                          </button>
+                        </div>
+                        <div className="diagramActionField">
+                          <span>Сохранённых версий:</span>
+                          <b data-testid="diagram-action-plan-versions-count">{executionPlanVersions.length}</b>
+                        </div>
+                        {executionPlanVersions.length > 0 ? (
+                          <div className="diagramIssueListWrap">
+                            <div className="diagramIssueList">
+                              {executionPlanVersions.slice(-5).reverse().map((versionRaw) => {
+                                const version = asObject(versionRaw);
+                                return (
+                                  <div key={`plan_version_${toText(version?.id)}`} className="diagramIssueListItem">
+                                    <span className="diagramIssueListItemTitle">{toText(version?.path_id) || "path"}</span>
+                                    <span className="diagramIssueListItemMeta">
+                                      {toText(version?.created_at).replace("T", " ").slice(0, 19)} · {shortHash(version?.steps_hash)}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : null}
+                        {executionPlanPreview ? (
+                          <div className="diagramActionField">
+                            <span>JSON preview</span>
+                            <pre className="diagramActionJsonPreview" data-testid="diagram-action-plan-json-preview">
+                              {JSON.stringify(executionPlanPreview, null, 2)}
+                            </pre>
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
 
