@@ -6,6 +6,7 @@ import * as decorManager from "../../features/process/bpmn/stage/decor/decorMana
 import * as viewportRecovery from "../../features/process/bpmn/stage/viewport/viewportRecovery";
 import { createPlaybackOverlayAdapter } from "../../features/process/bpmn/stage/playbackAdapter";
 import { createTemplatePackAdapter } from "../../features/process/bpmn/stage/template/templatePackAdapter";
+import { createCommandOpsAdapter } from "../../features/process/bpmn/stage/ops/commandOpsAdapter";
 import { createBpmnStageImperativeApi } from "../../features/process/bpmn/stage/imperative/bpmnStageImperativeApi";
 import forceTaskResizeRulesModule from "../../features/process/bpmn/runtime/modules/forceTaskResizeRules";
 import {
@@ -2381,76 +2382,8 @@ const BpmnStage = forwardRef(function BpmnStage({
     return templatePackAdapter.insertTemplatePackOnModeler(payload);
   }
 
-  function highlightChangedElements(inst, ids = []) {
-    if (!inst) return;
-    const uniqueIds = Array.from(new Set(asArray(ids).map((id) => String(id || "").trim()).filter(Boolean)));
-    if (!uniqueIds.length) return;
-    try {
-      const registry = inst.get("elementRegistry");
-      const selection = inst.get("selection");
-      const canvas = inst.get("canvas");
-      const selected = uniqueIds
-        .map((id) => registry.get(id))
-        .filter(Boolean);
-      if (selected.length) selection.select(selected);
-      uniqueIds.forEach((id) => {
-        try {
-          canvas.addMarker(id, "fpcElementSelected");
-        } catch {
-        }
-      });
-      window.setTimeout(() => {
-        uniqueIds.forEach((id) => {
-          try {
-            canvas.removeMarker(id, "fpcElementSelected");
-          } catch {
-          }
-        });
-      }, 1200);
-    } catch {
-    }
-  }
-
   async function applyCommandOpsOnModeler(payload = {}) {
-    const inst = modelerRef.current || await ensureModeler();
-    if (!inst) {
-      return {
-        ok: false,
-        applied: 0,
-        failed: 0,
-        changedIds: [],
-        results: [],
-        error: "modeler_not_ready",
-      };
-    }
-    const ops = asArray(payload?.ops);
-    if (!ops.length) {
-      return {
-        ok: false,
-        applied: 0,
-        failed: 0,
-        changedIds: [],
-        results: [],
-        error: "empty_ops",
-      };
-    }
-
-    const result = await applyOpsToModeler(inst, ops, {
-      selectedElementId: toText(payload?.selectedElementId || ""),
-    });
-
-    if (result?.changedIds?.length) {
-      highlightChangedElements(inst, result.changedIds);
-    }
-
-    if (result?.applied > 0) {
-      emitDiagramMutation("diagram.ai_command_ops", {
-        applied: Number(result?.applied || 0),
-        failed: Number(result?.failed || 0),
-      });
-    }
-
-    return result;
+    return commandOpsAdapter.applyCommandOpsOnModeler(payload);
   }
 
   function logChangeElementTrace(stage, payload = {}) {
@@ -2781,6 +2714,19 @@ const BpmnStage = forwardRef(function BpmnStage({
       isShapeElement,
       isConnectionElement,
     ],
+  );
+
+  function createCommandOpsCtx() {
+    return {
+      getModelerOrEnsure: async () => modelerRef.current || await ensureModeler(),
+      applyOpsToModeler,
+      emitDiagramMutation,
+    };
+  }
+
+  const commandOpsAdapter = useMemo(
+    () => createCommandOpsAdapter(createCommandOpsCtx()),
+    [ensureModeler, emitDiagramMutation],
   );
 
   function clearInterviewDecor(inst, kind) {
