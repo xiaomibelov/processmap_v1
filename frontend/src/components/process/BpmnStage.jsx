@@ -5,6 +5,7 @@ import createBpmnRuntime from "../../features/process/bpmn/runtime/createBpmnRun
 import createBpmnStore from "../../features/process/bpmn/store/createBpmnStore";
 import createBpmnCoordinator from "../../features/process/bpmn/coordinator/createBpmnCoordinator";
 import createBpmnPersistence from "../../features/process/bpmn/persistence/createBpmnPersistence";
+import * as decorManager from "../../features/process/bpmn/stage/decor/decorManager";
 import forceTaskResizeRulesModule from "../../features/process/bpmn/runtime/modules/forceTaskResizeRules";
 import {
   saveBpmnSnapshot,
@@ -3089,22 +3090,71 @@ const BpmnStage = forwardRef(function BpmnStage({
     return null;
   }
 
+  function createDecorCtx(inst, kind) {
+    return {
+      inst,
+      kind,
+      refs: {
+        interviewMarkerStateRef,
+        interviewOverlayStateRef,
+        interviewDecorSignatureRef,
+        happyFlowMarkerStateRef,
+        happyFlowStyledStateRef,
+        userNotesMarkerStateRef,
+        userNotesOverlayStateRef,
+        stepTimeOverlayStateRef,
+        robotMetaDecorStateRef,
+        aiQuestionPanelTargetRef,
+      },
+      getters: {
+        getFlowTierMetaMap,
+        getNodePathMetaMap,
+        getRobotMetaMap,
+        getElementNotesMap,
+        findShapeByNodeId,
+        findShapeForHint,
+        isShapeElement,
+        isConnectionElement,
+        isSelectableElement,
+        isInterviewDecorModeOn,
+      },
+      callbacks: {
+        emitElementSelection,
+        emitDiagramMutation,
+        openAiQuestionPanel,
+        clearAiQuestionPanel,
+        setSelectedDecor,
+        measureInterviewPerf,
+      },
+      readOnly: {
+        draftRef,
+        diagramDisplayModeRef,
+        stepTimeUnitRef,
+        robotMetaOverlayEnabledRef,
+        robotMetaOverlayFiltersRef,
+        robotMetaStatusByElementIdRef,
+        aiQuestionPanelTargetRef,
+      },
+      utils: {
+        asArray,
+        asObject,
+        toText,
+        normalizeLoose,
+        normalizeAiQuestionItems,
+        normalizeAiQuestionsByElementMap,
+        aiQuestionStats,
+        readStepTimeMinutes,
+        readStepTimeSeconds,
+        normalizeStepTimeUnit,
+        getRobotMetaStatus,
+        robotMetaMissingFields,
+        colorFromKey,
+      },
+    };
+  }
+
   function clearInterviewDecor(inst, kind) {
-    if (!inst) return;
-    try {
-      const canvas = inst.get("canvas");
-      const overlays = inst.get("overlays");
-      asArray(interviewMarkerStateRef.current[kind]).forEach((m) => {
-        canvas.removeMarker(m.elementId, m.className);
-      });
-      asArray(interviewOverlayStateRef.current[kind]).forEach((id) => {
-        overlays.remove(id);
-      });
-      interviewMarkerStateRef.current[kind] = [];
-      interviewOverlayStateRef.current[kind] = [];
-      clearAiQuestionPanel(inst, kind, { keepTarget: true });
-    } catch {
-    }
+    return decorManager.clearInterviewDecor(createDecorCtx(inst, kind));
   }
 
   function clearTaskTypeDecor(inst, kind) {
@@ -3226,876 +3276,43 @@ const BpmnStage = forwardRef(function BpmnStage({
   }
 
   function clearHappyFlowDecor(inst, kind) {
-    if (!inst) return;
-    try {
-      const canvas = inst.get("canvas");
-      const registry = inst.get("elementRegistry");
-      asArray(happyFlowMarkerStateRef.current[kind]).forEach((m) => {
-        canvas.removeMarker(m.elementId, m.className);
-      });
-      asArray(happyFlowStyledStateRef.current[kind]).forEach((elementId) => {
-        const gfx = registry?.getGraphics?.(elementId);
-        if (!gfx || !gfx.style) return;
-        gfx.style.removeProperty("--fpc-flow-tier-accent");
-        gfx.style.removeProperty("--fpc-happy-flow-accent");
-        gfx.style.removeProperty("--fpc-node-path-accent");
-        gfx.removeAttribute("data-fpc-happy-flow");
-        gfx.removeAttribute("data-fpc-flow-tier");
-        gfx.removeAttribute("data-fpc-node-path");
-        gfx.removeAttribute("data-fpc-sequence-key");
-      });
-      happyFlowMarkerStateRef.current[kind] = [];
-      happyFlowStyledStateRef.current[kind] = [];
-    } catch {
-    }
+    return decorManager.clearHappyFlowDecor(createDecorCtx(inst, kind));
   }
 
   function applyHappyFlowDecor(inst, kind) {
-    if (!inst) return;
-    clearHappyFlowDecor(inst, kind);
-    try {
-      const flowMeta = getFlowTierMetaMap();
-      const canvas = inst.get("canvas");
-      const registry = inst.get("elementRegistry");
-      if (flowMeta && Object.keys(flowMeta).length) {
-        const elements = registry.filter((el) => isConnectionElement(el));
-        elements.forEach((el) => {
-          const flowId = toText(el?.businessObject?.id || el?.id);
-          const tier = toText(flowMeta[flowId]?.tier).toUpperCase();
-          if (!flowId || !(tier === "P0" || tier === "P1" || tier === "P2")) return;
-          const tierClass = tier === "P1"
-            ? "fpcFlowTierP1"
-            : (tier === "P2" ? "fpcFlowTierP2" : "fpcFlowTierP0");
-          canvas.addMarker(el.id, tierClass);
-          happyFlowMarkerStateRef.current[kind].push({ elementId: el.id, className: tierClass });
-          if (tier === "P0") {
-            canvas.addMarker(el.id, "fpcHappyFlow");
-            happyFlowMarkerStateRef.current[kind].push({ elementId: el.id, className: "fpcHappyFlow" });
-          }
-          const gfx = registry?.getGraphics?.(el.id);
-          if (gfx?.style) {
-            const accentVar = tier === "P1"
-              ? "var(--bpmn-flow-tier-p1, #b38a46)"
-              : (tier === "P2" ? "var(--bpmn-flow-tier-p2, #b45353)" : "var(--bpmn-flow-tier-p0, #3d8f62)");
-            gfx.style.setProperty("--fpc-flow-tier-accent", accentVar);
-            gfx.style.setProperty("--fpc-happy-flow-accent", accentVar);
-            gfx.setAttribute("data-fpc-happy-flow", "1");
-            gfx.setAttribute("data-fpc-flow-tier", tier);
-            happyFlowStyledStateRef.current[kind].push(el.id);
-          }
-        });
-      }
-
-      const nodePathMeta = getNodePathMetaMap();
-      if (nodePathMeta && Object.keys(nodePathMeta).length) {
-        const shapes = registry.filter((el) => isShapeElement(el) && isSelectableElement(el));
-        shapes.forEach((el) => {
-          const nodeId = toText(el?.businessObject?.id || el?.id);
-          const entry = asObject(nodePathMeta[nodeId]);
-          const paths = asArray(entry?.paths).map((tag) => toText(tag).toUpperCase()).filter(Boolean);
-          if (!nodeId || !paths.length) return;
-          if (paths.includes("P0")) {
-            canvas.addMarker(el.id, "fpcNodePathP0");
-            happyFlowMarkerStateRef.current[kind].push({ elementId: el.id, className: "fpcNodePathP0" });
-          }
-          if (paths.includes("P1")) {
-            canvas.addMarker(el.id, "fpcNodePathP1");
-            happyFlowMarkerStateRef.current[kind].push({ elementId: el.id, className: "fpcNodePathP1" });
-          }
-          if (paths.includes("P2")) {
-            canvas.addMarker(el.id, "fpcNodePathP2");
-            happyFlowMarkerStateRef.current[kind].push({ elementId: el.id, className: "fpcNodePathP2" });
-          }
-
-          const gfx = registry?.getGraphics?.(el.id);
-          if (gfx?.style) {
-            const accentVar = paths.includes("P0")
-              ? "var(--bpmn-flow-tier-p0, #3d8f62)"
-              : (paths.includes("P1")
-                ? "var(--bpmn-flow-tier-p1, #b38a46)"
-                : "var(--bpmn-flow-tier-p2, #b45353)");
-            gfx.style.setProperty("--fpc-node-path-accent", accentVar);
-            gfx.setAttribute("data-fpc-node-path", paths.join(","));
-            const sequenceKey = toText(entry?.sequence_key || entry?.sequenceKey);
-            if (sequenceKey) gfx.setAttribute("data-fpc-sequence-key", sequenceKey);
-            happyFlowStyledStateRef.current[kind].push(el.id);
-          }
-        });
-      }
-    } catch {
-    }
+    return decorManager.applyHappyFlowDecor(createDecorCtx(inst, kind));
   }
 
   function buildInterviewDecorPayload() {
-    const draftNow = asObject(draftRef.current);
-    const iv = asObject(draftNow?.interview);
-    const steps = asArray(iv.steps);
-    const nodesList = asArray(draftNow?.nodes);
-    const notesByElement = getElementNotesMap();
-    const aiQuestionsByElement = normalizeAiQuestionsByElementMap(iv.ai_questions_by_element || iv.aiQuestionsByElementId);
-    if (!steps.length && !Object.keys(aiQuestionsByElement).length && !Object.keys(notesByElement).length) {
-      return {
-        items: [],
-        groups: [],
-        noteItems: [],
-        aiQuestionItems: [],
-        dodItems: [],
-      };
-    }
-
-    const hasDurationQuality = (nodeRaw) => {
-      const node = asObject(nodeRaw);
-      const params = asObject(node?.parameters);
-      const duration = Number(
-        node?.step_time_min
-        ?? node?.duration_min
-        ?? params?.step_time_min
-        ?? params?.duration_min
-        ?? params?.duration
-        ?? 0,
-      );
-      const hasDuration = Number.isFinite(duration) && duration > 0;
-      const hasQuality = (
-        asArray(node?.qc).length > 0
-        || asArray(params?.qc).length > 0
-        || !!toText(params?.quality)
-        || !!toText(params?.quality_gate)
-      );
-      return hasDuration && hasQuality;
-    };
-
-    const byId = {};
-    const byTitle = {};
-    nodesList.forEach((n) => {
-      const nid = toText(n?.id);
-      if (!nid) return;
-      byId[nid] = n;
-      const tk = normalizeLoose(n?.title || n?.name || "");
-      if (!tk) return;
-      if (!byTitle[tk]) byTitle[tk] = [];
-      byTitle[tk].push(n);
-    });
-
-    const byNode = {};
-    const aiByNode = {};
-    const groupsByKey = {};
-    steps.forEach((s) => {
-      const subprocess = toText(s?.subprocess || s?.subprocess_name);
-
-      const explicit = toText(s?.node_id || s?.nodeId || s?.node_bind_id || s?.nodeBindId || s?.id);
-      let node = null;
-      if (explicit && byId[explicit]) node = byId[explicit];
-      else if (explicit) {
-        node = {
-          id: explicit,
-          title: toText(s?.action || s?.title || explicit),
-        };
-      }
-      else {
-        const key = normalizeLoose(s?.action || s?.title);
-        const hits = asArray(byTitle[key]);
-        if (hits.length === 1) node = hits[0];
-      }
-      if (!node) return;
-
-      const nodeId = toText(node?.id);
-      if (!nodeId) return;
-      const nodeTitle = toText(node?.title || node?.name || nodeId);
-
-      const item = byNode[nodeId] || {
-        nodeId,
-        title: nodeTitle,
-        subprocess: "",
-        hasStepComment: false,
-        hasRole: false,
-        hasDurationQuality: false,
-      };
-      item.hasStepComment = item.hasStepComment || !!toText(s?.comment || s?.notes || s?.note);
-      item.hasRole = item.hasRole || !!toText(
-        s?.role
-        || s?.actor
-        || s?.lane
-        || node?.actor_role
-        || node?.laneName,
-      );
-      item.hasDurationQuality = item.hasDurationQuality || hasDurationQuality(node);
-      byNode[nodeId] = item;
-
-      if (subprocess) {
-        item.subprocess = subprocess;
-      }
-
-      if (subprocess) {
-        const sk = normalizeLoose(subprocess);
-        if (!groupsByKey[sk]) {
-          groupsByKey[sk] = {
-            key: sk,
-            name: subprocess,
-            nodeIds: new Set(),
-          };
-        }
-        groupsByKey[sk].nodeIds.add(nodeId);
-      }
-    });
-
-    Object.keys(aiQuestionsByElement).forEach((rawElementId) => {
-      const nodeId = toText(rawElementId);
-      if (!nodeId) return;
-      const items = normalizeAiQuestionItems(aiQuestionsByElement[rawElementId]);
-      if (!items.length) return;
-      const node = asObject(byId[nodeId]);
-      const nodeTitle = toText(node?.title || node?.name || nodeId);
-      const stats = aiQuestionStats(items);
-      aiByNode[nodeId] = {
-        nodeId,
-        title: nodeTitle,
-        count: stats.total,
-        withoutComment: stats.withoutComment,
-        done: stats.done,
-        open: stats.open,
-      };
-    });
-
-    const noteItemsByNode = {};
-    const dodItemsByNode = {};
-    const allNodeIds = new Set([
-      ...Object.keys(byNode),
-      ...Object.keys(aiByNode),
-      ...Object.keys(notesByElement),
-    ]);
-
-    allNodeIds.forEach((nodeIdRaw) => {
-      const nodeId = toText(nodeIdRaw);
-      if (!nodeId) return;
-      const node = asObject(byId[nodeId]);
-      const nodeTitle = toText(
-        byNode[nodeId]?.title
-        || aiByNode[nodeId]?.title
-        || node?.title
-        || node?.name
-        || nodeId,
-      );
-      const noteEntry = asObject(notesByElement[nodeId]);
-      const noteCount = asArray(noteEntry?.items).length;
-      const stepCommentCount = byNode[nodeId]?.hasStepComment ? 1 : 0;
-      const notesTotal = noteCount + stepCommentCount;
-      if (notesTotal > 0) {
-        noteItemsByNode[nodeId] = {
-          nodeId,
-          title: nodeTitle,
-          count: notesTotal,
-        };
-      }
-
-      const aiMeta = asObject(aiByNode[nodeId]);
-      const aiTotal = Number(aiMeta?.count || 0);
-      const aiDone = Number(aiMeta?.done || 0);
-      const hasRole = !!(byNode[nodeId]?.hasRole || toText(node?.actor_role || node?.laneName || node?.lane));
-      const hasDocs = notesTotal > 0;
-      const aiReady = aiTotal > 0 && aiDone >= aiTotal;
-      const dqReady = !!(byNode[nodeId]?.hasDurationQuality || hasDurationQuality(node));
-      const total = 4;
-      const done = Number(hasRole) + Number(hasDocs) + Number(aiReady) + Number(dqReady);
-      const percent = Math.round((done / total) * 100);
-      dodItemsByNode[nodeId] = {
-        nodeId,
-        title: nodeTitle,
-        done,
-        total,
-        percent,
-      };
-    });
-
-    const groups = Object.values(groupsByKey)
-      .map((g) => ({
-        key: g.key,
-        name: g.name,
-        nodeIds: Array.from(g.nodeIds || []),
-      }))
-      .filter((g) => g.nodeIds.length > 0);
-
-    return {
-      items: Object.values(byNode),
-      groups,
-      noteItems: Object.values(noteItemsByNode),
-      aiQuestionItems: Object.values(aiByNode),
-      dodItems: Object.values(dodItemsByNode),
-    };
+    return decorManager.buildInterviewDecorPayload(createDecorCtx(null, "viewer"));
   }
 
   function applyInterviewDecor(inst, kind, options = {}) {
-    if (!inst) return;
-    const signature = toText(options?.signature);
-    if (signature && toText(interviewDecorSignatureRef.current?.[kind]) === signature) return;
-    const interviewMode = isInterviewDecorModeOn();
-    const payload = buildInterviewDecorPayload();
-    const items = asArray(payload?.items);
-    const groups = asArray(payload?.groups);
-    const noteItems = asArray(payload?.noteItems);
-    const aiQuestionItems = asArray(payload?.aiQuestionItems);
-    const dodItems = asArray(payload?.dodItems);
-    const hasInterviewPayload = items.length || groups.length || noteItems.length || aiQuestionItems.length || dodItems.length;
-
-    measureInterviewPerf("diagram.updateInterviewOverlays", () => {
-      clearInterviewDecor(inst, kind);
-      if (interviewMode && !hasInterviewPayload) {
-        aiQuestionPanelTargetRef.current[kind] = "";
-        clearAiQuestionPanel(inst, kind);
-        interviewDecorSignatureRef.current[kind] = signature;
-        return;
-      }
-      if (!interviewMode && !aiQuestionItems.length) {
-        aiQuestionPanelTargetRef.current[kind] = "";
-        clearAiQuestionPanel(inst, kind);
-        interviewDecorSignatureRef.current[kind] = signature;
-        return;
-      }
-
-      try {
-        const canvas = inst.get("canvas");
-        const overlays = inst.get("overlays");
-        const registry = inst.get("elementRegistry");
-
-      if (interviewMode) {
-        items.forEach((it) => {
-          const el = findShapeByNodeId(registry, it.nodeId) || findShapeForHint(registry, { nodeId: it.nodeId, title: it.title });
-          if (!el) return;
-
-          canvas.addMarker(el.id, "fpcInterviewNode");
-          interviewMarkerStateRef.current[kind].push({ elementId: el.id, className: "fpcInterviewNode" });
-        });
-      }
-
-      const noteByNode = {};
-      if (interviewMode) {
-        noteItems.forEach((item) => {
-          const nodeId = toText(item?.nodeId);
-          if (!nodeId) return;
-          noteByNode[nodeId] = item;
-        });
-      }
-      const aiByNode = {};
-      aiQuestionItems.forEach((item) => {
-        const nodeId = toText(item?.nodeId);
-        if (!nodeId) return;
-        aiByNode[nodeId] = item;
-      });
-      const dodByNode = {};
-      if (interviewMode) {
-        dodItems.forEach((item) => {
-          const nodeId = toText(item?.nodeId);
-          if (!nodeId) return;
-          dodByNode[nodeId] = item;
-        });
-      }
-
-      const badgeNodeIds = new Set([
-        ...(interviewMode ? Object.keys(noteByNode) : []),
-        ...Object.keys(aiByNode),
-        ...(interviewMode ? Object.keys(dodByNode) : []),
-      ]);
-
-      const bindBadgeClick = (btn, onClick) => {
-        btn.addEventListener("mousedown", (ev) => ev.stopPropagation());
-        btn.addEventListener("click", (ev) => {
-          ev.preventDefault();
-          ev.stopPropagation();
-          onClick?.();
-        });
-      };
-
-      badgeNodeIds.forEach((nodeId) => {
-        const noteMeta = asObject(noteByNode[nodeId]);
-        const aiMeta = asObject(aiByNode[nodeId]);
-        const dodMeta = asObject(dodByNode[nodeId]);
-        const title = toText(noteMeta?.title || aiMeta?.title || dodMeta?.title || nodeId);
-        const el = findShapeByNodeId(registry, nodeId) || findShapeForHint(registry, { nodeId, title });
-        if (!el) return;
-
-        const noteCount = Number(noteMeta?.count || 0);
-        if (interviewMode && noteCount > 0) {
-          canvas.addMarker(el.id, "fpcHasNote");
-          interviewMarkerStateRef.current[kind].push({ elementId: el.id, className: "fpcHasNote" });
-        }
-        const aiCount = Number(aiMeta?.count || 0);
-        if (aiCount > 0) {
-          canvas.addMarker(el.id, "fpcHasAiQuestion");
-          interviewMarkerStateRef.current[kind].push({ elementId: el.id, className: "fpcHasAiQuestion" });
-        }
-
-        const rightStack = document.createElement("div");
-        rightStack.className = "fpcNodeBadgeStack";
-        rightStack.dataset.nodeId = nodeId;
-        rightStack.style.transform = "translateX(-100%)";
-
-        const leftStack = document.createElement("div");
-        leftStack.className = "fpcNodeBadgeStack";
-        leftStack.dataset.nodeId = nodeId;
-        leftStack.style.alignItems = "flex-start";
-
-        if (aiCount > 0) {
-          const aiBadge = document.createElement("button");
-          aiBadge.type = "button";
-          aiBadge.className = `fpcNodeBadge fpcNodeBadge--ai ${Number(aiMeta?.withoutComment || 0) > 0 ? "warn" : "ok"}`;
-          aiBadge.dataset.badgeKind = "ai";
-          aiBadge.textContent = `AI:${aiCount}`;
-          aiBadge.title = `AI-вопросов: ${aiCount} · done: ${Number(aiMeta?.done || 0)}`;
-          bindBadgeClick(aiBadge, () => {
-            setSelectedDecor(inst, kind, el.id);
-            emitElementSelection(el, `${kind}.ai_badge_click`);
-            openAiQuestionPanel(inst, kind, el.id, { source: "interview_ai_badge", toggle: true });
-          });
-          rightStack.appendChild(aiBadge);
-        }
-
-        if (interviewMode && noteCount > 0) {
-          const noteBadge = document.createElement("button");
-          noteBadge.type = "button";
-          noteBadge.className = "fpcNodeBadge fpcNodeBadge--notes";
-          noteBadge.dataset.badgeKind = "notes";
-          noteBadge.textContent = `N:${noteCount}`;
-          noteBadge.title = `Заметок: ${noteCount}`;
-          bindBadgeClick(noteBadge, () => {
-            setSelectedDecor(inst, kind, el.id);
-            emitElementSelection(el, `${kind}.notes_badge_click`);
-          });
-          leftStack.appendChild(noteBadge);
-        }
-
-        const dodTotal = interviewMode ? Number(dodMeta?.total || 0) : 0;
-        if (interviewMode && dodTotal > 0) {
-          const dodDone = Number(dodMeta?.done || 0);
-          const dodPercent = Number(dodMeta?.percent || 0);
-          const dodBadge = document.createElement("button");
-          dodBadge.type = "button";
-          dodBadge.className = `fpcNodeBadge fpcNodeBadge--dod ${dodDone >= dodTotal ? "ok" : ""}`;
-          dodBadge.dataset.badgeKind = "dod";
-          dodBadge.textContent = `DoD:${dodDone}/${dodTotal}`;
-          dodBadge.title = `DoD readiness: ${dodPercent}% (${dodDone}/${dodTotal})`;
-          bindBadgeClick(dodBadge, () => {
-            setSelectedDecor(inst, kind, el.id);
-            emitElementSelection(el, `${kind}.dod_badge_click`);
-          });
-          rightStack.appendChild(dodBadge);
-        }
-
-        const shapeWidth = Number(el?.width || 0);
-        const rightAnchorLeft = Number.isFinite(shapeWidth) && shapeWidth > 0 ? shapeWidth - 2 : 96;
-        if (rightStack.childNodes.length) {
-          const rightOverlayId = overlays.add(el.id, {
-            position: { top: -18, left: rightAnchorLeft },
-            html: rightStack,
-          });
-          interviewOverlayStateRef.current[kind].push(rightOverlayId);
-        }
-        if (leftStack.childNodes.length) {
-          const leftOverlayId = overlays.add(el.id, {
-            position: { top: -18, left: 2 },
-            html: leftStack,
-          });
-          interviewOverlayStateRef.current[kind].push(leftOverlayId);
-        }
-      });
-
-      if (interviewMode) {
-        groups.forEach((g) => {
-          const groupName = toText(g?.name);
-          const rawIds = asArray(g?.nodeIds).map((x) => toText(x)).filter(Boolean);
-          if (!groupName || !rawIds.length) return;
-
-          const shapes = [];
-          const usedShapeIds = new Set();
-          rawIds.forEach((nid) => {
-            const el = findShapeByNodeId(registry, nid) || findShapeForHint(registry, { nodeId: nid, title: nid });
-            if (!isShapeElement(el) || usedShapeIds.has(el.id)) return;
-            usedShapeIds.add(el.id);
-            shapes.push(el);
-          });
-          if (!shapes.length) return;
-
-          let minX = Number.POSITIVE_INFINITY;
-          let minY = Number.POSITIVE_INFINITY;
-          let maxX = 0;
-          let maxY = 0;
-
-          shapes.forEach((el) => {
-            const x = Number(el.x || 0);
-            const y = Number(el.y || 0);
-            const w = Number(el.width || 0);
-            const h = Number(el.height || 0);
-            if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) return;
-            minX = Math.min(minX, x);
-            minY = Math.min(minY, y);
-            maxX = Math.max(maxX, x + w);
-            maxY = Math.max(maxY, y + h);
-          });
-
-          if (!Number.isFinite(minX) || !Number.isFinite(minY) || maxX <= minX || maxY <= minY) return;
-
-          const padX = 22;
-          const padY = 16;
-          const boxX = minX - padX;
-          const boxY = minY - padY;
-          const boxW = Math.max(maxX - minX + padX * 2, 120);
-          const boxH = Math.max(maxY - minY + padY * 2, 70);
-
-          let anchor = shapes[0];
-          shapes.forEach((el) => {
-            if (Number(el.x || 0) < Number(anchor.x || 0)) anchor = el;
-          });
-
-          const box = document.createElement("div");
-          box.className = "fpcInterviewSubprocessBox";
-          box.style.width = `${boxW.toFixed(1)}px`;
-          box.style.height = `${boxH.toFixed(1)}px`;
-          box.style.setProperty("--sp-color", colorFromKey(groupName));
-
-          const lbl = document.createElement("div");
-          lbl.className = "fpcInterviewSubprocessLabel";
-          lbl.textContent = `Подпроцесс: ${groupName}`;
-          box.appendChild(lbl);
-
-          const oid = overlays.add(anchor.id, {
-            position: {
-              left: Number((boxX - Number(anchor.x || 0)).toFixed(1)),
-              top: Number((boxY - Number(anchor.y || 0)).toFixed(1)),
-            },
-            html: box,
-          });
-          interviewOverlayStateRef.current[kind].push(oid);
-        });
-      }
-
-      const currentTarget = toText(aiQuestionPanelTargetRef.current[kind]);
-        if (currentTarget) {
-          openAiQuestionPanel(inst, kind, currentTarget, {
-            source: "interview_decor_refresh",
-          });
-        } else {
-          clearAiQuestionPanel(inst, kind, { keepTarget: true });
-        }
-      } catch {
-      }
-      interviewDecorSignatureRef.current[kind] = signature;
-    }, () => ({
-      kind,
-      interviewMode: interviewMode ? 1 : 0,
-      items: items.length,
-      groups: groups.length,
-      notes: noteItems.length,
-      ai: aiQuestionItems.length,
-      dod: dodItems.length,
-    }));
+    return decorManager.applyInterviewDecor(createDecorCtx(inst, kind), options);
   }
 
   function clearUserNotesDecor(inst, kind) {
-    if (!inst) return;
-    try {
-      const canvas = inst.get("canvas");
-      const overlays = inst.get("overlays");
-      asArray(userNotesMarkerStateRef.current[kind]).forEach((m) => {
-        canvas.removeMarker(m.elementId, m.className);
-      });
-      asArray(userNotesOverlayStateRef.current[kind]).forEach((id) => {
-        overlays.remove(id);
-      });
-      userNotesMarkerStateRef.current[kind] = [];
-      userNotesOverlayStateRef.current[kind] = [];
-    } catch {
-    }
-  }
-
-  function buildUserNotesDecorPayload() {
-    const out = [];
-    const map = getElementNotesMap();
-    Object.entries(map).forEach(([elementId, entry]) => {
-      const eid = String(elementId || "").trim();
-      const count = asArray(entry?.items).length;
-      if (!eid || count <= 0) return;
-      out.push({ elementId: eid, count });
-    });
-    return out;
+    return decorManager.clearUserNotesDecor(createDecorCtx(inst, kind));
   }
 
   function applyUserNotesDecor(inst, kind) {
-    if (!inst) return;
-    clearUserNotesDecor(inst, kind);
-    // Notes in Interview mode are rendered via unified interview badges (AI/Notes/DoD).
-    if (isInterviewDecorModeOn()) return;
-    const payload = buildUserNotesDecorPayload();
-    if (!payload.length) return;
-    try {
-      const canvas = inst.get("canvas");
-      const overlays = inst.get("overlays");
-      const registry = inst.get("elementRegistry");
-
-      const bindBadgeClick = (btn, onClick) => {
-        btn.addEventListener("mousedown", (ev) => ev.stopPropagation());
-        btn.addEventListener("click", (ev) => {
-          ev.preventDefault();
-          ev.stopPropagation();
-          onClick?.();
-        });
-      };
-
-      payload.forEach((item) => {
-        const nodeId = toText(item?.elementId);
-        const count = Number(item?.count || 0);
-        if (!nodeId || count <= 0) return;
-        const el = findShapeByNodeId(registry, nodeId) || findShapeForHint(registry, { nodeId, title: nodeId });
-        if (!el) return;
-
-        canvas.addMarker(el.id, "fpcHasUserNote");
-        userNotesMarkerStateRef.current[kind].push({ elementId: el.id, className: "fpcHasUserNote" });
-
-        const stack = document.createElement("div");
-        stack.className = "fpcNodeBadgeStack";
-        stack.dataset.nodeId = nodeId;
-        stack.style.alignItems = "flex-start";
-
-        const badge = document.createElement("button");
-        badge.type = "button";
-        badge.className = "fpcNodeBadge fpcNodeBadge--notes";
-        badge.dataset.badgeKind = "notes";
-        badge.textContent = `N:${count}`;
-        badge.title = `Заметок: ${count}`;
-        bindBadgeClick(badge, () => {
-          setSelectedDecor(inst, kind, el.id);
-          emitElementSelection(el, `${kind}.notes_badge_click`);
-        });
-        stack.appendChild(badge);
-
-        const overlayId = overlays.add(el.id, {
-          position: { top: -18, left: 2 },
-          html: stack,
-        });
-        userNotesOverlayStateRef.current[kind].push(overlayId);
-      });
-    } catch {
-    }
+    return decorManager.applyUserNotesDecor(createDecorCtx(inst, kind));
   }
 
   function clearStepTimeDecor(inst, kind) {
-    if (!inst) return;
-    try {
-      const overlays = inst.get("overlays");
-      asArray(stepTimeOverlayStateRef.current[kind]).forEach((id) => {
-        overlays.remove(id);
-      });
-      stepTimeOverlayStateRef.current[kind] = [];
-    } catch {
-    }
-  }
-
-  function buildStepTimeDecorPayload() {
-    return asArray(draftRef.current?.nodes)
-      .map((rawNode) => {
-        const node = asObject(rawNode);
-        const nodeId = toText(node?.id);
-        if (!nodeId) return null;
-        const minutes = readStepTimeMinutes(node);
-        if (minutes === null) return null;
-        const seconds = readStepTimeSeconds(node);
-        return { nodeId, minutes, seconds: seconds === null ? Math.round(minutes * 60) : seconds };
-      })
-      .filter(Boolean);
+    return decorManager.clearStepTimeDecor(createDecorCtx(inst, kind));
   }
 
   function applyStepTimeDecor(inst, kind) {
-    if (!inst) return;
-    const payload = buildStepTimeDecorPayload();
-    measureInterviewPerf("diagram.updateStepTimeOverlays", () => {
-      clearStepTimeDecor(inst, kind);
-      if (!payload.length) return;
-      try {
-        const overlays = inst.get("overlays");
-        const registry = inst.get("elementRegistry");
-
-      const bindBadgeClick = (btn, onClick) => {
-        btn.addEventListener("mousedown", (ev) => ev.stopPropagation());
-        btn.addEventListener("click", (ev) => {
-          ev.preventDefault();
-          ev.stopPropagation();
-          onClick?.();
-        });
-      };
-
-        payload.forEach((item) => {
-        const nodeId = toText(item?.nodeId);
-        const minutes = Number(item?.minutes);
-        const seconds = Number(item?.seconds);
-        if (!nodeId || !Number.isFinite(minutes) || minutes < 0) return;
-        const el = findShapeByNodeId(registry, nodeId) || findShapeForHint(registry, { nodeId, title: nodeId });
-        if (!el) return;
-        const unit = normalizeStepTimeUnit(stepTimeUnitRef.current);
-        const value = unit === "sec"
-          ? (Number.isFinite(seconds) && seconds >= 0 ? Math.round(seconds) : Math.round(minutes * 60))
-          : Math.round(minutes);
-        const unitLabel = unit === "sec" ? "сек" : "мин";
-
-        const badge = document.createElement("button");
-        badge.type = "button";
-        badge.className = "fpcNodeBadge fpcNodeBadge--time";
-        badge.dataset.badgeKind = "time";
-        badge.textContent = `${value} ${unitLabel}`;
-        badge.title = `Время шага: ${value} ${unitLabel}`;
-        badge.style.transform = "translateX(-100%)";
-        bindBadgeClick(badge, () => {
-          setSelectedDecor(inst, kind, el.id);
-          emitElementSelection(el, `${kind}.step_time_badge_click`);
-        });
-
-        const shapeWidth = Number(el?.width || 0);
-        const shapeHeight = Number(el?.height || 0);
-        const anchorLeft = Number.isFinite(shapeWidth) && shapeWidth > 0 ? shapeWidth - 2 : 96;
-        const anchorTop = Number.isFinite(shapeHeight) && shapeHeight > 0 ? shapeHeight + 1 : 81;
-
-        const overlayId = overlays.add(el.id, {
-          position: { left: anchorLeft, top: anchorTop },
-          html: badge,
-        });
-        stepTimeOverlayStateRef.current[kind].push(overlayId);
-        });
-      } catch {
-      }
-    }, () => ({ kind, items: payload.length }));
+    return decorManager.applyStepTimeDecor(createDecorCtx(inst, kind));
   }
 
   function clearRobotMetaDecor(inst, kind) {
-    if (!inst) return;
-    const state = asObject(robotMetaDecorStateRef.current[kind]);
-    try {
-      const canvas = inst.get("canvas");
-      const overlays = inst.get("overlays");
-      Object.values(state).forEach((entryRaw) => {
-        const entry = asObject(entryRaw);
-        const elementId = toText(entry?.elementId);
-        const markerClass = toText(entry?.markerClass);
-        const overlayId = entry?.overlayId;
-        if (elementId && markerClass) {
-          canvas.removeMarker(elementId, markerClass);
-        }
-        if (overlayId !== null && overlayId !== undefined) {
-          overlays.remove(overlayId);
-        }
-      });
-    } catch {
-    }
-    robotMetaDecorStateRef.current[kind] = {};
-  }
-
-  function buildRobotMetaDecorPayload() {
-    const map = getRobotMetaMap();
-    const statusById = asObject(robotMetaStatusByElementIdRef.current);
-    const filters = asObject(robotMetaOverlayFiltersRef.current);
-    const showReady = !!filters.ready;
-    const showIncomplete = !!filters.incomplete;
-    return Object.keys(map)
-      .map((elementId) => {
-        const meta = map[elementId];
-        const statusRaw = toText(statusById[elementId]).toLowerCase();
-        const status = statusRaw || getRobotMetaStatus(meta);
-        if (status === "ready" && !showReady) return null;
-        if (status === "incomplete" && !showIncomplete) return null;
-        if (status !== "ready" && status !== "incomplete") return null;
-        const missingFields = robotMetaMissingFields(meta);
-        const executor = toText(meta?.exec?.executor);
-        const actionKey = toText(meta?.exec?.action_key);
-        const qcCritical = !!meta?.qc?.critical;
-        const tooltip = status === "ready"
-          ? `Robot ready · executor=${executor || "—"} · action=${actionKey || "—"}${qcCritical ? " · QC critical step" : ""}`
-          : `Robot meta incomplete: ${missingFields.length ? missingFields.map((name) => `missing ${name}`).join(" / ") : "missing action_key / missing executor"}${qcCritical ? " · QC critical step" : ""}`;
-        return {
-          elementId,
-          status,
-          markerClass: status === "incomplete" ? "fpcRobotMetaIncomplete" : "fpcRobotMetaReady",
-          badgeClass: status === "incomplete" ? "warn" : "ok",
-          badgeText: status === "incomplete" ? "!" : "R",
-          signature: `${status}|${executor}|${actionKey}|${missingFields.join(",")}|${qcCritical ? 1 : 0}|${tooltip}`,
-          tooltip,
-        };
-      })
-      .filter(Boolean);
+    return decorManager.clearRobotMetaDecor(createDecorCtx(inst, kind));
   }
 
   function applyRobotMetaDecor(inst, kind) {
-    if (!inst) return;
-    if (!robotMetaOverlayEnabledRef.current) {
-      clearRobotMetaDecor(inst, kind);
-      return;
-    }
-    const payload = buildRobotMetaDecorPayload();
-    if (!payload.length) {
-      clearRobotMetaDecor(inst, kind);
-      return;
-    }
-
-    try {
-      const canvas = inst.get("canvas");
-      const overlays = inst.get("overlays");
-      const registry = inst.get("elementRegistry");
-      const currentState = { ...asObject(robotMetaDecorStateRef.current[kind]) };
-      const nextState = {};
-
-      payload.forEach((item) => {
-        const nodeId = toText(item?.elementId);
-        const el = findShapeByNodeId(registry, nodeId) || findShapeForHint(registry, { nodeId, title: nodeId });
-        if (!el) return;
-        const elementId = toText(el?.id);
-        if (!elementId) return;
-        const markerClass = toText(item?.markerClass);
-        const signature = `${markerClass}|${toText(item?.badgeClass)}|${toText(item?.badgeText)}|${toText(item?.signature)}`;
-        const prev = asObject(currentState[elementId]);
-        const prevSignature = toText(prev?.signature);
-
-        if (prevSignature && prevSignature === signature) {
-          nextState[elementId] = prev;
-          delete currentState[elementId];
-          return;
-        }
-
-        const prevMarkerClass = toText(prev?.markerClass);
-        if (prevMarkerClass) {
-          canvas.removeMarker(elementId, prevMarkerClass);
-        }
-        if (prev?.overlayId !== null && prev?.overlayId !== undefined) {
-          overlays.remove(prev.overlayId);
-        }
-
-        const badge = document.createElement("div");
-        badge.className = `fpcNodeBadge fpcNodeBadge--robot ${toText(item?.badgeClass)}`;
-        badge.textContent = toText(item?.badgeText);
-        badge.title = toText(item?.tooltip);
-
-        canvas.addMarker(elementId, markerClass);
-        const overlayId = overlays.add(elementId, {
-          position: { top: -18, left: 2 },
-          html: badge,
-        });
-        nextState[elementId] = {
-          elementId,
-          markerClass,
-          overlayId,
-          signature,
-        };
-        delete currentState[elementId];
-      });
-
-      Object.values(currentState).forEach((entryRaw) => {
-        const entry = asObject(entryRaw);
-        const elementId = toText(entry?.elementId);
-        const markerClass = toText(entry?.markerClass);
-        if (elementId && markerClass) {
-          canvas.removeMarker(elementId, markerClass);
-        }
-        if (entry?.overlayId !== null && entry?.overlayId !== undefined) {
-          overlays.remove(entry.overlayId);
-        }
-      });
-
-      robotMetaDecorStateRef.current[kind] = nextState;
-    } catch {
-    }
+    return decorManager.applyRobotMetaDecor(createDecorCtx(inst, kind));
   }
 
   function clearPlaybackDecor(inst, kind) {
