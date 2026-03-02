@@ -146,9 +146,18 @@ export function buildStepMetaByNodeId(vmStepsRaw) {
 export function validateScenarioRowOrder(matrixRowsRaw) {
   const rows = toArray(matrixRowsRaw).filter((row) => toText(row?.kind) === "step" || toText(row?.kind) === "decision");
   const violations = [];
+  let checkedPairs = 0;
+  let skippedScopePairs = 0;
   rows.forEach((row, idx) => {
     if (idx <= 0) return;
     const prev = rows[idx - 1];
+    const prevScope = toArray(prev?.group_stack).map((token) => toText(token)).filter(Boolean).join(" > ");
+    const curScope = toArray(row?.group_stack).map((token) => toText(token)).filter(Boolean).join(" > ");
+    if (prevScope !== curScope) {
+      skippedScopePairs += 1;
+      return;
+    }
+    checkedPairs += 1;
     const prevOrder = Number(prev?.order_index || 0);
     const curOrder = Number(row?.order_index || 0);
     if (!Number.isFinite(prevOrder) || !Number.isFinite(curOrder) || curOrder > prevOrder) return;
@@ -157,6 +166,7 @@ export function validateScenarioRowOrder(matrixRowsRaw) {
       current_order_index: curOrder,
       node_id: toText(row?.node_id),
       title: toText(row?.step || row?.title),
+      scope: curScope,
     });
   });
   const nonMonotonic = violations.length > 0;
@@ -167,6 +177,8 @@ export function validateScenarioRowOrder(matrixRowsRaw) {
     ok: !nonMonotonic && (!hasStart || firstType.includes("start")),
     nonMonotonic,
     firstNotStart: hasStart && !firstType.includes("start"),
+    checked_pairs: checkedPairs,
+    skipped_scope_pairs: skippedScopePairs,
     violations,
   };
 }

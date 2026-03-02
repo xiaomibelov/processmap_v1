@@ -2,6 +2,7 @@ import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useSta
 import { isLocalSessionId, sanitizeDisplayText, toArray, toText } from "./utils";
 import {
   apiCreatePathReportVersion,
+  apiDeleteReportVersion,
   apiGetReportVersion,
   apiListPathReportVersions,
 } from "../../../lib/api";
@@ -27,6 +28,7 @@ import PathHeader from "./paths/PathHeader";
 import PathStepList from "./paths/PathStepList";
 import StepDetailsPanel from "./paths/StepDetailsPanel";
 import ReportsDrawer from "./paths/ReportsDrawer";
+import { buildScenarioMetrics, buildScenarioStepRows } from "./paths/scenarioMetrics.js";
 
 function normalizeTier(raw) {
   const tier = toText(raw).toUpperCase();
@@ -77,11 +79,7 @@ function sortScenarios(listRaw) {
 }
 
 function scenarioDurationSec(scenario, stepMetaByNodeId) {
-  return toArray(scenario?.sequence).reduce((acc, step) => {
-    const nodeId = toText(step?.node_id);
-    const n = Number(stepMetaByNodeId?.[nodeId]?.total_duration_sec || stepMetaByNodeId?.[nodeId]?.duration_sec || 0);
-    return acc + (Number.isFinite(n) && n > 0 ? n : 0);
-  }, 0);
+  return Number(buildScenarioMetrics(scenario, stepMetaByNodeId)?.total_time_sec || 0);
 }
 
 function scenarioContainsNodeId(scenario, nodeIdRaw) {
@@ -99,6 +97,54 @@ function resolveScenarioPathId(scenarioRaw) {
   return toText(scenario?.sequence_key || scenario?.sequenceKey)
     || toText(scenario?.path_id || scenario?.pathId)
     || toText(scenario?.id);
+}
+
+function normalizeDebugRouteSteps(stepsRaw) {
+  return toArray(stepsRaw)
+    .map((stepRaw, idx) => {
+      const step = asObject(stepRaw);
+      const bpmnRef = toText(
+        step?.bpmn_ref
+        || step?.bpmnRef
+        || step?.node_id
+        || step?.nodeId,
+      );
+      if (!bpmnRef) return null;
+      const workSec = Number(step?.work_duration_sec);
+      const waitSec = Number(step?.wait_duration_sec);
+      return {
+        order_index: idx + 1,
+        step_id: toText(step?.step_id || step?.stepId || step?.id) || null,
+        title: toText(step?.title || step?.name || step?.action || bpmnRef) || bpmnRef,
+        lane_id: toText(step?.lane_id || step?.laneId) || null,
+        lane_name: toText(step?.lane_name || step?.laneName || step?.lane || step?.role || step?.area) || null,
+        bpmn_ref: bpmnRef,
+        work_duration_sec: Number.isFinite(workSec) && workSec >= 0 ? Math.round(workSec) : 0,
+        wait_duration_sec: Number.isFinite(waitSec) && waitSec >= 0 ? Math.round(waitSec) : 0,
+        decision: asObject(step?.decision),
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildReportBuildDebugComparable(debugRaw) {
+  const debug = asObject(debugRaw);
+  return {
+    path_id_used: toText(debug?.path_id_used),
+    selectedScenarioLabel: toText(debug?.selectedScenarioLabel),
+    selected_scenario_id: toText(debug?.selected_scenario_id || debug?.selectedScenarioId),
+    scenario_tier: normalizeTier(debug?.scenario_tier || debug?.tier),
+    sequence_key: toText(debug?.sequence_key || debug?.sequenceKey),
+    steps_count: Number(debug?.steps_count || 0),
+    route_steps: normalizeDebugRouteSteps(debug?.route_steps || debug?.routeSteps).map((step) => ({
+      order_index: Number(step?.order_index || 0),
+      bpmn_ref: toText(step?.bpmn_ref),
+      title: toText(step?.title),
+      work_duration_sec: Number(step?.work_duration_sec || 0),
+      wait_duration_sec: Number(step?.wait_duration_sec || 0),
+      selected_flow_id: toText(asObject(step?.decision)?.selected_flow_id),
+    })),
+  };
 }
 
 function findScenarioByIntent(scenariosRaw, intentRaw) {
@@ -334,51 +380,6 @@ function makeSelectedNodeIdSet(selectedStepIds, stepById) {
   return out;
 }
 
-function buildSequenceMeta(scenario) {
-  const sequence = toArray(scenario?.sequence);
-  const byNodeId = {};
-  sequence.forEach((step, idx) => {
-    const nodeId = toText(step?.node_id);
-    if (!nodeId || byNodeId[nodeId]) return;
-    byNodeId[nodeId] = {
-      index: idx,
-      prev: idx > 0 ? sequence[idx - 1] : null,
-      next: idx + 1 < sequence.length ? sequence[idx + 1] : null,
-    };
-  });
-  return byNodeId;
-}
-
-function flattenRouteRows(rowsRaw) {
-  const out = [];
-  function walk(list, parentGroup = "") {
-    toArray(list).forEach((row) => {
-      const kind = toText(row?.kind).toLowerCase();
-      if (kind === "row_branch") {
-        out.push({
-          ...row,
-          kind: "row_branch",
-          _parent_group: parentGroup,
-        });
-        walk(row?.children, parentGroup);
-        return;
-      }
-      out.push({
-        ...row,
-        _parent_group: parentGroup,
-      });
-      if (kind === "row_group") {
-        const rowType = toText(row?.row_type).toLowerCase();
-        walk(row?.children, rowType || parentGroup);
-        return;
-      }
-      walk(row?.children, parentGroup);
-    });
-  }
-  walk(rowsRaw);
-  return out;
-}
-
 function buildDecisionHintsByOrderIndexFromScenarioRows(rowsRaw) {
   const out = {};
   function walk(list) {
@@ -447,23 +448,6 @@ function buildDodByNodeId(dodSnapshot) {
   return byNodeId;
 }
 
-function collapseDefaultForGroup(row) {
-  const rowType = toText(row?.row_type).toLowerCase();
-  if (rowType === "loop") return true;
-  if (rowType === "parallel") {
-    let count = 0;
-    function walk(list) {
-      toArray(list).forEach((child) => {
-        if (toText(child?.kind).toLowerCase() === "row_step") count += 1;
-        walk(child?.children);
-      });
-    }
-    walk(row?.children);
-    return count > 20;
-  }
-  return false;
-}
-
 function linkGroupForNode(linkGroupsRaw, nodeIdRaw) {
   const nodeId = toText(nodeIdRaw);
   if (!nodeId) return null;
@@ -490,38 +474,18 @@ function counterpartIdsForNode(group, nodeIdRaw) {
   });
 }
 
-function groupTimeSec(row, stepMetaByNodeId) {
-  const rowType = toText(row?.row_type).toLowerCase();
-  if (rowType === "parallel") {
-    return toArray(row?.children).reduce((acc, branch) => {
-      let t = 0;
-      function walk(list) {
-        toArray(list).forEach((child) => {
-          if (toText(child?.kind).toLowerCase() === "row_step") {
-            const nodeId = toText(child?.node_id);
-            const n = Number(stepMetaByNodeId?.[nodeId]?.total_duration_sec || stepMetaByNodeId?.[nodeId]?.duration_sec || 0);
-            if (Number.isFinite(n) && n > 0) t += n;
-          }
-          walk(child?.children);
-        });
-      }
-      walk(branch?.children);
-      return Math.max(acc, t);
-    }, 0);
-  }
-  let total = 0;
-  function walk(list) {
-    toArray(list).forEach((child) => {
-      if (toText(child?.kind).toLowerCase() === "row_step") {
-        const nodeId = toText(child?.node_id);
-        const n = Number(stepMetaByNodeId?.[nodeId]?.total_duration_sec || stepMetaByNodeId?.[nodeId]?.duration_sec || 0);
-        if (Number.isFinite(n) && n > 0) total += n;
-      }
-      walk(child?.children);
-    });
-  }
-  walk(row?.children);
-  return total;
+function buildStepTimeByNodeId(stepsRaw) {
+  const out = {};
+  toArray(stepsRaw).forEach((step) => {
+    const nodeId = toText(step?.node_id || step?.bpmn_ref);
+    if (!nodeId || out[nodeId]) return;
+    out[nodeId] = {
+      step_id: toText(step?.id),
+      work_duration_sec: Math.max(0, Number(step?.work_duration_sec || step?.duration_sec || 0)),
+      wait_duration_sec: Math.max(0, Number(step?.wait_duration_sec || 0)),
+    };
+  });
+  return out;
 }
 
 function toMinutesInputFromSeconds(secondsRaw) {
@@ -551,12 +515,18 @@ function buildApiErrorMeta(sourceRaw, fallback = {}) {
   const status = Number(source?.status || fallback?.status || 0);
   const method = toText(source?.method || fallback?.method || "GET").toUpperCase() || "GET";
   const endpoint = toText(source?.endpoint || fallback?.endpoint || source?.path);
+  const requestUrl = toText(source?.request_url || source?.url);
+  const errorName = toText(source?.error_name);
+  const errorMessage = toText(source?.error_message || source?.message || source?.error);
   const detailRaw = toText(source?.response_text || source?.text)
     || trimErrorPayload(safeStringify(source?.data));
   return {
     status,
     method,
     endpoint,
+    request_url: requestUrl,
+    error_name: errorName,
+    error_message: errorMessage,
     detail: trimErrorPayload(detailRaw),
   };
 }
@@ -571,6 +541,8 @@ function formatErrorClipboard(metaRaw) {
   const lines = [];
   if (Number.isFinite(Number(meta?.status)) && Number(meta?.status) > 0) lines.push(`status: ${Number(meta.status)}`);
   if (toText(meta?.method) || toText(meta?.endpoint)) lines.push(`${toText(meta?.method || "GET")} ${toText(meta?.endpoint || "")}`.trim());
+  if (toText(meta?.request_url)) lines.push(`url: ${toText(meta?.request_url)}`);
+  if (toText(meta?.error_name) || toText(meta?.error_message)) lines.push(`network: ${toText(meta?.error_name || "Error")} ${toText(meta?.error_message)}`.trim());
   if (toText(meta?.detail)) {
     lines.push("response:");
     lines.push(toText(meta.detail));
@@ -645,7 +617,7 @@ const StepDurationEditor = memo(function StepDurationEditor({
   workSec,
   waitSec,
   onCommitSeconds,
-  variant = "compact",
+  variant = "row",
 }) {
   const [workInput, setWorkInput] = useState(() => toMinutesInputFromSeconds(workSec));
   const [waitInput, setWaitInput] = useState(() => toMinutesInputFromSeconds(waitSec));
@@ -742,70 +714,49 @@ const StepDurationEditor = memo(function StepDurationEditor({
     { sec: 300, label: "+5m" },
   ];
 
-  return (
-    <div
-      className={`interviewPathsInlineTimeEditor ${variant === "detailed" ? "isDetailed" : "isCompact"}`}
-      onClick={(e) => e.stopPropagation()}
-      onKeyDown={(e) => e.stopPropagation()}
-    >
-      <label className="interviewPathsTimeField compact">
-        <span title="Работа = активное действие">{variant === "detailed" ? "Work, мин" : "W"}</span>
-        <div className="interviewPathsTimeInputWrap compact">
-          <input
-            className="input interviewPathsTimeCompactInput"
-            type="number"
-            min="0"
-            step="0.5"
-            value={workInput}
-            onChange={(e) => {
-              const value = e.target.value;
-              setWorkInput(value);
-              scheduleCommit("work", value);
-            }}
-            onBlur={() => flushCommit("work", workInput)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") flushCommit("work", workInput);
-            }}
-          />
-          {toText(workInput) ? (
-            <button type="button" className="secondaryBtn tinyBtn interviewPathsTimeClearBtn" onClick={() => clearField("work")} title="Очистить">
-              ×
-            </button>
-          ) : null}
-        </div>
-      </label>
-      <label className="interviewPathsTimeField compact">
-        <span title="Ожидание = очередь/таймер/ожидание устройства/курьера">{variant === "detailed" ? "Wait, мин" : "Q"}</span>
-        <div className="interviewPathsTimeInputWrap compact">
-          <input
-            className="input interviewPathsTimeCompactInput"
-            type="number"
-            min="0"
-            step="0.5"
-            value={waitInput}
-            onChange={(e) => {
-              const value = e.target.value;
-              setWaitInput(value);
-              scheduleCommit("wait", value);
-            }}
-            onBlur={() => flushCommit("wait", waitInput)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") flushCommit("wait", waitInput);
-            }}
-          />
-          {toText(waitInput) ? (
-            <button type="button" className="secondaryBtn tinyBtn interviewPathsTimeClearBtn" onClick={() => clearField("wait")} title="Очистить">
-              ×
-            </button>
-          ) : null}
-        </div>
-      </label>
+  function renderMinutesInput(kind) {
+    const isWork = kind === "work";
+    const inputValue = isWork ? workInput : waitInput;
+    const setInput = isWork ? setWorkInput : setWaitInput;
+    return (
+      <div className={`interviewPathsTimeInputWrap ${variant === "detailed" ? "" : "compact"}`}>
+        <input
+          className="input interviewPathsTimeCompactInput"
+          type="number"
+          min="0"
+          step="0.5"
+          placeholder={isWork ? "Work" : "Wait"}
+          aria-label={isWork ? "Work (мин)" : "Wait (мин)"}
+          title={isWork ? "Work (активная работа), минуты" : "Wait (ожидание), минуты"}
+          value={inputValue}
+          onChange={(e) => {
+            const value = e.target.value;
+            setInput(value);
+            scheduleCommit(kind, value);
+          }}
+          onBlur={() => flushCommit(kind, inputValue)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") flushCommit(kind, inputValue);
+          }}
+        />
+        {toText(inputValue) ? (
+          <button type="button" className="secondaryBtn tinyBtn interviewPathsTimeClearBtn" onClick={() => clearField(kind)} title="Очистить">
+            ×
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderPresets() {
+    return (
       <div ref={presetsRef} className="interviewPathsPresetWrap">
         <button
           type="button"
           className="secondaryBtn tinyBtn interviewPathsPresetTrigger"
           onClick={() => setPresetsOpen((prev) => !prev)}
           title="Пресеты времени"
+          aria-label="Открыть пресеты времени"
           aria-haspopup="menu"
           aria-expanded={presetsOpen}
         >
@@ -846,6 +797,40 @@ const StepDurationEditor = memo(function StepDurationEditor({
           </div>
         ) : null}
       </div>
+    );
+  }
+
+  if (variant === "row") {
+    return (
+      <>
+        <div className="interviewRouteTimeCell" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+          {renderMinutesInput("work")}
+        </div>
+        <div className="interviewRouteTimeCell" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+          {renderMinutesInput("wait")}
+        </div>
+        <div className="interviewRoutePresetCell" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+          {renderPresets()}
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <div
+      className="interviewPathsInlineTimeEditor isDetailed"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      <label className="interviewPathsTimeField">
+        <span title="Работа = активное действие">Work, мин</span>
+        {renderMinutesInput("work")}
+      </label>
+      <label className="interviewPathsTimeField">
+        <span title="Ожидание = очередь/таймер/ожидание устройства/курьера">Wait, мин</span>
+        {renderMinutesInput("wait")}
+      </label>
+      {renderPresets()}
     </div>
   );
 });
@@ -922,9 +907,6 @@ export default function InterviewPathsView({
   const [selectedScenarioId, setSelectedScenarioId] = useState("");
   const [selectedRouteKey, setSelectedRouteKey] = useState("");
   const [detailsCollapsed, setDetailsCollapsed] = useState(true);
-  const [collapseByGroupId, setCollapseByGroupId] = useState({});
-  const [showAltByGroupId, setShowAltByGroupId] = useState({});
-  const [hoveredLinkKey, setHoveredLinkKey] = useState("");
   const [isPendingTransition, startTransition] = useTransition();
   const [reportLoadingCount, setReportLoadingCount] = useState(0);
   const [pendingGenerationVersions, setPendingGenerationVersions] = useState([]);
@@ -944,6 +926,7 @@ export default function InterviewPathsView({
   const [reportGenerationTrace, setReportGenerationTrace] = useState([]);
   const [latestReportBuildDebugByPath, setLatestReportBuildDebugByPath] = useState({});
   const [reportTerminalOverrides, setReportTerminalOverrides] = useState({});
+  const [reportDeleteInFlightId, setReportDeleteInFlightId] = useState("");
   const [isReportsDrawerOpen, setIsReportsDrawerOpen] = useState(false);
   const recommendationHighlightTimerRef = useRef(0);
   const reportListAbortRef = useRef(null);
@@ -976,6 +959,7 @@ export default function InterviewPathsView({
   }, [sessionId]);
   const deferredSelectedTier = useDeferredValue(selectedTier);
   const reportLoading = reportLoadingCount > 0;
+  const stepTimeByNodeId = useMemo(() => buildStepTimeByNodeId(vm?.steps), [vm?.steps]);
 
   useEffect(() => {
     return () => {
@@ -1077,7 +1061,7 @@ export default function InterviewPathsView({
 
     const withTime = filtered.map((scenario) => ({
       scenario,
-      durationSec: scenarioDurationSec(scenario, stepMetaByNodeId),
+      durationSec: scenarioDurationSec(scenario, stepTimeByNodeId),
       failRank: toText(scenario?.outcome).toLowerCase() === "fail" ? 1 : 0,
       bpmnOrder: Number(toArray(scenario?.sequence)?.[0]?.order_index || 0),
     }));
@@ -1099,14 +1083,28 @@ export default function InterviewPathsView({
       );
     });
     return withTime.map((item) => item.scenario);
-  }, [deferredSelectedTier, scenarios, scenarioSearch, scenarioSortMode, scenarioPresentation, stepMetaByNodeId]);
+  }, [deferredSelectedTier, scenarios, scenarioSearch, scenarioSortMode, scenarioPresentation, stepTimeByNodeId]);
+
+  const scenarioMetricsById = useMemo(() => {
+    const out = {};
+    toArray(scenarios).forEach((scenario) => {
+      const scenarioId = toText(scenario?.id);
+      if (!scenarioId) return;
+      const metrics = buildScenarioMetrics(scenario, stepTimeByNodeId);
+      out[scenarioId] = {
+        ...metrics,
+        total_time_sec_label: formatSeconds(metrics?.total_time_sec),
+      };
+    });
+    return out;
+  }, [scenarios, stepTimeByNodeId]);
 
   const visibleSections = useMemo(() => {
     const byKey = {
-      P0_IDEAL: { key: "P0_IDEAL", title: "P0 (Ideal)", items: [] },
-      P0_ALT: { key: "P0_ALT", title: "P0 (Alt)", items: [] },
-      P1_MITIGATED: { key: "P1_MITIGATED", title: "P1 (Mitigated)", items: [] },
-      P2_FAIL: { key: "P2_FAIL", title: "P2 (Fail)", items: [] },
+      P0_IDEAL: { key: "P0_IDEAL", title: "P0 Ideal", items: [] },
+      P0_ALT: { key: "P0_ALT", title: "P0 Alt", items: [] },
+      P1_MITIGATED: { key: "P1_MITIGATED", title: "P1 Mitigated", items: [] },
+      P2_FAIL: { key: "P2_FAIL", title: "P2 Fail", items: [] },
     };
     toArray(visibleScenarios).forEach((scenario) => {
       const bucket = scenarioBucket(scenario);
@@ -1187,8 +1185,7 @@ export default function InterviewPathsView({
   }, [selectedNodeIds, activeScenario, visibleScenarios, scenarios]);
 
   const routeRows = useMemo(() => toArray(activeScenario?.rows), [activeScenario]);
-  const flatRouteRows = useMemo(() => flattenRouteRows(routeRows), [routeRows]);
-  const sequenceMetaByNodeId = useMemo(() => buildSequenceMeta(activeScenario), [activeScenario]);
+  const routeStepRows = useMemo(() => buildScenarioStepRows(activeScenario), [activeScenario]);
   const decisionByNodeId = useMemo(
     () => buildDecisionHintsByNodeIdFromScenarioRows(routeRows),
     [routeRows],
@@ -1221,16 +1218,20 @@ export default function InterviewPathsView({
     if (selectedRouteKey) return;
     const selectedNode = Array.from(selectedNodeIds)[0] || "";
     if (!selectedNode) return;
-    const row = flatRouteRows.find((item) => toText(item?.node_id) === selectedNode);
+    const row = routeStepRows.find((item) => toText(item?.node_id) === selectedNode);
     if (row) {
       setSelectedRouteKey(`route_${Number(row?.order_index || 0)}_${toText(row?.node_id || row?.id || row?.key)}`);
     }
-  }, [selectedRouteKey, selectedNodeIds, flatRouteRows]);
+  }, [selectedRouteKey, selectedNodeIds, routeStepRows]);
 
   const activeRouteRow = useMemo(() => {
     if (!selectedRouteKey) return null;
-    return flatRouteRows.find((row) => `route_${Number(row?.order_index || 0)}_${toText(row?.node_id || row?.id || row?.key)}` === selectedRouteKey) || null;
-  }, [selectedRouteKey, flatRouteRows]);
+    return routeStepRows.find((row) => `route_${Number(row?.order_index || 0)}_${toText(row?.node_id || row?.id || row?.key)}` === selectedRouteKey) || null;
+  }, [selectedRouteKey, routeStepRows]);
+  const activeRouteIndex = useMemo(() => {
+    if (!selectedRouteKey) return -1;
+    return routeStepRows.findIndex((row) => `route_${Number(row?.order_index || 0)}_${toText(row?.node_id || row?.id || row?.key)}` === selectedRouteKey);
+  }, [selectedRouteKey, routeStepRows]);
 
   const matrixRowsForValidation = useMemo(() => {
     if (!import.meta.env.DEV || !active || !pathsCalcReady) return [];
@@ -1253,22 +1254,12 @@ export default function InterviewPathsView({
         .filter(Boolean),
     );
   }, [activeScenario]);
-  const stepTimeByNodeId = useMemo(() => {
-    const out = {};
-    toArray(vm?.steps).forEach((step) => {
-      const nodeId = toText(step?.node_id || step?.bpmn_ref);
-      if (!nodeId || out[nodeId]) return;
-      out[nodeId] = {
-        step_id: toText(step?.id),
-        work_duration_sec: Number(step?.work_duration_sec || step?.duration_sec || 0),
-        wait_duration_sec: Number(step?.wait_duration_sec || 0),
-      };
-    });
-    return out;
-  }, [vm?.steps]);
+  const activeScenarioMetrics = useMemo(
+    () => buildScenarioMetrics(activeScenario, stepTimeByNodeId),
+    [activeScenario, stepTimeByNodeId],
+  );
   const activePathMetrics = useMemo(() => {
-    const sequence = toArray(activeScenario?.sequence);
-    if (!sequence.length) {
+    if (!Number(activeScenarioMetrics?.steps_count || 0)) {
       const fallback = pathMetrics && typeof pathMetrics === "object" ? pathMetrics : {};
       const stepsCount = Number(fallback?.steps_count || 0);
       const workTotal = Number(fallback?.work_time_total_sec || 0);
@@ -1281,15 +1272,8 @@ export default function InterviewPathsView({
         total_time_sec: total,
       };
     }
-    const work = sequence.reduce((acc, step) => acc + Math.max(0, Number(stepTimeByNodeId[toText(step?.node_id)]?.work_duration_sec || 0)), 0);
-    const wait = sequence.reduce((acc, step) => acc + Math.max(0, Number(stepTimeByNodeId[toText(step?.node_id)]?.wait_duration_sec || 0)), 0);
-    return {
-      steps_count: sequence.length,
-      work_time_total_sec: work,
-      wait_time_total_sec: wait,
-      total_time_sec: work + wait,
-    };
-  }, [activeScenario, stepTimeByNodeId, pathMetrics]);
+    return activeScenarioMetrics;
+  }, [activeScenarioMetrics, pathMetrics]);
   const reportScenarioSequence = useMemo(
     () => buildScenarioSequenceForReport(activeScenario),
     [activeScenario],
@@ -1321,27 +1305,66 @@ export default function InterviewPathsView({
       decisionByOrderIndex,
       scenarioSequence: reportScenarioSequenceForReport,
     });
-  }, [interviewData, decisionByNodeId, decisionByOrderIndex, reportScenarioSequenceForReport]);
+  }, [
+    interviewData?.steps,
+    interviewData?.path_spec,
+    interviewData?.pathSpec,
+    decisionByNodeId,
+    decisionByOrderIndex,
+    reportScenarioSequenceForReport,
+  ]);
+  const reportBuildDebugRouteSteps = useMemo(
+    () => normalizeDebugRouteSteps(reportBuildPreviewSteps),
+    [reportBuildPreviewSteps],
+  );
   const reportBuildDebugPreview = useMemo(() => {
-    return buildReportBuildDebug({
-      sessionId,
-      selectedScenarioLabel: reportScenarioLabel,
-      pathIdUsed: activePathId,
-      scenarioRaw: activeScenario,
-      scenarioSequence: reportScenarioSequenceForReport,
-      steps: reportBuildPreviewSteps,
-      graphModel: interviewGraph,
-      dodSnapshot,
-    });
+    return {
+      ...buildReportBuildDebug({
+        sessionId,
+        selectedScenarioLabel: reportScenarioLabel,
+        pathIdUsed: activePathId,
+        scenarioRaw: activeScenario,
+        scenarioSequence: reportScenarioSequenceForReport,
+        steps: reportBuildPreviewSteps,
+        graphModel: interviewGraph,
+        dodSnapshot,
+      }),
+      selected_scenario_id: toText(activeScenario?.id),
+      scenario_tier: normalizeTier(activeScenario?.tier),
+      sequence_key: toText(activeScenario?.sequence_key || activeScenario?.sequenceKey),
+      route_steps: reportBuildDebugRouteSteps,
+      source: "scenario_selection",
+    };
   }, [
     sessionId,
     reportScenarioLabel,
     activePathId,
+    activeScenario?.id,
+    activeScenario?.tier,
+    activeScenario?.sequence_key,
+    activeScenario?.sequenceKey,
     activeScenario,
     reportScenarioSequenceForReport,
     reportBuildPreviewSteps,
+    reportBuildDebugRouteSteps,
     interviewGraph,
     dodSnapshot,
+  ]);
+  useEffect(() => {
+    if (!active || !pathsCalcReady) return;
+    if (typeof onReportBuildDebug !== "function") return;
+    const nextDebug = asObject(reportBuildDebugPreview);
+    if (!toText(nextDebug?.path_id_used) || !toArray(nextDebug?.route_steps).length) return;
+    const currentComparable = buildReportBuildDebugComparable(asObject(interviewData?.report_build_debug));
+    const nextComparable = buildReportBuildDebugComparable(nextDebug);
+    if (JSON.stringify(currentComparable) === JSON.stringify(nextComparable)) return;
+    onReportBuildDebug(nextDebug);
+  }, [
+    active,
+    pathsCalcReady,
+    onReportBuildDebug,
+    reportBuildDebugPreview,
+    interviewData?.report_build_debug,
   ]);
   const activeReportBuildDebug = useMemo(() => {
     const byPath = asObject(latestReportBuildDebugByPath);
@@ -1391,6 +1414,20 @@ export default function InterviewPathsView({
   const selectedReportView = useMemo(() => {
     const selectedId = toText(selectedReportSummary?.id || selectedReportDetails?.id);
     const localOverride = asObject(reportTerminalOverrides[selectedId]);
+    const normalizedPayload = asObject(
+      selectedReportDetails?.payload_normalized
+      || selectedReportDetails?.report_json
+      || selectedReportSummary?.payload_normalized
+      || selectedReportSummary?.report_json,
+    );
+    const payloadRaw = (
+      selectedReportDetails?.payload_raw
+      ?? selectedReportSummary?.payload_raw
+      ?? selectedReportDetails?.raw_json
+      ?? selectedReportSummary?.raw_json
+      ?? {}
+    );
+    const rawText = toText(selectedReportDetails?.raw_text || normalizedPayload?.raw_text);
     return {
       id: selectedId,
       version: Number(selectedReportSummary?.version || selectedReportDetails?.version || 0),
@@ -1399,15 +1436,19 @@ export default function InterviewPathsView({
       steps_hash: toText(selectedReportSummary?.steps_hash || selectedReportDetails?.steps_hash),
       model: toText(selectedReportSummary?.model || selectedReportDetails?.model),
       prompt_template_version: toText(selectedReportSummary?.prompt_template_version || selectedReportDetails?.prompt_template_version),
-      report_json: asObject(selectedReportDetails?.report_json || selectedReportSummary?.report_json),
-      raw_json: asObject(selectedReportDetails?.raw_json || selectedReportSummary?.raw_json),
+      payload_normalized: normalizedPayload,
+      payload_raw: payloadRaw,
+      report_json: normalizedPayload,
+      raw_json: asObject(selectedReportDetails?.raw_json || selectedReportSummary?.raw_json || (payloadRaw && typeof payloadRaw === "object" ? payloadRaw : {})),
       report_markdown: normalizeReportMarkdown(
         selectedReportDetails?.report_markdown,
-        selectedReportDetails?.raw_text,
+        rawText,
+        normalizedPayload,
       ),
-      recommendations: toArray(selectedReportDetails?.recommendations_json || selectedReportDetails?.recommendations),
-      missing_data: toArray(selectedReportDetails?.missing_data_json || selectedReportDetails?.missing_data),
-      risks: toArray(selectedReportDetails?.risks_json || selectedReportDetails?.risks),
+      raw_text: rawText,
+      recommendations: toArray(selectedReportDetails?.recommendations_json || normalizedPayload?.recommendations || selectedReportDetails?.recommendations),
+      missing_data: toArray(selectedReportDetails?.missing_data_json || normalizedPayload?.missing_data || selectedReportDetails?.missing_data),
+      risks: toArray(selectedReportDetails?.risks_json || normalizedPayload?.risks || selectedReportDetails?.risks),
       request_payload_json: asObject(selectedReportDetails?.request_payload_json),
       steps: toArray(
         selectedReportDetails?.steps_json
@@ -1635,6 +1676,7 @@ export default function InterviewPathsView({
     setSelectedReportId("");
     setPendingGenerationVersions([]);
     setReportLoadingCount(0);
+    setReportDeleteInFlightId("");
     setReportGenerationTrace([]);
     reportTraceSeqRef.current = 0;
     reportTraceStatusByReportRef.current = {};
@@ -1912,7 +1954,7 @@ export default function InterviewPathsView({
       }
       if (import.meta.env.DEV) {
         // eslint-disable-next-line no-console
-        console.info(`[REPORTS_POLL] stop reason=${reason}`);
+        console.info(`[REPORT_POLL] stop reason=${reason}`);
       }
     }
 
@@ -2014,7 +2056,7 @@ export default function InterviewPathsView({
     if (import.meta.env.DEV) {
       // eslint-disable-next-line no-console
       console.info(
-        `[REPORTS_POLL] start sid=${toText(sessionId)} path=${toText(activePathId)} interval=${reportPollDelayMs(1)}..5000`,
+        `[REPORT_POLL] start sid=${toText(sessionId)} path=${toText(activePathId)} interval=${reportPollDelayMs(1)}..5000`,
       );
     }
     tick();
@@ -2049,6 +2091,13 @@ export default function InterviewPathsView({
   }, [selectedReportView?.status, selectedReportView?.report_markdown, reportGenerationTrace, reportLoading, hasRunningReports]);
 
   async function handleGenerateReport() {
+    if (reportLoading) {
+      if (import.meta.env.DEV) {
+        // eslint-disable-next-line no-console
+        console.info("[REPORT_GEN] request_skip reason=in_flight");
+      }
+      return;
+    }
     if (!reportApiAvailable) {
       setReportError("Отчёты недоступны в локальной сессии. Сохраните/откройте серверную сессию.");
       setReportErrorMeta(null);
@@ -2099,9 +2148,9 @@ export default function InterviewPathsView({
       if (import.meta.env.DEV) {
         // eslint-disable-next-line no-console
         console.info(
-          `[REPORT_BUILD] scenario=${toText(reportBuildDebug?.selectedScenarioLabel || reportScenarioLabel)} `
+          `[REPORT_GEN] request_build scenario=${toText(reportBuildDebug?.selectedScenarioLabel || reportScenarioLabel)} `
           + `path=${toText(reportBuildDebug?.path_id_used || activePathId)} steps=${Number(reportBuildDebug?.steps_count || 0)} `
-          + `reason=${stopReason} last=#${lastNo || "?"} ${lastTitle} bpmn=${lastBpmn}`,
+          + `hash=${toText(request?.steps_hash) || "—"} reason=${stopReason} last=#${lastNo || "?"} ${lastTitle} bpmn=${lastBpmn}`,
         );
       }
       setLatestReportBuildDebugByPath((prev) => ({
@@ -2155,6 +2204,13 @@ export default function InterviewPathsView({
         report_status: toText(reportEntry?.status || "running"),
         status: Number(response?.status || 0),
       });
+      if (import.meta.env.DEV) {
+        // eslint-disable-next-line no-console
+        console.info(
+          `[REPORT_GEN] post_ok version_id=${reportId || "—"} status=${toText(reportEntry?.status || "running")} `
+          + `steps_hash=${toText(request?.steps_hash) || "—"}`,
+        );
+      }
       appendReportStatusTrace(reportId, reportEntry?.status, reportEntry);
       if (reportId) {
         setReportDetailsById((prev) => ({ ...prev, [reportId]: reportEntry }));
@@ -2193,7 +2249,11 @@ export default function InterviewPathsView({
     const reportId = toText(reportIdRaw);
     if (!reportId) return;
     const detail = asObject(reportDetailsById[reportId]);
-    const markdown = normalizeReportMarkdown(detail?.report_markdown, detail?.raw_text);
+    const markdown = normalizeReportMarkdown(
+      detail?.report_markdown,
+      detail?.raw_text,
+      detail?.payload_normalized || detail?.report_json || {},
+    );
     if (!markdown) return;
     try {
       if (navigator?.clipboard?.writeText) {
@@ -2201,6 +2261,97 @@ export default function InterviewPathsView({
       }
     } catch {
       setReportDetailsError("Не удалось скопировать markdown.");
+    }
+  }
+
+  async function handleDeleteReportVersion(reportRaw) {
+    const report = asObject(reportRaw);
+    const reportId = toText(report?.id);
+    if (!reportId || reportDeleteInFlightId) return;
+    if (!reportApiAvailable) {
+      setReportError("Удаление недоступно в локальной сессии. Откройте серверную сессию.");
+      setReportErrorMeta(null);
+      return;
+    }
+    const fallbackReportId = toText(
+      [...toArray(reportVersions)]
+        .filter((item) => toText(item?.id) && toText(item?.id) !== reportId)
+        .sort((a, b) => Number(b?.version || 0) - Number(a?.version || 0))[0]?.id,
+    );
+
+    setReportDeleteInFlightId(reportId);
+    setReportError("");
+    setReportErrorMeta(null);
+    setReportDetailsError("");
+    setReportDetailsErrorMeta(null);
+    appendReportTrace({
+      phase: "delete_request",
+      title: `Удаление версии v${Number(report?.version || 0)}`,
+      report_id: reportId,
+      method: "DELETE",
+      endpoint: `/api/reports/${encodeURIComponent(reportId)}`,
+    });
+    try {
+      const response = await apiDeleteReportVersion(reportId, { sessionId, pathId: activePathId });
+      if (!response?.ok) {
+        const title = buildApiErrorTitle(response, "Не удалось удалить версию отчёта.");
+        const meta = buildApiErrorMeta(response, {
+          method: "DELETE",
+          endpoint: `/api/reports/${encodeURIComponent(reportId)}`,
+        });
+        setReportDetailsError(title);
+        setReportDetailsErrorMeta(meta);
+        appendReportTrace({
+          phase: "delete_error",
+          title,
+          report_id: reportId,
+          status: Number(meta?.status || 0),
+          detail: toText(meta?.detail),
+        });
+        return;
+      }
+
+      setReportVersions((prev) => toArray(prev).filter((item) => toText(item?.id) !== reportId));
+      setReportDetailsById((prev) => {
+        const next = { ...asObject(prev) };
+        delete next[reportId];
+        return next;
+      });
+      setReportTerminalOverrides((prev) => {
+        const next = { ...asObject(prev) };
+        delete next[reportId];
+        return next;
+      });
+      setSelectedReportId((prev) => {
+        if (toText(prev) !== reportId) return prev;
+        return fallbackReportId || "";
+      });
+
+      appendReportTrace({
+        phase: "delete_ok",
+        title: `Версия удалена: v${Number(report?.version || 0)}`,
+        report_id: reportId,
+        status: Number(response?.status || 204),
+      });
+
+      await reloadReportVersions(fallbackReportId, { force: true });
+    } catch (error) {
+      const title = buildApiErrorTitle(error, "Не удалось удалить версию отчёта.");
+      const meta = buildApiErrorMeta(error, {
+        method: "DELETE",
+        endpoint: `/api/reports/${encodeURIComponent(reportId)}`,
+      });
+      setReportDetailsError(title);
+      setReportDetailsErrorMeta(meta);
+      appendReportTrace({
+        phase: "delete_error",
+        title,
+        report_id: reportId,
+        status: Number(meta?.status || 0),
+        detail: toText(meta?.detail),
+      });
+    } finally {
+      setReportDeleteInFlightId("");
     }
   }
 
@@ -2218,7 +2369,7 @@ export default function InterviewPathsView({
   function handleRecommendationClick(recommendation) {
     const orderIndex = Number(recommendation?.order_index || recommendation?._orderIndex || 0);
     if (!Number.isFinite(orderIndex) || orderIndex <= 0) return;
-    const matchedRow = flatRouteRows.find((row) => Number(row?.order_index || 0) === Math.floor(orderIndex));
+    const matchedRow = routeStepRows.find((row) => Number(row?.order_index || 0) === Math.floor(orderIndex));
     let stepId = "";
     if (matchedRow) {
       const nodeId = toText(matchedRow?.node_id);
@@ -2241,6 +2392,11 @@ export default function InterviewPathsView({
     }
     setActiveRecommendationOrderIndex(Number.isFinite(orderIndex) ? orderIndex : 0);
     if (typeof document !== "undefined") {
+      const routeStack = document.querySelector('[data-testid="interview-paths-route-stack"]');
+      if (routeStack && typeof routeStack.scrollTo === "function") {
+        const targetTop = Math.max(0, (Math.floor(orderIndex) - 1) * 76 - 120);
+        routeStack.scrollTo({ top: targetTop, behavior: "smooth" });
+      }
       const el = document.querySelector(`[data-testid="interview-paths-node-${Math.floor(orderIndex)}"]`);
       if (el && typeof el.scrollIntoView === "function") {
         el.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -2273,224 +2429,83 @@ export default function InterviewPathsView({
     onSetTimelineViewMode?.(nextMode);
   }
 
-  function toggleGroup(groupIdRaw, row) {
-    const groupId = toText(groupIdRaw);
-    if (!groupId) return;
-    setCollapseByGroupId((prev) => {
-      const has = Object.prototype.hasOwnProperty.call(prev, groupId);
-      const current = has ? !!prev[groupId] : collapseDefaultForGroup(row);
-      return { ...prev, [groupId]: !current };
-    });
-  }
-
-  function toggleAlternatives(groupIdRaw) {
-    const groupId = toText(groupIdRaw);
-    if (!groupId) return;
-    setShowAltByGroupId((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
-  }
-
-  function renderRouteRows(rows, depth = 0) {
-    return toArray(rows).map((row, idx) => {
-      const kind = toText(row?.kind).toLowerCase();
-      const rowType = toText(row?.row_type).toLowerCase();
-      const key = `route_${Number(row?.order_index || 0)}_${toText(row?.node_id || row?.id || row?.key || idx)}`;
-
-      if (kind === "row_step") {
-        const nodeId = toText(row?.node_id);
-        const linkedStepId = toText(firstStepIdByNodeId[nodeId]);
-        const linkedStep = asObject(stepById[linkedStepId]);
-        const workSec = Math.max(0, Number(linkedStep?.work_duration_sec || linkedStep?.duration_sec || 0));
-        const waitSec = Math.max(0, Number(linkedStep?.wait_duration_sec || 0));
-        const seqMeta = asObject(sequenceMetaByNodeId[nodeId]);
-        const selected = selectedRouteKey === key || selectedNodeIds.has(nodeId);
-        const linkGroup = linkGroupForNode(dodSnapshot?.link_groups, nodeId);
-        const linkKey = toText(linkGroup?.link_key);
-        const counterpartIds = counterpartIdsForNode(linkGroup, nodeId);
-        const hoverActive = hoveredLinkKey && hoveredLinkKey === linkKey;
-        const isDecisionDiff = rowType === "decision" && diffDecisionGatewayIds.has(nodeId);
-        const recommendationActive = Number(row?.order_index || 0) === Number(activeRecommendationOrderIndex || 0);
-        const rowTitle = sanitizeDisplayText(row?.title, "—");
-        const prevTitle = sanitizeDisplayText(seqMeta?.prev?.title, "—");
-        const nextTitle = sanitizeDisplayText(seqMeta?.next?.title, "—");
-        const rowTier = normalizeTier(row?.tier);
-        return (
-          <div
-            key={key}
-            className={[
-              "interviewRouteNode",
-              selected ? "isSelected" : "",
-              recommendationActive ? "isRecommendationActive" : "",
-              hoverActive ? "isLinkHovered" : "",
-              rowType === "decision" ? "isDecision" : "",
-              isDecisionDiff ? "isDecisionDiff" : "",
-            ].filter(Boolean).join(" ")}
-            style={{ marginLeft: `${depth * 18}px` }}
-            onClick={() => pickRow(row)}
-            role="button"
-            tabIndex={0}
-            data-testid={`interview-paths-node-${Number(row?.order_index || 0)}`}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") pickRow(row);
-            }}
-          >
-            <div className="interviewRouteRowMain">
-              <div className="interviewRouteNodeHead">
-                <span className="interviewRouteNodeNo">#{Number(row?.order_index || 0)}</span>
-                <span className="interviewRouteNodeTitle" title={rowTitle}>{rowTitle}</span>
-                {rowType === "decision" ? <span className="badge warn">Decision</span> : null}
-                {isDecisionDiff ? <span className="badge warn">Δ</span> : null}
-                {rowTier !== "None" ? <span className={`tier tier-${rowTier.toLowerCase()}`}>{rowTier}</span> : null}
-              </div>
-              <div className="interviewRouteNodeMeta">
-                <span className="muted small interviewRouteNodeSubtitle" title={`${prevTitle} → ${nextTitle}`}>
-                  {prevTitle} → {nextTitle}
-                </span>
-                {toText(row?.lane_name) ? <span className="badge muted">{toText(row?.lane_name)}</span> : null}
-                {rowType === "decision" ? (
-                  <span className="badge ok">
-                    {toText(row?.decision?.selected_label || row?.decision?.selected_flow_id || "selected")}
-                  </span>
-                ) : null}
-                {counterpartIds.length ? (
-                  <span
-                    className="badge"
-                    onMouseEnter={() => setHoveredLinkKey(linkKey)}
-                    onMouseLeave={() => setHoveredLinkKey("")}
-                  >
-                    Link: {counterpartIds.length}
-                  </span>
-                ) : null}
-              </div>
-            </div>
-            <div className="interviewRouteNodeControls">
-              {linkedStepId ? (
-                <StepDurationEditor
-                  stepId={linkedStepId}
-                  workSec={workSec}
-                  waitSec={waitSec}
-                  onCommitSeconds={commitDurationSeconds}
-                />
-              ) : null}
-            </div>
+  function renderRouteStepRow(row, idx) {
+    const orderIndex = Number(row?.order_index || idx + 1);
+    const key = `route_${orderIndex}_${toText(row?.node_id || row?.id || row?.key || idx)}`;
+    const nodeId = toText(row?.node_id);
+    const linkedStepId = toText(firstStepIdByNodeId[nodeId]);
+    const linkedStep = asObject(stepById[linkedStepId]);
+    const workSec = Math.max(0, Number(linkedStep?.work_duration_sec || linkedStep?.duration_sec || 0));
+    const waitSec = Math.max(0, Number(linkedStep?.wait_duration_sec || 0));
+    const selected = selectedRouteKey === key;
+    const rowType = toText(row?.row_type).toLowerCase();
+    const isDecisionDiff = rowType === "decision" && diffDecisionGatewayIds.has(nodeId);
+    const recommendationActive = orderIndex === Number(activeRecommendationOrderIndex || 0);
+    const rowTitle = sanitizeDisplayText(row?.title, "—");
+    const prevTitle = sanitizeDisplayText(routeStepRows[idx - 1]?.title, "—");
+    const nextTitle = sanitizeDisplayText(routeStepRows[idx + 1]?.title, "—");
+    const laneName = toText(row?.lane_name || "—");
+    return (
+      <div
+        key={key}
+        className={[
+          "interviewRouteNode",
+          "interviewRouteNodeTable",
+          selected ? "isSelected" : "",
+          recommendationActive ? "isRecommendationActive" : "",
+          rowType === "decision" ? "isDecision" : "",
+          isDecisionDiff ? "isDecisionDiff" : "",
+        ].filter(Boolean).join(" ")}
+        onClick={() => pickRow(row)}
+        role="button"
+        tabIndex={0}
+        data-testid={`interview-paths-node-${orderIndex}`}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") pickRow(row);
+        }}
+      >
+        <div className="interviewRouteColStep">
+          <div className="interviewRouteNodeHead">
+            <span className="interviewRouteNodeNo">#{orderIndex}</span>
+            <span className="interviewRouteNodeTitle" title={rowTitle}>{rowTitle}</span>
+            {rowType === "decision" ? <span className="badge warn">Decision</span> : null}
+            {isDecisionDiff ? <span className="badge warn">Δ</span> : null}
           </div>
-        );
-      }
-
-      if (kind !== "row_group") return null;
-
-      const groupId = toText(row?.id || row?.key || `${rowType}_${row?.order_index}`);
-      const collapsedMapHas = Object.prototype.hasOwnProperty.call(collapseByGroupId, groupId);
-      const collapsed = collapsedMapHas ? !!collapseByGroupId[groupId] : collapseDefaultForGroup(row);
-      const showAlternatives = !!showAltByGroupId[groupId];
-      const branchRows = toArray(row?.children).filter((child) => toText(child?.kind).toLowerCase() === "row_branch");
-      const primaryBranch = branchRows.find((branch) => !!branch?.is_primary) || branchRows[0] || null;
-      const altBranches = branchRows.filter((branch) => branch !== primaryBranch);
-      const isParallel = rowType === "parallel";
-      const isLoop = rowType === "loop";
-      const isDecisionGroup = rowType === "gateway";
-      const groupTime = groupTimeSec(row, stepMetaByNodeId);
-
-      return (
-        <div
-          key={key}
-          className={`interviewRouteGroup ${rowType}`}
-          style={{ marginLeft: `${depth * 18}px` }}
-          data-testid={`interview-paths-group-${rowType}`}
-        >
-          <div className="interviewRouteGroupHead">
-            <button type="button" className="secondaryBtn tinyBtn" onClick={() => toggleGroup(groupId, row)}>
-              {collapsed ? "▶" : "▼"}
-            </button>
-            <strong>{toText(row?.title) || (isParallel ? "Параллельный участок" : isLoop ? "Повтор" : "Ветвление")}</strong>
-            <span className="badge muted">time {formatSeconds(groupTime)}</span>
-            {isLoop ? <span className="badge warn">expected 1 iteration</span> : null}
+          <div className="interviewRouteNodeMeta">
+            <span className="muted small interviewRouteNodeSubtitle" title={`${prevTitle} → ${nextTitle}`}>
+              {prevTitle} → {nextTitle}
+            </span>
           </div>
-
-          {!collapsed ? (
-            <div className="interviewRouteGroupBody">
-              {isDecisionGroup ? (
-                <div className="interviewRouteDecisionBlock">
-                  {primaryBranch ? (
-                    <div className="interviewRouteDecisionPrimary">
-                      <div className="interviewRouteBranchHead">
-                        {normalizeTier(primaryBranch?.tier) !== "None" ? (
-                          <span className={`tier tier-${normalizeTier(primaryBranch?.tier).toLowerCase()}`}>{normalizeTier(primaryBranch?.tier)}</span>
-                        ) : null}
-                        <span>{toText(primaryBranch?.label) || "Selected"}</span>
-                        <span className="badge ok">Primary</span>
-                        <span className="muted small">часть позитивного пути</span>
-                      </div>
-                      <div className="interviewRouteBranchBody">
-                        {renderRouteRows(primaryBranch?.children, depth + 1)}
-                      </div>
-                    </div>
-                  ) : null}
-                  {altBranches.length ? (
-                    <div className="interviewRouteDecisionAlt">
-                      <button type="button" className="secondaryBtn tinyBtn" onClick={() => toggleAlternatives(groupId)}>
-                        {showAlternatives ? "Скрыть альтернативы" : `Показать альтернативы (${altBranches.length})`}
-                      </button>
-                      {showAlternatives ? altBranches.map((branch, altIdx) => (
-                        <div key={`alt_${groupId}_${altIdx + 1}`} className="interviewRouteBranchAlt">
-                          <div className="interviewRouteBranchHead">
-                            {normalizeTier(branch?.tier) !== "None" ? (
-                              <span className={`tier tier-${normalizeTier(branch?.tier).toLowerCase()}`}>{normalizeTier(branch?.tier)}</span>
-                            ) : null}
-                            <span>{toText(branch?.label) || `Alt ${altIdx + 1}`}</span>
-                          </div>
-                          <div className="interviewRouteBranchBody">
-                            {renderRouteRows(branch?.children, depth + 1)}
-                          </div>
-                        </div>
-                      )) : null}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {isParallel ? (
-                <div className="interviewRouteParallelBlock" data-testid="interview-paths-parallel-block">
-                  <div className="interviewRouteParallelSplit">Split</div>
-                  <div className="interviewRouteParallelBranches">
-                    {branchRows.map((branch, branchIdx) => (
-                      <div key={`pb_${groupId}_${branchIdx + 1}`} className="interviewRouteParallelBranch">
-                        <div className="interviewRouteBranchHead">
-                          {normalizeTier(branch?.tier) !== "None" ? (
-                            <span className={`tier tier-${normalizeTier(branch?.tier).toLowerCase()}`}>{normalizeTier(branch?.tier)}</span>
-                          ) : null}
-                          <span>{toText(branch?.label) || `Branch ${branchIdx + 1}`}</span>
-                        </div>
-                        <div className="interviewRouteBranchBody">
-                          {renderRouteRows(branch?.children, depth + 1)}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="interviewRouteParallelJoin">Join · {formatSeconds(groupTime)}</div>
-                </div>
-              ) : null}
-
-              {isLoop ? (
-                <div className="interviewRouteLoopBlock" data-testid="interview-paths-loop-block">
-                  <div className="muted small">
-                    Повтор: {toText(row?.reason || "cycle")}
-                    {" · "}
-                    вернуться к: {toText(row?.back_to_node_id || row?.target_node_id || "—")}
-                  </div>
-                  <div className="muted small">итераций: {Number(row?.expected_iterations || 1)} (expected)</div>
-                  {toArray(row?.children).length ? (
-                    <div className="interviewRouteLoopBody">
-                      {renderRouteRows(toArray(row?.children).slice(0, 1), depth + 1)}
-                      <div className="muted small">…</div>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
         </div>
-      );
-    });
+
+        <div className="interviewRouteColLane" title={laneName}>
+          {laneName && laneName !== "—" ? (
+            <span className="interviewRouteLaneChip">
+              <span className="interviewRouteLaneDot" />
+              <span>{laneName}</span>
+            </span>
+          ) : (
+            <span className="muted small">—</span>
+          )}
+        </div>
+
+        {linkedStepId ? (
+          <StepDurationEditor
+            stepId={linkedStepId}
+            workSec={workSec}
+            waitSec={waitSec}
+            onCommitSeconds={commitDurationSeconds}
+            variant="row"
+          />
+        ) : (
+          <>
+            <div className="interviewRouteTimeCell muted small">—</div>
+            <div className="interviewRouteTimeCell muted small">—</div>
+            <div className="interviewRoutePresetCell muted small">—</div>
+          </>
+        )}
+      </div>
+    );
   }
 
   const activeLinkGroup = useMemo(() => {
@@ -2505,9 +2520,12 @@ export default function InterviewPathsView({
   }, [activeRouteRow, activeLinkGroup]);
 
   const activeNodeSeqMeta = useMemo(() => {
-    const nodeId = toText(activeRouteRow?.node_id);
-    return asObject(sequenceMetaByNodeId[nodeId]);
-  }, [activeRouteRow, sequenceMetaByNodeId]);
+    if (!activeRouteRow || activeRouteIndex < 0) return {};
+    return {
+      prev: routeStepRows[activeRouteIndex - 1] || null,
+      next: routeStepRows[activeRouteIndex + 1] || null,
+    };
+  }, [activeRouteRow, activeRouteIndex, routeStepRows]);
 
   const flowMaps = useMemo(() => buildFlowMaps(dodSnapshot), [dodSnapshot]);
   const dodMissingByNodeId = useMemo(() => buildDodByNodeId(dodSnapshot), [dodSnapshot]);
@@ -2574,7 +2592,11 @@ export default function InterviewPathsView({
     const selectedId = toText(selectedReportId || visibleReportVersions?.[0]?.id);
     if (!selectedId) return false;
     const detail = asObject(reportDetailsById[selectedId]);
-    return !!normalizeReportMarkdown(detail?.report_markdown, detail?.raw_text);
+    return !!normalizeReportMarkdown(
+      detail?.report_markdown,
+      detail?.raw_text,
+      detail?.payload_normalized || detail?.report_json || {},
+    );
   }, [selectedReportId, visibleReportVersions, reportDetailsById]);
 
   async function handleCopyActiveMarkdown() {
@@ -2625,22 +2647,44 @@ export default function InterviewPathsView({
       ) : null}
 
       {showDevOrderWarning ? (
-        <div className="interviewAnnotationNotice warn">
-          <div>
-            Scenario order corrupted: order_index not monotonic
-            {orderValidation.firstNotStart ? " · first row is not StartEvent" : ""}
+        <div className="interviewAnnotationNotice warn interviewScenarioOrderWarning">
+          <div className="interviewScenarioOrderWarningHead">
+            <span className="interviewScenarioOrderWarningTitle">Порядок сценария: найдено нарушение order_index</span>
+            <span className="badge warn">issues {Number(toArray(orderValidation?.violations).length || 0)}</span>
           </div>
-          {toArray(orderValidation?.violations).slice(0, 10).map((issue, idx) => (
-            <div key={`order_issue_${idx + 1}`} className="muted small">
-              {idx + 1}. prev=#{Number(issue?.prev_order_index || 0)} → cur=#{Number(issue?.current_order_index || 0)} ({toText(issue?.node_id || issue?.title || "step")})
+          <div className="interviewScenarioOrderWarningMeta muted small">
+            Проверено пар: {Number(orderValidation?.checked_pairs || 0)}
+            {" · "}
+            Пропущено между ветками: {Number(orderValidation?.skipped_scope_pairs || 0)}
+            {orderValidation.firstNotStart ? " · первый шаг не StartEvent" : ""}
+          </div>
+          <details className="interviewScenarioOrderWarningDetails">
+            <summary>Показать проблемные переходы</summary>
+            <div className="interviewScenarioOrderWarningList">
+              {toArray(orderValidation?.violations).slice(0, 10).map((issue, idx) => (
+                <div key={`order_issue_${idx + 1}`} className="interviewScenarioOrderWarningItem">
+                  <span className="badge muted">#{idx + 1}</span>
+                  <span className="interviewScenarioOrderWarningItemText">
+                    {`prev #${Number(issue?.prev_order_index || 0)} → cur #${Number(issue?.current_order_index || 0)} · `}
+                    {toText(issue?.node_id || issue?.title || "step")}
+                    {toText(issue?.scope) ? ` · scope: ${toText(issue?.scope)}` : ""}
+                  </span>
+                </div>
+              ))}
             </div>
-          ))}
+          </details>
         </div>
       ) : null}
 
       <PathsLayout
         detailsCollapsed={detailsCollapsed}
-        onToggleDetails={setDetailsCollapsed}
+        onToggleDetails={(nextCollapsedRaw) => {
+          const nextCollapsed = !!nextCollapsedRaw;
+          setDetailsCollapsed(nextCollapsed);
+          if (nextCollapsed) {
+            setSelectedRouteKey("");
+          }
+        }}
         hasActiveStep={!!activeRouteRow}
         left={(
           <ScenarioNav
@@ -2659,7 +2703,8 @@ export default function InterviewPathsView({
             scenarioStatusClass={scenarioStatusClass}
             scenarioStatusLabel={scenarioStatusLabel}
             scenarioStatusIcon={scenarioOutcomeIcon}
-            scenarioDurationLabel={(scenario) => formatSeconds(scenarioDurationSec(scenario, stepMetaByNodeId))}
+            scenarioDurationLabel={(scenario) => formatSeconds(scenarioDurationSec(scenario, stepTimeByNodeId))}
+            scenarioMetrics={scenarioMetricsById}
           />
         )}
         center={(
@@ -2718,9 +2763,11 @@ export default function InterviewPathsView({
               </div>
             ) : null}
 
-            <PathStepList title="Маршрут выбранного сценария">
-              {renderRouteRows(routeRows, 0)}
-            </PathStepList>
+            <PathStepList
+              title="Маршрут выбранного сценария"
+              rows={routeStepRows}
+              renderRow={renderRouteStepRow}
+            />
           </div>
         )}
         right={(
@@ -2758,6 +2805,8 @@ export default function InterviewPathsView({
         onRetryGenerate={handleGenerateReport}
         canGenerateReport={canGenerateReport}
         onCopyMarkdown={handleCopyMarkdown}
+        onDeleteReport={handleDeleteReportVersion}
+        deletingReportId={reportDeleteInFlightId}
         selectedReportView={selectedReportView}
         reportDetailsById={reportDetailsById}
         reportDetailsLoadingId={reportDetailsLoadingId}

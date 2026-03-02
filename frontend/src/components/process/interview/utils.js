@@ -319,7 +319,8 @@ export function isLocalSessionId(id) {
 
 export function emptyInterview() {
   return {
-    order_mode: "interview",
+    order_mode: "bpmn",
+    order_mode_user_set: false,
     boundaries: {
       trigger: "",
       start_shop: "",
@@ -700,6 +701,7 @@ export function normalizeInterview(raw) {
   const src = raw && typeof raw === "object" ? raw : {};
   const base = emptyInterview();
   const order_mode = normalizeInterviewOrderMode(src.order_mode || src.orderMode || base.order_mode);
+  const order_mode_user_set = !!(src.order_mode_user_set || src.orderModeUserSet);
 
   const boundaries = {
     ...base.boundaries,
@@ -831,6 +833,7 @@ export function normalizeInterview(raw) {
 
   return {
     order_mode,
+    order_mode_user_set,
     boundaries,
     steps,
     path_spec: normalizedPath.path_spec,

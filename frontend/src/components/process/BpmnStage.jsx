@@ -24,6 +24,7 @@ import {
   syncRobotMetaToBpmn,
 } from "../../features/process/robotmeta/robotMeta";
 import { normalizeExecutionPlanVersionList } from "../../features/process/robotmeta/executionPlan";
+import { buildExecutionGraphFromInstance } from "../../features/process/playback/buildExecutionGraph";
 
 import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-js.css";
@@ -239,6 +240,27 @@ function createFlashRuntimeState() {
     node: {},
     badge: {},
     pill: {},
+  };
+}
+
+function createPlaybackDecorRuntimeState() {
+  return {
+    nodeId: "",
+    prevNodeId: "",
+    flowId: "",
+    subprocessId: "",
+    frameKey: "",
+    stepOverlayId: null,
+    branchOverlayId: null,
+    subprocessOverlayId: null,
+    exitOverlayId: null,
+    exitTimer: 0,
+    markerNodeIds: [],
+    markerFlowIds: [],
+    markerSubprocessIds: [],
+    overlayIds: [],
+    gatewayOverlayId: null,
+    cameraRaf: 0,
   };
 }
 
@@ -1144,6 +1166,7 @@ async function ensureCanvasVisibleAndFit(inst, tag = "", sid = "", options = {})
 
 const BpmnStage = forwardRef(function BpmnStage({
   sessionId,
+  activeProjectId,
   view,
   draft,
   reloadKey,
@@ -1198,6 +1221,11 @@ const BpmnStage = forwardRef(function BpmnStage({
   const userNotesOverlayStateRef = useRef({ viewer: [], editor: [] });
   const stepTimeOverlayStateRef = useRef({ viewer: [], editor: [] });
   const robotMetaDecorStateRef = useRef({ viewer: {}, editor: {} });
+  const playbackDecorStateRef = useRef({
+    viewer: createPlaybackDecorRuntimeState(),
+    editor: createPlaybackDecorRuntimeState(),
+  });
+  const playbackBboxCacheRef = useRef({ viewer: {}, editor: {} });
   const focusMarkerStateRef = useRef({ viewer: [], editor: [] });
   const aiQuestionPanelStateRef = useRef({
     viewer: { overlayId: null, elementId: "" },
@@ -1473,7 +1501,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     if (bpmnPersistenceRef.current) return bpmnPersistenceRef.current;
     const persistence = createBpmnPersistence({
       getSessionDraft: () => draftRef.current || {},
-      getSnapshotProjectId: () => String(draftRef.current?.project_id || draftRef.current?.projectId || ""),
+      getSnapshotProjectId: () => String(draftRef.current?.project_id || draftRef.current?.projectId || activeProjectId || ""),
       saveSnapshot: saveBpmnSnapshot,
       loadLatestSnapshot: getLatestBpmnSnapshot,
       getLocalStorageKey: localKey,
@@ -4070,6 +4098,435 @@ const BpmnStage = forwardRef(function BpmnStage({
     }
   }
 
+  function clearPlaybackDecor(inst, kind) {
+    if (!inst) return;
+    const state = asObject(playbackDecorStateRef.current[kind]);
+    try {
+      const canvas = inst.get("canvas");
+      const overlays = inst.get("overlays");
+      if (state?.cameraRaf) {
+        window.cancelAnimationFrame(state.cameraRaf);
+      }
+      if (state?.exitTimer) {
+        window.clearTimeout(state.exitTimer);
+      }
+      asArray(state?.markerNodeIds).forEach((nodeIdRaw) => {
+        const nodeId = toText(nodeIdRaw);
+        if (!nodeId) return;
+        canvas.removeMarker(nodeId, "fpcPlaybackNodeActive");
+        canvas.removeMarker(nodeId, "fpcPlaybackNodePrev");
+      });
+      asArray(state?.markerFlowIds).forEach((flowIdRaw) => {
+        const flowId = toText(flowIdRaw);
+        if (!flowId) return;
+        canvas.removeMarker(flowId, "fpcPlaybackFlowActive");
+      });
+      asArray(state?.markerSubprocessIds).forEach((subprocessIdRaw) => {
+        const subprocessId = toText(subprocessIdRaw);
+        if (!subprocessId) return;
+        canvas.removeMarker(subprocessId, "fpcPlaybackSubprocessActive");
+      });
+      [
+        state?.stepOverlayId,
+        state?.branchOverlayId,
+        state?.subprocessOverlayId,
+        state?.exitOverlayId,
+        state?.gatewayOverlayId,
+        ...asArray(state?.overlayIds),
+      ].forEach((overlayId) => {
+        if (overlayId === null || overlayId === undefined) return;
+        overlays.remove(overlayId);
+      });
+    } catch {
+    }
+    playbackDecorStateRef.current[kind] = createPlaybackDecorRuntimeState();
+  }
+
+  function readElementBounds(inst, kind, elementIdRaw) {
+    const elementId = toText(elementIdRaw);
+    if (!inst || !elementId) return null;
+    const cache = asObject(playbackBboxCacheRef.current[kind]);
+    const cached = asObject(cache[elementId]);
+    if (Number.isFinite(cached?.width) && Number.isFinite(cached?.height)) return cached;
+    try {
+      const registry = inst.get("elementRegistry");
+      const el = registry?.get?.(elementId);
+      if (!el) return null;
+      const x = Number(el?.x);
+      const y = Number(el?.y);
+      const width = Number(el?.width);
+      const height = Number(el?.height);
+      let box = null;
+      if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(width) && Number.isFinite(height)) {
+        box = { x, y, width, height };
+      } else if (Array.isArray(el?.waypoints) && el.waypoints.length >= 2) {
+        const xs = el.waypoints.map((p) => Number(p?.x)).filter(Number.isFinite);
+        const ys = el.waypoints.map((p) => Number(p?.y)).filter(Number.isFinite);
+        if (xs.length && ys.length) {
+          const minX = Math.min(...xs);
+          const maxX = Math.max(...xs);
+          const minY = Math.min(...ys);
+          const maxY = Math.max(...ys);
+          box = {
+            x: minX,
+            y: minY,
+            width: Math.max(1, maxX - minX),
+            height: Math.max(1, maxY - minY),
+          };
+        }
+      }
+      if (!box) return null;
+      playbackBboxCacheRef.current[kind] = {
+        ...cache,
+        [elementId]: box,
+      };
+      return box;
+    } catch {
+      return null;
+    }
+  }
+
+  function preparePlaybackCache(inst, kind, timelineItemsRaw) {
+    if (!inst) return;
+    try {
+      const ids = new Set();
+      asArray(timelineItemsRaw).forEach((itemRaw) => {
+        const item = asObject(itemRaw);
+        const nodeId = toText(item?.nodeId || item?.node_id || item?.bpmn_ref || item?.bpmn_id);
+        const flowId = toText(item?.flowId || item?.flow_id || item?.selected_flow_id);
+        if (nodeId) ids.add(nodeId);
+        if (flowId) ids.add(flowId);
+      });
+      ids.forEach((id) => {
+        readElementBounds(inst, kind, id);
+      });
+    } catch {
+    }
+  }
+
+  function resolveParentSubprocessId(inst, elementIdRaw) {
+    const elementId = toText(elementIdRaw);
+    if (!inst || !elementId) return "";
+    try {
+      const registry = inst.get("elementRegistry");
+      const element = registry?.get?.(elementId);
+      if (!element) return "";
+      let bo = asObject(element?.businessObject);
+      if (!Object.keys(bo).length) return "";
+      while (bo && typeof bo === "object") {
+        const parent = asObject(bo?.$parent);
+        if (!Object.keys(parent).length) break;
+        const parentType = toText(parent?.$type).toLowerCase();
+        if (parentType.includes("subprocess")) return toText(parent?.id);
+        bo = parent;
+      }
+    } catch {
+    }
+    return "";
+  }
+
+  function resolveParentOfSubprocess(inst, subprocessIdRaw) {
+    const subprocessId = toText(subprocessIdRaw);
+    if (!inst || !subprocessId) return "";
+    try {
+      const registry = inst.get("elementRegistry");
+      const element = registry?.get?.(subprocessId);
+      if (!element) return "";
+      let bo = asObject(element?.businessObject);
+      while (bo && typeof bo === "object") {
+        const parent = asObject(bo?.$parent);
+        if (!Object.keys(parent).length) break;
+        const parentType = toText(parent?.$type).toLowerCase();
+        if (parentType.includes("subprocess")) return toText(parent?.id);
+        bo = parent;
+      }
+    } catch {
+    }
+    return "";
+  }
+
+  function readElementCenter(inst, kind, elementIdRaw) {
+    const box = readElementBounds(inst, kind, elementIdRaw);
+    if (!box) return null;
+    return {
+      x: Number(box?.x || 0) + Number(box?.width || 0) / 2,
+      y: Number(box?.y || 0) + Number(box?.height || 0) / 2,
+    };
+  }
+
+  function centerPlaybackCamera(inst, kind, centerRaw, options = {}) {
+    const center = asObject(centerRaw);
+    if (!inst || !Number.isFinite(center?.x) || !Number.isFinite(center?.y)) return false;
+    try {
+      const canvas = inst.get("canvas");
+      const viewbox = asObject(canvas?.viewbox?.());
+      const width = Number(viewbox?.width || 0);
+      const height = Number(viewbox?.height || 0);
+      if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return false;
+      const targetViewbox = {
+        x: Number(center.x || 0) - width / 2,
+        y: Number(center.y || 0) - height / 2,
+        width,
+        height,
+      };
+      const durationMs = Math.max(120, Math.min(640, Number(options?.durationMs || 280)));
+      const state = asObject(playbackDecorStateRef.current[kind]);
+      if (state?.cameraRaf) {
+        window.cancelAnimationFrame(state.cameraRaf);
+      }
+      const startViewbox = asObject(canvas?.viewbox?.());
+      const easing = (tRaw) => {
+        const t = Math.max(0, Math.min(1, Number(tRaw || 0)));
+        return t < 0.5 ? 2 * t * t : 1 - (Math.pow(-2 * t + 2, 2) / 2);
+      };
+      const startedAt = (typeof performance !== "undefined" && performance.now)
+        ? performance.now()
+        : Date.now();
+      const animate = () => {
+        const now = (typeof performance !== "undefined" && performance.now)
+          ? performance.now()
+          : Date.now();
+        const progress = Math.max(0, Math.min(1, (now - startedAt) / durationMs));
+        const k = easing(progress);
+        canvas.viewbox({
+          x: Number(startViewbox?.x || 0) + (targetViewbox.x - Number(startViewbox?.x || 0)) * k,
+          y: Number(startViewbox?.y || 0) + (targetViewbox.y - Number(startViewbox?.y || 0)) * k,
+          width: targetViewbox.width,
+          height: targetViewbox.height,
+        });
+        if (progress >= 1) {
+          playbackDecorStateRef.current[kind] = {
+            ...asObject(playbackDecorStateRef.current[kind]),
+            cameraRaf: 0,
+          };
+          return;
+        }
+        const rafId = window.requestAnimationFrame(animate);
+        playbackDecorStateRef.current[kind] = {
+          ...asObject(playbackDecorStateRef.current[kind]),
+          cameraRaf: rafId,
+        };
+      };
+      const firstRaf = window.requestAnimationFrame(animate);
+      playbackDecorStateRef.current[kind] = {
+        ...asObject(playbackDecorStateRef.current[kind]),
+        cameraRaf: firstRaf,
+      };
+
+      const nextZoomRaw = Number(options?.targetZoom || 0);
+      if (Number.isFinite(nextZoomRaw) && nextZoomRaw > 0.1) {
+        canvas.zoom(Math.max(0.45, Math.min(1.8, nextZoomRaw)), center);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function buildPlaybackGatewayOverlay(event, payload) {
+    const options = asArray(event?.outgoingOptions);
+    if (!options.length) return null;
+    const onGatewayDecision = typeof payload?.onGatewayDecision === "function"
+      ? payload.onGatewayDecision
+      : null;
+    const root = document.createElement("div");
+    root.className = "fpcPlaybackBranchTag";
+    root.style.pointerEvents = "auto";
+    root.style.padding = "6px";
+    root.style.borderRadius = "10px";
+    root.style.display = "grid";
+    root.style.gap = "6px";
+
+    const title = document.createElement("div");
+    title.style.fontSize = "10px";
+    title.style.fontWeight = "700";
+    title.textContent = "Выберите исход";
+    root.appendChild(title);
+
+    const list = document.createElement("div");
+    list.style.display = "grid";
+    list.style.gap = "4px";
+    options.forEach((optionRaw) => {
+      const option = asObject(optionRaw);
+      const flowId = toText(option?.flowId);
+      if (!flowId) return;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "secondaryBtn";
+      btn.style.height = "26px";
+      btn.style.padding = "0 8px";
+      btn.style.fontSize = "11px";
+      const label = toText(option?.label || option?.condition);
+      const targetName = toText(option?.targetName || option?.targetId || flowId);
+      btn.textContent = label ? `${label} -> ${targetName}` : targetName;
+      btn.addEventListener("click", (eventClick) => {
+        eventClick.preventDefault();
+        eventClick.stopPropagation();
+        onGatewayDecision?.({
+          gatewayId: toText(event?.gatewayId || event?.nodeId),
+          flowId,
+        });
+      });
+      list.appendChild(btn);
+    });
+    root.appendChild(list);
+    return root;
+  }
+
+  function applyPlaybackFrameOnInstance(inst, kind, payloadRaw = {}) {
+    if (!inst) return false;
+    const payload = asObject(payloadRaw);
+    const event = asObject(payload?.event || payload?.frame);
+    const index = Number(payload?.index || 0);
+    const total = Number(payload?.total || 0);
+    const eventType = toText(event?.type);
+    const nodeId = toText(
+      event?.nodeId
+      || event?.gatewayId
+      || event?.subprocessId
+      || event?.toId
+      || event?.fromId,
+    );
+    const frameKey = `${toText(event?.id || "")}|${eventType}|${index}|${total}|${payload?.autoCamera ? 1 : 0}`;
+    const prevState = asObject(playbackDecorStateRef.current[kind]);
+    if (toText(prevState?.frameKey) === frameKey) return true;
+    clearPlaybackDecor(inst, kind);
+
+    try {
+      const canvas = inst.get("canvas");
+      const overlays = inst.get("overlays");
+      const nextState = {
+        ...createPlaybackDecorRuntimeState(),
+        frameKey,
+      };
+      const addOverlay = (elementIdRaw, position, htmlNode) => {
+        const elementId = toText(elementIdRaw);
+        if (!elementId || !htmlNode) return null;
+        const overlayId = overlays.add(elementId, { position, html: htmlNode });
+        nextState.overlayIds = [...asArray(nextState.overlayIds), overlayId];
+        return overlayId;
+      };
+      const markNodeActive = (elementIdRaw, asPrev = false) => {
+        const elementId = toText(elementIdRaw);
+        if (!elementId) return;
+        canvas.addMarker(elementId, asPrev ? "fpcPlaybackNodePrev" : "fpcPlaybackNodeActive");
+        nextState.markerNodeIds = [...asArray(nextState.markerNodeIds), elementId];
+      };
+      const markFlowActive = (elementIdRaw) => {
+        const elementId = toText(elementIdRaw);
+        if (!elementId) return;
+        canvas.addMarker(elementId, "fpcPlaybackFlowActive");
+        nextState.markerFlowIds = [...asArray(nextState.markerFlowIds), elementId];
+      };
+      const markSubprocessActive = (elementIdRaw) => {
+        const elementId = toText(elementIdRaw);
+        if (!elementId) return;
+        canvas.addMarker(elementId, "fpcPlaybackSubprocessActive");
+        nextState.markerSubprocessIds = [...asArray(nextState.markerSubprocessIds), elementId];
+      };
+
+      const speed = Math.max(0.5, Math.min(4, Number(payload?.speed || 1)));
+      const autoCamera = payload?.autoCamera === true;
+      const containerNode = canvas?._container;
+      if (containerNode?.style?.setProperty) {
+        containerNode.style.setProperty("--fpc-playback-flow-dur", `${Math.max(0.16, 0.9 / speed)}s`);
+      }
+      const pill = document.createElement("div");
+      pill.className = "fpcPlaybackPill";
+      pill.textContent = `${Math.min(index + 1, Math.max(total, 1))}/${Math.max(total, 1)} · ${eventType || "event"}`;
+
+      if (eventType === "take_flow") {
+        const flowId = toText(event?.flowId);
+        markFlowActive(flowId);
+        markNodeActive(event?.fromId, true);
+        addOverlay(event?.toId || event?.fromId, { top: -16, left: 4 }, pill);
+        if (autoCamera) {
+          const fromCenter = readElementCenter(inst, kind, event?.fromId);
+          const toCenter = readElementCenter(inst, kind, event?.toId);
+          if (fromCenter && toCenter) {
+            centerPlaybackCamera(inst, kind, {
+              x: (Number(fromCenter.x || 0) + Number(toCenter.x || 0)) / 2,
+              y: (Number(fromCenter.y || 0) + Number(toCenter.y || 0)) / 2,
+            }, { durationMs: Math.round(240 / speed) });
+          } else if (toCenter || fromCenter) {
+            centerPlaybackCamera(inst, kind, toCenter || fromCenter, { durationMs: Math.round(240 / speed) });
+          }
+        }
+      } else if (eventType === "enter_node") {
+        markNodeActive(nodeId);
+        addOverlay(nodeId, { top: -16, left: 4 }, pill);
+        if (autoCamera) {
+          const center = readElementCenter(inst, kind, nodeId);
+          if (center) {
+            centerPlaybackCamera(inst, kind, center, { durationMs: Math.round(280 / speed), targetZoom: 1.02 });
+          }
+        }
+      } else if (eventType === "enter_subprocess" || eventType === "exit_subprocess") {
+        const subprocessId = toText(event?.subprocessId || nodeId);
+        markSubprocessActive(subprocessId);
+        const tag = document.createElement("div");
+        tag.className = "fpcPlaybackSubprocessTag";
+        tag.textContent = eventType === "enter_subprocess" ? "Entering…" : "Exiting…";
+        addOverlay(subprocessId, { top: -16, left: 6 }, tag);
+        if (autoCamera) {
+          const center = readElementCenter(inst, kind, subprocessId);
+          if (center) {
+            centerPlaybackCamera(inst, kind, center, { durationMs: Math.round(280 / speed), targetZoom: 1.08 });
+          }
+        }
+      } else if (eventType === "parallel_batch_begin" || eventType === "parallel_batch_end") {
+        markNodeActive(event?.gatewayId);
+        if (eventType === "parallel_batch_begin") {
+          asArray(event?.flowIds).slice(0, 4).forEach((flowIdRaw) => {
+            markFlowActive(flowIdRaw);
+          });
+        }
+        const batchTag = document.createElement("div");
+        batchTag.className = "fpcPlaybackBranchTag";
+        batchTag.textContent = eventType === "parallel_batch_begin"
+          ? `parallel x${Number(event?.count || asArray(event?.flowIds).length || 0)}`
+          : "parallel done";
+        addOverlay(event?.gatewayId, { bottom: -17, left: 2 }, batchTag);
+      } else if (eventType === "wait_for_gateway_decision") {
+        markNodeActive(event?.gatewayId);
+        const gatewayOverlay = buildPlaybackGatewayOverlay(event, payload);
+        if (gatewayOverlay) {
+          nextState.gatewayOverlayId = addOverlay(event?.gatewayId, { bottom: -18, left: 6 }, gatewayOverlay);
+        } else {
+          const waitTag = document.createElement("div");
+          waitTag.className = "fpcPlaybackBranchTag";
+          waitTag.textContent = "Ожидание выбора ветки";
+          addOverlay(event?.gatewayId, { bottom: -17, left: 2 }, waitTag);
+        }
+        if (autoCamera) {
+          const center = readElementCenter(inst, kind, event?.gatewayId);
+          if (center) {
+            centerPlaybackCamera(inst, kind, center, { durationMs: Math.round(260 / speed) });
+          }
+        }
+      } else if (eventType === "stop") {
+        if (nodeId) markNodeActive(nodeId);
+        const stopTag = document.createElement("div");
+        stopTag.className = "fpcPlaybackBranchTag";
+        stopTag.textContent = `stop: ${toText(event?.reason || "done")}`;
+        addOverlay(nodeId || event?.gatewayId || event?.subprocessId, { bottom: -17, left: 2 }, stopTag);
+      } else {
+        if (nodeId) {
+          markNodeActive(nodeId);
+          addOverlay(nodeId, { top: -16, left: 4 }, pill);
+        }
+      }
+
+      nextState.nodeId = nodeId;
+      nextState.flowId = toText(event?.flowId);
+      nextState.subprocessId = toText(event?.subprocessId);
+      playbackDecorStateRef.current[kind] = nextState;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function resolveFlashNodeClass(typeRaw) {
     const type = toText(typeRaw).toLowerCase();
     if (type === "ai") return "fpcNodeFlashAi";
@@ -4522,6 +4979,8 @@ const BpmnStage = forwardRef(function BpmnStage({
     clearStepTimeDecor(modelerRef.current, "editor");
     clearRobotMetaDecor(viewerRef.current, "viewer");
     clearRobotMetaDecor(modelerRef.current, "editor");
+    clearPlaybackDecor(viewerRef.current, "viewer");
+    clearPlaybackDecor(modelerRef.current, "editor");
     clearFlashDecor(viewerRef.current, "viewer");
     clearFlashDecor(modelerRef.current, "editor");
     try {
@@ -4544,6 +5003,11 @@ const BpmnStage = forwardRef(function BpmnStage({
     userNotesOverlayStateRef.current = { viewer: [], editor: [] };
     stepTimeOverlayStateRef.current = { viewer: [], editor: [] };
     robotMetaDecorStateRef.current = { viewer: {}, editor: {} };
+    playbackDecorStateRef.current = {
+      viewer: createPlaybackDecorRuntimeState(),
+      editor: createPlaybackDecorRuntimeState(),
+    };
+    playbackBboxCacheRef.current = { viewer: {}, editor: {} };
     focusMarkerStateRef.current = { viewer: [], editor: [] };
     aiQuestionPanelStateRef.current = {
       viewer: { overlayId: null, elementId: "" },
@@ -6368,6 +6832,24 @@ const BpmnStage = forwardRef(function BpmnStage({
         const viewerOk = focusNodeOnInstance(viewerRef.current, "viewer", nid, options);
         const editorOk = focusNodeOnInstance(modelerRef.current, "editor", nid, options);
         return viewerOk || editorOk;
+      },
+      preparePlayback: (timelineItems = []) => {
+        preparePlaybackCache(viewerRef.current, "viewer", timelineItems);
+        preparePlaybackCache(modelerRef.current, "editor", timelineItems);
+        return true;
+      },
+      getPlaybackGraph: () => {
+        const inst = viewerRef.current || modelerRef.current;
+        return buildExecutionGraphFromInstance(inst);
+      },
+      setPlaybackFrame: (payload = {}) => {
+        const viewerOk = applyPlaybackFrameOnInstance(viewerRef.current, "viewer", payload);
+        const editorOk = applyPlaybackFrameOnInstance(modelerRef.current, "editor", payload);
+        return viewerOk || editorOk;
+      },
+      clearPlayback: () => {
+        clearPlaybackDecor(viewerRef.current, "viewer");
+        clearPlaybackDecor(modelerRef.current, "editor");
       },
       flashNode: (nodeId, type = "accent", options = {}) => flashNode(nodeId, type, options),
       flashBadge: (nodeId, kind = "ai", options = {}) => flashBadge(nodeId, kind, options),

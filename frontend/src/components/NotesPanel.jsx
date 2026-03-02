@@ -25,10 +25,13 @@ import {
 } from "../features/process/robotmeta/robotMeta";
 import SidebarShell from "./sidebar/SidebarShell";
 import ActorsSection from "./sidebar/ActorsSection";
-import SelectedNodeSection from "./sidebar/SelectedNodeSection";
 import AIQuestionsSection from "./sidebar/AIQuestionsSection";
 import TemplatesAndTldrSection from "./sidebar/TemplatesAndTldrSection";
-import BottomActionBar from "./sidebar/BottomActionBar";
+import SidebarPrimaryActions from "./sidebar/SidebarPrimaryActions";
+import SelectedElementCard from "./sidebar/SelectedElementCard";
+import SidebarAccordionSection from "./sidebar/SidebarAccordionSection";
+import ElementNotesAccordionContent from "./sidebar/ElementNotesAccordionContent";
+import { NodePathSettings, RobotMetaSettings, StepTimeSettings } from "./sidebar/ElementSettingsControls";
 import { buildNodePathUpdatesFromFlowMeta } from "./sidebar/nodePathImport";
 
 function asArray(x) {
@@ -563,55 +566,18 @@ const NOTES_BATCH_APPLY_EVENT = "fpc:batch_ops_apply";
 const NOTES_BATCH_RESULT_PREFIX = "fpc:batch_ops_result:";
 const NOTES_COVERAGE_OPEN_EVENT = "fpc:coverage_open";
 const SIDEBAR_SECTIONS_STATE_KEY = "fpc_left_sidebar_sections";
-const SIDEBAR_SECTIONS_ORDER_KEY = "ui.sidebar.sections.order.v1";
-const SIDEBAR_SECTION_IDS = ["selected", "ai", "actors", "templates"];
+const SIDEBAR_LAST_OPEN_KEY = "ui.sidebar.last_open.v2";
+const SIDEBAR_ACCORDION_KEYS = ["paths", "time", "robotmeta", "ai", "notes", "templates", "actors"];
 
 const DEFAULT_SECTIONS_STATE = {
-  selected: false,
+  paths: false,
+  time: false,
+  robotmeta: false,
   ai: false,
+  notes: false,
   actors: false,
   templates: false,
 };
-
-function normalizeSectionsOrder(rawOrder, availableIds = SIDEBAR_SECTION_IDS) {
-  const knownSet = new Set(asArray(availableIds).map((x) => str(x)).filter(Boolean));
-  const incoming = asArray(rawOrder).map((x) => str(x)).filter((id) => knownSet.has(id));
-  const uniq = [];
-  const seen = new Set();
-  incoming.forEach((id) => {
-    if (seen.has(id)) return;
-    seen.add(id);
-    uniq.push(id);
-  });
-  asArray(availableIds).forEach((idRaw) => {
-    const id = str(idRaw);
-    if (!id || seen.has(id)) return;
-    seen.add(id);
-    uniq.push(id);
-  });
-  return uniq;
-}
-
-function readSectionsOrder() {
-  if (typeof window === "undefined") return [...SIDEBAR_SECTION_IDS];
-  try {
-    const raw = String(window.localStorage?.getItem(SIDEBAR_SECTIONS_ORDER_KEY) || "").trim();
-    if (!raw) return [...SIDEBAR_SECTION_IDS];
-    const parsed = JSON.parse(raw);
-    return normalizeSectionsOrder(parsed, SIDEBAR_SECTION_IDS);
-  } catch {
-    return [...SIDEBAR_SECTION_IDS];
-  }
-}
-
-function writeSectionsOrder(order) {
-  if (typeof window === "undefined") return;
-  try {
-    const normalized = normalizeSectionsOrder(order, SIDEBAR_SECTION_IDS);
-    window.localStorage?.setItem(SIDEBAR_SECTIONS_ORDER_KEY, JSON.stringify(normalized));
-  } catch {
-  }
-}
 
 function isHardReloadNavigation() {
   if (typeof window === "undefined") return false;
@@ -664,6 +630,29 @@ function writeSectionsState(state) {
       ...DEFAULT_SECTIONS_STATE,
       ...(state && typeof state === "object" ? state : {}),
     }));
+  } catch {
+  }
+}
+
+function readLastOpenAccordionKey() {
+  if (typeof window === "undefined") return "";
+  try {
+    const key = String(window.localStorage?.getItem(SIDEBAR_LAST_OPEN_KEY) || "").trim();
+    return SIDEBAR_ACCORDION_KEYS.includes(key) ? key : "";
+  } catch {
+    return "";
+  }
+}
+
+function writeLastOpenAccordionKey(keyRaw) {
+  if (typeof window === "undefined") return;
+  const key = String(keyRaw || "").trim();
+  try {
+    if (!SIDEBAR_ACCORDION_KEYS.includes(key)) {
+      window.localStorage?.removeItem(SIDEBAR_LAST_OPEN_KEY);
+      return;
+    }
+    window.localStorage?.setItem(SIDEBAR_LAST_OPEN_KEY, key);
   } catch {
   }
 }
@@ -787,11 +776,13 @@ export default function NotesPanel({
   const [startRoleErr, setStartRoleErr] = useState("");
   const [laneElementCounts, setLaneElementCounts] = useState(() => ({ byKey: {}, byLaneId: {}, byName: {} }));
   const [sectionsOpen, setSectionsOpen] = useState(() => readSectionsState());
-  const [sectionsOrder, setSectionsOrder] = useState(() => readSectionsOrder());
-  const [dragState, setDragState] = useState({ draggingId: "", overId: "", placement: "before" });
+  const [selectedCardOpen, setSelectedCardOpen] = useState(true);
   const elementNotesSectionRef = useRef(null);
-  const selectedSectionRef = useRef(null);
+  const pathsSectionRef = useRef(null);
+  const timeSectionRef = useRef(null);
+  const robotMetaSectionRef = useRef(null);
   const aiSectionRef = useRef(null);
+  const notesSectionRef = useRef(null);
   const actorsSectionRef = useRef(null);
   const templatesSectionRef = useRef(null);
   const sidebarHiddenRef = useRef(Boolean(sidebarHidden));
@@ -1073,28 +1064,27 @@ export default function NotesPanel({
   }, [sectionsOpen]);
 
   useEffect(() => {
-    writeSectionsOrder(sectionsOrder);
-  }, [sectionsOrder]);
-
-  useEffect(() => {
-    setSectionsOrder((prev) => normalizeSectionsOrder(prev, SIDEBAR_SECTION_IDS));
-  }, []);
-
-  useEffect(() => {
     setBatchErr("");
     setBatchResult("");
   }, [batchText]);
 
   useEffect(() => {
-    // Keep default UX deterministic: every session starts with collapsed sidebar sections.
-    setSectionsOpen({ ...DEFAULT_SECTIONS_STATE });
+    const savedKey = readLastOpenAccordionKey();
+    const nextKey = savedKey || "paths";
+    setSectionsOpen(
+      SIDEBAR_ACCORDION_KEYS.reduce((acc, key) => {
+        acc[key] = key === nextKey;
+        return acc;
+      }, {}),
+    );
+    setSelectedCardOpen(true);
   }, [sid]);
 
   useEffect(() => {
     if (!isElementMode) return;
     setSectionsOpen((prev) => {
-      if (prev.selected || prev.ai || prev.actors || prev.templates) return prev;
-      return { ...prev, selected: true };
+      if (Object.values(prev).some(Boolean)) return prev;
+      return { ...DEFAULT_SECTIONS_STATE, paths: true };
     });
   }, [isElementMode, selectedElementId]);
 
@@ -1102,23 +1092,44 @@ export default function NotesPanel({
     const wasHidden = sidebarHiddenRef.current;
     const isHidden = Boolean(sidebarHidden);
     if (wasHidden && !isHidden) {
-      setSectionsOpen({ ...DEFAULT_SECTIONS_STATE });
+      const savedKey = readLastOpenAccordionKey();
+      const nextKey = savedKey || "paths";
+      setSectionsOpen(
+        SIDEBAR_ACCORDION_KEYS.reduce((acc, key) => {
+          acc[key] = key === nextKey;
+          return acc;
+        }, {}),
+      );
     }
     sidebarHiddenRef.current = isHidden;
   }, [sidebarHidden]);
 
   function toggleSection(sectionId) {
     const key = str(sectionId);
-    if (!key) return;
-    setSectionsOpen((prev) => ({ ...prev, [key]: !prev?.[key] }));
+    if (!key || !SIDEBAR_ACCORDION_KEYS.includes(key)) return;
+    setSectionsOpen((prev) => {
+      const shouldOpen = !prev?.[key];
+      const next = SIDEBAR_ACCORDION_KEYS.reduce((acc, id) => {
+        acc[id] = shouldOpen && id === key;
+        return acc;
+      }, {});
+      writeLastOpenAccordionKey(shouldOpen ? key : "");
+      return next;
+    });
     onActiveSectionChange?.(key);
   }
 
   function openSectionShortcut(sectionId) {
     const key = str(sectionId);
-    if (!key) return;
+    if (!key || !SIDEBAR_ACCORDION_KEYS.includes(key)) return;
     onToggleSidebarCompact?.(false, "shortcut");
-    setSectionsOpen((prev) => ({ ...prev, [key]: true }));
+    setSectionsOpen(
+      SIDEBAR_ACCORDION_KEYS.reduce((acc, id) => {
+        acc[id] = id === key;
+        return acc;
+      }, {}),
+    );
+    writeLastOpenAccordionKey(key);
     onActiveSectionChange?.(key);
     const node = sectionRefById(key)?.current;
     if (node && typeof node.scrollIntoView === "function") {
@@ -1128,104 +1139,43 @@ export default function NotesPanel({
 
   function sectionRefById(sectionId) {
     const key = str(sectionId);
-    if (key === "selected") return selectedSectionRef;
+    if (key === "paths") return pathsSectionRef;
+    if (key === "time") return timeSectionRef;
+    if (key === "robotmeta") return robotMetaSectionRef;
     if (key === "ai") return aiSectionRef;
+    if (key === "notes") return notesSectionRef;
     if (key === "actors") return actorsSectionRef;
     if (key === "templates") return templatesSectionRef;
     return { current: null };
   }
 
-  function reorderSections(prevOrder, draggingId, overId, placement = "before") {
-    const normalized = normalizeSectionsOrder(prevOrder, SIDEBAR_SECTION_IDS);
-    const sourceId = str(draggingId);
-    const targetId = str(overId);
-    if (!sourceId || !targetId || sourceId === targetId) return normalized;
-    const sourceIndex = normalized.indexOf(sourceId);
-    const targetIndex = normalized.indexOf(targetId);
-    if (sourceIndex < 0 || targetIndex < 0) return normalized;
-    const next = [...normalized];
-    next.splice(sourceIndex, 1);
-    const targetIndexAfterRemove = next.indexOf(targetId);
-    const insertIndex = placement === "after" ? targetIndexAfterRemove + 1 : targetIndexAfterRemove;
-    next.splice(insertIndex, 0, sourceId);
-    return next;
-  }
-
-  function sectionDropPlacement(event) {
-    const rect = event.currentTarget?.getBoundingClientRect?.();
-    if (!rect) return "before";
-    return event.clientY >= rect.top + rect.height / 2 ? "after" : "before";
-  }
-
-  function handleSectionDragStart(event, sectionId) {
-    const armed = String(event?.currentTarget?.dataset?.dragArmed || "").trim() === "1";
-    if (!armed) {
-      event.preventDefault();
-      return;
-    }
-    const id = str(sectionId);
-    if (!id) return;
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", id);
-    setDragState({ draggingId: id, overId: "", placement: "before" });
-  }
-
-  function handleSectionDragOver(event, sectionId) {
-    const draggingId = str(dragState.draggingId || event.dataTransfer?.getData("text/plain"));
-    const overId = str(sectionId);
-    if (!draggingId || !overId || draggingId === overId) return;
-    event.preventDefault();
-    const placement = sectionDropPlacement(event);
-    setDragState((prev) => {
-      if (prev.draggingId === draggingId && prev.overId === overId && prev.placement === placement) return prev;
-      return { draggingId, overId, placement };
-    });
-  }
-
-  function handleSectionDrop(event, sectionId) {
-    event.preventDefault();
-    const draggingId = str(dragState.draggingId || event.dataTransfer?.getData("text/plain"));
-    const overId = str(sectionId);
-    if (!draggingId || !overId || draggingId === overId) {
-      setDragState({ draggingId: "", overId: "", placement: "before" });
-      return;
-    }
-    const placement = dragState.overId === overId ? dragState.placement : sectionDropPlacement(event);
-    setSectionsOrder((prev) => {
-      const next = reorderSections(prev, draggingId, overId, placement);
-      writeSectionsOrder(next);
-      return next;
-    });
-    setDragState({ draggingId: "", overId: "", placement: "before" });
-  }
-
-  function handleSectionDragEnd() {
-    const armedHosts = document.querySelectorAll("[data-sidebar-draggable-id][data-drag-armed='1']");
-    armedHosts.forEach((host) => {
-      if (host instanceof HTMLElement) host.dataset.dragArmed = "0";
-    });
-    setDragState({ draggingId: "", overId: "", placement: "before" });
-  }
-
   function openAiFromCard() {
-    setSectionsOpen((prev) => ({ ...prev, ai: true }));
-    onActiveSectionChange?.("ai");
-    aiSectionRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    openSectionShortcut("ai");
   }
 
   function focusNodeNotesFromCard() {
-    setSectionsOpen((prev) => ({ ...prev, selected: true }));
-    onActiveSectionChange?.("selected");
-    selectedSectionRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
-    try {
-      nodeEditorRef.current?.focus?.();
-    } catch {
-    }
+    openSectionShortcut("notes");
+    window.setTimeout(() => {
+      try {
+        nodeEditorRef.current?.focus?.();
+      } catch {
+      }
+    }, 0);
   }
 
   useEffect(() => {
     const rawKey = str(sidebarShortcutRequest);
-    const key = rawKey === "notes" ? "selected" : rawKey;
+    const keyMap = {
+      selected: "paths",
+      ai: "ai",
+      notes: "notes",
+      actors: "actors",
+      templates: "templates",
+      robotmeta: "robotmeta",
+      time: "time",
+      paths: "paths",
+    };
+    const key = keyMap[rawKey] || "";
     if (!key) return;
     if (sidebarHidden) return;
     openSectionShortcut(key);
@@ -1823,160 +1773,41 @@ export default function NotesPanel({
 
   const sectionShortcuts = [
     {
-      id: "selected",
-      title: isElementMode ? "Выбранный узел" : "Узел не выбран",
+      id: "paths",
+      title: "Пути",
       count: isElementMode ? 1 : 0,
-      active: String(activeSectionId || "") === "selected",
+      active: !!sectionsOpen.paths || String(activeSectionId || "") === "paths",
       muted: !isElementMode,
     },
     {
       id: "ai",
       title: "AI-вопросы",
       count: selectedElementAiQuestions.length,
-      active: String(activeSectionId || "") === "ai",
+      active: !!sectionsOpen.ai || String(activeSectionId || "") === "ai",
+      muted: !isElementMode,
+    },
+    {
+      id: "notes",
+      title: "Заметки",
+      count: selectedElementNotes.length,
+      active: !!sectionsOpen.notes || String(activeSectionId || "") === "notes",
+      muted: !isElementMode,
     },
     {
       id: "actors",
       title: "Акторы",
       count: roles.length,
-      active: String(activeSectionId || "") === "actors",
+      active: !!sectionsOpen.actors || String(activeSectionId || "") === "actors",
+      muted: false,
     },
     {
       id: "templates",
       title: "Шаблоны/TL;DR",
       count: selectedElementSummary ? 1 : 0,
-      active: String(activeSectionId || "") === "templates",
+      active: !!sectionsOpen.templates || String(activeSectionId || "") === "templates",
+      muted: !isElementMode,
     },
   ];
-
-  const orderedSectionIds = normalizeSectionsOrder(sectionsOrder, SIDEBAR_SECTION_IDS);
-
-  function renderSectionById(sectionId) {
-    if (sectionId === "selected") {
-      return (
-        <SelectedNodeSection
-          open={!!sectionsOpen.selected}
-          onToggle={toggleSection}
-          selectedElementId={isElementMode ? selectedElementId : ""}
-          selectedElementName={isElementMode ? selectedElementName : ""}
-          selectedElementType={isElementMode ? selectedElementType : ""}
-          selectedElementLaneName={isElementMode ? selectedElementLaneName : ""}
-          noteCount={isElementMode ? selectedElementNotes.length : 0}
-          aiCount={isElementMode ? selectedElementAiQuestions.length : 0}
-          templateTitle={selectedTemplate?.title || ""}
-          selectedElementNotes={isElementMode ? selectedElementNotes : []}
-          elementText={isElementMode ? elementText : ""}
-          onElementTextChange={setElementText}
-          onSendElementNote={sendElementNote}
-          elementBusy={isElementMode ? elementBusy : false}
-          elementErr={isElementMode ? elementErr : ""}
-          onNodeEditorRef={(node) => {
-            nodeEditorRef.current = node;
-          }}
-          stepTimeInput={isElementMode ? stepTimeInput : ""}
-          onStepTimeInputChange={setStepTimeInput}
-          onSaveStepTime={saveSelectedElementStepTime}
-          stepTimeBusy={isElementMode ? stepTimeBusy : false}
-          stepTimeErr={isElementMode ? stepTimeErr : ""}
-          stepTimeEditable={isElementMode ? !!selectedElementNode : false}
-          stepTimeUnit={normalizedStepTimeUnit}
-          onStepTimeUnitChange={onStepTimeUnitChange}
-          flowPathTier={isElementMode ? selectedFlowTier : ""}
-          onSetFlowPathTier={setSelectedFlowTier}
-          flowHappyBusy={isElementMode ? flowHappyBusy : false}
-          flowHappyErr={isElementMode ? flowHappyErr : ""}
-          flowHappyInfo={isElementMode ? flowHappyInfo : ""}
-          flowHappyEditable={isElementMode ? isSelectedSequenceFlow : false}
-          nodePathEditable={isElementMode ? isSelectedPathNode : false}
-          nodePathPaths={isElementMode ? nodePathDraftPaths : []}
-          nodePathSequenceKey={isElementMode ? nodePathDraftSequence : ""}
-          nodePathBusy={isElementMode ? nodePathBusy : false}
-          nodePathErr={isElementMode ? nodePathErr : ""}
-          nodePathInfo={isElementMode ? nodePathInfo : ""}
-          selectedNodeCount={isElementMode ? selectedElementSelectionIds.length : 0}
-          bulkSelectionCount={isElementMode ? bulkNodeIds.length : 0}
-          onToggleNodePathTag={toggleNodePathTag}
-          onNodePathSequenceChange={setNodePathDraftSequence}
-          onApplyNodePath={applySelectedNodePath}
-          onResetNodePath={resetSelectedNodePath}
-          onAutoNodePathFromColors={autoNodePathFromColors}
-          onSelectBranchUntilBoundary={selectBranchUntilBoundary}
-          onApplyP1ToSelected={applyP1ForSelectedNodes}
-          showLegacyPathImportHint={isElementMode ? showLegacyPathImportHint : false}
-          robotMetaEditable={isElementMode ? selectedRobotMetaEditable : false}
-          robotMetaDraft={isElementMode ? robotMetaDraft : createDefaultRobotMetaV1()}
-          robotMetaBusy={isElementMode ? robotMetaBusy : false}
-          robotMetaErr={isElementMode ? robotMetaErr : ""}
-          robotMetaInfo={isElementMode ? robotMetaInfo : ""}
-          onRobotMetaDraftChange={updateRobotMetaDraft}
-          onSaveRobotMeta={saveSelectedRobotMeta}
-          onResetRobotMeta={resetSelectedRobotMeta}
-          disabled={disabled}
-        />
-      );
-    }
-    if (sectionId === "ai") {
-      return (
-        <AIQuestionsSection
-          open={!!sectionsOpen.ai}
-          onToggle={toggleSection}
-          selectedElementId={isElementMode ? selectedElementId : ""}
-          selectedElementAiQuestions={isElementMode ? selectedElementAiQuestions : []}
-          onGenerateAiQuestions={requestAiQuestionsGenerate}
-          aiGenerateAvailable={aiGenerateUi.canGenerate}
-          aiGenerateHint={!aiGenerateUi.canGenerate ? aiGenerateUi.reasonText : ""}
-          aiGenerateReasonCode={aiGenerateUi.reasonCode}
-          onGenerateAiCta={aiGenerateUi.cta?.type === "diagram" ? onGoToDiagram : undefined}
-          aiGenerateCtaLabel={aiGenerateUi.cta?.label || ""}
-          aiBusyQid={aiBusyQid}
-          aiSavedQid={aiSavedQid}
-          aiErr={aiErr}
-          aiCommentDraft={aiCommentDraft}
-          onAiCommentDraftChange={(qid, value) => {
-            setAiCommentDraft((prev) => ({ ...prev, [qid]: String(value || "") }));
-          }}
-          onSaveElementAiQuestion={saveElementAiQuestion}
-          disabled={!isElementMode || disabled}
-        />
-      );
-    }
-    if (sectionId === "actors") {
-      return (
-        <ActorsSection
-          open={!!sectionsOpen.actors}
-          onToggle={toggleSection}
-          roles={roles}
-          laneCounts={roleElementCounts}
-          sourceLabel={rolesSourceLabel}
-          startRoleValue={startRoleValue}
-          onStartRoleChange={saveStartRole}
-          startRoleBusy={startRoleBusy}
-          startRoleErr={startRoleErr}
-          disabled={disabled}
-        />
-      );
-    }
-    if (sectionId === "templates") {
-      return (
-        <TemplatesAndTldrSection
-          open={!!sectionsOpen.templates}
-          onToggle={toggleSection}
-          selectedElementId={isElementMode ? selectedElementId : ""}
-          selectedTemplate={selectedTemplate}
-          selectedElementSummary={isElementMode ? selectedElementSummary : ""}
-          disabled={!isElementMode || disabled}
-          elementBusy={isElementMode ? elementBusy : false}
-          tldrBusy={isElementMode ? tldrBusy : false}
-          onInsertTemplate={insertTemplateNote}
-          onGenerateTldr={generateTldrSummary}
-          templateErr={isElementMode ? templateErr : ""}
-          tldrErr={isElementMode ? tldrErr : ""}
-          tldrStatus={isElementMode ? tldrStatus : ""}
-        />
-      );
-    }
-    return null;
-  }
 
   return (
     <div className="leftPanel h-full min-h-0 p-2">
@@ -2000,41 +1831,225 @@ export default function NotesPanel({
         onToggleCollapse={() => onToggleSidebarCompact?.(!sidebarCompact, "sidebar_header")}
         onCloseSidebar={() => onToggleSidebarHidden?.()}
         sections={sectionShortcuts}
+        showQuickNav={false}
         onSectionShortcut={openSectionShortcut}
         stickyContent={null}
-        bottomBar={isElementMode ? (
-          <BottomActionBar
+        bottomBar={null}
+      >
+        <div id="element-notes-section" ref={elementNotesSectionRef} className="sidebarRedesignStack">
+          <div>
+            <SelectedElementCard
+              selectedElementId={isElementMode ? selectedElementId : ""}
+              selectedElementName={isElementMode ? selectedElementName : ""}
+              selectedElementType={isElementMode ? selectedElementType : ""}
+              selectedElementLaneName={isElementMode ? selectedElementLaneName : ""}
+              noteCount={isElementMode ? selectedElementNotes.length : 0}
+              aiCount={isElementMode ? selectedElementAiQuestions.length : 0}
+              open={selectedCardOpen}
+              onToggle={() => setSelectedCardOpen((prev) => !prev)}
+            />
+          </div>
+
+          <SidebarPrimaryActions
             onOpenDiagram={onGoToDiagram}
             onOpenAi={openAiFromCard}
             onOpenNotes={focusNodeNotesFromCard}
           />
-        ) : null}
-      >
-        <div id="element-notes-section" ref={elementNotesSectionRef} className="sidebarSectionsStack">
-          {orderedSectionIds.map((sectionId) => {
-            const dragging = dragState.draggingId === sectionId;
-            const dropBefore = dragState.overId === sectionId && dragState.placement === "before" && dragState.draggingId && dragState.draggingId !== sectionId;
-            const dropAfter = dragState.overId === sectionId && dragState.placement === "after" && dragState.draggingId && dragState.draggingId !== sectionId;
-            return (
-              <div
-                key={sectionId}
-                ref={(node) => {
-                  const sectionRef = sectionRefById(sectionId);
-                  sectionRef.current = node;
-                }}
-                data-sidebar-draggable-id={sectionId}
-                data-drag-armed="0"
-                className={`sidebarSectionDraggable ${dragging ? "isDragging" : ""} ${dropBefore ? "dropBefore" : ""} ${dropAfter ? "dropAfter" : ""}`}
-                draggable
-                onDragStart={(event) => handleSectionDragStart(event, sectionId)}
-                onDragOver={(event) => handleSectionDragOver(event, sectionId)}
-                onDrop={(event) => handleSectionDrop(event, sectionId)}
-                onDragEnd={handleSectionDragEnd}
+
+          <section className="sidebarCardSurface sidebarSettingsSurface">
+            <div className="sidebarSectionCaption">Настройки элемента</div>
+
+            <div ref={pathsSectionRef} className="mt-2">
+              <SidebarAccordionSection
+                sectionKey="paths"
+                title="Пути и последовательность"
+                subtitle={isElementMode ? selectedElementId : "Выберите узел"}
+                open={!!sectionsOpen.paths}
+                onToggle={toggleSection}
               >
-                {renderSectionById(sectionId)}
-              </div>
-            );
-          })}
+                <NodePathSettings
+                  selectedElementId={isElementMode ? selectedElementId : ""}
+                  nodePathEditable={isElementMode ? isSelectedPathNode : false}
+                  nodePathPaths={isElementMode ? nodePathDraftPaths : []}
+                  nodePathSequenceKey={isElementMode ? nodePathDraftSequence : ""}
+                  nodePathBusy={isElementMode ? nodePathBusy : false}
+                  nodePathErr={isElementMode ? nodePathErr : ""}
+                  nodePathInfo={isElementMode ? nodePathInfo : ""}
+                  selectedNodeCount={isElementMode ? selectedElementSelectionIds.length : 0}
+                  bulkSelectionCount={isElementMode ? bulkNodeIds.length : 0}
+                  onToggleNodePathTag={toggleNodePathTag}
+                  onNodePathSequenceChange={setNodePathDraftSequence}
+                  onApplyNodePath={applySelectedNodePath}
+                  onResetNodePath={resetSelectedNodePath}
+                  onAutoNodePathFromColors={autoNodePathFromColors}
+                  onSelectBranchUntilBoundary={selectBranchUntilBoundary}
+                  onApplyP1ToSelected={applyP1ForSelectedNodes}
+                  showLegacyPathImportHint={isElementMode ? showLegacyPathImportHint : false}
+                  flowPathTier={isElementMode ? selectedFlowTier : ""}
+                  onSetFlowPathTier={setSelectedFlowTier}
+                  flowHappyBusy={isElementMode ? flowHappyBusy : false}
+                  flowHappyErr={isElementMode ? flowHappyErr : ""}
+                  flowHappyInfo={isElementMode ? flowHappyInfo : ""}
+                  flowHappyEditable={isElementMode ? isSelectedSequenceFlow : false}
+                  disabled={disabled}
+                />
+              </SidebarAccordionSection>
+            </div>
+
+            <div ref={timeSectionRef} className="mt-2">
+              <SidebarAccordionSection
+                sectionKey="time"
+                title="Время шага"
+                open={!!sectionsOpen.time}
+                onToggle={toggleSection}
+              >
+                <StepTimeSettings
+                  selectedElementId={isElementMode ? selectedElementId : ""}
+                  stepTimeInput={isElementMode ? stepTimeInput : ""}
+                  onStepTimeInputChange={setStepTimeInput}
+                  onSaveStepTime={saveSelectedElementStepTime}
+                  stepTimeBusy={isElementMode ? stepTimeBusy : false}
+                  stepTimeErr={isElementMode ? stepTimeErr : ""}
+                  stepTimeEditable={isElementMode ? !!selectedElementNode : false}
+                  stepTimeUnit={normalizedStepTimeUnit}
+                  onStepTimeUnitChange={onStepTimeUnitChange}
+                  disabled={disabled}
+                />
+              </SidebarAccordionSection>
+            </div>
+
+            <div ref={robotMetaSectionRef} className="mt-2">
+              <SidebarAccordionSection
+                sectionKey="robotmeta"
+                title="Robot Meta"
+                badge={selectedRobotMetaEditable ? "v1" : ""}
+                open={!!sectionsOpen.robotmeta}
+                onToggle={toggleSection}
+              >
+                <RobotMetaSettings
+                  selectedElementId={isElementMode ? selectedElementId : ""}
+                  robotMetaEditable={isElementMode ? selectedRobotMetaEditable : false}
+                  robotMetaDraft={isElementMode ? robotMetaDraft : createDefaultRobotMetaV1()}
+                  robotMetaBusy={isElementMode ? robotMetaBusy : false}
+                  robotMetaErr={isElementMode ? robotMetaErr : ""}
+                  robotMetaInfo={isElementMode ? robotMetaInfo : ""}
+                  onRobotMetaDraftChange={updateRobotMetaDraft}
+                  onSaveRobotMeta={saveSelectedRobotMeta}
+                  onResetRobotMeta={resetSelectedRobotMeta}
+                  disabled={disabled}
+                />
+              </SidebarAccordionSection>
+            </div>
+
+            <div ref={notesSectionRef} className="mt-2">
+              <SidebarAccordionSection
+                sectionKey="notes"
+                title="Notes"
+                badge={isElementMode ? String(selectedElementNotes.length) : ""}
+                open={!!sectionsOpen.notes}
+                onToggle={toggleSection}
+              >
+                <ElementNotesAccordionContent
+                  selectedElementId={isElementMode ? selectedElementId : ""}
+                  selectedElementName={isElementMode ? selectedElementName : ""}
+                  selectedElementNotes={isElementMode ? selectedElementNotes : []}
+                  noteCount={isElementMode ? selectedElementNotes.length : 0}
+                  elementText={isElementMode ? elementText : ""}
+                  onElementTextChange={setElementText}
+                  onSendElementNote={sendElementNote}
+                  elementBusy={isElementMode ? elementBusy : false}
+                  elementErr={isElementMode ? elementErr : ""}
+                  onNodeEditorRef={(node) => {
+                    nodeEditorRef.current = node;
+                  }}
+                  disabled={disabled}
+                />
+              </SidebarAccordionSection>
+            </div>
+
+            <div ref={aiSectionRef} className="mt-2">
+              <SidebarAccordionSection
+                sectionKey="ai"
+                title="AI"
+                badge={isElementMode ? String(selectedElementAiQuestions.length) : ""}
+                open={!!sectionsOpen.ai}
+                onToggle={toggleSection}
+              >
+                <AIQuestionsSection
+                  contentOnly
+                  open={true}
+                  onToggle={undefined}
+                  selectedElementId={isElementMode ? selectedElementId : ""}
+                  selectedElementAiQuestions={isElementMode ? selectedElementAiQuestions : []}
+                  onGenerateAiQuestions={requestAiQuestionsGenerate}
+                  aiGenerateAvailable={aiGenerateUi.canGenerate}
+                  aiGenerateHint={!aiGenerateUi.canGenerate ? aiGenerateUi.reasonText : ""}
+                  aiGenerateReasonCode={aiGenerateUi.reasonCode}
+                  onGenerateAiCta={aiGenerateUi.cta?.type === "diagram" ? onGoToDiagram : undefined}
+                  aiGenerateCtaLabel={aiGenerateUi.cta?.label || ""}
+                  aiBusyQid={aiBusyQid}
+                  aiSavedQid={aiSavedQid}
+                  aiErr={aiErr}
+                  aiCommentDraft={aiCommentDraft}
+                  onAiCommentDraftChange={(qid, value) => {
+                    setAiCommentDraft((prev) => ({ ...prev, [qid]: String(value || "") }));
+                  }}
+                  onSaveElementAiQuestion={saveElementAiQuestion}
+                  disabled={!isElementMode || disabled}
+                />
+              </SidebarAccordionSection>
+            </div>
+
+            <div ref={templatesSectionRef} className="mt-2">
+              <SidebarAccordionSection
+                sectionKey="templates"
+                title="Templates / TL;DR"
+                open={!!sectionsOpen.templates}
+                onToggle={toggleSection}
+              >
+                <TemplatesAndTldrSection
+                  contentOnly
+                  open={true}
+                  onToggle={undefined}
+                  selectedElementId={isElementMode ? selectedElementId : ""}
+                  selectedTemplate={selectedTemplate}
+                  selectedElementSummary={isElementMode ? selectedElementSummary : ""}
+                  disabled={!isElementMode || disabled}
+                  elementBusy={isElementMode ? elementBusy : false}
+                  tldrBusy={isElementMode ? tldrBusy : false}
+                  onInsertTemplate={insertTemplateNote}
+                  onGenerateTldr={generateTldrSummary}
+                  templateErr={isElementMode ? templateErr : ""}
+                  tldrErr={isElementMode ? tldrErr : ""}
+                  tldrStatus={isElementMode ? tldrStatus : ""}
+                />
+              </SidebarAccordionSection>
+            </div>
+
+            <div ref={actorsSectionRef} className="mt-2">
+              <SidebarAccordionSection
+                sectionKey="actors"
+                title="Actors"
+                badge={String(roles.length)}
+                open={!!sectionsOpen.actors}
+                onToggle={toggleSection}
+              >
+                <ActorsSection
+                  contentOnly
+                  open={true}
+                  onToggle={undefined}
+                  roles={roles}
+                  laneCounts={roleElementCounts}
+                  sourceLabel={rolesSourceLabel}
+                  startRoleValue={startRoleValue}
+                  onStartRoleChange={saveStartRole}
+                  startRoleBusy={startRoleBusy}
+                  startRoleErr={startRoleErr}
+                  disabled={disabled}
+                />
+              </SidebarAccordionSection>
+            </div>
+          </section>
         </div>
       </SidebarShell>
     </div>

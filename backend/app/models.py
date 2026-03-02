@@ -53,6 +53,8 @@ class ReportVersion(BaseModel):
     model: str = "deepseek-chat"
     prompt_template_version: str = "v2"
     request_payload_json: Dict[str, Any] = Field(default_factory=dict)
+    payload_normalized: Dict[str, Any] = Field(default_factory=dict)
+    payload_raw: Any = Field(default_factory=dict)
     report_json: Dict[str, Any] = Field(default_factory=dict)
     raw_json: Dict[str, Any] = Field(default_factory=dict)
     report_markdown: str = ""
@@ -88,6 +90,9 @@ class Session(BaseModel):
     bpmn_graph_fingerprint: str = ""
     bpmn_meta: Dict[str, Any] = Field(default_factory=dict)
     version: int = 0
+    owner_user_id: str = ""
+    created_at: int = 0
+    updated_at: int = 0
 # -----------------------------
 # Epic #1: Project (process passport)
 # -----------------------------
@@ -107,6 +112,7 @@ class Project(BaseModel):
     created_at: int = 0
     updated_at: int = 0
     version: int = 1
+    owner_user_id: str = ""
 
     model_config = ConfigDict(extra="allow")
 

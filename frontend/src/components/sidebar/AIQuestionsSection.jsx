@@ -16,6 +16,7 @@ function normalizeAiStatus(raw) {
 export default function AIQuestionsSection({
   open,
   onToggle,
+  contentOnly = false,
   selectedElementId,
   selectedElementAiQuestions,
   onGenerateAiQuestions,
@@ -51,15 +52,8 @@ export default function AIQuestionsSection({
   const generateDisabled = !!disabled || !aiGenerateAvailable || !hasSelected;
   const generateLabel = aiGenerateReasonCode === "busy" ? "В процессе..." : "Сгенерировать вопросы";
 
-  return (
-    <SidebarSection
-      sectionId="ai"
-      title="AI-вопросы"
-      summary={summary}
-      badge={openCount > 0 ? "NEW" : doneCount > 0 ? "DONE" : ""}
-      open={open}
-      onToggle={onToggle}
-    >
+  const content = (
+    <>
       <div className="mb-2 flex items-center justify-between gap-2">
         <button
           type="button"
@@ -132,7 +126,7 @@ export default function AIQuestionsSection({
                     <span className="text-xs text-fg">{question?.text}</span>
                   </label>
                   <textarea
-                    className="input mt-2 text-xs"
+                    className="input mt-2 w-full min-w-0 text-xs"
                     rows={2}
                     placeholder="Комментарий/ответ..."
                     value={comment}
@@ -180,6 +174,21 @@ export default function AIQuestionsSection({
         </div>
       )}
       {aiErr ? <div className="mt-2 text-[11px] text-danger">{aiErr}</div> : null}
+    </>
+  );
+
+  if (contentOnly) return <div className="sidebarAccordionContent">{content}</div>;
+
+  return (
+    <SidebarSection
+      sectionId="ai"
+      title="AI-вопросы"
+      summary={summary}
+      badge={openCount > 0 ? "NEW" : doneCount > 0 ? "DONE" : ""}
+      open={open}
+      onToggle={onToggle}
+    >
+      {content}
     </SidebarSection>
   );
 }

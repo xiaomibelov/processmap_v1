@@ -66,6 +66,11 @@ import {
   buildExecutionPlan,
   normalizeExecutionPlanVersionList,
 } from "../features/process/robotmeta/executionPlan";
+import {
+  buildRouteDecisionByNodeId,
+  createPlaybackEngine,
+  normalizePlaybackScenarioSpec,
+} from "../features/process/playback/playbackEngine";
 import { buildManualPathReportSteps } from "./process/interview/services/pathReport";
 
 function toText(value) {
@@ -84,6 +89,45 @@ function normalizePathTier(raw) {
 
 function normalizePathSequenceKey(raw) {
   return toText(raw);
+}
+
+function buildPlaybackScenarioKey(tierRaw, sequenceKeyRaw) {
+  const tier = normalizePathTier(tierRaw);
+  const sequenceKey = normalizePathSequenceKey(sequenceKeyRaw);
+  if (!tier) return "active";
+  if (!sequenceKey) return tier;
+  return `${tier}::${sequenceKey}`;
+}
+
+function parsePlaybackScenarioKey(keyRaw, fallbackRaw = {}) {
+  const key = toText(keyRaw);
+  const fallback = asObject(fallbackRaw);
+  if (!key || key === "active") {
+    return normalizePlaybackScenarioSpec({
+      tier: normalizePathTier(fallback?.tier),
+      sequenceKey: normalizePathSequenceKey(fallback?.sequenceKey),
+      label: toText(fallback?.label) || "Active scenario",
+    });
+  }
+  const [tierRaw, sequenceRaw] = key.split("::");
+  return normalizePlaybackScenarioSpec({
+    tier: normalizePathTier(tierRaw),
+    sequenceKey: normalizePathSequenceKey(sequenceRaw),
+    label: key,
+  });
+}
+
+function playbackEventTitle(eventRaw) {
+  const event = asObject(eventRaw);
+  const type = toText(event?.type);
+  if (type === "take_flow") return `Flow: ${toText(event?.flowId) || "—"}`;
+  if (type === "enter_node") return `${toText(event?.nodeName || event?.nodeId) || "Node"}`;
+  if (type === "wait_for_gateway_decision") return `Gateway: ${toText(event?.gatewayName || event?.gatewayId) || "decision"}`;
+  if (type === "parallel_batch_begin") return `Parallel x${Number(event?.count || asArray(event?.flowIds).length || 0)}`;
+  if (type === "enter_subprocess") return `Enter ${toText(event?.nodeName || event?.subprocessId) || "subprocess"}`;
+  if (type === "exit_subprocess") return `Exit ${toText(event?.nodeName || event?.subprocessId) || "subprocess"}`;
+  if (type === "stop") return `Stop: ${toText(event?.reason) || "done"}`;
+  return toText(event?.nodeName || event?.nodeId || type || "—");
 }
 
 function normalizeNodePathMetaMap(rawMap) {
@@ -218,6 +262,138 @@ function parseSequenceFlowsFromXml(xmlText) {
     });
   });
   return out;
+}
+
+function toSec(value, fallback = 0) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) return Math.max(0, Number(fallback || 0));
+  return Math.round(num);
+}
+
+function readStepBpmnRef(stepRaw) {
+  const step = asObject(stepRaw);
+  return toText(
+    step?.bpmn_ref
+    || step?.bpmnRef
+    || step?.node_bind_id
+    || step?.nodeBindId
+    || step?.node_id
+    || step?.nodeId
+    || step?.id,
+  );
+}
+
+function buildStepTitleLaneKey(stepRaw) {
+  const step = asObject(stepRaw);
+  const title = toText(step?.title || step?.action || step?.name).toLowerCase();
+  const lane = toText(
+    step?.lane_id
+    || step?.laneId
+    || step?.lane_name
+    || step?.laneName
+    || step?.lane_key
+    || step?.role
+    || step?.area,
+  ).toLowerCase();
+  if (!title) return "";
+  return `${title}::${lane}`;
+}
+
+function buildRouteStepsFromInterviewPathSpec(interviewRaw) {
+  const interview = asObject(interviewRaw);
+  const interviewSteps = asArray(interview?.steps);
+  const pathSpec = asObject(interview?.path_spec || interview?.pathSpec);
+  const pathSteps = asArray(pathSpec?.steps)
+    .filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry));
+
+  const byStepId = {};
+  const byTitleLane = {};
+  const byTitleLaneDup = new Set();
+  interviewSteps.forEach((stepRaw) => {
+    const step = asObject(stepRaw);
+    const stepId = toText(step?.id);
+    if (stepId && !byStepId[stepId]) byStepId[stepId] = step;
+    const titleLaneKey = buildStepTitleLaneKey(step);
+    if (titleLaneKey) {
+      if (byTitleLane[titleLaneKey]) {
+        byTitleLaneDup.add(titleLaneKey);
+      } else {
+        byTitleLane[titleLaneKey] = step;
+      }
+    }
+  });
+
+  if (!pathSteps.length) {
+    return asArray(buildManualPathReportSteps(interview, {}))
+      .map((stepRaw, idx) => ({
+        ...asObject(stepRaw),
+        order_index: idx + 1,
+      }));
+  }
+
+  return pathSteps.map((entryRaw, idx) => {
+    const entry = asObject(entryRaw);
+    const stepId = toText(entry?.step_id || entry?.stepId || entry?.id);
+    const titleLaneKey = buildStepTitleLaneKey(entry);
+    const linked = asObject(
+      byStepId[stepId]
+      || (titleLaneKey && !byTitleLaneDup.has(titleLaneKey) ? byTitleLane[titleLaneKey] : null)
+      || {},
+    );
+    const bpmnRef = readStepBpmnRef(entry) || readStepBpmnRef(linked);
+    const workSec = toSec(
+      entry?.work_duration_sec
+      ?? entry?.workDurationSec
+      ?? linked?.work_duration_sec
+      ?? linked?.step_time_sec
+      ?? linked?.duration_sec
+      ?? linked?.stepTimeSec,
+      0,
+    );
+    const waitSec = toSec(
+      entry?.wait_duration_sec
+      ?? entry?.waitDurationSec
+      ?? linked?.wait_duration_sec
+      ?? linked?.waitDurationSec,
+      0,
+    );
+    return {
+      order_index: idx + 1,
+      step_id: stepId || toText(linked?.id) || null,
+      title: toText(entry?.title || linked?.action || linked?.title || bpmnRef) || `Step ${idx + 1}`,
+      lane_id: toText(entry?.lane_id || entry?.laneId || linked?.lane_id || linked?.laneId || linked?.lane_key) || null,
+      lane_name: toText(entry?.lane_name || entry?.laneName || linked?.lane_name || linked?.laneName || linked?.role || linked?.area) || null,
+      bpmn_ref: bpmnRef || null,
+      work_duration_sec: workSec,
+      wait_duration_sec: waitSec,
+      notes: toText(linked?.notes || linked?.note || linked?.comment || linked?.description) || null,
+      decision: asObject(entry?.decision || linked?.decision),
+      is_decision: !!asObject(entry?.decision || linked?.decision)?.selected_flow_id,
+    };
+  });
+}
+
+function normalizeDebugRouteSteps(routeStepsRaw) {
+  return asArray(routeStepsRaw)
+    .map((stepRaw, idx) => {
+      const step = asObject(stepRaw);
+      const bpmnRef = readStepBpmnRef(step);
+      if (!bpmnRef) return null;
+      return {
+        order_index: idx + 1,
+        step_id: toText(step?.step_id || step?.stepId || step?.id) || null,
+        title: toText(step?.title || step?.name || step?.action || bpmnRef) || bpmnRef,
+        lane_id: toText(step?.lane_id || step?.laneId) || null,
+        lane_name: toText(step?.lane_name || step?.laneName || step?.lane || step?.role || step?.area) || null,
+        bpmn_ref: bpmnRef,
+        work_duration_sec: toSec(step?.work_duration_sec, 0),
+        wait_duration_sec: toSec(step?.wait_duration_sec, 0),
+        notes: toText(step?.notes || step?.note || step?.comment || step?.description) || null,
+        decision: asObject(step?.decision),
+        is_decision: !!asObject(step?.decision)?.selected_flow_id,
+      };
+    })
+    .filter(Boolean);
 }
 
 function fnv1aHex(input) {
@@ -592,7 +768,7 @@ function coverageMarkerClass(row) {
   return "fpcCoverageRisk";
 }
 
-const AI_QUESTIONS_TIMEOUT_MS = 45000;
+const AI_QUESTIONS_TIMEOUT_MS = 120000;
 
 function normalizeAiQuestionStatus(raw) {
   return String(raw || "").trim().toLowerCase() === "done" ? "done" : "open";
@@ -742,6 +918,7 @@ function emitBatchOpsResult(requestId, payload = {}) {
 
 export default function ProcessStage({
   sessionId,
+  activeProjectId,
   locked,
   draft,
   onSessionSync,
@@ -766,10 +943,16 @@ export default function ProcessStage({
   const diagramActionBarRef = useRef(null);
   const diagramPathPopoverRef = useRef(null);
   const diagramPlanPopoverRef = useRef(null);
+  const diagramPlaybackPopoverRef = useRef(null);
   const diagramRobotMetaPopoverRef = useRef(null);
   const diagramRobotMetaListRef = useRef(null);
   const diagramQualityPopoverRef = useRef(null);
   const diagramOverflowPopoverRef = useRef(null);
+  const playbackRafRef = useRef(0);
+  const playbackLastTickRef = useRef(0);
+  const playbackEngineRef = useRef(null);
+  const playbackFramesRef = useRef([]);
+  const playbackIndexRef = useRef(0);
   const lastDraftXmlHashRef = useRef("");
   const lastAiGenerateIntentKeyRef = useRef("");
 
@@ -823,6 +1006,7 @@ export default function ProcessStage({
   });
   const [diagramActionPathOpen, setDiagramActionPathOpen] = useState(false);
   const [diagramActionPlanOpen, setDiagramActionPlanOpen] = useState(false);
+  const [diagramActionPlaybackOpen, setDiagramActionPlaybackOpen] = useState(false);
   const [diagramActionRobotMetaOpen, setDiagramActionRobotMetaOpen] = useState(false);
   const [diagramActionQualityOpen, setDiagramActionQualityOpen] = useState(false);
   const [diagramActionOverflowOpen, setDiagramActionOverflowOpen] = useState(false);
@@ -853,6 +1037,15 @@ export default function ProcessStage({
   const [executionPlanBusy, setExecutionPlanBusy] = useState(false);
   const [executionPlanSaveBusy, setExecutionPlanSaveBusy] = useState(false);
   const [executionPlanError, setExecutionPlanError] = useState("");
+  const [playbackIsPlaying, setPlaybackIsPlaying] = useState(false);
+  const [playbackAutoCamera, setPlaybackAutoCamera] = useState(true);
+  const [playbackSpeed, setPlaybackSpeed] = useState("1");
+  const [playbackManualAtGateway, setPlaybackManualAtGateway] = useState(false);
+  const [playbackScenarioKey, setPlaybackScenarioKey] = useState("active");
+  const [playbackFrames, setPlaybackFrames] = useState([]);
+  const [playbackGatewayPending, setPlaybackGatewayPending] = useState(null);
+  const [playbackGraphError, setPlaybackGraphError] = useState("");
+  const [playbackIndex, setPlaybackIndex] = useState(0);
 
   useEffect(() => {
     setGenBusy(false);
@@ -901,6 +1094,7 @@ export default function ProcessStage({
     });
     setDiagramActionPathOpen(false);
     setDiagramActionPlanOpen(false);
+    setDiagramActionPlaybackOpen(false);
     setDiagramActionRobotMetaOpen(false);
     setDiagramActionQualityOpen(false);
     setDiagramActionOverflowOpen(false);
@@ -931,6 +1125,18 @@ export default function ProcessStage({
     setExecutionPlanBusy(false);
     setExecutionPlanSaveBusy(false);
     setExecutionPlanError("");
+    setPlaybackIsPlaying(false);
+    setPlaybackAutoCamera(true);
+    setPlaybackSpeed("1");
+    setPlaybackManualAtGateway(false);
+    setPlaybackScenarioKey("active");
+    setPlaybackFrames([]);
+    setPlaybackGatewayPending(null);
+    setPlaybackGraphError("");
+    setPlaybackIndex(0);
+    playbackFramesRef.current = [];
+    playbackEngineRef.current = null;
+    playbackIndexRef.current = 0;
   }, [sid]);
 
   const hasSession = !!sid;
@@ -1194,9 +1400,12 @@ export default function ProcessStage({
     const highlightedTier = normalizePathTier(pathHighlightTier);
     const highlightedSeq = normalizePathSequenceKey(pathHighlightSequenceKey);
     const useHighlightScope = !!pathHighlightEnabled && !!(highlightedTier || highlightedSeq);
-    const manualSteps = asArray(buildManualPathReportSteps(interview, {}));
-    const sourceSteps = manualSteps.length
-      ? manualSteps
+    const debugRouteSteps = normalizeDebugRouteSteps(debug?.route_steps || debug?.routeSteps);
+    const routeSteps = debugRouteSteps.length
+      ? debugRouteSteps
+      : asArray(buildRouteStepsFromInterviewPathSpec(interview));
+    const sourceSteps = routeSteps.length
+      ? routeSteps
       : asArray(draft?.nodes).map((nodeRaw, idx) => {
         const node = asObject(nodeRaw);
         const workSec = Number(
@@ -1255,7 +1464,9 @@ export default function ProcessStage({
       pathId,
       scenarioLabel,
       steps: filteredSteps,
-      source: useHighlightScope ? "diagram_path_highlight" : "interview_path_spec",
+      source: useHighlightScope
+        ? "diagram_path_highlight"
+        : (debugRouteSteps.length ? "report_build_debug_route" : "interview_path_spec"),
     };
   }, [
     draft?.interview,
@@ -1266,6 +1477,21 @@ export default function ProcessStage({
     pathHighlightSequenceKey,
   ]);
   const canExportExecutionPlan = asArray(executionPlanSource?.steps).length > 0;
+  const playbackRouteDecisionByNodeId = useMemo(
+    () => buildRouteDecisionByNodeId(asArray(executionPlanSource?.steps)),
+    [executionPlanSource?.steps],
+  );
+  const playbackTotal = Number(asArray(playbackFrames).length || 0);
+  const playbackSpeedValue = Number(playbackSpeed || 1);
+  const playbackIntervalMs = Math.max(
+    180,
+    Math.round(900 / (Number.isFinite(playbackSpeedValue) && playbackSpeedValue > 0 ? playbackSpeedValue : 1)),
+  );
+  const playbackIndexClamped = playbackTotal <= 0
+    ? 0
+    : Math.max(0, Math.min(playbackTotal - 1, Number(playbackIndex || 0)));
+  const playbackCurrentEvent = asArray(playbackFrames)[playbackIndexClamped] || null;
+  const playbackCanRun = playbackTotal > 0 || !!playbackEngineRef.current;
   const pathHighlightCatalog = useMemo(() => {
     const tiers = {
       P0: { id: "P0", nodes: 0, flows: 0, sequenceKeys: [] },
@@ -1308,6 +1534,75 @@ export default function ProcessStage({
     () => asArray(asObject(pathHighlightCatalog[pathHighlightTier]).sequenceKeys),
     [pathHighlightCatalog, pathHighlightTier],
   );
+  const playbackActiveScenarioFallback = useMemo(() => {
+    const debug = asObject(asObject(draft?.interview)?.report_build_debug);
+    return {
+      tier: normalizePathTier(debug?.scenario_tier || pathHighlightTier || "P0") || "P0",
+      sequenceKey: normalizePathSequenceKey(debug?.sequence_key || pathHighlightSequenceKey),
+      label: toText(debug?.selectedScenarioLabel || executionPlanSource?.scenarioLabel || "Active scenario"),
+    };
+  }, [draft?.interview, pathHighlightTier, pathHighlightSequenceKey, executionPlanSource?.scenarioLabel]);
+  const playbackScenarioOptions = useMemo(() => {
+    const out = [
+      {
+        key: "active",
+        label: `Active: ${toText(playbackActiveScenarioFallback?.label) || "Scenario"}`,
+        tier: normalizePathTier(playbackActiveScenarioFallback?.tier),
+        sequenceKey: normalizePathSequenceKey(playbackActiveScenarioFallback?.sequenceKey),
+      },
+    ];
+    ["P0", "P1", "P2"].forEach((tier) => {
+      const row = asObject(pathHighlightCatalog[tier]);
+      const sequences = asArray(row?.sequenceKeys);
+      if (!sequences.length && (Number(row?.nodes || 0) > 0 || Number(row?.flows || 0) > 0)) {
+        out.push({
+          key: buildPlaybackScenarioKey(tier, ""),
+          label: `${tier} (all)`,
+          tier,
+          sequenceKey: "",
+        });
+        return;
+      }
+      sequences.forEach((sequenceKey) => {
+        out.push({
+          key: buildPlaybackScenarioKey(tier, sequenceKey),
+          label: `${tier} · ${sequenceKey}`,
+          tier,
+          sequenceKey,
+        });
+      });
+    });
+    const dedupe = {};
+    out.forEach((itemRaw) => {
+      const item = asObject(itemRaw);
+      const key = toText(item?.key);
+      if (!key || dedupe[key]) return;
+      dedupe[key] = {
+        key,
+        label: toText(item?.label || key),
+        tier: normalizePathTier(item?.tier),
+        sequenceKey: normalizePathSequenceKey(item?.sequenceKey),
+      };
+    });
+    return Object.values(dedupe);
+  }, [pathHighlightCatalog, playbackActiveScenarioFallback]);
+  const playbackScenarioSpec = useMemo(() => parsePlaybackScenarioKey(
+    playbackScenarioKey,
+    playbackActiveScenarioFallback,
+  ), [playbackScenarioKey, playbackActiveScenarioFallback]);
+  const playbackScenarioLabel = useMemo(() => {
+    const row = playbackScenarioOptions.find((item) => toText(item?.key) === toText(playbackScenarioKey));
+    return toText(row?.label || playbackActiveScenarioFallback?.label || "Scenario");
+  }, [playbackScenarioOptions, playbackScenarioKey, playbackActiveScenarioFallback]);
+  useEffect(() => {
+    const options = playbackScenarioOptions.map((item) => toText(item?.key)).filter(Boolean);
+    if (!options.length) {
+      if (playbackScenarioKey !== "active") setPlaybackScenarioKey("active");
+      return;
+    }
+    if (options.includes(toText(playbackScenarioKey))) return;
+    setPlaybackScenarioKey(options[0]);
+  }, [playbackScenarioOptions, playbackScenarioKey]);
   const aiGenerateGate = useMemo(
     () => getAiGenerateGate({
       hasSession,
@@ -1863,7 +2158,7 @@ export default function ProcessStage({
     const seq = normalizePathSequenceKey(pathHighlightSequenceKey);
     return seq ? `${tier} · ${seq}` : tier;
   }, [pathHighlightTier, pathHighlightSequenceKey]);
-  const snapshotProjectId = String(draft?.project_id || draft?.projectId || "").trim();
+  const snapshotProjectId = String(draft?.project_id || draft?.projectId || activeProjectId || "").trim();
   const packScope = String(snapshotProjectId || "global").trim() || "global";
   const packStorageKey = buildPackStorageKey({ scope: packScope });
   const previewSnapshot = useMemo(
@@ -2613,26 +2908,26 @@ export default function ProcessStage({
     setInfoMsg("");
     try {
       let timeoutHandle = null;
-      const timeoutPromise = new Promise((resolve) => {
+      const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      if (controller) {
         timeoutHandle = setTimeout(() => {
-          resolve({
-            ok: false,
-            status: 0,
-            error: `Таймаут генерации (${Math.round(AI_QUESTIONS_TIMEOUT_MS / 1000)}с). Попробуйте ещё раз.`,
-          });
+          try {
+            controller.abort();
+          } catch {
+            // noop
+          }
         }, AI_QUESTIONS_TIMEOUT_MS);
-      });
-      const aiRes = await Promise.race([
-        apiAiQuestions(sid, {
+      }
+      const aiRes = await apiAiQuestions(
+        sid,
+        {
           mode: "node_step",
           node_id: selectedElementId,
           limit: 5,
-        }),
-        timeoutPromise,
-      ]);
-      if (timeoutHandle) {
-        clearTimeout(timeoutHandle);
-      }
+        },
+        { signal: controller?.signal },
+      );
+      if (timeoutHandle) clearTimeout(timeoutHandle);
       if (!aiRes || typeof aiRes !== "object") {
         const errText = "Не удалось получить ответ генератора.";
         setAiQuestionsStatus({ kind: "error", text: errText });
@@ -2640,7 +2935,10 @@ export default function ProcessStage({
         return;
       }
       if (!aiRes?.ok) {
-        const errText = shortErr(aiRes?.error || "Не удалось сгенерировать AI-вопросы.");
+        const aborted = !!aiRes?.aborted || String(aiRes?.error_name || "").toLowerCase() === "aborterror";
+        const errText = aborted
+          ? `Таймаут генерации (${Math.round(AI_QUESTIONS_TIMEOUT_MS / 1000)}с). Попробуйте ещё раз.`
+          : shortErr(aiRes?.error || "Не удалось сгенерировать AI-вопросы.");
         setAiQuestionsStatus({ kind: "error", text: errText });
         setGenErr(errText);
         return;
@@ -3026,13 +3324,20 @@ export default function ProcessStage({
   }, [toolbarMenuOpen]);
 
   useEffect(() => {
-    if (!diagramActionPathOpen && !diagramActionPlanOpen && !diagramActionRobotMetaOpen && !diagramActionQualityOpen && !diagramActionOverflowOpen && !robotMetaListOpen) return undefined;
+    if (!diagramActionPathOpen
+      && !diagramActionPlanOpen
+      && !diagramActionPlaybackOpen
+      && !diagramActionRobotMetaOpen
+      && !diagramActionQualityOpen
+      && !diagramActionOverflowOpen
+      && !robotMetaListOpen) return undefined;
     const onPointerDown = (event) => {
       const target = event?.target;
       const refs = [
         diagramActionBarRef.current,
         diagramPathPopoverRef.current,
         diagramPlanPopoverRef.current,
+        diagramPlaybackPopoverRef.current,
         diagramRobotMetaPopoverRef.current,
         diagramRobotMetaListRef.current,
         diagramQualityPopoverRef.current,
@@ -3042,6 +3347,7 @@ export default function ProcessStage({
       if (inside) return;
       setDiagramActionPathOpen(false);
       setDiagramActionPlanOpen(false);
+      setDiagramActionPlaybackOpen(false);
       setDiagramActionRobotMetaOpen(false);
       setRobotMetaListOpen(false);
       setDiagramActionQualityOpen(false);
@@ -3051,6 +3357,7 @@ export default function ProcessStage({
       if (event.key !== "Escape") return;
       setDiagramActionPathOpen(false);
       setDiagramActionPlanOpen(false);
+      setDiagramActionPlaybackOpen(false);
       setDiagramActionRobotMetaOpen(false);
       setRobotMetaListOpen(false);
       setDiagramActionQualityOpen(false);
@@ -3062,7 +3369,15 @@ export default function ProcessStage({
       window.removeEventListener("mousedown", onPointerDown);
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [diagramActionPathOpen, diagramActionPlanOpen, diagramActionRobotMetaOpen, robotMetaListOpen, diagramActionQualityOpen, diagramActionOverflowOpen]);
+  }, [
+    diagramActionPathOpen,
+    diagramActionPlanOpen,
+    diagramActionPlaybackOpen,
+    diagramActionRobotMetaOpen,
+    robotMetaListOpen,
+    diagramActionQualityOpen,
+    diagramActionOverflowOpen,
+  ]);
 
   useEffect(() => {
     if (diagramActionRobotMetaOpen) return;
@@ -3084,9 +3399,97 @@ export default function ProcessStage({
   ]);
 
   useEffect(() => {
+    playbackFramesRef.current = asArray(playbackFrames);
+  }, [playbackFrames]);
+
+  useEffect(() => {
+    playbackIndexRef.current = Number(playbackIndex || 0);
+  }, [playbackIndex]);
+
+  useEffect(() => {
+    if (tab === "diagram") return;
+    setPlaybackIsPlaying(false);
+    stopPlaybackTicker();
+    clearPlaybackDecor();
+    setPlaybackGatewayPending(null);
+  }, [tab]);
+
+  useEffect(() => {
+    if (!diagramActionPlaybackOpen) {
+      setPlaybackIsPlaying(false);
+      stopPlaybackTicker();
+      clearPlaybackDecor();
+      setPlaybackGatewayPending(null);
+      return;
+    }
+    resetPlaybackRuntime({ keepDecor: false });
+  }, [
+    diagramActionPlaybackOpen,
+    sid,
+    draft?.bpmn_xml,
+    playbackScenarioKey,
+    playbackManualAtGateway,
+    playbackRouteDecisionByNodeId,
+    flowTierMetaMap,
+    nodePathMetaMap,
+  ]);
+
+  useEffect(() => {
+    if (!diagramActionPlaybackOpen || tab !== "diagram" || !playbackCanRun) return;
+    applyPlaybackFrame(playbackIndexClamped, { autoCamera: playbackAutoCamera });
+  }, [
+    diagramActionPlaybackOpen,
+    tab,
+    playbackCanRun,
+    playbackIndexClamped,
+    playbackAutoCamera,
+    playbackFrames,
+    playbackScenarioLabel,
+    executionPlanSource?.pathId,
+  ]);
+
+  useEffect(() => {
+    if (!diagramActionPlaybackOpen || tab !== "diagram" || !playbackIsPlaying || !playbackCanRun) {
+      stopPlaybackTicker();
+      return undefined;
+    }
+    stopPlaybackTicker();
+    const tick = (ts) => {
+      if (!diagramActionPlaybackOpen || tab !== "diagram" || !playbackIsPlaying) {
+        stopPlaybackTicker();
+        return;
+      }
+      const prevTs = Number(playbackLastTickRef.current || 0);
+      if (!prevTs) {
+        playbackLastTickRef.current = ts;
+      } else if ((ts - prevTs) >= playbackIntervalMs) {
+        playbackLastTickRef.current = ts;
+        const advanced = stepPlaybackForward();
+        if (!advanced) {
+          setPlaybackIsPlaying(false);
+        }
+      }
+      playbackRafRef.current = window.requestAnimationFrame(tick);
+    };
+    playbackRafRef.current = window.requestAnimationFrame(tick);
+    return () => stopPlaybackTicker();
+  }, [
+    diagramActionPlaybackOpen,
+    tab,
+    playbackIsPlaying,
+    playbackCanRun,
+    playbackIntervalMs,
+    playbackFrames,
+  ]);
+
+  useEffect(() => {
     if (diagramActionPlanOpen) return;
     setExecutionPlanError("");
   }, [diagramActionPlanOpen]);
+
+  useEffect(() => () => {
+    stopPlaybackTicker();
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -3561,6 +3964,7 @@ export default function ProcessStage({
     setDiagramPathsIntent(intent);
     setDiagramActionPathOpen(false);
     setDiagramActionPlanOpen(false);
+    setDiagramActionPlaybackOpen(false);
     setDiagramActionRobotMetaOpen(false);
     setRobotMetaListOpen(false);
     setDiagramActionQualityOpen(false);
@@ -3699,6 +4103,213 @@ export default function ProcessStage({
     }
   }
 
+  function stopPlaybackTicker() {
+    if (playbackRafRef.current) {
+      window.cancelAnimationFrame(playbackRafRef.current);
+      playbackRafRef.current = 0;
+    }
+    playbackLastTickRef.current = 0;
+  }
+
+  function clearPlaybackDecor() {
+    bpmnRef.current?.clearPlayback?.();
+  }
+
+  function syncPlaybackFrames(nextFramesRaw) {
+    const nextFrames = asArray(nextFramesRaw);
+    playbackFramesRef.current = nextFrames;
+    setPlaybackFrames(nextFrames);
+  }
+
+  function appendPlaybackEvents(eventsRaw) {
+    const events = asArray(eventsRaw).filter(Boolean);
+    if (!events.length) return playbackFramesRef.current;
+    const next = [...asArray(playbackFramesRef.current), ...events];
+    syncPlaybackFrames(next);
+    bpmnRef.current?.preparePlayback?.(next);
+    const lastEvent = asObject(events[events.length - 1]);
+    if (toText(lastEvent?.type) === "wait_for_gateway_decision") {
+      setPlaybackGatewayPending(lastEvent);
+    }
+    return next;
+  }
+
+  function buildPlaybackEngineNow() {
+    const graphRes = asObject(bpmnRef.current?.getPlaybackGraph?.());
+    if (!graphRes?.ok) {
+      const msg = toText(graphRes?.reason || "playback_graph_unavailable");
+      setPlaybackGraphError(msg || "Не удалось построить playback graph.");
+      playbackEngineRef.current = null;
+      return null;
+    }
+    const scenario = playbackScenarioSpec;
+    const routeDecisionByNodeId = toText(playbackScenarioKey) === "active"
+      ? playbackRouteDecisionByNodeId
+      : {};
+    const engine = createPlaybackEngine({
+      graph: graphRes,
+      scenario,
+      flowMetaById: flowTierMetaMap,
+      nodePathMetaById: nodePathMetaMap,
+      routeDecisionByNodeId,
+      manualAtGateway: playbackManualAtGateway,
+      loopLimit: 3,
+      maxEvents: 2000,
+    });
+    setPlaybackGraphError("");
+    playbackEngineRef.current = engine;
+    return engine;
+  }
+
+  function resetPlaybackRuntime(options = {}) {
+    stopPlaybackTicker();
+    setPlaybackIsPlaying(false);
+    const keepDecor = options?.keepDecor === true;
+    if (!keepDecor) clearPlaybackDecor();
+    setPlaybackGatewayPending(null);
+    setPlaybackIndex(0);
+    playbackIndexRef.current = 0;
+    syncPlaybackFrames([]);
+    const engine = buildPlaybackEngineNow();
+    if (!engine) return false;
+    const firstEvent = engine.nextEvent();
+    if (!firstEvent) {
+      clearPlaybackDecor();
+      return true;
+    }
+    const nextFrames = appendPlaybackEvents([firstEvent]);
+    const firstIndex = Math.max(0, nextFrames.length - 1);
+    setPlaybackIndex(firstIndex);
+    playbackIndexRef.current = firstIndex;
+    applyPlaybackFrame(firstIndex, { autoCamera: false });
+    return true;
+  }
+
+  function ensurePlaybackFrameAt(targetIndexRaw) {
+    const targetIndex = Math.max(0, Number(targetIndexRaw || 0));
+    const currentFrames = asArray(playbackFramesRef.current);
+    if (currentFrames.length > targetIndex) return true;
+    const engine = playbackEngineRef.current;
+    if (!engine) return false;
+    const appended = [];
+    let guard = 0;
+    while ((currentFrames.length + appended.length) <= targetIndex && guard < 500) {
+      guard += 1;
+      const event = engine.nextEvent();
+      if (!event) break;
+      appended.push(event);
+      if (toText(event?.type) === "wait_for_gateway_decision") break;
+      if (toText(event?.type) === "stop") break;
+    }
+    if (!appended.length) return false;
+    const nextFrames = appendPlaybackEvents(appended);
+    return nextFrames.length > targetIndex;
+  }
+
+  function applyPlaybackFrame(indexRaw, options = {}) {
+    const frames = asArray(playbackFramesRef.current);
+    const total = Number(frames.length || 0);
+    if (total <= 0) {
+      clearPlaybackDecor();
+      return 0;
+    }
+    const index = Math.max(0, Math.min(total - 1, Number(indexRaw || 0)));
+    const event = asObject(frames[index]);
+    const autoCamera = options?.autoCamera === true || (!!playbackAutoCamera && options?.autoCamera !== false);
+    if (toText(event?.type) === "wait_for_gateway_decision") {
+      setPlaybackGatewayPending(event);
+    } else if (toText(event?.type) === "stop") {
+      setPlaybackGatewayPending(null);
+    }
+    bpmnRef.current?.setPlaybackFrame?.({
+      event,
+      index,
+      total,
+      autoCamera,
+      speed: playbackSpeedValue,
+      scenarioLabel: playbackScenarioLabel,
+      pathId: toText(executionPlanSource?.pathId),
+      onGatewayDecision: ({ gatewayId, flowId }) => {
+        handlePlaybackGatewayDecision(gatewayId, flowId);
+      },
+    });
+    return index;
+  }
+
+  function handlePlaybackGatewayDecision(gatewayIdRaw, flowIdRaw) {
+    const gatewayId = toText(gatewayIdRaw);
+    const flowId = toText(flowIdRaw);
+    const engine = playbackEngineRef.current;
+    if (!engine || !gatewayId || !flowId) return;
+    const decision = asObject(engine.chooseGatewayFlow(gatewayId, flowId));
+    if (!decision?.ok) return;
+    setPlaybackGatewayPending(null);
+    const before = asArray(playbackFramesRef.current).length;
+    const hasNext = ensurePlaybackFrameAt(before);
+    if (!hasNext) {
+      const snapshot = asObject(engine.getSnapshot?.());
+      if (snapshot?.finished) setPlaybackIsPlaying(false);
+      return;
+    }
+    const nextIndex = Math.max(0, asArray(playbackFramesRef.current).length - 1);
+    setPlaybackIndex(nextIndex);
+    playbackIndexRef.current = nextIndex;
+    applyPlaybackFrame(nextIndex, { autoCamera: playbackAutoCamera });
+  }
+
+  function stepPlaybackForward() {
+    const currentIndex = Math.max(0, Number(playbackIndexRef.current || 0));
+    const frames = asArray(playbackFramesRef.current);
+    if (currentIndex < frames.length - 1) {
+      const next = currentIndex + 1;
+      setPlaybackIndex(next);
+      playbackIndexRef.current = next;
+      return true;
+    }
+    const hasNewFrame = ensurePlaybackFrameAt(frames.length);
+    if (!hasNewFrame) return false;
+    const next = Math.max(0, asArray(playbackFramesRef.current).length - 1);
+    setPlaybackIndex(next);
+    playbackIndexRef.current = next;
+    return true;
+  }
+
+  function handlePlaybackPrev() {
+    setPlaybackIsPlaying(false);
+    setPlaybackIndex((prev) => {
+      const next = Math.max(0, Number(prev || 0) - 1);
+      playbackIndexRef.current = next;
+      return next;
+    });
+  }
+
+  function handlePlaybackNext() {
+    setPlaybackIsPlaying(false);
+    const advanced = stepPlaybackForward();
+    if (!advanced) {
+      const snapshot = asObject(playbackEngineRef.current?.getSnapshot?.());
+      if (snapshot?.finished) setPlaybackIsPlaying(false);
+    }
+  }
+
+  function handlePlaybackReset() {
+    resetPlaybackRuntime({ keepDecor: false });
+  }
+
+  function handlePlaybackTogglePlay() {
+    if (!playbackCanRun) return;
+    const engineSnapshot = asObject(playbackEngineRef.current?.getSnapshot?.());
+    if (engineSnapshot?.waitingDecision) {
+      setPlaybackIsPlaying(false);
+      return;
+    }
+    if (engineSnapshot?.finished && playbackIndexClamped >= Math.max(playbackTotal - 1, 0)) {
+      resetPlaybackRuntime({ keepDecor: false });
+      return;
+    }
+    setPlaybackIsPlaying((prev) => !prev);
+  }
+
   function openPathsFromDiagram() {
     const intent = {
       version: DIAGRAM_PATHS_INTENT_VERSION,
@@ -3711,6 +4322,7 @@ export default function ProcessStage({
     };
     setDiagramPathsIntent(intent);
     setDiagramActionPlanOpen(false);
+    setDiagramActionPlaybackOpen(false);
     setDiagramActionRobotMetaOpen(false);
     setRobotMetaListOpen(false);
     setDiagramActionQualityOpen(false);
@@ -4371,6 +4983,7 @@ export default function ProcessStage({
                         onClick={() => {
                           setDiagramActionPathOpen((prev) => !prev);
                           setDiagramActionPlanOpen(false);
+                          setDiagramActionPlaybackOpen(false);
                           setDiagramActionRobotMetaOpen(false);
                           setRobotMetaListOpen(false);
                           setDiagramActionQualityOpen(false);
@@ -4417,6 +5030,7 @@ export default function ProcessStage({
                         onClick={() => {
                           setDiagramActionPlanOpen((prev) => !prev);
                           setDiagramActionPathOpen(false);
+                          setDiagramActionPlaybackOpen(false);
                           setDiagramActionRobotMetaOpen(false);
                           setRobotMetaListOpen(false);
                           setDiagramActionQualityOpen(false);
@@ -4429,11 +5043,29 @@ export default function ProcessStage({
                       </button>
                       <button
                         type="button"
+                        className={`secondaryBtn h-8 px-2 text-[11px] ${diagramActionPlaybackOpen || playbackIsPlaying ? "ring-1 ring-accent/60" : ""}`}
+                        onClick={() => {
+                          setDiagramActionPlaybackOpen((prev) => !prev);
+                          setDiagramActionPathOpen(false);
+                          setDiagramActionPlanOpen(false);
+                          setDiagramActionRobotMetaOpen(false);
+                          setRobotMetaListOpen(false);
+                          setDiagramActionQualityOpen(false);
+                          setDiagramActionOverflowOpen(false);
+                        }}
+                        title={`Проезд по сценарию: ${toText(playbackScenarioLabel) || "Scenario"}`}
+                        data-testid="diagram-action-playback"
+                      >
+                        ▶ Проезд
+                      </button>
+                      <button
+                        type="button"
                         className={`secondaryBtn h-8 px-2 text-[11px] ${robotMetaOverlayEnabled ? "ring-1 ring-accent/60" : ""}`}
                         onClick={() => {
                           setDiagramActionRobotMetaOpen((prev) => !prev);
                           setDiagramActionPathOpen(false);
                           setDiagramActionPlanOpen(false);
+                          setDiagramActionPlaybackOpen(false);
                           setRobotMetaListOpen(false);
                           setDiagramActionQualityOpen(false);
                           setDiagramActionOverflowOpen(false);
@@ -4461,6 +5093,7 @@ export default function ProcessStage({
                           setDiagramActionQualityOpen((prev) => !prev);
                           setDiagramActionPathOpen(false);
                           setDiagramActionPlanOpen(false);
+                          setDiagramActionPlaybackOpen(false);
                           setDiagramActionRobotMetaOpen(false);
                           setRobotMetaListOpen(false);
                           setDiagramActionOverflowOpen(false);
@@ -4477,6 +5110,7 @@ export default function ProcessStage({
                           setDiagramActionOverflowOpen((prev) => !prev);
                           setDiagramActionPathOpen(false);
                           setDiagramActionPlanOpen(false);
+                          setDiagramActionPlaybackOpen(false);
                           setDiagramActionRobotMetaOpen(false);
                           setRobotMetaListOpen(false);
                           setDiagramActionQualityOpen(false);
@@ -4728,6 +5362,185 @@ export default function ProcessStage({
                             </pre>
                           </div>
                         ) : null}
+                      </div>
+                    ) : null}
+
+                    {diagramActionPlaybackOpen ? (
+                      <div className="diagramActionPopover diagramActionPopover--playback" ref={diagramPlaybackPopoverRef} data-testid="diagram-action-playback-popover">
+                        <div className="diagramActionPopoverHead">
+                          <span>Process Playback</span>
+                          <button
+                            type="button"
+                            className="secondaryBtn h-7 px-2 text-[11px]"
+                            onClick={() => setDiagramActionPlaybackOpen(false)}
+                          >
+                            Закрыть
+                          </button>
+                        </div>
+                        {!!toText(playbackGraphError) ? (
+                          <div className="diagramActionPopoverEmpty">
+                            Graph error: {toText(playbackGraphError)}
+                          </div>
+                        ) : !playbackCanRun ? (
+                          <div className="diagramActionPopoverEmpty">
+                            Нет событий playback. Нажмите Reset.
+                          </div>
+                        ) : (
+                          <>
+                            <div className="diagramActionField">
+                              <span>Сценарий:</span>
+                              <b>{toText(playbackScenarioLabel) || "Scenario"}</b>
+                              <span className="muted small">path: {toText(executionPlanSource?.pathId) || "—"}</span>
+                            </div>
+                            <div className="diagramActionField">
+                              <span>Scenario selector</span>
+                              <select
+                                className="select h-8 min-h-0 text-xs"
+                                value={playbackScenarioKey}
+                                onChange={(event) => setPlaybackScenarioKey(toText(event.target.value) || "active")}
+                                data-testid="diagram-action-playback-scenario"
+                              >
+                                {playbackScenarioOptions.map((optionRaw) => {
+                                  const option = asObject(optionRaw);
+                                  const key = toText(option?.key);
+                                  return (
+                                    <option key={`playback_scenario_${key}`} value={key}>
+                                      {toText(option?.label || key)}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            </div>
+                            <div className="diagramIssueRows">
+                              <div className="diagramIssueRow">
+                                <span>Event</span>
+                                <b data-testid="diagram-action-playback-progress">
+                                  {Math.min(playbackIndexClamped + 1, Math.max(playbackTotal, 1))} / {playbackTotal}
+                                </b>
+                              </div>
+                              <div className="diagramIssueRow">
+                                <span className="truncate" title={playbackEventTitle(playbackCurrentEvent)}>
+                                  {playbackEventTitle(playbackCurrentEvent)}
+                                </span>
+                                <span className="muted small" data-testid="diagram-action-playback-event-type">
+                                  {toText(playbackCurrentEvent?.type) || "—"}
+                                </span>
+                              </div>
+                              {toText(playbackCurrentEvent?.flowId) ? (
+                                <div className="diagramIssueRow">
+                                  <span>flow</span>
+                                  <span className="diagramIssueChip">{toText(playbackCurrentEvent?.flowId)}</span>
+                                </div>
+                              ) : null}
+                              {toText(playbackCurrentEvent?.nodeId || playbackCurrentEvent?.gatewayId) ? (
+                                <div className="diagramIssueRow">
+                                  <span>node</span>
+                                  <span className="diagramIssueChip">
+                                    {toText(playbackCurrentEvent?.nodeId || playbackCurrentEvent?.gatewayId)}
+                                  </span>
+                                </div>
+                              ) : null}
+                              {toText(playbackCurrentEvent?.reason) ? (
+                                <div className="diagramIssueRow">
+                                  <span>reason</span>
+                                  <span className="diagramIssueChip">{toText(playbackCurrentEvent?.reason)}</span>
+                                </div>
+                              ) : null}
+                            </div>
+                            <div className="diagramActionPopoverActions">
+                              <button
+                                type="button"
+                                className="secondaryBtn h-7 px-2 text-[11px]"
+                                onClick={handlePlaybackPrev}
+                                disabled={playbackIndexClamped <= 0}
+                                data-testid="diagram-action-playback-prev"
+                              >
+                                ⏮
+                              </button>
+                              <button
+                                type="button"
+                                className="secondaryBtn h-7 px-2 text-[11px]"
+                                onClick={handlePlaybackTogglePlay}
+                                data-testid="diagram-action-playback-play"
+                              >
+                                {playbackIsPlaying ? "⏸ Pause" : "▶ Play"}
+                              </button>
+                              <button
+                                type="button"
+                                className="secondaryBtn h-7 px-2 text-[11px]"
+                                onClick={handlePlaybackNext}
+                                data-testid="diagram-action-playback-next"
+                              >
+                                ⏭
+                              </button>
+                              <button
+                                type="button"
+                                className="secondaryBtn h-7 px-2 text-[11px]"
+                                onClick={handlePlaybackReset}
+                                data-testid="diagram-action-playback-reset"
+                              >
+                                Reset
+                              </button>
+                            </div>
+                            <div className="diagramActionField">
+                              <span>Speed</span>
+                              <select
+                                className="select h-8 min-h-0 text-xs"
+                                value={playbackSpeed}
+                                onChange={(event) => setPlaybackSpeed(toText(event.target.value) || "1")}
+                                data-testid="diagram-action-playback-speed"
+                              >
+                                <option value="0.5">0.5x</option>
+                                <option value="1">1x</option>
+                                <option value="2">2x</option>
+                                <option value="4">4x</option>
+                              </select>
+                            </div>
+                            <label className="diagramActionCheckboxRow mt-1">
+                              <input
+                                type="checkbox"
+                                checked={!!playbackManualAtGateway}
+                                onChange={(event) => setPlaybackManualAtGateway(!!event.target.checked)}
+                                data-testid="diagram-action-playback-manual-gateway"
+                              />
+                              <span>Manual at gateways</span>
+                            </label>
+                            <label className="diagramActionCheckboxRow mt-1">
+                              <input
+                                type="checkbox"
+                                checked={!!playbackAutoCamera}
+                                onChange={(event) => setPlaybackAutoCamera(!!event.target.checked)}
+                                data-testid="diagram-action-playback-autocamera"
+                              />
+                              <span>Auto-camera</span>
+                            </label>
+                            {asObject(playbackGatewayPending)?.type === "wait_for_gateway_decision" ? (
+                              <div className="diagramIssueListWrap mt-2">
+                                <div className="muted mb-1 text-[11px]">
+                                  Gateway decision: {toText(playbackGatewayPending?.gatewayName || playbackGatewayPending?.gatewayId)}
+                                </div>
+                                <div className="diagramActionPopoverActions">
+                                  {asArray(playbackGatewayPending?.outgoingOptions).map((optionRaw) => {
+                                    const option = asObject(optionRaw);
+                                    const flowId = toText(option?.flowId);
+                                    const label = toText(option?.label || option?.condition);
+                                    const target = toText(option?.targetName || option?.targetId || flowId);
+                                    return (
+                                      <button
+                                        key={`playback_gateway_option_${flowId}`}
+                                        type="button"
+                                        className="secondaryBtn h-7 px-2 text-[11px]"
+                                        onClick={() => handlePlaybackGatewayDecision(playbackGatewayPending?.gatewayId, flowId)}
+                                      >
+                                        {label ? `${label} -> ${target}` : target}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ) : null}
+                          </>
+                        )}
                       </div>
                     ) : null}
 
@@ -4994,6 +5807,7 @@ export default function ProcessStage({
                 <BpmnStage
                   ref={bpmnRef}
                   sessionId={sid}
+                  activeProjectId={activeProjectId}
                   view={tab === "xml" ? "xml" : "editor"}
                   draft={draft}
                   reloadKey={reloadKey}

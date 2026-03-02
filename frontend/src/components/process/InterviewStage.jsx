@@ -488,6 +488,15 @@ export default function InterviewStage({
     });
   }
 
+  function handleSelectSingleStep(stepId) {
+    const key = toText(stepId);
+    if (!key) {
+      setSelectedTimelineStepIds([]);
+      return;
+    }
+    setSelectedTimelineStepIds([key]);
+  }
+
   function handleToggleAllStepSelection(checked) {
     const visibleIds = (Array.isArray(filteredTimelineView) ? filteredTimelineView : [])
       .map((step) => toText(step?.id))
@@ -830,7 +839,7 @@ export default function InterviewStage({
             <InterviewDiagramView
               dodSnapshot={dodSnapshot}
               selectedStepIds={selectedTimelineStepIds}
-              onSelectStep={handleToggleStepSelection}
+              onSelectStep={handleSelectSingleStep}
             />
           </Profiler>
         ) : null}
@@ -845,7 +854,7 @@ export default function InterviewStage({
                 interviewGraph={interviewGraph}
                 tierFilters={timelineFilters?.tiers}
                 selectedStepIds={selectedTimelineStepIds}
-                onSelectStep={handleToggleStepSelection}
+                onSelectStep={handleSelectSingleStep}
                 onSetTimelineViewMode={handleSetTimelineViewMode}
                 dodSnapshot={dodSnapshot}
                 pathMetrics={pathMetrics}

@@ -140,3 +140,23 @@ test("pinned snapshot moves to top and keeps label after reload", async () => {
   assert.equal(list[0]?.pinned, true);
   assert.equal(String(list[0]?.label || ""), "Checkpoint A");
 });
+
+test("clearBpmnSnapshots clears legacy no_project snapshots for the same session", async () => {
+  const sid = `ut_snapshots_${Date.now()}_e`;
+  const projectId = "ut_project";
+
+  await clearBpmnSnapshots({ projectId, sessionId: sid });
+  await saveBpmnSnapshot({ projectId: "", sessionId: sid, xml: "<xml>LEGACY</xml>", rev: 1, reason: "manual_save" });
+
+  const merged = await listBpmnSnapshots({ projectId, sessionId: sid });
+  assert.equal(merged.length, 1);
+  assert.equal(String(merged[0]?.xml || ""), "<xml>LEGACY</xml>");
+
+  const cleared = await clearBpmnSnapshots({ projectId, sessionId: sid });
+  assert.equal(cleared.ok, true);
+
+  const afterProjectScope = await listBpmnSnapshots({ projectId, sessionId: sid });
+  const afterLegacyScope = await listBpmnSnapshots({ projectId: "", sessionId: sid });
+  assert.equal(afterProjectScope.length, 0);
+  assert.equal(afterLegacyScope.length, 0);
+});

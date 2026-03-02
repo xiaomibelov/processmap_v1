@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { renderMarkdownPreview } from "../../../../features/process/lib/markdownPreview.jsx";
+import Modal from "../../../../shared/ui/Modal";
 
 function toArray(value) {
   return Array.isArray(value) ? value : [];
@@ -260,6 +261,8 @@ export default function ReportsDrawer({
   onRetryGenerate,
   canGenerateReport = false,
   onCopyMarkdown,
+  onDeleteReport,
+  deletingReportId = "",
   selectedReportView,
   reportDetailsById = {},
   reportDetailsLoadingId = "",
@@ -272,8 +275,12 @@ export default function ReportsDrawer({
   reportDetailsErrorNotice = null,
 }) {
   const [techlogExpanded, setTechlogExpanded] = useState(false);
+  const [deleteCandidate, setDeleteCandidate] = useState(null);
   useEffect(() => {
-    if (!open) setTechlogExpanded(false);
+    if (!open) {
+      setTechlogExpanded(false);
+      setDeleteCandidate(null);
+    }
   }, [open]);
 
   if (!open) return null;
@@ -285,6 +292,9 @@ export default function ReportsDrawer({
   const selectedIsOk = selectedStatus === "ok";
   const selectedIsError = selectedStatus === "error";
   const selectedHasMarkdown = !!toText(selected?.report_markdown);
+  const deleteCandidateReport = asObject(deleteCandidate);
+  const deleteCandidateId = toText(deleteCandidateReport?.id);
+  const deleteBusy = deleteCandidateId && deleteCandidateId === toText(deletingReportId);
 
   const structured = asObject(selected?.report_json);
   const structuredOn = hasStructuredReport(selected);
@@ -295,6 +305,18 @@ export default function ReportsDrawer({
   const missing = toArray(structuredOn ? structured?.missing_data : selected?.missing_data);
   const risks = toArray(selected?.risks);
   const reportSteps = toArray(selected?.request_payload_json?.steps || selected?.steps);
+  const rawPayloadPreview = (() => {
+    const raw = selected?.payload_raw ?? selected?.raw_json ?? selected?.raw_text ?? "";
+    if (typeof raw === "string") return toText(raw);
+    if (raw && typeof raw === "object") {
+      try {
+        return JSON.stringify(raw, null, 2);
+      } catch {
+        return "";
+      }
+    }
+    return "";
+  })();
 
   const totals = extractReportTotals(selected);
   const coverage = extractCoverage(selected);
@@ -398,7 +420,13 @@ export default function ReportsDrawer({
   })();
 
   return (
-    <div className="interviewReportsDrawerOverlay" role="presentation" onClick={() => onClose?.()}>
+    <div
+      className="interviewReportsDrawerOverlay"
+      role="presentation"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose?.();
+      }}
+    >
       <aside
         className="interviewReportsDrawer"
         data-testid="interview-path-report-panel"
@@ -524,6 +552,18 @@ export default function ReportsDrawer({
                         <button type="button" className="secondaryBtn tinyBtn" disabled={!itemHasMarkdown || itemStatus === "running"} onClick={() => onCopyMarkdown?.(reportId)}>
                           Копировать
                         </button>
+                        <button
+                          type="button"
+                          className="secondaryBtn tinyBtn"
+                          disabled={!reportId || !!deletingReportId}
+                          title="Действия"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setDeleteCandidate({ id: reportId, version: Number(item?.version || 0) });
+                          }}
+                        >
+                          ⋯
+                        </button>
                       </div>
                     </div>
                   );
@@ -600,7 +640,7 @@ export default function ReportsDrawer({
 
                 {selectedIsOk ? (
                   <>
-                    {hasUnstructuredWarning(selected) ? <div className="interviewAnnotationNotice warn">DeepSeek ответ неструктурирован.</div> : null}
+                    {hasUnstructuredWarning(selected) ? <div className="interviewAnnotationNotice warn">Ответ модели частично неструктурирован; применён fallback-парсинг.</div> : null}
                     <div className="interviewPathReportKpiGrid">
                       {kpis.map((item) => <KpiCard key={item.label} label={item.label} value={item.value} />)}
                     </div>
@@ -650,6 +690,14 @@ export default function ReportsDrawer({
                         </div>
                       ) : (
                         <div className="muted small">Markdown отчёта отсутствует.</div>
+                      )}
+                    </ReportAccordion>
+
+                    <ReportAccordion title="Сырые данные" badge={rawPayloadPreview ? "есть" : "нет"}>
+                      {rawPayloadPreview ? (
+                        <pre className="interviewPathReportRawData">{rawPayloadPreview}</pre>
+                      ) : (
+                        <div className="muted small">Сырые данные отсутствуют.</div>
                       )}
                     </ReportAccordion>
 
@@ -793,6 +841,43 @@ export default function ReportsDrawer({
           </section>
         </div>
       </aside>
+
+      <Modal
+        open={!!deleteCandidateId}
+        title="Удалить версию отчёта?"
+        onClose={() => {
+          if (deleteBusy) return;
+          setDeleteCandidate(null);
+        }}
+        footer={(
+          <>
+            <button
+              type="button"
+              className="secondaryBtn"
+              onClick={() => setDeleteCandidate(null)}
+              disabled={!!deleteBusy}
+            >
+              Отмена
+            </button>
+            <button
+              type="button"
+              className="dangerBtn"
+              disabled={!deleteCandidateId || !!deleteBusy}
+              onClick={async () => {
+                if (!deleteCandidateId || deleteBusy) return;
+                await onDeleteReport?.(deleteCandidateReport);
+                setDeleteCandidate(null);
+              }}
+            >
+              {deleteBusy ? "Удаление..." : "Удалить"}
+            </button>
+          </>
+        )}
+      >
+        <div className="muted small">
+          Удалить версию v{Number(deleteCandidateReport?.version || 0)}? Это необратимо.
+        </div>
+      </Modal>
     </div>
   );
 }

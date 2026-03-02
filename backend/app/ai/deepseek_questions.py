@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import time
 from typing import Any, Dict, List, Optional, Set
@@ -13,6 +14,26 @@ from ..models import Node, Question, Session
 
 
 _ALLOWED_ISSUE = {"CRITICAL", "MISSING", "VARIANT", "AMBIG", "LOSS"}
+
+
+def _report_debug_enabled() -> bool:
+    return str(os.environ.get("REPORT_DEBUG_LOG") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _report_debug_log(tag: str, **fields: Any) -> None:
+    if not _report_debug_enabled():
+        return
+    parts: List[str] = []
+    for key, value in fields.items():
+        key_text = str(key or "").strip()
+        if not key_text:
+            continue
+        text = str(value if value is not None else "").replace("\n", "\\n").strip()
+        parts.append(f"{key_text}={text}")
+    suffix = f" {' '.join(parts)}" if parts else ""
+    print(f"[{str(tag or 'REPORT').strip()}]{suffix}")
+
+
 _PROCESS_DOMAIN_CONTEXT: Dict[str, Any] = {
     "domain": "food_production_and_cooking",
     "goal": "Собрать максимально подробный и исполнимый процесс приготовления блюда.",
@@ -350,6 +371,327 @@ def _kpis_fallback_from_payload(payload: Optional[Dict[str, Any]]) -> Dict[str, 
             "missing_notes_pct": _to_percent_or_none(coverage_src.get("missing_notes_pct")),
         },
     }
+
+
+def _to_non_negative_int_or_zero(value: Any, *, fallback: Any = None) -> int:
+    n = _to_non_negative_int(value)
+    if n is not None:
+        return int(n)
+    fb = _to_non_negative_int(fallback)
+    return int(fb if fb is not None else 0)
+
+
+def _normalize_summary_list(value: Any) -> List[str]:
+    if isinstance(value, list):
+        return [str(item or "").strip() for item in value if str(item or "").strip()]
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    return []
+
+
+def _normalize_recommendations_list(value: Any) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            out.append({"scope": "global", "text": text, "expected_effect": ""})
+        return out
+    if not isinstance(value, list):
+        return out
+    for item in value:
+        if isinstance(item, str):
+            text = item.strip()
+            if text:
+                out.append({"scope": "global", "text": text, "expected_effect": ""})
+            continue
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("text") or item.get("recommendation") or "").strip()
+        if not text:
+            continue
+        scope = str(item.get("scope") or "").strip().lower()
+        if scope not in {"global", "step"}:
+            scope = "global"
+        row: Dict[str, Any] = {
+            "scope": scope,
+            "text": text,
+            "expected_effect": str(item.get("expected_effect") or item.get("effect") or "").strip(),
+        }
+        priority = str(item.get("priority") or "").strip().upper()
+        if priority in {"P0", "P1", "P2"}:
+            row["priority"] = priority
+        order_index = _to_non_negative_int(item.get("order_index"))
+        if scope == "step" and order_index and order_index > 0:
+            row["order_index"] = int(order_index)
+        effort = str(item.get("effort") or "").strip()
+        if effort:
+            row["effort"] = effort
+        out.append(row)
+    return out
+
+
+def _normalize_missing_data_list(value: Any) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            out.append({"order_index": None, "missing": [text]})
+        return out
+    if not isinstance(value, list):
+        return out
+    for item in value:
+        if isinstance(item, str):
+            text = item.strip()
+            if text:
+                out.append({"order_index": None, "missing": [text]})
+            continue
+        if not isinstance(item, dict):
+            continue
+        order_index = _to_non_negative_int(item.get("order_index"))
+        miss_raw = item.get("missing")
+        if isinstance(miss_raw, list):
+            missing = [str(x or "").strip() for x in miss_raw if str(x or "").strip()]
+        elif isinstance(miss_raw, str):
+            missing = [miss_raw.strip()] if miss_raw.strip() else []
+        else:
+            missing = []
+        if not missing and not (order_index and order_index > 0):
+            continue
+        out.append(
+            {
+                "order_index": int(order_index) if order_index and order_index > 0 else None,
+                "missing": missing,
+            }
+        )
+    return out
+
+
+def _normalize_risks_list(value: Any) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            out.append({"text": text, "step_order_indexes": []})
+        return out
+    if not isinstance(value, list):
+        return out
+    for item in value:
+        if isinstance(item, str):
+            text = item.strip()
+            if text:
+                out.append({"text": text, "step_order_indexes": []})
+            continue
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("text") or item.get("risk") or "").strip()
+        if not text:
+            continue
+        indexes: List[int] = []
+        for raw_idx in (item.get("step_order_indexes") or []):
+            idx = _to_non_negative_int(raw_idx)
+            if idx and idx > 0:
+                indexes.append(int(idx))
+        out.append({"text": text, "step_order_indexes": indexes})
+    return out
+
+
+def _normalize_improvements_top5(value: Any, recommendations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            out.append({"text": text})
+    elif isinstance(value, list):
+        for item in value:
+            if isinstance(item, str):
+                text = item.strip()
+                if text:
+                    out.append({"text": text})
+                continue
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("text") or item.get("title") or "").strip()
+            if not text:
+                continue
+            row = {"text": text}
+            priority = str(item.get("priority") or "").strip().upper()
+            if priority in {"P0", "P1", "P2"}:
+                row["priority"] = priority
+            out.append(row)
+    if out:
+        return out[:5]
+    fallback = []
+    for rec in recommendations[:5]:
+        text = str((rec or {}).get("text") or "").strip()
+        if not text:
+            continue
+        row = {"text": text}
+        priority = str((rec or {}).get("priority") or "").strip().upper()
+        if priority in {"P0", "P1", "P2"}:
+            row["priority"] = priority
+        fallback.append(row)
+    return fallback[:5]
+
+
+def _build_report_markdown_from_payload_v2(payload_raw: Any) -> str:
+    payload = payload_raw if isinstance(payload_raw, dict) else {}
+    title = str(payload.get("title") or "").strip() or "AI-отчёт по процессу"
+    summary = _normalize_summary_list(payload.get("summary"))
+    kpis = payload.get("kpis") if isinstance(payload.get("kpis"), dict) else {}
+    lines: List[str] = [f"## {title}", ""]
+    lines.append("### Summary")
+    if summary:
+        lines.extend([f"- {item}" for item in summary])
+    else:
+        lines.append("- Структурированный ответ модели не получен; показаны нормализованные данные.")
+    lines.extend(
+        [
+            "",
+            "### KPIs",
+            f"- steps_count: {_to_non_negative_int_or_zero(kpis.get('steps_count'))}",
+            f"- work_total_sec: {_to_non_negative_int_or_zero(kpis.get('work_total_sec'))}",
+            f"- wait_total_sec: {_to_non_negative_int_or_zero(kpis.get('wait_total_sec'))}",
+            f"- total_sec: {_to_non_negative_int_or_zero(kpis.get('total_sec'))}",
+        ]
+    )
+    return "\n".join(lines).strip()
+
+
+def _looks_like_raw_json_blob(text_raw: str) -> bool:
+    text = str(text_raw or "").strip()
+    if not text:
+        return False
+    if text.startswith("```json") or text.startswith("```"):
+        return True
+    if (text.startswith("{") and text.endswith("}")) or (text.startswith("[") and text.endswith("]")):
+        return True
+    return False
+
+
+def normalize_deepseek_report_payload(
+    raw: Any,
+    *,
+    payload: Optional[Dict[str, Any]] = None,
+    raw_text: str = "",
+) -> Dict[str, Any]:
+    user_payload = payload if isinstance(payload, dict) else {}
+    fallback_kpis = _kpis_fallback_from_payload(user_payload)
+
+    source_obj: Dict[str, Any] = {}
+    payload_raw: Any = raw
+    raw_text_value = str(raw_text or "").strip()
+    warnings: List[str] = []
+
+    if isinstance(raw, dict):
+        source_obj = raw
+    elif isinstance(raw, str):
+        text = raw.strip()
+        if text and not raw_text_value:
+            raw_text_value = text
+        candidate = _extract_json_candidate(text)
+        if candidate:
+            try:
+                parsed = json.loads(candidate)
+                if isinstance(parsed, dict):
+                    source_obj = parsed
+                    payload_raw = parsed
+                else:
+                    warnings.append("invalid_json_object")
+            except Exception:
+                warnings.append("json_parse_failed")
+        elif text:
+            warnings.append("json_candidate_not_found")
+    elif raw is not None:
+        warnings.append("invalid_json_object")
+
+    report_obj = source_obj
+    if isinstance(source_obj.get("report_json"), dict):
+        report_obj = source_obj.get("report_json") or {}
+
+    title = (
+        str(report_obj.get("title") or "").strip()
+        or str(source_obj.get("title") or "").strip()
+        or "AI-отчёт по процессу"
+    )
+    summary = _normalize_summary_list(report_obj.get("summary"))
+    if not summary:
+        summary = _normalize_summary_list(source_obj.get("summary"))
+
+    kpis_src = report_obj.get("kpis") if isinstance(report_obj.get("kpis"), dict) else {}
+    if not kpis_src and isinstance(source_obj.get("kpis"), dict):
+        kpis_src = source_obj.get("kpis") or {}
+    kpis = {
+        "steps_count": _to_non_negative_int_or_zero(
+            kpis_src.get("steps_count"),
+            fallback=source_obj.get("steps_count") if source_obj else fallback_kpis.get("steps_count"),
+        ),
+        "work_total_sec": _to_non_negative_int_or_zero(
+            kpis_src.get("work_total_sec"),
+            fallback=source_obj.get("work_total_sec") if source_obj else fallback_kpis.get("work_total_sec"),
+        ),
+        "wait_total_sec": _to_non_negative_int_or_zero(
+            kpis_src.get("wait_total_sec"),
+            fallback=source_obj.get("wait_total_sec") if source_obj else fallback_kpis.get("wait_total_sec"),
+        ),
+        "total_sec": _to_non_negative_int_or_zero(
+            kpis_src.get("total_sec"),
+            fallback=source_obj.get("total_sec") if source_obj else fallback_kpis.get("total_sec"),
+        ),
+    }
+
+    recommendations = _normalize_recommendations_list(report_obj.get("recommendations"))
+    if not recommendations:
+        recommendations = _normalize_recommendations_list(source_obj.get("recommendations"))
+
+    missing_data = _normalize_missing_data_list(report_obj.get("missing_data"))
+    if not missing_data:
+        missing_data = _normalize_missing_data_list(source_obj.get("missing_data"))
+
+    risks = _normalize_risks_list(report_obj.get("risks"))
+    if not risks:
+        risks = _normalize_risks_list(source_obj.get("risks"))
+
+    improvements_top5 = _normalize_improvements_top5(
+        report_obj.get("improvements_top5", source_obj.get("improvements_top5")),
+        recommendations,
+    )
+
+    if not summary:
+        summary = ["Структурированный ответ модели не получен; отчёт нормализован из доступных данных."]
+
+    normalized: Dict[str, Any] = {
+        "title": title,
+        "kpis": kpis,
+        "summary": summary,
+        "recommendations": recommendations,
+        "improvements_top5": improvements_top5,
+        "missing_data": missing_data,
+        "risks": risks,
+    }
+
+    bottlenecks = report_obj.get("bottlenecks")
+    if isinstance(bottlenecks, list):
+        normalized["bottlenecks"] = bottlenecks
+    else:
+        normalized["bottlenecks"] = []
+
+    if not raw_text_value and not source_obj and raw is not None:
+        raw_text_value = str(raw).strip()
+    if raw_text_value:
+        normalized["raw_text"] = raw_text_value
+
+    return {
+        "payload_normalized": normalized,
+        "payload_raw": payload_raw if payload_raw is not None else {},
+        "raw_text": raw_text_value,
+        "warnings": warnings,
+    }
+
+
+def normalizeDeepSeekReport(raw: Any, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Backward-compatible camelCase alias for ReportPayload.v2 best-effort normalizer."""
+    return normalize_deepseek_report_payload(raw, payload=payload)
 
 
 def _deepseek_chat_json(
@@ -1008,12 +1350,33 @@ def generate_path_report(
         {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
     ]
 
-    raw = _deepseek_chat_text(
-        api_key=api_key,
-        base_url=base_url,
-        messages=messages,
-        timeout=90,
-        max_tokens=1800,
+    _report_debug_log(
+        "DEEPSEEK",
+        event="call_start",
+        prompt_template_version=version,
+        steps=len(user_payload.get("steps") or []) if isinstance(user_payload.get("steps"), list) else 0,
+    )
+    try:
+        raw = _deepseek_chat_text(
+            api_key=api_key,
+            base_url=base_url,
+            messages=messages,
+            timeout=90,
+            max_tokens=1800,
+        )
+    except Exception as exc:
+        _report_debug_log(
+            "DEEPSEEK",
+            event="call_end",
+            status="error",
+            error=str(exc),
+        )
+        raise
+    _report_debug_log(
+        "DEEPSEEK",
+        event="call_end",
+        status="ok",
+        raw_len=len(str(raw or "")),
     )
     parsed: Any = None
     candidate = _extract_json_candidate(raw)
@@ -1029,21 +1392,53 @@ def generate_path_report(
         normalized = _normalize_path_report_result_v2(parsed, raw_text=raw, payload=user_payload)
     else:
         normalized = _normalize_path_report_result(parsed, raw_text=raw)
-    merged_warnings = [*warnings, *list(normalized.get("warnings") or [])]
+    payload_norm_result = normalize_deepseek_report_payload(parsed, payload=user_payload, raw_text=raw)
+    payload_normalized = payload_norm_result.get("payload_normalized") or {}
+    payload_raw = payload_norm_result.get("payload_raw")
+    normalized_raw_text = str(payload_norm_result.get("raw_text") or "").strip()
+    norm_warnings = list(payload_norm_result.get("warnings") or [])
+    _report_debug_log(
+        "REPORT_NORMALIZE",
+        status="fallback" if norm_warnings else "ok",
+        reason=",".join(norm_warnings) if norm_warnings else "structured",
+        title=str(payload_normalized.get("title") or ""),
+        summary_count=len(payload_normalized.get("summary") or []) if isinstance(payload_normalized.get("summary"), list) else 0,
+    )
+
+    report_markdown = str(normalized.get("report_markdown") or "").strip()
+    if not report_markdown or _looks_like_raw_json_blob(report_markdown):
+        report_markdown = _build_report_markdown_from_payload_v2(payload_normalized)
+        warnings.append("report_markdown_generated_from_normalized")
+
+    merged_warnings_raw = [
+        *warnings,
+        *list(normalized.get("warnings") or []),
+        *list(payload_norm_result.get("warnings") or []),
+    ]
+    merged_warnings: List[str] = []
+    seen_warnings: Set[str] = set()
+    for item in merged_warnings_raw:
+        code = str(item or "").strip()
+        if not code or code in seen_warnings:
+            continue
+        seen_warnings.add(code)
+        merged_warnings.append(code)
     status = str(normalized.get("status") or "ok")
 
     return {
         "status": status,
         "model": "deepseek-chat",
         "prompt_template_version": version,
-        "report_markdown": str(normalized.get("report_markdown") or ""),
-        "report_json": normalized.get("report_json") or {},
-        "raw_json": normalized.get("raw_json") or (parsed if isinstance(parsed, dict) else {}),
-        "recommendations": normalized.get("recommendations") or [],
-        "missing_data": normalized.get("missing_data") or [],
-        "risks": normalized.get("risks") or [],
+        "report_markdown": report_markdown,
+        "payload_normalized": payload_normalized,
+        "payload_raw": payload_raw if payload_raw is not None else {},
+        "report_json": payload_normalized,
+        "raw_json": payload_raw if isinstance(payload_raw, dict) else (parsed if isinstance(parsed, dict) else {}),
+        "recommendations": payload_normalized.get("recommendations") or normalized.get("recommendations") or [],
+        "missing_data": payload_normalized.get("missing_data") or normalized.get("missing_data") or [],
+        "risks": payload_normalized.get("risks") or normalized.get("risks") or [],
         "warnings": merged_warnings,
-        "raw_text": str(raw or ""),
+        "raw_text": normalized_raw_text or str(raw or ""),
     }
 
 
@@ -1227,6 +1622,72 @@ def _node_interview_steps_context(s: Session, node: Node, max_items: int = 5) ->
             }
         )
     return out
+
+
+def _node_stage_context(s: Session, node: Node) -> Dict[str, Any]:
+    interview = getattr(s, "interview", None)
+    iv = interview if isinstance(interview, dict) else {}
+    steps_raw = iv.get("steps")
+    steps_src = steps_raw if isinstance(steps_raw, list) else []
+    node_id = str(getattr(node, "id", "") or "").strip()
+    node_title_norm = str(getattr(node, "title", "") or "").strip().lower()
+
+    def _matches_step(step_obj: Dict[str, Any]) -> bool:
+        sid = str(step_obj.get("node_id") or step_obj.get("nodeId") or "").strip()
+        action = str(step_obj.get("action") or step_obj.get("title") or "").strip()
+        action_norm = action.lower()
+        if sid and sid == node_id:
+            return True
+        if node_title_norm and action_norm and action_norm == node_title_norm:
+            return True
+        return False
+
+    def _step_brief(step_obj: Any, seq: int) -> Dict[str, Any]:
+        if not isinstance(step_obj, dict):
+            return {}
+        return {
+            "seq": int(seq),
+            "step_id": _safe_text(step_obj.get("id"), 80),
+            "node_id": _safe_text(step_obj.get("node_id") or step_obj.get("nodeId"), 80),
+            "action": _safe_text(step_obj.get("action") or step_obj.get("title"), 220),
+            "role": _safe_text(step_obj.get("role"), 120),
+            "type": _safe_text(step_obj.get("type"), 60),
+            "duration_min": _safe_text(step_obj.get("duration_min"), 40),
+            "wait_min": _safe_text(step_obj.get("wait_min"), 40),
+        }
+
+    match_indexes: List[int] = []
+    for idx, step in enumerate(steps_src):
+        if not isinstance(step, dict):
+            continue
+        if _matches_step(step):
+            match_indexes.append(idx)
+
+    if not match_indexes:
+        return {
+            "steps_total": len(steps_src),
+            "matched_count": 0,
+            "position_seq": None,
+            "previous_step": {},
+            "current_step": {},
+            "next_step": {},
+        }
+
+    focus_idx = match_indexes[0]
+    prev_idx = focus_idx - 1
+    next_idx = focus_idx + 1
+    prev_step = _step_brief(steps_src[prev_idx], prev_idx + 1) if prev_idx >= 0 else {}
+    curr_step = _step_brief(steps_src[focus_idx], focus_idx + 1)
+    next_step = _step_brief(steps_src[next_idx], next_idx + 1) if next_idx < len(steps_src) else {}
+
+    return {
+        "steps_total": len(steps_src),
+        "matched_count": len(match_indexes),
+        "position_seq": focus_idx + 1,
+        "previous_step": prev_step,
+        "current_step": curr_step,
+        "next_step": next_step,
+    }
 
 
 def _existing_question_texts(s: Session) -> Set[str]:
@@ -1640,11 +2101,16 @@ def generate_llm_questions_for_node(
     }
 
     bpmn_xml = str(getattr(s, "bpmn_xml", "") or "").strip()
+    stage_context = _node_stage_context(s, node)
+    graph_neighbors = _node_neighborhood_context(s, str(getattr(node, "id", "") or ""), max_items=4)
+    interview_hits = _node_interview_steps_context(s, node, max_items=3)
     system = (
         _LLM_QUESTION_POLICY_PROMPT
         + "\n\nДополнительное правило для этого запроса:\n"
         + f"- Верни вопросы ТОЛЬКО по node_id=\"{node.id}\".\n"
-        + f"- Верни не больше {lim} вопросов."
+        + f"- Верни не больше {lim} вопросов.\n"
+        + "- Обязательно учитывай контекст этапа из node_focus.stage_context "
+        + "(previous_step/current_step/next_step), чтобы вопросы соответствовали месту шага в процессе."
     )
     user: Dict[str, Any] = {
         "memory": _build_memory_payload(s, node_id=node.id, max_items=120),
@@ -1655,6 +2121,9 @@ def generate_llm_questions_for_node(
             "node_type": str(getattr(node, "type", "") or ""),
             "actor_role": str(getattr(node, "actor_role", "") or ""),
             "node_xml_element": (node_xml or "")[:4000],
+            "stage_context": stage_context,
+            "graph_neighbors": graph_neighbors,
+            "interview_step_hits": interview_hits,
         },
     }
     if bpmn_xml:

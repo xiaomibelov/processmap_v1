@@ -130,6 +130,7 @@ export default function AppShell({
         <div className="workspaceMain relative rounded-xl2 border border-border bg-panel">
           <ProcessStage
             sessionId={sessionId}
+            activeProjectId={projectId}
             locked={locked}
             draft={draft}
             onPatchDraft={onPatchDraft}

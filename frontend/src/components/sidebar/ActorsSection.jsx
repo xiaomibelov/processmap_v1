@@ -8,6 +8,7 @@ function asArray(value) {
 export default function ActorsSection({
   open,
   onToggle,
+  contentOnly = false,
   roles,
   laneCounts,
   sourceLabel,
@@ -32,18 +33,11 @@ export default function ActorsSection({
     void onStartRoleChange?.(selectedStartRole);
   }
 
-  return (
-    <SidebarSection
-      sectionId="actors"
-      title="Акторы"
-      summary={summary}
-      open={open}
-      onToggle={onToggle}
-      badge={list.length ? "LANES" : ""}
-    >
+  const content = (
+    <>
       {list.length > 8 ? (
         <input
-          className="input h-8 text-xs"
+          className="input h-8 w-full min-w-0 text-xs"
           placeholder="Поиск актора..."
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -77,14 +71,15 @@ export default function ActorsSection({
 
       <div className="mt-3">
         <div className="mb-1 text-[11px] font-medium text-muted">Стартовый актор</div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex min-w-0 items-center gap-1.5">
           <select
-            className="input h-8 text-xs"
+            className="input h-8 w-full min-w-0 text-xs"
             value={selectedStartRole}
             onChange={(event) => {
               setPendingStartRole(String(event.target.value || ""));
             }}
             disabled={!!disabled || !!startRoleBusy}
+            title={list.find((item) => String(item?.role_id || "") === selectedStartRole)?.label || ""}
           >
             <option value="">Не выбран</option>
             {list.map((item) => (
@@ -104,6 +99,21 @@ export default function ActorsSection({
         </div>
         {startRoleErr ? <div className="mt-1 text-[11px] text-danger">{startRoleErr}</div> : null}
       </div>
+    </>
+  );
+
+  if (contentOnly) return <div className="sidebarAccordionContent">{content}</div>;
+
+  return (
+    <SidebarSection
+      sectionId="actors"
+      title="Акторы"
+      summary={summary}
+      open={open}
+      onToggle={onToggle}
+      badge={list.length ? "LANES" : ""}
+    >
+      {content}
     </SidebarSection>
   );
 }

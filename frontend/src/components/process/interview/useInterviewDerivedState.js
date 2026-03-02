@@ -170,7 +170,12 @@ export default function useInterviewDerivedState({
     );
   }, [actorsDerived, roles]);
 
-  const orderMode = normalizeInterviewOrderMode(data?.order_mode || data?.orderMode || "interview");
+  const orderModeUserSet = !!(data?.order_mode_user_set || data?.orderModeUserSet);
+  const orderModeRaw = data?.order_mode || data?.orderMode || "bpmn";
+  const normalizedOrderMode = normalizeInterviewOrderMode(orderModeRaw);
+  const orderMode = !orderModeUserSet && normalizedOrderMode === "interview"
+    ? "bpmn"
+    : normalizedOrderMode;
   const bpmnOrderMeta = useMemo(() => collectBpmnTraversalOrderMeta(bpmnXml), [bpmnXml]);
   const xmlNodeOrder = useMemo(() => toArray(bpmnOrderMeta?.nodeIds), [bpmnOrderMeta]);
   const creationNodeOrder = useMemo(() => {

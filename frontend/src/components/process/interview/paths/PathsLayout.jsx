@@ -8,7 +8,11 @@ export default function PathsLayout({
 }) {
   return (
     <div
-      className={["interviewPathsWorkbench", hasActiveStep ? "hasSelection" : "isNoSelection"].join(" ")}
+      className={[
+        "interviewPathsWorkbench",
+        hasActiveStep ? "hasSelection" : "isNoSelection",
+        detailsCollapsed ? "isDetailsCollapsed" : "",
+      ].join(" ")}
       data-testid="interview-paths-layout"
     >
       <aside className="interviewPathsPane interviewPathsPane--nav" data-testid="interview-paths-left-rail">
@@ -29,21 +33,32 @@ export default function PathsLayout({
         ].filter(Boolean).join(" ")}
         data-testid="interview-paths-right-details"
       >
-        <div className="interviewPathsPaneHead">
-          <div className="interviewPathsRailTitle">Детали шага</div>
-          <button
-            type="button"
-            className="secondaryBtn tinyBtn"
-            onClick={() => onToggleDetails?.(!detailsCollapsed)}
-            title={detailsCollapsed ? "Развернуть детали" : "Свернуть детали"}
-          >
-            {detailsCollapsed ? "Показать" : "Свернуть"}
-          </button>
-        </div>
-        {!detailsCollapsed ? right : (
-          <div className="muted small">
-            {hasActiveStep ? "Выбран шаг. Нажмите «Показать»." : "Выберите шаг в маршруте."}
+        {detailsCollapsed ? (
+          <div className="interviewPathsPaneCollapsed">
+            <button
+              type="button"
+              className="secondaryBtn tinyBtn interviewPathsPaneCollapsedBtn"
+              onClick={() => onToggleDetails?.(false)}
+              title={hasActiveStep ? "Показать детали шага" : "Показать панель деталей"}
+            >
+              Показать
+            </button>
           </div>
+        ) : (
+          <>
+            <div className="interviewPathsPaneHead">
+              <div className="interviewPathsRailTitle">Детали шага</div>
+              <button
+                type="button"
+                className="secondaryBtn tinyBtn"
+                onClick={() => onToggleDetails?.(true)}
+                title="Свернуть детали"
+              >
+                Свернуть
+              </button>
+            </div>
+            {right}
+          </>
         )}
       </aside>
     </div>

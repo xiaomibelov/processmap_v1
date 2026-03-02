@@ -367,10 +367,12 @@ export default function useInterviewActions({
     const mutate = typeof applyInterviewMutation === "function" ? applyInterviewMutation : setData;
     mutate((prev) => {
       const currentMode = normalizeInterviewOrderMode(prev?.order_mode || prev?.orderMode || "bpmn");
-      if (currentMode === nextMode) return prev;
+      const alreadyUserSet = !!(prev?.order_mode_user_set || prev?.orderModeUserSet);
+      if (currentMode === nextMode && alreadyUserSet) return prev;
       return {
         ...prev,
         order_mode: nextMode,
+        order_mode_user_set: true,
       };
     }, {
       type: "interview.order_mode",

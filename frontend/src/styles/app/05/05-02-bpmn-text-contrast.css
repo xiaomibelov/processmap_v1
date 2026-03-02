@@ -920,6 +920,76 @@
   filter: drop-shadow(0 0 2px color-mix(in srgb, var(--fpc-path-highlight, #ff2db8) 32%, transparent)) !important;
 }
 
+.bpmnCanvas .djs-shape.fpcPlaybackNodeActive:not(.fpcElementSelected) .djs-visual > *:first-child {
+  stroke: color-mix(in srgb, hsl(var(--accent)) 78%, #0ea5e9) !important;
+  stroke-width: 2.8px !important;
+  filter: drop-shadow(0 0 2px color-mix(in srgb, hsl(var(--accent)) 35%, transparent)) !important;
+}
+
+.bpmnCanvas .djs-shape.fpcPlaybackNodePrev:not(.fpcPlaybackNodeActive):not(.fpcElementSelected) .djs-visual > *:first-child {
+  stroke: color-mix(in srgb, hsl(var(--accent)) 45%, #64748b) !important;
+  stroke-width: 2px !important;
+  stroke-dasharray: 5 2 !important;
+}
+
+.bpmnCanvas .djs-connection.fpcPlaybackFlowActive:not(.fpcElementSelected):not(.fpcQualityIssueFocus):not(.fpcQualityProblem):not(.fpcFocusEdgePrimary) .djs-visual > path[data-corner-radius] {
+  stroke: color-mix(in srgb, hsl(var(--accent)) 78%, #22d3ee) !important;
+  stroke-width: 3px !important;
+  stroke-dasharray: 8 4 !important;
+  animation: fpcPlaybackFlowDash var(--fpc-playback-flow-dur, .9s) linear infinite;
+  filter: drop-shadow(0 0 2px color-mix(in srgb, hsl(var(--accent)) 34%, transparent)) !important;
+}
+
+.bpmnCanvas .djs-shape.fpcPlaybackSubprocessActive:not(.fpcElementSelected) .djs-visual > *:first-child {
+  stroke: color-mix(in srgb, #0ea5e9 74%, hsl(var(--accent))) !important;
+  stroke-width: 3px !important;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, #0ea5e9 30%, transparent)) !important;
+}
+
+.fpcPlaybackPill,
+.fpcPlaybackBranchTag,
+.fpcPlaybackSubprocessTag {
+  pointer-events: none;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--diagram-badge-border) / 0.72);
+  background: hsl(var(--diagram-pill-bg) / 0.96);
+  color: hsl(var(--diagram-pill-text) / 0.98);
+  box-shadow:
+    0 0 0 1px hsl(var(--diagram-badge-border) / 0.24) inset,
+    0 8px 16px hsl(var(--bg) / 0.28);
+  line-height: 1;
+}
+
+.fpcPlaybackPill {
+  min-height: 16px;
+  padding: 0 7px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .01em;
+}
+
+.fpcPlaybackBranchTag {
+  min-height: 15px;
+  padding: 0 6px;
+  font-size: 8.5px;
+  border-color: hsl(var(--accent) / 0.42);
+  background: color-mix(in srgb, hsl(var(--accent)) 14%, hsl(var(--diagram-pill-bg) / 0.97));
+}
+
+.fpcPlaybackSubprocessTag {
+  min-height: 15px;
+  padding: 0 6px;
+  font-size: 8.5px;
+  border-color: #0ea5e9;
+  background: color-mix(in srgb, #0ea5e9 16%, hsl(var(--diagram-pill-bg) / 0.97));
+}
+
+@keyframes fpcPlaybackFlowDash {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
 /* 2) Hit layer: invisible but clickable and wide (removes grey wedges on bends) */
 .bpmnCanvas .djs-connection > path.djs-hit,
 .bpmnCanvas .djs-connection > path.djs-hit-stroke,

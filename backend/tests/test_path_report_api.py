@@ -42,6 +42,8 @@ class PathReportApiTest(unittest.TestCase):
             _set_report_active,
             create_path_report_version,
             create_session,
+            delete_path_report_version,
+            delete_report_version,
             get_storage,
             get_report_version,
             get_path_report_version_detail,
@@ -56,6 +58,8 @@ class PathReportApiTest(unittest.TestCase):
         self._set_report_active = _set_report_active
         self.create_path_report_version = create_path_report_version
         self.create_session = create_session
+        self.delete_path_report_version = delete_path_report_version
+        self.delete_report_version = delete_report_version
         self.get_storage = get_storage
         self.get_report_version = get_report_version
         self.get_path_report_version_detail = get_path_report_version_detail
@@ -605,6 +609,119 @@ class PathReportApiTest(unittest.TestCase):
         self.assertEqual((detail.get("report_json") or {}).get("title"), "Structured")
         self.assertEqual((detail.get("raw_json") or {}).get("title"), "Structured")
         self.assertTrue(isinstance(detail.get("request_payload_json"), dict))
+
+    @patch("app.main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
+    @patch(
+        "app.ai.deepseek_questions.generate_path_report",
+        side_effect=[
+            {
+                "status": "ok",
+                "model": "deepseek-chat",
+                "prompt_template_version": "v2",
+                "report_markdown": "## First",
+                "payload_normalized": {"title": "First", "summary": ["S1"], "kpis": {"steps_count": 1, "work_total_sec": 1, "wait_total_sec": 0, "total_sec": 1}, "recommendations": [], "improvements_top5": [], "missing_data": [], "risks": []},
+                "payload_raw": {"title": "First"},
+                "report_json": {"title": "First"},
+                "raw_json": {"title": "First"},
+                "recommendations": [],
+                "missing_data": [],
+                "risks": [],
+                "warnings": [],
+                "raw_text": "",
+            },
+            {
+                "status": "ok",
+                "model": "deepseek-chat",
+                "prompt_template_version": "v2",
+                "report_markdown": "## Second",
+                "payload_normalized": {"title": "Second", "summary": ["S2"], "kpis": {"steps_count": 1, "work_total_sec": 1, "wait_total_sec": 0, "total_sec": 1}, "recommendations": [], "improvements_top5": [], "missing_data": [], "risks": []},
+                "payload_raw": {"title": "Second"},
+                "report_json": {"title": "Second"},
+                "raw_json": {"title": "Second"},
+                "recommendations": [],
+                "missing_data": [],
+                "risks": [],
+                "warnings": [],
+                "raw_text": "",
+            },
+        ],
+    )
+    def test_delete_path_report_version_removes_row_and_repoints_latest(self, _mock_report, _mock_llm):
+        created = self.create_session(self.CreateSessionIn(title="Reports"))
+        sid = str(created["id"])
+        payload = _make_payload(sid, "primary")
+        out1 = self.create_path_report_version(
+            sid,
+            "primary",
+            self.CreatePathReportVersionIn(
+                steps_hash="hash_del_1",
+                request_payload_json=payload,
+                prompt_template_version="v2",
+            ),
+        )
+        out2 = self.create_path_report_version(
+            sid,
+            "primary",
+            self.CreatePathReportVersionIn(
+                steps_hash="hash_del_2",
+                request_payload_json=payload,
+                prompt_template_version="v2",
+            ),
+        )
+        rid1 = str((out1.get("report") or {}).get("id") or "")
+        rid2 = str((out2.get("report") or {}).get("id") or "")
+        self._wait_report_ready(rid1)
+        self._wait_report_ready(rid2)
+
+        resp = self.delete_path_report_version(sid, "primary", rid2)
+        self.assertEqual(getattr(resp, "status_code", 0), 204)
+
+        rows = self.list_path_report_versions(sid, "primary")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(str(rows[0].get("id") or ""), rid1)
+        self.assertEqual(self.get_report_version(rid2).get("error"), "not found")
+
+        session = self.get_session(sid)
+        latest = ((session.get("interview") or {}).get("path_reports") or {}).get("primary") or {}
+        self.assertEqual(str(latest.get("id") or ""), rid1)
+
+    @patch("app.main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
+    @patch(
+        "app.ai.deepseek_questions.generate_path_report",
+        return_value={
+            "status": "ok",
+            "model": "deepseek-chat",
+            "prompt_template_version": "v2",
+            "report_markdown": "## Structured",
+            "payload_normalized": {"title": "Structured", "summary": ["S1"], "kpis": {"steps_count": 1, "work_total_sec": 1, "wait_total_sec": 0, "total_sec": 1}, "recommendations": [], "improvements_top5": [], "missing_data": [], "risks": []},
+            "payload_raw": {"title": "Structured"},
+            "report_json": {"title": "Structured"},
+            "raw_json": {"title": "Structured"},
+            "recommendations": [],
+            "missing_data": [],
+            "risks": [],
+            "warnings": [],
+            "raw_text": "",
+        },
+    )
+    def test_delete_report_version_global_endpoint(self, _mock_report, _mock_llm):
+        created = self.create_session(self.CreateSessionIn(title="Reports"))
+        sid = str(created["id"])
+        out = self.create_path_report_version(
+            sid,
+            "primary",
+            self.CreatePathReportVersionIn(
+                steps_hash="hash_global_delete",
+                request_payload_json=_make_payload(sid, "primary"),
+                prompt_template_version="v2",
+            ),
+        )
+        rid = str((out.get("report") or {}).get("id") or "")
+        self._wait_report_ready(rid)
+
+        resp = self.delete_report_version(rid)
+        self.assertEqual(getattr(resp, "status_code", 0), 204)
+        self.assertEqual(self.get_report_version(rid).get("error"), "not found")
 
 
 if __name__ == "__main__":

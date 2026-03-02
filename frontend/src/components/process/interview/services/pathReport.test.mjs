@@ -464,3 +464,20 @@ test("normalizeReportMarkdown salvages invalid json-like text", () => {
   assert.equal(markdown.includes("Критерий: \"готово\""), true);
   assert.equal(markdown.includes("- Путь: P0"), true);
 });
+
+test("normalizeReportMarkdown builds fallback markdown from normalized payload when raw is json blob", () => {
+  const raw = "{\"title\":\"X\"}";
+  const markdown = normalizeReportMarkdown(raw, "", {
+    title: "Fallback",
+    summary: ["S1"],
+    kpis: {
+      steps_count: 3,
+      work_total_sec: 120,
+      wait_total_sec: 30,
+      total_sec: 150,
+    },
+  });
+  assert.equal(markdown.includes("## Fallback"), true);
+  assert.equal(markdown.includes("- S1"), true);
+  assert.equal(markdown.includes("- steps_count: 3"), true);
+});

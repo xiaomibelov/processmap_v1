@@ -88,9 +88,38 @@ function extractJsonStringFieldLoose(textRaw, fieldNameRaw) {
   }
 }
 
-export function normalizeReportMarkdown(reportMarkdownRaw, rawTextRaw = "") {
+export function normalizeReportMarkdown(reportMarkdownRaw, rawTextRaw = "", normalizedPayloadRaw = null) {
+  function buildFallbackMarkdownFromPayload(payloadRaw) {
+    const payload = asObject(payloadRaw);
+    if (!Object.keys(payload).length) return "";
+    const title = toText(payload?.title) || "AI-отчёт по процессу";
+    const summary = toArray(payload?.summary).map((item) => toText(item)).filter(Boolean);
+    const kpis = asObject(payload?.kpis);
+    const asNonNegativeInt = (value) => {
+      const num = Number(value);
+      if (!Number.isFinite(num) || num < 0) return 0;
+      return Math.round(num);
+    };
+    const lines = [`## ${title}`, "", "### Summary"];
+    if (summary.length) {
+      summary.forEach((item) => lines.push(`- ${item}`));
+    } else {
+      lines.push("- Структурированный ответ модели не получен; отчёт нормализован из доступных данных.");
+    }
+    lines.push(
+      "",
+      "### KPIs",
+      `- steps_count: ${asNonNegativeInt(kpis?.steps_count)}`,
+      `- work_total_sec: ${asNonNegativeInt(kpis?.work_total_sec)}`,
+      `- wait_total_sec: ${asNonNegativeInt(kpis?.wait_total_sec)}`,
+      `- total_sec: ${asNonNegativeInt(kpis?.total_sec)}`,
+    );
+    return lines.join("\n").trim();
+  }
+
   const raw = toText(reportMarkdownRaw || rawTextRaw);
   if (!raw) return "";
+  const explicitNormalizedPayload = asObject(normalizedPayloadRaw);
   const candidate = extractJsonCandidate(raw);
   if (candidate) {
     try {
@@ -98,6 +127,12 @@ export function normalizeReportMarkdown(reportMarkdownRaw, rawTextRaw = "") {
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
         const md = toText(parsed.report_markdown);
         if (md) return md;
+        const fallbackMd = buildFallbackMarkdownFromPayload(
+          Object.keys(explicitNormalizedPayload).length
+            ? explicitNormalizedPayload
+            : (parsed.payload_normalized || parsed.report_json || parsed),
+        );
+        if (fallbackMd) return fallbackMd;
       }
     } catch {
       // noop: fallback to loose extraction
@@ -105,6 +140,8 @@ export function normalizeReportMarkdown(reportMarkdownRaw, rawTextRaw = "") {
   }
   const loose = extractJsonStringFieldLoose(stripFences(raw), "report_markdown");
   if (loose) return loose;
+  const payloadFallback = buildFallbackMarkdownFromPayload(explicitNormalizedPayload);
+  if (payloadFallback && candidate) return payloadFallback;
   return raw;
 }
 

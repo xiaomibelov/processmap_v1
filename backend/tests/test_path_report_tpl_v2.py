@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest.mock import patch
 
-from app.ai.deepseek_questions import generate_path_report
+from app.ai.deepseek_questions import generate_path_report, normalizeDeepSeekReport
 
 
 def _payload() -> dict:
@@ -31,6 +31,34 @@ def _payload() -> dict:
 
 
 class PathReportTplV2Tests(unittest.TestCase):
+    def test_normalize_deepseek_report_string_without_json_returns_fallback_payload(self):
+        out = normalizeDeepSeekReport("LLM raw text without json", payload=_payload())
+        normalized = out.get("payload_normalized") or {}
+        self.assertEqual(normalized.get("title"), "AI-отчёт по процессу")
+        self.assertEqual((normalized.get("kpis") or {}).get("steps_count"), 3)
+        self.assertTrue(len(normalized.get("summary") or []) >= 1)
+        self.assertEqual(str(normalized.get("raw_text") or ""), "LLM raw text without json")
+
+    def test_normalize_deepseek_report_maps_root_steps_count_into_kpis(self):
+        out = normalizeDeepSeekReport({"title": "X", "summary": "S", "steps_count": 9})
+        normalized = out.get("payload_normalized") or {}
+        self.assertEqual(normalized.get("title"), "X")
+        self.assertEqual((normalized.get("kpis") or {}).get("steps_count"), 9)
+        self.assertEqual(normalized.get("summary"), ["S"])
+
+    def test_normalize_deepseek_report_accepts_structured_object(self):
+        out = normalizeDeepSeekReport(
+            {
+                "title": "Structured",
+                "summary": ["A", "B"],
+                "kpis": {"steps_count": 4, "work_total_sec": 120, "wait_total_sec": 30, "total_sec": 150},
+            }
+        )
+        normalized = out.get("payload_normalized") or {}
+        self.assertEqual(normalized.get("title"), "Structured")
+        self.assertEqual(normalized.get("summary"), ["A", "B"])
+        self.assertEqual((normalized.get("kpis") or {}).get("steps_count"), 4)
+
     @patch("app.ai.deepseek_questions._deepseek_chat_text")
     def test_v2_returns_structured_json_and_generates_markdown_fallback(self, mock_chat):
         mock_chat.return_value = json.dumps(

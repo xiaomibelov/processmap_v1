@@ -23,6 +23,7 @@ export default function ScenarioNav({
   scenarioStatusLabel,
   scenarioStatusIcon,
   scenarioDurationLabel,
+  scenarioMetrics = {},
 }) {
   const tiers = ["ALL", "P0", "P1", "P2"];
   return (
@@ -77,13 +78,16 @@ export default function ScenarioNav({
                 className="interviewPathsScenarioSectionToggle"
                 onClick={() => onToggleGroup?.(key)}
               >
-                <span>{toText(section?.title)}</span>
-                <span className="muted small">{isCollapsed ? "▶" : "▼"} {items.length}</span>
+                <span>{toText(section?.title)} <span className="muted">({items.length})</span></span>
+                <span className="muted small">{isCollapsed ? "▶" : "▼"}</span>
               </button>
 
               {!isCollapsed ? items.map((scenario) => {
                 const scenarioId = toText(scenario?.id);
                 const isActive = scenarioId === toText(selectedScenarioId);
+                const metrics = scenarioMetrics?.[scenarioId] || {};
+                const stepsCount = Number(metrics?.steps_count || toArray(scenario?.sequence).length || 0);
+                const timeLabel = toText(metrics?.total_time_sec_label || scenarioDurationLabel?.(scenario) || "—");
                 return (
                   <button
                     key={`scenario_rail_${scenarioId}`}
@@ -95,14 +99,20 @@ export default function ScenarioNav({
                     <div className="interviewPathsScenarioRailMain">
                       <span className="interviewScenarioName">
                         <span className={`interviewScenarioDot ${toText(scenarioStatusClass?.(scenario))}`} aria-hidden="true" />
-                        <span>{scenarioStatusIcon?.(scenario)} {scenarioTitle?.(scenario)}</span>
+                        <span title={toText(scenarioTitle?.(scenario))}>
+                          {scenarioStatusIcon?.(scenario)} {scenarioTitle?.(scenario)}
+                        </span>
                       </span>
-                      <span className={`badge ${toText(scenarioStatusClass?.(scenario))}`}>
-                        {scenarioStatusLabel?.(scenario)}
+                      <span
+                        className={`interviewScenarioStatusTiny ${toText(scenarioStatusClass?.(scenario))}`}
+                        title={toText(scenarioStatusLabel?.(scenario))}
+                        aria-label={toText(scenarioStatusLabel?.(scenario))}
+                      >
+                        {toText(scenarioStatusLabel?.(scenario)).toLowerCase() === "fail" ? "!" : "✓"}
                       </span>
                     </div>
-                    <div className="interviewPathsScenarioRailMeta muted small">
-                      steps {toArray(scenario?.sequence).length} · time {scenarioDurationLabel?.(scenario)}
+                    <div className="interviewPathsScenarioRailMeta muted small" data-testid={`paths-scenario-meta-${scenarioId}`}>
+                      steps {stepsCount} · time {timeLabel}
                     </div>
                   </button>
                 );

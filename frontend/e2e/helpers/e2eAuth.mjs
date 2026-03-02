@@ -62,8 +62,10 @@ export async function apiLogin(request, options = {}) {
 
 export async function setUiToken(page, token) {
   const accessToken = String(token || "").trim();
-  await page.addInitScript((payload) => {
-    window.localStorage.setItem(ACCESS_TOKEN_KEY, String(payload || ""));
-  }, accessToken);
+  await page.addInitScript(({ key, value }) => {
+    window.localStorage.setItem(String(key || ""), String(value || ""));
+  }, {
+    key: ACCESS_TOKEN_KEY,
+    value: accessToken,
+  });
 }
-

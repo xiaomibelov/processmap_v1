@@ -105,11 +105,22 @@ function normalizeNotes(value) {
 
 function okOrError(r) {
   if (!r.ok) return r;
-  if (r.data && typeof r.data === "object" && !Array.isArray(r.data) && r.data.error) {
+  if (r.data && typeof r.data === "object" && !Array.isArray(r.data) && (r.data.error || r.data.detail)) {
+    const errText = String(r.data.error || r.data.detail || "");
+    const marker = errText.toLowerCase();
+    const inferredStatus = marker.includes("not found")
+      ? 404
+      : marker.includes("unauthorized")
+        ? 401
+        : marker.includes("forbidden")
+          ? 403
+          : (marker.includes("required") || marker.includes("missing") || marker.includes("invalid"))
+            ? 422
+            : (r.status || 200);
     return {
       ok: false,
-      status: r.status || 200,
-      error: String(r.data.error),
+      status: inferredStatus,
+      error: errText,
       data: r.data,
       method: r.method,
       endpoint: r.endpoint,
@@ -259,14 +270,30 @@ async function request(path, opts = {}) {
     res = await fetchWithRawResponse(path, opts);
   } catch (e) {
     const aborted = !!opts?.signal?.aborted || String(e?.name || "").toLowerCase() === "aborterror";
+    const errName = String(e?.name || "Error");
+    const errMessage = String(e?.message || e || "network error");
+    if (typeof console !== "undefined") {
+      // eslint-disable-next-line no-console
+      console.error("[API_NETWORK_ERROR]", {
+        method,
+        endpoint,
+        url,
+        err_name: errName,
+        err_message: errMessage,
+      });
+    }
     return {
       ok: false,
       status: 0,
-      error: String(e?.message || e || "network error"),
+      error: errMessage,
+      error_name: errName,
+      error_message: errMessage,
       aborted,
       method,
       endpoint,
       url,
+      request_url: url,
+      request_method: method,
       response_text: "",
       data: null,
     };
@@ -693,10 +720,14 @@ export async function apiPostAnswers(sessionId, payload) {
   return r.ok ? { ok: true, status: r.status, result: r.data } : r;
 }
 
-export async function apiAiQuestions(sessionId, payload) {
+export async function apiAiQuestions(sessionId, payload, options = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
-  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/ai/questions`, { method: "POST", body: payload || {} }));
+  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/ai/questions`, {
+    method: "POST",
+    body: payload || {},
+    signal: options?.signal,
+  }));
   return r.ok ? { ok: true, status: r.status, result: r.data } : r;
 }
 
@@ -723,6 +754,11 @@ function isRetriablePathReportsStatus(statusRaw) {
   return status === 0 || status === 404 || status === 405 || status === 502 || status === 503 || status === 504;
 }
 
+function reportPayloadErrorText(payloadRaw) {
+  const payload = isPlainObject(payloadRaw) ? payloadRaw : {};
+  return String(payload?.error || payload?.detail || payload?.message || "").trim();
+}
+
 export async function apiCreatePathReportVersion(sessionId, pathId, payload) {
   const sid = String(sessionId || "").trim();
   const pid = String(pathId || "").trim();
@@ -742,8 +778,46 @@ export async function apiCreatePathReportVersion(sessionId, pathId, payload) {
   for (let i = 0; i < endpoints.length; i += 1) {
     const endpoint = endpoints[i];
     const r = okOrError(await request(endpoint, { method: "POST", body }));
-    if (r.ok) return { ok: true, status: r.status, report: r.data?.report || {}, result: r.data };
+    if (r.ok) {
+      const payloadError = reportPayloadErrorText(r?.data);
+      const report = isPlainObject(r?.data?.report) ? r.data.report : {};
+      const reportId = String(report?.id || "").trim();
+      if (payloadError) {
+        const marker = payloadError.toLowerCase();
+        const errorStatus = marker.includes("not found") || marker.includes("not_found") || marker.includes("404")
+          ? 404
+          : marker.includes("unauthorized")
+            ? 401
+            : marker.includes("forbidden")
+              ? 403
+              : (marker.includes("required") || marker.includes("invalid") || marker.includes("missing"))
+                ? 422
+                : Number(r?.status || 400);
+        return {
+          ok: false,
+          status: errorStatus,
+          error: payloadError,
+          data: r?.data || null,
+          method: r?.method,
+          endpoint: r?.endpoint || endpoint,
+          url: r?.url,
+        };
+      }
+      if (!reportId) {
+        return {
+          ok: false,
+          status: Number(r?.status || 502),
+          error: "Malformed report create response: missing report.id",
+          data: r?.data || null,
+          method: r?.method,
+          endpoint: r?.endpoint || endpoint,
+          url: r?.url,
+        };
+      }
+      return { ok: true, status: r.status, report, result: r.data };
+    }
     last = r;
+    if (Number(r?.status || 0) === 404 && isPlainObject(r?.data) && r.data.error) return r;
     if (!isRetriablePathReportsStatus(r?.status)) return r;
   }
   if (last && !isRetriablePathReportsStatus(last?.status)) return last;
@@ -778,10 +852,33 @@ export async function apiListPathReportVersions(sessionId, pathId, options = {})
   for (let i = 0; i < endpoints.length; i += 1) {
     const r = okOrError(await request(endpoints[i], { signal: options?.signal }));
     if (r.ok) {
+      const payloadError = reportPayloadErrorText(r?.data);
+      if (payloadError) {
+        const marker = payloadError.toLowerCase();
+        const errorStatus = marker.includes("not found") || marker.includes("not_found") || marker.includes("404")
+          ? 404
+          : marker.includes("unauthorized")
+            ? 401
+            : marker.includes("forbidden")
+              ? 403
+              : (marker.includes("required") || marker.includes("invalid") || marker.includes("missing"))
+                ? 422
+                : Number(r?.status || 400);
+        return {
+          ok: false,
+          status: errorStatus,
+          error: payloadError,
+          data: r?.data || null,
+          method: r?.method,
+          endpoint: r?.endpoint || endpoints[i],
+          url: r?.url,
+        };
+      }
       const items = (Array.isArray(r.data) ? r.data : []).filter((row) => !isUnavailableSyntheticReport(row));
       return { ok: true, status: r.status, items };
     }
     last = r;
+    if (Number(r?.status || 0) === 404 && isPlainObject(r?.data) && r.data.error) return r;
     if (!isRetriablePathReportsStatus(r?.status)) return r;
   }
   return last || { ok: false, status: 404, error: "not found" };
@@ -790,15 +887,26 @@ export async function apiListPathReportVersions(sessionId, pathId, options = {})
 export async function apiGetReportVersion(reportId, options = {}) {
   const rid = String(reportId || "").trim();
   if (!rid) return { ok: false, status: 0, error: "missing report_id" };
+  const sid = String(options?.sessionId || "").trim();
+  const pid = String(options?.pathId || "").trim();
   const isNotFoundPayload = (payload) => {
     if (!isPlainObject(payload)) return false;
     const marker = String(payload?.detail || payload?.error || "").trim().toLowerCase();
     return marker === "not found" || marker.includes("not found");
   };
-  const endpoints = [
+  const endpoints = [];
+  if (sid && pid) {
+    endpoints.push(
+      `/api/sessions/${encodeURIComponent(sid)}/paths/${encodeURIComponent(pid)}/reports/${encodeURIComponent(rid)}`,
+      `/api/sessions/${encodeURIComponent(sid)}/paths/${encodeURIComponent(pid)}/reports/${encodeURIComponent(rid)}/`,
+      `/api/sessions/${encodeURIComponent(sid)}/path/${encodeURIComponent(pid)}/reports/${encodeURIComponent(rid)}`,
+      `/api/sessions/${encodeURIComponent(sid)}/path/${encodeURIComponent(pid)}/reports/${encodeURIComponent(rid)}/`,
+    );
+  }
+  endpoints.push(
     `/api/reports/${encodeURIComponent(rid)}`,
     `/api/reports/${encodeURIComponent(rid)}/`,
-  ];
+  );
   let last = null;
   for (let i = 0; i < endpoints.length; i += 1) {
     const r = await request(endpoints[i], { signal: options?.signal });
@@ -833,6 +941,44 @@ export async function apiGetReportVersion(reportId, options = {}) {
     }
     last = r;
     if (!isRetriablePathReportsStatus(r?.status) && Number(r?.status || 0) !== 404) return r;
+  }
+  return last || { ok: false, status: 404, error: "not found" };
+}
+
+
+export async function apiDeleteReportVersion(reportId, options = {}) {
+  const rid = String(reportId || "").trim();
+  if (!rid) return { ok: false, status: 0, error: "missing report_id" };
+  const sid = String(options?.sessionId || "").trim();
+  const pid = String(options?.pathId || "").trim();
+
+  const endpoints = [];
+  if (sid && pid) {
+    endpoints.push(
+      `/api/sessions/${encodeURIComponent(sid)}/paths/${encodeURIComponent(pid)}/reports/${encodeURIComponent(rid)}`,
+      `/api/sessions/${encodeURIComponent(sid)}/path/${encodeURIComponent(pid)}/reports/${encodeURIComponent(rid)}`,
+    );
+  }
+  endpoints.push(
+    `/api/reports/${encodeURIComponent(rid)}`,
+  );
+
+  let last = null;
+  for (let i = 0; i < endpoints.length; i += 1) {
+    const r = okOrError(await request(endpoints[i], { method: "DELETE", signal: options?.signal }));
+    if (r.ok) return { ok: true, status: r.status, result: r.data || null };
+    last = r;
+    const status = Number(r?.status || 0);
+    if (status === 404) continue;
+    if (status === 405) {
+      return {
+        ...r,
+        ok: false,
+        unsupported_endpoint: true,
+        error: "Delete report endpoint is not available on current backend build",
+      };
+    }
+    if (!isRetriablePathReportsStatus(status)) return r;
   }
   return last || { ok: false, status: 404, error: "not found" };
 }

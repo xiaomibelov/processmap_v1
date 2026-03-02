@@ -40,6 +40,17 @@ async function openSession(page, projectId, sid) {
   await expect(page.locator(".interviewStage")).toBeVisible();
 }
 
+function parseTimeLabelToSec(metaRaw) {
+  const text = String(metaRaw || "");
+  const m = text.match(/time\s+([0-9]+):([0-9]{2})/i);
+  if (m) {
+    return Number(m[1]) * 60 + Number(m[2]);
+  }
+  const s = text.match(/time\s+([0-9]+)s/i);
+  if (s) return Number(s[1]);
+  return null;
+}
+
 test("Interview Paths mode renders 3-pane layout and supports jump actions", async ({ page, request }) => {
   const auth = await apiLogin(request, { apiBase: API_BASE });
   const sessionMeta = await readSessionMeta(request, auth.accessToken, SESSION_ID);
@@ -56,8 +67,50 @@ test("Interview Paths mode renders 3-pane layout and supports jump actions", asy
   await expect(page.getByTestId("interview-paths-center-route")).toBeVisible();
   await expect(page.getByTestId("interview-paths-right-details")).toBeVisible();
 
+  const altScenarioItems = page.locator("[data-testid^='paths-scenario-item-']").filter({ hasText: /P0 Alt/i });
+  const altCount = await altScenarioItems.count();
+  if (altCount >= 2) {
+    await altScenarioItems.nth(1).click();
+  } else if (altCount === 1) {
+    await altScenarioItems.first().click();
+  } else {
+    await page.locator("[data-testid^='paths-scenario-item-']").first().click();
+  }
+
+  const activeScenario = page.locator(".interviewPathsScenarioRailItem.isActive").first();
+  await expect(activeScenario).toBeVisible();
+  const activeMeta = await activeScenario.locator(".interviewPathsScenarioRailMeta").textContent();
+  const stepsMatch = String(activeMeta || "").match(/steps\s+(\d+)/i);
+  expect(stepsMatch).not.toBeNull();
+  const stepsFromScenario = Number(stepsMatch?.[1] || 0);
+  expect(Number.isFinite(stepsFromScenario)).toBeTruthy();
+  expect(stepsFromScenario).toBeGreaterThan(0);
+
+  const routeStack = page.getByTestId("interview-paths-route-stack");
+  await expect(routeStack).toHaveAttribute("data-total-rows", /\d+/);
+  const routeTotalRows = Number(await routeStack.getAttribute("data-total-rows"));
+  expect(routeTotalRows).toBe(stepsFromScenario);
+
+  const initialTimeSec = parseTimeLabelToSec(activeMeta);
   const firstRouteNode = page.locator("[data-testid^='interview-paths-node-']").first();
   await expect(firstRouteNode).toBeVisible();
+  const workInput = firstRouteNode.locator('input[placeholder="Work"]').first();
+  await expect(workInput).toBeVisible();
+  const currentWorkRaw = await workInput.inputValue();
+  const currentWork = Number(currentWorkRaw || 0);
+  const nextWork = Number.isFinite(currentWork) && currentWork > 0 ? currentWork + 1 : 1;
+  await workInput.fill(String(nextWork));
+  await workInput.press("Enter");
+
+  await expect
+    .poll(async () => {
+      const txt = await page.locator(".interviewPathsScenarioRailItem.isActive .interviewPathsScenarioRailMeta").first().textContent();
+      const nextTimeSec = parseTimeLabelToSec(txt || "");
+      if (initialTimeSec === null || nextTimeSec === null) return String(txt || "");
+      return nextTimeSec;
+    }, { timeout: 6000 })
+    .not.toBe(initialTimeSec === null ? String(activeMeta || "") : initialTimeSec);
+
   await firstRouteNode.click();
   await expect(page.locator(".interviewPathsDetailsCard")).toBeVisible();
 
@@ -69,4 +122,3 @@ test("Interview Paths mode renders 3-pane layout and supports jump actions", asy
   await page.getByTestId("interview-paths-jump-matrix").click();
   await expect(page.locator(".interviewTableWrap")).toBeVisible();
 });
-

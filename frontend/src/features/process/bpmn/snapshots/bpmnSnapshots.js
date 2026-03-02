@@ -60,6 +60,25 @@ function legacyScopeKey(projectId, sessionId) {
   return `${pid}:${sid}`;
 }
 
+function scopedAliasKeys(projectId, sessionId) {
+  const sid = asText(sessionId).trim();
+  if (!sid) return [];
+  const keys = new Set();
+  const pushScope = (pidRaw) => {
+    const pid = asText(pidRaw).trim();
+    keys.add(scopeKey(pid, sid));
+    keys.add(legacyScopeKey(pid, sid));
+  };
+  const { pid } = scopeParts(projectId, sid);
+  pushScope(pid);
+  if (pid !== "no_project") {
+    // Backward-compat: older builds stored snapshots without a real project id.
+    pushScope("no_project");
+    pushScope("");
+  }
+  return Array.from(keys).filter(Boolean);
+}
+
 export function buildSnapshotStorageKey({ projectId, sessionId } = {}) {
   const sid = asText(sessionId).trim();
   if (!sid) return "";
@@ -266,6 +285,76 @@ async function readRecordWithFallback(primaryKey, fallbackKey = "") {
   };
 }
 
+function mergeSnapshotItems(listsRaw = []) {
+  const byIdentity = new Map();
+  const lists = Array.isArray(listsRaw) ? listsRaw : [];
+  lists.forEach((itemsRaw) => {
+    const items = Array.isArray(itemsRaw) ? itemsRaw : [];
+    items.forEach((itemRaw) => {
+      const item = normalizeSnapshot(itemRaw);
+      const explicitId = asText(item?.id).trim();
+      const identity = explicitId || `${asText(item?.hash)}:${asNumber(item?.rev, 0)}:${asNumber(item?.len, 0)}:${asNumber(item?.ts, 0)}`;
+      if (!identity) return;
+      const prev = byIdentity.get(identity);
+      if (!prev) {
+        byIdentity.set(identity, item);
+        return;
+      }
+      const prevPinned = prev?.pinned === true ? 1 : 0;
+      const nextPinned = item?.pinned === true ? 1 : 0;
+      if (nextPinned !== prevPinned) {
+        if (nextPinned > prevPinned) byIdentity.set(identity, item);
+        return;
+      }
+      if (asNumber(item?.ts, 0) >= asNumber(prev?.ts, 0)) {
+        byIdentity.set(identity, item);
+      }
+    });
+  });
+  return normalizeRecord({ key: "", items: Array.from(byIdentity.values()) }).items;
+}
+
+async function readMergedRecord(projectId, sessionId) {
+  const sid = asText(sessionId).trim();
+  const key = scopeKey(projectId, sid);
+  const aliasKeys = scopedAliasKeys(projectId, sid);
+  const sourceRecords = [];
+  for (let i = 0; i < aliasKeys.length; i += 1) {
+    const aliasKey = aliasKeys[i];
+    const raw = await readRawRecord(aliasKey);
+    if (!raw || typeof raw !== "object") continue;
+    sourceRecords.push({
+      key: aliasKey,
+      record: normalizeRecord({ ...raw, key: aliasKey }),
+    });
+  }
+  if (!sourceRecords.length) {
+    return {
+      key,
+      aliasKeys,
+      sourceKeys: [],
+      record: normalizeRecord({ key, items: [] }),
+    };
+  }
+  if (sourceRecords.length === 1 && sourceRecords[0]?.key === key) {
+    return {
+      key,
+      aliasKeys,
+      sourceKeys: [key],
+      record: sourceRecords[0].record,
+    };
+  }
+  return {
+    key,
+    aliasKeys,
+    sourceKeys: sourceRecords.map((entry) => asText(entry?.key).trim()).filter(Boolean),
+    record: normalizeRecord({
+      key,
+      items: mergeSnapshotItems(sourceRecords.map((entry) => entry.record?.items || [])),
+    }),
+  };
+}
+
 async function writeRecord(record) {
   const normalized = normalizeRecord(record);
   normalized.updatedAt = Date.now();
@@ -297,12 +386,18 @@ function defaultCheckpointLabel(ts = Date.now()) {
 export async function listBpmnSnapshots({ projectId, sessionId }) {
   const sid = asText(sessionId).trim();
   if (!sid) return [];
-  const key = scopeKey(projectId, sid);
-  const legacyKey = legacyScopeKey(projectId, sid);
-  const { record, fromLegacy } = await readRecordWithFallback(key, legacyKey);
-  if (fromLegacy) {
+  const merged = await readMergedRecord(projectId, sid);
+  const key = merged.key;
+  const record = merged.record;
+  const sourceKeys = Array.isArray(merged?.sourceKeys) ? merged.sourceKeys : [];
+  if (sourceKeys.length && (sourceKeys.length > 1 || sourceKeys[0] !== key)) {
     await writeRecord({ key, updatedAt: Date.now(), items: record.items });
-    logSnapshotTrace("migrate_legacy", { sid, key, legacy_key: legacyKey, kept: record.items.length });
+    logSnapshotTrace("migrate_aliases", {
+      sid,
+      key,
+      source_keys: sourceKeys.join(","),
+      kept: record.items.length,
+    });
   }
   logSnapshotTrace("list", {
     sid,
@@ -388,7 +483,6 @@ export async function saveBpmnSnapshot(payload = {}) {
   }
 
   const key = scopeKey(payload?.projectId, sid);
-  const legacyKey = legacyScopeKey(payload?.projectId, sid);
   if (!key) {
     const response = {
       ok: false,
@@ -420,7 +514,7 @@ export async function saveBpmnSnapshot(payload = {}) {
 
   let readMeta;
   try {
-    readMeta = await readRecordWithFallback(key, legacyKey);
+    readMeta = await readMergedRecord(payload?.projectId, sid);
   } catch {
     const response = {
       ok: false,
@@ -583,7 +677,7 @@ export async function saveBpmnSnapshot(payload = {}) {
     len: xml.length,
     hash,
     kept: merged.length,
-    from_legacy: readMeta?.fromLegacy ? 1 : 0,
+    from_alias: Array.isArray(readMeta?.sourceKeys) && readMeta.sourceKeys.length > 1 ? 1 : 0,
     mode,
     force: force ? 1 : 0,
     backend,
@@ -626,13 +720,19 @@ export async function clearBpmnSnapshots({ projectId, sessionId }) {
   const sid = asText(sessionId).trim();
   if (!sid) return { ok: false };
   const key = scopeKey(projectId, sid);
-  const legacyKey = legacyScopeKey(projectId, sid);
-  const ok1 = await writeRecord({ key, updatedAt: Date.now(), items: [] });
-  const ok2 = legacyKey !== key
-    ? await writeRecord({ key: legacyKey, updatedAt: Date.now(), items: [] })
-    : true;
-  const ok = ok1 || ok2;
-  logSnapshotTrace("clear", { sid, key, legacy_key: legacyKey, ok: ok ? 1 : 0 });
+  const keys = scopedAliasKeys(projectId, sid);
+  const writes = [];
+  for (let i = 0; i < keys.length; i += 1) {
+    writes.push(writeRecord({ key: keys[i], updatedAt: Date.now(), items: [] }));
+  }
+  const results = await Promise.all(writes);
+  const ok = results.some(Boolean);
+  logSnapshotTrace("clear", {
+    sid,
+    key,
+    alias_keys: keys.join(","),
+    ok: ok ? 1 : 0,
+  });
   return { ok };
 }
 

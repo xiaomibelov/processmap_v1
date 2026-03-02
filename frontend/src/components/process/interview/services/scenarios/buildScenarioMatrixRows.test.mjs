@@ -121,3 +121,16 @@ test("loop group is represented as explicit group rows", () => {
   assert.ok(loopHeader);
   assert.equal(loopHeader.collapsed, true);
 });
+
+test("validateScenarioRowOrder ignores non-monotonic transitions between different branch scopes", () => {
+  const matrixRows = [
+    { kind: "step", node_id: "A", order_index: 122, group_stack: ["parallel", "branch_A"], node_type: "task" },
+    { kind: "step", node_id: "B", order_index: 43, group_stack: ["parallel", "branch_B"], node_type: "task" },
+    { kind: "step", node_id: "C", order_index: 44, group_stack: ["parallel", "branch_B"], node_type: "task" },
+  ];
+  const check = validateScenarioRowOrder(matrixRows);
+  assert.equal(check.ok, true);
+  assert.equal(check.nonMonotonic, false);
+  assert.equal(Number(check.skipped_scope_pairs || 0), 1);
+  assert.equal(Number(check.checked_pairs || 0), 1);
+});

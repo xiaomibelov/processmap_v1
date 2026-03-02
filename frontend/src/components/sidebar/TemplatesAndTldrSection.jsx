@@ -3,6 +3,7 @@ import SidebarSection from "./SidebarSection";
 export default function TemplatesAndTldrSection({
   open,
   onToggle,
+  contentOnly = false,
   selectedElementId,
   selectedTemplate,
   selectedElementSummary,
@@ -20,15 +21,8 @@ export default function TemplatesAndTldrSection({
     ? `Шаблон: ${selectedTemplate?.title || "—"} · TL;DR: ${selectedElementSummary ? "готово" : "нет"}`
     : "Выберите узел для шаблона";
 
-  return (
-    <SidebarSection
-      sectionId="templates"
-      title="Шаблоны и TL;DR"
-      summary={summary}
-      open={open}
-      onToggle={onToggle}
-      badge={selectedElementSummary ? "DONE" : ""}
-    >
+  const content = (
+    <>
       {!hasSelected ? (
         <div className="rounded-md border border-dashed border-border px-2 py-2 text-xs text-muted">
           Выберите узел на диаграмме, чтобы вставлять шаблоны и готовить TL;DR.
@@ -81,6 +75,21 @@ export default function TemplatesAndTldrSection({
           </div>
         </>
       )}
+    </>
+  );
+
+  if (contentOnly) return <div className="sidebarAccordionContent">{content}</div>;
+
+  return (
+    <SidebarSection
+      sectionId="templates"
+      title="Шаблоны и TL;DR"
+      summary={summary}
+      open={open}
+      onToggle={onToggle}
+      badge={selectedElementSummary ? "DONE" : ""}
+    >
+      {content}
     </SidebarSection>
   );
 }

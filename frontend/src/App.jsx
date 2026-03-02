@@ -23,6 +23,7 @@ import {
   apiCreateProject,
   apiListProjectSessions,
   apiCreateProjectSession,
+  apiPatchProject,
   apiListSessions,
   apiCreateSession,
   apiGetSession,
@@ -1169,7 +1170,16 @@ export default function App() {
       suppressProjectAutoselectRef.current = false;
     }
     const current = String(projectId || "").trim();
-    if (current) return;
+    if (current) {
+      const existsCurrent = list.some((p) => projectIdOf(p) === current);
+      if (existsCurrent) return;
+      // Current project was deleted or became unavailable; clear stale session context.
+      setProjectId("");
+      setSessions([]);
+      setSessionNavNotice(null);
+      requestedSessionIdRef.current = "";
+      resetDraft(ensureDraftShape(null));
+    }
     if (!list.length) return;
     const preferred = preferredFromUrl && list.some((p) => projectIdOf(p) === preferredFromUrl)
       ? preferredFromUrl
@@ -2852,6 +2862,7 @@ export default function App() {
     }
 
     suppressProjectAutoselectRef.current = true;
+    setProjects((prev) => ensureArray(prev).filter((item) => projectIdOf(item) !== pid));
     setProjectId("");
     setSessions([]);
     returnToSessionList("project_deleted");
@@ -3127,6 +3138,9 @@ export default function App() {
           logNav("project_change", { projectId: next || "-" });
           setProjectId(next);
           setSessionNavNotice(null);
+          requestedSessionIdRef.current = "";
+          setSessions([]);
+          resetDraft(ensureDraftShape(null));
         }}
         onDeleteProject={deleteCurrentProject}
         sessions={sessions}

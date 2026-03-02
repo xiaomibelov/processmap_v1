@@ -30,7 +30,12 @@ from .models import Node, Edge, Question, ReportVersion, Session, Project, Creat
 from .analytics import compute_analytics
 from .normalizer import load_seed_glossary, normalize_nodes
 from .resources import build_resources_report
-from .storage import get_storage, get_project_storage
+from .storage import (
+    get_storage,
+    get_project_storage,
+    push_storage_request_scope,
+    pop_storage_request_scope,
+)
 from .settings import load_llm_settings, llm_status, save_llm_settings, verify_llm_settings
 from .validators.coverage import build_questions
 from .validators.disposition import build_disposition_questions
@@ -732,6 +737,8 @@ def _set_latest_path_report_pointer(sess: Session, path_id: str, row_raw: Any) -
     interview = dict(getattr(sess, "interview", {}) or {})
     latest_raw = interview.get("path_reports")
     latest_by_path = dict(latest_raw) if isinstance(latest_raw, dict) else {}
+    payload_normalized = row.get("payload_normalized") or row.get("report_json") or {}
+    payload_raw = row.get("payload_raw")
     latest_by_path[pid] = {
         "id": str(row.get("id") or ""),
         "version": int(row.get("version") or 0),
@@ -740,16 +747,43 @@ def _set_latest_path_report_pointer(sess: Session, path_id: str, row_raw: Any) -
         "status": str(row.get("status") or "error"),
         "model": str(row.get("model") or "deepseek-chat"),
         "prompt_template_version": str(row.get("prompt_template_version") or "v2"),
-        "report_json": row.get("report_json") or {},
-        "raw_json": row.get("raw_json") or {},
+        "payload_normalized": payload_normalized,
+        "payload_raw": payload_raw if payload_raw is not None else {},
+        "report_json": payload_normalized,
+        "raw_json": row.get("raw_json") or (payload_raw if isinstance(payload_raw, dict) else {}),
         "report_markdown": str(row.get("report_markdown") or row.get("raw_text") or ""),
-        "recommendations": row.get("recommendations_json") or [],
-        "missing_data": row.get("missing_data_json") or [],
-        "risks": row.get("risks_json") or [],
+        "recommendations": row.get("recommendations_json") or payload_normalized.get("recommendations") or [],
+        "missing_data": row.get("missing_data_json") or payload_normalized.get("missing_data") or [],
+        "risks": row.get("risks_json") or payload_normalized.get("risks") or [],
         "warnings": row.get("warnings_json") or [],
     }
     interview["path_reports"] = latest_by_path
     sess.interview = interview
+
+
+def _clear_latest_path_report_pointer(sess: Session, path_id: str) -> None:
+    pid = str(path_id or "").strip()
+    if not pid:
+        return
+    interview = dict(getattr(sess, "interview", {}) or {})
+    latest_raw = interview.get("path_reports")
+    latest_by_path = dict(latest_raw) if isinstance(latest_raw, dict) else {}
+    if pid in latest_by_path:
+        latest_by_path.pop(pid, None)
+    interview["path_reports"] = latest_by_path
+    sess.interview = interview
+
+
+def _recompute_latest_path_report_pointer(sess: Session, path_id: str, rows_raw: Any) -> None:
+    pid = str(path_id or "").strip()
+    rows = list(rows_raw or [])
+    if not pid:
+        return
+    if not rows:
+        _clear_latest_path_report_pointer(sess, pid)
+        return
+    ordered = sorted(rows, key=lambda x: int((x or {}).get("version") or 0), reverse=True)
+    _set_latest_path_report_pointer(sess, pid, ordered[0])
 
 
 def _is_retryable_report_generation_error(exc: Exception) -> bool:
@@ -901,6 +935,67 @@ def _patch_report_version_row(
         return target_row
 
 
+def _delete_report_version_row(session_id: str, path_id: str, report_id: str) -> Optional[Dict[str, Any]]:
+    sid = str(session_id or "").strip()
+    pid = str(path_id or "").strip()
+    rid = str(report_id or "").strip()
+    if not sid or not pid or not rid:
+        return None
+
+    st = get_storage()
+    lock = _report_session_lock(sid)
+    with lock:
+        sess = st.load(sid)
+        if not sess:
+            return None
+        by_path = _get_report_versions_by_path(getattr(sess, "interview", {}))
+        rows = list(by_path.get(pid) or [])
+        target_idx = -1
+        deleted_row: Dict[str, Any] = {}
+        for idx, row in enumerate(rows):
+            if str((row or {}).get("id") or "").strip() != rid:
+                continue
+            target_idx = idx
+            deleted_row = dict(row or {})
+            break
+        if target_idx < 0:
+            return None
+
+        rows.pop(target_idx)
+        if rows:
+            by_path[pid] = rows
+        else:
+            by_path.pop(pid, None)
+        _set_report_versions_by_path(sess, by_path)
+        _recompute_latest_path_report_pointer(sess, pid, rows)
+        st.save(sess)
+        return deleted_row
+
+
+def _delete_report_version_global(report_id: str) -> Optional[Dict[str, Any]]:
+    rid = str(report_id or "").strip()
+    if not rid:
+        return None
+
+    st = get_storage()
+    for raw in st.list(limit=5000):
+        sid = str((raw or {}).get("id") or "").strip()
+        if not sid:
+            continue
+        sess = st.load(sid)
+        if not sess:
+            continue
+        by_path = _get_report_versions_by_path(getattr(sess, "interview", {}))
+        for pid, rows in by_path.items():
+            for row in (rows or []):
+                if str((row or {}).get("id") or "").strip() == rid:
+                    deleted = _delete_report_version_row(sid, pid, rid)
+                    if not deleted:
+                        return None
+                    return {"session_id": sid, "path_id": pid, "deleted": deleted}
+    return None
+
+
 def _run_path_report_generation_async(
     session_id: str,
     path_id: str,
@@ -978,15 +1073,19 @@ def _run_path_report_generation_async(
             report_result = {**report_result, "warnings": warnings}
 
         def _apply_success(row: Dict[str, Any]) -> None:
+            payload_normalized = report_result.get("payload_normalized") or report_result.get("report_json") or {}
+            payload_raw = report_result.get("payload_raw")
             row["status"] = "ok"
             row["model"] = str(report_result.get("model") or fallback_model)
             row["prompt_template_version"] = str(report_result.get("prompt_template_version") or prompt_ver)
             row["report_markdown"] = str(report_result.get("report_markdown") or report_result.get("raw_text") or "")
-            row["report_json"] = report_result.get("report_json") or {}
-            row["raw_json"] = report_result.get("raw_json") or {}
-            row["recommendations_json"] = report_result.get("recommendations") or []
-            row["missing_data_json"] = report_result.get("missing_data") or []
-            row["risks_json"] = report_result.get("risks") or []
+            row["payload_normalized"] = payload_normalized
+            row["payload_raw"] = payload_raw if payload_raw is not None else {}
+            row["report_json"] = payload_normalized
+            row["raw_json"] = report_result.get("raw_json") or (payload_raw if isinstance(payload_raw, dict) else {})
+            row["recommendations_json"] = payload_normalized.get("recommendations") or report_result.get("recommendations") or []
+            row["missing_data_json"] = payload_normalized.get("missing_data") or report_result.get("missing_data") or []
+            row["risks_json"] = payload_normalized.get("risks") or report_result.get("risks") or []
             row["warnings_json"] = report_result.get("warnings") or []
             row["error_message"] = None
             row["raw_text"] = str(report_result.get("raw_text") or "")
@@ -1014,14 +1113,8 @@ def _find_report_version_global(report_id: str) -> Optional[Dict[str, Any]]:
         return None
 
     st = get_storage()
-    for fp in _iter_session_files():
-        try:
-            raw = json.loads(fp.read_text(encoding="utf-8"))
-        except Exception:
-            continue
-        if not isinstance(raw, dict):
-            continue
-        sid = str(raw.get("id") or "").strip()
+    for raw in st.list(limit=5000):
+        sid = str((raw or {}).get("id") or "").strip()
         if not sid:
             continue
         sess = st.load(sid)
@@ -1552,28 +1645,37 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS", "HEAD"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With"],
 )
 
 
 @app.middleware("http")
 async def auth_guard_middleware(request: Request, call_next):
     path = str(request.url.path or "")
+    scope_tokens = None
     if request.method.upper() == "OPTIONS":
         return await call_next(request)
     if not path.startswith("/api"):
         return await call_next(request)
     if path in AUTH_PUBLIC_PATHS:
-        return await call_next(request)
+        scope_tokens = push_storage_request_scope("", False)
+        try:
+            return await call_next(request)
+        finally:
+            pop_storage_request_scope(scope_tokens)
 
     try:
         user = user_from_bearer_header(request.headers.get("authorization", ""))
         request.state.auth_user = user
+        scope_tokens = push_storage_request_scope(str(user.get("id") or ""), bool(user.get("is_admin", False)))
     except AuthError as e:
         return _auth_error_response(str(e))
 
-    return await call_next(request)
+    try:
+        return await call_next(request)
+    finally:
+        pop_storage_request_scope(scope_tokens)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -2398,18 +2500,37 @@ def patch_session(session_id: str, inp: UpdateSessionIn) -> Dict[str, Any]:
 
 @app.delete("/api/projects/{project_id}")
 def delete_project_api(project_id: str):
-    deleted_sessions = _delete_sessions_by_project(project_id)
-    deleted_projects = _delete_project_files(project_id)
-    if deleted_projects == 0:
-        return {"ok": False, "error": "project_not_found", "project_id": str(project_id), "deleted_sessions": deleted_sessions}
-    return {"ok": True, "project_id": str(project_id), "deleted_sessions": deleted_sessions}
+    pid = str(project_id or "").strip()
+    if not pid:
+        return {"ok": False, "error": "project_not_found", "project_id": str(project_id), "deleted_sessions": []}
+    ps = get_project_storage()
+    proj = ps.load(pid)
+    if proj is None:
+        return {"ok": False, "error": "project_not_found", "project_id": pid, "deleted_sessions": []}
+    st = get_storage()
+    related = st.list(project_id=pid, limit=500)
+    deleted_sessions: list[str] = []
+    for row in related:
+        sid = str((row or {}).get("id") or "").strip()
+        if not sid:
+            continue
+        if st.delete(sid):
+            deleted_sessions.append(sid)
+    deleted_project = ps.delete(pid)
+    if not deleted_project:
+        return {"ok": False, "error": "project_not_found", "project_id": pid, "deleted_sessions": deleted_sessions}
+    return {"ok": True, "project_id": pid, "deleted_sessions": deleted_sessions}
 
 @app.delete("/api/sessions/{session_id}")
 def delete_session_api(session_id: str):
-    deleted = _delete_session_files(session_id)
-    if deleted == 0:
+    sid = str(session_id or "").strip()
+    if not sid:
         return {"ok": False, "error": "session_not_found", "session_id": str(session_id)}
-    return {"ok": True, "session_id": str(session_id), "deleted_files": deleted}
+    st = get_storage()
+    deleted = st.delete(sid)
+    if not deleted:
+        return {"ok": False, "error": "session_not_found", "session_id": sid}
+    return {"ok": True, "session_id": sid, "deleted_files": 1}
 
 
 @app.put("/api/sessions/{session_id}")
@@ -2880,6 +3001,8 @@ def _report_version_summary(row_raw: Any) -> Dict[str, Any]:
 
 def _report_version_detail_payload(row_raw: Any) -> Dict[str, Any]:
     found = row_raw if isinstance(row_raw, dict) else {}
+    payload_normalized = found.get("payload_normalized") or found.get("report_json") or {}
+    payload_raw = found.get("payload_raw")
     return {
         "id": str(found.get("id") or ""),
         "session_id": str(found.get("session_id") or ""),
@@ -2891,12 +3014,14 @@ def _report_version_detail_payload(row_raw: Any) -> Dict[str, Any]:
         "model": str(found.get("model") or "deepseek-chat"),
         "prompt_template_version": str(found.get("prompt_template_version") or "v2"),
         "request_payload_json": found.get("request_payload_json") or {},
-        "report_json": found.get("report_json") or {},
-        "raw_json": found.get("raw_json") or {},
+        "payload_normalized": payload_normalized,
+        "payload_raw": payload_raw if payload_raw is not None else {},
+        "report_json": payload_normalized,
+        "raw_json": found.get("raw_json") or (payload_raw if isinstance(payload_raw, dict) else {}),
         "report_markdown": str(found.get("report_markdown") or found.get("raw_text") or ""),
-        "recommendations_json": found.get("recommendations_json") or [],
-        "missing_data_json": found.get("missing_data_json") or [],
-        "risks_json": found.get("risks_json") or [],
+        "recommendations_json": found.get("recommendations_json") or payload_normalized.get("recommendations") or [],
+        "missing_data_json": found.get("missing_data_json") or payload_normalized.get("missing_data") or [],
+        "risks_json": found.get("risks_json") or payload_normalized.get("risks") or [],
         "warnings_json": found.get("warnings_json") or [],
         "error_message": found.get("error_message"),
     }
@@ -2951,6 +3076,8 @@ def create_path_report_version(
             model=model_name,
             prompt_template_version=prompt_template_version,
             request_payload_json=request_payload_json,
+            payload_normalized={},
+            payload_raw={},
             report_json={},
             raw_json={},
             report_markdown="",
@@ -3056,6 +3183,34 @@ def get_path_report_version_detail(session_id: str, path_id: str, report_id: str
             continue
         return _report_version_detail_payload(row)
     return {"error": "not found"}
+
+
+@app.delete("/api/reports/{report_id}")
+@app.delete("/api/reports/{report_id}/")
+def delete_report_version(report_id: str) -> Response:
+    rid = str(report_id or "").strip()
+    if not rid:
+        raise HTTPException(status_code=404, detail="not found")
+    deleted = _delete_report_version_global(rid)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="not found")
+    return Response(status_code=204)
+
+
+@app.delete("/api/sessions/{session_id}/paths/{path_id}/reports/{report_id}")
+@app.delete("/api/sessions/{session_id}/paths/{path_id}/reports/{report_id}/")
+@app.delete("/api/sessions/{session_id}/path/{path_id}/reports/{report_id}")
+@app.delete("/api/sessions/{session_id}/path/{path_id}/reports/{report_id}/")
+def delete_path_report_version(session_id: str, path_id: str, report_id: str) -> Response:
+    sid = str(session_id or "").strip()
+    pid = str(path_id or "").strip()
+    rid = str(report_id or "").strip()
+    if not sid or not pid or not rid:
+        raise HTTPException(status_code=404, detail="not found")
+    deleted = _delete_report_version_row(sid, pid, rid)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="not found")
+    return Response(status_code=204)
 
 
 @app.post("/api/llm/session-title/questions")
