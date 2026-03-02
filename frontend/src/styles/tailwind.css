@@ -839,7 +839,7 @@
   }
 
   .sidebarBreadcrumbRow {
-    @apply mb-1 flex min-w-0 items-center gap-1 text-[10px] uppercase tracking-wide text-muted;
+    @apply mb-1 flex min-w-0 items-center gap-1 text-[10px] tracking-wide text-muted;
   }
 
   .sidebarBreadcrumbBtn {
@@ -871,16 +871,33 @@
   }
 
   .sidebarContextChips {
-    @apply flex min-w-0 flex-wrap items-center gap-1;
+    @apply flex min-w-0 flex-wrap items-center gap-1.5;
+  }
+
+  .sidebarContextChip {
+    @apply inline-flex h-5 min-w-0 items-center gap-1 rounded-md border border-border/70 bg-panel2/45 px-1.5 text-[10px] text-muted;
+    max-width: 100%;
+  }
+
+  .sidebarContextChipLabel {
+    @apply font-semibold uppercase tracking-wide text-muted;
+  }
+
+  .sidebarContextChipValue {
+    @apply min-w-0 truncate font-mono text-[10px] text-fg;
+  }
+
+  .sidebarContextChipCopy {
+    @apply inline-flex h-4 min-w-4 items-center justify-center rounded border border-border/70 bg-panel px-1 text-[9px] text-muted transition-colors hover:text-fg;
   }
 
   .sidebarRedesignStack {
-    @apply grid gap-2.5 px-2.5 py-2.5;
+    @apply grid gap-2 px-2.5 py-2.5;
   }
 
   .sidebarCardSurface {
-    @apply rounded-lg border border-border bg-panel/90 p-2.5;
-    box-shadow: inset 0 1px 0 hsl(var(--border) / 0.2);
+    @apply rounded-lg border border-border/70 bg-panel/90 p-2.5;
+    box-shadow: inset 0 1px 0 hsl(var(--border) / 0.15);
   }
 
   .sidebarSectionCaption {
@@ -898,6 +915,10 @@
   .selectedElementTitle {
     @apply min-w-0 flex-1 text-sm font-semibold leading-5 text-fg;
     overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   .selectedElementSubtitle {
@@ -910,8 +931,8 @@
   }
 
   .sidebarPrimaryActions {
-    @apply rounded-lg border border-border bg-panel/90 px-2.5 py-2;
-    box-shadow: inset 0 1px 0 hsl(var(--border) / 0.2);
+    @apply rounded-lg border border-border/70 bg-panel/90 px-2.5 py-2;
+    box-shadow: inset 0 1px 0 hsl(var(--border) / 0.15);
   }
 
   .sidebarPrimaryActionsRow {
@@ -922,12 +943,16 @@
     @apply min-w-0;
   }
 
+  .sidebarAccordionStack {
+    @apply grid gap-2;
+  }
+
   .sidebarAccordion {
-    @apply overflow-hidden rounded-md border border-border/75 bg-panel/65;
+    @apply overflow-hidden rounded-md border border-border/65 bg-panel/55;
   }
 
   .sidebarAccordionHead {
-    @apply flex w-full min-w-0 items-center justify-between gap-2 px-2.5 py-2 text-left transition-colors hover:bg-panel2/45;
+    @apply flex w-full min-w-0 items-center justify-between gap-2 px-2.5 py-2 text-left transition-colors hover:bg-panel2/35;
   }
 
   .sidebarAccordionTitleRow {
@@ -952,7 +977,7 @@
   }
 
   .sidebarAccordionBody {
-    @apply border-t border-border/65 px-2.5 py-2;
+    @apply border-t border-border/55 px-2.5 py-2;
   }
 
   .sidebarAccordionContent {
@@ -973,6 +998,52 @@
 
   .sidebarControlRowWrap {
     @apply flex-wrap;
+  }
+
+  .sidebarSelectWrap {
+    @apply relative min-w-0;
+  }
+
+  .sidebarSelectButton {
+    @apply flex h-8 w-full min-w-0 items-center justify-between gap-2 rounded-md border border-border bg-panel2/40 px-2 text-left text-[11px] text-fg transition-colors hover:bg-panel2/55 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .sidebarSelectButtonText {
+    @apply min-w-0;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    line-height: 1.2;
+  }
+
+  .sidebarSelectButtonChevron {
+    @apply text-[10px] text-muted;
+  }
+
+  .sidebarSelectPopover {
+    @apply absolute left-0 right-0 top-[calc(100%+4px)] z-30 max-h-56 overflow-auto rounded-md border border-border bg-panel p-1 shadow-panel;
+  }
+
+  .sidebarSelectOption {
+    @apply grid w-full min-w-0 gap-0.5 rounded-md px-2 py-1.5 text-left text-[11px] text-fg transition-colors hover:bg-panel2/60;
+  }
+
+  .sidebarSelectOption.isActive {
+    @apply bg-accent/20;
+  }
+
+  .sidebarSelectOptionLabel {
+    @apply min-w-0;
+    overflow-wrap: anywhere;
+    line-height: 1.2;
+  }
+
+  .sidebarSelectOptionKey {
+    @apply min-w-0 font-mono text-[10px] text-muted;
+    overflow-wrap: anywhere;
+    line-height: 1.2;
   }
 
   .sidebarButtonRow {
@@ -1198,10 +1269,20 @@
   }
 
   .sidebarBadge {
-    @apply inline-flex h-5 items-center rounded-full border border-border bg-panel2 px-2 text-[10px] font-semibold tracking-wide text-muted;
+    @apply inline-flex h-6 items-center rounded-md border border-border bg-panel2 px-2 text-[10px] font-semibold tracking-wide text-muted;
     border-color: hsl(var(--sidebar-accent, var(--accent2)) / 0.48);
     background: hsl(var(--sidebar-accent, var(--accent2)) / 0.16);
     color: hsl(var(--sidebar-accent, var(--text)) / 0.95);
+  }
+
+  .sidebarBadgeRobot--ready {
+    border-color: color-mix(in srgb, hsl(var(--success)) 52%, var(--c-border));
+    background: color-mix(in srgb, hsl(var(--success)) 14%, hsl(var(--panel2) / 0.72));
+  }
+
+  .sidebarBadgeRobot--incomplete {
+    border-color: color-mix(in srgb, hsl(var(--warning)) 56%, var(--c-border));
+    background: color-mix(in srgb, hsl(var(--warning)) 14%, hsl(var(--panel2) / 0.72));
   }
 
   .sidebarBadge--selected {

@@ -14,7 +14,7 @@ export default function SidebarPrimaryActions({
           AI
         </button>
         <button type="button" className="secondaryBtn h-8 px-3 text-[11px]" onClick={() => onOpenNotes?.()}>
-          Заметка
+          Notes
         </button>
       </div>
     </div>

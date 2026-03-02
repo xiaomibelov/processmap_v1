@@ -15,10 +15,12 @@ export default function SidebarShell({
   collapsed,
   onProjectBreadcrumbClick,
   onSessionBreadcrumbClick,
+  onProcessBreadcrumbClick,
   onRenameProject,
   onDeleteProject,
   onRenameSession,
   onDeleteSession,
+  tierLabel,
   onToggleCollapse,
   onCloseSidebar,
   sections,
@@ -100,10 +102,12 @@ export default function SidebarShell({
         actorsBadgeCount={actorsBadgeCount}
         onProjectBreadcrumbClick={onProjectBreadcrumbClick}
         onSessionBreadcrumbClick={onSessionBreadcrumbClick}
+        onProcessBreadcrumbClick={onProcessBreadcrumbClick}
         onRenameProject={onRenameProject}
         onDeleteProject={onDeleteProject}
         onRenameSession={onRenameSession}
         onDeleteSession={onDeleteSession}
+        tierLabel={tierLabel}
         onToggleCollapse={onToggleCollapse}
         onCloseSidebar={onCloseSidebar}
       />

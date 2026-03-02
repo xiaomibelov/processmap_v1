@@ -23,19 +23,31 @@ export default function SelectedElementCard({
   selectedElementLaneName,
   noteCount,
   aiCount,
+  incomingCount = 0,
+  outgoingCount = 0,
+  robotMetaStatus = "none",
+  robotMetaMissing = [],
   open,
   onToggle,
 }) {
   const hasSelected = !!selectedElementId;
   const typeLabel = normalizeBpmnTypeLabel(selectedElementType);
   const secondaryLine = normalizeSecondaryLine(selectedElementLaneName, typeLabel);
+  const robotStatusLabel = String(robotMetaStatus || "none").toLowerCase();
+  const missing = Array.isArray(robotMetaMissing) ? robotMetaMissing.filter(Boolean) : [];
+  const shortId = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    if (raw.length <= 20) return raw;
+    return `${raw.slice(0, 12)}…${raw.slice(-6)}`;
+  };
 
   return (
     <section className="sidebarCardSurface selectedElementCard">
       <div className="mb-1 flex items-center justify-between gap-2">
         <div className="sidebarSectionCaption">Выбранный элемент</div>
         <button type="button" className="secondaryBtn h-7 px-2 text-[11px]" onClick={onToggle}>
-          {open ? "Свернуть" : "Развернуть"}
+          {open ? "Collapse details" : "Expand details"}
         </button>
       </div>
 
@@ -76,12 +88,26 @@ export default function SelectedElementCard({
               {secondaryLine}
             </div>
           ) : null}
+          <div className="selectedElementMeta mt-2" role="list" aria-label="Краткая мета информация">
+            <span className="sidebarBadge" role="listitem" title={selectedElementId}>
+              ID: {shortId(selectedElementId)}
+            </span>
+            <span className="sidebarBadge" role="listitem">in {Number(incomingCount || 0)}</span>
+            <span className="sidebarBadge" role="listitem">out {Number(outgoingCount || 0)}</span>
+            <span className={`sidebarBadge sidebarBadgeRobot sidebarBadgeRobot--${robotStatusLabel}`} role="listitem" title={missing.length ? `missing: ${missing.join(", ")}` : "robot status"}>
+              robot {robotStatusLabel}
+            </span>
+          </div>
           {open ? (
             <div className="selectedElementMeta mt-2" role="list" aria-label="Свойства элемента">
               {typeLabel ? <span className="sidebarBadge" role="listitem">Type: {typeLabel}</span> : null}
-              <span className="sidebarBadge" role="listitem" title={selectedElementId}>ID: {selectedElementId.slice(0, 22)}{selectedElementId.length > 22 ? "…" : ""}</span>
               <span className="sidebarBadge" role="listitem">AI {Number(aiCount || 0)}</span>
               <span className="sidebarBadge" role="listitem">Notes {Number(noteCount || 0)}</span>
+              {missing.length ? (
+                <span className="sidebarBadge" role="listitem" title={missing.join(", ")}>
+                  missing: {missing.join(", ")}
+                </span>
+              ) : null}
             </div>
           ) : null}
         </>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   canonicalizeRobotMeta,
   getRobotMetaStatus,
@@ -83,6 +83,8 @@ export function NodePathSettings({
   disabled = false,
 }) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [sequenceOpen, setSequenceOpen] = useState(false);
+  const sequenceRef = useRef(null);
   const normalizedNodePathSet = new Set(
     asArray(nodePathPaths).map((item) => normalizeNodePathTag(item)).filter(Boolean),
   );
@@ -93,6 +95,32 @@ export function NodePathSettings({
   const selectedSequenceLabel = NODE_PATH_SEQUENCE_PRESETS.find((preset) => preset.key === sequenceSelectValue)?.label
     || (sequenceSelectValue ? `Пользовательская: ${sequenceSelectValue}` : "Не выбрано");
   const normalizedFlowPathTier = String(flowPathTier || "").trim().toUpperCase();
+  const sequenceOptions = [
+    { key: "", label: "Не выбрано" },
+    ...NODE_PATH_SEQUENCE_PRESETS,
+    ...(normalizedNodePathSequence && !hasPresetSequence
+      ? [{ key: normalizedNodePathSequence, label: `Пользовательская: ${normalizedNodePathSequence}` }]
+      : []),
+  ];
+
+  useEffect(() => {
+    if (!sequenceOpen) return undefined;
+    function onPointerDown(event) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (sequenceRef.current?.contains(target)) return;
+      setSequenceOpen(false);
+    }
+    function onKeyDown(event) {
+      if (event.key === "Escape") setSequenceOpen(false);
+    }
+    window.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [sequenceOpen]);
 
   return (
     <div className="sidebarControlStack">
@@ -123,21 +151,44 @@ export function NodePathSettings({
             })}
           </div>
           <div className="sidebarFieldLabel">Последовательность</div>
-          <select
-            className="input h-8 min-h-0 w-full min-w-0"
-            value={sequenceSelectValue}
-            onChange={(event) => onNodePathSequenceChange?.(event.target.value)}
-            disabled={!!disabled || !!nodePathBusy}
-            title={selectedSequenceLabel}
-          >
-            <option value="">Не выбрано</option>
-            {NODE_PATH_SEQUENCE_PRESETS.map((preset) => (
-              <option key={preset.key} value={preset.key}>{preset.label}</option>
-            ))}
-            {normalizedNodePathSequence && !hasPresetSequence ? (
-              <option value={normalizedNodePathSequence}>Пользовательская: {normalizedNodePathSequence}</option>
+          <div className="sidebarSelectWrap" ref={sequenceRef}>
+            <button
+              type="button"
+              className="sidebarSelectButton"
+              onClick={() => setSequenceOpen((prev) => !prev)}
+              disabled={!!disabled || !!nodePathBusy}
+              title={selectedSequenceLabel}
+              aria-expanded={sequenceOpen ? "true" : "false"}
+              data-testid="nodepath-sequence-select"
+            >
+              <span className="sidebarSelectButtonText">{selectedSequenceLabel}</span>
+              <span className="sidebarSelectButtonChevron" aria-hidden="true">{sequenceOpen ? "▴" : "▾"}</span>
+            </button>
+            {sequenceOpen ? (
+              <div className="sidebarSelectPopover" role="listbox" aria-label="Последовательность">
+                {sequenceOptions.map((option) => {
+                  const isActive = option.key === sequenceSelectValue;
+                  return (
+                    <button
+                      key={`node_path_seq_${option.key || "empty"}`}
+                      type="button"
+                      className={`sidebarSelectOption ${isActive ? "isActive" : ""}`}
+                      onClick={() => {
+                        onNodePathSequenceChange?.(option.key);
+                        setSequenceOpen(false);
+                      }}
+                      title={option.label}
+                      role="option"
+                      aria-selected={isActive ? "true" : "false"}
+                    >
+                      <span className="sidebarSelectOptionLabel">{option.label}</span>
+                      {option.key ? <span className="sidebarSelectOptionKey">{option.key}</span> : null}
+                    </button>
+                  );
+                })}
+              </div>
             ) : null}
-          </select>
+          </div>
           <div className="sidebarButtonRow mt-1">
             <button
               type="button"

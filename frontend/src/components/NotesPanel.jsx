@@ -20,18 +20,22 @@ import {
 import {
   canonicalRobotMetaString,
   createDefaultRobotMetaV1,
+  getRobotMetaStatus,
   normalizeRobotMetaMap,
   normalizeRobotMetaV1,
+  robotMetaMissingFields,
 } from "../features/process/robotmeta/robotMeta";
 import SidebarShell from "./sidebar/SidebarShell";
 import ActorsSection from "./sidebar/ActorsSection";
-import AIQuestionsSection from "./sidebar/AIQuestionsSection";
 import TemplatesAndTldrSection from "./sidebar/TemplatesAndTldrSection";
 import SidebarPrimaryActions from "./sidebar/SidebarPrimaryActions";
 import SelectedElementCard from "./sidebar/SelectedElementCard";
-import SidebarAccordionSection from "./sidebar/SidebarAccordionSection";
-import ElementNotesAccordionContent from "./sidebar/ElementNotesAccordionContent";
-import { NodePathSettings, RobotMetaSettings, StepTimeSettings } from "./sidebar/ElementSettingsControls";
+import SidebarAccordion from "./sidebar/SidebarAccordion";
+import PathsSection from "./sidebar/PathsSection";
+import TimeSection from "./sidebar/TimeSection";
+import RobotMetaSection from "./sidebar/RobotMetaSection";
+import AiSection from "./sidebar/AiSection";
+import NotesSection from "./sidebar/NotesSection";
 import { buildNodePathUpdatesFromFlowMeta } from "./sidebar/nodePathImport";
 
 function asArray(x) {
@@ -567,7 +571,7 @@ const NOTES_BATCH_RESULT_PREFIX = "fpc:batch_ops_result:";
 const NOTES_COVERAGE_OPEN_EVENT = "fpc:coverage_open";
 const SIDEBAR_SECTIONS_STATE_KEY = "fpc_left_sidebar_sections";
 const SIDEBAR_LAST_OPEN_KEY = "ui.sidebar.last_open.v2";
-const SIDEBAR_ACCORDION_KEYS = ["paths", "time", "robotmeta", "ai", "notes", "templates", "actors"];
+const SIDEBAR_ACCORDION_KEYS = ["paths", "time", "robotmeta", "ai", "notes", "advanced"];
 
 const DEFAULT_SECTIONS_STATE = {
   paths: false,
@@ -575,8 +579,7 @@ const DEFAULT_SECTIONS_STATE = {
   robotmeta: false,
   ai: false,
   notes: false,
-  actors: false,
-  templates: false,
+  advanced: false,
 };
 
 function isHardReloadNavigation() {
@@ -783,8 +786,7 @@ export default function NotesPanel({
   const robotMetaSectionRef = useRef(null);
   const aiSectionRef = useRef(null);
   const notesSectionRef = useRef(null);
-  const actorsSectionRef = useRef(null);
-  const templatesSectionRef = useRef(null);
+  const advancedSectionRef = useRef(null);
   const sidebarHiddenRef = useRef(Boolean(sidebarHidden));
   const nodeEditorRef = useRef(null);
 
@@ -902,6 +904,33 @@ export default function NotesPanel({
     [bpmnRobotMetaByElementId, selectedElementId],
   );
   const selectedRobotMetaEditable = !!selectedElementId && !isSelectedSequenceFlow && !!selectedElementNodeKind;
+  const selectedRobotMetaStatus = useMemo(
+    () => (selectedRobotMetaEditable ? getRobotMetaStatus(selectedRobotMetaEntry) : "none"),
+    [selectedRobotMetaEditable, selectedRobotMetaEntry],
+  );
+  const selectedRobotMetaMissing = useMemo(
+    () => (selectedRobotMetaEditable ? robotMetaMissingFields(selectedRobotMetaEntry) : []),
+    [selectedRobotMetaEditable, selectedRobotMetaEntry],
+  );
+  const selectedElementTierLabel = useMemo(() => {
+    const tags = asArray(selectedNodePathEntry?.paths).map((item) => normalizeNodePathTag(item)).filter(Boolean);
+    if (!tags.length) return "";
+    return tags.join("/");
+  }, [selectedNodePathEntry]);
+  const selectedElementFlowCounts = useMemo(() => {
+    if (!selectedElementId) return { incoming: 0, outgoing: 0 };
+    const endpoints = nodePathGraphContext?.flowEndpointsById && typeof nodePathGraphContext.flowEndpointsById === "object"
+      ? nodePathGraphContext.flowEndpointsById
+      : {};
+    let incoming = 0;
+    let outgoing = 0;
+    Object.keys(endpoints).forEach((flowId) => {
+      const edge = endpoints[flowId] && typeof endpoints[flowId] === "object" ? endpoints[flowId] : {};
+      if (str(edge.sourceId) === selectedElementId) outgoing += 1;
+      if (str(edge.targetId) === selectedElementId) incoming += 1;
+    });
+    return { incoming, outgoing };
+  }, [nodePathGraphContext, selectedElementId]);
   const selectedElementSelectionIds = useMemo(() => {
     const ids = asArray(selectedElement?.selectedIds).map((id) => str(id)).filter(Boolean);
     if (selectedElementId && !ids.includes(selectedElementId)) ids.unshift(selectedElementId);
@@ -1144,8 +1173,7 @@ export default function NotesPanel({
     if (key === "robotmeta") return robotMetaSectionRef;
     if (key === "ai") return aiSectionRef;
     if (key === "notes") return notesSectionRef;
-    if (key === "actors") return actorsSectionRef;
-    if (key === "templates") return templatesSectionRef;
+    if (key === "advanced") return advancedSectionRef;
     return { current: null };
   }
 
@@ -1169,11 +1197,12 @@ export default function NotesPanel({
       selected: "paths",
       ai: "ai",
       notes: "notes",
-      actors: "actors",
-      templates: "templates",
+      actors: "advanced",
+      templates: "advanced",
       robotmeta: "robotmeta",
       time: "time",
       paths: "paths",
+      advanced: "advanced",
     };
     const key = keyMap[rawKey] || "";
     if (!key) return;
@@ -1794,18 +1823,11 @@ export default function NotesPanel({
       muted: !isElementMode,
     },
     {
-      id: "actors",
-      title: "Акторы",
-      count: roles.length,
-      active: !!sectionsOpen.actors || String(activeSectionId || "") === "actors",
+      id: "advanced",
+      title: "Advanced",
+      count: Number(roles.length || 0) + (selectedElementSummary ? 1 : 0),
+      active: !!sectionsOpen.advanced || String(activeSectionId || "") === "advanced",
       muted: false,
-    },
-    {
-      id: "templates",
-      title: "Шаблоны/TL;DR",
-      count: selectedElementSummary ? 1 : 0,
-      active: !!sectionsOpen.templates || String(activeSectionId || "") === "templates",
-      muted: !isElementMode,
     },
   ];
 
@@ -1823,10 +1845,12 @@ export default function NotesPanel({
         actorsBadgeCount={roles.length}
         onProjectBreadcrumbClick={onProjectBreadcrumbClick}
         onSessionBreadcrumbClick={onSessionBreadcrumbClick}
+        onProcessBreadcrumbClick={onGoToDiagram}
         onRenameProject={onRenameProject}
         onDeleteProject={onDeleteProject}
         onRenameSession={onRenameSession}
         onDeleteSession={onDeleteSession}
+        tierLabel={selectedElementTierLabel}
         collapsed={!!sidebarCompact}
         onToggleCollapse={() => onToggleSidebarCompact?.(!sidebarCompact, "sidebar_header")}
         onCloseSidebar={() => onToggleSidebarHidden?.()}
@@ -1837,18 +1861,20 @@ export default function NotesPanel({
         bottomBar={null}
       >
         <div id="element-notes-section" ref={elementNotesSectionRef} className="sidebarRedesignStack">
-          <div>
-            <SelectedElementCard
-              selectedElementId={isElementMode ? selectedElementId : ""}
-              selectedElementName={isElementMode ? selectedElementName : ""}
-              selectedElementType={isElementMode ? selectedElementType : ""}
-              selectedElementLaneName={isElementMode ? selectedElementLaneName : ""}
-              noteCount={isElementMode ? selectedElementNotes.length : 0}
-              aiCount={isElementMode ? selectedElementAiQuestions.length : 0}
-              open={selectedCardOpen}
-              onToggle={() => setSelectedCardOpen((prev) => !prev)}
-            />
-          </div>
+          <SelectedElementCard
+            selectedElementId={isElementMode ? selectedElementId : ""}
+            selectedElementName={isElementMode ? selectedElementName : ""}
+            selectedElementType={isElementMode ? selectedElementType : ""}
+            selectedElementLaneName={isElementMode ? selectedElementLaneName : ""}
+            noteCount={isElementMode ? selectedElementNotes.length : 0}
+            aiCount={isElementMode ? selectedElementAiQuestions.length : 0}
+            incomingCount={isElementMode ? Number(selectedElementFlowCounts.incoming || 0) : 0}
+            outgoingCount={isElementMode ? Number(selectedElementFlowCounts.outgoing || 0) : 0}
+            robotMetaStatus={selectedRobotMetaStatus}
+            robotMetaMissing={selectedRobotMetaMissing}
+            open={selectedCardOpen}
+            onToggle={() => setSelectedCardOpen((prev) => !prev)}
+          />
 
           <SidebarPrimaryActions
             onOpenDiagram={onGoToDiagram}
@@ -1858,16 +1884,16 @@ export default function NotesPanel({
 
           <section className="sidebarCardSurface sidebarSettingsSurface">
             <div className="sidebarSectionCaption">Настройки элемента</div>
-
-            <div ref={pathsSectionRef} className="mt-2">
-              <SidebarAccordionSection
+            <div className="sidebarAccordionStack mt-2">
+              <div ref={pathsSectionRef}>
+                <SidebarAccordion
                 sectionKey="paths"
                 title="Пути и последовательность"
                 subtitle={isElementMode ? selectedElementId : "Выберите узел"}
                 open={!!sectionsOpen.paths}
                 onToggle={toggleSection}
               >
-                <NodePathSettings
+                <PathsSection
                   selectedElementId={isElementMode ? selectedElementId : ""}
                   nodePathEditable={isElementMode ? isSelectedPathNode : false}
                   nodePathPaths={isElementMode ? nodePathDraftPaths : []}
@@ -1893,17 +1919,17 @@ export default function NotesPanel({
                   flowHappyEditable={isElementMode ? isSelectedSequenceFlow : false}
                   disabled={disabled}
                 />
-              </SidebarAccordionSection>
-            </div>
+              </SidebarAccordion>
+              </div>
 
-            <div ref={timeSectionRef} className="mt-2">
-              <SidebarAccordionSection
+              <div ref={timeSectionRef}>
+                <SidebarAccordion
                 sectionKey="time"
                 title="Время шага"
                 open={!!sectionsOpen.time}
                 onToggle={toggleSection}
               >
-                <StepTimeSettings
+                <TimeSection
                   selectedElementId={isElementMode ? selectedElementId : ""}
                   stepTimeInput={isElementMode ? stepTimeInput : ""}
                   onStepTimeInputChange={setStepTimeInput}
@@ -1915,18 +1941,18 @@ export default function NotesPanel({
                   onStepTimeUnitChange={onStepTimeUnitChange}
                   disabled={disabled}
                 />
-              </SidebarAccordionSection>
-            </div>
+              </SidebarAccordion>
+              </div>
 
-            <div ref={robotMetaSectionRef} className="mt-2">
-              <SidebarAccordionSection
+              <div ref={robotMetaSectionRef}>
+                <SidebarAccordion
                 sectionKey="robotmeta"
                 title="Robot Meta"
                 badge={selectedRobotMetaEditable ? "v1" : ""}
                 open={!!sectionsOpen.robotmeta}
                 onToggle={toggleSection}
               >
-                <RobotMetaSettings
+                <RobotMetaSection
                   selectedElementId={isElementMode ? selectedElementId : ""}
                   robotMetaEditable={isElementMode ? selectedRobotMetaEditable : false}
                   robotMetaDraft={isElementMode ? robotMetaDraft : createDefaultRobotMetaV1()}
@@ -1938,18 +1964,18 @@ export default function NotesPanel({
                   onResetRobotMeta={resetSelectedRobotMeta}
                   disabled={disabled}
                 />
-              </SidebarAccordionSection>
-            </div>
+              </SidebarAccordion>
+              </div>
 
-            <div ref={notesSectionRef} className="mt-2">
-              <SidebarAccordionSection
+              <div ref={notesSectionRef}>
+                <SidebarAccordion
                 sectionKey="notes"
                 title="Notes"
                 badge={isElementMode ? String(selectedElementNotes.length) : ""}
                 open={!!sectionsOpen.notes}
                 onToggle={toggleSection}
               >
-                <ElementNotesAccordionContent
+                <NotesSection
                   selectedElementId={isElementMode ? selectedElementId : ""}
                   selectedElementName={isElementMode ? selectedElementName : ""}
                   selectedElementNotes={isElementMode ? selectedElementNotes : []}
@@ -1964,21 +1990,18 @@ export default function NotesPanel({
                   }}
                   disabled={disabled}
                 />
-              </SidebarAccordionSection>
-            </div>
+              </SidebarAccordion>
+              </div>
 
-            <div ref={aiSectionRef} className="mt-2">
-              <SidebarAccordionSection
+              <div ref={aiSectionRef}>
+                <SidebarAccordion
                 sectionKey="ai"
-                title="AI"
+                title="AI Questions"
                 badge={isElementMode ? String(selectedElementAiQuestions.length) : ""}
                 open={!!sectionsOpen.ai}
                 onToggle={toggleSection}
               >
-                <AIQuestionsSection
-                  contentOnly
-                  open={true}
-                  onToggle={undefined}
+                <AiSection
                   selectedElementId={isElementMode ? selectedElementId : ""}
                   selectedElementAiQuestions={isElementMode ? selectedElementAiQuestions : []}
                   onGenerateAiQuestions={requestAiQuestionsGenerate}
@@ -1997,57 +2020,58 @@ export default function NotesPanel({
                   onSaveElementAiQuestion={saveElementAiQuestion}
                   disabled={!isElementMode || disabled}
                 />
-              </SidebarAccordionSection>
-            </div>
+              </SidebarAccordion>
+              </div>
 
-            <div ref={templatesSectionRef} className="mt-2">
-              <SidebarAccordionSection
-                sectionKey="templates"
-                title="Templates / TL;DR"
-                open={!!sectionsOpen.templates}
-                onToggle={toggleSection}
-              >
-                <TemplatesAndTldrSection
-                  contentOnly
-                  open={true}
-                  onToggle={undefined}
-                  selectedElementId={isElementMode ? selectedElementId : ""}
-                  selectedTemplate={selectedTemplate}
-                  selectedElementSummary={isElementMode ? selectedElementSummary : ""}
-                  disabled={!isElementMode || disabled}
-                  elementBusy={isElementMode ? elementBusy : false}
-                  tldrBusy={isElementMode ? tldrBusy : false}
-                  onInsertTemplate={insertTemplateNote}
-                  onGenerateTldr={generateTldrSummary}
-                  templateErr={isElementMode ? templateErr : ""}
-                  tldrErr={isElementMode ? tldrErr : ""}
-                  tldrStatus={isElementMode ? tldrStatus : ""}
-                />
-              </SidebarAccordionSection>
-            </div>
-
-            <div ref={actorsSectionRef} className="mt-2">
-              <SidebarAccordionSection
-                sectionKey="actors"
-                title="Actors"
-                badge={String(roles.length)}
-                open={!!sectionsOpen.actors}
-                onToggle={toggleSection}
-              >
-                <ActorsSection
-                  contentOnly
-                  open={true}
-                  onToggle={undefined}
-                  roles={roles}
-                  laneCounts={roleElementCounts}
-                  sourceLabel={rolesSourceLabel}
-                  startRoleValue={startRoleValue}
-                  onStartRoleChange={saveStartRole}
-                  startRoleBusy={startRoleBusy}
-                  startRoleErr={startRoleErr}
-                  disabled={disabled}
-                />
-              </SidebarAccordionSection>
+              <div ref={advancedSectionRef}>
+                <SidebarAccordion
+                  sectionKey="advanced"
+                  title="Advanced / Debug"
+                  badge={String(roles.length || 0)}
+                  open={!!sectionsOpen.advanced}
+                  onToggle={toggleSection}
+                >
+                  <details className="sidebarAdvanced" data-testid="sidebar-advanced-templates">
+                    <summary className="sidebarAdvancedSummary">Templates / TL;DR</summary>
+                    <div className="mt-2">
+                      <TemplatesAndTldrSection
+                        contentOnly
+                        open={true}
+                        onToggle={undefined}
+                        selectedElementId={isElementMode ? selectedElementId : ""}
+                        selectedTemplate={selectedTemplate}
+                        selectedElementSummary={isElementMode ? selectedElementSummary : ""}
+                        disabled={!isElementMode || disabled}
+                        elementBusy={isElementMode ? elementBusy : false}
+                        tldrBusy={isElementMode ? tldrBusy : false}
+                        onInsertTemplate={insertTemplateNote}
+                        onGenerateTldr={generateTldrSummary}
+                        templateErr={isElementMode ? templateErr : ""}
+                        tldrErr={isElementMode ? tldrErr : ""}
+                        tldrStatus={isElementMode ? tldrStatus : ""}
+                      />
+                    </div>
+                  </details>
+                  <details className="sidebarAdvanced mt-2" data-testid="sidebar-advanced-actors">
+                    <summary className="sidebarAdvancedSummary">Actors</summary>
+                    <div className="mt-2">
+                      <ActorsSection
+                        contentOnly
+                        open={true}
+                        onToggle={undefined}
+                        roles={roles}
+                        laneCounts={roleElementCounts}
+                        sourceLabel={rolesSourceLabel}
+                        startRoleValue={startRoleValue}
+                        onStartRoleChange={saveStartRole}
+                        startRoleBusy={startRoleBusy}
+                        startRoleErr={startRoleErr}
+                        disabled={disabled}
+                      />
+                    </div>
+                  </details>
+                </SidebarAccordion>
+              </div>
             </div>
           </section>
         </div>
