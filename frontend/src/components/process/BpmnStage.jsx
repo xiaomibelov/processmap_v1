@@ -4,6 +4,7 @@ import { traceProcess } from "../../features/process/lib/processDebugTrace";
 import { createBpmnWiring } from "../../features/process/bpmn/stage/wiring/bpmnWiring";
 import * as decorManager from "../../features/process/bpmn/stage/decor/decorManager";
 import * as viewportRecovery from "../../features/process/bpmn/stage/viewport/viewportRecovery";
+import { createBpmnStageImperativeApi } from "../../features/process/bpmn/stage/imperative/bpmnStageImperativeApi";
 import forceTaskResizeRulesModule from "../../features/process/bpmn/runtime/modules/forceTaskResizeRules";
 import {
   saveBpmnSnapshot,
@@ -5327,306 +5328,68 @@ const BpmnStage = forwardRef(function BpmnStage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useImperativeHandle(ref, () => {
-    const getActiveInstance = () => (view === "editor" ? modelerRef.current : viewerRef.current);
-    const getActiveLoader = () => (view === "editor" ? ensureModeler() : ensureViewer());
-    const isInstanceReady = (inst) => {
-      if (!inst) return false;
-      if (inst === modelerRef.current) {
-        return !!modelerReadyRef.current && hasDefinitionsLoaded(inst);
-      }
-      if (inst === viewerRef.current) {
-        return !!viewerReadyRef.current && hasDefinitionsLoaded(inst);
-      }
-      return hasDefinitionsLoaded(inst);
-    };
-    const runOnActiveInstance = (fn) => {
-      const inst = getActiveInstance();
-      if (inst && isInstanceReady(inst)) {
-        fn(inst);
-        return;
-      }
-      if (inst && !isInstanceReady(inst)) return;
-      const loader = getActiveLoader();
-      loader
-        .then((ready) => {
-          if (ready && isInstanceReady(ready)) fn(ready);
-        })
-        .catch(() => {
-          // skip
-        });
-    };
-
+  function createImperativeApiCtx() {
     return {
-      zoomIn: () => {
-        if (view === "editor" && modelerRuntimeRef.current?.zoomIn?.()) return;
-        runOnActiveInstance((inst) => {
-          const canvas = inst.get("canvas");
-          const z = canvas.zoom();
-          canvas.zoom(Number.isFinite(z) ? z + 0.2 : 1.2);
-        });
+      refs: {
+        modelerRef,
+        viewerRef,
+        modelerRuntimeRef,
+        modelerReadyRef,
+        viewerReadyRef,
+        userViewportTouchedRef,
+        runtimeTokenRef,
+        activeSessionRef,
+        loadTokenRef,
+        bpmnCoordinatorRef,
+        bottlenecksRef,
       },
-      zoomOut: () => {
-        if (view === "editor" && modelerRuntimeRef.current?.zoomOut?.()) return;
-        runOnActiveInstance((inst) => {
-          const canvas = inst.get("canvas");
-          const z = canvas.zoom();
-          canvas.zoom(Number.isFinite(z) ? Math.max(z - 0.2, 0.2) : 0.8);
-        });
+      values: {
+        view,
+        sessionId,
+        xmlDirty,
+        xmlDraft,
       },
-      fit: () => {
-        if (view === "editor" && modelerRuntimeRef.current?.fit?.()) {
-          userViewportTouchedRef.current = false;
-          return;
-        }
-        runOnActiveInstance((inst) => {
-          userViewportTouchedRef.current = false;
-          void safeFit(inst, {
-            reason: "manual_fit",
-            tab: view === "xml" ? "xml" : "diagram",
-            sid: String(sessionId || ""),
-            token: runtimeTokenRef.current,
-            suppressViewbox: suppressViewboxEvents,
-          });
-        });
+      state: {
+        setErr,
       },
-      refreshViewport: (options = {}) => {
-        runOnActiveInstance((inst) => {
-          void ensureVisibleOnInstance(inst, {
-            reason: String(options?.reason || "tab_switch"),
-            tab: view === "xml" ? "xml" : "diagram",
-            cycleIndex: Number(options?.cycleIndex || 0),
-            expectedSid: String(options?.expectedSid || activeSessionRef.current || ""),
-          });
-        });
-      },
-      ensureVisible: (options = {}) => {
-        const reason = String(options?.reason || "ensure_visible");
-        const tabName = view === "xml" ? "xml" : "diagram";
-        const cycleIndex = Number(options?.cycleIndex || 0);
-        const force = options?.force === true;
-        return (async () => {
-          const activeInst = getActiveInstance();
-          if (activeInst && isInstanceReady(activeInst)) {
-            return await ensureVisibleOnInstance(activeInst, {
-              reason,
-              tab: tabName,
-              cycleIndex,
-              force,
-              expectedSid: String(options?.expectedSid || activeSessionRef.current || ""),
-            });
-          }
-          let loaded = null;
-          try {
-            loaded = await getActiveLoader();
-          } catch {
-            loaded = null;
-          }
-          if (!loaded || !isInstanceReady(loaded)) {
-            return { ok: false, reason: "not_ready" };
-          }
-          return await ensureVisibleOnInstance(loaded, {
-            reason,
-            tab: tabName,
-            cycleIndex,
-            force,
-            expectedSid: String(options?.expectedSid || activeSessionRef.current || ""),
-          });
-        })();
-      },
-      whenReady: async (options = {}) => {
-        const timeoutMsRaw = Number(options?.timeoutMs ?? 1800);
-        const timeoutMs = Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0 ? timeoutMsRaw : 1800;
-        const expectedSid = String(options?.expectedSid || "").trim();
-        const sidNow = String(activeSessionRef.current || sessionId || "");
-        const expectedToken = Number(runtimeTokenRef.current || 0);
-        if (shouldLogBpmnTrace()) {
-          // eslint-disable-next-line no-console
-          console.debug(
-            `[WHEN_READY] wait sid=${sidNow || "-"} expectedSid=${expectedSid || "-"} token=${expectedToken} expectedToken=${expectedToken} timeoutMs=${timeoutMs}`,
-          );
-        }
-        const started = Date.now();
-        while (Date.now() - started <= timeoutMs) {
-          if (expectedSid && expectedSid !== String(activeSessionRef.current || "")) {
-            return false;
-          }
-          const runtime = modelerRuntimeRef.current;
-          const status = runtime?.getStatus?.() || {};
-          const inst = modelerRef.current;
-          if (inst && status?.ready && status?.defs) {
-            if (shouldLogBpmnTrace()) {
-              // eslint-disable-next-line no-console
-              console.debug(
-                `[WHEN_READY] resolve sid=${String(activeSessionRef.current || sessionId || "-")} token=${Number(status?.token || 0)} `
-                + `reason=${status?.reason === "create.done" ? "createDiagram" : "import"}`,
-              );
-            }
-            return true;
-          }
-          await new Promise((resolve) => window.setTimeout(resolve, 40));
-        }
-        if (shouldLogBpmnTrace()) {
-          const status = modelerRuntimeRef.current?.getStatus?.() || {};
-          const inst = modelerRef.current;
-          const rect = inst?.get?.("canvas")?._container?.getBoundingClientRect?.() || { width: 0, height: 0 };
-          // eslint-disable-next-line no-console
-          console.debug(
-            `[WHEN_READY] timeout sid=${String(sessionId || "-")} token=${Number(status?.token || 0)} expectedSid=${expectedSid || "-"} `
-            + `state ready=${status?.ready ? 1 : 0} defs=${status?.defs ? 1 : 0} hasInstance=${inst ? 1 : 0} `
-            + `rect=${Math.round(Number(rect.width || 0))}x${Math.round(Number(rect.height || 0))}`,
-          );
-        }
-        return false;
-      },
-      seedFromActors: () => seedNew(),
-      saveLocal: (options) => saveLocalFromModeler(options),
-      isFlushing: () => !!bpmnCoordinatorRef.current?.isFlushing?.(),
-      saveXmlDraft: () => saveXmlDraftText(),
-      hasXmlDraftChanges: () => !!xmlDirty,
-      getXmlDraft: () => String(xmlDraft || ""),
-      resetBackend: () => {
-        const sid = String(sessionId || "");
-        if (!sid) return;
-        const token = loadTokenRef.current + 1;
-        loadTokenRef.current = token;
-        loadFromBackend(sid, token, { forceRemote: true, reason: "manual_reset_backend" });
-      },
-      clearLocal: () => {
-        const sid = String(sessionId || "");
-        if (!sid) return;
-        if (isLocalSessionId(sid)) {
-          clearLocalOnly();
-          const token = loadTokenRef.current + 1;
-          loadTokenRef.current = token;
-          loadFromBackend(sid, token, { forceRemote: true, reason: "clear_local" });
-          return;
-        }
-        (async () => {
-          const r = await apiDeleteBpmnXml(sid);
-          if (!r.ok) {
-            setErr(String(r.error || "Не удалось очистить BPMN на backend"));
-            return;
-          }
-          setErr("");
-          const token = loadTokenRef.current + 1;
-          loadTokenRef.current = token;
-          loadFromBackend(sid, token, { forceRemote: true, reason: "clear_backend" });
-        })();
-      },
-      setBottlenecks: (items) => {
-        bottlenecksRef.current = asArray(items);
-        applyBottleneckDecor(viewerRef.current, "viewer");
-        applyBottleneckDecor(modelerRef.current, "editor");
-      },
-      clearBottlenecks: () => {
-        bottlenecksRef.current = [];
-        clearBottleneckDecor(viewerRef.current, "viewer");
-        clearBottleneckDecor(modelerRef.current, "editor");
-      },
-      focusNode: (nodeId, options = {}) => {
-        const nid = String(nodeId || "").trim();
-        if (!nid) return false;
-        const markerClass = String(options?.markerClass || "").trim();
-        if (view === "editor") {
-          const direct = markerClass ? false : modelerRuntimeRef.current?.focus?.(nid);
-          if (direct) return true;
-        }
-        const viewerOk = focusNodeOnInstance(viewerRef.current, "viewer", nid, options);
-        const editorOk = focusNodeOnInstance(modelerRef.current, "editor", nid, options);
-        return viewerOk || editorOk;
-      },
-      preparePlayback: (timelineItems = []) => {
-        preparePlaybackCache(viewerRef.current, "viewer", timelineItems);
-        preparePlaybackCache(modelerRef.current, "editor", timelineItems);
-        return true;
-      },
-      getPlaybackGraph: () => {
-        const inst = viewerRef.current || modelerRef.current;
-        return buildExecutionGraphFromInstance(inst);
-      },
-      setPlaybackFrame: (payload = {}) => {
-        const viewerOk = applyPlaybackFrameOnInstance(viewerRef.current, "viewer", payload);
-        const editorOk = applyPlaybackFrameOnInstance(modelerRef.current, "editor", payload);
-        return viewerOk || editorOk;
-      },
-      clearPlayback: () => {
-        clearPlaybackDecor(viewerRef.current, "viewer");
-        clearPlaybackDecor(modelerRef.current, "editor");
-      },
-      flashNode: (nodeId, type = "accent", options = {}) => flashNode(nodeId, type, options),
-      flashBadge: (nodeId, kind = "ai", options = {}) => flashBadge(nodeId, kind, options),
-      captureTemplatePack: async (options = {}) => {
-        let inst = modelerRef.current;
-        if (!inst) {
-          try {
-            inst = await ensureModeler();
-          } catch {
-            inst = null;
-          }
-        }
-        if (!inst) return { ok: false, error: "modeler_not_ready" };
-        return captureTemplatePackOnModeler(inst, options);
-      },
-      insertTemplatePack: async (payload = {}) => {
-        try {
-          return await insertTemplatePackOnModeler(payload);
-        } catch (error) {
-          return {
-            ok: false,
-            error: String(error?.message || error || "insert_failed"),
-          };
-        }
-      },
-      applyCommandOps: async (payload = {}) => {
-        try {
-          return await applyCommandOpsOnModeler(payload);
-        } catch (error) {
-          return {
-            ok: false,
-            applied: 0,
-            failed: 0,
-            changedIds: [],
-            results: [],
-            error: String(error?.message || error || "apply_ops_failed"),
-          };
-        }
-      },
-      importXmlText: async (xmlText) => {
-        const raw = String(xmlText || "");
-        if (!raw.trim()) return false;
-        const vErr = validateBpmnXmlText(raw);
-        if (vErr) {
-          setErr(`Импорт BPMN не удался: ${vErr}`);
-          logBpmnTrace("VALIDATION_FAIL", raw, {
-            sid: String(sessionId || ""),
-            source: "xml_import",
-            error: vErr,
-          });
-          return false;
-        }
-
-        const saved = await persistXmlSnapshot(raw, "backend");
-        if (!saved.ok) {
-          setErr(`Импорт BPMN не удался: ${String(saved.error || "не удалось сохранить на backend")}`);
-          return false;
-        }
-
-        try {
-          if (view === "editor" || view === "diagram") {
-            await renderModeler(raw);
-          }
-          if (view === "viewer") {
-            await renderViewer(raw);
-          }
-          return true;
-        } catch (e) {
-          setErr(`Импорт BPMN не удался: ${String(e?.message || e)}`);
-          return false;
-        }
+      callbacks: {
+        asArray,
+        ensureModeler,
+        ensureViewer,
+        hasDefinitionsLoaded,
+        safeFit,
+        suppressViewboxEvents,
+        ensureVisibleOnInstance,
+        shouldLogBpmnTrace,
+        loadFromBackend,
+        isLocalSessionId,
+        clearLocalOnly,
+        apiDeleteBpmnXml,
+        applyBottleneckDecor,
+        clearBottleneckDecor,
+        focusNodeOnInstance,
+        preparePlaybackCache,
+        buildExecutionGraphFromInstance,
+        applyPlaybackFrameOnInstance,
+        clearPlaybackDecor,
+        flashNode,
+        flashBadge,
+        captureTemplatePackOnModeler,
+        insertTemplatePackOnModeler,
+        applyCommandOpsOnModeler,
+        validateBpmnXmlText,
+        logBpmnTrace,
+        persistXmlSnapshot,
+        renderModeler,
+        renderViewer,
+        saveLocalFromModeler,
+        saveXmlDraftText,
+        seedNew,
       },
     };
-  });
+  }
+
+  useImperativeHandle(ref, () => createBpmnStageImperativeApi(createImperativeApiCtx()));
 
   return (
     <div className="bpmnStage">
