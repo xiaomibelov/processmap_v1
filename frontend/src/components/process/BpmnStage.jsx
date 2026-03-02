@@ -1,10 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { apiDeleteBpmnXml, apiGetBpmnXml, apiPutBpmnXml } from "../../lib/api/bpmnApi";
 import { traceProcess } from "../../features/process/lib/processDebugTrace";
-import createBpmnRuntime from "../../features/process/bpmn/runtime/createBpmnRuntime";
-import createBpmnStore from "../../features/process/bpmn/store/createBpmnStore";
-import createBpmnCoordinator from "../../features/process/bpmn/coordinator/createBpmnCoordinator";
-import createBpmnPersistence from "../../features/process/bpmn/persistence/createBpmnPersistence";
+import { createBpmnWiring } from "../../features/process/bpmn/stage/wiring/bpmnWiring";
 import * as decorManager from "../../features/process/bpmn/stage/decor/decorManager";
 import forceTaskResizeRulesModule from "../../features/process/bpmn/runtime/modules/forceTaskResizeRules";
 import {
@@ -1375,44 +1372,65 @@ const BpmnStage = forwardRef(function BpmnStage({
     return undefined;
   }, []);
 
+  const wiring = createBpmnWiring(
+    () => ({
+      refs: {
+        bpmnStoreRef,
+        bpmnStoreUnsubRef,
+        lastStoreEventRef,
+        bpmnPersistenceRef,
+        bpmnCoordinatorRef,
+        modelerRuntimeRef,
+        activeSessionRef,
+        suppressCommandStackRef,
+        ensureVisibleCycleRef,
+        modelerReadyRef,
+        runtimeTokenRef,
+        modelerRef,
+        draftRef,
+      },
+      state: {
+        setXml,
+        setXmlDraft,
+        setXmlDirty,
+      },
+      values: {
+        xml,
+        xmlDraft,
+        draft,
+        sessionId,
+        activeProjectId,
+      },
+      readOnly: {
+        draftRef,
+      },
+      api: {
+        saveBpmnSnapshot,
+        getLatestBpmnSnapshot,
+        apiGetBpmnXml,
+        apiPutBpmnXml,
+      },
+      callbacks: {
+        localKey,
+        isLocalSessionId,
+        logBpmnTrace,
+        bumpSaveCounter,
+        onCoordinatorTrace,
+        shouldLogBpmnTrace,
+        probeCanvas,
+        emitDiagramMutation,
+        trackRuntimeStatus,
+        fnv1aHex,
+      },
+    }),
+    {
+      forceTaskResizeRulesModule,
+      pmModdleDescriptor,
+    },
+  );
+
   function ensureBpmnStore() {
-    if (bpmnStoreRef.current) return bpmnStoreRef.current;
-    const initialXml = String(xml || draft?.bpmn_xml || "");
-    const store = createBpmnStore({
-      xml: initialXml,
-      dirty: false,
-      source: "stage_init",
-    });
-    if (typeof bpmnStoreUnsubRef.current === "function") {
-      try {
-        bpmnStoreUnsubRef.current();
-      } catch {
-      }
-    }
-    bpmnStoreUnsubRef.current = store.subscribe((state) => {
-      if (!state || typeof state !== "object") return;
-      const nextXml = String(state.xml || "");
-      lastStoreEventRef.current = {
-        source: String(state.source || ""),
-        reason: String(state.reason || ""),
-        rev: Number(state.rev || 0),
-        hash: String(state.hash || fnv1aHex(nextXml)),
-      };
-      setXml(nextXml);
-      setXmlDraft(nextXml);
-      setXmlDirty(!!state.dirty);
-      if (state.reason === "setXml") {
-        const count = bumpSaveCounter("store_updated");
-        logBpmnTrace("STORE_UPDATED", nextXml, {
-          sid: String(sessionId || ""),
-          source: String(state.source || "store"),
-          rev: Number(state.rev || 0),
-          count,
-        });
-      }
-    });
-    bpmnStoreRef.current = store;
-    return store;
+    return wiring.ensureBpmnStore();
   }
 
   function onCoordinatorTrace(event, payload = {}) {
@@ -1499,99 +1517,15 @@ const BpmnStage = forwardRef(function BpmnStage({
   }
 
   function ensureBpmnPersistence() {
-    if (bpmnPersistenceRef.current) return bpmnPersistenceRef.current;
-    const persistence = createBpmnPersistence({
-      getSessionDraft: () => draftRef.current || {},
-      getSnapshotProjectId: () => String(draftRef.current?.project_id || draftRef.current?.projectId || activeProjectId || ""),
-      saveSnapshot: saveBpmnSnapshot,
-      loadLatestSnapshot: getLatestBpmnSnapshot,
-      getLocalStorageKey: localKey,
-      isLocalSessionId,
-      apiGetBpmnXml,
-      apiPutBpmnXml,
-      onTrace: (event, payload = {}) => {
-        const sid = String(activeSessionRef.current || "");
-        const storeXml = String(bpmnStoreRef.current?.getState?.()?.xml || "");
-        logBpmnTrace(event, storeXml, { sid, ...payload });
-      },
-    });
-    bpmnPersistenceRef.current = persistence;
-    return persistence;
+    return wiring.ensureBpmnPersistence();
   }
 
   function ensureBpmnCoordinator() {
-    if (bpmnCoordinatorRef.current) return bpmnCoordinatorRef.current;
-    const store = ensureBpmnStore();
-    const persistence = ensureBpmnPersistence();
-    const coordinator = createBpmnCoordinator({
-      store,
-      getRuntime: () => modelerRuntimeRef.current,
-      getSessionId: () => String(activeSessionRef.current || ""),
-      persistence: {
-        saveRaw: (sid, xmlText, rev, reason) => persistence.saveRaw(sid, xmlText, rev, reason),
-        loadRaw: (sid, optionsForLoad) => persistence.loadRaw(sid, optionsForLoad),
-        cacheRaw: (sid, xmlText, rev, reason) => (
-          typeof persistence.cacheRaw === "function"
-            ? persistence.cacheRaw(sid, xmlText, rev, reason)
-            : { ok: false, source: "runtime_cache" }
-        ),
-      },
-      onTrace: onCoordinatorTrace,
-      onRuntimeChange: (ev) => {
-        if (suppressCommandStackRef.current > 0) return;
-        setXmlDirty(true);
-        if (shouldLogBpmnTrace()) {
-          const runtime = modelerRuntimeRef.current;
-          const status = runtime?.getStatus?.() || {};
-          const activeInst = runtime?.getInstance?.();
-          // eslint-disable-next-line no-console
-          console.debug(
-            `[BPMN] commandStack.changed sid=${String(sessionId || "-")} token=${Number(status?.token || 0)} ready=${status?.ready ? 1 : 0} defs=${status?.defs ? 1 : 0} active_modeler=${activeInst === modelerRef.current ? 1 : 0}`,
-          );
-          probeCanvas(activeInst || modelerRef.current, "after_command_change", {
-            sid: String(sessionId || ""),
-            tab: "diagram",
-            token: Number(status?.token || 0),
-            reason: "commandStack.changed",
-            cycleIndex: Number(ensureVisibleCycleRef.current || 0),
-          });
-        }
-        emitDiagramMutation("diagram.change", {
-          eventName: "commandStack.changed",
-          command: String(ev?.command || "").trim(),
-        });
-      },
-      onRuntimeStatus: (status) => {
-        modelerReadyRef.current = !!status?.ready && !!status?.defs;
-        runtimeTokenRef.current = Number(status?.token || runtimeTokenRef.current || 0);
-        trackRuntimeStatus(status, "runtime_status");
-      },
-    });
-    bpmnCoordinatorRef.current = coordinator;
-    return coordinator;
+    return wiring.ensureBpmnCoordinator();
   }
 
   function ensureModelerRuntime() {
-    if (modelerRuntimeRef.current) return modelerRuntimeRef.current;
-    const runtime = createBpmnRuntime({
-      mode: "modeler",
-      getCtorOptions: (runtimeMode) => {
-        if (String(runtimeMode || "").toLowerCase() !== "modeler") return {};
-        return {
-          additionalModules: [forceTaskResizeRulesModule],
-          moddleExtensions: { pm: pmModdleDescriptor },
-        };
-      },
-    });
-    modelerRuntimeRef.current = runtime;
-    try {
-      if (typeof window !== "undefined") {
-        window.__FPC_E2E_RUNTIME__ = runtime;
-      }
-    } catch {
-    }
-    ensureBpmnCoordinator().bindRuntime(runtime);
-    return runtime;
+    return wiring.ensureModelerRuntime();
   }
 
   function bumpSaveCounter(key) {

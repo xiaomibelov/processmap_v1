@@ -1,0 +1,108 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { createBpmnWiring } from "./bpmnWiring.js";
+
+function ref(initial) {
+  return { current: initial };
+}
+
+function createCtx() {
+  const refs = {
+    bpmnStoreRef: ref(null),
+    bpmnStoreUnsubRef: ref(null),
+    lastStoreEventRef: ref({}),
+    bpmnPersistenceRef: ref(null),
+    bpmnCoordinatorRef: ref(null),
+    modelerRuntimeRef: ref(null),
+    activeSessionRef: ref("sid_1"),
+    suppressCommandStackRef: ref(0),
+    ensureVisibleCycleRef: ref(0),
+    modelerReadyRef: ref(false),
+    runtimeTokenRef: ref(0),
+    modelerRef: ref(null),
+    draftRef: ref({}),
+  };
+  const values = {
+    xml: "",
+    xmlDraft: "",
+    draft: {},
+    sessionId: "sid_1",
+    activeProjectId: "pid_1",
+  };
+  const state = {
+    setXml: () => {},
+    setXmlDraft: () => {},
+    setXmlDirty: () => {},
+  };
+  const readOnly = {
+    draftRef: refs.draftRef,
+  };
+  const api = {
+    saveBpmnSnapshot: async () => ({ ok: true }),
+    getLatestBpmnSnapshot: async () => ({ ok: false }),
+    apiGetBpmnXml: async () => ({ ok: true, xml: "" }),
+    apiPutBpmnXml: async () => ({ ok: true }),
+  };
+  const callbacks = {
+    localKey: (sid) => `k:${String(sid || "")}`,
+    isLocalSessionId: () => false,
+    logBpmnTrace: () => {},
+    bumpSaveCounter: () => 0,
+    onCoordinatorTrace: () => {},
+    shouldLogBpmnTrace: () => false,
+    probeCanvas: () => {},
+    emitDiagramMutation: () => {},
+    trackRuntimeStatus: () => {},
+    fnv1aHex: () => "hash",
+  };
+  return { refs, values, state, readOnly, api, callbacks };
+}
+
+test("ensureBpmnCoordinator binds runtime callbacks only once", () => {
+  const ctx = createCtx();
+  let createCoordinatorCalls = 0;
+  let bindRuntimeCalls = 0;
+  let createRuntimeCalls = 0;
+
+  const coordinator = {
+    bindRuntime(runtime) {
+      bindRuntimeCalls += 1;
+      this.runtime = runtime;
+    },
+  };
+  const deps = {
+    createBpmnStore: () => ({
+      subscribe: () => () => {},
+      getState: () => ({ xml: "" }),
+    }),
+    createBpmnPersistence: () => ({
+      saveRaw: async () => ({ ok: true }),
+      loadRaw: async () => ({ ok: true }),
+      cacheRaw: () => ({ ok: true }),
+    }),
+    createBpmnCoordinator: () => {
+      createCoordinatorCalls += 1;
+      return coordinator;
+    },
+    createBpmnRuntime: () => {
+      createRuntimeCalls += 1;
+      return { id: `runtime_${createRuntimeCalls}` };
+    },
+    forceTaskResizeRulesModule: {},
+    pmModdleDescriptor: {},
+  };
+
+  const wiring = createBpmnWiring(() => ctx, deps);
+  const c1 = wiring.ensureBpmnCoordinator();
+  const c2 = wiring.ensureBpmnCoordinator();
+  assert.equal(c1, c2);
+  assert.equal(createCoordinatorCalls, 1);
+
+  const r1 = wiring.ensureModelerRuntime();
+  const r2 = wiring.ensureModelerRuntime();
+  assert.equal(r1, r2);
+  assert.equal(createRuntimeCalls, 1);
+  assert.equal(bindRuntimeCalls, 1);
+  assert.equal(ctx.refs.modelerRuntimeRef.current, r1);
+});
