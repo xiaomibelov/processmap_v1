@@ -3,6 +3,7 @@ import { apiDeleteBpmnXml, apiGetBpmnXml, apiPutBpmnXml } from "../../lib/api/bp
 import { traceProcess } from "../../features/process/lib/processDebugTrace";
 import { createBpmnWiring } from "../../features/process/bpmn/stage/wiring/bpmnWiring";
 import * as decorManager from "../../features/process/bpmn/stage/decor/decorManager";
+import * as viewportRecovery from "../../features/process/bpmn/stage/viewport/viewportRecovery";
 import forceTaskResizeRulesModule from "../../features/process/bpmn/runtime/modules/forceTaskResizeRules";
 import {
   saveBpmnSnapshot,
@@ -1058,108 +1059,25 @@ function logCanvasMetrics(inst, tag = "", sid = "") {
 }
 
 async function ensureCanvasVisibleAndFit(inst, tag = "", sid = "", options = {}) {
-  if (!inst) return;
-  const reason = String(options?.reason || tag || "canvas").trim() || "canvas";
-  const tab = String(options?.tab || "-");
-  const token = Number(options?.token || 0);
-  const allowFit = options?.allowFit !== false;
-  const fitIfInvisible = options?.fitIfInvisible !== false;
-  const suppress = typeof options?.suppressViewbox === "function"
-    ? options.suppressViewbox
-    : null;
-  const cycleIndex = Number(options?.cycleIndex || 0);
-  let before = getCanvasSnapshot(inst);
-  const layoutReady = await waitForNonZeroRect(
-    () => inst?.get?.("canvas")?._container || null,
+  return viewportRecovery.ensureCanvasVisibleAndFit(
     {
-      sid: String(sid || "-"),
-      token,
-      reason: `${reason}:before_canvas_ops`,
-      timeoutMs: 3000,
+      helpers: {
+        getCanvasSnapshot,
+        waitForNonZeroRect,
+        probeCanvas,
+        safeFit,
+        logCanvasMetrics,
+        isAnyShapeInViewport,
+        logViewAction,
+      },
+    },
+    inst,
+    {
+      ...options,
+      tag,
+      sid,
     },
   );
-  if (!layoutReady.ok) {
-    return;
-  }
-  try {
-    const canvas = inst.get("canvas");
-    const container = canvas?._container;
-    const rect = container?.getBoundingClientRect?.();
-    const width = Number(rect?.width || container?.clientWidth || 0);
-    const height = Number(rect?.height || container?.clientHeight || 0);
-    suppress?.(1);
-    try {
-      canvas?.resized?.();
-    } finally {
-      suppress?.(-1);
-    }
-    const afterResized = getCanvasSnapshot(inst);
-    logViewAction("resized", before, afterResized, {
-      reason,
-      tab,
-      sid: String(sid || "-"),
-      token,
-    });
-    before = afterResized;
-    if (!width || !height) {
-      window.setTimeout(async () => {
-        try {
-          const b = getCanvasSnapshot(inst);
-          suppress?.(1);
-          try {
-            canvas?.resized?.();
-          } finally {
-            suppress?.(-1);
-          }
-          const a = getCanvasSnapshot(inst);
-          logViewAction("resized", b, a, {
-            reason: `${reason}:post_show`,
-            tab,
-            sid: String(sid || "-"),
-            token,
-          });
-          if (allowFit) {
-            const probe = probeCanvas(inst, `${String(tag || "canvas")}.post_show_probe`, {
-              tab,
-              sid: String(sid || "-"),
-              token,
-              reason: `${reason}:post_show`,
-              cycleIndex,
-            });
-            if (probe.invisible || !Number.isFinite(probe.zoom) || probe.zoom <= 0) {
-              await safeFit(inst, {
-                reason: `${reason}:post_show`,
-                tab,
-                sid,
-                token,
-                suppressViewbox: suppress,
-              });
-            }
-          }
-          logCanvasMetrics(inst, `${String(tag || "canvas")}.post_show`, sid);
-        } catch {
-        }
-      }, 90);
-    }
-  } catch {
-  }
-  if (allowFit) {
-    const hasVisibleShapes = isAnyShapeInViewport(inst);
-    const afterResized = getCanvasSnapshot(inst);
-    const shouldFit = !Number.isFinite(afterResized.zoom)
-      || afterResized.zoom <= 0
-      || (fitIfInvisible && afterResized.count > 0 && !hasVisibleShapes);
-    if (shouldFit) {
-      await safeFit(inst, {
-        reason,
-        tab,
-        sid,
-        token,
-        suppressViewbox: suppress,
-      });
-    }
-  }
-  logCanvasMetrics(inst, tag, sid);
 }
 
 const BpmnStage = forwardRef(function BpmnStage({
@@ -4814,6 +4732,63 @@ const BpmnStage = forwardRef(function BpmnStage({
     applyStepTimeDecor(m, "editor");
   }
 
+  function createViewportCtx() {
+    return {
+      refs: {
+        activeSessionRef,
+        ensureEpochRef,
+        runtimeTokenRef,
+        ensureVisiblePromiseRef,
+        ensureVisibleCycleRef,
+        modelerRef,
+        viewerRef,
+        modelerRuntimeRef,
+        modelerInitPromiseRef,
+        modelerDecorBoundInstanceRef,
+        modelerReadyRef,
+        viewerReadyRef,
+        userViewportTouchedRef,
+        viewerInitPromiseRef,
+        lastModelerXmlHashRef,
+        editorEl,
+        viewerEl,
+      },
+      values: {
+        sessionId,
+        view,
+      },
+      helpers: {
+        getCanvasSnapshot,
+        waitForNonZeroRect,
+        probeCanvas,
+        safeFit,
+        waitAnimationFrame,
+        isAnyShapeInViewport,
+        logCanvasMetrics,
+        logViewAction,
+      },
+      callbacks: {
+        suppressViewboxEvents,
+        getInstanceMeta,
+        logEnsureTrace,
+        logStaleGuard,
+        getRecoveryXmlCandidate,
+        ensureModelerRuntime,
+        ensureModeler,
+        ensureViewer,
+        fnv1aHex,
+        applyTaskTypeDecor,
+        applyLinkEventDecor,
+        applyHappyFlowDecor,
+        applyRobotMetaDecor,
+        applyBottleneckDecor,
+        applyInterviewDecor,
+        applyUserNotesDecor,
+        applyStepTimeDecor,
+      },
+    };
+  }
+
   function getRecoveryXmlCandidate() {
     return String(
       bpmnStoreRef.current?.getState?.()?.xml
@@ -4825,448 +4800,25 @@ const BpmnStage = forwardRef(function BpmnStage({
   }
 
   async function recoverByReimport(inst, xmlText, reason, cycleIndex = 0, guard = null) {
-    const raw = String(xmlText || "");
-    if (!raw.trim()) return false;
-    const sid = String(sessionId || "");
-    if (guard && !guard("recover2.start", inst)) return false;
-    if (inst === modelerRef.current) {
-      if (guard && !guard("recover2.modeler.before_load", inst)) return false;
-      const runtime = ensureModelerRuntime();
-      const loaded = await runtime.load(raw, { source: `${reason}:recover2` });
-      if (guard && !guard("recover2.modeler.after_load", inst, { allowTokenDrift: true, syncToken: true })) {
-        return false;
-      }
-      const status = runtime.getStatus();
-      runtimeTokenRef.current = Number(status?.token || runtimeTokenRef.current || 0);
-      modelerReadyRef.current = !!status?.ready && !!status?.defs;
-      if (!loaded?.ok || loaded?.reason === "stale" || inst !== modelerRef.current) return false;
-      lastModelerXmlHashRef.current = fnv1aHex(raw);
-      await ensureCanvasVisibleAndFit(inst, "recover2.modeler", sid, {
-        reason,
-        tab: "diagram",
-        token: runtimeTokenRef.current,
-        allowFit: true,
-        fitIfInvisible: true,
-        suppressViewbox: suppressViewboxEvents,
-        cycleIndex,
-      });
-      applyTaskTypeDecor(inst, "editor");
-      applyLinkEventDecor(inst, "editor");
-      applyHappyFlowDecor(inst, "editor");
-      applyRobotMetaDecor(inst, "editor");
-      applyBottleneckDecor(inst, "editor");
-      applyInterviewDecor(inst, "editor");
-      applyUserNotesDecor(inst, "editor");
-      applyStepTimeDecor(inst, "editor");
-      return true;
-    }
-
-    if (inst === viewerRef.current) {
-      if (guard && !guard("recover2.viewer.before_load", inst)) return false;
-      const token = runtimeTokenRef.current + 1;
-      runtimeTokenRef.current = token;
-      viewerReadyRef.current = false;
-      await inst.importXML(raw);
-      if (guard && !guard("recover2.viewer.after_load", inst, { allowTokenDrift: true, syncToken: true })) {
-        return false;
-      }
-      if (token !== runtimeTokenRef.current || inst !== viewerRef.current) return false;
-      viewerReadyRef.current = true;
-      await ensureCanvasVisibleAndFit(inst, "recover2.viewer", sid, {
-        reason,
-        tab: "diagram",
-        token: runtimeTokenRef.current,
-        allowFit: true,
-        fitIfInvisible: true,
-        suppressViewbox: suppressViewboxEvents,
-        cycleIndex,
-      });
-      applyTaskTypeDecor(inst, "viewer");
-      applyLinkEventDecor(inst, "viewer");
-      applyHappyFlowDecor(inst, "viewer");
-      applyRobotMetaDecor(inst, "viewer");
-      applyBottleneckDecor(inst, "viewer");
-      applyInterviewDecor(inst, "viewer");
-      applyUserNotesDecor(inst, "viewer");
-      applyStepTimeDecor(inst, "viewer");
-      return true;
-    }
-
-    return false;
+    return viewportRecovery.recoverByReimport(createViewportCtx(), inst, {
+      xmlText,
+      reason,
+      cycleIndex,
+      guard,
+    });
   }
 
   async function recoverByHardReset(inst, xmlText, reason, cycleIndex = 0, guard = null) {
-    const raw = String(xmlText || "");
-    const sid = String(sessionId || "");
-    if (guard && !guard("recover3.start", inst, { allowTokenDrift: true })) return false;
-    if (inst === modelerRef.current) {
-      if (guard && !guard("recover3.modeler.before_destroy", inst, { allowTokenDrift: true })) return false;
-      try {
-        modelerRuntimeRef.current?.destroy?.();
-      } catch {
-      }
-      modelerRuntimeRef.current = null;
-      modelerRef.current = null;
-      modelerInitPromiseRef.current = null;
-      modelerDecorBoundInstanceRef.current = null;
-      modelerReadyRef.current = false;
-      userViewportTouchedRef.current = false;
-      try {
-        if (editorEl.current) editorEl.current.innerHTML = "";
-      } catch {
-      }
-      if (!raw.trim()) return false;
-      const runtime = ensureModelerRuntime();
-      const m = await ensureModeler();
-      if (guard && !guard("recover3.modeler.after_init", m, { allowTokenDrift: true, syncToken: true })) return false;
-      const loaded = await runtime.load(raw, { source: `${reason}:recover3` });
-      if (guard && !guard("recover3.modeler.after_load", m, { allowTokenDrift: true, syncToken: true })) return false;
-      const status = runtime.getStatus();
-      runtimeTokenRef.current = Number(status?.token || runtimeTokenRef.current || 0);
-      modelerReadyRef.current = !!status?.ready && !!status?.defs;
-      if (!loaded?.ok || !m || m !== modelerRef.current) return false;
-      lastModelerXmlHashRef.current = fnv1aHex(raw);
-      await ensureCanvasVisibleAndFit(m, "recover3.modeler", sid, {
-        reason,
-        tab: "diagram",
-        token: runtimeTokenRef.current,
-        allowFit: true,
-        fitIfInvisible: true,
-        suppressViewbox: suppressViewboxEvents,
-        cycleIndex,
-      });
-      applyTaskTypeDecor(m, "editor");
-      applyLinkEventDecor(m, "editor");
-      applyHappyFlowDecor(m, "editor");
-      applyRobotMetaDecor(m, "editor");
-      applyBottleneckDecor(m, "editor");
-      applyInterviewDecor(m, "editor");
-      applyUserNotesDecor(m, "editor");
-      applyStepTimeDecor(m, "editor");
-      return true;
-    }
-
-    if (inst === viewerRef.current) {
-      if (guard && !guard("recover3.viewer.before_destroy", inst, { allowTokenDrift: true })) return false;
-      try {
-        viewerRef.current?.destroy?.();
-      } catch {
-      }
-      viewerRef.current = null;
-      viewerInitPromiseRef.current = null;
-      viewerReadyRef.current = false;
-      try {
-        if (viewerEl.current) viewerEl.current.innerHTML = "";
-      } catch {
-      }
-      if (!raw.trim()) return false;
-      const v = await ensureViewer();
-      if (guard && !guard("recover3.viewer.after_init", v, { allowTokenDrift: true, syncToken: true })) return false;
-      const token = runtimeTokenRef.current + 1;
-      runtimeTokenRef.current = token;
-      await v.importXML(raw);
-      if (guard && !guard("recover3.viewer.after_load", v, { allowTokenDrift: true, syncToken: true })) return false;
-      if (token !== runtimeTokenRef.current || v !== viewerRef.current) return false;
-      viewerReadyRef.current = true;
-      await ensureCanvasVisibleAndFit(v, "recover3.viewer", sid, {
-        reason,
-        tab: "diagram",
-        token: runtimeTokenRef.current,
-        allowFit: true,
-        fitIfInvisible: true,
-        suppressViewbox: suppressViewboxEvents,
-        cycleIndex,
-      });
-      applyTaskTypeDecor(v, "viewer");
-      applyLinkEventDecor(v, "viewer");
-      applyHappyFlowDecor(v, "viewer");
-      applyRobotMetaDecor(v, "viewer");
-      applyBottleneckDecor(v, "viewer");
-      applyInterviewDecor(v, "viewer");
-      applyUserNotesDecor(v, "viewer");
-      applyStepTimeDecor(v, "viewer");
-      return true;
-    }
-
-    return false;
+    return viewportRecovery.recoverByHardReset(createViewportCtx(), inst, {
+      xmlText,
+      reason,
+      cycleIndex,
+      guard,
+    });
   }
 
   async function ensureVisibleOnInstance(inst, options = {}) {
-    if (!inst) return { ok: false, reason: "missing_instance" };
-    const sid = String(activeSessionRef.current || sessionId || "");
-    const tabName = String(options?.tab || (view === "xml" ? "xml" : "diagram"));
-    const reason = String(options?.reason || "ensure_visible").trim() || "ensure_visible";
-    const cycleIndex = Number(options?.cycleIndex || (++ensureVisibleCycleRef.current));
-    const tokenState = { value: Number(runtimeTokenRef.current || 0) };
-    const expectedSid = String(options?.expectedSid || sid || "").trim();
-    const expectedEpoch = Number(options?.expectedEpoch || ensureEpochRef.current || 0);
-    const expectedContainerKey = String(
-      options?.containerKey
-      || getInstanceMeta(inst)?.containerKey
-      || "",
-    ).trim();
-    const instanceMeta = getInstanceMeta(inst);
-    const requestedSid = String(sid || "-");
-    const expectElements = options?.expectElements === true
-      || String(getRecoveryXmlCandidate() || "").trim().length > 0;
-
-    logEnsureTrace("start", {
-      sid: requestedSid,
-      requestedSid,
-      expectedSid: expectedSid || "-",
-      tab: tabName,
-      reason,
-      cycle: cycleIndex,
-      token: Number(tokenState.value || 0),
-      instanceId: Number(instanceMeta.id || 0),
-      containerKey: String(instanceMeta.containerKey || "-"),
-    });
-
-    const guard = (phase, candidateInst, guardOptions = {}) => {
-      const currentSid = String(activeSessionRef.current || "");
-      const currentEpoch = Number(ensureEpochRef.current || 0);
-      const activeInst = candidateInst || inst;
-      const activeMeta = getInstanceMeta(activeInst);
-      const currentToken = Number(runtimeTokenRef.current || 0);
-      const allowTokenDrift = guardOptions?.allowTokenDrift === true;
-
-      if (expectedEpoch && currentEpoch !== expectedEpoch) {
-        logStaleGuard("epoch_mismatch", {
-          phase,
-          expectedEpoch,
-          currentEpoch,
-          expectedSid: expectedSid || "-",
-          currentSid: currentSid || "-",
-        });
-        return false;
-      }
-      if (expectedSid && currentSid && expectedSid !== currentSid) {
-        logStaleGuard("sid_mismatch", {
-          phase,
-          expectedSid,
-          currentSid,
-          expectedToken: Number(tokenState.value || 0),
-          currentToken,
-        });
-        return false;
-      }
-      if (activeInst && activeInst !== modelerRef.current && activeInst !== viewerRef.current) {
-        logStaleGuard("instance_mismatch", {
-          phase,
-          expectedSid: expectedSid || "-",
-          currentSid: currentSid || "-",
-          expectedInstanceId: Number(instanceMeta.id || 0),
-          currentInstanceId: Number(activeMeta.id || 0),
-        });
-        return false;
-      }
-      if (expectedContainerKey && activeMeta.containerKey && expectedContainerKey !== activeMeta.containerKey) {
-        logStaleGuard("container_mismatch", {
-          phase,
-          expectedContainerKey,
-          currentContainerKey: String(activeMeta.containerKey || "-"),
-          expectedSid: expectedSid || "-",
-          currentSid: currentSid || "-",
-        });
-        return false;
-      }
-      if (!allowTokenDrift && Number(tokenState.value || 0) !== currentToken) {
-        logStaleGuard("token_mismatch", {
-          phase,
-          expectedToken: Number(tokenState.value || 0),
-          currentToken,
-          expectedSid: expectedSid || "-",
-          currentSid: currentSid || "-",
-        });
-        return false;
-      }
-      if (guardOptions?.syncToken === true) {
-        tokenState.value = currentToken;
-      }
-      return true;
-    };
-
-    const existingPromise = ensureVisiblePromiseRef.current;
-    if (existingPromise && options?.force !== true) {
-      return await existingPromise;
-    }
-
-    const run = (async () => {
-      if (!guard("ensure.enter", inst)) {
-        return { ok: false, reason: "skip_stale", step: 0 };
-      }
-      const enter = probeCanvas(inst, "after_tab_show", {
-        sid,
-        tab: tabName,
-        token: Number(tokenState.value || 0),
-        reason,
-        cycleIndex,
-        expectElements,
-      });
-      if (!enter.invisible) {
-        logEnsureTrace("done", {
-          sid: requestedSid,
-          expectedSid: expectedSid || "-",
-          tab: tabName,
-          step: 0,
-          result: "ok",
-          cycle: cycleIndex,
-        });
-        return { ok: true, recovered: false, step: 0, probe: enter };
-      }
-
-      const layoutReady = await waitForNonZeroRect(
-        () => inst?.get?.("canvas")?._container || null,
-        {
-          sid: requestedSid,
-          token: Number(tokenState.value || 0),
-          reason: `${reason}:ensure_visible_layout_gate`,
-          timeoutMs: 3000,
-        },
-      );
-      if (!layoutReady.ok) {
-        return { ok: false, reason: "layout_not_ready", step: 0, probe: enter };
-      }
-
-      try {
-        if (!guard("recover1.before_resize", inst)) return { ok: false, reason: "skip_stale", step: 1 };
-        const canvas = inst.get("canvas");
-        await waitAnimationFrame();
-        if (!guard("recover1.after_raf", inst)) return { ok: false, reason: "skip_stale", step: 1 };
-        suppressViewboxEvents(1);
-        try {
-          canvas?.resized?.();
-        } finally {
-          suppressViewboxEvents(-1);
-        }
-        await waitAnimationFrame();
-        if (!guard("recover1.after_resize", inst)) return { ok: false, reason: "skip_stale", step: 1 };
-      } catch {
-      }
-      let probeAfterRecover1 = probeCanvas(inst, "after_recover1", {
-        sid,
-        tab: tabName,
-        token: Number(tokenState.value || 0),
-        reason,
-        cycleIndex,
-        expectElements,
-      });
-      if (probeAfterRecover1.invisible) {
-        if (!guard("recover1.before_fit", inst)) return { ok: false, reason: "skip_stale", step: 1 };
-        await safeFit(inst, {
-          reason: `${reason}:recover1_fit`,
-          tab: tabName,
-          sid,
-          token: Number(tokenState.value || 0),
-          suppressViewbox: suppressViewboxEvents,
-        });
-        await waitAnimationFrame();
-        if (!guard("recover1.after_fit", inst)) return { ok: false, reason: "skip_stale", step: 1 };
-        probeAfterRecover1 = probeCanvas(inst, "after_recover1_fit", {
-          sid,
-          tab: tabName,
-          token: Number(tokenState.value || 0),
-          reason,
-          cycleIndex,
-          expectElements,
-        });
-      }
-      if (!probeAfterRecover1.invisible) {
-        logEnsureTrace("done", {
-          sid: requestedSid,
-          expectedSid: expectedSid || "-",
-          tab: tabName,
-          step: 1,
-          result: "ok",
-          cycle: cycleIndex,
-        });
-        return { ok: true, recovered: true, step: 1, probe: probeAfterRecover1 };
-      }
-
-      const xmlForRecovery = getRecoveryXmlCandidate();
-      if (xmlForRecovery.trim()) {
-        const reimported = await recoverByReimport(inst, xmlForRecovery, reason, cycleIndex, guard);
-        if (reimported) {
-          const currentInst = inst === modelerRef.current ? modelerRef.current : viewerRef.current;
-          const probeAfterRecover2 = probeCanvas(currentInst || inst, "after_recover2", {
-            sid,
-            tab: tabName,
-            token: Number(runtimeTokenRef.current || tokenState.value || 0),
-            reason,
-            cycleIndex,
-            expectElements,
-          });
-          if (!probeAfterRecover2.invisible) {
-            logEnsureTrace("done", {
-              sid: requestedSid,
-              expectedSid: expectedSid || "-",
-              tab: tabName,
-              step: 2,
-              result: "ok",
-              cycle: cycleIndex,
-            });
-            return { ok: true, recovered: true, step: 2, probe: probeAfterRecover2 };
-          }
-        }
-      }
-
-      const hardResetOk = await recoverByHardReset(inst, xmlForRecovery, reason, cycleIndex, guard);
-      const currentInst = inst === modelerRef.current ? modelerRef.current : viewerRef.current;
-      const probeAfterRecover3 = probeCanvas(currentInst || inst, "after_recover3", {
-        sid,
-        tab: tabName,
-        token: Number(runtimeTokenRef.current || tokenState.value || 0),
-        reason,
-        cycleIndex,
-        expectElements,
-      });
-      if (hardResetOk && !probeAfterRecover3.invisible) {
-        logEnsureTrace("done", {
-          sid: requestedSid,
-          expectedSid: expectedSid || "-",
-          tab: tabName,
-          step: 3,
-          result: "ok",
-          cycle: cycleIndex,
-        });
-        return { ok: true, recovered: true, step: 3, probe: probeAfterRecover3 };
-      }
-      logEnsureTrace("done", {
-        sid: requestedSid,
-        expectedSid: expectedSid || "-",
-        tab: tabName,
-        step: 3,
-        result: hardResetOk ? "failed_visible" : "failed_reset",
-        cycle: cycleIndex,
-      });
-      return {
-        ok: false,
-        recovered: hardResetOk,
-        step: 3,
-        reason: "still_invisible",
-        probe: probeAfterRecover3,
-      };
-    })();
-
-    ensureVisiblePromiseRef.current = run;
-    try {
-      const result = await run;
-      if (result?.reason === "skip_stale") {
-        logEnsureTrace("done", {
-          sid: requestedSid,
-          expectedSid: expectedSid || "-",
-          tab: tabName,
-          step: Number(result?.step || 0),
-          result: "skip_stale",
-          cycle: cycleIndex,
-        });
-      }
-      return result;
-    } finally {
-      if (ensureVisiblePromiseRef.current === run) {
-        ensureVisiblePromiseRef.current = null;
-      }
-    }
+    return viewportRecovery.ensureVisibleOnInstance(createViewportCtx(), inst, options);
   }
 
   async function persistXmlSnapshot(rawXml, hintBase = "backend") {
