@@ -1,6 +1,8 @@
 import os
+import sqlite3
 import tempfile
 import unittest
+from pathlib import Path
 
 
 class StorageSqliteScopeTest(unittest.TestCase):
@@ -83,6 +85,44 @@ class StorageSqliteScopeTest(unittest.TestCase):
             self.assertTrue({s1, s2}.issubset(session_ids))
         finally:
             self.pop_scope(t_admin)
+
+    def test_default_org_bootstrap_is_idempotent(self):
+        from app.auth import create_user
+        from app.storage import get_default_org_id, list_user_org_memberships
+
+        st = self.get_storage()
+        ps = self.get_project_storage()
+
+        user = create_user("member@local", "memberpass", is_admin=False)
+        uid = str(user.get("id") or "").strip()
+        default_org_id = get_default_org_id()
+        self.assertTrue(default_org_id)
+
+        t_user = self.push_scope(uid, False)
+        try:
+            pid = ps.create("Project Org Bootstrap", {"k": "v"})
+            sid = st.create("Session Org Bootstrap", roles=["role_boot"], project_id=pid, mode="quick_skeleton")
+        finally:
+            self.pop_scope(t_user)
+
+        memberships_first = list_user_org_memberships(uid, is_admin=False)
+        memberships_second = list_user_org_memberships(uid, is_admin=False)
+        default_rows = [row for row in memberships_second if str(row.get("org_id") or "") == default_org_id]
+        self.assertEqual(len(default_rows), 1)
+        self.assertGreaterEqual(len(memberships_first), 1)
+
+        db_path = Path(self.tmp_sessions.name) / "processmap.sqlite3"
+        with sqlite3.connect(str(db_path)) as con:
+            count = con.execute(
+                "SELECT COUNT(*) FROM org_memberships WHERE org_id = ? AND user_id = ?",
+                [default_org_id, uid],
+            ).fetchone()[0]
+            project_org = con.execute("SELECT org_id FROM projects WHERE id = ? LIMIT 1", [pid]).fetchone()[0]
+            session_org = con.execute("SELECT org_id FROM sessions WHERE id = ? LIMIT 1", [sid]).fetchone()[0]
+
+        self.assertEqual(int(count or 0), 1)
+        self.assertEqual(str(project_org or ""), default_org_id)
+        self.assertEqual(str(session_org or ""), default_org_id)
 
 
 if __name__ == "__main__":
