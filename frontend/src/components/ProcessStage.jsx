@@ -3,6 +3,7 @@ import BpmnStage from "./process/BpmnStage";
 import DocStage from "./process/DocStage";
 import InterviewStage from "./process/InterviewStage";
 import Modal from "../shared/ui/Modal";
+import { useAuth } from "../features/auth/AuthProvider";
 import { apiAiCommandOps } from "../lib/api";
 import { apiPatchSession, apiRecompute } from "../lib/api/sessionApi";
 import { apiGetBpmnXml } from "../lib/api/bpmnApi";
@@ -71,6 +72,15 @@ import {
   createPlaybackEngine,
   normalizePlaybackScenarioSpec,
 } from "../features/process/playback/playbackEngine";
+import {
+  applyHybridModeTransition,
+  applyHybridVisibilityTransition,
+  getHybridUiStorageKey,
+  loadHybridUiPrefs,
+  normalizeHybridLayerMap,
+  normalizeHybridUiPrefs,
+  saveHybridUiPrefs,
+} from "../features/process/hybrid/hybridLayerUi";
 import { buildManualPathReportSteps } from "./process/interview/services/pathReport";
 
 function toText(value) {
@@ -253,6 +263,34 @@ function shortHash(value) {
   const text = toText(value);
   if (!text) return "—";
   return text.slice(0, 10);
+}
+
+function cssEscapeAttr(value) {
+  const text = toText(value);
+  if (!text) return "";
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") return CSS.escape(text);
+  return text.replace(/["\\]/g, "\\$&");
+}
+
+function isEditableTarget(target) {
+  const el = target instanceof Element ? target : null;
+  if (!el) return false;
+  const tag = toText(el.tagName).toLowerCase();
+  if (tag === "input" || tag === "textarea" || tag === "select") return true;
+  return toText(el.getAttribute("contenteditable")).toLowerCase() === "true";
+}
+
+function serializeHybridLayerMap(rawMap) {
+  const map = normalizeHybridLayerMap(rawMap);
+  const sorted = {};
+  Object.keys(map).sort().forEach((elementId) => {
+    const row = asObject(map[elementId]);
+    sorted[elementId] = {
+      dx: Number(row.dx || 0),
+      dy: Number(row.dy || 0),
+    };
+  });
+  return JSON.stringify(sorted);
 }
 
 function downloadJsonFile(filenameRaw, payloadRaw) {
@@ -975,6 +1013,7 @@ export default function ProcessStage({
   snapshotRestoreNotice,
 }) {
   const sid = String(sessionId || "");
+  const { user } = useAuth();
   const bpmnRef = useRef(null);
   const importInputRef = useRef(null);
   const processBodyRef = useRef(null);
@@ -984,10 +1023,17 @@ export default function ProcessStage({
   const diagramPathPopoverRef = useRef(null);
   const diagramPlanPopoverRef = useRef(null);
   const diagramPlaybackPopoverRef = useRef(null);
+  const diagramLayersPopoverRef = useRef(null);
   const diagramRobotMetaPopoverRef = useRef(null);
   const diagramRobotMetaListRef = useRef(null);
   const diagramQualityPopoverRef = useRef(null);
   const diagramOverflowPopoverRef = useRef(null);
+  const bpmnStageHostRef = useRef(null);
+  const hybridLayerOverlayRef = useRef(null);
+  const hybridLayerDragRef = useRef(null);
+  const hybridLayerMapRef = useRef({});
+  const hybridLayerPositionsRef = useRef({});
+  const hybridLayerPersistedMapRef = useRef({});
   const playbackRafRef = useRef(0);
   const playbackLastTickRef = useRef(0);
   const playbackEngineRef = useRef(null);
@@ -1051,6 +1097,7 @@ export default function ProcessStage({
   const [diagramActionPathOpen, setDiagramActionPathOpen] = useState(false);
   const [diagramActionPlanOpen, setDiagramActionPlanOpen] = useState(false);
   const [diagramActionPlaybackOpen, setDiagramActionPlaybackOpen] = useState(false);
+  const [diagramActionLayersOpen, setDiagramActionLayersOpen] = useState(false);
   const [diagramActionRobotMetaOpen, setDiagramActionRobotMetaOpen] = useState(false);
   const [diagramActionQualityOpen, setDiagramActionQualityOpen] = useState(false);
   const [diagramActionOverflowOpen, setDiagramActionOverflowOpen] = useState(false);
@@ -1090,6 +1137,11 @@ export default function ProcessStage({
   const [playbackGatewayPending, setPlaybackGatewayPending] = useState(null);
   const [playbackGraphError, setPlaybackGraphError] = useState("");
   const [playbackIndex, setPlaybackIndex] = useState(0);
+  const [hybridUiPrefs, setHybridUiPrefs] = useState(() => normalizeHybridUiPrefs({}));
+  const [hybridPeekActive, setHybridPeekActive] = useState(false);
+  const [hybridLayerByElementId, setHybridLayerByElementId] = useState({});
+  const [hybridLayerPositions, setHybridLayerPositions] = useState({});
+  const [hybridLayerActiveElementId, setHybridLayerActiveElementId] = useState("");
 
   useEffect(() => {
     setGenBusy(false);
@@ -1139,6 +1191,7 @@ export default function ProcessStage({
     setDiagramActionPathOpen(false);
     setDiagramActionPlanOpen(false);
     setDiagramActionPlaybackOpen(false);
+    setDiagramActionLayersOpen(false);
     setDiagramActionRobotMetaOpen(false);
     setDiagramActionQualityOpen(false);
     setDiagramActionOverflowOpen(false);
@@ -1178,6 +1231,10 @@ export default function ProcessStage({
     setPlaybackGatewayPending(null);
     setPlaybackGraphError("");
     setPlaybackIndex(0);
+    setHybridPeekActive(false);
+    setHybridLayerActiveElementId("");
+    setHybridLayerPositions({});
+    hybridLayerPositionsRef.current = {};
     playbackFramesRef.current = [];
     playbackEngineRef.current = null;
     playbackIndexRef.current = 0;
@@ -1390,6 +1447,100 @@ export default function ProcessStage({
     });
     return out;
   }, [draft?.nodes]);
+  const hybridLayerMapFromDraft = useMemo(
+    () => normalizeHybridLayerMap(asObject(asObject(draft?.bpmn_meta).hybrid_layer_by_element_id)),
+    [draft?.bpmn_meta],
+  );
+  const hybridLayerMapLive = useMemo(
+    () => normalizeHybridLayerMap(hybridLayerByElementId),
+    [hybridLayerByElementId],
+  );
+  const hybridLayerItems = useMemo(() => {
+    const out = [];
+    const seen = new Set();
+    Object.keys(robotMetaByElementId).forEach((elementIdRaw) => {
+      const elementId = toText(elementIdRaw);
+      if (!elementId || seen.has(elementId)) return;
+      const meta = asObject(robotMetaByElementId[elementId]);
+      const mode = toText(meta?.exec?.mode).toLowerCase();
+      if (mode !== "hybrid") return;
+      seen.add(elementId);
+      const node = asObject(robotMetaNodeCatalogById[elementId]);
+      out.push({
+        elementId,
+        title: toText(node?.title || elementId) || elementId,
+        status: toText(robotMetaStatusByElementId[elementId]).toLowerCase() || "none",
+        executor: toText(meta?.exec?.executor),
+        actionKey: toText(meta?.exec?.action_key),
+      });
+    });
+    Object.keys(hybridLayerMapLive).forEach((elementIdRaw) => {
+      const elementId = toText(elementIdRaw);
+      if (!elementId || seen.has(elementId)) return;
+      seen.add(elementId);
+      const node = asObject(robotMetaNodeCatalogById[elementId]);
+      out.push({
+        elementId,
+        title: toText(node?.title || elementId) || elementId,
+        status: toText(robotMetaStatusByElementId[elementId]).toLowerCase() || "none",
+        executor: "",
+        actionKey: "",
+      });
+    });
+    return out.sort((a, b) => String(a.title || "").localeCompare(String(b.title || ""), "ru") || String(a.elementId || "").localeCompare(String(b.elementId || ""), "ru"));
+  }, [
+    robotMetaByElementId,
+    robotMetaNodeCatalogById,
+    robotMetaStatusByElementId,
+    hybridLayerMapLive,
+  ]);
+  const hybridStorageKey = useMemo(
+    () => getHybridUiStorageKey(toText(user?.id)),
+    [user?.id],
+  );
+  const hybridVisible = !!hybridUiPrefs.visible || !!hybridPeekActive;
+  const hybridModeEffective = hybridVisible
+    ? (hybridPeekActive ? "view" : (hybridUiPrefs.mode === "edit" && !hybridUiPrefs.lock ? "edit" : "view"))
+    : "hidden";
+  const hybridOpacityValue = Number(hybridUiPrefs.opacity || 60) / 100;
+  const hybridLayerCounts = useMemo(() => {
+    const out = { total: 0, ready: 0, incomplete: 0, none: 0 };
+    hybridLayerItems.forEach((itemRaw) => {
+      const item = asObject(itemRaw);
+      out.total += 1;
+      const status = toText(item?.status).toLowerCase();
+      if (status === "ready") out.ready += 1;
+      else if (status === "incomplete") out.incomplete += 1;
+      else out.none += 1;
+    });
+    return out;
+  }, [hybridLayerItems]);
+  useEffect(() => {
+    const incoming = normalizeHybridLayerMap(hybridLayerMapFromDraft);
+    const incomingSig = serializeHybridLayerMap(incoming);
+    const currentSig = serializeHybridLayerMap(hybridLayerMapRef.current);
+    const persistedSig = serializeHybridLayerMap(hybridLayerPersistedMapRef.current);
+    if (incomingSig === persistedSig && currentSig !== incomingSig) {
+      return;
+    }
+    setHybridLayerByElementId(incoming);
+    hybridLayerMapRef.current = incoming;
+    hybridLayerPersistedMapRef.current = incoming;
+  }, [hybridLayerMapFromDraft]);
+
+  useEffect(() => {
+    hybridLayerMapRef.current = normalizeHybridLayerMap(hybridLayerByElementId);
+  }, [hybridLayerByElementId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setHybridUiPrefs(loadHybridUiPrefs(window.localStorage, hybridStorageKey, toText(user?.id)));
+  }, [hybridStorageKey, sid, user?.id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    saveHybridUiPrefs(window.localStorage, hybridStorageKey, hybridUiPrefs, toText(user?.id));
+  }, [hybridStorageKey, hybridUiPrefs, user?.id]);
   const robotMetaListItems = useMemo(() => {
     const tab = toText(robotMetaListTab).toLowerCase() === "incomplete" ? "incomplete" : "ready";
     const query = toText(robotMetaListSearch).toLowerCase();
@@ -3303,6 +3454,7 @@ export default function ProcessStage({
   useEffect(() => {
     setToolbarMenuOpen(false);
     setDiagramActionPathOpen(false);
+    setDiagramActionLayersOpen(false);
     setDiagramActionRobotMetaOpen(false);
     setRobotMetaListOpen(false);
     setDiagramActionQualityOpen(false);
@@ -3344,6 +3496,259 @@ export default function ProcessStage({
     }
   }, [draft?.bpmn_xml, saveDirtyHint]);
 
+  const readHybridElementCenter = useCallback((elementIdRaw) => {
+    const host = bpmnStageHostRef.current;
+    const elementId = toText(elementIdRaw);
+    if (!host || !elementId) return null;
+    const escaped = cssEscapeAttr(elementId);
+    if (!escaped) return null;
+    const candidateSelectors = [
+      `g.djs-element.djs-shape[data-element-id="${escaped}"]`,
+      `g[data-element-id="${escaped}"]`,
+      `[data-element-id="${escaped}"]`,
+    ];
+    let target = null;
+    for (let i = 0; i < candidateSelectors.length; i += 1) {
+      const selector = candidateSelectors[i];
+      const found = host.querySelector(selector);
+      if (!found) continue;
+      const rect = found.getBoundingClientRect?.();
+      if (Number(rect?.width || 0) > 1 && Number(rect?.height || 0) > 1) {
+        target = found;
+        break;
+      }
+      if (!target) target = found;
+    }
+    if (!target) return null;
+    const targetRect = target.getBoundingClientRect?.();
+    const hostRect = host.getBoundingClientRect?.();
+    const width = Number(targetRect?.width || 0);
+    const height = Number(targetRect?.height || 0);
+    if (!(width > 0) || !(height > 0)) return null;
+    const x = Number(targetRect?.left || 0) - Number(hostRect?.left || 0) + (width / 2);
+    const y = Number(targetRect?.top || 0) - Number(hostRect?.top || 0) + (height / 2);
+    return {
+      x,
+      y,
+      width,
+      height,
+    };
+  }, []);
+
+  const resolveHybridTargetElementIdFromPoint = useCallback((clientXRaw, clientYRaw) => {
+    if (typeof document === "undefined") return "";
+    const host = bpmnStageHostRef.current;
+    const clientX = Number(clientXRaw || 0);
+    const clientY = Number(clientYRaw || 0);
+    if (!host || !Number.isFinite(clientX) || !Number.isFinite(clientY)) return "";
+    const points = typeof document.elementsFromPoint === "function"
+      ? document.elementsFromPoint(clientX, clientY)
+      : [];
+    const selector = "g.djs-element.djs-shape[data-element-id], g.djs-shape[data-element-id]";
+    for (let i = 0; i < points.length; i += 1) {
+      const row = points[i];
+      if (!(row instanceof Element)) continue;
+      if (!host.contains(row)) continue;
+      if (row.closest?.(".hybridLayerCard, .hybridLayerHotspot")) continue;
+      const candidate = row.closest?.(selector) || (row.matches?.(selector) ? row : null);
+      const elementId = toNodeId(candidate?.getAttribute?.("data-element-id") || row.getAttribute?.("data-element-id"));
+      if (!elementId) continue;
+      return elementId;
+    }
+    const shapes = host.querySelectorAll("g.djs-element.djs-shape[data-element-id], g.djs-shape[data-element-id]");
+    let bestId = "";
+    let bestArea = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < shapes.length; i += 1) {
+      const shape = shapes[i];
+      if (!(shape instanceof Element)) continue;
+      const rect = shape.getBoundingClientRect?.();
+      const left = Number(rect?.left || 0);
+      const top = Number(rect?.top || 0);
+      const width = Number(rect?.width || 0);
+      const height = Number(rect?.height || 0);
+      if (!(width > 0) || !(height > 0)) continue;
+      const right = left + width;
+      const bottom = top + height;
+      if (clientX < left || clientX > right || clientY < top || clientY > bottom) continue;
+      const area = width * height;
+      if (area < bestArea) {
+        bestArea = area;
+        bestId = toNodeId(shape.getAttribute("data-element-id"));
+      }
+    }
+    if (bestId) return bestId;
+    return "";
+  }, []);
+
+  const resolveFirstHybridSeedElementId = useCallback(() => {
+    const host = bpmnStageHostRef.current;
+    if (!host) return "";
+    const shapes = host.querySelectorAll("g.djs-element.djs-shape[data-element-id], g.djs-shape[data-element-id]");
+    for (let i = 0; i < shapes.length; i += 1) {
+      const row = shapes[i];
+      if (!(row instanceof Element)) continue;
+      const elementId = toNodeId(row.getAttribute("data-element-id"));
+      if (!elementId) continue;
+      const lowered = elementId.toLowerCase();
+      if (
+        lowered.includes("startevent")
+        || lowered.includes("endevent")
+        || lowered.includes("lane")
+        || lowered.includes("participant")
+      ) {
+        continue;
+      }
+      const rect = row.getBoundingClientRect?.();
+      if (Number(rect?.width || 0) < 2 || Number(rect?.height || 0) < 2) continue;
+      return elementId;
+    }
+    return "";
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    if (tab !== "diagram" || !hybridVisible || !hybridLayerItems.length) {
+      setHybridLayerPositions({});
+      hybridLayerPositionsRef.current = {};
+      return undefined;
+    }
+    let canceled = false;
+    let timerId = 0;
+    const compute = () => {
+      if (canceled) return;
+      const next = {};
+      hybridLayerItems.forEach((itemRaw) => {
+        const item = asObject(itemRaw);
+        const elementId = toText(item?.elementId);
+        if (!elementId) return;
+        const center = readHybridElementCenter(elementId);
+        if (!center) return;
+        next[elementId] = center;
+      });
+      const prev = asObject(hybridLayerPositionsRef.current);
+      const changed = Object.keys(next).length !== Object.keys(prev).length || Object.keys(next).some((key) => {
+        const a = asObject(prev[key]);
+        const b = asObject(next[key]);
+        return Math.abs(Number(a.x || 0) - Number(b.x || 0)) > 0.5
+          || Math.abs(Number(a.y || 0) - Number(b.y || 0)) > 0.5
+          || Math.abs(Number(a.width || 0) - Number(b.width || 0)) > 0.5
+          || Math.abs(Number(a.height || 0) - Number(b.height || 0)) > 0.5;
+      });
+      if (changed) {
+        hybridLayerPositionsRef.current = next;
+        setHybridLayerPositions(next);
+      }
+    };
+    compute();
+    timerId = window.setInterval(compute, 180);
+    return () => {
+      canceled = true;
+      if (timerId) window.clearInterval(timerId);
+    };
+  }, [tab, hybridVisible, hybridLayerItems, readHybridElementCenter]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onKeyDown = (event) => {
+      if (isEditableTarget(event.target)) return;
+      if (String(event?.key || "").toLowerCase() === "h" && !event.repeat) {
+        if (!hybridUiPrefs.visible) {
+          setHybridPeekActive(true);
+          markPlaybackOverlayInteraction({ stage: "hybrid_peek_down" });
+        }
+      }
+      if (String(event?.key || "") === "Escape" && hybridModeEffective === "edit") {
+        setHybridUiPrefs((prev) => applyHybridModeTransition(prev, "view"));
+        markPlaybackOverlayInteraction({ stage: "hybrid_edit_escape" });
+      }
+    };
+    const onKeyUp = (event) => {
+      if (String(event?.key || "").toLowerCase() !== "h") return;
+      if (hybridPeekActive) {
+        setHybridPeekActive(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, [hybridUiPrefs.visible, hybridPeekActive, hybridModeEffective]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    if (hybridModeEffective !== "edit") return undefined;
+    const onMove = (event) => {
+      const state = asObject(hybridLayerDragRef.current);
+      const elementId = toText(state?.elementId);
+      if (!elementId) return;
+      const dx = Number(event.clientX || 0) - Number(state.startX || 0);
+      const dy = Number(event.clientY || 0) - Number(state.startY || 0);
+      setHybridLayerByElementId((prevRaw) => {
+        const prev = normalizeHybridLayerMap(prevRaw);
+        const row = asObject(prev[elementId]);
+        return {
+          ...prev,
+          [elementId]: {
+            dx: Math.round((Number(state.baseDx || row.dx || 0) + dx) * 10) / 10,
+            dy: Math.round((Number(state.baseDy || row.dy || 0) + dy) * 10) / 10,
+          },
+        };
+      });
+    };
+    const onUp = () => {
+      const hadDrag = !!asObject(hybridLayerDragRef.current).elementId;
+      hybridLayerDragRef.current = null;
+      if (!hadDrag) return;
+      void persistHybridLayerMap(hybridLayerMapRef.current, { source: "hybrid_layer_drag_end" });
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [hybridModeEffective, draft?.bpmn_meta, isLocal, onSessionSync, sid]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    if (hybridModeEffective !== "edit" || hybridUiPrefs.lock || !hybridVisible) return undefined;
+    const onMouseDownCapture = (event) => {
+      const host = bpmnStageHostRef.current;
+      const target = event?.target;
+      if (!host || !(target instanceof Node) || !host.contains(target)) return;
+      if (
+        target instanceof Element
+        && (target.closest?.(".hybridLayerCard")
+          || target.closest?.(".hybridLayerHotspot")
+          || target.closest?.("[data-testid='diagram-action-layers-popover']"))
+      ) {
+        return;
+      }
+      const elementId = resolveHybridTargetElementIdFromPoint(event?.clientX, event?.clientY);
+      if (!elementId) return;
+      addOrSelectHybridMarker(elementId, "hybrid_edit_surface_pointer");
+      markPlaybackOverlayInteraction({
+        stage: "hybrid_edit_surface_pointer",
+        elementId,
+      });
+    };
+    window.addEventListener("mousedown", onMouseDownCapture, true);
+    return () => {
+      window.removeEventListener("mousedown", onMouseDownCapture, true);
+    };
+  }, [hybridModeEffective, hybridUiPrefs.lock, hybridVisible, resolveHybridTargetElementIdFromPoint]);
+
+  useEffect(() => {
+    if (hybridModeEffective !== "edit" || hybridUiPrefs.lock) return;
+    const elementId = toNodeId(selectedElementId);
+    const type = toText(selectedElementType).toLowerCase();
+    if (!elementId) return;
+    if (type.includes("sequenceflow") || type.includes("connection")) return;
+    addOrSelectHybridMarker(elementId, "hybrid_edit_selection");
+  }, [hybridModeEffective, hybridUiPrefs.lock, selectedElementId, selectedElementType]);
+
   useEffect(() => {
     if (!toolbarMenuOpen) return undefined;
     const onPointerDown = (event) => {
@@ -3371,6 +3776,7 @@ export default function ProcessStage({
     if (!diagramActionPathOpen
       && !diagramActionPlanOpen
       && !diagramActionPlaybackOpen
+      && !diagramActionLayersOpen
       && !diagramActionRobotMetaOpen
       && !diagramActionQualityOpen
       && !diagramActionOverflowOpen
@@ -3396,16 +3802,19 @@ export default function ProcessStage({
         diagramPathPopoverRef.current,
         diagramPlanPopoverRef.current,
         diagramPlaybackPopoverRef.current,
+        diagramLayersPopoverRef.current,
         diagramRobotMetaPopoverRef.current,
         diagramRobotMetaListRef.current,
         diagramQualityPopoverRef.current,
         diagramOverflowPopoverRef.current,
+        hybridLayerOverlayRef.current,
       ];
       const inside = refs.some((node) => !!(node && target instanceof Node && node.contains(target)));
       if (inside) return;
       setDiagramActionPathOpen(false);
       setDiagramActionPlanOpen(false);
       setDiagramActionPlaybackOpen(false);
+      setDiagramActionLayersOpen(false);
       setDiagramActionRobotMetaOpen(false);
       setRobotMetaListOpen(false);
       setDiagramActionQualityOpen(false);
@@ -3416,6 +3825,7 @@ export default function ProcessStage({
       setDiagramActionPathOpen(false);
       setDiagramActionPlanOpen(false);
       setDiagramActionPlaybackOpen(false);
+      setDiagramActionLayersOpen(false);
       setDiagramActionRobotMetaOpen(false);
       setRobotMetaListOpen(false);
       setDiagramActionQualityOpen(false);
@@ -3431,6 +3841,7 @@ export default function ProcessStage({
     diagramActionPathOpen,
     diagramActionPlanOpen,
     diagramActionPlaybackOpen,
+    diagramActionLayersOpen,
     diagramActionRobotMetaOpen,
     robotMetaListOpen,
     diagramActionQualityOpen,
@@ -4167,6 +4578,231 @@ export default function ProcessStage({
     } finally {
       setExecutionPlanSaveBusy(false);
     }
+  }
+
+  async function persistHybridLayerMap(nextRaw, options = {}) {
+    const nextMap = normalizeHybridLayerMap(nextRaw);
+    const nextSig = serializeHybridLayerMap(nextMap);
+    const prevMap = normalizeHybridLayerMap(hybridLayerPersistedMapRef.current);
+    const prevSig = serializeHybridLayerMap(prevMap);
+    if (nextSig === prevSig) return { ok: true, skipped: true };
+
+    const currentMeta = asObject(draft?.bpmn_meta);
+    const optimisticMeta = { ...currentMeta };
+    if (Object.keys(nextMap).length) optimisticMeta.hybrid_layer_by_element_id = nextMap;
+    else delete optimisticMeta.hybrid_layer_by_element_id;
+
+    const optimisticSession = {
+      id: sid,
+      session_id: sid,
+      bpmn_meta: optimisticMeta,
+      _sync_source: String(options?.source || "hybrid_layer_ui_save"),
+    };
+    hybridLayerPersistedMapRef.current = nextMap;
+    onSessionSync?.(optimisticSession);
+
+    if (!sid || isLocal) return { ok: true, local: true };
+
+    const syncRes = await apiPatchSession(sid, { bpmn_meta: optimisticMeta });
+    if (!syncRes?.ok) {
+      hybridLayerPersistedMapRef.current = prevMap;
+      const rollbackMeta = { ...currentMeta };
+      if (Object.keys(prevMap).length) rollbackMeta.hybrid_layer_by_element_id = prevMap;
+      else delete rollbackMeta.hybrid_layer_by_element_id;
+      onSessionSync?.({
+        id: sid,
+        session_id: sid,
+        bpmn_meta: rollbackMeta,
+        _sync_source: "hybrid_layer_ui_save_rollback",
+      });
+      const msg = shortErr(syncRes?.error || "Не удалось сохранить Hybrid Layer.");
+      setGenErr(msg);
+      return { ok: false, error: msg };
+    }
+    if (syncRes.session && typeof syncRes.session === "object") {
+      onSessionSync?.({
+        ...syncRes.session,
+        _sync_source: "hybrid_layer_ui_save_session_patch",
+      });
+    }
+    return { ok: true };
+  }
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    if (!hybridVisible) return undefined;
+    if (hybridLayerDragRef.current) return undefined;
+    const nextSig = serializeHybridLayerMap(hybridLayerByElementId);
+    const prevSig = serializeHybridLayerMap(hybridLayerPersistedMapRef.current);
+    if (nextSig === prevSig) return undefined;
+    const timerId = window.setTimeout(() => {
+      void persistHybridLayerMap(hybridLayerByElementId, { source: "hybrid_layer_autosave" });
+    }, 220);
+    return () => window.clearTimeout(timerId);
+  }, [hybridLayerByElementId, hybridVisible, isLocal, sid]);
+
+  function updateHybridUiPrefs(mutator) {
+    setHybridUiPrefs((prevRaw) => {
+      const prev = normalizeHybridUiPrefs(prevRaw);
+      const next = typeof mutator === "function" ? mutator(prev) : prev;
+      return normalizeHybridUiPrefs(next);
+    });
+  }
+
+  function showHybridLayer() {
+    updateHybridUiPrefs((prev) => applyHybridVisibilityTransition(prev, true));
+  }
+
+  function hideHybridLayer() {
+    updateHybridUiPrefs((prev) => applyHybridVisibilityTransition(prev, false));
+    setHybridPeekActive(false);
+  }
+
+  function setHybridLayerMode(modeRaw) {
+    const nextMode = toText(modeRaw).toLowerCase() === "edit" ? "edit" : "view";
+    updateHybridUiPrefs((prev) => applyHybridModeTransition(prev, nextMode));
+    if (nextMode !== "edit") return;
+    const currentMap = normalizeHybridLayerMap(hybridLayerMapRef.current);
+    if (Object.keys(currentMap).length > 0) return;
+    const selectedId = toNodeId(selectedElementId);
+    if (selectedId) {
+      addOrSelectHybridMarker(selectedId, "hybrid_edit_seed_selected");
+      return;
+    }
+    const domSelectedId = (() => {
+      const host = bpmnStageHostRef.current;
+      if (!host) return "";
+      const selectedNode = host.querySelector(
+        "g.djs-element.selected[data-element-id], g.djs-shape.selected[data-element-id]",
+      );
+      return toNodeId(selectedNode?.getAttribute?.("data-element-id"));
+    })();
+    if (domSelectedId) {
+      addOrSelectHybridMarker(domSelectedId, "hybrid_edit_seed_dom_selected");
+      return;
+    }
+    const graphSeedId = (() => {
+      const graphRes = asObject(bpmnRef.current?.getPlaybackGraph?.());
+      const nodesById = asObject(asObject(graphRes?.graph).nodesById);
+      const nodeIds = Object.keys(nodesById);
+      for (let i = 0; i < nodeIds.length; i += 1) {
+        const nodeId = toNodeId(nodeIds[i]);
+        const node = asObject(nodesById[nodeId]);
+        const type = toText(node?.type).toLowerCase();
+        if (!nodeId) continue;
+        if (type.includes("startevent") || type.includes("endevent") || type.includes("lane") || type.includes("participant")) continue;
+        return nodeId;
+      }
+      return "";
+    })();
+    if (graphSeedId) {
+      addOrSelectHybridMarker(graphSeedId, "hybrid_edit_seed_graph");
+      return;
+    }
+    const domSeedId = resolveFirstHybridSeedElementId();
+    if (domSeedId) {
+      addOrSelectHybridMarker(domSeedId, "hybrid_edit_seed_dom");
+      return;
+    }
+    const xmlSeedId = parseSequenceFlowsFromXml(draft?.bpmn_xml)
+      .map((flowRaw) => toNodeId(asObject(flowRaw)?.targetId || asObject(flowRaw)?.sourceId))
+      .find((nodeIdRaw) => {
+        const nodeId = toNodeId(nodeIdRaw);
+        const lowered = nodeId.toLowerCase();
+        if (!nodeId) return false;
+        if (lowered.includes("startevent") || lowered.includes("endevent") || lowered.includes("lane") || lowered.includes("participant")) return false;
+        return true;
+      });
+    if (xmlSeedId) {
+      addOrSelectHybridMarker(xmlSeedId, "hybrid_edit_seed_xml");
+      return;
+    }
+    const fallbackNode = asArray(draft?.nodes).find((rowRaw) => {
+      const row = asObject(rowRaw);
+      const nodeId = toNodeId(row?.id);
+      if (!nodeId) return false;
+      const type = toText(row?.type).toLowerCase();
+      if (type.includes("startevent") || type.includes("endevent")) return false;
+      return true;
+    });
+    const fallbackId = toNodeId(asObject(fallbackNode)?.id);
+    if (!fallbackId) return;
+    addOrSelectHybridMarker(fallbackId, "hybrid_edit_seed_fallback");
+  }
+
+  function setHybridLayerOpacity(opacityRaw) {
+    const opacity = Number(opacityRaw || 60);
+    updateHybridUiPrefs((prev) => ({
+      ...prev,
+      opacity: opacity >= 95 ? 100 : opacity >= 45 ? 60 : 30,
+    }));
+  }
+
+  function toggleHybridLayerLock() {
+    updateHybridUiPrefs((prev) => ({ ...prev, lock: !prev.lock }));
+  }
+
+  function toggleHybridLayerFocus() {
+    updateHybridUiPrefs((prev) => ({ ...prev, focus: !prev.focus }));
+  }
+
+  function withHybridOverlayGuard(event, meta = {}) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    markPlaybackOverlayInteraction({ stage: "hybrid_overlay_guard", ...asObject(meta) });
+  }
+
+  function handleHybridLayerItemPointerDown(event, itemRaw) {
+    const item = asObject(itemRaw);
+    const elementId = toText(item?.elementId);
+    if (!elementId) return;
+    withHybridOverlayGuard(event, { elementId, action: "item_pointer_down" });
+    setHybridLayerActiveElementId(elementId);
+    if (hybridModeEffective !== "edit" || hybridUiPrefs.lock) return;
+    const row = asObject(hybridLayerByElementId[elementId]);
+    hybridLayerDragRef.current = {
+      elementId,
+      startX: Number(event?.clientX || 0),
+      startY: Number(event?.clientY || 0),
+      baseDx: Number(row.dx || 0),
+      baseDy: Number(row.dy || 0),
+    };
+  }
+
+  function addOrSelectHybridMarker(elementIdRaw, source = "hybrid_edit_click") {
+    const elementId = toNodeId(elementIdRaw);
+    if (!elementId) return;
+    let createdMap = null;
+    setHybridLayerActiveElementId(elementId);
+    setHybridLayerByElementId((prevRaw) => {
+      const prev = normalizeHybridLayerMap(prevRaw);
+      if (prev[elementId]) return prev;
+      const next = {
+        ...prev,
+        [elementId]: { dx: 0, dy: 0 },
+      };
+      hybridLayerMapRef.current = next;
+      markPlaybackOverlayInteraction({
+        stage: "hybrid_marker_added",
+        source,
+        elementId,
+      });
+      createdMap = next;
+      return next;
+    });
+    if (createdMap) {
+      window.setTimeout(() => {
+        void persistHybridLayerMap(createdMap, { source: `${source}_create` });
+      }, 0);
+    }
+  }
+
+  function handleHybridEditSurfacePointerDown(event, source = "hybrid_edit_surface") {
+    if (hybridModeEffective !== "edit" || hybridUiPrefs.lock) return;
+    const elementId = resolveHybridTargetElementIdFromPoint(event?.clientX, event?.clientY) || toNodeId(selectedElementId);
+    withHybridOverlayGuard(event, { action: source, elementId });
+    if (!elementId) return;
+    addOrSelectHybridMarker(elementId, source);
   }
 
   function markPlaybackOverlayInteraction(meta = {}) {
@@ -5115,7 +5751,10 @@ export default function ProcessStage({
         ) : (
           <div className="relative h-full min-h-0">
             <div className={isInterview ? "absolute inset-0 opacity-0 pointer-events-none" : "absolute inset-0"}>
-              <div className="bpmnStageHost h-full">
+              <div
+                className={`bpmnStageHost h-full ${(hybridVisible && hybridUiPrefs.focus) ? "isHybridFocus" : ""}`}
+                ref={bpmnStageHostRef}
+              >
                 {tab === "diagram" ? (
                   <>
                     <div className="bpmnCanvasTools diagramActionBar" ref={diagramActionBarRef}>
@@ -5126,6 +5765,7 @@ export default function ProcessStage({
                           setDiagramActionPathOpen((prev) => !prev);
                           setDiagramActionPlanOpen(false);
                           setDiagramActionPlaybackOpen(false);
+                          setDiagramActionLayersOpen(false);
                           setDiagramActionRobotMetaOpen(false);
                           setRobotMetaListOpen(false);
                           setDiagramActionQualityOpen(false);
@@ -5173,6 +5813,7 @@ export default function ProcessStage({
                           setDiagramActionPlanOpen((prev) => !prev);
                           setDiagramActionPathOpen(false);
                           setDiagramActionPlaybackOpen(false);
+                          setDiagramActionLayersOpen(false);
                           setDiagramActionRobotMetaOpen(false);
                           setRobotMetaListOpen(false);
                           setDiagramActionQualityOpen(false);
@@ -5190,6 +5831,7 @@ export default function ProcessStage({
                           setDiagramActionPlaybackOpen((prev) => !prev);
                           setDiagramActionPathOpen(false);
                           setDiagramActionPlanOpen(false);
+                          setDiagramActionLayersOpen(false);
                           setDiagramActionRobotMetaOpen(false);
                           setRobotMetaListOpen(false);
                           setDiagramActionQualityOpen(false);
@@ -5202,12 +5844,30 @@ export default function ProcessStage({
                       </button>
                       <button
                         type="button"
+                        className={`secondaryBtn h-8 px-2 text-[11px] ${diagramActionLayersOpen || hybridVisible ? "ring-1 ring-accent/60" : ""}`}
+                        onClick={() => {
+                          setDiagramActionLayersOpen((prev) => !prev);
+                          setDiagramActionPathOpen(false);
+                          setDiagramActionPlanOpen(false);
+                          setDiagramActionRobotMetaOpen(false);
+                          setRobotMetaListOpen(false);
+                          setDiagramActionQualityOpen(false);
+                          setDiagramActionOverflowOpen(false);
+                        }}
+                        title="Управление Hybrid Layer"
+                        data-testid="diagram-action-layers"
+                      >
+                        Layers
+                      </button>
+                      <button
+                        type="button"
                         className={`secondaryBtn h-8 px-2 text-[11px] ${robotMetaOverlayEnabled ? "ring-1 ring-accent/60" : ""}`}
                         onClick={() => {
                           setDiagramActionRobotMetaOpen((prev) => !prev);
                           setDiagramActionPathOpen(false);
                           setDiagramActionPlanOpen(false);
                           setDiagramActionPlaybackOpen(false);
+                          setDiagramActionLayersOpen(false);
                           setRobotMetaListOpen(false);
                           setDiagramActionQualityOpen(false);
                           setDiagramActionOverflowOpen(false);
@@ -5236,6 +5896,7 @@ export default function ProcessStage({
                           setDiagramActionPathOpen(false);
                           setDiagramActionPlanOpen(false);
                           setDiagramActionPlaybackOpen(false);
+                          setDiagramActionLayersOpen(false);
                           setDiagramActionRobotMetaOpen(false);
                           setRobotMetaListOpen(false);
                           setDiagramActionOverflowOpen(false);
@@ -5253,6 +5914,7 @@ export default function ProcessStage({
                           setDiagramActionPathOpen(false);
                           setDiagramActionPlanOpen(false);
                           setDiagramActionPlaybackOpen(false);
+                          setDiagramActionLayersOpen(false);
                           setDiagramActionRobotMetaOpen(false);
                           setRobotMetaListOpen(false);
                           setDiagramActionQualityOpen(false);
@@ -5730,6 +6392,122 @@ export default function ProcessStage({
                       </div>
                     ) : null}
 
+                    {diagramActionLayersOpen ? (
+                      <div
+                        className="diagramActionPopover diagramActionPopover--layers"
+                        ref={diagramLayersPopoverRef}
+                        data-testid="diagram-action-layers-popover"
+                        onMouseDown={(event) => {
+                          event.stopPropagation();
+                          markPlaybackOverlayInteraction({ stage: "layers_popover_mousedown" });
+                        }}
+                      >
+                        <div className="diagramActionPopoverHead">
+                          <span>Layers</span>
+                          <button
+                            type="button"
+                            className="secondaryBtn h-7 px-2 text-[11px]"
+                            onClick={() => setDiagramActionLayersOpen(false)}
+                          >
+                            Закрыть
+                          </button>
+                        </div>
+                        <div className="diagramIssueRows">
+                          <div className="diagramIssueRow">
+                            <label className="diagramActionCheckboxRow">
+                              <input
+                                type="checkbox"
+                                checked={!!hybridVisible}
+                                onChange={(event) => {
+                                  if (event.target.checked) showHybridLayer();
+                                  else hideHybridLayer();
+                                }}
+                                data-testid="diagram-action-layers-hybrid-toggle"
+                              />
+                              <span>Hybrid ({Number(hybridLayerCounts.total || 0)})</span>
+                            </label>
+                          </div>
+                          <div className="diagramIssueRow">
+                            <span>Mode</span>
+                            <div className="diagramActionPopoverActions mt-0">
+                              <button
+                                type="button"
+                                className={`secondaryBtn h-7 px-2 text-[11px] ${hybridModeEffective === "view" ? "ring-1 ring-accent/60" : ""}`}
+                                onClick={() => setHybridLayerMode("view")}
+                                data-testid="diagram-action-layers-mode-view"
+                              >
+                                View
+                              </button>
+                              <button
+                                type="button"
+                                className={`secondaryBtn h-7 px-2 text-[11px] ${hybridModeEffective === "edit" ? "ring-1 ring-accent/60" : ""}`}
+                                onClick={() => {
+                                  showHybridLayer();
+                                  setHybridLayerMode("edit");
+                                }}
+                                disabled={!hybridVisible || !!hybridUiPrefs.lock}
+                                data-testid="diagram-action-layers-mode-edit"
+                              >
+                                Edit
+                              </button>
+                            </div>
+                          </div>
+                          <div className="diagramIssueRow">
+                            <span>Opacity</span>
+                            <div className="diagramActionPopoverActions mt-0">
+                              {[100, 60, 30].map((opacity) => (
+                                <button
+                                  key={`hybrid_opacity_${opacity}`}
+                                  type="button"
+                                  className={`secondaryBtn h-7 px-2 text-[11px] ${Number(hybridUiPrefs.opacity || 0) === opacity ? "ring-1 ring-accent/60" : ""}`}
+                                  onClick={() => setHybridLayerOpacity(opacity)}
+                                  data-testid={`diagram-action-layers-opacity-${opacity}`}
+                                >
+                                  {opacity}%
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="diagramIssueRow">
+                            <label className="diagramActionCheckboxRow">
+                              <input
+                                type="checkbox"
+                                checked={!!hybridUiPrefs.lock}
+                                onChange={toggleHybridLayerLock}
+                                data-testid="diagram-action-layers-lock"
+                              />
+                              <span>Lock</span>
+                            </label>
+                            <label className="diagramActionCheckboxRow">
+                              <input
+                                type="checkbox"
+                                checked={!!hybridUiPrefs.focus}
+                                onChange={toggleHybridLayerFocus}
+                                data-testid="diagram-action-layers-focus"
+                              />
+                              <span>Focus</span>
+                            </label>
+                          </div>
+                        </div>
+                        <div className="diagramIssueRows mt-2">
+                          <div className="diagramIssueRow">
+                            <span>Ready</span>
+                            <span className="diagramIssueChip">{Number(hybridLayerCounts.ready || 0)}</span>
+                          </div>
+                          <div className="diagramIssueRow">
+                            <span>Incomplete</span>
+                            <span className="diagramIssueChip">{Number(hybridLayerCounts.incomplete || 0)}</span>
+                          </div>
+                        </div>
+                        {hybridVisible && Number(hybridLayerCounts.total || 0) === 0 ? (
+                          <div className="diagramActionPopoverEmpty mt-2" data-testid="diagram-action-layers-empty-state">
+                            Нет элементов Hybrid. Переключись в Edit и кликни по узлу BPMN, чтобы добавить метку.
+                          </div>
+                        ) : null}
+                        <div className="muted mt-2 text-[10px]">Peek: удерживайте <b>H</b> (temporary View)</div>
+                      </div>
+                    ) : null}
+
                     {diagramActionRobotMetaOpen ? (
                       <div className="diagramActionPopover diagramActionPopover--robotmeta" ref={diagramRobotMetaPopoverRef} data-testid="diagram-action-robotmeta-popover">
                         <div className="diagramActionPopoverHead">
@@ -6009,6 +6787,78 @@ export default function ProcessStage({
                   robotMetaOverlayFilters={robotMetaOverlayFilters}
                   robotMetaStatusByElementId={robotMetaStatusByElementId}
                 />
+                {tab === "diagram" && hybridVisible ? (
+                  <div
+                    className={`hybridLayerOverlay ${hybridModeEffective === "edit" ? "isEdit" : "isView"}`}
+                    ref={hybridLayerOverlayRef}
+                    style={{ "--hybrid-layer-opacity": String(Math.max(0.2, Math.min(1, hybridOpacityValue))) }}
+                    data-testid="hybrid-layer-overlay"
+                  >
+                    {hybridModeEffective === "edit" ? (
+                      <div
+                        className="hybridLayerShield"
+                      />
+                    ) : null}
+                    {hybridLayerItems.map((itemRaw, index) => {
+                      const item = asObject(itemRaw);
+                      const elementId = toText(item?.elementId);
+                      const center = asObject(hybridLayerPositions[elementId]);
+                      if (!elementId) return null;
+                      const offset = asObject(hybridLayerByElementId[elementId]);
+                      const hasCenter = Number.isFinite(center.x) && Number.isFinite(center.y);
+                      const fallbackX = 92 + ((index % 6) * 36);
+                      const fallbackY = 88 + (Math.floor(index / 6) * 30);
+                      const posX = Number(hasCenter ? center.x : fallbackX) + Number(offset.dx || 0);
+                      const posY = Number(hasCenter ? center.y : fallbackY) + Number(offset.dy || 0);
+                      const status = toText(item?.status).toLowerCase() || "none";
+                      const isActive = toText(hybridLayerActiveElementId) === elementId;
+                      const showCard = hybridModeEffective === "edit" || isActive;
+                      return (
+                        <div
+                          key={`hybrid_layer_item_${elementId}`}
+                          className={`hybridLayerItem is-${status} ${showCard ? "isActive" : ""}`}
+                          style={{ left: `${posX}px`, top: `${posY}px` }}
+                          data-element-id={elementId}
+                        >
+                          <button
+                            type="button"
+                            className="hybridLayerHotspot"
+                            title={`Hybrid: ${toText(item?.title) || elementId}`}
+                            data-testid="hybrid-layer-hotspot"
+                            onMouseDown={(event) => withHybridOverlayGuard(event, { action: "hotspot_mousedown", elementId })}
+                            onClick={(event) => {
+                              withHybridOverlayGuard(event, { action: "hotspot_click", elementId });
+                              setHybridLayerActiveElementId(elementId);
+                              bpmnRef.current?.focusNode?.(elementId, { keepPrevious: false, durationMs: 1200 });
+                            }}
+                          >
+                            ℹ
+                          </button>
+                          {showCard ? (
+                            <div
+                              className="hybridLayerCard"
+                              data-testid="hybrid-layer-card"
+                              onMouseDown={(event) => handleHybridLayerItemPointerDown(event, item)}
+                              onClick={(event) => withHybridOverlayGuard(event, { action: "card_click", elementId })}
+                            >
+                              <div className="hybridLayerCardTitle" title={toText(item?.title) || elementId}>
+                                {toText(item?.title) || elementId}
+                              </div>
+                              <div className="hybridLayerCardMeta">
+                                <span className={`hybridLayerStatus is-${status}`}>{status}</span>
+                                <span className="hybridLayerNodeId">{elementId}</span>
+                              </div>
+                              <div className="hybridLayerCardMeta">
+                                <span>{toText(item?.executor) || "executor:—"}</span>
+                                <span>{toText(item?.actionKey) || "action:—"}</span>
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
                 {tab === "diagram" && isCoverageMode ? (
                   <div className="coverageMiniMap" data-testid="coverage-minimap">
                     <div className="coverageMiniMapHead">

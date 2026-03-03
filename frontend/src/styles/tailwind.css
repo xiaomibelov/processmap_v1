@@ -299,6 +299,12 @@
     overflow: auto;
   }
 
+  .diagramActionPopover--layers {
+    width: min(420px, calc(100% - 24px));
+    max-height: min(70vh, 620px);
+    overflow: auto;
+  }
+
   .diagramActionPopover--quality {
     width: min(440px, calc(100% - 24px));
     max-height: min(68vh, 620px);
@@ -418,6 +424,134 @@
 
   .bpmnStage {
     @apply relative flex h-full min-h-0 flex-1 flex-col bg-panel;
+  }
+
+  .bpmnStageHost.isHybridFocus .bpmnStage {
+    filter: grayscale(0.16) brightness(0.72);
+    transition: filter 150ms ease;
+  }
+
+  .hybridLayerOverlay {
+    position: absolute;
+    inset: 0;
+    z-index: 66;
+    pointer-events: none;
+    opacity: var(--hybrid-layer-opacity, 0.6);
+    transition: opacity 120ms ease;
+  }
+
+  .hybridLayerOverlay.isEdit {
+    pointer-events: none;
+  }
+
+  .hybridLayerShield {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: transparent;
+  }
+
+  .hybridLayerItem {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .hybridLayerItem.is-ready .hybridLayerCard {
+    border-color: color-mix(in oklab, hsl(var(--ok)) 64%, transparent);
+  }
+
+  .hybridLayerItem.is-incomplete .hybridLayerCard {
+    border-color: color-mix(in oklab, hsl(var(--warning)) 66%, transparent);
+  }
+
+  .hybridLayerHotspot {
+    pointer-events: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 999px;
+    border: 1px solid hsl(var(--border));
+    background: hsl(var(--panel));
+    color: hsl(var(--fg));
+    font-size: 11px;
+    line-height: 1;
+    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.16);
+  }
+
+  .hybridLayerCard {
+    pointer-events: auto;
+    min-width: 190px;
+    max-width: 280px;
+    margin-top: 6px;
+    border: 1px solid hsl(var(--border));
+    border-radius: 10px;
+    background: hsl(var(--panel));
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.2);
+    padding: 6px 8px;
+    cursor: grab;
+  }
+
+  .hybridLayerOverlay.isView .hybridLayerCard {
+    cursor: default;
+  }
+
+  .hybridLayerCard:active {
+    cursor: grabbing;
+  }
+
+  .hybridLayerCardTitle {
+    font-size: 12px;
+    font-weight: 600;
+    color: hsl(var(--fg));
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .hybridLayerCardMeta {
+    margin-top: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    min-width: 0;
+    font-size: 10px;
+    color: hsl(var(--muted));
+  }
+
+  .hybridLayerStatus {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    border: 1px solid hsl(var(--border));
+    padding: 0 6px;
+    font-size: 10px;
+    line-height: 16px;
+    text-transform: lowercase;
+  }
+
+  .hybridLayerStatus.is-ready {
+    color: hsl(var(--ok));
+    border-color: color-mix(in oklab, hsl(var(--ok)) 52%, transparent);
+  }
+
+  .hybridLayerStatus.is-incomplete {
+    color: hsl(var(--warning));
+    border-color: color-mix(in oklab, hsl(var(--warning)) 52%, transparent);
+  }
+
+  .hybridLayerNodeId {
+    min-width: 0;
+    max-width: 55%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   }
 
   .bpmnStack {

@@ -1636,6 +1636,40 @@ def _normalize_robot_meta_map(
     return out
 
 
+def _normalize_hybrid_layer_map(
+    value: Any,
+    *,
+    allowed_node_ids: Optional[Set[str]] = None,
+) -> Dict[str, Dict[str, float]]:
+    raw = value if isinstance(value, dict) else {}
+    out: Dict[str, Dict[str, float]] = {}
+    for element_id_raw in sorted(raw.keys(), key=lambda x: str(x)):
+        element_id = str(element_id_raw or "").strip()
+        if not element_id:
+            continue
+        # Hybrid layer UI can carry anchors that temporarily do not resolve in the
+        # current BPMN graph snapshot; keep them to avoid silent data loss.
+        _ = allowed_node_ids
+        row = raw.get(element_id_raw) if isinstance(raw.get(element_id_raw), dict) else {}
+        try:
+            dx = float(row.get("dx", row.get("x", 0)))
+        except Exception:
+            dx = 0.0
+        try:
+            dy = float(row.get("dy", row.get("y", 0)))
+        except Exception:
+            dy = 0.0
+        if not math.isfinite(dx):
+            dx = 0.0
+        if not math.isfinite(dy):
+            dy = 0.0
+        out[element_id] = {
+            "dx": round(dx, 3),
+            "dy": round(dy, 3),
+        }
+    return out
+
+
 def _entry_to_flow_tier(entry_raw: Any) -> Optional[str]:
     if isinstance(entry_raw, dict):
         tier = _normalize_flow_tier(entry_raw.get("tier"))
@@ -1706,12 +1740,17 @@ def _normalize_bpmn_meta(
         raw.get("robot_meta_by_element_id"),
         allowed_node_ids=allowed_node_ids,
     )
+    hybrid_layer_by_element_id = _normalize_hybrid_layer_map(
+        raw.get("hybrid_layer_by_element_id"),
+        allowed_node_ids=allowed_node_ids,
+    )
 
     return {
         "version": version,
         "flow_meta": flow_meta,
         "node_path_meta": node_path_meta,
         "robot_meta_by_element_id": robot_meta_by_element_id,
+        "hybrid_layer_by_element_id": hybrid_layer_by_element_id,
     }
 
 
@@ -2230,6 +2269,7 @@ class BpmnMetaPatchIn(BaseModel):
     remove_robot_meta: Optional[bool] = None
     robot_updates: Optional[List[Dict[str, Any]]] = None
     robot_meta_by_element_id: Optional[Dict[str, Any]] = None
+    hybrid_layer_by_element_id: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -4256,6 +4296,7 @@ def _infer_and_merge_rtiers(
     flow_meta = dict(current.get("flow_meta") or {})
     node_path_meta = dict(current.get("node_path_meta") or {})
     robot_meta_by_element_id = dict(current.get("robot_meta_by_element_id") or {})
+    hybrid_layer_by_element_id = dict(current.get("hybrid_layer_by_element_id") or {})
     now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
     manual_preserved_flow_ids: List[str] = []
@@ -4318,6 +4359,7 @@ def _infer_and_merge_rtiers(
             "flow_meta": flow_meta,
             "node_path_meta": node_path_meta,
             "robot_meta_by_element_id": robot_meta_by_element_id,
+            "hybrid_layer_by_element_id": hybrid_layer_by_element_id,
         },
         allowed_flow_ids=flow_ids,
         allowed_node_ids=node_ids,
@@ -4394,6 +4436,7 @@ def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn) -> Dict[str, 
     flow_meta = dict(current.get("flow_meta") or {})
     node_path_meta = dict(current.get("node_path_meta") or {})
     robot_meta_by_element_id = dict(current.get("robot_meta_by_element_id") or {})
+    hybrid_layer_by_element_id = dict(current.get("hybrid_layer_by_element_id") or {})
 
     if isinstance(inp.flow_meta, dict):
         replaced = _normalize_bpmn_meta(
@@ -4418,6 +4461,14 @@ def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn) -> Dict[str, 
             allowed_node_ids=node_ids if has_xml else None,
         )
         robot_meta_by_element_id = dict(replaced.get("robot_meta_by_element_id") or {})
+
+    if isinstance(inp.hybrid_layer_by_element_id, dict):
+        replaced = _normalize_bpmn_meta(
+            {"version": current.get("version", 1), "hybrid_layer_by_element_id": inp.hybrid_layer_by_element_id},
+            allowed_flow_ids=flow_ids if has_xml else None,
+            allowed_node_ids=node_ids if has_xml else None,
+        )
+        hybrid_layer_by_element_id = dict(replaced.get("hybrid_layer_by_element_id") or {})
 
     def apply_update(update_raw: Dict[str, Any]) -> None:
         update = update_raw if isinstance(update_raw, dict) else {}
@@ -4607,6 +4658,7 @@ def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn) -> Dict[str, 
             "flow_meta": flow_meta,
             "node_path_meta": node_path_meta,
             "robot_meta_by_element_id": robot_meta_by_element_id,
+            "hybrid_layer_by_element_id": hybrid_layer_by_element_id,
         },
         allowed_flow_ids=flow_ids if has_xml else None,
         allowed_node_ids=node_ids if has_xml else None,
@@ -4743,7 +4795,28 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn) -> Dict[str, Any]:
     flow_ctx = _collect_sequence_flow_meta(xml)
     flow_ids = flow_ctx.get("flow_ids") if isinstance(flow_ctx, dict) else set()
     node_ids = flow_ctx.get("node_ids") if isinstance(flow_ctx, dict) else set()
-    raw_bpmn_meta = inp.bpmn_meta if isinstance(inp.bpmn_meta, dict) else getattr(s, "bpmn_meta", {})
+    current_meta = _normalize_bpmn_meta(
+        getattr(s, "bpmn_meta", {}),
+        allowed_flow_ids=flow_ids,
+        allowed_node_ids=node_ids,
+    )
+    if isinstance(inp.bpmn_meta, dict):
+        incoming_meta = inp.bpmn_meta
+        raw_bpmn_meta = {
+            "version": incoming_meta.get("version", current_meta.get("version", 1)),
+            "flow_meta": incoming_meta.get("flow_meta", current_meta.get("flow_meta", {})),
+            "node_path_meta": incoming_meta.get("node_path_meta", current_meta.get("node_path_meta", {})),
+            "robot_meta_by_element_id": incoming_meta.get(
+                "robot_meta_by_element_id",
+                current_meta.get("robot_meta_by_element_id", {}),
+            ),
+            "hybrid_layer_by_element_id": incoming_meta.get(
+                "hybrid_layer_by_element_id",
+                current_meta.get("hybrid_layer_by_element_id", {}),
+            ),
+        }
+    else:
+        raw_bpmn_meta = current_meta
     s.bpmn_xml = xml
     s.bpmn_xml_version = int(getattr(s, "version", 0) or 0)
     s.bpmn_graph_fingerprint = _session_graph_fingerprint(s)

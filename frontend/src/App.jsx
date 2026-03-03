@@ -52,6 +52,7 @@ import {
   validateRobotMetaV1,
 } from "./features/process/robotmeta/robotMeta";
 import { normalizeExecutionPlanVersionList } from "./features/process/robotmeta/executionPlan";
+import { normalizeHybridLayerMap } from "./features/process/hybrid/hybridLayerUi";
 import { useAuth } from "./features/auth/AuthProvider";
 
 function isLocalSessionId(id) {
@@ -484,6 +485,7 @@ function emptyBpmnMeta() {
     flow_meta: {},
     node_path_meta: {},
     robot_meta_by_element_id: {},
+    hybrid_layer_by_element_id: {},
     execution_plans: [],
   };
 }
@@ -500,12 +502,14 @@ function readLocalBpmnMeta(sessionId) {
     const flowMeta = normalizeFlowMetaMap(obj.flow_meta);
     const nodePathMeta = normalizeNodePathMetaMap(obj.node_path_meta);
     const robotMetaByElementId = normalizeRobotMetaMap(obj.robot_meta_by_element_id);
+    const hybridLayerByElementId = normalizeHybridLayerMap(obj.hybrid_layer_by_element_id);
     const executionPlans = normalizeExecutionPlans(obj.execution_plans);
     return {
       version: Number(obj.version) > 0 ? Number(obj.version) : 1,
       flow_meta: flowMeta,
       node_path_meta: nodePathMeta,
       robot_meta_by_element_id: robotMetaByElementId,
+      hybrid_layer_by_element_id: hybridLayerByElementId,
       execution_plans: executionPlans,
     };
   } catch {
@@ -522,12 +526,14 @@ function writeLocalBpmnMeta(sessionId, meta) {
     const flowMeta = normalizeFlowMetaMap(obj.flow_meta);
     const nodePathMeta = normalizeNodePathMetaMap(obj.node_path_meta);
     const robotMetaByElementId = normalizeRobotMetaMap(obj.robot_meta_by_element_id);
+    const hybridLayerByElementId = normalizeHybridLayerMap(obj.hybrid_layer_by_element_id);
     const executionPlans = normalizeExecutionPlans(obj.execution_plans);
     const payload = {
       version: Number(obj.version) > 0 ? Number(obj.version) : 1,
       flow_meta: flowMeta,
       node_path_meta: nodePathMeta,
       robot_meta_by_element_id: robotMetaByElementId,
+      hybrid_layer_by_element_id: hybridLayerByElementId,
       execution_plans: executionPlans,
     };
     window.localStorage?.setItem(key, JSON.stringify(payload));
@@ -601,11 +607,16 @@ function sessionToDraft(sid, session) {
       ...normalizeRobotMetaMap(ensureObject(ensureObject(next.bpmn_meta).robot_meta_by_element_id)),
       ...normalizeRobotMetaMap(ensureObject(localMeta.robot_meta_by_element_id)),
     },
+    hybrid_layer_by_element_id: {
+      ...normalizeHybridLayerMap(ensureObject(ensureObject(next.bpmn_meta).hybrid_layer_by_element_id)),
+      ...normalizeHybridLayerMap(ensureObject(localMeta.hybrid_layer_by_element_id)),
+    },
     execution_plans: sessionExecutionPlans.length ? sessionExecutionPlans : localExecutionPlans,
   };
   const normalizedFlowMeta = normalizeFlowMetaMap(rawBpmnMeta.flow_meta);
   const normalizedNodePathMeta = normalizeNodePathMetaMap(rawBpmnMeta.node_path_meta);
   const normalizedRobotMeta = normalizeRobotMetaMap(rawBpmnMeta.robot_meta_by_element_id);
+  const normalizedHybridLayer = normalizeHybridLayerMap(rawBpmnMeta.hybrid_layer_by_element_id);
   const normalizedExecutionPlans = normalizeExecutionPlans(rawBpmnMeta.execution_plans);
   const hasSessionRobotMeta = Object.keys(normalizeRobotMetaMap(ensureObject(ensureObject(next.bpmn_meta).robot_meta_by_element_id))).length > 0;
   const hasXmlRobotMeta = Object.keys(xmlRobotMeta).length > 0;
@@ -636,6 +647,7 @@ function sessionToDraft(sid, session) {
       flow_meta: normalizedFlowMeta,
       node_path_meta: normalizedNodePathMeta,
       robot_meta_by_element_id: effectiveRobotMeta,
+      hybrid_layer_by_element_id: normalizedHybridLayer,
       execution_plans: normalizedExecutionPlans,
     },
     interview: ensureObject(next.interview),
@@ -2165,6 +2177,7 @@ export default function App() {
     const currentFlowMeta = normalizeFlowMetaMap(currentMeta?.flow_meta);
     const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta?.node_path_meta);
     const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id);
+    const currentHybridLayerByElementId = normalizeHybridLayerMap(currentMeta?.hybrid_layer_by_element_id);
     const currentExecutionPlans = normalizeExecutionPlans(currentMeta?.execution_plans);
     const nextFlowMeta = { ...currentFlowMeta };
     if (xorConflictFlowIds.length && (xorTier === "P0" || xorTier === "P1")) {
@@ -2191,6 +2204,7 @@ export default function App() {
       flow_meta: nextFlowMeta,
       node_path_meta: currentNodePathMeta,
       robot_meta_by_element_id: currentRobotMetaByElementId,
+      hybrid_layer_by_element_id: currentHybridLayerByElementId,
       execution_plans: currentExecutionPlans,
     };
 
@@ -2247,6 +2261,7 @@ export default function App() {
           flow_meta: currentFlowMeta,
           node_path_meta: currentNodePathMeta,
           robot_meta_by_element_id: currentRobotMetaByElementId,
+          hybrid_layer_by_element_id: currentHybridLayerByElementId,
           execution_plans: currentExecutionPlans,
         },
       }));
@@ -2255,6 +2270,7 @@ export default function App() {
         flow_meta: currentFlowMeta,
         node_path_meta: currentNodePathMeta,
         robot_meta_by_element_id: currentRobotMetaByElementId,
+        hybrid_layer_by_element_id: currentHybridLayerByElementId,
         execution_plans: currentExecutionPlans,
       });
       markFail(result.error);
@@ -2265,6 +2281,7 @@ export default function App() {
     const normalizedFlowMeta = normalizeFlowMetaMap(serverMeta?.flow_meta);
     const normalizedNodePathMeta = normalizeNodePathMetaMap(serverMeta?.node_path_meta);
     const normalizedRobotMetaByElementId = normalizeRobotMetaMap(serverMeta?.robot_meta_by_element_id);
+    const normalizedHybridLayerByElementId = normalizeHybridLayerMap(serverMeta?.hybrid_layer_by_element_id);
     const normalizedExecutionPlans = normalizeExecutionPlans(serverMeta?.execution_plans);
     const effectiveExecutionPlans = normalizedExecutionPlans.length ? normalizedExecutionPlans : currentExecutionPlans;
     const requestedTier = tier;
@@ -2287,6 +2304,7 @@ export default function App() {
         flow_meta: normalizedFlowMeta,
         node_path_meta: normalizedNodePathMeta,
         robot_meta_by_element_id: normalizedRobotMetaByElementId,
+        hybrid_layer_by_element_id: normalizedHybridLayerByElementId,
         execution_plans: effectiveExecutionPlans,
       },
     }));
@@ -2295,6 +2313,7 @@ export default function App() {
       flow_meta: normalizedFlowMeta,
       node_path_meta: normalizedNodePathMeta,
       robot_meta_by_element_id: normalizedRobotMetaByElementId,
+      hybrid_layer_by_element_id: normalizedHybridLayerByElementId,
       execution_plans: effectiveExecutionPlans,
     });
     markOk(normalizationNotice || "API OK");
@@ -2314,6 +2333,7 @@ export default function App() {
     const currentFlowMeta = normalizeFlowMetaMap(currentMeta?.flow_meta);
     const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta?.node_path_meta);
     const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id);
+    const currentHybridLayerByElementId = normalizeHybridLayerMap(currentMeta?.hybrid_layer_by_element_id);
     const currentExecutionPlans = normalizeExecutionPlans(currentMeta?.execution_plans);
     const nextNodePathMeta = { ...currentNodePathMeta };
     const apiUpdates = [];
@@ -2356,6 +2376,7 @@ export default function App() {
       flow_meta: currentFlowMeta,
       node_path_meta: nextNodePathMeta,
       robot_meta_by_element_id: currentRobotMetaByElementId,
+      hybrid_layer_by_element_id: currentHybridLayerByElementId,
       execution_plans: currentExecutionPlans,
     };
     setDraftPersisted((prev) => ({
@@ -2396,6 +2417,7 @@ export default function App() {
           flow_meta: currentFlowMeta,
           node_path_meta: currentNodePathMeta,
           robot_meta_by_element_id: currentRobotMetaByElementId,
+          hybrid_layer_by_element_id: currentHybridLayerByElementId,
           execution_plans: currentExecutionPlans,
         },
       }));
@@ -2404,6 +2426,7 @@ export default function App() {
         flow_meta: currentFlowMeta,
         node_path_meta: currentNodePathMeta,
         robot_meta_by_element_id: currentRobotMetaByElementId,
+        hybrid_layer_by_element_id: currentHybridLayerByElementId,
         execution_plans: currentExecutionPlans,
       });
       markFail(result.error);
@@ -2414,6 +2437,7 @@ export default function App() {
     const normalizedFlowMeta = normalizeFlowMetaMap(serverMeta?.flow_meta);
     const normalizedNodePathMeta = normalizeNodePathMetaMap(serverMeta?.node_path_meta);
     const normalizedRobotMetaByElementId = normalizeRobotMetaMap(serverMeta?.robot_meta_by_element_id);
+    const normalizedHybridLayerByElementId = normalizeHybridLayerMap(serverMeta?.hybrid_layer_by_element_id);
     const normalizedExecutionPlans = normalizeExecutionPlans(serverMeta?.execution_plans);
     const effectiveExecutionPlans = normalizedExecutionPlans.length ? normalizedExecutionPlans : currentExecutionPlans;
     const nextMeta = {
@@ -2421,6 +2445,7 @@ export default function App() {
       flow_meta: normalizedFlowMeta,
       node_path_meta: normalizedNodePathMeta,
       robot_meta_by_element_id: normalizedRobotMetaByElementId,
+      hybrid_layer_by_element_id: normalizedHybridLayerByElementId,
       execution_plans: effectiveExecutionPlans,
     };
     setDraftPersisted((prev) => ({
@@ -2441,6 +2466,7 @@ export default function App() {
     const currentFlowMeta = normalizeFlowMetaMap(currentMeta?.flow_meta);
     const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta?.node_path_meta);
     const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id);
+    const currentHybridLayerByElementId = normalizeHybridLayerMap(currentMeta?.hybrid_layer_by_element_id);
     const currentExecutionPlans = normalizeExecutionPlans(currentMeta?.execution_plans);
     const shouldRemove = options?.remove === true || robotMetaRaw === null;
     let nextRobotMetaByElementId = currentRobotMetaByElementId;
@@ -2463,6 +2489,7 @@ export default function App() {
       flow_meta: currentFlowMeta,
       node_path_meta: currentNodePathMeta,
       robot_meta_by_element_id: nextRobotMetaByElementId,
+      hybrid_layer_by_element_id: currentHybridLayerByElementId,
       execution_plans: currentExecutionPlans,
     };
     setDraftPersisted((prev) => ({
@@ -2510,6 +2537,7 @@ export default function App() {
         flow_meta: currentFlowMeta,
         node_path_meta: currentNodePathMeta,
         robot_meta_by_element_id: currentRobotMetaByElementId,
+        hybrid_layer_by_element_id: currentHybridLayerByElementId,
         execution_plans: currentExecutionPlans,
       };
       setDraftPersisted((prev) => ({
@@ -2523,6 +2551,7 @@ export default function App() {
 
     const serverMeta = ensureObject(result.meta);
     const normalizedServerRobotMeta = normalizeRobotMetaMap(serverMeta?.robot_meta_by_element_id);
+    const normalizedHybridLayerByElementId = normalizeHybridLayerMap(serverMeta?.hybrid_layer_by_element_id);
     const normalizedExecutionPlans = normalizeExecutionPlans(serverMeta?.execution_plans);
     const effectiveExecutionPlans = normalizedExecutionPlans.length ? normalizedExecutionPlans : currentExecutionPlans;
     const effectiveRobotMeta = shouldRemove
@@ -2537,6 +2566,7 @@ export default function App() {
       flow_meta: normalizeFlowMetaMap(serverMeta?.flow_meta),
       node_path_meta: normalizeNodePathMetaMap(serverMeta?.node_path_meta),
       robot_meta_by_element_id: effectiveRobotMeta,
+      hybrid_layer_by_element_id: normalizedHybridLayerByElementId,
       execution_plans: effectiveExecutionPlans,
     };
     setDraftPersisted((prev) => ({
@@ -2598,6 +2628,7 @@ export default function App() {
     const normalizedFlowMeta = normalizeFlowMetaMap(serverMeta?.flow_meta);
     const normalizedNodePathMeta = normalizeNodePathMetaMap(serverMeta?.node_path_meta);
     const normalizedRobotMetaByElementId = normalizeRobotMetaMap(serverMeta?.robot_meta_by_element_id);
+    const normalizedHybridLayerByElementId = normalizeHybridLayerMap(serverMeta?.hybrid_layer_by_element_id);
     const normalizedExecutionPlans = normalizeExecutionPlans(serverMeta?.execution_plans);
     const effectiveExecutionPlans = normalizedExecutionPlans.length ? normalizedExecutionPlans : currentExecutionPlans;
     const nextMeta = {
@@ -2605,6 +2636,7 @@ export default function App() {
       flow_meta: normalizedFlowMeta,
       node_path_meta: normalizedNodePathMeta,
       robot_meta_by_element_id: normalizedRobotMetaByElementId,
+      hybrid_layer_by_element_id: normalizedHybridLayerByElementId,
       execution_plans: effectiveExecutionPlans,
     };
     setDraftPersisted((prev) => ({
