@@ -28,10 +28,13 @@ test("enterprise org settings: invites + audit tabs", async ({ page }) => {
     window.localStorage.setItem("fpc_active_org_id", "org_a");
   });
 
-  await page.route("**/api/**", async (route, request) => {
+  await page.route("**/*", async (route, request) => {
     const url = new URL(request.url());
     const path = url.pathname.replace(/\/+$/, "") || "/";
     const method = request.method().toUpperCase();
+    if (!path.startsWith("/api/")) {
+      return route.continue();
+    }
     if (!path.startsWith("/api/")) {
       return route.continue();
     }

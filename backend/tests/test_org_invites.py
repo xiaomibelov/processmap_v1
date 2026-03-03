@@ -19,9 +19,15 @@ class OrgInvitesApiTest(unittest.TestCase):
         self.old_sessions_dir = os.environ.get("PROCESS_STORAGE_DIR")
         self.old_projects_dir = os.environ.get("PROJECT_STORAGE_DIR")
         self.old_db_path = os.environ.get("PROCESS_DB_PATH")
+        self.old_invite_email_enabled = os.environ.get("INVITE_EMAIL_ENABLED")
+        self.old_rl_invites = os.environ.get("RL_INVITES_PER_MIN")
+        self.old_rl_accept = os.environ.get("RL_ACCEPT_PER_MIN")
         os.environ["PROCESS_STORAGE_DIR"] = self.tmp_sessions.name
         os.environ["PROJECT_STORAGE_DIR"] = self.tmp_projects.name
         os.environ.pop("PROCESS_DB_PATH", None)
+        os.environ["INVITE_EMAIL_ENABLED"] = "0"
+        os.environ["RL_INVITES_PER_MIN"] = "50"
+        os.environ["RL_ACCEPT_PER_MIN"] = "50"
 
         from app.auth import create_user
         from app.main import (
@@ -66,6 +72,18 @@ class OrgInvitesApiTest(unittest.TestCase):
             os.environ.pop("PROCESS_DB_PATH", None)
         else:
             os.environ["PROCESS_DB_PATH"] = self.old_db_path
+        if self.old_invite_email_enabled is None:
+            os.environ.pop("INVITE_EMAIL_ENABLED", None)
+        else:
+            os.environ["INVITE_EMAIL_ENABLED"] = self.old_invite_email_enabled
+        if self.old_rl_invites is None:
+            os.environ.pop("RL_INVITES_PER_MIN", None)
+        else:
+            os.environ["RL_INVITES_PER_MIN"] = self.old_rl_invites
+        if self.old_rl_accept is None:
+            os.environ.pop("RL_ACCEPT_PER_MIN", None)
+        else:
+            os.environ["RL_ACCEPT_PER_MIN"] = self.old_rl_accept
         self.tmp_sessions.cleanup()
         self.tmp_projects.cleanup()
 
@@ -147,7 +165,7 @@ class OrgInvitesApiTest(unittest.TestCase):
         resp = self.revoke_org_invite_endpoint(self.default_org_id, invite_id, req_admin)
         self.assertEqual(int(getattr(resp, "status_code", 0) or 0), 204)
 
-    def test_accept_expired_invite_returns_409(self):
+    def test_accept_expired_invite_returns_410(self):
         req_admin = self._mk_req(self.admin)
         created = self.create_org_invite_endpoint(
             self.default_org_id,
@@ -167,7 +185,7 @@ class OrgInvitesApiTest(unittest.TestCase):
             self.OrgInviteAcceptIn(token=token),
             req_target,
         )
-        self.assertEqual(int(getattr(out, "status_code", 0) or 0), 409)
+        self.assertEqual(int(getattr(out, "status_code", 0) or 0), 410)
 
 
 if __name__ == "__main__":

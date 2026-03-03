@@ -1642,8 +1642,26 @@ def create_org_invite(
     return payload
 
 
+def delete_org_invite(org_id: str, invite_id: str) -> bool:
+    oid = str(org_id or "").strip()
+    iid = str(invite_id or "").strip()
+    if not oid or not iid:
+        return False
+    _ensure_schema()
+    with _connect() as con:
+        cur = con.execute(
+            """
+            DELETE FROM org_invites
+             WHERE org_id = ? AND id = ?
+            """,
+            [oid, iid],
+        )
+        con.commit()
+        return int(cur.rowcount or 0) > 0
+
+
 def accept_org_invite(
-    org_id: str,
+    org_id: Optional[str],
     token: str,
     *,
     accepted_by: str,
@@ -1653,26 +1671,40 @@ def accept_org_invite(
     tok = str(token or "").strip()
     actor = str(accepted_by or "").strip()
     actor_email = _normalize_email(accepted_email)
-    if not oid or not tok or not actor:
-        raise ValueError("org_id, token and accepted_by are required")
+    if not tok or not actor:
+        raise ValueError("token and accepted_by are required")
     token_hash = _hash_invite_token(tok)
     now = _now_ts()
     _ensure_schema()
     with _connect() as con:
-        row = con.execute(
-            """
-            SELECT id, org_id, email, role, token_hash, expires_at, created_at, created_by,
-                   accepted_at, accepted_by, revoked_at, revoked_by
-              FROM org_invites
-             WHERE org_id = ? AND token_hash = ?
-             ORDER BY created_at DESC
-             LIMIT 1
-            """,
-            [oid, token_hash],
-        ).fetchone()
+        if oid:
+            row = con.execute(
+                """
+                SELECT id, org_id, email, role, token_hash, expires_at, created_at, created_by,
+                       accepted_at, accepted_by, revoked_at, revoked_by
+                  FROM org_invites
+                 WHERE org_id = ? AND token_hash = ?
+                 ORDER BY created_at DESC
+                 LIMIT 1
+                """,
+                [oid, token_hash],
+            ).fetchone()
+        else:
+            row = con.execute(
+                """
+                SELECT id, org_id, email, role, token_hash, expires_at, created_at, created_by,
+                       accepted_at, accepted_by, revoked_at, revoked_by
+                  FROM org_invites
+                 WHERE token_hash = ?
+                 ORDER BY created_at DESC
+                 LIMIT 1
+                """,
+                [token_hash],
+            ).fetchone()
         if not row:
             raise ValueError("invite_not_found")
         invite = _invite_row_to_dict(row)
+        oid = str(invite.get("org_id") or "").strip()
         status = str(invite.get("status") or "")
         if status == "revoked":
             raise ValueError("invite_revoked")
@@ -1743,6 +1775,38 @@ def revoke_org_invite(
         )
         con.commit()
         return int(cur.rowcount or 0) > 0
+
+
+def cleanup_org_invites(
+    org_id: str,
+    *,
+    keep_days: int = 30,
+    now_ts: Optional[int] = None,
+) -> int:
+    oid = str(org_id or "").strip()
+    if not oid:
+        return 0
+    now = int(now_ts or 0) or _now_ts()
+    keep = max(1, int(keep_days or 30))
+    threshold = now - keep * 24 * 60 * 60
+    _ensure_schema()
+    with _connect() as con:
+        cur = con.execute(
+            """
+            DELETE FROM org_invites
+             WHERE org_id = ?
+               AND (
+                 (accepted_at IS NOT NULL AND accepted_at > 0 AND accepted_at < ?)
+                 OR
+                 (revoked_at IS NOT NULL AND revoked_at > 0 AND revoked_at < ?)
+                 OR
+                 (expires_at > 0 AND expires_at < ?)
+               )
+            """,
+            [oid, threshold, threshold, now],
+        )
+        con.commit()
+        return int(cur.rowcount or 0)
 
 
 def append_audit_log(
@@ -1863,6 +1927,26 @@ def list_audit_log(
             [*params, lim],
         ).fetchall()
     return [_audit_row_to_dict(row) for row in rows]
+
+
+def cleanup_audit_log(org_id: str, *, retention_days: int = 90, now_ts: Optional[int] = None) -> int:
+    oid = str(org_id or "").strip()
+    if not oid:
+        return 0
+    retention = max(1, int(retention_days or 90))
+    now = int(now_ts or 0) or _now_ts()
+    threshold = now - retention * 24 * 60 * 60
+    _ensure_schema()
+    with _connect() as con:
+        cur = con.execute(
+            """
+            DELETE FROM audit_log
+             WHERE org_id = ? AND ts > 0 AND ts < ?
+            """,
+            [oid, threshold],
+        )
+        con.commit()
+        return int(cur.rowcount or 0)
 
 
 def get_effective_project_scope(

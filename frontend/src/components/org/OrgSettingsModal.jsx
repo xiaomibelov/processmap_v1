@@ -52,6 +52,7 @@ export default function OrgSettingsModal({
   const [inviteRole, setInviteRole] = useState("viewer");
   const [inviteTtl, setInviteTtl] = useState("7");
   const [lastInviteToken, setLastInviteToken] = useState("");
+  const [lastInviteNotice, setLastInviteNotice] = useState("");
   const [auditAction, setAuditAction] = useState("");
   const [auditStatus, setAuditStatus] = useState("");
 
@@ -134,7 +135,15 @@ export default function OrgSettingsModal({
     setInviteEmail("");
     setInviteRole("viewer");
     setInviteTtl("7");
-    setLastInviteToken(toText(res.invite_token));
+    const token = toText(res.invite_token);
+    setLastInviteToken(token);
+    if (token) {
+      setLastInviteNotice("Инвайт создан. Токен доступен в dev-режиме.");
+    } else if (toText(res.delivery) === "email") {
+      setLastInviteNotice("Инвайт отправлен по email.");
+    } else {
+      setLastInviteNotice("Инвайт создан.");
+    }
     await loadInvites();
   }
 
@@ -263,6 +272,11 @@ export default function OrgSettingsModal({
             {lastInviteToken ? (
               <div className="rounded-lg border border-accent/40 bg-accentSoft/15 px-3 py-2 text-xs">
                 Invite token: <code>{lastInviteToken}</code>
+              </div>
+            ) : null}
+            {!lastInviteToken && lastInviteNotice ? (
+              <div className="rounded-lg border border-border px-3 py-2 text-xs text-muted">
+                {lastInviteNotice}
               </div>
             ) : null}
             <div className="max-h-72 overflow-auto rounded-lg border border-border">

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  apiAcceptInviteToken,
   apiCreateOrgInvite,
   apiListOrgAudit,
   apiListOrgMembers,
@@ -85,6 +86,27 @@ test("apiRevokeOrgInvite: calls revoke endpoint", async () => {
     assert.equal(out.ok, true);
     assert.equal(out.status, 204);
     assert.match(calls[0].url, /\/api\/orgs\/org_1\/invites\/inv_1\/revoke$/);
+    assert.equal(String(calls[0].init?.method || ""), "POST");
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
+});
+
+test("apiAcceptInviteToken: posts token to generic endpoint", async () => {
+  const prevFetch = globalThis.fetch;
+  const calls = [];
+  try {
+    globalThis.fetch = async (input, init) => {
+      calls.push({ url: String(input || ""), init });
+      return new Response(JSON.stringify({ invite: { id: "inv_1", org_id: "org_1" }, membership: { org_id: "org_1", user_id: "u_1", role: "viewer" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    const out = await apiAcceptInviteToken("tok_123");
+    assert.equal(out.ok, true);
+    assert.equal(String(out.membership?.org_id || ""), "org_1");
+    assert.match(calls[0].url, /\/api\/invites\/accept$/);
     assert.equal(String(calls[0].init?.method || ""), "POST");
   } finally {
     globalThis.fetch = prevFetch;

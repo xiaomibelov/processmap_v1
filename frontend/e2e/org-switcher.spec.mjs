@@ -18,10 +18,13 @@ test("multi-org user selects org and requests are scoped by X-Org-Id", async ({ 
     window.sessionStorage.removeItem("fpc_org_choice_done:u_multi");
   });
 
-  await page.route("**/api/**", async (route, request) => {
+  await page.route("**/*", async (route, request) => {
     const url = new URL(request.url());
     const path = url.pathname.replace(/\/+$/, "") || "/";
     const method = request.method().toUpperCase();
+    if (!path.startsWith("/api/")) {
+      return route.continue();
+    }
     const headers = request.headers();
     if (!path.startsWith("/api/")) {
       return route.continue();

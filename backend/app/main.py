@@ -11,6 +11,9 @@ import zipfile
 import json
 import time
 import threading
+import smtplib
+from email.message import EmailMessage
+from collections import deque
 from datetime import datetime, timezone
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -52,8 +55,11 @@ from .storage import (
     create_org_invite,
     accept_org_invite,
     revoke_org_invite,
+    delete_org_invite,
+    cleanup_org_invites,
     append_audit_log,
     list_audit_log,
+    cleanup_audit_log,
 )
 from .settings import load_llm_settings, llm_status, save_llm_settings, verify_llm_settings
 from .validators.coverage import build_questions
@@ -91,6 +97,45 @@ _ORG_PROJECT_MEMBER_MANAGE_ROLES = {"org_owner", "org_admin", "project_manager"}
 _ORG_MEMBER_MANAGE_ROLES = {"org_owner", "org_admin"}
 _ORG_INVITE_MANAGE_ROLES = {"org_owner", "org_admin"}
 _ORG_AUDIT_READ_ROLES = {"org_owner", "org_admin", "auditor", "project_manager"}
+
+_RATE_LIMIT_LOCK = threading.RLock()
+_RATE_LIMIT_BUCKETS: Dict[str, deque] = {}
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = str(os.environ.get(name, "") or "").strip().lower()
+    if not raw:
+        return bool(default)
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = str(os.environ.get(name, "") or "").strip()
+    try:
+        value = int(raw or default)
+    except Exception:
+        value = int(default)
+    return value
+
+
+def _rate_limit_check(key: str, limit: int, window_sec: int = 60) -> bool:
+    bucket_key = str(key or "").strip()
+    if not bucket_key:
+        return True
+    cap = max(1, int(limit or 1))
+    now = int(time.time())
+    with _RATE_LIMIT_LOCK:
+        bucket = _RATE_LIMIT_BUCKETS.get(bucket_key)
+        if bucket is None:
+            bucket = deque()
+            _RATE_LIMIT_BUCKETS[bucket_key] = bucket
+        threshold = now - max(1, int(window_sec or 60))
+        while bucket and int(bucket[0] or 0) <= threshold:
+            bucket.popleft()
+        if len(bucket) >= cap:
+            return False
+        bucket.append(now)
+    return True
 
 
 def _extract_org_from_path(path: str) -> str:
@@ -214,11 +259,14 @@ def _clear_refresh_cookie(resp: Response) -> None:
 
 
 def _request_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
+    headers = getattr(request, "headers", {}) or {}
+    forwarded = headers.get("x-forwarded-for") if hasattr(headers, "get") else None
     if forwarded:
         return str(forwarded).split(",")[0].strip()[:120]
-    if request.client and request.client.host:
-        return str(request.client.host)[:120]
+    client = getattr(request, "client", None)
+    host = getattr(client, "host", "") if client is not None else ""
+    if host:
+        return str(host)[:120]
     return ""
 
 
@@ -2363,6 +2411,10 @@ def health():
 
 @app.post("/api/auth/login", response_model=AuthTokenOut)
 def auth_login(inp: AuthLoginIn, request: Request):
+    login_limit = max(1, _env_int("RL_LOGIN_PER_MIN", 30))
+    ip_key = str(_request_client_ip(request) or "ip_unknown")
+    if not _rate_limit_check(f"login:{ip_key}", login_limit, 60):
+        raise HTTPException(status_code=429, detail="too_many_requests")
     try:
         user = authenticate_user(inp.email, inp.password)
     except AuthError:
@@ -4942,6 +4994,99 @@ def _request_user_email(request: Optional[Request]) -> str:
     return str((row or {}).get("email") or "").strip().lower()
 
 
+def _invite_email_enabled() -> bool:
+    return _env_bool("INVITE_EMAIL_ENABLED", default=False)
+
+
+def _invite_ttl_hours_default() -> int:
+    return max(1, _env_int("INVITE_TTL_HOURS", 72))
+
+
+def _audit_retention_days() -> int:
+    return max(1, _env_int("AUDIT_RETENTION_DAYS", 90))
+
+
+def _invite_cleanup_keep_days() -> int:
+    return max(1, _env_int("INVITE_CLEANUP_KEEP_DAYS", 30))
+
+
+def _invite_email_config() -> Dict[str, Any]:
+    return {
+        "host": str(os.environ.get("SMTP_HOST", "") or "").strip(),
+        "port": max(1, _env_int("SMTP_PORT", 587)),
+        "user": str(os.environ.get("SMTP_USER", "") or "").strip(),
+        "password": str(os.environ.get("SMTP_PASS", "") or ""),
+        "from": str(os.environ.get("SMTP_FROM", "") or "").strip(),
+        "tls": _env_bool("SMTP_TLS", default=True),
+        "base_url": str(os.environ.get("APP_BASE_URL", "") or "").strip(),
+    }
+
+
+def _invite_email_config_ready() -> Tuple[bool, str, Dict[str, Any]]:
+    cfg = _invite_email_config()
+    missing: List[str] = []
+    for key in ("host", "port", "from", "base_url"):
+        val = cfg.get(key)
+        if not val:
+            missing.append(key)
+    if missing:
+        return False, f"invite_email_config_missing:{','.join(missing)}", cfg
+    return True, "", cfg
+
+
+def _validate_invite_email_config_on_boot() -> None:
+    if not _invite_email_enabled():
+        return
+    ok, reason, _ = _invite_email_config_ready()
+    if not ok:
+        print(f"[INVITE_EMAIL] boot_warning reason={reason}")
+
+
+def _build_invite_link(base_url: str, token: str) -> str:
+    base = str(base_url or "").strip().rstrip("/")
+    return f"{base}/accept-invite?token={token}"
+
+
+def _send_org_invite_email(
+    *,
+    to_email: str,
+    org_name: str,
+    role: str,
+    invite_link: str,
+    expires_at: int,
+) -> None:
+    cfg = _invite_email_config()
+    host = str(cfg.get("host") or "").strip()
+    port = int(cfg.get("port") or 587)
+    sender = str(cfg.get("from") or "").strip()
+    username = str(cfg.get("user") or "").strip()
+    password = str(cfg.get("password") or "")
+    use_tls = bool(cfg.get("tls"))
+
+    msg = EmailMessage()
+    msg["Subject"] = f"ProcessMap invite: {org_name}"
+    msg["From"] = sender
+    msg["To"] = str(to_email or "").strip().lower()
+    expires_dt = datetime.fromtimestamp(int(expires_at or 0), tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    body = (
+        f"Вы приглашены в организацию \"{org_name}\".\n\n"
+        f"Роль: {role}\n"
+        f"Ссылка для принятия приглашения:\n{invite_link}\n\n"
+        f"Срок действия: {expires_dt}\n"
+    )
+    msg.set_content(body)
+
+    with smtplib.SMTP(host=host, port=port, timeout=20) as smtp:
+        if use_tls:
+            smtp.starttls()
+        if username and password:
+            smtp.login(username, password)
+        smtp.send_message(msg)
+
+
+_validate_invite_email_config_on_boot()
+
+
 def _should_reveal_invite_token(request: Optional[Request]) -> bool:
     raw = str(os.environ.get("FPC_ENTERPRISE_INVITE_TOKEN_EXPOSE", "") or "").strip().lower()
     if raw in {"1", "true", "yes", "on"}:
@@ -5412,19 +5557,68 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
         return _enterprise_error(422, "validation_error", "valid email is required")
     if not role:
         return _enterprise_error(422, "validation_error", "role is required")
+    invite_limit = max(1, _env_int("RL_INVITES_PER_MIN", 20))
+    ip_key = str(_request_client_ip(request) or "ip_unknown")
+    if not _rate_limit_check(f"invites:create:{oid}:{ip_key}", invite_limit, 60):
+        return _enterprise_error(429, "too_many_requests", "too_many_requests")
     uid, is_admin = _request_user_meta(request)
     if not uid:
         return _enterprise_error(401, "unauthorized", "unauthorized")
+    ttl_days = 0
+    try:
+        ttl_days = int(getattr(inp, "ttl_days", 0) or 0)
+    except Exception:
+        ttl_days = 0
+    if ttl_days <= 0:
+        ttl_days = max(1, int(math.ceil(float(_invite_ttl_hours_default()) / 24.0)))
+    ttl_days = max(1, min(ttl_days, 60))
+    email_delivery = _invite_email_enabled()
+    if email_delivery:
+        ready, reason, _ = _invite_email_config_ready()
+        if not ready:
+            print(f"[INVITE_EMAIL] unavailable reason={reason}")
+            return _enterprise_error(503, "service_unavailable", "invite_email_unavailable")
     try:
         created = create_org_invite(oid, email, role, created_by=uid, ttl_days=ttl_days)
     except ValueError as exc:
         return _enterprise_error(422, "validation_error", str(exc))
-    expose_token = _should_reveal_invite_token(request)
     token = str(created.pop("token", "") or "")
     response_payload: Dict[str, Any] = {"invite": created}
-    if expose_token and token:
-        response_payload["invite_token"] = token
-        response_payload["invite_link"] = f"/app/org?tab=invites&org_id={oid}&token={token}"
+    if email_delivery:
+        ok_cfg, _, cfg = _invite_email_config_ready()
+        if not ok_cfg:
+            _ = delete_org_invite(oid, str(created.get("id") or ""))
+            return _enterprise_error(503, "service_unavailable", "invite_email_unavailable")
+        invite_link = _build_invite_link(str(cfg.get("base_url") or ""), token)
+        try:
+            _send_org_invite_email(
+                to_email=email,
+                org_name=str(created.get("org_id") or oid),
+                role=str(created.get("role") or "viewer"),
+                invite_link=invite_link,
+                expires_at=int(created.get("expires_at") or 0),
+            )
+        except Exception:
+            _ = delete_org_invite(oid, str(created.get("id") or ""))
+            _audit_log_safe(
+                request,
+                org_id=oid,
+                action="invite.create",
+                entity_type="org_invite",
+                entity_id=str(created.get("id") or ""),
+                status="fail",
+                meta={"email": email, "role": str(created.get("role") or ""), "reason": "smtp_send_failed"},
+            )
+            return _enterprise_error(502, "upstream_error", "invite_email_send_failed")
+        response_payload["delivery"] = "email"
+    else:
+        expose_token = _should_reveal_invite_token(request)
+        if expose_token and token:
+            response_payload["invite_token"] = token
+            cfg = _invite_email_config()
+            base_url = str(cfg.get("base_url") or "").strip()
+            response_payload["invite_link"] = _build_invite_link(base_url, token) if base_url else f"/app/org?tab=invites&org_id={oid}&token={token}"
+        response_payload["delivery"] = "token"
     _audit_log_safe(
         request,
         org_id=oid,
@@ -5432,42 +5626,71 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
         entity_type="org_invite",
         entity_id=str(created.get("id") or ""),
         status="ok",
-        meta={"email": email, "role": str(created.get("role") or ""), "token_exposed": bool(expose_token and token), "is_admin": bool(is_admin)},
+        meta={"email": email, "role": str(created.get("role") or ""), "delivery": str(response_payload.get("delivery") or "token"), "is_admin": bool(is_admin)},
     )
     return response_payload
 
 
-@app.post("/api/orgs/{org_id}/invites/accept")
-def accept_org_invite_endpoint(org_id: str, inp: OrgInviteAcceptIn, request: Request):
+def _accept_org_invite_response(request: Request, *, org_id: Optional[str], token: str):
     oid = str(org_id or "").strip()
     uid, _ = _request_user_meta(request)
     if not uid:
         return _enterprise_error(401, "unauthorized", "unauthorized")
-    token = str(getattr(inp, "token", "") or "").strip()
+    accept_limit = max(1, _env_int("RL_ACCEPT_PER_MIN", 30))
+    ip_key = str(_request_client_ip(request) or "ip_unknown")
+    if not _rate_limit_check(f"invites:accept:{ip_key}", accept_limit, 60):
+        return _enterprise_error(429, "too_many_requests", "too_many_requests")
+    token = str(token or "").strip()
     if not token:
         return _enterprise_error(422, "validation_error", "token is required")
     email = _request_user_email(request)
     if not email:
         return _enterprise_error(404, "not_found", "user_email_not_found")
     try:
-        accepted = accept_org_invite(oid, token, accepted_by=uid, accepted_email=email)
+        accepted = accept_org_invite(oid or None, token, accepted_by=uid, accepted_email=email)
     except ValueError as exc:
         marker = str(exc or "").strip().lower()
+        audit_org = oid or _request_active_org_id(request)
+        _audit_log_safe(
+            request,
+            org_id=audit_org,
+            action="invite.accept",
+            entity_type="org_invite",
+            entity_id="-",
+            status="fail",
+            meta={"reason": marker or "validation_error"},
+        )
         if marker in {"invite_not_found", "invite_revoked"}:
             return _enterprise_error(404, "not_found", "not_found")
-        if marker in {"invite_already_accepted", "invite_expired", "invite_email_mismatch"}:
+        if marker == "invite_expired":
+            return _enterprise_error(410, "gone", "invite_expired")
+        if marker in {"invite_already_accepted", "invite_email_mismatch"}:
             return _enterprise_error(409, "conflict", marker)
         return _enterprise_error(422, "validation_error", marker or "validation_error")
+    accepted_org = str(accepted.get("org_id") or oid or "").strip()
     _audit_log_safe(
         request,
-        org_id=oid,
+        org_id=accepted_org or _request_active_org_id(request),
         action="invite.accept",
         entity_type="org_invite",
         entity_id=str(accepted.get("id") or ""),
         status="ok",
         meta={"email": email, "role": str(accepted.get("role") or "")},
     )
-    return {"invite": accepted, "membership": {"org_id": oid, "user_id": uid, "role": str(accepted.get("role") or "viewer")}}
+    return {"invite": accepted, "membership": {"org_id": accepted_org, "user_id": uid, "role": str(accepted.get("role") or "viewer")}}
+
+
+@app.post("/api/orgs/{org_id}/invites/accept")
+def accept_org_invite_endpoint(org_id: str, inp: OrgInviteAcceptIn, request: Request):
+    oid = str(org_id or "").strip()
+    token = str(getattr(inp, "token", "") or "").strip()
+    return _accept_org_invite_response(request, org_id=oid, token=token)
+
+
+@app.post("/api/invites/accept")
+def accept_invite_endpoint(inp: OrgInviteAcceptIn, request: Request):
+    token = str(getattr(inp, "token", "") or "").strip()
+    return _accept_org_invite_response(request, org_id=None, token=token)
 
 
 @app.post("/api/orgs/{org_id}/invites/{invite_id}/revoke")
@@ -5490,6 +5713,28 @@ def revoke_org_invite_endpoint(org_id: str, invite_id: str, request: Request):
         status="ok",
     )
     return Response(status_code=204)
+
+
+@app.post("/api/orgs/{org_id}/invites/cleanup")
+def cleanup_org_invites_endpoint(org_id: str, request: Request, keep_days: int = 0):
+    oid = str(org_id or "").strip()
+    _, err = _enterprise_require_org_role(request, oid, _ORG_INVITE_MANAGE_ROLES)
+    if err is not None:
+        return err
+    keep = int(keep_days or 0)
+    if keep <= 0:
+        keep = _invite_cleanup_keep_days()
+    deleted = cleanup_org_invites(oid, keep_days=keep)
+    _audit_log_safe(
+        request,
+        org_id=oid,
+        action="invite.cleanup",
+        entity_type="org_invite",
+        entity_id=f"cleanup:{oid}",
+        status="ok",
+        meta={"deleted": int(deleted or 0), "keep_days": int(keep)},
+    )
+    return {"ok": True, "org_id": oid, "deleted": int(deleted or 0), "keep_days": int(keep)}
 
 
 @app.get("/api/orgs/{org_id}/audit")
@@ -5541,6 +5786,28 @@ def list_org_audit_endpoint(
                 row["actor_email"] = email
     _ = uid
     return {"items": rows, "count": len(rows)}
+
+
+@app.post("/api/orgs/{org_id}/audit/cleanup")
+def cleanup_org_audit_endpoint(org_id: str, request: Request, retention_days: int = 0):
+    oid = str(org_id or "").strip()
+    _, err = _enterprise_require_org_role(request, oid, _ORG_INVITE_MANAGE_ROLES)
+    if err is not None:
+        return err
+    retention = int(retention_days or 0)
+    if retention <= 0:
+        retention = _audit_retention_days()
+    deleted = cleanup_audit_log(oid, retention_days=retention)
+    _audit_log_safe(
+        request,
+        org_id=oid,
+        action="audit.cleanup",
+        entity_type="audit_log",
+        entity_id=f"cleanup:{oid}",
+        status="ok",
+        meta={"deleted": int(deleted or 0), "retention_days": int(retention)},
+    )
+    return {"ok": True, "org_id": oid, "deleted": int(deleted or 0), "retention_days": int(retention)}
 
 
 @app.get("/api/orgs/{org_id}/sessions/{session_id}/reports/versions")

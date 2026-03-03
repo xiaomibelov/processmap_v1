@@ -549,7 +549,16 @@ export async function apiCreateOrgInvite(orgId, payload = {}) {
     ttl_days: Number(payload?.ttl_days || payload?.ttlDays || 7),
   };
   const r = okOrError(await request(endpoint, { method: "POST", body }));
-  return r.ok ? { ok: true, status: r.status, invite: r.data?.invite || {}, invite_token: r.data?.invite_token || "", invite_link: r.data?.invite_link || "" } : r;
+  return r.ok
+    ? {
+      ok: true,
+      status: r.status,
+      invite: r.data?.invite || {},
+      invite_token: r.data?.invite_token || "",
+      invite_link: r.data?.invite_link || "",
+      delivery: String(r.data?.delivery || ""),
+    }
+    : r;
 }
 
 export async function apiAcceptOrgInvite(orgId, token) {
@@ -562,6 +571,13 @@ export async function apiAcceptOrgInvite(orgId, token) {
   return r.ok ? { ok: true, status: r.status, invite: r.data?.invite || {}, membership: r.data?.membership || {} } : r;
 }
 
+export async function apiAcceptInviteToken(token) {
+  const inviteToken = String(token || "").trim();
+  if (!inviteToken) return { ok: false, status: 0, error: "missing token" };
+  const r = okOrError(await request("/api/invites/accept", { method: "POST", body: { token: inviteToken } }));
+  return r.ok ? { ok: true, status: r.status, invite: r.data?.invite || {}, membership: r.data?.membership || {} } : r;
+}
+
 export async function apiRevokeOrgInvite(orgId, inviteId) {
   const oid = String(orgId || "").trim();
   const iid = String(inviteId || "").trim();
@@ -570,6 +586,16 @@ export async function apiRevokeOrgInvite(orgId, inviteId) {
   const endpoint = `/api/orgs/${encodeURIComponent(oid)}/invites/${encodeURIComponent(iid)}/revoke`;
   const r = okOrError(await request(endpoint, { method: "POST" }));
   return r.ok ? { ok: true, status: r.status } : r;
+}
+
+export async function apiCleanupOrgInvites(orgId, keepDays) {
+  const oid = String(orgId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  const n = Number(keepDays || 0);
+  const qs = Number.isFinite(n) && n > 0 ? `?keep_days=${encodeURIComponent(String(Math.round(n)))}` : "";
+  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/invites/cleanup${qs}`;
+  const r = okOrError(await request(endpoint, { method: "POST" }));
+  return r.ok ? { ok: true, status: r.status, deleted: Number(r.data?.deleted || 0) } : r;
 }
 
 export async function apiListOrgAudit(orgId, query = {}) {
@@ -591,6 +617,16 @@ export async function apiListOrgAudit(orgId, query = {}) {
   const r = okOrError(await request(endpoint, { method: "GET" }));
   const items = Array.isArray(r?.data?.items) ? r.data.items : [];
   return r.ok ? { ok: true, status: r.status, items, count: Number(r?.data?.count || items.length || 0) } : r;
+}
+
+export async function apiCleanupOrgAudit(orgId, retentionDays) {
+  const oid = String(orgId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  const n = Number(retentionDays || 0);
+  const qs = Number.isFinite(n) && n > 0 ? `?retention_days=${encodeURIComponent(String(Math.round(n)))}` : "";
+  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/audit/cleanup${qs}`;
+  const r = okOrError(await request(endpoint, { method: "POST" }));
+  return r.ok ? { ok: true, status: r.status, deleted: Number(r.data?.deleted || 0) } : r;
 }
 
 // ------- Meta -------

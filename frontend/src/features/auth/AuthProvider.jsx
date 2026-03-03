@@ -77,7 +77,7 @@ export function AuthProvider({ children }) {
     const requested = String(orgId || "").trim();
     if (!requested) return { ok: false, status: 0, error: "org_id required" };
     const exists = orgs.some((item) => String(item?.org_id || "").trim() === requested);
-    if (!exists) return { ok: false, status: 404, error: "org not in memberships" };
+    if (!exists && options?.allowMissing !== true) return { ok: false, status: 404, error: "org not in memberships" };
     persistActiveOrgId(requested);
     setActiveOrgId(requested);
     setUser((prev) => (prev ? { ...prev, active_org_id: requested } : prev));
