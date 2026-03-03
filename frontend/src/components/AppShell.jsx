@@ -22,6 +22,7 @@ export default function AppShell({
   orgs,
   activeOrgId,
   onOrgChange,
+  onOpenOrgSettings,
   projects,
   projectId,
   onProjectChange,
@@ -82,6 +83,7 @@ export default function AppShell({
         orgs={orgs}
         activeOrgId={activeOrgId}
         onOrgChange={onOrgChange}
+        onOpenOrgSettings={onOpenOrgSettings}
         projects={projects}
         projectId={projectId}
         onDeleteProject={onDeleteProject}

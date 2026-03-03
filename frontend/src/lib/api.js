@@ -508,6 +508,91 @@ export async function apiListOrgs() {
   return { ok: true, status: r.status, items, active_org_id, default_org_id };
 }
 
+// ------- Enterprise Org Settings -------
+export async function apiListOrgMembers(orgId) {
+  const oid = String(orgId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/members`;
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  const items = Array.isArray(r?.data?.items) ? r.data.items : [];
+  return r.ok ? { ok: true, status: r.status, items, count: Number(r?.data?.count || items.length || 0) } : r;
+}
+
+export async function apiPatchOrgMember(orgId, userId, role) {
+  const oid = String(orgId || "").trim();
+  const uid = String(userId || "").trim();
+  const nextRole = String(role || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  if (!uid) return { ok: false, status: 0, error: "missing user_id" };
+  if (!nextRole) return { ok: false, status: 0, error: "missing role" };
+  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/members/${encodeURIComponent(uid)}`;
+  const r = okOrError(await request(endpoint, { method: "PATCH", body: { role: nextRole } }));
+  return r.ok ? { ok: true, status: r.status, item: r.data || {} } : r;
+}
+
+export async function apiListOrgInvites(orgId) {
+  const oid = String(orgId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/invites`;
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  const items = Array.isArray(r?.data?.items) ? r.data.items : [];
+  return r.ok ? { ok: true, status: r.status, items, count: Number(r?.data?.count || items.length || 0) } : r;
+}
+
+export async function apiCreateOrgInvite(orgId, payload = {}) {
+  const oid = String(orgId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/invites`;
+  const body = {
+    email: String(payload?.email || "").trim(),
+    role: String(payload?.role || "").trim(),
+    ttl_days: Number(payload?.ttl_days || payload?.ttlDays || 7),
+  };
+  const r = okOrError(await request(endpoint, { method: "POST", body }));
+  return r.ok ? { ok: true, status: r.status, invite: r.data?.invite || {}, invite_token: r.data?.invite_token || "", invite_link: r.data?.invite_link || "" } : r;
+}
+
+export async function apiAcceptOrgInvite(orgId, token) {
+  const oid = String(orgId || "").trim();
+  const inviteToken = String(token || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  if (!inviteToken) return { ok: false, status: 0, error: "missing token" };
+  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/invites/accept`;
+  const r = okOrError(await request(endpoint, { method: "POST", body: { token: inviteToken } }));
+  return r.ok ? { ok: true, status: r.status, invite: r.data?.invite || {}, membership: r.data?.membership || {} } : r;
+}
+
+export async function apiRevokeOrgInvite(orgId, inviteId) {
+  const oid = String(orgId || "").trim();
+  const iid = String(inviteId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  if (!iid) return { ok: false, status: 0, error: "missing invite_id" };
+  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/invites/${encodeURIComponent(iid)}/revoke`;
+  const r = okOrError(await request(endpoint, { method: "POST" }));
+  return r.ok ? { ok: true, status: r.status } : r;
+}
+
+export async function apiListOrgAudit(orgId, query = {}) {
+  const oid = String(orgId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  const params = new URLSearchParams();
+  const limit = Number(query?.limit || 100);
+  if (Number.isFinite(limit) && limit > 0) params.set("limit", String(Math.min(500, Math.max(1, Math.round(limit)))));
+  const action = String(query?.action || "").trim();
+  const projectId = String(query?.project_id || query?.projectId || "").trim();
+  const sessionId = String(query?.session_id || query?.sessionId || "").trim();
+  const status = String(query?.status || "").trim();
+  if (action) params.set("action", action);
+  if (projectId) params.set("project_id", projectId);
+  if (sessionId) params.set("session_id", sessionId);
+  if (status) params.set("status", status);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/audit${suffix}`;
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  const items = Array.isArray(r?.data?.items) ? r.data.items : [];
+  return r.ok ? { ok: true, status: r.status, items, count: Number(r?.data?.count || items.length || 0) } : r;
+}
+
 // ------- Meta -------
 export async function apiMeta() {
   const r = okOrError(await request("/api/meta"));

@@ -47,7 +47,8 @@ async function openSession(page, projectId, sid) {
 }
 
 test("enterprise reports: delete version removes it from list", async ({ page, request }) => {
-  test.skip(process.env.E2E_ENTERPRISE_REPORTS_DELETE !== "1", "Set E2E_ENTERPRISE_REPORTS_DELETE=1 to run enterprise report delete e2e.");
+  const reportsDeleteEnabled = process.env.E2E_ENTERPRISE_REPORTS_DELETE === "1" || process.env.E2E_REPORTS_DELETE === "1";
+  test.skip(!reportsDeleteEnabled, "Set E2E_ENTERPRISE_REPORTS_DELETE=1 or E2E_REPORTS_DELETE=1 to run enterprise report delete e2e.");
   test.skip(!SESSION_ID, "Set E2E_SESSION_ID for report delete e2e.");
 
   const auth = await apiLogin(request, { apiBase: API_BASE });

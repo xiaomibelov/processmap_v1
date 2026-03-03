@@ -66,6 +66,7 @@ export default function TopBar({
   orgs,
   activeOrgId,
   onOrgChange,
+  onOpenOrgSettings,
   projects,
   projectId,
   onProjectChange,
@@ -90,7 +91,7 @@ export default function TopBar({
   onSaveLlmSettings,
   onVerifyLlmSettings,
 }) {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const orgList = useMemo(() => asArray(orgs), [orgs]);
   const projList = useMemo(() => asArray(projects), [projects]);
   const sessList = useMemo(() => asArray(sessions), [sessions]);
@@ -218,6 +219,13 @@ export default function TopBar({
     const found = orgList.find((item) => orgIdFrom(item) === id);
     return orgTitleFrom(found);
   }, [orgList, activeOrgId]);
+  const activeOrgRole = useMemo(() => {
+    const id = String(activeOrgId || "").trim();
+    if (!id) return "";
+    const found = orgList.find((item) => orgIdFrom(item) === id);
+    return String(found?.role || "").trim().toLowerCase();
+  }, [activeOrgId, orgList]);
+  const canOpenOrgSettings = Boolean(user?.is_admin) || ["org_owner", "org_admin", "auditor"].includes(activeOrgRole);
 
   async function handleLogout() {
     if (typeof window !== "undefined") {
@@ -278,6 +286,17 @@ export default function TopBar({
               );
             })}
           </select>
+          {canOpenOrgSettings ? (
+            <button
+              type="button"
+              className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-3 py-0 text-sm"
+              onClick={() => onOpenOrgSettings?.()}
+              data-testid="topbar-org-settings-btn"
+              title="Настройки организации"
+            >
+              Организация
+            </button>
+          ) : null}
         </div>
 
         <div className="topGroup flex shrink-0 items-center gap-2">

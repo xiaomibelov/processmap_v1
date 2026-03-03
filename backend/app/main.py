@@ -46,6 +46,14 @@ from .storage import (
     delete_project_membership,
     get_effective_project_scope,
     user_has_project_access,
+    list_org_memberships,
+    upsert_org_membership,
+    list_org_invites,
+    create_org_invite,
+    accept_org_invite,
+    revoke_org_invite,
+    append_audit_log,
+    list_audit_log,
 )
 from .settings import load_llm_settings, llm_status, save_llm_settings, verify_llm_settings
 from .validators.coverage import build_questions
@@ -55,6 +63,7 @@ from .rtiers import infer_rtiers, parse_bpmn_sequence_graph, resolve_inference_i
 from .auth import (
     AuthError,
     authenticate_user,
+    find_user_by_id,
     issue_login_tokens,
     refresh_cookie_samesite,
     refresh_cookie_secure,
@@ -79,6 +88,9 @@ _ORG_EDITOR_ROLES = {"org_owner", "org_admin", "project_manager", "editor"}
 _ORG_READ_ROLES = {"org_owner", "org_admin", "project_manager", "editor", "viewer", "auditor"}
 _ORG_REPORT_DELETE_ROLES = {"org_owner", "org_admin", "project_manager"}
 _ORG_PROJECT_MEMBER_MANAGE_ROLES = {"org_owner", "org_admin", "project_manager"}
+_ORG_MEMBER_MANAGE_ROLES = {"org_owner", "org_admin"}
+_ORG_INVITE_MANAGE_ROLES = {"org_owner", "org_admin"}
+_ORG_AUDIT_READ_ROLES = {"org_owner", "org_admin", "auditor", "project_manager"}
 
 
 def _extract_org_from_path(path: str) -> str:
@@ -1793,7 +1805,8 @@ async def auth_guard_middleware(request: Request, call_next):
         path_org_id = _extract_org_from_path(path)
         header_org_id = _extract_org_from_headers(request)
 
-        if path_org_id and not user_has_org_membership(user_id, path_org_id, is_admin=is_admin):
+        allow_non_member = bool(path_org_id and path.rstrip("/").endswith("/invites/accept"))
+        if path_org_id and (not allow_non_member) and not user_has_org_membership(user_id, path_org_id, is_admin=is_admin):
             return JSONResponse(status_code=404, content={"detail": "not found"})
 
         requested_org_id = path_org_id or header_org_id
@@ -2001,6 +2014,20 @@ class ProjectMemberUpsertIn(BaseModel):
 
 class ProjectMemberPatchIn(BaseModel):
     role: str
+
+
+class OrgMemberPatchIn(BaseModel):
+    role: str
+
+
+class OrgInviteCreateIn(BaseModel):
+    email: str
+    role: str
+    ttl_days: Optional[int] = 7
+
+
+class OrgInviteAcceptIn(BaseModel):
+    token: str
 
 
 class CreateSessionIn(BaseModel):
@@ -2351,6 +2378,25 @@ def auth_login(inp: AuthLoginIn, request: Request):
         "access_token": str(issued.get("access_token") or ""),
         "token_type": "bearer",
     }
+    try:
+        uid = str(user.get("id") or "").strip()
+        oid = resolve_active_org_id(
+            uid,
+            requested_org_id=_extract_org_from_headers(request),
+            is_admin=bool(user.get("is_admin", False)),
+        )
+        if uid and oid:
+            append_audit_log(
+                actor_user_id=uid,
+                org_id=oid,
+                action="login",
+                entity_type="auth",
+                entity_id=uid,
+                status="ok",
+                meta={"ip": _request_client_ip(request), "user_agent": str(request.headers.get("user-agent") or "")[:180]},
+            )
+    except Exception:
+        pass
     resp = JSONResponse(status_code=200, content=payload)
     _set_refresh_cookie(resp, str(issued.get("refresh_token") or ""), max_age)
     return resp
@@ -2508,6 +2554,16 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
         if prep_questions:
             sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
             st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
+        _audit_log_safe(
+            request,
+            org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
+            action="session.create",
+            entity_type="session",
+            entity_id=str(getattr(sess, "id", "") or sid),
+            project_id=project_id,
+            session_id=str(getattr(sess, "id", "") or sid),
+            meta={"mode": str(getattr(sess, "mode", "") or ""), "title": str(getattr(sess, "title", "") or "")},
+        )
         return _session_api_dump(sess)
     except TypeError:
         # fallback: create base session then attach fields
@@ -2522,6 +2578,16 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
         if prep_questions:
             sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
         st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
+        _audit_log_safe(
+            request,
+            org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
+            action="session.create",
+            entity_type="session",
+            entity_id=str(getattr(sess, "id", "") or sid),
+            project_id=project_id,
+            session_id=str(getattr(sess, "id", "") or sid),
+            meta={"mode": str(getattr(sess, "mode", "") or ""), "title": str(getattr(sess, "title", "") or ""), "fallback": True},
+        )
         return _session_api_dump(sess)
 
 
@@ -2654,6 +2720,16 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
     if need_recompute:
         sess = _recompute_session(sess)
     st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
+    _audit_log_safe(
+        request,
+        org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
+        action="session.update",
+        entity_type="session",
+        entity_id=str(getattr(sess, "id", "") or session_id),
+        project_id=str(getattr(sess, "project_id", "") or ""),
+        session_id=str(getattr(sess, "id", "") or session_id),
+        meta={"keys": sorted(list(data.keys()))},
+    )
     return _session_api_dump(sess)
 
 
@@ -2678,6 +2754,15 @@ def delete_project_api(project_id: str, request: Request = None):
     deleted_project = ps.delete(pid, org_id=oid, is_admin=True)
     if not deleted_project:
         return {"ok": False, "error": "project_not_found", "project_id": pid, "deleted_sessions": deleted_sessions}
+    _audit_log_safe(
+        request,
+        org_id=oid or str(getattr(proj, "org_id", "") or get_default_org_id()),
+        action="project.delete",
+        entity_type="project",
+        entity_id=pid,
+        project_id=pid,
+        meta={"deleted_sessions": deleted_sessions},
+    )
     return {"ok": True, "project_id": pid, "deleted_sessions": deleted_sessions}
 
 
@@ -2693,6 +2778,15 @@ def delete_session_api(session_id: str, request: Request = None):
     deleted = st.delete(sid, org_id=oid, is_admin=True)
     if not deleted:
         return {"ok": False, "error": "session_not_found", "session_id": sid}
+    _audit_log_safe(
+        request,
+        org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
+        action="session.delete",
+        entity_type="session",
+        entity_id=sid,
+        project_id=str(getattr(sess, "project_id", "") or ""),
+        session_id=sid,
+    )
     return {"ok": True, "session_id": sid, "deleted_files": 1}
 
 
@@ -2751,6 +2845,16 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
 
     sess = _recompute_session(sess)
     st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
+    _audit_log_safe(
+        request,
+        org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
+        action="session.update",
+        entity_type="session",
+        entity_id=str(getattr(sess, "id", "") or session_id),
+        project_id=str(getattr(sess, "project_id", "") or ""),
+        session_id=str(getattr(sess, "id", "") or session_id),
+        meta={"put": True},
+    )
     return _session_api_dump(sess)
 
 @app.post("/api/sessions/{session_id}/recompute")
@@ -3270,6 +3374,16 @@ def _create_path_report_version_core(
         _set_report_versions_by_path(s, by_path)
         _set_latest_path_report_pointer(s, pid, running_row)
         st.save(s, org_id=org_scope, is_admin=admin)
+        _audit_log_safe(
+            request,
+            org_id=str(getattr(s, "org_id", "") or oid or get_default_org_id()),
+            action="report.build",
+            entity_type="report_version",
+            entity_id=report_id,
+            project_id=str(getattr(s, "project_id", "") or ""),
+            session_id=str(getattr(s, "id", "") or sid),
+            meta={"path_id": pid, "steps_hash": steps_hash, "status": "running"},
+        )
 
     sync_mode_env = str(os.environ.get("PATH_REPORT_SYNC_MODE") or "").strip().lower() in {"1", "true", "yes"}
     sync_mode = bool(sync_mode_env and request is None)
@@ -3377,6 +3491,19 @@ def _delete_path_report_version_core(
     deleted = _delete_report_version_row(sid, pid, rid, org_id=(oid or None), is_admin=admin)
     if not deleted:
         raise HTTPException(status_code=404, detail="not found")
+    if request is not None:
+        st = get_storage()
+        sess = st.load(sid, org_id=(oid or None), is_admin=admin)
+        _audit_log_safe(
+            request,
+            org_id=str(getattr(sess, "org_id", "") or oid or get_default_org_id()),
+            action="report.delete",
+            entity_type="report_version",
+            entity_id=rid,
+            project_id=str(getattr(sess, "project_id", "") or ""),
+            session_id=sid,
+            meta={"path_id": pid},
+        )
     return Response(status_code=204)
 
 
@@ -3468,9 +3595,21 @@ def delete_report_version(report_id: str, request: Request = None) -> Response:
         raise HTTPException(status_code=404, detail="not found")
     oid = _request_active_org_id(request) if request is not None else ""
     session_ids = _accessible_session_ids_for_request(request, oid)
+    found = _find_report_version_global(rid, org_id=(oid or None), is_admin=True, session_ids=session_ids)
     deleted = _delete_report_version_global(rid, org_id=(oid or None), is_admin=True, session_ids=session_ids)
     if not deleted:
         raise HTTPException(status_code=404, detail="not found")
+    if found and request is not None:
+        _audit_log_safe(
+            request,
+            org_id=oid or get_default_org_id(),
+            action="report.delete",
+            entity_type="report_version",
+            entity_id=rid,
+            project_id=str((found or {}).get("project_id") or ""),
+            session_id=str((found or {}).get("session_id") or ""),
+            meta={"path_id": str((found or {}).get("path_id") or "")},
+        )
     return Response(status_code=204)
 
 
@@ -4791,6 +4930,72 @@ def _is_role_allowed(role_raw: Any, allowed: Set[str]) -> bool:
     return role in {str(item or "").strip().lower() for item in allowed}
 
 
+def _request_user_email(request: Optional[Request]) -> str:
+    user = _request_auth_user(request) if request is not None else {}
+    email = str((user or {}).get("email") or "").strip().lower()
+    if email:
+        return email
+    uid = str((user or {}).get("id") or "").strip()
+    if not uid:
+        return ""
+    row = find_user_by_id(uid)
+    return str((row or {}).get("email") or "").strip().lower()
+
+
+def _should_reveal_invite_token(request: Optional[Request]) -> bool:
+    raw = str(os.environ.get("FPC_ENTERPRISE_INVITE_TOKEN_EXPOSE", "") or "").strip().lower()
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    user = _request_auth_user(request) if request is not None else {}
+    return bool((user or {}).get("is_admin", False))
+
+
+def _audit_log_safe(
+    request: Optional[Request],
+    *,
+    org_id: str,
+    action: str,
+    entity_type: str,
+    entity_id: str,
+    status: str = "ok",
+    project_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    meta: Optional[Dict[str, Any]] = None,
+) -> None:
+    uid, _ = _request_user_meta(request)
+    if not uid:
+        return
+    try:
+        append_audit_log(
+            actor_user_id=uid,
+            org_id=str(org_id or "").strip() or _request_active_org_id(request),
+            action=action,
+            entity_type=entity_type,
+            entity_id=str(entity_id or "").strip() or "-",
+            status=status,
+            project_id=project_id,
+            session_id=session_id,
+            meta=meta if isinstance(meta, dict) else {},
+        )
+    except Exception as exc:
+        print(f"[AUDIT] write_failed action={action} entity={entity_type}:{entity_id} err={exc}")
+
+
+def _enrich_members_with_email(items_raw: Any) -> List[Dict[str, Any]]:
+    items = items_raw if isinstance(items_raw, list) else []
+    out: List[Dict[str, Any]] = []
+    for row_raw in items:
+        row = dict(row_raw or {}) if isinstance(row_raw, dict) else {}
+        uid = str(row.get("user_id") or "").strip()
+        if uid:
+            found = find_user_by_id(uid) or {}
+            email = str(found.get("email") or "").strip().lower()
+            if email:
+                row["email"] = email
+        out.append(row)
+    return out
+
+
 def _legacy_load_project_scoped(
     project_id: str,
     request: Optional[Request] = None,
@@ -4897,6 +5102,47 @@ def create_org_endpoint(inp: OrgCreateIn, request: Request) -> Dict[str, Any]:
     return org
 
 
+@app.get("/api/orgs/{org_id}/members")
+def list_org_members_endpoint(org_id: str, request: Request) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    role, err = _enterprise_require_org_member(request, oid)
+    if err is not None:
+        return err
+    uid, is_admin = _request_user_meta(request)
+    role_l = str(role or "").strip().lower()
+    if not (is_admin or _is_role_allowed(role_l, {"org_owner", "org_admin", "auditor"})):
+        return _enterprise_error(403, "forbidden", "insufficient_permissions")
+    items = _enrich_members_with_email(list_org_memberships(oid))
+    return {"items": items, "count": len(items), "org_id": oid}
+
+
+@app.patch("/api/orgs/{org_id}/members/{user_id}")
+def patch_org_member_endpoint(org_id: str, user_id: str, inp: OrgMemberPatchIn, request: Request):
+    oid = str(org_id or "").strip()
+    uid = str(user_id or "").strip()
+    _, err = _enterprise_require_org_role(request, oid, _ORG_MEMBER_MANAGE_ROLES)
+    if err is not None:
+        return err
+    if not uid:
+        return _enterprise_error(422, "validation_error", "user_id is required")
+    role = str(getattr(inp, "role", "") or "").strip()
+    if not role:
+        return _enterprise_error(422, "validation_error", "role is required")
+    try:
+        row = upsert_org_membership(oid, uid, role)
+    except ValueError as exc:
+        return _enterprise_error(422, "validation_error", str(exc))
+    _audit_log_safe(
+        request,
+        org_id=oid,
+        action="member.role_change",
+        entity_type="org_membership",
+        entity_id=f"{oid}:{uid}",
+        meta={"target_user_id": uid, "role": str(row.get('role') or '')},
+    )
+    return row
+
+
 @app.get("/api/orgs/{org_id}/projects")
 def list_org_projects(org_id: str, request: Request) -> List[Dict[str, Any]]:
     oid = str(org_id or "").strip()
@@ -4929,6 +5175,15 @@ def create_org_project(org_id: str, inp: CreateProjectIn, request: Request) -> D
     proj = st.load(pid, org_id=oid, is_admin=True)
     if not proj:
         return _enterprise_error(404, "not_found", "not_found")
+    _audit_log_safe(
+        request,
+        org_id=oid,
+        action="project.create",
+        entity_type="project",
+        entity_id=pid,
+        project_id=pid,
+        meta={"title": str(getattr(proj, "title", "") or title)},
+    )
     return proj.model_dump()
 
 
@@ -5021,6 +5276,16 @@ def create_org_project_session(
         sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
         st.save(sess, user_id=uid, org_id=oid)
         sess = st.load(sid, org_id=oid) or sess
+    _audit_log_safe(
+        request,
+        org_id=oid,
+        action="session.create",
+        entity_type="session",
+        entity_id=str(getattr(sess, "id", "") or sid),
+        project_id=project_id,
+        session_id=str(getattr(sess, "id", "") or sid),
+        meta={"title": str(getattr(sess, "title", "") or ""), "mode": str(getattr(sess, "mode", "") or "")},
+    )
     return _session_api_dump(sess)
 
 
@@ -5056,6 +5321,15 @@ def create_org_project_member(org_id: str, project_id: str, inp: ProjectMemberUp
         row = upsert_project_membership(oid, pid, user_id, role)
     except ValueError as exc:
         return _enterprise_error(422, "validation_error", str(exc))
+    _audit_log_safe(
+        request,
+        org_id=oid,
+        action="project.member.add",
+        entity_type="project_membership",
+        entity_id=f"{oid}:{pid}:{user_id}",
+        project_id=pid,
+        meta={"target_user_id": user_id, "role": str(row.get("role") or role)},
+    )
     return row
 
 
@@ -5077,6 +5351,15 @@ def patch_org_project_member(org_id: str, project_id: str, user_id: str, inp: Pr
         row = upsert_project_membership(oid, pid, uid, role)
     except ValueError as exc:
         return _enterprise_error(422, "validation_error", str(exc))
+    _audit_log_safe(
+        request,
+        org_id=oid,
+        action="project.member.role_change",
+        entity_type="project_membership",
+        entity_id=f"{oid}:{pid}:{uid}",
+        project_id=pid,
+        meta={"target_user_id": uid, "role": str(row.get("role") or role)},
+    )
     return row
 
 
@@ -5094,7 +5377,170 @@ def delete_org_project_member(org_id: str, project_id: str, user_id: str, reques
     deleted = delete_project_membership(oid, pid, uid)
     if not deleted:
         return _enterprise_error(404, "not_found", "not_found")
+    _audit_log_safe(
+        request,
+        org_id=oid,
+        action="project.member.delete",
+        entity_type="project_membership",
+        entity_id=f"{oid}:{pid}:{uid}",
+        project_id=pid,
+        meta={"target_user_id": uid},
+    )
     return Response(status_code=204)
+
+
+@app.get("/api/orgs/{org_id}/invites")
+def list_org_invites_endpoint(org_id: str, request: Request):
+    oid = str(org_id or "").strip()
+    _, err = _enterprise_require_org_role(request, oid, _ORG_INVITE_MANAGE_ROLES)
+    if err is not None:
+        return err
+    items = list_org_invites(oid, include_inactive=True)
+    return {"items": items, "count": len(items)}
+
+
+@app.post("/api/orgs/{org_id}/invites")
+def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Request):
+    oid = str(org_id or "").strip()
+    _, err = _enterprise_require_org_role(request, oid, _ORG_INVITE_MANAGE_ROLES)
+    if err is not None:
+        return err
+    email = str(getattr(inp, "email", "") or "").strip().lower()
+    role = str(getattr(inp, "role", "") or "").strip()
+    ttl_days = int(getattr(inp, "ttl_days", 7) or 7)
+    if not email or "@" not in email:
+        return _enterprise_error(422, "validation_error", "valid email is required")
+    if not role:
+        return _enterprise_error(422, "validation_error", "role is required")
+    uid, is_admin = _request_user_meta(request)
+    if not uid:
+        return _enterprise_error(401, "unauthorized", "unauthorized")
+    try:
+        created = create_org_invite(oid, email, role, created_by=uid, ttl_days=ttl_days)
+    except ValueError as exc:
+        return _enterprise_error(422, "validation_error", str(exc))
+    expose_token = _should_reveal_invite_token(request)
+    token = str(created.pop("token", "") or "")
+    response_payload: Dict[str, Any] = {"invite": created}
+    if expose_token and token:
+        response_payload["invite_token"] = token
+        response_payload["invite_link"] = f"/app/org?tab=invites&org_id={oid}&token={token}"
+    _audit_log_safe(
+        request,
+        org_id=oid,
+        action="invite.create",
+        entity_type="org_invite",
+        entity_id=str(created.get("id") or ""),
+        status="ok",
+        meta={"email": email, "role": str(created.get("role") or ""), "token_exposed": bool(expose_token and token), "is_admin": bool(is_admin)},
+    )
+    return response_payload
+
+
+@app.post("/api/orgs/{org_id}/invites/accept")
+def accept_org_invite_endpoint(org_id: str, inp: OrgInviteAcceptIn, request: Request):
+    oid = str(org_id or "").strip()
+    uid, _ = _request_user_meta(request)
+    if not uid:
+        return _enterprise_error(401, "unauthorized", "unauthorized")
+    token = str(getattr(inp, "token", "") or "").strip()
+    if not token:
+        return _enterprise_error(422, "validation_error", "token is required")
+    email = _request_user_email(request)
+    if not email:
+        return _enterprise_error(404, "not_found", "user_email_not_found")
+    try:
+        accepted = accept_org_invite(oid, token, accepted_by=uid, accepted_email=email)
+    except ValueError as exc:
+        marker = str(exc or "").strip().lower()
+        if marker in {"invite_not_found", "invite_revoked"}:
+            return _enterprise_error(404, "not_found", "not_found")
+        if marker in {"invite_already_accepted", "invite_expired", "invite_email_mismatch"}:
+            return _enterprise_error(409, "conflict", marker)
+        return _enterprise_error(422, "validation_error", marker or "validation_error")
+    _audit_log_safe(
+        request,
+        org_id=oid,
+        action="invite.accept",
+        entity_type="org_invite",
+        entity_id=str(accepted.get("id") or ""),
+        status="ok",
+        meta={"email": email, "role": str(accepted.get("role") or "")},
+    )
+    return {"invite": accepted, "membership": {"org_id": oid, "user_id": uid, "role": str(accepted.get("role") or "viewer")}}
+
+
+@app.post("/api/orgs/{org_id}/invites/{invite_id}/revoke")
+def revoke_org_invite_endpoint(org_id: str, invite_id: str, request: Request):
+    oid = str(org_id or "").strip()
+    iid = str(invite_id or "").strip()
+    _, err = _enterprise_require_org_role(request, oid, _ORG_INVITE_MANAGE_ROLES)
+    if err is not None:
+        return err
+    uid, _ = _request_user_meta(request)
+    deleted = revoke_org_invite(oid, iid, revoked_by=uid)
+    if not deleted:
+        return _enterprise_error(404, "not_found", "not_found")
+    _audit_log_safe(
+        request,
+        org_id=oid,
+        action="invite.revoke",
+        entity_type="org_invite",
+        entity_id=iid,
+        status="ok",
+    )
+    return Response(status_code=204)
+
+
+@app.get("/api/orgs/{org_id}/audit")
+def list_org_audit_endpoint(
+    org_id: str,
+    request: Request,
+    limit: int = 100,
+    action: str = "",
+    project_id: str = "",
+    session_id: str = "",
+    status: str = "",
+):
+    oid = str(org_id or "").strip()
+    role, err = _enterprise_require_org_member(request, oid)
+    if err is not None:
+        return err
+    uid, is_admin = _request_user_meta(request)
+    role_l = str(role or "").strip().lower()
+    if not (is_admin or _is_role_allowed(role_l, _ORG_AUDIT_READ_ROLES)):
+        return _enterprise_error(403, "forbidden", "insufficient_permissions")
+    scope = _project_scope_for_request(request, oid)
+    requested_project = str(project_id or "").strip()
+    if requested_project and str(scope.get("mode") or "") != "all":
+        allowed = _scope_allowed_project_ids(scope)
+        if requested_project not in allowed:
+            return _enterprise_error(404, "not_found", "not_found")
+    rows = list_audit_log(
+        oid,
+        limit=limit,
+        action=action,
+        project_id=requested_project or None,
+        session_id=str(session_id or "").strip() or None,
+        status=str(status or "").strip() or None,
+    )
+    if str(scope.get("mode") or "") != "all":
+        allowed = _scope_allowed_project_ids(scope)
+        filtered: List[Dict[str, Any]] = []
+        for row in rows:
+            pid = str((row or {}).get("project_id") or "").strip()
+            if not pid or pid in allowed:
+                filtered.append(row)
+        rows = filtered
+    for row in rows:
+        actor_id = str((row or {}).get("actor_user_id") or "").strip()
+        if actor_id:
+            actor = find_user_by_id(actor_id) or {}
+            email = str(actor.get("email") or "").strip().lower()
+            if email:
+                row["actor_email"] = email
+    _ = uid
+    return {"items": rows, "count": len(rows)}
 
 
 @app.get("/api/orgs/{org_id}/sessions/{session_id}/reports/versions")
@@ -5280,6 +5726,15 @@ def create_project(inp: CreateProjectIn, request: Request = None) -> dict:
     proj = st.load(pid, org_id=(oid or None), is_admin=True)
     if not proj:
         raise HTTPException(status_code=500, detail="create failed")
+    _audit_log_safe(
+        request,
+        org_id=oid or str(getattr(proj, "org_id", "") or get_default_org_id()),
+        action="project.create",
+        entity_type="project",
+        entity_id=pid,
+        project_id=pid,
+        meta={"title": str(getattr(proj, "title", "") or "")},
+    )
     return proj.model_dump()
 
 
@@ -5315,6 +5770,15 @@ def patch_project(project_id: str, inp: UpdateProjectIn, request: Request = None
         proj.passport = merged
 
     st.save(proj, user_id=user_id, org_id=oid, is_admin=True)
+    _audit_log_safe(
+        request,
+        org_id=oid or str(getattr(proj, "org_id", "") or get_default_org_id()),
+        action="project.update",
+        entity_type="project",
+        entity_id=str(getattr(proj, "id", "") or project_id),
+        project_id=str(getattr(proj, "id", "") or project_id),
+        meta={"title": str(getattr(proj, "title", "") or "")},
+    )
     return proj.model_dump()
 
 
@@ -5336,4 +5800,13 @@ def put_project(project_id: str, inp: CreateProjectIn, request: Request = None) 
     proj.title = t
     proj.passport = inp.passport or {}
     st.save(proj, user_id=user_id, org_id=oid, is_admin=True)
+    _audit_log_safe(
+        request,
+        org_id=oid or str(getattr(proj, "org_id", "") or get_default_org_id()),
+        action="project.update",
+        entity_type="project",
+        entity_id=str(getattr(proj, "id", "") or project_id),
+        project_id=str(getattr(proj, "id", "") or project_id),
+        meta={"title": str(getattr(proj, "title", "") or ""), "put": True},
+    )
     return proj.model_dump()

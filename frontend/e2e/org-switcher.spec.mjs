@@ -20,9 +20,12 @@ test("multi-org user selects org and requests are scoped by X-Org-Id", async ({ 
 
   await page.route("**/api/**", async (route, request) => {
     const url = new URL(request.url());
-    const path = url.pathname;
+    const path = url.pathname.replace(/\/+$/, "") || "/";
     const method = request.method().toUpperCase();
     const headers = request.headers();
+    if (!path.startsWith("/api/")) {
+      return route.continue();
+    }
 
     if (path === "/api/auth/me" && method === "GET") {
       return route.fulfill(jsonResponse({

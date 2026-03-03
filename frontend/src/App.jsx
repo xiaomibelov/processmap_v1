@@ -5,6 +5,7 @@ import NotesPanel from "./components/NotesPanel";
 import NoSession from "./components/stages/NoSession";
 import ProjectWizardModal from "./components/ProjectWizardModal";
 import SessionFlowModal from "./components/SessionFlowModal";
+import OrgSettingsModal from "./components/org/OrgSettingsModal";
 import Modal from "./shared/ui/Modal";
 import useSessionStore from "./features/sessions/hooks/useSessionStore";
 import {
@@ -954,7 +955,7 @@ function mergeSessionDraft(prevDraft, sid, session, source = "session_sync") {
 }
 
 export default function App() {
-  const { user, orgs, activeOrgId, switchOrg } = useAuth();
+  const { user, orgs, activeOrgId, switchOrg, refreshOrgs } = useAuth();
   const SESSION_MODE = "quick_skeleton";
   const [backendStatus, setBackendStatus] = useState("idle"); // idle|ok|fail
   const [backendHint, setBackendHint] = useState("");
@@ -985,6 +986,10 @@ export default function App() {
   const [sessionNavNotice, setSessionNavNotice] = useState(null);
   const [renameDialog, setRenameDialog] = useState({ open: false, scope: "", value: "", error: "", busy: false });
   const [deleteDialog, setDeleteDialog] = useState({ open: false, scope: "", error: "", busy: false });
+  const [orgSettingsOpen, setOrgSettingsOpen] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return String(window.location.pathname || "").startsWith("/app/org");
+  });
 
   const [leftHidden, setLeftHidden] = useState(() => readLeftPanelHidden());
   const [leftCompact, setLeftCompact] = useState(() => readLeftPanelCompact());
@@ -1009,6 +1014,12 @@ export default function App() {
     if (!oid) return "";
     const row = ensureArray(orgs).find((item) => String(item?.org_id || item?.id || "").trim() === oid);
     return String(row?.role || "").trim().toLowerCase();
+  }, [activeOrgId, orgs]);
+  const activeOrgName = useMemo(() => {
+    const oid = String(activeOrgId || "").trim();
+    if (!oid) return "";
+    const row = ensureArray(orgs).find((item) => String(item?.org_id || item?.id || "").trim() === oid);
+    return String(row?.name || row?.org_name || oid).trim();
   }, [activeOrgId, orgs]);
   const canManageProjectEntities = useMemo(() => {
     if (Boolean(user?.is_admin)) return true;
@@ -3121,6 +3132,8 @@ export default function App() {
   useEffect(() => {
     function onPopState() {
       const fromUrl = readSelectionFromUrl();
+      const pathname = String(window.location.pathname || "");
+      setOrgSettingsOpen(pathname.startsWith("/app/org"));
       logNav("popstate", {
         projectId: fromUrl.projectId || "-",
         sessionId: fromUrl.sessionId || "-",
@@ -3152,6 +3165,36 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
+  const openOrgSettings = useCallback(() => {
+    setOrgSettingsOpen(true);
+    if (typeof window === "undefined") return;
+    const pathname = String(window.location.pathname || "");
+    if (pathname.startsWith("/app/org")) return;
+    try {
+      const url = new URL(window.location.href);
+      url.pathname = "/app/org";
+      window.history.pushState({}, "", `${url.pathname}${url.search}${url.hash}`);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const closeOrgSettings = useCallback(() => {
+    setOrgSettingsOpen(false);
+    if (typeof window === "undefined") return;
+    const pathname = String(window.location.pathname || "");
+    if (!pathname.startsWith("/app/org")) return;
+    try {
+      const url = new URL(window.location.href);
+      url.pathname = "/app";
+      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    } catch {
+      // ignore
+    }
+  }, []);
+
   return (
     <>
       <AppShell
@@ -3180,6 +3223,7 @@ export default function App() {
             markFail(String(switched?.error || "org_switch_failed"));
           }
         }}
+        onOpenOrgSettings={openOrgSettings}
         projects={projects}
         projectId={projectId}
         onProjectChange={async (pid) => {
@@ -3224,6 +3268,15 @@ export default function App() {
         sessionNavNotice={sessionNavNotice}
         onDismissSessionNavNotice={() => setSessionNavNotice(null)}
         onReturnToSessionList={() => returnToSessionList("banner_action")}
+      />
+
+      <OrgSettingsModal
+        open={orgSettingsOpen}
+        onClose={closeOrgSettings}
+        activeOrgId={activeOrgId}
+        activeOrgRole={activeOrgRole}
+        orgName={activeOrgName}
+        onRequestRefreshOrgs={refreshOrgs}
       />
 
       <ProjectWizardModal open={wizardOpen} onClose={() => setWizardOpen(false)} onCreate={createProjectFromWizard} />

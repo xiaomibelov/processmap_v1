@@ -5,6 +5,8 @@ import os
 import sqlite3
 import threading
 import uuid
+import hashlib
+import secrets
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -26,6 +28,8 @@ _DEFAULT_ORG_ID = str(os.environ.get("FPC_DEFAULT_ORG_ID", "org_default") or "or
 _DEFAULT_ORG_NAME = str(os.environ.get("FPC_DEFAULT_ORG_NAME", "Default") or "Default").strip() or "Default"
 _ORG_FULL_ACCESS_ROLES = {"org_owner", "org_admin", "auditor"}
 _PROJECT_MEMBER_ROLES = {"project_manager", "editor", "viewer"}
+_ORG_MEMBER_ROLES = {"org_owner", "org_admin", "project_manager", "editor", "viewer", "auditor"}
+_ORG_INVITE_ROLES = {"org_admin", "editor", "viewer", "auditor"}
 
 
 def _now_ts() -> int:
@@ -289,6 +293,54 @@ def _ensure_schema() -> None:
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_project_memberships_org_user ON project_memberships(org_id, user_id)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_project_memberships_org_project ON project_memberships(org_id, project_id)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS org_invites (
+                  id TEXT PRIMARY KEY,
+                  org_id TEXT NOT NULL,
+                  email TEXT NOT NULL,
+                  role TEXT NOT NULL,
+                  token_hash TEXT NOT NULL,
+                  expires_at INTEGER NOT NULL DEFAULT 0,
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  created_by TEXT NOT NULL DEFAULT '',
+                  accepted_at INTEGER,
+                  accepted_by TEXT,
+                  revoked_at INTEGER,
+                  revoked_by TEXT
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_org_invites_org_created ON org_invites(org_id, created_at DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_org_invites_token_hash ON org_invites(token_hash)")
+            con.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_org_invites_active_unique
+                ON org_invites(org_id, email)
+                WHERE accepted_at IS NULL AND revoked_at IS NULL
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS audit_log (
+                  id TEXT PRIMARY KEY,
+                  ts INTEGER NOT NULL DEFAULT 0,
+                  actor_user_id TEXT NOT NULL DEFAULT '',
+                  org_id TEXT NOT NULL,
+                  project_id TEXT,
+                  session_id TEXT,
+                  action TEXT NOT NULL,
+                  entity_type TEXT NOT NULL,
+                  entity_id TEXT NOT NULL,
+                  status TEXT NOT NULL DEFAULT 'ok',
+                  meta_json TEXT NOT NULL DEFAULT '{}'
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_audit_org_ts ON audit_log(org_id, ts DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_audit_org_action ON audit_log(org_id, action)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_audit_project ON audit_log(project_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_audit_session ON audit_log(session_id)")
             if not _column_exists(con, "projects", "org_id"):
                 con.execute("ALTER TABLE projects ADD COLUMN org_id TEXT NOT NULL DEFAULT 'org_default'")
             if not _column_exists(con, "projects", "created_by"):
@@ -1239,6 +1291,92 @@ def _normalize_project_membership_role(raw: Any) -> str:
     return role
 
 
+def _normalize_org_membership_role(raw: Any) -> str:
+    role = str(raw or "").strip().lower()
+    aliases = {
+        "owner": "org_owner",
+        "orgowner": "org_owner",
+        "org_owner": "org_owner",
+        "admin": "org_admin",
+        "orgadmin": "org_admin",
+        "org_admin": "org_admin",
+        "projectmanager": "project_manager",
+        "project_manager": "project_manager",
+        "pm": "project_manager",
+        "manager": "project_manager",
+        "editor": "editor",
+        "edit": "editor",
+        "viewer": "viewer",
+        "read_only": "viewer",
+        "auditor": "auditor",
+        "audit": "auditor",
+    }
+    role = aliases.get(role, role)
+    if role not in _ORG_MEMBER_ROLES:
+        return "viewer"
+    return role
+
+
+def _normalize_org_invite_role(raw: Any) -> str:
+    role = _normalize_org_membership_role(raw)
+    if role not in _ORG_INVITE_ROLES:
+        return "viewer"
+    return role
+
+
+def _normalize_email(raw: Any) -> str:
+    return str(raw or "").strip().lower()
+
+
+def _invite_status(row: Dict[str, Any]) -> str:
+    now = _now_ts()
+    if int(row.get("revoked_at") or 0) > 0:
+        return "revoked"
+    if int(row.get("accepted_at") or 0) > 0:
+        return "accepted"
+    if int(row.get("expires_at") or 0) > 0 and int(row.get("expires_at") or 0) < now:
+        return "expired"
+    return "active"
+
+
+def _invite_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    payload = {
+        "id": str(row["id"] or ""),
+        "org_id": str(row["org_id"] or ""),
+        "email": _normalize_email(row["email"]),
+        "role": _normalize_org_invite_role(row["role"]),
+        "expires_at": int(row["expires_at"] or 0),
+        "created_at": int(row["created_at"] or 0),
+        "created_by": str(row["created_by"] or ""),
+        "accepted_at": int(row["accepted_at"] or 0) if row["accepted_at"] is not None else None,
+        "accepted_by": str(row["accepted_by"] or "") if row["accepted_by"] is not None else None,
+        "revoked_at": int(row["revoked_at"] or 0) if row["revoked_at"] is not None else None,
+        "revoked_by": str(row["revoked_by"] or "") if row["revoked_by"] is not None else None,
+    }
+    payload["status"] = _invite_status(payload)
+    return payload
+
+
+def _audit_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    return {
+        "id": str(row["id"] or ""),
+        "ts": int(row["ts"] or 0),
+        "actor_user_id": str(row["actor_user_id"] or ""),
+        "org_id": str(row["org_id"] or ""),
+        "project_id": str(row["project_id"] or "") if row["project_id"] is not None else "",
+        "session_id": str(row["session_id"] or "") if row["session_id"] is not None else "",
+        "action": str(row["action"] or ""),
+        "entity_type": str(row["entity_type"] or ""),
+        "entity_id": str(row["entity_id"] or ""),
+        "status": str(row["status"] or "ok"),
+        "meta": _json_loads(row["meta_json"], {}),
+    }
+
+
+def _hash_invite_token(token: str) -> str:
+    return hashlib.sha256(str(token or "").encode("utf-8")).hexdigest()
+
+
 def list_project_memberships(
     org_id: str,
     *,
@@ -1341,6 +1479,390 @@ def delete_project_membership(org_id: str, project_id: str, user_id: str) -> boo
         )
         con.commit()
         return int(cur.rowcount or 0) > 0
+
+
+def list_org_memberships(org_id: str) -> List[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    if not oid:
+        return []
+    _ensure_schema()
+    with _connect() as con:
+        rows = con.execute(
+            """
+            SELECT org_id, user_id, role, created_at
+              FROM org_memberships
+             WHERE org_id = ?
+             ORDER BY created_at ASC, user_id ASC
+            """,
+            [oid],
+        ).fetchall()
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        out.append(
+            {
+                "org_id": str(row["org_id"] or ""),
+                "user_id": str(row["user_id"] or ""),
+                "role": _normalize_org_membership_role(row["role"]),
+                "created_at": int(row["created_at"] or 0),
+            }
+        )
+    return out
+
+
+def upsert_org_membership(org_id: str, user_id: str, role: str) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    uid = str(user_id or "").strip()
+    if not oid or not uid:
+        raise ValueError("org_id and user_id are required")
+    normalized_role = _normalize_org_membership_role(role)
+    now = _now_ts()
+    _ensure_schema()
+    with _connect() as con:
+        con.execute(
+            """
+            INSERT INTO org_memberships (org_id, user_id, role, created_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(org_id, user_id) DO UPDATE SET
+              role = excluded.role
+            """,
+            [oid, uid, normalized_role, now],
+        )
+        con.commit()
+        row = con.execute(
+            """
+            SELECT org_id, user_id, role, created_at
+              FROM org_memberships
+             WHERE org_id = ? AND user_id = ?
+             LIMIT 1
+            """,
+            [oid, uid],
+        ).fetchone()
+    if not row:
+        return {"org_id": oid, "user_id": uid, "role": normalized_role, "created_at": now}
+    return {
+        "org_id": str(row["org_id"] or ""),
+        "user_id": str(row["user_id"] or ""),
+        "role": _normalize_org_membership_role(row["role"]),
+        "created_at": int(row["created_at"] or 0),
+    }
+
+
+def list_org_invites(
+    org_id: str,
+    *,
+    include_inactive: bool = True,
+) -> List[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    if not oid:
+        return []
+    _ensure_schema()
+    with _connect() as con:
+        rows = con.execute(
+            """
+            SELECT id, org_id, email, role, token_hash, expires_at, created_at, created_by,
+                   accepted_at, accepted_by, revoked_at, revoked_by
+              FROM org_invites
+             WHERE org_id = ?
+             ORDER BY created_at DESC, id DESC
+            """,
+            [oid],
+        ).fetchall()
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        payload = _invite_row_to_dict(row)
+        if not include_inactive and payload.get("status") != "active":
+            continue
+        out.append(payload)
+    return out
+
+
+def create_org_invite(
+    org_id: str,
+    email: str,
+    role: str,
+    *,
+    created_by: str,
+    ttl_days: int = 7,
+) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    em = _normalize_email(email)
+    if not oid or not em:
+        raise ValueError("org_id and email are required")
+    normalized_role = _normalize_org_invite_role(role)
+    actor = str(created_by or "").strip()
+    ttl = int(ttl_days or 0)
+    if ttl <= 0:
+        ttl = 7
+    ttl = max(1, min(ttl, 60))
+    now = _now_ts()
+    expires_at = now + ttl * 24 * 60 * 60
+    invite_id = f"inv_{uuid.uuid4().hex[:12]}"
+    token = secrets.token_urlsafe(24)
+    token_hash = _hash_invite_token(token)
+    _ensure_schema()
+    with _connect() as con:
+        con.execute(
+            """
+            UPDATE org_invites
+               SET revoked_at = COALESCE(revoked_at, ?), revoked_by = COALESCE(revoked_by, 'system_expired')
+             WHERE org_id = ?
+               AND accepted_at IS NULL
+               AND revoked_at IS NULL
+               AND expires_at < ?
+            """,
+            [now, oid, now],
+        )
+        try:
+            con.execute(
+                """
+                INSERT INTO org_invites (
+                  id, org_id, email, role, token_hash, expires_at, created_at, created_by,
+                  accepted_at, accepted_by, revoked_at, revoked_by
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
+                """,
+                [invite_id, oid, em, normalized_role, token_hash, expires_at, now, actor],
+            )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("active invite already exists for this email") from exc
+        con.commit()
+        row = con.execute(
+            """
+            SELECT id, org_id, email, role, token_hash, expires_at, created_at, created_by,
+                   accepted_at, accepted_by, revoked_at, revoked_by
+              FROM org_invites
+             WHERE id = ?
+             LIMIT 1
+            """,
+            [invite_id],
+        ).fetchone()
+    if not row:
+        raise ValueError("invite create failed")
+    payload = _invite_row_to_dict(row)
+    payload["token"] = token
+    return payload
+
+
+def accept_org_invite(
+    org_id: str,
+    token: str,
+    *,
+    accepted_by: str,
+    accepted_email: str,
+) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    tok = str(token or "").strip()
+    actor = str(accepted_by or "").strip()
+    actor_email = _normalize_email(accepted_email)
+    if not oid or not tok or not actor:
+        raise ValueError("org_id, token and accepted_by are required")
+    token_hash = _hash_invite_token(tok)
+    now = _now_ts()
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT id, org_id, email, role, token_hash, expires_at, created_at, created_by,
+                   accepted_at, accepted_by, revoked_at, revoked_by
+              FROM org_invites
+             WHERE org_id = ? AND token_hash = ?
+             ORDER BY created_at DESC
+             LIMIT 1
+            """,
+            [oid, token_hash],
+        ).fetchone()
+        if not row:
+            raise ValueError("invite_not_found")
+        invite = _invite_row_to_dict(row)
+        status = str(invite.get("status") or "")
+        if status == "revoked":
+            raise ValueError("invite_revoked")
+        if status == "accepted":
+            raise ValueError("invite_already_accepted")
+        if status == "expired":
+            raise ValueError("invite_expired")
+        invite_email = _normalize_email(invite.get("email"))
+        if not actor_email or actor_email != invite_email:
+            raise ValueError("invite_email_mismatch")
+        role = _normalize_org_invite_role(invite.get("role"))
+        con.execute(
+            """
+            INSERT INTO org_memberships (org_id, user_id, role, created_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(org_id, user_id) DO UPDATE SET role = excluded.role
+            """,
+            [oid, actor, role, now],
+        )
+        con.execute(
+            """
+            UPDATE org_invites
+               SET accepted_at = ?, accepted_by = ?, revoked_at = NULL, revoked_by = NULL
+             WHERE id = ?
+            """,
+            [now, actor, str(invite.get("id") or "")],
+        )
+        con.commit()
+        accepted_row = con.execute(
+            """
+            SELECT id, org_id, email, role, token_hash, expires_at, created_at, created_by,
+                   accepted_at, accepted_by, revoked_at, revoked_by
+              FROM org_invites
+             WHERE id = ?
+             LIMIT 1
+            """,
+            [str(invite.get("id") or "")],
+        ).fetchone()
+    if not accepted_row:
+        raise ValueError("invite_accept_failed")
+    return _invite_row_to_dict(accepted_row)
+
+
+def revoke_org_invite(
+    org_id: str,
+    invite_id: str,
+    *,
+    revoked_by: str,
+) -> bool:
+    oid = str(org_id or "").strip()
+    iid = str(invite_id or "").strip()
+    actor = str(revoked_by or "").strip()
+    if not oid or not iid:
+        return False
+    now = _now_ts()
+    _ensure_schema()
+    with _connect() as con:
+        cur = con.execute(
+            """
+            UPDATE org_invites
+               SET revoked_at = ?, revoked_by = ?
+             WHERE org_id = ?
+               AND id = ?
+               AND accepted_at IS NULL
+               AND revoked_at IS NULL
+            """,
+            [now, actor, oid, iid],
+        )
+        con.commit()
+        return int(cur.rowcount or 0) > 0
+
+
+def append_audit_log(
+    *,
+    actor_user_id: str,
+    org_id: str,
+    action: str,
+    entity_type: str,
+    entity_id: str,
+    status: str = "ok",
+    project_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    meta: Optional[Dict[str, Any]] = None,
+    ts: Optional[int] = None,
+) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    actor = str(actor_user_id or "").strip()
+    act = str(action or "").strip()
+    etype = str(entity_type or "").strip()
+    eid = str(entity_id or "").strip()
+    state = str(status or "ok").strip().lower() or "ok"
+    if not oid or not actor or not act or not etype or not eid:
+        raise ValueError("actor_user_id, org_id, action, entity_type and entity_id are required")
+    at = int(ts or 0) or _now_ts()
+    payload = _json_dumps(meta if isinstance(meta, dict) else {}, {})
+    audit_id = f"aud_{uuid.uuid4().hex[:12]}"
+    _ensure_schema()
+    with _connect() as con:
+        con.execute(
+            """
+            INSERT INTO audit_log (
+              id, ts, actor_user_id, org_id, project_id, session_id, action, entity_type, entity_id, status, meta_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                audit_id,
+                at,
+                actor,
+                oid,
+                str(project_id or "").strip() or None,
+                str(session_id or "").strip() or None,
+                act,
+                etype,
+                eid,
+                state,
+                payload,
+            ],
+        )
+        con.commit()
+        row = con.execute(
+            """
+            SELECT id, ts, actor_user_id, org_id, project_id, session_id, action, entity_type, entity_id, status, meta_json
+              FROM audit_log
+             WHERE id = ?
+             LIMIT 1
+            """,
+            [audit_id],
+        ).fetchone()
+    if not row:
+        return {
+            "id": audit_id,
+            "ts": at,
+            "actor_user_id": actor,
+            "org_id": oid,
+            "project_id": str(project_id or ""),
+            "session_id": str(session_id or ""),
+            "action": act,
+            "entity_type": etype,
+            "entity_id": eid,
+            "status": state,
+            "meta": meta if isinstance(meta, dict) else {},
+        }
+    return _audit_row_to_dict(row)
+
+
+def list_audit_log(
+    org_id: str,
+    *,
+    limit: int = 100,
+    action: Optional[str] = None,
+    project_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    status: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    if not oid:
+        return []
+    lim = max(1, min(int(limit or 100), 500))
+    clauses = ["org_id = ?"]
+    params: List[Any] = [oid]
+    action_value = str(action or "").strip()
+    if action_value:
+        clauses.append("action = ?")
+        params.append(action_value)
+    project_value = str(project_id or "").strip()
+    if project_value:
+        clauses.append("project_id = ?")
+        params.append(project_value)
+    session_value = str(session_id or "").strip()
+    if session_value:
+        clauses.append("session_id = ?")
+        params.append(session_value)
+    status_value = str(status or "").strip().lower()
+    if status_value:
+        clauses.append("status = ?")
+        params.append(status_value)
+    where = " AND ".join(clauses)
+    _ensure_schema()
+    with _connect() as con:
+        rows = con.execute(
+            f"""
+            SELECT id, ts, actor_user_id, org_id, project_id, session_id, action, entity_type, entity_id, status, meta_json
+              FROM audit_log
+             WHERE {where}
+             ORDER BY ts DESC, id DESC
+             LIMIT ?
+            """,
+            [*params, lim],
+        ).fetchall()
+    return [_audit_row_to_dict(row) for row in rows]
 
 
 def get_effective_project_scope(
