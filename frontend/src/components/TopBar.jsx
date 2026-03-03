@@ -34,6 +34,13 @@ function orgTitleFrom(o) {
   return String((o && (o.name || o.org_name || o.org_id || o.id)) || "").trim() || "—";
 }
 
+function shortActor(raw) {
+  const value = String(raw || "").trim();
+  if (!value) return "—";
+  if (value.length <= 14) return value;
+  return `${value.slice(0, 6)}…${value.slice(-4)}`;
+}
+
 function sanitizeAiStatusMessage(msg) {
   const raw = String(msg || "").trim();
   if (!raw) return "";
@@ -63,6 +70,7 @@ export default function TopBar({
   projectId,
   onProjectChange,
   onDeleteProject,
+  canManageProjectEntities = true,
   sessions,
   sessionId,
   onOpenSession,
@@ -192,13 +200,17 @@ export default function TopBar({
     const id = String(projectId || "").trim();
     if (!id) return "";
     const found = projList.find((item) => projectIdFrom(item) === id);
-    return projectTitleFrom(found);
+    const createdBy = shortActor(found?.created_by || found?.owner_user_id);
+    const updatedBy = shortActor(found?.updated_by || found?.created_by || found?.owner_user_id);
+    return `${projectTitleFrom(found)} · Created by ${createdBy} · Updated by ${updatedBy}`;
   }, [projList, projectId]);
   const selectedSessionTitle = useMemo(() => {
     const id = String(sessionId || "").trim();
     if (!id) return "";
     const found = sessList.find((item) => sessionIdFrom(item) === id);
-    return sessionTitleFrom(found);
+    const createdBy = shortActor(found?.created_by || found?.owner_user_id);
+    const updatedBy = shortActor(found?.updated_by || found?.created_by || found?.owner_user_id);
+    return `${sessionTitleFrom(found)} · Created by ${createdBy} · Updated by ${updatedBy}`;
   }, [sessList, sessionId]);
   const selectedOrgTitle = useMemo(() => {
     const id = String(activeOrgId || "").trim();
@@ -279,16 +291,20 @@ export default function TopBar({
             <option value="">{projList.length ? "— выбрать проект —" : "Нет проектов"}</option>
             {projList.map((p, idx) => {
               const id = projectIdFrom(p);
+              const createdBy = shortActor(p?.created_by || p?.owner_user_id);
+              const updatedBy = shortActor(p?.updated_by || p?.created_by || p?.owner_user_id);
               return (
                 <option key={`${id || "p"}_${idx}`} value={id}>
-                  {projectTitleFrom(p)}
+                  {`${projectTitleFrom(p)} · C:${createdBy} · U:${updatedBy}`}
                 </option>
               );
             })}
           </select>
-          <button type="button" className="iconBtn h-8 w-8 min-w-8" onClick={() => onDeleteProject?.()} title="Удалить проект" disabled={!projectId}>
-            🗑
-          </button>
+          {canManageProjectEntities ? (
+            <button type="button" className="iconBtn h-8 w-8 min-w-8" onClick={() => onDeleteProject?.()} title="Удалить проект" disabled={!projectId}>
+              🗑
+            </button>
+          ) : null}
         </div>
 
         <div className="topGroup flex shrink-0 items-center gap-2">
@@ -302,16 +318,20 @@ export default function TopBar({
             <option value="">{sessList.length ? "— выбрать сессию —" : "Нет сессий"}</option>
             {sessList.map((s, idx) => {
               const id = sessionIdFrom(s);
+              const createdBy = shortActor(s?.created_by || s?.owner_user_id);
+              const updatedBy = shortActor(s?.updated_by || s?.created_by || s?.owner_user_id);
               return (
                 <option key={`${id || "s"}_${idx}`} value={id}>
-                  {sessionTitleFrom(s)}
+                  {`${sessionTitleFrom(s)} · C:${createdBy} · U:${updatedBy}`}
                 </option>
               );
             })}
           </select>
-          <button type="button" className="iconBtn h-8 w-8 min-w-8" onClick={() => onDeleteSession?.()} title="Удалить сессию" disabled={!sessionId}>
-            🗑
-          </button>
+          {canManageProjectEntities ? (
+            <button type="button" className="iconBtn h-8 w-8 min-w-8" onClick={() => onDeleteSession?.()} title="Удалить сессию" disabled={!sessionId}>
+              🗑
+            </button>
+          ) : null}
         </div>
       </div>
 

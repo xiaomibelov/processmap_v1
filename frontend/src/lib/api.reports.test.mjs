@@ -6,6 +6,7 @@ import {
   apiDeleteReportVersion,
   apiGetReportVersion,
   apiListPathReportVersions,
+  setActiveOrgId,
 } from "./api.js";
 
 test("apiListPathReportVersions: returns 404 when path reports endpoint is unavailable", async () => {
@@ -251,6 +252,47 @@ test("apiDeleteReportVersion: returns unsupported_endpoint on 405", async () => 
     assert.equal(out.status, 405);
     assert.equal(out.unsupported_endpoint, true);
   } finally {
+    globalThis.fetch = prevFetch;
+  }
+});
+
+test("apiListPathReportVersions: prefers enterprise route when active org is set", async () => {
+  const prevFetch = globalThis.fetch;
+  const calls = [];
+  try {
+    setActiveOrgId("org_enterprise", { persist: false });
+    globalThis.fetch = async (input) => {
+      calls.push(String(input || ""));
+      return new Response(JSON.stringify([{ id: "rpt_ent_1", status: "ok" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    const out = await apiListPathReportVersions("sess_1", "primary");
+    assert.equal(out.ok, true);
+    assert.equal(out.items.length, 1);
+    assert.match(calls[0], /\/api\/orgs\/org_enterprise\/sessions\/sess_1\/reports\/versions\?path_id=primary$/);
+  } finally {
+    setActiveOrgId("", { persist: false });
+    globalThis.fetch = prevFetch;
+  }
+});
+
+test("apiDeleteReportVersion: uses enterprise delete when active org is set", async () => {
+  const prevFetch = globalThis.fetch;
+  const calls = [];
+  try {
+    setActiveOrgId("org_enterprise", { persist: false });
+    globalThis.fetch = async (input) => {
+      calls.push(String(input || ""));
+      return new Response(null, { status: 204 });
+    };
+    const out = await apiDeleteReportVersion("rpt_1", { sessionId: "sess_1", pathId: "primary" });
+    assert.equal(out.ok, true);
+    assert.equal(out.status, 204);
+    assert.match(calls[0], /\/api\/orgs\/org_enterprise\/sessions\/sess_1\/reports\/rpt_1\?path_id=primary$/);
+  } finally {
+    setActiveOrgId("", { persist: false });
     globalThis.fetch = prevFetch;
   }
 });

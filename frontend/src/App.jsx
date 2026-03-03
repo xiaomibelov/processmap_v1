@@ -954,7 +954,7 @@ function mergeSessionDraft(prevDraft, sid, session, source = "session_sync") {
 }
 
 export default function App() {
-  const { orgs, activeOrgId, switchOrg } = useAuth();
+  const { user, orgs, activeOrgId, switchOrg } = useAuth();
   const SESSION_MODE = "quick_skeleton";
   const [backendStatus, setBackendStatus] = useState("idle"); // idle|ok|fail
   const [backendHint, setBackendHint] = useState("");
@@ -1004,6 +1004,16 @@ export default function App() {
   const [llmVerifyAt, setLlmVerifyAt] = useState(0);
   const [llmVerifyBusy, setLlmVerifyBusy] = useState(false);
   const activeOrgIdRef = useRef(String(activeOrgId || "").trim());
+  const activeOrgRole = useMemo(() => {
+    const oid = String(activeOrgId || "").trim();
+    if (!oid) return "";
+    const row = ensureArray(orgs).find((item) => String(item?.org_id || item?.id || "").trim() === oid);
+    return String(row?.role || "").trim().toLowerCase();
+  }, [activeOrgId, orgs]);
+  const canManageProjectEntities = useMemo(() => {
+    if (Boolean(user?.is_admin)) return true;
+    return activeOrgRole !== "viewer" && activeOrgRole !== "auditor";
+  }, [activeOrgRole, user?.is_admin]);
 
   function markOk(hint) {
     setBackendStatus("ok");
@@ -2850,6 +2860,7 @@ export default function App() {
   }
 
   async function deleteCurrentProject(options = {}) {
+    if (!canManageProjectEntities) return { ok: false, error: "forbidden" };
     const pid = String(projectId || "");
     if (!pid) return { ok: false, error: "Проект не выбран." };
     const skipConfirm = !!options?.skipConfirm;
@@ -2875,6 +2886,7 @@ export default function App() {
   }
 
   async function deleteCurrentSession(options = {}) {
+    if (!canManageProjectEntities) return { ok: false, error: "forbidden" };
     const sid = String(draft?.session_id || "");
     if (!sid || isLocalSessionId(sid)) {
       returnToSessionList("local_session_clear");
@@ -2899,6 +2911,7 @@ export default function App() {
   }
 
   function openRenameDialog(scope) {
+    if (!canManageProjectEntities) return;
     const kind = String(scope || "").trim();
     if (!(kind === "project" || kind === "session")) return;
     const currentValue = kind === "project"
@@ -2908,6 +2921,7 @@ export default function App() {
   }
 
   function openDeleteDialog(scope) {
+    if (!canManageProjectEntities) return;
     const kind = String(scope || "").trim();
     if (!(kind === "project" || kind === "session")) return;
     setDeleteDialog({ open: true, scope: kind, error: "", busy: false });
@@ -3042,10 +3056,10 @@ export default function App() {
         onSidebarShortcutHandled={() => setSidebarShortcutRequest("")}
         stepTimeUnit={stepTimeUnit}
         onStepTimeUnitChange={handleStepTimeUnitChange}
-        onRenameProject={() => openRenameDialog("project")}
-        onDeleteProject={() => openDeleteDialog("project")}
-        onRenameSession={() => openRenameDialog("session")}
-        onDeleteSession={() => openDeleteDialog("session")}
+        onRenameProject={canManageProjectEntities ? (() => openRenameDialog("project")) : undefined}
+        onDeleteProject={canManageProjectEntities ? (() => openDeleteDialog("project")) : undefined}
+        onRenameSession={canManageProjectEntities ? (() => openRenameDialog("session")) : undefined}
+        onDeleteSession={canManageProjectEntities ? (() => openDeleteDialog("session")) : undefined}
         disabled={locked}
       />
     );
@@ -3074,6 +3088,7 @@ export default function App() {
     returnToSessionList,
     openRenameDialog,
     openDeleteDialog,
+    canManageProjectEntities,
   ]);
 
   useEffect(() => {
@@ -3176,11 +3191,12 @@ export default function App() {
           setSessions([]);
           resetDraft(ensureDraftShape(null));
         }}
-        onDeleteProject={deleteCurrentProject}
+        onDeleteProject={canManageProjectEntities ? deleteCurrentProject : undefined}
+        canManageProjectEntities={canManageProjectEntities}
         sessions={sessions}
         sessionId={String(draft?.session_id || "")}
         onOpenSession={openSession}
-        onDeleteSession={deleteCurrentSession}
+        onDeleteSession={canManageProjectEntities ? deleteCurrentSession : undefined}
         onRefresh={async () => {
           await refreshProjects();
           await refreshSessions(projectId);

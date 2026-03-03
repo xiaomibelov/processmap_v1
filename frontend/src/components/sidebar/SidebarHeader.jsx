@@ -105,18 +105,26 @@ export default function SidebarHeader({
           </button>
           {menuOpen ? (
             <div ref={menuRef} className="sidebarHeaderMenu">
-              <button type="button" className="sidebarHeaderMenuItem" onClick={() => { setMenuOpen(false); onRenameProject?.(); }}>
-                Переименовать проект
-              </button>
-              <button type="button" className="sidebarHeaderMenuItem isDanger" onClick={() => { setMenuOpen(false); onDeleteProject?.(); }}>
-                Удалить проект
-              </button>
-              <button type="button" className="sidebarHeaderMenuItem" onClick={() => { setMenuOpen(false); onRenameSession?.(); }}>
-                Переименовать сессию
-              </button>
-              <button type="button" className="sidebarHeaderMenuItem isDanger" onClick={() => { setMenuOpen(false); onDeleteSession?.(); }}>
-                Удалить сессию
-              </button>
+              {typeof onRenameProject === "function" ? (
+                <button type="button" className="sidebarHeaderMenuItem" onClick={() => { setMenuOpen(false); onRenameProject?.(); }}>
+                  Переименовать проект
+                </button>
+              ) : null}
+              {typeof onDeleteProject === "function" ? (
+                <button type="button" className="sidebarHeaderMenuItem isDanger" onClick={() => { setMenuOpen(false); onDeleteProject?.(); }}>
+                  Удалить проект
+                </button>
+              ) : null}
+              {typeof onRenameSession === "function" ? (
+                <button type="button" className="sidebarHeaderMenuItem" onClick={() => { setMenuOpen(false); onRenameSession?.(); }}>
+                  Переименовать сессию
+                </button>
+              ) : null}
+              {typeof onDeleteSession === "function" ? (
+                <button type="button" className="sidebarHeaderMenuItem isDanger" onClick={() => { setMenuOpen(false); onDeleteSession?.(); }}>
+                  Удалить сессию
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="sidebarHeaderMenuItem"

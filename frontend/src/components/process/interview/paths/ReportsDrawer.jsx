@@ -262,6 +262,7 @@ export default function ReportsDrawer({
   canGenerateReport = false,
   onCopyMarkdown,
   onDeleteReport,
+  canDeleteReport = true,
   deletingReportId = "",
   selectedReportView,
   reportDetailsById = {},
@@ -552,18 +553,20 @@ export default function ReportsDrawer({
                         <button type="button" className="secondaryBtn tinyBtn" disabled={!itemHasMarkdown || itemStatus === "running"} onClick={() => onCopyMarkdown?.(reportId)}>
                           Копировать
                         </button>
-                        <button
-                          type="button"
-                          className="secondaryBtn tinyBtn"
-                          disabled={!reportId || !!deletingReportId}
-                          title="Действия"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setDeleteCandidate({ id: reportId, version: Number(item?.version || 0) });
-                          }}
-                        >
-                          ⋯
-                        </button>
+                        {canDeleteReport ? (
+                          <button
+                            type="button"
+                            className="secondaryBtn tinyBtn"
+                            disabled={!reportId || !!deletingReportId}
+                            title="Действия"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setDeleteCandidate({ id: reportId, version: Number(item?.version || 0) });
+                            }}
+                          >
+                            ⋯
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                   );

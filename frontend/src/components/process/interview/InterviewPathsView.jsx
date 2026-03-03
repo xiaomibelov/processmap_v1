@@ -6,6 +6,7 @@ import {
   apiGetReportVersion,
   apiListPathReportVersions,
 } from "../../../lib/api";
+import { useAuth } from "../../../features/auth/AuthProvider";
 import {
   buildScenarioMatrixRows,
   buildStepMetaByNodeId,
@@ -889,6 +890,7 @@ export default function InterviewPathsView({
   onPerfReady,
   externalIntent = null,
 }) {
+  const { user, orgs, activeOrgId } = useAuth();
   const vm = interviewVM && typeof interviewVM === "object" ? interviewVM : {};
   const [pathsCalcReady, setPathsCalcReady] = useState(false);
   const [scenarioPresentation, setScenarioPresentation] = useState(() => buildScenarioPresentation([]));
@@ -960,6 +962,16 @@ export default function InterviewPathsView({
   const deferredSelectedTier = useDeferredValue(selectedTier);
   const reportLoading = reportLoadingCount > 0;
   const stepTimeByNodeId = useMemo(() => buildStepTimeByNodeId(vm?.steps), [vm?.steps]);
+  const activeOrgRole = useMemo(() => {
+    const oid = toText(activeOrgId);
+    if (!oid) return "";
+    const row = toArray(orgs).find((item) => toText(item?.org_id || item?.id) === oid);
+    return toText(row?.role).toLowerCase();
+  }, [activeOrgId, orgs]);
+  const canDeleteReports = useMemo(() => {
+    if (Boolean(user?.is_admin)) return true;
+    return activeOrgRole === "org_owner" || activeOrgRole === "org_admin" || activeOrgRole === "project_manager";
+  }, [activeOrgRole, user?.is_admin]);
 
   useEffect(() => {
     return () => {
@@ -2265,6 +2277,11 @@ export default function InterviewPathsView({
   }
 
   async function handleDeleteReportVersion(reportRaw) {
+    if (!canDeleteReports) {
+      setReportDetailsError("Недостаточно прав для удаления версии отчёта.");
+      setReportDetailsErrorMeta({ status: 403, detail: "insufficient_permissions" });
+      return;
+    }
     const report = asObject(reportRaw);
     const reportId = toText(report?.id);
     if (!reportId || reportDeleteInFlightId) return;
@@ -2806,6 +2823,7 @@ export default function InterviewPathsView({
         canGenerateReport={canGenerateReport}
         onCopyMarkdown={handleCopyMarkdown}
         onDeleteReport={handleDeleteReportVersion}
+        canDeleteReport={canDeleteReports}
         deletingReportId={reportDeleteInFlightId}
         selectedReportView={selectedReportView}
         reportDetailsById={reportDetailsById}

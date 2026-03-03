@@ -625,6 +625,49 @@ export async function apiCreateProjectSession(projectId, mode, title, roles, sta
   return { ok: true, status: r.status, session_id, session: r.data };
 }
 
+// ------- Enterprise Project Members -------
+export async function apiListOrgProjectMembers(orgId, projectId) {
+  const oid = String(orgId || "").trim();
+  const pid = String(projectId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  if (!pid) return { ok: false, status: 0, error: "missing project_id" };
+  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/projects/${encodeURIComponent(pid)}/members`;
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  const items = Array.isArray(r?.data?.items) ? r.data.items : [];
+  return r.ok ? { ok: true, status: r.status, items, count: Number(r?.data?.count || items.length || 0) } : r;
+}
+
+export async function apiUpsertOrgProjectMember(orgId, projectId, userId, role, options = {}) {
+  const oid = String(orgId || "").trim();
+  const pid = String(projectId || "").trim();
+  const uid = String(userId || "").trim();
+  const nextRole = String(role || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  if (!pid) return { ok: false, status: 0, error: "missing project_id" };
+  if (!uid) return { ok: false, status: 0, error: "missing user_id" };
+  if (!nextRole) return { ok: false, status: 0, error: "missing role" };
+  const usePatch = options?.patch === true;
+  const endpoint = usePatch
+    ? `/api/orgs/${encodeURIComponent(oid)}/projects/${encodeURIComponent(pid)}/members/${encodeURIComponent(uid)}`
+    : `/api/orgs/${encodeURIComponent(oid)}/projects/${encodeURIComponent(pid)}/members`;
+  const body = usePatch ? { role: nextRole } : { user_id: uid, role: nextRole };
+  const method = usePatch ? "PATCH" : "POST";
+  const r = okOrError(await request(endpoint, { method, body }));
+  return r.ok ? { ok: true, status: r.status, item: r.data || {} } : r;
+}
+
+export async function apiDeleteOrgProjectMember(orgId, projectId, userId) {
+  const oid = String(orgId || "").trim();
+  const pid = String(projectId || "").trim();
+  const uid = String(userId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  if (!pid) return { ok: false, status: 0, error: "missing project_id" };
+  if (!uid) return { ok: false, status: 0, error: "missing user_id" };
+  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/projects/${encodeURIComponent(pid)}/members/${encodeURIComponent(uid)}`;
+  const r = okOrError(await request(endpoint, { method: "DELETE" }));
+  return r.ok ? { ok: true, status: r.status, result: r.data || null } : r;
+}
+
 // ------- Sessions (legacy / fallback) -------
 export async function apiListSessions() {
   const r = okOrError(await request("/api/sessions"));
@@ -800,6 +843,90 @@ export async function apiAiCommandOps(sessionId, payload) {
   return r.ok ? { ok: true, status: r.status, result: r.data } : r;
 }
 
+function resolveReportOrgId(options = {}) {
+  const explicit = String(options?.orgId || "").trim();
+  if (explicit) return explicit;
+  return String(getActiveOrgId() || "").trim();
+}
+
+function reportPathQuery(pathId, options = {}) {
+  const pid = String(pathId || "").trim();
+  const params = new URLSearchParams();
+  if (pid) params.set("path_id", pid);
+  const stepsHash = String(options?.stepsHash || "").trim();
+  if (stepsHash) params.set("steps_hash", stepsHash);
+  const qs = params.toString();
+  return qs ? `?${qs}` : "";
+}
+
+export async function apiBuildOrgReport(orgId, sessionId, pathId, payload, options = {}) {
+  const oid = String(orgId || "").trim();
+  const sid = String(sessionId || "").trim();
+  const pid = String(pathId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  if (!pid) return { ok: false, status: 0, error: "missing path_id" };
+  const body = isPlainObject(payload) ? { ...payload, path_id: pid } : { path_id: pid };
+  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/sessions/${encodeURIComponent(sid)}/reports/build`;
+  const r = okOrError(await request(endpoint, { method: "POST", body, signal: options?.signal }));
+  if (!r.ok) return r;
+  const report = isPlainObject(r?.data?.report) ? r.data.report : {};
+  const reportId = String(report?.id || "").trim();
+  if (!reportId) {
+    return {
+      ok: false,
+      status: Number(r?.status || 502),
+      error: "Malformed report create response: missing report.id",
+      data: r?.data || null,
+      method: r?.method,
+      endpoint: r?.endpoint || endpoint,
+      url: r?.url,
+    };
+  }
+  return { ok: true, status: r.status, report, result: r.data };
+}
+
+export async function apiListOrgReportVersions(orgId, sessionId, pathId, options = {}) {
+  const oid = String(orgId || "").trim();
+  const sid = String(sessionId || "").trim();
+  const pid = String(pathId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  if (!pid) return { ok: false, status: 0, error: "missing path_id" };
+  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/sessions/${encodeURIComponent(sid)}/reports/versions${reportPathQuery(pid, options)}`;
+  const r = okOrError(await request(endpoint, { signal: options?.signal }));
+  if (!r.ok) return r;
+  const items = (Array.isArray(r.data) ? r.data : []).filter((row) => !isUnavailableSyntheticReport(row));
+  return { ok: true, status: r.status, items };
+}
+
+export async function apiGetOrgReportVersion(orgId, sessionId, reportId, options = {}) {
+  const oid = String(orgId || "").trim();
+  const sid = String(sessionId || "").trim();
+  const rid = String(reportId || "").trim();
+  const pid = String(options?.pathId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  if (!rid) return { ok: false, status: 0, error: "missing report_id" };
+  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/sessions/${encodeURIComponent(sid)}/reports/${encodeURIComponent(rid)}${reportPathQuery(pid, options)}`;
+  const r = okOrError(await request(endpoint, { signal: options?.signal }));
+  if (!r.ok) return r;
+  return { ok: true, status: r.status, report: r.data || {} };
+}
+
+export async function apiDeleteOrgReportVersion(orgId, sessionId, reportId, options = {}) {
+  const oid = String(orgId || "").trim();
+  const sid = String(sessionId || "").trim();
+  const rid = String(reportId || "").trim();
+  const pid = String(options?.pathId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  if (!rid) return { ok: false, status: 0, error: "missing report_id" };
+  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/sessions/${encodeURIComponent(sid)}/reports/${encodeURIComponent(rid)}${reportPathQuery(pid, options)}`;
+  const r = okOrError(await request(endpoint, { method: "DELETE", signal: options?.signal }));
+  return r.ok ? { ok: true, status: r.status, result: r.data || null } : r;
+}
+
 function isUnavailableSyntheticReport(rowRaw) {
   const row = isPlainObject(rowRaw) ? rowRaw : {};
   const rid = String(row?.id || "").trim().toLowerCase();
@@ -826,6 +953,15 @@ export async function apiCreatePathReportVersion(sessionId, pathId, payload) {
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
   if (!pid) return { ok: false, status: 0, error: "missing path_id" };
   const body = isPlainObject(payload) ? payload : {};
+  const orgId = resolveReportOrgId();
+  let last = null;
+  if (orgId) {
+    const enterprise = await apiBuildOrgReport(orgId, sid, pid, body);
+    if (enterprise?.ok) return enterprise;
+    last = enterprise;
+    const status = Number(enterprise?.status || 0);
+    if (!(status === 0 || status === 404 || status === 405)) return enterprise;
+  }
   const endpoints = [
     `/api/sessions/${encodeURIComponent(sid)}/paths/${encodeURIComponent(pid)}/reports`,
     `/api/sessions/${encodeURIComponent(sid)}/paths/${encodeURIComponent(pid)}/reports/`,
@@ -835,7 +971,6 @@ export async function apiCreatePathReportVersion(sessionId, pathId, payload) {
     `/sessions/${encodeURIComponent(sid)}/path/${encodeURIComponent(pid)}/reports`,
   ];
 
-  let last = null;
   for (let i = 0; i < endpoints.length; i += 1) {
     const endpoint = endpoints[i];
     const r = okOrError(await request(endpoint, { method: "POST", body }));
@@ -896,6 +1031,15 @@ export async function apiListPathReportVersions(sessionId, pathId, options = {})
   const pid = String(pathId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
   if (!pid) return { ok: false, status: 0, error: "missing path_id" };
+  const orgId = resolveReportOrgId(options);
+  let last = null;
+  if (orgId) {
+    const enterprise = await apiListOrgReportVersions(orgId, sid, pid, options);
+    if (enterprise?.ok) return enterprise;
+    last = enterprise;
+    const status = Number(enterprise?.status || 0);
+    if (!(status === 0 || status === 404 || status === 405)) return enterprise;
+  }
   const params = new URLSearchParams();
   const stepsHash = String(options?.stepsHash || "").trim();
   if (stepsHash) params.set("steps_hash", stepsHash);
@@ -909,7 +1053,6 @@ export async function apiListPathReportVersions(sessionId, pathId, options = {})
     `/sessions/${encodeURIComponent(sid)}/path/${encodeURIComponent(pid)}/reports${qs ? `?${qs}` : ""}`,
   ];
 
-  let last = null;
   for (let i = 0; i < endpoints.length; i += 1) {
     const r = okOrError(await request(endpoints[i], { signal: options?.signal }));
     if (r.ok) {
@@ -950,12 +1093,21 @@ export async function apiGetReportVersion(reportId, options = {}) {
   if (!rid) return { ok: false, status: 0, error: "missing report_id" };
   const sid = String(options?.sessionId || "").trim();
   const pid = String(options?.pathId || "").trim();
+  const orgId = resolveReportOrgId(options);
   const isNotFoundPayload = (payload) => {
     if (!isPlainObject(payload)) return false;
     const marker = String(payload?.detail || payload?.error || "").trim().toLowerCase();
     return marker === "not found" || marker.includes("not found");
   };
   const endpoints = [];
+  let last = null;
+  if (orgId && sid) {
+    const enterprise = await apiGetOrgReportVersion(orgId, sid, rid, { ...options, pathId: pid });
+    if (enterprise?.ok) return enterprise;
+    last = enterprise;
+    const status = Number(enterprise?.status || 0);
+    if (!(status === 0 || status === 404 || status === 405)) return enterprise;
+  }
   if (sid && pid) {
     endpoints.push(
       `/api/sessions/${encodeURIComponent(sid)}/paths/${encodeURIComponent(pid)}/reports/${encodeURIComponent(rid)}`,
@@ -968,7 +1120,6 @@ export async function apiGetReportVersion(reportId, options = {}) {
     `/api/reports/${encodeURIComponent(rid)}`,
     `/api/reports/${encodeURIComponent(rid)}/`,
   );
-  let last = null;
   for (let i = 0; i < endpoints.length; i += 1) {
     const r = await request(endpoints[i], { signal: options?.signal });
     if (r.ok) {
@@ -1012,6 +1163,15 @@ export async function apiDeleteReportVersion(reportId, options = {}) {
   if (!rid) return { ok: false, status: 0, error: "missing report_id" };
   const sid = String(options?.sessionId || "").trim();
   const pid = String(options?.pathId || "").trim();
+  const orgId = resolveReportOrgId(options);
+  let last = null;
+  if (orgId && sid) {
+    const enterprise = await apiDeleteOrgReportVersion(orgId, sid, rid, { ...options, pathId: pid });
+    if (enterprise?.ok) return enterprise;
+    last = enterprise;
+    const status = Number(enterprise?.status || 0);
+    if (!(status === 0 || status === 404 || status === 405)) return enterprise;
+  }
 
   const endpoints = [];
   if (sid && pid) {
@@ -1024,7 +1184,6 @@ export async function apiDeleteReportVersion(reportId, options = {}) {
     `/api/reports/${encodeURIComponent(rid)}`,
   );
 
-  let last = null;
   for (let i = 0; i < endpoints.length; i += 1) {
     const r = okOrError(await request(endpoints[i], { method: "DELETE", signal: options?.signal }));
     if (r.ok) return { ok: true, status: r.status, result: r.data || null };

@@ -26,6 +26,7 @@ export default function AppShell({
   projectId,
   onProjectChange,
   onDeleteProject,
+  canManageProjectEntities,
   sessions,
   sessionId,
   onOpenSession,
@@ -84,6 +85,7 @@ export default function AppShell({
         projects={projects}
         projectId={projectId}
         onDeleteProject={onDeleteProject}
+        canManageProjectEntities={canManageProjectEntities}
         onProjectChange={onProjectChange}
         sessions={sessions}
         sessionId={sessionId}
