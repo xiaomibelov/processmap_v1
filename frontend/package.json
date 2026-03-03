@@ -9,7 +9,8 @@
     "preview": "vite preview --port 5173",
     "test": "node --test \"src/**/*.test.mjs\"",
     "test:e2e": "playwright test",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:enterprise": "../scripts/e2e_enterprise.sh"
   },
   "dependencies": {
     "bpmn-js": "^18.12.0",

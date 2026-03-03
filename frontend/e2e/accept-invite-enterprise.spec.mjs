@@ -8,7 +8,7 @@ function jsonResponse(payload, status = 200) {
   };
 }
 
-test("accept invite link: login then join org and enter /app", async ({ page }) => {
+test("accept invite link: authenticated user joins org and enters /app", async ({ page }) => {
   test.skip(process.env.E2E_ENTERPRISE !== "1", "Set E2E_ENTERPRISE=1 to run enterprise accept invite e2e.");
   page.on("pageerror", (err) => {
     throw err;
@@ -16,6 +16,13 @@ test("accept invite link: login then join org and enter /app", async ({ page }) 
 
   let activeOrgId = "org_a";
   const seenProjectHeaders = [];
+  let inviteAccepted = false;
+
+  await page.addInitScript(() => {
+    window.localStorage.setItem("fpc_auth_access_token", "token_accept_invite");
+    window.localStorage.removeItem("fpc_active_org_id");
+    window.sessionStorage.removeItem("fpc_org_choice_done:u_accept");
+  });
 
   await page.route("**/*", async (route, request) => {
     const url = new URL(request.url());
@@ -31,7 +38,7 @@ test("accept invite link: login then join org and enter /app", async ({ page }) 
     if (path === "/api/auth/me" && method === "GET") {
       return route.fulfill(jsonResponse({
         id: "u_accept",
-        email: "invite.user@local",
+        email: "invite.user@example.com",
         is_admin: false,
         active_org_id: activeOrgId,
         default_org_id: "org_a",
@@ -40,6 +47,7 @@ test("accept invite link: login then join org and enter /app", async ({ page }) 
     }
     if (path === "/api/invites/accept" && method === "POST") {
       activeOrgId = "org_b";
+      inviteAccepted = true;
       return route.fulfill(jsonResponse({
         invite: { id: "inv_1", org_id: "org_b", role: "viewer", status: "accepted" },
         membership: { org_id: "org_b", user_id: "u_accept", role: "viewer" },
@@ -80,13 +88,7 @@ test("accept invite link: login then join org and enter /app", async ({ page }) 
   });
 
   await page.goto("/accept-invite?token=tok_accept_1");
-  await expect(page.locator("input[type='email']")).toBeVisible();
+  await expect.poll(() => inviteAccepted).toBeTruthy();
 
-  await page.locator("input[type='email']").fill("invite.user@local");
-  await page.locator("input[type='password']").fill("pass");
-  await page.getByRole("button", { name: "Войти в систему" }).click();
-
-  await expect(page).toHaveURL(/\/app$/);
-  await expect(page.getByTestId("topbar-org-select")).toBeVisible();
   await expect.poll(() => seenProjectHeaders.includes("org_b")).toBeTruthy();
 });

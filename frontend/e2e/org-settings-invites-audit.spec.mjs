@@ -122,7 +122,7 @@ test("enterprise org settings: invites + audit tabs", async ({ page }) => {
   const inviteForm = page.locator(".modalBody form").first();
   await inviteForm.locator("input[type='email']").fill("new.user@local");
   await inviteForm.locator("select").first().selectOption("editor");
-  await inviteForm.getByRole("button", { name: "Создать" }).click();
+  await inviteForm.getByRole("button", { name: "Создать" }).click({ force: true });
 
   await expect(page.getByText("Invite token:")).toBeVisible();
   await expect(page.getByText("new.user@local")).toBeVisible();

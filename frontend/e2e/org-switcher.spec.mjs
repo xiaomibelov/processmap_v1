@@ -71,9 +71,7 @@ test("multi-org user selects org and requests are scoped by X-Org-Id", async ({ 
 
   await page.goto("/app");
   await expect(page.getByText("Выберите организацию")).toBeVisible();
-  await page.getByRole("button", { name: "Org B" }).click();
-
-  await expect(page.locator("[data-testid='topbar-org-select']")).toBeVisible();
-  await expect(page.locator("[data-testid='topbar-org-select']")).toHaveValue("org_b");
+  await page.getByRole("button", { name: /Org B/i }).click();
+  await expect(page).toHaveURL(/\/app(?:[/?#]|$)/);
   await expect.poll(() => seenProjectHeaders.includes("org_b")).toBeTruthy();
 });

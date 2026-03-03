@@ -28,10 +28,17 @@ export default defineConfig({
     screenshot: "only-on-failure",
     video: "retain-on-failure",
   },
-  projects: [
-    {
-      name: browserName,
-      use: { browserName },
-    },
-  ],
+  projects: e2eProfile === "enterprise"
+    ? [
+      {
+        name: `enterprise-${browserName}`,
+        use: { browserName, baseURL },
+      },
+    ]
+    : [
+      {
+        name: browserName,
+        use: { browserName },
+      },
+    ],
 });
