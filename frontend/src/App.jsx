@@ -51,6 +51,7 @@ import {
   validateRobotMetaV1,
 } from "./features/process/robotmeta/robotMeta";
 import { normalizeExecutionPlanVersionList } from "./features/process/robotmeta/executionPlan";
+import { useAuth } from "./features/auth/AuthProvider";
 
 function isLocalSessionId(id) {
   return typeof id === "string" && (id === "local" || id.startsWith("local_"));
@@ -953,6 +954,7 @@ function mergeSessionDraft(prevDraft, sid, session, source = "session_sync") {
 }
 
 export default function App() {
+  const { orgs, activeOrgId, switchOrg } = useAuth();
   const SESSION_MODE = "quick_skeleton";
   const [backendStatus, setBackendStatus] = useState("idle"); // idle|ok|fail
   const [backendHint, setBackendHint] = useState("");
@@ -1001,6 +1003,7 @@ export default function App() {
   const [llmVerifyMsg, setLlmVerifyMsg] = useState("Ключ не задан.");
   const [llmVerifyAt, setLlmVerifyAt] = useState(0);
   const [llmVerifyBusy, setLlmVerifyBusy] = useState(false);
+  const activeOrgIdRef = useRef(String(activeOrgId || "").trim());
 
   function markOk(hint) {
     setBackendStatus("ok");
@@ -3080,6 +3083,27 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const nextOrg = String(activeOrgId || "").trim();
+    if (!nextOrg || nextOrg === activeOrgIdRef.current) return;
+    activeOrgIdRef.current = nextOrg;
+    let canceled = false;
+    setProjectId("");
+    setSessions([]);
+    setSessionNavNotice(null);
+    requestedSessionIdRef.current = "";
+    resetDraft(ensureDraftShape(null));
+    void (async () => {
+      await refreshProjects();
+      if (canceled) return;
+      await refreshLlmSettings();
+    })();
+    return () => {
+      canceled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeOrgId]);
+
+  useEffect(() => {
     function onPopState() {
       const fromUrl = readSelectionFromUrl();
       logNav("popstate", {
@@ -3131,6 +3155,16 @@ export default function App() {
         reloadKey={reloadKey}
         backendStatus={backendStatus}
         backendHint={backendHint}
+        orgs={orgs}
+        activeOrgId={activeOrgId}
+        onOrgChange={async (orgId) => {
+          const next = String(orgId || "").trim();
+          if (!next || next === String(activeOrgId || "").trim()) return;
+          const switched = await switchOrg(next, { refreshMe: false });
+          if (!switched?.ok) {
+            markFail(String(switched?.error || "org_switch_failed"));
+          }
+        }}
         projects={projects}
         projectId={projectId}
         onProjectChange={async (pid) => {

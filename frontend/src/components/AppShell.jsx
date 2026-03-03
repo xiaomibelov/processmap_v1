@@ -19,6 +19,9 @@ export default function AppShell({
   reloadKey,
   backendStatus,
   backendHint,
+  orgs,
+  activeOrgId,
+  onOrgChange,
   projects,
   projectId,
   onProjectChange,
@@ -75,6 +78,9 @@ export default function AppShell({
       <TopBar
         backendStatus={backendStatus}
         backendHint={backendHint}
+        orgs={orgs}
+        activeOrgId={activeOrgId}
+        onOrgChange={onOrgChange}
         projects={projects}
         projectId={projectId}
         onDeleteProject={onDeleteProject}

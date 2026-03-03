@@ -26,6 +26,14 @@ function sessionTitleFrom(s) {
   return String((s && (s.title || s.name || s.id || s.session_id)) || "").trim() || "—";
 }
 
+function orgIdFrom(o) {
+  return String((o && (o.org_id || o.id)) || "").trim();
+}
+
+function orgTitleFrom(o) {
+  return String((o && (o.name || o.org_name || o.org_id || o.id)) || "").trim() || "—";
+}
+
 function sanitizeAiStatusMessage(msg) {
   const raw = String(msg || "").trim();
   if (!raw) return "";
@@ -48,6 +56,9 @@ function UserAvatarIcon({ className = "" }) {
 export default function TopBar({
   backendStatus,
   backendHint,
+  orgs,
+  activeOrgId,
+  onOrgChange,
   projects,
   projectId,
   onProjectChange,
@@ -72,6 +83,7 @@ export default function TopBar({
   onVerifyLlmSettings,
 }) {
   const { logout } = useAuth();
+  const orgList = useMemo(() => asArray(orgs), [orgs]);
   const projList = useMemo(() => asArray(projects), [projects]);
   const sessList = useMemo(() => asArray(sessions), [sessions]);
   const isApiOk = backendStatus === true || backendStatus === "ok";
@@ -188,6 +200,12 @@ export default function TopBar({
     const found = sessList.find((item) => sessionIdFrom(item) === id);
     return sessionTitleFrom(found);
   }, [sessList, sessionId]);
+  const selectedOrgTitle = useMemo(() => {
+    const id = String(activeOrgId || "").trim();
+    if (!id) return "";
+    const found = orgList.find((item) => orgIdFrom(item) === id);
+    return orgTitleFrom(found);
+  }, [orgList, activeOrgId]);
 
   async function handleLogout() {
     if (typeof window !== "undefined") {
@@ -227,6 +245,27 @@ export default function TopBar({
           >
             Создать сессию
           </button>
+        </div>
+
+        <div className="topGroup flex shrink-0 items-center gap-2">
+          <select
+            className="select topSelect topSelect--org h-9 min-h-0 w-36 min-w-[9rem] max-w-[12rem] py-0 text-sm md:w-44 md:max-w-[14rem]"
+            value={activeOrgId || ""}
+            title={selectedOrgTitle}
+            onChange={(e) => onOrgChange?.(e.target.value)}
+            disabled={!orgList.length || orgList.length < 2}
+            data-testid="topbar-org-select"
+          >
+            <option value="">{orgList.length ? "— выбрать org —" : "Org: default"}</option>
+            {orgList.map((org, idx) => {
+              const id = orgIdFrom(org);
+              return (
+                <option key={`${id || "org"}_${idx}`} value={id}>
+                  {orgTitleFrom(org)}
+                </option>
+              );
+            })}
+          </select>
         </div>
 
         <div className="topGroup flex shrink-0 items-center gap-2">

@@ -32,10 +32,61 @@ function navigate(to, { replace = false } = {}) {
   window.dispatchEvent(new PopStateEvent("popstate"));
 }
 
+function normalizeOrgMemberships(value) {
+  return Array.isArray(value) ? value.filter((item) => item && typeof item === "object") : [];
+}
+
+function OrgSelectScreen({ orgs, activeOrgId, busy, onSelect }) {
+  const items = normalizeOrgMemberships(orgs);
+  return (
+    <div className="flex h-screen items-center justify-center px-4">
+      <div className="w-full max-w-xl rounded-2xl border border-border bg-panel p-5 shadow-panel">
+        <h1 className="text-lg font-semibold text-fg">Выберите организацию</h1>
+        <p className="mt-1 text-sm text-muted">Текущий workspace откроется в выбранном org-контексте.</p>
+        <div className="mt-4 space-y-2">
+          {items.map((item, idx) => {
+            const id = String(item?.org_id || "").trim();
+            const title = String(item?.name || id || `Org ${idx + 1}`).trim();
+            const role = String(item?.role || "").trim();
+            const selected = id && id === String(activeOrgId || "").trim();
+            return (
+              <button
+                key={`${id || "org"}_${idx}`}
+                type="button"
+                className={`w-full rounded-xl border px-3 py-2 text-left transition ${
+                  selected
+                    ? "border-accent bg-accentSoft/30 text-fg"
+                    : "border-border bg-panel2/40 text-fg hover:border-accent/45 hover:bg-accentSoft/10"
+                }`}
+                disabled={busy || !id}
+                onClick={() => onSelect?.(id)}
+              >
+                <div className="truncate text-sm font-semibold">{title}</div>
+                <div className="mt-0.5 text-xs text-muted">{role ? `Role: ${role}` : "Role: viewer"}</div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AppRoutes() {
-  const { isAuthed, loading, reauthRequired, setReauthRequired } = useAuth();
+  const {
+    user,
+    isAuthed,
+    loading,
+    reauthRequired,
+    setReauthRequired,
+    orgs,
+    activeOrgId,
+    switchOrg,
+  } = useAuth();
   const [loc, setLoc] = useState(() => readLocation());
   const [loginModalOpen, setLoginModalOpen] = useState(false);
+  const [orgSwitchBusy, setOrgSwitchBusy] = useState(false);
+  const [orgChoiceDone, setOrgChoiceDone] = useState(false);
 
   useEffect(() => {
     function onPopState() {
@@ -49,6 +100,14 @@ function AppRoutes() {
   const pathname = String(loc.pathname || "/");
   const search = String(loc.search || "");
   const hash = String(loc.hash || "");
+  const orgItems = useMemo(() => normalizeOrgMemberships(orgs), [orgs]);
+  const orgChoiceKey = useMemo(() => {
+    const uid = String(user?.id || "").trim();
+    if (!uid) return "";
+    return `fpc_org_choice_done:${uid}`;
+  }, [user?.id]);
+  const activeOrg = String(activeOrgId || "").trim();
+  const shouldSelectOrg = Boolean(isAuthed && pathname.startsWith("/app") && orgItems.length > 1 && !orgChoiceDone);
 
   const nextFromQuery = useMemo(() => {
     const params = new URLSearchParams(search);
@@ -68,6 +127,34 @@ function AppRoutes() {
       navigate(`/?next=${next}`, { replace: true });
     }
   }, [hash, isAuthed, loading, pathname, reauthRequired, search]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!orgChoiceKey) {
+      setOrgChoiceDone(false);
+      return;
+    }
+    try {
+      setOrgChoiceDone(window.sessionStorage?.getItem(orgChoiceKey) === "1");
+    } catch {
+      setOrgChoiceDone(false);
+    }
+  }, [orgChoiceKey]);
+
+  useEffect(() => {
+    if (loading || !isAuthed) return;
+    if (orgItems.length !== 1) return;
+    const onlyOrgId = String(orgItems[0]?.org_id || "").trim();
+    if (!onlyOrgId || onlyOrgId === activeOrg) return;
+    let canceled = false;
+    setOrgSwitchBusy(true);
+    void switchOrg(onlyOrgId, { refreshMe: false }).finally(() => {
+      if (!canceled) setOrgSwitchBusy(false);
+    });
+    return () => {
+      canceled = true;
+    };
+  }, [activeOrg, isAuthed, loading, orgItems, switchOrg]);
 
   useEffect(() => {
     if (!loading && pathname.startsWith("/app") && !isAuthed && reauthRequired) {
@@ -99,6 +186,26 @@ function AppRoutes() {
     }
   }
 
+  async function handleOrgSelect(orgId) {
+    const next = String(orgId || "").trim();
+    if (!next) return;
+    setOrgSwitchBusy(true);
+    try {
+      await switchOrg(next, { refreshMe: false });
+      setOrgChoiceDone(true);
+      if (typeof window !== "undefined" && orgChoiceKey) {
+        try {
+          window.sessionStorage?.setItem(orgChoiceKey, "1");
+        } catch {
+          // ignore storage errors
+        }
+      }
+      if (pathname !== "/app") navigate("/app", { replace: true });
+    } finally {
+      setOrgSwitchBusy(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -112,7 +219,11 @@ function AppRoutes() {
   return (
     <>
       {showWorkspace ? (
-        <App />
+        isAuthed && shouldSelectOrg ? (
+          <OrgSelectScreen orgs={orgItems} activeOrgId={activeOrg} busy={orgSwitchBusy} onSelect={handleOrgSelect} />
+        ) : (
+          <App />
+        )
       ) : pathname === "/login" ? (
         <LoginPage
           onBack={() => navigate("/")}
