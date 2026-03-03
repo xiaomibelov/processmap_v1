@@ -1,12 +1,13 @@
-# Enterprise Prod Ops (Step 4)
+# Enterprise Prod Ops (Step 5)
 
 ## Scope
-This document describes production hardening controls introduced in Step 4:
+This document describes production hardening controls available after Step 5:
 - invite delivery via SMTP email
 - invite TTL enforcement and cleanup
 - audit retention cleanup
 - lightweight in-memory rate limits
 - config sanity checks for email mode
+- enterprise e2e bootstrap and CI profile
 
 ## Environment Variables
 
@@ -65,13 +66,19 @@ This document describes production hardening controls introduced in Step 4:
 3. Set rate limits for expected load profile.
 4. Verify `/accept-invite?token=...` flow in staging.
 5. Verify retention cleanup endpoints with admin account.
-6. Confirm enterprise e2e profile:
+6. Verify enterprise e2e bootstrap creates disposable project/session and report seed:
+   - helper: `frontend/e2e/helpers/enterpriseBootstrap.mjs`
+   - script auto-exports `E2E_ORG_ID`, `E2E_PROJECT_ID`, `E2E_SESSION_ID`
+7. Confirm enterprise e2e profile:
    - `E2E_ENTERPRISE=1`
    - `E2E_ORG_SWITCH=1`
    - `E2E_REPORTS_DELETE=1`
-   - run `scripts/e2e_enterprise.sh`
+   - run `scripts/e2e_enterprise.sh` (or `frontend npm run test:e2e:enterprise`)
+8. Confirm CI command:
+   - `scripts/ci_enterprise_e2e.sh`
+   - expected result: `4 passed, 0 skipped`
 
-## Operational Gaps (Step 5)
+## Operational Gaps (post Step 5)
 - MFA and stronger auth hardening
 - SCIM/IdP lifecycle provisioning
 - advanced audit export/archival pipeline
