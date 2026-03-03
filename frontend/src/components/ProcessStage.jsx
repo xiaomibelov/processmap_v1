@@ -122,12 +122,52 @@ function playbackEventTitle(eventRaw) {
   const type = toText(event?.type);
   if (type === "take_flow") return `Flow: ${toText(event?.flowId) || "—"}`;
   if (type === "enter_node") return `${toText(event?.nodeName || event?.nodeId) || "Node"}`;
-  if (type === "wait_for_gateway_decision") return `Gateway: ${toText(event?.gatewayName || event?.gatewayId) || "decision"}`;
+  if (type === "wait_for_gateway_decision") return `Gateway: ${formatPlaybackGatewayTitle(event)}`;
   if (type === "parallel_batch_begin") return `Parallel x${Number(event?.count || asArray(event?.flowIds).length || 0)}`;
   if (type === "enter_subprocess") return `Enter ${toText(event?.nodeName || event?.subprocessId) || "subprocess"}`;
   if (type === "exit_subprocess") return `Exit ${toText(event?.nodeName || event?.subprocessId) || "subprocess"}`;
   if (type === "stop") return `Stop: ${toText(event?.reason) || "done"}`;
   return toText(event?.nodeName || event?.nodeId || type || "—");
+}
+
+function shouldDebugPlayback() {
+  if (typeof window === "undefined") return false;
+  try {
+    const raw = window.DEBUG_PLAYBACK ?? window.localStorage?.getItem("DEBUG_PLAYBACK") ?? "";
+    return String(raw || "").trim() === "1";
+  } catch {
+    return String(window.DEBUG_PLAYBACK || "").trim() === "1";
+  }
+}
+
+function logPlaybackDebug(stage, payload = {}) {
+  if (!shouldDebugPlayback()) return;
+  // eslint-disable-next-line no-console
+  console.debug(`[PLAYBACK_DEBUG] ${String(stage || "-")}`, payload);
+}
+
+function shortPlaybackId(rawId) {
+  const id = toText(rawId);
+  if (!id) return "";
+  if (id.length <= 16) return id;
+  return id.slice(-10);
+}
+
+function formatPlaybackGatewayTitle(eventRaw) {
+  const event = asObject(eventRaw);
+  const gatewayName = toText(event?.gatewayName);
+  const gatewayId = shortPlaybackId(event?.gatewayId || event?.nodeId);
+  if (gatewayName && gatewayId) return `${gatewayName} (${gatewayId})`;
+  if (gatewayName) return gatewayName;
+  if (gatewayId) return `Gateway (${gatewayId})`;
+  return "Gateway";
+}
+
+function playbackGatewayOptionLabel(optionRaw, index = 0) {
+  const option = asObject(optionRaw);
+  const label = toText(option?.label || option?.condition);
+  if (label) return label;
+  return `Выбор ${Number(index || 0) + 1}`;
 }
 
 function normalizeNodePathMetaMap(rawMap) {
@@ -953,6 +993,10 @@ export default function ProcessStage({
   const playbackEngineRef = useRef(null);
   const playbackFramesRef = useRef([]);
   const playbackIndexRef = useRef(0);
+  const playbackResumeAfterDecisionRef = useRef(false);
+  const playbackOverlayClickGuardRef = useRef(false);
+  const playbackOverlayClickGuardRafRef = useRef(0);
+  const playbackGatewayDecisionRef = useRef(null);
   const lastDraftXmlHashRef = useRef("");
   const lastAiGenerateIntentKeyRef = useRef("");
 
@@ -3333,6 +3377,20 @@ export default function ProcessStage({
       && !robotMetaListOpen) return undefined;
     const onPointerDown = (event) => {
       const target = event?.target;
+      if (playbackOverlayClickGuardRef.current) {
+        logPlaybackDebug("outside_click_ignored", {
+          reason: "playback_overlay_guard",
+          targetClass: toText(target?.className),
+        });
+        return;
+      }
+      if (target instanceof Element && target.closest?.("[data-playback-overlay='gateway']")) {
+        logPlaybackDebug("outside_click_ignored", {
+          reason: "playback_overlay_node",
+          targetClass: toText(target?.className),
+        });
+        return;
+      }
       const refs = [
         diagramActionBarRef.current,
         diagramPathPopoverRef.current,
@@ -3409,20 +3467,20 @@ export default function ProcessStage({
   useEffect(() => {
     if (tab === "diagram") return;
     setPlaybackIsPlaying(false);
-    stopPlaybackTicker();
-    clearPlaybackDecor();
+    stopPlaybackTicker("tab_changed");
+    clearPlaybackDecor("tab_changed");
     setPlaybackGatewayPending(null);
   }, [tab]);
 
   useEffect(() => {
     if (!diagramActionPlaybackOpen) {
       setPlaybackIsPlaying(false);
-      stopPlaybackTicker();
-      clearPlaybackDecor();
+      stopPlaybackTicker("playback_popover_closed");
+      clearPlaybackDecor("playback_popover_closed");
       setPlaybackGatewayPending(null);
       return;
     }
-    resetPlaybackRuntime({ keepDecor: false });
+    resetPlaybackRuntime({ keepDecor: false, reason: "playback_popover_opened_or_inputs_changed" });
   }, [
     diagramActionPlaybackOpen,
     sid,
@@ -3450,13 +3508,13 @@ export default function ProcessStage({
 
   useEffect(() => {
     if (!diagramActionPlaybackOpen || tab !== "diagram" || !playbackIsPlaying || !playbackCanRun) {
-      stopPlaybackTicker();
+      stopPlaybackTicker("playback_not_running");
       return undefined;
     }
-    stopPlaybackTicker();
+    stopPlaybackTicker("restart_ticker");
     const tick = (ts) => {
       if (!diagramActionPlaybackOpen || tab !== "diagram" || !playbackIsPlaying) {
-        stopPlaybackTicker();
+        stopPlaybackTicker("tick_guard_stop");
         return;
       }
       const prevTs = Number(playbackLastTickRef.current || 0);
@@ -3466,13 +3524,17 @@ export default function ProcessStage({
         playbackLastTickRef.current = ts;
         const advanced = stepPlaybackForward();
         if (!advanced) {
+          const snapshot = asObject(playbackEngineRef.current?.getSnapshot?.());
+          if (snapshot?.waitingDecision) {
+            playbackResumeAfterDecisionRef.current = true;
+          }
           setPlaybackIsPlaying(false);
         }
       }
       playbackRafRef.current = window.requestAnimationFrame(tick);
     };
     playbackRafRef.current = window.requestAnimationFrame(tick);
-    return () => stopPlaybackTicker();
+    return () => stopPlaybackTicker("ticker_effect_cleanup");
   }, [
     diagramActionPlaybackOpen,
     tab,
@@ -3488,7 +3550,11 @@ export default function ProcessStage({
   }, [diagramActionPlanOpen]);
 
   useEffect(() => () => {
-    stopPlaybackTicker();
+    stopPlaybackTicker("component_unmount");
+    if (playbackOverlayClickGuardRafRef.current) {
+      window.cancelAnimationFrame(playbackOverlayClickGuardRafRef.current);
+      playbackOverlayClickGuardRafRef.current = 0;
+    }
   }, []);
 
   useEffect(() => {
@@ -4103,15 +4169,44 @@ export default function ProcessStage({
     }
   }
 
-  function stopPlaybackTicker() {
+  function markPlaybackOverlayInteraction(meta = {}) {
+    playbackOverlayClickGuardRef.current = true;
+    logPlaybackDebug("overlay_interaction_guard", {
+      ...asObject(meta),
+      enabled: 1,
+    });
+    if (playbackOverlayClickGuardRafRef.current) {
+      window.cancelAnimationFrame(playbackOverlayClickGuardRafRef.current);
+    }
+    playbackOverlayClickGuardRafRef.current = window.requestAnimationFrame(() => {
+      playbackOverlayClickGuardRef.current = false;
+      playbackOverlayClickGuardRafRef.current = 0;
+    });
+  }
+
+  function stopPlaybackTicker(reason = "") {
     if (playbackRafRef.current) {
       window.cancelAnimationFrame(playbackRafRef.current);
       playbackRafRef.current = 0;
     }
     playbackLastTickRef.current = 0;
+    if (reason) {
+      logPlaybackDebug("ticker_stop", { reason });
+    }
   }
 
-  function clearPlaybackDecor() {
+  function clearPlaybackDecor(reason = "") {
+    if (reason) {
+      const stack = String(new Error().stack || "")
+        .split("\n")
+        .slice(1, 4)
+        .map((line) => line.trim())
+        .join(" | ");
+      logPlaybackDebug("clear_playback_decor", {
+        reason,
+        stack,
+      });
+    }
     bpmnRef.current?.clearPlayback?.();
   }
 
@@ -4129,7 +4224,27 @@ export default function ProcessStage({
     bpmnRef.current?.preparePlayback?.(next);
     const lastEvent = asObject(events[events.length - 1]);
     if (toText(lastEvent?.type) === "wait_for_gateway_decision") {
+      logPlaybackDebug("wait_for_gateway_decision", {
+        gatewayId: toText(lastEvent?.gatewayId),
+        outgoingFlowIds: asArray(lastEvent?.outgoingOptions)
+          .map((optionRaw) => toText(asObject(optionRaw)?.flowId))
+          .filter(Boolean),
+      });
       setPlaybackGatewayPending(lastEvent);
+    } else if (toText(lastEvent?.type) === "stop") {
+      const metrics = asObject(lastEvent?.metrics);
+      logPlaybackDebug("run_summary_ui", {
+        reason: toText(lastEvent?.reason),
+        stepsTotal: Number(metrics?.stepsTotal || 0),
+        businessSteps: Number(metrics?.businessSteps || 0),
+        variationPoints: Number(metrics?.variationPoints || 0),
+        manualDecisionPrompts: Number(metrics?.manualDecisionPrompts || 0),
+        manualDecisionsApplied: Number(metrics?.manualDecisionsApplied || 0),
+        autoDecisionsApplied: Number(metrics?.autoDecisionsApplied || 0),
+        flowTransitions: Number(metrics?.flowTransitions || 0),
+        visitedNodes: Number(metrics?.visitedNodes || 0),
+        linkJumps: Number(metrics?.linkJumps || 0),
+      });
     }
     return next;
   }
@@ -4162,10 +4277,10 @@ export default function ProcessStage({
   }
 
   function resetPlaybackRuntime(options = {}) {
-    stopPlaybackTicker();
+    stopPlaybackTicker(toText(options?.reason || "reset_runtime"));
     setPlaybackIsPlaying(false);
     const keepDecor = options?.keepDecor === true;
-    if (!keepDecor) clearPlaybackDecor();
+    if (!keepDecor) clearPlaybackDecor(toText(options?.reason || "reset_runtime"));
     setPlaybackGatewayPending(null);
     setPlaybackIndex(0);
     playbackIndexRef.current = 0;
@@ -4174,7 +4289,7 @@ export default function ProcessStage({
     if (!engine) return false;
     const firstEvent = engine.nextEvent();
     if (!firstEvent) {
-      clearPlaybackDecor();
+      clearPlaybackDecor("reset_runtime_no_first_event");
       return true;
     }
     const nextFrames = appendPlaybackEvents([firstEvent]);
@@ -4210,7 +4325,7 @@ export default function ProcessStage({
     const frames = asArray(playbackFramesRef.current);
     const total = Number(frames.length || 0);
     if (total <= 0) {
-      clearPlaybackDecor();
+      clearPlaybackDecor("apply_frame_empty");
       return 0;
     }
     const index = Math.max(0, Math.min(total - 1, Number(indexRaw || 0)));
@@ -4229,8 +4344,11 @@ export default function ProcessStage({
       speed: playbackSpeedValue,
       scenarioLabel: playbackScenarioLabel,
       pathId: toText(executionPlanSource?.pathId),
+      onGatewayOverlayInteraction: (meta = {}) => {
+        markPlaybackOverlayInteraction(meta);
+      },
       onGatewayDecision: ({ gatewayId, flowId }) => {
-        handlePlaybackGatewayDecision(gatewayId, flowId);
+        playbackGatewayDecisionRef.current?.(gatewayId, flowId);
       },
     });
     return index;
@@ -4241,21 +4359,45 @@ export default function ProcessStage({
     const flowId = toText(flowIdRaw);
     const engine = playbackEngineRef.current;
     if (!engine || !gatewayId || !flowId) return;
+    logPlaybackDebug("gateway_decision_click", {
+      gatewayId,
+      flowId,
+    });
+    markPlaybackOverlayInteraction({
+      stage: "decision_click",
+      gatewayId,
+      flowId,
+    });
     const decision = asObject(engine.chooseGatewayFlow(gatewayId, flowId));
-    if (!decision?.ok) return;
+    if (!decision?.ok) {
+      logPlaybackDebug("gateway_decision_rejected", {
+        gatewayId,
+        flowId,
+        reason: toText(decision?.reason),
+      });
+      return;
+    }
     setPlaybackGatewayPending(null);
+    const shouldResume = playbackResumeAfterDecisionRef.current === true;
+    playbackResumeAfterDecisionRef.current = false;
     const before = asArray(playbackFramesRef.current).length;
-    const hasNext = ensurePlaybackFrameAt(before);
+    const hasNext = ensurePlaybackFrameAt(before + 1);
     if (!hasNext) {
       const snapshot = asObject(engine.getSnapshot?.());
       if (snapshot?.finished) setPlaybackIsPlaying(false);
       return;
     }
-    const nextIndex = Math.max(0, asArray(playbackFramesRef.current).length - 1);
+    const nextFrames = asArray(playbackFramesRef.current);
+    const nextIndex = Math.max(0, Math.min(before, nextFrames.length - 1));
     setPlaybackIndex(nextIndex);
     playbackIndexRef.current = nextIndex;
     applyPlaybackFrame(nextIndex, { autoCamera: playbackAutoCamera });
+    if (shouldResume) {
+      setPlaybackIsPlaying(true);
+    }
   }
+
+  playbackGatewayDecisionRef.current = handlePlaybackGatewayDecision;
 
   function stepPlaybackForward() {
     const currentIndex = Math.max(0, Number(playbackIndexRef.current || 0));
@@ -5446,6 +5588,36 @@ export default function ProcessStage({
                                   <span className="diagramIssueChip">{toText(playbackCurrentEvent?.reason)}</span>
                                 </div>
                               ) : null}
+                              {toText(playbackCurrentEvent?.type) === "stop" ? (
+                                <>
+                                  <div className="diagramIssueRow">
+                                    <span>steps</span>
+                                    <span className="diagramIssueChip">
+                                      {Number(asObject(playbackCurrentEvent?.metrics)?.stepsTotal || 0)}
+                                    </span>
+                                  </div>
+                                  <div className="diagramIssueRow">
+                                    <span>variations</span>
+                                    <span className="diagramIssueChip">
+                                      {Number(asObject(playbackCurrentEvent?.metrics)?.variationPoints || 0)}
+                                    </span>
+                                  </div>
+                                  <div className="diagramIssueRow">
+                                    <span>decisions</span>
+                                    <span className="diagramIssueChip">
+                                      m:{Number(asObject(playbackCurrentEvent?.metrics)?.manualDecisionsApplied || 0)}
+                                      {" / "}
+                                      a:{Number(asObject(playbackCurrentEvent?.metrics)?.autoDecisionsApplied || 0)}
+                                    </span>
+                                  </div>
+                                  <div className="diagramIssueRow">
+                                    <span>flows</span>
+                                    <span className="diagramIssueChip">
+                                      {Number(asObject(playbackCurrentEvent?.metrics)?.flowTransitions || 0)}
+                                    </span>
+                                  </div>
+                                </>
+                              ) : null}
                             </div>
                             <div className="diagramActionPopoverActions">
                               <button
@@ -5517,22 +5689,36 @@ export default function ProcessStage({
                             {asObject(playbackGatewayPending)?.type === "wait_for_gateway_decision" ? (
                               <div className="diagramIssueListWrap mt-2">
                                 <div className="muted mb-1 text-[11px]">
-                                  Gateway decision: {toText(playbackGatewayPending?.gatewayName || playbackGatewayPending?.gatewayId)}
+                                  Gateway: {formatPlaybackGatewayTitle(playbackGatewayPending)}
                                 </div>
                                 <div className="diagramActionPopoverActions">
-                                  {asArray(playbackGatewayPending?.outgoingOptions).map((optionRaw) => {
+                                  {asArray(playbackGatewayPending?.outgoingOptions).map((optionRaw, index) => {
                                     const option = asObject(optionRaw);
                                     const flowId = toText(option?.flowId);
-                                    const label = toText(option?.label || option?.condition);
-                                    const target = toText(option?.targetName || option?.targetId || flowId);
+                                    const label = playbackGatewayOptionLabel(option, index);
+                                    const targetHint = toText(option?.targetName || option?.targetId);
                                     return (
                                       <button
                                         key={`playback_gateway_option_${flowId}`}
                                         type="button"
                                         className="secondaryBtn h-7 px-2 text-[11px]"
-                                        onClick={() => handlePlaybackGatewayDecision(playbackGatewayPending?.gatewayId, flowId)}
+                                        title={targetHint ? `→ ${targetHint}` : ""}
+                                        onMouseDown={(event) => {
+                                          event.preventDefault();
+                                          event.stopPropagation();
+                                          markPlaybackOverlayInteraction({
+                                            stage: "manual_gateway_button_mousedown",
+                                            gatewayId: toText(playbackGatewayPending?.gatewayId),
+                                            flowId,
+                                          });
+                                        }}
+                                        onClick={(event) => {
+                                          event.preventDefault();
+                                          event.stopPropagation();
+                                          handlePlaybackGatewayDecision(playbackGatewayPending?.gatewayId, flowId);
+                                        }}
                                       >
-                                        {label ? `${label} -> ${target}` : target}
+                                        {label}
                                       </button>
                                     );
                                   })}

@@ -4253,7 +4253,12 @@ const BpmnStage = forwardRef(function BpmnStage({
     };
   }
 
-  useImperativeHandle(ref, () => createBpmnStageImperativeApi(createImperativeApiCtx()));
+  const imperativeApi = useMemo(
+    () => createBpmnStageImperativeApi(createImperativeApiCtx()),
+    [createImperativeApiCtx],
+  );
+
+  useImperativeHandle(ref, () => imperativeApi, [imperativeApi]);
 
   return (
     <div className="bpmnStage">

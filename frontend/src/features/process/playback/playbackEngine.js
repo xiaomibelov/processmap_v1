@@ -20,6 +20,31 @@ function typeLower(raw) {
   return asText(raw).toLowerCase();
 }
 
+function shouldDebugPlayback() {
+  try {
+    const fromGlobal = globalThis?.DEBUG_PLAYBACK;
+    if (String(fromGlobal || "").trim() === "1") return true;
+  } catch {
+  }
+  try {
+    const fromWindow = globalThis?.window?.DEBUG_PLAYBACK;
+    if (String(fromWindow || "").trim() === "1") return true;
+  } catch {
+  }
+  try {
+    const fromStorage = globalThis?.window?.localStorage?.getItem?.("DEBUG_PLAYBACK");
+    return String(fromStorage || "").trim() === "1";
+  } catch {
+    return false;
+  }
+}
+
+function logPlaybackDebug(stage, payload = {}) {
+  if (!shouldDebugPlayback()) return;
+  // eslint-disable-next-line no-console
+  console.debug(`[PLAYBACK_DEBUG] ${String(stage || "-")}`, payload);
+}
+
 function isEndNode(nodeRaw) {
   return typeLower(asObject(nodeRaw)?.type).includes("endevent");
 }
@@ -32,8 +57,50 @@ function isExclusiveGateway(nodeRaw) {
   return typeLower(asObject(nodeRaw)?.type).includes("exclusivegateway");
 }
 
+function isInclusiveGateway(nodeRaw) {
+  return typeLower(asObject(nodeRaw)?.type).includes("inclusivegateway");
+}
+
+function isDecisionGateway(nodeRaw) {
+  return isExclusiveGateway(nodeRaw) || isInclusiveGateway(nodeRaw);
+}
+
 function isSubprocess(nodeRaw) {
   return typeLower(asObject(nodeRaw)?.type).includes("subprocess");
+}
+
+function isBusinessStepNodeType(nodeTypeRaw) {
+  const type = typeLower(nodeTypeRaw);
+  if (!type) return false;
+  if (type.includes("startevent") || type.includes("endevent")) return false;
+  if (type.includes("gateway")) return false;
+  if (type.includes("intermediatethrowevent") || type.includes("intermediatecatchevent")) return false;
+  if (type.includes("task")) return true;
+  if (type.includes("subprocess")) return true;
+  if (type.includes("event")) return false;
+  return true;
+}
+
+function createPlaybackMetrics() {
+  return {
+    stepsTotal: 0,
+    businessSteps: 0,
+    flowTransitions: 0,
+    variationPoints: 0,
+    manualDecisionPrompts: 0,
+    manualDecisionsApplied: 0,
+    autoDecisionsApplied: 0,
+    parallelBatches: 0,
+    linkJumps: 0,
+  };
+}
+
+function isLinkThrowEvent(nodeRaw) {
+  const node = asObject(nodeRaw);
+  const kind = asText(node?.linkEventKind).toLowerCase();
+  if (kind === "throw") return true;
+  if (kind && kind !== "throw") return false;
+  return typeLower(node?.type).includes("intermediatethrowevent") && !!asText(node?.linkEventName || node?.name);
 }
 
 function toNum(value, fallback = 0) {
@@ -101,23 +168,106 @@ function asSortedIds(idsRaw) {
     .sort((a, b) => String(a).localeCompare(String(b), "ru"));
 }
 
+export function classifyGateway(nodeRaw) {
+  const node = asObject(nodeRaw);
+  const incoming = asSortedIds(node?.incomingFlowIds).length;
+  const outgoing = asSortedIds(node?.outgoingFlowIds).length;
+  if (incoming > 1 && outgoing <= 1) return "merge";
+  if (outgoing <= 1) return "pass_through";
+  if (incoming <= 1 && outgoing > 1) return "split";
+  if (incoming > 1 && outgoing > 1) return "mixed";
+  return "pass_through";
+}
+
+function normalizeGatewayConditionLabel(rawText) {
+  const text = asText(rawText);
+  const lower = text.toLowerCase();
+  if (!lower) return "";
+  if (
+    /\b(yes|true)\b/.test(lower)
+    || /\bда\b/.test(lower)
+    || /==\s*true/.test(lower)
+    || /===\s*true/.test(lower)
+  ) {
+    return "Да";
+  }
+  if (
+    /\b(no|false)\b/.test(lower)
+    || /\bнет\b/.test(lower)
+    || /==\s*false/.test(lower)
+    || /===\s*false/.test(lower)
+  ) {
+    return "Нет";
+  }
+  return text;
+}
+
 function buildGatewayOptions(node, flowsById, nodesById) {
   return asArray(node?.outgoingFlowIds)
-    .map((flowIdRaw) => {
+    .map((flowIdRaw, index) => {
       const flowId = asText(flowIdRaw);
       const flow = asObject(flowsById[flowId]);
       if (!flowId || !Object.keys(flow).length) return null;
       const targetId = asText(flow?.targetId);
       const target = asObject(nodesById[targetId]);
+      const label = asText(flow?.label || flow?.name);
+      const condition = normalizeGatewayConditionLabel(flow?.conditionText);
       return {
         flowId,
-        label: asText(flow?.label || flow?.conditionText),
+        label: label || condition || `Выбор ${index + 1}`,
         targetId,
         targetName: asText(target?.name || targetId),
-        condition: asText(flow?.conditionText),
+        condition,
       };
     })
     .filter(Boolean);
+}
+
+function filterOutgoingByScenario(outgoingIdsRaw, flowsById, nodePathMetaById, flowMetaById, scenarioRaw) {
+  const outgoingIds = asSortedIds(outgoingIdsRaw).filter((flowId) => !!flowsById[flowId]);
+  const scenario = normalizeScenarioSpec(scenarioRaw);
+  const tier = normalizeTier(scenario?.tier);
+  const sequenceKey = asText(scenario?.sequenceKey);
+  if (!tier) return outgoingIds;
+
+  const byFlowTier = outgoingIds.filter((flowId) => {
+    const flowTier = normalizeTier(asObject(flowMetaById[flowId])?.tier);
+    return flowTier === tier;
+  });
+  if (byFlowTier.length > 0) {
+    if (!sequenceKey) return byFlowTier;
+    const bySequence = byFlowTier.filter((flowId) => {
+      const flow = asObject(flowsById[flowId]);
+      const targetId = asText(flow?.targetId);
+      const targetMeta = asObject(nodePathMetaById[targetId]);
+      const targetSequence = asText(targetMeta?.sequenceKey || targetMeta?.sequence_key);
+      return !!targetSequence && targetSequence === sequenceKey;
+    });
+    return bySequence.length > 0 ? bySequence : byFlowTier;
+  }
+
+  const byNodePath = outgoingIds.filter((flowId) => {
+    const flow = asObject(flowsById[flowId]);
+    const targetId = asText(flow?.targetId);
+    const targetMeta = asObject(nodePathMetaById[targetId]);
+    const paths = asArray(targetMeta?.paths)
+      .map((value) => normalizeTier(value))
+      .filter(Boolean);
+    return paths.includes(tier);
+  });
+  if (byNodePath.length > 0) {
+    if (!sequenceKey) return byNodePath;
+    const bySequence = byNodePath.filter((flowId) => {
+      const flow = asObject(flowsById[flowId]);
+      const targetId = asText(flow?.targetId);
+      const targetMeta = asObject(nodePathMetaById[targetId]);
+      const targetSequence = asText(targetMeta?.sequenceKey || targetMeta?.sequence_key);
+      return !!targetSequence && targetSequence === sequenceKey;
+    });
+    return bySequence.length > 0 ? bySequence : byNodePath;
+  }
+
+  return [];
 }
 
 function buildScenarioFlowScore({
@@ -208,6 +358,21 @@ export function createPlaybackEngine(optionsRaw = {}) {
   let completedTokens = 0;
   let deadEndTokens = 0;
   let emittedStop = false;
+  let metrics = createPlaybackMetrics();
+  const linkCatchNodeIdsByName = {};
+
+  Object.values(nodesById).forEach((nodeRaw) => {
+    const node = asObject(nodeRaw);
+    if (asText(node?.linkEventKind).toLowerCase() !== "catch") return;
+    const linkName = asText(node?.linkEventName || node?.name);
+    if (!linkName) return;
+    const nodeId = asText(node?.id);
+    if (!nodeId) return;
+    const prev = asArray(linkCatchNodeIdsByName[linkName]);
+    linkCatchNodeIdsByName[linkName] = [...prev, nodeId]
+      .filter(Boolean)
+      .sort((a, b) => String(a).localeCompare(String(b), "ru"));
+  });
 
   function makeToken(nodeIdRaw, fromFlowIdRaw = "", extra = {}) {
     tokenSeq += 1;
@@ -235,12 +400,28 @@ export function createPlaybackEngine(optionsRaw = {}) {
   function enqueueEvent(typeRaw, payloadRaw = {}) {
     const type = asText(typeRaw);
     if (!type) return;
+    const payload = asObject(payloadRaw);
+    if (type === "take_flow") {
+      metrics.flowTransitions += 1;
+      if (payload.linkJump === true) metrics.linkJumps += 1;
+    } else if (type === "enter_node") {
+      if (payload.initial !== true) {
+        metrics.stepsTotal += 1;
+        if (isBusinessStepNodeType(payload.nodeType)) {
+          metrics.businessSteps += 1;
+        }
+      }
+    } else if (type === "wait_for_gateway_decision") {
+      metrics.manualDecisionPrompts += 1;
+    } else if (type === "parallel_batch_begin") {
+      metrics.parallelBatches += 1;
+    }
     eventSeq += 1;
     eventQueue.push({
       id: `evt_${eventSeq}`,
       index: eventSeq,
       type,
-      ...asObject(payloadRaw),
+      ...payload,
     });
   }
 
@@ -248,10 +429,20 @@ export function createPlaybackEngine(optionsRaw = {}) {
     if (emittedStop) return;
     emittedStop = true;
     stopReason = asText(reasonRaw || stopReason || "finished");
+    const visitedNodes = Object.keys(visitedByNodeId).length;
+    const summary = {
+      ...metrics,
+      visitedNodes,
+    };
     enqueueEvent("stop", {
       reason: stopReason,
       activeTokenCount: activeTokens.length,
-      visitedCount: Object.keys(visitedByNodeId).length,
+      visitedCount: visitedNodes,
+      metrics: summary,
+    });
+    logPlaybackDebug("run_summary", {
+      reason: stopReason,
+      ...summary,
     });
   }
 
@@ -279,26 +470,91 @@ export function createPlaybackEngine(optionsRaw = {}) {
   function buildFlowChoice(nodeRaw) {
     const node = asObject(nodeRaw);
     const outgoingIds = asArray(node?.outgoingFlowIds).filter((flowId) => !!flowsById[flowId]);
+    const incomingIds = asArray(node?.incomingFlowIds).filter((flowId) => !!flowsById[flowId]);
+    const gatewayKind = classifyGateway({
+      incomingFlowIds: incomingIds,
+      outgoingFlowIds: outgoingIds,
+    });
+    const decisionGateway = isDecisionGateway(node);
     if (!outgoingIds.length) return { type: "none", flowId: "" };
     if (outgoingIds.length === 1) {
-      return { type: "single", flowId: asText(outgoingIds[0]) };
+      return {
+        type: "single",
+        flowId: asText(outgoingIds[0]),
+        gatewayKind,
+      };
     }
 
     const nodeId = asText(node?.id);
     const routeFlowId = asText(routeDecisionByNodeId[nodeId]);
     if (routeFlowId && outgoingIds.includes(routeFlowId)) {
-      return { type: "route", flowId: routeFlowId };
+      return {
+        type: "route",
+        flowId: routeFlowId,
+        gatewayKind,
+      };
+    }
+
+    if (!decisionGateway || (gatewayKind !== "split" && gatewayKind !== "mixed")) {
+      return {
+        type: "stable",
+        flowId: asText(outgoingIds[0]),
+        gatewayKind,
+      };
+    }
+
+    let decisionOptions = outgoingIds;
+    if (gatewayKind === "mixed") {
+      const scenarioCandidates = filterOutgoingByScenario(
+        outgoingIds,
+        flowsById,
+        nodePathMetaById,
+        flowMetaById,
+        scenario,
+      );
+      if (scenarioCandidates.length === 1) {
+        return {
+          type: "mixed_single_candidate",
+          flowId: asText(scenarioCandidates[0]),
+          gatewayKind,
+          scenarioCandidates,
+        };
+      }
+      if (scenarioCandidates.length > 1) {
+        decisionOptions = scenarioCandidates;
+      } else {
+        logPlaybackDebug("gateway_candidates_empty_fallback", {
+          nodeId,
+          gatewayKind,
+          scenarioTier: normalizeTier(scenario?.tier),
+          sequenceKey: asText(scenario?.sequenceKey),
+          fallbackFlowId: asText(outgoingIds[0]),
+        });
+        return {
+          type: "mixed_fallback",
+          flowId: asText(outgoingIds[0]),
+          gatewayKind,
+        };
+      }
     }
 
     if (manualAtGateway) {
       return {
         type: "wait_manual",
         flowId: "",
-        options: buildGatewayOptions(node, flowsById, nodesById),
+        options: buildGatewayOptions(
+          {
+            ...node,
+            outgoingFlowIds: decisionOptions,
+          },
+          flowsById,
+          nodesById,
+        ),
+        gatewayKind,
       };
     }
 
-    const scored = outgoingIds.map((flowId) => {
+    const scored = decisionOptions.map((flowId) => {
       const flow = asObject(flowsById[flowId]);
       const score = buildScenarioFlowScore({
         flowId,
@@ -312,15 +568,40 @@ export function createPlaybackEngine(optionsRaw = {}) {
     const maxScore = scored.reduce((acc, row) => Math.max(acc, Number(row?.score || 0)), -1000);
     if (Number.isFinite(maxScore) && maxScore > 0) {
       const selected = scored.find((row) => Number(row?.score || 0) === maxScore);
-      if (selected?.flowId) return { type: "scenario", flowId: asText(selected.flowId) };
+      if (selected?.flowId) {
+        return {
+          type: "scenario",
+          flowId: asText(selected.flowId),
+          gatewayKind,
+        };
+      }
     }
-    return { type: "stable", flowId: asText(outgoingIds[0]) };
+    return {
+      type: "stable",
+      flowId: asText(decisionOptions[0] || outgoingIds[0]),
+      gatewayKind,
+    };
+  }
+
+  function resolveLinkCatchNodeId(nodeRaw) {
+    const node = asObject(nodeRaw);
+    const nodeId = asText(node?.id);
+    const linkName = asText(node?.linkEventName || node?.name);
+    if (!nodeId || !linkName) return "";
+    const candidates = asArray(linkCatchNodeIdsByName[linkName]).filter((id) => id && id !== nodeId);
+    if (!candidates.length) return "";
+    const parentSubprocessId = asText(node?.parentSubprocessId);
+    const sameScope = candidates.filter(
+      (id) => asText(asObject(nodesById[id])?.parentSubprocessId) === parentSubprocessId,
+    );
+    return asText((sameScope.length ? sameScope : candidates)[0]);
   }
 
   function transitionTokenViaFlow(tokenRaw, flowIdRaw, extra = {}) {
     const token = asObject(tokenRaw);
     const flowId = asText(flowIdRaw);
-    const flow = asObject(flowsById[flowId]);
+    const virtualFlow = asObject(extra?.virtualFlow);
+    const flow = Object.keys(virtualFlow).length ? virtualFlow : asObject(flowsById[flowId]);
     if (!flowId || !Object.keys(flow).length) return;
     const fromId = asText(flow?.sourceId || token?.nodeId);
     const toId = asText(flow?.targetId);
@@ -333,6 +614,8 @@ export function createPlaybackEngine(optionsRaw = {}) {
       tokenId: Number(token?.id || 0),
       batchId: asText(extra?.batchId),
       parallel: extra?.parallel === true,
+      linkJump: extra?.linkJump === true,
+      synthetic: extra?.synthetic === true,
     });
     const targetNode = asObject(nodesById[toId]);
     if (!Object.keys(targetNode).length) return;
@@ -345,16 +628,11 @@ export function createPlaybackEngine(optionsRaw = {}) {
       tokenId: Number(token?.id || 0),
       batchId: asText(extra?.batchId),
       parallel: extra?.parallel === true,
+      linkJump: extra?.linkJump === true,
+      synthetic: extra?.synthetic === true,
     });
-    const visitCount = markVisited(toId);
-    if (visitCount > loopLimit) {
-      finished = true;
-      stopReason = "loop_limit_reached";
-      enqueueStop(stopReason);
-      return;
-    }
-
-    if (isParallelGateway(targetNode) && asArray(targetNode?.incomingFlowIds).length > 1) {
+    const isParallelJoin = isParallelGateway(targetNode) && asArray(targetNode?.incomingFlowIds).length > 1;
+    if (isParallelJoin) {
       const incoming = asSortedIds(targetNode?.incomingFlowIds);
       const arrivals = new Set(asArray(joinArrivalsByNodeId[toId]));
       arrivals.add(flowId);
@@ -367,7 +645,21 @@ export function createPlaybackEngine(optionsRaw = {}) {
       const nextJoinArrivals = { ...joinArrivalsByNodeId };
       delete nextJoinArrivals[toId];
       joinArrivalsByNodeId = nextJoinArrivals;
+      const joinVisitCount = markVisited(toId);
+      if (joinVisitCount > loopLimit) {
+        finished = true;
+        stopReason = "loop_limit_reached";
+        enqueueStop(stopReason);
+        return;
+      }
       activeTokens = [...activeTokens, makeToken(toId, flowId, { joinReady: true })];
+      return;
+    }
+    const visitCount = markVisited(toId);
+    if (visitCount > loopLimit) {
+      finished = true;
+      stopReason = "loop_limit_reached";
+      enqueueStop(stopReason);
       return;
     }
     activeTokens = [...activeTokens, makeToken(toId, flowId)];
@@ -382,6 +674,36 @@ export function createPlaybackEngine(optionsRaw = {}) {
       return;
     }
     const outgoingIds = asArray(node?.outgoingFlowIds).filter((flowId) => !!flowsById[flowId]);
+    if (isLinkThrowEvent(node) && outgoingIds.length <= 0) {
+      const linkCatchNodeId = resolveLinkCatchNodeId(node);
+      if (linkCatchNodeId && nodesById[linkCatchNodeId]) {
+        const linkName = asText(node?.linkEventName || node?.name);
+        const linkFlowId = `link:${linkName || nodeId}:${nodeId}->${linkCatchNodeId}`;
+        logPlaybackDebug("link_event_jump", {
+          linkName,
+          fromId: nodeId,
+          toId: linkCatchNodeId,
+        });
+        transitionTokenViaFlow(token, linkFlowId, {
+          branchType: "link_jump",
+          linkJump: true,
+          synthetic: true,
+          virtualFlow: {
+            id: linkFlowId,
+            sourceId: nodeId,
+            targetId: linkCatchNodeId,
+            label: linkName,
+            conditionText: "",
+          },
+        });
+        maybeFinish();
+        return;
+      }
+      logPlaybackDebug("link_event_missing_target", {
+        linkName: asText(node?.linkEventName || node?.name),
+        nodeId,
+      });
+    }
     if (isEndNode(node)) {
       completedTokens += 1;
       maybeFinish();
@@ -398,6 +720,36 @@ export function createPlaybackEngine(optionsRaw = {}) {
     const flowChoice = forceFlowId
       ? { type: "manual", flowId: forceFlowId }
       : buildFlowChoice(node);
+    const gatewayKind = asText(flowChoice?.gatewayKind || classifyGateway(node));
+    const incomingCount = asArray(node?.incomingFlowIds).filter((flowId) => !!flowsById[flowId]).length;
+    const outgoingCount = outgoingIds.length;
+    const manualRequired = (
+      !forceFlowId
+      && isDecisionGateway(node)
+      && manualAtGateway
+      && (gatewayKind === "split" || gatewayKind === "mixed")
+      && asArray(flowChoice?.options).length > 1
+    );
+
+    if (nodeType.includes("gateway")) {
+      if (
+        !forceFlowId
+        && isDecisionGateway(node)
+        && (gatewayKind === "split" || gatewayKind === "mixed")
+        && outgoingCount > 1
+      ) {
+        metrics.variationPoints += 1;
+      }
+      logPlaybackDebug("gateway_enter", {
+        nodeId,
+        gatewayType: asText(node?.type),
+        incomingCount,
+        outgoingCount,
+        gatewayKind,
+        manualRequired,
+        flowChoiceType: asText(flowChoice?.type),
+      });
+    }
 
     if (flowChoice.type === "wait_manual") {
       waitingDecision = {
@@ -405,6 +757,13 @@ export function createPlaybackEngine(optionsRaw = {}) {
         token,
         options: asArray(flowChoice?.options),
       };
+      logPlaybackDebug("gateway_wait_manual", {
+        nodeId,
+        gatewayKind,
+        outgoingFlowIds: asArray(flowChoice?.options)
+          .map((optionRaw) => asText(asObject(optionRaw)?.flowId))
+          .filter(Boolean),
+      });
       enqueueEvent("wait_for_gateway_decision", {
         gatewayId: nodeId,
         gatewayName: asText(node?.name || nodeId),
@@ -418,6 +777,14 @@ export function createPlaybackEngine(optionsRaw = {}) {
       deadEndTokens += 1;
       maybeFinish();
       return;
+    }
+    if (
+      !forceFlowId
+      && isDecisionGateway(node)
+      && (gatewayKind === "split" || gatewayKind === "mixed")
+      && outgoingCount > 1
+    ) {
+      metrics.autoDecisionsApplied += 1;
     }
 
     if (nodeType.includes("parallelgateway") && outgoingIds.length > 1) {
@@ -476,6 +843,7 @@ export function createPlaybackEngine(optionsRaw = {}) {
     emittedStop = false;
     completedTokens = 0;
     deadEndTokens = 0;
+    metrics = createPlaybackMetrics();
     tokenSeq = 0;
     eventSeq = 0;
 
@@ -548,6 +916,11 @@ export function createPlaybackEngine(optionsRaw = {}) {
     const flowId = asText(flowIdRaw);
     const waiting = asObject(waitingDecision);
     if (!gatewayId || !flowId || asText(waiting?.nodeId) !== gatewayId) {
+      logPlaybackDebug("gateway_choice_rejected", {
+        gatewayId,
+        flowId,
+        waitingGatewayId: asText(waiting?.nodeId),
+      });
       return { ok: false, reason: "no_waiting_gateway" };
     }
     const waitingNode = asObject(nodesById[gatewayId]);
@@ -556,7 +929,12 @@ export function createPlaybackEngine(optionsRaw = {}) {
       ? flowId
       : asText(outgoingIds[0]);
     waitingDecision = null;
+    metrics.manualDecisionsApplied += 1;
     processTokenAtNode(waiting?.token, { forceFlowId: selectedFlowId });
+    logPlaybackDebug("gateway_choice_applied", {
+      gatewayId,
+      flowId: selectedFlowId,
+    });
     return {
       ok: true,
       gatewayId,
@@ -576,6 +954,10 @@ export function createPlaybackEngine(optionsRaw = {}) {
         : null,
       activeTokenCount: activeTokens.length,
       visitedByNodeId: { ...visitedByNodeId },
+      metrics: {
+        ...metrics,
+        visitedNodes: Object.keys(visitedByNodeId).length,
+      },
       scenario,
       manualAtGateway,
     };

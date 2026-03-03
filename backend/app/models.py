@@ -91,6 +91,9 @@ class Session(BaseModel):
     bpmn_meta: Dict[str, Any] = Field(default_factory=dict)
     version: int = 0
     owner_user_id: str = ""
+    org_id: str = ""
+    created_by: str = ""
+    updated_by: str = ""
     created_at: int = 0
     updated_at: int = 0
 # -----------------------------
@@ -113,6 +116,9 @@ class Project(BaseModel):
     updated_at: int = 0
     version: int = 1
     owner_user_id: str = ""
+    org_id: str = ""
+    created_by: str = ""
+    updated_by: str = ""
 
     model_config = ConfigDict(extra="allow")
 

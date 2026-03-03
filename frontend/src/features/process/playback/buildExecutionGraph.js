@@ -41,6 +41,32 @@ function findParentSubprocessId(boRaw) {
   return "";
 }
 
+function readLinkEventMeta(boRaw, boTypeRaw) {
+  const bo = asObject(boRaw);
+  const boType = typeLower(boTypeRaw || bo?.$type);
+  const isThrow = boType.includes("intermediatethrowevent");
+  const isCatch = boType.includes("intermediatecatchevent");
+  if (!isThrow && !isCatch) {
+    return {
+      linkEventKind: "",
+      linkEventName: "",
+    };
+  }
+  const linkDef = asArray(bo?.eventDefinitions)
+    .map((item) => asObject(item))
+    .find((item) => typeLower(item?.$type).includes("linkeventdefinition"));
+  if (!Object.keys(asObject(linkDef)).length) {
+    return {
+      linkEventKind: "",
+      linkEventName: "",
+    };
+  }
+  return {
+    linkEventKind: isThrow ? "throw" : "catch",
+    linkEventName: asText(linkDef?.name || bo?.name),
+  };
+}
+
 function flowSortKey(flowRaw, nodeById, outgoingOrderById) {
   const flow = asObject(flowRaw);
   const label = asText(flow?.label);
@@ -111,6 +137,7 @@ export function buildExecutionGraphFromInstance(instance) {
         return;
       }
       if (t === "label") return;
+      const linkMeta = readLinkEventMeta(bo, boType);
       nodesById[id] = {
         id,
         type: boType,
@@ -119,6 +146,8 @@ export function buildExecutionGraphFromInstance(instance) {
         incomingFlowIds: [],
         outgoingFlowIds: [],
         parentSubprocessId: findParentSubprocessId(bo),
+        linkEventKind: asText(linkMeta?.linkEventKind),
+        linkEventName: asText(linkMeta?.linkEventName),
       };
     });
 
@@ -135,6 +164,8 @@ export function buildExecutionGraphFromInstance(instance) {
           incomingFlowIds: [],
           outgoingFlowIds: [],
           parentSubprocessId: "",
+          linkEventKind: "",
+          linkEventName: "",
         };
       }
       if (!nodesById[targetId]) {
@@ -146,6 +177,8 @@ export function buildExecutionGraphFromInstance(instance) {
           incomingFlowIds: [],
           outgoingFlowIds: [],
           parentSubprocessId: "",
+          linkEventKind: "",
+          linkEventName: "",
         };
       }
       nodesById[sourceId].outgoingFlowIds.push(asText(flow?.id));

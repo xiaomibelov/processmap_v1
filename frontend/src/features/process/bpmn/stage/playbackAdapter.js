@@ -91,25 +91,83 @@ function resolveFlashPillLabel(typeRaw) {
   return "Updated";
 }
 
+function shouldDebugPlayback() {
+  if (typeof window === "undefined") return false;
+  try {
+    const raw = window.DEBUG_PLAYBACK ?? window.localStorage?.getItem("DEBUG_PLAYBACK") ?? "";
+    return String(raw || "").trim() === "1";
+  } catch {
+    return String(window.DEBUG_PLAYBACK || "").trim() === "1";
+  }
+}
+
+function logPlaybackDebug(stage, payload = {}) {
+  if (!shouldDebugPlayback()) return;
+  // eslint-disable-next-line no-console
+  console.debug(`[PLAYBACK_DEBUG] ${String(stage || "-")}`, payload);
+}
+
+function shortNodeId(rawId) {
+  const id = toText(rawId);
+  if (!id) return "";
+  if (id.length <= 16) return id;
+  return id.slice(-10);
+}
+
 function buildPlaybackGatewayOverlay(event, payload) {
   const options = asArray(event?.outgoingOptions);
   if (!options.length || typeof document === "undefined") return null;
   const onGatewayDecision = typeof payload?.onGatewayDecision === "function"
     ? payload.onGatewayDecision
     : null;
+  const onGatewayOverlayInteraction = typeof payload?.onGatewayOverlayInteraction === "function"
+    ? payload.onGatewayOverlayInteraction
+    : null;
+  const gatewayName = toText(event?.gatewayName);
+  const gatewayId = toText(event?.gatewayId || event?.nodeId);
   const root = document.createElement("div");
   root.className = "fpcPlaybackBranchTag";
+  root.dataset.playbackOverlay = "gateway";
+  root.dataset.gatewayId = gatewayId;
   root.style.pointerEvents = "auto";
   root.style.padding = "6px";
   root.style.borderRadius = "10px";
   root.style.display = "grid";
   root.style.gap = "6px";
+  root.style.zIndex = "12";
 
   const title = document.createElement("div");
   title.style.fontSize = "10px";
   title.style.fontWeight = "700";
-  title.textContent = "Выберите исход";
+  title.textContent = gatewayName
+    ? `Gateway: ${gatewayName} (${shortNodeId(gatewayId)})`
+    : `Gateway: ${shortNodeId(gatewayId) || "Gateway"}`;
   root.appendChild(title);
+
+  const consumeOverlayClick = (ev) => {
+    ev.stopPropagation();
+    onGatewayOverlayInteraction?.({
+      stage: "overlay_interaction",
+      gatewayId,
+    });
+  };
+  root.addEventListener("pointerdown", consumeOverlayClick);
+  root.addEventListener("mousedown", consumeOverlayClick);
+  root.addEventListener("click", consumeOverlayClick);
+
+  logPlaybackDebug("gateway_popover_render", {
+    gatewayId,
+    gatewayName,
+    options: options.map((optionRaw) => {
+      const option = asObject(optionRaw);
+      return {
+        flowId: toText(option?.flowId),
+        label: toText(option?.label || option?.condition),
+        targetId: toText(option?.targetId),
+        targetName: toText(option?.targetName),
+      };
+    }),
+  });
 
   const list = document.createElement("div");
   list.style.display = "grid";
@@ -125,11 +183,22 @@ function buildPlaybackGatewayOverlay(event, payload) {
     btn.style.padding = "0 8px";
     btn.style.fontSize = "11px";
     const label = toText(option?.label || option?.condition);
-    const targetName = toText(option?.targetName || option?.targetId || flowId);
-    btn.textContent = label ? `${label} -> ${targetName}` : targetName;
+    btn.textContent = label || "Выбор";
+    btn.title = toText(option?.targetName || option?.targetId || "");
+    btn.addEventListener("pointerdown", consumeOverlayClick);
+    btn.addEventListener("mousedown", consumeOverlayClick);
     btn.addEventListener("click", (eventClick) => {
       eventClick.preventDefault();
       eventClick.stopPropagation();
+      onGatewayOverlayInteraction?.({
+        stage: "gateway_option_click",
+        gatewayId,
+        flowId,
+      });
+      logPlaybackDebug("gateway_option_click", {
+        gatewayId,
+        flowId,
+      });
       onGatewayDecision?.({
         gatewayId: toText(event?.gatewayId || event?.nodeId),
         flowId,
@@ -485,6 +554,13 @@ export function createPlaybackOverlayAdapter(ctxBase) {
         addOverlay(event?.gatewayId, { bottom: -17, left: 2 }, batchTag);
       } else if (eventType === "wait_for_gateway_decision") {
         markNodeActive(event?.gatewayId);
+        logPlaybackDebug("wait_for_gateway_decision", {
+          gatewayId: utils.toText(event?.gatewayId),
+          outgoingFlowIds: utils.asArray(event?.outgoingOptions).map((optionRaw) => {
+            const option = utils.asObject(optionRaw);
+            return utils.toText(option?.flowId);
+          }).filter(Boolean),
+        });
         const gatewayOverlay = buildPlaybackGatewayOverlay(event, payload);
         if (gatewayOverlay) {
           nextState.gatewayOverlayId = addOverlay(event?.gatewayId, { bottom: -18, left: 6 }, gatewayOverlay);

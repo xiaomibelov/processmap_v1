@@ -35,6 +35,12 @@ from .storage import (
     get_project_storage,
     push_storage_request_scope,
     pop_storage_request_scope,
+    list_user_org_memberships,
+    resolve_active_org_id,
+    user_has_org_membership,
+    get_user_org_role,
+    get_default_org_id,
+    create_org_record,
 )
 from .settings import load_llm_settings, llm_status, save_llm_settings, verify_llm_settings
 from .validators.coverage import build_questions
@@ -61,6 +67,30 @@ AUTH_PUBLIC_PATHS = {
     "/api/auth/refresh",
     "/api/auth/logout",
 }
+
+_ORG_PATH_RE = re.compile(r"^/api/orgs/([^/]+)(?:/|$)")
+_ORG_WRITE_ROLES = {"org_owner", "org_admin"}
+_ORG_EDITOR_ROLES = {"org_owner", "org_admin", "project_manager", "editor"}
+
+
+def _extract_org_from_path(path: str) -> str:
+    src = str(path or "").strip()
+    m = _ORG_PATH_RE.match(src)
+    if not m:
+        return ""
+    return str(m.group(1) or "").strip()
+
+
+def _extract_org_from_headers(request: Request) -> str:
+    v = str(request.headers.get("x-org-id") or request.headers.get("x-active-org-id") or "").strip()
+    return v
+
+
+def _request_auth_user(request: Request) -> Dict[str, Any]:
+    user = getattr(request.state, "auth_user", None)
+    if isinstance(user, dict):
+        return user
+    return {}
 
 _REPORT_LOCKS_GUARD = threading.RLock()
 _REPORT_LOCKS_BY_SESSION: Dict[str, threading.RLock] = {}
@@ -1659,7 +1689,7 @@ async def auth_guard_middleware(request: Request, call_next):
     if not path.startswith("/api"):
         return await call_next(request)
     if path in AUTH_PUBLIC_PATHS:
-        scope_tokens = push_storage_request_scope("", False)
+        scope_tokens = push_storage_request_scope("", False, "")
         try:
             return await call_next(request)
         finally:
@@ -1668,7 +1698,19 @@ async def auth_guard_middleware(request: Request, call_next):
     try:
         user = user_from_bearer_header(request.headers.get("authorization", ""))
         request.state.auth_user = user
-        scope_tokens = push_storage_request_scope(str(user.get("id") or ""), bool(user.get("is_admin", False)))
+        user_id = str(user.get("id") or "").strip()
+        is_admin = bool(user.get("is_admin", False))
+        path_org_id = _extract_org_from_path(path)
+        header_org_id = _extract_org_from_headers(request)
+
+        if path_org_id and not user_has_org_membership(user_id, path_org_id, is_admin=is_admin):
+            return JSONResponse(status_code=404, content={"detail": "not found"})
+
+        requested_org_id = path_org_id or header_org_id
+        active_org_id = resolve_active_org_id(user_id, requested_org_id=requested_org_id, is_admin=is_admin)
+        request.state.active_org_id = active_org_id
+        request.state.org_memberships = list_user_org_memberships(user_id, is_admin=is_admin)
+        scope_tokens = push_storage_request_scope(user_id, is_admin, active_org_id)
     except AuthError as e:
         return _auth_error_response(str(e))
 
@@ -1852,6 +1894,14 @@ class AuthMeOut(BaseModel):
     id: str
     email: str
     is_admin: bool = False
+    active_org_id: str = ""
+    default_org_id: str = ""
+    orgs: List[Dict[str, Any]] = []
+
+
+class OrgCreateIn(BaseModel):
+    name: str
+    id: Optional[str] = None
 
 
 class CreateSessionIn(BaseModel):
@@ -2250,10 +2300,18 @@ def auth_me(request: Request):
             user = user_from_bearer_header(request.headers.get("authorization", ""))
         except AuthError:
             raise HTTPException(status_code=401, detail="unauthorized")
+    user_id = str(user.get("id") or "").strip()
+    is_admin = bool(user.get("is_admin", False))
+    memberships = list_user_org_memberships(user_id, is_admin=is_admin)
+    requested_org_id = _extract_org_from_headers(request)
+    active_org_id = resolve_active_org_id(user_id, requested_org_id=requested_org_id, is_admin=is_admin)
     return {
-        "id": str(user.get("id") or ""),
+        "id": user_id,
         "email": str(user.get("email") or ""),
-        "is_admin": bool(user.get("is_admin", False)),
+        "is_admin": is_admin,
+        "active_org_id": active_org_id,
+        "default_org_id": get_default_org_id(),
+        "orgs": memberships,
     }
 
 
@@ -4394,6 +4452,173 @@ def api_meta():
             "projects": True, "project_sessions": True,
         },
     }
+
+
+# -----------------------------
+# Enterprise org endpoints (dual-mode with legacy routes)
+# -----------------------------
+
+def _org_role_for_request(request: Request, org_id: str) -> str:
+    user = _request_auth_user(request)
+    user_id = str(user.get("id") or "").strip()
+    is_admin = bool(user.get("is_admin", False))
+    role = get_user_org_role(user_id, org_id, is_admin=is_admin)
+    return str(role or "")
+
+
+def _require_org_member_for_enterprise(request: Request, org_id: str) -> str:
+    oid = str(org_id or "").strip()
+    user = _request_auth_user(request)
+    user_id = str(user.get("id") or "").strip()
+    is_admin = bool(user.get("is_admin", False))
+    if not oid:
+        raise HTTPException(status_code=404, detail="not found")
+    if not user_has_org_membership(user_id, oid, is_admin=is_admin):
+        raise HTTPException(status_code=404, detail="not found")
+    return _org_role_for_request(request, oid)
+
+
+def _require_org_role(request: Request, org_id: str, allowed: Set[str]) -> str:
+    role = _require_org_member_for_enterprise(request, org_id)
+    if role not in allowed:
+        raise HTTPException(status_code=403, detail="forbidden")
+    return role
+
+
+@app.get("/api/orgs")
+def list_orgs_endpoint(request: Request) -> Dict[str, Any]:
+    user = _request_auth_user(request)
+    user_id = str(user.get("id") or "").strip()
+    is_admin = bool(user.get("is_admin", False))
+    active_org_id = str(getattr(request.state, "active_org_id", "") or "").strip() or resolve_active_org_id(user_id, is_admin=is_admin)
+    items = list_user_org_memberships(user_id, is_admin=is_admin)
+    return {
+        "items": items,
+        "active_org_id": active_org_id,
+        "default_org_id": get_default_org_id(),
+    }
+
+
+@app.post("/api/orgs")
+def create_org_endpoint(inp: OrgCreateIn, request: Request) -> Dict[str, Any]:
+    user = _request_auth_user(request)
+    user_id = str(user.get("id") or "").strip()
+    is_admin = bool(user.get("is_admin", False))
+    current_org_id = str(getattr(request.state, "active_org_id", "") or "").strip()
+    current_role = _org_role_for_request(request, current_org_id) if current_org_id else ""
+    if not is_admin and current_role not in _ORG_WRITE_ROLES:
+        raise HTTPException(status_code=403, detail="forbidden")
+    name = str(getattr(inp, "name", "") or "").strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="name is required")
+    org = create_org_record(name=name, created_by=user_id, org_id=getattr(inp, "id", None))
+    return org
+
+
+@app.get("/api/orgs/{org_id}/projects")
+def list_org_projects(org_id: str, request: Request) -> List[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    _require_org_member_for_enterprise(request, oid)
+    st = get_project_storage()
+    items = st.list(org_id=oid)
+    return [p.model_dump() for p in items]
+
+
+@app.post("/api/orgs/{org_id}/projects")
+def create_org_project(org_id: str, inp: CreateProjectIn, request: Request) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    _require_org_role(request, oid, _ORG_WRITE_ROLES)
+    title = str(getattr(inp, "title", "") or "").strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="title required")
+    passport = inp.passport if isinstance(inp.passport, dict) else {}
+    user = _request_auth_user(request)
+    uid = str(user.get("id") or "").strip()
+    st = get_project_storage()
+    pid = st.create(title=title, passport=passport, user_id=uid, org_id=oid)
+    proj = st.load(pid, org_id=oid)
+    if not proj:
+        raise HTTPException(status_code=404, detail="not found")
+    return proj.model_dump()
+
+
+@app.get("/api/orgs/{org_id}/projects/{project_id}")
+def get_org_project(org_id: str, project_id: str, request: Request) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    _require_org_member_for_enterprise(request, oid)
+    st = get_project_storage()
+    proj = st.load(project_id, org_id=oid)
+    if not proj:
+        raise HTTPException(status_code=404, detail="not found")
+    return proj.model_dump()
+
+
+@app.get("/api/orgs/{org_id}/projects/{project_id}/sessions")
+def list_org_project_sessions(org_id: str, project_id: str, request: Request, mode: str | None = None) -> List[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    _require_org_member_for_enterprise(request, oid)
+    raw_mode = mode
+    mode = _norm_project_session_mode(mode)
+    if raw_mode is not None and mode is None:
+        raise HTTPException(status_code=422, detail="invalid mode; allowed: quick_skeleton, deep_audit")
+    ps = get_project_storage()
+    if ps.load(project_id, org_id=oid) is None:
+        raise HTTPException(status_code=404, detail="not found")
+    st = get_storage()
+    rows = st.list(project_id=project_id, mode=mode, limit=500, org_id=oid)
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        if isinstance(row, dict):
+            out.append(_session_api_dump(Session.model_validate(row)))
+    return out
+
+
+@app.post("/api/orgs/{org_id}/projects/{project_id}/sessions")
+def create_org_project_session(
+    org_id: str,
+    project_id: str,
+    inp: CreateSessionIn,
+    request: Request,
+    mode: str | None = Query(default="quick_skeleton"),
+) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    _require_org_role(request, oid, _ORG_EDITOR_ROLES)
+    raw_mode = mode
+    mode = _norm_project_session_mode(mode)
+    if raw_mode is not None and mode is None:
+        raise HTTPException(status_code=422, detail="invalid mode; allowed: quick_skeleton, deep_audit")
+    ps = get_project_storage()
+    if ps.load(project_id, org_id=oid) is None:
+        raise HTTPException(status_code=404, detail="not found")
+    roles = _norm_roles(getattr(inp, "roles", None))
+    sr = getattr(inp, "start_role", None)
+    if sr is not None and str(sr).strip() != "":
+        sr = str(sr).strip()
+        if roles and sr not in roles:
+            raise HTTPException(status_code=422, detail="start_role must be one of roles")
+    else:
+        sr = None
+    prep_questions = _norm_prep_questions(getattr(inp, "ai_prep_questions", None))
+    user = _request_auth_user(request)
+    uid = str(user.get("id") or "").strip()
+    st = get_storage()
+    sid = st.create(
+        title=str(getattr(inp, "title", "") or "process"),
+        roles=roles,
+        start_role=sr,
+        project_id=project_id,
+        mode=mode,
+        user_id=uid,
+        org_id=oid,
+    )
+    sess = st.load(sid, org_id=oid)
+    if not sess:
+        raise HTTPException(status_code=404, detail="not found")
+    if prep_questions:
+        sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
+        st.save(sess, user_id=uid, org_id=oid)
+        sess = st.load(sid, org_id=oid) or sess
+    return _session_api_dump(sess)
 
 
 # -----------------------------

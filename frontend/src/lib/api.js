@@ -8,10 +8,12 @@ function readApiBase() {
 
 const API_BASE = readApiBase();
 const ACCESS_TOKEN_KEY = "fpc_auth_access_token";
+const ACTIVE_ORG_KEY = "fpc_active_org_id";
 const AUTH_RETRY_BLOCKLIST = new Set(["/api/auth/login", "/api/auth/refresh", "/api/auth/logout"]);
 const authFailureListeners = new Set();
 
 let accessToken = "";
+let activeOrgId = "";
 let refreshInFlight = null;
 let refreshWaiters = 0;
 let requestSeq = 0;
@@ -26,6 +28,17 @@ function readStoredAccessToken() {
 }
 
 accessToken = readStoredAccessToken();
+
+function readStoredActiveOrgId() {
+  if (typeof window === "undefined") return "";
+  try {
+    return String(window.localStorage?.getItem(ACTIVE_ORG_KEY) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+activeOrgId = readStoredActiveOrgId();
 
 function emitAuthFailure(reason = "unauthorized") {
   authFailureListeners.forEach((fn) => {
@@ -155,6 +168,25 @@ export function clearAccessToken() {
   return setAccessToken("");
 }
 
+export function getActiveOrgId() {
+  return String(activeOrgId || "");
+}
+
+export function setActiveOrgId(orgId, options = {}) {
+  const next = String(orgId || "").trim();
+  activeOrgId = next;
+  const persist = options?.persist !== false;
+  if (typeof window !== "undefined" && persist) {
+    try {
+      if (next) window.localStorage?.setItem(ACTIVE_ORG_KEY, next);
+      else window.localStorage?.removeItem(ACTIVE_ORG_KEY);
+    } catch {
+      // ignore storage errors
+    }
+  }
+  return activeOrgId;
+}
+
 export function onAuthFailure(listener) {
   if (typeof listener !== "function") return () => {};
   authFailureListeners.add(listener);
@@ -267,6 +299,18 @@ async function request(path, opts = {}) {
   const url = joinUrl(endpoint);
   let res;
   try {
+    if (
+      endpoint.startsWith("/api")
+      && !AUTH_RETRY_BLOCKLIST.has(endpoint)
+      && opts.auth !== false
+    ) {
+      const orgId = String(getActiveOrgId() || "").trim();
+      if (orgId) {
+        const baseHeaders = new Headers(opts.headers || {});
+        if (!baseHeaders.has("X-Org-Id")) baseHeaders.set("X-Org-Id", orgId);
+        opts = { ...opts, headers: baseHeaders };
+      }
+    }
     res = await fetchWithRawResponse(path, opts);
   } catch (e) {
     const aborted = !!opts?.signal?.aborted || String(e?.name || "").toLowerCase() === "aborterror";
@@ -436,6 +480,10 @@ export async function apiAuthLogout() {
 export async function apiAuthMe() {
   const r = okOrError(await request("/api/auth/me", { method: "GET", retryAuth: true }));
   if (!r.ok) return r;
+  const orgs = Array.isArray(r.data?.orgs) ? r.data.orgs : [];
+  const active_org_id = String(r.data?.active_org_id || r.data?.default_org_id || "").trim();
+  const default_org_id = String(r.data?.default_org_id || "").trim();
+  if (active_org_id) setActiveOrgId(active_org_id);
   return {
     ok: true,
     status: r.status,
@@ -443,8 +491,21 @@ export async function apiAuthMe() {
       id: String(r.data?.id || ""),
       email: String(r.data?.email || ""),
       is_admin: Boolean(r.data?.is_admin),
+      active_org_id,
+      default_org_id,
+      orgs,
     },
   };
+}
+
+export async function apiListOrgs() {
+  const r = okOrError(await request("/api/orgs", { method: "GET", retryAuth: true }));
+  if (!r.ok) return r;
+  const items = Array.isArray(r.data?.items) ? r.data.items : [];
+  const active_org_id = String(r.data?.active_org_id || "").trim();
+  const default_org_id = String(r.data?.default_org_id || "").trim();
+  if (active_org_id) setActiveOrgId(active_org_id);
+  return { ok: true, status: r.status, items, active_org_id, default_org_id };
 }
 
 // ------- Meta -------
