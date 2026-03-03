@@ -41,6 +41,11 @@ from .storage import (
     get_user_org_role,
     get_default_org_id,
     create_org_record,
+    list_project_memberships,
+    upsert_project_membership,
+    delete_project_membership,
+    get_effective_project_scope,
+    user_has_project_access,
 )
 from .settings import load_llm_settings, llm_status, save_llm_settings, verify_llm_settings
 from .validators.coverage import build_questions
@@ -71,6 +76,9 @@ AUTH_PUBLIC_PATHS = {
 _ORG_PATH_RE = re.compile(r"^/api/orgs/([^/]+)(?:/|$)")
 _ORG_WRITE_ROLES = {"org_owner", "org_admin"}
 _ORG_EDITOR_ROLES = {"org_owner", "org_admin", "project_manager", "editor"}
+_ORG_READ_ROLES = {"org_owner", "org_admin", "project_manager", "editor", "viewer", "auditor"}
+_ORG_REPORT_DELETE_ROLES = {"org_owner", "org_admin", "project_manager"}
+_ORG_PROJECT_MEMBER_MANAGE_ROLES = {"org_owner", "org_admin", "project_manager"}
 
 
 def _extract_org_from_path(path: str) -> str:
@@ -91,6 +99,50 @@ def _request_auth_user(request: Request) -> Dict[str, Any]:
     if isinstance(user, dict):
         return user
     return {}
+
+
+def _enterprise_error(status_code: int, code: str, message: str, details: Optional[Dict[str, Any]] = None) -> JSONResponse:
+    payload = {
+        "error": {
+            "code": str(code or "error"),
+            "message": str(message or "error"),
+            "details": details or {},
+        },
+    }
+    return JSONResponse(status_code=int(status_code), content=payload)
+
+
+def _request_user_meta(request: Optional[Request]) -> Tuple[str, bool]:
+    if request is None:
+        return "", False
+    user = _request_auth_user(request)
+    return str(user.get("id") or "").strip(), bool(user.get("is_admin", False))
+
+
+def _request_active_org_id(request: Optional[Request]) -> str:
+    if request is None:
+        return get_default_org_id()
+    oid = str(getattr(request.state, "active_org_id", "") or "").strip()
+    return oid or get_default_org_id()
+
+
+def _project_scope_for_request(request: Optional[Request], org_id: str) -> Dict[str, Any]:
+    uid, is_admin = _request_user_meta(request)
+    oid = str(org_id or "").strip() or get_default_org_id()
+    if not uid:
+        return {"mode": "all", "project_ids": [], "org_role": ""}
+    return get_effective_project_scope(uid, oid, is_admin=is_admin)
+
+
+def _project_access_allowed(request: Optional[Request], org_id: str, project_id: str) -> bool:
+    pid = str(project_id or "").strip()
+    if not pid:
+        return False
+    scope = _project_scope_for_request(request, org_id)
+    if str(scope.get("mode") or "") == "all":
+        return True
+    allowed = {str(item or "").strip() for item in (scope.get("project_ids") or []) if str(item or "").strip()}
+    return pid in allowed
 
 _REPORT_LOCKS_GUARD = threading.RLock()
 _REPORT_LOCKS_BY_SESSION: Dict[str, threading.RLock] = {}
@@ -930,6 +982,9 @@ def _patch_report_version_row(
     path_id: str,
     report_id: str,
     patch_fn: Callable[[Dict[str, Any]], None],
+    *,
+    org_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
 ) -> Optional[Dict[str, Any]]:
     sid = str(session_id or "").strip()
     pid = str(path_id or "").strip()
@@ -938,9 +993,11 @@ def _patch_report_version_row(
         return None
 
     st = get_storage()
+    org = str(org_id or "").strip() or None
+    admin = bool(is_admin) if is_admin is not None else None
     lock = _report_session_lock(sid)
     with lock:
-        sess = st.load(sid)
+        sess = st.load(sid, org_id=org, is_admin=admin)
         if not sess:
             return None
 
@@ -961,11 +1018,18 @@ def _patch_report_version_row(
         by_path[pid] = rows
         _set_report_versions_by_path(sess, by_path)
         _set_latest_path_report_pointer(sess, pid, target_row)
-        st.save(sess)
+        st.save(sess, org_id=org, is_admin=admin)
         return target_row
 
 
-def _delete_report_version_row(session_id: str, path_id: str, report_id: str) -> Optional[Dict[str, Any]]:
+def _delete_report_version_row(
+    session_id: str,
+    path_id: str,
+    report_id: str,
+    *,
+    org_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+) -> Optional[Dict[str, Any]]:
     sid = str(session_id or "").strip()
     pid = str(path_id or "").strip()
     rid = str(report_id or "").strip()
@@ -973,9 +1037,11 @@ def _delete_report_version_row(session_id: str, path_id: str, report_id: str) ->
         return None
 
     st = get_storage()
+    org = str(org_id or "").strip() or None
+    admin = bool(is_admin) if is_admin is not None else None
     lock = _report_session_lock(sid)
     with lock:
-        sess = st.load(sid)
+        sess = st.load(sid, org_id=org, is_admin=admin)
         if not sess:
             return None
         by_path = _get_report_versions_by_path(getattr(sess, "interview", {}))
@@ -998,28 +1064,39 @@ def _delete_report_version_row(session_id: str, path_id: str, report_id: str) ->
             by_path.pop(pid, None)
         _set_report_versions_by_path(sess, by_path)
         _recompute_latest_path_report_pointer(sess, pid, rows)
-        st.save(sess)
+        st.save(sess, org_id=org, is_admin=admin)
         return deleted_row
 
 
-def _delete_report_version_global(report_id: str) -> Optional[Dict[str, Any]]:
+def _delete_report_version_global(
+    report_id: str,
+    *,
+    org_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+    session_ids: Optional[Set[str]] = None,
+) -> Optional[Dict[str, Any]]:
     rid = str(report_id or "").strip()
     if not rid:
         return None
 
     st = get_storage()
-    for raw in st.list(limit=5000):
+    org = str(org_id or "").strip() or None
+    admin = bool(is_admin) if is_admin is not None else None
+    allowed_sessions = {str(item or "").strip() for item in (session_ids or set()) if str(item or "").strip()}
+    for raw in st.list(limit=5000, org_id=org, is_admin=admin):
         sid = str((raw or {}).get("id") or "").strip()
         if not sid:
             continue
-        sess = st.load(sid)
+        if allowed_sessions and sid not in allowed_sessions:
+            continue
+        sess = st.load(sid, org_id=org, is_admin=admin)
         if not sess:
             continue
         by_path = _get_report_versions_by_path(getattr(sess, "interview", {}))
         for pid, rows in by_path.items():
             for row in (rows or []):
                 if str((row or {}).get("id") or "").strip() == rid:
-                    deleted = _delete_report_version_row(sid, pid, rid)
+                    deleted = _delete_report_version_row(sid, pid, rid, org_id=org, is_admin=admin)
                     if not deleted:
                         return None
                     return {"session_id": sid, "path_id": pid, "deleted": deleted}
@@ -1033,6 +1110,7 @@ def _run_path_report_generation_async(
     request_payload_json: Dict[str, Any],
     prompt_template_version: str,
     model_name: str,
+    org_id: Optional[str] = None,
 ) -> None:
     sid = str(session_id or "").strip()
     pid = str(path_id or "").strip()
@@ -1040,6 +1118,7 @@ def _run_path_report_generation_async(
     payload = request_payload_json if isinstance(request_payload_json, dict) else {}
     prompt_ver = str(prompt_template_version or "v2").strip() or "v2"
     fallback_model = str(model_name or "deepseek-chat").strip() or "deepseek-chat"
+    org_scope = str(org_id or "").strip() or None
     if not sid or not pid or not rid:
         return
     _set_report_active(rid, True)
@@ -1053,7 +1132,7 @@ def _run_path_report_generation_async(
                 row["error_message"] = text
                 row["warnings_json"] = row.get("warnings_json") or []
 
-            _patch_report_version_row(sid, pid, rid, _apply)
+            _patch_report_version_row(sid, pid, rid, _apply, org_id=org_scope, is_admin=True)
 
         llm = load_llm_settings()
         api_key = str(llm.get("api_key") or "").strip()
@@ -1120,7 +1199,7 @@ def _run_path_report_generation_async(
             row["error_message"] = None
             row["raw_text"] = str(report_result.get("raw_text") or "")
 
-        _patch_report_version_row(sid, pid, rid, _apply_success)
+        _patch_report_version_row(sid, pid, rid, _apply_success, org_id=org_scope, is_admin=True)
     finally:
         _set_report_active(rid, False)
 
@@ -1137,21 +1216,32 @@ def _find_report_version(sess: Session, report_id: str) -> Optional[Dict[str, An
     return None
 
 
-def _find_report_version_global(report_id: str) -> Optional[Dict[str, Any]]:
+def _find_report_version_global(
+    report_id: str,
+    *,
+    org_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+    session_ids: Optional[Set[str]] = None,
+) -> Optional[Dict[str, Any]]:
     rid = str(report_id or "").strip()
     if not rid:
         return None
 
     st = get_storage()
-    for raw in st.list(limit=5000):
+    org = str(org_id or "").strip() or None
+    admin = bool(is_admin) if is_admin is not None else None
+    allowed_sessions = {str(item or "").strip() for item in (session_ids or set()) if str(item or "").strip()}
+    for raw in st.list(limit=5000, org_id=org, is_admin=admin):
         sid = str((raw or {}).get("id") or "").strip()
         if not sid:
             continue
-        sess = st.load(sid)
+        if allowed_sessions and sid not in allowed_sessions:
+            continue
+        sess = st.load(sid, org_id=org, is_admin=admin)
         if not sess:
             continue
         if _mark_stale_running_reports(sess):
-            st.save(sess)
+            st.save(sess, org_id=org, is_admin=admin)
         found = _find_report_version(sess, rid)
         if found:
             return found
@@ -1676,7 +1766,7 @@ app.add_middleware(
     allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS", "HEAD"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With", "X-Org-Id", "X-Active-Org-Id"],
 )
 
 
@@ -1904,6 +1994,15 @@ class OrgCreateIn(BaseModel):
     id: Optional[str] = None
 
 
+class ProjectMemberUpsertIn(BaseModel):
+    user_id: str
+    role: str
+
+
+class ProjectMemberPatchIn(BaseModel):
+    role: str
+
+
 class CreateSessionIn(BaseModel):
     title: str
     roles: Optional[Any] = None
@@ -2072,6 +2171,10 @@ class CreatePathReportVersionIn(BaseModel):
     prompt_template_version: str = "v2"
 
     model_config = ConfigDict(extra="allow")
+
+
+class OrgReportBuildIn(CreatePathReportVersionIn):
+    path_id: str
 
 
 def _merge_nodes(existing: List[Node], extracted: List[Node]) -> List[Node]:
@@ -2360,46 +2463,29 @@ def create_session(inp: CreateSessionIn) -> Dict[str, Any]:
 
 
 @app.get("/api/projects/{project_id}/sessions")
-def list_project_sessions(project_id: str, mode: str | None = None):
-    raw_mode = mode
-    mode = _norm_project_session_mode(mode)
-    if raw_mode is not None and mode is None:
-        raise HTTPException(status_code=422, detail="invalid mode; allowed: quick_skeleton, deep_audit")
-    ps = get_project_storage()
-    if ps.load(project_id) is None:
+def list_project_sessions(project_id: str, mode: str | None = None, request: Request = None):
+    proj, oid, _ = _legacy_load_project_scoped(project_id, request)
+    if proj is None:
         raise HTTPException(status_code=404, detail="project not found")
-
     raw_mode = mode
     mode = _norm_project_session_mode(mode)
     if raw_mode is not None and mode is None:
         raise HTTPException(status_code=422, detail="invalid mode; allowed: quick_skeleton, deep_audit")
-
     st = get_storage()
+    rows = st.list(project_id=project_id, mode=mode, limit=500, org_id=oid, is_admin=True)
     out = []
-    for item in st.list():
-        sess = item
-        # allow storage.list() to return ids or dicts defensively
-        if isinstance(item, str):
-            sess = st.load(item)
-        elif isinstance(item, dict):
-            try:
-                # best-effort parse via pydantic model
-                sess = Session.model_validate(item)
-            except Exception:
-                sess = None
-        if sess is None:
-            continue
-
-        if getattr(sess, "project_id", None) != project_id:
-            continue
-        if mode is not None and (getattr(sess, "mode", None) or None) != mode:
-            continue
-        out.append(_session_api_dump(sess))
+    for row in rows:
+        if isinstance(row, dict):
+            out.append(_session_api_dump(Session.model_validate(row)))
     return out
+
+
 @app.post("/api/projects/{project_id}/sessions")
-def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | None = Query(default="quick_skeleton")):
-    ps = get_project_storage()
-    if ps.load(project_id) is None:
+def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | None = Query(default="quick_skeleton"), request: Request = None):
+    user = _request_auth_user(request) if request is not None else {}
+    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
+    proj, oid, _ = _legacy_load_project_scoped(project_id, request)
+    if proj is None:
         raise HTTPException(status_code=404, detail="project not found")
 
     st = get_storage()
@@ -2415,18 +2501,18 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
     prep_questions = _norm_prep_questions(getattr(inp, "ai_prep_questions", None))
     # prefer storage-native create signature if it supports project_id/mode
     try:
-        sid = st.create(title=title, roles=roles, start_role=sr, project_id=project_id, mode=mode)
-        sess = st.load(sid)
+        sid = st.create(title=title, roles=roles, start_role=sr, project_id=project_id, mode=mode, user_id=user_id, org_id=oid)
+        sess = st.load(sid, org_id=oid, is_admin=True)
         if sess is None:
             raise HTTPException(status_code=500, detail="session not persisted")
         if prep_questions:
             sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
-            st.save(sess)
+            st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
         return _session_api_dump(sess)
     except TypeError:
         # fallback: create base session then attach fields
-        sid = st.create(title=title, roles=roles, start_role=sr)
-        sess = st.load(sid)
+        sid = st.create(title=title, roles=roles, start_role=sr, user_id=user_id, org_id=oid)
+        sess = st.load(sid, org_id=oid, is_admin=True)
         if sess is None:
             raise HTTPException(status_code=500, detail="session not persisted")
         if hasattr(sess, "project_id"):
@@ -2435,38 +2521,53 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
             sess.mode = mode
         if prep_questions:
             sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
-        st.save(sess)
+        st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
         return _session_api_dump(sess)
+
+
 @app.get("/api/sessions")
-def list_sessions(q: Optional[str] = None, limit: int = 200) -> Dict[str, Any]:
+def list_sessions(q: Optional[str] = None, limit: int = 200, request: Request = None) -> Dict[str, Any]:
+    oid = _request_active_org_id(request) if request is not None else ""
+    scope = _project_scope_for_request(request, oid or get_default_org_id())
+    allowed = _scope_allowed_project_ids(scope)
     st = get_storage()
-    items = st.list(query=q, limit=min(max(int(limit), 1), 500))
+    items = st.list(query=q, limit=min(max(int(limit), 1), 500), org_id=(oid or None), is_admin=True)
+    if allowed:
+        items = [
+            item for item in items
+            if str((item or {}).get("project_id") or "").strip() in allowed
+        ]
     return {"items": items, "count": len(items)}
 
 
 @app.get("/api/sessions/{session_id}")
-def get_session(session_id: str) -> Dict[str, Any]:
-    st = get_storage()
-    sess = st.load(session_id)
+def get_session(session_id: str, request: Request = None) -> Dict[str, Any]:
+    sess, _, _ = _legacy_load_session_scoped(session_id, request)
     if not sess:
         return {"error": "not found"}
     return _session_api_dump(sess)
 
 
 @app.get("/api/sessions/{session_id}/analytics")
-def get_session_analytics(session_id: str) -> dict:
+def get_session_analytics(session_id: str, request: Request = None) -> dict:
+    user = _request_auth_user(request) if request is not None else {}
+    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
     st = get_storage()
-    sess = st.load(session_id)
+    sess, oid, _ = _legacy_load_session_scoped(session_id, request)
     if not sess:
         return {"error": "not found"}
     if not getattr(sess, "analytics", None):
         sess = _recompute_session(sess)
-        st.save(sess)
+        st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
     return {"session_id": sess.id, "analytics": getattr(sess, "analytics", {})}
+
+
 @app.patch("/api/sessions/{session_id}")
-def patch_session(session_id: str, inp: UpdateSessionIn) -> Dict[str, Any]:
+def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None) -> Dict[str, Any]:
+    user = _request_auth_user(request) if request is not None else {}
+    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
     st = get_storage()
-    sess = st.load(session_id)
+    sess, oid, _ = _legacy_load_session_scoped(session_id, request)
     if not sess:
         return {"error": "not found"}
 
@@ -2552,49 +2653,55 @@ def patch_session(session_id: str, inp: UpdateSessionIn) -> Dict[str, Any]:
     # игнорируем любые extra поля без ошибки
     if need_recompute:
         sess = _recompute_session(sess)
-    st.save(sess)
+    st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
     return _session_api_dump(sess)
 
 
 @app.delete("/api/projects/{project_id}")
-def delete_project_api(project_id: str):
+def delete_project_api(project_id: str, request: Request = None):
     pid = str(project_id or "").strip()
     if not pid:
         return {"ok": False, "error": "project_not_found", "project_id": str(project_id), "deleted_sessions": []}
+    proj, oid, _ = _legacy_load_project_scoped(pid, request)
     ps = get_project_storage()
-    proj = ps.load(pid)
     if proj is None:
         return {"ok": False, "error": "project_not_found", "project_id": pid, "deleted_sessions": []}
     st = get_storage()
-    related = st.list(project_id=pid, limit=500)
+    related = st.list(project_id=pid, limit=500, org_id=oid, is_admin=True)
     deleted_sessions: list[str] = []
     for row in related:
         sid = str((row or {}).get("id") or "").strip()
         if not sid:
             continue
-        if st.delete(sid):
+        if st.delete(sid, org_id=oid, is_admin=True):
             deleted_sessions.append(sid)
-    deleted_project = ps.delete(pid)
+    deleted_project = ps.delete(pid, org_id=oid, is_admin=True)
     if not deleted_project:
         return {"ok": False, "error": "project_not_found", "project_id": pid, "deleted_sessions": deleted_sessions}
     return {"ok": True, "project_id": pid, "deleted_sessions": deleted_sessions}
 
+
 @app.delete("/api/sessions/{session_id}")
-def delete_session_api(session_id: str):
+def delete_session_api(session_id: str, request: Request = None):
     sid = str(session_id or "").strip()
     if not sid:
         return {"ok": False, "error": "session_not_found", "session_id": str(session_id)}
+    sess, oid, _ = _legacy_load_session_scoped(sid, request)
+    if not sess:
+        return {"ok": False, "error": "session_not_found", "session_id": sid}
     st = get_storage()
-    deleted = st.delete(sid)
+    deleted = st.delete(sid, org_id=oid, is_admin=True)
     if not deleted:
         return {"ok": False, "error": "session_not_found", "session_id": sid}
     return {"ok": True, "session_id": sid, "deleted_files": 1}
 
 
 @app.put("/api/sessions/{session_id}")
-def put_session(session_id: str, inp: UpdateSessionIn) -> Dict[str, Any]:
+def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) -> Dict[str, Any]:
+    user = _request_auth_user(request) if request is not None else {}
+    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
     st = get_storage()
-    sess = st.load(session_id)
+    sess, oid, _ = _legacy_load_session_scoped(session_id, request)
     if not sess:
         return {"error": "not found"}
 
@@ -2643,7 +2750,7 @@ def put_session(session_id: str, inp: UpdateSessionIn) -> Dict[str, Any]:
     sess.bpmn_meta = normalized_meta
 
     sess = _recompute_session(sess)
-    st.save(sess)
+    st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
     return _session_api_dump(sess)
 
 @app.post("/api/sessions/{session_id}/recompute")
@@ -3085,19 +3192,33 @@ def _report_version_detail_payload(row_raw: Any) -> Dict[str, Any]:
     }
 
 
-@app.post("/api/sessions/{session_id}/paths/{path_id}/reports")
-@app.post("/api/sessions/{session_id}/paths/{path_id}/reports/")
-@app.post("/api/sessions/{session_id}/path/{path_id}/reports")
-@app.post("/api/sessions/{session_id}/path/{path_id}/reports/")
-def create_path_report_version(
+def _resolve_report_scope(
+    *,
+    request: Optional[Request] = None,
+    org_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+) -> Tuple[str, Optional[bool]]:
+    oid = str(org_id or "").strip()
+    if not oid and request is not None:
+        oid = _request_active_org_id(request)
+    admin = bool(is_admin) if is_admin is not None else None
+    return oid, admin
+
+
+def _create_path_report_version_core(
     session_id: str,
     path_id: str,
     inp: CreatePathReportVersionIn,
-    request: Request = None,
+    *,
+    request: Optional[Request] = None,
+    org_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
 ) -> Dict[str, Any]:
     st = get_storage()
     sid = str(session_id or "").strip()
-    s = st.load(sid)
+    oid, admin = _resolve_report_scope(request=request, org_id=org_id, is_admin=is_admin)
+    org_scope = oid or None
+    s = st.load(sid, org_id=org_scope, is_admin=admin)
     if not s:
         return {"error": "not found"}
 
@@ -3116,7 +3237,7 @@ def create_path_report_version(
     model_name = str(llm.get("model") or "deepseek-chat").strip() or "deepseek-chat"
     lock = _report_session_lock(sid)
     with lock:
-        s = st.load(sid)
+        s = st.load(sid, org_id=org_scope, is_admin=admin)
         if not s:
             return {"error": "not found"}
         by_path = _get_report_versions_by_path(getattr(s, "interview", {}))
@@ -3148,30 +3269,25 @@ def create_path_report_version(
         by_path.setdefault(pid, []).append(running_row)
         _set_report_versions_by_path(s, by_path)
         _set_latest_path_report_pointer(s, pid, running_row)
-        st.save(s)
+        st.save(s, org_id=org_scope, is_admin=admin)
 
     sync_mode_env = str(os.environ.get("PATH_REPORT_SYNC_MODE") or "").strip().lower() in {"1", "true", "yes"}
     sync_mode = bool(sync_mode_env and request is None)
+    worker_kwargs = {
+        "session_id": str(sid),
+        "path_id": pid,
+        "report_id": report_id,
+        "request_payload_json": request_payload_json,
+        "prompt_template_version": prompt_template_version,
+        "model_name": model_name,
+        "org_id": org_scope,
+    }
     if sync_mode:
-        _run_path_report_generation_async(
-            session_id=str(sid),
-            path_id=pid,
-            report_id=report_id,
-            request_payload_json=request_payload_json,
-            prompt_template_version=prompt_template_version,
-            model_name=model_name,
-        )
+        _run_path_report_generation_async(**worker_kwargs)
     else:
         worker = threading.Thread(
             target=_run_path_report_generation_async,
-            kwargs={
-                "session_id": str(sid),
-                "path_id": pid,
-                "report_id": report_id,
-                "request_payload_json": request_payload_json,
-                "prompt_template_version": prompt_template_version,
-                "model_name": model_name,
-            },
+            kwargs=worker_kwargs,
             daemon=True,
             name=f"path-report-{report_id}",
         )
@@ -3185,21 +3301,23 @@ def create_path_report_version(
     }
 
 
-@app.get("/api/sessions/{session_id}/paths/{path_id}/reports")
-@app.get("/api/sessions/{session_id}/paths/{path_id}/reports/")
-@app.get("/api/sessions/{session_id}/path/{path_id}/reports")
-@app.get("/api/sessions/{session_id}/path/{path_id}/reports/")
-def list_path_report_versions(
+def _list_path_report_versions_core(
     session_id: str,
     path_id: str,
+    *,
     steps_hash: str = "",
+    request: Optional[Request] = None,
+    org_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
 ) -> List[Dict[str, Any]]:
     st = get_storage()
-    s = st.load(session_id)
+    oid, admin = _resolve_report_scope(request=request, org_id=org_id, is_admin=is_admin)
+    org_scope = oid or None
+    s = st.load(str(session_id or "").strip(), org_id=org_scope, is_admin=admin)
     if not s:
         return []
     if _mark_stale_running_reports(s):
-        st.save(s)
+        st.save(s, org_id=org_scope, is_admin=admin)
     pid = str(path_id or "").strip()
     if not pid:
         return []
@@ -3212,25 +3330,23 @@ def list_path_report_versions(
     return [_report_version_summary(row) for row in rows]
 
 
-@app.get("/api/reports/{report_id}")
-def get_report_version(report_id: str) -> Dict[str, Any]:
-    found = _find_report_version_global(report_id)
-    if not found:
-        return {"error": "not found"}
-    return _report_version_detail_payload(found)
-
-
-@app.get("/api/sessions/{session_id}/paths/{path_id}/reports/{report_id}")
-@app.get("/api/sessions/{session_id}/paths/{path_id}/reports/{report_id}/")
-@app.get("/api/sessions/{session_id}/path/{path_id}/reports/{report_id}")
-@app.get("/api/sessions/{session_id}/path/{path_id}/reports/{report_id}/")
-def get_path_report_version_detail(session_id: str, path_id: str, report_id: str) -> Dict[str, Any]:
+def _get_path_report_version_detail_core(
+    session_id: str,
+    path_id: str,
+    report_id: str,
+    *,
+    request: Optional[Request] = None,
+    org_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+) -> Dict[str, Any]:
     st = get_storage()
-    sess = st.load(str(session_id or "").strip())
+    oid, admin = _resolve_report_scope(request=request, org_id=org_id, is_admin=is_admin)
+    org_scope = oid or None
+    sess = st.load(str(session_id or "").strip(), org_id=org_scope, is_admin=admin)
     if not sess:
         return {"error": "not found"}
     if _mark_stale_running_reports(sess):
-        st.save(sess)
+        st.save(sess, org_id=org_scope, is_admin=admin)
     pid = str(path_id or "").strip()
     rid = str(report_id or "").strip()
     if not pid or not rid:
@@ -3243,13 +3359,116 @@ def get_path_report_version_detail(session_id: str, path_id: str, report_id: str
     return {"error": "not found"}
 
 
+def _delete_path_report_version_core(
+    session_id: str,
+    path_id: str,
+    report_id: str,
+    *,
+    request: Optional[Request] = None,
+    org_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+) -> Response:
+    sid = str(session_id or "").strip()
+    pid = str(path_id or "").strip()
+    rid = str(report_id or "").strip()
+    if not sid or not pid or not rid:
+        raise HTTPException(status_code=404, detail="not found")
+    oid, admin = _resolve_report_scope(request=request, org_id=org_id, is_admin=is_admin)
+    deleted = _delete_report_version_row(sid, pid, rid, org_id=(oid or None), is_admin=admin)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="not found")
+    return Response(status_code=204)
+
+
+@app.post("/api/sessions/{session_id}/paths/{path_id}/reports")
+@app.post("/api/sessions/{session_id}/paths/{path_id}/reports/")
+@app.post("/api/sessions/{session_id}/path/{path_id}/reports")
+@app.post("/api/sessions/{session_id}/path/{path_id}/reports/")
+def create_path_report_version(
+    session_id: str,
+    path_id: str,
+    inp: CreatePathReportVersionIn,
+    request: Request = None,
+) -> Dict[str, Any]:
+    if request is not None:
+        sess, oid, _ = _legacy_load_session_scoped(session_id, request)
+        if not sess:
+            return {"error": "not found"}
+        return _create_path_report_version_core(
+            str(getattr(sess, "id", "") or session_id),
+            path_id,
+            inp,
+            request=request,
+            org_id=oid,
+            is_admin=True,
+        )
+    return _create_path_report_version_core(session_id, path_id, inp, request=request)
+
+
+@app.get("/api/sessions/{session_id}/paths/{path_id}/reports")
+@app.get("/api/sessions/{session_id}/paths/{path_id}/reports/")
+@app.get("/api/sessions/{session_id}/path/{path_id}/reports")
+@app.get("/api/sessions/{session_id}/path/{path_id}/reports/")
+def list_path_report_versions(
+    session_id: str,
+    path_id: str,
+    steps_hash: str = "",
+    request: Request = None,
+) -> List[Dict[str, Any]]:
+    if request is not None:
+        sess, oid, _ = _legacy_load_session_scoped(session_id, request)
+        if not sess:
+            return []
+        return _list_path_report_versions_core(
+            str(getattr(sess, "id", "") or session_id),
+            path_id,
+            steps_hash=steps_hash,
+            request=request,
+            org_id=oid,
+            is_admin=True,
+        )
+    return _list_path_report_versions_core(session_id, path_id, steps_hash=steps_hash, request=request)
+
+
+@app.get("/api/reports/{report_id}")
+def get_report_version(report_id: str, request: Request = None) -> Dict[str, Any]:
+    oid = _request_active_org_id(request) if request is not None else ""
+    session_ids = _accessible_session_ids_for_request(request, oid)
+    found = _find_report_version_global(report_id, org_id=(oid or None), is_admin=True, session_ids=session_ids)
+    if not found:
+        return {"error": "not found"}
+    return _report_version_detail_payload(found)
+
+
+@app.get("/api/sessions/{session_id}/paths/{path_id}/reports/{report_id}")
+@app.get("/api/sessions/{session_id}/paths/{path_id}/reports/{report_id}/")
+@app.get("/api/sessions/{session_id}/path/{path_id}/reports/{report_id}")
+@app.get("/api/sessions/{session_id}/path/{path_id}/reports/{report_id}/")
+def get_path_report_version_detail(session_id: str, path_id: str, report_id: str, request: Request = None) -> Dict[str, Any]:
+    if request is not None:
+        sess, oid, _ = _legacy_load_session_scoped(session_id, request)
+        if not sess:
+            return {"error": "not found"}
+        return _get_path_report_version_detail_core(
+            str(getattr(sess, "id", "") or session_id),
+            path_id,
+            report_id,
+            request=request,
+            org_id=oid,
+            is_admin=True,
+        )
+    return _get_path_report_version_detail_core(session_id, path_id, report_id, request=request)
+
+
 @app.delete("/api/reports/{report_id}")
 @app.delete("/api/reports/{report_id}/")
-def delete_report_version(report_id: str) -> Response:
+def delete_report_version(report_id: str, request: Request = None) -> Response:
     rid = str(report_id or "").strip()
     if not rid:
         raise HTTPException(status_code=404, detail="not found")
-    deleted = _delete_report_version_global(rid)
+    oid = _request_active_org_id(request) if request is not None else ""
+    session_ids = _accessible_session_ids_for_request(request, oid)
+    deleted = _delete_report_version_global(rid, org_id=(oid or None), is_admin=True, session_ids=session_ids)
     if not deleted:
         raise HTTPException(status_code=404, detail="not found")
     return Response(status_code=204)
@@ -3259,16 +3478,20 @@ def delete_report_version(report_id: str) -> Response:
 @app.delete("/api/sessions/{session_id}/paths/{path_id}/reports/{report_id}/")
 @app.delete("/api/sessions/{session_id}/path/{path_id}/reports/{report_id}")
 @app.delete("/api/sessions/{session_id}/path/{path_id}/reports/{report_id}/")
-def delete_path_report_version(session_id: str, path_id: str, report_id: str) -> Response:
-    sid = str(session_id or "").strip()
-    pid = str(path_id or "").strip()
-    rid = str(report_id or "").strip()
-    if not sid or not pid or not rid:
-        raise HTTPException(status_code=404, detail="not found")
-    deleted = _delete_report_version_row(sid, pid, rid)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="not found")
-    return Response(status_code=204)
+def delete_path_report_version(session_id: str, path_id: str, report_id: str, request: Request = None) -> Response:
+    if request is not None:
+        sess, oid, _ = _legacy_load_session_scoped(session_id, request)
+        if not sess:
+            raise HTTPException(status_code=404, detail="not found")
+        return _delete_path_report_version_core(
+            str(getattr(sess, "id", "") or session_id),
+            path_id,
+            report_id,
+            request=request,
+            org_id=oid,
+            is_admin=True,
+        )
+    return _delete_path_report_version_core(session_id, path_id, report_id, request=request)
 
 
 @app.post("/api/llm/session-title/questions")
@@ -4485,6 +4708,165 @@ def _require_org_role(request: Request, org_id: str, allowed: Set[str]) -> str:
     return role
 
 
+def _enterprise_require_org_member(request: Request, org_id: str) -> Tuple[Optional[str], Optional[JSONResponse]]:
+    oid = str(org_id or "").strip()
+    if not oid:
+        return None, _enterprise_error(404, "not_found", "not_found")
+    uid, is_admin = _request_user_meta(request)
+    if not uid:
+        return None, _enterprise_error(401, "unauthorized", "unauthorized")
+    if not user_has_org_membership(uid, oid, is_admin=is_admin):
+        return None, _enterprise_error(404, "not_found", "not_found")
+    role = str(get_user_org_role(uid, oid, is_admin=is_admin) or "").strip().lower()
+    if role not in _ORG_READ_ROLES and not is_admin:
+        return None, _enterprise_error(403, "forbidden", "insufficient_permissions")
+    return role, None
+
+
+def _enterprise_require_org_role(request: Request, org_id: str, allowed: Set[str]) -> Tuple[Optional[str], Optional[JSONResponse]]:
+    role, err = _enterprise_require_org_member(request, org_id)
+    if err is not None:
+        return None, err
+    if str(role or "").strip().lower() not in {str(x or "").strip().lower() for x in allowed}:
+        return None, _enterprise_error(403, "forbidden", "insufficient_permissions")
+    return role, None
+
+
+def _enterprise_require_project_access(
+    request: Request,
+    org_id: str,
+    project_id: str,
+) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[JSONResponse]]:
+    role, err = _enterprise_require_org_member(request, org_id)
+    if err is not None:
+        return None, None, err
+    oid = str(org_id or "").strip()
+    pid = str(project_id or "").strip()
+    if not pid:
+        return None, None, _enterprise_error(404, "not_found", "not_found")
+    scope = _project_scope_for_request(request, oid)
+    if str(scope.get("mode") or "") != "all":
+        allowed = {str(item or "").strip() for item in (scope.get("project_ids") or []) if str(item or "").strip()}
+        if pid not in allowed:
+            return None, None, _enterprise_error(404, "not_found", "not_found")
+    return role, scope, None
+
+
+def _session_access_from_request(
+    request: Optional[Request],
+    session_id: str,
+    *,
+    org_id: Optional[str] = None,
+) -> Tuple[Optional[Session], Optional[Dict[str, Any]], Optional[JSONResponse]]:
+    sid = str(session_id or "").strip()
+    if not sid:
+        return None, None, _enterprise_error(404, "not_found", "not_found")
+    st = get_storage()
+    oid = str(org_id or "").strip() or _request_active_org_id(request)
+    sess = st.load(sid, org_id=oid, is_admin=True)
+    if not sess:
+        return None, None, _enterprise_error(404, "not_found", "not_found")
+    scope = _project_scope_for_request(request, oid)
+    project_id = str(getattr(sess, "project_id", "") or "").strip()
+    if project_id and str(scope.get("mode") or "") != "all":
+        allowed = {str(item or "").strip() for item in (scope.get("project_ids") or []) if str(item or "").strip()}
+        if project_id not in allowed:
+            return None, None, _enterprise_error(404, "not_found", "not_found")
+    return sess, scope, None
+
+
+def _scope_allowed_project_ids(scope_raw: Any) -> Set[str]:
+    scope = scope_raw if isinstance(scope_raw, dict) else {}
+    if str(scope.get("mode") or "") == "all":
+        return set()
+    return {
+        str(item or "").strip()
+        for item in (scope.get("project_ids") or [])
+        if str(item or "").strip()
+    }
+
+
+def _is_role_allowed(role_raw: Any, allowed: Set[str]) -> bool:
+    role = str(role_raw or "").strip().lower()
+    return role in {str(item or "").strip().lower() for item in allowed}
+
+
+def _legacy_load_project_scoped(
+    project_id: str,
+    request: Optional[Request] = None,
+) -> Tuple[Optional[Project], str, Optional[Dict[str, Any]]]:
+    oid = _request_active_org_id(request) if request is not None else ""
+    pid = str(project_id or "").strip()
+    if not pid:
+        return None, oid, None
+    ps = get_project_storage()
+    proj = ps.load(pid, org_id=(oid or None), is_admin=True)
+    if not proj:
+        return None, oid, None
+    scope = _project_scope_for_request(request, oid or str(getattr(proj, "org_id", "") or "").strip() or get_default_org_id())
+    allowed = _scope_allowed_project_ids(scope)
+    if allowed and str(getattr(proj, "id", "") or "").strip() not in allowed:
+        return None, oid, scope
+    return proj, (oid or str(getattr(proj, "org_id", "") or "").strip() or get_default_org_id()), scope
+
+
+def _legacy_load_session_scoped(
+    session_id: str,
+    request: Optional[Request] = None,
+) -> Tuple[Optional[Session], str, Optional[Dict[str, Any]]]:
+    oid = _request_active_org_id(request) if request is not None else ""
+    sid = str(session_id or "").strip()
+    if not sid:
+        return None, oid, None
+    st = get_storage()
+    sess = st.load(sid, org_id=(oid or None), is_admin=True)
+    if not sess:
+        return None, oid, None
+    scope = _project_scope_for_request(request, oid or str(getattr(sess, "org_id", "") or "").strip() or get_default_org_id())
+    allowed = _scope_allowed_project_ids(scope)
+    project_id = str(getattr(sess, "project_id", "") or "").strip()
+    if allowed and project_id and project_id not in allowed:
+        return None, oid, scope
+    return sess, (oid or str(getattr(sess, "org_id", "") or "").strip() or get_default_org_id()), scope
+
+
+def _enterprise_manage_project_members_guard(
+    request: Request,
+    org_id: str,
+    project_id: str,
+) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[JSONResponse]]:
+    role, scope, err = _enterprise_require_project_access(request, org_id, project_id)
+    if err is not None:
+        return None, None, err
+    if not _is_role_allowed(role, _ORG_PROJECT_MEMBER_MANAGE_ROLES):
+        return None, None, _enterprise_error(403, "forbidden", "insufficient_permissions")
+    return role, scope, None
+
+
+def _accessible_session_ids_for_request(
+    request: Optional[Request],
+    org_id: str,
+) -> Set[str]:
+    oid = str(org_id or "").strip()
+    if not oid and request is not None:
+        oid = _request_active_org_id(request)
+    org_scope = oid or None
+    scope = _project_scope_for_request(request, oid or get_default_org_id())
+    allowed_projects = _scope_allowed_project_ids(scope)
+    st = get_storage()
+    rows = st.list(limit=5000, org_id=org_scope, is_admin=True)
+    out: Set[str] = set()
+    for row in rows:
+        sid = str((row or {}).get("id") or "").strip()
+        if not sid:
+            continue
+        project_id = str((row or {}).get("project_id") or "").strip()
+        if allowed_projects and project_id and project_id not in allowed_projects:
+            continue
+        out.add(sid)
+    return out
+
+
 @app.get("/api/orgs")
 def list_orgs_endpoint(request: Request) -> Dict[str, Any]:
     user = _request_auth_user(request)
@@ -4518,54 +4900,66 @@ def create_org_endpoint(inp: OrgCreateIn, request: Request) -> Dict[str, Any]:
 @app.get("/api/orgs/{org_id}/projects")
 def list_org_projects(org_id: str, request: Request) -> List[Dict[str, Any]]:
     oid = str(org_id or "").strip()
-    _require_org_member_for_enterprise(request, oid)
+    _, err = _enterprise_require_org_member(request, oid)
+    if err is not None:
+        return err
+    scope = _project_scope_for_request(request, oid)
     st = get_project_storage()
-    items = st.list(org_id=oid)
+    items = st.list(org_id=oid, is_admin=True)
+    if str(scope.get("mode") or "") != "all":
+        allowed = {str(item or "").strip() for item in (scope.get("project_ids") or []) if str(item or "").strip()}
+        items = [proj for proj in items if str(getattr(proj, "id", "") or "").strip() in allowed]
     return [p.model_dump() for p in items]
 
 
 @app.post("/api/orgs/{org_id}/projects")
 def create_org_project(org_id: str, inp: CreateProjectIn, request: Request) -> Dict[str, Any]:
     oid = str(org_id or "").strip()
-    _require_org_role(request, oid, _ORG_WRITE_ROLES)
+    _, err = _enterprise_require_org_role(request, oid, _ORG_WRITE_ROLES)
+    if err is not None:
+        return err
     title = str(getattr(inp, "title", "") or "").strip()
     if not title:
-        raise HTTPException(status_code=422, detail="title required")
+        return _enterprise_error(422, "validation_error", "title required")
     passport = inp.passport if isinstance(inp.passport, dict) else {}
     user = _request_auth_user(request)
     uid = str(user.get("id") or "").strip()
     st = get_project_storage()
     pid = st.create(title=title, passport=passport, user_id=uid, org_id=oid)
-    proj = st.load(pid, org_id=oid)
+    proj = st.load(pid, org_id=oid, is_admin=True)
     if not proj:
-        raise HTTPException(status_code=404, detail="not found")
+        return _enterprise_error(404, "not_found", "not_found")
     return proj.model_dump()
 
 
 @app.get("/api/orgs/{org_id}/projects/{project_id}")
 def get_org_project(org_id: str, project_id: str, request: Request) -> Dict[str, Any]:
     oid = str(org_id or "").strip()
-    _require_org_member_for_enterprise(request, oid)
+    _, _, err = _enterprise_require_project_access(request, oid, project_id)
+    if err is not None:
+        return err
     st = get_project_storage()
-    proj = st.load(project_id, org_id=oid)
+    proj = st.load(project_id, org_id=oid, is_admin=True)
     if not proj:
-        raise HTTPException(status_code=404, detail="not found")
+        return _enterprise_error(404, "not_found", "not_found")
     return proj.model_dump()
 
 
 @app.get("/api/orgs/{org_id}/projects/{project_id}/sessions")
 def list_org_project_sessions(org_id: str, project_id: str, request: Request, mode: str | None = None) -> List[Dict[str, Any]]:
     oid = str(org_id or "").strip()
-    _require_org_member_for_enterprise(request, oid)
+    _, _, err = _enterprise_require_project_access(request, oid, project_id)
+    if err is not None:
+        return err
     raw_mode = mode
     mode = _norm_project_session_mode(mode)
     if raw_mode is not None and mode is None:
-        raise HTTPException(status_code=422, detail="invalid mode; allowed: quick_skeleton, deep_audit")
+        return _enterprise_error(422, "validation_error", "invalid mode; allowed: quick_skeleton, deep_audit")
     ps = get_project_storage()
-    if ps.load(project_id, org_id=oid) is None:
-        raise HTTPException(status_code=404, detail="not found")
+    if ps.load(project_id, org_id=oid, is_admin=True) is None:
+        return _enterprise_error(404, "not_found", "not_found")
     st = get_storage()
-    rows = st.list(project_id=project_id, mode=mode, limit=500, org_id=oid)
+    rows = st.list(project_id=project_id, mode=mode, limit=500, org_id=oid, is_admin=True)
     out: List[Dict[str, Any]] = []
     for row in rows:
         if isinstance(row, dict):
@@ -4582,20 +4976,29 @@ def create_org_project_session(
     mode: str | None = Query(default="quick_skeleton"),
 ) -> Dict[str, Any]:
     oid = str(org_id or "").strip()
-    _require_org_role(request, oid, _ORG_EDITOR_ROLES)
+    role, scope, err = _enterprise_require_project_access(request, oid, project_id)
+    if err is not None:
+        return err
+    if str(role or "").strip().lower() not in _ORG_EDITOR_ROLES:
+        return _enterprise_error(403, "forbidden", "insufficient_permissions")
     raw_mode = mode
     mode = _norm_project_session_mode(mode)
     if raw_mode is not None and mode is None:
-        raise HTTPException(status_code=422, detail="invalid mode; allowed: quick_skeleton, deep_audit")
+        return _enterprise_error(422, "validation_error", "invalid mode; allowed: quick_skeleton, deep_audit")
     ps = get_project_storage()
-    if ps.load(project_id, org_id=oid) is None:
-        raise HTTPException(status_code=404, detail="not found")
+    scope_obj = scope if isinstance(scope, dict) else {}
+    if str(scope_obj.get("mode") or "") != "all":
+        allowed = {str(item or "").strip() for item in (scope_obj.get("project_ids") or []) if str(item or "").strip()}
+        if str(project_id or "").strip() not in allowed:
+            return _enterprise_error(404, "not_found", "not_found")
+    if ps.load(project_id, org_id=oid, is_admin=True) is None:
+        return _enterprise_error(404, "not_found", "not_found")
     roles = _norm_roles(getattr(inp, "roles", None))
     sr = getattr(inp, "start_role", None)
     if sr is not None and str(sr).strip() != "":
         sr = str(sr).strip()
         if roles and sr not in roles:
-            raise HTTPException(status_code=422, detail="start_role must be one of roles")
+            return _enterprise_error(422, "validation_error", "start_role must be one of roles")
     else:
         sr = None
     prep_questions = _norm_prep_questions(getattr(inp, "ai_prep_questions", None))
@@ -4613,7 +5016,7 @@ def create_org_project_session(
     )
     sess = st.load(sid, org_id=oid)
     if not sess:
-        raise HTTPException(status_code=404, detail="not found")
+        return _enterprise_error(404, "not_found", "not_found")
     if prep_questions:
         sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
         st.save(sess, user_id=uid, org_id=oid)
@@ -4621,40 +5024,279 @@ def create_org_project_session(
     return _session_api_dump(sess)
 
 
+@app.get("/api/orgs/{org_id}/projects/{project_id}/members")
+def list_org_project_members(org_id: str, project_id: str, request: Request) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    pid = str(project_id or "").strip()
+    _, _, err = _enterprise_manage_project_members_guard(request, oid, pid)
+    if err is not None:
+        return err
+    ps = get_project_storage()
+    if ps.load(pid, org_id=oid, is_admin=True) is None:
+        return _enterprise_error(404, "not_found", "not_found")
+    items = list_project_memberships(oid, project_id=pid)
+    return {"items": items, "count": len(items)}
+
+
+@app.post("/api/orgs/{org_id}/projects/{project_id}/members")
+def create_org_project_member(org_id: str, project_id: str, inp: ProjectMemberUpsertIn, request: Request):
+    oid = str(org_id or "").strip()
+    pid = str(project_id or "").strip()
+    _, _, err = _enterprise_manage_project_members_guard(request, oid, pid)
+    if err is not None:
+        return err
+    ps = get_project_storage()
+    if ps.load(pid, org_id=oid, is_admin=True) is None:
+        return _enterprise_error(404, "not_found", "not_found")
+    user_id = str(getattr(inp, "user_id", "") or "").strip()
+    role = str(getattr(inp, "role", "") or "").strip()
+    if not user_id or not role:
+        return _enterprise_error(422, "validation_error", "user_id and role are required")
+    try:
+        row = upsert_project_membership(oid, pid, user_id, role)
+    except ValueError as exc:
+        return _enterprise_error(422, "validation_error", str(exc))
+    return row
+
+
+@app.patch("/api/orgs/{org_id}/projects/{project_id}/members/{user_id}")
+def patch_org_project_member(org_id: str, project_id: str, user_id: str, inp: ProjectMemberPatchIn, request: Request):
+    oid = str(org_id or "").strip()
+    pid = str(project_id or "").strip()
+    uid = str(user_id or "").strip()
+    _, _, err = _enterprise_manage_project_members_guard(request, oid, pid)
+    if err is not None:
+        return err
+    ps = get_project_storage()
+    if ps.load(pid, org_id=oid, is_admin=True) is None:
+        return _enterprise_error(404, "not_found", "not_found")
+    role = str(getattr(inp, "role", "") or "").strip()
+    if not uid or not role:
+        return _enterprise_error(422, "validation_error", "role is required")
+    try:
+        row = upsert_project_membership(oid, pid, uid, role)
+    except ValueError as exc:
+        return _enterprise_error(422, "validation_error", str(exc))
+    return row
+
+
+@app.delete("/api/orgs/{org_id}/projects/{project_id}/members/{user_id}")
+def delete_org_project_member(org_id: str, project_id: str, user_id: str, request: Request):
+    oid = str(org_id or "").strip()
+    pid = str(project_id or "").strip()
+    uid = str(user_id or "").strip()
+    _, _, err = _enterprise_manage_project_members_guard(request, oid, pid)
+    if err is not None:
+        return err
+    ps = get_project_storage()
+    if ps.load(pid, org_id=oid, is_admin=True) is None:
+        return _enterprise_error(404, "not_found", "not_found")
+    deleted = delete_project_membership(oid, pid, uid)
+    if not deleted:
+        return _enterprise_error(404, "not_found", "not_found")
+    return Response(status_code=204)
+
+
+@app.get("/api/orgs/{org_id}/sessions/{session_id}/reports/versions")
+def list_org_session_report_versions(
+    org_id: str,
+    session_id: str,
+    request: Request,
+    path_id: str = "",
+    steps_hash: str = "",
+):
+    oid = str(org_id or "").strip()
+    sess, _, err = _session_access_from_request(request, session_id, org_id=oid)
+    if err is not None:
+        return err
+    uid, is_admin = _request_user_meta(request)
+    role = str((_project_scope_for_request(request, oid) or {}).get("org_role") or "").strip().lower()
+    if not (is_admin or _is_role_allowed(role, _ORG_READ_ROLES)):
+        return _enterprise_error(403, "forbidden", "insufficient_permissions")
+    pid = str(path_id or "").strip()
+    if not pid:
+        return _enterprise_error(422, "validation_error", "path_id is required")
+    rows = _list_path_report_versions_core(
+        session_id=str(getattr(sess, "id", "") or session_id),
+        path_id=pid,
+        steps_hash=steps_hash,
+        request=request,
+        org_id=oid,
+        is_admin=True,
+    )
+    _ = uid
+    return rows
+
+
+@app.post("/api/orgs/{org_id}/sessions/{session_id}/reports/build")
+def build_org_session_report(
+    org_id: str,
+    session_id: str,
+    inp: OrgReportBuildIn,
+    request: Request,
+):
+    oid = str(org_id or "").strip()
+    sess, scope, err = _session_access_from_request(request, session_id, org_id=oid)
+    if err is not None:
+        return err
+    uid, is_admin = _request_user_meta(request)
+    role = str(((scope if isinstance(scope, dict) else {}).get("org_role") or "")).strip().lower()
+    if not (is_admin or _is_role_allowed(role, _ORG_EDITOR_ROLES)):
+        return _enterprise_error(403, "forbidden", "insufficient_permissions")
+    path_id = str(getattr(inp, "path_id", "") or "").strip()
+    if not path_id:
+        return _enterprise_error(422, "validation_error", "path_id is required")
+    created = _create_path_report_version_core(
+        session_id=str(getattr(sess, "id", "") or session_id),
+        path_id=path_id,
+        inp=CreatePathReportVersionIn(
+            steps_hash=str(getattr(inp, "steps_hash", "") or ""),
+            request_payload_json=(getattr(inp, "request_payload_json", {}) or {}),
+            prompt_template_version=str(getattr(inp, "prompt_template_version", "v2") or "v2"),
+        ),
+        request=request,
+        org_id=oid,
+        is_admin=True,
+    )
+    if isinstance(created, dict) and created.get("error"):
+        marker = str(created.get("error") or "").strip().lower()
+        if "required" in marker or "invalid" in marker or "missing" in marker:
+            return _enterprise_error(422, "validation_error", str(created.get("error") or "validation_error"))
+        return _enterprise_error(404, "not_found", "not_found")
+    _ = uid
+    return created
+
+
+@app.get("/api/orgs/{org_id}/sessions/{session_id}/reports/{version_id}")
+def get_org_session_report_version(
+    org_id: str,
+    session_id: str,
+    version_id: str,
+    request: Request,
+    path_id: str = "",
+):
+    oid = str(org_id or "").strip()
+    sess, scope, err = _session_access_from_request(request, session_id, org_id=oid)
+    if err is not None:
+        return err
+    uid, is_admin = _request_user_meta(request)
+    role = str(((scope if isinstance(scope, dict) else {}).get("org_role") or "")).strip().lower()
+    if not (is_admin or _is_role_allowed(role, _ORG_READ_ROLES)):
+        return _enterprise_error(403, "forbidden", "insufficient_permissions")
+    pid = str(path_id or "").strip()
+    rid = str(version_id or "").strip()
+    if not rid:
+        return _enterprise_error(404, "not_found", "not_found")
+    if not pid:
+        by_path = _get_report_versions_by_path(getattr(sess, "interview", {}))
+        for candidate_pid, rows in by_path.items():
+            if any(str((row or {}).get("id") or "").strip() == rid for row in (rows or [])):
+                pid = str(candidate_pid or "").strip()
+                break
+    if not pid:
+        return _enterprise_error(404, "not_found", "not_found")
+    detail = _get_path_report_version_detail_core(
+        session_id=str(getattr(sess, "id", "") or session_id),
+        path_id=pid,
+        report_id=rid,
+        request=request,
+        org_id=oid,
+        is_admin=True,
+    )
+    if isinstance(detail, dict) and detail.get("error"):
+        return _enterprise_error(404, "not_found", "not_found")
+    _ = uid
+    return detail
+
+
+@app.delete("/api/orgs/{org_id}/sessions/{session_id}/reports/{version_id}")
+def delete_org_session_report_version(
+    org_id: str,
+    session_id: str,
+    version_id: str,
+    request: Request,
+    path_id: str = "",
+):
+    oid = str(org_id or "").strip()
+    sess, scope, err = _session_access_from_request(request, session_id, org_id=oid)
+    if err is not None:
+        return err
+    uid, is_admin = _request_user_meta(request)
+    role = str(((scope if isinstance(scope, dict) else {}).get("org_role") or "")).strip().lower()
+    if not (is_admin or _is_role_allowed(role, _ORG_REPORT_DELETE_ROLES)):
+        return _enterprise_error(403, "forbidden", "insufficient_permissions")
+    pid = str(path_id or "").strip()
+    rid = str(version_id or "").strip()
+    if not rid:
+        return _enterprise_error(404, "not_found", "not_found")
+    if not pid:
+        by_path = _get_report_versions_by_path(getattr(sess, "interview", {}))
+        for candidate_pid, rows in by_path.items():
+            if any(str((row or {}).get("id") or "").strip() == rid for row in (rows or [])):
+                pid = str(candidate_pid or "").strip()
+                break
+    if not pid:
+        return _enterprise_error(404, "not_found", "not_found")
+    try:
+        response = _delete_path_report_version_core(
+            session_id=str(getattr(sess, "id", "") or session_id),
+            path_id=pid,
+            report_id=rid,
+            request=request,
+            org_id=oid,
+            is_admin=True,
+        )
+    except HTTPException as exc:
+        if int(exc.status_code or 0) == 404:
+            return _enterprise_error(404, "not_found", "not_found")
+        return _enterprise_error(422, "validation_error", str(exc.detail or "validation_error"))
+    _ = uid
+    return response
+
+
 # -----------------------------
 # Epic #1: Projects + Process Passport
 # -----------------------------
 
 @app.get("/api/projects")
-def list_projects() -> list[dict]:
+def list_projects(request: Request = None) -> list[dict]:
+    oid = _request_active_org_id(request) if request is not None else ""
+    scope = _project_scope_for_request(request, oid or get_default_org_id())
+    allowed = _scope_allowed_project_ids(scope)
     st = get_project_storage()
-    items = st.list()
+    items = st.list(org_id=(oid or None), is_admin=True)
+    if allowed:
+        items = [proj for proj in items if str(getattr(proj, "id", "") or "").strip() in allowed]
     return [p.model_dump() for p in items]
 
 
 @app.post("/api/projects")
-def create_project(inp: CreateProjectIn) -> dict:
+def create_project(inp: CreateProjectIn, request: Request = None) -> dict:
+    user = _request_auth_user(request) if request is not None else {}
+    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
+    oid = _request_active_org_id(request) if request is not None else ""
     st = get_project_storage()
-    pid = st.create(title=inp.title, passport=inp.passport)
-    proj = st.load(pid)
+    pid = st.create(title=inp.title, passport=inp.passport, user_id=user_id, org_id=(oid or None))
+    proj = st.load(pid, org_id=(oid or None), is_admin=True)
     if not proj:
         raise HTTPException(status_code=500, detail="create failed")
     return proj.model_dump()
 
 
 @app.get("/api/projects/{project_id}")
-def get_project(project_id: str) -> dict:
-    st = get_project_storage()
-    proj = st.load(project_id)
+def get_project(project_id: str, request: Request = None) -> dict:
+    proj, _, _ = _legacy_load_project_scoped(project_id, request)
     if not proj:
         raise HTTPException(status_code=404, detail="not found")
     return proj.model_dump()
 
 
 @app.patch("/api/projects/{project_id}")
-def patch_project(project_id: str, inp: UpdateProjectIn) -> dict:
+def patch_project(project_id: str, inp: UpdateProjectIn, request: Request = None) -> dict:
+    user = _request_auth_user(request) if request is not None else {}
+    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
+    proj, oid, _ = _legacy_load_project_scoped(project_id, request)
     st = get_project_storage()
-    proj = st.load(project_id)
     if not proj:
         raise HTTPException(status_code=404, detail="not found")
 
@@ -4672,14 +5314,16 @@ def patch_project(project_id: str, inp: UpdateProjectIn) -> dict:
         merged.update(payload["passport"])
         proj.passport = merged
 
-    st.save(proj)
+    st.save(proj, user_id=user_id, org_id=oid, is_admin=True)
     return proj.model_dump()
 
 
 @app.put("/api/projects/{project_id}")
-def put_project(project_id: str, inp: CreateProjectIn) -> dict:
+def put_project(project_id: str, inp: CreateProjectIn, request: Request = None) -> dict:
+    user = _request_auth_user(request) if request is not None else {}
+    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
+    proj, oid, _ = _legacy_load_project_scoped(project_id, request)
     st = get_project_storage()
-    proj = st.load(project_id)
     if not proj:
         raise HTTPException(status_code=404, detail="not found")
 
@@ -4691,5 +5335,5 @@ def put_project(project_id: str, inp: CreateProjectIn) -> dict:
 
     proj.title = t
     proj.passport = inp.passport or {}
-    st.save(proj)
+    st.save(proj, user_id=user_id, org_id=oid, is_admin=True)
     return proj.model_dump()

@@ -24,6 +24,8 @@ _MIGRATION_MARK = "legacy_file_to_sqlite_v1"
 _ENTERPRISE_BOOTSTRAP_MARK = "enterprise_org_bootstrap_v1"
 _DEFAULT_ORG_ID = str(os.environ.get("FPC_DEFAULT_ORG_ID", "org_default") or "org_default").strip() or "org_default"
 _DEFAULT_ORG_NAME = str(os.environ.get("FPC_DEFAULT_ORG_NAME", "Default") or "Default").strip() or "Default"
+_ORG_FULL_ACCESS_ROLES = {"org_owner", "org_admin", "auditor"}
+_PROJECT_MEMBER_ROLES = {"project_manager", "editor", "viewer"}
 
 
 def _now_ts() -> int:
@@ -272,6 +274,21 @@ def _ensure_schema() -> None:
                 """
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_org_memberships_user ON org_memberships(user_id)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS project_memberships (
+                  org_id TEXT NOT NULL,
+                  project_id TEXT NOT NULL,
+                  user_id TEXT NOT NULL,
+                  role TEXT NOT NULL,
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  PRIMARY KEY (org_id, project_id, user_id)
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_project_memberships_org_user ON project_memberships(org_id, user_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_project_memberships_org_project ON project_memberships(org_id, project_id)")
             if not _column_exists(con, "projects", "org_id"):
                 con.execute("ALTER TABLE projects ADD COLUMN org_id TEXT NOT NULL DEFAULT 'org_default'")
             if not _column_exists(con, "projects", "created_by"):
@@ -1201,6 +1218,173 @@ def create_org_record(name: str, *, created_by: str, org_id: Optional[str] = Non
         "created_at": int(row["created_at"] or 0),
         "created_by": str(row["created_by"] or ""),
     }
+
+
+def _normalize_project_membership_role(raw: Any) -> str:
+    role = str(raw or "").strip().lower()
+    aliases = {
+        "projectmanager": "project_manager",
+        "pm": "project_manager",
+        "manager": "project_manager",
+        "proj_manager": "project_manager",
+        "project_manager": "project_manager",
+        "editor": "editor",
+        "edit": "editor",
+        "viewer": "viewer",
+        "read_only": "viewer",
+    }
+    role = aliases.get(role, role)
+    if role not in _PROJECT_MEMBER_ROLES:
+        return "viewer"
+    return role
+
+
+def list_project_memberships(
+    org_id: str,
+    *,
+    project_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    if not oid:
+        return []
+    pid = str(project_id or "").strip()
+    uid = str(user_id or "").strip()
+    _ensure_schema()
+    filters = ["org_id = ?"]
+    params: List[Any] = [oid]
+    if pid:
+        filters.append("project_id = ?")
+        params.append(pid)
+    if uid:
+        filters.append("user_id = ?")
+        params.append(uid)
+    where = f"WHERE {' AND '.join(filters)}"
+    with _connect() as con:
+        rows = con.execute(
+            f"""
+            SELECT org_id, project_id, user_id, role, created_at, updated_at
+              FROM project_memberships
+              {where}
+             ORDER BY project_id ASC, user_id ASC
+            """,
+            params,
+        ).fetchall()
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        out.append(
+            {
+                "org_id": str(row["org_id"] or ""),
+                "project_id": str(row["project_id"] or ""),
+                "user_id": str(row["user_id"] or ""),
+                "role": _normalize_project_membership_role(row["role"]),
+                "created_at": int(row["created_at"] or 0),
+                "updated_at": int(row["updated_at"] or 0),
+            }
+        )
+    return out
+
+
+def upsert_project_membership(
+    org_id: str,
+    project_id: str,
+    user_id: str,
+    role: str,
+) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    pid = str(project_id or "").strip()
+    uid = str(user_id or "").strip()
+    if not oid or not pid or not uid:
+        raise ValueError("org_id, project_id and user_id are required")
+    normalized_role = _normalize_project_membership_role(role)
+    now = _now_ts()
+    _ensure_schema()
+    with _connect() as con:
+        con.execute(
+            """
+            INSERT INTO project_memberships (org_id, project_id, user_id, role, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(org_id, project_id, user_id) DO UPDATE SET
+              role = excluded.role,
+              updated_at = excluded.updated_at
+            """,
+            [oid, pid, uid, normalized_role, now, now],
+        )
+        con.commit()
+    rows = list_project_memberships(oid, project_id=pid, user_id=uid)
+    if rows:
+        return rows[0]
+    return {
+        "org_id": oid,
+        "project_id": pid,
+        "user_id": uid,
+        "role": normalized_role,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+def delete_project_membership(org_id: str, project_id: str, user_id: str) -> bool:
+    oid = str(org_id or "").strip()
+    pid = str(project_id or "").strip()
+    uid = str(user_id or "").strip()
+    if not oid or not pid or not uid:
+        return False
+    _ensure_schema()
+    with _connect() as con:
+        cur = con.execute(
+            """
+            DELETE FROM project_memberships
+             WHERE org_id = ? AND project_id = ? AND user_id = ?
+            """,
+            [oid, pid, uid],
+        )
+        con.commit()
+        return int(cur.rowcount or 0) > 0
+
+
+def get_effective_project_scope(
+    user_id: str,
+    org_id: str,
+    *,
+    is_admin: Optional[bool] = None,
+) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    oid = str(org_id or "").strip()
+    if not uid or not oid:
+        return {"mode": "scoped", "project_ids": [], "org_role": ""}
+    memberships = list_user_org_memberships(uid, is_admin=is_admin)
+    org_role = ""
+    for row in memberships:
+        if str(row.get("org_id") or "") == oid:
+            org_role = str(row.get("role") or "").strip().lower()
+            break
+    if bool(is_admin) or org_role in _ORG_FULL_ACCESS_ROLES:
+        return {"mode": "all", "project_ids": [], "org_role": org_role}
+    assigned = list_project_memberships(oid, user_id=uid)
+    project_ids = sorted(
+        {str(row.get("project_id") or "").strip() for row in assigned if str(row.get("project_id") or "").strip()}
+    )
+    if project_ids:
+        return {"mode": "scoped", "project_ids": project_ids, "org_role": org_role}
+    return {"mode": "all", "project_ids": [], "org_role": org_role}
+
+
+def user_has_project_access(
+    user_id: str,
+    org_id: str,
+    project_id: str,
+    *,
+    is_admin: Optional[bool] = None,
+) -> bool:
+    pid = str(project_id or "").strip()
+    if not pid:
+        return False
+    scope = get_effective_project_scope(user_id, org_id, is_admin=is_admin)
+    if str(scope.get("mode") or "") == "all":
+        return True
+    allowed = {str(item or "").strip() for item in (scope.get("project_ids") or []) if str(item or "").strip()}
+    return pid in allowed
 
 
 def get_project_storage() -> ProjectStorage:

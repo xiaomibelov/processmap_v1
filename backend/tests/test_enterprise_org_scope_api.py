@@ -5,9 +5,6 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from fastapi import HTTPException
-
-
 class _DummyRequest:
     def __init__(self, user: dict, *, active_org_id: str = "", headers: dict | None = None):
         self.state = SimpleNamespace(auth_user=user, active_org_id=active_org_id)
@@ -127,11 +124,10 @@ class EnterpriseOrgScopeApiTest(unittest.TestCase):
         req = _DummyRequest(self.editor_user, active_org_id=self.default_org_id)
         t_editor = self.push_scope(str(self.editor_user.get("id") or ""), False, self.default_org_id)
         try:
-            with self.assertRaises(HTTPException) as ctx:
-                self.create_org_project(oid, self.CreateProjectIn(title="Blocked", passport={}), req)
+            out = self.create_org_project(oid, self.CreateProjectIn(title="Blocked", passport={}), req)
         finally:
             self.pop_scope(t_editor)
-        self.assertEqual(int(ctx.exception.status_code or 0), 404)
+        self.assertEqual(int(getattr(out, "status_code", 0) or 0), 404)
 
     def test_legacy_projects_are_scoped_by_active_org(self):
         oid = str(self.org_b.get("id") or "")
