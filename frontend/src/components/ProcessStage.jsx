@@ -6824,6 +6824,26 @@ export default function ProcessStage({
                       </button>
                       <button
                         type="button"
+                        className="secondaryBtn h-8 px-2 text-[11px] diagramActionSecondary"
+                        onClick={openCreateSelectionTemplateModal}
+                        disabled={!hasSession || selectedElementsCount <= 0}
+                        title={selectedElementsCount > 0 ? "Сохранить выделение в Template v1" : "Сначала выделите элементы BPMN"}
+                        data-testid="diagram-action-template-create"
+                      >
+                        Add to template
+                      </button>
+                      <button
+                        type="button"
+                        className="secondaryBtn h-8 px-2 text-[11px] diagramActionSecondary"
+                        onClick={() => void openSelectionTemplatesLibrary(selectionTemplateScopeTab)}
+                        disabled={!hasSession}
+                        title="Открыть библиотеку Templates v1"
+                        data-testid="diagram-action-template-picker"
+                      >
+                        Templates v1
+                      </button>
+                      <button
+                        type="button"
                         className={`secondaryBtn h-8 px-2 text-[11px] ${diagramActionPlanOpen ? "ring-1 ring-accent/60" : ""}`}
                         onClick={() => {
                           setDiagramActionPlanOpen((prev) => !prev);
