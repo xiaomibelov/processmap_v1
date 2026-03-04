@@ -197,6 +197,34 @@ async function patchSessionHybridMap(request, accessToken, sessionId, map) {
   return res.ok();
 }
 
+async function readHybridAnchorPair(page, elementIdRaw) {
+  const elementId = String(elementIdRaw || "").trim();
+  return page.evaluate((targetId) => {
+    const escaped = String(targetId || "").replace(/"/g, "\\\"");
+    const shape = document.querySelector(`g.djs-element.djs-shape[data-element-id="${escaped}"]`);
+    const hotspot = document.querySelector(`.hybridLayerItem[data-element-id="${escaped}"] .hybridLayerHotspot`);
+    const shapeRect = shape?.getBoundingClientRect?.();
+    const hotspotRect = hotspot?.getBoundingClientRect?.();
+    if (!shapeRect || !hotspotRect) return null;
+    const shapeCenter = {
+      x: Number(shapeRect.left || 0) + (Number(shapeRect.width || 0) / 2),
+      y: Number(shapeRect.top || 0) + (Number(shapeRect.height || 0) / 2),
+    };
+    const hotspotCenter = {
+      x: Number(hotspotRect.left || 0) + (Number(hotspotRect.width || 0) / 2),
+      y: Number(hotspotRect.top || 0) + (Number(hotspotRect.height || 0) / 2),
+    };
+    return {
+      shapeCenter,
+      hotspotCenter,
+      delta: {
+        x: hotspotCenter.x - shapeCenter.x,
+        y: hotspotCenter.y - shapeCenter.y,
+      },
+    };
+  }, elementId);
+}
+
 test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ page, request }) => {
   test.skip(process.env.E2E_HYBRID_LAYER !== "1", "Set E2E_HYBRID_LAYER=1 to run hybrid layers e2e.");
 
@@ -293,10 +321,63 @@ test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ pag
       return Object.keys(map).length;
     })
     .toBeGreaterThan(0);
+  const anchorBefore = await readHybridAnchorPair(page, "Task_1");
+  expect(anchorBefore).toBeTruthy();
+  await page.evaluate(() => {
+    const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
+    if (!modeler) return false;
+    const canvas = modeler.get("canvas");
+    if (!canvas) return false;
+    try {
+      const current = canvas.viewbox();
+      canvas.zoom(1.35);
+      const next = canvas.viewbox();
+      canvas.viewbox({
+        x: Number(next?.x || current?.x || 0) + 140,
+        y: Number(next?.y || current?.y || 0) + 85,
+        width: Number(next?.width || current?.width || 0),
+        height: Number(next?.height || current?.height || 0),
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  await page.waitForTimeout(240);
+  const anchorAfter = await readHybridAnchorPair(page, "Task_1");
+  expect(anchorAfter).toBeTruthy();
+  const movedDistance = Math.hypot(
+    Number(anchorAfter.hotspotCenter.x || 0) - Number(anchorBefore.hotspotCenter.x || 0),
+    Number(anchorAfter.hotspotCenter.y || 0) - Number(anchorBefore.hotspotCenter.y || 0),
+  );
+  expect(movedDistance).toBeGreaterThan(12);
+  const hotspotToShapeAfter = Math.hypot(
+    Number(anchorAfter.delta.x || 0),
+    Number(anchorAfter.delta.y || 0),
+  );
+  expect(hotspotToShapeAfter).toBeLessThan(220);
+  await page.evaluate(() => {
+    const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
+    if (!modeler) return false;
+    const canvas = modeler.get("canvas");
+    if (!canvas) return false;
+    try {
+      canvas.zoom("fit-viewport", "auto");
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  await page.waitForTimeout(200);
   const card = page.getByTestId("hybrid-layer-card").first();
   if (await card.isVisible().catch(() => false)) {
     const box = await card.boundingBox();
     if (box) {
+      const viewport = page.viewportSize() || { width: 1280, height: 720 };
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
+      expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1);
       await page.mouse.move(box.x + 16, box.y + 12);
       await page.mouse.down();
       await page.mouse.move(box.x + 56, box.y + 26);
@@ -328,6 +409,17 @@ test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ pag
   expect(progressText).toContain("/");
   expect(progress.total).toBeGreaterThan(0);
   expect(progress.current).toBeGreaterThan(0);
+  const playbackCard = page.getByTestId("hybrid-layer-card").first();
+  if (await playbackCard.isVisible().catch(() => false)) {
+    const box = await playbackCard.boundingBox();
+    if (box) {
+      const viewport = page.viewportSize() || { width: 1280, height: 720 };
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
+      expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1);
+    }
+  }
 
   const importXml = `<?xml version="1.0" encoding="UTF-8"?>
 <mxfile host="ProcessMap"><diagram name="Hybrid"><mxGraphModel><root>

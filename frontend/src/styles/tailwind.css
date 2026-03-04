@@ -453,7 +453,6 @@
 
   .hybridLayerItem {
     position: absolute;
-    transform: translate(-50%, -50%);
     pointer-events: none;
     z-index: 2;
   }
@@ -467,6 +466,10 @@
   }
 
   .hybridLayerHotspot {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform: translate(-50%, -50%);
     pointer-events: auto;
     display: inline-flex;
     align-items: center;
@@ -495,10 +498,10 @@
   }
 
   .hybridLayerCard {
+    position: absolute;
     pointer-events: auto;
     min-width: 190px;
     max-width: 280px;
-    margin-top: 6px;
     border: 1px solid hsl(var(--border));
     border-radius: 10px;
     background: hsl(var(--panel));

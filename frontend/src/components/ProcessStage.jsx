@@ -1132,6 +1132,8 @@ export default function ProcessStage({
   const hybridLayerOverlayRef = useRef(null);
   const hybridV2FileInputRef = useRef(null);
   const hybridLayerDragRef = useRef(null);
+  const hybridLayerCardNodeRefsRef = useRef({});
+  const hybridLayerCardSizesRef = useRef({});
   const hybridLayerMapRef = useRef({});
   const hybridLayerPositionsRef = useRef({});
   const hybridLayerPersistedMapRef = useRef({});
@@ -1251,6 +1253,7 @@ export default function ProcessStage({
   const [hybridPeekActive, setHybridPeekActive] = useState(false);
   const [hybridLayerByElementId, setHybridLayerByElementId] = useState({});
   const [hybridLayerPositions, setHybridLayerPositions] = useState({});
+  const [hybridLayerCardSizes, setHybridLayerCardSizes] = useState({});
   const [hybridLayerActiveElementId, setHybridLayerActiveElementId] = useState("");
   const [hybridViewportSize, setHybridViewportSize] = useState({ width: 0, height: 0 });
   const [hybridViewportMatrix, setHybridViewportMatrix] = useState({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
@@ -1351,6 +1354,9 @@ export default function ProcessStage({
     setHybridPeekActive(false);
     setHybridLayerActiveElementId("");
     setHybridLayerPositions({});
+    setHybridLayerCardSizes({});
+    hybridLayerCardNodeRefsRef.current = {};
+    hybridLayerCardSizesRef.current = {};
     hybridLayerPositionsRef.current = {};
     setHybridViewportMatrix({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
     hybridViewportMatrixRef.current = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
@@ -1673,47 +1679,131 @@ export default function ProcessStage({
       return false;
     }
   }, [sid, tab]);
+  const setHybridLayerCardNode = useCallback((elementIdRaw, node) => {
+    const elementId = toText(elementIdRaw);
+    if (!elementId) return;
+    if (node instanceof HTMLElement) {
+      hybridLayerCardNodeRefsRef.current[elementId] = node;
+      const rect = node.getBoundingClientRect?.();
+      const width = Math.max(0, Math.round(Number(rect?.width || node.offsetWidth || 0)));
+      const height = Math.max(0, Math.round(Number(rect?.height || node.offsetHeight || 0)));
+      const prev = asObject(hybridLayerCardSizesRef.current[elementId]);
+      if (Math.abs(Number(prev.width || 0) - width) > 0.5 || Math.abs(Number(prev.height || 0) - height) > 0.5) {
+        const next = {
+          ...asObject(hybridLayerCardSizesRef.current),
+          [elementId]: { width, height },
+        };
+        hybridLayerCardSizesRef.current = next;
+        setHybridLayerCardSizes(next);
+      }
+      return;
+    }
+    if (hybridLayerCardNodeRefsRef.current[elementId]) delete hybridLayerCardNodeRefsRef.current[elementId];
+    if (hybridLayerCardSizesRef.current[elementId]) {
+      const next = { ...asObject(hybridLayerCardSizesRef.current) };
+      delete next[elementId];
+      hybridLayerCardSizesRef.current = next;
+      setHybridLayerCardSizes(next);
+    }
+  }, []);
+  const refreshHybridLayerCardSizes = useCallback(() => {
+    const refs = asObject(hybridLayerCardNodeRefsRef.current);
+    const next = { ...asObject(hybridLayerCardSizesRef.current) };
+    let changed = false;
+    Object.keys(refs).forEach((elementIdRaw) => {
+      const elementId = toText(elementIdRaw);
+      const node = refs[elementId];
+      if (!(node instanceof HTMLElement)) return;
+      const rect = node.getBoundingClientRect?.();
+      const width = Math.max(0, Math.round(Number(rect?.width || node.offsetWidth || 0)));
+      const height = Math.max(0, Math.round(Number(rect?.height || node.offsetHeight || 0)));
+      const prev = asObject(next[elementId]);
+      if (Math.abs(Number(prev.width || 0) - width) > 0.5 || Math.abs(Number(prev.height || 0) - height) > 0.5) {
+        next[elementId] = { width, height };
+        changed = true;
+      }
+    });
+    if (!changed) return;
+    hybridLayerCardSizesRef.current = next;
+    setHybridLayerCardSizes(next);
+  }, []);
   const hybridLayerRenderRows = useMemo(() => {
     const width = Number(hybridViewportSize?.width || 0);
     const height = Number(hybridViewportSize?.height || 0);
-    const minX = 14;
-    const minY = 14;
-    const maxX = width > 0 ? Math.max(minX, width - 14) : Number.POSITIVE_INFINITY;
-    const maxY = height > 0 ? Math.max(minY, height - 14) : Number.POSITIVE_INFINITY;
+    const hotspotPadding = 16;
+    const minX = hotspotPadding;
+    const minY = hotspotPadding;
+    const maxX = width > 0 ? Math.max(minX, width - hotspotPadding) : Number.POSITIVE_INFINITY;
+    const maxY = height > 0 ? Math.max(minY, height - hotspotPadding) : Number.POSITIVE_INFINITY;
+    const cardPadding = 10;
+    const cardDefaultOffsetX = 14;
+    const cardDefaultOffsetY = 12;
+    const matrix = asObject(hybridViewportMatrix);
     return hybridLayerItems.map((itemRaw, index) => {
       const item = asObject(itemRaw);
       const elementId = toText(item?.elementId);
-      const center = asObject(hybridLayerPositions[elementId]);
-      const hasCenter = Number.isFinite(center.x) && Number.isFinite(center.y);
+      const centerDiagram = asObject(hybridLayerPositions[elementId]);
+      const hasCenter = Number.isFinite(centerDiagram.x) && Number.isFinite(centerDiagram.y);
       const offset = asObject(hybridLayerByElementId[elementId]);
       const rawDx = Number(offset.dx || 0);
       const rawDy = Number(offset.dy || 0);
-      const fallbackX = 92 + ((index % 6) * 36);
-      const fallbackY = 88 + (Math.floor(index / 6) * 30);
-      const baseX = Number(hasCenter ? center.x : fallbackX);
-      const baseY = Number(hasCenter ? center.y : fallbackY);
-      const rawX = baseX + Number(hasCenter ? rawDx : 0);
-      const rawY = baseY + Number(hasCenter ? rawDy : 0);
+      const fallbackScreenX = 92 + ((index % 6) * 36);
+      const fallbackScreenY = 88 + (Math.floor(index / 6) * 30);
+      const fallbackDiagram = matrixToDiagram(matrix, fallbackScreenX, fallbackScreenY);
+      const baseDiagramX = Number(hasCenter ? centerDiagram.x : fallbackDiagram.x);
+      const baseDiagramY = Number(hasCenter ? centerDiagram.y : fallbackDiagram.y);
+      const rawDiagramX = baseDiagramX + Number(hasCenter ? rawDx : 0);
+      const rawDiagramY = baseDiagramY + Number(hasCenter ? rawDy : 0);
+      const rawScreen = matrixToScreen(matrix, rawDiagramX, rawDiagramY);
+      const rawX = Number(rawScreen.x || 0);
+      const rawY = Number(rawScreen.y || 0);
       const insideViewport = width > 0 && height > 0
         ? (rawX >= 0 && rawX <= width && rawY >= 0 && rawY <= height)
         : true;
       const posX = Number.isFinite(maxX) ? clampNumber(rawX, minX, maxX) : rawX;
       const posY = Number.isFinite(maxY) ? clampNumber(rawY, minY, maxY) : rawY;
+      const showCard = hybridModeEffective === "edit" || toText(hybridLayerActiveElementId) === elementId;
+      const cardSize = asObject(hybridLayerCardSizes[elementId]);
+      const cardWidth = Math.max(0, Number(cardSize.width || 0));
+      const cardHeight = Math.max(0, Number(cardSize.height || 0));
+      let cardLeft = cardDefaultOffsetX;
+      let cardTop = cardDefaultOffsetY;
+      if (showCard && width > 0 && height > 0 && cardWidth > 0 && cardHeight > 0) {
+        const clampedLeft = clampNumber(posX + cardDefaultOffsetX, cardPadding, Math.max(cardPadding, width - cardWidth - cardPadding));
+        const clampedTop = clampNumber(posY + cardDefaultOffsetY, cardPadding, Math.max(cardPadding, height - cardHeight - cardPadding));
+        cardLeft = Math.round((clampedLeft - posX) * 10) / 10;
+        cardTop = Math.round((clampedTop - posY) * 10) / 10;
+      }
       return {
         ...item,
         elementId,
         hasCenter,
         rawDx,
         rawDy,
+        baseDiagramX,
+        baseDiagramY,
+        rawDiagramX,
+        rawDiagramY,
         rawX,
         rawY,
         posX,
         posY,
+        cardLeft,
+        cardTop,
         insideViewport,
         wasClamped: Math.abs(posX - rawX) > 0.5 || Math.abs(posY - rawY) > 0.5,
       };
     });
-  }, [hybridLayerItems, hybridLayerPositions, hybridLayerByElementId, hybridViewportSize]);
+  }, [
+    hybridLayerItems,
+    hybridLayerPositions,
+    hybridLayerByElementId,
+    hybridViewportSize,
+    hybridViewportMatrix,
+    hybridModeEffective,
+    hybridLayerActiveElementId,
+    hybridLayerCardSizes,
+  ]);
   const hybridLayerMissingBindingIds = useMemo(
     () => hybridLayerRenderRows.filter((row) => !row?.hasCenter).map((row) => toText(row?.elementId)).filter(Boolean),
     [hybridLayerRenderRows],
@@ -1750,6 +1840,25 @@ export default function ProcessStage({
       none: Number(hybridLayerVisibilityStats.none || 0),
     };
   }, [hybridLayerVisibilityStats]);
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    if (tab !== "diagram" || !hybridVisible) return undefined;
+    const raf = window.requestAnimationFrame(() => {
+      refreshHybridLayerCardSizes();
+    });
+    return () => {
+      window.cancelAnimationFrame(raf);
+    };
+  }, [
+    tab,
+    hybridVisible,
+    hybridModeEffective,
+    hybridLayerActiveElementId,
+    hybridViewportSize.width,
+    hybridViewportSize.height,
+    hybridLayerRenderRows.length,
+    refreshHybridLayerCardSizes,
+  ]);
   const hybridV2Renderable = useMemo(() => {
     const matrix = asObject(hybridViewportMatrix);
     const layersById = asObject(hybridV2LayerById);
@@ -2160,6 +2269,17 @@ export default function ProcessStage({
     });
     return out;
   }, [hybridV2DocLive, playbackActiveBpmnIds]);
+  useEffect(() => {
+    if (tab !== "diagram" || !hybridVisible) return;
+    const activeIds = Array.from(playbackActiveBpmnIds);
+    if (!activeIds.length) return;
+    const nextHybridId = activeIds.find((bpmnId) => !!asObject(hybridLayerMapLive)[toText(bpmnId)]);
+    if (!nextHybridId) return;
+    setHybridLayerActiveElementId((prevRaw) => {
+      const prev = toText(prevRaw);
+      return prev === nextHybridId ? prev : nextHybridId;
+    });
+  }, [tab, hybridVisible, playbackActiveBpmnIds, hybridLayerMapLive]);
   const playbackCanRun = playbackTotal > 0 || !!playbackEngineRef.current;
   const pathHighlightCatalog = useMemo(() => {
     const tiers = {
@@ -3970,7 +4090,7 @@ export default function ProcessStage({
     }
   }, [draft?.bpmn_xml, saveDirtyHint]);
 
-  const readHybridElementCenter = useCallback((elementIdRaw) => {
+  const readHybridElementAnchor = useCallback((elementIdRaw) => {
     const host = bpmnStageHostRef.current;
     const elementId = toText(elementIdRaw);
     if (!host || !elementId) return null;
@@ -4001,9 +4121,12 @@ export default function ProcessStage({
     if (!(width > 0) || !(height > 0)) return null;
     const x = Number(targetRect?.left || 0) - Number(hostRect?.left || 0) + (width / 2);
     const y = Number(targetRect?.top || 0) - Number(hostRect?.top || 0) + (height / 2);
+    const diagramPoint = matrixToDiagram(hybridViewportMatrixRef.current, x, y);
     return {
-      x,
-      y,
+      x: Number(diagramPoint.x || 0),
+      y: Number(diagramPoint.y || 0),
+      screenX: x,
+      screenY: y,
       width,
       height,
     };
@@ -4088,19 +4211,18 @@ export default function ProcessStage({
     if (hybridV2MigrationGuardRef.current === guardKey) return;
     hybridV2MigrationGuardRef.current = guardKey;
     const migrated = migrateHybridV1ToV2(v1Map, (bpmnId) => {
-      const centerScreen = asObject(readHybridElementCenter(bpmnId));
-      if (!Number.isFinite(centerScreen.x) || !Number.isFinite(centerScreen.y)) return null;
-      return matrixToDiagram(
-        hybridViewportMatrixRef.current,
-        Number(centerScreen.x || 0),
-        Number(centerScreen.y || 0),
-      );
+      const anchor = asObject(readHybridElementAnchor(bpmnId));
+      if (!Number.isFinite(anchor.x) || !Number.isFinite(anchor.y)) return null;
+      return {
+        x: Number(anchor.x || 0),
+        y: Number(anchor.y || 0),
+      };
     });
     setHybridV2Doc(migrated);
     hybridV2DocRef.current = migrated;
     setHybridV2ImportNotice("Migrated v1 -> v2");
     void persistHybridV2Doc(migrated, { source: "hybrid_v2_migrate_v1" });
-  }, [draft?.bpmn_meta, hybridLayerMapFromDraft, readHybridElementCenter, sid]);
+  }, [draft?.bpmn_meta, hybridLayerMapFromDraft, readHybridElementAnchor, sid]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -4151,9 +4273,9 @@ export default function ProcessStage({
         const item = asObject(itemRaw);
         const elementId = toText(item?.elementId);
         if (!elementId) return;
-        const center = readHybridElementCenter(elementId);
-        if (!center) return;
-        next[elementId] = center;
+        const anchor = readHybridElementAnchor(elementId);
+        if (!anchor) return;
+        next[elementId] = anchor;
       });
       const prev = asObject(hybridLayerPositionsRef.current);
       const changed = Object.keys(next).length !== Object.keys(prev).length || Object.keys(next).some((key) => {
@@ -4175,7 +4297,7 @@ export default function ProcessStage({
       canceled = true;
       if (timerId) window.clearInterval(timerId);
     };
-  }, [tab, hybridVisible, hybridLayerItems, readHybridElementCenter]);
+  }, [tab, hybridVisible, hybridLayerItems, readHybridElementAnchor]);
 
   useEffect(() => {
     if (!hybridDebugEnabled || tab !== "diagram" || !hybridVisible) return;
@@ -4258,8 +4380,10 @@ export default function ProcessStage({
       const state = asObject(hybridLayerDragRef.current);
       const elementId = toText(state?.elementId);
       if (!elementId) return;
-      const dx = Number(event.clientX || 0) - Number(state.startX || 0);
-      const dy = Number(event.clientY || 0) - Number(state.startY || 0);
+      const pointer = resolveHybridPointerToDiagram(event);
+      if (!pointer) return;
+      const dx = Number(pointer.x || 0) - Number(state.startX || 0);
+      const dy = Number(pointer.y || 0) - Number(state.startY || 0);
       setHybridLayerByElementId((prevRaw) => {
         const prev = normalizeHybridLayerMap(prevRaw);
         const row = asObject(prev[elementId]);
@@ -5607,9 +5731,9 @@ export default function ProcessStage({
     if (!asArray(hybridV2DocRef.current?.elements).length) {
       const selectedIdForV2 = toNodeId(selectedElementId);
       if (selectedIdForV2) {
-        const centerScreen = asObject(readHybridElementCenter(selectedIdForV2));
-        const point = Number.isFinite(centerScreen.x) && Number.isFinite(centerScreen.y)
-          ? matrixToDiagram(hybridViewportMatrixRef.current, Number(centerScreen.x || 0), Number(centerScreen.y || 0))
+        const anchor = asObject(readHybridElementAnchor(selectedIdForV2));
+        const point = Number.isFinite(anchor.x) && Number.isFinite(anchor.y)
+          ? { x: Number(anchor.x || 0), y: Number(anchor.y || 0) }
           : { x: 260, y: 220 };
         const createdId = createHybridV2ElementAt(point, "note");
         if (createdId) bindActiveHybridV2ToBpmn(selectedIdForV2, createdId);
@@ -5883,10 +6007,12 @@ export default function ProcessStage({
     setHybridLayerActiveElementId(elementId);
     if (hybridModeEffective !== "edit" || hybridUiPrefs.lock) return;
     const row = asObject(hybridLayerByElementId[elementId]);
+    const pointer = resolveHybridPointerToDiagram(event);
+    if (!pointer) return;
     hybridLayerDragRef.current = {
       elementId,
-      startX: Number(event?.clientX || 0),
-      startY: Number(event?.clientY || 0),
+      startX: Number(pointer.x || 0),
+      startY: Number(pointer.y || 0),
       baseDx: Number(row.dx || 0),
       baseDy: Number(row.dy || 0),
     };
@@ -8445,6 +8571,8 @@ export default function ProcessStage({
                       const status = toText(item?.status).toLowerCase() || "none";
                       const isActive = toText(hybridLayerActiveElementId) === elementId;
                       const showCard = hybridModeEffective === "edit" || isActive;
+                      const debugOffsetX = Number(item?.rawX || 0) - posX;
+                      const debugOffsetY = Number(item?.rawY || 0) - posY;
                       return (
                         <div
                           key={`hybrid_layer_item_${elementId}`}
@@ -8455,7 +8583,7 @@ export default function ProcessStage({
                           {hybridDebugEnabled ? (
                             <span
                               className="hybridLayerDebugCross"
-                              style={{ left: `${Number(item?.rawX || 0)}px`, top: `${Number(item?.rawY || 0)}px` }}
+                              style={{ left: `${debugOffsetX}px`, top: `${debugOffsetY}px` }}
                               title={`${elementId}: x=${Math.round(Number(item?.rawX || 0))}, y=${Math.round(Number(item?.rawY || 0))}`}
                             />
                           ) : null}
@@ -8477,6 +8605,11 @@ export default function ProcessStage({
                             <div
                               className="hybridLayerCard"
                               data-testid="hybrid-layer-card"
+                              ref={(node) => setHybridLayerCardNode(elementId, node)}
+                              style={{
+                                left: `${Number(item?.cardLeft || 0)}px`,
+                                top: `${Number(item?.cardTop || 0)}px`,
+                              }}
                               onMouseDown={(event) => handleHybridLayerItemPointerDown(event, item)}
                               onClick={(event) => withHybridOverlayGuard(event, { action: "card_click", elementId })}
                             >
