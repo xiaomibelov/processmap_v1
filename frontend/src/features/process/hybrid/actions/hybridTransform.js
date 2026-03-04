@@ -27,7 +27,9 @@ export function clampHybridRect(rectRaw, options = {}) {
 
 export function applyDrag(rectRaw, dxRaw, dyRaw) {
   const rect = clampHybridRect(rectRaw);
+  const source = asObject(rectRaw);
   return {
+    ...source,
     x: round1(Number(rect.x || 0) + Number(dxRaw || 0)),
     y: round1(Number(rect.y || 0) + Number(dyRaw || 0)),
     w: round1(rect.w),
@@ -42,6 +44,7 @@ export function canResizeHybridElement(typeRaw) {
 
 export function applyResize(rectRaw, handleRaw, dxRaw, dyRaw, options = {}) {
   const rect = clampHybridRect(rectRaw, options);
+  const source = asObject(rectRaw);
   const handle = toText(handleRaw).toLowerCase();
   const dx = Number(dxRaw || 0);
   const dy = Number(dyRaw || 0);
@@ -74,6 +77,7 @@ export function applyResize(rectRaw, handleRaw, dxRaw, dyRaw, options = {}) {
   }
 
   return {
+    ...source,
     x: round1(x),
     y: round1(y),
     w: round1(w),

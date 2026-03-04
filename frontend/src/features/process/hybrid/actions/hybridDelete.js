@@ -22,6 +22,10 @@ export function deleteHybridIds(hybridV2Raw, idsToDeleteRaw) {
   if (!idsToDelete.size) {
     return {
       nextHybridV2: hybridV2,
+      deletedElements: [],
+      deletedEdges: [],
+      cleanedBindings: 0,
+      // Backward-compat for existing callers during D2 transition.
       deleted: { elements: [], edges: [] },
       cleanedBindingsCount: 0,
     };
@@ -69,6 +73,10 @@ export function deleteHybridIds(hybridV2Raw, idsToDeleteRaw) {
 
   return {
     nextHybridV2,
+    deletedElements: deletedElementIds,
+    deletedEdges: deletedEdgeIds,
+    cleanedBindings: Math.max(0, Number(asArray(hybridV2.bindings).length || 0) - Number(nextBindings.length || 0)),
+    // Backward-compat for existing callers during D2 transition.
     deleted: {
       elements: deletedElementIds,
       edges: deletedEdgeIds,
