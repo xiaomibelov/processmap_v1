@@ -3496,13 +3496,19 @@ export default function ProcessStage({
         payload,
       });
       if (!created?.ok) {
-        setGenErr(shortErr(created?.error || "Не удалось сохранить шаблон."));
+        const status = Number(created?.status || 0);
+        if (status === 404) {
+          setGenErr("Не удалось сохранить шаблон: endpoint /api/templates не найден. Перезапустите backend/контейнер с последней версией.");
+        } else {
+          setGenErr(shortErr(created?.error || "Не удалось сохранить шаблон."));
+        }
         return;
       }
+      setSelectionTemplateScopeTab(scope);
       setSelectionTemplateCreateOpen(false);
       setInfoMsg(`Шаблон сохранён: ${name}.`);
       if (selectionTemplatesOpen) {
-        await refreshSelectionTemplates({ scope: selectionTemplateScopeTab, q: selectionTemplateSearch, offset: 0 });
+        await refreshSelectionTemplates({ scope, q: selectionTemplateSearch, offset: 0 });
       }
     } catch (error) {
       setGenErr(shortErr(error?.message || error || "Не удалось сохранить шаблон."));
@@ -8143,6 +8149,11 @@ export default function ProcessStage({
         )}
       >
         <div className="space-y-3" data-testid="template-v1-create-modal">
+          {genErr ? (
+            <div className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger" data-testid="template-v1-create-error">
+              {genErr}
+            </div>
+          ) : null}
           <div className="rounded-lg border border-border bg-panel2/40 px-3 py-2 text-xs text-muted">
             Selected: <b className="text-fg">{selectedElementsCount}</b> elements
           </div>
