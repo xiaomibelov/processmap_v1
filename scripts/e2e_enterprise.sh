@@ -110,9 +110,16 @@ BOOTSTRAP_CREATED="${E2E_BOOTSTRAP_CREATED:-0}"
 BOOTSTRAP_PROJECT_ID="${E2E_BOOTSTRAP_PROJECT_ID:-}"
 
 cd "${ROOT_DIR}/frontend"
-npx playwright test \
-  e2e/accept-invite-enterprise.spec.mjs \
-  e2e/org-switcher.spec.mjs \
-  e2e/org-settings-invites-audit.spec.mjs \
-  e2e/reports-delete-enterprise.spec.mjs \
-  "$@"
+
+DEFAULT_SPECS=(
+  e2e/accept-invite-enterprise.spec.mjs
+  e2e/org-switcher.spec.mjs
+  e2e/org-settings-invites-audit.spec.mjs
+  e2e/reports-delete-enterprise.spec.mjs
+)
+
+if [ "$#" -gt 0 ]; then
+  npx playwright test "$@"
+else
+  npx playwright test "${DEFAULT_SPECS[@]}"
+fi

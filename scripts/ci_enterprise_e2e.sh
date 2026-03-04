@@ -52,11 +52,37 @@ if ! endpoint_up "${API_BASE}/api/health"; then
   fi
 fi
 
-E2E_API_BASE_URL="${API_BASE}" \
-E2E_APP_BASE_URL="${APP_BASE}" \
-E2E_PROFILE="enterprise" \
-E2E_ORG_SWITCH="${E2E_ORG_SWITCH:-1}" \
-E2E_ENTERPRISE="${E2E_ENTERPRISE:-1}" \
-E2E_REPORTS_DELETE="${E2E_REPORTS_DELETE:-1}" \
-E2E_ENTERPRISE_REPORTS_DELETE="${E2E_ENTERPRISE_REPORTS_DELETE:-${E2E_REPORTS_DELETE:-1}}" \
-./scripts/e2e_enterprise.sh "$@"
+export E2E_API_BASE_URL="${API_BASE}"
+export E2E_APP_BASE_URL="${APP_BASE}"
+export E2E_PROFILE="enterprise"
+export E2E_ORG_SWITCH="${E2E_ORG_SWITCH:-1}"
+export E2E_ENTERPRISE="${E2E_ENTERPRISE:-1}"
+export E2E_REPORTS_DELETE="${E2E_REPORTS_DELETE:-1}"
+export E2E_ENTERPRISE_REPORTS_DELETE="${E2E_ENTERPRISE_REPORTS_DELETE:-${E2E_REPORTS_DELETE:-1}}"
+
+if [ "$#" -gt 0 ]; then
+  ./scripts/e2e_enterprise.sh "$@"
+  exit $?
+fi
+
+echo "== e2e enterprise baseline =="
+./scripts/e2e_enterprise.sh
+
+echo
+echo "== e2e hybrid delete reload (env-gated) =="
+if ! E2E_HYBRID_LAYER=1 ./scripts/e2e_enterprise.sh e2e/hybrid-layer-delete-reload.spec.mjs; then
+  echo "retry: e2e hybrid delete reload"
+  E2E_HYBRID_LAYER=1 ./scripts/e2e_enterprise.sh e2e/hybrid-layer-delete-reload.spec.mjs
+fi
+
+echo
+if [ "${E2E_DRAWIO_SMOKE:-0}" = "1" ]; then
+  echo "== e2e drawio embedded (env-gated) =="
+  E2E_HYBRID_LAYER=1 E2E_DRAWIO=1 ./scripts/e2e_enterprise.sh e2e/drawio-embedded.spec.mjs
+else
+  echo "== e2e drawio embedded (env-gated) =="
+  echo "skip: set E2E_DRAWIO_SMOKE=1 to include drawio-embedded.spec.mjs"
+fi
+
+echo
+echo "ci_enterprise_e2e: PASS"
