@@ -201,7 +201,7 @@ async function readHybridAnchorPair(page, elementIdRaw) {
   const elementId = String(elementIdRaw || "").trim();
   return page.evaluate((targetId) => {
     const escaped = String(targetId || "").replace(/"/g, "\\\"");
-    const shape = document.querySelector(`g.djs-element.djs-shape[data-element-id="${escaped}"]`);
+    const shape = document.querySelector(`g.djs-element.djs-shape[data-element-id="${escaped}"], g.djs-shape[data-element-id="${escaped}"]`);
     const hotspot = document.querySelector(`.hybridLayerItem[data-element-id="${escaped}"] .hybridLayerHotspot`);
     const shapeRect = shape?.getBoundingClientRect?.();
     const hotspotRect = hotspot?.getBoundingClientRect?.();
@@ -281,9 +281,9 @@ test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ pag
   const v2Svg = activeOverlay.getByTestId("hybrid-v2-svg");
   await expect(v2Svg).toBeVisible();
   await toolRect.click();
-  await v2Svg.click({ position: { x: 260, y: 220 } });
+  await v2Svg.click({ position: { x: 260, y: 220 }, force: true });
   await toolText.click();
-  await v2Svg.click({ position: { x: 480, y: 220 } });
+  await v2Svg.click({ position: { x: 480, y: 220 }, force: true });
   await expect
     .poll(async () => {
       return Number(await activeOverlay.getByTestId("hybrid-v2-shape").count().catch(() => 0));
@@ -297,6 +297,7 @@ test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ pag
         .filter((value) => typeof value === "string" && value.trim().length > 0),
     )));
   expect(createdShapeIds.length).toBeGreaterThan(1);
+  await openLayersPopover(page);
   await toolArrow.click();
   await openLayersPopover(page);
   await clickHybridShapeById(page, createdShapeIds[0]);
@@ -321,7 +322,9 @@ test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ pag
       return Object.keys(map).length;
     })
     .toBeGreaterThan(0);
-  const anchorBefore = await readHybridAnchorPair(page, "Task_1");
+  const mapForAnchor = await readSessionHybridMap(request, auth.accessToken, sid);
+  const anchorElementId = Object.keys(mapForAnchor)[0] || "Task_1";
+  const anchorBefore = await readHybridAnchorPair(page, anchorElementId);
   expect(anchorBefore).toBeTruthy();
   await page.evaluate(() => {
     const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
@@ -344,7 +347,7 @@ test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ pag
     }
   });
   await page.waitForTimeout(240);
-  const anchorAfter = await readHybridAnchorPair(page, "Task_1");
+  const anchorAfter = await readHybridAnchorPair(page, anchorElementId);
   expect(anchorAfter).toBeTruthy();
   const movedDistance = Math.hypot(
     Number(anchorAfter.hotspotCenter.x || 0) - Number(anchorBefore.hotspotCenter.x || 0),

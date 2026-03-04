@@ -1132,6 +1132,7 @@ export default function ProcessStage({
   const hybridLayerOverlayRef = useRef(null);
   const hybridV2FileInputRef = useRef(null);
   const hybridLayerDragRef = useRef(null);
+  const hybridLayerCardRefCallbacksRef = useRef({});
   const hybridLayerCardNodeRefsRef = useRef({});
   const hybridLayerCardSizesRef = useRef({});
   const hybridLayerMapRef = useRef({});
@@ -1355,6 +1356,7 @@ export default function ProcessStage({
     setHybridLayerActiveElementId("");
     setHybridLayerPositions({});
     setHybridLayerCardSizes({});
+    hybridLayerCardRefCallbacksRef.current = {};
     hybridLayerCardNodeRefsRef.current = {};
     hybridLayerCardSizesRef.current = {};
     hybridLayerPositionsRef.current = {};
@@ -1684,32 +1686,31 @@ export default function ProcessStage({
     if (!elementId) return;
     if (node instanceof HTMLElement) {
       hybridLayerCardNodeRefsRef.current[elementId] = node;
-      const rect = node.getBoundingClientRect?.();
-      const width = Math.max(0, Math.round(Number(rect?.width || node.offsetWidth || 0)));
-      const height = Math.max(0, Math.round(Number(rect?.height || node.offsetHeight || 0)));
-      const prev = asObject(hybridLayerCardSizesRef.current[elementId]);
-      if (Math.abs(Number(prev.width || 0) - width) > 0.5 || Math.abs(Number(prev.height || 0) - height) > 0.5) {
-        const next = {
-          ...asObject(hybridLayerCardSizesRef.current),
-          [elementId]: { width, height },
-        };
-        hybridLayerCardSizesRef.current = next;
-        setHybridLayerCardSizes(next);
-      }
       return;
     }
     if (hybridLayerCardNodeRefsRef.current[elementId]) delete hybridLayerCardNodeRefsRef.current[elementId];
-    if (hybridLayerCardSizesRef.current[elementId]) {
-      const next = { ...asObject(hybridLayerCardSizesRef.current) };
-      delete next[elementId];
-      hybridLayerCardSizesRef.current = next;
-      setHybridLayerCardSizes(next);
-    }
   }, []);
+  const getHybridLayerCardRefCallback = useCallback((elementIdRaw) => {
+    const elementId = toText(elementIdRaw);
+    if (!elementId) return () => {};
+    const existing = hybridLayerCardRefCallbacksRef.current[elementId];
+    if (existing) return existing;
+    const next = (node) => {
+      setHybridLayerCardNode(elementId, node);
+    };
+    hybridLayerCardRefCallbacksRef.current[elementId] = next;
+    return next;
+  }, [setHybridLayerCardNode]);
   const refreshHybridLayerCardSizes = useCallback(() => {
     const refs = asObject(hybridLayerCardNodeRefsRef.current);
     const next = { ...asObject(hybridLayerCardSizesRef.current) };
     let changed = false;
+    Object.keys(next).forEach((elementIdRaw) => {
+      const elementId = toText(elementIdRaw);
+      if (!elementId || refs[elementId] instanceof HTMLElement) return;
+      delete next[elementId];
+      changed = true;
+    });
     Object.keys(refs).forEach((elementIdRaw) => {
       const elementId = toText(elementIdRaw);
       const node = refs[elementId];
@@ -8605,7 +8606,7 @@ export default function ProcessStage({
                             <div
                               className="hybridLayerCard"
                               data-testid="hybrid-layer-card"
-                              ref={(node) => setHybridLayerCardNode(elementId, node)}
+                              ref={getHybridLayerCardRefCallback(elementId)}
                               style={{
                                 left: `${Number(item?.cardLeft || 0)}px`,
                                 top: `${Number(item?.cardTop || 0)}px`,
