@@ -30,6 +30,7 @@ _ORG_FULL_ACCESS_ROLES = {"org_owner", "org_admin", "auditor"}
 _PROJECT_MEMBER_ROLES = {"project_manager", "editor", "viewer"}
 _ORG_MEMBER_ROLES = {"org_owner", "org_admin", "project_manager", "editor", "viewer", "auditor"}
 _ORG_INVITE_ROLES = {"org_admin", "editor", "viewer", "auditor"}
+_TEMPLATE_SCOPES = {"personal", "org"}
 
 
 def _now_ts() -> int:
@@ -339,6 +340,26 @@ def _ensure_schema() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_audit_org_action ON audit_log(org_id, action)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_audit_project ON audit_log(project_id)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_audit_session ON audit_log(session_id)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS templates (
+                  id TEXT PRIMARY KEY,
+                  org_id TEXT,
+                  owner_user_id TEXT NOT NULL DEFAULT '',
+                  scope TEXT NOT NULL DEFAULT 'personal',
+                  name TEXT NOT NULL,
+                  description TEXT NOT NULL DEFAULT '',
+                  template_type TEXT NOT NULL DEFAULT 'bpmn_selection_v1',
+                  payload_json TEXT NOT NULL DEFAULT '{}',
+                  created_from_session_id TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_templates_owner_updated ON templates(owner_user_id, updated_at DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_templates_org_scope_updated ON templates(org_id, scope, updated_at DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_templates_scope_updated ON templates(scope, updated_at DESC)")
             if not _column_exists(con, "projects", "org_id"):
                 con.execute("ALTER TABLE projects ADD COLUMN org_id TEXT NOT NULL DEFAULT 'org_default'")
             if not _column_exists(con, "projects", "created_by"):
@@ -1373,6 +1394,54 @@ def _audit_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     }
 
 
+def _normalize_template_scope(raw: Any) -> str:
+    scope = str(raw or "").strip().lower()
+    if scope in _TEMPLATE_SCOPES:
+        return scope
+    if not scope:
+        return "personal"
+    raise ValueError("scope must be personal|org")
+
+
+def _normalize_template_payload(raw: Any) -> Dict[str, Any]:
+    payload = raw if isinstance(raw, dict) else {}
+    ids: List[str] = []
+    seen: set[str] = set()
+    for item in payload.get("bpmn_element_ids", []):
+        value = str(item or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        ids.append(value)
+    return {
+        "bpmn_element_ids": ids,
+        "bpmn_fingerprint": str(payload.get("bpmn_fingerprint") or "").strip(),
+    }
+
+
+def _template_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    payload = _normalize_template_payload(_json_loads(row["payload_json"], {}))
+    ids = payload.get("bpmn_element_ids", [])
+    try:
+        scope = _normalize_template_scope(row["scope"])
+    except Exception:
+        scope = "personal"
+    return {
+        "id": str(row["id"] or ""),
+        "org_id": str(row["org_id"] or ""),
+        "owner_user_id": str(row["owner_user_id"] or ""),
+        "scope": scope,
+        "name": str(row["name"] or ""),
+        "description": str(row["description"] or ""),
+        "template_type": str(row["template_type"] or "bpmn_selection_v1"),
+        "payload": payload,
+        "count_elements": len(ids if isinstance(ids, list) else []),
+        "created_from_session_id": str(row["created_from_session_id"] or ""),
+        "created_at": int(row["created_at"] or 0),
+        "updated_at": int(row["updated_at"] or 0),
+    }
+
+
 def _hash_invite_token(token: str) -> str:
     return hashlib.sha256(str(token or "").encode("utf-8")).hexdigest()
 
@@ -2119,6 +2188,191 @@ def list_workspace_snapshot_rows(
         "projects": projects,
         "sessions": sessions,
     }
+
+
+def list_templates(
+    *,
+    scope: str,
+    user_id: str,
+    org_id: Optional[str] = None,
+    q: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> Dict[str, Any]:
+    tpl_scope = _normalize_template_scope(scope)
+    uid = str(user_id or "").strip()
+    if not uid:
+        return {"items": [], "total": 0, "limit": 0, "offset": 0}
+    if tpl_scope == "org":
+        oid = str(org_id or "").strip() or _default_org_id()
+    else:
+        oid = ""
+    try:
+        lim = int(limit)
+    except Exception:
+        lim = 50
+    lim = max(1, min(lim, 200))
+    try:
+        off = int(offset)
+    except Exception:
+        off = 0
+    off = max(0, off)
+    search = str(q or "").strip().lower()
+
+    filters: List[str] = ["scope = ?"]
+    params: List[Any] = [tpl_scope]
+    if tpl_scope == "personal":
+        filters.append("owner_user_id = ?")
+        params.append(uid)
+    else:
+        filters.append("org_id = ?")
+        params.append(oid)
+    if search:
+        filters.append("lower(id || ' ' || name || ' ' || description || ' ' || owner_user_id) LIKE ?")
+        params.append(f"%{search}%")
+    where = " AND ".join(filters)
+    _ensure_schema()
+    with _connect() as con:
+        total_row = con.execute(
+            f"SELECT COUNT(*) AS cnt FROM templates WHERE {where}",
+            params,
+        ).fetchone()
+        rows = con.execute(
+            f"""
+            SELECT *
+              FROM templates
+             WHERE {where}
+             ORDER BY updated_at DESC, id DESC
+             LIMIT ? OFFSET ?
+            """,
+            [*params, lim, off],
+        ).fetchall()
+    total = int((total_row["cnt"] if total_row and "cnt" in total_row.keys() else 0) or 0)
+    return {
+        "items": [_template_row_to_dict(row) for row in rows],
+        "total": total,
+        "limit": lim,
+        "offset": off,
+    }
+
+
+def get_template(template_id: str) -> Optional[Dict[str, Any]]:
+    tid = str(template_id or "").strip()
+    if not tid:
+        return None
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute("SELECT * FROM templates WHERE id = ? LIMIT 1", [tid]).fetchone()
+    if not row:
+        return None
+    return _template_row_to_dict(row)
+
+
+def create_template(
+    *,
+    scope: str,
+    owner_user_id: str,
+    name: str,
+    description: str = "",
+    template_type: str = "bpmn_selection_v1",
+    payload: Optional[Dict[str, Any]] = None,
+    org_id: Optional[str] = None,
+    created_from_session_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    tpl_scope = _normalize_template_scope(scope)
+    owner = str(owner_user_id or "").strip()
+    if not owner:
+        raise ValueError("owner_user_id is required")
+    title = str(name or "").strip()
+    if not title:
+        raise ValueError("name is required")
+    template_kind = str(template_type or "").strip() or "bpmn_selection_v1"
+    payload_norm = _normalize_template_payload(payload or {})
+    ids = payload_norm.get("bpmn_element_ids", [])
+    if not isinstance(ids, list) or not ids:
+        raise ValueError("payload.bpmn_element_ids is required")
+    oid = str(org_id or "").strip()
+    if tpl_scope == "org":
+        if not oid:
+            raise ValueError("org_id is required for org scope")
+    else:
+        oid = ""
+    now = _now_ts()
+    tid = f"tpl_{uuid.uuid4().hex[:12]}"
+    created_from = str(created_from_session_id or "").strip()
+    _ensure_schema()
+    with _connect() as con:
+        con.execute(
+            """
+            INSERT INTO templates (
+              id, org_id, owner_user_id, scope, name, description, template_type,
+              payload_json, created_from_session_id, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                tid,
+                oid if oid else None,
+                owner,
+                tpl_scope,
+                title,
+                str(description or "").strip(),
+                template_kind,
+                _json_dumps(payload_norm, {}),
+                created_from,
+                now,
+                now,
+            ],
+        )
+        con.commit()
+    created = get_template(tid)
+    if not created:
+        raise ValueError("template create failed")
+    return created
+
+
+def update_template(
+    template_id: str,
+    *,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    tid = str(template_id or "").strip()
+    if not tid:
+        return None
+    updates: Dict[str, Any] = {}
+    if name is not None:
+        next_name = str(name or "").strip()
+        if not next_name:
+            raise ValueError("name is required")
+        updates["name"] = next_name
+    if description is not None:
+        updates["description"] = str(description or "").strip()
+    if not updates:
+        return get_template(tid)
+    updates["updated_at"] = _now_ts()
+    set_sql = ", ".join([f"{field} = :{field}" for field in updates.keys()])
+    params = {"id": tid, **updates}
+    _ensure_schema()
+    with _connect() as con:
+        cur = con.execute(
+            f"UPDATE templates SET {set_sql} WHERE id = :id",
+            params,
+        )
+        con.commit()
+        if int(cur.rowcount or 0) <= 0:
+            return None
+    return get_template(tid)
+
+
+def delete_template(template_id: str) -> bool:
+    tid = str(template_id or "").strip()
+    if not tid:
+        return False
+    _ensure_schema()
+    with _connect() as con:
+        cur = con.execute("DELETE FROM templates WHERE id = ?", [tid])
+        con.commit()
+        return int(cur.rowcount or 0) > 0
 
 
 def get_project_storage() -> ProjectStorage:

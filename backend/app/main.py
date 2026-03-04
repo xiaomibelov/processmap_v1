@@ -61,6 +61,11 @@ from .storage import (
     list_audit_log,
     cleanup_audit_log,
     list_workspace_snapshot_rows,
+    list_templates as storage_list_templates,
+    get_template as storage_get_template,
+    create_template as storage_create_template,
+    update_template as storage_update_template,
+    delete_template as storage_delete_template,
 )
 from .settings import load_llm_settings, llm_status, save_llm_settings, verify_llm_settings
 from .validators.coverage import build_questions
@@ -98,6 +103,8 @@ _ORG_PROJECT_MEMBER_MANAGE_ROLES = {"org_owner", "org_admin", "project_manager"}
 _ORG_MEMBER_MANAGE_ROLES = {"org_owner", "org_admin"}
 _ORG_INVITE_MANAGE_ROLES = {"org_owner", "org_admin"}
 _ORG_AUDIT_READ_ROLES = {"org_owner", "org_admin", "auditor", "project_manager"}
+_ORG_TEMPLATE_CREATE_ROLES = {"org_owner", "org_admin", "project_manager"}
+_ORG_TEMPLATE_MANAGE_ROLES = {"org_owner", "org_admin"}
 
 _RATE_LIMIT_LOCK = threading.RLock()
 _RATE_LIMIT_BUCKETS: Dict[str, deque] = {}
@@ -2321,6 +2328,21 @@ class OrgInviteCreateIn(BaseModel):
 
 class OrgInviteAcceptIn(BaseModel):
     token: str
+
+
+class TemplateCreateIn(BaseModel):
+    scope: str = "personal"
+    org_id: Optional[str] = None
+    name: str
+    description: Optional[str] = ""
+    template_type: str = "bpmn_selection_v1"
+    payload: Dict[str, Any]
+    created_from_session_id: Optional[str] = None
+
+
+class TemplatePatchIn(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
 
 
 class CreateSessionIn(BaseModel):
@@ -6128,6 +6150,217 @@ def delete_org_project_member(org_id: str, project_id: str, user_id: str, reques
         project_id=pid,
         meta={"target_user_id": uid},
     )
+    return Response(status_code=204)
+
+
+def _normalize_template_scope(raw: Any) -> str:
+    scope = str(raw or "").strip().lower()
+    if scope in {"personal", "org"}:
+        return scope
+    return ""
+
+
+def _normalize_template_payload(raw: Any) -> Dict[str, Any]:
+    payload = raw if isinstance(raw, dict) else {}
+    ids: List[str] = []
+    seen: Set[str] = set()
+    raw_ids = payload.get("bpmn_element_ids")
+    for item in raw_ids if isinstance(raw_ids, list) else []:
+        value = str(item or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        ids.append(value)
+    return {
+        "bpmn_element_ids": ids,
+        "bpmn_fingerprint": str(payload.get("bpmn_fingerprint") or "").strip(),
+    }
+
+
+@app.get("/api/templates")
+def list_templates_endpoint(
+    request: Request,
+    scope: str = Query(default="personal"),
+    org_id: str = Query(default=""),
+    q: str = Query(default=""),
+    limit: int = Query(default=50),
+    offset: int = Query(default=0),
+):
+    uid, _ = _request_user_meta(request)
+    if not uid:
+        return _enterprise_error(401, "unauthorized", "unauthorized")
+    tpl_scope = _normalize_template_scope(scope)
+    if not tpl_scope:
+        return _enterprise_error(422, "validation_error", "scope must be personal|org")
+    oid = ""
+    if tpl_scope == "org":
+        oid = str(org_id or "").strip() or _request_active_org_id(request)
+        _, err = _enterprise_require_org_member(request, oid)
+        if err is not None:
+            return err
+    try:
+        rows = storage_list_templates(
+            scope=tpl_scope,
+            user_id=uid,
+            org_id=oid,
+            q=str(q or "").strip(),
+            limit=limit,
+            offset=offset,
+        )
+    except ValueError as exc:
+        return _enterprise_error(422, "validation_error", str(exc))
+    items = rows.get("items")
+    if not isinstance(items, list):
+        items = []
+    return {
+        "items": items,
+        "scope": tpl_scope,
+        "org_id": oid,
+        "page": {
+            "limit": int(rows.get("limit") or 0),
+            "offset": int(rows.get("offset") or 0),
+            "total": int(rows.get("total") or 0),
+        },
+    }
+
+
+@app.post("/api/templates")
+def create_template_endpoint(inp: TemplateCreateIn, request: Request):
+    uid, is_admin = _request_user_meta(request)
+    if not uid:
+        return _enterprise_error(401, "unauthorized", "unauthorized")
+    tpl_scope = _normalize_template_scope(getattr(inp, "scope", ""))
+    if not tpl_scope:
+        return _enterprise_error(422, "validation_error", "scope must be personal|org")
+    payload = _normalize_template_payload(getattr(inp, "payload", {}))
+    if not isinstance(payload.get("bpmn_element_ids"), list) or not payload.get("bpmn_element_ids"):
+        return _enterprise_error(422, "validation_error", "payload.bpmn_element_ids is required")
+    oid = ""
+    role = ""
+    if tpl_scope == "org":
+        oid = str(getattr(inp, "org_id", "") or "").strip() or _request_active_org_id(request)
+        role, err = _enterprise_require_org_member(request, oid)
+        if err is not None:
+            return err
+        if not (is_admin or _is_role_allowed(role, _ORG_TEMPLATE_CREATE_ROLES)):
+            return _enterprise_error(403, "forbidden", "insufficient_permissions")
+    try:
+        created = storage_create_template(
+            scope=tpl_scope,
+            org_id=oid if tpl_scope == "org" else None,
+            owner_user_id=uid,
+            name=str(getattr(inp, "name", "") or "").strip(),
+            description=str(getattr(inp, "description", "") or "").strip(),
+            template_type=str(getattr(inp, "template_type", "") or "").strip() or "bpmn_selection_v1",
+            payload=payload,
+            created_from_session_id=str(getattr(inp, "created_from_session_id", "") or "").strip(),
+        )
+    except ValueError as exc:
+        return _enterprise_error(422, "validation_error", str(exc))
+    if tpl_scope == "org":
+        _audit_log_safe(
+            request,
+            org_id=oid,
+            action="template.create",
+            entity_type="template",
+            entity_id=str(created.get("id") or "").strip(),
+            status="ok",
+            meta={
+                "scope": "org",
+                "owner_user_id": uid,
+                "name": str(created.get("name") or "").strip(),
+                "role": str(role or "").strip(),
+            },
+        )
+    return created
+
+
+@app.patch("/api/templates/{template_id}")
+def patch_template_endpoint(template_id: str, inp: TemplatePatchIn, request: Request):
+    uid, is_admin = _request_user_meta(request)
+    if not uid:
+        return _enterprise_error(401, "unauthorized", "unauthorized")
+    tid = str(template_id or "").strip()
+    if not tid:
+        return _enterprise_error(404, "not_found", "not_found")
+    current = storage_get_template(tid)
+    if not current:
+        return _enterprise_error(404, "not_found", "not_found")
+    scope = _normalize_template_scope(current.get("scope"))
+    owner = str(current.get("owner_user_id") or "").strip()
+    org_id_value = str(current.get("org_id") or "").strip()
+    can_manage = bool(is_admin) or uid == owner
+    role = ""
+    if scope == "org":
+        role, err = _enterprise_require_org_member(request, org_id_value)
+        if err is not None:
+            return err
+        can_manage = can_manage or _is_role_allowed(role, _ORG_TEMPLATE_MANAGE_ROLES)
+    if not can_manage:
+        return _enterprise_error(403, "forbidden", "insufficient_permissions")
+    name = getattr(inp, "name", None)
+    description = getattr(inp, "description", None)
+    if name is None and description is None:
+        return current
+    try:
+        updated = storage_update_template(tid, name=name, description=description)
+    except ValueError as exc:
+        return _enterprise_error(422, "validation_error", str(exc))
+    if not updated:
+        return _enterprise_error(404, "not_found", "not_found")
+    if scope == "org":
+        _audit_log_safe(
+            request,
+            org_id=org_id_value,
+            action="template.update",
+            entity_type="template",
+            entity_id=tid,
+            status="ok",
+            meta={
+                "name": str(updated.get("name") or "").strip(),
+                "owner_user_id": owner,
+                "role": str(role or "").strip(),
+            },
+        )
+    return updated
+
+
+@app.delete("/api/templates/{template_id}")
+def delete_template_endpoint(template_id: str, request: Request):
+    uid, is_admin = _request_user_meta(request)
+    if not uid:
+        return _enterprise_error(401, "unauthorized", "unauthorized")
+    tid = str(template_id or "").strip()
+    if not tid:
+        return _enterprise_error(404, "not_found", "not_found")
+    current = storage_get_template(tid)
+    if not current:
+        return _enterprise_error(404, "not_found", "not_found")
+    scope = _normalize_template_scope(current.get("scope"))
+    owner = str(current.get("owner_user_id") or "").strip()
+    org_id_value = str(current.get("org_id") or "").strip()
+    can_manage = bool(is_admin) or uid == owner
+    role = ""
+    if scope == "org":
+        role, err = _enterprise_require_org_member(request, org_id_value)
+        if err is not None:
+            return err
+        can_manage = can_manage or _is_role_allowed(role, _ORG_TEMPLATE_MANAGE_ROLES)
+    if not can_manage:
+        return _enterprise_error(403, "forbidden", "insufficient_permissions")
+    deleted = storage_delete_template(tid)
+    if not deleted:
+        return _enterprise_error(404, "not_found", "not_found")
+    if scope == "org":
+        _audit_log_safe(
+            request,
+            org_id=org_id_value,
+            action="template.delete",
+            entity_type="template",
+            entity_id=tid,
+            status="ok",
+            meta={"owner_user_id": owner, "role": str(role or "").strip()},
+        )
     return Response(status_code=204)
 
 

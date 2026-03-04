@@ -837,6 +837,62 @@ export async function apiDeleteOrgProjectMember(orgId, projectId, userId) {
   return r.ok ? { ok: true, status: r.status, result: r.data || null } : r;
 }
 
+// ------- Templates v1 -------
+export async function apiListTemplates(options = {}) {
+  const scope = String(options?.scope || "personal").trim().toLowerCase();
+  if (scope !== "personal" && scope !== "org") {
+    return { ok: false, status: 0, error: "scope must be personal|org" };
+  }
+  const params = new URLSearchParams();
+  params.set("scope", scope);
+  const orgId = String(options?.orgId || options?.org_id || "").trim() || String(getActiveOrgId() || "").trim();
+  if (scope === "org" && orgId) params.set("org_id", orgId);
+  const q = String(options?.q || "").trim();
+  if (q) params.set("q", q);
+  const limit = Number(options?.limit || 50);
+  if (Number.isFinite(limit) && limit > 0) params.set("limit", String(Math.min(Math.max(Math.round(limit), 1), 200)));
+  const offset = Number(options?.offset || 0);
+  if (Number.isFinite(offset) && offset >= 0) params.set("offset", String(Math.max(Math.round(offset), 0)));
+  const endpoint = `/api/templates?${params.toString()}`;
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  if (!r.ok) return r;
+  const items = Array.isArray(r?.data?.items) ? r.data.items : [];
+  const page = (r?.data && typeof r.data.page === "object" && r.data.page) ? r.data.page : {};
+  return {
+    ok: true,
+    status: r.status,
+    scope,
+    org_id: String(r?.data?.org_id || orgId || "").trim(),
+    items,
+    page: {
+      limit: Number(page?.limit || 0),
+      offset: Number(page?.offset || 0),
+      total: Number(page?.total || items.length || 0),
+    },
+  };
+}
+
+export async function apiCreateTemplate(payload = {}) {
+  const body = isPlainObject(payload) ? payload : {};
+  const r = okOrError(await request("/api/templates", { method: "POST", body }));
+  return r.ok ? { ok: true, status: r.status, template: r.data || {} } : r;
+}
+
+export async function apiPatchTemplate(templateId, patch = {}) {
+  const tid = String(templateId || "").trim();
+  if (!tid) return { ok: false, status: 0, error: "missing template_id" };
+  const body = isPlainObject(patch) ? patch : {};
+  const r = okOrError(await request(`/api/templates/${encodeURIComponent(tid)}`, { method: "PATCH", body }));
+  return r.ok ? { ok: true, status: r.status, template: r.data || {} } : r;
+}
+
+export async function apiDeleteTemplate(templateId) {
+  const tid = String(templateId || "").trim();
+  if (!tid) return { ok: false, status: 0, error: "missing template_id" };
+  const r = okOrError(await request(`/api/templates/${encodeURIComponent(tid)}`, { method: "DELETE" }));
+  return r.ok ? { ok: true, status: r.status } : r;
+}
+
 // ------- Sessions (legacy / fallback) -------
 export async function apiListSessions() {
   const r = okOrError(await request("/api/sessions"));

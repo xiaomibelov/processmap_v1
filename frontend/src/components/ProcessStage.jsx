@@ -5,7 +5,13 @@ import InterviewStage from "./process/InterviewStage";
 import WorkspaceDashboard from "./workspace/WorkspaceDashboard";
 import Modal from "../shared/ui/Modal";
 import { useAuth } from "../features/auth/AuthProvider";
-import { apiAiCommandOps } from "../lib/api";
+import {
+  apiAiCommandOps,
+  apiCreateTemplate,
+  apiDeleteTemplate,
+  apiListTemplates,
+  apiPatchTemplate,
+} from "../lib/api";
 import { apiPatchSession, apiRecompute } from "../lib/api/sessionApi";
 import { apiGetBpmnXml } from "../lib/api/bpmnApi";
 import { apiAiQuestions } from "../lib/api/interviewApi";
@@ -103,6 +109,14 @@ import useBpmnCanvasController from "../features/process/stage/hooks/useBpmnCanv
 import useDiagramOverlayTransform from "../features/process/stage/hooks/useDiagramOverlayTransform";
 import usePlaybackController from "../features/process/stage/hooks/usePlaybackController";
 import { buildManualPathReportSteps } from "./process/interview/services/pathReport";
+import {
+  buildSelectionTemplatePayload,
+  canCreateOrgTemplate,
+  canManageOrgTemplate,
+  normalizeTemplateElementIds,
+  normalizeTemplateScope,
+  readTemplateElementIds,
+} from "../features/process/templates/selectionTemplates";
 
 function toText(value) {
   return String(value || "").trim();
@@ -1069,7 +1083,7 @@ export default function ProcessStage({
   snapshotRestoreNotice,
 }) {
   const sid = String(sessionId || "");
-  const { user } = useAuth();
+  const { user, orgs, activeOrgId } = useAuth();
   const bpmnRef = useRef(null);
   const importInputRef = useRef(null);
   const processBodyRef = useRef(null);
@@ -1128,6 +1142,17 @@ export default function ProcessStage({
   const [packTitleDraft, setPackTitleDraft] = useState("");
   const [packDraft, setPackDraft] = useState(null);
   const [templatesEnabled, setTemplatesEnabled] = useState(() => readTemplateMode());
+  const [selectionTemplateCreateOpen, setSelectionTemplateCreateOpen] = useState(false);
+  const [selectionTemplatesOpen, setSelectionTemplatesOpen] = useState(false);
+  const [selectionTemplatesBusy, setSelectionTemplatesBusy] = useState(false);
+  const [selectionTemplateSaving, setSelectionTemplateSaving] = useState(false);
+  const [selectionTemplateScopeDraft, setSelectionTemplateScopeDraft] = useState("personal");
+  const [selectionTemplateNameDraft, setSelectionTemplateNameDraft] = useState("");
+  const [selectionTemplateDescriptionDraft, setSelectionTemplateDescriptionDraft] = useState("");
+  const [selectionTemplateScopeTab, setSelectionTemplateScopeTab] = useState("personal");
+  const [selectionTemplateSearch, setSelectionTemplateSearch] = useState("");
+  const [selectionTemplateItems, setSelectionTemplateItems] = useState([]);
+  const [selectionTemplatePage, setSelectionTemplatePage] = useState({ limit: 50, offset: 0, total: 0 });
   const [commandModeEnabled, setCommandModeEnabled] = useState(() => readCommandMode());
   const [diagramMode, setDiagramMode] = useState(() => readDiagramMode());
   const [qualityProfileId, setQualityProfileId] = useState(() => readQualityProfile());
@@ -1475,6 +1500,24 @@ export default function ProcessStage({
       laneName: selectedElementLaneName,
     };
   }, [selectedElementId, selectedElementName, selectedElementType, selectedElementLaneName]);
+  const selectedElementIds = useMemo(() => {
+    const selectedIdsRaw = Array.isArray(selectedBpmnElement?.selectedIds) ? selectedBpmnElement.selectedIds : [];
+    const fallback = selectedElementId ? [selectedElementId] : [];
+    return normalizeTemplateElementIds(selectedIdsRaw.length ? selectedIdsRaw : fallback);
+  }, [selectedBpmnElement?.selectedIds, selectedElementId]);
+  const selectedElementsCount = selectedElementIds.length;
+  const activeOrgForTemplates = String(workspaceActiveOrgId || activeOrgId || "").trim();
+  const activeOrgMembership = useMemo(
+    () => (
+      Array.isArray(orgs)
+        ? orgs.find((row) => String(row?.org_id || "").trim() === activeOrgForTemplates) || null
+        : null
+    ),
+    [orgs, activeOrgForTemplates],
+  );
+  const activeOrgRole = String(activeOrgMembership?.role || "").trim().toLowerCase();
+  const canCreateOrgSelectionTemplates = canCreateOrgTemplate(activeOrgRole, Boolean(user?.is_admin));
+  const canManageOrgSelectionTemplates = canManageOrgTemplate(activeOrgRole, Boolean(user?.is_admin));
   const nodePathMetaMap = useMemo(
     () => normalizeNodePathMetaMap(asObject(asObject(draft?.bpmn_meta).node_path_meta)),
     [draft?.bpmn_meta],
@@ -3360,6 +3403,241 @@ export default function ProcessStage({
     } finally {
       setPacksBusy(false);
     }
+  }
+
+  const refreshSelectionTemplates = useCallback(async (override = {}) => {
+    const nextScope = normalizeTemplateScope(override?.scope || selectionTemplateScopeTab);
+    const nextQuery = String(override?.q ?? selectionTemplateSearch).trim();
+    const nextOffset = Number(override?.offset || 0);
+    const nextLimit = Number(override?.limit || 50);
+    setSelectionTemplatesBusy(true);
+    try {
+      const res = await apiListTemplates({
+        scope: nextScope,
+        orgId: nextScope === "org" ? activeOrgForTemplates : "",
+        q: nextQuery,
+        limit: nextLimit,
+        offset: Number.isFinite(nextOffset) ? Math.max(0, Math.round(nextOffset)) : 0,
+      });
+      if (!res?.ok) {
+        setGenErr(shortErr(res?.error || "Не удалось загрузить шаблоны."));
+        return null;
+      }
+      const items = Array.isArray(res.items) ? res.items : [];
+      const page = res.page && typeof res.page === "object" ? res.page : {};
+      setSelectionTemplateItems(items);
+      setSelectionTemplatePage({
+        limit: Number(page?.limit || nextLimit || 50),
+        offset: Number(page?.offset || 0),
+        total: Number(page?.total || items.length || 0),
+      });
+      return items;
+    } catch (error) {
+      setGenErr(shortErr(error?.message || error || "Не удалось загрузить шаблоны."));
+      return null;
+    } finally {
+      setSelectionTemplatesBusy(false);
+    }
+  }, [
+    selectionTemplateScopeTab,
+    selectionTemplateSearch,
+    activeOrgForTemplates,
+  ]);
+
+  function openCreateSelectionTemplateModal() {
+    if (!sid || tab !== "diagram") {
+      setGenErr("Откройте Diagram и выделите элементы для сохранения шаблона.");
+      return;
+    }
+    if (selectedElementsCount <= 0) {
+      setGenErr("Выделите элементы BPMN на диаграмме.");
+      return;
+    }
+    setGenErr("");
+    setInfoMsg("");
+    setSelectionTemplateNameDraft("");
+    setSelectionTemplateDescriptionDraft("");
+    setSelectionTemplateScopeDraft("personal");
+    setSelectionTemplateCreateOpen(true);
+  }
+
+  async function saveSelectionTemplate() {
+    const scope = normalizeTemplateScope(selectionTemplateScopeDraft);
+    const name = String(selectionTemplateNameDraft || "").trim();
+    const description = String(selectionTemplateDescriptionDraft || "").trim();
+    const selectedIds = normalizeTemplateElementIds(selectedElementIds);
+    if (!name) {
+      setGenErr("Укажите название шаблона.");
+      return;
+    }
+    if (!selectedIds.length) {
+      setGenErr("Нет выделенных элементов для сохранения.");
+      return;
+    }
+    if (scope === "org" && !canCreateOrgSelectionTemplates) {
+      setGenErr("Общий шаблон может создать только администратор организации или менеджер.");
+      return;
+    }
+    const payload = buildSelectionTemplatePayload({
+      selectedElementIds: selectedIds,
+      bpmnFingerprint: String(draft?.bpmn_graph_fingerprint || "").trim(),
+    });
+    setSelectionTemplateSaving(true);
+    setGenErr("");
+    setInfoMsg("");
+    try {
+      const created = await apiCreateTemplate({
+        scope,
+        org_id: scope === "org" ? activeOrgForTemplates : "",
+        name,
+        description,
+        template_type: "bpmn_selection_v1",
+        created_from_session_id: sid,
+        payload,
+      });
+      if (!created?.ok) {
+        setGenErr(shortErr(created?.error || "Не удалось сохранить шаблон."));
+        return;
+      }
+      setSelectionTemplateCreateOpen(false);
+      setInfoMsg(`Шаблон сохранён: ${name}.`);
+      if (selectionTemplatesOpen) {
+        await refreshSelectionTemplates({ scope: selectionTemplateScopeTab, q: selectionTemplateSearch, offset: 0 });
+      }
+    } catch (error) {
+      setGenErr(shortErr(error?.message || error || "Не удалось сохранить шаблон."));
+    } finally {
+      setSelectionTemplateSaving(false);
+    }
+  }
+
+  async function openSelectionTemplatesLibrary(scope = "personal") {
+    setSelectionTemplatesOpen(true);
+    setSelectionTemplateScopeTab(normalizeTemplateScope(scope));
+    setSelectionTemplateSearch("");
+    setSelectionTemplatePage({ limit: 50, offset: 0, total: 0 });
+    await refreshSelectionTemplates({ scope: normalizeTemplateScope(scope), q: "", offset: 0 });
+  }
+
+  async function renameSelectionTemplate(item) {
+    const template = item && typeof item === "object" ? item : {};
+    const templateId = String(template?.id || "").trim();
+    if (!templateId) return;
+    const currentName = String(template?.name || "").trim();
+    const currentDescription = String(template?.description || "").trim();
+    const nextName = typeof window === "undefined"
+      ? currentName
+      : window.prompt("Название шаблона", currentName);
+    if (nextName == null) return;
+    const cleanedName = String(nextName || "").trim();
+    if (!cleanedName) {
+      setGenErr("Название шаблона не может быть пустым.");
+      return;
+    }
+    const nextDescription = typeof window === "undefined"
+      ? currentDescription
+      : window.prompt("Описание шаблона", currentDescription);
+    if (nextDescription == null) return;
+    setSelectionTemplatesBusy(true);
+    setGenErr("");
+    try {
+      const updated = await apiPatchTemplate(templateId, {
+        name: cleanedName,
+        description: String(nextDescription || "").trim(),
+      });
+      if (!updated?.ok) {
+        setGenErr(shortErr(updated?.error || "Не удалось обновить шаблон."));
+        return;
+      }
+      setInfoMsg("Шаблон обновлён.");
+      await refreshSelectionTemplates({ scope: selectionTemplateScopeTab, q: selectionTemplateSearch, offset: 0 });
+    } catch (error) {
+      setGenErr(shortErr(error?.message || error || "Не удалось обновить шаблон."));
+    } finally {
+      setSelectionTemplatesBusy(false);
+    }
+  }
+
+  async function removeSelectionTemplate(item) {
+    const template = item && typeof item === "object" ? item : {};
+    const templateId = String(template?.id || "").trim();
+    if (!templateId) return;
+    setSelectionTemplatesBusy(true);
+    setGenErr("");
+    setInfoMsg("");
+    try {
+      const removed = await apiDeleteTemplate(templateId);
+      if (!removed?.ok) {
+        setGenErr(shortErr(removed?.error || "Не удалось удалить шаблон."));
+        return;
+      }
+      setInfoMsg("Шаблон удалён.");
+      await refreshSelectionTemplates({ scope: selectionTemplateScopeTab, q: selectionTemplateSearch, offset: 0 });
+    } catch (error) {
+      setGenErr(shortErr(error?.message || error || "Не удалось удалить шаблон."));
+    } finally {
+      setSelectionTemplatesBusy(false);
+    }
+  }
+
+  function applySelectionTemplate(item) {
+    const template = item && typeof item === "object" ? item : {};
+    const ids = readTemplateElementIds(template);
+    if (!ids.length) {
+      setGenErr("В шаблоне нет элементов для применения.");
+      return;
+    }
+    const graph = asObject(bpmnRef.current?.getPlaybackGraph?.() || {});
+    const graphNodes = asObject(graph?.nodesById);
+    const graphFlows = asObject(graph?.flowsById);
+    const draftNodeById = {};
+    asArray(draft?.nodes).forEach((nodeRaw) => {
+      const node = asObject(nodeRaw);
+      const id = toNodeId(node?.id || node?.bpmn_id || node?.bpmnId);
+      if (!id) return;
+      draftNodeById[id] = node;
+    });
+    const draftEdgeIds = new Set(
+      asArray(draft?.edges)
+        .map((edgeRaw) => toText(asObject(edgeRaw)?.id || asObject(edgeRaw)?.bpmn_id || asObject(edgeRaw)?.bpmnId))
+        .filter(Boolean),
+    );
+    const found = [];
+    const missing = [];
+    ids.forEach((id) => {
+      const exists = !!graphNodes[id] || !!graphFlows[id] || !!draftNodeById[id] || draftEdgeIds.has(id);
+      if (exists) found.push(id);
+      else missing.push(id);
+    });
+    if (!found.length) {
+      setGenErr(`Шаблон не применён: элементы не найдены (${missing.length}).`);
+      return;
+    }
+    const firstId = String(found[0] || "").trim();
+    if (firstId) {
+      bpmnRef.current?.focusNode?.(firstId, { keepPrevious: false, durationMs: 1200 });
+    }
+    found.slice(0, 40).forEach((elementId) => {
+      bpmnRef.current?.flashNode?.(elementId, "flow", { label: "Template" });
+    });
+    const firstNode = asObject(draftNodeById[firstId] || graphNodes[firstId] || {});
+    onBpmnElementSelect?.({
+      id: firstId,
+      name: toText(firstNode?.name || firstId),
+      type: toText(firstNode?.type || ""),
+      laneName: toText(firstNode?.laneName || firstNode?.lane || ""),
+      selectedIds: found,
+      selectedCount: found.length,
+      source: "template_apply",
+    });
+    const templateFingerprint = toText(asObject(template?.payload)?.bpmn_fingerprint);
+    const currentFingerprint = toText(draft?.bpmn_graph_fingerprint);
+    const mismatch = !!templateFingerprint && !!currentFingerprint && templateFingerprint !== currentFingerprint;
+    const baseMessage = `Template applied: ${found.length} elements selected.`;
+    const missingMessage = missing.length ? ` Missing: ${missing.length}.` : "";
+    const mismatchMessage = mismatch ? " Внимание: шаблон создан для другой версии BPMN." : "";
+    setInfoMsg(`${baseMessage}${missingMessage}${mismatchMessage}`);
+    setSelectionTemplatesOpen(false);
   }
 
   function pushCommandHistory(commandText) {
@@ -6154,6 +6432,35 @@ export default function ProcessStage({
                 >
                   Вставить шаблон
                 </button>
+                <button
+                  type="button"
+                  className="secondaryBtn h-7 px-2 text-[11px]"
+                  onClick={() => {
+                    openCreateSelectionTemplateModal();
+                    setToolbarMenuOpen(false);
+                  }}
+                  disabled={!hasSession || tab !== "diagram" || selectedElementsCount <= 0}
+                  title={selectedElementsCount > 0 ? "Сохранить выделение в Template v1" : "Сначала выделите элементы BPMN"}
+                  data-testid="legacy-template-v1-create-open"
+                >
+                  Add to template
+                </button>
+                <button
+                  type="button"
+                  className="secondaryBtn h-7 px-2 text-[11px]"
+                  onClick={() => {
+                    void openSelectionTemplatesLibrary(selectionTemplateScopeTab);
+                    setToolbarMenuOpen(false);
+                  }}
+                  disabled={!hasSession}
+                  data-testid="legacy-template-v1-picker-open"
+                >
+                  Templates v1
+                </button>
+              </div>
+              <div className="mt-2 rounded-lg border border-border bg-panel2/40 px-2 py-1 text-[11px] text-muted">
+                Selected: <b className="text-fg" data-testid="legacy-template-v1-selected-count">{selectedElementsCount}</b>
+                <span className="ml-2">scope: <b className="text-fg">{canCreateOrgSelectionTemplates ? "personal/org" : "personal only"}</b></span>
               </div>
               {templatesEnabled && selectedElementId && suggestedPacks.length > 0 ? (
                 <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-border bg-panel2/45 px-2 py-1 text-[11px] text-muted">
@@ -7390,6 +7697,25 @@ export default function ProcessStage({
                           >
                             Reports
                           </button>
+                          <button
+                            type="button"
+                            className="secondaryBtn h-7 px-2 text-[11px]"
+                            onClick={openCreateSelectionTemplateModal}
+                            disabled={!hasSession || selectedElementsCount <= 0}
+                            title={selectedElementsCount > 0 ? "Сохранить выделение в Template v1" : "Сначала выделите элементы BPMN"}
+                            data-testid="template-v1-create-open"
+                          >
+                            Add to template
+                          </button>
+                          <button
+                            type="button"
+                            className="secondaryBtn h-7 px-2 text-[11px]"
+                            onClick={() => void openSelectionTemplatesLibrary(selectionTemplateScopeTab)}
+                            disabled={!hasSession}
+                            data-testid="template-v1-picker-open"
+                          >
+                            Templates v1
+                          </button>
                           {selectedInsertBetween ? (
                             <button
                               type="button"
@@ -7401,6 +7727,10 @@ export default function ProcessStage({
                               Вставить между
                             </button>
                           ) : null}
+                        </div>
+                        <div className="mt-2 rounded-lg border border-border bg-panel2/40 px-2 py-1 text-[11px] text-muted">
+                          Selected: <b className="text-fg" data-testid="template-v1-selected-count">{selectedElementsCount}</b>
+                          <span className="ml-2">scope: <b className="text-fg">{canCreateOrgSelectionTemplates ? "personal/org" : "personal only"}</b></span>
                         </div>
                       </div>
                     ) : null}
@@ -7760,6 +8090,250 @@ export default function ProcessStage({
               data-testid="diagram-insert-between-name"
             />
           </label>
+        </div>
+      </Modal>
+
+      <Modal
+        open={selectionTemplateCreateOpen}
+        title="Create template"
+        onClose={() => {
+          if (selectionTemplateSaving) return;
+          setSelectionTemplateCreateOpen(false);
+        }}
+        footer={(
+          <>
+            <button
+              type="button"
+              className="secondaryBtn"
+              onClick={() => setSelectionTemplateCreateOpen(false)}
+              disabled={selectionTemplateSaving}
+            >
+              Отмена
+            </button>
+            <button
+              type="button"
+              className="primaryBtn"
+              onClick={() => void saveSelectionTemplate()}
+              disabled={selectionTemplateSaving || !String(selectionTemplateNameDraft || "").trim() || selectedElementsCount <= 0}
+              data-testid="template-v1-save-confirm"
+            >
+              {selectionTemplateSaving ? "Сохранение..." : "Сохранить"}
+            </button>
+          </>
+        )}
+      >
+        <div className="space-y-3" data-testid="template-v1-create-modal">
+          <div className="rounded-lg border border-border bg-panel2/40 px-3 py-2 text-xs text-muted">
+            Selected: <b className="text-fg">{selectedElementsCount}</b> elements
+          </div>
+          <label className="block space-y-1 text-sm">
+            <span className="text-xs text-muted">Name *</span>
+            <input
+              className="input w-full"
+              value={selectionTemplateNameDraft}
+              onChange={(event) => setSelectionTemplateNameDraft(String(event.target.value || ""))}
+              placeholder="Например: P0 kitchen checks"
+              data-testid="template-v1-name-input"
+            />
+          </label>
+          <label className="block space-y-1 text-sm">
+            <span className="text-xs text-muted">Description</span>
+            <textarea
+              className="input w-full min-h-[76px] resize-y"
+              value={selectionTemplateDescriptionDraft}
+              onChange={(event) => setSelectionTemplateDescriptionDraft(String(event.target.value || ""))}
+              placeholder="Опционально"
+              data-testid="template-v1-description-input"
+            />
+          </label>
+          <div className="grid gap-2 text-sm sm:grid-cols-2">
+            <label
+              className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${
+                normalizeTemplateScope(selectionTemplateScopeDraft) === "personal"
+                  ? "border-primary bg-primary/10"
+                  : "border-border bg-panel"
+              }`}
+            >
+              <input
+                type="radio"
+                name="template_scope"
+                value="personal"
+                checked={normalizeTemplateScope(selectionTemplateScopeDraft) === "personal"}
+                onChange={() => setSelectionTemplateScopeDraft("personal")}
+                data-testid="template-v1-scope-personal"
+              />
+              <span>Личный шаблон</span>
+            </label>
+            <label
+              className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${
+                normalizeTemplateScope(selectionTemplateScopeDraft) === "org"
+                  ? "border-primary bg-primary/10"
+                  : "border-border bg-panel"
+              } ${canCreateOrgSelectionTemplates ? "" : "opacity-60"}`}
+              title={canCreateOrgSelectionTemplates ? "" : "Only org admins/managers can create shared templates"}
+            >
+              <input
+                type="radio"
+                name="template_scope"
+                value="org"
+                checked={normalizeTemplateScope(selectionTemplateScopeDraft) === "org"}
+                onChange={() => {
+                  if (!canCreateOrgSelectionTemplates) return;
+                  setSelectionTemplateScopeDraft("org");
+                }}
+                disabled={!canCreateOrgSelectionTemplates}
+                data-testid="template-v1-scope-org"
+              />
+              <span>Общий для организации</span>
+            </label>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={selectionTemplatesOpen}
+        title="Templates v1"
+        onClose={() => {
+          if (selectionTemplatesBusy) return;
+          setSelectionTemplatesOpen(false);
+        }}
+        footer={(
+          <>
+            <button
+              type="button"
+              className="secondaryBtn"
+              onClick={() => void refreshSelectionTemplates({ scope: selectionTemplateScopeTab, q: selectionTemplateSearch, offset: 0 })}
+              disabled={selectionTemplatesBusy}
+            >
+              Обновить
+            </button>
+            <button type="button" className="primaryBtn" onClick={() => setSelectionTemplatesOpen(false)}>
+              Закрыть
+            </button>
+          </>
+        )}
+      >
+        <div className="space-y-3" data-testid="template-v1-picker-modal">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className={`${selectionTemplateScopeTab === "personal" ? "primaryBtn" : "secondaryBtn"} h-7 px-2 text-[11px]`}
+              onClick={() => {
+                setSelectionTemplateScopeTab("personal");
+                void refreshSelectionTemplates({ scope: "personal", q: selectionTemplateSearch, offset: 0 });
+              }}
+              data-testid="template-v1-tab-personal"
+            >
+              My templates
+            </button>
+            <button
+              type="button"
+              className={`${selectionTemplateScopeTab === "org" ? "primaryBtn" : "secondaryBtn"} h-7 px-2 text-[11px]`}
+              onClick={() => {
+                setSelectionTemplateScopeTab("org");
+                void refreshSelectionTemplates({ scope: "org", q: selectionTemplateSearch, offset: 0 });
+              }}
+              data-testid="template-v1-tab-org"
+            >
+              Org templates
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              className="input h-8 min-w-[220px] flex-1 px-3 text-xs"
+              value={selectionTemplateSearch}
+              onChange={(event) => setSelectionTemplateSearch(String(event.target.value || ""))}
+              placeholder="Search templates"
+              data-testid="template-v1-search-input"
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                void refreshSelectionTemplates({ scope: selectionTemplateScopeTab, q: selectionTemplateSearch, offset: 0 });
+              }}
+            />
+            <button
+              type="button"
+              className="secondaryBtn h-8 px-2 text-xs"
+              onClick={() => void refreshSelectionTemplates({ scope: selectionTemplateScopeTab, q: selectionTemplateSearch, offset: 0 })}
+              disabled={selectionTemplatesBusy}
+            >
+              Найти
+            </button>
+          </div>
+          <div className="rounded-lg border border-border bg-panel2/40 px-3 py-2 text-xs text-muted">
+            total: <b className="text-fg">{Number(selectionTemplatePage?.total || 0)}</b>
+            <span className="ml-2">scope: <b className="text-fg">{selectionTemplateScopeTab}</b></span>
+          </div>
+          <div className="max-h-[56vh] space-y-2 overflow-auto pr-1">
+            {selectionTemplateItems.length === 0 ? (
+              <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted">
+                Шаблоны не найдены.
+              </div>
+            ) : (
+              selectionTemplateItems.map((item, idx) => {
+                const template = item && typeof item === "object" ? item : {};
+                const templateId = String(template?.id || "").trim();
+                const scope = normalizeTemplateScope(template?.scope);
+                const ownerUserId = String(template?.owner_user_id || "").trim();
+                const isOwner = !!user?.id && String(user.id) === ownerUserId;
+                const canManage = scope === "org"
+                  ? (isOwner || canManageOrgSelectionTemplates)
+                  : (isOwner || Boolean(user?.is_admin));
+                return (
+                  <div
+                    key={templateId || `template_${idx}`}
+                    className="rounded-lg border border-border bg-panel px-3 py-2"
+                    data-testid="template-v1-item"
+                    data-template-id={templateId}
+                  >
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <div className="text-sm font-semibold text-fg">{String(template?.name || "Template")}</div>
+                      <div className="text-[11px] text-muted">{new Date(Number(template?.updated_at || 0) * 1000).toLocaleString("ru-RU")}</div>
+                    </div>
+                    <div className="mb-2 text-xs text-muted">
+                      count: {Number(template?.count_elements || 0)} · scope: {scope}
+                      {scope === "org" ? ` · owner: ${ownerUserId || "—"}` : ""}
+                    </div>
+                    {String(template?.description || "").trim() ? (
+                      <div className="mb-2 text-xs text-muted">{String(template.description).trim()}</div>
+                    ) : null}
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        className="secondaryBtn h-7 px-2 text-[11px]"
+                        onClick={() => applySelectionTemplate(template)}
+                        data-testid="template-v1-apply"
+                      >
+                        Apply
+                      </button>
+                      {canManage ? (
+                        <button
+                          type="button"
+                          className="secondaryBtn h-7 px-2 text-[11px]"
+                          onClick={() => void renameSelectionTemplate(template)}
+                          disabled={selectionTemplatesBusy}
+                          data-testid="template-v1-edit"
+                        >
+                          Edit
+                        </button>
+                      ) : null}
+                      {canManage ? (
+                        <button
+                          type="button"
+                          className="secondaryBtn h-7 px-2 text-[11px]"
+                          onClick={() => void removeSelectionTemplate(template)}
+                          disabled={selectionTemplatesBusy}
+                          data-testid="template-v1-delete"
+                        >
+                          Delete
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
       </Modal>
 
