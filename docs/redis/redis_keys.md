@@ -11,6 +11,9 @@ This file defines reserved key prefixes for ProcessMap/Food Process Copilot.
 - `pm:cache:*`
   - Derived/read-through caches.
   - Examples: computed views, report payload cache.
+  - Canonical keys:
+    - `pm:cache:workspace:org:{orgId}:v1:{filtersHash}` (TTL 30s)
+    - `pm:cache:tldr:session:{sessionId}:v1` (TTL 60s)
 
 - `pm:idem:*`
   - Idempotency keys.
@@ -39,4 +42,3 @@ Example:
 - Cache: 30s-15m (per data volatility)
 - Idempotency: 5m-24h (per endpoint semantics)
 - Rate-limit: window-specific (e.g. 60s/300s)
-

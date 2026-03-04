@@ -64,6 +64,15 @@ from .storage import (
 )
 from .settings import load_llm_settings, llm_status, save_llm_settings, verify_llm_settings
 from .redis_lock import acquire_session_lock
+from .redis_cache import (
+    cache_get_json,
+    cache_set_json,
+    invalidate_tldr_session,
+    invalidate_workspace_org,
+    tldr_cache_key,
+    workspace_cache_key,
+    workspace_filters_hash,
+)
 from .validators.coverage import build_questions
 from .validators.disposition import build_disposition_questions
 from .validators.loss import build_loss_questions, loss_report
@@ -1875,6 +1884,58 @@ def _hybrid_v2_payload_size(value: Any) -> int:
     return len(elements) + len(edges) + len(bindings)
 
 
+def _normalize_drawio_meta(value: Any) -> Dict[str, Any]:
+    raw = value if isinstance(value, dict) else {}
+    try:
+        opacity = float(raw.get("opacity", 1.0))
+    except Exception:
+        opacity = 1.0
+    if not math.isfinite(opacity):
+        opacity = 1.0
+    page_raw = raw.get("page") if isinstance(raw.get("page"), dict) else {}
+    transform_raw = raw.get("transform") if isinstance(raw.get("transform"), dict) else {}
+    try:
+        page_index = int(page_raw.get("index", 0))
+    except Exception:
+        page_index = 0
+    try:
+        tx = float(transform_raw.get("x", 0))
+    except Exception:
+        tx = 0.0
+    try:
+        ty = float(transform_raw.get("y", 0))
+    except Exception:
+        ty = 0.0
+    if not math.isfinite(tx):
+        tx = 0.0
+    if not math.isfinite(ty):
+        ty = 0.0
+    doc_xml = str(raw.get("doc_xml") or "").strip()
+    if not doc_xml.lower().startswith("<mxfile"):
+        doc_xml = ""
+    svg_cache = str(raw.get("svg_cache") or "").strip()
+    return {
+        "enabled": bool(raw.get("enabled")),
+        "locked": bool(raw.get("locked")),
+        "opacity": round(max(0.05, min(1.0, opacity)), 3),
+        "last_saved_at": str(raw.get("last_saved_at") or "").strip(),
+        "doc_xml": doc_xml,
+        "svg_cache": svg_cache,
+        "page": {
+            "index": max(0, page_index),
+        },
+        "transform": {
+            "x": round(tx, 3),
+            "y": round(ty, 3),
+        },
+    }
+
+
+def _drawio_payload_size(value: Any) -> int:
+    normalized = _normalize_drawio_meta(value)
+    return len(str(normalized.get("doc_xml") or "")) + len(str(normalized.get("svg_cache") or ""))
+
+
 def _entry_to_flow_tier(entry_raw: Any) -> Optional[str]:
     if isinstance(entry_raw, dict):
         tier = _normalize_flow_tier(entry_raw.get("tier"))
@@ -1950,6 +2011,7 @@ def _normalize_bpmn_meta(
         allowed_node_ids=allowed_node_ids,
     )
     hybrid_v2 = _normalize_hybrid_v2(raw.get("hybrid_v2"))
+    drawio = _normalize_drawio_meta(raw.get("drawio"))
 
     return {
         "version": version,
@@ -1958,6 +2020,7 @@ def _normalize_bpmn_meta(
         "robot_meta_by_element_id": robot_meta_by_element_id,
         "hybrid_layer_by_element_id": hybrid_layer_by_element_id,
         "hybrid_v2": hybrid_v2,
+        "drawio": drawio,
     }
 
 
@@ -2478,6 +2541,7 @@ class BpmnMetaPatchIn(BaseModel):
     robot_meta_by_element_id: Optional[Dict[str, Any]] = None
     hybrid_layer_by_element_id: Optional[Dict[str, Any]] = None
     hybrid_v2: Optional[Dict[str, Any]] = None
+    drawio: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -2803,6 +2867,7 @@ def create_session(inp: CreateSessionIn) -> Dict[str, Any]:
     )
     sess = _recompute_session(sess)
     st.save(sess)
+    _invalidate_session_caches(sess, org_id=getattr(sess, "org_id", "") or get_default_org_id())
     return _session_api_dump(sess)
 
 
@@ -2864,6 +2929,7 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
             session_id=str(getattr(sess, "id", "") or sid),
             meta={"mode": str(getattr(sess, "mode", "") or ""), "title": str(getattr(sess, "title", "") or "")},
         )
+        _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
         return _session_api_dump(sess)
     except TypeError:
         # fallback: create base session then attach fields
@@ -2888,6 +2954,7 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
             session_id=str(getattr(sess, "id", "") or sid),
             meta={"mode": str(getattr(sess, "mode", "") or ""), "title": str(getattr(sess, "title", "") or ""), "fallback": True},
         )
+        _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
         return _session_api_dump(sess)
 
 
@@ -2912,6 +2979,20 @@ def get_session(session_id: str, request: Request = None) -> Dict[str, Any]:
     if not sess:
         return {"error": "not found"}
     return _session_api_dump(sess)
+
+
+@app.get("/api/sessions/{session_id}/tldr")
+def get_session_tldr(session_id: str, request: Request = None) -> Dict[str, Any]:
+    sess, _, _ = _legacy_load_session_scoped(session_id, request)
+    if not sess:
+        return {"error": "not found"}
+    sid = str(getattr(sess, "id", "") or session_id).strip()
+    cached = cache_get_json(tldr_cache_key(sid))
+    if isinstance(cached, dict):
+        return cached
+    payload = _build_session_tldr_payload(sess)
+    cache_set_json(tldr_cache_key(sid), payload, ttl_sec=60)
+    return payload
 
 
 @app.get("/api/sessions/{session_id}/analytics")
@@ -3026,6 +3107,10 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
                     "hybrid_v2",
                     current_meta.get("hybrid_v2", {}),
                 ),
+                "drawio": incoming_meta.get(
+                    "drawio",
+                    current_meta.get("drawio", {}),
+                ),
             }
         else:
             raw_bpmn_meta = current_meta
@@ -3056,6 +3141,7 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
         session_id=str(getattr(sess, "id", "") or session_id),
         meta={"keys": sorted(list(data.keys()))},
     )
+    _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
     return _session_api_dump(sess)
 
 
@@ -3077,6 +3163,7 @@ def delete_project_api(project_id: str, request: Request = None):
             continue
         if st.delete(sid, org_id=oid, is_admin=True):
             deleted_sessions.append(sid)
+            _invalidate_tldr_cache_for_session(sid)
     deleted_project = ps.delete(pid, org_id=oid, is_admin=True)
     if not deleted_project:
         return {"ok": False, "error": "project_not_found", "project_id": pid, "deleted_sessions": deleted_sessions}
@@ -3089,6 +3176,7 @@ def delete_project_api(project_id: str, request: Request = None):
         project_id=pid,
         meta={"deleted_sessions": deleted_sessions},
     )
+    _invalidate_workspace_cache_for_org(oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
     return {"ok": True, "project_id": pid, "deleted_sessions": deleted_sessions}
 
 
@@ -3113,6 +3201,7 @@ def delete_session_api(session_id: str, request: Request = None):
         project_id=str(getattr(sess, "project_id", "") or ""),
         session_id=sid,
     )
+    _invalidate_session_caches(sess, session_id=sid, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
     return {"ok": True, "session_id": sid, "deleted_files": 1}
 
 
@@ -3181,6 +3270,7 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
         session_id=str(getattr(sess, "id", "") or session_id),
         meta={"put": True},
     )
+    _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
     return _session_api_dump(sess)
 
 @app.post("/api/sessions/{session_id}/recompute")
@@ -3710,6 +3800,7 @@ def _create_path_report_version_core(
             session_id=str(getattr(s, "id", "") or sid),
             meta={"path_id": pid, "steps_hash": steps_hash, "status": "running"},
         )
+        _invalidate_session_caches(s, session_id=sid, org_id=str(getattr(s, "org_id", "") or oid or get_default_org_id()))
 
     sync_mode_env = str(os.environ.get("PATH_REPORT_SYNC_MODE") or "").strip().lower() in {"1", "true", "yes"}
     sync_mode = bool(sync_mode_env and request is None)
@@ -3817,6 +3908,7 @@ def _delete_path_report_version_core(
     deleted = _delete_report_version_row(sid, pid, rid, org_id=(oid or None), is_admin=admin)
     if not deleted:
         raise HTTPException(status_code=404, detail="not found")
+    _invalidate_session_caches(session_id=sid, org_id=oid or get_default_org_id())
     if request is not None:
         st = get_storage()
         sess = st.load(sid, org_id=(oid or None), is_admin=admin)
@@ -3925,6 +4017,10 @@ def delete_report_version(report_id: str, request: Request = None) -> Response:
     deleted = _delete_report_version_global(rid, org_id=(oid or None), is_admin=True, session_ids=session_ids)
     if not deleted:
         raise HTTPException(status_code=404, detail="not found")
+    _invalidate_session_caches(
+        session_id=str((deleted or {}).get("session_id") or ""),
+        org_id=oid or get_default_org_id(),
+    )
     if found and request is not None:
         _audit_log_safe(
             request,
@@ -4532,6 +4628,7 @@ def _infer_and_merge_rtiers(
     robot_meta_by_element_id = dict(current.get("robot_meta_by_element_id") or {})
     hybrid_layer_by_element_id = dict(current.get("hybrid_layer_by_element_id") or {})
     hybrid_v2 = dict(current.get("hybrid_v2") or {})
+    drawio = dict(current.get("drawio") or {})
     now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
     manual_preserved_flow_ids: List[str] = []
@@ -4596,6 +4693,7 @@ def _infer_and_merge_rtiers(
             "robot_meta_by_element_id": robot_meta_by_element_id,
             "hybrid_layer_by_element_id": hybrid_layer_by_element_id,
             "hybrid_v2": hybrid_v2,
+            "drawio": drawio,
         },
         allowed_flow_ids=flow_ids,
         allowed_node_ids=node_ids,
@@ -4674,6 +4772,7 @@ def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn) -> Dict[str, 
     robot_meta_by_element_id = dict(current.get("robot_meta_by_element_id") or {})
     hybrid_layer_by_element_id = dict(current.get("hybrid_layer_by_element_id") or {})
     hybrid_v2 = dict(current.get("hybrid_v2") or {})
+    drawio = dict(current.get("drawio") or {})
 
     if isinstance(inp.flow_meta, dict):
         replaced = _normalize_bpmn_meta(
@@ -4714,6 +4813,14 @@ def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn) -> Dict[str, 
             allowed_node_ids=node_ids if has_xml else None,
         )
         hybrid_v2 = dict(replaced.get("hybrid_v2") or {})
+
+    if isinstance(inp.drawio, dict):
+        replaced = _normalize_bpmn_meta(
+            {"version": current.get("version", 1), "drawio": inp.drawio},
+            allowed_flow_ids=flow_ids if has_xml else None,
+            allowed_node_ids=node_ids if has_xml else None,
+        )
+        drawio = dict(replaced.get("drawio") or {})
 
     def apply_update(update_raw: Dict[str, Any]) -> None:
         update = update_raw if isinstance(update_raw, dict) else {}
@@ -4905,6 +5012,7 @@ def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn) -> Dict[str, 
             "robot_meta_by_element_id": robot_meta_by_element_id,
             "hybrid_layer_by_element_id": hybrid_layer_by_element_id,
             "hybrid_v2": hybrid_v2,
+            "drawio": drawio,
         },
         allowed_flow_ids=flow_ids if has_xml else None,
         allowed_node_ids=node_ids if has_xml else None,
@@ -5110,6 +5218,7 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn) -> Dict[str, Any]:
         )
         s.bpmn_meta = normalized_meta
         st.save(s)
+        _invalidate_session_caches(s, session_id=session_id, org_id=getattr(s, "org_id", "") or get_default_org_id())
         return {"ok": True, "session_id": s.id, "bytes": len(xml), "version": s.bpmn_xml_version}
     finally:
         lock.release()
@@ -5127,6 +5236,7 @@ def session_bpmn_clear(session_id: str) -> Dict[str, Any]:
     s.bpmn_graph_fingerprint = ""
     s.bpmn_meta = _normalize_bpmn_meta({})
     st.save(s)
+    _invalidate_session_caches(s, session_id=session_id, org_id=getattr(s, "org_id", "") or get_default_org_id())
     return {"ok": True, "session_id": s.id}
 
 @app.get("/api/sessions/{session_id}/export")
@@ -5628,6 +5738,110 @@ def _workspace_session_status(
     return "draft"
 
 
+def _resolved_org_for_cache(org_id: Any) -> str:
+    return str(org_id or "").strip() or get_default_org_id()
+
+
+def _invalidate_workspace_cache_for_org(org_id: Any) -> None:
+    invalidate_workspace_org(_resolved_org_for_cache(org_id))
+
+
+def _invalidate_tldr_cache_for_session(session_id: Any) -> None:
+    sid = str(session_id or "").strip()
+    if not sid:
+        return
+    invalidate_tldr_session(sid)
+
+
+def _invalidate_session_caches(session_obj: Any = None, *, session_id: Any = None, org_id: Any = None) -> None:
+    sid = str(session_id or getattr(session_obj, "id", "") or "").strip()
+    oid = _resolved_org_for_cache(org_id or getattr(session_obj, "org_id", ""))
+    _invalidate_workspace_cache_for_org(oid)
+    if sid:
+        _invalidate_tldr_cache_for_session(sid)
+
+
+def _extract_report_summary_text(report_row: Dict[str, Any]) -> str:
+    row = report_row if isinstance(report_row, dict) else {}
+    payload = row.get("payload_normalized")
+    if not isinstance(payload, dict):
+        payload = row.get("report_json")
+    if not isinstance(payload, dict):
+        payload = {}
+    summary_raw = payload.get("summary")
+    lines: List[str] = []
+    if isinstance(summary_raw, list):
+        for item in summary_raw:
+            text = str(item or "").strip()
+            if text:
+                lines.append(text)
+    elif summary_raw is not None:
+        text = str(summary_raw or "").strip()
+        if text:
+            lines.append(text)
+    return "\n".join(lines).strip()
+
+
+def _build_session_tldr_payload(session_obj: Any) -> Dict[str, Any]:
+    sid = str(getattr(session_obj, "id", "") or "").strip()
+    interview = getattr(session_obj, "interview", {})
+    by_path = _get_report_versions_by_path(interview)
+    latest_row: Dict[str, Any] = {}
+    latest_key: Tuple[int, int] = (0, 0)
+    for rows in by_path.values():
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            item = row if isinstance(row, dict) else {}
+            key = (int(item.get("created_at") or 0), int(item.get("version") or 0))
+            if key > latest_key:
+                latest_key = key
+                latest_row = item
+
+    report_summary = _extract_report_summary_text(latest_row)
+    notes_map_raw = getattr(session_obj, "notes_by_element", {})
+    notes_map = notes_map_raw if isinstance(notes_map_raw, dict) else {}
+    notes_summaries: List[str] = []
+    notes_updated_at = 0
+    for entry_raw in notes_map.values():
+        entry = entry_raw if isinstance(entry_raw, dict) else {}
+        text = str(entry.get("summary") or entry.get("tldr") or entry.get("summary_text") or "").strip()
+        if text:
+            notes_summaries.append(text)
+        try:
+            notes_updated_at = max(
+                notes_updated_at,
+                int(entry.get("summaryUpdatedAt") or entry.get("summary_updated_at") or 0),
+                int(entry.get("updatedAt") or entry.get("updated_at") or 0),
+            )
+        except Exception:
+            pass
+
+    if report_summary:
+        summary_text = report_summary
+        source_kind = "report_version.summary"
+        updated_at = int(latest_row.get("created_at") or 0)
+    elif notes_summaries:
+        summary_text = "\n".join(notes_summaries[:4]).strip()
+        source_kind = "notes_by_element.summary"
+        updated_at = int(notes_updated_at or 0)
+    else:
+        summary_text = ""
+        source_kind = "notes_by_element.live"
+        updated_at = 0
+
+    report_id = str(latest_row.get("id") or "").strip()
+    path_id = str(latest_row.get("path_id") or "").strip()
+    return {
+        "session_id": sid,
+        "summary": summary_text,
+        "source_kind": source_kind,
+        "updated_at": updated_at,
+        "report_version_id": report_id or None,
+        "path_id": path_id or None,
+    }
+
+
 @app.get("/api/enterprise/workspace")
 def enterprise_workspace(
     request: Request,
@@ -5661,6 +5875,7 @@ def enterprise_workspace(
     role, err = _enterprise_require_org_member(request, oid)
     if err is not None:
         return err
+    uid, is_admin = _request_user_meta(request)
     role_l = str(role or "").strip().lower()
 
     scope = _project_scope_for_request(request, oid)
@@ -5670,6 +5885,30 @@ def enterprise_workspace(
         return _enterprise_error(404, "not_found", "not_found")
 
     owner_filter_ids = _workspace_parse_owner_ids(owner_ids)
+    workspace_cache_payload = {
+        "uid": uid,
+        "is_admin": bool(is_admin),
+        "role": role_l,
+        "group_by": group,
+        "q": str(q or "").strip(),
+        "owner_ids": owner_filter_ids,
+        "project_id": selected_project_id,
+        "status": status_filter,
+        "updated_from": int(updated_from or 0) if updated_from is not None else None,
+        "updated_to": int(updated_to or 0) if updated_to is not None else None,
+        "needs_attention": int(needs_attention) if needs_attention is not None else None,
+        "limit": lim,
+        "offset": off,
+        "allowed_projects": sorted(allowed_projects) if allowed_projects else [],
+    }
+    cache_key = workspace_cache_key(
+        _resolved_org_for_cache(oid),
+        workspace_filters_hash(workspace_cache_payload),
+    )
+    cached_payload = cache_get_json(cache_key)
+    if isinstance(cached_payload, dict):
+        return cached_payload
+
     snapshot = list_workspace_snapshot_rows(
         oid,
         allowed_project_ids=sorted(allowed_projects) if allowed_projects else None,
@@ -5822,7 +6061,7 @@ def enterprise_workspace(
     if not org_name:
         org_name = oid
 
-    return {
+    result = {
         "org": {"id": oid, "name": org_name, "role": role_l},
         "group_by": group,
         "users": users_out,
@@ -5830,6 +6069,8 @@ def enterprise_workspace(
         "sessions": sessions_page,
         "page": {"limit": lim, "offset": off, "total": total},
     }
+    cache_set_json(cache_key, result, ttl_sec=30)
+    return result
 
 
 @app.get("/api/orgs")
@@ -5944,6 +6185,7 @@ def create_org_project(org_id: str, inp: CreateProjectIn, request: Request) -> D
         project_id=pid,
         meta={"title": str(getattr(proj, "title", "") or title)},
     )
+    _invalidate_workspace_cache_for_org(oid)
     return proj.model_dump()
 
 
@@ -6046,6 +6288,7 @@ def create_org_project_session(
         session_id=str(getattr(sess, "id", "") or sid),
         meta={"title": str(getattr(sess, "title", "") or ""), "mode": str(getattr(sess, "mode", "") or "")},
     )
+    _invalidate_session_caches(sess, org_id=oid)
     return _session_api_dump(sess)
 
 
@@ -6617,6 +6860,7 @@ def create_project(inp: CreateProjectIn, request: Request = None) -> dict:
         project_id=pid,
         meta={"title": str(getattr(proj, "title", "") or "")},
     )
+    _invalidate_workspace_cache_for_org(oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
     return proj.model_dump()
 
 
@@ -6661,6 +6905,7 @@ def patch_project(project_id: str, inp: UpdateProjectIn, request: Request = None
         project_id=str(getattr(proj, "id", "") or project_id),
         meta={"title": str(getattr(proj, "title", "") or "")},
     )
+    _invalidate_workspace_cache_for_org(oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
     return proj.model_dump()
 
 
