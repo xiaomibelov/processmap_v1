@@ -27,6 +27,7 @@ import {
 } from "../actions/hybridPlace.js";
 import { matrixToScreen } from "../../stage/utils/hybridCoords.js";
 import { updateHybridElementRect } from "../actions/hybridUpdate.js";
+import useHybridTransformController from "../controllers/useHybridTransformController.js";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -655,6 +656,19 @@ export default function useHybridToolsController({
       baseY: Number(row.y || 0),
       baseW: Number(row.w || 0),
       baseH: Number(row.h || 0),
+      computeRect(nextPointRaw) {
+        const nextPoint = asObject(nextPointRaw);
+        return applyHybridDragDelta(
+          {
+            x: Number(row.x || 0),
+            y: Number(row.y || 0),
+            w: Number(row.w || 0),
+            h: Number(row.h || 0),
+          },
+          Number(nextPoint.x || 0) - Number(point.x || 0),
+          Number(nextPoint.y || 0) - Number(point.y || 0),
+        );
+      },
     };
   }, [clientToDiagram, createEdge, layerById, markPlaybackOverlayInteraction, modeEffective, renderable.elementsById, setGenErr, setInfoMsg, uiLocked]);
 
@@ -688,6 +702,20 @@ export default function useHybridToolsController({
       baseY: Number(row.y || 0),
       baseW: Number(row.w || 0),
       baseH: Number(row.h || 0),
+      computeRect(nextPointRaw) {
+        const nextPoint = asObject(nextPointRaw);
+        return applyHybridResizeHandleDelta(
+          {
+            x: Number(row.x || 0),
+            y: Number(row.y || 0),
+            w: Number(row.w || 0),
+            h: Number(row.h || 0),
+          },
+          handle,
+          Number(nextPoint.x || 0) - Number(point.x || 0),
+          Number(nextPoint.y || 0) - Number(point.y || 0),
+        );
+      },
     };
   }, [clientToDiagram, layerById, markPlaybackOverlayInteraction, modeEffective, renderable.elementsById, setGenErr, setInfoMsg, uiLocked]);
 
@@ -761,68 +789,32 @@ export default function useHybridToolsController({
     };
   }, []);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    if (modeEffective !== "edit" || uiLocked) return undefined;
-    const onMove = (event) => {
-      const drag = asObject(dragRef.current);
-      const resize = asObject(resizeRef.current);
-      if (!drag.id && !resize.id) return;
-      const point = clientToDiagram(event?.clientX, event?.clientY);
-      if (!point) return;
-      if (drag.id) {
-        queueElementTransform(
-          drag.id,
-          applyHybridDragDelta(
-            {
-              x: Number(drag.baseX || 0),
-              y: Number(drag.baseY || 0),
-              w: Number(drag.baseW || 0),
-              h: Number(drag.baseH || 0),
-            },
-            {
-              dx: Number(point.x || 0) - Number(drag.startX || 0),
-              dy: Number(point.y || 0) - Number(drag.startY || 0),
-            },
-          ),
-          "hybrid_v2_drag_move",
-        );
-      } else if (resize.id) {
-        queueElementTransform(
-          resize.id,
-          applyHybridResizeHandleDelta(
-            {
-              x: Number(resize.baseX || 0),
-              y: Number(resize.baseY || 0),
-              w: Number(resize.baseW || 0),
-              h: Number(resize.baseH || 0),
-            },
-            resize.handle,
-            {
-              dx: Number(point.x || 0) - Number(resize.startX || 0),
-              dy: Number(point.y || 0) - Number(resize.startY || 0),
-            },
-          ),
-          "hybrid_v2_resize_move",
-        );
-      }
-    };
-    const onUp = () => {
-      const hadDrag = !!asObject(dragRef.current).id;
-      const hadResize = !!asObject(resizeRef.current).id;
-      flushPendingTransform(hadResize ? "hybrid_v2_resize_move" : "hybrid_v2_drag_move");
-      dragRef.current = null;
-      resizeRef.current = null;
-      if (!hadDrag && !hadResize) return;
-      void persistHybridV2Doc(hybridDocRef.current, { source: hadResize ? "hybrid_v2_resize_end" : "hybrid_v2_drag_end" });
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-  }, [clientToDiagram, flushPendingTransform, hybridDocRef, modeEffective, persistHybridV2Doc, queueElementTransform, uiLocked]);
+  useHybridTransformController({
+    clientToDiagram,
+    modeEffective,
+    uiLocked,
+    dragRef,
+    resizeRef,
+    queueElementTransform: useCallback((elementIdRaw, rectRaw, source = "hybrid_v2_transform_move") => {
+      const elementId = toText(elementIdRaw);
+      if (!elementId) return;
+      const rect = asObject(rectRaw);
+      if (!Number.isFinite(Number(rect.x)) || !Number.isFinite(Number(rect.y))) return;
+      queueElementTransform(
+        elementId,
+        {
+          x: Number(rect.x || 0),
+          y: Number(rect.y || 0),
+          w: Number(rect.w || 0),
+          h: Number(rect.h || 0),
+        },
+        source,
+      );
+    }, [queueElementTransform]),
+    flushPendingTransform,
+    hybridDocRef,
+    persistHybridV2Doc,
+  });
 
   useEffect(() => {
     if (!contextMenu || typeof window === "undefined") return undefined;

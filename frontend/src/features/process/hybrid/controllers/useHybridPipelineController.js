@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo } from "react";
 import { deleteHybridIds } from "../actions/hybridDelete.js";
-import useHybridSelectionController from "../tools/useHybridSelectionController.js";
-import useHybridToolsController from "../tools/useHybridToolsController.js";
+import useHybridSelectionController from "./useHybridSelectionController.js";
+import useHybridToolsController from "./useHybridToolsController.js";
+import useHybridKeyboardController from "./useHybridKeyboardController.js";
 import { applyHybridPaletteModeIntent, applyHybridPaletteToolIntent } from "../tools/hybridToolState.js";
 import useHybridLegacyLayerController from "../../stage/controllers/useHybridLegacyLayerController.js";
 import { migrateHybridV1ToV2 } from "../hybridLayerV2.js";
@@ -494,94 +495,26 @@ export default function useHybridPipelineController({
     hybridAutoFocusGuardRef.current = guardKey;
     focusHybridLayer("hybrid_auto_focus_outside_viewport");
   }, [focusHybridLayer, hybridAutoFocusGuardRef, hybridLayerVisibilityStats.insideViewport, hybridLayerVisibilityStats.total, hybridVisible, sid, tab]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    const onKeyDown = (event) => {
-      if (isEditableTarget(event.target)) return;
-      if (tab !== "diagram" || hybridModeEffective !== "edit" || hybridUiPrefs.lock) return;
-      const key = String(event?.key || "");
-      if (key !== "Delete" && key !== "Backspace") return;
-      if (hybridSelection.selectionCount > 0) return;
-      const legacyId = toText(hybridLayerActiveElementId);
-      if (!legacyId) return;
-      if (!deleteLegacyHybridMarkers([legacyId], "hybrid_legacy_keyboard_delete")) return;
-      event.preventDefault();
-      event.stopPropagation();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [deleteLegacyHybridMarkers, hybridLayerActiveElementId, hybridModeEffective, hybridSelection.selectionCount, hybridUiPrefs.lock, isEditableTarget, tab, toText]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    const onKeyDown = (event) => {
-      if (isEditableTarget(event.target)) return;
-      if (tab === "diagram" && diagramActionHybridToolsOpen && !event.repeat) {
-        const key = String(event?.key || "");
-        if (key === "1") {
-          event.preventDefault();
-          selectHybridPaletteTool("select");
-          return;
-        }
-        if (key === "2") {
-          event.preventDefault();
-          selectHybridPaletteTool("rect");
-          return;
-        }
-        if (key === "3") {
-          event.preventDefault();
-          selectHybridPaletteTool("text");
-          return;
-        }
-        if (key === "4") {
-          event.preventDefault();
-          selectHybridPaletteTool("container");
-          return;
-        }
-      }
-      if (String(event?.key || "").toLowerCase() === "h" && !event.repeat) {
-        if (!hybridUiPrefs.visible) {
-          setHybridPeekActive(true);
-          markPlaybackOverlayInteraction({ stage: "hybrid_peek_down" });
-        }
-      }
-      if (String(event?.key || "") === "Escape" && hybridModeEffective === "edit") {
-        setHybridUiPrefs((prev) => applyHybridModeTransition(prev, "view"));
-        setHybridV2BindPickMode(false);
-        setDiagramActionHybridToolsOpen(false);
-        hybridTools.cancelTransientState();
-        markPlaybackOverlayInteraction({ stage: "hybrid_edit_escape" });
-      }
-    };
-    const onKeyUp = (event) => {
-      if (String(event?.key || "").toLowerCase() !== "h") return;
-      if (hybridPeekActive) setHybridPeekActive(false);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-    };
-  }, [
-    applyHybridModeTransition,
-    diagramActionHybridToolsOpen,
-    hybridModeEffective,
-    hybridPeekActive,
-    hybridTools,
-    hybridUiPrefs.visible,
+  useHybridKeyboardController({
     isEditableTarget,
-    markPlaybackOverlayInteraction,
-    selectHybridPaletteTool,
-    setDiagramActionHybridToolsOpen,
-    setHybridPeekActive,
-    setHybridUiPrefs,
-    setHybridV2BindPickMode,
     tab,
-  ]);
+    diagramActionHybridToolsOpen,
+    selectHybridPaletteTool,
+    hybridUiVisible: hybridUiPrefs.visible,
+    setHybridPeekActive,
+    markPlaybackOverlayInteraction,
+    hybridModeEffective,
+    setHybridUiPrefs,
+    applyHybridModeTransition,
+    setHybridV2BindPickMode,
+    setDiagramActionHybridToolsOpen,
+    hybridToolsCancelTransientState: hybridTools.cancelTransientState,
+    hybridPeekActive,
+    hybridUiLocked: hybridUiPrefs.lock,
+    hybridSelectionCount: hybridSelection.selectionCount,
+    hybridLayerActiveElementId,
+    deleteLegacyHybridMarkers,
+  });
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;

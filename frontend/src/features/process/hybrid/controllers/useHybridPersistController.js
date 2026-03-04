@@ -22,6 +22,22 @@ export default function useHybridPersistController({
 }) {
   const lastFailedDocRef = useRef(null);
   const lastFailedSourceRef = useRef("");
+  const lastErrorRef = useRef("");
+
+  const withErrorCode = useCallback((resultRaw) => {
+    const result = resultRaw && typeof resultRaw === "object" ? resultRaw : {};
+    const status = parsePersistStatus(result);
+    let errorCode = "";
+    if (status === 409 || status === 423) errorCode = "LOCK_BUSY";
+    if (!errorCode && result?.ok === false) errorCode = "SAVE_FAILED";
+    if (errorCode) lastErrorRef.current = errorCode;
+    else if (result?.ok) lastErrorRef.current = "";
+    return {
+      ...result,
+      status,
+      errorCode,
+    };
+  }, []);
 
   const notifyLockBusy = useCallback((status) => {
     if (status !== 409 && status !== 423) return;
@@ -29,14 +45,14 @@ export default function useHybridPersistController({
   }, [setInfoMsg]);
 
   const persistHybridLayerMapSafe = useCallback(async (nextRaw, options = {}) => {
-    const result = await persistHybridLayerMap(nextRaw, options);
-    notifyLockBusy(parsePersistStatus(result));
+    const result = withErrorCode(await persistHybridLayerMap(nextRaw, options));
+    notifyLockBusy(Number(result.status || 0));
     return result;
-  }, [notifyLockBusy, persistHybridLayerMap]);
+  }, [notifyLockBusy, persistHybridLayerMap, withErrorCode]);
 
   const persistHybridV2DocSafe = useCallback(async (nextRaw, options = {}) => {
-    const result = await persistHybridV2Doc(nextRaw, options);
-    const status = parsePersistStatus(result);
+    const result = withErrorCode(await persistHybridV2Doc(nextRaw, options));
+    const status = Number(result.status || 0);
     if (!result?.ok) {
       lastFailedDocRef.current = nextRaw;
       lastFailedSourceRef.current = toText(options?.source || "hybrid_v2_retry");
@@ -46,7 +62,7 @@ export default function useHybridPersistController({
     }
     notifyLockBusy(status);
     return result;
-  }, [notifyLockBusy, persistHybridV2Doc]);
+  }, [notifyLockBusy, persistHybridV2Doc, withErrorCode]);
 
   const retryLastHybridV2Save = useCallback(async () => {
     if (!lastFailedDocRef.current) return { ok: true, skipped: true };
@@ -56,15 +72,31 @@ export default function useHybridPersistController({
   }, [persistHybridV2DocSafe]);
 
   const persistDrawioMetaSafe = useCallback(async (nextRaw, options = {}) => {
-    const result = await persistDrawioMeta(nextRaw, options);
-    notifyLockBusy(parsePersistStatus(result));
+    const result = withErrorCode(await persistDrawioMeta(nextRaw, options));
+    notifyLockBusy(Number(result.status || 0));
     return result;
-  }, [notifyLockBusy, persistDrawioMeta]);
+  }, [notifyLockBusy, persistDrawioMeta, withErrorCode]);
+
+  const saveHybrid = useCallback(
+    async (nextHybridV2, options = {}) => persistHybridV2DocSafe(nextHybridV2, options),
+    [persistHybridV2DocSafe],
+  );
+
+  const patchHybrid = useCallback(async (patchFn, options = {}) => {
+    const next = typeof patchFn === "function" ? patchFn(lastFailedDocRef.current) : null;
+    if (!next) return { ok: false, errorCode: "SAVE_FAILED" };
+    return persistHybridV2DocSafe(next, options);
+  }, [persistHybridV2DocSafe]);
 
   return {
     persistHybridLayerMap: persistHybridLayerMapSafe,
     persistHybridV2Doc: persistHybridV2DocSafe,
     persistDrawioMeta: persistDrawioMetaSafe,
+    saveHybrid,
+    patchHybrid,
     retryLastHybridV2Save,
+    get lastError() {
+      return toText(lastErrorRef.current);
+    },
   };
 }
