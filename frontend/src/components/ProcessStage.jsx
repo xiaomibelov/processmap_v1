@@ -93,6 +93,14 @@ import {
   exportHybridV2ToDrawioXml,
   importDrawioXmlToHybridV2,
 } from "../features/process/hybrid/drawioCodec";
+import {
+  matrixToDiagram,
+  matrixToScreen,
+  parseSvgMatrix,
+} from "../features/process/stage/utils/hybridCoords";
+import LayersPopover from "../features/process/stage/components/LayersPopover";
+import HybridOverlayRenderer from "../features/process/stage/renderers/HybridOverlayRenderer";
+import useSessionMetaPersist from "../features/process/stage/controllers/useSessionMetaPersist";
 import { buildManualPathReportSteps } from "./process/interview/services/pathReport";
 
 function toText(value) {
@@ -312,59 +320,6 @@ function serializeHybridLayerMap(rawMap) {
     };
   });
   return JSON.stringify(sorted);
-}
-
-function parseSvgMatrix(transformRaw) {
-  const text = toText(transformRaw);
-  const match = text.match(/matrix\(([^)]+)\)/i);
-  if (!match) {
-    return { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
-  }
-  const values = String(match[1] || "")
-    .split(/[,\s]+/)
-    .map((part) => Number(part))
-    .filter((n) => Number.isFinite(n));
-  if (values.length < 6) return { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
-  return {
-    a: Number(values[0]),
-    b: Number(values[1]),
-    c: Number(values[2]),
-    d: Number(values[3]),
-    e: Number(values[4]),
-    f: Number(values[5]),
-  };
-}
-
-function matrixToScreen(matrixRaw, xRaw, yRaw) {
-  const matrix = asObject(matrixRaw);
-  const x = Number(xRaw || 0);
-  const y = Number(yRaw || 0);
-  return {
-    x: Number(matrix.a || 1) * x + Number(matrix.c || 0) * y + Number(matrix.e || 0),
-    y: Number(matrix.b || 0) * x + Number(matrix.d || 1) * y + Number(matrix.f || 0),
-  };
-}
-
-function matrixToDiagram(matrixRaw, xRaw, yRaw) {
-  const matrix = asObject(matrixRaw);
-  const x = Number(xRaw || 0);
-  const y = Number(yRaw || 0);
-  const a = Number(matrix.a || 1);
-  const b = Number(matrix.b || 0);
-  const c = Number(matrix.c || 0);
-  const d = Number(matrix.d || 1);
-  const e = Number(matrix.e || 0);
-  const f = Number(matrix.f || 0);
-  const det = (a * d) - (b * c);
-  if (!Number.isFinite(det) || Math.abs(det) < 1e-8) {
-    return { x, y };
-  }
-  const tx = x - e;
-  const ty = y - f;
-  return {
-    x: ((d * tx) - (c * ty)) / det,
-    y: ((-b * tx) + (a * ty)) / det,
-  };
 }
 
 function downloadTextFile(filenameRaw, textRaw, mimeRaw = "text/plain;charset=utf-8") {
@@ -1841,6 +1796,20 @@ export default function ProcessStage({
       none: Number(hybridLayerVisibilityStats.none || 0),
     };
   }, [hybridLayerVisibilityStats]);
+  const { persistHybridLayerMap, persistHybridV2Doc } = useSessionMetaPersist({
+    sid,
+    isLocal,
+    draftBpmnMeta: draft?.bpmn_meta,
+    onSessionSync,
+    setGenErr,
+    shortErr,
+    hybridLayerPersistedMapRef,
+    hybridV2PersistedDocRef,
+    normalizeHybridLayerMap,
+    serializeHybridLayerMap,
+    normalizeHybridV2Doc,
+    docToComparableJson,
+  });
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     if (tab !== "diagram" || !hybridVisible) return undefined;
@@ -5373,96 +5342,6 @@ export default function ProcessStage({
     }
   }
 
-  async function persistHybridLayerMap(nextRaw, options = {}) {
-    const nextMap = normalizeHybridLayerMap(nextRaw);
-    const nextSig = serializeHybridLayerMap(nextMap);
-    const prevMap = normalizeHybridLayerMap(hybridLayerPersistedMapRef.current);
-    const prevSig = serializeHybridLayerMap(prevMap);
-    if (nextSig === prevSig) return { ok: true, skipped: true };
-
-    const currentMeta = asObject(draft?.bpmn_meta);
-    const optimisticMeta = { ...currentMeta };
-    if (Object.keys(nextMap).length) optimisticMeta.hybrid_layer_by_element_id = nextMap;
-    else delete optimisticMeta.hybrid_layer_by_element_id;
-
-    const optimisticSession = {
-      id: sid,
-      session_id: sid,
-      bpmn_meta: optimisticMeta,
-      _sync_source: String(options?.source || "hybrid_layer_ui_save"),
-    };
-    hybridLayerPersistedMapRef.current = nextMap;
-    onSessionSync?.(optimisticSession);
-
-    if (!sid || isLocal) return { ok: true, local: true };
-
-    const syncRes = await apiPatchSession(sid, { bpmn_meta: optimisticMeta });
-    if (!syncRes?.ok) {
-      hybridLayerPersistedMapRef.current = prevMap;
-      const rollbackMeta = { ...currentMeta };
-      if (Object.keys(prevMap).length) rollbackMeta.hybrid_layer_by_element_id = prevMap;
-      else delete rollbackMeta.hybrid_layer_by_element_id;
-      onSessionSync?.({
-        id: sid,
-        session_id: sid,
-        bpmn_meta: rollbackMeta,
-        _sync_source: "hybrid_layer_ui_save_rollback",
-      });
-      const msg = shortErr(syncRes?.error || "Не удалось сохранить Hybrid Layer.");
-      setGenErr(msg);
-      return { ok: false, error: msg };
-    }
-    if (syncRes.session && typeof syncRes.session === "object") {
-      onSessionSync?.({
-        ...syncRes.session,
-        _sync_source: "hybrid_layer_ui_save_session_patch",
-      });
-    }
-    return { ok: true };
-  }
-
-  async function persistHybridV2Doc(nextRaw, options = {}) {
-    const nextDoc = normalizeHybridV2Doc(nextRaw);
-    const nextSig = docToComparableJson(nextDoc);
-    const prevDoc = normalizeHybridV2Doc(hybridV2PersistedDocRef.current);
-    const prevSig = docToComparableJson(prevDoc);
-    if (nextSig === prevSig) return { ok: true, skipped: true };
-
-    const currentMeta = asObject(draft?.bpmn_meta);
-    const optimisticMeta = { ...currentMeta, hybrid_v2: nextDoc };
-    const optimisticSession = {
-      id: sid,
-      session_id: sid,
-      bpmn_meta: optimisticMeta,
-      _sync_source: String(options?.source || "hybrid_v2_save"),
-    };
-    hybridV2PersistedDocRef.current = nextDoc;
-    onSessionSync?.(optimisticSession);
-    if (!sid || isLocal) return { ok: true, local: true };
-
-    const syncRes = await apiPatchSession(sid, { bpmn_meta: optimisticMeta });
-    if (!syncRes?.ok) {
-      hybridV2PersistedDocRef.current = prevDoc;
-      const rollbackMeta = { ...currentMeta, hybrid_v2: prevDoc };
-      onSessionSync?.({
-        id: sid,
-        session_id: sid,
-        bpmn_meta: rollbackMeta,
-        _sync_source: "hybrid_v2_save_rollback",
-      });
-      const msg = shortErr(syncRes?.error || "Не удалось сохранить Hybrid v2.");
-      setGenErr(msg);
-      return { ok: false, error: msg };
-    }
-    if (syncRes.session && typeof syncRes.session === "object") {
-      onSessionSync?.({
-        ...syncRes.session,
-        _sync_source: "hybrid_v2_save_session_patch",
-      });
-    }
-    return { ok: true };
-  }
-
   function updateHybridV2Doc(mutator, source = "hybrid_v2_update") {
     setHybridV2Doc((prevRaw) => {
       const prev = normalizeHybridV2Doc(prevRaw);
@@ -7761,370 +7640,50 @@ export default function ProcessStage({
                       </div>
                     ) : null}
 
-                    {diagramActionLayersOpen ? (
-                      <div
-                        className="diagramActionPopover diagramActionPopover--layers"
-                        ref={diagramLayersPopoverRef}
-                        data-testid="diagram-action-layers-popover"
-                        onMouseDown={(event) => {
-                          event.stopPropagation();
-                          markPlaybackOverlayInteraction({ stage: "layers_popover_mousedown" });
-                        }}
-                      >
-                        <div className="diagramActionPopoverHead">
-                          <span>Layers</span>
-                          <button
-                            type="button"
-                            className="secondaryBtn h-7 px-2 text-[11px]"
-                            onClick={() => setDiagramActionLayersOpen(false)}
-                          >
-                            Закрыть
-                          </button>
-                        </div>
-                        <div className="diagramIssueRows">
-                          <div className="diagramIssueRow">
-                            <label className="diagramActionCheckboxRow">
-                              <input
-                                type="checkbox"
-                                checked={!!hybridVisible}
-                                onChange={(event) => {
-                                  if (event.target.checked) showHybridLayer();
-                                  else hideHybridLayer();
-                                }}
-                                data-testid="diagram-action-layers-hybrid-toggle"
-                              />
-                              <span>Hybrid ({Number(hybridTotalCount || 0)})</span>
-                            </label>
-                            <button
-                              type="button"
-                              className="secondaryBtn h-7 px-2 text-[11px]"
-                              onClick={() => focusHybridLayer("layers_focus_button")}
-                              disabled={!hybridVisible || Number(hybridTotalCount || 0) <= 0}
-                              data-testid="diagram-action-layers-focus-visible"
-                            >
-                              Focus
-                            </button>
-                          </div>
-                          <div className="diagramIssueRow">
-                            <span>Mode</span>
-                            <div className="diagramActionPopoverActions mt-0">
-                              <button
-                                type="button"
-                                className={`secondaryBtn h-7 px-2 text-[11px] ${hybridModeEffective === "view" ? "ring-1 ring-accent/60" : ""}`}
-                                onClick={() => setHybridLayerMode("view")}
-                                data-testid="diagram-action-layers-mode-view"
-                              >
-                                View
-                              </button>
-                              <button
-                                type="button"
-                                className={`secondaryBtn h-7 px-2 text-[11px] ${hybridModeEffective === "edit" ? "ring-1 ring-accent/60" : ""}`}
-                                onClick={() => {
-                                  showHybridLayer();
-                                  setHybridLayerMode("edit");
-                                }}
-                                disabled={!hybridVisible || !!hybridUiPrefs.lock}
-                                data-testid="diagram-action-layers-mode-edit"
-                              >
-                                Edit
-                              </button>
-                            </div>
-                          </div>
-                          <div className="diagramIssueRow">
-                            <span>Tool</span>
-                            <div className="diagramActionPopoverActions mt-0">
-                              {[
-                                { id: "select", label: "Select" },
-                                { id: "rect", label: "Rect" },
-                                { id: "container", label: "Container" },
-                                { id: "note", label: "Note" },
-                                { id: "text", label: "Text" },
-                                { id: "arrow", label: "Arrow" },
-                              ].map((tool) => {
-                                const currentTool = toText(hybridV2ToolState || "select");
-                                return (
-                                  <button
-                                    key={`hybrid_v2_tool_${tool.id}`}
-                                    type="button"
-                                    className={`secondaryBtn h-7 px-2 text-[11px] ${currentTool === tool.id ? "ring-1 ring-accent/60" : ""}`}
-                                    onClick={() => setHybridV2Tool(tool.id)}
-                                    disabled={hybridModeEffective !== "edit" || !!hybridUiPrefs.lock}
-                                    data-testid={`diagram-action-layers-tool-${tool.id}`}
-                                  >
-                                    {tool.label}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                          <div className="diagramIssueRow">
-                            <span>Opacity</span>
-                            <div className="diagramActionPopoverActions mt-0">
-                              {[100, 60, 30].map((opacity) => (
-                                <button
-                                  key={`hybrid_opacity_${opacity}`}
-                                  type="button"
-                                  className={`secondaryBtn h-7 px-2 text-[11px] ${Number(hybridUiPrefs.opacity || 0) === opacity ? "ring-1 ring-accent/60" : ""}`}
-                                  onClick={() => setHybridLayerOpacity(opacity)}
-                                  data-testid={`diagram-action-layers-opacity-${opacity}`}
-                                >
-                                  {opacity}%
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                          <div className="diagramIssueRow">
-                            <label className="diagramActionCheckboxRow">
-                              <input
-                                type="checkbox"
-                                checked={!!hybridUiPrefs.lock}
-                                onChange={toggleHybridLayerLock}
-                                data-testid="diagram-action-layers-lock"
-                              />
-                              <span>Lock</span>
-                            </label>
-                            <label className="diagramActionCheckboxRow">
-                              <input
-                                type="checkbox"
-                                checked={!!hybridUiPrefs.focus}
-                                onChange={toggleHybridLayerFocus}
-                                data-testid="diagram-action-layers-focus"
-                              />
-                              <span>Dim BPMN</span>
-                            </label>
-                          </div>
-                          <div className="diagramIssueRow">
-                            <span>V2</span>
-                            <span className="diagramIssueChip">
-                              {Number(asArray(hybridV2DocLive?.elements).length || 0)} elements / {Number(asArray(hybridV2DocLive?.edges).length || 0)} edges
-                            </span>
-                          </div>
-                          <div className="diagramIssueRow">
-                            <span>Hidden</span>
-                            <div className="diagramActionPopoverActions mt-0">
-                              <span className="diagramIssueChip">{Number(hybridV2HiddenCount || 0)}</span>
-                              <button
-                                type="button"
-                                className="secondaryBtn h-7 px-2 text-[11px]"
-                                onClick={() => revealAllHybridV2("hybrid_v2_reveal_all_button")}
-                                disabled={Number(hybridV2HiddenCount || 0) <= 0}
-                                data-testid="diagram-action-layers-reveal-all"
-                              >
-                                Reveal all
-                              </button>
-                            </div>
-                          </div>
-                          <div className="diagramIssueRows mt-1">
-                            {asArray(hybridV2DocLive?.layers).map((layerRaw) => {
-                              const layer = asObject(layerRaw);
-                              const layerId = toText(layer.id);
-                              if (!layerId) return null;
-                              const opacityPct = Math.max(10, Math.min(100, Math.round(Number(layer.opacity || 1) * 100)));
-                              return (
-                                <div key={`hybrid_v2_layer_row_${layerId}`} className="diagramIssueRow">
-                                  <span className="min-w-0 truncate text-[11px]" title={toText(layer.name) || layerId}>
-                                    {toText(layer.name) || layerId}
-                                  </span>
-                                  <div className="diagramActionPopoverActions mt-0">
-                                    <label className="diagramActionCheckboxRow">
-                                      <input
-                                        type="checkbox"
-                                        checked={layer.visible !== false}
-                                        onChange={() => toggleHybridV2LayerVisibility(layerId)}
-                                        data-testid={`diagram-action-layers-layer-visible-${layerId}`}
-                                      />
-                                      <span>eye</span>
-                                    </label>
-                                    <label className="diagramActionCheckboxRow">
-                                      <input
-                                        type="checkbox"
-                                        checked={layer.locked === true}
-                                        onChange={() => toggleHybridV2LayerLock(layerId)}
-                                        data-testid={`diagram-action-layers-layer-lock-${layerId}`}
-                                      />
-                                      <span>lock</span>
-                                    </label>
-                                    <div className="diagramActionPopoverActions mt-0">
-                                      {[100, 60, 30].map((opacity) => (
-                                        <button
-                                          key={`hybrid_layer_opacity_${layerId}_${opacity}`}
-                                          type="button"
-                                          className={`secondaryBtn h-7 px-2 text-[11px] ${opacityPct === opacity ? "ring-1 ring-accent/60" : ""}`}
-                                          onClick={() => setHybridV2LayerOpacity(layerId, opacity / 100)}
-                                          data-testid={`diagram-action-layers-layer-opacity-${layerId}-${opacity}`}
-                                        >
-                                          {opacity}%
-                                        </button>
-                                      ))}
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                          <div className="diagramIssueRow">
-                            <span>Selection</span>
-                            <span className="diagramIssueChip">{toText(hybridV2ActiveId) || "—"}</span>
-                          </div>
-                          <div className="diagramIssueRow">
-                            <span>Bind</span>
-                            <div className="diagramActionPopoverActions mt-0">
-                              <button
-                                type="button"
-                                className={`secondaryBtn h-7 px-2 text-[11px] ${hybridV2BindPickMode ? "ring-1 ring-accent/60" : ""}`}
-                                onClick={() => setHybridV2BindPickMode((prev) => !prev)}
-                                disabled={!hybridV2ActiveId || hybridModeEffective !== "edit"}
-                                data-testid="diagram-action-layers-bind-pick"
-                              >
-                                {hybridV2BindPickMode ? "Pick BPMN: ON" : "Bind to BPMN"}
-                              </button>
-                              <button
-                                type="button"
-                                className="secondaryBtn h-7 px-2 text-[11px]"
-                                onClick={goToActiveHybridBinding}
-                                disabled={!toText(asObject(hybridV2BindingByHybridId[hybridV2ActiveId]).bpmn_id)}
-                                data-testid="diagram-action-layers-go-bound"
-                              >
-                                Go to bound
-                              </button>
-                            </div>
-                          </div>
-                          <div className="diagramIssueRow">
-                            <span>Draw.io</span>
-                            <div className="diagramActionPopoverActions mt-0">
-                              <button
-                                type="button"
-                                className="secondaryBtn h-7 px-2 text-[11px]"
-                                onClick={exportHybridV2Drawio}
-                                disabled={!hybridVisible}
-                                data-testid="diagram-action-layers-export-drawio"
-                              >
-                                Export
-                              </button>
-                              <button
-                                type="button"
-                                className="secondaryBtn h-7 px-2 text-[11px]"
-                                onClick={() => hybridV2FileInputRef.current?.click?.()}
-                                disabled={!hybridVisible}
-                                data-testid="diagram-action-layers-import-drawio"
-                              >
-                                Import
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="diagramIssueRows mt-2">
-                          <div className="diagramIssueRow">
-                            <span>Ready</span>
-                            <span className="diagramIssueChip">{Number(hybridLayerCounts.ready || 0)}</span>
-                          </div>
-                          <div className="diagramIssueRow">
-                            <span>Incomplete</span>
-                            <span className="diagramIssueChip">{Number(hybridLayerCounts.incomplete || 0)}</span>
-                          </div>
-                          <div className="diagramIssueRow">
-                            <span>Bindings</span>
-                            <span className="diagramIssueChip">
-                              {Number(hybridLayerVisibilityStats.validBindings || 0)} ok / {Number(hybridLayerVisibilityStats.missingBindings || 0)} missing
-                            </span>
-                          </div>
-                          <div className="diagramIssueRow">
-                            <span>Viewport</span>
-                            <span className="diagramIssueChip">
-                              {Number(hybridLayerVisibilityStats.insideViewport || 0)} in / {Number(hybridLayerVisibilityStats.outsideViewport || 0)} out
-                            </span>
-                          </div>
-                        </div>
-                        {hybridV2ImportNotice ? (
-                          <div className="diagramActionPopoverEmpty mt-2">{hybridV2ImportNotice}</div>
-                        ) : null}
-                        {hybridVisible && Number(hybridLayerVisibilityStats.outsideViewport || 0) > 0 ? (
-                          <div className="diagramActionPopoverEmpty mt-2" data-testid="diagram-action-layers-outside-warning">
-                            Часть меток вне viewport. Нажмите Focus или Go to.
-                          </div>
-                        ) : null}
-                        {hybridVisible && Number(hybridLayerVisibilityStats.missingBindings || 0) > 0 ? (
-                          <div className="diagramActionPopoverActions mt-2">
-                            <button
-                              type="button"
-                              className="secondaryBtn h-7 px-2 text-[11px]"
-                              onClick={() => cleanupMissingHybridBindings("layers_cleanup_missing")}
-                              data-testid="diagram-action-layers-cleanup-missing"
-                            >
-                              Clean up missing bindings ({Number(hybridLayerVisibilityStats.missingBindings || 0)})
-                            </button>
-                          </div>
-                        ) : null}
-                        {hybridVisible && Number(hybridTotalCount || 0) === 0 ? (
-                          <div className="diagramActionPopoverEmpty mt-2" data-testid="diagram-action-layers-empty-state">
-                            Нет элементов Hybrid. Переключись в Edit и кликни по узлу BPMN, чтобы добавить метку.
-                          </div>
-                        ) : null}
-                        {hybridVisible && Number(hybridTotalCount || 0) > 0 ? (
-                          <div className="hybridLayerPopoverList mt-2" data-testid="diagram-action-layers-item-list">
-                            {(hybridLayerRenderRows.length > 0
-                              ? hybridLayerRenderRows.slice(0, 30).map((rowRaw) => {
-                                const row = asObject(rowRaw);
-                                const elementId = toText(row?.elementId);
-                                const title = toText(row?.title || elementId) || elementId;
-                                const missing = !row?.hasCenter;
-                                return {
-                                  key: `legacy_${elementId}`,
-                                  elementId,
-                                  title,
-                                  missing,
-                                  onGoTo: () => goToHybridLayerItem(elementId, "layers_list_go_to"),
-                                };
-                              })
-                              : hybridV2Renderable.elements.slice(0, 40).map((elementRaw) => {
-                                const element = asObject(elementRaw);
-                                const elementId = toText(element.id);
-                                const binding = asObject(hybridV2BindingByHybridId[elementId]);
-                                const bpmnId = toText(binding.bpmn_id || binding.bpmnId);
-                                return {
-                                  key: `v2_${elementId}`,
-                                  elementId,
-                                  title: toText(element.text || elementId) || elementId,
-                                  missing: !bpmnId,
-                                  onGoTo: () => {
-                                    setHybridV2ActiveId(elementId);
-                                    if (bpmnId) {
-                                      bpmnRef.current?.focusNode?.(bpmnId, { keepPrevious: false, durationMs: 1200 });
-                                    }
-                                  },
-                                };
-                              })).map((rowRaw) => {
-                              const row = asObject(rowRaw);
-                              const elementId = toText(row?.elementId);
-                              const title = toText(row?.title || elementId) || elementId;
-                              const missing = !!row?.missing;
-                              return (
-                                <div key={toText(row?.key) || `hybrid_layer_row_${elementId}`} className="hybridLayerPopoverRow">
-                                  <div className="hybridLayerPopoverMain">
-                                    <span className="hybridLayerPopoverTitle" title={title}>{title}</span>
-                                    <span className="hybridLayerPopoverMeta">{elementId}</span>
-                                  </div>
-                                  <div className="hybridLayerPopoverActions">
-                                    {missing ? <span className="diagramIssueChip">missing</span> : null}
-                                    <button
-                                      type="button"
-                                      className="secondaryBtn h-7 px-2 text-[11px]"
-                                      onClick={() => {
-                                        if (typeof row.onGoTo === "function") row.onGoTo();
-                                      }}
-                                      data-testid="diagram-action-layers-go-to"
-                                    >
-                                      Go to
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : null}
-                        <div className="muted mt-2 text-[10px]">Peek: удерживайте <b>H</b> (temporary View)</div>
-                      </div>
-                    ) : null}
+                    <LayersPopover
+                      open={diagramActionLayersOpen}
+                      popoverRef={diagramLayersPopoverRef}
+                      onClose={() => setDiagramActionLayersOpen(false)}
+                      onMouseDown={(event) => {
+                        event.stopPropagation();
+                        markPlaybackOverlayInteraction({ stage: "layers_popover_mousedown" });
+                      }}
+                      hybridVisible={hybridVisible}
+                      hybridTotalCount={hybridTotalCount}
+                      showHybridLayer={showHybridLayer}
+                      hideHybridLayer={hideHybridLayer}
+                      focusHybridLayer={focusHybridLayer}
+                      hybridModeEffective={hybridModeEffective}
+                      setHybridLayerMode={setHybridLayerMode}
+                      hybridUiPrefs={hybridUiPrefs}
+                      hybridV2ToolState={hybridV2ToolState}
+                      setHybridV2Tool={setHybridV2Tool}
+                      setHybridLayerOpacity={setHybridLayerOpacity}
+                      toggleHybridLayerLock={toggleHybridLayerLock}
+                      toggleHybridLayerFocus={toggleHybridLayerFocus}
+                      hybridV2DocLive={hybridV2DocLive}
+                      hybridV2HiddenCount={hybridV2HiddenCount}
+                      revealAllHybridV2={revealAllHybridV2}
+                      toggleHybridV2LayerVisibility={toggleHybridV2LayerVisibility}
+                      toggleHybridV2LayerLock={toggleHybridV2LayerLock}
+                      setHybridV2LayerOpacity={setHybridV2LayerOpacity}
+                      hybridV2ActiveId={hybridV2ActiveId}
+                      hybridV2BindPickMode={hybridV2BindPickMode}
+                      setHybridV2BindPickMode={setHybridV2BindPickMode}
+                      goToActiveHybridBinding={goToActiveHybridBinding}
+                      hybridV2BindingByHybridId={hybridV2BindingByHybridId}
+                      exportHybridV2Drawio={exportHybridV2Drawio}
+                      onImportDrawioClick={() => hybridV2FileInputRef.current?.click?.()}
+                      hybridV2ImportNotice={hybridV2ImportNotice}
+                      hybridLayerCounts={hybridLayerCounts}
+                      hybridLayerVisibilityStats={hybridLayerVisibilityStats}
+                      cleanupMissingHybridBindings={cleanupMissingHybridBindings}
+                      hybridLayerRenderRows={hybridLayerRenderRows}
+                      hybridV2Renderable={hybridV2Renderable}
+                      setHybridV2ActiveId={setHybridV2ActiveId}
+                      bpmnRef={bpmnRef}
+                      goToHybridLayerItem={goToHybridLayerItem}
+                    />
 
                     {diagramActionRobotMetaOpen ? (
                       <div className="diagramActionPopover diagramActionPopover--robotmeta" ref={diagramRobotMetaPopoverRef} data-testid="diagram-action-robotmeta-popover">
@@ -8405,249 +7964,43 @@ export default function ProcessStage({
                   robotMetaOverlayFilters={robotMetaOverlayFilters}
                   robotMetaStatusByElementId={robotMetaStatusByElementId}
                 />
-                {tab === "diagram" && hybridVisible ? (
-                  <div
-                    className={`hybridLayerOverlay ${hybridModeEffective === "edit" ? "isEdit" : "isView"}`}
-                    ref={hybridLayerOverlayRef}
-                    style={{ "--hybrid-layer-opacity": String(Math.max(0.2, Math.min(1, hybridOpacityValue))) }}
-                    data-testid="hybrid-layer-overlay"
-                    onMouseDown={handleHybridV2OverlayPointerDown}
-                  >
-                    {hybridModeEffective === "edit" && !hybridUiPrefs.lock ? (
-                      <div
-                        className="hybridLayerShield"
-                      />
-                    ) : null}
-                    <svg
-                      className={`hybridV2Svg ${hybridModeEffective === "edit" ? "isEdit" : "isView"}`}
-                      data-testid="hybrid-v2-svg"
-                      onMouseDown={handleHybridV2OverlayPointerDown}
-                    >
-                      <defs>
-                        <marker
-                          id="hybridV2ArrowHead"
-                          markerWidth="8"
-                          markerHeight="8"
-                          refX="7"
-                          refY="3.5"
-                          orient="auto"
-                          markerUnits="strokeWidth"
-                        >
-                          <path d="M0,0 L7,3.5 L0,7 z" fill="#2563eb" />
-                        </marker>
-                      </defs>
-                      {hybridV2Renderable.edges.map((edgeRaw) => {
-                        const edge = asObject(edgeRaw);
-                        const edgeId = toText(edge.id);
-                        const active = toText(hybridV2ActiveId) === edgeId;
-                        const highlighted = hybridV2PlaybackHighlightedIds.has(edgeId);
-                        const style = asObject(edge.style);
-                        const stroke = toText(style.stroke) || "#2563eb";
-                        const width = Number(style.width || 2);
-                        const layerOpacity = Math.max(0.1, Math.min(1, Number(edge.layerOpacity || 1)));
-                        return (
-                          <path
-                            key={`hybrid_v2_edge_${edgeId}`}
-                            className={`hybridV2Edge ${active ? "isActive" : ""} ${highlighted ? "isPlayback" : ""}`}
-                            d={toText(edge.d)}
-                            stroke={stroke}
-                            strokeWidth={width}
-                            fill="none"
-                            markerEnd="url(#hybridV2ArrowHead)"
-                            style={{ opacity: layerOpacity }}
-                            data-hybrid-element-id={edgeId}
-                            data-testid="hybrid-v2-edge"
-                            onMouseDown={(event) => handleHybridV2ElementPointerDown(event, edgeId)}
-                          />
-                        );
-                      })}
-                      {hybridV2Renderable.elements.map((elementRaw) => {
-                        const element = asObject(elementRaw);
-                        const elementId = toText(element.id);
-                        const active = toText(hybridV2ActiveId) === elementId;
-                        const highlighted = hybridV2PlaybackHighlightedIds.has(elementId);
-                        const binding = asObject(hybridV2BindingByHybridId[elementId]);
-                        const style = asObject(element.style);
-                        const x = Number(element.left || 0);
-                        const y = Number(element.top || 0);
-                        const w = Number(element.width || 0);
-                        const h = Number(element.height || 0);
-                        const radius = Math.max(2, Number(style.radius || 8) * Number(element.scaleX || 1));
-                        const fontSize = Math.max(10, Number(style.fontSize || 12) * Math.min(Number(element.scaleX || 1), Number(element.scaleY || 1)));
-                        const layerOpacity = Math.max(0.1, Math.min(1, Number(element.layerOpacity || 1)));
-                        const isContainer = element.is_container === true || toText(element.type) === "container";
-                        return (
-                          <g
-                            key={`hybrid_v2_element_${elementId}`}
-                            className={`hybridV2Shape ${active ? "isActive" : ""} ${highlighted ? "isPlayback" : ""}`}
-                            style={{ opacity: layerOpacity }}
-                            data-hybrid-element-id={elementId}
-                            data-testid="hybrid-v2-shape"
-                            onMouseDown={(event) => handleHybridV2ElementPointerDown(event, elementId)}
-                          >
-                            {toText(element.type) === "text" ? (
-                              <text
-                                x={x + 6}
-                                y={y + Math.max(16, h / 2)}
-                                fill={toText(style.stroke) || "#334155"}
-                                fontSize={fontSize}
-                              >
-                                {toText(element.text) || "Text"}
-                              </text>
-                            ) : (
-                              <rect
-                                x={x}
-                                y={y}
-                                width={w}
-                                height={h}
-                                rx={radius}
-                                ry={radius}
-                                fill={toText(style.fill) || (toText(element.type) === "note" ? "#fff7d6" : "#f8fafc")}
-                                stroke={toText(style.stroke) || "#334155"}
-                                strokeWidth={isContainer ? 1.8 : 1.4}
-                              />
-                            )}
-                            {isContainer ? (
-                              <line
-                                x1={x}
-                                y1={y + Math.max(18, 24 * Number(element.scaleY || 1))}
-                                x2={x + w}
-                                y2={y + Math.max(18, 24 * Number(element.scaleY || 1))}
-                                stroke={toText(style.stroke) || "#334155"}
-                                strokeWidth={1.2}
-                              />
-                            ) : null}
-                            {toText(element.type) !== "text" ? (
-                              <text
-                                x={x + 8}
-                                y={y + 20}
-                                fill="#0f172a"
-                                fontSize={fontSize}
-                              >
-                                {toText(element.text) || ""}
-                              </text>
-                            ) : null}
-                            {toText(binding.bpmn_id || "") ? (
-                              <text
-                                x={x + w - 10}
-                                y={y + 14}
-                                textAnchor="end"
-                                className="hybridV2BindingBadge"
-                              >
-                                🔗
-                              </text>
-                            ) : null}
-                            {hybridModeEffective === "edit" && active ? (
-                              <>
-                                {[
-                                  { id: "nw", hx: x, hy: y },
-                                  { id: "ne", hx: x + w, hy: y },
-                                  { id: "sw", hx: x, hy: y + h },
-                                  { id: "se", hx: x + w, hy: y + h },
-                                ].map((handle) => (
-                                  <rect
-                                    key={`hybrid_v2_handle_${elementId}_${handle.id}`}
-                                    x={handle.hx - 4}
-                                    y={handle.hy - 4}
-                                    width={8}
-                                    height={8}
-                                    className="hybridV2ResizeHandle"
-                                    data-hybrid-element-id={elementId}
-                                    data-handle={handle.id}
-                                    onMouseDown={(event) => handleHybridV2ResizeHandlePointerDown(event, elementId, handle.id)}
-                                  />
-                                ))}
-                              </>
-                            ) : null}
-                          </g>
-                        );
-                      })}
-                    </svg>
-                    {hybridLayerRenderRows.map((rowRaw) => {
-                      const item = asObject(rowRaw);
-                      const elementId = toText(item?.elementId);
-                      if (!elementId) return null;
-                      const posX = Number(item?.posX || 0);
-                      const posY = Number(item?.posY || 0);
-                      const status = toText(item?.status).toLowerCase() || "none";
-                      const isActive = toText(hybridLayerActiveElementId) === elementId;
-                      const showCard = hybridModeEffective === "edit" || isActive;
-                      const debugOffsetX = Number(item?.rawX || 0) - posX;
-                      const debugOffsetY = Number(item?.rawY || 0) - posY;
-                      return (
-                        <div
-                          key={`hybrid_layer_item_${elementId}`}
-                          className={`hybridLayerItem is-${status} ${showCard ? "isActive" : ""}`}
-                          style={{ left: `${posX}px`, top: `${posY}px` }}
-                          data-element-id={elementId}
-                        >
-                          {hybridDebugEnabled ? (
-                            <span
-                              className="hybridLayerDebugCross"
-                              style={{ left: `${debugOffsetX}px`, top: `${debugOffsetY}px` }}
-                              title={`${elementId}: x=${Math.round(Number(item?.rawX || 0))}, y=${Math.round(Number(item?.rawY || 0))}`}
-                            />
-                          ) : null}
-                          <button
-                            type="button"
-                            className="hybridLayerHotspot"
-                            title={`Hybrid: ${toText(item?.title) || elementId}`}
-                            data-testid="hybrid-layer-hotspot"
-                            onMouseDown={(event) => withHybridOverlayGuard(event, { action: "hotspot_mousedown", elementId })}
-                            onClick={(event) => {
-                              withHybridOverlayGuard(event, { action: "hotspot_click", elementId });
-                              setHybridLayerActiveElementId(elementId);
-                              bpmnRef.current?.focusNode?.(elementId, { keepPrevious: false, durationMs: 1200 });
-                            }}
-                          >
-                            ℹ
-                          </button>
-                          {showCard ? (
-                            <div
-                              className="hybridLayerCard"
-                              data-testid="hybrid-layer-card"
-                              ref={getHybridLayerCardRefCallback(elementId)}
-                              style={{
-                                left: `${Number(item?.cardLeft || 0)}px`,
-                                top: `${Number(item?.cardTop || 0)}px`,
-                              }}
-                              onMouseDown={(event) => handleHybridLayerItemPointerDown(event, item)}
-                              onClick={(event) => withHybridOverlayGuard(event, { action: "card_click", elementId })}
-                            >
-                              <div className="hybridLayerCardTitle" title={toText(item?.title) || elementId}>
-                                {toText(item?.title) || elementId}
-                              </div>
-                              <div className="hybridLayerCardMeta">
-                                <span className={`hybridLayerStatus is-${status}`}>{status}</span>
-                                <span className="hybridLayerNodeId">{elementId}</span>
-                              </div>
-                              <div className="hybridLayerCardMeta">
-                                <span>{toText(item?.executor) || "executor:—"}</span>
-                                <span>{toText(item?.actionKey) || "action:—"}</span>
-                              </div>
-                              {!item?.hasCenter ? (
-                                <div className="hybridLayerCardMeta">
-                                  <span>binding: missing in current BPMN</span>
-                                  <button
-                                    type="button"
-                                    className="secondaryBtn h-6 px-1.5 text-[10px]"
-                                    onMouseDown={(event) => withHybridOverlayGuard(event, { action: "card_missing_cleanup_mousedown", elementId })}
-                                    onClick={(event) => {
-                                      withHybridOverlayGuard(event, { action: "card_missing_cleanup_click", elementId });
-                                      cleanupMissingHybridBindings("card_missing_cleanup");
-                                    }}
-                                  >
-                                    Clean
-                                  </button>
-                                </div>
-                              ) : null}
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : null}
+                <HybridOverlayRenderer
+                  visible={tab === "diagram" && hybridVisible}
+                  modeEffective={hybridModeEffective}
+                  uiPrefs={hybridUiPrefs}
+                  opacityValue={hybridOpacityValue}
+                  overlayRef={hybridLayerOverlayRef}
+                  onOverlayPointerDown={handleHybridV2OverlayPointerDown}
+                  v2Renderable={hybridV2Renderable}
+                  v2ActiveId={hybridV2ActiveId}
+                  v2PlaybackHighlightedIds={hybridV2PlaybackHighlightedIds}
+                  v2BindingByHybridId={hybridV2BindingByHybridId}
+                  onV2ElementPointerDown={handleHybridV2ElementPointerDown}
+                  onV2ResizeHandlePointerDown={handleHybridV2ResizeHandlePointerDown}
+                  legacyRows={hybridLayerRenderRows}
+                  legacyActiveElementId={hybridLayerActiveElementId}
+                  debugEnabled={hybridDebugEnabled}
+                  onLegacyHotspotMouseDown={(event, elementId) => {
+                    withHybridOverlayGuard(event, { action: "hotspot_mousedown", elementId });
+                  }}
+                  onLegacyHotspotClick={(event, elementId) => {
+                    withHybridOverlayGuard(event, { action: "hotspot_click", elementId });
+                    setHybridLayerActiveElementId(elementId);
+                    bpmnRef.current?.focusNode?.(elementId, { keepPrevious: false, durationMs: 1200 });
+                  }}
+                  onLegacyCardMouseDown={handleHybridLayerItemPointerDown}
+                  onLegacyCardClick={(event, elementId) => {
+                    withHybridOverlayGuard(event, { action: "card_click", elementId });
+                  }}
+                  onLegacyMissingCleanupMouseDown={(event, elementId) => {
+                    withHybridOverlayGuard(event, { action: "card_missing_cleanup_mousedown", elementId });
+                  }}
+                  onLegacyMissingCleanupClick={(event, elementId) => {
+                    withHybridOverlayGuard(event, { action: "card_missing_cleanup_click", elementId });
+                    cleanupMissingHybridBindings("card_missing_cleanup");
+                  }}
+                  onLegacyCardRef={getHybridLayerCardRefCallback}
+                />
                 {tab === "diagram" && isCoverageMode ? (
                   <div className="coverageMiniMap" data-testid="coverage-minimap">
                     <div className="coverageMiniMapHead">
