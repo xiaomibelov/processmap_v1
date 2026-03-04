@@ -68,3 +68,18 @@
   - `frontend/src/lib/api.js:4` `VITE_API_BASE`
   - `frontend/src/components/process/interview/featureFlags.js:31` `VITE_INTERVIEW_*`
 - Контракт D1: shell split не должен менять значения/семантику env gates и не должен делать Redis обязательным.
+
+## 6) D1.3 shell view-model and UI composition boundaries
+
+- Новый controller для view-model shell/panels/dialogs:
+  - `frontend/src/features/process/stage/controllers/useProcessStageShellController.js`
+  - Роль: вычисляет shell-level derived flags (`canSaveNow`, `canCreateTemplateFromSelection`, `hasPathHighlightData`) и отдает структурированные `shellProps/panelsProps/dialogsProps`.
+- Новый “layout-only” header wrapper для stage:
+  - `frontend/src/features/process/stage/ui/ProcessStageHeader.jsx`
+  - Роль: рендер toolbar/header и прокидывание top panels без stage-бизнес-логики.
+- Новый выделенный блок diagram action controls/popovers:
+  - `frontend/src/features/process/stage/ui/ProcessStageDiagramControls.jsx`
+  - Роль: рендер action-bar + popovers (paths/hybrid tools/playback/layers/quality/overflow) через props wiring.
+- Контракт D1.3:
+  - `frontend/src/components/ProcessStage.jsx` остается owner state и orchestration hooks, но большие JSX-секции и shell-level view wiring живут вне `ProcessStage`.
+  - Никаких изменений payload/flow сохранения (`persistHybridV2Doc`, `persistDrawioMeta`, `apiPatchSession`) в рамках shell split.
