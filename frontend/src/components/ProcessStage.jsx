@@ -3480,6 +3480,7 @@ export default function ProcessStage({
       setGenErr("Общий шаблон может создать только администратор организации или менеджер.");
       return;
     }
+    await Promise.resolve(bpmnRef.current?.whenReady?.());
     const graph = asObject(bpmnRef.current?.getPlaybackGraph?.() || {});
     const graphNodes = asObject(graph?.nodesById);
     const graphFlows = asObject(graph?.flowsById);
@@ -3620,7 +3621,7 @@ export default function ProcessStage({
     }
   }
 
-  function applySelectionTemplate(item) {
+  async function applySelectionTemplate(item) {
     const template = item && typeof item === "object" ? item : {};
     const ids = readTemplateElementIds(template);
     const elementRefs = readTemplateElementRefs(template);
@@ -3628,6 +3629,7 @@ export default function ProcessStage({
       setGenErr("В шаблоне нет элементов для применения.");
       return;
     }
+    await Promise.resolve(bpmnRef.current?.whenReady?.());
     const graph = asObject(bpmnRef.current?.getPlaybackGraph?.() || {});
     const graphNodes = asObject(graph?.nodesById);
     const graphFlows = asObject(graph?.flowsById);
@@ -3690,8 +3692,9 @@ export default function ProcessStage({
     }
     found = normalizeTemplateElementIds(found);
     if (!found.length) {
+      const refsInfo = elementRefs.length > 0 ? "" : " В шаблоне нет сигнатур для поиска по имени.";
       const ambiguousMessage = ambiguousCount > 0 ? ` Неоднозначные совпадения: ${ambiguousCount}.` : "";
-      setGenErr(`Шаблон не применён: элементы не найдены (${missing.length}).${ambiguousMessage}`);
+      setGenErr(`Шаблон не применён: элементы не найдены (${missing.length}).${ambiguousMessage}${refsInfo}`);
       return;
     }
     const firstId = String(found[0] || "").trim();
@@ -8409,7 +8412,9 @@ export default function ProcessStage({
                       <button
                         type="button"
                         className="secondaryBtn h-7 px-2 text-[11px]"
-                        onClick={() => applySelectionTemplate(template)}
+                        onClick={() => {
+                          void applySelectionTemplate(template);
+                        }}
                         data-testid="template-v1-apply"
                       >
                         Apply
