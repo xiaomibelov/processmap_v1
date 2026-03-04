@@ -5,6 +5,7 @@ function asObject(value) {
 }
 
 export default function useBpmnCanvasController({
+  canvasApi,
   tab,
   hybridVisible,
   hybridLayerItems,
@@ -18,10 +19,16 @@ export default function useBpmnCanvasController({
   const hybridLayerPositionsRef = useRef({});
   const [hybridLayerPositions, setHybridLayerPositions] = useState({});
 
+  const getCanvasHost = useCallback(() => {
+    const fromApi = canvasApi?.getCanvasContainerEl?.();
+    if (fromApi instanceof Element) return fromApi;
+    return bpmnStageHostRef.current;
+  }, [bpmnStageHostRef, canvasApi]);
+
   const readHybridElementAnchor = useCallback((elementIdRaw) => {
     const elementId = toText(elementIdRaw);
     if (!elementId) return null;
-    const bounds = getElementBBox?.(elementId);
+    const bounds = canvasApi?.getElementBBox?.(elementId) || getElementBBox?.(elementId);
     if (
       Number.isFinite(bounds?.x)
       && Number.isFinite(bounds?.y)
@@ -39,7 +46,7 @@ export default function useBpmnCanvasController({
         height: Number(bounds.height),
       };
     }
-    const host = bpmnStageHostRef.current;
+    const host = getCanvasHost();
     if (!host) return null;
     const escaped = cssEscapeAttr(elementId);
     if (!escaped) return null;
@@ -77,11 +84,11 @@ export default function useBpmnCanvasController({
       width,
       height,
     };
-  }, [bpmnStageHostRef, cssEscapeAttr, getElementBBox, localToDiagram, toText]);
+  }, [canvasApi, cssEscapeAttr, getCanvasHost, getElementBBox, localToDiagram, toText]);
 
   const resolveHybridTargetElementIdFromPoint = useCallback((clientXRaw, clientYRaw) => {
     if (typeof document === "undefined") return "";
-    const host = bpmnStageHostRef.current;
+    const host = getCanvasHost();
     const clientX = Number(clientXRaw || 0);
     const clientY = Number(clientYRaw || 0);
     if (!host || !Number.isFinite(clientX) || !Number.isFinite(clientY)) return "";
@@ -122,10 +129,10 @@ export default function useBpmnCanvasController({
     }
     if (bestId) return bestId;
     return "";
-  }, [bpmnStageHostRef, toNodeId]);
+  }, [getCanvasHost, toNodeId]);
 
   const resolveFirstHybridSeedElementId = useCallback(() => {
-    const host = bpmnStageHostRef.current;
+    const host = getCanvasHost();
     if (!host) return "";
     const shapes = host.querySelectorAll("g.djs-element.djs-shape[data-element-id], g.djs-shape[data-element-id]");
     for (let i = 0; i < shapes.length; i += 1) {
@@ -147,7 +154,7 @@ export default function useBpmnCanvasController({
       return elementId;
     }
     return "";
-  }, [bpmnStageHostRef, toNodeId]);
+  }, [getCanvasHost, toNodeId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;

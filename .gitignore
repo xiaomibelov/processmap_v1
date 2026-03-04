@@ -13,6 +13,8 @@ __pycache__/
 
 workspace/.session_store/
 workspace/.session_store/**
+backend/workspace/.session_store/
+backend/workspace/.session_store/**
 
 node_modules/
 dist/

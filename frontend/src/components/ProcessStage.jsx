@@ -85,8 +85,9 @@ import HybridOverlayRenderer from "../features/process/stage/renderers/HybridOve
 import useSessionMetaPersist from "../features/process/stage/controllers/useSessionMetaPersist";
 import useProcessStageActionsController from "../features/process/stage/controllers/useProcessStageActionsController";
 import useProcessStageShellController from "../features/process/stage/controllers/useProcessStageShellController";
-import useBpmnCanvasController from "../features/process/stage/hooks/useBpmnCanvasController";
-import useDiagramOverlayTransform from "../features/process/stage/hooks/useDiagramOverlayTransform";
+import useBpmnCanvasController from "../features/process/stage/controllers/useBpmnCanvasController";
+import useDiagramOverlayTransform from "../features/process/stage/controllers/useDiagramOverlayTransform";
+import useHybridLayerAnchorController from "../features/process/stage/hooks/useBpmnCanvasController";
 import useHybridLayerViewportController from "../features/process/stage/hooks/useHybridLayerViewportController";
 import usePlaybackController from "../features/process/stage/hooks/usePlaybackController";
 import useDiagramActionPopovers from "../features/process/stage/hooks/useDiagramActionPopovers";
@@ -1665,6 +1666,10 @@ export default function ProcessStage({
       return false;
     }
   }, [sid, tab]);
+  const bpmnCanvasApi = useBpmnCanvasController({
+    bpmnRef,
+    bpmnStageHostRef,
+  });
   const {
     hybridViewportSize,
     hybridViewportMatrix,
@@ -1673,13 +1678,11 @@ export default function ProcessStage({
     localToDiagram,
     clientToDiagram,
     getElementBBox,
+    diagramToScreen,
+    screenToDiagram,
   } = useDiagramOverlayTransform({
-    tab,
-    hybridVisible: overlayLayerVisible,
-    bpmnRef,
-    bpmnStageHostRef,
-    matrixToScreen,
-    matrixToDiagram,
+    enabled: tab === "diagram" && overlayLayerVisible,
+    canvasApi: bpmnCanvasApi,
   });
   const {
     hybridLayerPositions,
@@ -1687,7 +1690,8 @@ export default function ProcessStage({
     readHybridElementAnchor,
     resolveHybridTargetElementIdFromPoint,
     resolveFirstHybridSeedElementId,
-  } = useBpmnCanvasController({
+  } = useHybridLayerAnchorController({
+    canvasApi: bpmnCanvasApi,
     tab,
     hybridVisible,
     hybridLayerItems,
