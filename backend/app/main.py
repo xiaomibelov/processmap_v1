@@ -63,6 +63,7 @@ from .storage import (
     list_workspace_snapshot_rows,
 )
 from .settings import load_llm_settings, llm_status, save_llm_settings, verify_llm_settings
+from .redis_lock import acquire_session_lock
 from .validators.coverage import build_questions
 from .validators.disposition import build_disposition_questions
 from .validators.loss import build_loss_questions, loss_report
@@ -5028,6 +5029,10 @@ def session_bpmn_export(
 
 @app.put("/api/sessions/{session_id}/bpmn")
 def session_bpmn_save(session_id: str, inp: BpmnXmlIn) -> Dict[str, Any]:
+    lock = acquire_session_lock(session_id, ttl_ms=15000)
+    if not lock.acquired:
+        raise HTTPException(status_code=423, detail="Session is being updated, retry")
+
     st = get_storage()
     s = st.load(session_id)
     if not s:
@@ -5037,64 +5042,77 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn) -> Dict[str, Any]:
     if not xml.strip():
         return {"error": "xml is empty"}
 
-    flow_ctx = _collect_sequence_flow_meta(xml)
-    flow_ids = flow_ctx.get("flow_ids") if isinstance(flow_ctx, dict) else set()
-    node_ids = flow_ctx.get("node_ids") if isinstance(flow_ctx, dict) else set()
-    current_meta = _normalize_bpmn_meta(
-        getattr(s, "bpmn_meta", {}),
-        allowed_flow_ids=flow_ids,
-        allowed_node_ids=node_ids,
-    )
-    if isinstance(inp.bpmn_meta, dict):
-        incoming_meta = inp.bpmn_meta
-        incoming_hybrid_layer = incoming_meta.get("hybrid_layer_by_element_id")
-        current_hybrid_layer = current_meta.get("hybrid_layer_by_element_id", {})
-        if isinstance(incoming_hybrid_layer, dict):
-            if not incoming_hybrid_layer and isinstance(current_hybrid_layer, dict) and current_hybrid_layer:
-                merged_hybrid_layer = current_hybrid_layer
+    try:
+        flow_ctx = _collect_sequence_flow_meta(xml)
+        flow_ids = flow_ctx.get("flow_ids") if isinstance(flow_ctx, dict) else set()
+        node_ids = flow_ctx.get("node_ids") if isinstance(flow_ctx, dict) else set()
+        current_meta = _normalize_bpmn_meta(
+            getattr(s, "bpmn_meta", {}),
+            allowed_flow_ids=flow_ids,
+            allowed_node_ids=node_ids,
+        )
+        if isinstance(inp.bpmn_meta, dict):
+            incoming_meta = inp.bpmn_meta
+            incoming_hybrid_layer = incoming_meta.get("hybrid_layer_by_element_id")
+            current_hybrid_layer = current_meta.get("hybrid_layer_by_element_id", {})
+            if isinstance(incoming_hybrid_layer, dict):
+                if not incoming_hybrid_layer and isinstance(current_hybrid_layer, dict) and current_hybrid_layer:
+                    merged_hybrid_layer = current_hybrid_layer
+                else:
+                    merged_hybrid_layer = incoming_hybrid_layer
             else:
-                merged_hybrid_layer = incoming_hybrid_layer
-        else:
-            merged_hybrid_layer = current_hybrid_layer
+                merged_hybrid_layer = current_hybrid_layer
 
-        incoming_hybrid_v2 = incoming_meta.get("hybrid_v2")
-        current_hybrid_v2 = current_meta.get("hybrid_v2", {})
-        if isinstance(incoming_hybrid_v2, dict):
-            incoming_v2_size = _hybrid_v2_payload_size(incoming_hybrid_v2)
-            current_v2_size = _hybrid_v2_payload_size(current_hybrid_v2)
-            merged_hybrid_v2 = current_hybrid_v2 if incoming_v2_size <= 0 < current_v2_size else incoming_hybrid_v2
-        else:
-            merged_hybrid_v2 = current_hybrid_v2
+            incoming_hybrid_v2 = incoming_meta.get("hybrid_v2")
+            current_hybrid_v2 = current_meta.get("hybrid_v2", {})
+            if isinstance(incoming_hybrid_v2, dict):
+                incoming_v2_size = _hybrid_v2_payload_size(incoming_hybrid_v2)
+                current_v2_size = _hybrid_v2_payload_size(current_hybrid_v2)
+                merged_hybrid_v2 = current_hybrid_v2 if incoming_v2_size <= 0 < current_v2_size else incoming_hybrid_v2
+            else:
+                merged_hybrid_v2 = current_hybrid_v2
 
-        raw_bpmn_meta = {
-            "version": incoming_meta.get("version", current_meta.get("version", 1)),
-            "flow_meta": incoming_meta.get("flow_meta", current_meta.get("flow_meta", {})),
-            "node_path_meta": incoming_meta.get("node_path_meta", current_meta.get("node_path_meta", {})),
-            "robot_meta_by_element_id": incoming_meta.get(
-                "robot_meta_by_element_id",
-                current_meta.get("robot_meta_by_element_id", {}),
-            ),
-            "hybrid_layer_by_element_id": merged_hybrid_layer,
-            "hybrid_v2": merged_hybrid_v2,
-        }
-    else:
-        raw_bpmn_meta = current_meta
-    s.bpmn_xml = xml
-    s.bpmn_xml_version = int(getattr(s, "version", 0) or 0)
-    s.bpmn_graph_fingerprint = _session_graph_fingerprint(s)
-    normalized_meta = _normalize_bpmn_meta(
-        raw_bpmn_meta,
-        allowed_flow_ids=flow_ids,
-        allowed_node_ids=node_ids,
-    )
-    normalized_meta["flow_meta"] = _enforce_gateway_tier_constraints(
-        dict(normalized_meta.get("flow_meta") or {}),
-        outgoing_by_source=flow_ctx.get("outgoing_by_source"),
-        gateway_mode_by_node=flow_ctx.get("gateway_mode_by_node"),
-    )
-    s.bpmn_meta = normalized_meta
-    st.save(s)
-    return {"ok": True, "session_id": s.id, "bytes": len(xml), "version": s.bpmn_xml_version}
+            incoming_drawio = incoming_meta.get("drawio")
+            current_drawio = current_meta.get("drawio", {})
+            if isinstance(incoming_drawio, dict):
+                incoming_drawio_size = _drawio_payload_size(incoming_drawio)
+                current_drawio_size = _drawio_payload_size(current_drawio)
+                merged_drawio = current_drawio if incoming_drawio_size <= 0 < current_drawio_size else incoming_drawio
+            else:
+                merged_drawio = current_drawio
+
+            raw_bpmn_meta = {
+                "version": incoming_meta.get("version", current_meta.get("version", 1)),
+                "flow_meta": incoming_meta.get("flow_meta", current_meta.get("flow_meta", {})),
+                "node_path_meta": incoming_meta.get("node_path_meta", current_meta.get("node_path_meta", {})),
+                "robot_meta_by_element_id": incoming_meta.get(
+                    "robot_meta_by_element_id",
+                    current_meta.get("robot_meta_by_element_id", {}),
+                ),
+                "hybrid_layer_by_element_id": merged_hybrid_layer,
+                "hybrid_v2": merged_hybrid_v2,
+                "drawio": merged_drawio,
+            }
+        else:
+            raw_bpmn_meta = current_meta
+        s.bpmn_xml = xml
+        s.bpmn_xml_version = int(getattr(s, "version", 0) or 0)
+        s.bpmn_graph_fingerprint = _session_graph_fingerprint(s)
+        normalized_meta = _normalize_bpmn_meta(
+            raw_bpmn_meta,
+            allowed_flow_ids=flow_ids,
+            allowed_node_ids=node_ids,
+        )
+        normalized_meta["flow_meta"] = _enforce_gateway_tier_constraints(
+            dict(normalized_meta.get("flow_meta") or {}),
+            outgoing_by_source=flow_ctx.get("outgoing_by_source"),
+            gateway_mode_by_node=flow_ctx.get("gateway_mode_by_node"),
+        )
+        s.bpmn_meta = normalized_meta
+        st.save(s)
+        return {"ok": True, "session_id": s.id, "bytes": len(xml), "version": s.bpmn_xml_version}
+    finally:
+        lock.release()
 
 
 @app.delete("/api/sessions/{session_id}/bpmn")
