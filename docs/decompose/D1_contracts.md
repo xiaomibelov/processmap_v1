@@ -83,3 +83,16 @@
 - Контракт D1.3:
   - `frontend/src/components/ProcessStage.jsx` остается owner state и orchestration hooks, но большие JSX-секции и shell-level view wiring живут вне `ProcessStage`.
   - Никаких изменений payload/flow сохранения (`persistHybridV2Doc`, `persistDrawioMeta`, `apiPatchSession`) в рамках shell split.
+
+## 7) Playback orchestration boundary (D1.6)
+
+- Runtime playback state machine вынесен в:
+  - `frontend/src/features/process/stage/controllers/usePlaybackController.js`
+- Контракт публичного API playback controller:
+  - `highlightTargets` (node/edge ids для подсветки шага)
+  - `overlayInteractionGuard.markOverlayInteraction(...)`
+  - `overlayInteractionGuard.shouldIgnorePlaybackReset()`
+  - `controls.start()/stop()/next()/prev()/goTo(...)`
+  - `setFollowMode(bool)` (через playback auto-camera/follow)
+- Совместимость со старым импортом для поэтапного перехода:
+  - `frontend/src/features/process/stage/hooks/usePlaybackController.js` ре-экспортирует controller.

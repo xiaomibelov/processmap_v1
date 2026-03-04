@@ -60,10 +60,6 @@ import {
   normalizeExecutionPlanVersionList,
 } from "../features/process/robotmeta/executionPlan";
 import {
-  buildRouteDecisionByNodeId,
-  normalizePlaybackScenarioSpec,
-} from "../features/process/playback/playbackEngine";
-import {
   applyHybridModeTransition,
   applyHybridVisibilityTransition,
   getHybridUiStorageKey,
@@ -89,7 +85,7 @@ import useBpmnCanvasController from "../features/process/stage/controllers/useBp
 import useDiagramOverlayTransform from "../features/process/stage/controllers/useDiagramOverlayTransform";
 import useHybridLayerAnchorController from "../features/process/stage/hooks/useBpmnCanvasController";
 import useHybridLayerViewportController from "../features/process/stage/hooks/useHybridLayerViewportController";
-import usePlaybackController from "../features/process/stage/hooks/usePlaybackController";
+import usePlaybackController from "../features/process/stage/controllers/usePlaybackController";
 import useDiagramActionPopovers from "../features/process/stage/hooks/useDiagramActionPopovers";
 import ProcessStageShell from "../features/process/stage/ui/ProcessStageShell";
 import ProcessPanels from "../features/process/stage/ui/ProcessPanels";
@@ -124,6 +120,8 @@ function toArray(value) {
   return asArray(value);
 }
 
+function logPlaybackDebug() {}
+
 function normalizePathTier(raw) {
   const tier = toText(raw).toUpperCase();
   if (tier === "P0" || tier === "P1" || tier === "P2") return tier;
@@ -132,85 +130,6 @@ function normalizePathTier(raw) {
 
 function normalizePathSequenceKey(raw) {
   return toText(raw);
-}
-
-function buildPlaybackScenarioKey(tierRaw, sequenceKeyRaw) {
-  const tier = normalizePathTier(tierRaw);
-  const sequenceKey = normalizePathSequenceKey(sequenceKeyRaw);
-  if (!tier) return "active";
-  if (!sequenceKey) return tier;
-  return `${tier}::${sequenceKey}`;
-}
-
-function parsePlaybackScenarioKey(keyRaw, fallbackRaw = {}) {
-  const key = toText(keyRaw);
-  const fallback = asObject(fallbackRaw);
-  if (!key || key === "active") {
-    return normalizePlaybackScenarioSpec({
-      tier: normalizePathTier(fallback?.tier),
-      sequenceKey: normalizePathSequenceKey(fallback?.sequenceKey),
-      label: toText(fallback?.label) || "Active scenario",
-    });
-  }
-  const [tierRaw, sequenceRaw] = key.split("::");
-  return normalizePlaybackScenarioSpec({
-    tier: normalizePathTier(tierRaw),
-    sequenceKey: normalizePathSequenceKey(sequenceRaw),
-    label: key,
-  });
-}
-
-function playbackEventTitle(eventRaw) {
-  const event = asObject(eventRaw);
-  const type = toText(event?.type);
-  if (type === "take_flow") return `Flow: ${toText(event?.flowId) || "—"}`;
-  if (type === "enter_node") return `${toText(event?.nodeName || event?.nodeId) || "Node"}`;
-  if (type === "wait_for_gateway_decision") return `Gateway: ${formatPlaybackGatewayTitle(event)}`;
-  if (type === "parallel_batch_begin") return `Parallel x${Number(event?.count || asArray(event?.flowIds).length || 0)}`;
-  if (type === "enter_subprocess") return `Enter ${toText(event?.nodeName || event?.subprocessId) || "subprocess"}`;
-  if (type === "exit_subprocess") return `Exit ${toText(event?.nodeName || event?.subprocessId) || "subprocess"}`;
-  if (type === "stop") return `Stop: ${toText(event?.reason) || "done"}`;
-  return toText(event?.nodeName || event?.nodeId || type || "—");
-}
-
-function shouldDebugPlayback() {
-  if (typeof window === "undefined") return false;
-  try {
-    const raw = window.DEBUG_PLAYBACK ?? window.localStorage?.getItem("DEBUG_PLAYBACK") ?? "";
-    return String(raw || "").trim() === "1";
-  } catch {
-    return String(window.DEBUG_PLAYBACK || "").trim() === "1";
-  }
-}
-
-function logPlaybackDebug(stage, payload = {}) {
-  if (!shouldDebugPlayback()) return;
-  // eslint-disable-next-line no-console
-  console.debug(`[PLAYBACK_DEBUG] ${String(stage || "-")}`, payload);
-}
-
-function shortPlaybackId(rawId) {
-  const id = toText(rawId);
-  if (!id) return "";
-  if (id.length <= 16) return id;
-  return id.slice(-10);
-}
-
-function formatPlaybackGatewayTitle(eventRaw) {
-  const event = asObject(eventRaw);
-  const gatewayName = toText(event?.gatewayName);
-  const gatewayId = shortPlaybackId(event?.gatewayId || event?.nodeId);
-  if (gatewayName && gatewayId) return `${gatewayName} (${gatewayId})`;
-  if (gatewayName) return gatewayName;
-  if (gatewayId) return `Gateway (${gatewayId})`;
-  return "Gateway";
-}
-
-function playbackGatewayOptionLabel(optionRaw, index = 0) {
-  const option = asObject(optionRaw);
-  const label = toText(option?.label || option?.condition);
-  if (label) return label;
-  return `Выбор ${Number(index || 0) + 1}`;
 }
 
 function normalizeNodePathMetaMap(rawMap) {
@@ -1202,10 +1121,6 @@ export default function ProcessStage({
   const [executionPlanBusy, setExecutionPlanBusy] = useState(false);
   const [executionPlanSaveBusy, setExecutionPlanSaveBusy] = useState(false);
   const [executionPlanError, setExecutionPlanError] = useState("");
-  const [playbackAutoCamera, setPlaybackAutoCamera] = useState(true);
-  const [playbackSpeed, setPlaybackSpeed] = useState("1");
-  const [playbackManualAtGateway, setPlaybackManualAtGateway] = useState(false);
-  const [playbackScenarioKey, setPlaybackScenarioKey] = useState("active");
   const [hybridUiPrefs, setHybridUiPrefs] = useState(() => normalizeHybridUiPrefs({}));
   const [hybridPeekActive, setHybridPeekActive] = useState(false);
   const [hybridLayerByElementId, setHybridLayerByElementId] = useState({});
@@ -1289,10 +1204,6 @@ export default function ProcessStage({
     setExecutionPlanBusy(false);
     setExecutionPlanSaveBusy(false);
     setExecutionPlanError("");
-    setPlaybackAutoCamera(true);
-    setPlaybackSpeed("1");
-    setPlaybackManualAtGateway(false);
-    setPlaybackScenarioKey("active");
     setHybridPeekActive(false);
     setHybridLayerActiveElementId("");
     {
@@ -1972,11 +1883,6 @@ export default function ProcessStage({
     pathHighlightSequenceKey,
   ]);
   const canExportExecutionPlan = asArray(executionPlanSource?.steps).length > 0;
-  const playbackRouteDecisionByNodeId = useMemo(
-    () => buildRouteDecisionByNodeId(asArray(executionPlanSource?.steps)),
-    [executionPlanSource?.steps],
-  );
-  const playbackSpeedValue = Number(playbackSpeed || 1);
   const pathHighlightCatalog = useMemo(() => {
     const tiers = {
       P0: { id: "P0", nodes: 0, flows: 0, sequenceKeys: [] },
@@ -2019,83 +1925,11 @@ export default function ProcessStage({
     () => asArray(asObject(pathHighlightCatalog[pathHighlightTier]).sequenceKeys),
     [pathHighlightCatalog, pathHighlightTier],
   );
-  const playbackActiveScenarioFallback = useMemo(() => {
-    const debug = asObject(asObject(draft?.interview)?.report_build_debug);
-    return {
-      tier: normalizePathTier(debug?.scenario_tier || pathHighlightTier || "P0") || "P0",
-      sequenceKey: normalizePathSequenceKey(debug?.sequence_key || pathHighlightSequenceKey),
-      label: toText(debug?.selectedScenarioLabel || executionPlanSource?.scenarioLabel || "Active scenario"),
-    };
-  }, [draft?.interview, pathHighlightTier, pathHighlightSequenceKey, executionPlanSource?.scenarioLabel]);
-  const playbackScenarioOptions = useMemo(() => {
-    const out = [
-      {
-        key: "active",
-        label: `Active: ${toText(playbackActiveScenarioFallback?.label) || "Scenario"}`,
-        tier: normalizePathTier(playbackActiveScenarioFallback?.tier),
-        sequenceKey: normalizePathSequenceKey(playbackActiveScenarioFallback?.sequenceKey),
-      },
-    ];
-    ["P0", "P1", "P2"].forEach((tier) => {
-      const row = asObject(pathHighlightCatalog[tier]);
-      const sequences = asArray(row?.sequenceKeys);
-      if (!sequences.length && (Number(row?.nodes || 0) > 0 || Number(row?.flows || 0) > 0)) {
-        out.push({
-          key: buildPlaybackScenarioKey(tier, ""),
-          label: `${tier} (all)`,
-          tier,
-          sequenceKey: "",
-        });
-        return;
-      }
-      sequences.forEach((sequenceKey) => {
-        out.push({
-          key: buildPlaybackScenarioKey(tier, sequenceKey),
-          label: `${tier} · ${sequenceKey}`,
-          tier,
-          sequenceKey,
-        });
-      });
-    });
-    const dedupe = {};
-    out.forEach((itemRaw) => {
-      const item = asObject(itemRaw);
-      const key = toText(item?.key);
-      if (!key || dedupe[key]) return;
-      dedupe[key] = {
-        key,
-        label: toText(item?.label || key),
-        tier: normalizePathTier(item?.tier),
-        sequenceKey: normalizePathSequenceKey(item?.sequenceKey),
-      };
-    });
-    return Object.values(dedupe);
-  }, [pathHighlightCatalog, playbackActiveScenarioFallback]);
-  const playbackScenarioSpec = useMemo(() => parsePlaybackScenarioKey(
-    playbackScenarioKey,
-    playbackActiveScenarioFallback,
-  ), [playbackScenarioKey, playbackActiveScenarioFallback]);
-  const playbackScenarioLabel = useMemo(() => {
-    const row = playbackScenarioOptions.find((item) => toText(item?.key) === toText(playbackScenarioKey));
-    return toText(row?.label || playbackActiveScenarioFallback?.label || "Scenario");
-  }, [playbackScenarioOptions, playbackScenarioKey, playbackActiveScenarioFallback]);
-  useEffect(() => {
-    const options = playbackScenarioOptions.map((item) => toText(item?.key)).filter(Boolean);
-    if (!options.length) {
-      if (playbackScenarioKey !== "active") setPlaybackScenarioKey("active");
-      return;
-    }
-    if (options.includes(toText(playbackScenarioKey))) return;
-    setPlaybackScenarioKey(options[0]);
-  }, [playbackScenarioOptions, playbackScenarioKey]);
   const {
     playbackOverlayClickGuardRef,
     playbackIsPlaying,
-    setPlaybackIsPlaying,
-    playbackFrames,
     playbackGatewayPending,
     playbackGraphError,
-    playbackIndex,
     playbackTotal,
     playbackCanRun,
     playbackIndexClamped,
@@ -2107,22 +1941,38 @@ export default function ProcessStage({
     handlePlaybackNext,
     handlePlaybackReset,
     handlePlaybackTogglePlay,
+    playbackAutoCamera,
+    setPlaybackAutoCamera,
+    playbackSpeed,
+    setPlaybackSpeed,
+    playbackManualAtGateway,
+    setPlaybackManualAtGateway,
+    playbackScenarioKey,
+    setPlaybackScenarioKey,
+    playbackScenarioOptions,
+    playbackScenarioLabel,
+    playbackEventTitle,
+    formatPlaybackGatewayTitle,
+    playbackGatewayOptionLabel,
   } = usePlaybackController({
     sid,
     tab,
     draftBpmnXml: draft?.bpmn_xml,
     diagramActionPlaybackOpen,
     bpmnRef,
-    playbackScenarioSpec,
-    playbackScenarioKey,
-    playbackRouteDecisionByNodeId,
+    draftInterview: draft?.interview,
+    executionPlanSteps: asArray(executionPlanSource?.steps),
+    executionPlanPathId: executionPlanSource?.pathId,
+    executionPlanScenarioLabel: executionPlanSource?.scenarioLabel,
+    pathHighlightCatalog,
+    pathHighlightTier,
+    pathHighlightSequenceKey,
     flowTierMetaMap,
     nodePathMetaMap,
-    playbackManualAtGateway,
-    playbackAutoCamera,
-    playbackSpeedValue,
-    playbackScenarioLabel,
-    executionPlanPathId: executionPlanSource?.pathId,
+    initialPlaybackAutoCamera: true,
+    initialPlaybackSpeed: "1",
+    initialPlaybackManualAtGateway: false,
+    initialPlaybackScenarioKey: "active",
   });
   const applyHybridV2Delete = useCallback((idsRaw) => {
     const prev = normalizeHybridV2Doc(hybridV2DocRef.current);
