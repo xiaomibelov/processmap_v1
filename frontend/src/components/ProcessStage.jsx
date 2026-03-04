@@ -81,6 +81,8 @@ import HybridOverlayRenderer from "../features/process/stage/renderers/HybridOve
 import useSessionMetaPersist from "../features/process/stage/controllers/useSessionMetaPersist";
 import useProcessStageActionsController from "../features/process/stage/controllers/useProcessStageActionsController";
 import useProcessStageShellController from "../features/process/stage/controllers/useProcessStageShellController";
+import useProcessStageRuntimeGlue from "../features/process/stage/controllers/useProcessStageRuntimeGlue";
+import useHybridLegacyLayerController from "../features/process/stage/controllers/useHybridLegacyLayerController";
 import useBpmnCanvasController from "../features/process/stage/controllers/useBpmnCanvasController";
 import useDiagramOverlayTransform from "../features/process/stage/controllers/useDiagramOverlayTransform";
 import useHybridLayerAnchorController from "../features/process/stage/hooks/useBpmnCanvasController";
@@ -110,883 +112,61 @@ import {
 } from "../features/process/hybrid/tools/hybridToolState";
 import useTemplatesStore from "../features/templates/model/useTemplatesStore";
 import { applyTemplateToDiagram } from "../features/templates/services/applyTemplateToDiagram";
-import { buildManualPathReportSteps } from "./process/interview/services/pathReport";
-
-function toText(value) {
-  return String(value || "").trim();
-}
-
-function toArray(value) {
-  return asArray(value);
-}
-
-function logPlaybackDebug() {}
-
-function normalizePathTier(raw) {
-  const tier = toText(raw).toUpperCase();
-  if (tier === "P0" || tier === "P1" || tier === "P2") return tier;
-  return "";
-}
-
-function normalizePathSequenceKey(raw) {
-  return toText(raw);
-}
-
-function normalizeNodePathMetaMap(rawMap) {
-  const source = asObject(rawMap);
-  const out = {};
-  Object.keys(source).forEach((rawNodeId) => {
-    const nodeId = toNodeId(rawNodeId);
-    if (!nodeId) return;
-    const entry = asObject(source[rawNodeId]);
-    const paths = asArray(entry?.paths)
-      .map((tier) => normalizePathTier(tier))
-      .filter(Boolean);
-    if (!paths.length) return;
-    out[nodeId] = {
-      nodeId,
-      paths: Array.from(new Set(paths)),
-      sequenceKey: normalizePathSequenceKey(entry?.sequence_key || entry?.sequenceKey),
-      source: toText(entry?.source).toLowerCase(),
-    };
-  });
-  return out;
-}
-
-function normalizeFlowTierMetaMap(rawMap) {
-  const source = asObject(rawMap);
-  const out = {};
-  Object.keys(source).forEach((rawFlowId) => {
-    const flowId = toText(rawFlowId);
-    if (!flowId) return;
-    const row = asObject(source[rawFlowId]);
-    const tier = normalizePathTier(row?.tier || row?.path || (row?.happy ? "P0" : ""));
-    if (!tier) return;
-    out[flowId] = {
-      flowId,
-      tier,
-      sequenceKey: normalizePathSequenceKey(row?.sequence_key || row?.sequenceKey),
-      source: toText(row?.source).toLowerCase(),
-    };
-  });
-  return out;
-}
-
-function dedupeDiagramHints(itemsRaw) {
-  const out = [];
-  const seen = new Set();
-  asArray(itemsRaw).forEach((hintRaw) => {
-    const hint = asObject(hintRaw);
-    const markerClass = toText(hint?.markerClass);
-    const elementIds = asArray(hint?.elementIds).map((id) => toText(id)).filter(Boolean);
-    const nodeId = toText(hint?.nodeId);
-    const key = `${markerClass}::${nodeId}::${elementIds.join("|")}::${toText(hint?.title)}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    out.push(hint);
-  });
-  return out;
-}
-
-function isLocalSessionId(id) {
-  return typeof id === "string" && (id === "local" || id.startsWith("local_"));
-}
-
-function shortErr(x) {
-  const s = String(x || "").trim();
-  if (!s) return "";
-  return s.length > 160 ? `${s.slice(0, 160)}…` : s;
-}
-
-async function copyText(textRaw) {
-  const text = String(textRaw || "");
-  if (!text) return false;
-  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch {
-    }
-  }
-  return false;
-}
-
-function shortHash(value) {
-  const text = toText(value);
-  if (!text) return "—";
-  return text.slice(0, 10);
-}
-
-function cssEscapeAttr(value) {
-  const text = toText(value);
-  if (!text) return "";
-  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") return CSS.escape(text);
-  return text.replace(/["\\]/g, "\\$&");
-}
-
-function clampNumber(valueRaw, minRaw, maxRaw) {
-  const value = Number(valueRaw || 0);
-  const min = Number(minRaw || 0);
-  const max = Number(maxRaw || 0);
-  if (!Number.isFinite(value)) return Number.isFinite(min) ? min : 0;
-  if (!Number.isFinite(min) || !Number.isFinite(max) || min > max) return value;
-  return Math.min(max, Math.max(min, value));
-}
-
-function isEditableTarget(target) {
-  const el = target instanceof Element ? target : null;
-  if (!el) return false;
-  const tag = toText(el.tagName).toLowerCase();
-  if (tag === "input" || tag === "textarea" || tag === "select") return true;
-  return toText(el.getAttribute("contenteditable")).toLowerCase() === "true";
-}
-
-function serializeHybridLayerMap(rawMap) {
-  const map = normalizeHybridLayerMap(rawMap);
-  const sorted = {};
-  Object.keys(map).sort().forEach((elementId) => {
-    const row = asObject(map[elementId]);
-    sorted[elementId] = {
-      dx: Number(row.dx || 0),
-      dy: Number(row.dy || 0),
-    };
-  });
-  return JSON.stringify(sorted);
-}
-
-function downloadTextFile(filenameRaw, textRaw, mimeRaw = "text/plain;charset=utf-8") {
-  if (typeof window === "undefined" || typeof document === "undefined") return false;
-  const filename = toText(filenameRaw) || "download.txt";
-  try {
-    const blob = new Blob([String(textRaw || "")], { type: String(mimeRaw || "text/plain;charset=utf-8") });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.rel = "noopener";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function downloadJsonFile(filenameRaw, payloadRaw) {
-  if (typeof window === "undefined" || typeof document === "undefined") return false;
-  const filename = toText(filenameRaw) || "execution_plan.json";
-  const payload = payloadRaw && typeof payloadRaw === "object" ? payloadRaw : {};
-  try {
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.rel = "noopener";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function parseSequenceFlowsFromXml(xmlText) {
-  const raw = String(xmlText || "").trim();
-  if (!raw || typeof DOMParser === "undefined") return [];
-  let doc;
-  try {
-    doc = new DOMParser().parseFromString(raw, "application/xml");
-  } catch {
-    return [];
-  }
-  if (!doc || doc.getElementsByTagName("parsererror").length > 0) return [];
-  const out = [];
-  Array.from(doc.getElementsByTagName("*")).forEach((el) => {
-    const local = String(el?.localName || "").toLowerCase();
-    if (local !== "sequenceflow") return;
-    const id = toNodeId(el.getAttribute("id"));
-    const sourceId = toNodeId(el.getAttribute("sourceRef"));
-    const targetId = toNodeId(el.getAttribute("targetRef"));
-    if (!id || !sourceId || !targetId) return;
-    out.push({
-      id,
-      sourceId,
-      targetId,
-      name: String(el.getAttribute("name") || "").trim(),
-    });
-  });
-  return out;
-}
-
-function toSec(value, fallback = 0) {
-  const num = Number(value);
-  if (!Number.isFinite(num) || num < 0) return Math.max(0, Number(fallback || 0));
-  return Math.round(num);
-}
-
-function readStepBpmnRef(stepRaw) {
-  const step = asObject(stepRaw);
-  return toText(
-    step?.bpmn_ref
-    || step?.bpmnRef
-    || step?.node_bind_id
-    || step?.nodeBindId
-    || step?.node_id
-    || step?.nodeId
-    || step?.id,
-  );
-}
-
-function buildStepTitleLaneKey(stepRaw) {
-  const step = asObject(stepRaw);
-  const title = toText(step?.title || step?.action || step?.name).toLowerCase();
-  const lane = toText(
-    step?.lane_id
-    || step?.laneId
-    || step?.lane_name
-    || step?.laneName
-    || step?.lane_key
-    || step?.role
-    || step?.area,
-  ).toLowerCase();
-  if (!title) return "";
-  return `${title}::${lane}`;
-}
-
-function buildRouteStepsFromInterviewPathSpec(interviewRaw) {
-  const interview = asObject(interviewRaw);
-  const interviewSteps = asArray(interview?.steps);
-  const pathSpec = asObject(interview?.path_spec || interview?.pathSpec);
-  const pathSteps = asArray(pathSpec?.steps)
-    .filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry));
-
-  const byStepId = {};
-  const byTitleLane = {};
-  const byTitleLaneDup = new Set();
-  interviewSteps.forEach((stepRaw) => {
-    const step = asObject(stepRaw);
-    const stepId = toText(step?.id);
-    if (stepId && !byStepId[stepId]) byStepId[stepId] = step;
-    const titleLaneKey = buildStepTitleLaneKey(step);
-    if (titleLaneKey) {
-      if (byTitleLane[titleLaneKey]) {
-        byTitleLaneDup.add(titleLaneKey);
-      } else {
-        byTitleLane[titleLaneKey] = step;
-      }
-    }
-  });
-
-  if (!pathSteps.length) {
-    return asArray(buildManualPathReportSteps(interview, {}))
-      .map((stepRaw, idx) => ({
-        ...asObject(stepRaw),
-        order_index: idx + 1,
-      }));
-  }
-
-  return pathSteps.map((entryRaw, idx) => {
-    const entry = asObject(entryRaw);
-    const stepId = toText(entry?.step_id || entry?.stepId || entry?.id);
-    const titleLaneKey = buildStepTitleLaneKey(entry);
-    const linked = asObject(
-      byStepId[stepId]
-      || (titleLaneKey && !byTitleLaneDup.has(titleLaneKey) ? byTitleLane[titleLaneKey] : null)
-      || {},
-    );
-    const bpmnRef = readStepBpmnRef(entry) || readStepBpmnRef(linked);
-    const workSec = toSec(
-      entry?.work_duration_sec
-      ?? entry?.workDurationSec
-      ?? linked?.work_duration_sec
-      ?? linked?.step_time_sec
-      ?? linked?.duration_sec
-      ?? linked?.stepTimeSec,
-      0,
-    );
-    const waitSec = toSec(
-      entry?.wait_duration_sec
-      ?? entry?.waitDurationSec
-      ?? linked?.wait_duration_sec
-      ?? linked?.waitDurationSec,
-      0,
-    );
-    return {
-      order_index: idx + 1,
-      step_id: stepId || toText(linked?.id) || null,
-      title: toText(entry?.title || linked?.action || linked?.title || bpmnRef) || `Step ${idx + 1}`,
-      lane_id: toText(entry?.lane_id || entry?.laneId || linked?.lane_id || linked?.laneId || linked?.lane_key) || null,
-      lane_name: toText(entry?.lane_name || entry?.laneName || linked?.lane_name || linked?.laneName || linked?.role || linked?.area) || null,
-      bpmn_ref: bpmnRef || null,
-      work_duration_sec: workSec,
-      wait_duration_sec: waitSec,
-      notes: toText(linked?.notes || linked?.note || linked?.comment || linked?.description) || null,
-      decision: asObject(entry?.decision || linked?.decision),
-      is_decision: !!asObject(entry?.decision || linked?.decision)?.selected_flow_id,
-    };
-  });
-}
-
-function normalizeDebugRouteSteps(routeStepsRaw) {
-  return asArray(routeStepsRaw)
-    .map((stepRaw, idx) => {
-      const step = asObject(stepRaw);
-      const bpmnRef = readStepBpmnRef(step);
-      if (!bpmnRef) return null;
-      return {
-        order_index: idx + 1,
-        step_id: toText(step?.step_id || step?.stepId || step?.id) || null,
-        title: toText(step?.title || step?.name || step?.action || bpmnRef) || bpmnRef,
-        lane_id: toText(step?.lane_id || step?.laneId) || null,
-        lane_name: toText(step?.lane_name || step?.laneName || step?.lane || step?.role || step?.area) || null,
-        bpmn_ref: bpmnRef,
-        work_duration_sec: toSec(step?.work_duration_sec, 0),
-        wait_duration_sec: toSec(step?.wait_duration_sec, 0),
-        notes: toText(step?.notes || step?.note || step?.comment || step?.description) || null,
-        decision: asObject(step?.decision),
-        is_decision: !!asObject(step?.decision)?.selected_flow_id,
-      };
-    })
-    .filter(Boolean);
-}
-
-function fnv1aHex(input) {
-  const src = String(input || "");
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < src.length; i += 1) {
-    hash ^= src.charCodeAt(i);
-    hash = Math.imul(hash >>> 0, 0x01000193) >>> 0;
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
-
-function snapshotScopeKey(projectId, sessionId) {
-  const pid = String(projectId || "").trim() || "no_project";
-  const sid = String(sessionId || "").trim();
-  if (!sid) return "";
-  return `snapshots:${pid}:${sid}`;
-}
-
-function readPersistMark(sid) {
-  if (typeof window === "undefined") return null;
-  const mark = window.__FPC_LAST_PERSIST_OK__;
-  if (!mark || String(mark?.sid || "") !== String(sid || "")) return null;
-  return mark;
-}
-
-const COMMAND_MODE_KEY = "fpc_ai_ops_mode";
-const QUALITY_MODE_KEY = "fpc_quality_mode";
-const QUALITY_PROFILE_KEY = "fpc_quality_profile";
-const AI_QUESTIONS_MODE_KEY = "fpc_ai_questions_mode";
-const DIAGRAM_MODE_KEY = "ui.diagram.mode.v1";
-const COMMAND_HISTORY_LIMIT = 5;
-const NOTES_BATCH_APPLY_EVENT = "fpc:batch_ops_apply";
-const NOTES_BATCH_RESULT_PREFIX = "fpc:batch_ops_result:";
-const NOTES_COVERAGE_OPEN_EVENT = "fpc:coverage_open";
-const DIAGRAM_PATHS_INTENT_VERSION = 1;
-const HYBRID_V2_KNOWN_SESSIONS_KEY = "fpc_hybrid_v2_known_sessions_v1";
-
-function readCommandMode() {
-  if (typeof window === "undefined") return false;
-  try {
-    return String(window.localStorage?.getItem(COMMAND_MODE_KEY) || "").trim() === "1";
-  } catch {
-    return false;
-  }
-}
-
-function readQualityMode() {
-  if (typeof window === "undefined") return false;
-  try {
-    return String(window.localStorage?.getItem(QUALITY_MODE_KEY) || "").trim() === "1";
-  } catch {
-    return false;
-  }
-}
-
-function normalizeDiagramMode(raw) {
-  const value = String(raw || "").trim().toLowerCase();
-  if (value === "interview" || value === "quality" || value === "coverage") return value;
-  return "normal";
-}
-
-function readDiagramMode() {
-  if (typeof window === "undefined") return "normal";
-  try {
-    const stored = String(window.localStorage?.getItem(DIAGRAM_MODE_KEY) || "").trim();
-    if (stored) return normalizeDiagramMode(stored);
-    // Backward compatibility with older independent toggles.
-    if (readQualityMode()) return "quality";
-    if (readAiQuestionsMode()) return "interview";
-    return "normal";
-  } catch {
-    return "normal";
-  }
-}
-
-function readQualityProfile() {
-  if (typeof window === "undefined") return "mvp";
-  try {
-    const raw = String(window.localStorage?.getItem(QUALITY_PROFILE_KEY) || "").trim().toLowerCase();
-    if (raw === "production" || raw === "haccp") return raw;
-    return "mvp";
-  } catch {
-    return "mvp";
-  }
-}
-
-function readAiQuestionsMode() {
-  if (typeof window === "undefined") return false;
-  try {
-    return String(window.localStorage?.getItem(AI_QUESTIONS_MODE_KEY) || "").trim() === "1";
-  } catch {
-    return false;
-  }
-}
-
-function writeCommandMode(enabled) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage?.setItem(COMMAND_MODE_KEY, enabled ? "1" : "0");
-  } catch {
-  }
-}
-
-function writeQualityMode(enabled) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage?.setItem(QUALITY_MODE_KEY, enabled ? "1" : "0");
-  } catch {
-  }
-}
-
-function writeAiQuestionsMode(enabled) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage?.setItem(AI_QUESTIONS_MODE_KEY, enabled ? "1" : "0");
-  } catch {
-  }
-}
-
-function writeDiagramMode(mode) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage?.setItem(DIAGRAM_MODE_KEY, normalizeDiagramMode(mode));
-  } catch {
-  }
-}
-
-function writeQualityProfile(profileId) {
-  if (typeof window === "undefined") return;
-  const value = String(profileId || "mvp").trim().toLowerCase();
-  try {
-    window.localStorage?.setItem(QUALITY_PROFILE_KEY, value);
-  } catch {
-  }
-}
-
-function commandHistoryStorageKey(sessionId) {
-  const sid = String(sessionId || "").trim();
-  return sid ? `fpc_ai_ops_history:${sid}` : "";
-}
-
-function readCommandHistory(sessionId) {
-  if (typeof window === "undefined") return [];
-  const key = commandHistoryStorageKey(sessionId);
-  if (!key) return [];
-  try {
-    const raw = window.localStorage?.getItem(key);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return asArray(parsed)
-      .map((item) => ({
-        text: String(item?.text || ""),
-        ts: Number(item?.ts || Date.now()) || Date.now(),
-      }))
-      .filter((item) => item.text)
-      .slice(0, COMMAND_HISTORY_LIMIT);
-  } catch {
-    return [];
-  }
-}
-
-function writeCommandHistory(sessionId, list) {
-  if (typeof window === "undefined") return;
-  const key = commandHistoryStorageKey(sessionId);
-  if (!key) return;
-  try {
-    window.localStorage?.setItem(key, JSON.stringify(asArray(list).slice(0, COMMAND_HISTORY_LIMIT)));
-  } catch {
-  }
-}
-
-function shouldLogAiOpsTrace() {
-  if (typeof window === "undefined") return false;
-  try {
-    return String(window.localStorage?.getItem("fpc_debug_ai_ops") || "").trim() === "1";
-  } catch {
-    return false;
-  }
-}
-
-function logAiOpsTrace(tag, payload = {}) {
-  if (!shouldLogAiOpsTrace()) return;
-  const suffix = Object.entries(payload || {})
-    .map(([k, v]) => `${k}=${String(v)}`)
-    .join(" ");
-  // eslint-disable-next-line no-console
-  console.debug(`[AI_OPS] ${String(tag || "trace")} ${suffix}`.trim());
-}
-
-function readKnownHybridV2Sessions(storageLike) {
-  if (!storageLike) return new Set();
-  try {
-    const raw = storageLike.getItem(HYBRID_V2_KNOWN_SESSIONS_KEY);
-    const parsed = JSON.parse(String(raw || "[]"));
-    return new Set(asArray(parsed).map((row) => toText(row)).filter(Boolean));
-  } catch {
-    return new Set();
-  }
-}
-
-function hasKnownHybridV2Session(storageLike, sidRaw) {
-  const sid = toText(sidRaw);
-  if (!sid) return false;
-  return readKnownHybridV2Sessions(storageLike).has(sid);
-}
-
-function markKnownHybridV2Session(storageLike, sidRaw) {
-  const sid = toText(sidRaw);
-  if (!storageLike || !sid) return false;
-  try {
-    const next = readKnownHybridV2Sessions(storageLike);
-    next.add(sid);
-    storageLike.setItem(HYBRID_V2_KNOWN_SESSIONS_KEY, JSON.stringify(Array.from(next)));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function shouldLogActorsTrace() {
-  if (typeof window === "undefined") return false;
-  if (window.__FPC_DEBUG_ACTORS__) return true;
-  try {
-    return String(window.localStorage?.getItem("fpc_debug_actors") || "").trim() === "1";
-  } catch {
-    return false;
-  }
-}
-
-function logActorsTrace(tag, payload = {}) {
-  if (!shouldLogActorsTrace()) return;
-  const suffix = Object.entries(payload || {})
-    .map(([k, v]) => `${k}=${String(v)}`)
-    .join(" ");
-  // eslint-disable-next-line no-console
-  console.debug(`[ACTORS] ${String(tag || "trace")} ${suffix}`.trim());
-}
-
-function readInsertBetweenCandidate(raw) {
-  if (!raw || typeof raw !== "object") return null;
-  const candidate = {
-    available: raw.available !== false,
-    fromId: String(raw.fromId || "").trim(),
-    toId: String(raw.toId || "").trim(),
-    flowId: String(raw.flowId || "").trim(),
-    when: String(raw.when || "").trim(),
-    laneId: String(raw.laneId || "").trim(),
-    laneName: String(raw.laneName || "").trim(),
-    source: String(raw.source || "").trim(),
-    error: String(raw.error || "").trim(),
-  };
-  if (!candidate.fromId || !candidate.toId) return null;
-  return candidate;
-}
-
-function insertBetweenErrorMessage(errorCode) {
-  const code = String(errorCode || "").trim().toLowerCase();
-  if (code === "multiple_edges_ambiguous") {
-    return "Найдено несколько связей A→B. Выберите конкретную стрелку.";
-  }
-  if (code === "edge_not_found" || code === "flow_not_found") {
-    return "Связь между выбранными шагами не найдена.";
-  }
-  if (code === "insert_nodes_not_found") {
-    return "Не удалось найти узлы для вставки.";
-  }
-  if (!code) return "Операция недоступна для текущего выделения.";
-  return `Операция недоступна: ${code}.`;
-}
-
-const QUALITY_RULE_COPY = Object.freeze({
-  missing_start_event: {
-    title: "Не указано начало процесса",
-    short: "На схеме нет точки, откуда процесс стартует.",
-    fix: "Добавьте событие «Старт» и соедините его со следующим шагом.",
-  },
-  missing_end_event: {
-    title: "Не указано завершение процесса",
-    short: "На схеме нет явной точки завершения.",
-    fix: "Добавьте событие «Завершение» и подведите к нему финальный шаг.",
-  },
-  dangling_incoming: {
-    title: "Шаг недостижим",
-    short: "К этому шагу не ведет ни один переход.",
-    fix: "Добавьте входящий переход от предыдущего шага.",
-  },
-  dangling_outgoing: {
-    title: "Шаг обрывает процесс",
-    short: "После этого шага нет перехода дальше.",
-    fix: "Добавьте переход к следующему шагу или к завершению.",
-  },
-  gateway_missing_inout: {
-    title: "Развилка разрывает цепочку",
-    short: "У развилки нет корректного входа или выхода.",
-    fix: "Проверьте, что к развилке есть вход и хотя бы один выход.",
-  },
-  gateway_missing_condition: {
-    title: "Для веток не заданы условия",
-    short: "У развилки есть несколько выходов, но не подписаны условия.",
-    fix: "Добавьте условия переходов или отметьте ветку по умолчанию.",
-  },
-  gateway_single_outgoing: {
-    title: "Развилка не дает ветвления",
-    short: "У развилки только один выход.",
-    fix: "Либо добавьте альтернативную ветку, либо уберите развилку.",
-  },
-  task_without_label: {
-    title: "Шаг без названия",
-    short: "Название шага пустое.",
-    fix: "Укажите короткое понятное название шага.",
-  },
-  long_label: {
-    title: "Слишком длинное название шага",
-    short: "Название сложно читать на диаграмме.",
-    fix: "Сократите название до краткой формулировки.",
-  },
-  task_without_lane: {
-    title: "Шаг без роли/лайна",
-    short: "Для шага не указан исполнитель.",
-    fix: "Назначьте шагу роль или lane.",
-  },
-  duplicate_task_name: {
-    title: "Повторяются названия шагов",
-    short: "Несколько шагов имеют одинаковое название.",
-    fix: "Переименуйте шаги, чтобы их можно было различать.",
-  },
-  cycle_detected: {
-    title: "Обнаружен цикл в процессе",
-    short: "Процесс может зациклиться.",
-    fix: "Проверьте ветвления и условия переходов, чтобы разорвать цикл.",
-  },
-  unreachable_from_start: {
-    title: "Шаг не связан с началом процесса",
-    short: "Этот шаг не достижим от стартового события.",
-    fix: "Свяжите шаг цепочкой переходов от старта.",
-  },
-  interview_mismatch: {
-    title: "Несовпадение Interview и диаграммы",
-    short: "Данные Interview не соответствуют текущей схеме.",
-    fix: "Синхронизируйте шаги Interview с диаграммой.",
-  },
-  generic: {
-    title: "Найдена проблема качества",
-    short: "Проверьте выделенный шаг на схеме.",
-    fix: "Откройте элемент и уточните связи, название и роль.",
-  },
-});
-
-function qualityLevelLabel(levelRaw) {
-  return String(levelRaw || "").toLowerCase() === "error" ? "Ошибка" : "Предупреждение";
-}
-
-function qualityImpactLabel(issue) {
-  const score = Number(issue?.score || 0);
-  if (String(issue?.level || "").toLowerCase() === "error" || score >= 9) return "Влияние: высокое";
-  if (score >= 6) return "Влияние: среднее";
-  return "Влияние: низкое";
-}
-
-function qualityIssueCopy(issue, nodeTitle = "") {
-  const ruleId = String(issue?.ruleId || "generic").trim().toLowerCase() || "generic";
-  const preset = QUALITY_RULE_COPY[ruleId] || QUALITY_RULE_COPY.generic;
-  const fallbackReason = String(asArray(issue?.reasons)[0] || "").trim();
-  const fallbackFix = String(issue?.fixHint || issue?.aiHint || "").trim();
-  return {
-    ruleId,
-    title: String(preset?.title || QUALITY_RULE_COPY.generic.title),
-    short: String(preset?.short || fallbackReason || QUALITY_RULE_COPY.generic.short),
-    fix: fallbackFix || String(preset?.fix || QUALITY_RULE_COPY.generic.fix),
-    nodeTitle: String(nodeTitle || "").trim() || "Шаг без названия",
-  };
-}
-
-function coverageReadinessPercent(row) {
-  const score = Number(row?.score || 0);
-  const clamped = Number.isFinite(score) ? Math.max(0, Math.min(3, score)) : 0;
-  return Math.round(((3 - clamped) / 3) * 100);
-}
-
-function coverageMarkerClass(row) {
-  const score = Number(row?.score || 0);
-  if (!Number.isFinite(score) || score <= 0) return "fpcCoverageReady";
-  if (score <= 1) return "fpcCoverageWarn";
-  return "fpcCoverageRisk";
-}
-
-const AI_QUESTIONS_TIMEOUT_MS = 120000;
-
-function normalizeAiQuestionStatus(raw) {
-  return String(raw || "").trim().toLowerCase() === "done" ? "done" : "open";
-}
-
-function normalizeAiQuestionItems(rawList, fallbackStepId = "") {
-  const out = [];
-  const byQid = new Set();
-  const byText = new Set();
-  asArray(rawList).forEach((rawItem, idx) => {
-    const item = asObject(rawItem);
-    const text = String(item?.text || item?.question || "").trim();
-    const rawQid = String(item?.qid || item?.id || item?.question_id || item?.questionId || "").trim();
-    if (!text && !rawQid) return;
-    const qid = rawQid || `q_${idx + 1}_${fnv1aHex(text || `ai_q_${idx + 1}`).slice(0, 8)}`;
-    const textKey = text.toLowerCase();
-    if (qid && byQid.has(qid)) return;
-    if (!qid && textKey && byText.has(textKey)) return;
-    if (qid) byQid.add(qid);
-    if (textKey) byText.add(textKey);
-    out.push({
-      qid,
-      text: text || qid,
-      comment: String(item?.comment || item?.answer || "").trim(),
-      status: normalizeAiQuestionStatus(item?.status),
-      createdAt: Number(item?.createdAt || item?.created_at || item?.ts || Date.now()) || Date.now(),
-      source: String(item?.source || "ai").trim() || "ai",
-      stepId: String(item?.stepId || item?.step_id || fallbackStepId || "").trim(),
-    });
-  });
-  return out;
-}
-
-function collectAiQuestionsFromPayload(payloadRaw, fallbackNodeId = "") {
-  const payload = asObject(payloadRaw);
-  const llmStep = asObject(payload?.llm_step);
-  const nodeId = String(llmStep?.node_id || fallbackNodeId || "").trim();
-  let incomingRaw = asArray(llmStep?.questions);
-  if (!incomingRaw.length) incomingRaw = asArray(llmStep?.new_questions);
-  if (!incomingRaw.length) {
-    const payloadQuestions = asArray(payload?.questions).filter((item) => {
-      const q = asObject(item);
-      const text = String(q?.text || q?.question || "").trim();
-      return !!text;
-    });
-    if (payloadQuestions.length) {
-      const exactNodeQuestions = payloadQuestions.filter((item) => {
-        const q = asObject(item);
-        const qNodeId = String(q?.node_id || q?.nodeId || "").trim();
-        return !!nodeId && qNodeId === nodeId;
-      });
-      incomingRaw = exactNodeQuestions.length ? exactNodeQuestions : payloadQuestions;
-    }
-  }
-  const stepId = String(llmStep?.step_id || "").trim();
-  const questions = normalizeAiQuestionItems(incomingRaw, stepId);
-  return { nodeId, questions };
-}
-
-function withInjectedAiQuestionsPayload(payloadRaw, { selectedElementId = "", draftInterview = {} } = {}) {
-  const payload = asObject(payloadRaw);
-  const interview = asObject(payload?.interview);
-  const fallbackNodeId = String(selectedElementId || "").trim();
-  const { nodeId, questions } = collectAiQuestionsFromPayload(payload, fallbackNodeId);
-  if (!nodeId || !questions.length) return payload;
-
-  const payloadMap = asObject(interview?.ai_questions_by_element || interview?.aiQuestionsByElementId);
-  const draftInterviewObj = asObject(draftInterview);
-  const draftMap = asObject(draftInterviewObj?.ai_questions_by_element || draftInterviewObj?.aiQuestionsByElementId);
-  const mergedInterview = mergeInterviewData(
-    { ai_questions_by_element: draftMap },
-    {
-      ai_questions_by_element: {
-        ...payloadMap,
-        [nodeId]: questions,
-      },
-    },
-  );
-  const mergedMap = asObject(mergedInterview?.ai_questions_by_element);
-  if (!Object.keys(mergedMap).length) return payload;
-  return {
-    ...payload,
-    interview: {
-      ...interview,
-      ai_questions_by_element: mergedMap,
-    },
-  };
-}
-
-function getAiGenerateGate({
-  hasSession,
-  tab,
-  selectedElementId,
-  isLocal,
-  aiQuestionsBusy,
-}) {
-  if (!hasSession) {
-    return {
-      canGenerate: false,
-      reasonCode: "no_session",
-      reasonText: "Сначала откройте сессию процесса.",
-    };
-  }
-  if (tab !== "diagram") {
-    return {
-      canGenerate: false,
-      reasonCode: "tab_diagram_required",
-      reasonText: "Генерация доступна во вкладке Diagram.",
-    };
-  }
-  if (!String(selectedElementId || "").trim()) {
-    return {
-      canGenerate: false,
-      reasonCode: "no_selection",
-      reasonText: "Выберите узел на диаграмме.",
-    };
-  }
-  if (isLocal) {
-    return {
-      canGenerate: false,
-      reasonCode: "local_session",
-      reasonText: "Генерация AI-вопросов доступна только для API-сессий.",
-    };
-  }
-  if (aiQuestionsBusy) {
-    return {
-      canGenerate: false,
-      reasonCode: "busy",
-      reasonText: "Генерация уже выполняется.",
-    };
-  }
-  return {
-    canGenerate: true,
-    reasonCode: "",
-    reasonText: "",
-  };
-}
-
-function emitBatchOpsResult(requestId, payload = {}) {
-  if (typeof window === "undefined") return;
-  const rid = String(requestId || "").trim();
-  if (!rid) return;
-  window.dispatchEvent(new CustomEvent(`${NOTES_BATCH_RESULT_PREFIX}${rid}`, {
-    detail: payload && typeof payload === "object" ? payload : { ok: false, error: "invalid_payload" },
-  }));
-}
+import {
+  AI_QUESTIONS_TIMEOUT_MS,
+  COMMAND_HISTORY_LIMIT,
+  DIAGRAM_PATHS_INTENT_VERSION,
+  NOTES_BATCH_APPLY_EVENT,
+  NOTES_COVERAGE_OPEN_EVENT,
+  buildRouteStepsFromInterviewPathSpec,
+  copyText,
+  coverageMarkerClass,
+  coverageReadinessPercent,
+  cssEscapeAttr,
+  dedupeDiagramHints,
+  downloadJsonFile,
+  downloadTextFile,
+  emitBatchOpsResult,
+  fnv1aHex,
+  getAiGenerateGate,
+  hasKnownHybridV2Session,
+  insertBetweenErrorMessage,
+  isEditableTarget,
+  isLocalSessionId,
+  logActorsTrace,
+  logAiOpsTrace,
+  logPlaybackDebug,
+  markKnownHybridV2Session,
+  normalizeDebugRouteSteps,
+  normalizeDiagramMode,
+  normalizeFlowTierMetaMap,
+  normalizeNodePathMetaMap,
+  normalizePathSequenceKey,
+  normalizePathTier,
+  parseSequenceFlowsFromXml,
+  qualityImpactLabel,
+  qualityIssueCopy,
+  qualityLevelLabel,
+  readCommandHistory,
+  readCommandMode,
+  readDiagramMode,
+  readInsertBetweenCandidate,
+  readPersistMark,
+  readQualityProfile,
+  serializeHybridLayerMap,
+  shortErr,
+  shortHash,
+  snapshotScopeKey,
+  toArray,
+  toText,
+  withInjectedAiQuestionsPayload,
+  writeAiQuestionsMode,
+  writeCommandHistory,
+  writeCommandMode,
+  writeDiagramMode,
+  writeQualityMode,
+  writeQualityProfile,
+} from "../features/process/stage/utils/processStageHelpers";
 
 export default function ProcessStage({
   sessionId,
@@ -2060,6 +1240,69 @@ export default function ProcessStage({
   const deleteSelectedHybridIds = hybridSelection.deleteSelected;
   const hybridTotalCount = Math.max(Number(hybridLayerCounts.total || 0), hybridV2TotalCount);
   const setHybridV2Tool = hybridTools.setTool;
+  const {
+    showHybridLayer,
+    hideHybridLayer,
+    setHybridLayerMode,
+    toggleHybridToolsVisible,
+    setHybridLayerOpacity,
+    toggleHybridLayerLock,
+    toggleHybridLayerFocus,
+    toggleHybridV2LayerVisibility,
+    toggleHybridV2LayerLock,
+    setHybridV2LayerOpacity,
+    revealAllHybridV2,
+    focusHybridLayer,
+    goToHybridLayerItem,
+    cleanupMissingHybridBindings,
+    withHybridOverlayGuard,
+    handleHybridLayerItemPointerDown,
+    addOrSelectHybridMarker,
+    handleHybridEditSurfacePointerDown,
+  } = useHybridLegacyLayerController({
+    user,
+    hybridStorageKey,
+    hybridUiPrefs,
+    hybridVisible,
+    hybridModeEffective,
+    selectedElementId,
+    draft,
+    bpmnRef,
+    bpmnStageHostRef,
+    hybridTools,
+    hybridLayerByElementId,
+    hybridLayerMapRef,
+    hybridLayerRenderRows,
+    hybridLayerMissingBindingIds,
+    hybridLayerActiveElementId,
+    hybridV2DocRef,
+    hybridV2DocLive,
+    hybridV2BindingByHybridId,
+    resolveFirstHybridSeedElementId,
+    resolveHybridTargetElementIdFromPoint,
+    readHybridElementAnchor,
+    setHybridUiPrefs,
+    setHybridPeekActive,
+    setHybridV2BindPickMode,
+    setHybridLayerByElementId,
+    setHybridLayerActiveElementId,
+    setHybridV2ActiveId,
+    markPlaybackOverlayInteraction,
+    persistHybridLayerMap,
+    clientToDiagram,
+    hybridLayerDragRef,
+    toText,
+    toNodeId,
+    asArray,
+    asObject,
+    normalizeHybridUiPrefs,
+    saveHybridUiPrefs,
+    applyHybridVisibilityTransition,
+    applyHybridModeTransition,
+    normalizeHybridV2Doc,
+    normalizeHybridLayerMap,
+    parseSequenceFlowsFromXml,
+  });
   const hybridToolsUiState = useMemo(() => ({
     visible: hybridVisible,
     mode: hybridModeEffective,
@@ -4305,986 +3548,126 @@ export default function ProcessStage({
     }
   }
 
-  function openImportDialog() {
-    importInputRef.current?.click?.();
-  }
+  const {
+    openImportDialog,
+    runToolbarReset,
+    runToolbarClear,
+    toggleAiBottlenecks,
+    exportBpmn,
+    openClarifyNode,
+    toggleAttentionFilter,
+    focusAttentionItem,
+    openSelectedElementNotes,
+    openSelectedElementAi,
+    openReportsFromDiagram,
+    buildExecutionPlanNow,
+    copyExecutionPlanFromDiagram,
+    downloadExecutionPlanFromDiagram,
+    saveExecutionPlanVersionFromDiagram,
+    openEmbeddedDrawioEditor,
+    closeEmbeddedDrawioEditor,
+    handleDrawioEditorSave,
+    toggleDrawioEnabled,
+    setDrawioOpacity,
+    toggleDrawioLock,
+    exportEmbeddedDrawio,
+    handleDrawioImportFile,
+    openPathsFromDiagram,
+    toggleQualityOverlayFilter,
+    setQualityOverlayAll,
+    focusQualityOverlayItem,
+  } = useProcessStageRuntimeGlue({
+    importInputRef,
+    bpmnRef,
+    bpmnSync,
+    hasSession,
+    isInterview,
+    aiStepBusy,
+    isLocal,
+    aiBottleneckOn,
+    activeHints,
+    sid,
+    draft,
+    tab,
+    diagramHints,
+    isBpmnTab,
+    selectedElementContext,
+    pathHighlightTier,
+    pathHighlightSequenceKey,
+    executionPlanSource,
+    robotMetaByElementId,
+    executionPlanNodeTypeById,
+    executionPlanPreview,
+    executionPlanVersions,
+    flowTierMetaMap,
+    nodePathMetaMap,
+    hybridVisible,
+    hybridLayerDragRef,
+    hybridLayerByElementId,
+    hybridLayerPersistedMapRef,
+    hybridV2Doc,
+    hybridV2PersistedDocRef,
+    drawioMetaRef,
+    setSaveDirtyHint,
+    setToolbarMenuOpen,
+    setAiBottleneckOn,
+    setAiStepBusy,
+    setGenErr,
+    setInfoMsg,
+    setTab,
+    setAttentionFilters,
+    setAttentionOpen,
+    setDiagramPathsIntent,
+    setDiagramActionPathOpen,
+    setDiagramActionHybridToolsOpen,
+    setDiagramActionPlanOpen,
+    setDiagramActionPlaybackOpen,
+    setDiagramActionRobotMetaOpen,
+    setRobotMetaListOpen,
+    setDiagramActionQualityOpen,
+    setDiagramActionOverflowOpen,
+    setExecutionPlanError,
+    setExecutionPlanBusy,
+    setExecutionPlanPreview,
+    setExecutionPlanSaveBusy,
+    setDrawioMeta,
+    setDrawioEditorOpen,
+    setQualityOverlayFilters,
+    onSessionSync,
+    onOpenElementNotes,
+    requestDiagramFocus,
+    applyClarifyFromSession,
+    confirmExportWithQualityGate,
+    markPlaybackOverlayInteraction,
+    persistHybridLayerMap,
+    persistHybridV2Doc,
+    persistDrawioMeta,
+    normalizeDrawioMeta,
+    serializeDrawioMeta,
+    isDrawioXml,
+    readFileText,
+    toText,
+    toNodeId,
+    asArray,
+    asObject,
+    shortErr,
+    normalizePathTier,
+    normalizePathSequenceKey,
+    DIAGRAM_PATHS_INTENT_VERSION,
+    createAiInputHash,
+    executeAi,
+    apiAiQuestions,
+    apiGetBpmnXml,
+    apiPatchSession,
+    buildExecutionPlan,
+    appendExecutionPlanVersionEntry,
+    copyText,
+    downloadJsonFile,
+    downloadTextFile,
+    serializeHybridLayerMap,
+    docToComparableJson,
+  });
 
-  function requestToolbarDangerConfirm(kind = "reset") {
-    if (kind === "clear") {
-      return window.confirm("Очистить текущую диаграмму? Это действие нельзя отменить.");
-    }
-    return window.confirm("Сбросить диаграмму к последнему состоянию на backend?");
-  }
-
-  function runToolbarReset() {
-    if (!requestToolbarDangerConfirm("reset")) return;
-    void bpmnSync.resetBackend();
-    setSaveDirtyHint(false);
-    setToolbarMenuOpen(false);
-  }
-
-  function runToolbarClear() {
-    if (!requestToolbarDangerConfirm("clear")) return;
-    bpmnRef.current?.clearLocal?.();
-    setSaveDirtyHint(false);
-    setToolbarMenuOpen(false);
-  }
-
-  async function toggleAiBottlenecks() {
-    if (!hasSession || isInterview || aiStepBusy) return;
-    if (isLocal) {
-      setAiBottleneckOn((prev) => !prev);
-      if (!aiBottleneckOn && activeHints.length === 0) {
-        setGenErr("AI не нашёл выраженных узких мест в текущем графе.");
-      }
-      return;
-    }
-
-    setAiStepBusy(true);
-    setGenErr("");
-    setInfoMsg("");
-    try {
-      const inputHash = createAiInputHash({
-        tool: "ai_questions",
-        sid,
-        mode: "sequential",
-        limit: 5,
-        bpmn_len: String(draft?.bpmn_xml || "").length,
-        nodes: asArray(draft?.nodes).map((n) => ({ id: n?.id, title: n?.title })),
-      });
-      const exec = await executeAi({
-        toolId: "ai_questions",
-        sessionId: sid,
-        projectId: String(draft?.project_id || draft?.projectId || ""),
-        inputHash,
-        payload: { limit: 5, mode: "sequential" },
-        mode: "live",
-        run: () => apiAiQuestions(sid, { limit: 5, mode: "sequential" }),
-      });
-      if (!exec.ok) {
-        const msg = shortErr(exec?.error?.message || "LLM шаг не выполнен");
-        if (exec?.error?.shouldNotify !== false) setGenErr(msg);
-        return;
-      }
-      const aiRes = exec.result;
-      if (!aiRes?.ok) {
-        setGenErr(shortErr(aiRes?.error || "LLM шаг не выполнен"));
-        return;
-      }
-      const payload = aiRes.result || {};
-      const step = payload?.llm_step && typeof payload.llm_step === "object" ? payload.llm_step : null;
-      const updated = payload?.session && typeof payload.session === "object" ? payload.session : payload;
-      onSessionSync?.(updated);
-      applyClarifyFromSession(updated, draft?.nodes);
-      setAiBottleneckOn(true);
-
-      const cachePrefix = exec.cached ? "cached · " : "";
-      if (step?.status === "completed") {
-        setInfoMsg(`${cachePrefix}LLM: все элементы обработаны (${Number(step.processed || 0)}/${Number(step.total || 0)}).`);
-      } else if (step?.status === "processed") {
-        const title = String(step.node_title || step.node_id || "узел");
-        setInfoMsg(`${cachePrefix}LLM: ${title} · +${Number(step.generated || 0)} вопроса(ов) · осталось ${Number(step.remaining || 0)}.`);
-      } else {
-        setInfoMsg(exec.cached ? "AI недоступен: показан прошлый успешный LLM результат (cached)." : "LLM шаг выполнен.");
-      }
-    } catch (e) {
-      setGenErr(shortErr(e?.message || e));
-    } finally {
-      setAiStepBusy(false);
-    }
-  }
-
-  async function exportBpmn() {
-    if (!sid) {
-      setGenErr("Сначала выберите сессию.");
-      return;
-    }
-    if (!confirmExportWithQualityGate("bpmn")) {
-      setInfoMsg("Экспорт BPMN отменён: сначала исправьте критичные ошибки качества.");
-      return;
-    }
-    setGenErr("");
-    setInfoMsg("");
-
-    try {
-      // Force-save the live model before export; in Interview tab we still export from modeler runtime.
-      const prepared = tab === "interview"
-        ? await bpmnSync.saveFromModeler({ force: true, source: "export_bpmn_interview" })
-        : await bpmnSync.resolveXmlForExport(tab);
-      if (!prepared.ok) {
-        setGenErr(shortErr(prepared.error || "Не удалось подготовить BPMN к экспорту."));
-        return;
-      }
-
-      // Export raw session XML (no interview/AI overlay, no backend regeneration side-effects).
-      let xml = String(prepared.xml || "");
-      const rawResp = await apiGetBpmnXml(sid, { raw: true, cacheBust: true });
-      if (rawResp?.ok) {
-        const rawXml = String(rawResp.xml || "");
-        if (rawXml.trim()) xml = rawXml;
-      }
-
-      if (!xml.trim()) {
-        setGenErr("Нет BPMN для экспорта.");
-        return;
-      }
-
-      const base = String(draft?.title || sid || "process")
-        .trim()
-        .replace(/[\\/:*?"<>|]+/g, "_")
-        .replace(/\s+/g, "_")
-        .slice(0, 80) || "process";
-      const blob = new Blob([xml], { type: "application/xml;charset=utf-8" });
-      const href = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = href;
-      a.download = `${base}.bpmn`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(href);
-      setInfoMsg("BPMN экспортирован.");
-    } catch (e) {
-      setGenErr(shortErr(e?.message || e));
-    }
-  }
-
-  useEffect(() => {
-    if (!hasSession || !isBpmnTab) {
-      bpmnRef.current?.clearBottlenecks?.();
-      return;
-    }
-    if (!diagramHints.length) {
-      bpmnRef.current?.clearBottlenecks?.();
-      return;
-    }
-    bpmnRef.current?.setBottlenecks?.(diagramHints);
-  }, [diagramHints, hasSession, isBpmnTab]);
-
-  function openClarifyNode(nodeId) {
-    const nid = toNodeId(nodeId);
-    if (!nid) return;
-    setAiBottleneckOn(true);
-    requestDiagramFocus(nid);
-  }
-
-  function toggleAttentionFilter(kind) {
-    const id = String(kind || "").trim();
-    if (!id) return;
-    setAttentionFilters((prev) => ({
-      ...prev,
-      [id]: !prev?.[id],
-    }));
-  }
-
-  function focusAttentionItem(item, source = "attention_panel") {
-    const nodeId = toNodeId(item?.id || item?.nodeId);
-    if (!nodeId) return;
-    if (tab !== "diagram") setTab("diagram");
-    requestDiagramFocus(nodeId, {
-      markerClass: "fpcAttentionJumpFocus",
-      durationMs: 6200,
-      targetZoom: 0.92,
-      clearExistingSelection: true,
-    });
-    window.setTimeout(() => {
-      bpmnRef.current?.flashNode?.(nodeId, "accent", { label: "Показано" });
-    }, 180);
-    const selected = {
-      id: nodeId,
-      name: String(item?.title || nodeId).trim() || nodeId,
-      type: String(item?.type || "").trim(),
-      laneName: String(item?.lane || "").trim(),
-    };
-    if (item?.hasAiMissing) {
-      onOpenElementNotes?.(selected, "header_open_ai");
-    } else {
-      onOpenElementNotes?.(selected, "header_open_notes");
-    }
-    setInfoMsg(`Требует внимания: ${selected.name}`);
-    setGenErr("");
-    if (source === "attention_panel") setAttentionOpen(false);
-  }
-
-  function openSelectedElementNotes() {
-    if (!selectedElementContext) return;
-    onOpenElementNotes?.(selectedElementContext, "header_open_notes");
-    setDiagramActionOverflowOpen(false);
-  }
-
-  function openSelectedElementAi() {
-    if (!selectedElementContext) return;
-    onOpenElementNotes?.(selectedElementContext, "header_open_ai");
-    setDiagramActionOverflowOpen(false);
-  }
-
-  function openReportsFromDiagram() {
-    const intent = {
-      version: DIAGRAM_PATHS_INTENT_VERSION,
-      key: `${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
-      sid,
-      action: "open_reports",
-      tier: normalizePathTier(pathHighlightTier) || "P0",
-      sequenceKey: normalizePathSequenceKey(pathHighlightSequenceKey),
-      source: "diagram_action_bar",
-    };
-    setDiagramPathsIntent(intent);
-    setDiagramActionPathOpen(false);
-    setDiagramActionHybridToolsOpen(false);
-    setDiagramActionPlanOpen(false);
-    setDiagramActionPlaybackOpen(false);
-    setDiagramActionRobotMetaOpen(false);
-    setRobotMetaListOpen(false);
-    setDiagramActionQualityOpen(false);
-    setTab("interview");
-    setDiagramActionOverflowOpen(false);
-  }
-
-  async function buildExecutionPlanNow(options = {}) {
-    const suppressError = options?.suppressError === true;
-    if (!suppressError) setExecutionPlanError("");
-    setExecutionPlanBusy(true);
-    try {
-      const plan = await buildExecutionPlan({
-        sessionId: sid,
-        projectId: toText(draft?.project_id || draft?.projectId),
-        pathId: toText(executionPlanSource?.pathId),
-        scenarioLabel: toText(executionPlanSource?.scenarioLabel) || "P0 Ideal",
-        steps: asArray(executionPlanSource?.steps),
-        robotMetaByElementId,
-        bpmnTypeById: executionPlanNodeTypeById,
-      });
-      setExecutionPlanPreview(plan);
-      return plan;
-    } catch (error) {
-      const msg = shortErr(error?.message || error || "Не удалось собрать Execution Plan.");
-      if (!suppressError) {
-        setExecutionPlanError(msg);
-        setGenErr(msg);
-      }
-      return null;
-    } finally {
-      setExecutionPlanBusy(false);
-    }
-  }
-
-  async function copyExecutionPlanFromDiagram() {
-    const payload = await buildExecutionPlanNow();
-    if (!payload) return;
-    const serialized = JSON.stringify(payload, null, 2);
-    const copied = await copyText(serialized);
-    if (copied) {
-      setInfoMsg(`Execution plan скопирован (${Number(asArray(payload?.steps).length)} шагов).`);
-      setGenErr("");
-      setExecutionPlanError("");
-    } else {
-      setExecutionPlanError("Не удалось скопировать Execution Plan.");
-      setGenErr("Не удалось скопировать Execution Plan.");
-    }
-  }
-
-  async function downloadExecutionPlanFromDiagram() {
-    const payload = executionPlanPreview || await buildExecutionPlanNow();
-    if (!payload) return;
-    const sidText = toText(payload?.session_id || sid) || "session";
-    const pathText = toText(payload?.path_id) || "path";
-    const stamp = toText(payload?.generated_at).replace(/[^0-9]/g, "").slice(0, 14) || Date.now();
-    const ok = downloadJsonFile(`execution_plan_${sidText}_${pathText}_${stamp}.json`, payload);
-    if (ok) {
-      setInfoMsg("Execution Plan выгружен в .json.");
-      setGenErr("");
-      setExecutionPlanError("");
-    } else {
-      setExecutionPlanError("Не удалось скачать Execution Plan.");
-      setGenErr("Не удалось скачать Execution Plan.");
-    }
-  }
-
-  async function saveExecutionPlanVersionFromDiagram() {
-    const payload = executionPlanPreview || await buildExecutionPlanNow();
-    if (!payload) return;
-    const currentMeta = asObject(draft?.bpmn_meta);
-    const nextVersions = appendExecutionPlanVersionEntry(
-      executionPlanVersions,
-      payload,
-    );
-    const optimisticMeta = {
-      ...currentMeta,
-      version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
-      flow_meta: flowTierMetaMap,
-      node_path_meta: nodePathMetaMap,
-      robot_meta_by_element_id: robotMetaByElementId,
-      execution_plans: nextVersions,
-    };
-    const optimisticSession = {
-      id: sid,
-      session_id: sid,
-      bpmn_meta: optimisticMeta,
-      _sync_source: "execution_plan_save_optimistic",
-    };
-    onSessionSync?.(optimisticSession);
-
-    if (!sid || isLocal) {
-      setInfoMsg(`Execution Plan сохранён: v${nextVersions.length}.`);
-      setGenErr("");
-      setExecutionPlanError("");
-      return;
-    }
-
-    setExecutionPlanSaveBusy(true);
-    try {
-      const syncRes = await apiPatchSession(sid, { bpmn_meta: optimisticMeta });
-      if (!syncRes?.ok) {
-        onSessionSync?.({
-          id: sid,
-          session_id: sid,
-          bpmn_meta: {
-            ...currentMeta,
-            version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
-            flow_meta: flowTierMetaMap,
-            node_path_meta: nodePathMetaMap,
-            robot_meta_by_element_id: robotMetaByElementId,
-            execution_plans: executionPlanVersions,
-          },
-          _sync_source: "execution_plan_save_rollback",
-        });
-        const msg = shortErr(syncRes?.error || "Не удалось сохранить версию Execution Plan.");
-        setExecutionPlanError(msg);
-        setGenErr(msg);
-        return;
-      }
-
-      if (syncRes.session && typeof syncRes.session === "object") {
-        onSessionSync?.({
-          ...syncRes.session,
-          _sync_source: "execution_plan_save_session_patch",
-        });
-      } else {
-        onSessionSync?.({
-          ...optimisticSession,
-          _sync_source: "execution_plan_save_session_patch_fallback",
-        });
-      }
-      setInfoMsg(`Execution Plan сохранён: v${nextVersions.length}.`);
-      setGenErr("");
-      setExecutionPlanError("");
-    } finally {
-      setExecutionPlanSaveBusy(false);
-    }
-  }
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    if (!hybridVisible) return undefined;
-    if (hybridLayerDragRef.current) return undefined;
-    const nextSig = serializeHybridLayerMap(hybridLayerByElementId);
-    const prevSig = serializeHybridLayerMap(hybridLayerPersistedMapRef.current);
-    if (nextSig === prevSig) return undefined;
-    const timerId = window.setTimeout(() => {
-      void persistHybridLayerMap(hybridLayerByElementId, { source: "hybrid_layer_autosave" });
-    }, 220);
-    return () => window.clearTimeout(timerId);
-  }, [hybridLayerByElementId, hybridVisible, isLocal, sid]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    if (!hybridVisible) return undefined;
-    const nextSig = docToComparableJson(hybridV2Doc);
-    const prevSig = docToComparableJson(hybridV2PersistedDocRef.current);
-    if (nextSig === prevSig) return undefined;
-    const timerId = window.setTimeout(() => {
-      void persistHybridV2Doc(hybridV2Doc, { source: "hybrid_v2_autosave" });
-    }, 220);
-    return () => window.clearTimeout(timerId);
-  }, [hybridV2Doc, hybridVisible, isLocal, sid]);
-
-  const applyDrawioMetaUpdate = useCallback((mutator, source = "drawio_update") => {
-    const prev = normalizeDrawioMeta(drawioMetaRef.current);
-    const next = normalizeDrawioMeta(typeof mutator === "function" ? mutator(prev) : prev);
-    if (serializeDrawioMeta(next) === serializeDrawioMeta(prev)) return next;
-    setDrawioMeta(next);
-    drawioMetaRef.current = next;
-    markPlaybackOverlayInteraction?.({ stage: source });
-    return next;
-  }, [markPlaybackOverlayInteraction]);
-
-  const saveDrawioMetaNow = useCallback(async (mutator, source = "drawio_save") => {
-    const next = applyDrawioMetaUpdate(mutator, source);
-    await persistDrawioMeta(next, { source });
-    return next;
-  }, [applyDrawioMetaUpdate, persistDrawioMeta]);
-
-  const openEmbeddedDrawioEditor = useCallback(() => {
-    if (drawioMetaRef.current.locked === true) {
-      setInfoMsg("Draw.io overlay заблокирован. Снимите lock, чтобы редактировать.");
-      setGenErr("");
-      return false;
-    }
-    setDrawioEditorOpen(true);
-    return true;
-  }, [setGenErr, setInfoMsg]);
-
-  const closeEmbeddedDrawioEditor = useCallback(() => {
-    setDrawioEditorOpen(false);
-  }, []);
-
-  const handleDrawioEditorSave = useCallback(async (payloadRaw = {}) => {
-    const payload = asObject(payloadRaw);
-    const docXml = toText(payload.docXml || payload.doc_xml || payload.xml);
-    const svgCache = toText(payload.svgCache || payload.svg_cache || payload.svg);
-    if (!isDrawioXml(docXml)) {
-      setGenErr("Draw.io вернул некорректный документ.");
-      return false;
-    }
-    const next = normalizeDrawioMeta({
-      ...drawioMetaRef.current,
-      enabled: true,
-      doc_xml: docXml,
-      svg_cache: svgCache,
-      last_saved_at: new Date().toISOString(),
-    });
-    setDrawioMeta(next);
-    drawioMetaRef.current = next;
-    const persisted = await persistDrawioMeta(next, { source: "drawio_editor_save" });
-    if (!persisted?.ok) {
-      return false;
-    }
-    setDrawioEditorOpen(false);
-    setInfoMsg(svgCache ? "Draw.io сохранён." : "Draw.io сохранён без SVG preview.");
-    setGenErr("");
-    return true;
-  }, [persistDrawioMeta, setGenErr, setInfoMsg]);
-
-  const toggleDrawioEnabled = useCallback(async () => {
-    const current = normalizeDrawioMeta(drawioMetaRef.current);
-    const nextEnabled = !current.enabled;
-    await saveDrawioMetaNow((prev) => ({
-      ...prev,
-      enabled: nextEnabled,
-    }), "drawio_visibility_toggle");
-    if (nextEnabled && !toText(current.doc_xml)) {
-      setDrawioEditorOpen(true);
-    }
-  }, [saveDrawioMetaNow]);
-
-  const setDrawioOpacity = useCallback(async (opacityRaw) => {
-    const opacity = Math.max(0.05, Math.min(1, Number(opacityRaw || 1)));
-    await saveDrawioMetaNow((prev) => ({
-      ...prev,
-      opacity,
-    }), "drawio_opacity_change");
-  }, [saveDrawioMetaNow]);
-
-  const toggleDrawioLock = useCallback(async () => {
-    await saveDrawioMetaNow((prev) => ({
-      ...prev,
-      locked: prev.locked !== true,
-    }), "drawio_lock_toggle");
-  }, [saveDrawioMetaNow]);
-
-  const exportEmbeddedDrawio = useCallback(() => {
-    const current = normalizeDrawioMeta(drawioMetaRef.current);
-    const xml = toText(current.doc_xml);
-    if (!xml) {
-      setInfoMsg("Draw.io документ пока пуст. Сначала открой редактор и нажми Save.");
-      setGenErr("");
-      return false;
-    }
-    const stamp = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14) || Date.now();
-    const ok = downloadTextFile(`drawio_${sid || "session"}_${stamp}.drawio`, xml, "application/xml;charset=utf-8");
-    if (ok) {
-      setInfoMsg("Draw.io экспортирован (.drawio).");
-      setGenErr("");
-      return true;
-    }
-    setGenErr("Не удалось экспортировать Draw.io.");
-    return false;
-  }, [downloadTextFile, setGenErr, setInfoMsg, sid]);
-
-  const handleDrawioImportFile = useCallback(async (fileRaw) => {
-    const file = fileRaw instanceof File ? fileRaw : null;
-    if (!file) return false;
-    const text = toText(await readFileText(file).catch(() => ""));
-    if (!isDrawioXml(text)) {
-      setGenErr("Импорт Draw.io ожидает файл .drawio / <mxfile>.");
-      return false;
-    }
-    applyDrawioMetaUpdate((prev) => ({
-      ...prev,
-      enabled: true,
-      doc_xml: text,
-      svg_cache: prev.svg_cache,
-    }), "drawio_import_stage");
-    setDrawioEditorOpen(true);
-    setInfoMsg("Файл Draw.io загружен. Нажми Save в редакторе, чтобы обновить preview.");
-    setGenErr("");
-    return true;
-  }, [applyDrawioMetaUpdate, setGenErr, setInfoMsg]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    const e2eApi = {
-      openEditor() {
-        setDrawioEditorOpen(true);
-      },
-      savePayload(payloadRaw = {}) {
-        return handleDrawioEditorSave(payloadRaw);
-      },
-      setOpacity(valueRaw) {
-        return setDrawioOpacity(valueRaw);
-      },
-      readMeta() {
-        return normalizeDrawioMeta(drawioMetaRef.current);
-      },
-    };
-    window.__FPC_E2E_DRAWIO__ = e2eApi;
-    return () => {
-      if (window.__FPC_E2E_DRAWIO__ === e2eApi) {
-        window.__FPC_E2E_DRAWIO__ = null;
-      }
-    };
-  }, [handleDrawioEditorSave]);
-
-  function updateHybridUiPrefs(mutator) {
-    setHybridUiPrefs((prevRaw) => {
-      const prev = normalizeHybridUiPrefs(prevRaw);
-      const next = typeof mutator === "function" ? mutator(prev) : prev;
-      const normalized = normalizeHybridUiPrefs(next);
-      if (typeof window !== "undefined") {
-        saveHybridUiPrefs(window.localStorage, hybridStorageKey, normalized, toText(user?.id));
-      }
-      return normalized;
-    });
-  }
-
-  function showHybridLayer() {
-    updateHybridUiPrefs((prev) => applyHybridVisibilityTransition(prev, true));
-  }
-
-  function hideHybridLayer() {
-    updateHybridUiPrefs((prev) => applyHybridVisibilityTransition(prev, false));
-    setHybridPeekActive(false);
-    setHybridV2BindPickMode(false);
-    hybridTools.cancelTransientState();
-  }
-
-  function setHybridLayerMode(modeRaw, options = {}) {
-    const nextMode = toText(modeRaw).toLowerCase() === "edit" ? "edit" : "view";
-    const skipV2Seed = !!options?.skipV2Seed;
-    const skipLegacySeed = !!options?.skipLegacySeed;
-    updateHybridUiPrefs((prev) => applyHybridModeTransition(prev, nextMode));
-    hybridTools.updateDoc((prev) => ({
-      ...prev,
-      view: {
-        ...asObject(prev.view),
-        mode: nextMode,
-      },
-    }), "hybrid_v2_mode_change");
-    if (nextMode !== "edit") return;
-    const initialV2Count = Number(asArray(hybridV2DocRef.current?.elements).length || 0)
-      + Number(asArray(hybridV2DocRef.current?.edges).length || 0);
-    if (!skipV2Seed && initialV2Count <= 0) {
-      const selectedIdForV2 = toNodeId(selectedElementId);
-      if (selectedIdForV2) {
-        const anchor = asObject(readHybridElementAnchor(selectedIdForV2));
-        const point = Number.isFinite(anchor.x) && Number.isFinite(anchor.y)
-          ? { x: Number(anchor.x || 0), y: Number(anchor.y || 0) }
-          : { x: 260, y: 220 };
-        const createdId = hybridTools.createElementAt(point, "note");
-        if (createdId) {
-          bindActiveHybridV2ToBpmn(selectedIdForV2, createdId);
-          return;
-        }
-      }
-    }
-    if (Number(asArray(hybridV2DocRef.current?.elements).length || 0) + Number(asArray(hybridV2DocRef.current?.edges).length || 0) > 0) {
-      return;
-    }
-    if (skipLegacySeed) return;
-    const currentMap = normalizeHybridLayerMap(hybridLayerMapRef.current);
-    if (Object.keys(currentMap).length > 0) return;
-    const selectedId = toNodeId(selectedElementId);
-    if (selectedId) {
-      addOrSelectHybridMarker(selectedId, "hybrid_edit_seed_selected");
-      return;
-    }
-    const domSelectedId = (() => {
-      const host = bpmnStageHostRef.current;
-      if (!host) return "";
-      const selectedNode = host.querySelector(
-        "g.djs-element.selected[data-element-id], g.djs-shape.selected[data-element-id]",
-      );
-      return toNodeId(selectedNode?.getAttribute?.("data-element-id"));
-    })();
-    if (domSelectedId) {
-      addOrSelectHybridMarker(domSelectedId, "hybrid_edit_seed_dom_selected");
-      return;
-    }
-    const graphSeedId = (() => {
-      const graphRes = asObject(bpmnRef.current?.getPlaybackGraph?.());
-      const nodesById = asObject(asObject(graphRes?.graph).nodesById);
-      const nodeIds = Object.keys(nodesById);
-      for (let i = 0; i < nodeIds.length; i += 1) {
-        const nodeId = toNodeId(nodeIds[i]);
-        const node = asObject(nodesById[nodeId]);
-        const type = toText(node?.type).toLowerCase();
-        if (!nodeId) continue;
-        if (type.includes("startevent") || type.includes("endevent") || type.includes("lane") || type.includes("participant")) continue;
-        return nodeId;
-      }
-      return "";
-    })();
-    if (graphSeedId) {
-      addOrSelectHybridMarker(graphSeedId, "hybrid_edit_seed_graph");
-      return;
-    }
-    const domSeedId = resolveFirstHybridSeedElementId();
-    if (domSeedId) {
-      addOrSelectHybridMarker(domSeedId, "hybrid_edit_seed_dom");
-      return;
-    }
-    const xmlSeedId = parseSequenceFlowsFromXml(draft?.bpmn_xml)
-      .map((flowRaw) => toNodeId(asObject(flowRaw)?.targetId || asObject(flowRaw)?.sourceId))
-      .find((nodeIdRaw) => {
-        const nodeId = toNodeId(nodeIdRaw);
-        const lowered = nodeId.toLowerCase();
-        if (!nodeId) return false;
-        if (lowered.includes("startevent") || lowered.includes("endevent") || lowered.includes("lane") || lowered.includes("participant")) return false;
-        return true;
-      });
-    if (xmlSeedId) {
-      addOrSelectHybridMarker(xmlSeedId, "hybrid_edit_seed_xml");
-      return;
-    }
-    const fallbackNode = asArray(draft?.nodes).find((rowRaw) => {
-      const row = asObject(rowRaw);
-      const nodeId = toNodeId(row?.id);
-      if (!nodeId) return false;
-      const type = toText(row?.type).toLowerCase();
-      if (type.includes("startevent") || type.includes("endevent")) return false;
-      return true;
-    });
-    const fallbackId = toNodeId(asObject(fallbackNode)?.id);
-    if (!fallbackId) return;
-    addOrSelectHybridMarker(fallbackId, "hybrid_edit_seed_fallback");
-  }
-
-  const toggleHybridToolsVisible = useCallback(() => {
-    if (hybridVisible) {
-      hideHybridLayer();
-      return;
-    }
-    showHybridLayer();
-  }, [hybridVisible, hideHybridLayer, showHybridLayer]);
-
-  function setHybridLayerOpacity(opacityRaw) {
-    const opacity = Number(opacityRaw || 60);
-    updateHybridUiPrefs((prev) => ({
-      ...prev,
-      opacity: opacity >= 95 ? 100 : opacity >= 45 ? 60 : 30,
-    }));
-  }
-
-  function toggleHybridLayerLock() {
-    updateHybridUiPrefs((prev) => ({ ...prev, lock: !prev.lock }));
-  }
-
-  function toggleHybridLayerFocus() {
-    updateHybridUiPrefs((prev) => ({ ...prev, focus: !prev.focus }));
-  }
-
-  function toggleHybridV2LayerVisibility(layerIdRaw) {
-    const layerId = toText(layerIdRaw);
-    if (!layerId) return;
-    hybridTools.updateDoc((prevRaw) => {
-      const prev = normalizeHybridV2Doc(prevRaw);
-      const nextLayers = asArray(prev.layers).map((layerRaw) => {
-        const layer = asObject(layerRaw);
-        if (toText(layer.id) !== layerId) return layer;
-        return {
-          ...layer,
-          visible: layer.visible === false,
-        };
-      });
-      const activeLayerId = toText(asObject(prev.view).active_layer_id);
-      const stillVisible = asArray(nextLayers).some((rowRaw) => {
-        const row = asObject(rowRaw);
-        return toText(row.id) === activeLayerId && row.visible !== false;
-      });
-      const firstVisibleLayerId = toText(asArray(nextLayers).find((rowRaw) => asObject(rowRaw).visible !== false)?.id);
-      return {
-        ...prev,
-        layers: nextLayers,
-        view: {
-          ...asObject(prev.view),
-          active_layer_id: stillVisible ? activeLayerId : (firstVisibleLayerId || activeLayerId || "L1"),
-        },
-      };
-    }, "hybrid_v2_layer_visibility_toggle");
-  }
-
-  function toggleHybridV2LayerLock(layerIdRaw) {
-    const layerId = toText(layerIdRaw);
-    if (!layerId) return;
-    hybridTools.updateDoc((prevRaw) => {
-      const prev = normalizeHybridV2Doc(prevRaw);
-      return {
-        ...prev,
-        layers: asArray(prev.layers).map((layerRaw) => {
-          const layer = asObject(layerRaw);
-          if (toText(layer.id) !== layerId) return layer;
-          return {
-            ...layer,
-            locked: layer.locked !== true,
-          };
-        }),
-      };
-    }, "hybrid_v2_layer_lock_toggle");
-  }
-
-  function setHybridV2LayerOpacity(layerIdRaw, opacityRaw) {
-    const layerId = toText(layerIdRaw);
-    if (!layerId) return;
-    const targetOpacity = Math.max(0.1, Math.min(1, Number(opacityRaw || 1)));
-    hybridTools.updateDoc((prevRaw) => {
-      const prev = normalizeHybridV2Doc(prevRaw);
-      return {
-        ...prev,
-        layers: asArray(prev.layers).map((layerRaw) => {
-          const layer = asObject(layerRaw);
-          if (toText(layer.id) !== layerId) return layer;
-          return {
-            ...layer,
-            opacity: targetOpacity,
-          };
-        }),
-      };
-    }, "hybrid_v2_layer_opacity_change");
-  }
-
-  function revealAllHybridV2(source = "hybrid_v2_reveal_all") {
-    hybridTools.updateDoc((prevRaw) => {
-      const prev = normalizeHybridV2Doc(prevRaw);
-      return {
-        ...prev,
-        layers: asArray(prev.layers).map((layerRaw) => ({ ...asObject(layerRaw), visible: true })),
-        elements: asArray(prev.elements).map((rowRaw) => ({ ...asObject(rowRaw), visible: true })),
-        edges: asArray(prev.edges).map((rowRaw) => ({ ...asObject(rowRaw), visible: true })),
-      };
-    }, source);
-  }
-
-  function focusHybridLayer(source = "hybrid_layer_focus") {
-    const rows = asArray(hybridLayerRenderRows);
-    if (!rows.length && !asArray(hybridV2DocLive?.elements).length) return;
-    if (!rows.length && asArray(hybridV2DocLive?.elements).length) {
-      const first = asObject(hybridV2DocLive.elements[0]);
-      const firstId = toText(first.id);
-      if (!firstId) return;
-      setHybridV2ActiveId(firstId);
-      const binding = asObject(hybridV2BindingByHybridId[firstId]);
-      const bpmnId = toText(binding.bpmn_id || binding.bpmnId);
-      if (bpmnId) {
-        bpmnRef.current?.focusNode?.(bpmnId, { keepPrevious: false, durationMs: 1200 });
-      }
-      return;
-    }
-    const target = asObject(rows.find((row) => !!asObject(row).hasCenter) || rows[0]);
-    const elementId = toText(target?.elementId);
-    if (!elementId) return;
-    if (target?.hasCenter && !target?.insideViewport && (Math.abs(Number(target?.rawDx || 0)) > 0.5 || Math.abs(Number(target?.rawDy || 0)) > 0.5)) {
-      let rebasedMap = null;
-      setHybridLayerByElementId((prevRaw) => {
-        const prev = normalizeHybridLayerMap(prevRaw);
-        if (!prev[elementId]) return prev;
-        const next = {
-          ...prev,
-          [elementId]: { dx: 0, dy: 0 },
-        };
-        hybridLayerMapRef.current = next;
-        rebasedMap = next;
-        return next;
-      });
-      if (rebasedMap) {
-        window.setTimeout(() => {
-          void persistHybridLayerMap(rebasedMap, { source: `${source}_rebase` });
-        }, 0);
-      }
-    }
-    setHybridLayerActiveElementId(elementId);
-    markPlaybackOverlayInteraction({
-      stage: "hybrid_layer_focus",
-      source,
-      elementId,
-    });
-    bpmnRef.current?.focusNode?.(elementId, { keepPrevious: false, durationMs: 1400 });
-  }
-
-  function goToHybridLayerItem(elementIdRaw, source = "hybrid_layer_go_to") {
-    const elementId = toNodeId(elementIdRaw);
-    if (!elementId) return;
-    setHybridLayerActiveElementId(elementId);
-    markPlaybackOverlayInteraction({
-      stage: "hybrid_layer_go_to",
-      source,
-      elementId,
-    });
-    bpmnRef.current?.focusNode?.(elementId, { keepPrevious: false, durationMs: 1200 });
-  }
-
-  function cleanupMissingHybridBindings(source = "hybrid_layer_cleanup_missing") {
-    const missingIds = new Set(asArray(hybridLayerMissingBindingIds).map((row) => toText(row)).filter(Boolean));
-    if (!missingIds.size) return;
-    let nextMap = null;
-    setHybridLayerByElementId((prevRaw) => {
-      const prev = normalizeHybridLayerMap(prevRaw);
-      const next = {};
-      Object.keys(prev).forEach((elementIdRaw) => {
-        const elementId = toText(elementIdRaw);
-        if (!elementId || missingIds.has(elementId)) return;
-        next[elementId] = asObject(prev[elementId]);
-      });
-      hybridLayerMapRef.current = next;
-      nextMap = next;
-      return next;
-    });
-    if (nextMap) {
-      window.setTimeout(() => {
-        void persistHybridLayerMap(nextMap, { source });
-      }, 0);
-    }
-    if (toText(hybridLayerActiveElementId) && missingIds.has(toText(hybridLayerActiveElementId))) {
-      setHybridLayerActiveElementId("");
-    }
-    markPlaybackOverlayInteraction({
-      stage: "hybrid_layer_cleanup_missing",
-      count: missingIds.size,
-      source,
-    });
-  }
-
-  function withHybridOverlayGuard(event, meta = {}) {
-    event?.preventDefault?.();
-    event?.stopPropagation?.();
-    markPlaybackOverlayInteraction({ stage: "hybrid_overlay_guard", ...asObject(meta) });
-  }
-
-  function handleHybridLayerItemPointerDown(event, itemRaw) {
-    const item = asObject(itemRaw);
-    const elementId = toText(item?.elementId);
-    if (!elementId) return;
-    withHybridOverlayGuard(event, { elementId, action: "item_pointer_down" });
-    setHybridLayerActiveElementId(elementId);
-    if (hybridModeEffective !== "edit" || hybridUiPrefs.lock) return;
-    const row = asObject(hybridLayerByElementId[elementId]);
-    const pointer = clientToDiagram(event?.clientX, event?.clientY);
-    if (!pointer) return;
-    hybridLayerDragRef.current = {
-      elementId,
-      startX: Number(pointer.x || 0),
-      startY: Number(pointer.y || 0),
-      baseDx: Number(row.dx || 0),
-      baseDy: Number(row.dy || 0),
-    };
-  }
-
-  function addOrSelectHybridMarker(elementIdRaw, source = "hybrid_edit_click") {
-    const elementId = toNodeId(elementIdRaw);
-    if (!elementId) return;
-    let createdMap = null;
-    setHybridLayerActiveElementId(elementId);
-    setHybridLayerByElementId((prevRaw) => {
-      const prev = normalizeHybridLayerMap(prevRaw);
-      if (prev[elementId]) return prev;
-      const next = {
-        ...prev,
-        [elementId]: { dx: 0, dy: 0 },
-      };
-      hybridLayerMapRef.current = next;
-      markPlaybackOverlayInteraction({
-        stage: "hybrid_marker_added",
-        source,
-        elementId,
-      });
-      createdMap = next;
-      return next;
-    });
-    if (createdMap) {
-      window.setTimeout(() => {
-        void persistHybridLayerMap(createdMap, { source: `${source}_create` });
-      }, 0);
-    }
-  }
-
-  function handleHybridEditSurfacePointerDown(event, source = "hybrid_edit_surface") {
-    if (hybridModeEffective !== "edit" || hybridUiPrefs.lock) return;
-    const elementId = resolveHybridTargetElementIdFromPoint(event?.clientX, event?.clientY) || toNodeId(selectedElementId);
-    withHybridOverlayGuard(event, { action: source, elementId });
-    if (!elementId) return;
-    addOrSelectHybridMarker(elementId, source);
-  }
-
-  function openPathsFromDiagram() {
-    const intent = {
-      version: DIAGRAM_PATHS_INTENT_VERSION,
-      key: `${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
-      sid,
-      action: "open_paths",
-      tier: normalizePathTier(pathHighlightTier) || "P0",
-      sequenceKey: normalizePathSequenceKey(pathHighlightSequenceKey),
-      source: "diagram_action_bar",
-    };
-    setDiagramPathsIntent(intent);
-    setDiagramActionPlanOpen(false);
-    setDiagramActionPlaybackOpen(false);
-    setDiagramActionRobotMetaOpen(false);
-    setRobotMetaListOpen(false);
-    setDiagramActionQualityOpen(false);
-    setDiagramActionOverflowOpen(false);
-    setTab("interview");
-    setDiagramActionPathOpen(false);
-  }
-
-  function toggleQualityOverlayFilter(keyRaw) {
-    const key = toText(keyRaw);
-    if (!key) return;
-    setQualityOverlayFilters((prev) => ({
-      ...prev,
-      [key]: !prev?.[key],
-    }));
-  }
-
-  function setQualityOverlayAll(enabled) {
-    const value = !!enabled;
-    setQualityOverlayFilters({
-      orphan: value,
-      dead_end: value,
-      gateway: value,
-      link_errors: value,
-      missing_duration: value,
-      missing_notes: value,
-      route_truncated: value,
-    });
-  }
-
-  function focusQualityOverlayItem(itemRaw, source = "quality_overlay") {
-    const item = asObject(itemRaw);
-    const nodeId = toNodeId(item?.nodeId);
-    if (!nodeId) return;
-    if (tab !== "diagram") setTab("diagram");
-    requestDiagramFocus(nodeId, {
-      markerClass: "fpcAttentionJumpFocus",
-      durationMs: 6200,
-      targetZoom: 0.92,
-      clearExistingSelection: true,
-    });
-    window.setTimeout(() => {
-      bpmnRef.current?.flashNode?.(nodeId, "accent", { label: "Issue" });
-    }, 120);
-    if (source === "quality_overlay_list") {
-      setDiagramActionQualityOpen(false);
-    }
-  }
 
   const topPanelsView = useMemo(
     () => ({

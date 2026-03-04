@@ -43,14 +43,14 @@
   - `frontend/e2e/hybrid-layer-layers.spec.mjs:29` `topbar-project-select`
   - `frontend/e2e/hybrid-layer-layers.spec.mjs:30` `topbar-session-select`
 - Diagram toolbar anchors в stage:
-  - `frontend/src/components/ProcessStage.jsx:5457` `diagram-toolbar-save`
-  - `frontend/src/components/ProcessStage.jsx:5462` `diagram-toolbar-save-status`
-  - `frontend/src/components/ProcessStage.jsx:5555` `diagram-toolbar-overflow-toggle`
+  - `frontend/src/features/process/stage/ui/ProcessStageHeader.jsx:46` `diagram-toolbar-save`
+  - `frontend/src/features/process/stage/ui/ProcessStageHeader.jsx:51` `diagram-toolbar-save-status`
+  - `frontend/src/features/process/stage/ui/ProcessStageHeader.jsx:128` `diagram-toolbar-overflow-toggle`
 - Runtime readiness hooks для modeler/e2e:
   - `frontend/src/components/process/BpmnStage.jsx:3169` `window.__FPC_E2E_MODELER__`
   - `frontend/src/components/process/BpmnStage.jsx:3027` `window.__FPC_E2E_RUNTIME__`
-  - `frontend/src/components/ProcessStage.jsx:2347` `window.__FPC_E2E_HYBRID__`
-  - `frontend/src/components/ProcessStage.jsx:4985` `window.__FPC_E2E_DRAWIO__`
+  - `frontend/src/components/ProcessStage.jsx:1445` `window.__FPC_E2E_HYBRID__`
+  - `frontend/src/features/process/stage/controllers/useProcessStageRuntimeGlue.js:648` `window.__FPC_E2E_DRAWIO__`
 - Контракт D1: не ломать существующие `data-testid` и e2e глобальные ready hooks.
 
 ## 5) Feature flags / env gates
@@ -96,3 +96,15 @@
   - `setFollowMode(bool)` (через playback auto-camera/follow)
 - Совместимость со старым импортом для поэтапного перехода:
   - `frontend/src/features/process/stage/hooks/usePlaybackController.js` ре-экспортирует controller.
+
+## 8) Runtime glue and legacy hybrid boundary (D1.7)
+
+- Общие runtime-обработчики stage (toolbar/actions, execution plan, draw.io, quality-path overlays, hybrid autosave) вынесены в:
+  - `frontend/src/features/process/stage/controllers/useProcessStageRuntimeGlue.js`
+- Legacy hybrid-layer orchestration вынесена в:
+  - `frontend/src/features/process/stage/controllers/useHybridLegacyLayerController.js`
+- Утилиты верхнего уровня `ProcessStage` (normalization/storage/AI-question helpers) вынесены в:
+  - `frontend/src/features/process/stage/utils/processStageHelpers.js`
+- Контракт D1.7:
+  - `frontend/src/components/ProcessStage.jsx` остаётся orchestration shell (wiring контроллеров + рендер shell/panels/dialogs/overlay).
+  - Redis остаётся optional: lock/cache/idem работают только при доступном Redis; при OFF runtime не падает и e2e baseline проходит.
