@@ -71,7 +71,9 @@ class BpmnMetaApiTests(unittest.TestCase):
             InferRtiersIn,
             BpmnXmlIn,
             CreateSessionIn,
+            UpdateSessionIn,
             create_session,
+            patch_session,
             session_bpmn_meta_get,
             session_bpmn_meta_patch,
             session_bpmn_meta_infer_rtiers,
@@ -82,7 +84,9 @@ class BpmnMetaApiTests(unittest.TestCase):
         self.InferRtiersIn = InferRtiersIn
         self.BpmnXmlIn = BpmnXmlIn
         self.CreateSessionIn = CreateSessionIn
+        self.UpdateSessionIn = UpdateSessionIn
         self.create_session = create_session
+        self.patch_session = patch_session
         self.session_bpmn_meta_get = session_bpmn_meta_get
         self.session_bpmn_meta_patch = session_bpmn_meta_patch
         self.session_bpmn_meta_infer_rtiers = session_bpmn_meta_infer_rtiers
@@ -214,6 +218,98 @@ class BpmnMetaApiTests(unittest.TestCase):
             ),
         )
         self.assertNotIn("Task_yes", second.get("robot_meta_by_element_id", {}))
+
+    def test_bpmn_put_preserves_hybrid_v2(self):
+        initial = self.session_bpmn_meta_patch(
+            self.sid,
+            self.BpmnMetaPatchIn(
+                hybrid_v2={
+                    "schema_version": 2,
+                    "layers": [{"id": "L1", "name": "Hybrid"}],
+                    "elements": [
+                        {
+                            "id": "E1",
+                            "layer_id": "L1",
+                            "type": "rect",
+                            "x": 120,
+                            "y": 220,
+                            "w": 180,
+                            "h": 70,
+                            "text": "Hybrid box",
+                        }
+                    ],
+                    "edges": [],
+                    "bindings": [
+                        {"hybrid_id": "E1", "bpmn_id": "Task_yes", "kind": "node"},
+                    ],
+                    "view": {"mode": "view", "tool": "select", "active_layer_id": "L1"},
+                },
+            ),
+        )
+        self.assertIn("hybrid_v2", initial)
+        self.assertEqual(initial.get("hybrid_v2", {}).get("schema_version"), 2)
+        self.assertEqual(len(initial.get("hybrid_v2", {}).get("elements", [])), 1)
+
+        save_res = self.session_bpmn_save(self.sid, self.BpmnXmlIn(xml=PRUNED_BPMN_XML))
+        self.assertEqual(save_res.get("ok"), True)
+        after = self.session_bpmn_meta_get(self.sid)
+        hybrid = after.get("hybrid_v2", {})
+        self.assertEqual(hybrid.get("schema_version"), 2)
+        self.assertEqual(len(hybrid.get("elements", [])), 1)
+        self.assertEqual(hybrid.get("elements", [])[0].get("id"), "E1")
+
+    def test_bpmn_put_preserves_hybrid_v2_when_incoming_section_empty(self):
+        self.session_bpmn_meta_patch(
+            self.sid,
+            self.BpmnMetaPatchIn(
+                hybrid_v2={
+                    "schema_version": 2,
+                    "layers": [{"id": "L1", "name": "Hybrid"}],
+                    "elements": [
+                        {"id": "E1", "layer_id": "L1", "type": "rect", "x": 100, "y": 120, "w": 180, "h": 70}
+                    ],
+                    "edges": [],
+                    "bindings": [],
+                    "view": {"mode": "view", "tool": "select", "active_layer_id": "L1"},
+                },
+            ),
+        )
+        save_res = self.session_bpmn_save(
+            self.sid,
+            self.BpmnXmlIn(xml=PRUNED_BPMN_XML, bpmn_meta={"hybrid_v2": {}}),
+        )
+        self.assertEqual(save_res.get("ok"), True)
+        after = self.session_bpmn_meta_get(self.sid)
+        self.assertEqual(len(after.get("hybrid_v2", {}).get("elements", [])), 1)
+
+    def test_patch_session_partial_bpmn_meta_preserves_hybrid_v2(self):
+        self.session_bpmn_meta_patch(
+            self.sid,
+            self.BpmnMetaPatchIn(
+                hybrid_v2={
+                    "schema_version": 2,
+                    "layers": [{"id": "L1", "name": "Hybrid"}],
+                    "elements": [
+                        {"id": "E1", "layer_id": "L1", "type": "rect", "x": 100, "y": 120, "w": 180, "h": 70}
+                    ],
+                    "edges": [],
+                    "bindings": [],
+                    "view": {"mode": "view", "tool": "select", "active_layer_id": "L1"},
+                },
+            ),
+        )
+        patched = self.patch_session(
+            self.sid,
+            self.UpdateSessionIn(
+                bpmn_meta={
+                    "hybrid_layer_by_element_id": {
+                        "Task_yes": {"dx": 16, "dy": -4},
+                    }
+                }
+            ),
+        )
+        hybrid = (patched.get("bpmn_meta") or {}).get("hybrid_v2", {})
+        self.assertEqual(len(hybrid.get("elements", [])), 1)
 
     def test_infer_rtiers_smoke_afbb609e19(self):
         afbb_path = Path(__file__).resolve().parents[2] / "workspace" / ".session_store" / "afbb609e19.json"

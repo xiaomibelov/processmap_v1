@@ -59,8 +59,42 @@ test("load/save prefs roundtrip with per-user key", () => {
     lock: false,
     focus: true,
   });
-  const loadedAnon = loadHybridUiPrefs(storage, key, "u_other");
-  assert.deepEqual(loadedAnon, {
+  const loadedFallback = loadHybridUiPrefs(storage, key, "u_other");
+  assert.deepEqual(loadedFallback, {
+    visible: true,
+    mode: "view",
+    opacity: 30,
+    lock: false,
+    focus: true,
+  });
+});
+
+test("loadHybridUiPrefs: falls back to anon profile when specific user missing", () => {
+  const storage = createMemoryStorage();
+  const key = getHybridUiStorageKey("anon");
+  saveHybridUiPrefs(storage, key, {
+    visible: true,
+    mode: "edit",
+    opacity: 100,
+    lock: true,
+    focus: false,
+  }, "anon");
+  const loaded = loadHybridUiPrefs(storage, key, "u_enterprise");
+  assert.deepEqual(loaded, {
+    visible: true,
+    mode: "edit",
+    opacity: 100,
+    lock: true,
+    focus: false,
+  });
+});
+
+test("loadHybridUiPrefs: defaults when profile container is empty", () => {
+  const storage = createMemoryStorage();
+  const key = getHybridUiStorageKey("u_123");
+  storage.setItem(key, JSON.stringify({ by_user: {} }));
+  const loaded = loadHybridUiPrefs(storage, key, "u_other");
+  assert.deepEqual(loaded, {
     visible: false,
     mode: "view",
     opacity: 60,

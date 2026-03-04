@@ -1671,6 +1671,209 @@ def _normalize_hybrid_layer_map(
     return out
 
 
+def _normalize_hybrid_v2(value: Any) -> Dict[str, Any]:
+    raw = value if isinstance(value, dict) else {}
+    layers_raw = raw.get("layers") if isinstance(raw.get("layers"), list) else []
+    layers: List[Dict[str, Any]] = []
+    seen_layer_ids: Set[str] = set()
+    for idx, layer_raw in enumerate(layers_raw):
+        layer = layer_raw if isinstance(layer_raw, dict) else {}
+        layer_id = str(layer.get("id") or "").strip() or f"L{idx + 1}"
+        if not layer_id or layer_id in seen_layer_ids:
+            continue
+        seen_layer_ids.add(layer_id)
+        try:
+            opacity = float(layer.get("opacity", 1.0))
+        except Exception:
+            opacity = 1.0
+        if not math.isfinite(opacity):
+            opacity = 1.0
+        layers.append({
+            "id": layer_id,
+            "name": str(layer.get("name") or "").strip() or ("Hybrid" if layer_id == "L1" else f"Layer {idx + 1}"),
+            "visible": layer.get("visible") is not False,
+            "locked": bool(layer.get("locked")),
+            "opacity": round(max(0.1, min(1.0, opacity)), 3),
+        })
+    if not layers:
+        layers = [{
+            "id": "L1",
+            "name": "Hybrid",
+            "visible": True,
+            "locked": False,
+            "opacity": 1.0,
+        }]
+        seen_layer_ids = {"L1"}
+
+    elements_raw = raw.get("elements") if isinstance(raw.get("elements"), list) else []
+    elements: List[Dict[str, Any]] = []
+    seen_element_ids: Set[str] = set()
+    for idx, element_raw in enumerate(elements_raw):
+        element = element_raw if isinstance(element_raw, dict) else {}
+        element_id = str(element.get("id") or "").strip() or f"E{idx + 1}"
+        if not element_id or element_id in seen_element_ids:
+            continue
+        seen_element_ids.add(element_id)
+        layer_id = str(element.get("layer_id") or element.get("layerId") or "").strip() or "L1"
+        if layer_id not in seen_layer_ids:
+            layer_id = "L1"
+        element_type = str(element.get("type") or "").strip().lower()
+        if element_type not in {"rect", "text", "note"}:
+            element_type = "note"
+        try:
+            x = float(element.get("x", 120))
+        except Exception:
+            x = 120.0
+        try:
+            y = float(element.get("y", 120))
+        except Exception:
+            y = 120.0
+        try:
+            w = float(element.get("w", 180 if element_type == "text" else 200))
+        except Exception:
+            w = 180.0
+        try:
+            h = float(element.get("h", 34 if element_type == "text" else 70))
+        except Exception:
+            h = 70.0
+        style_raw = element.get("style") if isinstance(element.get("style"), dict) else {}
+        try:
+            radius = float(style_raw.get("radius", 8))
+        except Exception:
+            radius = 8.0
+        try:
+            font_size = float(style_raw.get("fontSize", 12))
+        except Exception:
+            font_size = 12.0
+        elements.append({
+            "id": element_id,
+            "layer_id": layer_id,
+            "type": element_type,
+            "x": round(x, 3) if math.isfinite(x) else 120.0,
+            "y": round(y, 3) if math.isfinite(y) else 120.0,
+            "w": round(max(36.0, min(2200.0, w if math.isfinite(w) else 180.0)), 3),
+            "h": round(max(20.0, min(1200.0, h if math.isfinite(h) else 70.0)), 3),
+            "text": str(element.get("text") or "").strip(),
+            "style": {
+                "stroke": str(style_raw.get("stroke") or "#334155").strip() or "#334155",
+                "fill": str(style_raw.get("fill") or ("#fff7d6" if element_type == "note" else "#f8fafc")).strip() or "#f8fafc",
+                "radius": round(max(0.0, min(24.0, radius if math.isfinite(radius) else 8.0)), 3),
+                "fontSize": int(max(10, min(24, round(font_size if math.isfinite(font_size) else 12.0)))),
+            },
+        })
+
+    edge_raw_list = raw.get("edges") if isinstance(raw.get("edges"), list) else []
+    edges: List[Dict[str, Any]] = []
+    seen_edge_ids: Set[str] = set()
+    for idx, edge_raw in enumerate(edge_raw_list):
+        edge = edge_raw if isinstance(edge_raw, dict) else {}
+        edge_id = str(edge.get("id") or "").strip() or f"A{idx + 1}"
+        if not edge_id or edge_id in seen_edge_ids:
+            continue
+        seen_edge_ids.add(edge_id)
+        layer_id = str(edge.get("layer_id") or edge.get("layerId") or "").strip() or "L1"
+        if layer_id not in seen_layer_ids:
+            layer_id = "L1"
+        from_raw = edge.get("from") if isinstance(edge.get("from"), dict) else {}
+        to_raw = edge.get("to") if isinstance(edge.get("to"), dict) else {}
+        from_id = str(from_raw.get("element_id") or from_raw.get("elementId") or "").strip()
+        to_id = str(to_raw.get("element_id") or to_raw.get("elementId") or "").strip()
+        if from_id not in seen_element_ids or to_id not in seen_element_ids:
+            continue
+        style_raw = edge.get("style") if isinstance(edge.get("style"), dict) else {}
+        try:
+            stroke_width = float(style_raw.get("width", 2))
+        except Exception:
+            stroke_width = 2.0
+        waypoints_raw = edge.get("waypoints") if isinstance(edge.get("waypoints"), list) else []
+        waypoints: List[Dict[str, float]] = []
+        for point_raw in waypoints_raw:
+            point = point_raw if isinstance(point_raw, dict) else {}
+            try:
+                px = float(point.get("x"))
+                py = float(point.get("y"))
+            except Exception:
+                continue
+            if not math.isfinite(px) or not math.isfinite(py):
+                continue
+            waypoints.append({"x": round(px, 3), "y": round(py, 3)})
+        edges.append({
+            "id": edge_id,
+            "layer_id": layer_id,
+            "type": "arrow",
+            "from": {
+                "element_id": from_id,
+                "anchor": str(from_raw.get("anchor") or "auto").strip() or "auto",
+            },
+            "to": {
+                "element_id": to_id,
+                "anchor": str(to_raw.get("anchor") or "auto").strip() or "auto",
+            },
+            "waypoints": waypoints,
+            "style": {
+                "stroke": str(style_raw.get("stroke") or "#2563eb").strip() or "#2563eb",
+                "width": round(max(1.0, min(8.0, stroke_width if math.isfinite(stroke_width) else 2.0)), 3),
+            },
+        })
+
+    valid_hybrid_ids: Set[str] = set(seen_element_ids) | set(seen_edge_ids)
+    bindings_raw = raw.get("bindings") if isinstance(raw.get("bindings"), list) else []
+    bindings: List[Dict[str, Any]] = []
+    seen_binding_keys: Set[str] = set()
+    for binding_raw in bindings_raw:
+        binding = binding_raw if isinstance(binding_raw, dict) else {}
+        hybrid_id = str(binding.get("hybrid_id") or binding.get("hybridId") or "").strip()
+        bpmn_id = str(binding.get("bpmn_id") or binding.get("bpmnId") or "").strip()
+        kind = str(binding.get("kind") or "node").strip().lower()
+        if kind not in {"node", "edge"}:
+            kind = "node"
+        if not hybrid_id or not bpmn_id or hybrid_id not in valid_hybrid_ids:
+            continue
+        dedupe_key = f"{hybrid_id}::{bpmn_id}::{kind}"
+        if dedupe_key in seen_binding_keys:
+            continue
+        seen_binding_keys.add(dedupe_key)
+        bindings.append({
+            "hybrid_id": hybrid_id,
+            "bpmn_id": bpmn_id,
+            "kind": kind,
+        })
+
+    view_raw = raw.get("view") if isinstance(raw.get("view"), dict) else {}
+    mode = str(view_raw.get("mode") or "view").strip().lower()
+    if mode not in {"view", "edit"}:
+        mode = "view"
+    tool = str(view_raw.get("tool") or "select").strip().lower()
+    if tool not in {"select", "rect", "text", "arrow", "note"}:
+        tool = "select"
+    active_layer_id = str(view_raw.get("active_layer_id") or view_raw.get("activeLayerId") or "L1").strip() or "L1"
+    if active_layer_id not in seen_layer_ids:
+        active_layer_id = layers[0]["id"]
+    view = {
+        "mode": mode,
+        "active_layer_id": active_layer_id,
+        "tool": tool,
+        "peek": bool(view_raw.get("peek")),
+    }
+
+    return {
+        "schema_version": 2,
+        "layers": layers,
+        "elements": elements,
+        "edges": edges,
+        "bindings": bindings,
+        "view": view,
+    }
+
+
+def _hybrid_v2_payload_size(value: Any) -> int:
+    normalized = _normalize_hybrid_v2(value)
+    elements = normalized.get("elements") if isinstance(normalized.get("elements"), list) else []
+    edges = normalized.get("edges") if isinstance(normalized.get("edges"), list) else []
+    bindings = normalized.get("bindings") if isinstance(normalized.get("bindings"), list) else []
+    return len(elements) + len(edges) + len(bindings)
+
+
 def _entry_to_flow_tier(entry_raw: Any) -> Optional[str]:
     if isinstance(entry_raw, dict):
         tier = _normalize_flow_tier(entry_raw.get("tier"))
@@ -1745,6 +1948,7 @@ def _normalize_bpmn_meta(
         raw.get("hybrid_layer_by_element_id"),
         allowed_node_ids=allowed_node_ids,
     )
+    hybrid_v2 = _normalize_hybrid_v2(raw.get("hybrid_v2"))
 
     return {
         "version": version,
@@ -1752,6 +1956,7 @@ def _normalize_bpmn_meta(
         "node_path_meta": node_path_meta,
         "robot_meta_by_element_id": robot_meta_by_element_id,
         "hybrid_layer_by_element_id": hybrid_layer_by_element_id,
+        "hybrid_v2": hybrid_v2,
     }
 
 
@@ -2271,6 +2476,7 @@ class BpmnMetaPatchIn(BaseModel):
     robot_updates: Optional[List[Dict[str, Any]]] = None
     robot_meta_by_element_id: Optional[Dict[str, Any]] = None
     hybrid_layer_by_element_id: Optional[Dict[str, Any]] = None
+    hybrid_v2: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -2796,8 +3002,34 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
         flow_ctx = _collect_sequence_flow_meta(sess_xml)
         flow_ids = flow_ctx.get("flow_ids")
         node_ids = flow_ctx.get("node_ids")
+        current_meta = _normalize_bpmn_meta(
+            getattr(sess, "bpmn_meta", {}),
+            allowed_flow_ids=flow_ids if sess_xml.strip() else None,
+            allowed_node_ids=node_ids if sess_xml.strip() else None,
+        )
+        incoming_meta = data.get("bpmn_meta")
+        if isinstance(incoming_meta, dict):
+            raw_bpmn_meta = {
+                "version": incoming_meta.get("version", current_meta.get("version", 1)),
+                "flow_meta": incoming_meta.get("flow_meta", current_meta.get("flow_meta", {})),
+                "node_path_meta": incoming_meta.get("node_path_meta", current_meta.get("node_path_meta", {})),
+                "robot_meta_by_element_id": incoming_meta.get(
+                    "robot_meta_by_element_id",
+                    current_meta.get("robot_meta_by_element_id", {}),
+                ),
+                "hybrid_layer_by_element_id": incoming_meta.get(
+                    "hybrid_layer_by_element_id",
+                    current_meta.get("hybrid_layer_by_element_id", {}),
+                ),
+                "hybrid_v2": incoming_meta.get(
+                    "hybrid_v2",
+                    current_meta.get("hybrid_v2", {}),
+                ),
+            }
+        else:
+            raw_bpmn_meta = current_meta
         normalized_meta = _normalize_bpmn_meta(
-            data.get("bpmn_meta"),
+            raw_bpmn_meta,
             allowed_flow_ids=flow_ids if sess_xml.strip() else None,
             allowed_node_ids=node_ids if sess_xml.strip() else None,
         )
@@ -4298,6 +4530,7 @@ def _infer_and_merge_rtiers(
     node_path_meta = dict(current.get("node_path_meta") or {})
     robot_meta_by_element_id = dict(current.get("robot_meta_by_element_id") or {})
     hybrid_layer_by_element_id = dict(current.get("hybrid_layer_by_element_id") or {})
+    hybrid_v2 = dict(current.get("hybrid_v2") or {})
     now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
     manual_preserved_flow_ids: List[str] = []
@@ -4361,6 +4594,7 @@ def _infer_and_merge_rtiers(
             "node_path_meta": node_path_meta,
             "robot_meta_by_element_id": robot_meta_by_element_id,
             "hybrid_layer_by_element_id": hybrid_layer_by_element_id,
+            "hybrid_v2": hybrid_v2,
         },
         allowed_flow_ids=flow_ids,
         allowed_node_ids=node_ids,
@@ -4438,6 +4672,7 @@ def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn) -> Dict[str, 
     node_path_meta = dict(current.get("node_path_meta") or {})
     robot_meta_by_element_id = dict(current.get("robot_meta_by_element_id") or {})
     hybrid_layer_by_element_id = dict(current.get("hybrid_layer_by_element_id") or {})
+    hybrid_v2 = dict(current.get("hybrid_v2") or {})
 
     if isinstance(inp.flow_meta, dict):
         replaced = _normalize_bpmn_meta(
@@ -4470,6 +4705,14 @@ def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn) -> Dict[str, 
             allowed_node_ids=node_ids if has_xml else None,
         )
         hybrid_layer_by_element_id = dict(replaced.get("hybrid_layer_by_element_id") or {})
+
+    if isinstance(inp.hybrid_v2, dict):
+        replaced = _normalize_bpmn_meta(
+            {"version": current.get("version", 1), "hybrid_v2": inp.hybrid_v2},
+            allowed_flow_ids=flow_ids if has_xml else None,
+            allowed_node_ids=node_ids if has_xml else None,
+        )
+        hybrid_v2 = dict(replaced.get("hybrid_v2") or {})
 
     def apply_update(update_raw: Dict[str, Any]) -> None:
         update = update_raw if isinstance(update_raw, dict) else {}
@@ -4660,6 +4903,7 @@ def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn) -> Dict[str, 
             "node_path_meta": node_path_meta,
             "robot_meta_by_element_id": robot_meta_by_element_id,
             "hybrid_layer_by_element_id": hybrid_layer_by_element_id,
+            "hybrid_v2": hybrid_v2,
         },
         allowed_flow_ids=flow_ids if has_xml else None,
         allowed_node_ids=node_ids if has_xml else None,
@@ -4803,6 +5047,25 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn) -> Dict[str, Any]:
     )
     if isinstance(inp.bpmn_meta, dict):
         incoming_meta = inp.bpmn_meta
+        incoming_hybrid_layer = incoming_meta.get("hybrid_layer_by_element_id")
+        current_hybrid_layer = current_meta.get("hybrid_layer_by_element_id", {})
+        if isinstance(incoming_hybrid_layer, dict):
+            if not incoming_hybrid_layer and isinstance(current_hybrid_layer, dict) and current_hybrid_layer:
+                merged_hybrid_layer = current_hybrid_layer
+            else:
+                merged_hybrid_layer = incoming_hybrid_layer
+        else:
+            merged_hybrid_layer = current_hybrid_layer
+
+        incoming_hybrid_v2 = incoming_meta.get("hybrid_v2")
+        current_hybrid_v2 = current_meta.get("hybrid_v2", {})
+        if isinstance(incoming_hybrid_v2, dict):
+            incoming_v2_size = _hybrid_v2_payload_size(incoming_hybrid_v2)
+            current_v2_size = _hybrid_v2_payload_size(current_hybrid_v2)
+            merged_hybrid_v2 = current_hybrid_v2 if incoming_v2_size <= 0 < current_v2_size else incoming_hybrid_v2
+        else:
+            merged_hybrid_v2 = current_hybrid_v2
+
         raw_bpmn_meta = {
             "version": incoming_meta.get("version", current_meta.get("version", 1)),
             "flow_meta": incoming_meta.get("flow_meta", current_meta.get("flow_meta", {})),
@@ -4811,10 +5074,8 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn) -> Dict[str, Any]:
                 "robot_meta_by_element_id",
                 current_meta.get("robot_meta_by_element_id", {}),
             ),
-            "hybrid_layer_by_element_id": incoming_meta.get(
-                "hybrid_layer_by_element_id",
-                current_meta.get("hybrid_layer_by_element_id", {}),
-            ),
+            "hybrid_layer_by_element_id": merged_hybrid_layer,
+            "hybrid_v2": merged_hybrid_v2,
         }
     else:
         raw_bpmn_meta = current_meta

@@ -43,7 +43,15 @@ export function loadHybridUiPrefs(storageLike, storageKey, userIdRaw = "") {
     const parsed = JSON.parse(raw);
     const container = asObject(parsed);
     if (container.by_user && typeof container.by_user === "object") {
-      return normalizeHybridUiPrefs(container.by_user[userId]);
+      const byUser = asObject(container.by_user);
+      if (byUser[userId] && typeof byUser[userId] === "object") {
+        return normalizeHybridUiPrefs(byUser[userId]);
+      }
+      if (byUser.anon && typeof byUser.anon === "object") {
+        return normalizeHybridUiPrefs(byUser.anon);
+      }
+      const first = Object.values(byUser).find((value) => value && typeof value === "object");
+      return normalizeHybridUiPrefs(first);
     }
     return normalizeHybridUiPrefs(container);
   } catch {

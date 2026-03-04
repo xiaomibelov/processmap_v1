@@ -82,6 +82,15 @@ import {
   normalizeHybridUiPrefs,
   saveHybridUiPrefs,
 } from "../features/process/hybrid/hybridLayerUi";
+import {
+  docToComparableJson,
+  exportHybridV2ToDrawioXml,
+  getHybridBindingsByBpmnId,
+  importHybridV2FromDrawioXml,
+  makeHybridV2Id,
+  migrateHybridV1ToV2,
+  normalizeHybridV2Doc,
+} from "../features/process/hybrid/hybridLayerV2";
 import { buildManualPathReportSteps } from "./process/interview/services/pathReport";
 
 function toText(value) {
@@ -301,6 +310,79 @@ function serializeHybridLayerMap(rawMap) {
     };
   });
   return JSON.stringify(sorted);
+}
+
+function parseSvgMatrix(transformRaw) {
+  const text = toText(transformRaw);
+  const match = text.match(/matrix\(([^)]+)\)/i);
+  if (!match) {
+    return { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+  }
+  const values = String(match[1] || "")
+    .split(/[,\s]+/)
+    .map((part) => Number(part))
+    .filter((n) => Number.isFinite(n));
+  if (values.length < 6) return { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+  return {
+    a: Number(values[0]),
+    b: Number(values[1]),
+    c: Number(values[2]),
+    d: Number(values[3]),
+    e: Number(values[4]),
+    f: Number(values[5]),
+  };
+}
+
+function matrixToScreen(matrixRaw, xRaw, yRaw) {
+  const matrix = asObject(matrixRaw);
+  const x = Number(xRaw || 0);
+  const y = Number(yRaw || 0);
+  return {
+    x: Number(matrix.a || 1) * x + Number(matrix.c || 0) * y + Number(matrix.e || 0),
+    y: Number(matrix.b || 0) * x + Number(matrix.d || 1) * y + Number(matrix.f || 0),
+  };
+}
+
+function matrixToDiagram(matrixRaw, xRaw, yRaw) {
+  const matrix = asObject(matrixRaw);
+  const x = Number(xRaw || 0);
+  const y = Number(yRaw || 0);
+  const a = Number(matrix.a || 1);
+  const b = Number(matrix.b || 0);
+  const c = Number(matrix.c || 0);
+  const d = Number(matrix.d || 1);
+  const e = Number(matrix.e || 0);
+  const f = Number(matrix.f || 0);
+  const det = (a * d) - (b * c);
+  if (!Number.isFinite(det) || Math.abs(det) < 1e-8) {
+    return { x, y };
+  }
+  const tx = x - e;
+  const ty = y - f;
+  return {
+    x: ((d * tx) - (c * ty)) / det,
+    y: ((-b * tx) + (a * ty)) / det,
+  };
+}
+
+function downloadTextFile(filenameRaw, textRaw, mimeRaw = "text/plain;charset=utf-8") {
+  if (typeof window === "undefined" || typeof document === "undefined") return false;
+  const filename = toText(filenameRaw) || "download.txt";
+  try {
+    const blob = new Blob([String(textRaw || "")], { type: String(mimeRaw || "text/plain;charset=utf-8") });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.rel = "noopener";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function downloadJsonFile(filenameRaw, payloadRaw) {
@@ -1046,11 +1128,20 @@ export default function ProcessStage({
   const diagramOverflowPopoverRef = useRef(null);
   const bpmnStageHostRef = useRef(null);
   const hybridLayerOverlayRef = useRef(null);
+  const hybridV2FileInputRef = useRef(null);
   const hybridLayerDragRef = useRef(null);
   const hybridLayerMapRef = useRef({});
   const hybridLayerPositionsRef = useRef({});
   const hybridLayerPersistedMapRef = useRef({});
   const hybridAutoFocusGuardRef = useRef("");
+  const hybridViewportMatrixRef = useRef({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
+  const hybridV2DocRef = useRef(normalizeHybridV2Doc({}));
+  const hybridV2PersistedDocRef = useRef(normalizeHybridV2Doc({}));
+  const hybridV2ToolRef = useRef("select");
+  const hybridV2DragRef = useRef(null);
+  const hybridV2ResizeRef = useRef(null);
+  const hybridV2ArrowDraftRef = useRef(null);
+  const hybridV2MigrationGuardRef = useRef("");
   const playbackRafRef = useRef(0);
   const playbackLastTickRef = useRef(0);
   const playbackEngineRef = useRef(null);
@@ -1160,6 +1251,12 @@ export default function ProcessStage({
   const [hybridLayerPositions, setHybridLayerPositions] = useState({});
   const [hybridLayerActiveElementId, setHybridLayerActiveElementId] = useState("");
   const [hybridViewportSize, setHybridViewportSize] = useState({ width: 0, height: 0 });
+  const [hybridViewportMatrix, setHybridViewportMatrix] = useState({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
+  const [hybridV2Doc, setHybridV2Doc] = useState(() => normalizeHybridV2Doc({}));
+  const [hybridV2ToolState, setHybridV2ToolState] = useState("select");
+  const [hybridV2ActiveId, setHybridV2ActiveId] = useState("");
+  const [hybridV2BindPickMode, setHybridV2BindPickMode] = useState(false);
+  const [hybridV2ImportNotice, setHybridV2ImportNotice] = useState("");
 
   useEffect(() => {
     setGenBusy(false);
@@ -1253,6 +1350,23 @@ export default function ProcessStage({
     setHybridLayerActiveElementId("");
     setHybridLayerPositions({});
     hybridLayerPositionsRef.current = {};
+    setHybridViewportMatrix({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
+    hybridViewportMatrixRef.current = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+    {
+      const emptyV2 = normalizeHybridV2Doc({});
+      setHybridV2Doc(emptyV2);
+      hybridV2DocRef.current = emptyV2;
+      hybridV2PersistedDocRef.current = emptyV2;
+    }
+    hybridV2DragRef.current = null;
+    hybridV2ResizeRef.current = null;
+    hybridV2ArrowDraftRef.current = null;
+    hybridV2MigrationGuardRef.current = "";
+    hybridV2ToolRef.current = "select";
+    setHybridV2ToolState("select");
+    setHybridV2ActiveId("");
+    setHybridV2BindPickMode(false);
+    setHybridV2ImportNotice("");
     playbackFramesRef.current = [];
     playbackEngineRef.current = null;
     playbackIndexRef.current = 0;
@@ -1469,10 +1583,38 @@ export default function ProcessStage({
     () => normalizeHybridLayerMap(asObject(asObject(draft?.bpmn_meta).hybrid_layer_by_element_id)),
     [draft?.bpmn_meta],
   );
+  const hybridV2FromDraft = useMemo(
+    () => normalizeHybridV2Doc(asObject(asObject(draft?.bpmn_meta).hybrid_v2)),
+    [draft?.bpmn_meta],
+  );
   const hybridLayerMapLive = useMemo(
     () => normalizeHybridLayerMap(hybridLayerByElementId),
     [hybridLayerByElementId],
   );
+  const hybridV2DocLive = useMemo(
+    () => normalizeHybridV2Doc(hybridV2Doc),
+    [hybridV2Doc],
+  );
+  const hybridV2LayerById = useMemo(() => {
+    const out = {};
+    hybridV2DocLive.layers.forEach((layerRaw) => {
+      const layer = asObject(layerRaw);
+      const id = toText(layer.id);
+      if (!id) return;
+      out[id] = layer;
+    });
+    return out;
+  }, [hybridV2DocLive]);
+  const hybridV2BindingByHybridId = useMemo(() => {
+    const out = {};
+    hybridV2DocLive.bindings.forEach((bindingRaw) => {
+      const binding = asObject(bindingRaw);
+      const hybridId = toText(binding.hybrid_id || binding.hybridId);
+      if (!hybridId) return;
+      out[hybridId] = binding;
+    });
+    return out;
+  }, [hybridV2DocLive]);
   const hybridLayerItems = useMemo(() => {
     const out = [];
     const seen = new Set();
@@ -1606,6 +1748,83 @@ export default function ProcessStage({
       none: Number(hybridLayerVisibilityStats.none || 0),
     };
   }, [hybridLayerVisibilityStats]);
+  const hybridV2Renderable = useMemo(() => {
+    const matrix = asObject(hybridViewportMatrix);
+    const elementsById = {};
+    const layersById = asObject(hybridV2LayerById);
+    const scaleX = Math.max(0.15, Math.hypot(Number(matrix.a || 1), Number(matrix.b || 0)));
+    const scaleY = Math.max(0.15, Math.hypot(Number(matrix.c || 0), Number(matrix.d || 1)));
+    const elements = [];
+    hybridV2DocLive.elements.forEach((elementRaw) => {
+      const element = asObject(elementRaw);
+      const id = toText(element.id);
+      if (!id) return;
+      const layerId = toText(element.layer_id);
+      const layer = asObject(layersById[layerId]);
+      if (!hybridVisible || layer.visible === false) return;
+      const x = Number(element.x || 0);
+      const y = Number(element.y || 0);
+      const w = Number(element.w || 0);
+      const h = Number(element.h || 0);
+      const p1 = matrixToScreen(matrix, x, y);
+      const p2 = matrixToScreen(matrix, x + w, y + h);
+      const left = Math.min(Number(p1.x || 0), Number(p2.x || 0));
+      const top = Math.min(Number(p1.y || 0), Number(p2.y || 0));
+      const width = Math.max(18, Math.abs(Number(p2.x || 0) - Number(p1.x || 0)));
+      const height = Math.max(14, Math.abs(Number(p2.y || 0) - Number(p1.y || 0)));
+      const center = matrixToScreen(matrix, x + (w / 2), y + (h / 2));
+      const normalized = {
+        ...element,
+        id,
+        layer,
+        left,
+        top,
+        width,
+        height,
+        centerX: Number(center.x || 0),
+        centerY: Number(center.y || 0),
+        scaleX,
+        scaleY,
+      };
+      elements.push(normalized);
+      elementsById[id] = normalized;
+    });
+    const edges = [];
+    hybridV2DocLive.edges.forEach((edgeRaw) => {
+      const edge = asObject(edgeRaw);
+      const id = toText(edge.id);
+      if (!id) return;
+      const layerId = toText(edge.layer_id);
+      const layer = asObject(layersById[layerId]);
+      if (!hybridVisible || layer.visible === false) return;
+      const fromId = toText(asObject(edge.from).element_id);
+      const toId = toText(asObject(edge.to).element_id);
+      const fromEl = asObject(elementsById[fromId]);
+      const toEl = asObject(elementsById[toId]);
+      if (!fromEl.id || !toEl.id) return;
+      const points = [];
+      points.push({ x: Number(fromEl.centerX || 0), y: Number(fromEl.centerY || 0) });
+      asArray(edge.waypoints).forEach((pointRaw) => {
+        const point = asObject(pointRaw);
+        const p = matrixToScreen(matrix, Number(point.x || 0), Number(point.y || 0));
+        points.push({ x: Number(p.x || 0), y: Number(p.y || 0) });
+      });
+      points.push({ x: Number(toEl.centerX || 0), y: Number(toEl.centerY || 0) });
+      const d = points.map((pt, idx) => `${idx === 0 ? "M" : "L"} ${Math.round(pt.x * 10) / 10} ${Math.round(pt.y * 10) / 10}`).join(" ");
+      edges.push({
+        ...edge,
+        id,
+        layer,
+        from: fromEl,
+        to: toEl,
+        points,
+        d,
+      });
+    });
+    return { elements, edges, elementsById };
+  }, [hybridV2DocLive, hybridV2LayerById, hybridViewportMatrix, hybridVisible]);
+  const hybridV2TotalCount = Number(asArray(hybridV2DocLive?.elements).length || 0) + Number(asArray(hybridV2DocLive?.edges).length || 0);
+  const hybridTotalCount = Math.max(Number(hybridLayerCounts.total || 0), hybridV2TotalCount);
   useEffect(() => {
     const incoming = normalizeHybridLayerMap(hybridLayerMapFromDraft);
     const incomingSig = serializeHybridLayerMap(incoming);
@@ -1624,14 +1843,67 @@ export default function ProcessStage({
   }, [hybridLayerByElementId]);
 
   useEffect(() => {
+    const incoming = normalizeHybridV2Doc(hybridV2FromDraft);
+    const incomingSig = docToComparableJson(incoming);
+    const currentDoc = normalizeHybridV2Doc(hybridV2DocRef.current);
+    const persistedDoc = normalizeHybridV2Doc(hybridV2PersistedDocRef.current);
+    const currentSig = docToComparableJson(currentDoc);
+    const persistedSig = docToComparableJson(persistedDoc);
+    const incomingCount = Number(asArray(incoming.elements).length) + Number(asArray(incoming.edges).length);
+    const currentCount = Number(asArray(currentDoc.elements).length) + Number(asArray(currentDoc.edges).length);
+    const persistedCount = Number(asArray(persistedDoc.elements).length) + Number(asArray(persistedDoc.edges).length);
+    if (incomingSig === persistedSig && currentSig !== incomingSig) return;
+    if (incomingCount <= 0 && incomingSig !== currentSig && (currentCount > 0 || persistedCount > 0)) return;
+    setHybridV2Doc(incoming);
+    hybridV2DocRef.current = incoming;
+    hybridV2PersistedDocRef.current = incoming;
+    const incomingTool = toText(asObject(incoming.view).tool || "select") || "select";
+    hybridV2ToolRef.current = incomingTool;
+    setHybridV2ToolState(incomingTool);
+  }, [hybridV2FromDraft]);
+
+  useEffect(() => {
+    hybridV2DocRef.current = normalizeHybridV2Doc(hybridV2Doc);
+  }, [hybridV2Doc]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
-    setHybridUiPrefs(loadHybridUiPrefs(window.localStorage, hybridStorageKey, toText(user?.id)));
+    const loaded = normalizeHybridUiPrefs(
+      loadHybridUiPrefs(window.localStorage, hybridStorageKey, toText(user?.id)),
+    );
+    setHybridUiPrefs((prevRaw) => {
+      const prev = normalizeHybridUiPrefs(prevRaw);
+      const loadedIsDefault = (
+        !loaded.visible
+        && loaded.mode === "view"
+        && Number(loaded.opacity || 60) === 60
+        && !loaded.lock
+        && !loaded.focus
+      );
+      const prevHasUserState = (
+        prev.visible
+        || prev.mode === "edit"
+        || Number(prev.opacity || 60) !== 60
+        || prev.lock
+        || prev.focus
+      );
+      if (loadedIsDefault && prevHasUserState) return prev;
+      return loaded;
+    });
   }, [hybridStorageKey, sid, user?.id]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     saveHybridUiPrefs(window.localStorage, hybridStorageKey, hybridUiPrefs, toText(user?.id));
   }, [hybridStorageKey, hybridUiPrefs, user?.id]);
+  useEffect(() => {
+    if (!hybridDebugEnabled || typeof console === "undefined") return;
+    // eslint-disable-next-line no-console
+    console.debug(
+      `[HYBRIDV2] prefs visible=${hybridUiPrefs.visible ? 1 : 0} mode=${toText(hybridUiPrefs.mode) || "view"} ` +
+      `lock=${hybridUiPrefs.lock ? 1 : 0} peek=${hybridPeekActive ? 1 : 0} effective=${hybridModeEffective}`,
+    );
+  }, [hybridDebugEnabled, hybridUiPrefs.visible, hybridUiPrefs.mode, hybridUiPrefs.lock, hybridPeekActive, hybridModeEffective]);
   const robotMetaListItems = useMemo(() => {
     const tab = toText(robotMetaListTab).toLowerCase() === "incomplete" ? "incomplete" : "ready";
     const query = toText(robotMetaListSearch).toLowerCase();
@@ -1777,6 +2049,35 @@ export default function ProcessStage({
     ? 0
     : Math.max(0, Math.min(playbackTotal - 1, Number(playbackIndex || 0)));
   const playbackCurrentEvent = asArray(playbackFrames)[playbackIndexClamped] || null;
+  const playbackActiveBpmnIds = useMemo(() => {
+    const event = asObject(playbackCurrentEvent);
+    const ids = new Set();
+    [
+      event?.flowId,
+      event?.nodeId,
+      event?.gatewayId,
+      event?.subprocessId,
+      event?.fromId,
+      event?.toId,
+      event?.linkTargetId,
+    ].forEach((idRaw) => {
+      const id = toText(idRaw);
+      if (id) ids.add(id);
+    });
+    return ids;
+  }, [playbackCurrentEvent]);
+  const hybridV2PlaybackHighlightedIds = useMemo(() => {
+    const byBpmnId = getHybridBindingsByBpmnId(hybridV2DocLive);
+    const out = new Set();
+    playbackActiveBpmnIds.forEach((bpmnId) => {
+      asArray(byBpmnId[bpmnId]).forEach((bindingRaw) => {
+        const binding = asObject(bindingRaw);
+        const hybridId = toText(binding.hybrid_id || binding.hybridId);
+        if (hybridId) out.add(hybridId);
+      });
+    });
+    return out;
+  }, [hybridV2DocLive, playbackActiveBpmnIds]);
   const playbackCanRun = playbackTotal > 0 || !!playbackEngineRef.current;
   const pathHighlightCatalog = useMemo(() => {
     const tiers = {
@@ -3697,8 +3998,31 @@ export default function ProcessStage({
   }, []);
 
   useEffect(() => {
+    const draftV2 = normalizeHybridV2Doc(asObject(asObject(draft?.bpmn_meta).hybrid_v2));
+    if (asArray(draftV2.elements).length > 0 || asArray(draftV2.edges).length > 0) return;
+    const v1Map = normalizeHybridLayerMap(hybridLayerMapFromDraft);
+    if (!Object.keys(v1Map).length) return;
+    const guardKey = `${sid}:${serializeHybridLayerMap(v1Map)}`;
+    if (hybridV2MigrationGuardRef.current === guardKey) return;
+    hybridV2MigrationGuardRef.current = guardKey;
+    const migrated = migrateHybridV1ToV2(v1Map, (bpmnId) => {
+      const centerScreen = asObject(readHybridElementCenter(bpmnId));
+      if (!Number.isFinite(centerScreen.x) || !Number.isFinite(centerScreen.y)) return null;
+      return matrixToDiagram(
+        hybridViewportMatrixRef.current,
+        Number(centerScreen.x || 0),
+        Number(centerScreen.y || 0),
+      );
+    });
+    setHybridV2Doc(migrated);
+    hybridV2DocRef.current = migrated;
+    setHybridV2ImportNotice("Migrated v1 -> v2");
+    void persistHybridV2Doc(migrated, { source: "hybrid_v2_migrate_v1" });
+  }, [draft?.bpmn_meta, hybridLayerMapFromDraft, readHybridElementCenter, sid]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return undefined;
-    if (tab !== "diagram" || !hybridVisible || !hybridLayerItems.length) {
+    if (tab !== "diagram" || !hybridVisible) {
       setHybridLayerPositions({});
       hybridLayerPositionsRef.current = {};
       setHybridViewportSize((prevRaw) => {
@@ -3706,6 +4030,8 @@ export default function ProcessStage({
         if (Number(prev.width || 0) === 0 && Number(prev.height || 0) === 0) return prev;
         return { width: 0, height: 0 };
       });
+      setHybridViewportMatrix({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
+      hybridViewportMatrixRef.current = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
       return undefined;
     }
     let canceled = false;
@@ -3720,6 +4046,23 @@ export default function ProcessStage({
         const prev = asObject(prevRaw);
         if (Number(prev.width || 0) === nextWidth && Number(prev.height || 0) === nextHeight) return prev;
         return { width: nextWidth, height: nextHeight };
+      });
+      const viewportEl = host?.querySelector?.(".djs-viewport");
+      const nextMatrix = parseSvgMatrix(viewportEl?.getAttribute?.("transform"));
+      hybridViewportMatrixRef.current = nextMatrix;
+      setHybridViewportMatrix((prevRaw) => {
+        const prev = asObject(prevRaw);
+        if (
+          Math.abs(Number(prev.a || 0) - Number(nextMatrix.a || 0)) < 0.0001
+          && Math.abs(Number(prev.b || 0) - Number(nextMatrix.b || 0)) < 0.0001
+          && Math.abs(Number(prev.c || 0) - Number(nextMatrix.c || 0)) < 0.0001
+          && Math.abs(Number(prev.d || 0) - Number(nextMatrix.d || 0)) < 0.0001
+          && Math.abs(Number(prev.e || 0) - Number(nextMatrix.e || 0)) < 0.1
+          && Math.abs(Number(prev.f || 0) - Number(nextMatrix.f || 0)) < 0.1
+        ) {
+          return prev;
+        }
+        return nextMatrix;
       });
       const next = {};
       hybridLayerItems.forEach((itemRaw) => {
@@ -3802,7 +4145,14 @@ export default function ProcessStage({
       }
       if (String(event?.key || "") === "Escape" && hybridModeEffective === "edit") {
         setHybridUiPrefs((prev) => applyHybridModeTransition(prev, "view"));
+        setHybridV2BindPickMode(false);
+        hybridV2ArrowDraftRef.current = null;
         markPlaybackOverlayInteraction({ stage: "hybrid_edit_escape" });
+      }
+      if ((String(event?.key || "") === "Delete" || String(event?.key || "") === "Backspace") && hybridModeEffective === "edit") {
+        if (isEditableTarget(event.target)) return;
+        event.preventDefault();
+        removeActiveHybridV2Item();
       }
     };
     const onKeyUp = (event) => {
@@ -3817,7 +4167,7 @@ export default function ProcessStage({
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [hybridUiPrefs.visible, hybridPeekActive, hybridModeEffective]);
+  }, [hybridUiPrefs.visible, hybridPeekActive, hybridModeEffective, hybridV2ActiveId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -3856,6 +4206,88 @@ export default function ProcessStage({
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
+    if (hybridModeEffective !== "edit" || hybridUiPrefs.lock) return undefined;
+    const onMove = (event) => {
+      const drag = asObject(hybridV2DragRef.current);
+      const resize = asObject(hybridV2ResizeRef.current);
+      if (!drag.id && !resize.id) return;
+      const point = resolveHybridPointerToDiagram(event);
+      if (!point) return;
+      if (drag.id) {
+        updateHybridV2Doc((prevRaw) => {
+          const prev = normalizeHybridV2Doc(prevRaw);
+          const nextElements = asArray(prev.elements).map((rowRaw) => {
+            const row = asObject(rowRaw);
+            if (toText(row.id) !== toText(drag.id)) return row;
+            return {
+              ...row,
+              x: Math.round((Number(drag.baseX || row.x || 0) + (Number(point.x || 0) - Number(drag.startX || 0))) * 10) / 10,
+              y: Math.round((Number(drag.baseY || row.y || 0) + (Number(point.y || 0) - Number(drag.startY || 0))) * 10) / 10,
+            };
+          });
+          return { ...prev, elements: nextElements };
+        }, "hybrid_v2_drag_move");
+      } else if (resize.id) {
+        updateHybridV2Doc((prevRaw) => {
+          const prev = normalizeHybridV2Doc(prevRaw);
+          const nextElements = asArray(prev.elements).map((rowRaw) => {
+            const row = asObject(rowRaw);
+            if (toText(row.id) !== toText(resize.id)) return row;
+            let x = Number(resize.baseX || row.x || 0);
+            let y = Number(resize.baseY || row.y || 0);
+            let w = Number(resize.baseW || row.w || 0);
+            let h = Number(resize.baseH || row.h || 0);
+            const dx = Number(point.x || 0) - Number(resize.startX || 0);
+            const dy = Number(point.y || 0) - Number(resize.startY || 0);
+            const handle = toText(resize.handle).toLowerCase();
+            if (handle.includes("e")) w = Number(resize.baseW || 0) + dx;
+            if (handle.includes("s")) h = Number(resize.baseH || 0) + dy;
+            if (handle.includes("w")) {
+              w = Number(resize.baseW || 0) - dx;
+              x = Number(resize.baseX || 0) + dx;
+            }
+            if (handle.includes("n")) {
+              h = Number(resize.baseH || 0) - dy;
+              y = Number(resize.baseY || 0) + dy;
+            }
+            if (w < 36) {
+              if (handle.includes("w")) x -= (36 - w);
+              w = 36;
+            }
+            if (h < 20) {
+              if (handle.includes("n")) y -= (20 - h);
+              h = 20;
+            }
+            return {
+              ...row,
+              x: Math.round(x * 10) / 10,
+              y: Math.round(y * 10) / 10,
+              w: Math.round(w * 10) / 10,
+              h: Math.round(h * 10) / 10,
+            };
+          });
+          return { ...prev, elements: nextElements };
+        }, "hybrid_v2_resize_move");
+      }
+    };
+    const onUp = () => {
+      const hadDrag = !!asObject(hybridV2DragRef.current).id;
+      const hadResize = !!asObject(hybridV2ResizeRef.current).id;
+      hybridV2DragRef.current = null;
+      hybridV2ResizeRef.current = null;
+      if (!hadDrag && !hadResize) return;
+      void persistHybridV2Doc(hybridV2DocRef.current, { source: hadResize ? "hybrid_v2_resize_end" : "hybrid_v2_drag_end" });
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [hybridModeEffective, hybridUiPrefs.lock, sid, isLocal]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
     if (hybridModeEffective !== "edit" || hybridUiPrefs.lock || !hybridVisible) return undefined;
     const onMouseDownCapture = (event) => {
       const host = bpmnStageHostRef.current;
@@ -3871,6 +4303,15 @@ export default function ProcessStage({
       }
       const elementId = resolveHybridTargetElementIdFromPoint(event?.clientX, event?.clientY);
       if (!elementId) return;
+      if (hybridV2BindPickMode && hybridV2ActiveId) {
+        bindActiveHybridV2ToBpmn(elementId);
+        markPlaybackOverlayInteraction({
+          stage: "hybrid_v2_bind_pick",
+          elementId,
+          hybridId: hybridV2ActiveId,
+        });
+        return;
+      }
       addOrSelectHybridMarker(elementId, "hybrid_edit_surface_pointer");
       markPlaybackOverlayInteraction({
         stage: "hybrid_edit_surface_pointer",
@@ -3881,7 +4322,7 @@ export default function ProcessStage({
     return () => {
       window.removeEventListener("mousedown", onMouseDownCapture, true);
     };
-  }, [hybridModeEffective, hybridUiPrefs.lock, hybridVisible, resolveHybridTargetElementIdFromPoint]);
+  }, [hybridModeEffective, hybridUiPrefs.lock, hybridVisible, resolveHybridTargetElementIdFromPoint, hybridV2BindPickMode, hybridV2ActiveId]);
 
   useEffect(() => {
     if (hybridModeEffective !== "edit" || hybridUiPrefs.lock) return;
@@ -4661,6 +5102,7 @@ export default function ProcessStage({
       payload,
     );
     const optimisticMeta = {
+      ...currentMeta,
       version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
       flow_meta: flowTierMetaMap,
       node_path_meta: nodePathMetaMap,
@@ -4690,6 +5132,7 @@ export default function ProcessStage({
           id: sid,
           session_id: sid,
           bpmn_meta: {
+            ...currentMeta,
             version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
             flow_meta: flowTierMetaMap,
             node_path_meta: nodePathMetaMap,
@@ -4771,6 +5214,236 @@ export default function ProcessStage({
     return { ok: true };
   }
 
+  async function persistHybridV2Doc(nextRaw, options = {}) {
+    const nextDoc = normalizeHybridV2Doc(nextRaw);
+    const nextSig = docToComparableJson(nextDoc);
+    const prevDoc = normalizeHybridV2Doc(hybridV2PersistedDocRef.current);
+    const prevSig = docToComparableJson(prevDoc);
+    if (nextSig === prevSig) return { ok: true, skipped: true };
+
+    const currentMeta = asObject(draft?.bpmn_meta);
+    const optimisticMeta = { ...currentMeta, hybrid_v2: nextDoc };
+    const optimisticSession = {
+      id: sid,
+      session_id: sid,
+      bpmn_meta: optimisticMeta,
+      _sync_source: String(options?.source || "hybrid_v2_save"),
+    };
+    hybridV2PersistedDocRef.current = nextDoc;
+    onSessionSync?.(optimisticSession);
+    if (!sid || isLocal) return { ok: true, local: true };
+
+    const syncRes = await apiPatchSession(sid, { bpmn_meta: optimisticMeta });
+    if (!syncRes?.ok) {
+      hybridV2PersistedDocRef.current = prevDoc;
+      const rollbackMeta = { ...currentMeta, hybrid_v2: prevDoc };
+      onSessionSync?.({
+        id: sid,
+        session_id: sid,
+        bpmn_meta: rollbackMeta,
+        _sync_source: "hybrid_v2_save_rollback",
+      });
+      const msg = shortErr(syncRes?.error || "Не удалось сохранить Hybrid v2.");
+      setGenErr(msg);
+      return { ok: false, error: msg };
+    }
+    if (syncRes.session && typeof syncRes.session === "object") {
+      onSessionSync?.({
+        ...syncRes.session,
+        _sync_source: "hybrid_v2_save_session_patch",
+      });
+    }
+    return { ok: true };
+  }
+
+  function updateHybridV2Doc(mutator, source = "hybrid_v2_update") {
+    setHybridV2Doc((prevRaw) => {
+      const prev = normalizeHybridV2Doc(prevRaw);
+      const nextCandidate = typeof mutator === "function" ? mutator(prev) : prev;
+      const next = normalizeHybridV2Doc(nextCandidate);
+      if (docToComparableJson(prev) !== docToComparableJson(next)) {
+        hybridV2DocRef.current = next;
+        markPlaybackOverlayInteraction({
+          stage: source,
+        });
+      }
+      return next;
+    });
+  }
+
+  function setHybridV2Tool(toolRaw) {
+    const tool = toText(toolRaw).toLowerCase();
+    const nextTool = tool || "select";
+    hybridV2ToolRef.current = nextTool;
+    setHybridV2ToolState(nextTool);
+    updateHybridV2Doc((prev) => ({
+      ...prev,
+      view: {
+        ...asObject(prev.view),
+        tool: nextTool,
+      },
+    }), "hybrid_v2_tool_change");
+  }
+
+  function resolveHybridPointerToDiagram(eventRaw) {
+    const host = bpmnStageHostRef.current;
+    if (!host) return null;
+    const rect = host.getBoundingClientRect?.();
+    const localX = Number(eventRaw?.clientX || 0) - Number(rect?.left || 0);
+    const localY = Number(eventRaw?.clientY || 0) - Number(rect?.top || 0);
+    return matrixToDiagram(hybridViewportMatrixRef.current, localX, localY);
+  }
+
+  function createHybridV2ElementAt(pointRaw, typeRaw = "rect") {
+    const point = asObject(pointRaw);
+    const x = Number(point.x || 0);
+    const y = Number(point.y || 0);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return "";
+    const createdId = makeHybridV2Id("E", hybridV2DocRef.current);
+    updateHybridV2Doc((prevRaw) => {
+      const prev = normalizeHybridV2Doc(prevRaw);
+      const view = asObject(prev.view);
+      const layerId = toText(view.active_layer_id || prev.layers?.[0]?.id || "L1") || "L1";
+      const type = toText(typeRaw).toLowerCase() === "text"
+        ? "text"
+        : (toText(typeRaw).toLowerCase() === "note" ? "note" : "rect");
+      const width = type === "text" ? 180 : 200;
+      const height = type === "text" ? 36 : 70;
+      const nextElements = [
+        ...asArray(prev.elements),
+        {
+          id: createdId,
+          layer_id: layerId,
+          type,
+          x: Math.round((x - (width / 2)) * 10) / 10,
+          y: Math.round((y - (height / 2)) * 10) / 10,
+          w: width,
+          h: height,
+          text: type === "text" ? "Text" : "",
+          style: {
+            stroke: "#334155",
+            fill: type === "note" ? "#fff7d6" : "#f8fafc",
+            radius: 8,
+            fontSize: 12,
+          },
+        },
+      ];
+      return {
+        ...prev,
+        elements: nextElements,
+      };
+    }, "hybrid_v2_create_element");
+    setHybridV2ActiveId(createdId);
+    return createdId;
+  }
+
+  function createHybridV2Edge(fromIdRaw, toIdRaw) {
+    const fromId = toText(fromIdRaw);
+    const toId = toText(toIdRaw);
+    if (!fromId || !toId || fromId === toId) return "";
+    const createdId = makeHybridV2Id("A", hybridV2DocRef.current);
+    updateHybridV2Doc((prevRaw) => {
+      const prev = normalizeHybridV2Doc(prevRaw);
+      const elementIds = new Set(asArray(prev.elements).map((row) => toText(asObject(row).id)).filter(Boolean));
+      if (!elementIds.has(fromId) || !elementIds.has(toId)) return prev;
+      const view = asObject(prev.view);
+      const layerId = toText(view.active_layer_id || prev.layers?.[0]?.id || "L1") || "L1";
+      return {
+        ...prev,
+        edges: [
+          ...asArray(prev.edges),
+          {
+            id: createdId,
+            layer_id: layerId,
+            type: "arrow",
+            from: { element_id: fromId, anchor: "auto" },
+            to: { element_id: toId, anchor: "auto" },
+            waypoints: [],
+            style: { stroke: "#2563eb", width: 2 },
+          },
+        ],
+      };
+    }, "hybrid_v2_create_edge");
+    setHybridV2ActiveId(createdId);
+    return createdId;
+  }
+
+  function removeActiveHybridV2Item() {
+    const activeId = toText(hybridV2ActiveId);
+    if (!activeId) return;
+    updateHybridV2Doc((prevRaw) => {
+      const prev = normalizeHybridV2Doc(prevRaw);
+      const nextElements = asArray(prev.elements).filter((row) => toText(asObject(row).id) !== activeId);
+      const nextEdges = asArray(prev.edges)
+        .filter((row) => toText(asObject(row).id) !== activeId)
+        .filter((row) => {
+          const edge = asObject(row);
+          return toText(asObject(edge.from).element_id) !== activeId && toText(asObject(edge.to).element_id) !== activeId;
+        });
+      const nextBindings = asArray(prev.bindings).filter((row) => toText(asObject(row).hybrid_id) !== activeId);
+      return {
+        ...prev,
+        elements: nextElements,
+        edges: nextEdges,
+        bindings: nextBindings,
+      };
+    }, "hybrid_v2_delete_item");
+    setHybridV2ActiveId("");
+  }
+
+  function bindActiveHybridV2ToBpmn(targetBpmnIdRaw, hybridIdRaw = "") {
+    const activeId = toText(hybridIdRaw || hybridV2ActiveId);
+    const targetBpmnId = toText(targetBpmnIdRaw);
+    if (!activeId || !targetBpmnId) return;
+    updateHybridV2Doc((prevRaw) => {
+      const prev = normalizeHybridV2Doc(prevRaw);
+      const edgeIds = new Set(asArray(prev.edges).map((row) => toText(asObject(row).id)).filter(Boolean));
+      const kind = edgeIds.has(activeId) ? "edge" : "node";
+      const keep = asArray(prev.bindings).filter((row) => toText(asObject(row).hybrid_id) !== activeId);
+      return {
+        ...prev,
+        bindings: [...keep, { hybrid_id: activeId, bpmn_id: targetBpmnId, kind }],
+      };
+    }, "hybrid_v2_bind");
+    setHybridV2BindPickMode(false);
+  }
+
+  function goToActiveHybridBinding() {
+    const activeId = toText(hybridV2ActiveId);
+    if (!activeId) return;
+    const binding = asObject(hybridV2BindingByHybridId[activeId]);
+    const bpmnId = toText(binding.bpmn_id || binding.bpmnId);
+    if (!bpmnId) return;
+    bpmnRef.current?.focusNode?.(bpmnId, { keepPrevious: false, durationMs: 1000 });
+  }
+
+  function exportHybridV2Drawio() {
+    const xml = exportHybridV2ToDrawioXml(hybridV2DocRef.current);
+    const stamp = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14) || Date.now();
+    const ok = downloadTextFile(`hybrid_${sid || "session"}_${stamp}.drawio`, xml, "application/xml;charset=utf-8");
+    if (ok) {
+      setInfoMsg("Hybrid экспортирован (.drawio).");
+      setGenErr("");
+    } else {
+      setGenErr("Не удалось экспортировать Hybrid.");
+    }
+  }
+
+  async function handleHybridV2ImportFile(fileRaw) {
+    const file = fileRaw instanceof File ? fileRaw : null;
+    if (!file) return;
+    const text = await file.text().catch(() => "");
+    const imported = importHybridV2FromDrawioXml(text);
+    const nextDoc = normalizeHybridV2Doc(imported.doc);
+    setHybridV2Doc(nextDoc);
+    hybridV2DocRef.current = nextDoc;
+    setHybridV2ActiveId("");
+    setHybridV2BindPickMode(false);
+    const skippedCount = asArray(imported.skipped).length;
+    setHybridV2ImportNotice(skippedCount ? `Imported with skipped: ${skippedCount}` : "Imported");
+    void persistHybridV2Doc(nextDoc, { source: "hybrid_v2_import_drawio" });
+  }
+
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     if (!hybridVisible) return undefined;
@@ -4784,11 +5457,28 @@ export default function ProcessStage({
     return () => window.clearTimeout(timerId);
   }, [hybridLayerByElementId, hybridVisible, isLocal, sid]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    if (!hybridVisible) return undefined;
+    if (hybridV2DragRef.current || hybridV2ResizeRef.current) return undefined;
+    const nextSig = docToComparableJson(hybridV2Doc);
+    const prevSig = docToComparableJson(hybridV2PersistedDocRef.current);
+    if (nextSig === prevSig) return undefined;
+    const timerId = window.setTimeout(() => {
+      void persistHybridV2Doc(hybridV2Doc, { source: "hybrid_v2_autosave" });
+    }, 220);
+    return () => window.clearTimeout(timerId);
+  }, [hybridV2Doc, hybridVisible, isLocal, sid]);
+
   function updateHybridUiPrefs(mutator) {
     setHybridUiPrefs((prevRaw) => {
       const prev = normalizeHybridUiPrefs(prevRaw);
       const next = typeof mutator === "function" ? mutator(prev) : prev;
-      return normalizeHybridUiPrefs(next);
+      const normalized = normalizeHybridUiPrefs(next);
+      if (typeof window !== "undefined") {
+        saveHybridUiPrefs(window.localStorage, hybridStorageKey, normalized, toText(user?.id));
+      }
+      return normalized;
     });
   }
 
@@ -4799,12 +5489,32 @@ export default function ProcessStage({
   function hideHybridLayer() {
     updateHybridUiPrefs((prev) => applyHybridVisibilityTransition(prev, false));
     setHybridPeekActive(false);
+    setHybridV2BindPickMode(false);
+    hybridV2ArrowDraftRef.current = null;
   }
 
   function setHybridLayerMode(modeRaw) {
     const nextMode = toText(modeRaw).toLowerCase() === "edit" ? "edit" : "view";
     updateHybridUiPrefs((prev) => applyHybridModeTransition(prev, nextMode));
+    updateHybridV2Doc((prev) => ({
+      ...prev,
+      view: {
+        ...asObject(prev.view),
+        mode: nextMode,
+      },
+    }), "hybrid_v2_mode_change");
     if (nextMode !== "edit") return;
+    if (!asArray(hybridV2DocRef.current?.elements).length) {
+      const selectedIdForV2 = toNodeId(selectedElementId);
+      if (selectedIdForV2) {
+        const centerScreen = asObject(readHybridElementCenter(selectedIdForV2));
+        const point = Number.isFinite(centerScreen.x) && Number.isFinite(centerScreen.y)
+          ? matrixToDiagram(hybridViewportMatrixRef.current, Number(centerScreen.x || 0), Number(centerScreen.y || 0))
+          : { x: 260, y: 220 };
+        const createdId = createHybridV2ElementAt(point, "note");
+        if (createdId) bindActiveHybridV2ToBpmn(selectedIdForV2, createdId);
+      }
+    }
     const currentMap = normalizeHybridLayerMap(hybridLayerMapRef.current);
     if (Object.keys(currentMap).length > 0) return;
     const selectedId = toNodeId(selectedElementId);
@@ -4891,7 +5601,19 @@ export default function ProcessStage({
 
   function focusHybridLayer(source = "hybrid_layer_focus") {
     const rows = asArray(hybridLayerRenderRows);
-    if (!rows.length) return;
+    if (!rows.length && !asArray(hybridV2DocLive?.elements).length) return;
+    if (!rows.length && asArray(hybridV2DocLive?.elements).length) {
+      const first = asObject(hybridV2DocLive.elements[0]);
+      const firstId = toText(first.id);
+      if (!firstId) return;
+      setHybridV2ActiveId(firstId);
+      const binding = asObject(hybridV2BindingByHybridId[firstId]);
+      const bpmnId = toText(binding.bpmn_id || binding.bpmnId);
+      if (bpmnId) {
+        bpmnRef.current?.focusNode?.(bpmnId, { keepPrevious: false, durationMs: 1200 });
+      }
+      return;
+    }
     const target = asObject(rows.find((row) => !!asObject(row).hasCenter) || rows[0]);
     const elementId = toText(target?.elementId);
     if (!elementId) return;
@@ -5023,6 +5745,93 @@ export default function ProcessStage({
     withHybridOverlayGuard(event, { action: source, elementId });
     if (!elementId) return;
     addOrSelectHybridMarker(elementId, source);
+  }
+
+  function handleHybridV2ElementPointerDown(event, elementIdRaw) {
+    const elementId = toText(elementIdRaw);
+    if (!elementId) return;
+    withHybridOverlayGuard(event, { action: "hybrid_v2_element_pointer", elementId });
+    setHybridV2ActiveId(elementId);
+    if (hybridModeEffective !== "edit" || hybridUiPrefs.lock) return;
+    const pointer = resolveHybridPointerToDiagram(event);
+    if (!pointer) return;
+    const row = asObject(hybridV2Renderable.elementsById[elementId]);
+    if (!row.id) return;
+    const tool = toText(hybridV2ToolRef.current).toLowerCase() || "select";
+    const pending = asObject(hybridV2ArrowDraftRef.current);
+    const pendingFromId = toText(pending.fromId);
+    if (pendingFromId && pendingFromId !== elementId) {
+      createHybridV2Edge(pendingFromId, elementId);
+      hybridV2ArrowDraftRef.current = null;
+      return;
+    }
+    if (tool === "arrow") {
+      if (!pendingFromId) {
+        hybridV2ArrowDraftRef.current = { fromId: elementId };
+      }
+      return;
+    }
+    if (pendingFromId && tool !== "arrow") {
+      hybridV2ArrowDraftRef.current = null;
+    }
+    hybridV2DragRef.current = {
+      id: elementId,
+      startX: Number(pointer.x || 0),
+      startY: Number(pointer.y || 0),
+      baseX: Number(row.x || 0),
+      baseY: Number(row.y || 0),
+    };
+  }
+
+  function handleHybridV2ResizeHandlePointerDown(event, elementIdRaw, handleRaw) {
+    const elementId = toText(elementIdRaw);
+    const handle = toText(handleRaw).toLowerCase();
+    if (!elementId || !handle) return;
+    withHybridOverlayGuard(event, { action: "hybrid_v2_resize_start", elementId, handle });
+    if (hybridModeEffective !== "edit" || hybridUiPrefs.lock) return;
+    const pointer = resolveHybridPointerToDiagram(event);
+    if (!pointer) return;
+    const row = asObject(hybridV2Renderable.elementsById[elementId]);
+    if (!row.id) return;
+    setHybridV2ActiveId(elementId);
+    hybridV2ResizeRef.current = {
+      id: elementId,
+      handle,
+      startX: Number(pointer.x || 0),
+      startY: Number(pointer.y || 0),
+      baseX: Number(row.x || 0),
+      baseY: Number(row.y || 0),
+      baseW: Number(row.w || 0),
+      baseH: Number(row.h || 0),
+    };
+  }
+
+  function handleHybridV2OverlayPointerDown(event) {
+    if (hybridModeEffective !== "edit" || hybridUiPrefs.lock || !hybridVisible) return;
+    const tool = toText(hybridV2ToolRef.current).toLowerCase() || "select";
+    const target = event?.target instanceof Element ? event.target : null;
+    if (!target) return;
+    if (
+      target.closest(".hybridV2Shape")
+      || target.closest(".hybridV2ResizeHandle")
+      || target.closest(".hybridLayerCard")
+      || target.closest(".hybridLayerHotspot")
+    ) {
+      return;
+    }
+    withHybridOverlayGuard(event, { action: "hybrid_v2_overlay_pointer", tool });
+    const point = resolveHybridPointerToDiagram(event);
+    if (!point) return;
+    if (tool === "rect" || tool === "note" || tool === "text") {
+      createHybridV2ElementAt(point, tool);
+      return;
+    }
+    if (tool === "arrow") {
+      hybridV2ArrowDraftRef.current = null;
+    }
+    if (tool === "select") {
+      setHybridV2ActiveId("");
+    }
   }
 
   function markPlaybackOverlayInteraction(meta = {}) {
@@ -5495,6 +6304,20 @@ export default function ProcessStage({
         </div>
 
         <input ref={importInputRef} type="file" accept=".bpmn,.xml,text/xml,application/xml" style={{ display: "none" }} onChange={onImportPicked} />
+        <input
+          ref={hybridV2FileInputRef}
+          type="file"
+          accept=".drawio,.xml,text/xml,application/xml"
+          style={{ display: "none" }}
+          data-testid="hybrid-v2-import-input"
+          onChange={(event) => {
+            const file = asArray(event?.target?.files)[0];
+            if (file) {
+              void handleHybridV2ImportFile(file);
+            }
+            if (event?.target) event.target.value = "";
+          }}
+        />
 
         {toolbarMenuOpen ? (
           <div ref={toolbarMenuRef} className="diagramToolbarOverlay" data-testid="diagram-toolbar-overlay">
@@ -6655,13 +7478,13 @@ export default function ProcessStage({
                                 }}
                                 data-testid="diagram-action-layers-hybrid-toggle"
                               />
-                              <span>Hybrid ({Number(hybridLayerCounts.total || 0)})</span>
+                              <span>Hybrid ({Number(hybridTotalCount || 0)})</span>
                             </label>
                             <button
                               type="button"
                               className="secondaryBtn h-7 px-2 text-[11px]"
                               onClick={() => focusHybridLayer("layers_focus_button")}
-                              disabled={!hybridVisible || Number(hybridLayerCounts.total || 0) <= 0}
+                              disabled={!hybridVisible || Number(hybridTotalCount || 0) <= 0}
                               data-testid="diagram-action-layers-focus-visible"
                             >
                               Focus
@@ -6690,6 +7513,32 @@ export default function ProcessStage({
                               >
                                 Edit
                               </button>
+                            </div>
+                          </div>
+                          <div className="diagramIssueRow">
+                            <span>Tool</span>
+                            <div className="diagramActionPopoverActions mt-0">
+                              {[
+                                { id: "select", label: "Select" },
+                                { id: "rect", label: "Rect" },
+                                { id: "note", label: "Note" },
+                                { id: "text", label: "Text" },
+                                { id: "arrow", label: "Arrow" },
+                              ].map((tool) => {
+                                const currentTool = toText(hybridV2ToolState || "select");
+                                return (
+                                  <button
+                                    key={`hybrid_v2_tool_${tool.id}`}
+                                    type="button"
+                                    className={`secondaryBtn h-7 px-2 text-[11px] ${currentTool === tool.id ? "ring-1 ring-accent/60" : ""}`}
+                                    onClick={() => setHybridV2Tool(tool.id)}
+                                    disabled={hybridModeEffective !== "edit" || !!hybridUiPrefs.lock}
+                                    data-testid={`diagram-action-layers-tool-${tool.id}`}
+                                  >
+                                    {tool.label}
+                                  </button>
+                                );
+                              })}
                             </div>
                           </div>
                           <div className="diagramIssueRow">
@@ -6728,6 +7577,62 @@ export default function ProcessStage({
                               <span>Dim BPMN</span>
                             </label>
                           </div>
+                          <div className="diagramIssueRow">
+                            <span>V2</span>
+                            <span className="diagramIssueChip">
+                              {Number(asArray(hybridV2DocLive?.elements).length || 0)} elements / {Number(asArray(hybridV2DocLive?.edges).length || 0)} edges
+                            </span>
+                          </div>
+                          <div className="diagramIssueRow">
+                            <span>Selection</span>
+                            <span className="diagramIssueChip">{toText(hybridV2ActiveId) || "—"}</span>
+                          </div>
+                          <div className="diagramIssueRow">
+                            <span>Bind</span>
+                            <div className="diagramActionPopoverActions mt-0">
+                              <button
+                                type="button"
+                                className={`secondaryBtn h-7 px-2 text-[11px] ${hybridV2BindPickMode ? "ring-1 ring-accent/60" : ""}`}
+                                onClick={() => setHybridV2BindPickMode((prev) => !prev)}
+                                disabled={!hybridV2ActiveId || hybridModeEffective !== "edit"}
+                                data-testid="diagram-action-layers-bind-pick"
+                              >
+                                {hybridV2BindPickMode ? "Pick BPMN: ON" : "Bind to BPMN"}
+                              </button>
+                              <button
+                                type="button"
+                                className="secondaryBtn h-7 px-2 text-[11px]"
+                                onClick={goToActiveHybridBinding}
+                                disabled={!toText(asObject(hybridV2BindingByHybridId[hybridV2ActiveId]).bpmn_id)}
+                                data-testid="diagram-action-layers-go-bound"
+                              >
+                                Go to bound
+                              </button>
+                            </div>
+                          </div>
+                          <div className="diagramIssueRow">
+                            <span>Draw.io</span>
+                            <div className="diagramActionPopoverActions mt-0">
+                              <button
+                                type="button"
+                                className="secondaryBtn h-7 px-2 text-[11px]"
+                                onClick={exportHybridV2Drawio}
+                                disabled={!hybridVisible}
+                                data-testid="diagram-action-layers-export-drawio"
+                              >
+                                Export
+                              </button>
+                              <button
+                                type="button"
+                                className="secondaryBtn h-7 px-2 text-[11px]"
+                                onClick={() => hybridV2FileInputRef.current?.click?.()}
+                                disabled={!hybridVisible}
+                                data-testid="diagram-action-layers-import-drawio"
+                              >
+                                Import
+                              </button>
+                            </div>
+                          </div>
                         </div>
                         <div className="diagramIssueRows mt-2">
                           <div className="diagramIssueRow">
@@ -6751,6 +7656,9 @@ export default function ProcessStage({
                             </span>
                           </div>
                         </div>
+                        {hybridV2ImportNotice ? (
+                          <div className="diagramActionPopoverEmpty mt-2">{hybridV2ImportNotice}</div>
+                        ) : null}
                         {hybridVisible && Number(hybridLayerVisibilityStats.outsideViewport || 0) > 0 ? (
                           <div className="diagramActionPopoverEmpty mt-2" data-testid="diagram-action-layers-outside-warning">
                             Часть меток вне viewport. Нажмите Focus или Go to.
@@ -6768,20 +7676,51 @@ export default function ProcessStage({
                             </button>
                           </div>
                         ) : null}
-                        {hybridVisible && Number(hybridLayerCounts.total || 0) === 0 ? (
+                        {hybridVisible && Number(hybridTotalCount || 0) === 0 ? (
                           <div className="diagramActionPopoverEmpty mt-2" data-testid="diagram-action-layers-empty-state">
                             Нет элементов Hybrid. Переключись в Edit и кликни по узлу BPMN, чтобы добавить метку.
                           </div>
                         ) : null}
-                        {hybridVisible && Number(hybridLayerCounts.total || 0) > 0 ? (
+                        {hybridVisible && Number(hybridTotalCount || 0) > 0 ? (
                           <div className="hybridLayerPopoverList mt-2" data-testid="diagram-action-layers-item-list">
-                            {hybridLayerRenderRows.slice(0, 30).map((rowRaw) => {
+                            {(hybridLayerRenderRows.length > 0
+                              ? hybridLayerRenderRows.slice(0, 30).map((rowRaw) => {
+                                const row = asObject(rowRaw);
+                                const elementId = toText(row?.elementId);
+                                const title = toText(row?.title || elementId) || elementId;
+                                const missing = !row?.hasCenter;
+                                return {
+                                  key: `legacy_${elementId}`,
+                                  elementId,
+                                  title,
+                                  missing,
+                                  onGoTo: () => goToHybridLayerItem(elementId, "layers_list_go_to"),
+                                };
+                              })
+                              : hybridV2Renderable.elements.slice(0, 40).map((elementRaw) => {
+                                const element = asObject(elementRaw);
+                                const elementId = toText(element.id);
+                                const binding = asObject(hybridV2BindingByHybridId[elementId]);
+                                const bpmnId = toText(binding.bpmn_id || binding.bpmnId);
+                                return {
+                                  key: `v2_${elementId}`,
+                                  elementId,
+                                  title: toText(element.text || elementId) || elementId,
+                                  missing: !bpmnId,
+                                  onGoTo: () => {
+                                    setHybridV2ActiveId(elementId);
+                                    if (bpmnId) {
+                                      bpmnRef.current?.focusNode?.(bpmnId, { keepPrevious: false, durationMs: 1200 });
+                                    }
+                                  },
+                                };
+                              })).map((rowRaw) => {
                               const row = asObject(rowRaw);
                               const elementId = toText(row?.elementId);
                               const title = toText(row?.title || elementId) || elementId;
-                              const missing = !row?.hasCenter;
+                              const missing = !!row?.missing;
                               return (
-                                <div key={`hybrid_layer_row_${elementId}`} className="hybridLayerPopoverRow">
+                                <div key={toText(row?.key) || `hybrid_layer_row_${elementId}`} className="hybridLayerPopoverRow">
                                   <div className="hybridLayerPopoverMain">
                                     <span className="hybridLayerPopoverTitle" title={title}>{title}</span>
                                     <span className="hybridLayerPopoverMeta">{elementId}</span>
@@ -6791,7 +7730,9 @@ export default function ProcessStage({
                                     <button
                                       type="button"
                                       className="secondaryBtn h-7 px-2 text-[11px]"
-                                      onClick={() => goToHybridLayerItem(elementId, "layers_list_go_to")}
+                                      onClick={() => {
+                                        if (typeof row.onGoTo === "function") row.onGoTo();
+                                      }}
                                       data-testid="diagram-action-layers-go-to"
                                     >
                                       Go to
@@ -7091,12 +8032,143 @@ export default function ProcessStage({
                     ref={hybridLayerOverlayRef}
                     style={{ "--hybrid-layer-opacity": String(Math.max(0.2, Math.min(1, hybridOpacityValue))) }}
                     data-testid="hybrid-layer-overlay"
+                    onMouseDown={handleHybridV2OverlayPointerDown}
                   >
-                    {hybridModeEffective === "edit" ? (
+                    {hybridModeEffective === "edit" && !hybridUiPrefs.lock ? (
                       <div
                         className="hybridLayerShield"
                       />
                     ) : null}
+                    <svg
+                      className={`hybridV2Svg ${hybridModeEffective === "edit" ? "isEdit" : "isView"}`}
+                      data-testid="hybrid-v2-svg"
+                      onMouseDown={handleHybridV2OverlayPointerDown}
+                    >
+                      <defs>
+                        <marker
+                          id="hybridV2ArrowHead"
+                          markerWidth="8"
+                          markerHeight="8"
+                          refX="7"
+                          refY="3.5"
+                          orient="auto"
+                          markerUnits="strokeWidth"
+                        >
+                          <path d="M0,0 L7,3.5 L0,7 z" fill="#2563eb" />
+                        </marker>
+                      </defs>
+                      {hybridV2Renderable.edges.map((edgeRaw) => {
+                        const edge = asObject(edgeRaw);
+                        const edgeId = toText(edge.id);
+                        const active = toText(hybridV2ActiveId) === edgeId;
+                        const highlighted = hybridV2PlaybackHighlightedIds.has(edgeId);
+                        const style = asObject(edge.style);
+                        const stroke = toText(style.stroke) || "#2563eb";
+                        const width = Number(style.width || 2);
+                        return (
+                          <path
+                            key={`hybrid_v2_edge_${edgeId}`}
+                            className={`hybridV2Edge ${active ? "isActive" : ""} ${highlighted ? "isPlayback" : ""}`}
+                            d={toText(edge.d)}
+                            stroke={stroke}
+                            strokeWidth={width}
+                            fill="none"
+                            markerEnd="url(#hybridV2ArrowHead)"
+                            data-hybrid-element-id={edgeId}
+                            data-testid="hybrid-v2-edge"
+                            onMouseDown={(event) => handleHybridV2ElementPointerDown(event, edgeId)}
+                          />
+                        );
+                      })}
+                      {hybridV2Renderable.elements.map((elementRaw) => {
+                        const element = asObject(elementRaw);
+                        const elementId = toText(element.id);
+                        const active = toText(hybridV2ActiveId) === elementId;
+                        const highlighted = hybridV2PlaybackHighlightedIds.has(elementId);
+                        const binding = asObject(hybridV2BindingByHybridId[elementId]);
+                        const style = asObject(element.style);
+                        const x = Number(element.left || 0);
+                        const y = Number(element.top || 0);
+                        const w = Number(element.width || 0);
+                        const h = Number(element.height || 0);
+                        const radius = Math.max(2, Number(style.radius || 8) * Number(element.scaleX || 1));
+                        const fontSize = Math.max(10, Number(style.fontSize || 12) * Math.min(Number(element.scaleX || 1), Number(element.scaleY || 1)));
+                        return (
+                          <g
+                            key={`hybrid_v2_element_${elementId}`}
+                            className={`hybridV2Shape ${active ? "isActive" : ""} ${highlighted ? "isPlayback" : ""}`}
+                            data-hybrid-element-id={elementId}
+                            data-testid="hybrid-v2-shape"
+                            onMouseDown={(event) => handleHybridV2ElementPointerDown(event, elementId)}
+                          >
+                            {toText(element.type) === "text" ? (
+                              <text
+                                x={x + 6}
+                                y={y + Math.max(16, h / 2)}
+                                fill={toText(style.stroke) || "#334155"}
+                                fontSize={fontSize}
+                              >
+                                {toText(element.text) || "Text"}
+                              </text>
+                            ) : (
+                              <rect
+                                x={x}
+                                y={y}
+                                width={w}
+                                height={h}
+                                rx={radius}
+                                ry={radius}
+                                fill={toText(style.fill) || (toText(element.type) === "note" ? "#fff7d6" : "#f8fafc")}
+                                stroke={toText(style.stroke) || "#334155"}
+                                strokeWidth={1.4}
+                              />
+                            )}
+                            {toText(element.type) !== "text" ? (
+                              <text
+                                x={x + 8}
+                                y={y + 20}
+                                fill="#0f172a"
+                                fontSize={fontSize}
+                              >
+                                {toText(element.text) || ""}
+                              </text>
+                            ) : null}
+                            {toText(binding.bpmn_id || "") ? (
+                              <text
+                                x={x + w - 10}
+                                y={y + 14}
+                                textAnchor="end"
+                                className="hybridV2BindingBadge"
+                              >
+                                🔗
+                              </text>
+                            ) : null}
+                            {hybridModeEffective === "edit" && active ? (
+                              <>
+                                {[
+                                  { id: "nw", hx: x, hy: y },
+                                  { id: "ne", hx: x + w, hy: y },
+                                  { id: "sw", hx: x, hy: y + h },
+                                  { id: "se", hx: x + w, hy: y + h },
+                                ].map((handle) => (
+                                  <rect
+                                    key={`hybrid_v2_handle_${elementId}_${handle.id}`}
+                                    x={handle.hx - 4}
+                                    y={handle.hy - 4}
+                                    width={8}
+                                    height={8}
+                                    className="hybridV2ResizeHandle"
+                                    data-hybrid-element-id={elementId}
+                                    data-handle={handle.id}
+                                    onMouseDown={(event) => handleHybridV2ResizeHandlePointerDown(event, elementId, handle.id)}
+                                  />
+                                ))}
+                              </>
+                            ) : null}
+                          </g>
+                        );
+                      })}
+                    </svg>
                     {hybridLayerRenderRows.map((rowRaw) => {
                       const item = asObject(rowRaw);
                       const elementId = toText(item?.elementId);

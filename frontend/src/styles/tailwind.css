@@ -272,7 +272,7 @@
   }
 
   .diagramActionPopover {
-    @apply absolute z-[74] min-w-[280px] max-w-[420px] rounded-xl border border-border bg-panel px-3 py-2 shadow-panel;
+    @apply absolute z-[92] min-w-[280px] max-w-[420px] rounded-xl border border-border bg-panel px-3 py-2 shadow-panel;
     right: 12px;
     top: 52px;
   }
@@ -434,14 +434,14 @@
   .hybridLayerOverlay {
     position: absolute;
     inset: 0;
-    z-index: 66;
+    z-index: 68;
     pointer-events: none;
     opacity: var(--hybrid-layer-opacity, 0.6);
     transition: opacity 120ms ease;
   }
 
   .hybridLayerOverlay.isEdit {
-    pointer-events: none;
+    pointer-events: auto;
   }
 
   .hybridLayerShield {
@@ -619,6 +619,71 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  }
+
+  .hybridV2Svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .hybridV2Svg.isEdit {
+    pointer-events: auto;
+  }
+
+  .hybridV2Edge {
+    pointer-events: auto;
+    cursor: pointer;
+    opacity: 0.9;
+    transition: opacity 120ms ease, filter 120ms ease, stroke-width 120ms ease;
+  }
+
+  .hybridV2Edge.isActive {
+    opacity: 1;
+    stroke-width: 3;
+    filter: drop-shadow(0 0 4px rgba(37, 99, 235, 0.45));
+  }
+
+  .hybridV2Edge.isPlayback {
+    filter: drop-shadow(0 0 7px rgba(16, 185, 129, 0.55));
+  }
+
+  .hybridV2Shape {
+    pointer-events: auto;
+    cursor: pointer;
+    transition: filter 120ms ease, opacity 120ms ease;
+  }
+
+  .hybridV2Svg.isEdit .hybridV2Shape {
+    cursor: move;
+  }
+
+  .hybridV2Shape.isActive rect {
+    stroke-width: 2;
+    filter: drop-shadow(0 0 4px rgba(37, 99, 235, 0.35));
+  }
+
+  .hybridV2Shape.isPlayback rect {
+    stroke: #10b981;
+    stroke-width: 2.4;
+    filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.5));
+  }
+
+  .hybridV2BindingBadge {
+    pointer-events: none;
+    font-size: 11px;
+    fill: #1d4ed8;
+  }
+
+  .hybridV2ResizeHandle {
+    pointer-events: auto;
+    fill: hsl(var(--panel));
+    stroke: hsl(var(--accent));
+    stroke-width: 1;
+    cursor: nwse-resize;
   }
 
   .bpmnStack {
