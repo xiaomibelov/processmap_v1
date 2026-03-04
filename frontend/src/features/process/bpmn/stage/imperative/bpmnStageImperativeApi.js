@@ -2,6 +2,86 @@ function asObject(x) {
   return x && typeof x === "object" && !Array.isArray(x) ? x : {};
 }
 
+function asArray(x) {
+  return Array.isArray(x) ? x : [];
+}
+
+function toText(value) {
+  return String(value || "").trim();
+}
+
+function readCanvasSnapshot(inst) {
+  try {
+    const canvas = inst?.get?.("canvas");
+    const registry = inst?.get?.("elementRegistry");
+    const container = canvas?._container;
+    const rect = container?.getBoundingClientRect?.() || { left: 0, top: 0, width: 0, height: 0 };
+    const vb = canvas?.viewbox?.() || {};
+    const zoom = Number(canvas?.zoom?.() || 0);
+    const count = asArray(registry?.getAll?.()).length;
+    const width = Number(rect?.width || container?.clientWidth || 0);
+    const height = Number(rect?.height || container?.clientHeight || 0);
+    return {
+      width: Number.isFinite(width) ? width : 0,
+      height: Number.isFinite(height) ? height : 0,
+      left: Number(rect?.left || 0),
+      top: Number(rect?.top || 0),
+      zoom: Number.isFinite(zoom) ? zoom : 0,
+      viewbox: {
+        x: Number(vb?.x || 0),
+        y: Number(vb?.y || 0),
+        width: Number(vb?.width || 0),
+        height: Number(vb?.height || 0),
+      },
+      count,
+    };
+  } catch {
+    return {
+      width: 0,
+      height: 0,
+      left: 0,
+      top: 0,
+      zoom: 0,
+      viewbox: { x: 0, y: 0, width: 0, height: 0 },
+      count: 0,
+    };
+  }
+}
+
+function readElementBounds(inst, elementIdRaw) {
+  const elementId = toText(elementIdRaw);
+  if (!elementId) return null;
+  try {
+    const registry = inst?.get?.("elementRegistry");
+    const el = registry?.get?.(elementId);
+    if (!el) return null;
+    if (Array.isArray(el?.waypoints) && el.waypoints.length) {
+      const xs = el.waypoints.map((pt) => Number(pt?.x || 0)).filter(Number.isFinite);
+      const ys = el.waypoints.map((pt) => Number(pt?.y || 0)).filter(Number.isFinite);
+      if (!xs.length || !ys.length) return null;
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
+      return {
+        x: minX,
+        y: minY,
+        width: Math.max(1, maxX - minX),
+        height: Math.max(1, maxY - minY),
+      };
+    }
+    const x = Number(el?.x || 0);
+    const y = Number(el?.y || 0);
+    const width = Number(el?.width || 0);
+    const height = Number(el?.height || 0);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    if (!(width > 0) || !(height > 0)) return null;
+    return { x, y, width, height };
+  } catch {
+    return null;
+  }
+}
+
 function resolveCtx(ctxBase) {
   if (typeof ctxBase === "function") return asObject(ctxBase());
   return asObject(ctxBase);
@@ -13,6 +93,47 @@ export function createBpmnStageImperativeApi(ctxBase) {
   const values = asObject(ctx.values);
   const state = asObject(ctx.state);
   const callbacks = asObject(ctx.callbacks);
+
+  const getReadyInstance = (preferredModeRaw = "") => {
+    const preferredMode = toText(preferredModeRaw).toLowerCase();
+    const modeler = refs.modelerRef?.current;
+    const viewer = refs.viewerRef?.current;
+    const modelerReady = modeler && !!refs.modelerReadyRef?.current && callbacks.hasDefinitionsLoaded?.(modeler);
+    const viewerReady = viewer && !!refs.viewerReadyRef?.current && callbacks.hasDefinitionsLoaded?.(viewer);
+    if (preferredMode === "editor" || preferredMode === "modeler") {
+      if (modelerReady) return modeler;
+      if (viewerReady) return viewer;
+    }
+    if (preferredMode === "viewer") {
+      if (viewerReady) return viewer;
+      if (modelerReady) return modeler;
+    }
+    if (values.view === "editor" || values.view === "diagram") {
+      if (modelerReady) return modeler;
+      if (viewerReady) return viewer;
+    }
+    if (values.view === "viewer") {
+      if (viewerReady) return viewer;
+      if (modelerReady) return modeler;
+    }
+    return modelerReady ? modeler : (viewerReady ? viewer : (modeler || viewer || null));
+  };
+
+  const getPreferredInstance = (preferredModeRaw = "") => {
+    const preferredMode = toText(preferredModeRaw).toLowerCase();
+    const modeler = refs.modelerRef?.current;
+    const viewer = refs.viewerRef?.current;
+    if (preferredMode === "editor" || preferredMode === "modeler" || preferredMode === "diagram") {
+      return modeler || viewer || null;
+    }
+    if (preferredMode === "viewer") {
+      return viewer || modeler || null;
+    }
+    if (values.view === "editor" || values.view === "diagram") {
+      return modeler || viewer || null;
+    }
+    return viewer || modeler || null;
+  };
 
   const getActiveInstance = () => (values.view === "editor" ? refs.modelerRef?.current : refs.viewerRef?.current);
   const getActiveLoader = () => (values.view === "editor" ? callbacks.ensureModeler?.() : callbacks.ensureViewer?.());
@@ -309,6 +430,29 @@ export function createBpmnStageImperativeApi(ctxBase) {
         state.setErr?.(`Импорт BPMN не удался: ${String(e?.message || e)}`);
         return false;
       }
+    },
+    getCanvasSnapshot: (options = {}) => {
+      const preferred = toText(options?.kind || options?.view || options?.mode).toLowerCase();
+      const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
+      return readCanvasSnapshot(inst);
+    },
+    getElementBounds: (elementId, options = {}) => {
+      const preferred = toText(options?.kind || options?.view || options?.mode).toLowerCase();
+      const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
+      return readElementBounds(inst, elementId);
+    },
+    onCanvasViewboxChanged: (listener) => {
+      if (typeof listener !== "function") return () => {};
+      const ref = refs.viewboxListenersRef;
+      if (!ref) return () => {};
+      if (!(ref.current instanceof Set)) ref.current = new Set();
+      ref.current.add(listener);
+      return () => {
+        try {
+          ref.current?.delete?.(listener);
+        } catch {
+        }
+      };
     },
   };
 }

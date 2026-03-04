@@ -12,19 +12,35 @@ export default function useBpmnCanvasController({
   toText,
   toNodeId,
   cssEscapeAttr,
-  parseSvgMatrix,
-  matrixToDiagram,
+  localToDiagram,
+  getElementBBox,
 }) {
   const hybridLayerPositionsRef = useRef({});
-  const hybridViewportMatrixRef = useRef({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
   const [hybridLayerPositions, setHybridLayerPositions] = useState({});
-  const [hybridViewportSize, setHybridViewportSize] = useState({ width: 0, height: 0 });
-  const [hybridViewportMatrix, setHybridViewportMatrix] = useState({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
 
   const readHybridElementAnchor = useCallback((elementIdRaw) => {
-    const host = bpmnStageHostRef.current;
     const elementId = toText(elementIdRaw);
-    if (!host || !elementId) return null;
+    if (!elementId) return null;
+    const bounds = getElementBBox?.(elementId);
+    if (
+      Number.isFinite(bounds?.x)
+      && Number.isFinite(bounds?.y)
+      && Number.isFinite(bounds?.width)
+      && Number.isFinite(bounds?.height)
+      && Number(bounds?.width) > 0
+      && Number(bounds?.height) > 0
+    ) {
+      return {
+        x: Number(bounds.x) + (Number(bounds.width) / 2),
+        y: Number(bounds.y) + (Number(bounds.height) / 2),
+        screenX: 0,
+        screenY: 0,
+        width: Number(bounds.width),
+        height: Number(bounds.height),
+      };
+    }
+    const host = bpmnStageHostRef.current;
+    if (!host) return null;
     const escaped = cssEscapeAttr(elementId);
     if (!escaped) return null;
     const candidateSelectors = [
@@ -52,7 +68,7 @@ export default function useBpmnCanvasController({
     if (!(width > 0) || !(height > 0)) return null;
     const x = Number(targetRect?.left || 0) - Number(hostRect?.left || 0) + (width / 2);
     const y = Number(targetRect?.top || 0) - Number(hostRect?.top || 0) + (height / 2);
-    const diagramPoint = matrixToDiagram(hybridViewportMatrixRef.current, x, y);
+    const diagramPoint = localToDiagram(x, y);
     return {
       x: Number(diagramPoint.x || 0),
       y: Number(diagramPoint.y || 0),
@@ -61,7 +77,7 @@ export default function useBpmnCanvasController({
       width,
       height,
     };
-  }, [bpmnStageHostRef, cssEscapeAttr, matrixToDiagram, toText]);
+  }, [bpmnStageHostRef, cssEscapeAttr, getElementBBox, localToDiagram, toText]);
 
   const resolveHybridTargetElementIdFromPoint = useCallback((clientXRaw, clientYRaw) => {
     if (typeof document === "undefined") return "";
@@ -138,45 +154,12 @@ export default function useBpmnCanvasController({
     if (tab !== "diagram" || !hybridVisible) {
       setHybridLayerPositions({});
       hybridLayerPositionsRef.current = {};
-      setHybridViewportSize((prevRaw) => {
-        const prev = asObject(prevRaw);
-        if (Number(prev.width || 0) === 0 && Number(prev.height || 0) === 0) return prev;
-        return { width: 0, height: 0 };
-      });
-      setHybridViewportMatrix({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
-      hybridViewportMatrixRef.current = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
       return undefined;
     }
     let canceled = false;
     let timerId = 0;
     const compute = () => {
       if (canceled) return;
-      const host = bpmnStageHostRef.current;
-      const hostRect = host?.getBoundingClientRect?.();
-      const nextWidth = Math.max(0, Math.round(Number(hostRect?.width || host?.clientWidth || 0)));
-      const nextHeight = Math.max(0, Math.round(Number(hostRect?.height || host?.clientHeight || 0)));
-      setHybridViewportSize((prevRaw) => {
-        const prev = asObject(prevRaw);
-        if (Number(prev.width || 0) === nextWidth && Number(prev.height || 0) === nextHeight) return prev;
-        return { width: nextWidth, height: nextHeight };
-      });
-      const viewportEl = host?.querySelector?.(".djs-viewport");
-      const nextMatrix = parseSvgMatrix(viewportEl?.getAttribute?.("transform"));
-      hybridViewportMatrixRef.current = nextMatrix;
-      setHybridViewportMatrix((prevRaw) => {
-        const prev = asObject(prevRaw);
-        if (
-          Math.abs(Number(prev.a || 0) - Number(nextMatrix.a || 0)) < 0.0001
-          && Math.abs(Number(prev.b || 0) - Number(nextMatrix.b || 0)) < 0.0001
-          && Math.abs(Number(prev.c || 0) - Number(nextMatrix.c || 0)) < 0.0001
-          && Math.abs(Number(prev.d || 0) - Number(nextMatrix.d || 0)) < 0.0001
-          && Math.abs(Number(prev.e || 0) - Number(nextMatrix.e || 0)) < 0.1
-          && Math.abs(Number(prev.f || 0) - Number(nextMatrix.f || 0)) < 0.1
-        ) {
-          return prev;
-        }
-        return nextMatrix;
-      });
       const next = {};
       hybridLayerItems.forEach((itemRaw) => {
         const item = asObject(itemRaw);
@@ -201,16 +184,14 @@ export default function useBpmnCanvasController({
       }
     };
     compute();
-    timerId = window.setInterval(compute, 180);
+    timerId = window.setInterval(compute, 320);
     return () => {
       canceled = true;
       if (timerId) window.clearInterval(timerId);
     };
   }, [
-    bpmnStageHostRef,
     hybridLayerItems,
     hybridVisible,
-    parseSvgMatrix,
     readHybridElementAnchor,
     tab,
     toText,
@@ -219,14 +200,8 @@ export default function useBpmnCanvasController({
   return {
     hybridLayerPositions,
     hybridLayerPositionsRef,
-    hybridViewportSize,
-    hybridViewportMatrix,
-    hybridViewportMatrixRef,
     readHybridElementAnchor,
     resolveHybridTargetElementIdFromPoint,
     resolveFirstHybridSeedElementId,
-    setHybridLayerPositions,
-    setHybridViewportMatrix,
-    setHybridViewportSize,
   };
 }

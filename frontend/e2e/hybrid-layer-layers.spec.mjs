@@ -98,7 +98,20 @@ async function clickLayersTool(page, toolIdRaw) {
   expect(toolId).not.toBe("");
   for (let attempt = 0; attempt < 4; attempt += 1) {
     await openLayersPopover(page);
+    if (toolId !== "select") {
+      const editBtn = page.getByTestId("diagram-action-layers-mode-edit");
+      if (await editBtn.isVisible().catch(() => false)) {
+        await editBtn.click().catch(() => {});
+      }
+    }
     const button = page.getByTestId(`diagram-action-layers-tool-${toolId}`);
+    const hasButton = await button.count().catch(() => 0);
+    if (!hasButton) {
+      await page.waitForLoadState("domcontentloaded").catch(() => {});
+      await waitForModelerReady(page);
+      await page.waitForTimeout(80);
+      continue;
+    }
     await expect(button).toBeVisible();
     try {
       await button.click();
@@ -118,7 +131,9 @@ async function clickLayersTool(page, toolIdRaw) {
     }
   }
   await openLayersPopover(page);
-  await page.getByTestId(`diagram-action-layers-tool-${toolId}`).click();
+  const fallback = page.getByTestId(`diagram-action-layers-tool-${toolId}`);
+  await expect(fallback).toBeVisible();
+  await fallback.click();
 }
 
 async function clickLayersControl(page, testIdRaw) {
@@ -223,6 +238,15 @@ async function readHybridPrefs(page) {
   });
 }
 
+async function readCenterOf(locator) {
+  const box = await locator.boundingBox();
+  if (!box) return null;
+  return {
+    x: box.x + (box.width / 2),
+    y: box.y + (box.height / 2),
+  };
+}
+
 function parseProgressIndex(value) {
   const text = String(value || "").trim();
   const match = text.match(/^(\d+)\s*\/\s*(\d+)$/);
@@ -305,7 +329,7 @@ test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ pag
   const activeOverlay = page.getByTestId("hybrid-layer-overlay").last();
   await expect(activeOverlay).toBeVisible();
 
-  const taskShape = page.locator("g.djs-element.djs-shape[data-element-id='Task_1']").first();
+  const taskShape = page.locator(".bpmnLayer--editor.on g.djs-element.djs-shape[data-element-id='Task_1']").first();
   await expect(taskShape).toBeVisible();
 
   await openLayersPopover(page);
@@ -328,7 +352,9 @@ test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ pag
   await expect(v2Svg).toBeVisible();
   await clickLayersTool(page, "rect");
   await v2Svg.click({ position: { x: 260, y: 220 }, force: true });
-  await clickLayersTool(page, "text");
+  await openLayersPopover(page);
+  const hasTextTool = await page.getByTestId("diagram-action-layers-tool-text").count().catch(() => 0);
+  await clickLayersTool(page, hasTextTool > 0 ? "text" : "note");
   await v2Svg.click({ position: { x: 480, y: 220 }, force: true });
   await expect
     .poll(async () => {
@@ -371,13 +397,19 @@ test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ pag
   await expect
     .poll(async () => Number(await page.getByTestId("hybrid-v2-shape").count().catch(() => 0)))
     .toBeGreaterThan(0);
+  const hotspotForTask = page.locator("[data-element-id='Task_1'] [data-testid='hybrid-layer-hotspot']").first();
+  await expect(hotspotForTask).toBeVisible();
+  const trackedShape = activeOverlay.locator(`[data-testid='hybrid-v2-shape'][data-hybrid-element-id='${createdShapeIds[0]}']`).first();
+  await expect(trackedShape).toBeVisible();
+  const shapeCenterBefore = await readCenterOf(trackedShape);
+  expect(shapeCenterBefore).toBeTruthy();
   let panApplied = false;
   for (let attempt = 0; attempt < 3 && !panApplied; attempt += 1) {
-    panApplied = await page.evaluate(() => {
+    const panResult = await page.evaluate(() => {
       const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
-      if (!modeler) return false;
+      if (!modeler) return { ok: false, reason: "modeler_missing" };
       const canvas = modeler.get("canvas");
-      if (!canvas) return false;
+      if (!canvas) return { ok: false, reason: "canvas_missing" };
       try {
         const current = canvas.viewbox();
         canvas.zoom(1.35);
@@ -388,18 +420,43 @@ test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ pag
           width: Number(next?.width || current?.width || 0),
           height: Number(next?.height || current?.height || 0),
         });
-        return true;
+        const after = canvas.viewbox();
+        const moved = Math.abs(Number(after?.x || 0) - Number(current?.x || 0)) > 1
+          || Math.abs(Number(after?.y || 0) - Number(current?.y || 0)) > 1
+          || Math.abs(Number(after?.width || 0) - Number(current?.width || 0)) > 1
+          || Math.abs(Number(after?.height || 0) - Number(current?.height || 0)) > 1;
+        return {
+          ok: moved,
+          reason: moved ? "changed" : "viewbox_unchanged",
+          current,
+          next,
+          after,
+        };
       } catch {
-        return false;
+        return { ok: false, reason: "exception" };
       }
     }).catch(() => false);
+    panApplied = !!panResult?.ok;
     if (!panApplied) {
+      // eslint-disable-next-line no-console
+      console.log("[E2E_HYBRID_SYNC_PAN_RETRY]", panResult);
       await waitForModelerReady(page);
       await page.waitForTimeout(120);
     }
   }
   expect(panApplied).toBeTruthy();
   await expect(page.getByTestId("hybrid-layer-overlay").last()).toBeVisible();
+  await expect
+    .poll(async () => {
+      const shapeCenterAfterZoom = await readCenterOf(trackedShape);
+      if (!shapeCenterAfterZoom) return false;
+      const shapeDistance = Math.hypot(
+        Number(shapeCenterAfterZoom.x) - Number(shapeCenterBefore.x),
+        Number(shapeCenterAfterZoom.y) - Number(shapeCenterBefore.y),
+      );
+      return shapeDistance > 10;
+    })
+    .toBeTruthy();
   await page.evaluate(() => {
     const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
     if (!modeler) return false;
@@ -413,6 +470,7 @@ test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ pag
     }
   });
   await page.waitForTimeout(200);
+  await expect(trackedShape).toBeVisible();
   const card = page.getByTestId("hybrid-layer-card").first();
   if (await card.isVisible().catch(() => false)) {
     const box = await card.boundingBox();

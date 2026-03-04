@@ -1116,6 +1116,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const bpmnCoordinatorRef = useRef(null);
   const bpmnPersistenceRef = useRef(null);
   const bpmnStoreUnsubRef = useRef(null);
+  const viewboxListenersRef = useRef(new Set());
   const activeSessionRef = useRef("");
   const prevSessionRef = useRef("");
   const loadTokenRef = useRef(0);
@@ -1219,6 +1220,17 @@ const BpmnStage = forwardRef(function BpmnStage({
     editor: createFlashRuntimeState(),
   });
   const prefersReducedMotionRef = useRef(false);
+
+  function emitViewboxChanged(payload = {}) {
+    const listeners = viewboxListenersRef.current;
+    if (!(listeners instanceof Set) || !listeners.size) return;
+    listeners.forEach((listener) => {
+      try {
+        listener(payload);
+      } catch {
+      }
+    });
+  }
 
   useEffect(() => {
     onDiagramMutationRef.current = onDiagramMutation;
@@ -3132,6 +3144,11 @@ const BpmnStage = forwardRef(function BpmnStage({
               token: Number(runtimeTokenRef.current || 0),
             },
           );
+          emitViewboxChanged({
+            mode: "viewer",
+            suppressed,
+            snapshot: snap,
+          });
         });
       } catch {
       }
@@ -3234,6 +3251,11 @@ const BpmnStage = forwardRef(function BpmnStage({
                 token: Number(runtimeTokenRef.current || 0),
               },
             );
+            emitViewboxChanged({
+              mode: "editor",
+              suppressed,
+              snapshot: snap,
+            });
           });
           modelerDecorBoundInstanceRef.current = m;
         }
@@ -4205,6 +4227,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         activeSessionRef,
         loadTokenRef,
         bpmnCoordinatorRef,
+        viewboxListenersRef,
         bottlenecksRef,
       },
       values: {

@@ -95,12 +95,12 @@ import {
 import {
   matrixToDiagram,
   matrixToScreen,
-  parseSvgMatrix,
 } from "../features/process/stage/utils/hybridCoords";
 import LayersPopover from "../features/process/stage/components/LayersPopover";
 import HybridOverlayRenderer from "../features/process/stage/renderers/HybridOverlayRenderer";
 import useSessionMetaPersist from "../features/process/stage/controllers/useSessionMetaPersist";
 import useBpmnCanvasController from "../features/process/stage/hooks/useBpmnCanvasController";
+import useDiagramOverlayTransform from "../features/process/stage/hooks/useDiagramOverlayTransform";
 import usePlaybackController from "../features/process/stage/hooks/usePlaybackController";
 import { buildManualPathReportSteps } from "./process/interview/services/pathReport";
 
@@ -1607,11 +1607,25 @@ export default function ProcessStage({
     }
   }, [sid, tab]);
   const {
-    hybridLayerPositions,
-    hybridLayerPositionsRef,
     hybridViewportSize,
     hybridViewportMatrix,
     hybridViewportMatrixRef,
+    overlayViewbox,
+    overlayContainerRect,
+    localToDiagram,
+    clientToDiagram,
+    getElementBBox,
+  } = useDiagramOverlayTransform({
+    tab,
+    hybridVisible,
+    bpmnRef,
+    bpmnStageHostRef,
+    matrixToScreen,
+    matrixToDiagram,
+  });
+  const {
+    hybridLayerPositions,
+    hybridLayerPositionsRef,
     readHybridElementAnchor,
     resolveHybridTargetElementIdFromPoint,
     resolveFirstHybridSeedElementId,
@@ -1623,8 +1637,8 @@ export default function ProcessStage({
     toText,
     toNodeId,
     cssEscapeAttr,
-    parseSvgMatrix,
-    matrixToDiagram,
+    localToDiagram,
+    getElementBBox,
   });
   const setHybridLayerCardNode = useCallback((elementIdRaw, node) => {
     const elementId = toText(elementIdRaw);
@@ -4117,10 +4131,12 @@ export default function ProcessStage({
     // eslint-disable-next-line no-console
     console.info("[HYBRID_DEBUG] visibility", {
       viewport: asObject(hybridViewportSize),
+      viewbox: asObject(overlayViewbox),
+      container: asObject(overlayContainerRect),
       stats: asObject(hybridLayerVisibilityStats),
       rows,
     });
-  }, [hybridDebugEnabled, hybridLayerRenderRows, hybridLayerVisibilityStats, hybridViewportSize, hybridVisible, tab]);
+  }, [hybridDebugEnabled, hybridLayerRenderRows, hybridLayerVisibilityStats, hybridViewportSize, overlayViewbox, overlayContainerRect, hybridVisible, tab]);
 
   useEffect(() => {
     if (tab !== "diagram" || !hybridVisible) return;
@@ -5105,12 +5121,7 @@ export default function ProcessStage({
   }
 
   function resolveHybridPointerToDiagram(eventRaw) {
-    const host = bpmnStageHostRef.current;
-    if (!host) return null;
-    const rect = host.getBoundingClientRect?.();
-    const localX = Number(eventRaw?.clientX || 0) - Number(rect?.left || 0);
-    const localY = Number(eventRaw?.clientY || 0) - Number(rect?.top || 0);
-    return matrixToDiagram(hybridViewportMatrixRef.current, localX, localY);
+    return clientToDiagram(eventRaw?.clientX, eventRaw?.clientY);
   }
 
   function createHybridV2ElementAt(pointRaw, typeRaw = "rect") {
