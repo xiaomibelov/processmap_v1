@@ -1431,6 +1431,41 @@ def _normalize_template_payload(raw: Any) -> Dict[str, Any]:
             "type": str(ref.get("type") or "").strip(),
             "lane_name": str(ref.get("lane_name") or ref.get("laneName") or ref.get("lane") or "").strip(),
         }
+        if kind == "node":
+            incoming_count = ref.get("incoming_count", ref.get("incomingCount"))
+            outgoing_count = ref.get("outgoing_count", ref.get("outgoingCount"))
+            try:
+                incoming_count = int(incoming_count) if incoming_count is not None else None
+            except Exception:
+                incoming_count = None
+            try:
+                outgoing_count = int(outgoing_count) if outgoing_count is not None else None
+            except Exception:
+                outgoing_count = None
+            if isinstance(incoming_count, int) and incoming_count >= 0:
+                normalized_ref["incoming_count"] = incoming_count
+            if isinstance(outgoing_count, int) and outgoing_count >= 0:
+                normalized_ref["outgoing_count"] = outgoing_count
+            incoming_names: List[str] = []
+            outgoing_names: List[str] = []
+            seen_in: set[str] = set()
+            seen_out: set[str] = set()
+            for raw_name in ref.get("incoming_names") or ref.get("incomingNames") or []:
+                value = str(raw_name or "").strip()
+                if not value or value in seen_in:
+                    continue
+                seen_in.add(value)
+                incoming_names.append(value)
+            for raw_name in ref.get("outgoing_names") or ref.get("outgoingNames") or []:
+                value = str(raw_name or "").strip()
+                if not value or value in seen_out:
+                    continue
+                seen_out.add(value)
+                outgoing_names.append(value)
+            if incoming_names:
+                normalized_ref["incoming_names"] = incoming_names
+            if outgoing_names:
+                normalized_ref["outgoing_names"] = outgoing_names
         if kind == "edge":
             source_id = str(
                 ref.get("source_id") or ref.get("sourceId") or ref.get("from_id") or ref.get("fromId") or ref.get("source") or ref.get("from") or ""

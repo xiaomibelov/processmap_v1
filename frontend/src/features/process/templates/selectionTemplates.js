@@ -6,6 +6,25 @@ function toToken(value) {
   return toText(value).toLowerCase().replace(/\s+/g, " ");
 }
 
+function normalizeNamesList(raw) {
+  const list = Array.isArray(raw) ? raw : [];
+  const out = [];
+  const seen = new Set();
+  for (let i = 0; i < list.length; i += 1) {
+    const value = toText(list[i]);
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
+}
+
+function toSafeCount(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n);
+}
+
 export function normalizeTemplateScope(raw) {
   const scope = toText(raw).toLowerCase();
   if (scope === "org") return "org";
@@ -46,6 +65,16 @@ export function normalizeTemplateElementRefs(rawList, allowedIdsRaw = []) {
       type: toText(item.type),
       lane_name: toText(item.lane_name || item.laneName || item.lane),
     };
+    if (kind === "node") {
+      const incomingCount = toSafeCount(item.incoming_count ?? item.incomingCount);
+      const outgoingCount = toSafeCount(item.outgoing_count ?? item.outgoingCount);
+      const incomingNames = normalizeNamesList(item.incoming_names || item.incomingNames);
+      const outgoingNames = normalizeNamesList(item.outgoing_names || item.outgoingNames);
+      if (incomingCount != null) normalized.incoming_count = incomingCount;
+      if (outgoingCount != null) normalized.outgoing_count = outgoingCount;
+      if (incomingNames.length) normalized.incoming_names = incomingNames;
+      if (outgoingNames.length) normalized.outgoing_names = outgoingNames;
+    }
     if (kind === "edge") {
       const sourceId = toText(item.source_id || item.sourceId || item.from_id || item.fromId || item.source || item.from);
       const targetId = toText(item.target_id || item.targetId || item.to_id || item.toId || item.target || item.to);
@@ -124,6 +153,27 @@ export function remapTemplateNodeIdsByRefs(options = {}) {
       nameToken: toToken(flow.name || flow.label || flow.title),
     };
   }).filter((entry) => entry.id && entry.sourceId && entry.targetId);
+  const nodeNameTokenById = new Map();
+  nodeEntries.forEach((entry) => {
+    nodeNameTokenById.set(entry.id, entry.nameToken);
+  });
+  const incomingCountByNodeId = new Map();
+  const outgoingCountByNodeId = new Map();
+  const incomingNameTokensByNodeId = new Map();
+  const outgoingNameTokensByNodeId = new Map();
+  flowEntries.forEach((entry) => {
+    incomingCountByNodeId.set(entry.targetId, Number(incomingCountByNodeId.get(entry.targetId) || 0) + 1);
+    outgoingCountByNodeId.set(entry.sourceId, Number(outgoingCountByNodeId.get(entry.sourceId) || 0) + 1);
+
+    const sourceNameToken = toToken(nodeNameTokenById.get(entry.sourceId));
+    const targetNameToken = toToken(nodeNameTokenById.get(entry.targetId));
+
+    if (!incomingNameTokensByNodeId.has(entry.targetId)) incomingNameTokensByNodeId.set(entry.targetId, new Set());
+    if (sourceNameToken) incomingNameTokensByNodeId.get(entry.targetId).add(sourceNameToken);
+
+    if (!outgoingNameTokensByNodeId.has(entry.sourceId)) outgoingNameTokensByNodeId.set(entry.sourceId, new Set());
+    if (targetNameToken) outgoingNameTokensByNodeId.get(entry.sourceId).add(targetNameToken);
+  });
 
   const mappedIds = [];
   const missingIds = [];
@@ -167,6 +217,48 @@ export function remapTemplateNodeIdsByRefs(options = {}) {
     if (refLane) {
       const laneScoped = candidates.filter((entry) => entry.laneToken === refLane);
       if (laneScoped.length) candidates = laneScoped;
+    }
+    if (candidates.length > 1) {
+      const refIncomingCount = toSafeCount(ref.incoming_count ?? ref.incomingCount);
+      if (refIncomingCount != null) {
+        const byIncomingCount = candidates.filter(
+          (entry) => Number(incomingCountByNodeId.get(entry.id) || 0) === refIncomingCount,
+        );
+        if (byIncomingCount.length) candidates = byIncomingCount;
+      }
+    }
+    if (candidates.length > 1) {
+      const refOutgoingCount = toSafeCount(ref.outgoing_count ?? ref.outgoingCount);
+      if (refOutgoingCount != null) {
+        const byOutgoingCount = candidates.filter(
+          (entry) => Number(outgoingCountByNodeId.get(entry.id) || 0) === refOutgoingCount,
+        );
+        if (byOutgoingCount.length) candidates = byOutgoingCount;
+      }
+    }
+    if (candidates.length > 1) {
+      const refIncomingNames = normalizeNamesList(ref.incoming_names || ref.incomingNames).map((value) => toToken(value)).filter(Boolean);
+      const refOutgoingNames = normalizeNamesList(ref.outgoing_names || ref.outgoingNames).map((value) => toToken(value)).filter(Boolean);
+      if (refIncomingNames.length || refOutgoingNames.length) {
+        let bestScore = -1;
+        const scored = candidates.map((entry) => {
+          const incomingSet = incomingNameTokensByNodeId.get(entry.id) || new Set();
+          const outgoingSet = outgoingNameTokensByNodeId.get(entry.id) || new Set();
+          let score = 0;
+          refIncomingNames.forEach((token) => {
+            if (incomingSet.has(token)) score += 1;
+          });
+          refOutgoingNames.forEach((token) => {
+            if (outgoingSet.has(token)) score += 1;
+          });
+          if (score > bestScore) bestScore = score;
+          return { entry, score };
+        });
+        if (bestScore > 0) {
+          const best = scored.filter((row) => row.score === bestScore).map((row) => row.entry);
+          if (best.length) candidates = best;
+        }
+      }
     }
     if (candidates.length !== 1) {
       missingIds.push(sourceId);

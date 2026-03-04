@@ -124,6 +124,40 @@ test("remapTemplateNodeIdsByRefs: remaps edge by mapped source/target nodes", ()
   assert.equal(result.remappedCount, 3);
 });
 
+test("remapTemplateNodeIdsByRefs: resolves ambiguous node by incoming/outgoing context", () => {
+  const result = remapTemplateNodeIdsByRefs({
+    ids: ["Task_1"],
+    elementRefs: [
+      {
+        id: "Task_1",
+        kind: "node",
+        name: "Сборка",
+        type: "userTask",
+        incoming_count: 1,
+        outgoing_count: 1,
+        incoming_names: ["Старт"],
+        outgoing_names: ["Проверка"],
+      },
+    ],
+    currentNodesById: {
+      Activity_A: { name: "Сборка", type: "userTask" },
+      Activity_B: { name: "Сборка", type: "userTask" },
+      Activity_Start: { name: "Старт", type: "startEvent" },
+      Activity_Check: { name: "Проверка", type: "userTask" },
+      Activity_Other: { name: "Иное", type: "userTask" },
+    },
+    currentFlowsById: {
+      F1: { sourceId: "Activity_Start", targetId: "Activity_A" },
+      F2: { sourceId: "Activity_A", targetId: "Activity_Check" },
+      F3: { sourceId: "Activity_Other", targetId: "Activity_B" },
+      F4: { sourceId: "Activity_B", targetId: "Activity_Other" },
+    },
+  });
+  assert.deepEqual(result.mappedIds, ["Activity_A"]);
+  assert.deepEqual(result.missingIds, []);
+  assert.equal(result.remappedCount, 1);
+});
+
 test("rbac: org template create/manage", () => {
   assert.equal(canCreateOrgTemplate("project_manager", false), true);
   assert.equal(canCreateOrgTemplate("viewer", false), false);

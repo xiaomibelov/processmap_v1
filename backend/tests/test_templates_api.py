@@ -149,7 +149,17 @@ class TemplatesApiTest(unittest.TestCase):
         payload = self._base_payload()
         payload["bpmn_element_ids"] = ["Task_1", "Task_2", "Flow_1"]
         payload["bpmn_element_refs"] = [
-            {"id": "Task_1", "kind": "node", "name": "Принять заказ", "type": "userTask", "lane_name": "Оператор"},
+            {
+                "id": "Task_1",
+                "kind": "node",
+                "name": "Принять заказ",
+                "type": "userTask",
+                "lane_name": "Оператор",
+                "incoming_count": 1,
+                "outgoing_count": 2,
+                "incoming_names": ["Старт"],
+                "outgoing_names": ["Проверка", "Паковать"],
+            },
             {"id": "Task_2", "kind": "node", "name": "Готовить суп", "type": "serviceTask", "lane_name": "Кухня"},
             {
                 "id": "Flow_1",
@@ -170,6 +180,11 @@ class TemplatesApiTest(unittest.TestCase):
         )
         self.assertEqual(_status_of(created), 200)
         refs = (created.get("payload") or {}).get("bpmn_element_refs") or []
+        node_ref = next((row for row in refs if str(row.get("id") or "") == "Task_1"), {})
+        self.assertEqual(int(node_ref.get("incoming_count") or 0), 1)
+        self.assertEqual(int(node_ref.get("outgoing_count") or 0), 2)
+        self.assertEqual(list(node_ref.get("incoming_names") or []), ["Старт"])
+        self.assertEqual(list(node_ref.get("outgoing_names") or []), ["Проверка", "Паковать"])
         edge_ref = next((row for row in refs if str(row.get("id") or "") == "Flow_1"), {})
         self.assertEqual(str(edge_ref.get("kind") or ""), "edge")
         self.assertEqual(str(edge_ref.get("source_id") or ""), "Task_1")

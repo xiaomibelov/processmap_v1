@@ -3467,12 +3467,12 @@ export default function ProcessStage({
     const scope = normalizeTemplateScope(selectionTemplateScopeDraft);
     const name = String(selectionTemplateNameDraft || "").trim();
     const description = String(selectionTemplateDescriptionDraft || "").trim();
-    const selectedIds = normalizeTemplateElementIds(selectedElementIds);
+    const selectedIdsRaw = normalizeTemplateElementIds(selectedElementIds);
     if (!name) {
       setGenErr("Укажите название шаблона.");
       return;
     }
-    if (!selectedIds.length) {
+    if (!selectedIdsRaw.length) {
       setGenErr("Нет выделенных элементов для сохранения.");
       return;
     }
@@ -3503,15 +3503,103 @@ export default function ProcessStage({
         name: toText(edge?.name || edge?.label || edge?.title),
       };
     });
-    const selectedRefs = selectedIds.map((id) => {
+    const currentFlowsById = {};
+    Object.entries(graphFlows).forEach(([id, flowRaw]) => {
+      const flow = asObject(flowRaw);
+      const flowId = toText(id || flow?.id);
+      if (!flowId) return;
+      const sourceId = toNodeId(flow?.sourceId || flow?.source_id || flow?.from_id || flow?.from);
+      const targetId = toNodeId(flow?.targetId || flow?.target_id || flow?.to_id || flow?.to);
+      if (!sourceId || !targetId) return;
+      currentFlowsById[flowId] = {
+        id: flowId,
+        sourceId,
+        targetId,
+        name: toText(flow?.name || flow?.label || flow?.title),
+      };
+    });
+    Object.entries(draftEdgeById).forEach(([id, flowRaw]) => {
+      const flow = asObject(flowRaw);
+      const flowId = toText(id || flow?.id);
+      if (!flowId || currentFlowsById[flowId]) return;
+      const sourceId = toNodeId(flow?.sourceId || flow?.source_id || flow?.from_id || flow?.from);
+      const targetId = toNodeId(flow?.targetId || flow?.target_id || flow?.to_id || flow?.to);
+      if (!sourceId || !targetId) return;
+      currentFlowsById[flowId] = {
+        id: flowId,
+        sourceId,
+        targetId,
+        name: toText(flow?.name || flow?.label || flow?.title),
+      };
+    });
+    const isKnownTemplateElementId = (idRaw) => {
+      const id = toText(idRaw);
+      if (!id) return false;
+      return !!graphNodes[id] || !!graphFlows[id] || !!draftNodeById[id] || !!draftEdgeById[id];
+    };
+    const resolveTemplateElementId = (idRaw) => {
+      const id = toText(idRaw);
+      if (!id) return "";
+      if (isKnownTemplateElementId(id)) return id;
+      const candidates = [
+        toText(id.replace(/_label$/i, "")),
+        toText(id.replace(/_di$/i, "")),
+        toNodeId(id),
+      ].filter(Boolean);
+      for (let i = 0; i < candidates.length; i += 1) {
+        const candidate = candidates[i];
+        if (isKnownTemplateElementId(candidate)) return candidate;
+      }
+      return "";
+    };
+    const selectedIds = [];
+    selectedIdsRaw.forEach((idRaw) => {
+      const resolved = resolveTemplateElementId(idRaw);
+      if (!resolved) return;
+      selectedIds.push(resolved);
+    });
+    const normalizedSelectedIds = normalizeTemplateElementIds(selectedIds);
+    if (!normalizedSelectedIds.length) {
+      setGenErr("Выделение не содержит поддерживаемых BPMN-узлов или sequenceFlow.");
+      return;
+    }
+    const selectedRefs = normalizedSelectedIds.map((id) => {
       const node = asObject(draftNodeById[id] || graphNodes[id] || {});
       if (Object.keys(node).length) {
+        const incomingFlows = Object.values(currentFlowsById)
+          .map((flowRaw) => asObject(flowRaw))
+          .filter((flow) => toNodeId(flow?.targetId) === id);
+        const outgoingFlows = Object.values(currentFlowsById)
+          .map((flowRaw) => asObject(flowRaw))
+          .filter((flow) => toNodeId(flow?.sourceId) === id);
+        const incomingNames = Array.from(new Set(
+          incomingFlows
+            .map((flow) => {
+              const sourceId = toNodeId(flow?.sourceId);
+              const sourceNode = asObject(draftNodeById[sourceId] || graphNodes[sourceId] || {});
+              return toText(sourceNode?.name || sourceId);
+            })
+            .filter(Boolean),
+        ));
+        const outgoingNames = Array.from(new Set(
+          outgoingFlows
+            .map((flow) => {
+              const targetId = toNodeId(flow?.targetId);
+              const targetNode = asObject(draftNodeById[targetId] || graphNodes[targetId] || {});
+              return toText(targetNode?.name || targetId);
+            })
+            .filter(Boolean),
+        ));
         return {
           id,
           kind: "node",
           name: toText(node?.name),
           type: toText(node?.type),
           lane_name: toText(node?.laneName || node?.lane),
+          incoming_count: incomingFlows.length,
+          outgoing_count: outgoingFlows.length,
+          incoming_names: incomingNames,
+          outgoing_names: outgoingNames,
         };
       }
       const flow = asObject(graphFlows[id] || draftEdgeById[id] || {});
@@ -3533,7 +3621,7 @@ export default function ProcessStage({
       return { id, kind: "node" };
     });
     const payload = buildSelectionTemplatePayload({
-      selectedElementIds: selectedIds,
+      selectedElementIds: normalizedSelectedIds,
       selectedElementRefs: selectedRefs,
       bpmnFingerprint: String(draft?.bpmn_graph_fingerprint || "").trim(),
     });
@@ -3722,12 +3810,32 @@ export default function ProcessStage({
         lane_name: toText(node?.laneName || node?.lane),
       };
     });
+    const isKnownTemplateElementId = (idRaw) => {
+      const id = toText(idRaw);
+      if (!id) return false;
+      return !!graphNodes[id] || !!draftNodeById[id] || !!currentFlowsById[id];
+    };
+    const resolveTemplateElementId = (idRaw) => {
+      const id = toText(idRaw);
+      if (!id) return "";
+      if (isKnownTemplateElementId(id)) return id;
+      const candidates = [
+        toText(id.replace(/_label$/i, "")),
+        toText(id.replace(/_di$/i, "")),
+        toNodeId(id),
+      ].filter(Boolean);
+      for (let i = 0; i < candidates.length; i += 1) {
+        const candidate = candidates[i];
+        if (isKnownTemplateElementId(candidate)) return candidate;
+      }
+      return "";
+    };
 
     let found = [];
     let missing = [];
     ids.forEach((id) => {
-      const exists = !!graphNodes[id] || !!draftNodeById[id] || !!currentFlowsById[id];
-      if (exists) found.push(id);
+      const resolvedId = resolveTemplateElementId(id);
+      if (resolvedId) found.push(resolvedId);
       else missing.push(id);
     });
     let remappedCount = 0;
