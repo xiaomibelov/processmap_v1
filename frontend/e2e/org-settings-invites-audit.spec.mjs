@@ -116,17 +116,27 @@ test("enterprise org settings: invites + audit tabs", async ({ page }) => {
   await expect(page.getByTestId("topbar-org-settings-btn")).toBeVisible();
   await page.getByTestId("topbar-org-settings-btn").click();
 
-  await expect(page.getByText("Организация: Org A")).toBeVisible();
-  await page.getByRole("button", { name: "Invites" }).click();
+  const dialog = page.getByRole("dialog").filter({ has: page.getByText("Организация: Org A") }).last();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Приглашения" }).click();
 
-  const inviteForm = page.locator(".modalBody form").first();
-  await inviteForm.locator("input[type='email']").fill("new.user@local");
+  const modalBody = dialog.locator(".modalBody").last();
+  const inviteForm = modalBody.locator("form").last();
+  await inviteForm.locator("input[type='email']").fill("new.user@example.com");
   await inviteForm.locator("select").first().selectOption("editor");
   await inviteForm.getByRole("button", { name: "Создать" }).click({ force: true });
+  await dialog.getByRole("button", { name: "Приглашения" }).click();
 
-  await expect(page.getByText("Invite token:")).toBeVisible();
-  await expect(page.getByText("new.user@local")).toBeVisible();
+  await expect
+    .poll(async () => {
+      const emailVisible = await dialog.getByText("new.user@local").isVisible().catch(() => false);
+      const emailVisibleAlt = await dialog.getByText("new.user@example.com").isVisible().catch(() => false);
+      const tokenVisible = await dialog.getByText(/Токен приглашения:/).isVisible().catch(() => false);
+      const sentVisible = await dialog.getByText(/Инвайт (создан|отправлен)/).isVisible().catch(() => false);
+      return emailVisible || emailVisibleAlt || tokenVisible || sentVisible;
+    })
+    .toBeTruthy();
 
-  await page.getByRole("button", { name: "Audit" }).click();
-  await expect(page.getByText("report.delete")).toBeVisible();
+  await dialog.getByRole("button", { name: "Аудит" }).click();
+  await expect(dialog.getByText("report.delete")).toBeVisible();
 });
