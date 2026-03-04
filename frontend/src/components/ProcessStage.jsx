@@ -18,13 +18,6 @@ import {
   shortSnapshotHash,
 } from "../features/process/bpmn/snapshots/bpmnSnapshots";
 import { buildSemanticBpmnDiff } from "../features/process/bpmn/diff/semanticDiff";
-import {
-  buildPackStorageKey,
-  deleteBpmnPack,
-  listBpmnPacks,
-  saveBpmnPack,
-  suggestBpmnPacks,
-} from "../features/process/bpmn/packs/bpmnPacks";
 import { parseAndProjectBpmnToInterview } from "../features/process/hooks/useInterviewProjection";
 import useBpmnSync from "../features/process/hooks/useBpmnSync";
 import useProcessOrchestrator from "../features/process/hooks/useProcessOrchestrator";
@@ -83,15 +76,9 @@ import {
 } from "../features/process/hybrid/hybridLayerUi";
 import {
   docToComparableJson,
-  getHybridBindingsByBpmnId,
-  makeHybridV2Id,
   migrateHybridV1ToV2,
   normalizeHybridV2Doc,
 } from "../features/process/hybrid/hybridLayerV2";
-import {
-  exportHybridV2ToDrawioXml,
-  importDrawioXmlToHybridV2,
-} from "../features/process/hybrid/drawioCodec";
 import {
   matrixToDiagram,
   matrixToScreen,
@@ -101,7 +88,22 @@ import HybridOverlayRenderer from "../features/process/stage/renderers/HybridOve
 import useSessionMetaPersist from "../features/process/stage/controllers/useSessionMetaPersist";
 import useBpmnCanvasController from "../features/process/stage/hooks/useBpmnCanvasController";
 import useDiagramOverlayTransform from "../features/process/stage/hooks/useDiagramOverlayTransform";
+import useHybridLayerViewportController from "../features/process/stage/hooks/useHybridLayerViewportController";
 import usePlaybackController from "../features/process/stage/hooks/usePlaybackController";
+import useDiagramActionPopovers from "../features/process/stage/hooks/useDiagramActionPopovers";
+import { deleteHybridIds } from "../features/process/hybrid/actions/hybridDelete";
+import useHybridSelectionController from "../features/process/hybrid/tools/useHybridSelectionController";
+import useHybridToolsController from "../features/process/hybrid/tools/useHybridToolsController";
+import HybridToolsPalette from "../features/process/hybrid/tools/HybridToolsPalette";
+import HybridContextMenu from "../features/process/hybrid/tools/HybridContextMenu";
+import {
+  applyHybridPaletteModeIntent,
+  applyHybridPaletteToolIntent,
+} from "../features/process/hybrid/tools/hybridToolState";
+import useTemplatesStore from "../features/templates/model/useTemplatesStore";
+import TemplatesPicker from "../features/templates/ui/TemplatesPicker";
+import CreateTemplateModal from "../features/templates/ui/CreateTemplateModal";
+import { applyTemplateToDiagram } from "../features/templates/services/applyTemplateToDiagram";
 import { buildManualPathReportSteps } from "./process/interview/services/pathReport";
 
 function toText(value) {
@@ -548,7 +550,6 @@ function readPersistMark(sid) {
   return mark;
 }
 
-const TEMPLATE_MODE_KEY = "fpc_templates_mode";
 const COMMAND_MODE_KEY = "fpc_ai_ops_mode";
 const QUALITY_MODE_KEY = "fpc_quality_mode";
 const QUALITY_PROFILE_KEY = "fpc_quality_profile";
@@ -559,15 +560,6 @@ const NOTES_BATCH_APPLY_EVENT = "fpc:batch_ops_apply";
 const NOTES_BATCH_RESULT_PREFIX = "fpc:batch_ops_result:";
 const NOTES_COVERAGE_OPEN_EVENT = "fpc:coverage_open";
 const DIAGRAM_PATHS_INTENT_VERSION = 1;
-
-function readTemplateMode() {
-  if (typeof window === "undefined") return false;
-  try {
-    return String(window.localStorage?.getItem(TEMPLATE_MODE_KEY) || "").trim() === "1";
-  } catch {
-    return false;
-  }
-}
 
 function readCommandMode() {
   if (typeof window === "undefined") return false;
@@ -719,14 +711,6 @@ function logAiOpsTrace(tag, payload = {}) {
     .join(" ");
   // eslint-disable-next-line no-console
   console.debug(`[AI_OPS] ${String(tag || "trace")} ${suffix}`.trim());
-}
-
-function writeTemplateMode(enabled) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage?.setItem(TEMPLATE_MODE_KEY, enabled ? "1" : "0");
-  } catch {
-  }
 }
 
 function shouldLogActorsTrace() {
@@ -1077,6 +1061,7 @@ export default function ProcessStage({
   const toolbarMenuButtonRef = useRef(null);
   const diagramActionBarRef = useRef(null);
   const diagramPathPopoverRef = useRef(null);
+  const diagramHybridToolsPopoverRef = useRef(null);
   const diagramPlanPopoverRef = useRef(null);
   const diagramPlaybackPopoverRef = useRef(null);
   const diagramLayersPopoverRef = useRef(null);
@@ -1088,18 +1073,11 @@ export default function ProcessStage({
   const hybridLayerOverlayRef = useRef(null);
   const hybridV2FileInputRef = useRef(null);
   const hybridLayerDragRef = useRef(null);
-  const hybridLayerCardRefCallbacksRef = useRef({});
-  const hybridLayerCardNodeRefsRef = useRef({});
-  const hybridLayerCardSizesRef = useRef({});
   const hybridLayerMapRef = useRef({});
   const hybridLayerPersistedMapRef = useRef({});
   const hybridAutoFocusGuardRef = useRef("");
   const hybridV2DocRef = useRef(normalizeHybridV2Doc({}));
   const hybridV2PersistedDocRef = useRef(normalizeHybridV2Doc({}));
-  const hybridV2ToolRef = useRef("select");
-  const hybridV2DragRef = useRef(null);
-  const hybridV2ResizeRef = useRef(null);
-  const hybridV2ArrowDraftRef = useRef(null);
   const hybridV2MigrationGuardRef = useRef("");
   const lastDraftXmlHashRef = useRef("");
   const lastAiGenerateIntentKeyRef = useRef("");
@@ -1121,13 +1099,6 @@ export default function ProcessStage({
   const [diffOpen, setDiffOpen] = useState(false);
   const [diffBaseSnapshotId, setDiffBaseSnapshotId] = useState("");
   const [diffTargetSnapshotId, setDiffTargetSnapshotId] = useState("");
-  const [packsOpen, setPacksOpen] = useState(false);
-  const [packSaveOpen, setPackSaveOpen] = useState(false);
-  const [packsBusy, setPacksBusy] = useState(false);
-  const [packsList, setPacksList] = useState([]);
-  const [packTitleDraft, setPackTitleDraft] = useState("");
-  const [packDraft, setPackDraft] = useState(null);
-  const [templatesEnabled, setTemplatesEnabled] = useState(() => readTemplateMode());
   const [commandModeEnabled, setCommandModeEnabled] = useState(() => readCommandMode());
   const [diagramMode, setDiagramMode] = useState(() => readDiagramMode());
   const [qualityProfileId, setQualityProfileId] = useState(() => readQualityProfile());
@@ -1153,6 +1124,7 @@ export default function ProcessStage({
     notes: false,
   });
   const [diagramActionPathOpen, setDiagramActionPathOpen] = useState(false);
+  const [diagramActionHybridToolsOpen, setDiagramActionHybridToolsOpen] = useState(false);
   const [diagramActionPlanOpen, setDiagramActionPlanOpen] = useState(false);
   const [diagramActionPlaybackOpen, setDiagramActionPlaybackOpen] = useState(false);
   const [diagramActionLayersOpen, setDiagramActionLayersOpen] = useState(false);
@@ -1193,13 +1165,9 @@ export default function ProcessStage({
   const [hybridUiPrefs, setHybridUiPrefs] = useState(() => normalizeHybridUiPrefs({}));
   const [hybridPeekActive, setHybridPeekActive] = useState(false);
   const [hybridLayerByElementId, setHybridLayerByElementId] = useState({});
-  const [hybridLayerCardSizes, setHybridLayerCardSizes] = useState({});
   const [hybridLayerActiveElementId, setHybridLayerActiveElementId] = useState("");
   const [hybridV2Doc, setHybridV2Doc] = useState(() => normalizeHybridV2Doc({}));
-  const [hybridV2ToolState, setHybridV2ToolState] = useState("select");
-  const [hybridV2ActiveId, setHybridV2ActiveId] = useState("");
   const [hybridV2BindPickMode, setHybridV2BindPickMode] = useState(false);
-  const [hybridV2ImportNotice, setHybridV2ImportNotice] = useState("");
 
   useEffect(() => {
     setGenBusy(false);
@@ -1219,12 +1187,6 @@ export default function ProcessStage({
     setDiffOpen(false);
     setDiffBaseSnapshotId("");
     setDiffTargetSnapshotId("");
-    setPacksOpen(false);
-    setPackSaveOpen(false);
-    setPacksBusy(false);
-    setPacksList([]);
-    setPackTitleDraft("");
-    setPackDraft(null);
     setCommandInput("");
     setCommandBusy(false);
     setCommandStatus({ kind: "", text: "" });
@@ -1247,6 +1209,7 @@ export default function ProcessStage({
       notes: false,
     });
     setDiagramActionPathOpen(false);
+    setDiagramActionHybridToolsOpen(false);
     setDiagramActionPlanOpen(false);
     setDiagramActionPlaybackOpen(false);
     setDiagramActionLayersOpen(false);
@@ -1286,25 +1249,14 @@ export default function ProcessStage({
     setPlaybackScenarioKey("active");
     setHybridPeekActive(false);
     setHybridLayerActiveElementId("");
-    setHybridLayerCardSizes({});
-    hybridLayerCardRefCallbacksRef.current = {};
-    hybridLayerCardNodeRefsRef.current = {};
-    hybridLayerCardSizesRef.current = {};
     {
       const emptyV2 = normalizeHybridV2Doc({});
       setHybridV2Doc(emptyV2);
       hybridV2DocRef.current = emptyV2;
       hybridV2PersistedDocRef.current = emptyV2;
     }
-    hybridV2DragRef.current = null;
-    hybridV2ResizeRef.current = null;
-    hybridV2ArrowDraftRef.current = null;
     hybridV2MigrationGuardRef.current = "";
-    hybridV2ToolRef.current = "select";
-    setHybridV2ToolState("select");
-    setHybridV2ActiveId("");
     setHybridV2BindPickMode(false);
-    setHybridV2ImportNotice("");
   }, [sid]);
 
   const hasSession = !!sid;
@@ -1475,6 +1427,86 @@ export default function ProcessStage({
       laneName: selectedElementLaneName,
     };
   }, [selectedElementId, selectedElementName, selectedElementType, selectedElementLaneName]);
+  const selectedBpmnElementIds = useMemo(() => {
+    const ids = new Set(
+      toArray(selectedBpmnElement?.selectedIds)
+        .map((row) => toText(row))
+        .filter(Boolean),
+    );
+    if (selectedElementId) ids.add(selectedElementId);
+    return Array.from(ids);
+  }, [selectedBpmnElement?.selectedIds, selectedElementId]);
+  const selectedTemplateNodes = useMemo(() => {
+    if (!selectedBpmnElementIds.length) return [];
+    const byId = new Set(selectedBpmnElementIds);
+    return toArray(draft?.nodes).filter((node) => byId.has(toText(node?.id)));
+  }, [draft?.nodes, selectedBpmnElementIds]);
+  const templateSelectionContext = useMemo(() => ({
+    name: selectedElementName || selectedElementId,
+    primaryName: selectedElementName || selectedElementId,
+    primaryElementId: selectedElementId,
+    sourceSessionId: sid,
+    elementTypes: Array.from(new Set([
+      ...selectedTemplateNodes.map((node) => toText(node?.type)).filter(Boolean),
+      toText(selectedElementType),
+    ].filter(Boolean))),
+    laneNames: Array.from(new Set([
+      ...selectedTemplateNodes
+        .map((node) => toText(node?.laneName || node?.lane_name || node?.lane || node?.role || node?.area))
+        .filter(Boolean),
+      toText(selectedElementLaneName),
+    ].filter(Boolean))),
+  }), [
+    selectedElementId,
+    selectedElementLaneName,
+    selectedElementName,
+    selectedElementType,
+    selectedTemplateNodes,
+    sid,
+  ]);
+  const getSelectedBpmnElementIds = useCallback(() => selectedBpmnElementIds, [selectedBpmnElementIds]);
+  const applyTemplateSelectionIds = useCallback(
+    async (ids) => applyTemplateToDiagram(bpmnRef.current, ids, { label: "Template" }),
+    [],
+  );
+  const templatesStore = useTemplatesStore({
+    userId: toText(user?.id),
+    orgId: workspaceActiveOrgId,
+    canCreateOrgTemplate: !!workspaceActiveOrgId && !!canInviteWorkspaceUsers,
+    hasSession,
+    tab,
+    getSelectedBpmnElementIds,
+    applySelectionIds: applyTemplateSelectionIds,
+    selectionContext: templateSelectionContext,
+    setError: setGenErr,
+    setInfo: setInfoMsg,
+  });
+  const {
+    templatesEnabled,
+    setTemplatesEnabled,
+    pickerOpen: templatesPickerOpen,
+    setPickerOpen: setTemplatesPickerOpen,
+    createOpen: createTemplateOpen,
+    setCreateOpen: setCreateTemplateOpen,
+    busy: templatesBusy,
+    search: templatesSearch,
+    setSearch: setTemplatesSearch,
+    activeScope: templatesScope,
+    setActiveScope: setTemplatesScope,
+    createScope: createTemplateScope,
+    setCreateScope: setCreateTemplateScope,
+    createTitle: createTemplateTitle,
+    setCreateTitle: setCreateTemplateTitle,
+    scopedTemplates,
+    suggestedTemplates,
+    counts: templateCounts,
+    openTemplatesPicker,
+    openCreateTemplateModal,
+    saveCurrentSelectionAsTemplate,
+    reloadTemplates,
+    applyTemplate,
+    removeTemplate,
+  } = templatesStore;
   const nodePathMetaMap = useMemo(
     () => normalizeNodePathMetaMap(asObject(asObject(draft?.bpmn_meta).node_path_meta)),
     [draft?.bpmn_meta],
@@ -1526,30 +1558,6 @@ export default function ProcessStage({
     () => normalizeHybridLayerMap(hybridLayerByElementId),
     [hybridLayerByElementId],
   );
-  const hybridV2DocLive = useMemo(
-    () => normalizeHybridV2Doc(hybridV2Doc),
-    [hybridV2Doc],
-  );
-  const hybridV2LayerById = useMemo(() => {
-    const out = {};
-    hybridV2DocLive.layers.forEach((layerRaw) => {
-      const layer = asObject(layerRaw);
-      const id = toText(layer.id);
-      if (!id) return;
-      out[id] = layer;
-    });
-    return out;
-  }, [hybridV2DocLive]);
-  const hybridV2BindingByHybridId = useMemo(() => {
-    const out = {};
-    hybridV2DocLive.bindings.forEach((bindingRaw) => {
-      const binding = asObject(bindingRaw);
-      const hybridId = toText(binding.hybrid_id || binding.hybridId);
-      if (!hybridId) return;
-      out[hybridId] = binding;
-    });
-    return out;
-  }, [hybridV2DocLive]);
   const hybridLayerItems = useMemo(() => {
     const out = [];
     const seen = new Set();
@@ -1609,7 +1617,6 @@ export default function ProcessStage({
   const {
     hybridViewportSize,
     hybridViewportMatrix,
-    hybridViewportMatrixRef,
     overlayViewbox,
     overlayContainerRect,
     localToDiagram,
@@ -1640,166 +1647,27 @@ export default function ProcessStage({
     localToDiagram,
     getElementBBox,
   });
-  const setHybridLayerCardNode = useCallback((elementIdRaw, node) => {
-    const elementId = toText(elementIdRaw);
-    if (!elementId) return;
-    if (node instanceof HTMLElement) {
-      hybridLayerCardNodeRefsRef.current[elementId] = node;
-      return;
-    }
-    if (hybridLayerCardNodeRefsRef.current[elementId]) delete hybridLayerCardNodeRefsRef.current[elementId];
-  }, []);
-  const getHybridLayerCardRefCallback = useCallback((elementIdRaw) => {
-    const elementId = toText(elementIdRaw);
-    if (!elementId) return () => {};
-    const existing = hybridLayerCardRefCallbacksRef.current[elementId];
-    if (existing) return existing;
-    const next = (node) => {
-      setHybridLayerCardNode(elementId, node);
-    };
-    hybridLayerCardRefCallbacksRef.current[elementId] = next;
-    return next;
-  }, [setHybridLayerCardNode]);
-  const refreshHybridLayerCardSizes = useCallback(() => {
-    const refs = asObject(hybridLayerCardNodeRefsRef.current);
-    const next = { ...asObject(hybridLayerCardSizesRef.current) };
-    let changed = false;
-    Object.keys(next).forEach((elementIdRaw) => {
-      const elementId = toText(elementIdRaw);
-      if (!elementId || refs[elementId] instanceof HTMLElement) return;
-      delete next[elementId];
-      changed = true;
-    });
-    Object.keys(refs).forEach((elementIdRaw) => {
-      const elementId = toText(elementIdRaw);
-      const node = refs[elementId];
-      if (!(node instanceof HTMLElement)) return;
-      const rect = node.getBoundingClientRect?.();
-      const width = Math.max(0, Math.round(Number(rect?.width || node.offsetWidth || 0)));
-      const height = Math.max(0, Math.round(Number(rect?.height || node.offsetHeight || 0)));
-      const prev = asObject(next[elementId]);
-      if (Math.abs(Number(prev.width || 0) - width) > 0.5 || Math.abs(Number(prev.height || 0) - height) > 0.5) {
-        next[elementId] = { width, height };
-        changed = true;
-      }
-    });
-    if (!changed) return;
-    hybridLayerCardSizesRef.current = next;
-    setHybridLayerCardSizes(next);
-  }, []);
-  const hybridLayerRenderRows = useMemo(() => {
-    const width = Number(hybridViewportSize?.width || 0);
-    const height = Number(hybridViewportSize?.height || 0);
-    const hotspotPadding = 16;
-    const minX = hotspotPadding;
-    const minY = hotspotPadding;
-    const maxX = width > 0 ? Math.max(minX, width - hotspotPadding) : Number.POSITIVE_INFINITY;
-    const maxY = height > 0 ? Math.max(minY, height - hotspotPadding) : Number.POSITIVE_INFINITY;
-    const cardPadding = 10;
-    const cardDefaultOffsetX = 14;
-    const cardDefaultOffsetY = 12;
-    const matrix = asObject(hybridViewportMatrix);
-    return hybridLayerItems.map((itemRaw, index) => {
-      const item = asObject(itemRaw);
-      const elementId = toText(item?.elementId);
-      const centerDiagram = asObject(hybridLayerPositions[elementId]);
-      const hasCenter = Number.isFinite(centerDiagram.x) && Number.isFinite(centerDiagram.y);
-      const offset = asObject(hybridLayerByElementId[elementId]);
-      const rawDx = Number(offset.dx || 0);
-      const rawDy = Number(offset.dy || 0);
-      const fallbackScreenX = 92 + ((index % 6) * 36);
-      const fallbackScreenY = 88 + (Math.floor(index / 6) * 30);
-      const fallbackDiagram = matrixToDiagram(matrix, fallbackScreenX, fallbackScreenY);
-      const baseDiagramX = Number(hasCenter ? centerDiagram.x : fallbackDiagram.x);
-      const baseDiagramY = Number(hasCenter ? centerDiagram.y : fallbackDiagram.y);
-      const rawDiagramX = baseDiagramX + Number(hasCenter ? rawDx : 0);
-      const rawDiagramY = baseDiagramY + Number(hasCenter ? rawDy : 0);
-      const rawScreen = matrixToScreen(matrix, rawDiagramX, rawDiagramY);
-      const rawX = Number(rawScreen.x || 0);
-      const rawY = Number(rawScreen.y || 0);
-      const insideViewport = width > 0 && height > 0
-        ? (rawX >= 0 && rawX <= width && rawY >= 0 && rawY <= height)
-        : true;
-      const posX = Number.isFinite(maxX) ? clampNumber(rawX, minX, maxX) : rawX;
-      const posY = Number.isFinite(maxY) ? clampNumber(rawY, minY, maxY) : rawY;
-      const showCard = hybridModeEffective === "edit" || toText(hybridLayerActiveElementId) === elementId;
-      const cardSize = asObject(hybridLayerCardSizes[elementId]);
-      const cardWidth = Math.max(0, Number(cardSize.width || 0));
-      const cardHeight = Math.max(0, Number(cardSize.height || 0));
-      let cardLeft = cardDefaultOffsetX;
-      let cardTop = cardDefaultOffsetY;
-      if (showCard && width > 0 && height > 0 && cardWidth > 0 && cardHeight > 0) {
-        const clampedLeft = clampNumber(posX + cardDefaultOffsetX, cardPadding, Math.max(cardPadding, width - cardWidth - cardPadding));
-        const clampedTop = clampNumber(posY + cardDefaultOffsetY, cardPadding, Math.max(cardPadding, height - cardHeight - cardPadding));
-        cardLeft = Math.round((clampedLeft - posX) * 10) / 10;
-        cardTop = Math.round((clampedTop - posY) * 10) / 10;
-      }
-      return {
-        ...item,
-        elementId,
-        hasCenter,
-        rawDx,
-        rawDy,
-        baseDiagramX,
-        baseDiagramY,
-        rawDiagramX,
-        rawDiagramY,
-        rawX,
-        rawY,
-        posX,
-        posY,
-        cardLeft,
-        cardTop,
-        insideViewport,
-        wasClamped: Math.abs(posX - rawX) > 0.5 || Math.abs(posY - rawY) > 0.5,
-      };
-    });
-  }, [
+  const {
+    getHybridLayerCardRefCallback,
+    hybridLayerRenderRows,
+    hybridLayerMissingBindingIds,
+    hybridLayerVisibilityStats,
+    hybridLayerCounts,
+  } = useHybridLayerViewportController({
+    resetKey: sid,
+    tab,
+    hybridVisible,
+    hybridModeEffective,
     hybridLayerItems,
     hybridLayerPositions,
     hybridLayerByElementId,
     hybridViewportSize,
     hybridViewportMatrix,
-    hybridModeEffective,
     hybridLayerActiveElementId,
-    hybridLayerCardSizes,
-  ]);
-  const hybridLayerMissingBindingIds = useMemo(
-    () => hybridLayerRenderRows.filter((row) => !row?.hasCenter).map((row) => toText(row?.elementId)).filter(Boolean),
-    [hybridLayerRenderRows],
-  );
-  const hybridLayerVisibilityStats = useMemo(() => {
-    const out = {
-      total: Number(hybridLayerRenderRows.length || 0),
-      ready: 0,
-      incomplete: 0,
-      none: 0,
-      validBindings: 0,
-      missingBindings: 0,
-      insideViewport: 0,
-      outsideViewport: 0,
-    };
-    hybridLayerRenderRows.forEach((rowRaw) => {
-      const row = asObject(rowRaw);
-      const status = toText(row?.status).toLowerCase();
-      if (status === "ready") out.ready += 1;
-      else if (status === "incomplete") out.incomplete += 1;
-      else out.none += 1;
-      if (row?.hasCenter) out.validBindings += 1;
-      else out.missingBindings += 1;
-      if (row?.insideViewport) out.insideViewport += 1;
-      else out.outsideViewport += 1;
-    });
-    return out;
-  }, [hybridLayerRenderRows]);
-  const hybridLayerCounts = useMemo(() => {
-    return {
-      total: Number(hybridLayerVisibilityStats.total || 0),
-      ready: Number(hybridLayerVisibilityStats.ready || 0),
-      incomplete: Number(hybridLayerVisibilityStats.incomplete || 0),
-      none: Number(hybridLayerVisibilityStats.none || 0),
-    };
-  }, [hybridLayerVisibilityStats]);
+    matrixToDiagram,
+    matrixToScreen,
+    toText,
+  });
   const { persistHybridLayerMap, persistHybridV2Doc } = useSessionMetaPersist({
     sid,
     isLocal,
@@ -1814,182 +1682,6 @@ export default function ProcessStage({
     normalizeHybridV2Doc,
     docToComparableJson,
   });
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    if (tab !== "diagram" || !hybridVisible) return undefined;
-    const raf = window.requestAnimationFrame(() => {
-      refreshHybridLayerCardSizes();
-    });
-    return () => {
-      window.cancelAnimationFrame(raf);
-    };
-  }, [
-    tab,
-    hybridVisible,
-    hybridModeEffective,
-    hybridLayerActiveElementId,
-    hybridViewportSize.width,
-    hybridViewportSize.height,
-    hybridLayerRenderRows.length,
-    refreshHybridLayerCardSizes,
-  ]);
-  const hybridV2Renderable = useMemo(() => {
-    const matrix = asObject(hybridViewportMatrix);
-    const layersById = asObject(hybridV2LayerById);
-    const scaleX = Math.max(0.15, Math.hypot(Number(matrix.a || 1), Number(matrix.b || 0)));
-    const scaleY = Math.max(0.15, Math.hypot(Number(matrix.c || 0), Number(matrix.d || 1)));
-    const sourceById = {};
-    hybridV2DocLive.elements.forEach((elementRaw) => {
-      const element = asObject(elementRaw);
-      const id = toText(element.id);
-      if (!id) return;
-      const layerId = toText(element.layer_id);
-      const layer = asObject(layersById[layerId]);
-      if (!hybridVisible || layer.visible === false || element.visible === false) return;
-      sourceById[id] = {
-        ...element,
-        id,
-        layer,
-      };
-    });
-    const visibleCache = {};
-    function isVisibleWithAncestors(elementIdRaw, seen = new Set()) {
-      const elementId = toText(elementIdRaw);
-      if (!elementId) return false;
-      if (Object.prototype.hasOwnProperty.call(visibleCache, elementId)) return !!visibleCache[elementId];
-      if (seen.has(elementId)) return false;
-      seen.add(elementId);
-      const row = asObject(sourceById[elementId]);
-      if (!row.id || row.visible === false || row.layer?.visible === false) {
-        visibleCache[elementId] = false;
-        return false;
-      }
-      const parentId = toText(row.parent_id || row.parentId);
-      if (!parentId) {
-        visibleCache[elementId] = true;
-        return true;
-      }
-      const parent = asObject(sourceById[parentId]);
-      if (!parent.id) {
-        visibleCache[elementId] = false;
-        return false;
-      }
-      if (!isVisibleWithAncestors(parentId, seen)) {
-        visibleCache[elementId] = false;
-        return false;
-      }
-      if ((parent.is_container === true || toText(parent.type) === "container") && parent.visible === false) {
-        visibleCache[elementId] = false;
-        return false;
-      }
-      visibleCache[elementId] = true;
-      return true;
-    }
-    function elementDepth(elementIdRaw, seen = new Set()) {
-      const elementId = toText(elementIdRaw);
-      if (!elementId || seen.has(elementId)) return 0;
-      seen.add(elementId);
-      const row = asObject(sourceById[elementId]);
-      const parentId = toText(row.parent_id || row.parentId);
-      if (!parentId || !sourceById[parentId]) return 0;
-      return 1 + elementDepth(parentId, seen);
-    }
-    const elements = [];
-    const elementsById = {};
-    Object.keys(sourceById).forEach((elementId) => {
-      if (!isVisibleWithAncestors(elementId)) return;
-      const element = asObject(sourceById[elementId]);
-      const x = Number(element.x || 0);
-      const y = Number(element.y || 0);
-      const w = Number(element.w || 0);
-      const h = Number(element.h || 0);
-      const p1 = matrixToScreen(matrix, x, y);
-      const p2 = matrixToScreen(matrix, x + w, y + h);
-      const left = Math.min(Number(p1.x || 0), Number(p2.x || 0));
-      const top = Math.min(Number(p1.y || 0), Number(p2.y || 0));
-      const width = Math.max(18, Math.abs(Number(p2.x || 0) - Number(p1.x || 0)));
-      const height = Math.max(14, Math.abs(Number(p2.y || 0) - Number(p1.y || 0)));
-      const center = matrixToScreen(matrix, x + (w / 2), y + (h / 2));
-      const normalized = {
-        ...element,
-        id: elementId,
-        layerOpacity: Math.max(0.1, Math.min(1, Number(asObject(element.layer).opacity || 1))),
-        left,
-        top,
-        width,
-        height,
-        centerX: Number(center.x || 0),
-        centerY: Number(center.y || 0),
-        scaleX,
-        scaleY,
-        depth: elementDepth(elementId),
-      };
-      elements.push(normalized);
-      elementsById[elementId] = normalized;
-    });
-    elements.sort((aRaw, bRaw) => {
-      const a = asObject(aRaw);
-      const b = asObject(bRaw);
-      const da = Number(a.depth || 0);
-      const db = Number(b.depth || 0);
-      if (da !== db) return da - db;
-      const ac = a.is_container === true || toText(a.type) === "container";
-      const bc = b.is_container === true || toText(b.type) === "container";
-      if (ac !== bc) return ac ? -1 : 1;
-      return toText(a.id).localeCompare(toText(b.id), "ru");
-    });
-    const edges = [];
-    hybridV2DocLive.edges.forEach((edgeRaw) => {
-      const edge = asObject(edgeRaw);
-      const id = toText(edge.id);
-      if (!id) return;
-      const layerId = toText(edge.layer_id);
-      const layer = asObject(layersById[layerId]);
-      if (!hybridVisible || layer.visible === false || edge.visible === false) return;
-      const fromId = toText(asObject(edge.from).element_id);
-      const toId = toText(asObject(edge.to).element_id);
-      const fromEl = asObject(elementsById[fromId]);
-      const toEl = asObject(elementsById[toId]);
-      if (!fromEl.id || !toEl.id) return;
-      const points = [];
-      points.push({ x: Number(fromEl.centerX || 0), y: Number(fromEl.centerY || 0) });
-      asArray(edge.waypoints).forEach((pointRaw) => {
-        const point = asObject(pointRaw);
-        const p = matrixToScreen(matrix, Number(point.x || 0), Number(point.y || 0));
-        points.push({ x: Number(p.x || 0), y: Number(p.y || 0) });
-      });
-      points.push({ x: Number(toEl.centerX || 0), y: Number(toEl.centerY || 0) });
-      const d = points.map((pt, idx) => `${idx === 0 ? "M" : "L"} ${Math.round(pt.x * 10) / 10} ${Math.round(pt.y * 10) / 10}`).join(" ");
-      edges.push({
-        ...edge,
-        id,
-        layer,
-        layerOpacity: Math.max(0.1, Math.min(1, Number(layer.opacity || 1))),
-        from: fromEl,
-        to: toEl,
-        points,
-        d,
-      });
-    });
-    return { elements, edges, elementsById };
-  }, [hybridV2DocLive, hybridV2LayerById, hybridViewportMatrix, hybridVisible]);
-  const hybridV2TotalCount = Number(asArray(hybridV2DocLive?.elements).length || 0) + Number(asArray(hybridV2DocLive?.edges).length || 0);
-  const hybridV2HiddenCount = useMemo(() => {
-    const layerById = asObject(hybridV2LayerById);
-    let hidden = 0;
-    asArray(hybridV2DocLive?.elements).forEach((rowRaw) => {
-      const row = asObject(rowRaw);
-      const layer = asObject(layerById[toText(row.layer_id)]);
-      if (layer.visible === false || row.visible === false) hidden += 1;
-    });
-    asArray(hybridV2DocLive?.edges).forEach((rowRaw) => {
-      const row = asObject(rowRaw);
-      const layer = asObject(layerById[toText(row.layer_id)]);
-      if (layer.visible === false || row.visible === false) hidden += 1;
-    });
-    return hidden;
-  }, [hybridV2DocLive, hybridV2LayerById]);
-  const hybridTotalCount = Math.max(Number(hybridLayerCounts.total || 0), hybridV2TotalCount);
   useEffect(() => {
     const incoming = normalizeHybridLayerMap(hybridLayerMapFromDraft);
     const incomingSig = serializeHybridLayerMap(incoming);
@@ -2022,9 +1714,6 @@ export default function ProcessStage({
     setHybridV2Doc(incoming);
     hybridV2DocRef.current = incoming;
     hybridV2PersistedDocRef.current = incoming;
-    const incomingTool = toText(asObject(incoming.view).tool || "select") || "select";
-    hybridV2ToolRef.current = incomingTool;
-    setHybridV2ToolState(incomingTool);
   }, [hybridV2FromDraft]);
 
   useEffect(() => {
@@ -2328,6 +2017,7 @@ export default function ProcessStage({
     playbackCanRun,
     playbackIndexClamped,
     playbackCurrentEvent,
+    playbackHighlightedBpmnIds,
     markPlaybackOverlayInteraction,
     handlePlaybackGatewayDecision,
     handlePlaybackPrev,
@@ -2351,27 +2041,115 @@ export default function ProcessStage({
     playbackScenarioLabel,
     executionPlanPathId: executionPlanSource?.pathId,
   });
-  const playbackActiveBpmnIds = useMemo(() => {
-    const event = asObject(playbackCurrentEvent);
-    const ids = new Set();
-    [
-      event?.flowId,
-      event?.nodeId,
-      event?.gatewayId,
-      event?.subprocessId,
-      event?.fromId,
-      event?.toId,
-      event?.linkTargetId,
-    ].forEach((idRaw) => {
-      const id = toText(idRaw);
-      if (id) ids.add(id);
+  const applyHybridV2Delete = useCallback((idsRaw) => {
+    const prev = normalizeHybridV2Doc(hybridV2DocRef.current);
+    const result = deleteHybridIds(prev, idsRaw);
+    const next = normalizeHybridV2Doc(result.nextHybridV2);
+    const changed = docToComparableJson(prev) !== docToComparableJson(next);
+    if (!changed) return false;
+    hybridV2DocRef.current = next;
+    setHybridV2Doc(next);
+    markPlaybackOverlayInteraction({
+      stage: "hybrid_v2_delete_item",
+      count: Number(asArray(result.deleted.elements).length || 0) + Number(asArray(result.deleted.edges).length || 0),
+      cleanedBindingsCount: Number(result.cleanedBindingsCount || 0),
     });
-    return ids;
-  }, [playbackCurrentEvent]);
+    setHybridV2BindPickMode(false);
+    void persistHybridV2Doc(next, { source: "hybrid_v2_delete_item" });
+    return changed;
+  }, [markPlaybackOverlayInteraction, persistHybridV2Doc]);
+  const hybridTools = useHybridToolsController({
+    hybridDoc: hybridV2Doc,
+    setHybridDoc: setHybridV2Doc,
+    hybridDocRef: hybridV2DocRef,
+    hybridVisible,
+    modeEffective: hybridModeEffective,
+    uiLocked: hybridUiPrefs.lock,
+    hybridViewportMatrix,
+    clientToDiagram,
+    overlayRect: overlayContainerRect,
+    persistHybridV2Doc,
+    sid,
+    markPlaybackOverlayInteraction,
+    bpmnRef,
+    setBindPickMode: setHybridV2BindPickMode,
+    setGenErr,
+    setInfoMsg,
+    downloadTextFile,
+  });
+  const hybridSelection = useHybridSelectionController({
+    enabled: tab === "diagram" && hybridVisible,
+    modeEffective: hybridModeEffective,
+    uiLocked: hybridUiPrefs.lock,
+    overlayRect: overlayContainerRect,
+    renderable: hybridTools.renderable,
+    docLive: hybridTools.docLive,
+    isEditableTarget,
+    onDeleteIds: applyHybridV2Delete,
+  });
+  const hybridV2DocLive = hybridTools.docLive;
+  const hybridV2LayerById = hybridTools.layerById;
+  const hybridV2BindingByHybridId = hybridTools.bindingByHybridId;
+  const hybridV2Renderable = hybridTools.renderable;
+  const hybridV2TotalCount = hybridTools.totalCount;
+  const hybridV2HiddenCount = hybridTools.hiddenCount;
+  const hybridV2ToolState = hybridTools.toolState;
+  const hybridV2ActiveId = hybridSelection.primarySelectedId;
+  const hybridV2SelectedIds = hybridSelection.selectedIds;
+  const hybridV2SelectedIdSet = hybridSelection.selectedIdSet;
+  const hybridV2ImportNotice = hybridTools.importNotice;
+  const setHybridV2ActiveId = hybridSelection.selectOnly;
+  const deleteSelectedHybridIds = hybridSelection.deleteSelected;
+  const hybridTotalCount = Math.max(Number(hybridLayerCounts.total || 0), hybridV2TotalCount);
+  const setHybridV2Tool = hybridTools.setTool;
+  const hybridToolsUiState = useMemo(() => ({
+    visible: hybridVisible,
+    mode: hybridModeEffective,
+    tool: hybridV2ToolState,
+  }), [hybridModeEffective, hybridV2ToolState, hybridVisible]);
+  const setHybridToolsMode = useCallback((modeRaw) => {
+    const nextState = applyHybridPaletteModeIntent(hybridToolsUiState, modeRaw);
+    showHybridLayer();
+    setHybridLayerMode(nextState.mode);
+  }, [hybridToolsUiState, setHybridLayerMode, showHybridLayer]);
+  const selectHybridPaletteTool = useCallback((toolRaw) => {
+    const nextState = applyHybridPaletteToolIntent(hybridToolsUiState, toolRaw);
+    showHybridLayer();
+    if (nextState.mode === "edit") {
+      setHybridLayerMode("edit");
+    }
+    setHybridV2Tool(nextState.tool);
+  }, [hybridToolsUiState, setHybridLayerMode, setHybridV2Tool, showHybridLayer]);
+  const bindActiveHybridV2ToBpmn = useCallback((targetBpmnIdRaw, hybridIdRaw = "") => {
+    hybridTools.bindHybridToBpmn(targetBpmnIdRaw, hybridIdRaw || hybridSelection.primarySelectedId);
+  }, [hybridSelection.primarySelectedId, hybridTools]);
+  const goToActiveHybridBinding = useCallback(() => {
+    hybridTools.goToHybridBinding(hybridSelection.primarySelectedId);
+  }, [hybridSelection.primarySelectedId, hybridTools]);
+  const exportHybridV2Drawio = hybridTools.exportDrawio;
+  const handleHybridV2ImportFile = hybridTools.importFile;
+  const handleHybridV2ElementPointerDown = useCallback((event, elementIdRaw) => {
+    hybridTools.onElementPointerDown(event, elementIdRaw, hybridSelection);
+  }, [hybridSelection, hybridTools]);
+  const handleHybridV2ResizeHandlePointerDown = useCallback((event, elementIdRaw, handleRaw) => {
+    hybridTools.onResizeHandlePointerDown(event, elementIdRaw, handleRaw, hybridSelection);
+  }, [hybridSelection, hybridTools]);
+  const handleHybridV2OverlayPointerDown = useCallback((event) => {
+    hybridTools.onOverlayPointerDown(event, hybridSelection);
+  }, [hybridSelection, hybridTools]);
+  const handleHybridV2OverlayContextMenu = useCallback((event) => {
+    hybridTools.onOverlayContextMenu(event, hybridSelection.hitTestAtClientPoint);
+  }, [hybridSelection.hitTestAtClientPoint, hybridTools]);
+  const handleHybridV2ElementContextMenu = useCallback((event, elementIdRaw) => {
+    if (!hybridV2SelectedIdSet.has(toText(elementIdRaw))) {
+      hybridSelection.selectOnly(elementIdRaw);
+    }
+    hybridTools.onElementContextMenu(event, elementIdRaw);
+  }, [hybridSelection, hybridTools, hybridV2SelectedIdSet]);
   const hybridV2PlaybackHighlightedIds = useMemo(() => {
-    const byBpmnId = getHybridBindingsByBpmnId(hybridV2DocLive);
+    const byBpmnId = hybridTools.bindingByBpmnId;
     const out = new Set();
-    playbackActiveBpmnIds.forEach((bpmnId) => {
+    playbackHighlightedBpmnIds.forEach((bpmnId) => {
       asArray(byBpmnId[bpmnId]).forEach((bindingRaw) => {
         const binding = asObject(bindingRaw);
         const hybridId = toText(binding.hybrid_id || binding.hybridId);
@@ -2379,10 +2157,10 @@ export default function ProcessStage({
       });
     });
     return out;
-  }, [hybridV2DocLive, playbackActiveBpmnIds]);
+  }, [hybridTools.bindingByBpmnId, playbackHighlightedBpmnIds]);
   useEffect(() => {
     if (tab !== "diagram" || !hybridVisible) return;
-    const activeIds = Array.from(playbackActiveBpmnIds);
+    const activeIds = Array.from(playbackHighlightedBpmnIds);
     if (!activeIds.length) return;
     const nextHybridId = activeIds.find((bpmnId) => !!asObject(hybridLayerMapLive)[toText(bpmnId)]);
     if (!nextHybridId) return;
@@ -2390,7 +2168,46 @@ export default function ProcessStage({
       const prev = toText(prevRaw);
       return prev === nextHybridId ? prev : nextHybridId;
     });
-  }, [tab, hybridVisible, playbackActiveBpmnIds, hybridLayerMapLive]);
+  }, [tab, hybridVisible, playbackHighlightedBpmnIds, hybridLayerMapLive]);
+  useDiagramActionPopovers({
+    toolbarMenuOpen,
+    setToolbarMenuOpen,
+    diagramActionPathOpen,
+    setDiagramActionPathOpen,
+    diagramActionHybridToolsOpen,
+    setDiagramActionHybridToolsOpen,
+    diagramActionPlanOpen,
+    setDiagramActionPlanOpen,
+    diagramActionPlaybackOpen,
+    setDiagramActionPlaybackOpen,
+    diagramActionLayersOpen,
+    setDiagramActionLayersOpen,
+    diagramActionRobotMetaOpen,
+    setDiagramActionRobotMetaOpen,
+    robotMetaListOpen,
+    setRobotMetaListOpen,
+    setRobotMetaListSearch,
+    diagramActionQualityOpen,
+    setDiagramActionQualityOpen,
+    diagramActionOverflowOpen,
+    setDiagramActionOverflowOpen,
+    toolbarMenuRef,
+    toolbarMenuButtonRef,
+    diagramActionBarRef,
+    diagramPathPopoverRef,
+    diagramHybridToolsPopoverRef,
+    diagramPlanPopoverRef,
+    diagramPlaybackPopoverRef,
+    diagramLayersPopoverRef,
+    diagramRobotMetaPopoverRef,
+    diagramRobotMetaListRef,
+    diagramQualityPopoverRef,
+    diagramOverflowPopoverRef,
+    hybridLayerOverlayRef,
+    playbackOverlayClickGuardRef,
+    logPlaybackDebug,
+    toText,
+  });
   const aiGenerateGate = useMemo(
     () => getAiGenerateGate({
       hasSession,
@@ -2947,28 +2764,10 @@ export default function ProcessStage({
     return seq ? `${tier} · ${seq}` : tier;
   }, [pathHighlightTier, pathHighlightSequenceKey]);
   const snapshotProjectId = String(draft?.project_id || draft?.projectId || activeProjectId || "").trim();
-  const packScope = String(snapshotProjectId || "global").trim() || "global";
-  const packStorageKey = buildPackStorageKey({ scope: packScope });
   const previewSnapshot = useMemo(
     () => asArray(versionsList).find((item) => String(item?.id || "") === String(previewSnapshotId || "")) || null,
     [versionsList, previewSnapshotId],
   );
-  const suggestedPacks = useMemo(() => {
-    if (!templatesEnabled || !selectedElementId) return [];
-    return suggestBpmnPacks(
-      packsList,
-      {
-        id: selectedElementId,
-        name: selectedElementName,
-        type: selectedElementType,
-        laneName: selectedElementLaneName,
-      },
-      {
-        max: 3,
-        threshold: 0.2,
-      },
-    );
-  }, [templatesEnabled, selectedElementId, selectedElementName, selectedElementType, selectedElementLaneName, packsList]);
 
   function formatSnapshotTs(ts) {
     const n = Number(ts || 0);
@@ -3238,128 +3037,6 @@ export default function ProcessStage({
     setDiffBaseSnapshotId(baseId);
     setDiffTargetSnapshotId(targetId);
     setDiffOpen(true);
-  }
-
-  const refreshPacks = useCallback(async () => {
-    const list = await listBpmnPacks({ scope: packScope });
-    setPacksList(asArray(list));
-    // eslint-disable-next-line no-console
-    console.debug(`UI_PACKS_LOAD sid=${sid || "-"} key="${packStorageKey}" count=${asArray(list).length}`);
-  }, [sid, packScope, packStorageKey]);
-
-  async function openPackLibrary() {
-    setPacksOpen(true);
-    setPacksBusy(true);
-    setGenErr("");
-    try {
-      await refreshPacks();
-    } finally {
-      setPacksBusy(false);
-    }
-  }
-
-  async function openSavePackModal() {
-    if (!sid || tab !== "diagram") {
-      setGenErr("Откройте Diagram и выберите элементы для сохранения шаблона.");
-      return;
-    }
-    setPacksBusy(true);
-    setGenErr("");
-    setInfoMsg("");
-    try {
-      const captured = await Promise.resolve(bpmnRef.current?.captureTemplatePack?.({}));
-      if (!captured?.ok || !captured?.pack) {
-        setGenErr(shortErr(captured?.error || "Не удалось собрать фрагмент из выделения."));
-        return;
-      }
-      setPackDraft(captured.pack);
-      setPackTitleDraft(String(captured?.pack?.title || "Новый шаблон"));
-      setPackSaveOpen(true);
-    } catch (error) {
-      setGenErr(shortErr(error?.message || error || "Не удалось открыть сохранение шаблона."));
-    } finally {
-      setPacksBusy(false);
-    }
-  }
-
-  async function saveTemplatePack() {
-    const draftPack = packDraft && typeof packDraft === "object" ? packDraft : null;
-    if (!draftPack) {
-      setGenErr("Нет данных шаблона для сохранения.");
-      return;
-    }
-    const title = String(packTitleDraft || draftPack.title || "").trim();
-    if (!title) {
-      setGenErr("Укажите название шаблона.");
-      return;
-    }
-    setPacksBusy(true);
-    setGenErr("");
-    setInfoMsg("");
-    try {
-      const saved = await saveBpmnPack({
-        ...draftPack,
-        scope: packScope,
-        title,
-      });
-      if (!saved?.ok) {
-        setGenErr(shortErr(saved?.error || "Не удалось сохранить шаблон."));
-        return;
-      }
-      setInfoMsg(`Шаблон сохранён: ${title}.`);
-      setPackSaveOpen(false);
-      setPackDraft(null);
-      setPackTitleDraft("");
-      await refreshPacks();
-    } catch (error) {
-      setGenErr(shortErr(error?.message || error || "Не удалось сохранить шаблон."));
-    } finally {
-      setPacksBusy(false);
-    }
-  }
-
-  async function insertTemplatePack(pack, mode = "after") {
-    if (!sid || tab !== "diagram") {
-      setGenErr("Откройте Diagram и выберите шаг-якорь для вставки.");
-      return;
-    }
-    if (!pack || typeof pack !== "object") {
-      setGenErr("Шаблон не найден.");
-      return;
-    }
-    setPacksBusy(true);
-    setGenErr("");
-    setInfoMsg("");
-    try {
-      const inserted = await Promise.resolve(bpmnRef.current?.insertTemplatePack?.({ pack, mode }));
-      if (!inserted?.ok) {
-        setGenErr(shortErr(inserted?.error || "Не удалось вставить шаблон."));
-        return;
-      }
-      setInfoMsg(`Шаблон вставлен (${mode === "between" ? "между" : "после"}).`);
-      setPacksOpen(false);
-    } catch (error) {
-      setGenErr(shortErr(error?.message || error || "Не удалось вставить шаблон."));
-    } finally {
-      setPacksBusy(false);
-    }
-  }
-
-  async function removeTemplatePack(packId) {
-    const id = String(packId || "").trim();
-    if (!id) return;
-    setPacksBusy(true);
-    setGenErr("");
-    try {
-      const removed = await deleteBpmnPack({ scope: packScope, packId: id });
-      if (!removed?.ok) {
-        setGenErr("Не удалось удалить шаблон.");
-        return;
-      }
-      await refreshPacks();
-    } finally {
-      setPacksBusy(false);
-    }
   }
 
   function pushCommandHistory(commandText) {
@@ -3966,15 +3643,6 @@ export default function ProcessStage({
   }, [diffOpen, versionsList, diffBaseSnapshotId, diffTargetSnapshotId]);
 
   useEffect(() => {
-    if (!packsOpen || !sid) return;
-    void refreshPacks();
-  }, [packsOpen, sid, refreshPacks]);
-
-  useEffect(() => {
-    writeTemplateMode(templatesEnabled);
-  }, [templatesEnabled]);
-
-  useEffect(() => {
     writeCommandMode(commandModeEnabled);
   }, [commandModeEnabled]);
 
@@ -4047,6 +3715,7 @@ export default function ProcessStage({
   useEffect(() => {
     setToolbarMenuOpen(false);
     setDiagramActionPathOpen(false);
+    setDiagramActionHybridToolsOpen(false);
     setDiagramActionLayersOpen(false);
     setDiagramActionRobotMetaOpen(false);
     setRobotMetaListOpen(false);
@@ -4108,7 +3777,7 @@ export default function ProcessStage({
     });
     setHybridV2Doc(migrated);
     hybridV2DocRef.current = migrated;
-    setHybridV2ImportNotice("Migrated v1 -> v2");
+    hybridTools.setImportNotice("Migrated v1 -> v2");
     void persistHybridV2Doc(migrated, { source: "hybrid_v2_migrate_v1" });
   }, [draft?.bpmn_meta, hybridLayerMapFromDraft, readHybridElementAnchor, sid]);
 
@@ -4156,6 +3825,29 @@ export default function ProcessStage({
     if (typeof window === "undefined") return undefined;
     const onKeyDown = (event) => {
       if (isEditableTarget(event.target)) return;
+      if (tab === "diagram" && diagramActionHybridToolsOpen && !event.repeat) {
+        const key = String(event?.key || "");
+        if (key === "1") {
+          event.preventDefault();
+          selectHybridPaletteTool("select");
+          return;
+        }
+        if (key === "2") {
+          event.preventDefault();
+          selectHybridPaletteTool("rect");
+          return;
+        }
+        if (key === "3") {
+          event.preventDefault();
+          selectHybridPaletteTool("text");
+          return;
+        }
+        if (key === "4") {
+          event.preventDefault();
+          selectHybridPaletteTool("container");
+          return;
+        }
+      }
       if (String(event?.key || "").toLowerCase() === "h" && !event.repeat) {
         if (!hybridUiPrefs.visible) {
           setHybridPeekActive(true);
@@ -4165,13 +3857,9 @@ export default function ProcessStage({
       if (String(event?.key || "") === "Escape" && hybridModeEffective === "edit") {
         setHybridUiPrefs((prev) => applyHybridModeTransition(prev, "view"));
         setHybridV2BindPickMode(false);
-        hybridV2ArrowDraftRef.current = null;
+        setDiagramActionHybridToolsOpen(false);
+        hybridTools.cancelTransientState();
         markPlaybackOverlayInteraction({ stage: "hybrid_edit_escape" });
-      }
-      if ((String(event?.key || "") === "Delete" || String(event?.key || "") === "Backspace") && hybridModeEffective === "edit") {
-        if (isEditableTarget(event.target)) return;
-        event.preventDefault();
-        removeActiveHybridV2Item();
       }
     };
     const onKeyUp = (event) => {
@@ -4186,7 +3874,7 @@ export default function ProcessStage({
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [hybridUiPrefs.visible, hybridPeekActive, hybridModeEffective, hybridV2ActiveId]);
+  }, [diagramActionHybridToolsOpen, hybridUiPrefs.visible, hybridPeekActive, hybridModeEffective, hybridTools, markPlaybackOverlayInteraction, selectHybridPaletteTool, tab]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -4195,7 +3883,7 @@ export default function ProcessStage({
       const state = asObject(hybridLayerDragRef.current);
       const elementId = toText(state?.elementId);
       if (!elementId) return;
-      const pointer = resolveHybridPointerToDiagram(event);
+      const pointer = clientToDiagram(event?.clientX, event?.clientY);
       if (!pointer) return;
       const dx = Number(pointer.x || 0) - Number(state.startX || 0);
       const dy = Number(pointer.y || 0) - Number(state.startY || 0);
@@ -4224,88 +3912,6 @@ export default function ProcessStage({
       window.removeEventListener("mouseup", onUp);
     };
   }, [hybridModeEffective, draft?.bpmn_meta, isLocal, onSessionSync, sid]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    if (hybridModeEffective !== "edit" || hybridUiPrefs.lock) return undefined;
-    const onMove = (event) => {
-      const drag = asObject(hybridV2DragRef.current);
-      const resize = asObject(hybridV2ResizeRef.current);
-      if (!drag.id && !resize.id) return;
-      const point = resolveHybridPointerToDiagram(event);
-      if (!point) return;
-      if (drag.id) {
-        updateHybridV2Doc((prevRaw) => {
-          const prev = normalizeHybridV2Doc(prevRaw);
-          const nextElements = asArray(prev.elements).map((rowRaw) => {
-            const row = asObject(rowRaw);
-            if (toText(row.id) !== toText(drag.id)) return row;
-            return {
-              ...row,
-              x: Math.round((Number(drag.baseX || row.x || 0) + (Number(point.x || 0) - Number(drag.startX || 0))) * 10) / 10,
-              y: Math.round((Number(drag.baseY || row.y || 0) + (Number(point.y || 0) - Number(drag.startY || 0))) * 10) / 10,
-            };
-          });
-          return { ...prev, elements: nextElements };
-        }, "hybrid_v2_drag_move");
-      } else if (resize.id) {
-        updateHybridV2Doc((prevRaw) => {
-          const prev = normalizeHybridV2Doc(prevRaw);
-          const nextElements = asArray(prev.elements).map((rowRaw) => {
-            const row = asObject(rowRaw);
-            if (toText(row.id) !== toText(resize.id)) return row;
-            let x = Number(resize.baseX || row.x || 0);
-            let y = Number(resize.baseY || row.y || 0);
-            let w = Number(resize.baseW || row.w || 0);
-            let h = Number(resize.baseH || row.h || 0);
-            const dx = Number(point.x || 0) - Number(resize.startX || 0);
-            const dy = Number(point.y || 0) - Number(resize.startY || 0);
-            const handle = toText(resize.handle).toLowerCase();
-            if (handle.includes("e")) w = Number(resize.baseW || 0) + dx;
-            if (handle.includes("s")) h = Number(resize.baseH || 0) + dy;
-            if (handle.includes("w")) {
-              w = Number(resize.baseW || 0) - dx;
-              x = Number(resize.baseX || 0) + dx;
-            }
-            if (handle.includes("n")) {
-              h = Number(resize.baseH || 0) - dy;
-              y = Number(resize.baseY || 0) + dy;
-            }
-            if (w < 36) {
-              if (handle.includes("w")) x -= (36 - w);
-              w = 36;
-            }
-            if (h < 20) {
-              if (handle.includes("n")) y -= (20 - h);
-              h = 20;
-            }
-            return {
-              ...row,
-              x: Math.round(x * 10) / 10,
-              y: Math.round(y * 10) / 10,
-              w: Math.round(w * 10) / 10,
-              h: Math.round(h * 10) / 10,
-            };
-          });
-          return { ...prev, elements: nextElements };
-        }, "hybrid_v2_resize_move");
-      }
-    };
-    const onUp = () => {
-      const hadDrag = !!asObject(hybridV2DragRef.current).id;
-      const hadResize = !!asObject(hybridV2ResizeRef.current).id;
-      hybridV2DragRef.current = null;
-      hybridV2ResizeRef.current = null;
-      if (!hadDrag && !hadResize) return;
-      void persistHybridV2Doc(hybridV2DocRef.current, { source: hadResize ? "hybrid_v2_resize_end" : "hybrid_v2_drag_end" });
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-  }, [hybridModeEffective, hybridUiPrefs.lock, sid, isLocal]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -4355,111 +3961,6 @@ export default function ProcessStage({
   }, [hybridModeEffective, hybridUiPrefs.lock, selectedElementId, selectedElementType]);
 
   useEffect(() => {
-    if (!toolbarMenuOpen) return undefined;
-    const onPointerDown = (event) => {
-      const target = event?.target;
-      const menuEl = toolbarMenuRef.current;
-      const btnEl = toolbarMenuButtonRef.current;
-      const insideMenu = !!(menuEl && target instanceof Node && menuEl.contains(target));
-      const insideBtn = !!(btnEl && target instanceof Node && btnEl.contains(target));
-      if (insideMenu || insideBtn) return;
-      setToolbarMenuOpen(false);
-    };
-    const onKeyDown = (event) => {
-      if (event.key !== "Escape") return;
-      setToolbarMenuOpen(false);
-    };
-    window.addEventListener("mousedown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("mousedown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [toolbarMenuOpen]);
-
-  useEffect(() => {
-    if (!diagramActionPathOpen
-      && !diagramActionPlanOpen
-      && !diagramActionPlaybackOpen
-      && !diagramActionLayersOpen
-      && !diagramActionRobotMetaOpen
-      && !diagramActionQualityOpen
-      && !diagramActionOverflowOpen
-      && !robotMetaListOpen) return undefined;
-    const onPointerDown = (event) => {
-      const target = event?.target;
-      if (playbackOverlayClickGuardRef.current) {
-        logPlaybackDebug("outside_click_ignored", {
-          reason: "playback_overlay_guard",
-          targetClass: toText(target?.className),
-        });
-        return;
-      }
-      if (target instanceof Element && target.closest?.("[data-playback-overlay='gateway']")) {
-        logPlaybackDebug("outside_click_ignored", {
-          reason: "playback_overlay_node",
-          targetClass: toText(target?.className),
-        });
-        return;
-      }
-      const refs = [
-        diagramActionBarRef.current,
-        diagramPathPopoverRef.current,
-        diagramPlanPopoverRef.current,
-        diagramPlaybackPopoverRef.current,
-        diagramLayersPopoverRef.current,
-        diagramRobotMetaPopoverRef.current,
-        diagramRobotMetaListRef.current,
-        diagramQualityPopoverRef.current,
-        diagramOverflowPopoverRef.current,
-        hybridLayerOverlayRef.current,
-      ];
-      const inside = refs.some((node) => !!(node && target instanceof Node && node.contains(target)));
-      if (inside) return;
-      setDiagramActionPathOpen(false);
-      setDiagramActionPlanOpen(false);
-      setDiagramActionPlaybackOpen(false);
-      setDiagramActionLayersOpen(false);
-      setDiagramActionRobotMetaOpen(false);
-      setRobotMetaListOpen(false);
-      setDiagramActionQualityOpen(false);
-      setDiagramActionOverflowOpen(false);
-    };
-    const onKeyDown = (event) => {
-      if (event.key !== "Escape") return;
-      setDiagramActionPathOpen(false);
-      setDiagramActionPlanOpen(false);
-      setDiagramActionPlaybackOpen(false);
-      setDiagramActionLayersOpen(false);
-      setDiagramActionRobotMetaOpen(false);
-      setRobotMetaListOpen(false);
-      setDiagramActionQualityOpen(false);
-      setDiagramActionOverflowOpen(false);
-    };
-    window.addEventListener("mousedown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("mousedown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [
-    diagramActionPathOpen,
-    diagramActionPlanOpen,
-    diagramActionPlaybackOpen,
-    diagramActionLayersOpen,
-    diagramActionRobotMetaOpen,
-    robotMetaListOpen,
-    diagramActionQualityOpen,
-    diagramActionOverflowOpen,
-  ]);
-
-  useEffect(() => {
-    if (diagramActionRobotMetaOpen) return;
-    setRobotMetaListOpen(false);
-    setRobotMetaListSearch("");
-  }, [diagramActionRobotMetaOpen]);
-
-  useEffect(() => {
     if (!diagramActionPlanOpen) return;
     void buildExecutionPlanNow({ suppressError: true });
   }, [
@@ -4500,14 +4001,6 @@ export default function ProcessStage({
       window.removeEventListener(NOTES_BATCH_APPLY_EVENT, onBatchApply);
     };
   }, [runNotesBatchOps]);
-
-  useEffect(() => {
-    if (!sid) {
-      setPacksList([]);
-      return;
-    }
-    void refreshPacks();
-  }, [sid, packScope, refreshPacks]);
 
   useEffect(() => {
     if (!sid) {
@@ -4949,6 +4442,7 @@ export default function ProcessStage({
     };
     setDiagramPathsIntent(intent);
     setDiagramActionPathOpen(false);
+    setDiagramActionHybridToolsOpen(false);
     setDiagramActionPlanOpen(false);
     setDiagramActionPlaybackOpen(false);
     setDiagramActionRobotMetaOpen(false);
@@ -5091,207 +4585,6 @@ export default function ProcessStage({
     }
   }
 
-  function updateHybridV2Doc(mutator, source = "hybrid_v2_update") {
-    setHybridV2Doc((prevRaw) => {
-      const prev = normalizeHybridV2Doc(prevRaw);
-      const nextCandidate = typeof mutator === "function" ? mutator(prev) : prev;
-      const next = normalizeHybridV2Doc(nextCandidate);
-      if (docToComparableJson(prev) !== docToComparableJson(next)) {
-        hybridV2DocRef.current = next;
-        markPlaybackOverlayInteraction({
-          stage: source,
-        });
-      }
-      return next;
-    });
-  }
-
-  function setHybridV2Tool(toolRaw) {
-    const tool = toText(toolRaw).toLowerCase();
-    const nextTool = tool || "select";
-    hybridV2ToolRef.current = nextTool;
-    setHybridV2ToolState(nextTool);
-    updateHybridV2Doc((prev) => ({
-      ...prev,
-      view: {
-        ...asObject(prev.view),
-        tool: nextTool,
-      },
-    }), "hybrid_v2_tool_change");
-  }
-
-  function resolveHybridPointerToDiagram(eventRaw) {
-    return clientToDiagram(eventRaw?.clientX, eventRaw?.clientY);
-  }
-
-  function createHybridV2ElementAt(pointRaw, typeRaw = "rect") {
-    const point = asObject(pointRaw);
-    const x = Number(point.x || 0);
-    const y = Number(point.y || 0);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return "";
-    const createdId = makeHybridV2Id("E", hybridV2DocRef.current);
-    updateHybridV2Doc((prevRaw) => {
-      const prev = normalizeHybridV2Doc(prevRaw);
-      const view = asObject(prev.view);
-      const layerId = toText(view.active_layer_id || prev.layers?.[0]?.id || "L1") || "L1";
-      const loweredType = toText(typeRaw).toLowerCase();
-      const type = loweredType === "text"
-        ? "text"
-        : (loweredType === "note" ? "note" : (loweredType === "container" ? "container" : "rect"));
-      const width = type === "text" ? 180 : (type === "container" ? 320 : 200);
-      const height = type === "text" ? 36 : (type === "container" ? 220 : 70);
-      const nextElements = [
-        ...asArray(prev.elements),
-        {
-          id: createdId,
-          layer_id: layerId,
-          parent_id: null,
-          type,
-          is_container: type === "container",
-          visible: true,
-          x: Math.round((x - (width / 2)) * 10) / 10,
-          y: Math.round((y - (height / 2)) * 10) / 10,
-          w: width,
-          h: height,
-          text: type === "text" ? "Text" : (type === "container" ? "Container" : ""),
-          style: {
-            stroke: "#334155",
-            fill: type === "note" ? "#fff7d6" : (type === "container" ? "#f1f5f9" : "#f8fafc"),
-            radius: 8,
-            fontSize: 12,
-          },
-        },
-      ];
-      return {
-        ...prev,
-        elements: nextElements,
-      };
-    }, "hybrid_v2_create_element");
-    setHybridV2ActiveId(createdId);
-    return createdId;
-  }
-
-  function createHybridV2Edge(fromIdRaw, toIdRaw) {
-    const fromId = toText(fromIdRaw);
-    const toId = toText(toIdRaw);
-    if (!fromId || !toId || fromId === toId) return "";
-    const createdId = makeHybridV2Id("A", hybridV2DocRef.current);
-    updateHybridV2Doc((prevRaw) => {
-      const prev = normalizeHybridV2Doc(prevRaw);
-      const elementIds = new Set(asArray(prev.elements).map((row) => toText(asObject(row).id)).filter(Boolean));
-      if (!elementIds.has(fromId) || !elementIds.has(toId)) return prev;
-      const view = asObject(prev.view);
-      const layerId = toText(view.active_layer_id || prev.layers?.[0]?.id || "L1") || "L1";
-      return {
-        ...prev,
-        edges: [
-          ...asArray(prev.edges),
-          {
-            id: createdId,
-            layer_id: layerId,
-            type: "arrow",
-            visible: true,
-            from: { element_id: fromId, anchor: "auto" },
-            to: { element_id: toId, anchor: "auto" },
-            waypoints: [],
-            style: { stroke: "#2563eb", width: 2 },
-          },
-        ],
-      };
-    }, "hybrid_v2_create_edge");
-    setHybridV2ActiveId(createdId);
-    return createdId;
-  }
-
-  function removeActiveHybridV2Item() {
-    const activeId = toText(hybridV2ActiveId);
-    if (!activeId) return;
-    updateHybridV2Doc((prevRaw) => {
-      const prev = normalizeHybridV2Doc(prevRaw);
-      const nextElements = asArray(prev.elements).filter((row) => toText(asObject(row).id) !== activeId);
-      const nextEdges = asArray(prev.edges)
-        .filter((row) => toText(asObject(row).id) !== activeId)
-        .filter((row) => {
-          const edge = asObject(row);
-          return toText(asObject(edge.from).element_id) !== activeId && toText(asObject(edge.to).element_id) !== activeId;
-        });
-      const nextBindings = asArray(prev.bindings).filter((row) => toText(asObject(row).hybrid_id) !== activeId);
-      return {
-        ...prev,
-        elements: nextElements,
-        edges: nextEdges,
-        bindings: nextBindings,
-      };
-    }, "hybrid_v2_delete_item");
-    setHybridV2ActiveId("");
-  }
-
-  function bindActiveHybridV2ToBpmn(targetBpmnIdRaw, hybridIdRaw = "") {
-    const activeId = toText(hybridIdRaw || hybridV2ActiveId);
-    const targetBpmnId = toText(targetBpmnIdRaw);
-    if (!activeId || !targetBpmnId) return;
-    updateHybridV2Doc((prevRaw) => {
-      const prev = normalizeHybridV2Doc(prevRaw);
-      const edgeIds = new Set(asArray(prev.edges).map((row) => toText(asObject(row).id)).filter(Boolean));
-      const kind = edgeIds.has(activeId) ? "edge" : "node";
-      const keep = asArray(prev.bindings).filter((row) => toText(asObject(row).hybrid_id) !== activeId);
-      return {
-        ...prev,
-        bindings: [...keep, { hybrid_id: activeId, bpmn_id: targetBpmnId, kind }],
-      };
-    }, "hybrid_v2_bind");
-    setHybridV2BindPickMode(false);
-  }
-
-  function goToActiveHybridBinding() {
-    const activeId = toText(hybridV2ActiveId);
-    if (!activeId) return;
-    const binding = asObject(hybridV2BindingByHybridId[activeId]);
-    const bpmnId = toText(binding.bpmn_id || binding.bpmnId);
-    if (!bpmnId) return;
-    bpmnRef.current?.focusNode?.(bpmnId, { keepPrevious: false, durationMs: 1000 });
-  }
-
-  function exportHybridV2Drawio() {
-    const xml = exportHybridV2ToDrawioXml(hybridV2DocRef.current);
-    const stamp = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14) || Date.now();
-    const ok = downloadTextFile(`hybrid_${sid || "session"}_${stamp}.drawio`, xml, "application/xml;charset=utf-8");
-    if (ok) {
-      setInfoMsg("Hybrid экспортирован (.drawio).");
-      setGenErr("");
-    } else {
-      setGenErr("Не удалось экспортировать Hybrid.");
-    }
-  }
-
-  async function handleHybridV2ImportFile(fileRaw) {
-    const file = fileRaw instanceof File ? fileRaw : null;
-    if (!file) return;
-    const text = await file.text().catch(() => "");
-    const imported = await importDrawioXmlToHybridV2(text, {
-      baseDoc: hybridV2DocRef.current,
-      preserveBindings: true,
-    });
-    const nextDoc = normalizeHybridV2Doc(imported.hybridV2);
-    setHybridV2Doc(nextDoc);
-    hybridV2DocRef.current = nextDoc;
-    setHybridV2ActiveId("");
-    setHybridV2BindPickMode(false);
-    const skippedCount = asArray(imported.skipped).length;
-    const warningsCount = asArray(imported.warnings).length;
-    const importedSummary = `Imported: ${Number(asArray(nextDoc.elements).length)} elements, ${Number(asArray(nextDoc.edges).length)} edges, ${Number(asArray(nextDoc.layers).length)} layers`;
-    const skippedPreview = asArray(imported.skipped).slice(0, 3).map((row) => toText(row)).filter(Boolean).join(", ");
-    const warningsPreview = asArray(imported.warnings).slice(0, 3).map((row) => toText(row)).filter(Boolean).join(", ");
-    const detail = [
-      skippedCount ? `Skipped: ${skippedCount}` : "",
-      warningsCount ? `Warnings: ${warningsCount}` : "",
-      skippedPreview ? `Skipped reasons: ${skippedPreview}` : "",
-      warningsPreview ? `Warnings: ${warningsPreview}` : "",
-    ].filter(Boolean).join(" · ");
-    setHybridV2ImportNotice(detail ? `${importedSummary} · ${detail}` : importedSummary);
-    void persistHybridV2Doc(nextDoc, { source: "hybrid_v2_import_drawio" });
-  }
-
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     if (!hybridVisible) return undefined;
@@ -5308,7 +4601,6 @@ export default function ProcessStage({
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     if (!hybridVisible) return undefined;
-    if (hybridV2DragRef.current || hybridV2ResizeRef.current) return undefined;
     const nextSig = docToComparableJson(hybridV2Doc);
     const prevSig = docToComparableJson(hybridV2PersistedDocRef.current);
     if (nextSig === prevSig) return undefined;
@@ -5338,13 +4630,13 @@ export default function ProcessStage({
     updateHybridUiPrefs((prev) => applyHybridVisibilityTransition(prev, false));
     setHybridPeekActive(false);
     setHybridV2BindPickMode(false);
-    hybridV2ArrowDraftRef.current = null;
+    hybridTools.cancelTransientState();
   }
 
   function setHybridLayerMode(modeRaw) {
     const nextMode = toText(modeRaw).toLowerCase() === "edit" ? "edit" : "view";
     updateHybridUiPrefs((prev) => applyHybridModeTransition(prev, nextMode));
-    updateHybridV2Doc((prev) => ({
+    hybridTools.updateDoc((prev) => ({
       ...prev,
       view: {
         ...asObject(prev.view),
@@ -5359,7 +4651,7 @@ export default function ProcessStage({
         const point = Number.isFinite(anchor.x) && Number.isFinite(anchor.y)
           ? { x: Number(anchor.x || 0), y: Number(anchor.y || 0) }
           : { x: 260, y: 220 };
-        const createdId = createHybridV2ElementAt(point, "note");
+        const createdId = hybridTools.createElementAt(point, "note");
         if (createdId) bindActiveHybridV2ToBpmn(selectedIdForV2, createdId);
       }
     }
@@ -5431,6 +4723,14 @@ export default function ProcessStage({
     addOrSelectHybridMarker(fallbackId, "hybrid_edit_seed_fallback");
   }
 
+  const toggleHybridToolsVisible = useCallback(() => {
+    if (hybridVisible) {
+      hideHybridLayer();
+      return;
+    }
+    showHybridLayer();
+  }, [hybridVisible, hideHybridLayer, showHybridLayer]);
+
   function setHybridLayerOpacity(opacityRaw) {
     const opacity = Number(opacityRaw || 60);
     updateHybridUiPrefs((prev) => ({
@@ -5450,7 +4750,7 @@ export default function ProcessStage({
   function toggleHybridV2LayerVisibility(layerIdRaw) {
     const layerId = toText(layerIdRaw);
     if (!layerId) return;
-    updateHybridV2Doc((prevRaw) => {
+    hybridTools.updateDoc((prevRaw) => {
       const prev = normalizeHybridV2Doc(prevRaw);
       const nextLayers = asArray(prev.layers).map((layerRaw) => {
         const layer = asObject(layerRaw);
@@ -5480,7 +4780,7 @@ export default function ProcessStage({
   function toggleHybridV2LayerLock(layerIdRaw) {
     const layerId = toText(layerIdRaw);
     if (!layerId) return;
-    updateHybridV2Doc((prevRaw) => {
+    hybridTools.updateDoc((prevRaw) => {
       const prev = normalizeHybridV2Doc(prevRaw);
       return {
         ...prev,
@@ -5500,7 +4800,7 @@ export default function ProcessStage({
     const layerId = toText(layerIdRaw);
     if (!layerId) return;
     const targetOpacity = Math.max(0.1, Math.min(1, Number(opacityRaw || 1)));
-    updateHybridV2Doc((prevRaw) => {
+    hybridTools.updateDoc((prevRaw) => {
       const prev = normalizeHybridV2Doc(prevRaw);
       return {
         ...prev,
@@ -5517,7 +4817,7 @@ export default function ProcessStage({
   }
 
   function revealAllHybridV2(source = "hybrid_v2_reveal_all") {
-    updateHybridV2Doc((prevRaw) => {
+    hybridTools.updateDoc((prevRaw) => {
       const prev = normalizeHybridV2Doc(prevRaw);
       return {
         ...prev,
@@ -5631,7 +4931,7 @@ export default function ProcessStage({
     setHybridLayerActiveElementId(elementId);
     if (hybridModeEffective !== "edit" || hybridUiPrefs.lock) return;
     const row = asObject(hybridLayerByElementId[elementId]);
-    const pointer = resolveHybridPointerToDiagram(event);
+    const pointer = clientToDiagram(event?.clientX, event?.clientY);
     if (!pointer) return;
     hybridLayerDragRef.current = {
       elementId,
@@ -5676,100 +4976,6 @@ export default function ProcessStage({
     withHybridOverlayGuard(event, { action: source, elementId });
     if (!elementId) return;
     addOrSelectHybridMarker(elementId, source);
-  }
-
-  function handleHybridV2ElementPointerDown(event, elementIdRaw) {
-    const elementId = toText(elementIdRaw);
-    if (!elementId) return;
-    withHybridOverlayGuard(event, { action: "hybrid_v2_element_pointer", elementId });
-    setHybridV2ActiveId(elementId);
-    if (hybridModeEffective !== "edit" || hybridUiPrefs.lock) return;
-    const pointer = resolveHybridPointerToDiagram(event);
-    if (!pointer) return;
-    const row = asObject(hybridV2Renderable.elementsById[elementId]);
-    if (!row.id) return;
-    const rowLayer = asObject(hybridV2LayerById[toText(row.layer_id)]);
-    if (rowLayer.locked === true) return;
-    const tool = toText(hybridV2ToolRef.current).toLowerCase() || "select";
-    const pending = asObject(hybridV2ArrowDraftRef.current);
-    const pendingFromId = toText(pending.fromId);
-    if (pendingFromId && pendingFromId !== elementId) {
-      createHybridV2Edge(pendingFromId, elementId);
-      hybridV2ArrowDraftRef.current = null;
-      return;
-    }
-    if (tool === "arrow") {
-      if (!pendingFromId) {
-        hybridV2ArrowDraftRef.current = { fromId: elementId };
-      }
-      return;
-    }
-    if (pendingFromId && tool !== "arrow") {
-      hybridV2ArrowDraftRef.current = null;
-    }
-    hybridV2DragRef.current = {
-      id: elementId,
-      startX: Number(pointer.x || 0),
-      startY: Number(pointer.y || 0),
-      baseX: Number(row.x || 0),
-      baseY: Number(row.y || 0),
-    };
-  }
-
-  function handleHybridV2ResizeHandlePointerDown(event, elementIdRaw, handleRaw) {
-    const elementId = toText(elementIdRaw);
-    const handle = toText(handleRaw).toLowerCase();
-    if (!elementId || !handle) return;
-    withHybridOverlayGuard(event, { action: "hybrid_v2_resize_start", elementId, handle });
-    if (hybridModeEffective !== "edit" || hybridUiPrefs.lock) return;
-    const pointer = resolveHybridPointerToDiagram(event);
-    if (!pointer) return;
-    const row = asObject(hybridV2Renderable.elementsById[elementId]);
-    if (!row.id) return;
-    const rowLayer = asObject(hybridV2LayerById[toText(row.layer_id)]);
-    if (rowLayer.locked === true) return;
-    setHybridV2ActiveId(elementId);
-    hybridV2ResizeRef.current = {
-      id: elementId,
-      handle,
-      startX: Number(pointer.x || 0),
-      startY: Number(pointer.y || 0),
-      baseX: Number(row.x || 0),
-      baseY: Number(row.y || 0),
-      baseW: Number(row.w || 0),
-      baseH: Number(row.h || 0),
-    };
-  }
-
-  function handleHybridV2OverlayPointerDown(event) {
-    if (hybridModeEffective !== "edit" || hybridUiPrefs.lock || !hybridVisible) return;
-    const tool = toText(hybridV2ToolRef.current).toLowerCase() || "select";
-    const target = event?.target instanceof Element ? event.target : null;
-    if (!target) return;
-    if (
-      target.closest(".hybridV2Shape")
-      || target.closest(".hybridV2ResizeHandle")
-      || target.closest(".hybridLayerCard")
-      || target.closest(".hybridLayerHotspot")
-    ) {
-      return;
-    }
-    withHybridOverlayGuard(event, { action: "hybrid_v2_overlay_pointer", tool });
-    const point = resolveHybridPointerToDiagram(event);
-    if (!point) return;
-    const activeLayerId = toText(asObject(hybridV2DocRef.current?.view).active_layer_id || "L1") || "L1";
-    const activeLayer = asObject(hybridV2LayerById[activeLayerId]);
-    if (activeLayer.locked === true) return;
-    if (tool === "rect" || tool === "note" || tool === "text" || tool === "container") {
-      createHybridV2ElementAt(point, tool);
-      return;
-    }
-    if (tool === "arrow") {
-      hybridV2ArrowDraftRef.current = null;
-    }
-    if (tool === "select") {
-      setHybridV2ActiveId("");
-    }
   }
 
   function openPathsFromDiagram() {
@@ -6134,10 +5340,10 @@ export default function ProcessStage({
                   type="button"
                   className="secondaryBtn h-7 px-2 text-[11px]"
                   onClick={() => {
-                    void openSavePackModal();
+                    openCreateTemplateModal();
                     setToolbarMenuOpen(false);
                   }}
-                  disabled={!hasSession || tab !== "diagram" || packsBusy}
+                  disabled={!hasSession || tab !== "diagram" || templatesBusy}
                   data-testid="template-pack-save-open"
                 >
                   Сохранить шаблон
@@ -6146,28 +5352,28 @@ export default function ProcessStage({
                   type="button"
                   className="secondaryBtn h-7 px-2 text-[11px]"
                   onClick={() => {
-                    void openPackLibrary();
+                    void openTemplatesPicker();
                     setToolbarMenuOpen(false);
                   }}
-                  disabled={!hasSession || packsBusy}
+                  disabled={!hasSession || templatesBusy}
                   data-testid="template-pack-insert-open"
                 >
-                  Вставить шаблон
+                  Открыть шаблоны
                 </button>
               </div>
-              {templatesEnabled && selectedElementId && suggestedPacks.length > 0 ? (
+              {templatesEnabled && selectedBpmnElementIds.length > 0 && suggestedTemplates.length > 0 ? (
                 <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-border bg-panel2/45 px-2 py-1 text-[11px] text-muted">
                   <span className="text-fg">Подходит:</span>
-                  {suggestedPacks.slice(0, 3).map((pack) => (
+                  {suggestedTemplates.slice(0, 3).map((template) => (
                     <button
-                      key={String(pack?.packId || pack?.id || "")}
+                      key={String(template?.id || "")}
                       type="button"
                       className="secondaryBtn h-7 px-2 text-[11px]"
-                      onClick={() => void insertTemplatePack(pack, "after")}
-                      title={`score=${Number(pack?.score || 0).toFixed(2)}`}
+                      onClick={() => void applyTemplate(template)}
+                      title={`score=${Number(template?.score || 0).toFixed(2)}`}
                       data-testid="template-pack-suggest-item"
                     >
-                      {String(pack?.title || "Шаблон")}
+                      {String(template?.title || "Шаблон")}
                     </button>
                   ))}
                 </div>
@@ -6430,7 +5636,7 @@ export default function ProcessStage({
 
       <div className="processBody relative" ref={processBodyRef}>
         {!hasSession ? (
-          <div className="grid h-full min-h-0 grid-cols-1 gap-3 p-3 xl:grid-cols-[minmax(0,1fr)_300px]">
+          <div className="h-full min-h-0 p-3">
             <WorkspaceDashboard
               activeOrgId={workspaceActiveOrgId}
               canInviteUsers={!!canInviteWorkspaceUsers}
@@ -6439,15 +5645,6 @@ export default function ProcessStage({
               onCreateSession={() => onCreateWorkspaceSession?.()}
               onInviteUsers={() => onOpenWorkspaceOrgSettings?.()}
             />
-            <div className="processEmptyGuide h-full min-h-0 overflow-auto rounded-xl border border-dashed border-borderStrong bg-panel p-4">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Как начать</div>
-              <div className="processEmptyTitle mb-2 text-base font-semibold">{workbench.emptyGuide.title}</div>
-              <ol>
-                {workbench.emptyGuide.steps.map((line, idx) => (
-                  <li key={`guide_${idx}`}>{line}</li>
-                ))}
-              </ol>
-            </div>
           </div>
         ) : tab === "doc" ? (
           <DocStage
@@ -6472,6 +5669,7 @@ export default function ProcessStage({
                         className={`primaryBtn h-8 min-w-[124px] px-2.5 text-xs ${pathHighlightEnabled ? "" : "opacity-95"}`}
                         onClick={() => {
                           setDiagramActionPathOpen((prev) => !prev);
+                          setDiagramActionHybridToolsOpen(false);
                           setDiagramActionPlanOpen(false);
                           setDiagramActionPlaybackOpen(false);
                           setDiagramActionLayersOpen(false);
@@ -6484,6 +5682,26 @@ export default function ProcessStage({
                       >
                         <span>Подсветить путь</span>
                         <span className="diagramActionChip">{pathHighlightEnabled ? pathHighlightBadge : "off"}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`secondaryBtn h-8 px-2 text-[11px] diagramActionSecondary ${hybridVisible ? "ring-1 ring-accent/60" : ""}`}
+                        onClick={() => {
+                          setDiagramActionHybridToolsOpen((prev) => !prev);
+                          setDiagramActionPathOpen(false);
+                          setDiagramActionPlanOpen(false);
+                          setDiagramActionPlaybackOpen(false);
+                          setDiagramActionLayersOpen(false);
+                          setDiagramActionRobotMetaOpen(false);
+                          setRobotMetaListOpen(false);
+                          setDiagramActionQualityOpen(false);
+                          setDiagramActionOverflowOpen(false);
+                        }}
+                        title="Hybrid Tools (Draw.io)"
+                        data-testid="diagram-action-hybrid-tools-toggle"
+                      >
+                        <span>Draw.io</span>
+                        <span className="diagramActionChip">{hybridVisible ? toText(hybridV2ToolState || hybridModeEffective || "on") : "off"}</span>
                       </button>
                       <button
                         type="button"
@@ -6521,6 +5739,7 @@ export default function ProcessStage({
                         onClick={() => {
                           setDiagramActionPlanOpen((prev) => !prev);
                           setDiagramActionPathOpen(false);
+                          setDiagramActionHybridToolsOpen(false);
                           setDiagramActionPlaybackOpen(false);
                           setDiagramActionLayersOpen(false);
                           setDiagramActionRobotMetaOpen(false);
@@ -6540,6 +5759,7 @@ export default function ProcessStage({
                           setDiagramActionPlaybackOpen((prev) => !prev);
                           setDiagramActionPathOpen(false);
                           setDiagramActionPlanOpen(false);
+                          setDiagramActionHybridToolsOpen(false);
                           setDiagramActionLayersOpen(false);
                           setDiagramActionRobotMetaOpen(false);
                           setRobotMetaListOpen(false);
@@ -6558,6 +5778,7 @@ export default function ProcessStage({
                           setDiagramActionLayersOpen((prev) => !prev);
                           setDiagramActionPathOpen(false);
                           setDiagramActionPlanOpen(false);
+                          setDiagramActionHybridToolsOpen(false);
                           setDiagramActionRobotMetaOpen(false);
                           setRobotMetaListOpen(false);
                           setDiagramActionQualityOpen(false);
@@ -6576,6 +5797,7 @@ export default function ProcessStage({
                           setDiagramActionPathOpen(false);
                           setDiagramActionPlanOpen(false);
                           setDiagramActionPlaybackOpen(false);
+                          setDiagramActionHybridToolsOpen(false);
                           setDiagramActionLayersOpen(false);
                           setRobotMetaListOpen(false);
                           setDiagramActionQualityOpen(false);
@@ -6605,6 +5827,7 @@ export default function ProcessStage({
                           setDiagramActionPathOpen(false);
                           setDiagramActionPlanOpen(false);
                           setDiagramActionPlaybackOpen(false);
+                          setDiagramActionHybridToolsOpen(false);
                           setDiagramActionLayersOpen(false);
                           setDiagramActionRobotMetaOpen(false);
                           setRobotMetaListOpen(false);
@@ -6623,6 +5846,7 @@ export default function ProcessStage({
                           setDiagramActionPathOpen(false);
                           setDiagramActionPlanOpen(false);
                           setDiagramActionPlaybackOpen(false);
+                          setDiagramActionHybridToolsOpen(false);
                           setDiagramActionLayersOpen(false);
                           setDiagramActionRobotMetaOpen(false);
                           setRobotMetaListOpen(false);
@@ -6749,6 +5973,16 @@ export default function ProcessStage({
                         </div>
                       </div>
                     ) : null}
+
+                    <HybridToolsPalette
+                      open={diagramActionHybridToolsOpen}
+                      popoverRef={diagramHybridToolsPopoverRef}
+                      state={hybridToolsUiState}
+                      onToggleVisible={toggleHybridToolsVisible}
+                      onSetTool={selectHybridPaletteTool}
+                      onSetMode={setHybridToolsMode}
+                      onClose={() => setDiagramActionHybridToolsOpen(false)}
+                    />
 
                     {diagramActionPlanOpen ? (
                       <div className="diagramActionPopover diagramActionPopover--plan" ref={diagramPlanPopoverRef} data-testid="diagram-action-plan-popover">
@@ -7117,8 +6351,10 @@ export default function ProcessStage({
                       hybridModeEffective={hybridModeEffective}
                       setHybridLayerMode={setHybridLayerMode}
                       hybridUiPrefs={hybridUiPrefs}
-                      hybridV2ToolState={hybridV2ToolState}
-                      setHybridV2Tool={setHybridV2Tool}
+                      onOpenHybridTools={() => {
+                        setDiagramActionHybridToolsOpen(true);
+                        setDiagramActionLayersOpen(false);
+                      }}
                       setHybridLayerOpacity={setHybridLayerOpacity}
                       toggleHybridLayerLock={toggleHybridLayerLock}
                       toggleHybridLayerFocus={toggleHybridLayerFocus}
@@ -7129,6 +6365,7 @@ export default function ProcessStage({
                       toggleHybridV2LayerLock={toggleHybridV2LayerLock}
                       setHybridV2LayerOpacity={setHybridV2LayerOpacity}
                       hybridV2ActiveId={hybridV2ActiveId}
+                      hybridV2SelectedIds={hybridV2SelectedIds}
                       hybridV2BindPickMode={hybridV2BindPickMode}
                       setHybridV2BindPickMode={setHybridV2BindPickMode}
                       goToActiveHybridBinding={goToActiveHybridBinding}
@@ -7142,6 +6379,7 @@ export default function ProcessStage({
                       hybridLayerRenderRows={hybridLayerRenderRows}
                       hybridV2Renderable={hybridV2Renderable}
                       setHybridV2ActiveId={setHybridV2ActiveId}
+                      deleteSelectedHybridIds={deleteSelectedHybridIds}
                       bpmnRef={bpmnRef}
                       goToHybridLayerItem={goToHybridLayerItem}
                     />
@@ -7432,12 +6670,19 @@ export default function ProcessStage({
                   opacityValue={hybridOpacityValue}
                   overlayRef={hybridLayerOverlayRef}
                   onOverlayPointerDown={handleHybridV2OverlayPointerDown}
+                  onOverlayPointerMove={hybridTools.onOverlayPointerMove}
+                  onOverlayPointerLeave={hybridTools.onOverlayPointerLeave}
+                  onOverlayContextMenu={handleHybridV2OverlayContextMenu}
                   v2Renderable={hybridV2Renderable}
                   v2ActiveId={hybridV2ActiveId}
+                  v2SelectedIds={hybridV2SelectedIdSet}
                   v2PlaybackHighlightedIds={hybridV2PlaybackHighlightedIds}
                   v2BindingByHybridId={hybridV2BindingByHybridId}
                   onV2ElementPointerDown={handleHybridV2ElementPointerDown}
+                  onV2ElementContextMenu={handleHybridV2ElementContextMenu}
                   onV2ResizeHandlePointerDown={handleHybridV2ResizeHandlePointerDown}
+                  v2GhostPreview={hybridTools.ghostPreview}
+                  v2ArrowPreview={hybridTools.arrowPreview}
                   legacyRows={hybridLayerRenderRows}
                   legacyActiveElementId={hybridLayerActiveElementId}
                   debugEnabled={hybridDebugEnabled}
@@ -7461,6 +6706,28 @@ export default function ProcessStage({
                     cleanupMissingHybridBindings("card_missing_cleanup");
                   }}
                   onLegacyCardRef={getHybridLayerCardRefCallback}
+                />
+                <HybridContextMenu
+                  menu={hybridTools.contextMenu}
+                  selectionCount={hybridSelection.selectionCount}
+                  canRename={hybridSelection.selectionCount === 1 && !!hybridV2DocLive.elements.find((row) => toText(asObject(row).id) === hybridV2ActiveId)}
+                  onClose={hybridTools.closeContextMenu}
+                  onDelete={() => {
+                    deleteSelectedHybridIds();
+                    hybridTools.closeContextMenu();
+                  }}
+                  onRename={() => {
+                    hybridTools.renameHybridItem(hybridV2ActiveId);
+                    hybridTools.closeContextMenu();
+                  }}
+                  onHide={() => {
+                    hybridTools.hideHybridIds(hybridV2SelectedIds);
+                    hybridTools.closeContextMenu();
+                  }}
+                  onLock={() => {
+                    hybridTools.lockLayersForHybridIds(hybridV2SelectedIds);
+                    hybridTools.closeContextMenu();
+                  }}
                 />
                 {tab === "diagram" && isCoverageMode ? (
                   <div className="coverageMiniMap" data-testid="coverage-minimap">
@@ -7763,142 +7030,40 @@ export default function ProcessStage({
         </div>
       </Modal>
 
-      <Modal
-        open={packSaveOpen}
-        title="Сохранить шаблон"
+      <CreateTemplateModal
+        open={createTemplateOpen}
         onClose={() => {
-          if (packsBusy) return;
-          setPackSaveOpen(false);
+          if (templatesBusy) return;
+          setCreateTemplateOpen(false);
         }}
-        footer={(
-          <>
-            <button
-              type="button"
-              className="secondaryBtn"
-              onClick={() => setPackSaveOpen(false)}
-              disabled={packsBusy}
-            >
-              Отмена
-            </button>
-            <button
-              type="button"
-              className="primaryBtn"
-              onClick={() => void saveTemplatePack()}
-              disabled={packsBusy || !packDraft}
-              data-testid="template-pack-save-confirm"
-            >
-              {packsBusy ? "Сохранение..." : "Сохранить шаблон"}
-            </button>
-          </>
-        )}
-      >
-        <div className="space-y-3" data-testid="template-pack-save-modal">
-          <label className="block space-y-1 text-sm">
-            <span className="text-xs text-muted">Название</span>
-            <input
-              className="input w-full"
-              value={packTitleDraft}
-              onChange={(e) => setPackTitleDraft(String(e.target.value || ""))}
-              placeholder="Например: Проверка качества"
-              data-testid="template-pack-title-input"
-            />
-          </label>
-          <div className="rounded-lg border border-border bg-panel2/40 px-3 py-2 text-xs text-muted">
-            {packDraft ? (
-              <>
-                <div>nodes: <b className="text-fg">{asArray(packDraft?.fragment?.nodes).length}</b></div>
-                <div>edges: <b className="text-fg">{asArray(packDraft?.fragment?.edges).length}</b></div>
-                <div>scope key: <b className="font-mono text-fg">{packStorageKey}</b></div>
-              </>
-            ) : (
-              <div>Нет выбранного фрагмента.</div>
-            )}
-          </div>
-        </div>
-      </Modal>
+        title={createTemplateTitle}
+        onTitleChange={setCreateTemplateTitle}
+        scope={createTemplateScope}
+        onScopeChange={setCreateTemplateScope}
+        canCreateOrgTemplate={!!workspaceActiveOrgId && !!canInviteWorkspaceUsers}
+        selectionCount={selectedBpmnElementIds.length}
+        busy={templatesBusy}
+        onSave={saveCurrentSelectionAsTemplate}
+      />
 
-      <Modal
-        open={packsOpen}
-        title="Шаблоны BPMN"
+      <TemplatesPicker
+        open={templatesPickerOpen}
         onClose={() => {
-          if (packsBusy) return;
-          setPacksOpen(false);
+          if (templatesBusy) return;
+          setTemplatesPickerOpen(false);
         }}
-        footer={(
-          <>
-            <button type="button" className="secondaryBtn" onClick={() => void refreshPacks()} disabled={packsBusy}>
-              Обновить
-            </button>
-            <button type="button" className="primaryBtn" onClick={() => setPacksOpen(false)}>
-              Закрыть
-            </button>
-          </>
-        )}
-      >
-        <div className="space-y-3" data-testid="template-pack-modal">
-          <div className="rounded-lg border border-border bg-panel2/40 px-3 py-2 text-xs text-muted">
-            key: <span className="font-mono text-fg">{packStorageKey}</span> · всего: {packsList.length}
-          </div>
-          <div className="max-h-[56vh] space-y-2 overflow-auto pr-1">
-            {packsList.length === 0 ? (
-              <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted">
-                Шаблоны пока не сохранены.
-              </div>
-            ) : (
-              packsList.map((pack) => {
-                const packId = String(pack?.packId || "");
-                const nodeCount = asArray(pack?.fragment?.nodes).length;
-                const edgeCount = asArray(pack?.fragment?.edges).length;
-                return (
-                  <div
-                    key={packId}
-                    className="rounded-lg border border-border bg-panel px-3 py-2"
-                    data-testid="template-pack-item"
-                    data-pack-id={packId}
-                  >
-                    <div className="mb-1 flex items-center justify-between gap-2">
-                      <div className="text-sm font-semibold text-fg">{String(pack?.title || "Шаблон")}</div>
-                      <div className="text-[11px] text-muted">{new Date(Number(pack?.createdAt || 0)).toLocaleString("ru-RU")}</div>
-                    </div>
-                    <div className="mb-2 text-xs text-muted">
-                      nodes: {nodeCount} · edges: {edgeCount} · tags: {asArray(pack?.tags).join(", ") || "—"}
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      <button
-                        type="button"
-                        className="secondaryBtn h-7 px-2 text-[11px]"
-                        onClick={() => void insertTemplatePack(pack, "after")}
-                        disabled={packsBusy}
-                        data-testid="template-pack-insert-after"
-                      >
-                        Вставить после
-                      </button>
-                      <button
-                        type="button"
-                        className="secondaryBtn h-7 px-2 text-[11px]"
-                        onClick={() => void insertTemplatePack(pack, "between")}
-                        disabled={packsBusy}
-                        data-testid="template-pack-insert-between"
-                      >
-                        Вставить между
-                      </button>
-                      <button
-                        type="button"
-                        className="secondaryBtn h-7 px-2 text-[11px]"
-                        onClick={() => void removeTemplatePack(packId)}
-                        disabled={packsBusy}
-                        data-testid="template-pack-delete"
-                      >
-                        Удалить
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-      </Modal>
+        activeScope={templatesScope}
+        onScopeChange={setTemplatesScope}
+        search={templatesSearch}
+        onSearchChange={setTemplatesSearch}
+        personalCount={templateCounts.personal}
+        orgCount={templateCounts.org}
+        templates={scopedTemplates}
+        busy={templatesBusy}
+        onRefresh={reloadTemplates}
+        onApply={applyTemplate}
+        onDelete={removeTemplate}
+      />
 
       <Modal
         open={versionsOpen}

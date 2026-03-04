@@ -28,6 +28,57 @@ function updatedFromPresetSeconds(preset) {
   return 0;
 }
 
+function formatRole(roleRaw) {
+  const role = toText(roleRaw).toLowerCase();
+  if (role === "org_owner") return "Org owner";
+  if (role === "org_admin") return "Org admin";
+  if (role === "project_manager") return "Project manager";
+  if (role === "editor") return "Editor";
+  if (role === "viewer") return "Viewer";
+  if (role === "auditor") return "Auditor";
+  return role ? role.replace(/_/g, " ") : "Member";
+}
+
+function statusBadgeClass(statusRaw) {
+  const status = toText(statusRaw).toLowerCase();
+  if (status === "ready") return "border-success/30 bg-success/10 text-success";
+  if (status === "in_progress") return "border-warning/30 bg-warning/10 text-warning";
+  return "border-borderStrong/60 bg-panel text-muted";
+}
+
+function attentionBadgeClass(countRaw) {
+  return Number(countRaw || 0) > 0
+    ? "border-danger/30 bg-danger/10 text-danger"
+    : "border-borderStrong/60 bg-panel text-muted";
+}
+
+function MetricCard({ label, value, hint = "", tone = "default" }) {
+  const toneClass = tone === "accent"
+    ? "border-accent/25 bg-accentSoft/10"
+    : tone === "danger"
+      ? "border-danger/25 bg-danger/5"
+      : "border-border bg-panel2/35";
+  return (
+    <div className={`rounded-xl border p-3 ${toneClass}`}>
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">{label}</div>
+      <div className="mt-2 text-2xl font-semibold text-fg">{value}</div>
+      <div className="mt-1 text-xs text-muted">{hint}</div>
+    </div>
+  );
+}
+
+function SectionHeader({ title, subtitle = "", actions = null }) {
+  return (
+    <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0">
+        <div className="text-sm font-semibold text-fg">{title}</div>
+        {subtitle ? <div className="mt-0.5 text-xs text-muted">{subtitle}</div> : null}
+      </div>
+      {actions}
+    </div>
+  );
+}
+
 export default function WorkspaceDashboard({
   activeOrgId = "",
   onOpenSession,
@@ -46,15 +97,16 @@ export default function WorkspaceDashboard({
   const [selectedOwnerId, setSelectedOwnerId] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [offset, setOffset] = useState(0);
-  const [limit] = useState(50);
-  const [loading, setLoading] = useState(false);
+  const [limit] = useState(10);
+  const [loading, setLoading] = useState(() => !!toText(activeOrgId));
+  const [loadedOnce, setLoadedOnce] = useState(false);
   const [error, setError] = useState("");
   const [workspace, setWorkspace] = useState({
     org: {},
     users: [],
     projects: [],
     sessions: [],
-    page: { limit: 50, offset: 0, total: 0 },
+    page: { limit: 10, offset: 0, total: 0 },
   });
 
   useEffect(() => {
@@ -63,6 +115,8 @@ export default function WorkspaceDashboard({
     setOwnerFilterIds([]);
     setOffset(0);
     setError("");
+    setLoading(!!toText(activeOrgId));
+    setLoadedOnce(false);
   }, [activeOrgId]);
 
   useEffect(() => {
@@ -91,7 +145,6 @@ export default function WorkspaceDashboard({
             const status = Number(res?.status || 0);
             const errorText = toText(res?.error || "");
             if (status === 404 && toText(selectedProjectId)) {
-              // Selected project can become out-of-scope after org/role context switch.
               setSelectedProjectId("");
               setOffset(0);
               return;
@@ -115,6 +168,7 @@ export default function WorkspaceDashboard({
           setError(String(err?.message || err || "workspace_load_failed"));
         })
         .finally(() => {
+          setLoadedOnce(true);
           setLoading(false);
         });
     }, 220);
@@ -142,238 +196,389 @@ export default function WorkspaceDashboard({
     if (sortKey === "updated_asc") return [...rows].reverse();
     return rows;
   }, [selectedOwnerId, selectedProjectId, sortKey, tree.sessions]);
+  const ownerOptions = useMemo(() => tree.users.map((item) => ({
+    id: toText(item.id),
+    label: toText(item.name || item.email || item.id),
+  })), [tree.users]);
 
-  const ownerOptions = useMemo(() => {
-    return tree.users.map((item) => ({
-      id: toText(item.id),
-      label: toText(item.name || item.email || item.id),
-    }));
-  }, [tree.users]);
-
-  const hasRows = listRows.length > 0;
   const total = Number(workspace?.page?.total || 0);
+  const hasRows = listRows.length > 0;
   const canPrev = offset > 0;
   const canNext = offset + limit < total;
+  const selectedProject = useMemo(
+    () => tree.projects.find((item) => item.id === selectedProjectId) || null,
+    [selectedProjectId, tree.projects],
+  );
+  const selectedOwner = useMemo(
+    () => tree.users.find((item) => item.id === selectedOwnerId) || null,
+    [selectedOwnerId, tree.users],
+  );
+  const sessionStatusSummary = useMemo(() => {
+    return listRows.reduce((acc, row) => {
+      const key = toText(row.status).toLowerCase() || "draft";
+      acc[key] = Number(acc[key] || 0) + 1;
+      acc.attention += Number(row.needs_attention || 0);
+      return acc;
+    }, { draft: 0, in_progress: 0, ready: 0, attention: 0 });
+  }, [listRows]);
+  const pageLabel = total > 0 ? `${offset + 1}-${Math.min(offset + limit, total)} / ${total}` : "0";
+  const scopeSummary = [
+    selectedProject ? `Project: ${selectedProject.name}` : "",
+    selectedOwner ? `Owner: ${selectedOwner.name}` : "",
+  ].filter(Boolean).join(" · ") || "All projects and sessions in the selected org scope.";
+  const orgName = toText(workspace?.org?.name || activeOrgId || "Workspace");
+  const orgRole = formatRole(workspace?.org?.role);
 
   function resetSelection() {
     setSelectedOwnerId("");
     setSelectedProjectId("");
+    setOwnerFilterIds([]);
     setOffset(0);
   }
 
   return (
-    <div className="workspaceDashboard h-full min-h-0 overflow-hidden rounded-xl border border-border bg-panel p-3" data-testid="workspace-dashboard">
-      <div className="workspaceDashboardToolbar mb-3 flex flex-wrap items-center gap-2">
-        <input
-          className="input h-9 min-h-0 flex-1 min-w-[220px]"
-          placeholder="Поиск: session / project / owner"
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setOffset(0);
-          }}
-          data-testid="workspace-search"
-        />
-        <select
-          className="select h-9 min-h-0 min-w-[136px]"
-          value={statusFilter}
-          onChange={(event) => {
-            setStatusFilter(event.target.value);
-            setOffset(0);
-          }}
-          data-testid="workspace-filter-status"
-        >
-          <option value="">Status: все</option>
-          <option value="draft">Draft</option>
-          <option value="in_progress">In progress</option>
-          <option value="ready">Ready</option>
-        </select>
-        <select
-          className="select h-9 min-h-0 min-w-[128px]"
-          value={updatedPreset}
-          onChange={(event) => {
-            setUpdatedPreset(event.target.value);
-            setOffset(0);
-          }}
-          data-testid="workspace-filter-updated"
-        >
-          <option value="all">Updated: все</option>
-          <option value="7d">Последние 7 дней</option>
-          <option value="30d">Последние 30 дней</option>
-        </select>
-        <select
-          className="select h-9 min-h-0 min-w-[128px]"
-          value={sortKey}
-          onChange={(event) => setSortKey(event.target.value)}
-          data-testid="workspace-sort"
-        >
-          <option value="updated_desc">Sort: updated ↓</option>
-          <option value="updated_asc">Sort: updated ↑</option>
-        </select>
-        <label className="inline-flex h-9 min-h-0 items-center gap-1 rounded-lg border border-border px-2 text-xs text-muted">
-          <input
-            type="checkbox"
-            checked={needsAttentionOnly}
-            onChange={(event) => {
-              setNeedsAttentionOnly(!!event.target.checked);
-              setOffset(0);
-            }}
-            data-testid="workspace-filter-attention"
-          />
-          needs attention
-        </label>
-      </div>
-
-      <div className="workspaceDashboardOwners mb-3">
-        <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">Owner filter</label>
-        <select
-          className="select min-h-[72px] w-full text-sm"
-          multiple
-          value={ownerFilterIds}
-          onChange={(event) => {
-            const next = [];
-            Array.from(event.target.selectedOptions).forEach((opt) => {
-              const value = toText(opt.value);
-              if (value) next.push(value);
-            });
-            setOwnerFilterIds(next);
-            setOffset(0);
-          }}
-          data-testid="workspace-filter-owner"
-        >
-          {ownerOptions.length === 0 ? <option value="">—</option> : null}
-          {ownerOptions.map((owner) => (
-            <option key={owner.id} value={owner.id}>
-              {owner.label}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="grid h-[calc(100%-132px)] min-h-[420px] grid-cols-1 gap-3 lg:grid-cols-[320px_minmax(0,1fr)]">
-        <div className="workspaceExplorer min-h-0 overflow-auto rounded-lg border border-border bg-panel2 p-2" data-testid="workspace-explorer">
-          <div className="mb-2 flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted">Group by</span>
-            <button
-              type="button"
-              className={`secondaryBtn h-7 px-2 text-[11px] ${groupBy === "users" ? "ring-1 ring-accent/60" : ""}`}
-              onClick={() => {
-                setGroupBy("users");
-                resetSelection();
-              }}
-              data-testid="workspace-group-users"
-            >
-              Users
-            </button>
-            <button
-              type="button"
-              className={`secondaryBtn h-7 px-2 text-[11px] ${groupBy === "projects" ? "ring-1 ring-accent/60" : ""}`}
-              onClick={() => {
-                setGroupBy("projects");
-                resetSelection();
-              }}
-              data-testid="workspace-group-projects"
-            >
-              Projects
-            </button>
+    <div className="workspaceDashboard h-full min-h-0 overflow-auto rounded-xl border border-border bg-panel p-4" data-testid="workspace-dashboard">
+      <div className="rounded-2xl border border-border bg-panel2/35 p-4">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-accent/30 bg-accentSoft/20 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-fg">
+                Workspace
+              </span>
+              <span className="rounded-full border border-border px-2 py-1 text-[11px] text-muted" title={orgName}>
+                {orgName}
+              </span>
+              <span className="rounded-full border border-border px-2 py-1 text-[11px] text-muted">
+                {orgRole}
+              </span>
+            </div>
+            <h1 className="text-xl font-semibold tracking-tight text-fg md:text-2xl">
+              Workspace / Projects / Sessions
+            </h1>
+            <p className="mt-2 max-w-3xl text-sm text-muted">
+              Select a session to edit diagram, run interview, generate reports.
+            </p>
           </div>
 
-          {groupBy === "users" ? (
-            <div className="space-y-1.5">
-              {tree.users.map((user) => {
-                const activeUser = selectedOwnerId === user.id;
-                const ownedProjects = tree.projects.filter((proj) => toText(proj.owner_id) === user.id);
-                return (
-                  <div key={user.id} className="rounded-lg border border-border/70 bg-panel px-2 py-1.5">
-                    <button
-                      type="button"
-                      className={`w-full text-left text-sm ${activeUser ? "font-semibold text-fg" : "text-fg"}`}
-                      onClick={() => {
-                        setSelectedOwnerId((prev) => (prev === user.id ? "" : user.id));
-                        setSelectedProjectId("");
-                        setOffset(0);
-                      }}
-                      data-testid="workspace-user-node"
-                    >
-                      {user.name}
-                      <span className="ml-1 text-xs text-muted">({Number(user.project_count || 0)}/{Number(user.session_count || 0)})</span>
-                    </button>
-                    {activeUser ? (
-                      <div className="mt-1 space-y-1 pl-3">
-                        {ownedProjects.map((project) => (
-                          <button
-                            key={`${user.id}_${project.id}`}
-                            type="button"
-                            className={`block w-full truncate rounded px-1.5 py-1 text-left text-xs ${selectedProjectId === project.id ? "bg-accent/15 text-fg" : "text-muted hover:text-fg"}`}
-                            onClick={() => {
-                              setSelectedProjectId((prev) => (prev === project.id ? "" : project.id));
-                              setOffset(0);
-                            }}
-                            title={project.name}
-                            data-testid="workspace-user-project-node"
-                          >
-                            {project.name} <span className="text-[10px]">({project.session_count})</span>
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="primaryBtn h-9 px-3 text-sm" onClick={() => onCreateProject?.()}>
+              Create Project
+            </button>
+            <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={() => onCreateSession?.()}>
+              Create Session
+            </button>
+            {canInviteUsers ? (
+              <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={() => onInviteUsers?.()}>
+                Invite Users
+              </button>
+            ) : (
+              <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={resetSelection}>
+                Reset Filters
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          label="Sessions"
+          value={total}
+          hint={`${sessionStatusSummary.in_progress} in progress · ${sessionStatusSummary.ready} ready`}
+          tone="accent"
+        />
+        <MetricCard
+          label="Projects"
+          value={tree.projects.length}
+          hint={selectedProject ? "Project filter is active." : "Projects visible in the current scope."}
+        />
+        <MetricCard
+          label="Owners"
+          value={tree.users.length}
+          hint={selectedOwner ? "Owner filter is active." : "Owners with visible projects or sessions."}
+        />
+        <MetricCard
+          label="Needs Attention"
+          value={sessionStatusSummary.attention}
+          hint={needsAttentionOnly ? "Attention filter is enabled." : "Aggregated attention markers on visible sessions."}
+          tone={sessionStatusSummary.attention > 0 ? "danger" : "default"}
+        />
+      </div>
+
+      <div className="mt-4 grid min-h-[560px] grid-cols-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <div className="min-h-0 space-y-4">
+          <div className="rounded-xl border border-border bg-panel2/35 p-3">
+            <SectionHeader
+              title="Scope & Filters"
+              subtitle={scopeSummary}
+              actions={(
+                <button type="button" className="secondaryBtn h-7 px-2 text-xs" onClick={resetSelection}>
+                  Reset
+                </button>
+              )}
+            />
+
+            <div className="space-y-3">
+              <input
+                className="input h-9 min-h-0 w-full"
+                placeholder="Search: session / project / owner"
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setOffset(0);
+                }}
+                data-testid="workspace-search"
+              />
+
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                <select
+                  className="select h-9 min-h-0 w-full"
+                  value={statusFilter}
+                  onChange={(event) => {
+                    setStatusFilter(event.target.value);
+                    setOffset(0);
+                  }}
+                  data-testid="workspace-filter-status"
+                >
+                  <option value="">Status: all</option>
+                  <option value="draft">Draft</option>
+                  <option value="in_progress">In progress</option>
+                  <option value="ready">Ready</option>
+                </select>
+                <select
+                  className="select h-9 min-h-0 w-full"
+                  value={updatedPreset}
+                  onChange={(event) => {
+                    setUpdatedPreset(event.target.value);
+                    setOffset(0);
+                  }}
+                  data-testid="workspace-filter-updated"
+                >
+                  <option value="all">Updated: all</option>
+                  <option value="7d">Last 7 days</option>
+                  <option value="30d">Last 30 days</option>
+                </select>
+                <select
+                  className="select h-9 min-h-0 w-full"
+                  value={sortKey}
+                  onChange={(event) => setSortKey(event.target.value)}
+                  data-testid="workspace-sort"
+                >
+                  <option value="updated_desc">Sort: updated ↓</option>
+                  <option value="updated_asc">Sort: updated ↑</option>
+                </select>
+                <label className="inline-flex h-9 min-h-0 items-center gap-2 rounded-lg border border-border px-3 text-xs text-muted">
+                  <input
+                    type="checkbox"
+                    checked={needsAttentionOnly}
+                    onChange={(event) => {
+                      setNeedsAttentionOnly(!!event.target.checked);
+                      setOffset(0);
+                    }}
+                    data-testid="workspace-filter-attention"
+                  />
+                  <span>Needs attention only</span>
+                </label>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">
+                  Owner filter
+                </label>
+                <select
+                  className="select min-h-[96px] w-full text-sm"
+                  multiple
+                  value={ownerFilterIds}
+                  onChange={(event) => {
+                    const next = [];
+                    Array.from(event.target.selectedOptions).forEach((opt) => {
+                      const value = toText(opt.value);
+                      if (value) next.push(value);
+                    });
+                    setOwnerFilterIds(next);
+                    setOffset(0);
+                  }}
+                  data-testid="workspace-filter-owner"
+                >
+                  {ownerOptions.length === 0 ? <option value="">—</option> : null}
+                  {ownerOptions.map((owner) => (
+                    <option key={owner.id} value={owner.id}>
+                      {owner.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-          ) : (
-            <div className="space-y-1.5">
-              {tree.projects.map((project) => {
-                const activeProject = selectedProjectId === project.id;
-                return (
-                  <div key={project.id} className="rounded-lg border border-border/70 bg-panel px-2 py-1.5">
-                    <button
-                      type="button"
-                      className={`w-full truncate text-left text-sm ${activeProject ? "font-semibold text-fg" : "text-fg"}`}
-                      onClick={() => {
-                        setSelectedProjectId((prev) => (prev === project.id ? "" : project.id));
-                        setSelectedOwnerId("");
-                        setOffset(0);
-                      }}
-                      title={project.name}
-                      data-testid="workspace-project-node"
-                    >
-                      {project.name}
-                      <span className="ml-1 text-xs text-muted">({project.session_count})</span>
-                    </button>
-                    <div className="mt-0.5 text-[11px] text-muted">owner: {project.owner || "—"}</div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          </div>
+
+          <div className="workspaceExplorer min-h-[260px] overflow-auto rounded-xl border border-border bg-panel2 p-3" data-testid="workspace-explorer">
+            <SectionHeader
+              title="Projects & Owners"
+              subtitle={groupBy === "users" ? "Browse sessions under each owner." : "Browse projects ordered by recent updates."}
+              actions={(
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className={`secondaryBtn h-7 px-2 text-[11px] ${groupBy === "users" ? "ring-1 ring-accent/60" : ""}`}
+                    onClick={() => {
+                      setGroupBy("users");
+                      resetSelection();
+                    }}
+                    data-testid="workspace-group-users"
+                  >
+                    Users
+                  </button>
+                  <button
+                    type="button"
+                    className={`secondaryBtn h-7 px-2 text-[11px] ${groupBy === "projects" ? "ring-1 ring-accent/60" : ""}`}
+                    onClick={() => {
+                      setGroupBy("projects");
+                      resetSelection();
+                    }}
+                    data-testid="workspace-group-projects"
+                  >
+                    Projects
+                  </button>
+                </div>
+              )}
+            />
+
+            {groupBy === "users" ? (
+              <div className="space-y-2">
+                {tree.users.map((user) => {
+                  const activeUser = selectedOwnerId === user.id;
+                  const ownedProjects = tree.projects.filter((proj) => toText(proj.owner_id) === user.id);
+                  return (
+                    <div key={user.id} className={`rounded-xl border px-3 py-2 ${activeUser ? "border-accent/40 bg-accentSoft/10" : "border-border/70 bg-panel"}`}>
+                      <button
+                        type="button"
+                        className="flex w-full items-start justify-between gap-3 text-left"
+                        onClick={() => {
+                          setSelectedOwnerId((prev) => (prev === user.id ? "" : user.id));
+                          setSelectedProjectId("");
+                          setOffset(0);
+                        }}
+                        data-testid="workspace-user-node"
+                        title={user.name}
+                      >
+                        <div className="min-w-0">
+                          <div className={`truncate text-sm ${activeUser ? "font-semibold text-fg" : "text-fg"}`}>{user.name}</div>
+                          <div className="mt-0.5 text-[11px] text-muted">{formatRole(user.role)}</div>
+                        </div>
+                        <div className="shrink-0 rounded-full border border-border px-2 py-1 text-[11px] text-muted">
+                          {Number(user.project_count || 0)} / {Number(user.session_count || 0)}
+                        </div>
+                      </button>
+                      {activeUser ? (
+                        <div className="mt-2 space-y-1.5 pl-2">
+                          {ownedProjects.length === 0 ? (
+                            <div className="text-xs text-muted">No projects for this owner in the current scope.</div>
+                          ) : ownedProjects.map((project) => (
+                            <button
+                              key={`${user.id}_${project.id}`}
+                              type="button"
+                              className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-xs ${
+                                selectedProjectId === project.id ? "bg-accent/15 text-fg" : "text-muted hover:bg-panel2/50 hover:text-fg"
+                              }`}
+                              onClick={() => {
+                                setSelectedProjectId((prev) => (prev === project.id ? "" : project.id));
+                                setOffset(0);
+                              }}
+                              title={project.name}
+                              data-testid="workspace-user-project-node"
+                            >
+                              <span className="min-w-0 truncate">{project.name}</span>
+                              <span className="shrink-0 text-[10px] text-muted">{project.session_count}</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {tree.projects.map((project) => {
+                  const activeProject = selectedProjectId === project.id;
+                  return (
+                    <div key={project.id} className={`rounded-xl border px-3 py-2 ${activeProject ? "border-accent/40 bg-accentSoft/10" : "border-border/70 bg-panel"}`}>
+                      <button
+                        type="button"
+                        className="w-full text-left"
+                        onClick={() => {
+                          setSelectedProjectId((prev) => (prev === project.id ? "" : project.id));
+                          setSelectedOwnerId("");
+                          setOffset(0);
+                        }}
+                        title={project.name}
+                        data-testid="workspace-project-node"
+                      >
+                        <div className={`truncate text-sm ${activeProject ? "font-semibold text-fg" : "text-fg"}`}>{project.name}</div>
+                        <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted">
+                          <span className="truncate" title={project.owner || "—"}>Owner: {project.owner || "—"}</span>
+                          <span className="shrink-0">{project.session_count} sessions</span>
+                        </div>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="workspaceSessions min-h-0 overflow-auto rounded-lg border border-border bg-panel2 p-2" data-testid="workspace-sessions-list">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <div className="text-sm font-semibold text-fg">Sessions</div>
-            <div className="text-xs text-muted">total: {total}</div>
-          </div>
-
-          {loading ? <div className="rounded border border-border px-3 py-2 text-sm text-muted">Загрузка workspace…</div> : null}
-          {error ? <div className="rounded border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">{error}</div> : null}
-
-          {!loading && !error && !hasRows ? (
-            <div className="rounded-lg border border-dashed border-borderStrong bg-panel px-4 py-3" data-testid="workspace-empty-state">
-              <div className="text-sm font-semibold text-fg">Нет сессий по текущим фильтрам</div>
-              <div className="mt-1 text-xs text-muted">
-                Измените фильтры или создайте новый проект/сессию для старта работы.
+        <div className="workspaceSessions min-h-0 rounded-xl border border-border bg-panel2 p-3" data-testid="workspace-sessions-list">
+          <SectionHeader
+            title="Recent Sessions"
+            subtitle="Latest updates across the current scope. Open a session to jump directly into the diagram workspace."
+            actions={(
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                <span className="rounded-full border border-border px-2 py-1">{pageLabel}</span>
+                {hasRows ? (
+                  <button
+                    type="button"
+                    className="secondaryBtn h-7 px-2 text-xs"
+                    onClick={() => onOpenSession?.(listRows[0])}
+                  >
+                    Open Latest
+                  </button>
+                ) : null}
               </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button type="button" className="primaryBtn h-8 px-3 text-xs" onClick={() => onCreateProject?.()}>
-                  Создать проект
+            )}
+          />
+
+          {loading ? (
+            <div className="rounded-xl border border-border px-4 py-3 text-sm text-muted">
+              Loading workspace…
+            </div>
+          ) : null}
+          {error ? (
+            <div className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">
+              {error}
+            </div>
+          ) : null}
+
+          {!loading && !error && loadedOnce && !hasRows ? (
+            <div className="rounded-xl border border-dashed border-borderStrong bg-panel px-4 py-4" data-testid="workspace-empty-state">
+              <div className="text-base font-semibold text-fg">
+                {tree.projects.length > 0 ? "No sessions yet" : "No projects or sessions yet"}
+              </div>
+              <div className="mt-1 text-sm text-muted">
+                {tree.projects.length > 0
+                  ? "Create a session to start diagram editing, interviews, and reports."
+                  : "Create a project first, then create a session to start working in the org workspace."}
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button type="button" className="primaryBtn h-9 px-3 text-sm" onClick={() => onCreateProject?.()}>
+                  Create Project
                 </button>
-                <button type="button" className="secondaryBtn h-8 px-3 text-xs" onClick={() => onCreateSession?.()}>
-                  Создать сессию
+                <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={() => onCreateSession?.()}>
+                  Create Session
                 </button>
                 {canInviteUsers ? (
-                  <button type="button" className="secondaryBtn h-8 px-3 text-xs" onClick={() => onInviteUsers?.()}>
-                    Пригласить пользователя
+                  <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={() => onInviteUsers?.()}>
+                    Invite Users
                   </button>
                 ) : null}
               </div>
@@ -381,68 +586,120 @@ export default function WorkspaceDashboard({
           ) : null}
 
           {!loading && !error && hasRows ? (
-            <div className="overflow-auto">
-              <table className="w-full min-w-[760px] border-separate border-spacing-y-1 text-sm">
-                <thead>
-                  <tr className="text-left text-xs uppercase tracking-wide text-muted">
-                    <th className="px-2 py-1">Session</th>
-                    <th className="px-2 py-1">Project</th>
-                    <th className="px-2 py-1">Owner</th>
-                    <th className="px-2 py-1">Updated</th>
-                    <th className="px-2 py-1">Status</th>
-                    <th className="px-2 py-1">Reports</th>
-                    <th className="px-2 py-1">Attention</th>
-                    <th className="px-2 py-1">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {listRows.map((row) => {
-                    const projectTitle = tree.projects.find((proj) => proj.id === row.project_id)?.name || row.project_id || "—";
-                    return (
-                      <tr key={row.id} className="rounded-lg bg-panel">
-                        <td className="px-2 py-1.5 font-medium">{row.name}</td>
-                        <td className="px-2 py-1.5 text-muted">{projectTitle}</td>
-                        <td className="px-2 py-1.5 text-muted">{row.owner || "—"}</td>
-                        <td className="px-2 py-1.5 text-muted">{formatDateTime(row.updated_at)}</td>
-                        <td className="px-2 py-1.5">
-                          <span className="badge">{row.status}</span>
-                        </td>
-                        <td className="px-2 py-1.5">{Number(row.reports_versions || 0)}</td>
-                        <td className="px-2 py-1.5">{Number(row.needs_attention || 0)}</td>
-                        <td className="px-2 py-1.5">
-                          <button
-                            type="button"
-                            className="primaryBtn h-7 px-2 text-xs"
-                            onClick={() => onOpenSession?.(row)}
-                            data-testid="workspace-open-session"
-                          >
-                            Open
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <>
+              <div className="space-y-2 md:hidden">
+                {listRows.map((row) => {
+                  const projectTitle = tree.projects.find((proj) => proj.id === row.project_id)?.name || row.project_id || "—";
+                  return (
+                    <div key={row.id} className="rounded-xl border border-border bg-panel px-3 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-fg" title={row.name}>{row.name}</div>
+                          <div className="mt-1 truncate text-xs text-muted" title={projectTitle}>{projectTitle}</div>
+                        </div>
+                        <button
+                          type="button"
+                          className="primaryBtn h-8 shrink-0 px-3 text-xs"
+                          onClick={() => onOpenSession?.(row)}
+                          data-testid="workspace-open-session"
+                        >
+                          Open
+                        </button>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                        <span className={`rounded-full border px-2 py-1 ${statusBadgeClass(row.status)}`}>{row.status}</span>
+                        <span className="rounded-full border border-border px-2 py-1 text-muted" title={row.owner || "—"}>{row.owner || "—"}</span>
+                        <span className={`rounded-full border px-2 py-1 ${attentionBadgeClass(row.needs_attention)}`}>
+                          Attention: {Number(row.needs_attention || 0)}
+                        </span>
+                        <span className="rounded-full border border-border px-2 py-1 text-muted">
+                          Updated: {formatDateTime(row.updated_at)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="hidden overflow-auto md:block">
+                <table className="w-full min-w-[760px] border-separate border-spacing-y-2 text-sm">
+                  <thead>
+                    <tr className="text-left text-[11px] uppercase tracking-wide text-muted">
+                      <th className="px-3 py-1">Session</th>
+                      <th className="px-3 py-1">Project</th>
+                      <th className="px-3 py-1">Owner</th>
+                      <th className="px-3 py-1">Updated</th>
+                      <th className="px-3 py-1">Status</th>
+                      <th className="px-3 py-1">Reports</th>
+                      <th className="px-3 py-1">Attention</th>
+                      <th className="px-3 py-1">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {listRows.map((row) => {
+                      const projectTitle = tree.projects.find((proj) => proj.id === row.project_id)?.name || row.project_id || "—";
+                      return (
+                        <tr key={row.id} className="bg-panel">
+                          <td className="rounded-l-xl px-3 py-2.5 align-top">
+                            <div className="max-w-[220px] truncate font-medium text-fg" title={row.name}>
+                              {row.name}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 align-top text-muted">
+                            <div className="max-w-[180px] truncate" title={projectTitle}>
+                              {projectTitle}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 align-top text-muted">
+                            <div className="max-w-[180px] truncate" title={row.owner || "—"}>
+                              {row.owner || "—"}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 align-top text-muted">{formatDateTime(row.updated_at)}</td>
+                          <td className="px-3 py-2.5 align-top">
+                            <span className={`rounded-full border px-2 py-1 text-[11px] ${statusBadgeClass(row.status)}`}>
+                              {row.status}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 align-top text-muted">{Number(row.reports_versions || 0)}</td>
+                          <td className="px-3 py-2.5 align-top">
+                            <span className={`rounded-full border px-2 py-1 text-[11px] ${attentionBadgeClass(row.needs_attention)}`}>
+                              {Number(row.needs_attention || 0)}
+                            </span>
+                          </td>
+                          <td className="rounded-r-xl px-3 py-2.5 align-top">
+                            <button
+                              type="button"
+                              className="primaryBtn h-8 px-3 text-xs"
+                              onClick={() => onOpenSession?.(row)}
+                              data-testid="workspace-open-session"
+                            >
+                              Open
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           ) : null}
 
-          <div className="mt-3 flex items-center justify-end gap-2">
+          <div className="mt-4 flex items-center justify-end gap-2 border-t border-border/70 pt-3">
             <button
               type="button"
-              className="secondaryBtn h-7 px-2 text-xs"
+              className="secondaryBtn h-8 px-3 text-xs"
               disabled={!canPrev}
               onClick={() => setOffset((prev) => Math.max(0, prev - limit))}
               data-testid="workspace-page-prev"
             >
               ← Prev
             </button>
-            <span className="text-xs text-muted">
-              {total > 0 ? `${offset + 1}-${Math.min(offset + limit, total)} / ${total}` : "0"}
-            </span>
+            <span className="text-xs text-muted">{pageLabel}</span>
             <button
               type="button"
-              className="secondaryBtn h-7 px-2 text-xs"
+              className="secondaryBtn h-8 px-3 text-xs"
               disabled={!canNext}
               onClick={() => setOffset((prev) => prev + limit)}
               data-testid="workspace-page-next"
