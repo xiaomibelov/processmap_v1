@@ -58,6 +58,14 @@ export default function WorkspaceDashboard({
   });
 
   useEffect(() => {
+    setSelectedOwnerId("");
+    setSelectedProjectId("");
+    setOwnerFilterIds([]);
+    setOffset(0);
+    setError("");
+  }, [activeOrgId]);
+
+  useEffect(() => {
     const oid = toText(activeOrgId);
     if (!oid) return undefined;
     const timer = window.setTimeout(() => {
@@ -80,7 +88,19 @@ export default function WorkspaceDashboard({
       void apiGetEnterpriseWorkspace(request)
         .then((res) => {
           if (!res?.ok) {
-            setError(String(res?.error || "Не удалось загрузить workspace"));
+            const status = Number(res?.status || 0);
+            const errorText = toText(res?.error || "");
+            if (status === 404 && toText(selectedProjectId)) {
+              // Selected project can become out-of-scope after org/role context switch.
+              setSelectedProjectId("");
+              setOffset(0);
+              return;
+            }
+            if (status === 404 && !toText(selectedProjectId)) {
+              setError("Нет доступа к данным текущей организации. Проверьте выбор организации в верхней панели.");
+              return;
+            }
+            setError(errorText || "Не удалось загрузить workspace");
             return;
           }
           setWorkspace({
@@ -435,4 +455,3 @@ export default function WorkspaceDashboard({
     </div>
   );
 }
-
