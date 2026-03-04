@@ -3491,11 +3491,18 @@ export default function ProcessStage({
       if (!id) return;
       draftNodeById[id] = node;
     });
-    const draftEdgeIds = new Set(
-      asArray(draft?.edges)
-        .map((edgeRaw) => toText(asObject(edgeRaw)?.id || asObject(edgeRaw)?.bpmn_id || asObject(edgeRaw)?.bpmnId))
-        .filter(Boolean),
-    );
+    const draftEdgeById = {};
+    asArray(draft?.edges).forEach((edgeRaw) => {
+      const edge = asObject(edgeRaw);
+      const id = toText(edge?.id || edge?.bpmn_id || edge?.bpmnId);
+      if (!id) return;
+      draftEdgeById[id] = {
+        id,
+        sourceId: toNodeId(edge?.sourceId || edge?.source_id || edge?.from_id || edge?.from || edge?.sourceRef || asObject(edge?.source)?.id),
+        targetId: toNodeId(edge?.targetId || edge?.target_id || edge?.to_id || edge?.to || edge?.targetRef || asObject(edge?.target)?.id),
+        name: toText(edge?.name || edge?.label || edge?.title),
+      };
+    });
     const selectedRefs = selectedIds.map((id) => {
       const node = asObject(draftNodeById[id] || graphNodes[id] || {});
       if (Object.keys(node).length) {
@@ -3507,8 +3514,21 @@ export default function ProcessStage({
           lane_name: toText(node?.laneName || node?.lane),
         };
       }
-      if (graphFlows[id] || draftEdgeIds.has(id)) {
-        return { id, kind: "edge" };
+      const flow = asObject(graphFlows[id] || draftEdgeById[id] || {});
+      if (Object.keys(flow).length) {
+        const sourceId = toNodeId(flow?.sourceId || flow?.source_id || flow?.from_id || flow?.from);
+        const targetId = toNodeId(flow?.targetId || flow?.target_id || flow?.to_id || flow?.to);
+        const sourceNode = asObject(draftNodeById[sourceId] || graphNodes[sourceId] || {});
+        const targetNode = asObject(draftNodeById[targetId] || graphNodes[targetId] || {});
+        return {
+          id,
+          kind: "edge",
+          name: toText(flow?.label || flow?.name || flow?.title),
+          source_id: sourceId,
+          target_id: targetId,
+          source_name: toText(sourceNode?.name || sourceId),
+          target_name: toText(targetNode?.name || targetId),
+        };
       }
       return { id, kind: "node" };
     });
@@ -3640,11 +3660,47 @@ export default function ProcessStage({
       if (!id) return;
       draftNodeById[id] = node;
     });
-    const draftEdgeIds = new Set(
-      asArray(draft?.edges)
-        .map((edgeRaw) => toText(asObject(edgeRaw)?.id || asObject(edgeRaw)?.bpmn_id || asObject(edgeRaw)?.bpmnId))
-        .filter(Boolean),
-    );
+    const draftEdgeById = {};
+    asArray(draft?.edges).forEach((edgeRaw) => {
+      const edge = asObject(edgeRaw);
+      const edgeId = toText(edge?.id || edge?.bpmn_id || edge?.bpmnId);
+      if (!edgeId) return;
+      draftEdgeById[edgeId] = {
+        id: edgeId,
+        sourceId: toNodeId(edge?.sourceId || edge?.source_id || edge?.from_id || edge?.from || edge?.sourceRef || asObject(edge?.source)?.id),
+        targetId: toNodeId(edge?.targetId || edge?.target_id || edge?.to_id || edge?.to || edge?.targetRef || asObject(edge?.target)?.id),
+        name: toText(edge?.name || edge?.label || edge?.title),
+      };
+    });
+    const currentFlowsById = {};
+    Object.entries(graphFlows).forEach(([id, flowRaw]) => {
+      const flow = asObject(flowRaw);
+      const flowId = toText(id || flow?.id);
+      if (!flowId) return;
+      const sourceId = toNodeId(flow?.sourceId || flow?.source_id || flow?.from_id || flow?.from);
+      const targetId = toNodeId(flow?.targetId || flow?.target_id || flow?.to_id || flow?.to);
+      if (!sourceId || !targetId) return;
+      currentFlowsById[flowId] = {
+        id: flowId,
+        sourceId,
+        targetId,
+        name: toText(flow?.name || flow?.label || flow?.title),
+      };
+    });
+    Object.entries(draftEdgeById).forEach(([id, flowRaw]) => {
+      const flow = asObject(flowRaw);
+      const flowId = toText(id || flow?.id);
+      if (!flowId || currentFlowsById[flowId]) return;
+      const sourceId = toNodeId(flow?.sourceId || flow?.source_id || flow?.from_id || flow?.from);
+      const targetId = toNodeId(flow?.targetId || flow?.target_id || flow?.to_id || flow?.to);
+      if (!sourceId || !targetId) return;
+      currentFlowsById[flowId] = {
+        id: flowId,
+        sourceId,
+        targetId,
+        name: toText(flow?.name || flow?.label || flow?.title),
+      };
+    });
     const currentNodesById = {};
     Object.entries(graphNodes).forEach(([id, nodeRaw]) => {
       const node = asObject(nodeRaw);
@@ -3670,7 +3726,7 @@ export default function ProcessStage({
     let found = [];
     let missing = [];
     ids.forEach((id) => {
-      const exists = !!graphNodes[id] || !!graphFlows[id] || !!draftNodeById[id] || draftEdgeIds.has(id);
+      const exists = !!graphNodes[id] || !!draftNodeById[id] || !!currentFlowsById[id];
       if (exists) found.push(id);
       else missing.push(id);
     });
@@ -3681,6 +3737,7 @@ export default function ProcessStage({
         ids: missing,
         elementRefs,
         currentNodesById,
+        currentFlowsById,
         selectedIds: found,
       });
       if (Array.isArray(remap?.mappedIds) && remap.mappedIds.length > 0) {

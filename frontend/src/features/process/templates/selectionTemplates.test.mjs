@@ -102,6 +102,28 @@ test("remapTemplateNodeIdsByRefs: keeps missing on ambiguous matches", () => {
   assert.equal(result.ambiguousCount, 1);
 });
 
+test("remapTemplateNodeIdsByRefs: remaps edge by mapped source/target nodes", () => {
+  const result = remapTemplateNodeIdsByRefs({
+    ids: ["Task_1", "Task_2", "Flow_1"],
+    elementRefs: [
+      { id: "Task_1", kind: "node", name: "Принять заказ", type: "userTask", lane_name: "Оператор" },
+      { id: "Task_2", kind: "node", name: "Готовить суп", type: "serviceTask", lane_name: "Кухня" },
+      { id: "Flow_1", kind: "edge", source_id: "Task_1", target_id: "Task_2" },
+    ],
+    currentNodesById: {
+      Activity_A: { name: "Принять заказ", type: "userTask", lane_name: "Оператор" },
+      Activity_B: { name: "Готовить суп", type: "serviceTask", lane_name: "Кухня" },
+    },
+    currentFlowsById: {
+      Sequence_X: { sourceId: "Activity_A", targetId: "Activity_B", name: "to soup" },
+    },
+    selectedIds: [],
+  });
+  assert.deepEqual(result.mappedIds, ["Activity_A", "Activity_B", "Sequence_X"]);
+  assert.deepEqual(result.missingIds, []);
+  assert.equal(result.remappedCount, 3);
+});
+
 test("rbac: org template create/manage", () => {
   assert.equal(canCreateOrgTemplate("project_manager", false), true);
   assert.equal(canCreateOrgTemplate("viewer", false), false);

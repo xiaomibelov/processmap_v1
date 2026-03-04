@@ -144,6 +144,37 @@ class TemplatesApiTest(unittest.TestCase):
         other_items = other_rows.get("items") if isinstance(other_rows, dict) else []
         self.assertEqual(len(other_items), 0)
 
+    def test_template_payload_preserves_edge_refs(self):
+        req_pm = self._mk_req(self.pm, self.default_org_id)
+        payload = self._base_payload()
+        payload["bpmn_element_ids"] = ["Task_1", "Task_2", "Flow_1"]
+        payload["bpmn_element_refs"] = [
+            {"id": "Task_1", "kind": "node", "name": "Принять заказ", "type": "userTask", "lane_name": "Оператор"},
+            {"id": "Task_2", "kind": "node", "name": "Готовить суп", "type": "serviceTask", "lane_name": "Кухня"},
+            {
+                "id": "Flow_1",
+                "kind": "edge",
+                "source_id": "Task_1",
+                "target_id": "Task_2",
+                "source_name": "Принять заказ",
+                "target_name": "Готовить суп",
+            },
+        ]
+        created = self.create_template_endpoint(
+            self.TemplateCreateIn(
+                scope="personal",
+                name="Edge refs",
+                payload=payload,
+            ),
+            req_pm,
+        )
+        self.assertEqual(_status_of(created), 200)
+        refs = (created.get("payload") or {}).get("bpmn_element_refs") or []
+        edge_ref = next((row for row in refs if str(row.get("id") or "") == "Flow_1"), {})
+        self.assertEqual(str(edge_ref.get("kind") or ""), "edge")
+        self.assertEqual(str(edge_ref.get("source_id") or ""), "Task_1")
+        self.assertEqual(str(edge_ref.get("target_id") or ""), "Task_2")
+
     def test_org_template_create_forbidden_for_viewer_and_allowed_for_project_manager(self):
         req_viewer = self._mk_req(self.viewer, self.default_org_id)
         denied = self.create_template_endpoint(

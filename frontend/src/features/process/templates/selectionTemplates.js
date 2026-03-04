@@ -39,13 +39,24 @@ export function normalizeTemplateElementRefs(rawList, allowedIdsRaw = []) {
     seen.add(id);
     const kindRaw = toText(item.kind).toLowerCase();
     const kind = kindRaw === "edge" ? "edge" : "node";
-    out.push({
+    const normalized = {
       id,
       kind,
       name: toText(item.name),
       type: toText(item.type),
       lane_name: toText(item.lane_name || item.laneName || item.lane),
-    });
+    };
+    if (kind === "edge") {
+      const sourceId = toText(item.source_id || item.sourceId || item.from_id || item.fromId || item.source || item.from);
+      const targetId = toText(item.target_id || item.targetId || item.to_id || item.toId || item.target || item.to);
+      const sourceName = toText(item.source_name || item.sourceName || item.from_name || item.fromName);
+      const targetName = toText(item.target_name || item.targetName || item.to_name || item.toName);
+      if (sourceId) normalized.source_id = sourceId;
+      if (targetId) normalized.target_id = targetId;
+      if (sourceName) normalized.source_name = sourceName;
+      if (targetName) normalized.target_name = targetName;
+    }
+    out.push(normalized);
   }
   return out;
 }
@@ -90,14 +101,46 @@ export function remapTemplateNodeIdsByRefs(options = {}) {
       laneToken: toToken(node.lane_name || node.laneName || node.lane),
     };
   }).filter((entry) => entry.id && entry.nameToken);
+  const nodeIdsByNameToken = new Map();
+  nodeEntries.forEach((entry) => {
+    const key = entry.nameToken;
+    if (!key) return;
+    if (!nodeIdsByNameToken.has(key)) nodeIdsByNameToken.set(key, []);
+    nodeIdsByNameToken.get(key).push(entry.id);
+  });
+  const nodeIdMap = new Map();
+  nodeEntries.forEach((entry) => {
+    nodeIdMap.set(entry.id, entry.id);
+  });
+  const flowsRaw = options?.currentFlowsById && typeof options.currentFlowsById === "object"
+    ? options.currentFlowsById
+    : {};
+  const flowEntries = Object.entries(flowsRaw).map(([id, flowRaw]) => {
+    const flow = flowRaw && typeof flowRaw === "object" ? flowRaw : {};
+    return {
+      id: toText(id),
+      sourceId: toText(flow.sourceId || flow.source_id || flow.from_id || flow.from),
+      targetId: toText(flow.targetId || flow.target_id || flow.to_id || flow.to),
+      nameToken: toToken(flow.name || flow.label || flow.title),
+    };
+  }).filter((entry) => entry.id && entry.sourceId && entry.targetId);
 
   const mappedIds = [];
   const missingIds = [];
   let ambiguousCount = 0;
   let noMatchCount = 0;
 
+  const nodeIds = [];
+  const edgeIds = [];
   for (let i = 0; i < ids.length; i += 1) {
     const sourceId = ids[i];
+    const ref = refById.get(sourceId);
+    if (ref?.kind === "edge") edgeIds.push(sourceId);
+    else nodeIds.push(sourceId);
+  }
+
+  for (let i = 0; i < nodeIds.length; i += 1) {
+    const sourceId = nodeIds[i];
     const ref = refById.get(sourceId);
     if (!ref || ref.kind !== "node") {
       missingIds.push(sourceId);
@@ -131,8 +174,57 @@ export function remapTemplateNodeIdsByRefs(options = {}) {
       continue;
     }
     const targetId = candidates[0].id;
+    nodeIdMap.set(sourceId, targetId);
     selectedSet.add(targetId);
     mappedIds.push(targetId);
+  }
+
+  function resolveNodeIdFromRef(idRaw, nameRaw) {
+    const fromId = toText(idRaw);
+    if (fromId && nodeIdMap.has(fromId)) return toText(nodeIdMap.get(fromId));
+    const nameToken = toToken(nameRaw);
+    if (!nameToken) return "";
+    const candidates = (nodeIdsByNameToken.get(nameToken) || []).filter(Boolean);
+    if (candidates.length === 1) return toText(candidates[0]);
+    return "";
+  }
+
+  for (let i = 0; i < edgeIds.length; i += 1) {
+    const sourceId = edgeIds[i];
+    const ref = refById.get(sourceId);
+    if (!ref || ref.kind !== "edge") {
+      missingIds.push(sourceId);
+      continue;
+    }
+    const sourceNodeId = resolveNodeIdFromRef(ref.source_id, ref.source_name);
+    const targetNodeId = resolveNodeIdFromRef(ref.target_id, ref.target_name);
+    let candidates = [];
+    if (sourceNodeId && targetNodeId) {
+      candidates = flowEntries.filter((entry) => (
+        entry.sourceId === sourceNodeId
+        && entry.targetId === targetNodeId
+        && !selectedSet.has(entry.id)
+      ));
+    }
+    if (!candidates.length) {
+      const edgeName = toToken(ref.name);
+      if (edgeName) {
+        candidates = flowEntries.filter((entry) => entry.nameToken === edgeName && !selectedSet.has(entry.id));
+      }
+    }
+    if (!candidates.length) {
+      missingIds.push(sourceId);
+      noMatchCount += 1;
+      continue;
+    }
+    if (candidates.length !== 1) {
+      missingIds.push(sourceId);
+      ambiguousCount += 1;
+      continue;
+    }
+    const targetFlowId = candidates[0].id;
+    selectedSet.add(targetFlowId);
+    mappedIds.push(targetFlowId);
   }
 
   return {

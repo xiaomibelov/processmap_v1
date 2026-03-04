@@ -1424,15 +1424,35 @@ def _normalize_template_payload(raw: Any) -> Dict[str, Any]:
         kind = str(ref.get("kind") or "node").strip().lower()
         if kind not in {"node", "edge"}:
             kind = "node"
-        refs.append(
-            {
-                "id": ref_id,
-                "kind": kind,
-                "name": str(ref.get("name") or "").strip(),
-                "type": str(ref.get("type") or "").strip(),
-                "lane_name": str(ref.get("lane_name") or ref.get("laneName") or ref.get("lane") or "").strip(),
-            }
-        )
+        normalized_ref = {
+            "id": ref_id,
+            "kind": kind,
+            "name": str(ref.get("name") or "").strip(),
+            "type": str(ref.get("type") or "").strip(),
+            "lane_name": str(ref.get("lane_name") or ref.get("laneName") or ref.get("lane") or "").strip(),
+        }
+        if kind == "edge":
+            source_id = str(
+                ref.get("source_id") or ref.get("sourceId") or ref.get("from_id") or ref.get("fromId") or ref.get("source") or ref.get("from") or ""
+            ).strip()
+            target_id = str(
+                ref.get("target_id") or ref.get("targetId") or ref.get("to_id") or ref.get("toId") or ref.get("target") or ref.get("to") or ""
+            ).strip()
+            source_name = str(
+                ref.get("source_name") or ref.get("sourceName") or ref.get("from_name") or ref.get("fromName") or ""
+            ).strip()
+            target_name = str(
+                ref.get("target_name") or ref.get("targetName") or ref.get("to_name") or ref.get("toName") or ""
+            ).strip()
+            if source_id:
+                normalized_ref["source_id"] = source_id
+            if target_id:
+                normalized_ref["target_id"] = target_id
+            if source_name:
+                normalized_ref["source_name"] = source_name
+            if target_name:
+                normalized_ref["target_name"] = target_name
+        refs.append(normalized_ref)
     return {
         "bpmn_element_ids": ids,
         "bpmn_element_refs": refs,
