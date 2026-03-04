@@ -149,6 +149,31 @@ async function clickLayersControl(page, testIdRaw) {
   await page.getByTestId(testId).click();
 }
 
+async function setHybridToggleChecked(page, checkedRaw) {
+  const checked = !!checkedRaw;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await openLayersPopover(page);
+    const toggle = page.getByTestId("diagram-action-layers-hybrid-toggle");
+    if (!(await toggle.isVisible().catch(() => false))) {
+      await waitForModelerReady(page);
+      const diagramTab = page.getByRole("tab", { name: "Diagram" });
+      if (await diagramTab.isVisible().catch(() => false)) {
+        await diagramTab.click().catch(() => {});
+      }
+      await page.waitForTimeout(80);
+      continue;
+    }
+    if (checked) await toggle.check({ force: true });
+    else await toggle.uncheck({ force: true });
+    return;
+  }
+  await openLayersPopover(page);
+  const toggle = page.getByTestId("diagram-action-layers-hybrid-toggle");
+  await expect(toggle).toBeVisible();
+  if (checked) await toggle.check({ force: true });
+  else await toggle.uncheck({ force: true });
+}
+
 async function openPlaybackPopover(page) {
   const toggle = page.getByTestId("diagram-action-playback");
   const popover = page.getByTestId("diagram-action-playback-popover");
@@ -266,10 +291,7 @@ test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ pag
   await waitForModelerReady(page);
   await expect(page.getByTestId("diagram-action-layers")).toBeVisible();
 
-  await openLayersPopover(page);
-  const hybridToggle = page.getByTestId("diagram-action-layers-hybrid-toggle");
-  await expect(hybridToggle).toBeVisible();
-  await hybridToggle.check({ force: true });
+  await setHybridToggleChecked(page, true);
   await openLayersPopover(page);
   await expect
     .poll(async () => {
@@ -287,8 +309,7 @@ test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ pag
   await expect(taskShape).toBeVisible();
 
   await openLayersPopover(page);
-  const hybridToggle2 = page.getByTestId("diagram-action-layers-hybrid-toggle");
-  await hybridToggle2.check({ force: true });
+  await setHybridToggleChecked(page, true);
   const editButton = page.getByTestId("diagram-action-layers-mode-edit");
   await expect(editButton).toBeEnabled();
   await editButton.click();
@@ -296,7 +317,7 @@ test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ pag
   const overlayAfterModeClick = page.getByTestId("hybrid-layer-overlay").last();
   if (!(await overlayAfterModeClick.isVisible().catch(() => false))) {
     await openLayersPopover(page);
-    await page.getByTestId("diagram-action-layers-hybrid-toggle").check({ force: true });
+    await setHybridToggleChecked(page, true);
     await page.getByTestId("diagram-action-layers-mode-edit").click();
   }
   await expect(page.getByTestId("hybrid-layer-overlay").last()).toHaveClass(/isEdit/);
@@ -346,8 +367,7 @@ test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ pag
       return Object.keys(map).length;
     })
     .toBeGreaterThan(0);
-  await openLayersPopover(page);
-  await page.getByTestId("diagram-action-layers-hybrid-toggle").check({ force: true });
+  await setHybridToggleChecked(page, true);
   await expect
     .poll(async () => Number(await page.getByTestId("hybrid-v2-shape").count().catch(() => 0)))
     .toBeGreaterThan(0);
@@ -468,8 +488,7 @@ test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ pag
   await waitForModelerReady(page);
   const overlayAfterReload = page.getByTestId("hybrid-layer-overlay").last();
   if (!(await overlayAfterReload.isVisible().catch(() => false))) {
-    await openLayersPopover(page);
-    await page.getByTestId("diagram-action-layers-hybrid-toggle").check({ force: true });
+    await setHybridToggleChecked(page, true);
   }
   await expect(overlayAfterReload).toBeVisible();
   await expect
@@ -500,8 +519,7 @@ test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ pag
     await openFixtureInTopbar(page, fixture);
     await switchTab(page, "Diagram");
     await waitForModelerReady(page);
-    await openLayersPopover(page);
-    await page.getByTestId("diagram-action-layers-hybrid-toggle").check({ force: true });
+    await setHybridToggleChecked(page, true);
     await openLayersPopover(page);
     const focusBtn = page.getByTestId("diagram-action-layers-focus-visible");
     await expect(focusBtn).toBeVisible();
