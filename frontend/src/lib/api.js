@@ -561,16 +561,6 @@ export async function apiCreateOrgInvite(orgId, payload = {}) {
     : r;
 }
 
-export async function apiAcceptOrgInvite(orgId, token) {
-  const oid = String(orgId || "").trim();
-  const inviteToken = String(token || "").trim();
-  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
-  if (!inviteToken) return { ok: false, status: 0, error: "missing token" };
-  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/invites/accept`;
-  const r = okOrError(await request(endpoint, { method: "POST", body: { token: inviteToken } }));
-  return r.ok ? { ok: true, status: r.status, invite: r.data?.invite || {}, membership: r.data?.membership || {} } : r;
-}
-
 export async function apiAcceptInviteToken(token) {
   const inviteToken = String(token || "").trim();
   if (!inviteToken) return { ok: false, status: 0, error: "missing token" };
@@ -1001,14 +991,6 @@ export async function apiAiQuestions(sessionId, payload, options = {}) {
     body: payload || {},
     signal: options?.signal,
   }));
-  return r.ok ? { ok: true, status: r.status, result: r.data } : r;
-}
-
-export async function apiAiCommandOps(sessionId, payload) {
-  const sid = String(sessionId || "").trim();
-  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
-  const body = isPlainObject(payload) ? payload : {};
-  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/ai/ops`, { method: "POST", body }));
   return r.ok ? { ok: true, status: r.status, result: r.data } : r;
 }
 

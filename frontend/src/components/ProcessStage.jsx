@@ -5,7 +5,6 @@ import InterviewStage from "./process/InterviewStage";
 import WorkspaceDashboard from "./workspace/WorkspaceDashboard";
 import Modal from "../shared/ui/Modal";
 import { useAuth } from "../features/auth/AuthProvider";
-import { apiAiCommandOps } from "../lib/api";
 import { apiPatchSession, apiRecompute } from "../lib/api/sessionApi";
 import { apiGetBpmnXml } from "../lib/api/bpmnApi";
 import { apiAiQuestions } from "../lib/api/interviewApi";
@@ -96,6 +95,14 @@ import useHybridSelectionController from "../features/process/hybrid/tools/useHy
 import useHybridToolsController from "../features/process/hybrid/tools/useHybridToolsController";
 import HybridToolsPalette from "../features/process/hybrid/tools/HybridToolsPalette";
 import HybridContextMenu from "../features/process/hybrid/tools/HybridContextMenu";
+import DrawioEditorModal from "../features/process/drawio/DrawioEditorModal";
+import DrawioOverlayRenderer from "../features/process/drawio/DrawioOverlayRenderer";
+import {
+  isDrawioXml,
+  mergeDrawioMeta,
+  normalizeDrawioMeta,
+  serializeDrawioMeta,
+} from "../features/process/drawio/drawioMeta";
 import {
   applyHybridPaletteModeIntent,
   applyHybridPaletteToolIntent,
@@ -560,6 +567,7 @@ const NOTES_BATCH_APPLY_EVENT = "fpc:batch_ops_apply";
 const NOTES_BATCH_RESULT_PREFIX = "fpc:batch_ops_result:";
 const NOTES_COVERAGE_OPEN_EVENT = "fpc:coverage_open";
 const DIAGRAM_PATHS_INTENT_VERSION = 1;
+const HYBRID_V2_KNOWN_SESSIONS_KEY = "fpc_hybrid_v2_known_sessions_v1";
 
 function readCommandMode() {
   if (typeof window === "undefined") return false;
@@ -711,6 +719,36 @@ function logAiOpsTrace(tag, payload = {}) {
     .join(" ");
   // eslint-disable-next-line no-console
   console.debug(`[AI_OPS] ${String(tag || "trace")} ${suffix}`.trim());
+}
+
+function readKnownHybridV2Sessions(storageLike) {
+  if (!storageLike) return new Set();
+  try {
+    const raw = storageLike.getItem(HYBRID_V2_KNOWN_SESSIONS_KEY);
+    const parsed = JSON.parse(String(raw || "[]"));
+    return new Set(asArray(parsed).map((row) => toText(row)).filter(Boolean));
+  } catch {
+    return new Set();
+  }
+}
+
+function hasKnownHybridV2Session(storageLike, sidRaw) {
+  const sid = toText(sidRaw);
+  if (!sid) return false;
+  return readKnownHybridV2Sessions(storageLike).has(sid);
+}
+
+function markKnownHybridV2Session(storageLike, sidRaw) {
+  const sid = toText(sidRaw);
+  if (!storageLike || !sid) return false;
+  try {
+    const next = readKnownHybridV2Sessions(storageLike);
+    next.add(sid);
+    storageLike.setItem(HYBRID_V2_KNOWN_SESSIONS_KEY, JSON.stringify(Array.from(next)));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function shouldLogActorsTrace() {
@@ -1072,12 +1110,15 @@ export default function ProcessStage({
   const bpmnStageHostRef = useRef(null);
   const hybridLayerOverlayRef = useRef(null);
   const hybridV2FileInputRef = useRef(null);
+  const drawioFileInputRef = useRef(null);
   const hybridLayerDragRef = useRef(null);
   const hybridLayerMapRef = useRef({});
   const hybridLayerPersistedMapRef = useRef({});
   const hybridAutoFocusGuardRef = useRef("");
   const hybridV2DocRef = useRef(normalizeHybridV2Doc({}));
   const hybridV2PersistedDocRef = useRef(normalizeHybridV2Doc({}));
+  const drawioMetaRef = useRef(normalizeDrawioMeta({}));
+  const drawioPersistedMetaRef = useRef(normalizeDrawioMeta({}));
   const hybridV2MigrationGuardRef = useRef("");
   const lastDraftXmlHashRef = useRef("");
   const lastAiGenerateIntentKeyRef = useRef("");
@@ -1168,6 +1209,8 @@ export default function ProcessStage({
   const [hybridLayerActiveElementId, setHybridLayerActiveElementId] = useState("");
   const [hybridV2Doc, setHybridV2Doc] = useState(() => normalizeHybridV2Doc({}));
   const [hybridV2BindPickMode, setHybridV2BindPickMode] = useState(false);
+  const [drawioMeta, setDrawioMeta] = useState(() => normalizeDrawioMeta({}));
+  const [drawioEditorOpen, setDrawioEditorOpen] = useState(false);
 
   useEffect(() => {
     setGenBusy(false);
@@ -1554,6 +1597,10 @@ export default function ProcessStage({
     () => normalizeHybridV2Doc(asObject(asObject(draft?.bpmn_meta).hybrid_v2)),
     [draft?.bpmn_meta],
   );
+  const drawioFromDraft = useMemo(
+    () => normalizeDrawioMeta(asObject(asObject(draft?.bpmn_meta).drawio)),
+    [draft?.bpmn_meta],
+  );
   const hybridLayerMapLive = useMemo(
     () => normalizeHybridLayerMap(hybridLayerByElementId),
     [hybridLayerByElementId],
@@ -1602,6 +1649,8 @@ export default function ProcessStage({
     [user?.id],
   );
   const hybridVisible = !!hybridUiPrefs.visible || !!hybridPeekActive;
+  const drawioVisible = !!drawioMeta.enabled && !!toText(drawioMeta.svg_cache);
+  const overlayLayerVisible = hybridVisible || drawioVisible;
   const hybridModeEffective = hybridVisible
     ? (hybridPeekActive ? "view" : (hybridUiPrefs.mode === "edit" && !hybridUiPrefs.lock ? "edit" : "view"))
     : "hidden";
@@ -1624,7 +1673,7 @@ export default function ProcessStage({
     getElementBBox,
   } = useDiagramOverlayTransform({
     tab,
-    hybridVisible,
+    hybridVisible: overlayLayerVisible,
     bpmnRef,
     bpmnStageHostRef,
     matrixToScreen,
@@ -1668,7 +1717,7 @@ export default function ProcessStage({
     matrixToScreen,
     toText,
   });
-  const { persistHybridLayerMap, persistHybridV2Doc } = useSessionMetaPersist({
+  const { persistHybridLayerMap, persistHybridV2Doc, persistDrawioMeta } = useSessionMetaPersist({
     sid,
     isLocal,
     draftBpmnMeta: draft?.bpmn_meta,
@@ -1677,10 +1726,13 @@ export default function ProcessStage({
     shortErr,
     hybridLayerPersistedMapRef,
     hybridV2PersistedDocRef,
+    drawioPersistedMetaRef,
     normalizeHybridLayerMap,
     serializeHybridLayerMap,
     normalizeHybridV2Doc,
     docToComparableJson,
+    normalizeDrawioMeta,
+    serializeDrawioMeta,
   });
   useEffect(() => {
     const incoming = normalizeHybridLayerMap(hybridLayerMapFromDraft);
@@ -1719,6 +1771,31 @@ export default function ProcessStage({
   useEffect(() => {
     hybridV2DocRef.current = normalizeHybridV2Doc(hybridV2Doc);
   }, [hybridV2Doc]);
+
+  useEffect(() => {
+    const incoming = normalizeDrawioMeta(drawioFromDraft);
+    const incomingSig = serializeDrawioMeta(incoming);
+    const currentMeta = normalizeDrawioMeta(drawioMetaRef.current);
+    const persistedMeta = normalizeDrawioMeta(drawioPersistedMetaRef.current);
+    const currentSig = serializeDrawioMeta(currentMeta);
+    const persistedSig = serializeDrawioMeta(persistedMeta);
+    if (incomingSig === persistedSig && currentSig !== incomingSig) return;
+    if (!incoming.doc_xml && currentMeta.doc_xml) return;
+    setDrawioMeta(incoming);
+    drawioMetaRef.current = incoming;
+    drawioPersistedMetaRef.current = incoming;
+  }, [drawioFromDraft]);
+
+  useEffect(() => {
+    drawioMetaRef.current = normalizeDrawioMeta(drawioMeta);
+  }, [drawioMeta]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const count = Number(asArray(hybridV2Doc?.elements).length || 0) + Number(asArray(hybridV2Doc?.edges).length || 0);
+    if (count <= 0 || !sid) return;
+    markKnownHybridV2Session(window.localStorage, sid);
+  }, [hybridV2Doc, sid]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2043,10 +2120,34 @@ export default function ProcessStage({
   });
   const applyHybridV2Delete = useCallback((idsRaw) => {
     const prev = normalizeHybridV2Doc(hybridV2DocRef.current);
+    const ids = asArray(idsRaw).map((row) => toText(row)).filter(Boolean);
+    if (!ids.length) return false;
+    const layerById = {};
+    asArray(prev.layers).forEach((layerRaw) => {
+      const layer = asObject(layerRaw);
+      const layerId = toText(layer.id);
+      if (layerId) layerById[layerId] = layer;
+    });
+    const blockedLockedIds = ids.filter((id) => {
+      const element = asObject(asArray(prev.elements).find((rowRaw) => toText(asObject(rowRaw).id) === id));
+      if (element.id) return asObject(layerById[toText(element.layer_id)]).locked === true;
+      const edge = asObject(asArray(prev.edges).find((rowRaw) => toText(asObject(rowRaw).id) === id));
+      if (edge.id) return asObject(layerById[toText(edge.layer_id)]).locked === true;
+      return false;
+    });
+    if (blockedLockedIds.length) {
+      setInfoMsg(`Удаление недоступно: слой заблокирован (${blockedLockedIds.join(", ")}).`);
+      setGenErr("");
+      return false;
+    }
     const result = deleteHybridIds(prev, idsRaw);
     const next = normalizeHybridV2Doc(result.nextHybridV2);
     const changed = docToComparableJson(prev) !== docToComparableJson(next);
-    if (!changed) return false;
+    if (!changed) {
+      setInfoMsg("Нечего удалять: элемент не найден или уже удалён.");
+      setGenErr("");
+      return false;
+    }
     hybridV2DocRef.current = next;
     setHybridV2Doc(next);
     markPlaybackOverlayInteraction({
@@ -2057,7 +2158,7 @@ export default function ProcessStage({
     setHybridV2BindPickMode(false);
     void persistHybridV2Doc(next, { source: "hybrid_v2_delete_item" });
     return changed;
-  }, [markPlaybackOverlayInteraction, persistHybridV2Doc]);
+  }, [markPlaybackOverlayInteraction, persistHybridV2Doc, setGenErr, setInfoMsg]);
   const hybridTools = useHybridToolsController({
     hybridDoc: hybridV2Doc,
     setHybridDoc: setHybridV2Doc,
@@ -2086,6 +2187,7 @@ export default function ProcessStage({
     docLive: hybridTools.docLive,
     isEditableTarget,
     onDeleteIds: applyHybridV2Delete,
+    onRequestEditSelected: hybridTools.openTextEditor,
   });
   const hybridV2DocLive = hybridTools.docLive;
   const hybridV2LayerById = hybridTools.layerById;
@@ -2107,6 +2209,7 @@ export default function ProcessStage({
     mode: hybridModeEffective,
     tool: hybridV2ToolState,
   }), [hybridModeEffective, hybridV2ToolState, hybridVisible]);
+  const drawioUiState = useMemo(() => normalizeDrawioMeta(drawioMeta), [drawioMeta]);
   const setHybridToolsMode = useCallback((modeRaw) => {
     const nextState = applyHybridPaletteModeIntent(hybridToolsUiState, modeRaw);
     showHybridLayer();
@@ -2116,7 +2219,10 @@ export default function ProcessStage({
     const nextState = applyHybridPaletteToolIntent(hybridToolsUiState, toolRaw);
     showHybridLayer();
     if (nextState.mode === "edit") {
-      setHybridLayerMode("edit");
+      setHybridLayerMode("edit", {
+        skipV2Seed: nextState.tool !== "select",
+        skipLegacySeed: nextState.tool !== "select",
+      });
     }
     setHybridV2Tool(nextState.tool);
   }, [hybridToolsUiState, setHybridLayerMode, setHybridV2Tool, showHybridLayer]);
@@ -2146,6 +2252,104 @@ export default function ProcessStage({
     }
     hybridTools.onElementContextMenu(event, elementIdRaw);
   }, [hybridSelection, hybridTools, hybridV2SelectedIdSet]);
+  const handleHybridV2ElementDoubleClick = useCallback((event, elementIdRaw) => {
+    hybridTools.onElementDoubleClick(event, elementIdRaw, hybridSelection);
+  }, [hybridSelection, hybridTools]);
+  const deleteLegacyHybridMarkers = useCallback((elementIdsRaw, source = "hybrid_legacy_delete") => {
+    const elementIds = Array.from(new Set(asArray(elementIdsRaw).map((row) => toText(row)).filter(Boolean)));
+    if (!elementIds.length) return false;
+    const boundHybridIds = new Set();
+    elementIds.forEach((elementId) => {
+      asArray(hybridTools.bindingByBpmnId[elementId]).forEach((bindingRaw) => {
+        const binding = asObject(bindingRaw);
+        const hybridId = toText(binding.hybrid_id || binding.hybridId);
+        if (hybridId) boundHybridIds.add(hybridId);
+      });
+    });
+    let nextMap = null;
+    let removedCount = 0;
+    setHybridLayerByElementId((prevRaw) => {
+      const prev = normalizeHybridLayerMap(prevRaw);
+      const next = {};
+      Object.keys(prev).forEach((elementIdRaw) => {
+        const elementId = toText(elementIdRaw);
+        if (!elementId) return;
+        if (elementIds.includes(elementId)) {
+          removedCount += 1;
+          return;
+        }
+        next[elementId] = asObject(prev[elementId]);
+      });
+      hybridLayerMapRef.current = next;
+      nextMap = next;
+      return next;
+    });
+    if (boundHybridIds.size) {
+      applyHybridV2Delete(Array.from(boundHybridIds));
+    }
+    if (nextMap) {
+      window.setTimeout(() => {
+        void persistHybridLayerMap(nextMap, { source });
+      }, 0);
+    }
+    if (elementIds.includes(toText(hybridLayerActiveElementId))) {
+      setHybridLayerActiveElementId("");
+    }
+    const changed = removedCount > 0 || boundHybridIds.size > 0;
+    if (!changed) {
+      setInfoMsg("Нечего удалять: legacy-метка не найдена.");
+      setGenErr("");
+      return false;
+    }
+    markPlaybackOverlayInteraction({
+      stage: source,
+      legacyCount: removedCount,
+      hybridCount: boundHybridIds.size,
+    });
+    return true;
+  }, [
+    applyHybridV2Delete,
+    hybridLayerActiveElementId,
+    hybridTools.bindingByBpmnId,
+    markPlaybackOverlayInteraction,
+    persistHybridLayerMap,
+    setGenErr,
+    setInfoMsg,
+  ]);
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const e2eApi = {
+      selectTool(toolRaw) {
+        selectHybridPaletteTool(toolRaw);
+      },
+      ensureEditVisible() {
+        showHybridLayer();
+        setHybridLayerMode("edit", {
+          skipV2Seed: true,
+          skipLegacySeed: true,
+        });
+      },
+      createElementAt(pointRaw, typeRaw = "rect") {
+        showHybridLayer();
+        setHybridLayerMode("edit", {
+          skipV2Seed: true,
+          skipLegacySeed: true,
+        });
+        const nextType = toText(typeRaw).toLowerCase() || "rect";
+        setHybridV2Tool(nextType);
+        return hybridTools.createElementAt(pointRaw, nextType);
+      },
+      readDoc() {
+        return normalizeHybridV2Doc(hybridV2DocRef.current);
+      },
+    };
+    window.__FPC_E2E_HYBRID__ = e2eApi;
+    return () => {
+      if (window.__FPC_E2E_HYBRID__ === e2eApi) {
+        window.__FPC_E2E_HYBRID__ = null;
+      }
+    };
+  }, [hybridTools, selectHybridPaletteTool, setHybridLayerMode, setHybridV2Tool, showHybridLayer]);
   const hybridV2PlaybackHighlightedIds = useMemo(() => {
     const byBpmnId = hybridTools.bindingByBpmnId;
     const out = new Set();
@@ -3071,21 +3275,6 @@ export default function ProcessStage({
           selectedElementType,
           selectedElementLaneName,
         },
-        llmFallback: async ({ command, context }) => {
-          const response = await apiAiCommandOps(sid, {
-            command: String(command || ""),
-            context: {
-              selected_element_id: String(context?.selectedElementId || ""),
-              selected_element_name: String(context?.selectedElementName || ""),
-              selected_element_type: String(context?.selectedElementType || ""),
-              selected_element_lane: String(context?.selectedElementLaneName || ""),
-            },
-          });
-          if (!response?.ok) {
-            throw new Error(`llm_http_${Number(response?.status || 0) || 0}`);
-          }
-          return response?.result;
-        },
       });
 
       if (!parsed?.ok || !asArray(parsed?.ops).length) {
@@ -3764,6 +3953,7 @@ export default function ProcessStage({
     if (asArray(draftV2.elements).length > 0 || asArray(draftV2.edges).length > 0) return;
     const v1Map = normalizeHybridLayerMap(hybridLayerMapFromDraft);
     if (!Object.keys(v1Map).length) return;
+    if (typeof window !== "undefined" && hasKnownHybridV2Session(window.localStorage, sid)) return;
     const guardKey = `${sid}:${serializeHybridLayerMap(v1Map)}`;
     if (hybridV2MigrationGuardRef.current === guardKey) return;
     hybridV2MigrationGuardRef.current = guardKey;
@@ -3820,6 +4010,33 @@ export default function ProcessStage({
     hybridAutoFocusGuardRef.current = guardKey;
     focusHybridLayer("hybrid_auto_focus_outside_viewport");
   }, [hybridLayerVisibilityStats.insideViewport, hybridLayerVisibilityStats.total, hybridVisible, sid, tab]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onKeyDown = (event) => {
+      if (isEditableTarget(event.target)) return;
+      if (tab !== "diagram" || hybridModeEffective !== "edit" || hybridUiPrefs.lock) return;
+      const key = String(event?.key || "");
+      if (key !== "Delete" && key !== "Backspace") return;
+      if (hybridSelection.selectionCount > 0) return;
+      const legacyId = toText(hybridLayerActiveElementId);
+      if (!legacyId) return;
+      if (!deleteLegacyHybridMarkers([legacyId], "hybrid_legacy_keyboard_delete")) return;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [
+    deleteLegacyHybridMarkers,
+    hybridLayerActiveElementId,
+    hybridModeEffective,
+    hybridSelection.selectionCount,
+    hybridUiPrefs.lock,
+    tab,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -3917,6 +4134,7 @@ export default function ProcessStage({
     if (typeof window === "undefined") return undefined;
     if (hybridModeEffective !== "edit" || hybridUiPrefs.lock || !hybridVisible) return undefined;
     const onMouseDownCapture = (event) => {
+      if (hybridV2ToolState !== "select") return;
       const host = bpmnStageHostRef.current;
       const target = event?.target;
       if (!host || !(target instanceof Node) || !host.contains(target)) return;
@@ -3924,6 +4142,7 @@ export default function ProcessStage({
         target instanceof Element
         && (target.closest?.(".hybridLayerCard")
           || target.closest?.(".hybridLayerHotspot")
+          || target.closest?.("[data-testid='hybrid-layer-overlay']")
           || target.closest?.("[data-testid='diagram-action-layers-popover']"))
       ) {
         return;
@@ -3949,16 +4168,18 @@ export default function ProcessStage({
     return () => {
       window.removeEventListener("mousedown", onMouseDownCapture, true);
     };
-  }, [hybridModeEffective, hybridUiPrefs.lock, hybridVisible, resolveHybridTargetElementIdFromPoint, hybridV2BindPickMode, hybridV2ActiveId]);
+  }, [hybridModeEffective, hybridUiPrefs.lock, hybridVisible, resolveHybridTargetElementIdFromPoint, hybridV2BindPickMode, hybridV2ActiveId, hybridV2ToolState]);
 
   useEffect(() => {
     if (hybridModeEffective !== "edit" || hybridUiPrefs.lock) return;
+    if (hybridV2ToolState !== "select") return;
+    if (asArray(hybridV2DocRef.current?.elements).length > 0 || asArray(hybridV2DocRef.current?.edges).length > 0) return;
     const elementId = toNodeId(selectedElementId);
     const type = toText(selectedElementType).toLowerCase();
     if (!elementId) return;
     if (type.includes("sequenceflow") || type.includes("connection")) return;
     addOrSelectHybridMarker(elementId, "hybrid_edit_selection");
-  }, [hybridModeEffective, hybridUiPrefs.lock, selectedElementId, selectedElementType]);
+  }, [hybridModeEffective, hybridUiPrefs.lock, hybridV2ToolState, selectedElementId, selectedElementType]);
 
   useEffect(() => {
     if (!diagramActionPlanOpen) return;
@@ -4610,6 +4831,153 @@ export default function ProcessStage({
     return () => window.clearTimeout(timerId);
   }, [hybridV2Doc, hybridVisible, isLocal, sid]);
 
+  const applyDrawioMetaUpdate = useCallback((mutator, source = "drawio_update") => {
+    const prev = normalizeDrawioMeta(drawioMetaRef.current);
+    const next = normalizeDrawioMeta(typeof mutator === "function" ? mutator(prev) : prev);
+    if (serializeDrawioMeta(next) === serializeDrawioMeta(prev)) return next;
+    setDrawioMeta(next);
+    drawioMetaRef.current = next;
+    markPlaybackOverlayInteraction?.({ stage: source });
+    return next;
+  }, [markPlaybackOverlayInteraction]);
+
+  const saveDrawioMetaNow = useCallback(async (mutator, source = "drawio_save") => {
+    const next = applyDrawioMetaUpdate(mutator, source);
+    await persistDrawioMeta(next, { source });
+    return next;
+  }, [applyDrawioMetaUpdate, persistDrawioMeta]);
+
+  const openEmbeddedDrawioEditor = useCallback(() => {
+    if (drawioMetaRef.current.locked === true) {
+      setInfoMsg("Draw.io overlay заблокирован. Снимите lock, чтобы редактировать.");
+      setGenErr("");
+      return false;
+    }
+    setDrawioEditorOpen(true);
+    return true;
+  }, [setGenErr, setInfoMsg]);
+
+  const closeEmbeddedDrawioEditor = useCallback(() => {
+    setDrawioEditorOpen(false);
+  }, []);
+
+  const handleDrawioEditorSave = useCallback(async (payloadRaw = {}) => {
+    const payload = asObject(payloadRaw);
+    const docXml = toText(payload.docXml || payload.doc_xml || payload.xml);
+    const svgCache = toText(payload.svgCache || payload.svg_cache || payload.svg);
+    if (!isDrawioXml(docXml)) {
+      setGenErr("Draw.io вернул некорректный документ.");
+      return false;
+    }
+    const next = normalizeDrawioMeta({
+      ...drawioMetaRef.current,
+      enabled: true,
+      doc_xml: docXml,
+      svg_cache: svgCache,
+      last_saved_at: new Date().toISOString(),
+    });
+    setDrawioMeta(next);
+    drawioMetaRef.current = next;
+    const persisted = await persistDrawioMeta(next, { source: "drawio_editor_save" });
+    if (!persisted?.ok) {
+      return false;
+    }
+    setDrawioEditorOpen(false);
+    setInfoMsg(svgCache ? "Draw.io сохранён." : "Draw.io сохранён без SVG preview.");
+    setGenErr("");
+    return true;
+  }, [persistDrawioMeta, setGenErr, setInfoMsg]);
+
+  const toggleDrawioEnabled = useCallback(async () => {
+    const current = normalizeDrawioMeta(drawioMetaRef.current);
+    const nextEnabled = !current.enabled;
+    await saveDrawioMetaNow((prev) => ({
+      ...prev,
+      enabled: nextEnabled,
+    }), "drawio_visibility_toggle");
+    if (nextEnabled && !toText(current.doc_xml)) {
+      setDrawioEditorOpen(true);
+    }
+  }, [saveDrawioMetaNow]);
+
+  const setDrawioOpacity = useCallback(async (opacityRaw) => {
+    const opacity = Math.max(0.05, Math.min(1, Number(opacityRaw || 1)));
+    await saveDrawioMetaNow((prev) => ({
+      ...prev,
+      opacity,
+    }), "drawio_opacity_change");
+  }, [saveDrawioMetaNow]);
+
+  const toggleDrawioLock = useCallback(async () => {
+    await saveDrawioMetaNow((prev) => ({
+      ...prev,
+      locked: prev.locked !== true,
+    }), "drawio_lock_toggle");
+  }, [saveDrawioMetaNow]);
+
+  const exportEmbeddedDrawio = useCallback(() => {
+    const current = normalizeDrawioMeta(drawioMetaRef.current);
+    const xml = toText(current.doc_xml);
+    if (!xml) {
+      setInfoMsg("Draw.io документ пока пуст. Сначала открой редактор и нажми Save.");
+      setGenErr("");
+      return false;
+    }
+    const stamp = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14) || Date.now();
+    const ok = downloadTextFile(`drawio_${sid || "session"}_${stamp}.drawio`, xml, "application/xml;charset=utf-8");
+    if (ok) {
+      setInfoMsg("Draw.io экспортирован (.drawio).");
+      setGenErr("");
+      return true;
+    }
+    setGenErr("Не удалось экспортировать Draw.io.");
+    return false;
+  }, [downloadTextFile, setGenErr, setInfoMsg, sid]);
+
+  const handleDrawioImportFile = useCallback(async (fileRaw) => {
+    const file = fileRaw instanceof File ? fileRaw : null;
+    if (!file) return false;
+    const text = toText(await readFileText(file).catch(() => ""));
+    if (!isDrawioXml(text)) {
+      setGenErr("Импорт Draw.io ожидает файл .drawio / <mxfile>.");
+      return false;
+    }
+    applyDrawioMetaUpdate((prev) => ({
+      ...prev,
+      enabled: true,
+      doc_xml: text,
+      svg_cache: prev.svg_cache,
+    }), "drawio_import_stage");
+    setDrawioEditorOpen(true);
+    setInfoMsg("Файл Draw.io загружен. Нажми Save в редакторе, чтобы обновить preview.");
+    setGenErr("");
+    return true;
+  }, [applyDrawioMetaUpdate, setGenErr, setInfoMsg]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const e2eApi = {
+      openEditor() {
+        setDrawioEditorOpen(true);
+      },
+      savePayload(payloadRaw = {}) {
+        return handleDrawioEditorSave(payloadRaw);
+      },
+      setOpacity(valueRaw) {
+        return setDrawioOpacity(valueRaw);
+      },
+      readMeta() {
+        return normalizeDrawioMeta(drawioMetaRef.current);
+      },
+    };
+    window.__FPC_E2E_DRAWIO__ = e2eApi;
+    return () => {
+      if (window.__FPC_E2E_DRAWIO__ === e2eApi) {
+        window.__FPC_E2E_DRAWIO__ = null;
+      }
+    };
+  }, [handleDrawioEditorSave]);
+
   function updateHybridUiPrefs(mutator) {
     setHybridUiPrefs((prevRaw) => {
       const prev = normalizeHybridUiPrefs(prevRaw);
@@ -4633,8 +5001,10 @@ export default function ProcessStage({
     hybridTools.cancelTransientState();
   }
 
-  function setHybridLayerMode(modeRaw) {
+  function setHybridLayerMode(modeRaw, options = {}) {
     const nextMode = toText(modeRaw).toLowerCase() === "edit" ? "edit" : "view";
+    const skipV2Seed = !!options?.skipV2Seed;
+    const skipLegacySeed = !!options?.skipLegacySeed;
     updateHybridUiPrefs((prev) => applyHybridModeTransition(prev, nextMode));
     hybridTools.updateDoc((prev) => ({
       ...prev,
@@ -4644,7 +5014,9 @@ export default function ProcessStage({
       },
     }), "hybrid_v2_mode_change");
     if (nextMode !== "edit") return;
-    if (!asArray(hybridV2DocRef.current?.elements).length) {
+    const initialV2Count = Number(asArray(hybridV2DocRef.current?.elements).length || 0)
+      + Number(asArray(hybridV2DocRef.current?.edges).length || 0);
+    if (!skipV2Seed && initialV2Count <= 0) {
       const selectedIdForV2 = toNodeId(selectedElementId);
       if (selectedIdForV2) {
         const anchor = asObject(readHybridElementAnchor(selectedIdForV2));
@@ -4652,9 +5024,16 @@ export default function ProcessStage({
           ? { x: Number(anchor.x || 0), y: Number(anchor.y || 0) }
           : { x: 260, y: 220 };
         const createdId = hybridTools.createElementAt(point, "note");
-        if (createdId) bindActiveHybridV2ToBpmn(selectedIdForV2, createdId);
+        if (createdId) {
+          bindActiveHybridV2ToBpmn(selectedIdForV2, createdId);
+          return;
+        }
       }
     }
+    if (Number(asArray(hybridV2DocRef.current?.elements).length || 0) + Number(asArray(hybridV2DocRef.current?.edges).length || 0) > 0) {
+      return;
+    }
+    if (skipLegacySeed) return;
     const currentMap = normalizeHybridLayerMap(hybridLayerMapRef.current);
     if (Object.keys(currentMap).length > 0) return;
     const selectedId = toNodeId(selectedElementId);
@@ -5047,6 +5426,9 @@ export default function ProcessStage({
   const toolbarInlineMessage = String(genErr || infoMsg || "").trim();
   const toolbarInlineTone = genErr ? "err" : "";
   const canUseElementContextActions = !!selectedElementContext;
+  const templateSelectionCount = selectedBpmnElementIds.length;
+  const canCreateTemplateFromSelection = hasSession && tab === "diagram" && !templatesBusy && templateSelectionCount > 0;
+  const canOpenTemplatesList = hasSession && !templatesBusy;
   const hasPathHighlightData = availablePathTiers.length > 0;
 
   return (
@@ -5175,6 +5557,20 @@ export default function ProcessStage({
             const file = asArray(event?.target?.files)[0];
             if (file) {
               void handleHybridV2ImportFile(file);
+            }
+            if (event?.target) event.target.value = "";
+          }}
+        />
+        <input
+          ref={drawioFileInputRef}
+          type="file"
+          accept=".drawio,.xml,text/xml,application/xml"
+          style={{ display: "none" }}
+          data-testid="drawio-import-input"
+          onChange={(event) => {
+            const file = asArray(event?.target?.files)[0];
+            if (file) {
+              void handleDrawioImportFile(file);
             }
             if (event?.target) event.target.value = "";
           }}
@@ -5335,30 +5731,6 @@ export default function ProcessStage({
                   data-testid="template-pack-toggle"
                 >
                   Шаблоны: {templatesEnabled ? "ON" : "OFF"}
-                </button>
-                <button
-                  type="button"
-                  className="secondaryBtn h-7 px-2 text-[11px]"
-                  onClick={() => {
-                    openCreateTemplateModal();
-                    setToolbarMenuOpen(false);
-                  }}
-                  disabled={!hasSession || tab !== "diagram" || templatesBusy}
-                  data-testid="template-pack-save-open"
-                >
-                  Сохранить шаблон
-                </button>
-                <button
-                  type="button"
-                  className="secondaryBtn h-7 px-2 text-[11px]"
-                  onClick={() => {
-                    void openTemplatesPicker();
-                    setToolbarMenuOpen(false);
-                  }}
-                  disabled={!hasSession || templatesBusy}
-                  data-testid="template-pack-insert-open"
-                >
-                  Открыть шаблоны
                 </button>
               </div>
               {templatesEnabled && selectedBpmnElementIds.length > 0 && suggestedTemplates.length > 0 ? (
@@ -5685,7 +6057,7 @@ export default function ProcessStage({
                       </button>
                       <button
                         type="button"
-                        className={`secondaryBtn h-8 px-2 text-[11px] diagramActionSecondary ${hybridVisible ? "ring-1 ring-accent/60" : ""}`}
+                        className={`secondaryBtn h-8 px-2 text-[11px] diagramActionSecondary ${(hybridVisible || drawioUiState.enabled) ? "ring-1 ring-accent/60" : ""}`}
                         onClick={() => {
                           setDiagramActionHybridToolsOpen((prev) => !prev);
                           setDiagramActionPathOpen(false);
@@ -5701,7 +6073,29 @@ export default function ProcessStage({
                         data-testid="diagram-action-hybrid-tools-toggle"
                       >
                         <span>Draw.io</span>
-                        <span className="diagramActionChip">{hybridVisible ? toText(hybridV2ToolState || hybridModeEffective || "on") : "off"}</span>
+                        <span className="diagramActionChip">{(drawioUiState.enabled || hybridVisible) ? (drawioUiState.enabled ? "full" : toText(hybridV2ToolState || hybridModeEffective || "on")) : "off"}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="secondaryBtn h-8 px-2 text-[11px] diagramActionSecondary"
+                        onClick={openCreateTemplateModal}
+                        disabled={!canCreateTemplateFromSelection}
+                        title={canCreateTemplateFromSelection ? "Сохранить выделенные BPMN элементы как шаблон" : "Выделите BPMN элементы на Diagram"}
+                        data-testid="template-pack-save-open"
+                      >
+                        {`Add template${templateSelectionCount > 0 ? ` (${templateSelectionCount})` : ""}`}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondaryBtn h-8 px-2 text-[11px] diagramActionSecondary"
+                        onClick={() => {
+                          void openTemplatesPicker();
+                        }}
+                        disabled={!canOpenTemplatesList}
+                        title="Открыть список шаблонов"
+                        data-testid="template-pack-insert-open"
+                      >
+                        Templates
                       </button>
                       <button
                         type="button"
@@ -5773,7 +6167,7 @@ export default function ProcessStage({
                       </button>
                       <button
                         type="button"
-                        className={`secondaryBtn h-8 px-2 text-[11px] ${diagramActionLayersOpen || hybridVisible ? "ring-1 ring-accent/60" : ""}`}
+                        className={`secondaryBtn h-8 px-2 text-[11px] ${diagramActionLayersOpen || hybridVisible || drawioUiState.enabled ? "ring-1 ring-accent/60" : ""}`}
                         onClick={() => {
                           setDiagramActionLayersOpen((prev) => !prev);
                           setDiagramActionPathOpen(false);
@@ -5978,9 +6372,16 @@ export default function ProcessStage({
                       open={diagramActionHybridToolsOpen}
                       popoverRef={diagramHybridToolsPopoverRef}
                       state={hybridToolsUiState}
+                      drawioState={drawioUiState}
                       onToggleVisible={toggleHybridToolsVisible}
                       onSetTool={selectHybridPaletteTool}
                       onSetMode={setHybridToolsMode}
+                      onOpenDrawioEditor={openEmbeddedDrawioEditor}
+                      onToggleDrawioVisible={toggleDrawioEnabled}
+                      onSetDrawioOpacity={setDrawioOpacity}
+                      onToggleDrawioLock={toggleDrawioLock}
+                      onImportDrawio={() => drawioFileInputRef.current?.click?.()}
+                      onExportDrawio={exportEmbeddedDrawio}
                       onClose={() => setDiagramActionHybridToolsOpen(false)}
                     />
 
@@ -6358,6 +6759,13 @@ export default function ProcessStage({
                       setHybridLayerOpacity={setHybridLayerOpacity}
                       toggleHybridLayerLock={toggleHybridLayerLock}
                       toggleHybridLayerFocus={toggleHybridLayerFocus}
+                      drawioState={drawioUiState}
+                      onOpenDrawioEditor={openEmbeddedDrawioEditor}
+                      onToggleDrawioVisible={toggleDrawioEnabled}
+                      onSetDrawioOpacity={setDrawioOpacity}
+                      onToggleDrawioLock={toggleDrawioLock}
+                      onImportEmbeddedDrawioClick={() => drawioFileInputRef.current?.click?.()}
+                      onExportEmbeddedDrawio={exportEmbeddedDrawio}
                       hybridV2DocLive={hybridV2DocLive}
                       hybridV2HiddenCount={hybridV2HiddenCount}
                       revealAllHybridV2={revealAllHybridV2}
@@ -6366,6 +6774,7 @@ export default function ProcessStage({
                       setHybridV2LayerOpacity={setHybridV2LayerOpacity}
                       hybridV2ActiveId={hybridV2ActiveId}
                       hybridV2SelectedIds={hybridV2SelectedIds}
+                      legacyActiveElementId={hybridLayerActiveElementId}
                       hybridV2BindPickMode={hybridV2BindPickMode}
                       setHybridV2BindPickMode={setHybridV2BindPickMode}
                       goToActiveHybridBinding={goToActiveHybridBinding}
@@ -6380,6 +6789,7 @@ export default function ProcessStage({
                       hybridV2Renderable={hybridV2Renderable}
                       setHybridV2ActiveId={setHybridV2ActiveId}
                       deleteSelectedHybridIds={deleteSelectedHybridIds}
+                      deleteLegacyHybridMarkers={deleteLegacyHybridMarkers}
                       bpmnRef={bpmnRef}
                       goToHybridLayerItem={goToHybridLayerItem}
                     />
@@ -6604,30 +7014,6 @@ export default function ProcessStage({
                           </button>
                         </div>
                         <div className="diagramActionPopoverActions">
-                          <button
-                            type="button"
-                            className="secondaryBtn h-7 px-2 text-[11px]"
-                            onClick={openSelectedElementNotes}
-                            disabled={!canUseElementContextActions}
-                          >
-                            Notes
-                          </button>
-                          <button
-                            type="button"
-                            className="secondaryBtn h-7 px-2 text-[11px]"
-                            onClick={openSelectedElementAi}
-                            disabled={!canUseElementContextActions}
-                          >
-                            AI-вопросы
-                          </button>
-                          <button
-                            type="button"
-                            className="secondaryBtn h-7 px-2 text-[11px]"
-                            onClick={openReportsFromDiagram}
-                            disabled={!hasSession}
-                          >
-                            Reports
-                          </button>
                           {selectedInsertBetween ? (
                             <button
                               type="button"
@@ -6638,7 +7024,9 @@ export default function ProcessStage({
                             >
                               Вставить между
                             </button>
-                          ) : null}
+                          ) : (
+                            <div className="diagramActionPopoverEmpty">Дублирующих действий нет.</div>
+                          )}
                         </div>
                       </div>
                     ) : null}
@@ -6663,6 +7051,11 @@ export default function ProcessStage({
                   robotMetaOverlayFilters={robotMetaOverlayFilters}
                   robotMetaStatusByElementId={robotMetaStatusByElementId}
                 />
+                <DrawioOverlayRenderer
+                  visible={tab === "diagram" && drawioVisible}
+                  drawioMeta={drawioUiState}
+                  overlayMatrix={hybridViewportMatrix}
+                />
                 <HybridOverlayRenderer
                   visible={tab === "diagram" && hybridVisible}
                   modeEffective={hybridModeEffective}
@@ -6680,9 +7073,14 @@ export default function ProcessStage({
                   v2BindingByHybridId={hybridV2BindingByHybridId}
                   onV2ElementPointerDown={handleHybridV2ElementPointerDown}
                   onV2ElementContextMenu={handleHybridV2ElementContextMenu}
+                  onV2ElementDoubleClick={handleHybridV2ElementDoubleClick}
                   onV2ResizeHandlePointerDown={handleHybridV2ResizeHandlePointerDown}
                   v2GhostPreview={hybridTools.ghostPreview}
                   v2ArrowPreview={hybridTools.arrowPreview}
+                  v2TextEditor={hybridTools.textEditor}
+                  onV2TextEditorChange={hybridTools.updateTextEditorValue}
+                  onV2TextEditorCommit={hybridTools.commitTextEditor}
+                  onV2TextEditorCancel={hybridTools.closeTextEditor}
                   legacyRows={hybridLayerRenderRows}
                   legacyActiveElementId={hybridLayerActiveElementId}
                   debugEnabled={hybridDebugEnabled}
@@ -6728,6 +7126,13 @@ export default function ProcessStage({
                     hybridTools.lockLayersForHybridIds(hybridV2SelectedIds);
                     hybridTools.closeContextMenu();
                   }}
+                />
+                <DrawioEditorModal
+                  open={drawioEditorOpen}
+                  title="Draw.io Editor"
+                  initialXml={drawioUiState.doc_xml}
+                  onSave={handleDrawioEditorSave}
+                  onClose={closeEmbeddedDrawioEditor}
                 />
                 {tab === "diagram" && isCoverageMode ? (
                   <div className="coverageMiniMap" data-testid="coverage-minimap">
