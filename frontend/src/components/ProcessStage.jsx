@@ -94,6 +94,7 @@ import useHybridStore from "../features/process/hybrid/controllers/useHybridStor
 import useHybridPersistController from "../features/process/hybrid/controllers/useHybridPersistController";
 import useHybridPipelineController from "../features/process/hybrid/controllers/useHybridPipelineController";
 import HybridContextMenu from "../features/process/hybrid/tools/HybridContextMenu";
+import HybridPersistToast from "../features/process/hybrid/ui/HybridPersistToast";
 import DrawioEditorModal from "../features/process/drawio/DrawioEditorModal";
 import DrawioOverlayRenderer from "../features/process/drawio/DrawioOverlayRenderer";
 import {
@@ -813,10 +814,11 @@ export default function ProcessStage({
     persistHybridLayerMap: sessionMetaPersist.persistHybridLayerMap,
     persistHybridV2Doc: sessionMetaPersist.persistHybridV2Doc,
     persistDrawioMeta: sessionMetaPersist.persistDrawioMeta,
+    sessionId: sid,
     setInfoMsg,
   });
   const persistHybridLayerMap = hybridPersist.persistHybridLayerMap;
-  const persistHybridV2Doc = hybridPersist.persistHybridV2Doc;
+  const persistHybridV2Doc = hybridPersist.saveHybrid;
   const persistDrawioMeta = hybridPersist.persistDrawioMeta;
   const robotMetaListItems = useMemo(() => {
     const tab = toText(robotMetaListTab).toLowerCase() === "incomplete" ? "incomplete" : "ready";
@@ -3773,6 +3775,15 @@ export default function ProcessStage({
                     hybridTools.lockLayersForHybridIds(hybridV2SelectedIds);
                     hybridTools.closeContextMenu();
                   }}
+                />
+                <HybridPersistToast
+                  visible={tab === "diagram" && !!hybridPersist.lockBusyNotice?.open}
+                  message={hybridPersist.lockBusyNotice?.message}
+                  pendingDraft={!!hybridPersist.pendingDraft}
+                  onRetry={() => {
+                    void hybridPersist.retryLast();
+                  }}
+                  onDismiss={hybridPersist.dismissLockBusyNotice}
                 />
                 <DrawioEditorModal
                   open={drawioEditorOpen}
