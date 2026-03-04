@@ -120,6 +120,23 @@ async function readSessionHybridMap(request, accessToken, sessionId) {
   return map && typeof map === "object" ? map : {};
 }
 
+async function patchSessionHybridMap(request, accessToken, sessionId, map) {
+  const sid = String(sessionId || "").trim();
+  const payload = {
+    bpmn_meta: {
+      hybrid_layer_by_element_id: map && typeof map === "object" ? map : {},
+    },
+  };
+  const res = await request.patch(`${API_BASE}/api/sessions/${encodeURIComponent(sid)}`, {
+    headers: {
+      Authorization: `Bearer ${String(accessToken || "")}`,
+      "Content-Type": "application/json",
+    },
+    data: payload,
+  });
+  return res.ok();
+}
+
 test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ page, request }) => {
   test.skip(process.env.E2E_HYBRID_LAYER !== "1", "Set E2E_HYBRID_LAYER=1 to run hybrid layers e2e.");
 
@@ -216,6 +233,35 @@ test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ pag
       return Object.keys(map).length;
     })
     .toBeGreaterThan(0);
+  const mapBeforeOffscreen = await readSessionHybridMap(request, auth.accessToken, sid);
+  const firstHybridId = Object.keys(mapBeforeOffscreen)[0] || "";
+  if (firstHybridId) {
+    const mutated = {
+      ...mapBeforeOffscreen,
+      [firstHybridId]: {
+        dx: -2200,
+        dy: Number(mapBeforeOffscreen[firstHybridId]?.dy || 0),
+      },
+    };
+    const patched = await patchSessionHybridMap(request, auth.accessToken, sid, mutated);
+    expect(patched).toBeTruthy();
+    await page.reload();
+    await openFixtureInTopbar(page, fixture);
+    await switchTab(page, "Diagram");
+    await waitForModelerReady(page);
+    await openLayersPopover(page);
+    await page.getByTestId("diagram-action-layers-hybrid-toggle").check({ force: true, noWaitAfter: true });
+    await openLayersPopover(page);
+    const focusBtn = page.getByTestId("diagram-action-layers-focus-visible");
+    await expect(focusBtn).toBeVisible();
+    await focusBtn.click({ noWaitAfter: true });
+    await expect(page.getByTestId("hybrid-layer-hotspot").first()).toBeVisible();
+    const goToBtn = page.getByTestId("diagram-action-layers-go-to").first();
+    if (await goToBtn.isVisible().catch(() => false)) {
+      await goToBtn.click({ noWaitAfter: true });
+      await expect(page.getByTestId("hybrid-layer-overlay")).toBeVisible();
+    }
+  }
   await page.keyboard.down("H");
   await expect(page.getByTestId("hybrid-layer-overlay")).toBeVisible();
   await page.keyboard.up("H");

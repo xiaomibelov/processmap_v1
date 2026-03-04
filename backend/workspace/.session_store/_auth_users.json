@@ -1,0 +1,10 @@
+[
+  {
+    "id": "9f9b0ed635924a23870eb1df3b996bf5",
+    "email": "admin@local",
+    "password_hash": "pbkdf2_sha256$390000$RtE7LMqTdGD8Wz8bzbV1-g$pdUuzeHDPycUEd3G-1EGQtpqRhtClZ5ht_B9Iytnx8M",
+    "is_active": true,
+    "is_admin": true,
+    "created_at": 1772548377
+  }
+]

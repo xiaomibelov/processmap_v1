@@ -1037,6 +1037,10 @@ export default function App() {
     if (Boolean(user?.is_admin)) return true;
     return activeOrgRole !== "viewer" && activeOrgRole !== "auditor";
   }, [activeOrgRole, user?.is_admin]);
+  const canInviteWorkspaceUsers = useMemo(() => {
+    if (Boolean(user?.is_admin)) return true;
+    return activeOrgRole === "org_owner" || activeOrgRole === "org_admin";
+  }, [activeOrgRole, user?.is_admin]);
 
   function markOk(hint) {
     setBackendStatus("ok");
@@ -1548,6 +1552,19 @@ export default function App() {
     });
     logNav("open_session_done", { sessionId: sid, projectId: sidProject || projectId, source });
     markOk("API OK");
+  }
+
+  async function openWorkspaceSession(sessionLike, options = {}) {
+    const row = ensureObject(sessionLike);
+    const sid = String(row?.id || row?.session_id || sessionLike || "").trim();
+    const pid = String(row?.project_id || "").trim();
+    const source = String(options?.source || "workspace_dashboard").trim() || "workspace_dashboard";
+    if (!sid) return;
+    if (pid && pid !== String(projectId || "").trim()) {
+      setProjectId(pid);
+      await refreshSessions(pid);
+    }
+    await openSession(sid, { source });
   }
 
   function createLocalSession() {
@@ -3247,6 +3264,7 @@ export default function App() {
         backendHint={backendHint}
         orgs={orgs}
         activeOrgId={activeOrgId}
+        canInviteWorkspaceUsers={canInviteWorkspaceUsers}
         onOrgChange={async (orgId) => {
           const next = String(orgId || "").trim();
           if (!next || next === String(activeOrgId || "").trim()) return;
@@ -3272,6 +3290,7 @@ export default function App() {
         sessions={sessions}
         sessionId={String(draft?.session_id || "")}
         onOpenSession={openSession}
+        onOpenWorkspaceSession={openWorkspaceSession}
         onDeleteSession={canManageProjectEntities ? deleteCurrentSession : undefined}
         onRefresh={async () => {
           await refreshProjects();

@@ -482,6 +482,18 @@
     box-shadow: 0 1px 4px rgba(15, 23, 42, 0.16);
   }
 
+  .hybridLayerDebugCross {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 1;
+    color: hsl(var(--danger));
+    font-size: 11px;
+    line-height: 1;
+    font-weight: 700;
+    opacity: 0.78;
+  }
+
   .hybridLayerCard {
     pointer-events: auto;
     min-width: 190px;
@@ -522,6 +534,61 @@
     min-width: 0;
     font-size: 10px;
     color: hsl(var(--muted));
+  }
+
+  .hybridLayerPopoverList {
+    display: grid;
+    gap: 6px;
+    max-height: 180px;
+    overflow: auto;
+    border-top: 1px solid hsl(var(--border) / 0.6);
+    padding-top: 8px;
+  }
+
+  .hybridLayerPopoverRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border: 1px solid hsl(var(--border) / 0.55);
+    border-radius: 8px;
+    padding: 6px;
+    background: hsl(var(--panel2) / 0.38);
+  }
+
+  .hybridLayerPopoverMain {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+  }
+
+  .hybridLayerPopoverTitle {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    font-weight: 600;
+    color: hsl(var(--fg));
+  }
+
+  .hybridLayerPopoverMeta {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 10px;
+    color: hsl(var(--muted));
+  }
+
+  .hybridLayerPopoverActions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
   }
 
   .hybridLayerStatus {

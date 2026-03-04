@@ -629,6 +629,54 @@ export async function apiCleanupOrgAudit(orgId, retentionDays) {
   return r.ok ? { ok: true, status: r.status, deleted: Number(r.data?.deleted || 0) } : r;
 }
 
+export async function apiGetEnterpriseWorkspace(options = {}) {
+  const explicitOrgId = String(options?.orgId || "").trim();
+  const active = String(getActiveOrgId() || "").trim();
+  const oid = explicitOrgId || active;
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  const params = new URLSearchParams();
+  const groupBy = String(options?.groupBy || "").trim().toLowerCase();
+  if (groupBy === "users" || groupBy === "projects") params.set("group_by", groupBy);
+  const q = String(options?.q || "").trim();
+  if (q) params.set("q", q);
+  const ownerIds = Array.isArray(options?.ownerIds)
+    ? options.ownerIds
+    : String(options?.ownerIds || "").split(",");
+  const ownerList = ownerIds
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  if (ownerList.length) params.set("owner_ids", ownerList.join(","));
+  const projectId = String(options?.projectId || "").trim();
+  if (projectId) params.set("project_id", projectId);
+  const status = String(options?.status || "").trim().toLowerCase();
+  if (status) params.set("status", status);
+  const updatedFrom = Number(options?.updatedFrom || 0);
+  if (Number.isFinite(updatedFrom) && updatedFrom > 0) params.set("updated_from", String(Math.round(updatedFrom)));
+  const updatedTo = Number(options?.updatedTo || 0);
+  if (Number.isFinite(updatedTo) && updatedTo > 0) params.set("updated_to", String(Math.round(updatedTo)));
+  if (options?.needsAttention === true || options?.needsAttention === 1) params.set("needs_attention", "1");
+  if (options?.needsAttention === false || options?.needsAttention === 0) params.set("needs_attention", "0");
+  const limit = Number(options?.limit || 50);
+  if (Number.isFinite(limit) && limit > 0) params.set("limit", String(Math.min(200, Math.max(1, Math.round(limit)))));
+  const offset = Number(options?.offset || 0);
+  if (Number.isFinite(offset) && offset >= 0) params.set("offset", String(Math.max(0, Math.round(offset))));
+  const qs = params.toString();
+  const endpoint = `/api/enterprise/workspace${qs ? `?${qs}` : ""}`;
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  if (!r.ok) return r;
+  const data = isPlainObject(r.data) ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    org: isPlainObject(data.org) ? data.org : {},
+    group_by: String(data.group_by || groupBy || "users"),
+    users: Array.isArray(data.users) ? data.users : [],
+    projects: Array.isArray(data.projects) ? data.projects : [],
+    sessions: Array.isArray(data.sessions) ? data.sessions : [],
+    page: isPlainObject(data.page) ? data.page : { limit: 50, offset: 0, total: 0 },
+  };
+}
+
 // ------- Meta -------
 export async function apiMeta() {
   const r = okOrError(await request("/api/meta"));

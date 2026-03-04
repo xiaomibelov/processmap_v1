@@ -21,6 +21,7 @@ export default function AppShell({
   backendHint,
   orgs,
   activeOrgId,
+  canInviteWorkspaceUsers,
   onOrgChange,
   onOpenOrgSettings,
   projects,
@@ -31,6 +32,7 @@ export default function AppShell({
   sessions,
   sessionId,
   onOpenSession,
+  onOpenWorkspaceSession,
   onDeleteSession,
   onNewProject,
   onNewBackendSession,
@@ -93,6 +95,7 @@ export default function AppShell({
         sessionId={sessionId}
         onDeleteSession={onDeleteSession}
         onOpenSession={onOpenSession}
+        onOpenWorkspace={onReturnToSessionList}
         onNewProject={onNewProject}
         onNewBackendSession={onNewBackendSession}
         llmHasApiKey={llmHasApiKey}
@@ -141,10 +144,16 @@ export default function AppShell({
           <ProcessStage
             sessionId={sessionId}
             activeProjectId={projectId}
+            workspaceActiveOrgId={activeOrgId}
+            canInviteWorkspaceUsers={!!canInviteWorkspaceUsers}
             locked={locked}
             draft={draft}
             onPatchDraft={onPatchDraft}
             onSessionSync={onSessionSync}
+            onOpenWorkspaceSession={onOpenWorkspaceSession}
+            onCreateWorkspaceProject={onNewProject}
+            onCreateWorkspaceSession={onNewBackendSession}
+            onOpenWorkspaceOrgSettings={onOpenOrgSettings}
             onUiStateChange={onProcessUiStateChange}
             processTabIntent={processTabIntent}
             aiGenerateIntent={aiGenerateIntent}

@@ -216,7 +216,6 @@ def _ensure_schema() -> None:
                 """
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_projects_owner_updated ON projects(owner_user_id, updated_at DESC)")
-            con.execute("CREATE INDEX IF NOT EXISTS idx_projects_org_updated ON projects(org_id, updated_at DESC)")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS sessions (
@@ -255,7 +254,6 @@ def _ensure_schema() -> None:
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_sessions_owner_updated ON sessions(owner_user_id, updated_at DESC)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id)")
-            con.execute("CREATE INDEX IF NOT EXISTS idx_sessions_org_project_updated ON sessions(org_id, project_id, updated_at DESC)")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS orgs (
@@ -353,6 +351,8 @@ def _ensure_schema() -> None:
                 con.execute("ALTER TABLE sessions ADD COLUMN created_by TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "sessions", "updated_by"):
                 con.execute("ALTER TABLE sessions ADD COLUMN updated_by TEXT NOT NULL DEFAULT ''")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_projects_org_updated ON projects(org_id, updated_at DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_sessions_org_project_updated ON sessions(org_id, project_id, updated_at DESC)")
             _maybe_migrate_legacy_files(con)
             _ensure_enterprise_bootstrap(con)
             con.commit()
@@ -1991,6 +1991,134 @@ def user_has_project_access(
         return True
     allowed = {str(item or "").strip() for item in (scope.get("project_ids") or []) if str(item or "").strip()}
     return pid in allowed
+
+
+def list_workspace_snapshot_rows(
+    org_id: str,
+    *,
+    allowed_project_ids: Optional[List[str]] = None,
+    q: Optional[str] = None,
+    owner_ids: Optional[List[str]] = None,
+    updated_from: Optional[int] = None,
+    updated_to: Optional[int] = None,
+) -> Dict[str, Any]:
+    oid = str(org_id or "").strip() or _default_org_id()
+    search = str(q or "").strip().lower()
+    allowed = sorted({
+        str(item or "").strip()
+        for item in (allowed_project_ids or [])
+        if str(item or "").strip()
+    })
+    owners = sorted({
+        str(item or "").strip()
+        for item in (owner_ids or [])
+        if str(item or "").strip()
+    })
+    try:
+        ts_from = int(updated_from) if updated_from is not None else None
+    except Exception:
+        ts_from = None
+    try:
+        ts_to = int(updated_to) if updated_to is not None else None
+    except Exception:
+        ts_to = None
+
+    session_filters: List[str] = ["org_id = ?"]
+    session_params: List[Any] = [oid]
+    project_filters: List[str] = ["org_id = ?"]
+    project_params: List[Any] = [oid]
+
+    if allowed:
+        ph = ",".join(["?"] * len(allowed))
+        session_filters.append(f"project_id IN ({ph})")
+        project_filters.append(f"id IN ({ph})")
+        session_params.extend(allowed)
+        project_params.extend(allowed)
+    if owners:
+        ph = ",".join(["?"] * len(owners))
+        session_filters.append(f"owner_user_id IN ({ph})")
+        project_filters.append(f"owner_user_id IN ({ph})")
+        session_params.extend(owners)
+        project_params.extend(owners)
+    if ts_from is not None and ts_from > 0:
+        session_filters.append("updated_at >= ?")
+        project_filters.append("updated_at >= ?")
+        session_params.append(ts_from)
+        project_params.append(ts_from)
+    if ts_to is not None and ts_to > 0:
+        session_filters.append("updated_at <= ?")
+        project_filters.append("updated_at <= ?")
+        session_params.append(ts_to)
+        project_params.append(ts_to)
+    if search:
+        like = f"%{search}%"
+        session_filters.append("lower(id || ' ' || title || ' ' || COALESCE(project_id,'') || ' ' || COALESCE(owner_user_id,'')) LIKE ?")
+        project_filters.append("lower(id || ' ' || title || ' ' || COALESCE(owner_user_id,'')) LIKE ?")
+        session_params.append(like)
+        project_params.append(like)
+
+    session_where = " AND ".join(session_filters)
+    project_where = " AND ".join(project_filters)
+
+    _ensure_schema()
+    with _connect() as con:
+        project_rows = con.execute(
+            f"""
+            SELECT id, title, owner_user_id, created_by, updated_by, created_at, updated_at, org_id
+              FROM projects
+             WHERE {project_where}
+             ORDER BY updated_at DESC, created_at DESC, id DESC
+            """,
+            project_params,
+        ).fetchall()
+        session_rows = con.execute(
+            f"""
+            SELECT
+              id, title, project_id, owner_user_id, created_by, updated_by,
+              created_at, updated_at, mode, version, bpmn_xml_version, interview_json, org_id
+              FROM sessions
+             WHERE {session_where}
+             ORDER BY updated_at DESC, id DESC
+            """,
+            session_params,
+        ).fetchall()
+
+    projects: List[Dict[str, Any]] = []
+    for row in project_rows:
+        projects.append({
+            "id": str(row["id"] or ""),
+            "title": str(row["title"] or ""),
+            "owner_user_id": str(row["owner_user_id"] or ""),
+            "created_by": str(row["created_by"] or ""),
+            "updated_by": str(row["updated_by"] or ""),
+            "created_at": int(row["created_at"] or 0),
+            "updated_at": int(row["updated_at"] or 0),
+            "org_id": str(row["org_id"] or oid),
+        })
+
+    sessions: List[Dict[str, Any]] = []
+    for row in session_rows:
+        sessions.append({
+            "id": str(row["id"] or ""),
+            "title": str(row["title"] or ""),
+            "project_id": str(row["project_id"] or ""),
+            "owner_user_id": str(row["owner_user_id"] or ""),
+            "created_by": str(row["created_by"] or ""),
+            "updated_by": str(row["updated_by"] or ""),
+            "created_at": int(row["created_at"] or 0),
+            "updated_at": int(row["updated_at"] or 0),
+            "mode": str(row["mode"] or ""),
+            "version": int(row["version"] or 0),
+            "bpmn_xml_version": int(row["bpmn_xml_version"] or 0),
+            "interview_json": str(row["interview_json"] or "{}"),
+            "org_id": str(row["org_id"] or oid),
+        })
+
+    return {
+        "org_id": oid,
+        "projects": projects,
+        "sessions": sessions,
+    }
 
 
 def get_project_storage() -> ProjectStorage:

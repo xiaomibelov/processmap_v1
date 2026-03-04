@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import BpmnStage from "./process/BpmnStage";
 import DocStage from "./process/DocStage";
 import InterviewStage from "./process/InterviewStage";
+import WorkspaceDashboard from "./workspace/WorkspaceDashboard";
 import Modal from "../shared/ui/Modal";
 import { useAuth } from "../features/auth/AuthProvider";
 import { apiAiCommandOps } from "../lib/api";
@@ -270,6 +271,15 @@ function cssEscapeAttr(value) {
   if (!text) return "";
   if (typeof CSS !== "undefined" && typeof CSS.escape === "function") return CSS.escape(text);
   return text.replace(/["\\]/g, "\\$&");
+}
+
+function clampNumber(valueRaw, minRaw, maxRaw) {
+  const value = Number(valueRaw || 0);
+  const min = Number(minRaw || 0);
+  const max = Number(maxRaw || 0);
+  if (!Number.isFinite(value)) return Number.isFinite(min) ? min : 0;
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min > max) return value;
+  return Math.min(max, Math.max(min, value));
 }
 
 function isEditableTarget(target) {
@@ -997,9 +1007,15 @@ function emitBatchOpsResult(requestId, payload = {}) {
 export default function ProcessStage({
   sessionId,
   activeProjectId,
+  workspaceActiveOrgId = "",
+  canInviteWorkspaceUsers = false,
   locked,
   draft,
   onSessionSync,
+  onOpenWorkspaceSession,
+  onCreateWorkspaceProject,
+  onCreateWorkspaceSession,
+  onOpenWorkspaceOrgSettings,
   onUiStateChange,
   processTabIntent,
   aiGenerateIntent,
@@ -1034,6 +1050,7 @@ export default function ProcessStage({
   const hybridLayerMapRef = useRef({});
   const hybridLayerPositionsRef = useRef({});
   const hybridLayerPersistedMapRef = useRef({});
+  const hybridAutoFocusGuardRef = useRef("");
   const playbackRafRef = useRef(0);
   const playbackLastTickRef = useRef(0);
   const playbackEngineRef = useRef(null);
@@ -1142,6 +1159,7 @@ export default function ProcessStage({
   const [hybridLayerByElementId, setHybridLayerByElementId] = useState({});
   const [hybridLayerPositions, setHybridLayerPositions] = useState({});
   const [hybridLayerActiveElementId, setHybridLayerActiveElementId] = useState("");
+  const [hybridViewportSize, setHybridViewportSize] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
     setGenBusy(false);
@@ -1503,18 +1521,91 @@ export default function ProcessStage({
     ? (hybridPeekActive ? "view" : (hybridUiPrefs.mode === "edit" && !hybridUiPrefs.lock ? "edit" : "view"))
     : "hidden";
   const hybridOpacityValue = Number(hybridUiPrefs.opacity || 60) / 100;
-  const hybridLayerCounts = useMemo(() => {
-    const out = { total: 0, ready: 0, incomplete: 0, none: 0 };
-    hybridLayerItems.forEach((itemRaw) => {
+  const hybridDebugEnabled = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return new URLSearchParams(String(window.location.search || "")).get("debugHybrid") === "1";
+    } catch {
+      return false;
+    }
+  }, [sid, tab]);
+  const hybridLayerRenderRows = useMemo(() => {
+    const width = Number(hybridViewportSize?.width || 0);
+    const height = Number(hybridViewportSize?.height || 0);
+    const minX = 14;
+    const minY = 14;
+    const maxX = width > 0 ? Math.max(minX, width - 14) : Number.POSITIVE_INFINITY;
+    const maxY = height > 0 ? Math.max(minY, height - 14) : Number.POSITIVE_INFINITY;
+    return hybridLayerItems.map((itemRaw, index) => {
       const item = asObject(itemRaw);
-      out.total += 1;
-      const status = toText(item?.status).toLowerCase();
+      const elementId = toText(item?.elementId);
+      const center = asObject(hybridLayerPositions[elementId]);
+      const hasCenter = Number.isFinite(center.x) && Number.isFinite(center.y);
+      const offset = asObject(hybridLayerByElementId[elementId]);
+      const rawDx = Number(offset.dx || 0);
+      const rawDy = Number(offset.dy || 0);
+      const fallbackX = 92 + ((index % 6) * 36);
+      const fallbackY = 88 + (Math.floor(index / 6) * 30);
+      const baseX = Number(hasCenter ? center.x : fallbackX);
+      const baseY = Number(hasCenter ? center.y : fallbackY);
+      const rawX = baseX + Number(hasCenter ? rawDx : 0);
+      const rawY = baseY + Number(hasCenter ? rawDy : 0);
+      const insideViewport = width > 0 && height > 0
+        ? (rawX >= 0 && rawX <= width && rawY >= 0 && rawY <= height)
+        : true;
+      const posX = Number.isFinite(maxX) ? clampNumber(rawX, minX, maxX) : rawX;
+      const posY = Number.isFinite(maxY) ? clampNumber(rawY, minY, maxY) : rawY;
+      return {
+        ...item,
+        elementId,
+        hasCenter,
+        rawDx,
+        rawDy,
+        rawX,
+        rawY,
+        posX,
+        posY,
+        insideViewport,
+        wasClamped: Math.abs(posX - rawX) > 0.5 || Math.abs(posY - rawY) > 0.5,
+      };
+    });
+  }, [hybridLayerItems, hybridLayerPositions, hybridLayerByElementId, hybridViewportSize]);
+  const hybridLayerMissingBindingIds = useMemo(
+    () => hybridLayerRenderRows.filter((row) => !row?.hasCenter).map((row) => toText(row?.elementId)).filter(Boolean),
+    [hybridLayerRenderRows],
+  );
+  const hybridLayerVisibilityStats = useMemo(() => {
+    const out = {
+      total: Number(hybridLayerRenderRows.length || 0),
+      ready: 0,
+      incomplete: 0,
+      none: 0,
+      validBindings: 0,
+      missingBindings: 0,
+      insideViewport: 0,
+      outsideViewport: 0,
+    };
+    hybridLayerRenderRows.forEach((rowRaw) => {
+      const row = asObject(rowRaw);
+      const status = toText(row?.status).toLowerCase();
       if (status === "ready") out.ready += 1;
       else if (status === "incomplete") out.incomplete += 1;
       else out.none += 1;
+      if (row?.hasCenter) out.validBindings += 1;
+      else out.missingBindings += 1;
+      if (row?.insideViewport) out.insideViewport += 1;
+      else out.outsideViewport += 1;
     });
     return out;
-  }, [hybridLayerItems]);
+  }, [hybridLayerRenderRows]);
+  const hybridLayerCounts = useMemo(() => {
+    return {
+      total: Number(hybridLayerVisibilityStats.total || 0),
+      ready: Number(hybridLayerVisibilityStats.ready || 0),
+      incomplete: Number(hybridLayerVisibilityStats.incomplete || 0),
+      none: Number(hybridLayerVisibilityStats.none || 0),
+    };
+  }, [hybridLayerVisibilityStats]);
   useEffect(() => {
     const incoming = normalizeHybridLayerMap(hybridLayerMapFromDraft);
     const incomingSig = serializeHybridLayerMap(incoming);
@@ -3610,12 +3701,26 @@ export default function ProcessStage({
     if (tab !== "diagram" || !hybridVisible || !hybridLayerItems.length) {
       setHybridLayerPositions({});
       hybridLayerPositionsRef.current = {};
+      setHybridViewportSize((prevRaw) => {
+        const prev = asObject(prevRaw);
+        if (Number(prev.width || 0) === 0 && Number(prev.height || 0) === 0) return prev;
+        return { width: 0, height: 0 };
+      });
       return undefined;
     }
     let canceled = false;
     let timerId = 0;
     const compute = () => {
       if (canceled) return;
+      const host = bpmnStageHostRef.current;
+      const hostRect = host?.getBoundingClientRect?.();
+      const nextWidth = Math.max(0, Math.round(Number(hostRect?.width || host?.clientWidth || 0)));
+      const nextHeight = Math.max(0, Math.round(Number(hostRect?.height || host?.clientHeight || 0)));
+      setHybridViewportSize((prevRaw) => {
+        const prev = asObject(prevRaw);
+        if (Number(prev.width || 0) === nextWidth && Number(prev.height || 0) === nextHeight) return prev;
+        return { width: nextWidth, height: nextHeight };
+      });
       const next = {};
       hybridLayerItems.forEach((itemRaw) => {
         const item = asObject(itemRaw);
@@ -3646,6 +3751,44 @@ export default function ProcessStage({
       if (timerId) window.clearInterval(timerId);
     };
   }, [tab, hybridVisible, hybridLayerItems, readHybridElementCenter]);
+
+  useEffect(() => {
+    if (!hybridDebugEnabled || tab !== "diagram" || !hybridVisible) return;
+    const rows = asArray(hybridLayerRenderRows).slice(0, 20).map((rowRaw) => {
+      const row = asObject(rowRaw);
+      return {
+        elementId: toText(row?.elementId),
+        hasCenter: !!row?.hasCenter,
+        dx: Number(row?.rawDx || 0),
+        dy: Number(row?.rawDy || 0),
+        x: Math.round(Number(row?.rawX || 0) * 10) / 10,
+        y: Math.round(Number(row?.rawY || 0) * 10) / 10,
+        insideViewport: !!row?.insideViewport,
+        clamped: !!row?.wasClamped,
+      };
+    });
+    // Dev-only diagnostics for offscreen marker issues.
+    // eslint-disable-next-line no-console
+    console.info("[HYBRID_DEBUG] visibility", {
+      viewport: asObject(hybridViewportSize),
+      stats: asObject(hybridLayerVisibilityStats),
+      rows,
+    });
+  }, [hybridDebugEnabled, hybridLayerRenderRows, hybridLayerVisibilityStats, hybridViewportSize, hybridVisible, tab]);
+
+  useEffect(() => {
+    if (tab !== "diagram" || !hybridVisible) return;
+    const total = Number(hybridLayerVisibilityStats.total || 0);
+    const inside = Number(hybridLayerVisibilityStats.insideViewport || 0);
+    if (total <= 0 || inside > 0) {
+      hybridAutoFocusGuardRef.current = "";
+      return;
+    }
+    const guardKey = `${sid}:${total}:${inside}`;
+    if (hybridAutoFocusGuardRef.current === guardKey) return;
+    hybridAutoFocusGuardRef.current = guardKey;
+    focusHybridLayer("hybrid_auto_focus_outside_viewport");
+  }, [hybridLayerVisibilityStats.insideViewport, hybridLayerVisibilityStats.total, hybridVisible, sid, tab]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -4746,6 +4889,83 @@ export default function ProcessStage({
     updateHybridUiPrefs((prev) => ({ ...prev, focus: !prev.focus }));
   }
 
+  function focusHybridLayer(source = "hybrid_layer_focus") {
+    const rows = asArray(hybridLayerRenderRows);
+    if (!rows.length) return;
+    const target = asObject(rows.find((row) => !!asObject(row).hasCenter) || rows[0]);
+    const elementId = toText(target?.elementId);
+    if (!elementId) return;
+    if (target?.hasCenter && !target?.insideViewport && (Math.abs(Number(target?.rawDx || 0)) > 0.5 || Math.abs(Number(target?.rawDy || 0)) > 0.5)) {
+      let rebasedMap = null;
+      setHybridLayerByElementId((prevRaw) => {
+        const prev = normalizeHybridLayerMap(prevRaw);
+        if (!prev[elementId]) return prev;
+        const next = {
+          ...prev,
+          [elementId]: { dx: 0, dy: 0 },
+        };
+        hybridLayerMapRef.current = next;
+        rebasedMap = next;
+        return next;
+      });
+      if (rebasedMap) {
+        window.setTimeout(() => {
+          void persistHybridLayerMap(rebasedMap, { source: `${source}_rebase` });
+        }, 0);
+      }
+    }
+    setHybridLayerActiveElementId(elementId);
+    markPlaybackOverlayInteraction({
+      stage: "hybrid_layer_focus",
+      source,
+      elementId,
+    });
+    bpmnRef.current?.focusNode?.(elementId, { keepPrevious: false, durationMs: 1400 });
+  }
+
+  function goToHybridLayerItem(elementIdRaw, source = "hybrid_layer_go_to") {
+    const elementId = toNodeId(elementIdRaw);
+    if (!elementId) return;
+    setHybridLayerActiveElementId(elementId);
+    markPlaybackOverlayInteraction({
+      stage: "hybrid_layer_go_to",
+      source,
+      elementId,
+    });
+    bpmnRef.current?.focusNode?.(elementId, { keepPrevious: false, durationMs: 1200 });
+  }
+
+  function cleanupMissingHybridBindings(source = "hybrid_layer_cleanup_missing") {
+    const missingIds = new Set(asArray(hybridLayerMissingBindingIds).map((row) => toText(row)).filter(Boolean));
+    if (!missingIds.size) return;
+    let nextMap = null;
+    setHybridLayerByElementId((prevRaw) => {
+      const prev = normalizeHybridLayerMap(prevRaw);
+      const next = {};
+      Object.keys(prev).forEach((elementIdRaw) => {
+        const elementId = toText(elementIdRaw);
+        if (!elementId || missingIds.has(elementId)) return;
+        next[elementId] = asObject(prev[elementId]);
+      });
+      hybridLayerMapRef.current = next;
+      nextMap = next;
+      return next;
+    });
+    if (nextMap) {
+      window.setTimeout(() => {
+        void persistHybridLayerMap(nextMap, { source });
+      }, 0);
+    }
+    if (toText(hybridLayerActiveElementId) && missingIds.has(toText(hybridLayerActiveElementId))) {
+      setHybridLayerActiveElementId("");
+    }
+    markPlaybackOverlayInteraction({
+      stage: "hybrid_layer_cleanup_missing",
+      count: missingIds.size,
+      source,
+    });
+  }
+
   function withHybridOverlayGuard(event, meta = {}) {
     event?.preventDefault?.();
     event?.stopPropagation?.();
@@ -5732,13 +5952,24 @@ export default function ProcessStage({
 
       <div className="processBody relative" ref={processBodyRef}>
         {!hasSession ? (
-          <div className="processEmptyGuide h-full min-h-0 overflow-auto rounded-xl border border-dashed border-borderStrong bg-panel p-4">
-            <div className="processEmptyTitle mb-2 text-base font-semibold">{workbench.emptyGuide.title}</div>
-            <ol>
-              {workbench.emptyGuide.steps.map((line, idx) => (
-                <li key={`guide_${idx}`}>{line}</li>
-              ))}
-            </ol>
+          <div className="grid h-full min-h-0 grid-cols-1 gap-3 p-3 xl:grid-cols-[minmax(0,1fr)_300px]">
+            <WorkspaceDashboard
+              activeOrgId={workspaceActiveOrgId}
+              canInviteUsers={!!canInviteWorkspaceUsers}
+              onOpenSession={(session) => onOpenWorkspaceSession?.(session)}
+              onCreateProject={() => onCreateWorkspaceProject?.()}
+              onCreateSession={() => onCreateWorkspaceSession?.()}
+              onInviteUsers={() => onOpenWorkspaceOrgSettings?.()}
+            />
+            <div className="processEmptyGuide h-full min-h-0 overflow-auto rounded-xl border border-dashed border-borderStrong bg-panel p-4">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Как начать</div>
+              <div className="processEmptyTitle mb-2 text-base font-semibold">{workbench.emptyGuide.title}</div>
+              <ol>
+                {workbench.emptyGuide.steps.map((line, idx) => (
+                  <li key={`guide_${idx}`}>{line}</li>
+                ))}
+              </ol>
+            </div>
           </div>
         ) : tab === "doc" ? (
           <DocStage
@@ -6426,6 +6657,15 @@ export default function ProcessStage({
                               />
                               <span>Hybrid ({Number(hybridLayerCounts.total || 0)})</span>
                             </label>
+                            <button
+                              type="button"
+                              className="secondaryBtn h-7 px-2 text-[11px]"
+                              onClick={() => focusHybridLayer("layers_focus_button")}
+                              disabled={!hybridVisible || Number(hybridLayerCounts.total || 0) <= 0}
+                              data-testid="diagram-action-layers-focus-visible"
+                            >
+                              Focus
+                            </button>
                           </div>
                           <div className="diagramIssueRow">
                             <span>Mode</span>
@@ -6485,7 +6725,7 @@ export default function ProcessStage({
                                 onChange={toggleHybridLayerFocus}
                                 data-testid="diagram-action-layers-focus"
                               />
-                              <span>Focus</span>
+                              <span>Dim BPMN</span>
                             </label>
                           </div>
                         </div>
@@ -6498,10 +6738,68 @@ export default function ProcessStage({
                             <span>Incomplete</span>
                             <span className="diagramIssueChip">{Number(hybridLayerCounts.incomplete || 0)}</span>
                           </div>
+                          <div className="diagramIssueRow">
+                            <span>Bindings</span>
+                            <span className="diagramIssueChip">
+                              {Number(hybridLayerVisibilityStats.validBindings || 0)} ok / {Number(hybridLayerVisibilityStats.missingBindings || 0)} missing
+                            </span>
+                          </div>
+                          <div className="diagramIssueRow">
+                            <span>Viewport</span>
+                            <span className="diagramIssueChip">
+                              {Number(hybridLayerVisibilityStats.insideViewport || 0)} in / {Number(hybridLayerVisibilityStats.outsideViewport || 0)} out
+                            </span>
+                          </div>
                         </div>
+                        {hybridVisible && Number(hybridLayerVisibilityStats.outsideViewport || 0) > 0 ? (
+                          <div className="diagramActionPopoverEmpty mt-2" data-testid="diagram-action-layers-outside-warning">
+                            Часть меток вне viewport. Нажмите Focus или Go to.
+                          </div>
+                        ) : null}
+                        {hybridVisible && Number(hybridLayerVisibilityStats.missingBindings || 0) > 0 ? (
+                          <div className="diagramActionPopoverActions mt-2">
+                            <button
+                              type="button"
+                              className="secondaryBtn h-7 px-2 text-[11px]"
+                              onClick={() => cleanupMissingHybridBindings("layers_cleanup_missing")}
+                              data-testid="diagram-action-layers-cleanup-missing"
+                            >
+                              Clean up missing bindings ({Number(hybridLayerVisibilityStats.missingBindings || 0)})
+                            </button>
+                          </div>
+                        ) : null}
                         {hybridVisible && Number(hybridLayerCounts.total || 0) === 0 ? (
                           <div className="diagramActionPopoverEmpty mt-2" data-testid="diagram-action-layers-empty-state">
                             Нет элементов Hybrid. Переключись в Edit и кликни по узлу BPMN, чтобы добавить метку.
+                          </div>
+                        ) : null}
+                        {hybridVisible && Number(hybridLayerCounts.total || 0) > 0 ? (
+                          <div className="hybridLayerPopoverList mt-2" data-testid="diagram-action-layers-item-list">
+                            {hybridLayerRenderRows.slice(0, 30).map((rowRaw) => {
+                              const row = asObject(rowRaw);
+                              const elementId = toText(row?.elementId);
+                              const title = toText(row?.title || elementId) || elementId;
+                              const missing = !row?.hasCenter;
+                              return (
+                                <div key={`hybrid_layer_row_${elementId}`} className="hybridLayerPopoverRow">
+                                  <div className="hybridLayerPopoverMain">
+                                    <span className="hybridLayerPopoverTitle" title={title}>{title}</span>
+                                    <span className="hybridLayerPopoverMeta">{elementId}</span>
+                                  </div>
+                                  <div className="hybridLayerPopoverActions">
+                                    {missing ? <span className="diagramIssueChip">missing</span> : null}
+                                    <button
+                                      type="button"
+                                      className="secondaryBtn h-7 px-2 text-[11px]"
+                                      onClick={() => goToHybridLayerItem(elementId, "layers_list_go_to")}
+                                      data-testid="diagram-action-layers-go-to"
+                                    >
+                                      Go to
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         ) : null}
                         <div className="muted mt-2 text-[10px]">Peek: удерживайте <b>H</b> (temporary View)</div>
@@ -6799,17 +7097,12 @@ export default function ProcessStage({
                         className="hybridLayerShield"
                       />
                     ) : null}
-                    {hybridLayerItems.map((itemRaw, index) => {
-                      const item = asObject(itemRaw);
+                    {hybridLayerRenderRows.map((rowRaw) => {
+                      const item = asObject(rowRaw);
                       const elementId = toText(item?.elementId);
-                      const center = asObject(hybridLayerPositions[elementId]);
                       if (!elementId) return null;
-                      const offset = asObject(hybridLayerByElementId[elementId]);
-                      const hasCenter = Number.isFinite(center.x) && Number.isFinite(center.y);
-                      const fallbackX = 92 + ((index % 6) * 36);
-                      const fallbackY = 88 + (Math.floor(index / 6) * 30);
-                      const posX = Number(hasCenter ? center.x : fallbackX) + Number(offset.dx || 0);
-                      const posY = Number(hasCenter ? center.y : fallbackY) + Number(offset.dy || 0);
+                      const posX = Number(item?.posX || 0);
+                      const posY = Number(item?.posY || 0);
                       const status = toText(item?.status).toLowerCase() || "none";
                       const isActive = toText(hybridLayerActiveElementId) === elementId;
                       const showCard = hybridModeEffective === "edit" || isActive;
@@ -6820,6 +7113,13 @@ export default function ProcessStage({
                           style={{ left: `${posX}px`, top: `${posY}px` }}
                           data-element-id={elementId}
                         >
+                          {hybridDebugEnabled ? (
+                            <span
+                              className="hybridLayerDebugCross"
+                              style={{ left: `${Number(item?.rawX || 0)}px`, top: `${Number(item?.rawY || 0)}px` }}
+                              title={`${elementId}: x=${Math.round(Number(item?.rawX || 0))}, y=${Math.round(Number(item?.rawY || 0))}`}
+                            />
+                          ) : null}
                           <button
                             type="button"
                             className="hybridLayerHotspot"
@@ -6852,6 +7152,22 @@ export default function ProcessStage({
                                 <span>{toText(item?.executor) || "executor:—"}</span>
                                 <span>{toText(item?.actionKey) || "action:—"}</span>
                               </div>
+                              {!item?.hasCenter ? (
+                                <div className="hybridLayerCardMeta">
+                                  <span>binding: missing in current BPMN</span>
+                                  <button
+                                    type="button"
+                                    className="secondaryBtn h-6 px-1.5 text-[10px]"
+                                    onMouseDown={(event) => withHybridOverlayGuard(event, { action: "card_missing_cleanup_mousedown", elementId })}
+                                    onClick={(event) => {
+                                      withHybridOverlayGuard(event, { action: "card_missing_cleanup_click", elementId });
+                                      cleanupMissingHybridBindings("card_missing_cleanup");
+                                    }}
+                                  >
+                                    Clean
+                                  </button>
+                                </div>
+                              ) : null}
                             </div>
                           ) : null}
                         </div>

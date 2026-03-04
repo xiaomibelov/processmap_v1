@@ -75,6 +75,7 @@ export default function TopBar({
   sessions,
   sessionId,
   onOpenSession,
+  onOpenWorkspace,
   onOpen,
   onDeleteSession,
   onNewProject,
@@ -349,6 +350,17 @@ export default function TopBar({
           {canManageProjectEntities ? (
             <button type="button" className="iconBtn h-8 w-8 min-w-8" onClick={() => onDeleteSession?.()} title="Удалить сессию" disabled={!sessionId}>
               🗑
+            </button>
+          ) : null}
+          {!sessionId ? (
+            <button
+              type="button"
+              className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-3 py-0 text-sm"
+              onClick={() => onOpenWorkspace?.()}
+              title="Открыть Workspace"
+              data-testid="topbar-open-workspace"
+            >
+              Workspace
             </button>
           ) : null}
         </div>

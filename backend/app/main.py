@@ -60,6 +60,7 @@ from .storage import (
     append_audit_log,
     list_audit_log,
     cleanup_audit_log,
+    list_workspace_snapshot_rows,
 )
 from .settings import load_llm_settings, llm_status, save_llm_settings, verify_llm_settings
 from .validators.coverage import build_questions
@@ -5288,6 +5289,268 @@ def _accessible_session_ids_for_request(
             continue
         out.add(sid)
     return out
+
+
+def _workspace_parse_owner_ids(raw: str) -> List[str]:
+    out: List[str] = []
+    for part in str(raw or "").split(","):
+        value = str(part or "").strip()
+        if value:
+            out.append(value)
+    return sorted(set(out))
+
+
+def _workspace_reports_count(interview_raw: Any) -> int:
+    interview = interview_raw if isinstance(interview_raw, dict) else {}
+    by_path = _get_report_versions_by_path(interview)
+    total = 0
+    for rows in by_path.values():
+        if isinstance(rows, list):
+            total += len(rows)
+    return int(total)
+
+
+def _workspace_needs_attention_count(interview_raw: Any) -> int:
+    interview = interview_raw if isinstance(interview_raw, dict) else {}
+    candidates = [
+        interview.get("needs_attention"),
+        interview.get("needs_attention_count"),
+        interview.get("attention_count"),
+        interview.get("attention_total"),
+        interview.get("missing_count"),
+    ]
+    for raw in candidates:
+        try:
+            value = int(raw or 0)
+        except Exception:
+            value = 0
+        if value > 0:
+            return value
+    attention_items = interview.get("attention_items")
+    if isinstance(attention_items, list):
+        return len(attention_items)
+    return 0
+
+
+def _workspace_session_status(
+    *,
+    reports_versions: int,
+    version: int,
+    bpmn_xml_version: int,
+    interview_raw: Any,
+) -> str:
+    if int(reports_versions or 0) > 0:
+        return "ready"
+    if int(version or 0) > 0 or int(bpmn_xml_version or 0) > 0:
+        return "in_progress"
+    interview = interview_raw if isinstance(interview_raw, dict) else {}
+    if interview:
+        return "in_progress"
+    return "draft"
+
+
+@app.get("/api/enterprise/workspace")
+def enterprise_workspace(
+    request: Request,
+    group_by: str = Query(default="users"),
+    q: str = Query(default=""),
+    owner_ids: str = Query(default=""),
+    project_id: str = Query(default=""),
+    status: str = Query(default=""),
+    updated_from: int | None = Query(default=None),
+    updated_to: int | None = Query(default=None),
+    needs_attention: int | None = Query(default=None),
+    limit: int = Query(default=50),
+    offset: int = Query(default=0),
+) -> Dict[str, Any]:
+    group = str(group_by or "").strip().lower() or "users"
+    if group not in {"users", "projects"}:
+        return _enterprise_error(422, "validation_error", "group_by must be users|projects")
+    status_filter = str(status or "").strip().lower()
+    if status_filter and status_filter not in {"draft", "in_progress", "ready"}:
+        return _enterprise_error(422, "validation_error", "status must be draft|in_progress|ready")
+    try:
+        lim = max(1, min(int(limit or 50), 200))
+    except Exception:
+        lim = 50
+    try:
+        off = max(0, int(offset or 0))
+    except Exception:
+        off = 0
+
+    oid = _request_active_org_id(request)
+    role, err = _enterprise_require_org_member(request, oid)
+    if err is not None:
+        return err
+    role_l = str(role or "").strip().lower()
+
+    scope = _project_scope_for_request(request, oid)
+    allowed_projects = _scope_allowed_project_ids(scope)
+    selected_project_id = str(project_id or "").strip()
+    if selected_project_id and allowed_projects and selected_project_id not in allowed_projects:
+        return _enterprise_error(404, "not_found", "not_found")
+
+    owner_filter_ids = _workspace_parse_owner_ids(owner_ids)
+    snapshot = list_workspace_snapshot_rows(
+        oid,
+        allowed_project_ids=sorted(allowed_projects) if allowed_projects else None,
+        q=str(q or "").strip(),
+        owner_ids=owner_filter_ids if owner_filter_ids else None,
+        updated_from=updated_from,
+        updated_to=updated_to,
+    )
+    raw_projects = snapshot.get("projects")
+    if not isinstance(raw_projects, list):
+        raw_projects = []
+    raw_sessions = snapshot.get("sessions")
+    if not isinstance(raw_sessions, list):
+        raw_sessions = []
+
+    memberships = _enrich_members_with_email(list_org_memberships(oid))
+    org_name = ""
+    member_by_user: Dict[str, Dict[str, Any]] = {}
+    for row in memberships:
+        uid = str(row.get("user_id") or "").strip()
+        if not uid:
+            continue
+        member_by_user[uid] = {
+            "id": uid,
+            "email": str(row.get("email") or "").strip().lower(),
+            "name": str(row.get("email") or uid).strip(),
+            "role": str(row.get("role") or "").strip().lower(),
+        }
+        if not org_name:
+            org_name = str(row.get("org_name") or row.get("name") or "").strip()
+
+    sessions_all: List[Dict[str, Any]] = []
+    project_counts: Dict[str, int] = {}
+    user_session_counts: Dict[str, int] = {}
+    for row_raw in raw_sessions:
+        row = row_raw if isinstance(row_raw, dict) else {}
+        pid = str(row.get("project_id") or "").strip()
+        if selected_project_id and pid != selected_project_id:
+            continue
+        owner_id = str(row.get("owner_user_id") or row.get("created_by") or "").strip()
+        interview = {}
+        try:
+            interview = json.loads(str(row.get("interview_json") or "{}"))
+            if not isinstance(interview, dict):
+                interview = {}
+        except Exception:
+            interview = {}
+        reports_versions = _workspace_reports_count(interview)
+        attention_count = _workspace_needs_attention_count(interview)
+        session_status = _workspace_session_status(
+            reports_versions=reports_versions,
+            version=int(row.get("version") or 0),
+            bpmn_xml_version=int(row.get("bpmn_xml_version") or 0),
+            interview_raw=interview,
+        )
+        if status_filter and session_status != status_filter:
+            continue
+        if needs_attention is not None:
+            try:
+                needs_filter = int(needs_attention)
+            except Exception:
+                needs_filter = -1
+            if needs_filter == 1 and attention_count <= 0:
+                continue
+            if needs_filter == 0 and attention_count > 0:
+                continue
+        owner_info = member_by_user.get(owner_id) or {}
+        if owner_id and owner_id not in member_by_user:
+            found = find_user_by_id(owner_id) or {}
+            email = str(found.get("email") or "").strip().lower()
+            owner_info = {
+                "id": owner_id,
+                "email": email,
+                "name": email or owner_id,
+                "role": "",
+            }
+            member_by_user[owner_id] = owner_info
+        session = {
+            "id": str(row.get("id") or ""),
+            "name": str(row.get("title") or row.get("id") or "").strip(),
+            "project_id": pid,
+            "owner_id": owner_id,
+            "owner": str(owner_info.get("email") or owner_id or "").strip(),
+            "updated_at": int(row.get("updated_at") or 0),
+            "created_at": int(row.get("created_at") or 0),
+            "status": session_status,
+            "reports_versions": int(reports_versions),
+            "needs_attention": int(attention_count),
+            "can_view": True,
+            "can_edit": role_l in _ORG_EDITOR_ROLES,
+            "can_manage": role_l in _ORG_PROJECT_MEMBER_MANAGE_ROLES,
+        }
+        sessions_all.append(session)
+        project_counts[pid] = int(project_counts.get(pid, 0) or 0) + 1
+        if owner_id:
+            user_session_counts[owner_id] = int(user_session_counts.get(owner_id, 0) or 0) + 1
+
+    sessions_all.sort(key=lambda item: (int(item.get("updated_at") or 0), str(item.get("id") or "")), reverse=True)
+    total = len(sessions_all)
+    sessions_page = sessions_all[off:off + lim]
+
+    user_project_counts: Dict[str, int] = {}
+    projects_out: List[Dict[str, Any]] = []
+    for row_raw in raw_projects:
+        row = row_raw if isinstance(row_raw, dict) else {}
+        pid = str(row.get("id") or "").strip()
+        if selected_project_id and pid != selected_project_id:
+            continue
+        owner_id = str(row.get("owner_user_id") or row.get("created_by") or "").strip()
+        owner_info = member_by_user.get(owner_id) or {}
+        if owner_id and owner_id not in member_by_user:
+            found = find_user_by_id(owner_id) or {}
+            email = str(found.get("email") or "").strip().lower()
+            owner_info = {
+                "id": owner_id,
+                "email": email,
+                "name": email or owner_id,
+                "role": "",
+            }
+            member_by_user[owner_id] = owner_info
+        if int(project_counts.get(pid, 0) or 0) <= 0 and total > 0:
+            continue
+        if owner_id:
+            user_project_counts[owner_id] = int(user_project_counts.get(owner_id, 0) or 0) + 1
+        projects_out.append({
+            "id": pid,
+            "name": str(row.get("title") or pid).strip(),
+            "owner_id": owner_id,
+            "owner": str(owner_info.get("email") or owner_id or "").strip(),
+            "updated_at": int(row.get("updated_at") or 0),
+            "created_at": int(row.get("created_at") or 0),
+            "session_count": int(project_counts.get(pid, 0) or 0),
+        })
+    projects_out.sort(key=lambda item: (int(item.get("updated_at") or 0), str(item.get("name") or "")), reverse=True)
+
+    users_out: List[Dict[str, Any]] = []
+    for uid, info in member_by_user.items():
+        if total > 0 and int(user_session_counts.get(uid, 0) or 0) <= 0 and int(user_project_counts.get(uid, 0) or 0) <= 0:
+            continue
+        users_out.append({
+            "id": uid,
+            "name": str(info.get("name") or info.get("email") or uid),
+            "email": str(info.get("email") or ""),
+            "role": str(info.get("role") or "").strip().lower(),
+            "project_count": int(user_project_counts.get(uid, 0) or 0),
+            "session_count": int(user_session_counts.get(uid, 0) or 0),
+        })
+    users_out.sort(key=lambda item: (str(item.get("name") or "").lower(), str(item.get("id") or "")))
+
+    if not org_name:
+        org_name = oid
+
+    return {
+        "org": {"id": oid, "name": org_name, "role": role_l},
+        "group_by": group,
+        "users": users_out,
+        "projects": projects_out,
+        "sessions": sessions_page,
+        "page": {"limit": lim, "offset": off, "total": total},
+    }
 
 
 @app.get("/api/orgs")
