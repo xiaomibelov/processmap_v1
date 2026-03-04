@@ -3,7 +3,6 @@ import BpmnStage from "./process/BpmnStage";
 import DocStage from "./process/DocStage";
 import InterviewStage from "./process/InterviewStage";
 import WorkspaceDashboard from "./workspace/WorkspaceDashboard";
-import Modal from "../shared/ui/Modal";
 import { useAuth } from "../features/auth/AuthProvider";
 import { apiPatchSession, apiRecompute } from "../lib/api/sessionApi";
 import { apiGetBpmnXml } from "../lib/api/bpmnApi";
@@ -85,11 +84,15 @@ import {
 import LayersPopover from "../features/process/stage/components/LayersPopover";
 import HybridOverlayRenderer from "../features/process/stage/renderers/HybridOverlayRenderer";
 import useSessionMetaPersist from "../features/process/stage/controllers/useSessionMetaPersist";
+import useProcessStageActionsController from "../features/process/stage/controllers/useProcessStageActionsController";
 import useBpmnCanvasController from "../features/process/stage/hooks/useBpmnCanvasController";
 import useDiagramOverlayTransform from "../features/process/stage/hooks/useDiagramOverlayTransform";
 import useHybridLayerViewportController from "../features/process/stage/hooks/useHybridLayerViewportController";
 import usePlaybackController from "../features/process/stage/hooks/usePlaybackController";
 import useDiagramActionPopovers from "../features/process/stage/hooks/useDiagramActionPopovers";
+import ProcessStageShell from "../features/process/stage/ui/ProcessStageShell";
+import ProcessPanels, { ProcessDiagramModeSwitch } from "../features/process/stage/ui/ProcessPanels";
+import ProcessDialogs from "../features/process/stage/ui/ProcessDialogs";
 import { deleteHybridIds } from "../features/process/hybrid/actions/hybridDelete";
 import useHybridSelectionController from "../features/process/hybrid/tools/useHybridSelectionController";
 import useHybridToolsController from "../features/process/hybrid/tools/useHybridToolsController";
@@ -108,8 +111,6 @@ import {
   applyHybridPaletteToolIntent,
 } from "../features/process/hybrid/tools/hybridToolState";
 import useTemplatesStore from "../features/templates/model/useTemplatesStore";
-import TemplatesPicker from "../features/templates/ui/TemplatesPicker";
-import CreateTemplateModal from "../features/templates/ui/CreateTemplateModal";
 import { applyTemplateToDiagram } from "../features/templates/services/applyTemplateToDiagram";
 import { buildManualPathReportSteps } from "./process/interview/services/pathReport";
 
@@ -2373,7 +2374,7 @@ export default function ProcessStage({
       return prev === nextHybridId ? prev : nextHybridId;
     });
   }, [tab, hybridVisible, playbackHighlightedBpmnIds, hybridLayerMapLive]);
-  useDiagramActionPopovers({
+  const { closeAllDiagramActions } = useDiagramActionPopovers({
     toolbarMenuOpen,
     setToolbarMenuOpen,
     diagramActionPathOpen,
@@ -2411,6 +2412,17 @@ export default function ProcessStage({
     playbackOverlayClickGuardRef,
     logPlaybackDebug,
     toText,
+  });
+  const stageActions = useProcessStageActionsController({
+    setToolbarMenuOpen,
+    setAttentionOpen,
+    setQualityAutoFixOpen,
+    setInsertBetweenOpen,
+    setVersionsOpen,
+    setDiffOpen,
+    setCreateTemplateOpen,
+    setTemplatesPickerOpen,
+    closeAllDiagramActions,
   });
   const aiGenerateGate = useMemo(
     () => getAiGenerateGate({
@@ -5432,7 +5444,7 @@ export default function ProcessStage({
   const hasPathHighlightData = availablePathTiers.length > 0;
 
   return (
-    <div className="processShell">
+    <ProcessStageShell>
       <div className="processHeader diagramToolbarHeader">
         <div className="diagramToolbarSlot diagramToolbarSlot--left">
           {canSaveNow ? (
@@ -5487,29 +5499,13 @@ export default function ProcessStage({
 
         <div className="diagramToolbarSlot diagramToolbarSlot--right">
           {tab === "diagram" ? (
-            <div className="seg hidden lg:inline-flex" data-testid="diagram-mode-switch-inline">
-              {[
-                { id: "normal", label: "Normal" },
-                { id: "interview", label: "Interview" },
-                { id: "quality", label: "Quality" },
-                { id: "coverage", label: "Coverage" },
-              ].map((mode) => (
-                <button
-                  key={mode.id}
-                  type="button"
-                  className={`segBtn px-2 py-1 text-[11px] ${diagramMode === mode.id ? "on" : ""}`}
-                  onClick={() => applyDiagramMode(mode.id)}
-                >
-                  {mode.label}
-                </button>
-              ))}
-            </div>
+            <ProcessDiagramModeSwitch diagramMode={diagramMode} applyDiagramMode={applyDiagramMode} />
           ) : null}
           {(tab === "diagram" || tab === "interview") && hasSession ? (
             <button
               type="button"
               className={`secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs ${attentionOpen ? "ring-1 ring-accent/60" : ""}`}
-              onClick={() => setAttentionOpen((prev) => !prev)}
+              onClick={stageActions.toggleAttentionPanel}
               data-testid="attention-panel-toggle"
               title="Открыть список узлов с пробелами"
             >
@@ -5537,7 +5533,7 @@ export default function ProcessStage({
             ref={toolbarMenuButtonRef}
             type="button"
             className="secondaryBtn h-8 w-9 px-0 text-sm"
-            onClick={() => setToolbarMenuOpen((prev) => !prev)}
+            onClick={stageActions.toggleToolbarMenu}
             aria-expanded={toolbarMenuOpen ? "true" : "false"}
             aria-label="Открыть меню действий"
             data-testid="diagram-toolbar-overflow-toggle"
@@ -5576,435 +5572,76 @@ export default function ProcessStage({
           }}
         />
 
-        {toolbarMenuOpen ? (
-          <div ref={toolbarMenuRef} className="diagramToolbarOverlay" data-testid="diagram-toolbar-overlay">
-            <div className="diagramToolbarOverlaySection">
-              <div className="diagramToolbarOverlayTitle">Режимы</div>
-              <div className="diagramToolbarOverlayRow">
-                <span>Отображение</span>
-                <div className="seg p-0.5" data-testid="diagram-mode-switch">
-                  {[
-                    { id: "normal", label: "Normal" },
-                    { id: "interview", label: "Interview" },
-                    { id: "quality", label: "Quality" },
-                    { id: "coverage", label: "Coverage" },
-                  ].map((mode) => (
-                    <button
-                      key={mode.id}
-                      type="button"
-                      className={`segBtn px-2 py-1 text-[11px] ${diagramMode === mode.id ? "on" : ""}`}
-                      onClick={() => applyDiagramMode(mode.id)}
-                    >
-                      {mode.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="diagramToolbarOverlayRow">
-                <span>Команды</span>
-                <div className="flex items-center gap-2">
-                  <span className={`badge text-[10px] ${commandModeEnabled ? "ok" : ""}`}>{commandModeEnabled ? "ON" : "OFF"}</span>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={commandModeEnabled ? "true" : "false"}
-                    className={`toolbarSwitch ${commandModeEnabled ? "on" : ""}`}
-                    onClick={() => setCommandModeEnabled((prev) => !prev)}
-                    data-testid="ai-command-toggle"
-                  >
-                    <span className="toolbarSwitchKnob" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="diagramToolbarOverlaySection">
-              <div className="diagramToolbarOverlayTitle">Файл и версии</div>
-              <div className="diagramToolbarOverlayActions">
-                <button
-                  type="button"
-                  className="secondaryBtn h-7 px-2 text-[11px]"
-                  onClick={() => {
-                    openImportDialog();
-                    setToolbarMenuOpen(false);
-                  }}
-                  disabled={!hasSession || !isBpmnTab}
-                  title={workbench.importTooltip}
-                >
-                  {workbench.labels.importBpmn}
-                </button>
-                <button
-                  type="button"
-                  className="secondaryBtn h-7 px-2 text-[11px]"
-                  onClick={() => {
-                    void exportBpmn();
-                    setToolbarMenuOpen(false);
-                  }}
-                  disabled={!hasSession}
-                  title={workbench.labels.exportBpmn}
-                  data-testid="bpmn-export-button"
-                >
-                  {workbench.labels.exportBpmn}
-                </button>
-                <button
-                  type="button"
-                  className="secondaryBtn h-7 px-2 text-[11px]"
-                  onClick={() => {
-                    openVersionsModal();
-                    setToolbarMenuOpen(false);
-                  }}
-                  disabled={!hasSession}
-                  data-testid="bpmn-versions-open"
-                >
-                  Версии
-                </button>
-              </div>
-            </div>
-
-            <div className="diagramToolbarOverlaySection">
-              <div className="diagramToolbarOverlayTitle">Контекст</div>
-              {selectedElementId ? (
-                <div className="diagramToolbarOverlayActions">
-                  <button
-                    type="button"
-                    className="secondaryBtn h-7 px-2 text-[11px]"
-                    onClick={() => {
-                      openInsertBetweenModal();
-                      setToolbarMenuOpen(false);
-                    }}
-                    disabled={insertBetweenBusy || !selectedInsertBetween || !canInsertBetween}
-                    title={!selectedInsertBetween ? "Выберите шаг/переход" : (!canInsertBetween ? insertBetweenErrorMessage(selectedInsertBetween?.error) : "Вставить шаг между")}
-                    data-testid="diagram-insert-between-open"
-                  >
-                    Вставить между
-                  </button>
-                  <button
-                    type="button"
-                    className="secondaryBtn h-7 px-2 text-[11px]"
-                    onClick={() => {
-                      onOpenElementNotes?.(selectedBpmnElement, "header_open_notes");
-                      setToolbarMenuOpen(false);
-                    }}
-                    title="Открыть заметки выбранного элемента"
-                  >
-                    Открыть заметки
-                  </button>
-                  <button
-                    type="button"
-                    className="secondaryBtn h-7 px-2 text-[11px]"
-                    onClick={() => {
-                      void generateAiQuestionsForSelectedElement();
-                      setToolbarMenuOpen(false);
-                    }}
-                    disabled={!canGenerateAiQuestions}
-                    data-testid="diagram-ai-generate-questions"
-                    title={canGenerateAiQuestions ? "Сгенерировать AI-вопросы для выбранного элемента" : aiGenerateGate.reasonText}
-                  >
-                    {aiQuestionsBusy ? "AI работает…" : "Сгенерировать вопросы"}
-                  </button>
-                </div>
-              ) : (
-                <div className="muted small">Выберите элемент/переход на диаграмме, чтобы открыть контекстные действия.</div>
-              )}
-              {aiQuestionsStatus?.text ? (
-                <div
-                  className={`mt-2 rounded-md border px-2 py-1 text-[11px] ${
-                    aiQuestionsStatus.kind === "error"
-                      ? "border-danger/50 bg-danger/10 text-danger"
-                      : (aiQuestionsStatus.kind === "warn" ? "border-warning/40 bg-warning/10 text-warning" : "border-success/40 bg-success/10 text-success")
-                  }`}
-                  data-testid="diagram-ai-questions-status"
-                >
-                  {aiQuestionsStatus.text}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="diagramToolbarOverlaySection">
-              <div className="diagramToolbarOverlayTitle">Шаблоны</div>
-              <div className="diagramToolbarOverlayActions">
-                <button
-                  type="button"
-                  className={`${templatesEnabled ? "primaryBtn" : "secondaryBtn"} h-7 px-2 text-[11px]`}
-                  onClick={() => setTemplatesEnabled((prev) => !prev)}
-                  disabled={!hasSession}
-                  data-testid="template-pack-toggle"
-                >
-                  Шаблоны: {templatesEnabled ? "ON" : "OFF"}
-                </button>
-              </div>
-              {templatesEnabled && selectedBpmnElementIds.length > 0 && suggestedTemplates.length > 0 ? (
-                <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-border bg-panel2/45 px-2 py-1 text-[11px] text-muted">
-                  <span className="text-fg">Подходит:</span>
-                  {suggestedTemplates.slice(0, 3).map((template) => (
-                    <button
-                      key={String(template?.id || "")}
-                      type="button"
-                      className="secondaryBtn h-7 px-2 text-[11px]"
-                      onClick={() => void applyTemplate(template)}
-                      title={`score=${Number(template?.score || 0).toFixed(2)}`}
-                      data-testid="template-pack-suggest-item"
-                    >
-                      {String(template?.title || "Шаблон")}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-
-            {commandModeEnabled ? (
-              <div className="diagramToolbarOverlaySection" data-testid="ai-command-panel">
-                <div className="diagramToolbarOverlayTitle">Командный режим</div>
-                <div className="mb-2 flex items-center gap-2">
-                  <input
-                    type="text"
-                    className="input h-8 min-h-0 flex-1 px-3 py-0 text-xs"
-                    placeholder="Команда BPMN: добавь шаг Проверить температуру после Start"
-                    value={commandInput}
-                    onChange={(e) => setCommandInput(String(e.target.value || ""))}
-                    disabled={commandBusy}
-                    data-testid="ai-command-input"
-                    onKeyDown={(e) => {
-                      if (e.key !== "Enter") return;
-                      e.preventDefault();
-                      void runAiCommand(commandInput);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="primaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
-                    disabled={commandBusy || !String(commandInput || "").trim()}
-                    onClick={() => void runAiCommand(commandInput)}
-                    data-testid="ai-command-run"
-                  >
-                    {commandBusy ? "AI работает…" : "Применить"}
-                  </button>
-                </div>
-                {commandStatus?.text ? (
-                  <div
-                    className={`mb-2 rounded-md border px-2 py-1 text-xs ${
-                      commandStatus.kind === "error"
-                        ? "border-danger/50 bg-danger/10 text-danger"
-                        : (commandStatus.kind === "warn"
-                          ? "border-warning/40 bg-warning/10 text-warning"
-                          : "border-success/50 bg-success/10 text-success")
-                    }`}
-                    data-testid="ai-command-status"
-                  >
-                    {commandStatus.text}
-                  </div>
-                ) : null}
-                <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
-                  <span>История:</span>
-                  {commandHistory.length === 0 ? <span>пока пусто</span> : null}
-                  {commandHistory.slice(0, 5).map((item, idx) => (
-                    <button
-                      key={`cmd_${idx}_${item?.ts || 0}`}
-                      type="button"
-                      className="secondaryBtn h-7 max-w-[220px] truncate px-2 text-[11px]"
-                      title={String(item?.text || "")}
-                      onClick={() => setCommandInput(String(item?.text || ""))}
-                      data-testid="ai-command-history-item"
-                    >
-                      {String(item?.text || "")}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="diagramToolbarOverlaySection">
-              <div className="diagramToolbarOverlayTitle">Редкие действия</div>
-              <div className="diagramToolbarOverlayActions">
-                <button type="button" className="secondaryBtn h-7 px-2 text-[11px]" onClick={runToolbarReset} title={workbench.labels.reset}>
-                  {workbench.labels.reset}
-                </button>
-                <button type="button" className="secondaryBtn h-7 px-2 text-[11px]" onClick={runToolbarClear} title={workbench.clearTooltip}>
-                  {workbench.labels.clear}
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null}
+        <ProcessPanels
+          section="top"
+          view={{
+            toolbarMenuOpen,
+            toolbarMenuRef,
+            diagramMode,
+            applyDiagramMode,
+            commandModeEnabled,
+            setCommandModeEnabled,
+            openImportDialog,
+            closeToolbarMenu: stageActions.closeToolbarMenu,
+            hasSession,
+            isBpmnTab,
+            workbench,
+            exportBpmn,
+            openVersionsModal,
+            selectedElementId,
+            openInsertBetweenModal,
+            insertBetweenBusy,
+            selectedInsertBetween,
+            canInsertBetween,
+            insertBetweenErrorMessage,
+            onOpenElementNotes,
+            selectedBpmnElement,
+            generateAiQuestionsForSelectedElement,
+            canGenerateAiQuestions,
+            aiGenerateGate,
+            aiQuestionsBusy,
+            aiQuestionsStatus,
+            templatesEnabled,
+            setTemplatesEnabled,
+            selectedBpmnElementIds,
+            suggestedTemplates,
+            applyTemplate,
+            commandInput,
+            setCommandInput,
+            commandBusy,
+            runAiCommand,
+            commandStatus,
+            commandHistory,
+            runToolbarReset,
+            runToolbarClear,
+            isQualityMode,
+            qualitySummary,
+            qualityProfile,
+            qualityProfileId,
+            setQualityProfileId,
+            openQualityAutoFix: stageActions.openQualityAutoFix,
+            qualityAutoFixBusy,
+            qualityAutoFixPreview,
+            qualityHints,
+            toNodeId,
+            qualityIssueFocusKey,
+            qualityNodeTitleById,
+            coverageById,
+            qualityIssueCopy,
+            focusQualityIssue,
+            qualityLevelLabel,
+            qualityImpactLabel,
+            isCoverageMode,
+            coverageMatrix,
+            coverageRows,
+            focusCoverageIssue,
+            aiBottleneckOn,
+            apiClarifyHints,
+            activeHints,
+            asArray,
+          }}
+        />
       </div>
-
-      {isBpmnTab && isQualityMode ? (
-        <div
-          className="aiBottleneckPanel qualityPanel m-3 rounded-xl border border-border bg-panel px-3 py-2"
-          data-testid="quality-panel"
-          onWheelCapture={(e) => e.stopPropagation()}
-        >
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <div className="aiBottleneckHead text-sm font-semibold">
-              Качество схемы: {qualitySummary.total}
-              <span className="ml-2 text-xs text-muted">
-                errors: {qualitySummary.errors} · warns: {qualitySummary.warns}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <select
-                className="input h-8 min-h-0 px-2 py-0 text-xs"
-                value={qualityProfile?.id || qualityProfileId}
-                onChange={(e) => setQualityProfileId(String(e.target.value || "mvp"))}
-                data-testid="quality-profile-select"
-              >
-                <option value="mvp">MVP</option>
-                <option value="production">Production</option>
-                <option value="haccp">HACCP</option>
-              </select>
-              <button
-                type="button"
-                className="secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
-                onClick={() => setQualityAutoFixOpen(true)}
-                disabled={qualityAutoFixBusy || Number(qualityAutoFixPreview?.safeFixes || 0) <= 0}
-                data-testid="quality-autofix-open"
-              >
-                Автоисправить ({Number(qualityAutoFixPreview?.safeFixes || 0)})
-              </button>
-            </div>
-          </div>
-          <div className="mb-2 text-xs text-muted">
-            Профиль: <b className="text-fg">{qualityProfile?.title || qualityProfileId}</b>
-            {qualityProfile?.isStub ? <span> · stub</span> : null}
-            <span> · {qualityProfile?.description || ""}</span>
-          </div>
-          {qualityHints.length === 0 ? (
-            <div className="muted small">Проблем не найдено.</div>
-          ) : (
-            <div className="aiBottleneckList qualityIssueList mt-2 space-y-1.5" onWheelCapture={(e) => e.stopPropagation()}>
-              {qualityHints.map((item, idx) => {
-                const nodeId = toNodeId(item?.nodeId);
-                const reason = String(asArray(item?.reasons)[0] || "").trim() || "Проверьте элемент BPMN.";
-                const key = `${nodeId}::${reason}`;
-                const focused = key === qualityIssueFocusKey;
-                const level = String(item?.level || "warn").toLowerCase() === "error" ? "error" : "warn";
-                const nodeTitle = String(
-                  qualityNodeTitleById[nodeId]
-                  || coverageById[nodeId]?.title
-                  || item?.title
-                  || "",
-                ).trim();
-                const ui = qualityIssueCopy(item, nodeTitle);
-                return (
-                  <div
-                    key={`${key}_${idx}`}
-                    className={`aiBottleneckItem qualityIssueCard sev-${item.severity} w-full cursor-pointer rounded-lg border border-border bg-panel2 px-2 py-1 text-left ${focused ? "is-active ring-1 ring-accent/70" : ""}`}
-                    onClick={() => focusQualityIssue(item)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        focusQualityIssue(item);
-                      }
-                    }}
-                    role="button"
-                    tabIndex={0}
-                    data-testid="quality-issue-item"
-                    data-node-id={nodeId}
-                  >
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <b>{ui.title}</b>
-                      <span className={`badge px-1.5 py-0 text-[10px] ${level === "error" ? "err" : "warn"}`}>{qualityLevelLabel(item?.level)}</span>
-                      <span className="text-[11px] text-muted">{qualityImpactLabel(item)}</span>
-                    </div>
-                    <div className="mt-0.5 text-[11px] text-muted">{ui.short}</div>
-                    <div className="mt-0.5 text-[11px] text-muted">Узел: <span className="text-fg">{ui.nodeTitle}</span></div>
-                    <div className="mt-0.5 text-[11px] text-muted">Как исправить: {ui.fix}</div>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        className="primaryBtn h-7 px-2 text-[11px]"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          focusQualityIssue(item);
-                        }}
-                      >
-                        Показать на схеме
-                      </button>
-                      <details
-                        className="qualityIssueDetails text-[11px] text-muted"
-                        onClick={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => e.stopPropagation()}
-                      >
-                        <summary className="cursor-pointer select-none hover:text-fg">Подробнее</summary>
-                        <div className="mt-1 space-y-0.5 rounded border border-border/70 bg-panel px-2 py-1.5">
-                          <div><span className="text-muted">rule_code:</span> <span className="font-mono text-fg">{ui.ruleId}</span></div>
-                          <div><span className="text-muted">node_id:</span> <span className="font-mono text-fg">{nodeId || "—"}</span></div>
-                          <div><span className="text-muted">score:</span> <span className="text-fg">{Number(item?.score || 0)}</span></div>
-                          <div><span className="text-muted">raw:</span> <span className="text-fg">{reason}</span></div>
-                        </div>
-                      </details>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      ) : null}
-
-      {isBpmnTab && isCoverageMode ? (
-        <div className="aiBottleneckPanel m-3 rounded-xl border border-border bg-panel px-3 py-2" data-testid="coverage-panel">
-          <div className="mb-1 flex items-center justify-between gap-2 text-sm font-semibold">
-            <span>Покрытие: {Number(coverageMatrix?.summary?.total || 0)} элементов</span>
-            <button
-              type="button"
-              className="secondaryBtn h-7 px-2 text-[11px]"
-              onClick={() => applyDiagramMode("normal")}
-            >
-              Скрыть
-            </button>
-          </div>
-          <div className="mb-2 text-xs text-muted">
-            без notes: <b className="text-fg">{Number(coverageMatrix?.summary?.missingNotes || 0)}</b>
-            <span> · без AI: <b className="text-fg">{Number(coverageMatrix?.summary?.missingAiQuestions || 0)}</b></span>
-            <span> · без duration/quality: <b className="text-fg">{Number(coverageMatrix?.summary?.missingDurationQuality || 0)}</b></span>
-          </div>
-          {coverageRows.length === 0 ? (
-            <div className="rounded-md border border-dashed border-border px-2 py-2 text-xs text-muted">
-              Пробелов покрытия не найдено.
-            </div>
-          ) : (
-            <div className="max-h-48 space-y-2 overflow-auto pr-1">
-              {coverageRows.slice(0, 20).map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className="w-full rounded-lg border border-border bg-panel2 px-2 py-1.5 text-left"
-                  onClick={() => focusCoverageIssue(item, "coverage_panel")}
-                  data-testid="coverage-issue-item"
-                  data-element-id={item.id}
-                >
-                  <div className="text-xs font-semibold text-fg">{item.title}</div>
-                  <div className="text-[11px] text-muted">
-                    {item.missingNotes ? "notes " : ""}
-                    {item.missingAiQuestions ? "ai_questions " : ""}
-                    {item.missingDurationQuality ? "duration/quality" : ""}
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      ) : null}
-
-      {isBpmnTab && aiBottleneckOn ? (
-        <div className="aiBottleneckPanel m-3 rounded-xl border border-border bg-panel px-3 py-2">
-          <div className="aiBottleneckHead text-sm font-semibold">{apiClarifyHints.length ? "API-уточнения на узлах" : "AI-подсветка узких мест"}: {activeHints.length}</div>
-          {activeHints.length === 0 ? (
-            <div className="muted small">Критичных узлов не найдено по текущим данным.</div>
-          ) : (
-            <div className="aiBottleneckList mt-2 space-y-2">
-              {activeHints.map((b) => (
-                <div key={b.nodeId} className={`aiBottleneckItem sev-${b.severity} rounded-lg border border-border bg-panel2 px-2 py-1.5`}>
-                  <b>{b.title}</b> · score {b.score}
-                  <span className="muted small"> · {b.reasons.join("; ")}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      ) : null}
 
       <div className="processBody relative" ref={processBodyRef}>
         {!hasSession ? (
@@ -7196,110 +6833,21 @@ export default function ProcessStage({
                 ) : null}
               </div>
             </div>
-            {(tab === "diagram" || tab === "interview") && hasSession && attentionOpen ? (
-              <div className="attentionPanel" data-testid="attention-panel">
-                <div className="attentionPanelHead">
-                  <div className="attentionPanelTitle">
-                    <span>Требует внимания</span>
-                    <span className="attentionPanelCount">{attentionItemsRaw.length}</span>
-                  </div>
-                  <button
-                    type="button"
-                    className="secondaryBtn h-7 px-2 text-[11px]"
-                    onClick={() => setAttentionOpen(false)}
-                    aria-label="Закрыть панель Требует внимания"
-                  >
-                    Закрыть
-                  </button>
-                </div>
-                <div className="attentionPanelFilters">
-                  <label className="attentionPanelFilter">
-                    <input
-                      type="checkbox"
-                      checked={!!attentionFilters?.quality}
-                      onChange={() => toggleAttentionFilter("quality")}
-                      data-testid="attention-filter-quality"
-                    />
-                    <span>Только Quality</span>
-                  </label>
-                  <label className="attentionPanelFilter">
-                    <input
-                      type="checkbox"
-                      checked={!!attentionFilters?.ai}
-                      onChange={() => toggleAttentionFilter("ai")}
-                      data-testid="attention-filter-ai"
-                    />
-                    <span>Только AI</span>
-                  </label>
-                  <label className="attentionPanelFilter">
-                    <input
-                      type="checkbox"
-                      checked={!!attentionFilters?.notes}
-                      onChange={() => toggleAttentionFilter("notes")}
-                      data-testid="attention-filter-notes"
-                    />
-                    <span>Только Notes</span>
-                  </label>
-                </div>
-                {attentionItems.length === 0 ? (
-                  <div className="attentionPanelEmpty">
-                    {attentionItemsRaw.length === 0 ? "Пробелов не найдено." : "По выбранным фильтрам ничего не найдено."}
-                  </div>
-                ) : (
-                  <div className="attentionPanelList">
-                    {attentionItems.map((item) => (
-                      <div
-                        key={`attention_${item.id}`}
-                        className="attentionItem"
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => focusAttentionItem(item)}
-                        onKeyDown={(event) => {
-                          if (event.key !== "Enter" && event.key !== " ") return;
-                          event.preventDefault();
-                          focusAttentionItem(item);
-                        }}
-                        data-testid="attention-item"
-                        data-element-id={item.id}
-                      >
-                        <div className="attentionItemHead">
-                          <div className="attentionItemTitle">{String(item?.title || item?.id || "").trim()}</div>
-                          <div className="attentionItemFlags">
-                            {item?.hasQuality ? <span className="attentionFlag is-quality">Quality</span> : null}
-                            {item?.hasAiMissing ? <span className="attentionFlag is-ai">AI</span> : null}
-                            {item?.hasNotesMissing ? <span className="attentionFlag is-notes">Notes</span> : null}
-                          </div>
-                        </div>
-                        {String(item?.lane || "").trim() ? (
-                          <div className="attentionItemLane">Lane: {String(item.lane).trim()}</div>
-                        ) : null}
-                        <ul className="attentionItemReasons">
-                          {asArray(item?.reasons).slice(0, 3).map((reason, idx) => (
-                            <li key={`attention_reason_${item.id}_${idx}`}>
-                              {String(reason?.text || "").trim()}
-                            </li>
-                          ))}
-                        </ul>
-                        <div className="attentionItemActions">
-                          <button
-                            type="button"
-                            className="primaryBtn h-7 px-2 text-[11px]"
-                            onClick={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              focusAttentionItem(item);
-                            }}
-                            data-testid="attention-item-focus"
-                          >
-                            Показать на схеме
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : null}
+            <ProcessPanels
+              section="attention"
+              view={{
+                tab,
+                hasSession,
+                attentionOpen,
+                attentionItemsRaw,
+                closeAttentionPanel: stageActions.closeAttentionPanel,
+                attentionFilters,
+                toggleAttentionFilter,
+                attentionItems,
+                focusAttentionItem,
+                asArray,
+              }}
+            />
             {isInterview ? (
               <div className="absolute inset-0 h-full min-h-0 overflow-auto">
                 <InterviewStage
@@ -7323,423 +6871,75 @@ export default function ProcessStage({
         )}
       </div>
 
-      <Modal
-        open={qualityAutoFixOpen}
-        title="Автоисправление качества"
-        onClose={() => {
-          if (qualityAutoFixBusy) return;
-          setQualityAutoFixOpen(false);
+      <ProcessDialogs
+        view={{
+          qualityAutoFixOpen,
+          qualityAutoFixBusy,
+          closeQualityAutoFix: stageActions.closeQualityAutoFix,
+          applyQualityAutoFix,
+          qualityAutoFixPreview,
+          qualityProfile,
+          qualityProfileId,
+          asArray,
+          insertBetweenOpen,
+          insertBetweenBusy,
+          closeInsertBetweenDialog: stageActions.closeInsertBetweenDialog,
+          applyInsertBetweenFromDiagram,
+          insertBetweenName,
+          setInsertBetweenName,
+          insertBetweenDraft,
+          createTemplateOpen,
+          templatesBusy,
+          closeCreateTemplateDialog: stageActions.closeCreateTemplateDialog,
+          createTemplateTitle,
+          setCreateTemplateTitle,
+          createTemplateScope,
+          setCreateTemplateScope,
+          workspaceActiveOrgId,
+          canInviteWorkspaceUsers,
+          selectedBpmnElementIds,
+          saveCurrentSelectionAsTemplate,
+          templatesPickerOpen,
+          closeTemplatesPickerDialog: stageActions.closeTemplatesPickerDialog,
+          templatesScope,
+          setTemplatesScope,
+          templatesSearch,
+          setTemplatesSearch,
+          templateCounts,
+          scopedTemplates,
+          reloadTemplates,
+          applyTemplate,
+          removeTemplate,
+          versionsOpen,
+          closeVersionsDialog: stageActions.closeVersionsDialog,
+          refreshSnapshotVersions,
+          createManualSnapshot,
+          versionsBusy,
+          hasSession,
+          versionsList,
+          setGenErr,
+          setDiffTargetSnapshotId,
+          setDiffBaseSnapshotId,
+          openDiffDialog: stageActions.openDiffDialog,
+          clearSnapshotHistory,
+          previewSnapshotId,
+          setPreviewSnapshotId,
+          formatSnapshotTs,
+          snapshotLabel,
+          shortSnapshotHash,
+          downloadSnapshot,
+          editSnapshotLabel,
+          togglePinSnapshot,
+          openDiffForSnapshot,
+          restoreSnapshot,
+          previewSnapshot,
+          diffOpen,
+          closeDiffDialog: stageActions.closeDiffDialog,
+          diffBaseSnapshotId,
+          diffTargetSnapshotId,
+          semanticDiffView,
         }}
-        footer={(
-          <>
-            <button
-              type="button"
-              className="secondaryBtn"
-              onClick={() => setQualityAutoFixOpen(false)}
-              disabled={qualityAutoFixBusy}
-            >
-              Отмена
-            </button>
-            <button
-              type="button"
-              className="primaryBtn"
-              onClick={() => void applyQualityAutoFix()}
-              disabled={qualityAutoFixBusy || Number(qualityAutoFixPreview?.safeFixes || 0) <= 0}
-              data-testid="quality-autofix-apply"
-            >
-              {qualityAutoFixBusy ? "Применение..." : `Автоисправить (${Number(qualityAutoFixPreview?.safeFixes || 0)})`}
-            </button>
-          </>
-        )}
-      >
-        <div className="space-y-3" data-testid="quality-autofix-modal">
-          <div className="rounded-lg border border-border bg-panel2/40 px-3 py-2 text-xs text-muted">
-            Профиль: <b className="text-fg">{qualityProfile?.title || qualityProfileId}</b>
-            <span> · safe fixes: <b className="text-fg">{Number(qualityAutoFixPreview?.safeFixes || 0)}</b></span>
-            <span> · всего пунктов: <b className="text-fg">{asArray(qualityAutoFixPreview?.fixes).length}</b></span>
-          </div>
-          <div className="max-h-[48vh] space-y-2 overflow-auto pr-1">
-            {asArray(qualityAutoFixPreview?.fixes).length === 0 ? (
-              <div className="rounded-md border border-dashed border-border px-2 py-2 text-xs text-muted">
-                Нет автоисправлений для текущих проблем.
-              </div>
-            ) : (
-              asArray(qualityAutoFixPreview?.fixes).map((fix) => (
-                <div key={String(fix?.id || "")} className="rounded-md border border-border bg-panel px-2 py-1.5 text-xs">
-                  <div className="flex items-center gap-1.5">
-                    <b className="text-fg">{String(fix?.title || "Fix")}</b>
-                    <span className={`badge px-1.5 py-0 text-[10px] ${fix?.safe ? "ok" : "warn"}`}>{fix?.safe ? "safe" : "warn"}</span>
-                    <span className="badge px-1.5 py-0 text-[10px]">{String(fix?.ruleId || "generic")}</span>
-                    <span className="font-mono text-[11px] text-muted">{String(fix?.target || "")}</span>
-                  </div>
-                  <div className="mt-0.5 text-[11px] text-muted">{String(fix?.detail || "")}</div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </Modal>
-
-      <Modal
-        open={insertBetweenOpen}
-        title="Вставить шаг между"
-        onClose={() => {
-          if (insertBetweenBusy) return;
-          setInsertBetweenOpen(false);
-        }}
-        footer={(
-          <>
-            <button
-              type="button"
-              className="secondaryBtn"
-              onClick={() => setInsertBetweenOpen(false)}
-              disabled={insertBetweenBusy}
-            >
-              Отмена
-            </button>
-            <button
-              type="button"
-              className="primaryBtn"
-              onClick={() => void applyInsertBetweenFromDiagram()}
-              disabled={insertBetweenBusy || !String(insertBetweenName || "").trim()}
-              data-testid="diagram-insert-between-confirm"
-            >
-              {insertBetweenBusy ? "Применение..." : "Вставить"}
-            </button>
-          </>
-        )}
-      >
-        <div className="space-y-3" data-testid="diagram-insert-between-modal">
-          <div className="rounded-lg border border-border bg-panel2/40 px-3 py-2 text-xs text-muted">
-            <div>
-              Связь: <b className="font-mono text-fg">{String(insertBetweenDraft?.fromId || "")}</b> →{" "}
-              <b className="font-mono text-fg">{String(insertBetweenDraft?.toId || "")}</b>
-            </div>
-            <div>
-              Lane: <b className="text-fg">{String(insertBetweenDraft?.laneName || insertBetweenDraft?.laneId || "auto")}</b>
-            </div>
-            <div>
-              Условие перехода переносится на <b className="text-fg">A→C</b>.
-            </div>
-          </div>
-          <label className="block space-y-1 text-sm">
-            <span className="text-xs text-muted">Название нового шага</span>
-            <input
-              className="input w-full"
-              value={insertBetweenName}
-              onChange={(e) => setInsertBetweenName(String(e.target.value || ""))}
-              placeholder="Например: Проверка качества"
-              data-testid="diagram-insert-between-name"
-            />
-          </label>
-        </div>
-      </Modal>
-
-      <CreateTemplateModal
-        open={createTemplateOpen}
-        onClose={() => {
-          if (templatesBusy) return;
-          setCreateTemplateOpen(false);
-        }}
-        title={createTemplateTitle}
-        onTitleChange={setCreateTemplateTitle}
-        scope={createTemplateScope}
-        onScopeChange={setCreateTemplateScope}
-        canCreateOrgTemplate={!!workspaceActiveOrgId && !!canInviteWorkspaceUsers}
-        selectionCount={selectedBpmnElementIds.length}
-        busy={templatesBusy}
-        onSave={saveCurrentSelectionAsTemplate}
       />
-
-      <TemplatesPicker
-        open={templatesPickerOpen}
-        onClose={() => {
-          if (templatesBusy) return;
-          setTemplatesPickerOpen(false);
-        }}
-        activeScope={templatesScope}
-        onScopeChange={setTemplatesScope}
-        search={templatesSearch}
-        onSearchChange={setTemplatesSearch}
-        personalCount={templateCounts.personal}
-        orgCount={templateCounts.org}
-        templates={scopedTemplates}
-        busy={templatesBusy}
-        onRefresh={reloadTemplates}
-        onApply={applyTemplate}
-        onDelete={removeTemplate}
-      />
-
-      <Modal
-        open={versionsOpen}
-        title="История версий BPMN"
-        onClose={() => setVersionsOpen(false)}
-        footer={(
-          <>
-            <button type="button" className="secondaryBtn" onClick={() => void refreshSnapshotVersions()} disabled={versionsBusy || !hasSession}>
-              Обновить
-            </button>
-            <button type="button" className="secondaryBtn" onClick={() => void createManualSnapshot()} disabled={versionsBusy || !hasSession}>
-              Создать версию
-            </button>
-            <button
-              type="button"
-              className="secondaryBtn"
-              onClick={() => {
-                const latestId = String(asArray(versionsList)[0]?.id || "");
-                const prevId = String(asArray(versionsList)[1]?.id || "");
-                if (!latestId || !prevId) {
-                  setGenErr("Для сравнения нужно минимум две версии.");
-                  return;
-                }
-                setDiffTargetSnapshotId(latestId);
-                setDiffBaseSnapshotId(prevId);
-                setDiffOpen(true);
-              }}
-              disabled={versionsBusy || versionsList.length < 2}
-              data-testid="bpmn-versions-open-diff"
-            >
-              Сравнить A/B
-            </button>
-            <button type="button" className="secondaryBtn" onClick={() => void clearSnapshotHistory()} disabled={versionsBusy || !hasSession || versionsList.length === 0}>
-              Очистить историю
-            </button>
-            <button type="button" className="primaryBtn" onClick={() => setVersionsOpen(false)}>
-              Закрыть
-            </button>
-          </>
-        )}
-      >
-        <div className="grid gap-3 lg:grid-cols-[minmax(320px,460px)_minmax(0,1fr)]" data-testid="bpmn-versions-modal">
-          <div className="rounded-xl border border-border bg-panel2/45 p-2">
-            <div className="mb-2 px-1 text-xs text-muted" data-testid="bpmn-versions-count">
-              Последние версии: {versionsList.length} · pinned: {asArray(versionsList).filter((item) => item?.pinned === true).length}
-            </div>
-            <div className="max-h-[52vh] space-y-2 overflow-auto pr-1">
-              {versionsList.length === 0 ? (
-                <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted">История пуста.</div>
-              ) : (
-                versionsList.map((item) => {
-                  const id = String(item?.id || "");
-                  const active = id === String(previewSnapshotId || "");
-                  return (
-                    <div
-                      key={id}
-                      className={"rounded-lg border px-2.5 py-2 " + (active ? "border-accent bg-accentSoft/35" : "border-border bg-panel")}
-                      data-testid="bpmn-version-item"
-                      data-snapshot-id={id}
-                    >
-                      <div className="mb-1 flex items-center justify-between gap-2 text-xs text-muted">
-                        <span>{formatSnapshotTs(item?.ts)}</span>
-                        <span className="uppercase">{String(item?.reason || "autosave")}</span>
-                      </div>
-                      <div className="mb-1 flex items-center justify-between gap-2">
-                        <span className="truncate text-sm font-semibold text-fg" data-testid="bpmn-version-label">
-                          {snapshotLabel(item)}
-                        </span>
-                        {item?.pinned ? (
-                          <span className="rounded-full border border-accent/40 bg-accentSoft/40 px-2 py-0.5 text-[10px] uppercase tracking-wide text-accent">
-                            Pinned
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="mb-2 text-xs text-muted">
-                        rev: {Number(item?.rev || 0)} · hash: <span className="font-mono text-fg">{shortSnapshotHash(item?.hash || item?.xml || "")}</span> · len: {Number(item?.len || String(item?.xml || "").length)}
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        <button
-                          type="button"
-                          className="secondaryBtn h-7 px-2 text-[11px]"
-                          onClick={() => setPreviewSnapshotId(id)}
-                          data-testid="bpmn-version-preview"
-                        >
-                          Предпросмотр XML
-                        </button>
-                        <button type="button" className="secondaryBtn h-7 px-2 text-[11px]" onClick={() => downloadSnapshot(item)}>
-                          Скачать .bpmn
-                        </button>
-                        <button
-                          type="button"
-                          className="secondaryBtn h-7 px-2 text-[11px]"
-                          onClick={() => void editSnapshotLabel(item)}
-                          disabled={versionsBusy}
-                          data-testid="bpmn-version-label-edit"
-                        >
-                          Label
-                        </button>
-                        <button
-                          type="button"
-                          className="secondaryBtn h-7 px-2 text-[11px]"
-                          onClick={() => void togglePinSnapshot(item)}
-                          disabled={versionsBusy}
-                          data-testid="bpmn-version-pin"
-                        >
-                          {item?.pinned ? "Unpin" : "Pin"}
-                        </button>
-                        <button
-                          type="button"
-                          className="secondaryBtn h-7 px-2 text-[11px]"
-                          onClick={() => openDiffForSnapshot(item)}
-                          disabled={versionsBusy || versionsList.length < 2}
-                          data-testid="bpmn-version-diff"
-                        >
-                          Diff
-                        </button>
-                        <button
-                          type="button"
-                          className="primaryBtn h-7 px-2 text-[11px]"
-                          onClick={() => void restoreSnapshot(item)}
-                          disabled={versionsBusy}
-                          data-testid="bpmn-version-restore"
-                        >
-                          Восстановить
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-          <div className="flex min-h-[300px] flex-col overflow-hidden rounded-xl border border-border bg-panel2/35">
-            <div className="border-b border-border px-3 py-2 text-xs text-muted">
-              {previewSnapshot ? `XML предпросмотр · ${formatSnapshotTs(previewSnapshot.ts)}` : "Выберите версию слева"}
-            </div>
-            <div className="min-h-0 flex-1 p-3">
-              <textarea
-                className="xmlEditorTextarea h-full min-h-[44vh] w-full"
-                value={String(previewSnapshot?.xml || "")}
-                readOnly
-                data-testid="bpmn-version-preview-xml"
-              />
-            </div>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal
-        open={diffOpen}
-        title="Semantic Diff BPMN"
-        onClose={() => setDiffOpen(false)}
-        footer={(
-          <>
-            <button type="button" className="secondaryBtn" onClick={() => setDiffOpen(false)}>
-              Закрыть
-            </button>
-          </>
-        )}
-      >
-        <div className="space-y-3" data-testid="bpmn-versions-diff-modal">
-          <div className="grid gap-2 md:grid-cols-2">
-            <label className="block space-y-1 text-xs text-muted">
-              <span>Версия A (base)</span>
-              <select
-                className="select w-full"
-                value={String(diffBaseSnapshotId || "")}
-                onChange={(e) => setDiffBaseSnapshotId(String(e.target.value || ""))}
-                data-testid="bpmn-diff-base-select"
-              >
-                <option value="">Выберите версию</option>
-                {asArray(versionsList).map((item) => {
-                  const id = String(item?.id || "");
-                  return (
-                    <option key={`base_${id}`} value={id}>
-                      {snapshotLabel(item)} · {formatSnapshotTs(item?.ts)}
-                    </option>
-                  );
-                })}
-              </select>
-            </label>
-            <label className="block space-y-1 text-xs text-muted">
-              <span>Версия B (target)</span>
-              <select
-                className="select w-full"
-                value={String(diffTargetSnapshotId || "")}
-                onChange={(e) => setDiffTargetSnapshotId(String(e.target.value || ""))}
-                data-testid="bpmn-diff-target-select"
-              >
-                <option value="">Выберите версию</option>
-                {asArray(versionsList).map((item) => {
-                  const id = String(item?.id || "");
-                  return (
-                    <option key={`target_${id}`} value={id}>
-                      {snapshotLabel(item)} · {formatSnapshotTs(item?.ts)}
-                    </option>
-                  );
-                })}
-              </select>
-            </label>
-          </div>
-
-          {!semanticDiffView?.ok ? (
-            <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted">
-              {String(semanticDiffView?.error || "Не удалось построить diff.")}
-            </div>
-          ) : (
-            <>
-              <div className="overflow-x-auto rounded-lg border border-border bg-panel">
-                <table className="min-w-full text-xs">
-                  <thead className="border-b border-border text-muted">
-                    <tr>
-                      <th className="px-3 py-2 text-left">Сущность</th>
-                      <th className="px-3 py-2 text-right">Added</th>
-                      <th className="px-3 py-2 text-right">Removed</th>
-                      <th className="px-3 py-2 text-right">Changed</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[
-                      { key: "tasks", title: "Tasks" },
-                      { key: "flows", title: "Flows" },
-                      { key: "lanes", title: "Lanes" },
-                      { key: "subprocess", title: "Subprocess" },
-                      { key: "conditions", title: "Conditions" },
-                    ].map((row) => (
-                      <tr key={row.key} className="border-b border-border/60 last:border-0">
-                        <td className="px-3 py-2 text-fg">{row.title}</td>
-                        <td className="px-3 py-2 text-right text-fg" data-testid={`bpmn-diff-count-${row.key}-added`}>
-                          {Number(semanticDiffView?.summary?.added?.[row.key] || 0)}
-                        </td>
-                        <td className="px-3 py-2 text-right text-fg" data-testid={`bpmn-diff-count-${row.key}-removed`}>
-                          {Number(semanticDiffView?.summary?.removed?.[row.key] || 0)}
-                        </td>
-                        <td className="px-3 py-2 text-right text-fg" data-testid={`bpmn-diff-count-${row.key}-changed`}>
-                          {Number(semanticDiffView?.summary?.changed?.[row.key] || 0)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="grid gap-2 md:grid-cols-2">
-                <div className="rounded-lg border border-border bg-panel px-3 py-2">
-                  <div className="mb-1 text-xs font-semibold text-fg">Changed tasks</div>
-                  <div className="space-y-1 text-xs text-muted">
-                    {asArray(semanticDiffView?.details?.tasks?.changed).slice(0, 6).map((item) => (
-                      <div key={`task_changed_${item.id}`}>
-                        {String(item?.id || "")}: {String(item?.before?.name || "—")} → {String(item?.after?.name || "—")}
-                      </div>
-                    ))}
-                    {asArray(semanticDiffView?.details?.tasks?.changed).length === 0 ? <div>Нет изменений</div> : null}
-                  </div>
-                </div>
-                <div className="rounded-lg border border-border bg-panel px-3 py-2">
-                  <div className="mb-1 text-xs font-semibold text-fg">Changed conditions</div>
-                  <div className="space-y-1 text-xs text-muted">
-                    {asArray(semanticDiffView?.details?.conditions?.changed).slice(0, 6).map((item) => (
-                      <div key={`condition_changed_${item.key}`}>
-                        {String(item?.from || "")} → {String(item?.to || "")}: {String(item?.before || "—")} → {String(item?.after || "—")}
-                      </div>
-                    ))}
-                    {asArray(semanticDiffView?.details?.conditions?.changed).length === 0 ? <div>Нет изменений</div> : null}
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      </Modal>
-    </div>
+    </ProcessStageShell>
   );
 }
