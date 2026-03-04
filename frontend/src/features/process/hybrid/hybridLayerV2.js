@@ -63,15 +63,20 @@ function normalizeElement(raw, idx, knownLayers) {
   const el = asObject(raw);
   const id = asText(el.id) || `E${idx + 1}`;
   const typeRaw = asText(el.type).toLowerCase();
-  const type = typeRaw === "rect" || typeRaw === "text" || typeRaw === "note" ? typeRaw : "note";
+  const type = typeRaw === "rect" || typeRaw === "text" || typeRaw === "note" || typeRaw === "container" ? typeRaw : "note";
+  const isContainer = type === "container" || !!el.is_container || !!el.isContainer;
   const layerId = asText(el.layer_id || el.layerId) || HYBRID_V2_DEFAULT_LAYER_ID;
   const safeLayerId = knownLayers.has(layerId) ? layerId : HYBRID_V2_DEFAULT_LAYER_ID;
+  const parentId = asText(el.parent_id || el.parentId);
   const wDefault = type === "text" ? 180 : 200;
   const hDefault = type === "text" ? 34 : 70;
   return {
     id,
     layer_id: safeLayerId,
+    parent_id: parentId || null,
     type,
+    is_container: !!isContainer,
+    visible: el.visible !== false,
     x: Math.round(asNum(el.x, 120) * 10) / 10,
     y: Math.round(asNum(el.y, 120) * 10) / 10,
     w: clamp(Math.round(asNum(el.w, wDefault) * 10) / 10, 36, 2200),
@@ -117,6 +122,7 @@ function normalizeEdge(raw, idx, knownLayers, knownElements) {
     id,
     layer_id: safeLayerId,
     type,
+    visible: edge.visible !== false,
     from,
     to,
     waypoints: normalizeWaypoints(edge.waypoints),
@@ -142,7 +148,7 @@ function normalizeView(raw, layers) {
   const view = asObject(raw);
   const mode = asText(view.mode).toLowerCase() === "edit" ? "edit" : "view";
   const toolRaw = asText(view.tool).toLowerCase();
-  const tool = ["select", "rect", "text", "arrow", "note"].includes(toolRaw) ? toolRaw : "select";
+  const tool = ["select", "rect", "text", "arrow", "note", "container"].includes(toolRaw) ? toolRaw : "select";
   const activeLayerIdRaw = asText(view.active_layer_id || view.activeLayerId) || HYBRID_V2_DEFAULT_LAYER_ID;
   const layerIds = new Set(layers.map((layer) => asText(layer.id)).filter(Boolean));
   const activeLayerId = layerIds.has(activeLayerIdRaw) ? activeLayerIdRaw : layers[0]?.id || HYBRID_V2_DEFAULT_LAYER_ID;
@@ -160,9 +166,38 @@ export function normalizeHybridV2Doc(raw) {
   const layers = (layersRaw.length ? layersRaw : [{}]).map((row, idx) => normalizeLayer(row, idx));
   const layersById = new Set(layers.map((layer) => layer.id));
 
-  const elements = asArray(source.elements)
+  const preElements = asArray(source.elements)
     .map((row, idx) => normalizeElement(row, idx, layersById))
     .filter((row, idx, arr) => arr.findIndex((x) => x.id === row.id) === idx);
+  const preElementsById = {};
+  preElements.forEach((row) => {
+    preElementsById[row.id] = row;
+  });
+  function resolveLayerForElement(elementIdRaw, seen = new Set()) {
+    const elementId = asText(elementIdRaw);
+    if (!elementId) return HYBRID_V2_DEFAULT_LAYER_ID;
+    if (seen.has(elementId)) return HYBRID_V2_DEFAULT_LAYER_ID;
+    seen.add(elementId);
+    const row = asObject(preElementsById[elementId]);
+    const directLayer = asText(row.layer_id);
+    if (layersById.has(directLayer)) return directLayer;
+    const parentId = asText(row.parent_id);
+    if (parentId && preElementsById[parentId]) return resolveLayerForElement(parentId, seen);
+    return HYBRID_V2_DEFAULT_LAYER_ID;
+  }
+  const elements = preElements.map((rowRaw) => {
+    const row = asObject(rowRaw);
+    const parentId = asText(row.parent_id);
+    const hasParent = !!(parentId && preElementsById[parentId] && parentId !== row.id);
+    const normalized = {
+      ...row,
+      parent_id: hasParent ? parentId : null,
+      layer_id: resolveLayerForElement(row.id),
+      visible: row.visible !== false,
+      is_container: row.is_container === true || asText(row.type) === "container",
+    };
+    return normalized;
+  });
   const elementIds = new Set(elements.map((row) => row.id));
 
   const edges = asArray(source.edges)
@@ -218,7 +253,10 @@ export function migrateHybridV1ToV2(hybridLayerByElementIdRaw, resolveNodeCenter
     elements.push({
       id,
       layer_id: HYBRID_V2_DEFAULT_LAYER_ID,
+      parent_id: null,
       type: "note",
+      is_container: false,
+      visible: true,
       x: Math.round((cx + dx) * 10) / 10,
       y: Math.round((cy + dy) * 10) / 10,
       w: 180,
@@ -279,6 +317,9 @@ function xmlEscape(textRaw) {
 function styleToMxStyle(element) {
   const row = asObject(element);
   const style = asObject(row.style);
+  if (row.type === "container" || row.is_container) {
+    return `swimlane;container=1;childLayout=stackLayout;horizontal=0;startSize=26;collapsible=0;recursiveResize=0;whiteSpace=wrap;html=1;rounded=0;strokeColor=${xmlEscape(asText(style.stroke) || "#334155")};fillColor=${xmlEscape(asText(style.fill) || "#f8fafc")};fontSize=${Math.round(asNum(style.fontSize, 12))};`;
+  }
   if (row.type === "text") {
     return `text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=${Math.round(asNum(style.fontSize, 12))};`;
   }
@@ -290,6 +331,32 @@ function styleToMxStyle(element) {
 
 export function exportHybridV2ToDrawioXml(docRaw) {
   const doc = normalizeHybridV2Doc(docRaw);
+  const elementById = {};
+  doc.elements.forEach((elementRaw) => {
+    const element = asObject(elementRaw);
+    const id = asText(element.id);
+    if (id) elementById[id] = element;
+  });
+  function elementDepth(elementIdRaw, seen = new Set()) {
+    const elementId = asText(elementIdRaw);
+    if (!elementId) return 0;
+    if (seen.has(elementId)) return 0;
+    seen.add(elementId);
+    const row = asObject(elementById[elementId]);
+    const parentId = asText(row.parent_id);
+    if (!parentId || !elementById[parentId]) return 0;
+    return 1 + elementDepth(parentId, seen);
+  }
+  const orderedElements = [...doc.elements].sort((aRaw, bRaw) => {
+    const a = asObject(aRaw);
+    const b = asObject(bRaw);
+    const da = elementDepth(a.id);
+    const db = elementDepth(b.id);
+    if (da !== db) return da - db;
+    const ai = asText(a.id);
+    const bi = asText(b.id);
+    return ai.localeCompare(bi, "ru");
+  });
   const lines = [];
   lines.push("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
   lines.push("<mxfile host=\"ProcessMap\" version=\"v2\">");
@@ -299,15 +366,23 @@ export function exportHybridV2ToDrawioXml(docRaw) {
   lines.push("        <mxCell id=\"0\"/>");
   lines.push("        <mxCell id=\"1\" parent=\"0\"/>");
   doc.layers.forEach((layer) => {
-    lines.push(`        <mxCell id=\"${xmlEscape(layer.id)}\" value=\"${xmlEscape(layer.name)}\" parent=\"1\" vertex=\"1\" visible=\"${layer.visible ? "1" : "0"}\">`);
+    const layerStyleParts = [];
+    if (layer.locked) layerStyleParts.push("locked=1");
+    const opacityPct = Math.max(10, Math.min(100, Math.round(asNum(layer.opacity, 1) * 100)));
+    layerStyleParts.push(`opacity=${opacityPct}`);
+    const layerStyle = layerStyleParts.join(";");
+    lines.push(`        <mxCell id=\"${xmlEscape(layer.id)}\" value=\"${xmlEscape(layer.name)}\" parent=\"1\" vertex=\"1\" visible=\"${layer.visible ? "1" : "0"}\"${layerStyle ? ` style=\"${xmlEscape(layerStyle)}\"` : ""}>`);
     lines.push("          <mxGeometry x=\"0\" y=\"0\" width=\"0\" height=\"0\" as=\"geometry\"/>");
     lines.push("        </mxCell>");
   });
-  doc.elements.forEach((element) => {
+  orderedElements.forEach((element) => {
     const layerId = asText(element.layer_id) || HYBRID_V2_DEFAULT_LAYER_ID;
+    const parentId = asText(element.parent_id);
+    const parentCellId = parentId && elementById[parentId] ? parentId : layerId;
     const value = xmlEscape(element.type === "text" ? (asText(element.text) || "Text") : (asText(element.text) || ""));
+    const visible = element.visible === false ? "0" : "1";
     lines.push(
-      `        <mxCell id=\"${xmlEscape(element.id)}\" value=\"${value}\" style=\"${styleToMxStyle(element)}\" parent=\"${xmlEscape(layerId)}\" vertex=\"1\">`,
+      `        <mxCell id=\"${xmlEscape(element.id)}\" value=\"${value}\" style=\"${styleToMxStyle(element)}\" parent=\"${xmlEscape(parentCellId)}\" vertex=\"1\" visible=\"${visible}\">`,
     );
     lines.push(
       `          <mxGeometry x=\"${Number(element.x)}\" y=\"${Number(element.y)}\" width=\"${Number(element.w)}\" height=\"${Number(element.h)}\" as=\"geometry\"/>`,
@@ -318,8 +393,9 @@ export function exportHybridV2ToDrawioXml(docRaw) {
     const layerId = asText(edge.layer_id) || HYBRID_V2_DEFAULT_LAYER_ID;
     const style = asObject(edge.style);
     const edgeStyle = `edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=${xmlEscape(asText(style.stroke) || "#2563eb")};strokeWidth=${Number(asNum(style.width, 2))};endArrow=block;`;
+    const visible = edge.visible === false ? "0" : "1";
     lines.push(
-      `        <mxCell id=\"${xmlEscape(edge.id)}\" style=\"${edgeStyle}\" parent=\"${xmlEscape(layerId)}\" source=\"${xmlEscape(asText(edge.from?.element_id))}\" target=\"${xmlEscape(asText(edge.to?.element_id))}\" edge=\"1\">`,
+      `        <mxCell id=\"${xmlEscape(edge.id)}\" style=\"${edgeStyle}\" parent=\"${xmlEscape(layerId)}\" source=\"${xmlEscape(asText(edge.from?.element_id))}\" target=\"${xmlEscape(asText(edge.to?.element_id))}\" edge=\"1\" visible=\"${visible}\">`,
     );
     lines.push("          <mxGeometry relative=\"1\" as=\"geometry\">");
     const waypoints = asArray(edge.waypoints);
@@ -370,123 +446,140 @@ function parseXmlAttrs(fragmentRaw) {
   return attrs;
 }
 
-function parseDrawioSubsetWithoutDomParser(xmlTextRaw) {
-  const xmlText = String(xmlTextRaw || "");
-  const layers = [];
-  const elements = [];
-  const edges = [];
-  const skipped = [];
-  const layerIds = new Set();
+function isLayerCellRecord(cellRaw) {
+  const cell = asObject(cellRaw);
+  const parent = asText(cell.parent);
+  const geom = asObject(cell.geometry);
+  const w = asNum(geom.w, 0);
+  const h = asNum(geom.h, 0);
+  return !!cell.isVertex
+    && parent === "1"
+    && Math.abs(w) < 0.0001
+    && Math.abs(h) < 0.0001;
+}
 
-  const cellRegex = /<mxCell\b([^>]*?)(?:\/>|>([\s\S]*?)<\/mxCell>)/g;
-  let match = cellRegex.exec(xmlText);
-  while (match) {
-    const attrs = parseXmlAttrs(match[1] || "");
-    const inner = String(match[2] || "");
-    const id = asText(attrs.id);
-    const parent = asText(attrs.parent);
-    const isVertex = attrs.vertex === "1";
-    const isEdge = attrs.edge === "1";
-    if (!id || id === "0" || id === "1") {
-      match = cellRegex.exec(xmlText);
-      continue;
-    }
-
-    if (isVertex) {
-      const geomMatch = inner.match(/<mxGeometry\b([^>]*?)\/>/);
-      const geomAttrs = parseXmlAttrs(geomMatch?.[1] || "");
-      const geomWidth = asNum(geomAttrs.width, 0);
-      const geomHeight = asNum(geomAttrs.height, 0);
-      const isLayerCell = parent === "1"
-        && Math.abs(geomWidth) < 0.0001
-        && Math.abs(geomHeight) < 0.0001
-        && !asText(attrs.style);
-      if (isLayerCell) {
-        if (!layerIds.has(id)) {
-          layerIds.add(id);
-          layers.push({
-            id,
-            name: asText(attrs.value) || id,
-            visible: attrs.visible !== "0",
-            locked: false,
-            opacity: 1,
-          });
-        }
-        match = cellRegex.exec(xmlText);
-        continue;
-      }
-      const styleMap = parseMxStyle(attrs.style);
-      const type = resolveElementTypeFromMxCell(
-        { getAttribute: (k) => (k === "vertex" ? attrs.vertex : "") },
-        styleMap,
-      );
-      if (!type) {
-        skipped.push(`vertex_unsupported:${id}`);
-        match = cellRegex.exec(xmlText);
-        continue;
-      }
-      elements.push({
-        id,
-        layer_id: parent && parent !== "1" ? parent : HYBRID_V2_DEFAULT_LAYER_ID,
-        type,
-        x: asNum(geomAttrs.x, 0),
-        y: asNum(geomAttrs.y, 0),
-        w: asNum(geomAttrs.width, 160),
-        h: asNum(geomAttrs.height, 60),
-        text: asText(attrs.value),
-        style: {
-          stroke: asText(styleMap.strokeColor) || "#334155",
-          fill: asText(styleMap.fillColor) || (type === "note" ? "#fff7d6" : "#f8fafc"),
-          radius: 8,
-          fontSize: asNum(styleMap.fontSize, 12),
-        },
-      });
-      match = cellRegex.exec(xmlText);
-      continue;
-    }
-
-    if (isEdge) {
-      const source = asText(attrs.source);
-      const target = asText(attrs.target);
-      if (!source || !target) {
-        skipped.push(`edge_missing_endpoints:${id}`);
-        match = cellRegex.exec(xmlText);
-        continue;
-      }
-      const styleMap = parseMxStyle(attrs.style);
-      const points = [];
-      const pointRegex = /<mxPoint\b([^>]*?)\/>/g;
-      let pm = pointRegex.exec(inner);
-      while (pm) {
-        const pAttrs = parseXmlAttrs(pm[1] || "");
-        const x = asNum(pAttrs.x, Number.NaN);
-        const y = asNum(pAttrs.y, Number.NaN);
-        if (Number.isFinite(x) && Number.isFinite(y)) points.push({ x, y });
-        pm = pointRegex.exec(inner);
-      }
-      edges.push({
-        id,
-        layer_id: parent || HYBRID_V2_DEFAULT_LAYER_ID,
-        type: "arrow",
-        from: { element_id: source, anchor: "auto" },
-        to: { element_id: target, anchor: "auto" },
-        waypoints: points,
-        style: {
-          stroke: asText(styleMap.strokeColor) || "#2563eb",
-          width: asNum(styleMap.strokeWidth, 2),
-        },
-      });
-      match = cellRegex.exec(xmlText);
-      continue;
-    }
-
-    skipped.push(`unsupported_cell:${id}`);
-    match = cellRegex.exec(xmlText);
+function resolveLayerIdFromParentChain(cellById, layerIds, startParentRaw) {
+  let parentId = asText(startParentRaw);
+  const seen = new Set();
+  while (parentId) {
+    if (seen.has(parentId)) break;
+    seen.add(parentId);
+    if (layerIds.has(parentId)) return parentId;
+    const parent = asObject(cellById[parentId]);
+    parentId = asText(parent.parent);
   }
+  return HYBRID_V2_DEFAULT_LAYER_ID;
+}
+
+function buildHybridFromDrawioCellRecords(cellsRaw) {
+  const cells = asArray(cellsRaw)
+    .map((row) => asObject(row))
+    .filter((row) => {
+      const id = asText(row.id);
+      return !!id && id !== "0" && id !== "1";
+    });
+  const cellById = {};
+  cells.forEach((cell) => {
+    const id = asText(cell.id);
+    if (!id) return;
+    cellById[id] = cell;
+  });
+  const skipped = [];
+  const layers = [];
+  const layerIds = new Set();
+  cells.forEach((cell) => {
+    if (!isLayerCellRecord(cell)) return;
+    const id = asText(cell.id);
+    if (!id || layerIds.has(id)) return;
+    layerIds.add(id);
+    const styleMap = asObject(cell.styleMap);
+    const opacityPct = Math.max(10, Math.min(100, Math.round(asNum(styleMap.opacity, 100))));
+    layers.push({
+      id,
+      name: asText(cell.value) || id,
+      visible: cell.visible !== false,
+      locked: styleMap.locked === "1",
+      opacity: opacityPct / 100,
+    });
+  });
+  if (!layers.length) {
+    layers.push({ id: HYBRID_V2_DEFAULT_LAYER_ID, name: HYBRID_V2_DEFAULT_LAYER_NAME, visible: true, locked: false, opacity: 1 });
+    layerIds.add(HYBRID_V2_DEFAULT_LAYER_ID);
+  }
+
+  const elementCandidateIds = new Set();
+  cells.forEach((cell) => {
+    if (cell.isVertex && !isLayerCellRecord(cell)) elementCandidateIds.add(asText(cell.id));
+  });
+  const elements = [];
+  cells.forEach((cell) => {
+    if (!cell.isVertex || isLayerCellRecord(cell)) return;
+    const id = asText(cell.id);
+    const styleMap = asObject(cell.styleMap);
+    const type = resolveElementTypeFromMxCell(
+      { getAttribute: (k) => (k === "vertex" ? "1" : "") },
+      styleMap,
+    );
+    if (!type) {
+      skipped.push(`vertex_unsupported:${id}`);
+      return;
+    }
+    const geom = asObject(cell.geometry);
+    const parent = asText(cell.parent);
+    const parentId = parent && elementCandidateIds.has(parent) ? parent : null;
+    const layerId = resolveLayerIdFromParentChain(cellById, layerIds, parent || "");
+    elements.push({
+      id,
+      layer_id: layerId,
+      parent_id: parentId,
+      type,
+      is_container: type === "container",
+      visible: cell.visible !== false,
+      x: asNum(geom.x, 0),
+      y: asNum(geom.y, 0),
+      w: asNum(geom.w, 160),
+      h: asNum(geom.h, 60),
+      text: asText(cell.value),
+      style: {
+        stroke: asText(styleMap.strokeColor) || "#334155",
+        fill: asText(styleMap.fillColor) || (type === "note" ? "#fff7d6" : "#f8fafc"),
+        radius: 8,
+        fontSize: asNum(styleMap.fontSize, 12),
+      },
+    });
+  });
+  const elementIds = new Set(elements.map((row) => asText(row.id)).filter(Boolean));
+  const edges = [];
+  cells.forEach((cell) => {
+    if (!cell.isEdge) return;
+    const id = asText(cell.id);
+    const source = asText(cell.source);
+    const target = asText(cell.target);
+    if (!source || !target || !elementIds.has(source) || !elementIds.has(target)) {
+      skipped.push(`edge_missing_endpoints:${id}`);
+      return;
+    }
+    const styleMap = asObject(cell.styleMap);
+    const parent = asText(cell.parent);
+    const layerId = resolveLayerIdFromParentChain(cellById, layerIds, parent || "");
+    edges.push({
+      id,
+      layer_id: layerId,
+      type: "arrow",
+      visible: cell.visible !== false,
+      from: { element_id: source, anchor: "auto" },
+      to: { element_id: target, anchor: "auto" },
+      waypoints: asArray(cell.points),
+      style: {
+        stroke: asText(styleMap.strokeColor) || "#2563eb",
+        width: asNum(styleMap.strokeWidth, 2),
+      },
+    });
+  });
 
   const normalized = normalizeHybridV2Doc({
     schema_version: HYBRID_V2_SCHEMA_VERSION,
-    layers: layers.length ? layers : [{ id: HYBRID_V2_DEFAULT_LAYER_ID, name: HYBRID_V2_DEFAULT_LAYER_NAME }],
+    layers,
     elements,
     edges,
     bindings: [],
@@ -497,10 +590,56 @@ function parseDrawioSubsetWithoutDomParser(xmlTextRaw) {
       peek: false,
     },
   });
-  return {
-    doc: normalized,
-    skipped,
-  };
+  return { doc: normalized, skipped };
+}
+
+function parseDrawioSubsetWithoutDomParser(xmlTextRaw) {
+  const xmlText = String(xmlTextRaw || "");
+  const cells = [];
+  const cellRegex = /<mxCell\b([^>]*?)(?:\/>|>([\s\S]*?)<\/mxCell>)/g;
+  let match = cellRegex.exec(xmlText);
+  while (match) {
+    const attrs = parseXmlAttrs(match[1] || "");
+    const inner = String(match[2] || "");
+    const id = asText(attrs.id);
+    if (!id || id === "0" || id === "1") {
+      match = cellRegex.exec(xmlText);
+      continue;
+    }
+    const styleMap = parseMxStyle(attrs.style);
+    const geomMatch = inner.match(/<mxGeometry\b([^>]*?)>/);
+    const geomAttrs = parseXmlAttrs(geomMatch?.[1] || "");
+    const points = [];
+    const pointRegex = /<mxPoint\b([^>]*?)\/>/g;
+    let pm = pointRegex.exec(inner);
+    while (pm) {
+      const pAttrs = parseXmlAttrs(pm[1] || "");
+      const x = asNum(pAttrs.x, Number.NaN);
+      const y = asNum(pAttrs.y, Number.NaN);
+      if (Number.isFinite(x) && Number.isFinite(y)) points.push({ x, y });
+      pm = pointRegex.exec(inner);
+    }
+    cells.push({
+      id,
+      parent: asText(attrs.parent),
+      isVertex: attrs.vertex === "1",
+      isEdge: attrs.edge === "1",
+      visible: attrs.visible !== "0",
+      value: asText(attrs.value),
+      styleMap,
+      geometry: {
+        x: asNum(geomAttrs.x, 0),
+        y: asNum(geomAttrs.y, 0),
+        w: asNum(geomAttrs.width, 160),
+        h: asNum(geomAttrs.height, 60),
+      },
+      source: asText(attrs.source),
+      target: asText(attrs.target),
+      points,
+    });
+    match = cellRegex.exec(xmlText);
+  }
+  return buildHybridFromDrawioCellRecords(cells);
 }
 
 function parseCellGeometry(geomEl) {
@@ -516,6 +655,8 @@ function parseCellGeometry(geomEl) {
 
 function resolveElementTypeFromMxCell(cellEl, styleMap) {
   const style = asObject(styleMap);
+  const shape = asText(style.shape).toLowerCase();
+  if (style.container === "1" || style.swimlane === "1" || shape.includes("swimlane") || shape.includes("verticalcontainer")) return "container";
   if (style.text === "1" || style.shape === "text") return "text";
   if (style.shape === "note") return "note";
   if ((cellEl?.getAttribute?.("vertex") || "") === "1") return "rect";
@@ -541,122 +682,34 @@ export function importHybridV2FromDrawioXml(xmlTextRaw) {
     };
   }
 
-  const cells = Array.from(docXml.getElementsByTagName("mxCell"));
-  const layers = [];
-  const elements = [];
-  const edges = [];
-  const skipped = [];
-  const layerIds = new Set();
-  const elementIds = new Set();
-
-  cells.forEach((cell) => {
+  const cells = Array.from(docXml.getElementsByTagName("mxCell")).map((cell) => {
     const id = asText(cell.getAttribute("id"));
-    if (!id || id === "0" || id === "1") return;
-    const parent = asText(cell.getAttribute("parent"));
-    const isVertex = cell.getAttribute("vertex") === "1";
-    const isEdge = cell.getAttribute("edge") === "1";
+    const geom = parseCellGeometry(cell.querySelector("mxGeometry"));
     const styleMap = parseMxStyle(cell.getAttribute("style"));
-
-    if (isVertex) {
-      const geom = parseCellGeometry(cell.querySelector("mxGeometry"));
-      if (!geom) {
-        skipped.push(`vertex_no_geometry:${id}`);
-        return;
-      }
-      const isLayerCell = parent === "1"
-        && Math.abs(asNum(geom.w, 0)) < 0.0001
-        && Math.abs(asNum(geom.h, 0)) < 0.0001
-        && !asText(cell.getAttribute("style"));
-      if (isLayerCell) {
-        if (layerIds.has(id)) return;
-        layerIds.add(id);
-        layers.push({
-          id,
-          name: asText(cell.getAttribute("value")) || id,
-          visible: cell.getAttribute("visible") !== "0",
-          locked: false,
-          opacity: 1,
-        });
-        return;
-      }
-      const type = resolveElementTypeFromMxCell(cell, styleMap);
-      if (!type) {
-        skipped.push(`vertex_unsupported:${id}`);
-        return;
-      }
-      const layerId = parent && parent !== "1" ? parent : HYBRID_V2_DEFAULT_LAYER_ID;
-      elements.push({
-        id,
-        layer_id: layerId,
-        type,
-        x: geom.x,
-        y: geom.y,
-        w: geom.w,
-        h: geom.h,
-        text: asText(cell.getAttribute("value")),
-        style: {
-          stroke: asText(styleMap.strokeColor) || "#334155",
-          fill: asText(styleMap.fillColor) || (type === "note" ? "#fff7d6" : "#f8fafc"),
-          radius: 8,
-          fontSize: asNum(styleMap.fontSize, 12),
-        },
-      });
-      elementIds.add(id);
-      return;
-    }
-
-    if (isEdge) {
-      const source = asText(cell.getAttribute("source"));
-      const target = asText(cell.getAttribute("target"));
-      if (!source || !target) {
-        skipped.push(`edge_missing_endpoints:${id}`);
-        return;
-      }
-      const geom = cell.querySelector("mxGeometry");
-      const waypoints = geom
-        ? Array.from(geom.querySelectorAll("Array[as='points'] > mxPoint"))
-          .map((pointEl) => ({
-            x: asNum(pointEl.getAttribute("x"), Number.NaN),
-            y: asNum(pointEl.getAttribute("y"), Number.NaN),
-          }))
-          .filter((pt) => Number.isFinite(pt.x) && Number.isFinite(pt.y))
-        : [];
-      edges.push({
-        id,
-        layer_id: parent || HYBRID_V2_DEFAULT_LAYER_ID,
-        type: "arrow",
-        from: { element_id: source, anchor: "auto" },
-        to: { element_id: target, anchor: "auto" },
-        waypoints,
-        style: {
-          stroke: asText(styleMap.strokeColor) || "#2563eb",
-          width: asNum(styleMap.strokeWidth, 2),
-        },
-      });
-      return;
-    }
-
-    skipped.push(`unsupported_cell:${id}`);
+    const geomNode = cell.querySelector("mxGeometry");
+    const points = geomNode
+      ? Array.from(geomNode.querySelectorAll("Array[as='points'] > mxPoint"))
+        .map((pointEl) => ({
+          x: asNum(pointEl.getAttribute("x"), Number.NaN),
+          y: asNum(pointEl.getAttribute("y"), Number.NaN),
+        }))
+        .filter((pt) => Number.isFinite(pt.x) && Number.isFinite(pt.y))
+      : [];
+    return {
+      id,
+      parent: asText(cell.getAttribute("parent")),
+      isVertex: cell.getAttribute("vertex") === "1",
+      isEdge: cell.getAttribute("edge") === "1",
+      visible: cell.getAttribute("visible") !== "0",
+      value: asText(cell.getAttribute("value")),
+      styleMap,
+      geometry: geom || { x: 0, y: 0, w: 160, h: 60 },
+      source: asText(cell.getAttribute("source")),
+      target: asText(cell.getAttribute("target")),
+      points,
+    };
   });
-
-  const normalized = normalizeHybridV2Doc({
-    schema_version: HYBRID_V2_SCHEMA_VERSION,
-    layers: layers.length ? layers : [{ id: HYBRID_V2_DEFAULT_LAYER_ID, name: HYBRID_V2_DEFAULT_LAYER_NAME }],
-    elements,
-    edges,
-    bindings: [],
-    view: {
-      mode: "view",
-      active_layer_id: layers[0]?.id || HYBRID_V2_DEFAULT_LAYER_ID,
-      tool: "select",
-      peek: false,
-    },
-  });
-
-  return {
-    doc: normalized,
-    skipped,
-  };
+  return buildHybridFromDrawioCellRecords(cells);
 }
 
 export function docToComparableJson(docRaw) {

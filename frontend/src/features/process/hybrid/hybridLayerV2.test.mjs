@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
 import {
   createEmptyHybridV2Doc,
   docToComparableJson,
@@ -9,6 +10,8 @@ import {
   migrateHybridV1ToV2,
   normalizeHybridV2Doc,
 } from "./hybridLayerV2.js";
+
+const CONTAINER_FIXTURE_PATH = new URL("./__fixtures__/diagramsnet_container_visibility.drawio", import.meta.url);
 
 test("normalizeHybridV2Doc: creates stable defaults", () => {
   const doc = normalizeHybridV2Doc({});
@@ -73,4 +76,39 @@ test("importHybridV2FromDrawioXml: empty XML returns defaults + skipped", () => 
   const out = importHybridV2FromDrawioXml("");
   assert.deepEqual(out.doc, createEmptyHybridV2Doc());
   assert.ok(out.skipped.includes("empty_xml"));
+});
+
+test("drawio subset import: preserves layers visibility + container nesting", async () => {
+  const xml = await fs.readFile(CONTAINER_FIXTURE_PATH, "utf-8");
+  const out = importHybridV2FromDrawioXml(xml);
+  const doc = out.doc;
+  assert.equal(doc.schema_version, 2);
+  assert.equal(doc.layers.length, 2);
+  const layerL2 = doc.layers.find((row) => row.id === "L2");
+  assert.equal(layerL2?.visible, false);
+  assert.equal(layerL2?.locked, true);
+  const container = doc.elements.find((row) => row.id === "C1");
+  assert.equal(container?.type, "container");
+  assert.equal(container?.is_container, true);
+  const inside = doc.elements.filter((row) => row.parent_id === "C1").map((row) => row.id).sort();
+  assert.deepEqual(inside, ["E1", "E2"]);
+  const hiddenElement = doc.elements.find((row) => row.id === "E4");
+  assert.equal(hiddenElement?.visible, false);
+  const hiddenEdge = doc.edges.find((row) => row.id === "A2");
+  assert.equal(hiddenEdge?.visible, false);
+});
+
+test("drawio subset roundtrip: keeps container and visibility flags", async () => {
+  const xml = await fs.readFile(CONTAINER_FIXTURE_PATH, "utf-8");
+  const imported = importHybridV2FromDrawioXml(xml);
+  const exported = exportHybridV2ToDrawioXml(imported.doc);
+  const reimported = importHybridV2FromDrawioXml(exported).doc;
+  const container = reimported.elements.find((row) => row.id === "C1");
+  assert.equal(container?.type, "container");
+  const child = reimported.elements.find((row) => row.id === "E1");
+  assert.equal(child?.parent_id, "C1");
+  const layerL2 = reimported.layers.find((row) => row.id === "L2");
+  assert.equal(layerL2?.visible, false);
+  const hiddenElement = reimported.elements.find((row) => row.id === "E4");
+  assert.equal(hiddenElement?.visible, false);
 });

@@ -10,6 +10,7 @@ import {
 } from "./drawioCodec.js";
 
 const ENCODED_FIXTURE_PATH = new URL("./__fixtures__/diagramsnet_encoded_cisco2.drawio", import.meta.url);
+const CONTAINER_FIXTURE_PATH = new URL("./__fixtures__/diagramsnet_container_visibility.drawio", import.meta.url);
 
 test("detectDrawioFormat: raw diagram and mxGraphModel roots", () => {
   const rawMxGraph = "<mxGraphModel><root><mxCell id=\"0\"/></root></mxGraphModel>";
@@ -66,4 +67,29 @@ test("importDrawioToHybrid: imports encoded diagrams.net file fixture", async ()
   assert.ok(imported.hybridV2.layers.length > 0);
   assert.equal(Array.isArray(imported.skipped), true);
   assert.equal(Array.isArray(imported.warnings), true);
+});
+
+test("importDrawioToHybrid: imports container/layer visibility fixture", async () => {
+  const fixture = await fs.readFile(CONTAINER_FIXTURE_PATH, "utf-8");
+  const imported = await importDrawioToHybrid(fixture);
+  assert.equal(imported.format, "raw_diagram_xml");
+  const doc = imported.hybridV2;
+  assert.equal(doc.layers.length, 2);
+  assert.equal(doc.layers.find((row) => row.id === "L2")?.visible, false);
+  assert.equal(doc.elements.find((row) => row.id === "C1")?.type, "container");
+  assert.equal(doc.elements.find((row) => row.id === "E1")?.parent_id, "C1");
+  assert.equal(doc.elements.find((row) => row.id === "E4")?.visible, false);
+  assert.equal(doc.edges.find((row) => row.id === "A2")?.visible, false);
+});
+
+test("import/export roundtrip via codec keeps container hierarchy and visibility", async () => {
+  const fixture = await fs.readFile(CONTAINER_FIXTURE_PATH, "utf-8");
+  const imported = await importDrawioToHybrid(fixture);
+  const exported = exportHybridToDrawio(imported.hybridV2);
+  const reimported = await importDrawioToHybrid(exported);
+  const doc = reimported.hybridV2;
+  assert.equal(doc.layers.find((row) => row.id === "L2")?.visible, false);
+  assert.equal(doc.elements.find((row) => row.id === "C1")?.type, "container");
+  assert.equal(doc.elements.find((row) => row.id === "E2")?.parent_id, "C1");
+  assert.equal(doc.elements.find((row) => row.id === "E4")?.visible, false);
 });

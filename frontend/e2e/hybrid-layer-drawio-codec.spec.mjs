@@ -120,6 +120,15 @@ async function clickHybridShapeById(page, hybridIdRaw) {
   expect(ok).toBeTruthy();
 }
 
+async function countHybridV2Shapes(page) {
+  return page.evaluate(() => {
+    const overlays = Array.from(document.querySelectorAll("[data-testid='hybrid-layer-overlay']"));
+    const overlay = overlays.at(-1);
+    if (!overlay) return 0;
+    return Number(overlay.querySelectorAll("[data-testid='hybrid-v2-shape']").length || 0);
+  });
+}
+
 function toComparableGeometry(docRaw) {
   const doc = docRaw && typeof docRaw === "object" ? docRaw : {};
   const elements = Array.isArray(doc.elements) ? doc.elements : [];
@@ -265,4 +274,53 @@ test("hybrid drawio codec: export -> clear -> import roundtrip", async ({ page, 
   await openLayersPopover(page);
   await page.getByTestId("diagram-action-layers-hybrid-toggle").check({ force: true });
   await expect(page.getByTestId("hybrid-layer-overlay").last()).toBeVisible();
+});
+
+test("hybrid drawio codec: layer visibility toggle hides/shows overlay shapes", async ({ page, request }) => {
+  test.skip(process.env.E2E_HYBRID_LAYER !== "1", "Set E2E_HYBRID_LAYER=1 to run hybrid drawio e2e.");
+
+  const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const auth = await apiLogin(request, { apiBase: API_BASE });
+  const fixture = await createFixture(
+    request,
+    `${runId}_hybrid_drawio_layers`,
+    auth.headers,
+    seedXml({ processName: `Hybrid drawio layer ${runId}`, taskName: "Hybrid Drawio Task" }),
+  );
+  const sid = String(fixture.sessionId || "").trim();
+  expect(sid).not.toBe("");
+
+  await primeAuth(page, auth.accessToken);
+  await openFixtureInTopbar(page, fixture);
+  await switchTab(page, "Diagram");
+  await waitForModelerReady(page);
+
+  await openLayersPopover(page);
+  await page.getByTestId("diagram-action-layers-hybrid-toggle").check({ force: true });
+  await openLayersPopover(page);
+  await page.getByTestId("diagram-action-layers-mode-edit").click();
+  const overlay = page.getByTestId("hybrid-layer-overlay").last();
+  const svg = overlay.getByTestId("hybrid-v2-svg");
+  await expect(svg).toBeVisible();
+  await page.getByTestId("diagram-action-layers-tool-container").click();
+  await svg.click({ position: { x: 280, y: 220 } });
+  await page.getByTestId("diagram-action-layers-tool-rect").click();
+  await svg.click({ position: { x: 340, y: 260 } });
+  await page.getByTestId("diagram-action-layers-tool-note").click();
+  await svg.click({ position: { x: 440, y: 300 } });
+
+  await expect
+    .poll(async () => countHybridV2Shapes(page))
+    .toBeGreaterThan(0);
+
+  await openLayersPopover(page);
+  await page.getByTestId("diagram-action-layers-layer-visible-L1").uncheck({ force: true });
+  await expect
+    .poll(async () => countHybridV2Shapes(page))
+    .toBe(0);
+
+  await page.getByTestId("diagram-action-layers-layer-visible-L1").check({ force: true });
+  await expect
+    .poll(async () => countHybridV2Shapes(page))
+    .toBeGreaterThan(0);
 });

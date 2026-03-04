@@ -1752,18 +1752,70 @@ export default function ProcessStage({
   }, [hybridLayerVisibilityStats]);
   const hybridV2Renderable = useMemo(() => {
     const matrix = asObject(hybridViewportMatrix);
-    const elementsById = {};
     const layersById = asObject(hybridV2LayerById);
     const scaleX = Math.max(0.15, Math.hypot(Number(matrix.a || 1), Number(matrix.b || 0)));
     const scaleY = Math.max(0.15, Math.hypot(Number(matrix.c || 0), Number(matrix.d || 1)));
-    const elements = [];
+    const sourceById = {};
     hybridV2DocLive.elements.forEach((elementRaw) => {
       const element = asObject(elementRaw);
       const id = toText(element.id);
       if (!id) return;
       const layerId = toText(element.layer_id);
       const layer = asObject(layersById[layerId]);
-      if (!hybridVisible || layer.visible === false) return;
+      if (!hybridVisible || layer.visible === false || element.visible === false) return;
+      sourceById[id] = {
+        ...element,
+        id,
+        layer,
+      };
+    });
+    const visibleCache = {};
+    function isVisibleWithAncestors(elementIdRaw, seen = new Set()) {
+      const elementId = toText(elementIdRaw);
+      if (!elementId) return false;
+      if (Object.prototype.hasOwnProperty.call(visibleCache, elementId)) return !!visibleCache[elementId];
+      if (seen.has(elementId)) return false;
+      seen.add(elementId);
+      const row = asObject(sourceById[elementId]);
+      if (!row.id || row.visible === false || row.layer?.visible === false) {
+        visibleCache[elementId] = false;
+        return false;
+      }
+      const parentId = toText(row.parent_id || row.parentId);
+      if (!parentId) {
+        visibleCache[elementId] = true;
+        return true;
+      }
+      const parent = asObject(sourceById[parentId]);
+      if (!parent.id) {
+        visibleCache[elementId] = false;
+        return false;
+      }
+      if (!isVisibleWithAncestors(parentId, seen)) {
+        visibleCache[elementId] = false;
+        return false;
+      }
+      if ((parent.is_container === true || toText(parent.type) === "container") && parent.visible === false) {
+        visibleCache[elementId] = false;
+        return false;
+      }
+      visibleCache[elementId] = true;
+      return true;
+    }
+    function elementDepth(elementIdRaw, seen = new Set()) {
+      const elementId = toText(elementIdRaw);
+      if (!elementId || seen.has(elementId)) return 0;
+      seen.add(elementId);
+      const row = asObject(sourceById[elementId]);
+      const parentId = toText(row.parent_id || row.parentId);
+      if (!parentId || !sourceById[parentId]) return 0;
+      return 1 + elementDepth(parentId, seen);
+    }
+    const elements = [];
+    const elementsById = {};
+    Object.keys(sourceById).forEach((elementId) => {
+      if (!isVisibleWithAncestors(elementId)) return;
+      const element = asObject(sourceById[elementId]);
       const x = Number(element.x || 0);
       const y = Number(element.y || 0);
       const w = Number(element.w || 0);
@@ -1777,8 +1829,8 @@ export default function ProcessStage({
       const center = matrixToScreen(matrix, x + (w / 2), y + (h / 2));
       const normalized = {
         ...element,
-        id,
-        layer,
+        id: elementId,
+        layerOpacity: Math.max(0.1, Math.min(1, Number(asObject(element.layer).opacity || 1))),
         left,
         top,
         width,
@@ -1787,9 +1839,21 @@ export default function ProcessStage({
         centerY: Number(center.y || 0),
         scaleX,
         scaleY,
+        depth: elementDepth(elementId),
       };
       elements.push(normalized);
-      elementsById[id] = normalized;
+      elementsById[elementId] = normalized;
+    });
+    elements.sort((aRaw, bRaw) => {
+      const a = asObject(aRaw);
+      const b = asObject(bRaw);
+      const da = Number(a.depth || 0);
+      const db = Number(b.depth || 0);
+      if (da !== db) return da - db;
+      const ac = a.is_container === true || toText(a.type) === "container";
+      const bc = b.is_container === true || toText(b.type) === "container";
+      if (ac !== bc) return ac ? -1 : 1;
+      return toText(a.id).localeCompare(toText(b.id), "ru");
     });
     const edges = [];
     hybridV2DocLive.edges.forEach((edgeRaw) => {
@@ -1798,7 +1862,7 @@ export default function ProcessStage({
       if (!id) return;
       const layerId = toText(edge.layer_id);
       const layer = asObject(layersById[layerId]);
-      if (!hybridVisible || layer.visible === false) return;
+      if (!hybridVisible || layer.visible === false || edge.visible === false) return;
       const fromId = toText(asObject(edge.from).element_id);
       const toId = toText(asObject(edge.to).element_id);
       const fromEl = asObject(elementsById[fromId]);
@@ -1817,6 +1881,7 @@ export default function ProcessStage({
         ...edge,
         id,
         layer,
+        layerOpacity: Math.max(0.1, Math.min(1, Number(layer.opacity || 1))),
         from: fromEl,
         to: toEl,
         points,
@@ -1826,6 +1891,21 @@ export default function ProcessStage({
     return { elements, edges, elementsById };
   }, [hybridV2DocLive, hybridV2LayerById, hybridViewportMatrix, hybridVisible]);
   const hybridV2TotalCount = Number(asArray(hybridV2DocLive?.elements).length || 0) + Number(asArray(hybridV2DocLive?.edges).length || 0);
+  const hybridV2HiddenCount = useMemo(() => {
+    const layerById = asObject(hybridV2LayerById);
+    let hidden = 0;
+    asArray(hybridV2DocLive?.elements).forEach((rowRaw) => {
+      const row = asObject(rowRaw);
+      const layer = asObject(layerById[toText(row.layer_id)]);
+      if (layer.visible === false || row.visible === false) hidden += 1;
+    });
+    asArray(hybridV2DocLive?.edges).forEach((rowRaw) => {
+      const row = asObject(rowRaw);
+      const layer = asObject(layerById[toText(row.layer_id)]);
+      if (layer.visible === false || row.visible === false) hidden += 1;
+    });
+    return hidden;
+  }, [hybridV2DocLive, hybridV2LayerById]);
   const hybridTotalCount = Math.max(Number(hybridLayerCounts.total || 0), hybridV2TotalCount);
   useEffect(() => {
     const incoming = normalizeHybridLayerMap(hybridLayerMapFromDraft);
@@ -5306,25 +5386,29 @@ export default function ProcessStage({
       const prev = normalizeHybridV2Doc(prevRaw);
       const view = asObject(prev.view);
       const layerId = toText(view.active_layer_id || prev.layers?.[0]?.id || "L1") || "L1";
-      const type = toText(typeRaw).toLowerCase() === "text"
+      const loweredType = toText(typeRaw).toLowerCase();
+      const type = loweredType === "text"
         ? "text"
-        : (toText(typeRaw).toLowerCase() === "note" ? "note" : "rect");
-      const width = type === "text" ? 180 : 200;
-      const height = type === "text" ? 36 : 70;
+        : (loweredType === "note" ? "note" : (loweredType === "container" ? "container" : "rect"));
+      const width = type === "text" ? 180 : (type === "container" ? 320 : 200);
+      const height = type === "text" ? 36 : (type === "container" ? 220 : 70);
       const nextElements = [
         ...asArray(prev.elements),
         {
           id: createdId,
           layer_id: layerId,
+          parent_id: null,
           type,
+          is_container: type === "container",
+          visible: true,
           x: Math.round((x - (width / 2)) * 10) / 10,
           y: Math.round((y - (height / 2)) * 10) / 10,
           w: width,
           h: height,
-          text: type === "text" ? "Text" : "",
+          text: type === "text" ? "Text" : (type === "container" ? "Container" : ""),
           style: {
             stroke: "#334155",
-            fill: type === "note" ? "#fff7d6" : "#f8fafc",
+            fill: type === "note" ? "#fff7d6" : (type === "container" ? "#f1f5f9" : "#f8fafc"),
             radius: 8,
             fontSize: 12,
           },
@@ -5358,6 +5442,7 @@ export default function ProcessStage({
             id: createdId,
             layer_id: layerId,
             type: "arrow",
+            visible: true,
             from: { element_id: fromId, anchor: "auto" },
             to: { element_id: toId, anchor: "auto" },
             waypoints: [],
@@ -5614,6 +5699,87 @@ export default function ProcessStage({
     updateHybridUiPrefs((prev) => ({ ...prev, focus: !prev.focus }));
   }
 
+  function toggleHybridV2LayerVisibility(layerIdRaw) {
+    const layerId = toText(layerIdRaw);
+    if (!layerId) return;
+    updateHybridV2Doc((prevRaw) => {
+      const prev = normalizeHybridV2Doc(prevRaw);
+      const nextLayers = asArray(prev.layers).map((layerRaw) => {
+        const layer = asObject(layerRaw);
+        if (toText(layer.id) !== layerId) return layer;
+        return {
+          ...layer,
+          visible: layer.visible === false,
+        };
+      });
+      const activeLayerId = toText(asObject(prev.view).active_layer_id);
+      const stillVisible = asArray(nextLayers).some((rowRaw) => {
+        const row = asObject(rowRaw);
+        return toText(row.id) === activeLayerId && row.visible !== false;
+      });
+      const firstVisibleLayerId = toText(asArray(nextLayers).find((rowRaw) => asObject(rowRaw).visible !== false)?.id);
+      return {
+        ...prev,
+        layers: nextLayers,
+        view: {
+          ...asObject(prev.view),
+          active_layer_id: stillVisible ? activeLayerId : (firstVisibleLayerId || activeLayerId || "L1"),
+        },
+      };
+    }, "hybrid_v2_layer_visibility_toggle");
+  }
+
+  function toggleHybridV2LayerLock(layerIdRaw) {
+    const layerId = toText(layerIdRaw);
+    if (!layerId) return;
+    updateHybridV2Doc((prevRaw) => {
+      const prev = normalizeHybridV2Doc(prevRaw);
+      return {
+        ...prev,
+        layers: asArray(prev.layers).map((layerRaw) => {
+          const layer = asObject(layerRaw);
+          if (toText(layer.id) !== layerId) return layer;
+          return {
+            ...layer,
+            locked: layer.locked !== true,
+          };
+        }),
+      };
+    }, "hybrid_v2_layer_lock_toggle");
+  }
+
+  function setHybridV2LayerOpacity(layerIdRaw, opacityRaw) {
+    const layerId = toText(layerIdRaw);
+    if (!layerId) return;
+    const targetOpacity = Math.max(0.1, Math.min(1, Number(opacityRaw || 1)));
+    updateHybridV2Doc((prevRaw) => {
+      const prev = normalizeHybridV2Doc(prevRaw);
+      return {
+        ...prev,
+        layers: asArray(prev.layers).map((layerRaw) => {
+          const layer = asObject(layerRaw);
+          if (toText(layer.id) !== layerId) return layer;
+          return {
+            ...layer,
+            opacity: targetOpacity,
+          };
+        }),
+      };
+    }, "hybrid_v2_layer_opacity_change");
+  }
+
+  function revealAllHybridV2(source = "hybrid_v2_reveal_all") {
+    updateHybridV2Doc((prevRaw) => {
+      const prev = normalizeHybridV2Doc(prevRaw);
+      return {
+        ...prev,
+        layers: asArray(prev.layers).map((layerRaw) => ({ ...asObject(layerRaw), visible: true })),
+        elements: asArray(prev.elements).map((rowRaw) => ({ ...asObject(rowRaw), visible: true })),
+        edges: asArray(prev.edges).map((rowRaw) => ({ ...asObject(rowRaw), visible: true })),
+      };
+    }, source);
+  }
+
   function focusHybridLayer(source = "hybrid_layer_focus") {
     const rows = asArray(hybridLayerRenderRows);
     if (!rows.length && !asArray(hybridV2DocLive?.elements).length) return;
@@ -5772,6 +5938,8 @@ export default function ProcessStage({
     if (!pointer) return;
     const row = asObject(hybridV2Renderable.elementsById[elementId]);
     if (!row.id) return;
+    const rowLayer = asObject(hybridV2LayerById[toText(row.layer_id)]);
+    if (rowLayer.locked === true) return;
     const tool = toText(hybridV2ToolRef.current).toLowerCase() || "select";
     const pending = asObject(hybridV2ArrowDraftRef.current);
     const pendingFromId = toText(pending.fromId);
@@ -5808,6 +5976,8 @@ export default function ProcessStage({
     if (!pointer) return;
     const row = asObject(hybridV2Renderable.elementsById[elementId]);
     if (!row.id) return;
+    const rowLayer = asObject(hybridV2LayerById[toText(row.layer_id)]);
+    if (rowLayer.locked === true) return;
     setHybridV2ActiveId(elementId);
     hybridV2ResizeRef.current = {
       id: elementId,
@@ -5837,7 +6007,10 @@ export default function ProcessStage({
     withHybridOverlayGuard(event, { action: "hybrid_v2_overlay_pointer", tool });
     const point = resolveHybridPointerToDiagram(event);
     if (!point) return;
-    if (tool === "rect" || tool === "note" || tool === "text") {
+    const activeLayerId = toText(asObject(hybridV2DocRef.current?.view).active_layer_id || "L1") || "L1";
+    const activeLayer = asObject(hybridV2LayerById[activeLayerId]);
+    if (activeLayer.locked === true) return;
+    if (tool === "rect" || tool === "note" || tool === "text" || tool === "container") {
       createHybridV2ElementAt(point, tool);
       return;
     }
@@ -7536,6 +7709,7 @@ export default function ProcessStage({
                               {[
                                 { id: "select", label: "Select" },
                                 { id: "rect", label: "Rect" },
+                                { id: "container", label: "Container" },
                                 { id: "note", label: "Note" },
                                 { id: "text", label: "Text" },
                                 { id: "arrow", label: "Arrow" },
@@ -7597,6 +7771,69 @@ export default function ProcessStage({
                             <span className="diagramIssueChip">
                               {Number(asArray(hybridV2DocLive?.elements).length || 0)} elements / {Number(asArray(hybridV2DocLive?.edges).length || 0)} edges
                             </span>
+                          </div>
+                          <div className="diagramIssueRow">
+                            <span>Hidden</span>
+                            <div className="diagramActionPopoverActions mt-0">
+                              <span className="diagramIssueChip">{Number(hybridV2HiddenCount || 0)}</span>
+                              <button
+                                type="button"
+                                className="secondaryBtn h-7 px-2 text-[11px]"
+                                onClick={() => revealAllHybridV2("hybrid_v2_reveal_all_button")}
+                                disabled={Number(hybridV2HiddenCount || 0) <= 0}
+                                data-testid="diagram-action-layers-reveal-all"
+                              >
+                                Reveal all
+                              </button>
+                            </div>
+                          </div>
+                          <div className="diagramIssueRows mt-1">
+                            {asArray(hybridV2DocLive?.layers).map((layerRaw) => {
+                              const layer = asObject(layerRaw);
+                              const layerId = toText(layer.id);
+                              if (!layerId) return null;
+                              const opacityPct = Math.max(10, Math.min(100, Math.round(Number(layer.opacity || 1) * 100)));
+                              return (
+                                <div key={`hybrid_v2_layer_row_${layerId}`} className="diagramIssueRow">
+                                  <span className="min-w-0 truncate text-[11px]" title={toText(layer.name) || layerId}>
+                                    {toText(layer.name) || layerId}
+                                  </span>
+                                  <div className="diagramActionPopoverActions mt-0">
+                                    <label className="diagramActionCheckboxRow">
+                                      <input
+                                        type="checkbox"
+                                        checked={layer.visible !== false}
+                                        onChange={() => toggleHybridV2LayerVisibility(layerId)}
+                                        data-testid={`diagram-action-layers-layer-visible-${layerId}`}
+                                      />
+                                      <span>eye</span>
+                                    </label>
+                                    <label className="diagramActionCheckboxRow">
+                                      <input
+                                        type="checkbox"
+                                        checked={layer.locked === true}
+                                        onChange={() => toggleHybridV2LayerLock(layerId)}
+                                        data-testid={`diagram-action-layers-layer-lock-${layerId}`}
+                                      />
+                                      <span>lock</span>
+                                    </label>
+                                    <div className="diagramActionPopoverActions mt-0">
+                                      {[100, 60, 30].map((opacity) => (
+                                        <button
+                                          key={`hybrid_layer_opacity_${layerId}_${opacity}`}
+                                          type="button"
+                                          className={`secondaryBtn h-7 px-2 text-[11px] ${opacityPct === opacity ? "ring-1 ring-accent/60" : ""}`}
+                                          onClick={() => setHybridV2LayerOpacity(layerId, opacity / 100)}
+                                          data-testid={`diagram-action-layers-layer-opacity-${layerId}-${opacity}`}
+                                        >
+                                          {opacity}%
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                           <div className="diagramIssueRow">
                             <span>Selection</span>
@@ -8080,6 +8317,7 @@ export default function ProcessStage({
                         const style = asObject(edge.style);
                         const stroke = toText(style.stroke) || "#2563eb";
                         const width = Number(style.width || 2);
+                        const layerOpacity = Math.max(0.1, Math.min(1, Number(edge.layerOpacity || 1)));
                         return (
                           <path
                             key={`hybrid_v2_edge_${edgeId}`}
@@ -8089,6 +8327,7 @@ export default function ProcessStage({
                             strokeWidth={width}
                             fill="none"
                             markerEnd="url(#hybridV2ArrowHead)"
+                            style={{ opacity: layerOpacity }}
                             data-hybrid-element-id={edgeId}
                             data-testid="hybrid-v2-edge"
                             onMouseDown={(event) => handleHybridV2ElementPointerDown(event, edgeId)}
@@ -8108,10 +8347,13 @@ export default function ProcessStage({
                         const h = Number(element.height || 0);
                         const radius = Math.max(2, Number(style.radius || 8) * Number(element.scaleX || 1));
                         const fontSize = Math.max(10, Number(style.fontSize || 12) * Math.min(Number(element.scaleX || 1), Number(element.scaleY || 1)));
+                        const layerOpacity = Math.max(0.1, Math.min(1, Number(element.layerOpacity || 1)));
+                        const isContainer = element.is_container === true || toText(element.type) === "container";
                         return (
                           <g
                             key={`hybrid_v2_element_${elementId}`}
                             className={`hybridV2Shape ${active ? "isActive" : ""} ${highlighted ? "isPlayback" : ""}`}
+                            style={{ opacity: layerOpacity }}
                             data-hybrid-element-id={elementId}
                             data-testid="hybrid-v2-shape"
                             onMouseDown={(event) => handleHybridV2ElementPointerDown(event, elementId)}
@@ -8135,9 +8377,19 @@ export default function ProcessStage({
                                 ry={radius}
                                 fill={toText(style.fill) || (toText(element.type) === "note" ? "#fff7d6" : "#f8fafc")}
                                 stroke={toText(style.stroke) || "#334155"}
-                                strokeWidth={1.4}
+                                strokeWidth={isContainer ? 1.8 : 1.4}
                               />
                             )}
+                            {isContainer ? (
+                              <line
+                                x1={x}
+                                y1={y + Math.max(18, 24 * Number(element.scaleY || 1))}
+                                x2={x + w}
+                                y2={y + Math.max(18, 24 * Number(element.scaleY || 1))}
+                                stroke={toText(style.stroke) || "#334155"}
+                                strokeWidth={1.2}
+                              />
+                            ) : null}
                             {toText(element.type) !== "text" ? (
                               <text
                                 x={x + 8}
