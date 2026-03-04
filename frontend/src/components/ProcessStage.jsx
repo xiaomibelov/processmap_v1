@@ -90,8 +90,8 @@ import {
   normalizeHybridV2Doc,
 } from "../features/process/hybrid/hybridLayerV2";
 import {
-  exportHybridToDrawio,
-  importDrawioToHybrid,
+  exportHybridV2ToDrawioXml,
+  importDrawioXmlToHybridV2,
 } from "../features/process/hybrid/drawioCodec";
 import { buildManualPathReportSteps } from "./process/interview/services/pathReport";
 
@@ -5420,7 +5420,7 @@ export default function ProcessStage({
   }
 
   function exportHybridV2Drawio() {
-    const xml = exportHybridToDrawio(hybridV2DocRef.current);
+    const xml = exportHybridV2ToDrawioXml(hybridV2DocRef.current);
     const stamp = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14) || Date.now();
     const ok = downloadTextFile(`hybrid_${sid || "session"}_${stamp}.drawio`, xml, "application/xml;charset=utf-8");
     if (ok) {
@@ -5435,7 +5435,7 @@ export default function ProcessStage({
     const file = fileRaw instanceof File ? fileRaw : null;
     if (!file) return;
     const text = await file.text().catch(() => "");
-    const imported = await importDrawioToHybrid(text, {
+    const imported = await importDrawioXmlToHybridV2(text, {
       baseDoc: hybridV2DocRef.current,
       preserveBindings: true,
     });

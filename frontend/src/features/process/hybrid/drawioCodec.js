@@ -1,7 +1,7 @@
 import {
   createEmptyHybridV2Doc,
-  exportHybridV2ToDrawioXml,
-  importHybridV2FromDrawioXml,
+  exportHybridV2ToDrawioXml as exportHybridV2ToDrawioXmlRaw,
+  importHybridV2FromDrawioXml as importHybridV2FromDrawioXmlRaw,
   normalizeHybridV2Doc,
 } from "./hybridLayerV2.js";
 
@@ -134,7 +134,11 @@ function mergeBindingsFromBaseDoc(importedDocRaw, baseDocRaw) {
 }
 
 export function exportHybridToDrawio(hybridV2Raw) {
-  return exportHybridV2ToDrawioXml(normalizeHybridV2Doc(hybridV2Raw));
+  return exportHybridV2ToDrawioXmlRaw(normalizeHybridV2Doc(hybridV2Raw));
+}
+
+export function exportHybridV2ToDrawioXml(hybridV2Raw) {
+  return exportHybridToDrawio(hybridV2Raw);
 }
 
 export async function importDrawioToHybrid(xmlOrFileTextRaw, optionsRaw = {}) {
@@ -152,7 +156,7 @@ export async function importDrawioToHybrid(xmlOrFileTextRaw, optionsRaw = {}) {
     warnings.push("drawio_format_unknown");
   }
 
-  const imported = importHybridV2FromDrawioXml(parseInput);
+  const imported = importHybridV2FromDrawioXmlRaw(parseInput);
   const skipped = [...asArray(imported.skipped), ...asArray(parseInput ? [] : ["drawio_import_empty_after_decode"])];
   let hybridV2 = normalizeHybridV2Doc(imported.doc);
   if (options.preserveBindings !== false) {
@@ -180,7 +184,7 @@ export function importDrawioToHybridSync(xmlOrFileTextRaw, optionsRaw = {}) {
       format: formatInfo.format,
     };
   }
-  const imported = importHybridV2FromDrawioXml(
+  const imported = importHybridV2FromDrawioXmlRaw(
     formatInfo.format === "raw_diagram_xml" || formatInfo.format === "mxgraphmodel_root"
       ? formatInfo.diagramPayload
       : String(xmlOrFileTextRaw || ""),
@@ -195,4 +199,8 @@ export function importDrawioToHybridSync(xmlOrFileTextRaw, optionsRaw = {}) {
     warnings: formatInfo.format === "unknown" ? ["drawio_format_unknown"] : [],
     format: formatInfo.format,
   };
+}
+
+export async function importDrawioXmlToHybridV2(xmlOrFileTextRaw, optionsRaw = {}) {
+  return importDrawioToHybrid(xmlOrFileTextRaw, optionsRaw);
 }
