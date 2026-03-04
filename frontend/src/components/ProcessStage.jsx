@@ -114,8 +114,10 @@ import {
   canCreateOrgTemplate,
   canManageOrgTemplate,
   normalizeTemplateElementIds,
+  readTemplateElementRefs,
   normalizeTemplateScope,
   readTemplateElementIds,
+  remapTemplateNodeIdsByRefs,
 } from "../features/process/templates/selectionTemplates";
 
 function toText(value) {
@@ -3478,8 +3480,40 @@ export default function ProcessStage({
       setGenErr("Общий шаблон может создать только администратор организации или менеджер.");
       return;
     }
+    const graph = asObject(bpmnRef.current?.getPlaybackGraph?.() || {});
+    const graphNodes = asObject(graph?.nodesById);
+    const graphFlows = asObject(graph?.flowsById);
+    const draftNodeById = {};
+    asArray(draft?.nodes).forEach((nodeRaw) => {
+      const node = asObject(nodeRaw);
+      const id = toNodeId(node?.id || node?.bpmn_id || node?.bpmnId);
+      if (!id) return;
+      draftNodeById[id] = node;
+    });
+    const draftEdgeIds = new Set(
+      asArray(draft?.edges)
+        .map((edgeRaw) => toText(asObject(edgeRaw)?.id || asObject(edgeRaw)?.bpmn_id || asObject(edgeRaw)?.bpmnId))
+        .filter(Boolean),
+    );
+    const selectedRefs = selectedIds.map((id) => {
+      const node = asObject(draftNodeById[id] || graphNodes[id] || {});
+      if (Object.keys(node).length) {
+        return {
+          id,
+          kind: "node",
+          name: toText(node?.name),
+          type: toText(node?.type),
+          lane_name: toText(node?.laneName || node?.lane),
+        };
+      }
+      if (graphFlows[id] || draftEdgeIds.has(id)) {
+        return { id, kind: "edge" };
+      }
+      return { id, kind: "node" };
+    });
     const payload = buildSelectionTemplatePayload({
       selectedElementIds: selectedIds,
+      selectedElementRefs: selectedRefs,
       bpmnFingerprint: String(draft?.bpmn_graph_fingerprint || "").trim(),
     });
     setSelectionTemplateSaving(true);
@@ -3589,6 +3623,7 @@ export default function ProcessStage({
   function applySelectionTemplate(item) {
     const template = item && typeof item === "object" ? item : {};
     const ids = readTemplateElementIds(template);
+    const elementRefs = readTemplateElementRefs(template);
     if (!ids.length) {
       setGenErr("В шаблоне нет элементов для применения.");
       return;
@@ -3608,15 +3643,55 @@ export default function ProcessStage({
         .map((edgeRaw) => toText(asObject(edgeRaw)?.id || asObject(edgeRaw)?.bpmn_id || asObject(edgeRaw)?.bpmnId))
         .filter(Boolean),
     );
-    const found = [];
-    const missing = [];
+    const currentNodesById = {};
+    Object.entries(graphNodes).forEach(([id, nodeRaw]) => {
+      const node = asObject(nodeRaw);
+      const nodeId = toNodeId(id);
+      if (!nodeId) return;
+      currentNodesById[nodeId] = {
+        name: toText(node?.name),
+        type: toText(node?.type),
+        lane_name: toText(node?.laneName || node?.lane),
+      };
+    });
+    Object.entries(draftNodeById).forEach(([id, nodeRaw]) => {
+      const node = asObject(nodeRaw);
+      const nodeId = toNodeId(id);
+      if (!nodeId) return;
+      currentNodesById[nodeId] = {
+        name: toText(node?.name),
+        type: toText(node?.type),
+        lane_name: toText(node?.laneName || node?.lane),
+      };
+    });
+
+    let found = [];
+    let missing = [];
     ids.forEach((id) => {
       const exists = !!graphNodes[id] || !!graphFlows[id] || !!draftNodeById[id] || draftEdgeIds.has(id);
       if (exists) found.push(id);
       else missing.push(id);
     });
+    let remappedCount = 0;
+    let ambiguousCount = 0;
+    if (missing.length > 0 && elementRefs.length > 0) {
+      const remap = remapTemplateNodeIdsByRefs({
+        ids: missing,
+        elementRefs,
+        currentNodesById,
+        selectedIds: found,
+      });
+      if (Array.isArray(remap?.mappedIds) && remap.mappedIds.length > 0) {
+        found = found.concat(remap.mappedIds);
+      }
+      missing = Array.isArray(remap?.missingIds) ? remap.missingIds : missing;
+      remappedCount = Number(remap?.remappedCount || 0);
+      ambiguousCount = Number(remap?.ambiguousCount || 0);
+    }
+    found = normalizeTemplateElementIds(found);
     if (!found.length) {
-      setGenErr(`Шаблон не применён: элементы не найдены (${missing.length}).`);
+      const ambiguousMessage = ambiguousCount > 0 ? ` Неоднозначные совпадения: ${ambiguousCount}.` : "";
+      setGenErr(`Шаблон не применён: элементы не найдены (${missing.length}).${ambiguousMessage}`);
       return;
     }
     const firstId = String(found[0] || "").trim();
@@ -3641,8 +3716,10 @@ export default function ProcessStage({
     const mismatch = !!templateFingerprint && !!currentFingerprint && templateFingerprint !== currentFingerprint;
     const baseMessage = `Template applied: ${found.length} elements selected.`;
     const missingMessage = missing.length ? ` Missing: ${missing.length}.` : "";
+    const remapMessage = remappedCount > 0 ? ` Remapped by name: ${remappedCount}.` : "";
+    const ambiguousMessage = ambiguousCount > 0 ? ` Ambiguous: ${ambiguousCount}.` : "";
     const mismatchMessage = mismatch ? " Внимание: шаблон создан для другой версии BPMN." : "";
-    setInfoMsg(`${baseMessage}${missingMessage}${mismatchMessage}`);
+    setInfoMsg(`${baseMessage}${missingMessage}${remapMessage}${ambiguousMessage}${mismatchMessage}`);
     setSelectionTemplatesOpen(false);
   }
 

@@ -1413,8 +1413,29 @@ def _normalize_template_payload(raw: Any) -> Dict[str, Any]:
             continue
         seen.add(value)
         ids.append(value)
+    refs: List[Dict[str, Any]] = []
+    seen_refs: set[str] = set()
+    for ref_raw in payload.get("bpmn_element_refs", []):
+        ref = ref_raw if isinstance(ref_raw, dict) else {}
+        ref_id = str(ref.get("id") or "").strip()
+        if not ref_id or ref_id in seen_refs or (ids and ref_id not in seen):
+            continue
+        seen_refs.add(ref_id)
+        kind = str(ref.get("kind") or "node").strip().lower()
+        if kind not in {"node", "edge"}:
+            kind = "node"
+        refs.append(
+            {
+                "id": ref_id,
+                "kind": kind,
+                "name": str(ref.get("name") or "").strip(),
+                "type": str(ref.get("type") or "").strip(),
+                "lane_name": str(ref.get("lane_name") or ref.get("laneName") or ref.get("lane") or "").strip(),
+            }
+        )
     return {
         "bpmn_element_ids": ids,
+        "bpmn_element_refs": refs,
         "bpmn_fingerprint": str(payload.get("bpmn_fingerprint") or "").strip(),
     }
 

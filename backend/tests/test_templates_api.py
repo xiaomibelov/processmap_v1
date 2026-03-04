@@ -107,7 +107,14 @@ class TemplatesApiTest(unittest.TestCase):
         return _DummyRequest(user, active_org_id=org_id)
 
     def _base_payload(self):
-        return {"bpmn_element_ids": ["Task_1", "Task_2"], "bpmn_fingerprint": "fp_123"}
+        return {
+            "bpmn_element_ids": ["Task_1", "Task_2"],
+            "bpmn_element_refs": [
+                {"id": "Task_1", "kind": "node", "name": "Принять заказ", "type": "userTask", "lane_name": "Оператор"},
+                {"id": "Task_2", "kind": "node", "name": "Готовить суп", "type": "serviceTask", "lane_name": "Кухня"},
+            ],
+            "bpmn_fingerprint": "fp_123",
+        }
 
     def test_create_personal_template_and_list_only_owner(self):
         req_pm = self._mk_req(self.pm, self.default_org_id)
@@ -122,6 +129,9 @@ class TemplatesApiTest(unittest.TestCase):
         self.assertEqual(_status_of(created), 200)
         self.assertEqual(str(created.get("scope") or ""), "personal")
         self.assertEqual(str(created.get("owner_user_id") or ""), str(self.pm.get("id") or ""))
+        payload = created.get("payload") if isinstance(created, dict) else {}
+        refs = payload.get("bpmn_element_refs") if isinstance(payload, dict) else []
+        self.assertEqual(len(refs), 2)
 
         own_rows = self.list_templates_endpoint(req_pm, scope="personal", q="", limit=50, offset=0)
         self.assertEqual(_status_of(own_rows), 200)
