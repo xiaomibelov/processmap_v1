@@ -62,15 +62,12 @@ import {
 import {
   applyHybridModeTransition,
   applyHybridVisibilityTransition,
-  getHybridUiStorageKey,
-  loadHybridUiPrefs,
   normalizeHybridLayerMap,
   normalizeHybridUiPrefs,
   saveHybridUiPrefs,
 } from "../features/process/hybrid/hybridLayerUi";
 import {
   docToComparableJson,
-  migrateHybridV1ToV2,
   normalizeHybridV2Doc,
 } from "../features/process/hybrid/hybridLayerV2";
 import {
@@ -82,7 +79,6 @@ import useSessionMetaPersist from "../features/process/stage/controllers/useSess
 import useProcessStageActionsController from "../features/process/stage/controllers/useProcessStageActionsController";
 import useProcessStageShellController from "../features/process/stage/controllers/useProcessStageShellController";
 import useProcessStageRuntimeGlue from "../features/process/stage/controllers/useProcessStageRuntimeGlue";
-import useHybridLegacyLayerController from "../features/process/stage/controllers/useHybridLegacyLayerController";
 import useBpmnCanvasController from "../features/process/stage/controllers/useBpmnCanvasController";
 import useDiagramOverlayTransform from "../features/process/stage/controllers/useDiagramOverlayTransform";
 import useHybridLayerAnchorController from "../features/process/stage/hooks/useBpmnCanvasController";
@@ -94,9 +90,9 @@ import ProcessPanels from "../features/process/stage/ui/ProcessPanels";
 import ProcessDialogs from "../features/process/stage/ui/ProcessDialogs";
 import ProcessStageHeader from "../features/process/stage/ui/ProcessStageHeader";
 import ProcessStageDiagramControls from "../features/process/stage/ui/ProcessStageDiagramControls";
-import { deleteHybridIds } from "../features/process/hybrid/actions/hybridDelete";
-import useHybridSelectionController from "../features/process/hybrid/tools/useHybridSelectionController";
-import useHybridToolsController from "../features/process/hybrid/tools/useHybridToolsController";
+import useHybridStore from "../features/process/hybrid/controllers/useHybridStore";
+import useHybridPersistController from "../features/process/hybrid/controllers/useHybridPersistController";
+import useHybridPipelineController from "../features/process/hybrid/controllers/useHybridPipelineController";
 import HybridContextMenu from "../features/process/hybrid/tools/HybridContextMenu";
 import DrawioEditorModal from "../features/process/drawio/DrawioEditorModal";
 import DrawioOverlayRenderer from "../features/process/drawio/DrawioOverlayRenderer";
@@ -106,10 +102,6 @@ import {
   normalizeDrawioMeta,
   serializeDrawioMeta,
 } from "../features/process/drawio/drawioMeta";
-import {
-  applyHybridPaletteModeIntent,
-  applyHybridPaletteToolIntent,
-} from "../features/process/hybrid/tools/hybridToolState";
 import useTemplatesStore from "../features/templates/model/useTemplatesStore";
 import { applyTemplateToDiagram } from "../features/templates/services/applyTemplateToDiagram";
 import {
@@ -129,14 +121,12 @@ import {
   emitBatchOpsResult,
   fnv1aHex,
   getAiGenerateGate,
-  hasKnownHybridV2Session,
   insertBetweenErrorMessage,
   isEditableTarget,
   isLocalSessionId,
   logActorsTrace,
   logAiOpsTrace,
   logPlaybackDebug,
-  markKnownHybridV2Session,
   normalizeDebugRouteSteps,
   normalizeDiagramMode,
   normalizeFlowTierMetaMap,
@@ -213,15 +203,6 @@ export default function ProcessStage({
   const hybridLayerOverlayRef = useRef(null);
   const hybridV2FileInputRef = useRef(null);
   const drawioFileInputRef = useRef(null);
-  const hybridLayerDragRef = useRef(null);
-  const hybridLayerMapRef = useRef({});
-  const hybridLayerPersistedMapRef = useRef({});
-  const hybridAutoFocusGuardRef = useRef("");
-  const hybridV2DocRef = useRef(normalizeHybridV2Doc({}));
-  const hybridV2PersistedDocRef = useRef(normalizeHybridV2Doc({}));
-  const drawioMetaRef = useRef(normalizeDrawioMeta({}));
-  const drawioPersistedMetaRef = useRef(normalizeDrawioMeta({}));
-  const hybridV2MigrationGuardRef = useRef("");
   const lastDraftXmlHashRef = useRef("");
   const lastAiGenerateIntentKeyRef = useRef("");
 
@@ -301,14 +282,44 @@ export default function ProcessStage({
   const [executionPlanBusy, setExecutionPlanBusy] = useState(false);
   const [executionPlanSaveBusy, setExecutionPlanSaveBusy] = useState(false);
   const [executionPlanError, setExecutionPlanError] = useState("");
-  const [hybridUiPrefs, setHybridUiPrefs] = useState(() => normalizeHybridUiPrefs({}));
-  const [hybridPeekActive, setHybridPeekActive] = useState(false);
-  const [hybridLayerByElementId, setHybridLayerByElementId] = useState({});
-  const [hybridLayerActiveElementId, setHybridLayerActiveElementId] = useState("");
-  const [hybridV2Doc, setHybridV2Doc] = useState(() => normalizeHybridV2Doc({}));
-  const [hybridV2BindPickMode, setHybridV2BindPickMode] = useState(false);
-  const [drawioMeta, setDrawioMeta] = useState(() => normalizeDrawioMeta({}));
-  const [drawioEditorOpen, setDrawioEditorOpen] = useState(false);
+  const {
+    hybridLayerDragRef,
+    hybridLayerMapRef,
+    hybridLayerPersistedMapRef,
+    hybridAutoFocusGuardRef,
+    hybridV2DocRef,
+    hybridV2PersistedDocRef,
+    drawioMetaRef,
+    drawioPersistedMetaRef,
+    hybridV2MigrationGuardRef,
+    hybridUiPrefs,
+    setHybridUiPrefs,
+    hybridPeekActive,
+    setHybridPeekActive,
+    hybridLayerByElementId,
+    setHybridLayerByElementId,
+    hybridLayerActiveElementId,
+    setHybridLayerActiveElementId,
+    hybridV2Doc,
+    setHybridV2Doc,
+    hybridV2BindPickMode,
+    setHybridV2BindPickMode,
+    drawioMeta,
+    setDrawioMeta,
+    drawioEditorOpen,
+    setDrawioEditorOpen,
+    hybridLayerMapFromDraft,
+    hybridStorageKey,
+    hybridVisible,
+    drawioVisible,
+    overlayLayerVisible,
+    hybridModeEffective,
+    hybridOpacityValue,
+  } = useHybridStore({
+    sid,
+    draftBpmnMeta: draft?.bpmn_meta,
+    userId: user?.id,
+  });
 
   useEffect(() => {
     setGenBusy(false);
@@ -384,16 +395,6 @@ export default function ProcessStage({
     setExecutionPlanBusy(false);
     setExecutionPlanSaveBusy(false);
     setExecutionPlanError("");
-    setHybridPeekActive(false);
-    setHybridLayerActiveElementId("");
-    {
-      const emptyV2 = normalizeHybridV2Doc({});
-      setHybridV2Doc(emptyV2);
-      hybridV2DocRef.current = emptyV2;
-      hybridV2PersistedDocRef.current = emptyV2;
-    }
-    hybridV2MigrationGuardRef.current = "";
-    setHybridV2BindPickMode(false);
   }, [sid]);
 
   const hasSession = !!sid;
@@ -683,18 +684,6 @@ export default function ProcessStage({
     });
     return out;
   }, [draft?.nodes]);
-  const hybridLayerMapFromDraft = useMemo(
-    () => normalizeHybridLayerMap(asObject(asObject(draft?.bpmn_meta).hybrid_layer_by_element_id)),
-    [draft?.bpmn_meta],
-  );
-  const hybridV2FromDraft = useMemo(
-    () => normalizeHybridV2Doc(asObject(asObject(draft?.bpmn_meta).hybrid_v2)),
-    [draft?.bpmn_meta],
-  );
-  const drawioFromDraft = useMemo(
-    () => normalizeDrawioMeta(asObject(asObject(draft?.bpmn_meta).drawio)),
-    [draft?.bpmn_meta],
-  );
   const hybridLayerMapLive = useMemo(
     () => normalizeHybridLayerMap(hybridLayerByElementId),
     [hybridLayerByElementId],
@@ -738,17 +727,6 @@ export default function ProcessStage({
     robotMetaStatusByElementId,
     hybridLayerMapLive,
   ]);
-  const hybridStorageKey = useMemo(
-    () => getHybridUiStorageKey(toText(user?.id)),
-    [user?.id],
-  );
-  const hybridVisible = !!hybridUiPrefs.visible || !!hybridPeekActive;
-  const drawioVisible = !!drawioMeta.enabled && !!toText(drawioMeta.svg_cache);
-  const overlayLayerVisible = hybridVisible || drawioVisible;
-  const hybridModeEffective = hybridVisible
-    ? (hybridPeekActive ? "view" : (hybridUiPrefs.mode === "edit" && !hybridUiPrefs.lock ? "edit" : "view"))
-    : "hidden";
-  const hybridOpacityValue = Number(hybridUiPrefs.opacity || 60) / 100;
   const hybridDebugEnabled = useMemo(() => {
     if (typeof window === "undefined") return false;
     try {
@@ -814,7 +792,7 @@ export default function ProcessStage({
     matrixToScreen,
     toText,
   });
-  const { persistHybridLayerMap, persistHybridV2Doc, persistDrawioMeta } = useSessionMetaPersist({
+  const sessionMetaPersist = useSessionMetaPersist({
     sid,
     isLocal,
     draftBpmnMeta: draft?.bpmn_meta,
@@ -831,107 +809,15 @@ export default function ProcessStage({
     normalizeDrawioMeta,
     serializeDrawioMeta,
   });
-  useEffect(() => {
-    const incoming = normalizeHybridLayerMap(hybridLayerMapFromDraft);
-    const incomingSig = serializeHybridLayerMap(incoming);
-    const currentSig = serializeHybridLayerMap(hybridLayerMapRef.current);
-    const persistedSig = serializeHybridLayerMap(hybridLayerPersistedMapRef.current);
-    if (incomingSig === persistedSig && currentSig !== incomingSig) {
-      return;
-    }
-    setHybridLayerByElementId(incoming);
-    hybridLayerMapRef.current = incoming;
-    hybridLayerPersistedMapRef.current = incoming;
-  }, [hybridLayerMapFromDraft]);
-
-  useEffect(() => {
-    hybridLayerMapRef.current = normalizeHybridLayerMap(hybridLayerByElementId);
-  }, [hybridLayerByElementId]);
-
-  useEffect(() => {
-    const incoming = normalizeHybridV2Doc(hybridV2FromDraft);
-    const incomingSig = docToComparableJson(incoming);
-    const currentDoc = normalizeHybridV2Doc(hybridV2DocRef.current);
-    const persistedDoc = normalizeHybridV2Doc(hybridV2PersistedDocRef.current);
-    const currentSig = docToComparableJson(currentDoc);
-    const persistedSig = docToComparableJson(persistedDoc);
-    const incomingCount = Number(asArray(incoming.elements).length) + Number(asArray(incoming.edges).length);
-    const currentCount = Number(asArray(currentDoc.elements).length) + Number(asArray(currentDoc.edges).length);
-    const persistedCount = Number(asArray(persistedDoc.elements).length) + Number(asArray(persistedDoc.edges).length);
-    if (incomingSig === persistedSig && currentSig !== incomingSig) return;
-    if (incomingCount <= 0 && incomingSig !== currentSig && (currentCount > 0 || persistedCount > 0)) return;
-    setHybridV2Doc(incoming);
-    hybridV2DocRef.current = incoming;
-    hybridV2PersistedDocRef.current = incoming;
-  }, [hybridV2FromDraft]);
-
-  useEffect(() => {
-    hybridV2DocRef.current = normalizeHybridV2Doc(hybridV2Doc);
-  }, [hybridV2Doc]);
-
-  useEffect(() => {
-    const incoming = normalizeDrawioMeta(drawioFromDraft);
-    const incomingSig = serializeDrawioMeta(incoming);
-    const currentMeta = normalizeDrawioMeta(drawioMetaRef.current);
-    const persistedMeta = normalizeDrawioMeta(drawioPersistedMetaRef.current);
-    const currentSig = serializeDrawioMeta(currentMeta);
-    const persistedSig = serializeDrawioMeta(persistedMeta);
-    if (incomingSig === persistedSig && currentSig !== incomingSig) return;
-    if (!incoming.doc_xml && currentMeta.doc_xml) return;
-    setDrawioMeta(incoming);
-    drawioMetaRef.current = incoming;
-    drawioPersistedMetaRef.current = incoming;
-  }, [drawioFromDraft]);
-
-  useEffect(() => {
-    drawioMetaRef.current = normalizeDrawioMeta(drawioMeta);
-  }, [drawioMeta]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const count = Number(asArray(hybridV2Doc?.elements).length || 0) + Number(asArray(hybridV2Doc?.edges).length || 0);
-    if (count <= 0 || !sid) return;
-    markKnownHybridV2Session(window.localStorage, sid);
-  }, [hybridV2Doc, sid]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const loaded = normalizeHybridUiPrefs(
-      loadHybridUiPrefs(window.localStorage, hybridStorageKey, toText(user?.id)),
-    );
-    setHybridUiPrefs((prevRaw) => {
-      const prev = normalizeHybridUiPrefs(prevRaw);
-      const loadedIsDefault = (
-        !loaded.visible
-        && loaded.mode === "view"
-        && Number(loaded.opacity || 60) === 60
-        && !loaded.lock
-        && !loaded.focus
-      );
-      const prevHasUserState = (
-        prev.visible
-        || prev.mode === "edit"
-        || Number(prev.opacity || 60) !== 60
-        || prev.lock
-        || prev.focus
-      );
-      if (loadedIsDefault && prevHasUserState) return prev;
-      return loaded;
-    });
-  }, [hybridStorageKey, sid, user?.id]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    saveHybridUiPrefs(window.localStorage, hybridStorageKey, hybridUiPrefs, toText(user?.id));
-  }, [hybridStorageKey, hybridUiPrefs, user?.id]);
-  useEffect(() => {
-    if (!hybridDebugEnabled || typeof console === "undefined") return;
-    // eslint-disable-next-line no-console
-    console.debug(
-      `[HYBRIDV2] prefs visible=${hybridUiPrefs.visible ? 1 : 0} mode=${toText(hybridUiPrefs.mode) || "view"} ` +
-      `lock=${hybridUiPrefs.lock ? 1 : 0} peek=${hybridPeekActive ? 1 : 0} effective=${hybridModeEffective}`,
-    );
-  }, [hybridDebugEnabled, hybridUiPrefs.visible, hybridUiPrefs.mode, hybridUiPrefs.lock, hybridPeekActive, hybridModeEffective]);
+  const hybridPersist = useHybridPersistController({
+    persistHybridLayerMap: sessionMetaPersist.persistHybridLayerMap,
+    persistHybridV2Doc: sessionMetaPersist.persistHybridV2Doc,
+    persistDrawioMeta: sessionMetaPersist.persistDrawioMeta,
+    setInfoMsg,
+  });
+  const persistHybridLayerMap = hybridPersist.persistHybridLayerMap;
+  const persistHybridV2Doc = hybridPersist.persistHybridV2Doc;
+  const persistDrawioMeta = hybridPersist.persistDrawioMeta;
   const robotMetaListItems = useMemo(() => {
     const tab = toText(robotMetaListTab).toLowerCase() === "incomplete" ? "incomplete" : "ready";
     const query = toText(robotMetaListSearch).toLowerCase();
@@ -1154,93 +1040,21 @@ export default function ProcessStage({
     initialPlaybackManualAtGateway: false,
     initialPlaybackScenarioKey: "active",
   });
-  const applyHybridV2Delete = useCallback((idsRaw) => {
-    const prev = normalizeHybridV2Doc(hybridV2DocRef.current);
-    const ids = asArray(idsRaw).map((row) => toText(row)).filter(Boolean);
-    if (!ids.length) return false;
-    const layerById = {};
-    asArray(prev.layers).forEach((layerRaw) => {
-      const layer = asObject(layerRaw);
-      const layerId = toText(layer.id);
-      if (layerId) layerById[layerId] = layer;
-    });
-    const blockedLockedIds = ids.filter((id) => {
-      const element = asObject(asArray(prev.elements).find((rowRaw) => toText(asObject(rowRaw).id) === id));
-      if (element.id) return asObject(layerById[toText(element.layer_id)]).locked === true;
-      const edge = asObject(asArray(prev.edges).find((rowRaw) => toText(asObject(rowRaw).id) === id));
-      if (edge.id) return asObject(layerById[toText(edge.layer_id)]).locked === true;
-      return false;
-    });
-    if (blockedLockedIds.length) {
-      setInfoMsg(`Удаление недоступно: слой заблокирован (${blockedLockedIds.join(", ")}).`);
-      setGenErr("");
-      return false;
-    }
-    const result = deleteHybridIds(prev, idsRaw);
-    const next = normalizeHybridV2Doc(result.nextHybridV2);
-    const changed = docToComparableJson(prev) !== docToComparableJson(next);
-    if (!changed) {
-      setInfoMsg("Нечего удалять: элемент не найден или уже удалён.");
-      setGenErr("");
-      return false;
-    }
-    hybridV2DocRef.current = next;
-    setHybridV2Doc(next);
-    markPlaybackOverlayInteraction({
-      stage: "hybrid_v2_delete_item",
-      count: Number(asArray(result.deleted.elements).length || 0) + Number(asArray(result.deleted.edges).length || 0),
-      cleanedBindingsCount: Number(result.cleanedBindingsCount || 0),
-    });
-    setHybridV2BindPickMode(false);
-    void persistHybridV2Doc(next, { source: "hybrid_v2_delete_item" });
-    return changed;
-  }, [markPlaybackOverlayInteraction, persistHybridV2Doc, setGenErr, setInfoMsg]);
-  const hybridTools = useHybridToolsController({
-    hybridDoc: hybridV2Doc,
-    setHybridDoc: setHybridV2Doc,
-    hybridDocRef: hybridV2DocRef,
-    hybridVisible,
-    modeEffective: hybridModeEffective,
-    uiLocked: hybridUiPrefs.lock,
-    hybridViewportMatrix,
-    clientToDiagram,
-    overlayRect: overlayContainerRect,
-    persistHybridV2Doc,
-    sid,
-    markPlaybackOverlayInteraction,
-    bpmnRef,
-    setBindPickMode: setHybridV2BindPickMode,
-    setGenErr,
-    setInfoMsg,
-    downloadTextFile,
-  });
-  const hybridSelection = useHybridSelectionController({
-    enabled: tab === "diagram" && hybridVisible,
-    modeEffective: hybridModeEffective,
-    uiLocked: hybridUiPrefs.lock,
-    overlayRect: overlayContainerRect,
-    renderable: hybridTools.renderable,
-    docLive: hybridTools.docLive,
-    isEditableTarget,
-    onDeleteIds: applyHybridV2Delete,
-    onRequestEditSelected: hybridTools.openTextEditor,
-  });
-  const hybridV2DocLive = hybridTools.docLive;
-  const hybridV2LayerById = hybridTools.layerById;
-  const hybridV2BindingByHybridId = hybridTools.bindingByHybridId;
-  const hybridV2Renderable = hybridTools.renderable;
-  const hybridV2TotalCount = hybridTools.totalCount;
-  const hybridV2HiddenCount = hybridTools.hiddenCount;
-  const hybridV2ToolState = hybridTools.toolState;
-  const hybridV2ActiveId = hybridSelection.primarySelectedId;
-  const hybridV2SelectedIds = hybridSelection.selectedIds;
-  const hybridV2SelectedIdSet = hybridSelection.selectedIdSet;
-  const hybridV2ImportNotice = hybridTools.importNotice;
-  const setHybridV2ActiveId = hybridSelection.selectOnly;
-  const deleteSelectedHybridIds = hybridSelection.deleteSelected;
-  const hybridTotalCount = Math.max(Number(hybridLayerCounts.total || 0), hybridV2TotalCount);
-  const setHybridV2Tool = hybridTools.setTool;
   const {
+    hybridTools,
+    hybridSelection,
+    hybridV2DocLive,
+    hybridV2BindingByHybridId,
+    hybridV2Renderable,
+    hybridV2HiddenCount,
+    hybridV2ToolState,
+    hybridV2ActiveId,
+    hybridV2SelectedIds,
+    hybridV2SelectedIdSet,
+    hybridV2ImportNotice,
+    setHybridV2ActiveId,
+    deleteSelectedHybridIds,
+    hybridTotalCount,
     showHybridLayer,
     hideHybridLayer,
     setHybridLayerMode,
@@ -1257,221 +1071,93 @@ export default function ProcessStage({
     cleanupMissingHybridBindings,
     withHybridOverlayGuard,
     handleHybridLayerItemPointerDown,
-    addOrSelectHybridMarker,
-    handleHybridEditSurfacePointerDown,
-  } = useHybridLegacyLayerController({
+    hybridToolsUiState,
+    drawioUiState,
+    setHybridToolsMode,
+    selectHybridPaletteTool,
+    goToActiveHybridBinding,
+    exportHybridV2Drawio,
+    handleHybridV2ImportFile,
+    handleHybridV2ElementPointerDown,
+    handleHybridV2ResizeHandlePointerDown,
+    handleHybridV2OverlayPointerDown,
+    handleHybridV2OverlayContextMenu,
+    handleHybridV2ElementContextMenu,
+    handleHybridV2ElementDoubleClick,
+    deleteLegacyHybridMarkers,
+    hybridV2PlaybackHighlightedIds,
+  } = useHybridPipelineController({
+    sid,
+    tab,
+    draft,
     user,
-    hybridStorageKey,
+    isLocal,
+    selectedElementId,
+    selectedElementType,
+    diagramActionHybridToolsOpen,
+    setDiagramActionHybridToolsOpen,
     hybridUiPrefs,
+    setHybridUiPrefs,
+    hybridPeekActive,
+    setHybridPeekActive,
     hybridVisible,
     hybridModeEffective,
-    selectedElementId,
-    draft,
-    bpmnRef,
-    bpmnStageHostRef,
-    hybridTools,
     hybridLayerByElementId,
+    setHybridLayerByElementId,
+    hybridLayerActiveElementId,
+    setHybridLayerActiveElementId,
     hybridLayerMapRef,
+    hybridLayerPersistedMapRef,
+    hybridLayerDragRef,
+    hybridAutoFocusGuardRef,
+    hybridV2Doc,
+    setHybridV2Doc,
+    hybridV2DocRef,
+    hybridV2PersistedDocRef,
+    hybridV2BindPickMode,
+    setHybridV2BindPickMode,
+    hybridV2MigrationGuardRef,
+    drawioMeta,
+    hybridStorageKey,
+    hybridLayerMapFromDraft,
+    hybridLayerMapLive,
     hybridLayerRenderRows,
     hybridLayerMissingBindingIds,
-    hybridLayerActiveElementId,
-    hybridV2DocRef,
-    hybridV2DocLive,
-    hybridV2BindingByHybridId,
-    resolveFirstHybridSeedElementId,
-    resolveHybridTargetElementIdFromPoint,
-    readHybridElementAnchor,
-    setHybridUiPrefs,
-    setHybridPeekActive,
-    setHybridV2BindPickMode,
-    setHybridLayerByElementId,
-    setHybridLayerActiveElementId,
-    setHybridV2ActiveId,
-    markPlaybackOverlayInteraction,
-    persistHybridLayerMap,
+    hybridLayerVisibilityStats,
+    hybridLayerCounts,
+    hybridViewportSize,
+    hybridViewportMatrix,
+    overlayViewbox,
+    overlayContainerRect,
     clientToDiagram,
-    hybridLayerDragRef,
-    toText,
-    toNodeId,
-    asArray,
-    asObject,
+    resolveHybridTargetElementIdFromPoint,
+    resolveFirstHybridSeedElementId,
+    readHybridElementAnchor,
+    getHybridLayerCardRefCallback,
+    bpmnRef,
+    bpmnStageHostRef,
+    persistHybridLayerMap,
+    persistHybridV2Doc,
+    markPlaybackOverlayInteraction,
+    playbackHighlightedBpmnIds,
+    hybridDebugEnabled,
+    normalizeHybridLayerMap,
     normalizeHybridUiPrefs,
     saveHybridUiPrefs,
     applyHybridVisibilityTransition,
     applyHybridModeTransition,
     normalizeHybridV2Doc,
-    normalizeHybridLayerMap,
+    docToComparableJson,
     parseSequenceFlowsFromXml,
-  });
-  const hybridToolsUiState = useMemo(() => ({
-    visible: hybridVisible,
-    mode: hybridModeEffective,
-    tool: hybridV2ToolState,
-  }), [hybridModeEffective, hybridV2ToolState, hybridVisible]);
-  const drawioUiState = useMemo(() => normalizeDrawioMeta(drawioMeta), [drawioMeta]);
-  const setHybridToolsMode = useCallback((modeRaw) => {
-    const nextState = applyHybridPaletteModeIntent(hybridToolsUiState, modeRaw);
-    showHybridLayer();
-    setHybridLayerMode(nextState.mode);
-  }, [hybridToolsUiState, setHybridLayerMode, showHybridLayer]);
-  const selectHybridPaletteTool = useCallback((toolRaw) => {
-    const nextState = applyHybridPaletteToolIntent(hybridToolsUiState, toolRaw);
-    showHybridLayer();
-    if (nextState.mode === "edit") {
-      setHybridLayerMode("edit", {
-        skipV2Seed: nextState.tool !== "select",
-        skipLegacySeed: nextState.tool !== "select",
-      });
-    }
-    setHybridV2Tool(nextState.tool);
-  }, [hybridToolsUiState, setHybridLayerMode, setHybridV2Tool, showHybridLayer]);
-  const bindActiveHybridV2ToBpmn = useCallback((targetBpmnIdRaw, hybridIdRaw = "") => {
-    hybridTools.bindHybridToBpmn(targetBpmnIdRaw, hybridIdRaw || hybridSelection.primarySelectedId);
-  }, [hybridSelection.primarySelectedId, hybridTools]);
-  const goToActiveHybridBinding = useCallback(() => {
-    hybridTools.goToHybridBinding(hybridSelection.primarySelectedId);
-  }, [hybridSelection.primarySelectedId, hybridTools]);
-  const exportHybridV2Drawio = hybridTools.exportDrawio;
-  const handleHybridV2ImportFile = hybridTools.importFile;
-  const handleHybridV2ElementPointerDown = useCallback((event, elementIdRaw) => {
-    hybridTools.onElementPointerDown(event, elementIdRaw, hybridSelection);
-  }, [hybridSelection, hybridTools]);
-  const handleHybridV2ResizeHandlePointerDown = useCallback((event, elementIdRaw, handleRaw) => {
-    hybridTools.onResizeHandlePointerDown(event, elementIdRaw, handleRaw, hybridSelection);
-  }, [hybridSelection, hybridTools]);
-  const handleHybridV2OverlayPointerDown = useCallback((event) => {
-    hybridTools.onOverlayPointerDown(event, hybridSelection);
-  }, [hybridSelection, hybridTools]);
-  const handleHybridV2OverlayContextMenu = useCallback((event) => {
-    hybridTools.onOverlayContextMenu(event, hybridSelection.hitTestAtClientPoint);
-  }, [hybridSelection.hitTestAtClientPoint, hybridTools]);
-  const handleHybridV2ElementContextMenu = useCallback((event, elementIdRaw) => {
-    if (!hybridV2SelectedIdSet.has(toText(elementIdRaw))) {
-      hybridSelection.selectOnly(elementIdRaw);
-    }
-    hybridTools.onElementContextMenu(event, elementIdRaw);
-  }, [hybridSelection, hybridTools, hybridV2SelectedIdSet]);
-  const handleHybridV2ElementDoubleClick = useCallback((event, elementIdRaw) => {
-    hybridTools.onElementDoubleClick(event, elementIdRaw, hybridSelection);
-  }, [hybridSelection, hybridTools]);
-  const deleteLegacyHybridMarkers = useCallback((elementIdsRaw, source = "hybrid_legacy_delete") => {
-    const elementIds = Array.from(new Set(asArray(elementIdsRaw).map((row) => toText(row)).filter(Boolean)));
-    if (!elementIds.length) return false;
-    const boundHybridIds = new Set();
-    elementIds.forEach((elementId) => {
-      asArray(hybridTools.bindingByBpmnId[elementId]).forEach((bindingRaw) => {
-        const binding = asObject(bindingRaw);
-        const hybridId = toText(binding.hybrid_id || binding.hybridId);
-        if (hybridId) boundHybridIds.add(hybridId);
-      });
-    });
-    let nextMap = null;
-    let removedCount = 0;
-    setHybridLayerByElementId((prevRaw) => {
-      const prev = normalizeHybridLayerMap(prevRaw);
-      const next = {};
-      Object.keys(prev).forEach((elementIdRaw) => {
-        const elementId = toText(elementIdRaw);
-        if (!elementId) return;
-        if (elementIds.includes(elementId)) {
-          removedCount += 1;
-          return;
-        }
-        next[elementId] = asObject(prev[elementId]);
-      });
-      hybridLayerMapRef.current = next;
-      nextMap = next;
-      return next;
-    });
-    if (boundHybridIds.size) {
-      applyHybridV2Delete(Array.from(boundHybridIds));
-    }
-    if (nextMap) {
-      window.setTimeout(() => {
-        void persistHybridLayerMap(nextMap, { source });
-      }, 0);
-    }
-    if (elementIds.includes(toText(hybridLayerActiveElementId))) {
-      setHybridLayerActiveElementId("");
-    }
-    const changed = removedCount > 0 || boundHybridIds.size > 0;
-    if (!changed) {
-      setInfoMsg("Нечего удалять: legacy-метка не найдена.");
-      setGenErr("");
-      return false;
-    }
-    markPlaybackOverlayInteraction({
-      stage: source,
-      legacyCount: removedCount,
-      hybridCount: boundHybridIds.size,
-    });
-    return true;
-  }, [
-    applyHybridV2Delete,
-    hybridLayerActiveElementId,
-    hybridTools.bindingByBpmnId,
-    markPlaybackOverlayInteraction,
-    persistHybridLayerMap,
+    toText,
+    toNodeId,
+    asArray,
+    asObject,
+    isEditableTarget,
+    downloadTextFile,
     setGenErr,
     setInfoMsg,
-  ]);
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    const e2eApi = {
-      selectTool(toolRaw) {
-        selectHybridPaletteTool(toolRaw);
-      },
-      ensureEditVisible() {
-        showHybridLayer();
-        setHybridLayerMode("edit", {
-          skipV2Seed: true,
-          skipLegacySeed: true,
-        });
-      },
-      createElementAt(pointRaw, typeRaw = "rect") {
-        showHybridLayer();
-        setHybridLayerMode("edit", {
-          skipV2Seed: true,
-          skipLegacySeed: true,
-        });
-        const nextType = toText(typeRaw).toLowerCase() || "rect";
-        setHybridV2Tool(nextType);
-        return hybridTools.createElementAt(pointRaw, nextType);
-      },
-      readDoc() {
-        return normalizeHybridV2Doc(hybridV2DocRef.current);
-      },
-    };
-    window.__FPC_E2E_HYBRID__ = e2eApi;
-    return () => {
-      if (window.__FPC_E2E_HYBRID__ === e2eApi) {
-        window.__FPC_E2E_HYBRID__ = null;
-      }
-    };
-  }, [hybridTools, selectHybridPaletteTool, setHybridLayerMode, setHybridV2Tool, showHybridLayer]);
-  const hybridV2PlaybackHighlightedIds = useMemo(() => {
-    const byBpmnId = hybridTools.bindingByBpmnId;
-    const out = new Set();
-    playbackHighlightedBpmnIds.forEach((bpmnId) => {
-      asArray(byBpmnId[bpmnId]).forEach((bindingRaw) => {
-        const binding = asObject(bindingRaw);
-        const hybridId = toText(binding.hybrid_id || binding.hybridId);
-        if (hybridId) out.add(hybridId);
-      });
-    });
-    return out;
-  }, [hybridTools.bindingByBpmnId, playbackHighlightedBpmnIds]);
-  useEffect(() => {
-    if (tab !== "diagram" || !hybridVisible) return;
-    const activeIds = Array.from(playbackHighlightedBpmnIds);
-    if (!activeIds.length) return;
-    const nextHybridId = activeIds.find((bpmnId) => !!asObject(hybridLayerMapLive)[toText(bpmnId)]);
-    if (!nextHybridId) return;
-    setHybridLayerActiveElementId((prevRaw) => {
-      const prev = toText(prevRaw);
-      return prev === nextHybridId ? prev : nextHybridId;
-    });
-  }, [tab, hybridVisible, playbackHighlightedBpmnIds, hybridLayerMapLive]);
+  });
   const { closeAllDiagramActions } = useDiagramActionPopovers({
     toolbarMenuOpen,
     setToolbarMenuOpen,
@@ -3056,240 +2742,6 @@ export default function ProcessStage({
       setSaveDirtyHint(false);
     }
   }, [draft?.bpmn_xml, saveDirtyHint]);
-
-
-  useEffect(() => {
-    const draftV2 = normalizeHybridV2Doc(asObject(asObject(draft?.bpmn_meta).hybrid_v2));
-    if (asArray(draftV2.elements).length > 0 || asArray(draftV2.edges).length > 0) return;
-    const v1Map = normalizeHybridLayerMap(hybridLayerMapFromDraft);
-    if (!Object.keys(v1Map).length) return;
-    if (typeof window !== "undefined" && hasKnownHybridV2Session(window.localStorage, sid)) return;
-    const guardKey = `${sid}:${serializeHybridLayerMap(v1Map)}`;
-    if (hybridV2MigrationGuardRef.current === guardKey) return;
-    hybridV2MigrationGuardRef.current = guardKey;
-    const migrated = migrateHybridV1ToV2(v1Map, (bpmnId) => {
-      const anchor = asObject(readHybridElementAnchor(bpmnId));
-      if (!Number.isFinite(anchor.x) || !Number.isFinite(anchor.y)) return null;
-      return {
-        x: Number(anchor.x || 0),
-        y: Number(anchor.y || 0),
-      };
-    });
-    setHybridV2Doc(migrated);
-    hybridV2DocRef.current = migrated;
-    hybridTools.setImportNotice("Migrated v1 -> v2");
-    void persistHybridV2Doc(migrated, { source: "hybrid_v2_migrate_v1" });
-  }, [draft?.bpmn_meta, hybridLayerMapFromDraft, readHybridElementAnchor, sid]);
-
-  useEffect(() => {
-    if (!hybridDebugEnabled || tab !== "diagram" || !hybridVisible) return;
-    const rows = asArray(hybridLayerRenderRows).slice(0, 20).map((rowRaw) => {
-      const row = asObject(rowRaw);
-      return {
-        elementId: toText(row?.elementId),
-        hasCenter: !!row?.hasCenter,
-        dx: Number(row?.rawDx || 0),
-        dy: Number(row?.rawDy || 0),
-        x: Math.round(Number(row?.rawX || 0) * 10) / 10,
-        y: Math.round(Number(row?.rawY || 0) * 10) / 10,
-        insideViewport: !!row?.insideViewport,
-        clamped: !!row?.wasClamped,
-      };
-    });
-    // Dev-only diagnostics for offscreen marker issues.
-    // eslint-disable-next-line no-console
-    console.info("[HYBRID_DEBUG] visibility", {
-      viewport: asObject(hybridViewportSize),
-      viewbox: asObject(overlayViewbox),
-      container: asObject(overlayContainerRect),
-      stats: asObject(hybridLayerVisibilityStats),
-      rows,
-    });
-  }, [hybridDebugEnabled, hybridLayerRenderRows, hybridLayerVisibilityStats, hybridViewportSize, overlayViewbox, overlayContainerRect, hybridVisible, tab]);
-
-  useEffect(() => {
-    if (tab !== "diagram" || !hybridVisible) return;
-    const total = Number(hybridLayerVisibilityStats.total || 0);
-    const inside = Number(hybridLayerVisibilityStats.insideViewport || 0);
-    if (total <= 0 || inside > 0) {
-      hybridAutoFocusGuardRef.current = "";
-      return;
-    }
-    const guardKey = `${sid}:${total}:${inside}`;
-    if (hybridAutoFocusGuardRef.current === guardKey) return;
-    hybridAutoFocusGuardRef.current = guardKey;
-    focusHybridLayer("hybrid_auto_focus_outside_viewport");
-  }, [hybridLayerVisibilityStats.insideViewport, hybridLayerVisibilityStats.total, hybridVisible, sid, tab]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    const onKeyDown = (event) => {
-      if (isEditableTarget(event.target)) return;
-      if (tab !== "diagram" || hybridModeEffective !== "edit" || hybridUiPrefs.lock) return;
-      const key = String(event?.key || "");
-      if (key !== "Delete" && key !== "Backspace") return;
-      if (hybridSelection.selectionCount > 0) return;
-      const legacyId = toText(hybridLayerActiveElementId);
-      if (!legacyId) return;
-      if (!deleteLegacyHybridMarkers([legacyId], "hybrid_legacy_keyboard_delete")) return;
-      event.preventDefault();
-      event.stopPropagation();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [
-    deleteLegacyHybridMarkers,
-    hybridLayerActiveElementId,
-    hybridModeEffective,
-    hybridSelection.selectionCount,
-    hybridUiPrefs.lock,
-    tab,
-  ]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    const onKeyDown = (event) => {
-      if (isEditableTarget(event.target)) return;
-      if (tab === "diagram" && diagramActionHybridToolsOpen && !event.repeat) {
-        const key = String(event?.key || "");
-        if (key === "1") {
-          event.preventDefault();
-          selectHybridPaletteTool("select");
-          return;
-        }
-        if (key === "2") {
-          event.preventDefault();
-          selectHybridPaletteTool("rect");
-          return;
-        }
-        if (key === "3") {
-          event.preventDefault();
-          selectHybridPaletteTool("text");
-          return;
-        }
-        if (key === "4") {
-          event.preventDefault();
-          selectHybridPaletteTool("container");
-          return;
-        }
-      }
-      if (String(event?.key || "").toLowerCase() === "h" && !event.repeat) {
-        if (!hybridUiPrefs.visible) {
-          setHybridPeekActive(true);
-          markPlaybackOverlayInteraction({ stage: "hybrid_peek_down" });
-        }
-      }
-      if (String(event?.key || "") === "Escape" && hybridModeEffective === "edit") {
-        setHybridUiPrefs((prev) => applyHybridModeTransition(prev, "view"));
-        setHybridV2BindPickMode(false);
-        setDiagramActionHybridToolsOpen(false);
-        hybridTools.cancelTransientState();
-        markPlaybackOverlayInteraction({ stage: "hybrid_edit_escape" });
-      }
-    };
-    const onKeyUp = (event) => {
-      if (String(event?.key || "").toLowerCase() !== "h") return;
-      if (hybridPeekActive) {
-        setHybridPeekActive(false);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-    };
-  }, [diagramActionHybridToolsOpen, hybridUiPrefs.visible, hybridPeekActive, hybridModeEffective, hybridTools, markPlaybackOverlayInteraction, selectHybridPaletteTool, tab]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    if (hybridModeEffective !== "edit") return undefined;
-    const onMove = (event) => {
-      const state = asObject(hybridLayerDragRef.current);
-      const elementId = toText(state?.elementId);
-      if (!elementId) return;
-      const pointer = clientToDiagram(event?.clientX, event?.clientY);
-      if (!pointer) return;
-      const dx = Number(pointer.x || 0) - Number(state.startX || 0);
-      const dy = Number(pointer.y || 0) - Number(state.startY || 0);
-      setHybridLayerByElementId((prevRaw) => {
-        const prev = normalizeHybridLayerMap(prevRaw);
-        const row = asObject(prev[elementId]);
-        return {
-          ...prev,
-          [elementId]: {
-            dx: Math.round((Number(state.baseDx || row.dx || 0) + dx) * 10) / 10,
-            dy: Math.round((Number(state.baseDy || row.dy || 0) + dy) * 10) / 10,
-          },
-        };
-      });
-    };
-    const onUp = () => {
-      const hadDrag = !!asObject(hybridLayerDragRef.current).elementId;
-      hybridLayerDragRef.current = null;
-      if (!hadDrag) return;
-      void persistHybridLayerMap(hybridLayerMapRef.current, { source: "hybrid_layer_drag_end" });
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-  }, [hybridModeEffective, draft?.bpmn_meta, isLocal, onSessionSync, sid]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    if (hybridModeEffective !== "edit" || hybridUiPrefs.lock || !hybridVisible) return undefined;
-    const onMouseDownCapture = (event) => {
-      if (hybridV2ToolState !== "select") return;
-      const host = bpmnStageHostRef.current;
-      const target = event?.target;
-      if (!host || !(target instanceof Node) || !host.contains(target)) return;
-      if (
-        target instanceof Element
-        && (target.closest?.(".hybridLayerCard")
-          || target.closest?.(".hybridLayerHotspot")
-          || target.closest?.("[data-testid='hybrid-layer-overlay']")
-          || target.closest?.("[data-testid='diagram-action-layers-popover']"))
-      ) {
-        return;
-      }
-      const elementId = resolveHybridTargetElementIdFromPoint(event?.clientX, event?.clientY);
-      if (!elementId) return;
-      if (hybridV2BindPickMode && hybridV2ActiveId) {
-        bindActiveHybridV2ToBpmn(elementId);
-        markPlaybackOverlayInteraction({
-          stage: "hybrid_v2_bind_pick",
-          elementId,
-          hybridId: hybridV2ActiveId,
-        });
-        return;
-      }
-      addOrSelectHybridMarker(elementId, "hybrid_edit_surface_pointer");
-      markPlaybackOverlayInteraction({
-        stage: "hybrid_edit_surface_pointer",
-        elementId,
-      });
-    };
-    window.addEventListener("mousedown", onMouseDownCapture, true);
-    return () => {
-      window.removeEventListener("mousedown", onMouseDownCapture, true);
-    };
-  }, [hybridModeEffective, hybridUiPrefs.lock, hybridVisible, resolveHybridTargetElementIdFromPoint, hybridV2BindPickMode, hybridV2ActiveId, hybridV2ToolState]);
-
-  useEffect(() => {
-    if (hybridModeEffective !== "edit" || hybridUiPrefs.lock) return;
-    if (hybridV2ToolState !== "select") return;
-    if (asArray(hybridV2DocRef.current?.elements).length > 0 || asArray(hybridV2DocRef.current?.edges).length > 0) return;
-    const elementId = toNodeId(selectedElementId);
-    const type = toText(selectedElementType).toLowerCase();
-    if (!elementId) return;
-    if (type.includes("sequenceflow") || type.includes("connection")) return;
-    addOrSelectHybridMarker(elementId, "hybrid_edit_selection");
-  }, [hybridModeEffective, hybridUiPrefs.lock, hybridV2ToolState, selectedElementId, selectedElementType]);
 
   useEffect(() => {
     if (!diagramActionPlanOpen) return;

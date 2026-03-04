@@ -16,11 +16,17 @@ import {
   setHybridLayerLocked,
 } from "./hybridActions.js";
 import {
-  applyHybridDragDelta,
-  applyHybridResizeHandleDelta,
+  applyDrag as applyHybridDragDelta,
+  applyResize as applyHybridResizeHandleDelta,
   canResizeHybridElement,
-} from "./hybridTransforms.js";
+} from "../actions/hybridTransform.js";
+import {
+  buildHybridElementAt,
+  buildHybridGhost,
+  getDefaultHybridSize,
+} from "../actions/hybridPlace.js";
 import { matrixToScreen } from "../../stage/utils/hybridCoords.js";
+import { updateHybridElementRect } from "../actions/hybridUpdate.js";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -45,25 +51,11 @@ function focusHybridOverlayFromEvent(event) {
 }
 
 export function defaultGhostSize(typeRaw) {
-  const type = toText(typeRaw).toLowerCase();
-  if (type === "container") return { width: 320, height: 220 };
-  if (type === "text") return { width: 180, height: 36 };
-  return { width: 200, height: 70 };
+  return getDefaultHybridSize(typeRaw);
 }
 
 export function buildDiagramGhostPreview(typeRaw, pointRaw) {
-  const point = asObject(pointRaw);
-  const x = Number(point.x || 0);
-  const y = Number(point.y || 0);
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-  const size = defaultGhostSize(typeRaw);
-  return {
-    type: toText(typeRaw).toLowerCase() || "rect",
-    x: Math.round((x - (size.width / 2)) * 10) / 10,
-    y: Math.round((y - (size.height / 2)) * 10) / 10,
-    w: size.width,
-    h: size.height,
-  };
+  return buildHybridGhost(typeRaw, pointRaw);
 }
 
 export function projectDiagramGhostPreview(ghostRaw, matrixRaw) {
@@ -318,22 +310,7 @@ export default function useHybridToolsController({
   const applyElementRect = useCallback((prevRaw, elementIdRaw, rectRaw) => {
     const elementId = toText(elementIdRaw);
     if (!elementId) return normalizeHybridV2Doc(prevRaw);
-    const rect = asObject(rectRaw);
-    const prev = normalizeHybridV2Doc(prevRaw);
-    return {
-      ...prev,
-      elements: asArray(prev.elements).map((rowRaw) => {
-        const row = asObject(rowRaw);
-        if (toText(row.id) !== elementId) return row;
-        return {
-          ...row,
-          x: Number(rect.x || row.x || 0),
-          y: Number(rect.y || row.y || 0),
-          w: Number(rect.w || row.w || 0),
-          h: Number(rect.h || row.h || 0),
-        };
-      }),
-    };
+    return updateHybridElementRect(prevRaw, elementId, rectRaw);
   }, []);
 
   const flushPendingTransform = useCallback((fallbackSource = "hybrid_v2_transform_flush") => {
@@ -401,31 +378,15 @@ export default function useHybridToolsController({
       const prev = normalizeHybridV2Doc(prevRaw);
       const view = asObject(prev.view);
       const layerId = toText(view.active_layer_id || prev.layers?.[0]?.id || "L1") || "L1";
-      const type = ["text", "note", "container", "rect"].includes(toText(typeRaw).toLowerCase()) ? toText(typeRaw).toLowerCase() : "rect";
-      const size = defaultGhostSize(type);
       return {
         ...prev,
         elements: [
           ...asArray(prev.elements),
-          {
+          buildHybridElementAt(typeRaw, { x, y }, {
             id: createdId,
             layer_id: layerId,
             parent_id: null,
-            type,
-            is_container: type === "container",
-            visible: true,
-            x: Math.round((x - (size.width / 2)) * 10) / 10,
-            y: Math.round((y - (size.height / 2)) * 10) / 10,
-            w: size.width,
-            h: size.height,
-            text: type === "text" ? "Text" : (type === "container" ? "Container" : ""),
-            style: {
-              stroke: "#334155",
-              fill: type === "note" ? "#fff7d6" : (type === "container" ? "#f1f5f9" : "#f8fafc"),
-              radius: 8,
-              fontSize: 12,
-            },
-          },
+          }),
         ],
       };
     }, "hybrid_v2_create_element");

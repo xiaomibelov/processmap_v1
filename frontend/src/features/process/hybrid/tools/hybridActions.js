@@ -1,5 +1,9 @@
 import { normalizeHybridV2Doc } from "../hybridLayerV2.js";
 import { deleteHybridIds as deleteHybridIdsDetailed } from "../actions/hybridDelete.js";
+import {
+  setHybridItemVisible,
+  updateHybridText,
+} from "../actions/hybridUpdate.js";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -22,41 +26,18 @@ export function deleteHybridIds(hybridRaw, idsRaw) {
 }
 
 export function renameHybridText(hybridRaw, idRaw, nextTextRaw) {
-  const doc = normalizeHybridV2Doc(hybridRaw);
-  const id = toText(idRaw);
-  if (!id) return doc;
-  const nextText = String(nextTextRaw ?? "");
-  return normalizeHybridV2Doc({
-    ...doc,
-    elements: asArray(doc.elements).map((rowRaw) => {
-      const row = asObject(rowRaw);
-      if (toText(row.id) !== id) return row;
-      return {
-        ...row,
-        text: nextText,
-      };
-    }),
-  });
+  return updateHybridText(hybridRaw, idRaw, nextTextRaw);
 }
 
 export function setHybridIdsVisible(hybridRaw, idsRaw, visibleRaw) {
   const doc = normalizeHybridV2Doc(hybridRaw);
   const ids = new Set(normalizeIdList(idsRaw));
   if (!ids.size) return doc;
-  const visible = !!visibleRaw;
-  return normalizeHybridV2Doc({
-    ...doc,
-    elements: asArray(doc.elements).map((rowRaw) => {
-      const row = asObject(rowRaw);
-      if (!ids.has(toText(row.id))) return row;
-      return { ...row, visible };
-    }),
-    edges: asArray(doc.edges).map((rowRaw) => {
-      const row = asObject(rowRaw);
-      if (!ids.has(toText(row.id))) return row;
-      return { ...row, visible };
-    }),
+  let next = doc;
+  ids.forEach((id) => {
+    next = setHybridItemVisible(next, id, visibleRaw);
   });
+  return next;
 }
 
 export function collectHybridLayerIdsForIds(hybridRaw, idsRaw) {

@@ -93,7 +93,7 @@ export default function useSessionMetaPersist({
       });
       const msg = shortErr(syncRes?.error || "Не удалось сохранить Hybrid Layer.");
       setGenErr(msg);
-      return { ok: false, error: msg };
+      return { ok: false, error: msg, status: Number(syncRes?.status || 0) };
     }
     if (syncRes.session && typeof syncRes.session === "object") {
       onSessionSync?.({
@@ -145,7 +145,7 @@ export default function useSessionMetaPersist({
       });
       const msg = shortErr(syncRes?.error || "Не удалось сохранить Hybrid v2.");
       setGenErr(msg);
-      return { ok: false, error: msg };
+      return { ok: false, error: msg, status: Number(syncRes?.status || 0) };
     }
     if (syncRes.session && typeof syncRes.session === "object") {
       onSessionSync?.({
@@ -197,7 +197,7 @@ export default function useSessionMetaPersist({
       });
       const msg = shortErr(syncRes?.error || "Не удалось сохранить Draw.io.");
       setGenErr(msg);
-      return { ok: false, error: msg };
+      return { ok: false, error: msg, status: Number(syncRes?.status || 0) };
     }
     if (syncRes.session && typeof syncRes.session === "object") {
       onSessionSync?.({

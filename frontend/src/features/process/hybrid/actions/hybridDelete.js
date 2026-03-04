@@ -57,7 +57,7 @@ export function deleteHybridIds(hybridV2Raw, idsToDeleteRaw) {
   const nextBindings = asArray(hybridV2.bindings).filter((rowRaw) => {
     const hybridId = toText(asObject(rowRaw).hybrid_id);
     if (!hybridId) return false;
-    return !deletedElementIdSet.has(hybridId) && !deletedEdgeIdSet.has(hybridId);
+    return !idsToDelete.has(hybridId) && !deletedElementIdSet.has(hybridId) && !deletedEdgeIdSet.has(hybridId);
   });
 
   const nextHybridV2 = normalizeHybridV2Doc({
