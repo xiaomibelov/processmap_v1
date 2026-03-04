@@ -392,24 +392,29 @@ function parseDrawioSubsetWithoutDomParser(xmlTextRaw) {
       continue;
     }
 
-    if (isVertex && parent === "1") {
-      if (!layerIds.has(id)) {
-        layerIds.add(id);
-        layers.push({
-          id,
-          name: asText(attrs.value) || id,
-          visible: attrs.visible !== "0",
-          locked: false,
-          opacity: 1,
-        });
-      }
-      match = cellRegex.exec(xmlText);
-      continue;
-    }
-
     if (isVertex) {
       const geomMatch = inner.match(/<mxGeometry\b([^>]*?)\/>/);
       const geomAttrs = parseXmlAttrs(geomMatch?.[1] || "");
+      const geomWidth = asNum(geomAttrs.width, 0);
+      const geomHeight = asNum(geomAttrs.height, 0);
+      const isLayerCell = parent === "1"
+        && Math.abs(geomWidth) < 0.0001
+        && Math.abs(geomHeight) < 0.0001
+        && !asText(attrs.style);
+      if (isLayerCell) {
+        if (!layerIds.has(id)) {
+          layerIds.add(id);
+          layers.push({
+            id,
+            name: asText(attrs.value) || id,
+            visible: attrs.visible !== "0",
+            locked: false,
+            opacity: 1,
+          });
+        }
+        match = cellRegex.exec(xmlText);
+        continue;
+      }
       const styleMap = parseMxStyle(attrs.style);
       const type = resolveElementTypeFromMxCell(
         { getAttribute: (k) => (k === "vertex" ? attrs.vertex : "") },
@@ -422,7 +427,7 @@ function parseDrawioSubsetWithoutDomParser(xmlTextRaw) {
       }
       elements.push({
         id,
-        layer_id: parent || HYBRID_V2_DEFAULT_LAYER_ID,
+        layer_id: parent && parent !== "1" ? parent : HYBRID_V2_DEFAULT_LAYER_ID,
         type,
         x: asNum(geomAttrs.x, 0),
         y: asNum(geomAttrs.y, 0),
@@ -552,23 +557,26 @@ export function importHybridV2FromDrawioXml(xmlTextRaw) {
     const isEdge = cell.getAttribute("edge") === "1";
     const styleMap = parseMxStyle(cell.getAttribute("style"));
 
-    if (isVertex && parent === "1") {
-      if (layerIds.has(id)) return;
-      layerIds.add(id);
-      layers.push({
-        id,
-        name: asText(cell.getAttribute("value")) || id,
-        visible: cell.getAttribute("visible") !== "0",
-        locked: false,
-        opacity: 1,
-      });
-      return;
-    }
-
     if (isVertex) {
       const geom = parseCellGeometry(cell.querySelector("mxGeometry"));
       if (!geom) {
         skipped.push(`vertex_no_geometry:${id}`);
+        return;
+      }
+      const isLayerCell = parent === "1"
+        && Math.abs(asNum(geom.w, 0)) < 0.0001
+        && Math.abs(asNum(geom.h, 0)) < 0.0001
+        && !asText(cell.getAttribute("style"));
+      if (isLayerCell) {
+        if (layerIds.has(id)) return;
+        layerIds.add(id);
+        layers.push({
+          id,
+          name: asText(cell.getAttribute("value")) || id,
+          visible: cell.getAttribute("visible") !== "0",
+          locked: false,
+          opacity: 1,
+        });
         return;
       }
       const type = resolveElementTypeFromMxCell(cell, styleMap);
@@ -576,7 +584,7 @@ export function importHybridV2FromDrawioXml(xmlTextRaw) {
         skipped.push(`vertex_unsupported:${id}`);
         return;
       }
-      const layerId = parent || HYBRID_V2_DEFAULT_LAYER_ID;
+      const layerId = parent && parent !== "1" ? parent : HYBRID_V2_DEFAULT_LAYER_ID;
       elements.push({
         id,
         layer_id: layerId,

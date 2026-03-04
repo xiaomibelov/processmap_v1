@@ -84,13 +84,15 @@ import {
 } from "../features/process/hybrid/hybridLayerUi";
 import {
   docToComparableJson,
-  exportHybridV2ToDrawioXml,
   getHybridBindingsByBpmnId,
-  importHybridV2FromDrawioXml,
   makeHybridV2Id,
   migrateHybridV1ToV2,
   normalizeHybridV2Doc,
 } from "../features/process/hybrid/hybridLayerV2";
+import {
+  exportHybridToDrawio,
+  importDrawioToHybrid,
+} from "../features/process/hybrid/drawioCodec";
 import { buildManualPathReportSteps } from "./process/interview/services/pathReport";
 
 function toText(value) {
@@ -5418,7 +5420,7 @@ export default function ProcessStage({
   }
 
   function exportHybridV2Drawio() {
-    const xml = exportHybridV2ToDrawioXml(hybridV2DocRef.current);
+    const xml = exportHybridToDrawio(hybridV2DocRef.current);
     const stamp = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14) || Date.now();
     const ok = downloadTextFile(`hybrid_${sid || "session"}_${stamp}.drawio`, xml, "application/xml;charset=utf-8");
     if (ok) {
@@ -5433,14 +5435,27 @@ export default function ProcessStage({
     const file = fileRaw instanceof File ? fileRaw : null;
     if (!file) return;
     const text = await file.text().catch(() => "");
-    const imported = importHybridV2FromDrawioXml(text);
-    const nextDoc = normalizeHybridV2Doc(imported.doc);
+    const imported = await importDrawioToHybrid(text, {
+      baseDoc: hybridV2DocRef.current,
+      preserveBindings: true,
+    });
+    const nextDoc = normalizeHybridV2Doc(imported.hybridV2);
     setHybridV2Doc(nextDoc);
     hybridV2DocRef.current = nextDoc;
     setHybridV2ActiveId("");
     setHybridV2BindPickMode(false);
     const skippedCount = asArray(imported.skipped).length;
-    setHybridV2ImportNotice(skippedCount ? `Imported with skipped: ${skippedCount}` : "Imported");
+    const warningsCount = asArray(imported.warnings).length;
+    const importedSummary = `Imported: ${Number(asArray(nextDoc.elements).length)} elements, ${Number(asArray(nextDoc.edges).length)} edges, ${Number(asArray(nextDoc.layers).length)} layers`;
+    const skippedPreview = asArray(imported.skipped).slice(0, 3).map((row) => toText(row)).filter(Boolean).join(", ");
+    const warningsPreview = asArray(imported.warnings).slice(0, 3).map((row) => toText(row)).filter(Boolean).join(", ");
+    const detail = [
+      skippedCount ? `Skipped: ${skippedCount}` : "",
+      warningsCount ? `Warnings: ${warningsCount}` : "",
+      skippedPreview ? `Skipped reasons: ${skippedPreview}` : "",
+      warningsPreview ? `Warnings: ${warningsPreview}` : "",
+    ].filter(Boolean).join(" · ");
+    setHybridV2ImportNotice(detail ? `${importedSummary} · ${detail}` : importedSummary);
     void persistHybridV2Doc(nextDoc, { source: "hybrid_v2_import_drawio" });
   }
 
