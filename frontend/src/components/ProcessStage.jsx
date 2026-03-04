@@ -74,7 +74,7 @@ import {
   matrixToDiagram,
   matrixToScreen,
 } from "../features/process/stage/utils/hybridCoords";
-import HybridOverlayRenderer from "../features/process/stage/renderers/HybridOverlayRenderer";
+import HybridOverlayRenderer from "../features/process/hybrid/renderers/HybridOverlayRenderer";
 import useSessionMetaPersist from "../features/process/stage/controllers/useSessionMetaPersist";
 import useProcessStageActionsController from "../features/process/stage/controllers/useProcessStageActionsController";
 import useProcessStageShellController from "../features/process/stage/controllers/useProcessStageShellController";
