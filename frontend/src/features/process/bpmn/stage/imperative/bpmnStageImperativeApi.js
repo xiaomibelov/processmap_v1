@@ -82,6 +82,41 @@ function readElementBounds(inst, elementIdRaw) {
   }
 }
 
+function getSelectionService(inst) {
+  try {
+    return inst?.get?.("selection") || null;
+  } catch {
+    return null;
+  }
+}
+
+function getRegistryService(inst) {
+  try {
+    return inst?.get?.("elementRegistry") || null;
+  } catch {
+    return null;
+  }
+}
+
+function readSelectedElementIds(inst) {
+  const selection = getSelectionService(inst);
+  const items = asArray(selection?.get?.());
+  return Array.from(new Set(items.map((item) => toText(item?.id)).filter(Boolean)));
+}
+
+function resolveSelectionPayload(inst, idsRaw) {
+  const registry = getRegistryService(inst);
+  const ids = Array.from(new Set(asArray(idsRaw).map((row) => toText(row)).filter(Boolean)));
+  const elements = ids
+    .map((id) => registry?.get?.(id))
+    .filter((item) => !!item);
+  return {
+    ids,
+    elements,
+    foundIds: elements.map((item) => toText(item?.id)).filter(Boolean),
+  };
+}
+
 function resolveCtx(ctxBase) {
   if (typeof ctxBase === "function") return asObject(ctxBase());
   return asObject(ctxBase);
@@ -137,6 +172,11 @@ export function createBpmnStageImperativeApi(ctxBase) {
 
   const getActiveInstance = () => (values.view === "editor" ? refs.modelerRef?.current : refs.viewerRef?.current);
   const getActiveLoader = () => (values.view === "editor" ? callbacks.ensureModeler?.() : callbacks.ensureViewer?.());
+  const getInstanceKind = (inst) => {
+    if (inst === refs.modelerRef?.current) return "editor";
+    if (inst === refs.viewerRef?.current) return "viewer";
+    return values.view === "editor" ? "editor" : "viewer";
+  };
   const isInstanceReady = (inst) => {
     if (!inst) return false;
     if (inst === refs.modelerRef?.current) {
@@ -362,6 +402,43 @@ export function createBpmnStageImperativeApi(ctxBase) {
     },
     flashNode: (nodeId, type = "accent", options = {}) => callbacks.flashNode?.(nodeId, type, options),
     flashBadge: (nodeId, kind = "ai", options = {}) => callbacks.flashBadge?.(nodeId, kind, options),
+    getSelectedElementIds: (options = {}) => {
+      const preferred = toText(options?.kind || options?.view || options?.mode).toLowerCase();
+      const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
+      return readSelectedElementIds(inst);
+    },
+    selectElements: (idsRaw, options = {}) => {
+      const preferred = toText(options?.kind || options?.view || options?.mode).toLowerCase();
+      const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
+      if (!inst) {
+        return { ok: false, error: "instance_not_ready", count: 0, ids: [] };
+      }
+      const selection = getSelectionService(inst);
+      if (!selection || typeof selection.select !== "function") {
+        return { ok: false, error: "selection_api_unavailable", count: 0, ids: [] };
+      }
+      const payload = resolveSelectionPayload(inst, idsRaw);
+      if (!payload.ids.length) {
+        selection.select([]);
+        return { ok: false, error: "no_ids", count: 0, ids: [] };
+      }
+      if (!payload.elements.length) {
+        return { ok: false, error: "elements_not_found", count: 0, ids: payload.ids };
+      }
+      selection.select(payload.elements);
+      if (options.focusFirst !== false && payload.foundIds[0]) {
+        callbacks.focusNodeOnInstance?.(inst, getInstanceKind(inst), payload.foundIds[0], {
+          markerClass: toText(options.markerClass),
+          source: toText(options.source || "template_apply"),
+        });
+      }
+      return {
+        ok: true,
+        count: payload.foundIds.length,
+        ids: payload.foundIds,
+        missingIds: payload.ids.filter((id) => !payload.foundIds.includes(id)),
+      };
+    },
     captureTemplatePack: async (options = {}) => {
       let inst = refs.modelerRef?.current;
       if (!inst) {

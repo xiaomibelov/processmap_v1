@@ -1,4 +1,5 @@
 import SidebarSection from "./SidebarSection";
+import TldrCard from "../../features/tldr/ui/TldrCard";
 
 export default function TemplatesAndTldrSection({
   open,
@@ -48,31 +49,14 @@ export default function TemplatesAndTldrSection({
             {templateErr ? <div className="mt-2 text-[11px] text-danger">{templateErr}</div> : null}
           </div>
 
-          <div className="mt-3 border-t border-border/70 pt-2" data-testid="notes-tldr-panel">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">TL;DR</div>
-            {selectedElementSummary ? (
-              <div className="mt-1 rounded-md border border-border bg-panel2 px-2 py-2 text-xs whitespace-pre-wrap" data-testid="notes-tldr-summary">
-                {selectedElementSummary}
-              </div>
-            ) : (
-              <div className="mt-1 rounded-md border border-dashed border-border px-2 py-2 text-xs text-muted">
-                Краткое резюме пока не сформировано.
-              </div>
-            )}
-            <button
-              type="button"
-              className="primaryBtn mt-2 w-full"
-              onClick={() => {
-                void onGenerateTldr?.();
-              }}
-              disabled={!!disabled || !!tldrBusy}
-              data-testid="notes-tldr-generate"
-            >
-              {tldrBusy ? "Сжимаю..." : "Сжать заметку"}
-            </button>
-            {tldrErr ? <div className="mt-2 text-[11px] text-danger">{tldrErr}</div> : null}
-            {!tldrErr && tldrStatus ? <div className="mt-2 text-[11px] text-success">{tldrStatus}</div> : null}
-          </div>
+          <TldrCard
+            summary={selectedElementSummary}
+            busy={tldrBusy}
+            error={tldrErr}
+            status={tldrStatus}
+            disabled={disabled}
+            onGenerate={onGenerateTldr}
+          />
         </>
       )}
     </>

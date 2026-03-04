@@ -268,37 +268,39 @@ export default function TopBar({
           </button>
         </div>
 
-        <div className="topGroup flex shrink-0 items-center gap-2">
-          <select
-            className="select topSelect topSelect--org h-9 min-h-0 w-36 min-w-[9rem] max-w-[12rem] py-0 text-sm md:w-44 md:max-w-[14rem]"
-            value={activeOrgId || ""}
-            title={selectedOrgTitle}
-            onChange={(e) => onOrgChange?.(e.target.value)}
-            disabled={!orgList.length || orgList.length < 2}
-            data-testid="topbar-org-select"
-          >
-            <option value="">{orgList.length ? "— выбрать org —" : "Org: default"}</option>
-            {orgList.map((org, idx) => {
-              const id = orgIdFrom(org);
-              return (
-                <option key={`${id || "org"}_${idx}`} value={id}>
-                  {orgTitleFrom(org)}
-                </option>
-              );
-            })}
-          </select>
-          {canOpenOrgSettings ? (
-            <button
-              type="button"
-              className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-3 py-0 text-sm"
-              onClick={() => onOpenOrgSettings?.()}
-              data-testid="topbar-org-settings-btn"
-              title="Настройки организации"
+        {!sessionId ? (
+          <div className="topGroup flex shrink-0 items-center gap-2">
+            <select
+              className="select topSelect topSelect--org h-9 min-h-0 w-36 min-w-[9rem] max-w-[12rem] py-0 text-sm md:w-44 md:max-w-[14rem]"
+              value={activeOrgId || ""}
+              title={selectedOrgTitle}
+              onChange={(e) => onOrgChange?.(e.target.value)}
+              disabled={!orgList.length || orgList.length < 2}
+              data-testid="topbar-org-select"
             >
-              Организация
-            </button>
-          ) : null}
-        </div>
+              <option value="">{orgList.length ? "— выбрать организацию —" : "Организация по умолчанию"}</option>
+              {orgList.map((org, idx) => {
+                const id = orgIdFrom(org);
+                return (
+                  <option key={`${id || "org"}_${idx}`} value={id}>
+                    {orgTitleFrom(org)}
+                  </option>
+                );
+              })}
+            </select>
+            {canOpenOrgSettings ? (
+              <button
+                type="button"
+                className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-3 py-0 text-sm"
+                onClick={() => onOpenOrgSettings?.()}
+                data-testid="topbar-org-settings-btn"
+                title="Настройки организации"
+              >
+                Организация
+              </button>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="topGroup flex shrink-0 items-center gap-2">
           <select

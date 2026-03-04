@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  elementNoteSummaryForId,
   elementNotesForId,
   normalizeElementNotesMap,
 } from "../features/notes/elementNotes";
@@ -37,6 +36,7 @@ import RobotMetaSection from "./sidebar/RobotMetaSection";
 import AiSection from "./sidebar/AiSection";
 import NotesSection from "./sidebar/NotesSection";
 import { buildNodePathUpdatesFromFlowMeta } from "./sidebar/nodePathImport";
+import { buildTldrFromSession } from "../features/tldr/selectors/buildTldrFromSession";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -840,10 +840,11 @@ export default function NotesPanel({
     () => elementNotesForId(notesByElement, selectedElementId),
     [notesByElement, selectedElementId],
   );
-  const selectedElementSummary = useMemo(
-    () => elementNoteSummaryForId(notesByElement, selectedElementId),
-    [notesByElement, selectedElementId],
+  const selectedTldr = useMemo(
+    () => buildTldrFromSession(draft, selectedElementId, { elementDraftText: elementText }),
+    [draft, elementText, selectedElementId],
   );
+  const selectedElementSummary = selectedTldr.summary;
   const aiQuestionsByElement = useMemo(
     () => normalizeAiQuestionsByElementMap(draft?.interview?.ai_questions_by_element || draft?.interview?.aiQuestionsByElementId),
     [draft?.interview?.ai_questions_by_element, draft?.interview?.aiQuestionsByElementId],
@@ -1687,12 +1688,7 @@ export default function NotesPanel({
       return;
     }
 
-    const sourceText = [
-      ...selectedElementNotes.map((item) => str(item?.text || item?.notes || "")),
-      str(elementText),
-    ]
-      .filter(Boolean)
-      .join("\n");
+    const sourceText = str(selectedTldr.sourceText);
     if (!sourceText) {
       setTldrErr("Добавьте заметку узла перед генерацией TL;DR.");
       return;

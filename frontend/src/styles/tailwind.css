@@ -664,6 +664,21 @@
     cursor: move;
   }
 
+  .hybridV2Svg.isEdit .hybridV2Shape.isLocked {
+    cursor: not-allowed;
+  }
+
+  .hybridV2SelectionOutline {
+    fill: none;
+    stroke: hsl(var(--accent));
+    stroke-width: 1.5;
+    stroke-dasharray: 6 4;
+  }
+
+  .hybridV2SelectionOutline.isLocked {
+    stroke: hsl(var(--warning));
+  }
+
   .hybridV2Shape.isActive rect {
     stroke-width: 2;
     filter: drop-shadow(0 0 4px rgba(37, 99, 235, 0.35));
@@ -687,6 +702,15 @@
     stroke: hsl(var(--accent));
     stroke-width: 1;
     cursor: nwse-resize;
+  }
+
+  .drawioLayerOverlaySvg {
+    user-select: none;
+  }
+
+  .drawioLayerOverlaySvg svg {
+    display: block;
+    overflow: visible;
   }
 
   .bpmnStack {

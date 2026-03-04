@@ -1,4 +1,5 @@
 import React from "react";
+import { canResizeHybridElement } from "../../hybrid/tools/hybridTransforms.js";
 
 function toText(value) {
   return String(value || "").trim();
@@ -12,6 +13,15 @@ function asObject(value) {
   return value && typeof value === "object" ? value : {};
 }
 
+function renderTextLines(textRaw, x, y, lineHeight) {
+  const lines = String(textRaw || "").split(/\r?\n/);
+  return lines.map((line, idx) => (
+    <tspan key={`line_${idx}`} x={x} dy={idx === 0 ? 0 : lineHeight}>
+      {line || " "}
+    </tspan>
+  ));
+}
+
 export default function HybridOverlayRenderer({
   visible,
   modeEffective,
@@ -19,12 +29,24 @@ export default function HybridOverlayRenderer({
   opacityValue,
   overlayRef,
   onOverlayPointerDown,
+  onOverlayPointerMove,
+  onOverlayPointerLeave,
+  onOverlayContextMenu,
   v2Renderable,
   v2ActiveId,
+  v2SelectedIds,
   v2PlaybackHighlightedIds,
   v2BindingByHybridId,
   onV2ElementPointerDown,
+  onV2ElementContextMenu,
+  onV2ElementDoubleClick,
   onV2ResizeHandlePointerDown,
+  v2GhostPreview,
+  v2ArrowPreview,
+  v2TextEditor,
+  onV2TextEditorChange,
+  onV2TextEditorCommit,
+  onV2TextEditorCancel,
   legacyRows,
   legacyActiveElementId,
   debugEnabled,
@@ -43,7 +65,11 @@ export default function HybridOverlayRenderer({
       ref={overlayRef}
       style={{ "--hybrid-layer-opacity": String(Math.max(0.2, Math.min(1, opacityValue))) }}
       data-testid="hybrid-layer-overlay"
+      tabIndex={-1}
       onMouseDown={onOverlayPointerDown}
+      onMouseMove={onOverlayPointerMove}
+      onMouseLeave={onOverlayPointerLeave}
+      onContextMenu={onOverlayContextMenu}
     >
       {modeEffective === "edit" && !uiPrefs.lock ? (
         <div
@@ -71,7 +97,7 @@ export default function HybridOverlayRenderer({
         {asArray(v2Renderable?.edges).map((edgeRaw) => {
           const edge = asObject(edgeRaw);
           const edgeId = toText(edge.id);
-          const active = toText(v2ActiveId) === edgeId;
+          const active = toText(v2ActiveId) === edgeId || !!v2SelectedIds?.has?.(edgeId);
           const highlighted = v2PlaybackHighlightedIds?.has?.(edgeId);
           const style = asObject(edge.style);
           const stroke = toText(style.stroke) || "#2563eb";
@@ -88,15 +114,17 @@ export default function HybridOverlayRenderer({
               markerEnd="url(#hybridV2ArrowHead)"
               style={{ opacity: layerOpacity }}
               data-hybrid-element-id={edgeId}
+              data-selected={active ? "true" : "false"}
               data-testid="hybrid-v2-edge"
               onMouseDown={(event) => onV2ElementPointerDown(event, edgeId)}
+              onContextMenu={(event) => onV2ElementContextMenu(event, edgeId)}
             />
           );
         })}
         {asArray(v2Renderable?.elements).map((elementRaw) => {
           const element = asObject(elementRaw);
           const elementId = toText(element.id);
-          const active = toText(v2ActiveId) === elementId;
+          const active = toText(v2ActiveId) === elementId || !!v2SelectedIds?.has?.(elementId);
           const highlighted = v2PlaybackHighlightedIds?.has?.(elementId);
           const binding = asObject(v2BindingByHybridId?.[elementId]);
           const style = asObject(element.style);
@@ -108,15 +136,35 @@ export default function HybridOverlayRenderer({
           const fontSize = Math.max(10, Number(style.fontSize || 12) * Math.min(Number(element.scaleX || 1), Number(element.scaleY || 1)));
           const layerOpacity = Math.max(0.1, Math.min(1, Number(element.layerOpacity || 1)));
           const isContainer = element.is_container === true || toText(element.type) === "container";
+          const isLocked = asObject(element.layer).locked === true;
+          const canResize = canResizeHybridElement(element.type) && !isLocked;
           return (
             <g
               key={`hybrid_v2_element_${elementId}`}
-              className={`hybridV2Shape ${active ? "isActive" : ""} ${highlighted ? "isPlayback" : ""}`}
+              className={`hybridV2Shape ${active ? "isActive" : ""} ${highlighted ? "isPlayback" : ""} ${isLocked ? "isLocked" : ""}`}
               style={{ opacity: layerOpacity }}
               data-hybrid-element-id={elementId}
+              data-selected={active ? "true" : "false"}
+              data-locked={isLocked ? "true" : "false"}
               data-testid="hybrid-v2-shape"
               onMouseDown={(event) => onV2ElementPointerDown(event, elementId)}
+              onContextMenu={(event) => onV2ElementContextMenu(event, elementId)}
+              onDoubleClick={(event) => onV2ElementDoubleClick(event, elementId)}
             >
+              <title>{isLocked ? "Locked" : (toText(element.text) || elementId)}</title>
+              {active ? (
+                <rect
+                  x={x - 4}
+                  y={y - 4}
+                  width={w + 8}
+                  height={h + 8}
+                  rx={Math.max(4, radius + 2)}
+                  ry={Math.max(4, radius + 2)}
+                  className={`hybridV2SelectionOutline ${isLocked ? "isLocked" : ""}`}
+                  pointerEvents="none"
+                  data-testid="hybrid-v2-selection-outline"
+                />
+              ) : null}
               {toText(element.type) === "text" ? (
                 <text
                   x={x + 6}
@@ -124,7 +172,7 @@ export default function HybridOverlayRenderer({
                   fill={toText(style.stroke) || "#334155"}
                   fontSize={fontSize}
                 >
-                  {toText(element.text) || "Text"}
+                  {renderTextLines(toText(element.text) || "Text", x + 6, y + Math.max(16, h / 2), Math.max(14, fontSize + 2))}
                 </text>
               ) : (
                 <rect
@@ -156,7 +204,7 @@ export default function HybridOverlayRenderer({
                   fill="#0f172a"
                   fontSize={fontSize}
                 >
-                  {toText(element.text) || ""}
+                  {renderTextLines(toText(element.text) || "", x + 8, y + 20, Math.max(14, fontSize + 2))}
                 </text>
               ) : null}
               {toText(binding.bpmn_id || "") ? (
@@ -169,7 +217,7 @@ export default function HybridOverlayRenderer({
                   🔗
                 </text>
               ) : null}
-              {modeEffective === "edit" && active ? (
+              {modeEffective === "edit" && active && canResize ? (
                 <>
                   {[
                     { id: "nw", hx: x, hy: y },
@@ -186,6 +234,7 @@ export default function HybridOverlayRenderer({
                       className="hybridV2ResizeHandle"
                       data-hybrid-element-id={elementId}
                       data-handle={handle.id}
+                      data-testid="hybrid-v2-resize-handle"
                       onMouseDown={(event) => onV2ResizeHandlePointerDown(event, elementId, handle.id)}
                     />
                   ))}
@@ -194,7 +243,71 @@ export default function HybridOverlayRenderer({
             </g>
           );
         })}
+        {v2GhostPreview ? (
+          <rect
+            x={Number(v2GhostPreview.left || 0)}
+            y={Number(v2GhostPreview.top || 0)}
+            width={Number(v2GhostPreview.width || 0)}
+            height={Number(v2GhostPreview.height || 0)}
+            rx="8"
+            ry="8"
+            fill="rgba(37,99,235,0.08)"
+            stroke="#2563eb"
+            strokeDasharray="6 4"
+            pointerEvents="none"
+            data-testid="hybrid-v2-ghost"
+          />
+        ) : null}
+        {v2ArrowPreview ? (
+          <line
+            x1={Number(v2ArrowPreview.x1 || 0)}
+            y1={Number(v2ArrowPreview.y1 || 0)}
+            x2={Number(v2ArrowPreview.x2 || 0)}
+            y2={Number(v2ArrowPreview.y2 || 0)}
+            stroke="#2563eb"
+            strokeWidth="2"
+            strokeDasharray="6 4"
+            pointerEvents="none"
+            data-testid="hybrid-v2-arrow-preview"
+          />
+        ) : null}
       </svg>
+      {v2TextEditor ? (
+        <div
+          className="absolute"
+          style={{
+            left: `${Math.round(Number(v2TextEditor.left || 0))}px`,
+            top: `${Math.round(Number(v2TextEditor.top || 0))}px`,
+            width: `${Math.max(140, Math.round(Number(v2TextEditor.width || 0)))}px`,
+            minHeight: `${Math.max(44, Math.round(Number(v2TextEditor.height || 0)))}px`,
+            zIndex: 12,
+          }}
+          data-testid="hybrid-v2-text-editor-shell"
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <textarea
+            className="input w-full resize-none rounded-lg border border-accent/50 bg-panel px-2 py-1 text-sm text-fg shadow-lg outline-none"
+            value={String(v2TextEditor.value ?? "")}
+            autoFocus
+            spellCheck={false}
+            rows={Math.max(2, Math.ceil(Number(v2TextEditor.height || 44) / 24))}
+            onChange={(event) => onV2TextEditorChange?.(event.target.value)}
+            onBlur={() => onV2TextEditorCommit?.("hybrid_v2_text_blur")}
+            onKeyDown={(event) => {
+              if (String(event.key || "") === "Escape") {
+                event.preventDefault();
+                onV2TextEditorCancel?.();
+                return;
+              }
+              if (String(event.key || "") === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                onV2TextEditorCommit?.("hybrid_v2_text_enter");
+              }
+            }}
+            data-testid="hybrid-v2-text-editor"
+          />
+        </div>
+      ) : null}
       {asArray(legacyRows).map((rowRaw) => {
         const item = asObject(rowRaw);
         const elementId = toText(item?.elementId);

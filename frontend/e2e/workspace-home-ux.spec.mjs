@@ -87,10 +87,10 @@ test("workspace home renders overview CTA and no getting started block", async (
   await page.goto("/app");
 
   await expect(page.getByTestId("workspace-dashboard")).toBeVisible();
-  await expect(page.getByText("Workspace / Projects / Sessions")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Create Project" }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Create Session" }).first()).toBeVisible();
-  await expect(page.getByText("Recent Sessions")).toBeVisible();
+  await expect(page.getByText("Рабочее пространство / Проекты / Сессии")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Создать проект" }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Создать сессию" }).first()).toBeVisible();
+  await expect(page.getByText("Последние сессии")).toBeVisible();
   await expect(page.getByTestId("workspace-open-session")).toHaveCount(2);
   await expect(page.getByText("Как начать")).toHaveCount(0);
 });

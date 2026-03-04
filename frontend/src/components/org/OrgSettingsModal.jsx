@@ -184,9 +184,9 @@ export default function OrgSettingsModal({
     >
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" className={tabButtonClass("members")} onClick={() => setTab("members")}>Members</button>
-          <button type="button" className={tabButtonClass("invites")} onClick={() => setTab("invites")}>Invites</button>
-          <button type="button" className={tabButtonClass("audit")} onClick={() => setTab("audit")}>Audit</button>
+          <button type="button" className={tabButtonClass("members")} onClick={() => setTab("members")}>Участники</button>
+          <button type="button" className={tabButtonClass("invites")} onClick={() => setTab("invites")}>Приглашения</button>
+          <button type="button" className={tabButtonClass("audit")} onClick={() => setTab("audit")}>Аудит</button>
         </div>
 
         {error ? <div className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div> : null}
@@ -199,10 +199,10 @@ export default function OrgSettingsModal({
               <table className="min-w-full text-xs">
                 <thead className="bg-panel2/70 text-muted">
                   <tr>
-                    <th className="px-2 py-1 text-left">User</th>
+                    <th className="px-2 py-1 text-left">Пользователь</th>
                     <th className="px-2 py-1 text-left">Email</th>
-                    <th className="px-2 py-1 text-left">Role</th>
-                    <th className="px-2 py-1 text-left">Created</th>
+                    <th className="px-2 py-1 text-left">Роль</th>
+                    <th className="px-2 py-1 text-left">Создан</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -260,7 +260,7 @@ export default function OrgSettingsModal({
                   type="number"
                   min="1"
                   max="60"
-                  placeholder="TTL"
+                  placeholder="Срок (дни)"
                   value={inviteTtl}
                   onChange={(e) => setInviteTtl(e.target.value)}
                 />
@@ -271,7 +271,7 @@ export default function OrgSettingsModal({
             )}
             {lastInviteToken ? (
               <div className="rounded-lg border border-accent/40 bg-accentSoft/15 px-3 py-2 text-xs">
-                Invite token: <code>{lastInviteToken}</code>
+                Токен приглашения: <code>{lastInviteToken}</code>
               </div>
             ) : null}
             {!lastInviteToken && lastInviteNotice ? (
@@ -284,10 +284,10 @@ export default function OrgSettingsModal({
                 <thead className="bg-panel2/70 text-muted">
                   <tr>
                     <th className="px-2 py-1 text-left">Email</th>
-                    <th className="px-2 py-1 text-left">Role</th>
-                    <th className="px-2 py-1 text-left">Status</th>
-                    <th className="px-2 py-1 text-left">Expires</th>
-                    <th className="px-2 py-1 text-left">Action</th>
+                    <th className="px-2 py-1 text-left">Роль</th>
+                    <th className="px-2 py-1 text-left">Статус</th>
+                    <th className="px-2 py-1 text-left">Истекает</th>
+                    <th className="px-2 py-1 text-left">Действие</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -304,7 +304,7 @@ export default function OrgSettingsModal({
                         <td className="px-2 py-1">
                           {canManageInvites && isActive ? (
                             <button type="button" className="secondaryBtn h-8 min-h-0 px-2 py-0 text-xs" onClick={() => void handleRevokeInvite(inviteId)}>
-                              Revoke
+                              Отозвать
                             </button>
                           ) : "-"}
                         </td>
@@ -322,12 +322,12 @@ export default function OrgSettingsModal({
             <div className="grid grid-cols-1 gap-2 md:grid-cols-12">
               <input
                 className="input md:col-span-4"
-                placeholder="action filter"
+                placeholder="Фильтр по действию"
                 value={auditAction}
                 onChange={(e) => setAuditAction(e.target.value)}
               />
               <select className="select md:col-span-3" value={auditStatus} onChange={(e) => setAuditStatus(e.target.value)}>
-                <option value="">status: all</option>
+                <option value="">Статус: все</option>
                 <option value="ok">ok</option>
                 <option value="fail">fail</option>
               </select>
@@ -337,11 +337,11 @@ export default function OrgSettingsModal({
               <table className="min-w-full text-xs">
                 <thead className="bg-panel2/70 text-muted">
                   <tr>
-                    <th className="px-2 py-1 text-left">TS</th>
-                    <th className="px-2 py-1 text-left">Actor</th>
-                    <th className="px-2 py-1 text-left">Action</th>
-                    <th className="px-2 py-1 text-left">Entity</th>
-                    <th className="px-2 py-1 text-left">Status</th>
+                    <th className="px-2 py-1 text-left">Время</th>
+                    <th className="px-2 py-1 text-left">Исполнитель</th>
+                    <th className="px-2 py-1 text-left">Действие</th>
+                    <th className="px-2 py-1 text-left">Сущность</th>
+                    <th className="px-2 py-1 text-left">Статус</th>
                   </tr>
                 </thead>
                 <tbody>

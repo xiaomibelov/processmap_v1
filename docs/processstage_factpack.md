@@ -2,7 +2,7 @@
 
 ## 1) Размер и структура
 - File: `frontend/src/components/ProcessStage.jsx`
-- Lines: `9361`
+- Lines: `7564`
 - `useState`: `89`
 - `useRef`: `44`
 - `useEffect/useLayoutEffect`: `56`
@@ -84,3 +84,25 @@
 - Playback controls and manual gateway popover still work.
 - Hybrid v1/v2 persist on reload still works.
 - Reports/RobotMeta/Paths buttons remain functional.
+
+## 6) Теперь маршруты и точки входа живут здесь
+
+- Route map / URL truth: `docs/route-map.md`
+- Workspace routing shell: `frontend/src/RootApp.jsx`
+- Org / project / session navigation: `frontend/src/App.jsx`, `frontend/src/features/auth/AuthProvider.jsx`, `frontend/src/lib/api.js`
+- Process shell tab orchestration: `frontend/src/features/process/hooks/useProcessOrchestrator.js`, `frontend/src/features/process/hooks/useProcessTabs.js`
+- BPMN canvas wiring: `frontend/src/features/process/stage/hooks/useBpmnCanvasController.js`
+- Overlay transform / viewbox sync: `frontend/src/features/process/stage/hooks/useDiagramOverlayTransform.js`
+- Playback orchestration: `frontend/src/features/process/stage/hooks/usePlaybackController.js`
+- Hybrid viewport/layout wiring: `frontend/src/features/process/stage/hooks/useHybridLayerViewportController.js`
+- Diagram action popover wiring: `frontend/src/features/process/stage/hooks/useDiagramActionPopovers.js`
+- Hybrid renderer / settings entry points: `frontend/src/features/process/stage/renderers/HybridOverlayRenderer.jsx`, `frontend/src/features/process/stage/components/LayersPopover.jsx`, `frontend/src/features/process/hybrid/tools/*`
+- Templates orchestration: `frontend/src/features/templates/model/useTemplatesStore.js`, `frontend/src/features/templates/ui/*`, `frontend/src/features/templates/services/*`
+- TL;DR derivation / render: `frontend/src/features/tldr/selectors/buildTldrFromSession.js`, `frontend/src/features/tldr/ui/TldrCard.jsx`
+
+Практический смысл для следующих шагов:
+
+- URL-маршруты и session/org/project flow больше не надо восстанавливать по памяти.
+- `ProcessStage.jsx` должен рассматриваться как orchestration shell, а не место для новых системных state machine.
+- Новый код для Hybrid ghost/create должен входить через существующие stage hooks, а не возвращать poll/listener logic обратно в компонент.
+- Новый код для Templates/TL;DR должен входить через `features/templates/*` и `features/tldr/*`, а не добавлять ещё одну business-state machine в `ProcessStage`.

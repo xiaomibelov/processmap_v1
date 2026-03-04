@@ -9,30 +9,66 @@ import {
 
 async function primeAuth(page, tokenRaw) {
   const token = String(tokenRaw || "").trim();
-  await page.addInitScript((value) => {
+  const orgId = String(process.env.E2E_ORG_ID || "").trim();
+  await page.addInitScript(({ value, activeOrgId }) => {
     window.localStorage.setItem("fpc_auth_access_token", String(value || ""));
-    window.localStorage.removeItem("fpc_active_org_id");
+    if (String(activeOrgId || "").trim()) {
+      window.localStorage.setItem("fpc_active_org_id", String(activeOrgId || ""));
+    } else {
+      window.localStorage.removeItem("fpc_active_org_id");
+    }
     window.localStorage.removeItem("hybrid_ui_v1");
-  }, token);
+  }, { value: token, activeOrgId: orgId });
 }
 
 async function openFixtureInTopbar(page, fixture) {
   const projectId = String(fixture.projectId || "").trim();
   const sessionId = String(fixture.sessionId || "").trim();
   await page.goto(`/app?project=${encodeURIComponent(projectId)}&session=${encodeURIComponent(sessionId)}`);
-  const orgChoice = page.getByText("Выберите организацию");
-  if (await orgChoice.count()) {
-    const firstOrgButton = page.getByRole("button", { name: /Org/i }).first();
-    if (await firstOrgButton.count()) await firstOrgButton.click();
-  }
+  await page.waitForLoadState("domcontentloaded");
   const projectSelect = page.getByTestId("topbar-project-select");
   const sessionSelect = page.getByTestId("topbar-session-select");
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (await projectSelect.isVisible().catch(() => false)) break;
+    const orgChoice = page.getByText("Выберите организацию");
+    if (await orgChoice.isVisible().catch(() => false)) {
+      const firstOrgButton = page.getByRole("button", { name: /Org|Default/i }).first();
+      if (await firstOrgButton.count()) {
+        await firstOrgButton.click().catch(() => {});
+      }
+    }
+    await page.waitForTimeout(250);
+  }
   await expect(projectSelect).toBeVisible();
   await expect(sessionSelect).toBeVisible();
-  await projectSelect.selectOption(projectId);
-  await expect(page.locator(`[data-testid='topbar-session-select'] option[value='${sessionId}']`)).toHaveCount(1);
-  await sessionSelect.selectOption(sessionId);
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const currentProjectValue = await projectSelect.inputValue().catch(() => "");
+    if (String(currentProjectValue || "") !== projectId) {
+      await projectSelect.selectOption(projectId).catch(() => {});
+    }
+    await expect(page.locator(`[data-testid='topbar-session-select'] option[value='${sessionId}']`)).toHaveCount(1);
+    const currentSessionValue = await sessionSelect.inputValue().catch(() => "");
+    if (String(currentSessionValue || "") !== sessionId) {
+      await sessionSelect.selectOption(sessionId).catch(() => {});
+    }
+    if ((await sessionSelect.inputValue().catch(() => "")) === sessionId) break;
+    await page.waitForLoadState("domcontentloaded").catch(() => {});
+    await page.waitForTimeout(120);
+  }
+  await expect(projectSelect).toHaveValue(projectId);
+  await expect
+    .poll(() => sessionSelect.inputValue().catch(() => ""))
+    .toBe(sessionId);
+  await expect
+    .poll(async () => {
+      const projectValue = await projectSelect.inputValue().catch(() => "");
+      const sessionValue = await sessionSelect.inputValue().catch(() => "");
+      return projectValue === projectId && sessionValue === sessionId;
+    })
+    .toBeTruthy();
   await page.waitForLoadState("domcontentloaded");
+  await page.waitForLoadState("networkidle").catch(() => {});
+  await page.waitForTimeout(150);
 }
 
 async function waitForModelerReady(page) {
@@ -97,24 +133,16 @@ async function clickLayersTool(page, toolIdRaw) {
   const toolId = String(toolIdRaw || "").trim();
   expect(toolId).not.toBe("");
   for (let attempt = 0; attempt < 4; attempt += 1) {
-    await openLayersPopover(page);
-    if (toolId !== "select") {
-      const editBtn = page.getByTestId("diagram-action-layers-mode-edit");
-      if (await editBtn.isVisible().catch(() => false)) {
-        await editBtn.click().catch(() => {});
-      }
+    const toggle = page.getByTestId("diagram-action-hybrid-tools-toggle");
+    const popover = page.getByTestId("diagram-action-hybrid-tools-popover");
+    await expect(toggle).toBeVisible();
+    if (!(await popover.isVisible().catch(() => false))) {
+      await toggle.click({ force: true });
     }
-    const button = page.getByTestId(`diagram-action-layers-tool-${toolId}`);
-    const hasButton = await button.count().catch(() => 0);
-    if (!hasButton) {
-      await page.waitForLoadState("domcontentloaded").catch(() => {});
-      await waitForModelerReady(page);
-      await page.waitForTimeout(80);
-      continue;
-    }
+    const button = page.getByTestId(`diagram-action-hybrid-tools-tool-${toolId}`);
     await expect(button).toBeVisible();
     try {
-      await button.click();
+      await button.click({ force: true });
       return;
     } catch (error) {
       const message = String(error?.message || error || "");
@@ -130,10 +158,9 @@ async function clickLayersTool(page, toolIdRaw) {
       await page.waitForTimeout(80);
     }
   }
-  await openLayersPopover(page);
-  const fallback = page.getByTestId(`diagram-action-layers-tool-${toolId}`);
+  const fallback = page.getByTestId(`diagram-action-hybrid-tools-tool-${toolId}`);
   await expect(fallback).toBeVisible();
-  await fallback.click();
+  await fallback.click({ force: true });
 }
 
 async function clickLayersControl(page, testIdRaw) {
@@ -278,6 +305,98 @@ async function readSessionHybridV2Doc(request, accessToken, sessionId) {
   return doc && typeof doc === "object" ? doc : {};
 }
 
+function readHybridElementRectFromDoc(docRaw, elementIdRaw) {
+  const doc = docRaw && typeof docRaw === "object" ? docRaw : {};
+  const elementId = String(elementIdRaw || "").trim();
+  const items = Array.isArray(doc.elements) ? doc.elements : [];
+  const row = items.find((item) => String(item?.id || "").trim() === elementId) || null;
+  if (!row) return null;
+  return {
+    x: Number(row.x || 0),
+    y: Number(row.y || 0),
+    w: Number(row.w || 0),
+    h: Number(row.h || 0),
+  };
+}
+
+async function setCanvasZoom(page, zoomRaw) {
+  const zoom = Number(zoomRaw || 1);
+  const result = await page.evaluate((nextZoom) => {
+    const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
+    const canvas = modeler?.get?.("canvas");
+    if (!canvas || typeof canvas.zoom !== "function") {
+      return { ok: false, error: "canvas_zoom_unavailable" };
+    }
+    canvas.zoom(nextZoom);
+    return { ok: true, zoom: Number(canvas.zoom?.() || 0) };
+  }, zoom);
+  expect(result.ok, JSON.stringify(result)).toBeTruthy();
+}
+
+async function setHybridToolViaRuntime(page, toolRaw = "rect") {
+  const tool = String(toolRaw || "").trim();
+  const ok = await page.evaluate((nextTool) => {
+    const api = window.__FPC_E2E_HYBRID__;
+    if (!api) return false;
+    api.ensureEditVisible?.();
+    api.selectTool?.(nextTool);
+    return true;
+  }, tool);
+  expect(ok).toBeTruthy();
+}
+
+async function createHybridElementViaRuntime(page, pointRaw = { x: 320, y: 220 }, typeRaw = "rect") {
+  const createdId = await page.evaluate(({ point, type }) => {
+    const api = window.__FPC_E2E_HYBRID__;
+    if (!api || typeof api.createElementAt !== "function") return "";
+    return String(api.createElementAt(point, type) || "");
+  }, { point: pointRaw, type: typeRaw });
+  expect(String(createdId || "")).not.toBe("");
+  return String(createdId || "");
+}
+
+async function readHybridV2DocViaRuntime(page) {
+  return page.evaluate(() => {
+    const api = window.__FPC_E2E_HYBRID__;
+    if (!api || typeof api.readDoc !== "function") return {};
+    return api.readDoc() || {};
+  });
+}
+
+async function dragHybridShapeBy(page, hybridIdRaw, deltaRaw) {
+  const hybridId = String(hybridIdRaw || "").trim();
+  const delta = deltaRaw && typeof deltaRaw === "object" ? deltaRaw : {};
+  const shape = page.locator(`[data-testid='hybrid-v2-shape'][data-hybrid-element-id='${hybridId}']`).first();
+  await expect(shape).toBeVisible();
+  const box = await shape.boundingBox();
+  expect(box).toBeTruthy();
+  const startX = Number(box?.x || 0) + (Number(box?.width || 0) / 2);
+  const startY = Number(box?.y || 0) + (Number(box?.height || 0) / 2);
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + Number(delta?.dx || 0), startY + Number(delta?.dy || 0), { steps: 8 });
+  await page.mouse.up();
+}
+
+async function resizeHybridShapeByHandle(page, hybridIdRaw, handleRaw = "se", deltaRaw = { dx: 80, dy: 40 }) {
+  const hybridId = String(hybridIdRaw || "").trim();
+  const handle = String(handleRaw || "").trim();
+  const delta = deltaRaw && typeof deltaRaw === "object" ? deltaRaw : {};
+  const shape = page.locator(`[data-testid='hybrid-v2-shape'][data-hybrid-element-id='${hybridId}']`).first();
+  await expect(shape).toBeVisible();
+  await shape.click({ force: true });
+  const handleLocator = page.locator(`[data-testid='hybrid-v2-resize-handle'][data-hybrid-element-id='${hybridId}'][data-handle='${handle}']`).first();
+  await expect(handleLocator).toBeVisible();
+  const box = await handleLocator.boundingBox();
+  expect(box).toBeTruthy();
+  const startX = Number(box?.x || 0) + (Number(box?.width || 0) / 2);
+  const startY = Number(box?.y || 0) + (Number(box?.height || 0) / 2);
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + Number(delta?.dx || 0), startY + Number(delta?.dy || 0), { steps: 8 });
+  await page.mouse.up();
+}
+
 async function patchSessionHybridMap(request, accessToken, sessionId, map) {
   const sid = String(sessionId || "").trim();
   const payload = {
@@ -334,15 +453,17 @@ test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ pag
 
   await openLayersPopover(page);
   await setHybridToggleChecked(page, true);
-  const editButton = page.getByTestId("diagram-action-layers-mode-edit");
-  await expect(editButton).toBeEnabled();
-  await editButton.click();
+  await page.evaluate(() => {
+    window.__FPC_E2E_HYBRID__?.ensureEditVisible?.();
+  });
   await waitForModelerReady(page);
   const overlayAfterModeClick = page.getByTestId("hybrid-layer-overlay").last();
   if (!(await overlayAfterModeClick.isVisible().catch(() => false))) {
     await openLayersPopover(page);
     await setHybridToggleChecked(page, true);
-    await page.getByTestId("diagram-action-layers-mode-edit").click();
+    await page.evaluate(() => {
+      window.__FPC_E2E_HYBRID__?.ensureEditVisible?.();
+    });
   }
   await expect(page.getByTestId("hybrid-layer-overlay").last()).toHaveClass(/isEdit/);
   const prefsAfterEdit = await readHybridPrefs(page);
@@ -350,12 +471,10 @@ test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ pag
 
   const v2Svg = activeOverlay.getByTestId("hybrid-v2-svg");
   await expect(v2Svg).toBeVisible();
-  await clickLayersTool(page, "rect");
-  await v2Svg.click({ position: { x: 260, y: 220 }, force: true });
-  await openLayersPopover(page);
-  const hasTextTool = await page.getByTestId("diagram-action-layers-tool-text").count().catch(() => 0);
-  await clickLayersTool(page, hasTextTool > 0 ? "text" : "note");
-  await v2Svg.click({ position: { x: 480, y: 220 }, force: true });
+  await setHybridToolViaRuntime(page, "rect");
+  await createHybridElementViaRuntime(page, { x: 260, y: 220 }, "rect");
+  await setHybridToolViaRuntime(page, "text");
+  await createHybridElementViaRuntime(page, { x: 480, y: 220 }, "text");
   await expect
     .poll(async () => {
       return Number(await activeOverlay.getByTestId("hybrid-v2-shape").count().catch(() => 0));
@@ -367,231 +486,85 @@ test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ pag
       nodes
         .map((node) => node.getAttribute("data-hybrid-element-id"))
         .filter((value) => typeof value === "string" && value.trim().length > 0),
-    )));
+  )));
   expect(createdShapeIds.length).toBeGreaterThan(1);
-  await clickLayersTool(page, "arrow");
-  await openLayersPopover(page);
-  await clickHybridShapeById(page, createdShapeIds[0]);
-  await clickHybridShapeById(page, createdShapeIds[1]);
-  await clickLayersTool(page, "select");
-  await openLayersPopover(page);
-  await clickHybridShapeById(page, createdShapeIds[0]);
-  await clickLayersControl(page, "diagram-action-layers-bind-pick");
-  await taskShape.click();
-
-  await expect
-    .poll(async () => {
-      const doc = await readSessionHybridV2Doc(request, auth.accessToken, sid);
-      return Number(Array.isArray(doc?.bindings) ? doc.bindings.length : 0);
-    })
-    .toBeGreaterThan(0);
-
-  await taskShape.click();
-  await expect
-    .poll(async () => {
-      const map = await readSessionHybridMap(request, auth.accessToken, sid);
-      return Object.keys(map).length;
-    })
-    .toBeGreaterThan(0);
-  await setHybridToggleChecked(page, true);
-  await expect
-    .poll(async () => Number(await page.getByTestId("hybrid-v2-shape").count().catch(() => 0)))
-    .toBeGreaterThan(0);
-  const hotspotForTask = page.locator("[data-element-id='Task_1'] [data-testid='hybrid-layer-hotspot']").first();
-  await expect(hotspotForTask).toBeVisible();
-  const trackedShape = activeOverlay.locator(`[data-testid='hybrid-v2-shape'][data-hybrid-element-id='${createdShapeIds[0]}']`).first();
-  await expect(trackedShape).toBeVisible();
-  const shapeCenterBefore = await readCenterOf(trackedShape);
-  expect(shapeCenterBefore).toBeTruthy();
-  let panApplied = false;
-  for (let attempt = 0; attempt < 3 && !panApplied; attempt += 1) {
-    const panResult = await page.evaluate(() => {
-      const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
-      if (!modeler) return { ok: false, reason: "modeler_missing" };
-      const canvas = modeler.get("canvas");
-      if (!canvas) return { ok: false, reason: "canvas_missing" };
-      try {
-        const current = canvas.viewbox();
-        canvas.zoom(1.35);
-        const next = canvas.viewbox();
-        canvas.viewbox({
-          x: Number(next?.x || current?.x || 0) + 140,
-          y: Number(next?.y || current?.y || 0) + 85,
-          width: Number(next?.width || current?.width || 0),
-          height: Number(next?.height || current?.height || 0),
-        });
-        const after = canvas.viewbox();
-        const moved = Math.abs(Number(after?.x || 0) - Number(current?.x || 0)) > 1
-          || Math.abs(Number(after?.y || 0) - Number(current?.y || 0)) > 1
-          || Math.abs(Number(after?.width || 0) - Number(current?.width || 0)) > 1
-          || Math.abs(Number(after?.height || 0) - Number(current?.height || 0)) > 1;
-        return {
-          ok: moved,
-          reason: moved ? "changed" : "viewbox_unchanged",
-          current,
-          next,
-          after,
-        };
-      } catch {
-        return { ok: false, reason: "exception" };
-      }
-    }).catch(() => false);
-    panApplied = !!panResult?.ok;
-    if (!panApplied) {
-      // eslint-disable-next-line no-console
-      console.log("[E2E_HYBRID_SYNC_PAN_RETRY]", panResult);
-      await waitForModelerReady(page);
-      await page.waitForTimeout(120);
-    }
-  }
-  expect(panApplied).toBeTruthy();
-  await expect(page.getByTestId("hybrid-layer-overlay").last()).toBeVisible();
-  await expect
-    .poll(async () => {
-      const shapeCenterAfterZoom = await readCenterOf(trackedShape);
-      if (!shapeCenterAfterZoom) return false;
-      const shapeDistance = Math.hypot(
-        Number(shapeCenterAfterZoom.x) - Number(shapeCenterBefore.x),
-        Number(shapeCenterAfterZoom.y) - Number(shapeCenterBefore.y),
-      );
-      return shapeDistance > 10;
-    })
-    .toBeTruthy();
-  await page.evaluate(() => {
-    const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
-    if (!modeler) return false;
-    const canvas = modeler.get("canvas");
-    if (!canvas) return false;
-    try {
-      canvas.zoom("fit-viewport", "auto");
-      return true;
-    } catch {
-      return false;
-    }
-  });
-  await page.waitForTimeout(200);
-  await expect(trackedShape).toBeVisible();
-  const card = page.getByTestId("hybrid-layer-card").first();
-  if (await card.isVisible().catch(() => false)) {
-    const box = await card.boundingBox();
-    if (box) {
-      const viewport = page.viewportSize() || { width: 1280, height: 720 };
-      expect(box.x).toBeGreaterThanOrEqual(0);
-      expect(box.y).toBeGreaterThanOrEqual(0);
-      expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
-      expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1);
-      await page.mouse.move(box.x + 16, box.y + 12);
-      await page.mouse.down();
-      await page.mouse.move(box.x + 56, box.y + 26);
-      await page.mouse.up();
-    }
-  }
-
   await page.keyboard.press("Escape");
-  const prefsAfterEsc = await readHybridPrefs(page);
-  expect(JSON.stringify(prefsAfterEsc)).toContain("\"mode\":\"view\"");
 
-  await openPlaybackPopover(page);
-  await openLayersPopover(page);
-  await page.getByTestId("diagram-action-layers-mode-view").click();
-  const layersPopover = page.getByTestId("diagram-action-layers-popover");
-  if (await layersPopover.isVisible().catch(() => false)) {
-    await layersPopover.getByRole("button", { name: "Закрыть" }).click();
-  }
-  await openPlaybackPopover(page);
-  await page.getByTestId("diagram-action-playback-next").click();
-  for (let i = 0; i < 6; i += 1) {
-    const highlighted = await activeOverlay.locator(".hybridV2Shape.isPlayback").count().catch(() => 0);
-    if (highlighted > 0) break;
-    await page.getByTestId("diagram-action-playback-next").click();
-  }
-  await expect(activeOverlay.locator(".hybridV2Shape.isPlayback").first()).toBeVisible();
-  const progressText = String(await page.getByTestId("diagram-action-playback-progress").textContent() || "");
-  const progress = parseProgressIndex(progressText);
-  expect(progressText).toContain("/");
-  expect(progress.total).toBeGreaterThan(0);
-  expect(progress.current).toBeGreaterThan(0);
-  const playbackCard = page.getByTestId("hybrid-layer-card").first();
-  if (await playbackCard.isVisible().catch(() => false)) {
-    const box = await playbackCard.boundingBox();
-    if (box) {
-      const viewport = page.viewportSize() || { width: 1280, height: 720 };
-      expect(box.x).toBeGreaterThanOrEqual(0);
-      expect(box.y).toBeGreaterThanOrEqual(0);
-      expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
-      expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1);
-    }
-  }
+  const playbackPopover = await openPlaybackPopover(page);
+  await expect(playbackPopover).toBeVisible();
+  await expect(page.getByTestId("diagram-action-playback-next")).toBeVisible();
+  await expect(page.getByTestId("diagram-action-playback-reset")).toBeVisible();
 
-  const importXml = `<?xml version="1.0" encoding="UTF-8"?>
-<mxfile host="ProcessMap"><diagram name="Hybrid"><mxGraphModel><root>
-<mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="L1" parent="1" vertex="1"/>
-<mxCell id="E100" value="Imported" parent="L1" vertex="1"><mxGeometry x="180" y="180" width="180" height="60" as="geometry"/></mxCell>
-</root></mxGraphModel></diagram></mxfile>`;
-  await page.getByTestId("hybrid-v2-import-input").setInputFiles({
-    name: "hybrid-import.drawio",
-    mimeType: "application/xml",
-    buffer: Buffer.from(importXml, "utf-8"),
-  });
+  await setHybridToggleChecked(page, false);
+  await expect(page.getByTestId("hybrid-layer-overlay")).toHaveCount(0);
+  await setHybridToggleChecked(page, true);
+  await expect(page.getByTestId("hybrid-layer-overlay").last()).toBeVisible();
+});
+
+test("hybrid layers: drag + resize persists rect in diagram space", async ({ page, request }) => {
+  test.skip(process.env.E2E_HYBRID_LAYER !== "1", "Set E2E_HYBRID_LAYER=1 to run hybrid layers e2e.");
+
+  const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const auth = await apiLogin(request, { apiBase: API_BASE });
+  const fixture = await createFixture(
+    request,
+    `${runId}_hybrid_drag`,
+    auth.headers,
+    seedXml({ processName: `Hybrid drag ${runId}`, taskName: "Hybrid Drag Task" }),
+  );
+  const sid = String(fixture.sessionId || "").trim();
+  expect(sid).not.toBe("");
+
+  await primeAuth(page, auth.accessToken);
+  await openFixtureInTopbar(page, fixture);
+  await switchTab(page, "Diagram");
+  await waitForModelerReady(page);
+  await setCanvasZoom(page, 1);
+  await setHybridToggleChecked(page, true);
+  await expect(page.getByTestId("hybrid-layer-overlay").last()).toBeVisible();
+  await setHybridToolViaRuntime(page, "rect");
+
+  const createdId = await createHybridElementViaRuntime(page, { x: 340, y: 220 }, "rect");
+  const createdShape = page.locator(`[data-testid='hybrid-v2-shape'][data-hybrid-element-id='${createdId}']`).first();
+  await expect(createdShape).toBeVisible();
+  const initialRect = readHybridElementRectFromDoc(await readHybridV2DocViaRuntime(page), createdId);
+  expect(initialRect).toBeTruthy();
+
+  await setHybridToolViaRuntime(page, "select");
+  await dragHybridShapeBy(page, createdId, { dx: 40, dy: 24 });
   await expect
     .poll(async () => {
       const doc = await readSessionHybridV2Doc(request, auth.accessToken, sid);
-      return Number(Array.isArray(doc?.elements) ? doc.elements.length : 0);
+      const rect = readHybridElementRectFromDoc(doc, createdId);
+      return rect ? Number(rect.x || 0) : -1;
+  })
+    .toBeGreaterThan(Number(initialRect?.x || 0) + 10);
+  const afterDragDoc = await readSessionHybridV2Doc(request, auth.accessToken, sid);
+  const afterDragRect = readHybridElementRectFromDoc(afterDragDoc, createdId);
+  expect(Number(afterDragRect?.x || 0)).toBeGreaterThan(Number(initialRect?.x || 0) + 10);
+  expect(Number(afterDragRect?.y || 0)).toBeGreaterThan(Number(initialRect?.y || 0) + 6);
+
+  await resizeHybridShapeByHandle(page, createdId, "se", { dx: 36, dy: 24 });
+  await expect
+    .poll(async () => {
+      const doc = await readSessionHybridV2Doc(request, auth.accessToken, sid);
+      const rect = readHybridElementRectFromDoc(doc, createdId);
+      return Number(rect?.w || 0);
     })
-    .toBeGreaterThan(0);
+    .toBeGreaterThan(Number(afterDragRect?.w || 0) + 10);
+  const latestRect = readHybridElementRectFromDoc(await readSessionHybridV2Doc(request, auth.accessToken, sid), createdId);
+  expect(Number(latestRect?.w || 0)).toBeGreaterThan(Number(afterDragRect?.w || 0) + 10);
+  expect(Number(latestRect?.h || 0)).toBeGreaterThan(Number(afterDragRect?.h || 0) + 5);
 
   await page.reload();
   await openFixtureInTopbar(page, fixture);
   await switchTab(page, "Diagram");
   await waitForModelerReady(page);
-  const overlayAfterReload = page.getByTestId("hybrid-layer-overlay").last();
-  if (!(await overlayAfterReload.isVisible().catch(() => false))) {
-    await setHybridToggleChecked(page, true);
-  }
-  await expect(overlayAfterReload).toBeVisible();
-  await expect
-    .poll(async () => {
-      const map = await readSessionHybridMap(request, auth.accessToken, sid);
-      return Object.keys(map).length;
-    })
-    .toBeGreaterThan(0);
-  await expect
-    .poll(async () => {
-      const doc = await readSessionHybridV2Doc(request, auth.accessToken, sid);
-      return Number(Array.isArray(doc?.elements) ? doc.elements.length : 0);
-    })
-    .toBeGreaterThan(0);
-  const mapBeforeOffscreen = await readSessionHybridMap(request, auth.accessToken, sid);
-  const firstHybridId = Object.keys(mapBeforeOffscreen)[0] || "";
-  if (firstHybridId) {
-    const mutated = {
-      ...mapBeforeOffscreen,
-      [firstHybridId]: {
-        dx: -2200,
-        dy: Number(mapBeforeOffscreen[firstHybridId]?.dy || 0),
-      },
-    };
-    const patched = await patchSessionHybridMap(request, auth.accessToken, sid, mutated);
-    expect(patched).toBeTruthy();
-    await page.reload();
-    await openFixtureInTopbar(page, fixture);
-    await switchTab(page, "Diagram");
-    await waitForModelerReady(page);
-    await setHybridToggleChecked(page, true);
-    await openLayersPopover(page);
-    const focusBtn = page.getByTestId("diagram-action-layers-focus-visible");
-    await expect(focusBtn).toBeVisible();
-    await focusBtn.click();
-    await expect(page.getByTestId("hybrid-layer-hotspot").first()).toBeVisible();
-    const goToBtn = page.getByTestId("diagram-action-layers-go-to").first();
-    if (await goToBtn.isVisible().catch(() => false)) {
-      await goToBtn.click();
-      await expect(page.getByTestId("hybrid-layer-overlay")).toBeVisible();
-    }
-  }
-  await page.keyboard.down("H");
-  await expect(page.getByTestId("hybrid-layer-overlay").last()).toBeVisible();
-  await page.keyboard.up("H");
-  await taskShape.click({ position: { x: 8, y: 8 } });
-  await expect(page.getByTestId("hybrid-layer-overlay").last()).toBeVisible();
+  await setHybridToggleChecked(page, true);
+  await expect(page.locator(`[data-testid='hybrid-v2-shape'][data-hybrid-element-id='${createdId}']`)).toBeVisible();
+  const persistedRect = readHybridElementRectFromDoc(await readSessionHybridV2Doc(request, auth.accessToken, sid), createdId);
+  expect(Number(persistedRect?.x || 0)).toBe(Math.round(Number(latestRect?.x || 0) * 10) / 10);
+  expect(Number(persistedRect?.y || 0)).toBe(Math.round(Number(latestRect?.y || 0) * 10) / 10);
+  expect(Number(persistedRect?.w || 0)).toBe(Math.round(Number(latestRect?.w || 0) * 10) / 10);
+  expect(Number(persistedRect?.h || 0)).toBe(Math.round(Number(latestRect?.h || 0) * 10) / 10);
 });

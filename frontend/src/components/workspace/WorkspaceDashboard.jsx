@@ -30,13 +30,13 @@ function updatedFromPresetSeconds(preset) {
 
 function formatRole(roleRaw) {
   const role = toText(roleRaw).toLowerCase();
-  if (role === "org_owner") return "Org owner";
-  if (role === "org_admin") return "Org admin";
-  if (role === "project_manager") return "Project manager";
-  if (role === "editor") return "Editor";
-  if (role === "viewer") return "Viewer";
-  if (role === "auditor") return "Auditor";
-  return role ? role.replace(/_/g, " ") : "Member";
+  if (role === "org_owner") return "Владелец организации";
+  if (role === "org_admin") return "Администратор организации";
+  if (role === "project_manager") return "Менеджер проекта";
+  if (role === "editor") return "Редактор";
+  if (role === "viewer") return "Наблюдатель";
+  if (role === "auditor") return "Аудитор";
+  return role ? role.replace(/_/g, " ") : "Участник";
 }
 
 function statusBadgeClass(statusRaw) {
@@ -44,6 +44,14 @@ function statusBadgeClass(statusRaw) {
   if (status === "ready") return "border-success/30 bg-success/10 text-success";
   if (status === "in_progress") return "border-warning/30 bg-warning/10 text-warning";
   return "border-borderStrong/60 bg-panel text-muted";
+}
+
+function formatSessionStatus(statusRaw) {
+  const status = toText(statusRaw).toLowerCase();
+  if (status === "ready") return "Готово";
+  if (status === "in_progress") return "В работе";
+  if (status === "draft") return "Черновик";
+  return status || "—";
 }
 
 function attentionBadgeClass(countRaw) {
@@ -225,8 +233,8 @@ export default function WorkspaceDashboard({
   const scopeSummary = [
     selectedProject ? `Project: ${selectedProject.name}` : "",
     selectedOwner ? `Owner: ${selectedOwner.name}` : "",
-  ].filter(Boolean).join(" · ") || "All projects and sessions in the selected org scope.";
-  const orgName = toText(workspace?.org?.name || activeOrgId || "Workspace");
+  ].filter(Boolean).join(" · ") || "Все проекты и сессии в рамках выбранной организации.";
+  const orgName = toText(workspace?.org?.name || activeOrgId || "Рабочее пространство");
   const orgRole = formatRole(workspace?.org?.role);
 
   function resetSelection() {
@@ -243,7 +251,7 @@ export default function WorkspaceDashboard({
           <div className="min-w-0">
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <span className="rounded-full border border-accent/30 bg-accentSoft/20 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-fg">
-                Workspace
+                Рабочее пространство
               </span>
               <span className="rounded-full border border-border px-2 py-1 text-[11px] text-muted" title={orgName}>
                 {orgName}
@@ -253,27 +261,27 @@ export default function WorkspaceDashboard({
               </span>
             </div>
             <h1 className="text-xl font-semibold tracking-tight text-fg md:text-2xl">
-              Workspace / Projects / Sessions
+              Рабочее пространство / Проекты / Сессии
             </h1>
             <p className="mt-2 max-w-3xl text-sm text-muted">
-              Select a session to edit diagram, run interview, generate reports.
+              Выберите сессию, чтобы редактировать диаграмму, проходить интервью и формировать отчёты.
             </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
             <button type="button" className="primaryBtn h-9 px-3 text-sm" onClick={() => onCreateProject?.()}>
-              Create Project
+              Создать проект
             </button>
             <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={() => onCreateSession?.()}>
-              Create Session
+              Создать сессию
             </button>
             {canInviteUsers ? (
               <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={() => onInviteUsers?.()}>
-                Invite Users
+                Пригласить пользователей
               </button>
             ) : (
               <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={resetSelection}>
-                Reset Filters
+                Сбросить фильтры
               </button>
             )}
           </div>
@@ -282,25 +290,25 @@ export default function WorkspaceDashboard({
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
-          label="Sessions"
+          label="Сессии"
           value={total}
-          hint={`${sessionStatusSummary.in_progress} in progress · ${sessionStatusSummary.ready} ready`}
+          hint={`${sessionStatusSummary.in_progress} в работе · ${sessionStatusSummary.ready} готовы`}
           tone="accent"
         />
         <MetricCard
-          label="Projects"
+          label="Проекты"
           value={tree.projects.length}
-          hint={selectedProject ? "Project filter is active." : "Projects visible in the current scope."}
+          hint={selectedProject ? "Фильтр по проекту включён." : "Проекты в текущем выбранном контуре."}
         />
         <MetricCard
-          label="Owners"
+          label="Владельцы"
           value={tree.users.length}
-          hint={selectedOwner ? "Owner filter is active." : "Owners with visible projects or sessions."}
+          hint={selectedOwner ? "Фильтр по владельцу включён." : "Владельцы с доступными проектами или сессиями."}
         />
         <MetricCard
-          label="Needs Attention"
+          label="Требует внимания"
           value={sessionStatusSummary.attention}
-          hint={needsAttentionOnly ? "Attention filter is enabled." : "Aggregated attention markers on visible sessions."}
+          hint={needsAttentionOnly ? "Фильтр внимания включён." : "Суммарные маркеры внимания по видимым сессиям."}
           tone={sessionStatusSummary.attention > 0 ? "danger" : "default"}
         />
       </div>
@@ -309,11 +317,11 @@ export default function WorkspaceDashboard({
         <div className="min-h-0 space-y-4">
           <div className="rounded-xl border border-border bg-panel2/35 p-3">
             <SectionHeader
-              title="Scope & Filters"
+              title="Область и фильтры"
               subtitle={scopeSummary}
               actions={(
                 <button type="button" className="secondaryBtn h-7 px-2 text-xs" onClick={resetSelection}>
-                  Reset
+                  Сбросить
                 </button>
               )}
             />
@@ -321,7 +329,7 @@ export default function WorkspaceDashboard({
             <div className="space-y-3">
               <input
                 className="input h-9 min-h-0 w-full"
-                placeholder="Search: session / project / owner"
+                placeholder="Поиск: сессия / проект / владелец"
                 value={query}
                 onChange={(event) => {
                   setQuery(event.target.value);
@@ -340,10 +348,10 @@ export default function WorkspaceDashboard({
                   }}
                   data-testid="workspace-filter-status"
                 >
-                  <option value="">Status: all</option>
-                  <option value="draft">Draft</option>
-                  <option value="in_progress">In progress</option>
-                  <option value="ready">Ready</option>
+                  <option value="">Статус: все</option>
+                  <option value="draft">Черновик</option>
+                  <option value="in_progress">В работе</option>
+                  <option value="ready">Готово</option>
                 </select>
                 <select
                   className="select h-9 min-h-0 w-full"
@@ -354,9 +362,9 @@ export default function WorkspaceDashboard({
                   }}
                   data-testid="workspace-filter-updated"
                 >
-                  <option value="all">Updated: all</option>
-                  <option value="7d">Last 7 days</option>
-                  <option value="30d">Last 30 days</option>
+                  <option value="all">Обновление: всё</option>
+                  <option value="7d">Последние 7 дней</option>
+                  <option value="30d">Последние 30 дней</option>
                 </select>
                 <select
                   className="select h-9 min-h-0 w-full"
@@ -364,8 +372,8 @@ export default function WorkspaceDashboard({
                   onChange={(event) => setSortKey(event.target.value)}
                   data-testid="workspace-sort"
                 >
-                  <option value="updated_desc">Sort: updated ↓</option>
-                  <option value="updated_asc">Sort: updated ↑</option>
+                  <option value="updated_desc">Сортировка: обновлённые ↓</option>
+                  <option value="updated_asc">Сортировка: обновлённые ↑</option>
                 </select>
                 <label className="inline-flex h-9 min-h-0 items-center gap-2 rounded-lg border border-border px-3 text-xs text-muted">
                   <input
@@ -377,13 +385,13 @@ export default function WorkspaceDashboard({
                     }}
                     data-testid="workspace-filter-attention"
                   />
-                  <span>Needs attention only</span>
+                  <span>Только требующие внимания</span>
                 </label>
               </div>
 
               <div>
                 <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">
-                  Owner filter
+                  Фильтр по владельцу
                 </label>
                 <select
                   className="select min-h-[96px] w-full text-sm"
@@ -413,8 +421,8 @@ export default function WorkspaceDashboard({
 
           <div className="workspaceExplorer min-h-[260px] overflow-auto rounded-xl border border-border bg-panel2 p-3" data-testid="workspace-explorer">
             <SectionHeader
-              title="Projects & Owners"
-              subtitle={groupBy === "users" ? "Browse sessions under each owner." : "Browse projects ordered by recent updates."}
+              title="Проекты и владельцы"
+              subtitle={groupBy === "users" ? "Просмотр сессий по каждому владельцу." : "Просмотр проектов по последним обновлениям."}
               actions={(
                 <div className="flex items-center gap-2">
                   <button
@@ -426,7 +434,7 @@ export default function WorkspaceDashboard({
                     }}
                     data-testid="workspace-group-users"
                   >
-                    Users
+                    Пользователи
                   </button>
                   <button
                     type="button"
@@ -437,7 +445,7 @@ export default function WorkspaceDashboard({
                     }}
                     data-testid="workspace-group-projects"
                   >
-                    Projects
+                    Проекты
                   </button>
                 </div>
               )}
@@ -472,7 +480,7 @@ export default function WorkspaceDashboard({
                       {activeUser ? (
                         <div className="mt-2 space-y-1.5 pl-2">
                           {ownedProjects.length === 0 ? (
-                            <div className="text-xs text-muted">No projects for this owner in the current scope.</div>
+                            <div className="text-xs text-muted">У этого владельца нет проектов в текущем контуре.</div>
                           ) : ownedProjects.map((project) => (
                             <button
                               key={`${user.id}_${project.id}`}
@@ -516,8 +524,8 @@ export default function WorkspaceDashboard({
                       >
                         <div className={`truncate text-sm ${activeProject ? "font-semibold text-fg" : "text-fg"}`}>{project.name}</div>
                         <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted">
-                          <span className="truncate" title={project.owner || "—"}>Owner: {project.owner || "—"}</span>
-                          <span className="shrink-0">{project.session_count} sessions</span>
+                          <span className="truncate" title={project.owner || "—"}>Владелец: {project.owner || "—"}</span>
+                          <span className="shrink-0">{project.session_count} сессий</span>
                         </div>
                       </button>
                     </div>
@@ -530,8 +538,8 @@ export default function WorkspaceDashboard({
 
         <div className="workspaceSessions min-h-0 rounded-xl border border-border bg-panel2 p-3" data-testid="workspace-sessions-list">
           <SectionHeader
-            title="Recent Sessions"
-            subtitle="Latest updates across the current scope. Open a session to jump directly into the diagram workspace."
+            title="Последние сессии"
+            subtitle="Последние обновления в текущем контуре. Откройте сессию, чтобы сразу перейти к диаграмме."
             actions={(
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
                 <span className="rounded-full border border-border px-2 py-1">{pageLabel}</span>
@@ -541,7 +549,7 @@ export default function WorkspaceDashboard({
                     className="secondaryBtn h-7 px-2 text-xs"
                     onClick={() => onOpenSession?.(listRows[0])}
                   >
-                    Open Latest
+                    Открыть последнюю
                   </button>
                 ) : null}
               </div>
@@ -550,7 +558,7 @@ export default function WorkspaceDashboard({
 
           {loading ? (
             <div className="rounded-xl border border-border px-4 py-3 text-sm text-muted">
-              Loading workspace…
+              Загрузка рабочего пространства...
             </div>
           ) : null}
           {error ? (
@@ -562,23 +570,23 @@ export default function WorkspaceDashboard({
           {!loading && !error && loadedOnce && !hasRows ? (
             <div className="rounded-xl border border-dashed border-borderStrong bg-panel px-4 py-4" data-testid="workspace-empty-state">
               <div className="text-base font-semibold text-fg">
-                {tree.projects.length > 0 ? "No sessions yet" : "No projects or sessions yet"}
+                {tree.projects.length > 0 ? "Сессий пока нет" : "Проектов и сессий пока нет"}
               </div>
               <div className="mt-1 text-sm text-muted">
                 {tree.projects.length > 0
-                  ? "Create a session to start diagram editing, interviews, and reports."
-                  : "Create a project first, then create a session to start working in the org workspace."}
+                  ? "Создайте сессию, чтобы начать редактирование диаграммы, интервью и отчёты."
+                  : "Сначала создайте проект, затем создайте сессию и начните работу в пространстве организации."}
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button type="button" className="primaryBtn h-9 px-3 text-sm" onClick={() => onCreateProject?.()}>
-                  Create Project
+                  Создать проект
                 </button>
                 <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={() => onCreateSession?.()}>
-                  Create Session
+                  Создать сессию
                 </button>
                 {canInviteUsers ? (
                   <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={() => onInviteUsers?.()}>
-                    Invite Users
+                    Пригласить пользователей
                   </button>
                 ) : null}
               </div>
@@ -603,17 +611,17 @@ export default function WorkspaceDashboard({
                           onClick={() => onOpenSession?.(row)}
                           data-testid="workspace-open-session"
                         >
-                          Open
+                          Открыть
                         </button>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
-                        <span className={`rounded-full border px-2 py-1 ${statusBadgeClass(row.status)}`}>{row.status}</span>
+                        <span className={`rounded-full border px-2 py-1 ${statusBadgeClass(row.status)}`}>{formatSessionStatus(row.status)}</span>
                         <span className="rounded-full border border-border px-2 py-1 text-muted" title={row.owner || "—"}>{row.owner || "—"}</span>
                         <span className={`rounded-full border px-2 py-1 ${attentionBadgeClass(row.needs_attention)}`}>
-                          Attention: {Number(row.needs_attention || 0)}
+                          Внимание: {Number(row.needs_attention || 0)}
                         </span>
                         <span className="rounded-full border border-border px-2 py-1 text-muted">
-                          Updated: {formatDateTime(row.updated_at)}
+                          Обновлено: {formatDateTime(row.updated_at)}
                         </span>
                       </div>
                     </div>
@@ -625,14 +633,14 @@ export default function WorkspaceDashboard({
                 <table className="w-full min-w-[760px] border-separate border-spacing-y-2 text-sm">
                   <thead>
                     <tr className="text-left text-[11px] uppercase tracking-wide text-muted">
-                      <th className="px-3 py-1">Session</th>
-                      <th className="px-3 py-1">Project</th>
-                      <th className="px-3 py-1">Owner</th>
-                      <th className="px-3 py-1">Updated</th>
-                      <th className="px-3 py-1">Status</th>
-                      <th className="px-3 py-1">Reports</th>
-                      <th className="px-3 py-1">Attention</th>
-                      <th className="px-3 py-1">Actions</th>
+                      <th className="px-3 py-1">Сессия</th>
+                      <th className="px-3 py-1">Проект</th>
+                      <th className="px-3 py-1">Владелец</th>
+                      <th className="px-3 py-1">Обновлено</th>
+                      <th className="px-3 py-1">Статус</th>
+                      <th className="px-3 py-1">Отчёты</th>
+                      <th className="px-3 py-1">Внимание</th>
+                      <th className="px-3 py-1">Действия</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -658,7 +666,7 @@ export default function WorkspaceDashboard({
                           <td className="px-3 py-2.5 align-top text-muted">{formatDateTime(row.updated_at)}</td>
                           <td className="px-3 py-2.5 align-top">
                             <span className={`rounded-full border px-2 py-1 text-[11px] ${statusBadgeClass(row.status)}`}>
-                              {row.status}
+                              {formatSessionStatus(row.status)}
                             </span>
                           </td>
                           <td className="px-3 py-2.5 align-top text-muted">{Number(row.reports_versions || 0)}</td>
@@ -674,7 +682,7 @@ export default function WorkspaceDashboard({
                               onClick={() => onOpenSession?.(row)}
                               data-testid="workspace-open-session"
                             >
-                              Open
+                              Открыть
                             </button>
                           </td>
                         </tr>
@@ -694,7 +702,7 @@ export default function WorkspaceDashboard({
               onClick={() => setOffset((prev) => Math.max(0, prev - limit))}
               data-testid="workspace-page-prev"
             >
-              ← Prev
+              ← Назад
             </button>
             <span className="text-xs text-muted">{pageLabel}</span>
             <button
@@ -704,7 +712,7 @@ export default function WorkspaceDashboard({
               onClick={() => setOffset((prev) => prev + limit)}
               data-testid="workspace-page-next"
             >
-              Next →
+              Далее →
             </button>
           </div>
         </div>

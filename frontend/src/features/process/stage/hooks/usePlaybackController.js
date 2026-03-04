@@ -22,6 +22,24 @@ function logPlaybackDebug(stage, payload = {}) {
   console.debug(`[PLAYBACK_DEBUG] ${String(stage || "-")}`, payload);
 }
 
+function buildHighlightedBpmnIds(eventRaw) {
+  const event = asObject(eventRaw);
+  const ids = new Set();
+  [
+    event?.flowId,
+    event?.nodeId,
+    event?.gatewayId,
+    event?.subprocessId,
+    event?.fromId,
+    event?.toId,
+    event?.linkTargetId,
+  ].forEach((idRaw) => {
+    const id = toText(idRaw);
+    if (id) ids.add(id);
+  });
+  return ids;
+}
+
 export default function usePlaybackController({
   sid,
   tab,
@@ -64,6 +82,10 @@ export default function usePlaybackController({
   const playbackIntervalMs = useMemo(
     () => Math.max(140, Math.round(900 / (Number.isFinite(playbackSpeedValue) && playbackSpeedValue > 0 ? playbackSpeedValue : 1))),
     [playbackSpeedValue],
+  );
+  const playbackHighlightedBpmnIds = useMemo(
+    () => buildHighlightedBpmnIds(playbackCurrentEvent),
+    [playbackCurrentEvent],
   );
 
   const markPlaybackOverlayInteraction = useCallback((meta = {}) => {
@@ -502,6 +524,7 @@ export default function usePlaybackController({
     playbackCanRun,
     playbackIndexClamped,
     playbackCurrentEvent,
+    playbackHighlightedBpmnIds,
     markPlaybackOverlayInteraction,
     handlePlaybackGatewayDecision,
     handlePlaybackPrev,

@@ -12,6 +12,17 @@ function asObject(value) {
   return value && typeof value === "object" ? value : {};
 }
 
+function confirmHybridDelete(idsRaw, labelRaw = "") {
+  const ids = asArray(idsRaw).map((row) => toText(row)).filter(Boolean);
+  if (!ids.length) return false;
+  if (typeof window === "undefined" || typeof window.confirm !== "function") return true;
+  const label = toText(labelRaw);
+  const subject = ids.length === 1
+    ? (label || ids[0])
+    : `${ids.length} шт.`;
+  return window.confirm(`Удалить элемент Hybrid: ${subject}?`);
+}
+
 export default function LayersPopover({
   open,
   popoverRef,
@@ -25,11 +36,17 @@ export default function LayersPopover({
   hybridModeEffective,
   setHybridLayerMode,
   hybridUiPrefs,
-  hybridV2ToolState,
-  setHybridV2Tool,
+  onOpenHybridTools,
   setHybridLayerOpacity,
   toggleHybridLayerLock,
   toggleHybridLayerFocus,
+  drawioState,
+  onOpenDrawioEditor,
+  onToggleDrawioVisible,
+  onSetDrawioOpacity,
+  onToggleDrawioLock,
+  onImportEmbeddedDrawioClick,
+  onExportEmbeddedDrawio,
   hybridV2DocLive,
   hybridV2HiddenCount,
   revealAllHybridV2,
@@ -37,6 +54,8 @@ export default function LayersPopover({
   toggleHybridV2LayerLock,
   setHybridV2LayerOpacity,
   hybridV2ActiveId,
+  hybridV2SelectedIds,
+  legacyActiveElementId,
   hybridV2BindPickMode,
   setHybridV2BindPickMode,
   goToActiveHybridBinding,
@@ -50,10 +69,16 @@ export default function LayersPopover({
   hybridLayerRenderRows,
   hybridV2Renderable,
   setHybridV2ActiveId,
+  deleteSelectedHybridIds,
+  deleteLegacyHybridMarkers,
   bpmnRef,
   goToHybridLayerItem,
 }) {
   if (!open) return null;
+  const drawioEnabled = !!drawioState?.enabled;
+  const drawioLocked = !!drawioState?.locked;
+  const drawioHasDoc = toText(drawioState?.doc_xml).length > 0;
+  const drawioHasPreview = toText(drawioState?.svg_cache).length > 0;
   return (
     <div
       className="diagramActionPopover diagramActionPopover--layers"
@@ -62,7 +87,7 @@ export default function LayersPopover({
       onMouseDown={onMouseDown}
     >
       <div className="diagramActionPopoverHead">
-        <span>Layers</span>
+        <span>Слои</span>
         <button
           type="button"
           className="secondaryBtn h-7 px-2 text-[11px]"
@@ -72,6 +97,76 @@ export default function LayersPopover({
         </button>
       </div>
       <div className="diagramIssueRows">
+        <div className="diagramIssueRow">
+          <label className="diagramActionCheckboxRow">
+            <input
+              type="checkbox"
+              checked={drawioEnabled}
+              onChange={() => onToggleDrawioVisible?.()}
+              data-testid="diagram-action-layers-drawio-toggle"
+            />
+            <span>Draw.io overlay</span>
+          </label>
+          <span className="diagramIssueChip">{drawioHasPreview ? "preview" : (drawioHasDoc ? "save нужен" : "empty")}</span>
+        </div>
+        <div className="diagramIssueRow">
+          <span>Draw.io editor</span>
+          <div className="diagramActionPopoverActions mt-0">
+            <button
+              type="button"
+              className="secondaryBtn h-7 px-2 text-[11px]"
+              onClick={() => onOpenDrawioEditor?.()}
+              disabled={drawioLocked}
+              data-testid="diagram-action-layers-drawio-open"
+            >
+              Открыть
+            </button>
+            <button
+              type="button"
+              className="secondaryBtn h-7 px-2 text-[11px]"
+              onClick={() => onImportEmbeddedDrawioClick?.()}
+              disabled={drawioLocked}
+              data-testid="diagram-action-layers-drawio-import"
+            >
+              Импорт
+            </button>
+            <button
+              type="button"
+              className="secondaryBtn h-7 px-2 text-[11px]"
+              onClick={() => onExportEmbeddedDrawio?.()}
+              disabled={!drawioHasDoc}
+              data-testid="diagram-action-layers-drawio-export"
+            >
+              Экспорт
+            </button>
+          </div>
+        </div>
+        <div className="diagramIssueRow">
+          <span>Draw.io lock</span>
+          <div className="diagramActionPopoverActions mt-0">
+            <button
+              type="button"
+              className={`secondaryBtn h-7 px-2 text-[11px] ${drawioLocked ? "ring-1 ring-accent/60" : ""}`}
+              onClick={() => onToggleDrawioLock?.()}
+              data-testid="diagram-action-layers-drawio-lock"
+            >
+              {drawioLocked ? "Locked" : "Unlocked"}
+            </button>
+          </div>
+        </div>
+        <div className="diagramIssueRow">
+          <span>Draw.io opacity</span>
+          <input
+            className="accent-accent"
+            type="range"
+            min="5"
+            max="100"
+            step="5"
+            value={Math.round(Math.max(0.05, Math.min(1, Number(drawioState?.opacity || 1))) * 100)}
+            onChange={(event) => onSetDrawioOpacity?.(Number(event.target.value) / 100)}
+            data-testid="diagram-action-layers-drawio-opacity"
+          />
+        </div>
         <div className="diagramIssueRow">
           <label className="diagramActionCheckboxRow">
             <input
@@ -92,11 +187,11 @@ export default function LayersPopover({
             disabled={!hybridVisible || Number(hybridTotalCount || 0) <= 0}
             data-testid="diagram-action-layers-focus-visible"
           >
-            Focus
+            Фокус
           </button>
         </div>
         <div className="diagramIssueRow">
-          <span>Mode</span>
+          <span>Режим</span>
           <div className="diagramActionPopoverActions mt-0">
             <button
               type="button"
@@ -104,7 +199,7 @@ export default function LayersPopover({
               onClick={() => setHybridLayerMode("view")}
               data-testid="diagram-action-layers-mode-view"
             >
-              View
+              Просмотр
             </button>
             <button
               type="button"
@@ -116,39 +211,25 @@ export default function LayersPopover({
               disabled={!hybridVisible || !!hybridUiPrefs.lock}
               data-testid="diagram-action-layers-mode-edit"
             >
-              Edit
+              Редактирование
             </button>
           </div>
         </div>
         <div className="diagramIssueRow">
-          <span>Tool</span>
+          <span>Инструменты</span>
           <div className="diagramActionPopoverActions mt-0">
-            {[
-              { id: "select", label: "Select" },
-              { id: "rect", label: "Rect" },
-              { id: "container", label: "Container" },
-              { id: "note", label: "Note" },
-              { id: "text", label: "Text" },
-              { id: "arrow", label: "Arrow" },
-            ].map((tool) => {
-              const currentTool = toText(hybridV2ToolState || "select");
-              return (
-                <button
-                  key={`hybrid_v2_tool_${tool.id}`}
-                  type="button"
-                  className={`secondaryBtn h-7 px-2 text-[11px] ${currentTool === tool.id ? "ring-1 ring-accent/60" : ""}`}
-                  onClick={() => setHybridV2Tool(tool.id)}
-                  disabled={hybridModeEffective !== "edit" || !!hybridUiPrefs.lock}
-                  data-testid={`diagram-action-layers-tool-${tool.id}`}
-                >
-                  {tool.label}
-                </button>
-              );
-            })}
+            <button
+              type="button"
+              className="secondaryBtn h-7 px-2 text-[11px]"
+              onClick={() => onOpenHybridTools?.()}
+              data-testid="diagram-action-layers-open-tools"
+            >
+              Открыть палитру
+            </button>
           </div>
         </div>
         <div className="diagramIssueRow">
-          <span>Opacity</span>
+          <span>Прозрачность</span>
           <div className="diagramActionPopoverActions mt-0">
             {[100, 60, 30].map((opacity) => (
               <button
@@ -171,7 +252,7 @@ export default function LayersPopover({
               onChange={toggleHybridLayerLock}
               data-testid="diagram-action-layers-lock"
             />
-            <span>Lock</span>
+            <span>Блокировка</span>
           </label>
           <label className="diagramActionCheckboxRow">
             <input
@@ -180,17 +261,17 @@ export default function LayersPopover({
               onChange={toggleHybridLayerFocus}
               data-testid="diagram-action-layers-focus"
             />
-            <span>Dim BPMN</span>
+            <span>Затемнить BPMN</span>
           </label>
         </div>
         <div className="diagramIssueRow">
           <span>V2</span>
           <span className="diagramIssueChip">
-            {Number(asArray(hybridV2DocLive?.elements).length || 0)} elements / {Number(asArray(hybridV2DocLive?.edges).length || 0)} edges
+            {Number(asArray(hybridV2DocLive?.elements).length || 0)} элементов / {Number(asArray(hybridV2DocLive?.edges).length || 0)} связей
           </span>
         </div>
         <div className="diagramIssueRow">
-          <span>Hidden</span>
+          <span>Скрыто</span>
           <div className="diagramActionPopoverActions mt-0">
             <span className="diagramIssueChip">{Number(hybridV2HiddenCount || 0)}</span>
             <button
@@ -200,7 +281,7 @@ export default function LayersPopover({
               disabled={Number(hybridV2HiddenCount || 0) <= 0}
               data-testid="diagram-action-layers-reveal-all"
             >
-              Reveal all
+              Показать всё
             </button>
           </div>
         </div>
@@ -223,7 +304,7 @@ export default function LayersPopover({
                       onChange={() => toggleHybridV2LayerVisibility(layerId)}
                       data-testid={`diagram-action-layers-layer-visible-${layerId}`}
                     />
-                    <span>eye</span>
+                    <span>вид</span>
                   </label>
                   <label className="diagramActionCheckboxRow">
                     <input
@@ -232,7 +313,7 @@ export default function LayersPopover({
                       onChange={() => toggleHybridV2LayerLock(layerId)}
                       data-testid={`diagram-action-layers-layer-lock-${layerId}`}
                     />
-                    <span>lock</span>
+                    <span>блок</span>
                   </label>
                   <div className="diagramActionPopoverActions mt-0">
                     {[100, 60, 30].map((opacity) => (
@@ -253,11 +334,37 @@ export default function LayersPopover({
           })}
         </div>
         <div className="diagramIssueRow">
-          <span>Selection</span>
-          <span className="diagramIssueChip">{toText(hybridV2ActiveId) || "—"}</span>
+          <span>Выбрано</span>
+          <div className="diagramActionPopoverActions mt-0">
+            <span className="diagramIssueChip">
+              <span data-testid="diagram-action-layers-selection-chip">
+              {Number(asArray(hybridV2SelectedIds).length || 0) > 1
+                ? `${Number(asArray(hybridV2SelectedIds).length || 0)} шт.`
+                : (toText(hybridV2ActiveId) || toText(legacyActiveElementId) || "—")}
+              </span>
+            </span>
+            <button
+              type="button"
+              className="secondaryBtn h-7 px-2 text-[11px]"
+              onClick={() => {
+                if (Number(asArray(hybridV2SelectedIds).length || 0) > 0) {
+                  if (!confirmHybridDelete(hybridV2SelectedIds, hybridV2ActiveId)) return;
+                  deleteSelectedHybridIds();
+                  return;
+                }
+                if (!toText(legacyActiveElementId)) return;
+                if (!confirmHybridDelete([legacyActiveElementId], legacyActiveElementId)) return;
+                deleteLegacyHybridMarkers?.([legacyActiveElementId], "layers_delete_legacy_selected");
+              }}
+              disabled={Number(asArray(hybridV2SelectedIds).length || 0) <= 0 && !toText(legacyActiveElementId)}
+              data-testid="diagram-action-layers-delete-selected"
+            >
+              Удалить
+            </button>
+          </div>
         </div>
         <div className="diagramIssueRow">
-          <span>Bind</span>
+          <span>Привязка</span>
           <div className="diagramActionPopoverActions mt-0">
             <button
               type="button"
@@ -266,7 +373,7 @@ export default function LayersPopover({
               disabled={!hybridV2ActiveId || hybridModeEffective !== "edit"}
               data-testid="diagram-action-layers-bind-pick"
             >
-              {hybridV2BindPickMode ? "Pick BPMN: ON" : "Bind to BPMN"}
+              {hybridV2BindPickMode ? "Выбор BPMN: ВКЛ" : "Привязать к BPMN"}
             </button>
             <button
               type="button"
@@ -275,7 +382,7 @@ export default function LayersPopover({
               disabled={!toText(asObject(hybridV2BindingByHybridId[hybridV2ActiveId]).bpmn_id)}
               data-testid="diagram-action-layers-go-bound"
             >
-              Go to bound
+              Перейти к привязке
             </button>
           </div>
         </div>
@@ -289,7 +396,7 @@ export default function LayersPopover({
               disabled={!hybridVisible}
               data-testid="diagram-action-layers-export-drawio"
             >
-              Export
+              Экспорт
             </button>
             <button
               type="button"
@@ -298,30 +405,30 @@ export default function LayersPopover({
               disabled={!hybridVisible}
               data-testid="diagram-action-layers-import-drawio"
             >
-              Import
+              Импорт
             </button>
           </div>
         </div>
       </div>
       <div className="diagramIssueRows mt-2">
         <div className="diagramIssueRow">
-          <span>Ready</span>
+          <span>Готово</span>
           <span className="diagramIssueChip">{Number(hybridLayerCounts.ready || 0)}</span>
         </div>
         <div className="diagramIssueRow">
-          <span>Incomplete</span>
+          <span>Незаполнено</span>
           <span className="diagramIssueChip">{Number(hybridLayerCounts.incomplete || 0)}</span>
         </div>
         <div className="diagramIssueRow">
-          <span>Bindings</span>
+          <span>Привязки</span>
           <span className="diagramIssueChip">
-            {Number(hybridLayerVisibilityStats.validBindings || 0)} ok / {Number(hybridLayerVisibilityStats.missingBindings || 0)} missing
+            {Number(hybridLayerVisibilityStats.validBindings || 0)} ок / {Number(hybridLayerVisibilityStats.missingBindings || 0)} отсутствуют
           </span>
         </div>
         <div className="diagramIssueRow">
           <span>Viewport</span>
           <span className="diagramIssueChip">
-            {Number(hybridLayerVisibilityStats.insideViewport || 0)} in / {Number(hybridLayerVisibilityStats.outsideViewport || 0)} out
+            {Number(hybridLayerVisibilityStats.insideViewport || 0)} внутри / {Number(hybridLayerVisibilityStats.outsideViewport || 0)} вне
           </span>
         </div>
       </div>
@@ -330,7 +437,7 @@ export default function LayersPopover({
       ) : null}
       {hybridVisible && Number(hybridLayerVisibilityStats.outsideViewport || 0) > 0 ? (
         <div className="diagramActionPopoverEmpty mt-2" data-testid="diagram-action-layers-outside-warning">
-          Часть меток вне viewport. Нажмите Focus или Go to.
+          Часть меток вне viewport. Нажмите «Фокус» или «Перейти».
         </div>
       ) : null}
       {hybridVisible && Number(hybridLayerVisibilityStats.missingBindings || 0) > 0 ? (
@@ -341,7 +448,7 @@ export default function LayersPopover({
             onClick={() => cleanupMissingHybridBindings("layers_cleanup_missing")}
             data-testid="diagram-action-layers-cleanup-missing"
           >
-            Clean up missing bindings ({Number(hybridLayerVisibilityStats.missingBindings || 0)})
+            Очистить отсутствующие привязки ({Number(hybridLayerVisibilityStats.missingBindings || 0)})
           </button>
         </div>
       ) : null}
@@ -361,6 +468,8 @@ export default function LayersPopover({
               return {
                 key: `legacy_${elementId}`,
                 elementId,
+                deleteId: elementId,
+                deleteKind: "legacy",
                 title,
                 missing,
                 onGoTo: () => goToHybridLayerItem(elementId, "layers_list_go_to"),
@@ -374,6 +483,7 @@ export default function LayersPopover({
               return {
                 key: `v2_${elementId}`,
                 elementId,
+                deleteId: elementId,
                 title: toText(element.text || elementId) || elementId,
                 missing: !bpmnId,
                 onGoTo: () => {
@@ -395,7 +505,7 @@ export default function LayersPopover({
                   <span className="hybridLayerPopoverMeta">{elementId}</span>
                 </div>
                 <div className="hybridLayerPopoverActions">
-                  {missing ? <span className="diagramIssueChip">missing</span> : null}
+                  {missing ? <span className="diagramIssueChip">нет привязки</span> : null}
                   <button
                     type="button"
                     className="secondaryBtn h-7 px-2 text-[11px]"
@@ -404,8 +514,26 @@ export default function LayersPopover({
                     }}
                     data-testid="diagram-action-layers-go-to"
                   >
-                    Go to
+                    Перейти
                   </button>
+                  {row?.deleteId ? (
+                    <button
+                      type="button"
+                      className="secondaryBtn h-7 px-2 text-[11px]"
+                      onClick={() => {
+                        if (!confirmHybridDelete([row.deleteId], title)) return;
+                        if (toText(row.deleteKind) === "legacy") {
+                          deleteLegacyHybridMarkers?.([row.deleteId], "layers_delete_legacy_row");
+                          return;
+                        }
+                        deleteSelectedHybridIds([row.deleteId]);
+                      }}
+                      title={`Удалить ${title}`}
+                      data-testid="diagram-action-layers-delete-item"
+                    >
+                      🗑
+                    </button>
+                  ) : null}
                 </div>
               </div>
             );

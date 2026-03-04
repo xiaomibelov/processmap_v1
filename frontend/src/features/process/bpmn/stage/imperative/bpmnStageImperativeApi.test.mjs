@@ -83,6 +83,8 @@ test("createBpmnStageImperativeApi exposes expected public methods", () => {
     "saveXmlDraft",
     "resetBackend",
     "focusNode",
+    "getSelectedElementIds",
+    "selectElements",
     "setPlaybackFrame",
     "insertTemplatePack",
     "applyCommandOps",
@@ -112,5 +114,65 @@ test("focusNode proxies to focusNodeOnInstance with same args", () => {
   assert.deepEqual(focusCalls, [
     { inst: ctx.refs.viewerRef.current, kind: "viewer", nodeId: "Task_1", options },
     { inst: ctx.refs.modelerRef.current, kind: "editor", nodeId: "Task_1", options },
+  ]);
+});
+
+test("selectElements uses selection service and returns selected ids", () => {
+  const selected = [];
+  const selectionService = {
+    current: [],
+    get() {
+      return this.current;
+    },
+    select(items) {
+      this.current = Array.isArray(items) ? items : [];
+      selected.push(this.current.map((item) => item.id));
+    },
+  };
+  const registry = {
+    get(id) {
+      return id === "Task_1" || id === "Task_2" ? { id } : null;
+    },
+  };
+  const viewer = {
+    id: "viewer",
+    get(service) {
+      if (service === "selection") return selectionService;
+      if (service === "elementRegistry") return registry;
+      return null;
+    },
+  };
+  const focusCalls = [];
+  const ctx = createCtx({
+    refs: {
+      viewerRef: { current: viewer },
+    },
+    callbacks: {
+      focusNodeOnInstance: (inst, kind, nodeId, options) => {
+        focusCalls.push({ inst, kind, nodeId, options });
+        return true;
+      },
+    },
+  });
+  const api = createBpmnStageImperativeApi(ctx);
+  const result = api.selectElements(["Task_1", "Task_2", "Missing"], { markerClass: "fpcMark" });
+  assert.deepEqual(result, {
+    ok: true,
+    count: 2,
+    ids: ["Task_1", "Task_2"],
+    missingIds: ["Missing"],
+  });
+  assert.deepEqual(selected, [["Task_1", "Task_2"]]);
+  assert.deepEqual(api.getSelectedElementIds(), ["Task_1", "Task_2"]);
+  assert.deepEqual(focusCalls, [
+    {
+      inst: viewer,
+      kind: "viewer",
+      nodeId: "Task_1",
+      options: {
+        markerClass: "fpcMark",
+        source: "template_apply",
+      },
+    },
   ]);
 });

@@ -11,24 +11,36 @@ import { exportHybridToDrawio, importDrawioToHybridSync } from "../src/features/
 
 async function primeAuth(page, tokenRaw) {
   const token = String(tokenRaw || "").trim();
-  await page.addInitScript((value) => {
+  const orgId = String(process.env.E2E_ORG_ID || "").trim();
+  await page.addInitScript(({ value, activeOrgId }) => {
     window.localStorage.setItem("fpc_auth_access_token", String(value || ""));
-    window.localStorage.removeItem("fpc_active_org_id");
+    if (String(activeOrgId || "").trim()) {
+      window.localStorage.setItem("fpc_active_org_id", String(activeOrgId || ""));
+    } else {
+      window.localStorage.removeItem("fpc_active_org_id");
+    }
     window.localStorage.removeItem("hybrid_ui_v1");
-  }, token);
+  }, { value: token, activeOrgId: orgId });
 }
 
 async function openFixtureInTopbar(page, fixture) {
   const projectId = String(fixture.projectId || "").trim();
   const sessionId = String(fixture.sessionId || "").trim();
   await page.goto(`/app?project=${encodeURIComponent(projectId)}&session=${encodeURIComponent(sessionId)}`);
-  const orgChoice = page.getByText("Выберите организацию");
-  if (await orgChoice.count()) {
-    const firstOrgButton = page.getByRole("button", { name: /Org/i }).first();
-    if (await firstOrgButton.count()) await firstOrgButton.click();
-  }
+  await page.waitForLoadState("domcontentloaded");
   const projectSelect = page.getByTestId("topbar-project-select");
   const sessionSelect = page.getByTestId("topbar-session-select");
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (await projectSelect.isVisible().catch(() => false)) break;
+    const orgChoice = page.getByText("Выберите организацию");
+    if (await orgChoice.isVisible().catch(() => false)) {
+      const firstOrgButton = page.getByRole("button", { name: /Org|Default/i }).first();
+      if (await firstOrgButton.count()) {
+        await firstOrgButton.click().catch(() => {});
+      }
+    }
+    await page.waitForTimeout(250);
+  }
   await expect(projectSelect).toBeVisible();
   await expect(sessionSelect).toBeVisible();
   await projectSelect.selectOption(projectId);
@@ -60,6 +72,25 @@ async function openLayersPopover(page) {
   await toggle.click();
   await expect(popover).toBeVisible();
   return popover;
+}
+
+async function openHybridToolsPopover(page) {
+  const toggle = page.getByTestId("diagram-action-hybrid-tools-toggle");
+  const popover = page.getByTestId("diagram-action-hybrid-tools-popover");
+  if (await popover.isVisible().catch(() => false)) return popover;
+  await expect(toggle).toBeVisible();
+  await toggle.click({ force: true });
+  await expect(popover).toBeVisible();
+  return popover;
+}
+
+async function clickHybridTool(page, toolIdRaw) {
+  const toolId = String(toolIdRaw || "").trim();
+  expect(toolId).not.toBe("");
+  await openHybridToolsPopover(page);
+  const button = page.getByTestId(`diagram-action-hybrid-tools-tool-${toolId}`);
+  await expect(button).toBeVisible();
+  await button.click({ force: true });
 }
 
 async function readSessionHybridV2Doc(request, accessToken, sessionId) {
@@ -181,11 +212,10 @@ test("hybrid drawio codec: export -> clear -> import roundtrip", async ({ page, 
   const svg = overlay.getByTestId("hybrid-v2-svg");
   await expect(svg).toBeVisible();
 
-  await page.getByTestId("diagram-action-layers-tool-rect").click();
+  await clickHybridTool(page, "rect");
   await svg.click({ position: { x: 260, y: 220 } });
-  await page.getByTestId("diagram-action-layers-tool-text").click();
+  await clickHybridTool(page, "text");
   await svg.click({ position: { x: 520, y: 220 } });
-  await page.getByTestId("diagram-action-layers-tool-arrow").click();
   const shapeLocator = overlay.getByTestId("hybrid-v2-shape");
   await expect(shapeLocator).toHaveCount(2);
   const shapeIds = await shapeLocator.evaluateAll((nodes) => {
@@ -302,11 +332,11 @@ test("hybrid drawio codec: layer visibility toggle hides/shows overlay shapes", 
   const overlay = page.getByTestId("hybrid-layer-overlay").last();
   const svg = overlay.getByTestId("hybrid-v2-svg");
   await expect(svg).toBeVisible();
-  await page.getByTestId("diagram-action-layers-tool-container").click();
+  await clickHybridTool(page, "container");
   await svg.click({ position: { x: 280, y: 220 } });
-  await page.getByTestId("diagram-action-layers-tool-rect").click();
+  await clickHybridTool(page, "rect");
   await svg.click({ position: { x: 340, y: 260 } });
-  await page.getByTestId("diagram-action-layers-tool-note").click();
+  await clickHybridTool(page, "text");
   await svg.click({ position: { x: 440, y: 300 } });
 
   await expect
