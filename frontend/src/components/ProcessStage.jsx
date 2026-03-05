@@ -3501,6 +3501,7 @@ export default function ProcessStage({
               activeOrgId={workspaceActiveOrgId}
               canInviteUsers={!!canInviteWorkspaceUsers}
               onOpenSession={(session) => onOpenWorkspaceSession?.(session)}
+              onOpenDoc={(session) => onOpenWorkspaceSession?.(session, { source: "workspace_doc_link", openTab: "doc" })}
               onCreateProject={() => onCreateWorkspaceProject?.()}
               onCreateSession={() => onCreateWorkspaceSession?.()}
               onInviteUsers={() => onOpenWorkspaceOrgSettings?.()}

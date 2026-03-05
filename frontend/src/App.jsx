@@ -1564,12 +1564,16 @@ export default function App() {
     const sid = String(row?.id || row?.session_id || sessionLike || "").trim();
     const pid = String(row?.project_id || "").trim();
     const source = String(options?.source || "workspace_dashboard").trim() || "workspace_dashboard";
+    const openTab = String(options?.openTab || "").trim().toLowerCase();
     if (!sid) return;
     if (pid && pid !== String(projectId || "").trim()) {
       setProjectId(pid);
       await refreshSessions(pid);
     }
     await openSession(sid, { source });
+    if (openTab === "diagram" || openTab === "interview" || openTab === "xml" || openTab === "doc") {
+      setProcessTabIntent({ sid, tab: openTab, nonce: Date.now() });
+    }
   }
 
   function createLocalSession() {

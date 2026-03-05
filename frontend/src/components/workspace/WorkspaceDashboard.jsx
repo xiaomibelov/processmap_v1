@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { apiGetEnterpriseWorkspace } from "../../lib/api";
 import { buildWorkspaceTree, filterSessionsForSelection } from "../../features/workspace/workspaceDashboardVm";
@@ -54,6 +54,37 @@ function formatSessionStatus(statusRaw) {
   return status || "—";
 }
 
+function readDodPercent(rowRaw) {
+  const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
+  const candidates = [
+    row?.dod_fill_pct,
+    row?.dod_pct,
+    row?.dod_percent,
+    row?.dod_coverage_pct,
+    row?.dodCoveragePct,
+    row?.dod,
+    row?.snapshot?.dod_pct,
+    row?.snapshot?.coverage_pct,
+    row?.dod_snapshot?.summary?.dodPct,
+  ];
+  for (const raw of candidates) {
+    const value = Number(raw);
+    if (!Number.isFinite(value)) continue;
+    if (value < 0) continue;
+    if (value > 100) continue;
+    return Math.round(value);
+  }
+  return null;
+}
+
+function dodBadgeClass(percentRaw) {
+  const pct = Number(percentRaw);
+  if (!Number.isFinite(pct)) return "border-borderStrong/60 bg-panel text-muted";
+  if (pct >= 80) return "border-success/30 bg-success/10 text-success";
+  if (pct >= 50) return "border-warning/30 bg-warning/10 text-warning";
+  return "border-danger/30 bg-danger/10 text-danger";
+}
+
 function attentionBadgeClass(countRaw) {
   return Number(countRaw || 0) > 0
     ? "border-danger/30 bg-danger/10 text-danger"
@@ -90,11 +121,13 @@ function SectionHeader({ title, subtitle = "", actions = null }) {
 export default function WorkspaceDashboard({
   activeOrgId = "",
   onOpenSession,
+  onOpenDoc,
   onCreateProject,
   onCreateSession,
   onInviteUsers,
   canInviteUsers = false,
 }) {
+  const explorerRef = useRef(null);
   const [groupBy, setGroupBy] = useState("users");
   const [query, setQuery] = useState("");
   const [ownerFilterIds, setOwnerFilterIds] = useState([]);
@@ -237,6 +270,26 @@ export default function WorkspaceDashboard({
   const orgName = toText(workspace?.org?.name || activeOrgId || "Рабочее пространство");
   const orgRole = formatRole(workspace?.org?.role);
 
+  function openProjectsList() {
+    setGroupBy("projects");
+    setSelectedOwnerId("");
+    setOffset(0);
+    if (explorerRef.current && typeof explorerRef.current.scrollIntoView === "function") {
+      explorerRef.current.scrollIntoView({ block: "start", behavior: "smooth" });
+    }
+  }
+
+  function openDocFromWorkspace() {
+    const latest = listRows[0] || null;
+    if (latest && typeof onOpenDoc === "function") {
+      onOpenDoc(latest);
+      return;
+    }
+    if (typeof window !== "undefined") {
+      window.location.assign("/app");
+    }
+  }
+
   function resetSelection() {
     setSelectedOwnerId("");
     setSelectedProjectId("");
@@ -247,18 +300,21 @@ export default function WorkspaceDashboard({
   return (
     <div className="workspaceDashboard h-full min-h-0 overflow-auto rounded-xl border border-border bg-panel p-4" data-testid="workspace-dashboard">
       <div className="rounded-2xl border border-border bg-panel2/35 p-4">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <span className="rounded-full border border-accent/30 bg-accentSoft/20 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-fg">
                 Рабочее пространство
               </span>
-              <span className="rounded-full border border-border px-2 py-1 text-[11px] text-muted" title={orgName}>
-                {orgName}
-              </span>
-              <span className="rounded-full border border-border px-2 py-1 text-[11px] text-muted">
-                {orgRole}
-              </span>
+              <button
+                type="button"
+                className="secondaryBtn h-7 px-2 text-xs"
+                onClick={openProjectsList}
+                data-testid="workspace-open-projects"
+                title="Перейти к списку проектов"
+              >
+                К проектам
+              </button>
             </div>
             <h1 className="text-xl font-semibold tracking-tight text-fg md:text-2xl">
               Рабочее пространство / Проекты / Сессии
@@ -266,9 +322,21 @@ export default function WorkspaceDashboard({
             <p className="mt-2 max-w-3xl text-sm text-muted">
               Выберите сессию, чтобы редактировать диаграмму, проходить интервью и формировать отчёты.
             </p>
+            <p className="mt-1 max-w-3xl text-xs text-muted" title={orgName}>
+              Организация: {orgName}{orgRole ? ` · ${orgRole}` : ""}
+            </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="ml-auto flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              className="secondaryBtn h-9 px-3 text-sm"
+              onClick={openDocFromWorkspace}
+              data-testid="workspace-open-doc"
+              title="Открыть DOC"
+            >
+              DOC
+            </button>
             <button type="button" className="primaryBtn h-9 px-3 text-sm" onClick={() => onCreateProject?.()}>
               Создать проект
             </button>
@@ -419,7 +487,11 @@ export default function WorkspaceDashboard({
             </div>
           </div>
 
-          <div className="workspaceExplorer min-h-[260px] overflow-auto rounded-xl border border-border bg-panel2 p-3" data-testid="workspace-explorer">
+          <div
+            ref={explorerRef}
+            className="workspaceExplorer min-h-[260px] overflow-auto rounded-xl border border-border bg-panel2 p-3"
+            data-testid="workspace-explorer"
+          >
             <SectionHeader
               title="Проекты и владельцы"
               subtitle={groupBy === "users" ? "Просмотр сессий по каждому владельцу." : "Просмотр проектов по последним обновлениям."}
@@ -620,6 +692,12 @@ export default function WorkspaceDashboard({
                         <span className={`rounded-full border px-2 py-1 ${attentionBadgeClass(row.needs_attention)}`}>
                           Внимание: {Number(row.needs_attention || 0)}
                         </span>
+                        <span
+                          className={`rounded-full border px-2 py-1 ${dodBadgeClass(readDodPercent(row))}`}
+                          title={readDodPercent(row) == null ? "No snapshot yet" : `DoD заполненность: ${readDodPercent(row)}%`}
+                        >
+                          DoD: {readDodPercent(row) == null ? "—" : `${readDodPercent(row)}%`}
+                        </span>
                         <span className="rounded-full border border-border px-2 py-1 text-muted">
                           Обновлено: {formatDateTime(row.updated_at)}
                         </span>
@@ -630,13 +708,14 @@ export default function WorkspaceDashboard({
               </div>
 
               <div className="hidden overflow-auto md:block">
-                <table className="w-full min-w-[760px] border-separate border-spacing-y-2 text-sm">
+                <table className="w-full min-w-[860px] border-separate border-spacing-y-2 text-sm">
                   <thead>
                     <tr className="text-left text-[11px] uppercase tracking-wide text-muted">
                       <th className="px-3 py-1">Сессия</th>
                       <th className="px-3 py-1">Проект</th>
                       <th className="px-3 py-1">Владелец</th>
                       <th className="px-3 py-1">Обновлено</th>
+                      <th className="px-3 py-1">DoD %</th>
                       <th className="px-3 py-1">Статус</th>
                       <th className="px-3 py-1">Отчёты</th>
                       <th className="px-3 py-1">Внимание</th>
@@ -664,6 +743,15 @@ export default function WorkspaceDashboard({
                             </div>
                           </td>
                           <td className="px-3 py-2.5 align-top text-muted">{formatDateTime(row.updated_at)}</td>
+                          <td className="px-3 py-2.5 align-top">
+                            <span
+                              className={`rounded-full border px-2 py-1 text-[11px] ${dodBadgeClass(readDodPercent(row))}`}
+                              title={readDodPercent(row) == null ? "No snapshot yet" : `DoD заполненность: ${readDodPercent(row)}%`}
+                              data-testid="workspace-dod-badge"
+                            >
+                              {readDodPercent(row) == null ? "—" : `${readDodPercent(row)}%`}
+                            </span>
+                          </td>
                           <td className="px-3 py-2.5 align-top">
                             <span className={`rounded-full border px-2 py-1 text-[11px] ${statusBadgeClass(row.status)}`}>
                               {formatSessionStatus(row.status)}

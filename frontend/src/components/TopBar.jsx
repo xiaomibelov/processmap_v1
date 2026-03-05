@@ -270,24 +270,13 @@ export default function TopBar({
 
         {!sessionId ? (
           <div className="topGroup flex shrink-0 items-center gap-2">
-            <select
-              className="select topSelect topSelect--org h-9 min-h-0 w-36 min-w-[9rem] max-w-[12rem] py-0 text-sm md:w-44 md:max-w-[14rem]"
-              value={activeOrgId || ""}
-              title={selectedOrgTitle}
-              onChange={(e) => onOrgChange?.(e.target.value)}
-              disabled={!orgList.length || orgList.length < 2}
-              data-testid="topbar-org-select"
+            <span
+              className="inline-flex h-9 min-h-0 max-w-[14rem] items-center rounded-lg border border-border bg-panel2/60 px-3 py-0 text-sm text-muted"
+              title={selectedOrgTitle || "Организация"}
+              data-testid="topbar-org-label"
             >
-              <option value="">{orgList.length ? "— выбрать организацию —" : "Организация по умолчанию"}</option>
-              {orgList.map((org, idx) => {
-                const id = orgIdFrom(org);
-                return (
-                  <option key={`${id || "org"}_${idx}`} value={id}>
-                    {orgTitleFrom(org)}
-                  </option>
-                );
-              })}
-            </select>
+              <span className="truncate">{selectedOrgTitle || "Организация"}</span>
+            </span>
             {canOpenOrgSettings ? (
               <button
                 type="button"
