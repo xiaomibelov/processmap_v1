@@ -26,15 +26,17 @@ export function normalizeTemplateRecord(raw, defaults = {}) {
   const laneNames = Array.from(new Set(asArray(item.lane_names || item.laneNames).map((row) => toText(row)).filter(Boolean)));
   const bpmnElementIds = Array.from(new Set(asArray(item.bpmn_element_ids || item.bpmnElementIds).map((row) => toText(row)).filter(Boolean)));
   const scope = normalizeTemplateScope(item.scope || fallback.scope);
-  const title = toText(item.title || fallback.title) || "Template";
+  const title = toText(item.title || item.name || fallback.title || fallback.name) || "Template";
   const id = toText(item.id || item.template_id || item.templateId || fallback.id) || `tpl_${createdAt}_${Math.random().toString(36).slice(2, 8)}`;
   return {
     id,
+    name: title,
     title,
     scope,
     created_at: createdAt,
     updated_at: updatedAt,
     user_id: toText(item.user_id || item.userId || fallback.user_id || fallback.userId),
+    owner_user_id: toText(item.owner_user_id || item.ownerUserId || item.user_id || fallback.owner_user_id || fallback.ownerUserId || fallback.user_id || fallback.userId),
     org_id: toText(item.org_id || item.orgId || fallback.org_id || fallback.orgId),
     bpmn_element_ids: bpmnElementIds,
     element_types: elementTypes,
@@ -46,5 +48,7 @@ export function normalizeTemplateRecord(raw, defaults = {}) {
     meta: {
       source: toText(asObject(item.meta).source || asObject(fallback.meta).source || "diagram_selection"),
     },
+    can_edit: item.can_edit !== undefined ? Boolean(item.can_edit) : Boolean(fallback.can_edit ?? true),
+    can_delete: item.can_delete !== undefined ? Boolean(item.can_delete) : Boolean(fallback.can_delete ?? true),
   };
 }

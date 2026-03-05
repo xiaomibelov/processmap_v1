@@ -27,7 +27,7 @@ export default function ProcessDialogs({ view = {} }) {
     createTemplateScope,
     setCreateTemplateScope,
     workspaceActiveOrgId,
-    canInviteWorkspaceUsers,
+    canCreateOrgTemplates,
     selectedBpmnElementIds,
     saveCurrentSelectionAsTemplate,
     templatesPickerOpen,
@@ -197,7 +197,7 @@ export default function ProcessDialogs({ view = {} }) {
         onTitleChange={setCreateTemplateTitle}
         scope={createTemplateScope}
         onScopeChange={setCreateTemplateScope}
-        canCreateOrgTemplate={!!workspaceActiveOrgId && !!canInviteWorkspaceUsers}
+        canCreateOrgTemplate={!!workspaceActiveOrgId && !!canCreateOrgTemplates}
         selectionCount={selectedBpmnElementIds.length}
         busy={templatesBusy}
         onSave={saveCurrentSelectionAsTemplate}
@@ -215,6 +215,7 @@ export default function ProcessDialogs({ view = {} }) {
         onSearchChange={setTemplatesSearch}
         personalCount={templateCounts.personal}
         orgCount={templateCounts.org}
+        showOrgScope={!!workspaceActiveOrgId}
         templates={scopedTemplates}
         busy={templatesBusy}
         onRefresh={reloadTemplates}

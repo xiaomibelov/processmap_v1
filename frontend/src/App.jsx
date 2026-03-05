@@ -56,6 +56,7 @@ import { normalizeHybridLayerMap } from "./features/process/hybrid/hybridLayerUi
 import { normalizeHybridV2Doc } from "./features/process/hybrid/hybridLayerV2";
 import { mergeDrawioMeta, normalizeDrawioMeta } from "./features/process/drawio/drawioMeta";
 import { useAuth } from "./features/auth/AuthProvider";
+import { canCreateOrgTemplateForRole } from "./features/templates/model/templatesRbac";
 
 function isLocalSessionId(id) {
   return typeof id === "string" && (id === "local" || id.startsWith("local_"));
@@ -1041,6 +1042,9 @@ export default function App() {
   const canInviteWorkspaceUsers = useMemo(() => {
     if (Boolean(user?.is_admin)) return true;
     return activeOrgRole === "org_owner" || activeOrgRole === "org_admin";
+  }, [activeOrgRole, user?.is_admin]);
+  const canManageSharedTemplates = useMemo(() => {
+    return canCreateOrgTemplateForRole(activeOrgRole, Boolean(user?.is_admin));
   }, [activeOrgRole, user?.is_admin]);
 
   function markOk(hint) {
@@ -3292,6 +3296,7 @@ export default function App() {
         orgs={orgs}
         activeOrgId={activeOrgId}
         canInviteWorkspaceUsers={canInviteWorkspaceUsers}
+        canManageSharedTemplates={canManageSharedTemplates}
         onOrgChange={async (orgId) => {
           const next = String(orgId || "").trim();
           if (!next || next === String(activeOrgId || "").trim()) return;

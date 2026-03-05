@@ -10,6 +10,7 @@ export default function TemplatesPicker({
   onSearchChange,
   personalCount = 0,
   orgCount = 0,
+  showOrgScope = true,
   templates = [],
   busy = false,
   onRefresh,
@@ -37,13 +38,19 @@ export default function TemplatesPicker({
           >
             Личные ({Number(personalCount || 0)})
           </button>
-          <button
-            type="button"
-            className={`secondaryBtn h-8 px-3 text-xs ${activeScope === "org" ? "border-accent/55 bg-accentSoft/25 text-fg" : ""}`}
-            onClick={() => onScopeChange?.("org")}
-          >
-            Организация ({Number(orgCount || 0)})
-          </button>
+          {showOrgScope ? (
+            <button
+              type="button"
+              className={`secondaryBtn h-8 px-3 text-xs ${activeScope === "org" ? "border-accent/55 bg-accentSoft/25 text-fg" : ""}`}
+              onClick={() => onScopeChange?.("org")}
+            >
+              Организация ({Number(orgCount || 0)})
+            </button>
+          ) : (
+            <span className="rounded-md border border-border/60 px-3 py-1.5 text-xs text-muted">
+              Организация (0)
+            </span>
+          )}
           <input
             type="search"
             className="input h-8 min-h-0 flex-1 px-3 py-0 text-xs"

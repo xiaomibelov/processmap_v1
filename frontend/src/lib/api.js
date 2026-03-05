@@ -508,6 +508,72 @@ export async function apiListOrgs() {
   return { ok: true, status: r.status, items, active_org_id, default_org_id };
 }
 
+// ------- Templates -------
+export async function apiListTemplates({ scope = "personal", orgId = "", limit = 200 } = {}) {
+  const normalizedScope = String(scope || "").trim().toLowerCase() === "org" ? "org" : "personal";
+  const oid = String(orgId || "").trim();
+  const qs = new URLSearchParams();
+  qs.set("scope", normalizedScope);
+  if (normalizedScope === "org" && oid) qs.set("org_id", oid);
+  if (Number(limit || 0) > 0) qs.set("limit", String(Math.max(1, Math.min(1000, Number(limit || 200)))));
+  const endpoint = `/api/templates?${qs.toString()}`;
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  if (!r.ok) return r;
+  const items = Array.isArray(r.data?.items) ? r.data.items : [];
+  return {
+    ok: true,
+    status: r.status,
+    scope: String(r.data?.scope || normalizedScope),
+    org_id: String(r.data?.org_id || oid),
+    count: Number(r.data?.count || items.length || 0),
+    items,
+  };
+}
+
+export async function apiCreateTemplate(payload = {}) {
+  const body = {
+    scope: String(payload?.scope || "personal"),
+    org_id: String(payload?.org_id || payload?.orgId || ""),
+    name: String(payload?.name || ""),
+    description: String(payload?.description || ""),
+    payload: payload?.payload && typeof payload.payload === "object" ? payload.payload : {},
+  };
+  const r = okOrError(await request("/api/templates", { method: "POST", body }));
+  if (!r.ok) return r;
+  return {
+    ok: true,
+    status: r.status,
+    item: r.data?.item || {},
+  };
+}
+
+export async function apiPatchTemplate(templateId, patch = {}) {
+  const tid = String(templateId || "").trim();
+  if (!tid) return { ok: false, status: 0, error: "missing template_id" };
+  const body = {};
+  if (patch && Object.prototype.hasOwnProperty.call(patch, "name")) body.name = String(patch.name || "");
+  if (patch && Object.prototype.hasOwnProperty.call(patch, "description")) body.description = String(patch.description || "");
+  if (patch && Object.prototype.hasOwnProperty.call(patch, "payload")) body.payload = patch.payload && typeof patch.payload === "object" ? patch.payload : {};
+  const r = okOrError(await request(`/api/templates/${encodeURIComponent(tid)}`, { method: "PATCH", body }));
+  if (!r.ok) return r;
+  return {
+    ok: true,
+    status: r.status,
+    item: r.data?.item || {},
+  };
+}
+
+export async function apiDeleteTemplate(templateId) {
+  const tid = String(templateId || "").trim();
+  if (!tid) return { ok: false, status: 0, error: "missing template_id" };
+  const r = okOrError(await request(`/api/templates/${encodeURIComponent(tid)}`, { method: "DELETE" }));
+  if (!r.ok) return r;
+  return {
+    ok: true,
+    status: r.status,
+  };
+}
+
 // ------- Enterprise Org Settings -------
 export async function apiListOrgMembers(orgId) {
   const oid = String(orgId || "").trim();

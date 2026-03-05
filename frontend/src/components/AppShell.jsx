@@ -22,6 +22,7 @@ export default function AppShell({
   orgs,
   activeOrgId,
   canInviteWorkspaceUsers,
+  canManageSharedTemplates,
   onOrgChange,
   onOpenOrgSettings,
   projects,
@@ -146,6 +147,7 @@ export default function AppShell({
             activeProjectId={projectId}
             workspaceActiveOrgId={activeOrgId}
             canInviteWorkspaceUsers={!!canInviteWorkspaceUsers}
+            canManageSharedTemplates={!!canManageSharedTemplates}
             locked={locked}
             draft={draft}
             onPatchDraft={onPatchDraft}

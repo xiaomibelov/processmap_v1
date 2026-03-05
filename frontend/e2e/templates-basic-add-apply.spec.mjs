@@ -130,6 +130,7 @@ test("templates smoke: add from selection and apply restores selection", async (
   test.skip(process.env.E2E_TEMPLATES !== "1", "Set E2E_TEMPLATES=1 to run templates add/apply smoke.");
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const marker = `TPLSMK_${runId.slice(-4)}`;
+  const templateName = `Smoke ${marker}`;
   const auth = await apiLogin(request, { apiBase: API_BASE });
   const fixture = await createProjectAndSession(request, auth.headers, runId);
 
@@ -145,10 +146,18 @@ test("templates smoke: add from selection and apply restores selection", async (
   await expect(addTemplateButton).toContainText("(2)");
 
   await addTemplateButton.click();
-  await expect(byTestIds(page, ["modal-create-template", "template-pack-save-modal"])).toBeVisible();
-  await byTestIds(page, ["input-template-name", "template-pack-title-input"]).fill(`Smoke ${marker}`);
-  await byTestIds(page, ["btn-save-template", "template-pack-save-confirm"]).click();
-  await expect(page.getByText(new RegExp(`(Saved|Шаблон сохранён): Smoke ${marker}`))).toBeVisible();
+  const createTemplateModal = byTestIds(page, ["modal-create-template", "template-pack-save-modal"]);
+  await expect(createTemplateModal).toBeVisible();
+  await page
+    .locator('[data-testid="input-template-name"]:visible, [data-testid="template-pack-title-input"]:visible')
+    .first()
+    .fill(templateName);
+  const saveTemplateButton = page
+    .locator('[data-testid="btn-save-template"]:visible, [data-testid="template-pack-save-confirm"]:visible')
+    .first();
+  await expect(saveTemplateButton).toBeEnabled();
+  await saveTemplateButton.click({ force: true });
+  await expect(createTemplateModal).toBeHidden({ timeout: 20000 });
 
   await page.evaluate(() => {
     const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
@@ -159,10 +168,11 @@ test("templates smoke: add from selection and apply restores selection", async (
   const templatesButton = byTestIds(page, ["btn-templates", "template-pack-insert-open"]);
   await expect(templatesButton).toBeEnabled();
   await templatesButton.click();
-  await expect(byTestIds(page, ["templates-picker", "template-pack-modal"])).toBeVisible();
+  const templatesPicker = byTestIds(page, ["templates-picker", "template-pack-modal"]);
+  await expect(templatesPicker).toBeVisible();
   const targetTemplateRow = page
     .locator("[data-testid^='template-item-'], [data-testid='template-pack-item']")
-    .filter({ hasText: `Smoke ${marker}` })
+    .filter({ hasText: templateName })
     .first();
   await expect(targetTemplateRow).toBeVisible();
   await targetTemplateRow

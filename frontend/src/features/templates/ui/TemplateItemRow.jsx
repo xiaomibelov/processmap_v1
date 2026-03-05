@@ -16,6 +16,7 @@ export default function TemplateItemRow({
   const templateId = toText(item.id) || "unknown";
   const count = Number(item.selection_count || item.bpmn_element_ids?.length || 0);
   const updatedAt = Number(item.updated_at || item.created_at || 0);
+  const canDelete = item.can_delete !== false;
   return (
     <div
       className="rounded-lg border border-border/70 bg-panel2/35 px-3 py-2"
@@ -46,7 +47,8 @@ export default function TemplateItemRow({
             type="button"
             className="secondaryBtn h-7 px-2 text-[11px] text-danger"
             onClick={() => void onDelete?.(item)}
-            disabled={deleting}
+            disabled={deleting || !canDelete}
+            title={canDelete ? "Удалить шаблон" : "Недостаточно прав для удаления"}
             data-testid="template-pack-delete"
           >
             Удалить

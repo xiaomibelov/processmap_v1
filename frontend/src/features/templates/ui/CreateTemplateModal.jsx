@@ -64,9 +64,10 @@ export default function CreateTemplateModal({
             checked={scope === "org"}
             onChange={() => onScopeChange?.("org")}
             disabled={busy || !canCreateOrgTemplate}
+            title={canCreateOrgTemplate ? "" : "Only org admins can create shared templates"}
           />
           <span>Общий для организации</span>
-          {!canCreateOrgTemplate ? <span className="text-xs text-muted">(Недоступно по правам)</span> : null}
+          {!canCreateOrgTemplate ? <span className="text-xs text-muted">(Only org admins can create shared templates)</span> : null}
         </label>
       </div>
     </Modal>

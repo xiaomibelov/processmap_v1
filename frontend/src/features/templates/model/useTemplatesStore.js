@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createTemplate, deleteTemplate, listTemplates } from "../api/index.js";
-import { countTemplatesByScope, filterTemplatesByQuery, suggestTemplates, splitTemplatesByScope } from "./templatesSelectors";
-import { buildTemplateFromSelection } from "../services/buildTemplateFromSelection";
+import { countTemplatesByScope, filterTemplatesByQuery, suggestTemplates, splitTemplatesByScope } from "./templatesSelectors.js";
+import { buildTemplateFromSelection } from "../services/buildTemplateFromSelection.js";
 
 function toText(value) {
   return String(value || "").trim();
@@ -32,6 +32,19 @@ function defaultTemplateTitle(selectionContext = {}, selectionCount = 0) {
   return `Шаблон ${Math.max(1, Number(selectionCount || 0))}`;
 }
 
+export async function loadTemplatesForScopes({
+  userId = "",
+  orgId = "",
+  listFn = listTemplates,
+}) {
+  const myTemplates = await listFn({ scope: "personal", userId, orgId: "" });
+  const orgTemplates = orgId ? await listFn({ scope: "org", userId, orgId }) : [];
+  return {
+    myTemplates: Array.isArray(myTemplates) ? myTemplates : [],
+    orgTemplates: Array.isArray(orgTemplates) ? orgTemplates : [],
+  };
+}
+
 export default function useTemplatesStore({
   userId = "",
   orgId = "",
@@ -48,20 +61,54 @@ export default function useTemplatesStore({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [lastError, setLastError] = useState("");
   const [search, setSearch] = useState("");
   const [activeScope, setActiveScope] = useState("personal");
   const [createScope, setCreateScope] = useState("personal");
   const [createTitle, setCreateTitle] = useState("");
-  const [templates, setTemplates] = useState([]);
+  const [myTemplates, setMyTemplates] = useState([]);
+  const [orgTemplates, setOrgTemplates] = useState([]);
 
   const selectedIds = typeof getSelectedBpmnElementIds === "function" ? getSelectedBpmnElementIds() : [];
 
-  const reloadTemplates = useCallback(async () => {
-    const personal = await listTemplates({ scope: "personal", userId });
-    const org = await listTemplates({ scope: "org", orgId });
-    setTemplates([...personal, ...org]);
-    return { personal, org };
+  const loadMy = useCallback(async () => {
+    const items = await listTemplates({ scope: "personal", userId, orgId: "" });
+    setMyTemplates(Array.isArray(items) ? items : []);
+    return Array.isArray(items) ? items : [];
+  }, [userId]);
+
+  const loadOrg = useCallback(async () => {
+    if (!orgId) {
+      setOrgTemplates([]);
+      return [];
+    }
+    const items = await listTemplates({ scope: "org", userId, orgId });
+    setOrgTemplates(Array.isArray(items) ? items : []);
+    return Array.isArray(items) ? items : [];
   }, [orgId, userId]);
+
+  const reloadTemplates = useCallback(async () => {
+    setLoading(true);
+    setLastError("");
+    try {
+      const loaded = await loadTemplatesForScopes({
+        userId,
+        orgId,
+        listFn: listTemplates,
+      });
+      setMyTemplates(loaded.myTemplates);
+      setOrgTemplates(loaded.orgTemplates);
+      return loaded;
+    } catch (error) {
+      const message = toText(error?.message || error || "template_list_failed");
+      setLastError(message);
+      setError?.(message);
+      return { myTemplates: [], orgTemplates: [] };
+    } finally {
+      setLoading(false);
+    }
+  }, [orgId, setError, userId]);
 
   useEffect(() => {
     writeTemplatesEnabled(templatesEnabled);
@@ -72,6 +119,7 @@ export default function useTemplatesStore({
     void reloadTemplates();
   }, [reloadTemplates, templatesEnabled]);
 
+  const templates = useMemo(() => [...myTemplates, ...orgTemplates], [myTemplates, orgTemplates]);
   const byScope = useMemo(() => splitTemplatesByScope(templates), [templates]);
   const counts = useMemo(() => countTemplatesByScope(templates), [templates]);
   const scopedTemplates = useMemo(
@@ -85,13 +133,8 @@ export default function useTemplatesStore({
 
   const openTemplatesPicker = useCallback(async () => {
     setTemplatesEnabled(true);
-    setBusy(true);
-    try {
-      await reloadTemplates();
-      setPickerOpen(true);
-    } finally {
-      setBusy(false);
-    }
+    await reloadTemplates();
+    setPickerOpen(true);
   }, [reloadTemplates]);
 
   const openCreateTemplateModal = useCallback(() => {
@@ -105,7 +148,8 @@ export default function useTemplatesStore({
     }
     setTemplatesEnabled(true);
     setCreateTitle(defaultTemplateTitle(selectionContext, selectedIds.length));
-    setCreateScope(canCreateOrgTemplate ? activeScope : "personal");
+    const nextScope = canCreateOrgTemplate && activeScope === "org" ? "org" : "personal";
+    setCreateScope(nextScope);
     setCreateOpen(true);
   }, [activeScope, canCreateOrgTemplate, hasSession, selectedIds.length, selectionContext, setError, tab]);
 
@@ -125,6 +169,7 @@ export default function useTemplatesStore({
       return;
     }
     setBusy(true);
+    setLastError("");
     try {
       const saved = await createTemplate({
         scope,
@@ -133,7 +178,9 @@ export default function useTemplatesStore({
         template: built.template,
       });
       if (!saved?.ok) {
-        setError?.("Не удалось сохранить шаблон.");
+        const message = toText(saved?.error || "Не удалось сохранить шаблон.");
+        setLastError(message);
+        setError?.(message);
         return;
       }
       await reloadTemplates();
@@ -159,6 +206,25 @@ export default function useTemplatesStore({
     userId,
   ]);
 
+  const createPersonalTemplate = useCallback(async (template) => {
+    return await createTemplate({
+      scope: "personal",
+      userId,
+      orgId: "",
+      template,
+    });
+  }, [userId]);
+
+  const createOrgTemplate = useCallback(async (template) => {
+    if (!canCreateOrgTemplate || !orgId) return { ok: false, status: 403, error: "insufficient_permissions" };
+    return await createTemplate({
+      scope: "org",
+      userId,
+      orgId,
+      template,
+    });
+  }, [canCreateOrgTemplate, orgId, userId]);
+
   const applyTemplate = useCallback(async (template) => {
     if (typeof applySelectionIds !== "function") return;
     const result = await Promise.resolve(applySelectionIds(template?.bpmn_element_ids || []));
@@ -177,20 +243,26 @@ export default function useTemplatesStore({
 
   const removeTemplate = useCallback(async (template) => {
     const item = template && typeof template === "object" ? template : {};
-    const scope = toText(item.scope || "personal");
     if (!item.id) return;
+    if (item.can_delete === false) {
+      setError?.("Недостаточно прав для удаления шаблона.");
+      return;
+    }
     const ok = typeof window === "undefined" || window.confirm(`Удалить шаблон «${toText(item.title || item.id)}»?`);
     if (!ok) return;
     setBusy(true);
+    setLastError("");
     try {
       const removed = await deleteTemplate({
-        scope,
+        scope: toText(item.scope || "personal"),
         userId,
         orgId,
         templateId: item.id,
       });
       if (!removed?.ok) {
-        setError?.("Не удалось удалить шаблон.");
+        const message = toText(removed?.error || "Не удалось удалить шаблон.");
+        setLastError(message);
+        setError?.(message);
         return;
       }
       await reloadTemplates();
@@ -206,7 +278,9 @@ export default function useTemplatesStore({
     setPickerOpen,
     createOpen,
     setCreateOpen,
-    busy,
+    busy: busy || loading,
+    loading,
+    lastError,
     search,
     setSearch,
     activeScope,
@@ -216,9 +290,15 @@ export default function useTemplatesStore({
     createTitle,
     setCreateTitle,
     selectedIds,
+    myTemplates,
+    orgTemplates,
     scopedTemplates,
     suggestedTemplates,
     counts,
+    loadMy,
+    loadOrg,
+    createPersonalTemplate,
+    createOrgTemplate,
     openTemplatesPicker,
     openCreateTemplateModal,
     saveCurrentSelectionAsTemplate,
