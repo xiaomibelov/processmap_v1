@@ -1988,6 +1988,8 @@ def _normalize_auto_pass_v1(value: Any) -> Dict[str, Any]:
                     "node_id": node_id,
                     "name": str(step.get("name") or node_id).strip() or node_id,
                     "duration_s": duration_s,
+                    "kind": str(step.get("kind") or "task").strip() or "task",
+                    "bpmn_type": str(step.get("bpmn_type") or "").strip(),
                 }
             )
         return steps
@@ -2034,6 +2036,8 @@ def _normalize_auto_pass_v1(value: Any) -> Dict[str, Any]:
                         row["duration_s"] = int(d) if d is not None and int(d) >= 0 else None
                     except Exception:
                         row["duration_s"] = None
+                    row["step_kind"] = str(row_raw.get("step_kind") or "task").strip() or "task"
+                    row["bpmn_type"] = str(row_raw.get("bpmn_type") or "").strip()
             elif kind == "gateway_choice":
                 gateway_id = str(row_raw.get("gateway_id") or "").strip()
                 flow_id = str(row_raw.get("flow_id") or "").strip()

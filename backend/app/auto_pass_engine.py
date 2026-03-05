@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -92,7 +93,12 @@ def build_duration_index(session: Any) -> Dict[str, Optional[int]]:
 
 def _pick_start_nodes(graph: Dict[str, Any]) -> List[str]:
     incoming_by_node = _as_dict(graph.get("incoming_by_node"))
-    start_ids = sorted({_as_text(x) for x in _as_list(graph.get("start_event_ids")) if _as_text(x)})
+    top_level_start_ids = sorted(
+        {_as_text(x) for x in _as_list(graph.get("top_level_start_event_ids")) if _as_text(x)}
+    )
+    start_ids = top_level_start_ids or sorted(
+        {_as_text(x) for x in _as_list(graph.get("start_event_ids")) if _as_text(x)}
+    )
     if start_ids:
         top_level_starts = [nid for nid in start_ids if len(_as_list(incoming_by_node.get(nid))) == 0]
         if top_level_starts:
@@ -113,6 +119,54 @@ def _flow_choice_label(flow_by_id: Dict[str, Dict[str, Any]], flow_id: str) -> s
 
 def _mk_warning(code: str, message: str) -> Dict[str, Any]:
     return {"code": _as_text(code), "message": _as_text(message)}
+
+
+def _parse_graph_for_autopass(xml: str) -> Dict[str, Any]:
+    raw = _as_text(xml)
+    if not raw:
+        return parse_bpmn_sequence_graph("")
+    try:
+        graph = parse_bpmn_sequence_graph(raw, expand_subprocess_flows=False)
+    except TypeError:
+        graph = parse_bpmn_sequence_graph(raw)
+    graph_dict = _as_dict(graph)
+
+    try:
+        root = ET.fromstring(raw)
+    except Exception:
+        return graph_dict
+
+    node_type_by_id = _as_dict(graph_dict.get("node_type_by_id"))
+    node_parent_subprocess: Dict[str, str] = {}
+
+    def _ln(tag: str) -> str:
+        src = str(tag or "")
+        if "}" in src:
+            src = src.rsplit("}", 1)[-1]
+        return src.lower()
+
+    def walk(el: Any, current_subprocess_id: str = "") -> None:
+        local = _ln(getattr(el, "tag", ""))
+        el_id = _as_text(getattr(el, "attrib", {}).get("id"))
+        if el_id and el_id in node_type_by_id:
+            node_parent_subprocess[el_id] = _as_text(current_subprocess_id)
+        next_subprocess_id = current_subprocess_id
+        if local in {"subprocess", "adhocsubprocess"} and el_id:
+            next_subprocess_id = el_id
+        for child in list(el):
+            walk(child, next_subprocess_id)
+
+    walk(root, "")
+
+    start_event_ids = [_as_text(x) for x in _as_list(graph_dict.get("start_event_ids")) if _as_text(x)]
+    end_event_ids = [_as_text(x) for x in _as_list(graph_dict.get("end_event_ids")) if _as_text(x)]
+    derived_top_level_start = [nid for nid in start_event_ids if not _as_text(node_parent_subprocess.get(nid))]
+    derived_top_level_end = [nid for nid in end_event_ids if not _as_text(node_parent_subprocess.get(nid))]
+
+    graph_dict["node_parent_subprocess_by_id"] = node_parent_subprocess
+    graph_dict["top_level_start_event_ids"] = sorted(set(derived_top_level_start))
+    graph_dict["top_level_end_event_ids"] = sorted(set(derived_top_level_end))
+    return graph_dict
 
 
 def _compute_reachability_to_main_end(graph: Dict[str, Any]) -> Dict[str, Any]:
@@ -183,7 +237,7 @@ def _compute_reachability_to_main_end(graph: Dict[str, Any]) -> Dict[str, Any]:
 
 def compute_auto_pass_precheck(session: Any) -> Dict[str, Any]:
     xml = _as_text(getattr(session, "bpmn_xml", ""))
-    graph = parse_bpmn_sequence_graph(xml)
+    graph = _parse_graph_for_autopass(xml)
     reach = _compute_reachability_to_main_end(graph)
     return {
         "ok": bool(reach.get("ok")),
@@ -203,11 +257,18 @@ _TASK_NODE_TYPES: Set[str] = {
     "businessruletask",
     "sendtask",
     "receivetask",
+    "subprocess",
+    "adhocsubprocess",
+    "callactivity",
 }
 
 
 def _is_task_node(node_type: str) -> bool:
     return _as_text(node_type).lower() in _TASK_NODE_TYPES
+
+
+def _is_subprocess_like_node(node_type: str) -> bool:
+    return _as_text(node_type).lower() in {"subprocess", "adhocsubprocess", "callactivity"}
 
 
 def _is_teleport_flow(flow_id: str) -> bool:
@@ -391,10 +452,13 @@ def _enumerate_variants(
         next_detail_rows = list(detail_rows)
         if _is_task_node(node_type):
             node_duration = duration_by_node.get(nid)
+            step_kind = "subprocess" if _is_subprocess_like_node(node_type) else "task"
             task_step = {
                 "node_id": nid,
                 "name": node_name,
                 "duration_s": node_duration if isinstance(node_duration, int) else None,
+                "kind": step_kind,
+                "bpmn_type": node_type,
             }
             next_task_steps.append(task_step)
             next_detail_rows.append(
@@ -403,6 +467,8 @@ def _enumerate_variants(
                     "node_id": nid,
                     "name": node_name,
                     "duration_s": task_step["duration_s"],
+                    "step_kind": step_kind,
+                    "bpmn_type": node_type,
                 }
             )
 
@@ -429,9 +495,14 @@ def _enumerate_variants(
 
         outgoing = [_as_text(fid) for fid in _as_list(outgoing_by_node.get(nid)) if _as_text(fid)]
         if not outgoing:
+            failed_code = "END_NOT_REACHED"
+            failed_message = f"Traversal stopped at {nid} before reaching top-level EndEvent"
+            if _is_subprocess_like_node(node_type):
+                failed_code = "NO_OUTGOING_FROM_SUBPROCESS"
+                failed_message = f"SubProcess/CallActivity {nid} has no outgoing sequence flow"
             fail_variant(
-                code="END_NOT_REACHED",
-                message=f"Traversal stopped at {nid} before reaching top-level EndEvent",
+                code=failed_code,
+                message=failed_message,
                 task_steps=next_task_steps,
                 gateway_choices=gateway_choices,
                 detail_rows=next_detail_rows,
@@ -593,7 +664,7 @@ def compute_auto_pass_v1(
     max_visits_n = max(1, min(_to_int(max_visits_per_node, 2), 10))
 
     xml = _as_text(getattr(session, "bpmn_xml", ""))
-    graph = parse_bpmn_sequence_graph(xml)
+    graph = _parse_graph_for_autopass(xml)
     reach = _compute_reachability_to_main_end(graph)
     if not bool(reach.get("ok")):
         return {
