@@ -567,51 +567,6 @@ export default function ProcessStage({
       laneName: selectedElementLaneName,
     };
   }, [selectedElementId, selectedElementName, selectedElementType, selectedElementLaneName]);
-  const templatesBridge = useTemplatesStageBridge({
-    selectedBpmnElement,
-    draftNodes: draft?.nodes,
-    sessionId: sid,
-    bpmnApiRef: bpmnRef,
-  });
-  const selectedBpmnElementIds = templatesBridge.selectedBpmnIds;
-  const templatesStore = useTemplatesStore({
-    userId: toText(user?.id),
-    orgId: workspaceActiveOrgId,
-    canCreateOrgTemplate: !!workspaceActiveOrgId && !!canManageSharedTemplates,
-    hasSession,
-    tab,
-    getSelectedBpmnElementIds: templatesBridge.getSelectedBpmnIds,
-    applySelectionIds: templatesBridge.applyBpmnSelection,
-    selectionContext: templatesBridge.selectionContext,
-    setError: setGenErr,
-    setInfo: setInfoMsg,
-  });
-  const {
-    templatesEnabled,
-    setTemplatesEnabled,
-    pickerOpen: templatesPickerOpen,
-    setPickerOpen: setTemplatesPickerOpen,
-    createOpen: createTemplateOpen,
-    setCreateOpen: setCreateTemplateOpen,
-    busy: templatesBusy,
-    search: templatesSearch,
-    setSearch: setTemplatesSearch,
-    activeScope: templatesScope,
-    setActiveScope: setTemplatesScope,
-    createScope: createTemplateScope,
-    setCreateScope: setCreateTemplateScope,
-    createTitle: createTemplateTitle,
-    setCreateTitle: setCreateTemplateTitle,
-    scopedTemplates,
-    suggestedTemplates,
-    counts: templateCounts,
-    openTemplatesPicker,
-    openCreateTemplateModal,
-    saveCurrentSelectionAsTemplate,
-    reloadTemplates,
-    applyTemplate,
-    removeTemplate,
-  } = templatesStore;
   const nodePathMetaMap = useMemo(
     () => normalizeNodePathMetaMap(asObject(asObject(draft?.bpmn_meta).node_path_meta)),
     [draft?.bpmn_meta],
@@ -1043,6 +998,7 @@ export default function ProcessStage({
     drawioUiState,
     setHybridToolsMode,
     selectHybridPaletteTool,
+    startHybridStencilPlacement,
     goToActiveHybridBinding,
     exportHybridV2Drawio,
     handleHybridV2ImportFile,
@@ -1126,6 +1082,67 @@ export default function ProcessStage({
     setGenErr,
     setInfoMsg,
   });
+  const templatesBridge = useTemplatesStageBridge({
+    selectedBpmnElement,
+    draftNodes: draft?.nodes,
+    sessionId: sid,
+    bpmnApiRef: bpmnRef,
+  });
+  const selectedBpmnElementIds = templatesBridge.selectedBpmnIds;
+  const getSelectedHybridStencilTemplate = useCallback(() => {
+    const selectedIds = Array.from(new Set(asArray(hybridV2SelectedIds).map((row) => toText(row)).filter(Boolean)));
+    return {
+      selected_ids: selectedIds,
+      hybrid_doc: hybridV2DocLive,
+      selection_count: selectedIds.length,
+    };
+  }, [asArray, hybridV2DocLive, hybridV2SelectedIds, toText]);
+  const applyHybridStencilTemplate = useCallback((template) => {
+    return startHybridStencilPlacement(template);
+  }, [startHybridStencilPlacement]);
+  const templatesStore = useTemplatesStore({
+    userId: toText(user?.id),
+    orgId: workspaceActiveOrgId,
+    canCreateOrgTemplate: !!workspaceActiveOrgId && !!canManageSharedTemplates,
+    hasSession,
+    tab,
+    getSelectedBpmnElementIds: templatesBridge.getSelectedBpmnIds,
+    getSelectedHybridStencilTemplate,
+    applySelectionIds: templatesBridge.applyBpmnSelection,
+    applyHybridStencilTemplate,
+    selectionContext: templatesBridge.selectionContext,
+    setError: setGenErr,
+    setInfo: setInfoMsg,
+  });
+  const {
+    templatesEnabled,
+    setTemplatesEnabled,
+    pickerOpen: templatesPickerOpen,
+    setPickerOpen: setTemplatesPickerOpen,
+    createOpen: createTemplateOpen,
+    setCreateOpen: setCreateTemplateOpen,
+    busy: templatesBusy,
+    search: templatesSearch,
+    setSearch: setTemplatesSearch,
+    activeScope: templatesScope,
+    setActiveScope: setTemplatesScope,
+    createScope: createTemplateScope,
+    setCreateScope: setCreateTemplateScope,
+    createType: createTemplateType,
+    setCreateType: setCreateTemplateType,
+    createTitle: createTemplateTitle,
+    setCreateTitle: setCreateTemplateTitle,
+    selectedHybridCount: selectedHybridTemplateCount,
+    scopedTemplates,
+    suggestedTemplates,
+    counts: templateCounts,
+    openTemplatesPicker,
+    openCreateTemplateModal,
+    saveCurrentSelectionAsTemplate,
+    reloadTemplates,
+    applyTemplate,
+    removeTemplate,
+  } = templatesStore;
   const { closeAllDiagramActions } = useDiagramActionPopovers({
     toolbarMenuOpen,
     setToolbarMenuOpen,
@@ -3271,9 +3288,12 @@ export default function ProcessStage({
       setCreateTemplateTitle,
       createTemplateScope,
       setCreateTemplateScope,
+      createTemplateType,
+      setCreateTemplateType,
       workspaceActiveOrgId,
       canCreateOrgTemplates: !!workspaceActiveOrgId && !!canManageSharedTemplates,
       selectedBpmnElementIds,
+      selectedHybridTemplateCount,
       saveCurrentSelectionAsTemplate,
       templatesPickerOpen,
       closeTemplatesPickerDialog: stageActions.closeTemplatesPickerDialog,
@@ -3325,6 +3345,7 @@ export default function ProcessStage({
       createManualSnapshot,
       createTemplateOpen,
       createTemplateScope,
+      createTemplateType,
       createTemplateTitle,
       diffBaseSnapshotId,
       diffOpen,
@@ -3351,7 +3372,9 @@ export default function ProcessStage({
       scopedTemplates,
       semanticDiffView,
       selectedBpmnElementIds,
+      selectedHybridTemplateCount,
       setCreateTemplateScope,
+      setCreateTemplateType,
       setCreateTemplateTitle,
       setDiffBaseSnapshotId,
       setDiffTargetSnapshotId,
@@ -3393,6 +3416,7 @@ export default function ProcessStage({
     infoMsg,
     selectedElementContext,
     selectedBpmnElementIds,
+    selectedHybridTemplateCount,
     templatesBusy,
     tab,
     availablePathTiers,

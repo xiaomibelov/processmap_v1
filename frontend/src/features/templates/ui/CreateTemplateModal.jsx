@@ -7,8 +7,11 @@ export default function CreateTemplateModal({
   onTitleChange,
   scope = "personal",
   onScopeChange,
+  templateType = "bpmn_selection_v1",
+  onTemplateTypeChange,
   canCreateOrgTemplate = false,
   selectionCount = 0,
+  hybridSelectionCount = 0,
   busy = false,
   onSave,
 }) {
@@ -24,7 +27,12 @@ export default function CreateTemplateModal({
             type="button"
             className="primaryBtn"
             onClick={() => void onSave?.()}
-            disabled={busy || !String(title || "").trim()}
+            disabled={
+              busy
+              || !String(title || "").trim()
+              || (templateType === "hybrid_stencil_v1" && Number(hybridSelectionCount || 0) <= 0)
+              || (templateType !== "hybrid_stencil_v1" && Number(selectionCount || 0) <= 0)
+            }
             data-testid="btn-save-template"
           >
             {busy ? "Сохранение..." : "Сохранить шаблон"}
@@ -46,6 +54,31 @@ export default function CreateTemplateModal({
         </label>
         <div className="rounded-lg border border-border bg-panel2/35 px-3 py-2 text-xs text-muted">
           Выделено BPMN элементов: <b className="text-fg">{Number(selectionCount || 0)}</b>
+          <span> · Hybrid элементов: <b className="text-fg">{Number(hybridSelectionCount || 0)}</b></span>
+        </div>
+        <div className="space-y-2 rounded-lg border border-border bg-panel2/25 px-3 py-2">
+          <div className="text-xs text-muted">Тип шаблона</div>
+          <label className="flex items-center gap-2 text-sm text-fg">
+            <input
+              type="radio"
+              name="template_type"
+              checked={templateType !== "hybrid_stencil_v1"}
+              onChange={() => onTemplateTypeChange?.("bpmn_selection_v1")}
+              disabled={busy}
+            />
+            <span>BPMN selection</span>
+          </label>
+          <label className="flex items-center gap-2 text-sm text-fg">
+            <input
+              type="radio"
+              name="template_type"
+              checked={templateType === "hybrid_stencil_v1"}
+              onChange={() => onTemplateTypeChange?.("hybrid_stencil_v1")}
+              disabled={busy || Number(hybridSelectionCount || 0) <= 0}
+              title={Number(hybridSelectionCount || 0) > 0 ? "" : "Выделите Hybrid элементы для stencil"}
+            />
+            <span>Hybrid stencil (placement)</span>
+          </label>
         </div>
         <label className="flex items-center gap-2 text-sm text-fg">
           <input

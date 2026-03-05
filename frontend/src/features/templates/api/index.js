@@ -24,7 +24,7 @@ function toNormalizedList(itemsRaw, defaults = {}) {
 
 function toPayloadTemplate(templateRaw) {
   const template = templateRaw && typeof templateRaw === "object" ? templateRaw : {};
-  return {
+  const payload = {
     bpmn_element_ids: Array.isArray(template.bpmn_element_ids) ? template.bpmn_element_ids : [],
     primary_element_id: String(template.primary_element_id || ""),
     selection_count: Number(template.selection_count || 0),
@@ -34,6 +34,10 @@ function toPayloadTemplate(templateRaw) {
     notes: String(template.notes || ""),
     meta: template.meta && typeof template.meta === "object" ? template.meta : {},
   };
+  if (template.payload && typeof template.payload === "object") {
+    return { ...payload, ...template.payload };
+  }
+  return payload;
 }
 
 export async function listTemplates(params = {}) {
@@ -57,6 +61,7 @@ export async function createTemplate(params = {}) {
   const description = String(template.description || "").trim();
   const remote = await apiCreateTemplate({
     scope,
+    template_type: String(template.template_type || "bpmn_selection_v1"),
     org_id: scope === "org" ? orgId : "",
     name,
     description,
@@ -88,6 +93,9 @@ export async function updateTemplate(params = {}) {
     }
     if (Object.prototype.hasOwnProperty.call(patchRaw, "payload")) {
       patch.payload = patchRaw.payload && typeof patchRaw.payload === "object" ? patchRaw.payload : {};
+    }
+    if (Object.prototype.hasOwnProperty.call(patchRaw, "template_type")) {
+      patch.template_type = String(patchRaw.template_type || "");
     }
     const remote = await apiPatchTemplate(templateId, patch);
     if (remote?.ok) {

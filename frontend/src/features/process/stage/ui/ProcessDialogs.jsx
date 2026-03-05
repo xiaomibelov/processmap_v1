@@ -26,9 +26,12 @@ export default function ProcessDialogs({ view = {} }) {
     setCreateTemplateTitle,
     createTemplateScope,
     setCreateTemplateScope,
+    createTemplateType,
+    setCreateTemplateType,
     workspaceActiveOrgId,
     canCreateOrgTemplates,
     selectedBpmnElementIds,
+    selectedHybridTemplateCount,
     saveCurrentSelectionAsTemplate,
     templatesPickerOpen,
     closeTemplatesPickerDialog,
@@ -197,8 +200,11 @@ export default function ProcessDialogs({ view = {} }) {
         onTitleChange={setCreateTemplateTitle}
         scope={createTemplateScope}
         onScopeChange={setCreateTemplateScope}
+        templateType={createTemplateType}
+        onTemplateTypeChange={setCreateTemplateType}
         canCreateOrgTemplate={!!workspaceActiveOrgId && !!canCreateOrgTemplates}
         selectionCount={selectedBpmnElementIds.length}
+        hybridSelectionCount={selectedHybridTemplateCount}
         busy={templatesBusy}
         onSave={saveCurrentSelectionAsTemplate}
       />

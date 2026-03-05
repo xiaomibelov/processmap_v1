@@ -24,6 +24,8 @@ import {
   buildHybridElementAt,
   buildHybridGhost,
   getDefaultHybridSize,
+  instantiateHybridStencilAt,
+  normalizeHybridStencilPayload,
 } from "../actions/hybridPlace.js";
 import { matrixToScreen } from "../../stage/utils/hybridCoords.js";
 import { updateHybridElementRect } from "../actions/hybridUpdate.js";
@@ -77,6 +79,51 @@ export function projectDiagramGhostPreview(ghostRaw, matrixRaw) {
   };
 }
 
+function buildStencilGhostPreview(stencilRaw, pointRaw, matrixRaw) {
+  const stencil = asObject(stencilRaw);
+  const point = asObject(pointRaw);
+  const bbox = asObject(stencil.bbox);
+  const bboxW = Number(bbox.w || 0);
+  const bboxH = Number(bbox.h || 0);
+  const anchorX = Number(point.x || 0);
+  const anchorY = Number(point.y || 0);
+  if (!Number.isFinite(anchorX) || !Number.isFinite(anchorY) || bboxW <= 0 || bboxH <= 0) return null;
+  const leftDiagram = anchorX - (bboxW / 2);
+  const topDiagram = anchorY - (bboxH / 2);
+  const p1 = matrixToScreen(matrixRaw, leftDiagram, topDiagram);
+  const p2 = matrixToScreen(matrixRaw, leftDiagram + bboxW, topDiagram + bboxH);
+  const left = Math.min(Number(p1.x || 0), Number(p2.x || 0));
+  const top = Math.min(Number(p1.y || 0), Number(p2.y || 0));
+  const width = Math.max(0, Math.abs(Number(p2.x || 0) - Number(p1.x || 0)));
+  const height = Math.max(0, Math.abs(Number(p2.y || 0) - Number(p1.y || 0)));
+  const items = asArray(stencil.elements).map((elementRaw, index) => {
+    const element = asObject(elementRaw);
+    const dx = Number(element.dx || 0);
+    const dy = Number(element.dy || 0);
+    const ew = Number(element.w || 0);
+    const eh = Number(element.h || 0);
+    const e1 = matrixToScreen(matrixRaw, leftDiagram + dx, topDiagram + dy);
+    const e2 = matrixToScreen(matrixRaw, leftDiagram + dx + ew, topDiagram + dy + eh);
+    return {
+      id: `ghost_item_${index + 1}`,
+      type: toText(element.type || "rect") || "rect",
+      left: Math.min(Number(e1.x || 0), Number(e2.x || 0)),
+      top: Math.min(Number(e1.y || 0), Number(e2.y || 0)),
+      width: Math.max(0, Math.abs(Number(e2.x || 0) - Number(e1.x || 0))),
+      height: Math.max(0, Math.abs(Number(e2.y || 0) - Number(e1.y || 0))),
+      text: toText(element.text || ""),
+    };
+  });
+  return {
+    kind: "group",
+    left,
+    top,
+    width,
+    height,
+    items,
+  };
+}
+
 export default function useHybridToolsController({
   hybridDoc,
   setHybridDoc,
@@ -102,6 +149,7 @@ export default function useHybridToolsController({
   const pendingTransformRef = useRef(null);
   const toolRef = useRef("select");
   const arrowDraftRef = useRef(null);
+  const stencilPlacementRef = useRef(null);
   const textEditorRef = useRef(null);
   const [toolState, setToolState] = useState("select");
   const [importNotice, setImportNotice] = useState("");
@@ -424,6 +472,94 @@ export default function useHybridToolsController({
     return createdId;
   }, [hybridDocRef, updateDoc]);
 
+  const cancelStencilPlacement = useCallback(() => {
+    stencilPlacementRef.current = null;
+    setGhostPreview(null);
+    if (toText(toolRef.current) === "template_stencil") {
+      toolRef.current = "select";
+      setToolState("select");
+    }
+  }, []);
+
+  const startStencilPlacement = useCallback((templateRaw = {}) => {
+    const template = asObject(templateRaw);
+    const payload = normalizeHybridStencilPayload(template.payload);
+    if (!asArray(payload.elements).length) {
+      setGenErr?.("Шаблон stencil пустой: нет элементов для размещения.");
+      return { ok: false, error: "stencil_empty" };
+    }
+    stencilPlacementRef.current = {
+      templateId: toText(template.id),
+      title: toText(template.title || "Stencil"),
+      payload,
+    };
+    toolRef.current = "template_stencil";
+    setToolState("template_stencil");
+    setGhostPreview(null);
+    setInfoMsg?.(`Placement mode: ${toText(template.title || "Stencil")}. Кликните по диаграмме для размещения.`);
+    setGenErr?.("");
+    return { ok: true };
+  }, [setGenErr, setInfoMsg]);
+
+  const placeStencilAt = useCallback((pointRaw) => {
+    const placement = asObject(stencilPlacementRef.current);
+    const payload = asObject(placement.payload);
+    if (!asArray(payload.elements).length) return false;
+    const point = asObject(pointRaw);
+    const x = Number(point.x || 0);
+    const y = Number(point.y || 0);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    let nextDoc = hybridDocRef.current;
+    updateDoc((prevRaw) => {
+      const prev = normalizeHybridV2Doc(prevRaw);
+      const activeLayerId = toText(asObject(prev.view).active_layer_id || prev.layers?.[0]?.id || "L1") || "L1";
+      const usedIds = new Set([
+        ...asArray(prev.elements).map((rowRaw) => toText(asObject(rowRaw).id)).filter(Boolean),
+        ...asArray(prev.edges).map((rowRaw) => toText(asObject(rowRaw).id)).filter(Boolean),
+      ]);
+      const nextGeneratedId = (prefixRaw = "E") => {
+        const prefix = toText(prefixRaw || "E") || "E";
+        let guard = 0;
+        while (guard < 10000) {
+          guard += 1;
+          const candidate = `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+          if (usedIds.has(candidate)) continue;
+          usedIds.add(candidate);
+          return candidate;
+        }
+        return `${prefix}_${Math.random().toString(36).slice(2, 12)}`;
+      };
+      const created = instantiateHybridStencilAt(payload, { x, y }, {
+        layerId: activeLayerId,
+        makeElementId: () => nextGeneratedId("E"),
+        makeEdgeId: () => nextGeneratedId("A"),
+      });
+      nextDoc = normalizeHybridV2Doc({
+        ...prev,
+        elements: [...asArray(prev.elements), ...asArray(created.elements)],
+        edges: [...asArray(prev.edges), ...asArray(created.edges)],
+      });
+      return nextDoc;
+    }, "hybrid_v2_stencil_place");
+    void persistHybridV2Doc(nextDoc, { source: "hybrid_v2_stencil_place" });
+    markPlaybackOverlayInteraction?.({
+      stage: "hybrid_v2_stencil_place",
+      elements: Number(asArray(payload.elements).length || 0),
+      edges: Number(asArray(payload.edges).length || 0),
+    });
+    cancelStencilPlacement();
+    return true;
+  }, [asArray, cancelStencilPlacement, hybridDocRef, markPlaybackOverlayInteraction, persistHybridV2Doc, updateDoc]);
+
+  const placeStencilAtClient = useCallback((clientXRaw, clientYRaw) => {
+    const clientX = Number(clientXRaw);
+    const clientY = Number(clientYRaw);
+    if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return false;
+    const point = clientToDiagram(clientX, clientY);
+    if (!point) return false;
+    return placeStencilAt(point);
+  }, [clientToDiagram, placeStencilAt]);
+
   const bindHybridToBpmn = useCallback((targetBpmnIdRaw, hybridIdRaw = "") => {
     const activeId = toText(hybridIdRaw);
     const targetBpmnId = toText(targetBpmnIdRaw);
@@ -744,6 +880,10 @@ export default function useHybridToolsController({
     }
     const tool = toText(toolRef.current).toLowerCase() || "select";
     markPlaybackOverlayInteraction?.({ action: "hybrid_v2_overlay_pointer", tool });
+    if (toText(tool) === "template_stencil") {
+      placeStencilAt(point);
+      return;
+    }
     if (tool === "rect" || tool === "note" || tool === "text" || tool === "container") {
       createElementAt(point, tool);
       return;
@@ -753,7 +893,7 @@ export default function useHybridToolsController({
       return;
     }
     selectionApi.clearSelection?.();
-  }, [clientToDiagram, createElementAt, hybridDocRef, hybridVisible, layerById, markPlaybackOverlayInteraction, modeEffective, setGenErr, setInfoMsg, uiLocked]);
+  }, [clientToDiagram, createElementAt, hybridDocRef, hybridVisible, layerById, markPlaybackOverlayInteraction, modeEffective, placeStencilAt, setGenErr, setInfoMsg, uiLocked]);
 
   const onOverlayPointerMove = useCallback((event) => {
     const rect = asObject(overlayRect);
@@ -761,7 +901,10 @@ export default function useHybridToolsController({
     const localY = Number(event?.clientY || 0) - Number(rect.top || 0);
     const point = clientToDiagram(event?.clientX, event?.clientY);
     const tool = toText(toolRef.current).toLowerCase() || "select";
-    if (tool === "rect" || tool === "container") {
+    const stencilPlacement = asObject(stencilPlacementRef.current);
+    if (tool === "template_stencil" && asArray(stencilPlacement.payload?.elements).length && point) {
+      setGhostPreview(buildStencilGhostPreview(stencilPlacement.payload, point, hybridViewportMatrix));
+    } else if (tool === "rect" || tool === "container") {
       setGhostPreview(buildDiagramGhostPreview(tool, point));
     } else {
       setGhostPreview(null);
@@ -777,7 +920,7 @@ export default function useHybridToolsController({
         pointer: localPoint,
       };
     }
-  }, [clientToDiagram, overlayRect]);
+  }, [asArray, clientToDiagram, hybridViewportMatrix, overlayRect]);
 
   const onOverlayPointerLeave = useCallback(() => {
     setGhostPreview(null);
@@ -840,12 +983,17 @@ export default function useHybridToolsController({
     }
     pendingTransformRef.current = null;
     arrowDraftRef.current = null;
+    stencilPlacementRef.current = null;
     dragRef.current = null;
     resizeRef.current = null;
     textEditorRef.current = null;
     setGhostPreview(null);
     setContextMenu(null);
     setTextEditor(null);
+    if (toText(toolRef.current) === "template_stencil") {
+      toolRef.current = "select";
+      setToolState("select");
+    }
   }, []);
 
   useEffect(() => () => {
@@ -908,6 +1056,9 @@ export default function useHybridToolsController({
     updateDoc,
     createElementAt,
     createEdge,
+    startStencilPlacement,
+    placeStencilAtClient,
+    cancelStencilPlacement,
     bindHybridToBpmn,
     goToHybridBinding,
     exportDrawio,
@@ -924,6 +1075,7 @@ export default function useHybridToolsController({
     closeContextMenu,
     ghostPreview: ghostPreviewScreen,
     ghostPreviewDiagram: ghostPreview,
+    stencilPlacementActive: !!stencilPlacementRef.current,
     arrowPreview,
     cancelTransientState,
     renameHybridItem,

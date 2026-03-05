@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createTemplate, deleteTemplate, listTemplates } from "../api/index.js";
 import { countTemplatesByScope, filterTemplatesByQuery, suggestTemplates, splitTemplatesByScope } from "./templatesSelectors.js";
 import { buildTemplateFromSelection } from "../services/buildTemplateFromSelection.js";
+import { buildHybridStencilTemplate } from "../services/buildHybridStencilTemplate.js";
 
 function toText(value) {
   return String(value || "").trim();
@@ -52,7 +53,9 @@ export default function useTemplatesStore({
   hasSession = false,
   tab = "",
   getSelectedBpmnElementIds,
+  getSelectedHybridStencilTemplate,
   applySelectionIds,
+  applyHybridStencilTemplate,
   selectionContext = {},
   setError,
   setInfo,
@@ -66,11 +69,16 @@ export default function useTemplatesStore({
   const [search, setSearch] = useState("");
   const [activeScope, setActiveScope] = useState("personal");
   const [createScope, setCreateScope] = useState("personal");
+  const [createType, setCreateType] = useState("bpmn_selection_v1");
   const [createTitle, setCreateTitle] = useState("");
   const [myTemplates, setMyTemplates] = useState([]);
   const [orgTemplates, setOrgTemplates] = useState([]);
 
   const selectedIds = typeof getSelectedBpmnElementIds === "function" ? getSelectedBpmnElementIds() : [];
+  const selectedHybridStencil = typeof getSelectedHybridStencilTemplate === "function"
+    ? getSelectedHybridStencilTemplate()
+    : null;
+  const selectedHybridCount = Number(selectedHybridStencil?.selection_count || selectedHybridStencil?.payload?.elements?.length || 0);
 
   const loadMy = useCallback(async () => {
     const items = await listTemplates({ scope: "personal", userId, orgId: "" });
@@ -142,30 +150,43 @@ export default function useTemplatesStore({
       setError?.("Откройте Diagram и выделите BPMN элементы для шаблона.");
       return;
     }
-    if (!selectedIds.length) {
-      setError?.("Сначала выделите BPMN элементы.");
+    if (!selectedIds.length && selectedHybridCount <= 0) {
+      setError?.("Сначала выделите BPMN или Hybrid элементы.");
       return;
     }
     setTemplatesEnabled(true);
-    setCreateTitle(defaultTemplateTitle(selectionContext, selectedIds.length));
+    setCreateTitle(defaultTemplateTitle(selectionContext, selectedIds.length || selectedHybridCount));
+    setCreateType(selectedIds.length > 0 ? "bpmn_selection_v1" : "hybrid_stencil_v1");
     const nextScope = canCreateOrgTemplate && activeScope === "org" ? "org" : "personal";
     setCreateScope(nextScope);
     setCreateOpen(true);
-  }, [activeScope, canCreateOrgTemplate, hasSession, selectedIds.length, selectionContext, setError, tab]);
+  }, [activeScope, canCreateOrgTemplate, hasSession, selectedHybridCount, selectedIds.length, selectionContext, setError, tab]);
 
   const saveCurrentSelectionAsTemplate = useCallback(async () => {
     const scope = createScope === "org" && canCreateOrgTemplate ? "org" : "personal";
-    const built = buildTemplateFromSelection(selectedIds, {
-      title: createTitle,
-      scope,
-      primaryName: selectionContext.primaryName,
-      primaryElementId: selectionContext.primaryElementId,
-      sourceSessionId: selectionContext.sourceSessionId,
-      elementTypes: selectionContext.elementTypes,
-      laneNames: selectionContext.laneNames,
-    });
+    const built = createType === "hybrid_stencil_v1"
+      ? buildHybridStencilTemplate(
+        selectedHybridStencil?.selected_ids || [],
+        selectedHybridStencil?.hybrid_doc,
+        {
+          title: createTitle,
+          scope,
+          sourceSessionId: selectionContext.sourceSessionId,
+        },
+      )
+      : buildTemplateFromSelection(selectedIds, {
+        title: createTitle,
+        scope,
+        primaryName: selectionContext.primaryName,
+        primaryElementId: selectionContext.primaryElementId,
+        sourceSessionId: selectionContext.sourceSessionId,
+        elementTypes: selectionContext.elementTypes,
+        laneNames: selectionContext.laneNames,
+      });
     if (!built.ok) {
-      setError?.("Не удалось собрать шаблон из текущего выделения.");
+      setError?.(createType === "hybrid_stencil_v1"
+        ? "Не удалось собрать stencil из текущего Hybrid выделения."
+        : "Не удалось собрать шаблон из текущего выделения.");
       return;
     }
     setBusy(true);
@@ -175,7 +196,10 @@ export default function useTemplatesStore({
         scope,
         userId,
         orgId,
-        template: built.template,
+        template: {
+          ...built.template,
+          template_type: createType,
+        },
       });
       if (!saved?.ok) {
         const message = toText(saved?.error || "Не удалось сохранить шаблон.");
@@ -192,6 +216,7 @@ export default function useTemplatesStore({
   }, [
     canCreateOrgTemplate,
     createScope,
+    createType,
     createTitle,
     orgId,
     reloadTemplates,
@@ -201,6 +226,8 @@ export default function useTemplatesStore({
     selectionContext.primaryElementId,
     selectionContext.primaryName,
     selectionContext.sourceSessionId,
+    selectedHybridStencil?.hybrid_doc,
+    selectedHybridStencil?.selected_ids,
     setError,
     setInfo,
     userId,
@@ -226,6 +253,21 @@ export default function useTemplatesStore({
   }, [canCreateOrgTemplate, orgId, userId]);
 
   const applyTemplate = useCallback(async (template) => {
+    const templateType = toText(template?.template_type || "bpmn_selection_v1");
+    if (templateType === "hybrid_stencil_v1") {
+      if (typeof applyHybridStencilTemplate !== "function") {
+        setError?.("Hybrid placement API недоступен.");
+        return;
+      }
+      const result = await Promise.resolve(applyHybridStencilTemplate(template));
+      if (result?.ok === false) {
+        setError?.(toText(result.error || "Не удалось включить режим размещения stencil."));
+        return;
+      }
+      setPickerOpen(false);
+      setInfo?.(`Placement mode: ${toText(template?.title || "Stencil")}`);
+      return;
+    }
     if (typeof applySelectionIds !== "function") return;
     const result = await Promise.resolve(applySelectionIds(template?.bpmn_element_ids || []));
     if (result?.ok === false) {
@@ -239,7 +281,7 @@ export default function useTemplatesStore({
       return;
     }
     setInfo?.(`Applied: ${toText(template?.title || "Template")}`);
-  }, [applySelectionIds, setError, setInfo]);
+  }, [applyHybridStencilTemplate, applySelectionIds, setError, setInfo]);
 
   const removeTemplate = useCallback(async (template) => {
     const item = template && typeof template === "object" ? template : {};
@@ -287,9 +329,12 @@ export default function useTemplatesStore({
     setActiveScope,
     createScope,
     setCreateScope,
+    createType,
+    setCreateType,
     createTitle,
     setCreateTitle,
     selectedIds,
+    selectedHybridCount,
     myTemplates,
     orgTemplates,
     scopedTemplates,

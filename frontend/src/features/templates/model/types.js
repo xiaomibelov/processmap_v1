@@ -1,4 +1,5 @@
 export const TEMPLATE_SCOPES = ["personal", "org"];
+export const TEMPLATE_TYPES = ["bpmn_selection_v1", "hybrid_stencil_v1"];
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -17,6 +18,11 @@ export function normalizeTemplateScope(scopeRaw) {
   return TEMPLATE_SCOPES.includes(scope) ? scope : "personal";
 }
 
+export function normalizeTemplateType(templateTypeRaw) {
+  const value = toText(templateTypeRaw).toLowerCase();
+  return TEMPLATE_TYPES.includes(value) ? value : "bpmn_selection_v1";
+}
+
 export function normalizeTemplateRecord(raw, defaults = {}) {
   const item = asObject(raw);
   const fallback = asObject(defaults);
@@ -25,6 +31,9 @@ export function normalizeTemplateRecord(raw, defaults = {}) {
   const elementTypes = Array.from(new Set(asArray(item.element_types || item.elementTypes).map((row) => toText(row)).filter(Boolean)));
   const laneNames = Array.from(new Set(asArray(item.lane_names || item.laneNames).map((row) => toText(row)).filter(Boolean)));
   const bpmnElementIds = Array.from(new Set(asArray(item.bpmn_element_ids || item.bpmnElementIds).map((row) => toText(row)).filter(Boolean)));
+  const payload = asObject(item.payload || fallback.payload);
+  const payloadBpmnIds = Array.from(new Set(asArray(payload.bpmn_element_ids).map((row) => toText(row)).filter(Boolean)));
+  const templateType = normalizeTemplateType(item.template_type || item.templateType || fallback.template_type || fallback.templateType);
   const scope = normalizeTemplateScope(item.scope || fallback.scope);
   const title = toText(item.title || item.name || fallback.title || fallback.name) || "Template";
   const id = toText(item.id || item.template_id || item.templateId || fallback.id) || `tpl_${createdAt}_${Math.random().toString(36).slice(2, 8)}`;
@@ -32,19 +41,21 @@ export function normalizeTemplateRecord(raw, defaults = {}) {
     id,
     name: title,
     title,
+    template_type: templateType,
     scope,
     created_at: createdAt,
     updated_at: updatedAt,
     user_id: toText(item.user_id || item.userId || fallback.user_id || fallback.userId),
     owner_user_id: toText(item.owner_user_id || item.ownerUserId || item.user_id || fallback.owner_user_id || fallback.ownerUserId || fallback.user_id || fallback.userId),
     org_id: toText(item.org_id || item.orgId || fallback.org_id || fallback.orgId),
-    bpmn_element_ids: bpmnElementIds,
+    bpmn_element_ids: bpmnElementIds.length ? bpmnElementIds : payloadBpmnIds,
     element_types: elementTypes,
     lane_names: laneNames,
     primary_element_id: toText(item.primary_element_id || item.primaryElementId || bpmnElementIds[0] || ""),
     selection_count: Number(item.selection_count || item.selectionCount || bpmnElementIds.length || 0),
     source_session_id: toText(item.source_session_id || item.sourceSessionId || fallback.source_session_id || fallback.sourceSessionId),
     notes: toText(item.notes || ""),
+    payload,
     meta: {
       source: toText(asObject(item.meta).source || asObject(fallback.meta).source || "diagram_selection"),
     },

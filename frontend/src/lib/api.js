@@ -402,6 +402,7 @@ export async function apiListTemplates({ scope = "personal", orgId = "", limit =
 export async function apiCreateTemplate(payload = {}) {
   const body = {
     scope: String(payload?.scope || "personal"),
+    template_type: String(payload?.template_type || payload?.templateType || "bpmn_selection_v1"),
     org_id: String(payload?.org_id || payload?.orgId || ""),
     name: String(payload?.name || ""),
     description: String(payload?.description || ""),
@@ -423,6 +424,7 @@ export async function apiPatchTemplate(templateId, patch = {}) {
   if (patch && Object.prototype.hasOwnProperty.call(patch, "name")) body.name = String(patch.name || "");
   if (patch && Object.prototype.hasOwnProperty.call(patch, "description")) body.description = String(patch.description || "");
   if (patch && Object.prototype.hasOwnProperty.call(patch, "payload")) body.payload = patch.payload && typeof patch.payload === "object" ? patch.payload : {};
+  if (patch && Object.prototype.hasOwnProperty.call(patch, "template_type")) body.template_type = String(patch.template_type || "");
   const r = okOrError(await request(apiRoutes.templates.item(tid), { method: "PATCH", body }));
   if (!r.ok) return r;
   return {

@@ -23,6 +23,7 @@ export function buildTemplateFromSelection(idsRaw, meta = {}) {
     id: toText(meta.id),
     title,
     scope: toText(meta.scope || "personal") || "personal",
+    template_type: "bpmn_selection_v1",
     bpmn_element_ids: ids,
     primary_element_id: toText(meta.primaryElementId || ids[0] || ""),
     selection_count: ids.length,

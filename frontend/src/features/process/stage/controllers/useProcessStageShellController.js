@@ -12,6 +12,7 @@ export default function useProcessStageShellController({
   infoMsg,
   selectedElementContext,
   selectedBpmnElementIds,
+  selectedHybridTemplateCount = 0,
   templatesBusy,
   tab,
   availablePathTiers,
@@ -29,8 +30,10 @@ export default function useProcessStageShellController({
       toolbarInlineMessage: String(genErr || infoMsg || "").trim(),
       toolbarInlineTone: genErr ? "err" : "",
       canUseElementContextActions: !!selectedElementContext,
-      templateSelectionCount: selectedBpmnElementIds.length,
-      canCreateTemplateFromSelection: hasSession && tab === "diagram" && selectedBpmnElementIds.length > 0,
+      templateSelectionCount: Math.max(Number(selectedBpmnElementIds.length || 0), Number(selectedHybridTemplateCount || 0)),
+      canCreateTemplateFromSelection: hasSession
+        && tab === "diagram"
+        && (selectedBpmnElementIds.length > 0 || Number(selectedHybridTemplateCount || 0) > 0),
       canOpenTemplatesList: hasSession && !templatesBusy,
       hasPathHighlightData: availablePathTiers.length > 0,
     };
@@ -45,6 +48,7 @@ export default function useProcessStageShellController({
     isSwitchingTab,
     saveDirtyHint,
     selectedBpmnElementIds.length,
+    selectedHybridTemplateCount,
     selectedElementContext,
     tab,
     workbench.labels.save,

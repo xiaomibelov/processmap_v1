@@ -397,6 +397,25 @@ export default function useHybridPipelineController({
         setHybridV2Tool(nextType);
         return hybridTools.createElementAt(pointRaw, nextType);
       },
+      startStencilPlacement(templateRaw = {}) {
+        showHybridLayer();
+        setHybridLayerMode("edit", {
+          skipV2Seed: true,
+          skipLegacySeed: true,
+        });
+        return hybridTools.startStencilPlacement(templateRaw);
+      },
+      placeStencilAtClient(clientX, clientY) {
+        return hybridTools.placeStencilAtClient(clientX, clientY);
+      },
+      getState() {
+        return {
+          mode: hybridModeEffective,
+          visible: !!hybridVisible,
+          tool: String(hybridTools.toolState || ""),
+          stencilPlacementActive: !!hybridTools.stencilPlacementActive,
+        };
+      },
       readDoc() {
         return normalizeHybridV2Doc(hybridV2DocRef.current);
       },
@@ -407,7 +426,7 @@ export default function useHybridPipelineController({
         window.__FPC_E2E_HYBRID__ = null;
       }
     };
-  }, [hybridTools, normalizeHybridV2Doc, selectHybridPaletteTool, setHybridLayerMode, setHybridV2Tool, showHybridLayer, toText, hybridV2DocRef]);
+  }, [hybridModeEffective, hybridTools, hybridVisible, normalizeHybridV2Doc, selectHybridPaletteTool, setHybridLayerMode, setHybridV2Tool, showHybridLayer, toText, hybridV2DocRef]);
 
   const hybridV2PlaybackHighlightedIds = useMemo(() => {
     const byBpmnId = hybridTools.bindingByBpmnId;
@@ -606,6 +625,15 @@ export default function useHybridPipelineController({
 
   const drawioUiState = useMemo(() => drawioMeta && typeof drawioMeta === "object" ? drawioMeta : {}, [drawioMeta]);
 
+  const startHybridStencilPlacement = useCallback((templateRaw = {}) => {
+    showHybridLayer();
+    setHybridLayerMode("edit", {
+      skipV2Seed: true,
+      skipLegacySeed: true,
+    });
+    return hybridTools.startStencilPlacement(templateRaw);
+  }, [hybridTools, setHybridLayerMode, showHybridLayer]);
+
   return {
     hybridTools,
     hybridSelection,
@@ -645,6 +673,7 @@ export default function useHybridPipelineController({
     drawioUiState,
     setHybridToolsMode,
     selectHybridPaletteTool,
+    startHybridStencilPlacement,
     bindActiveHybridV2ToBpmn,
     goToActiveHybridBinding,
     exportHybridV2Drawio,

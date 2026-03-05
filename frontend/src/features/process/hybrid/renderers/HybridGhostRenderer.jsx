@@ -7,10 +7,34 @@ function asObject(value) {
 export default function HybridGhostRenderer({ ghost, arrowPreview }) {
   const safeGhost = asObject(ghost);
   const safeArrow = asObject(arrowPreview);
+  const isGroupGhost = String(safeGhost.kind || "") === "group" && Array.isArray(safeGhost.items);
   return (
     <>
       {ghost ? (
         <>
+          {isGroupGhost ? (
+            <>
+              {safeGhost.items.map((itemRaw) => {
+                const item = asObject(itemRaw);
+                return (
+                  <rect
+                    key={String(item.id || `${item.left}_${item.top}`)}
+                    x={Number(item.left || 0)}
+                    y={Number(item.top || 0)}
+                    width={Number(item.width || 0)}
+                    height={Number(item.height || 0)}
+                    rx="6"
+                    ry="6"
+                    fill="rgba(37,99,235,0.1)"
+                    stroke="#2563eb"
+                    strokeDasharray="5 4"
+                    pointerEvents="none"
+                    data-testid="hybrid-stencil-ghost-item"
+                  />
+                );
+              })}
+            </>
+          ) : null}
           <rect
             x={Number(safeGhost.left || 0)}
             y={Number(safeGhost.top || 0)}
