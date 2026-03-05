@@ -1,15 +1,14 @@
-// Single source of truth for API calls (FPC)
-// Uses Vite proxy: /api -> backend, so API_BASE is empty.
-function readApiBase() {
-  const raw = String(import.meta?.env?.VITE_API_BASE || "").trim();
-  if (!raw) return "";
-  return raw.endsWith("/") ? raw.slice(0, -1) : raw;
-}
+import { apiFetch, apiFetchWithFallback, isPlainObject, normalizeApiErrorPayload } from "./apiClient.js";
+import { apiRoutes } from "./apiRoutes.js";
 
-const API_BASE = readApiBase();
+// Single source of truth for API calls (FPC)
 const ACCESS_TOKEN_KEY = "fpc_auth_access_token";
 const ACTIVE_ORG_KEY = "fpc_active_org_id";
-const AUTH_RETRY_BLOCKLIST = new Set(["/api/auth/login", "/api/auth/refresh", "/api/auth/logout"]);
+const AUTH_RETRY_BLOCKLIST = new Set([
+  apiRoutes.auth.login(),
+  apiRoutes.auth.refresh(),
+  apiRoutes.auth.logout(),
+]);
 const authFailureListeners = new Set();
 
 let accessToken = "";
@@ -68,37 +67,6 @@ function logAuthTrace(tag, payload = {}) {
     .join(" ");
   // eslint-disable-next-line no-console
   console.debug(`[AUTH_TRACE] ${String(tag || "trace")} ${suffix}`.trim());
-}
-
-function joinUrl(path) {
-  const p = String(path || "");
-  if (!p) return API_BASE || "";
-  if (/^https?:\/\//i.test(p)) return p;
-  if (!API_BASE) return p;
-  if (API_BASE.endsWith("/api") && p === "/api") return API_BASE;
-  if (API_BASE.endsWith("/api") && p.startsWith("/api/")) return `${API_BASE}${p.slice(4)}`;
-  if (p.startsWith("/")) return `${API_BASE}${p}`;
-  return `${API_BASE}/${p}`;
-}
-
-function normalizeErrorPayload(payload) {
-  if (!payload) return "";
-  if (typeof payload === "string") return payload;
-  if (typeof payload === "object") {
-    if (payload.detail) return String(payload.detail);
-    if (payload.message) return String(payload.message);
-    if (payload.error) return String(payload.error);
-    if (Array.isArray(payload.errors)) return payload.errors.map(String).join("; ");
-  }
-  try {
-    return JSON.stringify(payload);
-  } catch {
-    return String(payload);
-  }
-}
-
-function isPlainObject(x) {
-  return !!x && typeof x === "object" && !Array.isArray(x) && !(x instanceof FormData) && !(x instanceof Blob);
 }
 
 function normalizeNotes(value) {
@@ -193,31 +161,6 @@ export function onAuthFailure(listener) {
   return () => authFailureListeners.delete(listener);
 }
 
-async function fetchWithRawResponse(path, opts = {}) {
-  const url = joinUrl(path);
-  const method = String(opts.method || "GET").toUpperCase();
-  const headers = new Headers(opts.headers || {});
-  const hasBody = opts.body !== undefined && opts.body !== null;
-  let body = opts.body;
-  if (hasBody && isPlainObject(body)) {
-    if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-    body = JSON.stringify(body);
-  }
-  if (opts.auth !== false) {
-    const token = getAccessToken();
-    if (token && !headers.has("Authorization")) {
-      headers.set("Authorization", `Bearer ${token}`);
-    }
-  }
-  return fetch(url, {
-    method,
-    headers,
-    body: hasBody ? body : undefined,
-    credentials: "include",
-    signal: opts.signal,
-  });
-}
-
 async function refreshAccessTokenLocked(meta = {}) {
   if (refreshInFlight) {
     refreshWaiters += 1;
@@ -237,37 +180,26 @@ async function refreshAccessTokenLocked(meta = {}) {
     reason: String(meta?.reason || "unknown"),
   });
   refreshInFlight = (async () => {
-    let res;
-    try {
-      res = await fetch(joinUrl("/api/auth/refresh"), {
-        method: "POST",
-        credentials: "include",
-      });
-    } catch (e) {
-      clearAccessToken();
-      return { ok: false, status: 0, error: String(e?.message || e || "network error") };
-    }
-
-    let payload = null;
-    try {
-      payload = await res.json();
-    } catch {
-      payload = null;
-    }
-
-    if (!res.ok) {
+    const refreshResult = await apiFetch({
+      path: apiRoutes.auth.refresh(),
+      method: "POST",
+      auth: false,
+      withOrgHeader: false,
+    });
+    if (!refreshResult.ok) {
       clearAccessToken();
       logAuthTrace("refresh_fail", {
         requestId: Number(meta?.requestId || 0),
-        status: Number(res.status || 0),
+        status: Number(refreshResult.status || 0),
       });
       return {
         ok: false,
-        status: res.status,
-        error: normalizeErrorPayload(payload) || `HTTP ${res.status}`,
+        status: Number(refreshResult.status || 0),
+        error: normalizeApiErrorPayload(refreshResult?.data) || String(refreshResult?.error || "refresh_failed"),
       };
     }
 
+    const payload = refreshResult.data && typeof refreshResult.data === "object" ? refreshResult.data : {};
     const token = String(payload?.access_token || "").trim();
     if (!token) {
       clearAccessToken();
@@ -279,10 +211,10 @@ async function refreshAccessTokenLocked(meta = {}) {
     setAccessToken(token);
     logAuthTrace("refresh_ok", {
       requestId: Number(meta?.requestId || 0),
-      status: Number(res.status || 0),
+      status: Number(refreshResult.status || 0),
       waiters: refreshWaiters,
     });
-    return { ok: true, status: res.status, access_token: token, token_type: "bearer" };
+    return { ok: true, status: Number(refreshResult.status || 0), access_token: token, token_type: "bearer" };
   })();
   try {
     return await refreshInFlight;
@@ -294,54 +226,22 @@ async function refreshAccessTokenLocked(meta = {}) {
 async function request(path, opts = {}) {
   const requestId = Number(opts.__requestId || (++requestSeq));
   const authAttempts = Number(opts.__authAttempts || 0);
-  const method = String(opts.method || "GET").toUpperCase();
   const endpoint = String(path || "");
-  const url = joinUrl(endpoint);
-  let res;
-  try {
-    if (
-      endpoint.startsWith("/api")
-      && !AUTH_RETRY_BLOCKLIST.has(endpoint)
-      && opts.auth !== false
-    ) {
-      const orgId = String(getActiveOrgId() || "").trim();
-      if (orgId) {
-        const baseHeaders = new Headers(opts.headers || {});
-        if (!baseHeaders.has("X-Org-Id")) baseHeaders.set("X-Org-Id", orgId);
-        opts = { ...opts, headers: baseHeaders };
-      }
-    }
-    res = await fetchWithRawResponse(path, opts);
-  } catch (e) {
-    const aborted = !!opts?.signal?.aborted || String(e?.name || "").toLowerCase() === "aborterror";
-    const errName = String(e?.name || "Error");
-    const errMessage = String(e?.message || e || "network error");
-    if (typeof console !== "undefined") {
-      // eslint-disable-next-line no-console
-      console.error("[API_NETWORK_ERROR]", {
-        method,
-        endpoint,
-        url,
-        err_name: errName,
-        err_message: errMessage,
-      });
-    }
-    return {
-      ok: false,
-      status: 0,
-      error: errMessage,
-      error_name: errName,
-      error_message: errMessage,
-      aborted,
-      method,
-      endpoint,
-      url,
-      request_url: url,
-      request_method: method,
-      response_text: "",
-      data: null,
-    };
-  }
+  const method = String(opts.method || "GET").toUpperCase();
+  const orgId = endpoint.startsWith("/api") && !AUTH_RETRY_BLOCKLIST.has(endpoint) && opts.auth !== false
+    ? String(getActiveOrgId() || "").trim()
+    : "";
+  const res = await apiFetch({
+    path: endpoint,
+    method,
+    headers: opts.headers,
+    body: opts.body,
+    signal: opts.signal,
+    authToken: opts.auth !== false ? getAccessToken() : "",
+    auth: opts.auth !== false,
+    orgId,
+    withOrgHeader: true,
+  });
 
   if (
     res.status === 401
@@ -388,47 +288,15 @@ async function request(path, opts = {}) {
       emitAuthFailure("refresh_failed");
     }
   }
-
-  const status = res.status;
-  const ct = String(res.headers.get("content-type") || "");
-
-  let data = null;
-  let text = "";
-
-  try {
-    if (ct.includes("application/json")) {
-      data = await res.json();
-    } else {
-      text = await res.text();
-    }
-  } catch {
-    // ignore parse errors
+  if (!res.ok && Number(res?.status || 0) === 401) {
+    logAuthTrace("401_final", {
+      requestId,
+      path: String(path || ""),
+      didRetry: opts.__didRetryAuth ? 1 : 0,
+      authAttempts,
+    });
   }
-
-  if (!res.ok) {
-    const err = normalizeErrorPayload(data) || text || `HTTP ${status}`;
-    if (status === 401) {
-      logAuthTrace("401_final", {
-        requestId,
-        path: String(path || ""),
-        didRetry: opts.__didRetryAuth ? 1 : 0,
-        authAttempts,
-      });
-    }
-    return {
-      ok: false,
-      status,
-      error: err,
-      data,
-      text,
-      method,
-      endpoint,
-      url,
-      response_text: text,
-    };
-  }
-
-  return { ok: true, status, data, text, method, endpoint, url };
+  return res;
 }
 
 function shouldLogBpmnTrace() {
@@ -457,7 +325,7 @@ export async function apiAuthLogin(email, password) {
     email: String(email || "").trim(),
     password: String(password || ""),
   };
-  const r = okOrError(await request("/api/auth/login", { method: "POST", body, auth: false, retryAuth: false }));
+  const r = okOrError(await request(apiRoutes.auth.login(), { method: "POST", body, auth: false, retryAuth: false }));
   if (!r.ok) return r;
   const token = String(r.data?.access_token || "").trim();
   if (!token) return { ok: false, status: r.status, error: "missing access_token" };
@@ -472,13 +340,13 @@ export async function apiAuthRefresh(options = {}) {
 }
 
 export async function apiAuthLogout() {
-  const r = okOrError(await request("/api/auth/logout", { method: "POST", auth: false, retryAuth: false }));
+  const r = okOrError(await request(apiRoutes.auth.logout(), { method: "POST", auth: false, retryAuth: false }));
   clearAccessToken();
   return r.ok ? { ok: true, status: r.status, result: r.data || { ok: true } } : r;
 }
 
 export async function apiAuthMe() {
-  const r = okOrError(await request("/api/auth/me", { method: "GET", retryAuth: true }));
+  const r = okOrError(await request(apiRoutes.auth.me(), { method: "GET", retryAuth: true }));
   if (!r.ok) return r;
   const orgs = Array.isArray(r.data?.orgs) ? r.data.orgs : [];
   const active_org_id = String(r.data?.active_org_id || r.data?.default_org_id || "").trim();
@@ -499,7 +367,7 @@ export async function apiAuthMe() {
 }
 
 export async function apiListOrgs() {
-  const r = okOrError(await request("/api/orgs", { method: "GET", retryAuth: true }));
+  const r = okOrError(await request(apiRoutes.orgs.list(), { method: "GET", retryAuth: true }));
   if (!r.ok) return r;
   const items = Array.isArray(r.data?.items) ? r.data.items : [];
   const active_org_id = String(r.data?.active_org_id || "").trim();
@@ -512,11 +380,12 @@ export async function apiListOrgs() {
 export async function apiListTemplates({ scope = "personal", orgId = "", limit = 200 } = {}) {
   const normalizedScope = String(scope || "").trim().toLowerCase() === "org" ? "org" : "personal";
   const oid = String(orgId || "").trim();
-  const qs = new URLSearchParams();
-  qs.set("scope", normalizedScope);
-  if (normalizedScope === "org" && oid) qs.set("org_id", oid);
-  if (Number(limit || 0) > 0) qs.set("limit", String(Math.max(1, Math.min(1000, Number(limit || 200)))));
-  const endpoint = `/api/templates?${qs.toString()}`;
+  const endpoint = (() => {
+    const base = apiRoutes.templates.list(normalizedScope, oid);
+    if (Number(limit || 0) <= 0) return base;
+    const cap = String(Math.max(1, Math.min(1000, Number(limit || 200))));
+    return `${base}${base.includes("?") ? "&" : "?"}limit=${encodeURIComponent(cap)}`;
+  })();
   const r = okOrError(await request(endpoint, { method: "GET" }));
   if (!r.ok) return r;
   const items = Array.isArray(r.data?.items) ? r.data.items : [];
@@ -538,7 +407,7 @@ export async function apiCreateTemplate(payload = {}) {
     description: String(payload?.description || ""),
     payload: payload?.payload && typeof payload.payload === "object" ? payload.payload : {},
   };
-  const r = okOrError(await request("/api/templates", { method: "POST", body }));
+  const r = okOrError(await request(apiRoutes.templates.create(), { method: "POST", body }));
   if (!r.ok) return r;
   return {
     ok: true,
@@ -554,7 +423,7 @@ export async function apiPatchTemplate(templateId, patch = {}) {
   if (patch && Object.prototype.hasOwnProperty.call(patch, "name")) body.name = String(patch.name || "");
   if (patch && Object.prototype.hasOwnProperty.call(patch, "description")) body.description = String(patch.description || "");
   if (patch && Object.prototype.hasOwnProperty.call(patch, "payload")) body.payload = patch.payload && typeof patch.payload === "object" ? patch.payload : {};
-  const r = okOrError(await request(`/api/templates/${encodeURIComponent(tid)}`, { method: "PATCH", body }));
+  const r = okOrError(await request(apiRoutes.templates.item(tid), { method: "PATCH", body }));
   if (!r.ok) return r;
   return {
     ok: true,
@@ -566,7 +435,7 @@ export async function apiPatchTemplate(templateId, patch = {}) {
 export async function apiDeleteTemplate(templateId) {
   const tid = String(templateId || "").trim();
   if (!tid) return { ok: false, status: 0, error: "missing template_id" };
-  const r = okOrError(await request(`/api/templates/${encodeURIComponent(tid)}`, { method: "DELETE" }));
+  const r = okOrError(await request(apiRoutes.templates.item(tid), { method: "DELETE" }));
   if (!r.ok) return r;
   return {
     ok: true,
@@ -578,7 +447,7 @@ export async function apiDeleteTemplate(templateId) {
 export async function apiListOrgMembers(orgId) {
   const oid = String(orgId || "").trim();
   if (!oid) return { ok: false, status: 0, error: "missing org_id" };
-  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/members`;
+  const endpoint = apiRoutes.orgs.members(oid);
   const r = okOrError(await request(endpoint, { method: "GET" }));
   const items = Array.isArray(r?.data?.items) ? r.data.items : [];
   return r.ok ? { ok: true, status: r.status, items, count: Number(r?.data?.count || items.length || 0) } : r;
@@ -591,7 +460,7 @@ export async function apiPatchOrgMember(orgId, userId, role) {
   if (!oid) return { ok: false, status: 0, error: "missing org_id" };
   if (!uid) return { ok: false, status: 0, error: "missing user_id" };
   if (!nextRole) return { ok: false, status: 0, error: "missing role" };
-  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/members/${encodeURIComponent(uid)}`;
+  const endpoint = apiRoutes.orgs.member(oid, uid);
   const r = okOrError(await request(endpoint, { method: "PATCH", body: { role: nextRole } }));
   return r.ok ? { ok: true, status: r.status, item: r.data || {} } : r;
 }
@@ -599,7 +468,7 @@ export async function apiPatchOrgMember(orgId, userId, role) {
 export async function apiListOrgInvites(orgId) {
   const oid = String(orgId || "").trim();
   if (!oid) return { ok: false, status: 0, error: "missing org_id" };
-  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/invites`;
+  const endpoint = apiRoutes.orgs.invites(oid);
   const r = okOrError(await request(endpoint, { method: "GET" }));
   const items = Array.isArray(r?.data?.items) ? r.data.items : [];
   return r.ok ? { ok: true, status: r.status, items, count: Number(r?.data?.count || items.length || 0) } : r;
@@ -608,7 +477,7 @@ export async function apiListOrgInvites(orgId) {
 export async function apiCreateOrgInvite(orgId, payload = {}) {
   const oid = String(orgId || "").trim();
   if (!oid) return { ok: false, status: 0, error: "missing org_id" };
-  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/invites`;
+  const endpoint = apiRoutes.orgs.invites(oid);
   const body = {
     email: String(payload?.email || "").trim(),
     role: String(payload?.role || "").trim(),
@@ -630,7 +499,7 @@ export async function apiCreateOrgInvite(orgId, payload = {}) {
 export async function apiAcceptInviteToken(token) {
   const inviteToken = String(token || "").trim();
   if (!inviteToken) return { ok: false, status: 0, error: "missing token" };
-  const r = okOrError(await request("/api/invites/accept", { method: "POST", body: { token: inviteToken } }));
+  const r = okOrError(await request(apiRoutes.misc.inviteAccept(), { method: "POST", body: { token: inviteToken } }));
   return r.ok ? { ok: true, status: r.status, invite: r.data?.invite || {}, membership: r.data?.membership || {} } : r;
 }
 
@@ -639,7 +508,7 @@ export async function apiRevokeOrgInvite(orgId, inviteId) {
   const iid = String(inviteId || "").trim();
   if (!oid) return { ok: false, status: 0, error: "missing org_id" };
   if (!iid) return { ok: false, status: 0, error: "missing invite_id" };
-  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/invites/${encodeURIComponent(iid)}/revoke`;
+  const endpoint = apiRoutes.orgs.inviteRevoke(oid, iid);
   const r = okOrError(await request(endpoint, { method: "POST" }));
   return r.ok ? { ok: true, status: r.status } : r;
 }
@@ -648,8 +517,10 @@ export async function apiCleanupOrgInvites(orgId, keepDays) {
   const oid = String(orgId || "").trim();
   if (!oid) return { ok: false, status: 0, error: "missing org_id" };
   const n = Number(keepDays || 0);
-  const qs = Number.isFinite(n) && n > 0 ? `?keep_days=${encodeURIComponent(String(Math.round(n)))}` : "";
-  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/invites/cleanup${qs}`;
+  const endpoint = apiRoutes.orgs.invitesCleanup(
+    oid,
+    Number.isFinite(n) && n > 0 ? String(Math.round(n)) : "",
+  );
   const r = okOrError(await request(endpoint, { method: "POST" }));
   return r.ok ? { ok: true, status: r.status, deleted: Number(r.data?.deleted || 0) } : r;
 }
@@ -668,8 +539,7 @@ export async function apiListOrgAudit(orgId, query = {}) {
   if (projectId) params.set("project_id", projectId);
   if (sessionId) params.set("session_id", sessionId);
   if (status) params.set("status", status);
-  const suffix = params.toString() ? `?${params.toString()}` : "";
-  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/audit${suffix}`;
+  const endpoint = apiRoutes.orgs.audit(oid) + (params.toString() ? `?${params.toString()}` : "");
   const r = okOrError(await request(endpoint, { method: "GET" }));
   const items = Array.isArray(r?.data?.items) ? r.data.items : [];
   return r.ok ? { ok: true, status: r.status, items, count: Number(r?.data?.count || items.length || 0) } : r;
@@ -679,8 +549,10 @@ export async function apiCleanupOrgAudit(orgId, retentionDays) {
   const oid = String(orgId || "").trim();
   if (!oid) return { ok: false, status: 0, error: "missing org_id" };
   const n = Number(retentionDays || 0);
-  const qs = Number.isFinite(n) && n > 0 ? `?retention_days=${encodeURIComponent(String(Math.round(n)))}` : "";
-  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/audit/cleanup${qs}`;
+  const endpoint = apiRoutes.orgs.auditCleanup(
+    oid,
+    Number.isFinite(n) && n > 0 ? String(Math.round(n)) : "",
+  );
   const r = okOrError(await request(endpoint, { method: "POST" }));
   return r.ok ? { ok: true, status: r.status, deleted: Number(r.data?.deleted || 0) } : r;
 }
@@ -716,8 +588,7 @@ export async function apiGetEnterpriseWorkspace(options = {}) {
   if (Number.isFinite(limit) && limit > 0) params.set("limit", String(Math.min(200, Math.max(1, Math.round(limit)))));
   const offset = Number(options?.offset || 0);
   if (Number.isFinite(offset) && offset >= 0) params.set("offset", String(Math.max(0, Math.round(offset))));
-  const qs = params.toString();
-  const endpoint = `/api/enterprise/workspace${qs ? `?${qs}` : ""}`;
+  const endpoint = apiRoutes.enterprise.workspace(Object.fromEntries(params.entries()));
   const r = okOrError(await request(endpoint, { method: "GET" }));
   if (!r.ok) return r;
   const data = isPlainObject(r.data) ? r.data : {};
@@ -735,19 +606,19 @@ export async function apiGetEnterpriseWorkspace(options = {}) {
 
 // ------- Meta -------
 export async function apiMeta() {
-  const r = okOrError(await request("/api/meta"));
+  const r = okOrError(await request(apiRoutes.misc.meta()));
   return r.ok ? { ok: true, status: r.status, meta: r.data } : r;
 }
 
 // ------- Glossary -------
 export async function apiGlossaryAdd(payload) {
-  const r = okOrError(await request("/api/glossary/add", { method: "POST", body: payload || {} }));
+  const r = okOrError(await request(apiRoutes.misc.glossaryAdd(), { method: "POST", body: payload || {} }));
   return r.ok ? { ok: true, status: r.status, result: r.data } : r;
 }
 
 // ------- Projects -------
 export async function apiListProjects() {
-  const r = okOrError(await request("/api/projects"));
+  const r = okOrError(await request(apiRoutes.projects.list()));
   const list = Array.isArray(r.data) ? r.data : [];
   return r.ok ? { ok: true, status: r.status, projects: list, items: list } : r;
 }
@@ -779,7 +650,7 @@ export async function apiCreateProject(payload) {
     return { ok: false, status: 0, error: "project title required" };
   }
 
-  const r = okOrError(await request("/api/projects", { method: "POST", body }));
+  const r = okOrError(await request(apiRoutes.projects.create(), { method: "POST", body }));
   if (!r.ok) return r;
 
   const project_id = String(r.data?.id || r.data?.project_id || "").trim();
@@ -789,28 +660,28 @@ export async function apiCreateProject(payload) {
 export async function apiGetProject(projectId) {
   const id = String(projectId || "").trim();
   if (!id) return { ok: false, status: 0, error: "missing project_id" };
-  const r = okOrError(await request(`/api/projects/${encodeURIComponent(id)}`));
+  const r = okOrError(await request(apiRoutes.projects.item(id)));
   return r.ok ? { ok: true, status: r.status, project: r.data } : r;
 }
 
 export async function apiPatchProject(projectId, patch) {
   const id = String(projectId || "").trim();
   if (!id) return { ok: false, status: 0, error: "missing project_id" };
-  const r = okOrError(await request(`/api/projects/${encodeURIComponent(id)}`, { method: "PATCH", body: patch || {} }));
+  const r = okOrError(await request(apiRoutes.projects.item(id), { method: "PATCH", body: patch || {} }));
   return r.ok ? { ok: true, status: r.status, project: r.data } : r;
 }
 
 export async function apiPutProject(projectId, body) {
   const id = String(projectId || "").trim();
   if (!id) return { ok: false, status: 0, error: "missing project_id" };
-  const r = okOrError(await request(`/api/projects/${encodeURIComponent(id)}`, { method: "PUT", body: body || {} }));
+  const r = okOrError(await request(apiRoutes.projects.item(id), { method: "PUT", body: body || {} }));
   return r.ok ? { ok: true, status: r.status, project: r.data } : r;
 }
 
 export async function apiDeleteProject(projectId) {
   const id = String(projectId || "").trim();
   if (!id) return { ok: false, status: 0, error: "missing project_id" };
-  return okOrError(await request(`/api/projects/${encodeURIComponent(id)}`, { method: "DELETE" }));
+  return okOrError(await request(apiRoutes.projects.item(id), { method: "DELETE" }));
 }
 
 // ------- Project Sessions -------
@@ -819,8 +690,7 @@ export async function apiListProjectSessions(projectId, mode) {
   if (!pid) return { ok: false, status: 0, error: "missing project_id" };
 
   const m = String(mode || "").trim();
-  const qs = m ? `?mode=${encodeURIComponent(m)}` : "";
-  const r = okOrError(await request(`/api/projects/${encodeURIComponent(pid)}/sessions${qs}`));
+  const r = okOrError(await request(apiRoutes.projects.sessions(pid, m)));
   const list = Array.isArray(r.data) ? r.data : [];
   return r.ok ? { ok: true, status: r.status, sessions: list } : r;
 }
@@ -830,7 +700,6 @@ export async function apiCreateProjectSession(projectId, mode, title, roles, sta
   if (!pid) return { ok: false, status: 0, error: "missing project_id" };
 
   const m = String(mode || "").trim();
-  const qs = m ? `?mode=${encodeURIComponent(m)}` : "";
   const t = String(title || "process").trim() || "process";
   const roleList = Array.isArray(roles) ? roles : undefined;
   const startRole = start_role === undefined ? undefined : String(start_role || "").trim();
@@ -843,7 +712,7 @@ export async function apiCreateProjectSession(projectId, mode, title, roles, sta
     body.ai_prep_questions = ai_prep_questions;
   }
 
-  const r = okOrError(await request(`/api/projects/${encodeURIComponent(pid)}/sessions${qs}`, { method: "POST", body }));
+  const r = okOrError(await request(apiRoutes.projects.sessions(pid, m), { method: "POST", body }));
   if (!r.ok) return r;
 
   const session_id = String(r.data?.id || r.data?.session_id || "").trim();
@@ -856,7 +725,7 @@ export async function apiListOrgProjectMembers(orgId, projectId) {
   const pid = String(projectId || "").trim();
   if (!oid) return { ok: false, status: 0, error: "missing org_id" };
   if (!pid) return { ok: false, status: 0, error: "missing project_id" };
-  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/projects/${encodeURIComponent(pid)}/members`;
+  const endpoint = apiRoutes.orgs.projectMembers(oid, pid);
   const r = okOrError(await request(endpoint, { method: "GET" }));
   const items = Array.isArray(r?.data?.items) ? r.data.items : [];
   return r.ok ? { ok: true, status: r.status, items, count: Number(r?.data?.count || items.length || 0) } : r;
@@ -873,8 +742,8 @@ export async function apiUpsertOrgProjectMember(orgId, projectId, userId, role, 
   if (!nextRole) return { ok: false, status: 0, error: "missing role" };
   const usePatch = options?.patch === true;
   const endpoint = usePatch
-    ? `/api/orgs/${encodeURIComponent(oid)}/projects/${encodeURIComponent(pid)}/members/${encodeURIComponent(uid)}`
-    : `/api/orgs/${encodeURIComponent(oid)}/projects/${encodeURIComponent(pid)}/members`;
+    ? apiRoutes.orgs.projectMember(oid, pid, uid)
+    : apiRoutes.orgs.projectMembers(oid, pid);
   const body = usePatch ? { role: nextRole } : { user_id: uid, role: nextRole };
   const method = usePatch ? "PATCH" : "POST";
   const r = okOrError(await request(endpoint, { method, body }));
@@ -888,14 +757,14 @@ export async function apiDeleteOrgProjectMember(orgId, projectId, userId) {
   if (!oid) return { ok: false, status: 0, error: "missing org_id" };
   if (!pid) return { ok: false, status: 0, error: "missing project_id" };
   if (!uid) return { ok: false, status: 0, error: "missing user_id" };
-  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/projects/${encodeURIComponent(pid)}/members/${encodeURIComponent(uid)}`;
+  const endpoint = apiRoutes.orgs.projectMember(oid, pid, uid);
   const r = okOrError(await request(endpoint, { method: "DELETE" }));
   return r.ok ? { ok: true, status: r.status, result: r.data || null } : r;
 }
 
 // ------- Sessions (legacy / fallback) -------
 export async function apiListSessions() {
-  const r = okOrError(await request("/api/sessions"));
+  const r = okOrError(await request(apiRoutes.sessions.list()));
   // backend returns {items, count}
   const list = Array.isArray(r.data) ? r.data : Array.isArray(r.data?.items) ? r.data.items : [];
   return r.ok ? { ok: true, status: r.status, sessions: list, count: Number(r.data?.count || list.length || 0) } : r;
@@ -907,7 +776,7 @@ export async function apiCreateSession(title, roles, start_role) {
   if (roles !== undefined) body.roles = roles;
   if (start_role !== undefined) body.start_role = start_role;
 
-  const r = okOrError(await request("/api/sessions", { method: "POST", body }));
+  const r = okOrError(await request(apiRoutes.sessions.create(), { method: "POST", body }));
   if (!r.ok) return r;
 
   const session_id = String(r.data?.id || r.data?.session_id || "").trim();
@@ -917,7 +786,7 @@ export async function apiCreateSession(title, roles, start_role) {
 export async function apiGetSession(sessionId) {
   const id = String(sessionId || "").trim();
   if (!id) return { ok: false, status: 0, error: "missing session_id" };
-  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(id)}`));
+  const r = okOrError(await request(apiRoutes.sessions.item(id)));
   if (r.ok && r.data && typeof r.data === "object" && String(r.data.error || "").trim()) {
     const detail = String(r.data.error || "not found").trim() || "not found";
     return { ok: false, status: 404, error: detail, data: r.data };
@@ -942,7 +811,7 @@ export async function apiPatchSession(sessionId, patch) {
     // eslint-disable-next-line no-console
     console.debug(`[PATCH_SESSION] start sid=${id} payloadKeys=${patchKeys.join(",") || "-"}`);
   }
-  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(id)}`, { method: "PATCH", body: patch || {} }));
+  const r = okOrError(await request(apiRoutes.sessions.item(id), { method: "PATCH", body: patch || {} }));
   if (shouldLogBpmnTrace()) {
     const xml = String(r?.data?.bpmn_xml || "");
     // eslint-disable-next-line no-console
@@ -967,21 +836,21 @@ export async function apiPatchSession(sessionId, patch) {
 export async function apiPutSession(sessionId, body) {
   const id = String(sessionId || "").trim();
   if (!id) return { ok: false, status: 0, error: "missing session_id" };
-  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(id)}`, { method: "PUT", body: body || {} }));
+  const r = okOrError(await request(apiRoutes.sessions.item(id), { method: "PUT", body: body || {} }));
   return r.ok ? { ok: true, status: r.status, session: r.data } : r;
 }
 
 export async function apiDeleteSession(sessionId) {
   const id = String(sessionId || "").trim();
   if (!id) return { ok: false, status: 0, error: "missing session_id" };
-  return okOrError(await request(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }));
+  return okOrError(await request(apiRoutes.sessions.item(id), { method: "DELETE" }));
 }
 
 // ------- Nodes -------
 export async function apiCreateNode(sessionId, payload) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
-  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/nodes`, { method: "POST", body: payload || {} }));
+  const r = okOrError(await request(apiRoutes.sessions.nodes(sid), { method: "POST", body: payload || {} }));
   return r.ok ? { ok: true, status: r.status, node: r.data } : r;
 }
 
@@ -990,7 +859,7 @@ export async function apiPatchNode(sessionId, nodeId, patch) {
   const nid = String(nodeId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
   if (!nid) return { ok: false, status: 0, error: "missing node_id" };
-  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/nodes/${encodeURIComponent(nid)}`, { method: "POST", body: patch || {} }));
+  const r = okOrError(await request(apiRoutes.sessions.node(sid, nid), { method: "POST", body: patch || {} }));
   return r.ok ? { ok: true, status: r.status, node: r.data } : r;
 }
 
@@ -999,21 +868,21 @@ export async function apiDeleteNode(sessionId, nodeId) {
   const nid = String(nodeId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
   if (!nid) return { ok: false, status: 0, error: "missing node_id" };
-  return okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/nodes/${encodeURIComponent(nid)}`, { method: "DELETE" }));
+  return okOrError(await request(apiRoutes.sessions.node(sid, nid), { method: "DELETE" }));
 }
 
 // ------- Edges -------
 export async function apiCreateEdge(sessionId, payload) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
-  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/edges`, { method: "POST", body: payload || {} }));
+  const r = okOrError(await request(apiRoutes.sessions.edges(sid), { method: "POST", body: payload || {} }));
   return r.ok ? { ok: true, status: r.status, edge: r.data } : r;
 }
 
 export async function apiDeleteEdge(sessionId, payload) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
-  return okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/edges`, { method: "DELETE", body: payload || {} }));
+  return okOrError(await request(apiRoutes.sessions.edges(sid), { method: "DELETE", body: payload || {} }));
 }
 
 // ------- Notes / Answers / AI -------
@@ -1026,7 +895,7 @@ export async function apiPostNote(sessionId, payload) {
   } else if (!isPlainObject(payload)) {
     body = {};
   }
-  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/notes`, { method: "POST", body }));
+  const r = okOrError(await request(apiRoutes.sessions.notes(sid), { method: "POST", body }));
   if (!r.ok) return r;
   const session = isPlainObject(r.data) ? { ...r.data } : r.data;
   if (isPlainObject(session) && "notes" in session) {
@@ -1038,21 +907,21 @@ export async function apiPostNote(sessionId, payload) {
 export async function apiPostAnswer(sessionId, payload) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
-  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/answer`, { method: "POST", body: payload || {} }));
+  const r = okOrError(await request(apiRoutes.sessions.answer(sid), { method: "POST", body: payload || {} }));
   return r.ok ? { ok: true, status: r.status, result: r.data } : r;
 }
 
 export async function apiPostAnswers(sessionId, payload) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
-  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/answers`, { method: "POST", body: payload || {} }));
+  const r = okOrError(await request(apiRoutes.sessions.answers(sid), { method: "POST", body: payload || {} }));
   return r.ok ? { ok: true, status: r.status, result: r.data } : r;
 }
 
 export async function apiAiQuestions(sessionId, payload, options = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
-  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/ai/questions`, {
+  const r = okOrError(await request(apiRoutes.sessions.aiQuestions(sid), {
     method: "POST",
     body: payload || {},
     signal: options?.signal,
@@ -1066,16 +935,6 @@ function resolveReportOrgId(options = {}) {
   return String(getActiveOrgId() || "").trim();
 }
 
-function reportPathQuery(pathId, options = {}) {
-  const pid = String(pathId || "").trim();
-  const params = new URLSearchParams();
-  if (pid) params.set("path_id", pid);
-  const stepsHash = String(options?.stepsHash || "").trim();
-  if (stepsHash) params.set("steps_hash", stepsHash);
-  const qs = params.toString();
-  return qs ? `?${qs}` : "";
-}
-
 export async function apiBuildOrgReport(orgId, sessionId, pathId, payload, options = {}) {
   const oid = String(orgId || "").trim();
   const sid = String(sessionId || "").trim();
@@ -1084,7 +943,7 @@ export async function apiBuildOrgReport(orgId, sessionId, pathId, payload, optio
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
   if (!pid) return { ok: false, status: 0, error: "missing path_id" };
   const body = isPlainObject(payload) ? { ...payload, path_id: pid } : { path_id: pid };
-  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/sessions/${encodeURIComponent(sid)}/reports/build`;
+  const endpoint = apiRoutes.orgs.reportBuild(oid, sid);
   const r = okOrError(await request(endpoint, { method: "POST", body, signal: options?.signal }));
   if (!r.ok) return r;
   const report = isPlainObject(r?.data?.report) ? r.data.report : {};
@@ -1110,7 +969,7 @@ export async function apiListOrgReportVersions(orgId, sessionId, pathId, options
   if (!oid) return { ok: false, status: 0, error: "missing org_id" };
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
   if (!pid) return { ok: false, status: 0, error: "missing path_id" };
-  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/sessions/${encodeURIComponent(sid)}/reports/versions${reportPathQuery(pid, options)}`;
+  const endpoint = apiRoutes.orgs.reportVersions(oid, sid, pid, options?.stepsHash || "");
   const r = okOrError(await request(endpoint, { signal: options?.signal }));
   if (!r.ok) return r;
   const items = (Array.isArray(r.data) ? r.data : []).filter((row) => !isUnavailableSyntheticReport(row));
@@ -1125,7 +984,7 @@ export async function apiGetOrgReportVersion(orgId, sessionId, reportId, options
   if (!oid) return { ok: false, status: 0, error: "missing org_id" };
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
   if (!rid) return { ok: false, status: 0, error: "missing report_id" };
-  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/sessions/${encodeURIComponent(sid)}/reports/${encodeURIComponent(rid)}${reportPathQuery(pid, options)}`;
+  const endpoint = apiRoutes.orgs.reportVersion(oid, sid, rid, pid, options?.stepsHash || "");
   const r = okOrError(await request(endpoint, { signal: options?.signal }));
   if (!r.ok) return r;
   return { ok: true, status: r.status, report: r.data || {} };
@@ -1139,7 +998,7 @@ export async function apiDeleteOrgReportVersion(orgId, sessionId, reportId, opti
   if (!oid) return { ok: false, status: 0, error: "missing org_id" };
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
   if (!rid) return { ok: false, status: 0, error: "missing report_id" };
-  const endpoint = `/api/orgs/${encodeURIComponent(oid)}/sessions/${encodeURIComponent(sid)}/reports/${encodeURIComponent(rid)}${reportPathQuery(pid, options)}`;
+  const endpoint = apiRoutes.orgs.reportVersion(oid, sid, rid, pid, options?.stepsHash || "");
   const r = okOrError(await request(endpoint, { method: "DELETE", signal: options?.signal }));
   return r.ok ? { ok: true, status: r.status, result: r.data || null } : r;
 }
@@ -1164,6 +1023,38 @@ function reportPayloadErrorText(payloadRaw) {
   return String(payload?.error || payload?.detail || payload?.message || "").trim();
 }
 
+function reportPayloadErrorStatus(payloadError, fallbackStatus = 400) {
+  const marker = String(payloadError || "").toLowerCase();
+  if (!marker) return Number(fallbackStatus || 400);
+  if (marker.includes("not found") || marker.includes("not_found") || marker.includes("404")) return 404;
+  if (marker.includes("unauthorized")) return 401;
+  if (marker.includes("forbidden")) return 403;
+  if (marker.includes("required") || marker.includes("invalid") || marker.includes("missing")) return 422;
+  return Number(fallbackStatus || 400);
+}
+
+async function pathReportsFallbackFetch({
+  op,
+  primaryPath,
+  fallbackPath,
+  method = "GET",
+  body,
+  signal,
+}) {
+  return apiFetchWithFallback({
+    op,
+    primaryPath,
+    fallbackPath,
+    method,
+    body,
+    signal,
+    authToken: getAccessToken(),
+    orgId: getActiveOrgId(),
+    withOrgHeader: true,
+    fallbackStatuses: [404, 405],
+  });
+}
+
 export async function apiCreatePathReportVersion(sessionId, pathId, payload) {
   const sid = String(sessionId || "").trim();
   const pid = String(pathId || "").trim();
@@ -1179,68 +1070,45 @@ export async function apiCreatePathReportVersion(sessionId, pathId, payload) {
     const status = Number(enterprise?.status || 0);
     if (!(status === 0 || status === 404 || status === 405)) return enterprise;
   }
-  const endpoints = [
-    `/api/sessions/${encodeURIComponent(sid)}/paths/${encodeURIComponent(pid)}/reports`,
-    `/api/sessions/${encodeURIComponent(sid)}/paths/${encodeURIComponent(pid)}/reports/`,
-    `/api/sessions/${encodeURIComponent(sid)}/path/${encodeURIComponent(pid)}/reports`,
-    `/api/sessions/${encodeURIComponent(sid)}/path/${encodeURIComponent(pid)}/reports/`,
-    `/sessions/${encodeURIComponent(sid)}/paths/${encodeURIComponent(pid)}/reports`,
-    `/sessions/${encodeURIComponent(sid)}/path/${encodeURIComponent(pid)}/reports`,
-  ];
-
-  for (let i = 0; i < endpoints.length; i += 1) {
-    const endpoint = endpoints[i];
-    const r = okOrError(await request(endpoint, { method: "POST", body }));
-    if (r.ok) {
-      const payloadError = reportPayloadErrorText(r?.data);
-      const report = isPlainObject(r?.data?.report) ? r.data.report : {};
-      const reportId = String(report?.id || "").trim();
-      if (payloadError) {
-        const marker = payloadError.toLowerCase();
-        const errorStatus = marker.includes("not found") || marker.includes("not_found") || marker.includes("404")
-          ? 404
-          : marker.includes("unauthorized")
-            ? 401
-            : marker.includes("forbidden")
-              ? 403
-              : (marker.includes("required") || marker.includes("invalid") || marker.includes("missing"))
-                ? 422
-                : Number(r?.status || 400);
-        return {
-          ok: false,
-          status: errorStatus,
-          error: payloadError,
-          data: r?.data || null,
-          method: r?.method,
-          endpoint: r?.endpoint || endpoint,
-          url: r?.url,
-        };
-      }
-      if (!reportId) {
-        return {
-          ok: false,
-          status: Number(r?.status || 502),
-          error: "Malformed report create response: missing report.id",
-          data: r?.data || null,
-          method: r?.method,
-          endpoint: r?.endpoint || endpoint,
-          url: r?.url,
-        };
-      }
-      return { ok: true, status: r.status, report, result: r.data };
-    }
-    last = r;
-    if (Number(r?.status || 0) === 404 && isPlainObject(r?.data) && r.data.error) return r;
-    if (!isRetriablePathReportsStatus(r?.status)) return r;
+  const endpoint = apiRoutes.sessions.pathReports(sid, pid);
+  const fallbackEndpoint = apiRoutes.sessions.pathReportsLegacy(sid, pid);
+  const r = okOrError(await pathReportsFallbackFetch({
+    op: "apiCreatePathReportVersion",
+    primaryPath: endpoint,
+    fallbackPath: fallbackEndpoint,
+    method: "POST",
+    body,
+  }));
+  if (!r.ok) {
+    if (last && !isRetriablePathReportsStatus(r?.status)) return r;
+    return last && !last.ok ? last : r;
   }
-  if (last && !isRetriablePathReportsStatus(last?.status)) return last;
-  return {
-    ok: false,
-    status: Number(last?.status || 404),
-    error: "Path reports API endpoint is not available on current backend build",
-    unsupported_endpoint: true,
-    details: last,
-  };
+  const payloadError = reportPayloadErrorText(r?.data);
+  const report = isPlainObject(r?.data?.report) ? r.data.report : {};
+  const reportId = String(report?.id || "").trim();
+  if (payloadError) {
+    return {
+      ok: false,
+      status: reportPayloadErrorStatus(payloadError, r?.status),
+      error: payloadError,
+      data: r?.data || null,
+      method: r?.method,
+      endpoint: r?.endpoint || endpoint,
+      url: r?.url,
+    };
+  }
+  if (!reportId) {
+    return {
+      ok: false,
+      status: Number(r?.status || 502),
+      error: "Malformed report create response: missing report.id",
+      data: r?.data || null,
+      method: r?.method,
+      endpoint: r?.endpoint || endpoint,
+      url: r?.url,
+    };
+  }
+  return { ok: true, status: r.status, report, result: r.data };
 }
 
 export async function apiListPathReportVersions(sessionId, pathId, options = {}) {
@@ -1257,52 +1125,31 @@ export async function apiListPathReportVersions(sessionId, pathId, options = {})
     const status = Number(enterprise?.status || 0);
     if (!(status === 0 || status === 404 || status === 405)) return enterprise;
   }
-  const params = new URLSearchParams();
   const stepsHash = String(options?.stepsHash || "").trim();
-  if (stepsHash) params.set("steps_hash", stepsHash);
-  const qs = params.toString();
-  const endpoints = [
-    `/api/sessions/${encodeURIComponent(sid)}/paths/${encodeURIComponent(pid)}/reports${qs ? `?${qs}` : ""}`,
-    `/api/sessions/${encodeURIComponent(sid)}/paths/${encodeURIComponent(pid)}/reports/${qs ? `?${qs}` : ""}`,
-    `/api/sessions/${encodeURIComponent(sid)}/path/${encodeURIComponent(pid)}/reports${qs ? `?${qs}` : ""}`,
-    `/api/sessions/${encodeURIComponent(sid)}/path/${encodeURIComponent(pid)}/reports/${qs ? `?${qs}` : ""}`,
-    `/sessions/${encodeURIComponent(sid)}/paths/${encodeURIComponent(pid)}/reports${qs ? `?${qs}` : ""}`,
-    `/sessions/${encodeURIComponent(sid)}/path/${encodeURIComponent(pid)}/reports${qs ? `?${qs}` : ""}`,
-  ];
-
-  for (let i = 0; i < endpoints.length; i += 1) {
-    const r = okOrError(await request(endpoints[i], { signal: options?.signal }));
-    if (r.ok) {
-      const payloadError = reportPayloadErrorText(r?.data);
-      if (payloadError) {
-        const marker = payloadError.toLowerCase();
-        const errorStatus = marker.includes("not found") || marker.includes("not_found") || marker.includes("404")
-          ? 404
-          : marker.includes("unauthorized")
-            ? 401
-            : marker.includes("forbidden")
-              ? 403
-              : (marker.includes("required") || marker.includes("invalid") || marker.includes("missing"))
-                ? 422
-                : Number(r?.status || 400);
-        return {
-          ok: false,
-          status: errorStatus,
-          error: payloadError,
-          data: r?.data || null,
-          method: r?.method,
-          endpoint: r?.endpoint || endpoints[i],
-          url: r?.url,
-        };
-      }
-      const items = (Array.isArray(r.data) ? r.data : []).filter((row) => !isUnavailableSyntheticReport(row));
-      return { ok: true, status: r.status, items };
-    }
-    last = r;
-    if (Number(r?.status || 0) === 404 && isPlainObject(r?.data) && r.data.error) return r;
-    if (!isRetriablePathReportsStatus(r?.status)) return r;
+  const endpoint = apiRoutes.sessions.pathReports(sid, pid, stepsHash);
+  const fallbackEndpoint = apiRoutes.sessions.pathReportsLegacy(sid, pid, stepsHash);
+  const r = okOrError(await pathReportsFallbackFetch({
+    op: "apiListPathReportVersions",
+    primaryPath: endpoint,
+    fallbackPath: fallbackEndpoint,
+    method: "GET",
+    signal: options?.signal,
+  }));
+  if (!r.ok) return last && !last.ok ? last : r;
+  const payloadError = reportPayloadErrorText(r?.data);
+  if (payloadError) {
+    return {
+      ok: false,
+      status: reportPayloadErrorStatus(payloadError, r?.status),
+      error: payloadError,
+      data: r?.data || null,
+      method: r?.method,
+      endpoint: r?.endpoint || endpoint,
+      url: r?.url,
+    };
   }
-  return last || { ok: false, status: 404, error: "not found" };
+  const items = (Array.isArray(r.data) ? r.data : []).filter((row) => !isUnavailableSyntheticReport(row));
+  return { ok: true, status: r.status, items };
 }
 
 export async function apiGetReportVersion(reportId, options = {}) {
@@ -1316,7 +1163,6 @@ export async function apiGetReportVersion(reportId, options = {}) {
     const marker = String(payload?.detail || payload?.error || "").trim().toLowerCase();
     return marker === "not found" || marker.includes("not found");
   };
-  const endpoints = [];
   let last = null;
   if (orgId && sid) {
     const enterprise = await apiGetOrgReportVersion(orgId, sid, rid, { ...options, pathId: pid });
@@ -1326,51 +1172,60 @@ export async function apiGetReportVersion(reportId, options = {}) {
     if (!(status === 0 || status === 404 || status === 405)) return enterprise;
   }
   if (sid && pid) {
-    endpoints.push(
-      `/api/sessions/${encodeURIComponent(sid)}/paths/${encodeURIComponent(pid)}/reports/${encodeURIComponent(rid)}`,
-      `/api/sessions/${encodeURIComponent(sid)}/paths/${encodeURIComponent(pid)}/reports/${encodeURIComponent(rid)}/`,
-      `/api/sessions/${encodeURIComponent(sid)}/path/${encodeURIComponent(pid)}/reports/${encodeURIComponent(rid)}`,
-      `/api/sessions/${encodeURIComponent(sid)}/path/${encodeURIComponent(pid)}/reports/${encodeURIComponent(rid)}/`,
-    );
-  }
-  endpoints.push(
-    `/api/reports/${encodeURIComponent(rid)}`,
-    `/api/reports/${encodeURIComponent(rid)}/`,
-  );
-  for (let i = 0; i < endpoints.length; i += 1) {
-    const r = await request(endpoints[i], { signal: options?.signal });
-    if (r.ok) {
-      if (isNotFoundPayload(r?.data)) {
+    const scoped = await okOrError(await pathReportsFallbackFetch({
+      op: "apiGetReportVersion",
+      primaryPath: apiRoutes.sessions.pathReport(sid, pid, rid),
+      fallbackPath: apiRoutes.sessions.pathReportLegacy(sid, pid, rid),
+      method: "GET",
+      signal: options?.signal,
+    }));
+    if (scoped.ok) {
+      if (isNotFoundPayload(scoped?.data)) {
         return {
           ok: false,
           status: 404,
-          error: String(r?.data?.detail || r?.data?.error || "not found"),
-          data: r?.data || null,
-          method: r?.method,
-          endpoint: r?.endpoint,
-          url: r?.url,
-          response_text: r?.response_text,
-          text: r?.text,
+          error: String(scoped?.data?.detail || scoped?.data?.error || "not found"),
+          data: scoped?.data || null,
+          method: scoped?.method,
+          endpoint: scoped?.endpoint,
+          url: scoped?.url,
+          response_text: scoped?.response_text,
+          text: scoped?.text,
         };
       }
-      return { ok: true, status: r.status, report: r.data || {} };
+      return { ok: true, status: scoped.status, report: scoped.data || {} };
     }
-    if (
-      Number(r?.status || 0) === 404
-      || isNotFoundPayload(r?.data)
-      || String(r?.error || "").trim().toLowerCase().includes("not found")
-    ) {
-      last = {
-        ...r,
+    const scopedStatus = Number(scoped?.status || 0);
+    if (scopedStatus !== 404 && !isRetriablePathReportsStatus(scopedStatus)) return scoped;
+    last = scoped;
+  }
+  const r = await request(apiRoutes.reports.item(rid), { signal: options?.signal });
+  if (r.ok) {
+    if (isNotFoundPayload(r?.data)) {
+      return {
         ok: false,
         status: 404,
-        error: String(r?.error || r?.data?.detail || r?.data?.error || "not found"),
+        error: String(r?.data?.detail || r?.data?.error || "not found"),
+        data: r?.data || null,
+        method: r?.method,
+        endpoint: r?.endpoint,
+        url: r?.url,
+        response_text: r?.response_text,
+        text: r?.text,
       };
-      continue;
     }
-    last = r;
-    if (!isRetriablePathReportsStatus(r?.status) && Number(r?.status || 0) !== 404) return r;
+    return { ok: true, status: r.status, report: r.data || {} };
   }
+  if (Number(r?.status || 0) === 404 || isNotFoundPayload(r?.data) || String(r?.error || "").trim().toLowerCase().includes("not found")) {
+    return {
+      ...r,
+      ok: false,
+      status: 404,
+      error: String(r?.error || r?.data?.detail || r?.data?.error || "not found"),
+    };
+  }
+  last = r;
+  if (!isRetriablePathReportsStatus(r?.status) && Number(r?.status || 0) !== 404) return r;
   return last || { ok: false, status: 404, error: "not found" };
 }
 
@@ -1390,33 +1245,40 @@ export async function apiDeleteReportVersion(reportId, options = {}) {
     if (!(status === 0 || status === 404 || status === 405)) return enterprise;
   }
 
-  const endpoints = [];
   if (sid && pid) {
-    endpoints.push(
-      `/api/sessions/${encodeURIComponent(sid)}/paths/${encodeURIComponent(pid)}/reports/${encodeURIComponent(rid)}`,
-      `/api/sessions/${encodeURIComponent(sid)}/path/${encodeURIComponent(pid)}/reports/${encodeURIComponent(rid)}`,
-    );
-  }
-  endpoints.push(
-    `/api/reports/${encodeURIComponent(rid)}`,
-  );
-
-  for (let i = 0; i < endpoints.length; i += 1) {
-    const r = okOrError(await request(endpoints[i], { method: "DELETE", signal: options?.signal }));
-    if (r.ok) return { ok: true, status: r.status, result: r.data || null };
-    last = r;
-    const status = Number(r?.status || 0);
-    if (status === 404) continue;
-    if (status === 405) {
+    const scoped = okOrError(await pathReportsFallbackFetch({
+      op: "apiDeleteReportVersion",
+      primaryPath: apiRoutes.sessions.pathReport(sid, pid, rid),
+      fallbackPath: apiRoutes.sessions.pathReportLegacy(sid, pid, rid),
+      method: "DELETE",
+      signal: options?.signal,
+    }));
+    if (scoped.ok) return { ok: true, status: scoped.status, result: scoped.data || null };
+    last = scoped;
+    const scopedStatus = Number(scoped?.status || 0);
+    if (scopedStatus === 405) {
       return {
-        ...r,
+        ...scoped,
         ok: false,
         unsupported_endpoint: true,
         error: "Delete report endpoint is not available on current backend build",
       };
     }
-    if (!isRetriablePathReportsStatus(status)) return r;
+    if (scopedStatus !== 404 && !isRetriablePathReportsStatus(scopedStatus)) return scoped;
   }
+  const r = okOrError(await request(apiRoutes.reports.item(rid), { method: "DELETE", signal: options?.signal }));
+  if (r.ok) return { ok: true, status: r.status, result: r.data || null };
+  last = r;
+  const status = Number(r?.status || 0);
+  if (status === 405) {
+    return {
+      ...r,
+      ok: false,
+      unsupported_endpoint: true,
+      error: "Delete report endpoint is not available on current backend build",
+    };
+  }
+  if (!isRetriablePathReportsStatus(status)) return r;
   return last || { ok: false, status: 404, error: "not found" };
 }
 
@@ -1424,7 +1286,7 @@ export async function apiSessionTitleQuestions(payload) {
   const body = isPlainObject(payload) ? payload : {};
   const title = String(body.title || "").trim();
   if (!title) return { ok: false, status: 0, error: "title is required" };
-  const r = okOrError(await request("/api/llm/session-title/questions", { method: "POST", body }));
+  const r = okOrError(await request(apiRoutes.llm.sessionTitleQuestions(), { method: "POST", body }));
   return r.ok ? { ok: true, status: r.status, result: r.data } : r;
 }
 
@@ -1432,26 +1294,21 @@ export async function apiSessionTitleQuestions(payload) {
 export async function apiRecompute(sessionId) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
-  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/recompute`, { method: "POST", body: {} }));
+  const r = okOrError(await request(apiRoutes.sessions.recompute(sid), { method: "POST", body: {} }));
   return r.ok ? { ok: true, status: r.status, result: r.data } : r;
 }
 
 export async function apiGetAnalytics(sessionId) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
-  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/analytics`));
+  const r = okOrError(await request(apiRoutes.sessions.analytics(sid)));
   return r.ok ? { ok: true, status: r.status, analytics: r.data } : r;
 }
 
 export async function apiGetBpmnXml(sessionId, options = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
-  const params = new URLSearchParams();
-  if (options?.raw === true) params.set("raw", "1");
-  if (options?.includeOverlay === false) params.set("include_overlay", "0");
-  if (options?.cacheBust === true) params.set("_ts", String(Date.now()));
-  const qs = params.toString();
-  const url = `/api/sessions/${encodeURIComponent(sid)}/bpmn${qs ? `?${qs}` : ""}`;
+  const url = apiRoutes.sessions.bpmn(sid, options);
   const r = okOrError(await request(url));
   return r.ok ? { ok: true, status: r.status, xml: r.text || "" } : r;
 }
@@ -1468,7 +1325,7 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
   if (options?.ifMatch !== undefined && options?.ifMatch !== null) {
     headers["If-Match"] = String(options.ifMatch);
   }
-  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/bpmn`, { method: "PUT", body, headers }));
+  const r = okOrError(await request(apiRoutes.sessions.bpmn(sid), { method: "PUT", body, headers }));
   if (!r.ok) return r;
   const storedRev = Number(r?.data?.version);
   return {
@@ -1482,14 +1339,14 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
 export async function apiDeleteBpmnXml(sessionId) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
-  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/bpmn`, { method: "DELETE" }));
+  const r = okOrError(await request(apiRoutes.sessions.bpmn(sid), { method: "DELETE" }));
   return r.ok ? { ok: true, status: r.status, result: r.data } : r;
 }
 
 export async function apiGetBpmnMeta(sessionId) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
-  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/bpmn_meta`));
+  const r = okOrError(await request(apiRoutes.sessions.bpmnMeta(sid)));
   return r.ok ? { ok: true, status: r.status, meta: r.data || { version: 1, flow_meta: {}, node_path_meta: {} } } : r;
 }
 
@@ -1497,7 +1354,7 @@ export async function apiPatchBpmnMeta(sessionId, payload = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
   const body = isPlainObject(payload) ? payload : {};
-  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/bpmn_meta`, { method: "PATCH", body }));
+  const r = okOrError(await request(apiRoutes.sessions.bpmnMeta(sid), { method: "PATCH", body }));
   return r.ok ? { ok: true, status: r.status, meta: r.data || { version: 1, flow_meta: {}, node_path_meta: {} } } : r;
 }
 
@@ -1505,7 +1362,7 @@ export async function apiInferBpmnRtiers(sessionId, payload = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
   const body = isPlainObject(payload) ? payload : {};
-  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/bpmn_meta/infer_rtiers`, { method: "POST", body }));
+  const r = okOrError(await request(apiRoutes.sessions.inferRtiers(sid), { method: "POST", body }));
   if (!r.ok) return r;
   const data = isPlainObject(r.data) ? r.data : {};
   return {
@@ -1519,23 +1376,23 @@ export async function apiInferBpmnRtiers(sessionId, payload = {}) {
 export async function apiGetExport(sessionId) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
-  const r = okOrError(await request(`/api/sessions/${encodeURIComponent(sid)}/export`));
+  const r = okOrError(await request(apiRoutes.sessions.export(sid)));
   return r.ok ? { ok: true, status: r.status, export: r.data } : r;
 }
 
 // ------- LLM Settings -------
 export async function apiGetLlmSettings() {
-  const r = okOrError(await request("/api/settings/llm"));
+  const r = okOrError(await request(apiRoutes.llm.settings()));
   return r.ok ? { ok: true, status: r.status, settings: r.data } : r;
 }
 
 export async function apiPostLlmSettings(payload) {
-  const r = okOrError(await request("/api/settings/llm", { method: "POST", body: payload || {} }));
+  const r = okOrError(await request(apiRoutes.llm.settings(), { method: "POST", body: payload || {} }));
   return r.ok ? { ok: true, status: r.status, settings: r.data } : r;
 }
 
 export async function apiVerifyLlmSettings(payload) {
-  const r = okOrError(await request("/api/settings/llm/verify", { method: "POST", body: payload || {} }));
+  const r = okOrError(await request(apiRoutes.llm.verify(), { method: "POST", body: payload || {} }));
   if (!r.ok && Number(r.status) === 404) {
     return {
       ok: false,

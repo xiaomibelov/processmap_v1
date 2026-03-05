@@ -1,0 +1,48 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+
+import { apiRoutes } from "./apiRoutes.js";
+
+test("apiRoutes: canonical report and session routes are stable", () => {
+  assert.equal(apiRoutes.sessions.item("sess_1"), "/api/sessions/sess_1");
+  assert.equal(apiRoutes.sessions.bpmn("sess_1"), "/api/sessions/sess_1/bpmn");
+  assert.equal(apiRoutes.sessions.pathReports("sess_1", "main"), "/api/sessions/sess_1/paths/main/reports");
+  assert.equal(apiRoutes.sessions.pathReport("sess_1", "main", "rpt_1"), "/api/sessions/sess_1/paths/main/reports/rpt_1");
+  assert.equal(apiRoutes.reports.item("rpt_1"), "/api/reports/rpt_1");
+});
+
+test("apiRoutes: template scope routes are canonical", () => {
+  assert.equal(apiRoutes.templates.listMy(), "/api/templates?scope=personal");
+  assert.equal(apiRoutes.templates.listOrg("org_1"), "/api/templates?scope=org&org_id=org_1");
+  assert.equal(apiRoutes.templates.item("tpl_1"), "/api/templates/tpl_1");
+});
+
+test("apiRoutes: generated sample URLs do not have trailing slash variants", () => {
+  const samples = [
+    apiRoutes.auth.login(),
+    apiRoutes.auth.refresh(),
+    apiRoutes.projects.item("p1"),
+    apiRoutes.sessions.item("s1"),
+    apiRoutes.sessions.pathReports("s1", "primary"),
+    apiRoutes.sessions.pathReport("s1", "primary", "r1"),
+    apiRoutes.orgs.member("o1", "u1"),
+    apiRoutes.reports.item("r1"),
+    apiRoutes.llm.settings(),
+  ];
+  for (const url of samples) {
+    assert.equal(url.endsWith("/"), false, `unexpected trailing slash for ${url}`);
+  }
+});
+
+test("api.js static guard: no literal /api strings and no endpoint fanout arrays", () => {
+  const apiJsPath = path.resolve(process.cwd(), "frontend/src/lib/api.js");
+  const src = fs.readFileSync(apiJsPath, "utf8");
+
+  assert.equal(/["'`]\/api\//.test(src), false, "api.js must use apiRoutes (no literal /api strings)");
+  assert.equal(/\b(endpoints|endpointCandidates|urlCandidates|fallbackCandidates)\s*=\s*\[/.test(src), false, "endpoint fanout arrays are forbidden");
+
+  const fallbackUses = (src.match(/apiFetchWithFallback\s*\(/g) || []).length;
+  assert.ok(fallbackUses <= 1, `too many fallback sites: ${fallbackUses}`);
+});
