@@ -6,6 +6,10 @@ import {
   seedXml,
   switchTab,
 } from "./helpers/processFixture.mjs";
+import {
+  openSessionInTopbar,
+  waitForDiagramReady,
+} from "./helpers/diagramReady.mjs";
 
 async function primeAuth(page, tokenRaw) {
   const token = String(tokenRaw || "").trim();
@@ -25,59 +29,11 @@ async function primeAuth(page, tokenRaw) {
 }
 
 async function openFixtureInTopbar(page, fixture) {
-  const projectId = String(fixture.projectId || "").trim();
-  const sessionId = String(fixture.sessionId || "").trim();
-  await page.goto(`/app?project=${encodeURIComponent(projectId)}&session=${encodeURIComponent(sessionId)}`);
-  await page.waitForLoadState("domcontentloaded");
-  const projectSelect = page.getByTestId("topbar-project-select");
-  const sessionSelect = page.getByTestId("topbar-session-select");
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    if (await projectSelect.isVisible().catch(() => false)) break;
-    const orgChoice = page.getByText("Выберите организацию");
-    if (await orgChoice.isVisible().catch(() => false)) {
-      const firstOrgButton = page.getByRole("button", { name: /Org|Default/i }).first();
-      if (await firstOrgButton.count()) {
-        await firstOrgButton.click().catch(() => {});
-      }
-    }
-    await page.waitForTimeout(250);
-  }
-  await expect(projectSelect).toBeVisible();
-  await expect(sessionSelect).toBeVisible();
-  const currentProjectValue = await projectSelect.inputValue().catch(() => "");
-  if (String(currentProjectValue || "") !== projectId) {
-    await projectSelect.selectOption(projectId);
-  }
-  await expect(page.locator(`[data-testid='topbar-session-select'] option[value='${sessionId}']`)).toHaveCount(1);
-  const currentSessionValue = await sessionSelect.inputValue().catch(() => "");
-  if (String(currentSessionValue || "") !== sessionId) {
-    await sessionSelect.selectOption(sessionId);
-  }
-  await expect(projectSelect).toHaveValue(projectId);
-  await expect(sessionSelect).toHaveValue(sessionId);
-  await expect
-    .poll(() => page.url())
-    .toContain(`/app?project=${encodeURIComponent(projectId)}&session=${encodeURIComponent(sessionId)}`);
-  await page.waitForLoadState("domcontentloaded");
-  await page.waitForTimeout(150);
+  await openSessionInTopbar(page, fixture);
 }
 
 async function waitForModelerReady(page) {
-  await expect
-    .poll(async () => {
-      try {
-        return await page.evaluate(() => {
-          if (window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.()) return true;
-          return Boolean(
-            document.querySelector(".bpmnStageHost .djs-container .djs-viewport")
-            || document.querySelector(".djs-container .djs-viewport"),
-          );
-        });
-      } catch {
-        return false;
-      }
-    })
-    .toBeTruthy();
+  await waitForDiagramReady(page);
 }
 
 async function openLayersPopover(page) {

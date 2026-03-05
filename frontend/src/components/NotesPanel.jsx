@@ -1057,8 +1057,6 @@ export default function NotesPanel({
 
   useEffect(() => {
     setTemplateErr("");
-    setTldrErr("");
-    setTldrStatus("");
   }, [selectedElementId]);
 
   useEffect(() => {

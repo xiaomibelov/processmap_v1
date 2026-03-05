@@ -1128,6 +1128,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const [xmlSaveBusy, setXmlSaveBusy] = useState(false);
   const [srcHint, setSrcHint] = useState("");
   const [err, setErr] = useState("");
+  const [diagramReady, setDiagramReady] = useState(false);
   const bottlenecksRef = useRef([]);
   const markerStateRef = useRef({ viewer: [], editor: [] });
   const overlayStateRef = useRef({ viewer: [], editor: [] });
@@ -1279,6 +1280,10 @@ const BpmnStage = forwardRef(function BpmnStage({
   useEffect(() => {
     draftRef.current = draft;
   }, [draft]);
+
+  useEffect(() => {
+    setDiagramReady(false);
+  }, [sessionId, reloadKey]);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
@@ -1449,6 +1454,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       ready: nextReady,
       destroyed: nextDestroyed,
     };
+    setDiagramReady((prev) => (prev === nextReady ? prev : nextReady));
   }
 
   function ensureBpmnPersistence() {
@@ -4303,6 +4309,20 @@ const BpmnStage = forwardRef(function BpmnStage({
       </div>
 
       <div className={view === "xml" ? "bpmnStack hidden" : "bpmnStack"}>
+        {diagramReady ? (
+          <div
+            data-testid="diagram-ready"
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: 1,
+              height: 1,
+              opacity: 0,
+              pointerEvents: "none",
+            }}
+          />
+        ) : null}
         <div
           className={"bpmnLayer bpmnLayer--diagram " + (view === "viewer" ? "on" : "off")}
           style={{ position: "absolute", inset: 0, display: view === "viewer" ? "block" : "none" }}

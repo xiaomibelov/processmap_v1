@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { apiLogin, setUiToken } from "./helpers/e2eAuth.mjs";
+import { openSessionInTopbar, waitForDiagramReady } from "./helpers/diagramReady.mjs";
 
 const API_BASE = process.env.E2E_API_BASE_URL || "http://127.0.0.1:8011";
 
@@ -52,24 +53,12 @@ async function openWorkspaceSession(page, fixture) {
     window.__FPC_E2E__ = true;
     window.localStorage.setItem("fpc_debug_bpmn", "1");
   });
-  await page.goto("/app");
-  const projectSelect = page.locator(".topbar .topSelect--project");
-  await expect(projectSelect).toBeVisible({ timeout: 15000 });
-  await page.selectOption(".topbar .topSelect--project", fixture.projectId);
-  await expect(page.locator(`.topbar .topSelect--session option[value="${fixture.sessionId}"]`)).toHaveCount(1);
-  await page.selectOption(".topbar .topSelect--session", fixture.sessionId);
+  await openSessionInTopbar(page, fixture);
   await switchTab(page, "Diagram");
 }
 
 async function assertDiagramReady(page) {
-  await expect.poll(async () => {
-    return await page.evaluate(() => {
-      const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
-      if (!modeler) return false;
-      const registry = modeler.get("elementRegistry");
-      return (registry?.getAll?.() || []).length > 0;
-    });
-  }).toBe(true);
+  await waitForDiagramReady(page);
 }
 
 async function createTemplateFragmentFromDiagram(page, marker) {

@@ -75,7 +75,10 @@ if ! curl -fsS "${APP_URL}" >/dev/null 2>&1; then
   fi
   (
     cd "${ROOT_DIR}/frontend"
-    VITE_API_PROXY_TARGET="${API_BASE}" npm run dev -- --host 127.0.0.1 --port "${APP_PORT}" >/tmp/fpc_e2e_enterprise_frontend.log 2>&1
+    VITE_API_PROXY_TARGET="${API_BASE}" \
+    VITE_PORT="${APP_PORT}" \
+    VITE_HMR_PORT="${APP_PORT}" \
+    npm run dev -- --host 127.0.0.1 --port "${APP_PORT}" >/tmp/fpc_e2e_enterprise_frontend.log 2>&1
   ) &
   APP_PID="$!"
   for _ in $(seq 1 60); do
