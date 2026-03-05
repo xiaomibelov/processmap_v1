@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AiToolsModal from "./AiToolsModal";
+import TopRightCtaGroup from "./nav/TopRightCtaGroup";
 import { useAuth } from "../features/auth/AuthProvider";
 
 function asArray(x) {
@@ -282,27 +283,6 @@ export default function TopBar({
           <span className="bg-gradient-to-r from-fg via-fg to-accent bg-clip-text text-transparent [text-shadow:0_1px_0_rgba(0,0,0,.14)]">PROCESSMAP</span>
         </div>
 
-        <div className="topGroup flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-3 py-0 text-sm"
-            onClick={onNewProject}
-            data-testid="topbar-new-project"
-          >
-            Новый проект
-          </button>
-          <button
-            type="button"
-            className="primaryBtn h-9 min-h-0 whitespace-nowrap px-3 py-0 text-sm"
-            onClick={newBackendHandler}
-            disabled={!projectId}
-            title={!projectId ? "Сначала выбери проект" : "Открыть мастер создания сессии"}
-            data-testid="topbar-new-session"
-          >
-            Создать сессию
-          </button>
-        </div>
-
         {!sessionId ? (
           <div className="topGroup flex shrink-0 items-center gap-2">
             <span
@@ -390,6 +370,17 @@ export default function TopBar({
       </div>
 
       <div className="topRight relative flex min-w-0 shrink-0 items-center justify-end gap-2 overflow-visible whitespace-nowrap">
+        <TopRightCtaGroup
+          onCreateProject={onNewProject}
+          onCreateSession={newBackendHandler}
+          createProjectLabel="Новый проект"
+          createSessionLabel="Создать сессию"
+          createProjectTestId="topbar-new-project"
+          createSessionTestId="topbar-new-session"
+          createSessionDisabled={!projectId}
+          createSessionTitle={!projectId ? "Сначала выбери проект" : "Открыть мастер создания сессии"}
+          className="mr-1"
+        />
         <div className="topGroup flex shrink-0 items-center gap-2">
           {canOpenOrgSettings ? (
             <div className="relative">

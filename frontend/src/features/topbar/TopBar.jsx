@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import TopRightCtaGroup from "../../components/nav/TopRightCtaGroup";
 
 function projectIdFrom(p) {
   return (p && (p.id || p.project_id || p.slug)) || "";
@@ -89,20 +90,18 @@ export default function TopBar({
           <button className="secondaryBtn" onClick={onRefresh} title="Обновить список проектов/сессий">
             Обновить
           </button>
-          <button className="secondaryBtn" onClick={onNewProject} title="Создать проект">
-            Новый проект
-          </button>
           <button className="secondaryBtn" onClick={onNewLocal} title="Создать локальный черновик">
             Новая (Local)
           </button>
-          <button
-            className="primaryBtn smallBtn"
-            onClick={() => onNewBackend?.()}
-            disabled={!canCreateApiSession}
-            title={canCreateApiSession ? "Создать сессию в проекте" : "Сначала выбери или создай проект"}
-          >
-            Новая (API)
-          </button>
+          <TopRightCtaGroup
+            onCreateProject={onNewProject}
+            onCreateSession={onNewBackend}
+            createProjectLabel="Новый проект"
+            createSessionLabel="Создать сессию"
+            createSessionDisabled={!canCreateApiSession}
+            createSessionTitle={canCreateApiSession ? "Создать сессию в проекте" : "Сначала выбери или создай проект"}
+            compact
+          />
         </div>
       </div>
     </div>

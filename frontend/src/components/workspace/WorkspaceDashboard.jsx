@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { apiGetEnterpriseWorkspace } from "../../lib/api";
 import { buildWorkspaceTree, filterSessionsForSelection } from "../../features/workspace/workspaceDashboardVm";
 import { computeDodPercent, formatDodBreakdownTooltip } from "../../features/workspace/computeDodPercent";
+import TopRightCtaGroup from "../nav/TopRightCtaGroup";
 
 function toText(value) {
   return String(value || "").trim();
@@ -524,7 +525,7 @@ export default function WorkspaceDashboard({
             </p>
           </div>
 
-          <div className="ml-auto flex flex-wrap justify-end gap-2">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             <button
               type="button"
               className="secondaryBtn h-9 px-3 text-sm"
@@ -534,12 +535,12 @@ export default function WorkspaceDashboard({
             >
               DOC
             </button>
-            <button type="button" className="primaryBtn h-9 px-3 text-sm" onClick={() => onCreateProject?.()}>
-              Создать проект
-            </button>
-            <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={() => onCreateSession?.()}>
-              Создать сессию
-            </button>
+            <TopRightCtaGroup
+              onCreateProject={onCreateProject}
+              onCreateSession={onCreateSession}
+              createProjectLabel="Создать проект"
+              createSessionLabel="Создать сессию"
+            />
             {canInviteUsers ? (
               <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={() => onInviteUsers?.()}>
                 Пригласить пользователей
@@ -847,12 +848,13 @@ export default function WorkspaceDashboard({
                   : "Сначала создайте проект, затем создайте сессию и начните работу в пространстве организации."}
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
-                <button type="button" className="primaryBtn h-9 px-3 text-sm" onClick={() => onCreateProject?.()}>
-                  Создать проект
-                </button>
-                <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={() => onCreateSession?.()}>
-                  Создать сессию
-                </button>
+                <TopRightCtaGroup
+                  onCreateProject={onCreateProject}
+                  onCreateSession={onCreateSession}
+                  createProjectLabel="Создать проект"
+                  createSessionLabel="Создать сессию"
+                  className="ml-0 justify-start"
+                />
                 {canInviteUsers ? (
                   <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={() => onInviteUsers?.()}>
                     Пригласить пользователей
