@@ -59,13 +59,13 @@ export default function CreateTemplateModal({
         <div className="space-y-2 rounded-lg border border-border bg-panel2/25 px-3 py-2">
           <div className="text-xs text-muted">Тип шаблона</div>
           <label className="flex items-center gap-2 text-sm text-fg">
-            <input
-              type="radio"
-              name="template_type"
-              checked={templateType !== "hybrid_stencil_v1"}
-              onChange={() => onTemplateTypeChange?.("bpmn_selection_v1")}
-              disabled={busy}
-            />
+              <input
+                type="radio"
+                name="template_type"
+                checked={templateType !== "hybrid_stencil_v1"}
+                onChange={() => onTemplateTypeChange?.("bpmn_fragment_v1")}
+                disabled={busy}
+              />
             <span>BPMN selection</span>
           </label>
           <label className="flex items-center gap-2 text-sm text-fg">

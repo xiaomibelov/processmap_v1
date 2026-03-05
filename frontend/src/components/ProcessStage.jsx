@@ -105,6 +105,7 @@ import {
 } from "../features/process/drawio/drawioMeta";
 import useTemplatesStore from "../features/templates/model/useTemplatesStore";
 import useTemplatesStageBridge from "../features/templates/services/useTemplatesStageBridge";
+import BpmnFragmentPlacementGhost from "../features/templates/ui/BpmnFragmentPlacementGhost";
 import {
   AI_QUESTIONS_TIMEOUT_MS,
   COMMAND_HISTORY_LIMIT,
@@ -675,6 +676,23 @@ export default function ProcessStage({
     enabled: tab === "diagram" && overlayLayerVisible,
     canvasApi: bpmnCanvasApi,
   });
+  const templatesDiagramContainerRect = useMemo(() => {
+    const rect = asObject(overlayContainerRect);
+    const width = Number(rect.width || 0);
+    const height = Number(rect.height || 0);
+    if (width > 0 && height > 0) return rect;
+    const host = bpmnStageHostRef?.current;
+    if (host instanceof Element && typeof host.getBoundingClientRect === "function") {
+      const box = host.getBoundingClientRect();
+      return {
+        left: Number(box.left || 0),
+        top: Number(box.top || 0),
+        width: Number(box.width || 0),
+        height: Number(box.height || 0),
+      };
+    }
+    return rect;
+  }, [overlayContainerRect, sid, tab]);
   const {
     hybridLayerPositions,
     hybridLayerPositionsRef,
@@ -1087,6 +1105,8 @@ export default function ProcessStage({
     draftNodes: draft?.nodes,
     sessionId: sid,
     bpmnApiRef: bpmnRef,
+    bpmnStageHostRef,
+    clientToDiagram,
   });
   const selectedBpmnElementIds = templatesBridge.selectedBpmnIds;
   const getSelectedHybridStencilTemplate = useCallback(() => {
@@ -1110,6 +1130,10 @@ export default function ProcessStage({
     getSelectedHybridStencilTemplate,
     applySelectionIds: templatesBridge.applyBpmnSelection,
     applyHybridStencilTemplate,
+    captureBpmnFragmentTemplatePack: templatesBridge.captureBpmnFragmentTemplatePack,
+    insertBpmnFragmentTemplateAtPoint: templatesBridge.insertBpmnFragmentTemplateAtPoint,
+    isDiagramClientPoint: templatesBridge.isDiagramClientPoint,
+    diagramContainerRect: templatesDiagramContainerRect,
     selectionContext: templatesBridge.selectionContext,
     setError: setGenErr,
     setInfo: setInfoMsg,
@@ -1142,6 +1166,8 @@ export default function ProcessStage({
     reloadTemplates,
     applyTemplate,
     removeTemplate,
+    bpmnFragmentPlacementGhost,
+    bpmnFragmentPlacementActive,
   } = templatesStore;
   const { closeAllDiagramActions } = useDiagramActionPopovers({
     toolbarMenuOpen,
@@ -3689,6 +3715,10 @@ export default function ProcessStage({
                   robotMetaOverlayEnabled={robotMetaOverlayEnabled}
                   robotMetaOverlayFilters={robotMetaOverlayFilters}
                   robotMetaStatusByElementId={robotMetaStatusByElementId}
+                />
+                <BpmnFragmentPlacementGhost
+                  active={bpmnFragmentPlacementActive}
+                  ghost={bpmnFragmentPlacementGhost}
                 />
                 <DrawioOverlayRenderer
                   visible={tab === "diagram" && drawioVisible}

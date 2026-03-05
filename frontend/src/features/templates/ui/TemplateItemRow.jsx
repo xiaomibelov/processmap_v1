@@ -7,7 +7,10 @@ function scopeLabel(scopeRaw) {
 }
 
 function typeLabel(typeRaw) {
-  return toText(typeRaw).toLowerCase() === "hybrid_stencil_v1" ? "hybrid stencil" : "bpmn selection";
+  const type = toText(typeRaw).toLowerCase();
+  if (type === "hybrid_stencil_v1") return "hybrid stencil";
+  if (type === "bpmn_fragment_v1") return "bpmn fragment";
+  return "bpmn selection";
 }
 
 export default function TemplateItemRow({

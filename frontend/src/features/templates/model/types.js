@@ -1,5 +1,5 @@
 export const TEMPLATE_SCOPES = ["personal", "org"];
-export const TEMPLATE_TYPES = ["bpmn_selection_v1", "hybrid_stencil_v1"];
+export const TEMPLATE_TYPES = ["bpmn_selection_v1", "hybrid_stencil_v1", "bpmn_fragment_v1"];
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];

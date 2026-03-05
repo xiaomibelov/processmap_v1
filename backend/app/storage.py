@@ -1576,6 +1576,8 @@ def _normalize_template_type(raw: Any) -> str:
     value = str(raw or "").strip().lower()
     if value == "hybrid_stencil_v1":
         return "hybrid_stencil_v1"
+    if value == "bpmn_fragment_v1":
+        return "bpmn_fragment_v1"
     return "bpmn_selection_v1"
 
 

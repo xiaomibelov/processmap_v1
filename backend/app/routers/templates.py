@@ -44,6 +44,8 @@ def _normalize_template_type(template_type_raw: Any) -> str:
     value = str(template_type_raw or "").strip().lower()
     if value == "hybrid_stencil_v1":
         return "hybrid_stencil_v1"
+    if value == "bpmn_fragment_v1":
+        return "bpmn_fragment_v1"
     return "bpmn_selection_v1"
 
 
@@ -62,6 +64,19 @@ def _validate_template_payload(template_type_raw: Any, payload_raw: Any) -> Tupl
             return False, "payload.edges must be array for hybrid_stencil_v1"
         if not isinstance(bbox, dict):
             return False, "payload.bbox must be object for hybrid_stencil_v1"
+        return True, ""
+    if template_type == "bpmn_fragment_v1":
+        pack = payload.get("pack")
+        fragment = payload.get("fragment")
+        source_fragment = pack.get("fragment") if isinstance(pack, dict) else fragment
+        if not isinstance(source_fragment, dict):
+            return False, "payload.pack.fragment must be object for bpmn_fragment_v1"
+        nodes = source_fragment.get("nodes")
+        edges = source_fragment.get("edges")
+        if not isinstance(nodes, list):
+            return False, "payload.pack.fragment.nodes must be array for bpmn_fragment_v1"
+        if not isinstance(edges, list):
+            return False, "payload.pack.fragment.edges must be array for bpmn_fragment_v1"
         return True, ""
     ids = payload.get("bpmn_element_ids")
     if ids is not None and not isinstance(ids, list):

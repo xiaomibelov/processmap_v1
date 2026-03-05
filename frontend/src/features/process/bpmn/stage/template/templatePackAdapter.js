@@ -24,6 +24,12 @@ function isTemplateConnectionType(typeRaw) {
   return type.includes("sequenceflow");
 }
 
+function isLaneContainerType(typeRaw) {
+  const type = String(typeRaw || "").trim().toLowerCase();
+  if (!type) return false;
+  return type.includes("lane") || type.includes("participant") || type.includes("process");
+}
+
 function readShapeBounds(el) {
   if (!el) return null;
   const x = Number(el?.x);
@@ -93,6 +99,36 @@ function connectSequenceFlow(modeling, source, target, when = "") {
   } catch {
     return null;
   }
+}
+
+function readPoint(raw) {
+  const point = asObject(raw);
+  const x = Number(point?.x);
+  const y = Number(point?.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x, y };
+}
+
+function isPointInsideBounds(point, bounds) {
+  if (!point || !bounds) return false;
+  return point.x >= bounds.x
+    && point.x <= (bounds.x + bounds.width)
+    && point.y >= bounds.y
+    && point.y <= (bounds.y + bounds.height);
+}
+
+function findShapeAtPoint(elements, point, predicate = () => true) {
+  if (!point) return null;
+  const candidates = asArray(elements)
+    .filter((el) => predicate(el))
+    .map((el) => ({ el, bounds: readShapeBounds(el) }))
+    .filter((row) => !!row.bounds && isPointInsideBounds(point, row.bounds))
+    .sort((a, b) => {
+      const aArea = Number(a.bounds.width || 0) * Number(a.bounds.height || 0);
+      const bArea = Number(b.bounds.width || 0) * Number(b.bounds.height || 0);
+      return aArea - bArea;
+    });
+  return candidates[0]?.el || null;
 }
 
 export function createTemplatePackAdapter(deps = {}) {
@@ -224,22 +260,47 @@ export function createTemplatePackAdapter(deps = {}) {
     const edges = asArray(pack?.fragment?.edges).filter((edge) => String(edge?.sourceId || "").trim() && String(edge?.targetId || "").trim());
     if (!nodes.length) return { ok: false, error: "empty_pack" };
 
-    const selectedNodes = selectTemplateNodes(inst, { isShapeElement });
-    const anchor = selectedNodes[0] || null;
-    if (!anchor) return { ok: false, error: "anchor_required" };
-
     const modeling = inst.get("modeling");
     const elementFactory = inst.get("elementFactory");
     const canvas = inst.get("canvas");
+    const registry = inst.get("elementRegistry");
     const laneMap = readLaneMap(inst, { isShapeElement });
-    const anchorParent = anchor?.parent || canvas?.getRootElement?.() || null;
+    const allElements = asArray(registry?.getAll?.()).filter((el) => isShapeElement(el));
+    const anchorPayload = asObject(payload?.anchor);
+    const anchorPoint = readPoint(anchorPayload?.point);
+    const anchorById = toText(anchorPayload?.elementId) ? registry?.get?.(toText(anchorPayload.elementId)) : null;
+    const selectedNodes = selectTemplateNodes(inst, { isShapeElement });
+    const anchorByPoint = findShapeAtPoint(
+      allElements,
+      anchorPoint,
+      (el) => {
+        const type = String(el?.businessObject?.$type || el?.type || "");
+        return isTemplateNodeType(type);
+      },
+    );
+    const anchor = anchorById || selectedNodes[0] || anchorByPoint || null;
+    const parentById = toText(anchorPayload?.parentId) ? registry?.get?.(toText(anchorPayload.parentId)) : null;
+    const parentByPoint = findShapeAtPoint(
+      allElements,
+      anchorPoint,
+      (el) => {
+        const type = String(el?.businessObject?.$type || el?.type || "");
+        return isLaneContainerType(type);
+      },
+    );
+    const anchorParent = parentById || parentByPoint || anchor?.parent || canvas?.getRootElement?.() || null;
     if (!anchorParent) return { ok: false, error: "anchor_parent_missing" };
 
-    const mode = String(payload?.mode || "after").trim() === "between" ? "between" : "after";
+    const modeRaw = String(payload?.mode || "after").trim();
+    const mode = modeRaw === "between" && anchor ? "between" : "after";
     const minX = Math.min(...nodes.map((node) => Number(node?.di?.x || 0)));
     const minY = Math.min(...nodes.map((node) => Number(node?.di?.y || 0)));
-    const offsetX = Number(anchor?.x || 0) + Number(anchor?.width || 0) + 220;
-    const offsetY = Number(anchor?.y || 0) - 16;
+    const offsetX = anchor
+      ? Number(anchor?.x || 0) + Number(anchor?.width || 0) + 220
+      : Number(anchorPoint?.x || 0) + 80;
+    const offsetY = anchor
+      ? Number(anchor?.y || 0) - 16
+      : Number(anchorPoint?.y || 0) - 16;
 
     const createdNodeMap = {};
     const remap = {};
@@ -305,7 +366,9 @@ export function createTemplatePackAdapter(deps = {}) {
       }
     }
 
-    connectSequenceFlow(modeling, anchor, entryShape);
+    if (anchor) {
+      connectSequenceFlow(modeling, anchor, entryShape);
+    }
     if (mode === "between" && nextTarget) {
       connectSequenceFlow(modeling, exitShape, nextTarget);
     }
@@ -315,6 +378,7 @@ export function createTemplatePackAdapter(deps = {}) {
       mode,
       packId: String(pack?.packId || "-"),
       anchorId: String(anchor?.id || "-"),
+      anchorByPoint: anchor ? 0 : 1,
       createdNodes: createdNodes.length,
       createdEdges: createdEdges.length,
       rewiredNext: nextTarget ? 1 : 0,
@@ -335,6 +399,7 @@ export function createTemplatePackAdapter(deps = {}) {
       entryNodeId: String(entryShape?.id || ""),
       exitNodeId: String(exitShape?.id || ""),
       anchorId: String(anchor?.id || ""),
+      anchorByPoint: !anchor,
     };
   }
 

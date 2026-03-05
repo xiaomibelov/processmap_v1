@@ -37,14 +37,17 @@ export async function applyTemplateToDiagram(bpmnApi, idsRaw, options = {}) {
     }),
   );
   if (result?.ok === false) {
+    const resolvedMissing = asArray(result?.missingIds).map((row) => toText(row)).filter(Boolean);
+    const resolvedApplied = asArray(result?.ids).map((row) => toText(row)).filter(Boolean);
+    const softMissing = toText(result?.error) === "elements_not_found";
     return {
-      ok: false,
-      error: toText(result.error || "selection_apply_failed"),
-      count: Number(result.count || 0),
+      ok: softMissing,
+      error: softMissing ? "" : toText(result.error || "selection_apply_failed"),
+      count: Number(result.count || resolvedApplied.length || 0),
       ids,
-      applied: asArray(result.ids).map((row) => toText(row)).filter(Boolean),
-      missing: asArray(result.missingIds).map((row) => toText(row)).filter(Boolean),
-      warning: "",
+      applied: resolvedApplied,
+      missing: resolvedMissing.length ? resolvedMissing : ids,
+      warning: softMissing ? `template_partial_apply:${resolvedApplied.length}/${ids.length}` : "",
     };
   }
   const appliedIds = Array.from(new Set(asArray(result?.ids).map((row) => toText(row)).filter(Boolean)));
