@@ -48,6 +48,7 @@ export function normalizeTemplateRecord(raw, defaults = {}) {
     user_id: toText(item.user_id || item.userId || fallback.user_id || fallback.userId),
     owner_user_id: toText(item.owner_user_id || item.ownerUserId || item.user_id || fallback.owner_user_id || fallback.ownerUserId || fallback.user_id || fallback.userId),
     org_id: toText(item.org_id || item.orgId || fallback.org_id || fallback.orgId),
+    folder_id: toText(item.folder_id || item.folderId || fallback.folder_id || fallback.folderId),
     bpmn_element_ids: bpmnElementIds.length ? bpmnElementIds : payloadBpmnIds,
     element_types: elementTypes,
     lane_names: laneNames,
@@ -59,6 +60,29 @@ export function normalizeTemplateRecord(raw, defaults = {}) {
     meta: {
       source: toText(asObject(item.meta).source || asObject(fallback.meta).source || "diagram_selection"),
     },
+    can_edit: item.can_edit !== undefined ? Boolean(item.can_edit) : Boolean(fallback.can_edit ?? true),
+    can_delete: item.can_delete !== undefined ? Boolean(item.can_delete) : Boolean(fallback.can_delete ?? true),
+  };
+}
+
+export function normalizeTemplateFolderRecord(raw, defaults = {}) {
+  const item = asObject(raw);
+  const fallback = asObject(defaults);
+  const createdAt = Number(item.created_at || item.createdAt || fallback.created_at || fallback.createdAt || Date.now()) || Date.now();
+  const updatedAt = Number(item.updated_at || item.updatedAt || createdAt) || createdAt;
+  const scope = normalizeTemplateScope(item.scope || fallback.scope);
+  const name = toText(item.name || fallback.name) || "Folder";
+  const id = toText(item.id || item.folder_id || item.folderId || fallback.id) || `tpf_${createdAt}_${Math.random().toString(36).slice(2, 8)}`;
+  return {
+    id,
+    scope,
+    name,
+    org_id: toText(item.org_id || item.orgId || fallback.org_id || fallback.orgId),
+    owner_user_id: toText(item.owner_user_id || item.ownerUserId || fallback.owner_user_id || fallback.ownerUserId || fallback.user_id || fallback.userId),
+    parent_id: toText(item.parent_id || item.parentId || fallback.parent_id || fallback.parentId),
+    sort_order: Number(item.sort_order || item.sortOrder || fallback.sort_order || fallback.sortOrder || 0),
+    created_at: createdAt,
+    updated_at: updatedAt,
     can_edit: item.can_edit !== undefined ? Boolean(item.can_edit) : Boolean(fallback.can_edit ?? true),
     can_delete: item.can_delete !== undefined ? Boolean(item.can_delete) : Boolean(fallback.can_delete ?? true),
   };

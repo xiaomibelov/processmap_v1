@@ -315,6 +315,12 @@
     width: min(280px, calc(100% - 24px));
   }
 
+  .templatesBottomMenu {
+    width: min(860px, calc(100% - 24px));
+    max-height: min(72vh, 680px);
+    overflow: auto;
+  }
+
   .diagramActionPopoverHead {
     @apply mb-2 flex items-center justify-between gap-2 text-xs font-semibold text-fg;
   }

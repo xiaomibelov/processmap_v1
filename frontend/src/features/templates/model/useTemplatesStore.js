@@ -4,6 +4,7 @@ import { countTemplatesByScope, filterTemplatesByQuery, suggestTemplates, splitT
 import { buildTemplateFromSelection } from "../services/buildTemplateFromSelection.js";
 import { buildHybridStencilTemplate } from "../services/buildHybridStencilTemplate.js";
 import { buildBpmnFragmentTemplate } from "../services/buildBpmnFragmentTemplate.js";
+import useTemplateFoldersStore from "../folders/useTemplateFoldersStore.js";
 import {
   buildBpmnFragmentGhost,
   createBpmnFragmentPlacementDraft,
@@ -78,15 +79,31 @@ export default function useTemplatesStore({
   const [lastError, setLastError] = useState("");
   const [search, setSearch] = useState("");
   const [activeScope, setActiveScope] = useState("personal");
+  const [activeFolderByScope, setActiveFolderByScope] = useState({ personal: "", org: "" });
   const [createScope, setCreateScope] = useState("personal");
   const [createType, setCreateType] = useState("bpmn_fragment_v1");
   const [createTitle, setCreateTitle] = useState("");
+  const [createFolderId, setCreateFolderId] = useState("");
   const [myTemplates, setMyTemplates] = useState([]);
   const [orgTemplates, setOrgTemplates] = useState([]);
   const [fragmentPlacement, setFragmentPlacement] = useState(null);
   const [fragmentPlacementBusy, setFragmentPlacementBusy] = useState(false);
   const fragmentPlacementRef = useRef(null);
   const fragmentPlacementBusyRef = useRef(false);
+
+  const {
+    foldersMy,
+    foldersOrg,
+    foldersLoading,
+    foldersError,
+    reloadAllFolders,
+    createFolderForScope,
+  } = useTemplateFoldersStore({
+    userId,
+    orgId,
+    canCreateOrgFolder: canCreateOrgTemplate,
+    setError,
+  });
 
   const selectedIds = typeof getSelectedBpmnElementIds === "function" ? getSelectedBpmnElementIds() : [];
   const selectedHybridStencil = typeof getSelectedHybridStencilTemplate === "function"
@@ -139,7 +156,8 @@ export default function useTemplatesStore({
   useEffect(() => {
     if (!templatesEnabled) return;
     void reloadTemplates();
-  }, [reloadTemplates, templatesEnabled]);
+    void reloadAllFolders();
+  }, [reloadAllFolders, reloadTemplates, templatesEnabled]);
 
   useEffect(() => {
     fragmentPlacementRef.current = fragmentPlacement;
@@ -151,10 +169,26 @@ export default function useTemplatesStore({
 
   const templates = useMemo(() => [...myTemplates, ...orgTemplates], [myTemplates, orgTemplates]);
   const byScope = useMemo(() => splitTemplatesByScope(templates), [templates]);
+  const foldersByScope = useMemo(() => ({
+    personal: Array.isArray(foldersMy) ? foldersMy : [],
+    org: Array.isArray(foldersOrg) ? foldersOrg : [],
+  }), [foldersMy, foldersOrg]);
   const counts = useMemo(() => countTemplatesByScope(templates), [templates]);
+  const activeFolderId = useMemo(
+    () => toText(activeFolderByScope?.[activeScope]),
+    [activeFolderByScope, activeScope],
+  );
+  const scopedTemplatesByFolder = useMemo(() => {
+    const source = activeScope === "org" ? byScope.org : byScope.personal;
+    const folderId = toText(activeFolderByScope?.[activeScope]);
+    if (!folderId) {
+      return source.filter((row) => !toText(row?.folder_id));
+    }
+    return source.filter((row) => toText(row?.folder_id) === folderId);
+  }, [activeFolderByScope, activeScope, byScope.org, byScope.personal]);
   const scopedTemplates = useMemo(
-    () => filterTemplatesByQuery(activeScope === "org" ? byScope.org : byScope.personal, search),
-    [activeScope, byScope.org, byScope.personal, search],
+    () => filterTemplatesByQuery(scopedTemplatesByFolder, search),
+    [scopedTemplatesByFolder, search],
   );
   const suggestedTemplates = useMemo(
     () => suggestTemplates(templates, selectionContext),
@@ -167,9 +201,19 @@ export default function useTemplatesStore({
 
   const openTemplatesPicker = useCallback(async () => {
     setTemplatesEnabled(true);
-    await reloadTemplates();
+    await Promise.all([
+      reloadTemplates(),
+      reloadAllFolders(),
+    ]);
     setPickerOpen(true);
-  }, [reloadTemplates]);
+  }, [reloadAllFolders, reloadTemplates]);
+
+  const reloadTemplatesAndFolders = useCallback(async () => {
+    await Promise.all([
+      reloadTemplates(),
+      reloadAllFolders(),
+    ]);
+  }, [reloadAllFolders, reloadTemplates]);
 
   const openCreateTemplateModal = useCallback(() => {
     if (!hasSession || tab !== "diagram") {
@@ -181,12 +225,25 @@ export default function useTemplatesStore({
       return;
     }
     setTemplatesEnabled(true);
+    void reloadAllFolders();
     setCreateTitle(defaultTemplateTitle(selectionContext, selectedIds.length || selectedHybridCount));
     setCreateType(selectedIds.length > 0 ? "bpmn_fragment_v1" : "hybrid_stencil_v1");
     const nextScope = canCreateOrgTemplate && activeScope === "org" ? "org" : "personal";
     setCreateScope(nextScope);
+    setCreateFolderId(toText(activeFolderByScope?.[nextScope]));
     setCreateOpen(true);
-  }, [activeScope, canCreateOrgTemplate, hasSession, selectedHybridCount, selectedIds.length, selectionContext, setError, tab]);
+  }, [
+    activeFolderByScope,
+    activeScope,
+    canCreateOrgTemplate,
+    hasSession,
+    selectedHybridCount,
+    selectedIds.length,
+    selectionContext,
+    setError,
+    tab,
+    reloadAllFolders,
+  ]);
 
   const saveCurrentSelectionAsTemplate = useCallback(async () => {
     const scope = createScope === "org" && canCreateOrgTemplate ? "org" : "personal";
@@ -235,6 +292,7 @@ export default function useTemplatesStore({
         template: {
           ...built.template,
           template_type: toText(built?.template?.template_type || createType) || "bpmn_selection_v1",
+          folder_id: toText(createFolderId),
         },
       });
       if (!saved?.ok) {
@@ -254,6 +312,7 @@ export default function useTemplatesStore({
     createScope,
     createType,
     createTitle,
+    createFolderId,
     orgId,
     reloadTemplates,
     selectedIds,
@@ -288,6 +347,40 @@ export default function useTemplatesStore({
       template,
     });
   }, [canCreateOrgTemplate, orgId, userId]);
+
+  const setActiveFolderForScope = useCallback((scopeRaw, folderIdRaw) => {
+    const scope = toText(scopeRaw).toLowerCase() === "org" ? "org" : "personal";
+    const folderId = toText(folderIdRaw);
+    setActiveFolderByScope((prev) => {
+      const next = prev && typeof prev === "object" ? { ...prev } : { personal: "", org: "" };
+      next[scope] = folderId;
+      return next;
+    });
+  }, []);
+
+  const createFolderFromUi = useCallback(async ({
+    scope: scopeRaw = "personal",
+    name = "",
+    parentId = "",
+  } = {}) => {
+    const scope = toText(scopeRaw).toLowerCase() === "org" ? "org" : "personal";
+    const created = await createFolderForScope({ scope, name, parentId });
+    if (!created?.ok) return created;
+    const nextId = toText(created?.item?.id);
+    if (nextId) {
+      setActiveFolderForScope(scope, nextId);
+      if (toText(createScope).toLowerCase() === scope) {
+        setCreateFolderId(nextId);
+      }
+    }
+    return created;
+  }, [createFolderForScope, createScope, setActiveFolderForScope]);
+
+  const setCreateScopeAndFolder = useCallback((scopeRaw) => {
+    const scope = toText(scopeRaw).toLowerCase() === "org" ? "org" : "personal";
+    setCreateScope(scope);
+    setCreateFolderId(toText(activeFolderByScope?.[scope]));
+  }, [activeFolderByScope]);
 
   const startBpmnFragmentPlacement = useCallback((templateRaw) => {
     const created = createBpmnFragmentPlacementDraft(templateRaw, { ignoreClickMs: 0 });
@@ -417,6 +510,7 @@ export default function useTemplatesStore({
       const target = event?.target;
       if (target instanceof Element) {
         if (target.closest("[data-testid='templates-picker']")) return;
+        if (target.closest("[data-testid='templates-menu-panel']")) return;
         if (target.closest("[data-testid='modal-create-template']")) return;
         if (target.closest(".modalCard")) return;
       }
@@ -496,16 +590,24 @@ export default function useTemplatesStore({
     setSearch,
     activeScope,
     setActiveScope,
+    activeFolderByScope,
+    activeFolderId,
+    setActiveFolderForScope,
     createScope,
-    setCreateScope,
+    setCreateScope: setCreateScopeAndFolder,
     createType,
     setCreateType,
     createTitle,
     setCreateTitle,
+    createFolderId,
+    setCreateFolderId,
     selectedIds,
     selectedHybridCount,
     myTemplates,
     orgTemplates,
+    foldersByScope,
+    foldersLoading,
+    foldersError,
     scopedTemplates,
     suggestedTemplates,
     counts,
@@ -515,8 +617,10 @@ export default function useTemplatesStore({
     createOrgTemplate,
     openTemplatesPicker,
     openCreateTemplateModal,
+    createFolderFromUi,
     saveCurrentSelectionAsTemplate,
     reloadTemplates,
+    reloadTemplatesAndFolders,
     applyTemplate,
     removeTemplate,
     bpmnFragmentPlacementGhost: fragmentPlacementGhost,

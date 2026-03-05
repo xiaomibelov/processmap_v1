@@ -1,5 +1,6 @@
 import LayersPopover from "../components/LayersPopover";
 import HybridToolsPalette from "../../hybrid/tools/HybridToolsPalette";
+import TemplatesBottomMenu from "../../../templates/ui/TemplatesBottomMenu";
 
 export default function ProcessStageDiagramControls({ view = {} }) {
   const {
@@ -26,6 +27,21 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     templateSelectionCount,
     openTemplatesPicker,
     canOpenTemplatesList,
+    templatesMenuOpen,
+    setTemplatesMenuOpen,
+    templatesScope,
+    setTemplatesScope,
+    templatesActiveFolderId,
+    setTemplatesActiveFolder,
+    templatesFoldersByScope,
+    scopedTemplates,
+    reloadTemplatesAndFolders,
+    templatesBusy,
+    applyTemplate,
+    removeTemplate,
+    createTemplateFolderFromUi,
+    canCreateOrgFolders,
+    workspaceActiveOrgId,
     openSelectedElementNotes,
     canUseElementContextActions,
     openSelectedElementAi,
@@ -230,18 +246,24 @@ export default function ProcessStageDiagramControls({ view = {} }) {
         >
           {`Add template${templateSelectionCount > 0 ? ` (${templateSelectionCount})` : ""}`}
         </button>
-        <button
-          type="button"
-          className="secondaryBtn h-8 px-2 text-[11px] diagramActionSecondary"
-          onClick={() => {
-            void openTemplatesPicker();
-          }}
-          disabled={!canOpenTemplatesList}
-          title="Открыть список шаблонов"
-          data-testid="btn-templates"
-        >
-          Templates
-        </button>
+        <span data-testid="templates-menu-button">
+          <button
+            type="button"
+            className="secondaryBtn h-8 px-2 text-[11px] diagramActionSecondary"
+            onClick={() => {
+              if (templatesMenuOpen) {
+                setTemplatesMenuOpen(false);
+                return;
+              }
+              void openTemplatesPicker();
+            }}
+            disabled={!canOpenTemplatesList}
+            title="Открыть список шаблонов"
+            data-testid="btn-templates"
+          >
+            Templates
+          </button>
+        </span>
         <button
           type="button"
           className="secondaryBtn h-8 px-2 text-[11px] diagramActionSecondary"
@@ -512,6 +534,26 @@ export default function ProcessStageDiagramControls({ view = {} }) {
           </div>
         </div>
       ) : null}
+
+      <TemplatesBottomMenu
+        open={!!templatesMenuOpen}
+        onClose={() => setTemplatesMenuOpen(false)}
+        activeScope={templatesScope}
+        onScopeChange={(next) => {
+          setTemplatesScope(next);
+        }}
+        activeFolderId={templatesActiveFolderId}
+        onSelectFolder={(folderId) => setTemplatesActiveFolder(templatesScope, folderId)}
+        foldersByScope={templatesFoldersByScope}
+        templates={scopedTemplates}
+        busy={!!templatesBusy}
+        onRefresh={reloadTemplatesAndFolders}
+        onApply={applyTemplate}
+        onDelete={removeTemplate}
+        onCreateFolder={createTemplateFolderFromUi}
+        canCreateOrgFolder={!!workspaceActiveOrgId && !!canCreateOrgFolders}
+        showOrgScope={!!workspaceActiveOrgId}
+      />
 
       <HybridToolsPalette
         open={diagramActionHybridToolsOpen}

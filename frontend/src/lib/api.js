@@ -404,6 +404,7 @@ export async function apiCreateTemplate(payload = {}) {
     scope: String(payload?.scope || "personal"),
     template_type: String(payload?.template_type || payload?.templateType || "bpmn_selection_v1"),
     org_id: String(payload?.org_id || payload?.orgId || ""),
+    folder_id: String(payload?.folder_id || payload?.folderId || ""),
     name: String(payload?.name || ""),
     description: String(payload?.description || ""),
     payload: payload?.payload && typeof payload.payload === "object" ? payload.payload : {},
@@ -423,6 +424,7 @@ export async function apiPatchTemplate(templateId, patch = {}) {
   const body = {};
   if (patch && Object.prototype.hasOwnProperty.call(patch, "name")) body.name = String(patch.name || "");
   if (patch && Object.prototype.hasOwnProperty.call(patch, "description")) body.description = String(patch.description || "");
+  if (patch && Object.prototype.hasOwnProperty.call(patch, "folder_id")) body.folder_id = String(patch.folder_id || "");
   if (patch && Object.prototype.hasOwnProperty.call(patch, "payload")) body.payload = patch.payload && typeof patch.payload === "object" ? patch.payload : {};
   if (patch && Object.prototype.hasOwnProperty.call(patch, "template_type")) body.template_type = String(patch.template_type || "");
   const r = okOrError(await request(apiRoutes.templates.item(tid), { method: "PATCH", body }));
@@ -438,6 +440,66 @@ export async function apiDeleteTemplate(templateId) {
   const tid = String(templateId || "").trim();
   if (!tid) return { ok: false, status: 0, error: "missing template_id" };
   const r = okOrError(await request(apiRoutes.templates.item(tid), { method: "DELETE" }));
+  if (!r.ok) return r;
+  return {
+    ok: true,
+    status: r.status,
+  };
+}
+
+export async function apiListTemplateFolders({ scope = "personal", orgId = "" } = {}) {
+  const normalizedScope = String(scope || "").trim().toLowerCase() === "org" ? "org" : "personal";
+  const endpoint = apiRoutes.templateFolders.list(normalizedScope, String(orgId || "").trim());
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  if (!r.ok) return r;
+  const items = Array.isArray(r.data?.items) ? r.data.items : [];
+  return {
+    ok: true,
+    status: r.status,
+    scope: String(r.data?.scope || normalizedScope),
+    org_id: String(r.data?.org_id || ""),
+    count: Number(r.data?.count || items.length || 0),
+    items,
+  };
+}
+
+export async function apiCreateTemplateFolder(payload = {}) {
+  const body = {
+    scope: String(payload?.scope || "personal"),
+    org_id: String(payload?.org_id || payload?.orgId || ""),
+    name: String(payload?.name || ""),
+    parent_id: String(payload?.parent_id || payload?.parentId || ""),
+    sort_order: Number(payload?.sort_order || payload?.sortOrder || 0),
+  };
+  const r = okOrError(await request(apiRoutes.templateFolders.create(), { method: "POST", body }));
+  if (!r.ok) return r;
+  return {
+    ok: true,
+    status: r.status,
+    item: r.data?.item || {},
+  };
+}
+
+export async function apiPatchTemplateFolder(folderId, patch = {}) {
+  const fid = String(folderId || "").trim();
+  if (!fid) return { ok: false, status: 0, error: "missing folder_id" };
+  const body = {};
+  if (patch && Object.prototype.hasOwnProperty.call(patch, "name")) body.name = String(patch.name || "");
+  if (patch && Object.prototype.hasOwnProperty.call(patch, "parent_id")) body.parent_id = String(patch.parent_id || "");
+  if (patch && Object.prototype.hasOwnProperty.call(patch, "sort_order")) body.sort_order = Number(patch.sort_order || 0);
+  const r = okOrError(await request(apiRoutes.templateFolders.item(fid), { method: "PATCH", body }));
+  if (!r.ok) return r;
+  return {
+    ok: true,
+    status: r.status,
+    item: r.data?.item || {},
+  };
+}
+
+export async function apiDeleteTemplateFolder(folderId) {
+  const fid = String(folderId || "").trim();
+  if (!fid) return { ok: false, status: 0, error: "missing folder_id" };
+  const r = okOrError(await request(apiRoutes.templateFolders.item(fid), { method: "DELETE" }));
   if (!r.ok) return r;
   return {
     ok: true,

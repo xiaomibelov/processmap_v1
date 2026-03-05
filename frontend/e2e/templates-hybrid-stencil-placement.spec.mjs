@@ -97,12 +97,12 @@ test("templates stencil smoke: apply starts placement mode and click places hybr
   const templatesButton = page.getByTestId("btn-templates");
   await expect(templatesButton).toBeVisible();
   await templatesButton.click();
-  const templatesPicker = page.getByTestId("templates-picker");
+  const templatesPicker = page.locator("[data-testid='templates-menu-panel'], [data-testid='templates-picker']").first();
   await expect(templatesPicker).toBeVisible();
 
-  const templateRow = page.getByTestId(/template-item-.+/).filter({ hasText: templateName }).first();
+  const templateRow = page.locator("[data-testid^='templates-item-'], [data-testid^='template-item-']").filter({ hasText: templateName }).first();
   await expect(templateRow).toBeVisible();
-  await templateRow.getByTestId(/btn-apply-template-.+/).first().click();
+  await templateRow.locator("[data-testid^='btn-apply-template-']").first().click();
   await expect(templatesPicker).toBeHidden({ timeout: 20000 });
   await expect
     .poll(async () => page.evaluate(() => {

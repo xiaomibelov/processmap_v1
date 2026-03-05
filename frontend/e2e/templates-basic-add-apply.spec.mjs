@@ -187,10 +187,10 @@ test("templates smoke: add from selection and apply restores selection", async (
   const templatesButton = byTestIds(page, ["btn-templates", "template-pack-insert-open"]);
   await expect(templatesButton).toBeEnabled();
   await templatesButton.click();
-  const templatesPicker = byTestIds(page, ["templates-picker", "template-pack-modal"]);
+  const templatesPicker = byTestIds(page, ["templates-menu-panel", "templates-picker", "template-pack-modal"]);
   await expect(templatesPicker).toBeVisible();
   const targetTemplateRow = page
-    .locator("[data-testid^='template-item-'], [data-testid='template-pack-item']")
+    .locator("[data-testid^='templates-item-'], [data-testid^='template-item-'], [data-testid='template-pack-item']")
     .filter({ hasText: templateName })
     .first();
   await expect(targetTemplateRow).toBeVisible();

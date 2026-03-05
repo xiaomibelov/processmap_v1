@@ -299,6 +299,7 @@ def _ensure_schema() -> None:
                   template_type TEXT NOT NULL DEFAULT 'bpmn_selection_v1',
                   org_id TEXT NOT NULL DEFAULT '',
                   owner_user_id TEXT NOT NULL DEFAULT '',
+                  folder_id TEXT NOT NULL DEFAULT '',
                   name TEXT NOT NULL DEFAULT '',
                   description TEXT NOT NULL DEFAULT '',
                   payload_json TEXT NOT NULL DEFAULT '{}',
@@ -309,6 +310,24 @@ def _ensure_schema() -> None:
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_templates_scope_owner_updated ON templates(scope, owner_user_id, updated_at DESC)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_templates_scope_org_updated ON templates(scope, org_id, updated_at DESC)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS template_folders (
+                  id TEXT PRIMARY KEY,
+                  scope TEXT NOT NULL DEFAULT 'personal',
+                  org_id TEXT NOT NULL DEFAULT '',
+                  owner_user_id TEXT NOT NULL DEFAULT '',
+                  name TEXT NOT NULL DEFAULT '',
+                  parent_id TEXT NOT NULL DEFAULT '',
+                  sort_order INTEGER NOT NULL DEFAULT 0,
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_template_folders_scope_owner ON template_folders(scope, owner_user_id, updated_at DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_template_folders_scope_org ON template_folders(scope, org_id, updated_at DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_template_folders_parent ON template_folders(parent_id)")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS org_invites (
@@ -361,6 +380,9 @@ def _ensure_schema() -> None:
                 con.execute("ALTER TABLE projects ADD COLUMN org_id TEXT NOT NULL DEFAULT 'org_default'")
             if not _column_exists(con, "templates", "template_type"):
                 con.execute("ALTER TABLE templates ADD COLUMN template_type TEXT NOT NULL DEFAULT 'bpmn_selection_v1'")
+            if not _column_exists(con, "templates", "folder_id"):
+                con.execute("ALTER TABLE templates ADD COLUMN folder_id TEXT NOT NULL DEFAULT ''")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_templates_folder ON templates(folder_id)")
             if not _column_exists(con, "projects", "created_by"):
                 con.execute("ALTER TABLE projects ADD COLUMN created_by TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "projects", "updated_by"):
@@ -1572,6 +1594,10 @@ def _normalize_template_scope(raw: Any) -> str:
     return "org" if scope == "org" else "personal"
 
 
+def _normalize_template_folder_id(raw: Any) -> str:
+    return str(raw or "").strip()
+
+
 def _normalize_template_type(raw: Any) -> str:
     value = str(raw or "").strip().lower()
     if value == "hybrid_stencil_v1":
@@ -1593,6 +1619,7 @@ def _template_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
         "template_type": _normalize_template_type(row["template_type"] if "template_type" in row.keys() else ""),
         "org_id": str(row["org_id"] or ""),
         "owner_user_id": str(row["owner_user_id"] or ""),
+        "folder_id": _normalize_template_folder_id(row["folder_id"] if "folder_id" in row.keys() else ""),
         "name": str(row["name"] or ""),
         "description": str(row["description"] or ""),
         "payload": payload,
@@ -1601,6 +1628,214 @@ def _template_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
         "created_at": int(row["created_at"] or 0),
         "updated_at": int(row["updated_at"] or 0),
     }
+
+
+def _template_folder_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    return {
+        "id": str(row["id"] or ""),
+        "scope": _normalize_template_scope(row["scope"]),
+        "org_id": str(row["org_id"] or ""),
+        "owner_user_id": str(row["owner_user_id"] or ""),
+        "name": str(row["name"] or ""),
+        "parent_id": str(row["parent_id"] or ""),
+        "sort_order": int(row["sort_order"] or 0),
+        "created_at": int(row["created_at"] or 0),
+        "updated_at": int(row["updated_at"] or 0),
+    }
+
+
+def list_template_folders(
+    *,
+    scope: str,
+    owner_user_id: str = "",
+    org_id: str = "",
+) -> List[Dict[str, Any]]:
+    normalized_scope = _normalize_template_scope(scope)
+    owner_id = str(owner_user_id or "").strip()
+    oid = str(org_id or "").strip()
+    _ensure_schema()
+    clauses = ["scope = ?"]
+    params: List[Any] = [normalized_scope]
+    if normalized_scope == "personal":
+        clauses.append("owner_user_id = ?")
+        params.append(owner_id)
+    else:
+        clauses.append("org_id = ?")
+        params.append(oid)
+    with _connect() as con:
+        rows = con.execute(
+            f"""
+            SELECT id, scope, org_id, owner_user_id, name, parent_id, sort_order, created_at, updated_at
+              FROM template_folders
+             WHERE {' AND '.join(clauses)}
+             ORDER BY sort_order ASC, lower(name) ASC, updated_at DESC, id DESC
+            """,
+            params,
+        ).fetchall()
+    return [_template_folder_row_to_dict(row) for row in rows]
+
+
+def get_template_folder(folder_id: str) -> Optional[Dict[str, Any]]:
+    fid = str(folder_id or "").strip()
+    if not fid:
+        return None
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT id, scope, org_id, owner_user_id, name, parent_id, sort_order, created_at, updated_at
+              FROM template_folders
+             WHERE id = ?
+             LIMIT 1
+            """,
+            [fid],
+        ).fetchone()
+    if not row:
+        return None
+    return _template_folder_row_to_dict(row)
+
+
+def _validate_folder_parent(
+    *,
+    con: sqlite3.Connection,
+    scope: str,
+    owner_user_id: str,
+    org_id: str,
+    folder_id: str,
+    parent_id: str,
+) -> str:
+    pid = str(parent_id or "").strip()
+    if not pid:
+        return ""
+    if folder_id and pid == folder_id:
+        raise ValueError("parent_id cannot reference folder itself")
+    parent_row = con.execute(
+        """
+        SELECT id, scope, org_id, owner_user_id
+          FROM template_folders
+         WHERE id = ?
+         LIMIT 1
+        """,
+        [pid],
+    ).fetchone()
+    if not parent_row:
+        raise ValueError("parent_folder_not_found")
+    parent_scope = _normalize_template_scope(parent_row["scope"])
+    parent_org_id = str(parent_row["org_id"] or "")
+    parent_owner_id = str(parent_row["owner_user_id"] or "")
+    if parent_scope != scope:
+        raise ValueError("parent_scope_mismatch")
+    if scope == "org":
+        if parent_org_id != org_id:
+            raise ValueError("parent_org_mismatch")
+    else:
+        if parent_owner_id != owner_user_id:
+            raise ValueError("parent_owner_mismatch")
+    return pid
+
+
+def create_template_folder(
+    *,
+    scope: str,
+    owner_user_id: str,
+    org_id: str = "",
+    name: str,
+    parent_id: str = "",
+    sort_order: int = 0,
+) -> Dict[str, Any]:
+    normalized_scope = _normalize_template_scope(scope)
+    owner_id = str(owner_user_id or "").strip()
+    oid = str(org_id or "").strip() if normalized_scope == "org" else ""
+    folder_name = str(name or "").strip()
+    if not owner_id:
+        raise ValueError("owner_user_id is required")
+    if not folder_name:
+        raise ValueError("name is required")
+    if normalized_scope == "org" and not oid:
+        raise ValueError("org_id is required for org scope")
+    now = _now_ts()
+    fid = f"tpf_{uuid.uuid4().hex[:12]}"
+    _ensure_schema()
+    with _connect() as con:
+        pid = _validate_folder_parent(
+            con=con,
+            scope=normalized_scope,
+            owner_user_id=owner_id,
+            org_id=oid,
+            folder_id=fid,
+            parent_id=parent_id,
+        )
+        con.execute(
+            """
+            INSERT INTO template_folders (
+              id, scope, org_id, owner_user_id, name, parent_id, sort_order, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [fid, normalized_scope, oid, owner_id, folder_name, pid, int(sort_order or 0), now, now],
+        )
+        con.commit()
+    created = get_template_folder(fid)
+    if not created:
+        raise ValueError("template_folder_create_failed")
+    return created
+
+
+def update_template_folder(
+    folder_id: str,
+    *,
+    name: Optional[str] = None,
+    parent_id: Optional[str] = None,
+    sort_order: Optional[int] = None,
+) -> Optional[Dict[str, Any]]:
+    fid = str(folder_id or "").strip()
+    if not fid:
+        return None
+    current = get_template_folder(fid)
+    if not current:
+        return None
+    next_name = str(name if name is not None else current.get("name") or "").strip()
+    if not next_name:
+        raise ValueError("name is required")
+    next_sort_order = int(sort_order if sort_order is not None else current.get("sort_order") or 0)
+    now = _now_ts()
+    _ensure_schema()
+    with _connect() as con:
+        next_parent_id = (
+            _validate_folder_parent(
+                con=con,
+                scope=_normalize_template_scope(current.get("scope")),
+                owner_user_id=str(current.get("owner_user_id") or ""),
+                org_id=str(current.get("org_id") or ""),
+                folder_id=fid,
+                parent_id=parent_id if parent_id is not None else current.get("parent_id"),
+            )
+        )
+        con.execute(
+            """
+            UPDATE template_folders
+               SET name = ?,
+                   parent_id = ?,
+                   sort_order = ?,
+                   updated_at = ?
+             WHERE id = ?
+            """,
+            [next_name, next_parent_id, next_sort_order, now, fid],
+        )
+        con.commit()
+    return get_template_folder(fid)
+
+
+def delete_template_folder(folder_id: str) -> bool:
+    fid = str(folder_id or "").strip()
+    if not fid:
+        return False
+    _ensure_schema()
+    with _connect() as con:
+        con.execute("UPDATE templates SET folder_id = '' WHERE folder_id = ?", [fid])
+        con.execute("UPDATE template_folders SET parent_id = '' WHERE parent_id = ?", [fid])
+        cur = con.execute("DELETE FROM template_folders WHERE id = ?", [fid])
+        con.commit()
+    return int(cur.rowcount or 0) > 0
 
 
 def list_templates(
@@ -1626,7 +1861,7 @@ def list_templates(
     with _connect() as con:
         rows = con.execute(
             f"""
-            SELECT id, scope, template_type, org_id, owner_user_id, name, description, payload_json, created_at, updated_at
+            SELECT id, scope, template_type, org_id, owner_user_id, folder_id, name, description, payload_json, created_at, updated_at
               FROM templates
              WHERE {' AND '.join(clauses)}
              ORDER BY updated_at DESC, id DESC
@@ -1645,7 +1880,7 @@ def get_template(template_id: str) -> Optional[Dict[str, Any]]:
     with _connect() as con:
         row = con.execute(
             """
-            SELECT id, scope, template_type, org_id, owner_user_id, name, description, payload_json, created_at, updated_at
+            SELECT id, scope, template_type, org_id, owner_user_id, folder_id, name, description, payload_json, created_at, updated_at
               FROM templates
              WHERE id = ?
              LIMIT 1
@@ -1663,6 +1898,7 @@ def create_template(
     template_type: str = "bpmn_selection_v1",
     owner_user_id: str,
     org_id: str = "",
+    folder_id: str = "",
     name: str,
     description: str = "",
     payload: Optional[Dict[str, Any]] = None,
@@ -1671,6 +1907,7 @@ def create_template(
     normalized_template_type = _normalize_template_type(template_type)
     owner_id = str(owner_user_id or "").strip()
     oid = str(org_id or "").strip() if normalized_scope == "org" else ""
+    fid = _normalize_template_folder_id(folder_id)
     template_name = str(name or "").strip()
     template_description = str(description or "").strip()
     payload_obj = payload if isinstance(payload, dict) else {}
@@ -1687,8 +1924,8 @@ def create_template(
         con.execute(
             """
             INSERT INTO templates (
-              id, scope, template_type, org_id, owner_user_id, name, description, payload_json, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              id, scope, template_type, org_id, owner_user_id, folder_id, name, description, payload_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 tid,
@@ -1696,6 +1933,7 @@ def create_template(
                 normalized_template_type,
                 oid,
                 owner_id,
+                fid,
                 template_name,
                 template_description,
                 _json_dumps(payload_obj, {}),
@@ -1716,6 +1954,7 @@ def update_template(
     template_type: Optional[str] = None,
     name: Optional[str] = None,
     description: Optional[str] = None,
+    folder_id: Optional[str] = None,
     payload: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     tid = str(template_id or "").strip()
@@ -1727,6 +1966,7 @@ def update_template(
     next_name = str(name if name is not None else current.get("name") or "").strip()
     next_template_type = _normalize_template_type(template_type if template_type is not None else current.get("template_type"))
     next_description = str(description if description is not None else current.get("description") or "").strip()
+    next_folder_id = _normalize_template_folder_id(folder_id if folder_id is not None else current.get("folder_id"))
     next_payload = payload if isinstance(payload, dict) else (current.get("payload") if isinstance(current.get("payload"), dict) else {})
     if not next_name:
         raise ValueError("name is required")
@@ -1739,6 +1979,7 @@ def update_template(
                SET name = ?,
                    description = ?,
                    template_type = ?,
+                   folder_id = ?,
                    payload_json = ?,
                    updated_at = ?
              WHERE id = ?
@@ -1747,6 +1988,7 @@ def update_template(
                 next_name,
                 next_description,
                 next_template_type,
+                next_folder_id,
                 _json_dumps(next_payload, {}),
                 now,
                 tid,

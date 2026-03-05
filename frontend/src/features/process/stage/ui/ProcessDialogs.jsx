@@ -1,5 +1,4 @@
 import Modal from "../../../../shared/ui/Modal";
-import TemplatesPicker from "../../../templates/ui/TemplatesPicker";
 import CreateTemplateModal from "../../../templates/ui/CreateTemplateModal";
 
 export default function ProcessDialogs({ view = {} }) {
@@ -30,20 +29,14 @@ export default function ProcessDialogs({ view = {} }) {
     setCreateTemplateType,
     workspaceActiveOrgId,
     canCreateOrgTemplates,
+    canCreateOrgFolders,
     selectedBpmnElementIds,
     selectedHybridTemplateCount,
+    createTemplateFolders,
+    createTemplateFolderId,
+    setCreateTemplateFolderId,
+    createTemplateFolderFromModal,
     saveCurrentSelectionAsTemplate,
-    templatesPickerOpen,
-    closeTemplatesPickerDialog,
-    templatesScope,
-    setTemplatesScope,
-    templatesSearch,
-    setTemplatesSearch,
-    templateCounts,
-    scopedTemplates,
-    reloadTemplates,
-    applyTemplate,
-    removeTemplate,
     versionsOpen,
     closeVersionsDialog,
     refreshSnapshotVersions,
@@ -203,30 +196,21 @@ export default function ProcessDialogs({ view = {} }) {
         templateType={createTemplateType}
         onTemplateTypeChange={setCreateTemplateType}
         canCreateOrgTemplate={!!workspaceActiveOrgId && !!canCreateOrgTemplates}
+        canCreateOrgFolder={!!workspaceActiveOrgId && !!canCreateOrgFolders}
+        folders={createTemplateFolders}
+        folderId={createTemplateFolderId}
+        onFolderChange={setCreateTemplateFolderId}
+        onCreateFolder={async () => {
+          if (typeof window === "undefined") return;
+          const raw = window.prompt("Название папки", "");
+          const name = String(raw || "").trim();
+          if (!name) return;
+          await Promise.resolve(createTemplateFolderFromModal?.(name));
+        }}
         selectionCount={selectedBpmnElementIds.length}
         hybridSelectionCount={selectedHybridTemplateCount}
         busy={templatesBusy}
         onSave={saveCurrentSelectionAsTemplate}
-      />
-
-      <TemplatesPicker
-        open={templatesPickerOpen}
-        onClose={() => {
-          if (templatesBusy) return;
-          closeTemplatesPickerDialog();
-        }}
-        activeScope={templatesScope}
-        onScopeChange={setTemplatesScope}
-        search={templatesSearch}
-        onSearchChange={setTemplatesSearch}
-        personalCount={templateCounts.personal}
-        orgCount={templateCounts.org}
-        showOrgScope={!!workspaceActiveOrgId}
-        templates={scopedTemplates}
-        busy={templatesBusy}
-        onRefresh={reloadTemplates}
-        onApply={applyTemplate}
-        onDelete={removeTemplate}
       />
 
       <Modal

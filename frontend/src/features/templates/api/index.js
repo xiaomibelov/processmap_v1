@@ -5,11 +5,15 @@ import {
 } from "./templatesApi.js";
 import {
   apiCreateTemplate,
+  apiCreateTemplateFolder,
   apiDeleteTemplate,
+  apiDeleteTemplateFolder,
   apiListTemplates,
+  apiListTemplateFolders,
   apiPatchTemplate,
+  apiPatchTemplateFolder,
 } from "../../../lib/api.js";
-import { normalizeTemplateRecord } from "../model/types.js";
+import { normalizeTemplateFolderRecord, normalizeTemplateRecord } from "../model/types.js";
 
 function shouldFallbackLocal(result) {
   const status = Number(result?.status || 0);
@@ -32,6 +36,7 @@ function toPayloadTemplate(templateRaw) {
     lane_names: Array.isArray(template.lane_names) ? template.lane_names : [],
     source_session_id: String(template.source_session_id || ""),
     notes: String(template.notes || ""),
+    folder_id: String(template.folder_id || template.folderId || ""),
     meta: template.meta && typeof template.meta === "object" ? template.meta : {},
   };
   if (template.payload && typeof template.payload === "object") {
@@ -61,11 +66,12 @@ export async function createTemplate(params = {}) {
   const description = String(template.description || "").trim();
   const remote = await apiCreateTemplate({
     scope,
-    template_type: String(template.template_type || "bpmn_selection_v1"),
-    org_id: scope === "org" ? orgId : "",
-    name,
-    description,
-    payload: toPayloadTemplate(template),
+      template_type: String(template.template_type || "bpmn_selection_v1"),
+      org_id: scope === "org" ? orgId : "",
+      folder_id: String(template.folder_id || template.folderId || ""),
+      name,
+      description,
+      payload: toPayloadTemplate(template),
   });
   if (remote?.ok) {
     return {
@@ -90,6 +96,9 @@ export async function updateTemplate(params = {}) {
     }
     if (Object.prototype.hasOwnProperty.call(patchRaw, "description")) {
       patch.description = String(patchRaw.description || "");
+    }
+    if (Object.prototype.hasOwnProperty.call(patchRaw, "folder_id") || Object.prototype.hasOwnProperty.call(patchRaw, "folderId")) {
+      patch.folder_id = String(patchRaw.folder_id || patchRaw.folderId || "");
     }
     if (Object.prototype.hasOwnProperty.call(patchRaw, "payload")) {
       patch.payload = patchRaw.payload && typeof patchRaw.payload === "object" ? patchRaw.payload : {};
@@ -118,4 +127,59 @@ export async function deleteTemplate(params = {}) {
     if (!shouldFallbackLocal(remote)) return remote;
   }
   return deleteTemplateLocal(params);
+}
+
+export async function listTemplateFolders(params = {}) {
+  const scope = String(params?.scope || "personal").trim().toLowerCase() === "org" ? "org" : "personal";
+  const userId = String(params?.userId || "");
+  const orgId = String(params?.orgId || "");
+  const remote = await apiListTemplateFolders({ scope, orgId });
+  if (!remote?.ok) return [];
+  return (Array.isArray(remote.items) ? remote.items : [])
+    .map((row) => normalizeTemplateFolderRecord(row, { scope, owner_user_id: userId, org_id: orgId }))
+    .filter((row) => !!row.id);
+}
+
+export async function createTemplateFolder(params = {}) {
+  const scope = String(params?.scope || "personal").trim().toLowerCase() === "org" ? "org" : "personal";
+  const orgId = String(params?.orgId || "");
+  const remote = await apiCreateTemplateFolder({
+    scope,
+    org_id: scope === "org" ? orgId : "",
+    name: String(params?.name || ""),
+    parent_id: String(params?.parentId || params?.parent_id || ""),
+    sort_order: Number(params?.sortOrder || params?.sort_order || 0),
+  });
+  if (!remote?.ok) return remote;
+  return {
+    ok: true,
+    item: normalizeTemplateFolderRecord(remote.item, { scope, org_id: orgId }),
+    status: remote.status,
+  };
+}
+
+export async function updateTemplateFolder(params = {}) {
+  const folderId = String(params?.folderId || params?.id || "").trim();
+  if (!folderId) return { ok: false, status: 0, error: "missing folder_id" };
+  const patch = {};
+  if (Object.prototype.hasOwnProperty.call(params, "name")) patch.name = String(params.name || "");
+  if (Object.prototype.hasOwnProperty.call(params, "parentId") || Object.prototype.hasOwnProperty.call(params, "parent_id")) {
+    patch.parent_id = String(params.parentId || params.parent_id || "");
+  }
+  if (Object.prototype.hasOwnProperty.call(params, "sortOrder") || Object.prototype.hasOwnProperty.call(params, "sort_order")) {
+    patch.sort_order = Number(params.sortOrder || params.sort_order || 0);
+  }
+  const remote = await apiPatchTemplateFolder(folderId, patch);
+  if (!remote?.ok) return remote;
+  return {
+    ok: true,
+    item: normalizeTemplateFolderRecord(remote.item),
+    status: remote.status,
+  };
+}
+
+export async function deleteTemplateFolder(params = {}) {
+  const folderId = String(params?.folderId || params?.id || "").trim();
+  if (!folderId) return { ok: false, status: 0, error: "missing folder_id" };
+  return await apiDeleteTemplateFolder(folderId);
 }

@@ -62,6 +62,14 @@ export const apiRoutes = {
     create: () => "/api/templates",
     item: (id) => `/api/templates/${encode(id)}`,
   },
+  templateFolders: {
+    list: (scope = "personal", orgId = "") => withQuery("/api/template-folders", {
+      scope: String(scope || "personal").trim(),
+      org_id: String(orgId || "").trim(),
+    }),
+    create: () => "/api/template-folders",
+    item: (id) => `/api/template-folders/${encode(id)}`,
+  },
   projects: {
     list: () => "/api/projects",
     create: () => "/api/projects",
