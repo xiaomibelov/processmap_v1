@@ -3499,6 +3499,7 @@ export default function ProcessStage({
           <div className="h-full min-h-0 p-3">
             <WorkspaceDashboard
               activeOrgId={workspaceActiveOrgId}
+              userId={toText(user?.id || user?.user_id || user?.email)}
               canInviteUsers={!!canInviteWorkspaceUsers}
               onOpenSession={(session) => onOpenWorkspaceSession?.(session)}
               onOpenDoc={(session) => onOpenWorkspaceSession?.(session, { source: "workspace_doc_link", openTab: "doc" })}

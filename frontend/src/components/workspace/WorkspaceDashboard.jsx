@@ -96,16 +96,76 @@ function SectionHeader({ title, subtitle = "", actions = null }) {
   );
 }
 
+const SESSION_ACTION_PREFS_KEY_PREFIX = "pm:session_actions_prefs:v1";
+const SESSION_ACTIONS = [
+  { id: "open", label: "Open", defaultEnabled: true },
+  { id: "doc", label: "DOC", defaultEnabled: true },
+  { id: "export", label: "Export", defaultEnabled: false },
+  { id: "duplicate", label: "Duplicate", defaultEnabled: false },
+  { id: "delete", label: "Delete", defaultEnabled: false },
+  { id: "invite", label: "Invite", defaultEnabled: false },
+];
+
+function sessionActionsPrefsKey(userIdRaw) {
+  const userId = toText(userIdRaw);
+  return userId ? `${SESSION_ACTION_PREFS_KEY_PREFIX}:${userId}` : SESSION_ACTION_PREFS_KEY_PREFIX;
+}
+
+function defaultEnabledActions(actionIdsRaw) {
+  const actionIds = Array.isArray(actionIdsRaw) ? actionIdsRaw : [];
+  const defaults = SESSION_ACTIONS
+    .filter((item) => item.defaultEnabled && actionIds.includes(item.id))
+    .map((item) => item.id);
+  if (actionIds.includes("open") && !defaults.includes("open")) defaults.unshift("open");
+  return defaults;
+}
+
+function readSessionActionPrefs(userIdRaw, actionIdsRaw) {
+  const actionIds = Array.isArray(actionIdsRaw) ? actionIdsRaw : [];
+  if (typeof window === "undefined") return defaultEnabledActions(actionIds);
+  try {
+    const raw = window.localStorage?.getItem(sessionActionsPrefsKey(userIdRaw));
+    const parsed = raw ? JSON.parse(raw) : {};
+    const enabled = Array.isArray(parsed?.enabledActions)
+      ? parsed.enabledActions.map((id) => toText(id)).filter((id) => actionIds.includes(id))
+      : [];
+    if (!enabled.length) return defaultEnabledActions(actionIds);
+    if (actionIds.includes("open") && !enabled.includes("open")) enabled.unshift("open");
+    return Array.from(new Set(enabled));
+  } catch {
+    return defaultEnabledActions(actionIds);
+  }
+}
+
+function writeSessionActionPrefs(userIdRaw, enabledActionsRaw) {
+  if (typeof window === "undefined") return;
+  try {
+    const enabledActions = Array.isArray(enabledActionsRaw)
+      ? Array.from(new Set(enabledActionsRaw.map((id) => toText(id)).filter(Boolean)))
+      : [];
+    window.localStorage?.setItem(
+      sessionActionsPrefsKey(userIdRaw),
+      JSON.stringify({ enabledActions }),
+    );
+  } catch {
+  }
+}
+
 export default function WorkspaceDashboard({
   activeOrgId = "",
+  userId = "",
   onOpenSession,
   onOpenDoc,
+  onExportSession,
+  onDuplicateSession,
+  onDeleteSession,
   onCreateProject,
   onCreateSession,
   onInviteUsers,
   canInviteUsers = false,
 }) {
   const explorerRef = useRef(null);
+  const actionsMenuRef = useRef(null);
   const [groupBy, setGroupBy] = useState("users");
   const [query, setQuery] = useState("");
   const [ownerFilterIds, setOwnerFilterIds] = useState([]);
@@ -120,6 +180,8 @@ export default function WorkspaceDashboard({
   const [loading, setLoading] = useState(() => !!toText(activeOrgId));
   const [loadedOnce, setLoadedOnce] = useState(false);
   const [error, setError] = useState("");
+  const [actionsMenuSessionId, setActionsMenuSessionId] = useState("");
+  const [actionsCustomizeOpen, setActionsCustomizeOpen] = useState(false);
   const [workspace, setWorkspace] = useState({
     org: {},
     users: [],
@@ -232,6 +294,34 @@ export default function WorkspaceDashboard({
     () => tree.users.find((item) => item.id === selectedOwnerId) || null,
     [selectedOwnerId, tree.users],
   );
+  const availableSessionActions = useMemo(() => {
+    const hasOpen = typeof onOpenSession === "function";
+    const hasDoc = typeof onOpenDoc === "function";
+    const hasExport = typeof onExportSession === "function";
+    const hasDuplicate = typeof onDuplicateSession === "function";
+    const hasDelete = typeof onDeleteSession === "function";
+    const hasInvite = typeof onInviteUsers === "function";
+    return SESSION_ACTIONS.filter((action) => {
+      if (action.id === "open") return hasOpen;
+      if (action.id === "doc") return hasDoc;
+      if (action.id === "export") return hasExport;
+      if (action.id === "duplicate") return hasDuplicate;
+      if (action.id === "delete") return hasDelete;
+      if (action.id === "invite") return hasInvite;
+      return false;
+    });
+  }, [onDeleteSession, onDuplicateSession, onExportSession, onInviteUsers, onOpenDoc, onOpenSession]);
+  const availableSessionActionIds = useMemo(
+    () => availableSessionActions.map((item) => item.id),
+    [availableSessionActions],
+  );
+  const [enabledSessionActions, setEnabledSessionActions] = useState(() => (
+    readSessionActionPrefs(userId, availableSessionActionIds)
+  ));
+  const enabledSessionActionSet = useMemo(
+    () => new Set(enabledSessionActions.filter((id) => availableSessionActionIds.includes(id))),
+    [availableSessionActionIds, enabledSessionActions],
+  );
   const dodBySessionId = useMemo(() => {
     const map = new Map();
     listRows.forEach((row) => {
@@ -256,6 +346,126 @@ export default function WorkspaceDashboard({
   ].filter(Boolean).join(" · ") || "Все проекты и сессии в рамках выбранной организации.";
   const orgName = toText(workspace?.org?.name || activeOrgId || "Рабочее пространство");
   const orgRole = formatRole(workspace?.org?.role);
+
+  useEffect(() => {
+    setEnabledSessionActions(readSessionActionPrefs(userId, availableSessionActionIds));
+  }, [availableSessionActionIds, userId]);
+
+  useEffect(() => {
+    writeSessionActionPrefs(userId, enabledSessionActions);
+  }, [enabledSessionActions, userId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    if (!actionsMenuSessionId && !actionsCustomizeOpen) return undefined;
+    const onPointerDown = (event) => {
+      const target = event?.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest("[data-testid='workspace-session-actions-menu']")) return;
+      if (target.closest("[data-testid='workspace-session-actions-button']")) return;
+      if (target.closest("[data-testid='workspace-session-actions-customize']")) return;
+      setActionsMenuSessionId("");
+      setActionsCustomizeOpen(false);
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => window.removeEventListener("pointerdown", onPointerDown, true);
+  }, [actionsCustomizeOpen, actionsMenuSessionId]);
+
+  function resetEnabledSessionActions() {
+    setEnabledSessionActions(defaultEnabledActions(availableSessionActionIds));
+  }
+
+  function toggleEnabledSessionAction(actionIdRaw, checked) {
+    const actionId = toText(actionIdRaw);
+    if (!actionId || !availableSessionActionIds.includes(actionId)) return;
+    if (actionId === "open" && !checked) return;
+    setEnabledSessionActions((prevRaw) => {
+      const prev = Array.isArray(prevRaw) ? prevRaw : [];
+      const set = new Set(prev.filter((id) => availableSessionActionIds.includes(id)));
+      if (checked) set.add(actionId);
+      else set.delete(actionId);
+      if (availableSessionActionIds.includes("open") && !set.has("open")) set.add("open");
+      return Array.from(set);
+    });
+  }
+
+  async function runSessionRowAction(actionIdRaw, row) {
+    const actionId = toText(actionIdRaw);
+    if (!actionId || !row) return;
+    setActionsMenuSessionId("");
+    if (actionId === "open") {
+      await onOpenSession?.(row);
+      return;
+    }
+    if (actionId === "doc") {
+      await onOpenDoc?.(row);
+      return;
+    }
+    if (actionId === "export") {
+      await onExportSession?.(row);
+      return;
+    }
+    if (actionId === "duplicate") {
+      await onDuplicateSession?.(row);
+      return;
+    }
+    if (actionId === "delete") {
+      await onDeleteSession?.(row);
+      return;
+    }
+    if (actionId === "invite") {
+      await onInviteUsers?.();
+    }
+  }
+
+  function renderSessionActionsMenu(row) {
+    const rowId = toText(row?.id);
+    if (!rowId) return null;
+    const enabledActions = availableSessionActions.filter((item) => enabledSessionActionSet.has(item.id));
+    return (
+      <div className="relative" ref={actionsMenuRef}>
+        <button
+          type="button"
+          className="iconBtn h-8 w-8 min-w-8"
+          onClick={() => setActionsMenuSessionId((prev) => (prev === rowId ? "" : rowId))}
+          data-testid="workspace-session-actions-button"
+          title="Действия"
+          aria-label="Действия"
+        >
+          ⋯
+        </button>
+        {actionsMenuSessionId === rowId ? (
+          <div
+            className="absolute right-0 top-9 z-30 min-w-[180px] rounded-xl border border-border bg-panel p-1 shadow-panel"
+            data-testid="workspace-session-actions-menu"
+          >
+            {enabledActions.length === 0 ? (
+              <div className="px-2 py-1 text-xs text-muted">Нет включённых действий</div>
+            ) : enabledActions.map((action) => (
+              <button
+                key={`${rowId}_${action.id}`}
+                type="button"
+                className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs text-fg hover:bg-panel2/60"
+                onClick={() => { void runSessionRowAction(action.id, row); }}
+                data-testid={`workspace-session-action-${action.id}`}
+              >
+                <span>{action.label}</span>
+              </button>
+            ))}
+            <div className="my-1 border-t border-border/70" />
+            <button
+              type="button"
+              className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-xs text-muted hover:bg-panel2/60 hover:text-fg"
+              onClick={() => setActionsCustomizeOpen(true)}
+              data-testid="workspace-session-actions-customize-open"
+            >
+              Customize…
+            </button>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
   function openProjectsList() {
     setGroupBy("projects");
@@ -668,14 +878,17 @@ export default function WorkspaceDashboard({
                           <div className="truncate text-sm font-semibold text-fg" title={row.name}>{row.name}</div>
                           <div className="mt-1 truncate text-xs text-muted" title={projectTitle}>{projectTitle}</div>
                         </div>
-                        <button
-                          type="button"
-                          className="primaryBtn h-8 shrink-0 px-3 text-xs"
-                          onClick={() => onOpenSession?.(row)}
-                          data-testid="workspace-open-session"
-                        >
-                          Открыть
-                        </button>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <button
+                            type="button"
+                            className="primaryBtn h-8 shrink-0 px-3 text-xs"
+                            onClick={() => onOpenSession?.(row)}
+                            data-testid="workspace-open-session"
+                          >
+                            Открыть
+                          </button>
+                          {renderSessionActionsMenu(row)}
+                        </div>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
                         <span className={`rounded-full border px-2 py-1 ${statusBadgeClass(row.status)}`}>{formatSessionStatus(row.status)}</span>
@@ -759,14 +972,17 @@ export default function WorkspaceDashboard({
                             </span>
                           </td>
                           <td className="rounded-r-xl px-3 py-2.5 align-top">
-                            <button
-                              type="button"
-                              className="primaryBtn h-8 px-3 text-xs"
-                              onClick={() => onOpenSession?.(row)}
-                              data-testid="workspace-open-session"
-                            >
-                              Открыть
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                className="primaryBtn h-8 px-3 text-xs"
+                                onClick={() => onOpenSession?.(row)}
+                                data-testid="workspace-open-session"
+                              >
+                                Открыть
+                              </button>
+                              {renderSessionActionsMenu(row)}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -800,6 +1016,68 @@ export default function WorkspaceDashboard({
           </div>
         </div>
       </div>
+
+      {actionsCustomizeOpen ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/35 px-4">
+          <div
+            className="w-full max-w-md rounded-xl border border-border bg-panel p-4 shadow-panel"
+            data-testid="workspace-session-actions-customize"
+          >
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-fg">Customize session actions</div>
+                <div className="mt-1 text-xs text-muted">Выберите, какие пункты отображать в меню “…” для каждой сессии.</div>
+              </div>
+              <button
+                type="button"
+                className="iconBtn h-8 w-8 min-w-8"
+                onClick={() => setActionsCustomizeOpen(false)}
+                title="Закрыть"
+                aria-label="Закрыть"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {availableSessionActions.map((action) => {
+                const checked = enabledSessionActionSet.has(action.id);
+                const disabled = action.id === "open";
+                return (
+                  <label key={action.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/70 px-3 py-2 text-sm text-fg">
+                    <span>{action.label}</span>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={disabled}
+                      onChange={(event) => toggleEnabledSessionAction(action.id, !!event.target.checked)}
+                      data-testid={`workspace-session-actions-toggle-${action.id}`}
+                    />
+                  </label>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                className="secondaryBtn h-8 px-3 text-xs"
+                onClick={resetEnabledSessionActions}
+                data-testid="workspace-session-actions-reset"
+              >
+                Reset to default
+              </button>
+              <button
+                type="button"
+                className="primaryBtn h-8 px-3 text-xs"
+                onClick={() => setActionsCustomizeOpen(false)}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
