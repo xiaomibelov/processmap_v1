@@ -184,6 +184,7 @@ export default function useDiagramOverlayTransform({
 
     const containerEl = canvasApi?.getCanvasContainerEl?.();
     let stopResize = () => {};
+    let stopFallbackRefresh = () => {};
     if (containerEl && typeof window.ResizeObserver === "function") {
       const observer = new window.ResizeObserver(() => scheduleApply(null));
       observer.observe(containerEl);
@@ -193,12 +194,15 @@ export default function useDiagramOverlayTransform({
       window.addEventListener("resize", onResize);
       stopResize = () => window.removeEventListener("resize", onResize);
     }
+    const fallbackTimer = window.setInterval(() => scheduleApply(null), 360);
+    stopFallbackRefresh = () => window.clearInterval(fallbackTimer);
 
     scheduleApply(canvasApi?.getViewbox?.() || null);
 
     return () => {
       unbindViewbox();
       stopResize();
+      stopFallbackRefresh();
       if (frameRef.current) {
         const cancelFrame = typeof window !== "undefined" && typeof window.cancelAnimationFrame === "function"
           ? window.cancelAnimationFrame.bind(window)

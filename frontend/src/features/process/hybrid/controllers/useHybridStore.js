@@ -78,6 +78,11 @@ export default function useHybridStore({
     hybridV2PersistedDocRef.current = emptyV2;
     hybridV2MigrationGuardRef.current = "";
     setHybridV2BindPickMode(false);
+    const emptyDrawio = normalizeDrawioMeta({});
+    setDrawioMeta(emptyDrawio);
+    drawioMetaRef.current = emptyDrawio;
+    drawioPersistedMetaRef.current = emptyDrawio;
+    setDrawioEditorOpen(false);
   }, [sid]);
 
   useEffect(() => {
@@ -124,7 +129,7 @@ export default function useHybridStore({
     const currentSig = serializeDrawioMeta(currentMeta);
     const persistedSig = serializeDrawioMeta(persistedMeta);
     if (incomingSig === persistedSig && currentSig !== incomingSig) return;
-    if (!incoming.doc_xml && currentMeta.doc_xml) return;
+    if (!incoming.doc_xml && !incoming.svg_cache && (currentMeta.doc_xml || currentMeta.svg_cache)) return;
     setDrawioMeta(incoming);
     drawioMetaRef.current = incoming;
     drawioPersistedMetaRef.current = incoming;

@@ -35,10 +35,15 @@ export function normalizeDrawioMeta(valueRaw) {
   };
 }
 
+function hasDrawioPayload(valueRaw) {
+  const meta = normalizeDrawioMeta(valueRaw);
+  return !!(meta.doc_xml || meta.svg_cache || meta.enabled);
+}
+
 export function mergeDrawioMeta(primaryRaw, fallbackRaw = {}) {
   const primary = normalizeDrawioMeta(primaryRaw);
   const fallback = normalizeDrawioMeta(fallbackRaw);
-  if (!primary.doc_xml && fallback.doc_xml) {
+  if (!hasDrawioPayload(primary) && hasDrawioPayload(fallback)) {
     return {
       ...fallback,
       enabled: primary.enabled || fallback.enabled,

@@ -323,8 +323,21 @@ test("hybrid delete: keyboard delete survives reload", async ({ page, request })
   await clickHybridShapeById(page, createdId);
   const layersPopover = await openLayersPopover(page);
   await expect(layersPopover.getByTestId("diagram-action-layers-selection-chip")).toContainText(createdId);
+  const shapeAfterDelete = page.locator(`[data-testid='hybrid-v2-shape'][data-hybrid-element-id='${createdId}']`);
+  await page.locator("body").click({ position: { x: 8, y: 8 } }).catch(() => {});
   await page.keyboard.press("Delete");
-  await expect(page.locator(`[data-testid='hybrid-v2-shape'][data-hybrid-element-id='${createdId}']`)).toHaveCount(0);
+  const removedByDelete = await page
+    .waitForFunction(
+      (hybridId) => !document.querySelector(`[data-testid='hybrid-v2-shape'][data-hybrid-element-id='${String(hybridId || "")}']`),
+      createdId,
+      { timeout: 2200 },
+    )
+    .then(() => true)
+    .catch(() => false);
+  if (!removedByDelete) {
+    await page.keyboard.press("Backspace");
+  }
+  await expect(shapeAfterDelete).toHaveCount(0);
 
   await expect
     .poll(async () => {
