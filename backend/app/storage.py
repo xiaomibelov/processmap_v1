@@ -296,6 +296,7 @@ def _ensure_schema() -> None:
                 CREATE TABLE IF NOT EXISTS templates (
                   id TEXT PRIMARY KEY,
                   scope TEXT NOT NULL DEFAULT 'personal',
+                  template_type TEXT NOT NULL DEFAULT 'bpmn_selection_v1',
                   org_id TEXT NOT NULL DEFAULT '',
                   owner_user_id TEXT NOT NULL DEFAULT '',
                   name TEXT NOT NULL DEFAULT '',
@@ -358,6 +359,8 @@ def _ensure_schema() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_audit_session ON audit_log(session_id)")
             if not _column_exists(con, "projects", "org_id"):
                 con.execute("ALTER TABLE projects ADD COLUMN org_id TEXT NOT NULL DEFAULT 'org_default'")
+            if not _column_exists(con, "templates", "template_type"):
+                con.execute("ALTER TABLE templates ADD COLUMN template_type TEXT NOT NULL DEFAULT 'bpmn_selection_v1'")
             if not _column_exists(con, "projects", "created_by"):
                 con.execute("ALTER TABLE projects ADD COLUMN created_by TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "projects", "updated_by"):
@@ -1569,6 +1572,13 @@ def _normalize_template_scope(raw: Any) -> str:
     return "org" if scope == "org" else "personal"
 
 
+def _normalize_template_type(raw: Any) -> str:
+    value = str(raw or "").strip().lower()
+    if value == "hybrid_stencil_v1":
+        return "hybrid_stencil_v1"
+    return "bpmn_selection_v1"
+
+
 def _template_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     payload = _json_loads(row["payload_json"], {})
     if not isinstance(payload, dict):
@@ -1578,6 +1588,7 @@ def _template_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     return {
         "id": str(row["id"] or ""),
         "scope": _normalize_template_scope(row["scope"]),
+        "template_type": _normalize_template_type(row["template_type"] if "template_type" in row.keys() else ""),
         "org_id": str(row["org_id"] or ""),
         "owner_user_id": str(row["owner_user_id"] or ""),
         "name": str(row["name"] or ""),
@@ -1613,7 +1624,7 @@ def list_templates(
     with _connect() as con:
         rows = con.execute(
             f"""
-            SELECT id, scope, org_id, owner_user_id, name, description, payload_json, created_at, updated_at
+            SELECT id, scope, template_type, org_id, owner_user_id, name, description, payload_json, created_at, updated_at
               FROM templates
              WHERE {' AND '.join(clauses)}
              ORDER BY updated_at DESC, id DESC
@@ -1632,7 +1643,7 @@ def get_template(template_id: str) -> Optional[Dict[str, Any]]:
     with _connect() as con:
         row = con.execute(
             """
-            SELECT id, scope, org_id, owner_user_id, name, description, payload_json, created_at, updated_at
+            SELECT id, scope, template_type, org_id, owner_user_id, name, description, payload_json, created_at, updated_at
               FROM templates
              WHERE id = ?
              LIMIT 1
@@ -1647,6 +1658,7 @@ def get_template(template_id: str) -> Optional[Dict[str, Any]]:
 def create_template(
     *,
     scope: str,
+    template_type: str = "bpmn_selection_v1",
     owner_user_id: str,
     org_id: str = "",
     name: str,
@@ -1654,6 +1666,7 @@ def create_template(
     payload: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     normalized_scope = _normalize_template_scope(scope)
+    normalized_template_type = _normalize_template_type(template_type)
     owner_id = str(owner_user_id or "").strip()
     oid = str(org_id or "").strip() if normalized_scope == "org" else ""
     template_name = str(name or "").strip()
@@ -1672,12 +1685,13 @@ def create_template(
         con.execute(
             """
             INSERT INTO templates (
-              id, scope, org_id, owner_user_id, name, description, payload_json, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+              id, scope, template_type, org_id, owner_user_id, name, description, payload_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 tid,
                 normalized_scope,
+                normalized_template_type,
                 oid,
                 owner_id,
                 template_name,
@@ -1697,6 +1711,7 @@ def create_template(
 def update_template(
     template_id: str,
     *,
+    template_type: Optional[str] = None,
     name: Optional[str] = None,
     description: Optional[str] = None,
     payload: Optional[Dict[str, Any]] = None,
@@ -1708,6 +1723,7 @@ def update_template(
     if not current:
         return None
     next_name = str(name if name is not None else current.get("name") or "").strip()
+    next_template_type = _normalize_template_type(template_type if template_type is not None else current.get("template_type"))
     next_description = str(description if description is not None else current.get("description") or "").strip()
     next_payload = payload if isinstance(payload, dict) else (current.get("payload") if isinstance(current.get("payload"), dict) else {})
     if not next_name:
@@ -1720,6 +1736,7 @@ def update_template(
             UPDATE templates
                SET name = ?,
                    description = ?,
+                   template_type = ?,
                    payload_json = ?,
                    updated_at = ?
              WHERE id = ?
@@ -1727,6 +1744,7 @@ def update_template(
             [
                 next_name,
                 next_description,
+                next_template_type,
                 _json_dumps(next_payload, {}),
                 now,
                 tid,
