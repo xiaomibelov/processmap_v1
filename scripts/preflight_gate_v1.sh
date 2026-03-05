@@ -47,6 +47,20 @@ else
 fi
 
 echo
+echo "== e2e templates env-gated (best effort) =="
+if [ -f frontend/e2e/templates-basic-add-apply.spec.mjs ] || [ -f e2e/templates-basic-add-apply.spec.mjs ]; then
+  E2E_TEMPLATES=1 ./scripts/e2e_enterprise.sh e2e/templates-basic-add-apply.spec.mjs
+else
+  echo "skip: templates-basic-add-apply.spec.mjs not found"
+fi
+
+if [ -f frontend/e2e/templates-hybrid-stencil-placement.spec.mjs ] || [ -f e2e/templates-hybrid-stencil-placement.spec.mjs ]; then
+  E2E_TEMPLATES=1 E2E_HYBRID_LAYER=1 ./scripts/e2e_enterprise.sh e2e/templates-hybrid-stencil-placement.spec.mjs
+else
+  echo "skip: templates-hybrid-stencil-placement.spec.mjs not found"
+fi
+
+echo
 echo "== e2e baseline (Redis OFF best effort) =="
 docker compose stop redis >/dev/null 2>&1 || true
 ./scripts/e2e_enterprise.sh
