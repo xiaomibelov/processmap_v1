@@ -6,6 +6,7 @@ import {
   applyDrag,
   applyResize,
   canResizeHybridElement,
+  clampRectToBounds,
   clampHybridRect,
 } from "./hybridTransform.js";
 
@@ -45,4 +46,24 @@ test("canResizeHybridElement: only known resizable types", () => {
   assert.equal(canResizeHybridElement("container"), true);
   assert.equal(canResizeHybridElement("text"), false);
   assert.equal(canResizeHybridElement("arrow"), false);
+});
+
+test("applyDrag: respects bounds clamp", () => {
+  const start = { x: 50, y: 60, w: 100, h: 40 };
+  const next = applyDrag(start, 400, 200, {
+    bounds: { minX: 0, minY: 0, maxX: 240, maxY: 160 },
+  });
+  assert.equal(next.x, 140);
+  assert.equal(next.y, 120);
+});
+
+test("clampRectToBounds: clips oversize rect into viewport", () => {
+  const next = clampRectToBounds(
+    { x: -20, y: -20, w: 800, h: 500 },
+    { bounds: { minX: 10, minY: 20, maxX: 210, maxY: 150 } },
+  );
+  assert.equal(next.x, 10);
+  assert.equal(next.y, 20);
+  assert.equal(next.w, 200);
+  assert.equal(next.h, 130);
 });

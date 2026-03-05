@@ -29,7 +29,7 @@ export default function HybridSelectionRenderer({
         const w = Number(element.width || 0);
         const h = Number(element.height || 0);
         const radius = Math.max(2, Number(style.radius || 8) * Number(element.scaleX || 1));
-        const isLocked = asObject(element.layer).locked === true;
+        const isLocked = asObject(element.layer).locked === true || element.locked === true;
         const canResize = canResizeHybridElement(element.type) && !isLocked;
 
         return (
@@ -70,7 +70,7 @@ export default function HybridSelectionRenderer({
                       data-hybrid-element-id={elementId}
                       data-handle={handle}
                       data-testid="hybrid-v2-resize-handle"
-                      onMouseDown={(event) => onHandlePointerDown?.(event, elementId, handle)}
+                      onPointerDown={(event) => onHandlePointerDown?.(event, elementId, handle)}
                     />
                   </g>
                 );

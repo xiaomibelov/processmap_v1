@@ -95,9 +95,9 @@ export default function useHybridPipelineController({
     });
     const blockedLockedIds = ids.filter((id) => {
       const element = asObject(asArray(prev.elements).find((rowRaw) => toText(asObject(rowRaw).id) === id));
-      if (element.id) return asObject(layerById[toText(element.layer_id)]).locked === true;
+      if (element.id) return element.locked === true || asObject(layerById[toText(element.layer_id)]).locked === true;
       const edge = asObject(asArray(prev.edges).find((rowRaw) => toText(asObject(rowRaw).id) === id));
-      if (edge.id) return asObject(layerById[toText(edge.layer_id)]).locked === true;
+      if (edge.id) return edge.locked === true || asObject(layerById[toText(edge.layer_id)]).locked === true;
       return false;
     });
     if (blockedLockedIds.length) {

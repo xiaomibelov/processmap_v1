@@ -150,13 +150,10 @@ export default function useHybridSelectionController({
   const selectFromPointerEvent = useCallback((idRaw, event) => {
     const id = toText(idRaw);
     if (!id) return;
-    const additive = !!(event?.shiftKey || event?.metaKey || event?.ctrlKey);
-    if (additive) {
-      toggleSelection(id);
-      return;
-    }
+    // P0 contract: keep selection deterministic (single-select).
+    // Multi-select can be reintroduced later with explicit UX.
     selectOnly(id);
-  }, [selectOnly, toggleSelection]);
+  }, [selectOnly]);
 
   const hitTestAtClientPoint = useCallback((clientXRaw, clientYRaw) => {
     const point = toLocalPoint(clientXRaw, clientYRaw, overlayRect);

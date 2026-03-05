@@ -13,6 +13,27 @@ function round1(value) {
   return Math.round(Number(value || 0) * 10) / 10;
 }
 
+function normalizeBounds(boundsRaw) {
+  const bounds = asObject(boundsRaw);
+  const minX = Number(bounds.minX);
+  const minY = Number(bounds.minY);
+  const maxX = Number(bounds.maxX);
+  const maxY = Number(bounds.maxY);
+  if (
+    !Number.isFinite(minX)
+    || !Number.isFinite(minY)
+    || !Number.isFinite(maxX)
+    || !Number.isFinite(maxY)
+  ) {
+    return null;
+  }
+  const left = Math.min(minX, maxX);
+  const right = Math.max(minX, maxX);
+  const top = Math.min(minY, maxY);
+  const bottom = Math.max(minY, maxY);
+  return { minX: left, minY: top, maxX: right, maxY: bottom };
+}
+
 export function clampHybridRect(rectRaw, options = {}) {
   const rect = asObject(rectRaw);
   const minWidth = Math.max(1, Number(options.minWidth || HYBRID_MIN_WIDTH));
@@ -25,16 +46,39 @@ export function clampHybridRect(rectRaw, options = {}) {
   };
 }
 
-export function applyDrag(rectRaw, dxRaw, dyRaw) {
+export function clampRectToBounds(rectRaw, options = {}) {
+  const rect = clampHybridRect(rectRaw, options);
+  const bounds = normalizeBounds(options.bounds);
+  if (!bounds) return rect;
+  const widthLimit = Math.max(1, Number(bounds.maxX || 0) - Number(bounds.minX || 0));
+  const heightLimit = Math.max(1, Number(bounds.maxY || 0) - Number(bounds.minY || 0));
+  const minWidth = Math.max(1, Number(options.minWidth || HYBRID_MIN_WIDTH));
+  const minHeight = Math.max(1, Number(options.minHeight || HYBRID_MIN_HEIGHT));
+  const clampedW = Math.min(Math.max(minWidth, Number(rect.w || 0)), widthLimit);
+  const clampedH = Math.min(Math.max(minHeight, Number(rect.h || 0)), heightLimit);
+  const maxXForRect = Number(bounds.maxX || 0) - clampedW;
+  const maxYForRect = Number(bounds.maxY || 0) - clampedH;
+  const clampedX = Math.min(Math.max(Number(rect.x || 0), Number(bounds.minX || 0)), maxXForRect);
+  const clampedY = Math.min(Math.max(Number(rect.y || 0), Number(bounds.minY || 0)), maxYForRect);
+  return {
+    ...rect,
+    x: round1(clampedX),
+    y: round1(clampedY),
+    w: round1(clampedW),
+    h: round1(clampedH),
+  };
+}
+
+export function applyDrag(rectRaw, dxRaw, dyRaw, options = {}) {
   const rect = clampHybridRect(rectRaw);
   const source = asObject(rectRaw);
-  return {
+  return clampRectToBounds({
     ...source,
     x: round1(Number(rect.x || 0) + Number(dxRaw || 0)),
     y: round1(Number(rect.y || 0) + Number(dyRaw || 0)),
     w: round1(rect.w),
     h: round1(rect.h),
-  };
+  }, options);
 }
 
 export function canResizeHybridElement(typeRaw) {
@@ -76,11 +120,11 @@ export function applyResize(rectRaw, handleRaw, dxRaw, dyRaw, options = {}) {
     h = minHeight;
   }
 
-  return {
+  return clampRectToBounds({
     ...source,
     x: round1(x),
     y: round1(y),
     w: round1(w),
     h: round1(h),
-  };
+  }, options);
 }

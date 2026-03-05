@@ -25,6 +25,7 @@ export default function HybridEdgesRenderer({
         const stroke = toText(style.stroke) || "#2563eb";
         const width = Number(style.width || 2);
         const layerOpacity = Math.max(0.1, Math.min(1, Number(edge.layerOpacity || 1)));
+        const isLocked = asObject(edge.layer).locked === true || edge.locked === true;
         return (
           <g key={`hybrid_v2_edge_group_${edgeId}`}>
             <path
@@ -45,8 +46,9 @@ export default function HybridEdgesRenderer({
               style={{ opacity: layerOpacity }}
               data-hybrid-element-id={edgeId}
               data-selected={active ? "true" : "false"}
+              data-locked={isLocked ? "true" : "false"}
               data-testid="hybrid-v2-edge"
-              onMouseDown={(event) => onElementPointerDown?.(event, edgeId)}
+              onPointerDown={(event) => onElementPointerDown?.(event, edgeId)}
               onContextMenu={(event) => onElementContextMenu?.(event, edgeId)}
             />
           </g>

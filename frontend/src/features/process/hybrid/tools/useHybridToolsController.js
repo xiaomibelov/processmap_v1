@@ -19,6 +19,7 @@ import {
   applyDrag as applyHybridDragDelta,
   applyResize as applyHybridResizeHandleDelta,
   canResizeHybridElement,
+  clampRectToBounds,
 } from "../actions/hybridTransform.js";
 import {
   buildHybridElementAt,
@@ -50,6 +51,17 @@ function focusHybridOverlayFromEvent(event) {
     || (typeof document !== "undefined" ? document.querySelector("[data-testid='hybrid-layer-overlay']") : null);
   if (activeTarget && typeof activeTarget.focus === "function") {
     activeTarget.focus();
+  }
+}
+
+function tryCapturePointer(event) {
+  const pointerId = Number(event?.pointerId);
+  const target = event?.currentTarget;
+  if (!Number.isFinite(pointerId)) return;
+  if (!target || typeof target.setPointerCapture !== "function") return;
+  try {
+    target.setPointerCapture(pointerId);
+  } catch {
   }
 }
 
@@ -398,6 +410,29 @@ export default function useHybridToolsController({
     });
   }, [applyElementRect, flushPendingTransform, updateDoc]);
 
+  const getDiagramViewportBounds = useCallback(() => {
+    const rect = asObject(overlayRect);
+    const width = Number(rect.width || 0);
+    const height = Number(rect.height || 0);
+    if (width <= 1 || height <= 1) return null;
+    const left = Number(rect.left || 0);
+    const top = Number(rect.top || 0);
+    const p1 = clientToDiagram(left, top);
+    const p2 = clientToDiagram(left + width, top + height);
+    if (!p1 || !p2) return null;
+    const minX = Math.min(Number(p1.x || 0), Number(p2.x || 0));
+    const maxX = Math.max(Number(p1.x || 0), Number(p2.x || 0));
+    const minY = Math.min(Number(p1.y || 0), Number(p2.y || 0));
+    const maxY = Math.max(Number(p1.y || 0), Number(p2.y || 0));
+    if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) return null;
+    return { minX, minY, maxX, maxY };
+  }, [clientToDiagram, overlayRect]);
+
+  const clampRectToViewport = useCallback((rectRaw) => {
+    const bounds = getDiagramViewportBounds();
+    return clampRectToBounds(rectRaw, { bounds });
+  }, [getDiagramViewportBounds]);
+
   const setTool = useCallback((toolRaw) => {
     const nextTool = toText(toolRaw).toLowerCase() || "select";
     toolRef.current = nextTool;
@@ -734,6 +769,7 @@ export default function useHybridToolsController({
     if (!id) return;
     event?.preventDefault?.();
     event?.stopPropagation?.();
+    tryCapturePointer(event);
     focusHybridOverlayFromEvent(event);
     selectionApi.selectOnly?.(id);
     openTextEditor(id);
@@ -755,6 +791,7 @@ export default function useHybridToolsController({
     if (!elementId) return;
     event?.preventDefault?.();
     event?.stopPropagation?.();
+    tryCapturePointer(event);
     focusHybridOverlayFromEvent(event);
     markPlaybackOverlayInteraction?.({ action: "hybrid_v2_element_pointer", elementId });
     selectionApi.selectFromPointerEvent?.(elementId, event);
@@ -764,7 +801,7 @@ export default function useHybridToolsController({
     const row = asObject(renderable.elementsById[elementId]);
     const rowLayer = asObject(layerById[toText(row.layer_id)]);
     if (!row.id) return;
-    if (rowLayer.locked === true) {
+    if (rowLayer.locked === true || row.locked === true) {
       setInfoMsg?.(`Перемещение недоступно: слой "${toText(rowLayer.name) || toText(row.layer_id) || "Hybrid"}" заблокирован.`);
       setGenErr?.("");
       return;
@@ -803,10 +840,11 @@ export default function useHybridToolsController({
           },
           Number(nextPoint.x || 0) - Number(point.x || 0),
           Number(nextPoint.y || 0) - Number(point.y || 0),
+          { bounds: getDiagramViewportBounds() },
         );
       },
     };
-  }, [clientToDiagram, createEdge, layerById, markPlaybackOverlayInteraction, modeEffective, renderable.elementsById, setGenErr, setInfoMsg, uiLocked]);
+  }, [clientToDiagram, createEdge, getDiagramViewportBounds, layerById, markPlaybackOverlayInteraction, modeEffective, renderable.elementsById, setGenErr, setInfoMsg, uiLocked]);
 
   const onResizeHandlePointerDown = useCallback((event, elementIdRaw, handleRaw, selectionApi = {}) => {
     const elementId = toText(elementIdRaw);
@@ -814,6 +852,7 @@ export default function useHybridToolsController({
     if (!elementId || !handle) return;
     event?.preventDefault?.();
     event?.stopPropagation?.();
+    tryCapturePointer(event);
     focusHybridOverlayFromEvent(event);
     markPlaybackOverlayInteraction?.({ action: "hybrid_v2_resize_start", elementId, handle });
     if (modeEffective !== "edit" || uiLocked) return;
@@ -823,7 +862,7 @@ export default function useHybridToolsController({
     const rowLayer = asObject(layerById[toText(row.layer_id)]);
     if (!row.id) return;
     if (!canResizeHybridElement(row.type)) return;
-    if (rowLayer.locked === true) {
+    if (rowLayer.locked === true || row.locked === true) {
       setInfoMsg?.(`Изменение размера недоступно: слой "${toText(rowLayer.name) || toText(row.layer_id) || "Hybrid"}" заблокирован.`);
       setGenErr?.("");
       return;
@@ -850,10 +889,11 @@ export default function useHybridToolsController({
           handle,
           Number(nextPoint.x || 0) - Number(point.x || 0),
           Number(nextPoint.y || 0) - Number(point.y || 0),
+          { bounds: getDiagramViewportBounds() },
         );
       },
     };
-  }, [clientToDiagram, layerById, markPlaybackOverlayInteraction, modeEffective, renderable.elementsById, setGenErr, setInfoMsg, uiLocked]);
+  }, [clientToDiagram, getDiagramViewportBounds, layerById, markPlaybackOverlayInteraction, modeEffective, renderable.elementsById, setGenErr, setInfoMsg, uiLocked]);
 
   const onOverlayPointerDown = useCallback((event, selectionApi = {}) => {
     if (modeEffective !== "edit" || uiLocked || !hybridVisible) return;
@@ -943,17 +983,18 @@ export default function useHybridToolsController({
       if (!elementId) return;
       const rect = asObject(rectRaw);
       if (!Number.isFinite(Number(rect.x)) || !Number.isFinite(Number(rect.y))) return;
+      const clampedRect = clampRectToViewport({
+        x: Number(rect.x || 0),
+        y: Number(rect.y || 0),
+        w: Number(rect.w || 0),
+        h: Number(rect.h || 0),
+      });
       queueElementTransform(
         elementId,
-        {
-          x: Number(rect.x || 0),
-          y: Number(rect.y || 0),
-          w: Number(rect.w || 0),
-          h: Number(rect.h || 0),
-        },
+        clampedRect,
         source,
       );
-    }, [queueElementTransform]),
+    }, [clampRectToViewport, queueElementTransform]),
     flushPendingTransform,
     hybridDocRef,
     persistHybridV2Doc,

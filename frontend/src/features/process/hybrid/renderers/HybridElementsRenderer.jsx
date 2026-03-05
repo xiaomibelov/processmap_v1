@@ -37,7 +37,7 @@ export default function HybridElementsRenderer({
         );
         const layerOpacity = Math.max(0.1, Math.min(1, Number(element.layerOpacity || 1)));
         const isContainer = element.is_container === true || toText(element.type) === "container";
-        const isLocked = asObject(element.layer).locked === true;
+        const isLocked = asObject(element.layer).locked === true || element.locked === true;
 
         return (
           <g
@@ -48,7 +48,7 @@ export default function HybridElementsRenderer({
             data-selected={active ? "true" : "false"}
             data-locked={isLocked ? "true" : "false"}
             data-testid="hybrid-v2-shape"
-            onMouseDown={(event) => onElementPointerDown?.(event, elementId)}
+            onPointerDown={(event) => onElementPointerDown?.(event, elementId)}
             onContextMenu={(event) => onElementContextMenu?.(event, elementId)}
             onDoubleClick={(event) => onElementDoubleClick?.(event, elementId)}
           >

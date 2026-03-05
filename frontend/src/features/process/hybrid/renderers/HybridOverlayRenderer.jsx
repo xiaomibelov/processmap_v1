@@ -55,7 +55,7 @@ export default function HybridOverlayRenderer({
       style={{ "--hybrid-layer-opacity": String(Math.max(0.2, Math.min(1, opacityValue))) }}
       data-testid="hybrid-layer-overlay"
       tabIndex={-1}
-      onMouseDown={onOverlayPointerDown}
+      onPointerDown={onOverlayPointerDown}
       onMouseMove={onOverlayPointerMove}
       onMouseLeave={onOverlayPointerLeave}
       onContextMenu={onOverlayContextMenu}
@@ -67,7 +67,7 @@ export default function HybridOverlayRenderer({
       <svg
         className={`hybridV2Svg ${mode === "edit" ? "isEdit" : "isView"}`}
         data-testid="hybrid-v2-svg"
-        onMouseDown={onOverlayPointerDown}
+        onPointerDown={onOverlayPointerDown}
       >
         <defs>
           <marker
