@@ -1937,6 +1937,262 @@ def _drawio_payload_size(value: Any) -> int:
     return len(str(normalized.get("doc_xml") or "")) + len(str(normalized.get("svg_cache") or ""))
 
 
+def _normalize_auto_pass_v1(value: Any) -> Dict[str, Any]:
+    raw = value if isinstance(value, dict) else {}
+    schema_version = str(raw.get("schema_version") or "").strip() or "auto_pass_v1.1"
+    graph_hash = str(raw.get("graph_hash") or "").strip()
+    generated_at = str(raw.get("generated_at") or "").strip()
+    run_id = str(raw.get("run_id") or "").strip()
+    status = str(raw.get("status") or "").strip().lower()
+    if status not in {"queued", "running", "done", "failed"}:
+        status = ""
+    error_code = str(raw.get("error_code") or "").strip()
+    error_message = str(raw.get("error_message") or "").strip()
+    limits_raw = raw.get("limits") if isinstance(raw.get("limits"), dict) else {}
+    summary_raw = raw.get("summary") if isinstance(raw.get("summary"), dict) else {}
+    variants_raw = raw.get("variants") if isinstance(raw.get("variants"), list) else []
+    debug_failed_raw = (
+        raw.get("debug_failed_variants") if isinstance(raw.get("debug_failed_variants"), list) else []
+    )
+    warnings_raw = raw.get("warnings") if isinstance(raw.get("warnings"), list) else []
+
+    limits = {
+        "max_variants": max(1, min(_robot_meta_as_non_negative_int(limits_raw.get("max_variants"), 500), 5000)),
+        "max_steps": max(10, min(_robot_meta_as_non_negative_int(limits_raw.get("max_steps"), 2000), 20000)),
+        "max_visits_per_node": max(1, min(_robot_meta_as_non_negative_int(limits_raw.get("max_visits_per_node"), 2), 10)),
+    }
+    mode = str(limits_raw.get("mode") or "all").strip().lower()
+    limits["mode"] = "all" if mode != "all" else mode
+
+    def _normalize_task_steps(variant: Dict[str, Any]) -> List[Dict[str, Any]]:
+        source_steps = variant.get("task_steps")
+        if not isinstance(source_steps, list):
+            source_steps = variant.get("steps") if isinstance(variant.get("steps"), list) else []
+        steps: List[Dict[str, Any]] = []
+        for step_raw in source_steps[:2000]:
+            step = step_raw if isinstance(step_raw, dict) else {}
+            node_id = str(step.get("node_id") or "").strip()
+            if not node_id:
+                continue
+            duration_raw = step.get("duration_s")
+            duration_s = None
+            if duration_raw is not None:
+                try:
+                    duration_val = int(duration_raw)
+                    if duration_val >= 0:
+                        duration_s = duration_val
+                except Exception:
+                    duration_s = None
+            steps.append(
+                {
+                    "node_id": node_id,
+                    "name": str(step.get("name") or node_id).strip() or node_id,
+                    "duration_s": duration_s,
+                }
+            )
+        return steps
+
+    def _normalize_gateway_choices(variant: Dict[str, Any]) -> List[Dict[str, Any]]:
+        source_choices = variant.get("gateway_choices")
+        if not isinstance(source_choices, list):
+            source_choices = variant.get("choices") if isinstance(variant.get("choices"), list) else []
+        choices: List[Dict[str, Any]] = []
+        for choice_raw in source_choices[:2000]:
+            choice = choice_raw if isinstance(choice_raw, dict) else {}
+            gateway_id = str(choice.get("gateway_id") or "").strip()
+            flow_id = str(choice.get("flow_id") or "").strip()
+            if not gateway_id or not flow_id:
+                continue
+            choices.append(
+                {
+                    "gateway_id": gateway_id,
+                    "flow_id": flow_id,
+                    "label": str(choice.get("label") or flow_id).strip() or flow_id,
+                }
+            )
+        return choices
+
+    def _normalize_detail_rows(variant: Dict[str, Any]) -> List[Dict[str, Any]]:
+        rows_raw = variant.get("detail_rows") if isinstance(variant.get("detail_rows"), list) else []
+        rows: List[Dict[str, Any]] = []
+        for row_raw in rows_raw[:4000]:
+            if not isinstance(row_raw, dict):
+                continue
+            kind = str(row_raw.get("kind") or "").strip()
+            if kind not in {"task", "gateway_choice", "teleport", "end_event"}:
+                continue
+            row = {"kind": kind}
+            if kind in {"task", "end_event"}:
+                node_id = str(row_raw.get("node_id") or "").strip()
+                if not node_id:
+                    continue
+                row["node_id"] = node_id
+                row["name"] = str(row_raw.get("name") or node_id).strip() or node_id
+                if kind == "task":
+                    try:
+                        d = row_raw.get("duration_s")
+                        row["duration_s"] = int(d) if d is not None and int(d) >= 0 else None
+                    except Exception:
+                        row["duration_s"] = None
+            elif kind == "gateway_choice":
+                gateway_id = str(row_raw.get("gateway_id") or "").strip()
+                flow_id = str(row_raw.get("flow_id") or "").strip()
+                if not gateway_id or not flow_id:
+                    continue
+                row["gateway_id"] = gateway_id
+                row["flow_id"] = flow_id
+                row["label"] = str(row_raw.get("label") or flow_id).strip() or flow_id
+            elif kind == "teleport":
+                row["from"] = str(row_raw.get("from") or "").strip()
+                row["to"] = str(row_raw.get("to") or "").strip()
+                row["flow_id"] = str(row_raw.get("flow_id") or "").strip()
+            rows.append(row)
+        return rows
+
+    def _normalize_variant(variant_raw: Any, idx: int) -> Dict[str, Any]:
+        variant = variant_raw if isinstance(variant_raw, dict) else {}
+        variant_id = str(variant.get("variant_id") or f"V{idx + 1:03d}").strip() or f"V{idx + 1:03d}"
+        task_steps = _normalize_task_steps(variant)
+        gateway_choices = _normalize_gateway_choices(variant)
+        detail_rows = _normalize_detail_rows(variant)
+        end_event_id = str(variant.get("end_event_id") or "").strip()
+        variant_status = str(variant.get("status") or "").strip().lower()
+        if variant_status not in {"done", "failed"}:
+            variant_status = "done" if end_event_id else "failed"
+        end_reached_raw = variant.get("end_reached")
+        end_reached = bool(end_reached_raw) if end_reached_raw is not None else bool(end_event_id)
+        error_raw = variant.get("error") if isinstance(variant.get("error"), dict) else {}
+        error: Dict[str, str] = {}
+        if variant_status != "done":
+            error = {
+                "code": str(error_raw.get("code") or "UNKNOWN").strip() or "UNKNOWN",
+                "message": str(error_raw.get("message") or "").strip(),
+            }
+        teleport_raw = variant.get("teleport") if isinstance(variant.get("teleport"), dict) else {}
+        teleport = {
+            "used": bool(teleport_raw.get("used")),
+            "from": str(teleport_raw.get("from") or "").strip(),
+            "to": str(teleport_raw.get("to") or "").strip(),
+            "flow_id": str(teleport_raw.get("flow_id") or "").strip(),
+        }
+        known_duration = 0
+        unknown_duration = 0
+        for step in task_steps:
+            d = step.get("duration_s")
+            if isinstance(d, int):
+                known_duration += max(0, d)
+            else:
+                unknown_duration += 1
+        total_steps = max(0, int(variant.get("total_steps") or len(task_steps)))
+        total_duration = max(0, int(variant.get("total_duration_s") or known_duration))
+        unknown_duration_count = max(0, int(variant.get("unknown_duration_count") or unknown_duration))
+        out_variant = {
+            "variant_id": variant_id,
+            "status": variant_status,
+            "end_reached": bool(end_reached),
+            "end_event_id": end_event_id,
+            "task_steps": task_steps,
+            "gateway_choices": gateway_choices,
+            "detail_rows": detail_rows,
+            "teleport": teleport,
+            "error": error,
+            "steps": task_steps,
+            "choices": gateway_choices,
+            "total_steps": total_steps,
+            "total_duration_s": total_duration,
+            "unknown_duration_count": unknown_duration_count,
+        }
+        return out_variant
+
+    all_variants = [_normalize_variant(v, idx) for idx, v in enumerate(variants_raw)]
+    complete_variants = [
+        v
+        for v in all_variants
+        if str(v.get("status") or "").lower() == "done"
+        and bool(v.get("end_reached"))
+        and str(v.get("end_event_id") or "").strip()
+    ]
+    failed_variants = [
+        v
+        for v in all_variants
+        if v not in complete_variants
+    ]
+    debug_failed_variants = [_normalize_variant(v, idx) for idx, v in enumerate(debug_failed_raw)]
+    if not debug_failed_variants and failed_variants:
+        debug_failed_variants = failed_variants
+
+    warnings: List[Dict[str, str]] = []
+    for warning_raw in warnings_raw[:200]:
+        if isinstance(warning_raw, dict):
+            code = str(warning_raw.get("code") or "").strip()
+            msg = str(warning_raw.get("message") or "").strip()
+            if code or msg:
+                warnings.append({"code": code, "message": msg})
+            continue
+        txt = str(warning_raw or "").strip()
+        if txt:
+            warnings.append({"code": "warning", "message": txt})
+
+    total_done = len(complete_variants)
+    total_failed = max(
+        _robot_meta_as_non_negative_int(summary_raw.get("total_variants_failed"), len(debug_failed_variants)),
+        len(debug_failed_variants),
+    )
+    total_variants = max(
+        _robot_meta_as_non_negative_int(summary_raw.get("total_variants"), total_done),
+        total_done,
+    )
+    failed_reasons_raw = summary_raw.get("failed_reasons") if isinstance(summary_raw.get("failed_reasons"), dict) else {}
+    failed_reasons: Dict[str, int] = {}
+    for code_raw, count_raw in failed_reasons_raw.items():
+        code = str(code_raw or "").strip()
+        if not code:
+            continue
+        failed_reasons[code] = max(0, _robot_meta_as_non_negative_int(count_raw, 0))
+
+    if not status:
+        status = "done" if total_done > 0 else "failed"
+    if status == "done" and total_done <= 0:
+        status = "failed"
+    if status != "failed":
+        error_code = ""
+        error_message = ""
+    if status == "failed" and not error_code and total_done <= 0:
+        error_code = "NO_COMPLETE_PATH_TO_END"
+        error_message = error_message or "No complete path reaches EndEvent of main process"
+
+    out = {
+        "schema_version": schema_version,
+        "status": status,
+        "run_id": run_id,
+        "error_code": error_code,
+        "error_message": error_message,
+        "graph_hash": graph_hash,
+        "generated_at": generated_at,
+        "limits": limits,
+        "summary": {
+            "total_variants": total_variants,
+            "total_variants_done": total_done,
+            "total_variants_failed": total_failed,
+            "failed_reasons": failed_reasons,
+            "truncated": bool(summary_raw.get("truncated")),
+        },
+        "variants": complete_variants,
+        "debug_failed_variants": debug_failed_variants,
+        "warnings": warnings,
+    }
+    if (
+        not graph_hash
+        and not generated_at
+        and not complete_variants
+        and not debug_failed_variants
+        and not warnings
+        and not status
+    ):
+        return {}
+    return out
+
+
 def _entry_to_flow_tier(entry_raw: Any) -> Optional[str]:
     if isinstance(entry_raw, dict):
         tier = _normalize_flow_tier(entry_raw.get("tier"))
@@ -2013,8 +2269,9 @@ def _normalize_bpmn_meta(
     )
     hybrid_v2 = _normalize_hybrid_v2(raw.get("hybrid_v2"))
     drawio = _normalize_drawio_meta(raw.get("drawio"))
+    auto_pass_v1 = _normalize_auto_pass_v1(raw.get("auto_pass_v1"))
 
-    return {
+    out = {
         "version": version,
         "flow_meta": flow_meta,
         "node_path_meta": node_path_meta,
@@ -2023,6 +2280,9 @@ def _normalize_bpmn_meta(
         "hybrid_v2": hybrid_v2,
         "drawio": drawio,
     }
+    if auto_pass_v1:
+        out["auto_pass_v1"] = auto_pass_v1
+    return out
 
 
 def _enforce_gateway_tier_constraints(
@@ -5722,6 +5982,44 @@ def _workspace_needs_attention_count(interview_raw: Any) -> int:
     return 0
 
 
+def _workspace_attention_markers_info(bpmn_meta_raw: Any, user_id: str) -> Dict[str, Any]:
+    try:
+        bpmn_meta = json.loads(str(bpmn_meta_raw or "{}"))
+        if not isinstance(bpmn_meta, dict):
+            bpmn_meta = {}
+    except Exception:
+        bpmn_meta = {}
+    markers_raw = bpmn_meta.get("attention_markers")
+    markers = markers_raw if isinstance(markers_raw, list) else []
+    show_on_workspace = bpmn_meta.get("attention_show_on_workspace")
+    show_flag = bool(show_on_workspace is not False)
+    uid = str(user_id or "").strip()
+    unresolved = 0
+    unread = 0
+    for marker_raw in markers:
+        marker = marker_raw if isinstance(marker_raw, dict) else {}
+        if not str(marker.get("id") or "").strip():
+            continue
+        if bool(marker.get("is_checked")):
+            continue
+        unresolved += 1
+        seen_by = marker.get("last_seen_at_by_user")
+        seen_by_map = seen_by if isinstance(seen_by, dict) else {}
+        seen_raw = seen_by_map.get(uid) if uid else None
+        try:
+            seen_ts = int(seen_raw or 0)
+        except Exception:
+            seen_ts = 0
+        if seen_ts <= 0:
+            unread += 1
+    return {
+        "show_on_workspace": show_flag,
+        "unresolved_count": int(unresolved),
+        "workspace_count": int(unresolved if show_flag else 0),
+        "unread_count": int(unread),
+    }
+
+
 def _workspace_session_status(
     *,
     reports_versions: int,
@@ -6057,13 +6355,13 @@ def enterprise_workspace(
     org_name = ""
     member_by_user: Dict[str, Dict[str, Any]] = {}
     for row in memberships:
-        uid = str(row.get("user_id") or "").strip()
-        if not uid:
+        member_uid = str(row.get("user_id") or "").strip()
+        if not member_uid:
             continue
-        member_by_user[uid] = {
-            "id": uid,
+        member_by_user[member_uid] = {
+            "id": member_uid,
             "email": str(row.get("email") or "").strip().lower(),
-            "name": str(row.get("email") or uid).strip(),
+            "name": str(row.get("email") or member_uid).strip(),
             "role": str(row.get("role") or "").strip().lower(),
         }
         if not org_name:
@@ -6087,11 +6385,15 @@ def enterprise_workspace(
             interview = {}
         reports_versions = _workspace_reports_count(interview)
         attention_count = _workspace_needs_attention_count(interview)
+        markers_info = _workspace_attention_markers_info(row.get("bpmn_meta_json"), uid)
+        marker_workspace_count = int(markers_info.get("workspace_count") or 0)
+        marker_unread_count = int(markers_info.get("unread_count") or 0)
+        combined_attention_count = int(attention_count) + marker_workspace_count
         dod_artifacts = _workspace_collect_dod_artifacts(
             row=row,
             interview=interview,
             reports_versions=reports_versions,
-            attention_count=attention_count,
+            attention_count=combined_attention_count,
         )
         session_status = _workspace_session_status(
             reports_versions=reports_versions,
@@ -6106,9 +6408,9 @@ def enterprise_workspace(
                 needs_filter = int(needs_attention)
             except Exception:
                 needs_filter = -1
-            if needs_filter == 1 and attention_count <= 0:
+            if needs_filter == 1 and combined_attention_count <= 0:
                 continue
-            if needs_filter == 0 and attention_count > 0:
+            if needs_filter == 0 and combined_attention_count > 0:
                 continue
         owner_info = member_by_user.get(owner_id) or {}
         if owner_id and owner_id not in member_by_user:
@@ -6131,7 +6433,11 @@ def enterprise_workspace(
             "created_at": int(row.get("created_at") or 0),
             "status": session_status,
             "reports_versions": int(reports_versions),
-            "needs_attention": int(attention_count),
+            "needs_attention": int(combined_attention_count),
+            "attention_unread": int(marker_unread_count),
+            "attention_markers_count": int(marker_workspace_count),
+            "attention_markers_unread": int(marker_unread_count),
+            "attention_show_on_workspace": bool(markers_info.get("show_on_workspace") is not False),
             "version": int(row.get("version") or 0),
             "bpmn_xml_version": int(row.get("bpmn_xml_version") or 0),
             "dod_artifacts": dod_artifacts,
