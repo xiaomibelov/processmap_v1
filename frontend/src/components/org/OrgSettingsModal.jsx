@@ -37,6 +37,7 @@ const INVITE_ROLES = ["org_admin", "editor", "viewer", "auditor"];
 export default function OrgSettingsModal({
   open,
   onClose,
+  initialTab = "members",
   activeOrgId,
   activeOrgRole,
   orgName,
@@ -58,6 +59,16 @@ export default function OrgSettingsModal({
 
   const canManageMembers = useMemo(() => ["org_owner", "org_admin"].includes(toText(activeOrgRole).toLowerCase()), [activeOrgRole]);
   const canManageInvites = canManageMembers;
+
+  useEffect(() => {
+    if (!open) return;
+    const nextTab = toText(initialTab).toLowerCase();
+    if (nextTab === "members" || nextTab === "invites" || nextTab === "audit") {
+      setTab(nextTab);
+    } else {
+      setTab("members");
+    }
+  }, [initialTab, open]);
 
   const loadMembers = useCallback(async () => {
     const oid = toText(activeOrgId);

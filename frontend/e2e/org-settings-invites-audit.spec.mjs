@@ -113,6 +113,8 @@ test("enterprise org settings: invites + audit tabs", async ({ page }) => {
   });
 
   await page.goto("/app");
+  await expect(page.getByTestId("topbar-admin-button")).toBeVisible();
+  await page.getByTestId("topbar-admin-button").click();
   await expect(page.getByTestId("topbar-org-settings-btn")).toBeVisible();
   await page.getByTestId("topbar-org-settings-btn").click();
 

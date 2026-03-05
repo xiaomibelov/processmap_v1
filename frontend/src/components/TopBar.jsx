@@ -102,9 +102,12 @@ export default function TopBar({
   const [uiTheme, setUiTheme] = useState("dark");
   const [aiToolsOpen, setAiToolsOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [accountMenuPos, setAccountMenuPos] = useState({ left: 8, top: 56, width: 220 });
   const accountMenuRef = useRef(null);
   const accountButtonRef = useRef(null);
+  const adminMenuRef = useRef(null);
+  const adminButtonRef = useRef(null);
 
   const updateAccountMenuPos = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -165,6 +168,27 @@ export default function TopBar({
       window.removeEventListener("scroll", onViewportChange, true);
     };
   }, [accountMenuOpen, updateAccountMenuPos]);
+
+  useEffect(() => {
+    if (!adminMenuOpen) return undefined;
+    function onPointerDown(event) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      const menu = adminMenuRef.current;
+      const button = adminButtonRef.current;
+      if (menu?.contains(target) || button?.contains(target)) return;
+      setAdminMenuOpen(false);
+    }
+    function onKeyDown(event) {
+      if (event.key === "Escape") setAdminMenuOpen(false);
+    }
+    window.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [adminMenuOpen]);
 
   function toggleTheme() {
     const next = uiTheme === "dark" ? "light" : "dark";
@@ -237,6 +261,17 @@ export default function TopBar({
     window.location.assign("/");
   }
 
+  function openAdminSection(sectionRaw = "organization") {
+    const section = String(sectionRaw || "organization").trim().toLowerCase();
+    setAdminMenuOpen(false);
+    if (!onOpenOrgSettings) return;
+    if (section === "members" || section === "invites" || section === "audit") {
+      onOpenOrgSettings({ tab: section });
+      return;
+    }
+    onOpenOrgSettings();
+  }
+
   return (
     <div className="topbar sticky left-0 right-0 top-0 z-40 flex h-12 w-full min-w-0 shrink-0 items-center gap-3 border-b border-border bg-panel/95 px-3 backdrop-blur">
       <div className="topLeft flex min-w-0 flex-1 items-center gap-2 overflow-x-auto whitespace-nowrap">
@@ -271,23 +306,12 @@ export default function TopBar({
         {!sessionId ? (
           <div className="topGroup flex shrink-0 items-center gap-2">
             <span
-              className="inline-flex h-9 min-h-0 max-w-[14rem] items-center rounded-lg border border-border bg-panel2/60 px-3 py-0 text-sm text-muted"
+              className="inline-flex h-9 min-h-0 min-w-[10rem] max-w-[22rem] items-center rounded-lg border border-border bg-panel2/60 px-3 py-0 text-sm text-muted"
               title={selectedOrgTitle || "Организация"}
               data-testid="topbar-org-label"
             >
               <span className="truncate">{selectedOrgTitle || "Организация"}</span>
             </span>
-            {canOpenOrgSettings ? (
-              <button
-                type="button"
-                className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-3 py-0 text-sm"
-                onClick={() => onOpenOrgSettings?.()}
-                data-testid="topbar-org-settings-btn"
-                title="Настройки организации"
-              >
-                Организация
-              </button>
-            ) : null}
           </div>
         ) : null}
 
@@ -367,6 +391,66 @@ export default function TopBar({
 
       <div className="topRight relative flex min-w-0 shrink-0 items-center justify-end gap-2 overflow-visible whitespace-nowrap">
         <div className="topGroup flex shrink-0 items-center gap-2">
+          {canOpenOrgSettings ? (
+            <div className="relative">
+              <button
+                type="button"
+                ref={adminButtonRef}
+                className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-3 py-0 text-sm"
+                onClick={() => setAdminMenuOpen((prev) => !prev)}
+                data-testid="topbar-admin-button"
+                aria-haspopup="menu"
+                aria-expanded={adminMenuOpen ? "true" : "false"}
+                title="Административные функции"
+              >
+                Админка
+              </button>
+              {adminMenuOpen ? (
+                <div
+                  ref={adminMenuRef}
+                  className="absolute right-0 top-10 z-[110] min-w-[240px] rounded-xl border border-border bg-panel p-1.5 shadow-panel"
+                  data-testid="topbar-admin-menu"
+                >
+                  <button
+                    type="button"
+                    className="secondaryBtn h-9 w-full justify-start px-3 text-left text-sm"
+                    onClick={() => openAdminSection("organization")}
+                    data-testid="topbar-org-settings-btn"
+                    title="Настройки организации"
+                  >
+                    Организация
+                  </button>
+                  <button
+                    type="button"
+                    className="secondaryBtn mt-1 h-9 w-full justify-start px-3 text-left text-sm"
+                    onClick={() => openAdminSection("members")}
+                    data-testid="topbar-admin-members-btn"
+                    title="Участники организации"
+                  >
+                    Members
+                  </button>
+                  <button
+                    type="button"
+                    className="secondaryBtn mt-1 h-9 w-full justify-start px-3 text-left text-sm"
+                    onClick={() => openAdminSection("invites")}
+                    data-testid="topbar-admin-invites-btn"
+                    title="Приглашения"
+                  >
+                    Invites
+                  </button>
+                  <button
+                    type="button"
+                    className="secondaryBtn mt-1 h-9 w-full justify-start px-3 text-left text-sm"
+                    onClick={() => openAdminSection("audit")}
+                    data-testid="topbar-admin-audit-btn"
+                    title="Аудит"
+                  >
+                    Audit
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <button type="button" className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-3 py-0 text-sm" onClick={toggleTheme} title="Переключить тему">
             {uiTheme === "dark" ? "Light" : "Dark"}
           </button>

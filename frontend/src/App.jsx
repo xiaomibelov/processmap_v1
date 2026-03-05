@@ -326,6 +326,22 @@ function writeSelectionToUrl({ projectId, sessionId }) {
   }
 }
 
+function normalizeOrgSettingsTab(raw) {
+  const value = String(raw || "").trim().toLowerCase();
+  if (value === "members" || value === "invites" || value === "audit") return value;
+  return "members";
+}
+
+function readOrgSettingsTabFromUrl() {
+  if (typeof window === "undefined") return "members";
+  try {
+    const params = new URLSearchParams(window.location.search || "");
+    return normalizeOrgSettingsTab(params.get("tab"));
+  } catch {
+    return "members";
+  }
+}
+
 function projectIdOf(p) {
   return String((p && (p.id || p.project_id || p.slug)) || "").trim();
 }
@@ -1004,6 +1020,7 @@ export default function App() {
     if (typeof window === "undefined") return false;
     return String(window.location.pathname || "").startsWith("/app/org");
   });
+  const [orgSettingsTab, setOrgSettingsTab] = useState(() => readOrgSettingsTabFromUrl());
 
   const [leftHidden, setLeftHidden] = useState(() => readLeftPanelHidden());
   const [leftCompact, setLeftCompact] = useState(() => readLeftPanelCompact());
@@ -3217,7 +3234,11 @@ export default function App() {
     function onPopState() {
       const fromUrl = readSelectionFromUrl();
       const pathname = String(window.location.pathname || "");
-      setOrgSettingsOpen(pathname.startsWith("/app/org"));
+      const orgOpen = pathname.startsWith("/app/org");
+      setOrgSettingsOpen(orgOpen);
+      if (orgOpen) {
+        setOrgSettingsTab(readOrgSettingsTabFromUrl());
+      }
       logNav("popstate", {
         projectId: fromUrl.projectId || "-",
         sessionId: fromUrl.sessionId || "-",
@@ -3249,15 +3270,21 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
-  const openOrgSettings = useCallback(() => {
+  const openOrgSettings = useCallback((options = {}) => {
+    const nextTab = normalizeOrgSettingsTab(options?.tab);
+    setOrgSettingsTab(nextTab);
     setOrgSettingsOpen(true);
     if (typeof window === "undefined") return;
-    const pathname = String(window.location.pathname || "");
-    if (pathname.startsWith("/app/org")) return;
     try {
       const url = new URL(window.location.href);
+      const pathname = String(url.pathname || "");
       url.pathname = "/app/org";
-      window.history.pushState({}, "", `${url.pathname}${url.search}${url.hash}`);
+      if (nextTab === "members") url.searchParams.delete("tab");
+      else url.searchParams.set("tab", nextTab);
+      const nextHref = `${url.pathname}${url.search}${url.hash}`;
+      const currentHref = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      if (nextHref === currentHref && pathname.startsWith("/app/org")) return;
+      window.history.pushState({}, "", nextHref);
       window.dispatchEvent(new PopStateEvent("popstate"));
     } catch {
       // ignore
@@ -3360,6 +3387,7 @@ export default function App() {
       <OrgSettingsModal
         open={orgSettingsOpen}
         onClose={closeOrgSettings}
+        initialTab={orgSettingsTab}
         activeOrgId={activeOrgId}
         activeOrgRole={activeOrgRole}
         orgName={activeOrgName}
