@@ -104,7 +104,7 @@ import {
   serializeDrawioMeta,
 } from "../features/process/drawio/drawioMeta";
 import useTemplatesStore from "../features/templates/model/useTemplatesStore";
-import { applyTemplateToDiagram } from "../features/templates/services/applyTemplateToDiagram";
+import useTemplatesStageBridge from "../features/templates/services/useTemplatesStageBridge";
 import {
   AI_QUESTIONS_TIMEOUT_MS,
   COMMAND_HISTORY_LIMIT,
@@ -566,57 +566,22 @@ export default function ProcessStage({
       laneName: selectedElementLaneName,
     };
   }, [selectedElementId, selectedElementName, selectedElementType, selectedElementLaneName]);
-  const selectedBpmnElementIds = useMemo(() => {
-    const ids = new Set(
-      toArray(selectedBpmnElement?.selectedIds)
-        .map((row) => toText(row))
-        .filter(Boolean),
-    );
-    if (selectedElementId) ids.add(selectedElementId);
-    return Array.from(ids);
-  }, [selectedBpmnElement?.selectedIds, selectedElementId]);
-  const selectedTemplateNodes = useMemo(() => {
-    if (!selectedBpmnElementIds.length) return [];
-    const byId = new Set(selectedBpmnElementIds);
-    return toArray(draft?.nodes).filter((node) => byId.has(toText(node?.id)));
-  }, [draft?.nodes, selectedBpmnElementIds]);
-  const templateSelectionContext = useMemo(() => ({
-    name: selectedElementName || selectedElementId,
-    primaryName: selectedElementName || selectedElementId,
-    primaryElementId: selectedElementId,
-    sourceSessionId: sid,
-    elementTypes: Array.from(new Set([
-      ...selectedTemplateNodes.map((node) => toText(node?.type)).filter(Boolean),
-      toText(selectedElementType),
-    ].filter(Boolean))),
-    laneNames: Array.from(new Set([
-      ...selectedTemplateNodes
-        .map((node) => toText(node?.laneName || node?.lane_name || node?.lane || node?.role || node?.area))
-        .filter(Boolean),
-      toText(selectedElementLaneName),
-    ].filter(Boolean))),
-  }), [
-    selectedElementId,
-    selectedElementLaneName,
-    selectedElementName,
-    selectedElementType,
-    selectedTemplateNodes,
-    sid,
-  ]);
-  const getSelectedBpmnElementIds = useCallback(() => selectedBpmnElementIds, [selectedBpmnElementIds]);
-  const applyTemplateSelectionIds = useCallback(
-    async (ids) => applyTemplateToDiagram(bpmnRef.current, ids, { label: "Template" }),
-    [],
-  );
+  const templatesBridge = useTemplatesStageBridge({
+    selectedBpmnElement,
+    draftNodes: draft?.nodes,
+    sessionId: sid,
+    bpmnApiRef: bpmnRef,
+  });
+  const selectedBpmnElementIds = templatesBridge.selectedBpmnIds;
   const templatesStore = useTemplatesStore({
     userId: toText(user?.id),
     orgId: workspaceActiveOrgId,
     canCreateOrgTemplate: !!workspaceActiveOrgId && !!canInviteWorkspaceUsers,
     hasSession,
     tab,
-    getSelectedBpmnElementIds,
-    applySelectionIds: applyTemplateSelectionIds,
-    selectionContext: templateSelectionContext,
+    getSelectedBpmnElementIds: templatesBridge.getSelectedBpmnIds,
+    applySelectionIds: templatesBridge.applyBpmnSelection,
+    selectionContext: templatesBridge.selectionContext,
     setError: setGenErr,
     setInfo: setInfoMsg,
   });

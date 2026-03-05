@@ -1,4 +1,4 @@
-import { normalizeTemplateRecord, normalizeTemplateScope } from "../model/templatesTypes";
+import { normalizeTemplateRecord, normalizeTemplateScope } from "../model/types.js";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];

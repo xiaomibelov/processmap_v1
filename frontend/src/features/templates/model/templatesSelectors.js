@@ -1,4 +1,4 @@
-import { normalizeTemplateScope } from "./templatesTypes";
+import { normalizeTemplateScope } from "./types.js";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];

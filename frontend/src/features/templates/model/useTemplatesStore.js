@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { deleteTemplate, listTemplates, saveTemplate } from "../api/templatesApi";
+import { createTemplate, deleteTemplate, listTemplates } from "../api/index.js";
 import { countTemplatesByScope, filterTemplatesByQuery, suggestTemplates, splitTemplatesByScope } from "./templatesSelectors";
 import { buildTemplateFromSelection } from "../services/buildTemplateFromSelection";
 
@@ -126,7 +126,7 @@ export default function useTemplatesStore({
     }
     setBusy(true);
     try {
-      const saved = await saveTemplate({
+      const saved = await createTemplate({
         scope,
         userId,
         orgId,
