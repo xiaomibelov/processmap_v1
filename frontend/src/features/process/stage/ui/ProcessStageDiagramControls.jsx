@@ -1,6 +1,7 @@
 import LayersPopover from "../components/LayersPopover";
 import HybridToolsPalette from "../../hybrid/tools/HybridToolsPalette";
 import TemplatesBottomMenu from "../../../templates/ui/TemplatesBottomMenu";
+import GatewaysPanel from "../../playback/ui/GatewaysPanel";
 
 export default function ProcessStageDiagramControls({ view = {} }) {
   const {
@@ -107,6 +108,10 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     playbackTotal,
     playbackCurrentEvent,
     playbackEventTitle,
+    autoPassUi,
+    autoPassError,
+    autoPassBlockedReason,
+    startAutoPass,
     handlePlaybackPrev,
     handlePlaybackTogglePlay,
     handlePlaybackNext,
@@ -117,10 +122,14 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     setPlaybackManualAtGateway,
     playbackAutoCamera,
     setPlaybackAutoCamera,
+    playbackGateways,
+    playbackGatewayChoices,
     playbackGatewayPending,
+    playbackAwaitingGatewayId,
     formatPlaybackGatewayTitle,
     playbackGatewayOptionLabel,
     markPlaybackOverlayInteraction,
+    setPlaybackGatewayChoice,
     handlePlaybackGatewayDecision,
     diagramLayersPopoverRef,
     showHybridLayer,
@@ -193,6 +202,12 @@ export default function ProcessStageDiagramControls({ view = {} }) {
   } = view;
 
   if (tab !== "diagram") return null;
+  const autoPassState = asObject(autoPassUi);
+  const autoPassStatus = toText(autoPassState?.status).toLowerCase();
+  const autoPassBusy = autoPassStatus === "queued" || autoPassStatus === "running" || autoPassStatus === "starting";
+  const autoPassBlocked = toText(autoPassBlockedReason).length > 0;
+  const autoPassLabel = toText(autoPassState?.label) || "Auto: idle";
+  const autoPassProgress = Number(autoPassState?.progress || 0);
 
   return (
     <>
@@ -746,71 +761,128 @@ export default function ProcessStageDiagramControls({ view = {} }) {
                   })}
                 </select>
               </div>
-              <div className="diagramIssueRows">
-                <div className="diagramIssueRow">
-                  <span>Event</span>
-                  <b data-testid="diagram-action-playback-progress">
-                    {Math.min(playbackIndexClamped + 1, Math.max(playbackTotal, 1))} / {playbackTotal}
-                  </b>
+              <div className="playbackDetailsLayout">
+                <GatewaysPanel
+                  gateways={playbackGateways}
+                  choices={playbackGatewayChoices}
+                  activeGatewayId={playbackAwaitingGatewayId}
+                  onChangeChoice={(gatewayId, flowId) => {
+                    setPlaybackGatewayChoice(gatewayId, flowId);
+                    const pendingGatewayId = toText(playbackGatewayPending?.gatewayId || playbackGatewayPending?.nodeId);
+                    if (pendingGatewayId && pendingGatewayId === toText(gatewayId) && toText(flowId)) {
+                      handlePlaybackGatewayDecision(gatewayId, flowId);
+                    }
+                  }}
+                />
+                <div className="playbackDetailsCol">
+                  <div className="muted mb-1 text-[11px]">Details</div>
+                  <div className="diagramIssueRows">
+                    <div className="diagramIssueRow">
+                      <span>Event</span>
+                      <b data-testid="diagram-action-playback-progress">
+                        {Math.min(playbackIndexClamped + 1, Math.max(playbackTotal, 1))} / {playbackTotal}
+                      </b>
+                    </div>
+                    <div className="diagramIssueRow">
+                      <span className="truncate" title={playbackEventTitle(playbackCurrentEvent)}>
+                        {playbackEventTitle(playbackCurrentEvent)}
+                      </span>
+                      <span className="muted small" data-testid="diagram-action-playback-event-type">
+                        {toText(playbackCurrentEvent?.type) || "—"}
+                      </span>
+                    </div>
+                    {toText(playbackCurrentEvent?.flowId) ? (
+                      <div className="diagramIssueRow">
+                        <span>flow</span>
+                        <span className="diagramIssueChip">{toText(playbackCurrentEvent?.flowId)}</span>
+                      </div>
+                    ) : null}
+                    {toText(playbackCurrentEvent?.nodeId || playbackCurrentEvent?.gatewayId) ? (
+                      <div className="diagramIssueRow">
+                        <span>node</span>
+                        <span className="diagramIssueChip">
+                          {toText(playbackCurrentEvent?.nodeId || playbackCurrentEvent?.gatewayId)}
+                        </span>
+                      </div>
+                    ) : null}
+                    {toText(playbackCurrentEvent?.reason) ? (
+                      <div className="diagramIssueRow">
+                        <span>reason</span>
+                        <span className="diagramIssueChip">{toText(playbackCurrentEvent?.reason)}</span>
+                      </div>
+                    ) : null}
+                    {toText(playbackCurrentEvent?.type) === "stop" ? (
+                      <>
+                        <div className="diagramIssueRow">
+                          <span>steps</span>
+                          <span className="diagramIssueChip">
+                            {Number(asObject(playbackCurrentEvent?.metrics)?.stepsTotal || 0)}
+                          </span>
+                        </div>
+                        <div className="diagramIssueRow">
+                          <span>variations</span>
+                          <span className="diagramIssueChip">
+                            {Number(asObject(playbackCurrentEvent?.metrics)?.variationPoints || 0)}
+                          </span>
+                        </div>
+                        <div className="diagramIssueRow">
+                          <span>decisions</span>
+                          <span className="diagramIssueChip">
+                            m:{Number(asObject(playbackCurrentEvent?.metrics)?.manualDecisionsApplied || 0)}
+                            {" / "}
+                            a:{Number(asObject(playbackCurrentEvent?.metrics)?.autoDecisionsApplied || 0)}
+                          </span>
+                        </div>
+                        <div className="diagramIssueRow">
+                          <span>flows</span>
+                          <span className="diagramIssueChip">
+                            {Number(asObject(playbackCurrentEvent?.metrics)?.flowTransitions || 0)}
+                          </span>
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                  {asObject(playbackGatewayPending)?.type === "wait_for_gateway_decision" ? (
+                    <div className="diagramIssueListWrap mt-2">
+                      <div className="muted mb-1 text-[11px]">
+                        Gateway: {formatPlaybackGatewayTitle(playbackGatewayPending)}
+                      </div>
+                      <div className="diagramActionPopoverActions">
+                        {asArray(playbackGatewayPending?.outgoingOptions).map((optionRaw, index) => {
+                          const option = asObject(optionRaw);
+                          const flowId = toText(option?.flowId);
+                          const label = playbackGatewayOptionLabel(option, index);
+                          const targetHint = toText(option?.targetName || option?.targetId);
+                          return (
+                            <button
+                              key={`playback_gateway_option_${flowId}`}
+                              type="button"
+                              className="secondaryBtn h-7 px-2 text-[11px]"
+                              title={targetHint ? `→ ${targetHint}` : ""}
+                              onMouseDown={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                markPlaybackOverlayInteraction({
+                                  stage: "manual_gateway_button_mousedown",
+                                  gatewayId: toText(playbackGatewayPending?.gatewayId),
+                                  flowId,
+                                });
+                              }}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                setPlaybackGatewayChoice(playbackGatewayPending?.gatewayId, flowId);
+                                handlePlaybackGatewayDecision(playbackGatewayPending?.gatewayId, flowId);
+                              }}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
-                <div className="diagramIssueRow">
-                  <span className="truncate" title={playbackEventTitle(playbackCurrentEvent)}>
-                    {playbackEventTitle(playbackCurrentEvent)}
-                  </span>
-                  <span className="muted small" data-testid="diagram-action-playback-event-type">
-                    {toText(playbackCurrentEvent?.type) || "—"}
-                  </span>
-                </div>
-                {toText(playbackCurrentEvent?.flowId) ? (
-                  <div className="diagramIssueRow">
-                    <span>flow</span>
-                    <span className="diagramIssueChip">{toText(playbackCurrentEvent?.flowId)}</span>
-                  </div>
-                ) : null}
-                {toText(playbackCurrentEvent?.nodeId || playbackCurrentEvent?.gatewayId) ? (
-                  <div className="diagramIssueRow">
-                    <span>node</span>
-                    <span className="diagramIssueChip">
-                      {toText(playbackCurrentEvent?.nodeId || playbackCurrentEvent?.gatewayId)}
-                    </span>
-                  </div>
-                ) : null}
-                {toText(playbackCurrentEvent?.reason) ? (
-                  <div className="diagramIssueRow">
-                    <span>reason</span>
-                    <span className="diagramIssueChip">{toText(playbackCurrentEvent?.reason)}</span>
-                  </div>
-                ) : null}
-                {toText(playbackCurrentEvent?.type) === "stop" ? (
-                  <>
-                    <div className="diagramIssueRow">
-                      <span>steps</span>
-                      <span className="diagramIssueChip">
-                        {Number(asObject(playbackCurrentEvent?.metrics)?.stepsTotal || 0)}
-                      </span>
-                    </div>
-                    <div className="diagramIssueRow">
-                      <span>variations</span>
-                      <span className="diagramIssueChip">
-                        {Number(asObject(playbackCurrentEvent?.metrics)?.variationPoints || 0)}
-                      </span>
-                    </div>
-                    <div className="diagramIssueRow">
-                      <span>decisions</span>
-                      <span className="diagramIssueChip">
-                        m:{Number(asObject(playbackCurrentEvent?.metrics)?.manualDecisionsApplied || 0)}
-                        {" / "}
-                        a:{Number(asObject(playbackCurrentEvent?.metrics)?.autoDecisionsApplied || 0)}
-                      </span>
-                    </div>
-                    <div className="diagramIssueRow">
-                      <span>flows</span>
-                      <span className="diagramIssueChip">
-                        {Number(asObject(playbackCurrentEvent?.metrics)?.flowTransitions || 0)}
-                      </span>
-                    </div>
-                  </>
-                ) : null}
               </div>
               <div className="diagramActionPopoverActions">
                 <button
@@ -837,6 +909,16 @@ export default function ProcessStageDiagramControls({ view = {} }) {
                   data-testid="diagram-action-playback-next"
                 >
                   ⏭
+                </button>
+                <button
+                  type="button"
+                  className="secondaryBtn h-7 px-2 text-[11px]"
+                  onClick={startAutoPass}
+                  disabled={!hasSession || autoPassBusy || autoPassBlocked}
+                  data-testid="diagram-action-playback-auto"
+                  title={autoPassBlockedReason || autoPassError || "Запустить автопроход"}
+                >
+                  {autoPassBusy ? "Авто…" : "Авто"}
                 </button>
                 <button
                   type="button"
@@ -879,43 +961,17 @@ export default function ProcessStageDiagramControls({ view = {} }) {
                 />
                 <span>Auto-camera</span>
               </label>
-              {asObject(playbackGatewayPending)?.type === "wait_for_gateway_decision" ? (
-                <div className="diagramIssueListWrap mt-2">
-                  <div className="muted mb-1 text-[11px]">
-                    Gateway: {formatPlaybackGatewayTitle(playbackGatewayPending)}
-                  </div>
-                  <div className="diagramActionPopoverActions">
-                    {asArray(playbackGatewayPending?.outgoingOptions).map((optionRaw, index) => {
-                      const option = asObject(optionRaw);
-                      const flowId = toText(option?.flowId);
-                      const label = playbackGatewayOptionLabel(option, index);
-                      const targetHint = toText(option?.targetName || option?.targetId);
-                      return (
-                        <button
-                          key={`playback_gateway_option_${flowId}`}
-                          type="button"
-                          className="secondaryBtn h-7 px-2 text-[11px]"
-                          title={targetHint ? `→ ${targetHint}` : ""}
-                          onMouseDown={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            markPlaybackOverlayInteraction({
-                              stage: "manual_gateway_button_mousedown",
-                              gatewayId: toText(playbackGatewayPending?.gatewayId),
-                              flowId,
-                            });
-                          }}
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            handlePlaybackGatewayDecision(playbackGatewayPending?.gatewayId, flowId);
-                          }}
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
-                  </div>
+              <div className="diagramIssueRow mt-1" title={autoPassBlockedReason || autoPassError || ""}>
+                <span>Auto</span>
+                <span className="diagramIssueChip" data-testid="diagram-action-playback-auto-status">
+                  {autoPassLabel}
+                  {autoPassBusy || autoPassStatus === "done" ? ` (${Math.max(0, Math.min(100, Math.round(autoPassProgress || (autoPassStatus === "done" ? 100 : 0))))}%)` : ""}
+                </span>
+              </div>
+              {autoPassBlocked ? (
+                <div className="diagramIssueRow mt-1" title={autoPassBlockedReason}>
+                  <span>Auto precheck</span>
+                  <span className="diagramIssueChip">{toText(autoPassBlockedReason)}</span>
                 </div>
               ) : null}
             </>

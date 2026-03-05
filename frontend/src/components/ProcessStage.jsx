@@ -4,8 +4,14 @@ import DocStage from "./process/DocStage";
 import InterviewStage from "./process/InterviewStage";
 import WorkspaceDashboard from "./workspace/WorkspaceDashboard";
 import { useAuth } from "../features/auth/AuthProvider";
-import { apiPatchSession, apiRecompute } from "../lib/api/sessionApi";
-import { apiGetBpmnXml } from "../lib/api/bpmnApi";
+import {
+  apiPatchSession,
+  apiRecompute,
+  apiStartAutoPass,
+  apiGetAutoPassPrecheck,
+  apiGetAutoPassStatus,
+} from "../lib/api/sessionApi";
+import { apiGetBpmnMeta, apiGetBpmnXml } from "../lib/api/bpmnApi";
 import { apiAiQuestions } from "../lib/api/interviewApi";
 import { createAiInputHash, executeAi } from "../features/ai/aiExecutor";
 import {
@@ -106,6 +112,14 @@ import {
 import useTemplatesStore from "../features/templates/model/useTemplatesStore";
 import useTemplatesStageBridge from "../features/templates/services/useTemplatesStageBridge";
 import BpmnFragmentPlacementGhost from "../features/templates/ui/BpmnFragmentPlacementGhost";
+import {
+  normalizeAttentionMarkers,
+  createAttentionMarker,
+  isAttentionMarkerUnread,
+  markAttentionMarkersSeen,
+  countAttentionMarkers,
+  countUnreadAttentionMarkers,
+} from "../features/process/attention/attentionMarkers";
 import {
   AI_QUESTIONS_TIMEOUT_MS,
   COMMAND_HISTORY_LIMIT,
@@ -208,6 +222,10 @@ export default function ProcessStage({
   const drawioFileInputRef = useRef(null);
   const lastDraftXmlHashRef = useRef("");
   const lastAiGenerateIntentKeyRef = useRef("");
+  const attentionPanelWasOpenRef = useRef(false);
+  const autoPassToastJobIdRef = useRef("");
+  const autoPassDocSyncInFlightRef = useRef(false);
+  const autoPassDocSyncLastAttemptMsRef = useRef(0);
 
   const [genBusy, setGenBusy] = useState(false);
   const [genErr, setGenErr] = useState("");
@@ -250,6 +268,23 @@ export default function ProcessStage({
     ai: false,
     notes: false,
   });
+  const [attentionMarkerMessage, setAttentionMarkerMessage] = useState("");
+  const [attentionMarkerSaving, setAttentionMarkerSaving] = useState(false);
+  const [attentionSessionLastOpenedAt, setAttentionSessionLastOpenedAt] = useState(0);
+  const [autoPassJobState, setAutoPassJobState] = useState({
+    jobId: "",
+    status: "idle",
+    progress: 0,
+    startedAtMs: 0,
+    error: "",
+  });
+  const [autoPassPrecheck, setAutoPassPrecheck] = useState({
+    loading: false,
+    canRun: true,
+    reason: "",
+    code: "",
+  });
+  const autoPassPrecheckReqSeqRef = useRef(0);
   const [diagramActionPathOpen, setDiagramActionPathOpen] = useState(false);
   const [diagramActionHybridToolsOpen, setDiagramActionHybridToolsOpen] = useState(false);
   const [diagramActionPlanOpen, setDiagramActionPlanOpen] = useState(false);
@@ -363,6 +398,17 @@ export default function ProcessStage({
       ai: false,
       notes: false,
     });
+    setAttentionMarkerMessage("");
+    setAttentionMarkerSaving(false);
+    setAttentionSessionLastOpenedAt(0);
+    setAutoPassJobState({
+      jobId: "",
+      status: "idle",
+      progress: 0,
+      startedAtMs: 0,
+      error: "",
+    });
+    autoPassToastJobIdRef.current = "";
     setDiagramActionPathOpen(false);
     setDiagramActionHybridToolsOpen(false);
     setDiagramActionPlanOpen(false);
@@ -568,6 +614,482 @@ export default function ProcessStage({
       laneName: selectedElementLaneName,
     };
   }, [selectedElementId, selectedElementName, selectedElementType, selectedElementLaneName]);
+  const sessionMetaPersist = useSessionMetaPersist({
+    sid,
+    isLocal,
+    draftBpmnMeta: draft?.bpmn_meta,
+    onSessionSync,
+    setGenErr,
+    shortErr,
+    hybridLayerPersistedMapRef,
+    hybridV2PersistedDocRef,
+    drawioPersistedMetaRef,
+    normalizeHybridLayerMap,
+    serializeHybridLayerMap,
+    normalizeHybridV2Doc,
+    docToComparableJson,
+    normalizeDrawioMeta,
+    serializeDrawioMeta,
+  });
+  const persistBpmnMeta = sessionMetaPersist.persistBpmnMeta;
+  const applyAutoPassResultToDraft = useCallback((resultRaw, source = "auto_pass_result_sync") => {
+    const result = asObject(resultRaw);
+    if (!Object.keys(result).length || !sid) return false;
+    const currentMeta = asObject(draft?.bpmn_meta);
+    const nextMeta = {
+      ...currentMeta,
+      auto_pass_v1: result,
+    };
+    onSessionSync?.({
+      id: sid,
+      session_id: sid,
+      bpmn_meta: nextMeta,
+      _sync_source: source,
+    });
+    return true;
+  }, [draft?.bpmn_meta, onSessionSync, sid]);
+  const syncAutoPassResultFromServer = useCallback(async (source = "auto_pass_result_server_sync") => {
+    if (!sid) return false;
+    const metaResult = await apiGetBpmnMeta(sid);
+    if (!metaResult?.ok) return false;
+    const serverMeta = asObject(metaResult?.meta);
+    return applyAutoPassResultToDraft(asObject(serverMeta?.auto_pass_v1), source);
+  }, [applyAutoPassResultToDraft, sid]);
+  const hydrateAutoPassResult = useCallback(async (jobIdRaw, source = "auto_pass_hydrate") => {
+    const jobId = toText(jobIdRaw);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (jobId) {
+        const statusResult = await apiGetAutoPassStatus(sid, jobId);
+        if (statusResult?.ok) {
+          const statusApplied = applyAutoPassResultToDraft(
+            statusResult?.result,
+            `${source}_status_attempt_${attempt + 1}`,
+          );
+          if (statusApplied) return true;
+        }
+      }
+      const metaApplied = await syncAutoPassResultFromServer(`${source}_meta_attempt_${attempt + 1}`);
+      if (metaApplied) return true;
+      if (attempt < 2) {
+        await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)));
+      }
+    }
+    return false;
+  }, [applyAutoPassResultToDraft, sid, syncAutoPassResultFromServer]);
+  useEffect(() => {
+    const currentSid = toText(sid);
+    if (!currentSid) {
+      setAutoPassPrecheck({ loading: false, canRun: false, reason: "Session is not selected.", code: "NO_SESSION" });
+      return;
+    }
+    const reqSeq = Number(autoPassPrecheckReqSeqRef.current || 0) + 1;
+    autoPassPrecheckReqSeqRef.current = reqSeq;
+    setAutoPassPrecheck((prev) => ({ ...prev, loading: true }));
+    (async () => {
+      const result = await apiGetAutoPassPrecheck(currentSid);
+      if (autoPassPrecheckReqSeqRef.current !== reqSeq) return;
+      if (result?.ok) {
+        const canRun = result.can_run === true;
+        setAutoPassPrecheck({
+          loading: false,
+          canRun,
+          reason: canRun ? "" : (toText(result.message) || "No complete path to EndEvent in main process."),
+          code: toText(result.code),
+        });
+        return;
+      }
+      const status = Number(result?.status || 0);
+      if (status === 404) {
+        // Backward compatibility: if precheck endpoint is not present, do not block Auto.
+        setAutoPassPrecheck({ loading: false, canRun: true, reason: "", code: "" });
+        return;
+      }
+      setAutoPassPrecheck({
+        loading: false,
+        canRun: false,
+        reason: shortErr(result?.error || "No complete path to EndEvent in main process."),
+        code: "",
+      });
+    })();
+  }, [sid, shortErr]);
+  useEffect(() => {
+    if (tab !== "doc" || !sid) return;
+    const current = asObject(asObject(draft?.bpmn_meta)?.auto_pass_v1);
+    if (Object.keys(current).length > 0) return;
+    if (autoPassDocSyncInFlightRef.current) return;
+    const now = Date.now();
+    if (now - Number(autoPassDocSyncLastAttemptMsRef.current || 0) < 3000) return;
+    autoPassDocSyncInFlightRef.current = true;
+    autoPassDocSyncLastAttemptMsRef.current = now;
+    (async () => {
+      try {
+        await syncAutoPassResultFromServer("doc_tab_autopass_sync");
+      } finally {
+        autoPassDocSyncInFlightRef.current = false;
+      }
+    })();
+  }, [draft?.bpmn_meta, sid, syncAutoPassResultFromServer, tab]);
+  const startAutoPass = useCallback(async () => {
+    if (!sid) return;
+    if (!autoPassPrecheck.canRun) {
+      const reason = toText(autoPassPrecheck.reason) || "No complete path to EndEvent in main process.";
+      setAutoPassJobState((prev) => ({
+        ...prev,
+        status: "failed",
+        progress: 100,
+        error: reason,
+      }));
+      setGenErr(reason);
+      return;
+    }
+    const currentStatus = toText(autoPassJobState?.status).toLowerCase();
+    if (currentStatus === "queued" || currentStatus === "running") return;
+    setAutoPassJobState((prev) => ({
+      ...prev,
+      status: "starting",
+      error: "",
+      progress: 0,
+      startedAtMs: Date.now(),
+    }));
+    const started = await apiStartAutoPass(sid, {
+      mode: "all",
+      max_variants: 500,
+      max_visits_per_node: 2,
+      max_steps: 2000,
+    });
+    if (!started?.ok) {
+      setAutoPassJobState({
+        jobId: "",
+        status: "failed",
+        progress: 100,
+        startedAtMs: Date.now(),
+        error: shortErr(started?.error || "Не удалось запустить автопроход."),
+      });
+      setGenErr(shortErr(started?.error || "Не удалось запустить автопроход."));
+      return;
+    }
+    const jobId = toText(started?.job_id);
+    const nextStatus = toText(started?.job_status || started?.status || "queued").toLowerCase() || "queued";
+    setGenErr("");
+    setAutoPassJobState({
+      jobId,
+      status: nextStatus,
+      progress: Number(started?.progress || (nextStatus === "completed" ? 100 : 0)),
+      startedAtMs: Date.now(),
+      error: "",
+    });
+    if (nextStatus === "completed") {
+      const applied = applyAutoPassResultToDraft(started?.result, "auto_pass_completed_sync");
+      if (!applied) {
+        const hydrated = await hydrateAutoPassResult(jobId, "auto_pass_completed_sync_hydrate");
+        if (!hydrated) {
+          setGenErr("Автопроход завершён, но результат пока не синхронизирован. Повторите через несколько секунд.");
+        }
+      }
+      if (autoPassToastJobIdRef.current !== jobId) {
+        autoPassToastJobIdRef.current = jobId;
+        setInfoMsg("Автопроход готов.");
+      }
+    }
+  }, [
+    applyAutoPassResultToDraft,
+    autoPassJobState?.status,
+    autoPassPrecheck.canRun,
+    autoPassPrecheck.reason,
+    hydrateAutoPassResult,
+    setInfoMsg,
+    setGenErr,
+    sid,
+  ]);
+  useEffect(() => {
+    const jobId = toText(autoPassJobState?.jobId);
+    const status = toText(autoPassJobState?.status).toLowerCase();
+    if (!sid || !jobId) return undefined;
+    if (status !== "queued" && status !== "running" && status !== "starting") return undefined;
+    const elapsedMs = Math.max(0, Date.now() - Number(autoPassJobState?.startedAtMs || Date.now()));
+    const delayMs = elapsedMs >= 30000 ? 4500 : 1500;
+    const timer = window.setTimeout(async () => {
+      const polled = await apiGetAutoPassStatus(sid, jobId);
+      if (!polled?.ok) {
+        const errMsg = shortErr(polled?.error || "Не удалось получить статус автопрохода.");
+        setAutoPassJobState((prev) => ({
+          ...prev,
+          status: "failed",
+          progress: Math.max(Number(prev?.progress || 0), 0),
+          error: errMsg,
+        }));
+        setGenErr(errMsg);
+        return;
+      }
+      const nextStatus = toText(polled?.job_status || polled?.status || "").toLowerCase();
+      const nextProgress = Number(polled?.progress || 0);
+      if (nextStatus === "completed" || nextStatus === "done") {
+        const applied = applyAutoPassResultToDraft(polled?.result, "auto_pass_completed_poll");
+        if (!applied) {
+          const hydrated = await hydrateAutoPassResult(jobId, "auto_pass_completed_poll_hydrate");
+          if (!hydrated) {
+            setGenErr("Автопроход завершён, но результат пока не синхронизирован. Повторите через несколько секунд.");
+          }
+        }
+        setAutoPassJobState((prev) => ({
+          ...prev,
+          status: "completed",
+          progress: Number.isFinite(nextProgress) ? Math.max(0, Math.min(100, nextProgress || 100)) : 100,
+          error: "",
+        }));
+        if (autoPassToastJobIdRef.current !== jobId) {
+          autoPassToastJobIdRef.current = jobId;
+          setInfoMsg("Автопроход готов.");
+        }
+        setGenErr("");
+        return;
+      }
+      if (nextStatus === "failed" || nextStatus === "error") {
+        const errMsg = shortErr(polled?.error || "Автопроход завершился с ошибкой.");
+        setAutoPassJobState((prev) => ({
+          ...prev,
+          status: "failed",
+          progress: 100,
+          error: errMsg,
+        }));
+        setGenErr(errMsg);
+        return;
+      }
+      setAutoPassJobState((prev) => ({
+        ...prev,
+        status: nextStatus || prev.status || "running",
+        progress: Number.isFinite(nextProgress) ? Math.max(0, Math.min(99, nextProgress)) : prev.progress,
+        error: "",
+      }));
+    }, delayMs);
+    return () => window.clearTimeout(timer);
+  }, [
+    applyAutoPassResultToDraft,
+    autoPassJobState?.jobId,
+    autoPassJobState?.startedAtMs,
+    autoPassJobState?.status,
+    hydrateAutoPassResult,
+    setGenErr,
+    setInfoMsg,
+    sid,
+  ]);
+  const autoPassUi = useMemo(() => {
+    const status = toText(autoPassJobState?.status).toLowerCase();
+    if (!status || status === "idle") return { status: "idle", label: "Auto: idle", progress: 0 };
+    if (status === "starting") return { status, label: "Auto: queued", progress: 0 };
+    if (status === "queued") return { status, label: "Auto: queued", progress: Number(autoPassJobState?.progress || 0) };
+    if (status === "running") return { status, label: "Auto: running", progress: Number(autoPassJobState?.progress || 0) };
+    if (status === "completed" || status === "done") return { status: "done", label: "Auto: done", progress: 100 };
+    if (status === "failed" || status === "error") return { status: "fail", label: "Auto: fail", progress: 100 };
+    return { status, label: `Auto: ${status}`, progress: Number(autoPassJobState?.progress || 0) };
+  }, [autoPassJobState?.progress, autoPassJobState?.status]);
+  const attentionViewerId = useMemo(
+    () => toText(user?.id || user?.user_id || user?.email || "anon"),
+    [user?.email, user?.id, user?.user_id],
+  );
+  const attentionStorageKey = useMemo(
+    () => `pm:attention_last_opened:v1:${attentionViewerId}:${sid || "-"}`,
+    [attentionViewerId, sid],
+  );
+  const attentionMarkers = useMemo(
+    () => normalizeAttentionMarkers(asObject(draft?.bpmn_meta).attention_markers),
+    [draft?.bpmn_meta],
+  );
+  const attentionShowOnWorkspace = useMemo(
+    () => asObject(draft?.bpmn_meta).attention_show_on_workspace !== false,
+    [draft?.bpmn_meta],
+  );
+  useEffect(() => {
+    if (!sid) return;
+    if (typeof window === "undefined") return;
+    const now = Math.floor(Date.now() / 1000);
+    try {
+      const raw = Number(window.localStorage?.getItem(attentionStorageKey) || 0);
+      const prev = Number.isFinite(raw) ? Math.round(raw) : 0;
+      if (prev > 0) {
+        setAttentionSessionLastOpenedAt(prev);
+      } else {
+        setAttentionSessionLastOpenedAt(now);
+      }
+      window.localStorage?.setItem(attentionStorageKey, String(now));
+    } catch {
+      setAttentionSessionLastOpenedAt(now);
+    }
+  }, [attentionStorageKey, sid]);
+  const attentionMarkersWithState = useMemo(
+    () => attentionMarkers.map((marker) => {
+      const unread = isAttentionMarkerUnread(marker, attentionViewerId, attentionSessionLastOpenedAt);
+      return {
+        ...marker,
+        unread,
+      };
+    }),
+    [attentionMarkers, attentionSessionLastOpenedAt, attentionViewerId],
+  );
+  const attentionMarkerUnreadCount = useMemo(
+    () => countUnreadAttentionMarkers(attentionMarkers, attentionViewerId, attentionSessionLastOpenedAt),
+    [attentionMarkers, attentionSessionLastOpenedAt, attentionViewerId],
+  );
+  const attentionMarkerHomeCount = useMemo(
+    () => countAttentionMarkers(attentionMarkers, { showOnWorkspace: attentionShowOnWorkspace }),
+    [attentionMarkers, attentionShowOnWorkspace],
+  );
+  const customAttentionHints = useMemo(
+    () => attentionMarkersWithState
+      .filter((marker) => !marker.is_checked && marker.node_id)
+      .map((marker) => ({
+        id: marker.id,
+        nodeId: marker.node_id,
+        title: marker.message,
+        reasons: [marker.message],
+        markerClass: marker.unread ? "fpcAttentionMarkerUnread" : "fpcAttentionMarkerSeen",
+        severity: marker.unread ? "high" : "medium",
+        hideTag: true,
+      })),
+    [attentionMarkersWithState],
+  );
+  const persistAttentionMeta = useCallback(async ({
+    markersRaw,
+    showOnWorkspaceRaw,
+    source = "attention_marker_update",
+  }) => {
+    const markersNext = normalizeAttentionMarkers(markersRaw);
+    const showOnWorkspace = showOnWorkspaceRaw !== false;
+    const currentMeta = asObject(draft?.bpmn_meta);
+    const nextMeta = {
+      ...currentMeta,
+      attention_markers: markersNext,
+      attention_show_on_workspace: showOnWorkspace,
+    };
+    setAttentionMarkerSaving(true);
+    try {
+      const saved = await persistBpmnMeta(nextMeta, {
+        source,
+        maxAttempts: 3,
+        retryBackoffMs: [280, 720],
+      });
+      if (!saved?.ok) {
+        const status = Number(saved?.status || 0);
+        if (status === 409 || status === 423) {
+          setInfoMsg("Session is being updated. Retry in a moment.");
+        }
+      }
+      return saved;
+    } finally {
+      setAttentionMarkerSaving(false);
+    }
+  }, [draft?.bpmn_meta, persistBpmnMeta]);
+  const addAttentionMarker = useCallback(async () => {
+    const message = toText(attentionMarkerMessage);
+    if (!message) return;
+    const marker = createAttentionMarker({
+      message,
+      nodeId: selectedElementId,
+      createdBy: attentionViewerId,
+      createdAt: Math.floor(Date.now() / 1000),
+    });
+    const next = [marker, ...attentionMarkers];
+    setAttentionMarkerMessage("");
+    const saved = await persistAttentionMeta({
+      markersRaw: next,
+      showOnWorkspaceRaw: attentionShowOnWorkspace,
+      source: "attention_marker_add",
+    });
+    if (saved?.ok) {
+      setInfoMsg("Маркер внимания добавлен.");
+      setGenErr("");
+    }
+  }, [
+    attentionMarkerMessage,
+    selectedElementId,
+    attentionViewerId,
+    attentionMarkers,
+    persistAttentionMeta,
+    attentionShowOnWorkspace,
+  ]);
+  const toggleAttentionMarkerChecked = useCallback(async (markerIdRaw, checkedRaw) => {
+    const markerId = toText(markerIdRaw);
+    if (!markerId) return;
+    const checked = !!checkedRaw;
+    const nextMarkers = attentionMarkers.map((marker) => (
+      marker.id === markerId ? { ...marker, is_checked: checked } : marker
+    ));
+    const saved = await persistAttentionMeta({
+      markersRaw: nextMarkers,
+      showOnWorkspaceRaw: attentionShowOnWorkspace,
+      source: "attention_marker_check_toggle",
+    });
+    if (saved?.ok) {
+      setInfoMsg(checked ? "Маркер отмечен как проверенный." : "Маркер снова требует внимания.");
+      setGenErr("");
+    }
+  }, [attentionMarkers, attentionShowOnWorkspace, persistAttentionMeta]);
+  const markAttentionMarkersSeenByIds = useCallback(async (markerIdsRaw = null, source = "attention_marker_seen") => {
+    const markerIds = markerIdsRaw ? asArray(markerIdsRaw).map((id) => toText(id)).filter(Boolean) : null;
+    const nextMarkers = markAttentionMarkersSeen(
+      attentionMarkers,
+      attentionViewerId,
+      markerIds,
+      Math.floor(Date.now() / 1000),
+    );
+    const hasChanges = JSON.stringify(nextMarkers) !== JSON.stringify(attentionMarkers);
+    if (!hasChanges) return { ok: true, skipped: true };
+    return persistAttentionMeta({
+      markersRaw: nextMarkers,
+      showOnWorkspaceRaw: attentionShowOnWorkspace,
+      source,
+    });
+  }, [attentionMarkers, attentionShowOnWorkspace, attentionViewerId, persistAttentionMeta]);
+  const toggleAttentionShowOnWorkspace = useCallback(async (enabledRaw) => {
+    const enabled = !!enabledRaw;
+    const saved = await persistAttentionMeta({
+      markersRaw: attentionMarkers,
+      showOnWorkspaceRaw: enabled,
+      source: "attention_show_on_workspace_toggle",
+    });
+    if (saved?.ok) {
+      setInfoMsg(enabled ? "Маркеры внимания теперь отображаются на главной." : "Маркеры внимания скрыты на главной.");
+      setGenErr("");
+    }
+  }, [attentionMarkers, persistAttentionMeta]);
+  const focusAttentionMarker = useCallback(async (markerRaw) => {
+    const marker = asObject(markerRaw);
+    const markerId = toText(marker.id);
+    if (!markerId) return;
+    await markAttentionMarkersSeenByIds([markerId], "attention_marker_focus");
+    const nodeId = toNodeId(marker.node_id);
+    if (!nodeId) return;
+    if (tab !== "diagram") setTab("diagram");
+    requestDiagramFocus(nodeId, {
+      markerClass: "fpcAttentionJumpFocus",
+      durationMs: 6200,
+      targetZoom: 0.92,
+      clearExistingSelection: true,
+    });
+    window.setTimeout(() => {
+      bpmnRef.current?.flashNode?.(nodeId, "accent", { label: "Показано" });
+    }, 120);
+    onOpenElementNotes?.({
+      id: nodeId,
+      name: toText(marker.message || nodeId) || nodeId,
+      type: "",
+      laneName: "",
+    }, "header_open_notes");
+  }, [markAttentionMarkersSeenByIds, onOpenElementNotes, requestDiagramFocus, setTab, tab, toNodeId, toText]);
+  useEffect(() => {
+    if (!attentionOpen) {
+      attentionPanelWasOpenRef.current = false;
+      return;
+    }
+    const justOpened = !attentionPanelWasOpenRef.current;
+    attentionPanelWasOpenRef.current = true;
+    if (!justOpened) return;
+    const unreadIds = attentionMarkersWithState
+      .filter((marker) => marker.unread)
+      .map((marker) => marker.id);
+    if (!unreadIds.length) return;
+    void markAttentionMarkersSeenByIds(unreadIds, "attention_marker_panel_open");
+  }, [attentionOpen, attentionMarkersWithState, markAttentionMarkersSeenByIds]);
   const nodePathMetaMap = useMemo(
     () => normalizeNodePathMetaMap(asObject(asObject(draft?.bpmn_meta).node_path_meta)),
     [draft?.bpmn_meta],
@@ -731,23 +1253,6 @@ export default function ProcessStage({
     matrixToDiagram,
     matrixToScreen,
     toText,
-  });
-  const sessionMetaPersist = useSessionMetaPersist({
-    sid,
-    isLocal,
-    draftBpmnMeta: draft?.bpmn_meta,
-    onSessionSync,
-    setGenErr,
-    shortErr,
-    hybridLayerPersistedMapRef,
-    hybridV2PersistedDocRef,
-    drawioPersistedMetaRef,
-    normalizeHybridLayerMap,
-    serializeHybridLayerMap,
-    normalizeHybridV2Doc,
-    docToComparableJson,
-    normalizeDrawioMeta,
-    serializeDrawioMeta,
   });
   const hybridPersist = useHybridPersistController({
     persistHybridLayerMap: sessionMetaPersist.persistHybridLayerMap,
@@ -935,7 +1440,10 @@ export default function ProcessStage({
   const {
     playbackOverlayClickGuardRef,
     playbackIsPlaying,
+    playbackGateways,
+    playbackGatewayChoices,
     playbackGatewayPending,
+    playbackAwaitingGatewayId,
     playbackGraphError,
     playbackTotal,
     playbackCanRun,
@@ -943,6 +1451,7 @@ export default function ProcessStage({
     playbackCurrentEvent,
     playbackHighlightedBpmnIds,
     markPlaybackOverlayInteraction,
+    setPlaybackGatewayChoice,
     handlePlaybackGatewayDecision,
     handlePlaybackPrev,
     handlePlaybackNext,
@@ -1572,6 +2081,7 @@ export default function ProcessStage({
     const base = isQualityMode ? qualityHints : (isCoverageMode ? coverageHints : []);
     return dedupeDiagramHints([
       ...asArray(base),
+      ...asArray(customAttentionHints),
       ...asArray(pathHighlightHints),
       ...asArray(qualityOverlayHints),
       ...asArray(reportPathStopHints),
@@ -1582,6 +2092,7 @@ export default function ProcessStage({
     isCoverageMode,
     qualityHints,
     coverageHints,
+    customAttentionHints,
     pathHighlightHints,
     qualityOverlayHints,
     reportPathStopHints,
@@ -3277,24 +3788,45 @@ export default function ProcessStage({
       hasSession,
       attentionOpen,
       attentionItemsRaw,
+      attentionItemsCount: Number(attentionItemsRaw.length || 0) + Number(attentionMarkerHomeCount || 0),
       closeAttentionPanel: stageActions.closeAttentionPanel,
       attentionFilters,
       toggleAttentionFilter,
       attentionItems,
       focusAttentionItem,
+      attentionMarkers: attentionMarkersWithState,
+      attentionMarkerMessage,
+      setAttentionMarkerMessage,
+      attentionMarkerSaving,
+      addAttentionMarker,
+      toggleAttentionMarkerChecked,
+      focusAttentionMarker,
+      attentionShowOnWorkspace,
+      toggleAttentionShowOnWorkspace,
+      attentionMarkerUnreadCount,
       asArray,
     }),
     [
+      addAttentionMarker,
       asArray,
       attentionFilters,
       attentionItems,
       attentionItemsRaw,
+      attentionMarkerHomeCount,
+      attentionMarkerMessage,
+      attentionMarkerSaving,
+      attentionMarkerUnreadCount,
+      attentionMarkersWithState,
       attentionOpen,
+      attentionShowOnWorkspace,
       focusAttentionItem,
+      focusAttentionMarker,
       hasSession,
       stageActions.closeAttentionPanel,
       tab,
+      toggleAttentionMarkerChecked,
       toggleAttentionFilter,
+      toggleAttentionShowOnWorkspace,
     ],
   );
   const dialogsView = useMemo(
@@ -3466,6 +3998,7 @@ export default function ProcessStage({
       <ProcessStageHeader
         view={{
           ...shellVm.shellProps,
+          sessionId: sid,
           saveDirtyHint,
           handleSaveCurrentTab,
           workbench,
@@ -3479,6 +4012,7 @@ export default function ProcessStage({
           attentionOpen,
           toggleAttentionPanel: stageActions.toggleAttentionPanel,
           attentionItemsRaw,
+          attentionItemsCount: shellVm.panelsProps.attention?.attentionItemsCount,
           doGenerate,
           toolbarMenuButtonRef,
           toggleToolbarMenu: stageActions.toggleToolbarMenu,
@@ -3628,6 +4162,12 @@ export default function ProcessStage({
                     playbackTotal,
                     playbackCurrentEvent,
                     playbackEventTitle,
+                    autoPassUi,
+                    autoPassError: toText(autoPassJobState?.error),
+                    autoPassBlockedReason: autoPassPrecheck.loading
+                      ? "Checking complete path to EndEvent..."
+                      : (autoPassPrecheck.canRun ? "" : (toText(autoPassPrecheck.reason) || "No complete path to EndEvent in main process.")),
+                    startAutoPass,
                     handlePlaybackPrev,
                     handlePlaybackTogglePlay,
                     handlePlaybackNext,
@@ -3638,10 +4178,14 @@ export default function ProcessStage({
                     setPlaybackManualAtGateway,
                     playbackAutoCamera,
                     setPlaybackAutoCamera,
+                    playbackGateways,
+                    playbackGatewayChoices,
                     playbackGatewayPending,
+                    playbackAwaitingGatewayId,
                     formatPlaybackGatewayTitle,
                     playbackGatewayOptionLabel,
                     markPlaybackOverlayInteraction,
+                    setPlaybackGatewayChoice,
                     handlePlaybackGatewayDecision,
                     diagramLayersPopoverRef,
                     showHybridLayer,

@@ -5,9 +5,49 @@ import {
   normalizePlaybackScenarioSpec,
 } from "../../playback/playbackEngine";
 import { asArray, asObject } from "../../lib/processStageDomain";
+import { extractGateways } from "../../playback/utils/extractGateways";
 
 function toText(value) {
   return String(value || "").trim();
+}
+
+const PLAYBACK_GATEWAY_CHOICES_KEY = "pm:playback_gateway_choices:v1";
+
+function readGatewayChoices(sessionIdRaw) {
+  if (typeof window === "undefined") return {};
+  const sessionId = toText(sessionIdRaw);
+  if (!sessionId) return {};
+  try {
+    const raw = window.localStorage?.getItem(PLAYBACK_GATEWAY_CHOICES_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    const bySession = asObject(parsed?.bySession);
+    return asObject(bySession[sessionId]);
+  } catch {
+    return {};
+  }
+}
+
+function writeGatewayChoices(sessionIdRaw, choicesRaw) {
+  if (typeof window === "undefined") return;
+  const sessionId = toText(sessionIdRaw);
+  if (!sessionId) return;
+  try {
+    const raw = window.localStorage?.getItem(PLAYBACK_GATEWAY_CHOICES_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    const bySession = asObject(parsed?.bySession);
+    window.localStorage?.setItem(
+      PLAYBACK_GATEWAY_CHOICES_KEY,
+      JSON.stringify({
+        ...asObject(parsed),
+        bySession: {
+          ...bySession,
+          [sessionId]: asObject(choicesRaw),
+        },
+      }),
+    );
+  } catch {
+    // no-op
+  }
 }
 
 function normalizePathTier(raw) {
@@ -179,6 +219,8 @@ export default function usePlaybackController({
   const [playbackIsPlaying, setPlaybackIsPlaying] = useState(false);
   const [playbackFrames, setPlaybackFrames] = useState([]);
   const [playbackGatewayPending, setPlaybackGatewayPending] = useState(null);
+  const [playbackGateways, setPlaybackGateways] = useState([]);
+  const [playbackGatewayChoices, setPlaybackGatewayChoices] = useState(() => readGatewayChoices(sid));
   const [playbackGraphError, setPlaybackGraphError] = useState("");
   const [playbackIndex, setPlaybackIndex] = useState(0);
 
@@ -267,6 +309,30 @@ export default function usePlaybackController({
     () => buildPlaybackHighlightTargets(playbackCurrentEvent),
     [playbackCurrentEvent],
   );
+  const playbackAwaitingGatewayId = toText(
+    playbackGatewayPending?.gatewayId
+      || playbackGatewayPending?.nodeId,
+  );
+
+  const setPlaybackGatewayChoice = useCallback((gatewayIdRaw, flowIdRaw) => {
+    const gatewayId = toText(gatewayIdRaw);
+    const flowId = toText(flowIdRaw);
+    if (!gatewayId) return;
+    setPlaybackGatewayChoices((prevRaw) => {
+      const prev = asObject(prevRaw);
+      if (!flowId) {
+        if (!(gatewayId in prev)) return prev;
+        const next = { ...prev };
+        delete next[gatewayId];
+        return next;
+      }
+      if (toText(prev[gatewayId]) === flowId) return prev;
+      return {
+        ...prev,
+        [gatewayId]: flowId,
+      };
+    });
+  }, []);
 
   const markPlaybackOverlayInteraction = useCallback((meta = {}) => {
     playbackOverlayClickGuardRef.current = true;
@@ -362,9 +428,28 @@ export default function usePlaybackController({
     if (!graphRes?.ok) {
       const msg = toText(graphRes?.reason || "playback_graph_unavailable");
       setPlaybackGraphError(msg || "Не удалось построить playback graph.");
+      setPlaybackGateways([]);
       playbackEngineRef.current = null;
       return null;
     }
+    const gateways = extractGateways(graphRes);
+    setPlaybackGateways(gateways);
+    setPlaybackGatewayChoices((prevRaw) => {
+      const prev = asObject(prevRaw);
+      const next = {};
+      gateways.forEach((gatewayRaw) => {
+        const gateway = asObject(gatewayRaw);
+        const gatewayId = toText(gateway?.gateway_id);
+        const selectedFlowId = toText(prev[gatewayId]);
+        if (!gatewayId || !selectedFlowId) return;
+        const hasMatch = asArray(gateway?.outgoing).some((optionRaw) => {
+          const option = asObject(optionRaw);
+          return toText(option?.flow_id) === selectedFlowId;
+        });
+        if (hasMatch) next[gatewayId] = selectedFlowId;
+      });
+      return next;
+    });
     const scenario = playbackScenarioSpec;
     const routeDecisionByNodeId = toText(playbackScenarioKey) === "active"
       ? playbackRouteDecisionByNodeId
@@ -505,6 +590,7 @@ export default function usePlaybackController({
       });
       return;
     }
+    setPlaybackGatewayChoice(gatewayId, flowId);
     setPlaybackGatewayPending(null);
     const shouldResume = playbackResumeAfterDecisionRef.current === true;
     playbackResumeAfterDecisionRef.current = false;
@@ -523,7 +609,13 @@ export default function usePlaybackController({
     if (shouldResume) {
       setPlaybackIsPlaying(true);
     }
-  }, [applyPlaybackFrame, ensurePlaybackFrameAt, markPlaybackOverlayInteraction, playbackAutoCamera]);
+  }, [
+    applyPlaybackFrame,
+    ensurePlaybackFrameAt,
+    markPlaybackOverlayInteraction,
+    playbackAutoCamera,
+    setPlaybackGatewayChoice,
+  ]);
 
   useEffect(() => {
     playbackGatewayDecisionRef.current = handlePlaybackGatewayDecision;
@@ -622,6 +714,34 @@ export default function usePlaybackController({
   }, []);
 
   useEffect(() => {
+    if (!sid) {
+      setPlaybackGatewayChoices({});
+      return;
+    }
+    setPlaybackGatewayChoices(readGatewayChoices(sid));
+  }, [sid]);
+
+  useEffect(() => {
+    if (!sid) return;
+    writeGatewayChoices(sid, playbackGatewayChoices);
+  }, [sid, playbackGatewayChoices]);
+
+  useEffect(() => {
+    if (!playbackAwaitingGatewayId) return;
+    const selectedFlowId = toText(playbackGatewayChoices[playbackAwaitingGatewayId]);
+    if (!selectedFlowId) return;
+    const options = asArray(playbackGatewayPending?.outgoingOptions);
+    const canApply = options.some((optionRaw) => toText(asObject(optionRaw)?.flowId) === selectedFlowId);
+    if (!canApply) return;
+    handlePlaybackGatewayDecision(playbackAwaitingGatewayId, selectedFlowId);
+  }, [
+    handlePlaybackGatewayDecision,
+    playbackAwaitingGatewayId,
+    playbackGatewayChoices,
+    playbackGatewayPending,
+  ]);
+
+  useEffect(() => {
     playbackFramesRef.current = asArray(playbackFrames);
   }, [playbackFrames]);
 
@@ -648,6 +768,7 @@ export default function usePlaybackController({
     setPlaybackIsPlaying(false);
     setPlaybackFrames([]);
     setPlaybackGatewayPending(null);
+    setPlaybackGateways([]);
     setPlaybackGraphError("");
     setPlaybackIndex(0);
     playbackFramesRef.current = [];
@@ -731,7 +852,12 @@ export default function usePlaybackController({
           if (snapshot?.waitingDecision) {
             const waiting = asObject(playbackGatewayPending || asArray(playbackFramesRef.current).slice(-1)[0]);
             const gatewayId = toText(waiting?.gatewayId || waiting?.nodeId);
-            const flowId = toText(asObject(asArray(waiting?.outgoingOptions)[0]).flowId);
+            const optionRows = asArray(waiting?.outgoingOptions);
+            const selectedFlowId = toText(playbackGatewayChoices[gatewayId]);
+            const selectedExists = optionRows.some((optionRaw) => toText(asObject(optionRaw)?.flowId) === selectedFlowId);
+            const flowId = selectedExists
+              ? selectedFlowId
+              : toText(asObject(optionRows[0]).flowId);
             if (!playbackManualAtGateway && gatewayId && flowId) {
               playbackResumeAfterDecisionRef.current = true;
               handlePlaybackGatewayDecision(gatewayId, flowId);
@@ -752,6 +878,7 @@ export default function usePlaybackController({
     playbackCanRun,
     playbackFrames,
     playbackGatewayPending,
+    playbackGatewayChoices,
     playbackIntervalMs,
     playbackIsPlaying,
     playbackManualAtGateway,
@@ -793,7 +920,10 @@ export default function usePlaybackController({
     playbackIsPlaying,
     setPlaybackIsPlaying,
     playbackFrames,
+    playbackGateways,
+    playbackGatewayChoices,
     playbackGatewayPending,
+    playbackAwaitingGatewayId,
     playbackGraphError,
     playbackIndex,
     setPlaybackIndex,
@@ -803,6 +933,7 @@ export default function usePlaybackController({
     playbackCurrentEvent,
     playbackHighlightedBpmnIds,
     markPlaybackOverlayInteraction,
+    setPlaybackGatewayChoice,
     handlePlaybackGatewayDecision,
     handlePlaybackPrev,
     handlePlaybackNext,

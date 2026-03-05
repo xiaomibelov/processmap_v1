@@ -288,9 +288,24 @@
   }
 
   .diagramActionPopover--playback {
-    width: min(420px, calc(100% - 24px));
+    width: min(760px, calc(100% - 24px));
     max-height: min(72vh, 660px);
     overflow: auto;
+  }
+
+  .playbackDetailsLayout {
+    @apply mt-2 grid items-start gap-2;
+    grid-template-columns: minmax(210px, 1fr) minmax(280px, 1.3fr);
+  }
+
+  .playbackDetailsCol {
+    @apply min-w-0;
+  }
+
+  @media (max-width: 980px) {
+    .playbackDetailsLayout {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 
   .diagramActionPopover--robotmeta {
