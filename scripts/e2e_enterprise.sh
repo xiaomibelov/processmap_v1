@@ -121,7 +121,41 @@ DEFAULT_SPECS=(
   e2e/reports-delete-enterprise.spec.mjs
 )
 
-if [ "$#" -gt 0 ]; then
+CRITICAL_SMOKE_SPECS=(
+  e2e/accept-invite-enterprise.spec.mjs
+  e2e/org-switcher.spec.mjs
+  e2e/org-settings-invites-audit.spec.mjs
+  e2e/reports-delete-enterprise.spec.mjs
+)
+
+if [ "$#" -gt 0 ] && [ "$1" = "--critical-smoke" ]; then
+  echo "== critical smoke: enterprise baseline =="
+  npx playwright test "${CRITICAL_SMOKE_SPECS[@]}"
+
+  echo
+  echo "== critical smoke: hybrid delete/reload =="
+  E2E_HYBRID_LAYER=1 E2E_HYBRID_GHOST_CHECK=0 npx playwright test e2e/hybrid-layer-delete-reload.spec.mjs
+
+  echo
+  echo "== critical smoke: hybrid basic edit/delete/reload =="
+  E2E_HYBRID_LAYER=1 E2E_HYBRID_GHOST_CHECK=0 npx playwright test e2e/hybrid-basic-edit-delete-reload.spec.mjs
+
+  echo
+  echo "== critical smoke: templates add/apply =="
+  E2E_TEMPLATES=1 npx playwright test e2e/templates-basic-add-apply.spec.mjs
+
+  echo
+  echo "== critical smoke: templates stencil placement =="
+  E2E_TEMPLATES=1 E2E_HYBRID_LAYER=1 npx playwright test e2e/templates-hybrid-stencil-placement.spec.mjs
+
+  echo
+  echo "== critical smoke: drawio (optional env-gated) =="
+  if [ "${E2E_DRAWIO_SMOKE:-0}" = "1" ]; then
+    E2E_HYBRID_LAYER=1 E2E_DRAWIO=1 npx playwright test e2e/hybrid-layer-drawio-codec.spec.mjs
+  else
+    echo "skip: set E2E_DRAWIO_SMOKE=1 to include e2e/hybrid-layer-drawio-codec.spec.mjs"
+  fi
+elif [ "$#" -gt 0 ]; then
   npx playwright test "$@"
 else
   npx playwright test "${DEFAULT_SPECS[@]}"
