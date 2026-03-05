@@ -8,7 +8,6 @@ import {
   formatTemplateNoteText,
   getNoteTemplatePreset,
   normalizeAiQuestionsByElementMap,
-  summarizeNoteTextForTldr,
 } from "../features/notes/knowledgeTools";
 import { parseBatchOpsFromNotes } from "../features/process/bpmn/ops/parseBatchOpsFromNotes";
 import {
@@ -36,7 +35,7 @@ import RobotMetaSection from "./sidebar/RobotMetaSection";
 import AiSection from "./sidebar/AiSection";
 import NotesSection from "./sidebar/NotesSection";
 import { buildNodePathUpdatesFromFlowMeta } from "./sidebar/nodePathImport";
-import { buildTldrFromSession } from "../features/tldr/selectors/buildTldrFromSession";
+import { useTldr } from "../features/tldr/hooks/useTldr";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -771,9 +770,6 @@ export default function NotesPanel({
   const [batchErr, setBatchErr] = useState("");
   const [batchResult, setBatchResult] = useState("");
   const [templateErr, setTemplateErr] = useState("");
-  const [tldrBusy, setTldrBusy] = useState(false);
-  const [tldrErr, setTldrErr] = useState("");
-  const [tldrStatus, setTldrStatus] = useState("");
   const [coverageOpen, setCoverageOpen] = useState(false);
   const [startRoleBusy, setStartRoleBusy] = useState(false);
   const [startRoleErr, setStartRoleErr] = useState("");
@@ -840,11 +836,7 @@ export default function NotesPanel({
     () => elementNotesForId(notesByElement, selectedElementId),
     [notesByElement, selectedElementId],
   );
-  const selectedTldr = useMemo(
-    () => buildTldrFromSession(draft, selectedElementId, { elementDraftText: elementText }),
-    [draft, elementText, selectedElementId],
-  );
-  const selectedElementSummary = selectedTldr.summary;
+  const sessionTldr = useTldr(draft);
   const aiQuestionsByElement = useMemo(
     () => normalizeAiQuestionsByElementMap(draft?.interview?.ai_questions_by_element || draft?.interview?.aiQuestionsByElementId),
     [draft?.interview?.ai_questions_by_element, draft?.interview?.aiQuestionsByElementId],
@@ -1667,55 +1659,9 @@ export default function NotesPanel({
         setTemplateErr(String(rr.error || "Не удалось вставить шаблон."));
         return;
       }
-      if (typeof onSetElementNoteSummary === "function") {
-        await Promise.resolve(
-          onSetElementNoteSummary(selectedElementId, selectedElementSummary, {
-            templateKey: selectedTemplate?.key,
-          }),
-        );
-      }
-      setTldrStatus(`Шаблон «${selectedTemplate?.title || "Template"}» добавлен.`);
+      setBatchResult(`Шаблон «${selectedTemplate?.title || "Template"}» добавлен.`);
     } catch (error) {
       setTemplateErr(String(error?.message || error || "Не удалось вставить шаблон."));
-    }
-  }
-
-  async function generateTldrSummary() {
-    if (!selectedElementId) return;
-    if (disabled || tldrBusy) return;
-    if (typeof onSetElementNoteSummary !== "function") {
-      setTldrErr("Сохранение summary недоступно в текущем режиме.");
-      return;
-    }
-
-    const sourceText = str(selectedTldr.sourceText);
-    if (!sourceText) {
-      setTldrErr("Добавьте заметку узла перед генерацией TL;DR.");
-      return;
-    }
-
-    setTldrBusy(true);
-    setTldrErr("");
-    setTldrStatus("AI работает...");
-    try {
-      const summary = summarizeNoteTextForTldr(sourceText, { maxItems: 4, maxChars: 420 });
-      if (!summary) {
-        setTldrErr("Не удалось собрать краткое резюме.");
-        return;
-      }
-      const r = onSetElementNoteSummary(selectedElementId, summary, {
-        templateKey: selectedTemplate?.key,
-      });
-      const rr = r && typeof r.then === "function" ? await r : r;
-      if (rr && rr.ok === false) {
-        setTldrErr(String(rr.error || "Не удалось сохранить TL;DR."));
-        return;
-      }
-      setTldrStatus("TL;DR сохранён.");
-    } catch (error) {
-      setTldrErr(String(error?.message || error || "Не удалось подготовить TL;DR."));
-    } finally {
-      setTldrBusy(false);
     }
   }
 
@@ -1821,7 +1767,7 @@ export default function NotesPanel({
     {
       id: "advanced",
       title: "Advanced",
-      count: Number(roles.length || 0) + (selectedElementSummary ? 1 : 0),
+      count: Number(roles.length || 0) + (!sessionTldr?.empty ? 1 : 0),
       active: !!sectionsOpen.advanced || String(activeSectionId || "") === "advanced",
       muted: false,
     },
@@ -2036,15 +1982,12 @@ export default function NotesPanel({
                         onToggle={undefined}
                         selectedElementId={isElementMode ? selectedElementId : ""}
                         selectedTemplate={selectedTemplate}
-                        selectedElementSummary={isElementMode ? selectedElementSummary : ""}
+                        tldr={sessionTldr}
                         disabled={!isElementMode || disabled}
                         elementBusy={isElementMode ? elementBusy : false}
-                        tldrBusy={isElementMode ? tldrBusy : false}
                         onInsertTemplate={insertTemplateNote}
-                        onGenerateTldr={generateTldrSummary}
+                        onRefreshTldr={undefined}
                         templateErr={isElementMode ? templateErr : ""}
-                        tldrErr={isElementMode ? tldrErr : ""}
-                        tldrStatus={isElementMode ? tldrStatus : ""}
                       />
                     </div>
                   </details>

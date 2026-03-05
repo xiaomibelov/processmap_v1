@@ -7,30 +7,34 @@ export default function TemplatesAndTldrSection({
   contentOnly = false,
   selectedElementId,
   selectedTemplate,
-  selectedElementSummary,
+  tldr,
   disabled,
   elementBusy,
-  tldrBusy,
   onInsertTemplate,
-  onGenerateTldr,
+  onRefreshTldr,
+  tldrRefreshing = false,
   templateErr,
-  tldrErr,
-  tldrStatus,
 }) {
   const hasSelected = !!selectedElementId;
+  const hasTldr = !tldr?.empty && !!String(tldr?.summary || "").trim();
   const summary = hasSelected
-    ? `Шаблон: ${selectedTemplate?.title || "—"} · TL;DR: ${selectedElementSummary ? "готово" : "нет"}`
-    : "Выберите узел для шаблона";
+    ? `Шаблон: ${selectedTemplate?.title || "—"} · TL;DR: ${hasTldr ? "готово" : "нет"}`
+    : `TL;DR: ${hasTldr ? "готово" : "нет данных"}`;
 
   const content = (
     <>
+      <TldrCard
+        tldr={tldr}
+        refreshing={tldrRefreshing}
+        onRefresh={onRefreshTldr}
+      />
       {!hasSelected ? (
-        <div className="rounded-md border border-dashed border-border px-2 py-2 text-xs text-muted">
-          Выберите узел на диаграмме, чтобы вставлять шаблоны и готовить TL;DR.
+        <div className="mt-2 rounded-md border border-dashed border-border px-2 py-2 text-xs text-muted">
+          Выберите узел на диаграмме, чтобы вставлять шаблоны.
         </div>
       ) : (
         <>
-          <div className="mt-1">
+          <div className="mt-2">
             <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Шаблоны</div>
             <div className="mt-1 rounded-md border border-border bg-panel2 px-2 py-2 text-xs text-muted">
               {selectedTemplate?.title || "Шаблон заметки"} · {selectedTemplate?.bullets?.length || 0} полей
@@ -48,15 +52,6 @@ export default function TemplatesAndTldrSection({
             </button>
             {templateErr ? <div className="mt-2 text-[11px] text-danger">{templateErr}</div> : null}
           </div>
-
-          <TldrCard
-            summary={selectedElementSummary}
-            busy={tldrBusy}
-            error={tldrErr}
-            status={tldrStatus}
-            disabled={disabled}
-            onGenerate={onGenerateTldr}
-          />
         </>
       )}
     </>
@@ -71,7 +66,7 @@ export default function TemplatesAndTldrSection({
       summary={summary}
       open={open}
       onToggle={onToggle}
-      badge={selectedElementSummary ? "DONE" : ""}
+      badge={hasTldr ? "LIVE" : ""}
     >
       {content}
     </SidebarSection>

@@ -92,12 +92,12 @@ async function switchTab(page, title) {
 async function openFixture(page, fixture) {
   await expect(page.locator(".topbar .topSelect--project")).toBeVisible();
   await page.selectOption(".topbar .topSelect--project", fixture.projectId);
-  await page.getByRole("button", { name: "Обновить" }).click();
-  await expect(page.locator(`.topbar .topSelect--session option[value="${fixture.sessionId}"]`)).toHaveCount(1);
+  await expect(page.locator(`.topbar .topSelect--session option[value="${fixture.sessionId}"]`)).toHaveCount(1, { timeout: 15000 });
   await page.selectOption(".topbar .topSelect--session", fixture.sessionId);
+  await expect.poll(async () => page.locator(".topbar .topSelect--session").inputValue()).toBe(fixture.sessionId);
 }
 
-test("notes TL;DR: generates summary and stores it separately from original note", async ({ page, request }) => {
+test("notes TL;DR: renders live summary card with source and updated fields", async ({ page, request }) => {
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const auth = await apiLogin(request, { apiBase: API_BASE });
   const fixture = await createFixture(request, runId, auth.headers);
@@ -141,18 +141,11 @@ test("notes TL;DR: generates summary and stores it separately from original note
   await notePatch;
   await expect(page.locator("#element-notes-section")).toContainText(inputText);
 
-  const summaryPatch = page.waitForResponse((res) => (
-    res.request().method() === "PATCH"
-    && responsePath(res.url()) === `/api/sessions/${sid}`
-    && res.status() === 200
-    && String(res.request().postData() || "").includes("\"summary\"")
-  ));
-  await page.getByTestId("notes-tldr-generate").click();
-  const patchRes = await summaryPatch;
-  const payload = patchRes.request().postDataJSON?.() || {};
-  const entry = payload?.notes_by_element?.Task_1 || payload?.notes_by_element?.[selected.id] || {};
-  const summary = String(entry?.summary || "");
-  expect(summary).toContain("TL;DR");
-  await expect(page.getByTestId("notes-tldr-summary")).toContainText("TL;DR");
+  const tldrAccordion = page.locator("[data-testid='sidebar-advanced-templates']").first();
+  await expect(tldrAccordion).toBeVisible();
+  await tldrAccordion.locator("summary").first().click();
+  await expect(page.getByTestId("tldr-card")).toBeVisible();
+  await expect(page.getByTestId("tldr-source")).toContainText("Source:");
+  await expect(page.getByTestId("tldr-updated")).toContainText("Last updated:");
   await expect(page.locator("#element-notes-section")).toContainText(inputText);
 });
