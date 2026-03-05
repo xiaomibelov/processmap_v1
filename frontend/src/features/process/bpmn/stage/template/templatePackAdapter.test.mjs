@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createTemplatePackAdapter } from "./templatePackAdapter.js";
+import { createTemplatePackAdapter, resolveGraphicalInsertParent } from "./templatePackAdapter.js";
 
 function createShape(id, x, y, name = "") {
   return {
@@ -258,4 +258,39 @@ test("insertTemplatePackOnModeler supports point-based insert without selected a
   assert.equal(createShapeCalls.length, 2);
   assert.equal(connectCalls.length, 1);
   assert.equal(result?.anchorByPoint, true);
+});
+
+test("resolveGraphicalInsertParent maps lane to participant/root", () => {
+  const root = {
+    id: "Process_1",
+    type: "bpmn:Process",
+    businessObject: {
+      $type: "bpmn:Process",
+      flowElements: [],
+    },
+  };
+  const participant = {
+    id: "Participant_1",
+    type: "bpmn:Participant",
+    parent: root,
+    businessObject: {
+      $type: "bpmn:Participant",
+      processRef: { flowElements: [] },
+    },
+  };
+  const lane = {
+    id: "Lane_1",
+    type: "bpmn:Lane",
+    parent: participant,
+    businessObject: {
+      $type: "bpmn:Lane",
+      flowNodeRef: [],
+    },
+  };
+
+  const fromLane = resolveGraphicalInsertParent(lane, root);
+  assert.equal(fromLane, participant);
+
+  const fromParticipant = resolveGraphicalInsertParent(participant, root);
+  assert.equal(fromParticipant, participant);
 });

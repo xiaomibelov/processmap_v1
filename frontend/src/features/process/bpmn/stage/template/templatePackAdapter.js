@@ -30,6 +30,35 @@ function isLaneContainerType(typeRaw) {
   return type.includes("lane") || type.includes("participant") || type.includes("process");
 }
 
+function isLaneType(typeRaw) {
+  return String(typeRaw || "").trim().toLowerCase().includes("lane");
+}
+
+function isParticipantType(typeRaw) {
+  return String(typeRaw || "").trim().toLowerCase().includes("participant");
+}
+
+function isProcessType(typeRaw) {
+  const type = String(typeRaw || "").trim().toLowerCase();
+  return type.includes("process") || type.includes("subprocess");
+}
+
+function hasSemanticFlowElements(el) {
+  const bo = asObject(el?.businessObject);
+  if (Array.isArray(bo.flowElements)) return true;
+  if (bo.processRef && Array.isArray(bo.processRef.flowElements)) return true;
+  return false;
+}
+
+function isSafeFlowParent(el) {
+  const type = String(el?.businessObject?.$type || el?.type || "").trim();
+  if (!type) return false;
+  if (isLaneType(type)) return false;
+  if (isParticipantType(type)) return true;
+  if (isProcessType(type) && hasSemanticFlowElements(el)) return true;
+  return false;
+}
+
 function readShapeBounds(el) {
   if (!el) return null;
   const x = Number(el?.x);
@@ -129,6 +158,23 @@ function findShapeAtPoint(elements, point, predicate = () => true) {
       return aArea - bArea;
     });
   return candidates[0]?.el || null;
+}
+
+export function resolveGraphicalInsertParent(hitElement, canvasRoot = null) {
+  const visited = new Set();
+  let cursor = hitElement || null;
+  while (cursor && !visited.has(cursor)) {
+    visited.add(cursor);
+    if (isSafeFlowParent(cursor)) return cursor;
+    const type = String(cursor?.businessObject?.$type || cursor?.type || "").trim();
+    if (isLaneType(type)) {
+      cursor = cursor?.parent || null;
+      continue;
+    }
+    cursor = cursor?.parent || null;
+  }
+  if (isSafeFlowParent(canvasRoot)) return canvasRoot;
+  return canvasRoot || null;
 }
 
 export function createTemplatePackAdapter(deps = {}) {
@@ -279,7 +325,7 @@ export function createTemplatePackAdapter(deps = {}) {
       },
     );
     const anchor = anchorById || selectedNodes[0] || anchorByPoint || null;
-    const parentById = toText(anchorPayload?.parentId) ? registry?.get?.(toText(anchorPayload.parentId)) : null;
+    const parentByIdRaw = toText(anchorPayload?.parentId) ? registry?.get?.(toText(anchorPayload.parentId)) : null;
     const parentByPoint = findShapeAtPoint(
       allElements,
       anchorPoint,
@@ -288,8 +334,20 @@ export function createTemplatePackAdapter(deps = {}) {
         return isLaneContainerType(type);
       },
     );
-    const anchorParent = parentById || parentByPoint || anchor?.parent || canvas?.getRootElement?.() || null;
-    if (!anchorParent) return { ok: false, error: "anchor_parent_missing" };
+    const canvasRoot = canvas?.getRootElement?.() || null;
+    const parentById = resolveGraphicalInsertParent(parentByIdRaw, canvasRoot);
+    const pointParent = resolveGraphicalInsertParent(parentByPoint, canvasRoot);
+    const anchorParent = resolveGraphicalInsertParent(anchor?.parent || null, canvasRoot);
+    const defaultParent = resolveGraphicalInsertParent(canvasRoot, canvasRoot);
+    const insertParent = parentById || pointParent || anchorParent || defaultParent || canvasRoot || null;
+    const laneParentResolved = !!(parentByPoint && pointParent && parentByPoint !== pointParent);
+    const parentFallbackUsed = !insertParent || insertParent === canvasRoot;
+    if (!insertParent) return { ok: false, error: "anchor_parent_missing" };
+    const safeLaneParentByName = new Map();
+    laneMap.forEach((laneEl, key) => {
+      safeLaneParentByName.set(key, resolveGraphicalInsertParent(laneEl, insertParent) || insertParent);
+    });
+    const safeAnchorParent = resolveGraphicalInsertParent(anchor?.parent || null, insertParent) || insertParent;
 
     const modeRaw = String(payload?.mode || "after").trim();
     const mode = modeRaw === "between" && anchor ? "between" : "after";
@@ -310,7 +368,9 @@ export function createTemplatePackAdapter(deps = {}) {
       const type = String(node?.type || "bpmn:Task").trim() || "bpmn:Task";
       if (!isTemplateNodeType(type)) continue;
       const laneHint = String(node?.laneHint || "").trim().toLowerCase();
-      const parent = laneHint && laneMap.get(laneHint) ? laneMap.get(laneHint) : anchorParent;
+      const parent = laneHint && safeLaneParentByName.get(laneHint)
+        ? safeLaneParentByName.get(laneHint)
+        : safeAnchorParent;
       const relX = Number(node?.di?.x || 0) - minX;
       const relY = Number(node?.di?.y || 0) - minY;
       const shape = modeling.createShape(
@@ -379,6 +439,8 @@ export function createTemplatePackAdapter(deps = {}) {
       packId: String(pack?.packId || "-"),
       anchorId: String(anchor?.id || "-"),
       anchorByPoint: anchor ? 0 : 1,
+      laneParentResolved: laneParentResolved ? 1 : 0,
+      parentFallbackUsed: parentFallbackUsed ? 1 : 0,
       createdNodes: createdNodes.length,
       createdEdges: createdEdges.length,
       rewiredNext: nextTarget ? 1 : 0,
@@ -400,6 +462,8 @@ export function createTemplatePackAdapter(deps = {}) {
       exitNodeId: String(exitShape?.id || ""),
       anchorId: String(anchor?.id || ""),
       anchorByPoint: !anchor,
+      laneParentResolved,
+      parentFallbackUsed,
     };
   }
 

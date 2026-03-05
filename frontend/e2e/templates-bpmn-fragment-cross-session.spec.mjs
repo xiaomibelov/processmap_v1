@@ -117,10 +117,36 @@ async function createAndSelectFragment(page, marker) {
 async function clickDiagramForPlacement(page) {
   const host = page.locator(".bpmnStageHost").first();
   await expect(host).toBeVisible();
+  const lanePoint = await page.evaluate(() => {
+    try {
+      const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
+      if (!modeler) return null;
+      const hostEl = document.querySelector(".bpmnStageHost");
+      const rect = hostEl?.getBoundingClientRect?.();
+      if (!rect) return null;
+      const canvas = modeler.get("canvas");
+      const registry = modeler.get("elementRegistry");
+      const viewbox = canvas?.viewbox?.() || {};
+      const scale = Number(viewbox.scale || 1) || 1;
+      const lane = (registry?.getAll?.() || []).find((el) => {
+        const type = String(el?.businessObject?.$type || el?.type || "").toLowerCase();
+        return type.includes("lane");
+      });
+      if (!lane) return null;
+      const laneX = Number(lane.x || 0) + (Number(lane.width || 0) / 2);
+      const laneY = Number(lane.y || 0) + (Number(lane.height || 0) / 2);
+      return {
+        x: Number(rect.left || 0) + ((laneX - Number(viewbox.x || 0)) * scale),
+        y: Number(rect.top || 0) + ((laneY - Number(viewbox.y || 0)) * scale),
+      };
+    } catch {
+      return null;
+    }
+  });
   const box = await host.boundingBox();
   expect(box).toBeTruthy();
-  const x = Number(box.x || 0) + Math.max(80, Math.round(Number(box.width || 0) * 0.55));
-  const y = Number(box.y || 0) + Math.max(60, Math.round(Number(box.height || 0) * 0.35));
+  const x = Number(lanePoint?.x || 0) || (Number(box.x || 0) + Math.max(80, Math.round(Number(box.width || 0) * 0.55)));
+  const y = Number(lanePoint?.y || 0) || (Number(box.y || 0) + Math.max(60, Math.round(Number(box.height || 0) * 0.35)));
   await page.mouse.move(x, y);
   await page.mouse.click(x, y);
 }
