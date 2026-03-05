@@ -30,7 +30,7 @@ export default function useProcessStageShellController({
       toolbarInlineTone: genErr ? "err" : "",
       canUseElementContextActions: !!selectedElementContext,
       templateSelectionCount: selectedBpmnElementIds.length,
-      canCreateTemplateFromSelection: hasSession && tab === "diagram" && !templatesBusy && selectedBpmnElementIds.length > 0,
+      canCreateTemplateFromSelection: hasSession && tab === "diagram" && selectedBpmnElementIds.length > 0,
       canOpenTemplatesList: hasSession && !templatesBusy,
       hasPathHighlightData: availablePathTiers.length > 0,
     };
@@ -47,7 +47,6 @@ export default function useProcessStageShellController({
     selectedBpmnElementIds.length,
     selectedElementContext,
     tab,
-    templatesBusy,
     workbench.labels.save,
   ]);
 

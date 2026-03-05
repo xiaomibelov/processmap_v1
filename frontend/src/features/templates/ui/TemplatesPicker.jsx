@@ -28,7 +28,7 @@ export default function TemplatesPicker({
         </div>
       )}
     >
-      <div className="space-y-3" data-testid="template-pack-modal">
+      <div className="space-y-3" data-testid="templates-picker">
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"

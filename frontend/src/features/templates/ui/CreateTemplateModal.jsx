@@ -25,14 +25,14 @@ export default function CreateTemplateModal({
             className="primaryBtn"
             onClick={() => void onSave?.()}
             disabled={busy || !String(title || "").trim()}
-            data-testid="template-pack-save-confirm"
+            data-testid="btn-save-template"
           >
             {busy ? "Сохранение..." : "Сохранить шаблон"}
           </button>
         </>
       )}
     >
-      <div className="space-y-3" data-testid="template-pack-save-modal">
+      <div className="space-y-3" data-testid="modal-create-template">
         <label className="fieldLabel">
           <span>Название</span>
           <input
@@ -41,7 +41,7 @@ export default function CreateTemplateModal({
             value={title}
             onChange={(event) => onTitleChange?.(String(event.target.value || ""))}
             placeholder="Название шаблона"
-            data-testid="template-pack-title-input"
+            data-testid="input-template-name"
           />
         </label>
         <div className="rounded-lg border border-border bg-panel2/35 px-3 py-2 text-xs text-muted">

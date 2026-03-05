@@ -138,7 +138,7 @@ export default function useTemplatesStore({
       }
       await reloadTemplates();
       setCreateOpen(false);
-      setInfo?.(`Шаблон сохранён: ${toText(saved?.item?.title || built.template.title)}`);
+      setInfo?.(`Saved: ${toText(saved?.item?.title || built.template.title)}`);
     } finally {
       setBusy(false);
     }
@@ -166,7 +166,13 @@ export default function useTemplatesStore({
       setError?.(toText(result.error || "Не удалось применить шаблон."));
       return;
     }
-    setInfo?.(`Шаблон применён: ${toText(template?.title || "Template")}`);
+    const missingCount = Array.isArray(result?.missing) ? result.missing.length : 0;
+    const appliedCount = Array.isArray(result?.applied) ? result.applied.length : Number(result?.count || 0);
+    if (missingCount > 0) {
+      setError?.(`Applied ${appliedCount}, missing ${missingCount}`);
+      return;
+    }
+    setInfo?.(`Applied: ${toText(template?.title || "Template")}`);
   }, [applySelectionIds, setError, setInfo]);
 
   const removeTemplate = useCallback(async (template) => {

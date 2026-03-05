@@ -13,13 +13,14 @@ export default function TemplateItemRow({
   deleting = false,
 }) {
   const item = template && typeof template === "object" ? template : {};
+  const templateId = toText(item.id) || "unknown";
   const count = Number(item.selection_count || item.bpmn_element_ids?.length || 0);
   const updatedAt = Number(item.updated_at || item.created_at || 0);
   return (
     <div
       className="rounded-lg border border-border/70 bg-panel2/35 px-3 py-2"
-      data-testid="template-pack-item"
-      data-pack-id={toText(item.id)}
+      data-testid={`template-item-${templateId}`}
+      data-pack-id={templateId}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -37,7 +38,7 @@ export default function TemplateItemRow({
             type="button"
             className="secondaryBtn h-7 px-2 text-[11px]"
             onClick={() => void onApply?.(item)}
-            data-testid="template-pack-insert-after"
+            data-testid={`btn-apply-template-${templateId}`}
           >
             Применить
           </button>

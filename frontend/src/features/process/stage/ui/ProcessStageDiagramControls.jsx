@@ -226,7 +226,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
           onClick={openCreateTemplateModal}
           disabled={!canCreateTemplateFromSelection}
           title={canCreateTemplateFromSelection ? "Сохранить выделенные BPMN элементы как шаблон" : "Выделите BPMN элементы на Diagram"}
-          data-testid="template-pack-save-open"
+          data-testid="btn-add-template"
         >
           {`Add template${templateSelectionCount > 0 ? ` (${templateSelectionCount})` : ""}`}
         </button>
@@ -238,7 +238,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
           }}
           disabled={!canOpenTemplatesList}
           title="Открыть список шаблонов"
-          data-testid="template-pack-insert-open"
+          data-testid="btn-templates"
         >
           Templates
         </button>

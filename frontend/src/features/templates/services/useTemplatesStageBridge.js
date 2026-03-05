@@ -20,15 +20,30 @@ export default function useTemplatesStageBridge({
   const selectedElementType = toText(selectedBpmnElement?.type);
   const selectedElementLaneName = toText(selectedBpmnElement?.laneName);
 
+  const runtimeSelectedIds = useMemo(() => {
+    const api = bpmnApiRef?.current;
+    if (!api || typeof api.getSelectedElementIds !== "function") return [];
+    try {
+      return asArray(api.getSelectedElementIds({ view: "editor" }))
+        .map((row) => toText(row))
+        .filter(Boolean);
+    } catch {
+      return [];
+    }
+  }, [bpmnApiRef, selectedBpmnElement?.selectedIds, selectedElementId]);
+
   const selectedBpmnIds = useMemo(() => {
     const ids = new Set(
-      asArray(selectedBpmnElement?.selectedIds)
+      [
+        ...runtimeSelectedIds,
+        ...asArray(selectedBpmnElement?.selectedIds),
+      ]
         .map((row) => toText(row))
         .filter(Boolean),
     );
     if (selectedElementId) ids.add(selectedElementId);
     return Array.from(ids);
-  }, [selectedBpmnElement?.selectedIds, selectedElementId]);
+  }, [runtimeSelectedIds, selectedBpmnElement?.selectedIds, selectedElementId]);
 
   const selectionNodes = useMemo(() => {
     if (!selectedBpmnIds.length) return [];
@@ -67,6 +82,7 @@ export default function useTemplatesStageBridge({
     idsRaw,
     {
       label: "Template",
+      focusFirst: false,
       ...options,
     },
   ), [bpmnApiRef]);

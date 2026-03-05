@@ -74,17 +74,8 @@ async function openWorkspaceSession(page, fixture, accessToken, options = {}) {
   }
   if (!options.skipGoto) await page.goto("/app");
   const projectSelect = page.locator(".topbar .topSelect--project");
-  const ready = await projectSelect.isVisible({ timeout: 3000 }).catch(() => false);
-  if (!ready) {
-    await page.evaluate((token) => {
-      window.localStorage.setItem("fpc_auth_access_token", String(token || ""));
-    }, accessToken);
-    await page.reload({ waitUntil: "domcontentloaded" });
-  }
-
-  await expect(projectSelect).toBeVisible();
+  await expect(projectSelect).toBeVisible({ timeout: 15000 });
   await page.selectOption(".topbar .topSelect--project", fixture.projectId);
-  await page.getByRole("button", { name: "Обновить" }).click();
   await expect(page.locator(`.topbar .topSelect--session option[value="${fixture.sessionId}"]`)).toHaveCount(1);
   await page.selectOption(".topbar .topSelect--session", fixture.sessionId);
   await switchTab(page, "Diagram");
@@ -179,6 +170,11 @@ async function readRegistryCount(page) {
   });
 }
 
+function byTestIds(page, ids) {
+  const selector = ids.map((id) => `[data-testid="${String(id || "").trim()}"]`).join(", ");
+  return page.locator(selector).first();
+}
+
 test("template packs: save selected fragment and insert into another session", async ({ page, request }) => {
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const marker = `TPL_${runId.slice(-4)}`;
@@ -193,20 +189,19 @@ test("template packs: save selected fragment and insert into another session", a
 
   await createTemplateFragmentFromDiagram(page, marker);
 
-  await page.getByTestId("template-pack-save-open").click();
-  await expect(page.getByTestId("template-pack-save-modal")).toBeVisible();
-  await page.getByTestId("template-pack-title-input").fill(`Pack ${marker}`);
-  await page.getByTestId("template-pack-save-confirm").click();
-  await expect(page.getByText(new RegExp(`Шаблон сохранён: Pack ${marker}`))).toBeVisible();
+  await byTestIds(page, ["btn-add-template", "template-pack-save-open"]).click();
+  await expect(byTestIds(page, ["modal-create-template", "template-pack-save-modal"])).toBeVisible();
+  await byTestIds(page, ["input-template-name", "template-pack-title-input"]).fill(`Pack ${marker}`);
+  await byTestIds(page, ["btn-save-template", "template-pack-save-confirm"]).click();
+  await expect(page.getByText(new RegExp(`(Saved|Шаблон сохранён): Pack ${marker}`))).toBeVisible();
 
-  await page.getByTestId("template-pack-insert-open").click();
-  await expect(page.getByTestId("template-pack-modal")).toBeVisible();
-  const firstPackCard = page.getByTestId("template-pack-item").first();
+  await byTestIds(page, ["btn-templates", "template-pack-insert-open"]).click();
+  await expect(byTestIds(page, ["templates-picker", "template-pack-modal"])).toBeVisible();
+  const firstPackCard = page.locator("[data-testid^='template-item-'], [data-testid='template-pack-item']").first();
   await expect(firstPackCard).toContainText(`Pack ${marker}`);
   await page.getByRole("button", { name: "Закрыть" }).click();
 
   await page.selectOption(".topbar .topSelect--project", first.projectId);
-  await page.getByRole("button", { name: "Обновить" }).click();
   await expect(page.locator(`.topbar .topSelect--session option[value="${secondSessionId}"]`)).toHaveCount(1);
   await page.selectOption(".topbar .topSelect--session", secondSessionId);
   await switchTab(page, "Diagram");
@@ -215,8 +210,8 @@ test("template packs: save selected fragment and insert into another session", a
   await selectAnchorForInsert(page);
   const beforeCount = await readRegistryCount(page);
 
-  await page.getByTestId("template-pack-insert-open").click();
-  await expect(page.getByTestId("template-pack-modal")).toBeVisible();
+  await byTestIds(page, ["btn-templates", "template-pack-insert-open"]).click();
+  await expect(byTestIds(page, ["templates-picker", "template-pack-modal"])).toBeVisible();
 
   const putResponse = page.waitForResponse((resp) => {
     return resp.request().method() === "PUT"
@@ -224,7 +219,7 @@ test("template packs: save selected fragment and insert into another session", a
       && resp.status() === 200;
   });
 
-  await page.getByTestId("template-pack-item").first().getByTestId("template-pack-insert-after").click();
+  await page.locator("[data-testid^='btn-apply-template-'], [data-testid='template-pack-insert-after']").first().click();
   await putResponse;
 
   const afterCount = await readRegistryCount(page);
