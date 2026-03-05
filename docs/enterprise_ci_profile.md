@@ -9,10 +9,15 @@ Enterprise profile runs end-to-end checks for org-scoped flows with strict enter
   - `cd frontend && npm run test:e2e:enterprise`
 
 ## What the profile runs
-- `frontend/e2e/accept-invite-enterprise.spec.mjs`
-- `frontend/e2e/org-switcher.spec.mjs`
-- `frontend/e2e/org-settings-invites-audit.spec.mjs`
-- `frontend/e2e/reports-delete-enterprise.spec.mjs`
+- Baseline:
+  - `frontend/e2e/accept-invite-enterprise.spec.mjs`
+  - `frontend/e2e/org-switcher.spec.mjs`
+  - `frontend/e2e/org-settings-invites-audit.spec.mjs`
+  - `frontend/e2e/reports-delete-enterprise.spec.mjs`
+- Hybrid critical smoke (always in `scripts/ci_enterprise_e2e.sh`):
+  - `frontend/e2e/hybrid-basic-edit-delete-reload.spec.mjs` with `E2E_HYBRID_LAYER=1` and `E2E_HYBRID_GHOST_CHECK=0` (stability mode)
+- Draw.io smoke (optional):
+  - `frontend/e2e/hybrid-layer-drawio-codec.spec.mjs` when `E2E_DRAWIO_SMOKE=1`
 
 ## Bootstrap behavior
 `frontend/e2e/helpers/enterpriseBootstrap.mjs` ensures disposable fixture data exists before Playwright starts:
@@ -38,4 +43,5 @@ Enterprise profile runs end-to-end checks for org-scoped flows with strict enter
 
 ## Expected green signal
 - Playwright result: `4 passed, 0 skipped`
-- If `reports-delete-enterprise` fails, inspect bootstrap stderr and `/tmp/fpc_e2e_enterprise_frontend.log`
+- Hybrid smoke result: `1 passed` (`hybrid-basic-edit-delete-reload`)
+- If `reports-delete-enterprise` or hybrid smoke fails, inspect bootstrap stderr and `/tmp/fpc_e2e_enterprise_frontend.log`

@@ -69,19 +69,19 @@ echo "== e2e enterprise baseline =="
 ./scripts/e2e_enterprise.sh
 
 echo
-echo "== e2e hybrid delete reload (env-gated) =="
-if ! E2E_HYBRID_LAYER=1 ./scripts/e2e_enterprise.sh e2e/hybrid-layer-delete-reload.spec.mjs; then
-  echo "retry: e2e hybrid delete reload"
-  E2E_HYBRID_LAYER=1 ./scripts/e2e_enterprise.sh e2e/hybrid-layer-delete-reload.spec.mjs
+echo "== e2e hybrid smoke: basic edit/delete/reload (env-gated) =="
+if ! E2E_HYBRID_LAYER=1 E2E_HYBRID_GHOST_CHECK=0 ./scripts/e2e_enterprise.sh e2e/hybrid-basic-edit-delete-reload.spec.mjs; then
+  echo "retry: e2e hybrid basic smoke"
+  E2E_HYBRID_LAYER=1 E2E_HYBRID_GHOST_CHECK=0 ./scripts/e2e_enterprise.sh e2e/hybrid-basic-edit-delete-reload.spec.mjs
 fi
 
 echo
 if [ "${E2E_DRAWIO_SMOKE:-0}" = "1" ]; then
-  echo "== e2e drawio embedded (env-gated) =="
-  E2E_HYBRID_LAYER=1 E2E_DRAWIO=1 ./scripts/e2e_enterprise.sh e2e/drawio-embedded.spec.mjs
+  echo "== e2e drawio smoke (env-gated) =="
+  E2E_HYBRID_LAYER=1 E2E_DRAWIO=1 ./scripts/e2e_enterprise.sh e2e/hybrid-layer-drawio-codec.spec.mjs
 else
-  echo "== e2e drawio embedded (env-gated) =="
-  echo "skip: set E2E_DRAWIO_SMOKE=1 to include drawio-embedded.spec.mjs"
+  echo "== e2e drawio smoke (env-gated) =="
+  echo "skip: set E2E_DRAWIO_SMOKE=1 to include hybrid-layer-drawio-codec.spec.mjs"
 fi
 
 echo

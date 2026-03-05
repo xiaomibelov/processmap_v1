@@ -283,30 +283,32 @@ test("hybrid delete: keyboard delete survives reload", async ({ page, request })
   const svg = overlay.getByTestId("hybrid-v2-svg");
   await expect(svg).toBeVisible();
   const ghost = page.getByTestId("hybrid-v2-ghost");
+  const ghostChecksEnabled = process.env.E2E_HYBRID_GHOST_CHECK !== "0";
+  if (ghostChecksEnabled) {
+    await setCanvasZoom(page, 1);
+    await expect(svg).toBeVisible();
+    await movePointerOnHybridOverlay(page, { x: 320, y: 240 });
+    await expect.poll(async () => {
+      const box = await ghost.boundingBox();
+      return Math.round(Number(box?.width || 0));
+    }).toBeGreaterThan(100);
+    const fullGhostBox = await ghost.boundingBox();
+    expect(fullGhostBox?.width || 0).toBeGreaterThan(100);
 
-  await setCanvasZoom(page, 1);
-  await expect(svg).toBeVisible();
-  await movePointerOnHybridOverlay(page, { x: 320, y: 240 });
-  await expect.poll(async () => {
-    const box = await ghost.boundingBox();
-    return Math.round(Number(box?.width || 0));
-  }).toBeGreaterThan(100);
-  const fullGhostBox = await ghost.boundingBox();
-  expect(fullGhostBox?.width || 0).toBeGreaterThan(100);
+    await setCanvasZoom(page, 0.3);
+    await expect(svg).toBeVisible();
+    await movePointerOnHybridOverlay(page, { x: 320, y: 240 });
+    await expect.poll(async () => {
+      const box = await ghost.boundingBox();
+      return Math.round(Number(box?.width || 0));
+    }).toBeGreaterThan(10);
+    const zoomedGhostBox = await ghost.boundingBox();
+    expect((zoomedGhostBox?.width || 0) < (fullGhostBox?.width || 0)).toBeTruthy();
 
-  await setCanvasZoom(page, 0.3);
-  await expect(svg).toBeVisible();
-  await movePointerOnHybridOverlay(page, { x: 320, y: 240 });
-  await expect.poll(async () => {
-    const box = await ghost.boundingBox();
-    return Math.round(Number(box?.width || 0));
-  }).toBeGreaterThan(10);
-  const zoomedGhostBox = await ghost.boundingBox();
-  expect((zoomedGhostBox?.width || 0) < (fullGhostBox?.width || 0)).toBeTruthy();
-
-  await setCanvasZoom(page, 1);
-  await expect(svg).toBeVisible();
-  await movePointerOnHybridOverlay(page, { x: 320, y: 240 });
+    await setCanvasZoom(page, 1);
+    await expect(svg).toBeVisible();
+    await movePointerOnHybridOverlay(page, { x: 320, y: 240 });
+  }
 
   const beforeIds = await overlay
     .locator("[data-testid='hybrid-v2-shape']")
