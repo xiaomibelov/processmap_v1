@@ -97,12 +97,6 @@ export const apiRoutes = {
       { steps_hash: String(stepsHash || "").trim() },
     ),
     pathReport: (sessionId, pathId, reportId) => `/api/sessions/${encode(sessionId)}/paths/${encode(pathId)}/reports/${encode(reportId)}`,
-    // Temporary legacy fallback kept for D5 backend alias cleanup.
-    pathReportsLegacy: (sessionId, pathId, stepsHash = "") => withQuery(
-      `/api/sessions/${encode(sessionId)}/path/${encode(pathId)}/reports`,
-      { steps_hash: String(stepsHash || "").trim() },
-    ),
-    pathReportLegacy: (sessionId, pathId, reportId) => `/api/sessions/${encode(sessionId)}/path/${encode(pathId)}/reports/${encode(reportId)}`,
   },
   reports: {
     item: (reportId) => `/api/reports/${encode(reportId)}`,

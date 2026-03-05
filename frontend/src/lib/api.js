@@ -1,4 +1,4 @@
-import { apiFetch, apiFetchWithFallback, isPlainObject, normalizeApiErrorPayload } from "./apiClient.js";
+import { apiFetch, isPlainObject, normalizeApiErrorPayload } from "./apiClient.js";
 import { apiRoutes } from "./apiRoutes.js";
 
 // Single source of truth for API calls (FPC)
@@ -1033,28 +1033,6 @@ function reportPayloadErrorStatus(payloadError, fallbackStatus = 400) {
   return Number(fallbackStatus || 400);
 }
 
-async function pathReportsFallbackFetch({
-  op,
-  primaryPath,
-  fallbackPath,
-  method = "GET",
-  body,
-  signal,
-}) {
-  return apiFetchWithFallback({
-    op,
-    primaryPath,
-    fallbackPath,
-    method,
-    body,
-    signal,
-    authToken: getAccessToken(),
-    orgId: getActiveOrgId(),
-    withOrgHeader: true,
-    fallbackStatuses: [404, 405],
-  });
-}
-
 export async function apiCreatePathReportVersion(sessionId, pathId, payload) {
   const sid = String(sessionId || "").trim();
   const pid = String(pathId || "").trim();
@@ -1071,14 +1049,7 @@ export async function apiCreatePathReportVersion(sessionId, pathId, payload) {
     if (!(status === 0 || status === 404 || status === 405)) return enterprise;
   }
   const endpoint = apiRoutes.sessions.pathReports(sid, pid);
-  const fallbackEndpoint = apiRoutes.sessions.pathReportsLegacy(sid, pid);
-  const r = okOrError(await pathReportsFallbackFetch({
-    op: "apiCreatePathReportVersion",
-    primaryPath: endpoint,
-    fallbackPath: fallbackEndpoint,
-    method: "POST",
-    body,
-  }));
+  const r = okOrError(await request(endpoint, { method: "POST", body }));
   if (!r.ok) {
     if (last && !isRetriablePathReportsStatus(r?.status)) return r;
     return last && !last.ok ? last : r;
@@ -1127,14 +1098,7 @@ export async function apiListPathReportVersions(sessionId, pathId, options = {})
   }
   const stepsHash = String(options?.stepsHash || "").trim();
   const endpoint = apiRoutes.sessions.pathReports(sid, pid, stepsHash);
-  const fallbackEndpoint = apiRoutes.sessions.pathReportsLegacy(sid, pid, stepsHash);
-  const r = okOrError(await pathReportsFallbackFetch({
-    op: "apiListPathReportVersions",
-    primaryPath: endpoint,
-    fallbackPath: fallbackEndpoint,
-    method: "GET",
-    signal: options?.signal,
-  }));
+  const r = okOrError(await request(endpoint, { signal: options?.signal }));
   if (!r.ok) return last && !last.ok ? last : r;
   const payloadError = reportPayloadErrorText(r?.data);
   if (payloadError) {
@@ -1172,11 +1136,7 @@ export async function apiGetReportVersion(reportId, options = {}) {
     if (!(status === 0 || status === 404 || status === 405)) return enterprise;
   }
   if (sid && pid) {
-    const scoped = await okOrError(await pathReportsFallbackFetch({
-      op: "apiGetReportVersion",
-      primaryPath: apiRoutes.sessions.pathReport(sid, pid, rid),
-      fallbackPath: apiRoutes.sessions.pathReportLegacy(sid, pid, rid),
-      method: "GET",
+    const scoped = await okOrError(await request(apiRoutes.sessions.pathReport(sid, pid, rid), {
       signal: options?.signal,
     }));
     if (scoped.ok) {
@@ -1246,10 +1206,7 @@ export async function apiDeleteReportVersion(reportId, options = {}) {
   }
 
   if (sid && pid) {
-    const scoped = okOrError(await pathReportsFallbackFetch({
-      op: "apiDeleteReportVersion",
-      primaryPath: apiRoutes.sessions.pathReport(sid, pid, rid),
-      fallbackPath: apiRoutes.sessions.pathReportLegacy(sid, pid, rid),
+    const scoped = okOrError(await request(apiRoutes.sessions.pathReport(sid, pid, rid), {
       method: "DELETE",
       signal: options?.signal,
     }));
