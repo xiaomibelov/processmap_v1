@@ -5739,6 +5739,134 @@ def _workspace_session_status(
     return "draft"
 
 
+def _as_dict_obj(value: Any) -> Dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list_obj(value: Any) -> List[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _safe_json_dict(raw: Any) -> Dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    try:
+        parsed = json.loads(str(raw or "{}"))
+    except Exception:
+        parsed = {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _workspace_collect_dod_artifacts(
+    *,
+    row: Dict[str, Any],
+    interview: Dict[str, Any],
+    reports_versions: int,
+    attention_count: int,
+) -> Dict[str, Any]:
+    bpmn_meta = _safe_json_dict(row.get("bpmn_meta_json"))
+    notes_by_element = _safe_json_dict(row.get("notes_by_element_json"))
+    notes_raw = str(row.get("notes") or "").strip()
+
+    # Paths/coverage artifacts from interview graph/path spec.
+    path_candidates = [
+        interview.get("report_paths_spec"),
+        interview.get("paths_spec"),
+        interview.get("paths"),
+        interview.get("path_specs"),
+        interview.get("path_tiers"),
+        interview.get("node_path_assignments"),
+        interview.get("happy_path"),
+    ]
+    path_hits = 0
+    for candidate in path_candidates:
+        if isinstance(candidate, dict) and len(candidate) > 0:
+            path_hits += 1
+        elif isinstance(candidate, list) and len(candidate) > 0:
+            path_hits += 1
+        elif isinstance(candidate, str) and candidate.strip():
+            path_hits += 1
+
+    interview_steps = _as_list_obj(interview.get("steps"))
+    interview_timeline = _as_list_obj(interview.get("timeline"))
+    interview_graph_nodes = _as_list_obj(interview.get("graph_nodes"))
+    interview_questions = _as_list_obj(interview.get("questions"))
+    interview_answers = _as_list_obj(interview.get("answers"))
+
+    robot_meta = _as_dict_obj(bpmn_meta.get("robot_meta_by_element_id"))
+    robot_meta_count = len(robot_meta)
+
+    hybrid_doc = _as_dict_obj(bpmn_meta.get("hybrid_v2"))
+    hybrid_elements = _as_list_obj(hybrid_doc.get("elements"))
+    hybrid_edges = _as_list_obj(hybrid_doc.get("edges"))
+    hybrid_count = len(hybrid_elements) + len(hybrid_edges)
+
+    drawio = _as_dict_obj(bpmn_meta.get("drawio"))
+    drawio_enabled = bool(drawio.get("enabled")) or bool(str(drawio.get("doc_xml") or "").strip()) or bool(str(drawio.get("svg_cache") or "").strip())
+
+    notes_items_count = 0
+    notes_summary_count = 0
+    for entry_raw in notes_by_element.values():
+        entry = _as_dict_obj(entry_raw)
+        note_text = str(entry.get("note") or entry.get("text") or "").strip()
+        summary_text = str(entry.get("summary") or entry.get("summary_text") or entry.get("tldr") or "").strip()
+        if note_text:
+            notes_items_count += 1
+        if summary_text:
+            notes_summary_count += 1
+
+    has_interview_data = bool(
+        interview_steps
+        or interview_timeline
+        or interview_graph_nodes
+        or interview_questions
+        or interview_answers
+        or interview
+    )
+    has_bpmn = int(row.get("bpmn_xml_version") or 0) > 0
+    has_paths = path_hits > 0
+    has_interview = has_interview_data
+    has_reports = int(reports_versions or 0) > 0
+    has_robotmeta = robot_meta_count > 0
+    has_hybrid = hybrid_count > 0 or drawio_enabled
+    has_notes_reviewed = notes_summary_count > 0 or notes_items_count > 0 or bool(notes_raw) or (
+        int(attention_count or 0) == 0 and (has_interview or has_reports)
+    )
+
+    dod_snapshot = _as_dict_obj(interview.get("dod_snapshot"))
+    dod_summary = _as_dict_obj(dod_snapshot.get("summary"))
+    dod_snapshot_pct_raw = dod_summary.get("dodPct")
+    try:
+        dod_snapshot_pct = int(dod_snapshot_pct_raw) if dod_snapshot_pct_raw is not None else None
+    except Exception:
+        dod_snapshot_pct = None
+    if isinstance(dod_snapshot_pct, int) and (dod_snapshot_pct < 0 or dod_snapshot_pct > 100):
+        dod_snapshot_pct = None
+
+    return {
+        "bpmn_present": has_bpmn,
+        "paths_mapped": has_paths,
+        "interview_filled": has_interview,
+        "ai_report_created": has_reports,
+        "robotmeta_filled": has_robotmeta,
+        "hybrid_or_drawio_present": has_hybrid,
+        "notes_reviewed": has_notes_reviewed,
+        "bpmn_xml_version": int(row.get("bpmn_xml_version") or 0),
+        "version": int(row.get("version") or 0),
+        "reports_versions": int(reports_versions or 0),
+        "needs_attention": int(attention_count or 0),
+        "path_artifacts_count": int(path_hits),
+        "interview_steps_count": int(len(interview_steps) or len(interview_timeline) or len(interview_graph_nodes)),
+        "robotmeta_count": int(robot_meta_count),
+        "hybrid_items_count": int(hybrid_count),
+        "drawio_enabled": bool(drawio_enabled),
+        "notes_items_count": int(notes_items_count),
+        "notes_summary_count": int(notes_summary_count),
+        "notes_text_present": bool(notes_raw),
+        "dod_snapshot_pct": dod_snapshot_pct,
+    }
+
+
 def _resolved_org_for_cache(org_id: Any) -> str:
     return str(org_id or "").strip() or get_default_org_id()
 
@@ -5959,6 +6087,12 @@ def enterprise_workspace(
             interview = {}
         reports_versions = _workspace_reports_count(interview)
         attention_count = _workspace_needs_attention_count(interview)
+        dod_artifacts = _workspace_collect_dod_artifacts(
+            row=row,
+            interview=interview,
+            reports_versions=reports_versions,
+            attention_count=attention_count,
+        )
         session_status = _workspace_session_status(
             reports_versions=reports_versions,
             version=int(row.get("version") or 0),
@@ -5998,6 +6132,10 @@ def enterprise_workspace(
             "status": session_status,
             "reports_versions": int(reports_versions),
             "needs_attention": int(attention_count),
+            "version": int(row.get("version") or 0),
+            "bpmn_xml_version": int(row.get("bpmn_xml_version") or 0),
+            "dod_artifacts": dod_artifacts,
+            "dod_snapshot_pct": dod_artifacts.get("dod_snapshot_pct"),
             "can_view": True,
             "can_edit": role_l in _ORG_EDITOR_ROLES,
             "can_manage": role_l in _ORG_PROJECT_MEMBER_MANAGE_ROLES,

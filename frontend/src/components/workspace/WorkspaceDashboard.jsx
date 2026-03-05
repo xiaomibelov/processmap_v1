@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { apiGetEnterpriseWorkspace } from "../../lib/api";
 import { buildWorkspaceTree, filterSessionsForSelection } from "../../features/workspace/workspaceDashboardVm";
+import { computeDodPercent, formatDodBreakdownTooltip } from "../../features/workspace/computeDodPercent";
 
 function toText(value) {
   return String(value || "").trim();
@@ -52,29 +53,6 @@ function formatSessionStatus(statusRaw) {
   if (status === "in_progress") return "В работе";
   if (status === "draft") return "Черновик";
   return status || "—";
-}
-
-function readDodPercent(rowRaw) {
-  const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
-  const candidates = [
-    row?.dod_fill_pct,
-    row?.dod_pct,
-    row?.dod_percent,
-    row?.dod_coverage_pct,
-    row?.dodCoveragePct,
-    row?.dod,
-    row?.snapshot?.dod_pct,
-    row?.snapshot?.coverage_pct,
-    row?.dod_snapshot?.summary?.dodPct,
-  ];
-  for (const raw of candidates) {
-    const value = Number(raw);
-    if (!Number.isFinite(value)) continue;
-    if (value < 0) continue;
-    if (value > 100) continue;
-    return Math.round(value);
-  }
-  return null;
 }
 
 function dodBadgeClass(percentRaw) {
@@ -254,6 +232,15 @@ export default function WorkspaceDashboard({
     () => tree.users.find((item) => item.id === selectedOwnerId) || null,
     [selectedOwnerId, tree.users],
   );
+  const dodBySessionId = useMemo(() => {
+    const map = new Map();
+    listRows.forEach((row) => {
+      const id = toText(row?.id);
+      if (!id) return;
+      map.set(id, computeDodPercent(row));
+    });
+    return map;
+  }, [listRows]);
   const sessionStatusSummary = useMemo(() => {
     return listRows.reduce((acc, row) => {
       const key = toText(row.status).toLowerCase() || "draft";
@@ -670,6 +657,10 @@ export default function WorkspaceDashboard({
               <div className="space-y-2 md:hidden">
                 {listRows.map((row) => {
                   const projectTitle = tree.projects.find((proj) => proj.id === row.project_id)?.name || row.project_id || "—";
+                  const dod = dodBySessionId.get(toText(row.id)) || computeDodPercent(row);
+                  const dodPercent = dod?.percent;
+                  const dodLabel = dodPercent == null ? "—" : `${dodPercent}%`;
+                  const dodTooltip = formatDodBreakdownTooltip(dod);
                   return (
                     <div key={row.id} className="rounded-xl border border-border bg-panel px-3 py-3">
                       <div className="flex items-start justify-between gap-3">
@@ -693,10 +684,10 @@ export default function WorkspaceDashboard({
                           Внимание: {Number(row.needs_attention || 0)}
                         </span>
                         <span
-                          className={`rounded-full border px-2 py-1 ${dodBadgeClass(readDodPercent(row))}`}
-                          title={readDodPercent(row) == null ? "No snapshot yet" : `DoD заполненность: ${readDodPercent(row)}%`}
+                          className={`rounded-full border px-2 py-1 ${dodBadgeClass(dodPercent)}`}
+                          title={dodTooltip}
                         >
-                          DoD: {readDodPercent(row) == null ? "—" : `${readDodPercent(row)}%`}
+                          DoD: {dodLabel}
                         </span>
                         <span className="rounded-full border border-border px-2 py-1 text-muted">
                           Обновлено: {formatDateTime(row.updated_at)}
@@ -725,6 +716,10 @@ export default function WorkspaceDashboard({
                   <tbody>
                     {listRows.map((row) => {
                       const projectTitle = tree.projects.find((proj) => proj.id === row.project_id)?.name || row.project_id || "—";
+                      const dod = dodBySessionId.get(toText(row.id)) || computeDodPercent(row);
+                      const dodPercent = dod?.percent;
+                      const dodLabel = dodPercent == null ? "—" : `${dodPercent}%`;
+                      const dodTooltip = formatDodBreakdownTooltip(dod);
                       return (
                         <tr key={row.id} className="bg-panel">
                           <td className="rounded-l-xl px-3 py-2.5 align-top">
@@ -745,11 +740,11 @@ export default function WorkspaceDashboard({
                           <td className="px-3 py-2.5 align-top text-muted">{formatDateTime(row.updated_at)}</td>
                           <td className="px-3 py-2.5 align-top">
                             <span
-                              className={`rounded-full border px-2 py-1 text-[11px] ${dodBadgeClass(readDodPercent(row))}`}
-                              title={readDodPercent(row) == null ? "No snapshot yet" : `DoD заполненность: ${readDodPercent(row)}%`}
+                              className={`rounded-full border px-2 py-1 text-[11px] ${dodBadgeClass(dodPercent)}`}
+                              title={dodTooltip}
                               data-testid="workspace-dod-badge"
                             >
-                              {readDodPercent(row) == null ? "—" : `${readDodPercent(row)}%`}
+                              {dodLabel}
                             </span>
                           </td>
                           <td className="px-3 py-2.5 align-top">

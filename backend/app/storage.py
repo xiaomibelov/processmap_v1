@@ -2537,7 +2537,8 @@ def list_workspace_snapshot_rows(
             f"""
             SELECT
               id, title, project_id, owner_user_id, created_by, updated_by,
-              created_at, updated_at, mode, version, bpmn_xml_version, interview_json, org_id
+              created_at, updated_at, mode, version, bpmn_xml_version, interview_json,
+              bpmn_meta_json, notes, notes_by_element_json, org_id
               FROM sessions
              WHERE {session_where}
              ORDER BY updated_at DESC, id DESC
@@ -2573,6 +2574,9 @@ def list_workspace_snapshot_rows(
             "version": int(row["version"] or 0),
             "bpmn_xml_version": int(row["bpmn_xml_version"] or 0),
             "interview_json": str(row["interview_json"] or "{}"),
+            "bpmn_meta_json": str(row["bpmn_meta_json"] or "{}"),
+            "notes": str(row["notes"] or ""),
+            "notes_by_element_json": str(row["notes_by_element_json"] or "{}"),
             "org_id": str(row["org_id"] or oid),
         })
 
