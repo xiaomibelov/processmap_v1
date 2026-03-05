@@ -94,6 +94,20 @@ export default function useDiagramOverlayTransform({
     return normalizeRect(rect);
   }, [canvasApi]);
 
+  const readRuntimeMatrix = useCallback(() => {
+    const nextRect = readContainerRect();
+    const nextViewbox = normalizeViewbox(canvasApi?.getViewbox?.() || {});
+    return buildOverlayMatrixFromSnapshot(
+      {
+        viewbox: nextViewbox,
+        zoom: nextViewbox.scale,
+        width: nextRect.width,
+        height: nextRect.height,
+      },
+      nextRect,
+    );
+  }, [canvasApi, readContainerRect]);
+
   const applyViewbox = useCallback((viewboxRaw) => {
     const nextViewbox = normalizeViewbox(viewboxRaw);
     const nextRect = readContainerRect();
@@ -181,14 +195,10 @@ export default function useDiagramOverlayTransform({
     }
 
     scheduleApply(canvasApi?.getViewbox?.() || null);
-    const pollId = window.setInterval(() => {
-      scheduleApply(canvasApi?.getViewbox?.() || null);
-    }, 220);
 
     return () => {
       unbindViewbox();
       stopResize();
-      window.clearInterval(pollId);
       if (frameRef.current) {
         const cancelFrame = typeof window !== "undefined" && typeof window.cancelAnimationFrame === "function"
           ? window.cancelAnimationFrame.bind(window)
@@ -202,8 +212,9 @@ export default function useDiagramOverlayTransform({
   const localToDiagram = useCallback((localXRaw, localYRaw) => {
     const localX = clampNumber(localXRaw, 0);
     const localY = clampNumber(localYRaw, 0);
-    return matrixToDiagram(matrixRef.current, localX, localY);
-  }, []);
+    const matrix = enabled ? matrixRef.current : readRuntimeMatrix();
+    return matrixToDiagram(matrix, localX, localY);
+  }, [enabled, readRuntimeMatrix]);
 
   const screenToDiagram = useCallback((pointRaw) => {
     const point = asObject(pointRaw);
@@ -213,13 +224,14 @@ export default function useDiagramOverlayTransform({
 
   const diagramToScreen = useCallback((pointRaw) => {
     const point = asObject(pointRaw);
-    const local = matrixToScreen(matrixRef.current, clampNumber(point.x, 0), clampNumber(point.y, 0));
+    const matrix = enabled ? matrixRef.current : readRuntimeMatrix();
+    const local = matrixToScreen(matrix, clampNumber(point.x, 0), clampNumber(point.y, 0));
     const rect = readContainerRect();
     return {
       x: clampNumber(local.x, 0) + rect.left,
       y: clampNumber(local.y, 0) + rect.top,
     };
-  }, [readContainerRect]);
+  }, [enabled, readContainerRect, readRuntimeMatrix]);
 
   const clientToDiagram = useCallback((clientXRaw, clientYRaw) => {
     return screenToDiagram({
