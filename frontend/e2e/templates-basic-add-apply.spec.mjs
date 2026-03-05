@@ -115,6 +115,36 @@ function byTestIds(page, ids) {
   return page.locator(selector).first();
 }
 
+async function placeFragmentIfNeeded(page) {
+  const ghost = page.getByTestId("bpmn-fragment-ghost");
+  const host = page.locator(".bpmnStageHost").first();
+  await expect(host).toBeVisible();
+  let visible = await ghost.isVisible().catch(() => false);
+  if (!visible) {
+    const probeBox = await host.boundingBox();
+    if (probeBox) {
+      const px = Number(probeBox.x || 0) + Math.round(Number(probeBox.width || 0) / 2);
+      const py = Number(probeBox.y || 0) + Math.round(Number(probeBox.height || 0) / 2);
+      await page.mouse.move(px, py);
+      visible = await ghost.isVisible().catch(() => false);
+    }
+  }
+  if (!visible) return false;
+  const box = await host.boundingBox();
+  expect(box).toBeTruthy();
+  const x = Number(box.x || 0) + Math.max(80, Math.round(Number(box.width || 0) * 0.55));
+  const y = Number(box.y || 0) + Math.max(60, Math.round(Number(box.height || 0) * 0.35));
+  await page.mouse.move(x, y);
+  await page.mouse.click(x, y);
+  await expect
+    .poll(async () => {
+      return await page.evaluate(() => Boolean(window.__FPC_E2E_TEMPLATE_FRAGMENT_INSERT__?.ok));
+    }, { timeout: 10000 })
+    .toBeTruthy();
+  await expect(ghost).toBeHidden({ timeout: 10000 });
+  return true;
+}
+
 test("templates smoke: add from selection and apply restores selection", async ({ page, request }) => {
   test.skip(process.env.E2E_TEMPLATES !== "1", "Set E2E_TEMPLATES=1 to run templates add/apply smoke.");
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -168,6 +198,14 @@ test("templates smoke: add from selection and apply restores selection", async (
     .locator("[data-testid^='btn-apply-template-'], [data-testid='template-pack-insert-after']")
     .first()
     .click();
-  await expect(addTemplateButton).toBeEnabled();
-  await expect(addTemplateButton).toContainText("(2)");
+  const placed = await placeFragmentIfNeeded(page);
+  if (!placed) {
+    await expect(addTemplateButton).toBeEnabled();
+    await expect(addTemplateButton).toContainText("(2)");
+  } else {
+    await switchTab(page, "XML");
+    const xmlText = await page.locator(".xmlEditorTextarea").inputValue();
+    expect(xmlText).toContain(`${marker}_A`);
+    expect(xmlText).toContain(`${marker}_B`);
+  }
 });

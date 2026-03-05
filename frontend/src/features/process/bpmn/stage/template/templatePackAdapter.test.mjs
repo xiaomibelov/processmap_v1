@@ -106,7 +106,7 @@ function createModelerWithServices({ selectionItems = [], registryItems = [], an
 
   const selection = {
     get() {
-      if (selectionItems.length) return selectionItems;
+      if (Array.isArray(selectionItems)) return selectionItems;
       return [anchor];
     },
   };
@@ -114,6 +114,10 @@ function createModelerWithServices({ selectionItems = [], registryItems = [], an
   const elementRegistry = {
     getAll() {
       return allRegistryItems;
+    },
+    get(id) {
+      const target = String(id || "");
+      return allRegistryItems.find((item) => String(item?.id || "") === target) || null;
     },
   };
 
@@ -210,4 +214,48 @@ test("insertTemplatePackOnModeler creates nodes, connects sequence flows and emi
   assert.equal(connectCalls.length, 2);
   assert.equal(emitCalls.length, 1);
   assert.equal(emitCalls[0][0], "diagram.template_insert");
+});
+
+test("insertTemplatePackOnModeler supports point-based insert without selected anchor", async () => {
+  const lane = {
+    id: "Lane_1",
+    type: "bpmn:Lane",
+    x: 0,
+    y: 0,
+    width: 1200,
+    height: 600,
+    businessObject: {
+      id: "Lane_1",
+      $type: "bpmn:Lane",
+      name: "lane 1",
+    },
+  };
+  const { adapter, connectCalls, createShapeCalls } = createModelerWithServices({
+    selectionItems: [],
+    registryItems: [lane],
+  });
+  const payload = {
+    mode: "after",
+    anchor: {
+      point: { x: 320, y: 220 },
+    },
+    pack: {
+      packId: "pack_point",
+      entryNodeId: "N1",
+      exitNodeId: "N2",
+      fragment: {
+        nodes: [
+          { id: "N1", type: "bpmn:Task", name: "One", di: { x: 10, y: 20 } },
+          { id: "N2", type: "bpmn:Task", name: "Two", di: { x: 180, y: 20 } },
+        ],
+        edges: [{ id: "E1", sourceId: "N1", targetId: "N2" }],
+      },
+    },
+  };
+  const result = await adapter.insertTemplatePackOnModeler(payload);
+  assert.equal(result?.ok, true);
+  assert.equal(result?.createdNodes, 2);
+  assert.equal(createShapeCalls.length, 2);
+  assert.equal(connectCalls.length, 1);
+  assert.equal(result?.anchorByPoint, true);
 });
