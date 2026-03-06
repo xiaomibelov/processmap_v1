@@ -634,6 +634,19 @@ export default function useHybridPipelineController({
     return hybridTools.startStencilPlacement(templateRaw);
   }, [hybridTools, setHybridLayerMode, showHybridLayer]);
 
+  const hybridPlacementHitLayerActive = useMemo(() => {
+    if (hybridModeEffective !== "edit" || hybridUiPrefs.lock || !hybridVisible) return false;
+    const tool = String(hybridV2ToolState || "").trim().toLowerCase();
+    return (
+      tool === "template_stencil"
+      || tool === "rect"
+      || tool === "note"
+      || tool === "text"
+      || tool === "container"
+      || tool === "arrow"
+    );
+  }, [hybridModeEffective, hybridUiPrefs.lock, hybridV2ToolState, hybridVisible]);
+
   return {
     hybridTools,
     hybridSelection,
@@ -674,6 +687,7 @@ export default function useHybridPipelineController({
     setHybridToolsMode,
     selectHybridPaletteTool,
     startHybridStencilPlacement,
+    hybridPlacementHitLayerActive,
     bindActiveHybridV2ToBpmn,
     goToActiveHybridBinding,
     exportHybridV2Drawio,

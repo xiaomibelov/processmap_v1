@@ -100,6 +100,10 @@ export const apiRoutes = {
     }),
     bpmnMeta: (sessionId) => `/api/sessions/${encode(sessionId)}/bpmn_meta`,
     inferRtiers: (sessionId) => `/api/sessions/${encode(sessionId)}/bpmn_meta/infer_rtiers`,
+    autoPass: (sessionId, options = {}) => withQuery(`/api/sessions/${encode(sessionId)}/auto-pass`, {
+      job_id: String(options?.job_id || options?.jobId || "").trim(),
+    }),
+    autoPassPrecheck: (sessionId) => `/api/sessions/${encode(sessionId)}/auto-pass/precheck`,
     pathReports: (sessionId, pathId, stepsHash = "") => withQuery(
       `/api/sessions/${encode(sessionId)}/paths/${encode(pathId)}/reports`,
       { steps_hash: String(stepsHash || "").trim() },

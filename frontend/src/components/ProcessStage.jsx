@@ -1490,6 +1490,74 @@ export default function ProcessStage({
     initialPlaybackManualAtGateway: false,
     initialPlaybackScenarioKey: "active",
   });
+  const commitDrawioOverlayTransform = useCallback((nextTransformRaw) => {
+    const nextTransform = asObject(nextTransformRaw);
+    const nextX = Number(nextTransform.x);
+    const nextY = Number(nextTransform.y);
+    if (!Number.isFinite(nextX) || !Number.isFinite(nextY)) return false;
+    const prev = normalizeDrawioMeta(drawioMetaRef.current);
+    const prevX = Number(asObject(prev.transform).x || 0);
+    const prevY = Number(asObject(prev.transform).y || 0);
+    if (Math.abs(nextX - prevX) < 0.01 && Math.abs(nextY - prevY) < 0.01) return true;
+    const next = normalizeDrawioMeta({
+      ...prev,
+      transform: {
+        ...asObject(prev.transform),
+        x: nextX,
+        y: nextY,
+      },
+    });
+    if (serializeDrawioMeta(next) === serializeDrawioMeta(prev)) return true;
+    setDrawioMeta(next);
+    drawioMetaRef.current = next;
+    markPlaybackOverlayInteraction?.({ stage: "drawio_overlay_drag_end" });
+    void persistDrawioMeta(next, { source: "drawio_overlay_drag_end" });
+    return true;
+  }, [
+    asObject,
+    drawioMetaRef,
+    markPlaybackOverlayInteraction,
+    normalizeDrawioMeta,
+    persistDrawioMeta,
+    serializeDrawioMeta,
+    setDrawioMeta,
+  ]);
+  const deleteDrawioOverlayElement = useCallback((elementIdRaw) => {
+    const elementId = toText(elementIdRaw);
+    if (!elementId) return false;
+    const prev = normalizeDrawioMeta(drawioMetaRef.current);
+    let changed = false;
+    const nextElements = asArray(prev.drawio_elements_v1).map((rowRaw) => {
+      const row = asObject(rowRaw);
+      const id = toText(row.id);
+      if (id !== elementId) return row;
+      if (row.deleted === true) return row;
+      changed = true;
+      return {
+        ...row,
+        deleted: true,
+      };
+    });
+    if (!changed) return false;
+    const next = normalizeDrawioMeta({
+      ...prev,
+      drawio_elements_v1: nextElements,
+    });
+    setDrawioMeta(next);
+    drawioMetaRef.current = next;
+    markPlaybackOverlayInteraction?.({ stage: "drawio_overlay_delete", elementId });
+    void persistDrawioMeta(next, { source: "drawio_overlay_delete" });
+    return true;
+  }, [
+    asArray,
+    asObject,
+    drawioMetaRef,
+    markPlaybackOverlayInteraction,
+    normalizeDrawioMeta,
+    persistDrawioMeta,
+    setDrawioMeta,
+    toText,
+  ]);
   const {
     hybridTools,
     hybridSelection,
@@ -1526,6 +1594,7 @@ export default function ProcessStage({
     setHybridToolsMode,
     selectHybridPaletteTool,
     startHybridStencilPlacement,
+    hybridPlacementHitLayerActive,
     goToActiveHybridBinding,
     exportHybridV2Drawio,
     handleHybridV2ImportFile,
@@ -4284,6 +4353,9 @@ export default function ProcessStage({
                   visible={tab === "diagram" && drawioVisible}
                   drawioMeta={drawioUiState}
                   overlayMatrix={hybridViewportMatrix}
+                  screenToDiagram={clientToDiagram}
+                  onCommitTransform={commitDrawioOverlayTransform}
+                  onDeleteElement={deleteDrawioOverlayElement}
                 />
                 <HybridOverlayRenderer
                   visible={tab === "diagram" && hybridVisible}
@@ -4291,6 +4363,7 @@ export default function ProcessStage({
                   uiPrefs={hybridUiPrefs}
                   opacityValue={hybridOpacityValue}
                   overlayRef={hybridLayerOverlayRef}
+                  placementHitLayerActive={hybridPlacementHitLayerActive}
                   onOverlayPointerDown={handleHybridV2OverlayPointerDown}
                   onOverlayPointerMove={hybridTools.onOverlayPointerMove}
                   onOverlayPointerLeave={hybridTools.onOverlayPointerLeave}

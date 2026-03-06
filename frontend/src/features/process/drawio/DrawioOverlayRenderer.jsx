@@ -68,9 +68,10 @@ function mergeStyle(attrsRaw, patchStyleRaw) {
 function resolveDrawioElementFlags(metaRaw, layerMap, elementMap, elementIdRaw) {
   const meta = asObject(metaRaw);
   const elementId = String(elementIdRaw || "").trim();
+  const hasElement = !!elementId && elementMap.has(elementId);
   const elementState = asObject(elementMap.get(elementId));
   const layerState = asObject(layerMap.get(String(elementState.layer_id || "").trim()));
-  const visible = !!elementId
+  const visible = hasElement
     && layerState.visible !== false
     && elementState.visible !== false
     && elementState.deleted !== true;
@@ -175,6 +176,19 @@ function DrawioOverlayRenderer({
   }, [selectedId]);
 
   useEffect(() => {
+    const root = rootRef.current;
+    if (!(root instanceof Element)) return;
+    const nodes = root.querySelectorAll("[data-testid^='drawio-el-']");
+    nodes.forEach((node) => {
+      if (!(node instanceof Element)) return;
+      const elementId = toText(node.getAttribute("data-drawio-el-id") || node.getAttribute("id"));
+      if (!elementId) return;
+      node.setAttribute("data-drawio-el-id", elementId);
+      if (!node.style.pointerEvents) node.style.pointerEvents = "auto";
+    });
+  }, [renderedBody]);
+
+  useEffect(() => {
     if (!selectedIdRef.current) return;
     if (!elementMap.has(selectedIdRef.current)) {
       selectedIdRef.current = "";
@@ -183,7 +197,7 @@ function DrawioOverlayRenderer({
     }
   }, [elementMap, onSelectionChange]);
 
-  const finishDrag = useCallback((shouldCommit = true) => {
+  const finishDrag = useCallback((shouldCommit = true, finalEventRaw = null) => {
     const state = asObject(dragRef.current);
     const activePointerId = Number(activePointerIdRef.current);
     const captureTarget = captureTargetRef.current;
@@ -196,16 +210,53 @@ function DrawioOverlayRenderer({
     activePointerIdRef.current = null;
     captureTargetRef.current = null;
     dragRef.current = null;
+    if (moveRafRef.current && typeof window !== "undefined" && typeof window.cancelAnimationFrame === "function") {
+      window.cancelAnimationFrame(moveRafRef.current);
+      moveRafRef.current = 0;
+    }
     const activeDraftTransform = asObject(draftTransformRef.current || draftTransform);
     setDraftTransform(null);
     draftTransformRef.current = null;
     if (!shouldCommit) return;
     if (!state.id) return;
-    const nextX = toNumber(activeDraftTransform.x, state.baseTx || 0);
-    const nextY = toNumber(activeDraftTransform.y, state.baseTy || 0);
+    let nextX = toNumber(activeDraftTransform.x, state.baseTx || 0);
+    let nextY = toNumber(activeDraftTransform.y, state.baseTy || 0);
+    if (
+      Math.abs(nextX - Number(state.baseTx || 0)) < 0.01
+      && Math.abs(nextY - Number(state.baseTy || 0)) < 0.01
+    ) {
+      const finalEvent = asObject(finalEventRaw);
+      const pendingPoint = asObject(pendingPointRef.current);
+      const finalClientX = Number.isFinite(Number(finalEvent.clientX))
+        ? Number(finalEvent.clientX)
+        : Number(pendingPoint.clientX || 0);
+      const finalClientY = Number.isFinite(Number(finalEvent.clientY))
+        ? Number(finalEvent.clientY)
+        : Number(pendingPoint.clientY || 0);
+      if (typeof screenToDiagram === "function") {
+        const current = screenToDiagram(finalClientX, finalClientY);
+        if (current && Number.isFinite(Number(current.x)) && Number.isFinite(Number(current.y))) {
+          const dx = Number(current.x || 0) - Number(state.startX || 0);
+          const dy = Number(current.y || 0) - Number(state.startY || 0);
+          nextX = Number(state.baseTx || 0) + dx;
+          nextY = Number(state.baseTy || 0) + dy;
+        }
+      }
+      if (
+        Math.abs(nextX - Number(state.baseTx || 0)) < 0.01
+        && Math.abs(nextY - Number(state.baseTy || 0)) < 0.01
+      ) {
+        const scale = Math.max(0.0001, Math.abs(toNumber(matrix.a, 1)));
+        const dxScreen = finalClientX - Number(state.startClientX || 0);
+        const dyScreen = finalClientY - Number(state.startClientY || 0);
+        nextX = Number(state.baseTx || 0) + (dxScreen / scale);
+        nextY = Number(state.baseTy || 0) + (dyScreen / scale);
+      }
+    }
+    pendingPointRef.current = null;
     if (Math.abs(nextX - Number(state.baseTx || 0)) < 0.01 && Math.abs(nextY - Number(state.baseTy || 0)) < 0.01) return;
     onCommitTransform?.({ x: nextX, y: nextY });
-  }, [draftTransform, onCommitTransform]);
+  }, [draftTransform, onCommitTransform, screenToDiagram]);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -248,16 +299,16 @@ function DrawioOverlayRenderer({
       const activePointerId = Number(activePointerIdRef.current);
       const eventPointerId = Number(event?.pointerId);
       if (Number.isFinite(activePointerId) && Number.isFinite(eventPointerId) && activePointerId !== eventPointerId) return;
-      finishDrag(true);
+      finishDrag(true, event);
     };
     const onMouseMove = (event) => {
-      const activePointerId = Number(activePointerIdRef.current);
-      if (Number.isFinite(activePointerId)) return;
+      const state = asObject(dragRef.current);
+      if (!state.id) return;
       onMove(event);
     };
     const onMouseUp = (event) => {
-      const activePointerId = Number(activePointerIdRef.current);
-      if (Number.isFinite(activePointerId)) return;
+      const state = asObject(dragRef.current);
+      if (!state.id) return;
       onUp(event);
     };
     window.addEventListener("pointermove", onMove);
@@ -370,6 +421,8 @@ function DrawioOverlayRenderer({
       pointerId: Number(event?.pointerId || 0),
       startX: Number(point.x || 0),
       startY: Number(point.y || 0),
+      startClientX: Number(event?.clientX || 0),
+      startClientY: Number(event?.clientY || 0),
       baseTx: toNumber(asObject(meta.transform).x, 0),
       baseTy: toNumber(asObject(meta.transform).y, 0),
     };
@@ -404,8 +457,12 @@ function DrawioOverlayRenderer({
     const onPointerDown = (event) => {
       const target = event?.target instanceof Element ? event.target : null;
       if (!target) return;
-      const hitNode = target.closest?.("[data-drawio-el-id]");
-      const hitId = toText(hitNode?.getAttribute?.("data-drawio-el-id"));
+      const hitNode = target.closest?.("[data-drawio-el-id], [data-testid^='drawio-el-'], [id]");
+      const hitId = toText(
+        hitNode?.getAttribute?.("data-drawio-el-id")
+        || hitNode?.getAttribute?.("id")
+        || "",
+      );
       if (hitId && root.contains(hitNode)) {
         startDragByElementId(event, hitId);
         return;
@@ -416,10 +473,8 @@ function DrawioOverlayRenderer({
       onSelectionChange?.("");
     };
     root.addEventListener("pointerdown", onPointerDown, true);
-    root.addEventListener("mousedown", onPointerDown, true);
     return () => {
       root.removeEventListener("pointerdown", onPointerDown, true);
-      root.removeEventListener("mousedown", onPointerDown, true);
     };
   }, [hasRenderable, onSelectionChange, startDragByElementId]);
 

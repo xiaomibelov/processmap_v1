@@ -1394,6 +1394,91 @@ export async function apiInferBpmnRtiers(sessionId, payload = {}) {
   };
 }
 
+export async function apiStartAutoPass(sessionId, payload = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const buildPath = apiRoutes?.sessions?.autoPass;
+  if (typeof buildPath !== "function") {
+    return { ok: false, status: 0, error: "auto-pass route builder is missing" };
+  }
+  const body = isPlainObject(payload) ? payload : {};
+  const r = okOrError(await request(buildPath(sid), { method: "POST", body }));
+  if (!r.ok) return r;
+  const data = isPlainObject(r.data) ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    job_id: String(data.job_id || "").trim(),
+    job_status: String(data.status || "").trim().toLowerCase(),
+    progress: Number(data.progress || 0),
+    result: isPlainObject(data.result) ? data.result : null,
+    execution: String(data.execution || "").trim(),
+    error_code: String(data.error_code || "").trim(),
+    error_message: String(data.error_message || "").trim(),
+    data,
+  };
+}
+
+export async function apiGetAutoPassPrecheck(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const buildPath = apiRoutes?.sessions?.autoPassPrecheck;
+  if (typeof buildPath !== "function") {
+    // Backward compatibility guard: precheck route is optional.
+    // eslint-disable-next-line no-console
+    console.warn("[api] autoPassPrecheck route builder is missing; precheck skipped");
+    return {
+      ok: true,
+      status: 200,
+      can_run: true,
+      code: "PRECHECK_UNAVAILABLE",
+      message: "",
+      main_start_event_ids: [],
+      main_end_event_ids: [],
+      data: {},
+    };
+  }
+  const r = okOrError(await request(buildPath(sid)));
+  if (!r.ok) return r;
+  const data = isPlainObject(r.data) ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    can_run: data.ok === true,
+    code: String(data.code || "").trim(),
+    message: String(data.message || "").trim(),
+    main_start_event_ids: Array.isArray(data.main_start_event_ids) ? data.main_start_event_ids : [],
+    main_end_event_ids: Array.isArray(data.main_end_event_ids) ? data.main_end_event_ids : [],
+    data,
+  };
+}
+
+export async function apiGetAutoPassStatus(sessionId, jobId) {
+  const sid = String(sessionId || "").trim();
+  const jid = String(jobId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  if (!jid) return { ok: false, status: 0, error: "missing job_id" };
+  const buildPath = apiRoutes?.sessions?.autoPass;
+  if (typeof buildPath !== "function") {
+    return { ok: false, status: 0, error: "auto-pass route builder is missing" };
+  }
+  const r = okOrError(await request(buildPath(sid, { job_id: jid })));
+  if (!r.ok) return r;
+  const data = isPlainObject(r.data) ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    job_id: String(data.job_id || jid).trim(),
+    job_status: String(data.status || "").trim().toLowerCase(),
+    progress: Number(data.progress || 0),
+    result: isPlainObject(data.result) ? data.result : null,
+    error: String(data.error || "").trim(),
+    error_code: String(data.error_code || "").trim(),
+    error_message: String(data.error_message || "").trim(),
+    data,
+  };
+}
+
 export async function apiGetExport(sessionId) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };

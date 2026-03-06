@@ -34,3 +34,20 @@ test("mergeDrawioMeta keeps primary payload when it already has svg cache", () =
   assert.equal(String(merged.svg_cache || "").includes("local"), true);
   assert.equal(String(merged.svg_cache || "").includes("server"), false);
 });
+
+test("normalizeDrawioMeta creates Default layer and assigns svg elements to layer", () => {
+  const meta = normalizeDrawioMeta({
+    enabled: true,
+    svg_cache: "<svg><rect id='rect_1' x='10' y='10' width='20' height='20'/><circle id='c1' cx='6' cy='6' r='3'/></svg>",
+  });
+  assert.equal(Array.isArray(meta.drawio_layers_v1), true);
+  assert.equal(meta.drawio_layers_v1.length >= 1, true);
+  assert.equal(String(meta.drawio_layers_v1[0]?.name || ""), "Default");
+  assert.equal(Array.isArray(meta.drawio_elements_v1), true);
+  assert.equal(meta.drawio_elements_v1.some((row) => String(row?.id) === "rect_1"), true);
+  assert.equal(meta.drawio_elements_v1.some((row) => String(row?.id) === "c1"), true);
+  assert.equal(
+    meta.drawio_elements_v1.every((row) => String(row?.layer_id || "").trim().length > 0),
+    true,
+  );
+});

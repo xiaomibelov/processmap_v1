@@ -12,6 +12,9 @@ import {
   apiDeleteEdge,
   apiRecompute,
   apiGetAnalytics,
+  apiStartAutoPass,
+  apiGetAutoPassPrecheck,
+  apiGetAutoPassStatus,
 } from "../api";
 
 export {
@@ -28,5 +31,7 @@ export {
   apiDeleteEdge,
   apiRecompute,
   apiGetAnalytics,
+  apiStartAutoPass,
+  apiGetAutoPassPrecheck,
+  apiGetAutoPassStatus,
 };
-

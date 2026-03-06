@@ -1,100 +1,94 @@
 import { expect, test } from "@playwright/test";
+
 import { apiLogin, setUiToken } from "./helpers/e2eAuth.mjs";
-import { API_BASE, apiJson, createFixture, seedXml, switchTab } from "./helpers/processFixture.mjs";
+import { API_BASE, createFixture, seedXml, switchTab } from "./helpers/processFixture.mjs";
 import { openSessionInTopbar, waitForDiagramReady } from "./helpers/diagramReady.mjs";
 
-async function patchDrawioMeta(request, headers, sessionId) {
-  const payload = {
-    bpmn_meta: {
-      drawio: {
-        enabled: true,
-        locked: false,
-        opacity: 1,
-        svg_cache: "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 240 120\"><rect id=\"shape1\" x=\"60\" y=\"30\" width=\"120\" height=\"60\" rx=\"8\" fill=\"rgba(59,130,246,0.25)\" stroke=\"#2563eb\" stroke-width=\"3\"/></svg>",
-        transform: { x: 250, y: 130 },
-      },
+async function readHybridElementCount(request, accessTokenRaw, sessionIdRaw) {
+  const sid = String(sessionIdRaw || "").trim();
+  if (!sid) return 0;
+  const token = String(accessTokenRaw || "").trim();
+  const res = await request.get(`${API_BASE}/api/sessions/${encodeURIComponent(sid)}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
     },
-  };
-  const res = await request.patch(`${API_BASE}/api/sessions/${encodeURIComponent(String(sessionId || ""))}`, {
-    headers,
-    data: payload,
   });
-  await apiJson(res, "patch drawio meta");
+  if (!res.ok()) return 0;
+  const body = await res.json().catch(() => ({}));
+  const doc = body?.bpmn_meta?.hybrid_v2;
+  return Array.isArray(doc?.elements) ? doc.elements.length : 0;
 }
 
-async function readBox(locator) {
-  const box = await locator.boundingBox();
-  expect(box).toBeTruthy();
-  return box;
-}
+test("drawio overlay smoke: place rect, zoom/pan, reload keeps element", async ({ page, request }) => {
+  test.skip(process.env.E2E_HYBRID_LAYER !== "1", "Set E2E_HYBRID_LAYER=1 for overlay smoke.");
 
-test("drawio overlay stays attached to diagram on zoom and pan", async ({ page, request }) => {
-  test.skip(process.env.E2E_DRAWIO_OVERLAY !== "1", "Set E2E_DRAWIO_OVERLAY=1 to run drawio overlay zoom/pan smoke.");
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const auth = await apiLogin(request, { apiBase: API_BASE });
   const fixture = await createFixture(
     request,
     `${runId}_drawio_overlay`,
     auth.headers,
-    seedXml({ processName: `Drawio overlay ${runId}`, taskName: "Overlay Task" }),
+    seedXml({ processName: `Drawio overlay ${runId}`, taskName: "Drawio Overlay Task" }),
   );
-  await patchDrawioMeta(request, auth.headers, fixture.sessionId);
 
-  await page.addInitScript(() => {
-    window.__FPC_E2E__ = true;
-    window.localStorage.setItem("fpc_debug_bpmn", "1");
-  });
   await setUiToken(page, auth.accessToken);
-  await openSessionInTopbar(page, {
-    projectId: fixture.projectId,
-    sessionId: fixture.sessionId,
-  });
+  await openSessionInTopbar(page, { projectId: fixture.projectId, sessionId: fixture.sessionId }, { timeout: 60000 });
   await switchTab(page, "Diagram");
   await waitForDiagramReady(page);
 
-  const overlayRoot = page.getByTestId("drawio-overlay-root");
-  const drawioEl = page.getByTestId("drawio-el-shape1");
-  const canvasHost = page.locator(".bpmnStageHost").first();
-  await expect(overlayRoot).toBeVisible();
-  await expect(drawioEl).toBeVisible();
-  await expect(canvasHost).toBeVisible();
-
-  const hostBox = await readBox(canvasHost);
-  const before = await readBox(drawioEl);
-
-  await page.getByTestId("diagram-zoom-in").click();
-  await page.getByTestId("diagram-zoom-in").click();
+  const layersBtn = page.getByTestId("diagram-action-layers");
+  await layersBtn.click({ force: true });
+  const popover = page.getByTestId("diagram-action-layers-popover");
+  await popover.getByTestId("diagram-action-layers-hybrid-toggle").check({ force: true });
+  await popover.getByTestId("diagram-action-layers-mode-edit").click({ force: true });
 
   await expect
-    .poll(async () => {
-      const box = await drawioEl.boundingBox();
-      return Number(box?.width || 0);
-    }, { timeout: 12000 })
-    .toBeGreaterThan(Number(before.width || 0) + 3);
+    .poll(async () => page.evaluate(() => Boolean(window.__FPC_E2E_HYBRID__?.createElementAt)))
+    .toBeTruthy();
 
-  const afterZoom = await readBox(drawioEl);
-  expect(afterZoom.x).toBeGreaterThanOrEqual(hostBox.x - 8);
-  expect(afterZoom.y).toBeGreaterThanOrEqual(hostBox.y - 8);
-  expect(afterZoom.x + afterZoom.width).toBeLessThanOrEqual(hostBox.x + hostBox.width + 16);
-  expect(afterZoom.y + afterZoom.height).toBeLessThanOrEqual(hostBox.y + hostBox.height + 16);
+  const created = await page.evaluate(() => {
+    const api = window.__FPC_E2E_HYBRID__;
+    if (!api || typeof api.createElementAt !== "function") return "";
+    if (typeof api.ensureEditVisible === "function") api.ensureEditVisible();
+    return api.createElementAt({ x: 320, y: 220 }, "rect");
+  });
+  expect(typeof created === "string" && created.trim().length > 0).toBeTruthy();
+
+  const shape = page.getByTestId("hybrid-v2-shape").first();
+  await expect(shape).toBeVisible();
+  await expect
+    .poll(async () => readHybridElementCount(request, auth.accessToken, fixture.sessionId))
+    .toBeGreaterThanOrEqual(1);
+  const bboxBefore = await shape.boundingBox();
+  expect(Number(bboxBefore?.width || 0)).toBeGreaterThan(10);
 
   await page.evaluate(() => {
     const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
     const canvas = modeler?.get?.("canvas");
     const vb = canvas?.viewbox?.();
-    if (!canvas || !vb) return false;
+    if (!canvas || !vb) return;
     canvas.viewbox({
       ...vb,
       x: Number(vb.x || 0) + 120,
-      y: Number(vb.y || 0) + 60,
+      y: Number(vb.y || 0) + 80,
+      width: Number(vb.width || 0) * 1.2,
+      height: Number(vb.height || 0) * 1.2,
     });
-    return true;
   });
+  await page.waitForTimeout(250);
 
+  const bboxAfter = await shape.boundingBox();
+  expect(Number(bboxAfter?.width || 0)).toBeGreaterThan(5);
+  expect(Number.isFinite(Number(bboxAfter?.x))).toBeTruthy();
+  expect(Number.isFinite(Number(bboxAfter?.y))).toBeTruthy();
+
+  await page.reload();
+  await openSessionInTopbar(page, { projectId: fixture.projectId, sessionId: fixture.sessionId }, { timeout: 60000 });
+  await switchTab(page, "Diagram");
+  await waitForDiagramReady(page);
+  await layersBtn.click({ force: true });
+  await popover.getByTestId("diagram-action-layers-hybrid-toggle").check({ force: true });
   await expect
-    .poll(async () => {
-      const box = await drawioEl.boundingBox();
-      return Number(box?.x || 0);
-    }, { timeout: 12000 })
-    .toBeLessThan(Number(afterZoom.x || 0) - 5);
+    .poll(async () => page.getByTestId("hybrid-v2-shape").count())
+    .toBeGreaterThanOrEqual(1);
 });

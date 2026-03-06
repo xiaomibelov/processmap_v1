@@ -472,6 +472,15 @@
     background: transparent;
   }
 
+  .hybridPlacementHitLayer {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: auto;
+    background: transparent;
+    touch-action: none;
+  }
+
   .hybridLayerItem {
     position: absolute;
     pointer-events: none;

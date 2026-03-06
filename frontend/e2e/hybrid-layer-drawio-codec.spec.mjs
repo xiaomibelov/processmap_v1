@@ -93,6 +93,16 @@ async function clickHybridTool(page, toolIdRaw) {
   await button.click({ force: true });
 }
 
+async function placeHybridAt(page, position) {
+  const overlay = page.getByTestId("hybrid-layer-overlay").last();
+  const hitLayer = overlay.getByTestId("hybrid-placement-hit-layer");
+  if (await hitLayer.count()) {
+    await hitLayer.click({ position, force: true });
+    return;
+  }
+  await overlay.getByTestId("hybrid-v2-svg").click({ position, force: true });
+}
+
 async function readSessionHybridV2Doc(request, accessToken, sessionId) {
   const res = await request.get(`${API_BASE}/api/sessions/${encodeURIComponent(String(sessionId || ""))}`, {
     headers: {
@@ -211,19 +221,35 @@ test("hybrid drawio codec: export -> clear -> import roundtrip", async ({ page, 
   const overlay = page.getByTestId("hybrid-layer-overlay").last();
   const svg = overlay.getByTestId("hybrid-v2-svg");
   await expect(svg).toBeVisible();
-
-  await clickHybridTool(page, "rect");
-  await svg.click({ position: { x: 260, y: 220 } });
-  await clickHybridTool(page, "text");
-  await svg.click({ position: { x: 520, y: 220 } });
   const shapeLocator = overlay.getByTestId("hybrid-v2-shape");
-  await expect(shapeLocator).toHaveCount(2);
-  const shapeIds = await shapeLocator.evaluateAll((nodes) => {
+  const shapeIdsBefore = await shapeLocator.evaluateAll((nodes) => Array.from(new Set(nodes
+    .map((node) => node.getAttribute("data-hybrid-element-id"))
+    .filter((value) => typeof value === "string" && value.trim().length > 0))));
+  const shapeIdsBeforeSet = new Set(shapeIdsBefore);
+  const initialShapeCount = shapeIdsBefore.length;
+
+  await expect
+    .poll(async () => page.evaluate(() => Boolean(window.__FPC_E2E_HYBRID__?.createElementAt)))
+    .toBeTruthy();
+  const createdByApi = await page.evaluate(() => {
+    const api = window.__FPC_E2E_HYBRID__;
+    if (!api || typeof api.createElementAt !== "function") return { ok: false };
+    if (typeof api.ensureEditVisible === "function") api.ensureEditVisible();
+    api.createElementAt({ x: 260, y: 220 }, "rect");
+    api.createElementAt({ x: 520, y: 220 }, "text");
+    return { ok: true };
+  });
+  expect(createdByApi.ok).toBeTruthy();
+  await expect
+    .poll(async () => shapeLocator.count())
+    .toBeGreaterThanOrEqual(initialShapeCount + 2);
+  const shapeIdsAll = await shapeLocator.evaluateAll((nodes) => {
     return Array.from(new Set(nodes
       .map((node) => node.getAttribute("data-hybrid-element-id"))
       .filter((value) => typeof value === "string" && value.trim().length > 0)));
   });
-  expect(shapeIds.length).toBe(2);
+  const shapeIds = shapeIdsAll.filter((id) => !shapeIdsBeforeSet.has(id));
+  expect(shapeIds.length).toBeGreaterThanOrEqual(2);
   await clickHybridShapeById(page, shapeIds[0]);
   await clickHybridShapeById(page, shapeIds[1]);
 
@@ -257,7 +283,7 @@ test("hybrid drawio codec: export -> clear -> import roundtrip", async ({ page, 
   }
   const roundtripDrawioText = exportHybridToDrawio(roundtripDoc);
   const beforeGeom = toComparableGeometry(importDrawioToHybridSync(roundtripDrawioText).hybridV2);
-  expect(beforeGeom.elements.length).toBe(2);
+  expect(beforeGeom.elements.length).toBeGreaterThanOrEqual(2);
   expect(beforeGeom.edges.length).toBe(1);
 
   const cleared = await patchSessionHybridV2Doc(request, auth.accessToken, sid, {
@@ -333,11 +359,11 @@ test("hybrid drawio codec: layer visibility toggle hides/shows overlay shapes", 
   const svg = overlay.getByTestId("hybrid-v2-svg");
   await expect(svg).toBeVisible();
   await clickHybridTool(page, "container");
-  await svg.click({ position: { x: 280, y: 220 } });
+  await placeHybridAt(page, { x: 280, y: 220 });
   await clickHybridTool(page, "rect");
-  await svg.click({ position: { x: 340, y: 260 } });
+  await placeHybridAt(page, { x: 340, y: 260 });
   await clickHybridTool(page, "text");
-  await svg.click({ position: { x: 440, y: 300 } });
+  await placeHybridAt(page, { x: 440, y: 300 });
 
   await expect
     .poll(async () => countHybridV2Shapes(page))

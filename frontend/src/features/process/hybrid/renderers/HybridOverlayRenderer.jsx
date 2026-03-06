@@ -16,6 +16,7 @@ export default function HybridOverlayRenderer({
   onOverlayPointerMove,
   onOverlayPointerLeave,
   onOverlayContextMenu,
+  placementHitLayerActive,
   v2Renderable,
   v2ActiveId,
   v2SelectedIds,
@@ -52,22 +53,33 @@ export default function HybridOverlayRenderer({
     <div
       className={`hybridLayerOverlay ${mode === "edit" ? "isEdit" : "isView"}`}
       ref={overlayRef}
-      style={{ "--hybrid-layer-opacity": String(Math.max(0.2, Math.min(1, opacityValue))) }}
+      style={{
+        "--hybrid-layer-opacity": String(Math.max(0.2, Math.min(1, opacityValue))),
+        pointerEvents: "none",
+      }}
       data-testid="hybrid-layer-overlay"
       tabIndex={-1}
-      onPointerDown={onOverlayPointerDown}
-      onMouseMove={onOverlayPointerMove}
-      onMouseLeave={onOverlayPointerLeave}
-      onContextMenu={onOverlayContextMenu}
     >
       <div className="sr-only" data-testid="hybrid-overlay-root" />
       {mode === "edit" && !uiPrefs?.lock ? (
         <div className="hybridLayerShield" />
       ) : null}
+      {placementHitLayerActive ? (
+        <div
+          className="hybridPlacementHitLayer"
+          data-testid="hybrid-placement-hit-layer"
+          onPointerDown={onOverlayPointerDown}
+          onPointerMove={onOverlayPointerMove}
+          onMouseMove={onOverlayPointerMove}
+          onPointerLeave={onOverlayPointerLeave}
+          onMouseLeave={onOverlayPointerLeave}
+          onContextMenu={onOverlayContextMenu}
+        />
+      ) : null}
       <svg
         className={`hybridV2Svg ${mode === "edit" ? "isEdit" : "isView"}`}
         data-testid="hybrid-v2-svg"
-        onPointerDown={onOverlayPointerDown}
+        style={{ pointerEvents: "none" }}
       >
         <defs>
           <marker

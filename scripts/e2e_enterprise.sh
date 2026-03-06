@@ -151,9 +151,9 @@ if [ "$#" -gt 0 ] && [ "$1" = "--critical-smoke" ]; then
   echo
   echo "== critical smoke: drawio (optional env-gated) =="
   if [ "${E2E_DRAWIO_SMOKE:-0}" = "1" ]; then
-    E2E_HYBRID_LAYER=1 E2E_DRAWIO=1 npx playwright test e2e/hybrid-layer-drawio-codec.spec.mjs
+    E2E_HYBRID_LAYER=1 E2E_DRAWIO=1 npx playwright test e2e/drawio-overlay-zoom-pan.spec.mjs
   else
-    echo "skip: set E2E_DRAWIO_SMOKE=1 to include e2e/hybrid-layer-drawio-codec.spec.mjs"
+    echo "skip: set E2E_DRAWIO_SMOKE=1 to include e2e/drawio-overlay-zoom-pan.spec.mjs"
   fi
 elif [ "$#" -gt 0 ]; then
   npx playwright test "$@"
