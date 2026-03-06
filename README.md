@@ -30,7 +30,24 @@ DeepSeek:
 Сервисы:
 - `api` — FastAPI backend
 - `frontend` — Vite/React UI
+- `redis` — primary runtime performance layer (locks/cache/jobs queue)
+- `postgres` — primary runtime DB backend
 - `gateway` — Nginx reverse-proxy (единая точка входа для браузера)
+
+DB backend selection:
+- `FPC_DB_BACKEND=postgres` + `DATABASE_URL=postgresql://...` — основной путь.
+- `FPC_DB_BACKEND=sqlite` — legacy/local режим на `PROCESS_DB_PATH` или `PROCESS_STORAGE_DIR/processmap.sqlite3`.
+- `FPC_DB_STARTUP_CHECK=1` (по умолчанию) — fail-fast проверка DB соединения и schema bootstrap при старте API.
+
+Redis policy:
+- `REDIS_URL` — Redis DSN (по умолчанию в compose: `redis://redis:6379/0`).
+- `REDIS_REQUIRED=1` — Redis считается штатным путём; OFF трактуется как degraded/incident fallback.
+- При недоступности Redis backend остаётся доступным, но переключается в fallback mode с warning/error семантикой.
+
+SQLite -> PostgreSQL data transfer:
+- Скрипт: `backend/scripts/sqlite_to_postgres.py`
+- Пример (внутри `api` контейнера):
+  `python /app/backend/scripts/sqlite_to_postgres.py --source-sqlite /app/workspace/.session_store/processmap.sqlite3 --postgres-url postgresql://fpc:fpc@postgres:5432/processmap --reset-target`
 
 Auth + routes:
 - Public home: `/`

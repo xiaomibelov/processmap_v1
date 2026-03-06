@@ -74,6 +74,7 @@ from .redis_cache import (
     workspace_cache_key,
     workspace_filters_hash,
 )
+from .redis_client import runtime_status
 from .validators.coverage import build_questions
 from .validators.disposition import build_disposition_questions
 from .validators.loss import build_loss_questions, loss_report
@@ -103,6 +104,8 @@ AUTH_PUBLIC_PATHS = {
     "/api/auth/logout",
     "/api/auth/invite/preview",
     "/api/auth/invite/activate",
+    "/api/health",
+    "/api/meta",
 }
 
 _ORG_PATH_RE = re.compile(r"^/api/orgs/([^/]+)(?:/|$)")
@@ -3003,7 +3006,21 @@ def favicon():
 
 @app.get("/health")
 def health():
-    return {"ok": True}
+    redis = runtime_status(force_ping=True)
+    mode = str(redis.get("mode") or "UNKNOWN").upper()
+    overall_status = "ok" if mode == "ON" else ("incident" if mode == "ERROR" else "degraded")
+    return {
+        "ok": True,
+        "status": overall_status,
+        "redis": redis,
+    }
+
+
+@app.get("/api/health")
+def api_health():
+    payload = health()
+    payload["api"] = "ready"
+    return payload
 
 
 @app.post("/api/auth/login", response_model=AuthTokenOut)
@@ -5746,6 +5763,7 @@ def export_zip(session_id: str):
 
 @app.get("/api/meta")
 def api_meta():
+    redis = runtime_status(force_ping=True)
     return {
         "api_version": 2,
         "features": {
@@ -5753,6 +5771,14 @@ def api_meta():
             "export_zip": True,
             "graph_edit": True,
             "projects": True, "project_sessions": True,
+            "redis": bool(redis.get("mode") == "ON"),
+        },
+        "redis": {
+            "mode": redis.get("mode"),
+            "state": redis.get("state"),
+            "degraded": bool(redis.get("degraded")),
+            "incident": bool(redis.get("incident")),
+            "required": bool(redis.get("required")),
         },
     }
 
