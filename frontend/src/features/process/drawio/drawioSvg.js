@@ -70,3 +70,17 @@ export function parseDrawioSvgCache(svgRaw) {
     viewBox,
   };
 }
+
+export function extractDrawioElementIdsFromSvg(svgRaw) {
+  const parsed = parseDrawioSvgCache(svgRaw);
+  const body = String(parsed?.body || "");
+  if (!body) return [];
+  const ids = new Set();
+  body.replace(/\sid\s*=\s*["']([^"']+)["']/gi, (_full, idRaw) => {
+    const id = toText(idRaw);
+    if (!id) return "";
+    ids.add(id);
+    return "";
+  });
+  return Array.from(ids);
+}

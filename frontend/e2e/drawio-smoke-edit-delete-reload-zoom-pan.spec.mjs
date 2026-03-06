@@ -12,6 +12,10 @@ async function patchDrawioMeta(request, headers, sessionId) {
         opacity: 1,
         svg_cache: "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 240 120\"><rect id=\"shape1\" x=\"60\" y=\"30\" width=\"120\" height=\"60\" rx=\"8\" fill=\"rgba(59,130,246,0.25)\" stroke=\"#2563eb\" stroke-width=\"3\"/></svg>",
         transform: { x: 260, y: 130 },
+        drawio_layers_v1: [{ id: "DL1", name: "Default", visible: true, locked: false, opacity: 1 }],
+        drawio_elements_v1: [
+          { id: "shape1", layer_id: "DL1", visible: true, locked: false, deleted: false, opacity: 1, offset_x: 0, offset_y: 0, z_index: 1 },
+        ],
       },
     },
   };
@@ -29,26 +33,6 @@ async function openLayersPopover(page) {
   const popover = page.getByTestId("diagram-action-layers-popover");
   await expect(popover).toBeVisible();
   return popover;
-}
-
-async function addDrawioLayer(page) {
-  const popover = await openLayersPopover(page);
-  const before = await page.evaluate(() => {
-    const api = window.__FPC_E2E_DRAWIO__;
-    const meta = typeof api?.readMeta === "function" ? api.readMeta() : {};
-    return Number(Array.isArray(meta?.drawio_layers_v1) ? meta.drawio_layers_v1.length : 0);
-  });
-  const addButton = popover.getByTestId("diagram-action-layers-drawio-layer-add");
-  await expect(addButton).toBeVisible();
-  await addButton.click({ force: true });
-  await expect
-    .poll(async () => page.evaluate(() => {
-      const api = window.__FPC_E2E_DRAWIO__;
-      const meta = typeof api?.readMeta === "function" ? api.readMeta() : {};
-      return Number(Array.isArray(meta?.drawio_layers_v1) ? meta.drawio_layers_v1.length : 0);
-    }), { timeout: 10000 })
-    .toBeGreaterThan(before);
-  await page.getByTestId("diagram-action-layers").click({ force: true });
 }
 
 function isIgnorableConsoleError(messageRaw) {
@@ -108,7 +92,9 @@ test("drawio smoke: create/edit/drag/reload + overlay zoom-pan", async ({ page, 
   expect(beforeZoom).toBeTruthy();
   expect(bpmnBefore).toBeTruthy();
 
-  await addDrawioLayer(page);
+  const popover = await openLayersPopover(page);
+  await expect(popover.getByTestId("diagram-action-layers-drawio-open")).toBeVisible();
+  await page.getByTestId("diagram-action-layers").click({ force: true });
 
   const bpmnDragStart = await page.evaluate(() => {
     const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
@@ -141,10 +127,12 @@ test("drawio smoke: create/edit/drag/reload + overlay zoom-pan", async ({ page, 
     }, { timeout: 10000 })
     .toBeGreaterThan(Number(bpmnDragStart?.x || 0) + 8);
 
-  const drawioTransformBefore = await page.evaluate(() => {
+  const drawioOffsetBefore = await page.evaluate(() => {
     const api = window.__FPC_E2E_DRAWIO__;
     const meta = typeof api?.readMeta === "function" ? api.readMeta() : {};
-    return Number(meta?.transform?.x || 0);
+    const rows = Array.isArray(meta?.drawio_elements_v1) ? meta.drawio_elements_v1 : [];
+    const shape = rows.find((row) => String(row?.id || "") === "shape1") || {};
+    return Number(shape?.offset_x || 0);
   });
   const drawioEditState = await page.evaluate(() => {
     const api = window.__FPC_E2E_DRAWIO__;
@@ -175,11 +163,52 @@ test("drawio smoke: create/edit/drag/reload + overlay zoom-pan", async ({ page, 
       const value = await page.evaluate(() => {
         const api = window.__FPC_E2E_DRAWIO__;
         const meta = typeof api?.readMeta === "function" ? api.readMeta() : {};
-        return Number(meta?.transform?.x || 0);
+        const rows = Array.isArray(meta?.drawio_elements_v1) ? meta.drawio_elements_v1 : [];
+        const shape = rows.find((row) => String(row?.id || "") === "shape1") || {};
+        return Number(shape?.offset_x || 0);
       });
       return Number(value || 0);
     }, { timeout: 10000 })
-    .toBeGreaterThan(Number(drawioTransformBefore || 0) + 8);
+    .toBeGreaterThan(Number(drawioOffsetBefore || 0) + 8);
+  const movedOffsetX = await page.evaluate(() => {
+    const api = window.__FPC_E2E_DRAWIO__;
+    const meta = typeof api?.readMeta === "function" ? api.readMeta() : {};
+    const rows = Array.isArray(meta?.drawio_elements_v1) ? meta.drawio_elements_v1 : [];
+    const shape = rows.find((row) => String(row?.id || "") === "shape1") || {};
+    return Number(shape?.offset_x || 0);
+  });
+
+  await page.getByTestId("diagram-action-fullscreen-mode").click({ force: true });
+  await expect
+    .poll(async () => page.evaluate(() => !!document.fullscreenElement), { timeout: 10000 })
+    .toBeTruthy();
+  await page.getByTestId("diagram-action-fullscreen-mode").click({ force: true });
+  await expect
+    .poll(async () => page.evaluate(() => !!document.fullscreenElement), { timeout: 10000 })
+    .toBeFalsy();
+
+  await page.evaluate(() => {
+    window.__FPC_E2E_DRAWIO__?.openEditor?.();
+  });
+  await expect(page.getByTestId("drawio-editor-iframe")).toBeVisible();
+  const saveFromBridge = await page.evaluate(async () => {
+    const api = window.__FPC_E2E_DRAWIO__;
+    return api?.savePayload?.({
+      docXml: "<mxfile host=\"app.diagrams.net\"></mxfile>",
+      svgCache: "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 240 120\"><rect id=\"shape1\" x=\"60\" y=\"30\" width=\"120\" height=\"60\" rx=\"8\" fill=\"rgba(16,185,129,0.25)\" stroke=\"#059669\" stroke-width=\"3\"/></svg>",
+    });
+  });
+  expect(saveFromBridge).toBeTruthy();
+  await expect
+    .poll(async () => page.evaluate(() => {
+      const api = window.__FPC_E2E_DRAWIO__;
+      const meta = typeof api?.readMeta === "function" ? api.readMeta() : {};
+      return {
+        hasDoc: String(meta?.doc_xml || "").includes("<mxfile"),
+        hasPreview: String(meta?.svg_cache || "").includes("shape1"),
+      };
+    }), { timeout: 10000 })
+    .toEqual({ hasDoc: true, hasPreview: true });
 
   await page.getByTestId("diagram-zoom-in").click();
   await page.getByTestId("diagram-zoom-in").click();
@@ -209,6 +238,15 @@ test("drawio smoke: create/edit/drag/reload + overlay zoom-pan", async ({ page, 
   await waitForDiagramReady(page);
   await expect(drawioRoot).toBeVisible();
   await expect(drawioRect).toBeVisible();
+  await expect
+    .poll(async () => page.evaluate(() => {
+      const api = window.__FPC_E2E_DRAWIO__;
+      const meta = typeof api?.readMeta === "function" ? api.readMeta() : {};
+      const rows = Array.isArray(meta?.drawio_elements_v1) ? meta.drawio_elements_v1 : [];
+      const shape = rows.find((row) => String(row?.id || "") === "shape1") || {};
+      return Number(shape?.offset_x || 0);
+    }), { timeout: 10000 })
+    .toBeGreaterThan(Number(movedOffsetX || 0) - 1);
 
   expect(pageErrors).toEqual([]);
   expect(consoleErrors).toEqual([]);

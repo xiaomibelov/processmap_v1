@@ -1,4 +1,4 @@
-import ProcessPanels, { ProcessDiagramModeSwitch } from "./ProcessPanels";
+import ProcessPanels from "./ProcessPanels";
 
 export default function ProcessStageHeader({ view = {} }) {
   const {
@@ -8,8 +8,6 @@ export default function ProcessStageHeader({ view = {} }) {
     handleSaveCurrentTab,
     workbench,
     tab,
-    diagramMode,
-    applyDiagramMode,
     isSwitchingTab,
     isFlushingTab,
     switchTab,
@@ -87,9 +85,6 @@ export default function ProcessStageHeader({ view = {} }) {
       </div>
 
       <div className="diagramToolbarSlot diagramToolbarSlot--right">
-        {tab === "diagram" ? (
-          <ProcessDiagramModeSwitch diagramMode={diagramMode} applyDiagramMode={applyDiagramMode} />
-        ) : null}
         {(tab === "diagram" || tab === "interview") && hasSession ? (
           <button
             type="button"

@@ -1,13 +1,33 @@
 import LayersPopover from "../components/LayersPopover";
-import HybridToolsPalette from "../../hybrid/tools/HybridToolsPalette";
 import TemplatesBottomMenu from "../../../templates/ui/TemplatesBottomMenu";
 import GatewaysPanel from "../../playback/ui/GatewaysPanel";
 
+function ensureObject(value) {
+  return value && typeof value === "object" ? value : {};
+}
+
 export default function ProcessStageDiagramControls({ view = {} }) {
+  const legacyView = ensureObject(view);
+  const sections = ensureObject(legacyView.sections);
+  const useSectionedContract = Object.keys(sections).length > 0;
+  const topbarSection = useSectionedContract ? ensureObject(sections.topbar) : legacyView;
+  const drawioLayersSection = useSectionedContract ? ensureObject(sections.drawioLayers) : legacyView;
+  const playbackAutopassSection = useSectionedContract ? ensureObject(sections.playbackAutopass) : legacyView;
+  const pathsQualitySection = useSectionedContract ? ensureObject(sections.pathsQuality) : legacyView;
+  const reportsTemplatesProblemsSection = useSectionedContract ? ensureObject(sections.reportsTemplatesProblems) : legacyView;
+  const overflowModesSection = useSectionedContract ? ensureObject(sections.overflowModes) : legacyView;
+
   const {
     tab,
     diagramActionBarRef,
-    pathHighlightEnabled,
+    bpmnRef,
+    isBpmnTab,
+    toText,
+    asObject,
+    diagramFocusMode,
+    setDiagramFocusMode,
+    diagramFullscreenActive,
+    toggleDiagramFullscreen,
     setDiagramActionPathOpen,
     setDiagramActionHybridToolsOpen,
     setDiagramActionPlanOpen,
@@ -17,19 +37,22 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     setRobotMetaListOpen,
     setDiagramActionQualityOpen,
     setDiagramActionOverflowOpen,
-    pathHighlightBadge,
+    diagramActionLayersOpen,
+    diagramActionHybridToolsOpen,
     hybridVisible,
     drawioUiState,
-    toText,
-    hybridV2ToolState,
-    hybridModeEffective,
-    openCreateTemplateModal,
-    canCreateTemplateFromSelection,
-    templateSelectionCount,
-    openTemplatesPicker,
-    canOpenTemplatesList,
+    overlayPanelModel,
+    hasSession,
+    activeQualityOverlayCount,
+    diagramActionQualityOpen,
+    diagramActionOverflowOpen,
+  } = topbarSection;
+
+  const {
     templatesMenuOpen,
     setTemplatesMenuOpen,
+    openTemplatesPicker,
+    canOpenTemplatesList,
     templatesScope,
     setTemplatesScope,
     templatesActiveFolderId,
@@ -41,29 +64,80 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     applyTemplate,
     removeTemplate,
     createTemplateFolderFromUi,
-    canCreateOrgFolders,
     workspaceActiveOrgId,
-    openSelectedElementNotes,
-    canUseElementContextActions,
-    openSelectedElementAi,
+    canCreateOrgFolders,
     openReportsFromDiagram,
-    hasSession,
+    openCreateTemplateModal,
+    canCreateTemplateFromSelection,
+    templateSelectionCount,
+    openSelectedElementNotes,
+    openSelectedElementAi,
+    canUseElementContextActions,
+    selectedInsertBetween,
+    openInsertBetweenModal,
+    insertBetweenBusy,
+    canInsertBetween,
+    insertBetweenErrorMessage,
+  } = reportsTemplatesProblemsSection;
+
+  const {
     diagramActionPlanOpen,
+    diagramPlanPopoverRef,
     executionPlanSource,
+    canExportExecutionPlan,
+    executionPlanBusy,
+    executionPlanPreview,
+    asArray,
+    executionPlanError,
+    copyExecutionPlanFromDiagram,
+    downloadExecutionPlanFromDiagram,
+    saveExecutionPlanVersionFromDiagram,
+    executionPlanSaveBusy,
+    executionPlanVersions,
+    shortHash,
     diagramActionPlaybackOpen,
-    playbackIsPlaying,
+    diagramPlaybackPopoverRef,
+    playbackGraphError,
+    playbackCanRun,
     playbackScenarioLabel,
-    diagramActionLayersOpen,
-    robotMetaOverlayEnabled,
-    setRobotMetaOverlayEnabled,
-    setRobotMetaOverlayFilters,
-    robotMetaCounts,
-    activeQualityOverlayCount,
-    bpmnRef,
-    isBpmnTab,
+    playbackScenarioKey,
+    setPlaybackScenarioKey,
+    playbackScenarioOptions,
+    playbackIndexClamped,
+    playbackTotal,
+    playbackCurrentEvent,
+    playbackEventTitle,
+    playbackGateways,
+    playbackGatewayChoices,
+    playbackGatewayPending,
+    playbackAwaitingGatewayId,
+    formatPlaybackGatewayTitle,
+    playbackGatewayOptionLabel,
+    setPlaybackGatewayChoice,
+    handlePlaybackGatewayDecision,
+    handlePlaybackPrev,
+    handlePlaybackTogglePlay,
+    handlePlaybackNext,
+    handlePlaybackReset,
+    playbackIsPlaying,
+    playbackSpeed,
+    setPlaybackSpeed,
+    playbackManualAtGateway,
+    setPlaybackManualAtGateway,
+    playbackAutoCamera,
+    setPlaybackAutoCamera,
+    autoPassUi,
+    autoPassError,
+    autoPassBlockedReason,
+    startAutoPass,
+    markPlaybackOverlayInteraction,
+  } = playbackAutopassSection;
+
+  const {
     diagramActionPathOpen,
     diagramPathPopoverRef,
     hasPathHighlightData,
+    pathHighlightEnabled,
     setPathHighlightEnabled,
     availablePathTiers,
     pathHighlightCatalog,
@@ -73,74 +147,55 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     availableSequenceKeysForTier,
     pathHighlightSequenceKey,
     openPathsFromDiagram,
-    diagramActionHybridToolsOpen,
-    diagramHybridToolsPopoverRef,
-    hybridToolsUiState,
-    toggleHybridToolsVisible,
+    diagramQualityPopoverRef,
+    setQualityOverlayAll,
+    qualityOverlayRows,
+    qualityOverlayFilters,
+    toggleQualityOverlayFilter,
+    setQualityOverlayListKey,
+    setQualityOverlaySearch,
+    qualityOverlayListKey,
+    qualityOverlaySearch,
+    qualityOverlayListItems,
+    focusQualityOverlayItem,
+    diagramActionRobotMetaOpen,
+    diagramRobotMetaPopoverRef,
+    robotMetaOverlayFilters,
+    toggleRobotMetaOverlayFilter,
+    showRobotMetaOverlay,
+    resetRobotMetaOverlay,
+    robotMetaCounts,
+    robotMetaListOpen,
+    diagramRobotMetaListRef,
+    robotMetaListSearch,
+    setRobotMetaListSearch,
+    robotMetaListTab,
+    setRobotMetaListTab,
+    robotMetaListItems,
+    focusRobotMetaItem,
+  } = pathsQualitySection;
+
+  const {
+    diagramLayersPopoverRef,
+    hybridTotalCount,
+    showHybridLayer,
+    hideHybridLayer,
+    focusHybridLayer,
+    hybridModeEffective,
+    setHybridLayerMode,
+    hybridUiPrefs,
     selectHybridPaletteTool,
-    setHybridToolsMode,
+    setHybridLayerOpacity,
+    toggleHybridLayerLock,
+    toggleHybridLayerFocus,
     openEmbeddedDrawioEditor,
     toggleDrawioEnabled,
     setDrawioOpacity,
     toggleDrawioLock,
+    setDrawioElementVisible,
+    setDrawioElementLocked,
     drawioFileInputRef,
     exportEmbeddedDrawio,
-    diagramPlanPopoverRef,
-    canExportExecutionPlan,
-    executionPlanBusy,
-    executionPlanPreview,
-    asObject,
-    asArray,
-    executionPlanError,
-    copyExecutionPlanFromDiagram,
-    downloadExecutionPlanFromDiagram,
-    saveExecutionPlanVersionFromDiagram,
-    executionPlanSaveBusy,
-    executionPlanVersions,
-    shortHash,
-    diagramPlaybackPopoverRef,
-    playbackGraphError,
-    playbackCanRun,
-    playbackScenarioKey,
-    setPlaybackScenarioKey,
-    playbackScenarioOptions,
-    playbackIndexClamped,
-    playbackTotal,
-    playbackCurrentEvent,
-    playbackEventTitle,
-    autoPassUi,
-    autoPassError,
-    autoPassBlockedReason,
-    startAutoPass,
-    handlePlaybackPrev,
-    handlePlaybackTogglePlay,
-    handlePlaybackNext,
-    handlePlaybackReset,
-    playbackSpeed,
-    setPlaybackSpeed,
-    playbackManualAtGateway,
-    setPlaybackManualAtGateway,
-    playbackAutoCamera,
-    setPlaybackAutoCamera,
-    playbackGateways,
-    playbackGatewayChoices,
-    playbackGatewayPending,
-    playbackAwaitingGatewayId,
-    formatPlaybackGatewayTitle,
-    playbackGatewayOptionLabel,
-    markPlaybackOverlayInteraction,
-    setPlaybackGatewayChoice,
-    handlePlaybackGatewayDecision,
-    diagramLayersPopoverRef,
-    showHybridLayer,
-    hideHybridLayer,
-    focusHybridLayer,
-    setHybridLayerMode,
-    hybridUiPrefs,
-    setHybridLayerOpacity,
-    toggleHybridLayerLock,
-    toggleHybridLayerFocus,
-    hybridTotalCount,
     hybridV2DocLive,
     hybridV2HiddenCount,
     revealAllHybridV2,
@@ -163,43 +218,19 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     hybridLayerRenderRows,
     hybridV2Renderable,
     setHybridV2ActiveId,
-    deleteSelectedHybridIds,
-    deleteLegacyHybridMarkers,
+    drawioSelectedElementId,
+    deleteOverlayEntity,
     goToHybridLayerItem,
-    diagramActionRobotMetaOpen,
-    diagramRobotMetaPopoverRef,
-    robotMetaOverlayFilters,
-    toggleRobotMetaOverlayFilter,
-    showRobotMetaOverlay,
-    resetRobotMetaOverlay,
-    robotMetaListOpen,
-    diagramRobotMetaListRef,
-    robotMetaListSearch,
-    setRobotMetaListSearch,
-    robotMetaListTab,
-    setRobotMetaListTab,
-    robotMetaListItems,
-    focusRobotMetaItem,
-    diagramActionQualityOpen,
-    diagramQualityPopoverRef,
-    setQualityOverlayAll,
-    qualityOverlayRows,
-    qualityOverlayFilters,
-    toggleQualityOverlayFilter,
-    setQualityOverlayListKey,
-    setQualityOverlaySearch,
-    qualityOverlayListKey,
-    qualityOverlaySearch,
-    qualityOverlayListItems,
-    focusQualityOverlayItem,
-    diagramActionOverflowOpen,
+    hideSelectedHybridItems,
+    lockSelectedHybridItems,
+  } = drawioLayersSection;
+
+  const {
     diagramOverflowPopoverRef,
-    selectedInsertBetween,
-    openInsertBetweenModal,
-    insertBetweenBusy,
-    canInsertBetween,
-    insertBetweenErrorMessage,
-  } = view;
+    robotMetaOverlayEnabled,
+    setRobotMetaOverlayEnabled,
+    setRobotMetaOverlayFilters,
+  } = overflowModesSection;
 
   if (tab !== "diagram") return null;
   const autoPassState = asObject(autoPassUi);
@@ -208,63 +239,44 @@ export default function ProcessStageDiagramControls({ view = {} }) {
   const autoPassBlocked = toText(autoPassBlockedReason).length > 0;
   const autoPassLabel = toText(autoPassState?.label) || "Auto: idle";
   const autoPassProgress = Number(autoPassState?.progress || 0);
+  const overlayStatusLabel = toText(asObject(overlayPanelModel?.status).label)
+    || (drawioUiState.enabled ? "ON" : (hybridVisible ? "HYBRID" : "OFF"));
+  const unifiedOverlayPanelOpen = !!diagramActionLayersOpen || !!diagramActionHybridToolsOpen;
+  const closeDiagramPopovers = () => {
+    setDiagramActionPathOpen(false);
+    setDiagramActionHybridToolsOpen(false);
+    setDiagramActionPlanOpen(false);
+    setDiagramActionPlaybackOpen(false);
+    setDiagramActionLayersOpen(false);
+    setDiagramActionRobotMetaOpen(false);
+    setRobotMetaListOpen(false);
+    setDiagramActionQualityOpen(false);
+    setDiagramActionOverflowOpen(false);
+  };
 
   return (
     <>
       <div className="bpmnCanvasTools diagramActionBar" ref={diagramActionBarRef}>
         <button
           type="button"
-          className={`primaryBtn h-8 min-w-[124px] px-2.5 text-xs ${pathHighlightEnabled ? "" : "opacity-95"}`}
+          className={`primaryBtn h-8 px-2.5 text-xs ${unifiedOverlayPanelOpen || hybridVisible || drawioUiState.enabled ? "" : "opacity-95"}`}
           onClick={() => {
-            setDiagramActionPathOpen((prev) => !prev);
-            setDiagramActionHybridToolsOpen(false);
-            setDiagramActionPlanOpen(false);
-            setDiagramActionPlaybackOpen(false);
-            setDiagramActionLayersOpen(false);
-            setDiagramActionRobotMetaOpen(false);
-            setRobotMetaListOpen(false);
-            setDiagramActionQualityOpen(false);
-            setDiagramActionOverflowOpen(false);
+            const next = !unifiedOverlayPanelOpen;
+            closeDiagramPopovers();
+            setDiagramActionLayersOpen(next);
+            setDiagramActionHybridToolsOpen(next);
           }}
-          data-testid="diagram-action-path-toggle"
+          data-testid="diagram-action-layers"
         >
-          <span>Подсветить путь</span>
-          <span className="diagramActionChip">{pathHighlightEnabled ? pathHighlightBadge : "off"}</span>
-        </button>
-        <button
-          type="button"
-          className={`secondaryBtn h-8 px-2 text-[11px] diagramActionSecondary ${(hybridVisible || drawioUiState.enabled) ? "ring-1 ring-accent/60" : ""}`}
-          onClick={() => {
-            setDiagramActionHybridToolsOpen((prev) => !prev);
-            setDiagramActionPathOpen(false);
-            setDiagramActionPlanOpen(false);
-            setDiagramActionPlaybackOpen(false);
-            setDiagramActionLayersOpen(false);
-            setDiagramActionRobotMetaOpen(false);
-            setRobotMetaListOpen(false);
-            setDiagramActionQualityOpen(false);
-            setDiagramActionOverflowOpen(false);
-          }}
-          title="Hybrid Tools (Draw.io)"
-          data-testid="diagram-action-hybrid-tools-toggle"
-        >
-          <span>Draw.io</span>
-          <span className="diagramActionChip">{(drawioUiState.enabled || hybridVisible) ? (drawioUiState.enabled ? "full" : toText(hybridV2ToolState || hybridModeEffective || "on")) : "off"}</span>
-        </button>
-        <button
-          type="button"
-          className="secondaryBtn h-8 px-2 text-[11px] diagramActionSecondary"
-          onClick={openCreateTemplateModal}
-          disabled={!canCreateTemplateFromSelection}
-          title={canCreateTemplateFromSelection ? "Сохранить выделенные BPMN элементы как шаблон" : "Выделите BPMN элементы на Diagram"}
-          data-testid="btn-add-template"
-        >
-          {`Add template${templateSelectionCount > 0 ? ` (${templateSelectionCount})` : ""}`}
+          <span>Draw.io / Overlay</span>
+          <span className="diagramActionChip">
+            {overlayStatusLabel}
+          </span>
         </button>
         <span data-testid="templates-menu-button">
           <button
             type="button"
-            className="secondaryBtn h-8 px-2 text-[11px] diagramActionSecondary"
+            className="secondaryBtn h-8 px-2 text-[11px]"
             onClick={() => {
               if (templatesMenuOpen) {
                 setTemplatesMenuOpen(false);
@@ -276,138 +288,29 @@ export default function ProcessStageDiagramControls({ view = {} }) {
             title="Открыть список шаблонов"
             data-testid="btn-templates"
           >
-            Templates
+            Шаблоны
           </button>
         </span>
         <button
           type="button"
-          className="secondaryBtn h-8 px-2 text-[11px] diagramActionSecondary"
-          onClick={openSelectedElementNotes}
-          disabled={!canUseElementContextActions}
-          title={canUseElementContextActions ? "Открыть Notes для выбранного элемента" : "Выберите элемент на диаграмме"}
-          data-testid="diagram-action-notes"
-        >
-          Notes
-        </button>
-        <button
-          type="button"
-          className="secondaryBtn h-8 px-2 text-[11px] diagramActionSecondary"
-          onClick={openSelectedElementAi}
-          disabled={!canUseElementContextActions}
-          title={canUseElementContextActions ? "Открыть AI-вопросы для выбранного элемента" : "Выберите элемент на диаграмме"}
-          data-testid="diagram-action-ai"
-        >
-          AI
-        </button>
-        <button
-          type="button"
-          className="secondaryBtn h-8 px-2 text-[11px] diagramActionSecondary"
-          onClick={openReportsFromDiagram}
+          className="secondaryBtn h-8 px-2 text-[11px]"
+          onClick={() => {
+            closeDiagramPopovers();
+            openReportsFromDiagram();
+          }}
           disabled={!hasSession}
           title="Открыть Reports для выбранного сценария"
           data-testid="diagram-action-reports"
         >
-          Reports
-        </button>
-        <button
-          type="button"
-          className={`secondaryBtn h-8 px-2 text-[11px] ${diagramActionPlanOpen ? "ring-1 ring-accent/60" : ""}`}
-          onClick={() => {
-            setDiagramActionPlanOpen((prev) => !prev);
-            setDiagramActionPathOpen(false);
-            setDiagramActionHybridToolsOpen(false);
-            setDiagramActionPlaybackOpen(false);
-            setDiagramActionLayersOpen(false);
-            setDiagramActionRobotMetaOpen(false);
-            setRobotMetaListOpen(false);
-            setDiagramActionQualityOpen(false);
-            setDiagramActionOverflowOpen(false);
-          }}
-          title={`Экспорт плана: ${toText(executionPlanSource?.scenarioLabel) || "Scenario"}`}
-          data-testid="diagram-action-export-plan"
-        >
-          Export Plan
-        </button>
-        <button
-          type="button"
-          className={`secondaryBtn h-8 px-2 text-[11px] ${diagramActionPlaybackOpen || playbackIsPlaying ? "ring-1 ring-accent/60" : ""}`}
-          onClick={() => {
-            setDiagramActionPlaybackOpen((prev) => !prev);
-            setDiagramActionPathOpen(false);
-            setDiagramActionPlanOpen(false);
-            setDiagramActionHybridToolsOpen(false);
-            setDiagramActionLayersOpen(false);
-            setDiagramActionRobotMetaOpen(false);
-            setRobotMetaListOpen(false);
-            setDiagramActionQualityOpen(false);
-            setDiagramActionOverflowOpen(false);
-          }}
-          title={`Проезд по сценарию: ${toText(playbackScenarioLabel) || "Scenario"}`}
-          data-testid="diagram-action-playback"
-        >
-          ▶ Проезд
-        </button>
-        <button
-          type="button"
-          className={`secondaryBtn h-8 px-2 text-[11px] ${diagramActionLayersOpen || hybridVisible || drawioUiState.enabled ? "ring-1 ring-accent/60" : ""}`}
-          onClick={() => {
-            setDiagramActionLayersOpen((prev) => !prev);
-            setDiagramActionPathOpen(false);
-            setDiagramActionPlanOpen(false);
-            setDiagramActionHybridToolsOpen(false);
-            setDiagramActionRobotMetaOpen(false);
-            setRobotMetaListOpen(false);
-            setDiagramActionQualityOpen(false);
-            setDiagramActionOverflowOpen(false);
-          }}
-          title="Управление Hybrid Layer"
-          data-testid="diagram-action-layers"
-        >
-          Layers
-        </button>
-        <button
-          type="button"
-          className={`secondaryBtn h-8 px-2 text-[11px] ${robotMetaOverlayEnabled ? "ring-1 ring-accent/60" : ""}`}
-          onClick={() => {
-            setDiagramActionRobotMetaOpen((prev) => !prev);
-            setDiagramActionPathOpen(false);
-            setDiagramActionPlanOpen(false);
-            setDiagramActionPlaybackOpen(false);
-            setDiagramActionHybridToolsOpen(false);
-            setDiagramActionLayersOpen(false);
-            setRobotMetaListOpen(false);
-            setDiagramActionQualityOpen(false);
-            setDiagramActionOverflowOpen(false);
-            setRobotMetaOverlayEnabled(true);
-            setRobotMetaOverlayFilters((prev) => {
-              const next = {
-                ready: !!prev?.ready,
-                incomplete: !!prev?.incomplete,
-              };
-              if (!next.ready && !next.incomplete) {
-                return { ready: true, incomplete: true };
-              }
-              return next;
-            });
-          }}
-          title="Подсветка готовности Robot Meta"
-          data-testid="diagram-action-robotmeta"
-        >
-          Robot Meta {robotMetaOverlayEnabled ? `(${robotMetaCounts.ready}/${robotMetaCounts.incomplete})` : "off"}
+          Отчёты
         </button>
         <button
           type="button"
           className={`secondaryBtn h-8 px-2 text-[11px] ${activeQualityOverlayCount > 0 ? "ring-1 ring-accent/60" : ""}`}
           onClick={() => {
-            setDiagramActionQualityOpen((prev) => !prev);
-            setDiagramActionPathOpen(false);
-            setDiagramActionPlanOpen(false);
-            setDiagramActionPlaybackOpen(false);
-            setDiagramActionHybridToolsOpen(false);
-            setDiagramActionLayersOpen(false);
-            setDiagramActionRobotMetaOpen(false);
-            setRobotMetaListOpen(false);
-            setDiagramActionOverflowOpen(false);
+            const next = !diagramActionQualityOpen;
+            closeDiagramPopovers();
+            setDiagramActionQualityOpen(next);
           }}
           title="Проблемы на диаграмме"
           data-testid="diagram-action-quality"
@@ -416,17 +319,35 @@ export default function ProcessStageDiagramControls({ view = {} }) {
         </button>
         <button
           type="button"
+          className={`secondaryBtn h-8 px-2 text-[11px] ${diagramFocusMode ? "ring-1 ring-accent/60" : ""}`}
+          onClick={() => {
+            setDiagramFocusMode((prev) => !prev);
+            closeDiagramPopovers();
+          }}
+          title="Скрыть второстепенные панели и сфокусироваться на диаграмме"
+          data-testid="diagram-action-focus-mode"
+        >
+          {diagramFocusMode ? "Выйти из фокуса" : "Фокус"}
+        </button>
+        <button
+          type="button"
+          className={`secondaryBtn h-8 px-2 text-[11px] ${diagramFullscreenActive ? "ring-1 ring-accent/60" : ""}`}
+          onClick={() => {
+            closeDiagramPopovers();
+            void toggleDiagramFullscreen?.();
+          }}
+          title="Fullscreen диаграммы"
+          data-testid="diagram-action-fullscreen-mode"
+        >
+          {diagramFullscreenActive ? "Выйти из fullscreen" : "Fullscreen"}
+        </button>
+        <button
+          type="button"
           className="secondaryBtn h-8 w-8 px-0 text-sm"
           onClick={() => {
-            setDiagramActionOverflowOpen((prev) => !prev);
-            setDiagramActionPathOpen(false);
-            setDiagramActionPlanOpen(false);
-            setDiagramActionPlaybackOpen(false);
-            setDiagramActionHybridToolsOpen(false);
-            setDiagramActionLayersOpen(false);
-            setDiagramActionRobotMetaOpen(false);
-            setRobotMetaListOpen(false);
-            setDiagramActionQualityOpen(false);
+            const next = !diagramActionOverflowOpen;
+            closeDiagramPopovers();
+            setDiagramActionOverflowOpen(next);
           }}
           aria-label="Открыть дополнительные действия Diagram"
           data-testid="diagram-action-overflow"
@@ -568,23 +489,6 @@ export default function ProcessStageDiagramControls({ view = {} }) {
         onCreateFolder={createTemplateFolderFromUi}
         canCreateOrgFolder={!!workspaceActiveOrgId && !!canCreateOrgFolders}
         showOrgScope={!!workspaceActiveOrgId}
-      />
-
-      <HybridToolsPalette
-        open={diagramActionHybridToolsOpen}
-        popoverRef={diagramHybridToolsPopoverRef}
-        state={hybridToolsUiState}
-        drawioState={drawioUiState}
-        onToggleVisible={toggleHybridToolsVisible}
-        onSetTool={selectHybridPaletteTool}
-        onSetMode={setHybridToolsMode}
-        onOpenDrawioEditor={openEmbeddedDrawioEditor}
-        onToggleDrawioVisible={toggleDrawioEnabled}
-        onSetDrawioOpacity={setDrawioOpacity}
-        onToggleDrawioLock={toggleDrawioLock}
-        onImportDrawio={() => drawioFileInputRef.current?.click?.()}
-        onExportDrawio={exportEmbeddedDrawio}
-        onClose={() => setDiagramActionHybridToolsOpen(false)}
       />
 
       {diagramActionPlanOpen ? (
@@ -980,9 +884,12 @@ export default function ProcessStageDiagramControls({ view = {} }) {
       ) : null}
 
       <LayersPopover
-        open={diagramActionLayersOpen}
+        open={unifiedOverlayPanelOpen}
         popoverRef={diagramLayersPopoverRef}
-        onClose={() => setDiagramActionLayersOpen(false)}
+        onClose={() => {
+          setDiagramActionLayersOpen(false);
+          setDiagramActionHybridToolsOpen(false);
+        }}
         onMouseDown={(event) => {
           event.stopPropagation();
           markPlaybackOverlayInteraction({ stage: "layers_popover_mousedown" });
@@ -995,10 +902,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
         hybridModeEffective={hybridModeEffective}
         setHybridLayerMode={setHybridLayerMode}
         hybridUiPrefs={hybridUiPrefs}
-        onOpenHybridTools={() => {
-          setDiagramActionHybridToolsOpen(true);
-          setDiagramActionLayersOpen(false);
-        }}
+        onSetTool={selectHybridPaletteTool}
         setHybridLayerOpacity={setHybridLayerOpacity}
         toggleHybridLayerLock={toggleHybridLayerLock}
         toggleHybridLayerFocus={toggleHybridLayerFocus}
@@ -1007,6 +911,8 @@ export default function ProcessStageDiagramControls({ view = {} }) {
         onToggleDrawioVisible={toggleDrawioEnabled}
         onSetDrawioOpacity={setDrawioOpacity}
         onToggleDrawioLock={toggleDrawioLock}
+        onSetDrawioElementVisible={setDrawioElementVisible}
+        onSetDrawioElementLocked={setDrawioElementLocked}
         onImportEmbeddedDrawioClick={() => drawioFileInputRef.current?.click?.()}
         onExportEmbeddedDrawio={exportEmbeddedDrawio}
         hybridV2DocLive={hybridV2DocLive}
@@ -1031,10 +937,13 @@ export default function ProcessStageDiagramControls({ view = {} }) {
         hybridLayerRenderRows={hybridLayerRenderRows}
         hybridV2Renderable={hybridV2Renderable}
         setHybridV2ActiveId={setHybridV2ActiveId}
-        deleteSelectedHybridIds={deleteSelectedHybridIds}
-        deleteLegacyHybridMarkers={deleteLegacyHybridMarkers}
+        drawioSelectedElementId={drawioSelectedElementId}
+        overlayPanelModel={overlayPanelModel}
+        onDeleteOverlayEntity={deleteOverlayEntity}
         bpmnRef={bpmnRef}
         goToHybridLayerItem={goToHybridLayerItem}
+        onHideSelectedHybridItems={hideSelectedHybridItems}
+        onLockSelectedHybridItems={lockSelectedHybridItems}
       />
 
       {diagramActionRobotMetaOpen ? (
@@ -1256,20 +1165,116 @@ export default function ProcessStageDiagramControls({ view = {} }) {
               Закрыть
             </button>
           </div>
+          <div className="diagramIssueRows">
+            <div className="diagramIssueRow">
+              <span>Навигация и диагностика</span>
+            </div>
+          </div>
           <div className="diagramActionPopoverActions">
+            <button
+              type="button"
+              className="secondaryBtn h-7 px-2 text-[11px]"
+              onClick={() => {
+                closeDiagramPopovers();
+                setDiagramActionPathOpen(true);
+              }}
+            >
+              Подсветка путей
+            </button>
+            <button
+              type="button"
+              className="secondaryBtn h-7 px-2 text-[11px]"
+              onClick={() => {
+                closeDiagramPopovers();
+                setDiagramActionPlaybackOpen(true);
+              }}
+            >
+              Проход
+            </button>
+            <button
+              type="button"
+              className="secondaryBtn h-7 px-2 text-[11px]"
+              onClick={() => {
+                closeDiagramPopovers();
+                setDiagramActionPlanOpen(true);
+              }}
+            >
+              План (JSON)
+            </button>
+            <button
+              type="button"
+              className={`secondaryBtn h-7 px-2 text-[11px] ${robotMetaOverlayEnabled ? "ring-1 ring-accent/60" : ""}`}
+              onClick={() => {
+                closeDiagramPopovers();
+                setDiagramActionRobotMetaOpen(true);
+                setRobotMetaOverlayEnabled(true);
+                setRobotMetaOverlayFilters((prev) => {
+                  const next = {
+                    ready: !!prev?.ready,
+                    incomplete: !!prev?.incomplete,
+                  };
+                  if (!next.ready && !next.incomplete) return { ready: true, incomplete: true };
+                  return next;
+                });
+              }}
+            >
+              Robot Meta
+            </button>
+          </div>
+          <div className="diagramIssueRows mt-2">
+            <div className="diagramIssueRow">
+              <span>Контекст и редактирование</span>
+            </div>
+          </div>
+          <div className="diagramActionPopoverActions">
+            <button
+              type="button"
+              className="secondaryBtn h-7 px-2 text-[11px]"
+              onClick={() => {
+                closeDiagramPopovers();
+                openCreateTemplateModal();
+              }}
+              disabled={!canCreateTemplateFromSelection}
+              title={canCreateTemplateFromSelection ? "Сохранить выделенные BPMN элементы как шаблон" : "Выделите BPMN элементы"}
+            >
+              {`Добавить шаблон${templateSelectionCount > 0 ? ` (${templateSelectionCount})` : ""}`}
+            </button>
+            <button
+              type="button"
+              className="secondaryBtn h-7 px-2 text-[11px]"
+              onClick={() => {
+                closeDiagramPopovers();
+                openSelectedElementNotes();
+              }}
+              disabled={!canUseElementContextActions}
+            >
+              Заметки
+            </button>
+            <button
+              type="button"
+              className="secondaryBtn h-7 px-2 text-[11px]"
+              onClick={() => {
+                closeDiagramPopovers();
+                openSelectedElementAi();
+              }}
+              disabled={!canUseElementContextActions}
+            >
+              AI
+            </button>
             {selectedInsertBetween ? (
               <button
                 type="button"
                 className="secondaryBtn h-7 px-2 text-[11px]"
-                onClick={openInsertBetweenModal}
+                onClick={() => {
+                  closeDiagramPopovers();
+                  openInsertBetweenModal();
+                }}
                 disabled={insertBetweenBusy || !canInsertBetween}
                 title={canInsertBetween ? "Вставить шаг между" : insertBetweenErrorMessage(selectedInsertBetween?.error)}
               >
                 Вставить между
               </button>
-            ) : (
-              <div className="diagramActionPopoverEmpty">Дублирующих действий нет.</div>
-            )}
+            ) : null}
           </div>
         </div>
       ) : null}

@@ -10,6 +10,7 @@ import {
   hasKnownHybridV2Session,
   serializeHybridLayerMap,
 } from "../../stage/utils/processStageHelpers.js";
+import { pushDeleteTrace } from "../../stage/utils/deleteTrace";
 
 export default function useHybridPipelineController({
   sid,
@@ -307,6 +308,11 @@ export default function useHybridPipelineController({
 
   const deleteLegacyHybridMarkers = useCallback((elementIdsRaw, source = "hybrid_legacy_delete") => {
     const elementIds = Array.from(new Set(asArray(elementIdsRaw).map((row) => toText(row)).filter(Boolean)));
+    pushDeleteTrace("hybrid_legacy_delete_attempt", {
+      elementIds,
+      source,
+      activeLegacyId: toText(hybridLayerActiveElementId),
+    });
     if (!elementIds.length) return false;
     const boundHybridIds = new Set();
     elementIds.forEach((elementId) => {
@@ -346,6 +352,13 @@ export default function useHybridPipelineController({
       setHybridLayerActiveElementId("");
     }
     const changed = removedCount > 0 || boundHybridIds.size > 0;
+    pushDeleteTrace("hybrid_legacy_delete_result", {
+      elementIds,
+      source,
+      removedCount,
+      boundHybridCount: boundHybridIds.size,
+      changed,
+    });
     if (!changed) {
       setInfoMsg("Нечего удалять: legacy-метка не найдена.");
       setGenErr("");

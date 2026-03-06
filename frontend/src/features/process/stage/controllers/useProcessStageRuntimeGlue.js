@@ -31,7 +31,6 @@ export default function useProcessStageRuntimeGlue({
   hybridLayerPersistedMapRef,
   hybridV2Doc,
   hybridV2PersistedDocRef,
-  drawioMetaRef,
   setSaveDirtyHint,
   setToolbarMenuOpen,
   setAiBottleneckOn,
@@ -54,8 +53,6 @@ export default function useProcessStageRuntimeGlue({
   setExecutionPlanBusy,
   setExecutionPlanPreview,
   setExecutionPlanSaveBusy,
-  setDrawioMeta,
-  setDrawioEditorOpen,
   setQualityOverlayFilters,
   onSessionSync,
   onOpenElementNotes,
@@ -65,11 +62,6 @@ export default function useProcessStageRuntimeGlue({
   markPlaybackOverlayInteraction,
   persistHybridLayerMap,
   persistHybridV2Doc,
-  persistDrawioMeta,
-  normalizeDrawioMeta,
-  serializeDrawioMeta,
-  isDrawioXml,
-  readFileText,
   toText,
   toNodeId,
   asArray,
@@ -87,7 +79,6 @@ export default function useProcessStageRuntimeGlue({
   appendExecutionPlanVersionEntry,
   copyText,
   downloadJsonFile,
-  downloadTextFile,
   serializeHybridLayerMap,
   docToComparableJson,
 }) {
@@ -506,153 +497,6 @@ export default function useProcessStageRuntimeGlue({
     return () => window.clearTimeout(timerId);
   }, [docToComparableJson, hybridV2Doc, hybridV2PersistedDocRef, hybridVisible, persistHybridV2Doc]);
 
-  const applyDrawioMetaUpdate = useCallback((mutator, source = "drawio_update") => {
-    const prev = normalizeDrawioMeta(drawioMetaRef.current);
-    const next = normalizeDrawioMeta(typeof mutator === "function" ? mutator(prev) : prev);
-    if (serializeDrawioMeta(next) === serializeDrawioMeta(prev)) return next;
-    setDrawioMeta(next);
-    drawioMetaRef.current = next;
-    markPlaybackOverlayInteraction?.({ stage: source });
-    return next;
-  }, [drawioMetaRef, markPlaybackOverlayInteraction, normalizeDrawioMeta, serializeDrawioMeta, setDrawioMeta]);
-
-  const saveDrawioMetaNow = useCallback(async (mutator, source = "drawio_save") => {
-    const next = applyDrawioMetaUpdate(mutator, source);
-    await persistDrawioMeta(next, { source });
-    return next;
-  }, [applyDrawioMetaUpdate, persistDrawioMeta]);
-
-  const openEmbeddedDrawioEditor = useCallback(() => {
-    if (drawioMetaRef.current.locked === true) {
-      setInfoMsg("Draw.io overlay заблокирован. Снимите lock, чтобы редактировать.");
-      setGenErr("");
-      return false;
-    }
-    setDrawioEditorOpen(true);
-    return true;
-  }, [drawioMetaRef, setDrawioEditorOpen, setGenErr, setInfoMsg]);
-
-  const closeEmbeddedDrawioEditor = useCallback(() => {
-    setDrawioEditorOpen(false);
-  }, [setDrawioEditorOpen]);
-
-  const handleDrawioEditorSave = useCallback(async (payloadRaw = {}) => {
-    const payload = asObject(payloadRaw);
-    const docXml = toText(payload.docXml || payload.doc_xml || payload.xml);
-    const svgCache = toText(payload.svgCache || payload.svg_cache || payload.svg);
-    if (!isDrawioXml(docXml)) {
-      setGenErr("Draw.io вернул некорректный документ.");
-      return false;
-    }
-    const next = normalizeDrawioMeta({
-      ...drawioMetaRef.current,
-      enabled: true,
-      doc_xml: docXml,
-      svg_cache: svgCache,
-      last_saved_at: new Date().toISOString(),
-    });
-    setDrawioMeta(next);
-    drawioMetaRef.current = next;
-    const persisted = await persistDrawioMeta(next, { source: "drawio_editor_save" });
-    if (!persisted?.ok) {
-      return false;
-    }
-    setDrawioEditorOpen(false);
-    setInfoMsg(svgCache ? "Draw.io сохранён." : "Draw.io сохранён без SVG preview.");
-    setGenErr("");
-    return true;
-  }, [asObject, drawioMetaRef, isDrawioXml, normalizeDrawioMeta, persistDrawioMeta, setDrawioEditorOpen, setDrawioMeta, setGenErr, setInfoMsg, toText]);
-
-  const toggleDrawioEnabled = useCallback(async () => {
-    const current = normalizeDrawioMeta(drawioMetaRef.current);
-    const nextEnabled = !current.enabled;
-    await saveDrawioMetaNow((prev) => ({
-      ...prev,
-      enabled: nextEnabled,
-    }), "drawio_visibility_toggle");
-    if (nextEnabled && !toText(current.doc_xml)) {
-      setDrawioEditorOpen(true);
-    }
-  }, [drawioMetaRef, normalizeDrawioMeta, saveDrawioMetaNow, setDrawioEditorOpen, toText]);
-
-  const setDrawioOpacity = useCallback(async (opacityRaw) => {
-    const opacity = Math.max(0.05, Math.min(1, Number(opacityRaw || 1)));
-    await saveDrawioMetaNow((prev) => ({
-      ...prev,
-      opacity,
-    }), "drawio_opacity_change");
-  }, [saveDrawioMetaNow]);
-
-  const toggleDrawioLock = useCallback(async () => {
-    await saveDrawioMetaNow((prev) => ({
-      ...prev,
-      locked: prev.locked !== true,
-    }), "drawio_lock_toggle");
-  }, [saveDrawioMetaNow]);
-
-  const exportEmbeddedDrawio = useCallback(() => {
-    const current = normalizeDrawioMeta(drawioMetaRef.current);
-    const xml = toText(current.doc_xml);
-    if (!xml) {
-      setInfoMsg("Draw.io документ пока пуст. Сначала открой редактор и нажми Save.");
-      setGenErr("");
-      return false;
-    }
-    const stamp = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14) || Date.now();
-    const ok = downloadTextFile(`drawio_${sid || "session"}_${stamp}.drawio`, xml, "application/xml;charset=utf-8");
-    if (ok) {
-      setInfoMsg("Draw.io экспортирован (.drawio).");
-      setGenErr("");
-      return true;
-    }
-    setGenErr("Не удалось экспортировать Draw.io.");
-    return false;
-  }, [downloadTextFile, drawioMetaRef, normalizeDrawioMeta, setGenErr, setInfoMsg, sid, toText]);
-
-  const handleDrawioImportFile = useCallback(async (fileRaw) => {
-    const file = fileRaw instanceof File ? fileRaw : null;
-    if (!file) return false;
-    const text = toText(await readFileText(file).catch(() => ""));
-    if (!isDrawioXml(text)) {
-      setGenErr("Импорт Draw.io ожидает файл .drawio / <mxfile>.");
-      return false;
-    }
-    applyDrawioMetaUpdate((prev) => ({
-      ...prev,
-      enabled: true,
-      doc_xml: text,
-      svg_cache: prev.svg_cache,
-    }), "drawio_import_stage");
-    setDrawioEditorOpen(true);
-    setInfoMsg("Файл Draw.io загружен. Нажми Save в редакторе, чтобы обновить preview.");
-    setGenErr("");
-    return true;
-  }, [applyDrawioMetaUpdate, isDrawioXml, readFileText, setDrawioEditorOpen, setGenErr, setInfoMsg, toText]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    const e2eApi = {
-      openEditor() {
-        setDrawioEditorOpen(true);
-      },
-      savePayload(payloadRaw = {}) {
-        return handleDrawioEditorSave(payloadRaw);
-      },
-      setOpacity(valueRaw) {
-        return setDrawioOpacity(valueRaw);
-      },
-      readMeta() {
-        return normalizeDrawioMeta(drawioMetaRef.current);
-      },
-    };
-    window.__FPC_E2E_DRAWIO__ = e2eApi;
-    return () => {
-      if (window.__FPC_E2E_DRAWIO__ === e2eApi) {
-        window.__FPC_E2E_DRAWIO__ = null;
-      }
-    };
-  }, [drawioMetaRef, handleDrawioEditorSave, normalizeDrawioMeta, setDrawioOpacity, setDrawioEditorOpen]);
-
   function openPathsFromDiagram() {
     const intent = {
       version: DIAGRAM_PATHS_INTENT_VERSION,
@@ -731,14 +575,6 @@ export default function useProcessStageRuntimeGlue({
     copyExecutionPlanFromDiagram,
     downloadExecutionPlanFromDiagram,
     saveExecutionPlanVersionFromDiagram,
-    openEmbeddedDrawioEditor,
-    closeEmbeddedDrawioEditor,
-    handleDrawioEditorSave,
-    toggleDrawioEnabled,
-    setDrawioOpacity,
-    toggleDrawioLock,
-    exportEmbeddedDrawio,
-    handleDrawioImportFile,
     openPathsFromDiagram,
     toggleQualityOverlayFilter,
     setQualityOverlayAll,
