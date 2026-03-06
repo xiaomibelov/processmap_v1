@@ -32,7 +32,7 @@ function shortId(value) {
 }
 
 const MEMBER_ROLES = ["org_admin", "project_manager", "editor", "viewer", "auditor"];
-const INVITE_ROLES = ["org_admin", "editor", "viewer", "auditor"];
+const INVITE_ROLES = ["org_admin", "team_admin", "editor", "viewer", "auditor"];
 
 export default function OrgSettingsModal({
   open,
@@ -52,6 +52,9 @@ export default function OrgSettingsModal({
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("viewer");
   const [inviteTtl, setInviteTtl] = useState("7");
+  const [inviteTeamName, setInviteTeamName] = useState("");
+  const [inviteSubgroupName, setInviteSubgroupName] = useState("");
+  const [inviteComment, setInviteComment] = useState("");
   const [lastInviteToken, setLastInviteToken] = useState("");
   const [lastInviteNotice, setLastInviteNotice] = useState("");
   const [auditAction, setAuditAction] = useState("");
@@ -138,7 +141,15 @@ export default function OrgSettingsModal({
     if (!oid) return;
     setError("");
     const ttlDays = Number(inviteTtl || 7);
-    const res = await apiCreateOrgInvite(oid, { email: inviteEmail, role: inviteRole, ttl_days: ttlDays });
+    const res = await apiCreateOrgInvite(oid, {
+      email: inviteEmail,
+      role: inviteRole,
+      ttl_days: ttlDays,
+      team_name: inviteTeamName,
+      subgroup_name: inviteSubgroupName,
+      invite_comment: inviteComment,
+      invite_mode: "one_time",
+    });
     if (!res.ok) {
       setError(toText(res.error || "Не удалось создать инвайт"));
       return;
@@ -146,6 +157,9 @@ export default function OrgSettingsModal({
     setInviteEmail("");
     setInviteRole("viewer");
     setInviteTtl("7");
+    setInviteTeamName("");
+    setInviteSubgroupName("");
+    setInviteComment("");
     const token = toText(res.invite_token);
     setLastInviteToken(token);
     if (token) {
@@ -256,26 +270,50 @@ export default function OrgSettingsModal({
             {canManageInvites ? (
               <form className="grid grid-cols-1 gap-2 rounded-lg border border-border p-2 md:grid-cols-12" onSubmit={handleCreateInvite}>
                 <input
-                  className="input md:col-span-5"
+                  className="input md:col-span-4"
                   type="email"
-                  placeholder="email@company.com"
+                  placeholder="Логин/email сотрудника"
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
                   required
                 />
-                <select className="select md:col-span-3" value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
+                <select className="select md:col-span-2" value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
                   {INVITE_ROLES.map((item) => <option key={item} value={item}>{item}</option>)}
                 </select>
                 <input
                   className="input md:col-span-2"
+                  type="text"
+                  placeholder="Команда"
+                  value={inviteTeamName}
+                  onChange={(e) => setInviteTeamName(e.target.value)}
+                />
+                <input
+                  className="input md:col-span-2"
+                  type="text"
+                  placeholder="Подгруппа"
+                  value={inviteSubgroupName}
+                  onChange={(e) => setInviteSubgroupName(e.target.value)}
+                />
+                <input
+                  className="input md:col-span-1"
                   type="number"
                   min="1"
                   max="60"
-                  placeholder="Срок (дни)"
+                  placeholder="TTL"
                   value={inviteTtl}
                   onChange={(e) => setInviteTtl(e.target.value)}
                 />
-                <button type="submit" className="primaryBtn md:col-span-2">Создать</button>
+                <button type="submit" className="primaryBtn md:col-span-1">Создать</button>
+                <input
+                  className="input md:col-span-12"
+                  type="text"
+                  placeholder="Комментарий (опционально)"
+                  value={inviteComment}
+                  onChange={(e) => setInviteComment(e.target.value)}
+                />
+                <div className="md:col-span-12 text-[11px] text-muted">
+                  Политика приглашений: только одноразовые инвайты (one-time).
+                </div>
               </form>
             ) : (
               <div className="text-xs text-muted">Нет прав на управление инвайтами.</div>
@@ -294,10 +332,12 @@ export default function OrgSettingsModal({
               <table className="min-w-full text-xs">
                 <thead className="bg-panel2/70 text-muted">
                   <tr>
-                    <th className="px-2 py-1 text-left">Email</th>
+                    <th className="px-2 py-1 text-left">Логин/Email</th>
                     <th className="px-2 py-1 text-left">Роль</th>
+                    <th className="px-2 py-1 text-left">Команда</th>
                     <th className="px-2 py-1 text-left">Статус</th>
                     <th className="px-2 py-1 text-left">Истекает</th>
+                    <th className="px-2 py-1 text-left">Использован</th>
                     <th className="px-2 py-1 text-left">Действие</th>
                   </tr>
                 </thead>
@@ -310,8 +350,10 @@ export default function OrgSettingsModal({
                       <tr key={inviteId} className="border-t border-border/60">
                         <td className="px-2 py-1">{toText(row?.email) || "-"}</td>
                         <td className="px-2 py-1">{toText(row?.role) || "viewer"}</td>
+                        <td className="px-2 py-1">{toText(row?.team_name || row?.subgroup_name) || "-"}</td>
                         <td className="px-2 py-1">{status || "-"}</td>
                         <td className="px-2 py-1">{formatTs(row?.expires_at)}</td>
+                        <td className="px-2 py-1">{formatTs(row?.used_at || row?.accepted_at)}</td>
                         <td className="px-2 py-1">
                           {canManageInvites && isActive ? (
                             <button type="button" className="secondaryBtn h-8 min-h-0 px-2 py-0 text-xs" onClick={() => void handleRevokeInvite(inviteId)}>

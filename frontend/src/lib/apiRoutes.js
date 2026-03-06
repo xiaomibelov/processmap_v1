@@ -19,6 +19,8 @@ export const apiRoutes = {
     logout: () => "/api/auth/logout",
     me: () => "/api/auth/me",
     refresh: () => "/api/auth/refresh",
+    invitePreview: () => "/api/auth/invite/preview",
+    inviteActivate: () => "/api/auth/invite/activate",
   },
   orgs: {
     list: () => "/api/orgs",

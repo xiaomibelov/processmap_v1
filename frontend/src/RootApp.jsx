@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import App from "./App";
 import AdminApp from "./features/admin/AdminApp";
@@ -36,18 +36,6 @@ function navigate(to, { replace = false } = {}) {
 
 function normalizeOrgMemberships(value) {
   return Array.isArray(value) ? value.filter((item) => item && typeof item === "object") : [];
-}
-
-function mapInviteAcceptError(result) {
-  const status = Number(result?.status || 0);
-  const marker = String(result?.error || "").toLowerCase();
-  if (status === 409 && marker.includes("email")) return "Email аккаунта не совпадает с приглашением.";
-  if (status === 410) return "Срок действия приглашения истёк.";
-  if (status === 404) return "Приглашение не найдено или уже недоступно.";
-  if (status === 401) return "Требуется вход в систему.";
-  if (status === 429) return "Слишком много попыток. Попробуйте позже.";
-  if (status >= 500) return "Ошибка сервера при принятии приглашения.";
-  return "Не удалось принять приглашение.";
 }
 
 function OrgSelectScreen({ orgs, activeOrgId, busy, onSelect }) {
@@ -102,9 +90,6 @@ function AppRoutes() {
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [orgSwitchBusy, setOrgSwitchBusy] = useState(false);
   const [orgChoiceDone, setOrgChoiceDone] = useState(false);
-  const [acceptInviteBusy, setAcceptInviteBusy] = useState(false);
-  const [acceptInviteError, setAcceptInviteError] = useState("");
-  const acceptInviteAttemptRef = useRef("");
 
   useEffect(() => {
     function onPopState() {
@@ -136,12 +121,11 @@ function AppRoutes() {
     const params = new URLSearchParams(search);
     return String(params.get("token") || "").trim();
   }, [search]);
-  const isAcceptInviteRoute = pathname === "/accept-invite";
 
   useEffect(() => {
     if (loading) return;
 
-    if (isAuthed && (pathname === "/" || pathname === "/login")) {
+    if (isAuthed && (pathname === "/" || pathname === "/login" || pathname === "/accept-invite")) {
       navigate("/app", { replace: true });
       return;
     }
@@ -189,49 +173,6 @@ function AppRoutes() {
       setReauthRequired(false);
     }
   }, [isAuthed, loading, pathname, reauthRequired, setReauthRequired]);
-
-  useEffect(() => {
-    if (!isAcceptInviteRoute) {
-      acceptInviteAttemptRef.current = "";
-      setAcceptInviteBusy(false);
-      setAcceptInviteError("");
-      return;
-    }
-    if (loading || !isAuthed) return;
-    if (!inviteToken) {
-      setAcceptInviteError("В ссылке отсутствует token приглашения.");
-      return;
-    }
-    const attemptKey = `${String(user?.id || "").trim()}::${inviteToken}`;
-    if (acceptInviteAttemptRef.current === attemptKey) return;
-    acceptInviteAttemptRef.current = attemptKey;
-    let canceled = false;
-    setAcceptInviteBusy(true);
-    setAcceptInviteError("");
-    void (async () => {
-      const accepted = await apiAcceptInviteToken(inviteToken);
-      if (!accepted?.ok) {
-        if (!canceled) {
-          setAcceptInviteBusy(false);
-          setAcceptInviteError(mapInviteAcceptError(accepted));
-        }
-        return;
-      }
-      const acceptedOrgId = String(accepted?.membership?.org_id || accepted?.invite?.org_id || "").trim();
-      await refreshOrgs();
-      if (acceptedOrgId) {
-        await switchOrg(acceptedOrgId, { refreshMe: false, allowMissing: true });
-      }
-      if (!canceled) {
-        setAcceptInviteBusy(false);
-        setReauthRequired(false);
-        navigate("/app", { replace: true });
-      }
-    })();
-    return () => {
-      canceled = true;
-    };
-  }, [inviteToken, isAcceptInviteRoute, isAuthed, loading, refreshOrgs, setReauthRequired, switchOrg, user?.id]);
 
   function resolvePostLoginPath() {
     if (pathname.startsWith("/app")) return `${pathname}${search}${hash}`;
@@ -339,6 +280,11 @@ function AppRoutes() {
             else setLoginModalOpen(true);
           }}
           onOpenLoginPage={() => navigate("/login")}
+          initialInviteToken={inviteToken}
+          onAccessActivated={() => {
+            setReauthRequired(false);
+            navigate("/app", { replace: true });
+          }}
         />
       )}
 

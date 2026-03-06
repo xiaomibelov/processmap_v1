@@ -249,6 +249,61 @@ def find_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _find_user_index_by_email(rows: list[Dict[str, Any]], email: str) -> int:
+    target = normalize_email(email)
+    if not target:
+        return -1
+    for idx, row in enumerate(rows):
+        if normalize_email(row.get("email")) == target:
+            return idx
+    return -1
+
+
+def ensure_invited_identity(email: str) -> Dict[str, Any]:
+    em = normalize_email(email)
+    if not em:
+        raise AuthError("email_required")
+    st = get_auth_store()
+    rows = st.list_users()
+    idx = _find_user_index_by_email(rows, em)
+    if idx >= 0:
+        return rows[idx]
+    row = {
+        "id": uuid.uuid4().hex,
+        "email": em,
+        "password_hash": "",
+        "is_active": False,
+        "is_admin": False,
+        "created_at": now_ts(),
+        "activation_pending": True,
+    }
+    rows.append(row)
+    st.save_users(rows)
+    return row
+
+
+def set_invited_identity_password(email: str, password: str) -> Dict[str, Any]:
+    em = normalize_email(email)
+    if not em:
+        raise AuthError("email_required")
+    st = get_auth_store()
+    rows = st.list_users()
+    idx = _find_user_index_by_email(rows, em)
+    if idx < 0:
+        raise AuthError("identity_not_found")
+    current = dict(rows[idx])
+    if bool(current.get("is_active")) and str(current.get("password_hash") or "").strip():
+        raise AuthError("identity_already_active")
+    updated = dict(current)
+    updated["password_hash"] = hash_password(password)
+    updated["is_active"] = True
+    updated["activation_pending"] = False
+    updated["activated_at"] = now_ts()
+    rows[idx] = updated
+    st.save_users(rows)
+    return updated
+
+
 def create_user(email: str, password: str, *, is_admin: bool = False, is_active: bool = True) -> Dict[str, Any]:
     em = normalize_email(email)
     if not em:

@@ -8,6 +8,8 @@ const AUTH_RETRY_BLOCKLIST = new Set([
   apiRoutes.auth.login(),
   apiRoutes.auth.refresh(),
   apiRoutes.auth.logout(),
+  apiRoutes.auth.invitePreview(),
+  apiRoutes.auth.inviteActivate(),
 ]);
 const authFailureListeners = new Set();
 
@@ -339,6 +341,56 @@ export async function apiAuthRefresh(options = {}) {
   return r;
 }
 
+export async function apiAuthInvitePreview(token) {
+  const inviteToken = String(token || "").trim();
+  if (!inviteToken) return { ok: false, status: 0, error: "missing token" };
+  const r = okOrError(await request(apiRoutes.auth.invitePreview(), {
+    method: "POST",
+    auth: false,
+    retryAuth: false,
+    body: { token: inviteToken },
+  }));
+  if (!r.ok) return r;
+  return {
+    ok: true,
+    status: r.status,
+    invite: r.data?.invite || {},
+    identity: r.data?.identity || {},
+    activation_allowed: Boolean(r.data?.activation_allowed),
+  };
+}
+
+export async function apiAuthInviteActivate({ token, password, password_confirm }) {
+  const inviteToken = String(token || "").trim();
+  const pwd = String(password || "");
+  const pwdConfirm = String(password_confirm || "");
+  if (!inviteToken) return { ok: false, status: 0, error: "missing token" };
+  if (!pwd) return { ok: false, status: 0, error: "password_required" };
+  const r = okOrError(await request(apiRoutes.auth.inviteActivate(), {
+    method: "POST",
+    auth: false,
+    retryAuth: false,
+    body: {
+      token: inviteToken,
+      password: pwd,
+      password_confirm: pwdConfirm,
+    },
+  }));
+  if (!r.ok) return r;
+  const access = String(r.data?.access_token || "").trim();
+  if (!access) return { ok: false, status: r.status, error: "missing access_token" };
+  setAccessToken(access);
+  return {
+    ok: true,
+    status: r.status,
+    access_token: access,
+    token_type: "bearer",
+    invite: r.data?.invite || {},
+    membership: r.data?.membership || {},
+    user: r.data?.user || {},
+  };
+}
+
 export async function apiAuthLogout() {
   const r = okOrError(await request(apiRoutes.auth.logout(), { method: "POST", auth: false, retryAuth: false }));
   clearAccessToken();
@@ -546,6 +598,10 @@ export async function apiCreateOrgInvite(orgId, payload = {}) {
     email: String(payload?.email || "").trim(),
     role: String(payload?.role || "").trim(),
     ttl_days: Number(payload?.ttl_days || payload?.ttlDays || 7),
+    team_name: String(payload?.team_name || payload?.teamName || "").trim(),
+    subgroup_name: String(payload?.subgroup_name || payload?.subgroupName || "").trim(),
+    invite_comment: String(payload?.invite_comment || payload?.inviteComment || "").trim(),
+    invite_mode: String(payload?.invite_mode || payload?.inviteMode || "one_time").trim() || "one_time",
   };
   const r = okOrError(await request(endpoint, { method: "POST", body }));
   return r.ok

@@ -16,6 +16,8 @@ export default function LoginForm({
   submitLabel = "Войти",
   onSuccess,
   onCancel,
+  secondaryLabel = "Отмена",
+  secondaryTestId = "",
   compact = false,
 }) {
   const { login } = useAuth();
@@ -24,6 +26,7 @@ export default function LoginForm({
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const emailRef = useRef(null);
+  const hasSubtitle = String(subtitle || "").trim().length > 0;
 
   useEffect(() => {
     emailRef.current?.focus();
@@ -47,7 +50,7 @@ export default function LoginForm({
     <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
       <div className="space-y-1">
         <h2 className={compact ? "text-lg font-semibold text-fg" : "text-2xl font-semibold text-fg"}>{title}</h2>
-        <p className="text-sm text-muted">{subtitle}</p>
+        {hasSubtitle ? <p className="text-sm text-muted">{subtitle}</p> : null}
       </div>
 
       <label className="flex flex-col gap-1.5 text-sm text-muted">
@@ -90,8 +93,14 @@ export default function LoginForm({
           {submitting ? "Входим..." : submitLabel}
         </button>
         {onCancel ? (
-          <button type="button" className="secondaryBtn h-11 min-h-0 px-4 py-0 text-sm" onClick={onCancel} disabled={submitting}>
-            Отмена
+          <button
+            type="button"
+            className="secondaryBtn h-11 min-h-0 px-4 py-0 text-sm"
+            onClick={onCancel}
+            disabled={submitting}
+            data-testid={secondaryTestId || undefined}
+          >
+            {secondaryLabel}
           </button>
         ) : null}
       </div>

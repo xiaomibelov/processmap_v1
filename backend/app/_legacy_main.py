@@ -53,6 +53,7 @@ from .storage import (
     upsert_org_membership,
     list_org_invites,
     create_org_invite,
+    preview_org_invite,
     accept_org_invite,
     revoke_org_invite,
     delete_org_invite,
@@ -80,12 +81,15 @@ from .rtiers import infer_rtiers, parse_bpmn_sequence_graph, resolve_inference_i
 from .auth import (
     AuthError,
     authenticate_user,
+    ensure_invited_identity,
     find_user_by_id,
+    find_user_by_email,
     issue_login_tokens,
     refresh_cookie_samesite,
     refresh_cookie_secure,
     revoke_refresh_from_token,
     rotate_refresh_token,
+    set_invited_identity_password,
     seed_admin_user_if_enabled,
     user_from_bearer_header,
 )
@@ -97,6 +101,8 @@ AUTH_PUBLIC_PATHS = {
     "/api/auth/login",
     "/api/auth/refresh",
     "/api/auth/logout",
+    "/api/auth/invite/preview",
+    "/api/auth/invite/activate",
 }
 
 _ORG_PATH_RE = re.compile(r"^/api/orgs/([^/]+)(?:/|$)")
@@ -2646,10 +2652,24 @@ class OrgInviteCreateIn(BaseModel):
     email: str
     role: str
     ttl_days: Optional[int] = 7
+    team_name: Optional[str] = ""
+    subgroup_name: Optional[str] = ""
+    invite_comment: Optional[str] = ""
+    invite_mode: Optional[str] = "one_time"
 
 
 class OrgInviteAcceptIn(BaseModel):
     token: str
+
+
+class InvitePreviewIn(BaseModel):
+    token: str
+
+
+class InviteActivateIn(BaseModel):
+    token: str
+    password: str
+    password_confirm: Optional[str] = None
 
 
 class CreateSessionIn(BaseModel):
@@ -3091,6 +3111,147 @@ def auth_me(request: Request):
         "default_org_id": get_default_org_id(),
         "orgs": memberships,
     }
+
+
+def _invite_error_to_response(marker_raw: str) -> JSONResponse:
+    marker = str(marker_raw or "").strip().lower()
+    if marker in {"invite_not_found", "invite_revoked"}:
+        return _enterprise_error(404, "not_found", marker or "not_found")
+    if marker == "invite_expired":
+        return _enterprise_error(410, "gone", "invite_expired")
+    if marker in {"invite_already_accepted", "invite_email_mismatch", "identity_already_active"}:
+        return _enterprise_error(409, "conflict", marker)
+    if marker in {"token is required", "password_required", "password_mismatch", "password_too_short"}:
+        return _enterprise_error(422, "validation_error", marker)
+    if marker in {"identity_not_found", "email_required"}:
+        return _enterprise_error(422, "validation_error", marker)
+    if marker:
+        return _enterprise_error(422, "validation_error", marker)
+    return _enterprise_error(500, "invite_activation_failed", "invite_activation_failed")
+
+
+@app.post("/api/auth/invite/preview")
+def auth_invite_preview(inp: InvitePreviewIn, request: Request):
+    token = str(getattr(inp, "token", "") or "").strip()
+    if not token:
+        return _enterprise_error(422, "validation_error", "token is required")
+    try:
+        invite = preview_org_invite(token)
+    except ValueError as exc:
+        return _invite_error_to_response(str(exc or "").strip().lower())
+
+    identity = find_user_by_email(str(invite.get("email") or "").strip().lower())
+    identity_state = "missing"
+    if isinstance(identity, dict):
+        has_password = bool(str(identity.get("password_hash") or "").strip())
+        is_active = bool(identity.get("is_active", False))
+        identity_state = "active" if (is_active and has_password) else "pending"
+
+    payload = {
+        "invite": {
+            "id": str(invite.get("id") or ""),
+            "email": str(invite.get("email") or ""),
+            "org_id": str(invite.get("org_id") or ""),
+            "org_name": str(invite.get("org_name") or invite.get("org_id") or ""),
+            "team_name": str(invite.get("team_name") or ""),
+            "subgroup_name": str(invite.get("subgroup_name") or ""),
+            "role": str(invite.get("role") or "viewer"),
+            "status": str(invite.get("status") or "active"),
+            "expires_at": int(invite.get("expires_at") or 0),
+            "invite_mode": "one_time",
+            "created_by": str(invite.get("created_by") or ""),
+            "used_by": str(invite.get("used_by") or ""),
+            "used_at": int(invite.get("used_at") or 0) if invite.get("used_at") else None,
+        },
+        "identity": {
+            "login": str(invite.get("email") or ""),
+            "email": str(invite.get("email") or ""),
+            "state": identity_state,
+            "readonly": True,
+        },
+        "activation_allowed": identity_state != "active",
+    }
+    return payload
+
+
+@app.post("/api/auth/invite/activate")
+def auth_invite_activate(inp: InviteActivateIn, request: Request):
+    token = str(getattr(inp, "token", "") or "").strip()
+    password = str(getattr(inp, "password", "") or "")
+    password_confirm = str(getattr(inp, "password_confirm", "") or "")
+    if not token:
+        return _enterprise_error(422, "validation_error", "token is required")
+    if not password:
+        return _enterprise_error(422, "validation_error", "password_required")
+    if len(password) < 8:
+        return _enterprise_error(422, "validation_error", "password_too_short")
+    if password_confirm and password_confirm != password:
+        return _enterprise_error(422, "validation_error", "password_mismatch")
+
+    accept_limit = max(1, _env_int("RL_ACCEPT_PER_MIN", 30))
+    ip_key = str(_request_client_ip(request) or "ip_unknown")
+    if not _rate_limit_check(f"auth:invite_activate:{ip_key}", accept_limit, 60):
+        return _enterprise_error(429, "too_many_requests", "too_many_requests")
+
+    try:
+        invite = preview_org_invite(token)
+    except ValueError as exc:
+        return _invite_error_to_response(str(exc or "").strip().lower())
+
+    invited_email = str(invite.get("email") or "").strip().lower()
+    identity = find_user_by_email(invited_email)
+    if isinstance(identity, dict):
+        if bool(identity.get("is_active", False)) and str(identity.get("password_hash") or "").strip():
+            return _invite_error_to_response("identity_already_active")
+    try:
+        base_identity = ensure_invited_identity(invited_email)
+        accepted = accept_org_invite(
+            str(invite.get("org_id") or "") or None,
+            token,
+            accepted_by=str(base_identity.get("id") or ""),
+            accepted_email=invited_email,
+        )
+        activated_user = set_invited_identity_password(invited_email, password)
+    except (ValueError, AuthError) as exc:
+        return _invite_error_to_response(str(exc or "").strip().lower())
+
+    issued = issue_login_tokens(
+        user=activated_user,
+        user_agent=request.headers.get("user-agent", ""),
+        ip=_request_client_ip(request),
+    )
+    max_age = max(1, int(issued.get("refresh_expires_at", 0)) - int(time.time()))
+    payload = {
+        "access_token": str(issued.get("access_token") or ""),
+        "token_type": "bearer",
+        "invite": accepted,
+        "membership": {
+            "org_id": str(accepted.get("org_id") or ""),
+            "user_id": str(activated_user.get("id") or ""),
+            "role": str(accepted.get("role") or "viewer"),
+        },
+        "user": {
+            "id": str(activated_user.get("id") or ""),
+            "email": str(activated_user.get("email") or invited_email),
+        },
+    }
+    _audit_log_safe(
+        request,
+        org_id=str(accepted.get("org_id") or get_default_org_id()),
+        action="invite.activate",
+        entity_type="org_invite",
+        entity_id=str(accepted.get("id") or ""),
+        status="ok",
+        meta={
+            "email": invited_email,
+            "role": str(accepted.get("role") or ""),
+            "team_name": str(accepted.get("team_name") or ""),
+            "subgroup_name": str(accepted.get("subgroup_name") or ""),
+        },
+    )
+    resp = JSONResponse(status_code=200, content=payload)
+    _set_refresh_cookie(resp, str(issued.get("refresh_token") or ""), max_age)
+    return resp
 
 
 @app.post("/api/sessions")
@@ -6859,11 +7020,17 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
         return err
     email = str(getattr(inp, "email", "") or "").strip().lower()
     role = str(getattr(inp, "role", "") or "").strip()
+    team_name = str(getattr(inp, "team_name", "") or "").strip()
+    subgroup_name = str(getattr(inp, "subgroup_name", "") or "").strip()
+    invite_comment = str(getattr(inp, "invite_comment", "") or "").strip()
+    invite_mode = str(getattr(inp, "invite_mode", "one_time") or "one_time").strip().lower()
     ttl_days = int(getattr(inp, "ttl_days", 7) or 7)
     if not email or "@" not in email:
         return _enterprise_error(422, "validation_error", "valid email is required")
     if not role:
         return _enterprise_error(422, "validation_error", "role is required")
+    if invite_mode and invite_mode not in {"one_time", "single_use"}:
+        return _enterprise_error(422, "validation_error", "only one_time invite mode is supported")
     invite_limit = max(1, _env_int("RL_INVITES_PER_MIN", 20))
     ip_key = str(_request_client_ip(request) or "ip_unknown")
     if not _rate_limit_check(f"invites:create:{oid}:{ip_key}", invite_limit, 60):
@@ -6886,8 +7053,21 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
             print(f"[INVITE_EMAIL] unavailable reason={reason}")
             return _enterprise_error(503, "service_unavailable", "invite_email_unavailable")
     try:
-        created = create_org_invite(oid, email, role, created_by=uid, ttl_days=ttl_days)
+        # Identity is pre-created by admin; end-user only activates password on invite redemption.
+        ensure_invited_identity(email)
+        created = create_org_invite(
+            oid,
+            email,
+            role,
+            created_by=uid,
+            team_name=team_name,
+            subgroup_name=subgroup_name,
+            invite_comment=invite_comment,
+            ttl_days=ttl_days,
+        )
     except ValueError as exc:
+        return _enterprise_error(422, "validation_error", str(exc))
+    except AuthError as exc:
         return _enterprise_error(422, "validation_error", str(exc))
     token = str(created.pop("token", "") or "")
     response_payload: Dict[str, Any] = {"invite": created}
@@ -6914,7 +7094,14 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
                 entity_type="org_invite",
                 entity_id=str(created.get("id") or ""),
                 status="fail",
-                meta={"email": email, "role": str(created.get("role") or ""), "reason": "smtp_send_failed"},
+                meta={
+                    "email": email,
+                    "role": str(created.get("role") or ""),
+                    "team_name": team_name,
+                    "subgroup_name": subgroup_name,
+                    "invite_mode": "one_time",
+                    "reason": "smtp_send_failed",
+                },
             )
             return _enterprise_error(502, "upstream_error", "invite_email_send_failed")
         response_payload["delivery"] = "email"
@@ -6933,7 +7120,15 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
         entity_type="org_invite",
         entity_id=str(created.get("id") or ""),
         status="ok",
-        meta={"email": email, "role": str(created.get("role") or ""), "delivery": str(response_payload.get("delivery") or "token"), "is_admin": bool(is_admin)},
+        meta={
+            "email": email,
+            "role": str(created.get("role") or ""),
+            "team_name": team_name,
+            "subgroup_name": subgroup_name,
+            "invite_mode": "one_time",
+            "delivery": str(response_payload.get("delivery") or "token"),
+            "is_admin": bool(is_admin),
+        },
     )
     return response_payload
 
