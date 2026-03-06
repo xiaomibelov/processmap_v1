@@ -1924,6 +1924,104 @@ def _normalize_drawio_meta(value: Any) -> Dict[str, Any]:
     if not doc_xml.lower().startswith("<mxfile"):
         doc_xml = ""
     svg_cache = str(raw.get("svg_cache") or "").strip()
+    layers_raw = raw.get("drawio_layers_v1")
+    if not isinstance(layers_raw, list):
+        layers_raw = raw.get("layers_v1")
+    if not isinstance(layers_raw, list):
+        layers_raw = raw.get("layers")
+    if not isinstance(layers_raw, list):
+        layers_raw = []
+    layers: List[Dict[str, Any]] = []
+    seen_layer_ids: Set[str] = set()
+    for idx, layer_raw in enumerate(layers_raw):
+        layer = layer_raw if isinstance(layer_raw, dict) else {}
+        layer_id = str(layer.get("id") or f"DL{idx + 1}").strip()
+        if not layer_id or layer_id in seen_layer_ids:
+            continue
+        seen_layer_ids.add(layer_id)
+        try:
+            layer_opacity = float(layer.get("opacity", 1.0))
+        except Exception:
+            layer_opacity = 1.0
+        if not math.isfinite(layer_opacity):
+            layer_opacity = 1.0
+        layers.append(
+            {
+                "id": layer_id,
+                "name": str(layer.get("name") or (f"Layer {idx + 1}" if idx > 0 else "Default")).strip() or layer_id,
+                "visible": layer.get("visible") is not False,
+                "locked": bool(layer.get("locked")),
+                "opacity": round(max(0.05, min(1.0, layer_opacity)), 3),
+            }
+        )
+    if not layers:
+        layers = [
+            {
+                "id": "DL1",
+                "name": "Default",
+                "visible": True,
+                "locked": False,
+                "opacity": 1.0,
+            }
+        ]
+        seen_layer_ids = {"DL1"}
+    active_layer_id = str(raw.get("active_layer_id") or raw.get("activeLayerId") or "").strip()
+    if not active_layer_id or active_layer_id not in seen_layer_ids:
+        active_layer_id = layers[0]["id"]
+
+    elements_raw = raw.get("drawio_elements_v1")
+    if not isinstance(elements_raw, list):
+        elements_raw = raw.get("elements_v1")
+    if not isinstance(elements_raw, list):
+        elements_raw = raw.get("elements")
+    if not isinstance(elements_raw, list):
+        elements_raw = []
+    elements: List[Dict[str, Any]] = []
+    seen_element_ids: Set[str] = set()
+    for idx, row_raw in enumerate(elements_raw):
+        row = row_raw if isinstance(row_raw, dict) else {}
+        element_id = str(row.get("id") or "").strip()
+        if not element_id or element_id in seen_element_ids:
+            continue
+        seen_element_ids.add(element_id)
+        layer_id = str(row.get("layer_id") or row.get("layerId") or active_layer_id).strip()
+        if layer_id not in seen_layer_ids:
+            layer_id = active_layer_id
+        try:
+            element_opacity = float(row.get("opacity", 1.0))
+        except Exception:
+            element_opacity = 1.0
+        if not math.isfinite(element_opacity):
+            element_opacity = 1.0
+        try:
+            offset_x = float(row.get("offset_x", row.get("offsetX", 0.0)))
+        except Exception:
+            offset_x = 0.0
+        try:
+            offset_y = float(row.get("offset_y", row.get("offsetY", 0.0)))
+        except Exception:
+            offset_y = 0.0
+        try:
+            z_index = int(row.get("z_index", idx))
+        except Exception:
+            z_index = idx
+        if not math.isfinite(offset_x):
+            offset_x = 0.0
+        if not math.isfinite(offset_y):
+            offset_y = 0.0
+        elements.append(
+            {
+                "id": element_id,
+                "layer_id": layer_id,
+                "visible": row.get("visible") is not False,
+                "locked": bool(row.get("locked")),
+                "deleted": bool(row.get("deleted")),
+                "opacity": round(max(0.05, min(1.0, element_opacity)), 3),
+                "offset_x": round(offset_x, 3),
+                "offset_y": round(offset_y, 3),
+                "z_index": max(0, z_index),
+            }
+        )
     return {
         "enabled": bool(raw.get("enabled")),
         "locked": bool(raw.get("locked")),
@@ -1938,12 +2036,20 @@ def _normalize_drawio_meta(value: Any) -> Dict[str, Any]:
             "x": round(tx, 3),
             "y": round(ty, 3),
         },
+        "drawio_layers_v1": layers,
+        "drawio_elements_v1": elements,
+        "active_layer_id": active_layer_id,
     }
 
 
 def _drawio_payload_size(value: Any) -> int:
     normalized = _normalize_drawio_meta(value)
-    return len(str(normalized.get("doc_xml") or "")) + len(str(normalized.get("svg_cache") or ""))
+    return (
+        len(str(normalized.get("doc_xml") or ""))
+        + len(str(normalized.get("svg_cache") or ""))
+        + len(normalized.get("drawio_elements_v1") or [])
+        + len(normalized.get("drawio_layers_v1") or [])
+    )
 
 
 def _normalize_auto_pass_v1(value: Any) -> Dict[str, Any]:
