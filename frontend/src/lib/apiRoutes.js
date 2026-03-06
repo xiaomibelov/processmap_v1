@@ -121,6 +121,15 @@ export const apiRoutes = {
   enterprise: {
     workspace: (params = {}) => withQuery("/api/enterprise/workspace", params),
   },
+  admin: {
+    dashboard: (params = {}) => withQuery("/api/admin/dashboard", params),
+    orgs: () => "/api/admin/orgs",
+    projects: (params = {}) => withQuery("/api/admin/projects", params),
+    sessions: (params = {}) => withQuery("/api/admin/sessions", params),
+    session: (sessionId) => `/api/admin/sessions/${encode(sessionId)}`,
+    jobs: () => "/api/admin/jobs",
+    audit: (params = {}) => withQuery("/api/admin/audit", params),
+  },
   misc: {
     meta: () => "/api/meta",
     glossaryAdd: () => "/api/glossary/add",

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import App from "./App";
+import AdminApp from "./features/admin/AdminApp";
 import { AuthProvider, useAuth } from "./features/auth/AuthProvider";
 import LoginModal from "./features/auth/LoginModal";
 import LoginPage from "./features/auth/LoginPage";
 import PublicHomePage from "./features/auth/PublicHomePage";
-import { apiAcceptInviteToken } from "./lib/api";
+import { canAccessAdminConsole } from "./features/admin/adminUtils";
 
 function readLocation() {
   if (typeof window === "undefined") {
@@ -21,7 +22,7 @@ function readLocation() {
 function sanitizeNextPath(raw) {
   const src = String(raw || "").trim();
   if (!src.startsWith("/")) return "/app";
-  if (!src.startsWith("/app")) return "/app";
+  if (!src.startsWith("/app") && !src.startsWith("/admin")) return "/app";
   return src;
 }
 
@@ -125,6 +126,7 @@ function AppRoutes() {
   }, [user?.id]);
   const activeOrg = String(activeOrgId || "").trim();
   const shouldSelectOrg = Boolean(isAuthed && pathname.startsWith("/app") && orgItems.length > 1 && !orgChoiceDone);
+  const canAccessAdmin = useMemo(() => canAccessAdminConsole(user, orgItems), [orgItems, user]);
 
   const nextFromQuery = useMemo(() => {
     const params = new URLSearchParams(search);
@@ -144,7 +146,7 @@ function AppRoutes() {
       return;
     }
 
-    if (!isAuthed && pathname.startsWith("/app") && !reauthRequired) {
+    if (!isAuthed && (pathname.startsWith("/app") || pathname.startsWith("/admin")) && !reauthRequired) {
       const next = encodeURIComponent(`${pathname}${search}${hash}`);
       navigate(`/?next=${next}`, { replace: true });
     }
@@ -179,7 +181,7 @@ function AppRoutes() {
   }, [activeOrg, isAuthed, loading, orgItems, switchOrg]);
 
   useEffect(() => {
-    if (!loading && pathname.startsWith("/app") && !isAuthed && reauthRequired) {
+    if (!loading && (pathname.startsWith("/app") || pathname.startsWith("/admin")) && !isAuthed && reauthRequired) {
       setLoginModalOpen(true);
     }
     if (isAuthed) {
@@ -245,7 +247,7 @@ function AppRoutes() {
 
   function handleModalClose() {
     setLoginModalOpen(false);
-    if (!isAuthed && pathname.startsWith("/app")) {
+    if (!isAuthed && (pathname.startsWith("/app") || pathname.startsWith("/admin"))) {
       setReauthRequired(false);
       navigate("/", { replace: true });
     }
@@ -280,50 +282,33 @@ function AppRoutes() {
   }
 
   const showWorkspace = pathname.startsWith("/app") && (isAuthed || reauthRequired);
+  const showAdmin = pathname.startsWith("/admin") && (isAuthed || reauthRequired);
 
   return (
     <>
-      {showWorkspace ? (
-        isAuthed && shouldSelectOrg ? (
-          <OrgSelectScreen orgs={orgItems} activeOrgId={activeOrg} busy={orgSwitchBusy} onSelect={handleOrgSelect} />
-        ) : (
-          <App />
-        )
-      ) : isAcceptInviteRoute ? (
+      {showAdmin ? (
         isAuthed ? (
-          <div className="flex min-h-screen items-center justify-center px-4">
-            <div className="w-full max-w-lg rounded-2xl border border-border bg-panel p-6">
-              <h1 className="text-xl font-semibold text-fg">Принятие приглашения</h1>
-              {acceptInviteBusy ? <p className="mt-2 text-sm text-muted">Применяем приглашение к вашему аккаунту…</p> : null}
-              {acceptInviteError ? (
-                <div className="mt-3 rounded-xl border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
-                  {acceptInviteError}
-                </div>
-              ) : null}
-              {!acceptInviteBusy && !acceptInviteError ? <p className="mt-2 text-sm text-muted">Готово. Переходим в рабочую зону…</p> : null}
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  className="secondaryBtn h-10 min-h-0 px-4 py-0 text-sm"
-                  onClick={() => navigate("/app", { replace: true })}
-                >
-                  В рабочую зону
-                </button>
-                {acceptInviteError ? (
+          canAccessAdmin ? (
+            <AdminApp pathname={pathname} onNavigate={navigate} />
+          ) : (
+            <div className="flex min-h-screen items-center justify-center px-4">
+              <div className="w-full max-w-lg rounded-2xl border border-border bg-panel p-6">
+                <h1 className="text-xl font-semibold text-fg">Доступ ограничен</h1>
+                <p className="mt-2 text-sm text-muted">
+                  Для входа в admin-console нужна роль org_admin/org_owner/project_manager/auditor или global admin.
+                </p>
+                <div className="mt-4 flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     className="primaryBtn h-10 min-h-0 px-4 py-0 text-sm"
-                    onClick={() => {
-                      acceptInviteAttemptRef.current = "";
-                      setAcceptInviteError("");
-                    }}
+                    onClick={() => navigate("/app", { replace: true })}
                   >
-                    Повторить
+                    Вернуться в workspace
                   </button>
-                ) : null}
+                </div>
               </div>
             </div>
-          </div>
+          )
         ) : (
           <LoginPage
             onBack={() => navigate("/")}
@@ -331,6 +316,12 @@ function AppRoutes() {
               setReauthRequired(false);
             }}
           />
+        )
+      ) : showWorkspace ? (
+        isAuthed && shouldSelectOrg ? (
+          <OrgSelectScreen orgs={orgItems} activeOrgId={activeOrg} busy={orgSwitchBusy} onSelect={handleOrgSelect} />
+        ) : (
+          <App />
         )
       ) : pathname === "/login" ? (
         <LoginPage
@@ -353,7 +344,7 @@ function AppRoutes() {
 
       <LoginModal
         open={loginModalOpen}
-        locked={Boolean(pathname.startsWith("/app") && !isAuthed)}
+        locked={Boolean((pathname.startsWith("/app") || pathname.startsWith("/admin")) && !isAuthed)}
         onClose={handleModalClose}
         onSuccess={handleLoginSuccess}
       />

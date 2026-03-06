@@ -668,6 +668,58 @@ export async function apiGetEnterpriseWorkspace(options = {}) {
   };
 }
 
+// ------- Admin (aggregated payloads) -------
+function normalizeAdminParams(params = {}) {
+  const out = {};
+  Object.entries(params || {}).forEach(([key, value]) => {
+    const text = String(value ?? "").trim();
+    if (!text) return;
+    out[String(key)] = text;
+  });
+  return out;
+}
+
+export async function apiAdminGetDashboard(params = {}) {
+  const endpoint = apiRoutes.admin.dashboard(normalizeAdminParams(params));
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminListOrgs() {
+  const r = okOrError(await request(apiRoutes.admin.orgs(), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminListProjects(params = {}) {
+  const endpoint = apiRoutes.admin.projects(normalizeAdminParams(params));
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminListSessions(params = {}) {
+  const endpoint = apiRoutes.admin.sessions(normalizeAdminParams(params));
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminGetSession(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.admin.session(sid), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminListJobs() {
+  const r = okOrError(await request(apiRoutes.admin.jobs(), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminListAudit(params = {}) {
+  const endpoint = apiRoutes.admin.audit(normalizeAdminParams(params));
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
 // ------- Meta -------
 export async function apiMeta() {
   const r = okOrError(await request(apiRoutes.misc.meta()));
