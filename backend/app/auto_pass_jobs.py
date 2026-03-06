@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
-from .redis_client import get_client, ping
+from .redis_client import get_client, runtime_status
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +32,8 @@ def _job_key(job_id: str) -> str:
 
 
 def redis_queue_enabled() -> bool:
-    client = get_client()
-    if client is None:
-        return False
-    return bool(ping(client))
+    status = runtime_status(force_ping=True)
+    return bool(status.get("available") and status.get("mode") == "ON")
 
 
 def _read_json(raw: Any) -> Optional[Dict[str, Any]]:

@@ -6,6 +6,7 @@ _SYSTEM_EXACT = {
     "/",
     "/favicon.ico",
     "/health",
+    "/api/health",
     "/api/glossary/add",
     "/api/llm/session-title/questions",
     "/api/meta",

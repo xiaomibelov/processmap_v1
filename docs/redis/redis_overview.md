@@ -1,21 +1,19 @@
-# Redis Bootstrap (P0)
+# Redis Runtime Policy
 
 ## Goal
 
-Add Redis as optional infrastructure without changing product logic.
+Run Redis as the default performance layer (locks/cache/jobs), and use fallback mode only on real Redis failure.
 
 ## Runtime contract
 
-- `REDIS_URL` controls Redis activation.
+- `REDIS_URL` defines Redis connection (compose default: `redis://redis:6379/0`).
+- `REDIS_REQUIRED=1` keeps Redis-first semantics enabled by default.
 - Backend helper: `backend/app/redis_client.py`.
-- `get_client()` returns:
-  - Redis client, when URL + package + connection are available.
-  - `None`, when Redis is disabled or unavailable.
-- `ping()` returns:
-  - `True`, when Redis responds.
-  - `False`, on disabled/unavailable/error.
-
-The module is no-op safe by design: Redis issues log warnings but do not crash app startup or requests.
+- `runtime_status()` returns explicit state:
+  - `ON / healthy` (normal preferred path)
+  - `FALLBACK / fallback_unavailable` (degraded)
+  - `ERROR / misconfigured` (incident)
+- Backend remains no-op safe: if Redis is unavailable, requests continue in fallback mode, but status is not treated as normal.
 
 ## Local infrastructure
 
@@ -28,13 +26,12 @@ The module is no-op safe by design: Redis issues log warnings but do not crash a
 Minimal run:
 
 ```bash
-docker compose up -d redis
+docker compose up -d redis api
 docker compose ps redis
 ```
 
-Minimal backend smoke:
+Minimal backend smoke (healthy path):
 
 ```bash
-REDIS_URL=redis://localhost:6379/0 python -c "from backend.app.redis_client import get_client,ping; print('client=', bool(get_client())); print('ping=', ping())"
+REDIS_URL=redis://localhost:6379/0 REDIS_REQUIRED=1 python -c "from backend.app.redis_client import runtime_status; print(runtime_status())"
 ```
-

@@ -16,6 +16,7 @@ from ..auto_pass_jobs import (
     get_job_status,
     set_job_status,
 )
+from ..redis_client import runtime_status
 from ..redis_lock import acquire_session_lock
 
 router = APIRouter()
@@ -247,7 +248,9 @@ def run_auto_pass(session_id: str, inp: AutoPassRunIn, request: Request) -> Dict
     if enqueue_job(job_payload):
         return {"job_id": job_id, "run_id": run_id, "status": "queued"}
 
-    # Redis OFF fallback: compute synchronously in request lifecycle.
+    # Redis degraded fallback: compute synchronously in request lifecycle.
+    redis_state = runtime_status(force_ping=True)
+    fallback_reason = str(redis_state.get("reason") or "redis_unavailable")
     set_job_status(
         job_id,
         {
@@ -256,6 +259,8 @@ def run_auto_pass(session_id: str, inp: AutoPassRunIn, request: Request) -> Dict
             "session_id": str(session_id or "").strip(),
             "run_id": run_id,
             "mode": mode,
+            "execution": "sync_fallback_redis_unavailable",
+            "fallback_reason": fallback_reason,
         },
     )
     try:
@@ -277,6 +282,8 @@ def run_auto_pass(session_id: str, inp: AutoPassRunIn, request: Request) -> Dict
                 "session_id": str(session_id or "").strip(),
                 "run_id": run_id,
                 "error": str(exc),
+                "execution": "sync_fallback_redis_unavailable",
+                "fallback_reason": fallback_reason,
             },
         )
         return _legacy_main._enterprise_error(http_status, err_code, str(exc))
@@ -288,14 +295,16 @@ def run_auto_pass(session_id: str, inp: AutoPassRunIn, request: Request) -> Dict
             "session_id": str(session_id or "").strip(),
             "run_id": run_id,
             "result": result,
-            "execution": "sync_fallback_no_redis",
+            "execution": "sync_fallback_redis_unavailable",
+            "fallback_reason": fallback_reason,
         },
     )
     return {
         "job_id": job_id,
         "run_id": run_id,
         "status": "completed",
-        "execution": "sync_fallback_no_redis",
+        "execution": "sync_fallback_redis_unavailable",
+        "fallback_reason": fallback_reason,
         "result": result,
     }
 
