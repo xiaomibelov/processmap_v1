@@ -6644,6 +6644,19 @@ def enterprise_workspace(
 
     sessions_all.sort(key=lambda item: (int(item.get("updated_at") or 0), str(item.get("id") or "")), reverse=True)
     total = len(sessions_all)
+    summary = {
+        "total": int(total),
+        "draft": 0,
+        "in_progress": 0,
+        "ready": 0,
+        "attention": 0,
+    }
+    for item in sessions_all:
+        status_key = str(item.get("status") or "").strip().lower()
+        if status_key not in {"draft", "in_progress", "ready"}:
+            status_key = "draft"
+        summary[status_key] = int(summary.get(status_key, 0) or 0) + 1
+        summary["attention"] = int(summary.get("attention", 0) or 0) + int(item.get("needs_attention") or 0)
     sessions_page = sessions_all[off:off + lim]
 
     user_project_counts: Dict[str, int] = {}
@@ -6702,6 +6715,7 @@ def enterprise_workspace(
         "group_by": group,
         "users": users_out,
         "projects": projects_out,
+        "summary": summary,
         "sessions": sessions_page,
         "page": {"limit": lim, "offset": off, "total": total},
     }

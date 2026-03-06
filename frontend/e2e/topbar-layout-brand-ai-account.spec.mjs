@@ -102,31 +102,18 @@ test("topbar layout: brand text + AI button + account menu", async ({ page, requ
   await expect(page.locator(".topbar img")).toHaveCount(0);
   await expect(page.locator('[data-testid="topbar-logo"]')).toHaveCount(0);
 
-  const newProjectBtn = page.getByTestId("topbar-new-project");
   const newSessionBtn = page.getByTestId("topbar-new-session");
+  const projectActionsBtn = page.getByTestId("topbar-project-actions-button");
   const projectSelect = page.getByTestId("topbar-project-select");
   const sessionSelect = page.getByTestId("topbar-session-select");
 
-  await expect(newProjectBtn).toBeVisible();
   await expect(newSessionBtn).toBeVisible();
+  await expect(projectActionsBtn).toBeVisible();
   await expect(projectSelect).toBeVisible();
   await expect(sessionSelect).toBeVisible();
 
-  const [newProjectBox, newSessionBox, projectSelectBox, sessionSelectBox] = await Promise.all([
-    newProjectBtn.boundingBox(),
-    newSessionBtn.boundingBox(),
-    projectSelect.boundingBox(),
-    sessionSelect.boundingBox(),
-  ]);
-
-  expect(newProjectBox).not.toBeNull();
-  expect(newSessionBox).not.toBeNull();
-  expect(projectSelectBox).not.toBeNull();
-  expect(sessionSelectBox).not.toBeNull();
-  expect(newProjectBox.x).toBeLessThan(projectSelectBox.x);
-  expect(newSessionBox.x).toBeLessThan(projectSelectBox.x);
-  expect(newProjectBox.x).toBeLessThan(sessionSelectBox.x);
-  expect(newSessionBox.x).toBeLessThan(sessionSelectBox.x);
+  await projectActionsBtn.click();
+  await expect(page.getByTestId("topbar-new-project")).toBeVisible();
 
   await page.getByTestId("topbar-ai-button").click();
   await expect(page.getByRole("dialog", { name: "AI инструменты" })).toBeVisible();
@@ -135,7 +122,8 @@ test("topbar layout: brand text + AI button + account menu", async ({ page, requ
 
   await page.getByTestId("topbar-account-button").click();
   await expect(page.getByTestId("topbar-account-menu")).toBeVisible();
-  await expect(page.getByTestId("topbar-account-profile-soon")).toBeDisabled();
+  await expect(page.getByTestId("topbar-account-profile-soon")).toBeVisible();
+  await expect(page.getByTestId("topbar-account-settings")).toBeVisible();
   await expect(page.getByTestId("topbar-account-logout")).toBeVisible();
 
   await page.screenshot({

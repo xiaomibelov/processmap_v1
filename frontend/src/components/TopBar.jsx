@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AiToolsModal from "./AiToolsModal";
-import TopRightCtaGroup from "./nav/TopRightCtaGroup";
 import { useAuth } from "../features/auth/AuthProvider";
 
 function asArray(x) {
@@ -31,10 +30,6 @@ function orgIdFrom(o) {
   return String((o && (o.org_id || o.id)) || "").trim();
 }
 
-function orgTitleFrom(o) {
-  return String((o && (o.name || o.org_name || o.org_id || o.id)) || "").trim() || "—";
-}
-
 function shortActor(raw) {
   const value = String(raw || "").trim();
   if (!value) return "—";
@@ -48,6 +43,17 @@ function sanitizeAiStatusMessage(msg) {
   if (raw.includes("Нажмите «Проверить AI»")) return "";
   if (raw.includes("Ключ сохранён")) return "";
   return raw;
+}
+
+function shortLabel(value, max = 34) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (text.length <= max) return text;
+  return `${text.slice(0, Math.max(8, max - 1)).trim()}…`;
+}
+
+function userTitleFrom(user) {
+  return String(user?.name || user?.email || user?.id || "").trim() || "Пользователь";
 }
 
 function UserAvatarIcon({ className = "" }) {
@@ -103,33 +109,14 @@ export default function TopBar({
   const [uiTheme, setUiTheme] = useState("dark");
   const [aiToolsOpen, setAiToolsOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
-  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
-  const [accountMenuPos, setAccountMenuPos] = useState({ left: 8, top: 56, width: 220 });
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
   const accountMenuRef = useRef(null);
   const accountButtonRef = useRef(null);
-  const adminMenuRef = useRef(null);
-  const adminButtonRef = useRef(null);
-
-  const updateAccountMenuPos = useCallback(() => {
-    if (typeof window === "undefined") return;
-    const button = accountButtonRef.current;
-    if (!button) return;
-    const rect = button.getBoundingClientRect();
-    const margin = 8;
-    const viewportW = Math.max(0, Number(window.innerWidth || 0));
-    const viewportH = Math.max(0, Number(window.innerHeight || 0));
-    const width = Math.min(220, Math.max(170, viewportW - margin * 2));
-    const left = Math.max(
-      margin,
-      Math.min(rect.right - width, viewportW - width - margin),
-    );
-    const top = Math.max(margin, Math.min(rect.bottom + 8, viewportH - 48));
-    setAccountMenuPos({
-      left: Number.isFinite(left) ? left : margin,
-      top: Number.isFinite(top) ? top : 56,
-      width: Number.isFinite(width) ? width : 220,
-    });
-  }, []);
+  const projectMenuRef = useRef(null);
+  const projectMenuButtonRef = useRef(null);
+  const sessionMenuRef = useRef(null);
+  const sessionMenuButtonRef = useRef(null);
 
   useEffect(() => {
     try {
@@ -143,7 +130,6 @@ export default function TopBar({
 
   useEffect(() => {
     if (!accountMenuOpen) return undefined;
-    updateAccountMenuPos();
     function onPointerDown(event) {
       const target = event.target;
       if (!(target instanceof Node)) return;
@@ -155,33 +141,26 @@ export default function TopBar({
     function onKeyDown(event) {
       if (event.key === "Escape") setAccountMenuOpen(false);
     }
-    function onViewportChange() {
-      updateAccountMenuPos();
-    }
     window.addEventListener("mousedown", onPointerDown);
     window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("resize", onViewportChange);
-    window.addEventListener("scroll", onViewportChange, true);
     return () => {
       window.removeEventListener("mousedown", onPointerDown);
       window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("resize", onViewportChange);
-      window.removeEventListener("scroll", onViewportChange, true);
     };
-  }, [accountMenuOpen, updateAccountMenuPos]);
+  }, [accountMenuOpen]);
 
   useEffect(() => {
-    if (!adminMenuOpen) return undefined;
+    if (!projectMenuOpen) return undefined;
     function onPointerDown(event) {
       const target = event.target;
       if (!(target instanceof Node)) return;
-      const menu = adminMenuRef.current;
-      const button = adminButtonRef.current;
+      const menu = projectMenuRef.current;
+      const button = projectMenuButtonRef.current;
       if (menu?.contains(target) || button?.contains(target)) return;
-      setAdminMenuOpen(false);
+      setProjectMenuOpen(false);
     }
     function onKeyDown(event) {
-      if (event.key === "Escape") setAdminMenuOpen(false);
+      if (event.key === "Escape") setProjectMenuOpen(false);
     }
     window.addEventListener("mousedown", onPointerDown);
     window.addEventListener("keydown", onKeyDown);
@@ -189,7 +168,28 @@ export default function TopBar({
       window.removeEventListener("mousedown", onPointerDown);
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [adminMenuOpen]);
+  }, [projectMenuOpen]);
+
+  useEffect(() => {
+    if (!sessionMenuOpen) return undefined;
+    function onPointerDown(event) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      const menu = sessionMenuRef.current;
+      const button = sessionMenuButtonRef.current;
+      if (menu?.contains(target) || button?.contains(target)) return;
+      setSessionMenuOpen(false);
+    }
+    function onKeyDown(event) {
+      if (event.key === "Escape") setSessionMenuOpen(false);
+    }
+    window.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [sessionMenuOpen]);
 
   function toggleTheme() {
     const next = uiTheme === "dark" ? "light" : "dark";
@@ -239,12 +239,6 @@ export default function TopBar({
     const updatedBy = shortActor(found?.updated_by || found?.created_by || found?.owner_user_id);
     return `${sessionTitleFrom(found)} · Created by ${createdBy} · Updated by ${updatedBy}`;
   }, [sessList, sessionId]);
-  const selectedOrgTitle = useMemo(() => {
-    const id = String(activeOrgId || "").trim();
-    if (!id) return "";
-    const found = orgList.find((item) => orgIdFrom(item) === id);
-    return orgTitleFrom(found);
-  }, [orgList, activeOrgId]);
   const activeOrgRole = useMemo(() => {
     const id = String(activeOrgId || "").trim();
     if (!id) return "";
@@ -262,101 +256,182 @@ export default function TopBar({
     window.location.assign("/");
   }
 
-  function openAdminSection(sectionRaw = "organization") {
-    const section = String(sectionRaw || "organization").trim().toLowerCase();
-    setAdminMenuOpen(false);
-    if (!onOpenOrgSettings) return;
-    if (section === "members" || section === "invites" || section === "audit") {
-      onOpenOrgSettings({ tab: section });
-      return;
-    }
-    onOpenOrgSettings();
+  function openAdminConsole() {
+    if (typeof window === "undefined") return;
+    window.location.assign("/admin/dashboard");
+  }
+
+  function openProfileSoon() {
+    setAccountMenuOpen(false);
+    if (typeof window === "undefined") return;
+    window.alert("Раздел «Профиль» будет доступен в следующих релизах.");
   }
 
   return (
-    <div className="topbar sticky left-0 right-0 top-0 z-40 flex h-12 w-full min-w-0 shrink-0 items-center gap-3 border-b border-border bg-panel/95 px-3 backdrop-blur">
-      <div className="topLeft flex min-w-0 flex-1 items-center gap-2 overflow-x-auto whitespace-nowrap">
+    <div className="topbar sticky left-0 right-0 top-0 z-40 flex h-auto min-h-12 w-full min-w-0 shrink-0 items-center gap-3 border-b border-border bg-panel/95 px-3 py-2 backdrop-blur">
+      <div className="topbarNavLeft flex min-w-[180px] shrink-0 items-center gap-2">
         <div
           className="brand mr-1 inline-flex shrink-0 items-center text-xl font-black uppercase tracking-[0.08em] text-fg"
           data-testid="topbar-brand-text"
         >
-          <span className="bg-gradient-to-r from-fg via-fg to-accent bg-clip-text text-transparent [text-shadow:0_1px_0_rgba(0,0,0,.14)]">PROCESSMAP</span>
+          <span className="bg-gradient-to-r from-fg via-fg to-accent bg-clip-text text-transparent [text-shadow:0_1px_0_rgba(0,0,0,.14)]">ProcessMap</span>
         </div>
+        <button
+          type="button"
+          className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-3 py-0 text-sm"
+          onClick={() => onOpenWorkspace?.()}
+          title="Вернуться к странице проектов"
+          data-testid="topbar-back-projects"
+        >
+          ← Проекты
+        </button>
+      </div>
 
-        {!sessionId ? (
-          <div className="topGroup flex shrink-0 items-center gap-2">
-            <span
-              className="inline-flex h-9 min-h-0 min-w-[10rem] max-w-[22rem] items-center rounded-lg border border-border bg-panel2/60 px-3 py-0 text-sm text-muted"
-              title={selectedOrgTitle || "Организация"}
-              data-testid="topbar-org-label"
+      <div className="topbarNavCenter flex min-w-0 flex-1 items-center justify-center gap-2 overflow-visible">
+        <div
+          className="topGroup relative flex min-w-[180px] max-w-[340px] flex-1 items-center gap-1.5 rounded-full border border-border/70 bg-panel2/40 px-2 py-1"
+          title={selectedProjectTitle}
+        >
+          <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.1em] text-muted">ПРОЕКТ</span>
+          <div className="min-w-0 flex-1">
+            <select
+              className="h-7 min-h-0 w-full truncate appearance-none border-0 bg-transparent px-0 py-0 text-[13px] font-semibold text-fg outline-none"
+              value={projectId || ""}
+              title={selectedProjectTitle}
+              onChange={(e) => onProjectChange?.(e.target.value)}
+              data-testid="topbar-project-select"
             >
-              <span className="truncate">{selectedOrgTitle || "Организация"}</span>
-            </span>
+              <option value="">{projList.length ? "Выбери проект" : "Нет проектов"}</option>
+              {projList.map((p, idx) => {
+                const id = projectIdFrom(p);
+                return (
+                  <option key={`${id || "p"}_${idx}`} value={id} title={projectTitleFrom(p)}>
+                    {shortLabel(projectTitleFrom(p), 48)}
+                  </option>
+                );
+              })}
+            </select>
           </div>
-        ) : null}
-
-        <div className="topGroup flex shrink-0 items-center gap-2">
-          <select
-            className="select topSelect topSelect--project h-9 min-h-0 w-40 min-w-[9.5rem] max-w-[12rem] py-0 text-sm md:w-48 md:max-w-[14rem]"
-            value={projectId || ""}
-            title={selectedProjectTitle}
-            onChange={(e) => onProjectChange?.(e.target.value)}
-            data-testid="topbar-project-select"
+          <button
+            ref={projectMenuButtonRef}
+            type="button"
+            className="inline-flex h-6 w-6 min-w-6 items-center justify-center rounded-full text-[12px] text-muted transition hover:text-fg"
+            onClick={() => setProjectMenuOpen((prev) => !prev)}
+            title="Действия проекта"
+            data-testid="topbar-project-actions-button"
+            aria-label="Действия проекта"
           >
-            <option value="">{projList.length ? "— выбрать проект —" : "Нет проектов"}</option>
-            {projList.map((p, idx) => {
-              const id = projectIdFrom(p);
-              const createdBy = shortActor(p?.created_by || p?.owner_user_id);
-              const updatedBy = shortActor(p?.updated_by || p?.created_by || p?.owner_user_id);
-              return (
-                <option key={`${id || "p"}_${idx}`} value={id}>
-                  {`${projectTitleFrom(p)} · C:${createdBy} · U:${updatedBy}`}
-                </option>
-              );
-            })}
-          </select>
-          {canManageProjectEntities ? (
-            <button type="button" className="iconBtn h-8 w-8 min-w-8" onClick={() => onDeleteProject?.()} title="Удалить проект" disabled={!projectId}>
-              🗑
-            </button>
+            ▾
+          </button>
+          {projectMenuOpen ? (
+            <div
+              ref={projectMenuRef}
+              className="absolute right-1 top-[calc(100%+8px)] z-[130] grid min-w-[220px] gap-1 rounded-xl border border-border bg-panel p-1.5 shadow-panel"
+              data-testid="topbar-project-actions-menu"
+            >
+              <button
+                type="button"
+                className="secondaryBtn h-9 w-full justify-start px-3 text-left text-sm"
+                onClick={() => {
+                  setProjectMenuOpen(false);
+                  onOpenWorkspace?.();
+                }}
+              >
+                ← Проекты
+              </button>
+              <button
+                type="button"
+                className="secondaryBtn h-9 w-full justify-start px-3 text-left text-sm"
+                onClick={() => {
+                  setProjectMenuOpen(false);
+                  onNewProject?.();
+                }}
+                data-testid="topbar-new-project"
+              >
+                Новый проект
+              </button>
+              {canManageProjectEntities ? (
+                <button
+                  type="button"
+                  className="secondaryBtn h-9 w-full justify-start border-danger/45 bg-danger/10 px-3 text-left text-sm text-danger hover:border-danger/60 hover:bg-danger/20"
+                  onClick={() => {
+                    setProjectMenuOpen(false);
+                    onDeleteProject?.();
+                  }}
+                  disabled={!projectId}
+                >
+                  Удалить проект
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </div>
 
-        <div className="topGroup flex shrink-0 items-center gap-2">
-          <select
-            className="select topSelect topSelect--session h-9 min-h-0 w-44 min-w-[10.5rem] max-w-[13rem] py-0 text-sm md:w-52 md:max-w-[15rem]"
-            value={sessionId || ""}
-            title={selectedSessionTitle}
-            onChange={(e) => openSessionHandler?.(e.target.value)}
-            data-testid="topbar-session-select"
-          >
-            <option value="">{sessList.length ? "— выбрать сессию —" : "Нет сессий"}</option>
-            {sessList.map((s, idx) => {
-              const id = sessionIdFrom(s);
-              const createdBy = shortActor(s?.created_by || s?.owner_user_id);
-              const updatedBy = shortActor(s?.updated_by || s?.created_by || s?.owner_user_id);
-              return (
-                <option key={`${id || "s"}_${idx}`} value={id}>
-                  {`${sessionTitleFrom(s)} · C:${createdBy} · U:${updatedBy}`}
-                </option>
-              );
-            })}
-          </select>
-          {canManageProjectEntities ? (
-            <button type="button" className="iconBtn h-8 w-8 min-w-8" onClick={() => onDeleteSession?.()} title="Удалить сессию" disabled={!sessionId}>
-              🗑
-            </button>
-          ) : null}
-          {!sessionId ? (
-            <button
-              type="button"
-              className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-3 py-0 text-sm"
-              onClick={() => onOpenWorkspace?.()}
-              title="Открыть Workspace"
-              data-testid="topbar-open-workspace"
+        <div
+          className="topGroup relative flex min-w-[200px] max-w-[380px] flex-1 items-center gap-1.5 rounded-full border border-border/70 bg-panel2/40 px-2 py-1"
+          title={selectedSessionTitle}
+        >
+          <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.1em] text-muted">СЕССИЯ</span>
+          <div className="min-w-0 flex-1">
+            <select
+              className="h-7 min-h-0 w-full truncate appearance-none border-0 bg-transparent px-0 py-0 text-[13px] font-semibold text-fg outline-none"
+              value={sessionId || ""}
+              title={selectedSessionTitle}
+              onChange={(e) => openSessionHandler?.(e.target.value)}
+              data-testid="topbar-session-select"
             >
-              Workspace
-            </button>
+              <option value="">{sessList.length ? "Выбери сессию" : "Нет сессий"}</option>
+              {sessList.map((s, idx) => {
+                const id = sessionIdFrom(s);
+                return (
+                  <option key={`${id || "s"}_${idx}`} value={id} title={sessionTitleFrom(s)}>
+                    {shortLabel(sessionTitleFrom(s), 56)}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+          <button
+            ref={sessionMenuButtonRef}
+            type="button"
+            className="inline-flex h-6 w-6 min-w-6 items-center justify-center rounded-full text-[12px] text-muted transition hover:text-fg"
+            onClick={() => setSessionMenuOpen((prev) => !prev)}
+            title="Действия сессии"
+            data-testid="topbar-session-actions-button"
+            aria-label="Действия сессии"
+          >
+            ▾
+          </button>
+          {sessionMenuOpen ? (
+            <div
+              ref={sessionMenuRef}
+              className="absolute right-1 top-[calc(100%+8px)] z-[130] grid min-w-[220px] gap-1 rounded-xl border border-border bg-panel p-1.5 shadow-panel"
+              data-testid="topbar-session-actions-menu"
+            >
+              <button
+                type="button"
+                className="secondaryBtn h-9 w-full justify-start px-3 text-left text-sm"
+                onClick={() => {
+                  setSessionMenuOpen(false);
+                  onOpenWorkspace?.();
+                }}
+              >
+                К списку сессий
+              </button>
+              {canManageProjectEntities ? (
+                <button
+                  type="button"
+                  className="secondaryBtn h-9 w-full justify-start border-danger/45 bg-danger/10 px-3 text-left text-sm text-danger hover:border-danger/60 hover:bg-danger/20"
+                  onClick={() => {
+                    setSessionMenuOpen(false);
+                    onDeleteSession?.();
+                  }}
+                  disabled={!sessionId}
+                >
+                  Удалить сессию
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </div>
@@ -369,82 +444,29 @@ export default function TopBar({
         ) : null}
       </div>
 
-      <div className="topRight relative flex min-w-0 shrink-0 items-center justify-end gap-2 overflow-visible whitespace-nowrap">
-        <TopRightCtaGroup
-          onCreateProject={onNewProject}
-          onCreateSession={newBackendHandler}
-          createProjectLabel="Новый проект"
-          createSessionLabel="Создать сессию"
-          createProjectTestId="topbar-new-project"
-          createSessionTestId="topbar-new-session"
-          createSessionDisabled={!projectId}
-          createSessionTitle={!projectId ? "Сначала выбери проект" : "Открыть мастер создания сессии"}
-          className="mr-1"
-        />
+      <div className="topbarNavRight relative flex min-w-0 shrink-0 items-center justify-end gap-2 overflow-visible whitespace-nowrap">
+        <button
+          type="button"
+          className="primaryBtn h-9 min-h-0 whitespace-nowrap px-3 py-0 text-sm"
+          onClick={() => newBackendHandler?.()}
+          disabled={!projectId}
+          title={!projectId ? "Сначала выбери проект" : "Открыть мастер создания сессии"}
+          data-testid="topbar-new-session"
+        >
+          Создать сессию
+        </button>
         <div className="topGroup flex shrink-0 items-center gap-2">
           {canOpenOrgSettings ? (
-            <div className="relative">
-              <button
-                type="button"
-                ref={adminButtonRef}
-                className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-3 py-0 text-sm"
-                onClick={() => setAdminMenuOpen((prev) => !prev)}
-                data-testid="topbar-admin-button"
-                aria-haspopup="menu"
-                aria-expanded={adminMenuOpen ? "true" : "false"}
-                title="Административные функции"
-              >
-                Админка
-              </button>
-              {adminMenuOpen ? (
-                <div
-                  ref={adminMenuRef}
-                  className="absolute right-0 top-10 z-[110] min-w-[240px] rounded-xl border border-border bg-panel p-1.5 shadow-panel"
-                  data-testid="topbar-admin-menu"
-                >
-                  <button
-                    type="button"
-                    className="secondaryBtn h-9 w-full justify-start px-3 text-left text-sm"
-                    onClick={() => openAdminSection("organization")}
-                    data-testid="topbar-org-settings-btn"
-                    title="Настройки организации"
-                  >
-                    Организация
-                  </button>
-                  <button
-                    type="button"
-                    className="secondaryBtn mt-1 h-9 w-full justify-start px-3 text-left text-sm"
-                    onClick={() => openAdminSection("members")}
-                    data-testid="topbar-admin-members-btn"
-                    title="Участники организации"
-                  >
-                    Members
-                  </button>
-                  <button
-                    type="button"
-                    className="secondaryBtn mt-1 h-9 w-full justify-start px-3 text-left text-sm"
-                    onClick={() => openAdminSection("invites")}
-                    data-testid="topbar-admin-invites-btn"
-                    title="Приглашения"
-                  >
-                    Invites
-                  </button>
-                  <button
-                    type="button"
-                    className="secondaryBtn mt-1 h-9 w-full justify-start px-3 text-left text-sm"
-                    onClick={() => openAdminSection("audit")}
-                    data-testid="topbar-admin-audit-btn"
-                    title="Аудит"
-                  >
-                    Audit
-                  </button>
-                </div>
-              ) : null}
-            </div>
+            <button
+              type="button"
+              className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-3 py-0 text-sm"
+              onClick={openAdminConsole}
+              data-testid="topbar-admin-button"
+              title="Открыть admin dashboard"
+            >
+              Админ-панель
+            </button>
           ) : null}
-          <button type="button" className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-3 py-0 text-sm" onClick={toggleTheme} title="Переключить тему">
-            {uiTheme === "dark" ? "Light" : "Dark"}
-          </button>
           <button
             type="button"
             className={`inline-flex h-9 min-h-0 items-center rounded-full border px-3 py-0 text-sm font-semibold ${aiButtonClass}`}
@@ -466,8 +488,8 @@ export default function TopBar({
             ref={accountButtonRef}
             className="iconBtn h-9 w-9 min-w-9 rounded-full border border-border bg-panel2/70 text-fg"
             onClick={() => setAccountMenuOpen((prev) => !prev)}
-            title="Профиль (скоро)"
-            aria-label="Профиль (скоро)"
+            title="Профиль"
+            aria-label="Профиль"
             aria-expanded={accountMenuOpen ? "true" : "false"}
             data-testid="topbar-account-button"
           >
@@ -477,23 +499,37 @@ export default function TopBar({
           {accountMenuOpen ? (
             <div
               ref={accountMenuRef}
-              className="fixed z-[120] rounded-xl border border-border bg-panel p-1.5 shadow-panel backdrop-blur"
-              style={{
-                left: `${Math.round(Number(accountMenuPos.left || 8))}px`,
-                top: `${Math.round(Number(accountMenuPos.top || 56))}px`,
-                width: `${Math.round(Number(accountMenuPos.width || 220))}px`,
-                maxWidth: "calc(100vw - 16px)",
-              }}
+              className="absolute right-0 top-[calc(100%+8px)] z-[140] grid min-w-[220px] gap-1 rounded-xl border border-border bg-panel p-1.5 shadow-panel backdrop-blur"
               data-testid="topbar-account-menu"
             >
+              <div className="mb-1 rounded-lg border border-border/60 bg-panel2/50 px-3 py-2">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">Аккаунт</div>
+                <div className="truncate text-sm font-semibold text-fg" title={userTitleFrom(user)}>
+                  {shortLabel(userTitleFrom(user), 28)}
+                </div>
+              </div>
               <button
                 type="button"
-                className="secondaryBtn h-9 w-full justify-start px-3 text-left text-sm opacity-60"
-                disabled
-                title="Профиль (скоро)"
+                className="secondaryBtn h-9 w-full justify-start px-3 text-left text-sm"
+                onClick={openProfileSoon}
+                title="Профиль пользователя"
                 data-testid="topbar-account-profile-soon"
               >
-                Профиль (скоро)
+                Профиль
+                <span className="ml-auto text-[11px] text-muted">скоро</span>
+              </button>
+              <button
+                type="button"
+                className="secondaryBtn h-9 w-full justify-start px-3 text-left text-sm"
+                onClick={() => {
+                  setAccountMenuOpen(false);
+                  toggleTheme();
+                }}
+                data-testid="topbar-account-settings"
+                title="Настройки интерфейса"
+              >
+                Настройки
+                <span className="ml-auto text-[11px] text-muted">{uiTheme === "dark" ? "Dark" : "Light"}</span>
               </button>
               <button
                 type="button"

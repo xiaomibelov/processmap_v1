@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { apiGetEnterpriseWorkspace } from "../../lib/api";
 import { buildWorkspaceTree, filterSessionsForSelection } from "../../features/workspace/workspaceDashboardVm";
 import { computeDodPercent, formatDodBreakdownTooltip } from "../../features/workspace/computeDodPercent";
-import TopRightCtaGroup from "../nav/TopRightCtaGroup";
 
 function toText(value) {
   return String(value || "").trim();
@@ -161,11 +160,9 @@ export default function WorkspaceDashboard({
   onDuplicateSession,
   onDeleteSession,
   onCreateProject,
-  onCreateSession,
   onInviteUsers,
   canInviteUsers = false,
 }) {
-  const explorerRef = useRef(null);
   const actionsMenuRef = useRef(null);
   const [groupBy, setGroupBy] = useState("users");
   const [query, setQuery] = useState("");
@@ -185,6 +182,7 @@ export default function WorkspaceDashboard({
   const [actionsCustomizeOpen, setActionsCustomizeOpen] = useState(false);
   const [workspace, setWorkspace] = useState({
     org: {},
+    summary: {},
     users: [],
     projects: [],
     sessions: [],
@@ -240,6 +238,7 @@ export default function WorkspaceDashboard({
           }
           setWorkspace({
             org: res.org || {},
+            summary: res.summary && typeof res.summary === "object" ? res.summary : {},
             users: Array.isArray(res.users) ? res.users : [],
             projects: Array.isArray(res.projects) ? res.projects : [],
             sessions: Array.isArray(res.sessions) ? res.sessions : [],
@@ -340,6 +339,28 @@ export default function WorkspaceDashboard({
       return acc;
     }, { draft: 0, in_progress: 0, ready: 0, attention: 0 });
   }, [listRows]);
+  const kpiSummary = useMemo(() => {
+    const summary = workspace?.summary && typeof workspace.summary === "object" ? workspace.summary : {};
+    const hasTotal = Number.isFinite(Number(summary.total));
+    if (hasTotal) {
+      return {
+        total: Number(summary.total || 0),
+        draft: Number(summary.draft || 0),
+        in_progress: Number(summary.in_progress || 0),
+        ready: Number(summary.ready || 0),
+        attention: Number(summary.attention || 0),
+        source: "filtered",
+      };
+    }
+    return {
+      total,
+      draft: Number(sessionStatusSummary.draft || 0),
+      in_progress: Number(sessionStatusSummary.in_progress || 0),
+      ready: Number(sessionStatusSummary.ready || 0),
+      attention: Number(sessionStatusSummary.attention || 0),
+      source: "page",
+    };
+  }, [sessionStatusSummary, total, workspace?.summary]);
   const pageLabel = total > 0 ? `${offset + 1}-${Math.min(offset + limit, total)} / ${total}` : "0";
   const scopeSummary = [
     selectedProject ? `Project: ${selectedProject.name}` : "",
@@ -468,26 +489,6 @@ export default function WorkspaceDashboard({
     );
   }
 
-  function openProjectsList() {
-    setGroupBy("projects");
-    setSelectedOwnerId("");
-    setOffset(0);
-    if (explorerRef.current && typeof explorerRef.current.scrollIntoView === "function") {
-      explorerRef.current.scrollIntoView({ block: "start", behavior: "smooth" });
-    }
-  }
-
-  function openDocFromWorkspace() {
-    const latest = listRows[0] || null;
-    if (latest && typeof onOpenDoc === "function") {
-      onOpenDoc(latest);
-      return;
-    }
-    if (typeof window !== "undefined") {
-      window.location.assign("/app");
-    }
-  }
-
   function resetSelection() {
     setSelectedOwnerId("");
     setSelectedProjectId("");
@@ -496,26 +497,15 @@ export default function WorkspaceDashboard({
   }
 
   return (
-    <div className="workspaceDashboard h-full min-h-0 overflow-auto rounded-xl border border-border bg-panel p-4" data-testid="workspace-dashboard">
-      <div className="rounded-2xl border border-border bg-panel2/35 p-4">
+    <div className="workspaceDashboard h-full min-h-0 overflow-auto px-3 pb-4 pt-2" data-testid="workspace-dashboard">
+      <div className="px-1">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <span className="rounded-full border border-accent/30 bg-accentSoft/20 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-fg">
-                Рабочее пространство
-              </span>
-              <button
-                type="button"
-                className="secondaryBtn h-7 px-2 text-xs"
-                onClick={openProjectsList}
-                data-testid="workspace-open-projects"
-                title="Перейти к списку проектов"
-              >
-                К проектам
-              </button>
+            <div className="mb-2 inline-flex rounded-full border border-accent/30 bg-accentSoft/20 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-fg">
+              Рабочее пространство
             </div>
             <h1 className="text-xl font-semibold tracking-tight text-fg md:text-2xl">
-              Рабочее пространство / Проекты / Сессии
+              Проекты и сессии
             </h1>
             <p className="mt-2 max-w-3xl text-sm text-muted">
               Выберите сессию, чтобы редактировать диаграмму, проходить интервью и формировать отчёты.
@@ -529,27 +519,19 @@ export default function WorkspaceDashboard({
             <button
               type="button"
               className="secondaryBtn h-9 px-3 text-sm"
-              onClick={openDocFromWorkspace}
-              data-testid="workspace-open-doc"
-              title="Открыть DOC"
+              onClick={() => onCreateProject?.()}
+              data-testid="workspace-create-project"
             >
-              DOC
+              Создать проект
             </button>
-            <TopRightCtaGroup
-              onCreateProject={onCreateProject}
-              onCreateSession={onCreateSession}
-              createProjectLabel="Создать проект"
-              createSessionLabel="Создать сессию"
-            />
             {canInviteUsers ? (
               <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={() => onInviteUsers?.()}>
                 Пригласить пользователей
               </button>
-            ) : (
-              <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={resetSelection}>
-                Сбросить фильтры
-              </button>
-            )}
+            ) : null}
+            <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={resetSelection}>
+              Сбросить фильтры
+            </button>
           </div>
         </div>
       </div>
@@ -557,8 +539,8 @@ export default function WorkspaceDashboard({
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           label="Сессии"
-          value={total}
-          hint={`${sessionStatusSummary.in_progress} в работе · ${sessionStatusSummary.ready} готовы`}
+          value={kpiSummary.total}
+          hint={`${kpiSummary.in_progress} в работе · ${kpiSummary.ready} готовы · ${kpiSummary.source === "filtered" ? "по всей выборке" : "на текущей странице"}`}
           tone="accent"
         />
         <MetricCard
@@ -573,9 +555,13 @@ export default function WorkspaceDashboard({
         />
         <MetricCard
           label="Требует внимания"
-          value={sessionStatusSummary.attention}
-          hint={needsAttentionOnly ? "Фильтр внимания включён." : "Суммарные маркеры внимания по видимым сессиям."}
-          tone={sessionStatusSummary.attention > 0 ? "danger" : "default"}
+          value={kpiSummary.attention}
+          hint={needsAttentionOnly
+            ? "Фильтр внимания включён."
+            : (kpiSummary.source === "filtered"
+              ? "Суммарные маркеры внимания по всей выборке."
+              : "Суммарные маркеры внимания на текущей странице.")}
+          tone={kpiSummary.attention > 0 ? "danger" : "default"}
         />
       </div>
 
@@ -686,7 +672,6 @@ export default function WorkspaceDashboard({
           </div>
 
           <div
-            ref={explorerRef}
             className="workspaceExplorer min-h-[260px] overflow-auto rounded-xl border border-border bg-panel2 p-3"
             data-testid="workspace-explorer"
           >
@@ -848,13 +833,9 @@ export default function WorkspaceDashboard({
                   : "Сначала создайте проект, затем создайте сессию и начните работу в пространстве организации."}
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
-                <TopRightCtaGroup
-                  onCreateProject={onCreateProject}
-                  onCreateSession={onCreateSession}
-                  createProjectLabel="Создать проект"
-                  createSessionLabel="Создать сессию"
-                  className="ml-0 justify-start"
-                />
+                <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={() => onCreateProject?.()}>
+                  Создать проект
+                </button>
                 {canInviteUsers ? (
                   <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={() => onInviteUsers?.()}>
                     Пригласить пользователей

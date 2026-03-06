@@ -717,6 +717,7 @@ export async function apiGetEnterpriseWorkspace(options = {}) {
     status: r.status,
     org: isPlainObject(data.org) ? data.org : {},
     group_by: String(data.group_by || groupBy || "users"),
+    summary: isPlainObject(data.summary) ? data.summary : {},
     users: Array.isArray(data.users) ? data.users : [],
     projects: Array.isArray(data.projects) ? data.projects : [],
     sessions: Array.isArray(data.sessions) ? data.sessions : [],

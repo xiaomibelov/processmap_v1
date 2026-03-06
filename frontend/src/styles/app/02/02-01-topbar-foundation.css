@@ -26,17 +26,20 @@
   justify-content:flex-end;
   gap:10px;
   flex-wrap:nowrap;
-  overflow:hidden;
+  overflow:visible;
 }
 
 .topbar .topSelect{
   height: 34px;
   line-height: 34px;
-  padding: 0 12px;
+  padding: 0 2px;
   border-radius: 14px;
-  border: 1px solid rgba(255,255,255,.18);
-  background: rgba(255,255,255,.10);
+  border: 0;
+  background: transparent;
   color: var(--ink);
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
 }
 
 .topbar .topSelect option{
@@ -44,8 +47,8 @@
   color: #fff;
 }
 
-.topbar .topSelect--project{ width: 220px; max-width: 220px; }
-.topbar .topSelect--session{ width: 280px; max-width: 280px; }
+.topbar .topSelect--project{ width: 100%; max-width: 100%; }
+.topbar .topSelect--session{ width: 100%; max-width: 100%; }
 
 .topbar .smallBtn{
   height: 34px;
@@ -58,7 +61,7 @@
 }
 
 @media (max-width: 1100px){
-  .topbar .topSelect--session{ width: 220px; max-width: 220px; }
+  .topbar .topSelect--session{ width: 100%; max-width: 100%; }
 }
 
 @media (max-width: 900px){
