@@ -69,12 +69,32 @@ async function createTemplateFragmentFromDiagram(page, marker) {
       const registry = modeler.get("elementRegistry");
       const modeling = modeler.get("modeling");
       const elementFactory = modeler.get("elementFactory");
-      const source = registry.get("Task_1_1")
+      let source = registry.get("Task_1_1")
         || (registry.getAll() || []).find((el) => /task$/i.test(String(el?.type || "")))
         || registry.get("StartEvent_1")
         || (registry.getAll() || []).find((el) => /startevent$/i.test(String(el?.type || "")));
-      if (!source) return { ok: false, error: "anchor_not_found" };
-      const root = source.parent;
+      let root = source?.parent || null;
+      if (!source) {
+        const canvas = modeler.get("canvas");
+        root = canvas?.getRootElement?.() || null;
+        if (root) {
+          const seededStart = modeling.createShape(
+            elementFactory.createShape({ type: "bpmn:StartEvent" }),
+            { x: 220, y: 180 },
+            root,
+          );
+          const seededTask = modeling.createShape(
+            elementFactory.createShape({ type: "bpmn:Task" }),
+            { x: 420, y: 180 },
+            root,
+          );
+          modeling.updateLabel(seededTask, `${prefix}_ANCHOR`);
+          modeling.connect(seededStart, seededTask, { type: "bpmn:SequenceFlow" });
+          source = seededTask || seededStart;
+          root = source?.parent || root;
+        }
+      }
+      if (!source || !root) return { ok: false, error: "anchor_not_found" };
       const first = modeling.createShape(
         elementFactory.createShape({ type: "bpmn:Task" }),
         { x: Number(source.x || 0) + 220, y: Number(source.y || 0) + 20 },
@@ -113,6 +133,29 @@ async function selectBpmnElementsById(page, ids) {
 function byTestIds(page, ids) {
   const selector = ids.map((id) => `[data-testid="${String(id || "").trim()}"]`).join(", ");
   return page.locator(selector).first();
+}
+
+async function resolveAddTemplateButton(page) {
+  const direct = byTestIds(page, ["btn-add-template", "template-pack-save-open"]);
+  if (await direct.isVisible().catch(() => false)) {
+    return { button: direct, via: "direct" };
+  }
+  const overflowToggle = page.getByTestId("diagram-action-overflow").first();
+  await expect(overflowToggle).toBeVisible();
+  await overflowToggle.click();
+  const overflowButton = page.getByRole("button", { name: /Добавить шаблон/i }).first();
+  await expect(overflowButton).toBeVisible();
+  return { button: overflowButton, via: "overflow" };
+}
+
+async function closeOverflowIfOpen(page) {
+  const popover = page.getByTestId("diagram-action-overflow-popover");
+  const isOpen = await popover.isVisible().catch(() => false);
+  if (!isOpen) return;
+  const overflowToggle = page.getByTestId("diagram-action-overflow").first();
+  if (await overflowToggle.isVisible().catch(() => false)) {
+    await overflowToggle.click();
+  }
 }
 
 async function placeFragmentIfNeeded(page) {
@@ -159,12 +202,12 @@ test("templates smoke: add from selection and apply restores selection", async (
 
   const createdIds = await createTemplateFragmentFromDiagram(page, marker);
   expect(createdIds.length).toBe(2);
-  const addTemplateButton = byTestIds(page, ["btn-add-template", "template-pack-save-open"]);
   await selectBpmnElementsById(page, createdIds);
-  await expect(addTemplateButton).toBeEnabled();
-  await expect(addTemplateButton).toContainText("(2)");
+  const addTemplateAction = await resolveAddTemplateButton(page);
+  await expect(addTemplateAction.button).toBeEnabled();
+  await expect(addTemplateAction.button).toContainText("(2)");
 
-  await addTemplateButton.click();
+  await addTemplateAction.button.click();
   const createTemplateModal = byTestIds(page, ["modal-create-template", "template-pack-save-modal"]);
   await expect(createTemplateModal).toBeVisible();
   await page
@@ -182,7 +225,9 @@ test("templates smoke: add from selection and apply restores selection", async (
     const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
     modeler?.get?.("selection")?.select?.([]);
   });
-  await expect(addTemplateButton).toBeDisabled();
+  const addTemplateAfterClear = await resolveAddTemplateButton(page);
+  await expect(addTemplateAfterClear.button).toBeDisabled();
+  await closeOverflowIfOpen(page);
 
   const templatesButton = byTestIds(page, ["btn-templates", "template-pack-insert-open"]);
   await expect(templatesButton).toBeEnabled();
@@ -200,8 +245,10 @@ test("templates smoke: add from selection and apply restores selection", async (
     .click();
   const placed = await placeFragmentIfNeeded(page);
   if (!placed) {
-    await expect(addTemplateButton).toBeEnabled();
-    await expect(addTemplateButton).toContainText("(2)");
+    const addTemplateAfterApply = await resolveAddTemplateButton(page);
+    await expect(addTemplateAfterApply.button).toBeEnabled();
+    await expect(addTemplateAfterApply.button).toContainText("(2)");
+    await closeOverflowIfOpen(page);
   } else {
     await switchTab(page, "XML");
     const xmlText = await page.locator(".xmlEditorTextarea").inputValue();
