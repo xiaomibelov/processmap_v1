@@ -158,6 +158,8 @@ export default function useHybridToolsController({
   const dragRef = useRef(null);
   const resizeRef = useRef(null);
   const transformFrameRef = useRef(0);
+  const pointerMoveFrameRef = useRef(0);
+  const pendingPointerMoveRef = useRef(null);
   const pendingTransformRef = useRef(null);
   const toolRef = useRef("select");
   const arrowDraftRef = useRef(null);
@@ -823,6 +825,8 @@ export default function useHybridToolsController({
     }
     dragRef.current = {
       id: elementId,
+      pointerId: Number(event?.pointerId),
+      captureTarget: event?.currentTarget || null,
       startX: Number(point.x || 0),
       startY: Number(point.y || 0),
       baseX: Number(row.x || 0),
@@ -870,6 +874,8 @@ export default function useHybridToolsController({
     selectionApi.selectOnly?.(elementId);
     resizeRef.current = {
       id: elementId,
+      pointerId: Number(event?.pointerId),
+      captureTarget: event?.currentTarget || null,
       handle,
       startX: Number(point.x || 0),
       startY: Number(point.y || 0),
@@ -906,19 +912,34 @@ export default function useHybridToolsController({
     ) {
       return;
     }
-    event?.preventDefault?.();
-    event?.stopPropagation?.();
-    focusHybridOverlayFromEvent(event);
     const point = clientToDiagram(event?.clientX, event?.clientY);
     if (!point) return;
     const activeLayerId = toText(asObject(hybridDocRef.current?.view).active_layer_id || "L1") || "L1";
     const activeLayer = asObject(layerById[activeLayerId]);
+    const tool = toText(toolRef.current).toLowerCase() || "select";
+    const isPlacementTool = tool === "template_stencil"
+      || tool === "rect"
+      || tool === "note"
+      || tool === "text"
+      || tool === "container"
+      || tool === "arrow";
+    if (!isPlacementTool) {
+      if (tool === "arrow") {
+        arrowDraftRef.current = null;
+      }
+      if (tool === "select") {
+        selectionApi.clearSelection?.();
+      }
+      return;
+    }
     if (activeLayer.locked === true) {
       setInfoMsg?.(`Создание недоступно: слой "${toText(activeLayer.name) || activeLayerId}" заблокирован.`);
       setGenErr?.("");
       return;
     }
-    const tool = toText(toolRef.current).toLowerCase() || "select";
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    focusHybridOverlayFromEvent(event);
     markPlaybackOverlayInteraction?.({ action: "hybrid_v2_overlay_pointer", tool });
     if (toText(tool) === "template_stencil") {
       placeStencilAt(point);
@@ -936,33 +957,56 @@ export default function useHybridToolsController({
   }, [clientToDiagram, createElementAt, hybridDocRef, hybridVisible, layerById, markPlaybackOverlayInteraction, modeEffective, placeStencilAt, setGenErr, setInfoMsg, uiLocked]);
 
   const onOverlayPointerMove = useCallback((event) => {
-    const rect = asObject(overlayRect);
-    const localX = Number(event?.clientX || 0) - Number(rect.left || 0);
-    const localY = Number(event?.clientY || 0) - Number(rect.top || 0);
-    const point = clientToDiagram(event?.clientX, event?.clientY);
-    const tool = toText(toolRef.current).toLowerCase() || "select";
-    const stencilPlacement = asObject(stencilPlacementRef.current);
-    if (tool === "template_stencil" && asArray(stencilPlacement.payload?.elements).length && point) {
-      setGhostPreview(buildStencilGhostPreview(stencilPlacement.payload, point, hybridViewportMatrix));
-    } else if (tool === "rect" || tool === "container") {
-      setGhostPreview(buildDiagramGhostPreview(tool, point));
-    } else {
-      setGhostPreview(null);
-    }
-    const pending = asObject(arrowDraftRef.current);
-    if (toText(pending.fromId) && point) {
-      const localPoint = {
-        x: localX,
-        y: localY,
-      };
-      arrowDraftRef.current = {
-        ...pending,
-        pointer: localPoint,
-      };
-    }
+    const clientX = Number(event?.clientX);
+    const clientY = Number(event?.clientY);
+    if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
+    pendingPointerMoveRef.current = { clientX, clientY };
+    if (pointerMoveFrameRef.current) return;
+    const scheduleFrame = typeof window !== "undefined" && typeof window.requestAnimationFrame === "function"
+      ? window.requestAnimationFrame.bind(window)
+      : (fn) => setTimeout(fn, 16);
+    pointerMoveFrameRef.current = scheduleFrame(() => {
+      pointerMoveFrameRef.current = 0;
+      const pendingPoint = asObject(pendingPointerMoveRef.current);
+      pendingPointerMoveRef.current = null;
+      const px = Number(pendingPoint.clientX);
+      const py = Number(pendingPoint.clientY);
+      if (!Number.isFinite(px) || !Number.isFinite(py)) return;
+      const rect = asObject(overlayRect);
+      const localX = px - Number(rect.left || 0);
+      const localY = py - Number(rect.top || 0);
+      const point = clientToDiagram(px, py);
+      const tool = toText(toolRef.current).toLowerCase() || "select";
+      const stencilPlacement = asObject(stencilPlacementRef.current);
+      if (tool === "template_stencil" && asArray(stencilPlacement.payload?.elements).length && point) {
+        setGhostPreview(buildStencilGhostPreview(stencilPlacement.payload, point, hybridViewportMatrix));
+      } else if (tool === "rect" || tool === "container" || tool === "text") {
+        setGhostPreview(buildDiagramGhostPreview(tool, point));
+      } else {
+        setGhostPreview(null);
+      }
+      const pendingArrow = asObject(arrowDraftRef.current);
+      if (toText(pendingArrow.fromId) && point) {
+        arrowDraftRef.current = {
+          ...pendingArrow,
+          pointer: {
+            x: localX,
+            y: localY,
+          },
+        };
+      }
+    });
   }, [asArray, clientToDiagram, hybridViewportMatrix, overlayRect]);
 
   const onOverlayPointerLeave = useCallback(() => {
+    if (pointerMoveFrameRef.current) {
+      const cancelFrame = typeof window !== "undefined" && typeof window.cancelAnimationFrame === "function"
+        ? window.cancelAnimationFrame.bind(window)
+        : clearTimeout;
+      cancelFrame(pointerMoveFrameRef.current);
+      pointerMoveFrameRef.current = 0;
+    }
+    pendingPointerMoveRef.current = null;
     setGhostPreview(null);
     const pending = asObject(arrowDraftRef.current);
     if (!toText(pending.fromId)) return;
@@ -1042,10 +1086,15 @@ export default function useHybridToolsController({
       window.cancelAnimationFrame(transformFrameRef.current);
       transformFrameRef.current = 0;
     }
+    if (typeof window !== "undefined" && pointerMoveFrameRef.current) {
+      window.cancelAnimationFrame(pointerMoveFrameRef.current);
+      pointerMoveFrameRef.current = 0;
+    }
+    pendingPointerMoveRef.current = null;
   }, []);
 
   useEffect(() => {
-    if (toolState === "rect" || toolState === "container") return;
+    if (toolState === "rect" || toolState === "container" || toolState === "text" || toolState === "template_stencil") return;
     setGhostPreview(null);
   }, [toolState]);
 

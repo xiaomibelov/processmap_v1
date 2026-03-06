@@ -22,6 +22,12 @@ export default function useHybridTransformController({
       const drag = asObject(dragRef?.current);
       const resize = asObject(resizeRef?.current);
       if (!drag.id && !resize.id) return;
+      const active = drag.id ? drag : resize;
+      const activePointerId = Number(active.pointerId);
+      if (Number.isFinite(activePointerId)) {
+        const eventPointerId = Number(event?.pointerId);
+        if (Number.isFinite(eventPointerId) && eventPointerId !== activePointerId) return;
+      }
       const point = clientToDiagram(event?.clientX, event?.clientY);
       if (!point) return;
       if (drag.id) {
@@ -50,23 +56,34 @@ export default function useHybridTransformController({
         );
       }
     };
-    const onUp = () => {
-      const hadDrag = !!asObject(dragRef?.current).id;
-      const hadResize = !!asObject(resizeRef?.current).id;
+    const onUp = (event) => {
+      const drag = asObject(dragRef?.current);
+      const resize = asObject(resizeRef?.current);
+      const hadDrag = !!drag.id;
+      const hadResize = !!resize.id;
+      const active = hadDrag ? drag : resize;
+      const activePointerId = Number(active.pointerId);
+      if (Number.isFinite(activePointerId)) {
+        const eventPointerId = Number(event?.pointerId);
+        if (Number.isFinite(eventPointerId) && eventPointerId !== activePointerId) return;
+      }
       flushPendingTransform(hadResize ? "hybrid_v2_resize_move" : "hybrid_v2_drag_move");
+      const captureTarget = active.captureTarget;
+      if (captureTarget && typeof captureTarget.releasePointerCapture === "function" && Number.isFinite(activePointerId)) {
+        try {
+          captureTarget.releasePointerCapture(activePointerId);
+        } catch {
+        }
+      }
       if (dragRef) dragRef.current = null;
       if (resizeRef) resizeRef.current = null;
       if (!hadDrag && !hadResize) return;
       void persistHybridV2Doc?.(hybridDocRef?.current, { source: hadResize ? "hybrid_v2_resize_end" : "hybrid_v2_drag_end" });
     };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
     return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
