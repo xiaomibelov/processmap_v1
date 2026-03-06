@@ -37,7 +37,6 @@ import {
   apiVerifyLlmSettings,
   apiRecompute,
   apiPutBpmnXml,
-  apiPatchBpmnMeta,
   apiInferBpmnRtiers,
 } from "./lib/api";
 import {
@@ -55,6 +54,11 @@ import { normalizeExecutionPlanVersionList } from "./features/process/robotmeta/
 import { normalizeHybridLayerMap } from "./features/process/hybrid/hybridLayerUi";
 import { normalizeHybridV2Doc } from "./features/process/hybrid/hybridLayerV2";
 import { mergeDrawioMeta, normalizeDrawioMeta } from "./features/process/drawio/drawioMeta";
+import buildSessionMetaReadModel from "./features/session-meta/read/buildSessionMetaReadModel";
+import applySessionMetaHydration from "./features/session-meta/hydrate/applySessionMetaHydration";
+import { createSessionMetaConflictGuard } from "./features/session-meta/guards/sessionMetaConflictGuard";
+import useSessionMetaWriteGateway from "./features/session-meta/write/useSessionMetaWriteGateway";
+import { buildSessionMetaWriteEnvelope } from "./features/session-meta/write/sessionMetaMergePolicy";
 import { useAuth } from "./features/auth/AuthProvider";
 import { canCreateOrgTemplateForRole } from "./features/templates/model/templatesRbac";
 
@@ -606,33 +610,14 @@ function sessionToDraft(sid, session) {
   const localMeta = normalizeBpmnMeta(readLocalBpmnMeta(sid));
   const sessionMeta = normalizeBpmnMeta(ensureObject(next.bpmn_meta));
   const xmlRobotMeta = normalizeRobotMetaMap(extractRobotMetaMapFromBpmnXml(next?.bpmn_xml || ""));
-  const sessionExecutionPlans = normalizeExecutionPlans(sessionMeta.execution_plans);
-  const localExecutionPlans = normalizeExecutionPlans(localMeta.execution_plans);
-  const rawBpmnMeta = {
-    version: Number(sessionMeta.version) > 0 ? Number(sessionMeta.version) : 1,
-    flow_meta: {
-      ...normalizeFlowMetaMap(sessionMeta.flow_meta),
-      ...normalizeFlowMetaMap(ensureObject(localMeta.flow_meta)),
-    },
-    node_path_meta: {
-      ...normalizeNodePathMetaMap(sessionMeta.node_path_meta),
-      ...normalizeNodePathMetaMap(ensureObject(localMeta.node_path_meta)),
-    },
-    robot_meta_by_element_id: {
-      ...normalizeRobotMetaMap(sessionMeta.robot_meta_by_element_id),
-      ...normalizeRobotMetaMap(ensureObject(localMeta.robot_meta_by_element_id)),
-    },
-    hybrid_layer_by_element_id: {
-      ...normalizeHybridLayerMap(sessionMeta.hybrid_layer_by_element_id),
-      ...normalizeHybridLayerMap(ensureObject(localMeta.hybrid_layer_by_element_id)),
-    },
-    hybrid_v2: mergeHybridV2Doc(localMeta.hybrid_v2, sessionMeta.hybrid_v2),
-    drawio: mergeDrawioMeta(localMeta.drawio, sessionMeta.drawio),
-    execution_plans: sessionExecutionPlans.length ? sessionExecutionPlans : localExecutionPlans,
-  };
-  const normalizedMeta = normalizeBpmnMeta(rawBpmnMeta, {
-    fallbackHybridV2: sessionMeta.hybrid_v2,
-    fallbackDrawio: sessionMeta.drawio,
+  const { derivedReadMeta: normalizedMeta } = buildSessionMetaReadModel({
+    sessionMetaRaw: sessionMeta,
+    localMetaRaw: localMeta,
+    normalizeBpmnMeta,
+    normalizeHybridLayerMap,
+    mergeHybridV2Doc,
+    mergeDrawioMeta,
+    preferServerOverlay: true,
   });
   const hasSessionRobotMeta = Object.keys(normalizeRobotMetaMap(sessionMeta.robot_meta_by_element_id)).length > 0;
   const hasXmlRobotMeta = Object.keys(xmlRobotMeta).length > 0;
@@ -1008,6 +993,7 @@ export default function App() {
   const [processTabIntent, setProcessTabIntent] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   const openSessionReqSeqRef = useRef(0);
+  const sessionMetaConflictGuardRef = useRef(createSessionMetaConflictGuard());
   const activeSessionIdRef = useRef("");
   const suppressProjectAutoselectRef = useRef(false);
   const initialSelectionRef = useRef(readSelectionFromUrl());
@@ -1063,6 +1049,59 @@ export default function App() {
   const canManageSharedTemplates = useMemo(() => {
     return canCreateOrgTemplateForRole(activeOrgRole, Boolean(user?.is_admin));
   }, [activeOrgRole, user?.is_admin]);
+  const draftSessionId = String(draft?.session_id || "").trim();
+  const isSessionLocalMode = !draftSessionId || isLocalSessionId(draftSessionId);
+  const serializeSessionMetaForBoundary = useCallback((valueRaw) => JSON.stringify(normalizeBpmnMeta(valueRaw)), []);
+  const shortSessionMetaErr = useCallback((value) => String(value || "Не удалось сохранить session meta."), []);
+  const ignoreSessionMetaErr = useCallback(() => {}, []);
+  const sessionMetaWriteGateway = useSessionMetaWriteGateway({
+    sid: draftSessionId,
+    isLocal: isSessionLocalMode,
+    normalizeMeta: normalizeBpmnMeta,
+    serializeMeta: serializeSessionMetaForBoundary,
+    getPersistedMeta: () => normalizeBpmnMeta(draft?.bpmn_meta),
+    onSessionSync,
+    shortErr: shortSessionMetaErr,
+    setGenErr: ignoreSessionMetaErr,
+  });
+
+  const persistSessionMetaBoundary = useCallback(async (nextMetaRaw, options = {}) => {
+    const sid = String(draftSessionId || "").trim();
+    const source = String(options?.source || "app_session_meta_write");
+    const successHint = String(options?.successHint || "").trim();
+    const failureHint = String(options?.failureHint || "Не удалось сохранить session meta.");
+    const nextMeta = normalizeBpmnMeta(nextMetaRaw);
+    const result = await sessionMetaWriteGateway.persistSessionMeta(nextMeta, {
+      source,
+      onRollback: ({ prevMeta, writeSeq }) => {
+        if (!sid) return;
+        onSessionSync(buildSessionMetaWriteEnvelope({
+          sessionId: sid,
+          bpmnMeta: normalizeBpmnMeta(prevMeta),
+          source: `${source}_rollback`,
+          writeSeq,
+        }));
+      },
+    });
+    if (!result?.ok) {
+      const error = String(result?.error || failureHint || "Не удалось сохранить session meta.");
+      markFail(error);
+      return {
+        ok: false,
+        error,
+        status: Number(result?.status || 0),
+      };
+    }
+    if (successHint) markOk(successHint);
+    return {
+      ok: true,
+      session: result?.session || null,
+      writeSeq: Number(result?.writeSeq || 0),
+      local: result?.local === true,
+      skipped: result?.skipped === true,
+      stale: result?.stale === true,
+    };
+  }, [draftSessionId, markFail, markOk, onSessionSync, sessionMetaWriteGateway]);
 
   function markOk(hint) {
     setBackendStatus("ok");
@@ -1196,10 +1235,20 @@ export default function App() {
   }, [draft?.session_id]);
 
   useEffect(() => {
+    sessionMetaConflictGuardRef.current = createSessionMetaConflictGuard();
+  }, [draft?.session_id]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     if (!window.__FPC_E2E__) return;
     window.__FPC_E2E_DRAFT__ = draft;
   }, [draft]);
+
+  useEffect(() => {
+    const sid = String(draft?.session_id || "").trim();
+    if (!sid) return;
+    writeLocalBpmnMeta(sid, draft?.bpmn_meta);
+  }, [draft?.bpmn_meta, draft?.session_id]);
 
   useEffect(() => {
     setSelectedBpmnElement(null);
@@ -1756,7 +1805,18 @@ export default function App() {
     const activeSid = String(activeSessionIdRef.current || "").trim();
     if (activeSid && sid !== activeSid) return;
     const source = String(session?._sync_source || session?._source || "session_sync");
-    setDraftPersisted((prevDraft) => mergeSessionDraft(prevDraft, sid, session, source));
+    setDraftPersisted((prevDraft) => {
+      const hydration = applySessionMetaHydration({
+        sid,
+        activeSessionId: activeSid,
+        source,
+        payloadRaw: session,
+        conflictGuard: sessionMetaConflictGuardRef.current,
+        mergeDraft: mergeSessionDraft,
+        prevDraft,
+      });
+      return hydration.nextDraft;
+    });
   }
 
   async function patchDraft(partial) {
@@ -1771,8 +1831,19 @@ export default function App() {
       markFail(r.error);
       return { ok: false, error: String(r.error || "patch_failed") };
     }
-
-    setDraftPersisted((d) => ({ ...d, ...partial }));
+    if (r.session && typeof r.session === "object") {
+      onSessionSync({
+        ...r.session,
+        _sync_source: "patch_draft_session",
+      });
+    } else {
+      onSessionSync({
+        id: sid,
+        session_id: sid,
+        ...partial,
+        _sync_source: "patch_draft_local",
+      });
+    }
     markOk("API OK");
     return { ok: true };
   }
@@ -2252,90 +2323,20 @@ export default function App() {
       drawio: currentMeta.drawio,
       execution_plans: currentExecutionPlans,
     };
-
-    setDraftPersisted((prev) => ({
-      ...prev,
-      bpmn_meta: optimisticMeta,
-    }));
-    writeLocalBpmnMeta(sid, optimisticMeta);
-
-    if (!sid || isLocalSessionId(sid)) {
-      markOk("Локальный уровень пути обновлён.");
-      return {
-        ok: true,
-        normalizedConflicts: xorConflictFlowIds,
-      };
+    const persistResult = await persistSessionMetaBoundary(optimisticMeta, {
+      source: "flow_happy_path_save",
+      successHint: sid && !isLocalSessionId(sid) ? "Уровень пути сохранён" : "Локальный уровень пути обновлён.",
+      failureHint: "Не удалось сохранить happy-path.",
+    });
+    if (!persistResult?.ok) {
+      return { ok: false, error: String(persistResult?.error || "Не удалось сохранить happy-path.") };
     }
 
-    const updates = xorConflictFlowIds.length && (xorTier === "P0" || xorTier === "P1")
-      ? [
-          ...xorConflictFlowIds.map((conflictFlowId) => ({ flowId: conflictFlowId, tier: null })),
-          { flowId, tier: tier || null },
-        ]
-      : [];
-    const patchPayload = updates.length
-      ? { updates }
-      : { flowId, tier: tier || null };
-    const result = await apiPatchBpmnMeta(sid, patchPayload);
-    if (!result.ok) {
-      const isMissingMetaEndpoint = Number(result?.status || 0) === 404
-        || /not found/i.test(String(result?.error || ""));
-      if (isMissingMetaEndpoint) {
-        const compat = await apiPatchSession(sid, { bpmn_meta: optimisticMeta });
-        if (compat?.ok) {
-          if (compat.session && typeof compat.session === "object") {
-            onSessionSync({
-              ...compat.session,
-              _sync_source: "happy_path_session_patch_fallback",
-            });
-          } else {
-            setDraftPersisted((prev) => ({
-              ...prev,
-              bpmn_meta: optimisticMeta,
-            }));
-          }
-          writeLocalBpmnMeta(sid, optimisticMeta);
-          markOk("Уровень пути сохранён");
-          return { ok: true, via: "session_patch_fallback" };
-        }
-      }
-      setDraftPersisted((prev) => ({
-        ...prev,
-        bpmn_meta: {
-          version: Number(currentMeta.version) > 0 ? Number(currentMeta.version) : 1,
-          flow_meta: currentFlowMeta,
-          node_path_meta: currentNodePathMeta,
-          robot_meta_by_element_id: currentRobotMetaByElementId,
-          hybrid_layer_by_element_id: currentHybridLayerByElementId,
-          hybrid_v2: currentMeta.hybrid_v2,
-          drawio: currentMeta.drawio,
-          execution_plans: currentExecutionPlans,
-        },
-      }));
-      writeLocalBpmnMeta(sid, {
-        version: Number(currentMeta.version) > 0 ? Number(currentMeta.version) : 1,
-        flow_meta: currentFlowMeta,
-        node_path_meta: currentNodePathMeta,
-        robot_meta_by_element_id: currentRobotMetaByElementId,
-        hybrid_layer_by_element_id: currentHybridLayerByElementId,
-        hybrid_v2: currentMeta.hybrid_v2,
-        drawio: currentMeta.drawio,
-        execution_plans: currentExecutionPlans,
-      });
-      markFail(result.error);
-      return { ok: false, error: String(result.error || "Не удалось сохранить happy-path.") };
-    }
-
-    const serverMeta = ensureObject(result.meta);
-    const normalizedFlowMeta = normalizeFlowMetaMap(serverMeta?.flow_meta);
-    const normalizedNodePathMeta = normalizeNodePathMetaMap(serverMeta?.node_path_meta);
-    const normalizedRobotMetaByElementId = normalizeRobotMetaMap(serverMeta?.robot_meta_by_element_id);
-    const normalizedHybridLayerByElementId = normalizeHybridLayerMap(serverMeta?.hybrid_layer_by_element_id);
-    const normalizedExecutionPlans = normalizeExecutionPlans(serverMeta?.execution_plans);
-    const effectiveExecutionPlans = normalizedExecutionPlans.length ? normalizedExecutionPlans : currentExecutionPlans;
+    const serverMeta = normalizeBpmnMeta(ensureObject(ensureObject(persistResult?.session).bpmn_meta));
+    const normalizedFlowMeta = normalizeFlowMetaMap(serverMeta.flow_meta);
     const requestedTier = tier;
     let normalizationNotice = "";
-    if (requestedTier && normalizedFlowMeta[flowId]?.tier !== requestedTier) {
+    if (requestedTier && Object.keys(normalizedFlowMeta).length && normalizedFlowMeta[flowId]?.tier !== requestedTier) {
       const competingFlowIds = [flowId, ...xorConflictFlowIds];
       const keptFlowId = Object.keys(normalizedFlowMeta).find((id) => (
         competingFlowIds.includes(id) && normalizeFlowTier(normalizedFlowMeta[id]?.tier) === requestedTier
@@ -2346,30 +2347,7 @@ export default function App() {
     } else if (xorConflictFlowIds.length && requestedTier) {
       normalizationNotice = `Нормализация: ${requestedTier} оставлен на ${flowId}, конфликтующие значения сняты.`;
     }
-    setDraftPersisted((prev) => ({
-      ...prev,
-      bpmn_meta: {
-        version: Number(serverMeta?.version) > 0 ? Number(serverMeta.version) : 1,
-        flow_meta: normalizedFlowMeta,
-        node_path_meta: normalizedNodePathMeta,
-        robot_meta_by_element_id: normalizedRobotMetaByElementId,
-        hybrid_layer_by_element_id: normalizedHybridLayerByElementId,
-        hybrid_v2: mergeHybridV2Doc(serverMeta?.hybrid_v2, currentMeta.hybrid_v2),
-        drawio: mergeDrawioMeta(serverMeta?.drawio, currentMeta.drawio),
-        execution_plans: effectiveExecutionPlans,
-      },
-    }));
-    writeLocalBpmnMeta(sid, {
-      version: Number(serverMeta?.version) > 0 ? Number(serverMeta.version) : 1,
-      flow_meta: normalizedFlowMeta,
-      node_path_meta: normalizedNodePathMeta,
-      robot_meta_by_element_id: normalizedRobotMetaByElementId,
-      hybrid_layer_by_element_id: normalizedHybridLayerByElementId,
-      hybrid_v2: mergeHybridV2Doc(serverMeta?.hybrid_v2, currentMeta.hybrid_v2),
-      drawio: mergeDrawioMeta(serverMeta?.drawio, currentMeta.drawio),
-      execution_plans: effectiveExecutionPlans,
-    });
-    markOk(normalizationNotice || "API OK");
+    if (normalizationNotice) markOk(normalizationNotice);
     return {
       ok: true,
       normalizedConflicts: xorConflictFlowIds,
@@ -2434,87 +2412,14 @@ export default function App() {
       drawio: currentMeta.drawio,
       execution_plans: currentExecutionPlans,
     };
-    setDraftPersisted((prev) => ({
-      ...prev,
-      bpmn_meta: optimisticMeta,
-    }));
-    writeLocalBpmnMeta(sid, optimisticMeta);
-
-    if (!sid || isLocalSessionId(sid)) {
-      markOk("Локальная разметка Paths обновлена.");
-      return { ok: true, applied: apiUpdates.length };
+    const persistResult = await persistSessionMetaBoundary(optimisticMeta, {
+      source: "node_path_meta_save",
+      successHint: sid && !isLocalSessionId(sid) ? "Разметка Paths сохранена" : "Локальная разметка Paths обновлена.",
+      failureHint: "Не удалось сохранить разметку Paths.",
+    });
+    if (!persistResult?.ok) {
+      return { ok: false, error: String(persistResult?.error || "Не удалось сохранить разметку Paths.") };
     }
-
-    const result = await apiPatchBpmnMeta(sid, { node_updates: apiUpdates });
-    if (!result.ok) {
-      const isMissingMetaEndpoint = Number(result?.status || 0) === 404
-        || /not found/i.test(String(result?.error || ""));
-      if (isMissingMetaEndpoint) {
-        const compat = await apiPatchSession(sid, { bpmn_meta: optimisticMeta });
-        if (compat?.ok) {
-          if (compat.session && typeof compat.session === "object") {
-            onSessionSync({
-              ...compat.session,
-              _sync_source: "node_path_meta_session_patch_fallback",
-            });
-          } else {
-            setDraftPersisted((prev) => ({ ...prev, bpmn_meta: optimisticMeta }));
-          }
-          writeLocalBpmnMeta(sid, optimisticMeta);
-          markOk("Разметка Paths сохранена");
-          return { ok: true, via: "session_patch_fallback", applied: apiUpdates.length };
-        }
-      }
-      setDraftPersisted((prev) => ({
-        ...prev,
-        bpmn_meta: {
-          version: Number(currentMeta.version) > 0 ? Number(currentMeta.version) : 1,
-          flow_meta: currentFlowMeta,
-          node_path_meta: currentNodePathMeta,
-          robot_meta_by_element_id: currentRobotMetaByElementId,
-          hybrid_layer_by_element_id: currentHybridLayerByElementId,
-          hybrid_v2: currentMeta.hybrid_v2,
-          drawio: currentMeta.drawio,
-          execution_plans: currentExecutionPlans,
-        },
-      }));
-      writeLocalBpmnMeta(sid, {
-        version: Number(currentMeta.version) > 0 ? Number(currentMeta.version) : 1,
-        flow_meta: currentFlowMeta,
-        node_path_meta: currentNodePathMeta,
-        robot_meta_by_element_id: currentRobotMetaByElementId,
-        hybrid_layer_by_element_id: currentHybridLayerByElementId,
-        hybrid_v2: currentMeta.hybrid_v2,
-        drawio: currentMeta.drawio,
-        execution_plans: currentExecutionPlans,
-      });
-      markFail(result.error);
-      return { ok: false, error: String(result.error || "Не удалось сохранить разметку Paths.") };
-    }
-
-    const serverMeta = ensureObject(result.meta);
-    const normalizedFlowMeta = normalizeFlowMetaMap(serverMeta?.flow_meta);
-    const normalizedNodePathMeta = normalizeNodePathMetaMap(serverMeta?.node_path_meta);
-    const normalizedRobotMetaByElementId = normalizeRobotMetaMap(serverMeta?.robot_meta_by_element_id);
-    const normalizedHybridLayerByElementId = normalizeHybridLayerMap(serverMeta?.hybrid_layer_by_element_id);
-    const normalizedExecutionPlans = normalizeExecutionPlans(serverMeta?.execution_plans);
-    const effectiveExecutionPlans = normalizedExecutionPlans.length ? normalizedExecutionPlans : currentExecutionPlans;
-    const nextMeta = {
-      version: Number(serverMeta?.version) > 0 ? Number(serverMeta.version) : 1,
-      flow_meta: normalizedFlowMeta,
-      node_path_meta: normalizedNodePathMeta,
-      robot_meta_by_element_id: normalizedRobotMetaByElementId,
-      hybrid_layer_by_element_id: normalizedHybridLayerByElementId,
-      hybrid_v2: mergeHybridV2Doc(serverMeta?.hybrid_v2, currentMeta.hybrid_v2),
-      drawio: mergeDrawioMeta(serverMeta?.drawio, currentMeta.drawio),
-      execution_plans: effectiveExecutionPlans,
-    };
-    setDraftPersisted((prev) => ({
-      ...prev,
-      bpmn_meta: nextMeta,
-    }));
-    writeLocalBpmnMeta(sid, nextMeta);
-    markOk("API OK");
     return { ok: true, applied: apiUpdates.length };
   }
 
@@ -2555,93 +2460,16 @@ export default function App() {
       drawio: currentMeta.drawio,
       execution_plans: currentExecutionPlans,
     };
-    setDraftPersisted((prev) => ({
-      ...prev,
-      bpmn_meta: optimisticMeta,
-    }));
-    writeLocalBpmnMeta(sid, optimisticMeta);
-
-    if (!sid || isLocalSessionId(sid)) {
-      markOk(shouldRemove ? "Robot Meta удалена локально." : "Robot Meta сохранена локально.");
-      return { ok: true };
+    const persistResult = await persistSessionMetaBoundary(optimisticMeta, {
+      source: "robot_meta_save",
+      successHint: sid && !isLocalSessionId(sid)
+        ? (shouldRemove ? "Robot Meta удалена." : "Robot Meta сохранена.")
+        : (shouldRemove ? "Robot Meta удалена локально." : "Robot Meta сохранена локально."),
+      failureHint: "Не удалось сохранить Robot Meta.",
+    });
+    if (!persistResult?.ok) {
+      return { ok: false, error: String(persistResult?.error || "Не удалось сохранить Robot Meta.") };
     }
-
-    const patchPayload = {
-      robot_updates: [
-        {
-          element_id: elementId,
-          robot_meta: shouldRemove ? null : nextRobotMetaByElementId[elementId],
-          remove: shouldRemove,
-        },
-      ],
-    };
-    const result = await apiPatchBpmnMeta(sid, patchPayload);
-    if (!result.ok) {
-      const isMissingMetaEndpoint = Number(result?.status || 0) === 404
-        || /not found/i.test(String(result?.error || ""));
-      if (isMissingMetaEndpoint) {
-        const compat = await apiPatchSession(sid, { bpmn_meta: optimisticMeta });
-        if (compat?.ok) {
-          if (compat.session && typeof compat.session === "object") {
-            onSessionSync({
-              ...compat.session,
-              _sync_source: "robot_meta_session_patch_fallback",
-            });
-          } else {
-            setDraftPersisted((prev) => ({ ...prev, bpmn_meta: optimisticMeta }));
-          }
-          writeLocalBpmnMeta(sid, optimisticMeta);
-          markOk(shouldRemove ? "Robot Meta удалена." : "Robot Meta сохранена.");
-          return { ok: true, via: "session_patch_fallback" };
-        }
-      }
-      const rollbackMeta = {
-        version: Number(currentMeta.version) > 0 ? Number(currentMeta.version) : 1,
-        flow_meta: currentFlowMeta,
-        node_path_meta: currentNodePathMeta,
-        robot_meta_by_element_id: currentRobotMetaByElementId,
-        hybrid_layer_by_element_id: currentHybridLayerByElementId,
-        hybrid_v2: currentMeta.hybrid_v2,
-        drawio: currentMeta.drawio,
-        execution_plans: currentExecutionPlans,
-      };
-      setDraftPersisted((prev) => ({
-        ...prev,
-        bpmn_meta: rollbackMeta,
-      }));
-      writeLocalBpmnMeta(sid, rollbackMeta);
-      markFail(result.error);
-      return { ok: false, error: String(result.error || "Не удалось сохранить Robot Meta.") };
-    }
-
-    const serverMeta = ensureObject(result.meta);
-    const normalizedServerRobotMeta = normalizeRobotMetaMap(serverMeta?.robot_meta_by_element_id);
-    const normalizedHybridLayerByElementId = normalizeHybridLayerMap(serverMeta?.hybrid_layer_by_element_id);
-    const normalizedExecutionPlans = normalizeExecutionPlans(serverMeta?.execution_plans);
-    const effectiveExecutionPlans = normalizedExecutionPlans.length ? normalizedExecutionPlans : currentExecutionPlans;
-    const effectiveRobotMeta = shouldRemove
-      ? normalizedServerRobotMeta
-      : (Object.keys(normalizedServerRobotMeta).length ? normalizedServerRobotMeta : nextRobotMetaByElementId);
-    if (!shouldRemove && !Object.keys(normalizedServerRobotMeta).length && Object.keys(nextRobotMetaByElementId).length) {
-      // eslint-disable-next-line no-console
-      console.warn("[ROBOT_META] backend response has empty robot_meta_by_element_id; keeping optimistic map");
-    }
-    const nextMeta = {
-      version: Number(serverMeta?.version) > 0 ? Number(serverMeta.version) : 1,
-      flow_meta: normalizeFlowMetaMap(serverMeta?.flow_meta),
-      node_path_meta: normalizeNodePathMetaMap(serverMeta?.node_path_meta),
-      robot_meta_by_element_id: effectiveRobotMeta,
-      hybrid_layer_by_element_id: normalizedHybridLayerByElementId,
-      hybrid_v2: mergeHybridV2Doc(serverMeta?.hybrid_v2, currentMeta.hybrid_v2),
-      drawio: mergeDrawioMeta(serverMeta?.drawio, currentMeta.drawio),
-      execution_plans: effectiveExecutionPlans,
-    };
-    setDraftPersisted((prev) => ({
-      ...prev,
-      bpmn_meta: nextMeta,
-    }));
-    writeLocalBpmnMeta(sid, nextMeta);
-    markOk(shouldRemove ? "Robot Meta удалена." : "Robot Meta сохранена.");
     return { ok: true };
   }
 

@@ -1,8 +1,34 @@
 import { useCallback } from "react";
-import { apiPatchSession } from "../../../../lib/api/sessionApi";
+
+import { pushDeleteTrace } from "../utils/deleteTrace";
+import useSessionMetaWriteGateway from "../../../session-meta/write/useSessionMetaWriteGateway";
+import {
+  buildSessionMetaSnapshot,
+  buildSessionMetaWriteEnvelope,
+} from "../../../session-meta/write/sessionMetaMergePolicy";
 
 function asObject(value) {
   return value && typeof value === "object" ? value : {};
+}
+
+function normalizeSessionMetaBoundary(valueRaw, {
+  normalizeHybridLayerMap,
+  normalizeHybridV2Doc,
+  normalizeDrawioMeta,
+}) {
+  const value = asObject(valueRaw);
+  const hybridLayerMap = normalizeHybridLayerMap(value.hybrid_layer_by_element_id);
+  const out = {
+    ...value,
+    version: Number(value.version) > 0 ? Number(value.version) : 1,
+    hybrid_layer_by_element_id: hybridLayerMap,
+    hybrid_v2: normalizeHybridV2Doc(value.hybrid_v2),
+    drawio: normalizeDrawioMeta(value.drawio),
+  };
+  if (!Object.keys(hybridLayerMap).length) {
+    delete out.hybrid_layer_by_element_id;
+  }
+  return out;
 }
 
 export default function useSessionMetaPersist({
@@ -22,39 +48,81 @@ export default function useSessionMetaPersist({
   normalizeDrawioMeta,
   serializeDrawioMeta,
 }) {
-  const buildMetaSnapshot = useCallback(() => {
-    const currentMeta = asObject(draftBpmnMeta);
-    const hybridLayerMap = normalizeHybridLayerMap(
-      Object.keys(asObject(hybridLayerPersistedMapRef.current)).length
-        ? hybridLayerPersistedMapRef.current
-        : currentMeta.hybrid_layer_by_element_id,
-    );
-    const hybridV2Doc = normalizeHybridV2Doc(
-      asObject(hybridV2PersistedDocRef.current).schema_version
-        ? hybridV2PersistedDocRef.current
-        : currentMeta.hybrid_v2,
-    );
-    const drawioMeta = normalizeDrawioMeta(
-      asObject(drawioPersistedMetaRef.current).doc_xml
-        || asObject(drawioPersistedMetaRef.current).svg_cache
-        || drawioPersistedMetaRef.current?.enabled
-        ? drawioPersistedMetaRef.current
-        : currentMeta.drawio,
-    );
-    const meta = { ...currentMeta, hybrid_layer_by_element_id: hybridLayerMap, hybrid_v2: hybridV2Doc, drawio: drawioMeta };
-    if (!Object.keys(hybridLayerMap).length) {
-      delete meta.hybrid_layer_by_element_id;
-    }
-    return meta;
-  }, [
-    draftBpmnMeta,
-    hybridLayerPersistedMapRef,
-    hybridV2PersistedDocRef,
-    drawioPersistedMetaRef,
+  const normalizeBoundaryMeta = useCallback((valueRaw) => normalizeSessionMetaBoundary(valueRaw, {
     normalizeHybridLayerMap,
     normalizeHybridV2Doc,
     normalizeDrawioMeta,
+  }), [
+    normalizeDrawioMeta,
+    normalizeHybridLayerMap,
+    normalizeHybridV2Doc,
   ]);
+
+  const serializeBoundaryMeta = useCallback((valueRaw) => JSON.stringify(normalizeBoundaryMeta(valueRaw)), [normalizeBoundaryMeta]);
+
+  const buildMetaSnapshot = useCallback(() => buildSessionMetaSnapshot({
+    currentMetaRaw: draftBpmnMeta,
+    persistedHybridLayerMapRaw: hybridLayerPersistedMapRef.current,
+    persistedHybridV2DocRaw: hybridV2PersistedDocRef.current,
+    persistedDrawioMetaRaw: drawioPersistedMetaRef.current,
+    normalizeHybridLayerMap,
+    normalizeHybridV2Doc,
+    normalizeDrawioMeta,
+  }), [
+    draftBpmnMeta,
+    drawioPersistedMetaRef,
+    hybridLayerPersistedMapRef,
+    hybridV2PersistedDocRef,
+    normalizeDrawioMeta,
+    normalizeHybridLayerMap,
+    normalizeHybridV2Doc,
+  ]);
+
+  const writeGateway = useSessionMetaWriteGateway({
+    sid,
+    isLocal,
+    normalizeMeta: normalizeBoundaryMeta,
+    serializeMeta: serializeBoundaryMeta,
+    getPersistedMeta: buildMetaSnapshot,
+    onSessionSync,
+    shortErr,
+    setGenErr,
+  });
+
+  const syncPersistedRefs = useCallback((metaRaw) => {
+    const meta = normalizeBoundaryMeta(metaRaw);
+    hybridLayerPersistedMapRef.current = normalizeHybridLayerMap(meta.hybrid_layer_by_element_id);
+    hybridV2PersistedDocRef.current = normalizeHybridV2Doc(meta.hybrid_v2);
+    drawioPersistedMetaRef.current = normalizeDrawioMeta(meta.drawio);
+  }, [
+    drawioPersistedMetaRef,
+    hybridLayerPersistedMapRef,
+    hybridV2PersistedDocRef,
+    normalizeBoundaryMeta,
+    normalizeDrawioMeta,
+    normalizeHybridLayerMap,
+    normalizeHybridV2Doc,
+  ]);
+
+  const persistBpmnMeta = useCallback(async (nextRaw, options = {}) => {
+    const source = String(options?.source || "bpmn_meta_save");
+    const result = await writeGateway.persistSessionMeta(nextRaw, {
+      source,
+      onOptimistic: ({ nextMeta }) => {
+        syncPersistedRefs(nextMeta);
+      },
+      onRollback: ({ prevMeta, writeSeq }) => {
+        syncPersistedRefs(prevMeta);
+        onSessionSync?.(buildSessionMetaWriteEnvelope({
+          sessionId: sid,
+          bpmnMeta: prevMeta,
+          source: `${source}_rollback`,
+          writeSeq,
+        }));
+      },
+    });
+    return result;
+  }, [onSessionSync, sid, syncPersistedRefs, writeGateway]);
 
   const persistHybridLayerMap = useCallback(async (nextRaw, options = {}) => {
     const nextMap = normalizeHybridLayerMap(nextRaw);
@@ -62,56 +130,22 @@ export default function useSessionMetaPersist({
     const prevMap = normalizeHybridLayerMap(hybridLayerPersistedMapRef.current);
     const prevSig = serializeHybridLayerMap(prevMap);
     if (nextSig === prevSig) return { ok: true, skipped: true };
-
-    const currentMeta = buildMetaSnapshot();
-    const optimisticMeta = { ...currentMeta };
-    if (Object.keys(nextMap).length) optimisticMeta.hybrid_layer_by_element_id = nextMap;
-    else delete optimisticMeta.hybrid_layer_by_element_id;
-
-    const optimisticSession = {
-      id: sid,
-      session_id: sid,
-      bpmn_meta: optimisticMeta,
-      _sync_source: String(options?.source || "hybrid_layer_ui_save"),
+    const nextMeta = {
+      ...buildMetaSnapshot(),
+      hybrid_layer_by_element_id: nextMap,
     };
-    hybridLayerPersistedMapRef.current = nextMap;
-    onSessionSync?.(optimisticSession);
-
-    if (!sid || isLocal) return { ok: true, local: true };
-
-    const syncRes = await apiPatchSession(sid, { bpmn_meta: optimisticMeta });
-    if (!syncRes?.ok) {
-      hybridLayerPersistedMapRef.current = prevMap;
-      const rollbackMeta = { ...buildMetaSnapshot() };
-      if (Object.keys(prevMap).length) rollbackMeta.hybrid_layer_by_element_id = prevMap;
-      else delete rollbackMeta.hybrid_layer_by_element_id;
-      onSessionSync?.({
-        id: sid,
-        session_id: sid,
-        bpmn_meta: rollbackMeta,
-        _sync_source: "hybrid_layer_ui_save_rollback",
-      });
-      const msg = shortErr(syncRes?.error || "Не удалось сохранить Hybrid Layer.");
-      setGenErr(msg);
-      return { ok: false, error: msg, status: Number(syncRes?.status || 0) };
+    if (!Object.keys(nextMap).length) {
+      delete nextMeta.hybrid_layer_by_element_id;
     }
-    if (syncRes.session && typeof syncRes.session === "object") {
-      onSessionSync?.({
-        ...syncRes.session,
-        _sync_source: "hybrid_layer_ui_save_session_patch",
-      });
-    }
-    return { ok: true };
+    return persistBpmnMeta(nextMeta, {
+      source: String(options?.source || "hybrid_layer_ui_save"),
+    });
   }, [
     buildMetaSnapshot,
-    normalizeHybridLayerMap,
-    serializeHybridLayerMap,
     hybridLayerPersistedMapRef,
-    sid,
-    onSessionSync,
-    isLocal,
-    shortErr,
-    setGenErr,
+    normalizeHybridLayerMap,
+    persistBpmnMeta,
+    serializeHybridLayerMap,
   ]);
 
   const persistHybridV2Doc = useCallback(async (nextRaw, options = {}) => {
@@ -120,50 +154,19 @@ export default function useSessionMetaPersist({
     const prevDoc = normalizeHybridV2Doc(hybridV2PersistedDocRef.current);
     const prevSig = docToComparableJson(prevDoc);
     if (nextSig === prevSig) return { ok: true, skipped: true };
-
-    const currentMeta = buildMetaSnapshot();
-    const optimisticMeta = { ...currentMeta, hybrid_v2: nextDoc };
-    const optimisticSession = {
-      id: sid,
-      session_id: sid,
-      bpmn_meta: optimisticMeta,
-      _sync_source: String(options?.source || "hybrid_v2_save"),
+    const nextMeta = {
+      ...buildMetaSnapshot(),
+      hybrid_v2: nextDoc,
     };
-    hybridV2PersistedDocRef.current = nextDoc;
-    onSessionSync?.(optimisticSession);
-    if (!sid || isLocal) return { ok: true, local: true };
-
-    const syncRes = await apiPatchSession(sid, { bpmn_meta: optimisticMeta });
-    if (!syncRes?.ok) {
-      hybridV2PersistedDocRef.current = prevDoc;
-      const rollbackMeta = { ...buildMetaSnapshot(), hybrid_v2: prevDoc };
-      onSessionSync?.({
-        id: sid,
-        session_id: sid,
-        bpmn_meta: rollbackMeta,
-        _sync_source: "hybrid_v2_save_rollback",
-      });
-      const msg = shortErr(syncRes?.error || "Не удалось сохранить Hybrid v2.");
-      setGenErr(msg);
-      return { ok: false, error: msg, status: Number(syncRes?.status || 0) };
-    }
-    if (syncRes.session && typeof syncRes.session === "object") {
-      onSessionSync?.({
-        ...syncRes.session,
-        _sync_source: "hybrid_v2_save_session_patch",
-      });
-    }
-    return { ok: true };
+    return persistBpmnMeta(nextMeta, {
+      source: String(options?.source || "hybrid_v2_save"),
+    });
   }, [
     buildMetaSnapshot,
-    normalizeHybridV2Doc,
     docToComparableJson,
     hybridV2PersistedDocRef,
-    sid,
-    onSessionSync,
-    isLocal,
-    shortErr,
-    setGenErr,
+    normalizeHybridV2Doc,
+    persistBpmnMeta,
   ]);
 
   const persistDrawioMeta = useCallback(async (nextRaw, options = {}) => {
@@ -171,54 +174,51 @@ export default function useSessionMetaPersist({
     const nextSig = serializeDrawioMeta(nextMeta);
     const prevMeta = normalizeDrawioMeta(drawioPersistedMetaRef.current);
     const prevSig = serializeDrawioMeta(prevMeta);
-    if (nextSig === prevSig) return { ok: true, skipped: true };
-
-    const currentMeta = buildMetaSnapshot();
-    const optimisticMeta = { ...currentMeta, drawio: nextMeta };
-    const optimisticSession = {
-      id: sid,
-      session_id: sid,
-      bpmn_meta: optimisticMeta,
-      _sync_source: String(options?.source || "drawio_save"),
+    if (nextSig === prevSig) {
+      pushDeleteTrace("persist_drawio_meta_skipped", {
+        source: String(options?.source || "drawio_save"),
+        reason: "same_signature",
+      });
+      return { ok: true, skipped: true };
+    }
+    pushDeleteTrace("persist_drawio_meta_optimistic", {
+      source: String(options?.source || "drawio_save"),
+      svgCacheLength: Number(String(nextMeta?.svg_cache || "").length || 0),
+      elementsCount: Number(Array.isArray(nextMeta?.drawio_elements_v1) ? nextMeta.drawio_elements_v1.length : 0),
+      deletedCount: Number(
+        Array.isArray(nextMeta?.drawio_elements_v1)
+          ? nextMeta.drawio_elements_v1.filter((row) => row && typeof row === "object" && row.deleted === true).length
+          : 0,
+      ),
+    });
+    const mergedMeta = {
+      ...buildMetaSnapshot(),
+      drawio: nextMeta,
     };
-    drawioPersistedMetaRef.current = nextMeta;
-    onSessionSync?.(optimisticSession);
-    if (!sid || isLocal) return { ok: true, local: true };
-
-    const syncRes = await apiPatchSession(sid, { bpmn_meta: optimisticMeta });
-    if (!syncRes?.ok) {
-      drawioPersistedMetaRef.current = prevMeta;
-      const rollbackMeta = { ...buildMetaSnapshot(), drawio: prevMeta };
-      onSessionSync?.({
-        id: sid,
-        session_id: sid,
-        bpmn_meta: rollbackMeta,
-        _sync_source: "drawio_save_rollback",
+    const result = await persistBpmnMeta(mergedMeta, {
+      source: String(options?.source || "drawio_save"),
+    });
+    if (!result?.ok) {
+      pushDeleteTrace("persist_drawio_meta_failed", {
+        source: String(options?.source || "drawio_save"),
+        status: Number(result?.status || 0),
       });
-      const msg = shortErr(syncRes?.error || "Не удалось сохранить Draw.io.");
-      setGenErr(msg);
-      return { ok: false, error: msg, status: Number(syncRes?.status || 0) };
+      return result;
     }
-    if (syncRes.session && typeof syncRes.session === "object") {
-      onSessionSync?.({
-        ...syncRes.session,
-        _sync_source: "drawio_save_session_patch",
-      });
-    }
-    return { ok: true };
+    pushDeleteTrace("persist_drawio_meta_synced", {
+      source: String(options?.source || "drawio_save"),
+    });
+    return result;
   }, [
     buildMetaSnapshot,
-    normalizeDrawioMeta,
-    serializeDrawioMeta,
     drawioPersistedMetaRef,
-    sid,
-    onSessionSync,
-    isLocal,
-    shortErr,
-    setGenErr,
+    normalizeDrawioMeta,
+    persistBpmnMeta,
+    serializeDrawioMeta,
   ]);
 
   return {
+    persistBpmnMeta,
     persistHybridLayerMap,
     persistHybridV2Doc,
     persistDrawioMeta,
