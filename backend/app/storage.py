@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import threading
 import uuid
@@ -11,9 +12,19 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
+from .db import get_db_runtime_config, redact_database_url
 from .models import Project, Session
+
+try:
+    import psycopg
+    from psycopg.errors import IntegrityError as PsycopgIntegrityError
+    from psycopg_pool import ConnectionPool
+except Exception:
+    psycopg = None
+    PsycopgIntegrityError = None
+    ConnectionPool = None
 
 _REQ_USER_ID: ContextVar[str] = ContextVar("fpc_req_user_id", default="")
 _REQ_IS_ADMIN: ContextVar[bool] = ContextVar("fpc_req_is_admin", default=False)
@@ -29,7 +40,9 @@ _DEFAULT_ORG_NAME = str(os.environ.get("FPC_DEFAULT_ORG_NAME", "Default") or "De
 _ORG_FULL_ACCESS_ROLES = {"org_owner", "org_admin", "auditor"}
 _PROJECT_MEMBER_ROLES = {"project_manager", "editor", "viewer"}
 _ORG_MEMBER_ROLES = {"org_owner", "org_admin", "project_manager", "editor", "viewer", "auditor"}
-_ORG_INVITE_ROLES = {"org_admin", "editor", "viewer", "auditor"}
+_ORG_INVITE_ROLES = {"org_admin", "project_manager", "editor", "viewer", "auditor"}
+_PG_POOL_LOCK = threading.RLock()
+_PG_POOL: Any = None
 
 
 def _now_ts() -> int:
@@ -95,7 +108,192 @@ def _db_path() -> Path:
     return _db_base_dir() / "processmap.sqlite3"
 
 
-def _connect() -> sqlite3.Connection:
+class _RowCompat:
+    __slots__ = ("_columns", "_values", "_mapping")
+
+    def __init__(self, columns: Iterable[str], values: Iterable[Any]) -> None:
+        self._columns = list(columns)
+        self._values = list(values)
+        self._mapping = {name: self._values[idx] for idx, name in enumerate(self._columns)}
+
+    def __getitem__(self, key: Any) -> Any:
+        if isinstance(key, int):
+            return self._values[key]
+        return self._mapping[str(key)]
+
+    def keys(self) -> List[str]:
+        return list(self._columns)
+
+
+class _PgResult:
+    __slots__ = ("_rows", "_offset", "rowcount")
+
+    def __init__(self, rows: List[_RowCompat], rowcount: int) -> None:
+        self._rows = rows
+        self._offset = 0
+        self.rowcount = int(rowcount or 0)
+
+    def fetchone(self) -> Any:
+        if self._offset >= len(self._rows):
+            return None
+        row = self._rows[self._offset]
+        self._offset += 1
+        return row
+
+    def fetchall(self) -> List[Any]:
+        if self._offset >= len(self._rows):
+            return []
+        rows = self._rows[self._offset :]
+        self._offset = len(self._rows)
+        return rows
+
+
+class _PgCompatConnection:
+    def __init__(self, conn: Any, conn_ctx: Any = None) -> None:
+        self._conn = conn
+        self._conn_ctx = conn_ctx
+
+    def __enter__(self) -> "_PgCompatConnection":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        try:
+            if exc_type is None:
+                self._conn.commit()
+            else:
+                self._conn.rollback()
+        finally:
+            self.close()
+        return False
+
+    def close(self) -> None:
+        if self._conn_ctx is not None:
+            self._conn_ctx.__exit__(None, None, None)
+            self._conn_ctx = None
+            return
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+
+    def commit(self) -> None:
+        self._conn.commit()
+
+    def rollback(self) -> None:
+        self._conn.rollback()
+
+    def execute(self, query: str, params: Any = None) -> _PgResult:
+        sql, bound = _translate_sql_for_postgres(query, params)
+        with self._conn.cursor() as cur:
+            cur.execute(sql, bound)
+            if cur.description:
+                rows_raw = cur.fetchall()
+                columns = [str(col.name or "") for col in (cur.description or [])]
+                rows: List[_RowCompat] = []
+                for row_raw in rows_raw:
+                    values = list(row_raw if isinstance(row_raw, tuple) else tuple(row_raw))
+                    rows.append(_RowCompat(columns, values))
+                rowcount = len(rows)
+                return _PgResult(rows, rowcount=rowcount)
+            rowcount = int(cur.rowcount or 0)
+            return _PgResult([], rowcount=rowcount)
+
+
+def _qmark_to_pyformat(sql: str) -> str:
+    out: List[str] = []
+    in_single = False
+    in_double = False
+    i = 0
+    while i < len(sql):
+        ch = sql[i]
+        if ch == "'" and not in_double:
+            in_single = not in_single
+            out.append(ch)
+            i += 1
+            continue
+        if ch == '"' and not in_single:
+            in_double = not in_double
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "?" and not in_single and not in_double:
+            out.append("%s")
+            i += 1
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _named_to_pyformat(sql: str) -> str:
+    # Keep PostgreSQL casts (::) intact.
+    return re.sub(r"(?<!:):([A-Za-z_][A-Za-z0-9_]*)", r"%(\1)s", sql)
+
+
+def _translate_sql_for_postgres(query: str, params: Any) -> Tuple[str, Any]:
+    sql = str(query or "")
+    pragma_match = re.match(r"^\s*PRAGMA\s+table_info\(([^)]+)\)\s*;?\s*$", sql, flags=re.IGNORECASE)
+    if pragma_match:
+        table = str(pragma_match.group(1) or "").strip().strip("'").strip('"')
+        return (
+            """
+            SELECT
+              (ordinal_position - 1) AS cid,
+              column_name AS name,
+              data_type AS type,
+              CASE WHEN is_nullable = 'NO' THEN 1 ELSE 0 END AS notnull,
+              column_default AS dflt_value,
+              0 AS pk
+            FROM information_schema.columns
+            WHERE table_schema = current_schema() AND table_name = %s
+            ORDER BY ordinal_position
+            """,
+            [table],
+        )
+
+    had_insert_ignore = bool(re.search(r"\bINSERT\s+OR\s+IGNORE\s+INTO\b", sql, flags=re.IGNORECASE))
+    if had_insert_ignore:
+        sql = re.sub(r"\bINSERT\s+OR\s+IGNORE\s+INTO\b", "INSERT INTO", sql, flags=re.IGNORECASE)
+        if "ON CONFLICT" not in sql.upper():
+            stripped = sql.rstrip()
+            if stripped.endswith(";"):
+                stripped = stripped[:-1]
+            sql = f"{stripped} ON CONFLICT DO NOTHING"
+
+    if isinstance(params, Mapping):
+        return _named_to_pyformat(sql), dict(params)
+    return _qmark_to_pyformat(sql), (list(params) if params is not None else [])
+
+
+def _get_pg_pool() -> Any:
+    global _PG_POOL
+    with _PG_POOL_LOCK:
+        if _PG_POOL is not None:
+            return _PG_POOL
+        cfg = get_db_runtime_config()
+        if cfg.backend != "postgres":
+            return None
+        if psycopg is None or ConnectionPool is None:
+            raise RuntimeError("postgres backend selected but psycopg/psycopg_pool is not installed")
+        _PG_POOL = ConnectionPool(
+            conninfo=cfg.database_url,
+            min_size=cfg.pool_min_size,
+            max_size=cfg.pool_max_size,
+            kwargs={"autocommit": False},
+        )
+        _PG_POOL.wait()
+        return _PG_POOL
+
+
+def _connect() -> Any:
+    cfg = get_db_runtime_config()
+    if cfg.backend == "postgres":
+        pool = _get_pg_pool()
+        if pool is None:
+            raise RuntimeError("postgres backend selected but connection pool is unavailable")
+        conn_ctx = pool.connection()
+        conn = conn_ctx.__enter__()
+        return _PgCompatConnection(conn, conn_ctx=conn_ctx)
     con = sqlite3.connect(str(_db_path()))
     con.row_factory = sqlite3.Row
     return con
@@ -171,14 +369,31 @@ def _org_clause(org_id: str) -> Tuple[str, List[Any]]:
     return " AND org_id = ? ", [oid]
 
 
-def _column_exists(con: sqlite3.Connection, table: str, column: str) -> bool:
+def _row_value(row: Any, key: str, fallback_idx: Optional[int] = None) -> Any:
+    if row is None:
+        return None
+    if isinstance(row, Mapping):
+        return row.get(key)
+    try:
+        return row[key]
+    except Exception:
+        pass
+    if fallback_idx is None:
+        return None
+    try:
+        return row[fallback_idx]
+    except Exception:
+        return None
+
+
+def _column_exists(con: Any, table: str, column: str) -> bool:
     try:
         rows = con.execute(f"PRAGMA table_info({table})").fetchall()
     except Exception:
         return False
     target = str(column or "").strip().lower()
     for row in rows:
-        name = str(row["name"] if isinstance(row, sqlite3.Row) else row[1]).strip().lower()
+        name = str(_row_value(row, "name", 1) or "").strip().lower()
         if name == target:
             return True
     return False
@@ -186,11 +401,18 @@ def _column_exists(con: sqlite3.Connection, table: str, column: str) -> bool:
 
 def _ensure_schema() -> None:
     global _SCHEMA_READY, _SCHEMA_DB_FILE
-    db_file = str(_db_path())
+    cfg = get_db_runtime_config()
+    if cfg.backend == "postgres":
+        db_file = f"postgres:{redact_database_url(cfg.database_url)}"
+    else:
+        db_file = f"sqlite:{_db_path()}"
     with _DB_LOCK:
         if _SCHEMA_READY and _SCHEMA_DB_FILE == db_file:
             return
         with _connect() as con:
+            if cfg.backend == "postgres":
+                # Guard schema/bootstrap against multi-process startup deadlocks.
+                con.execute("SELECT pg_advisory_xact_lock(?)", [904120266])
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS storage_meta (
@@ -303,6 +525,7 @@ def _ensure_schema() -> None:
                   name TEXT NOT NULL DEFAULT '',
                   description TEXT NOT NULL DEFAULT '',
                   payload_json TEXT NOT NULL DEFAULT '{}',
+                  created_from_session_id TEXT NOT NULL DEFAULT '',
                   created_at INTEGER NOT NULL DEFAULT 0,
                   updated_at INTEGER NOT NULL DEFAULT 0
                 )
@@ -310,6 +533,9 @@ def _ensure_schema() -> None:
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_templates_scope_owner_updated ON templates(scope, owner_user_id, updated_at DESC)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_templates_scope_org_updated ON templates(scope, org_id, updated_at DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_templates_owner_updated ON templates(owner_user_id, updated_at DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_templates_scope_updated ON templates(scope, updated_at DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_templates_org_scope_updated ON templates(org_id, scope, updated_at DESC)")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS template_folders (
@@ -335,6 +561,9 @@ def _ensure_schema() -> None:
                   org_id TEXT NOT NULL,
                   email TEXT NOT NULL,
                   role TEXT NOT NULL,
+                  team_name TEXT NOT NULL DEFAULT '',
+                  subgroup_name TEXT NOT NULL DEFAULT '',
+                  invite_comment TEXT NOT NULL DEFAULT '',
                   token_hash TEXT NOT NULL,
                   expires_at INTEGER NOT NULL DEFAULT 0,
                   created_at INTEGER NOT NULL DEFAULT 0,
@@ -382,6 +611,8 @@ def _ensure_schema() -> None:
                 con.execute("ALTER TABLE templates ADD COLUMN template_type TEXT NOT NULL DEFAULT 'bpmn_selection_v1'")
             if not _column_exists(con, "templates", "folder_id"):
                 con.execute("ALTER TABLE templates ADD COLUMN folder_id TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "templates", "created_from_session_id"):
+                con.execute("ALTER TABLE templates ADD COLUMN created_from_session_id TEXT NOT NULL DEFAULT ''")
             con.execute("CREATE INDEX IF NOT EXISTS idx_templates_folder ON templates(folder_id)")
             if not _column_exists(con, "projects", "created_by"):
                 con.execute("ALTER TABLE projects ADD COLUMN created_by TEXT NOT NULL DEFAULT ''")
@@ -393,6 +624,12 @@ def _ensure_schema() -> None:
                 con.execute("ALTER TABLE sessions ADD COLUMN created_by TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "sessions", "updated_by"):
                 con.execute("ALTER TABLE sessions ADD COLUMN updated_by TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "org_invites", "team_name"):
+                con.execute("ALTER TABLE org_invites ADD COLUMN team_name TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "org_invites", "subgroup_name"):
+                con.execute("ALTER TABLE org_invites ADD COLUMN subgroup_name TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "org_invites", "invite_comment"):
+                con.execute("ALTER TABLE org_invites ADD COLUMN invite_comment TEXT NOT NULL DEFAULT ''")
             con.execute("CREATE INDEX IF NOT EXISTS idx_projects_org_updated ON projects(org_id, updated_at DESC)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_sessions_org_project_updated ON sessions(org_id, project_id, updated_at DESC)")
             _maybe_migrate_legacy_files(con)
@@ -620,7 +857,7 @@ def _ensure_enterprise_bootstrap(con: sqlite3.Connection) -> None:
          WHERE COALESCE(owner_user_id,'') <> ''
         """
     ).fetchall()
-    owner_ids = {str((row["user_id"] if isinstance(row, sqlite3.Row) else row[0]) or "").strip() for row in owner_rows}
+    owner_ids = {str(_row_value(row, "user_id", 0) or "").strip() for row in owner_rows}
     owner_ids.discard("")
 
     users = _read_auth_users_rows()
@@ -1322,6 +1559,8 @@ def _normalize_project_membership_role(raw: Any) -> str:
         "manager": "project_manager",
         "proj_manager": "project_manager",
         "project_manager": "project_manager",
+        "team_admin": "project_manager",
+        "teamadmin": "project_manager",
         "editor": "editor",
         "edit": "editor",
         "viewer": "viewer",
@@ -1346,6 +1585,8 @@ def _normalize_org_membership_role(raw: Any) -> str:
         "project_manager": "project_manager",
         "pm": "project_manager",
         "manager": "project_manager",
+        "team_admin": "project_manager",
+        "teamadmin": "project_manager",
         "editor": "editor",
         "edit": "editor",
         "viewer": "viewer",
@@ -1382,20 +1623,32 @@ def _invite_status(row: Dict[str, Any]) -> str:
 
 
 def _invite_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    keys = set(row.keys()) if hasattr(row, "keys") else set()
+
+    def _col(name: str, default: Any = "") -> Any:
+        return row[name] if name in keys else default
+
     payload = {
-        "id": str(row["id"] or ""),
-        "org_id": str(row["org_id"] or ""),
-        "email": _normalize_email(row["email"]),
-        "role": _normalize_org_invite_role(row["role"]),
-        "expires_at": int(row["expires_at"] or 0),
-        "created_at": int(row["created_at"] or 0),
-        "created_by": str(row["created_by"] or ""),
-        "accepted_at": int(row["accepted_at"] or 0) if row["accepted_at"] is not None else None,
-        "accepted_by": str(row["accepted_by"] or "") if row["accepted_by"] is not None else None,
-        "revoked_at": int(row["revoked_at"] or 0) if row["revoked_at"] is not None else None,
-        "revoked_by": str(row["revoked_by"] or "") if row["revoked_by"] is not None else None,
+        "id": str(_col("id") or ""),
+        "org_id": str(_col("org_id") or ""),
+        "org_name": str(_col("org_name") or _col("org_id") or ""),
+        "email": _normalize_email(_col("email")),
+        "role": _normalize_org_invite_role(_col("role")),
+        "team_name": str(_col("team_name") or "").strip(),
+        "subgroup_name": str(_col("subgroup_name") or "").strip(),
+        "invite_comment": str(_col("invite_comment") or "").strip(),
+        "expires_at": int(_col("expires_at") or 0),
+        "created_at": int(_col("created_at") or 0),
+        "created_by": str(_col("created_by") or ""),
+        "accepted_at": int(_col("accepted_at") or 0) if _col("accepted_at") is not None else None,
+        "accepted_by": str(_col("accepted_by") or "") if _col("accepted_by") is not None else None,
+        "revoked_at": int(_col("revoked_at") or 0) if _col("revoked_at") is not None else None,
+        "revoked_by": str(_col("revoked_by") or "") if _col("revoked_by") is not None else None,
+        "invite_mode": "one_time",
     }
     payload["status"] = _invite_status(payload)
+    payload["used_at"] = payload.get("accepted_at")
+    payload["used_by"] = payload.get("accepted_by")
     return payload
 
 
@@ -1620,6 +1873,7 @@ def _template_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
         "org_id": str(row["org_id"] or ""),
         "owner_user_id": str(row["owner_user_id"] or ""),
         "folder_id": _normalize_template_folder_id(row["folder_id"] if "folder_id" in row.keys() else ""),
+        "created_from_session_id": str(row["created_from_session_id"] if "created_from_session_id" in row.keys() else ""),
         "name": str(row["name"] or ""),
         "description": str(row["description"] or ""),
         "payload": payload,
@@ -1861,7 +2115,7 @@ def list_templates(
     with _connect() as con:
         rows = con.execute(
             f"""
-            SELECT id, scope, template_type, org_id, owner_user_id, folder_id, name, description, payload_json, created_at, updated_at
+            SELECT id, scope, template_type, org_id, owner_user_id, folder_id, name, description, payload_json, created_from_session_id, created_at, updated_at
               FROM templates
              WHERE {' AND '.join(clauses)}
              ORDER BY updated_at DESC, id DESC
@@ -1880,7 +2134,7 @@ def get_template(template_id: str) -> Optional[Dict[str, Any]]:
     with _connect() as con:
         row = con.execute(
             """
-            SELECT id, scope, template_type, org_id, owner_user_id, folder_id, name, description, payload_json, created_at, updated_at
+            SELECT id, scope, template_type, org_id, owner_user_id, folder_id, name, description, payload_json, created_from_session_id, created_at, updated_at
               FROM templates
              WHERE id = ?
              LIMIT 1
@@ -2021,11 +2275,12 @@ def list_org_invites(
     with _connect() as con:
         rows = con.execute(
             """
-            SELECT id, org_id, email, role, token_hash, expires_at, created_at, created_by,
-                   accepted_at, accepted_by, revoked_at, revoked_by
-              FROM org_invites
-             WHERE org_id = ?
-             ORDER BY created_at DESC, id DESC
+            SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.team_name, i.subgroup_name, i.invite_comment,
+                   i.token_hash, i.expires_at, i.created_at, i.created_by, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+              FROM org_invites i
+              LEFT JOIN orgs o ON o.id = i.org_id
+             WHERE i.org_id = ?
+             ORDER BY i.created_at DESC, i.id DESC
             """,
             [oid],
         ).fetchall()
@@ -2044,6 +2299,9 @@ def create_org_invite(
     role: str,
     *,
     created_by: str,
+    team_name: str = "",
+    subgroup_name: str = "",
+    invite_comment: str = "",
     ttl_days: int = 7,
 ) -> Dict[str, Any]:
     oid = str(org_id or "").strip()
@@ -2051,6 +2309,9 @@ def create_org_invite(
     if not oid or not em:
         raise ValueError("org_id and email are required")
     normalized_role = _normalize_org_invite_role(role)
+    normalized_team_name = str(team_name or "").strip()
+    normalized_subgroup_name = str(subgroup_name or "").strip()
+    normalized_comment = str(invite_comment or "").strip()
     actor = str(created_by or "").strip()
     ttl = int(ttl_days or 0)
     if ttl <= 0:
@@ -2078,21 +2339,38 @@ def create_org_invite(
             con.execute(
                 """
                 INSERT INTO org_invites (
-                  id, org_id, email, role, token_hash, expires_at, created_at, created_by,
+                  id, org_id, email, role, team_name, subgroup_name, invite_comment, token_hash, expires_at, created_at, created_by,
                   accepted_at, accepted_by, revoked_at, revoked_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
                 """,
-                [invite_id, oid, em, normalized_role, token_hash, expires_at, now, actor],
+                [
+                    invite_id,
+                    oid,
+                    em,
+                    normalized_role,
+                    normalized_team_name,
+                    normalized_subgroup_name,
+                    normalized_comment,
+                    token_hash,
+                    expires_at,
+                    now,
+                    actor,
+                ],
             )
-        except sqlite3.IntegrityError as exc:
-            raise ValueError("active invite already exists for this email") from exc
+        except Exception as exc:
+            if isinstance(exc, sqlite3.IntegrityError) or (
+                PsycopgIntegrityError is not None and isinstance(exc, PsycopgIntegrityError)
+            ):
+                raise ValueError("active invite already exists for this email") from exc
+            raise
         con.commit()
         row = con.execute(
             """
-            SELECT id, org_id, email, role, token_hash, expires_at, created_at, created_by,
-                   accepted_at, accepted_by, revoked_at, revoked_by
-              FROM org_invites
-             WHERE id = ?
+            SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.team_name, i.subgroup_name, i.invite_comment,
+                   i.token_hash, i.expires_at, i.created_at, i.created_by, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+              FROM org_invites i
+              LEFT JOIN orgs o ON o.id = i.org_id
+             WHERE i.id = ?
              LIMIT 1
             """,
             [invite_id],
@@ -2122,6 +2400,57 @@ def delete_org_invite(org_id: str, invite_id: str) -> bool:
         return int(cur.rowcount or 0) > 0
 
 
+def preview_org_invite(
+    token: str,
+    *,
+    org_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    tok = str(token or "").strip()
+    oid = str(org_id or "").strip()
+    if not tok:
+        raise ValueError("token is required")
+    token_hash = _hash_invite_token(tok)
+    _ensure_schema()
+    with _connect() as con:
+        if oid:
+            row = con.execute(
+                """
+                SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.team_name, i.subgroup_name, i.invite_comment,
+                       i.token_hash, i.expires_at, i.created_at, i.created_by, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                  FROM org_invites i
+                  LEFT JOIN orgs o ON o.id = i.org_id
+                 WHERE i.org_id = ? AND i.token_hash = ?
+                 ORDER BY i.created_at DESC
+                 LIMIT 1
+                """,
+                [oid, token_hash],
+            ).fetchone()
+        else:
+            row = con.execute(
+                """
+                SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.team_name, i.subgroup_name, i.invite_comment,
+                       i.token_hash, i.expires_at, i.created_at, i.created_by, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                  FROM org_invites i
+                  LEFT JOIN orgs o ON o.id = i.org_id
+                 WHERE i.token_hash = ?
+                 ORDER BY i.created_at DESC
+                 LIMIT 1
+                """,
+                [token_hash],
+            ).fetchone()
+    if not row:
+        raise ValueError("invite_not_found")
+    payload = _invite_row_to_dict(row)
+    status = str(payload.get("status") or "")
+    if status == "revoked":
+        raise ValueError("invite_revoked")
+    if status == "accepted":
+        raise ValueError("invite_already_accepted")
+    if status == "expired":
+        raise ValueError("invite_expired")
+    return payload
+
+
 def accept_org_invite(
     org_id: Optional[str],
     token: str,
@@ -2142,11 +2471,12 @@ def accept_org_invite(
         if oid:
             row = con.execute(
                 """
-                SELECT id, org_id, email, role, token_hash, expires_at, created_at, created_by,
-                       accepted_at, accepted_by, revoked_at, revoked_by
-                  FROM org_invites
-                 WHERE org_id = ? AND token_hash = ?
-                 ORDER BY created_at DESC
+                SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.team_name, i.subgroup_name, i.invite_comment,
+                       i.token_hash, i.expires_at, i.created_at, i.created_by, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                  FROM org_invites i
+                  LEFT JOIN orgs o ON o.id = i.org_id
+                 WHERE i.org_id = ? AND i.token_hash = ?
+                 ORDER BY i.created_at DESC
                  LIMIT 1
                 """,
                 [oid, token_hash],
@@ -2154,11 +2484,12 @@ def accept_org_invite(
         else:
             row = con.execute(
                 """
-                SELECT id, org_id, email, role, token_hash, expires_at, created_at, created_by,
-                       accepted_at, accepted_by, revoked_at, revoked_by
-                  FROM org_invites
-                 WHERE token_hash = ?
-                 ORDER BY created_at DESC
+                SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.team_name, i.subgroup_name, i.invite_comment,
+                       i.token_hash, i.expires_at, i.created_at, i.created_by, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                  FROM org_invites i
+                  LEFT JOIN orgs o ON o.id = i.org_id
+                 WHERE i.token_hash = ?
+                 ORDER BY i.created_at DESC
                  LIMIT 1
                 """,
                 [token_hash],
@@ -2197,10 +2528,11 @@ def accept_org_invite(
         con.commit()
         accepted_row = con.execute(
             """
-            SELECT id, org_id, email, role, token_hash, expires_at, created_at, created_by,
-                   accepted_at, accepted_by, revoked_at, revoked_by
-              FROM org_invites
-             WHERE id = ?
+            SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.team_name, i.subgroup_name, i.invite_comment,
+                   i.token_hash, i.expires_at, i.created_at, i.created_by, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+              FROM org_invites i
+              LEFT JOIN orgs o ON o.id = i.org_id
+             WHERE i.id = ?
              LIMIT 1
             """,
             [str(invite.get("id") or "")],
@@ -2592,6 +2924,32 @@ def get_project_storage() -> ProjectStorage:
     if root:
         return ProjectStorage(Path(root))
     return ProjectStorage(_db_base_dir())
+
+
+def get_db_runtime_info() -> Dict[str, Any]:
+    cfg = get_db_runtime_config()
+    info: Dict[str, Any] = {
+        "backend": cfg.backend,
+        "configured_backend": cfg.configured_backend,
+        "startup_check": bool(cfg.startup_check),
+    }
+    if cfg.backend == "postgres":
+        info["database_url"] = redact_database_url(cfg.database_url)
+        info["pool_min_size"] = int(cfg.pool_min_size)
+        info["pool_max_size"] = int(cfg.pool_max_size)
+    else:
+        info["db_path"] = str(_db_path())
+    return info
+
+
+def startup_db_check() -> Dict[str, Any]:
+    info = get_db_runtime_info()
+    with _connect() as con:
+        row = con.execute("SELECT 1 AS ok").fetchone()
+        if row is None:
+            raise RuntimeError("database ping failed")
+    _ensure_schema()
+    return info
 
 
 def get_storage() -> Storage:

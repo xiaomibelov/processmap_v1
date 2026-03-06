@@ -5,3 +5,5 @@ PyYAML==6.0.1
 python-multipart==0.0.9
 requests==2.31.0
 redis==5.0.4
+psycopg[binary]==3.2.12
+psycopg_pool==3.2.6

@@ -10,7 +10,9 @@ from fastapi.staticfiles import StaticFiles
 from starlette.routing import Match
 
 from . import _legacy_main
+from .redis_client import runtime_status
 from .routers import ROUTERS
+from .storage import get_db_runtime_info, startup_db_check
 
 app = FastAPI(title="Food Process Copilot MVP")
 _logger = logging.getLogger(__name__)
@@ -154,3 +156,26 @@ if _legacy_main.STATIC_DIR.exists():
 
 for router in ROUTERS:
     app.include_router(router)
+
+
+@app.on_event("startup")
+def _startup_db_runtime_log() -> None:
+    info = get_db_runtime_info()
+    _logger.info("DB runtime config: %s", info)
+    redis = runtime_status(force_ping=True)
+    _logger.info(
+        "Redis runtime config: mode=%s state=%s configured=%s required=%s reason=%s",
+        redis.get("mode"),
+        redis.get("state"),
+        redis.get("configured"),
+        redis.get("required"),
+        redis.get("reason"),
+    )
+    if redis.get("mode") == "ERROR":
+        _logger.error("Redis misconfigured: fallback mode active (incident)")
+    elif redis.get("mode") == "FALLBACK":
+        _logger.warning("Redis unavailable: degraded fallback mode active")
+    if not bool(info.get("startup_check")):
+        return
+    checked = startup_db_check()
+    _logger.info("DB startup check passed: backend=%s", checked.get("backend"))
