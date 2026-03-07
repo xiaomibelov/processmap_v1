@@ -71,16 +71,56 @@ export function parseDrawioSvgCache(svgRaw) {
   };
 }
 
-export function extractDrawioElementIdsFromSvg(svgRaw) {
+export function extractDrawioElementIdsFromSvg(svgRaw, options = {}) {
   const parsed = parseDrawioSvgCache(svgRaw);
   const body = String(parsed?.body || "");
   if (!body) return [];
+  const includeTechnical = options.includeTechnical === true;
+  const TECHNICAL_TAGS = new Set([
+    "defs",
+    "clippath",
+    "mask",
+    "pattern",
+    "lineargradient",
+    "radialgradient",
+    "marker",
+    "filter",
+    "style",
+    "title",
+    "desc",
+    "metadata",
+  ]);
+  const TECHNICAL_ID_PATTERNS = [
+    /^mx(?:clip|marker|gradient|pattern|shadow|filter|mask|defs)[-_]/i,
+    /^clip[-_]/i,
+    /^mask[-_]/i,
+    /^filter[-_]/i,
+    /^gradient[-_]/i,
+    /^pattern[-_]/i,
+    /^arrow[-_]/i,
+  ];
   const ids = new Set();
-  body.replace(/\sid\s*=\s*["']([^"']+)["']/gi, (_full, idRaw) => {
-    const id = toText(idRaw);
-    if (!id) return "";
+  const re = /<([a-zA-Z][a-zA-Z0-9:_-]*)([^>]*?)\sid\s*=\s*("([^"]+)"|'([^']+)')([^>]*)>/g;
+  let match = re.exec(body);
+  while (match) {
+    const tagName = String(match[1] || "").trim().toLowerCase();
+    const id = toText(match[4] || match[5]);
+    if (!id) {
+      match = re.exec(body);
+      continue;
+    }
+    if (!includeTechnical) {
+      if (TECHNICAL_TAGS.has(tagName)) {
+        match = re.exec(body);
+        continue;
+      }
+      if (TECHNICAL_ID_PATTERNS.some((pattern) => pattern.test(id))) {
+        match = re.exec(body);
+        continue;
+      }
+    }
     ids.add(id);
-    return "";
-  });
+    match = re.exec(body);
+  }
   return Array.from(ids);
 }

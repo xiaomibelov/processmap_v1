@@ -613,9 +613,31 @@ export default function useHybridPipelineController({
         });
         return;
       }
-      addOrSelectHybridMarker(elementId, "hybrid_edit_surface_pointer");
+      const legacyMap = normalizeHybridLayerMap(hybridLayerMapRef.current);
+      if (legacyMap[elementId]) {
+        setHybridLayerActiveElementId((prevRaw) => {
+          const prev = toText(prevRaw);
+          return prev === elementId ? prev : elementId;
+        });
+        markPlaybackOverlayInteraction({
+          stage: "hybrid_edit_surface_pointer_select_legacy",
+          elementId,
+        });
+        return;
+      }
+      const firstBinding = asObject(asArray(hybridTools.bindingByBpmnId[elementId])[0]);
+      const boundHybridId = toText(firstBinding.hybrid_id || firstBinding.hybridId);
+      if (boundHybridId) {
+        setHybridV2ActiveId(boundHybridId);
+        markPlaybackOverlayInteraction({
+          stage: "hybrid_edit_surface_pointer_select_bound_v2",
+          elementId,
+          hybridId: boundHybridId,
+        });
+        return;
+      }
       markPlaybackOverlayInteraction({
-        stage: "hybrid_edit_surface_pointer",
+        stage: "hybrid_edit_surface_pointer_blocked_create",
         elementId,
       });
     };
@@ -623,7 +645,26 @@ export default function useHybridPipelineController({
     return () => {
       window.removeEventListener("mousedown", onMouseDownCapture, true);
     };
-  }, [addOrSelectHybridMarker, bindActiveHybridV2ToBpmn, bpmnStageHostRef, hybridModeEffective, hybridUiPrefs.lock, hybridVisible, hybridV2ActiveId, hybridV2BindPickMode, hybridV2ToolState, markPlaybackOverlayInteraction, resolveHybridTargetElementIdFromPoint]);
+  }, [
+    asArray,
+    asObject,
+    bindActiveHybridV2ToBpmn,
+    bpmnStageHostRef,
+    hybridLayerMapRef,
+    hybridModeEffective,
+    hybridTools.bindingByBpmnId,
+    hybridUiPrefs.lock,
+    hybridVisible,
+    hybridV2ActiveId,
+    hybridV2BindPickMode,
+    hybridV2ToolState,
+    markPlaybackOverlayInteraction,
+    normalizeHybridLayerMap,
+    resolveHybridTargetElementIdFromPoint,
+    setHybridLayerActiveElementId,
+    setHybridV2ActiveId,
+    toText,
+  ]);
 
   useEffect(() => {
     if (hybridModeEffective !== "edit" || hybridUiPrefs.lock) return;
@@ -633,8 +674,26 @@ export default function useHybridPipelineController({
     const type = toText(selectedElementType).toLowerCase();
     if (!elementId) return;
     if (type.includes("sequenceflow") || type.includes("connection")) return;
-    addOrSelectHybridMarker(elementId, "hybrid_edit_selection");
-  }, [addOrSelectHybridMarker, asArray, hybridModeEffective, hybridUiPrefs.lock, hybridV2DocRef, hybridV2ToolState, selectedElementId, selectedElementType, toNodeId, toText]);
+    const legacyMap = normalizeHybridLayerMap(hybridLayerMapRef.current);
+    if (!legacyMap[elementId]) return;
+    setHybridLayerActiveElementId((prevRaw) => {
+      const prev = toText(prevRaw);
+      return prev === elementId ? prev : elementId;
+    });
+  }, [
+    asArray,
+    hybridLayerMapRef,
+    hybridModeEffective,
+    hybridUiPrefs.lock,
+    hybridV2DocRef,
+    hybridV2ToolState,
+    normalizeHybridLayerMap,
+    selectedElementId,
+    selectedElementType,
+    setHybridLayerActiveElementId,
+    toNodeId,
+    toText,
+  ]);
 
   const drawioUiState = useMemo(() => drawioMeta && typeof drawioMeta === "object" ? drawioMeta : {}, [drawioMeta]);
 

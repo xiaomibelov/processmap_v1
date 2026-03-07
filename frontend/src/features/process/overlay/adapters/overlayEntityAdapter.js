@@ -31,7 +31,7 @@ export function buildOverlayEntityRows({
   const rows = [];
   const legacyRows = asArray(hybridLayerRenderRows);
   const v2Elements = asArray(asObject(hybridV2Renderable).elements);
-  const drawioRows = getDrawioElements(drawioState).slice(0, 40);
+  const drawioRows = getDrawioElements(drawioState, { renderableOnly: true }).slice(0, 40);
 
   drawioRows.forEach((row) => {
     const id = toText(row.id);
@@ -112,10 +112,12 @@ export function buildOverlaySelectedEntity({
   const canonicalDrawioId = deriveSelectedDrawioElementId({
     drawioMeta: drawioState,
     selectedDrawioElementId: drawioSelectedElementId,
+    requireRenderable: true,
+    allowLegacyFallback: false,
     legacyActiveElementId,
   });
   if (canonicalDrawioId) {
-    const row = asObject(getDrawioElementById(drawioState, canonicalDrawioId, { includeDeleted: true }));
+    const row = asObject(getDrawioElementById(drawioState, canonicalDrawioId));
     return {
       entityKind: OVERLAY_ENTITY_KINDS.DRAWIO,
       entityId: canonicalDrawioId,

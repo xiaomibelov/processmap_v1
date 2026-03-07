@@ -13,6 +13,7 @@ export function getDrawioOverlayStatus(drawioMetaRaw = {}) {
   const enabled = drawioMeta.enabled === true;
   const hasDoc = toText(drawioMeta.doc_xml).length > 0;
   const hasPreview = toText(drawioMeta.svg_cache).length > 0;
+  const visibleOnCanvas = enabled && hasPreview;
   if (!enabled) {
     return {
       key: "off",
@@ -21,16 +22,18 @@ export function getDrawioOverlayStatus(drawioMetaRaw = {}) {
       enabled,
       hasDoc,
       hasPreview,
+      visibleOnCanvas,
     };
   }
   if (!hasPreview) {
     return {
       key: "on_preview_missing",
-      label: "ON · preview missing",
+      label: "ON · preview missing · hidden",
       tone: "warning",
       enabled,
       hasDoc,
       hasPreview,
+      visibleOnCanvas,
     };
   }
   return {
@@ -40,5 +43,6 @@ export function getDrawioOverlayStatus(drawioMetaRaw = {}) {
     enabled,
     hasDoc,
     hasPreview,
+    visibleOnCanvas,
   };
 }

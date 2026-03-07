@@ -2,6 +2,9 @@ import { useCallback } from "react";
 import { OVERLAY_ENTITY_KINDS, normalizeOverlayEntityKind } from "../../drawio/domain/drawioEntityKinds.js";
 import { resolveCanonicalDrawioElementId } from "../../drawio/domain/drawioSelectors.js";
 import { clampDrawioOpacity, getDrawioOverlayStatus } from "../../drawio/domain/drawioVisibility.js";
+import { normalizeDrawioInteractionMode } from "../../drawio/drawioMeta.js";
+import { publishDrawioNormalizationSnapshot } from "../../drawio/runtime/drawioNormalizationDiagnostics.js";
+import { buildRuntimePlacementPatch, normalizeRuntimeTool } from "../../drawio/runtime/drawioRuntimePlacement.js";
 import { pushDeleteTrace } from "../../stage/utils/deleteTrace.js";
 
 function asObject(value) {
@@ -25,6 +28,7 @@ function normalizeIdList(idsRaw) {
 }
 
 export default function useOverlayMutationGateway({
+  sessionId,
   drawioMetaRef,
   normalizeDrawioMeta,
   applyDrawioMutation,
@@ -33,6 +37,14 @@ export default function useOverlayMutationGateway({
   setInfoMsg,
   setGenErr,
 }) {
+  const publishNormalization = useCallback((source = "overlay_mutation") => {
+    publishDrawioNormalizationSnapshot({
+      sessionId,
+      drawioMeta: normalizeDrawioMeta(drawioMetaRef.current),
+      source,
+    });
+  }, [drawioMetaRef, normalizeDrawioMeta, sessionId]);
+
   const moveDrawioElement = useCallback((payloadRaw = {}, source = "drawio_element_move") => {
     const payload = asObject(payloadRaw);
     const elementId = resolveCanonicalDrawioElementId(drawioMetaRef.current, payload.id);
@@ -66,8 +78,9 @@ export default function useOverlayMutationGateway({
       playbackStage: source,
       persist: true,
     });
+    if (result.changed) publishNormalization(source);
     return !!result.changed;
-  }, [applyDrawioMutation, drawioMetaRef, normalizeDrawioMeta]);
+  }, [applyDrawioMutation, drawioMetaRef, normalizeDrawioMeta, publishNormalization]);
 
   const deleteDrawioElement = useCallback((elementIdRaw, source = "drawio_overlay_delete") => {
     const elementId = resolveCanonicalDrawioElementId(drawioMetaRef.current, elementIdRaw) || toText(elementIdRaw);
@@ -128,8 +141,9 @@ export default function useOverlayMutationGateway({
       setInfoMsg?.("Нечего удалять: draw.io элемент не найден.");
       setGenErr?.("");
     }
+    if (result.changed) publishNormalization(source);
     return !!result.changed;
-  }, [applyDrawioMutation, drawioMetaRef, normalizeDrawioMeta, setGenErr, setInfoMsg]);
+  }, [applyDrawioMutation, drawioMetaRef, normalizeDrawioMeta, publishNormalization, setGenErr, setInfoMsg]);
 
   const deleteOverlayEntity = useCallback((entityRaw, source = "overlay_delete_entity") => {
     const entity = asObject(entityRaw);
@@ -172,7 +186,61 @@ export default function useOverlayMutationGateway({
       playbackStage: source,
       persist: true,
     });
-  }, [applyDrawioMutation]);
+    publishNormalization(source);
+  }, [applyDrawioMutation, publishNormalization]);
+
+  const setDrawioInteractionMode = useCallback((modeRaw, options = {}) => {
+    const nextMode = normalizeDrawioInteractionMode(modeRaw);
+    const ensureVisible = options?.ensureVisible === true;
+    const requestedTool = normalizeRuntimeTool(options?.activeTool);
+    applyDrawioMutation((prev) => {
+      const next = {
+        ...prev,
+        interaction_mode: nextMode,
+      };
+      const prevTool = normalizeRuntimeTool(prev?.active_tool);
+      if (nextMode === "edit") {
+        next.active_tool = requestedTool || prevTool || "select";
+      } else {
+        next.active_tool = "select";
+      }
+      if (ensureVisible && nextMode === "edit") next.enabled = true;
+      return next;
+    }, {
+      source: String(options?.source || "drawio_mode_change"),
+      playbackStage: String(options?.playbackStage || options?.source || "drawio_mode_change"),
+      persist: options?.persist !== false,
+    });
+    publishNormalization(String(options?.source || "drawio_mode_change"));
+  }, [applyDrawioMutation, publishNormalization]);
+
+  const createDrawioRuntimeElement = useCallback((payloadRaw = {}, source = "drawio_runtime_place") => {
+    const payload = asObject(payloadRaw);
+    const toolId = normalizeRuntimeTool(payload.toolId);
+    if (!toolId) return "";
+    const point = {
+      x: Number(payload.x),
+      y: Number(payload.y),
+    };
+    let createdId = "";
+    const result = applyDrawioMutation((prevRaw) => {
+      const prev = normalizeDrawioMeta(prevRaw);
+      const patch = buildRuntimePlacementPatch({
+        metaRaw: prev,
+        toolIdRaw: toolId,
+        pointRaw: point,
+      });
+      createdId = toText(patch.createdId);
+      if (!patch.changed) return prev;
+      return normalizeDrawioMeta(patch.meta);
+    }, {
+      source,
+      playbackStage: source,
+      persist: true,
+    });
+    if (result.changed) publishNormalization(source);
+    return result.changed ? createdId : "";
+  }, [applyDrawioMutation, normalizeDrawioMeta, publishNormalization]);
 
   const setDrawioOpacity = useCallback((opacityRaw, source = "drawio_opacity_change") => {
     const opacity = clampDrawioOpacity(opacityRaw, 1);
@@ -184,7 +252,8 @@ export default function useOverlayMutationGateway({
       playbackStage: source,
       persist: true,
     });
-  }, [applyDrawioMutation]);
+    publishNormalization(source);
+  }, [applyDrawioMutation, publishNormalization]);
 
   const toggleDrawioLock = useCallback((source = "drawio_lock_toggle") => {
     applyDrawioMutation((prev) => ({
@@ -195,7 +264,8 @@ export default function useOverlayMutationGateway({
       playbackStage: source,
       persist: true,
     });
-  }, [applyDrawioMutation]);
+    publishNormalization(source);
+  }, [applyDrawioMutation, publishNormalization]);
 
   const setDrawioElementVisible = useCallback((elementIdRaw, visibleRaw, source = "drawio_element_visibility") => {
     const elementId = resolveCanonicalDrawioElementId(drawioMetaRef.current, elementIdRaw);
@@ -220,8 +290,9 @@ export default function useOverlayMutationGateway({
       playbackStage: source,
       persist: true,
     });
+    if (result.changed) publishNormalization(source);
     return !!result.changed;
-  }, [applyDrawioMutation, drawioMetaRef, normalizeDrawioMeta]);
+  }, [applyDrawioMutation, drawioMetaRef, normalizeDrawioMeta, publishNormalization]);
 
   const setDrawioElementLocked = useCallback((elementIdRaw, lockedRaw, source = "drawio_element_lock") => {
     const elementId = resolveCanonicalDrawioElementId(drawioMetaRef.current, elementIdRaw);
@@ -246,8 +317,9 @@ export default function useOverlayMutationGateway({
       playbackStage: source,
       persist: true,
     });
+    if (result.changed) publishNormalization(source);
     return !!result.changed;
-  }, [applyDrawioMutation, drawioMetaRef, normalizeDrawioMeta]);
+  }, [applyDrawioMutation, drawioMetaRef, normalizeDrawioMeta, publishNormalization]);
 
   const getDrawioStatus = useCallback(() => getDrawioOverlayStatus(drawioMetaRef.current), [drawioMetaRef]);
 
@@ -256,6 +328,8 @@ export default function useOverlayMutationGateway({
     deleteDrawioElement,
     moveDrawioElement,
     toggleDrawioVisibility,
+    setDrawioInteractionMode,
+    createDrawioRuntimeElement,
     setDrawioOpacity,
     toggleDrawioLock,
     setDrawioElementVisible,

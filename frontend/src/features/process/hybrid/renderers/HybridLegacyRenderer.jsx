@@ -1,6 +1,22 @@
 import React from "react";
 import { asArray, asObject, toText } from "./hybridRendererUtils.jsx";
 
+function shouldRenderLegacyCanvasRow(itemRaw) {
+  const item = asObject(itemRaw);
+  const elementId = toText(item.elementId);
+  if (!elementId) return false;
+  const loweredId = elementId.toLowerCase();
+  const status = toText(item.status).toLowerCase();
+  const executor = toText(item.executor);
+  const actionKey = toText(item.actionKey);
+  const processInfoGhostSignature = loweredId.startsWith("process_")
+    && (status === "" || status === "none")
+    && !executor
+    && !actionKey;
+  if (processInfoGhostSignature) return false;
+  return true;
+}
+
 export default function HybridLegacyRenderer({
   legacyRows,
   legacyActiveElementId,
@@ -18,6 +34,7 @@ export default function HybridLegacyRenderer({
     <>
       {asArray(legacyRows).map((rowRaw) => {
         const item = asObject(rowRaw);
+        if (!shouldRenderLegacyCanvasRow(item)) return null;
         const elementId = toText(item.elementId);
         if (!elementId) return null;
         const posX = Number(item.posX || 0);

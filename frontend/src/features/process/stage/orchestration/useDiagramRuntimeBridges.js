@@ -1,18 +1,56 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import useProcessStageRuntimeGlue from "../controllers/useProcessStageRuntimeGlue";
 import useOverlayPersistBoundary from "../../overlay/controllers/useOverlayPersistBoundary";
 import useOverlayMutationGateway from "../../overlay/controllers/useOverlayMutationGateway";
 import buildOverlayPanelModel from "../../overlay/models/buildOverlayPanelModel";
 import useDrawioEditorBridge from "../../drawio/controllers/useDrawioEditorBridge";
-
-function toText(value) {
-  return String(value || "").trim();
-}
+import { normalizeDrawioInteractionMode } from "../../drawio/drawioMeta.js";
+import {
+  buildDrawioVisibilitySelectionContract,
+  shouldClearDrawioSelectionByContract,
+} from "../../drawio/domain/drawioVisibilitySelectionContract.js";
+import { normalizeRuntimeTool } from "../../drawio/runtime/drawioRuntimePlacement.js";
 
 export default function useDiagramRuntimeBridges({
   overlay = {},
   runtimeGlueConfig = {},
 }) {
+  const [drawioModeState, setDrawioModeState] = useState(() => (
+    normalizeDrawioInteractionMode(overlay.drawioUiState?.interaction_mode)
+  ));
+  const [drawioRuntimeToolState, setDrawioRuntimeToolState] = useState(() => (
+    normalizeRuntimeTool(overlay.drawioUiState?.active_tool) || "select"
+  ));
+
+  useEffect(() => {
+    setDrawioModeState(normalizeDrawioInteractionMode(overlay.drawioUiState?.interaction_mode));
+  }, [overlay.sid]);
+
+  useEffect(() => {
+    const nextMode = normalizeDrawioInteractionMode(overlay.drawioUiState?.interaction_mode);
+    setDrawioModeState((prevMode) => {
+      if (prevMode === "edit" && nextMode === "view" && overlay.drawioUiState?.enabled === true) {
+        return prevMode;
+      }
+      return nextMode;
+    });
+  }, [overlay.drawioUiState?.enabled, overlay.drawioUiState?.interaction_mode]);
+
+  useEffect(() => {
+    setDrawioRuntimeToolState(normalizeRuntimeTool(overlay.drawioUiState?.active_tool) || "select");
+  }, [overlay.sid]);
+
+  useEffect(() => {
+    const incoming = normalizeRuntimeTool(overlay.drawioUiState?.active_tool);
+    if (!incoming) return;
+    setDrawioRuntimeToolState(incoming);
+  }, [overlay.drawioUiState?.active_tool]);
+
+  const drawioStateForRuntime = useMemo(() => ({
+    ...(overlay.drawioUiState && typeof overlay.drawioUiState === "object" ? overlay.drawioUiState : {}),
+    active_tool: drawioRuntimeToolState,
+  }), [drawioRuntimeToolState, overlay.drawioUiState]);
+
   const overlayPersistBoundary = useOverlayPersistBoundary({
     drawioMetaRef: overlay.drawioMetaRef,
     setDrawioMeta: overlay.setDrawioMeta,
@@ -23,6 +61,7 @@ export default function useDiagramRuntimeBridges({
   });
 
   const overlayMutationGateway = useOverlayMutationGateway({
+    sessionId: overlay.sid,
     drawioMetaRef: overlay.drawioMetaRef,
     normalizeDrawioMeta: overlay.normalizeDrawioMeta,
     applyDrawioMutation: overlayPersistBoundary.applyDrawioMutation,
@@ -47,8 +86,11 @@ export default function useDiagramRuntimeBridges({
   });
 
   const overlayPanelModel = useMemo(() => buildOverlayPanelModel({
-    drawioState: overlay.drawioUiState,
+    drawioState: drawioStateForRuntime,
+    drawioModeEffective: drawioModeState,
     drawioEditorStatus: drawioEditorBridge.status,
+    hybridVisible: overlay.hybridVisible,
+    hybridTotalCount: overlay.hybridTotalCount,
     hybridModeEffective: overlay.hybridModeEffective,
     hybridUiPrefs: overlay.hybridUiPrefs,
     hybridV2HiddenCount: overlay.hybridV2HiddenCount,
@@ -61,11 +103,14 @@ export default function useDiagramRuntimeBridges({
     legacyActiveElementId: overlay.hybridLayerActiveElementId,
   }), [
     drawioEditorBridge.status,
+    drawioModeState,
     overlay.drawioSelectedElementId,
-    overlay.drawioUiState,
+    drawioStateForRuntime,
+    overlay.hybridVisible,
     overlay.hybridLayerActiveElementId,
     overlay.hybridLayerRenderRows,
     overlay.hybridModeEffective,
+    overlay.hybridTotalCount,
     overlay.hybridUiPrefs,
     overlay.hybridV2ActiveId,
     overlay.hybridV2BindingByHybridId,
@@ -77,6 +122,11 @@ export default function useDiagramRuntimeBridges({
   const commitDrawioOverlayMove = useCallback((payloadRaw) => {
     return overlayMutationGateway.moveDrawioElement(payloadRaw, "drawio_overlay_drag_end");
   }, [overlayMutationGateway]);
+
+  const drawioModeEffective = drawioModeState;
+  const drawioVisibilityContract = useMemo(() => (
+    buildDrawioVisibilitySelectionContract(drawioStateForRuntime, { mode: drawioModeState })
+  ), [drawioModeState, drawioStateForRuntime]);
 
   const deleteDrawioOverlayElement = useCallback((elementIdRaw) => {
     return overlayMutationGateway.deleteOverlayEntity({
@@ -90,22 +140,63 @@ export default function useDiagramRuntimeBridges({
   }, [overlayMutationGateway]);
 
   const toggleDrawioEnabled = useCallback(() => {
-    const prev = overlay.normalizeDrawioMeta(overlay.drawioMetaRef.current);
     overlayMutationGateway.toggleDrawioVisibility("drawio_visibility_toggle");
     const next = overlay.normalizeDrawioMeta(overlay.drawioMetaRef.current);
-    if (!prev.enabled && next.enabled && !toText(next.doc_xml)) {
-      overlay.setDrawioEditorOpen(true);
+    if (!next.enabled) {
+      overlay.setDrawioSelectedElementId?.("");
     }
   }, [
     overlay.drawioMetaRef,
     overlay.normalizeDrawioMeta,
-    overlay.setDrawioEditorOpen,
+    overlay.setDrawioSelectedElementId,
     overlayMutationGateway,
   ]);
 
   const setDrawioOpacity = useCallback((opacityRaw) => {
     overlayMutationGateway.setDrawioOpacity(opacityRaw, "drawio_opacity_change");
   }, [overlayMutationGateway]);
+
+  const setDrawioMode = useCallback((modeRaw, options = {}) => {
+    const nextMode = normalizeDrawioInteractionMode(modeRaw);
+    const activeTool = normalizeRuntimeTool(options?.toolId);
+    setDrawioModeState(nextMode);
+    if (nextMode === "edit") {
+      setDrawioRuntimeToolState(activeTool || "select");
+    } else {
+      setDrawioRuntimeToolState("select");
+    }
+    overlayMutationGateway.setDrawioInteractionMode(nextMode, {
+      source: "drawio_mode_change",
+      playbackStage: "drawio_mode_change",
+      ensureVisible: nextMode === "edit",
+      persist: true,
+      activeTool: nextMode === "edit" ? (activeTool || drawioRuntimeToolState) : "",
+    });
+    if (nextMode !== "edit") {
+      overlay.setDrawioSelectedElementId?.("");
+    }
+  }, [drawioRuntimeToolState, overlay.setDrawioSelectedElementId, overlayMutationGateway]);
+
+  const createDrawioRuntimeElement = useCallback((payloadRaw) => {
+    const payload = payloadRaw && typeof payloadRaw === "object" ? payloadRaw : {};
+    const toolId = normalizeRuntimeTool(payload.toolId) || drawioRuntimeToolState;
+    return overlayMutationGateway.createDrawioRuntimeElement({
+      ...payload,
+      toolId,
+    }, "drawio_runtime_place");
+  }, [drawioRuntimeToolState, overlayMutationGateway]);
+
+  useEffect(() => {
+    if (!shouldClearDrawioSelectionByContract({
+      contract: drawioVisibilityContract,
+      selectedId: overlay.drawioSelectedElementId,
+    })) return;
+    overlay.setDrawioSelectedElementId?.("");
+  }, [
+    drawioVisibilityContract,
+    overlay.drawioSelectedElementId,
+    overlay.setDrawioSelectedElementId,
+  ]);
 
   const toggleDrawioLock = useCallback(() => {
     overlayMutationGateway.toggleDrawioLock("drawio_lock_toggle");
@@ -132,6 +223,10 @@ export default function useDiagramRuntimeBridges({
     deleteOverlayEntity,
     toggleDrawioEnabled,
     setDrawioOpacity,
+    drawioModeEffective,
+    drawioRuntimeToolState,
+    setDrawioMode,
+    createDrawioRuntimeElement,
     toggleDrawioLock,
     setDrawioElementVisible,
     setDrawioElementLocked,

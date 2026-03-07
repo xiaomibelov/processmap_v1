@@ -51,6 +51,8 @@ const DRAWIO_LAYERS_KEYS = [
   "focusHybridLayer",
   "hybridModeEffective",
   "setHybridLayerMode",
+  "drawioModeEffective",
+  "setDrawioMode",
   "hybridUiPrefs",
   "selectHybridPaletteTool",
   "setHybridLayerOpacity",

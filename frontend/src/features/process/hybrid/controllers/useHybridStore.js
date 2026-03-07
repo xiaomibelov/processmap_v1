@@ -8,7 +8,8 @@ import {
 } from "../hybridLayerUi.js";
 import { docToComparableJson, normalizeHybridV2Doc } from "../hybridLayerV2.js";
 import { normalizeDrawioMeta, serializeDrawioMeta } from "../../drawio/drawioMeta.js";
-import { pushDeleteTrace } from "../../stage/utils/deleteTrace";
+import { buildDrawioVisibilitySelectionContract } from "../../drawio/domain/drawioVisibilitySelectionContract.js";
+import useDrawioPersistHydrateBoundary from "../../drawio/runtime/useDrawioPersistHydrateBoundary";
 import {
   hasKnownHybridV2Session,
   markKnownHybridV2Session,
@@ -63,7 +64,11 @@ export default function useHybridStore({
   const hybridStorageKey = useMemo(() => getHybridUiStorageKey(toText(userId)), [userId]);
 
   const hybridVisible = !!hybridUiPrefs.visible || !!hybridPeekActive;
-  const drawioVisible = !!drawioMeta.enabled && !!toText(drawioMeta.svg_cache);
+  const drawioVisibilityContract = useMemo(
+    () => buildDrawioVisibilitySelectionContract(drawioMeta),
+    [drawioMeta],
+  );
+  const drawioVisible = drawioVisibilityContract.visibleOnCanvas === true;
   const overlayLayerVisible = hybridVisible || drawioVisible;
   const hybridModeEffective = hybridVisible
     ? (hybridPeekActive ? "view" : (hybridUiPrefs.mode === "edit" && !hybridUiPrefs.lock ? "edit" : "view"))
@@ -122,42 +127,15 @@ export default function useHybridStore({
     hybridV2DocRef.current = normalizeHybridV2Doc(hybridV2Doc);
   }, [hybridV2Doc]);
 
-  useEffect(() => {
-    const incoming = normalizeDrawioMeta(drawioFromDraft);
-    const incomingSig = serializeDrawioMeta(incoming);
-    const currentMeta = normalizeDrawioMeta(drawioMetaRef.current);
-    const persistedMeta = normalizeDrawioMeta(drawioPersistedMetaRef.current);
-    const currentSig = serializeDrawioMeta(currentMeta);
-    const persistedSig = serializeDrawioMeta(persistedMeta);
-    if (incomingSig === persistedSig && currentSig !== incomingSig) {
-      pushDeleteTrace("drawio_hydrate_skip", {
-        reason: "incoming_equals_persisted_current_differs",
-        incomingSvg: Number(String(incoming?.svg_cache || "").length || 0),
-        currentSvg: Number(String(currentMeta?.svg_cache || "").length || 0),
-      });
-      return;
-    }
-    if (!incoming.doc_xml && !incoming.svg_cache && (currentMeta.doc_xml || currentMeta.svg_cache)) {
-      pushDeleteTrace("drawio_hydrate_skip", {
-        reason: "incoming_empty_while_current_has_payload",
-        incomingSvg: Number(String(incoming?.svg_cache || "").length || 0),
-        currentSvg: Number(String(currentMeta?.svg_cache || "").length || 0),
-      });
-      return;
-    }
-    pushDeleteTrace("drawio_hydrate_apply", {
-      incomingSvg: Number(String(incoming?.svg_cache || "").length || 0),
-      incomingElements: Number(Array.isArray(incoming?.drawio_elements_v1) ? incoming.drawio_elements_v1.length : 0),
-      currentSvg: Number(String(currentMeta?.svg_cache || "").length || 0),
-    });
-    setDrawioMeta(incoming);
-    drawioMetaRef.current = incoming;
-    drawioPersistedMetaRef.current = incoming;
-  }, [drawioFromDraft]);
-
-  useEffect(() => {
-    drawioMetaRef.current = normalizeDrawioMeta(drawioMeta);
-  }, [drawioMeta]);
+  useDrawioPersistHydrateBoundary({
+    drawioFromDraft,
+    drawioMetaRef,
+    drawioPersistedMetaRef,
+    drawioMeta,
+    setDrawioMeta,
+    normalizeDrawioMeta,
+    serializeDrawioMeta,
+  });
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -226,6 +204,7 @@ export default function useHybridStore({
     setHybridV2BindPickMode,
     drawioMeta,
     setDrawioMeta,
+    drawioVisibilityContract,
     drawioEditorOpen,
     setDrawioEditorOpen,
     hybridLayerMapFromDraft,

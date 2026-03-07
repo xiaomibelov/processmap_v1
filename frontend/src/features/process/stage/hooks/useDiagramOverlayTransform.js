@@ -1,4 +1,4 @@
 export {
   default,
   buildOverlayMatrixFromSnapshot,
-} from "../controllers/useDiagramOverlayTransform";
+} from "../controllers/useDiagramOverlayTransform.js";

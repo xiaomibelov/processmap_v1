@@ -183,6 +183,8 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     focusHybridLayer,
     hybridModeEffective,
     setHybridLayerMode,
+    drawioModeEffective,
+    setDrawioMode,
     hybridUiPrefs,
     selectHybridPaletteTool,
     setHybridLayerOpacity,
@@ -239,8 +241,12 @@ export default function ProcessStageDiagramControls({ view = {} }) {
   const autoPassBlocked = toText(autoPassBlockedReason).length > 0;
   const autoPassLabel = toText(autoPassState?.label) || "Auto: idle";
   const autoPassProgress = Number(autoPassState?.progress || 0);
-  const overlayStatusLabel = toText(asObject(overlayPanelModel?.status).label)
-    || (drawioUiState.enabled ? "ON" : (hybridVisible ? "HYBRID" : "OFF"));
+  const overlayStatus = asObject(overlayPanelModel?.status);
+  const overlayStatusKey = toText(overlayStatus.key).toLowerCase();
+  const overlayStatusLabel = overlayStatusKey === "on_preview_missing"
+    ? "ON ⚠ hidden"
+    : (overlayStatusKey === "on" ? "ON" : (drawioUiState.enabled ? "ON" : "OFF"));
+  const overlayStatusTitle = toText(overlayStatus.label) || (overlayStatusLabel === "ON ⚠ hidden" ? "ON · preview missing · hidden" : overlayStatusLabel);
   const unifiedOverlayPanelOpen = !!diagramActionLayersOpen || !!diagramActionHybridToolsOpen;
   const closeDiagramPopovers = () => {
     setDiagramActionPathOpen(false);
@@ -259,7 +265,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
       <div className="bpmnCanvasTools diagramActionBar" ref={diagramActionBarRef}>
         <button
           type="button"
-          className={`primaryBtn h-8 px-2.5 text-xs ${unifiedOverlayPanelOpen || hybridVisible || drawioUiState.enabled ? "" : "opacity-95"}`}
+          className={`secondaryBtn h-8 px-2.5 text-xs ${unifiedOverlayPanelOpen ? "ring-1 ring-accent/60" : ""}`}
           onClick={() => {
             const next = !unifiedOverlayPanelOpen;
             closeDiagramPopovers();
@@ -269,7 +275,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
           data-testid="diagram-action-layers"
         >
           <span>Draw.io / Overlay</span>
-          <span className="diagramActionChip">
+          <span className="diagramActionChip" title={overlayStatusTitle}>
             {overlayStatusLabel}
           </span>
         </button>
@@ -901,6 +907,8 @@ export default function ProcessStageDiagramControls({ view = {} }) {
         focusHybridLayer={focusHybridLayer}
         hybridModeEffective={hybridModeEffective}
         setHybridLayerMode={setHybridLayerMode}
+        drawioModeEffective={drawioModeEffective}
+        setDrawioMode={setDrawioMode}
         hybridUiPrefs={hybridUiPrefs}
         onSetTool={selectHybridPaletteTool}
         setHybridLayerOpacity={setHybridLayerOpacity}

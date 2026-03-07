@@ -47,3 +47,19 @@ test("overlayEntityAdapter: selected entity resolves drawio -> hybrid -> legacy"
   assert.equal(selectedLegacy.entityKind, OVERLAY_ENTITY_KINDS.LEGACY);
   assert.equal(selectedLegacy.entityId, "Lane_03dntrc");
 });
+
+test("overlayEntityAdapter: legacy active id does not masquerade as drawio selection", () => {
+  const drawioState = {
+    drawio_elements_v1: [
+      { id: "Activity_123", label: "Drawio copy", deleted: false },
+    ],
+  };
+  const selected = buildOverlaySelectedEntity({
+    drawioState,
+    drawioSelectedElementId: "",
+    hybridV2SelectedIds: [],
+    legacyActiveElementId: "Activity_123",
+  });
+  assert.equal(selected.entityKind, OVERLAY_ENTITY_KINDS.LEGACY);
+  assert.equal(selected.entityId, "Activity_123");
+});

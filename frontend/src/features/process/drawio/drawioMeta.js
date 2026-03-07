@@ -1,3 +1,5 @@
+import { extractDrawioElementIdsFromSvg } from "./drawioSvg.js";
+
 function asObject(value) {
   return value && typeof value === "object" ? value : {};
 }
@@ -20,26 +22,27 @@ export function isDrawioXml(valueRaw) {
   return /^<mxfile[\s>]/i.test(toText(valueRaw));
 }
 
+export const DRAWIO_INTERACTION_MODES = Object.freeze({
+  VIEW: "view",
+  EDIT: "edit",
+});
+
+export function normalizeDrawioInteractionMode(modeRaw, fallback = DRAWIO_INTERACTION_MODES.VIEW) {
+  const mode = toText(modeRaw).toLowerCase();
+  if (mode === DRAWIO_INTERACTION_MODES.EDIT) return DRAWIO_INTERACTION_MODES.EDIT;
+  if (mode === DRAWIO_INTERACTION_MODES.VIEW) return DRAWIO_INTERACTION_MODES.VIEW;
+  return normalizeDrawioInteractionMode(fallback, DRAWIO_INTERACTION_MODES.VIEW);
+}
+
+function normalizeDrawioActiveTool(toolRaw) {
+  const tool = toText(toolRaw).toLowerCase();
+  if (!tool) return "select";
+  if (tool === "select" || tool === "rect" || tool === "text" || tool === "container") return tool;
+  return "select";
+}
+
 const DRAWIO_DEFAULT_LAYER_ID = "DL1";
 const DRAWIO_DEFAULT_LAYER_NAME = "Default";
-
-function extractSvgElementIds(svgRaw) {
-  const svg = toText(svgRaw);
-  if (!svg) return [];
-  const ids = [];
-  const seen = new Set();
-  const regexp = /<([a-zA-Z][a-zA-Z0-9:_-]*)([^>]*?)\sid\s*=\s*("([^"]+)"|'([^']+)')([^>]*)>/g;
-  let match = regexp.exec(svg);
-  while (match) {
-    const idValue = toText(match[4] || match[5]);
-    if (idValue && !seen.has(idValue)) {
-      seen.add(idValue);
-      ids.push(idValue);
-    }
-    match = regexp.exec(svg);
-  }
-  return ids;
-}
 
 function normalizeDrawioLayersAndElements(valueRaw, svgCacheRaw) {
   const value = asObject(valueRaw);
@@ -91,21 +94,24 @@ function normalizeDrawioLayersAndElements(valueRaw, svgCacheRaw) {
       z_index: Math.max(0, Math.round(clampNumber(row.z_index, idx, 0))),
     });
   });
-  const svgElementIds = extractSvgElementIds(svgCacheRaw);
-  svgElementIds.forEach((id, idx) => {
-    if (elementsMap.has(id)) return;
-    elementsMap.set(id, {
-      id,
-      layer_id: activeLayerId,
-      visible: true,
-      locked: false,
-      deleted: false,
-      opacity: 1,
-      offset_x: 0,
-      offset_y: 0,
-      z_index: idx,
+  const shouldBootstrapElementsFromSvg = elementsMap.size === 0;
+  if (shouldBootstrapElementsFromSvg) {
+    const svgElementIds = extractDrawioElementIdsFromSvg(svgCacheRaw);
+    svgElementIds.forEach((id, idx) => {
+      if (elementsMap.has(id)) return;
+      elementsMap.set(id, {
+        id,
+        layer_id: activeLayerId,
+        visible: true,
+        locked: false,
+        deleted: false,
+        opacity: 1,
+        offset_x: 0,
+        offset_y: 0,
+        z_index: idx,
+      });
     });
-  });
+  }
   return {
     drawio_layers_v1: layers,
     drawio_elements_v1: Array.from(elementsMap.values()),
@@ -116,9 +122,12 @@ function normalizeDrawioLayersAndElements(valueRaw, svgCacheRaw) {
 export function normalizeDrawioMeta(valueRaw) {
   const value = asObject(valueRaw);
   const svgCache = toText(value.svg_cache || value.svgCache);
+  const interactionMode = normalizeDrawioInteractionMode(value.interaction_mode || value.mode);
   const normalizedLayers = normalizeDrawioLayersAndElements(value, svgCache);
   return {
     enabled: value.enabled === true,
+    interaction_mode: interactionMode,
+    active_tool: normalizeDrawioActiveTool(value.active_tool || value.activeTool),
     locked: value.locked === true,
     opacity: clampNumber(value.opacity, 1, 0.05, 1),
     last_saved_at: toText(value.last_saved_at || value.lastSavedAt),

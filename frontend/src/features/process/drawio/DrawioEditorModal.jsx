@@ -23,7 +23,7 @@ function parseEditorMessage(dataRaw) {
 export default function DrawioEditorModal({
   open,
   initialXml,
-  title = "Draw.io Editor",
+  title = "Draw.io (full editor)",
   onSave,
   onClose,
 }) {
@@ -105,7 +105,7 @@ export default function DrawioEditorModal({
         loadedXmlRef.current = nextXml;
         pendingSaveXmlRef.current = "";
         setSaving(false);
-        setStatus("Сохранено.");
+        setStatus("Сохранено и применено.");
         onSave?.({
           docXml: nextXml,
           svgCache,
@@ -152,7 +152,7 @@ export default function DrawioEditorModal({
               disabled={!ready || saving}
               data-testid="drawio-editor-save"
             >
-              {saving ? "Сохраняем…" : "Сохранить"}
+              {saving ? "Сохраняем…" : "Сохранить и применить"}
             </button>
           </div>
         </div>

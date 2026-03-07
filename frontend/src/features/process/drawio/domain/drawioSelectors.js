@@ -1,3 +1,5 @@
+import { extractDrawioElementIdsFromSvg } from "../drawioSvg.js";
+
 function asObject(value) {
   return value && typeof value === "object" ? value : {};
 }
@@ -13,12 +15,15 @@ function toText(value) {
 export function getDrawioElements(drawioMetaRaw, options = {}) {
   const drawioMeta = asObject(drawioMetaRaw);
   const includeDeleted = options?.includeDeleted === true;
+  const renderableOnly = options?.renderableOnly === true;
+  const renderableIds = renderableOnly ? getDrawioRenderableIdSet(drawioMeta) : null;
   return asArray(drawioMeta.drawio_elements_v1)
     .map((rowRaw) => asObject(rowRaw))
     .filter((row) => {
       const id = toText(row.id);
       if (!id) return false;
       if (!includeDeleted && row.deleted === true) return false;
+      if (renderableOnly && renderableIds && !renderableIds.has(id)) return false;
       return true;
     });
 }
@@ -45,6 +50,13 @@ export function resolveCanonicalDrawioElementId(drawioMetaRaw, idRaw) {
   return "";
 }
 
+export function getDrawioRenderableIdSet(drawioMetaRaw) {
+  const drawioMeta = asObject(drawioMetaRaw);
+  const svgCache = toText(drawioMeta.svg_cache);
+  if (!svgCache) return null;
+  return new Set(extractDrawioElementIdsFromSvg(svgCache));
+}
+
 export function getDrawioElementById(drawioMetaRaw, idRaw, options = {}) {
   const canonicalId = resolveCanonicalDrawioElementId(drawioMetaRaw, idRaw);
   if (!canonicalId) return null;
@@ -55,12 +67,22 @@ export function getDrawioElementById(drawioMetaRaw, idRaw, options = {}) {
 export function deriveSelectedDrawioElementId({
   drawioMeta,
   selectedDrawioElementId,
+  allowLegacyFallback = false,
   legacyActiveElementId,
+  requireRenderable = true,
 } = {}) {
   const primary = resolveCanonicalDrawioElementId(drawioMeta, selectedDrawioElementId);
-  if (primary) return primary;
-  const legacy = resolveCanonicalDrawioElementId(drawioMeta, legacyActiveElementId);
-  if (legacy) return legacy;
+  if (primary) {
+    const renderableIds = requireRenderable ? getDrawioRenderableIdSet(drawioMeta) : null;
+    if (!renderableIds || renderableIds.has(primary)) return primary;
+  }
+  if (allowLegacyFallback) {
+    const legacy = resolveCanonicalDrawioElementId(drawioMeta, legacyActiveElementId);
+    if (legacy) {
+      const renderableIds = requireRenderable ? getDrawioRenderableIdSet(drawioMeta) : null;
+      if (!renderableIds || renderableIds.has(legacy)) return legacy;
+    }
+  }
   return "";
 }
 

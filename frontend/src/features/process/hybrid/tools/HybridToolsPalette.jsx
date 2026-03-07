@@ -36,6 +36,8 @@ export default function HybridToolsPalette({
   const drawioOpacity = Math.max(0.05, Math.min(1, Number(drawioState?.opacity || 1)));
   const hasDrawioDoc = toText(drawioState?.doc_xml).length > 0;
   const hasDrawioPreview = toText(drawioState?.svg_cache).length > 0;
+  const drawioVisibleOnCanvas = drawioEnabled && hasDrawioPreview;
+  const drawioOpacityControlEnabled = drawioVisibleOnCanvas;
   return (
     <div
       className="diagramActionPopover min-w-[260px]"
@@ -62,7 +64,7 @@ export default function HybridToolsPalette({
               onClick={() => onToggleDrawioVisible?.()}
               data-testid="diagram-action-drawio-enabled"
             >
-              {drawioEnabled ? "Показать" : "Скрыт"}
+              {drawioEnabled ? "Вкл" : "Выкл"}
             </button>
             <button
               type="button"
@@ -77,7 +79,7 @@ export default function HybridToolsPalette({
         </div>
         <div className="diagramIssueRow">
           <span>Overlay</span>
-          <span className="diagramIssueChip">{hasDrawioPreview ? "preview ready" : (hasDrawioDoc ? "save нужен" : "empty")}</span>
+          <span className="diagramIssueChip">{drawioVisibleOnCanvas ? "visible" : (drawioEnabled ? "hidden · preview missing" : "hidden")}</span>
         </div>
         <div className="diagramIssueRow">
           <span>Opacity</span>
@@ -89,6 +91,7 @@ export default function HybridToolsPalette({
             step="5"
             value={Math.round(drawioOpacity * 100)}
             onChange={(event) => onSetDrawioOpacity?.(Number(event.target.value) / 100)}
+            disabled={!drawioOpacityControlEnabled}
             data-testid="diagram-action-drawio-opacity"
           />
         </div>

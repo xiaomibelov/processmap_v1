@@ -2,15 +2,22 @@ function canUseWindow() {
   return typeof window !== "undefined" && window && typeof window === "object";
 }
 
+let cachedQuerySearch = "";
+let cachedQueryFlag = false;
+
 function readFlagFromQuery() {
   if (!canUseWindow()) return false;
   try {
-    const params = new URLSearchParams(String(window.location?.search || ""));
-    return (
+    const search = String(window.location?.search || "");
+    if (search === cachedQuerySearch) return cachedQueryFlag;
+    const params = new URLSearchParams(search);
+    cachedQuerySearch = search;
+    cachedQueryFlag = (
       params.get("deleteTrace") === "1"
       || params.get("drawioDeleteDebug") === "1"
       || params.get("debugDelete") === "1"
     );
+    return cachedQueryFlag;
   } catch {
     return false;
   }
@@ -36,4 +43,3 @@ export function pushDeleteTrace(stageRaw, payloadRaw = {}) {
   console.info("[DELETE_TRACE]", entry);
   return entry;
 }
-

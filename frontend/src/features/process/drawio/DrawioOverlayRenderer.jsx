@@ -1,564 +1,162 @@
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useEffect, useMemo, useRef } from "react";
 
 import { parseDrawioSvgCache } from "./drawioSvg";
-import { pushDeleteTrace } from "../stage/utils/deleteTrace";
+import {
+  applyDrawioLayerRenderState,
+  asArray,
+  asObject,
+  buildDrawioLayerRenderMaps,
+  toNumber,
+  toText,
+} from "./runtime/drawioOverlayState";
+import { bumpDrawioPerfCounter } from "./runtime/drawioRuntimeProbes.js";
+import useDrawioOverlayInteraction from "./runtime/useDrawioOverlayInteraction";
+import { normalizeDrawioInteractionMode } from "./drawioMeta.js";
+import { normalizeRuntimeTool } from "./runtime/drawioRuntimePlacement.js";
 
-function asObject(value) {
-  return value && typeof value === "object" ? value : {};
-}
-
-function toNumber(valueRaw, fallback = 0) {
-  const value = Number(valueRaw);
-  return Number.isFinite(value) ? value : fallback;
-}
-
-function asArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
-function toText(value) {
-  return String(value || "").trim();
-}
-
-function buildDrawioLayerRenderMaps(metaRaw) {
-  const meta = asObject(metaRaw);
-  const layers = asArray(meta.drawio_layers_v1);
-  const elements = asArray(meta.drawio_elements_v1);
-  const layerMap = new Map();
-  layers.forEach((layerRaw) => {
-    const layer = asObject(layerRaw);
-    const id = String(layer.id || "").trim();
-    if (!id) return;
-    layerMap.set(id, {
-      visible: layer.visible !== false,
-      locked: layer.locked === true,
-      opacity: Math.max(0.05, Math.min(1, Number(layer.opacity || 1))),
-    });
-  });
-  const elementMap = new Map();
-  elements.forEach((rowRaw) => {
-    const row = asObject(rowRaw);
-    const id = String(row.id || "").trim();
-    if (!id) return;
-    elementMap.set(id, {
-      layer_id: String(row.layer_id || "").trim(),
-      visible: row.visible !== false,
-      locked: row.locked === true,
-      deleted: row.deleted === true,
-      opacity: Math.max(0.05, Math.min(1, Number(row.opacity || 1))),
-      offset_x: toNumber(row.offset_x ?? row.offsetX, 0),
-      offset_y: toNumber(row.offset_y ?? row.offsetY, 0),
-    });
-  });
-  return { layerMap, elementMap };
-}
-
-function mergeStyle(attrsRaw, patchStyleRaw) {
-  const attrs = String(attrsRaw || "");
-  const patchStyle = String(patchStyleRaw || "").trim();
-  if (!patchStyle) return attrs;
-  if (/\sstyle\s*=\s*"/i.test(attrs)) {
-    return attrs.replace(/\sstyle\s*=\s*"([^"]*)"/i, (_match, existing) => {
-      const joined = `${String(existing || "").trim()} ${patchStyle}`.trim();
-      return ` style="${joined}"`;
-    });
-  }
-  return `${attrs} style="${patchStyle}"`;
-}
-
-function resolveDrawioElementFlags(metaRaw, layerMap, elementMap, elementIdRaw) {
-  const meta = asObject(metaRaw);
-  const elementId = String(elementIdRaw || "").trim();
-  const hasElement = !!elementId && elementMap.has(elementId);
-  const elementState = asObject(elementMap.get(elementId));
-  const layerState = asObject(layerMap.get(String(elementState.layer_id || "").trim()));
-  const visible = hasElement
-    && layerState.visible !== false
-    && elementState.visible !== false
-    && elementState.deleted !== true;
-  const editable = visible
-    && meta.locked !== true
-    && layerState.locked !== true
-    && elementState.locked !== true;
-  return {
-    visible,
-    editable,
-    layerLocked: layerState.locked === true,
-    elementLocked: elementState.locked === true,
-    globalLocked: meta.locked === true,
-  };
-}
-
-function collectDrawioElementIdsFromTarget(targetRaw, rootRaw) {
-  const target = targetRaw instanceof Element ? targetRaw : null;
-  const root = rootRaw instanceof Element ? rootRaw : null;
-  if (!target || !root) return [];
-  const ids = [];
-  const seen = new Set();
-  let node = target;
-  while (node instanceof Element) {
-    if (!root.contains(node)) break;
-    const id = toText(node.getAttribute("data-drawio-el-id") || node.getAttribute("id"));
-    if (id && !seen.has(id)) {
-      seen.add(id);
-      ids.push(id);
-    }
-    if (node === root) break;
-    node = node.parentElement;
-  }
-  return ids;
-}
-
-function resolveDrawioPointerElementId(targetRaw, rootRaw, metaRaw, layerMap, elementMap) {
-  const chain = collectDrawioElementIdsFromTarget(targetRaw, rootRaw);
-  if (!chain.length) return "";
-  // Prefer outer visible id (group-level) to avoid deleting only nested SVG internals.
-  const outward = [...chain].reverse();
-  for (let i = 0; i < outward.length; i += 1) {
-    const id = outward[i];
-    const flags = resolveDrawioElementFlags(metaRaw, layerMap, elementMap, id);
-    if (flags.visible) return id;
-  }
-  for (let i = 0; i < chain.length; i += 1) {
-    const id = chain[i];
-    const flags = resolveDrawioElementFlags(metaRaw, layerMap, elementMap, id);
-    if (flags.visible) return id;
-  }
-  return chain[0];
-}
-
-function applyDrawioLayerRenderState(bodyRaw, metaRaw, selectedIdRaw = "", draftOffsetRaw = null) {
-  const body = String(bodyRaw || "");
-  if (!body) return body;
-  const { layerMap, elementMap } = buildDrawioLayerRenderMaps(metaRaw);
-  const selectedId = String(selectedIdRaw || "").trim();
-  const draftOffset = asObject(draftOffsetRaw);
-  const draftId = String(draftOffset.id || "").trim();
-  const draftX = toNumber(draftOffset.offset_x, 0);
-  const draftY = toNumber(draftOffset.offset_y, 0);
-  return body.replace(
-    /<([a-zA-Z][a-zA-Z0-9:_-]*)([^>]*?)\sid\s*=\s*("([^"]+)"|'([^']+)')([^>]*)>/g,
-    (fullMatch, tagName, beforeIdAttrs, _idQuoted, idDouble, idSingle, afterIdAttrs) => {
-      const elementId = String(idDouble || idSingle || "").trim();
-      if (!elementId) return fullMatch;
-      const elementState = asObject(elementMap.get(elementId));
-      const layerState = asObject(layerMap.get(String(elementState.layer_id || "").trim()));
-      const flags = resolveDrawioElementFlags(metaRaw, layerMap, elementMap, elementId);
-      const visible = flags.visible;
-      const interactive = flags.editable;
-      const opacity = Math.max(0.05, Math.min(1, Number(layerState.opacity || 1) * Number(elementState.opacity || 1)));
-      const offsetX = draftId && draftId === elementId ? draftX : toNumber(elementState.offset_x, 0);
-      const offsetY = draftId && draftId === elementId ? draftY : toNumber(elementState.offset_y, 0);
-      const selected = selectedId && selectedId === elementId;
-      const selectionStyle = selected ? "stroke:#2563eb; stroke-width:2.4; filter: drop-shadow(0 0 2px rgba(37,99,235,.45));" : "";
-      const patchStyle = visible
-        ? `opacity:${opacity}; transform: translate(${offsetX}px, ${offsetY}px); pointer-events:${interactive ? "auto" : "none"}; cursor:${flags.editable ? "move" : "default"}; ${selectionStyle}`
-        : "display:none; opacity:0; pointer-events:none;";
-      let patchedAttrs = mergeStyle(`${String(beforeIdAttrs || "")}${String(afterIdAttrs || "")}`, patchStyle);
-      if (!/\sdata-drawio-el-id=/.test(patchedAttrs)) {
-        patchedAttrs = `${patchedAttrs} data-drawio-el-id="${elementId}"`;
-      }
-      return `<${tagName}${patchedAttrs} id="${elementId}">`;
-    },
-  );
-}
-
-function DrawioOverlayRenderer({
-  visible,
-  drawioMeta,
-  overlayMatrix,
-  screenToDiagram,
-  onCommitMove,
-  onDeleteElement,
-  onSelectionChange,
-}) {
-  const [selectedId, setSelectedId] = useState("");
-  const [draftOffset, setDraftOffset] = useState(null);
-  const draftOffsetRef = useRef(null);
-  const rootRef = useRef(null);
-  const dragRef = useRef(null);
-  const activePointerIdRef = useRef(null);
-  const captureTargetRef = useRef(null);
-  const moveRafRef = useRef(0);
-  const pendingPointRef = useRef(null);
-  const selectedIdRef = useRef("");
-  const editableTarget = useCallback((target) => {
-    if (!(target instanceof Element)) return false;
-    return !!target.closest("input, textarea, select, [contenteditable='true']");
-  }, []);
-
-  const parsed = useMemo(
-    () => parseDrawioSvgCache(asObject(drawioMeta).svg_cache),
-    [drawioMeta],
-  );
-  const hasRenderable = !!visible && !!parsed?.svg;
-  const parsedBody = String(parsed?.body || "");
-  const meta = asObject(drawioMeta);
-  const matrix = asObject(overlayMatrix);
-  const tx = toNumber(asObject(meta.transform).x, 0);
-  const ty = toNumber(asObject(meta.transform).y, 0);
+function composeOverlayMatrix(matrixRaw, txRaw, tyRaw) {
+  const matrix = asObject(matrixRaw);
   const a = toNumber(matrix.a, 1);
   const b = toNumber(matrix.b, 0);
   const c = toNumber(matrix.c, 0);
   const d = toNumber(matrix.d, 1);
   const e = toNumber(matrix.e, 0);
   const f = toNumber(matrix.f, 0);
+  const tx = toNumber(txRaw, 0);
+  const ty = toNumber(tyRaw, 0);
+  return {
+    a,
+    b,
+    c,
+    d,
+    e: e + (a * tx) + (c * ty),
+    f: f + (b * tx) + (d * ty),
+  };
+}
+
+function DrawioOverlayRenderer({
+  visible,
+  drawioMeta,
+  overlayMatrix,
+  overlayMatrixRef,
+  subscribeOverlayMatrix,
+  getOverlayMatrix,
+  drawioMode,
+  drawioActiveTool,
+  screenToDiagram,
+  onCommitMove,
+  onCreateElement,
+  onDeleteElement,
+  onSelectionChange,
+}) {
+  bumpDrawioPerfCounter("drawio.renderer.renders");
+  const parsed = useMemo(
+    () => parseDrawioSvgCache(asObject(drawioMeta).svg_cache),
+    [drawioMeta],
+  );
+  const meta = asObject(drawioMeta);
+  const effectiveMode = normalizeDrawioInteractionMode(drawioMode || meta.interaction_mode);
+  const runtimeTool = normalizeRuntimeTool(drawioActiveTool || meta.active_tool);
+  const createPlacementActive = !!visible && effectiveMode === "edit" && !!runtimeTool;
+  const hasRenderable = !!visible && !!parsed?.svg;
+  const hasInteractionSurface = hasRenderable || createPlacementActive;
+  const parsedBody = String(parsed?.body || "");
+  const runtimeMeta = useMemo(() => ({
+    ...meta,
+    interaction_mode: effectiveMode,
+    active_tool: runtimeTool || "select",
+  }), [effectiveMode, meta, runtimeTool]);
+  const matrix = asObject(overlayMatrix);
+  const tx = toNumber(asObject(meta.transform).x, 0);
+  const ty = toNumber(asObject(meta.transform).y, 0);
+  const composedMatrix = useMemo(
+    () => composeOverlayMatrix(matrix, tx, ty),
+    [matrix, tx, ty],
+  );
+  const a = composedMatrix.a;
+  const b = composedMatrix.b;
+  const c = composedMatrix.c;
+  const d = composedMatrix.d;
+  const e = composedMatrix.e;
+  const f = composedMatrix.f;
   const opacity = Math.max(0.05, Math.min(1, Number(meta.opacity || 1)));
-  const { layerMap, elementMap } = useMemo(() => buildDrawioLayerRenderMaps(meta), [meta]);
+  const { layerMap, elementMap } = useMemo(() => buildDrawioLayerRenderMaps(runtimeMeta), [runtimeMeta]);
+  const viewportGroupRef = useRef(null);
+
+  const {
+    rootRef,
+    selectedId,
+  } = useDrawioOverlayInteraction({
+    visible,
+    hasRenderable,
+    createPlacementActive,
+    meta: runtimeMeta,
+    layerMap,
+    elementMap,
+    matrixScale: a,
+    screenToDiagram,
+    onCommitMove,
+    onCreateElement,
+    onDeleteElement,
+    onSelectionChange,
+  });
+
   const renderedBody = useMemo(
-    () => applyDrawioLayerRenderState(parsedBody, meta, selectedId, draftOffset),
-    [draftOffset, meta, parsedBody, selectedId],
+    () => {
+      bumpDrawioPerfCounter("drawio.renderer.renderedBody.recompute");
+      return applyDrawioLayerRenderState(parsedBody, runtimeMeta, selectedId, null);
+    },
+    [runtimeMeta, parsedBody, selectedId],
   );
 
   useEffect(() => {
-    selectedIdRef.current = String(selectedId || "").trim();
-  }, [selectedId]);
-
-  useEffect(() => {
+    bumpDrawioPerfCounter("drawio.renderer.bindDataAttrs.effects");
     const root = rootRef.current;
     if (!(root instanceof Element)) return;
     const nodes = root.querySelectorAll("[data-testid^='drawio-el-']");
     nodes.forEach((node) => {
       if (!(node instanceof Element)) return;
-      const elementId = toText(node.getAttribute("data-drawio-el-id") || node.getAttribute("id"));
-      if (!elementId) return;
-      node.setAttribute("data-drawio-el-id", elementId);
-      if (!node.style.pointerEvents) node.style.pointerEvents = "auto";
-    });
-  }, [renderedBody]);
-
-  useEffect(() => {
-    if (!selectedIdRef.current) return;
-    if (!elementMap.has(selectedIdRef.current)) {
-      pushDeleteTrace("drawio_selection_cleared_missing_element", {
-        selectedId: selectedIdRef.current,
-      });
-      selectedIdRef.current = "";
-      setSelectedId("");
-      onSelectionChange?.("");
-    }
-  }, [elementMap, onSelectionChange]);
-
-  useEffect(() => {
-    const activeId = String(selectedIdRef.current || "").trim();
-    if (!activeId) return;
-    const flags = resolveDrawioElementFlags(meta, layerMap, elementMap, activeId);
-    if (flags.visible) return;
-    pushDeleteTrace("drawio_selection_cleared_not_visible", {
-      selectedId: activeId,
-    });
-    selectedIdRef.current = "";
-    setSelectedId("");
-    onSelectionChange?.("");
-  }, [elementMap, layerMap, meta, onSelectionChange]);
-
-  const finishDrag = useCallback((shouldCommit = true, finalEventRaw = null) => {
-    const state = asObject(dragRef.current);
-    const activePointerId = Number(activePointerIdRef.current);
-    const captureTarget = captureTargetRef.current;
-    if (captureTarget && typeof captureTarget.releasePointerCapture === "function" && Number.isFinite(activePointerId)) {
-      try {
-        captureTarget.releasePointerCapture(activePointerId);
-      } catch {
-      }
-    }
-    activePointerIdRef.current = null;
-    captureTargetRef.current = null;
-    dragRef.current = null;
-    if (moveRafRef.current && typeof window !== "undefined" && typeof window.cancelAnimationFrame === "function") {
-      window.cancelAnimationFrame(moveRafRef.current);
-      moveRafRef.current = 0;
-    }
-    const activeDraftOffset = asObject(draftOffsetRef.current || draftOffset);
-    setDraftOffset(null);
-    draftOffsetRef.current = null;
-    if (!shouldCommit) return;
-    if (!state.id) return;
-    let nextOffsetX = toNumber(activeDraftOffset.offset_x, state.baseOffsetX || 0);
-    let nextOffsetY = toNumber(activeDraftOffset.offset_y, state.baseOffsetY || 0);
-    if (
-      Math.abs(nextOffsetX - Number(state.baseOffsetX || 0)) < 0.01
-      && Math.abs(nextOffsetY - Number(state.baseOffsetY || 0)) < 0.01
-    ) {
-      const finalEvent = asObject(finalEventRaw);
-      const pendingPoint = asObject(pendingPointRef.current);
-      const finalClientX = Number.isFinite(Number(finalEvent.clientX))
-        ? Number(finalEvent.clientX)
-        : Number(pendingPoint.clientX || 0);
-      const finalClientY = Number.isFinite(Number(finalEvent.clientY))
-        ? Number(finalEvent.clientY)
-        : Number(pendingPoint.clientY || 0);
-      if (typeof screenToDiagram === "function") {
-        const current = screenToDiagram(finalClientX, finalClientY);
-        if (current && Number.isFinite(Number(current.x)) && Number.isFinite(Number(current.y))) {
-          const dx = Number(current.x || 0) - Number(state.startX || 0);
-          const dy = Number(current.y || 0) - Number(state.startY || 0);
-          nextOffsetX = Number(state.baseOffsetX || 0) + dx;
-          nextOffsetY = Number(state.baseOffsetY || 0) + dy;
-        }
-      }
-      if (
-        Math.abs(nextOffsetX - Number(state.baseOffsetX || 0)) < 0.01
-        && Math.abs(nextOffsetY - Number(state.baseOffsetY || 0)) < 0.01
-      ) {
-        const scale = Math.max(0.0001, Math.abs(toNumber(matrix.a, 1)));
-        const dxScreen = finalClientX - Number(state.startClientX || 0);
-        const dyScreen = finalClientY - Number(state.startClientY || 0);
-        nextOffsetX = Number(state.baseOffsetX || 0) + (dxScreen / scale);
-        nextOffsetY = Number(state.baseOffsetY || 0) + (dyScreen / scale);
-      }
-    }
-    pendingPointRef.current = null;
-    if (
-      Math.abs(nextOffsetX - Number(state.baseOffsetX || 0)) < 0.01
-      && Math.abs(nextOffsetY - Number(state.baseOffsetY || 0)) < 0.01
-    ) return;
-    onCommitMove?.({
-      id: state.id,
-      offsetX: nextOffsetX,
-      offsetY: nextOffsetY,
-    });
-  }, [draftOffset, matrix.a, onCommitMove, screenToDiagram]);
-
-  useEffect(() => {
-    const root = rootRef.current;
-    const doc = typeof document !== "undefined" ? document : null;
-    const onMove = (event) => {
-      const state = asObject(dragRef.current);
-      if (!state.id) return;
-      const activePointerId = Number(activePointerIdRef.current);
-      const eventPointerId = Number(event?.pointerId);
-      if (Number.isFinite(activePointerId) && Number.isFinite(eventPointerId) && activePointerId !== eventPointerId) return;
-      pendingPointRef.current = {
-        clientX: Number(event?.clientX || 0),
-        clientY: Number(event?.clientY || 0),
-      };
-      if (moveRafRef.current) return;
-      const scheduleFrame = typeof window !== "undefined" && typeof window.requestAnimationFrame === "function"
-        ? window.requestAnimationFrame.bind(window)
-        : (fn) => setTimeout(fn, 16);
-      moveRafRef.current = scheduleFrame(() => {
-        moveRafRef.current = 0;
-        const point = asObject(pendingPointRef.current);
-        pendingPointRef.current = null;
-        const current = typeof screenToDiagram === "function"
-          ? screenToDiagram(Number(point.clientX || 0), Number(point.clientY || 0))
-          : null;
-        if (!current) return;
-        const dx = Number(current.x || 0) - Number(state.startX || 0);
-        const dy = Number(current.y || 0) - Number(state.startY || 0);
-        const nextDraft = {
-          id: state.id,
-          offset_x: Number(state.baseOffsetX || 0) + dx,
-          offset_y: Number(state.baseOffsetY || 0) + dy,
-        };
-        draftOffsetRef.current = nextDraft;
-        setDraftOffset(nextDraft);
-      });
-    };
-    const onUp = (event) => {
-      const state = asObject(dragRef.current);
-      if (!state.id) return;
-      const activePointerId = Number(activePointerIdRef.current);
-      const eventPointerId = Number(event?.pointerId);
-      if (Number.isFinite(activePointerId) && Number.isFinite(eventPointerId) && activePointerId !== eventPointerId) return;
-      finishDrag(true, event);
-    };
-    const onMouseMove = (event) => {
-      const state = asObject(dragRef.current);
-      if (!state.id) return;
-      onMove(event);
-    };
-    const onMouseUp = (event) => {
-      const state = asObject(dragRef.current);
-      if (!state.id) return;
-      onUp(event);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
-    if (doc) {
-      doc.addEventListener("pointermove", onMove, true);
-      doc.addEventListener("pointerup", onUp, true);
-      doc.addEventListener("pointercancel", onUp, true);
-      doc.addEventListener("mousemove", onMouseMove, true);
-      doc.addEventListener("mouseup", onMouseUp, true);
-    }
-    if (root instanceof Element) {
-      root.addEventListener("pointermove", onMove, true);
-      root.addEventListener("pointerup", onUp, true);
-      root.addEventListener("pointercancel", onUp, true);
-      root.addEventListener("mousemove", onMouseMove, true);
-      root.addEventListener("mouseup", onMouseUp, true);
-    }
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-      if (doc) {
-        doc.removeEventListener("pointermove", onMove, true);
-        doc.removeEventListener("pointerup", onUp, true);
-        doc.removeEventListener("pointercancel", onUp, true);
-        doc.removeEventListener("mousemove", onMouseMove, true);
-        doc.removeEventListener("mouseup", onMouseUp, true);
-      }
-      if (root instanceof Element) {
-        root.removeEventListener("pointermove", onMove, true);
-        root.removeEventListener("pointerup", onUp, true);
-        root.removeEventListener("pointercancel", onUp, true);
-        root.removeEventListener("mousemove", onMouseMove, true);
-        root.removeEventListener("mouseup", onMouseUp, true);
-      }
-      if (moveRafRef.current && typeof window !== "undefined" && typeof window.cancelAnimationFrame === "function") {
-        window.cancelAnimationFrame(moveRafRef.current);
-        moveRafRef.current = 0;
-      }
-      pendingPointRef.current = null;
-      activePointerIdRef.current = null;
-      captureTargetRef.current = null;
-      dragRef.current = null;
-      draftOffsetRef.current = null;
-    };
-  }, [finishDrag, screenToDiagram]);
-
-  const canEditSelectedId = useCallback((elementIdRaw) => {
-    const flags = resolveDrawioElementFlags(meta, layerMap, elementMap, elementIdRaw);
-    return flags.editable;
-  }, [elementMap, layerMap, meta]);
-
-  useEffect(() => {
-    const onKeyDown = (event) => {
-      if (!hasRenderable) return;
-      if (editableTarget(event.target)) return;
-      const key = String(event?.key || "");
-      const activeId = String(selectedIdRef.current || "").trim();
-      if (!activeId) return;
-      const selectedEditable = canEditSelectedId(activeId);
-      if (key === "ArrowLeft" || key === "ArrowRight" || key === "ArrowUp" || key === "ArrowDown") {
-        if (!selectedEditable) return;
-        const step = event.shiftKey ? 24 : 12;
-        const elementState = asObject(elementMap.get(activeId));
-        const baseX = toNumber(elementState.offset_x, 0);
-        const baseY = toNumber(elementState.offset_y, 0);
-        const dx = key === "ArrowRight" ? step : key === "ArrowLeft" ? -step : 0;
-        const dy = key === "ArrowDown" ? step : key === "ArrowUp" ? -step : 0;
-        onCommitMove?.({
-          id: activeId,
-          offsetX: baseX + dx,
-          offsetY: baseY + dy,
-        });
-        event.preventDefault();
-        event.stopPropagation();
+      const elementId = toText(node.getAttribute("id"));
+      const elementState = asObject(elementMap.get(elementId));
+      const managed = !!elementId && elementMap.has(elementId) && elementState.deleted !== true;
+      if (managed) {
+        node.setAttribute("data-drawio-el-id", elementId);
         return;
       }
-      if (key !== "Delete" && key !== "Backspace") return;
-      if (!selectedEditable) return;
-      pushDeleteTrace("drawio_keyboard_delete", {
-        activeId,
-      });
-      const handled = onDeleteElement?.(activeId);
-      if (!handled) return;
-      event.preventDefault();
-      event.stopPropagation();
-      selectedIdRef.current = "";
-      setSelectedId("");
-      onSelectionChange?.("");
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [canEditSelectedId, editableTarget, elementMap, hasRenderable, onCommitMove, onDeleteElement, onSelectionChange]);
-
-  const startDragByElementId = useCallback((event, elementIdRaw) => {
-    const elementId = String(elementIdRaw || "").trim();
-    if (!elementId) return;
-    const flags = resolveDrawioElementFlags(meta, layerMap, elementMap, elementId);
-    if (!visible || !hasRenderable || !flags.visible) return;
-    pushDeleteTrace("drawio_select_start", {
-      elementId,
-      editable: !!flags.editable,
-      visible: !!flags.visible,
-    });
-    if (!flags.editable) return;
-    selectedIdRef.current = elementId;
-    setSelectedId(elementId);
-    onSelectionChange?.(elementId);
-    event.preventDefault();
-    event.stopPropagation();
-    const point = typeof screenToDiagram === "function"
-      ? screenToDiagram(Number(event?.clientX || 0), Number(event?.clientY || 0))
-      : null;
-    if (!point) return;
-    const elementState = asObject(elementMap.get(elementId));
-    dragRef.current = {
-      id: elementId,
-      pointerId: Number(event?.pointerId || 0),
-      startX: Number(point.x || 0),
-      startY: Number(point.y || 0),
-      startClientX: Number(event?.clientX || 0),
-      startClientY: Number(event?.clientY || 0),
-      baseOffsetX: toNumber(elementState.offset_x, 0),
-      baseOffsetY: toNumber(elementState.offset_y, 0),
-    };
-    const pointerId = Number(event?.pointerId);
-    activePointerIdRef.current = Number.isFinite(pointerId) ? pointerId : null;
-    const captureTarget = event?.target && typeof event.target.setPointerCapture === "function"
-      ? event.target
-      : (rootRef.current && typeof rootRef.current.setPointerCapture === "function" ? rootRef.current : null);
-    if (captureTarget && Number.isFinite(pointerId)) {
-      try {
-        captureTarget.setPointerCapture(pointerId);
-        captureTargetRef.current = captureTarget;
-      } catch {
-        captureTargetRef.current = null;
+      if (node.hasAttribute("data-drawio-el-id")) {
+        node.removeAttribute("data-drawio-el-id");
       }
-    } else {
-      captureTargetRef.current = null;
-    }
-    setDraftOffset({
-      id: elementId,
-      offset_x: toNumber(elementState.offset_x, 0),
-      offset_y: toNumber(elementState.offset_y, 0),
     });
-    draftOffsetRef.current = {
-      id: elementId,
-      offset_x: toNumber(elementState.offset_x, 0),
-      offset_y: toNumber(elementState.offset_y, 0),
-    };
-  }, [elementMap, hasRenderable, layerMap, meta, onSelectionChange, screenToDiagram, visible]);
+  }, [elementMap, renderedBody, rootRef]);
 
   useEffect(() => {
-    const root = rootRef.current;
-    if (!(root instanceof Element) || !hasRenderable) return undefined;
-    const onPointerDown = (event) => {
-      const target = event?.target instanceof Element ? event.target : null;
-      if (!target) return;
-      const idChain = collectDrawioElementIdsFromTarget(target, root);
-      const hitId = resolveDrawioPointerElementId(target, root, meta, layerMap, elementMap);
-      pushDeleteTrace("drawio_pointerdown", {
-        hitId,
-        idChain,
-        pointerId: Number(event?.pointerId ?? NaN),
-      });
-      if (hitId) {
-        startDragByElementId(event, hitId);
-        return;
-      }
-      if (!selectedIdRef.current) return;
-      selectedIdRef.current = "";
-      setSelectedId("");
-      onSelectionChange?.("");
+    const viewportNode = viewportGroupRef.current;
+    if (!(viewportNode instanceof Element)) return undefined;
+    const applyMatrix = (matrixRaw) => {
+      const nextComposed = composeOverlayMatrix(matrixRaw, tx, ty);
+      viewportNode.setAttribute(
+        "transform",
+        `matrix(${nextComposed.a},${nextComposed.b},${nextComposed.c},${nextComposed.d},${nextComposed.e},${nextComposed.f})`,
+      );
     };
-    root.addEventListener("pointerdown", onPointerDown, true);
-    return () => {
-      root.removeEventListener("pointerdown", onPointerDown, true);
-    };
-  }, [elementMap, hasRenderable, layerMap, meta, onSelectionChange, startDragByElementId]);
+    const initial = typeof getOverlayMatrix === "function"
+      ? getOverlayMatrix()
+      : (overlayMatrixRef?.current || overlayMatrix);
+    applyMatrix(initial);
+    if (typeof subscribeOverlayMatrix !== "function") return undefined;
+    return subscribeOverlayMatrix((nextMatrix) => {
+      applyMatrix(nextMatrix);
+    });
+  }, [
+    getOverlayMatrix,
+    overlayMatrix,
+    overlayMatrixRef,
+    subscribeOverlayMatrix,
+    tx,
+    ty,
+  ]);
 
-  if (!hasRenderable) return null;
+  if (!hasInteractionSurface) return null;
 
   return (
     <div
@@ -570,16 +168,20 @@ function DrawioOverlayRenderer({
       <div
         className="drawioLayerOverlay absolute inset-0 overflow-hidden"
         style={{ pointerEvents: "none" }}
-      data-testid="drawio-overlay"
+        data-testid="drawio-overlay"
       >
         <svg
           className="drawioLayerOverlaySvg"
           data-testid="drawio-overlay-svg"
-          style={{ position: "absolute", left: 0, top: 0, opacity, pointerEvents: "visiblePainted" }}
+          style={{ position: "absolute", left: 0, top: 0, opacity, pointerEvents: createPlacementActive ? "auto" : "visiblePainted" }}
           width="100%"
           height="100%"
         >
-          <g transform={`matrix(${a},${b},${c},${d},${e},${f}) translate(${tx},${ty})`}>
+          <g
+            ref={viewportGroupRef}
+            data-testid="drawio-overlay-viewport-g"
+            transform={`matrix(${a},${b},${c},${d},${e},${f})`}
+          >
             <g dangerouslySetInnerHTML={{ __html: renderedBody }} />
           </g>
         </svg>
@@ -595,6 +197,8 @@ function num(valueRaw, fallback = 0) {
 
 function areEqual(prevProps, nextProps) {
   if (!!prevProps.visible !== !!nextProps.visible) return false;
+  if (String(prevProps.drawioMode || "") !== String(nextProps.drawioMode || "")) return false;
+  if (String(prevProps.drawioActiveTool || "") !== String(nextProps.drawioActiveTool || "")) return false;
   const prevMeta = asObject(prevProps.drawioMeta);
   const nextMeta = asObject(nextProps.drawioMeta);
   const prevMatrix = asObject(prevProps.overlayMatrix);
@@ -602,9 +206,18 @@ function areEqual(prevProps, nextProps) {
   if (toNumber(prevMeta.opacity, 1) !== toNumber(nextMeta.opacity, 1)) return false;
   if (toNumber(asObject(prevMeta.transform).x, 0) !== toNumber(asObject(nextMeta.transform).x, 0)) return false;
   if (toNumber(asObject(prevMeta.transform).y, 0) !== toNumber(asObject(nextMeta.transform).y, 0)) return false;
+  if (String(prevMeta.active_tool || "") !== String(nextMeta.active_tool || "")) return false;
   if (String(prevMeta.svg_cache || "") !== String(nextMeta.svg_cache || "")) return false;
   if (String(JSON.stringify(asArray(prevMeta.drawio_layers_v1) || [])) !== String(JSON.stringify(asArray(nextMeta.drawio_layers_v1) || []))) return false;
   if (String(JSON.stringify(asArray(prevMeta.drawio_elements_v1) || [])) !== String(JSON.stringify(asArray(nextMeta.drawio_elements_v1) || []))) return false;
+  if (String(prevProps.screenToDiagram) !== String(nextProps.screenToDiagram)) return false;
+  if (String(prevProps.overlayMatrixRef) !== String(nextProps.overlayMatrixRef)) return false;
+  if (String(prevProps.subscribeOverlayMatrix) !== String(nextProps.subscribeOverlayMatrix)) return false;
+  if (String(prevProps.getOverlayMatrix) !== String(nextProps.getOverlayMatrix)) return false;
+  if (String(prevProps.onCommitMove) !== String(nextProps.onCommitMove)) return false;
+  if (String(prevProps.onCreateElement) !== String(nextProps.onCreateElement)) return false;
+  if (String(prevProps.onDeleteElement) !== String(nextProps.onDeleteElement)) return false;
+  if (String(prevProps.onSelectionChange) !== String(nextProps.onSelectionChange)) return false;
   if (num(prevMatrix.a, 1) !== num(nextMatrix.a, 1)) return false;
   if (num(prevMatrix.b, 0) !== num(nextMatrix.b, 0)) return false;
   if (num(prevMatrix.c, 0) !== num(nextMatrix.c, 0)) return false;

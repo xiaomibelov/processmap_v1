@@ -1,18 +1,30 @@
 import { buildOverlayEntityRows, buildOverlaySelectedEntity } from "../adapters/overlayEntityAdapter.js";
-import {
-  buildDrawioToolsInventory,
-  getEditorDrawioTools,
-  getRuntimeDrawioTools,
-} from "../../drawio/domain/drawioSelectors.js";
 import { getDrawioOverlayStatus } from "../../drawio/domain/drawioVisibility.js";
+import { buildDrawioVisibilitySelectionContract } from "../../drawio/domain/drawioVisibilitySelectionContract.js";
+import buildDrawioOverlaySection from "./sections/buildDrawioOverlaySection.js";
+import buildHybridLegacySection from "./sections/buildHybridLegacySection.js";
 
 function toText(value) {
   return String(value || "").trim();
 }
 
+function bumpPanelPerfCounter() {
+  if (typeof window === "undefined" || !window || typeof window !== "object") return;
+  if (window.__FPC_DRAWIO_PERF_ENABLE__ !== true) return;
+  const store = window.__FPC_DRAWIO_PERF__ && typeof window.__FPC_DRAWIO_PERF__ === "object"
+    ? window.__FPC_DRAWIO_PERF__
+    : (window.__FPC_DRAWIO_PERF__ = { counters: {}, samples: {}, marks: {}, startedAt: Date.now(), resetAt: Date.now() });
+  const counters = store.counters && typeof store.counters === "object" ? store.counters : {};
+  counters["drawio.panel.model.builds"] = Number(counters["drawio.panel.model.builds"] || 0) + 1;
+  store.counters = counters;
+}
+
 export default function buildOverlayPanelModel({
   drawioState,
+  drawioModeEffective,
   drawioEditorStatus,
+  hybridVisible,
+  hybridTotalCount,
   hybridModeEffective,
   hybridUiPrefs,
   hybridV2HiddenCount,
@@ -24,7 +36,11 @@ export default function buildOverlayPanelModel({
   hybridV2SelectedIds,
   legacyActiveElementId,
 } = {}) {
+  bumpPanelPerfCounter();
   const overlayStatus = getDrawioOverlayStatus(drawioState);
+  const drawioVisibilityContract = buildDrawioVisibilitySelectionContract(drawioState, {
+    mode: drawioModeEffective,
+  });
   const editorState = drawioEditorStatus && typeof drawioEditorStatus === "object" ? drawioEditorStatus : {};
   const rows = buildOverlayEntityRows({
     drawioState,
@@ -40,28 +56,52 @@ export default function buildOverlayPanelModel({
     legacyActiveElementId,
     hybridV2Renderable,
   });
-  const drawioOpacity = Math.round(Math.max(0.05, Math.min(1, Number(drawioState?.opacity || 1))) * 100);
-  const toolsAll = buildDrawioToolsInventory({ includeEditorTools: true });
-  const toolsRuntime = getRuntimeDrawioTools(toolsAll);
-  const toolsEditorOnly = getEditorDrawioTools(toolsAll);
-  const drawioRows = rows.filter((row) => toText(row.entityKind) === "drawio");
-  const hybridRows = rows.filter((row) => toText(row.entityKind) === "hybrid");
-  const legacyRows = rows.filter((row) => toText(row.entityKind) === "legacy");
+  const {
+    drawioSection,
+    toolsAll,
+    toolsRuntime,
+    toolsEditorOnly,
+    drawioRows,
+    drawioMode,
+    drawioOpacity,
+  } = buildDrawioOverlaySection({
+    overlayStatus,
+    visibilityContract: drawioVisibilityContract,
+    drawioState,
+    drawioModeEffective,
+    rows,
+  });
+  const {
+    hybridLegacySection,
+    hybridRows,
+    legacyRows,
+  } = buildHybridLegacySection({
+    rows,
+    hybridVisible,
+    hybridUiPrefs,
+    hybridTotalCount,
+    hybridModeEffective,
+  });
   const statusLine = [
     `Overlay: ${overlayStatus.label}`,
-    `Mode: ${hybridModeEffective === "edit" ? "edit" : "view"}`,
-    `Lock: ${hybridUiPrefs?.lock || drawioState?.locked ? "on" : "off"}`,
+    `Mode: ${drawioMode}`,
+    `Lock: ${drawioState?.locked ? "on" : "off"}`,
     `Opacity: ${drawioOpacity}%`,
   ].join(" · ");
   return {
     status: {
       ...overlayStatus,
+      visibilityContract: drawioVisibilityContract,
       summary: statusLine,
       drawioOpacity,
-      mode: hybridModeEffective === "edit" ? "edit" : "view",
-      locked: !!(hybridUiPrefs?.lock || drawioState?.locked),
+      mode: drawioMode,
+      locked: !!drawioState?.locked,
       overlayEnabled: overlayStatus.enabled === true,
       previewStatus: overlayStatus.hasPreview ? "available" : "missing",
+      visibleOnCanvas: drawioVisibilityContract.visibleOnCanvas === true,
+      selectableOnCanvas: drawioVisibilityContract.selectableOnCanvas === true,
+      opacityControlEnabled: drawioVisibilityContract.opacityControlEnabled === true,
+      selectionPolicy: toText(drawioVisibilityContract.selectionPolicy || ""),
     },
     editor: {
       available: editorState.editorAvailable !== false,
@@ -73,6 +113,8 @@ export default function buildOverlayPanelModel({
       previewAvailable: editorState.previewAvailable === true,
       overlayEnabled: editorState.overlayEnabled === true,
     },
+    drawio: drawioSection,
+    hybridLegacy: hybridLegacySection,
     selected: {
       ...selected,
       displayId: toText(selected.entityId),
