@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import BpmnStage from "./process/BpmnStage";
 import DocStage from "./process/DocStage";
 import InterviewStage from "./process/InterviewStage";
@@ -91,6 +91,7 @@ import usePlaybackController from "../features/process/stage/controllers/usePlay
 import useDiagramShellState from "../features/process/stage/orchestration/useDiagramShellState";
 import useDiagramActionsController from "../features/process/stage/orchestration/useDiagramActionsController";
 import useDiagramRuntimeBridges from "../features/process/stage/orchestration/useDiagramRuntimeBridges";
+import useProcessStageLocalState from "../features/process/stage/orchestration/state/useProcessStageLocalState";
 import {
   buildTopPanelsView,
   buildAttentionPanelsView,
@@ -234,101 +235,152 @@ export default function ProcessStage({
   const autoPassToastJobIdRef = useRef("");
   const autoPassDocSyncInFlightRef = useRef(false);
   const autoPassDocSyncLastAttemptMsRef = useRef(0);
+  const localStateResetSidRef = useRef("");
 
-  const [genBusy, setGenBusy] = useState(false);
-  const [genErr, setGenErr] = useState("");
-  const [infoMsg, setInfoMsg] = useState("");
-  const [aiBottleneckOn, setAiBottleneckOn] = useState(false);
-  const [aiStepBusy, setAiStepBusy] = useState(false);
-  const [isManualSaveBusy, setIsManualSaveBusy] = useState(false);
-  const [apiClarifyHints, setApiClarifyHints] = useState([]);
-  const [apiClarifyList, setApiClarifyList] = useState([]);
-  const [llmClarifyList, setLlmClarifyList] = useState([]);
-  const [apiClarifyMeta, setApiClarifyMeta] = useState(null);
-  const [versionsOpen, setVersionsOpen] = useState(false);
-  const [versionsBusy, setVersionsBusy] = useState(false);
-  const [versionsList, setVersionsList] = useState([]);
-  const [previewSnapshotId, setPreviewSnapshotId] = useState("");
-  const [diffOpen, setDiffOpen] = useState(false);
-  const [diffBaseSnapshotId, setDiffBaseSnapshotId] = useState("");
-  const [diffTargetSnapshotId, setDiffTargetSnapshotId] = useState("");
-  const [commandModeEnabled, setCommandModeEnabled] = useState(() => readCommandMode());
-  const [diagramMode, setDiagramMode] = useState(() => readDiagramMode());
-  const [qualityProfileId, setQualityProfileId] = useState(() => readQualityProfile());
-  const [commandInput, setCommandInput] = useState("");
-  const [commandBusy, setCommandBusy] = useState(false);
-  const [commandStatus, setCommandStatus] = useState({ kind: "", text: "" });
-  const [commandHistory, setCommandHistory] = useState([]);
-  const [qualityIssueFocusKey, setQualityIssueFocusKey] = useState("");
-  const [qualityAutoFixOpen, setQualityAutoFixOpen] = useState(false);
-  const [qualityAutoFixBusy, setQualityAutoFixBusy] = useState(false);
-  const [aiQuestionsBusy, setAiQuestionsBusy] = useState(false);
-  const [aiQuestionsStatus, setAiQuestionsStatus] = useState({ kind: "", text: "" });
-  const [insertBetweenOpen, setInsertBetweenOpen] = useState(false);
-  const [insertBetweenBusy, setInsertBetweenBusy] = useState(false);
-  const [insertBetweenName, setInsertBetweenName] = useState("");
-  const [insertBetweenDraft, setInsertBetweenDraft] = useState(null);
-  const [toolbarMenuOpen, setToolbarMenuOpen] = useState(false);
-  const [saveDirtyHint, setSaveDirtyHint] = useState(false);
-  const [attentionOpen, setAttentionOpen] = useState(false);
-  const [attentionFilters, setAttentionFilters] = useState({
-    quality: false,
-    ai: false,
-    notes: false,
+  const {
+    genBusy,
+    setGenBusy,
+    genErr,
+    setGenErr,
+    infoMsg,
+    setInfoMsg,
+    aiBottleneckOn,
+    setAiBottleneckOn,
+    aiStepBusy,
+    setAiStepBusy,
+    isManualSaveBusy,
+    setIsManualSaveBusy,
+    apiClarifyHints,
+    setApiClarifyHints,
+    apiClarifyList,
+    setApiClarifyList,
+    llmClarifyList,
+    setLlmClarifyList,
+    apiClarifyMeta,
+    setApiClarifyMeta,
+    versionsOpen,
+    setVersionsOpen,
+    versionsBusy,
+    setVersionsBusy,
+    versionsList,
+    setVersionsList,
+    previewSnapshotId,
+    setPreviewSnapshotId,
+    diffOpen,
+    setDiffOpen,
+    diffBaseSnapshotId,
+    setDiffBaseSnapshotId,
+    diffTargetSnapshotId,
+    setDiffTargetSnapshotId,
+    commandModeEnabled,
+    setCommandModeEnabled,
+    diagramMode,
+    setDiagramMode,
+    qualityProfileId,
+    setQualityProfileId,
+    commandInput,
+    setCommandInput,
+    commandBusy,
+    setCommandBusy,
+    commandStatus,
+    setCommandStatus,
+    commandHistory,
+    setCommandHistory,
+    qualityIssueFocusKey,
+    setQualityIssueFocusKey,
+    qualityAutoFixOpen,
+    setQualityAutoFixOpen,
+    qualityAutoFixBusy,
+    setQualityAutoFixBusy,
+    aiQuestionsBusy,
+    setAiQuestionsBusy,
+    aiQuestionsStatus,
+    setAiQuestionsStatus,
+    insertBetweenOpen,
+    setInsertBetweenOpen,
+    insertBetweenBusy,
+    setInsertBetweenBusy,
+    insertBetweenName,
+    setInsertBetweenName,
+    insertBetweenDraft,
+    setInsertBetweenDraft,
+    toolbarMenuOpen,
+    setToolbarMenuOpen,
+    saveDirtyHint,
+    setSaveDirtyHint,
+    attentionOpen,
+    setAttentionOpen,
+    attentionFilters,
+    setAttentionFilters,
+    attentionMarkerMessage,
+    setAttentionMarkerMessage,
+    attentionMarkerSaving,
+    setAttentionMarkerSaving,
+    attentionSessionLastOpenedAt,
+    setAttentionSessionLastOpenedAt,
+    autoPassJobState,
+    setAutoPassJobState,
+    autoPassPrecheck,
+    setAutoPassPrecheck,
+    autoPassPrecheckReqSeqRef,
+    diagramActionPathOpen,
+    setDiagramActionPathOpen,
+    diagramActionHybridToolsOpen,
+    setDiagramActionHybridToolsOpen,
+    diagramActionPlanOpen,
+    setDiagramActionPlanOpen,
+    diagramActionPlaybackOpen,
+    setDiagramActionPlaybackOpen,
+    diagramActionLayersOpen,
+    setDiagramActionLayersOpen,
+    diagramActionRobotMetaOpen,
+    setDiagramActionRobotMetaOpen,
+    diagramActionQualityOpen,
+    setDiagramActionQualityOpen,
+    diagramActionOverflowOpen,
+    setDiagramActionOverflowOpen,
+    drawioSelectedElementId,
+    setDrawioSelectedElementId,
+    pathHighlightEnabled,
+    setPathHighlightEnabled,
+    pathHighlightTier,
+    setPathHighlightTier,
+    pathHighlightSequenceKey,
+    setPathHighlightSequenceKey,
+    robotMetaOverlayEnabled,
+    setRobotMetaOverlayEnabled,
+    robotMetaOverlayFilters,
+    setRobotMetaOverlayFilters,
+    robotMetaListOpen,
+    setRobotMetaListOpen,
+    robotMetaListTab,
+    setRobotMetaListTab,
+    robotMetaListSearch,
+    setRobotMetaListSearch,
+    qualityOverlayFilters,
+    setQualityOverlayFilters,
+    qualityOverlayListKey,
+    setQualityOverlayListKey,
+    qualityOverlaySearch,
+    setQualityOverlaySearch,
+    diagramPathsIntent,
+    setDiagramPathsIntent,
+    executionPlanPreview,
+    setExecutionPlanPreview,
+    executionPlanBusy,
+    setExecutionPlanBusy,
+    executionPlanSaveBusy,
+    setExecutionPlanSaveBusy,
+    executionPlanError,
+    setExecutionPlanError,
+    resetLocalStateForSession,
+  } = useProcessStageLocalState({
+    sid,
+    readCommandHistory,
+    readCommandMode,
+    readDiagramMode,
+    readQualityProfile,
   });
-  const [attentionMarkerMessage, setAttentionMarkerMessage] = useState("");
-  const [attentionMarkerSaving, setAttentionMarkerSaving] = useState(false);
-  const [attentionSessionLastOpenedAt, setAttentionSessionLastOpenedAt] = useState(0);
-  const [autoPassJobState, setAutoPassJobState] = useState({
-    jobId: "",
-    status: "idle",
-    progress: 0,
-    startedAtMs: 0,
-    error: "",
-  });
-  const [autoPassPrecheck, setAutoPassPrecheck] = useState({
-    loading: false,
-    canRun: true,
-    reason: "",
-    code: "",
-  });
-  const autoPassPrecheckReqSeqRef = useRef(0);
-  const [diagramActionPathOpen, setDiagramActionPathOpen] = useState(false);
-  const [diagramActionHybridToolsOpen, setDiagramActionHybridToolsOpen] = useState(false);
-  const [diagramActionPlanOpen, setDiagramActionPlanOpen] = useState(false);
-  const [diagramActionPlaybackOpen, setDiagramActionPlaybackOpen] = useState(false);
-  const [diagramActionLayersOpen, setDiagramActionLayersOpen] = useState(false);
-  const [diagramActionRobotMetaOpen, setDiagramActionRobotMetaOpen] = useState(false);
-  const [diagramActionQualityOpen, setDiagramActionQualityOpen] = useState(false);
-  const [diagramActionOverflowOpen, setDiagramActionOverflowOpen] = useState(false);
-  const [drawioSelectedElementId, setDrawioSelectedElementId] = useState("");
-  const [pathHighlightEnabled, setPathHighlightEnabled] = useState(false);
-  const [pathHighlightTier, setPathHighlightTier] = useState("P0");
-  const [pathHighlightSequenceKey, setPathHighlightSequenceKey] = useState("");
-  const [robotMetaOverlayEnabled, setRobotMetaOverlayEnabled] = useState(false);
-  const [robotMetaOverlayFilters, setRobotMetaOverlayFilters] = useState({
-    ready: true,
-    incomplete: true,
-  });
-  const [robotMetaListOpen, setRobotMetaListOpen] = useState(false);
-  const [robotMetaListTab, setRobotMetaListTab] = useState("ready");
-  const [robotMetaListSearch, setRobotMetaListSearch] = useState("");
-  const [qualityOverlayFilters, setQualityOverlayFilters] = useState({
-    orphan: false,
-    dead_end: false,
-    gateway: false,
-    link_errors: false,
-    missing_duration: false,
-    missing_notes: false,
-    route_truncated: false,
-  });
-  const [qualityOverlayListKey, setQualityOverlayListKey] = useState("");
-  const [qualityOverlaySearch, setQualityOverlaySearch] = useState("");
-  const [diagramPathsIntent, setDiagramPathsIntent] = useState(null);
-  const [executionPlanPreview, setExecutionPlanPreview] = useState(null);
-  const [executionPlanBusy, setExecutionPlanBusy] = useState(false);
-  const [executionPlanSaveBusy, setExecutionPlanSaveBusy] = useState(false);
-  const [executionPlanError, setExecutionPlanError] = useState("");
   const {
     hybridLayerDragRef,
     hybridLayerMapRef,
@@ -353,6 +405,7 @@ export default function ProcessStage({
     setHybridV2BindPickMode,
     drawioMeta,
     setDrawioMeta,
+    drawioVisibilityContract,
     drawioEditorOpen,
     setDrawioEditorOpen,
     hybridLayerMapFromDraft,
@@ -367,96 +420,6 @@ export default function ProcessStage({
     draftBpmnMeta: draft?.bpmn_meta,
     userId: user?.id,
   });
-
-  useEffect(() => {
-    setGenBusy(false);
-    setGenErr("");
-    setInfoMsg("");
-    setAiBottleneckOn(false);
-    setAiStepBusy(false);
-    setIsManualSaveBusy(false);
-    setApiClarifyHints([]);
-    setApiClarifyList([]);
-    setLlmClarifyList([]);
-    setApiClarifyMeta(null);
-    setVersionsOpen(false);
-    setVersionsBusy(false);
-    setVersionsList([]);
-    setPreviewSnapshotId("");
-    setDiffOpen(false);
-    setDiffBaseSnapshotId("");
-    setDiffTargetSnapshotId("");
-    setCommandInput("");
-    setCommandBusy(false);
-    setCommandStatus({ kind: "", text: "" });
-    setCommandHistory(readCommandHistory(sid));
-    setQualityIssueFocusKey("");
-    setQualityAutoFixOpen(false);
-    setQualityAutoFixBusy(false);
-    setAiQuestionsBusy(false);
-    setAiQuestionsStatus({ kind: "", text: "" });
-    setInsertBetweenOpen(false);
-    setInsertBetweenBusy(false);
-    setInsertBetweenName("");
-    setInsertBetweenDraft(null);
-    setToolbarMenuOpen(false);
-    setSaveDirtyHint(false);
-    setAttentionOpen(false);
-    setAttentionFilters({
-      quality: false,
-      ai: false,
-      notes: false,
-    });
-    setAttentionMarkerMessage("");
-    setAttentionMarkerSaving(false);
-    setAttentionSessionLastOpenedAt(0);
-    setAutoPassJobState({
-      jobId: "",
-      status: "idle",
-      progress: 0,
-      startedAtMs: 0,
-      error: "",
-    });
-    autoPassToastJobIdRef.current = "";
-    setDiagramActionPathOpen(false);
-    setDiagramActionHybridToolsOpen(false);
-    setDiagramActionPlanOpen(false);
-    setDiagramActionPlaybackOpen(false);
-    setDiagramActionLayersOpen(false);
-    setDiagramActionRobotMetaOpen(false);
-    setDiagramActionQualityOpen(false);
-    setDiagramActionOverflowOpen(false);
-    setDiagramFocusMode(false);
-    setDiagramFullscreenActive(false);
-    setDrawioSelectedElementId("");
-    setPathHighlightEnabled(false);
-    setPathHighlightTier("P0");
-    setPathHighlightSequenceKey("");
-    setRobotMetaOverlayEnabled(false);
-    setRobotMetaOverlayFilters({
-      ready: true,
-      incomplete: true,
-    });
-    setRobotMetaListOpen(false);
-    setRobotMetaListTab("ready");
-    setRobotMetaListSearch("");
-    setQualityOverlayFilters({
-      orphan: false,
-      dead_end: false,
-      gateway: false,
-      link_errors: false,
-      missing_duration: false,
-      missing_notes: false,
-      route_truncated: false,
-    });
-    setQualityOverlayListKey("");
-    setQualityOverlaySearch("");
-    setDiagramPathsIntent(null);
-    setExecutionPlanPreview(null);
-    setExecutionPlanBusy(false);
-    setExecutionPlanSaveBusy(false);
-    setExecutionPlanError("");
-  }, [sid]);
 
   const hasSession = !!sid;
   const isLocal = isLocalSessionId(sid);
@@ -527,6 +490,16 @@ export default function ProcessStage({
     setGenErr,
     shortErr,
   });
+
+  useEffect(() => {
+    if (localStateResetSidRef.current === sid) return;
+    localStateResetSidRef.current = sid;
+    resetLocalStateForSession({
+      autoPassToastJobIdRef,
+      setDiagramFocusMode,
+      setDiagramFullscreenActive,
+    });
+  }, [resetLocalStateForSession, setDiagramFocusMode, setDiagramFullscreenActive, sid]);
 
   const queueDiagramMutation = useCallback((mutation) => {
     const kind = String(mutation?.kind || mutation || "").trim().toLowerCase();
@@ -1214,6 +1187,9 @@ export default function ProcessStage({
   const {
     hybridViewportSize,
     hybridViewportMatrix,
+    hybridViewportMatrixRef,
+    subscribeOverlayViewportMatrix,
+    getOverlayViewportMatrix,
     overlayViewbox,
     overlayContainerRect,
     localToDiagram,
@@ -3567,6 +3543,10 @@ export default function ProcessStage({
     deleteOverlayEntity,
     toggleDrawioEnabled,
     setDrawioOpacity,
+    drawioModeEffective,
+    drawioRuntimeToolState,
+    setDrawioMode,
+    createDrawioRuntimeElement,
     toggleDrawioLock,
     setDrawioElementVisible,
     setDrawioElementLocked,
@@ -3589,6 +3569,11 @@ export default function ProcessStage({
       setGenErr,
       downloadTextFile,
       drawioUiState,
+      drawioVisibilityContract,
+      drawioVisible,
+      setDrawioSelectedElementId,
+      hybridVisible,
+      hybridTotalCount,
       hybridModeEffective,
       hybridUiPrefs,
       hybridV2HiddenCount,
@@ -4052,6 +4037,8 @@ export default function ProcessStage({
                     setHybridToolsMode,
                     openEmbeddedDrawioEditor,
                     toggleDrawioEnabled,
+                    drawioModeEffective,
+                    setDrawioMode,
                     setDrawioOpacity,
                     toggleDrawioLock,
                     setDrawioElementVisible,
@@ -4208,9 +4195,15 @@ export default function ProcessStage({
                 <DrawioOverlayRenderer
                   visible={tab === "diagram" && drawioVisible}
                   drawioMeta={drawioUiState}
+                  drawioMode={drawioModeEffective}
+                  drawioActiveTool={drawioRuntimeToolState}
                   overlayMatrix={hybridViewportMatrix}
+                  overlayMatrixRef={hybridViewportMatrixRef}
+                  subscribeOverlayMatrix={subscribeOverlayViewportMatrix}
+                  getOverlayMatrix={getOverlayViewportMatrix}
                   screenToDiagram={clientToDiagram}
                   onCommitMove={commitDrawioOverlayMove}
+                  onCreateElement={createDrawioRuntimeElement}
                   onDeleteElement={deleteDrawioOverlayElement}
                   onSelectionChange={setDrawioSelectedElementId}
                 />
