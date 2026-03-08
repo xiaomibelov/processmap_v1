@@ -1245,6 +1245,27 @@ export default function App() {
   }, [draft]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    if (!window.__FPC_E2E__) return undefined;
+    const e2eOpenSession = async (sessionIdRaw) => {
+      const sid = String(sessionIdRaw || "").trim();
+      if (!sid) return { ok: false, error: "missing_session_id" };
+      try {
+        await openSession(sid, { source: "e2e_helper" });
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: String(error?.message || error || "open_session_failed") };
+      }
+    };
+    window.__FPC_E2E_OPEN_SESSION__ = e2eOpenSession;
+    return () => {
+      if (window.__FPC_E2E_OPEN_SESSION__ === e2eOpenSession) {
+        window.__FPC_E2E_OPEN_SESSION__ = null;
+      }
+    };
+  }, [openSession]);
+
+  useEffect(() => {
     const sid = String(draft?.session_id || "").trim();
     if (!sid) return;
     writeLocalBpmnMeta(sid, draft?.bpmn_meta);
