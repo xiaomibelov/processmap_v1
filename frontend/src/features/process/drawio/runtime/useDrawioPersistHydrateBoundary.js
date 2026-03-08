@@ -47,6 +47,25 @@ export default function useDrawioPersistHydrateBoundary({
       });
       return;
     }
+    // Guard: incoming is stale behind an optimistically persisted state.
+    // Race window: syncPersistedRefs updates drawioPersistedMetaRef synchronously
+    // in onOptimistic BEFORE a concurrent onSessionSync (e.g. from a BPMN save
+    // response) propagates through React to drawioFromDraft. In that window,
+    // persistedSig reflects the nudge offset but drawioFromDraft still carries
+    // the old server value. Conditions 1/2 do not fire (incomingSig !== persistedSig)
+    // so without this guard the stale incoming would overwrite drawioMetaRef.current
+    // and cause savePayload to read offset_x=0.
+    // Only skip when persisted has real payload (not initial-load empty), so that
+    // the initial hydrate on page load is never blocked.
+    const persistedHasPayload = !!(persistedMeta.doc_xml || persistedMeta.svg_cache || persistedMeta.enabled);
+    if (currentSig === persistedSig && incomingSig !== persistedSig && persistedHasPayload) {
+      pushDeleteTrace("drawio_hydrate_skip", {
+        reason: "incoming_stale_behind_optimistic_persist",
+        incomingSvg: Number(String(incoming?.svg_cache || "").length || 0),
+        currentSvg: Number(String(currentMeta?.svg_cache || "").length || 0),
+      });
+      return;
+    }
     pushDeleteTrace("drawio_hydrate_apply", {
       incomingSvg: Number(String(incoming?.svg_cache || "").length || 0),
       incomingElements: Number(Array.isArray(incoming?.drawio_elements_v1) ? incoming.drawio_elements_v1.length : 0),
