@@ -1,0 +1,61 @@
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+.claude/
+.tools/
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.crt
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+.venv/
+venv/
+
+# Node / frontend
+node_modules/
+dist/
+build/
+coverage/
+playwright-report/
+test-results/
+
+# Runtime data
+workspace/
+backend/workspace/
+deploy/logs/
+uploads/
+media/
+storage/
+
+# Databases / dumps / logs
+*.sqlite
+*.sqlite3
+*.db
+*.sql
+*.dump
+*.log
+*.pid
+
+# Archives / binaries / temp
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.dmg
+*.tmp
+*.temp
+tmp/

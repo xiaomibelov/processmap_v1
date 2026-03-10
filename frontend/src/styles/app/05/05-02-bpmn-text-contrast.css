@@ -1,0 +1,1100 @@
+.bpmnStage .djs-direct-editing-parent,
+.bpmnStage .djs-direct-editing-content{
+  background: hsl(var(--menu-bg-elevated) / 0.94) !important;
+  color: hsl(var(--text) / 0.98) !important;
+  border: 1px solid hsl(var(--diagram-select) / 0.34) !important;
+  border-radius: 8px !important;
+  box-shadow: var(--shadow-soft) !important;
+}
+
+.bpmnStage .djs-direct-editing-content::selection{
+  background: hsl(var(--diagram-select) / 0.24);
+  color: hsl(var(--text) / 0.98);
+}
+
+.bpmnCanvas .djs-element:not(.fpcBottleneckHigh):not(.fpcBottleneckMedium):not(.fpcBottleneckLow):not(.fpcElementSelected):not(.fpcTaskLightBg):not(.fpcSendTask):not(.fpcReceiveTask):not(.fpcStartEvent):not(.fpcEndEvent) .djs-visual > :is(rect, circle, ellipse, polygon){
+  fill: color-mix(in srgb, var(--bpmn-task-fill) 20%, transparent) !important;
+  stroke: color-mix(in srgb, var(--bpmn-task-stroke) 85%, transparent) !important;
+  stroke-width: 1.35px !important;
+}
+
+.bpmnCanvas .djs-connection:not(.fpcElementSelected) .djs-visual > path[data-corner-radius] {
+  stroke: var(--bpmn-connection) !important;
+  stroke-width: 1.4px !important;
+}
+
+/* remove unintended shadow/halo bands for regular (non-highlighted) connections */
+.bpmnCanvas .djs-connection:not(.fpcElementSelected):not(.fpcQualityProblem):not(.fpcQualityIssueFocus):not(.fpcAttentionJumpFocus):not(.fpcFocusEdgePrimary):not(.fpcNodeFlashAccent):not(.fpcNodeFlashAi):not(.fpcNodeFlashNotes):not(.fpcNodeFlashSync):not(.fpcNodeFlashFlow) .djs-visual,
+.bpmnCanvas .djs-connection:not(.fpcElementSelected):not(.fpcQualityProblem):not(.fpcQualityIssueFocus):not(.fpcAttentionJumpFocus):not(.fpcFocusEdgePrimary):not(.fpcNodeFlashAccent):not(.fpcNodeFlashAi):not(.fpcNodeFlashNotes):not(.fpcNodeFlashSync):not(.fpcNodeFlashFlow) {
+  filter: none !important;
+  opacity: 1 !important;
+}
+
+.bpmnCanvas .djs-connection:not(.fpcElementSelected):not(.fpcQualityProblem):not(.fpcQualityIssueFocus):not(.fpcAttentionJumpFocus):not(.fpcFocusEdgePrimary):not(.fpcNodeFlashAccent):not(.fpcNodeFlashAi):not(.fpcNodeFlashNotes):not(.fpcNodeFlashSync):not(.fpcNodeFlashFlow) .djs-visual > path[data-corner-radius] {
+  filter: none !important;
+  opacity: 1 !important;
+}
+
+/* keep connection hitboxes wide but invisible */
+.bpmnCanvas .djs-connection .djs-hit {
+  stroke: transparent !important;
+  opacity: 0 !important;
+  stroke-width: 18px !important;
+  stroke-linejoin: round !important;
+  stroke-linecap: round !important;
+  pointer-events: stroke !important;
+  fill: none !important;
+}
+
+/* keep native send/receive icon contrast from bpmn-js renderer */
+.bpmnCanvas .djs-shape:not(.fpcTaskLightBg) .djs-visual > path{
+  fill: initial !important;
+  stroke: initial !important;
+}
+
+.interviewStage .input::placeholder,
+.interviewStage .textarea::placeholder,
+.interviewStage textarea::placeholder{
+  color: hsl(var(--hint) / 0.62) !important;
+}
+
+/* fpc: bpmn_ux_readability_v1 */
+.dark .bpmnStage {
+  --bpmn-task-fill: rgba(15, 22, 38, 0.72);
+  --bpmn-task-stroke: rgba(236, 245, 255, 0.78);
+  --bpmn-task-text: rgba(240, 247, 255, 0.95);
+  --bpmn-flow-stroke: rgba(226, 236, 252, 0.9);
+  --bpmn-flow-hover: rgba(148, 191, 255, 0.98);
+  --bpmn-lane-fill: rgba(154, 192, 255, 0.06);
+  --bpmn-lane-stroke: rgba(194, 214, 246, 0.52);
+  --bpmn-pool-fill: rgba(163, 199, 255, 0.09);
+  --bpmn-pool-stroke: rgba(214, 228, 248, 0.68);
+  --bpmn-gateway-stroke: rgba(249, 195, 96, 0.95);
+  --bpmn-gateway-fill: rgba(249, 195, 96, 0.2);
+  --bpmn-start-stroke: rgba(52, 211, 153, 0.96);
+  --bpmn-start-fill: rgba(22, 163, 74, 0.46);
+  --bpmn-end-stroke: rgba(248, 113, 113, 0.98);
+  --bpmn-end-fill: rgba(185, 28, 28, 0.48);
+  --bpmn-hover-stroke: rgba(140, 196, 255, 0.96);
+  --bpmn-selected-stroke: hsl(var(--diagram-select));
+  --bpmn-selected-glow: hsl(var(--diagram-select-glow) / 0.44);
+  --bpmn-note-accent: rgba(250, 204, 21, 0.98);
+  --bpmn-label-outline: rgba(6, 12, 24, 0.82);
+  --bpmn-coverage-ready: hsl(var(--diagram-coverage-low));
+  --bpmn-coverage-warn: hsl(var(--diagram-coverage-med));
+  --bpmn-coverage-risk: hsl(var(--diagram-coverage-high));
+  --bpmn-flash-accent: hsl(var(--diagram-jump));
+  --bpmn-flash-ai: hsl(var(--diagram-ai));
+  --bpmn-flash-notes: hsl(var(--diagram-notes));
+  --bpmn-flash-sync: hsl(var(--diagram-dod));
+  --bpmn-flash-flow: hsl(var(--diagram-coverage-med));
+}
+
+.light .bpmnStage {
+  --bpmn-task-fill: rgba(255, 255, 255, 0.9);
+  --bpmn-task-stroke: rgba(40, 64, 102, 0.9);
+  --bpmn-task-text: rgba(16, 28, 46, 0.98);
+  --bpmn-flow-stroke: rgba(37, 63, 103, 0.94);
+  --bpmn-flow-hover: rgba(24, 90, 196, 0.98);
+  --bpmn-lane-fill: rgba(95, 130, 184, 0.08);
+  --bpmn-lane-stroke: rgba(77, 106, 150, 0.46);
+  --bpmn-pool-fill: rgba(91, 125, 182, 0.11);
+  --bpmn-pool-stroke: rgba(57, 84, 129, 0.62);
+  --bpmn-gateway-stroke: rgba(180, 111, 18, 0.92);
+  --bpmn-gateway-fill: rgba(245, 158, 11, 0.18);
+  --bpmn-start-stroke: rgba(22, 163, 74, 0.96);
+  --bpmn-start-fill: rgba(34, 197, 94, 0.34);
+  --bpmn-end-stroke: rgba(220, 38, 38, 0.95);
+  --bpmn-end-fill: rgba(248, 113, 113, 0.36);
+  --bpmn-hover-stroke: rgba(37, 99, 235, 0.95);
+  --bpmn-selected-stroke: hsl(var(--diagram-select));
+  --bpmn-selected-glow: hsl(var(--diagram-select-glow) / 0.38);
+  --bpmn-note-accent: rgba(217, 119, 6, 0.98);
+  --bpmn-label-outline: rgba(236, 243, 252, 0.86);
+  --bpmn-coverage-ready: hsl(var(--diagram-coverage-low));
+  --bpmn-coverage-warn: hsl(var(--diagram-coverage-med));
+  --bpmn-coverage-risk: hsl(var(--diagram-coverage-high));
+  --bpmn-flash-accent: hsl(var(--diagram-jump));
+  --bpmn-flash-ai: hsl(var(--diagram-ai));
+  --bpmn-flash-notes: hsl(var(--diagram-notes));
+  --bpmn-flash-sync: hsl(var(--diagram-dod));
+  --bpmn-flash-flow: hsl(var(--diagram-coverage-med));
+}
+
+/* minimal light-theme visibility boost for core BPMN primitives only */
+.light .bpmnCanvas .djs-element:not(.fpcElementSelected):not(.fpcQualityProblem):not(.fpcQualityIssueFocus):not(.fpcAttentionJumpFocus) .djs-visual > :is(rect, circle, ellipse, polygon) {
+  stroke-width: 1.8px !important;
+}
+
+.light .bpmnCanvas .djs-shape:not([data-element-id^="Participant"]):not([data-element-id^="Lane"]):not(.fpcStartEvent):not(.fpcEndEvent):not(.fpcElementSelected):not(.fpcQualityProblem):not(.fpcQualityIssueFocus):not(.fpcAttentionJumpFocus) .djs-visual > :is(rect, polygon) {
+  fill: hsl(0 0% 100% / 0.98) !important;
+  stroke: var(--bpmn-task-stroke) !important;
+}
+
+.light .bpmnCanvas .djs-connection:not(.fpcElementSelected):not(.fpcQualityProblem):not(.fpcQualityIssueFocus):not(.fpcAttentionJumpFocus) .djs-visual > path[data-corner-radius] {
+  stroke-width: 2px !important;
+  stroke: var(--bpmn-connection) !important;
+}
+
+.light .bpmnCanvas marker path {
+  fill: var(--bpmn-connection) !important;
+  stroke: var(--bpmn-connection) !important;
+}
+
+.light .bpmnCanvas .djs-label,
+.light .bpmnCanvas .djs-visual text {
+  fill: var(--bpmn-task-text) !important;
+}
+
+.bpmnCanvas .djs-element[data-element-id^="Participant"] .djs-visual > rect {
+  fill: var(--bpmn-pool-fill) !important;
+  stroke: var(--bpmn-pool-stroke) !important;
+  stroke-width: 1.65px !important;
+}
+
+.bpmnCanvas .djs-element[data-element-id^="Participant"] .djs-visual > rect + rect {
+  fill: color-mix(in srgb, var(--bpmn-pool-fill) 72%, transparent) !important;
+}
+
+.bpmnCanvas .djs-element[data-element-id^="Lane"] .djs-visual > rect {
+  fill: var(--bpmn-lane-fill) !important;
+  stroke: var(--bpmn-lane-stroke) !important;
+  stroke-width: 1.35px !important;
+}
+
+.bpmnCanvas .djs-element[data-element-id^="Participant"] .djs-label,
+.bpmnCanvas .djs-element[data-element-id^="Lane"] .djs-label {
+  fill: var(--bpmn-task-text) !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  paint-order: stroke fill;
+  stroke: var(--bpmn-label-outline);
+  stroke-width: 2px;
+  stroke-linejoin: round;
+}
+
+.bpmnCanvas .djs-shape.fpcTaskLightBg .djs-visual > rect {
+  fill: var(--bpmn-task-fill) !important;
+  stroke: var(--bpmn-task-stroke) !important;
+  stroke-width: 1.55px !important;
+}
+
+.bpmnCanvas .djs-shape.fpcTaskLightBg .djs-label,
+.bpmnCanvas .djs-shape.fpcTaskLightBg text {
+  fill: var(--bpmn-task-text) !important;
+  font-weight: 600 !important;
+}
+
+.bpmnCanvas .djs-shape[data-element-id*="Gateway"] .djs-visual > polygon {
+  fill: var(--bpmn-gateway-fill) !important;
+  stroke: var(--bpmn-gateway-stroke) !important;
+  stroke-width: 2px !important;
+}
+
+.bpmnCanvas .djs-shape[data-element-id*="Gateway"] .djs-visual > path {
+  stroke: var(--bpmn-gateway-stroke) !important;
+  stroke-width: 1.5px !important;
+}
+
+.bpmnCanvas .djs-shape.fpcStartEvent .djs-visual > circle:first-child {
+  fill: var(--bpmn-start-fill) !important;
+  stroke: var(--bpmn-start-stroke) !important;
+  stroke-width: 2.4px !important;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--bpmn-start-stroke) 44%, transparent));
+}
+
+.bpmnCanvas .djs-shape.fpcStartEvent .djs-visual > circle + circle {
+  fill: transparent !important;
+  stroke: color-mix(in srgb, var(--bpmn-start-stroke) 84%, #ffffff) !important;
+  stroke-width: 1.5px !important;
+}
+
+.bpmnCanvas .djs-shape.fpcEndEvent .djs-visual > circle:first-child {
+  fill: var(--bpmn-end-fill) !important;
+  stroke: var(--bpmn-end-stroke) !important;
+  stroke-width: 2.8px !important;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--bpmn-end-stroke) 40%, transparent));
+}
+
+.bpmnCanvas .djs-shape.fpcEndEvent .djs-visual > circle + circle {
+  fill: transparent !important;
+  stroke: color-mix(in srgb, var(--bpmn-end-stroke) 90%, #fff) !important;
+  stroke-width: 2px !important;
+}
+
+.bpmnCanvas .djs-connection .djs-visual > path[data-corner-radius] {
+  stroke: var(--bpmn-connection, var(--bpmn-flow-stroke, #1f2a44)) !important;
+  stroke-width: 2px !important;
+  stroke-linejoin: round !important;
+  stroke-linecap: round !important;
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+.bpmnCanvas .djs-connection.hover .djs-visual > path[data-corner-radius] {
+  stroke: var(--bpmn-flow-hover) !important;
+  stroke-width: 2.2px !important;
+}
+
+.bpmnCanvas .djs-element.hover:not(.fpcElementSelected) .djs-visual > :is(rect, circle, ellipse, polygon) {
+  stroke: var(--bpmn-hover-stroke) !important;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--bpmn-hover-stroke) 32%, transparent));
+}
+
+.bpmnCanvas .djs-element.fpcElementSelected .djs-visual > :is(rect, circle, ellipse, polygon) {
+  stroke: var(--bpmn-selected-stroke) !important;
+  stroke-width: 2.2px !important;
+  filter: drop-shadow(0 0 8px var(--bpmn-selected-glow));
+}
+
+.light .bpmnCanvas .djs-shape.fpcElementSelected .djs-visual > :is(rect, circle, ellipse, polygon) {
+  fill: hsl(0 0% 100% / 0.99) !important;
+  stroke: var(--bpmn-selected-stroke) !important;
+  stroke-width: 2.25px !important;
+}
+
+.light .bpmnCanvas .djs-shape.fpcElementSelected .djs-label,
+.light .bpmnCanvas .djs-shape.fpcElementSelected .djs-visual text {
+  fill: var(--bpmn-task-text) !important;
+}
+
+.bpmnCanvas .djs-element.fpcElementSelected .djs-connection .djs-visual > path[data-corner-radius],
+.bpmnCanvas .djs-connection.fpcElementSelected .djs-visual > path[data-corner-radius] {
+  stroke: var(--bpmn-selected-stroke) !important;
+  stroke-width: 2.3px !important;
+}
+
+.bpmnCanvas .djs-element.fpcCoverageReady:not(.fpcElementSelected) .djs-visual > :is(rect, circle, ellipse, polygon, path) {
+  stroke: color-mix(in srgb, var(--bpmn-coverage-ready) 74%, #d9f99d) !important;
+  stroke-width: 2.2px !important;
+  fill: color-mix(in srgb, var(--bpmn-coverage-ready) 12%, var(--bpmn-task-fill)) !important;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--bpmn-coverage-ready) 28%, transparent));
+}
+
+.bpmnCanvas .djs-element.fpcCoverageWarn:not(.fpcElementSelected) .djs-visual > :is(rect, circle, ellipse, polygon, path) {
+  stroke: color-mix(in srgb, var(--bpmn-coverage-warn) 74%, #fde68a) !important;
+  stroke-width: 2.2px !important;
+  fill: color-mix(in srgb, var(--bpmn-coverage-warn) 14%, var(--bpmn-task-fill)) !important;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--bpmn-coverage-warn) 32%, transparent));
+}
+
+.bpmnCanvas .djs-element.fpcCoverageRisk:not(.fpcElementSelected) .djs-visual > :is(rect, circle, ellipse, polygon, path) {
+  stroke: color-mix(in srgb, var(--bpmn-coverage-risk) 74%, #fca5a5) !important;
+  stroke-width: 2.25px !important;
+  fill: color-mix(in srgb, var(--bpmn-coverage-risk) 15%, var(--bpmn-task-fill)) !important;
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--bpmn-coverage-risk) 34%, transparent));
+}
+
+.bpmnCanvas .djs-element.fpcNodeFlashAccent:not(.fpcElementSelected) .djs-visual > :is(rect, circle, ellipse, polygon, path),
+.bpmnCanvas .djs-connection.fpcNodeFlashAccent .djs-visual > path[data-corner-radius] {
+  stroke: color-mix(in srgb, var(--bpmn-flash-accent) 84%, #d8b4fe) !important;
+  stroke-width: 3px !important;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--bpmn-flash-accent) 58%, transparent));
+}
+
+.bpmnCanvas .djs-element.fpcNodeFlashAi:not(.fpcElementSelected) .djs-visual > :is(rect, circle, ellipse, polygon, path),
+.bpmnCanvas .djs-connection.fpcNodeFlashAi .djs-visual > path[data-corner-radius] {
+  stroke: color-mix(in srgb, var(--bpmn-flash-ai) 86%, #c4b5fd) !important;
+  stroke-width: 3px !important;
+  filter: drop-shadow(0 0 11px color-mix(in srgb, var(--bpmn-flash-ai) 62%, transparent));
+}
+
+.bpmnCanvas .djs-element.fpcNodeFlashNotes:not(.fpcElementSelected) .djs-visual > :is(rect, circle, ellipse, polygon, path),
+.bpmnCanvas .djs-connection.fpcNodeFlashNotes .djs-visual > path[data-corner-radius] {
+  stroke: color-mix(in srgb, var(--bpmn-flash-notes) 84%, #bae6fd) !important;
+  stroke-width: 3px !important;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--bpmn-flash-notes) 56%, transparent));
+}
+
+.bpmnCanvas .djs-element.fpcNodeFlashSync:not(.fpcElementSelected) .djs-visual > :is(rect, circle, ellipse, polygon, path),
+.bpmnCanvas .djs-connection.fpcNodeFlashSync .djs-visual > path[data-corner-radius] {
+  stroke: color-mix(in srgb, var(--bpmn-flash-sync) 84%, #c4b5fd) !important;
+  stroke-width: 3px !important;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--bpmn-flash-sync) 56%, transparent));
+}
+
+.bpmnCanvas .djs-element.fpcNodeFlashFlow:not(.fpcElementSelected) .djs-visual > :is(rect, circle, ellipse, polygon, path),
+.bpmnCanvas .djs-connection.fpcNodeFlashFlow .djs-visual > path[data-corner-radius] {
+  stroke: color-mix(in srgb, var(--bpmn-flash-flow) 84%, #fde68a) !important;
+  stroke-width: 3px !important;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--bpmn-flash-flow) 56%, transparent));
+}
+
+.bpmnCanvas .djs-element.fpcFocusNeighbor:not(.fpcElementSelected):not(.fpcBottleneckHigh):not(.fpcBottleneckMedium):not(.fpcBottleneckLow):not(.fpcQualityIssueFocus):not(.fpcQualityProblem) .djs-visual > :is(rect, circle, ellipse, polygon, path) {
+  stroke: color-mix(in srgb, var(--bpmn-selected-stroke) 78%, #8cc4ff) !important;
+  stroke-width: 2px !important;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--bpmn-selected-stroke) 34%, transparent));
+}
+
+.bpmnCanvas .djs-connection.fpcFocusEdgePrimary:not(.fpcElementSelected):not(.fpcQualityIssueFocus):not(.fpcQualityProblem) .djs-visual > path[data-corner-radius] {
+  stroke: color-mix(in srgb, var(--bpmn-selected-stroke) 82%, #9cd4ff) !important;
+  stroke-width: 2.2px !important;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--bpmn-selected-stroke) 36%, transparent));
+}
+
+.bpmnCanvas .djs-element.fpcFocusDim:not(.fpcElementSelected):not(.fpcFocusNeighbor):not(.fpcBottleneckHigh):not(.fpcBottleneckMedium):not(.fpcBottleneckLow):not(.fpcQualityIssueFocus):not(.fpcQualityProblem) .djs-visual > :is(rect, circle, ellipse, polygon, path) {
+  opacity: 0.34 !important;
+}
+
+.bpmnCanvas .djs-element.fpcFocusDim .djs-label {
+  opacity: 0.45 !important;
+}
+
+.bpmnCanvas .djs-connection.fpcFocusDim:not(.fpcElementSelected):not(.fpcFocusEdgePrimary):not(.fpcQualityIssueFocus):not(.fpcQualityProblem) .djs-visual > path[data-corner-radius] {
+  opacity: 0.26 !important;
+}
+
+.bpmnCanvas marker path {
+  fill: var(--bpmn-connection) !important;
+  stroke: var(--bpmn-connection) !important;
+}
+
+.bpmnCanvas .djs-element.fpcHasNote .djs-visual > :is(rect, circle, ellipse, polygon) {
+  stroke: var(--bpmn-note-accent) !important;
+}
+
+.fpcNoteDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  pointer-events: none;
+  background: var(--bpmn-note-accent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--bpmn-note-accent) 26%, transparent),
+    0 0 10px color-mix(in srgb, var(--bpmn-note-accent) 42%, transparent);
+}
+
+.bpmnCanvas .djs-element.fpcHasUserNote .djs-visual > :is(rect, circle, ellipse, polygon) {
+  stroke: color-mix(in srgb, var(--bpmn-note-accent) 74%, #60a5fa) !important;
+}
+
+.bpmnCanvas .djs-element.fpcHasAiQuestion .djs-visual > :is(rect, circle, ellipse, polygon) {
+  stroke: hsl(var(--diagram-ai)) !important;
+  stroke-width: 2.3px !important;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, hsl(var(--diagram-ai)) 32%, transparent));
+}
+
+.fpcUserNoteDot {
+  min-width: 13px;
+  height: 13px;
+  padding: 0 3px;
+  border-radius: 999px;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  background: color-mix(in srgb, var(--bpmn-note-accent) 68%, #2563eb);
+  border: 1px solid color-mix(in srgb, #fff 24%, transparent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--bpmn-note-accent) 20%, transparent),
+    0 0 10px color-mix(in srgb, var(--bpmn-note-accent) 36%, transparent);
+}
+
+.fpcNodeBadgeStack {
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.fpcNodeBadge {
+  pointer-events: auto;
+  min-height: 16px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--diagram-badge-border) / 0.7);
+  background: hsl(var(--diagram-badge-bg) / 0.94);
+  color: hsl(var(--diagram-badge-text) / 0.98);
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: .01em;
+  box-shadow:
+    0 0 0 1px hsl(var(--diagram-badge-border) / 0.24) inset,
+    0 6px 14px hsl(var(--bg) / 0.24);
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+
+.fpcNodeBadge:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 0 1px hsl(var(--diagram-badge-border) / 0.34) inset,
+    0 8px 16px hsl(var(--bg) / 0.3);
+}
+
+.fpcNodeBadge:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px hsl(var(--bg-elevated) / 0.56),
+    0 0 0 4px hsl(var(--focus-ring) / 0.42);
+}
+
+.fpcNodeBadge--ai {
+  border-color: hsl(var(--diagram-ai) / 0.76);
+  background: color-mix(in srgb, hsl(var(--diagram-ai)) 28%, hsl(var(--diagram-badge-bg) / 0.94));
+  color: hsl(var(--diagram-badge-text) / 0.98);
+}
+
+.fpcNodeBadge--ai.warn {
+  border-color: hsl(var(--diagram-ai) / 0.76);
+  background: color-mix(in srgb, hsl(var(--diagram-ai)) 30%, hsl(var(--diagram-badge-bg) / 0.94));
+}
+
+.fpcNodeBadge--notes {
+  border-color: hsl(var(--diagram-notes) / 0.66);
+  background: color-mix(in srgb, hsl(var(--diagram-notes)) 20%, hsl(var(--diagram-badge-bg) / 0.94));
+}
+
+.fpcNodeBadge--time {
+  border-color: hsl(var(--diagram-coverage-med) / 0.66);
+  background: color-mix(in srgb, hsl(var(--diagram-coverage-med)) 18%, hsl(var(--diagram-badge-bg) / 0.94));
+  min-height: 14px;
+  padding: 0 5px;
+  font-size: 8.5px;
+}
+
+.fpcNodeBadge--dod {
+  border-color: hsl(var(--diagram-dod) / 0.64);
+  background: color-mix(in srgb, hsl(var(--diagram-dod)) 18%, hsl(var(--diagram-badge-bg) / 0.94));
+}
+
+.fpcNodeBadge--dod.ok {
+  border-color: hsl(var(--success) / 0.64);
+  background: color-mix(in srgb, hsl(var(--success)) 18%, hsl(var(--diagram-badge-bg) / 0.94));
+}
+
+.fpcNodeBadge--robot {
+  border-color: hsl(var(--success) / 0.66);
+  background: color-mix(in srgb, hsl(var(--success)) 16%, hsl(var(--diagram-badge-bg) / 0.95));
+  font-size: 8.5px;
+  min-height: 14px;
+  padding: 0 5px;
+}
+
+.fpcNodeBadge--robot.warn {
+  border-color: hsl(var(--warning) / 0.74);
+  background: color-mix(in srgb, hsl(var(--warning)) 22%, hsl(var(--diagram-badge-bg) / 0.95));
+}
+
+.fpcNodeBadgeFlash {
+  animation: fpcBadgeFlashPop .82s cubic-bezier(.22, .88, .3, 1);
+}
+
+.fpcNodeBadgeGhost {
+  pointer-events: none;
+}
+
+.fpcNodeFlashPill {
+  pointer-events: none;
+  min-height: 16px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--diagram-badge-border) / 0.62);
+  background: hsl(var(--diagram-pill-bg) / 0.96);
+  color: hsl(var(--diagram-pill-text) / 0.98);
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: .01em;
+  box-shadow:
+    0 0 0 1px hsl(var(--diagram-badge-border) / 0.24) inset,
+    0 8px 16px hsl(var(--bg) / 0.34);
+  animation: fpcNodePillFade 1.8s ease-out forwards;
+}
+
+.fpcNodeFlashPill.is-ai {
+  border-color: hsl(var(--diagram-ai) / 0.7);
+  background: color-mix(in srgb, hsl(var(--diagram-ai)) 20%, hsl(var(--diagram-pill-bg) / 0.96));
+}
+
+.fpcNodeFlashPill.is-notes {
+  border-color: hsl(var(--diagram-notes) / 0.7);
+  background: color-mix(in srgb, hsl(var(--diagram-notes)) 20%, hsl(var(--diagram-pill-bg) / 0.96));
+}
+
+.fpcNodeFlashPill.is-sync,
+.fpcNodeFlashPill.is-xml {
+  border-color: hsl(var(--diagram-dod) / 0.7);
+  background: color-mix(in srgb, hsl(var(--diagram-dod)) 20%, hsl(var(--diagram-pill-bg) / 0.96));
+}
+
+.fpcNodeFlashPill.is-flow,
+.fpcNodeFlashPill.is-transition {
+  border-color: hsl(var(--diagram-coverage-med) / 0.7);
+  background: color-mix(in srgb, hsl(var(--diagram-coverage-med)) 20%, hsl(var(--diagram-pill-bg) / 0.96));
+}
+
+@keyframes fpcBadgeFlashPop {
+  0% {
+    transform: scale(0.98);
+    box-shadow:
+      0 0 0 1px hsl(var(--diagram-badge-border) / 0.3) inset,
+      0 0 0 0 color-mix(in srgb, #a855f7 0%, transparent);
+    opacity: 0.92;
+  }
+  38% {
+    transform: scale(1.04);
+    box-shadow:
+      0 0 0 1px hsl(var(--diagram-badge-border) / 0.42) inset,
+      0 0 0 5px color-mix(in srgb, #a855f7 20%, transparent);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 1px hsl(var(--diagram-badge-border) / 0.32) inset,
+      0 8px 16px rgba(2, 8, 20, 0.34);
+    opacity: 1;
+  }
+}
+
+@keyframes fpcNodePillFade {
+  0% {
+    opacity: 0;
+    transform: translateY(2px) scale(0.98);
+  }
+  15% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  78% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fpcNodeBadgeFlash,
+  .fpcNodeFlashPill {
+    animation: none !important;
+  }
+
+  .fpcNodeBadge,
+  .fpcAiQuestionIndicator {
+    transition: none !important;
+  }
+}
+
+.fpcAiQuestionDot {
+  min-width: 13px;
+  height: 13px;
+  padding: 0 3px;
+  border-radius: 999px;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  background: hsl(var(--diagram-ai));
+  border: 1px solid color-mix(in srgb, #fff 24%, transparent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, hsl(var(--diagram-ai)) 18%, transparent),
+    0 0 10px color-mix(in srgb, hsl(var(--diagram-ai)) 30%, transparent);
+}
+
+.fpcAiQuestionIndicator {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 18px;
+  min-width: 64px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, hsl(var(--diagram-ai)) 50%, hsl(var(--diagram-badge-border) / 0.55));
+  background: color-mix(in srgb, hsl(var(--diagram-ai)) 20%, hsl(var(--diagram-badge-bg) / 0.96));
+  color: hsl(var(--diagram-badge-text) / 0.98);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--bpmn-note-accent) 14%, transparent),
+    0 4px 12px hsl(var(--bg) / 0.24);
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease, background-color .12s ease;
+}
+
+.fpcAiQuestionIndicator:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--bpmn-note-accent) 24%, transparent),
+    0 8px 16px hsl(var(--bg) / 0.28);
+}
+
+.fpcAiQuestionIndicator.warn {
+  border-color: hsl(var(--diagram-ai) / 0.72);
+  background: color-mix(in srgb, hsl(var(--diagram-ai)) 26%, hsl(var(--diagram-badge-bg) / 0.96));
+}
+
+.fpcAiQuestionIndicator.ok {
+  border-color: hsl(var(--success) / 0.64);
+  background: color-mix(in srgb, hsl(var(--success)) 18%, hsl(var(--diagram-badge-bg) / 0.96));
+}
+
+.fpcAiQuestionIndicator:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, #fff 16%, transparent),
+    0 0 0 4px color-mix(in srgb, #3b82f6 46%, transparent);
+}
+
+.fpcAiQuestionPanel {
+  width: min(340px, calc(100vw - 48px));
+  max-height: min(56vh, 460px);
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--bpmn-task-stroke) 52%, hsl(var(--diagram-badge-border) / 0.2));
+  background: color-mix(in srgb, var(--bpmn-bg) 86%, rgba(10, 18, 32, 0.92));
+  box-shadow:
+    0 10px 30px rgba(2, 8, 20, 0.38),
+    0 0 0 1px color-mix(in srgb, var(--bpmn-selected-stroke) 22%, transparent);
+  backdrop-filter: blur(6px);
+  overflow: hidden;
+}
+
+.fpcAiQuestionPanelHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 10px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--bpmn-task-stroke) 30%, transparent);
+}
+
+.fpcAiQuestionPanelHeadText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fpcAiQuestionPanelTitle {
+  color: var(--bpmn-task-text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.fpcAiQuestionPanelMeta {
+  color: color-mix(in srgb, var(--bpmn-task-text) 78%, transparent);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.fpcAiQuestionPanelClose {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, var(--bpmn-task-stroke) 46%, transparent);
+  background: color-mix(in srgb, var(--bpmn-task-fill) 86%, transparent);
+  color: var(--bpmn-task-text);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.fpcAiQuestionList {
+  padding: 8px;
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+}
+
+.fpcAiQuestionRow {
+  border: 1px solid color-mix(in srgb, var(--bpmn-task-stroke) 38%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bpmn-task-fill) 88%, transparent);
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.fpcAiQuestionRow.done {
+  border-color: color-mix(in srgb, #10b981 46%, transparent);
+}
+
+.fpcAiQuestionLine {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.fpcAiQuestionCheck {
+  margin-top: 2px;
+  accent-color: #22c55e;
+}
+
+.fpcAiQuestionText {
+  color: var(--bpmn-task-text);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.32;
+}
+
+.fpcAiQuestionComment {
+  width: 100%;
+  min-height: 50px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--bpmn-task-stroke) 40%, transparent);
+  background: color-mix(in srgb, var(--bpmn-bg) 78%, transparent);
+  color: var(--bpmn-task-text);
+  font-size: 11px;
+  line-height: 1.35;
+  resize: vertical;
+  padding: 7px 8px;
+}
+
+.fpcAiQuestionComment:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--bpmn-selected-stroke) 72%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--bpmn-selected-stroke) 26%, transparent);
+}
+
+.fpcAiQuestionRowFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fpcAiQuestionSave {
+  border: 1px solid color-mix(in srgb, var(--bpmn-task-stroke) 48%, transparent);
+  background: color-mix(in srgb, var(--bpmn-task-fill) 82%, transparent);
+  color: var(--bpmn-task-text);
+  border-radius: 8px;
+  min-height: 24px;
+  padding: 0 8px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.fpcAiQuestionSave:hover {
+  background: color-mix(in srgb, var(--bpmn-selected-stroke) 20%, var(--bpmn-task-fill));
+}
+
+.fpcAiQuestionState {
+  min-height: 14px;
+  color: color-mix(in srgb, #10b981 80%, var(--bpmn-task-text));
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+/* === Link Event pairing: throw/catch distinction + stable pair accent === */
+.bpmnCanvas .djs-element.fpcLinkEvent {
+  --fpc-link-accent: #8b5cf6;
+}
+
+.bpmnCanvas .djs-element.fpcLinkEvent .djs-visual > circle {
+  stroke: var(--fpc-link-accent) !important;
+  stroke-width: 2.2px !important;
+}
+
+.bpmnCanvas .djs-element.fpcLinkEvent .djs-visual > :is(path, polygon) {
+  stroke: var(--fpc-link-accent) !important;
+  fill: var(--fpc-link-accent) !important;
+}
+
+.bpmnCanvas .djs-element.fpcLinkEventThrow .djs-visual > circle:first-child {
+  fill: color-mix(in srgb, var(--fpc-link-accent) 20%, var(--bpmn-task-fill)) !important;
+}
+
+.bpmnCanvas .djs-element.fpcLinkEventThrow .djs-visual > circle + circle {
+  stroke: var(--fpc-link-accent) !important;
+}
+
+.bpmnCanvas .djs-element.fpcLinkEventCatch .djs-visual > circle:first-child {
+  fill: color-mix(in srgb, #ffffff 94%, var(--fpc-link-accent) 6%) !important;
+}
+
+.bpmnCanvas .djs-element.fpcLinkEventCatch .djs-visual > circle + circle {
+  stroke: var(--fpc-link-accent) !important;
+}
+
+.dark .bpmnCanvas .djs-element.fpcLinkEventCatch .djs-visual > circle:first-child {
+  fill: #ffffff !important;
+  stroke: var(--fpc-link-accent) !important;
+}
+
+.dark .bpmnCanvas .djs-element.fpcLinkEventCatch .djs-visual > :is(path, polygon) {
+  stroke: color-mix(in srgb, var(--fpc-link-accent) 72%, #111827) !important;
+  fill: color-mix(in srgb, var(--fpc-link-accent) 72%, #111827) !important;
+}
+
+.bpmnCanvas .djs-element.fpcLinkEvent .djs-visual > circle:first-child {
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--fpc-link-accent) 38%, transparent));
+}
+
+/* === BPMN connection FINAL GUARDS (stable with bpmn-js DOM) === */
+
+/* 1) Visible connection line (real arrow) */
+.bpmnCanvas .djs-connection .djs-visual > path[data-corner-radius] {
+  stroke: var(--bpmn-connection) !important;
+  stroke-width: 2px !important;
+  fill: none !important;
+  opacity: 1 !important;
+  filter: none !important;
+  stroke-linejoin: round !important;
+  stroke-linecap: round !important;
+}
+
+/* 1b) Flow path tiers (meta-layer only, no XML changes) */
+.bpmnCanvas .djs-connection.fpcHappyFlow:not(.fpcElementSelected):not(.fpcQualityIssueFocus):not(.fpcQualityProblem):not(.fpcFocusEdgePrimary) .djs-visual > path[data-corner-radius],
+.bpmnCanvas .djs-connection.fpcFlowTierP0:not(.fpcElementSelected):not(.fpcQualityIssueFocus):not(.fpcQualityProblem):not(.fpcFocusEdgePrimary) .djs-visual > path[data-corner-radius] {
+  stroke: var(--bpmn-flow-tier-p0, #3d8f62) !important;
+  stroke-width: 2.45px !important;
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--bpmn-flow-tier-p0, #3d8f62) 24%, transparent)) !important;
+}
+
+.bpmnCanvas .djs-connection.fpcFlowTierP1:not(.fpcElementSelected):not(.fpcQualityIssueFocus):not(.fpcQualityProblem):not(.fpcFocusEdgePrimary) .djs-visual > path[data-corner-radius] {
+  stroke: var(--bpmn-flow-tier-p1, #b38a46) !important;
+  stroke-width: 2.4px !important;
+  stroke-dasharray: 7 3 !important;
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--bpmn-flow-tier-p1, #b38a46) 22%, transparent)) !important;
+}
+
+.bpmnCanvas .djs-connection.fpcFlowTierP2:not(.fpcElementSelected):not(.fpcQualityIssueFocus):not(.fpcQualityProblem):not(.fpcFocusEdgePrimary) .djs-visual > path[data-corner-radius] {
+  stroke: var(--bpmn-flow-tier-p2, #b45353) !important;
+  stroke-width: 2.35px !important;
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--bpmn-flow-tier-p2, #b45353) 22%, transparent)) !important;
+}
+
+/* 1c) Node path tags (P0/P1/P2) */
+.bpmnCanvas .djs-shape.fpcNodePathP0:not(.fpcElementSelected):not(.fpcQualityIssueFocus):not(.fpcQualityProblem) .djs-visual > *:first-child {
+  stroke: var(--bpmn-flow-tier-p0, #3d8f62) !important;
+  stroke-width: 2.2px !important;
+  filter: drop-shadow(0 0 1px color-mix(in srgb, var(--bpmn-flow-tier-p0, #3d8f62) 22%, transparent)) !important;
+}
+
+.bpmnCanvas .djs-shape.fpcNodePathP1:not(.fpcElementSelected):not(.fpcQualityIssueFocus):not(.fpcQualityProblem) .djs-visual > *:first-child {
+  stroke: var(--bpmn-flow-tier-p1, #b38a46) !important;
+  stroke-width: 2.2px !important;
+  stroke-dasharray: 6 3 !important;
+  filter: drop-shadow(0 0 1px color-mix(in srgb, var(--bpmn-flow-tier-p1, #b38a46) 22%, transparent)) !important;
+}
+
+.bpmnCanvas .djs-shape.fpcNodePathP2:not(.fpcElementSelected):not(.fpcQualityIssueFocus):not(.fpcQualityProblem) .djs-visual > *:first-child {
+  stroke: var(--bpmn-flow-tier-p2, #b45353) !important;
+  stroke-width: 2.2px !important;
+  filter: drop-shadow(0 0 1px color-mix(in srgb, var(--bpmn-flow-tier-p2, #b45353) 22%, transparent)) !important;
+}
+
+.bpmnCanvas .djs-shape.fpcRobotMetaReady:not(.fpcElementSelected):not(.fpcQualityIssueFocus):not(.fpcQualityProblem) .djs-visual > *:first-child {
+  stroke: hsl(var(--success) / 0.9) !important;
+  stroke-width: 2.1px !important;
+  filter: drop-shadow(0 0 1px hsl(var(--success) / 0.28)) !important;
+}
+
+.bpmnCanvas .djs-shape.fpcRobotMetaIncomplete:not(.fpcElementSelected):not(.fpcQualityIssueFocus):not(.fpcQualityProblem) .djs-visual > *:first-child {
+  stroke: hsl(var(--warning) / 0.94) !important;
+  stroke-width: 2.3px !important;
+  stroke-dasharray: 4 2 !important;
+  filter: drop-shadow(0 0 1px hsl(var(--warning) / 0.34)) !important;
+}
+
+.bpmnCanvas .djs-shape.fpcPathHighlightNode:not(.fpcElementSelected):not(.fpcQualityIssueFocus):not(.fpcQualityProblem) .djs-visual > *:first-child {
+  stroke: var(--fpc-path-highlight, #ff2db8) !important;
+  stroke-width: 2.8px !important;
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--fpc-path-highlight, #ff2db8) 32%, transparent)) !important;
+}
+
+.bpmnCanvas .djs-connection.fpcPathHighlightFlow:not(.fpcElementSelected):not(.fpcQualityIssueFocus):not(.fpcQualityProblem):not(.fpcFocusEdgePrimary) .djs-visual > path[data-corner-radius] {
+  stroke: var(--fpc-path-highlight, #ff2db8) !important;
+  stroke-width: 2.9px !important;
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--fpc-path-highlight, #ff2db8) 32%, transparent)) !important;
+}
+
+.bpmnCanvas .djs-shape.fpcPlaybackNodeActive:not(.fpcElementSelected) .djs-visual > *:first-child {
+  stroke: color-mix(in srgb, hsl(var(--accent)) 78%, #0ea5e9) !important;
+  stroke-width: 2.8px !important;
+  filter: drop-shadow(0 0 2px color-mix(in srgb, hsl(var(--accent)) 35%, transparent)) !important;
+}
+
+.bpmnCanvas .djs-shape.fpcPlaybackNodePrev:not(.fpcPlaybackNodeActive):not(.fpcElementSelected) .djs-visual > *:first-child {
+  stroke: color-mix(in srgb, hsl(var(--accent)) 45%, #64748b) !important;
+  stroke-width: 2px !important;
+  stroke-dasharray: 5 2 !important;
+}
+
+.bpmnCanvas .djs-connection.fpcPlaybackFlowActive:not(.fpcElementSelected):not(.fpcQualityIssueFocus):not(.fpcQualityProblem):not(.fpcFocusEdgePrimary) .djs-visual > path[data-corner-radius] {
+  stroke: color-mix(in srgb, hsl(var(--accent)) 78%, #22d3ee) !important;
+  stroke-width: 3px !important;
+  stroke-dasharray: 8 4 !important;
+  animation: fpcPlaybackFlowDash var(--fpc-playback-flow-dur, .9s) linear infinite;
+  filter: drop-shadow(0 0 2px color-mix(in srgb, hsl(var(--accent)) 34%, transparent)) !important;
+}
+
+.bpmnCanvas .djs-shape.fpcPlaybackSubprocessActive:not(.fpcElementSelected) .djs-visual > *:first-child {
+  stroke: color-mix(in srgb, #0ea5e9 74%, hsl(var(--accent))) !important;
+  stroke-width: 3px !important;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, #0ea5e9 30%, transparent)) !important;
+}
+
+.fpcPlaybackPill,
+.fpcPlaybackBranchTag,
+.fpcPlaybackSubprocessTag {
+  pointer-events: none;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--diagram-badge-border) / 0.72);
+  background: hsl(var(--diagram-pill-bg) / 0.96);
+  color: hsl(var(--diagram-pill-text) / 0.98);
+  box-shadow:
+    0 0 0 1px hsl(var(--diagram-badge-border) / 0.24) inset,
+    0 8px 16px hsl(var(--bg) / 0.28);
+  line-height: 1;
+}
+
+.fpcPlaybackPill {
+  min-height: 16px;
+  padding: 0 7px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .01em;
+}
+
+.fpcPlaybackBranchTag {
+  min-height: 15px;
+  padding: 0 6px;
+  font-size: 8.5px;
+  border-color: hsl(var(--accent) / 0.42);
+  background: color-mix(in srgb, hsl(var(--accent)) 14%, hsl(var(--diagram-pill-bg) / 0.97));
+}
+
+.fpcPlaybackSubprocessTag {
+  min-height: 15px;
+  padding: 0 6px;
+  font-size: 8.5px;
+  border-color: #0ea5e9;
+  background: color-mix(in srgb, #0ea5e9 16%, hsl(var(--diagram-pill-bg) / 0.97));
+}
+
+@keyframes fpcPlaybackFlowDash {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+/* 2) Hit layer: invisible but clickable and wide (removes grey wedges on bends) */
+.bpmnCanvas .djs-connection > path.djs-hit,
+.bpmnCanvas .djs-connection > path.djs-hit-stroke,
+.bpmnCanvas .djs-connection > path.djs-hit-click-stroke,
+.bpmnCanvas .djs-connection > path.djs-hit-all,
+.bpmnCanvas .djs-connection > path.djs-hit-no-move,
+.bpmnCanvas .djs-connection > path.djs-hit.djs-hit-stroke {
+  stroke: transparent !important;
+  stroke-opacity: 0 !important;
+  opacity: 0 !important;
+  stroke-width: 18px !important;
+  pointer-events: stroke !important;
+  fill: none !important;
+  filter: none !important;
+  stroke-linejoin: round !important;
+  stroke-linecap: round !important;
+  marker-start: none !important;
+  marker-mid: none !important;
+  marker-end: none !important;
+}
+
+/* 3) Connection outline of any type should never be visible */
+.bpmnCanvas .djs-connection .djs-outline {
+  display: none !important;
+}
+
+/* 3b) Any non-path hit primitive under connection should stay invisible */
+.bpmnCanvas .djs-connection > rect.djs-hit,
+.bpmnCanvas .djs-connection > rect.djs-hit-all,
+.bpmnCanvas .djs-connection > rect.djs-hit-no-move,
+.bpmnCanvas .djs-connection > rect.djs-hit-click-stroke,
+.bpmnCanvas .djs-connection > polygon.djs-hit,
+.bpmnCanvas .djs-connection > polygon.djs-hit-all,
+.bpmnCanvas .djs-connection > polygon.djs-hit-no-move,
+.bpmnCanvas .djs-connection > polygon.djs-hit-click-stroke {
+  stroke: transparent !important;
+  stroke-opacity: 0 !important;
+  fill: none !important;
+  filter: none !important;
+}
+
+/* Keep task resize handles interactive */
+.bpmnCanvas .djs-resizer {
+  pointer-events: all !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+/* Hard guard: selected shape resize handles must stay visible/clickable */
+.bpmnCanvas .djs-element.selected .djs-resizer {
+  display: block !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: all !important;
+}
+
+/* Remove vignette/overlay from BPMN canvas background; keep grid only */
+.bpmnStage .bpmnStack::before {
+  background-image:
+    linear-gradient(var(--bpmn-grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bpmn-grid-major) 1px, transparent 1px),
+    linear-gradient(var(--bpmn-grid-minor) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bpmn-grid-minor) 1px, transparent 1px) !important;
+  background-size:
+    120px 120px,
+    120px 120px,
+    24px 24px,
+    24px 24px !important;
+  background-position:
+    -1px -1px,
+    -1px -1px,
+    -1px -1px,
+    -1px -1px !important;
+  filter: none !important;
+  mask: none !important;
+  -webkit-mask-image: none !important;
+  mix-blend-mode: normal !important;
+}
+
+/* TextAnnotation guard: keep annotation subtle and readable (no black wedge/fill) */
+.bpmnCanvas .djs-shape[data-element-id^="TextAnnotation"] .djs-visual > rect {
+  fill: color-mix(in srgb, var(--bpmn-task-fill) 12%, transparent) !important;
+  stroke: color-mix(in srgb, var(--bpmn-task-stroke) 66%, transparent) !important;
+  stroke-width: 1.2px !important;
+}
+
+.bpmnCanvas .djs-shape[data-element-id^="TextAnnotation"] .djs-visual > path {
+  fill: color-mix(in srgb, var(--bpmn-task-stroke) 8%, transparent) !important;
+  stroke: color-mix(in srgb, var(--bpmn-task-stroke) 72%, transparent) !important;
+  stroke-width: 1.35px !important;
+}
+
+.bpmnCanvas .djs-shape[data-element-id^="TextAnnotation"] text,
+.bpmnCanvas .djs-shape[data-element-id^="TextAnnotation"] .djs-label {
+  fill: var(--bpmn-task-text) !important;
+  transform: translateX(6px);
+}
+
+/* Keep participant left label strip barely visible (soft gray, not black) */
+.dark .bpmnCanvas .djs-element[data-element-id^="Participant"] .djs-visual > rect + rect {
+  fill: rgba(188, 198, 214, 0.05) !important;
+  stroke: rgba(196, 206, 224, 0.14) !important;
+}
+
+.light .bpmnCanvas .djs-element[data-element-id^="Participant"] .djs-visual > rect + rect {
+  fill: rgba(118, 128, 146, 0.04) !important;
+  stroke: rgba(108, 122, 148, 0.12) !important;
+}

@@ -1,0 +1,462 @@
+function asText(value) {
+  return String(value || "");
+}
+
+function asNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function fnv1aHex(input) {
+  const src = asText(input);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < src.length; i += 1) {
+    hash ^= src.charCodeAt(i);
+    hash = Math.imul(hash >>> 0, 0x01000193) >>> 0;
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+const RUNTIME_CACHE_PREFIX = "fpc_bpmn_runtime_cache:";
+const RUNTIME_CACHE_MAX_AGE_MS = 1000 * 60 * 60 * 24;
+
+function runtimeCacheKey(sessionId) {
+  const sid = asText(sessionId).trim();
+  if (!sid) return "";
+  return `${RUNTIME_CACHE_PREFIX}${sid}`;
+}
+
+function readRuntimeCache(sessionId) {
+  if (typeof window === "undefined") return null;
+  const key = runtimeCacheKey(sessionId);
+  if (!key) return null;
+  try {
+    const raw = String(window.localStorage?.getItem(key) || "");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const xml = asText(parsed?.xml || "");
+    const ts = asNumber(parsed?.ts, 0);
+    if (!xml.trim()) return null;
+    if (ts > 0 && (Date.now() - ts) > RUNTIME_CACHE_MAX_AGE_MS) return null;
+    return {
+      source: "runtime_cache",
+      xml,
+      rev: asNumber(parsed?.rev, 0),
+      ts,
+      hash: asText(parsed?.hash || fnv1aHex(xml)),
+      reason: asText(parsed?.reason || "runtime_change"),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeRuntimeCache(sessionId, xmlText, rev = 0, reason = "runtime_change") {
+  if (typeof window === "undefined") return null;
+  const sid = asText(sessionId).trim();
+  const key = runtimeCacheKey(sid);
+  const xml = asText(xmlText);
+  if (!sid || !key || !xml.trim()) return null;
+  const payload = {
+    xml,
+    rev: asNumber(rev, 0),
+    ts: Date.now(),
+    hash: fnv1aHex(xml),
+    reason: asText(reason || "runtime_change"),
+  };
+  try {
+    window.localStorage?.setItem(key, JSON.stringify(payload));
+    return {
+      source: "runtime_cache",
+      xml: payload.xml,
+      rev: payload.rev,
+      ts: payload.ts,
+      hash: payload.hash,
+      reason: payload.reason,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function pickFreshestCandidate(candidates = []) {
+  const list = (Array.isArray(candidates) ? candidates : [])
+    .filter((item) => asText(item?.xml).trim())
+    .map((item) => ({
+      source: asText(item?.source || "unknown"),
+      xml: asText(item?.xml),
+      rev: asNumber(item?.rev, 0),
+      ts: asNumber(item?.ts, 0),
+      hash: asText(item?.hash || fnv1aHex(item?.xml || "")),
+      reason: asText(item?.reason || ""),
+    }));
+  if (!list.length) return null;
+  list.sort((a, b) => {
+    if (a.rev !== b.rev) return b.rev - a.rev;
+    if (a.ts !== b.ts) return b.ts - a.ts;
+    if (a.xml.length !== b.xml.length) return b.xml.length - a.xml.length;
+    return String(a.hash).localeCompare(String(b.hash));
+  });
+  return list[0];
+}
+
+function snapshotStorageKey(projectId, sessionId) {
+  const pid = asText(projectId).trim() || "no_project";
+  const sid = asText(sessionId).trim();
+  if (!sid) return "";
+  return `snapshots:${pid}:${sid}`;
+}
+
+function snapshotMode(reason) {
+  const raw = asText(reason).trim().toLowerCase();
+  if (raw.includes("manual")) return "manual";
+  return "auto";
+}
+
+export default function createBpmnPersistence(options = {}) {
+  const getSessionDraft = typeof options?.getSessionDraft === "function"
+    ? options.getSessionDraft
+    : () => ({});
+  const getLocalStorageKey = typeof options?.getLocalStorageKey === "function"
+    ? options.getLocalStorageKey
+    : (sid) => `fpc_bpmn_xml_${sid}`;
+  const isLocalSessionId = typeof options?.isLocalSessionId === "function"
+    ? options.isLocalSessionId
+    : () => false;
+  const apiGetBpmnXml = typeof options?.apiGetBpmnXml === "function"
+    ? options.apiGetBpmnXml
+    : null;
+  const apiPutBpmnXml = typeof options?.apiPutBpmnXml === "function"
+    ? options.apiPutBpmnXml
+    : null;
+  const saveSnapshot = typeof options?.saveSnapshot === "function"
+    ? options.saveSnapshot
+    : null;
+  const loadLatestSnapshot = typeof options?.loadLatestSnapshot === "function"
+    ? options.loadLatestSnapshot
+    : null;
+  const getSnapshotProjectId = typeof options?.getSnapshotProjectId === "function"
+    ? options.getSnapshotProjectId
+    : null;
+  const onTrace = typeof options?.onTrace === "function"
+    ? options.onTrace
+    : null;
+
+  function emit(event, payload = {}) {
+    if (!onTrace) return;
+    try {
+      onTrace(String(event || "unknown"), payload);
+    } catch {
+      // no-op
+    }
+  }
+
+  function draftRevision() {
+    const draft = getSessionDraft?.() || {};
+    const byBpmnVersion = asNumber(draft?.bpmn_xml_version, 0);
+    const bySessionVersion = asNumber(draft?.version, 0);
+    return byBpmnVersion || bySessionVersion || 0;
+  }
+
+  function snapshotProjectId() {
+    if (typeof getSnapshotProjectId === "function") {
+      return asText(getSnapshotProjectId()).trim();
+    }
+    const draft = getSessionDraft?.() || {};
+    return asText(draft?.project_id || draft?.projectId || "").trim();
+  }
+
+  async function maybeSaveSnapshot(sessionId, xmlText, reason, rev, force = false) {
+    if (typeof saveSnapshot !== "function") return { ok: false, reason: "read_fail" };
+    const sid = asText(sessionId).trim();
+    const xml = asText(xmlText);
+    const projectId = snapshotProjectId();
+    const key = snapshotStorageKey(projectId, sid);
+    const hash = fnv1aHex(xml);
+    const len = xml.length;
+    const snapshotRev = asNumber(rev, 0);
+    const mode = snapshotMode(reason);
+    // eslint-disable-next-line no-console
+    console.debug(
+      `SNAPSHOT_TRY sid=${sid || "-"} rev=${snapshotRev} hash=${hash} len=${len} `
+      + `mode=${mode} force=${force ? 1 : 0} key="${key}"`,
+    );
+    if (!sid || !xml.trim() || !key) {
+      // eslint-disable-next-line no-console
+      console.debug(
+        `SNAPSHOT_DECISION sid=${sid || "-"} rev=${snapshotRev} hash=${hash} len=${len} existingCount=0 `
+        + `lastSnapshotId=- lastHash=- reason=wrong_key key="${key}"`,
+      );
+      return { ok: false, reason: "wrong_key" };
+    }
+    try {
+      const decision = await saveSnapshot({
+        projectId,
+        sessionId: sid,
+        xml,
+        reason,
+        rev: snapshotRev,
+        force: force === true,
+      });
+      const decisionReason = asText(
+        decision?.decisionReason
+          || (decision?.saved ? "saved_new" : "")
+          || (decision?.deduped ? "skip_same_hash" : "")
+          || (decision?.ok ? "saved_new" : "read_fail"),
+      );
+      const existingCount = asNumber(decision?.existingCount, 0);
+      const lastSnapshotId = asText(decision?.lastSnapshotId || "-");
+      const lastHash = asText(decision?.lastHash || "-");
+      // eslint-disable-next-line no-console
+      console.debug(
+        `SNAPSHOT_DECISION sid=${sid} rev=${snapshotRev} hash=${hash} len=${len} existingCount=${existingCount} `
+        + `lastSnapshotId=${lastSnapshotId || "-"} lastHash=${lastHash || "-"} reason=${decisionReason || "read_fail"} key="${key}"`,
+      );
+      return { ok: !!decision?.ok, reason: decisionReason || "read_fail", decision };
+    } catch {
+      // eslint-disable-next-line no-console
+      console.debug(
+        `SNAPSHOT_DECISION sid=${sid} rev=${snapshotRev} hash=${hash} len=${len} existingCount=0 `
+        + `lastSnapshotId=- lastHash=- reason=read_fail key="${key}"`,
+      );
+      return { ok: false, reason: "read_fail" };
+    }
+  }
+
+  async function loadRaw(sessionId, optionsForLoad = {}) {
+    const sid = asText(sessionId).trim();
+    if (!sid) return { ok: false, status: 0, error: "missing session id" };
+    const forceRemote = optionsForLoad?.forceRemote === true;
+
+    if (isLocalSessionId(sid)) {
+      const xml = asText(window.localStorage?.getItem(getLocalStorageKey(sid)) || "");
+      return {
+        ok: true,
+        status: 200,
+        source: "local",
+        xml,
+        rev: asNumber(optionsForLoad?.rev, 0),
+        hash: fnv1aHex(xml),
+      };
+    }
+
+    const draft = getSessionDraft?.() || {};
+    const draftXml = asText(draft?.bpmn_xml || "");
+    const rev = draftRevision();
+    const runtimeCache = !forceRemote ? readRuntimeCache(sid) : null;
+    const draftCandidate = draftXml.trim()
+      ? {
+          source: "draft",
+          xml: draftXml,
+          rev,
+          hash: fnv1aHex(draftXml),
+          ts: 0,
+        }
+      : null;
+    const localWinner = pickFreshestCandidate([draftCandidate, runtimeCache]);
+    if (localWinner) {
+      emit("PERSISTENCE_LOAD_LOCAL_WINNER", {
+        sid,
+        source: localWinner.source,
+        rev: localWinner.rev,
+        hash: localWinner.hash,
+      });
+      return {
+        ok: true,
+        status: 200,
+        source: localWinner.source,
+        xml: localWinner.xml,
+        rev: localWinner.rev,
+        hash: localWinner.hash,
+      };
+    }
+
+    if (typeof apiGetBpmnXml !== "function") {
+      if (typeof loadLatestSnapshot === "function") {
+        try {
+          const snap = await loadLatestSnapshot({
+            projectId: snapshotProjectId(),
+            sessionId: sid,
+          });
+          const snapXml = asText(snap?.xml || "");
+          if (snapXml.trim()) {
+            emit("PERSISTENCE_LOAD_SNAPSHOT_FALLBACK", {
+              sid,
+              rev: asNumber(snap?.rev, 0),
+              hash: asText(snap?.hash || fnv1aHex(snapXml)),
+            });
+            return {
+              ok: true,
+              status: 200,
+              source: "snapshot",
+              xml: snapXml,
+              rev: asNumber(snap?.rev, rev),
+              hash: asText(snap?.hash || fnv1aHex(snapXml)),
+            };
+          }
+        } catch {
+        }
+      }
+      if (runtimeCache?.xml?.trim()) {
+        emit("PERSISTENCE_LOAD_RUNTIME_ONLY", {
+          sid,
+          rev: runtimeCache.rev,
+          hash: runtimeCache.hash,
+        });
+        return {
+          ok: true,
+          status: 200,
+          source: runtimeCache.source,
+          xml: runtimeCache.xml,
+          rev: runtimeCache.rev,
+          hash: runtimeCache.hash,
+        };
+      }
+      return { ok: false, status: 0, error: "apiGetBpmnXml unavailable" };
+    }
+    const loaded = await apiGetBpmnXml(sid);
+    if (!loaded?.ok) {
+      return {
+        ok: false,
+        status: asNumber(loaded?.status, 0),
+        error: asText(loaded?.error || "failed to load bpmn"),
+      };
+    }
+    const xml = asText(loaded?.xml || "");
+    const backendCandidate = {
+      source: "backend",
+      xml,
+      rev,
+      hash: fnv1aHex(xml),
+      ts: 0,
+    };
+    let snapshotCandidate = null;
+    if (!xml.trim() && typeof loadLatestSnapshot === "function") {
+      try {
+        const snap = await loadLatestSnapshot({
+          projectId: snapshotProjectId(),
+          sessionId: sid,
+        });
+        const snapXml = asText(snap?.xml || "");
+        if (snapXml.trim()) {
+          snapshotCandidate = {
+            source: "snapshot",
+            xml: snapXml,
+            rev: asNumber(snap?.rev, rev),
+            hash: asText(snap?.hash || fnv1aHex(snapXml)),
+            ts: asNumber(snap?.ts, 0),
+          };
+        }
+      } catch {
+      }
+    }
+    const winner = pickFreshestCandidate([backendCandidate, snapshotCandidate, runtimeCache]);
+    if (winner?.source === "runtime_cache") {
+      emit("PERSISTENCE_LOAD_RUNTIME_RECOVER", {
+        sid,
+        rev: winner.rev,
+        hash: winner.hash,
+      });
+    } else if (winner?.source === "snapshot") {
+      emit("PERSISTENCE_LOAD_SNAPSHOT_RECOVER", {
+        sid,
+        rev: winner.rev,
+        hash: winner.hash,
+      });
+    }
+    if (winner) {
+      return {
+        ok: true,
+        status: asNumber(loaded?.status, 200),
+        source: winner.source,
+        xml: winner.xml,
+        rev: winner.rev,
+        hash: winner.hash,
+      };
+    }
+    return {
+      ok: true,
+      status: asNumber(loaded?.status, 200),
+      source: "backend",
+      xml,
+      rev,
+      hash: fnv1aHex(xml),
+    };
+  }
+
+  async function saveRaw(sessionId, xmlText, rev, reason = "save") {
+    const sid = asText(sessionId).trim();
+    if (!sid) return { ok: false, status: 0, error: "missing session id" };
+    const xml = asText(xmlText);
+    const targetRev = asNumber(rev, 0);
+
+    if (isLocalSessionId(sid)) {
+      window.localStorage?.setItem(getLocalStorageKey(sid), xml);
+      await maybeSaveSnapshot(sid, xml, reason, targetRev, false);
+      return {
+        ok: true,
+        status: 200,
+        source: "local",
+        storedRev: targetRev,
+        rev: targetRev,
+        hash: fnv1aHex(xml),
+      };
+    }
+
+    if (typeof apiPutBpmnXml !== "function") {
+      return { ok: false, status: 0, error: "apiPutBpmnXml unavailable" };
+    }
+
+    const saved = await apiPutBpmnXml(sid, xml, { rev: targetRev, reason });
+    if (!saved?.ok) {
+      return {
+        ok: false,
+        status: asNumber(saved?.status, 0),
+        error: asText(saved?.error || "failed to save bpmn"),
+      };
+    }
+    const storedRev = asNumber(saved?.storedRev, targetRev);
+    // eslint-disable-next-line no-console
+    console.debug(
+      `PERSIST_OK sid=${sid} rev=${storedRev} hash=${fnv1aHex(xml)} len=${xml.length} `
+      + `key="${snapshotStorageKey(snapshotProjectId(), sid)}"`,
+    );
+    try {
+      if (typeof window !== "undefined") {
+        window.__FPC_LAST_PERSIST_OK__ = {
+          sid,
+          rev: storedRev,
+          hash: fnv1aHex(xml),
+          len: xml.length,
+          ts: Date.now(),
+        };
+      }
+    } catch {
+      // no-op
+    }
+    writeRuntimeCache(sid, xml, storedRev, reason);
+    await maybeSaveSnapshot(sid, xml, reason, storedRev, false);
+    return {
+      ok: true,
+      status: asNumber(saved?.status, 200),
+      source: "backend",
+      storedRev,
+      rev: storedRev,
+      hash: fnv1aHex(xml),
+    };
+  }
+
+  return {
+    loadRaw,
+    saveRaw,
+    cacheRaw: (sessionId, xmlText, rev = 0, reason = "runtime_change") => {
+      const cached = writeRuntimeCache(sessionId, xmlText, rev, reason);
+      return {
+        ok: !!cached,
+        source: cached?.source || "runtime_cache",
+        rev: asNumber(cached?.rev, 0),
+        hash: asText(cached?.hash || ""),
+      };
+    },
+  };
+}

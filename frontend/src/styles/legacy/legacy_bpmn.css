@@ -1,0 +1,66 @@
+/*
+  Legacy BPMN layer kept intentionally during Tailwind migration.
+  Scope: bpmn-js internals (.djs-*), BPMN overlays, marker classes (.fpc*).
+  Do not remove until full parity is verified across e2e runtime scenarios.
+*/
+
+@import "../app/02/02-02-bpmn-viewer-core.css";
+@import "../app/02/02-06-bpmn-dark-theme.css";
+@import "../app/04/04-03-llm-bottlenecks.css";
+@import "../app/05/05-02-bpmn-text-contrast.css";
+
+/* fpc: bpmn_n8n_like_background_v1
+   n8n-like canvas background on wrapper layer.
+   Keep SVG/djs layers transparent and interactive above it.
+*/
+.bpmnStage .bpmnStack {
+  position: relative;
+  isolation: isolate;
+  background: var(--bpmn-bg);
+}
+
+.bpmnStage .bpmnStack::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-color: var(--bpmn-bg);
+  background-image:
+    radial-gradient(130% 90% at 8% -8%, var(--bpmn-glow-a), transparent 62%),
+    radial-gradient(120% 95% at 102% 4%, var(--bpmn-glow-b), transparent 58%),
+    linear-gradient(var(--bpmn-grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bpmn-grid-major) 1px, transparent 1px),
+    linear-gradient(var(--bpmn-grid-minor) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bpmn-grid-minor) 1px, transparent 1px);
+  background-size:
+    auto,
+    auto,
+    120px 120px,
+    120px 120px,
+    24px 24px,
+    24px 24px;
+  background-position:
+    0 0,
+    0 0,
+    -1px -1px,
+    -1px -1px,
+    -1px -1px,
+    -1px -1px;
+}
+
+.bpmnStage .bpmnLayer {
+  z-index: 1;
+}
+
+.bpmnStage .bpmnLayer--diagram,
+.bpmnStage .bpmnLayer--editor {
+  background: transparent !important;
+}
+
+.bpmnStage .bpmnCanvas,
+.bpmnStage .bpmnCanvas .djs-container,
+.bpmnStage .bpmnCanvas .djs-container svg,
+.bpmnStage .bpmnCanvas .djs-container .djs-canvas {
+  background: transparent !important;
+}

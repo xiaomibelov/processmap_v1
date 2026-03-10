@@ -1,0 +1,169 @@
+from __future__ import annotations
+
+from typing import Any, Dict, Optional, Set, Tuple
+
+from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
+
+from ..auth import find_user_by_id
+from ..legacy.request_context import enterprise_error, request_active_org_id, request_auth_user, request_user_meta
+from ..storage import (
+    get_default_org_id,
+    get_effective_project_scope,
+    get_user_org_role,
+    list_org_memberships,
+    list_user_org_memberships,
+    rename_org_record,
+    resolve_active_org_id,
+    user_has_org_membership,
+)
+from ..utils.response_builders import build_items_count_payload, build_items_payload
+
+ORG_READ_ROLES = {"org_owner", "org_admin", "project_manager", "editor", "viewer", "org_viewer", "auditor"}
+ORG_MEMBER_READ_ROLES = {"org_owner", "org_admin", "auditor"}
+
+
+def org_role_for_request(request: Request, org_id: str) -> str:
+    user_id, is_admin = request_user_meta(request)
+    role = get_user_org_role(user_id, org_id, is_admin=is_admin)
+    return str(role or "")
+
+
+def require_org_member_for_enterprise(request: Request, org_id: str) -> str:
+    oid = str(org_id or "").strip()
+    user_id, is_admin = request_user_meta(request)
+    if not oid:
+        raise HTTPException(status_code=404, detail="not found")
+    if not user_has_org_membership(user_id, oid, is_admin=is_admin):
+        raise HTTPException(status_code=404, detail="not found")
+    return org_role_for_request(request, oid)
+
+
+def require_org_role(request: Request, org_id: str, allowed: Set[str]) -> str:
+    role = require_org_member_for_enterprise(request, org_id)
+    if role not in allowed:
+        raise HTTPException(status_code=403, detail="forbidden")
+    return role
+
+
+def can_edit_workspace(request: Request, org_id: str) -> bool:
+    user_id, is_admin = request_user_meta(request)
+    if is_admin:
+        return True
+    if not user_id:
+        return False
+    return str(get_user_org_role(user_id, org_id, is_admin=is_admin) or "").strip().lower() in {
+        "org_owner",
+        "org_admin",
+        "project_manager",
+        "editor",
+    }
+
+
+def can_manage_workspace(request: Request, org_id: str) -> bool:
+    user_id, is_admin = request_user_meta(request)
+    if is_admin:
+        return True
+    if not user_id:
+        return False
+    return str(get_user_org_role(user_id, org_id, is_admin=is_admin) or "").strip().lower() in {
+        "org_owner",
+        "org_admin",
+    }
+
+
+def enterprise_require_org_member(request: Request, org_id: str) -> Tuple[Optional[str], Optional[JSONResponse]]:
+    oid = str(org_id or "").strip()
+    if not oid:
+        return None, enterprise_error(404, "not_found", "not_found")
+    user_id, is_admin = request_user_meta(request)
+    if not user_id:
+        return None, enterprise_error(401, "unauthorized", "unauthorized")
+    if not user_has_org_membership(user_id, oid, is_admin=is_admin):
+        return None, enterprise_error(404, "not_found", "not_found")
+    role = str(get_user_org_role(user_id, oid, is_admin=is_admin) or "").strip().lower()
+    if role not in ORG_READ_ROLES and not is_admin:
+        return None, enterprise_error(403, "forbidden", "insufficient_permissions")
+    return role, None
+
+
+def enterprise_require_org_role(
+    request: Request,
+    org_id: str,
+    allowed: Set[str],
+) -> Tuple[Optional[str], Optional[JSONResponse]]:
+    role, err = enterprise_require_org_member(request, org_id)
+    if err is not None:
+        return None, err
+    _, is_admin = request_user_meta(request)
+    if is_admin:
+        return role or "platform_admin", None
+    allowed_normalized = {str(item or "").strip().lower() for item in allowed}
+    if str(role or "").strip().lower() not in allowed_normalized:
+        return None, enterprise_error(403, "forbidden", "insufficient_permissions")
+    return role, None
+
+
+def project_scope_for_request(request: Optional[Request], org_id: str) -> Dict[str, Any]:
+    user_id, is_admin = request_user_meta(request)
+    oid = str(org_id or "").strip() or get_default_org_id()
+    if not user_id:
+        return {"mode": "all", "project_ids": [], "org_role": ""}
+    return get_effective_project_scope(user_id, oid, is_admin=is_admin)
+
+
+def project_access_allowed(request: Optional[Request], org_id: str, project_id: str) -> bool:
+    pid = str(project_id or "").strip()
+    if not pid:
+        return False
+    scope = project_scope_for_request(request, org_id)
+    if str(scope.get("mode") or "") == "all":
+        return True
+    allowed = {str(item or "").strip() for item in (scope.get("project_ids") or []) if str(item or "").strip()}
+    return pid in allowed
+
+
+def rename_org_with_validation(org_id: str, name: str) -> Dict[str, Any]:
+    return rename_org_record(str(org_id or "").strip(), str(name or "").strip())
+
+
+def resolved_active_org_id(request: Optional[Request]) -> str:
+    return request_active_org_id(request)
+
+
+def list_org_memberships_payload(request: Request) -> Dict[str, Any]:
+    user = request_auth_user(request)
+    user_id = str(user.get("id") or "").strip()
+    is_admin = bool(user.get("is_admin", False))
+    active_org_id = (
+        str(getattr(request.state, "active_org_id", "") or "").strip()
+        or resolve_active_org_id(user_id, is_admin=is_admin)
+    )
+    items = list_user_org_memberships(user_id, is_admin=is_admin)
+    return build_items_payload(
+        items,
+        active_org_id=active_org_id,
+        default_org_id=get_default_org_id(),
+    )
+
+
+def list_org_members_payload(request: Request, org_id: str):
+    oid = str(org_id or "").strip()
+    role, err = enterprise_require_org_member(request, oid)
+    if err is not None:
+        return err
+    _, is_admin = request_user_meta(request)
+    role_l = str(role or "").strip().lower()
+    if not (is_admin or role_l in ORG_MEMBER_READ_ROLES):
+        return enterprise_error(403, "forbidden", "insufficient_permissions")
+    items = []
+    for row_raw in list_org_memberships(oid):
+        row = dict(row_raw or {}) if isinstance(row_raw, dict) else {}
+        user_id = str(row.get("user_id") or "").strip()
+        if user_id:
+            found = find_user_by_id(user_id) or {}
+            email = str(found.get("email") or "").strip().lower()
+            if email:
+                row["email"] = email
+        items.append(row)
+    return build_items_count_payload(items, org_id=oid)

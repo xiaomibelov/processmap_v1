@@ -1,0 +1,11 @@
+/*
+  App styles are decomposed into ordered partials.
+  Keep import order stable: later files intentionally override earlier rules.
+*/
+
+@import "./app/01-base-layout.css";
+@import "./app/02-topbar-bpmn.css";
+@import "./app/03-interview.css";
+@import "./app/04-process-llm.css";
+@import "./app/05-leftpanel-polish.css";
+@import "./app/06-final-structure.css";
