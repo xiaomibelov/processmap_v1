@@ -1,0 +1,30 @@
+services:
+  api:
+    ports:
+      - "127.0.0.1:${HOST_PORT:?HOST_PORT is required}:8000"
+    volumes:
+      - ./runtime/stage/workspace:/app/workspace
+
+  redis:
+    ports:
+      - "127.0.0.1:${REDIS_PORT:?REDIS_PORT is required}:6379"
+
+  postgres:
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:?POSTGRES_PORT is required}:5432"
+    volumes:
+      - ./runtime/stage/postgres:/var/lib/postgresql/data
+
+  gateway:
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:?FRONTEND_PORT is required}:80"
+    networks:
+      default:
+      edge_shared:
+        aliases:
+          - stage-gateway
+
+networks:
+  edge_shared:
+    name: ${EDGE_NETWORK_NAME:?EDGE_NETWORK_NAME is required}
+    external: true

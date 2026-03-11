@@ -75,6 +75,31 @@ The source project at `/Users/mac/PycharmProjects/foodproc_process_copilot` was 
 - removed compose dependence on the old `frontend` dev service and updated server deploy scripts accordingly
 - added a root `.dockerignore` to keep runtime data, local caches, and build junk out of Docker build context
 
+### Multi-environment overlay preparation
+
+- added explicit prod app overlay files:
+  - `docker-compose.prod.yml`
+  - `.env.prod.example`
+  - `deploy/scripts/deploy_prod.sh`
+  - `deploy/scripts/smoke_prod.sh`
+  - `deploy/scripts/rollback_prod.sh`
+- added explicit stage app overlay files:
+  - `docker-compose.stage.yml`
+  - `.env.stage.example`
+  - `deploy/scripts/deploy_stage.sh`
+  - `deploy/scripts/smoke_stage.sh`
+  - `deploy/scripts/rollback_stage.sh`
+- added shared public edge overlay files:
+  - `docker-compose.edge.yml`
+  - `.env.edge.example`
+  - `deploy/edge/nginx/conf.d/processmap.ru.conf`
+  - `deploy/edge/nginx/conf.d/stage.processmap.ru.conf`
+  - `deploy/scripts/deploy_edge.sh`
+  - `deploy/scripts/smoke_edge.sh`
+  - `deploy/scripts/rollback_edge.sh`
+- documented the same-server topology and shared-edge/webroot model in `deploy/DEPLOY_OVERLAYS.md`
+- marked standalone cert renewal as legacy that must be migrated before final prod+stage shared-edge rollout
+
 ## Files changed
 
 - `.env.example`
@@ -89,6 +114,25 @@ The source project at `/Users/mac/PycharmProjects/foodproc_process_copilot` was 
 - `deploy/nginx/default.conf`
 - `deploy/scripts/server_first_deploy.sh`
 - `deploy/scripts/server_update.sh`
+- `deploy/scripts/server_smoke.sh`
+- `docker-compose.prod.yml`
+- `docker-compose.stage.yml`
+- `docker-compose.edge.yml`
+- `.env.prod.example`
+- `.env.stage.example`
+- `.env.edge.example`
+- `deploy/edge/nginx/conf.d/processmap.ru.conf`
+- `deploy/edge/nginx/conf.d/stage.processmap.ru.conf`
+- `deploy/scripts/deploy_prod.sh`
+- `deploy/scripts/smoke_prod.sh`
+- `deploy/scripts/rollback_prod.sh`
+- `deploy/scripts/deploy_stage.sh`
+- `deploy/scripts/smoke_stage.sh`
+- `deploy/scripts/rollback_stage.sh`
+- `deploy/scripts/deploy_edge.sh`
+- `deploy/scripts/smoke_edge.sh`
+- `deploy/scripts/rollback_edge.sh`
+- `deploy/DEPLOY_OVERLAYS.md`
 - `docs/README.md`
 
 ## Docs imported from source
@@ -146,6 +190,12 @@ Executed from baseline:
 - `docker build -f frontend/Dockerfile -t processmap-gateway-validate .`
 - `docker compose build gateway`
 - `docker run --rm processmap-gateway-validate sh -lc 'nginx -t'`
+- `APP_ENV_FILE=.env.prod.example docker compose --env-file .env.prod.example -f docker-compose.yml -f docker-compose.prod.yml -p processmap_prod config -q`
+- `APP_ENV_FILE=.env.stage.example docker compose --env-file .env.stage.example -f docker-compose.yml -f docker-compose.stage.yml -p processmap_stage config -q`
+- `docker compose --env-file .env.edge.example -f docker-compose.edge.yml -p processmap_edge config -q`
+- `bash -n deploy/scripts/deploy_prod.sh deploy/scripts/smoke_prod.sh deploy/scripts/rollback_prod.sh`
+- `bash -n deploy/scripts/deploy_stage.sh deploy/scripts/smoke_stage.sh deploy/scripts/rollback_stage.sh`
+- `bash -n deploy/scripts/deploy_edge.sh deploy/scripts/smoke_edge.sh deploy/scripts/rollback_edge.sh`
 
 Additional verification performed:
 

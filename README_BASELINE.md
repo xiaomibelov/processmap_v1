@@ -40,5 +40,11 @@ Operational notes:
   - nginx serves the built SPA directly and proxies only `/api/` to `api`
   - production no longer depends on Vite dev server / HMR / `:5177` browser runtime requests
   - the old compose-level `frontend` runtime service is no longer part of the production path
+- Deployment overlays now live in repo:
+  - common baseline: `docker-compose.yml`, `frontend/Dockerfile`, `deploy/nginx/default.conf`
+  - prod overlay: `docker-compose.prod.yml`, `.env.prod.example`, `deploy/scripts/deploy_prod.sh`
+  - stage overlay: `docker-compose.stage.yml`, `.env.stage.example`, `deploy/scripts/deploy_stage.sh`
+  - shared edge overlay: `docker-compose.edge.yml`, `.env.edge.example`, `deploy/edge/nginx/conf.d/*.conf`
+- See `deploy/DEPLOY_OVERLAYS.md` for same-server topology, shared edge, and renewal migration notes.
 
 Before first Git push, read `MANIFEST_WORKING_PRODUCT.md`.

@@ -2,7 +2,7 @@ services:
   api:
     build: .
     env_file:
-      - .env
+      - ${APP_ENV_FILE:-.env}
     environment:
       - FPC_DB_BACKEND=${FPC_DB_BACKEND:?FPC_DB_BACKEND is required}
       - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required}
