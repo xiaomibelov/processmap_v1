@@ -49,7 +49,9 @@ App isolation:
 - prod workspace: `runtime/prod/workspace`
 - stage workspace: `runtime/stage/workspace`
 - prod and stage each run their own `postgres`, `redis`, `api`, `gateway`
-- prod and stage gateways publish only to loopback and also join `processmap_edge_net`
+- prod and stage app overlays do not publish host ports
+- prod and stage gateways join `processmap_edge_net` with aliases `prod-gateway` and `stage-gateway`
+- shared edge reaches prod and stage only over Docker networks, not via loopback port binds
 
 ## Overlay files
 
@@ -96,10 +98,10 @@ Legacy model:
 
 ## Expected rollout order
 
-1. Deploy prod app overlay on loopback-only ports.
+1. Deploy prod app overlay on internal Docker networks only.
 2. Deploy shared edge overlay for prod using the existing prod certificate.
 3. Migrate prod renewal from standalone to webroot.
-4. Deploy stage app overlay on isolated loopback-only ports.
+4. Deploy stage app overlay on isolated internal Docker networks only.
 5. Issue stage certificate through shared edge webroot flow.
 6. Enable stage edge vhost.
 7. Smoke stage publicly.
