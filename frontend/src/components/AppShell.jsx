@@ -120,6 +120,7 @@ export default function AppShell({
         llmVerifyBusy={llmVerifyBusy}
         onSaveLlmSettings={onSaveLlmSettings}
         onVerifyLlmSettings={onVerifyLlmSettings}
+        draft={draft}
       />
 
       {sessionNavNotice ? (

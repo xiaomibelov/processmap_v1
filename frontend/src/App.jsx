@@ -1594,6 +1594,9 @@ export default function App() {
 
     const nextRaw = r.session || ensureDraftShape(sid);
     const sidProject = String(nextRaw?.project_id || projectId || "").trim();
+    if (sidProject && sidProject !== String(projectId || "").trim()) {
+      setProjectId(sidProject);
+    }
     const backendXml = String(nextRaw?.bpmn_xml || "");
     const backendHash = fnv1aHex(backendXml);
     let restoredFromSnapshot = false;
