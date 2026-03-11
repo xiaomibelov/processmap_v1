@@ -998,6 +998,7 @@ export default function App() {
   const activeSessionIdRef = useRef("");
   const suppressProjectAutoselectRef = useRef(false);
   const initialSelectionRef = useRef(readSelectionFromUrl());
+  const initialProjectSelectionConsumedRef = useRef(false);
   const requestedSessionIdRef = useRef(String(initialSelectionRef.current?.sessionId || "").trim());
   const [snapshotRestoreNotice, setSnapshotRestoreNotice] = useState(null);
   const [sessionNavNotice, setSessionNavNotice] = useState(null);
@@ -1300,7 +1301,13 @@ export default function App() {
     if (!r.ok) return markFail(r.error);
     const list = ensureArray(r.projects || r.items);
     setProjects(list);
-    const preferredFromUrl = String(initialSelectionRef.current?.projectId || "").trim();
+    const selectionFromUrl = readSelectionFromUrl();
+    const currentUrlProjectId = String(selectionFromUrl?.projectId || "").trim();
+    const bootRequestedProjectId = initialProjectSelectionConsumedRef.current
+      ? ""
+      : String(initialSelectionRef.current?.projectId || "").trim();
+    const preferredFromUrl = String(currentUrlProjectId || bootRequestedProjectId).trim();
+    initialProjectSelectionConsumedRef.current = true;
     const suppressAutoselect = !!suppressProjectAutoselectRef.current;
     if (suppressAutoselect) {
       suppressProjectAutoselectRef.current = false;
@@ -1309,6 +1316,10 @@ export default function App() {
     if (current) {
       const existsCurrent = list.some((p) => projectIdOf(p) === current);
       if (existsCurrent) return;
+      if (preferredFromUrl && preferredFromUrl === current) {
+        logNav("project_keep_requested_url", { projectId: current });
+        return;
+      }
       // Current project was deleted or became unavailable; clear stale session context.
       setProjectId("");
       setSessions([]);
@@ -1317,6 +1328,13 @@ export default function App() {
       resetDraft(ensureDraftShape(null));
     }
     if (!list.length) return;
+    if (preferredFromUrl && !list.some((p) => projectIdOf(p) === preferredFromUrl)) {
+      if (!current) {
+        setProjectId(preferredFromUrl);
+        logNav("project_restore_missing_from_list", { projectId: preferredFromUrl });
+      }
+      return;
+    }
     const preferred = preferredFromUrl && list.some((p) => projectIdOf(p) === preferredFromUrl)
       ? preferredFromUrl
       : "";
@@ -1324,11 +1342,12 @@ export default function App() {
       logNav("project_autoselect_suppressed", {});
       return;
     }
-    const nextProjectId = preferred || projectIdOf(list[0]);
-    if (nextProjectId) {
-      setProjectId(nextProjectId);
-      logNav("project_autoselect", { projectId: nextProjectId, fromUrl: preferredFromUrl ? 1 : 0 });
+    if (!preferred) {
+      logNav("project_keep_home", { projects: list.length });
+      return;
     }
+    setProjectId(preferred);
+    logNav("project_restore_from_url", { projectId: preferred });
   }
 
   async function refreshLlmSettings() {
@@ -2979,6 +2998,13 @@ export default function App() {
     return String(found?.title || found?.name || "").trim();
   }, [projects, projectId]);
 
+  const currentProjectWorkspaceId = useMemo(() => {
+    const pid = String(projectId || "").trim();
+    if (!pid) return "";
+    const found = projects.find((item) => projectIdOf(item) === pid);
+    return String(found?.workspace_id || "").trim();
+  }, [projects, projectId]);
+
   const currentSessionTitle = useMemo(() => {
     const sid = String(draft?.session_id || "").trim();
     if (!sid) return "";
@@ -3214,9 +3240,13 @@ export default function App() {
         onOpenOrgSettings={openOrgSettings}
         projects={projects}
         projectId={projectId}
+        projectWorkspaceId={currentProjectWorkspaceId}
         onProjectChange={async (pid) => {
           const next = String(pid || "");
           logNav("project_change", { projectId: next || "-" });
+          if (!next.trim()) {
+            suppressProjectAutoselectRef.current = true;
+          }
           setProjectId(next);
           setSessionNavNotice(null);
           requestedSessionIdRef.current = "";

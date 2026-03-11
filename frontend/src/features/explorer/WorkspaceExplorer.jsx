@@ -17,6 +17,7 @@ import {
   apiListWorkspaces,
   apiCreateWorkspace,
   apiRenameWorkspace,
+  apiFindProjectWorkspace,
   apiGetExplorerPage,
   apiCreateFolder,
   apiRenameFolder,
@@ -33,6 +34,11 @@ import {
   getManualSessionStatusMeta,
 } from "../workspace/workspacePermissions";
 import { useAuth } from "../auth/AuthProvider.jsx";
+import {
+  canRestoreRequestedProject,
+  normalizeRequestedProjectWorkspace,
+  resolveExplorerWorkspaceId,
+} from "./workspaceRestore.js";
 
 // ─── Icons (inline SVG to avoid external deps) ────────────────────────────────
 function IcoFolder({ open = false, className = "" }) {
@@ -449,8 +455,16 @@ function FolderRow({ folder, onClick, workspaceId, onReload, canEdit = false, ca
         </td>
         <td className="px-2 py-2.5 text-sm font-medium text-fg">{folder.name}</td>
         <td className="px-2 py-2.5 text-xs text-muted">Папка</td>
-        <td className="px-2 py-2.5 text-xs text-muted text-center">{folder.child_folder_count ?? 0}</td>
-        <td className="px-2 py-2.5 text-xs text-muted text-center">{folder.child_project_count ?? 0}</td>
+        <td className="px-2 py-2.5 text-xs text-muted text-center">
+          {folder.child_folder_count ?? 0}
+        </td>
+        <td className="px-2 py-2.5 text-xs text-muted text-center">
+          {folder.child_project_count ?? 0}
+        </td>
+        <td className="px-2 py-2.5 text-xs text-muted">—</td>
+        <td className="px-2 py-2.5 text-xs text-muted text-center">—</td>
+        <td className="px-2 py-2.5 text-xs text-muted text-center">—</td>
+        <td className="px-2 py-2.5 text-xs text-muted">—</td>
         <td className="px-2 py-2.5 text-xs text-muted text-right">{ts(folder.updated_at)}</td>
         <td className="px-2 py-2.5 w-8 text-right relative" onClick={(e) => e.stopPropagation()}>
           <button
@@ -1098,17 +1112,27 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
 
 // ─── Root WorkspaceExplorer ────────────────────────────────────────────────────
 
-export default function WorkspaceExplorer({ activeOrgId, onOpenSession, requestProjectId }) {
+export default function WorkspaceExplorer({
+  activeOrgId,
+  onOpenSession,
+  requestProjectId,
+  requestProjectWorkspaceId = "",
+}) {
   const { user, orgs } = useAuth();
   const [workspaces, setWorkspaces] = useState([]);
   const [wsLoading, setWsLoading] = useState(true);
   const [wsError, setWsError] = useState("");
 
   // Navigation state
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState(activeOrgId || "");
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState("");
   const [currentFolderId, setCurrentFolderId] = useState("");
   const [currentProjectId, setCurrentProjectId] = useState(null); // null = explorer view, string = project view
   const [breadcrumbBase, setBreadcrumbBase] = useState([]);
+  const [resolvedRequestWorkspaceId, setResolvedRequestWorkspaceId] = useState("");
+  const [projectRestoreStatus, setProjectRestoreStatus] = useState("idle");
+  const [ignoredRequestProjectId, setIgnoredRequestProjectId] = useState("");
+  const resolvedWorkspaceCacheRef = useRef(new Map());
+  const previousRequestProjectIdRef = useRef("");
   const currentOrg = (Array.isArray(orgs) ? orgs : []).find((item) => String(item?.org_id || item?.id || "") === String(activeOrgId || "")) || null;
   const currentOrgName = String(currentOrg?.name || currentOrg?.org_name || activeOrgId || "").trim();
   const activeWorkspace = workspaces.find((item) => String(item?.id || "") === String(activeWorkspaceId || "")) || null;
@@ -1132,39 +1156,145 @@ export default function WorkspaceExplorer({ activeOrgId, onOpenSession, requestP
           setCurrentProjectId(null);
           return;
         }
-        const preferredId = String(activeWorkspaceId || "").trim();
-        const hasPreferred = list.some((item) => String(item?.id || "") === preferredId);
-        if (!hasPreferred) {
-          setActiveWorkspaceId(list[0].id);
+        const nextWorkspaceId = resolveExplorerWorkspaceId({
+          workspaces: list,
+          activeWorkspaceId,
+          requestProjectWorkspaceId,
+        });
+        if (nextWorkspaceId && nextWorkspaceId !== String(activeWorkspaceId || "").trim()) {
+          setActiveWorkspaceId(nextWorkspaceId);
           setCurrentFolderId("");
-          setCurrentProjectId(null);
         }
       })
       .catch((e) => { if (!cancelled) setWsError(String(e?.message || "Ошибка")); })
       .finally(() => { if (!cancelled) setWsLoading(false); });
     return () => { cancelled = true; };
-  }, [activeOrgId]);
+  }, [activeOrgId, activeWorkspaceId, requestProjectWorkspaceId]);
 
   // When activeOrgId prop changes, sync
   useEffect(() => {
-    if (activeOrgId && activeOrgId !== activeWorkspaceId) {
-      setActiveWorkspaceId(activeOrgId);
-      setCurrentFolderId("");
-      setCurrentProjectId(null);
-    }
+    setActiveWorkspaceId("");
+    setCurrentFolderId("");
+    setCurrentProjectId(null);
+    setBreadcrumbBase([]);
+    setResolvedRequestWorkspaceId("");
+    setProjectRestoreStatus("idle");
+    setIgnoredRequestProjectId("");
   }, [activeOrgId]);
 
-  // When a specific project is requested (e.g. returning from session screen),
-  // navigate the explorer to that project. Only acts when currentProjectId is
-  // not already set (prevents overwriting user-initiated navigation).
   useEffect(() => {
     const pid = String(requestProjectId || "").trim();
-    if (pid && pid !== currentProjectId) {
-      setCurrentProjectId(pid);
+    if (!pid) {
+      setResolvedRequestWorkspaceId("");
+      setProjectRestoreStatus("idle");
+      return;
     }
+    if (wsLoading) {
+      setProjectRestoreStatus("resolving");
+      return;
+    }
+    if (!workspaces.length) {
+      setResolvedRequestWorkspaceId("");
+      setProjectRestoreStatus("idle");
+      return;
+    }
+
+    const workspaceIds = workspaces.map((item) => String(item?.id || "").trim()).filter(Boolean);
+    const explicitWorkspaceId = String(requestProjectWorkspaceId || "").trim();
+    const cachedWorkspaceId = String(resolvedWorkspaceCacheRef.current.get(pid) || "").trim();
+    const immediateWorkspaceId = [explicitWorkspaceId, cachedWorkspaceId]
+      .find((candidate) => candidate && workspaceIds.includes(candidate)) || "";
+
+    if (immediateWorkspaceId) {
+      setResolvedRequestWorkspaceId(immediateWorkspaceId);
+      setProjectRestoreStatus("ready");
+      if (immediateWorkspaceId !== String(activeWorkspaceId || "").trim()) {
+        setActiveWorkspaceId(immediateWorkspaceId);
+        setCurrentFolderId("");
+      }
+      return;
+    }
+
+    let cancelled = false;
+    setProjectRestoreStatus("resolving");
+    void (async () => {
+      const foundWorkspaceId = await apiFindProjectWorkspace(workspaceIds, pid);
+      if (cancelled) return;
+      const fallbackWorkspaceId = resolveExplorerWorkspaceId({
+        workspaces,
+        activeWorkspaceId,
+        requestProjectWorkspaceId: "",
+      });
+      const nextWorkspaceId = String(foundWorkspaceId || fallbackWorkspaceId || "").trim();
+      if (foundWorkspaceId) {
+        resolvedWorkspaceCacheRef.current.set(pid, foundWorkspaceId);
+      }
+      setResolvedRequestWorkspaceId(nextWorkspaceId);
+      setProjectRestoreStatus("ready");
+      if (nextWorkspaceId && nextWorkspaceId !== String(activeWorkspaceId || "").trim()) {
+        setActiveWorkspaceId(nextWorkspaceId);
+        setCurrentFolderId("");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [requestProjectId, requestProjectWorkspaceId, workspaces, wsLoading, activeWorkspaceId]);
+
+  // Restore the requested project only after the explorer resolved the matching
+  // workspace. This avoids calling the project explorer route with org_id in
+  // place of workspace_id during reload bootstrap.
+  useEffect(() => {
+    const pid = String(requestProjectId || "").trim();
+    const ignored = String(ignoredRequestProjectId || "").trim();
+    if (!ignored) return;
+    if (!pid || pid !== ignored) {
+      setIgnoredRequestProjectId("");
+    }
+  }, [requestProjectId, ignoredRequestProjectId]);
+
+  const dismissRequestedProjectRestore = useCallback(() => {
+    const pid = String(requestProjectId || "").trim();
+    if (!pid) return;
+    setIgnoredRequestProjectId(pid);
   }, [requestProjectId]);
 
+  useEffect(() => {
+    const pid = String(requestProjectId || "").trim();
+    const prevPid = String(previousRequestProjectIdRef.current || "").trim();
+    previousRequestProjectIdRef.current = pid;
+    if (!pid) {
+      if (prevPid && currentProjectId === prevPid) {
+        setCurrentProjectId(null);
+      }
+      return;
+    }
+    if (projectRestoreStatus === "resolving") {
+      return;
+    }
+    if (pid === String(ignoredRequestProjectId || "").trim()) {
+      return;
+    }
+    const effectiveRequestedWorkspaceId = normalizeRequestedProjectWorkspace({
+      requestProjectId: pid,
+      requestProjectWorkspaceId,
+      resolvedWorkspaceId: resolvedRequestWorkspaceId,
+      activeWorkspaceId,
+    });
+    if (!canRestoreRequestedProject({
+      requestProjectId: pid,
+      requestProjectWorkspaceId: effectiveRequestedWorkspaceId,
+      activeWorkspaceId,
+    })) {
+      return;
+    }
+    if (pid !== currentProjectId) {
+      setCurrentProjectId(pid);
+    }
+  }, [requestProjectId, requestProjectWorkspaceId, resolvedRequestWorkspaceId, activeWorkspaceId, currentProjectId, projectRestoreStatus, ignoredRequestProjectId]);
+
   const handleSelectWorkspace = (wsId) => {
+    dismissRequestedProjectRestore();
     setActiveWorkspaceId(wsId);
     setCurrentFolderId("");
     setCurrentProjectId(null);
@@ -1189,6 +1319,7 @@ export default function WorkspaceExplorer({ activeOrgId, onOpenSession, requestP
   };
 
   const handleNavigateToFolder = (folderId) => {
+    dismissRequestedProjectRestore();
     setCurrentFolderId(folderId);
     setCurrentProjectId(null);
   };
@@ -1198,6 +1329,7 @@ export default function WorkspaceExplorer({ activeOrgId, onOpenSession, requestP
   };
 
   const handleNavigateToBreadcrumb = (wsId, folderId) => {
+    dismissRequestedProjectRestore();
     if (wsId !== activeWorkspaceId) {
       setActiveWorkspaceId(wsId);
     }
@@ -1206,6 +1338,7 @@ export default function WorkspaceExplorer({ activeOrgId, onOpenSession, requestP
   };
 
   const handleBackFromProject = (crumb) => {
+    dismissRequestedProjectRestore();
     setCurrentProjectId(null);
     if (crumb.type === "workspace") {
       setCurrentFolderId("");
@@ -1258,7 +1391,11 @@ export default function WorkspaceExplorer({ activeOrgId, onOpenSession, requestP
            ExplorerPane is kept in DOM so its loaded state survives project round-trips.
            This eliminates the refetch that used to happen when navigating back. */}
       <div className="flex-1 flex flex-col min-h-0 min-w-0 relative">
-        {!activeWorkspaceId ? (
+        {requestProjectId && projectRestoreStatus === "resolving" ? (
+          <div className="flex-1 flex items-center justify-center text-sm text-muted">
+            Восстанавливаем проект…
+          </div>
+        ) : !activeWorkspaceId ? (
           <div className="flex-1 flex items-center justify-center text-sm text-muted">
             Выберите workspace слева
           </div>

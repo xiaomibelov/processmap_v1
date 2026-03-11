@@ -27,6 +27,7 @@ export default function AppShell({
   onOpenOrgSettings,
   projects,
   projectId,
+  projectWorkspaceId,
   onProjectChange,
   onDeleteProject,
   canManageProjectEntities,
@@ -63,6 +64,9 @@ export default function AppShell({
   const hasActiveSession = String(sessionId || "").trim().length > 0;
   const effectiveLeftHidden = hasActiveSession ? !!leftHidden : true;
   const workspaceClass = `workspace ${effectiveLeftHidden ? "workspace--leftHidden" : leftCompact ? "workspace--leftCompact" : ""}`.trim();
+  const workspaceBackHandler = hasActiveSession
+    ? (() => onReturnToSessionList?.())
+    : (() => onProjectChange?.(""));
 
   useEffect(() => {
     // eslint-disable-next-line no-console
@@ -103,7 +107,7 @@ export default function AppShell({
         onDeleteSession={onDeleteSession}
         onChangeSessionStatus={onChangeSessionStatus}
         onOpenSession={onOpenSession}
-        onOpenWorkspace={onReturnToSessionList}
+        onOpenWorkspace={workspaceBackHandler}
         onNewProject={onNewProject}
         onNewBackendSession={onNewBackendSession}
         llmHasApiKey={llmHasApiKey}
@@ -153,6 +157,7 @@ export default function AppShell({
           <ProcessStage
             sessionId={sessionId}
             activeProjectId={projectId}
+            activeProjectWorkspaceId={projectWorkspaceId}
             workspaceActiveOrgId={activeOrgId}
             canInviteWorkspaceUsers={!!canInviteWorkspaceUsers}
             canManageSharedTemplates={!!canManageSharedTemplates}
