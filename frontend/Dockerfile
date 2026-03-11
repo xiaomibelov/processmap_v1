@@ -1,12 +1,19 @@
-FROM node:20-alpine
+FROM node:20-alpine AS frontend-build
 
-WORKDIR /app
+WORKDIR /app/frontend
 
-COPY package*.json ./
+COPY frontend/package*.json ./
 RUN npm ci --include=dev
 
-COPY . .
+COPY frontend/ ./
 
-EXPOSE 5177
+RUN npm run build
 
-CMD ["sh", "-c", "if [ ! -f node_modules/tailwindcss/package.json ]; then npm ci --include=dev; fi && npm run dev -- --host 0.0.0.0 --port 5177"]
+FROM nginx:1.27-alpine
+
+COPY deploy/nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY --from=frontend-build /app/frontend/dist /usr/share/nginx/html
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]

@@ -35,5 +35,10 @@ Operational notes:
 - `docker-compose.yml` was tightened to require env values from `.env` instead of relying on misleading built-in credential defaults.
 - `.env.example` and `deploy/.env.server.example` are templates only; fill them explicitly before running anything.
 - `scripts/dev_up.sh` no longer creates git tags and now fails fast if `.env` is missing.
+- Production frontend deploy is now static:
+  - `gateway` image builds `frontend/dist` during Docker build
+  - nginx serves the built SPA directly and proxies only `/api/` to `api`
+  - production no longer depends on Vite dev server / HMR / `:5177` browser runtime requests
+  - the old compose-level `frontend` runtime service is no longer part of the production path
 
 Before first Git push, read `MANIFEST_WORKING_PRODUCT.md`.

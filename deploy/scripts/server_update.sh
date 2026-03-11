@@ -11,8 +11,8 @@ if [ -n "$REF" ]; then
 fi
 
 docker compose config -q
-docker compose build api frontend
-docker compose up -d --remove-orphans postgres redis api frontend gateway
+docker compose build api gateway
+docker compose up -d --remove-orphans postgres redis api gateway
 
 "$ROOT_DIR/deploy/scripts/server_smoke.sh"
 echo "[deploy] update completed"

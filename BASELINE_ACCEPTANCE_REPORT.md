@@ -62,6 +62,19 @@ The source project at `/Users/mac/PycharmProjects/foodproc_process_copilot` was 
   - `frontend/src/features/workspace/workspacePermissions.js`
 - intentionally did not carry over unrelated sibling files from the local workspace subtree
 
+### Production frontend runtime correction
+
+- confirmed the previous production-style deploy path still ran the frontend through Vite dev runtime
+- replaced the runtime frontend container with a static build path:
+  - `frontend/Dockerfile` now performs `npm ci + npm run build` in a build stage
+  - final runtime image is nginx with `dist/` baked in
+  - `gateway` now builds from that image and serves SPA static assets directly
+- updated nginx routing so:
+  - `/api/` proxies to `api:8000`
+  - `/` serves static files with SPA fallback to `/index.html`
+- removed compose dependence on the old `frontend` dev service and updated server deploy scripts accordingly
+- added a root `.dockerignore` to keep runtime data, local caches, and build junk out of Docker build context
+
 ## Files changed
 
 - `.env.example`
@@ -71,6 +84,11 @@ The source project at `/Users/mac/PycharmProjects/foodproc_process_copilot` was 
 - `README_BASELINE.md`
 - `MANIFEST_WORKING_PRODUCT.md`
 - `BASELINE_ACCEPTANCE_REPORT.md`
+- `.dockerignore`
+- `frontend/Dockerfile`
+- `deploy/nginx/default.conf`
+- `deploy/scripts/server_first_deploy.sh`
+- `deploy/scripts/server_update.sh`
 - `docs/README.md`
 
 ## Docs imported from source
@@ -116,6 +134,7 @@ Excluded categories:
 - The docs subset is conservative; a later repo owner may still want to cherry-pick one or two more stable docs.
 - `README.md` still reflects the original product runbook and was not rewritten in this cleanup pass.
 - `npm run build` completed successfully, but Vite reported oversized chunks; that is a performance note, not a baseline blocker.
+- The baseline repository does not contain `docker-compose.ssl.yml`; if the live server uses an out-of-repo SSL override, its `/` location must stay aligned with the new static-serving gateway model.
 
 ## Validation run
 
@@ -124,6 +143,9 @@ Executed from baseline:
 - `docker compose config -q` using a temporary `.env` copied from `.env.example`, then removed
 - `cd backend && PYTHONPATH=. python3 -m unittest tests.test_bpmn_meta -q`
 - `cd frontend && npm ci && npm run build`, then removed generated `node_modules/` and `dist/`
+- `docker build -f frontend/Dockerfile -t processmap-gateway-validate .`
+- `docker compose build gateway`
+- `docker run --rm processmap-gateway-validate sh -lc 'nginx -t'`
 
 Additional verification performed:
 
@@ -131,6 +153,7 @@ Additional verification performed:
 - artifact scan for `.env`, sqlite/db/log/key/cert files and excluded runtime/build directories
 - check that `frontend/e2e/*.local.mjs` did not return
 - removed leftover Python `__pycache__/` directories from baseline after verification
+- inspected `frontend/dist/index.html` and confirmed the static build no longer references `@vite/client`, `:5177`, HMR, or websocket runtime strings
 
 ## Current recommendation
 
