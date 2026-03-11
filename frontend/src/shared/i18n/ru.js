@@ -81,6 +81,8 @@ export const ru = {
       inviteSent: "Инвайт отправлен по email.",
       inviteTokenDev: "Invite key доступен в dev-режиме.",
       copyButton: "Скопировать key",
+      inviteLinkLabel: "Invite link",
+      copyLinkButton: "Скопировать ссылку",
     },
     inviteTable: {
       email: "Email",

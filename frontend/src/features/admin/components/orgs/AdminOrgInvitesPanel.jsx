@@ -14,6 +14,20 @@ function inviteTone(statusRaw) {
   return "accent";
 }
 
+async function copyInviteValue(value) {
+  const text = toText(value);
+  if (!text) return false;
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
 export default function AdminOrgInvitesPanel({
   activeOrgId = "",
   activeOrgName = "",
@@ -41,6 +55,8 @@ export default function AdminOrgInvitesPanel({
   const [inviteRole, setInviteRole] = useState("editor");
   const [inviteTtl, setInviteTtl] = useState("7");
   const [lastInviteNotice, setLastInviteNotice] = useState("");
+  const [lastCreatedInvite, setLastCreatedInvite] = useState(null);
+  const [copyState, setCopyState] = useState("");
 
   const loadInvites = useCallback(async () => {
     if (!oid) {
@@ -68,6 +84,9 @@ export default function AdminOrgInvitesPanel({
     event.preventDefault();
     if (!canManageInvites || !oid) return;
     setError("");
+    setCopyState("");
+    setLastInviteNotice("");
+    setLastCreatedInvite(null);
     const res = await apiCreateOrgInvite(oid, {
       email: inviteEmail,
       full_name: inviteFullName,
@@ -89,6 +108,10 @@ export default function AdminOrgInvitesPanel({
     } else {
       setLastInviteNotice(ru.org.inviteForm.inviteCreated);
     }
+    setLastCreatedInvite({
+      key: toText(res.invite_token || res.invite_key),
+      link: toText(res.invite_link),
+    });
     await loadInvites();
     onChanged?.();
   }
@@ -106,6 +129,11 @@ export default function AdminOrgInvitesPanel({
     }
     await loadInvites();
     onChanged?.();
+  }
+
+  async function handleCopy(value) {
+    const ok = await copyInviteValue(value);
+    setCopyState(ok ? "copied" : "");
   }
 
   return (
@@ -209,6 +237,34 @@ export default function AdminOrgInvitesPanel({
         {lastInviteNotice ? (
           <div className="rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-600">
             {lastInviteNotice}
+          </div>
+        ) : null}
+
+        {lastCreatedInvite && (toText(lastCreatedInvite.key) || toText(lastCreatedInvite.link)) ? (
+          <div className="space-y-3 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4">
+            {toText(lastCreatedInvite.key) ? (
+              <div className="space-y-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{ru.org.inviteForm.inviteKeyLabel}</div>
+                <div className="flex flex-col gap-2 md:flex-row">
+                  <input className="input w-full" type="text" value={toText(lastCreatedInvite.key)} readOnly />
+                  <button type="button" className="secondaryBtn whitespace-nowrap" onClick={() => void handleCopy(lastCreatedInvite.key)}>
+                    {copyState === "copied" ? ru.common.copied : ru.org.inviteForm.copyButton}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {toText(lastCreatedInvite.link) ? (
+              <div className="space-y-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{ru.org.inviteForm.inviteLinkLabel}</div>
+                <div className="flex flex-col gap-2 md:flex-row">
+                  <input className="input w-full" type="text" value={toText(lastCreatedInvite.link)} readOnly />
+                  <button type="button" className="secondaryBtn whitespace-nowrap" onClick={() => void handleCopy(lastCreatedInvite.link)}>
+                    {copyState === "copied" ? ru.common.copied : ru.org.inviteForm.copyLinkButton}
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
 

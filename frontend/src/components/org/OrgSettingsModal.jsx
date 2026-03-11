@@ -36,6 +36,20 @@ function shortId(value) {
   return `${text.slice(0, 6)}…${text.slice(-4)}`;
 }
 
+async function copyInviteValue(value) {
+  const text = toText(value);
+  if (!text) return false;
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
 const MEMBER_ROLES = ["org_admin", "editor", "org_viewer"];
 
 export default function OrgSettingsModal({
@@ -60,6 +74,8 @@ export default function OrgSettingsModal({
   const [inviteRole, setInviteRole] = useState("editor");
   const [inviteTtl, setInviteTtl] = useState("7");
   const [lastInviteNotice, setLastInviteNotice] = useState("");
+  const [lastCreatedInvite, setLastCreatedInvite] = useState(null);
+  const [copyState, setCopyState] = useState("");
   const [auditAction, setAuditAction] = useState("");
   const [auditStatus, setAuditStatus] = useState("");
   const [workspaceName, setWorkspaceName] = useState("");
@@ -152,6 +168,9 @@ export default function OrgSettingsModal({
     const oid = toText(activeOrgId);
     if (!oid) return;
     setError("");
+    setCopyState("");
+    setLastInviteNotice("");
+    setLastCreatedInvite(null);
     const ttlDays = Number(inviteTtl || 7);
     const res = await apiCreateOrgInvite(oid, {
       email: inviteEmail,
@@ -174,6 +193,10 @@ export default function OrgSettingsModal({
     } else {
       setLastInviteNotice(ru.org.inviteForm.inviteCreated);
     }
+    setLastCreatedInvite({
+      key: toText(res.invite_token || res.invite_key),
+      link: toText(res.invite_link),
+    });
     await loadInvites();
   }
 
@@ -191,6 +214,11 @@ export default function OrgSettingsModal({
       return;
     }
     await loadInvites();
+  }
+
+  async function handleCopy(value) {
+    const ok = await copyInviteValue(value);
+    setCopyState(ok ? "copied" : "");
   }
 
   async function handleRenameWorkspace(event) {
@@ -401,6 +429,32 @@ export default function OrgSettingsModal({
             {lastInviteNotice ? (
               <div className="rounded-lg border border-border px-3 py-2 text-xs text-muted">
                 {lastInviteNotice}
+              </div>
+            ) : null}
+            {lastCreatedInvite && (toText(lastCreatedInvite.key) || toText(lastCreatedInvite.link)) ? (
+              <div className="space-y-3 rounded-lg border border-border bg-panel2/40 px-3 py-3">
+                {toText(lastCreatedInvite.key) ? (
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">{ru.org.inviteForm.inviteKeyLabel}</div>
+                    <div className="flex flex-col gap-2 md:flex-row">
+                      <input className="input flex-1" type="text" value={toText(lastCreatedInvite.key)} readOnly />
+                      <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={() => void handleCopy(lastCreatedInvite.key)}>
+                        {copyState === "copied" ? ru.common.copied : ru.org.inviteForm.copyButton}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+                {toText(lastCreatedInvite.link) ? (
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">{ru.org.inviteForm.inviteLinkLabel}</div>
+                    <div className="flex flex-col gap-2 md:flex-row">
+                      <input className="input flex-1" type="text" value={toText(lastCreatedInvite.link)} readOnly />
+                      <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={() => void handleCopy(lastCreatedInvite.link)}>
+                        {copyState === "copied" ? ru.common.copied : ru.org.inviteForm.copyLinkButton}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : null}
             <div className="max-h-72 overflow-auto rounded-lg border border-border">
