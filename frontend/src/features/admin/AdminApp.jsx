@@ -44,6 +44,7 @@ export default function AdminApp({
     sessionId: "",
     dateRange: "",
   });
+  const [recentOrgInvite, setRecentOrgInvite] = useState(null);
 
   const canAccessAdmin = useMemo(() => canAccessAdminConsole(user, orgs), [orgs, user]);
   const currentOrg = useMemo(() => {
@@ -120,6 +121,8 @@ export default function AdminApp({
           activeOrgRole={currentOrgRole}
           isAdmin={Boolean(user?.is_admin)}
           onRefresh={() => orgsQ.reload?.()}
+          recentInvite={recentOrgInvite}
+          onInviteCreated={setRecentOrgInvite}
         />
       );
     }

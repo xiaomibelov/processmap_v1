@@ -35,6 +35,8 @@ export default function AdminOrgInvitesPanel({
   isAdmin = false,
   items = [],
   onChanged,
+  onInviteCreated,
+  recentInvite = null,
 }) {
   const rows = asArray(items);
   const oid = toText(activeOrgId);
@@ -57,6 +59,12 @@ export default function AdminOrgInvitesPanel({
   const [lastInviteNotice, setLastInviteNotice] = useState("");
   const [lastCreatedInvite, setLastCreatedInvite] = useState(null);
   const [copyState, setCopyState] = useState("");
+  const visibleCreatedInvite = useMemo(() => {
+    const localInvite = lastCreatedInvite && toText(lastCreatedInvite.orgId) === oid ? lastCreatedInvite : null;
+    if (localInvite) return localInvite;
+    const sharedInvite = recentInvite && toText(recentInvite.orgId) === oid ? recentInvite : null;
+    return sharedInvite;
+  }, [lastCreatedInvite, recentInvite, oid]);
 
   const loadInvites = useCallback(async () => {
     if (!oid) {
@@ -108,10 +116,13 @@ export default function AdminOrgInvitesPanel({
     } else {
       setLastInviteNotice(ru.org.inviteForm.inviteCreated);
     }
-    setLastCreatedInvite({
+    const createdInvite = {
+      orgId: oid,
       key: toText(res.invite_token || res.invite_key),
       link: toText(res.invite_link),
-    });
+    };
+    setLastCreatedInvite(createdInvite);
+    onInviteCreated?.(createdInvite);
     await loadInvites();
     onChanged?.();
   }
@@ -240,26 +251,26 @@ export default function AdminOrgInvitesPanel({
           </div>
         ) : null}
 
-        {lastCreatedInvite && (toText(lastCreatedInvite.key) || toText(lastCreatedInvite.link)) ? (
+        {visibleCreatedInvite && (toText(visibleCreatedInvite.key) || toText(visibleCreatedInvite.link)) ? (
           <div className="space-y-3 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4">
-            {toText(lastCreatedInvite.key) ? (
+            {toText(visibleCreatedInvite.key) ? (
               <div className="space-y-2">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{ru.org.inviteForm.inviteKeyLabel}</div>
                 <div className="flex flex-col gap-2 md:flex-row">
-                  <input className="input w-full" type="text" value={toText(lastCreatedInvite.key)} readOnly />
-                  <button type="button" className="secondaryBtn whitespace-nowrap" onClick={() => void handleCopy(lastCreatedInvite.key)}>
+                  <input className="input w-full" type="text" value={toText(visibleCreatedInvite.key)} readOnly />
+                  <button type="button" className="secondaryBtn whitespace-nowrap" onClick={() => void handleCopy(visibleCreatedInvite.key)}>
                     {copyState === "copied" ? ru.common.copied : ru.org.inviteForm.copyButton}
                   </button>
                 </div>
               </div>
             ) : null}
 
-            {toText(lastCreatedInvite.link) ? (
+            {toText(visibleCreatedInvite.link) ? (
               <div className="space-y-2">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{ru.org.inviteForm.inviteLinkLabel}</div>
                 <div className="flex flex-col gap-2 md:flex-row">
-                  <input className="input w-full" type="text" value={toText(lastCreatedInvite.link)} readOnly />
-                  <button type="button" className="secondaryBtn whitespace-nowrap" onClick={() => void handleCopy(lastCreatedInvite.link)}>
+                  <input className="input w-full" type="text" value={toText(visibleCreatedInvite.link)} readOnly />
+                  <button type="button" className="secondaryBtn whitespace-nowrap" onClick={() => void handleCopy(visibleCreatedInvite.link)}>
                     {copyState === "copied" ? ru.common.copied : ru.org.inviteForm.copyLinkButton}
                   </button>
                 </div>

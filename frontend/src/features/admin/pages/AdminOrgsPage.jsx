@@ -131,6 +131,8 @@ export default function AdminOrgsPage({
   activeOrgRole = "",
   isAdmin = false,
   onRefresh,
+  recentInvite = null,
+  onInviteCreated,
 }) {
   return (
     <AdminPageContainer
@@ -172,6 +174,8 @@ export default function AdminOrgsPage({
         activeOrgRole={activeOrgRole}
         isAdmin={isAdmin}
         onChanged={onRefresh}
+        recentInvite={recentInvite}
+        onInviteCreated={onInviteCreated}
       />
       <OrgsTable items={payload?.items || []} />
     </AdminPageContainer>
