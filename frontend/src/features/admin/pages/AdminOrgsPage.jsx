@@ -171,6 +171,7 @@ export default function AdminOrgsPage({
         activeOrgName={activeOrgName}
         activeOrgRole={activeOrgRole}
         isAdmin={isAdmin}
+        onChanged={onRefresh}
       />
       <OrgsTable items={payload?.items || []} />
     </AdminPageContainer>

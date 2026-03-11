@@ -20,6 +20,7 @@ export default function AdminOrgInvitesPanel({
   activeOrgRole = "",
   isAdmin = false,
   items = [],
+  onChanged,
 }) {
   const rows = asArray(items);
   const oid = toText(activeOrgId);
@@ -89,6 +90,7 @@ export default function AdminOrgInvitesPanel({
       setLastInviteNotice(ru.org.inviteForm.inviteCreated);
     }
     await loadInvites();
+    onChanged?.();
   }
 
   async function handleRevokeInvite(inviteId) {
@@ -103,6 +105,7 @@ export default function AdminOrgInvitesPanel({
       return;
     }
     await loadInvites();
+    onChanged?.();
   }
 
   return (
