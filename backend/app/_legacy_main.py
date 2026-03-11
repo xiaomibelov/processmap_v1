@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import math
 import hashlib
+import logging
 import os
 import re
 import uuid
@@ -65,7 +66,11 @@ from .redis_cache import (
     cache_get_json,
     cache_set_json,
     explorer_invalidate_sessions,
+    invalidate_session_open,
     invalidate_tldr_session,
+    session_open_cache_key,
+    session_open_cache_ttl_sec,
+    session_open_version_token,
     invalidate_workspace_org,
     tldr_cache_key,
     workspace_cache_key,
@@ -173,6 +178,7 @@ from .startup.static_mounts import GLOSSARY_SEED, STATIC_DIR, WORKSPACE_DIR as W
 
 
 app = FastAPI(title="Food Process Copilot MVP")
+logger = logging.getLogger(__name__)
 
 AUTH_PUBLIC_PATHS = {
     "/api/auth/login",
@@ -3024,7 +3030,30 @@ def get_session(session_id: str, request: Request = None) -> Dict[str, Any]:
     sess, _, _ = _legacy_load_session_scoped(session_id, request)
     if not sess:
         return {"error": "not found"}
-    return _session_api_dump(sess)
+    sid = str(getattr(sess, "id", "") or session_id).strip()
+    version_token = session_open_version_token(sess)
+    cache_key = session_open_cache_key(sid, version_token)
+    cached = cache_get_json(cache_key)
+    if isinstance(cached, dict):
+        logger.info(
+            "session_open_cache: hit session_id=%s version=%s",
+            sid,
+            version_token,
+        )
+        return cached
+    logger.info(
+        "session_open_cache: miss session_id=%s version=%s",
+        sid,
+        version_token,
+    )
+    payload = _session_api_dump(sess)
+    if cache_set_json(cache_key, payload, ttl_sec=session_open_cache_ttl_sec()):
+        logger.info(
+            "session_open_cache: write session_id=%s version=%s",
+            sid,
+            version_token,
+        )
+    return payload
 
 
 @app.get("/api/sessions/{session_id}/tldr")
@@ -5968,6 +5997,13 @@ def _invalidate_tldr_cache_for_session(session_id: Any) -> None:
     invalidate_tldr_session(sid)
 
 
+def _invalidate_session_open_cache_for_session(session_id: Any) -> None:
+    sid = str(session_id or "").strip()
+    if not sid:
+        return
+    invalidate_session_open(sid)
+
+
 def _invalidate_session_caches(session_obj: Any = None, *, session_id: Any = None, org_id: Any = None) -> None:
     sid = str(session_id or getattr(session_obj, "id", "") or "").strip()
     oid = _resolved_org_for_cache(org_id or getattr(session_obj, "org_id", ""))
@@ -5976,6 +6012,7 @@ def _invalidate_session_caches(session_obj: Any = None, *, session_id: Any = Non
     if project_id:
         explorer_invalidate_sessions(project_id)
     if sid:
+        _invalidate_session_open_cache_for_session(sid)
         _invalidate_tldr_cache_for_session(sid)
 
 
@@ -6289,6 +6326,7 @@ def enterprise_workspace(
             "name": str(row.get("title") or pid).strip(),
             "owner_id": owner_id,
             "owner": str(owner_info.get("email") or owner_id or "").strip(),
+            "workspace_id": str(row.get("workspace_id") or "").strip(),
             "updated_at": int(row.get("updated_at") or 0),
             "created_at": int(row.get("created_at") or 0),
             "session_count": int(project_counts.get(pid, 0) or 0),

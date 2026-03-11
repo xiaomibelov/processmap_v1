@@ -119,6 +119,7 @@ class Project(BaseModel):
     org_id: str = ""
     created_by: str = ""
     updated_by: str = ""
+    workspace_id: str = ""
     folder_id: str = ""  # '' = workspace root; non-empty = folder id
 
     model_config = ConfigDict(extra="allow")

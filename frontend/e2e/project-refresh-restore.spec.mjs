@@ -53,6 +53,28 @@ async function createDefaultWorkspaceProject(request, auth) {
   };
 }
 
+async function createDefaultWorkspaceProjectWithSession(request, auth) {
+  const fixture = await createDefaultWorkspaceProject(request, auth);
+  const sessionTitle = `E2E back session ${uniqueSuffix()}`;
+  const res = await request.post(
+    `${API_BASE}/api/projects/${encodeURIComponent(fixture.projectId)}/sessions?mode=quick_skeleton`,
+    {
+      headers: auth.headers,
+      data: {
+        title: sessionTitle,
+        roles: ["Оператор"],
+        start_role: "Оператор",
+      },
+    },
+  );
+  const session = await apiJson(res, "create session for back flow");
+  return {
+    ...fixture,
+    sessionId: String(session.id || session.session_id || "").trim(),
+    sessionTitle: String(session.title || session.name || sessionTitle).trim(),
+  };
+}
+
 async function createNonDefaultWorkspaceProject(request, auth) {
   const workspaceName = `E2E Workspace ${uniqueSuffix()}`;
   const wsRes = await request.post(`${API_BASE}/api/workspaces`, {
@@ -214,6 +236,38 @@ function collectBootstrapTraffic(page) {
   return entries;
 }
 
+function collectWorkspaceExplorerTraffic(page) {
+  const requests = [];
+  const responses = [];
+  const marker = "/api/explorer?";
+
+  page.on("request", (req) => {
+    const url = String(req.url() || "");
+    if (!url.includes(marker)) return;
+    const parsed = new URL(url);
+    requests.push({
+      url,
+      workspaceId: String(parsed.searchParams.get("workspace_id") || "").trim(),
+      folderId: String(parsed.searchParams.get("folder_id") || "").trim(),
+      method: req.method(),
+    });
+  });
+
+  page.on("response", async (res) => {
+    const url = String(res.url() || "");
+    if (!url.includes(marker)) return;
+    const parsed = new URL(url);
+    responses.push({
+      url,
+      workspaceId: String(parsed.searchParams.get("workspace_id") || "").trim(),
+      folderId: String(parsed.searchParams.get("folder_id") || "").trim(),
+      status: res.status(),
+    });
+  });
+
+  return { requests, responses };
+}
+
 async function activeWorkspaceLabel(page) {
   return page.evaluate(() => {
     const rows = Array.from(document.querySelectorAll("div"))
@@ -363,6 +417,62 @@ test.describe("project deep-link refresh restore", () => {
     await expect(page.getByRole("heading", { name: fixture.projectTitle })).toBeVisible();
     await expect(page.getByText(/project not found/i)).toHaveCount(0);
     await expect(page.getByRole("button", { name: fixture.projectTitle, exact: true })).toHaveCount(0);
+  });
+
+  test("returning from session to project does not scan unrelated workspaces", async ({ page, request }) => {
+    const auth = await authContext(request);
+    const fixture = await createDefaultWorkspaceProjectWithSession(request, auth);
+    const explorerTraffic = collectWorkspaceExplorerTraffic(page);
+
+    await page.addInitScript(() => {
+      window.__FPC_E2E__ = true;
+    });
+    await resetUiStorage(page);
+    await installNotFoundObserver(page);
+    await setUiToken(page, auth.accessToken, { activeOrgId: auth.activeOrgId });
+    await setChosenOrgContext(page, auth);
+
+    await page.goto(`/app?project=${fixture.projectId}`, { waitUntil: "domcontentloaded" });
+    await waitForProjectPane(page, fixture);
+
+    await page.evaluate(async (sid) => {
+      const opener = window?.__FPC_E2E_OPEN_SESSION__;
+      if (typeof opener !== "function") {
+        throw new Error("missing_open_session_helper");
+      }
+      const result = await opener(sid);
+      if (!result?.ok) {
+        throw new Error(String(result?.error || "open_session_failed"));
+      }
+    }, fixture.sessionId);
+
+    await expect(page.getByTestId("topbar-back-projects")).toHaveText(/к проекту/i);
+    const responsesBeforeBack = explorerTraffic.responses.length;
+    await page.getByTestId("topbar-back-projects").click();
+
+    await expect
+      .poll(() => {
+        const url = new URL(page.url());
+        return {
+          project: String(url.searchParams.get("project") || "").trim(),
+          session: String(url.searchParams.get("session") || "").trim(),
+        };
+      })
+      .toEqual({ project: fixture.projectId, session: "" });
+
+    await expect(page.getByRole("heading", { name: fixture.projectTitle })).toBeVisible();
+    await page.waitForTimeout(1200);
+
+    const responsesAfterBack = explorerTraffic.responses.slice(responsesBeforeBack);
+    expect(responsesAfterBack.length).toBeGreaterThan(0);
+    expect(
+      responsesAfterBack.every((item) => item.status === 200),
+      JSON.stringify(responsesAfterBack),
+    ).toBeTruthy();
+    expect(
+      responsesAfterBack.every((item) => item.workspaceId === fixture.workspaceId),
+      JSON.stringify(responsesAfterBack),
+    ).toBeTruthy();
   });
 
   test("invalid stale project id stays in loading/restoring state until lookup finishes, then shows final not-found", async ({ page, request }) => {

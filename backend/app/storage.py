@@ -1210,6 +1210,7 @@ def _project_row_to_model(row: Any) -> "Project":
         "org_id": str((row["org_id"] if "org_id" in keys else "") or ""),
         "created_by": str((row["created_by"] if "created_by" in keys else "") or ""),
         "updated_by": str((row["updated_by"] if "updated_by" in keys else "") or ""),
+        "workspace_id": str((row["workspace_id"] if "workspace_id" in keys else "") or ""),
         "folder_id": str((row["folder_id"] if "folder_id" in keys else "") or ""),
     }
     return Project.model_validate(payload)
