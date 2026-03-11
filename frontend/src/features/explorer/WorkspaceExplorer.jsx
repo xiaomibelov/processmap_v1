@@ -12,6 +12,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   apiListWorkspaces,
   apiCreateWorkspace,
@@ -189,7 +190,7 @@ function Modal({ title, onClose, children }) {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
-  return (
+  const overlay = (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
       <div className="bg-panel border border-border rounded-xl shadow-xl w-full max-w-sm mx-4 p-5">
         <div className="flex items-center justify-between mb-4">
@@ -200,6 +201,8 @@ function Modal({ title, onClose, children }) {
       </div>
     </div>
   );
+  if (typeof document === "undefined" || !document.body) return overlay;
+  return createPortal(overlay, document.body);
 }
 
 function InputModal({ title, placeholder, initialValue = "", actionLabel = "Создать", onClose, onSubmit }) {
@@ -247,13 +250,23 @@ function InputModal({ title, placeholder, initialValue = "", actionLabel = "Со
 
 function ConfirmModal({ title, message, actionLabel = "Удалить", danger = true, onClose, onConfirm }) {
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const confirm = async () => {
     setBusy(true);
-    try { await onConfirm(); onClose(); } catch { /* swallow */ } finally { setBusy(false); }
+    setError("");
+    try {
+      await onConfirm();
+      onClose();
+    } catch (e) {
+      setError(String(e?.message || e || "Ошибка"));
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <Modal title={title} onClose={onClose}>
       <p className="text-sm text-muted mb-4">{message}</p>
+      {error ? <p className="text-xs text-danger mb-3">{error}</p> : null}
       <div className="flex justify-end gap-2">
         <button onClick={onClose} className="secondaryBtn h-8 px-3 text-sm" disabled={busy}>Отмена</button>
         <button
@@ -470,10 +483,15 @@ function FolderRow({ folder, onClick, workspaceId, onReload, canEdit = false, ca
           actionLabel="Удалить"
           onClose={() => setDeleting(false)}
           onConfirm={async () => {
-            try {
-              await apiDeleteFolder(workspaceId, folder.id, false);
-            } catch {
-              await apiDeleteFolder(workspaceId, folder.id, true);
+            const firstAttempt = await apiDeleteFolder(workspaceId, folder.id, false);
+            if (!firstAttempt?.ok) {
+              if (Number(firstAttempt?.status || 0) !== 409) {
+                throw new Error(firstAttempt?.error || "Не удалось удалить папку");
+              }
+              const cascadeAttempt = await apiDeleteFolder(workspaceId, folder.id, true);
+              if (!cascadeAttempt?.ok) {
+                throw new Error(cascadeAttempt?.error || "Не удалось удалить папку с содержимым");
+              }
             }
             onReload();
           }}
