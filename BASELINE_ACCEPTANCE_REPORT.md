@@ -52,6 +52,16 @@ The source project at `/Users/mac/PycharmProjects/foodproc_process_copilot` was 
 - updated `MANIFEST_WORKING_PRODUCT.md`
 - added this acceptance report
 
+### Post-deploy repo follow-up
+
+- investigated a real server-side Vite import-analysis failure for `../workspace/computeDodPercent`
+- confirmed the required frontend workspace module files existed locally but had been excluded from Git by an over-broad root `.gitignore` rule: `workspace/`
+- narrowed that ignore rule to top-level runtime storage only
+- prepared the minimal frontend workspace runtime source set for the next commit:
+  - `frontend/src/features/workspace/computeDodPercent.js`
+  - `frontend/src/features/workspace/workspacePermissions.js`
+- intentionally did not carry over unrelated sibling files from the local workspace subtree
+
 ## Files changed
 
 - `.env.example`
