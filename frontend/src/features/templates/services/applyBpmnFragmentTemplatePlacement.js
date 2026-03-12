@@ -142,11 +142,18 @@ export function buildBpmnFragmentGhost(draftRaw, containerRectRaw) {
   const h = clamp(Math.round(rawH), 48, Math.max(48, Math.round(rectH || 400)));
   const left = clamp(Math.round(pointerX - rectLeft - (w / 2)), 0, Math.max(0, Math.round(rectW - w)));
   const top = clamp(Math.round(pointerY - rectTop - (h / 2)), 0, Math.max(0, Math.round(rectH - h)));
+  const anchorLeft = clamp(Math.round(pointerX - rectLeft), 0, Math.max(0, Math.round(rectW)));
+  const anchorTop = clamp(Math.round(pointerY - rectTop), 0, Math.max(0, Math.round(rectH)));
+  const fragment = asObject(asObject(draft.pack).fragment);
   return {
     left,
     top,
     width: w,
     height: h,
+    anchorLeft,
+    anchorTop,
+    nodes: asArray(fragment.nodes).length,
+    edges: asArray(fragment.edges).length,
     title: toText(draft.title || "BPMN fragment"),
   };
 }
@@ -160,6 +167,7 @@ export function buildBpmnFragmentInsertPayload(draftRaw, options = {}) {
   return {
     pack,
     mode: toText(options.mode || "after") || "after",
+    preferPointAnchor: options.preferPointAnchor === true,
     anchor: {
       client: {
         x: toFinite(clientPoint.x, 0),
