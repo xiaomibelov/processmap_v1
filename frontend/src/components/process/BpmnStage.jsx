@@ -3776,6 +3776,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     const source = String(options?.source || (force ? "tab_switch" : "autosave")).trim() || "autosave";
     const trigger = String(options?.trigger || "").trim() || "manual";
     const sid = String(sessionId || "");
+    const allowForceFallback = isLocalSessionId(sid);
     if (!sid) return { ok: false, error: "missing session id" };
     ensureBpmnStore();
     const runtime = ensureModelerRuntime();
@@ -3808,7 +3809,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       const out = String(nextState.xml || fallbackXml || "");
 
       if (!flushed?.ok) {
-        if (force && out.trim()) {
+        if (force && allowForceFallback && out.trim()) {
           return { ok: true, xml: out, source: "fallback" };
         }
         return { ok: false, error: String(flushed?.error || "saveXML failed"), xml: out };
@@ -3833,12 +3834,12 @@ const BpmnStage = forwardRef(function BpmnStage({
         console.error(`[BPMN] saveXML.modeler.error ${msg}\n${String(e?.stack || "")}`);
       }
       if (fallbackXml.trim()) {
-        if (force) {
+        if (force && allowForceFallback) {
           const rev = Number(bpmnStoreRef.current?.getState?.()?.rev || 0);
           const persisted = await ensureBpmnPersistence().saveRaw(sid, fallbackXml, rev, `${source}:catch_fallback`);
           if (!persisted.ok) return { ok: false, error: String(persisted.error || msg), xml: fallbackXml };
+          return { ok: true, xml: fallbackXml, source: "fallback" };
         }
-        return { ok: true, xml: fallbackXml, source: "fallback" };
       }
       return { ok: false, error: msg || "saveXML failed" };
     }
