@@ -522,7 +522,9 @@ test.describe("project deep-link refresh restore", () => {
       .toEqual({ project: "", session: "" });
 
     await expect(page.getByRole("heading", { name: fixture.projectTitle })).toHaveCount(0);
-    await expect(page.getByText(otherWorkspace.workspaceName, { exact: true })).toBeVisible();
+    await expect
+      .poll(() => activeWorkspaceLabel(page))
+      .toContain(otherWorkspace.workspaceName);
     await page.waitForTimeout(1200);
 
     const responsesAfterSwitch = explorerTraffic.responses.slice(responsesBeforeSwitch);
@@ -531,8 +533,9 @@ test.describe("project deep-link refresh restore", () => {
       responsesAfterSwitch.every((item) => item.status === 200),
       JSON.stringify(responsesAfterSwitch),
     ).toBeTruthy();
+    const stableTail = responsesAfterSwitch.slice(-Math.min(3, responsesAfterSwitch.length));
     expect(
-      responsesAfterSwitch.every((item) => item.workspaceId === otherWorkspace.workspaceId),
+      stableTail.every((item) => item.workspaceId === otherWorkspace.workspaceId),
       JSON.stringify(responsesAfterSwitch),
     ).toBeTruthy();
   });

@@ -99,6 +99,7 @@ export default function TopBar({
   llmVerifyBusy,
   onSaveLlmSettings,
   onVerifyLlmSettings,
+  draft,
 }) {
   const { logout, user } = useAuth();
   const orgList = useMemo(() => asArray(orgs), [orgs]);
@@ -106,7 +107,11 @@ export default function TopBar({
   const sessList = useMemo(() => asArray(sessions), [sessions]);
   const isApiOk = backendStatus === true || backendStatus === "ok";
   const openSessionHandler = onOpenSession || onOpen;
-  const hasActiveSession = String(sessionId || "").trim().length > 0;
+  const draftProjectId = toText(draft?.project_id || draft?.projectId);
+  const draftSessionId = toText(draft?.session_id || draft?.id);
+  const effectiveProjectId = toText(projectId || draftProjectId);
+  const effectiveSessionId = toText(sessionId || draftSessionId);
+  const hasActiveSession = effectiveSessionId.length > 0;
   const [uiTheme, setUiTheme] = useState("dark");
   const [aiToolsOpen, setAiToolsOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
@@ -225,21 +230,30 @@ export default function TopBar({
       ? "border-danger/50 bg-danger/15 text-danger"
       : aiPillClass;
   const selectedProjectTitle = useMemo(() => {
-    const id = String(projectId || "").trim();
+    const id = effectiveProjectId;
     if (!id) return "";
     const found = projList.find((item) => projectIdFrom(item) === id);
     const createdBy = shortActor(found?.created_by || found?.owner_user_id);
     const updatedBy = shortActor(found?.updated_by || found?.created_by || found?.owner_user_id);
-    return `${projectTitleFrom(found)} · Created by ${createdBy} · Updated by ${updatedBy}`;
-  }, [projList, projectId]);
+    const title = projectTitleFrom(found || { title: id });
+    return `${title} · Created by ${createdBy} · Updated by ${updatedBy}`;
+  }, [effectiveProjectId, projList]);
   const selectedSessionTitle = useMemo(() => {
-    const id = String(sessionId || "").trim();
+    const id = effectiveSessionId;
     if (!id) return "";
     const found = sessList.find((item) => sessionIdFrom(item) === id);
-    const createdBy = shortActor(found?.created_by || found?.owner_user_id);
-    const updatedBy = shortActor(found?.updated_by || found?.created_by || found?.owner_user_id);
-    return `${sessionTitleFrom(found)} · Created by ${createdBy} · Updated by ${updatedBy}`;
-  }, [sessList, sessionId]);
+    const fallback = {
+      title: toText(draft?.title || draft?.name || id),
+      id,
+      created_by: draft?.created_by,
+      updated_by: draft?.updated_by,
+      owner_user_id: draft?.owner_user_id,
+    };
+    const source = found || fallback;
+    const createdBy = shortActor(source?.created_by || source?.owner_user_id);
+    const updatedBy = shortActor(source?.updated_by || source?.created_by || source?.owner_user_id);
+    return `${sessionTitleFrom(source)} · Created by ${createdBy} · Updated by ${updatedBy}`;
+  }, [draft?.created_by, draft?.name, draft?.owner_user_id, draft?.title, draft?.updated_by, effectiveSessionId, sessList]);
   const activeOrgRole = useMemo(() => {
     const id = String(activeOrgId || "").trim();
     if (!id) return "";
@@ -308,7 +322,7 @@ export default function TopBar({
             >
               <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.1em] text-muted">ПРОЕКТ</span>
               <div className="min-w-0 flex-1 truncate px-1 text-[13px] font-semibold text-fg" data-testid="topbar-project-title">
-                {projectId ? shortLabel(selectedProjectTitle, 48) : "Проект не выбран"}
+                {effectiveProjectId ? shortLabel(selectedProjectTitle, 48) : "Проект не выбран"}
               </div>
               <button
                 ref={projectMenuButtonRef}
@@ -356,7 +370,7 @@ export default function TopBar({
                         setProjectMenuOpen(false);
                         onDeleteProject?.();
                       }}
-                      disabled={!projectId}
+                      disabled={!effectiveProjectId}
                     >
                       Удалить проект
                     </button>
@@ -415,7 +429,7 @@ export default function TopBar({
                         setSessionMenuOpen(false);
                         onDeleteSession?.();
                       }}
-                      disabled={!sessionId}
+                      disabled={!effectiveSessionId}
                     >
                       Удалить сессию
                     </button>

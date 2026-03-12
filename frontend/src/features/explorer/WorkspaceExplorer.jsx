@@ -1081,7 +1081,11 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                 <SessionRow
                   key={s.id}
                   session={s}
-                  onOpen={(sess) => onOpenSession(sess.id)}
+                  onOpen={(sess) => onOpenSession({
+                    ...sess,
+                    project_id: projectId,
+                    workspace_id: workspaceId,
+                  })}
                   onReload={load}
                   onSessionPatched={handleSessionPatched}
                   canRename={!!permissions?.canRenameSession}

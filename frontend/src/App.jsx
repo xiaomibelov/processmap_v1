@@ -1000,6 +1000,7 @@ export default function App() {
   const initialSelectionRef = useRef(readSelectionFromUrl());
   const initialProjectSelectionConsumedRef = useRef(false);
   const requestedSessionIdRef = useRef(String(initialSelectionRef.current?.sessionId || "").trim());
+  const projectWorkspaceHintsRef = useRef(new Map());
   const [snapshotRestoreNotice, setSnapshotRestoreNotice] = useState(null);
   const [sessionNavNotice, setSessionNavNotice] = useState(null);
   const [renameDialog, setRenameDialog] = useState({ open: false, scope: "", value: "", error: "", busy: false });
@@ -1676,9 +1677,13 @@ export default function App() {
     const row = ensureObject(sessionLike);
     const sid = String(row?.id || row?.session_id || sessionLike || "").trim();
     const pid = String(row?.project_id || "").trim();
+    const wid = String(row?.workspace_id || "").trim();
     const source = String(options?.source || "workspace_dashboard").trim() || "workspace_dashboard";
     const openTab = String(options?.openTab || "").trim().toLowerCase();
     if (!sid) return;
+    if (pid && wid) {
+      projectWorkspaceHintsRef.current.set(pid, wid);
+    }
     if (pid && pid !== String(projectId || "").trim()) {
       setProjectId(pid);
       await refreshSessions(pid);
@@ -3005,7 +3010,7 @@ export default function App() {
     const pid = String(projectId || "").trim();
     if (!pid) return "";
     const found = projects.find((item) => projectIdOf(item) === pid);
-    return String(found?.workspace_id || "").trim();
+    return String(found?.workspace_id || projectWorkspaceHintsRef.current.get(pid) || "").trim();
   }, [projects, projectId]);
 
   const currentSessionTitle = useMemo(() => {
