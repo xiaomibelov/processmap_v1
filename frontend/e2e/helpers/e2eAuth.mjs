@@ -1,5 +1,6 @@
 const DEFAULT_API_BASE = process.env.E2E_API_BASE_URL || "http://127.0.0.1:8011";
 const ACCESS_TOKEN_KEY = "fpc_auth_access_token";
+const ACTIVE_ORG_KEY = "fpc_active_org_id";
 
 function safeJsonParse(text) {
   try {
@@ -53,19 +54,43 @@ export async function apiLogin(request, options = {}) {
       `[E2E_AUTH] login_missing_access_token status=${res.status()} endpoint=${endpoint} payloadKeys=${summarizePayloadKeys(payload)}`,
     );
   }
+  let activeOrgId = "";
+  try {
+    const meRes = await request.get(`${apiBase}/api/auth/me`, {
+      headers: withAuthHeaders(accessToken),
+    });
+    if (meRes.ok()) {
+      const meText = await meRes.text();
+      const meBody = safeJsonParse(meText);
+      const user = meBody?.user && typeof meBody.user === "object" ? meBody.user : {};
+      activeOrgId = String(user?.active_org_id || user?.default_org_id || "").trim();
+    }
+  } catch {
+    activeOrgId = "";
+  }
   return {
     accessToken,
-    headers: withAuthHeaders(accessToken),
+    headers: withAuthHeaders(accessToken, activeOrgId ? { "X-Org-Id": activeOrgId } : {}),
     email,
+    activeOrgId,
   };
 }
 
-export async function setUiToken(page, token) {
+export async function setUiToken(page, token, options = {}) {
   const accessToken = String(token || "").trim();
+  const activeOrgId = String(options?.activeOrgId || "").trim();
   await page.addInitScript(({ key, value }) => {
     window.localStorage.setItem(String(key || ""), String(value || ""));
   }, {
     key: ACCESS_TOKEN_KEY,
     value: accessToken,
   });
+  if (activeOrgId) {
+    await page.addInitScript(({ key, value }) => {
+      window.localStorage.setItem(String(key || ""), String(value || ""));
+    }, {
+      key: ACTIVE_ORG_KEY,
+      value: activeOrgId,
+    });
+  }
 }

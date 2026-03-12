@@ -135,14 +135,6 @@ export default function DrawioEditorModal({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              className="secondaryBtn h-9 px-3 text-sm"
-              onClick={onClose}
-              disabled={saving}
-            >
-              Закрыть
-            </button>
-            <button
-              type="button"
               className="primaryBtn h-9 px-3 text-sm"
               onClick={() => {
                 setStatus("Запрашиваем сохранение…");

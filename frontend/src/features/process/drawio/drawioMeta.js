@@ -92,6 +92,7 @@ function normalizeDrawioLayersAndElements(valueRaw, svgCacheRaw) {
       offset_x: clampNumber(row.offset_x ?? row.offsetX, 0),
       offset_y: clampNumber(row.offset_y ?? row.offsetY, 0),
       z_index: Math.max(0, Math.round(clampNumber(row.z_index, idx, 0))),
+      ...(toText(row.text || row.label) ? { text: toText(row.text || row.label) } : {}),
     });
   });
   const shouldBootstrapElementsFromSvg = elementsMap.size === 0;

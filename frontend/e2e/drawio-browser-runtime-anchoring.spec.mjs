@@ -36,10 +36,13 @@ function center(box) {
 }
 
 async function openLayersPopover(page) {
+  const popover = page.getByTestId("diagram-action-layers-popover");
+  if (await popover.isVisible().catch(() => false)) {
+    return popover;
+  }
   const button = page.getByTestId("diagram-action-layers");
   await expect(button).toBeVisible();
   await button.click({ force: true });
-  const popover = page.getByTestId("diagram-action-layers-popover");
   await expect(popover).toBeVisible();
   return popover;
 }

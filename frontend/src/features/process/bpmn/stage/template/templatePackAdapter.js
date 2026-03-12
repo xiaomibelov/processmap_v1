@@ -24,6 +24,14 @@ function isTemplateConnectionType(typeRaw) {
   return type.includes("sequenceflow");
 }
 
+function isUnsupportedFragmentNodeType(typeRaw) {
+  const type = String(typeRaw || "").trim().toLowerCase();
+  if (!type) return false;
+  if (type.includes("boundaryevent")) return true;
+  if (type.includes("subprocess")) return true;
+  return false;
+}
+
 function isLaneContainerType(typeRaw) {
   const type = String(typeRaw || "").trim().toLowerCase();
   if (!type) return false;
@@ -68,6 +76,20 @@ function readShapeBounds(el) {
   if (![x, y, width, height].every(Number.isFinite)) return null;
   if (width <= 0 || height <= 0) return null;
   return { x, y, width, height };
+}
+
+function readElementType(el) {
+  return String(el?.businessObject?.$type || el?.type || "").trim();
+}
+
+function readSelectionSnapshot(itemsRaw) {
+  const items = asArray(itemsRaw);
+  return items.map((el) => ({
+    id: String(el?.id || "").trim(),
+    type: readElementType(el),
+    supportedNode: isTemplateNodeType(readElementType(el)),
+    unsupportedFragmentNode: isUnsupportedFragmentNodeType(readElementType(el)),
+  }));
 }
 
 function createTemplateTitle(selectedNodes) {
@@ -177,6 +199,29 @@ export function resolveGraphicalInsertParent(hitElement, canvasRoot = null) {
   return canvasRoot || null;
 }
 
+function findFirstSafeFlowParent(root) {
+  const queue = root ? [root] : [];
+  const visited = new Set();
+  while (queue.length) {
+    const current = queue.shift();
+    if (!current || visited.has(current)) continue;
+    visited.add(current);
+    if (isSafeFlowParent(current)) return current;
+    asArray(current?.children).forEach((child) => {
+      if (child && !visited.has(child)) queue.push(child);
+    });
+  }
+  return null;
+}
+
+function resolveCreateShapeParent(candidate, canvasRoot = null) {
+  const resolved = resolveGraphicalInsertParent(candidate, canvasRoot);
+  if (isSafeFlowParent(resolved)) return resolved;
+  const fromRootChildren = findFirstSafeFlowParent(canvasRoot);
+  if (isSafeFlowParent(fromRootChildren)) return fromRootChildren;
+  return isSafeFlowParent(canvasRoot) ? canvasRoot : null;
+}
+
 export function createTemplatePackAdapter(deps = {}) {
   const ensureModeler = typeof deps.ensureModeler === "function" ? deps.ensureModeler : null;
   const getModeler = typeof deps.getModeler === "function" ? deps.getModeler : null;
@@ -197,9 +242,27 @@ export function createTemplatePackAdapter(deps = {}) {
 
   function captureTemplatePackOnModeler(inst, options = {}) {
     if (!inst) return { ok: false, error: "modeler_not_ready" };
+    let rawSelection = [];
+    try {
+      rawSelection = asArray(inst.get("selection")?.get?.());
+    } catch {
+      rawSelection = [];
+    }
+    const selectionSnapshot = readSelectionSnapshot(rawSelection);
     const selectedNodes = selectTemplateNodes(inst, { isShapeElement });
     if (!selectedNodes.length) {
-      return { ok: false, error: "no_selection" };
+      return {
+        ok: false,
+        error: "no_selection",
+        diagnostics: {
+          rawSelection: selectionSnapshot,
+          normalizedSelection: [],
+          unsupportedSelectionTypes: selectionSnapshot
+            .filter((row) => row.unsupportedFragmentNode)
+            .map((row) => row.type)
+            .filter(Boolean),
+        },
+      };
     }
 
     const selectedIds = new Set(selectedNodes.map((el) => String(el?.id || "").trim()).filter(Boolean));
@@ -293,7 +356,22 @@ export function createTemplatePackAdapter(deps = {}) {
       entry: pack.entryNodeId || "-",
       exit: pack.exitNodeId || "-",
     });
-    return { ok: true, pack };
+    return {
+      ok: true,
+      pack,
+      diagnostics: {
+        rawSelection: selectionSnapshot,
+        normalizedSelection: nodeItems.map((node) => ({
+          id: String(node.id || "").trim(),
+          type: String(node.type || "").trim(),
+          laneHint: String(node.laneHint || "").trim(),
+        })),
+        unsupportedSelectionTypes: selectionSnapshot
+          .filter((row) => row.unsupportedFragmentNode)
+          .map((row) => row.type)
+          .filter(Boolean),
+      },
+    };
   }
 
   async function insertTemplatePackOnModeler(payload = {}) {
@@ -324,7 +402,9 @@ export function createTemplatePackAdapter(deps = {}) {
         return isTemplateNodeType(type);
       },
     );
-    const anchor = anchorById || selectedNodes[0] || anchorByPoint || null;
+    const preferPointAnchor = payload?.preferPointAnchor === true;
+    const anchor = anchorById
+      || (preferPointAnchor ? (anchorByPoint || selectedNodes[0] || null) : (selectedNodes[0] || anchorByPoint || null));
     const parentByIdRaw = toText(anchorPayload?.parentId) ? registry?.get?.(toText(anchorPayload.parentId)) : null;
     const parentByPoint = findShapeAtPoint(
       allElements,
@@ -335,19 +415,33 @@ export function createTemplatePackAdapter(deps = {}) {
       },
     );
     const canvasRoot = canvas?.getRootElement?.() || null;
-    const parentById = resolveGraphicalInsertParent(parentByIdRaw, canvasRoot);
-    const pointParent = resolveGraphicalInsertParent(parentByPoint, canvasRoot);
-    const anchorParent = resolveGraphicalInsertParent(anchor?.parent || null, canvasRoot);
-    const defaultParent = resolveGraphicalInsertParent(canvasRoot, canvasRoot);
+
+    // Guard: bpmn-js's BpmnUpdater.updateDiParent() calls
+    // `BPMNPlane.get('planeElement').push(di)` but bpmn-moddle does NOT
+    // initialize the `planeElement` collection when the plane has no shapes
+    // (i.e. the array is `undefined`, not `[]`).  On empty/new sessions this
+    // causes "Cannot read properties of undefined (reading 'push')".
+    // Fix: ensure the root plane's planeElement array exists before any
+    // modeling.createShape() call.  Direct property assignment is safe here
+    // because bpmn-moddle falls back to own-property reads for collections.
+    const canvasRootDi = canvasRoot?.di;
+    if (canvasRootDi && !Array.isArray(canvasRootDi.planeElement)) {
+      canvasRootDi.planeElement = [];
+    }
+
+    const parentById = resolveCreateShapeParent(parentByIdRaw, canvasRoot);
+    const pointParent = resolveCreateShapeParent(parentByPoint, canvasRoot);
+    const anchorParent = resolveCreateShapeParent(anchor?.parent || null, canvasRoot);
+    const defaultParent = resolveCreateShapeParent(canvasRoot, canvasRoot);
     const insertParent = parentById || pointParent || anchorParent || defaultParent || canvasRoot || null;
     const laneParentResolved = !!(parentByPoint && pointParent && parentByPoint !== pointParent);
     const parentFallbackUsed = !insertParent || insertParent === canvasRoot;
     if (!insertParent) return { ok: false, error: "anchor_parent_missing" };
     const safeLaneParentByName = new Map();
     laneMap.forEach((laneEl, key) => {
-      safeLaneParentByName.set(key, resolveGraphicalInsertParent(laneEl, insertParent) || insertParent);
+      safeLaneParentByName.set(key, resolveCreateShapeParent(laneEl, insertParent) || insertParent);
     });
-    const safeAnchorParent = resolveGraphicalInsertParent(anchor?.parent || null, insertParent) || insertParent;
+    const safeAnchorParent = resolveCreateShapeParent(anchor?.parent || null, insertParent) || insertParent;
 
     const modeRaw = String(payload?.mode || "after").trim();
     const mode = modeRaw === "between" && anchor ? "between" : "after";

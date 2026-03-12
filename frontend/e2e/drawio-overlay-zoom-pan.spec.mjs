@@ -31,8 +31,12 @@ test("drawio overlay smoke: place rect, zoom/pan, reload keeps element", async (
     seedXml({ processName: `Drawio overlay ${runId}`, taskName: "Drawio Overlay Task" }),
   );
 
-  await setUiToken(page, auth.accessToken);
-  await openSessionInTopbar(page, { projectId: fixture.projectId, sessionId: fixture.sessionId }, { timeout: 60000 });
+  await page.addInitScript(() => {
+    window.__FPC_E2E__ = true;
+    window.localStorage.setItem("fpc_debug_bpmn", "1");
+  });
+  await setUiToken(page, auth.accessToken, { activeOrgId: fixture.orgId || auth.activeOrgId });
+  await openSessionInTopbar(page, fixture, { timeout: 60000 });
   await switchTab(page, "Diagram");
   await waitForDiagramReady(page);
 
@@ -83,7 +87,7 @@ test("drawio overlay smoke: place rect, zoom/pan, reload keeps element", async (
   expect(Number.isFinite(Number(bboxAfter?.y))).toBeTruthy();
 
   await page.reload();
-  await openSessionInTopbar(page, { projectId: fixture.projectId, sessionId: fixture.sessionId }, { timeout: 60000 });
+  await openSessionInTopbar(page, fixture, { timeout: 60000 });
   await switchTab(page, "Diagram");
   await waitForDiagramReady(page);
   await layersBtn.click({ force: true });

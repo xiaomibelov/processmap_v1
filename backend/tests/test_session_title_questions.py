@@ -21,7 +21,7 @@ class SessionTitleQuestionsApiTest(unittest.TestCase):
         os.environ["PROCESS_STORAGE_DIR"] = self.tmp_sessions.name
         os.environ["PROJECT_STORAGE_DIR"] = self.tmp_projects.name
 
-        from app.main import SessionTitleQuestionsIn, llm_session_title_questions
+        from app._legacy_main import SessionTitleQuestionsIn, llm_session_title_questions
 
         self.SessionTitleQuestionsIn = SessionTitleQuestionsIn
         self.llm_session_title_questions = llm_session_title_questions
@@ -42,12 +42,12 @@ class SessionTitleQuestionsApiTest(unittest.TestCase):
         res = self.llm_session_title_questions(self.SessionTitleQuestionsIn(title=""))
         self.assertEqual(res.get("error"), "title is required")
 
-    @patch("app.main.load_llm_settings", return_value={"api_key": "", "base_url": "https://example.invalid"})
+    @patch("app._legacy_main.load_llm_settings", return_value={"api_key": "", "base_url": "https://example.invalid"})
     def test_api_key_required(self, _mock_llm):
         res = self.llm_session_title_questions(self.SessionTitleQuestionsIn(title="Фо Бо"))
         self.assertEqual(res.get("error"), "deepseek api_key is not set")
 
-    @patch("app.main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid"})
+    @patch("app._legacy_main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid"})
     @patch("app.ai.deepseek_questions.generate_session_title_questions")
     def test_returns_generated_questions(self, mock_generate, _mock_llm):
         mock_generate.return_value = {

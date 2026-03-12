@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "bpmn-js": "^18.12.0",
+    "camunda-bpmn-moddle": "^7.0.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -21,6 +22,7 @@
     "@playwright/test": "^1.58.2",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.24",
+    "jsdom": "^28.1.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
     "vite": "^5.4.10"

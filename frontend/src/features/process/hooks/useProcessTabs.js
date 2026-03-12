@@ -316,7 +316,12 @@ export default function useProcessTabs({
         return { ok: true, xml: String(draftRef.current?.bpmn_xml || ""), pending: false };
       }
       if (flushBusyRef.current) {
-        return { ok: false, error: "flush_in_progress", xml: "" };
+        return {
+          ok: true,
+          pending: true,
+          xml: String(draftRef.current?.bpmn_xml || ""),
+          reason: "flush_in_progress",
+        };
       }
       flushBusyRef.current = true;
       setIsFlushingTab(true);
@@ -694,8 +699,8 @@ export default function useProcessTabs({
               });
               return;
             }
-            if (current === "diagram" && saved?.pending) {
-              pendingDiagramReplayRef.current = true;
+            if (saved?.pending) {
+              pendingDiagramReplayRef.current = current === "diagram";
               pendingTabReplayRef.current = {
                 sid: switchSid,
                 epoch: switchEpoch,
@@ -704,14 +709,14 @@ export default function useProcessTabs({
               };
               if (shouldLogTabTrace()) {
                 // eslint-disable-next-line no-console
-                console.debug(`[TAB_PENDING] sid=${switchSid || "-"} target=${target || "-"} reason=diagram_save_pending`);
+                console.debug(`[TAB_PENDING] sid=${switchSid || "-"} target=${target || "-"} reason=${String(saved?.reason || "diagram_save_pending")}`);
               }
               schedulePendingTabReplay();
               logTabDecision({
                 request: target,
                 current,
                 allow: true,
-                reason: "diagram_save_pending",
+                reason: String(saved?.reason || "diagram_save_pending"),
                 sessionId: sid,
                 storeLen: traceMeta.storeLen,
                 rev: traceMeta.rev,
@@ -827,9 +832,10 @@ export default function useProcessTabs({
                 invalidateHydrateForSession?.();
               }
             }
-	          } catch {
-            traceProcess("tabs.switch_error", { sid, current, target, error: "save_before_switch_failed" });
-            onError?.("Не удалось сохранить BPMN перед переключением вкладки.");
+	          } catch (error) {
+            const errorText = shortErr(error?.message || error || "save_before_switch_failed");
+            traceProcess("tabs.switch_error", { sid, current, target, error: errorText || "save_before_switch_failed" });
+            onError?.(errorText || "Не удалось сохранить BPMN перед переключением вкладки.");
             logTabDecision({
               request: target,
               current,

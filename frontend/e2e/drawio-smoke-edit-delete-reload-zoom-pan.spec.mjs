@@ -35,6 +35,22 @@ async function openLayersPopover(page) {
   return popover;
 }
 
+async function ensureDrawioEditMode(page, popover) {
+  const modeEdit = popover.getByTestId("diagram-action-layers-mode-edit");
+  const drawioToggle = popover.getByTestId("diagram-action-layers-drawio-toggle");
+  if (await modeEdit.isDisabled()) {
+    await drawioToggle.check({ force: true });
+    await expect(modeEdit).toBeEnabled();
+  }
+  await modeEdit.click({ force: true });
+  await expect
+    .poll(async () => {
+      const style = String(await page.getByTestId("drawio-el-shape1").getAttribute("style") || "");
+      return style.includes("cursor:move") && style.includes("pointer-events:auto");
+    }, { timeout: 10000 })
+    .toBeTruthy();
+}
+
 function isIgnorableConsoleError(messageRaw) {
   const msg = String(messageRaw || "");
   if (!msg) return true;
@@ -72,11 +88,8 @@ test("drawio smoke: create/edit/drag/reload + overlay zoom-pan", async ({ page, 
     window.__FPC_E2E__ = true;
     window.localStorage.setItem("fpc_debug_bpmn", "1");
   });
-  await setUiToken(page, auth.accessToken);
-  await openSessionInTopbar(page, {
-    projectId: fixture.projectId,
-    sessionId: fixture.sessionId,
-  });
+  await setUiToken(page, auth.accessToken, { activeOrgId: fixture.orgId || auth.activeOrgId });
+  await openSessionInTopbar(page, fixture);
   await switchTab(page, "Diagram");
   await waitForDiagramReady(page);
 
@@ -94,6 +107,7 @@ test("drawio smoke: create/edit/drag/reload + overlay zoom-pan", async ({ page, 
 
   const popover = await openLayersPopover(page);
   await expect(popover.getByTestId("diagram-action-layers-drawio-open")).toBeVisible();
+  await ensureDrawioEditMode(page, popover);
   await page.getByTestId("diagram-action-layers").click({ force: true });
 
   const bpmnDragStart = await page.evaluate(() => {
@@ -154,6 +168,9 @@ test("drawio smoke: create/edit/drag/reload + overlay zoom-pan", async ({ page, 
   expect(drawioEditState.shapeLocked).toBeFalsy();
   expect(drawioEditState.shapeVisible).toBeTruthy();
   expect(drawioEditState.layerVisible).toBeTruthy();
+  const popoverBeforeNudge = await openLayersPopover(page);
+  await ensureDrawioEditMode(page, popoverBeforeNudge);
+  await page.getByTestId("diagram-action-layers").click({ force: true });
   const drawioBox = await drawioRect.boundingBox();
   expect(drawioBox).toBeTruthy();
   await drawioRect.click({ force: true });
@@ -230,10 +247,7 @@ test("drawio smoke: create/edit/drag/reload + overlay zoom-pan", async ({ page, 
   await expect(drawioRect).toBeVisible();
 
   await page.reload();
-  await openSessionInTopbar(page, {
-    projectId: fixture.projectId,
-    sessionId: fixture.sessionId,
-  });
+  await openSessionInTopbar(page, fixture);
   await switchTab(page, "Diagram");
   await waitForDiagramReady(page);
   await expect(drawioRoot).toBeVisible();

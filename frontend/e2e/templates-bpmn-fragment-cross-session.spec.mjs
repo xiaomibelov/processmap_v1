@@ -63,6 +63,47 @@ async function switchTab(page, title) {
   await btn.click();
 }
 
+function byTestIds(page, ids) {
+  const selector = ids.map((id) => `[data-testid="${String(id || "").trim()}"]`).join(", ");
+  return page.locator(selector).first();
+}
+
+async function resolveAddTemplateButton(page) {
+  const direct = byTestIds(page, ["btn-add-template", "template-pack-save-open"]);
+  if (await direct.isVisible().catch(() => false)) {
+    return { button: direct, via: "direct" };
+  }
+  const overflowToggle = page.getByTestId("diagram-action-overflow").first();
+  await expect(overflowToggle).toBeVisible();
+  await overflowToggle.click();
+  const overflowButton = page.getByRole("button", { name: /Добавить шаблон/i }).first();
+  await expect(overflowButton).toBeVisible();
+  return { button: overflowButton, via: "overflow" };
+}
+
+async function closeOverflowIfOpen(page) {
+  const popover = page.getByTestId("diagram-action-overflow-popover");
+  const isOpen = await popover.isVisible().catch(() => false);
+  if (!isOpen) return;
+  const overflowToggle = page.getByTestId("diagram-action-overflow").first();
+  if (await overflowToggle.isVisible().catch(() => false)) {
+    await overflowToggle.click();
+  }
+}
+
+async function resolveTemplatesButton(page) {
+  const direct = byTestIds(page, ["btn-templates", "template-pack-insert-open"]);
+  if (await direct.isVisible().catch(() => false)) {
+    return { button: direct, via: "direct" };
+  }
+  const overflowToggle = page.getByTestId("diagram-action-overflow").first();
+  await expect(overflowToggle).toBeVisible();
+  await overflowToggle.click();
+  const overflowButton = page.getByRole("button", { name: /Шаблоны|Templates/i }).first();
+  await expect(overflowButton).toBeVisible();
+  return { button: overflowButton, via: "overflow" };
+}
+
 async function openWorkspaceSession(page, fixture) {
   await page.addInitScript(() => {
     window.__FPC_E2E__ = true;
@@ -114,43 +155,6 @@ async function createAndSelectFragment(page, marker) {
   expect(result.ok, JSON.stringify(result)).toBeTruthy();
 }
 
-async function clickDiagramForPlacement(page) {
-  const host = page.locator(".bpmnStageHost").first();
-  await expect(host).toBeVisible();
-  const lanePoint = await page.evaluate(() => {
-    try {
-      const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
-      if (!modeler) return null;
-      const hostEl = document.querySelector(".bpmnStageHost");
-      const rect = hostEl?.getBoundingClientRect?.();
-      if (!rect) return null;
-      const canvas = modeler.get("canvas");
-      const registry = modeler.get("elementRegistry");
-      const viewbox = canvas?.viewbox?.() || {};
-      const scale = Number(viewbox.scale || 1) || 1;
-      const lane = (registry?.getAll?.() || []).find((el) => {
-        const type = String(el?.businessObject?.$type || el?.type || "").toLowerCase();
-        return type.includes("lane");
-      });
-      if (!lane) return null;
-      const laneX = Number(lane.x || 0) + (Number(lane.width || 0) / 2);
-      const laneY = Number(lane.y || 0) + (Number(lane.height || 0) / 2);
-      return {
-        x: Number(rect.left || 0) + ((laneX - Number(viewbox.x || 0)) * scale),
-        y: Number(rect.top || 0) + ((laneY - Number(viewbox.y || 0)) * scale),
-      };
-    } catch {
-      return null;
-    }
-  });
-  const box = await host.boundingBox();
-  expect(box).toBeTruthy();
-  const x = Number(lanePoint?.x || 0) || (Number(box.x || 0) + Math.max(80, Math.round(Number(box.width || 0) * 0.55)));
-  const y = Number(lanePoint?.y || 0) || (Number(box.y || 0) + Math.max(60, Math.round(Number(box.height || 0) * 0.35)));
-  await page.mouse.move(x, y);
-  await page.mouse.click(x, y);
-}
-
 test("templates bpmn fragment: save in session A and place in session B", async ({ page, request }) => {
   test.skip(process.env.E2E_TEMPLATES !== "1", "Set E2E_TEMPLATES=1 to run BPMN fragment cross-session smoke.");
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -164,27 +168,30 @@ test("templates bpmn fragment: save in session A and place in session B", async 
   await openWorkspaceSession(page, first);
   await createAndSelectFragment(page, marker);
 
-  await page.getByTestId("btn-add-template").click();
+  const addTemplateAction = await resolveAddTemplateButton(page);
+  await addTemplateAction.button.click();
   await expect(page.getByTestId("modal-create-template")).toBeVisible();
   await page.getByTestId("input-template-name").fill(templateName);
   await page.getByTestId("btn-save-template").click();
   await expect(page.getByTestId("modal-create-template")).toBeHidden({ timeout: 20000 });
+  await closeOverflowIfOpen(page);
 
   await openWorkspaceSession(page, { projectId: first.projectId, sessionId: secondSessionId });
 
-  await page.getByTestId("btn-templates").click();
-  await expect(page.getByTestId("templates-picker")).toBeVisible();
+  const templatesAction = await resolveTemplatesButton(page);
+  await templatesAction.button.click();
+  await expect(page.getByTestId("templates-menu-panel")).toBeVisible();
   const templateRow = page.locator("[data-testid^='template-item-']").filter({ hasText: templateName }).first();
   await expect(templateRow).toBeVisible();
-  await templateRow.locator("[data-testid^='btn-apply-template-']").first().click();
-
-  await expect(page.getByTestId("bpmn-fragment-ghost")).toBeVisible({ timeout: 10000 });
+  await templateRow.locator("button").first().click();
+  const applyFooter = page.getByRole("button", { name: /Применить в сессию/i }).last();
+  await expect(applyFooter).toBeVisible();
   const putResponse = page.waitForResponse((resp) => {
     return resp.request().method() === "PUT"
       && /\/api\/sessions\/[^/]+\/bpmn(?:\?|$)/.test(resp.url())
       && resp.status() === 200;
   });
-  await clickDiagramForPlacement(page);
+  await applyFooter.click();
   await expect
     .poll(async () => {
       return await page.evaluate(() => window.__FPC_E2E_TEMPLATE_FRAGMENT_INSERT__ || null);

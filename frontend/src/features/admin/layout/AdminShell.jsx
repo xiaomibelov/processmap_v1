@@ -19,12 +19,12 @@ export default function AdminShell({
   children,
 }) {
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-950">
-      <div className="flex min-h-screen flex-col lg:flex-row">
+    <div className="h-screen overflow-hidden bg-slate-50 text-slate-950">
+      <div className="flex h-full min-h-0 flex-col lg:flex-row">
         <div className="lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:shrink-0">
           <AdminSidebar section={section} onNavigate={onNavigate} />
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <AdminTopbar
             user={user}
             orgs={orgs}
@@ -33,7 +33,7 @@ export default function AdminShell({
             onNavigate={onNavigate}
             redisMode={redisMode}
           />
-          <main className="px-4 py-5 lg:px-6">
+          <main className="min-h-0 flex-1 overflow-y-auto px-4 py-5 lg:px-6">
             <div className="mx-auto max-w-[1560px] space-y-5">
               <AdminBreadcrumbs items={breadcrumbs} onNavigate={onNavigate} />
               <AdminPageHeader
@@ -50,4 +50,3 @@ export default function AdminShell({
     </div>
   );
 }
-

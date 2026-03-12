@@ -1,6 +1,7 @@
 import SectionCard from "../common/SectionCard";
 import StatusPill from "../common/StatusPill";
 import { asArray, formatTs, toInt, toText } from "../../utils/adminFormat";
+import { ru } from "../../../../shared/i18n/ru";
 
 export default function SessionsTable({
   items = [],
@@ -8,24 +9,24 @@ export default function SessionsTable({
 }) {
   const rows = asArray(items);
   return (
-    <SectionCard title="Sessions Table" subtitle="Operational session inventory with cross-stage health" eyebrow="List">
+    <SectionCard title={ru.admin.sessionsPage.table.title} subtitle={ru.admin.sessionsPage.table.subtitle} eyebrow={ru.admin.common.listEyebrow}>
       <div className="overflow-auto">
         <table className="w-full min-w-[1180px] border-collapse text-sm">
           <thead className="text-left text-[11px] uppercase tracking-[0.16em] text-slate-400">
             <tr>
-              <th className="px-3 py-3">Session ID</th>
-              <th className="px-3 py-3">Org</th>
-              <th className="px-3 py-3">Project</th>
-              <th className="px-3 py-3">Updated</th>
+              <th className="px-3 py-3">{ru.admin.sessionsPage.table.sessionId}</th>
+              <th className="px-3 py-3">{ru.admin.sessionsPage.table.org}</th>
+              <th className="px-3 py-3">{ru.admin.sessionsPage.table.project}</th>
+              <th className="px-3 py-3">{ru.admin.sessionsPage.table.updated}</th>
               <th className="px-3 py-3">BPMN</th>
-              <th className="px-3 py-3">Interview</th>
-              <th className="px-3 py-3">Paths</th>
+              <th className="px-3 py-3">{ru.admin.sessionsPage.table.interview}</th>
+              <th className="px-3 py-3">{ru.admin.sessionsPage.table.paths}</th>
               <th className="px-3 py-3">AutoPass</th>
-              <th className="px-3 py-3">Reports / Doc</th>
+              <th className="px-3 py-3">{ru.admin.sessionsPage.table.reportsDoc}</th>
               <th className="px-3 py-3">Redis</th>
-              <th className="px-3 py-3">Warnings</th>
-              <th className="px-3 py-3">Errors</th>
-              <th className="px-3 py-3">Actions</th>
+              <th className="px-3 py-3">{ru.admin.sessionsPage.table.warnings}</th>
+              <th className="px-3 py-3">{ru.admin.sessionsPage.table.errors}</th>
+              <th className="px-3 py-3">{ru.admin.sessionsPage.table.actions}</th>
             </tr>
           </thead>
           <tbody>
@@ -60,7 +61,7 @@ export default function SessionsTable({
                     className="secondaryBtn h-9 min-h-0 rounded-2xl px-3 py-0 text-xs"
                     onClick={() => onOpenSession?.(toText(row?.session_id))}
                   >
-                    Open Detail
+                    {ru.admin.sessionsPage.table.openDetail}
                   </button>
                 </td>
               </tr>
@@ -68,7 +69,7 @@ export default function SessionsTable({
             {!rows.length ? (
               <tr>
                 <td colSpan={13} className="px-3 py-10 text-center text-sm text-slate-500">
-                  No sessions matched current filters.
+                  {ru.admin.sessionsPage.table.empty}
                 </td>
               </tr>
             ) : null}

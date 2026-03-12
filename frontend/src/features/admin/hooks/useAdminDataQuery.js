@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { toText } from "../adminUtils";
 
@@ -11,7 +11,9 @@ export default function useAdminDataQuery({
   const [loading, setLoading] = useState(Boolean(enabled));
   const [error, setError] = useState("");
   const [data, setData] = useState(initialData);
+  const [reloadCount, setReloadCount] = useState(0);
   const seqRef = useRef(0);
+  const reload = useCallback(() => setReloadCount((n) => n + 1), []);
 
   useEffect(() => {
     if (!enabled) {
@@ -47,7 +49,7 @@ export default function useAdminDataQuery({
         if (seqRef.current === seq) setLoading(false);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, ...deps]);
+  }, [enabled, reloadCount, ...deps]);
 
-  return { loading, error, data };
+  return { loading, error, data, reload };
 }

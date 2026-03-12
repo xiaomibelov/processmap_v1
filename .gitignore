@@ -1,6 +1,8 @@
 .DS_Store
 .idea/
 .vscode/
+.claude/
+.tools/
 
 .venv/
 venv/
@@ -19,6 +21,11 @@ backend/workspace/.session_store/**
 node_modules/
 dist/
 build/
+playwright-report/
+frontend/playwright-report/
+coverage/
+*.log
+*.pid
 
 workspace/processes/*
 !workspace/processes/.keep
@@ -27,3 +34,7 @@ test-results/
 frontend/test-results/
 workspace/projects/*.json
 .env
+archive/
+backups/
+zip/
+deploy/logs/

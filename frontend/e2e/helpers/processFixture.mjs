@@ -68,6 +68,7 @@ export async function createFixture(request, runId, headers, xml) {
   });
   const project = await apiJson(projectRes, "create project");
   const projectId = String(project.id || project.project_id || "").trim();
+  const orgId = String(project.org_id || project.orgId || project.organization_id || "").trim();
   expect(projectId).not.toBe("");
 
   const sessionRes = await request.post(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}/sessions?mode=quick_skeleton`, {
@@ -87,7 +88,7 @@ export async function createFixture(request, runId, headers, xml) {
     data: { xml: String(xml || seedXml()) },
   });
   await apiJson(putRes, "seed bpmn");
-  return { projectId, sessionId };
+  return { projectId, sessionId, orgId };
 }
 
 export async function openFixture(page, fixture) {

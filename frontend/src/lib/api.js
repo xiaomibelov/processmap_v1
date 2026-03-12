@@ -10,6 +10,8 @@ const AUTH_RETRY_BLOCKLIST = new Set([
   apiRoutes.auth.logout(),
   apiRoutes.auth.invitePreview(),
   apiRoutes.auth.inviteActivate(),
+  apiRoutes.invite.resolve(),
+  apiRoutes.invite.activate(),
 ]);
 const authFailureListeners = new Set();
 
@@ -301,6 +303,10 @@ async function request(path, opts = {}) {
   return res;
 }
 
+export async function apiRequest(path, opts = {}) {
+  return request(path, opts);
+}
+
 function shouldLogBpmnTrace() {
   if (typeof window === "undefined") return false;
   if (window.__FPC_DEBUG_BPMN__) return true;
@@ -360,6 +366,10 @@ export async function apiAuthInvitePreview(token) {
   };
 }
 
+export async function apiInviteResolve(token) {
+  return apiAuthInvitePreview(token);
+}
+
 export async function apiAuthInviteActivate({ token, password, password_confirm }) {
   const inviteToken = String(token || "").trim();
   const pwd = String(password || "");
@@ -389,6 +399,10 @@ export async function apiAuthInviteActivate({ token, password, password_confirm 
     membership: r.data?.membership || {},
     user: r.data?.user || {},
   };
+}
+
+export async function apiInviteActivate(payload = {}) {
+  return apiAuthInviteActivate(payload);
 }
 
 export async function apiAuthLogout() {
@@ -426,6 +440,24 @@ export async function apiListOrgs() {
   const default_org_id = String(r.data?.default_org_id || "").trim();
   if (active_org_id) setActiveOrgId(active_org_id);
   return { ok: true, status: r.status, items, active_org_id, default_org_id };
+}
+
+export async function apiCreateOrg(name) {
+  const orgName = String(name || "").trim();
+  if (!orgName) return { ok: false, status: 0, error: "name is required" };
+  const r = okOrError(await request(apiRoutes.orgs.list(), { method: "POST", body: { name: orgName } }));
+  return r.ok ? { ok: true, status: r.status, org: r.data || {} } : r;
+}
+
+export async function apiAssignOrgMember(orgId, userId, role = "org_viewer") {
+  const oid = String(orgId || "").trim();
+  const uid = String(userId || "").trim();
+  if (!oid || !uid) return { ok: false, status: 0, error: "org_id and user_id required" };
+  const r = okOrError(await request(apiRoutes.orgs.memberAssign(oid), {
+    method: "POST",
+    body: { user_id: uid, role: String(role || "org_viewer").trim() },
+  }));
+  return r.ok ? { ok: true, status: r.status, ...r.data } : r;
 }
 
 // ------- Templates -------
@@ -581,11 +613,136 @@ export async function apiPatchOrgMember(orgId, userId, role) {
   return r.ok ? { ok: true, status: r.status, item: r.data || {} } : r;
 }
 
+export async function apiPatchOrg(orgId, payload = {}) {
+  const oid = String(orgId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  const body = {
+    name: String(payload?.name || "").trim(),
+  };
+  const endpoint = apiRoutes.orgs.item(oid);
+  const r = okOrError(await request(endpoint, { method: "PATCH", body }));
+  return r.ok ? { ok: true, status: r.status, org: r.data || {} } : r;
+}
+
+export async function apiListOrgPropertyDictionaryOperations(orgId, options = {}) {
+  const oid = String(orgId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  const endpoint = apiRoutes.orgs.propertyDictionaryOperations(oid)
+    + (options?.includeInactive ? "?include_inactive=1" : "");
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  const items = Array.isArray(r?.data?.items) ? r.data.items : [];
+  return r.ok ? { ok: true, status: r.status, items, count: Number(r?.data?.count || items.length || 0) } : r;
+}
+
+export async function apiUpsertOrgPropertyDictionaryOperation(orgId, payload = {}) {
+  const oid = String(orgId || "").trim();
+  const operationKey = String(payload?.operation_key || payload?.operationKey || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  const body = {
+    operation_key: operationKey,
+    operation_label: String(payload?.operation_label || payload?.operationLabel || "").trim(),
+    is_active: payload?.is_active ?? payload?.isActive ?? true,
+    sort_order: Number(payload?.sort_order ?? payload?.sortOrder ?? 0),
+  };
+  const endpoint = operationKey
+    ? apiRoutes.orgs.propertyDictionaryOperation(oid, operationKey)
+    : apiRoutes.orgs.propertyDictionaryOperations(oid);
+  const method = operationKey ? "PATCH" : "POST";
+  const r = okOrError(await request(endpoint, { method, body }));
+  return r.ok ? { ok: true, status: r.status, item: r.data?.item || {} } : r;
+}
+
+export async function apiGetOrgPropertyDictionaryBundle(orgId, operationKey, options = {}) {
+  const oid = String(orgId || "").trim();
+  const opKey = String(operationKey || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  if (!opKey) return { ok: false, status: 0, error: "missing operation_key" };
+  const endpoint = apiRoutes.orgs.propertyDictionaryOperation(oid, opKey)
+    + (options?.includeInactive ? "?include_inactive=1" : "");
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, bundle: r.data || {} } : r;
+}
+
+export async function apiUpsertOrgPropertyDictionaryDefinition(orgId, operationKey, payload = {}) {
+  const oid = String(orgId || "").trim();
+  const opKey = String(operationKey || "").trim();
+  const propertyKey = String(payload?.property_key || payload?.propertyKey || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  if (!opKey) return { ok: false, status: 0, error: "missing operation_key" };
+  const body = {
+    property_key: propertyKey,
+    property_label: String(payload?.property_label || payload?.propertyLabel || "").trim(),
+    input_mode: String(payload?.input_mode || payload?.inputMode || "autocomplete").trim(),
+    allow_custom_value: payload?.allow_custom_value ?? payload?.allowCustomValue ?? true,
+    required: payload?.required ?? false,
+    is_active: payload?.is_active ?? payload?.isActive ?? true,
+    sort_order: Number(payload?.sort_order ?? payload?.sortOrder ?? 0),
+  };
+  const endpoint = propertyKey
+    ? apiRoutes.orgs.propertyDictionaryProperty(oid, opKey, propertyKey)
+    : apiRoutes.orgs.propertyDictionaryProperties(oid, opKey);
+  const method = propertyKey ? "PATCH" : "POST";
+  const r = okOrError(await request(endpoint, { method, body }));
+  return r.ok ? { ok: true, status: r.status, item: r.data?.item || {} } : r;
+}
+
+export async function apiDeleteOrgPropertyDictionaryDefinition(orgId, operationKey, propertyKey) {
+  const oid = String(orgId || "").trim();
+  const opKey = String(operationKey || "").trim();
+  const propKey = String(propertyKey || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  if (!opKey) return { ok: false, status: 0, error: "missing operation_key" };
+  if (!propKey) return { ok: false, status: 0, error: "missing property_key" };
+  const r = okOrError(await request(apiRoutes.orgs.propertyDictionaryProperty(oid, opKey, propKey), { method: "DELETE" }));
+  return r.ok ? { ok: true, status: r.status } : r;
+}
+
+export async function apiUpsertOrgPropertyDictionaryValue(orgId, operationKey, propertyKey, payload = {}) {
+  const oid = String(orgId || "").trim();
+  const opKey = String(operationKey || "").trim();
+  const propKey = String(propertyKey || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  if (!opKey) return { ok: false, status: 0, error: "missing operation_key" };
+  if (!propKey) return { ok: false, status: 0, error: "missing property_key" };
+  const body = {
+    option_value: String(payload?.option_value || payload?.optionValue || "").trim(),
+    is_active: payload?.is_active ?? payload?.isActive ?? true,
+    sort_order: Number(payload?.sort_order ?? payload?.sortOrder ?? 0),
+  };
+  const r = okOrError(await request(apiRoutes.orgs.propertyDictionaryValues(oid, opKey, propKey), { method: "POST", body }));
+  return r.ok ? { ok: true, status: r.status, item: r.data?.item || {} } : r;
+}
+
+export async function apiPatchOrgPropertyDictionaryValue(orgId, valueId, payload = {}) {
+  const oid = String(orgId || "").trim();
+  const vid = String(valueId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  if (!vid) return { ok: false, status: 0, error: "missing value_id" };
+  const body = {
+    option_value: String(payload?.option_value || payload?.optionValue || "").trim(),
+    is_active: payload?.is_active ?? payload?.isActive ?? true,
+    sort_order: Number(payload?.sort_order ?? payload?.sortOrder ?? 0),
+  };
+  const r = okOrError(await request(apiRoutes.orgs.propertyDictionaryValue(oid, vid), { method: "PATCH", body }));
+  return r.ok ? { ok: true, status: r.status, item: r.data?.item || {} } : r;
+}
+
+export async function apiDeleteOrgPropertyDictionaryValue(orgId, valueId) {
+  const oid = String(orgId || "").trim();
+  const vid = String(valueId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  if (!vid) return { ok: false, status: 0, error: "missing value_id" };
+  const r = okOrError(await request(apiRoutes.orgs.propertyDictionaryValue(oid, vid), { method: "DELETE" }));
+  return r.ok ? { ok: true, status: r.status } : r;
+}
+
 export async function apiListOrgInvites(orgId) {
   const oid = String(orgId || "").trim();
   if (!oid) return { ok: false, status: 0, error: "missing org_id" };
-  const endpoint = apiRoutes.orgs.invites(oid);
-  const r = okOrError(await request(endpoint, { method: "GET" }));
+  let r = okOrError(await request(apiRoutes.orgs.invites(oid), { method: "GET" }));
+  if (!r.ok && Number(r.status || 0) === 404) {
+    r = okOrError(await request(apiRoutes.admin.organizationInvites(oid), { method: "GET" }));
+  }
   const items = Array.isArray(r?.data?.items) ? r.data.items : [];
   return r.ok ? { ok: true, status: r.status, items, count: Number(r?.data?.count || items.length || 0) } : r;
 }
@@ -593,23 +750,24 @@ export async function apiListOrgInvites(orgId) {
 export async function apiCreateOrgInvite(orgId, payload = {}) {
   const oid = String(orgId || "").trim();
   if (!oid) return { ok: false, status: 0, error: "missing org_id" };
-  const endpoint = apiRoutes.orgs.invites(oid);
   const body = {
     email: String(payload?.email || "").trim(),
-    role: String(payload?.role || "").trim(),
+    full_name: String(payload?.full_name || payload?.fullName || "").trim(),
+    job_title: String(payload?.job_title || payload?.jobTitle || "").trim(),
+    role: String(payload?.role || "viewer").trim() || "viewer",
     ttl_days: Number(payload?.ttl_days || payload?.ttlDays || 7),
-    team_name: String(payload?.team_name || payload?.teamName || "").trim(),
-    subgroup_name: String(payload?.subgroup_name || payload?.subgroupName || "").trim(),
-    invite_comment: String(payload?.invite_comment || payload?.inviteComment || "").trim(),
-    invite_mode: String(payload?.invite_mode || payload?.inviteMode || "one_time").trim() || "one_time",
   };
-  const r = okOrError(await request(endpoint, { method: "POST", body }));
+  let r = okOrError(await request(apiRoutes.orgs.invites(oid), { method: "POST", body }));
+  if (!r.ok && Number(r.status || 0) === 404) {
+    r = okOrError(await request(apiRoutes.admin.organizationInvites(oid), { method: "POST", body }));
+  }
   return r.ok
     ? {
       ok: true,
       status: r.status,
       invite: r.data?.invite || {},
-      invite_token: r.data?.invite_token || "",
+      invite_key: r.data?.invite_key || r.data?.invite_token || "",
+      invite_token: r.data?.invite_token || r.data?.invite_key || "",
       invite_link: r.data?.invite_link || "",
       delivery: String(r.data?.delivery || ""),
     }
@@ -628,8 +786,10 @@ export async function apiRevokeOrgInvite(orgId, inviteId) {
   const iid = String(inviteId || "").trim();
   if (!oid) return { ok: false, status: 0, error: "missing org_id" };
   if (!iid) return { ok: false, status: 0, error: "missing invite_id" };
-  const endpoint = apiRoutes.orgs.inviteRevoke(oid, iid);
-  const r = okOrError(await request(endpoint, { method: "POST" }));
+  let r = okOrError(await request(apiRoutes.orgs.inviteRevoke(oid, iid), { method: "POST" }));
+  if (!r.ok && Number(r.status || 0) === 404) {
+    r = okOrError(await request(apiRoutes.admin.organizationInviteRevoke(oid, iid), { method: "POST" }));
+  }
   return r.ok ? { ok: true, status: r.status } : r;
 }
 
@@ -744,6 +904,46 @@ export async function apiAdminGetDashboard(params = {}) {
 
 export async function apiAdminListOrgs() {
   const r = okOrError(await request(apiRoutes.admin.orgs(), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminListUsers() {
+  const r = okOrError(await request(apiRoutes.admin.users(), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminCreateUser(payload = {}) {
+  const membershipsRaw = Array.isArray(payload?.memberships) ? payload.memberships : [];
+  const body = {
+    email: String(payload?.email || "").trim(),
+    password: String(payload?.password || ""),
+    is_admin: payload?.is_admin === true,
+    is_active: payload?.is_active !== false,
+    memberships: membershipsRaw.map((row) => ({
+      org_id: String(row?.org_id || "").trim(),
+      role: String(row?.role || "org_viewer").trim() || "org_viewer",
+    })).filter((row) => row.org_id),
+  };
+  const r = okOrError(await request(apiRoutes.admin.users(), { method: "POST", body }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminPatchUser(userId, payload = {}) {
+  const uid = String(userId || "").trim();
+  if (!uid) return { ok: false, status: 0, error: "missing user_id" };
+  const body = {};
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "email")) body.email = String(payload?.email || "").trim();
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "password")) body.password = String(payload?.password || "");
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "is_admin")) body.is_admin = payload?.is_admin === true;
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "is_active")) body.is_active = Boolean(payload?.is_active);
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "memberships")) {
+    const membershipsRaw = Array.isArray(payload?.memberships) ? payload.memberships : [];
+    body.memberships = membershipsRaw.map((row) => ({
+      org_id: String(row?.org_id || "").trim(),
+      role: String(row?.role || "org_viewer").trim() || "org_viewer",
+    })).filter((row) => row.org_id);
+  }
+  const r = okOrError(await request(apiRoutes.admin.user(uid), { method: "PATCH", body }));
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
 

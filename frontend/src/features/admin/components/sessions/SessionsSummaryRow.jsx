@@ -1,5 +1,6 @@
 import KpiCard from "../common/KpiCard";
 import { asArray, toInt, toText } from "../../utils/adminFormat";
+import { ru } from "../../../../shared/i18n/ru";
 
 export default function SessionsSummaryRow({
   items = [],
@@ -13,12 +14,12 @@ export default function SessionsSummaryRow({
   const redisIncident = rows.filter((row) => toText(row?.redis_mode).toLowerCase() === "error").length;
   return (
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-      <KpiCard title="Total Sessions" value={rows.length} hint="Sessions in current admin scope" />
-      <KpiCard title="Active" value={active} hint="In progress right now" tone="accent" />
-      <KpiCard title="AutoPass Failed" value={autopassFailed} hint="Failed latest AutoPass run" tone="danger" />
-      <KpiCard title="Warnings / Errors" value={`${warnings} / ${errors}`} hint="Aggregate warning pressure" />
-      <KpiCard title="Redis Fallback" value={redisFallback} hint="Degraded fallback sessions" tone={redisFallback > 0 ? "warn" : "default"} />
-      <KpiCard title="Redis Incidents" value={redisIncident} hint="Redis config/connectivity incident markers" tone={redisIncident > 0 ? "danger" : "default"} />
+      <KpiCard title={ru.admin.sessionsPage.summary.totalSessions} value={rows.length} hint={ru.admin.sessionsPage.summary.totalSessionsHint} />
+      <KpiCard title={ru.admin.sessionsPage.summary.active} value={active} hint={ru.admin.sessionsPage.summary.activeHint} tone="accent" />
+      <KpiCard title={ru.admin.sessionsPage.summary.autopassFailed} value={autopassFailed} hint={ru.admin.sessionsPage.summary.autopassFailedHint} tone="danger" />
+      <KpiCard title={ru.admin.sessionsPage.summary.warningsErrors} value={`${warnings} / ${errors}`} hint={ru.admin.sessionsPage.summary.warningsErrorsHint} />
+      <KpiCard title={ru.admin.sessionsPage.summary.redisFallback} value={redisFallback} hint={ru.admin.sessionsPage.summary.redisFallbackHint} tone={redisFallback > 0 ? "warn" : "default"} />
+      <KpiCard title={ru.admin.sessionsPage.summary.redisIncidents} value={redisIncident} hint={ru.admin.sessionsPage.summary.redisIncidentsHint} tone={redisIncident > 0 ? "danger" : "default"} />
     </div>
   );
 }

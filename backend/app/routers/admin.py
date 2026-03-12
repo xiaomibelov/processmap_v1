@@ -6,16 +6,60 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Query, Request
+from pydantic import BaseModel, Field
 from starlette.responses import Response
 
 from .. import _legacy_main
 from ..auto_pass_jobs import redis_queue_enabled
+from ..auth import AuthError, create_user, list_users as list_auth_users, update_user
 from ..redis_client import get_client, runtime_status
-from ..storage import list_audit_log, list_templates
+from ..storage import (
+    delete_org_membership,
+    get_project_storage,
+    get_storage,
+    list_audit_log,
+    list_org_invites,
+    list_org_memberships,
+    list_org_records,
+    list_templates,
+    list_user_org_memberships,
+    upsert_org_membership,
+)
 
 router = APIRouter()
 
 _ADMIN_ALLOWED_ROLES = {"org_owner", "org_admin", "project_manager", "auditor"}
+_ADMIN_USER_ROLE_ALIASES = {
+    "admin": "org_admin",
+    "editor": "editor",
+    "org_admin": "org_admin",
+    "org_owner": "org_admin",
+    "project_manager": "editor",
+    "viewer": "org_viewer",
+    "org_viewer": "org_viewer",
+    "auditor": "org_viewer",
+}
+
+
+class AdminUserMembershipIn(BaseModel):
+    org_id: str
+    role: str = "org_viewer"
+
+
+class AdminUserCreateBody(BaseModel):
+    email: str
+    password: str
+    is_admin: bool = False
+    is_active: bool = True
+    memberships: List[AdminUserMembershipIn] = Field(default_factory=list)
+
+
+class AdminUserPatchBody(BaseModel):
+    email: Optional[str] = None
+    password: Optional[str] = None
+    is_admin: Optional[bool] = None
+    is_active: Optional[bool] = None
+    memberships: Optional[List[AdminUserMembershipIn]] = None
 
 
 def _now_iso() -> str:
@@ -77,6 +121,123 @@ def _admin_context(
         return None, False, None, None, None, _legacy_main._enterprise_error(403, "forbidden", "insufficient_permissions")
     scope = _legacy_main._project_scope_for_request(request, oid)
     return uid, bool(is_admin), oid, role_l, scope, None
+
+
+def _platform_admin_context(request: Request) -> Tuple[Optional[str], Optional[str], Optional[Response]]:
+    uid, is_admin = _legacy_main._request_user_meta(request)
+    if not uid:
+        return None, None, _legacy_main._enterprise_error(401, "unauthorized", "unauthorized")
+    if not is_admin:
+        return None, None, _legacy_main._enterprise_error(403, "forbidden", "insufficient_permissions")
+    oid = _legacy_main._request_active_org_id(request)
+    return uid, oid, None
+
+
+def _normalize_admin_membership_role(raw: Any) -> str:
+    key = _as_text(raw).lower()
+    normalized = _ADMIN_USER_ROLE_ALIASES.get(key, "")
+    if not normalized:
+        raise ValueError("role must be org_admin, editor or org_viewer")
+    return normalized
+
+
+def _normalize_admin_memberships(rows: List[AdminUserMembershipIn], *, allow_empty: bool = False) -> List[Dict[str, str]]:
+    out: List[Dict[str, str]] = []
+    seen: set[str] = set()
+    for item in rows:
+        org_id = _as_text(getattr(item, "org_id", ""))
+        if not org_id:
+            raise ValueError("org_id is required")
+        if org_id in seen:
+            continue
+        role = _normalize_admin_membership_role(getattr(item, "role", "org_viewer"))
+        out.append({"org_id": org_id, "role": role})
+        seen.add(org_id)
+    if not out and not allow_empty:
+        raise ValueError("at least one organization membership is required")
+    if not out:
+        return []
+    known_org_ids = {str(row.get("id") or "") for row in list_org_records()}
+    missing = [row["org_id"] for row in out if row["org_id"] not in known_org_ids]
+    if missing:
+        raise ValueError(f"unknown org_id: {missing[0]}")
+    return out
+
+
+def _org_name_by_id() -> Dict[str, str]:
+    return {
+        str(row.get("id") or ""): _as_text(row.get("name") or row.get("id"))
+        for row in list_org_records()
+    }
+
+
+def _membership_payload_for_user(user_id: str, *, org_name_by_id: Dict[str, str]) -> List[Dict[str, Any]]:
+    rows = list_user_org_memberships(user_id, is_admin=False)
+    items: List[Dict[str, Any]] = []
+    for row in rows:
+        org_id = _as_text(row.get("org_id"))
+        items.append(
+            {
+                "org_id": org_id,
+                "org_name": _as_text(org_name_by_id.get(org_id) or row.get("name") or org_id),
+                "role": _as_text(row.get("role") or "org_viewer") or "org_viewer",
+                "created_at": _as_int(row.get("created_at"), 0),
+            }
+        )
+    return items
+
+
+def _user_payload(row: Dict[str, Any], *, org_name_by_id: Dict[str, str]) -> Dict[str, Any]:
+    user = _as_dict(row)
+    user_id = _as_text(user.get("id"))
+    memberships = _membership_payload_for_user(user_id, org_name_by_id=org_name_by_id)
+    return {
+        "id": user_id,
+        "email": _as_text(user.get("email")).lower(),
+        "is_active": bool(user.get("is_active", False)),
+        "is_admin": bool(user.get("is_admin", False)),
+        "created_at": _as_int(user.get("created_at"), 0),
+        "memberships": memberships,
+    }
+
+
+def _replace_user_memberships(user_id: str, memberships: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+    current = {
+        _as_text(row.get("org_id")): row
+        for row in list_user_org_memberships(user_id, is_admin=False)
+        if _as_text(row.get("org_id"))
+    }
+    next_map = {_as_text(row.get("org_id")): row for row in memberships if _as_text(row.get("org_id"))}
+    for org_id in list(current.keys()):
+        if org_id not in next_map:
+            delete_org_membership(org_id, user_id)
+    for org_id, row in next_map.items():
+        upsert_org_membership(org_id, user_id, _as_text(row.get("role") or "org_viewer"))
+    return list_user_org_memberships(user_id, is_admin=False)
+
+
+def _org_aggregate_item(
+    *,
+    org_row: Dict[str, Any],
+    role: str,
+    active_org_id: str,
+) -> Dict[str, Any]:
+    org_id = _as_text(org_row.get("org_id") or org_row.get("id"))
+    sessions = get_storage().list(limit=5000, org_id=(org_id or None), is_admin=True)
+    projects = get_project_storage().list(org_id=(org_id or None), is_admin=True)
+    memberships = list_org_memberships(org_id)
+    pending_invites = list_org_invites(org_id, include_inactive=False)
+    return {
+        "org_id": org_id,
+        "id": org_id,
+        "name": _as_text(org_row.get("name") or org_row.get("org_name") or org_id),
+        "role": _as_text(role or org_row.get("role") or "org_viewer") or "org_viewer",
+        "members_count": len(memberships),
+        "projects_count": len(projects),
+        "active_sessions_count": sum(1 for item in sessions if _as_text(_as_dict(item).get("status")).lower() == "in_progress"),
+        "pending_invites_count": len(pending_invites),
+        "is_active_context": org_id == _as_text(active_org_id),
+    }
 
 
 def _workspace_payload(
@@ -433,12 +594,110 @@ def admin_orgs(request: Request) -> Any:
     if err is not None:
         return err
     memberships = _as_list(getattr(request.state, "org_memberships", []) or [])
+    items = [
+        _org_aggregate_item(
+            org_row=_as_dict(row),
+            role=_as_text(_as_dict(row).get("role") or "org_viewer"),
+            active_org_id=oid or "",
+        )
+        for row in memberships
+    ]
     return {
         "ok": True,
         "active_org_id": oid,
         "actor": {"user_id": uid, "is_admin": bool(is_admin), "role": role},
-        "items": memberships,
-        "count": len(memberships),
+        "items": items,
+        "count": len(items),
+    }
+
+
+@router.get("/api/admin/users")
+def admin_users(request: Request) -> Any:
+    _uid, _oid, err = _platform_admin_context(request)
+    if err is not None:
+        return err
+    org_name_by_id = _org_name_by_id()
+    items = [_user_payload(row, org_name_by_id=org_name_by_id) for row in list_auth_users()]
+    return {
+        "ok": True,
+        "items": items,
+        "count": len(items),
+    }
+
+
+@router.post("/api/admin/users", status_code=201)
+def admin_create_user(body: AdminUserCreateBody, request: Request) -> Any:
+    actor_id, _oid, err = _platform_admin_context(request)
+    if err is not None:
+        return err
+    try:
+        memberships = _normalize_admin_memberships(list(body.memberships or []), allow_empty=bool(body.is_admin))
+        created = create_user(
+            body.email,
+            body.password,
+            is_admin=bool(body.is_admin),
+            is_active=bool(body.is_active),
+        )
+        _replace_user_memberships(_as_text(created.get("id")), memberships)
+    except AuthError as exc:
+        return _legacy_main._enterprise_error(422, "validation_error", str(exc))
+    except ValueError as exc:
+        return _legacy_main._enterprise_error(422, "validation_error", str(exc))
+    _legacy_main._audit_log_safe(
+        request,
+        org_id=_as_text(memberships[0].get("org_id")) if memberships else (_oid or ""),
+        action="admin.user_create",
+        entity_type="user",
+        entity_id=_as_text(created.get("id")),
+        meta={"email": _as_text(created.get("email")), "actor_user_id": actor_id, "is_admin": bool(created.get("is_admin"))},
+    )
+    return {
+        "ok": True,
+        "item": _user_payload(created, org_name_by_id=_org_name_by_id()),
+    }
+
+
+@router.patch("/api/admin/users/{user_id}")
+def admin_patch_user(user_id: str, body: AdminUserPatchBody, request: Request) -> Any:
+    actor_id, _oid, err = _platform_admin_context(request)
+    if err is not None:
+        return err
+    uid = _as_text(user_id)
+    if not uid:
+        return _legacy_main._enterprise_error(422, "validation_error", "user_id is required")
+    memberships: Optional[List[Dict[str, str]]] = None
+    try:
+        updated = update_user(
+            uid,
+            email=body.email,
+            password=body.password if body.password is not None and _as_text(body.password) else None,
+            is_admin=body.is_admin,
+            is_active=body.is_active,
+        )
+        if body.memberships is not None:
+            memberships = _normalize_admin_memberships(
+                list(body.memberships or []),
+                allow_empty=bool(body.is_admin if body.is_admin is not None else updated.get("is_admin")),
+            )
+            _replace_user_memberships(uid, memberships)
+    except AuthError as exc:
+        marker = _as_text(exc).lower()
+        status = 404 if marker == "user_not_found" else 422
+        code = "not_found" if status == 404 else "validation_error"
+        return _legacy_main._enterprise_error(status, code, str(exc))
+    except ValueError as exc:
+        return _legacy_main._enterprise_error(422, "validation_error", str(exc))
+    _legacy_main._audit_log_safe(
+        request,
+        org_id=_as_text((memberships or [{}])[0].get("org_id")) if memberships is not None else "",
+        action="admin.user_update",
+        entity_type="user",
+        entity_id=uid,
+        meta={"actor_user_id": actor_id, "is_admin": bool(updated.get("is_admin"))},
+    )
+    return {
+        "ok": True,
+        "item": _user_payload(updated, org_name_by_id=_org_name_by_id()),
     }
 
 

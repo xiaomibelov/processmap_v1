@@ -259,6 +259,16 @@ def _find_user_index_by_email(rows: list[Dict[str, Any]], email: str) -> int:
     return -1
 
 
+def _find_user_index_by_id(rows: list[Dict[str, Any]], user_id: str) -> int:
+    uid = str(user_id or "").strip()
+    if not uid:
+        return -1
+    for idx, row in enumerate(rows):
+        if str(row.get("id") or "").strip() == uid:
+            return idx
+    return -1
+
+
 def ensure_invited_identity(email: str) -> Dict[str, Any]:
     em = normalize_email(email)
     if not em:
@@ -325,6 +335,54 @@ def create_user(email: str, password: str, *, is_admin: bool = False, is_active:
     users.append(row)
     st.save_users(users)
     return row
+
+
+def list_users() -> list[Dict[str, Any]]:
+    st = get_auth_store()
+    rows = [dict(item or {}) for item in st.list_users()]
+    rows.sort(key=lambda item: (normalize_email(item.get("email")), str(item.get("id") or "")))
+    return rows
+
+
+def update_user(
+    user_id: str,
+    *,
+    email: Optional[str] = None,
+    password: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+    is_active: Optional[bool] = None,
+) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    if not uid:
+        raise AuthError("user_id_required")
+    st = get_auth_store()
+    rows = st.list_users()
+    idx = _find_user_index_by_id(rows, uid)
+    if idx < 0:
+        raise AuthError("user_not_found")
+    current = dict(rows[idx] or {})
+    updated = dict(current)
+    if email is not None:
+        em = normalize_email(email)
+        if not em:
+            raise AuthError("email_required")
+        dup_idx = _find_user_index_by_email(rows, em)
+        if dup_idx >= 0 and dup_idx != idx:
+            raise AuthError("email_exists")
+        updated["email"] = em
+    if password is not None:
+        pwd = str(password or "")
+        if not pwd:
+            raise AuthError("empty_password")
+        updated["password_hash"] = hash_password(pwd)
+        updated["activation_pending"] = False
+    if is_admin is not None:
+        updated["is_admin"] = bool(is_admin)
+    if is_active is not None:
+        updated["is_active"] = bool(is_active)
+    rows[idx] = updated
+    st.save_users(rows)
+    return updated
 
 
 def seed_admin_user_if_enabled() -> Optional[Dict[str, Any]]:

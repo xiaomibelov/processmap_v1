@@ -1,5 +1,6 @@
 import KpiCard from "../common/KpiCard";
 import { asArray, toText } from "../../utils/adminFormat";
+import { ru } from "../../../../shared/i18n/ru";
 
 export default function OrgsSummaryRow({
   items = [],
@@ -9,11 +10,10 @@ export default function OrgsSummaryRow({
   const adminRoles = rows.filter((row) => ["org_owner", "org_admin", "project_manager", "auditor"].includes(toText(row?.role))).length;
   return (
     <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-4">
-      <KpiCard title="Organizations" value={rows.length} hint="Memberships visible to current actor" />
-      <KpiCard title="Elevated Roles" value={adminRoles} hint="Owner/admin/PM/auditor memberships" tone="accent" />
-      <KpiCard title="Active Org" value={toText(activeOrgId || "—")} hint="Current admin context" />
-      <KpiCard title="Health" value="Scoped" hint="Per-org operational metrics can be drilled down via dashboard" />
+      <KpiCard title={ru.admin.orgsPage.summary.orgs} value={rows.length} hint={ru.admin.orgsPage.summary.orgsHint} />
+      <KpiCard title={ru.admin.orgsPage.summary.elevated} value={adminRoles} hint={ru.admin.orgsPage.summary.elevatedHint} tone="accent" />
+      <KpiCard title={ru.admin.orgsPage.summary.activeOrg} value={toText(activeOrgId || "—")} hint={ru.admin.orgsPage.summary.activeOrgHint} />
+      <KpiCard title={ru.admin.orgsPage.summary.health} value={ru.admin.orgsPage.summary.healthValue} hint={ru.admin.orgsPage.summary.healthHint} />
     </div>
   );
 }
-

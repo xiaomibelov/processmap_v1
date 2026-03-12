@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 
 import LoginForm from "./LoginForm";
 import { useAuth } from "./AuthProvider";
-import { apiAuthInviteActivate, apiAuthInvitePreview } from "../../lib/api";
+import { apiInviteActivate, apiInviteResolve } from "../../lib/api";
+import { ru } from "../../shared/i18n/ru";
 
 function asText(value) {
   return String(value || "").trim();
@@ -11,16 +12,16 @@ function asText(value) {
 function mapInviteError(result) {
   const status = Number(result?.status || 0);
   const marker = asText(result?.error || result?.data?.error?.message).toLowerCase();
-  if (marker.includes("password_mismatch")) return "Пароли не совпадают.";
-  if (marker.includes("password_too_short")) return "Пароль должен содержать минимум 8 символов.";
-  if (marker.includes("identity_already_active")) return "Аккаунт уже активирован. Используйте вход по логину и паролю.";
-  if (status === 410 || marker.includes("invite_expired")) return "Срок действия инвайта истёк.";
-  if (status === 404 || marker.includes("invite_not_found") || marker.includes("not_found")) return "Инвайт не найден или уже недоступен.";
-  if (marker.includes("invite_revoked")) return "Инвайт отозван администратором.";
-  if (marker.includes("invite_already_accepted")) return "Инвайт уже использован.";
-  if (status === 429) return "Слишком много попыток, попробуйте позже.";
-  if (status >= 500) return "Ошибка сервера при обработке инвайта.";
-  return asText(result?.error || "Не удалось обработать инвайт.");
+  if (marker.includes("password_mismatch")) return ru.auth.invitePasswordMismatch;
+  if (marker.includes("password_too_short")) return ru.auth.invitePasswordTooShort;
+  if (marker.includes("identity_already_active")) return ru.auth.inviteAlreadyActive;
+  if (status === 410 || marker.includes("invite_expired") || marker.includes("expired")) return ru.auth.inviteExpired;
+  if (status === 404 || marker.includes("invite_not_found") || marker.includes("invalid_key") || marker.includes("not_found")) return ru.auth.inviteInvalidKey;
+  if (marker.includes("invite_revoked") || marker.includes("revoked")) return ru.auth.inviteRevoked;
+  if (marker.includes("invite_already_accepted") || marker.includes("invite_used") || marker.includes("used")) return ru.auth.inviteUsed;
+  if (status === 429) return ru.auth.inviteTooManyRequests;
+  if (status >= 500) return `${ru.common.errorServer} при обработке invite key.`;
+  return asText(result?.error || ru.auth.inviteFailed);
 }
 
 const MODE_LOGIN = "login";
@@ -73,12 +74,12 @@ export default function PublicHomePage({
   async function handlePreview(tokenRaw) {
     const token = asText(tokenRaw ?? inviteKey);
     if (!token) {
-      setError("Введите инвайт-ключ.");
+      setError(ru.auth.inviteMissingKey);
       return;
     }
     setBusy(true);
     setError("");
-    const res = await apiAuthInvitePreview(token);
+    const res = await apiInviteResolve(token);
     setBusy(false);
     if (!res?.ok) {
       setPreview(null);
@@ -95,20 +96,20 @@ export default function PublicHomePage({
     event.preventDefault();
     if (busy) return;
     if (!asText(inviteKey)) {
-      setError("Инвайт-ключ отсутствует.");
+      setError(ru.auth.inviteMissingKey);
       return;
     }
     if (!asText(password)) {
-      setError("Введите пароль.");
+      setError(ru.auth.invitePasswordRequired);
       return;
     }
     if (password !== passwordConfirm) {
-      setError("Пароли не совпадают.");
+      setError(ru.auth.invitePasswordMismatch);
       return;
     }
     setBusy(true);
     setError("");
-    const activated = await apiAuthInviteActivate({
+    const activated = await apiInviteActivate({
       token: inviteKey,
       password,
       password_confirm: passwordConfirm,
@@ -129,32 +130,33 @@ export default function PublicHomePage({
 
   const invite = preview?.invite || {};
   const loginReadonly = asText(preview?.identity?.email || invite?.email);
+  const singleOrgMode = !!preview?.single_org_mode;
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4 py-8 md:px-6">
-      <div className="w-full max-w-md rounded-2xl border border-border bg-panel p-6 shadow-panel">
+      <div className="w-full max-w-md -translate-y-6 rounded-2xl border border-border bg-panel p-6 shadow-panel md:-translate-y-10">
         {mode === MODE_LOGIN ? (
           <LoginForm
-            title="Вход в PROCESSMAP"
+            title={ru.auth.loginTitle}
             subtitle=""
-            submitLabel="Войти в систему"
+            submitLabel={ru.auth.loginSubmit}
             onSuccess={() => onAccessActivated?.({ source: "login" })}
             onCancel={switchToInviteMode}
-            secondaryLabel="Доступ по инвайту"
+            secondaryLabel={ru.auth.loginSecondaryInvite}
             secondaryTestId="public-home-invite-mode-button"
           />
         ) : mode === MODE_INVITE_ENTRY ? (
           <>
-            <h1 className="text-2xl font-semibold text-fg">Доступ по инвайту</h1>
-            <p className="mt-1 text-sm text-muted">Введите инвайт-ключ, выданный администратором.</p>
+            <h1 className="text-2xl font-semibold text-fg">{ru.auth.inviteEntryTitle}</h1>
+            <p className="mt-1 text-sm text-muted">{ru.auth.inviteEntrySubtitle}</p>
 
             <label className="mt-4 flex flex-col gap-1.5 text-sm text-muted">
-              <span className="font-medium text-fg">Инвайт-ключ</span>
+              <span className="font-medium text-fg">{ru.auth.inviteKeyLabel}</span>
               <input
                 className="input h-11"
                 value={inviteKey}
                 onChange={(event) => setInviteKey(event.target.value)}
-                placeholder="inv_..."
+                placeholder={ru.auth.inviteKeyPlaceholder}
                 autoFocus
               />
             </label>
@@ -170,57 +172,59 @@ export default function PublicHomePage({
                 onClick={() => void handlePreview(inviteKey)}
                 disabled={busy}
               >
-                {busy ? "Проверяем..." : "Продолжить"}
+                {busy ? ru.auth.invitePreviewBusy : ru.common.continue}
               </button>
               <button type="button" className="secondaryBtn h-10 min-h-0 px-4 py-0 text-sm" onClick={switchToLoginMode}>
-                Назад ко входу
+                {ru.auth.loginBack}
               </button>
             </div>
           </>
         ) : (
           <>
-            <h1 className="text-2xl font-semibold text-fg">Активация доступа</h1>
-            <p className="mt-1 text-sm text-muted">Логин и контекст доступа заданы администратором.</p>
+            <h1 className="text-2xl font-semibold text-fg">{ru.auth.inviteActivateTitle}</h1>
+            <p className="mt-1 text-sm text-muted">{ru.auth.inviteActivateSubtitle}</p>
 
             <div className="mt-4 space-y-2 rounded-xl border border-border bg-panel2/40 p-3 text-sm">
               <div className="flex items-start justify-between gap-3">
-                <span className="text-muted">Логин / Email</span>
+                <span className="text-muted">{ru.auth.inviteReadonlyEmail}</span>
                 <span className="text-right font-semibold text-fg">{loginReadonly || "-"}</span>
               </div>
               <div className="flex items-start justify-between gap-3">
-                <span className="text-muted">Организация / Группа</span>
-                <span className="text-right text-fg">{asText(invite?.org_name || invite?.org_id) || "-"}</span>
+                <span className="text-muted">{ru.auth.inviteReadonlyName}</span>
+                <span className="text-right text-fg">{asText(invite?.full_name) || "-"}</span>
               </div>
               <div className="flex items-start justify-between gap-3">
-                <span className="text-muted">Команда / Подгруппа</span>
-                <span className="text-right text-fg">{asText(invite?.team_name || invite?.subgroup_name) || "-"}</span>
+                <span className="text-muted">{ru.auth.inviteReadonlyJobTitle}</span>
+                <span className="text-right text-fg">{asText(invite?.job_title) || "-"}</span>
               </div>
-              <div className="flex items-start justify-between gap-3">
-                <span className="text-muted">Роль</span>
-                <span className="text-right text-fg">{asText(invite?.role) || "viewer"}</span>
-              </div>
+              {!singleOrgMode ? (
+                <div className="flex items-start justify-between gap-3">
+                  <span className="text-muted">{ru.auth.inviteReadonlyOrg}</span>
+                  <span className="text-right text-fg">{asText(invite?.org_name || invite?.org_id) || "-"}</span>
+                </div>
+              ) : null}
             </div>
 
             <form className="mt-4 space-y-3" onSubmit={handleActivate}>
               <label className="flex flex-col gap-1.5 text-sm text-muted">
-                <span className="font-medium text-fg">Пароль</span>
+                <span className="font-medium text-fg">{ru.common.password}</span>
                 <input
                   type="password"
                   className="input h-11"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  placeholder="Минимум 8 символов"
+                  placeholder={ru.auth.invitePasswordMin}
                   autoComplete="new-password"
                 />
               </label>
               <label className="flex flex-col gap-1.5 text-sm text-muted">
-                <span className="font-medium text-fg">Подтвердите пароль</span>
+                <span className="font-medium text-fg">{ru.auth.invitePasswordRepeat}</span>
                 <input
                   type="password"
                   className="input h-11"
                   value={passwordConfirm}
                   onChange={(event) => setPasswordConfirm(event.target.value)}
-                  placeholder="Повторите пароль"
+                  placeholder={ru.auth.invitePasswordRepeatPlaceholder}
                   autoComplete="new-password"
                 />
               </label>
@@ -231,7 +235,7 @@ export default function PublicHomePage({
 
               <div className="flex flex-wrap items-center gap-2">
                 <button type="submit" className="primaryBtn h-10 min-h-0 px-4 py-0 text-sm" disabled={busy}>
-                  {busy ? "Активируем..." : "Активировать доступ"}
+                  {busy ? ru.auth.inviteActivateBusy : ru.auth.inviteActivateSubmit}
                 </button>
                 <button
                   type="button"
@@ -243,7 +247,7 @@ export default function PublicHomePage({
                   }}
                   disabled={busy}
                 >
-                  Назад ко входу
+                  {ru.auth.loginBack}
                 </button>
               </div>
             </form>

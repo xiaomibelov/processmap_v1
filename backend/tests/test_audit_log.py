@@ -25,7 +25,7 @@ class AuditLogApiTest(unittest.TestCase):
         os.environ.pop("PROCESS_DB_PATH", None)
 
         from app.auth import create_user
-        from app.main import (
+        from app._legacy_main import (
             delete_org_session_report_version,
             list_org_audit_endpoint,
         )

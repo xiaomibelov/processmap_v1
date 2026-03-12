@@ -97,7 +97,9 @@ export default function buildOverlayPanelModel({
       mode: drawioMode,
       locked: !!drawioState?.locked,
       overlayEnabled: overlayStatus.enabled === true,
-      previewStatus: overlayStatus.hasPreview ? "available" : "missing",
+      previewStatus: overlayStatus.placementToolActive === true && overlayStatus.hasPreview !== true
+        ? "placement_ready"
+        : (overlayStatus.hasPreview ? "available" : "missing"),
       visibleOnCanvas: drawioVisibilityContract.visibleOnCanvas === true,
       selectableOnCanvas: drawioVisibilityContract.selectableOnCanvas === true,
       opacityControlEnabled: drawioVisibilityContract.opacityControlEnabled === true,

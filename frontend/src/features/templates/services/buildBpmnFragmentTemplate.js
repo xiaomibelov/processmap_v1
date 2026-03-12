@@ -19,6 +19,30 @@ function hasUnsupportedFragmentNode(nodeRaw) {
   return false;
 }
 
+function uniqueText(itemsRaw) {
+  return Array.from(new Set(asArray(itemsRaw).map((row) => toText(row)).filter(Boolean)));
+}
+
+function buildCaptureWarning(captureResult) {
+  const diagnostics = captureResult?.diagnostics && typeof captureResult.diagnostics === "object"
+    ? captureResult.diagnostics
+    : {};
+  const rawSelection = asArray(diagnostics.rawSelection);
+  const normalizedSelection = asArray(diagnostics.normalizedSelection);
+  const unsupportedSelectionTypes = uniqueText(diagnostics.unsupportedSelectionTypes);
+  if (toText(captureResult?.error) === "no_selection" && rawSelection.length) {
+    const rawTypes = uniqueText(rawSelection.map((row) => row?.type));
+    return `В выделении нет поддерживаемых BPMN узлов. Raw selection: ${rawTypes.join(", ") || "-"}`;
+  }
+  if (unsupportedSelectionTypes.length) {
+    return `Неподдерживаемые BPMN типы в выделении: ${unsupportedSelectionTypes.join(", ")}`;
+  }
+  if (normalizedSelection.length === 0 && rawSelection.length === 0) {
+    return "В текущем выделении нет BPMN элементов для шаблона.";
+  }
+  return "";
+}
+
 export async function buildBpmnFragmentTemplate(captureTemplatePack, meta = {}) {
   if (typeof captureTemplatePack !== "function") {
     return { ok: false, error: "capture_api_unavailable", template: null };
@@ -30,6 +54,10 @@ export async function buildBpmnFragmentTemplate(captureTemplatePack, meta = {}) 
     return {
       ok: false,
       error: toText(captureResult?.error || "fragment_capture_failed"),
+      warning: buildCaptureWarning(captureResult),
+      diagnostics: captureResult?.diagnostics && typeof captureResult.diagnostics === "object"
+        ? captureResult.diagnostics
+        : {},
       template: null,
     };
   }
@@ -45,7 +73,11 @@ export async function buildBpmnFragmentTemplate(captureTemplatePack, meta = {}) 
     return {
       ok: false,
       error: "unsupported_fragment_nodes",
-      warning: `Unsupported BPMN node types: ${unsupported.join(", ")}`,
+      warning: `Неподдерживаемые BPMN типы в шаблоне: ${unsupported.join(", ")}`,
+      diagnostics: {
+        ...(captureResult?.diagnostics && typeof captureResult.diagnostics === "object" ? captureResult.diagnostics : {}),
+        unsupportedNodeTypes: unsupported,
+      },
       template: null,
     };
   }
@@ -75,6 +107,13 @@ export async function buildBpmnFragmentTemplate(captureTemplatePack, meta = {}) 
       source: "bpmn_fragment_capture",
     },
   };
-  return { ok: true, error: "", warning: "", template };
+  return {
+    ok: true,
+    error: "",
+    warning: "",
+    diagnostics: captureResult?.diagnostics && typeof captureResult.diagnostics === "object"
+      ? captureResult.diagnostics
+      : {},
+    template,
+  };
 }
-

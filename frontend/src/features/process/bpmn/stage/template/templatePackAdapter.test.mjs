@@ -35,7 +35,13 @@ function createSequence(id, source, target, name = "") {
   };
 }
 
-function createModelerWithServices({ selectionItems = [], registryItems = [], anchorShape = null } = {}) {
+function createModelerWithServices({
+  selectionItems = [],
+  registryItems = [],
+  anchorShape = null,
+  rootDi = null,
+  rootElement = null,
+} = {}) {
   const connectCalls = [];
   const createShapeCalls = [];
   const updateLabelCalls = [];
@@ -44,12 +50,15 @@ function createModelerWithServices({ selectionItems = [], registryItems = [], an
 
   let shapeSeq = 0;
   let connSeq = 0;
-  const root = { id: "Process_1", type: "bpmn:Process" };
+  const root = rootElement || { id: "Process_1", type: "bpmn:Process", di: rootDi };
   const anchor = anchorShape || createShape("Anchor_1", 100, 100, "Anchor");
   const allRegistryItems = [...registryItems];
 
   const modeling = {
     createShape(shapeDef, pos, parent) {
+      if (root.di) {
+        root.di.planeElement.push({ id: `DI_${shapeSeq + 1}` });
+      }
       shapeSeq += 1;
       const shape = {
         id: `Task_new_${shapeSeq}`,
@@ -258,6 +267,143 @@ test("insertTemplatePackOnModeler supports point-based insert without selected a
   assert.equal(createShapeCalls.length, 2);
   assert.equal(connectCalls.length, 1);
   assert.equal(result?.anchorByPoint, true);
+});
+
+test("insertTemplatePackOnModeler initializes missing root planeElement before first createShape", async () => {
+  const anchor = createShape("Anchor_1", 100, 100, "Anchor");
+  const { adapter } = createModelerWithServices({
+    selectionItems: [anchor],
+    registryItems: [anchor],
+    anchorShape: anchor,
+    rootDi: { planeElement: undefined },
+  });
+  const result = await adapter.insertTemplatePackOnModeler({
+    mode: "after",
+    pack: {
+      entryNodeId: "N1",
+      exitNodeId: "N1",
+      fragment: {
+        nodes: [{ id: "N1", type: "bpmn:Task", name: "First", di: { x: 10, y: 20 } }],
+        edges: [],
+      },
+    },
+  });
+  assert.equal(result?.ok, true);
+});
+
+test("insertTemplatePackOnModeler falls back from collaboration root to participant flow parent", async () => {
+  const collaboration = {
+    id: "Collaboration_1",
+    type: "bpmn:Collaboration",
+    di: { planeElement: [] },
+    children: [],
+    businessObject: {
+      id: "Collaboration_1",
+      $type: "bpmn:Collaboration",
+    },
+  };
+  const participant = {
+    id: "Participant_1",
+    type: "bpmn:Participant",
+    x: 0,
+    y: 0,
+    width: 1600,
+    height: 900,
+    parent: collaboration,
+    businessObject: {
+      id: "Participant_1",
+      $type: "bpmn:Participant",
+      processRef: { flowElements: [] },
+    },
+  };
+  collaboration.children = [participant];
+  const { adapter, createShapeCalls } = createModelerWithServices({
+    selectionItems: [],
+    registryItems: [participant],
+    rootElement: collaboration,
+  });
+  const result = await adapter.insertTemplatePackOnModeler({
+    mode: "after",
+    anchor: {
+      point: { x: 640, y: 320 },
+    },
+    pack: {
+      entryNodeId: "N1",
+      exitNodeId: "N1",
+      fragment: {
+        nodes: [{ id: "N1", type: "bpmn:Task", name: "Inside participant", di: { x: 10, y: 20 } }],
+        edges: [],
+      },
+    },
+  });
+  assert.equal(result?.ok, true);
+  assert.equal(createShapeCalls.length, 1);
+  assert.equal(String(createShapeCalls[0]?.parent?.id || ""), "Participant_1");
+});
+
+test("captureTemplatePackOnModeler returns raw-selection diagnostics when selection has no supported nodes", () => {
+  const lane = {
+    id: "Lane_1",
+    type: "bpmn:Lane",
+    businessObject: {
+      id: "Lane_1",
+      $type: "bpmn:Lane",
+      name: "Lane 1",
+    },
+  };
+  const { adapter, inst } = createModelerWithServices({
+    selectionItems: [lane],
+    registryItems: [lane],
+  });
+  const result = adapter.captureTemplatePackOnModeler(inst, { title: "Unsupported selection" });
+  assert.equal(result?.ok, false);
+  assert.equal(result?.error, "no_selection");
+  assert.deepEqual(result?.diagnostics?.rawSelection?.map((row) => row.type), ["bpmn:Lane"]);
+  assert.deepEqual(result?.diagnostics?.normalizedSelection, []);
+});
+
+test("insertTemplatePackOnModeler prefers point anchor over selected shape when requested", async () => {
+  const selectedAnchor = createShape("Anchor_Selected", 100, 100, "Selected");
+  const lane = {
+    id: "Lane_1",
+    type: "bpmn:Lane",
+    x: 0,
+    y: 0,
+    width: 1600,
+    height: 900,
+    businessObject: {
+      id: "Lane_1",
+      $type: "bpmn:Lane",
+      name: "lane 1",
+    },
+  };
+  const { adapter, createShapeCalls } = createModelerWithServices({
+    selectionItems: [selectedAnchor],
+    registryItems: [selectedAnchor, lane],
+    anchorShape: selectedAnchor,
+  });
+  const payload = {
+    mode: "after",
+    preferPointAnchor: true,
+    anchor: {
+      point: { x: 520, y: 320 },
+    },
+    pack: {
+      packId: "pack_point_priority",
+      entryNodeId: "N1",
+      exitNodeId: "N1",
+      fragment: {
+        nodes: [
+          { id: "N1", type: "bpmn:Task", name: "Placed by point", di: { x: 10, y: 20 } },
+        ],
+        edges: [],
+      },
+    },
+  };
+  const result = await adapter.insertTemplatePackOnModeler(payload);
+  assert.equal(result?.ok, true);
+  assert.equal(createShapeCalls.length, 1);
+  assert.equal(String(createShapeCalls[0]?.createdId || "").startsWith("Task_new_"), true);
 });
 
 test("resolveGraphicalInsertParent maps lane to participant/root", () => {

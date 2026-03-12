@@ -10,6 +10,12 @@ function toText(value) {
   return String(value || "").trim();
 }
 
+function delay(ms = 0) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, Math.max(0, Number(ms || 0)));
+  });
+}
+
 function toFinite(value, fallback = Number.NaN) {
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
@@ -162,17 +168,72 @@ export default function useTemplatesStageBridge({
       },
       {
         mode: toText(options?.mode || "after") || "after",
+        preferPointAnchor: options?.preferPointAnchor === true,
         clientPoint: { x: clientX, y: clientY },
         diagramPoint,
       },
     );
     if (!payload) return { ok: false, error: "invalid_insert_payload" };
     try {
-      return await Promise.resolve(api.insertTemplatePack(payload));
+      const inserted = await Promise.resolve(api.insertTemplatePack(payload));
+      if (!inserted?.ok || options?.persistImmediately !== true) {
+        return inserted;
+      }
+      if (typeof api.saveLocal !== "function") {
+        return { ok: false, error: "save_api_unavailable" };
+      }
+      let saved = await Promise.resolve(api.saveLocal({
+        force: true,
+        source: toText(options?.source || "template_apply"),
+        trigger: "template_apply",
+      }));
+      let attempts = 0;
+      while (saved?.ok && saved?.pending === true && attempts < 20) {
+        attempts += 1;
+        await delay(150);
+        saved = await Promise.resolve(api.saveLocal({
+          force: true,
+          source: toText(options?.source || "template_apply"),
+          trigger: "template_apply",
+        }));
+      }
+      if (!saved?.ok) {
+        return { ok: false, error: toText(saved?.error || "persist_failed"), inserted };
+      }
+      if (saved?.pending === true) {
+        return { ok: false, error: "persist_pending_timeout", inserted };
+      }
+      return {
+        ...inserted,
+        persisted: true,
+        persistedSource: toText(saved?.source || "backend"),
+      };
     } catch (error) {
       return { ok: false, error: toText(error?.message || error || "insert_failed") };
     }
   }, [bpmnApiRef, bpmnStageHostRef, clientToDiagram]);
+
+  const insertBpmnFragmentTemplateImmediately = useCallback(async (templateRaw, options = {}) => {
+    const rect = options?.diagramContainerRect && typeof options.diagramContainerRect === "object"
+      ? options.diagramContainerRect
+      : null;
+    const fallbackWidth = typeof window !== "undefined" ? Number(window.innerWidth || 1280) : 1280;
+    const fallbackHeight = typeof window !== "undefined" ? Number(window.innerHeight || 800) : 800;
+    const clientX = rect
+      ? Number(rect.left || 0) + Math.round(Number(rect.width || fallbackWidth) / 2)
+      : Math.round(fallbackWidth / 2);
+    const clientY = rect
+      ? Number(rect.top || 0) + Math.round(Number(rect.height || fallbackHeight) / 2)
+      : Math.round(fallbackHeight / 2);
+    return insertBpmnFragmentTemplateAtPoint(templateRaw, {
+      clientX,
+      clientY,
+      mode: toText(options?.mode || "after") || "after",
+      preferPointAnchor: options?.preferPointAnchor !== false,
+      persistImmediately: options?.persistImmediately !== false,
+      source: toText(options?.source || "template_apply"),
+    });
+  }, [insertBpmnFragmentTemplateAtPoint]);
 
   return {
     selectedBpmnIds,
@@ -181,6 +242,7 @@ export default function useTemplatesStageBridge({
     applyBpmnSelection,
     captureBpmnFragmentTemplatePack,
     insertBpmnFragmentTemplateAtPoint,
+    insertBpmnFragmentTemplateImmediately,
     isDiagramClientPoint,
   };
 }

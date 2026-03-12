@@ -59,6 +59,34 @@ def tldr_cache_key(session_id: str) -> str:
     return f"pm:cache:tldr:session:{sid}:v1"
 
 
+_SESSION_OPEN_TTL = 72 * 60 * 60
+
+
+def session_open_cache_ttl_sec() -> int:
+    return int(_SESSION_OPEN_TTL)
+
+
+def session_open_version_token(session_obj: Any) -> str:
+    version = int(getattr(session_obj, "version", 0) or 0)
+    bpmn_xml_version = int(getattr(session_obj, "bpmn_xml_version", 0) or 0)
+    updated_at = int(getattr(session_obj, "updated_at", 0) or 0)
+    return f"{version}.{bpmn_xml_version}.{updated_at}"
+
+
+def session_open_cache_key(session_id: str, version_token: str) -> str:
+    sid = str(session_id or "").strip() or "unknown"
+    token = str(version_token or "").strip() or "0.0.0"
+    return f"pm:cache:session_open:session:{sid}:v:{token}"
+
+
+def invalidate_session_open(session_id: str, *, client: Any = None) -> int:
+    sid = str(session_id or "").strip()
+    if not sid:
+        return 0
+    prefix = f"pm:cache:session_open:session:{sid}:v:"
+    return cache_delete_prefix(prefix, client=client)
+
+
 def _resolve_client(client: Any = None):
     conn = client if client is not None else get_client()
     if conn is None:
@@ -173,3 +201,170 @@ def invalidate_workspace_org(org_id: str, *, client: Any = None) -> int:
 
 def invalidate_tldr_session(session_id: str, *, client: Any = None) -> int:
     return cache_delete_key(tldr_cache_key(session_id), client=client)
+
+
+# ─── Explorer cache helpers ───────────────────────────────────────────────────
+# Key scheme:  pm:cache:explorer:<segment>:<qualifiers>:v1
+#
+# Segment       Key pattern
+# ----------    -------------------------------------------------------
+# memberships   pm:cache:explorer:memberships:user:{uid}:v1
+# children      pm:cache:explorer:children:org:{oid}:workspace:{wid}:folder:{fid}:v1
+# breadcrumb    pm:cache:explorer:breadcrumb:org:{oid}:workspace:{wid}:folder:{fid}:v1
+# sessions      pm:cache:explorer:sessions:project:{pid}:v1
+
+_EX_TTL_MEMBERSHIPS = 60          # seconds  (workspace list)
+_EX_TTL_CHILDREN    = 30          # seconds  (folder/root children)
+_EX_TTL_BREADCRUMB  = 120         # seconds  (folder path)
+_EX_TTL_SESSIONS    = 30          # seconds  (project sessions)
+
+
+def _ex_memberships_key(user_id: str) -> str:
+    uid = str(user_id or "").strip() or "anon"
+    return f"pm:cache:explorer:memberships:user:{uid}:v1"
+
+
+def _ex_children_key(org_id: str, workspace_id: str, folder_id: str) -> str:
+    oid = str(org_id or "").strip() or "default"
+    wid = str(workspace_id or "").strip() or "default"
+    fid = str(folder_id or "").strip() or "root"
+    return f"pm:cache:explorer:children:org:{oid}:workspace:{wid}:folder:{fid}:v1"
+
+
+def _ex_breadcrumb_key(org_id: str, workspace_id: str, folder_id: str) -> str:
+    oid = str(org_id or "").strip() or "default"
+    wid = str(workspace_id or "").strip() or "default"
+    fid = str(folder_id or "").strip() or "root"
+    return f"pm:cache:explorer:breadcrumb:org:{oid}:workspace:{wid}:folder:{fid}:v1"
+
+
+def _ex_sessions_key(project_id: str) -> str:
+    pid = str(project_id or "").strip() or "unknown"
+    return f"pm:cache:explorer:sessions:project:{pid}:v1"
+
+
+# ── get/set ────────────────────────────────────────────────────────────────────
+
+def explorer_get_memberships(user_id: str, *, client: Any = None) -> Optional[Any]:
+    return cache_get_json(_ex_memberships_key(user_id), client=client)
+
+
+def explorer_set_memberships(user_id: str, value: Any, *, client: Any = None) -> bool:
+    return cache_set_json(_ex_memberships_key(user_id), value,
+                          ttl_sec=_EX_TTL_MEMBERSHIPS, client=client)
+
+
+def explorer_get_children(org_id: str, workspace_id: str, folder_id: str, *, client: Any = None) -> Optional[Any]:
+    return cache_get_json(_ex_children_key(org_id, workspace_id, folder_id), client=client)
+
+
+def explorer_set_children(org_id: str, workspace_id: str, folder_id: str, value: Any, *, client: Any = None) -> bool:
+    return cache_set_json(_ex_children_key(org_id, workspace_id, folder_id), value,
+                          ttl_sec=_EX_TTL_CHILDREN, client=client)
+
+
+def explorer_get_breadcrumb(org_id: str, workspace_id: str, folder_id: str, *, client: Any = None) -> Optional[Any]:
+    return cache_get_json(_ex_breadcrumb_key(org_id, workspace_id, folder_id), client=client)
+
+
+def _ex_breadcrumb_registry_key(org_id: str, workspace_id: str) -> str:
+    oid = str(org_id or "").strip() or "default"
+    wid = str(workspace_id or "").strip() or "default"
+    return f"pm:cache:explorer:breadcrumb-registry:org:{oid}:workspace:{wid}:v1"
+
+
+def explorer_set_breadcrumb(org_id: str, workspace_id: str, folder_id: str, value: Any, *, client: Any = None) -> bool:
+    fid = str(folder_id or "").strip()
+    ok = cache_set_json(_ex_breadcrumb_key(org_id, workspace_id, fid), value,
+                        ttl_sec=_EX_TTL_BREADCRUMB, client=client)
+    if ok and fid:
+        # Register this folder_id in the per-org breadcrumb Set so we can
+        # invalidate without a scan.
+        conn = _resolve_client(client=client)
+        if conn is not None:
+            try:
+                rkey = _ex_breadcrumb_registry_key(org_id, workspace_id)
+                conn.sadd(rkey, fid)
+                conn.expire(rkey, _EX_TTL_BREADCRUMB * 4)  # registry outlives entries
+            except Exception as exc:
+                logger.warning("redis_cache: breadcrumb registry sadd failed: %s", exc)
+    return ok
+
+
+def explorer_get_sessions(project_id: str, *, client: Any = None) -> Optional[Any]:
+    return cache_get_json(_ex_sessions_key(project_id), client=client)
+
+
+def explorer_set_sessions(project_id: str, value: Any, *, client: Any = None) -> bool:
+    return cache_set_json(_ex_sessions_key(project_id), value,
+                          ttl_sec=_EX_TTL_SESSIONS, client=client)
+
+
+# ── targeted invalidation ──────────────────────────────────────────────────────
+
+def explorer_invalidate_memberships(user_id: str, *, client: Any = None) -> int:
+    """Invalidate workspace list for one user (org join/leave)."""
+    return cache_delete_key(_ex_memberships_key(user_id), client=client)
+
+
+def explorer_invalidate_children(org_id: str, workspace_id: str, folder_id: str, *, client: Any = None) -> int:
+    """Invalidate explorer list for one folder (or root when folder_id='')."""
+    return cache_delete_key(_ex_children_key(org_id, workspace_id, folder_id), client=client)
+
+
+def explorer_invalidate_breadcrumb(org_id: str, workspace_id: str, folder_id: str, *, client: Any = None) -> int:
+    """Invalidate breadcrumb for a specific folder."""
+    return cache_delete_key(_ex_breadcrumb_key(org_id, workspace_id, folder_id), client=client)
+
+
+def explorer_invalidate_all_breadcrumbs_for_workspace(org_id: str, workspace_id: str, *, client: Any = None) -> int:
+    """Invalidate all cached breadcrumbs for one workspace using a Set-based registry.
+    O(n_tracked_folders) — no key scan required.
+    Falls back to prefix scan only when registry key itself is missing.
+    """
+    oid = str(org_id or "").strip() or "default"
+    wid = str(workspace_id or "").strip() or "default"
+    conn = _resolve_client(client=client)
+    if conn is None:
+        return 0
+
+    rkey = _ex_breadcrumb_registry_key(org_id, workspace_id)
+    deleted = 0
+    try:
+        folder_ids = conn.smembers(rkey)
+    except Exception as exc:
+        logger.warning("redis_cache: breadcrumb registry smembers failed: %s", exc)
+        # Graceful fallback to prefix scan
+        prefix = f"pm:cache:explorer:breadcrumb:org:{oid}:workspace:{wid}:"
+        return cache_delete_prefix(prefix, client=conn)
+
+    if folder_ids:
+        keys_to_delete = [
+            _ex_breadcrumb_key(oid, wid, fid.decode() if isinstance(fid, bytes) else str(fid))
+            for fid in folder_ids
+        ]
+        for key in keys_to_delete:
+            deleted += cache_delete_key(key, client=conn)
+
+    # Delete the registry itself
+    try:
+        conn.delete(rkey)
+    except Exception as exc:
+        logger.warning("redis_cache: breadcrumb registry delete failed: %s", exc)
+
+    logger.debug("explorer invalidate breadcrumbs org=%s workspace=%s keys=%d deleted=%d",
+                 oid, wid, len(folder_ids) if folder_ids else 0, deleted)
+    return deleted
+
+
+def explorer_invalidate_sessions(project_id: str, *, client: Any = None) -> int:
+    """Invalidate session list for a project."""
+    return cache_delete_key(_ex_sessions_key(project_id), client=client)
+
+
+def explorer_invalidate_org_children(org_id: str, workspace_id: str, *, client: Any = None) -> int:
+    """Invalidate ALL children entries for one workspace (nuclear option for moves)."""
+    oid = str(org_id or "").strip() or "default"
+    wid = str(workspace_id or "").strip() or "default"
+    prefix = f"pm:cache:explorer:children:org:{oid}:workspace:{wid}:"
+    return cache_delete_prefix(prefix, client=client)

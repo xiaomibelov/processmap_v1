@@ -64,7 +64,7 @@ class BpmnPutRedisLockIntegrationTests(unittest.TestCase):
         os.environ["PROCESS_STORAGE_DIR"] = self.tmp.name
         os.environ["REDIS_URL"] = "redis://test/0"
 
-        import app.main as main_mod
+        import app._legacy_main as main_mod
 
         self.main_mod = main_mod
         self.BpmnXmlIn = main_mod.BpmnXmlIn
@@ -108,7 +108,7 @@ class BpmnPutRedisLockIntegrationTests(unittest.TestCase):
                     outcomes.append(("err", exc))
 
         with patch("app.redis_lock.get_client", return_value=fake), patch(
-            "app.main._collect_sequence_flow_meta",
+            "app._legacy_main._collect_sequence_flow_meta",
             side_effect=slow_collect,
         ):
             t1 = threading.Thread(target=worker, daemon=True)

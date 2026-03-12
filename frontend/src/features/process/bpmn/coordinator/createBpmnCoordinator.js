@@ -506,10 +506,20 @@ export default function createBpmnCoordinator(options = {}) {
     return !!saveInFlight || !!flushPromise;
   }
 
-  function destroy() {
+  function clearPendingWork(reason = "manual_clear") {
     clearSaveTimer();
     clearPendingReplayTimer();
     clearPendingSave();
+    const lastSavedRev = asNumber(store?.getState?.()?.lastSavedRev, 0);
+    saveQueuedRev = Math.max(saveQueuedRev, lastSavedRev);
+    emit("SAVE_QUEUE_CLEARED", {
+      reason: asText(reason || "manual_clear"),
+      last_saved_rev: lastSavedRev,
+    });
+  }
+
+  function destroy() {
+    clearPendingWork("destroy");
     unbindRuntime();
     flushPromise = null;
     saveInFlight = false;
@@ -525,6 +535,7 @@ export default function createBpmnCoordinator(options = {}) {
     syncExternalXml,
     getDebugState,
     isFlushing,
+    clearPendingWork,
     destroy,
   };
 }

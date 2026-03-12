@@ -19,6 +19,7 @@ export function createBpmnWiring(ctxBase, deps = {}) {
   const createBpmnRuntime = deps.createBpmnRuntime || createBpmnRuntimeDefault;
   const forceTaskResizeRulesModule = deps.forceTaskResizeRulesModule || null;
   const pmModdleDescriptor = deps.pmModdleDescriptor || null;
+  const camundaModdleDescriptor = deps.camundaModdleDescriptor || null;
 
   function ensureBpmnStore() {
     const ctx = resolveCtx(ctxBase);
@@ -158,7 +159,10 @@ export function createBpmnWiring(ctxBase, deps = {}) {
       getCtorOptions: (runtimeMode) => {
         if (String(runtimeMode || "").toLowerCase() !== "modeler") return {};
         const additionalModules = forceTaskResizeRulesModule ? [forceTaskResizeRulesModule] : [];
-        const moddleExtensions = pmModdleDescriptor ? { pm: pmModdleDescriptor } : {};
+        const moddleExtensions = {
+          ...(pmModdleDescriptor ? { pm: pmModdleDescriptor } : {}),
+          ...(camundaModdleDescriptor ? { camunda: camundaModdleDescriptor } : {}),
+        };
         return {
           additionalModules,
           moddleExtensions,

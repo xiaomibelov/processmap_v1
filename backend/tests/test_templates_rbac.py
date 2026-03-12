@@ -34,7 +34,7 @@ class TemplatesRbacTest(unittest.TestCase):
         os.environ.pop("PROCESS_DB_PATH", None)
 
         from app.auth import create_user
-        from app.main import (
+        from app.routers.templates import (
             TemplateCreateIn,
             create_template_endpoint,
             delete_template_endpoint,

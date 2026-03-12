@@ -207,8 +207,21 @@ export default function useBpmnSync({
     const fallbackXml = toText(
       bpmnRef.current?.getXmlDraft?.() || draftRef.current?.bpmn_xml || "",
     );
-    if (typeof saveLocal !== "function") {
+    const isSaveInProgress = () => {
+      try {
+        return !!bpmnRef.current?.isFlushing?.();
+      } catch {
+        return false;
+      }
+    };
+    if (force && isSaveInProgress()) {
       if (fallbackXml.trim()) {
+        syncXmlToSession(fallbackXml, { source: `${source}:pending_flush` });
+      }
+      return { ok: true, pending: true, reason: "save_in_progress", xml: fallbackXml };
+    }
+    if (typeof saveLocal !== "function") {
+      if (isLocal && fallbackXml.trim()) {
         syncXmlToSession(fallbackXml, { source: `${source}:fallback_no_modeler` });
         return { ok: true, xml: fallbackXml };
       }
@@ -217,7 +230,13 @@ export default function useBpmnSync({
     try {
       const saved = await Promise.resolve(saveLocal({ force, source }));
       if (saved === false || (saved && typeof saved === "object" && saved.ok === false)) {
-        if (force && fallbackXml.trim()) {
+        if (force && isSaveInProgress()) {
+          if (fallbackXml.trim()) {
+            syncXmlToSession(fallbackXml, { source: `${source}:pending_on_error` });
+          }
+          return { ok: true, pending: true, reason: "save_in_progress", xml: fallbackXml };
+        }
+        if (force && isLocal && fallbackXml.trim()) {
           syncXmlToSession(fallbackXml, { source: `${source}:fallback_on_error` });
           return { ok: true, xml: fallbackXml };
         }
@@ -255,7 +274,13 @@ export default function useBpmnSync({
       }
       return { ok: true, xml: savedXml, pending };
     } catch (error) {
-      if (force && fallbackXml.trim()) {
+      if (force && isSaveInProgress()) {
+        if (fallbackXml.trim()) {
+          syncXmlToSession(fallbackXml, { source: `${source}:pending_catch` });
+        }
+        return { ok: true, pending: true, reason: "save_in_progress", xml: fallbackXml };
+      }
+      if (force && isLocal && fallbackXml.trim()) {
         syncXmlToSession(fallbackXml, { source: `${source}:fallback_catch` });
         return { ok: true, xml: fallbackXml };
       }

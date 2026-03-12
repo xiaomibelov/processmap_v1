@@ -1037,3 +1037,183 @@ export function applyRobotMetaDecor(ctx) {
   } catch {
   }
 }
+
+export function clearPropertiesOverlayDecor(ctx) {
+  const inst = ctx?.inst;
+  const kind = ctx?.kind;
+  const refs = ctx?.refs;
+  const asObject = ctx?.utils?.asObject;
+  const toText = ctx?.utils?.toText;
+  if (!inst || !kind || !refs || typeof asObject !== "function" || typeof toText !== "function") return;
+  const state = asObject(refs.propertiesOverlayStateRef?.current?.[kind]);
+  try {
+    const overlays = inst.get("overlays");
+    Object.values(state).forEach((entryRaw) => {
+      const entry = asObject(entryRaw);
+      if (entry?.overlayId !== null && entry?.overlayId !== undefined) {
+        overlays.remove(entry.overlayId);
+      }
+    });
+  } catch {
+  }
+  refs.propertiesOverlayStateRef.current[kind] = {};
+}
+
+export function applyPropertiesOverlayDecor(ctx) {
+  const inst = ctx?.inst;
+  const kind = ctx?.kind;
+  const refs = ctx?.refs;
+  const getters = ctx?.getters;
+  const readOnly = ctx?.readOnly;
+  const toText = ctx?.utils?.toText;
+  const asObject = ctx?.utils?.asObject;
+  const asArray = ctx?.utils?.asArray;
+  if (
+    !inst || !kind || !refs || !getters || !readOnly
+    || typeof toText !== "function" || typeof asObject !== "function" || typeof asArray !== "function"
+  ) return;
+
+  function toneClassForProperty(item, index) {
+    const key = toText(item?.key || item?.label || `${index}`);
+    let hash = 0;
+    for (let i = 0; i < key.length; i += 1) {
+      hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+    }
+    const tone = (hash % 6) + 1;
+    return `fpcPropertyRow--tone${tone}`;
+  }
+
+  function normalizePreviewEntry(rawPreview) {
+    const preview = asObject(rawPreview);
+    const elementId = toText(preview?.elementId);
+    const items = asArray(preview?.items).map((item) => ({
+      key: toText(item?.key),
+      label: toText(item?.label),
+      value: toText(item?.value),
+    })).filter((item) => item.label && item.value);
+    const hiddenCount = Math.max(0, Number(preview?.hiddenCount || 0));
+    const enabled = preview?.enabled === true && !!elementId && items.length > 0;
+    if (!enabled) return null;
+    return {
+      elementId,
+      items,
+      hiddenCount,
+    };
+  }
+
+  const previewByElementId = {};
+  const alwaysEnabled = readOnly.propertiesOverlayAlwaysEnabledRef?.current === true;
+  if (alwaysEnabled) {
+    const alwaysMap = asObject(readOnly.propertiesOverlayAlwaysPreviewByElementIdRef?.current);
+    Object.keys(alwaysMap).forEach((rawElementId) => {
+      const normalized = normalizePreviewEntry(alwaysMap[rawElementId]);
+      if (!normalized) return;
+      previewByElementId[normalized.elementId] = normalized;
+    });
+  }
+  const selectedPreview = normalizePreviewEntry(readOnly.selectedPropertiesOverlayPreviewRef?.current);
+  if (selectedPreview) {
+    previewByElementId[selectedPreview.elementId] = selectedPreview;
+  }
+  const previewEntries = Object.values(previewByElementId);
+  if (!previewEntries.length) {
+    clearPropertiesOverlayDecor(ctx);
+    return;
+  }
+
+  try {
+    const overlays = inst.get("overlays");
+    const registry = inst.get("elementRegistry");
+    const currentState = { ...asObject(refs.propertiesOverlayStateRef.current[kind]) };
+    const nextState = {};
+    previewEntries.forEach((preview) => {
+      const elementId = toText(preview?.elementId);
+      const items = asArray(preview?.items);
+      const hiddenCount = Math.max(0, Number(preview?.hiddenCount || 0));
+      if (!elementId || !items.length) return;
+
+      let el = getters.findShapeByNodeId(registry, elementId)
+        || getters.findShapeForHint(registry, { nodeId: elementId, title: elementId });
+      if (!el) return;
+
+      const resolvedElementId = toText(el?.id);
+      if (!resolvedElementId) return;
+      const signature = JSON.stringify({
+        elementId,
+        items,
+        hiddenCount,
+      });
+      const prev = asObject(currentState[resolvedElementId]);
+      if (toText(prev?.signature) === signature) {
+        nextState[resolvedElementId] = prev;
+        delete currentState[resolvedElementId];
+        return;
+      }
+
+      if (prev?.overlayId !== null && prev?.overlayId !== undefined) {
+        overlays.remove(prev.overlayId);
+      }
+
+      const container = document.createElement("div");
+      container.className = "fpcPropertyOverlay fpcPropertyOverlay--table";
+      container.dataset.nodeId = elementId;
+      const shapeWidth = Number(el?.width || 0);
+      if (Number.isFinite(shapeWidth) && shapeWidth > 0) {
+        container.style.maxWidth = `${Math.max(Math.min(shapeWidth + 76, 280), 152)}px`;
+      }
+
+      const table = document.createElement("div");
+      table.className = "fpcPropertyTable";
+
+      items.forEach((item, index) => {
+        const row = document.createElement("div");
+        row.className = `fpcPropertyRow ${toneClassForProperty(item, index)}`;
+        row.title = `${item.label}: ${item.value}`;
+
+        const keyCell = document.createElement("span");
+        keyCell.className = "fpcPropertyCell fpcPropertyCell--key";
+        keyCell.textContent = item.label;
+        row.appendChild(keyCell);
+
+        const valueCell = document.createElement("span");
+        valueCell.className = "fpcPropertyCell fpcPropertyCell--value";
+        valueCell.textContent = item.value;
+        row.appendChild(valueCell);
+
+        table.appendChild(row);
+      });
+
+      if (hiddenCount > 0) {
+        const moreRow = document.createElement("div");
+        moreRow.className = "fpcPropertyRow fpcPropertyRow--summary";
+        moreRow.textContent = `+${hiddenCount} ещё`;
+        moreRow.title = `Еще свойств: ${hiddenCount}`;
+        table.appendChild(moreRow);
+      }
+      container.appendChild(table);
+
+      const anchorLeft = Number.isFinite(shapeWidth) && shapeWidth > 0 ? Math.round(shapeWidth / 2) : 68;
+      const topOffset = -14;
+      const overlayId = overlays.add(resolvedElementId, {
+        position: { top: topOffset, left: anchorLeft },
+        html: container,
+        scale: false,
+      });
+      nextState[resolvedElementId] = {
+        elementId: resolvedElementId,
+        overlayId,
+        signature,
+      };
+      delete currentState[resolvedElementId];
+    });
+
+    Object.values(currentState).forEach((entryRaw) => {
+      const entry = asObject(entryRaw);
+      if (entry?.overlayId !== null && entry?.overlayId !== undefined) {
+        overlays.remove(entry.overlayId);
+      }
+    });
+    refs.propertiesOverlayStateRef.current[kind] = nextState;
+  } catch {
+  }
+}

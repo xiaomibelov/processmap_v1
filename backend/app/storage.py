@@ -37,10 +37,14 @@ _MIGRATION_MARK = "legacy_file_to_sqlite_v1"
 _ENTERPRISE_BOOTSTRAP_MARK = "enterprise_org_bootstrap_v1"
 _DEFAULT_ORG_ID = str(os.environ.get("FPC_DEFAULT_ORG_ID", "org_default") or "org_default").strip() or "org_default"
 _DEFAULT_ORG_NAME = str(os.environ.get("FPC_DEFAULT_ORG_NAME", "Default") or "Default").strip() or "Default"
+_DEFAULT_WORKSPACE_NAME = (
+    str(os.environ.get("FPC_DEFAULT_WORKSPACE_NAME", "Main Workspace") or "Main Workspace").strip()
+    or "Main Workspace"
+)
 _ORG_FULL_ACCESS_ROLES = {"org_owner", "org_admin", "auditor"}
 _PROJECT_MEMBER_ROLES = {"project_manager", "editor", "viewer"}
-_ORG_MEMBER_ROLES = {"org_owner", "org_admin", "project_manager", "editor", "viewer", "auditor"}
-_ORG_INVITE_ROLES = {"org_admin", "project_manager", "editor", "viewer", "auditor"}
+_ORG_MEMBER_ROLES = {"org_owner", "org_admin", "project_manager", "editor", "viewer", "org_viewer", "auditor"}
+_ORG_INVITE_ROLES = {"org_admin", "project_manager", "editor", "viewer", "org_viewer", "auditor"}
 _PG_POOL_LOCK = threading.RLock()
 _PG_POOL: Any = None
 
@@ -556,18 +560,103 @@ def _ensure_schema() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_template_folders_parent ON template_folders(parent_id)")
             con.execute(
                 """
+                CREATE TABLE IF NOT EXISTS org_property_dictionary_operations (
+                  id TEXT PRIMARY KEY,
+                  org_id TEXT NOT NULL,
+                  operation_key TEXT NOT NULL,
+                  operation_label TEXT NOT NULL DEFAULT '',
+                  is_active INTEGER NOT NULL DEFAULT 1,
+                  sort_order INTEGER NOT NULL DEFAULT 0,
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  created_by TEXT NOT NULL DEFAULT '',
+                  updated_by TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            con.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_org_prop_dict_ops_unique
+                ON org_property_dictionary_operations(org_id, operation_key)
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_org_prop_dict_ops_sort ON org_property_dictionary_operations(org_id, is_active, sort_order ASC, operation_key ASC)"
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS org_property_dictionary_defs (
+                  id TEXT PRIMARY KEY,
+                  org_id TEXT NOT NULL,
+                  operation_key TEXT NOT NULL,
+                  property_key TEXT NOT NULL,
+                  property_label TEXT NOT NULL DEFAULT '',
+                  input_mode TEXT NOT NULL DEFAULT 'autocomplete',
+                  allow_custom_value INTEGER NOT NULL DEFAULT 1,
+                  required INTEGER NOT NULL DEFAULT 0,
+                  is_active INTEGER NOT NULL DEFAULT 1,
+                  sort_order INTEGER NOT NULL DEFAULT 0,
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  created_by TEXT NOT NULL DEFAULT '',
+                  updated_by TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            con.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_org_prop_dict_defs_unique
+                ON org_property_dictionary_defs(org_id, operation_key, property_key)
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_org_prop_dict_defs_sort ON org_property_dictionary_defs(org_id, operation_key, is_active, sort_order ASC, property_key ASC)"
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS org_property_dictionary_values (
+                  id TEXT PRIMARY KEY,
+                  org_id TEXT NOT NULL,
+                  operation_key TEXT NOT NULL,
+                  property_key TEXT NOT NULL,
+                  option_value TEXT NOT NULL,
+                  is_active INTEGER NOT NULL DEFAULT 1,
+                  sort_order INTEGER NOT NULL DEFAULT 0,
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  created_by TEXT NOT NULL DEFAULT '',
+                  updated_by TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            con.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_org_prop_dict_values_unique
+                ON org_property_dictionary_values(org_id, operation_key, property_key, option_value)
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_org_prop_dict_values_sort ON org_property_dictionary_values(org_id, operation_key, property_key, is_active, sort_order ASC, option_value ASC)"
+            )
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS org_invites (
                   id TEXT PRIMARY KEY,
                   org_id TEXT NOT NULL,
                   email TEXT NOT NULL,
                   role TEXT NOT NULL,
+                  full_name TEXT NOT NULL DEFAULT '',
+                  job_title TEXT NOT NULL DEFAULT '',
                   team_name TEXT NOT NULL DEFAULT '',
                   subgroup_name TEXT NOT NULL DEFAULT '',
                   invite_comment TEXT NOT NULL DEFAULT '',
+                  invite_key TEXT NOT NULL DEFAULT '',
                   token_hash TEXT NOT NULL,
                   expires_at INTEGER NOT NULL DEFAULT 0,
                   created_at INTEGER NOT NULL DEFAULT 0,
                   created_by TEXT NOT NULL DEFAULT '',
+                  used_at INTEGER,
+                  used_by_user_id TEXT,
                   accepted_at INTEGER,
                   accepted_by TEXT,
                   revoked_at INTEGER,
@@ -630,10 +719,71 @@ def _ensure_schema() -> None:
                 con.execute("ALTER TABLE org_invites ADD COLUMN subgroup_name TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "org_invites", "invite_comment"):
                 con.execute("ALTER TABLE org_invites ADD COLUMN invite_comment TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "org_invites", "full_name"):
+                con.execute("ALTER TABLE org_invites ADD COLUMN full_name TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "org_invites", "job_title"):
+                con.execute("ALTER TABLE org_invites ADD COLUMN job_title TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "org_invites", "invite_key"):
+                con.execute("ALTER TABLE org_invites ADD COLUMN invite_key TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "org_invites", "used_at"):
+                con.execute("ALTER TABLE org_invites ADD COLUMN used_at INTEGER")
+            if not _column_exists(con, "org_invites", "used_by_user_id"):
+                con.execute("ALTER TABLE org_invites ADD COLUMN used_by_user_id TEXT")
             con.execute("CREATE INDEX IF NOT EXISTS idx_projects_org_updated ON projects(org_id, updated_at DESC)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_sessions_org_project_updated ON sessions(org_id, project_id, updated_at DESC)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS workspaces (
+                  id TEXT PRIMARY KEY,
+                  org_id TEXT NOT NULL DEFAULT '',
+                  name TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  created_by TEXT NOT NULL DEFAULT '',
+                  updated_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_workspaces_org_name ON workspaces(org_id, name)")
+            try:
+                con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_workspaces_org_unique_name ON workspaces(org_id, name)")
+            except Exception:
+                pass
+            # ── Workspace Folders (adjacency list; parent_id='' means workspace root) ──
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS workspace_folders (
+                  id TEXT PRIMARY KEY,
+                  org_id TEXT NOT NULL DEFAULT '',
+                  workspace_id TEXT NOT NULL DEFAULT '',
+                  parent_id TEXT NOT NULL DEFAULT '',
+                  name TEXT NOT NULL DEFAULT '',
+                  sort_order INTEGER NOT NULL DEFAULT 0,
+                  created_by TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  archived_at INTEGER
+                )
+                """
+            )
+            if not _column_exists(con, "workspace_folders", "workspace_id"):
+                con.execute("ALTER TABLE workspace_folders ADD COLUMN workspace_id TEXT NOT NULL DEFAULT ''")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_wf_org_workspace_parent ON workspace_folders(org_id, workspace_id, parent_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_wf_org_updated ON workspace_folders(org_id, updated_at DESC)")
+            try:
+                con.execute("DROP INDEX IF EXISTS idx_wf_unique_name")
+                con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_wf_unique_name ON workspace_folders(org_id, workspace_id, parent_id, name)")
+            except Exception:
+                pass
+            # ── Add folder_id to projects ('' = workspace root) ─────────────────────
+            if not _column_exists(con, "projects", "folder_id"):
+                con.execute("ALTER TABLE projects ADD COLUMN folder_id TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "projects", "workspace_id"):
+                con.execute("ALTER TABLE projects ADD COLUMN workspace_id TEXT NOT NULL DEFAULT ''")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_projects_org_workspace_folder ON projects(org_id, workspace_id, folder_id)")
             _maybe_migrate_legacy_files(con)
             _ensure_enterprise_bootstrap(con)
+            _ensure_org_workspaces_bootstrap(con)
+            _ensure_workspace_folder_backfill(con)
             con.commit()
         _SCHEMA_READY = True
         _SCHEMA_DB_FILE = db_file
@@ -768,6 +918,15 @@ def _default_org_name() -> str:
     return _DEFAULT_ORG_NAME
 
 
+def _default_workspace_name() -> str:
+    return _DEFAULT_WORKSPACE_NAME
+
+
+def _default_workspace_id(org_id: str) -> str:
+    oid = str(org_id or "").strip() or _default_org_id()
+    return f"ws_{oid}_main"
+
+
 def _read_auth_users_rows() -> List[Dict[str, Any]]:
     path = _db_base_dir() / "_auth_users.json"
     if not path.exists():
@@ -785,10 +944,92 @@ def _read_auth_users_rows() -> List[Dict[str, Any]]:
     return out
 
 
+_BACKFILL_FOLDER_NAME = "Импортировано"
+_BACKFILL_META_KEY = "workspace_folder_backfill_v1"
+
+
+def _ensure_workspace_folder_backfill(con: Any) -> None:
+    """
+    Backfill: move every project with an empty or non-existent folder_id into a
+    per-org system folder called _BACKFILL_FOLDER_NAME so the explorer
+    always has valid hierarchy (project must live in a folder).
+
+    Idempotent: tracked via storage_meta key.  Safe to call repeatedly.
+    """
+    already_done = _meta_get(con, _BACKFILL_META_KEY)
+    if already_done == "done":
+        return
+
+    now = _now_ts()
+
+    # Collect all distinct org_ids that have orphan projects
+    # (folder_id empty OR folder_id points to a non-existent/archived folder)
+    orphan_rows = con.execute(
+        """
+        SELECT p.id, p.org_id, p.folder_id
+        FROM projects p
+        WHERE p.folder_id = ''
+           OR NOT EXISTS (
+               SELECT 1 FROM workspace_folders wf
+                WHERE wf.id = p.folder_id
+                  AND wf.org_id = p.org_id
+                  AND wf.archived_at IS NULL
+           )
+        """
+    ).fetchall()
+
+    if not orphan_rows:
+        _meta_set(con, _BACKFILL_META_KEY, "done")
+        return
+
+    # Group orphan project ids by org_id
+    by_org: Dict[str, List[str]] = {}
+    for row in orphan_rows:
+        oid = str(row["org_id"] or "").strip()
+        pid = str(row["id"] or "").strip()
+        if oid and pid:
+            by_org.setdefault(oid, []).append(pid)
+
+    for org_id, project_ids in by_org.items():
+        default_workspace_id = _default_workspace_id(org_id)
+        # Find or create the "Импортировано" backfill folder at workspace root
+        existing_bf = con.execute(
+            """
+            SELECT id FROM workspace_folders
+            WHERE org_id = ? AND workspace_id = ? AND parent_id = '' AND name = ? AND archived_at IS NULL
+            LIMIT 1
+            """,
+            [org_id, default_workspace_id, _BACKFILL_FOLDER_NAME],
+        ).fetchone()
+
+        if existing_bf:
+            bf_folder_id = str(existing_bf["id"])
+        else:
+            bf_folder_id = uuid.uuid4().hex[:12]
+            con.execute(
+                """
+                INSERT INTO workspace_folders (id, org_id, workspace_id, parent_id, name, sort_order, created_by, created_at, updated_at)
+                VALUES (?, ?, ?, '', ?, 9999, 'system', ?, ?)
+                """,
+                [bf_folder_id, org_id, default_workspace_id, _BACKFILL_FOLDER_NAME, now, now],
+            )
+
+        # Move all orphan projects for this org into the backfill folder
+        for pid in project_ids:
+            con.execute(
+                "UPDATE projects SET folder_id = ?, workspace_id = ?, updated_at = ? WHERE id = ? AND org_id = ?",
+                [bf_folder_id, default_workspace_id, now, pid, org_id],
+            )
+
+    _meta_set(con, _BACKFILL_META_KEY, "done")
+
+
 def _ensure_enterprise_bootstrap(con: sqlite3.Connection) -> None:
     default_org_id = _default_org_id()
     default_org_name = _default_org_name()
     if not default_org_id:
+        return
+    if _meta_get(con, _ENTERPRISE_BOOTSTRAP_MARK) == "done":
         return
 
     now = _now_ts()
@@ -846,6 +1087,10 @@ def _ensure_enterprise_bootstrap(con: sqlite3.Connection) -> None:
         """
     )
 
+    org_rows = con.execute("SELECT id FROM orgs ORDER BY id ASC").fetchall()
+    org_ids = [str(_row_value(row, "id", 0) or "").strip() for row in org_rows]
+    single_default_mode = len(org_ids) == 1 and org_ids[0] == default_org_id
+
     owner_rows = con.execute(
         """
         SELECT DISTINCT owner_user_id AS user_id
@@ -864,6 +1109,8 @@ def _ensure_enterprise_bootstrap(con: sqlite3.Connection) -> None:
     for user in users:
         uid = str(user.get("id") or "").strip()
         if not uid:
+            continue
+        if not single_default_mode:
             continue
         is_admin = bool(user.get("is_admin", False))
         role = "org_admin" if is_admin else "editor"
@@ -894,6 +1141,100 @@ def _ensure_enterprise_bootstrap(con: sqlite3.Connection) -> None:
         )
 
     _meta_set(con, _ENTERPRISE_BOOTSTRAP_MARK, "done")
+
+
+def _ensure_workspace_record(
+    con: Any,
+    org_id: str,
+    *,
+    created_by: str = "",
+    workspace_id: Optional[str] = None,
+    name: Optional[str] = None,
+) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    if not oid:
+        raise ValueError("org_id required")
+    now = _now_ts()
+    wid = str(workspace_id or "").strip() or _default_workspace_id(oid)
+    title = str(name or "").strip() or _default_workspace_name()
+    actor = str(created_by or "").strip()
+    con.execute(
+        """
+        INSERT INTO workspaces (id, org_id, name, created_at, created_by, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          org_id = excluded.org_id,
+          name = COALESCE(NULLIF(workspaces.name, ''), excluded.name),
+          updated_at = excluded.updated_at
+        """,
+        [wid, oid, title, now, actor, now],
+    )
+    row = con.execute(
+        """
+        SELECT id, org_id, name, created_at, created_by, updated_at
+          FROM workspaces
+         WHERE id = ?
+         LIMIT 1
+        """,
+        [wid],
+    ).fetchone()
+    return {
+        "id": str(_row_value(row, "id", 0) or wid),
+        "org_id": str(_row_value(row, "org_id", 1) or oid),
+        "name": str(_row_value(row, "name", 2) or title),
+        "created_at": int(_row_value(row, "created_at", 3) or now),
+        "created_by": str(_row_value(row, "created_by", 4) or actor),
+        "updated_at": int(_row_value(row, "updated_at", 5) or now),
+    }
+
+
+def _ensure_org_workspaces_bootstrap(con: Any) -> None:
+    rows = con.execute("SELECT id, created_by FROM orgs ORDER BY created_at ASC, id ASC").fetchall()
+    org_ids: List[str] = []
+    for row in rows:
+        oid = str(_row_value(row, "id", 0) or "").strip()
+        if not oid:
+            continue
+        org_ids.append(oid)
+        _ensure_workspace_record(
+            con,
+            oid,
+            created_by=str(_row_value(row, "created_by", 1) or "").strip(),
+        )
+        default_wid = _default_workspace_id(oid)
+        con.execute(
+            """
+            UPDATE workspace_folders
+               SET workspace_id = ?
+             WHERE org_id = ?
+               AND COALESCE(workspace_id, '') = ''
+            """,
+            [default_wid, oid],
+        )
+        con.execute(
+            """
+            UPDATE projects
+               SET workspace_id = (
+                 SELECT COALESCE(NULLIF(wf.workspace_id, ''), ?)
+                   FROM workspace_folders wf
+                  WHERE wf.id = projects.folder_id
+                  LIMIT 1
+               )
+             WHERE org_id = ?
+               AND COALESCE(workspace_id, '') = ''
+               AND COALESCE(folder_id, '') <> ''
+            """,
+            [default_wid, oid],
+        )
+        con.execute(
+            """
+            UPDATE projects
+               SET workspace_id = ?
+             WHERE org_id = ?
+               AND COALESCE(workspace_id, '') = ''
+            """,
+            [default_wid, oid],
+        )
 
 
 def _session_row_to_model(row: sqlite3.Row) -> Session:
@@ -933,12 +1274,15 @@ def _session_row_to_model(row: sqlite3.Row) -> Session:
     return Session.model_validate(payload)
 
 
-def _project_row_to_model(row: sqlite3.Row) -> Project:
+def _project_row_to_model(row: Any) -> "Project":
     keys = set(row.keys())
+    passport = _json_loads(row["passport_json"], {})
+    if not isinstance(passport, dict):
+        passport = {}
     payload = {
         "id": str(row["id"] or ""),
         "title": str(row["title"] or ""),
-        "passport": _json_loads(row["passport_json"], {}),
+        "passport": passport,
         "created_at": int(row["created_at"] or 0),
         "updated_at": int(row["updated_at"] or 0),
         "version": int(row["version"] or 1),
@@ -946,6 +1290,8 @@ def _project_row_to_model(row: sqlite3.Row) -> Project:
         "org_id": str((row["org_id"] if "org_id" in keys else "") or ""),
         "created_by": str((row["created_by"] if "created_by" in keys else "") or ""),
         "updated_by": str((row["updated_by"] if "updated_by" in keys else "") or ""),
+        "workspace_id": str((row["workspace_id"] if "workspace_id" in keys else "") or ""),
+        "folder_id": str((row["folder_id"] if "folder_id" in keys else "") or ""),
     }
     return Project.model_validate(payload)
 
@@ -1267,13 +1613,15 @@ class ProjectStorage:
         _ = _scope_is_admin(is_admin)
         owner = _scope_user_id(user_id)
         org = _scope_org_id(org_id) or _default_org_id()
+        workspace_id = _default_workspace_id(org)
         pid = gen_project_id()
         now = _now_ts()
         with _connect() as con:
+            _ensure_workspace_record(con, org, created_by=owner)
             con.execute(
                 """
-                INSERT INTO projects (id, title, passport_json, created_at, updated_at, version, owner_user_id, org_id, created_by, updated_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO projects (id, title, passport_json, created_at, updated_at, version, owner_user_id, org_id, workspace_id, created_by, updated_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     pid,
@@ -1284,6 +1632,7 @@ class ProjectStorage:
                     1,
                     owner,
                     org,
+                    workspace_id,
                     owner,
                     owner,
                 ],
@@ -1355,9 +1704,10 @@ class ProjectStorage:
         org_scope = _scope_org_id(org_id) or str(getattr(proj, "org_id", "") or "").strip() or _default_org_id()
         now = _now_ts()
         with _connect() as con:
-            existing = con.execute("SELECT owner_user_id, created_at, version, org_id, created_by FROM projects WHERE id = ? LIMIT 1", [pid]).fetchone()
+            existing = con.execute("SELECT owner_user_id, created_at, version, org_id, workspace_id, created_by FROM projects WHERE id = ? LIMIT 1", [pid]).fetchone()
             existing_owner = str(existing["owner_user_id"] or "") if existing else ""
             existing_org = str(existing["org_id"] or "") if existing else ""
+            existing_workspace_id = str(existing["workspace_id"] or "") if existing else ""
             existing_created_by = str(existing["created_by"] or "") if existing else ""
             if existing and not admin and owner_scope and existing_owner and existing_owner != owner_scope:
                 raise PermissionError("project belongs to another user")
@@ -1370,10 +1720,12 @@ class ProjectStorage:
             next_version = int(existing["version"] or 0) + 1 if existing else max(1, int(getattr(proj, "version", 1) or 1))
             created_by = existing_created_by or owner_scope or owner or str(getattr(proj, "created_by", "") or "").strip()
             updated_by = owner_scope or owner or str(getattr(proj, "updated_by", "") or "").strip()
+            workspace_id = existing_workspace_id or _default_workspace_id(existing_org or org_scope)
+            _ensure_workspace_record(con, existing_org or org_scope or _default_org_id(), created_by=created_by)
             con.execute(
                 """
-                INSERT INTO projects (id, title, passport_json, created_at, updated_at, version, owner_user_id, org_id, created_by, updated_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO projects (id, title, passport_json, created_at, updated_at, version, owner_user_id, org_id, workspace_id, created_by, updated_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                   title=excluded.title,
                   passport_json=excluded.passport_json,
@@ -1382,6 +1734,7 @@ class ProjectStorage:
                   version=excluded.version,
                   owner_user_id=excluded.owner_user_id,
                   org_id=excluded.org_id,
+                  workspace_id=excluded.workspace_id,
                   created_by=excluded.created_by,
                   updated_by=excluded.updated_by
                 """,
@@ -1394,6 +1747,7 @@ class ProjectStorage:
                     next_version,
                     owner,
                     existing_org or org_scope or _default_org_id(),
+                    workspace_id,
                     created_by,
                     updated_by,
                 ],
@@ -1430,32 +1784,78 @@ def get_default_org_id() -> str:
     return _default_org_id()
 
 
-def list_user_org_memberships(user_id: str, *, is_admin: Optional[bool] = None) -> List[Dict[str, Any]]:
+def count_org_records() -> int:
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute("SELECT COUNT(1) AS cnt FROM orgs").fetchone()
+    return int((row["cnt"] if row and row["cnt"] is not None else 0) or 0)
+
+
+def list_org_records() -> List[Dict[str, Any]]:
+    _ensure_schema()
+    with _connect() as con:
+        rows = con.execute(
+            """
+            SELECT id, name, created_at, created_by
+              FROM orgs
+             ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, lower(name) ASC, id ASC
+            """,
+            [_default_org_id()],
+        ).fetchall()
+    return [
+        {
+            "id": str(row["id"] or ""),
+            "name": str(row["name"] or row["id"] or ""),
+            "created_at": int(row["created_at"] or 0),
+            "created_by": str(row["created_by"] or ""),
+        }
+        for row in rows
+    ]
+
+
+def read_user_org_memberships_fast(user_id: str, *, is_admin: Optional[bool] = None) -> List[Dict[str, Any]]:
+    """Pure SELECT — no bootstrap, no INSERT, no commit.
+    Used by Explorer read paths where writes must not happen.
+    Falls back to [] if user has no memberships yet (first-login bootstrap
+    hasn't run yet); caller should treat that as cache-miss and let the
+    write-capable list_user_org_memberships() handle it on the auth path.
+    """
     uid = str(user_id or "").strip()
     if not uid:
         return []
     _ensure_schema()
-    with _connect() as con:
-        _ensure_enterprise_bootstrap(con)
-        now = _now_ts()
-        role = "org_admin" if bool(is_admin) else "editor"
-        con.execute(
-            """
-            INSERT OR IGNORE INTO org_memberships (org_id, user_id, role, created_at)
-            VALUES (?, ?, ?, ?)
-            """,
-            [_default_org_id(), uid, role, now],
-        )
-        if bool(is_admin):
-            con.execute(
+    if bool(is_admin):
+        rows = list_org_records()
+        memberships: List[Dict[str, Any]] = []
+        with _connect() as con:
+            membership_rows = con.execute(
                 """
-                UPDATE org_memberships
-                   SET role = 'org_admin'
-                 WHERE org_id = ? AND user_id = ?
+                SELECT org_id, role, created_at
+                  FROM org_memberships
+                 WHERE user_id = ?
                 """,
-                [_default_org_id(), uid],
+                [uid],
+            ).fetchall()
+        membership_by_org = {
+            str(row["org_id"] or ""): {
+                "role": _normalize_org_membership_role(row["role"]),
+                "created_at": int(row["created_at"] or 0),
+            }
+            for row in membership_rows
+        }
+        for row in rows:
+            org_id = str(row.get("id") or "")
+            current = membership_by_org.get(org_id) or {}
+            memberships.append(
+                {
+                    "org_id": org_id,
+                    "name": str(row.get("name") or org_id),
+                    "role": str(current.get("role") or "platform_admin"),
+                    "created_at": int(current.get("created_at") or row.get("created_at") or 0),
+                }
             )
-        con.commit()
+        return memberships
+    with _connect() as con:
         rows = con.execute(
             """
             SELECT m.org_id AS org_id, o.name AS org_name, m.role AS role, m.created_at AS created_at
@@ -1466,16 +1866,78 @@ def list_user_org_memberships(user_id: str, *, is_admin: Optional[bool] = None) 
             """,
             [uid, _default_org_id()],
         ).fetchall()
+    return [
+        {
+            "org_id": str(row["org_id"] or ""),
+            "name": str(row["org_name"] or row["org_id"] or ""),
+            "role": str(row["role"] or "org_viewer"),
+            "created_at": int(row["created_at"] or 0),
+        }
+        for row in rows
+    ]
+
+
+def list_user_org_memberships(user_id: str, *, is_admin: Optional[bool] = None) -> List[Dict[str, Any]]:
+    uid = str(user_id or "").strip()
+    if not uid:
+        return []
+    _ensure_schema()
+    with _connect() as con:
+        _ensure_enterprise_bootstrap(con)
+        now = _now_ts()
+        existing_count_row = con.execute(
+            "SELECT COUNT(1) AS cnt FROM org_memberships WHERE user_id = ?",
+            [uid],
+        ).fetchone()
+        existing_count = int((existing_count_row["cnt"] if existing_count_row and existing_count_row["cnt"] is not None else 0) or 0)
+        org_rows = con.execute("SELECT id FROM orgs ORDER BY id ASC").fetchall()
+        org_ids = [str(row["id"] or "") for row in org_rows]
+        single_default_mode = len(org_ids) == 1 and org_ids[0] == _default_org_id()
+        if existing_count <= 0 and single_default_mode and not bool(is_admin):
+            con.execute(
+                """
+                INSERT OR IGNORE INTO org_memberships (org_id, user_id, role, created_at)
+                VALUES (?, ?, 'editor', ?)
+                """,
+                [_default_org_id(), uid, now],
+            )
+            con.commit()
+        rows = con.execute(
+            """
+            SELECT m.org_id AS org_id, o.name AS org_name, m.role AS role, m.created_at AS created_at
+              FROM org_memberships m
+              JOIN orgs o ON o.id = m.org_id
+                WHERE m.user_id = ?
+             ORDER BY CASE WHEN m.org_id = ? THEN 0 ELSE 1 END, o.name ASC, m.org_id ASC
+            """,
+            [uid, _default_org_id()],
+        ).fetchall()
     out: List[Dict[str, Any]] = []
     for row in rows:
         out.append(
             {
                 "org_id": str(row["org_id"] or ""),
                 "name": str(row["org_name"] or row["org_id"] or ""),
-                "role": str(row["role"] or "viewer"),
+                "role": str(row["role"] or "org_viewer"),
                 "created_at": int(row["created_at"] or 0),
             }
         )
+    if not bool(is_admin):
+        return out
+    membership_by_org = {str(item.get("org_id") or ""): item for item in out}
+    for row in list_org_records():
+        org_id = str(row.get("id") or "")
+        if org_id in membership_by_org:
+            continue
+        out.append(
+            {
+                "org_id": org_id,
+                "name": str(row.get("name") or org_id),
+                "role": "platform_admin",
+                "created_at": int(row.get("created_at") or 0),
+            }
+        )
+    out.sort(key=lambda item: (0 if str(item.get("org_id") or "") == _default_org_id() else 1, str(item.get("name") or "").lower(), str(item.get("org_id") or "")))
     return out
 
 
@@ -1516,6 +1978,138 @@ def get_user_org_role(user_id: str, org_id: str, *, is_admin: Optional[bool] = N
     return ""
 
 
+def get_workspace_record(workspace_id: str, *, org_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    wid = str(workspace_id or "").strip()
+    oid = str(org_id or "").strip()
+    if not wid:
+        return None
+    _ensure_schema()
+    with _connect() as con:
+        if oid:
+            row = con.execute(
+                """
+                SELECT id, org_id, name, created_at, created_by, updated_at
+                  FROM workspaces
+                 WHERE id = ? AND org_id = ?
+                 LIMIT 1
+                """,
+                [wid, oid],
+            ).fetchone()
+        else:
+            row = con.execute(
+                """
+                SELECT id, org_id, name, created_at, created_by, updated_at
+                  FROM workspaces
+                 WHERE id = ?
+                 LIMIT 1
+                """,
+                [wid],
+            ).fetchone()
+    if not row:
+        return None
+    return {
+        "id": str(row["id"] or ""),
+        "org_id": str(row["org_id"] or ""),
+        "name": str(row["name"] or ""),
+        "created_at": int(row["created_at"] or 0),
+        "created_by": str(row["created_by"] or ""),
+        "updated_at": int(row["updated_at"] or 0),
+    }
+
+
+def list_org_workspaces(org_id: str) -> List[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    if not oid:
+        return []
+    _ensure_schema()
+    with _connect() as con:
+        _ensure_workspace_record(con, oid)
+        rows = con.execute(
+            """
+            SELECT id, org_id, name, created_at, created_by, updated_at
+              FROM workspaces
+             WHERE org_id = ?
+             ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, name ASC, id ASC
+            """,
+            [oid, _default_workspace_id(oid)],
+        ).fetchall()
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        out.append({
+            "id": str(row["id"] or ""),
+            "org_id": str(row["org_id"] or ""),
+            "name": str(row["name"] or ""),
+            "created_at": int(row["created_at"] or 0),
+            "created_by": str(row["created_by"] or ""),
+            "updated_at": int(row["updated_at"] or 0),
+            "is_default": str(row["id"] or "") == _default_workspace_id(oid),
+        })
+    return out
+
+
+def create_workspace_record(org_id: str, name: str, *, created_by: str, workspace_id: Optional[str] = None) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    title = " ".join(str(name or "").split()).strip()
+    actor = str(created_by or "").strip()
+    if not oid:
+        raise ValueError("org_id required")
+    if not title:
+        raise ValueError("name required")
+    _ensure_schema()
+    with _connect() as con:
+        dup = con.execute(
+            "SELECT id FROM workspaces WHERE org_id = ? AND lower(trim(name)) = lower(trim(?)) LIMIT 1",
+            [oid, title],
+        ).fetchone()
+        if dup:
+            raise ValueError("workspace name already exists")
+        row = _ensure_workspace_record(
+            con,
+            oid,
+            created_by=actor,
+            workspace_id=str(workspace_id or "").strip() or uuid.uuid4().hex[:12],
+            name=title,
+        )
+        con.commit()
+    return row
+
+
+def rename_workspace_record(org_id: str, workspace_id: str, name: str) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    wid = str(workspace_id or "").strip()
+    title = " ".join(str(name or "").split()).strip()
+    if not oid:
+        raise ValueError("org_id required")
+    if not wid:
+        raise ValueError("workspace_id required")
+    if not title:
+        raise ValueError("name required")
+    _ensure_schema()
+    with _connect() as con:
+        exists = con.execute(
+            "SELECT id FROM workspaces WHERE id = ? AND org_id = ? LIMIT 1",
+            [wid, oid],
+        ).fetchone()
+        if not exists:
+            raise ValueError("workspace not found")
+        dup = con.execute(
+            "SELECT id FROM workspaces WHERE org_id = ? AND lower(trim(name)) = lower(trim(?)) AND id != ? LIMIT 1",
+            [oid, title, wid],
+        ).fetchone()
+        if dup:
+            raise ValueError("workspace name already exists")
+        now = _now_ts()
+        con.execute(
+            "UPDATE workspaces SET name = ?, updated_at = ? WHERE id = ? AND org_id = ?",
+            [title, now, wid, oid],
+        )
+        con.commit()
+    row = get_workspace_record(wid, org_id=oid)
+    if not row:
+        raise ValueError("workspace not found")
+    return row
+
+
 def create_org_record(name: str, *, created_by: str, org_id: Optional[str] = None) -> Dict[str, Any]:
     _ensure_schema()
     now = _now_ts()
@@ -1539,10 +2133,44 @@ def create_org_record(name: str, *, created_by: str, org_id: Optional[str] = Non
             """,
             [oid, actor, now],
         )
+        _ensure_workspace_record(con, oid, created_by=actor)
         con.commit()
         row = con.execute("SELECT id, name, created_at, created_by FROM orgs WHERE id = ? LIMIT 1", [oid]).fetchone()
     if not row:
         return {"id": oid, "name": title, "created_at": now, "created_by": actor}
+    return {
+        "id": str(row["id"] or ""),
+        "name": str(row["name"] or ""),
+        "created_at": int(row["created_at"] or 0),
+        "created_by": str(row["created_by"] or ""),
+    }
+
+
+def rename_org_record(org_id: str, name: str) -> Dict[str, Any]:
+    _ensure_schema()
+    oid = str(org_id or "").strip()
+    title = " ".join(str(name or "").split()).strip()
+    if not oid:
+        raise ValueError("org_id required")
+    if not title:
+        raise ValueError("name required")
+    with _connect() as con:
+        exists = con.execute(
+            "SELECT id FROM orgs WHERE lower(trim(name)) = lower(trim(?)) AND id != ? LIMIT 1",
+            [title, oid],
+        ).fetchone()
+        if exists:
+            raise ValueError("workspace name already exists")
+        cur = con.execute(
+            "UPDATE orgs SET name = ? WHERE id = ?",
+            [title, oid],
+        )
+        con.commit()
+        if int(cur.rowcount or 0) <= 0:
+            raise ValueError("org not found")
+        row = con.execute("SELECT id, name, created_at, created_by FROM orgs WHERE id = ? LIMIT 1", [oid]).fetchone()
+    if not row:
+        raise ValueError("org not found")
     return {
         "id": str(row["id"] or ""),
         "name": str(row["name"] or ""),
@@ -1589,21 +2217,23 @@ def _normalize_org_membership_role(raw: Any) -> str:
         "teamadmin": "project_manager",
         "editor": "editor",
         "edit": "editor",
-        "viewer": "viewer",
-        "read_only": "viewer",
+        "viewer": "org_viewer",
+        "orgviewer": "org_viewer",
+        "org_viewer": "org_viewer",
+        "read_only": "org_viewer",
         "auditor": "auditor",
         "audit": "auditor",
     }
     role = aliases.get(role, role)
     if role not in _ORG_MEMBER_ROLES:
-        return "viewer"
+        return "org_viewer"
     return role
 
 
 def _normalize_org_invite_role(raw: Any) -> str:
     role = _normalize_org_membership_role(raw)
     if role not in _ORG_INVITE_ROLES:
-        return "viewer"
+        return "org_viewer"
     return role
 
 
@@ -1615,11 +2245,11 @@ def _invite_status(row: Dict[str, Any]) -> str:
     now = _now_ts()
     if int(row.get("revoked_at") or 0) > 0:
         return "revoked"
-    if int(row.get("accepted_at") or 0) > 0:
-        return "accepted"
+    if int(row.get("used_at") or row.get("accepted_at") or 0) > 0:
+        return "used"
     if int(row.get("expires_at") or 0) > 0 and int(row.get("expires_at") or 0) < now:
         return "expired"
-    return "active"
+    return "pending"
 
 
 def _invite_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
@@ -1634,12 +2264,17 @@ def _invite_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
         "org_name": str(_col("org_name") or _col("org_id") or ""),
         "email": _normalize_email(_col("email")),
         "role": _normalize_org_invite_role(_col("role")),
+        "full_name": str(_col("full_name") or "").strip(),
+        "job_title": str(_col("job_title") or "").strip(),
         "team_name": str(_col("team_name") or "").strip(),
         "subgroup_name": str(_col("subgroup_name") or "").strip(),
         "invite_comment": str(_col("invite_comment") or "").strip(),
+        "invite_key": str(_col("invite_key") or "").strip(),
         "expires_at": int(_col("expires_at") or 0),
         "created_at": int(_col("created_at") or 0),
         "created_by": str(_col("created_by") or ""),
+        "used_at": int(_col("used_at") or 0) if _col("used_at") is not None else None,
+        "used_by_user_id": str(_col("used_by_user_id") or "") if _col("used_by_user_id") is not None else None,
         "accepted_at": int(_col("accepted_at") or 0) if _col("accepted_at") is not None else None,
         "accepted_by": str(_col("accepted_by") or "") if _col("accepted_by") is not None else None,
         "revoked_at": int(_col("revoked_at") or 0) if _col("revoked_at") is not None else None,
@@ -1647,8 +2282,11 @@ def _invite_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
         "invite_mode": "one_time",
     }
     payload["status"] = _invite_status(payload)
-    payload["used_at"] = payload.get("accepted_at")
-    payload["used_by"] = payload.get("accepted_by")
+    if not payload.get("used_at") and payload.get("accepted_at"):
+        payload["used_at"] = payload.get("accepted_at")
+    if not payload.get("used_by_user_id") and payload.get("accepted_by"):
+        payload["used_by_user_id"] = payload.get("accepted_by")
+    payload["used_by"] = payload.get("used_by_user_id")
     return payload
 
 
@@ -1840,6 +2478,24 @@ def upsert_org_membership(org_id: str, user_id: str, role: str) -> Dict[str, Any
         "role": _normalize_org_membership_role(row["role"]),
         "created_at": int(row["created_at"] or 0),
     }
+
+
+def delete_org_membership(org_id: str, user_id: str) -> bool:
+    oid = str(org_id or "").strip()
+    uid = str(user_id or "").strip()
+    if not oid or not uid:
+        return False
+    _ensure_schema()
+    with _connect() as con:
+        cur = con.execute(
+            """
+            DELETE FROM org_memberships
+             WHERE org_id = ? AND user_id = ?
+            """,
+            [oid, uid],
+        )
+        con.commit()
+    return int(cur.rowcount or 0) > 0
 
 
 def _normalize_template_scope(raw: Any) -> str:
@@ -2263,6 +2919,582 @@ def delete_template(template_id: str) -> bool:
     return int(cur.rowcount or 0) > 0
 
 
+def _normalize_org_property_dictionary_key(value: Any) -> str:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return ""
+    normalized = re.sub(r"\s+", "_", raw)
+    normalized = re.sub(r"[^a-z0-9_-]+", "_", normalized)
+    normalized = re.sub(r"_+", "_", normalized).strip("_")
+    return normalized[:120]
+
+
+def _normalize_org_property_dictionary_label(value: Any, fallback: str = "") -> str:
+    text = str(value or "").strip()
+    if text:
+        return text[:200]
+    return str(fallback or "").strip()[:200]
+
+
+def _normalize_org_property_dictionary_input_mode(value: Any) -> str:
+    mode = str(value or "").strip().lower()
+    if mode == "free_text":
+        return "free_text"
+    return "autocomplete"
+
+
+def _normalize_org_property_dictionary_bool(value: Any, *, default: bool = True) -> int:
+    if value is None:
+        return 1 if default else 0
+    if isinstance(value, bool):
+        return 1 if value else 0
+    text = str(value or "").strip().lower()
+    if text in {"0", "false", "no", "off"}:
+        return 0
+    if text in {"1", "true", "yes", "on"}:
+        return 1
+    return 1 if default else 0
+
+
+def _org_property_dictionary_operation_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    return {
+        "id": str(row["id"] or ""),
+        "organizationId": str(row["org_id"] or ""),
+        "org_id": str(row["org_id"] or ""),
+        "operationKey": str(row["operation_key"] or ""),
+        "operation_key": str(row["operation_key"] or ""),
+        "operationLabel": str(row["operation_label"] or ""),
+        "operation_label": str(row["operation_label"] or ""),
+        "isActive": bool(int(row["is_active"] or 0)),
+        "is_active": bool(int(row["is_active"] or 0)),
+        "sortOrder": int(row["sort_order"] or 0),
+        "sort_order": int(row["sort_order"] or 0),
+        "created_at": int(row["created_at"] or 0),
+        "updated_at": int(row["updated_at"] or 0),
+        "created_by": str(row["created_by"] or ""),
+        "updated_by": str(row["updated_by"] or ""),
+    }
+
+
+def _org_property_dictionary_definition_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    return {
+        "id": str(row["id"] or ""),
+        "organizationId": str(row["org_id"] or ""),
+        "org_id": str(row["org_id"] or ""),
+        "operationKey": str(row["operation_key"] or ""),
+        "operation_key": str(row["operation_key"] or ""),
+        "propertyKey": str(row["property_key"] or ""),
+        "property_key": str(row["property_key"] or ""),
+        "propertyLabel": str(row["property_label"] or ""),
+        "property_label": str(row["property_label"] or ""),
+        "inputMode": _normalize_org_property_dictionary_input_mode(row["input_mode"]),
+        "input_mode": _normalize_org_property_dictionary_input_mode(row["input_mode"]),
+        "allowCustomValue": bool(int(row["allow_custom_value"] or 0)),
+        "allow_custom_value": bool(int(row["allow_custom_value"] or 0)),
+        "required": bool(int(row["required"] or 0)),
+        "isActive": bool(int(row["is_active"] or 0)),
+        "is_active": bool(int(row["is_active"] or 0)),
+        "sortOrder": int(row["sort_order"] or 0),
+        "sort_order": int(row["sort_order"] or 0),
+        "created_at": int(row["created_at"] or 0),
+        "updated_at": int(row["updated_at"] or 0),
+        "created_by": str(row["created_by"] or ""),
+        "updated_by": str(row["updated_by"] or ""),
+    }
+
+
+def _org_property_dictionary_value_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    return {
+        "id": str(row["id"] or ""),
+        "organizationId": str(row["org_id"] or ""),
+        "org_id": str(row["org_id"] or ""),
+        "operationKey": str(row["operation_key"] or ""),
+        "operation_key": str(row["operation_key"] or ""),
+        "propertyKey": str(row["property_key"] or ""),
+        "property_key": str(row["property_key"] or ""),
+        "optionValue": str(row["option_value"] or ""),
+        "option_value": str(row["option_value"] or ""),
+        "isActive": bool(int(row["is_active"] or 0)),
+        "is_active": bool(int(row["is_active"] or 0)),
+        "sortOrder": int(row["sort_order"] or 0),
+        "sort_order": int(row["sort_order"] or 0),
+        "created_at": int(row["created_at"] or 0),
+        "updated_at": int(row["updated_at"] or 0),
+        "created_by": str(row["created_by"] or ""),
+        "updated_by": str(row["updated_by"] or ""),
+    }
+
+
+def list_org_property_dictionary_operations(
+    org_id: str,
+    *,
+    include_inactive: bool = True,
+) -> List[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    if not oid:
+        return []
+    _ensure_schema()
+    clauses = ["org_id = ?"]
+    params: List[Any] = [oid]
+    if not include_inactive:
+        clauses.append("is_active = 1")
+    with _connect() as con:
+        rows = con.execute(
+            f"""
+            SELECT id, org_id, operation_key, operation_label, is_active, sort_order, created_at, updated_at, created_by, updated_by
+              FROM org_property_dictionary_operations
+             WHERE {' AND '.join(clauses)}
+             ORDER BY sort_order ASC, lower(operation_label) ASC, lower(operation_key) ASC, id ASC
+            """,
+            params,
+        ).fetchall()
+    return [_org_property_dictionary_operation_row_to_dict(row) for row in rows]
+
+
+def get_org_property_dictionary_operation(org_id: str, operation_key: str) -> Optional[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    op_key = _normalize_org_property_dictionary_key(operation_key)
+    if not oid or not op_key:
+        return None
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT id, org_id, operation_key, operation_label, is_active, sort_order, created_at, updated_at, created_by, updated_by
+              FROM org_property_dictionary_operations
+             WHERE org_id = ? AND operation_key = ?
+             LIMIT 1
+            """,
+            [oid, op_key],
+        ).fetchone()
+    return _org_property_dictionary_operation_row_to_dict(row) if row else None
+
+
+def upsert_org_property_dictionary_operation(
+    org_id: str,
+    *,
+    operation_key: str,
+    operation_label: str = "",
+    is_active: Any = True,
+    sort_order: Any = 0,
+    actor_user_id: str = "",
+) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    op_key = _normalize_org_property_dictionary_key(operation_key)
+    if not oid:
+        raise ValueError("org_id required")
+    if not op_key:
+        raise ValueError("operation_key required")
+    label = _normalize_org_property_dictionary_label(operation_label, fallback=op_key)
+    now = _now_ts()
+    op_id = f"opd_{uuid.uuid4().hex[:12]}"
+    _ensure_schema()
+    with _connect() as con:
+        existing = con.execute(
+            "SELECT id, created_at, created_by FROM org_property_dictionary_operations WHERE org_id = ? AND operation_key = ? LIMIT 1",
+            [oid, op_key],
+        ).fetchone()
+        con.execute(
+            """
+            INSERT INTO org_property_dictionary_operations (
+              id, org_id, operation_key, operation_label, is_active, sort_order, created_at, updated_at, created_by, updated_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(org_id, operation_key) DO UPDATE SET
+              operation_label = excluded.operation_label,
+              is_active = excluded.is_active,
+              sort_order = excluded.sort_order,
+              updated_at = excluded.updated_at,
+              updated_by = excluded.updated_by
+            """,
+            [
+                str(existing["id"] if existing else op_id),
+                oid,
+                op_key,
+                label,
+                _normalize_org_property_dictionary_bool(is_active, default=True),
+                int(sort_order or 0),
+                int(existing["created_at"] or now) if existing else now,
+                now,
+                str(existing["created_by"] or actor_user_id or "") if existing else str(actor_user_id or ""),
+                str(actor_user_id or ""),
+            ],
+        )
+        con.commit()
+    out = get_org_property_dictionary_operation(oid, op_key)
+    if not out:
+        raise ValueError("operation_upsert_failed")
+    return out
+
+
+def list_org_property_dictionary_definitions(
+    org_id: str,
+    operation_key: str,
+    *,
+    include_inactive: bool = True,
+) -> List[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    op_key = _normalize_org_property_dictionary_key(operation_key)
+    if not oid or not op_key:
+        return []
+    _ensure_schema()
+    clauses = ["org_id = ?", "operation_key = ?"]
+    params: List[Any] = [oid, op_key]
+    if not include_inactive:
+        clauses.append("is_active = 1")
+    with _connect() as con:
+        rows = con.execute(
+            f"""
+            SELECT id, org_id, operation_key, property_key, property_label, input_mode, allow_custom_value, required, is_active, sort_order, created_at, updated_at, created_by, updated_by
+              FROM org_property_dictionary_defs
+             WHERE {' AND '.join(clauses)}
+             ORDER BY sort_order ASC, lower(property_label) ASC, lower(property_key) ASC, id ASC
+            """,
+            params,
+        ).fetchall()
+    return [_org_property_dictionary_definition_row_to_dict(row) for row in rows]
+
+
+def get_org_property_dictionary_definition(org_id: str, operation_key: str, property_key: str) -> Optional[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    op_key = _normalize_org_property_dictionary_key(operation_key)
+    prop_key = _normalize_org_property_dictionary_key(property_key)
+    if not oid or not op_key or not prop_key:
+        return None
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT id, org_id, operation_key, property_key, property_label, input_mode, allow_custom_value, required, is_active, sort_order, created_at, updated_at, created_by, updated_by
+              FROM org_property_dictionary_defs
+             WHERE org_id = ? AND operation_key = ? AND property_key = ?
+             LIMIT 1
+            """,
+            [oid, op_key, prop_key],
+        ).fetchone()
+    return _org_property_dictionary_definition_row_to_dict(row) if row else None
+
+
+def upsert_org_property_dictionary_definition(
+    org_id: str,
+    *,
+    operation_key: str,
+    property_key: str,
+    property_label: str = "",
+    input_mode: Any = "autocomplete",
+    allow_custom_value: Any = True,
+    required: Any = False,
+    is_active: Any = True,
+    sort_order: Any = 0,
+    actor_user_id: str = "",
+) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    op_key = _normalize_org_property_dictionary_key(operation_key)
+    prop_key = _normalize_org_property_dictionary_key(property_key)
+    if not oid:
+        raise ValueError("org_id required")
+    if not op_key:
+        raise ValueError("operation_key required")
+    if not prop_key:
+        raise ValueError("property_key required")
+    label = _normalize_org_property_dictionary_label(property_label, fallback=prop_key)
+    now = _now_ts()
+    prop_id = f"opddef_{uuid.uuid4().hex[:12]}"
+    _ensure_schema()
+    with _connect() as con:
+        existing = con.execute(
+            """
+            SELECT id, created_at, created_by
+              FROM org_property_dictionary_defs
+             WHERE org_id = ? AND operation_key = ? AND property_key = ?
+             LIMIT 1
+            """,
+            [oid, op_key, prop_key],
+        ).fetchone()
+        con.execute(
+            """
+            INSERT INTO org_property_dictionary_defs (
+              id, org_id, operation_key, property_key, property_label, input_mode, allow_custom_value, required, is_active, sort_order, created_at, updated_at, created_by, updated_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(org_id, operation_key, property_key) DO UPDATE SET
+              property_label = excluded.property_label,
+              input_mode = excluded.input_mode,
+              allow_custom_value = excluded.allow_custom_value,
+              required = excluded.required,
+              is_active = excluded.is_active,
+              sort_order = excluded.sort_order,
+              updated_at = excluded.updated_at,
+              updated_by = excluded.updated_by
+            """,
+            [
+                str(existing["id"] if existing else prop_id),
+                oid,
+                op_key,
+                prop_key,
+                label,
+                _normalize_org_property_dictionary_input_mode(input_mode),
+                _normalize_org_property_dictionary_bool(allow_custom_value, default=True),
+                _normalize_org_property_dictionary_bool(required, default=False),
+                _normalize_org_property_dictionary_bool(is_active, default=True),
+                int(sort_order or 0),
+                int(existing["created_at"] or now) if existing else now,
+                now,
+                str(existing["created_by"] or actor_user_id or "") if existing else str(actor_user_id or ""),
+                str(actor_user_id or ""),
+            ],
+        )
+        con.commit()
+    out = get_org_property_dictionary_definition(oid, op_key, prop_key)
+    if not out:
+        raise ValueError("definition_upsert_failed")
+    return out
+
+
+def delete_org_property_dictionary_definition(org_id: str, operation_key: str, property_key: str) -> bool:
+    oid = str(org_id or "").strip()
+    op_key = _normalize_org_property_dictionary_key(operation_key)
+    prop_key = _normalize_org_property_dictionary_key(property_key)
+    if not oid or not op_key or not prop_key:
+        return False
+    _ensure_schema()
+    with _connect() as con:
+        con.execute(
+            "DELETE FROM org_property_dictionary_values WHERE org_id = ? AND operation_key = ? AND property_key = ?",
+            [oid, op_key, prop_key],
+        )
+        cur = con.execute(
+            "DELETE FROM org_property_dictionary_defs WHERE org_id = ? AND operation_key = ? AND property_key = ?",
+            [oid, op_key, prop_key],
+        )
+        con.commit()
+    return int(cur.rowcount or 0) > 0
+
+
+def list_org_property_dictionary_values(
+    org_id: str,
+    operation_key: str,
+    property_key: str,
+    *,
+    include_inactive: bool = True,
+) -> List[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    op_key = _normalize_org_property_dictionary_key(operation_key)
+    prop_key = _normalize_org_property_dictionary_key(property_key)
+    if not oid or not op_key or not prop_key:
+        return []
+    _ensure_schema()
+    clauses = ["org_id = ?", "operation_key = ?", "property_key = ?"]
+    params: List[Any] = [oid, op_key, prop_key]
+    if not include_inactive:
+        clauses.append("is_active = 1")
+    with _connect() as con:
+        rows = con.execute(
+            f"""
+            SELECT id, org_id, operation_key, property_key, option_value, is_active, sort_order, created_at, updated_at, created_by, updated_by
+              FROM org_property_dictionary_values
+             WHERE {' AND '.join(clauses)}
+             ORDER BY sort_order ASC, lower(option_value) ASC, id ASC
+            """,
+            params,
+        ).fetchall()
+    return [_org_property_dictionary_value_row_to_dict(row) for row in rows]
+
+
+def get_org_property_dictionary_value_by_id(org_id: str, option_id: str) -> Optional[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    option_row_id = str(option_id or "").strip()
+    if not oid or not option_row_id:
+        return None
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT id, org_id, operation_key, property_key, option_value, is_active, sort_order, created_at, updated_at, created_by, updated_by
+              FROM org_property_dictionary_values
+             WHERE org_id = ? AND id = ?
+             LIMIT 1
+            """,
+            [oid, option_row_id],
+        ).fetchone()
+    return _org_property_dictionary_value_row_to_dict(row) if row else None
+
+
+def upsert_org_property_dictionary_value(
+    org_id: str,
+    *,
+    operation_key: str,
+    property_key: str,
+    option_value: str,
+    is_active: Any = True,
+    sort_order: Any = 0,
+    actor_user_id: str = "",
+) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    op_key = _normalize_org_property_dictionary_key(operation_key)
+    prop_key = _normalize_org_property_dictionary_key(property_key)
+    opt_value = str(option_value or "").strip()
+    if not oid:
+        raise ValueError("org_id required")
+    if not op_key:
+        raise ValueError("operation_key required")
+    if not prop_key:
+        raise ValueError("property_key required")
+    if not opt_value:
+        raise ValueError("option_value required")
+    now = _now_ts()
+    value_id = f"opdval_{uuid.uuid4().hex[:12]}"
+    _ensure_schema()
+    with _connect() as con:
+        existing = con.execute(
+            """
+            SELECT id, created_at, created_by
+              FROM org_property_dictionary_values
+             WHERE org_id = ? AND operation_key = ? AND property_key = ? AND option_value = ?
+             LIMIT 1
+            """,
+            [oid, op_key, prop_key, opt_value],
+        ).fetchone()
+        con.execute(
+            """
+            INSERT INTO org_property_dictionary_values (
+              id, org_id, operation_key, property_key, option_value, is_active, sort_order, created_at, updated_at, created_by, updated_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(org_id, operation_key, property_key, option_value) DO UPDATE SET
+              is_active = excluded.is_active,
+              sort_order = excluded.sort_order,
+              updated_at = excluded.updated_at,
+              updated_by = excluded.updated_by
+            """,
+            [
+                str(existing["id"] if existing else value_id),
+                oid,
+                op_key,
+                prop_key,
+                opt_value,
+                _normalize_org_property_dictionary_bool(is_active, default=True),
+                int(sort_order or 0),
+                int(existing["created_at"] or now) if existing else now,
+                now,
+                str(existing["created_by"] or actor_user_id or "") if existing else str(actor_user_id or ""),
+                str(actor_user_id or ""),
+            ],
+        )
+        con.commit()
+    out = None
+    values = list_org_property_dictionary_values(oid, op_key, prop_key, include_inactive=True)
+    for item in values:
+        if str(item.get("option_value") or "") == opt_value:
+            out = item
+            break
+    if not out:
+        raise ValueError("value_upsert_failed")
+    return out
+
+
+def update_org_property_dictionary_value(
+    org_id: str,
+    option_id: str,
+    *,
+    option_value: Optional[str] = None,
+    is_active: Any = None,
+    sort_order: Any = None,
+    actor_user_id: str = "",
+) -> Optional[Dict[str, Any]]:
+    current = get_org_property_dictionary_value_by_id(org_id, option_id)
+    if not current:
+        return None
+    oid = str(current.get("org_id") or "")
+    op_key = str(current.get("operation_key") or "")
+    prop_key = str(current.get("property_key") or "")
+    next_value = str(option_value if option_value is not None else current.get("option_value") or "").strip()
+    if not next_value:
+        raise ValueError("option_value required")
+    next_sort_order = int(sort_order if sort_order is not None else current.get("sort_order") or 0)
+    next_is_active = (
+        _normalize_org_property_dictionary_bool(is_active, default=bool(current.get("is_active")))
+        if is_active is not None
+        else (1 if bool(current.get("is_active")) else 0)
+    )
+    now = _now_ts()
+    _ensure_schema()
+    with _connect() as con:
+        conflict = con.execute(
+            """
+            SELECT id
+              FROM org_property_dictionary_values
+             WHERE org_id = ? AND operation_key = ? AND property_key = ? AND option_value = ? AND id != ?
+             LIMIT 1
+            """,
+            [oid, op_key, prop_key, next_value, str(option_id or "").strip()],
+        ).fetchone()
+        if conflict:
+            raise ValueError("option_value_exists")
+        con.execute(
+            """
+            UPDATE org_property_dictionary_values
+               SET option_value = ?,
+                   is_active = ?,
+                   sort_order = ?,
+                   updated_at = ?,
+                   updated_by = ?
+             WHERE org_id = ? AND id = ?
+            """,
+            [next_value, next_is_active, next_sort_order, now, str(actor_user_id or ""), oid, str(option_id or "").strip()],
+        )
+        con.commit()
+    return get_org_property_dictionary_value_by_id(oid, option_id)
+
+
+def delete_org_property_dictionary_value(org_id: str, option_id: str) -> bool:
+    oid = str(org_id or "").strip()
+    option_row_id = str(option_id or "").strip()
+    if not oid or not option_row_id:
+        return False
+    _ensure_schema()
+    with _connect() as con:
+        cur = con.execute(
+            "DELETE FROM org_property_dictionary_values WHERE org_id = ? AND id = ?",
+            [oid, option_row_id],
+        )
+        con.commit()
+    return int(cur.rowcount or 0) > 0
+
+
+def get_org_property_dictionary_bundle(
+    org_id: str,
+    operation_key: str,
+    *,
+    include_inactive: bool = False,
+) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    op_key = _normalize_org_property_dictionary_key(operation_key)
+    operation = get_org_property_dictionary_operation(oid, op_key)
+    definitions = list_org_property_dictionary_definitions(oid, op_key, include_inactive=include_inactive)
+    values_by_property: Dict[str, List[Dict[str, Any]]] = {}
+    for definition in definitions:
+        property_key = str(definition.get("property_key") or "")
+        values_by_property[property_key] = list_org_property_dictionary_values(
+            oid,
+            op_key,
+            property_key,
+            include_inactive=include_inactive,
+        )
+    properties = []
+    for definition in definitions:
+        property_key = str(definition.get("property_key") or "")
+        properties.append({
+            **definition,
+            "options": values_by_property.get(property_key, []),
+        })
+    return {
+        "org_id": oid,
+        "organizationId": oid,
+        "operation_key": op_key,
+        "operationKey": op_key,
+        "operation": operation,
+        "properties": properties,
+    }
+
+
 def list_org_invites(
     org_id: str,
     *,
@@ -2275,8 +3507,8 @@ def list_org_invites(
     with _connect() as con:
         rows = con.execute(
             """
-            SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.team_name, i.subgroup_name, i.invite_comment,
-                   i.token_hash, i.expires_at, i.created_at, i.created_by, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+            SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
+                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
               FROM org_invites i
               LEFT JOIN orgs o ON o.id = i.org_id
              WHERE i.org_id = ?
@@ -2287,7 +3519,7 @@ def list_org_invites(
     out: List[Dict[str, Any]] = []
     for row in rows:
         payload = _invite_row_to_dict(row)
-        if not include_inactive and payload.get("status") != "active":
+        if not include_inactive and payload.get("status") != "pending":
             continue
         out.append(payload)
     return out
@@ -2296,9 +3528,11 @@ def list_org_invites(
 def create_org_invite(
     org_id: str,
     email: str,
-    role: str,
     *,
     created_by: str,
+    full_name: str = "",
+    job_title: str = "",
+    role: str = "org_viewer",
     team_name: str = "",
     subgroup_name: str = "",
     invite_comment: str = "",
@@ -2309,6 +3543,8 @@ def create_org_invite(
     if not oid or not em:
         raise ValueError("org_id and email are required")
     normalized_role = _normalize_org_invite_role(role)
+    normalized_full_name = str(full_name or "").strip()
+    normalized_job_title = str(job_title or "").strip()
     normalized_team_name = str(team_name or "").strip()
     normalized_subgroup_name = str(subgroup_name or "").strip()
     normalized_comment = str(invite_comment or "").strip()
@@ -2339,18 +3575,21 @@ def create_org_invite(
             con.execute(
                 """
                 INSERT INTO org_invites (
-                  id, org_id, email, role, team_name, subgroup_name, invite_comment, token_hash, expires_at, created_at, created_by,
-                  accepted_at, accepted_by, revoked_at, revoked_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
+                  id, org_id, email, role, full_name, job_title, team_name, subgroup_name, invite_comment, invite_key, token_hash, expires_at, created_at, created_by,
+                  used_at, used_by_user_id, accepted_at, accepted_by, revoked_at, revoked_by
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL)
                 """,
                 [
                     invite_id,
                     oid,
                     em,
                     normalized_role,
+                    normalized_full_name,
+                    normalized_job_title,
                     normalized_team_name,
                     normalized_subgroup_name,
                     normalized_comment,
+                    token,
                     token_hash,
                     expires_at,
                     now,
@@ -2366,8 +3605,8 @@ def create_org_invite(
         con.commit()
         row = con.execute(
             """
-            SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.team_name, i.subgroup_name, i.invite_comment,
-                   i.token_hash, i.expires_at, i.created_at, i.created_by, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+            SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
+                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
               FROM org_invites i
               LEFT JOIN orgs o ON o.id = i.org_id
              WHERE i.id = ?
@@ -2415,8 +3654,8 @@ def preview_org_invite(
         if oid:
             row = con.execute(
                 """
-                SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.team_name, i.subgroup_name, i.invite_comment,
-                       i.token_hash, i.expires_at, i.created_at, i.created_by, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
+                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
                   FROM org_invites i
                   LEFT JOIN orgs o ON o.id = i.org_id
                  WHERE i.org_id = ? AND i.token_hash = ?
@@ -2428,8 +3667,8 @@ def preview_org_invite(
         else:
             row = con.execute(
                 """
-                SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.team_name, i.subgroup_name, i.invite_comment,
-                       i.token_hash, i.expires_at, i.created_at, i.created_by, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
+                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
                   FROM org_invites i
                   LEFT JOIN orgs o ON o.id = i.org_id
                  WHERE i.token_hash = ?
@@ -2444,8 +3683,8 @@ def preview_org_invite(
     status = str(payload.get("status") or "")
     if status == "revoked":
         raise ValueError("invite_revoked")
-    if status == "accepted":
-        raise ValueError("invite_already_accepted")
+    if status == "used":
+        raise ValueError("invite_used")
     if status == "expired":
         raise ValueError("invite_expired")
     return payload
@@ -2471,8 +3710,8 @@ def accept_org_invite(
         if oid:
             row = con.execute(
                 """
-                SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.team_name, i.subgroup_name, i.invite_comment,
-                       i.token_hash, i.expires_at, i.created_at, i.created_by, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
+                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
                   FROM org_invites i
                   LEFT JOIN orgs o ON o.id = i.org_id
                  WHERE i.org_id = ? AND i.token_hash = ?
@@ -2484,8 +3723,8 @@ def accept_org_invite(
         else:
             row = con.execute(
                 """
-                SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.team_name, i.subgroup_name, i.invite_comment,
-                       i.token_hash, i.expires_at, i.created_at, i.created_by, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
+                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
                   FROM org_invites i
                   LEFT JOIN orgs o ON o.id = i.org_id
                  WHERE i.token_hash = ?
@@ -2501,8 +3740,8 @@ def accept_org_invite(
         status = str(invite.get("status") or "")
         if status == "revoked":
             raise ValueError("invite_revoked")
-        if status == "accepted":
-            raise ValueError("invite_already_accepted")
+        if status == "used":
+            raise ValueError("invite_used")
         if status == "expired":
             raise ValueError("invite_expired")
         invite_email = _normalize_email(invite.get("email"))
@@ -2520,16 +3759,16 @@ def accept_org_invite(
         con.execute(
             """
             UPDATE org_invites
-               SET accepted_at = ?, accepted_by = ?, revoked_at = NULL, revoked_by = NULL
+               SET used_at = ?, used_by_user_id = ?, accepted_at = ?, accepted_by = ?, revoked_at = NULL, revoked_by = NULL
              WHERE id = ?
             """,
-            [now, actor, str(invite.get("id") or "")],
+            [now, actor, now, actor, str(invite.get("id") or "")],
         )
         con.commit()
         accepted_row = con.execute(
             """
-            SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.team_name, i.subgroup_name, i.invite_comment,
-                   i.token_hash, i.expires_at, i.created_at, i.created_by, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+            SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
+                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
               FROM org_invites i
               LEFT JOIN orgs o ON o.id = i.org_id
              WHERE i.id = ?
@@ -2954,3 +4193,512 @@ def startup_db_check() -> Dict[str, Any]:
 
 def get_storage() -> Storage:
     return Storage(base_dir=_db_base_dir())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Workspace Folder CRUD
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _folder_row_to_dict(row: Any) -> Dict[str, Any]:
+    return {
+        "id": str(row["id"] or ""),
+        "org_id": str(row["org_id"] or ""),
+        "workspace_id": str((_row_value(row, "workspace_id") or "") or ""),
+        "parent_id": str(row["parent_id"] or ""),
+        "name": str(row["name"] or ""),
+        "sort_order": int(row["sort_order"] or 0),
+        "created_by": str(row["created_by"] or ""),
+        "created_at": int(row["created_at"] or 0),
+        "updated_at": int(row["updated_at"] or 0),
+        "archived_at": row["archived_at"],
+    }
+
+
+def create_workspace_folder(
+    org_id: str,
+    workspace_id: str,
+    name: str,
+    parent_id: str = "",
+    *,
+    user_id: Optional[str] = None,
+    sort_order: int = 0,
+) -> Dict[str, Any]:
+    """Create a folder inside the given workspace. parent_id='' means workspace root."""
+    _ensure_schema()
+    oid = str(org_id or "").strip()
+    wid = str(workspace_id or "").strip()
+    pid = str(parent_id or "").strip()
+    fname = str(name or "").strip()
+    if not oid:
+        raise ValueError("org_id required")
+    if not wid:
+        raise ValueError("workspace_id required")
+    if not fname:
+        raise ValueError("name required")
+    owner = _scope_user_id(user_id)
+    now = _now_ts()
+    fid = uuid.uuid4().hex[:12]
+    with _connect() as con:
+        if not get_workspace_record(wid, org_id=oid):
+            raise ValueError("workspace not found")
+        # Validate parent exists (if not root)
+        if pid:
+            prow = con.execute(
+                "SELECT id FROM workspace_folders WHERE id = ? AND org_id = ? AND workspace_id = ? AND archived_at IS NULL LIMIT 1",
+                [pid, oid, wid],
+            ).fetchone()
+            if not prow:
+                raise ValueError(f"parent folder '{pid}' not found in workspace")
+        # Unique name within parent
+        dup = con.execute(
+            "SELECT id FROM workspace_folders WHERE org_id = ? AND workspace_id = ? AND parent_id = ? AND name = ? AND archived_at IS NULL LIMIT 1",
+            [oid, wid, pid, fname],
+        ).fetchone()
+        if dup:
+            raise ValueError(f"A folder named '{fname}' already exists here")
+        con.execute(
+            """
+            INSERT INTO workspace_folders (id, org_id, workspace_id, parent_id, name, sort_order, created_by, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [fid, oid, wid, pid, fname, sort_order, owner, now, now],
+        )
+        con.commit()
+        row = con.execute("SELECT * FROM workspace_folders WHERE id = ? LIMIT 1", [fid]).fetchone()
+    return _folder_row_to_dict(row)
+
+
+def get_workspace_folder(org_id: str, workspace_id: str, folder_id: str) -> Optional[Dict[str, Any]]:
+    _ensure_schema()
+    oid = str(org_id or "").strip()
+    wid = str(workspace_id or "").strip()
+    fid = str(folder_id or "").strip()
+    if not oid or not wid or not fid:
+        return None
+    with _connect() as con:
+        row = con.execute(
+            "SELECT * FROM workspace_folders WHERE id = ? AND org_id = ? AND workspace_id = ? AND archived_at IS NULL LIMIT 1",
+            [fid, oid, wid],
+        ).fetchone()
+    return _folder_row_to_dict(row) if row else None
+
+
+def rename_workspace_folder(
+    org_id: str,
+    workspace_id: str,
+    folder_id: str,
+    new_name: str,
+    *,
+    user_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    _ensure_schema()
+    oid = str(org_id or "").strip()
+    wid = str(workspace_id or "").strip()
+    fid = str(folder_id or "").strip()
+    fname = str(new_name or "").strip()
+    if not oid or not wid or not fid or not fname:
+        raise ValueError("org_id, workspace_id, folder_id, new_name required")
+    now = _now_ts()
+    with _connect() as con:
+        existing = con.execute(
+            "SELECT * FROM workspace_folders WHERE id = ? AND org_id = ? AND workspace_id = ? AND archived_at IS NULL LIMIT 1",
+            [fid, oid, wid],
+        ).fetchone()
+        if not existing:
+            raise ValueError("folder not found")
+        pid = str(existing["parent_id"] or "")
+        dup = con.execute(
+            "SELECT id FROM workspace_folders WHERE org_id = ? AND workspace_id = ? AND parent_id = ? AND name = ? AND id != ? AND archived_at IS NULL LIMIT 1",
+            [oid, wid, pid, fname, fid],
+        ).fetchone()
+        if dup:
+            raise ValueError(f"A folder named '{fname}' already exists here")
+        con.execute(
+            "UPDATE workspace_folders SET name = ?, updated_at = ? WHERE id = ? AND org_id = ? AND workspace_id = ?",
+            [fname, now, fid, oid, wid],
+        )
+        con.commit()
+        row = con.execute("SELECT * FROM workspace_folders WHERE id = ? LIMIT 1", [fid]).fetchone()
+    return _folder_row_to_dict(row)
+
+
+def _get_folder_descendant_ids(con: Any, org_id: str, workspace_id: str, folder_id: str) -> List[str]:
+    """Return all descendant folder IDs (not including folder_id itself)."""
+    cfg = get_db_runtime_config()
+    if cfg.backend == "postgres":
+        rows = con.execute(
+            """
+            WITH RECURSIVE desc_cte(id) AS (
+              SELECT id FROM workspace_folders WHERE parent_id = ? AND org_id = ? AND workspace_id = ?
+              UNION ALL
+              SELECT f.id FROM workspace_folders f
+              JOIN desc_cte d ON f.parent_id = d.id AND f.org_id = ? AND f.workspace_id = ?
+            )
+            SELECT id FROM desc_cte
+            """,
+            [folder_id, org_id, workspace_id, org_id, workspace_id],
+        ).fetchall()
+    else:
+        rows = con.execute(
+            """
+            WITH RECURSIVE desc_cte(id) AS (
+              SELECT id FROM workspace_folders WHERE parent_id = ? AND org_id = ? AND workspace_id = ?
+              UNION ALL
+              SELECT f.id FROM workspace_folders f
+              JOIN desc_cte d ON f.parent_id = d.id AND f.org_id = ? AND f.workspace_id = ?
+            )
+            SELECT id FROM desc_cte
+            """,
+            [folder_id, org_id, workspace_id, org_id, workspace_id],
+        ).fetchall()
+    return [str(r["id"] or "") for r in rows if r["id"]]
+
+
+def move_workspace_folder(
+    org_id: str,
+    workspace_id: str,
+    folder_id: str,
+    new_parent_id: str,
+    *,
+    user_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Move folder to new_parent_id ('' = workspace root). Validates no cycles."""
+    _ensure_schema()
+    oid = str(org_id or "").strip()
+    wid = str(workspace_id or "").strip()
+    fid = str(folder_id or "").strip()
+    npid = str(new_parent_id or "").strip()
+    if not oid or not wid or not fid:
+        raise ValueError("org_id, workspace_id and folder_id required")
+    if fid == npid:
+        raise ValueError("Cannot move a folder into itself")
+    now = _now_ts()
+    with _connect() as con:
+        existing = con.execute(
+            "SELECT * FROM workspace_folders WHERE id = ? AND org_id = ? AND workspace_id = ? AND archived_at IS NULL LIMIT 1",
+            [fid, oid, wid],
+        ).fetchone()
+        if not existing:
+            raise ValueError("folder not found")
+        # Validate new parent exists if not root
+        if npid:
+            prow = con.execute(
+                "SELECT id FROM workspace_folders WHERE id = ? AND org_id = ? AND workspace_id = ? AND archived_at IS NULL LIMIT 1",
+                [npid, oid, wid],
+            ).fetchone()
+            if not prow:
+                raise ValueError("target parent folder not found")
+            # Cycle check: new_parent must not be a descendant of folder
+            descendant_ids = _get_folder_descendant_ids(con, oid, wid, fid)
+            if npid in descendant_ids:
+                raise ValueError("Cannot move a folder into one of its descendants")
+        # Name uniqueness in new parent
+        fname = str(existing["name"] or "")
+        dup = con.execute(
+            "SELECT id FROM workspace_folders WHERE org_id = ? AND workspace_id = ? AND parent_id = ? AND name = ? AND id != ? AND archived_at IS NULL LIMIT 1",
+            [oid, wid, npid, fname, fid],
+        ).fetchone()
+        if dup:
+            raise ValueError(f"A folder named '{fname}' already exists in the target location")
+        con.execute(
+            "UPDATE workspace_folders SET parent_id = ?, updated_at = ? WHERE id = ? AND org_id = ? AND workspace_id = ?",
+            [npid, now, fid, oid, wid],
+        )
+        con.commit()
+        row = con.execute("SELECT * FROM workspace_folders WHERE id = ? LIMIT 1", [fid]).fetchone()
+    return _folder_row_to_dict(row)
+
+
+def delete_workspace_folder(
+    org_id: str,
+    workspace_id: str,
+    folder_id: str,
+    *,
+    cascade: bool = False,
+    user_id: Optional[str] = None,
+) -> bool:
+    """Delete a folder. If cascade=False (default), reject if non-empty."""
+    _ensure_schema()
+    oid = str(org_id or "").strip()
+    wid = str(workspace_id or "").strip()
+    fid = str(folder_id or "").strip()
+    if not oid or not wid or not fid:
+        return False
+    with _connect() as con:
+        existing = con.execute(
+            "SELECT id FROM workspace_folders WHERE id = ? AND org_id = ? AND workspace_id = ? AND archived_at IS NULL LIMIT 1",
+            [fid, oid, wid],
+        ).fetchone()
+        if not existing:
+            return False
+        if not cascade:
+            child_folders = con.execute(
+                "SELECT id FROM workspace_folders WHERE parent_id = ? AND org_id = ? AND workspace_id = ? AND archived_at IS NULL LIMIT 1",
+                [fid, oid, wid],
+            ).fetchone()
+            child_projects = con.execute(
+                "SELECT id FROM projects WHERE folder_id = ? AND org_id = ? AND workspace_id = ? LIMIT 1",
+                [fid, oid, wid],
+            ).fetchone()
+            if child_folders or child_projects:
+                raise ValueError("folder_not_empty")
+            con.execute("DELETE FROM workspace_folders WHERE id = ? AND org_id = ? AND workspace_id = ?", [fid, oid, wid])
+        else:
+            # Cascade: delete all descendants then self
+            descendant_ids = _get_folder_descendant_ids(con, oid, wid, fid)
+            all_ids = descendant_ids + [fid]
+            # Move projects in deleted folders to workspace root
+            for did in all_ids:
+                con.execute(
+                    "UPDATE projects SET folder_id = '' WHERE folder_id = ? AND org_id = ? AND workspace_id = ?",
+                    [did, oid, wid],
+                )
+            # Delete all folders
+            for did in all_ids:
+                con.execute(
+                    "DELETE FROM workspace_folders WHERE id = ? AND org_id = ? AND workspace_id = ?",
+                    [did, oid, wid],
+                )
+        con.commit()
+    return True
+
+
+def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: str) -> Dict[str, Any]:
+    """Return direct child folders and projects for given parent ('' = workspace root)."""
+    _ensure_schema()
+    oid = str(org_id or "").strip()
+    wid = str(workspace_id or "").strip()
+    pid = str(parent_id or "").strip()
+    with _connect() as con:
+        folder_rows = con.execute(
+            """
+            SELECT f.*,
+              (SELECT COUNT(*) FROM workspace_folders cf WHERE cf.parent_id = f.id AND cf.org_id = ? AND cf.workspace_id = ? AND cf.archived_at IS NULL) AS child_folder_count,
+              (SELECT COUNT(*) FROM projects cp WHERE cp.folder_id = f.id AND cp.org_id = ? AND cp.workspace_id = ?) AS child_project_count
+            FROM workspace_folders f
+            WHERE f.org_id = ? AND f.workspace_id = ? AND f.parent_id = ? AND f.archived_at IS NULL
+            ORDER BY f.sort_order ASC, f.name ASC
+            """,
+            [oid, wid, oid, wid, oid, wid, pid],
+        ).fetchall()
+        project_rows = con.execute(
+            """
+            SELECT p.*,
+              (SELECT COUNT(*) FROM sessions s WHERE s.project_id = p.id) AS sessions_count
+            FROM projects p
+            WHERE p.org_id = ? AND p.workspace_id = ? AND p.folder_id = ?
+            ORDER BY p.updated_at DESC, p.title ASC
+            """,
+            [oid, wid, pid],
+        ).fetchall()
+    folders = []
+    for row in folder_rows:
+        d = _folder_row_to_dict(row)
+        d["child_folder_count"] = int(row["child_folder_count"] or 0)
+        d["child_project_count"] = int(row["child_project_count"] or 0)
+        folders.append(d)
+    projects = []
+    for row in project_rows:
+        p = _project_row_to_model(row)
+        passport = dict(p.passport or {})
+        projects.append({
+            "id": p.id,
+            "title": p.title,
+            "folder_id": str(getattr(p, "folder_id", "") or ""),
+            "workspace_id": str((_row_value(row, "workspace_id") or "") or wid),
+            "owner_user_id": p.owner_user_id,
+            "org_id": p.org_id,
+            "sessions_count": int(row["sessions_count"] or 0),
+            "status": str(passport.get("status", "active") or "active"),
+            "dod_percent": int(passport.get("dod_percent", 0) or 0),
+            "attention_count": int(passport.get("attention_count", 0) or 0),
+            "reports_count": int(passport.get("reports_count", 0) or 0),
+            "description": str(passport.get("description", "") or ""),
+            "updated_at": p.updated_at,
+            "created_at": p.created_at,
+        })
+    return {"folders": folders, "projects": projects}
+
+
+def get_workspace_folder_breadcrumb(org_id: str, workspace_id: str, folder_id: str) -> List[Dict[str, Any]]:
+    """Return path from workspace root to folder_id (exclusive of workspace itself)."""
+    _ensure_schema()
+    oid = str(org_id or "").strip()
+    wid = str(workspace_id or "").strip()
+    fid = str(folder_id or "").strip()
+    if not fid:
+        return []
+    crumbs = []
+    visited = set()
+    with _connect() as con:
+        current_id = fid
+        while current_id and current_id not in visited:
+            visited.add(current_id)
+            row = con.execute(
+                "SELECT * FROM workspace_folders WHERE id = ? AND org_id = ? AND workspace_id = ? LIMIT 1",
+                [current_id, oid, wid],
+            ).fetchone()
+            if not row:
+                break
+            crumbs.append({"id": str(row["id"]), "name": str(row["name"]), "parent_id": str(row["parent_id"] or "")})
+            current_id = str(row["parent_id"] or "")
+    crumbs.reverse()
+    return crumbs
+
+
+def create_project_in_folder(
+    org_id: str,
+    workspace_id: str,
+    folder_id: str,
+    title: str,
+    *,
+    user_id: Optional[str] = None,
+    passport: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Create a project inside a folder. folder_id must be a valid non-empty folder id."""
+    _ensure_schema()
+    oid = str(org_id or "").strip()
+    wid = str(workspace_id or "").strip()
+    fid = str(folder_id or "").strip()
+    if not oid:
+        raise ValueError("org_id required")
+    if not wid:
+        raise ValueError("workspace_id required")
+    if not fid:
+        raise ValueError("folder_id required — projects must live in a folder")
+    owner = _scope_user_id(user_id)
+    pid = gen_project_id()
+    now = _now_ts()
+    pdata = dict(passport or {})
+    with _connect() as con:
+        frow = con.execute(
+            "SELECT id FROM workspace_folders WHERE id = ? AND org_id = ? AND workspace_id = ? AND archived_at IS NULL LIMIT 1",
+            [fid, oid, wid],
+        ).fetchone()
+        if not frow:
+            raise ValueError("folder not found")
+        con.execute(
+            """
+            INSERT INTO projects (id, title, passport_json, folder_id, workspace_id, created_at, updated_at, version, owner_user_id, org_id, created_by, updated_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [pid, str(title or "").strip() or "Проект", _json_dumps(pdata, {}), fid, wid, now, now, 1, owner, oid, owner, owner],
+        )
+        con.commit()
+    return pid
+
+
+def get_project_workspace_details(org_id: str, project_id: str) -> Optional[Dict[str, str]]:
+    _ensure_schema()
+    oid = str(org_id or "").strip()
+    pid = str(project_id or "").strip()
+    if not oid or not pid:
+        return None
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT
+              p.id AS project_id,
+              p.org_id AS org_id,
+              COALESCE(NULLIF(p.workspace_id, ''), NULLIF(wf.workspace_id, ''), ?) AS workspace_id,
+              p.folder_id AS folder_id
+            FROM projects p
+            LEFT JOIN workspace_folders wf ON wf.id = p.folder_id
+            WHERE p.id = ? AND p.org_id = ?
+            LIMIT 1
+            """,
+            [_default_workspace_id(oid), pid, oid],
+        ).fetchone()
+    if not row:
+        return None
+    return {
+        "project_id": str(row["project_id"] or ""),
+        "org_id": str(row["org_id"] or oid),
+        "workspace_id": str(row["workspace_id"] or _default_workspace_id(oid)),
+        "folder_id": str(row["folder_id"] or ""),
+    }
+
+
+def list_project_sessions_for_explorer(org_id: str, project_id: str) -> List[Dict[str, Any]]:
+    """List sessions for a project, explorer-friendly format.
+    Falls back to no-org-filter when org_id mismatches legacy data."""
+    _ensure_schema()
+    oid = str(org_id or "").strip()
+    pid = str(project_id or "").strip()
+    with _connect() as con:
+        if oid:
+            rows = con.execute(
+                "SELECT * FROM sessions WHERE project_id = ? AND org_id = ? ORDER BY updated_at DESC",
+                [pid, oid],
+            ).fetchall()
+            if not rows:
+                # Fallback: legacy sessions may have wrong org_id
+                rows = con.execute(
+                    "SELECT * FROM sessions WHERE project_id = ? ORDER BY updated_at DESC",
+                    [pid],
+                ).fetchall()
+        else:
+            rows = con.execute(
+                "SELECT * FROM sessions WHERE project_id = ? ORDER BY updated_at DESC",
+                [pid],
+            ).fetchall()
+    result = []
+    for row in rows:
+        s = _session_row_to_model(row)
+        result.append({
+            "id": s.id,
+            "title": s.title,
+            "project_id": s.project_id or "",
+            "owner_user_id": s.owner_user_id,
+            "org_id": s.org_id,
+            "status": str((s.interview or {}).get("status", "draft") or "draft"),
+            "stage": str((s.interview or {}).get("stage", "") or ""),
+            "dod_percent": int((s.analytics or {}).get("dod_percent", 0) or 0),
+            "attention_count": int((s.analytics or {}).get("attention_count", 0) or 0),
+            "reports_count": int((s.analytics or {}).get("reports_count", 0) or 0),
+            "updated_at": s.updated_at,
+            "created_at": s.created_at,
+        })
+    return result
+
+
+def run_workspace_folder_backfill(*, force: bool = False) -> Dict[str, Any]:
+    """
+    Public repair command: move all orphan projects (folder_id empty or invalid)
+    into per-org 'Импортировано' folder.
+
+    Set force=True to re-run even if already marked done.
+    Returns summary dict.
+    """
+    _ensure_schema()
+    with _connect() as con:
+        if force:
+            # Reset the completion mark so the backfill runs again
+            con.execute(
+                "DELETE FROM storage_meta WHERE key = ?",
+                [_BACKFILL_META_KEY],
+            )
+        _ensure_workspace_folder_backfill(con)
+        con.commit()
+
+    # Count remaining orphans (should be 0 after backfill)
+    with _connect() as con:
+        remaining = con.execute(
+            """
+            SELECT COUNT(*) AS cnt FROM projects p
+            WHERE p.folder_id = ''
+               OR NOT EXISTS (
+                   SELECT 1 FROM workspace_folders wf
+                    WHERE wf.id = p.folder_id
+                      AND wf.org_id = p.org_id
+                      AND wf.archived_at IS NULL
+               )
+            """
+        ).fetchone()
+        remaining_count = int(remaining["cnt"] or 0) if remaining else 0
+
+    return {
+        "ok": True,
+        "remaining_orphan_projects": remaining_count,
+        "backfill_folder_name": _BACKFILL_FOLDER_NAME,
+    }

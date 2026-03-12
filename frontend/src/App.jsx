@@ -41,6 +41,7 @@ import {
 } from "./lib/api";
 import {
   getLatestBpmnSnapshot,
+  shouldAutoRestoreFromSnapshot,
 } from "./features/process/bpmn/snapshots/bpmnSnapshots";
 import {
   canonicalRobotMetaMapString,
@@ -50,6 +51,20 @@ import {
   upsertRobotMetaByElementId,
   validateRobotMetaV1,
 } from "./features/process/robotmeta/robotMeta";
+import {
+  extractCamundaExtensionsMapFromBpmnXml,
+  hydrateCamundaExtensionsFromBpmn,
+  normalizeCamundaExtensionsMap,
+  removeCamundaExtensionStateByElementId,
+  upsertCamundaExtensionStateByElementId,
+} from "./features/process/camunda/camundaExtensions";
+import {
+  normalizeCamundaPresentationMap,
+  removeCamundaPresentationByElementId,
+  shouldResetPropertiesOverlayPreviewForSelection,
+  upsertCamundaPresentationByElementId,
+} from "./features/process/camunda/camundaPresentation";
+import { buildPropertiesOverlayPreview } from "./features/process/camunda/propertyDictionaryModel";
 import { normalizeExecutionPlanVersionList } from "./features/process/robotmeta/executionPlan";
 import { normalizeHybridLayerMap } from "./features/process/hybrid/hybridLayerUi";
 import { normalizeHybridV2Doc } from "./features/process/hybrid/hybridLayerV2";
@@ -59,8 +74,10 @@ import applySessionMetaHydration from "./features/session-meta/hydrate/applySess
 import { createSessionMetaConflictGuard } from "./features/session-meta/guards/sessionMetaConflictGuard";
 import useSessionMetaWriteGateway from "./features/session-meta/write/useSessionMetaWriteGateway";
 import { buildSessionMetaWriteEnvelope } from "./features/session-meta/write/sessionMetaMergePolicy";
+import { requestProcessStageFlushBeforeLeave } from "./features/process/navigation/processLeaveFlush";
 import { useAuth } from "./features/auth/AuthProvider";
 import { canCreateOrgTemplateForRole } from "./features/templates/model/templatesRbac";
+import { buildWorkspacePermissions } from "./features/workspace/workspacePermissions";
 
 function isLocalSessionId(id) {
   return typeof id === "string" && (id === "local" || id.startsWith("local_"));
@@ -332,7 +349,7 @@ function writeSelectionToUrl({ projectId, sessionId }) {
 
 function normalizeOrgSettingsTab(raw) {
   const value = String(raw || "").trim().toLowerCase();
-  if (value === "members" || value === "invites" || value === "audit") return value;
+  if (value === "members" || value === "invites" || value === "audit" || value === "dictionary") return value;
   return "members";
 }
 
@@ -362,6 +379,7 @@ const LEFT_PANEL_OPEN_KEY = "ui.sidebar.left.open";
 const LEFT_PANEL_COMPACT_KEY = "fpc_leftpanel_compact";
 const STEP_TIME_UNIT_KEY = "fpc_step_time_unit_v1";
 const BPMN_META_LOCAL_KEY_PREFIX = "fpc_bpmn_meta_v1:";
+const PROPERTIES_OVERLAY_ALWAYS_KEY_PREFIX = "fpc_properties_overlay_always_v1:";
 const FLOW_TIER_SET = new Set(["P0", "P1", "P2"]);
 const R_FLOW_TIER_SET = new Set(["R0", "R1", "R2"]);
 const FLOW_R_SOURCE_SET = new Set(["manual", "inferred"]);
@@ -392,6 +410,33 @@ function writeStepTimeUnit(unit) {
 function bpmnMetaLocalStorageKey(sessionId) {
   const sid = String(sessionId || "").trim();
   return sid ? `${BPMN_META_LOCAL_KEY_PREFIX}${sid}` : "";
+}
+
+function propertiesOverlayAlwaysLocalStorageKey(sessionId) {
+  const sid = String(sessionId || "").trim();
+  return sid ? `${PROPERTIES_OVERLAY_ALWAYS_KEY_PREFIX}${sid}` : "";
+}
+
+function readPropertiesOverlayAlwaysEnabled(sessionId) {
+  if (typeof window === "undefined") return false;
+  const key = propertiesOverlayAlwaysLocalStorageKey(sessionId);
+  if (!key) return false;
+  try {
+    const raw = String(window.localStorage?.getItem(key) || "").trim().toLowerCase();
+    return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+  } catch {
+    return false;
+  }
+}
+
+function writePropertiesOverlayAlwaysEnabled(sessionId, value) {
+  if (typeof window === "undefined") return;
+  const key = propertiesOverlayAlwaysLocalStorageKey(sessionId);
+  if (!key) return;
+  try {
+    window.localStorage?.setItem(key, value ? "1" : "0");
+  } catch {
+  }
 }
 
 function normalizeFlowTier(value) {
@@ -523,6 +568,8 @@ function normalizeBpmnMeta(raw, options = {}) {
     flow_meta: normalizeFlowMetaMap(obj.flow_meta),
     node_path_meta: normalizeNodePathMetaMap(obj.node_path_meta),
     robot_meta_by_element_id: normalizeRobotMetaMap(obj.robot_meta_by_element_id),
+    camunda_extensions_by_element_id: normalizeCamundaExtensionsMap(obj.camunda_extensions_by_element_id),
+    presentation_by_element_id: normalizeCamundaPresentationMap(obj.presentation_by_element_id),
     hybrid_layer_by_element_id: normalizeHybridLayerMap(obj.hybrid_layer_by_element_id),
     hybrid_v2: mergeHybridV2Doc(obj.hybrid_v2, options.fallbackHybridV2),
     drawio: mergeDrawioMeta(obj.drawio, options.fallbackDrawio),
@@ -610,6 +657,7 @@ function sessionToDraft(sid, session) {
   const localMeta = normalizeBpmnMeta(readLocalBpmnMeta(sid));
   const sessionMeta = normalizeBpmnMeta(ensureObject(next.bpmn_meta));
   const xmlRobotMeta = normalizeRobotMetaMap(extractRobotMetaMapFromBpmnXml(next?.bpmn_xml || ""));
+  const xmlCamundaExtensions = normalizeCamundaExtensionsMap(extractCamundaExtensionsMapFromBpmnXml(next?.bpmn_xml || ""));
   const { derivedReadMeta: normalizedMeta } = buildSessionMetaReadModel({
     sessionMetaRaw: sessionMeta,
     localMetaRaw: localMeta,
@@ -622,6 +670,11 @@ function sessionToDraft(sid, session) {
   const hasSessionRobotMeta = Object.keys(normalizeRobotMetaMap(sessionMeta.robot_meta_by_element_id)).length > 0;
   const hasXmlRobotMeta = Object.keys(xmlRobotMeta).length > 0;
   let effectiveRobotMeta = normalizedMeta.robot_meta_by_element_id;
+  const camundaHydration = hydrateCamundaExtensionsFromBpmn({
+    extractedMap: xmlCamundaExtensions,
+    sessionMetaMap: normalizedMeta.camunda_extensions_by_element_id,
+  });
+  let effectiveCamundaExtensions = normalizeCamundaExtensionsMap(camundaHydration.nextSessionMetaMap);
   if (!Object.keys(effectiveRobotMeta).length && hasXmlRobotMeta) {
     effectiveRobotMeta = xmlRobotMeta;
   }
@@ -648,6 +701,8 @@ function sessionToDraft(sid, session) {
       flow_meta: normalizedMeta.flow_meta,
       node_path_meta: normalizedMeta.node_path_meta,
       robot_meta_by_element_id: effectiveRobotMeta,
+      camunda_extensions_by_element_id: normalizeCamundaExtensionsMap(effectiveCamundaExtensions),
+      presentation_by_element_id: normalizeCamundaPresentationMap(normalizedMeta.presentation_by_element_id),
       hybrid_layer_by_element_id: normalizedMeta.hybrid_layer_by_element_id,
       hybrid_v2: normalizedMeta.hybrid_v2,
       drawio: normalizeDrawioMeta(normalizedMeta.drawio),
@@ -956,6 +1011,29 @@ function mergeSessionDraft(prevDraft, sid, session, source = "session_sync") {
     };
   }
 
+  const prevBpmnMeta = ensureObject(prev?.bpmn_meta);
+  const nextBpmnMeta = ensureObject(next?.bpmn_meta);
+  const incomingBpmnMeta = ensureObject(incoming?.bpmn_meta);
+  const incomingHasBpmnMeta = hasOwn(incoming, "bpmn_meta");
+  const incomingHasPresentationMap = incomingHasBpmnMeta && hasOwn(incomingBpmnMeta, "presentation_by_element_id");
+  if (!incomingHasPresentationMap) {
+    const prevPresentationMap = normalizeCamundaPresentationMap(prevBpmnMeta.presentation_by_element_id);
+    if (Object.keys(prevPresentationMap).length > 0) {
+      next = {
+        ...next,
+        bpmn_meta: {
+          ...nextBpmnMeta,
+          presentation_by_element_id: prevPresentationMap,
+        },
+      };
+      logDraftTrace("MERGE_KEEP_PRESENTATION_BY_ELEMENT", {
+        sid: sid || "-",
+        source,
+        count: Object.keys(prevPresentationMap).length,
+      });
+    }
+  }
+
   const afterXml = String(next?.bpmn_xml || "");
   logDraftTrace("DRAFT_MERGE", {
     sid: sid || "-",
@@ -997,7 +1075,9 @@ export default function App() {
   const activeSessionIdRef = useRef("");
   const suppressProjectAutoselectRef = useRef(false);
   const initialSelectionRef = useRef(readSelectionFromUrl());
+  const initialProjectSelectionConsumedRef = useRef(false);
   const requestedSessionIdRef = useRef(String(initialSelectionRef.current?.sessionId || "").trim());
+  const projectWorkspaceHintsRef = useRef(new Map());
   const [snapshotRestoreNotice, setSnapshotRestoreNotice] = useState(null);
   const [sessionNavNotice, setSessionNavNotice] = useState(null);
   const [renameDialog, setRenameDialog] = useState({ open: false, scope: "", value: "", error: "", busy: false });
@@ -1007,6 +1087,9 @@ export default function App() {
     return String(window.location.pathname || "").startsWith("/app/org");
   });
   const [orgSettingsTab, setOrgSettingsTab] = useState(() => readOrgSettingsTabFromUrl());
+  const [orgSettingsOperationKey, setOrgSettingsOperationKey] = useState("");
+  const [orgSettingsDictionaryOnly, setOrgSettingsDictionaryOnly] = useState(false);
+  const [orgPropertyDictionaryRevision, setOrgPropertyDictionaryRevision] = useState(0);
 
   const [leftHidden, setLeftHidden] = useState(() => readLeftPanelHidden());
   const [leftCompact, setLeftCompact] = useState(() => readLeftPanelCompact());
@@ -1014,6 +1097,9 @@ export default function App() {
   const [sidebarActiveSection, setSidebarActiveSection] = useState("selected");
   const [sidebarShortcutRequest, setSidebarShortcutRequest] = useState("");
   const [selectedBpmnElement, setSelectedBpmnElement] = useState(null);
+  const [selectedPropertiesOverlayPreview, setSelectedPropertiesOverlayPreview] = useState(null);
+  const [selectedPropertiesOverlayAlwaysPreview, setSelectedPropertiesOverlayAlwaysPreview] = useState(null);
+  const [showPropertiesOverlayAlways, setShowPropertiesOverlayAlways] = useState(false);
   const [processUiState, setProcessUiState] = useState(null);
   const [aiGenerateIntent, setAiGenerateIntent] = useState(null);
   const [elementNotesFocusKey, setElementNotesFocusKey] = useState(0);
@@ -1038,18 +1124,59 @@ export default function App() {
     const row = ensureArray(orgs).find((item) => String(item?.org_id || item?.id || "").trim() === oid);
     return String(row?.name || row?.org_name || oid).trim();
   }, [activeOrgId, orgs]);
-  const canManageProjectEntities = useMemo(() => {
-    if (Boolean(user?.is_admin)) return true;
-    return activeOrgRole !== "viewer" && activeOrgRole !== "auditor";
-  }, [activeOrgRole, user?.is_admin]);
-  const canInviteWorkspaceUsers = useMemo(() => {
-    if (Boolean(user?.is_admin)) return true;
-    return activeOrgRole === "org_owner" || activeOrgRole === "org_admin";
-  }, [activeOrgRole, user?.is_admin]);
+  const workspacePermissions = useMemo(
+    () => buildWorkspacePermissions(activeOrgRole, Boolean(user?.is_admin)),
+    [activeOrgRole, user?.is_admin],
+  );
+  const canManageProjectEntities = workspacePermissions.canEdit;
+  const canInviteWorkspaceUsers = workspacePermissions.canManageInvites;
   const canManageSharedTemplates = useMemo(() => {
     return canCreateOrgTemplateForRole(activeOrgRole, Boolean(user?.is_admin));
   }, [activeOrgRole, user?.is_admin]);
   const draftSessionId = String(draft?.session_id || "").trim();
+  useEffect(() => {
+    setShowPropertiesOverlayAlways(readPropertiesOverlayAlwaysEnabled(draftSessionId));
+    setSelectedPropertiesOverlayAlwaysPreview(null);
+  }, [draftSessionId]);
+
+  useEffect(() => {
+    writePropertiesOverlayAlwaysEnabled(draftSessionId, !!showPropertiesOverlayAlways);
+  }, [draftSessionId, showPropertiesOverlayAlways]);
+
+  const propertiesOverlayAlwaysPreviewByElementId = useMemo(() => {
+    if (!showPropertiesOverlayAlways) return {};
+    const currentMeta = normalizeBpmnMeta(draft?.bpmn_meta);
+    const extensionMap = normalizeCamundaExtensionsMap(currentMeta.camunda_extensions_by_element_id);
+    const out = {};
+    Object.keys(extensionMap).forEach((rawElementId) => {
+      const elementId = String(rawElementId || "").trim();
+      if (!elementId) return;
+      const preview = buildPropertiesOverlayPreview({
+        elementId,
+        extensionStateRaw: extensionMap[rawElementId],
+        showPropertiesOverlay: true,
+      });
+      if (preview?.enabled && ensureArray(preview.items).length) {
+        out[elementId] = preview;
+      }
+    });
+    const draftPreview = ensureObject(selectedPropertiesOverlayAlwaysPreview);
+    const draftElementId = String(draftPreview.elementId || "").trim();
+    if (draftElementId) {
+      const draftItems = ensureArray(draftPreview.items);
+      if (draftPreview.enabled === true && draftItems.length) {
+        out[draftElementId] = {
+          ...draftPreview,
+          elementId: draftElementId,
+          items: draftItems,
+        };
+      } else {
+        delete out[draftElementId];
+      }
+    }
+    return out;
+  }, [showPropertiesOverlayAlways, draft?.bpmn_meta, selectedPropertiesOverlayAlwaysPreview]);
+
   const isSessionLocalMode = !draftSessionId || isLocalSessionId(draftSessionId);
   const serializeSessionMetaForBoundary = useCallback((valueRaw) => JSON.stringify(normalizeBpmnMeta(valueRaw)), []);
   const shortSessionMetaErr = useCallback((value) => String(value || "Не удалось сохранить session meta."), []);
@@ -1181,6 +1308,7 @@ export default function App() {
   }
 
   const sidebarHandleSections = useMemo(() => {
+    const hasActiveSession = !!String(draft?.session_id || "").trim();
     const selectedElementId = String(selectedBpmnElement?.id || "").trim();
     const notesMap = normalizeElementNotesMap(draft?.notes_by_element || draft?.notesByElementId);
     const aiMapRaw = draft?.interview?.ai_questions_by_element || draft?.interview?.aiQuestionsByElementId || {};
@@ -1198,28 +1326,32 @@ export default function App() {
         title: selectedElementId ? "Выбранный узел" : "Узел не выбран",
         count: selectedElementId ? 1 : 0,
         active: sidebarActiveSection === "selected",
-        muted: !selectedElementId,
+        muted: !hasActiveSession || !selectedElementId,
       },
       {
         id: "ai",
         title: "AI-вопросы",
         count: selectedAiCount,
         active: sidebarActiveSection === "ai",
+        muted: !hasActiveSession,
       },
       {
         id: "actors",
         title: "Акторы",
         count: actorsCount,
         active: sidebarActiveSection === "actors",
+        muted: !hasActiveSession,
       },
       {
         id: "templates",
         title: "Шаблоны / TL;DR",
         count: hasSummary ? 1 : 0,
         active: sidebarActiveSection === "templates",
+        muted: !hasActiveSession,
       },
     ];
   }, [
+    draft?.session_id,
     selectedBpmnElement?.id,
     draft?.notes_by_element,
     draft?.notesByElementId,
@@ -1296,7 +1428,13 @@ export default function App() {
     if (!r.ok) return markFail(r.error);
     const list = ensureArray(r.projects || r.items);
     setProjects(list);
-    const preferredFromUrl = String(initialSelectionRef.current?.projectId || "").trim();
+    const selectionFromUrl = readSelectionFromUrl();
+    const currentUrlProjectId = String(selectionFromUrl?.projectId || "").trim();
+    const bootRequestedProjectId = initialProjectSelectionConsumedRef.current
+      ? ""
+      : String(initialSelectionRef.current?.projectId || "").trim();
+    const preferredFromUrl = String(currentUrlProjectId || bootRequestedProjectId).trim();
+    initialProjectSelectionConsumedRef.current = true;
     const suppressAutoselect = !!suppressProjectAutoselectRef.current;
     if (suppressAutoselect) {
       suppressProjectAutoselectRef.current = false;
@@ -1305,6 +1443,10 @@ export default function App() {
     if (current) {
       const existsCurrent = list.some((p) => projectIdOf(p) === current);
       if (existsCurrent) return;
+      if (preferredFromUrl && preferredFromUrl === current) {
+        logNav("project_keep_requested_url", { projectId: current });
+        return;
+      }
       // Current project was deleted or became unavailable; clear stale session context.
       setProjectId("");
       setSessions([]);
@@ -1313,6 +1455,13 @@ export default function App() {
       resetDraft(ensureDraftShape(null));
     }
     if (!list.length) return;
+    if (preferredFromUrl && !list.some((p) => projectIdOf(p) === preferredFromUrl)) {
+      if (!current) {
+        setProjectId(preferredFromUrl);
+        logNav("project_restore_missing_from_list", { projectId: preferredFromUrl });
+      }
+      return;
+    }
     const preferred = preferredFromUrl && list.some((p) => projectIdOf(p) === preferredFromUrl)
       ? preferredFromUrl
       : "";
@@ -1320,11 +1469,12 @@ export default function App() {
       logNav("project_autoselect_suppressed", {});
       return;
     }
-    const nextProjectId = preferred || projectIdOf(list[0]);
-    if (nextProjectId) {
-      setProjectId(nextProjectId);
-      logNav("project_autoselect", { projectId: nextProjectId, fromUrl: preferredFromUrl ? 1 : 0 });
+    if (!preferred) {
+      logNav("project_keep_home", { projects: list.length });
+      return;
     }
+    setProjectId(preferred);
+    logNav("project_restore_from_url", { projectId: preferred });
   }
 
   async function refreshLlmSettings() {
@@ -1571,6 +1721,9 @@ export default function App() {
 
     const nextRaw = r.session || ensureDraftShape(sid);
     const sidProject = String(nextRaw?.project_id || projectId || "").trim();
+    if (sidProject && sidProject !== String(projectId || "").trim()) {
+      setProjectId(sidProject);
+    }
     const backendXml = String(nextRaw?.bpmn_xml || "");
     const backendHash = fnv1aHex(backendXml);
     let restoredFromSnapshot = false;
@@ -1584,7 +1737,11 @@ export default function App() {
       });
       const snapshotXml = String(latestSnapshot?.xml || "");
       const snapshotHash = String(latestSnapshot?.hash || fnv1aHex(snapshotXml));
-      if (snapshotXml.trim() && snapshotHash && snapshotHash !== backendHash) {
+      const restoreDecision = shouldAutoRestoreFromSnapshot({
+        backendXml,
+        snapshot: latestSnapshot,
+      });
+      if (restoreDecision.restore) {
         restoredFromSnapshot = true;
         restoredSnapshot = latestSnapshot;
         next = {
@@ -1599,6 +1756,7 @@ export default function App() {
           snapshotLen: snapshotXml.length,
           snapshotHash,
           snapshotTs: Number(latestSnapshot?.ts || 0),
+          reason: restoreDecision.reason,
         });
       }
     } catch (snapshotError) {
@@ -1633,6 +1791,8 @@ export default function App() {
           hash: fnv1aHex(xml),
         });
       })();
+    } else {
+      setSnapshotRestoreNotice(null);
     }
     logCreateTrace("OPEN_SESSION", {
       phase: "done",
@@ -1650,12 +1810,15 @@ export default function App() {
     const row = ensureObject(sessionLike);
     const sid = String(row?.id || row?.session_id || sessionLike || "").trim();
     const pid = String(row?.project_id || "").trim();
+    const wid = String(row?.workspace_id || "").trim();
     const source = String(options?.source || "workspace_dashboard").trim() || "workspace_dashboard";
     const openTab = String(options?.openTab || "").trim().toLowerCase();
     if (!sid) return;
+    if (pid && wid) {
+      projectWorkspaceHintsRef.current.set(pid, wid);
+    }
     if (pid && pid !== String(projectId || "").trim()) {
       setProjectId(pid);
-      await refreshSessions(pid);
     }
     await openSession(sid, { source });
     if (openTab === "diagram" || openTab === "interview" || openTab === "xml" || openTab === "doc") {
@@ -1953,6 +2116,8 @@ export default function App() {
       : null;
     if (!next?.id) {
       setSelectedBpmnElement(null);
+      setSelectedPropertiesOverlayPreview(null);
+      setSelectedPropertiesOverlayAlwaysPreview(null);
       return;
     }
     setSelectedBpmnElement(next);
@@ -2002,7 +2167,13 @@ export default function App() {
       : null;
     if (!next?.id) {
       setSelectedBpmnElement(null);
+      setSelectedPropertiesOverlayPreview(null);
+      setSelectedPropertiesOverlayAlwaysPreview(null);
       return;
+    }
+    if (shouldResetPropertiesOverlayPreviewForSelection(selectedBpmnElement?.id, next.id)) {
+      setSelectedPropertiesOverlayPreview(null);
+      setSelectedPropertiesOverlayAlwaysPreview(null);
     }
     focusElementNotes(next, "diagram_select", { openSidebar: false });
   }
@@ -2312,6 +2483,8 @@ export default function App() {
     const currentFlowMeta = normalizeFlowMetaMap(currentMeta.flow_meta);
     const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta.node_path_meta);
     const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta.robot_meta_by_element_id);
+    const currentCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(currentMeta.camunda_extensions_by_element_id);
+    const currentPresentationByElementId = normalizeCamundaPresentationMap(currentMeta.presentation_by_element_id);
     const currentHybridLayerByElementId = normalizeHybridLayerMap(currentMeta.hybrid_layer_by_element_id);
     const currentExecutionPlans = normalizeExecutionPlans(currentMeta.execution_plans);
     const nextFlowMeta = { ...currentFlowMeta };
@@ -2339,6 +2512,8 @@ export default function App() {
       flow_meta: nextFlowMeta,
       node_path_meta: currentNodePathMeta,
       robot_meta_by_element_id: currentRobotMetaByElementId,
+      camunda_extensions_by_element_id: currentCamundaExtensionsByElementId,
+      presentation_by_element_id: currentPresentationByElementId,
       hybrid_layer_by_element_id: currentHybridLayerByElementId,
       hybrid_v2: currentMeta.hybrid_v2,
       drawio: currentMeta.drawio,
@@ -2385,6 +2560,8 @@ export default function App() {
     const currentFlowMeta = normalizeFlowMetaMap(currentMeta.flow_meta);
     const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta.node_path_meta);
     const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta.robot_meta_by_element_id);
+    const currentCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(currentMeta.camunda_extensions_by_element_id);
+    const currentPresentationByElementId = normalizeCamundaPresentationMap(currentMeta.presentation_by_element_id);
     const currentHybridLayerByElementId = normalizeHybridLayerMap(currentMeta.hybrid_layer_by_element_id);
     const currentExecutionPlans = normalizeExecutionPlans(currentMeta.execution_plans);
     const nextNodePathMeta = { ...currentNodePathMeta };
@@ -2428,6 +2605,8 @@ export default function App() {
       flow_meta: currentFlowMeta,
       node_path_meta: nextNodePathMeta,
       robot_meta_by_element_id: currentRobotMetaByElementId,
+      camunda_extensions_by_element_id: currentCamundaExtensionsByElementId,
+      presentation_by_element_id: currentPresentationByElementId,
       hybrid_layer_by_element_id: currentHybridLayerByElementId,
       hybrid_v2: currentMeta.hybrid_v2,
       drawio: currentMeta.drawio,
@@ -2453,6 +2632,8 @@ export default function App() {
     const currentFlowMeta = normalizeFlowMetaMap(currentMeta.flow_meta);
     const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta.node_path_meta);
     const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta.robot_meta_by_element_id);
+    const currentCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(currentMeta.camunda_extensions_by_element_id);
+    const currentPresentationByElementId = normalizeCamundaPresentationMap(currentMeta.presentation_by_element_id);
     const currentHybridLayerByElementId = normalizeHybridLayerMap(currentMeta.hybrid_layer_by_element_id);
     const currentExecutionPlans = normalizeExecutionPlans(currentMeta.execution_plans);
     const shouldRemove = options?.remove === true || robotMetaRaw === null;
@@ -2476,6 +2657,8 @@ export default function App() {
       flow_meta: currentFlowMeta,
       node_path_meta: currentNodePathMeta,
       robot_meta_by_element_id: nextRobotMetaByElementId,
+      camunda_extensions_by_element_id: currentCamundaExtensionsByElementId,
+      presentation_by_element_id: currentPresentationByElementId,
       hybrid_layer_by_element_id: currentHybridLayerByElementId,
       hybrid_v2: currentMeta.hybrid_v2,
       drawio: currentMeta.drawio,
@@ -2490,6 +2673,92 @@ export default function App() {
     });
     if (!persistResult?.ok) {
       return { ok: false, error: String(persistResult?.error || "Не удалось сохранить Robot Meta.") };
+    }
+    return { ok: true };
+  }
+
+  async function setElementCamundaExtensions(elementIdRaw, extensionStateRaw, options = {}) {
+    const sid = String(draft?.session_id || "").trim();
+    const elementId = String(elementIdRaw || "").trim();
+    if (!elementId) return { ok: false, error: "Не выбран BPMN-элемент." };
+
+    const currentMeta = normalizeBpmnMeta(draft?.bpmn_meta);
+    const currentFlowMeta = normalizeFlowMetaMap(currentMeta.flow_meta);
+    const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta.node_path_meta);
+    const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta.robot_meta_by_element_id);
+    const currentCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(currentMeta.camunda_extensions_by_element_id);
+    const currentPresentationByElementId = normalizeCamundaPresentationMap(currentMeta.presentation_by_element_id);
+    const currentHybridLayerByElementId = normalizeHybridLayerMap(currentMeta.hybrid_layer_by_element_id);
+    const currentExecutionPlans = normalizeExecutionPlans(currentMeta.execution_plans);
+    const shouldRemove = options?.remove === true || extensionStateRaw === null;
+    const nextCamundaExtensionsByElementId = shouldRemove
+      ? removeCamundaExtensionStateByElementId(currentCamundaExtensionsByElementId, elementId)
+      : upsertCamundaExtensionStateByElementId(currentCamundaExtensionsByElementId, elementId, extensionStateRaw);
+
+    const optimisticMeta = {
+      version: Number(currentMeta.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: currentFlowMeta,
+      node_path_meta: currentNodePathMeta,
+      robot_meta_by_element_id: currentRobotMetaByElementId,
+      camunda_extensions_by_element_id: nextCamundaExtensionsByElementId,
+      presentation_by_element_id: currentPresentationByElementId,
+      hybrid_layer_by_element_id: currentHybridLayerByElementId,
+      hybrid_v2: currentMeta.hybrid_v2,
+      drawio: currentMeta.drawio,
+      execution_plans: currentExecutionPlans,
+    };
+    const persistResult = await persistSessionMetaBoundary(optimisticMeta, {
+      source: "camunda_extensions_save",
+      successHint: sid && !isLocalSessionId(sid)
+        ? (shouldRemove ? "Properties удалены." : "Properties сохранены.")
+        : (shouldRemove ? "Properties удалены локально." : "Properties сохранены локально."),
+      failureHint: "Не удалось сохранить Properties.",
+    });
+    if (!persistResult?.ok) {
+      return { ok: false, error: String(persistResult?.error || "Не удалось сохранить Properties.") };
+    }
+    return { ok: true };
+  }
+
+  async function setElementCamundaPresentation(elementIdRaw, presentationRaw, options = {}) {
+    const sid = String(draft?.session_id || "").trim();
+    const elementId = String(elementIdRaw || "").trim();
+    if (!elementId) return { ok: false, error: "Не выбран BPMN-элемент." };
+
+    const currentMeta = normalizeBpmnMeta(draft?.bpmn_meta);
+    const currentFlowMeta = normalizeFlowMetaMap(currentMeta.flow_meta);
+    const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta.node_path_meta);
+    const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta.robot_meta_by_element_id);
+    const currentCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(currentMeta.camunda_extensions_by_element_id);
+    const currentPresentationByElementId = normalizeCamundaPresentationMap(currentMeta.presentation_by_element_id);
+    const currentHybridLayerByElementId = normalizeHybridLayerMap(currentMeta.hybrid_layer_by_element_id);
+    const currentExecutionPlans = normalizeExecutionPlans(currentMeta.execution_plans);
+    const shouldRemove = options?.remove === true || presentationRaw === null;
+    const nextPresentationByElementId = shouldRemove
+      ? removeCamundaPresentationByElementId(currentPresentationByElementId, elementId)
+      : upsertCamundaPresentationByElementId(currentPresentationByElementId, elementId, presentationRaw);
+
+    const optimisticMeta = {
+      version: Number(currentMeta.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: currentFlowMeta,
+      node_path_meta: currentNodePathMeta,
+      robot_meta_by_element_id: currentRobotMetaByElementId,
+      camunda_extensions_by_element_id: currentCamundaExtensionsByElementId,
+      presentation_by_element_id: nextPresentationByElementId,
+      hybrid_layer_by_element_id: currentHybridLayerByElementId,
+      hybrid_v2: currentMeta.hybrid_v2,
+      drawio: currentMeta.drawio,
+      execution_plans: currentExecutionPlans,
+    };
+    const persistResult = await persistSessionMetaBoundary(optimisticMeta, {
+      source: "camunda_presentation_save",
+      successHint: sid && !isLocalSessionId(sid)
+        ? "Настройка overlay сохранена."
+        : "Настройка overlay сохранена локально.",
+      failureHint: "Не удалось сохранить настройку overlay.",
+    });
+    if (!persistResult?.ok) {
+      return { ok: false, error: String(persistResult?.error || "Не удалось сохранить настройку overlay.") };
     }
     return { ok: true };
   }
@@ -2544,6 +2813,8 @@ export default function App() {
     const normalizedFlowMeta = normalizeFlowMetaMap(serverMeta?.flow_meta);
     const normalizedNodePathMeta = normalizeNodePathMetaMap(serverMeta?.node_path_meta);
     const normalizedRobotMetaByElementId = normalizeRobotMetaMap(serverMeta?.robot_meta_by_element_id);
+    const normalizedCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(serverMeta?.camunda_extensions_by_element_id);
+    const normalizedPresentationByElementId = normalizeCamundaPresentationMap(serverMeta?.presentation_by_element_id || currentMeta.presentation_by_element_id);
     const normalizedHybridLayerByElementId = normalizeHybridLayerMap(serverMeta?.hybrid_layer_by_element_id);
     const normalizedExecutionPlans = normalizeExecutionPlans(serverMeta?.execution_plans);
     const effectiveExecutionPlans = normalizedExecutionPlans.length ? normalizedExecutionPlans : currentExecutionPlans;
@@ -2552,6 +2823,8 @@ export default function App() {
       flow_meta: normalizedFlowMeta,
       node_path_meta: normalizedNodePathMeta,
       robot_meta_by_element_id: normalizedRobotMetaByElementId,
+      camunda_extensions_by_element_id: normalizedCamundaExtensionsByElementId,
+      presentation_by_element_id: normalizedPresentationByElementId,
       hybrid_layer_by_element_id: normalizedHybridLayerByElementId,
       hybrid_v2: mergeHybridV2Doc(serverMeta?.hybrid_v2, currentMeta.hybrid_v2),
       drawio: mergeDrawioMeta(serverMeta?.drawio, currentMeta.drawio),
@@ -2813,15 +3086,36 @@ export default function App() {
     return { ok: true };
   }
 
-  function returnToSessionList(reason = "manual_return") {
+  async function returnToSessionList(reason = "manual_return", options = {}) {
+    const shouldFlushBeforeLeave = options?.flushBeforeLeave !== false;
+    const sid = String(draft?.session_id || "").trim();
+    if (shouldFlushBeforeLeave && sid && !isLocalSessionId(sid)) {
+      const flushResult = await requestProcessStageFlushBeforeLeave({
+        sessionId: sid,
+        reason,
+        timeoutMs: 7000,
+      });
+      if (!flushResult?.ok) {
+        setSessionNavNotice({
+          code: "LEAVE_FLUSH_FAILED",
+          status: 0,
+          projectId: String(projectId || ""),
+          sessionId: sid,
+          message: "Не удалось сохранить изменения перед выходом в проект. Попробуйте снова.",
+        });
+        markFail(String(flushResult?.error || "flush_before_leave_failed"));
+        return { ok: false, error: String(flushResult?.error || "flush_before_leave_failed") };
+      }
+    }
     logNav("return_to_session_list", { reason });
     setSessionNavNotice(null);
     requestedSessionIdRef.current = "";
     resetDraft(ensureDraftShape(null));
+    return { ok: true };
   }
 
   async function deleteCurrentProject(options = {}) {
-    if (!canManageProjectEntities) return { ok: false, error: "forbidden" };
+    if (!workspacePermissions.canDeleteProject) return { ok: false, error: "forbidden" };
     const pid = String(projectId || "");
     if (!pid) return { ok: false, error: "Проект не выбран." };
     const skipConfirm = !!options?.skipConfirm;
@@ -2840,22 +3134,26 @@ export default function App() {
     setProjects((prev) => ensureArray(prev).filter((item) => projectIdOf(item) !== pid));
     setProjectId("");
     setSessions([]);
-    returnToSessionList("project_deleted");
+    await returnToSessionList("project_deleted", { flushBeforeLeave: false });
     await refreshProjects();
     markOk("API OK");
     return { ok: true };
   }
 
   async function deleteCurrentSession(options = {}) {
-    if (!canManageProjectEntities) return { ok: false, error: "forbidden" };
+    if (!workspacePermissions.canDeleteSession) return { ok: false, error: "forbidden" };
     const sid = String(draft?.session_id || "");
     if (!sid || isLocalSessionId(sid)) {
-      returnToSessionList("local_session_clear");
+      await returnToSessionList("local_session_clear", { flushBeforeLeave: false });
       return { ok: true };
     }
     const skipConfirm = !!options?.skipConfirm;
     if (!skipConfirm) {
-      const ok = confirm("Удалить сессию?");
+      const currentStatus = String(draft?.interview?.status || "").trim().toLowerCase();
+      const message = currentStatus === "ready" || currentStatus === "archived"
+        ? "Удалить сессию с финальным статусом? Это действие необратимо."
+        : "Удалить сессию?";
+      const ok = confirm(message);
       if (!ok) return { ok: false, cancelled: true };
     }
 
@@ -2865,7 +3163,7 @@ export default function App() {
       return { ok: false, error: String(r.error || "delete_session_failed") };
     }
 
-    returnToSessionList("session_deleted");
+    await returnToSessionList("session_deleted", { flushBeforeLeave: false });
     await refreshSessions(projectId);
     markOk("API OK");
     return { ok: true };
@@ -2938,6 +3236,23 @@ export default function App() {
     }
   }
 
+  async function changeCurrentSessionStatus(nextStatus) {
+    if (!workspacePermissions.canChangeStatus) return { ok: false, error: "forbidden" };
+    const sid = String(draft?.session_id || "").trim();
+    if (!sid || isLocalSessionId(sid)) return { ok: false, error: "Сессия не выбрана." };
+    const status = String(nextStatus || "").trim();
+    if (!status) return { ok: false, error: "status_required" };
+    const r = await apiPatchSession(sid, { status });
+    if (!r.ok) {
+      markFail(r.error);
+      return { ok: false, error: String(r.error || "status_update_failed") };
+    }
+    onSessionSync(r.session || {});
+    await refreshSessions(projectId);
+    markOk("API OK");
+    return { ok: true };
+  }
+
   // Sessions are valid even without predefined actors; keep editing flow open.
   const locked = false;
 
@@ -2954,12 +3269,74 @@ export default function App() {
     return String(found?.title || found?.name || "").trim();
   }, [projects, projectId]);
 
+  const currentProjectWorkspaceId = useMemo(() => {
+    const pid = String(projectId || "").trim();
+    if (!pid) return "";
+    const found = projects.find((item) => projectIdOf(item) === pid);
+    return String(found?.workspace_id || projectWorkspaceHintsRef.current.get(pid) || "").trim();
+  }, [projects, projectId]);
+
   const currentSessionTitle = useMemo(() => {
     const sid = String(draft?.session_id || "").trim();
     if (!sid) return "";
     const found = sessions.find((item) => sessionIdOf(item) === sid);
     return String(found?.title || found?.name || draft?.title || "").trim();
   }, [sessions, draft?.session_id, draft?.title]);
+
+  const openOrgSettings = useCallback((options = {}) => {
+    const nextTab = normalizeOrgSettingsTab(options?.tab);
+    const nextDictionaryOnly = nextTab === "dictionary" && !!options?.dictionaryOnly;
+    setOrgSettingsTab(nextTab);
+    setOrgSettingsOperationKey(String(options?.operationKey || options?.operation_key || "").trim());
+    setOrgSettingsDictionaryOnly(nextDictionaryOnly);
+    setOrgSettingsOpen(true);
+    if (typeof window === "undefined") return;
+    try {
+      const url = new URL(window.location.href);
+      const pathname = String(url.pathname || "");
+      url.pathname = "/app/org";
+      if (nextTab === "members") url.searchParams.delete("tab");
+      else url.searchParams.set("tab", nextTab);
+      const nextHref = `${url.pathname}${url.search}${url.hash}`;
+      const currentHref = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      if (nextHref === currentHref && pathname.startsWith("/app/org")) return;
+      window.history.pushState({}, "", nextHref);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const closeOrgSettings = useCallback(() => {
+    setOrgSettingsOpen(false);
+    setOrgSettingsOperationKey("");
+    setOrgSettingsDictionaryOnly(false);
+    if (typeof window === "undefined") return;
+    const pathname = String(window.location.pathname || "");
+    if (!pathname.startsWith("/app/org")) return;
+    try {
+      const url = new URL(window.location.href);
+      url.pathname = "/app";
+      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const notifyOrgPropertyDictionaryChanged = useCallback(() => {
+    setOrgPropertyDictionaryRevision((prev) => prev + 1);
+  }, []);
+
+  const consumeSnapshotRestoreNotice = useCallback((sessionIdRaw, nonceRaw = 0) => {
+    const sid = String(sessionIdRaw || "").trim();
+    const nonce = Number(nonceRaw || 0);
+    setSnapshotRestoreNotice((prev) => {
+      if (!prev || String(prev?.sid || "").trim() !== sid) return prev;
+      if (nonce > 0 && Number(prev?.nonce || 0) !== nonce) return prev;
+      return null;
+    });
+  }, []);
 
   const left = useMemo(() => {
     if (phase === "no_session") {
@@ -2992,6 +3369,16 @@ export default function App() {
         onSetFlowPathTier={setFlowHappyPath}
         onSetNodePathAssignments={setNodePathAssignments}
         onSetElementRobotMeta={setElementRobotMeta}
+        onSetElementCamundaExtensions={setElementCamundaExtensions}
+        onSetElementCamundaPresentation={setElementCamundaPresentation}
+        activeOrgId={activeOrgId}
+        onOpenOrgSettings={openOrgSettings}
+        orgPropertyDictionaryRevision={orgPropertyDictionaryRevision}
+        onOrgPropertyDictionaryChanged={notifyOrgPropertyDictionaryChanged}
+        onPropertiesOverlayPreviewChange={setSelectedPropertiesOverlayPreview}
+        onPropertiesOverlayAlwaysPreviewChange={setSelectedPropertiesOverlayAlwaysPreview}
+        showPropertiesOverlayAlways={showPropertiesOverlayAlways}
+        onShowPropertiesOverlayAlwaysChange={setShowPropertiesOverlayAlways}
         onGoToDiagram={() => {
           const sid = String(draft?.session_id || "").trim();
           if (!sid) return;
@@ -3018,9 +3405,9 @@ export default function App() {
         stepTimeUnit={stepTimeUnit}
         onStepTimeUnitChange={handleStepTimeUnitChange}
         onRenameProject={canManageProjectEntities ? (() => openRenameDialog("project")) : undefined}
-        onDeleteProject={canManageProjectEntities ? (() => openDeleteDialog("project")) : undefined}
+        onDeleteProject={workspacePermissions.canDeleteProject ? (() => openDeleteDialog("project")) : undefined}
         onRenameSession={canManageProjectEntities ? (() => openRenameDialog("session")) : undefined}
-        onDeleteSession={canManageProjectEntities ? (() => openDeleteDialog("session")) : undefined}
+        onDeleteSession={workspacePermissions.canDeleteSession ? (() => openDeleteDialog("session")) : undefined}
         disabled={locked}
       />
     );
@@ -3050,6 +3437,7 @@ export default function App() {
     openRenameDialog,
     openDeleteDialog,
     canManageProjectEntities,
+    workspacePermissions,
   ]);
 
   useEffect(() => {
@@ -3086,7 +3474,9 @@ export default function App() {
       const orgOpen = pathname.startsWith("/app/org");
       setOrgSettingsOpen(orgOpen);
       if (orgOpen) {
-        setOrgSettingsTab(readOrgSettingsTabFromUrl());
+        const nextTab = readOrgSettingsTabFromUrl();
+        setOrgSettingsTab(nextTab);
+        setOrgSettingsDictionaryOnly((prev) => (nextTab === "dictionary" ? prev : false));
       }
       logNav("popstate", {
         projectId: fromUrl.projectId || "-",
@@ -3118,42 +3508,6 @@ export default function App() {
     refreshSessions(projectId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
-
-  const openOrgSettings = useCallback((options = {}) => {
-    const nextTab = normalizeOrgSettingsTab(options?.tab);
-    setOrgSettingsTab(nextTab);
-    setOrgSettingsOpen(true);
-    if (typeof window === "undefined") return;
-    try {
-      const url = new URL(window.location.href);
-      const pathname = String(url.pathname || "");
-      url.pathname = "/app/org";
-      if (nextTab === "members") url.searchParams.delete("tab");
-      else url.searchParams.set("tab", nextTab);
-      const nextHref = `${url.pathname}${url.search}${url.hash}`;
-      const currentHref = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-      if (nextHref === currentHref && pathname.startsWith("/app/org")) return;
-      window.history.pushState({}, "", nextHref);
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  const closeOrgSettings = useCallback(() => {
-    setOrgSettingsOpen(false);
-    if (typeof window === "undefined") return;
-    const pathname = String(window.location.pathname || "");
-    if (!pathname.startsWith("/app/org")) return;
-    try {
-      const url = new URL(window.location.href);
-      url.pathname = "/app";
-      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    } catch {
-      // ignore
-    }
-  }, []);
 
   return (
     <>
@@ -3188,22 +3542,28 @@ export default function App() {
         onOpenOrgSettings={openOrgSettings}
         projects={projects}
         projectId={projectId}
+        projectWorkspaceId={currentProjectWorkspaceId}
         onProjectChange={async (pid) => {
           const next = String(pid || "");
           logNav("project_change", { projectId: next || "-" });
+          if (!next.trim()) {
+            suppressProjectAutoselectRef.current = true;
+          }
           setProjectId(next);
           setSessionNavNotice(null);
           requestedSessionIdRef.current = "";
           setSessions([]);
           resetDraft(ensureDraftShape(null));
         }}
-        onDeleteProject={canManageProjectEntities ? deleteCurrentProject : undefined}
+        onDeleteProject={workspacePermissions.canDeleteProject ? deleteCurrentProject : undefined}
         canManageProjectEntities={canManageProjectEntities}
         sessions={sessions}
         sessionId={String(draft?.session_id || "")}
+        sessionStatus={String(draft?.status || "draft")}
         onOpenSession={openSession}
         onOpenWorkspaceSession={openWorkspaceSession}
-        onDeleteSession={canManageProjectEntities ? deleteCurrentSession : undefined}
+        onDeleteSession={workspacePermissions.canDeleteSession ? deleteCurrentSession : undefined}
+        onChangeSessionStatus={workspacePermissions.canChangeStatus ? changeCurrentSessionStatus : undefined}
         onRefresh={async () => {
           await refreshProjects();
           await refreshSessions(projectId);
@@ -3228,6 +3588,10 @@ export default function App() {
         onSessionSync={onSessionSync}
         onRecalculateRtiers={recalculateRtiers}
         snapshotRestoreNotice={snapshotRestoreNotice}
+        onSnapshotRestoreNoticeConsumed={consumeSnapshotRestoreNotice}
+        selectedPropertiesOverlayPreview={selectedPropertiesOverlayPreview}
+        propertiesOverlayAlwaysEnabled={showPropertiesOverlayAlways}
+        propertiesOverlayAlwaysPreviewByElementId={propertiesOverlayAlwaysPreviewByElementId}
         sessionNavNotice={sessionNavNotice}
         onDismissSessionNavNotice={() => setSessionNavNotice(null)}
         onReturnToSessionList={() => returnToSessionList("banner_action")}
@@ -3237,10 +3601,14 @@ export default function App() {
         open={orgSettingsOpen}
         onClose={closeOrgSettings}
         initialTab={orgSettingsTab}
+        dictionaryOnly={orgSettingsDictionaryOnly}
         activeOrgId={activeOrgId}
         activeOrgRole={activeOrgRole}
+        isAdmin={Boolean(user?.is_admin)}
         orgName={activeOrgName}
         onRequestRefreshOrgs={refreshOrgs}
+        initialOperationKey={orgSettingsOperationKey}
+        onDictionaryChanged={notifyOrgPropertyDictionaryChanged}
       />
 
       <ProjectWizardModal open={wizardOpen} onClose={() => setWizardOpen(false)} onCreate={createProjectFromWizard} />

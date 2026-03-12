@@ -66,13 +66,16 @@ class BpmnMetaApiTests(unittest.TestCase):
         os.environ.setdefault("JWT_ISSUER", "test-issuer")
         os.environ.setdefault("JWT_AUDIENCE", "test-audience")
 
-        from app.main import (
+        # Router split moved these callable/model symbols out of app.main;
+        # test harness needs the legacy module that still owns them.
+        from app._legacy_main import (
             BpmnMetaPatchIn,
             InferRtiersIn,
             BpmnXmlIn,
             CreateSessionIn,
             UpdateSessionIn,
             create_session,
+            get_storage,
             patch_session,
             session_bpmn_meta_get,
             session_bpmn_meta_patch,
@@ -86,6 +89,7 @@ class BpmnMetaApiTests(unittest.TestCase):
         self.CreateSessionIn = CreateSessionIn
         self.UpdateSessionIn = UpdateSessionIn
         self.create_session = create_session
+        self.get_storage = get_storage
         self.patch_session = patch_session
         self.session_bpmn_meta_get = session_bpmn_meta_get
         self.session_bpmn_meta_patch = session_bpmn_meta_patch
@@ -99,6 +103,13 @@ class BpmnMetaApiTests(unittest.TestCase):
 
     def tearDown(self):
         self.tmp.cleanup()
+
+    def _seed_raw_bpmn_meta(self, meta):
+        st = self.get_storage()
+        sess = st.load(self.sid, is_admin=True)
+        self.assertIsNotNone(sess)
+        sess.bpmn_meta = dict(meta or {})
+        st.save(sess, user_id="test-user", is_admin=True)
 
     def test_xor_p0_and_p1_are_unique_per_gateway(self):
         first = self.session_bpmn_meta_patch(self.sid, self.BpmnMetaPatchIn(flowId="Flow_yes", tier="P0"))
@@ -310,6 +321,286 @@ class BpmnMetaApiTests(unittest.TestCase):
         )
         hybrid = (patched.get("bpmn_meta") or {}).get("hybrid_v2", {})
         self.assertEqual(len(hybrid.get("elements", [])), 1)
+
+    def test_patch_session_partial_bpmn_meta_preserves_camunda_and_presentation(self):
+        self._seed_raw_bpmn_meta(
+            {
+                "version": 4,
+                "camunda_extensions_by_element_id": {
+                    "Task_yes": {
+                        "properties": {
+                            "extensionProperties": [
+                                {"id": "prop_1", "name": "ingredient", "value": "Картошка"},
+                            ],
+                            "extensionListeners": [],
+                        },
+                        "preservedExtensionElements": [],
+                    }
+                },
+                "presentation_by_element_id": {
+                    "Task_yes": {"showPropertiesOverlay": True, "show_properties_overlay": True}
+                },
+                "execution_plans": [{"id": "v1", "name": "base"}],
+                "drawio": {"enabled": False},
+            }
+        )
+
+        patched = self.patch_session(
+            self.sid,
+            self.UpdateSessionIn(
+                bpmn_meta={
+                    "drawio": {
+                        "enabled": True,
+                        "doc_xml": '<mxfile host="app.diagrams.net"></mxfile>',
+                    }
+                }
+            ),
+        )
+
+        meta = patched.get("bpmn_meta", {})
+        self.assertEqual(
+            meta.get("camunda_extensions_by_element_id", {})
+            .get("Task_yes", {})
+            .get("properties", {})
+            .get("extensionProperties", [{}])[0]
+            .get("name"),
+            "ingredient",
+        )
+        self.assertEqual(
+            meta.get("presentation_by_element_id", {})
+            .get("Task_yes", {})
+            .get("showPropertiesOverlay"),
+            True,
+        )
+        self.assertEqual(len(meta.get("execution_plans") or []), 1)
+        self.assertEqual(meta.get("drawio", {}).get("enabled"), True)
+
+    def test_bpmn_save_partial_bpmn_meta_preserves_camunda_and_presentation(self):
+        self._seed_raw_bpmn_meta(
+            {
+                "version": 5,
+                "camunda_extensions_by_element_id": {
+                    "Task_yes": {
+                        "properties": {
+                            "extensionProperties": [
+                                {"id": "prop_1", "name": "equipment", "value": "Весы"},
+                            ],
+                            "extensionListeners": [],
+                        },
+                        "preservedExtensionElements": [],
+                    }
+                },
+                "presentation_by_element_id": {
+                    "Task_yes": {"showPropertiesOverlay": True, "show_properties_overlay": True}
+                },
+                "drawio": {"enabled": False},
+            }
+        )
+
+        saved = self.session_bpmn_save(
+            self.sid,
+            self.BpmnXmlIn(
+                xml=XOR_BPMN_XML,
+                bpmn_meta={
+                    "drawio": {
+                        "enabled": True,
+                        "doc_xml": '<mxfile host="app.diagrams.net"></mxfile>',
+                    }
+                },
+            ),
+        )
+        self.assertEqual(saved.get("ok"), True)
+        meta = self.session_bpmn_meta_get(self.sid)
+        self.assertEqual(
+            meta.get("camunda_extensions_by_element_id", {})
+            .get("Task_yes", {})
+            .get("properties", {})
+            .get("extensionProperties", [{}])[0]
+            .get("name"),
+            "equipment",
+        )
+        self.assertEqual(
+            meta.get("presentation_by_element_id", {})
+            .get("Task_yes", {})
+            .get("showPropertiesOverlay"),
+            True,
+        )
+        self.assertEqual(meta.get("drawio", {}).get("enabled"), True)
+
+    def test_patch_session_drawio_only_preserves_bpmn_owned_meta_and_xml(self):
+        self.session_bpmn_meta_patch(self.sid, self.BpmnMetaPatchIn(flowId="Flow_yes", tier="P0"))
+        self.session_bpmn_meta_patch(
+            self.sid,
+            self.BpmnMetaPatchIn(
+                node_id="Task_yes",
+                paths=["P0"],
+                sequence_key="primary",
+                source="manual",
+            ),
+        )
+        self.session_bpmn_meta_patch(
+            self.sid,
+            self.BpmnMetaPatchIn(
+                robot_element_id="Task_yes",
+                robot_meta={
+                    "exec": {
+                        "mode": "machine",
+                        "action_key": "soup.reheat",
+                    },
+                },
+            ),
+        )
+
+        patched = self.patch_session(
+            self.sid,
+            self.UpdateSessionIn(
+                bpmn_meta={
+                    "drawio": {
+                        "enabled": True,
+                        "doc_xml": '<mxfile host="app.diagrams.net"></mxfile>',
+                        "svg_cache": '<svg xmlns="http://www.w3.org/2000/svg"><g id="Task_yes"></g></svg>',
+                        "drawio_layers_v1": [
+                            {"id": "DL1", "name": "Default", "visible": True, "locked": False, "opacity": 1},
+                        ],
+                        "drawio_elements_v1": [
+                            {"id": "Task_yes", "layer_id": "DL1", "offset_x": 12, "offset_y": -6},
+                        ],
+                    },
+                }
+            ),
+        )
+
+        meta = patched.get("bpmn_meta", {})
+        self.assertEqual(str(patched.get("bpmn_xml") or ""), XOR_BPMN_XML)
+        self.assertEqual(meta.get("flow_meta", {}).get("Flow_yes", {}).get("tier"), "P0")
+        self.assertEqual(meta.get("node_path_meta", {}).get("Task_yes", {}).get("paths"), ["P0"])
+        self.assertEqual(
+            meta.get("robot_meta_by_element_id", {}).get("Task_yes", {}).get("exec", {}).get("action_key"),
+            "soup.reheat",
+        )
+        drawio = meta.get("drawio", {})
+        self.assertEqual(drawio.get("doc_xml"), '<mxfile host="app.diagrams.net"></mxfile>')
+        self.assertEqual(drawio.get("drawio_elements_v1", [{}])[0].get("id"), "Task_yes")
+        self.assertEqual(drawio.get("drawio_elements_v1", [{}])[0].get("offset_x"), 12.0)
+        self.assertEqual(drawio.get("drawio_elements_v1", [{}])[0].get("offset_y"), -6.0)
+
+    def test_patch_session_drawio_only_preserves_existing_extra_top_level_branches(self):
+        self._seed_raw_bpmn_meta(
+            {
+                "version": 7,
+                "flow_meta": {"Flow_yes": {"tier": "P0"}},
+                "drawio": {"enabled": False},
+                "custom_branch": {"alpha": 1, "nested": {"beta": 2}},
+                "attention_markers": [{"id": "m1", "is_checked": False}],
+                "attention_show_on_workspace": False,
+            }
+        )
+
+        patched = self.patch_session(
+            self.sid,
+            self.UpdateSessionIn(
+                bpmn_meta={
+                    "drawio": {
+                        "enabled": True,
+                        "doc_xml": '<mxfile host="app.diagrams.net"></mxfile>',
+                    }
+                }
+            ),
+        )
+
+        meta = patched.get("bpmn_meta", {})
+        self.assertEqual(meta.get("custom_branch", {}).get("nested", {}).get("beta"), 2)
+        self.assertEqual(meta.get("attention_markers", [{}])[0].get("id"), "m1")
+        self.assertEqual(meta.get("attention_show_on_workspace"), False)
+        self.assertEqual(meta.get("flow_meta", {}).get("Flow_yes", {}).get("tier"), "P0")
+        self.assertEqual(meta.get("drawio", {}).get("doc_xml"), '<mxfile host="app.diagrams.net"></mxfile>')
+
+    def test_patch_session_known_branch_update_preserves_unknown_top_level_branch(self):
+        self._seed_raw_bpmn_meta(
+            {
+                "version": 5,
+                "custom_branch": {"flags": ["x"], "nested": {"gamma": 3}},
+                "flow_meta": {"Flow_yes": {"tier": "P0"}},
+            }
+        )
+
+        patched = self.patch_session(
+            self.sid,
+            self.UpdateSessionIn(
+                bpmn_meta={
+                    "flow_meta": {
+                        "Flow_no": {"tier": "P1"},
+                    }
+                }
+            ),
+        )
+
+        meta = patched.get("bpmn_meta", {})
+        self.assertEqual(meta.get("custom_branch", {}).get("nested", {}).get("gamma"), 3)
+        self.assertEqual(meta.get("flow_meta", {}).get("Flow_no", {}).get("tier"), "P1")
+        self.assertNotIn("Flow_yes", meta.get("flow_meta", {}))
+
+    def test_patch_session_known_branch_normalization_still_prunes_unknown_nested_keys(self):
+        self._seed_raw_bpmn_meta(
+            {
+                "version": 3,
+                "drawio": {
+                    "enabled": True,
+                    "doc_xml": '<mxfile host="app.diagrams.net"></mxfile>',
+                    "svg_cache": "<svg></svg>",
+                    "warnings": ["legacy-warning"],
+                    "extra_nested": {"x": 1},
+                },
+                "flow_meta": {
+                    "Flow_yes": {"tier": "P0", "custom": "drop-me"},
+                },
+            }
+        )
+
+        patched = self.patch_session(
+            self.sid,
+            self.UpdateSessionIn(
+                bpmn_meta={
+                    "drawio": {
+                        "enabled": True,
+                        "doc_xml": '<mxfile host="app.diagrams.net"></mxfile>',
+                        "svg_cache": "<svg></svg>",
+                        "warnings": ["new-warning"],
+                        "extra_nested": {"x": 2},
+                    }
+                }
+            ),
+        )
+
+        meta = patched.get("bpmn_meta", {})
+        self.assertNotIn("warnings", meta.get("drawio", {}))
+        self.assertNotIn("extra_nested", meta.get("drawio", {}))
+        self.assertEqual(meta.get("flow_meta", {}).get("Flow_yes", {}).get("tier"), "P0")
+        self.assertNotIn("custom", meta.get("flow_meta", {}).get("Flow_yes", {}))
+
+    def test_session_bpmn_meta_patch_preserves_existing_extra_top_level_branches(self):
+        self._seed_raw_bpmn_meta(
+            {
+                "version": 4,
+                "drawio": {"enabled": False},
+                "custom_branch": {"keep": True},
+                "attention_show_on_workspace": False,
+            }
+        )
+
+        patched = self.session_bpmn_meta_patch(
+            self.sid,
+            self.BpmnMetaPatchIn(
+                drawio={
+                    "enabled": True,
+                    "doc_xml": '<mxfile host="app.diagrams.net"></mxfile>',
+                }
+            ),
+        )
+
+        self.assertEqual(patched.get("custom_branch", {}).get("keep"), True)
+        self.assertEqual(patched.get("attention_show_on_workspace"), False)
+        self.assertEqual(patched.get("drawio", {}).get("doc_xml"), '<mxfile host="app.diagrams.net"></mxfile>')
 
     def test_infer_rtiers_smoke_afbb609e19(self):
         afbb_path = Path(__file__).resolve().parents[2] / "workspace" / ".session_store" / "afbb609e19.json"

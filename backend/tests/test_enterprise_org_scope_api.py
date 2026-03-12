@@ -23,13 +23,9 @@ class EnterpriseOrgScopeApiTest(unittest.TestCase):
         os.environ.pop("PROCESS_DB_PATH", None)
 
         from app.auth import create_user
-        from app.main import (
-            AuthMeOut,
-            CreateProjectIn,
-            auth_me,
-            create_org_project,
-            list_projects,
-        )
+        from app._legacy_main import AuthMeOut, auth_me, create_org_project, list_projects
+        from app.models import CreateProjectIn
+        from app.routers.org_members import list_org_members_endpoint
         from app.storage import (
             create_org_record,
             get_default_org_id,
@@ -43,6 +39,7 @@ class EnterpriseOrgScopeApiTest(unittest.TestCase):
         self.auth_me = auth_me
         self.create_org_project = create_org_project
         self.list_projects = list_projects
+        self.list_org_members_endpoint = list_org_members_endpoint
         self.create_org_record = create_org_record
         self.get_default_org_id = get_default_org_id
         self.list_user_org_memberships = list_user_org_memberships
@@ -166,6 +163,16 @@ class EnterpriseOrgScopeApiTest(unittest.TestCase):
         self.assertIn(default_project_id, default_ids)
         self.assertNotIn(created_b_id, default_ids)
         self.assertIn(created_b_id, org_b_ids)
+
+    def test_org_members_route_returns_members_with_email(self):
+        req = _DummyRequest(self.admin_user, active_org_id=self.default_org_id)
+        payload = self.list_org_members_endpoint(self.default_org_id, req)
+        self.assertIsInstance(payload, dict)
+        self.assertEqual(int(payload.get("count") or 0), 2)
+        rows = payload.get("items") or []
+        emails = {str(item.get("email") or "") for item in rows}
+        self.assertIn("ent_admin@local", emails)
+        self.assertIn("ent_editor@local", emails)
 
 
 if __name__ == "__main__":

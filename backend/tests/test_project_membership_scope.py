@@ -24,7 +24,8 @@ class ProjectMembershipScopeTest(unittest.TestCase):
         os.environ.pop("PROCESS_DB_PATH", None)
 
         from app.auth import create_user
-        from app.main import CreateProjectIn, create_org_project, get_org_project, list_projects
+        from app._legacy_main import create_org_project, get_org_project, list_projects
+        from app.models import CreateProjectIn
         from app.storage import (
             create_org_record,
             get_default_org_id,

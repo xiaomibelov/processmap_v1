@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { apiLogin, setUiToken } from "./helpers/e2eAuth.mjs";
+import { openSessionInTopbar, waitForDiagramReady } from "./helpers/diagramReady.mjs";
 
 const API_BASE = process.env.E2E_API_BASE_URL || "http://127.0.0.1:8011";
 
@@ -72,6 +73,7 @@ async function createFixture(request, runId, headers) {
   });
   const project = await apiJson(projectRes, "create project");
   const projectId = String(project.id || project.project_id || "").trim();
+  const orgId = String(project.org_id || project.orgId || project.organization_id || "").trim();
   expect(projectId).not.toBe("");
 
   const sessionRes = await request.post(
@@ -94,22 +96,13 @@ async function createFixture(request, runId, headers) {
     data: { xml: seedXml() },
   });
   await apiJson(putRes, "seed bpmn");
-  return { projectId, sessionId };
+  return { projectId, sessionId, orgId };
 }
 
 async function switchTab(page, title) {
   const btn = page.locator(".segBtn").filter({ hasText: new RegExp(`^${title}$`, "i") }).first();
   await expect(btn).toBeVisible();
   await btn.click();
-}
-
-async function openFixture(page, fixture) {
-  await page.goto("/app");
-  await expect(page.locator(".topbar .topSelect--project")).toBeVisible();
-  await page.selectOption(".topbar .topSelect--project", fixture.projectId);
-  await page.getByRole("button", { name: "Обновить" }).click();
-  await expect(page.locator(`.topbar .topSelect--session option[value="${fixture.sessionId}"]`)).toHaveCount(1);
-  await page.selectOption(".topbar .topSelect--session", fixture.sessionId);
 }
 
 async function readZoom(page) {
@@ -133,9 +126,10 @@ test("diagram zoom controls are clickable and change zoom", async ({ page, reque
     window.__FPC_E2E__ = true;
     window.localStorage.setItem("fpc_debug_bpmn", "1");
   });
-  await setUiToken(page, auth.accessToken);
-  await openFixture(page, fixture);
+  await setUiToken(page, auth.accessToken, { activeOrgId: fixture.orgId || auth.activeOrgId });
+  await openSessionInTopbar(page, fixture, { timeout: 60000 });
   await switchTab(page, "Diagram");
+  await waitForDiagramReady(page, { timeout: 60000 });
 
   const zoomIn = page.getByTestId("diagram-zoom-in");
   const zoomOut = page.getByTestId("diagram-zoom-out");

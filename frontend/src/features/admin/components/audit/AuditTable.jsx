@@ -1,24 +1,25 @@
 import SectionCard from "../common/SectionCard";
 import StatusPill from "../common/StatusPill";
 import { asArray, formatTs, toText } from "../../utils/adminFormat";
+import { ru } from "../../../../shared/i18n/ru";
 
 export default function AuditTable({
   items = [],
 }) {
   const rows = asArray(items);
   return (
-    <SectionCard title="Audit Table" subtitle="Operational event stream with actor and entity context" eyebrow="List">
+    <SectionCard title={ru.admin.auditPage.table.title} subtitle={ru.admin.auditPage.table.subtitle} eyebrow={ru.admin.common.listEyebrow}>
       <div className="overflow-auto">
         <table className="w-full min-w-[1080px] border-collapse text-sm">
           <thead className="text-left text-[11px] uppercase tracking-[0.16em] text-slate-400">
             <tr>
-              <th className="px-3 py-3">Timestamp</th>
-              <th className="px-3 py-3">Action</th>
-              <th className="px-3 py-3">Status</th>
-              <th className="px-3 py-3">Actor</th>
-              <th className="px-3 py-3">Entity</th>
-              <th className="px-3 py-3">Project</th>
-              <th className="px-3 py-3">Session</th>
+              <th className="px-3 py-3">{ru.admin.auditPage.table.timestamp}</th>
+              <th className="px-3 py-3">{ru.admin.auditPage.table.action}</th>
+              <th className="px-3 py-3">{ru.admin.auditPage.table.status}</th>
+              <th className="px-3 py-3">{ru.admin.auditPage.table.actor}</th>
+              <th className="px-3 py-3">{ru.admin.auditPage.table.entity}</th>
+              <th className="px-3 py-3">{ru.admin.auditPage.table.project}</th>
+              <th className="px-3 py-3">{ru.admin.auditPage.table.session}</th>
             </tr>
           </thead>
           <tbody>
@@ -39,4 +40,3 @@ export default function AuditTable({
     </SectionCard>
   );
 }
-

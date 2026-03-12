@@ -16,8 +16,10 @@ test("enterprise org settings: invites + audit tabs", async ({ page }) => {
       id: "inv_seed_1",
       org_id: "org_a",
       email: "seed@local",
+      full_name: "Seed User",
+      job_title: "Operator",
       role: "viewer",
-      status: "active",
+      status: "pending",
       created_at: 1700000000,
       expires_at: 1999999999,
     },
@@ -77,24 +79,26 @@ test("enterprise org settings: invites + audit tabs", async ({ page }) => {
         count: 2,
       }));
     }
-    if (path === "/api/orgs/org_a/invites" && method === "GET") {
+    if (path === "/api/admin/organizations/org_a/invites" && method === "GET") {
       return route.fulfill(jsonResponse({ items: invites, count: invites.length }));
     }
-    if (path === "/api/orgs/org_a/invites" && method === "POST") {
+    if (path === "/api/admin/organizations/org_a/invites" && method === "POST") {
       const payload = request.postDataJSON ? request.postDataJSON() : {};
       const row = {
         id: `inv_${Date.now()}`,
         org_id: "org_a",
         email: String(payload?.email || "").trim().toLowerCase(),
+        full_name: String(payload?.full_name || "").trim(),
+        job_title: String(payload?.job_title || "").trim(),
         role: String(payload?.role || "viewer").trim(),
-        status: "active",
+        status: "pending",
         created_at: 1700000002,
         expires_at: 1999999999,
       };
       invites.unshift(row);
-      return route.fulfill(jsonResponse({ invite: row, invite_token: "tok_dev_123" }));
+      return route.fulfill(jsonResponse({ invite: row, invite_key: "tok_dev_123", invite_token: "tok_dev_123" }));
     }
-    if (path.startsWith("/api/orgs/org_a/invites/") && path.endsWith("/revoke") && method === "POST") {
+    if (path.startsWith("/api/admin/organizations/org_a/invites/") && path.endsWith("/revoke") && method === "POST") {
       return route.fulfill({ status: 204, body: "" });
     }
     if (path === "/api/orgs/org_a/audit" && method === "GET") {
@@ -112,28 +116,25 @@ test("enterprise org settings: invites + audit tabs", async ({ page }) => {
     return route.fulfill(jsonResponse({ ok: true }));
   });
 
-  await page.goto("/app");
-  await expect(page.getByTestId("topbar-admin-button")).toBeVisible();
-  await page.getByTestId("topbar-admin-button").click();
-  await expect(page.getByTestId("topbar-org-settings-btn")).toBeVisible();
-  await page.getByTestId("topbar-org-settings-btn").click();
+  await page.goto("/app/org?tab=invites");
 
   const dialog = page.getByRole("dialog").filter({ has: page.getByText("Организация: Org A") }).last();
   await expect(dialog).toBeVisible();
-  await dialog.getByRole("button", { name: "Приглашения" }).click();
+  await dialog.getByRole("button", { name: "Инвайты" }).click();
 
   const modalBody = dialog.locator(".modalBody").last();
   const inviteForm = modalBody.locator("form").last();
   await inviteForm.locator("input[type='email']").fill("new.user@example.com");
-  await inviteForm.locator("select").first().selectOption("editor");
-  await inviteForm.getByRole("button", { name: "Создать" }).click({ force: true });
-  await dialog.getByRole("button", { name: "Приглашения" }).click();
+  await inviteForm.getByPlaceholder("Имя").fill("Новый пользователь");
+  await inviteForm.getByPlaceholder("Должность").fill("Технолог");
+  await inviteForm.getByRole("button", { name: "Создать инвайт" }).click({ force: true });
+  await dialog.getByRole("button", { name: "Инвайты" }).click();
 
   await expect
     .poll(async () => {
       const emailVisible = await dialog.getByText("new.user@local").isVisible().catch(() => false);
       const emailVisibleAlt = await dialog.getByText("new.user@example.com").isVisible().catch(() => false);
-      const tokenVisible = await dialog.getByText(/Токен приглашения:/).isVisible().catch(() => false);
+      const tokenVisible = await dialog.getByText(/Invite key:/).isVisible().catch(() => false);
       const sentVisible = await dialog.getByText(/Инвайт (создан|отправлен)/).isVisible().catch(() => false);
       return emailVisible || emailVisibleAlt || tokenVisible || sentVisible;
     })

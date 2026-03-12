@@ -239,20 +239,28 @@ test("templates smoke: add from selection and apply restores selection", async (
     .filter({ hasText: templateName })
     .first();
   await expect(targetTemplateRow).toBeVisible();
-  await targetTemplateRow
-    .locator("[data-testid^='btn-apply-template-'], [data-testid='template-pack-insert-after']")
-    .first()
-    .click();
-  const placed = await placeFragmentIfNeeded(page);
-  if (!placed) {
-    const addTemplateAfterApply = await resolveAddTemplateButton(page);
-    await expect(addTemplateAfterApply.button).toBeEnabled();
-    await expect(addTemplateAfterApply.button).toContainText("(2)");
-    await closeOverflowIfOpen(page);
-  } else {
-    await switchTab(page, "XML");
-    const xmlText = await page.locator(".xmlEditorTextarea").inputValue();
-    expect(xmlText).toContain(`${marker}_A`);
-    expect(xmlText).toContain(`${marker}_B`);
-  }
+  await targetTemplateRow.locator("button").first().click();
+  const applyFooter = page.getByRole("button", { name: /Применить в сессию/i }).last();
+  await expect(applyFooter).toBeVisible();
+  const putResponse = page.waitForResponse((resp) => {
+    return resp.request().method() === "PUT"
+      && /\/api\/sessions\/[^/]+\/bpmn(?:\?|$)/.test(resp.url())
+      && resp.status() === 200;
+  });
+  await applyFooter.click();
+  await putResponse;
+  await expect
+    .poll(async () => {
+      return await page.evaluate(() => Boolean(window.__FPC_E2E_TEMPLATE_FRAGMENT_INSERT__?.ok));
+    }, { timeout: 10000 })
+    .toBeTruthy();
+  await expect(page.getByTestId("bpmn-fragment-ghost")).toBeHidden({ timeout: 10000 });
+  await switchTab(page, "XML");
+  const xmlText = await page.locator(".xmlEditorTextarea").inputValue();
+  expect(xmlText).toContain(`${marker}_A`);
+  expect(xmlText).toContain(`${marker}_B`);
+  const addTemplateAfterApply = await resolveAddTemplateButton(page);
+  await expect(addTemplateAfterApply.button).toBeEnabled();
+  await expect(addTemplateAfterApply.button).toContainText("(2)");
+  await closeOverflowIfOpen(page);
 });

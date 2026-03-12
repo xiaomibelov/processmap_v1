@@ -40,11 +40,13 @@ function createMaps({
 function OverlayHookHarness({
   visible = true,
   hasRenderable = true,
+  createPlacementActive = false,
   meta = { locked: false },
   layerMap,
   elementMap,
   matrixScale = 1,
   onCommitMove,
+  onCreateElement,
   onDeleteElement,
   onSelectionChange,
   onState,
@@ -52,12 +54,14 @@ function OverlayHookHarness({
   const interaction = useDrawioOverlayInteraction({
     visible,
     hasRenderable,
+    createPlacementActive,
     meta,
     layerMap,
     elementMap,
     matrixScale,
     screenToDiagram: (x, y) => ({ x, y }),
     onCommitMove,
+    onCreateElement,
     onDeleteElement,
     onSelectionChange,
   });
@@ -270,6 +274,46 @@ test("dom integration: keyboard delete path works only with active editable sele
     assert.deepEqual(deleted, ["shape1"]);
     assert.equal(selections.includes("shape1"), true);
     assert.equal(selections.includes(""), true);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("dom integration: create tool works on interaction surface without persisted preview", async () => {
+  const { dom, root, cleanup } = setupDom();
+  const created = [];
+  const selections = [];
+  try {
+    const { layerMap, elementMap } = createMaps({ includeElement: false });
+    await act(async () => {
+      root.render(React.createElement(OverlayHookHarness, {
+        visible: true,
+        hasRenderable: false,
+        createPlacementActive: true,
+        meta: { enabled: true, locked: false, interaction_mode: "edit", active_tool: "rect" },
+        layerMap,
+        elementMap,
+        onCommitMove: () => {},
+        onCreateElement: (payload) => {
+          created.push(payload);
+          return "rect_runtime_1";
+        },
+        onDeleteElement: () => false,
+        onSelectionChange: (id) => selections.push(String(id || "")),
+      }));
+    });
+    await flush();
+    const rootNode = dom.window.document.querySelector("[data-testid='drawio-root']");
+    assert.ok(rootNode);
+    await dispatchWithAct(rootNode, createPointerLikeEvent(dom.window, "pointerdown", {
+      pointerId: 11,
+      clientX: 260,
+      clientY: 180,
+    }));
+    await flush();
+    assert.equal(created.length, 1);
+    assert.equal(String(created[0]?.toolId || ""), "rect");
+    assert.equal(selections.includes("rect_runtime_1"), true);
   } finally {
     await cleanup();
   }

@@ -1,4 +1,5 @@
 import { ADMIN_NAV_ITEMS } from "../constants/adminNav";
+import { ru } from "../../../shared/i18n/ru";
 
 export default function AdminSidebar({
   section = "dashboard",
@@ -8,8 +9,8 @@ export default function AdminSidebar({
     <aside className="adminSidebar flex h-full min-h-0 w-full flex-col border-r border-border bg-slate-950 text-slate-100 lg:w-72">
       <div className="border-b border-white/10 px-5 py-5">
         <div className="text-[10px] uppercase tracking-[0.28em] text-slate-400">ProcessMap</div>
-        <div className="mt-2 text-xl font-semibold">Operations Console</div>
-        <div className="mt-1 text-xs text-slate-400">Admin / backoffice contour</div>
+        <div className="mt-2 text-xl font-semibold">{ru.admin.sidebar.title}</div>
+        <div className="mt-1 text-xs text-slate-400">{ru.admin.sidebar.subtitle}</div>
       </div>
       <nav className="flex-1 space-y-1 overflow-auto px-3 py-4">
         {ADMIN_NAV_ITEMS.map((item) => {
@@ -38,9 +39,8 @@ export default function AdminSidebar({
         })}
       </nav>
       <div className="border-t border-white/10 px-5 py-4 text-xs text-slate-400">
-        BPMN-first workspace shell remains isolated from admin runtime.
+        {ru.admin.sidebar.footer}
       </div>
     </aside>
   );
 }
-

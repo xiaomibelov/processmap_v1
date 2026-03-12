@@ -22,6 +22,23 @@ test("drawio visibility-selection contract: preview missing is not renderable/se
   assert.equal(contract.statusTone, "warning");
 });
 
+test("drawio visibility-selection contract: placement-ready create tool is visible but not selectable", () => {
+  const contract = buildDrawioVisibilitySelectionContract({
+    enabled: true,
+    svg_cache: "",
+    interaction_mode: "edit",
+    active_tool: "rect",
+    locked: false,
+  });
+  assert.equal(contract.visibleOnCanvas, true);
+  assert.equal(contract.renderable, true);
+  assert.equal(contract.selectableOnCanvas, false);
+  assert.equal(contract.opacityControlEnabled, true);
+  assert.equal(contract.placementToolActive, true);
+  assert.equal(contract.statusKey, "on_placement_ready");
+  assert.equal(contract.statusTone, "ok");
+});
+
 test("drawio visibility-selection contract: editable preview allows selection", () => {
   const contract = buildDrawioVisibilitySelectionContract({
     enabled: true,

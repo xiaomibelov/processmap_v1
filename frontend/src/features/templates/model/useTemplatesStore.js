@@ -65,6 +65,7 @@ export default function useTemplatesStore({
   applyHybridStencilTemplate,
   captureBpmnFragmentTemplatePack,
   insertBpmnFragmentTemplateAtPoint,
+  insertBpmnFragmentTemplateImmediately,
   isDiagramClientPoint,
   diagramContainerRect,
   selectionContext = {},
@@ -278,7 +279,7 @@ export default function useTemplatesStore({
       setError?.(createType === "hybrid_stencil_v1"
         ? "Не удалось собрать stencil из текущего Hybrid выделения."
         : createType === "bpmn_fragment_v1"
-          ? toText(built.warning || "Не удалось собрать BPMN-фрагмент из текущего выделения.")
+          ? toText(built.warning || built.error || "Не удалось собрать BPMN-фрагмент из текущего выделения.")
         : "Не удалось собрать шаблон из текущего выделения.");
       return;
     }
@@ -416,43 +417,30 @@ export default function useTemplatesStore({
   const applyTemplate = useCallback(async (template) => {
     const templateType = toText(template?.template_type || "bpmn_selection_v1");
     if (templateType === "hybrid_stencil_v1") {
-      if (typeof applyHybridStencilTemplate !== "function") {
-        setError?.("Hybrid placement API недоступен.");
-        return;
-      }
-      const result = await Promise.resolve(applyHybridStencilTemplate(template));
-      if (result?.ok === false) {
-        setError?.(toText(result.error || "Не удалось включить режим размещения stencil."));
-        return;
-      }
-      setPickerOpen(false);
-      setInfo?.(`Placement mode: ${toText(template?.title || "Stencil")}`);
-      return;
+      const error = "В этом окне доступны только BPMN-шаблоны для вставки в текущую сессию.";
+      setError?.(error);
+      return { ok: false, error };
     }
     if (templateType === "bpmn_fragment_v1") {
-      const result = startBpmnFragmentPlacement(template);
-      if (!result?.ok) {
-        setError?.(toText(result?.error || "Не удалось включить режим вставки BPMN-фрагмента."));
-        return;
+      if (typeof insertBpmnFragmentTemplateImmediately !== "function") {
+        const error = "BPMN insert API недоступен.";
+        setError?.(error);
+        return { ok: false, error };
+      }
+      const placement = startBpmnFragmentPlacement(template);
+      if (!placement?.ok) {
+        const error = toText(placement?.error || "Не удалось подготовить вставку BPMN-фрагмента.");
+        setError?.(error);
+        return { ok: false, error };
       }
       setPickerOpen(false);
-      setInfo?.(`Placement mode: ${toText(template?.title || "BPMN fragment")}`);
-      return;
+      setInfo?.("Выберите точку на диаграмме для вставки шаблона.");
+      return { ok: true, placement: true };
     }
-    if (typeof applySelectionIds !== "function") return;
-    const result = await Promise.resolve(applySelectionIds(template?.bpmn_element_ids || []));
-    if (result?.ok === false && toText(result?.error) !== "elements_not_found") {
-      setError?.(toText(result.error || "Не удалось применить шаблон."));
-      return;
-    }
-    const missingCount = Array.isArray(result?.missing) ? result.missing.length : 0;
-    const appliedCount = Array.isArray(result?.applied) ? result.applied.length : Number(result?.count || 0);
-    if (missingCount > 0) {
-      setInfo?.(`Applied ${appliedCount}, missing ${missingCount}`);
-      return;
-    }
-    setInfo?.(`Applied: ${toText(template?.title || "Template")}`);
-  }, [applyHybridStencilTemplate, applySelectionIds, setError, setInfo, startBpmnFragmentPlacement]);
+    const error = "Для прямой вставки в сессию поддерживаются только BPMN fragment templates.";
+    setError?.(error);
+    return { ok: false, error };
+  }, [insertBpmnFragmentTemplateImmediately, setError, setInfo, startBpmnFragmentPlacement]);
 
   const removeTemplate = useCallback(async (template) => {
     const item = template && typeof template === "object" ? template : {};

@@ -1,4 +1,5 @@
 import os
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -30,24 +31,35 @@ class OrgInvitesApiTest(unittest.TestCase):
         os.environ["RL_ACCEPT_PER_MIN"] = "50"
 
         from app.auth import create_user
-        from app.main import (
+        from app._legacy_main import (
             accept_org_invite_endpoint,
             create_org_invite_endpoint,
+            auth_invite_activate,
+            auth_invite_preview,
             list_org_invites_endpoint,
             revoke_org_invite_endpoint,
+            InviteActivateIn,
+            InvitePreviewIn,
             OrgInviteAcceptIn,
             OrgInviteCreateIn,
         )
         from app.storage import get_default_org_id, get_storage
+        from app.storage import create_org_record, list_user_org_memberships
 
         self.create_user = create_user
         self.accept_org_invite_endpoint = accept_org_invite_endpoint
         self.create_org_invite_endpoint = create_org_invite_endpoint
         self.list_org_invites_endpoint = list_org_invites_endpoint
         self.revoke_org_invite_endpoint = revoke_org_invite_endpoint
+        self.auth_invite_preview = auth_invite_preview
+        self.auth_invite_activate = auth_invite_activate
         self.OrgInviteAcceptIn = OrgInviteAcceptIn
         self.OrgInviteCreateIn = OrgInviteCreateIn
+        self.InvitePreviewIn = InvitePreviewIn
+        self.InviteActivateIn = InviteActivateIn
         self.get_default_org_id = get_default_org_id
+        self.create_org_record = create_org_record
+        self.list_user_org_memberships = list_user_org_memberships
         _ = get_storage()
 
         self.admin = create_user("invite_admin@local", "admin", is_admin=True)
@@ -116,25 +128,30 @@ class OrgInvitesApiTest(unittest.TestCase):
         req_admin = self._mk_req(self.admin)
         created = self.create_org_invite_endpoint(
             self.default_org_id,
-            self.OrgInviteCreateIn(email="invite_target@local", role="Editor", ttl_days=7),
+            self.OrgInviteCreateIn(email="invite_target@local", full_name="Иван Петров", job_title="Технолог", role="Editor", ttl_days=7),
             req_admin,
         )
         self.assertTrue(isinstance(created, dict))
-        token = str(created.get("invite_token") or "").strip()
-        self.assertTrue(token)
+        invite_key = str(created.get("invite_key") or created.get("invite_token") or "").strip()
+        self.assertTrue(invite_key)
+        self.assertEqual(str((created.get("invite") or {}).get("status") or ""), "pending")
+        self.assertEqual(str((created.get("invite") or {}).get("full_name") or ""), "Иван Петров")
+        self.assertEqual(str((created.get("invite") or {}).get("job_title") or ""), "Технолог")
 
         listed = self.list_org_invites_endpoint(self.default_org_id, req_admin)
         self.assertEqual(int(listed.get("count") or 0), 1)
+        self.assertEqual(str((listed.get("items") or [{}])[0].get("status") or ""), "pending")
 
         req_target = self._mk_req(self.user_ok)
         accepted = self.accept_org_invite_endpoint(
             self.default_org_id,
-            self.OrgInviteAcceptIn(token=token),
+            self.OrgInviteAcceptIn(token=invite_key),
             req_target,
         )
         self.assertTrue(isinstance(accepted, dict))
         self.assertEqual(str((accepted.get("membership") or {}).get("user_id") or ""), str(self.user_ok.get("id") or ""))
         self.assertEqual(str((accepted.get("membership") or {}).get("role") or ""), "editor")
+        self.assertEqual(str((accepted.get("invite") or {}).get("status") or ""), "used")
 
     def test_accept_invite_email_mismatch_returns_409(self):
         req_admin = self._mk_req(self.admin)
@@ -152,6 +169,66 @@ class OrgInvitesApiTest(unittest.TestCase):
             req_other,
         )
         self.assertEqual(int(getattr(out, "status_code", 0) or 0), 409)
+
+    def test_resolve_activate_invite_flow_returns_tokens_and_used_status(self):
+        req_admin = self._mk_req(self.admin)
+        created = self.create_org_invite_endpoint(
+            self.default_org_id,
+            self.OrgInviteCreateIn(email="invite_new_user@local", full_name="Мария", job_title="Оператор"),
+            req_admin,
+        )
+        invite_key = str(created.get("invite_key") or created.get("invite_token") or "").strip()
+        self.assertTrue(invite_key)
+
+        preview = self.auth_invite_preview(self.InvitePreviewIn(invite_key=invite_key), req_admin)
+        self.assertTrue(isinstance(preview, dict))
+        self.assertEqual(str((preview.get("invite") or {}).get("email") or ""), "invite_new_user@local")
+        self.assertEqual(str((preview.get("invite") or {}).get("full_name") or ""), "Мария")
+        self.assertEqual(str((preview.get("invite") or {}).get("job_title") or ""), "Оператор")
+
+        activated = self.auth_invite_activate(
+            self.InviteActivateIn(invite_key=invite_key, password="strongpass1", password_confirm="strongpass1"),
+            req_admin,
+        )
+        self.assertEqual(int(getattr(activated, "status_code", 0) or 0), 200)
+        payload = json.loads(bytes(getattr(activated, "body", b"{}")).decode("utf-8"))
+        self.assertTrue(str(payload.get("access_token") or "").strip())
+        self.assertEqual(str((payload.get("invite") or {}).get("status") or ""), "used")
+        self.assertEqual(str((payload.get("membership") or {}).get("org_id") or ""), self.default_org_id)
+
+    def test_invite_preview_hides_org_for_single_org_mode(self):
+        req_admin = self._mk_req(self.admin)
+        created = self.create_org_invite_endpoint(
+            self.default_org_id,
+            self.OrgInviteCreateIn(email="invite_preview@local", full_name="Мария", job_title="Оператор"),
+            req_admin,
+        )
+        invite_key = str(created.get("invite_key") or created.get("invite_token") or "").strip()
+        preview = self.auth_invite_preview(self.InvitePreviewIn(invite_key=invite_key), req_admin)
+        self.assertTrue(bool(preview.get("single_org_mode")))
+
+    def test_accept_invite_grants_membership_only_for_invited_org(self):
+        req_admin = self._mk_req(self.admin)
+        second_org = self.create_org_record("Test org", created_by=str(self.admin.get("id") or ""))
+        self.assertTrue(str(second_org.get("id") or "").strip())
+
+        created = self.create_org_invite_endpoint(
+            self.default_org_id,
+            self.OrgInviteCreateIn(email="invite_target@local", role="Viewer", ttl_days=7),
+            req_admin,
+        )
+        token = str(created.get("invite_token") or created.get("invite_key") or "").strip()
+        req_target = self._mk_req(self.user_ok)
+        self.accept_org_invite_endpoint(
+            self.default_org_id,
+            self.OrgInviteAcceptIn(token=token),
+            req_target,
+        )
+
+        memberships = self.list_user_org_memberships(str(self.user_ok.get("id") or ""))
+        org_ids = {str(item.get("org_id") or "") for item in memberships}
+        self.assertIn(self.default_org_id, org_ids)
+        self.assertNotIn(str(second_org.get("id") or ""), org_ids)
 
     def test_revoke_invite(self):
         req_admin = self._mk_req(self.admin)

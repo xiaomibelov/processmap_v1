@@ -25,6 +25,22 @@ async function patchDrawioMeta(request, headers, sessionId) {
   await apiJson(res, "patch drawio stage1 meta");
 }
 
+async function ensureDrawioEditMode(page, popover) {
+  const modeEdit = popover.getByTestId("diagram-action-layers-mode-edit");
+  const drawioToggle = popover.getByTestId("diagram-action-layers-drawio-toggle");
+  if (await modeEdit.isDisabled()) {
+    await drawioToggle.check({ force: true });
+    await expect(modeEdit).toBeEnabled();
+  }
+  await modeEdit.click({ force: true });
+  await expect
+    .poll(async () => {
+      const style = String(await page.getByTestId("drawio-el-shape1").getAttribute("style") || "");
+      return style.includes("cursor:move") && style.includes("pointer-events:auto");
+    }, { timeout: 10000 })
+    .toBeTruthy();
+}
+
 test("drawio stage1 boundary smoke: move/delete/opacity/toggle/editor+reload", async ({ page, request }) => {
   test.setTimeout(240000);
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -41,16 +57,17 @@ test("drawio stage1 boundary smoke: move/delete/opacity/toggle/editor+reload", a
     window.__FPC_E2E__ = true;
     window.__FPC_DELETE_TRACE_ENABLE__ = true;
   });
-  await setUiToken(page, auth.accessToken);
-  await openSessionInTopbar(page, {
-    projectId: fixture.projectId,
-    sessionId: fixture.sessionId,
-  });
+  await setUiToken(page, auth.accessToken, { activeOrgId: fixture.orgId || auth.activeOrgId });
+  await openSessionInTopbar(page, fixture);
   await switchTab(page, "Diagram");
   await waitForDiagramReady(page);
 
   const drawioRect = page.getByTestId("drawio-el-shape1");
   await expect(drawioRect).toBeVisible();
+  await page.getByTestId("diagram-action-layers").click({ force: true });
+  const popover = page.getByTestId("diagram-action-layers-popover");
+  await expect(popover).toBeVisible();
+  await ensureDrawioEditMode(page, popover);
 
   const offsetBefore = await page.evaluate(() => {
     const meta = window.__FPC_E2E_DRAWIO__?.readMeta?.() || {};
@@ -59,6 +76,7 @@ test("drawio stage1 boundary smoke: move/delete/opacity/toggle/editor+reload", a
     return Number(shape?.offset_x || 0);
   });
   await drawioRect.click({ force: true });
+  await expect(popover.getByTestId("diagram-action-layers-selection-chip")).toContainText("shape1");
   await page.keyboard.press("ArrowRight");
   await expect
     .poll(async () => {
@@ -71,9 +89,6 @@ test("drawio stage1 boundary smoke: move/delete/opacity/toggle/editor+reload", a
     }, { timeout: 10000 })
     .toBeGreaterThan(offsetBefore + 8);
 
-  await page.getByTestId("diagram-action-layers").click({ force: true });
-  const popover = page.getByTestId("diagram-action-layers-popover");
-  await expect(popover).toBeVisible();
   await popover.getByTestId("diagram-action-layers-drawio-opacity").fill("60");
   await expect
     .poll(async () => page.evaluate(() => {
@@ -83,6 +98,7 @@ test("drawio stage1 boundary smoke: move/delete/opacity/toggle/editor+reload", a
     .toBeGreaterThan(0.55);
 
   const drawioToggle = popover.getByTestId("diagram-action-layers-drawio-toggle");
+  const drawioOpacitySlider = popover.getByTestId("diagram-action-layers-drawio-opacity");
   await drawioToggle.uncheck({ force: true });
   await expect
     .poll(async () => page.evaluate(() => {
@@ -90,6 +106,9 @@ test("drawio stage1 boundary smoke: move/delete/opacity/toggle/editor+reload", a
       return !!meta?.enabled;
     }), { timeout: 10000 })
     .toBeFalsy();
+  await expect(page.getByTestId("drawio-overlay-root")).toHaveCount(0);
+  await expect(popover.getByTestId("diagram-action-layers-selection-chip")).not.toContainText("shape1");
+  await expect(drawioOpacitySlider).toBeDisabled();
   await drawioToggle.check({ force: true });
   await expect
     .poll(async () => page.evaluate(() => {
@@ -97,6 +116,8 @@ test("drawio stage1 boundary smoke: move/delete/opacity/toggle/editor+reload", a
       return !!meta?.enabled;
     }), { timeout: 10000 })
     .toBeTruthy();
+  await expect(page.getByTestId("drawio-overlay-root")).toBeVisible();
+  await expect(drawioOpacitySlider).toBeEnabled();
 
   await page.getByTestId("diagram-action-layers").click({ force: true });
   await drawioRect.click({ force: true });
@@ -130,10 +151,7 @@ test("drawio stage1 boundary smoke: move/delete/opacity/toggle/editor+reload", a
     .toEqual({ hasDoc: true, hasPreview: true, hasShape2Meta: true });
 
   await page.reload();
-  await openSessionInTopbar(page, {
-    projectId: fixture.projectId,
-    sessionId: fixture.sessionId,
-  });
+  await openSessionInTopbar(page, fixture);
   await switchTab(page, "Diagram");
   await waitForDiagramReady(page);
   await expect

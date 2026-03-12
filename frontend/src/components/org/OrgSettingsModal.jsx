@@ -1,14 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import Modal from "../../shared/ui/Modal";
+import OrgPropertyDictionaryPanel from "./OrgPropertyDictionaryPanel";
 import {
+  apiAssignOrgMember,
   apiCreateOrgInvite,
   apiListOrgAudit,
   apiListOrgInvites,
   apiListOrgMembers,
+  apiPatchOrg,
   apiPatchOrgMember,
   apiRevokeOrgInvite,
 } from "../../lib/api";
+import { ru, trStatusInvite } from "../../shared/i18n/ru";
+import { INVITE_ROLE_OPTIONS } from "../../features/workspace/workspacePermissions";
+import { formatRoleWithScope, toUserFacingRoleLabel } from "../../features/admin/adminRoles";
 
 function toText(value) {
   return String(value || "").trim();
@@ -31,17 +37,34 @@ function shortId(value) {
   return `${text.slice(0, 6)}…${text.slice(-4)}`;
 }
 
-const MEMBER_ROLES = ["org_admin", "project_manager", "editor", "viewer", "auditor"];
-const INVITE_ROLES = ["org_admin", "team_admin", "editor", "viewer", "auditor"];
+async function copyInviteValue(value) {
+  const text = toText(value);
+  if (!text) return false;
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+const MEMBER_ROLES = ["org_admin", "editor", "org_viewer"];
 
 export default function OrgSettingsModal({
   open,
   onClose,
   initialTab = "members",
+  dictionaryOnly = false,
   activeOrgId,
   activeOrgRole,
+  isAdmin = false,
   orgName,
   onRequestRefreshOrgs,
+  initialOperationKey = "",
+  onDictionaryChanged,
 }) {
   const [tab, setTab] = useState("members");
   const [members, setMembers] = useState([]);
@@ -50,35 +73,48 @@ export default function OrgSettingsModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState("viewer");
+  const [inviteFullName, setInviteFullName] = useState("");
+  const [inviteJobTitle, setInviteJobTitle] = useState("");
+  const [inviteRole, setInviteRole] = useState("editor");
   const [inviteTtl, setInviteTtl] = useState("7");
-  const [inviteTeamName, setInviteTeamName] = useState("");
-  const [inviteSubgroupName, setInviteSubgroupName] = useState("");
-  const [inviteComment, setInviteComment] = useState("");
-  const [lastInviteToken, setLastInviteToken] = useState("");
   const [lastInviteNotice, setLastInviteNotice] = useState("");
+  const [lastCreatedInvite, setLastCreatedInvite] = useState(null);
+  const [copyState, setCopyState] = useState("");
   const [auditAction, setAuditAction] = useState("");
   const [auditStatus, setAuditStatus] = useState("");
+  const [workspaceName, setWorkspaceName] = useState("");
 
-  const canManageMembers = useMemo(() => ["org_owner", "org_admin"].includes(toText(activeOrgRole).toLowerCase()), [activeOrgRole]);
+  const canManageMembers = useMemo(() => isAdmin || ["org_owner", "org_admin"].includes(toText(activeOrgRole).toLowerCase()), [activeOrgRole, isAdmin]);
   const canManageInvites = canManageMembers;
+  const [assignUserId, setAssignUserId] = useState("");
+  const [assignRole, setAssignRole] = useState("org_viewer");
+  const [assignMsg, setAssignMsg] = useState("");
 
   useEffect(() => {
     if (!open) return;
+    if (dictionaryOnly) {
+      setTab("dictionary");
+      return;
+    }
     const nextTab = toText(initialTab).toLowerCase();
-    if (nextTab === "members" || nextTab === "invites" || nextTab === "audit") {
+    if (nextTab === "members" || nextTab === "invites" || nextTab === "audit" || nextTab === "dictionary") {
       setTab(nextTab);
     } else {
       setTab("members");
     }
   }, [initialTab, open]);
 
+  useEffect(() => {
+    if (!open) return;
+    setWorkspaceName(toText(orgName));
+  }, [open, orgName]);
+
   const loadMembers = useCallback(async () => {
     const oid = toText(activeOrgId);
     if (!oid) return;
     const res = await apiListOrgMembers(oid);
     if (!res.ok) {
-      setError(toText(res.error || "Не удалось загрузить участников"));
+      setError(toText(res.error || ru.org.membersLoadFailed));
       return;
     }
     setMembers(Array.isArray(res.items) ? res.items : []);
@@ -89,7 +125,7 @@ export default function OrgSettingsModal({
     if (!oid) return;
     const res = await apiListOrgInvites(oid);
     if (!res.ok) {
-      setError(toText(res.error || "Не удалось загрузить инвайты"));
+      setError(toText(res.error || ru.org.invitesLoadFailed));
       return;
     }
     setInvites(Array.isArray(res.items) ? res.items : []);
@@ -100,7 +136,7 @@ export default function OrgSettingsModal({
     if (!oid) return;
     const res = await apiListOrgAudit(oid, { limit: 100, action: auditAction, status: auditStatus });
     if (!res.ok) {
-      setError(toText(res.error || "Не удалось загрузить аудит"));
+      setError(toText(res.error || ru.org.auditLoadFailed));
       return;
     }
     setAuditRows(Array.isArray(res.items) ? res.items : []);
@@ -108,6 +144,10 @@ export default function OrgSettingsModal({
 
   useEffect(() => {
     if (!open) return;
+    if (dictionaryOnly) {
+      setBusy(false);
+      return;
+    }
     let canceled = false;
     setBusy(true);
     setError("");
@@ -118,7 +158,7 @@ export default function OrgSettingsModal({
     return () => {
       canceled = true;
     };
-  }, [open, loadMembers, loadInvites, loadAudit]);
+  }, [open, dictionaryOnly, loadMembers, loadInvites, loadAudit]);
 
   async function handlePatchMemberRole(userId, role) {
     if (!canManageMembers) return;
@@ -127,7 +167,7 @@ export default function OrgSettingsModal({
     setError("");
     const res = await apiPatchOrgMember(oid, userId, role);
     if (!res.ok) {
-      setError(toText(res.error || "Не удалось обновить роль"));
+      setError(toText(res.error || ru.org.patchRoleFailed));
       return;
     }
     await loadMembers();
@@ -140,35 +180,35 @@ export default function OrgSettingsModal({
     const oid = toText(activeOrgId);
     if (!oid) return;
     setError("");
+    setCopyState("");
+    setLastInviteNotice("");
+    setLastCreatedInvite(null);
     const ttlDays = Number(inviteTtl || 7);
     const res = await apiCreateOrgInvite(oid, {
       email: inviteEmail,
+      full_name: inviteFullName,
+      job_title: inviteJobTitle,
       role: inviteRole,
       ttl_days: ttlDays,
-      team_name: inviteTeamName,
-      subgroup_name: inviteSubgroupName,
-      invite_comment: inviteComment,
-      invite_mode: "one_time",
     });
     if (!res.ok) {
-      setError(toText(res.error || "Не удалось создать инвайт"));
+      setError(toText(res.error || ru.org.createInviteFailed));
       return;
     }
     setInviteEmail("");
-    setInviteRole("viewer");
+    setInviteFullName("");
+    setInviteJobTitle("");
+    setInviteRole("editor");
     setInviteTtl("7");
-    setInviteTeamName("");
-    setInviteSubgroupName("");
-    setInviteComment("");
-    const token = toText(res.invite_token);
-    setLastInviteToken(token);
-    if (token) {
-      setLastInviteNotice("Инвайт создан. Токен доступен в dev-режиме.");
-    } else if (toText(res.delivery) === "email") {
-      setLastInviteNotice("Инвайт отправлен по email.");
+    if (toText(res.delivery) === "email") {
+      setLastInviteNotice(ru.org.inviteForm.inviteSent);
     } else {
-      setLastInviteNotice("Инвайт создан.");
+      setLastInviteNotice(ru.org.inviteForm.inviteCreated);
     }
+    setLastCreatedInvite({
+      key: toText(res.invite_token || res.invite_key),
+      link: toText(res.invite_link),
+    });
     await loadInvites();
   }
 
@@ -178,20 +218,56 @@ export default function OrgSettingsModal({
     const iid = toText(inviteId);
     if (!oid || !iid) return;
     setError("");
-    const ok = typeof window === "undefined" || window.confirm("Отозвать инвайт?");
+    const ok = typeof window === "undefined" || window.confirm(ru.org.revokeConfirm);
     if (!ok) return;
     const res = await apiRevokeOrgInvite(oid, iid);
     if (!res.ok) {
-      setError(toText(res.error || "Не удалось отозвать инвайт"));
+      setError(toText(res.error || ru.org.revokeInviteFailed));
       return;
     }
     await loadInvites();
+  }
+
+  async function handleCopy(value) {
+    const ok = await copyInviteValue(value);
+    setCopyState(ok ? "copied" : "");
+  }
+
+  async function handleRenameWorkspace(event) {
+    event.preventDefault();
+    if (!canManageMembers) return;
+    const oid = toText(activeOrgId);
+    const nextName = toText(workspaceName);
+    if (!oid || !nextName) return;
+    setError("");
+    const res = await apiPatchOrg(oid, { name: nextName });
+    if (!res.ok) {
+      setError(toText(res.error || "Не удалось переименовать workspace."));
+      return;
+    }
+    onRequestRefreshOrgs?.();
+  }
+
+  async function handleAssignUser(event) {
+    event.preventDefault();
+    if (!canManageMembers) return;
+    const oid = toText(activeOrgId);
+    const uid = toText(assignUserId);
+    if (!oid || !uid) { setAssignMsg("Введите User ID"); return; }
+    setAssignMsg("");
+    const res = await apiAssignOrgMember(oid, uid, assignRole);
+    if (!res.ok) { setAssignMsg(toText(res.error || "Ошибка назначения")); return; }
+    setAssignUserId("");
+    setAssignMsg(`Пользователь ${uid} добавлен с ролью ${assignRole}`);
+    await loadMembers();
   }
 
   const tabButtonClass = (key) => [
     "secondaryBtn h-8 min-h-0 px-3 py-0 text-xs",
     key === tab ? "border-accent/55 bg-accentSoft/30 text-fg" : "",
   ].join(" ").trim();
+  const dictionaryTabActive = tab === "dictionary";
+  const dictionaryVisualMode = dictionaryOnly || dictionaryTabActive;
 
   const oid = toText(activeOrgId);
 
@@ -199,35 +275,71 @@ export default function OrgSettingsModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={`Организация: ${toText(orgName) || oid || "-"}`}
+      title={dictionaryOnly || dictionaryTabActive
+        ? "Справочник свойств операций"
+        : `${ru.org.modalTitlePrefix}: ${toText(orgName) || oid || "-"}`}
+      overlayClassName={dictionaryVisualMode ? "orgDictionaryModalOverlay" : ""}
+      cardClassName={dictionaryVisualMode ? "orgDictionaryModalCard" : ""}
+      headerClassName={dictionaryVisualMode ? "orgDictionaryModalHeader" : ""}
+      bodyClassName={dictionaryVisualMode ? "orgDictionaryModalBody" : ""}
+      footerClassName={dictionaryVisualMode ? "orgDictionaryModalFooter" : ""}
       footer={(
-        <div className="flex w-full items-center justify-between gap-2">
-          <div className="text-xs text-muted">org_id: {shortId(oid)}</div>
-          <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={onClose}>Закрыть</button>
+        <div className="flex w-full items-center justify-end gap-2">
+          {!dictionaryOnly && !dictionaryTabActive ? (
+            <div className="text-xs text-muted mr-auto">org_id: {shortId(oid)}</div>
+          ) : null}
+          <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={onClose}>{ru.common.close}</button>
         </div>
       )}
     >
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <button type="button" className={tabButtonClass("members")} onClick={() => setTab("members")}>Участники</button>
-          <button type="button" className={tabButtonClass("invites")} onClick={() => setTab("invites")}>Приглашения</button>
-          <button type="button" className={tabButtonClass("audit")} onClick={() => setTab("audit")}>Аудит</button>
-        </div>
+      <div className={`flex flex-col gap-3 ${dictionaryVisualMode ? "orgDictionaryModalContent" : ""}`}>
+        {!dictionaryOnly && canManageMembers && !dictionaryTabActive ? (
+          <form className="rounded-lg border border-border p-3" onSubmit={handleRenameWorkspace}>
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Workspace</div>
+            <div className="flex flex-col gap-2 md:flex-row">
+              <input
+                className="input flex-1"
+                type="text"
+                value={workspaceName}
+                onChange={(e) => setWorkspaceName(e.target.value)}
+                placeholder="Название workspace"
+              />
+              <button type="submit" className="secondaryBtn h-9 px-3 text-sm">{ru.common.save}</button>
+            </div>
+          </form>
+        ) : null}
+        {!dictionaryOnly ? (
+          dictionaryTabActive ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" className={tabButtonClass("dictionary")} onClick={() => setTab("dictionary")}>Справочник</button>
+              <button type="button" className="secondaryBtn h-8 min-h-0 px-3 py-0 text-xs" onClick={() => setTab("members")}>
+                Другие разделы
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" className={tabButtonClass("members")} onClick={() => setTab("members")}>{ru.org.membersTab}</button>
+              <button type="button" className={tabButtonClass("invites")} onClick={() => setTab("invites")}>{ru.org.invitesTab}</button>
+              <button type="button" className={tabButtonClass("audit")} onClick={() => setTab("audit")}>{ru.org.auditTab}</button>
+              <button type="button" className={tabButtonClass("dictionary")} onClick={() => setTab("dictionary")}>Справочник</button>
+            </div>
+          )
+        ) : null}
 
-        {error ? <div className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div> : null}
-        {busy ? <div className="text-xs text-muted">Загрузка…</div> : null}
+        {!dictionaryTabActive && error ? <div className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div> : null}
+        {!dictionaryTabActive && busy ? <div className="text-xs text-muted">{ru.common.loading}</div> : null}
 
         {tab === "members" ? (
           <div className="space-y-2">
-            <div className="text-xs text-muted">Участники организации: {members.length}</div>
+            <div className="text-xs text-muted">{ru.org.membersCount}: {members.length}</div>
             <div className="max-h-72 overflow-auto rounded-lg border border-border">
               <table className="min-w-full text-xs">
                 <thead className="bg-panel2/70 text-muted">
                   <tr>
-                    <th className="px-2 py-1 text-left">Пользователь</th>
-                    <th className="px-2 py-1 text-left">Email</th>
-                    <th className="px-2 py-1 text-left">Роль</th>
-                    <th className="px-2 py-1 text-left">Создан</th>
+                    <th className="px-2 py-1 text-left">{ru.org.memberTable.user}</th>
+                    <th className="px-2 py-1 text-left">{ru.org.memberTable.email}</th>
+                    <th className="px-2 py-1 text-left">{ru.org.memberTable.role}</th>
+                    <th className="px-2 py-1 text-left">{ru.org.memberTable.created}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -242,17 +354,17 @@ export default function OrgSettingsModal({
                           {canManageMembers ? (
                             <select
                               className="select h-8 min-h-0 w-full"
-                              value={role || "viewer"}
+                              value={role || "org_viewer"}
                               onChange={(e) => {
                                 void handlePatchMemberRole(uid, e.target.value);
                               }}
                             >
                               {MEMBER_ROLES.map((item) => (
-                                <option key={item} value={item}>{item}</option>
+                                <option key={item} value={item}>{toUserFacingRoleLabel(item)}</option>
                               ))}
                             </select>
                           ) : (
-                            role || "viewer"
+                            formatRoleWithScope(role)
                           )}
                         </td>
                         <td className="px-2 py-1">{formatTs(row?.created_at)}</td>
@@ -262,6 +374,35 @@ export default function OrgSettingsModal({
                 </tbody>
               </table>
             </div>
+          {canManageMembers ? (
+            <form className="rounded-lg border border-border p-2 space-y-2" onSubmit={handleAssignUser}>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Добавить / изменить участника</div>
+              <div className="flex flex-wrap gap-2 items-end">
+                <input
+                  className="input flex-1 min-w-[160px]"
+                  type="text"
+                  placeholder="User ID или email"
+                  value={assignUserId}
+                  onChange={(e) => { setAssignUserId(e.target.value); setAssignMsg(""); }}
+                />
+                <select
+                  className="select h-9 min-h-0"
+                  value={assignRole}
+                  onChange={(e) => setAssignRole(e.target.value)}
+                >
+                  {MEMBER_ROLES.map((r) => <option key={r} value={r}>{toUserFacingRoleLabel(r)}</option>)}
+                </select>
+                <button type="submit" className="primaryBtn h-9 px-3 text-sm" disabled={!assignUserId.trim()}>
+                  Назначить
+                </button>
+              </div>
+              {assignMsg ? (
+                <div className={`text-xs px-2 py-1 rounded ${assignMsg.includes("добавлен") ? "text-success bg-success/10" : "text-danger bg-danger/10"}`}>
+                  {assignMsg}
+                </div>
+              ) : null}
+            </form>
+          ) : null}
           </div>
         ) : null}
 
@@ -272,92 +413,124 @@ export default function OrgSettingsModal({
                 <input
                   className="input md:col-span-4"
                   type="email"
-                  placeholder="Логин/email сотрудника"
+                  placeholder={ru.org.inviteForm.emailPlaceholder}
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
                   required
                 />
-                <select className="select md:col-span-2" value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
-                  {INVITE_ROLES.map((item) => <option key={item} value={item}>{item}</option>)}
+                <input
+                  className="input md:col-span-2"
+                  type="text"
+                  placeholder={ru.org.inviteForm.fullNamePlaceholder}
+                  value={inviteFullName}
+                  onChange={(e) => setInviteFullName(e.target.value)}
+                />
+                <input
+                  className="input md:col-span-2"
+                  type="text"
+                  placeholder={ru.org.inviteForm.jobTitlePlaceholder}
+                  value={inviteJobTitle}
+                  onChange={(e) => setInviteJobTitle(e.target.value)}
+                />
+                <select
+                  className="input md:col-span-2"
+                  value={inviteRole}
+                  onChange={(e) => setInviteRole(e.target.value)}
+                >
+                  {INVITE_ROLE_OPTIONS.map((item) => (
+                    <option key={item.value} value={item.value}>{item.label}</option>
+                  ))}
                 </select>
-                <input
-                  className="input md:col-span-2"
-                  type="text"
-                  placeholder="Команда"
-                  value={inviteTeamName}
-                  onChange={(e) => setInviteTeamName(e.target.value)}
-                />
-                <input
-                  className="input md:col-span-2"
-                  type="text"
-                  placeholder="Подгруппа"
-                  value={inviteSubgroupName}
-                  onChange={(e) => setInviteSubgroupName(e.target.value)}
-                />
-                <input
-                  className="input md:col-span-1"
-                  type="number"
-                  min="1"
-                  max="60"
-                  placeholder="TTL"
-                  value={inviteTtl}
-                  onChange={(e) => setInviteTtl(e.target.value)}
-                />
-                <button type="submit" className="primaryBtn md:col-span-1">Создать</button>
-                <input
-                  className="input md:col-span-12"
-                  type="text"
-                  placeholder="Комментарий (опционально)"
-                  value={inviteComment}
-                  onChange={(e) => setInviteComment(e.target.value)}
-                />
+                <label className="md:col-span-1">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Срок, дней</div>
+                  <input
+                    className="input w-full"
+                    type="number"
+                    min="1"
+                    max="60"
+                    placeholder={ru.org.inviteForm.expiresPlaceholder}
+                    value={inviteTtl}
+                    onChange={(e) => setInviteTtl(e.target.value)}
+                  />
+                </label>
+                <button type="submit" className="primaryBtn md:col-span-1">{ru.org.inviteForm.createButton}</button>
                 <div className="md:col-span-12 text-[11px] text-muted">
-                  Политика приглашений: только одноразовые инвайты (one-time).
+                  {ru.org.noInviteCreateHint}
                 </div>
               </form>
             ) : (
-              <div className="text-xs text-muted">Нет прав на управление инвайтами.</div>
+              <div className="text-xs text-muted">{ru.org.noInviteRights}</div>
             )}
-            {lastInviteToken ? (
-              <div className="rounded-lg border border-accent/40 bg-accentSoft/15 px-3 py-2 text-xs">
-                Токен приглашения: <code>{lastInviteToken}</code>
-              </div>
-            ) : null}
-            {!lastInviteToken && lastInviteNotice ? (
+            {lastInviteNotice ? (
               <div className="rounded-lg border border-border px-3 py-2 text-xs text-muted">
                 {lastInviteNotice}
+              </div>
+            ) : null}
+            {lastCreatedInvite && (toText(lastCreatedInvite.key) || toText(lastCreatedInvite.link)) ? (
+              <div className="space-y-3 rounded-lg border border-border bg-panel2/40 px-3 py-3">
+                {toText(lastCreatedInvite.key) ? (
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">{ru.org.inviteForm.inviteKeyLabel}</div>
+                    <div className="flex flex-col gap-2 md:flex-row">
+                      <input className="input flex-1" type="text" value={toText(lastCreatedInvite.key)} readOnly />
+                      <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={() => void handleCopy(lastCreatedInvite.key)}>
+                        {copyState === "copied" ? ru.common.copied : ru.org.inviteForm.copyButton}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+                {toText(lastCreatedInvite.link) ? (
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">{ru.org.inviteForm.inviteLinkLabel}</div>
+                    <div className="flex flex-col gap-2 md:flex-row">
+                      <input className="input flex-1" type="text" value={toText(lastCreatedInvite.link)} readOnly />
+                      <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={() => void handleCopy(lastCreatedInvite.link)}>
+                        {copyState === "copied" ? ru.common.copied : ru.org.inviteForm.copyLinkButton}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : null}
             <div className="max-h-72 overflow-auto rounded-lg border border-border">
               <table className="min-w-full text-xs">
                 <thead className="bg-panel2/70 text-muted">
                   <tr>
-                    <th className="px-2 py-1 text-left">Логин/Email</th>
+                    <th className="px-2 py-1 text-left">{ru.org.inviteTable.email}</th>
+                    <th className="px-2 py-1 text-left">{ru.org.inviteTable.fullName}</th>
+                    <th className="px-2 py-1 text-left">{ru.org.inviteTable.jobTitle}</th>
                     <th className="px-2 py-1 text-left">Роль</th>
-                    <th className="px-2 py-1 text-left">Команда</th>
-                    <th className="px-2 py-1 text-left">Статус</th>
-                    <th className="px-2 py-1 text-left">Истекает</th>
-                    <th className="px-2 py-1 text-left">Использован</th>
-                    <th className="px-2 py-1 text-left">Действие</th>
+                    <th className="px-2 py-1 text-left">{ru.org.inviteTable.status}</th>
+                    <th className="px-2 py-1 text-left">{ru.org.inviteTable.createdAt}</th>
+                    <th className="px-2 py-1 text-left">{ru.org.inviteTable.expiresAt}</th>
+                    <th className="px-2 py-1 text-left">{ru.org.inviteTable.usedAt}</th>
+                    <th className="px-2 py-1 text-left">{ru.org.inviteTable.action}</th>
                   </tr>
                 </thead>
                 <tbody>
+                  {invites.length === 0 ? (
+                    <tr>
+                      <td className="px-2 py-3 text-muted" colSpan={9}>{ru.org.inviteTable.empty}</td>
+                    </tr>
+                  ) : null}
                   {invites.map((row) => {
                     const inviteId = toText(row?.id);
                     const status = toText(row?.status);
-                    const isActive = status === "active";
+                    const isActive = status === "pending";
                     return (
                       <tr key={inviteId} className="border-t border-border/60">
                         <td className="px-2 py-1">{toText(row?.email) || "-"}</td>
-                        <td className="px-2 py-1">{toText(row?.role) || "viewer"}</td>
-                        <td className="px-2 py-1">{toText(row?.team_name || row?.subgroup_name) || "-"}</td>
-                        <td className="px-2 py-1">{status || "-"}</td>
+                        <td className="px-2 py-1">{toText(row?.full_name) || "-"}</td>
+                        <td className="px-2 py-1">{toText(row?.job_title) || "-"}</td>
+                        <td className="px-2 py-1">{toUserFacingRoleLabel(row?.role)}</td>
+                        <td className="px-2 py-1">{trStatusInvite(status)}</td>
+                        <td className="px-2 py-1">{formatTs(row?.created_at)}</td>
                         <td className="px-2 py-1">{formatTs(row?.expires_at)}</td>
                         <td className="px-2 py-1">{formatTs(row?.used_at || row?.accepted_at)}</td>
                         <td className="px-2 py-1">
                           {canManageInvites && isActive ? (
                             <button type="button" className="secondaryBtn h-8 min-h-0 px-2 py-0 text-xs" onClick={() => void handleRevokeInvite(inviteId)}>
-                              Отозвать
+                              {ru.common.revoke}
                             </button>
                           ) : "-"}
                         </td>
@@ -375,26 +548,26 @@ export default function OrgSettingsModal({
             <div className="grid grid-cols-1 gap-2 md:grid-cols-12">
               <input
                 className="input md:col-span-4"
-                placeholder="Фильтр по действию"
+                placeholder={ru.org.auditTable.actionFilter}
                 value={auditAction}
                 onChange={(e) => setAuditAction(e.target.value)}
               />
               <select className="select md:col-span-3" value={auditStatus} onChange={(e) => setAuditStatus(e.target.value)}>
-                <option value="">Статус: все</option>
+                <option value="">{ru.org.auditTable.statusAll}</option>
                 <option value="ok">ok</option>
                 <option value="fail">fail</option>
               </select>
-              <button type="button" className="secondaryBtn md:col-span-2" onClick={() => void loadAudit()}>Обновить</button>
+              <button type="button" className="secondaryBtn md:col-span-2" onClick={() => void loadAudit()}>{ru.common.refresh}</button>
             </div>
             <div className="max-h-72 overflow-auto rounded-lg border border-border">
               <table className="min-w-full text-xs">
                 <thead className="bg-panel2/70 text-muted">
                   <tr>
-                    <th className="px-2 py-1 text-left">Время</th>
-                    <th className="px-2 py-1 text-left">Исполнитель</th>
-                    <th className="px-2 py-1 text-left">Действие</th>
-                    <th className="px-2 py-1 text-left">Сущность</th>
-                    <th className="px-2 py-1 text-left">Статус</th>
+                    <th className="px-2 py-1 text-left">{ru.org.auditTable.time}</th>
+                    <th className="px-2 py-1 text-left">{ru.org.auditTable.actor}</th>
+                    <th className="px-2 py-1 text-left">{ru.org.auditTable.action}</th>
+                    <th className="px-2 py-1 text-left">{ru.org.auditTable.entity}</th>
+                    <th className="px-2 py-1 text-left">{ru.org.auditTable.status}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -417,6 +590,16 @@ export default function OrgSettingsModal({
                 </tbody>
               </table>
             </div>
+          </div>
+        ) : null}
+
+        {tab === "dictionary" ? (
+          <div className="orgDictionaryPanelRoot">
+            <OrgPropertyDictionaryPanel
+              activeOrgId={activeOrgId}
+              initialOperationKey={initialOperationKey}
+              onDictionaryChanged={onDictionaryChanged}
+            />
           </div>
         ) : null}
       </div>

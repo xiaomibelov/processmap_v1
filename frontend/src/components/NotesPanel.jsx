@@ -23,15 +23,31 @@ import {
   normalizeRobotMetaV1,
   robotMetaMissingFields,
 } from "../features/process/robotmeta/robotMeta";
+import {
+  createEmptyCamundaExtensionState,
+  normalizeCamundaExtensionsMap,
+  normalizeCamundaExtensionState,
+} from "../features/process/camunda/camundaExtensions";
+import {
+  finalizeExtensionStateWithDictionary,
+  buildPropertiesOverlayPreview,
+  getOperationKeyFromRobotMeta,
+} from "../features/process/camunda/propertyDictionaryModel";
+import { normalizeCamundaPresentationMap } from "../features/process/camunda/camundaPresentation";
+import {
+  apiGetOrgPropertyDictionaryBundle,
+  apiListOrgPropertyDictionaryOperations,
+  apiUpsertOrgPropertyDictionaryValue,
+} from "../lib/api";
 import SidebarShell from "./sidebar/SidebarShell";
 import ActorsSection from "./sidebar/ActorsSection";
 import TemplatesAndTldrSection from "./sidebar/TemplatesAndTldrSection";
-import SidebarPrimaryActions from "./sidebar/SidebarPrimaryActions";
 import SelectedElementCard from "./sidebar/SelectedElementCard";
 import SidebarAccordion from "./sidebar/SidebarAccordion";
 import PathsSection from "./sidebar/PathsSection";
 import TimeSection from "./sidebar/TimeSection";
 import RobotMetaSection from "./sidebar/RobotMetaSection";
+import CamundaPropertiesSection from "./sidebar/CamundaPropertiesSection";
 import AiSection from "./sidebar/AiSection";
 import NotesSection from "./sidebar/NotesSection";
 import { buildNodePathUpdatesFromFlowMeta } from "./sidebar/nodePathImport";
@@ -103,6 +119,8 @@ function normalizeNodePathMetaMap(rawMap) {
   });
   return out;
 }
+
+const DEFAULT_ROBOT_META_CANONICAL = canonicalRobotMetaString(createDefaultRobotMetaV1());
 
 function parseStepTimeMinutes(raw) {
   if (raw === null || raw === undefined) return null;
@@ -570,12 +588,13 @@ const NOTES_BATCH_RESULT_PREFIX = "fpc:batch_ops_result:";
 const NOTES_COVERAGE_OPEN_EVENT = "fpc:coverage_open";
 const SIDEBAR_SECTIONS_STATE_KEY = "fpc_left_sidebar_sections";
 const SIDEBAR_LAST_OPEN_KEY = "ui.sidebar.last_open.v2";
-const SIDEBAR_ACCORDION_KEYS = ["paths", "time", "robotmeta", "ai", "notes", "advanced"];
+const SIDEBAR_ACCORDION_KEYS = ["paths", "time", "robotmeta", "properties", "ai", "notes", "advanced"];
 
 const DEFAULT_SECTIONS_STATE = {
   paths: false,
   time: false,
   robotmeta: false,
+  properties: false,
   ai: false,
   notes: false,
   advanced: false,
@@ -719,6 +738,16 @@ export default function NotesPanel({
   onSetFlowHappyPath,
   onSetNodePathAssignments,
   onSetElementRobotMeta,
+  onSetElementCamundaExtensions,
+  onSetElementCamundaPresentation,
+  activeOrgId = "",
+  onOpenOrgSettings,
+  orgPropertyDictionaryRevision = 0,
+  onOrgPropertyDictionaryChanged,
+  onPropertiesOverlayPreviewChange,
+  onPropertiesOverlayAlwaysPreviewChange,
+  showPropertiesOverlayAlways = false,
+  onShowPropertiesOverlayAlwaysChange,
   onGoToDiagram,
   onProjectBreadcrumbClick,
   onSessionBreadcrumbClick,
@@ -759,6 +788,17 @@ export default function NotesPanel({
   const [robotMetaBusy, setRobotMetaBusy] = useState(false);
   const [robotMetaErr, setRobotMetaErr] = useState("");
   const [robotMetaInfo, setRobotMetaInfo] = useState("");
+  const [camundaPropertiesDraft, setCamundaPropertiesDraft] = useState(() => createEmptyCamundaExtensionState());
+  const [camundaPropertiesBusy, setCamundaPropertiesBusy] = useState(false);
+  const [camundaPropertiesErr, setCamundaPropertiesErr] = useState("");
+  const [camundaPropertiesInfo, setCamundaPropertiesInfo] = useState("");
+  const [showPropertiesOverlayDraft, setShowPropertiesOverlayDraft] = useState(false);
+  const [orgPropertyDictionaryOperations, setOrgPropertyDictionaryOperations] = useState([]);
+  const [orgPropertyDictionaryOperationsLoading, setOrgPropertyDictionaryOperationsLoading] = useState(false);
+  const [orgPropertyDictionaryBundle, setOrgPropertyDictionaryBundle] = useState(null);
+  const [orgPropertyDictionaryLoading, setOrgPropertyDictionaryLoading] = useState(false);
+  const [orgPropertyDictionaryErr, setOrgPropertyDictionaryErr] = useState("");
+  const [orgPropertyDictionaryAddBusyKey, setOrgPropertyDictionaryAddBusyKey] = useState("");
   const [bulkNodeIds, setBulkNodeIds] = useState([]);
   const [aiErr, setAiErr] = useState("");
   const [aiBusyQid, setAiBusyQid] = useState("");
@@ -780,11 +820,17 @@ export default function NotesPanel({
   const pathsSectionRef = useRef(null);
   const timeSectionRef = useRef(null);
   const robotMetaSectionRef = useRef(null);
+  const camundaPropertiesSectionRef = useRef(null);
   const aiSectionRef = useRef(null);
   const notesSectionRef = useRef(null);
   const advancedSectionRef = useRef(null);
   const sidebarHiddenRef = useRef(Boolean(sidebarHidden));
   const nodeEditorRef = useRef(null);
+  const showPropertiesOverlaySyncRef = useRef({
+    elementId: "",
+    pending: false,
+    target: false,
+  });
 
   const derivedActors = useMemo(() => normalizeDerivedActors(draft?.actors_derived), [draft]);
   const legacyRoles = useMemo(() => normalizeRoles(draft?.roles), [draft]);
@@ -859,6 +905,14 @@ export default function NotesPanel({
     const rawMeta = draft?.bpmn_meta && typeof draft.bpmn_meta === "object" ? draft.bpmn_meta : {};
     return normalizeRobotMetaMap(rawMeta.robot_meta_by_element_id);
   }, [draft?.bpmn_meta]);
+  const bpmnCamundaExtensionsByElementId = useMemo(() => {
+    const rawMeta = draft?.bpmn_meta && typeof draft.bpmn_meta === "object" ? draft.bpmn_meta : {};
+    return normalizeCamundaExtensionsMap(rawMeta.camunda_extensions_by_element_id);
+  }, [draft?.bpmn_meta]);
+  const bpmnCamundaPresentationByElementId = useMemo(() => {
+    const rawMeta = draft?.bpmn_meta && typeof draft.bpmn_meta === "object" ? draft.bpmn_meta : {};
+    return normalizeCamundaPresentationMap(rawMeta.presentation_by_element_id);
+  }, [draft?.bpmn_meta]);
   const hasExplicitNodePathMeta = useMemo(
     () => Object.keys(bpmnNodePathMetaById).length > 0,
     [bpmnNodePathMetaById],
@@ -888,6 +942,7 @@ export default function NotesPanel({
   const isSelectedPathNode = !!selectedElementId
     && !isSelectedSequenceFlow
     && !!selectedElementNodeKind;
+  const selectedRobotMetaEditable = !!selectedElementId && !isSelectedSequenceFlow && !!selectedElementNodeKind;
   const selectedNodePathEntry = useMemo(
     () => normalizeNodePathEntry(bpmnNodePathMetaById[selectedElementId]) || { paths: [], source: "manual" },
     [bpmnNodePathMetaById, selectedElementId],
@@ -896,7 +951,22 @@ export default function NotesPanel({
     () => normalizeRobotMetaV1(bpmnRobotMetaByElementId[selectedElementId] || createDefaultRobotMetaV1()),
     [bpmnRobotMetaByElementId, selectedElementId],
   );
-  const selectedRobotMetaEditable = !!selectedElementId && !isSelectedSequenceFlow && !!selectedElementNodeKind;
+  const selectedCamundaExtensionEntry = useMemo(
+    () => normalizeCamundaExtensionState(bpmnCamundaExtensionsByElementId[selectedElementId] || createEmptyCamundaExtensionState()),
+    [bpmnCamundaExtensionsByElementId, selectedElementId],
+  );
+  const selectedCamundaPresentationEntry = useMemo(
+    () => bpmnCamundaPresentationByElementId[selectedElementId] || { showPropertiesOverlay: false },
+    [bpmnCamundaPresentationByElementId, selectedElementId],
+  );
+  const selectedOperationKey = useMemo(
+    () => getOperationKeyFromRobotMeta(
+      selectedRobotMetaEditable ? robotMetaDraft : selectedRobotMetaEntry,
+      selectedCamundaExtensionEntry,
+    ),
+    [selectedRobotMetaEditable, robotMetaDraft, selectedRobotMetaEntry, selectedCamundaExtensionEntry],
+  );
+  const selectedCamundaPropertiesEditable = selectedRobotMetaEditable;
   const selectedRobotMetaStatus = useMemo(
     () => (selectedRobotMetaEditable ? getRobotMetaStatus(selectedRobotMetaEntry) : "none"),
     [selectedRobotMetaEditable, selectedRobotMetaEntry],
@@ -1005,13 +1075,6 @@ export default function NotesPanel({
   }, [draft?.bpmn_xml]);
 
   useEffect(() => {
-    if (!selectedElementId) return;
-    const node = elementNotesSectionRef.current;
-    if (!node) return;
-    node.scrollIntoView({ block: "start", behavior: "smooth" });
-  }, [selectedElementId, elementNotesFocusKey]);
-
-  useEffect(() => {
     setFlowHappyInfo("");
     setFlowHappyErr("");
   }, [selectedElementId]);
@@ -1044,6 +1107,137 @@ export default function NotesPanel({
     setRobotMetaErr("");
     setRobotMetaInfo("");
   }, [selectedRobotMetaEditable, selectedRobotMetaEntry]);
+
+  useEffect(() => {
+    if (!selectedCamundaPropertiesEditable) {
+      setCamundaPropertiesDraft(createEmptyCamundaExtensionState());
+      setCamundaPropertiesErr("");
+      setCamundaPropertiesInfo("");
+      return;
+    }
+    setCamundaPropertiesDraft(selectedCamundaExtensionEntry);
+    setCamundaPropertiesErr("");
+    setCamundaPropertiesInfo("");
+  }, [selectedCamundaPropertiesEditable, selectedCamundaExtensionEntry]);
+
+  useEffect(() => {
+    if (!selectedCamundaPropertiesEditable) {
+      showPropertiesOverlaySyncRef.current = {
+        elementId: "",
+        pending: false,
+        target: false,
+      };
+      setShowPropertiesOverlayDraft(false);
+      return;
+    }
+    const incoming = !!selectedCamundaPresentationEntry?.showPropertiesOverlay;
+    const syncState = showPropertiesOverlaySyncRef.current;
+    const sameElement = str(syncState?.elementId) === str(selectedElementId);
+    if (sameElement && syncState?.pending) {
+      if (incoming !== !!syncState.target) {
+        return;
+      }
+      showPropertiesOverlaySyncRef.current = {
+        elementId: str(selectedElementId),
+        pending: false,
+        target: incoming,
+      };
+    }
+    setShowPropertiesOverlayDraft(incoming);
+  }, [selectedCamundaPropertiesEditable, selectedElementId, selectedCamundaPresentationEntry]);
+
+  useEffect(() => {
+    if (!selectedElementId || !selectedCamundaPropertiesEditable) {
+      onPropertiesOverlayPreviewChange?.(null);
+      return;
+    }
+    const nextPreview = buildPropertiesOverlayPreview({
+      elementId: selectedElementId,
+      extensionStateRaw: camundaPropertiesDraft,
+      dictionaryBundleRaw: orgPropertyDictionaryBundle,
+      showPropertiesOverlay: showPropertiesOverlayDraft,
+    });
+    onPropertiesOverlayPreviewChange?.(nextPreview);
+  }, [
+    selectedElementId,
+    selectedCamundaPropertiesEditable,
+    camundaPropertiesDraft,
+    orgPropertyDictionaryBundle,
+    showPropertiesOverlayDraft,
+    onPropertiesOverlayPreviewChange,
+  ]);
+
+  useEffect(() => {
+    if (!selectedElementId || !selectedCamundaPropertiesEditable) {
+      onPropertiesOverlayAlwaysPreviewChange?.(null);
+      return;
+    }
+    const nextAlwaysPreview = buildPropertiesOverlayPreview({
+      elementId: selectedElementId,
+      extensionStateRaw: camundaPropertiesDraft,
+      dictionaryBundleRaw: orgPropertyDictionaryBundle,
+      showPropertiesOverlay: true,
+    });
+    onPropertiesOverlayAlwaysPreviewChange?.(nextAlwaysPreview);
+  }, [
+    selectedElementId,
+    selectedCamundaPropertiesEditable,
+    camundaPropertiesDraft,
+    orgPropertyDictionaryBundle,
+    onPropertiesOverlayAlwaysPreviewChange,
+  ]);
+
+  useEffect(() => {
+    if (!selectedCamundaPropertiesEditable || !str(activeOrgId)) {
+      setOrgPropertyDictionaryOperations([]);
+      setOrgPropertyDictionaryOperationsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setOrgPropertyDictionaryOperationsLoading(true);
+    void (async () => {
+      const result = await apiListOrgPropertyDictionaryOperations(activeOrgId, { includeInactive: false });
+      if (cancelled) return;
+      if (!result.ok) {
+        setOrgPropertyDictionaryOperations([]);
+        setOrgPropertyDictionaryOperationsLoading(false);
+        return;
+      }
+      setOrgPropertyDictionaryOperations(Array.isArray(result.items) ? result.items : []);
+      setOrgPropertyDictionaryOperationsLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeOrgId, selectedCamundaPropertiesEditable, orgPropertyDictionaryRevision]);
+
+  useEffect(() => {
+    if (!selectedCamundaPropertiesEditable || !str(activeOrgId) || !str(selectedOperationKey)) {
+      setOrgPropertyDictionaryBundle(null);
+      setOrgPropertyDictionaryLoading(false);
+      setOrgPropertyDictionaryErr("");
+      setOrgPropertyDictionaryAddBusyKey("");
+      return;
+    }
+    let cancelled = false;
+    setOrgPropertyDictionaryLoading(true);
+    setOrgPropertyDictionaryErr("");
+    void (async () => {
+      const result = await apiGetOrgPropertyDictionaryBundle(activeOrgId, selectedOperationKey, { includeInactive: false });
+      if (cancelled) return;
+      if (!result.ok) {
+        setOrgPropertyDictionaryBundle(null);
+        setOrgPropertyDictionaryErr(str(result.error || "Не удалось загрузить словарь свойств."));
+        setOrgPropertyDictionaryLoading(false);
+        return;
+      }
+      setOrgPropertyDictionaryBundle(result.bundle || null);
+      setOrgPropertyDictionaryLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeOrgId, selectedCamundaPropertiesEditable, selectedOperationKey, orgPropertyDictionaryRevision]);
 
   useEffect(() => {
     const next = {};
@@ -1101,14 +1295,6 @@ export default function NotesPanel({
   }, [sid]);
 
   useEffect(() => {
-    if (!isElementMode) return;
-    setSectionsOpen((prev) => {
-      if (Object.values(prev).some(Boolean)) return prev;
-      return { ...DEFAULT_SECTIONS_STATE, paths: true };
-    });
-  }, [isElementMode, selectedElementId]);
-
-  useEffect(() => {
     const wasHidden = sidebarHiddenRef.current;
     const isHidden = Boolean(sidebarHidden);
     if (wasHidden && !isHidden) {
@@ -1162,24 +1348,11 @@ export default function NotesPanel({
     if (key === "paths") return pathsSectionRef;
     if (key === "time") return timeSectionRef;
     if (key === "robotmeta") return robotMetaSectionRef;
+    if (key === "properties") return camundaPropertiesSectionRef;
     if (key === "ai") return aiSectionRef;
     if (key === "notes") return notesSectionRef;
     if (key === "advanced") return advancedSectionRef;
     return { current: null };
-  }
-
-  function openAiFromCard() {
-    openSectionShortcut("ai");
-  }
-
-  function focusNodeNotesFromCard() {
-    openSectionShortcut("notes");
-    window.setTimeout(() => {
-      try {
-        nodeEditorRef.current?.focus?.();
-      } catch {
-      }
-    }, 0);
   }
 
   useEffect(() => {
@@ -1191,6 +1364,7 @@ export default function NotesPanel({
       actors: "advanced",
       templates: "advanced",
       robotmeta: "robotmeta",
+      properties: "properties",
       time: "time",
       paths: "paths",
       advanced: "advanced",
@@ -1554,6 +1728,195 @@ export default function NotesPanel({
     }
   }
 
+  function updateCamundaPropertiesDraft(nextRaw) {
+    setCamundaPropertiesDraft(nextRaw && typeof nextRaw === "object" ? nextRaw : createEmptyCamundaExtensionState());
+    setCamundaPropertiesErr("");
+  }
+
+  async function updateSelectedOperationKey(nextOperationKeyRaw) {
+    if (!selectedCamundaPropertiesEditable || !selectedElementId) return;
+    if (typeof onSetElementRobotMeta !== "function" || disabled || robotMetaBusy) return;
+    const nextOperationKey = str(nextOperationKeyRaw);
+    const currentRobotMeta = normalizeRobotMetaV1(selectedRobotMetaEntry || createDefaultRobotMetaV1());
+    const nextRobotMeta = normalizeRobotMetaV1({
+      ...currentRobotMeta,
+      exec: {
+        ...(currentRobotMeta.exec || {}),
+        action_key: nextOperationKey || null,
+      },
+    });
+    const prevCanonical = canonicalRobotMetaString(currentRobotMeta);
+    const nextCanonical = canonicalRobotMetaString(nextRobotMeta);
+    if (prevCanonical === nextCanonical) return;
+    const shouldRemove = nextCanonical === DEFAULT_ROBOT_META_CANONICAL;
+    const previousDraft = robotMetaDraft;
+    setRobotMetaBusy(true);
+    setRobotMetaErr("");
+    setCamundaPropertiesErr("");
+    setCamundaPropertiesInfo("");
+    setRobotMetaDraft(shouldRemove ? createDefaultRobotMetaV1() : nextRobotMeta);
+    try {
+      const result = await Promise.resolve(
+        shouldRemove
+          ? onSetElementRobotMeta(selectedElementId, null, { remove: true })
+          : onSetElementRobotMeta(selectedElementId, nextRobotMeta),
+      );
+      if (result && result.ok === false) {
+        setRobotMetaDraft(previousDraft);
+        setCamundaPropertiesErr(str(result.error || "Не удалось сохранить операцию узла."));
+        return;
+      }
+      setCamundaPropertiesInfo(nextOperationKey
+        ? `Операция узла: ${nextOperationKey}.`
+        : "Операция узла очищена.");
+    } catch (error) {
+      setRobotMetaDraft(previousDraft);
+      setCamundaPropertiesErr(str(error?.message || error || "Не удалось сохранить операцию узла."));
+    } finally {
+      setRobotMetaBusy(false);
+    }
+  }
+
+  async function updateShowPropertiesOverlay(nextValueRaw) {
+    if (!selectedCamundaPropertiesEditable || !selectedElementId) return;
+    if (typeof onSetElementCamundaPresentation !== "function" || disabled || camundaPropertiesBusy) return;
+    const nextValue = !!nextValueRaw;
+    const prevValue = !!selectedCamundaPresentationEntry?.showPropertiesOverlay;
+    showPropertiesOverlaySyncRef.current = {
+      elementId: str(selectedElementId),
+      pending: true,
+      target: nextValue,
+    };
+    setShowPropertiesOverlayDraft(nextValue);
+    setCamundaPropertiesErr("");
+    setCamundaPropertiesInfo("");
+    try {
+      const result = await Promise.resolve(onSetElementCamundaPresentation(selectedElementId, { showPropertiesOverlay: nextValue }));
+      if (result && result.ok === false) {
+        showPropertiesOverlaySyncRef.current = {
+          elementId: str(selectedElementId),
+          pending: false,
+          target: prevValue,
+        };
+        setShowPropertiesOverlayDraft(prevValue);
+        setCamundaPropertiesErr(str(result.error || "Не удалось сохранить настройку overlay."));
+        return;
+      }
+      const currentElementId = str(selectedElementId);
+      setTimeout(() => {
+        const syncState = showPropertiesOverlaySyncRef.current;
+        if (str(syncState?.elementId) !== currentElementId) return;
+        if (!syncState?.pending) return;
+        showPropertiesOverlaySyncRef.current = {
+          elementId: currentElementId,
+          pending: false,
+          target: !!syncState?.target,
+        };
+      }, 1800);
+      setCamundaPropertiesInfo(nextValue ? "Overlay свойств включён." : "Overlay свойств отключён.");
+    } catch (error) {
+      showPropertiesOverlaySyncRef.current = {
+        elementId: str(selectedElementId),
+        pending: false,
+        target: prevValue,
+      };
+      setShowPropertiesOverlayDraft(prevValue);
+      setCamundaPropertiesErr(str(error?.message || error || "Не удалось сохранить настройку overlay."));
+    }
+  }
+
+  async function addDictionaryValueForSelectedElement(propertyKey, optionValue) {
+    const oid = str(activeOrgId);
+    const operationKey = str(selectedOperationKey);
+    const normalizedPropertyKey = str(propertyKey);
+    const normalizedValue = str(optionValue);
+    if (!oid || !operationKey || !normalizedPropertyKey || !normalizedValue) return { ok: false, error: "missing_dictionary_context" };
+    setOrgPropertyDictionaryAddBusyKey(normalizedPropertyKey);
+    setCamundaPropertiesErr("");
+    try {
+      const result = await apiUpsertOrgPropertyDictionaryValue(oid, operationKey, normalizedPropertyKey, {
+        option_value: normalizedValue,
+      });
+      if (!result.ok) {
+        const errorText = str(result.error || "Не удалось добавить значение в словарь организации.");
+        setCamundaPropertiesErr(errorText);
+        return { ok: false, error: errorText };
+      }
+      const bundleResult = await apiGetOrgPropertyDictionaryBundle(oid, operationKey, { includeInactive: false });
+      if (bundleResult.ok) {
+        setOrgPropertyDictionaryBundle(bundleResult.bundle || null);
+      }
+      onOrgPropertyDictionaryChanged?.();
+      setCamundaPropertiesInfo(`Значение «${normalizedValue}» добавлено в словарь организации.`);
+      return { ok: true };
+    } catch (error) {
+      const errorText = str(error?.message || error || "Не удалось добавить значение в словарь организации.");
+      setCamundaPropertiesErr(errorText);
+      return { ok: false, error: errorText };
+    } finally {
+      setOrgPropertyDictionaryAddBusyKey("");
+    }
+  }
+
+  async function saveSelectedCamundaProperties() {
+    if (!selectedCamundaPropertiesEditable || !selectedElementId) return;
+    if (typeof onSetElementCamundaExtensions !== "function" || disabled || camundaPropertiesBusy) return;
+    const finalizedDraft = finalizeExtensionStateWithDictionary({
+      extensionStateRaw: camundaPropertiesDraft,
+      dictionaryBundleRaw: orgPropertyDictionaryBundle,
+    });
+    const normalized = normalizeCamundaExtensionState(finalizedDraft);
+    const prevCanonical = JSON.stringify(normalizeCamundaExtensionState(selectedCamundaExtensionEntry));
+    const nextCanonical = JSON.stringify(normalizeCamundaExtensionState(normalized));
+    if (prevCanonical === nextCanonical) {
+      setCamundaPropertiesErr("");
+      setCamundaPropertiesInfo("Без изменений.");
+      return;
+    }
+    setCamundaPropertiesBusy(true);
+    setCamundaPropertiesErr("");
+    setCamundaPropertiesInfo("");
+    try {
+      const result = await Promise.resolve(onSetElementCamundaExtensions(selectedElementId, normalized));
+      if (result && result.ok === false) {
+        setCamundaPropertiesErr(str(result.error || "Не удалось сохранить Properties."));
+        return;
+      }
+      setCamundaPropertiesInfo("Properties сохранены.");
+    } catch (error) {
+      setCamundaPropertiesErr(str(error?.message || error || "Не удалось сохранить Properties."));
+    } finally {
+      setCamundaPropertiesBusy(false);
+    }
+  }
+
+  async function resetSelectedCamundaProperties() {
+    if (!selectedCamundaPropertiesEditable || !selectedElementId) return;
+    if (typeof onSetElementCamundaExtensions !== "function" || disabled || camundaPropertiesBusy) return;
+    const nextState = {
+      ...createEmptyCamundaExtensionState(),
+      preservedExtensionElements: Array.isArray(selectedCamundaExtensionEntry?.preservedExtensionElements)
+        ? selectedCamundaExtensionEntry.preservedExtensionElements.slice()
+        : [],
+    };
+    setCamundaPropertiesBusy(true);
+    setCamundaPropertiesErr("");
+    setCamundaPropertiesInfo("");
+    try {
+      const result = await Promise.resolve(onSetElementCamundaExtensions(selectedElementId, nextState));
+      if (result && result.ok === false) {
+        setCamundaPropertiesErr(str(result.error || "Не удалось очистить Properties."));
+        return;
+      }
+      setCamundaPropertiesDraft(nextState);
+      setCamundaPropertiesInfo("Properties очищены.");
+    } catch (error) {
+      setCamundaPropertiesErr(str(error?.message || error || "Не удалось очистить Properties."));
+    } finally {
+      setCamundaPropertiesBusy(false);
+    }
+  }
+
   function selectBranchUntilBoundary() {
     if (!isSelectedPathNode || !selectedElementId) return;
     const outgoingByNodeId = nodePathGraphContext?.outgoingByNodeId || {};
@@ -1801,30 +2164,11 @@ export default function NotesPanel({
         bottomBar={null}
       >
         <div id="element-notes-section" ref={elementNotesSectionRef} className="sidebarRedesignStack">
-          <SelectedElementCard
-            selectedElementId={isElementMode ? selectedElementId : ""}
-            selectedElementName={isElementMode ? selectedElementName : ""}
-            selectedElementType={isElementMode ? selectedElementType : ""}
-            selectedElementLaneName={isElementMode ? selectedElementLaneName : ""}
-            noteCount={isElementMode ? selectedElementNotes.length : 0}
-            aiCount={isElementMode ? selectedElementAiQuestions.length : 0}
-            incomingCount={isElementMode ? Number(selectedElementFlowCounts.incoming || 0) : 0}
-            outgoingCount={isElementMode ? Number(selectedElementFlowCounts.outgoing || 0) : 0}
-            robotMetaStatus={selectedRobotMetaStatus}
-            robotMetaMissing={selectedRobotMetaMissing}
-            open={selectedCardOpen}
-            onToggle={() => setSelectedCardOpen((prev) => !prev)}
-          />
-
-          <SidebarPrimaryActions
-            onOpenDiagram={onGoToDiagram}
-            onOpenAi={openAiFromCard}
-            onOpenNotes={focusNodeNotesFromCard}
-          />
-
-          <section className="sidebarCardSurface sidebarSettingsSurface">
-            <div className="sidebarSectionCaption">Настройки элемента</div>
-            <div className="sidebarAccordionStack mt-2">
+          <section className="sidebarSettingsSurface">
+            <div className="sidebarSettingsHeader">
+              <div className="sidebarSectionCaption">Настройки элемента</div>
+            </div>
+            <div className="sidebarAccordionStack">
               <div ref={pathsSectionRef}>
                 <SidebarAccordion
                 sectionKey="paths"
@@ -1907,10 +2251,50 @@ export default function NotesPanel({
               </SidebarAccordion>
               </div>
 
+              <div ref={camundaPropertiesSectionRef}>
+                <SidebarAccordion
+                sectionKey="properties"
+                title="Свойства"
+                open={!!sectionsOpen.properties}
+                onToggle={toggleSection}
+              >
+                <CamundaPropertiesSection
+                  selectedElementId={isElementMode ? selectedElementId : ""}
+                  camundaPropertiesEditable={isElementMode ? selectedCamundaPropertiesEditable : false}
+                  extensionStateDraft={isElementMode ? camundaPropertiesDraft : createEmptyCamundaExtensionState()}
+                  extensionStateBusy={isElementMode ? camundaPropertiesBusy : false}
+                  extensionStateErr={isElementMode ? camundaPropertiesErr : ""}
+                  extensionStateInfo={isElementMode ? camundaPropertiesInfo : ""}
+                  dictionaryBundle={isElementMode ? orgPropertyDictionaryBundle : null}
+                  dictionaryLoading={isElementMode ? orgPropertyDictionaryLoading : false}
+                  dictionaryError={isElementMode ? orgPropertyDictionaryErr : ""}
+                  dictionaryAddBusyKey={isElementMode ? orgPropertyDictionaryAddBusyKey : ""}
+                  operationKey={isElementMode ? selectedOperationKey : ""}
+                  operationOptions={isElementMode ? orgPropertyDictionaryOperations : []}
+                  operationSelectionBusy={isElementMode ? (orgPropertyDictionaryOperationsLoading || robotMetaBusy) : false}
+                  showPropertiesOverlay={isElementMode ? showPropertiesOverlayDraft : false}
+                  showPropertiesOverlayAlways={!!showPropertiesOverlayAlways}
+                  onExtensionStateDraftChange={updateCamundaPropertiesDraft}
+                  onOperationKeyChange={updateSelectedOperationKey}
+                  onShowPropertiesOverlayChange={updateShowPropertiesOverlay}
+                  onShowPropertiesOverlayAlwaysChange={onShowPropertiesOverlayAlwaysChange}
+                  onAddDictionaryValue={addDictionaryValueForSelectedElement}
+                  onOpenDictionaryManager={() => onOpenOrgSettings?.({
+                    tab: "dictionary",
+                    operationKey: selectedOperationKey,
+                    dictionaryOnly: true,
+                  })}
+                  onSaveExtensionState={saveSelectedCamundaProperties}
+                  onResetExtensionState={resetSelectedCamundaProperties}
+                  disabled={disabled}
+                />
+              </SidebarAccordion>
+              </div>
+
               <div ref={notesSectionRef}>
                 <SidebarAccordion
                 sectionKey="notes"
-                title="Notes"
+                title="Заметки"
                 badge={isElementMode ? String(selectedElementNotes.length) : ""}
                 open={!!sectionsOpen.notes}
                 onToggle={toggleSection}
@@ -1936,7 +2320,7 @@ export default function NotesPanel({
               <div ref={aiSectionRef}>
                 <SidebarAccordion
                 sectionKey="ai"
-                title="AI Questions"
+                title="AI-вопросы"
                 badge={isElementMode ? String(selectedElementAiQuestions.length) : ""}
                 open={!!sectionsOpen.ai}
                 onToggle={toggleSection}
@@ -2008,6 +2392,55 @@ export default function NotesPanel({
                     </div>
                   </details>
                 </SidebarAccordion>
+              </div>
+            </div>
+          </section>
+
+          <SelectedElementCard
+            selectedElementId={isElementMode ? selectedElementId : ""}
+            selectedElementName={isElementMode ? selectedElementName : ""}
+            selectedElementType={isElementMode ? selectedElementType : ""}
+            selectedElementLaneName={isElementMode ? selectedElementLaneName : ""}
+            noteCount={isElementMode ? selectedElementNotes.length : 0}
+            aiCount={isElementMode ? selectedElementAiQuestions.length : 0}
+            incomingCount={isElementMode ? Number(selectedElementFlowCounts.incoming || 0) : 0}
+            outgoingCount={isElementMode ? Number(selectedElementFlowCounts.outgoing || 0) : 0}
+            robotMetaStatus={selectedRobotMetaStatus}
+            robotMetaMissing={selectedRobotMetaMissing}
+            open={selectedCardOpen}
+            onToggle={() => setSelectedCardOpen((prev) => !prev)}
+          />
+
+          <section className="sidebarSupplementaryInfo" aria-label="Дополнительная информация">
+            <div className="sidebarSectionCaption">Доп. информация</div>
+            <div className="sidebarInfoList">
+              <div className="sidebarInfoRow">
+                <span className="sidebarInfoLabel">Тип элемента</span>
+                <span className="sidebarInfoValue">{isElementMode ? (selectedElementType || "—") : "—"}</span>
+              </div>
+              <div className="sidebarInfoRow">
+                <span className="sidebarInfoLabel">Внутренний ID</span>
+                <span className="sidebarInfoValue">{isElementMode ? (selectedElementId || "—") : "—"}</span>
+              </div>
+              <div className="sidebarInfoRow">
+                <span className="sidebarInfoLabel">Роль / lane</span>
+                <span className="sidebarInfoValue">{isElementMode ? (selectedElementLaneName || "—") : "—"}</span>
+              </div>
+              <div className="sidebarInfoRow">
+                <span className="sidebarInfoLabel">Связи</span>
+                <span className="sidebarInfoValue">
+                  {isElementMode
+                    ? `in ${Number(selectedElementFlowCounts.incoming || 0)} / out ${Number(selectedElementFlowCounts.outgoing || 0)}`
+                    : "—"}
+                </span>
+              </div>
+              <div className="sidebarInfoRow">
+                <span className="sidebarInfoLabel">robot</span>
+                <span className="sidebarInfoValue">{isElementMode ? (selectedRobotMetaStatus || "none") : "—"}</span>
+              </div>
+              <div className="sidebarInfoRow">
+                <span className="sidebarInfoLabel">Операция</span>
+                <span className="sidebarInfoValue">{isElementMode ? (selectedOperationKey || "—") : "—"}</span>
               </div>
             </div>
           </section>

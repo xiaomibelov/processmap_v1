@@ -1,4 +1,5 @@
 import { computeDodPercent } from "../workspace/computeDodPercent";
+import { ru } from "../../shared/i18n/ru";
 
 export function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -45,22 +46,22 @@ export function parseAdminRoute(pathnameRaw) {
   const pathname = toText(pathnameRaw || "/admin");
   const clean = pathname.replace(/\/+$/g, "") || "/admin";
   if (!clean.startsWith("/admin")) {
-    return { section: "dashboard", sectionLabel: "Dashboard", sessionId: "", isRoot: false };
+    return { section: "dashboard", sectionLabel: ru.admin.sections.dashboard, sessionId: "", isRoot: false };
   }
   const tail = clean.slice("/admin".length).replace(/^\/+/g, "");
   if (!tail) {
-    return { section: "dashboard", sectionLabel: "Dashboard", sessionId: "", isRoot: true };
+    return { section: "dashboard", sectionLabel: ru.admin.sections.dashboard, sessionId: "", isRoot: true };
   }
   const parts = tail.split("/").filter(Boolean);
   const section = toLower(parts[0]) || "dashboard";
   const sessionId = section === "sessions" ? toText(parts[1]) : "";
   const labels = {
-    dashboard: "Dashboard",
-    orgs: "Организации",
-    projects: "Проекты",
-    sessions: "Сессии",
-    jobs: "Операции",
-    audit: "Аудит",
+    dashboard: ru.admin.sections.dashboard,
+    orgs: ru.admin.sections.orgs,
+    projects: ru.admin.sections.projects,
+    sessions: ru.admin.sections.sessions,
+    jobs: ru.admin.sections.jobs,
+    audit: ru.admin.sections.audit,
   };
   return {
     section,
@@ -71,7 +72,7 @@ export function parseAdminRoute(pathnameRaw) {
 }
 
 export function buildAdminBreadcrumbs(route, activeOrgName = "") {
-  const crumbs = [{ id: "admin", label: "Admin", href: "/admin/dashboard" }];
+  const crumbs = [{ id: "admin", label: ru.admin.sections.admin, href: "/admin/dashboard" }];
   const section = toLower(route?.section || "dashboard");
   if (section !== "dashboard") {
     crumbs.push({
@@ -325,12 +326,12 @@ export function buildActivitySeries(sessionRows = [], days = 10) {
 
 export function buildAdminRouteMap() {
   return [
-    { path: "/admin/dashboard", section: "Dashboard" },
-    { path: "/admin/orgs", section: "Organizations" },
-    { path: "/admin/projects", section: "Projects" },
-    { path: "/admin/sessions", section: "Sessions" },
-    { path: "/admin/sessions/:sessionId", section: "Session Detail" },
-    { path: "/admin/jobs", section: "Jobs" },
-    { path: "/admin/audit", section: "Audit" },
+    { path: "/admin/dashboard", section: ru.admin.sections.dashboard },
+    { path: "/admin/orgs", section: ru.admin.sections.orgs },
+    { path: "/admin/projects", section: ru.admin.sections.projects },
+    { path: "/admin/sessions", section: ru.admin.sections.sessions },
+    { path: "/admin/sessions/:sessionId", section: ru.admin.sections.sessionDetail },
+    { path: "/admin/jobs", section: ru.admin.sections.jobs },
+    { path: "/admin/audit", section: ru.admin.sections.audit },
   ];
 }

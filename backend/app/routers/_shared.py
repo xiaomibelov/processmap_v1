@@ -4,9 +4,8 @@ import re
 from typing import Callable
 
 from fastapi import APIRouter
-from fastapi.routing import APIRoute
 
-from .. import _legacy_main
+from ..legacy.route_registry import iter_legacy_routes
 
 PathPredicate = Callable[[str], bool]
 
@@ -28,9 +27,7 @@ def build_router(predicate: PathPredicate) -> APIRouter:
     router = APIRouter()
     selected = {}
     order = []
-    for route in _legacy_main.app.router.routes:
-        if not isinstance(route, APIRoute):
-            continue
+    for route in iter_legacy_routes():
         path = str(route.path or "")
         if predicate(path):
             canonical_path = _canonicalize_api_path(path)

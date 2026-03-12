@@ -196,6 +196,10 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     toggleDrawioLock,
     setDrawioElementVisible,
     setDrawioElementLocked,
+    setDrawioElementText,
+    setDrawioElementTextWidth,
+    setDrawioElementStylePreset,
+    setDrawioElementSize,
     drawioFileInputRef,
     exportEmbeddedDrawio,
     hybridV2DocLive,
@@ -245,7 +249,9 @@ export default function ProcessStageDiagramControls({ view = {} }) {
   const overlayStatusKey = toText(overlayStatus.key).toLowerCase();
   const overlayStatusLabel = overlayStatusKey === "on_preview_missing"
     ? "ON ⚠ hidden"
-    : (overlayStatusKey === "on" ? "ON" : (drawioUiState.enabled ? "ON" : "OFF"));
+    : (overlayStatusKey === "on_placement_ready"
+      ? "ON"
+      : (overlayStatusKey === "on" ? "ON" : (drawioUiState.enabled ? "ON" : "OFF")));
   const overlayStatusTitle = toText(overlayStatus.label) || (overlayStatusLabel === "ON ⚠ hidden" ? "ON · preview missing · hidden" : overlayStatusLabel);
   const unifiedOverlayPanelOpen = !!diagramActionLayersOpen || !!diagramActionHybridToolsOpen;
   const closeDiagramPopovers = () => {
@@ -921,6 +927,10 @@ export default function ProcessStageDiagramControls({ view = {} }) {
         onToggleDrawioLock={toggleDrawioLock}
         onSetDrawioElementVisible={setDrawioElementVisible}
         onSetDrawioElementLocked={setDrawioElementLocked}
+        onSetDrawioElementText={setDrawioElementText}
+        onSetDrawioElementTextWidth={setDrawioElementTextWidth}
+        onSetDrawioElementStylePreset={setDrawioElementStylePreset}
+        onSetDrawioElementSize={setDrawioElementSize}
         onImportEmbeddedDrawioClick={() => drawioFileInputRef.current?.click?.()}
         onExportEmbeddedDrawio={exportEmbeddedDrawio}
         hybridV2DocLive={hybridV2DocLive}

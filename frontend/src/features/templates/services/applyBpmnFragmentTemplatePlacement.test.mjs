@@ -59,3 +59,14 @@ test("buildBpmnFragmentInsertPayload returns pack and anchor points", () => {
   assert.equal(payload.anchor.point.y, 96);
 });
 
+test("buildBpmnFragmentInsertPayload carries preferPointAnchor flag for immediate insert flow", () => {
+  const created = createBpmnFragmentPlacementDraft(createTemplate(), { startedAt: 1000, ignoreClickMs: 200 });
+  const payload = buildBpmnFragmentInsertPayload(created.draft, {
+    clientPoint: { x: 400, y: 260 },
+    diagramPoint: { x: 180, y: 110 },
+    mode: "after",
+    preferPointAnchor: true,
+  });
+  assert.equal(payload.preferPointAnchor, true);
+  assert.equal(payload.anchor.point.x, 180);
+});

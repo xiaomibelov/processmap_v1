@@ -43,13 +43,13 @@ class OrgInvitesEmailFlowTest(unittest.TestCase):
         os.environ["RL_ACCEPT_PER_MIN"] = "30"
 
         from app.auth import create_user
-        from app.main import (
+        from app._legacy_main import (
             OrgInviteAcceptIn,
             OrgInviteCreateIn,
             accept_org_invite_endpoint,
             create_org_invite_endpoint,
         )
-        import app.main as main_mod
+        import app._legacy_main as main_mod
         from app.storage import get_default_org_id, get_storage
 
         self.create_user = create_user
@@ -139,12 +139,13 @@ class OrgInvitesEmailFlowTest(unittest.TestCase):
             req_admin = self._mk_req(self.admin, ip="10.0.0.8")
             created = self.create_org_invite_endpoint(
                 self.default_org_id,
-                self.OrgInviteCreateIn(email="invite_email_target@local", role="Editor", ttl_days=7),
+                self.OrgInviteCreateIn(email="invite_email_target@local", full_name="Тестовый пользователь", job_title="Инженер", role="Editor", ttl_days=7),
                 req_admin,
             )
             self.assertTrue(isinstance(created, dict))
             self.assertEqual(str(created.get("delivery") or ""), "email")
             self.assertEqual(str(created.get("invite_token") or ""), "")
+            self.assertEqual(str(created.get("invite_key") or ""), "")
             self.assertEqual(len(calls), 1)
             self.assertEqual(str(calls[0].get("to_email") or ""), "invite_email_target@local")
             self.assertTrue(str(calls[0].get("invite_link") or "").startswith("https://pm.local/accept-invite?token="))

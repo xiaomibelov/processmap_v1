@@ -19,6 +19,16 @@ test("apiRoutes: template scope routes are canonical", () => {
   assert.equal(apiRoutes.templates.item("tpl_1"), "/api/templates/tpl_1");
 });
 
+test("apiRoutes: org property dictionary routes are canonical", () => {
+  assert.equal(apiRoutes.orgs.memberAssign("org_1"), "/api/orgs/org_1/members/assign");
+  assert.equal(apiRoutes.orgs.propertyDictionaryOperations("org_1"), "/api/orgs/org_1/property-dictionary/operations");
+  assert.equal(apiRoutes.orgs.propertyDictionaryOperation("org_1", "set_container"), "/api/orgs/org_1/property-dictionary/operations/set_container");
+  assert.equal(apiRoutes.orgs.propertyDictionaryProperties("org_1", "set_container"), "/api/orgs/org_1/property-dictionary/operations/set_container/properties");
+  assert.equal(apiRoutes.orgs.propertyDictionaryProperty("org_1", "set_container", "container"), "/api/orgs/org_1/property-dictionary/operations/set_container/properties/container");
+  assert.equal(apiRoutes.orgs.propertyDictionaryValues("org_1", "set_container", "container"), "/api/orgs/org_1/property-dictionary/operations/set_container/properties/container/values");
+  assert.equal(apiRoutes.orgs.propertyDictionaryValue("org_1", "value_1"), "/api/orgs/org_1/property-dictionary/values/value_1");
+});
+
 test("apiRoutes: generated sample URLs do not have trailing slash variants", () => {
   const samples = [
     apiRoutes.auth.login(),
@@ -28,6 +38,7 @@ test("apiRoutes: generated sample URLs do not have trailing slash variants", () 
     apiRoutes.sessions.pathReports("s1", "primary"),
     apiRoutes.sessions.pathReport("s1", "primary", "r1"),
     apiRoutes.orgs.member("o1", "u1"),
+    apiRoutes.orgs.propertyDictionaryOperations("o1"),
     apiRoutes.reports.item("r1"),
     apiRoutes.llm.settings(),
   ];

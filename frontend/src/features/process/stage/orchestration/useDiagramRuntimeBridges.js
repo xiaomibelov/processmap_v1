@@ -210,6 +210,22 @@ export default function useDiagramRuntimeBridges({
     return overlayMutationGateway.setDrawioElementLocked(elementIdRaw, lockedRaw, source);
   }, [overlayMutationGateway]);
 
+  const setDrawioElementText = useCallback((elementIdRaw, textRaw, source = "drawio_element_text") => {
+    return overlayMutationGateway.setDrawioElementText(elementIdRaw, textRaw, source);
+  }, [overlayMutationGateway]);
+
+  const setDrawioElementTextWidth = useCallback((elementIdRaw, widthRaw, source = "drawio_element_text_width") => {
+    return overlayMutationGateway.setDrawioElementTextWidth(elementIdRaw, widthRaw, source);
+  }, [overlayMutationGateway]);
+
+  const setDrawioElementStylePreset = useCallback((elementIdRaw, presetIdRaw, source = "drawio_element_style") => {
+    return overlayMutationGateway.setDrawioElementStylePreset(elementIdRaw, presetIdRaw, source);
+  }, [overlayMutationGateway]);
+
+  const setDrawioElementSize = useCallback((elementIdRaw, sizeRaw, source = "drawio_element_resize") => {
+    return overlayMutationGateway.setDrawioElementSize(elementIdRaw, sizeRaw, source);
+  }, [overlayMutationGateway]);
+
   const runtimeActions = useProcessStageRuntimeGlue(runtimeGlueConfig);
 
   return {
@@ -230,5 +246,9 @@ export default function useDiagramRuntimeBridges({
     toggleDrawioLock,
     setDrawioElementVisible,
     setDrawioElementLocked,
+    setDrawioElementText,
+    setDrawioElementTextWidth,
+    setDrawioElementStylePreset,
+    setDrawioElementSize,
   };
 }

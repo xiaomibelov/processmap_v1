@@ -27,14 +27,17 @@ export default function AppShell({
   onOpenOrgSettings,
   projects,
   projectId,
+  projectWorkspaceId,
   onProjectChange,
   onDeleteProject,
   canManageProjectEntities,
   sessions,
   sessionId,
+  sessionStatus,
   onOpenSession,
   onOpenWorkspaceSession,
   onDeleteSession,
+  onChangeSessionStatus,
   onNewProject,
   onNewBackendSession,
   llmHasApiKey,
@@ -54,21 +57,31 @@ export default function AppShell({
   onSessionSync,
   onRecalculateRtiers,
   snapshotRestoreNotice,
+  onSnapshotRestoreNoticeConsumed,
+  selectedPropertiesOverlayPreview,
+  propertiesOverlayAlwaysEnabled = false,
+  propertiesOverlayAlwaysPreviewByElementId = null,
   sessionNavNotice,
   onDismissSessionNavNotice,
   onReturnToSessionList,
 }) {
-  const workspaceClass = `workspace ${leftHidden ? "workspace--leftHidden" : leftCompact ? "workspace--leftCompact" : ""}`.trim();
+  const hasActiveSession = String(sessionId || "").trim().length > 0;
+  const effectiveLeftHidden = hasActiveSession ? !!leftHidden : true;
+  const workspaceClass = `workspace ${effectiveLeftHidden ? "workspace--leftHidden" : leftCompact ? "workspace--leftCompact" : ""}`.trim();
+  const workspaceBackHandler = hasActiveSession
+    ? (() => onReturnToSessionList?.())
+    : (() => onProjectChange?.(""));
 
   useEffect(() => {
     // eslint-disable-next-line no-console
-    console.debug(`[UI] sidebar.render collapsed=${leftHidden ? 1 : 0} class=${workspaceClass}`);
-  }, [leftHidden, workspaceClass]);
+    console.debug(`[UI] sidebar.render collapsed=${effectiveLeftHidden ? 1 : 0} class=${workspaceClass}`);
+  }, [effectiveLeftHidden, workspaceClass]);
 
   useEffect(() => {
     function onKeyDown(event) {
       const isHotkey = (event.ctrlKey || event.metaKey) && String(event.key || "") === "\\";
       if (!isHotkey) return;
+      if (!hasActiveSession) return;
       event.preventDefault();
       onToggleLeft?.("hotkey");
     }
@@ -76,10 +89,10 @@ export default function AppShell({
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [onToggleLeft]);
+  }, [hasActiveSession, onToggleLeft]);
 
   return (
-    <div className={"appRoot graphite " + (leftHidden ? "leftHidden" : "")}>
+    <div className={"appRoot graphite " + (hasActiveSession && effectiveLeftHidden ? "leftHidden" : "")}>
       <TopBar
         backendStatus={backendStatus}
         backendHint={backendHint}
@@ -94,9 +107,11 @@ export default function AppShell({
         onProjectChange={onProjectChange}
         sessions={sessions}
         sessionId={sessionId}
+        sessionStatus={sessionStatus}
         onDeleteSession={onDeleteSession}
+        onChangeSessionStatus={onChangeSessionStatus}
         onOpenSession={onOpenSession}
-        onOpenWorkspace={onReturnToSessionList}
+        onOpenWorkspace={workspaceBackHandler}
         onNewProject={onNewProject}
         onNewBackendSession={onNewBackendSession}
         llmHasApiKey={llmHasApiKey}
@@ -109,6 +124,7 @@ export default function AppShell({
         llmVerifyBusy={llmVerifyBusy}
         onSaveLlmSettings={onSaveLlmSettings}
         onVerifyLlmSettings={onVerifyLlmSettings}
+        draft={draft}
       />
 
       {sessionNavNotice ? (
@@ -130,13 +146,14 @@ export default function AppShell({
       ) : null}
 
       <div className={workspaceClass}>
-        <div className={leftHidden ? "workspaceLeft workspaceLeft--rail" : `workspaceLeft ${leftCompact ? "workspaceLeft--compact" : "flex min-w-0 flex-col"}`.trim()}>
-          <div className={leftHidden ? "workspaceLeftContent workspaceLeftContent--hidden" : "workspaceLeftContent"}>
+        <div className={effectiveLeftHidden ? "workspaceLeft workspaceLeft--rail" : `workspaceLeft ${leftCompact ? "workspaceLeft--compact" : "flex min-w-0 flex-col"}`.trim()}>
+          <div className={effectiveLeftHidden ? "workspaceLeftContent workspaceLeftContent--hidden" : "workspaceLeftContent"}>
             {left}
           </div>
-          {leftHidden ? (
+          {effectiveLeftHidden ? (
             <SidebarHandle
               sections={sidebarHandleSections}
+              disabled={!hasActiveSession}
               onClick={(sectionId) => onToggleLeft?.(`global_handle:${String(sectionId || "open")}`)}
             />
           ) : null}
@@ -145,6 +162,7 @@ export default function AppShell({
           <ProcessStage
             sessionId={sessionId}
             activeProjectId={projectId}
+            activeProjectWorkspaceId={projectWorkspaceId}
             workspaceActiveOrgId={activeOrgId}
             canInviteWorkspaceUsers={!!canInviteWorkspaceUsers}
             canManageSharedTemplates={!!canManageSharedTemplates}
@@ -153,6 +171,7 @@ export default function AppShell({
             onPatchDraft={onPatchDraft}
             onSessionSync={onSessionSync}
             onOpenWorkspaceSession={onOpenWorkspaceSession}
+            onClearWorkspaceProject={() => onProjectChange?.("")}
             onCreateWorkspaceProject={onNewProject}
             onCreateWorkspaceSession={onNewBackendSession}
             onOpenWorkspaceOrgSettings={onOpenOrgSettings}
@@ -166,7 +185,11 @@ export default function AppShell({
             onOpenElementNotes={onOpenElementNotes}
             onElementNotesRemap={onElementNotesRemap}
             snapshotRestoreNotice={snapshotRestoreNotice}
+            onSnapshotRestoreNoticeConsumed={onSnapshotRestoreNoticeConsumed}
             onRecalculateRtiers={onRecalculateRtiers}
+            selectedPropertiesOverlayPreview={selectedPropertiesOverlayPreview}
+            propertiesOverlayAlwaysEnabled={propertiesOverlayAlwaysEnabled}
+            propertiesOverlayAlwaysPreviewByElementId={propertiesOverlayAlwaysPreviewByElementId}
           />
         </div>
       </div>

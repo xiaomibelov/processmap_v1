@@ -52,6 +52,38 @@ test("buildOverlayPanelModel: drawio ON without preview is degraded preview_miss
   assert.equal(model.hybridLegacy.totalCount, 4);
 });
 
+test("buildOverlayPanelModel: drawio placement-ready state is visible without persisted preview", () => {
+  const model = buildOverlayPanelModel({
+    drawioState: {
+      enabled: true,
+      interaction_mode: "edit",
+      active_tool: "rect",
+      opacity: 1,
+      doc_xml: "",
+      svg_cache: "",
+      drawio_elements_v1: [],
+    },
+    drawioEditorStatus: {},
+    hybridVisible: false,
+    hybridTotalCount: 0,
+    hybridModeEffective: "view",
+    hybridUiPrefs: { lock: false, opacity: 60 },
+    hybridV2HiddenCount: 0,
+    hybridLayerRenderRows: [],
+    hybridV2Renderable: { elements: [] },
+    hybridV2BindingByHybridId: {},
+    drawioSelectedElementId: "",
+    hybridV2ActiveId: "",
+    hybridV2SelectedIds: [],
+    legacyActiveElementId: "",
+  });
+  assert.equal(model.status.key, "on_placement_ready");
+  assert.equal(model.drawio.statusLabel, "ON · placement ready");
+  assert.equal(model.drawio.visibleOnCanvas, true);
+  assert.equal(model.drawio.opacityControlEnabled, true);
+  assert.equal(model.status.previewStatus, "placement_ready");
+});
+
 test("buildOverlayPanelModel: drawio mode is owned by drawio state, not hybrid mode", () => {
   const model = buildOverlayPanelModel({
     drawioState: {
@@ -80,4 +112,47 @@ test("buildOverlayPanelModel: drawio mode is owned by drawio state, not hybrid m
   assert.equal(model.drawio.visibleOnCanvas, true);
   assert.equal(model.drawio.opacityControlEnabled, true);
   assert.equal(model.hybridLegacy.mode, "view");
+});
+
+test("buildOverlayPanelModel: hybrid focus reports actual dimming effect, not stored pref", () => {
+  const hiddenModel = buildOverlayPanelModel({
+    drawioState: {},
+    drawioEditorStatus: {},
+    hybridVisible: false,
+    hybridTotalCount: 0,
+    hybridModeEffective: "view",
+    hybridUiPrefs: { lock: false, opacity: 60, focus: true },
+    hybridV2HiddenCount: 0,
+    hybridLayerRenderRows: [],
+    hybridV2Renderable: { elements: [] },
+    hybridV2BindingByHybridId: {},
+    drawioSelectedElementId: "",
+    hybridV2ActiveId: "",
+    hybridV2SelectedIds: [],
+    legacyActiveElementId: "",
+  });
+  assert.equal(hiddenModel.hybridLegacy.visible, false);
+  assert.equal(hiddenModel.hybridLegacy.focusPref, true);
+  assert.equal(hiddenModel.hybridLegacy.focusActive, false);
+  assert.equal(hiddenModel.hybridLegacy.focus, false);
+
+  const visibleModel = buildOverlayPanelModel({
+    drawioState: {},
+    drawioEditorStatus: {},
+    hybridVisible: true,
+    hybridTotalCount: 0,
+    hybridModeEffective: "view",
+    hybridUiPrefs: { lock: false, opacity: 60, focus: true },
+    hybridV2HiddenCount: 0,
+    hybridLayerRenderRows: [],
+    hybridV2Renderable: { elements: [] },
+    hybridV2BindingByHybridId: {},
+    drawioSelectedElementId: "",
+    hybridV2ActiveId: "",
+    hybridV2SelectedIds: [],
+    legacyActiveElementId: "",
+  });
+  assert.equal(visibleModel.hybridLegacy.visible, true);
+  assert.equal(visibleModel.hybridLegacy.focusActive, true);
+  assert.equal(visibleModel.hybridLegacy.focus, true);
 });

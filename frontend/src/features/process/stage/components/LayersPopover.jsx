@@ -1,8 +1,21 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 import { pushDeleteTrace } from "../utils/deleteTrace";
 import { OVERLAY_ENTITY_KINDS } from "../../drawio/domain/drawioEntityKinds";
 import { resolveDrawioToolIntent } from "../../drawio/runtime/drawioCreateGuard.js";
+import { readDrawioElementSnapshot, readDrawioTextElementContent } from "../../drawio/drawioSvg.js";
+import {
+  getRuntimeStylePresets,
+  matchRuntimeStylePreset,
+  resolveRuntimeStyleSurface,
+} from "../../drawio/drawioRuntimeStylePresets.js";
+import {
+  readRuntimeResizableSize,
+  resolveRuntimeResizeSurface,
+} from "../../drawio/drawioRuntimeGeometry.js";
+import { readRuntimeTextState } from "../../drawio/drawioRuntimeText.js";
+import { readDrawioDocXmlCellGeometry } from "../../drawio/drawioDocXml.js";
+import { resolveSelectedObjectUxModel } from "../../drawio/drawioSelectedObjectUx.js";
 
 function toText(value) {
   return String(value || "").trim();
@@ -154,6 +167,26 @@ function OverlayRowsSection({
   );
 }
 
+function SelectedObjectGroup({
+  title,
+  hint = "",
+  children,
+  testId = "",
+}) {
+  return (
+    <div
+      className="rounded-md border border-slate-200 bg-slate-50/70 p-2"
+      data-testid={testId || undefined}
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-[11px] font-medium text-slate-700">{title}</span>
+        {hint ? <span className="text-[10px] text-slate-500">{hint}</span> : null}
+      </div>
+      <div className="space-y-2">{children}</div>
+    </div>
+  );
+}
+
 export default function LayersPopover({
   open,
   popoverRef,
@@ -180,6 +213,10 @@ export default function LayersPopover({
   onToggleDrawioLock,
   onSetDrawioElementVisible,
   onSetDrawioElementLocked,
+  onSetDrawioElementText,
+  onSetDrawioElementTextWidth,
+  onSetDrawioElementStylePreset,
+  onSetDrawioElementSize,
   onImportEmbeddedDrawioClick,
   onExportEmbeddedDrawio,
   hybridV2DocLive,
@@ -211,7 +248,6 @@ export default function LayersPopover({
   onHideSelectedHybridItems,
   onLockSelectedHybridItems,
 }) {
-  if (!open) return null;
   const drawioEnabled = !!drawioState?.enabled;
   const drawioLocked = !!drawioState?.locked;
   const drawioHasDoc = toText(drawioState?.doc_xml).length > 0;
@@ -280,8 +316,149 @@ export default function LayersPopover({
     ? "Редактирование"
     : (drawioMode === "view" ? "Просмотр" : "Выключен");
   const hybridVisibleLabel = hybridVisible ? "Вкл" : "Выкл";
+  const hybridFocusActive = panelHybridLegacy.focusActive === true;
   const canHideSelected = selectedIsDrawio ? !!selectedEntityId : selectedHybridCount > 0;
   const canLockSelected = selectedIsDrawio ? !!selectedEntityId : selectedHybridCount > 0;
+  const selectedDrawioRow = useMemo(() => (
+    selectedIsDrawio
+      ? asObject(asArray(drawioState?.drawio_elements_v1).find((rowRaw) => toText(asObject(rowRaw).id) === selectedEntityId))
+      : {}
+  ), [drawioState?.drawio_elements_v1, selectedEntityId, selectedIsDrawio]);
+  const selectedDrawioText = useMemo(() => {
+    if (!selectedIsDrawio || !selectedEntityId) return null;
+    return readDrawioTextElementContent(drawioState?.svg_cache, selectedEntityId);
+  }, [drawioState?.svg_cache, selectedEntityId, selectedIsDrawio]);
+  const selectedDrawioSnapshot = useMemo(() => {
+    if (!selectedIsDrawio || !selectedEntityId) return null;
+    return readDrawioElementSnapshot(drawioState?.svg_cache, selectedEntityId);
+  }, [drawioState?.svg_cache, selectedEntityId, selectedIsDrawio]);
+  const selectedDrawioDocGeometry = useMemo(() => {
+    if (!selectedIsDrawio || !selectedEntityId) return null;
+    return readDrawioDocXmlCellGeometry(drawioState?.doc_xml, selectedEntityId);
+  }, [drawioState?.doc_xml, selectedEntityId, selectedIsDrawio]);
+  const selectedDrawioStyleSurface = useMemo(
+    () => resolveRuntimeStyleSurface(selectedDrawioSnapshot),
+    [selectedDrawioSnapshot],
+  );
+  const selectedDrawioStylePresets = useMemo(
+    () => getRuntimeStylePresets(selectedDrawioStyleSurface),
+    [selectedDrawioStyleSurface],
+  );
+  const selectedDrawioStylePreset = useMemo(
+    () => matchRuntimeStylePreset(selectedDrawioStyleSurface, selectedDrawioSnapshot?.attrs),
+    [selectedDrawioSnapshot?.attrs, selectedDrawioStyleSurface],
+  );
+  const selectedDrawioTextEditable = selectedDrawioText != null;
+  const selectedDrawioTextState = useMemo(() => {
+    if (!selectedIsDrawio || !selectedEntityId || !selectedDrawioTextEditable) return null;
+    return readRuntimeTextState(drawioState?.svg_cache, selectedEntityId, {
+      docGeometryRaw: selectedDrawioDocGeometry,
+    });
+  }, [
+    drawioState?.svg_cache,
+    selectedDrawioDocGeometry,
+    selectedDrawioTextEditable,
+    selectedEntityId,
+    selectedIsDrawio,
+  ]);
+  const selectedDrawioResizeSurface = useMemo(
+    () => resolveRuntimeResizeSurface(selectedDrawioSnapshot),
+    [selectedDrawioSnapshot],
+  );
+  const selectedDrawioSize = useMemo(
+    () => readRuntimeResizableSize(selectedDrawioSnapshot),
+    [selectedDrawioSnapshot],
+  );
+  const selectedDrawioTextActionEnabled = selectedDrawioTextEditable
+    && drawioEnabled
+    && drawioMode === "edit"
+    && !drawioLocked
+    && selectedDrawioRow.visible !== false
+    && selectedDrawioRow.locked !== true;
+  const selectedDrawioStyleActionEnabled = !!selectedDrawioStyleSurface
+    && drawioEnabled
+    && drawioMode === "edit"
+    && !drawioLocked
+    && selectedDrawioRow.visible !== false
+    && selectedDrawioRow.locked !== true;
+  const selectedDrawioResizeActionEnabled = !!selectedDrawioResizeSurface
+    && !!selectedDrawioSize
+    && drawioEnabled
+    && drawioMode === "edit"
+    && !drawioLocked
+    && selectedDrawioRow.visible !== false
+    && selectedDrawioRow.locked !== true;
+  const [selectedDrawioTextDraft, setSelectedDrawioTextDraft] = useState(selectedDrawioText || "");
+  const [selectedDrawioTextWidthDraft, setSelectedDrawioTextWidthDraft] = useState(selectedDrawioTextState?.width ? String(selectedDrawioTextState.width) : "");
+  const [selectedDrawioWidthDraft, setSelectedDrawioWidthDraft] = useState(selectedDrawioSize?.width ? String(selectedDrawioSize.width) : "");
+  const [selectedDrawioHeightDraft, setSelectedDrawioHeightDraft] = useState(selectedDrawioSize?.height ? String(selectedDrawioSize.height) : "");
+  const selectedObjectUx = useMemo(() => resolveSelectedObjectUxModel({
+    selectedKind,
+    selectedEntityId,
+    selectedLayerId,
+    selectedDrawioTextEditable,
+    selectedDrawioTextState,
+    selectedDrawioStyleSurface,
+    selectedDrawioStylePresetCount: selectedDrawioStylePresets.length,
+    selectedDrawioResizeSurface,
+  }), [
+    selectedDrawioResizeSurface,
+    selectedDrawioStylePresets.length,
+    selectedDrawioStyleSurface,
+    selectedDrawioTextEditable,
+    selectedDrawioTextState,
+    selectedEntityId,
+    selectedKind,
+    selectedLayerId,
+  ]);
+
+  useEffect(() => {
+    setSelectedDrawioTextDraft(selectedDrawioText || "");
+  }, [selectedDrawioText, selectedEntityId]);
+
+  useEffect(() => {
+    setSelectedDrawioTextWidthDraft(selectedDrawioTextState?.width ? String(selectedDrawioTextState.width) : "");
+  }, [selectedDrawioTextState?.width, selectedEntityId]);
+
+  useEffect(() => {
+    setSelectedDrawioWidthDraft(selectedDrawioSize?.width ? String(selectedDrawioSize.width) : "");
+    setSelectedDrawioHeightDraft(selectedDrawioSize?.height ? String(selectedDrawioSize.height) : "");
+  }, [selectedDrawioSize?.height, selectedDrawioSize?.width, selectedEntityId]);
+
+  const applySelectedDrawioText = () => {
+    if (!selectedDrawioTextActionEnabled || !selectedEntityId) return;
+    const changed = onSetDrawioElementText?.(
+      selectedEntityId,
+      selectedDrawioTextDraft,
+      "layers_selected_drawio_text_apply",
+    );
+    if (changed) {
+      setSelectedDrawioTextDraft(selectedDrawioTextDraft);
+    }
+  };
+
+  const applySelectedDrawioTextWidth = () => {
+    if (!selectedDrawioTextEditable || !selectedDrawioTextState || !selectedEntityId) return;
+    onSetDrawioElementTextWidth?.(
+      selectedEntityId,
+      selectedDrawioTextWidthDraft,
+      "layers_selected_drawio_text_width_apply",
+    );
+  };
+
+  const applySelectedDrawioSize = () => {
+    if (!selectedDrawioResizeActionEnabled || !selectedEntityId || !selectedDrawioSize) return;
+    onSetDrawioElementSize?.(
+      selectedEntityId,
+      {
+        width: selectedDrawioWidthDraft,
+        height: selectedDrawioHeightDraft,
+      },
+      "layers_selected_drawio_resize_apply",
+    );
+  };
+
+  if (!open) return null;
 
   return (
     <div
@@ -539,14 +716,23 @@ export default function LayersPopover({
             <label className="diagramActionCheckboxRow">
               <input
                 type="checkbox"
-                checked={!!hybridUiPrefs.focus}
+                checked={hybridFocusActive}
                 onChange={toggleHybridLayerFocus}
+                disabled={!hybridVisible}
                 data-testid="diagram-action-layers-focus"
               />
               <span>Затемнить BPMN</span>
             </label>
           </div>
         </div>
+        {!hybridVisible ? (
+          <div className="diagramIssueRow">
+            <span>Затемнение</span>
+            <span className="diagramIssueChip" data-testid="diagram-action-layers-focus-status">
+              недоступно, пока Hybrid / Legacy hidden
+            </span>
+          </div>
+        ) : null}
 
         <OverlayRowsSection
           title={`Hybrid elements (${hybridRows.length})`}
@@ -689,18 +875,207 @@ export default function LayersPopover({
       <div className="diagramToolbarOverlaySection">
         <div className="diagramToolbarOverlayTitle">Selected object</div>
         <div className="diagramIssueRows">
-        <div className="diagramIssueRow">
-          <span>Выбрано</span>
-          <span className="diagramIssueChip" data-testid="diagram-action-layers-selection-chip">
-            {selectedLabel} · {kindLabel(selectedKind)}
-          </span>
-        </div>
-        <div className="diagramIssueRow">
-          <span>ID / слой</span>
-          <span className="diagramIssueChip">
-            {selectedEntityId || "—"}{selectedLayerId ? ` · ${selectedLayerId}` : ""}
-          </span>
-        </div>
+          <div className="diagramIssueRow">
+            <span>Выбрано</span>
+            <span className="diagramIssueChip" data-testid="diagram-action-layers-selection-chip">
+              {selectedLabel} · {kindLabel(selectedKind)}
+            </span>
+          </div>
+          <div className="diagramIssueRow">
+            <span>Тип</span>
+            <div className="diagramActionPopoverActions mt-0">
+              <span className="diagramIssueChip" data-testid="diagram-action-layers-selected-type-chip">
+                {selectedObjectUx.typeLabel}
+              </span>
+              {selectedObjectUx.advancedBoundaryLabel ? (
+                <span className="diagramIssueChip" data-testid="diagram-action-layers-selected-advanced-chip">
+                  {selectedObjectUx.advancedBoundaryLabel}
+                </span>
+              ) : null}
+            </div>
+          </div>
+          <div className="diagramIssueRow">
+            <span>ID / слой</span>
+            <span className="diagramIssueChip">
+              {selectedEntityId || "—"}{selectedLayerId ? ` · ${selectedLayerId}` : ""}
+            </span>
+          </div>
+          <div className="diagramIssueRow items-start">
+            <span>Здесь доступно</span>
+            <div
+              className="flex min-w-0 flex-1 flex-wrap gap-2"
+              data-testid="diagram-action-layers-selected-capability-list"
+            >
+              {selectedObjectUx.capabilities.length > 0 ? selectedObjectUx.capabilities.map((capability) => (
+                <span
+                  key={`selected_capability_${capability.id}`}
+                  className="diagramIssueChip"
+                  data-testid={`diagram-action-layers-selected-capability-${capability.id}`}
+                >
+                  {capability.label}
+                </span>
+              )) : (
+                <span className="diagramIssueChip">нет быстрых действий</span>
+              )}
+            </div>
+          </div>
+          <div className="diagramActionPopoverEmpty">{selectedObjectUx.summary}</div>
+          {selectedIsDrawio && selectedObjectUx.showTextSection ? (
+            <SelectedObjectGroup
+              title="Текст"
+              hint="Enter = применить"
+              testId="diagram-action-layers-selected-group-text"
+            >
+              <div className="diagramIssueRow items-start">
+                <span>Содержимое</span>
+                <div className="flex min-w-0 flex-1 items-start gap-2">
+                  <input
+                    type="text"
+                    className="min-w-0 flex-1 rounded border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-900"
+                    value={selectedDrawioTextDraft}
+                    onChange={(event) => setSelectedDrawioTextDraft(event.target.value)}
+                    disabled={!selectedDrawioTextActionEnabled}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter") return;
+                      event.preventDefault();
+                      applySelectedDrawioText();
+                    }}
+                    data-testid="diagram-action-layers-selected-text-input"
+                  />
+                  <button
+                    type="button"
+                    className="secondaryBtn h-7 px-2 text-[11px]"
+                    onClick={applySelectedDrawioText}
+                    disabled={!selectedDrawioTextActionEnabled || selectedDrawioTextDraft === selectedDrawioText}
+                    data-testid="diagram-action-layers-selected-text-apply"
+                  >
+                    Применить
+                  </button>
+                </div>
+              </div>
+              {selectedObjectUx.showTextWidthSection ? (
+                <div className="diagramIssueRow items-start">
+                  <span>Ширина текста</span>
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                    <input
+                      type="number"
+                      min="80"
+                      max="800"
+                      step="1"
+                      className="min-w-0 w-24 rounded border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-900"
+                      value={selectedDrawioTextWidthDraft}
+                      onChange={(event) => setSelectedDrawioTextWidthDraft(event.target.value)}
+                      disabled={!selectedDrawioTextActionEnabled}
+                      data-testid="diagram-action-layers-selected-text-width-input"
+                    />
+                    <span className="diagramIssueChip" data-testid="diagram-action-layers-selected-text-auto-height">
+                      auto H {Math.round(Number(selectedDrawioTextState?.height || 0))}
+                    </span>
+                    <button
+                      type="button"
+                      className="secondaryBtn h-7 px-2 text-[11px]"
+                      onClick={applySelectedDrawioTextWidth}
+                      disabled={!selectedDrawioTextActionEnabled || selectedDrawioTextWidthDraft === String(selectedDrawioTextState?.width)}
+                      data-testid="diagram-action-layers-selected-text-width-apply"
+                    >
+                      Применить
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </SelectedObjectGroup>
+          ) : null}
+          {selectedIsDrawio && selectedObjectUx.showStyleSection ? (
+            <SelectedObjectGroup
+              title={selectedObjectUx.styleSectionLabel}
+              hint="1 клик"
+              testId="diagram-action-layers-selected-group-style"
+            >
+              <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+                {selectedDrawioStylePresets.map((preset) => {
+                  const isActive = toText(selectedDrawioStylePreset?.id) === toText(preset.id);
+                  const swatchColor = toText(preset.svg?.fill || preset.svg?.stroke || "#cbd5e1");
+                  return (
+                    <button
+                      key={`drawio_style_${preset.id}`}
+                      type="button"
+                      className={`secondaryBtn flex h-7 items-center gap-2 px-2 text-[11px] ${isActive ? "ring-1 ring-accent/60" : ""}`}
+                      onClick={() => onSetDrawioElementStylePreset?.(
+                        selectedEntityId,
+                        preset.id,
+                        `layers_selected_drawio_style_${preset.id}`,
+                      )}
+                      disabled={!selectedDrawioStyleActionEnabled}
+                      data-testid={`diagram-action-layers-selected-style-${preset.id}`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="inline-block h-3 w-3 rounded-full border border-slate-300"
+                        style={{ backgroundColor: swatchColor }}
+                      />
+                      <span>{toText(preset.label)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </SelectedObjectGroup>
+          ) : null}
+          {selectedIsDrawio && selectedObjectUx.showResizeSection ? (
+            <SelectedObjectGroup
+              title={selectedObjectUx.resizeSectionLabel}
+              hint="Введите W/H и примените"
+              testId="diagram-action-layers-selected-group-size"
+            >
+              <div className="diagramIssueRow items-start">
+                <span>Размер</span>
+                <div className="flex min-w-0 flex-1 items-start gap-2">
+                  <div className="flex min-w-0 flex-1 items-center gap-1">
+                    <span className="text-[11px] text-slate-500">W</span>
+                    <input
+                      type="number"
+                      min="24"
+                      max="1600"
+                      step="1"
+                      className="min-w-0 w-20 rounded border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-900"
+                      value={selectedDrawioWidthDraft}
+                      onChange={(event) => setSelectedDrawioWidthDraft(event.target.value)}
+                      disabled={!selectedDrawioResizeActionEnabled}
+                      data-testid="diagram-action-layers-selected-width-input"
+                    />
+                  </div>
+                  <div className="flex min-w-0 flex-1 items-center gap-1">
+                    <span className="text-[11px] text-slate-500">H</span>
+                    <input
+                      type="number"
+                      min="24"
+                      max="1600"
+                      step="1"
+                      className="min-w-0 w-20 rounded border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-900"
+                      value={selectedDrawioHeightDraft}
+                      onChange={(event) => setSelectedDrawioHeightDraft(event.target.value)}
+                      disabled={!selectedDrawioResizeActionEnabled}
+                      data-testid="diagram-action-layers-selected-height-input"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="secondaryBtn h-7 px-2 text-[11px]"
+                    onClick={applySelectedDrawioSize}
+                    disabled={
+                      !selectedDrawioResizeActionEnabled
+                      || (
+                        String(selectedDrawioWidthDraft || "") === String(selectedDrawioSize?.width)
+                        && String(selectedDrawioHeightDraft || "") === String(selectedDrawioSize?.height)
+                      )
+                    }
+                    data-testid="diagram-action-layers-selected-size-apply"
+                  >
+                    Применить
+                  </button>
+                </div>
+              </div>
+            </SelectedObjectGroup>
+          ) : null}
         <div className="diagramIssueRow">
           <span>Действия</span>
           <div className="diagramActionPopoverActions mt-0">
@@ -778,29 +1153,36 @@ export default function LayersPopover({
             </button>
           </div>
         </div>
-        <div className="diagramIssueRow">
-          <span>Привязка</span>
-          <div className="diagramActionPopoverActions mt-0">
-            <button
-              type="button"
-              className={`secondaryBtn h-7 px-2 text-[11px] ${hybridV2BindPickMode ? "ring-1 ring-accent/60" : ""}`}
-              onClick={() => setHybridV2BindPickMode((prev) => !prev)}
-              disabled={!hybridV2ActiveId || hybridModeEffective !== "edit"}
-              data-testid="diagram-action-layers-bind-pick"
-            >
-              {hybridV2BindPickMode ? "Выбор BPMN: ВКЛ" : "Привязать к BPMN"}
-            </button>
-            <button
-              type="button"
-              className="secondaryBtn h-7 px-2 text-[11px]"
-              onClick={goToActiveHybridBinding}
-              disabled={!toText(asObject(hybridV2BindingByHybridId?.[hybridV2ActiveId]).bpmn_id)}
-              data-testid="diagram-action-layers-go-bound"
-            >
-              Перейти к привязке
-            </button>
-          </div>
-        </div>
+          {selectedObjectUx.showBindingSection ? (
+            <div className="diagramIssueRow">
+              <span>Привязка</span>
+              <div className="diagramActionPopoverActions mt-0">
+                <button
+                  type="button"
+                  className={`secondaryBtn h-7 px-2 text-[11px] ${hybridV2BindPickMode ? "ring-1 ring-accent/60" : ""}`}
+                  onClick={() => setHybridV2BindPickMode((prev) => !prev)}
+                  disabled={!hybridV2ActiveId || hybridModeEffective !== "edit"}
+                  data-testid="diagram-action-layers-bind-pick"
+                >
+                  {hybridV2BindPickMode ? "Выбор BPMN: ВКЛ" : "Привязать к BPMN"}
+                </button>
+                <button
+                  type="button"
+                  className="secondaryBtn h-7 px-2 text-[11px]"
+                  onClick={goToActiveHybridBinding}
+                  disabled={!toText(asObject(hybridV2BindingByHybridId?.[hybridV2ActiveId]).bpmn_id)}
+                  data-testid="diagram-action-layers-go-bound"
+                >
+                  Перейти к привязке
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {selectedIsDrawio && selectedObjectUx.advancedHint ? (
+            <div className="diagramActionPopoverEmpty" data-testid="diagram-action-layers-selected-advanced-note">
+              {selectedObjectUx.advancedHint}
+            </div>
+          ) : null}
       </div>
       </div>
 

@@ -95,7 +95,7 @@ export default function LoginModal({ open, onClose, onSuccess, locked = false })
     >
       <div
         ref={dialogRef}
-        className="w-full max-w-md rounded-2xl border border-border bg-panel p-5 shadow-panel"
+        className="w-full max-w-md -translate-y-6 rounded-2xl border border-border bg-panel p-5 shadow-panel md:-translate-y-10"
         tabIndex={-1}
       >
         <LoginForm

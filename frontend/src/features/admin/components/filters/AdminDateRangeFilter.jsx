@@ -1,3 +1,5 @@
+import { ru } from "../../../../shared/i18n/ru";
+
 export default function AdminDateRangeFilter({
   value = "",
   onChange,
@@ -8,11 +10,10 @@ export default function AdminDateRangeFilter({
       value={value}
       onChange={(event) => onChange?.(event.target.value)}
     >
-      <option value="">All time</option>
-      <option value="24h">Last 24h</option>
-      <option value="7d">Last 7d</option>
-      <option value="30d">Last 30d</option>
+      <option value="">{ru.admin.filters.dateRange.all}</option>
+      <option value="24h">{ru.admin.filters.dateRange.last24h}</option>
+      <option value="7d">{ru.admin.filters.dateRange.last7d}</option>
+      <option value="30d">{ru.admin.filters.dateRange.last30d}</option>
     </select>
   );
 }
-

@@ -1,5 +1,11 @@
+import { readRuntimeTextState, updateRuntimeTextLayout } from "./drawioRuntimeText.js";
+
 function toText(value) {
   return String(value || "").trim();
+}
+
+function escapeRegExp(valueRaw) {
+  return String(valueRaw || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function escapeAttr(valueRaw) {
@@ -123,4 +129,74 @@ export function extractDrawioElementIdsFromSvg(svgRaw, options = {}) {
     match = re.exec(body);
   }
   return Array.from(ids);
+}
+
+export function readDrawioTextElementContent(svgRaw, elementIdRaw) {
+  return readRuntimeTextState(svgRaw, elementIdRaw)?.text ?? null;
+}
+
+export function updateDrawioTextElementContent(svgRaw, elementIdRaw, nextTextRaw) {
+  return updateRuntimeTextLayout(svgRaw, elementIdRaw, { textRaw: nextTextRaw }).svg;
+}
+
+function upsertElementAttr(attrsRaw, attrNameRaw, attrValueRaw) {
+  const attrs = String(attrsRaw || "");
+  const attrName = String(attrNameRaw || "").trim();
+  if (!attrName) return attrs;
+  const attrPattern = new RegExp(`\\s${escapeRegExp(attrName)}\\s*=\\s*(\"([^\"]*)\"|'([^']*)')`, "i");
+  const attrValue = attrValueRaw == null ? null : String(attrValueRaw);
+  if (attrValue == null) {
+    return attrs.replace(attrPattern, "");
+  }
+  if (attrPattern.test(attrs)) {
+    return attrs.replace(attrPattern, ` ${attrName}="${escapeAttr(attrValue)}"`);
+  }
+  return `${attrs} ${attrName}="${escapeAttr(attrValue)}"`;
+}
+
+export function readDrawioElementSnapshot(svgRaw, elementIdRaw) {
+  const svg = toText(svgRaw);
+  const elementId = toText(elementIdRaw);
+  if (!svg || !elementId) return null;
+  const pattern = new RegExp(
+    `<([a-zA-Z][a-zA-Z0-9:_-]*)\\b([^>]*?)\\bid\\s*=\\s*["']${escapeRegExp(elementId)}["']([^>]*)>`,
+    "i",
+  );
+  const match = svg.match(pattern);
+  if (!match) return null;
+  const tagName = toText(match[1]).toLowerCase();
+  const attrsRaw = `${String(match[2] || "")}${String(match[3] || "")}`;
+  const attrs = {};
+  const attrPattern = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*("([^"]*)"|'([^']*)')/g;
+  let attrMatch = attrPattern.exec(attrsRaw);
+  while (attrMatch) {
+    const key = toText(attrMatch[1]);
+    const value = String(attrMatch[3] || attrMatch[4] || "");
+    if (key) attrs[key] = value;
+    attrMatch = attrPattern.exec(attrsRaw);
+  }
+  return {
+    tagName,
+    attrs,
+  };
+}
+
+export function updateDrawioElementAttributes(svgRaw, elementIdRaw, patchRaw = {}) {
+  const svg = toText(svgRaw);
+  const elementId = toText(elementIdRaw);
+  const patch = patchRaw && typeof patchRaw === "object" ? patchRaw : {};
+  if (!svg || !elementId || Object.keys(patch).length === 0) return svg;
+  const pattern = new RegExp(
+    `(<([a-zA-Z][a-zA-Z0-9:_-]*)\\b)([^>]*?\\bid\\s*=\\s*["']${escapeRegExp(elementId)}["'][^>]*?)(\\/?>)`,
+    "i",
+  );
+  const match = svg.match(pattern);
+  if (!match) return svg;
+  return svg.replace(pattern, (_fullMatch, openPrefix, _tagName, attrsRaw, closePart) => {
+    let nextAttrs = String(attrsRaw || "");
+    Object.entries(patch).forEach(([key, value]) => {
+      nextAttrs = upsertElementAttr(nextAttrs, key, value);
+    });
+    return `${openPrefix}${nextAttrs}${closePart}`;
+  });
 }

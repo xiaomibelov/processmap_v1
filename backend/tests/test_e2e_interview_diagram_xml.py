@@ -234,7 +234,7 @@ class E2EInterviewDiagramXmlTest(unittest.TestCase):
         os.environ["PROCESS_STORAGE_DIR"] = self.tmp_sessions.name
         os.environ["PROJECT_STORAGE_DIR"] = self.tmp_projects.name
 
-        from app.main import (
+        from app._legacy_main import (
             BpmnXmlIn,
             CreateSessionIn,
             UpdateSessionIn,
@@ -257,7 +257,9 @@ class E2EInterviewDiagramXmlTest(unittest.TestCase):
         self.get_session_analytics = get_session_analytics
         self.patch_session = patch_session
         self.recompute = recompute
-        self.session_bpmn_export = session_bpmn_export
+        self.session_bpmn_export = lambda sid, raw=0, include_overlay=1: (
+            session_bpmn_export(sid, raw=raw, include_overlay=include_overlay)
+        )
         self.session_bpmn_save = session_bpmn_save
 
     def tearDown(self):

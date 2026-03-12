@@ -489,6 +489,77 @@
   pointer-events: none;
 }
 
+.fpcPropertyOverlay {
+  pointer-events: none;
+  display: block;
+  max-width: 268px;
+  transform: translate(-50%, calc(-100% - 12px));
+  z-index: 17;
+}
+
+.fpcPropertyOverlay--table {
+  pointer-events: none;
+}
+
+.fpcPropertyTable {
+  pointer-events: none;
+  display: grid;
+  gap: 4px;
+  max-width: 100%;
+  min-width: 172px;
+}
+
+.fpcPropertyRow {
+  pointer-events: none;
+  display: grid;
+  grid-template-columns: minmax(64px, 40%) minmax(90px, 60%);
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
+  border-radius: 8px;
+  border: 1px solid hsl(var(--diagram-badge-border) / 0.66);
+  background: hsl(var(--diagram-badge-bg) / 0.95);
+  color: hsl(var(--diagram-badge-text) / 1);
+  padding: 2px 8px;
+  box-shadow:
+    0 0 0 1px hsl(var(--diagram-badge-border) / 0.22) inset,
+    0 3px 8px hsl(var(--bg) / 0.18);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: .01em;
+}
+
+.fpcPropertyCell {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fpcPropertyCell--key {
+  color: hsl(var(--diagram-badge-text) / 0.74);
+}
+
+.fpcPropertyCell--value {
+  color: hsl(var(--diagram-badge-text) / 1);
+  font-weight: 700;
+}
+
+.fpcPropertyRow--tone1 { background: color-mix(in srgb, hsl(var(--diagram-badge-bg) / 0.95) 58%, #dff0ff 42%); border-left: 3px solid #6eb2e4; }
+.fpcPropertyRow--tone2 { background: color-mix(in srgb, hsl(var(--diagram-badge-bg) / 0.95) 58%, #e5f9de 42%); border-left: 3px solid #74c56c; }
+.fpcPropertyRow--tone3 { background: color-mix(in srgb, hsl(var(--diagram-badge-bg) / 0.95) 58%, #fff0d6 42%); border-left: 3px solid #d9a950; }
+.fpcPropertyRow--tone4 { background: color-mix(in srgb, hsl(var(--diagram-badge-bg) / 0.95) 58%, #ede2ff 42%); border-left: 3px solid #a98ddd; }
+.fpcPropertyRow--tone5 { background: color-mix(in srgb, hsl(var(--diagram-badge-bg) / 0.95) 58%, #ffdfe6 42%); border-left: 3px solid #d78296; }
+.fpcPropertyRow--tone6 { background: color-mix(in srgb, hsl(var(--diagram-badge-bg) / 0.95) 58%, #ddf8f0 42%); border-left: 3px solid #66c2a9; }
+
+.fpcPropertyRow--summary {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  font-weight: 700;
+  background: hsl(var(--diagram-badge-bg) / 0.9);
+}
+
 .fpcNodeFlashPill {
   pointer-events: none;
   min-height: 16px;

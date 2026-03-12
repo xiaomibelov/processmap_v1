@@ -1,6 +1,21 @@
 import { useEffect } from "react";
 
-export default function Modal({ open, title, onClose, children, footer }) {
+function cx(...items) {
+  return items.filter(Boolean).join(" ");
+}
+
+export default function Modal({
+  open,
+  title,
+  onClose,
+  children,
+  footer,
+  overlayClassName = "",
+  cardClassName = "",
+  headerClassName = "",
+  bodyClassName = "",
+  footerClassName = "",
+}) {
   useEffect(() => {
     if (!open) return;
 
@@ -23,24 +38,24 @@ export default function Modal({ open, title, onClose, children, footer }) {
 
   return (
     <div
-      className="modalOverlay"
+      className={cx("modalOverlay", overlayClassName)}
       role="dialog"
       aria-modal="true"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose?.();
       }}
     >
-      <div className="modalCard">
-        <div className="modalHeader">
+      <div className={cx("modalCard", cardClassName)}>
+        <div className={cx("modalHeader", headerClassName)}>
           <div className="modalTitle">{title || ""}</div>
           <button type="button" className="iconBtn" onClick={onClose} title="Закрыть">
             ✕
           </button>
         </div>
 
-        <div className="modalBody">{children}</div>
+        <div className={cx("modalBody", bodyClassName)}>{children}</div>
 
-        {footer ? <div className="modalFooter">{footer}</div> : null}
+        {footer ? <div className={cx("modalFooter", footerClassName)}>{footer}</div> : null}
       </div>
     </div>
   );

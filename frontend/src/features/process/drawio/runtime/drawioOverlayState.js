@@ -123,7 +123,8 @@ function collectDrawioElementIdsFromTarget(targetRaw, rootRaw) {
   let node = target;
   while (node instanceof Element) {
     if (!root.contains(node)) break;
-    const id = toText(node.getAttribute("data-drawio-el-id"));
+    const tagName = toText(node.tagName).toLowerCase();
+    const id = toText(node.getAttribute("data-drawio-el-id") || (tagName === "text" ? node.getAttribute("id") : ""));
     if (id && !seen.has(id)) {
       seen.add(id);
       ids.push(id);

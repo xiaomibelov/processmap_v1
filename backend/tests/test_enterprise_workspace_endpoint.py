@@ -23,13 +23,8 @@ class EnterpriseWorkspaceEndpointTest(unittest.TestCase):
         os.environ.pop("PROCESS_DB_PATH", None)
 
         from app.auth import create_user
-        from app.main import (
-            CreateProjectIn,
-            CreateSessionIn,
-            create_org_project,
-            create_org_project_session,
-            enterprise_workspace,
-        )
+        from app._legacy_main import CreateSessionIn, create_org_project, create_org_project_session, enterprise_workspace
+        from app.models import CreateProjectIn
         from app.storage import (
             get_default_org_id,
             get_storage,

@@ -5,6 +5,19 @@ import {
   ROBOT_EXECUTOR_OPTIONS,
   robotMetaMissingFields,
 } from "../../features/process/robotmeta/robotMeta";
+import {
+  CAMUNDA_LISTENER_EVENTS,
+  CAMUNDA_LISTENER_TYPES,
+  createEmptyCamundaExtensionState,
+  normalizeCamundaExtensionState,
+} from "../../features/process/camunda/camundaExtensions";
+import {
+  buildVisibleExtensionPropertyRows,
+  buildPropertyDictionaryEditorModel,
+  countVisibleExtensionPropertyRows,
+  setSchemaPropertyValueInExtensionState,
+  shouldOfferAddDictionaryValueAction,
+} from "../../features/process/camunda/propertyDictionaryModel";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -679,6 +692,677 @@ export function RobotMetaSettings({
 
       {robotMetaInfo ? <div className="text-[11px] text-muted">{robotMetaInfo}</div> : null}
       {robotMetaErr ? <div className="selectedNodeFieldError">{robotMetaErr}</div> : null}
+    </div>
+  );
+}
+
+function SidebarInfoTip({ text = "", label = "Пояснение" }) {
+  const tipText = String(text || "").trim();
+  if (!tipText) return null;
+  return (
+    <span className="sidebarInfoTipWrap">
+      <button
+        type="button"
+        className="sidebarInfoTip"
+        aria-label={label}
+        tabIndex={0}
+      >
+        i
+      </button>
+      <span className="sidebarInfoTipBubble" role="tooltip">
+        {tipText}
+      </span>
+    </span>
+  );
+}
+
+export function CamundaPropertiesSettings({
+  selectedElementId,
+  camundaPropertiesEditable = false,
+  extensionStateDraft = null,
+  extensionStateBusy = false,
+  extensionStateErr = "",
+  extensionStateInfo = "",
+  dictionaryBundle = null,
+  dictionaryLoading = false,
+  dictionaryError = "",
+  dictionaryAddBusyKey = "",
+  operationKey = "",
+  operationOptions = [],
+  operationSelectionBusy = false,
+  showPropertiesOverlay = false,
+  showPropertiesOverlayAlways = false,
+  onExtensionStateDraftChange,
+  onOperationKeyChange,
+  onShowPropertiesOverlayChange,
+  onShowPropertiesOverlayAlwaysChange,
+  onAddDictionaryValue,
+  onOpenDictionaryManager,
+  onSaveExtensionState,
+  onResetExtensionState,
+  disabled = false,
+}) {
+  const [listenersOpen, setListenersOpen] = useState(true);
+  const [expandedBpmnRows, setExpandedBpmnRows] = useState({});
+  const state = extensionStateDraft && typeof extensionStateDraft === "object"
+    ? extensionStateDraft
+    : createEmptyCamundaExtensionState();
+  const properties = Array.isArray(state?.properties?.extensionProperties)
+    ? state.properties.extensionProperties
+    : [];
+  const listeners = Array.isArray(state?.properties?.extensionListeners)
+    ? state.properties.extensionListeners
+    : [];
+  const normalizedState = useMemo(() => normalizeCamundaExtensionState(state), [state]);
+  const dictionaryEditorModel = useMemo(
+    () => buildPropertyDictionaryEditorModel({ extensionStateRaw: state, dictionaryBundleRaw: dictionaryBundle }),
+    [state, dictionaryBundle],
+  );
+  const visibleFallbackProperties = useMemo(
+    () => buildVisibleExtensionPropertyRows(state).rows,
+    [state],
+  );
+  const hasDictionarySchema = dictionaryEditorModel.hasSchema;
+  const propertyCount = useMemo(
+    () => countVisibleExtensionPropertyRows(state),
+    [state],
+  );
+  const listenerCount = normalizedState.properties.extensionListeners.length;
+  const operationLabel = String(dictionaryEditorModel?.operationLabel || operationKey || "").trim();
+  const normalizedOperationKey = String(operationKey || "").trim();
+  const normalizedOperationOptions = useMemo(
+    () => asArray(operationOptions).map((item) => {
+      const row = item && typeof item === "object" ? item : {};
+      const key = String(row.operationKey || row.operation_key || "").trim();
+      if (!key) return null;
+      const label = String(row.operationLabel || row.operation_label || key).trim();
+      const isActive = row.isActive ?? row.is_active ?? true;
+      const sortOrder = Number.isFinite(Number(row.sortOrder || row.sort_order))
+        ? Number(row.sortOrder || row.sort_order)
+        : 0;
+      return {
+        key,
+        label,
+        isActive: !!isActive,
+        sortOrder,
+      };
+    }).filter(Boolean)
+      .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || String(a.label || "").localeCompare(String(b.label || ""), "ru")),
+    [operationOptions],
+  );
+  const selectedOperationOption = normalizedOperationOptions.find((item) => item.key === normalizedOperationKey) || null;
+  const hasOperationChoices = normalizedOperationOptions.length > 0;
+  const operationDisplayLabel = String(operationLabel || selectedOperationOption?.label || normalizedOperationKey || "").trim();
+
+  function isBpmnRowExpanded(rowIdRaw) {
+    const rowId = String(rowIdRaw || "").trim();
+    if (!rowId) return false;
+    return !!expandedBpmnRows[rowId];
+  }
+
+  function setBpmnRowExpanded(rowIdRaw, nextOpen) {
+    const rowId = String(rowIdRaw || "").trim();
+    if (!rowId) return;
+    setExpandedBpmnRows((prev) => {
+      const next = { ...(prev || {}) };
+      if (nextOpen) {
+        next[rowId] = true;
+      } else {
+        delete next[rowId];
+      }
+      return next;
+    });
+  }
+
+  useEffect(() => {
+    const knownIds = new Set(
+      properties
+        .map((row) => String(row?.id || "").trim())
+        .filter(Boolean),
+    );
+    setExpandedBpmnRows((prev) => {
+      const current = prev && typeof prev === "object" ? prev : {};
+      let changed = false;
+      const next = {};
+      Object.keys(current).forEach((rowId) => {
+        if (knownIds.has(rowId) && !!current[rowId]) {
+          next[rowId] = true;
+        } else {
+          changed = true;
+        }
+      });
+      return changed ? next : current;
+    });
+  }, [properties]);
+
+  function updateDraft(nextState) {
+    onExtensionStateDraftChange?.(nextState);
+  }
+
+  function replaceExtensionProperties(nextExtensionProperties) {
+    updateDraft({
+      ...state,
+      properties: {
+        ...(state.properties || {}),
+        extensionProperties: nextExtensionProperties,
+        extensionListeners: listeners,
+      },
+    });
+  }
+
+  function updatePropertyRow(rowId, patch = {}) {
+    replaceExtensionProperties(properties.map((row) => (
+      String(row?.id || "") === String(rowId || "")
+        ? { ...row, ...patch }
+        : row
+    )));
+  }
+
+  function addPropertyRow() {
+    replaceExtensionProperties([...properties, { id: `prop_draft_${Date.now()}`, name: "", value: "" }]);
+  }
+
+  function deletePropertyRow(rowId) {
+    replaceExtensionProperties(properties.filter((row) => String(row?.id || "") !== String(rowId || "")));
+  }
+
+  function renderCustomPropertyRow(row) {
+    const rowId = String(row?.id || "").trim();
+    const isExpanded = isBpmnRowExpanded(rowId);
+    const previewName = String(row?.name || "").trim() || "name";
+    const previewValue = String(row?.value || "").trim() || "—";
+    return (
+      <details
+        key={rowId || String(row?.id || "")}
+        className={`sidebarBpmnPropertyItem ${isExpanded ? "isOpen" : ""}`}
+        open={isExpanded}
+      >
+        <summary
+          className="sidebarBpmnPropertySummary"
+          onClick={(event) => {
+            event.preventDefault();
+            setBpmnRowExpanded(rowId, !isExpanded);
+          }}
+        >
+          <span className="sidebarBpmnPropertyPreviewKey" title={previewName}>{previewName}</span>
+          <span className="sidebarBpmnPropertyPreviewValue" title={previewValue}>{previewValue}</span>
+          <span className="sidebarBpmnPropertySummaryActions">
+            <button
+              type="button"
+              className="secondaryBtn sidebarPropertiesActionBtn sidebarPropertiesActionBtn--tiny px-2"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setBpmnRowExpanded(rowId, !isExpanded);
+              }}
+              disabled={!!disabled || !!extensionStateBusy}
+            >
+              {isExpanded ? "Свернуть" : "Изменить"}
+            </button>
+            <button
+              type="button"
+              className="secondaryBtn sidebarPropertiesActionBtn sidebarPropertiesActionBtn--tiny px-2"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                deletePropertyRow(row?.id);
+              }}
+              disabled={!!disabled || !!extensionStateBusy}
+            >
+              Удалить
+            </button>
+          </span>
+        </summary>
+        {isExpanded ? (
+          <div className="sidebarBpmnPropertyEditor">
+            <label className="sidebarBpmnEditorField">
+              <span className="sidebarBpmnEditorLabel">Name</span>
+              <input
+                className="input w-full min-w-0"
+                placeholder="Название"
+                value={String(row?.name || "")}
+                onChange={(event) => updatePropertyRow(row?.id, { name: event.target.value })}
+                disabled={!!disabled || !!extensionStateBusy}
+              />
+            </label>
+            <label className="sidebarBpmnEditorField">
+              <span className="sidebarBpmnEditorLabel">Value</span>
+              <input
+                className="input w-full min-w-0"
+                placeholder="Значение"
+                value={String(row?.value || "")}
+                onChange={(event) => updatePropertyRow(row?.id, { value: event.target.value })}
+                disabled={!!disabled || !!extensionStateBusy}
+              />
+            </label>
+          </div>
+        ) : null}
+      </details>
+    );
+  }
+
+  function updateSchemaPropertyValue(propertyKey, value) {
+    updateDraft(setSchemaPropertyValueInExtensionState({
+      extensionStateRaw: state,
+      dictionaryBundleRaw: dictionaryBundle,
+      propertyKey,
+      value,
+    }));
+  }
+
+  function renderSchemaPropertyRow(row) {
+    const logicalKey = String(row?.propertyKey || row?.name || "");
+    const label = String(row?.propertyLabel || logicalKey || "");
+    const options = Array.isArray(row?.options) ? row.options : [];
+    const datalistId = selectedElementId ? `property_dict_${selectedElementId}_${logicalKey}` : "";
+    const canAddTypedValue = shouldOfferAddDictionaryValueAction({
+      inputValue: row?.value,
+      options,
+      allowCustomValue: row?.allowCustomValue,
+      busy: dictionaryAddBusyKey === logicalKey,
+    });
+    return (
+      <div key={`schema_property_${logicalKey}`} className="sidebarSchemaPropertyRow">
+        <div className="sidebarSchemaPropertyLabel">
+          <div className="sidebarSchemaPropertyHuman">{label}</div>
+          {logicalKey ? <div className="sidebarSchemaPropertyKey">{logicalKey}</div> : null}
+        </div>
+        <div className="sidebarSchemaPropertyValueCell">
+          <input
+            className="input w-full min-w-0 flex-[1_1_220px]"
+            placeholder={row?.inputMode === "free_text" ? "Введите значение" : "Выберите или введите значение"}
+            value={String(row?.value || "")}
+            list={row?.inputMode === "autocomplete" && options.length ? datalistId : undefined}
+            onChange={(event) => updateSchemaPropertyValue(logicalKey, event.target.value)}
+            disabled={!!disabled || !!extensionStateBusy}
+            title={String(row?.value || "")}
+          />
+        </div>
+        <div className="sidebarSchemaPropertyActionCell">
+          <button
+            type="button"
+            className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
+            onClick={() => updateSchemaPropertyValue(logicalKey, "")}
+            disabled={!!disabled || !!extensionStateBusy || !String(row?.value || "").trim()}
+          >
+            Очистить
+          </button>
+        </div>
+        {row?.inputMode === "autocomplete" && options.length ? (
+          <datalist id={datalistId}>
+            {options.map((option) => (
+              <option
+                key={`schema_property_option_${logicalKey}_${String(option?.id || option?.optionValue || "")}`}
+                value={String(option?.optionValue || "")}
+              />
+            ))}
+          </datalist>
+        ) : null}
+        {row?.inputMode === "autocomplete" && !options.length ? (
+          <div className="sidebarFieldHint sidebarSchemaPropertyHint">
+            {row?.allowCustomValue ? "Пока нет значений. Можно ввести своё." : "Для этого свойства пока нет значений."}
+          </div>
+        ) : null}
+        {canAddTypedValue ? (
+          <div className="sidebarSchemaPropertyHint">
+            <button
+              type="button"
+              className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
+              onClick={() => {
+                void onAddDictionaryValue?.(logicalKey, row?.value);
+              }}
+              disabled={!!disabled || !!extensionStateBusy || dictionaryAddBusyKey === logicalKey}
+            >
+              {dictionaryAddBusyKey === logicalKey
+                ? "Добавляю..."
+                : `Добавить «${String(row?.value || "").trim()}» в справочник`}
+            </button>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function updateListenerRow(rowId, patch = {}) {
+    updateDraft({
+      ...state,
+      properties: {
+        ...(state.properties || {}),
+        extensionProperties: properties,
+        extensionListeners: listeners.map((row) => (
+          String(row?.id || "") === String(rowId || "")
+            ? { ...row, ...patch }
+            : row
+        )),
+      },
+    });
+  }
+
+  function addListenerRow() {
+    updateDraft({
+      ...state,
+      properties: {
+        ...(state.properties || {}),
+        extensionProperties: properties,
+        extensionListeners: [...listeners, {
+          id: `listener_draft_${Date.now()}`,
+          event: "start",
+          type: "expression",
+          value: "",
+        }],
+      },
+    });
+  }
+
+  function deleteListenerRow(rowId) {
+    updateDraft({
+      ...state,
+      properties: {
+        ...(state.properties || {}),
+        extensionProperties: properties,
+        extensionListeners: listeners.filter((row) => String(row?.id || "") !== String(rowId || "")),
+      },
+    });
+  }
+
+  if (!selectedElementId) {
+    return <div className="sidebarEmptyHint">Выберите узел для настройки свойств.</div>;
+  }
+
+  if (!camundaPropertiesEditable) {
+    return <div className="sidebarEmptyHint">Свойства доступны только для BPMN-узлов (не sequenceFlow).</div>;
+  }
+
+  const showSchemaHint = !hasDictionarySchema && !!normalizedOperationKey && !!dictionaryLoading && !dictionaryError;
+  const showFallbackBlock = !hasDictionarySchema && (!normalizedOperationKey || !dictionaryLoading || !!dictionaryError);
+
+  return (
+    <div className="sidebarControlStack sidebarPropertiesLayout">
+      <section className="sidebarPropertiesForm" data-testid="camunda-properties-group">
+        <div className="sidebarPropertiesHeader">
+          <div className="sidebarPropertiesTitleRow">
+            <div className="sidebarPropertiesTitle">Свойства элемента</div>
+            <SidebarInfoTip
+              label="О секции «Свойства элемента»"
+              text="Свойства текущего BPMN-элемента. Часть значений задаётся операцией, часть хранится как BPMN extension properties."
+            />
+          </div>
+          {propertyCount ? <div className="sidebarPropertiesCount">{propertyCount}</div> : null}
+        </div>
+
+        <label className="sidebarPropertiesInlineToggle">
+          <input
+            type="checkbox"
+            checked={!!showPropertiesOverlay}
+            onChange={(event) => {
+              void onShowPropertiesOverlayChange?.(!!event.target.checked);
+            }}
+            disabled={!!disabled || !!extensionStateBusy}
+          />
+          <span>Показывать свойства над задачей при выделении</span>
+        </label>
+
+        <label className="sidebarPropertiesInlineToggle">
+          <input
+            type="checkbox"
+            checked={!!showPropertiesOverlayAlways}
+            onChange={(event) => {
+              void onShowPropertiesOverlayAlwaysChange?.(!!event.target.checked);
+            }}
+            disabled={!!disabled}
+          />
+          <span>Всегда показывать свойства над задачей</span>
+        </label>
+
+        <div className="sidebarPropertiesDivider" />
+
+        <section className="sidebarPropertiesBlock">
+          <div className="sidebarPropertiesBlockHead">
+            <div className="sidebarPropertiesBlockTitle">Операция</div>
+            <SidebarInfoTip
+              label="Что такое операция"
+              text="Операция определяет схему полей, доступных для этого узла."
+            />
+          </div>
+          <div className="sidebarControlRow sidebarOperationRow">
+            <select
+              className="select w-full min-w-0 flex-[1_1_220px]"
+              value={normalizedOperationKey}
+              onChange={(event) => {
+                void onOperationKeyChange?.(event.target.value);
+              }}
+              disabled={!!disabled || !!extensionStateBusy || !!operationSelectionBusy || typeof onOperationKeyChange !== "function"}
+            >
+              <option value="">Не выбрано</option>
+              {normalizedOperationOptions.map((item) => (
+                <option key={`operation_option_${item.key}`} value={item.key}>
+                  {item.label && item.label !== item.key ? `${item.label} (${item.key})` : item.key}
+                </option>
+              ))}
+              {normalizedOperationKey && !selectedOperationOption ? (
+                <option value={normalizedOperationKey}>
+                  {operationDisplayLabel && operationDisplayLabel !== normalizedOperationKey
+                    ? `${operationDisplayLabel} (${normalizedOperationKey})`
+                    : normalizedOperationKey}
+                </option>
+              ) : null}
+            </select>
+            <button
+              type="button"
+              className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
+              onClick={() => onOpenDictionaryManager?.()}
+              disabled={!!disabled}
+            >
+              Справочник
+            </button>
+          </div>
+          {!normalizedOperationKey && !hasOperationChoices ? (
+            <div className="sidebarFieldHint mt-1">
+              Для организации пока нет операций в справочнике.
+            </div>
+          ) : null}
+          {normalizedOperationKey ? (
+            <div className="sidebarOperationSummary">
+              Операция: <span className="font-medium text-fg">{operationDisplayLabel || normalizedOperationKey}</span>
+              <span className="text-muted"> ({normalizedOperationKey})</span>
+            </div>
+          ) : null}
+        </section>
+
+        <div className="sidebarPropertiesDivider" />
+
+        <section className="sidebarPropertiesBlock">
+          <div className="sidebarPropertiesBlockHead">
+            <div className="sidebarPropertiesBlockTitle">Свойства операции</div>
+            <SidebarInfoTip
+              label="О свойствах операции"
+              text="Поля, которые управляются выбранной операцией и её схемой."
+            />
+          </div>
+          {dictionaryLoading ? <div className="sidebarFieldHint">Загружаю справочник организации...</div> : null}
+          {dictionaryError ? <div className="selectedNodeFieldError">{dictionaryError}</div> : null}
+          {showSchemaHint ? (
+            <div className="sidebarFieldHint">
+              Подгружаю свойства операции <span className="font-medium text-fg">{operationDisplayLabel || normalizedOperationKey}</span>.
+            </div>
+          ) : null}
+          {hasDictionarySchema ? (
+            <div className="sidebarPropertiesRows sidebarPropertiesRows--table">
+              <div className="sidebarPropertiesTableHead" role="presentation">
+                <span>Поле</span>
+                <span>Значение</span>
+                <span>Действие</span>
+              </div>
+              {dictionaryEditorModel.schemaRows.map((row) => renderSchemaPropertyRow(row))}
+            </div>
+          ) : null}
+          {showFallbackBlock ? (
+            <div className="sidebarFieldHint">
+              {normalizedOperationKey
+                ? (
+                  <>
+                    Для операции <span className="font-medium text-fg">{operationDisplayLabel || normalizedOperationKey}</span> схема не найдена. Используйте блок «Дополнительные BPMN-свойства».
+                  </>
+                )
+                : "Выберите операцию, чтобы увидеть схему свойств. Пока доступен ручной режим."}
+            </div>
+          ) : null}
+        </section>
+
+        <div className="sidebarPropertiesDivider" />
+
+        <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary">
+          <div className="sidebarPropertiesBlockHead">
+            <div className="sidebarPropertiesBlockTitle">Дополнительные BPMN-свойства</div>
+            <SidebarInfoTip
+              label="О дополнительных BPMN-свойствах"
+              text="Extension properties текущего элемента в формате name/value."
+            />
+          </div>
+          {hasDictionarySchema ? (
+            <>
+              <div className="sidebarPropertiesRows sidebarPropertiesRows--table">
+                <div className="sidebarPropertiesTableHead" role="presentation">
+                  <span>Свойство</span>
+                  <span>Значение</span>
+                  <span>Действие</span>
+                </div>
+                {dictionaryEditorModel.customRows.map((row) => renderCustomPropertyRow(row))}
+              </div>
+              <div className="sidebarButtonRow">
+                <button
+                  type="button"
+                  className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
+                  onClick={addPropertyRow}
+                  disabled={!!disabled || !!extensionStateBusy}
+                >
+                  + Добавить BPMN-свойство
+                </button>
+              </div>
+            </>
+          ) : showFallbackBlock ? (
+            <>
+              <div className="sidebarPropertiesRows sidebarPropertiesRows--table">
+                <div className="sidebarPropertiesTableHead" role="presentation">
+                  <span>Свойство</span>
+                  <span>Значение</span>
+                  <span>Действие</span>
+                </div>
+                {visibleFallbackProperties.map((row) => renderCustomPropertyRow(row))}
+              </div>
+              <div className="sidebarButtonRow">
+                <button
+                  type="button"
+                  className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
+                  onClick={addPropertyRow}
+                  disabled={!!disabled || !!extensionStateBusy}
+                >
+                  + Добавить BPMN-свойство
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="sidebarFieldHint">Ожидаю загрузку схемы операции.</div>
+          )}
+        </section>
+
+        <div className="sidebarPropertiesDivider" />
+
+        <div className="sidebarPropertiesBlockHead">
+          <div className="sidebarPropertiesBlockTitle">Слушатели{listenerCount ? ` (${listenerCount})` : ""}</div>
+          <SidebarInfoTip
+            label="О слушателях"
+            text="Дополнительные BPMN listeners для текущего элемента."
+          />
+        </div>
+        <details
+          className="sidebarPropertiesDisclosure"
+          open={listenersOpen}
+          onToggle={(event) => setListenersOpen(!!event.currentTarget.open)}
+          data-testid="camunda-listeners-group"
+        >
+          <summary className="sidebarPropertiesDisclosureSummary">
+            {listenersOpen ? "Скрыть" : "Показать"}
+          </summary>
+          <div className="mt-2 space-y-2">
+            {listeners.map((row) => (
+              <div key={String(row?.id || "")} className="sidebarControlRow sidebarListenerRow sidebarPropertiesInputRow">
+                <select
+                  className="input w-full min-w-0 flex-[0_1_90px]"
+                  value={String(row?.event || "start")}
+                  onChange={(event) => updateListenerRow(row?.id, { event: event.target.value })}
+                  disabled={!!disabled || !!extensionStateBusy}
+                >
+                  {CAMUNDA_LISTENER_EVENTS.map((option) => (
+                    <option key={`camunda_event_${option}`} value={option}>{option}</option>
+                  ))}
+                </select>
+                <select
+                  className="input w-full min-w-0 flex-[0_1_150px]"
+                  value={String(row?.type || "expression")}
+                  onChange={(event) => updateListenerRow(row?.id, { type: event.target.value })}
+                  disabled={!!disabled || !!extensionStateBusy}
+                >
+                  {CAMUNDA_LISTENER_TYPES.map((option) => (
+                    <option key={`camunda_listener_type_${option}`} value={option}>{option}</option>
+                  ))}
+                </select>
+                <input
+                  className="input w-full min-w-0 flex-[1_1_180px]"
+                  placeholder="Значение"
+                  value={String(row?.value || "")}
+                  onChange={(event) => updateListenerRow(row?.id, { value: event.target.value })}
+                  disabled={!!disabled || !!extensionStateBusy}
+                />
+                <button
+                  type="button"
+                  className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
+                  onClick={() => deleteListenerRow(row?.id)}
+                  disabled={!!disabled || !!extensionStateBusy}
+                >
+                  Удалить
+                </button>
+              </div>
+            ))}
+            <div className="sidebarButtonRow">
+              <button
+                type="button"
+                className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
+                onClick={addListenerRow}
+                disabled={!!disabled || !!extensionStateBusy}
+              >
+                + Добавить слушатель
+              </button>
+            </div>
+          </div>
+        </details>
+
+        <div className="sidebarPropertiesFooter sidebarButtonRow">
+          <button
+            type="button"
+            className="primaryBtn sidebarPropertiesPrimaryAction px-3"
+            onClick={() => {
+              void onSaveExtensionState?.();
+            }}
+            disabled={!!disabled || !!extensionStateBusy}
+          >
+            {extensionStateBusy ? "Сохраняю..." : "Сохранить"}
+          </button>
+          <button
+            type="button"
+            className="secondaryBtn sidebarPropertiesActionBtn px-3"
+            onClick={() => {
+              void onResetExtensionState?.();
+            }}
+            disabled={!!disabled || !!extensionStateBusy}
+          >
+            Сбросить
+          </button>
+        </div>
+      </section>
+
+      {extensionStateInfo ? <div className="text-[11px] text-muted">{extensionStateInfo}</div> : null}
+      {extensionStateErr ? <div className="selectedNodeFieldError">{extensionStateErr}</div> : null}
     </div>
   );
 }

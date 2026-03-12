@@ -18,6 +18,7 @@ import { applyOpsToModeler } from "../../features/process/bpmn/ops/applyOps";
 import { elementNotesCount, normalizeElementNotesMap } from "../../features/notes/elementNotes";
 import { measureInterviewPerf } from "./interview/perf";
 import pmModdleDescriptor from "../../features/process/robotmeta/pmModdleDescriptor";
+import camundaModdleDescriptor from "../../features/process/camunda/camundaModdleDescriptor";
 import {
   canonicalRobotMetaMapString,
   extractRobotMetaFromBpmn,
@@ -27,7 +28,15 @@ import {
   robotMetaMissingFields,
   syncRobotMetaToBpmn,
 } from "../../features/process/robotmeta/robotMeta";
+import {
+  extractCamundaExtensionsMapFromBpmnXml,
+  finalizeCamundaExtensionsXml,
+  hydrateCamundaExtensionsFromBpmn,
+  normalizeCamundaExtensionsMap,
+  syncCamundaExtensionsToBpmn,
+} from "../../features/process/camunda/camundaExtensions";
 import { normalizeExecutionPlanVersionList } from "../../features/process/robotmeta/executionPlan";
+import { normalizeHybridLayerMap } from "../../features/process/hybrid/hybridLayerUi";
 import { buildExecutionGraphFromInstance } from "../../features/process/playback/buildExecutionGraph";
 
 import "bpmn-js/dist/assets/diagram-js.css";
@@ -602,6 +611,17 @@ function getCanvasSnapshot(inst) {
   }
 }
 
+function emitCurrentViewboxSnapshot(inst, emitViewboxChanged, mode, meta = {}) {
+  if (typeof emitViewboxChanged !== "function") return;
+  const snap = getCanvasSnapshot(inst);
+  emitViewboxChanged({
+    mode: String(mode || "").trim() || "editor",
+    suppressed: true,
+    snapshot: snap,
+    ...meta,
+  });
+}
+
 function isAnyShapeInViewport(inst) {
   try {
     const canvas = inst?.get?.("canvas");
@@ -1102,6 +1122,9 @@ const BpmnStage = forwardRef(function BpmnStage({
   robotMetaOverlayEnabled = false,
   robotMetaOverlayFilters = { ready: true, incomplete: true },
   robotMetaStatusByElementId = {},
+  selectedPropertiesOverlayPreview = null,
+  propertiesOverlayAlwaysEnabled = false,
+  propertiesOverlayAlwaysPreviewByElementId = null,
 }, ref) {
   const viewerEl = useRef(null);
   const editorEl = useRef(null);
@@ -1144,6 +1167,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const userNotesOverlayStateRef = useRef({ viewer: [], editor: [] });
   const stepTimeOverlayStateRef = useRef({ viewer: [], editor: [] });
   const robotMetaDecorStateRef = useRef({ viewer: {}, editor: {} });
+  const propertiesOverlayStateRef = useRef({ viewer: {}, editor: {} });
   const playbackDecorStateRef = useRef({
     viewer: createPlaybackDecorRuntimeState(),
     editor: createPlaybackDecorRuntimeState(),
@@ -1167,6 +1191,9 @@ const BpmnStage = forwardRef(function BpmnStage({
   const robotMetaOverlayEnabledRef = useRef(!!robotMetaOverlayEnabled);
   const robotMetaOverlayFiltersRef = useRef(asObject(robotMetaOverlayFilters));
   const robotMetaStatusByElementIdRef = useRef(asObject(robotMetaStatusByElementId));
+  const selectedPropertiesOverlayPreviewRef = useRef(asObject(selectedPropertiesOverlayPreview));
+  const propertiesOverlayAlwaysEnabledRef = useRef(!!propertiesOverlayAlwaysEnabled);
+  const propertiesOverlayAlwaysPreviewByElementIdRef = useRef(asObject(propertiesOverlayAlwaysPreviewByElementId));
   const replaceCommandStateRef = useRef({
     oldId: "",
     oldType: "",
@@ -1196,6 +1223,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const renderRunRef = useRef(0);
   const modelerImportInFlightRef = useRef({ sid: "", xmlHash: "", promise: null });
   const robotMetaHydrateStateRef = useRef({ key: "" });
+  const camundaHydrateStateRef = useRef({ key: "" });
   const prevViewRef = useRef(view);
   const runtimeTokenRef = useRef(0);
   const runtimeStatusRef = useRef({
@@ -1276,6 +1304,18 @@ const BpmnStage = forwardRef(function BpmnStage({
   useEffect(() => {
     robotMetaStatusByElementIdRef.current = asObject(robotMetaStatusByElementId);
   }, [robotMetaStatusByElementId]);
+
+  useEffect(() => {
+    selectedPropertiesOverlayPreviewRef.current = asObject(selectedPropertiesOverlayPreview);
+  }, [selectedPropertiesOverlayPreview]);
+
+  useEffect(() => {
+    propertiesOverlayAlwaysEnabledRef.current = !!propertiesOverlayAlwaysEnabled;
+  }, [propertiesOverlayAlwaysEnabled]);
+
+  useEffect(() => {
+    propertiesOverlayAlwaysPreviewByElementIdRef.current = asObject(propertiesOverlayAlwaysPreviewByElementId);
+  }, [propertiesOverlayAlwaysPreviewByElementId]);
 
   useEffect(() => {
     draftRef.current = draft;
@@ -1366,6 +1406,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     {
       forceTaskResizeRulesModule,
       pmModdleDescriptor,
+      camundaModdleDescriptor,
     },
   );
 
@@ -1939,10 +1980,23 @@ const BpmnStage = forwardRef(function BpmnStage({
     return normalizeRobotMetaMap(meta.robot_meta_by_element_id);
   }
 
+  function getCamundaExtensionsMap() {
+    const d = asObject(draftRef.current);
+    const meta = asObject(d.bpmn_meta);
+    return normalizeCamundaExtensionsMap(meta.camunda_extensions_by_element_id);
+  }
+
   function syncRobotMetaToModeler(inst) {
     return syncRobotMetaToBpmn({
       modeler: inst,
       robotMetaByElementId: getRobotMetaMap(),
+    });
+  }
+
+  function syncCamundaExtensionsToModeler(inst) {
+    return syncCamundaExtensionsToBpmn({
+      modeler: inst,
+      camundaExtensionsByElementId: getCamundaExtensionsMap(),
     });
   }
 
@@ -2006,6 +2060,10 @@ const BpmnStage = forwardRef(function BpmnStage({
       flow_meta: normalizeFlowTierMetaMap(currentMeta?.flow_meta),
       node_path_meta: normalizeNodePathMetaMap(currentMeta?.node_path_meta),
       robot_meta_by_element_id: nextMap,
+      camunda_extensions_by_element_id: normalizeCamundaExtensionsMap(currentMeta?.camunda_extensions_by_element_id),
+      hybrid_layer_by_element_id: normalizeHybridLayerMap(currentMeta?.hybrid_layer_by_element_id),
+      hybrid_v2: currentMeta?.hybrid_v2,
+      drawio: currentMeta?.drawio,
       execution_plans: normalizeExecutionPlanVersionList(currentMeta?.execution_plans),
     };
     onSessionSyncRef.current?.({
@@ -2015,6 +2073,52 @@ const BpmnStage = forwardRef(function BpmnStage({
       _sync_source: "robot_meta_bpmn_hydrate",
     });
     return { ok: true, adopted: true, extractedCount: Object.keys(extractedMap).length, conflicts: conflicts.length };
+  }
+
+  function hydrateCamundaExtensionsFromImportedBpmn(xmlText, source = "import_xml") {
+    const sid = String(activeSessionRef.current || sessionId || "").trim();
+    if (!sid) return { ok: false, reason: "missing_context" };
+
+    const currentSessionMap = getCamundaExtensionsMap();
+    const xmlHash = fnv1aHex(String(xmlText || ""));
+    const currentSessionHash = fnv1aHex(JSON.stringify(currentSessionMap));
+    const preflightKey = `${sid}|${xmlHash}|${currentSessionHash}`;
+    if (camundaHydrateStateRef.current.key === preflightKey) {
+      return { ok: true, skipped: true, reason: "dedup" };
+    }
+
+    const extractedMap = extractCamundaExtensionsMapFromBpmnXml(xmlText);
+    const hydration = hydrateCamundaExtensionsFromBpmn({
+      extractedMap,
+      sessionMetaMap: currentSessionMap,
+    });
+    const nextMap = normalizeCamundaExtensionsMap(hydration?.nextSessionMetaMap);
+    const nextHash = fnv1aHex(JSON.stringify(nextMap));
+    camundaHydrateStateRef.current.key = `${sid}|${xmlHash}|${nextHash}`;
+
+    if (!hydration?.adoptedFromBpmn || !Object.keys(nextMap).length) {
+      return { ok: true, adopted: false, extractedCount: Object.keys(extractedMap).length };
+    }
+
+    const currentMeta = asObject(asObject(draftRef.current).bpmn_meta);
+    const nextMeta = {
+      version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: normalizeFlowTierMetaMap(currentMeta?.flow_meta),
+      node_path_meta: normalizeNodePathMetaMap(currentMeta?.node_path_meta),
+      robot_meta_by_element_id: normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id),
+      camunda_extensions_by_element_id: nextMap,
+      hybrid_layer_by_element_id: normalizeHybridLayerMap(currentMeta?.hybrid_layer_by_element_id),
+      hybrid_v2: currentMeta?.hybrid_v2,
+      drawio: currentMeta?.drawio,
+      execution_plans: normalizeExecutionPlanVersionList(currentMeta?.execution_plans),
+    };
+    onSessionSyncRef.current?.({
+      id: sid,
+      session_id: sid,
+      bpmn_meta: nextMeta,
+      _sync_source: `camunda_extensions_${source}_hydrate`,
+    });
+    return { ok: true, adopted: true, extractedCount: Object.keys(extractedMap).length };
   }
 
   function isAiQuestionsModeOn() {
@@ -2453,6 +2557,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         userNotesOverlayStateRef,
         stepTimeOverlayStateRef,
         robotMetaDecorStateRef,
+        propertiesOverlayStateRef,
         aiQuestionPanelTargetRef,
       },
       getters: {
@@ -2482,6 +2587,9 @@ const BpmnStage = forwardRef(function BpmnStage({
         robotMetaOverlayEnabledRef,
         robotMetaOverlayFiltersRef,
         robotMetaStatusByElementIdRef,
+        selectedPropertiesOverlayPreviewRef,
+        propertiesOverlayAlwaysEnabledRef,
+        propertiesOverlayAlwaysPreviewByElementIdRef,
         aiQuestionPanelTargetRef,
       },
       utils: {
@@ -2737,6 +2845,14 @@ const BpmnStage = forwardRef(function BpmnStage({
     return decorManager.applyRobotMetaDecor(createDecorCtx(inst, kind));
   }
 
+  function clearPropertiesOverlayDecor(inst, kind) {
+    return decorManager.clearPropertiesOverlayDecor(createDecorCtx(inst, kind));
+  }
+
+  function applyPropertiesOverlayDecor(inst, kind) {
+    return decorManager.applyPropertiesOverlayDecor(createDecorCtx(inst, kind));
+  }
+
   function clearPlaybackDecor(inst, kind) {
     return playbackOverlayAdapter.clearPlaybackDecor(inst, kind);
   }
@@ -2955,6 +3071,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     userNotesOverlayStateRef.current = { viewer: [], editor: [] };
     stepTimeOverlayStateRef.current = { viewer: [], editor: [] };
     robotMetaDecorStateRef.current = { viewer: {}, editor: {} };
+    propertiesOverlayStateRef.current = { viewer: {}, editor: {} };
     playbackDecorStateRef.current = {
       viewer: createPlaybackDecorRuntimeState(),
       editor: createPlaybackDecorRuntimeState(),
@@ -3101,7 +3218,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       const Viewer = mod.default || mod;
       const v = new Viewer({
         container: viewerEl.current,
-        moddleExtensions: { pm: pmModdleDescriptor },
+        moddleExtensions: { pm: pmModdleDescriptor, camunda: camundaModdleDescriptor },
       });
       runtimeInstanceSeq += 1;
       viewerInstanceMetaRef.current = {
@@ -3355,6 +3472,9 @@ const BpmnStage = forwardRef(function BpmnStage({
         expectElements: String(nextXml || "").trim().length > 0,
       });
     }
+    emitCurrentViewboxSnapshot(v, emitViewboxChanged, "viewer", {
+      reason: "viewer_import_ready",
+    });
     applyTaskTypeDecor(v, "viewer");
     applyLinkEventDecor(v, "viewer");
     applyHappyFlowDecor(v, "viewer");
@@ -3441,6 +3561,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       }
       if (!m || m !== modelerRef.current) return;
       hydrateRobotMetaFromImportedBpmn(m, nextXml, "renderModeler");
+      hydrateCamundaExtensionsFromImportedBpmn(nextXml, "renderModeler");
       try {
         const canvas = m.get("canvas");
         await waitAnimationFrame();
@@ -3505,6 +3626,9 @@ const BpmnStage = forwardRef(function BpmnStage({
           expectElements: String(nextXml || "").trim().length > 0,
         });
       }
+      emitCurrentViewboxSnapshot(m, emitViewboxChanged, "editor", {
+        reason: "modeler_import_ready",
+      });
       applyTaskTypeDecor(m, "editor");
       applyLinkEventDecor(m, "editor");
       applyHappyFlowDecor(m, "editor");
@@ -3776,6 +3900,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     const source = String(options?.source || (force ? "tab_switch" : "autosave")).trim() || "autosave";
     const trigger = String(options?.trigger || "").trim() || "manual";
     const sid = String(sessionId || "");
+    const allowForceFallback = isLocalSessionId(sid);
     if (!sid) return { ok: false, error: "missing session id" };
     ensureBpmnStore();
     const runtime = ensureModelerRuntime();
@@ -3798,17 +3923,26 @@ const BpmnStage = forwardRef(function BpmnStage({
 
       const activeModeler = modelerRef.current || runtime.getInstance?.();
       const robotSync = syncRobotMetaToModeler(activeModeler);
+      const camundaSync = syncCamundaExtensionsToModeler(activeModeler);
       if (!robotSync?.ok && shouldLogBpmnTrace()) {
         // eslint-disable-next-line no-console
         console.warn(`[ROBOT_META] sync_before_save_failed sid=${sid} reason=${String(robotSync?.reason || "unknown")}`);
       }
+      if (!camundaSync?.ok && shouldLogBpmnTrace()) {
+        // eslint-disable-next-line no-console
+        console.warn(`[CAMUNDA_EXT] sync_before_save_failed sid=${sid} reason=${String(camundaSync?.reason || "unknown")}`);
+      }
 
       const flushed = await coordinator.flushSave(source, { force, trigger });
       const nextState = bpmnStoreRef.current?.getState?.() || {};
-      const out = String(nextState.xml || fallbackXml || "");
+      const rawOut = String(nextState.xml || fallbackXml || "");
+      const out = finalizeCamundaExtensionsXml({
+        xmlText: rawOut,
+        camundaExtensionsByElementId: getCamundaExtensionsMap(),
+      });
 
       if (!flushed?.ok) {
-        if (force && out.trim()) {
+        if (force && allowForceFallback && out.trim()) {
           return { ok: true, xml: out, source: "fallback" };
         }
         return { ok: false, error: String(flushed?.error || "saveXML failed"), xml: out };
@@ -3816,6 +3950,18 @@ const BpmnStage = forwardRef(function BpmnStage({
 
       if (flushed.pending) {
         return { ok: true, pending: true, xml: out, source: "pending" };
+      }
+
+      if (out !== rawOut) {
+        const rev = Number(nextState.rev || 0);
+        const persistedFinalXml = await ensureBpmnPersistence().saveRaw(sid, out, rev, `${source}:camunda_finalize`);
+        if (!persistedFinalXml?.ok) {
+          return { ok: false, error: String(persistedFinalXml?.error || "camunda finalize persist failed"), xml: out };
+        }
+      }
+
+      if (force) {
+        coordinator.clearPendingWork?.(`${source}:after_force_flush`);
       }
 
       traceProcess("bpmn.save_modeler_xml", {
@@ -3833,12 +3979,12 @@ const BpmnStage = forwardRef(function BpmnStage({
         console.error(`[BPMN] saveXML.modeler.error ${msg}\n${String(e?.stack || "")}`);
       }
       if (fallbackXml.trim()) {
-        if (force) {
+        if (force && allowForceFallback) {
           const rev = Number(bpmnStoreRef.current?.getState?.()?.rev || 0);
           const persisted = await ensureBpmnPersistence().saveRaw(sid, fallbackXml, rev, `${source}:catch_fallback`);
           if (!persisted.ok) return { ok: false, error: String(persisted.error || msg), xml: fallbackXml };
+          return { ok: true, xml: fallbackXml, source: "fallback" };
         }
-        return { ok: true, xml: fallbackXml, source: "fallback" };
       }
       return { ok: false, error: msg || "saveXML failed" };
     }
@@ -3896,6 +4042,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     activeSessionRef.current = sid;
     ensureEpochRef.current += 1;
     robotMetaHydrateStateRef.current = { key: "" };
+    camundaHydrateStateRef.current = { key: "" };
     destroyRuntime();
     setErr("");
     const draftNow = asObject(draftRef.current);
@@ -3979,7 +4126,8 @@ const BpmnStage = forwardRef(function BpmnStage({
           if ((!xml || !xml.trim()) && draftXml.trim()) {
             applyXmlSnapshot(draftXml, srcHint || "draft");
           }
-          const modelerReady = !!modelerRef.current && !!modelerReadyRef.current && hasDefinitionsLoaded(modelerRef.current);
+          const modelerHasDefinitions = !!modelerRef.current && hasDefinitionsLoaded(modelerRef.current);
+          const modelerReady = !!modelerRef.current && !!modelerReadyRef.current && modelerHasDefinitions;
           const source = String(storeEvent.source || "");
           const reason = String(storeEvent.reason || "");
           const isInternalModelerUpdate = reason === "setXml"
@@ -4002,7 +4150,7 @@ const BpmnStage = forwardRef(function BpmnStage({
             if (isStale("modeler.keep_view.after")) return;
             return;
           }
-          if (modelerReady && lastModelerXmlHashRef.current === resolvedHash) {
+          if (modelerHasDefinitions && lastModelerXmlHashRef.current === resolvedHash) {
             if (isStale("modeler.same_hash.before")) return;
             await ensureCanvasVisibleAndFit(modelerRef.current, "renderModeler.same_hash", sid, {
               reason: "editor_same_hash",
@@ -4130,6 +4278,12 @@ const BpmnStage = forwardRef(function BpmnStage({
   }, [draft?.bpmn_meta, view]);
 
   useEffect(() => {
+    const inst = modelerRef.current || modelerRuntimeRef.current?.getInstance?.() || null;
+    if (!inst || !modelerReadyRef.current) return;
+    syncCamundaExtensionsToModeler(inst);
+  }, [draft?.bpmn_meta]);
+
+  useEffect(() => {
     if (isInterviewDecorModeOn()) {
       clearUserNotesDecor(viewerRef.current, "viewer");
       clearUserNotesDecor(modelerRef.current, "editor");
@@ -4141,6 +4295,8 @@ const BpmnStage = forwardRef(function BpmnStage({
     applyStepTimeDecor(modelerRef.current, "editor");
     applyRobotMetaDecor(viewerRef.current, "viewer");
     applyRobotMetaDecor(modelerRef.current, "editor");
+    applyPropertiesOverlayDecor(viewerRef.current, "viewer");
+    applyPropertiesOverlayDecor(modelerRef.current, "editor");
     const kind = view === "editor" ? "editor" : "viewer";
     const inst = kind === "editor" ? modelerRef.current : viewerRef.current;
     const selectedId = String(selectedMarkerStateRef.current[kind] || "");
@@ -4164,6 +4320,9 @@ const BpmnStage = forwardRef(function BpmnStage({
     robotMetaOverlayEnabled,
     robotMetaOverlayFilters,
     robotMetaStatusByElementId,
+    selectedPropertiesOverlayPreview,
+    propertiesOverlayAlwaysEnabled,
+    propertiesOverlayAlwaysPreviewByElementId,
   ]);
 
   useEffect(() => {

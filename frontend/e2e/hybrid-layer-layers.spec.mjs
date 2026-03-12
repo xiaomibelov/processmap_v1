@@ -501,6 +501,40 @@ test("hybrid layers: view/edit modes, H peek, and playback safety", async ({ pag
   await expect(page.getByTestId("hybrid-layer-overlay").last()).toBeVisible();
 });
 
+test("hybrid layers: dimming checkbox reflects actual visible effect only", async ({ page, request }) => {
+  test.skip(process.env.E2E_HYBRID_LAYER !== "1", "Set E2E_HYBRID_LAYER=1 to run hybrid layers e2e.");
+
+  const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const auth = await apiLogin(request, { apiBase: API_BASE });
+  const fixture = await createFixture(
+    request,
+    `${runId}_hybrid_focus_truth`,
+    auth.headers,
+    seedXml({ processName: `Hybrid focus truth ${runId}`, taskName: "Hybrid Focus Truth Task" }),
+  );
+
+  await primeAuth(page, auth.accessToken);
+  await openFixtureInTopbar(page, fixture);
+  await switchTab(page, "Diagram");
+  await waitForModelerReady(page);
+
+  await setHybridToggleChecked(page, true);
+  await openLayersPopover(page);
+  const focusToggle = page.getByTestId("diagram-action-layers-focus");
+  await expect(focusToggle).toBeEnabled();
+  await expect(focusToggle).not.toBeChecked();
+  await focusToggle.check({ force: true });
+  await expect(focusToggle).toBeChecked();
+  await expect(page.locator(".bpmnStageHost.isHybridFocus")).toHaveCount(1);
+
+  await setHybridToggleChecked(page, false);
+  await openLayersPopover(page);
+  await expect(focusToggle).toBeDisabled();
+  await expect(focusToggle).not.toBeChecked();
+  await expect(page.getByTestId("diagram-action-layers-focus-status")).toHaveText("недоступно, пока Hybrid / Legacy hidden");
+  await expect(page.locator(".bpmnStageHost.isHybridFocus")).toHaveCount(0);
+});
+
 test("hybrid layers: drag + resize persists rect in diagram space", async ({ page, request }) => {
   test.skip(process.env.E2E_HYBRID_LAYER !== "1", "Set E2E_HYBRID_LAYER=1 to run hybrid layers e2e.");
 

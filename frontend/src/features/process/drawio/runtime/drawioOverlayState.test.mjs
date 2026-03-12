@@ -32,6 +32,30 @@ test("collectDrawioElementIdsFromTarget reads managed data attribute only", () =
   }
 });
 
+test("collectDrawioElementIdsFromTarget can resolve managed text id through tspan parent", () => {
+  const dom = new JSDOM("<!doctype html><html><body></body></html>");
+  const prevElement = globalThis.Element;
+  try {
+    globalThis.Element = dom.window.Element;
+    const { document } = dom.window;
+    const root = document.createElement("div");
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("id", "text_runtime_1");
+    text.setAttribute("data-drawio-el-id", "text_runtime_1");
+    const tspan = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
+    tspan.textContent = "Wrapped";
+    text.appendChild(tspan);
+    root.appendChild(text);
+    document.body.appendChild(root);
+
+    const ids = collectDrawioElementIdsFromTarget(tspan, root);
+    assert.deepEqual(ids, ["text_runtime_1"]);
+  } finally {
+    globalThis.Element = prevElement;
+    dom.window.close();
+  }
+});
+
 test("applyDrawioLayerRenderState keeps unmanaged nodes visible but non-interactive", () => {
   const body = [
     "<g id=\"shape1\"><rect id=\"shape1_inner\"/></g>",

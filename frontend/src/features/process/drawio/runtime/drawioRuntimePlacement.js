@@ -1,3 +1,6 @@
+import { promoteRuntimeElementIntoDrawioDoc } from "../drawioDocXml.js";
+import { buildRuntimeWrappedTextMarkup } from "../drawioRuntimeText.js";
+
 function toText(value) {
   return String(value || "").trim();
 }
@@ -17,7 +20,7 @@ function escapeAttr(valueRaw) {
 
 function normalizeRuntimeTool(toolRaw) {
   const tool = toText(toolRaw).toLowerCase();
-  if (tool === "rect" || tool === "text" || tool === "container") return tool;
+  if (tool === "select" || tool === "rect" || tool === "text" || tool === "container") return tool;
   return "";
 }
 
@@ -41,9 +44,16 @@ function buildRuntimeMarkupByTool({ toolId, elementId, x, y }) {
     return `<rect id="${id}" x="${left}" y="${top}" width="200" height="120" rx="10" fill="rgba(15,23,42,0.04)" stroke="#334155" stroke-width="2" stroke-dasharray="8 4"/>`;
   }
   if (toolId === "text") {
-    const textX = formatNumber(x);
-    const textY = formatNumber(y);
-    return `<text id="${id}" x="${textX}" y="${textY}" fill="#0f172a" font-size="16" font-family="Arial, sans-serif">Text</text>`;
+    return buildRuntimeWrappedTextMarkup({
+      elementIdRaw: id,
+      textRaw: "Text",
+      xRaw: formatNumber(x),
+      yRaw: formatNumber(y),
+      widthRaw: 120,
+      fillRaw: "#0f172a",
+      fontSizeRaw: 16,
+      fontFamilyRaw: "Arial, sans-serif",
+    });
   }
   return "";
 }
@@ -87,7 +97,9 @@ function buildRuntimeElementRow({
   elementId,
   layerIdRaw,
   zIndexRaw,
+  toolIdRaw,
 }) {
+  const toolId = normalizeRuntimeTool(toolIdRaw);
   return {
     id: toText(elementId),
     layer_id: toText(layerIdRaw) || "DL1",
@@ -98,6 +110,7 @@ function buildRuntimeElementRow({
     offset_x: 0,
     offset_y: 0,
     z_index: Math.max(0, Math.round(toNumber(zIndexRaw, 0))),
+    ...(toolId === "text" ? { text: "Text" } : {}),
   };
 }
 
@@ -130,6 +143,7 @@ function buildRuntimePlacementPatch({
     elementId: createdId,
     layerIdRaw: activeLayerId,
     zIndexRaw: rows.length,
+    toolIdRaw: toolId,
   }));
   return {
     changed: true,
@@ -139,6 +153,11 @@ function buildRuntimePlacementPatch({
       enabled: true,
       interaction_mode: "edit",
       active_tool: toolId,
+      doc_xml: promoteRuntimeElementIntoDrawioDoc(meta.doc_xml, {
+        elementId: createdId,
+        toolId,
+        point: { x, y },
+      }),
       svg_cache: svgCache,
       drawio_layers_v1: layers,
       active_layer_id: activeLayerId,
@@ -151,4 +170,3 @@ export {
   normalizeRuntimeTool,
   buildRuntimePlacementPatch,
 };
-

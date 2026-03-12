@@ -4,6 +4,7 @@ import JobsSummaryRow from "../components/jobs/JobsSummaryRow";
 import JobsTable from "../components/jobs/JobsTable";
 import QueueHealthWidget from "../components/jobs/QueueHealthWidget";
 import { asArray, toText } from "../utils/adminFormat";
+import { ru } from "../../../shared/i18n/ru";
 
 export default function AdminJobsPage({
   payload = {},
@@ -15,14 +16,14 @@ export default function AdminJobsPage({
       secondary={(
         <div className="grid gap-4 xl:grid-cols-2">
           <QueueHealthWidget payload={payload?.queue_health || {}} />
-          <SectionCard title="Recent Failures" subtitle="Quick access to last failed jobs" eyebrow="Attention">
+          <SectionCard title={ru.admin.jobsPage.recentFailuresTitle} subtitle={ru.admin.jobsPage.recentFailuresSubtitle} eyebrow={ru.admin.jobsPage.recentFailuresEyebrow}>
             <div className="space-y-2">
               {failedRows.length ? failedRows.map((row) => (
                 <div key={toText(row?.job_id)} className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-3">
                   <div className="text-sm font-medium text-slate-950">{toText(row?.job_id)}</div>
-                  <div className="mt-1 text-xs text-slate-500">{toText(row?.session_id || "—")} · {toText(row?.last_error || "failed")}</div>
+                  <div className="mt-1 text-xs text-slate-500">{toText(row?.session_id || "—")} · {toText(row?.last_error || ru.admin.jobsPage.failedLabel)}</div>
                 </div>
-              )) : <div className="text-sm text-slate-500">No failed jobs in current payload.</div>}
+              )) : <div className="text-sm text-slate-500">{ru.admin.jobsPage.recentFailuresEmpty}</div>}
             </div>
           </SectionCard>
         </div>
@@ -32,4 +33,3 @@ export default function AdminJobsPage({
     </AdminPageContainer>
   );
 }
-

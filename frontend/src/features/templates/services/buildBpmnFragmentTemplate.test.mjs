@@ -39,11 +39,28 @@ test("buildBpmnFragmentTemplate returns capture error", async () => {
   assert.equal(result.error, "no_selection");
 });
 
+test("buildBpmnFragmentTemplate surfaces raw-selection diagnostics for unsupported current selection", async () => {
+  const result = await buildBpmnFragmentTemplate(async () => ({
+    ok: false,
+    error: "no_selection",
+    diagnostics: {
+      rawSelection: [{ id: "Lane_1", type: "bpmn:Lane" }],
+      normalizedSelection: [],
+      unsupportedSelectionTypes: [],
+    },
+  }), {
+    title: "Fragment Diagnostics",
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "no_selection");
+  assert.match(String(result.warning || ""), /Raw selection: bpmn:Lane/);
+});
+
 test("buildBpmnFragmentTemplate rejects unsupported fragment node types", async () => {
   const result = await buildBpmnFragmentTemplate(async () => ({ ok: true, pack: createPack("bpmn:BoundaryEvent") }), {
     title: "Fragment C",
   });
   assert.equal(result.ok, false);
   assert.equal(result.error, "unsupported_fragment_nodes");
+  assert.match(String(result.warning || ""), /boundaryevent/i);
 });
-

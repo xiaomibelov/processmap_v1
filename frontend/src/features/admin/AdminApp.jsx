@@ -20,6 +20,7 @@ import AdminOrgsPage from "./pages/AdminOrgsPage";
 import AdminProjectsPage from "./pages/AdminProjectsPage";
 import AdminSessionDetailPage from "./pages/AdminSessionDetailPage";
 import AdminSessionsPage from "./pages/AdminSessionsPage";
+import { ru } from "../../shared/i18n/ru";
 
 export default function AdminApp({
   pathname = "/admin/dashboard",
@@ -43,8 +44,14 @@ export default function AdminApp({
     sessionId: "",
     dateRange: "",
   });
+  const [recentOrgInvite, setRecentOrgInvite] = useState(null);
 
   const canAccessAdmin = useMemo(() => canAccessAdminConsole(user, orgs), [orgs, user]);
+  const currentOrg = useMemo(() => {
+    return (Array.isArray(orgs) ? orgs : []).find((row) => toText(row?.org_id || row?.id) === toText(activeOrgId)) || null;
+  }, [orgs, activeOrgId]);
+  const currentOrgName = toText(currentOrg?.name || currentOrg?.org_name || activeOrgId);
+  const currentOrgRole = toText(currentOrg?.role);
 
   const dashboardQ = useAdminDashboardData({ enabled: route.section === "dashboard" });
   const orgsQ = useAdminOrgsData({ enabled: route.section === "orgs" });
@@ -94,19 +101,30 @@ export default function AdminApp({
 
   function renderPage() {
     if (!canAccessAdmin) {
-      return <ErrorState title="Admin access denied" message="Current actor does not have admin/backoffice permissions for this contour." />;
+      return <ErrorState title={ru.admin.runtime.accessDeniedTitle} message={ru.admin.runtime.accessDeniedMessage} />;
     }
     if (activeQuery.loading) {
-      return <LoadingBlock label="Loading admin section…" />;
+      return <LoadingBlock label={ru.admin.runtime.loadingSection} />;
     }
     if (activeQuery.error) {
-      return <ErrorState title="Admin data error" message={activeQuery.error} />;
+      return <ErrorState title={ru.admin.runtime.dataErrorTitle} message={activeQuery.error} />;
     }
     if (route.section === "dashboard") {
       return <AdminDashboardPage payload={dashboardQ.data || {}} onNavigate={onNavigate} />;
     }
     if (route.section === "orgs") {
-      return <AdminOrgsPage payload={orgsQ.data || {}} />;
+      return (
+        <AdminOrgsPage
+          payload={orgsQ.data || {}}
+          activeOrgId={activeOrgId}
+          activeOrgName={currentOrgName}
+          activeOrgRole={currentOrgRole}
+          isAdmin={Boolean(user?.is_admin)}
+          onRefresh={() => orgsQ.reload?.()}
+          recentInvite={recentOrgInvite}
+          onInviteCreated={setRecentOrgInvite}
+        />
+      );
     }
     if (route.section === "projects") {
       return <AdminProjectsPage payload={projectsQ.data || {}} />;
@@ -138,7 +156,7 @@ export default function AdminApp({
     if (route.section === "audit") {
       return <AdminAuditPage payload={auditQ.data || {}} filters={auditFilters} onFiltersChange={setAuditFilters} />;
     }
-    return <ErrorState title="Unknown admin route" message={pathname} />;
+    return <ErrorState title={ru.admin.runtime.unknownRouteTitle} message={pathname} />;
   }
 
   const redisMode = (() => {
@@ -150,9 +168,9 @@ export default function AdminApp({
     return "UNKNOWN";
   })();
   const pageBadges = [
-    { label: "Section", value: meta.title, tone: "default" },
-    { label: "Route", value: pathname, tone: "default" },
-    { label: "Access", value: canAccessAdmin ? "allowed" : "forbidden", tone: canAccessAdmin ? "ok" : "danger" },
+    { label: ru.admin.runtime.badges.section, value: meta.title, tone: "default" },
+    { label: ru.admin.runtime.badges.route, value: pathname, tone: "default" },
+    { label: ru.admin.runtime.badges.access, value: canAccessAdmin ? ru.admin.runtime.badges.allowed : ru.admin.runtime.badges.forbidden, tone: canAccessAdmin ? "ok" : "danger" },
   ];
 
   return (

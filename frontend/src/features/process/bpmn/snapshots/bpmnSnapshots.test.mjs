@@ -6,6 +6,7 @@ import {
   getBpmnSnapshotById,
   listBpmnSnapshots,
   saveBpmnSnapshot,
+  shouldAutoRestoreFromSnapshot,
   updateBpmnSnapshotMeta,
 } from "./bpmnSnapshots.js";
 
@@ -159,4 +160,22 @@ test("clearBpmnSnapshots clears legacy no_project snapshots for the same session
   const afterLegacyScope = await listBpmnSnapshots({ projectId: "", sessionId: sid });
   assert.equal(afterProjectScope.length, 0);
   assert.equal(afterLegacyScope.length, 0);
+});
+
+test("shouldAutoRestoreFromSnapshot restores only when backend xml is empty", () => {
+  const snapshot = { xml: "<bpmn:definitions/>" };
+
+  const whenBackendPresent = shouldAutoRestoreFromSnapshot({
+    backendXml: "<bpmn:definitions><bpmn:process id=\"P\" /></bpmn:definitions>",
+    snapshot,
+  });
+  assert.equal(whenBackendPresent.restore, false);
+  assert.equal(whenBackendPresent.reason, "backend_present");
+
+  const whenBackendEmpty = shouldAutoRestoreFromSnapshot({
+    backendXml: "",
+    snapshot,
+  });
+  assert.equal(whenBackendEmpty.restore, true);
+  assert.equal(whenBackendEmpty.reason, "backend_empty");
 });

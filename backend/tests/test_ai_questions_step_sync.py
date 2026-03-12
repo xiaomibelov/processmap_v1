@@ -23,7 +23,7 @@ class AiQuestionsStepSyncTest(unittest.TestCase):
         os.environ["PROCESS_STORAGE_DIR"] = self.tmp_sessions.name
         os.environ["PROJECT_STORAGE_DIR"] = self.tmp_projects.name
 
-        from app.main import (
+        from app._legacy_main import (
             AiQuestionsIn,
             CreateSessionIn,
             UpdateSessionIn,
@@ -87,7 +87,7 @@ class AiQuestionsStepSyncTest(unittest.TestCase):
         self.assertNotIn("error", updated)
         return sid
 
-    @patch("app.main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid"})
+    @patch("app._legacy_main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid"})
     @patch("app.ai.deepseek_questions.generate_llm_questions_for_node")
     def test_node_step_saves_and_returns_questions_for_step(self, mock_generate, _mock_llm):
         mock_generate.return_value = [
@@ -119,7 +119,7 @@ class AiQuestionsStepSyncTest(unittest.TestCase):
         self.assertEqual((ai_map.get("step_1") or [{}])[0].get("text"), "Какая температура шага?")
         self.assertEqual((ai_map.get("step_1") or [{}])[0].get("status"), "уточнить")
 
-    @patch("app.main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid"})
+    @patch("app._legacy_main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid"})
     @patch("app.ai.deepseek_questions.generate_llm_questions_for_node")
     def test_node_step_with_existing_five_questions_returns_saved_step_list(self, mock_generate, _mock_llm):
         sid = self._create_session_with_step()

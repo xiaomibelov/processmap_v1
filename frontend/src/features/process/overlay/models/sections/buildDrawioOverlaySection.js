@@ -32,7 +32,9 @@ export default function buildDrawioOverlaySection({
       statusKey: overlayStatus.key,
       statusLabel: overlayStatus.label,
       hasPreview: overlayStatus.hasPreview === true,
-      previewStatus: overlayStatus.hasPreview ? "available" : "missing",
+      previewStatus: overlayStatus.placementToolActive === true && overlayStatus.hasPreview !== true
+        ? "placement_ready"
+        : (overlayStatus.hasPreview ? "available" : "missing"),
       mode: drawioMode,
       interactionMode,
       activeTool,

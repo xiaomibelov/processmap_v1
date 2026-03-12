@@ -22,7 +22,7 @@ export default function SidebarAccordionSection({
           </div>
           {subtitle ? <div className="sidebarAccordionSubtitle">{subtitle}</div> : null}
         </div>
-        <span className="sidebarAccordionToggle">{open ? "Свернуть" : "Развернуть"}</span>
+        <span className="sidebarAccordionToggle" aria-hidden="true">{open ? "▾" : "▸"}</span>
       </button>
       {open ? <div className="sidebarAccordionBody">{children}</div> : null}
     </section>

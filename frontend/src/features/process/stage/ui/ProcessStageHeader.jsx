@@ -1,4 +1,5 @@
 import ProcessPanels from "./ProcessPanels";
+import { getFirstPickedFile } from "./fileInputEvent.js";
 
 export default function ProcessStageHeader({ view = {} }) {
   const {
@@ -28,7 +29,6 @@ export default function ProcessStageHeader({ view = {} }) {
     drawioFileInputRef,
     handleDrawioImportFile,
     topPanelsView,
-    asArray,
   } = view;
 
   return (
@@ -64,23 +64,28 @@ export default function ProcessStageHeader({ view = {} }) {
 
       <div className="diagramToolbarSlot diagramToolbarSlot--center">
         <div className="seg" role="tablist" aria-label="Process tabs" aria-orientation="horizontal">
-          {workbench.tabs.map((x) => (
+          {workbench.tabs.map((x) => {
+            const isEnabled = !!hasSession && !isSwitchingTab && !isFlushingTab;
+            const isActive = isEnabled && tab === x.id;
+            const isDisabled = !isEnabled;
+            return (
             <button
               type="button"
               key={x.id}
-              className={`segBtn rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${tab === x.id ? "on bg-accent text-white" : "text-muted hover:bg-accentSoft hover:text-fg"}`}
+              className={`segBtn rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${isActive ? "on bg-accent text-white" : isDisabled ? "isDisabled text-muted" : "text-muted hover:bg-accentSoft hover:text-fg"}`}
               role="tab"
-              aria-selected={tab === x.id}
-              aria-current={tab === x.id ? "page" : undefined}
-              tabIndex={tab === x.id ? 0 : -1}
-              disabled={isSwitchingTab || isFlushingTab}
+              aria-selected={isActive}
+              aria-current={isActive ? "page" : undefined}
+              tabIndex={isActive ? 0 : -1}
+              disabled={!hasSession || isSwitchingTab || isFlushingTab}
               onClick={async () => {
                 await switchTab(x.id);
               }}
             >
               {x.label}
             </button>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -134,7 +139,7 @@ export default function ProcessStageHeader({ view = {} }) {
         style={{ display: "none" }}
         data-testid="hybrid-v2-import-input"
         onChange={(event) => {
-          const file = asArray(event?.target?.files)[0];
+          const file = getFirstPickedFile(event);
           if (file) {
             void handleHybridV2ImportFile(file);
           }
@@ -148,7 +153,7 @@ export default function ProcessStageHeader({ view = {} }) {
         style={{ display: "none" }}
         data-testid="drawio-import-input"
         onChange={(event) => {
-          const file = asArray(event?.target?.files)[0];
+          const file = getFirstPickedFile(event);
           if (file) {
             void handleDrawioImportFile(file);
           }

@@ -1,3 +1,5 @@
+import { ru } from "../../../shared/i18n/ru";
+
 export const ADMIN_SECTIONS = {
   dashboard: "dashboard",
   orgs: "orgs",
@@ -9,33 +11,33 @@ export const ADMIN_SECTIONS = {
 
 export const ADMIN_ROUTE_META = {
   [ADMIN_SECTIONS.dashboard]: {
-    title: "Dashboard",
-    subtitle: "Operations console for ProcessMap / Food Process Copilot",
+    title: ru.admin.route.dashboard.title,
+    subtitle: ru.admin.route.dashboard.subtitle,
     path: "/admin/dashboard",
   },
   [ADMIN_SECTIONS.orgs]: {
-    title: "Organizations",
-    subtitle: "Org memberships, access posture, invite health",
+    title: ru.admin.route.orgs.title,
+    subtitle: ru.admin.route.orgs.subtitle,
     path: "/admin/orgs",
   },
   [ADMIN_SECTIONS.projects]: {
-    title: "Projects",
-    subtitle: "Project portfolio, session volume, reporting readiness",
+    title: ru.admin.route.projects.title,
+    subtitle: ru.admin.route.projects.subtitle,
     path: "/admin/projects",
   },
   [ADMIN_SECTIONS.sessions]: {
-    title: "Sessions",
-    subtitle: "Primary diagnostics surface for BPMN, AutoPass, reports, and persistence",
+    title: ru.admin.route.sessions.title,
+    subtitle: ru.admin.route.sessions.subtitle,
     path: "/admin/sessions",
   },
   [ADMIN_SECTIONS.jobs]: {
-    title: "Jobs",
-    subtitle: "Queue health, retries, lock contention, execution failures",
+    title: ru.admin.route.jobs.title,
+    subtitle: ru.admin.route.jobs.subtitle,
     path: "/admin/jobs",
   },
   [ADMIN_SECTIONS.audit]: {
-    title: "Audit",
-    subtitle: "Operational event trail across org, project, session, and admin actions",
+    title: ru.admin.route.audit.title,
+    subtitle: ru.admin.route.audit.subtitle,
     path: "/admin/audit",
   },
 };
@@ -48,4 +50,3 @@ export function buildAdminSessionPath(sessionId = "") {
   const value = String(sessionId || "").trim();
   return value ? `/admin/sessions/${encodeURIComponent(value)}` : ADMIN_ROUTE_META.sessions.path;
 }
-

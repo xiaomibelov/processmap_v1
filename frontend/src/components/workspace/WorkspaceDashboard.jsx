@@ -33,6 +33,7 @@ function formatRole(roleRaw) {
   const role = toText(roleRaw).toLowerCase();
   if (role === "org_owner") return "Владелец организации";
   if (role === "org_admin") return "Администратор организации";
+  if (role === "org_viewer") return "Наблюдатель организации";
   if (role === "project_manager") return "Менеджер проекта";
   if (role === "editor") return "Редактор";
   if (role === "viewer") return "Наблюдатель";

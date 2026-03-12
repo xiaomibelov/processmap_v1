@@ -13,6 +13,7 @@ _SYSTEM_EXACT = {
 }
 _SYSTEM_PREFIXES = (
     "/api/auth/",
+    "/api/invite/",
     "/api/settings/",
 )
 

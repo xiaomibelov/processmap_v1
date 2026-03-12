@@ -4,16 +4,21 @@ export default function SidebarHandle({
   onClick,
   sections = [],
   title = "Открыть панель",
+  disabled = false,
 }) {
   const items = Array.isArray(sections) ? sections.slice(0, 5) : [];
   return (
     <div className="leftSidebarHandleRail" data-testid="left-sidebar-handle">
       <button
         type="button"
-        className="leftSidebarHandleOpenBtn"
-        onClick={() => onClick?.("open")}
+        className={`leftSidebarHandleOpenBtn ${disabled ? "isDisabled" : ""}`}
+        onClick={() => {
+          if (disabled) return;
+          onClick?.("open");
+        }}
         title={title}
         aria-label={title}
+        disabled={disabled}
       >
         <span className="leftSidebarHandleIcon">
           <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden="true">
@@ -25,7 +30,7 @@ export default function SidebarHandle({
         {items.map((section) => {
           const id = String(section?.id || "").trim();
           const meta = getSidebarSectionMeta(id);
-          const isActive = !!section?.active;
+          const isActive = !!section?.active && !section?.muted;
           const isMuted = !!section?.muted;
           return (
           <button

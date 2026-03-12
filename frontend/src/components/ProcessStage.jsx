@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import BpmnStage from "./process/BpmnStage";
 import DocStage from "./process/DocStage";
 import InterviewStage from "./process/InterviewStage";
-import WorkspaceDashboard from "./workspace/WorkspaceDashboard";
+import WorkspaceExplorer from "../features/explorer/WorkspaceExplorer";
 import { useAuth } from "../features/auth/AuthProvider";
 import {
   apiPatchSession,
@@ -82,6 +82,7 @@ import {
 } from "../features/process/stage/utils/hybridCoords";
 import HybridOverlayRenderer from "../features/process/hybrid/renderers/HybridOverlayRenderer";
 import useSessionMetaPersist from "../features/process/stage/controllers/useSessionMetaPersist";
+import { attachProcessStageFlushBeforeLeaveListener } from "../features/process/navigation/processLeaveFlush";
 import useProcessStageShellController from "../features/process/stage/controllers/useProcessStageShellController";
 import useBpmnCanvasController from "../features/process/stage/controllers/useBpmnCanvasController";
 import useDiagramOverlayTransform from "../features/process/stage/controllers/useDiagramOverlayTransform";
@@ -186,6 +187,7 @@ import { pushDeleteTrace } from "../features/process/stage/utils/deleteTrace";
 export default function ProcessStage({
   sessionId,
   activeProjectId,
+  activeProjectWorkspaceId = "",
   workspaceActiveOrgId = "",
   canInviteWorkspaceUsers = false,
   canManageSharedTemplates = false,
@@ -193,6 +195,7 @@ export default function ProcessStage({
   draft,
   onSessionSync,
   onOpenWorkspaceSession,
+  onClearWorkspaceProject,
   onCreateWorkspaceProject,
   onCreateWorkspaceSession,
   onOpenWorkspaceOrgSettings,
@@ -207,6 +210,10 @@ export default function ProcessStage({
   onElementNotesRemap,
   onRecalculateRtiers,
   snapshotRestoreNotice,
+  onSnapshotRestoreNoticeConsumed,
+  selectedPropertiesOverlayPreview = null,
+  propertiesOverlayAlwaysEnabled = false,
+  propertiesOverlayAlwaysPreviewByElementId = null,
 }) {
   const sid = String(sessionId || "");
   const { user } = useAuth();
@@ -423,6 +430,15 @@ export default function ProcessStage({
 
   const hasSession = !!sid;
   const isLocal = isLocalSessionId(sid);
+  // Track the last project that had an active session so the explorer can
+  // navigate back to it when the session is closed.
+  const lastSessionProjectIdRef = useRef("");
+  useEffect(() => {
+    const pid = String(draft?.project_id || draft?.projectId || "").trim();
+    if (hasSession && pid) {
+      lastSessionProjectIdRef.current = pid;
+    }
+  }, [hasSession, draft?.project_id, draft?.projectId]);
   const isInterviewMode = diagramMode === "interview";
   const isQualityMode = diagramMode === "quality";
   const isCoverageMode = diagramMode === "coverage";
@@ -1645,6 +1661,7 @@ export default function ProcessStage({
     applyHybridStencilTemplate,
     captureBpmnFragmentTemplatePack: templatesBridge.captureBpmnFragmentTemplatePack,
     insertBpmnFragmentTemplateAtPoint: templatesBridge.insertBpmnFragmentTemplateAtPoint,
+    insertBpmnFragmentTemplateImmediately: templatesBridge.insertBpmnFragmentTemplateImmediately,
     isDiagramClientPoint: templatesBridge.isDiagramClientPoint,
     diagramContainerRect: templatesDiagramContainerRect,
     selectionContext: templatesBridge.selectionContext,
@@ -3143,7 +3160,8 @@ export default function ProcessStage({
     if (!notice) return;
     if (String(notice.sid || "") !== String(sid || "")) return;
     setInfoMsg(`Восстановлено из локальной истории (${formatSnapshotTs(notice.ts)}).`);
-  }, [sid, snapshotRestoreNotice]);
+    onSnapshotRestoreNoticeConsumed?.(sid, Number(notice?.nonce || 0));
+  }, [sid, snapshotRestoreNotice, onSnapshotRestoreNoticeConsumed]);
 
   useEffect(() => {
     if (!versionsOpen || !sid) return;
@@ -3178,6 +3196,66 @@ export default function ProcessStage({
   useEffect(() => {
     if (!isQualityMode) setQualityIssueFocusKey("");
   }, [isQualityMode]);
+
+  useEffect(() => {
+    const sidValue = String(sid || "").trim();
+    return attachProcessStageFlushBeforeLeaveListener(async ({ sessionId }) => {
+      const requestedSid = String(sessionId || "").trim();
+      if (!sidValue) {
+        return { ok: true, skipped: true, reason: "no_active_session" };
+      }
+      if (requestedSid && requestedSid !== sidValue) {
+        return { ok: true, skipped: true, reason: "session_mismatch" };
+      }
+      const flushTab = tab === "xml" ? "xml" : "diagram";
+      const startedAt = Date.now();
+      let attempts = 0;
+      let stableFlushCount = 0;
+      let stableXmlHash = "";
+      while (Date.now() - startedAt <= 4200) {
+        attempts += 1;
+        const flush = await bpmnSync.flushFromActiveTab(flushTab, {
+          force: true,
+          source: "leave_to_project",
+          reason: "leave_to_project",
+        });
+        if (!flush?.ok) {
+          return {
+            ok: false,
+            error: String(flush?.error || "flush_before_leave_failed"),
+            attempts,
+          };
+        }
+        if (flush?.pending) {
+          stableFlushCount = 0;
+          stableXmlHash = "";
+          await new Promise((resolve) => setTimeout(resolve, 220));
+          continue;
+        }
+        const xmlHash = fnv1aHex(String(flush?.xml || ""));
+        if (xmlHash && xmlHash === stableXmlHash) {
+          stableFlushCount += 1;
+        } else {
+          stableXmlHash = xmlHash;
+          stableFlushCount = 1;
+        }
+        if (stableFlushCount >= 2) {
+          return {
+            ok: true,
+            pending: false,
+            attempts,
+            stableXmlHash,
+          };
+        }
+        await new Promise((resolve) => setTimeout(resolve, 180));
+      }
+      return {
+        ok: false,
+        error: "flush_before_leave_pending_timeout",
+        attempts,
+      };
+    });
+  }, [sid, tab, bpmnSync]);
 
   useEffect(() => {
     // eslint-disable-next-line no-console
@@ -3550,6 +3628,10 @@ export default function ProcessStage({
     toggleDrawioLock,
     setDrawioElementVisible,
     setDrawioElementLocked,
+    setDrawioElementText,
+    setDrawioElementTextWidth,
+    setDrawioElementStylePreset,
+    setDrawioElementSize,
   } = useDiagramRuntimeBridges({
     overlay: {
       sid,
@@ -3928,18 +4010,13 @@ export default function ProcessStage({
         ref={processBodyRef}
       >
         {!hasSession ? (
-          <div className="h-full min-h-0 p-3">
-            <WorkspaceDashboard
-              activeOrgId={workspaceActiveOrgId}
-              userId={toText(user?.id || user?.user_id || user?.email)}
-              canInviteUsers={!!canInviteWorkspaceUsers}
-              onOpenSession={(session) => onOpenWorkspaceSession?.(session)}
-              onOpenDoc={(session) => onOpenWorkspaceSession?.(session, { source: "workspace_doc_link", openTab: "doc" })}
-              onCreateProject={() => onCreateWorkspaceProject?.()}
-              onCreateSession={() => onCreateWorkspaceSession?.()}
-              onInviteUsers={() => onOpenWorkspaceOrgSettings?.()}
-            />
-          </div>
+          <WorkspaceExplorer
+            activeOrgId={workspaceActiveOrgId}
+            requestProjectId={activeProjectId}
+            requestProjectWorkspaceId={activeProjectWorkspaceId}
+            onOpenSession={(sessionLike) => onOpenWorkspaceSession?.(sessionLike)}
+            onClearRequestedProject={onClearWorkspaceProject}
+          />
         ) : tab === "doc" ? (
           <DocStage
             sessionId={sid}
@@ -4043,6 +4120,10 @@ export default function ProcessStage({
                     toggleDrawioLock,
                     setDrawioElementVisible,
                     setDrawioElementLocked,
+                    setDrawioElementText,
+                    setDrawioElementTextWidth,
+                    setDrawioElementStylePreset,
+                    setDrawioElementSize,
                     drawioFileInputRef,
                     exportEmbeddedDrawio,
                     diagramPlanPopoverRef,
@@ -4187,6 +4268,9 @@ export default function ProcessStage({
                   robotMetaOverlayEnabled={robotMetaOverlayEnabled}
                   robotMetaOverlayFilters={robotMetaOverlayFilters}
                   robotMetaStatusByElementId={robotMetaStatusByElementId}
+                  selectedPropertiesOverlayPreview={selectedPropertiesOverlayPreview}
+                  propertiesOverlayAlwaysEnabled={propertiesOverlayAlwaysEnabled}
+                  propertiesOverlayAlwaysPreviewByElementId={propertiesOverlayAlwaysPreviewByElementId}
                 />
                 <BpmnFragmentPlacementGhost
                   active={bpmnFragmentPlacementActive}

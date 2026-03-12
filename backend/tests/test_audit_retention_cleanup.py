@@ -23,7 +23,7 @@ class AuditRetentionCleanupTest(unittest.TestCase):
         os.environ.pop("PROCESS_DB_PATH", None)
 
         from app.auth import create_user
-        from app.main import cleanup_org_audit_endpoint
+        from app._legacy_main import cleanup_org_audit_endpoint
         from app.storage import (
             append_audit_log,
             create_org_record,

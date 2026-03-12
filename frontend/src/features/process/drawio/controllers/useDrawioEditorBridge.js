@@ -226,6 +226,14 @@ export default function useDrawioEditorBridge({
       savePayload(payloadRaw = {}) {
         return handleDrawioEditorSave(payloadRaw);
       },
+      importXml(xmlRaw, filenameRaw = "e2e.drawio") {
+        if (typeof File !== "function") return false;
+        return handleDrawioImportFile(
+          new File([String(xmlRaw || "")], String(filenameRaw || "e2e.drawio"), {
+            type: "application/xml",
+          }),
+        );
+      },
       setOpacity(valueRaw) {
         setOpacityForBridge(valueRaw);
       },

@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo, useRef } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { parseDrawioSvgCache } from "./drawioSvg";
 import {
@@ -13,6 +13,12 @@ import { bumpDrawioPerfCounter } from "./runtime/drawioRuntimeProbes.js";
 import useDrawioOverlayInteraction from "./runtime/useDrawioOverlayInteraction";
 import { normalizeDrawioInteractionMode } from "./drawioMeta.js";
 import { normalizeRuntimeTool } from "./runtime/drawioRuntimePlacement.js";
+import { buildDrawioPlacementPreviewSpec } from "./runtime/drawioPlacementPreview.js";
+import {
+  isDrawioCreatePlacementActive,
+  resolveDrawioOverlaySvgPointerEvents,
+} from "./runtime/drawioOverlayPointerOwnership.js";
+import resolveDrawioOverlayRenderMatrix from "./runtime/drawioOverlayMatrix.js";
 
 function composeOverlayMatrix(matrixRaw, txRaw, tyRaw) {
   const matrix = asObject(matrixRaw);
@@ -57,16 +63,25 @@ function DrawioOverlayRenderer({
   const meta = asObject(drawioMeta);
   const effectiveMode = normalizeDrawioInteractionMode(drawioMode || meta.interaction_mode);
   const runtimeTool = normalizeRuntimeTool(drawioActiveTool || meta.active_tool);
-  const createPlacementActive = !!visible && effectiveMode === "edit" && !!runtimeTool;
+  const createPlacementActive = isDrawioCreatePlacementActive({
+    visible,
+    effectiveMode,
+    runtimeTool,
+  });
   const hasRenderable = !!visible && !!parsed?.svg;
   const hasInteractionSurface = hasRenderable || createPlacementActive;
+  const placementPreviewEnabled = createPlacementActive && runtimeTool !== "select";
   const parsedBody = String(parsed?.body || "");
   const runtimeMeta = useMemo(() => ({
     ...meta,
     interaction_mode: effectiveMode,
     active_tool: runtimeTool || "select",
   }), [effectiveMode, meta, runtimeTool]);
-  const matrix = asObject(overlayMatrix);
+  const matrix = resolveDrawioOverlayRenderMatrix({
+    overlayMatrix,
+    overlayMatrixRef,
+    getOverlayMatrix,
+  });
   const tx = toNumber(asObject(meta.transform).x, 0);
   const ty = toNumber(asObject(meta.transform).y, 0);
   const composedMatrix = useMemo(
@@ -82,6 +97,7 @@ function DrawioOverlayRenderer({
   const opacity = Math.max(0.05, Math.min(1, Number(meta.opacity || 1)));
   const { layerMap, elementMap } = useMemo(() => buildDrawioLayerRenderMaps(runtimeMeta), [runtimeMeta]);
   const viewportGroupRef = useRef(null);
+  const [placementPreviewPoint, setPlacementPreviewPoint] = useState(null);
 
   const {
     rootRef,
@@ -108,6 +124,31 @@ function DrawioOverlayRenderer({
     },
     [runtimeMeta, parsedBody, selectedId],
   );
+
+  const placementPreviewSpec = useMemo(() => (
+    placementPreviewEnabled ? buildDrawioPlacementPreviewSpec(runtimeTool, placementPreviewPoint) : null
+  ), [placementPreviewEnabled, placementPreviewPoint, runtimeTool]);
+
+  const updatePlacementPreviewPoint = useCallback((event) => {
+    if (!placementPreviewEnabled || typeof screenToDiagram !== "function") {
+      setPlacementPreviewPoint(null);
+      return;
+    }
+    const point = screenToDiagram(Number(event?.clientX || 0), Number(event?.clientY || 0));
+    if (!point || !Number.isFinite(Number(point.x)) || !Number.isFinite(Number(point.y))) {
+      setPlacementPreviewPoint(null);
+      return;
+    }
+    setPlacementPreviewPoint({
+      x: Number(point.x || 0),
+      y: Number(point.y || 0),
+    });
+  }, [placementPreviewEnabled, screenToDiagram]);
+
+  useEffect(() => {
+    if (placementPreviewEnabled) return;
+    setPlacementPreviewPoint(null);
+  }, [placementPreviewEnabled]);
 
   useEffect(() => {
     bumpDrawioPerfCounter("drawio.renderer.bindDataAttrs.effects");
@@ -139,9 +180,11 @@ function DrawioOverlayRenderer({
         `matrix(${nextComposed.a},${nextComposed.b},${nextComposed.c},${nextComposed.d},${nextComposed.e},${nextComposed.f})`,
       );
     };
-    const initial = typeof getOverlayMatrix === "function"
-      ? getOverlayMatrix()
-      : (overlayMatrixRef?.current || overlayMatrix);
+    const initial = resolveDrawioOverlayRenderMatrix({
+      overlayMatrix,
+      overlayMatrixRef,
+      getOverlayMatrix,
+    });
     applyMatrix(initial);
     if (typeof subscribeOverlayMatrix !== "function") return undefined;
     return subscribeOverlayMatrix((nextMatrix) => {
@@ -173,9 +216,17 @@ function DrawioOverlayRenderer({
         <svg
           className="drawioLayerOverlaySvg"
           data-testid="drawio-overlay-svg"
-          style={{ position: "absolute", left: 0, top: 0, opacity, pointerEvents: createPlacementActive ? "auto" : "visiblePainted" }}
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            opacity,
+            pointerEvents: resolveDrawioOverlaySvgPointerEvents(createPlacementActive),
+          }}
           width="100%"
           height="100%"
+          onPointerMove={updatePlacementPreviewPoint}
+          onPointerLeave={() => setPlacementPreviewPoint(null)}
         >
           <g
             ref={viewportGroupRef}
@@ -183,6 +234,49 @@ function DrawioOverlayRenderer({
             transform={`matrix(${a},${b},${c},${d},${e},${f})`}
           >
             <g dangerouslySetInnerHTML={{ __html: renderedBody }} />
+            {placementPreviewSpec ? (
+              <g
+                data-testid={`drawio-placement-preview-${placementPreviewSpec.toolId}`}
+                style={{ pointerEvents: "none" }}
+              >
+                {placementPreviewSpec.shape === "rect" ? (
+                  <rect
+                    x={placementPreviewSpec.x}
+                    y={placementPreviewSpec.y}
+                    width={placementPreviewSpec.width}
+                    height={placementPreviewSpec.height}
+                    rx={placementPreviewSpec.rx}
+                    fill={placementPreviewSpec.fill}
+                    stroke={placementPreviewSpec.stroke}
+                    strokeWidth="2"
+                    strokeDasharray={placementPreviewSpec.strokeDasharray || "6 4"}
+                  />
+                ) : (
+                  <g>
+                    <rect
+                      x={placementPreviewSpec.x - 10}
+                      y={placementPreviewSpec.y - 18}
+                      width={placementPreviewSpec.width}
+                      height={placementPreviewSpec.height}
+                      fill="rgba(248,250,252,0.75)"
+                      stroke={placementPreviewSpec.guideStroke}
+                      strokeWidth="1.5"
+                      strokeDasharray="6 4"
+                      rx="6"
+                    />
+                    <text
+                      x={placementPreviewSpec.x}
+                      y={placementPreviewSpec.y}
+                      fill={placementPreviewSpec.fill}
+                      fontSize="16"
+                      fontFamily="Arial, sans-serif"
+                    >
+                      {placementPreviewSpec.text}
+                    </text>
+                  </g>
+                )}
+              </g>
+            ) : null}
           </g>
         </svg>
       </div>

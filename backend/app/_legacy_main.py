@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import math
 import hashlib
+import logging
 import os
 import re
 import uuid
@@ -20,11 +21,9 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.routing import APIRoute
 from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, ValidationError
 
 from .exporters.mermaid import render_mermaid
 from .exporters.yaml_export import dump_yaml, session_to_process_dict
@@ -36,13 +35,11 @@ from .resources import build_resources_report
 from .storage import (
     get_storage,
     get_project_storage,
-    push_storage_request_scope,
-    pop_storage_request_scope,
     list_user_org_memberships,
     resolve_active_org_id,
-    user_has_org_membership,
     get_user_org_role,
     get_default_org_id,
+    count_org_records,
     create_org_record,
     list_project_memberships,
     upsert_project_membership,
@@ -68,7 +65,12 @@ from .redis_lock import acquire_session_lock
 from .redis_cache import (
     cache_get_json,
     cache_set_json,
+    explorer_invalidate_sessions,
+    invalidate_session_open,
     invalidate_tldr_session,
+    session_open_cache_key,
+    session_open_cache_ttl_sec,
+    session_open_version_token,
     invalidate_workspace_org,
     tldr_cache_key,
     workspace_cache_key,
@@ -91,12 +93,92 @@ from .auth import (
     revoke_refresh_from_token,
     rotate_refresh_token,
     set_invited_identity_password,
-    seed_admin_user_if_enabled,
     user_from_bearer_header,
 )
+from .schemas.legacy_api import (
+    AiQuestionsIn,
+    AnswerIn,
+    AuthLoginIn,
+    AuthMeOut,
+    AuthTokenOut,
+    BpmnMetaPatchIn,
+    BpmnXmlIn,
+    CreateEdgeIn,
+    CreateNodeIn,
+    CreatePathReportVersionIn,
+    CreateSessionIn,
+    GlossaryAddIn,
+    InferRtiersIn,
+    InviteActivateIn,
+    InvitePreviewIn,
+    LlmSettingsIn,
+    LlmVerifyIn,
+    NodePatchIn,
+    NotesIn,
+    OrgCreateIn,
+    OrgPatchIn,
+    OrgInviteAcceptIn,
+    OrgInviteCreateIn,
+    OrgMemberPatchIn,
+    OrgReportBuildIn,
+    ProjectMemberPatchIn,
+    ProjectMemberUpsertIn,
+    SessionTitleQuestionsIn,
+    UpdateSessionIn,
+    norm_project_session_mode as _norm_project_session_mode,
+)
+from .legacy.request_context import (
+    enterprise_error as _enterprise_error,
+    extract_org_from_headers as _extract_org_from_headers,
+    extract_org_from_path as _extract_org_from_path,
+    request_active_org_id as _request_active_org_id,
+    request_auth_user as _request_auth_user,
+    request_client_ip as _request_client_ip,
+    request_user_email as _request_user_email,
+    request_user_meta as _request_user_meta,
+)
+from .services.org_invites import (
+    build_invite_create_audit_meta,
+    extract_invite_token,
+    invite_error_to_response as _invite_error_to_response,
+    invited_identity_state,
+    normalize_invite_role,
+    normalize_invite_ttl_days,
+)
+from .services.org_workspace import (
+    enterprise_require_org_member as _enterprise_require_org_member,
+    enterprise_require_org_role as _enterprise_require_org_role,
+    org_role_for_request as _org_role_for_request,
+    project_access_allowed as _project_access_allowed,
+    project_scope_for_request as _project_scope_for_request,
+    rename_org_with_validation,
+    require_org_member_for_enterprise as _require_org_member_for_enterprise,
+    require_org_role as _require_org_role,
+)
+from .utils.legacy_normalization import (
+    norm_edges as _norm_edges,
+    norm_interview as _norm_interview,
+    norm_nodes as _norm_nodes,
+    norm_notes_by_element as _norm_notes_by_element,
+    norm_prep_questions as _norm_prep_questions,
+    norm_questions as _norm_questions,
+    norm_roles as _norm_roles,
+    notes_decode as _notes_decode,
+    notes_encode as _notes_encode,
+    pick as _pick,
+)
+from .utils.response_builders import (
+    build_auth_me_payload,
+    build_invite_activate_payload,
+    build_invite_preview_payload,
+    build_items_payload,
+    build_items_count_payload,
+)
+from .startup.static_mounts import GLOSSARY_SEED, STATIC_DIR, WORKSPACE_DIR as WORKSPACE
 
 
 app = FastAPI(title="Food Process Copilot MVP")
+logger = logging.getLogger(__name__)
 
 AUTH_PUBLIC_PATHS = {
     "/api/auth/login",
@@ -104,23 +186,97 @@ AUTH_PUBLIC_PATHS = {
     "/api/auth/logout",
     "/api/auth/invite/preview",
     "/api/auth/invite/activate",
+    "/api/invite/resolve",
+    "/api/invite/activate",
+    "/api/invites/accept",
     "/api/health",
     "/api/meta",
 }
 
-_ORG_PATH_RE = re.compile(r"^/api/orgs/([^/]+)(?:/|$)")
 _ORG_WRITE_ROLES = {"org_owner", "org_admin"}
 _ORG_EDITOR_ROLES = {"org_owner", "org_admin", "project_manager", "editor"}
-_ORG_READ_ROLES = {"org_owner", "org_admin", "project_manager", "editor", "viewer", "auditor"}
+_ORG_READ_ROLES = {"org_owner", "org_admin", "project_manager", "editor", "viewer", "org_viewer", "auditor"}
 _ORG_REPORT_DELETE_ROLES = {"org_owner", "org_admin", "project_manager"}
 _ORG_PROJECT_MEMBER_MANAGE_ROLES = {"org_owner", "org_admin", "project_manager"}
 _ORG_MEMBER_MANAGE_ROLES = {"org_owner", "org_admin"}
 _ORG_INVITE_MANAGE_ROLES = {"org_owner", "org_admin"}
 _ORG_AUDIT_READ_ROLES = {"org_owner", "org_admin", "auditor", "project_manager"}
 _ORG_TEMPLATE_WRITE_ROLES = {"org_owner", "org_admin", "project_manager"}
+_WORKSPACE_ADMIN_ROLES = {"org_owner", "org_admin"}
+_WORKSPACE_EDITOR_ROLES = {"org_owner", "org_admin", "project_manager", "editor"}
+_WORKSPACE_VIEWER_ROLES = {"viewer", "org_viewer", "auditor"}
+_SESSION_STATUS_ORDER = ("draft", "in_progress", "review", "ready", "archived")
+_SESSION_STATUS_SET = set(_SESSION_STATUS_ORDER)
+_SESSION_STATUS_TRANSITIONS: Dict[str, Set[str]] = {
+    "draft": {"draft", "in_progress", "archived"},
+    "in_progress": {"draft", "in_progress", "review", "ready", "archived"},
+    "review": {"in_progress", "review", "ready", "archived"},
+    "ready": {"in_progress", "review", "ready", "archived"},
+    "archived": {"archived", "in_progress"},
+}
 
 _RATE_LIMIT_LOCK = threading.RLock()
 _RATE_LIMIT_BUCKETS: Dict[str, deque] = {}
+
+
+def _clean_name(value: Any) -> str:
+    return " ".join(str(value or "").split()).strip()
+
+
+def _practical_role_for_org(role_raw: Any, is_admin: bool = False) -> str:
+    if bool(is_admin):
+        return "admin"
+    role = str(role_raw or "").strip().lower()
+    if role in _WORKSPACE_ADMIN_ROLES:
+        return "admin"
+    if role in _WORKSPACE_EDITOR_ROLES:
+        return "editor"
+    return "viewer"
+
+
+def _can_manage_workspace(role_raw: Any, is_admin: bool = False) -> bool:
+    return _practical_role_for_org(role_raw, is_admin=is_admin) == "admin"
+
+
+def _can_edit_workspace(role_raw: Any, is_admin: bool = False) -> bool:
+    return _practical_role_for_org(role_raw, is_admin=is_admin) in {"admin", "editor"}
+
+
+def _can_delete_workspace_content(role_raw: Any, is_admin: bool = False) -> bool:
+    return _practical_role_for_org(role_raw, is_admin=is_admin) == "admin"
+
+
+def _normalize_session_status(raw: Any) -> str:
+    value = str(raw or "").strip().lower()
+    aliases = {
+        "draft": "draft",
+        "in_work": "in_progress",
+        "inprogress": "in_progress",
+        "in_progress": "in_progress",
+        "review": "review",
+        "on_review": "review",
+        "ready": "ready",
+        "done": "ready",
+        "archive": "archived",
+        "archived": "archived",
+    }
+    normalized = aliases.get(value, value)
+    return normalized if normalized in _SESSION_STATUS_SET else ""
+
+
+def _validate_session_status_transition(current_raw: Any, next_raw: Any, *, role_raw: Any, is_admin: bool = False) -> str:
+    current_status = _normalize_session_status(current_raw) or "draft"
+    next_status = _normalize_session_status(next_raw)
+    if not next_status:
+        raise HTTPException(status_code=422, detail="invalid status")
+    if not _can_edit_workspace(role_raw, is_admin=is_admin):
+        raise HTTPException(status_code=403, detail="forbidden")
+    allowed = set(_SESSION_STATUS_TRANSITIONS.get(current_status) or {current_status})
+    if next_status not in allowed:
+        raise HTTPException(status_code=409, detail="invalid status transition")
+    if next_status == "archived" and not _can_manage_workspace(role_raw, is_admin=is_admin):
+        raise HTTPException(status_code=403, detail="forbidden")
+    return next_status
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -158,69 +314,6 @@ def _rate_limit_check(key: str, limit: int, window_sec: int = 60) -> bool:
         bucket.append(now)
     return True
 
-
-def _extract_org_from_path(path: str) -> str:
-    src = str(path or "").strip()
-    m = _ORG_PATH_RE.match(src)
-    if not m:
-        return ""
-    return str(m.group(1) or "").strip()
-
-
-def _extract_org_from_headers(request: Request) -> str:
-    v = str(request.headers.get("x-org-id") or request.headers.get("x-active-org-id") or "").strip()
-    return v
-
-
-def _request_auth_user(request: Request) -> Dict[str, Any]:
-    user = getattr(request.state, "auth_user", None)
-    if isinstance(user, dict):
-        return user
-    return {}
-
-
-def _enterprise_error(status_code: int, code: str, message: str, details: Optional[Dict[str, Any]] = None) -> JSONResponse:
-    payload = {
-        "error": {
-            "code": str(code or "error"),
-            "message": str(message or "error"),
-            "details": details or {},
-        },
-    }
-    return JSONResponse(status_code=int(status_code), content=payload)
-
-
-def _request_user_meta(request: Optional[Request]) -> Tuple[str, bool]:
-    if request is None:
-        return "", False
-    user = _request_auth_user(request)
-    return str(user.get("id") or "").strip(), bool(user.get("is_admin", False))
-
-
-def _request_active_org_id(request: Optional[Request]) -> str:
-    if request is None:
-        return get_default_org_id()
-    oid = str(getattr(request.state, "active_org_id", "") or "").strip()
-    return oid or get_default_org_id()
-
-
-def _project_scope_for_request(request: Optional[Request], org_id: str) -> Dict[str, Any]:
-    uid, is_admin = _request_user_meta(request)
-    oid = str(org_id or "").strip() or get_default_org_id()
-    if not uid:
-        return {"mode": "all", "project_ids": [], "org_role": ""}
-    return get_effective_project_scope(uid, oid, is_admin=is_admin)
-
-
-def _project_access_allowed(request: Optional[Request], org_id: str, project_id: str) -> bool:
-    pid = str(project_id or "").strip()
-    if not pid:
-        return False
-    scope = _project_scope_for_request(request, org_id)
-    if str(scope.get("mode") or "") == "all":
-        return True
-    allowed = {str(item or "").strip() for item in (scope.get("project_ids") or []) if str(item or "").strip()}
-    return pid in allowed
 
 _REPORT_LOCKS_GUARD = threading.RLock()
 _REPORT_LOCKS_BY_SESSION: Dict[str, threading.RLock] = {}
@@ -293,252 +386,6 @@ def _request_client_ip(request: Request) -> str:
 
 def _auth_error_response(detail: str = "unauthorized") -> JSONResponse:
     return JSONResponse(status_code=401, content={"detail": str(detail or "unauthorized")})
-
-
-seed_admin_user_if_enabled()
-
-# --- Frontend contract helpers (Vite dev 5174) ---
-def _role_id_from_any(x: Any) -> Optional[str]:
-    if x is None:
-        return None
-    if isinstance(x, str):
-        v = x.strip()
-        return v or None
-    if isinstance(x, dict):
-        for k in ("role_id", "roleId", "id", "value", "name", "key"):
-            if k in x and x[k] is not None:
-                v = str(x[k]).strip()
-                if v:
-                    return v
-    return None
-
-
-def _norm_roles(v: Any) -> List[str]:
-    if v is None:
-        return []
-    if isinstance(v, list):
-        out: List[str] = []
-        seen = set()
-        for it in v:
-            rid = _role_id_from_any(it)
-            if not rid or rid in seen:
-                continue
-            seen.add(rid)
-            out.append(rid)
-        return out
-    rid = _role_id_from_any(v)
-    return [rid] if rid else []
-
-
-def _notes_decode(raw: Any) -> List[Dict[str, Any]]:
-    if raw is None:
-        return []
-    if isinstance(raw, list):
-        return raw
-    if isinstance(raw, dict):
-        return [raw]
-    if isinstance(raw, str):
-        txt = raw.strip()
-        if not txt:
-            return []
-        try:
-            j = json.loads(txt)
-            if isinstance(j, list):
-                return j
-            if isinstance(j, dict):
-                return [j]
-        except Exception:
-            pass
-        return [{"note_id": "legacy", "ts": None, "author": None, "text": txt}]
-    return []
-
-
-def _notes_encode(v: Any) -> str:
-    if v is None:
-        return ""
-    if isinstance(v, str):
-        return v
-    if isinstance(v, dict):
-        return json.dumps([v], ensure_ascii=False)
-    if isinstance(v, list):
-        return json.dumps(v, ensure_ascii=False)
-    return ""
-
-
-def _norm_notes_by_element(value: Any) -> Dict[str, Any]:
-    if not isinstance(value, dict):
-        return {}
-
-    out: Dict[str, Any] = {}
-    for raw_key, raw_entry in value.items():
-        key = str(raw_key or "").strip()
-        if not key:
-            continue
-        entry = raw_entry if isinstance(raw_entry, dict) else {}
-        raw_items = entry.get("items")
-        if not isinstance(raw_items, list):
-            raw_items = entry.get("notes") if isinstance(entry.get("notes"), list) else []
-
-        items: List[Dict[str, Any]] = []
-        for idx, raw_item in enumerate(raw_items):
-            item = raw_item if isinstance(raw_item, dict) else {"text": str(raw_item or "")}
-            text = str(item.get("text") or item.get("note") or "").strip()
-            if not text:
-                continue
-            created_at = item.get("createdAt") or item.get("created_at") or item.get("ts") or int(time.time() * 1000)
-            updated_at = item.get("updatedAt") or item.get("updated_at") or created_at
-            note_id = str(item.get("id") or item.get("note_id") or f"note_{created_at}_{idx + 1}").strip()
-            items.append(
-                {
-                    "id": note_id or f"note_{created_at}_{idx + 1}",
-                    "text": text,
-                    "createdAt": int(created_at) if str(created_at).isdigit() else created_at,
-                    "updatedAt": int(updated_at) if str(updated_at).isdigit() else updated_at,
-                }
-            )
-
-        if not items:
-            continue
-
-        updated_at_entry = entry.get("updatedAt") or entry.get("updated_at") or items[-1].get("updatedAt")
-        out[key] = {
-            "items": items,
-            "updatedAt": int(updated_at_entry) if str(updated_at_entry).isdigit() else updated_at_entry,
-        }
-
-    return out
-
-
-def _pick(d: Dict[str, Any], *keys: str) -> Any:
-    for k in keys:
-        if k in d and d[k] is not None:
-            return d[k]
-    return None
-
-
-def _norm_nodes(v: Any) -> List[Node]:
-    if v is None:
-        return []
-    if not isinstance(v, list):
-        return []
-    out: List[Node] = []
-    for it in v:
-        if not isinstance(it, dict):
-            continue
-        nid = _pick(it, "id", "node_id", "nodeId")
-        title = _pick(it, "title", "label", "name")
-        if nid is None or title is None:
-            continue
-        payload = dict(it)
-        payload["id"] = str(nid)
-        payload["title"] = str(title)
-        if "actor_role" not in payload and "actorRole" in payload:
-            payload["actor_role"] = payload.get("actorRole")
-        if "recipient_role" not in payload and "recipientRole" in payload:
-            payload["recipient_role"] = payload.get("recipientRole")
-        # node_type_alias: accept some client synonyms (avoid 500 on PATCH)
-        t = payload.get("type")
-        if isinstance(t, str):
-            tt = t.strip().lower()
-            alias = {
-                "task": "step",
-                "action": "step",
-                "activity": "step",
-                "gateway": "decision",
-                "xor": "decision",
-                "and": "fork",
-                "parallel": "fork",
-            }.get(tt)
-            if alias:
-                payload["type"] = alias
-
-        try:
-            out.append(Node.model_validate(payload))
-        except ValidationError as e:
-            raise HTTPException(status_code=422, detail=e.errors())
-
-    return out
-
-
-def _norm_edges(v: Any) -> List[Edge]:
-    if v is None:
-        return []
-    if not isinstance(v, list):
-        return []
-    out: List[Edge] = []
-    for it in v:
-        if not isinstance(it, dict):
-            continue
-        fr = _pick(it, "from_id", "from", "source_id", "sourceId")
-        to = _pick(it, "to_id", "to", "target_id", "targetId")
-        if fr is None or to is None:
-            continue
-        payload = dict(it)
-        payload["from_id"] = str(fr)
-        payload["to_id"] = str(to)
-        out.append(Edge.model_validate(payload))
-    return out
-
-
-def _norm_questions(v: Any) -> List[Question]:
-    if v is None:
-        return []
-    if not isinstance(v, list):
-        return []
-    out: List[Question] = []
-    for it in v:
-        if isinstance(it, Question):
-            out.append(it.model_copy(deep=True))
-            continue
-        if not isinstance(it, dict):
-            continue
-        payload = dict(it)
-        if "question" not in payload and "text" in payload:
-            payload["question"] = payload.get("text")
-        if "node_id" not in payload and "nodeId" in payload:
-            payload["node_id"] = payload.get("nodeId")
-        try:
-            out.append(Question.model_validate(payload))
-        except ValidationError:
-            continue
-    return out
-
-def _norm_prep_questions(value: Any) -> List[Dict[str, Any]]:
-    if value is None:
-        return []
-    items = []
-    if isinstance(value, list):
-        items = value
-    elif isinstance(value, dict):
-        items = [value]
-    else:
-        return []
-
-    out = []
-    for idx, item in enumerate(items):
-        if not isinstance(item, dict):
-            continue
-        question = str(item.get("question") or item.get("text") or "").strip()
-        if not question:
-            continue
-        out.append(
-            {
-                "id": str(item.get("id") or f"Q{idx + 1}").strip() or f"Q{idx + 1}",
-                "block": str(item.get("block") or "").strip(),
-                "question": question,
-                "ask_to": str(item.get("ask_to") or item.get("role") or item.get("askTo") or "").strip(),
-                "answer_type": str(item.get("answer_type") or item.get("answerType") or "").strip(),
-                "follow_up": str(item.get("follow_up") or item.get("followUp") or "").strip(),
-                "answer": str(item.get("answer") or "").strip(),
-            }
-        )
-    return out
-
-
-def _norm_interview(v: Any) -> Dict[str, Any]:
-    if isinstance(v, dict):
-        return dict(v)
-    return {}
 
 
 def _is_legacy_seed_bpmn(xml_text: str) -> bool:
@@ -2401,6 +2248,14 @@ def _normalize_bpmn_meta(
     }
     if auto_pass_v1:
         out["auto_pass_v1"] = auto_pass_v1
+    for key_raw, value_raw in raw.items():
+        key = str(key_raw or "").strip()
+        if not key or key in out or key == "auto_pass_v1":
+            continue
+        try:
+            out[key] = json.loads(json.dumps(value_raw, ensure_ascii=False))
+        except Exception:
+            continue
     return out
 
 
@@ -2494,75 +2349,6 @@ def _session_graph_fingerprint(sess: Session) -> str:
     }
     packed = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha1(packed.encode("utf-8")).hexdigest()
-
-
-# CORS (local frontend integration)
-cors_env = os.getenv("CORS_ORIGINS", "").strip()
-if cors_env:
-    cors_origins = [o.strip() for o in cors_env.split(",") if o.strip()]
-else:
-    cors_origins = [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5174",
-        "http://localhost:5177",
-        "http://127.0.0.1:5177",
-    ]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS", "HEAD"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With", "X-Org-Id", "X-Active-Org-Id"],
-)
-
-
-@app.middleware("http")
-async def auth_guard_middleware(request: Request, call_next):
-    path = str(request.url.path or "")
-    scope_tokens = None
-    if request.method.upper() == "OPTIONS":
-        return await call_next(request)
-    if not path.startswith("/api"):
-        return await call_next(request)
-    if path in AUTH_PUBLIC_PATHS:
-        scope_tokens = push_storage_request_scope("", False, "")
-        try:
-            return await call_next(request)
-        finally:
-            pop_storage_request_scope(scope_tokens)
-
-    try:
-        user = user_from_bearer_header(request.headers.get("authorization", ""))
-        request.state.auth_user = user
-        user_id = str(user.get("id") or "").strip()
-        is_admin = bool(user.get("is_admin", False))
-        path_org_id = _extract_org_from_path(path)
-        header_org_id = _extract_org_from_headers(request)
-
-        allow_non_member = bool(path_org_id and path.rstrip("/").endswith("/invites/accept"))
-        if path_org_id and (not allow_non_member) and not user_has_org_membership(user_id, path_org_id, is_admin=is_admin):
-            return JSONResponse(status_code=404, content={"detail": "not found"})
-
-        requested_org_id = path_org_id or header_org_id
-        active_org_id = resolve_active_org_id(user_id, requested_org_id=requested_org_id, is_admin=is_admin)
-        request.state.active_org_id = active_org_id
-        request.state.org_memberships = list_user_org_memberships(user_id, is_admin=is_admin)
-        scope_tokens = push_storage_request_scope(user_id, is_admin, active_org_id)
-    except AuthError as e:
-        return _auth_error_response(str(e))
-
-    try:
-        return await call_next(request)
-    finally:
-        pop_storage_request_scope(scope_tokens)
-
-
-BASE_DIR = Path(__file__).resolve().parent
-STATIC_DIR = BASE_DIR / "static"
-WORKSPACE = Path(os.environ.get("PROCESS_WORKSPACE", "workspace/processes"))
 
 # == delete helpers (projects/sessions) ==
 def _ws_path(*parts: str) -> Path:
@@ -2713,250 +2499,6 @@ def _delete_sessions_by_project(project_id: str) -> list[str]:
         if _delete_session_files(sid) > 0:
             deleted_ids.append(sid)
     return deleted_ids
-
-GLOSSARY_SEED = BASE_DIR / "knowledge" / "glossary_seed.yml"
-
-if STATIC_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
-
-class AuthLoginIn(BaseModel):
-    email: str
-    password: str
-
-
-class AuthTokenOut(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-
-
-class AuthMeOut(BaseModel):
-    id: str
-    email: str
-    is_admin: bool = False
-    active_org_id: str = ""
-    default_org_id: str = ""
-    orgs: List[Dict[str, Any]] = []
-
-
-class OrgCreateIn(BaseModel):
-    name: str
-    id: Optional[str] = None
-
-
-class ProjectMemberUpsertIn(BaseModel):
-    user_id: str
-    role: str
-
-
-class ProjectMemberPatchIn(BaseModel):
-    role: str
-
-
-class OrgMemberPatchIn(BaseModel):
-    role: str
-
-
-class OrgInviteCreateIn(BaseModel):
-    email: str
-    role: str
-    ttl_days: Optional[int] = 7
-    team_name: Optional[str] = ""
-    subgroup_name: Optional[str] = ""
-    invite_comment: Optional[str] = ""
-    invite_mode: Optional[str] = "one_time"
-
-
-class OrgInviteAcceptIn(BaseModel):
-    token: str
-
-
-class InvitePreviewIn(BaseModel):
-    token: str
-
-
-class InviteActivateIn(BaseModel):
-    token: str
-    password: str
-    password_confirm: Optional[str] = None
-
-
-class CreateSessionIn(BaseModel):
-    title: str
-    roles: Optional[Any] = None
-    start_role: Optional[str] = None
-    ai_prep_questions: Optional[List[Dict[str, Any]]] = None
-
-    model_config = ConfigDict(extra="allow")
-
-
-
-class UpdateSessionIn(BaseModel):
-    title: Optional[str] = None
-    roles: Optional[Any] = None
-    start_role: Optional[str] = None
-    notes: Optional[Any] = None
-    notes_by_element: Optional[Any] = None
-    interview: Optional[Any] = None
-    nodes: Optional[Any] = None
-    edges: Optional[Any] = None
-    questions: Optional[Any] = None
-    bpmn_meta: Optional[Any] = None
-
-    # frontend часто шлёт derived поля (mermaid*, normalized, resources, version)
-    # бек имеет право игнорировать и пересчитывать их.
-    model_config = ConfigDict(extra="allow")
-
-# -----------------------------
-# Project Sessions: mode contract
-# -----------------------------
-ALLOWED_PROJECT_SESSION_MODES = ("quick_skeleton", "deep_audit")
-
-def _norm_project_session_mode(mode: str | None) -> str | None:
-    if mode is None:
-        return None
-    m = str(mode).strip().lower()
-    if not m:
-        return None
-    aliases = {
-        "quick": "quick_skeleton",
-        "qs": "quick_skeleton",
-        "skeleton": "quick_skeleton",
-        "deep": "deep_audit",
-        "da": "deep_audit",
-        "audit": "deep_audit",
-    }
-    m = aliases.get(m, m)
-    if m not in ALLOWED_PROJECT_SESSION_MODES:
-        return None
-    return m
-
-
-
-
-
-class NotesIn(BaseModel):
-    notes: str
-
-
-class AnswerIn(BaseModel):
-    question_id: str
-    answer: str
-    node_id: Optional[str] = None
-
-
-class NodePatchIn(BaseModel):
-    title: Optional[str] = None
-    type: Optional[str] = None
-    actor_role: Optional[str] = None
-    recipient_role: Optional[str] = None
-    equipment: Optional[List[str]] = None
-    duration_min: Optional[int] = None
-    parameters: Optional[Dict[str, Any]] = None
-    disposition: Optional[Dict[str, Any]] = None
-
-
-
-
-class CreateNodeIn(BaseModel):
-    id: Optional[str] = None
-    title: str
-    type: str = "step"
-    actor_role: Optional[str] = None
-    recipient_role: Optional[str] = None
-    equipment: Optional[List[str]] = None
-    duration_min: Optional[int] = None
-    parameters: Optional[Dict[str, Any]] = None
-    disposition: Optional[Dict[str, Any]] = None
-
-
-class CreateEdgeIn(BaseModel):
-    from_id: str
-    to_id: str
-    when: Optional[str] = None
-
-
-class GlossaryAddIn(BaseModel):
-    kind: str
-    term: str
-    canon: Optional[str] = None
-    title: Optional[str] = None
-
-
-
-
-class LlmSettingsIn(BaseModel):
-    api_key: str = ""
-    base_url: str = ""
-
-
-class LlmVerifyIn(BaseModel):
-    api_key: str = ""
-    base_url: str = ""
-
-
-class AiQuestionsIn(BaseModel):
-    limit: int = 10
-    mode: str = "strict"
-    reset: bool = False
-    node_id: Optional[str] = None
-    step_id: Optional[str] = None
-
-
-class SessionTitleQuestionsIn(BaseModel):
-    title: str
-    prompt: str = ""
-    min_questions: int = 15
-    max_questions: int = 20
-
-
-class BpmnXmlIn(BaseModel):
-    xml: str = ""
-    bpmn_meta: Optional[Dict[str, Any]] = None
-
-
-class BpmnMetaPatchIn(BaseModel):
-    flowId: Optional[str] = None
-    happy: Optional[bool] = None
-    tier: Optional[str] = None
-    rtier: Optional[str] = None
-    updates: Optional[List[Dict[str, Any]]] = None
-    flow_meta: Optional[Dict[str, Any]] = None
-    node_id: Optional[str] = None
-    paths: Optional[List[str]] = None
-    sequence_key: Optional[str] = None
-    source: Optional[str] = None
-    node_updates: Optional[List[Dict[str, Any]]] = None
-    node_path_meta: Optional[Dict[str, Any]] = None
-    robot_element_id: Optional[str] = None
-    robot_meta: Optional[Dict[str, Any]] = None
-    remove_robot_meta: Optional[bool] = None
-    robot_updates: Optional[List[Dict[str, Any]]] = None
-    robot_meta_by_element_id: Optional[Dict[str, Any]] = None
-    hybrid_layer_by_element_id: Optional[Dict[str, Any]] = None
-    hybrid_v2: Optional[Dict[str, Any]] = None
-    drawio: Optional[Dict[str, Any]] = None
-
-    model_config = ConfigDict(extra="allow")
-
-
-class InferRtiersIn(BaseModel):
-    scopeStartId: Optional[str] = None
-    successEndIds: Optional[List[str]] = None
-    failEndIds: Optional[List[str]] = None
-
-
-class CreatePathReportVersionIn(BaseModel):
-    steps_hash: str
-    request_payload_json: Dict[str, Any]
-    prompt_template_version: str = "v2"
-
-    model_config = ConfigDict(extra="allow")
-
-
-class OrgReportBuildIn(CreatePathReportVersionIn):
-    path_id: str
-
 
 def _merge_nodes(existing: List[Node], extracted: List[Node]) -> List[Node]:
     by_id = {n.id: n for n in existing}
@@ -3226,36 +2768,20 @@ def auth_me(request: Request):
     memberships = list_user_org_memberships(user_id, is_admin=is_admin)
     requested_org_id = _extract_org_from_headers(request)
     active_org_id = resolve_active_org_id(user_id, requested_org_id=requested_org_id, is_admin=is_admin)
-    return {
-        "id": user_id,
-        "email": str(user.get("email") or ""),
-        "is_admin": is_admin,
-        "active_org_id": active_org_id,
-        "default_org_id": get_default_org_id(),
-        "orgs": memberships,
-    }
-
-
-def _invite_error_to_response(marker_raw: str) -> JSONResponse:
-    marker = str(marker_raw or "").strip().lower()
-    if marker in {"invite_not_found", "invite_revoked"}:
-        return _enterprise_error(404, "not_found", marker or "not_found")
-    if marker == "invite_expired":
-        return _enterprise_error(410, "gone", "invite_expired")
-    if marker in {"invite_already_accepted", "invite_email_mismatch", "identity_already_active"}:
-        return _enterprise_error(409, "conflict", marker)
-    if marker in {"token is required", "password_required", "password_mismatch", "password_too_short"}:
-        return _enterprise_error(422, "validation_error", marker)
-    if marker in {"identity_not_found", "email_required"}:
-        return _enterprise_error(422, "validation_error", marker)
-    if marker:
-        return _enterprise_error(422, "validation_error", marker)
-    return _enterprise_error(500, "invite_activation_failed", "invite_activation_failed")
+    return build_auth_me_payload(
+        user_id=user_id,
+        email=str(user.get("email") or ""),
+        is_admin=is_admin,
+        active_org_id=active_org_id,
+        default_org_id=get_default_org_id(),
+        orgs=memberships,
+    )
 
 
 @app.post("/api/auth/invite/preview")
+@app.post("/api/invite/resolve")
 def auth_invite_preview(inp: InvitePreviewIn, request: Request):
-    token = str(getattr(inp, "token", "") or "").strip()
+    token = extract_invite_token(inp)
     if not token:
         return _enterprise_error(422, "validation_error", "token is required")
     try:
@@ -3264,42 +2790,17 @@ def auth_invite_preview(inp: InvitePreviewIn, request: Request):
         return _invite_error_to_response(str(exc or "").strip().lower())
 
     identity = find_user_by_email(str(invite.get("email") or "").strip().lower())
-    identity_state = "missing"
-    if isinstance(identity, dict):
-        has_password = bool(str(identity.get("password_hash") or "").strip())
-        is_active = bool(identity.get("is_active", False))
-        identity_state = "active" if (is_active and has_password) else "pending"
-
-    payload = {
-        "invite": {
-            "id": str(invite.get("id") or ""),
-            "email": str(invite.get("email") or ""),
-            "org_id": str(invite.get("org_id") or ""),
-            "org_name": str(invite.get("org_name") or invite.get("org_id") or ""),
-            "team_name": str(invite.get("team_name") or ""),
-            "subgroup_name": str(invite.get("subgroup_name") or ""),
-            "role": str(invite.get("role") or "viewer"),
-            "status": str(invite.get("status") or "active"),
-            "expires_at": int(invite.get("expires_at") or 0),
-            "invite_mode": "one_time",
-            "created_by": str(invite.get("created_by") or ""),
-            "used_by": str(invite.get("used_by") or ""),
-            "used_at": int(invite.get("used_at") or 0) if invite.get("used_at") else None,
-        },
-        "identity": {
-            "login": str(invite.get("email") or ""),
-            "email": str(invite.get("email") or ""),
-            "state": identity_state,
-            "readonly": True,
-        },
-        "activation_allowed": identity_state != "active",
-    }
-    return payload
+    return build_invite_preview_payload(
+        invite,
+        identity_state=invited_identity_state(identity),
+        single_org_mode=count_org_records() <= 1,
+    )
 
 
 @app.post("/api/auth/invite/activate")
+@app.post("/api/invite/activate")
 def auth_invite_activate(inp: InviteActivateIn, request: Request):
-    token = str(getattr(inp, "token", "") or "").strip()
+    token = extract_invite_token(inp)
     password = str(getattr(inp, "password", "") or "")
     password_confirm = str(getattr(inp, "password_confirm", "") or "")
     if not token:
@@ -3344,20 +2845,12 @@ def auth_invite_activate(inp: InviteActivateIn, request: Request):
         ip=_request_client_ip(request),
     )
     max_age = max(1, int(issued.get("refresh_expires_at", 0)) - int(time.time()))
-    payload = {
-        "access_token": str(issued.get("access_token") or ""),
-        "token_type": "bearer",
-        "invite": accepted,
-        "membership": {
-            "org_id": str(accepted.get("org_id") or ""),
-            "user_id": str(activated_user.get("id") or ""),
-            "role": str(accepted.get("role") or "viewer"),
-        },
-        "user": {
-            "id": str(activated_user.get("id") or ""),
-            "email": str(activated_user.get("email") or invited_email),
-        },
-    }
+    payload = build_invite_activate_payload(
+        issued=issued,
+        accepted=accepted,
+        activated_user=activated_user,
+        invited_email=invited_email,
+    )
     _audit_log_safe(
         request,
         org_id=str(accepted.get("org_id") or get_default_org_id()),
@@ -3444,12 +2937,22 @@ def list_project_sessions(project_id: str, mode: str | None = None, request: Req
 def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | None = Query(default="quick_skeleton"), request: Request = None):
     user = _request_auth_user(request) if request is not None else {}
     user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
+    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
     proj, oid, _ = _legacy_load_project_scoped(project_id, request)
     if proj is None:
         raise HTTPException(status_code=404, detail="project not found")
+    role = _org_role_for_request(request, oid) if request is not None and oid else ""
+    if not _can_edit_workspace(role, is_admin=is_admin):
+        raise HTTPException(status_code=403, detail="forbidden")
 
     st = get_storage()
-    title = getattr(inp, "title", None) or "process"
+    title = _clean_name(getattr(inp, "title", None) or "process") or "process"
+    sibling_titles = {
+        _clean_name(str((row or {}).get("title") or ""))
+        for row in st.list(project_id=project_id, mode=mode, limit=500, org_id=oid, is_admin=True)
+    }
+    if title in sibling_titles:
+        raise HTTPException(status_code=409, detail="session title already exists")
     roles = _norm_roles(getattr(inp, "roles", None))
     sr = getattr(inp, "start_role", None)
     if sr is not None and str(sr).strip() != "":
@@ -3527,7 +3030,30 @@ def get_session(session_id: str, request: Request = None) -> Dict[str, Any]:
     sess, _, _ = _legacy_load_session_scoped(session_id, request)
     if not sess:
         return {"error": "not found"}
-    return _session_api_dump(sess)
+    sid = str(getattr(sess, "id", "") or session_id).strip()
+    version_token = session_open_version_token(sess)
+    cache_key = session_open_cache_key(sid, version_token)
+    cached = cache_get_json(cache_key)
+    if isinstance(cached, dict):
+        logger.info(
+            "session_open_cache: hit session_id=%s version=%s",
+            sid,
+            version_token,
+        )
+        return cached
+    logger.info(
+        "session_open_cache: miss session_id=%s version=%s",
+        sid,
+        version_token,
+    )
+    payload = _session_api_dump(sess)
+    if cache_set_json(cache_key, payload, ttl_sec=session_open_cache_ttl_sec()):
+        logger.info(
+            "session_open_cache: write session_id=%s version=%s",
+            sid,
+            version_token,
+        )
+    return payload
 
 
 @app.get("/api/sessions/{session_id}/tldr")
@@ -3562,10 +3088,13 @@ def get_session_analytics(session_id: str, request: Request = None) -> dict:
 def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None) -> Dict[str, Any]:
     user = _request_auth_user(request) if request is not None else {}
     user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
+    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
+    effective_is_admin = is_admin or request is None
     st = get_storage()
     sess, oid, _ = _legacy_load_session_scoped(session_id, request)
     if not sess:
         return {"error": "not found"}
+    role = _org_role_for_request(request, oid) if request is not None and oid else ("org_admin" if effective_is_admin else "")
 
     data = inp.model_dump(exclude_unset=True)
 
@@ -3573,15 +3102,26 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
     need_recompute = False
 
     if "title" in data and data["title"] is not None:
-        title = str(data["title"]).strip()
+        if not _can_edit_workspace(role, is_admin=effective_is_admin):
+            raise HTTPException(status_code=403, detail="forbidden")
+        title = _clean_name(data["title"])
         if title:
-            sess2 = st.rename(session_id, title)
+            sibling_titles = {
+                _clean_name(str((row or {}).get("title") or ""))
+                for row in st.list(project_id=str(getattr(sess, "project_id", "") or "").strip(), limit=500, org_id=oid, is_admin=True)
+                if str((row or {}).get("id") or "").strip() != str(session_id).strip()
+            }
+            if title in sibling_titles:
+                raise HTTPException(status_code=409, detail="session title already exists")
+            sess2 = st.rename(session_id, title, user_id=user_id, is_admin=True)
             if not sess2:
                 return {"error": "not found"}
             sess = sess2
             handled = True
 
     if "roles" in data:
+        if not _can_edit_workspace(role, is_admin=effective_is_admin):
+            raise HTTPException(status_code=403, detail="forbidden")
         sess.roles = _norm_roles(data.get("roles"))
         if sess.start_role and sess.roles and sess.start_role not in sess.roles:
             sess.start_role = None
@@ -3589,6 +3129,8 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
         need_recompute = True
 
     if "start_role" in data:
+        if not _can_edit_workspace(role, is_admin=effective_is_admin):
+            raise HTTPException(status_code=403, detail="forbidden")
         sr = data.get("start_role")
         if sr is None or str(sr).strip() == "":
             sess.start_role = None
@@ -3601,34 +3143,58 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
         need_recompute = True
 
     if "notes" in data:
+        if not _can_edit_workspace(role, is_admin=effective_is_admin):
+            raise HTTPException(status_code=403, detail="forbidden")
         sess.notes = _notes_encode(data.get("notes"))
         handled = True
         need_recompute = True
 
     if "notes_by_element" in data:
+        if not _can_edit_workspace(role, is_admin=effective_is_admin):
+            raise HTTPException(status_code=403, detail="forbidden")
         sess.notes_by_element = _norm_notes_by_element(data.get("notes_by_element"))
         handled = True
 
     if "interview" in data:
+        if not _can_edit_workspace(role, is_admin=effective_is_admin):
+            raise HTTPException(status_code=403, detail="forbidden")
         sess.interview = _merge_interview_with_server_fields(sess.interview, data.get("interview"))
         handled = True
 
+    if "status" in data:
+        next_status = _validate_session_status_transition(
+            (sess.interview or {}).get("status"),
+            data.get("status"),
+            role_raw=role,
+            is_admin=effective_is_admin,
+        )
+        sess.interview = {**(sess.interview or {}), "status": next_status}
+        handled = True
+
     if "nodes" in data:
+        if not _can_edit_workspace(role, is_admin=effective_is_admin):
+            raise HTTPException(status_code=403, detail="forbidden")
         sess.nodes = _norm_nodes(data.get("nodes"))
         handled = True
         need_recompute = True
 
     if "edges" in data:
+        if not _can_edit_workspace(role, is_admin=effective_is_admin):
+            raise HTTPException(status_code=403, detail="forbidden")
         sess.edges = _norm_edges(data.get("edges"))
         handled = True
         need_recompute = True
 
     if "questions" in data:
+        if not _can_edit_workspace(role, is_admin=effective_is_admin):
+            raise HTTPException(status_code=403, detail="forbidden")
         sess.questions = _norm_questions(data.get("questions"))
         handled = True
         need_recompute = True
 
     if "bpmn_meta" in data:
+        if not _can_edit_workspace(role, is_admin=effective_is_admin):
+            raise HTTPException(status_code=403, detail="forbidden")
         sess_xml = str(getattr(sess, "bpmn_xml", "") or "")
         flow_ctx = _collect_sequence_flow_meta(sess_xml)
         flow_ids = flow_ctx.get("flow_ids")
@@ -3641,12 +3207,26 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
         incoming_meta = data.get("bpmn_meta")
         if isinstance(incoming_meta, dict):
             raw_bpmn_meta = {
+                **current_meta,
+                **incoming_meta,
                 "version": incoming_meta.get("version", current_meta.get("version", 1)),
                 "flow_meta": incoming_meta.get("flow_meta", current_meta.get("flow_meta", {})),
                 "node_path_meta": incoming_meta.get("node_path_meta", current_meta.get("node_path_meta", {})),
                 "robot_meta_by_element_id": incoming_meta.get(
                     "robot_meta_by_element_id",
                     current_meta.get("robot_meta_by_element_id", {}),
+                ),
+                "camunda_extensions_by_element_id": incoming_meta.get(
+                    "camunda_extensions_by_element_id",
+                    current_meta.get("camunda_extensions_by_element_id", {}),
+                ),
+                "presentation_by_element_id": incoming_meta.get(
+                    "presentation_by_element_id",
+                    current_meta.get("presentation_by_element_id", {}),
+                ),
+                "execution_plans": incoming_meta.get(
+                    "execution_plans",
+                    current_meta.get("execution_plans", []),
                 ),
                 "hybrid_layer_by_element_id": incoming_meta.get(
                     "hybrid_layer_by_element_id",
@@ -3703,6 +3283,11 @@ def delete_project_api(project_id: str, request: Request = None):
     ps = get_project_storage()
     if proj is None:
         return {"ok": False, "error": "project_not_found", "project_id": pid, "deleted_sessions": []}
+    role = _org_role_for_request(request, oid) if request is not None and oid else ""
+    user = _request_auth_user(request) if request is not None else {}
+    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
+    if not _can_delete_workspace_content(role, is_admin=is_admin):
+        raise HTTPException(status_code=403, detail="forbidden")
     st = get_storage()
     related = st.list(project_id=pid, limit=500, org_id=oid, is_admin=True)
     deleted_sessions: list[str] = []
@@ -3737,6 +3322,11 @@ def delete_session_api(session_id: str, request: Request = None):
     sess, oid, _ = _legacy_load_session_scoped(sid, request)
     if not sess:
         return {"ok": False, "error": "session_not_found", "session_id": sid}
+    role = _org_role_for_request(request, oid) if request is not None and oid else ""
+    user = _request_auth_user(request) if request is not None else {}
+    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
+    if not _can_delete_workspace_content(role, is_admin=is_admin):
+        raise HTTPException(status_code=403, detail="forbidden")
     st = get_storage()
     deleted = st.delete(sid, org_id=oid, is_admin=True)
     if not deleted:
@@ -5555,6 +5145,7 @@ def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn) -> Dict[str, 
 
     normalized = _normalize_bpmn_meta(
         {
+            **current,
             "version": current.get("version", 1),
             "flow_meta": flow_meta,
             "node_path_meta": node_path_meta,
@@ -5739,12 +5330,26 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn) -> Dict[str, Any]:
                 merged_drawio = current_drawio
 
             raw_bpmn_meta = {
+                **current_meta,
+                **incoming_meta,
                 "version": incoming_meta.get("version", current_meta.get("version", 1)),
                 "flow_meta": incoming_meta.get("flow_meta", current_meta.get("flow_meta", {})),
                 "node_path_meta": incoming_meta.get("node_path_meta", current_meta.get("node_path_meta", {})),
                 "robot_meta_by_element_id": incoming_meta.get(
                     "robot_meta_by_element_id",
                     current_meta.get("robot_meta_by_element_id", {}),
+                ),
+                "camunda_extensions_by_element_id": incoming_meta.get(
+                    "camunda_extensions_by_element_id",
+                    current_meta.get("camunda_extensions_by_element_id", {}),
+                ),
+                "presentation_by_element_id": incoming_meta.get(
+                    "presentation_by_element_id",
+                    current_meta.get("presentation_by_element_id", {}),
+                ),
+                "execution_plans": incoming_meta.get(
+                    "execution_plans",
+                    current_meta.get("execution_plans", []),
                 ),
                 "hybrid_layer_by_element_id": merged_hybrid_layer,
                 "hybrid_v2": merged_hybrid_v2,
@@ -5893,56 +5498,6 @@ def api_meta():
 # Enterprise org endpoints (dual-mode with legacy routes)
 # -----------------------------
 
-def _org_role_for_request(request: Request, org_id: str) -> str:
-    user = _request_auth_user(request)
-    user_id = str(user.get("id") or "").strip()
-    is_admin = bool(user.get("is_admin", False))
-    role = get_user_org_role(user_id, org_id, is_admin=is_admin)
-    return str(role or "")
-
-
-def _require_org_member_for_enterprise(request: Request, org_id: str) -> str:
-    oid = str(org_id or "").strip()
-    user = _request_auth_user(request)
-    user_id = str(user.get("id") or "").strip()
-    is_admin = bool(user.get("is_admin", False))
-    if not oid:
-        raise HTTPException(status_code=404, detail="not found")
-    if not user_has_org_membership(user_id, oid, is_admin=is_admin):
-        raise HTTPException(status_code=404, detail="not found")
-    return _org_role_for_request(request, oid)
-
-
-def _require_org_role(request: Request, org_id: str, allowed: Set[str]) -> str:
-    role = _require_org_member_for_enterprise(request, org_id)
-    if role not in allowed:
-        raise HTTPException(status_code=403, detail="forbidden")
-    return role
-
-
-def _enterprise_require_org_member(request: Request, org_id: str) -> Tuple[Optional[str], Optional[JSONResponse]]:
-    oid = str(org_id or "").strip()
-    if not oid:
-        return None, _enterprise_error(404, "not_found", "not_found")
-    uid, is_admin = _request_user_meta(request)
-    if not uid:
-        return None, _enterprise_error(401, "unauthorized", "unauthorized")
-    if not user_has_org_membership(uid, oid, is_admin=is_admin):
-        return None, _enterprise_error(404, "not_found", "not_found")
-    role = str(get_user_org_role(uid, oid, is_admin=is_admin) or "").strip().lower()
-    if role not in _ORG_READ_ROLES and not is_admin:
-        return None, _enterprise_error(403, "forbidden", "insufficient_permissions")
-    return role, None
-
-
-def _enterprise_require_org_role(request: Request, org_id: str, allowed: Set[str]) -> Tuple[Optional[str], Optional[JSONResponse]]:
-    role, err = _enterprise_require_org_member(request, org_id)
-    if err is not None:
-        return None, err
-    if str(role or "").strip().lower() not in {str(x or "").strip().lower() for x in allowed}:
-        return None, _enterprise_error(403, "forbidden", "insufficient_permissions")
-    return role, None
-
 
 def _enterprise_require_project_access(
     request: Request,
@@ -6001,18 +5556,6 @@ def _scope_allowed_project_ids(scope_raw: Any) -> Set[str]:
 def _is_role_allowed(role_raw: Any, allowed: Set[str]) -> bool:
     role = str(role_raw or "").strip().lower()
     return role in {str(item or "").strip().lower() for item in allowed}
-
-
-def _request_user_email(request: Optional[Request]) -> str:
-    user = _request_auth_user(request) if request is not None else {}
-    email = str((user or {}).get("email") or "").strip().lower()
-    if email:
-        return email
-    uid = str((user or {}).get("id") or "").strip()
-    if not uid:
-        return ""
-    row = find_user_by_id(uid)
-    return str((row or {}).get("email") or "").strip().lower()
 
 
 def _invite_email_enabled() -> bool:
@@ -6103,9 +5646,6 @@ def _send_org_invite_email(
         if username and password:
             smtp.login(username, password)
         smtp.send_message(msg)
-
-
-_validate_invite_email_config_on_boot()
 
 
 def _should_reveal_invite_token(request: Optional[Request]) -> bool:
@@ -6325,13 +5865,19 @@ def _workspace_session_status(
     interview_raw: Any,
 ) -> str:
     if int(reports_versions or 0) > 0:
-        return "ready"
-    if int(version or 0) > 0 or int(bpmn_xml_version or 0) > 0:
-        return "in_progress"
+        derived = "ready"
+    else:
+        derived = ""
+        if int(version or 0) > 0 or int(bpmn_xml_version or 0) > 0:
+            derived = "in_progress"
+        interview = interview_raw if isinstance(interview_raw, dict) else {}
+        if interview and not derived:
+            derived = "in_progress"
+        if not derived:
+            derived = "draft"
     interview = interview_raw if isinstance(interview_raw, dict) else {}
-    if interview:
-        return "in_progress"
-    return "draft"
+    manual = _normalize_session_status(interview.get("status"))
+    return manual or derived
 
 
 def _as_dict_obj(value: Any) -> Dict[str, Any]:
@@ -6477,11 +6023,22 @@ def _invalidate_tldr_cache_for_session(session_id: Any) -> None:
     invalidate_tldr_session(sid)
 
 
+def _invalidate_session_open_cache_for_session(session_id: Any) -> None:
+    sid = str(session_id or "").strip()
+    if not sid:
+        return
+    invalidate_session_open(sid)
+
+
 def _invalidate_session_caches(session_obj: Any = None, *, session_id: Any = None, org_id: Any = None) -> None:
     sid = str(session_id or getattr(session_obj, "id", "") or "").strip()
     oid = _resolved_org_for_cache(org_id or getattr(session_obj, "org_id", ""))
+    project_id = str(getattr(session_obj, "project_id", "") or "").strip()
     _invalidate_workspace_cache_for_org(oid)
+    if project_id:
+        explorer_invalidate_sessions(project_id)
     if sid:
+        _invalidate_session_open_cache_for_session(sid)
         _invalidate_tldr_cache_for_session(sid)
 
 
@@ -6584,8 +6141,8 @@ def enterprise_workspace(
     if group not in {"users", "projects"}:
         return _enterprise_error(422, "validation_error", "group_by must be users|projects")
     status_filter = str(status or "").strip().lower()
-    if status_filter and status_filter not in {"draft", "in_progress", "ready"}:
-        return _enterprise_error(422, "validation_error", "status must be draft|in_progress|ready")
+    if status_filter and status_filter not in _SESSION_STATUS_SET:
+        return _enterprise_error(422, "validation_error", "status must be draft|in_progress|review|ready|archived")
     try:
         lim = max(1, min(int(limit or 50), 200))
     except Exception:
@@ -6740,8 +6297,8 @@ def enterprise_workspace(
             "dod_artifacts": dod_artifacts,
             "dod_snapshot_pct": dod_artifacts.get("dod_snapshot_pct"),
             "can_view": True,
-            "can_edit": role_l in _ORG_EDITOR_ROLES,
-            "can_manage": role_l in _ORG_PROJECT_MEMBER_MANAGE_ROLES,
+            "can_edit": _can_edit_workspace(role_l, is_admin=is_admin),
+            "can_manage": _can_manage_workspace(role_l, is_admin=is_admin),
         }
         sessions_all.append(session)
         project_counts[pid] = int(project_counts.get(pid, 0) or 0) + 1
@@ -6754,12 +6311,14 @@ def enterprise_workspace(
         "total": int(total),
         "draft": 0,
         "in_progress": 0,
+        "review": 0,
         "ready": 0,
+        "archived": 0,
         "attention": 0,
     }
     for item in sessions_all:
         status_key = str(item.get("status") or "").strip().lower()
-        if status_key not in {"draft", "in_progress", "ready"}:
+        if status_key not in _SESSION_STATUS_SET:
             status_key = "draft"
         summary[status_key] = int(summary.get(status_key, 0) or 0) + 1
         summary["attention"] = int(summary.get("attention", 0) or 0) + int(item.get("needs_attention") or 0)
@@ -6793,6 +6352,7 @@ def enterprise_workspace(
             "name": str(row.get("title") or pid).strip(),
             "owner_id": owner_id,
             "owner": str(owner_info.get("email") or owner_id or "").strip(),
+            "workspace_id": str(row.get("workspace_id") or "").strip(),
             "updated_at": int(row.get("updated_at") or 0),
             "created_at": int(row.get("created_at") or 0),
             "session_count": int(project_counts.get(pid, 0) or 0),
@@ -6829,18 +6389,13 @@ def enterprise_workspace(
     return result
 
 
-@app.get("/api/orgs")
 def list_orgs_endpoint(request: Request) -> Dict[str, Any]:
     user = _request_auth_user(request)
     user_id = str(user.get("id") or "").strip()
     is_admin = bool(user.get("is_admin", False))
     active_org_id = str(getattr(request.state, "active_org_id", "") or "").strip() or resolve_active_org_id(user_id, is_admin=is_admin)
     items = list_user_org_memberships(user_id, is_admin=is_admin)
-    return {
-        "items": items,
-        "active_org_id": active_org_id,
-        "default_org_id": get_default_org_id(),
-    }
+    return build_items_payload(items, active_org_id=active_org_id, default_org_id=get_default_org_id())
 
 
 @app.post("/api/orgs")
@@ -6859,7 +6414,39 @@ def create_org_endpoint(inp: OrgCreateIn, request: Request) -> Dict[str, Any]:
     return org
 
 
-@app.get("/api/orgs/{org_id}/members")
+@app.patch("/api/orgs/{org_id}")
+def patch_org_endpoint(org_id: str, inp: OrgPatchIn, request: Request) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    role, err = _enterprise_require_org_role(request, oid, _ORG_MEMBER_MANAGE_ROLES)
+    if err is not None:
+        return err
+    uid, is_admin = _request_user_meta(request)
+    if not _can_manage_workspace(role, is_admin=is_admin):
+        return _enterprise_error(403, "forbidden", "insufficient_permissions")
+    name = _clean_name(getattr(inp, "name", ""))
+    if not name:
+        return _enterprise_error(422, "validation_error", "name is required")
+    try:
+        org = rename_org_with_validation(oid, name)
+    except ValueError as exc:
+        marker = str(exc or "").strip().lower()
+        if "exists" in marker:
+            return _enterprise_error(409, "conflict", "workspace_name_exists")
+        if "not found" in marker:
+            return _enterprise_error(404, "not_found", "not_found")
+        return _enterprise_error(422, "validation_error", str(exc))
+    _audit_log_safe(
+        request,
+        org_id=oid,
+        action="org.rename",
+        entity_type="org",
+        entity_id=oid,
+        meta={"name": name, "actor_user_id": uid},
+    )
+    _invalidate_workspace_cache_for_org(oid)
+    return org
+
+
 def list_org_members_endpoint(org_id: str, request: Request) -> Dict[str, Any]:
     oid = str(org_id or "").strip()
     role, err = _enterprise_require_org_member(request, oid)
@@ -6870,7 +6457,7 @@ def list_org_members_endpoint(org_id: str, request: Request) -> Dict[str, Any]:
     if not (is_admin or _is_role_allowed(role_l, {"org_owner", "org_admin", "auditor"})):
         return _enterprise_error(403, "forbidden", "insufficient_permissions")
     items = _enrich_members_with_email(list_org_memberships(oid))
-    return {"items": items, "count": len(items), "org_id": oid}
+    return build_items_count_payload(items, org_id=oid)
 
 
 @app.patch("/api/orgs/{org_id}/members/{user_id}")
@@ -7059,7 +6646,7 @@ def list_org_project_members(org_id: str, project_id: str, request: Request) -> 
     if ps.load(pid, org_id=oid, is_admin=True) is None:
         return _enterprise_error(404, "not_found", "not_found")
     items = list_project_memberships(oid, project_id=pid)
-    return {"items": items, "count": len(items)}
+    return build_items_count_payload(items)
 
 
 @app.post("/api/orgs/{org_id}/projects/{project_id}/members")
@@ -7149,34 +6736,32 @@ def delete_org_project_member(org_id: str, project_id: str, user_id: str, reques
 
 
 @app.get("/api/orgs/{org_id}/invites")
+@app.get("/api/admin/organizations/{org_id}/invites")
 def list_org_invites_endpoint(org_id: str, request: Request):
     oid = str(org_id or "").strip()
     _, err = _enterprise_require_org_role(request, oid, _ORG_INVITE_MANAGE_ROLES)
     if err is not None:
         return err
     items = list_org_invites(oid, include_inactive=True)
-    return {"items": items, "count": len(items)}
+    return build_items_count_payload(items)
 
 
 @app.post("/api/orgs/{org_id}/invites")
+@app.post("/api/admin/organizations/{org_id}/invites")
 def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Request):
     oid = str(org_id or "").strip()
     _, err = _enterprise_require_org_role(request, oid, _ORG_INVITE_MANAGE_ROLES)
     if err is not None:
         return err
     email = str(getattr(inp, "email", "") or "").strip().lower()
-    role = str(getattr(inp, "role", "") or "").strip()
-    team_name = str(getattr(inp, "team_name", "") or "").strip()
-    subgroup_name = str(getattr(inp, "subgroup_name", "") or "").strip()
-    invite_comment = str(getattr(inp, "invite_comment", "") or "").strip()
-    invite_mode = str(getattr(inp, "invite_mode", "one_time") or "one_time").strip().lower()
-    ttl_days = int(getattr(inp, "ttl_days", 7) or 7)
+    full_name = str(getattr(inp, "full_name", "") or "").strip()
+    job_title = str(getattr(inp, "job_title", "") or "").strip()
+    try:
+        normalized_invite_role = normalize_invite_role(getattr(inp, "role", "viewer"))
+    except ValueError as exc:
+        return _enterprise_error(422, "validation_error", str(exc))
     if not email or "@" not in email:
         return _enterprise_error(422, "validation_error", "valid email is required")
-    if not role:
-        return _enterprise_error(422, "validation_error", "role is required")
-    if invite_mode and invite_mode not in {"one_time", "single_use"}:
-        return _enterprise_error(422, "validation_error", "only one_time invite mode is supported")
     invite_limit = max(1, _env_int("RL_INVITES_PER_MIN", 20))
     ip_key = str(_request_client_ip(request) or "ip_unknown")
     if not _rate_limit_check(f"invites:create:{oid}:{ip_key}", invite_limit, 60):
@@ -7184,14 +6769,7 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
     uid, is_admin = _request_user_meta(request)
     if not uid:
         return _enterprise_error(401, "unauthorized", "unauthorized")
-    ttl_days = 0
-    try:
-        ttl_days = int(getattr(inp, "ttl_days", 0) or 0)
-    except Exception:
-        ttl_days = 0
-    if ttl_days <= 0:
-        ttl_days = max(1, int(math.ceil(float(_invite_ttl_hours_default()) / 24.0)))
-    ttl_days = max(1, min(ttl_days, 60))
+    ttl_days = normalize_invite_ttl_days(getattr(inp, "ttl_days", 0), _invite_ttl_hours_default())
     email_delivery = _invite_email_enabled()
     if email_delivery:
         ready, reason, _ = _invite_email_config_ready()
@@ -7204,11 +6782,10 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
         created = create_org_invite(
             oid,
             email,
-            role,
             created_by=uid,
-            team_name=team_name,
-            subgroup_name=subgroup_name,
-            invite_comment=invite_comment,
+            full_name=full_name,
+            job_title=job_title,
+            role=normalized_invite_role,
             ttl_days=ttl_days,
         )
     except ValueError as exc:
@@ -7226,7 +6803,7 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
         try:
             _send_org_invite_email(
                 to_email=email,
-                org_name=str(created.get("org_id") or oid),
+                org_name=str(created.get("org_name") or created.get("org_id") or oid),
                 role=str(created.get("role") or "viewer"),
                 invite_link=invite_link,
                 expires_at=int(created.get("expires_at") or 0),
@@ -7243,8 +6820,8 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
                 meta={
                     "email": email,
                     "role": str(created.get("role") or ""),
-                    "team_name": team_name,
-                    "subgroup_name": subgroup_name,
+                    "full_name": full_name,
+                    "job_title": job_title,
                     "invite_mode": "one_time",
                     "reason": "smtp_send_failed",
                 },
@@ -7254,6 +6831,7 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
     else:
         expose_token = _should_reveal_invite_token(request)
         if expose_token and token:
+            response_payload["invite_key"] = token
             response_payload["invite_token"] = token
             cfg = _invite_email_config()
             base_url = str(cfg.get("base_url") or "").strip()
@@ -7266,15 +6844,14 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
         entity_type="org_invite",
         entity_id=str(created.get("id") or ""),
         status="ok",
-        meta={
-            "email": email,
-            "role": str(created.get("role") or ""),
-            "team_name": team_name,
-            "subgroup_name": subgroup_name,
-            "invite_mode": "one_time",
-            "delivery": str(response_payload.get("delivery") or "token"),
-            "is_admin": bool(is_admin),
-        },
+        meta=build_invite_create_audit_meta(
+            email=email,
+            role=str(created.get("role") or ""),
+            full_name=full_name,
+            job_title=job_title,
+            delivery=str(response_payload.get("delivery") or "token"),
+            is_admin=bool(is_admin),
+        ),
     )
     return response_payload
 
@@ -7308,11 +6885,13 @@ def _accept_org_invite_response(request: Request, *, org_id: Optional[str], toke
             status="fail",
             meta={"reason": marker or "validation_error"},
         )
-        if marker in {"invite_not_found", "invite_revoked"}:
+        if marker in {"invite_not_found"}:
             return _enterprise_error(404, "not_found", "not_found")
+        if marker == "invite_revoked":
+            return _enterprise_error(409, "conflict", "invite_revoked")
         if marker == "invite_expired":
             return _enterprise_error(410, "gone", "invite_expired")
-        if marker in {"invite_already_accepted", "invite_email_mismatch"}:
+        if marker in {"invite_already_accepted", "invite_used", "invite_email_mismatch"}:
             return _enterprise_error(409, "conflict", marker)
         return _enterprise_error(422, "validation_error", marker or "validation_error")
     accepted_org = str(accepted.get("org_id") or oid or "").strip()
@@ -7342,6 +6921,7 @@ def accept_invite_endpoint(inp: OrgInviteAcceptIn, request: Request):
 
 
 @app.post("/api/orgs/{org_id}/invites/{invite_id}/revoke")
+@app.post("/api/admin/organizations/{org_id}/invites/{invite_id}/revoke")
 def revoke_org_invite_endpoint(org_id: str, invite_id: str, request: Request):
     oid = str(org_id or "").strip()
     iid = str(invite_id or "").strip()
@@ -7635,9 +7215,22 @@ def list_projects(request: Request = None) -> list[dict]:
 def create_project(inp: CreateProjectIn, request: Request = None) -> dict:
     user = _request_auth_user(request) if request is not None else {}
     user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
+    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
     oid = _request_active_org_id(request) if request is not None else ""
+    role = _org_role_for_request(request, oid) if request is not None and oid else ""
+    if oid and not _can_edit_workspace(role, is_admin=is_admin):
+        raise HTTPException(status_code=403, detail="forbidden")
     st = get_project_storage()
-    pid = st.create(title=inp.title, passport=inp.passport, user_id=user_id, org_id=(oid or None))
+    title = _clean_name(inp.title)
+    if not title:
+        raise HTTPException(status_code=422, detail="title required")
+    sibling_titles = {
+        _clean_name(getattr(item, "title", ""))
+        for item in st.list(org_id=(oid or None), is_admin=True)
+    }
+    if title in sibling_titles:
+        raise HTTPException(status_code=409, detail="project title already exists")
+    pid = st.create(title=title, passport=inp.passport, user_id=user_id, org_id=(oid or None))
     proj = st.load(pid, org_id=(oid or None), is_admin=True)
     if not proj:
         raise HTTPException(status_code=500, detail="create failed")
@@ -7666,16 +7259,27 @@ def get_project(project_id: str, request: Request = None) -> dict:
 def patch_project(project_id: str, inp: UpdateProjectIn, request: Request = None) -> dict:
     user = _request_auth_user(request) if request is not None else {}
     user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
+    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
     proj, oid, _ = _legacy_load_project_scoped(project_id, request)
     st = get_project_storage()
     if not proj:
         raise HTTPException(status_code=404, detail="not found")
+    role = _org_role_for_request(request, oid) if request is not None and oid else ""
+    if not _can_edit_workspace(role, is_admin=is_admin):
+        raise HTTPException(status_code=403, detail="forbidden")
 
     payload = inp.model_dump(exclude_unset=True)
 
     if "title" in payload and payload["title"] is not None:
-        t = str(payload["title"]).strip()
+        t = _clean_name(payload["title"])
         if t:
+            sibling_titles = {
+                _clean_name(getattr(item, "title", ""))
+                for item in st.list(org_id=(oid or None), is_admin=True)
+                if str(getattr(item, "id", "") or "").strip() != str(getattr(proj, "id", "") or project_id).strip()
+            }
+            if t in sibling_titles:
+                raise HTTPException(status_code=409, detail="project title already exists")
             proj.title = t
 
     if "passport" in payload and payload["passport"] is not None:
@@ -7727,3 +7331,14 @@ def put_project(project_id: str, inp: CreateProjectIn, request: Request = None) 
         meta={"title": str(getattr(proj, "title", "") or ""), "put": True},
     )
     return proj.model_dump()
+
+
+def _build_legacy_route_export() -> Tuple[APIRoute, ...]:
+    return tuple(route for route in app.router.routes if isinstance(route, APIRoute))
+
+
+LEGACY_ROUTE_EXPORT: Tuple[APIRoute, ...] = _build_legacy_route_export()
+
+
+def export_legacy_routes() -> Tuple[APIRoute, ...]:
+    return LEGACY_ROUTE_EXPORT

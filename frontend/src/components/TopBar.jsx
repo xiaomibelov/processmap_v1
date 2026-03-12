@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import AiToolsModal from "./AiToolsModal";
 import { useAuth } from "../features/auth/AuthProvider";
+import { getManualSessionStatusMeta } from "../features/workspace/workspacePermissions";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -81,13 +82,13 @@ export default function TopBar({
   canManageProjectEntities = true,
   sessions,
   sessionId,
+  sessionStatus = "draft",
   onOpenSession,
   onOpenWorkspace,
   onOpen,
   onDeleteSession,
+  onChangeSessionStatus,
   onNewProject,
-  onNewBackendSession,
-  onNewBackend,
   llmHasApiKey,
   llmBaseUrl,
   llmSaving,
@@ -98,6 +99,7 @@ export default function TopBar({
   llmVerifyBusy,
   onSaveLlmSettings,
   onVerifyLlmSettings,
+  draft,
 }) {
   const { logout, user } = useAuth();
   const orgList = useMemo(() => asArray(orgs), [orgs]);
@@ -105,7 +107,11 @@ export default function TopBar({
   const sessList = useMemo(() => asArray(sessions), [sessions]);
   const isApiOk = backendStatus === true || backendStatus === "ok";
   const openSessionHandler = onOpenSession || onOpen;
-  const newBackendHandler = onNewBackendSession || onNewBackend;
+  const draftProjectId = toText(draft?.project_id || draft?.projectId);
+  const draftSessionId = toText(draft?.session_id || draft?.id);
+  const effectiveProjectId = toText(projectId || draftProjectId);
+  const effectiveSessionId = toText(sessionId || draftSessionId);
+  const hasActiveSession = effectiveSessionId.length > 0;
   const [uiTheme, setUiTheme] = useState("dark");
   const [aiToolsOpen, setAiToolsOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
@@ -224,27 +230,47 @@ export default function TopBar({
       ? "border-danger/50 bg-danger/15 text-danger"
       : aiPillClass;
   const selectedProjectTitle = useMemo(() => {
-    const id = String(projectId || "").trim();
+    const id = effectiveProjectId;
     if (!id) return "";
     const found = projList.find((item) => projectIdFrom(item) === id);
     const createdBy = shortActor(found?.created_by || found?.owner_user_id);
     const updatedBy = shortActor(found?.updated_by || found?.created_by || found?.owner_user_id);
-    return `${projectTitleFrom(found)} · Created by ${createdBy} · Updated by ${updatedBy}`;
-  }, [projList, projectId]);
+    const title = projectTitleFrom(found || { title: id });
+    return `${title} · Created by ${createdBy} · Updated by ${updatedBy}`;
+  }, [effectiveProjectId, projList]);
   const selectedSessionTitle = useMemo(() => {
-    const id = String(sessionId || "").trim();
+    const id = effectiveSessionId;
     if (!id) return "";
     const found = sessList.find((item) => sessionIdFrom(item) === id);
-    const createdBy = shortActor(found?.created_by || found?.owner_user_id);
-    const updatedBy = shortActor(found?.updated_by || found?.created_by || found?.owner_user_id);
-    return `${sessionTitleFrom(found)} · Created by ${createdBy} · Updated by ${updatedBy}`;
-  }, [sessList, sessionId]);
+    const fallback = {
+      title: toText(draft?.title || draft?.name || id),
+      id,
+      created_by: draft?.created_by,
+      updated_by: draft?.updated_by,
+      owner_user_id: draft?.owner_user_id,
+    };
+    const source = found || fallback;
+    const createdBy = shortActor(source?.created_by || source?.owner_user_id);
+    const updatedBy = shortActor(source?.updated_by || source?.created_by || source?.owner_user_id);
+    return `${sessionTitleFrom(source)} · Created by ${createdBy} · Updated by ${updatedBy}`;
+  }, [draft?.created_by, draft?.name, draft?.owner_user_id, draft?.title, draft?.updated_by, effectiveSessionId, sessList]);
   const activeOrgRole = useMemo(() => {
     const id = String(activeOrgId || "").trim();
     if (!id) return "";
     const found = orgList.find((item) => orgIdFrom(item) === id);
     return String(found?.role || "").trim().toLowerCase();
   }, [activeOrgId, orgList]);
+  const currentOrg = useMemo(() => {
+    const id = String(activeOrgId || "").trim();
+    if (!id) return null;
+    return orgList.find((item) => orgIdFrom(item) === id) || null;
+  }, [activeOrgId, orgList]);
+  const currentOrgLabel = useMemo(
+    () => String(currentOrg?.name || currentOrg?.org_name || activeOrgId || "").trim() || "Организация",
+    [activeOrgId, currentOrg],
+  );
+  const hasMultiOrg = orgList.length > 1;
+  const sessionStatusMeta = getManualSessionStatusMeta(sessionStatus);
   const canOpenOrgSettings = Boolean(user?.is_admin) || ["org_owner", "org_admin", "auditor"].includes(activeOrgRole);
 
   async function handleLogout() {
@@ -268,8 +294,8 @@ export default function TopBar({
   }
 
   return (
-    <div className="topbar sticky left-0 right-0 top-0 z-40 flex h-auto min-h-12 w-full min-w-0 shrink-0 items-center gap-3 border-b border-border bg-panel/95 px-3 py-2 backdrop-blur">
-      <div className="topbarNavLeft flex min-w-[180px] shrink-0 items-center gap-2">
+    <div className="topbar sticky left-0 right-0 top-0 z-40 flex h-auto min-h-12 w-full min-w-0 shrink-0 items-center gap-2 border-b border-border bg-panel/95 px-3 py-2 backdrop-blur md:gap-3">
+      <div className="topbarNavLeft flex min-w-0 shrink-0 items-center gap-2">
         <div
           className="brand mr-1 inline-flex shrink-0 items-center text-xl font-black uppercase tracking-[0.08em] text-fg"
           data-testid="topbar-brand-text"
@@ -280,160 +306,139 @@ export default function TopBar({
           type="button"
           className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-3 py-0 text-sm"
           onClick={() => onOpenWorkspace?.()}
-          title="Вернуться к странице проектов"
+          title={hasActiveSession ? "Вернуться к проекту" : "Вернуться к списку проектов"}
           data-testid="topbar-back-projects"
         >
-          ← Проекты
+          {hasActiveSession ? "← К проекту" : "← Проекты"}
         </button>
       </div>
 
-      <div className="topbarNavCenter flex min-w-0 flex-1 items-center justify-center gap-2 overflow-visible">
-        <div
-          className="topGroup relative flex min-w-[180px] max-w-[340px] flex-1 items-center gap-1.5 rounded-full border border-border/70 bg-panel2/40 px-2 py-1"
-          title={selectedProjectTitle}
-        >
-          <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.1em] text-muted">ПРОЕКТ</span>
-          <div className="min-w-0 flex-1">
-            <select
-              className="h-7 min-h-0 w-full truncate appearance-none border-0 bg-transparent px-0 py-0 text-[13px] font-semibold text-fg outline-none"
-              value={projectId || ""}
+      <div className="topbarNavCenter flex min-w-0 flex-1 items-center justify-center gap-1.5 overflow-visible md:gap-2">
+        {hasActiveSession ? (
+          <>
+            <div
+              className="topGroup relative flex min-w-[180px] max-w-[320px] flex-1 items-center gap-1.5 rounded-full border border-border/70 bg-panel2/40 px-2 py-1"
               title={selectedProjectTitle}
-              onChange={(e) => onProjectChange?.(e.target.value)}
-              data-testid="topbar-project-select"
             >
-              <option value="">{projList.length ? "Выбери проект" : "Нет проектов"}</option>
-              {projList.map((p, idx) => {
-                const id = projectIdFrom(p);
-                return (
-                  <option key={`${id || "p"}_${idx}`} value={id} title={projectTitleFrom(p)}>
-                    {shortLabel(projectTitleFrom(p), 48)}
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-          <button
-            ref={projectMenuButtonRef}
-            type="button"
-            className="inline-flex h-6 w-6 min-w-6 items-center justify-center rounded-full text-[12px] text-muted transition hover:text-fg"
-            onClick={() => setProjectMenuOpen((prev) => !prev)}
-            title="Действия проекта"
-            data-testid="topbar-project-actions-button"
-            aria-label="Действия проекта"
-          >
-            ▾
-          </button>
-          {projectMenuOpen ? (
-            <div
-              ref={projectMenuRef}
-              className="absolute right-1 top-[calc(100%+8px)] z-[130] grid min-w-[220px] gap-1 rounded-xl border border-border bg-panel p-1.5 shadow-panel"
-              data-testid="topbar-project-actions-menu"
-            >
+              <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.1em] text-muted">ПРОЕКТ</span>
+              <div className="min-w-0 flex-1 truncate px-1 text-[13px] font-semibold text-fg" data-testid="topbar-project-title">
+                {effectiveProjectId ? shortLabel(selectedProjectTitle, 48) : "Проект не выбран"}
+              </div>
               <button
+                ref={projectMenuButtonRef}
                 type="button"
-                className="secondaryBtn h-9 w-full justify-start px-3 text-left text-sm"
-                onClick={() => {
-                  setProjectMenuOpen(false);
-                  onOpenWorkspace?.();
-                }}
+                className="inline-flex h-6 w-6 min-w-6 items-center justify-center rounded-full text-[12px] text-muted transition hover:text-fg"
+                onClick={() => setProjectMenuOpen((prev) => !prev)}
+                title="Действия проекта"
+                data-testid="topbar-project-actions-button"
+                aria-label="Действия проекта"
               >
-                ← Проекты
+                ▾
               </button>
-              <button
-                type="button"
-                className="secondaryBtn h-9 w-full justify-start px-3 text-left text-sm"
-                onClick={() => {
-                  setProjectMenuOpen(false);
-                  onNewProject?.();
-                }}
-                data-testid="topbar-new-project"
-              >
-                Новый проект
-              </button>
-              {canManageProjectEntities ? (
-                <button
-                  type="button"
-                  className="secondaryBtn h-9 w-full justify-start border-danger/45 bg-danger/10 px-3 text-left text-sm text-danger hover:border-danger/60 hover:bg-danger/20"
-                  onClick={() => {
-                    setProjectMenuOpen(false);
-                    onDeleteProject?.();
-                  }}
-                  disabled={!projectId}
+              {projectMenuOpen ? (
+                <div
+                  ref={projectMenuRef}
+                  className="absolute right-1 top-[calc(100%+8px)] z-[130] grid min-w-[220px] gap-1 rounded-xl border border-border bg-panel p-1.5 shadow-panel"
+                  data-testid="topbar-project-actions-menu"
                 >
-                  Удалить проект
-                </button>
+                  <button
+                    type="button"
+                    className="secondaryBtn h-9 w-full justify-start px-3 text-left text-sm"
+                    onClick={() => {
+                      setProjectMenuOpen(false);
+                      onOpenWorkspace?.();
+                    }}
+                  >
+                    ← Проекты
+                  </button>
+                  <button
+                    type="button"
+                    className="secondaryBtn h-9 w-full justify-start px-3 text-left text-sm"
+                    onClick={() => {
+                      setProjectMenuOpen(false);
+                      onNewProject?.();
+                    }}
+                    data-testid="topbar-new-project"
+                  >
+                    Новый проект
+                  </button>
+                  {canManageProjectEntities ? (
+                    <button
+                      type="button"
+                      className="secondaryBtn h-9 w-full justify-start border-danger/45 bg-danger/10 px-3 text-left text-sm text-danger hover:border-danger/60 hover:bg-danger/20"
+                      onClick={() => {
+                        setProjectMenuOpen(false);
+                        onDeleteProject?.();
+                      }}
+                      disabled={!effectiveProjectId}
+                    >
+                      Удалить проект
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
             </div>
-          ) : null}
-        </div>
 
-        <div
-          className="topGroup relative flex min-w-[200px] max-w-[380px] flex-1 items-center gap-1.5 rounded-full border border-border/70 bg-panel2/40 px-2 py-1"
-          title={selectedSessionTitle}
-        >
-          <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.1em] text-muted">СЕССИЯ</span>
-          <div className="min-w-0 flex-1">
-            <select
-              className="h-7 min-h-0 w-full truncate appearance-none border-0 bg-transparent px-0 py-0 text-[13px] font-semibold text-fg outline-none"
-              value={sessionId || ""}
-              title={selectedSessionTitle}
-              onChange={(e) => openSessionHandler?.(e.target.value)}
-              data-testid="topbar-session-select"
-            >
-              <option value="">{sessList.length ? "Выбери сессию" : "Нет сессий"}</option>
-              {sessList.map((s, idx) => {
-                const id = sessionIdFrom(s);
-                return (
-                  <option key={`${id || "s"}_${idx}`} value={id} title={sessionTitleFrom(s)}>
-                    {shortLabel(sessionTitleFrom(s), 56)}
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-          <button
-            ref={sessionMenuButtonRef}
-            type="button"
-            className="inline-flex h-6 w-6 min-w-6 items-center justify-center rounded-full text-[12px] text-muted transition hover:text-fg"
-            onClick={() => setSessionMenuOpen((prev) => !prev)}
-            title="Действия сессии"
-            data-testid="topbar-session-actions-button"
-            aria-label="Действия сессии"
-          >
-            ▾
-          </button>
-          {sessionMenuOpen ? (
             <div
-              ref={sessionMenuRef}
-              className="absolute right-1 top-[calc(100%+8px)] z-[130] grid min-w-[220px] gap-1 rounded-xl border border-border bg-panel p-1.5 shadow-panel"
-              data-testid="topbar-session-actions-menu"
+              className="topGroup relative flex min-w-[200px] max-w-[360px] flex-1 items-center gap-1.5 rounded-full border border-border/70 bg-panel2/40 px-2 py-1"
+              title={selectedSessionTitle}
             >
-              <button
-                type="button"
-                className="secondaryBtn h-9 w-full justify-start px-3 text-left text-sm"
-                onClick={() => {
-                  setSessionMenuOpen(false);
-                  onOpenWorkspace?.();
-                }}
+              <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.1em] text-muted">СЕССИЯ</span>
+              <div className="min-w-0 flex-1 truncate px-1 text-[13px] font-semibold text-fg" data-testid="topbar-session-title">
+                {shortLabel(selectedSessionTitle, 56)}
+              </div>
+              <span
+                className={`inline-flex items-center rounded-full border px-2 py-1 text-[11px] font-medium ${sessionStatusMeta.badgeClass}`}
+                title="Статус сессии"
+                data-testid="topbar-session-status"
               >
-                К списку сессий
+                {sessionStatusMeta.label}
+              </span>
+              <button
+                ref={sessionMenuButtonRef}
+                type="button"
+                className="inline-flex h-6 w-6 min-w-6 items-center justify-center rounded-full text-[12px] text-muted transition hover:text-fg"
+                onClick={() => setSessionMenuOpen((prev) => !prev)}
+                title="Действия сессии"
+                data-testid="topbar-session-actions-button"
+                aria-label="Действия сессии"
+              >
+                ▾
               </button>
-              {canManageProjectEntities ? (
-                <button
-                  type="button"
-                  className="secondaryBtn h-9 w-full justify-start border-danger/45 bg-danger/10 px-3 text-left text-sm text-danger hover:border-danger/60 hover:bg-danger/20"
-                  onClick={() => {
-                    setSessionMenuOpen(false);
-                    onDeleteSession?.();
-                  }}
-                  disabled={!sessionId}
+              {sessionMenuOpen ? (
+                <div
+                  ref={sessionMenuRef}
+                  className="absolute right-1 top-[calc(100%+8px)] z-[130] grid min-w-[220px] gap-1 rounded-xl border border-border bg-panel p-1.5 shadow-panel"
+                  data-testid="topbar-session-actions-menu"
                 >
-                  Удалить сессию
-                </button>
+                  <button
+                    type="button"
+                    className="secondaryBtn h-9 w-full justify-start px-3 text-left text-sm"
+                    onClick={() => {
+                      setSessionMenuOpen(false);
+                      onOpenWorkspace?.();
+                    }}
+                  >
+                    К списку сессий
+                  </button>
+                  {canManageProjectEntities ? (
+                    <button
+                      type="button"
+                      className="secondaryBtn h-9 w-full justify-start border-danger/45 bg-danger/10 px-3 text-left text-sm text-danger hover:border-danger/60 hover:bg-danger/20"
+                      onClick={() => {
+                        setSessionMenuOpen(false);
+                        onDeleteSession?.();
+                      }}
+                      disabled={!effectiveSessionId}
+                    >
+                      Удалить сессию
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
             </div>
-          ) : null}
-        </div>
+          </>
+        ) : null}
       </div>
 
       <div className="topCenter hidden min-w-[140px] justify-center md:flex">
@@ -444,22 +449,35 @@ export default function TopBar({
         ) : null}
       </div>
 
-      <div className="topbarNavRight relative flex min-w-0 shrink-0 items-center justify-end gap-2 overflow-visible whitespace-nowrap">
-        <button
-          type="button"
-          className="primaryBtn h-9 min-h-0 whitespace-nowrap px-3 py-0 text-sm"
-          onClick={() => newBackendHandler?.()}
-          disabled={!projectId}
-          title={!projectId ? "Сначала выбери проект" : "Открыть мастер создания сессии"}
-          data-testid="topbar-new-session"
-        >
-          Создать сессию
-        </button>
-        <div className="topGroup flex shrink-0 items-center gap-2">
+      <div className="topbarNavRight relative flex min-w-0 shrink-0 items-center justify-end gap-1.5 overflow-visible whitespace-nowrap">
+        <div className="topGroup flex shrink-0 items-center gap-1.5">
+          {hasMultiOrg ? (
+            <label className="inline-flex min-w-[210px] items-center gap-2 rounded-full border border-border/70 bg-panel2/40 px-3 py-1 text-xs text-muted">
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.12em]">Org</span>
+              <select
+                className="h-7 min-h-0 flex-1 border-0 bg-transparent px-0 text-sm font-medium text-fg outline-none"
+                value={toText(activeOrgId)}
+                onChange={(event) => onOrgChange?.(event.target.value)}
+                data-testid="topbar-org-switcher"
+                aria-label="Organization switcher"
+              >
+                {orgList.map((item, index) => {
+                  const id = orgIdFrom(item);
+                  const label = String(item?.name || item?.org_name || id || `Org ${index + 1}`).trim();
+                  return <option key={id || `org_${index}`} value={id}>{label}</option>;
+                })}
+              </select>
+            </label>
+          ) : currentOrgLabel ? (
+            <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-panel2/40 px-3 py-1 text-xs text-muted">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.12em]">Org</span>
+              <span className="max-w-[190px] truncate text-sm font-medium text-fg" title={currentOrgLabel}>{currentOrgLabel}</span>
+            </div>
+          ) : null}
           {canOpenOrgSettings ? (
             <button
               type="button"
-              className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-3 py-0 text-sm"
+              className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-2.5 py-0 text-sm"
               onClick={openAdminConsole}
               data-testid="topbar-admin-button"
               title="Открыть admin dashboard"
@@ -469,7 +487,7 @@ export default function TopBar({
           ) : null}
           <button
             type="button"
-            className={`inline-flex h-9 min-h-0 items-center rounded-full border px-3 py-0 text-sm font-semibold ${aiButtonClass}`}
+            className={`inline-flex h-9 min-h-0 items-center rounded-full border px-2.5 py-0 text-sm font-semibold ${aiButtonClass}`}
             onClick={() => setAiToolsOpen(true)}
             title={safeVerifyMsg || backendHint || "AI инструменты"}
             data-testid="topbar-ai-button"

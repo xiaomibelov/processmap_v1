@@ -7,6 +7,7 @@ import LoginModal from "./features/auth/LoginModal";
 import LoginPage from "./features/auth/LoginPage";
 import PublicHomePage from "./features/auth/PublicHomePage";
 import { canAccessAdminConsole } from "./features/admin/adminUtils";
+import { ru } from "./shared/i18n/ru";
 
 function readLocation() {
   if (typeof window === "undefined") {
@@ -43,8 +44,8 @@ function OrgSelectScreen({ orgs, activeOrgId, busy, onSelect }) {
   return (
     <div className="flex h-screen items-center justify-center px-4">
       <div className="w-full max-w-xl rounded-2xl border border-border bg-panel p-5 shadow-panel">
-        <h1 className="text-lg font-semibold text-fg">Выберите организацию</h1>
-        <p className="mt-1 text-sm text-muted">Текущий workspace откроется в выбранном org-контексте.</p>
+        <h1 className="text-lg font-semibold text-fg">{ru.admin.orgSelect.title}</h1>
+        <p className="mt-1 text-sm text-muted">{ru.admin.orgSelect.description}</p>
         <div className="mt-4 space-y-2">
           {items.map((item, idx) => {
             const id = String(item?.org_id || "").trim();
@@ -64,7 +65,7 @@ function OrgSelectScreen({ orgs, activeOrgId, busy, onSelect }) {
                 onClick={() => onSelect?.(id)}
               >
                 <div className="truncate text-sm font-semibold">{title}</div>
-                <div className="mt-0.5 text-xs text-muted">{role ? `Role: ${role}` : "Role: viewer"}</div>
+                <div className="mt-0.5 text-xs text-muted">{`${ru.admin.orgSelect.rolePrefix}: ${role || ru.admin.orgSelect.defaultRole}`}</div>
               </button>
             );
           })}
@@ -165,11 +166,14 @@ function AppRoutes() {
   }, [activeOrg, isAuthed, loading, orgItems, switchOrg]);
 
   useEffect(() => {
-    if (!loading && (pathname.startsWith("/app") || pathname.startsWith("/admin")) && !isAuthed && reauthRequired) {
+    const privateRoute = pathname.startsWith("/app") || pathname.startsWith("/admin");
+    if (!loading && !privateRoute && !isAuthed && reauthRequired) {
       setLoginModalOpen(true);
     }
-    if (isAuthed) {
+    if (isAuthed || privateRoute) {
       setLoginModalOpen(false);
+    }
+    if (isAuthed) {
       setReauthRequired(false);
     }
   }, [isAuthed, loading, pathname, reauthRequired, setReauthRequired]);
@@ -222,8 +226,10 @@ function AppRoutes() {
     );
   }
 
-  const showWorkspace = pathname.startsWith("/app") && (isAuthed || reauthRequired);
-  const showAdmin = pathname.startsWith("/admin") && (isAuthed || reauthRequired);
+  const wantsWorkspace = pathname.startsWith("/app");
+  const wantsAdmin = pathname.startsWith("/admin");
+  const showWorkspace = wantsWorkspace && isAuthed;
+  const showAdmin = wantsAdmin && isAuthed;
 
   return (
     <>
@@ -234,9 +240,9 @@ function AppRoutes() {
           ) : (
             <div className="flex min-h-screen items-center justify-center px-4">
               <div className="w-full max-w-lg rounded-2xl border border-border bg-panel p-6">
-                <h1 className="text-xl font-semibold text-fg">Доступ ограничен</h1>
+                <h1 className="text-xl font-semibold text-fg">{ru.admin.accessDenied.title}</h1>
                 <p className="mt-2 text-sm text-muted">
-                  Для входа в admin-console нужна роль org_admin/org_owner/project_manager/auditor или global admin.
+                  {ru.admin.accessDenied.description}
                 </p>
                 <div className="mt-4 flex flex-wrap items-center gap-2">
                   <button
@@ -244,7 +250,7 @@ function AppRoutes() {
                     className="primaryBtn h-10 min-h-0 px-4 py-0 text-sm"
                     onClick={() => navigate("/app", { replace: true })}
                   >
-                    Вернуться в workspace
+                    {ru.admin.accessDenied.back}
                   </button>
                 </div>
               </div>
@@ -258,12 +264,28 @@ function AppRoutes() {
             }}
           />
         )
+      ) : wantsAdmin ? (
+        <LoginPage
+          onBack={() => navigate("/")}
+          onSuccess={() => {
+            setReauthRequired(false);
+            navigate(resolvePostLoginPath(), { replace: true });
+          }}
+        />
       ) : showWorkspace ? (
         isAuthed && shouldSelectOrg ? (
           <OrgSelectScreen orgs={orgItems} activeOrgId={activeOrg} busy={orgSwitchBusy} onSelect={handleOrgSelect} />
         ) : (
           <App />
         )
+      ) : wantsWorkspace ? (
+        <LoginPage
+          onBack={() => navigate("/")}
+          onSuccess={() => {
+            setReauthRequired(false);
+            navigate(resolvePostLoginPath(), { replace: true });
+          }}
+        />
       ) : pathname === "/login" ? (
         <LoginPage
           onBack={() => navigate("/")}

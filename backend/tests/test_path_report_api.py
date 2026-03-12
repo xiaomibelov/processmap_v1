@@ -35,7 +35,7 @@ class PathReportApiTest(unittest.TestCase):
         os.environ["PROJECT_STORAGE_DIR"] = self.tmp_projects.name
         os.environ["PATH_REPORT_SYNC_MODE"] = "1"
 
-        from app.main import (
+        from app._legacy_main import (
             CreatePathReportVersionIn,
             CreateSessionIn,
             UpdateSessionIn,
@@ -44,13 +44,13 @@ class PathReportApiTest(unittest.TestCase):
             create_session,
             delete_path_report_version,
             delete_report_version,
-            get_storage,
             get_report_version,
             get_path_report_version_detail,
             get_session,
             list_path_report_versions,
             patch_session,
         )
+        from app.storage import get_storage
 
         self.CreatePathReportVersionIn = CreatePathReportVersionIn
         self.CreateSessionIn = CreateSessionIn
@@ -95,7 +95,7 @@ class PathReportApiTest(unittest.TestCase):
         self.tmp_sessions.cleanup()
         self.tmp_projects.cleanup()
 
-    @patch("app.main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
+    @patch("app._legacy_main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
     @patch(
         "app.ai.deepseek_questions.generate_path_report",
         side_effect=[
@@ -165,7 +165,7 @@ class PathReportApiTest(unittest.TestCase):
         self._wait_report_ready(str((out_b1.get("report") or {}).get("id")))
         self._wait_report_ready(str((out_a2.get("report") or {}).get("id")))
 
-    @patch("app.main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
+    @patch("app._legacy_main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
     @patch(
         "app.ai.deepseek_questions.generate_path_report",
         side_effect=[
@@ -232,7 +232,7 @@ class PathReportApiTest(unittest.TestCase):
         by_path = interview.get("report_versions") or {}
         self.assertEqual(len(by_path.get("manual_path") or []), 2)
 
-    @patch("app.main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
+    @patch("app._legacy_main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
     @patch("app.ai.deepseek_questions.generate_path_report", side_effect=RuntimeError("deepseek unavailable"))
     def test_failed_generation_is_saved_as_error_version(self, _mock_report, _mock_llm):
         created = self.create_session(self.CreateSessionIn(title="Reports"))
@@ -260,7 +260,7 @@ class PathReportApiTest(unittest.TestCase):
         rows = self.list_path_report_versions(sid, "primary")
         self.assertEqual(rows, [])
 
-    @patch("app.main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
+    @patch("app._legacy_main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
     @patch(
         "app.ai.deepseek_questions.generate_path_report",
         return_value={
@@ -294,7 +294,7 @@ class PathReportApiTest(unittest.TestCase):
         self.assertEqual(str(detail.get("status") or "").lower(), "ok")
         self.assertIn("scoped endpoint", str(detail.get("report_markdown") or "").lower())
 
-    @patch("app.main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
+    @patch("app._legacy_main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
     @patch(
         "app.ai.deepseek_questions.generate_path_report",
         side_effect=[
@@ -357,7 +357,7 @@ class PathReportApiTest(unittest.TestCase):
         self.assertEqual(len(h1_rows), 1)
         self.assertEqual(h1_rows[0].get("steps_hash"), "hash_h1")
 
-    @patch("app.main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
+    @patch("app._legacy_main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
     @patch(
         "app.ai.deepseek_questions.generate_path_report",
         return_value={
@@ -398,7 +398,7 @@ class PathReportApiTest(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].get("steps_hash"), "hash_persist")
 
-    @patch("app.main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
+    @patch("app._legacy_main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
     @patch(
         "app.ai.deepseek_questions.generate_path_report",
         return_value={
@@ -444,8 +444,8 @@ class PathReportApiTest(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].get("steps_hash"), "hash_stale_patch")
 
-    @patch("app.main._run_path_report_generation_async", return_value=None)
-    @patch("app.main.load_llm_settings", return_value={"api_key": "", "base_url": "https://example.invalid", "model": "deepseek-chat"})
+    @patch("app._legacy_main._run_path_report_generation_async", return_value=None)
+    @patch("app._legacy_main.load_llm_settings", return_value={"api_key": "", "base_url": "https://example.invalid", "model": "deepseek-chat"})
     def test_list_marks_stale_running_versions_as_error(self, _mock_llm, _mock_worker):
         created = self.create_session(self.CreateSessionIn(title="Reports"))
         sid = str(created["id"])
@@ -482,7 +482,7 @@ class PathReportApiTest(unittest.TestCase):
         self.assertEqual(str(details.get("status") or "").lower(), "error")
         self.assertTrue("interrupted" in str(details.get("error_message") or "").lower())
 
-    @patch("app.main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
+    @patch("app._legacy_main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
     @patch("app.ai.deepseek_questions.generate_path_report")
     def test_generation_retries_with_compacted_payload_after_transport_error(self, mock_report, _mock_llm):
         calls = {"payloads": []}
@@ -528,8 +528,8 @@ class PathReportApiTest(unittest.TestCase):
         compact_meta = (calls["payloads"][1] or {}).get("_meta") or {}
         self.assertEqual(bool(compact_meta.get("compacted_for_llm")), True)
 
-    @patch("app.main._run_path_report_generation_async", return_value=None)
-    @patch("app.main.load_llm_settings", return_value={"api_key": "", "base_url": "https://example.invalid", "model": "deepseek-chat"})
+    @patch("app._legacy_main._run_path_report_generation_async", return_value=None)
+    @patch("app._legacy_main.load_llm_settings", return_value={"api_key": "", "base_url": "https://example.invalid", "model": "deepseek-chat"})
     def test_stale_marker_skips_active_running_report(self, _mock_llm, _mock_worker):
         created = self.create_session(self.CreateSessionIn(title="Reports"))
         sid = str(created["id"])
@@ -566,7 +566,7 @@ class PathReportApiTest(unittest.TestCase):
         self.assertEqual(len(listed), 1)
         self.assertEqual(str(listed[0].get("status") or "").lower(), "running")
 
-    @patch("app.main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
+    @patch("app._legacy_main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
     @patch(
         "app.ai.deepseek_questions.generate_path_report",
         return_value={
@@ -610,7 +610,7 @@ class PathReportApiTest(unittest.TestCase):
         self.assertEqual((detail.get("raw_json") or {}).get("title"), "Structured")
         self.assertTrue(isinstance(detail.get("request_payload_json"), dict))
 
-    @patch("app.main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
+    @patch("app._legacy_main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
     @patch(
         "app.ai.deepseek_questions.generate_path_report",
         side_effect=[
@@ -685,7 +685,7 @@ class PathReportApiTest(unittest.TestCase):
         latest = ((session.get("interview") or {}).get("path_reports") or {}).get("primary") or {}
         self.assertEqual(str(latest.get("id") or ""), rid1)
 
-    @patch("app.main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
+    @patch("app._legacy_main.load_llm_settings", return_value={"api_key": "x", "base_url": "https://example.invalid", "model": "deepseek-chat"})
     @patch(
         "app.ai.deepseek_questions.generate_path_report",
         return_value={

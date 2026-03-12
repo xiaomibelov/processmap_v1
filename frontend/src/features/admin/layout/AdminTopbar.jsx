@@ -1,5 +1,7 @@
 import StatusPill from "../components/common/StatusPill";
+import { formatRoleWithScope } from "../adminRoles";
 import { toText } from "../adminUtils";
+import { ru } from "../../../shared/i18n/ru";
 
 function ContextBadge({ label, value, tone = "default" }) {
   return (
@@ -34,13 +36,13 @@ export default function AdminTopbar({
     <header className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50/95 px-4 py-4 backdrop-blur">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
-          <ContextBadge label="Org" value={currentOrgLabel} />
+          <ContextBadge label={ru.admin.topbar.org} value={currentOrgLabel} />
           <ContextBadge label="Redis" value={toText(redisMode) || "UNKNOWN"} tone={redisTone} />
-          <ContextBadge label="User" value={userLabel} />
+          <ContextBadge label={ru.admin.topbar.user} value={userLabel} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <label className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500" htmlFor="admin-org-context">
-            Org Context
+            {ru.admin.topbar.orgContext}
           </label>
           <select
             id="admin-org-context"
@@ -55,7 +57,7 @@ export default function AdminTopbar({
               const role = toText(row?.role);
               return (
                 <option key={`${id}_${idx}`} value={id}>
-                  {name}{role ? ` · ${role}` : ""}
+                  {name}{role ? ` · ${formatRoleWithScope(role, { isAdmin: role === "platform_admin" })}` : ""}
                 </option>
               );
             })}
@@ -66,7 +68,7 @@ export default function AdminTopbar({
             onClick={() => onNavigate?.("/app")}
             data-testid="admin-back-workspace"
           >
-            Open Workspace
+            {ru.admin.topbar.openWorkspace}
           </button>
         </div>
       </div>

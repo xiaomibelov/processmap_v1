@@ -4,7 +4,11 @@ import assert from "node:assert/strict";
 import buildSessionMetaReadModel from "./read/buildSessionMetaReadModel.js";
 import applySessionMetaHydration from "./hydrate/applySessionMetaHydration.js";
 import { createSessionMetaConflictGuard } from "./guards/sessionMetaConflictGuard.js";
-import { buildSessionMetaWriteEnvelope } from "./write/sessionMetaMergePolicy.js";
+import {
+  buildSessionMetaSnapshot,
+  buildSessionMetaWriteEnvelope,
+  mergeSessionMetaForRead,
+} from "./write/sessionMetaMergePolicy.js";
 
 function asObject(value) {
   return value && typeof value === "object" ? value : {};
@@ -17,6 +21,8 @@ function normalizeBpmnMeta(raw) {
     flow_meta: asObject(value.flow_meta),
     node_path_meta: asObject(value.node_path_meta),
     robot_meta_by_element_id: asObject(value.robot_meta_by_element_id),
+    camunda_extensions_by_element_id: asObject(value.camunda_extensions_by_element_id),
+    presentation_by_element_id: asObject(value.presentation_by_element_id),
     hybrid_layer_by_element_id: asObject(value.hybrid_layer_by_element_id),
     hybrid_v2: asObject(value.hybrid_v2),
     drawio: asObject(value.drawio),
@@ -25,6 +31,10 @@ function normalizeBpmnMeta(raw) {
 }
 
 function normalizeHybridLayerMap(raw) {
+  return asObject(raw);
+}
+
+function normalizeHybridV2Doc(raw) {
   return asObject(raw);
 }
 
@@ -40,6 +50,10 @@ function mergeDrawioMeta(primaryRaw, fallbackRaw = {}) {
   const primaryHasPayload = !!String(primary.svg_cache || primary.doc_xml || "").trim();
   if (primaryHasPayload) return primary;
   return Object.keys(primary).length ? primary : fallback;
+}
+
+function normalizeDrawioMeta(raw) {
+  return asObject(raw);
 }
 
 test("session-meta read model prefers server overlay and keeps local fallback only when server is empty", () => {
@@ -162,4 +176,100 @@ test("reopen conflict probe: server draw.io truth wins over stale local snapshot
   assert.equal(String(model.derivedReadMeta.drawio.svg_cache || ""), "<svg>shape_server</svg>");
   assert.equal(Number(model.derivedReadMeta.drawio.opacity || 0), 0.6);
   assert.deepEqual(model.derivedReadMeta.drawio.drawio_elements_v1, [{ id: "shape_server", deleted: false }]);
+});
+
+test("drawio-only session-meta snapshot preserves BPMN-owned branches in write envelope", () => {
+  const currentMeta = normalizeBpmnMeta({
+    version: 7,
+    flow_meta: { Flow_yes: { tier: "P0", source: "manual" } },
+    node_path_meta: { Task_yes: { paths: ["P0"], sequence_key: "primary" } },
+    robot_meta_by_element_id: {
+      Task_yes: {
+        robot_meta_version: "v1",
+        exec: { mode: "machine", action_key: "soup.reheat" },
+      },
+    },
+    presentation_by_element_id: {
+      Task_yes: { showPropertiesOverlay: true },
+    },
+    execution_plans: [{ id: "plan_1", label: "Primary" }],
+    drawio: {
+      enabled: true,
+      doc_xml: "<mxfile>old</mxfile>",
+      svg_cache: "<svg>old</svg>",
+    },
+  });
+
+  const snapshot = buildSessionMetaSnapshot({
+    currentMetaRaw: currentMeta,
+    persistedHybridLayerMapRaw: {},
+    persistedHybridV2DocRaw: {},
+    persistedDrawioMetaRaw: currentMeta.drawio,
+    normalizeHybridLayerMap,
+    normalizeHybridV2Doc,
+    normalizeDrawioMeta,
+  });
+  const nextMeta = {
+    ...snapshot,
+    drawio: normalizeDrawioMeta({
+      enabled: true,
+      doc_xml: "<mxfile>next</mxfile>",
+      svg_cache: "<svg>next</svg>",
+      drawio_elements_v1: [{ id: "Task_yes", deleted: false }],
+    }),
+  };
+  const envelope = buildSessionMetaWriteEnvelope({
+    sessionId: "s1",
+    bpmnMeta: nextMeta,
+    source: "drawio_save",
+    writeSeq: 2,
+  });
+
+  assert.deepEqual(nextMeta.flow_meta, currentMeta.flow_meta);
+  assert.deepEqual(nextMeta.node_path_meta, currentMeta.node_path_meta);
+  assert.deepEqual(nextMeta.robot_meta_by_element_id, currentMeta.robot_meta_by_element_id);
+  assert.deepEqual(nextMeta.presentation_by_element_id, currentMeta.presentation_by_element_id);
+  assert.deepEqual(nextMeta.execution_plans, currentMeta.execution_plans);
+  assert.equal(String(envelope.bpmn_meta.drawio.svg_cache || ""), "<svg>next</svg>");
+  assert.deepEqual(envelope.bpmn_meta.flow_meta, currentMeta.flow_meta);
+  assert.deepEqual(envelope.bpmn_meta.node_path_meta, currentMeta.node_path_meta);
+  assert.deepEqual(envelope.bpmn_meta.robot_meta_by_element_id, currentMeta.robot_meta_by_element_id);
+  assert.deepEqual(envelope.bpmn_meta.presentation_by_element_id, currentMeta.presentation_by_element_id);
+  assert.deepEqual(envelope.bpmn_meta.execution_plans, currentMeta.execution_plans);
+  assert.equal(Object.prototype.hasOwnProperty.call(envelope, "bpmn_xml"), false);
+});
+
+test("presentation overlay state survives server read merge after session patch hydrate", () => {
+  const currentMeta = normalizeBpmnMeta({
+    presentation_by_element_id: {
+      Task_1: { showPropertiesOverlay: true },
+    },
+    camunda_extensions_by_element_id: {
+      Task_1: {
+        properties: {
+          extensionProperties: [{ id: "p1", name: "ingredient", value: "Шампиньон отварной" }],
+        },
+      },
+    },
+  });
+
+  const merged = mergeSessionMetaForRead({
+    sessionMetaRaw: normalizeBpmnMeta({
+      version: 2,
+      presentation_by_element_id: {
+        Task_1: { showPropertiesOverlay: true },
+      },
+    }),
+    localMetaRaw: currentMeta,
+    normalizeBpmnMeta,
+    normalizeHybridLayerMap,
+    mergeHybridV2Doc,
+    mergeDrawioMeta,
+    preferServerOverlay: true,
+  });
+
+  assert.deepEqual(merged.presentation_by_element_id, {
+    Task_1: { showPropertiesOverlay: true },
+  });
+  assert.deepEqual(merged.camunda_extensions_by_element_id, currentMeta.camunda_extensions_by_element_id);
 });

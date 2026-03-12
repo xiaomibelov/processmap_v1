@@ -1,4 +1,5 @@
 import { normalizeDrawioInteractionMode } from "../drawioMeta.js";
+import { getDrawioOverlayStatus } from "./drawioVisibility.js";
 
 function toText(value) {
   return String(value || "").trim();
@@ -10,20 +11,22 @@ function asObject(value) {
 
 export function buildDrawioVisibilitySelectionContract(drawioMetaRaw = {}, options = {}) {
   const drawioMeta = asObject(drawioMetaRaw);
-  const enabled = drawioMeta.enabled === true;
-  const hasPreview = toText(drawioMeta.svg_cache).length > 0;
-  const hasDoc = toText(drawioMeta.doc_xml).length > 0;
-  const locked = drawioMeta.locked === true;
   const mode = normalizeDrawioInteractionMode(
     options.mode || drawioMeta.interaction_mode,
   );
-  const visibleOnCanvas = enabled && hasPreview;
-  const selectableOnCanvas = visibleOnCanvas && mode === "edit" && !locked;
-  const statusKey = !enabled ? "off" : (hasPreview ? "on" : "on_preview_missing");
-  const statusLabel = !enabled
-    ? "OFF"
-    : (hasPreview ? "ON" : "ON · preview missing · hidden");
-  const statusTone = !enabled ? "muted" : (hasPreview ? "ok" : "warning");
+  const overlayStatus = getDrawioOverlayStatus({
+    ...drawioMeta,
+    interaction_mode: mode,
+  });
+  const enabled = overlayStatus.enabled === true;
+  const hasPreview = overlayStatus.hasPreview === true;
+  const hasDoc = overlayStatus.hasDoc === true;
+  const locked = overlayStatus.locked === true;
+  const visibleOnCanvas = overlayStatus.visibleOnCanvas === true;
+  const selectableOnCanvas = enabled && hasPreview && mode === "edit" && !locked;
+  const statusKey = toText(overlayStatus.key);
+  const statusLabel = toText(overlayStatus.label);
+  const statusTone = toText(overlayStatus.tone);
   const opacityControlEnabled = visibleOnCanvas;
   const selectionPolicy = mode === "edit" ? "edit_only" : "view_clears_selection";
 
@@ -33,6 +36,8 @@ export function buildDrawioVisibilitySelectionContract(drawioMetaRaw = {}, optio
     hasDoc,
     locked,
     mode,
+    activeTool: toText(overlayStatus.activeTool),
+    placementToolActive: overlayStatus.placementToolActive === true,
     visibleOnCanvas,
     renderable: visibleOnCanvas,
     selectable: selectableOnCanvas,

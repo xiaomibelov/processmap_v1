@@ -43,7 +43,7 @@
   }
 
   .workspace {
-    @apply grid h-full min-h-0 min-w-0 grid-cols-1 gap-3 overflow-hidden p-3 lg:grid-cols-[minmax(280px,360px)_minmax(0,1fr)];
+    @apply grid h-full min-h-0 min-w-0 grid-cols-1 gap-3 overflow-hidden p-3 lg:grid-cols-[minmax(336px,432px)_minmax(0,1fr)];
   }
 
   .workspace--leftHidden {
@@ -52,6 +52,10 @@
 
   .workspace--leftCompact {
     @apply lg:grid-cols-[72px_minmax(0,1fr)];
+  }
+
+  .workspace--noSession {
+    @apply grid-cols-1 lg:grid-cols-1;
   }
 
   .workspaceLeft {
@@ -264,6 +268,12 @@
 
   .segBtn:disabled {
     @apply cursor-not-allowed opacity-50;
+  }
+
+  .segBtn.isDisabled {
+    @apply cursor-not-allowed opacity-35;
+    background: transparent;
+    box-shadow: none;
   }
 
   .bpmnStageHost {
@@ -1165,6 +1175,7 @@
 
   .leftPanel {
     @apply h-full min-h-0 min-w-0;
+    background: #F5F7FB;
   }
 
   .leftPanelCard {
@@ -1172,10 +1183,10 @@
   }
 
   .leftSidebarShell {
-    box-shadow:
-      inset 0 1px 0 hsl(var(--border) / 0.3),
-      0 12px 28px hsl(var(--bg) / 0.28);
-    background-image: linear-gradient(180deg, hsl(var(--panel) / 0.98), hsl(var(--panel2) / 0.92));
+    border: 1px solid #D9E1EE;
+    border-radius: 18px;
+    background: #FFFFFF;
+    box-shadow: 0 8px 24px rgba(31, 42, 68, 0.08);
   }
 
   .leftSidebarSticky {
@@ -1184,46 +1195,73 @@
 
   .leftSidebarBody {
     scrollbar-width: thin;
+    background: linear-gradient(180deg, #F7F9FC 0%, #F5F7FB 34%, #F5F7FB 100%);
   }
 
   .leftSidebarBottom {
     @apply relative z-10;
+    border-top: 1px solid #E7ECF4;
+    background: #FFFFFF;
   }
 
   .leftSidebarHeader {
     @apply min-w-0;
+    border-bottom: 1px solid #E7ECF4;
+    background: #F7F9FC;
   }
 
   .sidebarBreadcrumbRow {
-    @apply mb-1 flex min-w-0 items-center gap-1 text-[10px] tracking-wide text-muted;
+    @apply mb-1 flex min-w-0 items-center gap-1 text-[11px];
+    color: #5B667A;
   }
 
   .sidebarBreadcrumbBtn {
-    @apply min-w-0 truncate rounded px-1 py-0.5 text-left transition-colors hover:bg-panel2/70 hover:text-fg;
+    @apply min-w-0 truncate rounded px-1.5 py-0.5 text-left transition-colors;
+    color: #43506A;
+  }
+
+  .sidebarBreadcrumbBtn:hover {
+    background: #EEF2FF;
+    color: #1F2A44;
   }
 
   .sidebarBreadcrumbSep {
-    @apply opacity-70;
+    color: #7E8AA3;
   }
 
   .sidebarHeaderMenu {
-    @apply absolute right-0 top-[calc(100%+6px)] z-30 grid min-w-[190px] gap-1 rounded-lg border border-border bg-panel p-1.5 shadow-panel;
+    @apply absolute right-0 top-[calc(100%+6px)] z-30 grid min-w-[190px] gap-1 rounded-xl p-1.5;
+    border: 1px solid #D9E1EE;
+    background: #FFFFFF;
+    box-shadow: 0 8px 24px rgba(31, 42, 68, 0.12);
   }
 
   .sidebarHeaderMenuItem {
-    @apply rounded-md px-2 py-1.5 text-left text-xs text-fg transition-colors hover:bg-panel2;
+    @apply rounded-lg px-2 py-1.5 text-left text-xs transition-colors;
+    color: #1F2A44;
+  }
+
+  .sidebarHeaderMenuItem:hover {
+    background: #F7F9FC;
   }
 
   .sidebarHeaderMenuItem.isDanger {
-    @apply text-danger hover:bg-danger/15;
+    color: #D64C4C;
+  }
+
+  .sidebarHeaderMenuItem.isDanger:hover {
+    background: rgba(214, 76, 76, 0.12);
   }
 
   .sidebarContextHeader {
-    @apply min-w-0;
+    @apply sticky top-0 z-20 min-w-0 px-3 py-1.5;
+    border-bottom: 1px solid #E7ECF4;
+    background: #F7F9FC;
   }
 
   .sidebarBreadcrumbText {
-    @apply min-w-0 truncate rounded px-1 py-0.5 text-left text-muted;
+    @apply min-w-0 truncate rounded px-1 py-0.5 text-left;
+    color: #7E8AA3;
   }
 
   .sidebarContextChips {
@@ -1231,37 +1269,57 @@
   }
 
   .sidebarContextChip {
-    @apply inline-flex h-5 min-w-0 items-center gap-1 rounded-md border border-border/70 bg-panel2/45 px-1.5 text-[10px] text-muted;
+    @apply inline-flex min-w-0 items-center gap-1 rounded-[10px] px-2 py-1 text-[11px];
+    border: 1px solid #D9E1EE;
+    background: #F4F7FC;
+    color: #43506A;
     max-width: 100%;
   }
 
   .sidebarContextChipLabel {
-    @apply font-semibold uppercase tracking-wide text-muted;
+    @apply font-semibold uppercase tracking-[0.04em];
+    color: #7E8AA3;
   }
 
   .sidebarContextChipValue {
-    @apply min-w-0 truncate font-mono text-[10px] text-fg;
+    @apply min-w-0 truncate font-mono text-[10px];
+    color: #1F2A44;
   }
 
   .sidebarContextChipCopy {
-    @apply inline-flex h-4 min-w-4 items-center justify-center rounded border border-border/70 bg-panel px-1 text-[9px] text-muted transition-colors hover:text-fg;
+    @apply inline-flex h-4 min-w-4 items-center justify-center rounded border px-1 text-[9px] transition-colors;
+    border-color: #D9E1EE;
+    background: #FFFFFF;
+    color: #5B667A;
+  }
+
+  .sidebarContextChipCopy:hover {
+    border-color: #C8D2FF;
+    color: #3E59D9;
   }
 
   .sidebarRedesignStack {
-    @apply grid gap-2 px-2.5 py-2.5;
+    @apply grid px-3 py-3;
+    gap: 10px;
   }
 
   .sidebarCardSurface {
-    @apply rounded-lg border border-border/70 bg-panel/90 p-2.5;
-    box-shadow: inset 0 1px 0 hsl(var(--border) / 0.15);
+    @apply p-0;
+    border-radius: 14px;
+    box-shadow: none;
   }
 
   .sidebarSectionCaption {
-    @apply text-[10px] font-semibold uppercase tracking-wide text-muted;
+    @apply text-[11px] font-semibold;
+    color: #7E8AA3;
+    letter-spacing: 0.04em;
   }
 
   .selectedElementCard {
-    @apply min-w-0;
+    @apply min-w-0 px-3 py-2;
+    border-radius: 16px;
+    border: 1px solid #E7ECF4;
+    background: #F7F9FC;
   }
 
   .selectedElementTitleWrap {
@@ -1269,7 +1327,8 @@
   }
 
   .selectedElementTitle {
-    @apply min-w-0 flex-1 text-sm font-semibold leading-5 text-fg;
+    @apply min-w-0 flex-1 text-[16px] font-semibold leading-[1.25];
+    color: #1F2A44;
     overflow-wrap: anywhere;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -1278,7 +1337,8 @@
   }
 
   .selectedElementSubtitle {
-    @apply mt-1 text-[11px] text-muted;
+    @apply mt-1 text-[11px];
+    color: #5B667A;
     overflow-wrap: anywhere;
   }
 
@@ -1286,54 +1346,99 @@
     @apply flex min-w-0 flex-wrap items-center gap-1;
   }
 
+  .selectedElementActionRow {
+    @apply mt-2 flex min-w-0 items-center gap-1.5;
+  }
+
   .sidebarPrimaryActions {
-    @apply rounded-lg border border-border/70 bg-panel/90 px-2.5 py-2;
-    box-shadow: inset 0 1px 0 hsl(var(--border) / 0.15);
+    @apply rounded-none border-0 bg-transparent px-0 py-0;
+    box-shadow: none;
   }
 
   .sidebarPrimaryActionsRow {
-    @apply mt-1.5 flex min-w-0 items-center gap-1.5;
+    @apply mt-1 flex min-w-0 items-center;
+    gap: 10px;
   }
 
   .sidebarSettingsSurface {
-    @apply min-w-0;
+    @apply min-w-0 p-1.5;
+    border-radius: 18px;
+    border: 1px solid #D9E1EE;
+    background: #FFFFFF;
+    box-shadow: none;
+  }
+
+  .sidebarSettingsHeader {
+    @apply px-2 pb-1.5;
+    border-bottom: 1px solid #E7ECF4;
   }
 
   .sidebarAccordionStack {
-    @apply grid gap-2;
+    @apply mt-1.5 grid overflow-visible;
+    gap: 8px;
+    border-radius: 14px;
+    border: 0;
+    background: transparent;
   }
 
   .sidebarAccordion {
-    @apply overflow-hidden rounded-md border border-border/65 bg-panel/55;
+    @apply overflow-hidden bg-transparent;
+    border-radius: 12px;
+    border: 1px solid transparent;
+    box-shadow: none;
+  }
+
+  .sidebarAccordion:last-child {
+    border-bottom: 1px solid transparent;
+  }
+
+  .sidebarAccordion.isOpen {
+    border-color: #C8D2FF;
+    background: #EEF2FF;
   }
 
   .sidebarAccordionHead {
-    @apply flex w-full min-w-0 items-center justify-between gap-2 px-2.5 py-2 text-left transition-colors hover:bg-panel2/35;
+    @apply flex w-full min-w-0 items-center justify-between gap-2 px-3 text-left transition-colors;
+    min-height: 44px;
+  }
+
+  .sidebarAccordionHead:hover {
+    background: #F7F9FC;
   }
 
   .sidebarAccordionTitleRow {
-    @apply flex min-w-0 items-center gap-1.5;
+    @apply flex min-w-0 items-center gap-2;
   }
 
   .sidebarAccordionTitle {
-    @apply text-xs font-semibold text-fg;
+    font-size: 15px;
+    font-weight: 600;
+    color: #1F2A44;
   }
 
   .sidebarAccordionSubtitle {
-    @apply mt-0.5 text-[11px] text-muted;
+    @apply mt-0.5 text-[11px];
+    color: #7E8AA3;
     overflow-wrap: anywhere;
   }
 
   .sidebarAccordionBadge {
-    @apply inline-flex h-4 items-center rounded-md border border-border px-1.5 text-[10px] font-semibold text-muted;
+    @apply inline-flex h-5 items-center rounded-[10px] px-1.5 text-[10px] font-semibold;
+    border: 1px solid #DDE4EF;
+    background: #F1F4F8;
+    color: #66748D;
   }
 
   .sidebarAccordionToggle {
-    @apply text-[11px] text-muted;
+    font-size: 14px;
+    color: #7E8AA3;
   }
 
   .sidebarAccordionBody {
-    @apply border-t border-border/55 px-2.5 py-2;
+    @apply px-3 py-2.5;
+    border-top: 1px solid #E7ECF4;
+    background: #FCFDFE;
+    border-radius: 0 0 12px 12px;
   }
 
   .sidebarAccordionContent {
@@ -1344,12 +1449,325 @@
     @apply grid gap-2;
   }
 
+  .sidebarPropertiesLayout {
+    @apply gap-1.5;
+  }
+
+  .sidebarPropertiesForm {
+    @apply grid px-0 py-0;
+    gap: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  .sidebarPropertiesHeader {
+    @apply flex items-center justify-between gap-2;
+    padding-bottom: 4px;
+  }
+
+  .sidebarPropertiesTitleRow {
+    @apply flex items-center gap-1.5 min-w-0;
+  }
+
+  .sidebarPropertiesTitle {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1F2A44;
+  }
+
+  .sidebarPropertiesCount {
+    @apply inline-flex h-4 min-w-4 items-center justify-center rounded-[9px] px-1.5 text-[10px] font-semibold;
+    border: 1px solid #DDE4EF;
+    background: #F1F4F8;
+    color: #66748D;
+  }
+
+  .sidebarPropertiesInlineToggle {
+    @apply flex items-center gap-2 text-[13px];
+    padding: 4px 0 6px;
+    border-bottom: 1px solid #E7ECF4;
+    color: #1F2A44;
+  }
+
+  .sidebarPropertiesDivider {
+    @apply h-px w-full;
+    margin: 10px 0;
+    background: #E7ECF4;
+  }
+
+  .sidebarPropertiesBlock {
+    @apply grid;
+    gap: 6px;
+    padding: 0;
+  }
+
+  .sidebarPropertiesBlock--secondary {
+    opacity: 0.94;
+  }
+
+  .sidebarPropertiesBlockHead {
+    @apply flex items-center justify-between gap-2 min-w-0;
+  }
+
+  .sidebarPropertiesBlockTitle {
+    font-size: 11px;
+    font-weight: 600;
+    color: #5B667A;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+
+  .sidebarOperationSummary {
+    font-size: 11px;
+    color: #5B667A;
+    border: 1px solid #E7ECF4;
+    background: #F7F9FC;
+    border-radius: 8px;
+    padding: 5px 8px;
+  }
+
+  .sidebarPropertiesIntro {
+    font-size: 12px;
+    line-height: 1.4;
+    color: #5B667A;
+  }
+
+  .sidebarPropertiesBlockDescription {
+    font-size: 12px;
+    line-height: 1.35;
+    color: #5B667A;
+    margin-top: -2px;
+  }
+
+  .sidebarPropertiesRows {
+    @apply grid;
+    gap: 6px;
+  }
+
+  .sidebarPropertiesRows--table {
+    gap: 0;
+  }
+
+  .sidebarPropertiesTableHead {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+    gap: 6px;
+    align-items: center;
+    min-height: 24px;
+    padding: 0 0 4px;
+    border-bottom: 1px solid #E7ECF4;
+    font-size: 11px;
+    font-weight: 600;
+    color: #7E8AA3;
+  }
+
+  .sidebarInfoTipWrap {
+    @apply relative inline-flex items-center;
+  }
+
+  .sidebarInfoTip {
+    @apply inline-flex items-center justify-center rounded-full;
+    width: 15px;
+    height: 15px;
+    border: 1px solid #C8D2FF;
+    background: #EEF2FF;
+    color: #3E59D9;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .sidebarInfoTip:hover {
+    background: #E3E9FF;
+  }
+
+  .sidebarInfoTip:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(79, 107, 255, 0.18);
+  }
+
+  .sidebarInfoTipBubble {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 8px);
+    transform: none;
+    width: min(236px, 54vw);
+    border-radius: 10px;
+    background: #1F2A44;
+    color: #F5F8FF;
+    padding: 8px 10px;
+    font-size: 11px;
+    line-height: 1.32;
+    box-shadow: 0 8px 24px rgba(31, 42, 68, 0.22);
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+    z-index: 20;
+  }
+
+  .sidebarInfoTipWrap:hover .sidebarInfoTipBubble,
+  .sidebarInfoTipWrap:focus-within .sidebarInfoTipBubble {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  .sidebarPropertiesDisclosure {
+    @apply rounded-lg bg-transparent;
+  }
+
+  .sidebarPropertiesDisclosureSummary {
+    @apply cursor-pointer list-none text-[11px] font-semibold;
+    color: #5B667A;
+  }
+
+  .sidebarPropertiesFooter {
+    @apply pt-1.5;
+    margin-top: 10px;
+    border-top: 1px solid #E7ECF4;
+  }
+
+  .sidebarFieldHint {
+    @apply text-[11px];
+    color: #5B667A;
+  }
+
+  .sidebarSchemaPropertyRow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+    gap: 6px;
+    align-items: center;
+    border-bottom: 1px solid #E7ECF4;
+    padding: 6px 0;
+    border-color: #E7ECF4;
+  }
+
+  .sidebarSchemaPropertyRow:last-child {
+    border-bottom: none;
+    padding-bottom: 4px;
+  }
+
+  .sidebarSchemaPropertyLabel {
+    @apply min-w-0;
+  }
+
+  .sidebarSchemaPropertyHuman {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1F2A44;
+    line-height: 1.2;
+  }
+
+  .sidebarSchemaPropertyKey {
+    margin-top: 2px;
+    font-size: 11px;
+    color: #7E8AA3;
+    line-height: 1.2;
+  }
+
+  .sidebarSchemaPropertyValueCell {
+    @apply min-w-0;
+  }
+
+  .sidebarSchemaPropertyActionCell {
+    @apply flex items-center justify-end;
+  }
+
+  .sidebarSchemaPropertyHint {
+    grid-column: 2 / 4;
+    margin-top: 1px;
+  }
+
+  .sidebarBpmnPropertyItem {
+    border-bottom: 1px solid #E7ECF4;
+    padding: 4px 0;
+  }
+
+  .sidebarBpmnPropertyItem:last-child {
+    border-bottom: none;
+  }
+
+  .sidebarBpmnPropertySummary {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.5fr) auto;
+    gap: 6px;
+    align-items: center;
+    min-height: 34px;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .sidebarBpmnPropertySummary::-webkit-details-marker {
+    display: none;
+  }
+
+  .sidebarBpmnPropertyPreviewKey {
+    @apply min-w-0 truncate;
+    font-size: 13px;
+    color: #1F2A44;
+    font-weight: 600;
+  }
+
+  .sidebarBpmnPropertyPreviewValue {
+    @apply min-w-0 truncate;
+    font-size: 13px;
+    color: #5B667A;
+  }
+
+  .sidebarBpmnPropertySummaryActions {
+    @apply flex items-center gap-1;
+  }
+
+  .sidebarBpmnPropertyEditor {
+    display: grid;
+    gap: 6px;
+    padding: 6px 0 2px;
+    border-top: 1px dashed #E7ECF4;
+  }
+
+  .sidebarBpmnEditorField {
+    @apply grid min-w-0 gap-1;
+  }
+
+  .sidebarBpmnEditorLabel {
+    font-size: 11px;
+    font-weight: 600;
+    color: #7E8AA3;
+  }
+
   .sidebarControlBlock {
-    @apply grid gap-1.5;
+    @apply grid gap-2;
   }
 
   .sidebarControlRow {
-    @apply flex min-w-0 items-center gap-2;
+    @apply flex min-w-0 items-end gap-1.5;
+  }
+
+  .sidebarPropertiesForm .sidebarControlRow {
+    align-items: center;
+    gap: 8px;
+  }
+
+  .sidebarPropertiesInputRow {
+    row-gap: 6px;
+  }
+
+  .sidebarPropertiesActionBtn {
+    min-height: 34px;
+    height: 34px;
+    font-size: 13px;
+  }
+
+  .sidebarPropertiesPrimaryAction {
+    min-height: 36px;
+    height: 36px;
+    font-size: 13px;
+  }
+
+  .sidebarPropertiesActionBtn--tiny {
+    min-height: 31px;
+    height: 31px;
+    font-size: 12px;
+    border-radius: 10px;
   }
 
   .sidebarControlRowWrap {
@@ -1361,7 +1779,16 @@
   }
 
   .sidebarSelectButton {
-    @apply flex h-8 w-full min-w-0 items-center justify-between gap-2 rounded-md border border-border bg-panel2/40 px-2 text-left text-[11px] text-fg transition-colors hover:bg-panel2/55 disabled:cursor-not-allowed disabled:opacity-60;
+    @apply flex w-full min-w-0 items-center justify-between gap-2 rounded-xl px-3 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60;
+    height: 42px;
+    border: 1px solid #D9E1EE;
+    background: #FFFFFF;
+    color: #1F2A44;
+  }
+
+  .sidebarSelectButton:hover {
+    border-color: #C8D2FF;
+    background: #F7F9FC;
   }
 
   .sidebarSelectButtonText {
@@ -1375,19 +1802,28 @@
   }
 
   .sidebarSelectButtonChevron {
-    @apply text-[10px] text-muted;
+    @apply text-[11px];
+    color: #7E8AA3;
   }
 
   .sidebarSelectPopover {
-    @apply absolute left-0 right-0 top-[calc(100%+4px)] z-30 max-h-56 overflow-auto rounded-md border border-border bg-panel p-1 shadow-panel;
+    @apply absolute left-0 right-0 top-[calc(100%+4px)] z-30 max-h-56 overflow-auto rounded-xl p-1;
+    border: 1px solid #D9E1EE;
+    background: #FFFFFF;
+    box-shadow: 0 8px 24px rgba(31, 42, 68, 0.14);
   }
 
   .sidebarSelectOption {
-    @apply grid w-full min-w-0 gap-0.5 rounded-md px-2 py-1.5 text-left text-[11px] text-fg transition-colors hover:bg-panel2/60;
+    @apply grid w-full min-w-0 gap-0.5 rounded-lg px-2 py-1.5 text-left text-[12px] transition-colors;
+    color: #1F2A44;
+  }
+
+  .sidebarSelectOption:hover {
+    background: #F7F9FC;
   }
 
   .sidebarSelectOption.isActive {
-    @apply bg-accent/20;
+    background: #EEF2FF;
   }
 
   .sidebarSelectOptionLabel {
@@ -1397,7 +1833,8 @@
   }
 
   .sidebarSelectOptionKey {
-    @apply min-w-0 font-mono text-[10px] text-muted;
+    @apply min-w-0 font-mono text-[10px];
+    color: #7E8AA3;
     overflow-wrap: anywhere;
     line-height: 1.2;
   }
@@ -1407,7 +1844,8 @@
   }
 
   .sidebarFieldLabel {
-    @apply block text-[11px] font-semibold text-fg;
+    @apply block text-[12px] font-semibold;
+    color: #1F2A44;
   }
 
   .sidebarFieldLabel--withChip {
@@ -1415,23 +1853,806 @@
   }
 
   .sidebarInlineTabs {
-    @apply inline-flex items-center gap-1 rounded-md border border-border/70 bg-panel2/45 p-1;
+    @apply inline-flex items-center gap-1 rounded-[10px] p-1;
+    border: 1px solid #D9E1EE;
+    background: #F7F9FC;
   }
 
   .sidebarInlineTab {
-    @apply h-7 rounded px-2.5 text-[11px] font-semibold text-muted transition-colors;
+    @apply h-8 rounded-[10px] px-2.5 text-[12px] font-semibold transition-colors;
+    color: #5B667A;
   }
 
   .sidebarInlineTab.isActive {
-    @apply bg-accent/20 text-fg;
+    background: #EEF2FF;
+    color: #1F2A44;
   }
 
   .sidebarAdvanced {
-    @apply rounded-md border border-border/70 bg-panel2/35 px-2 py-1;
+    @apply rounded-xl px-3 py-2;
+    border: 1px solid #D9E1EE;
+    background: #FFFFFF;
   }
 
   .sidebarAdvancedSummary {
-    @apply cursor-pointer list-none text-[11px] font-semibold text-muted;
+    @apply cursor-pointer list-none text-[11px] font-semibold uppercase tracking-[0.04em];
+    color: #5B667A;
+  }
+
+  .sidebarOperationRow {
+    align-items: center;
+  }
+
+  .sidebarCustomPropertyRow,
+  .sidebarListenerRow {
+    align-items: center;
+  }
+
+  .leftSidebarShell .sidebarIconBtn {
+    border: 1px solid #D9E1EE;
+    background: #FFFFFF;
+    color: #5B667A;
+    border-radius: 10px;
+  }
+
+  .leftSidebarShell .sidebarIconBtn:hover {
+    border-color: #C8D2FF;
+    background: #EEF2FF;
+    color: #1F2A44;
+  }
+
+  .leftSidebarShell .sidebarBadge {
+    border: 1px solid #D9E1EE;
+    background: #F4F7FC;
+    color: #40516F;
+    height: 20px;
+    border-radius: 10px;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+
+  .leftSidebarShell .sidebarBadgeRobot--ready {
+    border-color: #BDE4CC;
+    background: #EAF6EF;
+    color: #2E9B63;
+  }
+
+  .leftSidebarShell .sidebarBadgeRobot--incomplete {
+    border-color: #F0DFC1;
+    background: #FFF7E8;
+    color: #8E6A2F;
+  }
+
+  .sidebarRedesignStack .primaryBtn {
+    height: 40px;
+    min-height: 40px;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-radius: 12px;
+    border: 1px solid #4F6BFF;
+    background: #4F6BFF;
+    color: #FFFFFF;
+    font-weight: 600;
+    font-size: 14px;
+  }
+
+  .sidebarRedesignStack .primaryBtn:hover {
+    border-color: #3F5AF0;
+    background: #3F5AF0;
+  }
+
+  .sidebarRedesignStack .secondaryBtn {
+    min-height: 36px;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-radius: 12px;
+    border: 1px solid #D9E1EE;
+    background: #FFFFFF;
+    color: #2F3B53;
+    font-weight: 500;
+    font-size: 14px;
+  }
+
+  .sidebarRedesignStack .secondaryBtn:hover {
+    border-color: #C8D2FF;
+    background: #F7F9FC;
+    color: #1F2A44;
+  }
+
+  .sidebarRedesignStack .input,
+  .sidebarRedesignStack .select,
+  .sidebarRedesignStack textarea {
+    min-height: 38px;
+    padding-top: 7px;
+    padding-bottom: 7px;
+    border-radius: 12px;
+    border: 1px solid #D9E1EE;
+    background: #FFFFFF;
+    color: #1F2A44;
+    font-size: 14px;
+    line-height: 1.25;
+    font-weight: 500;
+  }
+
+  .sidebarRedesignStack .input::placeholder,
+  .sidebarRedesignStack .select::placeholder,
+  .sidebarRedesignStack textarea::placeholder {
+    color: #7E8AA3;
+    font-size: 14px;
+  }
+
+  .sidebarRedesignStack .input:focus,
+  .sidebarRedesignStack .select:focus,
+  .sidebarRedesignStack textarea:focus {
+    border-color: #4F6BFF;
+    box-shadow: 0 0 0 3px rgba(79, 107, 255, 0.18);
+    outline: none;
+  }
+
+  .sidebarRedesignStack input[type="checkbox"] {
+    accent-color: #4F6BFF;
+  }
+
+  .sidebarPropertiesForm .primaryBtn {
+    height: 36px;
+    min-height: 36px;
+    font-size: 13px;
+    border-radius: 10px;
+  }
+
+  .sidebarPropertiesForm .secondaryBtn {
+    height: 34px;
+    min-height: 34px;
+    font-size: 13px;
+    border-radius: 10px;
+  }
+
+  .sidebarPropertiesForm .input,
+  .sidebarPropertiesForm .select,
+  .sidebarPropertiesForm textarea {
+    min-height: 35px;
+    height: 35px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+    padding-left: 9px;
+    padding-right: 9px;
+    font-size: 13px;
+    border-radius: 10px;
+  }
+
+  .sidebarPropertiesForm .input::placeholder,
+  .sidebarPropertiesForm .select::placeholder,
+  .sidebarPropertiesForm textarea::placeholder {
+    font-size: 13px;
+  }
+
+  .sidebarSupplementaryInfo {
+    @apply rounded-[14px] px-3 py-2.5;
+    border: 1px solid #D9E1EE;
+    background: #FFFFFF;
+  }
+
+  .sidebarInfoList {
+    @apply mt-2 grid gap-1.5;
+  }
+
+  .sidebarInfoRow {
+    @apply grid items-start gap-2;
+    grid-template-columns: 120px minmax(0, 1fr);
+  }
+
+  .sidebarInfoLabel {
+    font-size: 11px;
+    color: #7E8AA3;
+  }
+
+  .sidebarInfoValue {
+    font-size: 12px;
+    color: #1F2A44;
+    word-break: break-word;
+  }
+
+  .dark .leftSidebarShell {
+    border-color: #2C3A52;
+    background: #121A28;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.34);
+  }
+
+  .dark .leftSidebarHeader,
+  .dark .sidebarContextHeader {
+    border-color: #2C3A52;
+    background: #172133;
+  }
+
+  .dark .leftSidebarBody {
+    background: linear-gradient(180deg, #141F31 0%, #121A28 100%);
+  }
+
+  .dark .sidebarSectionCaption {
+    color: #8FA2C5;
+  }
+
+  .dark .sidebarBreadcrumbRow {
+    color: #8EA1C0;
+  }
+
+  .dark .sidebarBreadcrumbBtn {
+    color: #C5D3EB;
+  }
+
+  .dark .sidebarBreadcrumbBtn:hover {
+    background: #22314B;
+    color: #EAF1FF;
+  }
+
+  .dark .sidebarHeaderMenu {
+    border-color: #314463;
+    background: #152035;
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.34);
+  }
+
+  .dark .sidebarHeaderMenuItem {
+    color: #D8E3F8;
+  }
+
+  .dark .sidebarHeaderMenuItem:hover {
+    background: #202D45;
+  }
+
+  .dark .sidebarSettingsSurface,
+  .dark .selectedElementCard,
+  .dark .sidebarSupplementaryInfo {
+    border-color: #314463;
+    background: #172235;
+  }
+
+  .dark .sidebarSettingsHeader,
+  .dark .sidebarPropertiesInlineToggle,
+  .dark .sidebarPropertiesFooter,
+  .dark .sidebarPropertiesDivider,
+  .dark .sidebarSchemaPropertyRow,
+  .dark .sidebarBpmnPropertyItem,
+  .dark .sidebarBpmnPropertyEditor,
+  .dark .sidebarAccordionBody {
+    border-color: #2F3F5E;
+  }
+
+  .dark .sidebarAccordion.isOpen {
+    border-color: #4C64A3;
+    background: #1F2C45;
+  }
+
+  .dark .sidebarAccordionHead:hover {
+    background: #22314B;
+  }
+
+  .dark .sidebarAccordionBody {
+    background: #172235;
+  }
+
+  .dark .sidebarAccordionTitle,
+  .dark .selectedElementTitle,
+  .dark .sidebarPropertiesTitle,
+  .dark .sidebarSchemaPropertyHuman,
+  .dark .sidebarBpmnPropertyPreviewKey,
+  .dark .sidebarInfoValue {
+    color: #E7EEFC;
+  }
+
+  .dark .sidebarAccordionSubtitle,
+  .dark .selectedElementSubtitle,
+  .dark .sidebarSchemaPropertyKey,
+  .dark .sidebarBpmnPropertyPreviewValue,
+  .dark .sidebarBpmnEditorLabel,
+  .dark .sidebarInfoLabel,
+  .dark .sidebarFieldHint,
+  .dark .sidebarPropertiesIntro,
+  .dark .sidebarPropertiesBlockDescription {
+    color: #9BAFCC;
+  }
+
+  .dark .sidebarPropertiesCount,
+  .dark .leftSidebarShell .sidebarBadge,
+  .dark .sidebarAccordionBadge {
+    border-color: #3A4F73;
+    background: #202E45;
+    color: #AFC0DC;
+  }
+
+  .dark .sidebarPropertiesTableHead,
+  .dark .sidebarOperationSummary {
+    border-color: #2F3F5E;
+    color: #9BAFCC;
+  }
+
+  .dark .sidebarOperationSummary {
+    background: #172235;
+  }
+
+  .dark .sidebarInfoTip {
+    border-color: #4B63A0;
+    background: #25365A;
+    color: #C9D8F4;
+  }
+
+  .dark .sidebarInfoTipBubble {
+    background: #0F1726;
+    color: #E7EEFC;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4);
+  }
+
+  .dark .sidebarRedesignStack .input,
+  .dark .sidebarRedesignStack .select,
+  .dark .sidebarRedesignStack textarea {
+    border-color: #334A6F;
+    background: #101A2A;
+    color: #E7EEFC;
+  }
+
+  .dark .sidebarRedesignStack .input::placeholder,
+  .dark .sidebarRedesignStack textarea::placeholder {
+    color: #8EA1C0;
+  }
+
+  .dark .sidebarRedesignStack .secondaryBtn {
+    border-color: #3A4F73;
+    background: #1A2740;
+    color: #D7E3F9;
+  }
+
+  .dark .sidebarRedesignStack .secondaryBtn:hover {
+    border-color: #5A78C2;
+    background: #22314B;
+    color: #F1F6FF;
+  }
+
+  .dark .sidebarRedesignStack .primaryBtn {
+    border-color: #5E7CDA;
+    background: #5E7CDA;
+  }
+
+  .dark .sidebarRedesignStack .primaryBtn:hover {
+    border-color: #7792EB;
+    background: #7792EB;
+  }
+
+  .dark .sidebarRailBtn,
+  .dark .leftSidebarHandleOpenBtn,
+  .dark .leftSidebarHandleMini {
+    border-color: #334A6F;
+    background: #172438;
+    color: #9FB1CE;
+  }
+
+  .dark .sidebarRailBtn:hover,
+  .dark .leftSidebarHandleOpenBtn:hover,
+  .dark .leftSidebarHandleMini:hover:not(.isMuted) {
+    border-color: #5A78C2;
+    background: #22314B;
+    color: #E7EEFC;
+  }
+
+  .dark .sidebarRailBtn.isActive,
+  .dark .leftSidebarHandleMini.isActive {
+    border-color: #6B87DB;
+    background: #1D2B44;
+    color: #F1F6FF;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+  }
+
+  .dark .leftSidebarHandleRail {
+    border-color: #334A6F;
+    background: #121A28;
+  }
+
+  .dark .sidebarRailBadge,
+  .dark .leftSidebarHandleMiniCount {
+    border-color: #3A4F73;
+    background: #202E45;
+    color: #AFC0DC;
+  }
+
+  .orgDictionaryRoot {
+    @apply grid gap-3.5;
+  }
+
+  .orgDictionaryPanelRoot {
+    @apply rounded-[18px] p-3.5;
+    border: 1px solid #E7ECF4;
+    background: #F7F9FC;
+  }
+
+  .modalOverlay.orgDictionaryModalOverlay {
+    background: rgba(31, 42, 68, 0.24);
+    backdrop-filter: blur(6px);
+  }
+
+  .modalCard.orgDictionaryModalCard {
+    width: min(1120px, 96vw);
+    max-height: 82vh;
+    border-radius: 22px;
+    border: 1px solid #D9E1EE;
+    background: #FFFFFF;
+    box-shadow: 0 20px 60px rgba(31, 42, 68, 0.18);
+  }
+
+  .modalHeader.orgDictionaryModalHeader {
+    padding: 20px 24px;
+    border-bottom: 1px solid #E7ECF4;
+    background: #FFFFFF;
+  }
+
+  .modalHeader.orgDictionaryModalHeader .modalTitle {
+    font-size: 20px;
+    font-weight: 700;
+    color: #1F2A44;
+  }
+
+  .modalHeader.orgDictionaryModalHeader .iconBtn {
+    border: 1px solid #D9E1EE;
+    background: #FFFFFF;
+    color: #5B667A;
+    border-radius: 12px;
+  }
+
+  .modalHeader.orgDictionaryModalHeader .iconBtn:hover {
+    border-color: #C8D2FF;
+    background: #EEF2FF;
+    color: #1F2A44;
+  }
+
+  .modalBody.orgDictionaryModalBody {
+    padding: 16px 24px;
+    background: #F5F7FB;
+  }
+
+  .modalFooter.orgDictionaryModalFooter {
+    padding: 16px 24px;
+    border-top: 1px solid #E7ECF4;
+    background: #FFFFFF;
+  }
+
+  .orgDictionaryModalContent {
+    @apply gap-3.5;
+  }
+
+  .orgDictionaryWizardNav {
+    @apply flex flex-wrap items-center gap-1.5 p-1.5;
+    border: 1px solid #E7ECF4;
+    border-radius: 14px;
+    background: #F7F9FC;
+  }
+
+  .orgDictionaryWizardTab {
+    @apply inline-flex min-w-0 items-center gap-1.5 rounded-[10px] border bg-transparent px-3.5 text-[13px] transition-colors disabled:cursor-not-allowed disabled:opacity-45;
+    min-height: 38px;
+    border-color: transparent;
+    color: #5B667A;
+  }
+
+  .orgDictionaryWizardTab:hover {
+    background: #EEF2FF;
+    color: #1F2A44;
+  }
+
+  .orgDictionaryWizardTab.isActive {
+    border-color: #C8D2FF;
+    background: #FFFFFF;
+    color: #1F2A44;
+    box-shadow: 0 2px 8px rgba(31, 42, 68, 0.08);
+  }
+
+  .orgDictionaryWizardTabIndex {
+    @apply inline-flex h-5 min-w-5 items-center justify-center rounded-[10px] border text-[11px] font-semibold;
+    border-color: #D9E1EE;
+    background: #F1F4F8;
+    color: #66748D;
+  }
+
+  .orgDictionaryWizardTabLabel {
+    @apply truncate;
+  }
+
+  .orgDictionaryFocusBar {
+    @apply grid gap-1 rounded-xl px-3 py-2;
+    border: 1px solid #C8D2FF;
+    background: #EEF2FF;
+  }
+
+  .orgDictionaryFocusItem {
+    @apply flex min-w-0 flex-wrap items-center gap-1 text-xs;
+  }
+
+  .orgDictionaryFocusLabel {
+    color: #5B667A;
+  }
+
+  .orgDictionaryFocusValue {
+    @apply font-medium;
+    color: #1F2A44;
+  }
+
+  .orgDictionaryFocusKey {
+    @apply text-[11px];
+    color: #7E8AA3;
+  }
+
+  .orgDictionaryStage {
+    @apply overflow-hidden rounded-[14px];
+    border: 1px solid #D9E1EE;
+    background: #FFFFFF;
+  }
+
+  .orgDictionaryStageTitle {
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid #E7ECF4;
+    background: #F7F9FC;
+    font-size: 15px;
+    font-weight: 600;
+    color: #1F2A44;
+  }
+
+  .orgDictionaryStageBody {
+    @apply grid gap-3;
+    padding: 14px 16px;
+    background: #FFFFFF;
+  }
+
+  .orgDictionaryStageBody--split {
+    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  }
+
+  .orgDictionaryStageBody--value {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .orgDictionaryStageFooter {
+    @apply flex flex-wrap items-center gap-2;
+    padding: 12px 16px;
+    border-top: 1px solid #E7ECF4;
+    background: #FCFDFE;
+  }
+
+  .orgDictionarySubTitle {
+    @apply text-[11px] font-semibold uppercase tracking-[0.04em];
+    color: #5B667A;
+  }
+
+  .orgDictionaryRail {
+    @apply min-h-0 rounded-xl p-2.5;
+    border: 1px solid #E7ECF4;
+    background: #F7F9FC;
+  }
+
+  .orgDictionaryRailHint {
+    margin-top: 6px;
+    margin-bottom: 8px;
+    font-size: 12px;
+    color: #5B667A;
+  }
+
+  .orgDictionaryRailList {
+    @apply grid gap-2 overflow-auto pr-0.5;
+    max-height: 430px;
+  }
+
+  .orgDictionaryEditorStack {
+    @apply grid gap-2;
+  }
+
+  .orgDictionaryEditorCard {
+    @apply grid gap-2 rounded-xl p-2.5;
+    border: 1px solid #D9E1EE;
+    background: #FFFFFF;
+  }
+
+  .orgDictionaryEditorModeSwitch {
+    @apply inline-flex items-center gap-1 rounded-[10px] p-1;
+    border: 1px solid #E7ECF4;
+    background: #F7F9FC;
+    width: fit-content;
+  }
+
+  .orgDictionaryModeButton {
+    @apply rounded-[8px] px-2.5 py-1.5 text-xs font-medium transition-colors;
+    color: #5B667A;
+  }
+
+  .orgDictionaryModeButton.isActive {
+    border: 1px solid #C8D2FF;
+    background: #FFFFFF;
+    color: #1F2A44;
+  }
+
+  .orgDictionaryCompactRow {
+    @apply flex items-center gap-2;
+  }
+
+  .orgDictionaryOrderInput {
+    width: 92px;
+    min-width: 92px;
+    max-width: 92px;
+  }
+
+  .orgDictionaryFlagsRow {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .orgDictionaryEditorActions {
+    @apply mt-1 flex flex-wrap items-center gap-2;
+  }
+
+  .orgDictionaryListButton {
+    @apply flex h-auto w-full min-h-0 flex-col items-start justify-center rounded-[10px] border px-2.5 py-2 text-left text-xs transition-colors;
+    border-color: transparent;
+    background: #FFFFFF;
+  }
+
+  .orgDictionaryListButton.isActive {
+    border-color: #C8D2FF;
+    background: #EEF2FF;
+  }
+
+  .orgDictionaryListButton:hover {
+    border-color: #C8D2FF;
+    background: #F7F9FC;
+  }
+
+  .orgDictionaryListLabel {
+    @apply w-full truncate text-xs font-semibold;
+    color: #1F2A44;
+  }
+
+  .orgDictionaryListKey {
+    @apply w-full truncate text-[10px];
+    color: #7E8AA3;
+  }
+
+  .orgDictionaryListMeta {
+    @apply mt-0.5 text-[10px];
+    color: #D64C4C;
+  }
+
+  .orgDictionaryEmptyState {
+    @apply rounded-xl border px-2.5 py-2 text-xs;
+    border-color: #E7ECF4;
+    background: #F7F9FC;
+    color: #5B667A;
+  }
+
+  .orgDictionaryValueContext {
+    @apply grid gap-0.5 rounded-xl px-2.5 py-1.5;
+    border: 1px solid #E7ECF4;
+    background: #F7F9FC;
+  }
+
+  .orgDictionaryValuesTableWrap {
+    @apply overflow-hidden rounded-[14px];
+    border: 1px solid #D9E1EE;
+    background: #FFFFFF;
+  }
+
+  .orgDictionaryValuesTableHead {
+    @apply grid items-center px-3;
+    grid-template-columns: minmax(0, 1fr) 90px 88px 170px;
+    min-height: 42px;
+    border-bottom: 1px solid #E7ECF4;
+    background: #F7F9FC;
+    font-size: 11px;
+    font-weight: 700;
+    color: #5B667A;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .orgDictionaryValuesTableBody {
+    @apply grid;
+    max-height: 312px;
+    overflow: auto;
+  }
+
+  .orgDictionaryValuesTableRow {
+    @apply grid items-center px-3;
+    grid-template-columns: minmax(0, 1fr) 90px 88px 170px;
+    min-height: 52px;
+    border-bottom: 1px solid #EEF2F7;
+  }
+
+  .orgDictionaryValuesTableRow:hover {
+    background: #FAFBFF;
+  }
+
+  .orgDictionaryValuesTableRow:last-child {
+    border-bottom: 0;
+  }
+
+  .orgDictionaryValuesTableRow--add {
+    border-bottom: 0;
+    min-height: 54px;
+  }
+
+  .orgDictionaryValuesCell {
+    @apply flex items-center;
+  }
+
+  .orgDictionaryValuesCell--value .input {
+    width: 100%;
+  }
+
+  .orgDictionaryValuesCell--order {
+    justify-content: flex-start;
+  }
+
+  .orgDictionaryValuesCell--active {
+    justify-content: flex-start;
+  }
+
+  .orgDictionaryValuesCell--actions {
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .orgDictionaryAddValueZone {
+    @apply grid gap-2 px-3 py-2.5;
+    border-top: 1px solid #E7ECF4;
+    background: #FCFDFE;
+  }
+
+  .orgDictionaryPanelRoot .primaryBtn {
+    border-radius: 12px;
+    border: 1px solid #4F6BFF;
+    background: #4F6BFF;
+    color: #FFFFFF;
+    font-weight: 600;
+  }
+
+  .orgDictionaryPanelRoot .primaryBtn:hover {
+    border-color: #3F5AF0;
+    background: #3F5AF0;
+  }
+
+  .orgDictionaryPanelRoot .secondaryBtn {
+    border-radius: 12px;
+    border: 1px solid #D9E1EE;
+    background: #FFFFFF;
+    color: #2F3B53;
+    font-weight: 500;
+  }
+
+  .orgDictionaryPanelRoot .secondaryBtn:hover {
+    border-color: #C8D2FF;
+    background: #F7F9FC;
+    color: #1F2A44;
+  }
+
+  .orgDictionaryPanelRoot .input,
+  .orgDictionaryPanelRoot .select,
+  .orgDictionaryPanelRoot textarea {
+    min-height: 40px;
+    border-radius: 10px;
+    border: 1px solid #D9E1EE;
+    background: #FFFFFF;
+    color: #1F2A44;
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .orgDictionaryPanelRoot .input::placeholder,
+  .orgDictionaryPanelRoot textarea::placeholder {
+    color: #7E8AA3;
+  }
+
+  .orgDictionaryPanelRoot .input:focus,
+  .orgDictionaryPanelRoot .select:focus,
+  .orgDictionaryPanelRoot textarea:focus {
+    border-color: #4F6BFF;
+    box-shadow: 0 0 0 3px rgba(79, 107, 255, 0.18);
+    outline: none;
+  }
+
+  .orgDictionaryPanelRoot input[type="checkbox"] {
+    accent-color: #4F6BFF;
   }
 
   .sidebarAccordionBody > * {
@@ -1666,10 +2887,10 @@
   }
 
   .sidebarRailBtn {
-    @apply inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-panel2/75 text-xs font-semibold text-fg transition-colors hover:border-borderStrong hover:bg-panel2;
-    border-color: color-mix(in srgb, var(--sidebar-accent, var(--c-border)) 38%, var(--c-border));
-    color: color-mix(in srgb, var(--sidebar-accent, hsl(var(--text))) 68%, hsl(var(--text)));
-    background: color-mix(in srgb, var(--sidebar-accent, var(--c-panel2)) 14%, hsl(var(--panel2) / 0.75));
+    @apply inline-flex h-10 w-10 items-center justify-center rounded-xl border text-xs font-semibold transition-colors;
+    border-color: #D9E1EE;
+    color: #5B667A;
+    background: #F7F9FC;
   }
 
   .sidebarRailBtn:disabled {
@@ -1677,16 +2898,16 @@
   }
 
   .sidebarRailBtn.isActive {
-    border-color: color-mix(in srgb, var(--sidebar-accent, hsl(var(--accent2))) 60%, var(--c-border));
-    background: color-mix(in srgb, var(--sidebar-accent, var(--c-panel2)) 22%, hsl(var(--panel2) / 0.85));
-    box-shadow:
-      inset 0 0 0 1px color-mix(in srgb, var(--sidebar-accent, hsl(var(--accent2))) 34%, transparent),
-      0 4px 10px hsl(var(--bg) / 0.24);
+    border-color: #C8D2FF;
+    background: #FFFFFF;
+    color: #1F2A44;
+    box-shadow: 0 4px 10px rgba(31, 42, 68, 0.1);
   }
 
   .sidebarRailBtn:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 6px 14px hsl(var(--bg) / 0.22);
+    border-color: #C8D2FF;
+    background: #EEF2FF;
+    color: #1F2A44;
   }
 
   .sidebarRailItem {
@@ -1698,9 +2919,9 @@
   }
 
   .sidebarRailActiveStripe {
-    @apply pointer-events-none absolute -left-1 top-1/2 hidden h-5 w-0.5 -translate-y-1/2 rounded-full;
-    background: color-mix(in srgb, var(--sidebar-accent, hsl(var(--accent2))) 78%, transparent);
-    box-shadow: 0 0 10px color-mix(in srgb, var(--sidebar-accent, hsl(var(--accent2))) 40%, transparent);
+    @apply pointer-events-none absolute -left-1 top-1/2 hidden h-6 w-0.5 -translate-y-1/2 rounded-full;
+    background: #4F6BFF;
+    box-shadow: 0 0 10px rgba(79, 107, 255, 0.35);
   }
 
   .sidebarRailItem.isActive .sidebarRailActiveStripe {
@@ -1728,33 +2949,36 @@
   }
 
   .sidebarRailBadge {
-    @apply absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-border bg-accentSoft px-1 text-[9px] font-semibold text-fg;
-    box-shadow: 0 1px 4px hsl(var(--bg) / 0.25);
+    @apply absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full border px-1 text-[9px] font-semibold;
+    border-color: #D9E1EE;
+    background: #F1F4F8;
+    color: #66748D;
+    box-shadow: 0 1px 4px rgba(31, 42, 68, 0.16);
   }
 
   .sidebarRailBadge--selected {
-    border-color: color-mix(in srgb, hsl(188 75% 58%) 50%, var(--c-border));
-    background: color-mix(in srgb, hsl(188 75% 58%) 26%, hsl(var(--panel)));
+    border-color: #C8D2FF;
+    background: #EEF2FF;
   }
 
   .sidebarRailBadge--ai {
-    border-color: color-mix(in srgb, hsl(258 86% 66%) 50%, var(--c-border));
-    background: color-mix(in srgb, hsl(258 86% 66%) 26%, hsl(var(--panel)));
+    border-color: #C8D2FF;
+    background: #EEF2FF;
   }
 
   .sidebarRailBadge--notes {
-    border-color: color-mix(in srgb, hsl(200 84% 62%) 50%, var(--c-border));
-    background: color-mix(in srgb, hsl(200 84% 62%) 26%, hsl(var(--panel)));
+    border-color: #C8D2FF;
+    background: #EEF2FF;
   }
 
   .sidebarRailBadge--actors {
-    border-color: color-mix(in srgb, hsl(154 62% 48%) 50%, var(--c-border));
-    background: color-mix(in srgb, hsl(154 62% 48%) 26%, hsl(var(--panel)));
+    border-color: #C8D2FF;
+    background: #EEF2FF;
   }
 
   .sidebarRailBadge--templates {
-    border-color: color-mix(in srgb, hsl(32 78% 59%) 50%, var(--c-border));
-    background: color-mix(in srgb, hsl(32 78% 59%) 26%, hsl(var(--panel)));
+    border-color: #C8D2FF;
+    background: #EEF2FF;
   }
 
   .stickyNodeCard {
@@ -1971,45 +3195,53 @@
   }
 
   .leftSidebarHandleRail {
-    @apply rounded-xl border border-border/80 bg-panel/95 p-1.5 shadow-panel backdrop-blur;
-    box-shadow:
-      inset 0 1px 0 hsl(var(--border) / 0.24),
-      0 10px 24px hsl(var(--bg) / 0.32);
-    background-image:
-      linear-gradient(180deg, hsl(var(--panel) / 0.96), hsl(var(--panel2) / 0.88)),
-      radial-gradient(80px 44px at 50% -8%, hsl(var(--accent2) / 0.14), transparent 70%);
+    @apply rounded-[14px] p-1.5;
+    border: 1px solid #D9E1EE;
+    background: #FFFFFF;
+    box-shadow: 0 8px 24px rgba(31, 42, 68, 0.08);
   }
 
   .leftSidebarHandleOpenBtn {
-    @apply inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border/70 bg-panel2/65 text-[10px] text-fg transition-colors hover:border-borderStrong hover:bg-panel2;
-    box-shadow: inset 0 1px 0 hsl(var(--border) / 0.22);
+    @apply inline-flex h-10 w-10 items-center justify-center rounded-xl border text-[10px] transition-colors;
+    border-color: #D9E1EE;
+    background: #F7F9FC;
+    color: #5B667A;
+  }
+
+  .leftSidebarHandleOpenBtn.isDisabled,
+  .leftSidebarHandleOpenBtn:disabled {
+    @apply cursor-not-allowed opacity-40;
+    box-shadow: none;
   }
 
   .leftSidebarHandleIcon {
-    @apply inline-flex h-6 w-6 items-center justify-center rounded-md border border-border bg-panel text-[10px] text-muted;
+    @apply inline-flex h-7 w-7 items-center justify-center rounded-[10px] border text-[10px];
+    border-color: #D9E1EE;
+    background: #FFFFFF;
+    color: #5B667A;
   }
 
   .leftSidebarHandleList {
-    @apply mt-2 grid gap-1.5;
+    @apply mt-2 grid gap-2;
   }
 
   .leftSidebarHandleMini {
-    @apply relative inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border/70 bg-panel2/55 text-[10px] text-muted transition-colors hover:border-borderStrong hover:bg-panel2 hover:text-fg;
-    border-color: color-mix(in srgb, var(--sidebar-accent, var(--c-border)) 40%, var(--c-border));
-    color: color-mix(in srgb, var(--sidebar-accent, hsl(var(--text))) 68%, hsl(var(--text)));
-    background: color-mix(in srgb, var(--sidebar-accent, var(--c-panel2)) 14%, hsl(var(--panel2) / 0.58));
+    @apply relative inline-flex h-10 w-10 items-center justify-center rounded-xl border text-[10px] transition-colors;
+    border-color: #D9E1EE;
+    color: #5B667A;
+    background: #F7F9FC;
   }
 
   .leftSidebarHandleMini.isMuted {
-    @apply cursor-not-allowed opacity-45;
+    @apply cursor-not-allowed opacity-30;
+    box-shadow: none;
   }
 
   .leftSidebarHandleMini.isActive {
-    border-color: color-mix(in srgb, var(--sidebar-accent, hsl(var(--accent2))) 62%, var(--c-border));
-    background: color-mix(in srgb, var(--sidebar-accent, var(--c-panel2)) 22%, hsl(var(--panel2) / 0.8));
-    box-shadow:
-      inset 0 0 0 1px color-mix(in srgb, var(--sidebar-accent, hsl(var(--accent2))) 36%, transparent),
-      0 4px 10px hsl(var(--bg) / 0.25);
+    border-color: #C8D2FF;
+    background: #FFFFFF;
+    color: #1F2A44;
+    box-shadow: 0 4px 10px rgba(31, 42, 68, 0.1);
   }
 
   .leftSidebarHandleMiniLabel {
@@ -2017,14 +3249,15 @@
   }
 
   .leftSidebarHandleMini:hover:not(.isMuted) {
-    transform: translateY(-1px);
-    box-shadow: 0 6px 14px hsl(var(--bg) / 0.24);
+    border-color: #C8D2FF;
+    background: #EEF2FF;
+    color: #1F2A44;
   }
 
   .leftSidebarHandleMiniStripe {
-    @apply pointer-events-none absolute -left-[5px] top-1/2 hidden h-5 w-0.5 -translate-y-1/2 rounded-full;
-    background: color-mix(in srgb, var(--sidebar-accent, hsl(var(--accent2))) 78%, transparent);
-    box-shadow: 0 0 10px color-mix(in srgb, var(--sidebar-accent, hsl(var(--accent2))) 40%, transparent);
+    @apply pointer-events-none absolute -left-[5px] top-1/2 hidden h-6 w-0.5 -translate-y-1/2 rounded-full;
+    background: #4F6BFF;
+    box-shadow: 0 0 10px rgba(79, 107, 255, 0.35);
   }
 
   .leftSidebarHandleMini.isActive .leftSidebarHandleMiniStripe {
@@ -2032,33 +3265,36 @@
   }
 
   .leftSidebarHandleMiniCount {
-    @apply absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-border bg-panel px-1 text-[9px] font-semibold text-fg;
-    box-shadow: 0 1px 4px hsl(var(--bg) / 0.25);
+    @apply absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full border px-1 text-[9px] font-semibold;
+    border-color: #D9E1EE;
+    background: #F1F4F8;
+    color: #66748D;
+    box-shadow: 0 1px 4px rgba(31, 42, 68, 0.16);
   }
 
   .leftSidebarHandleMiniCount--selected {
-    border-color: color-mix(in srgb, hsl(188 75% 58%) 50%, var(--c-border));
-    background: color-mix(in srgb, hsl(188 75% 58%) 26%, hsl(var(--panel)));
+    border-color: #C8D2FF;
+    background: #EEF2FF;
   }
 
   .leftSidebarHandleMiniCount--ai {
-    border-color: color-mix(in srgb, hsl(258 86% 66%) 50%, var(--c-border));
-    background: color-mix(in srgb, hsl(258 86% 66%) 26%, hsl(var(--panel)));
+    border-color: #C8D2FF;
+    background: #EEF2FF;
   }
 
   .leftSidebarHandleMiniCount--notes {
-    border-color: color-mix(in srgb, hsl(200 84% 62%) 50%, var(--c-border));
-    background: color-mix(in srgb, hsl(200 84% 62%) 26%, hsl(var(--panel)));
+    border-color: #C8D2FF;
+    background: #EEF2FF;
   }
 
   .leftSidebarHandleMiniCount--actors {
-    border-color: color-mix(in srgb, hsl(154 62% 48%) 50%, var(--c-border));
-    background: color-mix(in srgb, hsl(154 62% 48%) 26%, hsl(var(--panel)));
+    border-color: #C8D2FF;
+    background: #EEF2FF;
   }
 
   .leftSidebarHandleMiniCount--templates {
-    border-color: color-mix(in srgb, hsl(32 78% 59%) 50%, var(--c-border));
-    background: color-mix(in srgb, hsl(32 78% 59%) 26%, hsl(var(--panel)));
+    border-color: #C8D2FF;
+    background: #EEF2FF;
   }
 
   .leftSidebarHandleMini--selected, .leftSidebarHandleMiniStripe--selected {
