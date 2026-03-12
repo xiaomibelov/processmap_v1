@@ -167,6 +167,7 @@ export default function AppShell({
             onPatchDraft={onPatchDraft}
             onSessionSync={onSessionSync}
             onOpenWorkspaceSession={onOpenWorkspaceSession}
+            onClearWorkspaceProject={() => onProjectChange?.("")}
             onCreateWorkspaceProject={onNewProject}
             onCreateWorkspaceSession={onNewBackendSession}
             onOpenWorkspaceOrgSettings={onOpenOrgSettings}

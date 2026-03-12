@@ -186,6 +186,7 @@ import { pushDeleteTrace } from "../features/process/stage/utils/deleteTrace";
 export default function ProcessStage({
   sessionId,
   activeProjectId,
+  activeProjectWorkspaceId = "",
   workspaceActiveOrgId = "",
   canInviteWorkspaceUsers = false,
   canManageSharedTemplates = false,
@@ -193,6 +194,7 @@ export default function ProcessStage({
   draft,
   onSessionSync,
   onOpenWorkspaceSession,
+  onClearWorkspaceProject,
   onCreateWorkspaceProject,
   onCreateWorkspaceSession,
   onOpenWorkspaceOrgSettings,
@@ -3945,7 +3947,9 @@ export default function ProcessStage({
           <WorkspaceExplorer
             activeOrgId={workspaceActiveOrgId}
             requestProjectId={activeProjectId}
+            requestProjectWorkspaceId={activeProjectWorkspaceId}
             onOpenSession={(sessionLike) => onOpenWorkspaceSession?.(sessionLike)}
+            onClearRequestedProject={onClearWorkspaceProject}
           />
         ) : tab === "doc" ? (
           <DocStage

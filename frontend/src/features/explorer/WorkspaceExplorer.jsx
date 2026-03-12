@@ -1117,6 +1117,7 @@ export default function WorkspaceExplorer({
   onOpenSession,
   requestProjectId,
   requestProjectWorkspaceId = "",
+  onClearRequestedProject,
 }) {
   const { user, orgs } = useAuth();
   const [workspaces, setWorkspaces] = useState([]);
@@ -1184,7 +1185,13 @@ export default function WorkspaceExplorer({
 
   useEffect(() => {
     const pid = String(requestProjectId || "").trim();
+    const ignored = String(ignoredRequestProjectId || "").trim();
     if (!pid) {
+      setResolvedRequestWorkspaceId("");
+      setProjectRestoreStatus("idle");
+      return;
+    }
+    if (ignored && pid === ignored) {
       setResolvedRequestWorkspaceId("");
       setProjectRestoreStatus("idle");
       return;
@@ -1239,7 +1246,7 @@ export default function WorkspaceExplorer({
     return () => {
       cancelled = true;
     };
-  }, [requestProjectId, requestProjectWorkspaceId, workspaces, wsLoading, activeWorkspaceId]);
+  }, [requestProjectId, requestProjectWorkspaceId, workspaces, wsLoading, activeWorkspaceId, ignoredRequestProjectId]);
 
   // Restore the requested project only after the explorer resolved the matching
   // workspace. This avoids calling the project explorer route with org_id in
@@ -1253,11 +1260,14 @@ export default function WorkspaceExplorer({
     }
   }, [requestProjectId, ignoredRequestProjectId]);
 
-  const dismissRequestedProjectRestore = useCallback(() => {
+  const dismissRequestedProjectRestore = useCallback((options = {}) => {
     const pid = String(requestProjectId || "").trim();
     if (!pid) return;
     setIgnoredRequestProjectId(pid);
-  }, [requestProjectId]);
+    if (options?.clearExternal) {
+      onClearRequestedProject?.();
+    }
+  }, [requestProjectId, onClearRequestedProject]);
 
   useEffect(() => {
     const pid = String(requestProjectId || "").trim();
@@ -1294,7 +1304,7 @@ export default function WorkspaceExplorer({
   }, [requestProjectId, requestProjectWorkspaceId, resolvedRequestWorkspaceId, activeWorkspaceId, currentProjectId, projectRestoreStatus, ignoredRequestProjectId]);
 
   const handleSelectWorkspace = (wsId) => {
-    dismissRequestedProjectRestore();
+    dismissRequestedProjectRestore({ clearExternal: true });
     setActiveWorkspaceId(wsId);
     setCurrentFolderId("");
     setCurrentProjectId(null);
@@ -1319,7 +1329,7 @@ export default function WorkspaceExplorer({
   };
 
   const handleNavigateToFolder = (folderId) => {
-    dismissRequestedProjectRestore();
+    dismissRequestedProjectRestore({ clearExternal: true });
     setCurrentFolderId(folderId);
     setCurrentProjectId(null);
   };
@@ -1329,7 +1339,7 @@ export default function WorkspaceExplorer({
   };
 
   const handleNavigateToBreadcrumb = (wsId, folderId) => {
-    dismissRequestedProjectRestore();
+    dismissRequestedProjectRestore({ clearExternal: true });
     if (wsId !== activeWorkspaceId) {
       setActiveWorkspaceId(wsId);
     }
@@ -1338,7 +1348,7 @@ export default function WorkspaceExplorer({
   };
 
   const handleBackFromProject = (crumb) => {
-    dismissRequestedProjectRestore();
+    dismissRequestedProjectRestore({ clearExternal: true });
     setCurrentProjectId(null);
     if (crumb.type === "workspace") {
       setCurrentFolderId("");

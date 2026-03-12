@@ -464,14 +464,76 @@ test.describe("project deep-link refresh restore", () => {
     await page.waitForTimeout(1200);
 
     const responsesAfterBack = explorerTraffic.responses.slice(responsesBeforeBack);
+    const expectedWorkspaceId = String(fixture.workspaceId || responsesAfterBack[0]?.workspaceId || "").trim();
     expect(responsesAfterBack.length).toBeGreaterThan(0);
     expect(
       responsesAfterBack.every((item) => item.status === 200),
       JSON.stringify(responsesAfterBack),
     ).toBeTruthy();
     expect(
-      responsesAfterBack.every((item) => item.workspaceId === fixture.workspaceId),
+      responsesAfterBack.every((item) => item.workspaceId === expectedWorkspaceId),
       JSON.stringify(responsesAfterBack),
+    ).toBeTruthy();
+  });
+
+  test("switching workspace after returning from session clears stale project query", async ({ page, request }) => {
+    const auth = await authContext(request);
+    const fixture = await createDefaultWorkspaceProjectWithSession(request, auth);
+    const otherWorkspace = await createNonDefaultWorkspaceProject(request, auth);
+    const explorerTraffic = collectWorkspaceExplorerTraffic(page);
+
+    await page.addInitScript(() => {
+      window.__FPC_E2E__ = true;
+    });
+    await resetUiStorage(page);
+    await installNotFoundObserver(page);
+    await setUiToken(page, auth.accessToken, { activeOrgId: auth.activeOrgId });
+    await setChosenOrgContext(page, auth);
+
+    await page.goto(`/app?project=${fixture.projectId}`, { waitUntil: "domcontentloaded" });
+    await waitForProjectPane(page, fixture);
+
+    await page.evaluate(async (sid) => {
+      const opener = window?.__FPC_E2E_OPEN_SESSION__;
+      if (typeof opener !== "function") {
+        throw new Error("missing_open_session_helper");
+      }
+      const result = await opener(sid);
+      if (!result?.ok) {
+        throw new Error(String(result?.error || "open_session_failed"));
+      }
+    }, fixture.sessionId);
+
+    await expect(page.getByTestId("topbar-back-projects")).toHaveText(/к проекту/i);
+    await page.getByTestId("topbar-back-projects").click();
+    await waitForProjectPane(page, fixture);
+
+    const responsesBeforeSwitch = explorerTraffic.responses.length;
+    await page.getByText(otherWorkspace.workspaceName, { exact: true }).click();
+
+    await expect
+      .poll(() => {
+        const url = new URL(page.url());
+        return {
+          project: String(url.searchParams.get("project") || "").trim(),
+          session: String(url.searchParams.get("session") || "").trim(),
+        };
+      })
+      .toEqual({ project: "", session: "" });
+
+    await expect(page.getByRole("heading", { name: fixture.projectTitle })).toHaveCount(0);
+    await expect(page.getByText(otherWorkspace.workspaceName, { exact: true })).toBeVisible();
+    await page.waitForTimeout(1200);
+
+    const responsesAfterSwitch = explorerTraffic.responses.slice(responsesBeforeSwitch);
+    expect(responsesAfterSwitch.length).toBeGreaterThan(0);
+    expect(
+      responsesAfterSwitch.every((item) => item.status === 200),
+      JSON.stringify(responsesAfterSwitch),
+    ).toBeTruthy();
+    expect(
+      responsesAfterSwitch.every((item) => item.workspaceId === otherWorkspace.workspaceId),
+      JSON.stringify(responsesAfterSwitch),
     ).toBeTruthy();
   });
 
