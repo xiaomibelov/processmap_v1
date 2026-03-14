@@ -59,6 +59,34 @@ def tldr_cache_key(session_id: str) -> str:
     return f"pm:cache:tldr:session:{sid}:v1"
 
 
+_SESSION_OPEN_TTL = 72 * 60 * 60
+
+
+def session_open_cache_ttl_sec() -> int:
+    return int(_SESSION_OPEN_TTL)
+
+
+def session_open_version_token(session_obj: Any) -> str:
+    version = int(getattr(session_obj, "version", 0) or 0)
+    bpmn_xml_version = int(getattr(session_obj, "bpmn_xml_version", 0) or 0)
+    updated_at = int(getattr(session_obj, "updated_at", 0) or 0)
+    return f"{version}.{bpmn_xml_version}.{updated_at}"
+
+
+def session_open_cache_key(session_id: str, version_token: str) -> str:
+    sid = str(session_id or "").strip() or "unknown"
+    token = str(version_token or "").strip() or "0.0.0"
+    return f"pm:cache:session_open:session:{sid}:v:{token}"
+
+
+def invalidate_session_open(session_id: str, *, client: Any = None) -> int:
+    sid = str(session_id or "").strip()
+    if not sid:
+        return 0
+    prefix = f"pm:cache:session_open:session:{sid}:v:"
+    return cache_delete_prefix(prefix, client=client)
+
+
 def _resolve_client(client: Any = None):
     conn = client if client is not None else get_client()
     if conn is None:

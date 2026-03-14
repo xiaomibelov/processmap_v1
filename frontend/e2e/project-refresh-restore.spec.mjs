@@ -268,6 +268,32 @@ function collectWorkspaceExplorerTraffic(page) {
   return { requests, responses };
 }
 
+function collectWorkspacesTraffic(page) {
+  const requests = [];
+  const responses = [];
+  const marker = "/api/workspaces";
+
+  page.on("request", (req) => {
+    const url = String(req.url() || "");
+    if (!url.includes(marker)) return;
+    requests.push({
+      url,
+      method: req.method(),
+    });
+  });
+
+  page.on("response", (res) => {
+    const url = String(res.url() || "");
+    if (!url.includes(marker)) return;
+    responses.push({
+      url,
+      status: res.status(),
+    });
+  });
+
+  return { requests, responses };
+}
+
 async function activeWorkspaceLabel(page) {
   return page.evaluate(() => {
     const rows = Array.from(document.querySelectorAll("div"))
@@ -481,6 +507,7 @@ test.describe("project deep-link refresh restore", () => {
     const fixture = await createDefaultWorkspaceProjectWithSession(request, auth);
     const otherWorkspace = await createNonDefaultWorkspaceProject(request, auth);
     const explorerTraffic = collectWorkspaceExplorerTraffic(page);
+    const workspacesTraffic = collectWorkspacesTraffic(page);
 
     await page.addInitScript(() => {
       window.__FPC_E2E__ = true;
@@ -509,6 +536,7 @@ test.describe("project deep-link refresh restore", () => {
     await waitForProjectPane(page, fixture);
 
     const responsesBeforeSwitch = explorerTraffic.responses.length;
+    const workspaceResponsesBeforeSwitch = workspacesTraffic.responses.length;
     await page.getByText(otherWorkspace.workspaceName, { exact: true }).click();
 
     await expect
@@ -538,6 +566,10 @@ test.describe("project deep-link refresh restore", () => {
       stableTail.every((item) => item.workspaceId === otherWorkspace.workspaceId),
       JSON.stringify(responsesAfterSwitch),
     ).toBeTruthy();
+    expect(
+      workspacesTraffic.responses.length - workspaceResponsesBeforeSwitch,
+      JSON.stringify(workspacesTraffic.responses),
+    ).toBe(0);
   });
 
   test("invalid stale project id stays in loading/restoring state until lookup finishes, then shows final not-found", async ({ page, request }) => {

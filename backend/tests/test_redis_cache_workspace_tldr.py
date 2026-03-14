@@ -44,6 +44,23 @@ class _FakeRedis:
                 yield key
 
 
+class _FailingRedis:
+    def get(self, key):
+        raise RuntimeError(f"get failed for {key}")
+
+    def set(self, key, value, ex=None):
+        raise RuntimeError("set failed")
+
+    def setex(self, key, ttl, value):
+        raise RuntimeError("setex failed")
+
+    def delete(self, key):
+        raise RuntimeError("delete failed")
+
+    def scan_iter(self, match=None, count=500):
+        raise RuntimeError("scan failed")
+
+
 class RedisCacheHelperTest(unittest.TestCase):
     def test_cache_hit_miss_and_prefix_invalidation(self):
         from app.redis_cache import (
@@ -52,6 +69,9 @@ class RedisCacheHelperTest(unittest.TestCase):
             cache_set_json,
             cache_stats_reset,
             cache_stats_snapshot,
+            invalidate_session_open,
+            session_open_cache_key,
+            session_open_version_token,
             tldr_cache_key,
             workspace_cache_key,
         )
@@ -64,6 +84,11 @@ class RedisCacheHelperTest(unittest.TestCase):
             self.assertTrue(cache_set_json(key, {"ok": True}, ttl_sec=30))
             self.assertEqual(cache_get_json(key), {"ok": True})
             self.assertTrue(cache_set_json(tldr_cache_key("s1"), {"summary": "A"}, ttl_sec=60))
+            token = session_open_version_token(SimpleNamespace(version=3, bpmn_xml_version=2, updated_at=101))
+            self.assertEqual(token, "3.2.101")
+            open_key = session_open_cache_key("s1", token)
+            self.assertTrue(cache_set_json(open_key, {"id": "s1"}, ttl_sec=60))
+            self.assertGreaterEqual(invalidate_session_open("s1"), 1)
             deleted = cache_delete_prefix("pm:cache:tldr:session:")
             self.assertGreaterEqual(deleted, 1)
             stats = cache_stats_snapshot()
@@ -90,6 +115,7 @@ class RedisCacheWorkspaceTldrIntegrationTest(unittest.TestCase):
             create_org_project,
             create_org_project_session,
             enterprise_workspace,
+            get_session,
             get_session_tldr,
         )
         from app.models import CreateProjectIn
@@ -106,6 +132,7 @@ class RedisCacheWorkspaceTldrIntegrationTest(unittest.TestCase):
         self.create_org_project = create_org_project
         self.create_org_project_session = create_org_project_session
         self.enterprise_workspace = enterprise_workspace
+        self.get_session = get_session
         self.get_session_tldr = get_session_tldr
         self.get_default_org_id = get_default_org_id
         self.get_storage = get_storage
@@ -249,6 +276,59 @@ class RedisCacheWorkspaceTldrIntegrationTest(unittest.TestCase):
         self.assertGreaterEqual(int(first_stats.get("set") or 0), 1)
         self.assertEqual(int(first_stats.get("hit") or 0), 0)
         self.assertGreaterEqual(int(second_stats.get("hit") or 0), 1)
+
+    def test_session_open_second_call_is_cache_hit(self):
+        from app.redis_cache import cache_stats_reset, cache_stats_snapshot
+
+        req_admin = _DummyRequest(self.admin, active_org_id=self.org_id)
+        fake = _FakeRedis()
+        with patch("app.redis_cache.get_client", return_value=fake):
+            cache_stats_reset()
+            first = self.get_session(self.session_id, request=req_admin)
+            first_stats = cache_stats_snapshot()
+            second = self.get_session(self.session_id, request=req_admin)
+            second_stats = cache_stats_snapshot()
+
+        self.assertIsInstance(first, dict)
+        self.assertEqual(str(first.get("id") or ""), self.session_id)
+        self.assertEqual(first, second)
+        self.assertGreaterEqual(int(first_stats.get("set") or 0), 1)
+        self.assertEqual(int(first_stats.get("hit") or 0), 0)
+        self.assertGreaterEqual(int(second_stats.get("hit") or 0), 1)
+
+    def test_session_open_does_not_reuse_stale_cache_after_canonical_change(self):
+        from app.redis_cache import cache_stats_reset, cache_stats_snapshot
+
+        req_admin = _DummyRequest(self.admin, active_org_id=self.org_id)
+        fake = _FakeRedis()
+        with patch("app.redis_cache.get_client", return_value=fake):
+            cache_stats_reset()
+            first = self.get_session(self.session_id, request=req_admin)
+            first_stats = cache_stats_snapshot()
+
+            st = self.get_storage()
+            sess = st.load(self.session_id, org_id=self.org_id, is_admin=True)
+            self.assertIsNotNone(sess)
+            sess.title = "Cache Session Updated"
+            sess.version = int(getattr(sess, "version", 0) or 0) + 1
+            st.save(sess, user_id=str(self.admin.get("id") or ""), org_id=self.org_id, is_admin=True)
+
+            second = self.get_session(self.session_id, request=req_admin)
+            second_stats = cache_stats_snapshot()
+
+        self.assertEqual(str(first.get("title") or ""), "Cache Session")
+        self.assertEqual(str(second.get("title") or ""), "Cache Session Updated")
+        self.assertGreaterEqual(int(first_stats.get("set") or 0), 1)
+        self.assertEqual(int(second_stats.get("hit") or 0), 0)
+        self.assertGreaterEqual(int(second_stats.get("set") or 0), 2)
+
+    def test_session_open_falls_back_to_canonical_on_redis_failure(self):
+        req_admin = _DummyRequest(self.admin, active_org_id=self.org_id)
+        with patch("app.redis_cache.get_client", return_value=_FailingRedis()):
+            payload = self.get_session(self.session_id, request=req_admin)
+
+        self.assertIsInstance(payload, dict)
+        self.assertEqual(str(payload.get("id") or ""), self.session_id)
 
 
 if __name__ == "__main__":

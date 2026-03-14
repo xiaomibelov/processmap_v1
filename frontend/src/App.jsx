@@ -1686,7 +1686,6 @@ export default function App() {
     }
     if (pid && pid !== String(projectId || "").trim()) {
       setProjectId(pid);
-      await refreshSessions(pid);
     }
     await openSession(sid, { source });
     if (openTab === "diagram" || openTab === "interview" || openTab === "xml" || openTab === "doc") {

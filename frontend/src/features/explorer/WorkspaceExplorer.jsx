@@ -1143,7 +1143,9 @@ export default function WorkspaceExplorer({
   const activeWorkspace = workspaces.find((item) => String(item?.id || "") === String(activeWorkspaceId || "")) || null;
   const permissions = buildWorkspacePermissions(activeWorkspace?.role || "", Boolean(user?.is_admin));
 
-  // Load workspaces for the selected organization
+  // Load workspaces for the selected organization. Keep this fetch scoped to
+  // org changes only; workspace selection changes should not refetch the full
+  // workspace list and remount the explorer.
   useEffect(() => {
     let cancelled = false;
     setWsLoading(true);
@@ -1161,20 +1163,25 @@ export default function WorkspaceExplorer({
           setCurrentProjectId(null);
           return;
         }
-        const nextWorkspaceId = resolveExplorerWorkspaceId({
-          workspaces: list,
-          activeWorkspaceId,
-          requestProjectWorkspaceId,
-        });
-        if (nextWorkspaceId && nextWorkspaceId !== String(activeWorkspaceId || "").trim()) {
-          setActiveWorkspaceId(nextWorkspaceId);
-          setCurrentFolderId("");
-        }
       })
       .catch((e) => { if (!cancelled) setWsError(String(e?.message || "Ошибка")); })
       .finally(() => { if (!cancelled) setWsLoading(false); });
     return () => { cancelled = true; };
-  }, [activeOrgId, activeWorkspaceId, requestProjectWorkspaceId]);
+  }, [activeOrgId]);
+
+  useEffect(() => {
+    if (wsLoading) return;
+    if (!workspaces.length) return;
+    const nextWorkspaceId = resolveExplorerWorkspaceId({
+      workspaces,
+      activeWorkspaceId,
+      requestProjectWorkspaceId,
+    });
+    if (nextWorkspaceId && nextWorkspaceId !== String(activeWorkspaceId || "").trim()) {
+      setActiveWorkspaceId(nextWorkspaceId);
+      setCurrentFolderId("");
+    }
+  }, [workspaces, wsLoading, activeWorkspaceId, requestProjectWorkspaceId]);
 
   // When activeOrgId prop changes, sync
   useEffect(() => {
