@@ -81,10 +81,18 @@ function createOverlayMock() {
   return {
     addCalls,
     removeCalls,
-    add(elementId, payload = {}) {
+    add(elementId, typeOrPayload = {}, payloadMaybe = null) {
       seq += 1;
       const id = `ov_${seq}`;
-      addCalls.push({ id, elementId: String(elementId || ""), payload });
+      let overlayType = "";
+      let payload = {};
+      if (typeof typeOrPayload === "string") {
+        overlayType = String(typeOrPayload || "");
+        payload = asObject(payloadMaybe);
+      } else {
+        payload = asObject(typeOrPayload);
+      }
+      addCalls.push({ id, elementId: String(elementId || ""), payload, overlayType });
       return id;
     },
     remove(id) {
@@ -268,6 +276,7 @@ test("properties overlay decor coexists with notes/time/robot overlay positions"
     assert.equal(addCall.payload.position.top, -14);
     assert.equal(addCall.payload.position.left, 70);
     assert.equal(addCall.payload.scale, false);
+    assert.equal(addCall.overlayType, "fpc-properties");
   });
 });
 
@@ -347,6 +356,9 @@ test("properties overlay decor renders all element overlays when always mode is 
     assert.equal(Object.keys(fixture.refs.propertiesOverlayStateRef.current.viewer).length, 2);
     const addedIds = fixture.overlays.addCalls.map((call) => call.elementId).sort();
     assert.deepEqual(addedIds, ["Task_1", "Task_2"]);
+    fixture.overlays.addCalls.forEach((call) => {
+      assert.equal(call.overlayType, "fpc-properties");
+    });
   });
 });
 

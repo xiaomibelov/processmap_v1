@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { mergeDrawioMeta, normalizeDrawioMeta } from "./drawioMeta.js";
+import { buildDrawioJazzSnapshot, mergeDrawioMeta, normalizeDrawioMeta } from "./drawioMeta.js";
 
 test("mergeDrawioMeta uses fallback when primary is empty and fallback has svg cache", () => {
   const merged = mergeDrawioMeta(
@@ -50,4 +50,57 @@ test("normalizeDrawioMeta creates Default layer and assigns svg elements to laye
     meta.drawio_elements_v1.every((row) => String(row?.layer_id || "").trim().length > 0),
     true,
   );
+});
+
+test("buildDrawioJazzSnapshot excludes transient editor mode and tool state", () => {
+  const snapshot = buildDrawioJazzSnapshot({
+    enabled: true,
+    interaction_mode: "edit",
+    active_tool: "rect",
+    doc_xml: "<mxfile><diagram id='p1'/></mxfile>",
+    svg_cache: "<svg><rect id='shape_1'/></svg>",
+  });
+
+  assert.equal(snapshot.interaction_mode, "view");
+  assert.equal(snapshot.active_tool, "select");
+  assert.equal(String(snapshot.doc_xml || "").includes("<mxfile"), true);
+  assert.equal(String(snapshot.svg_cache || "").includes("<svg"), true);
+});
+
+test("normalizeDrawioMeta keeps valid anchor_v1 on eligible drawio rows", () => {
+  const meta = normalizeDrawioMeta({
+    svg_cache: "<svg><text id='text_1'>A</text></svg>",
+    drawio_elements_v1: [{
+      id: "text_1",
+      text: "A",
+      anchor_v1: {
+        target_kind: "bpmn_node",
+        target_id: "Task_1",
+        relation: "explains",
+        status: "anchored",
+      },
+    }],
+  });
+  assert.deepEqual(meta.drawio_elements_v1[0].anchor_v1, {
+    target_kind: "bpmn_node",
+    target_id: "Task_1",
+    relation: "explains",
+    status: "anchored",
+  });
+});
+
+test("normalizeDrawioMeta marks malformed anchor_v1 as invalid instead of treating it as anchored", () => {
+  const meta = normalizeDrawioMeta({
+    svg_cache: "<svg><rect id='ellipse_1'/></svg>",
+    drawio_elements_v1: [{
+      id: "ellipse_1",
+      anchor_v1: {
+        target_kind: "bpmn_edge",
+        target_id: "Flow_1",
+        relation: "calls_out",
+      },
+    }],
+  });
+  assert.equal(meta.drawio_elements_v1[0].anchor_v1.status, "invalid");
+  assert.equal(meta.drawio_elements_v1[0].anchor_v1.target_kind, "bpmn_edge");
 });

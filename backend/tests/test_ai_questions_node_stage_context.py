@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest.mock import patch
 
-from app.ai.deepseek_questions import generate_llm_questions_for_node
+from app.ai.deepseek_questions import _LLM_QUESTIONS_TIMEOUT_SEC, generate_llm_questions_for_node
 from app.models import Edge, Node, Session
 
 
@@ -81,6 +81,7 @@ class AiQuestionsNodeStageContextTest(unittest.TestCase):
         outgoing = neighbors.get("outgoing_sample") or []
         self.assertEqual((incoming[0] or {}).get("id"), "Task_1")
         self.assertEqual((outgoing[0] or {}).get("id"), "Task_3")
+        self.assertEqual(mock_chat.call_args.kwargs.get("timeout"), _LLM_QUESTIONS_TIMEOUT_SEC)
 
 
 if __name__ == "__main__":

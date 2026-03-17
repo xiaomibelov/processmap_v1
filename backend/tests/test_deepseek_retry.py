@@ -23,6 +23,33 @@ class _DummyResp:
 
 class DeepseekRetryTests(unittest.TestCase):
     @patch("app.ai.deepseek_questions.time.sleep", return_value=None)
+    def test_retries_on_read_timeout_then_succeeds(self, _sleep):
+        calls = {"count": 0}
+
+        def _post(*args, **kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise requests.exceptions.ReadTimeout("HTTPSConnectionPool(host='api.deepseek.com', port=443): Read timed out")
+            return _DummyResp(
+                {
+                    "choices": [
+                        {"message": {"content": "ok text"}}
+                    ]
+                },
+                status_code=200,
+            )
+
+        with patch("app.ai.deepseek_questions.requests.post", side_effect=_post):
+            out = _deepseek_chat_text(
+                api_key="x",
+                base_url="https://example.invalid",
+                messages=[{"role": "user", "content": "hi"}],
+                timeout=30,
+            )
+        self.assertEqual(out, "ok text")
+        self.assertEqual(calls["count"], 2)
+
+    @patch("app.ai.deepseek_questions.time.sleep", return_value=None)
     def test_retries_on_chunked_encoding_error_then_succeeds(self, _sleep):
         calls = {"count": 0}
 

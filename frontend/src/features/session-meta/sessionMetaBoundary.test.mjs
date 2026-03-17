@@ -27,6 +27,8 @@ function normalizeBpmnMeta(raw) {
     hybrid_v2: asObject(value.hybrid_v2),
     drawio: asObject(value.drawio),
     execution_plans: Array.isArray(value.execution_plans) ? value.execution_plans : [],
+    auto_pass_v1: asObject(value.auto_pass_v1),
+    session_companion_v1: asObject(value.session_companion_v1),
   };
 }
 
@@ -193,6 +195,11 @@ test("drawio-only session-meta snapshot preserves BPMN-owned branches in write e
       Task_yes: { showPropertiesOverlay: true },
     },
     execution_plans: [{ id: "plan_1", label: "Primary" }],
+    auto_pass_v1: { status: "done", graph_hash: "abc123" },
+    session_companion_v1: {
+      schema_version: "session_companion_v1",
+      save_state_v1: { status: "saved" },
+    },
     drawio: {
       enabled: true,
       doc_xml: "<mxfile>old</mxfile>",
@@ -230,12 +237,16 @@ test("drawio-only session-meta snapshot preserves BPMN-owned branches in write e
   assert.deepEqual(nextMeta.robot_meta_by_element_id, currentMeta.robot_meta_by_element_id);
   assert.deepEqual(nextMeta.presentation_by_element_id, currentMeta.presentation_by_element_id);
   assert.deepEqual(nextMeta.execution_plans, currentMeta.execution_plans);
+  assert.deepEqual(nextMeta.auto_pass_v1, currentMeta.auto_pass_v1);
+  assert.deepEqual(nextMeta.session_companion_v1, currentMeta.session_companion_v1);
   assert.equal(String(envelope.bpmn_meta.drawio.svg_cache || ""), "<svg>next</svg>");
   assert.deepEqual(envelope.bpmn_meta.flow_meta, currentMeta.flow_meta);
   assert.deepEqual(envelope.bpmn_meta.node_path_meta, currentMeta.node_path_meta);
   assert.deepEqual(envelope.bpmn_meta.robot_meta_by_element_id, currentMeta.robot_meta_by_element_id);
   assert.deepEqual(envelope.bpmn_meta.presentation_by_element_id, currentMeta.presentation_by_element_id);
   assert.deepEqual(envelope.bpmn_meta.execution_plans, currentMeta.execution_plans);
+  assert.deepEqual(envelope.bpmn_meta.auto_pass_v1, currentMeta.auto_pass_v1);
+  assert.deepEqual(envelope.bpmn_meta.session_companion_v1, currentMeta.session_companion_v1);
   assert.equal(Object.prototype.hasOwnProperty.call(envelope, "bpmn_xml"), false);
 });
 

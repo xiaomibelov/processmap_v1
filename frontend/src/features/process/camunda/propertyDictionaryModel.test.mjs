@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { JSDOM } from "jsdom";
 
 import {
   buildPropertiesOverlayPreview,
@@ -13,6 +14,21 @@ import {
   setSchemaPropertyValueInExtensionState,
   shouldOfferAddDictionaryValueAction,
 } from "./propertyDictionaryModel.js";
+
+function withDom(fn) {
+  const dom = new JSDOM("<!doctype html><html><body></body></html>");
+  const prevDomParser = globalThis.DOMParser;
+  const prevSerializer = globalThis.XMLSerializer;
+  globalThis.DOMParser = dom.window.DOMParser;
+  globalThis.XMLSerializer = dom.window.XMLSerializer;
+  try {
+    return fn(dom.window);
+  } finally {
+    globalThis.DOMParser = prevDomParser;
+    globalThis.XMLSerializer = prevSerializer;
+    dom.window.close();
+  }
+}
 
 test("schema load mapping binds schema rows to matching extension properties in schema order", () => {
   const model = buildPropertyDictionaryEditorModel({
@@ -503,3 +519,58 @@ test("properties overlay preview compacts overflow into summary chip count", () 
   assert.equal(preview.hiddenCount, 2);
   assert.equal(preview.totalCount, 5);
 });
+
+test("properties overlay preview includes Camunda IO rows", () => withDom(() => {
+  const preview = buildPropertiesOverlayPreview({
+    elementId: "Task_1",
+    showPropertiesOverlay: true,
+    extensionStateRaw: {
+      properties: {
+        extensionProperties: [],
+      },
+      preservedExtensionElements: [
+        `<camunda:connector xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:pm="http://foodproc.ai/schema/pm">
+          <camunda:inputOutput>
+            <camunda:inputParameter name="url" pm:showOnTask="true">http://192.168.56.101/robot</camunda:inputParameter>
+            <camunda:outputParameter name="response" pm:showOnTask="true">
+              <camunda:script scriptFormat="javascript">connector.getVariable("response");</camunda:script>
+            </camunda:outputParameter>
+          </camunda:inputOutput>
+        </camunda:connector>`,
+      ],
+    },
+  });
+  assert.equal(preview.enabled, true);
+  assert.deepEqual(
+    preview.items.map((item) => item.label),
+    ["IN url", "OUT response"],
+  );
+  assert.equal(preview.items[0].value, "http://192.168.56.101/robot");
+  assert.equal(preview.items[1].value.includes("javascript"), true);
+}));
+
+test("properties overlay preview includes Camunda IO rows without row-level showOnTask flag", () => withDom(() => {
+  const preview = buildPropertiesOverlayPreview({
+    elementId: "Task_1",
+    showPropertiesOverlay: true,
+    extensionStateRaw: {
+      properties: {
+        extensionProperties: [],
+      },
+      preservedExtensionElements: [
+        `<camunda:connector xmlns:camunda="http://camunda.org/schema/1.0/bpmn">
+          <camunda:inputOutput>
+            <camunda:inputParameter name="url">http://192.168.56.101/robot</camunda:inputParameter>
+            <camunda:outputParameter name="response">ok</camunda:outputParameter>
+          </camunda:inputOutput>
+        </camunda:connector>`,
+      ],
+    },
+  });
+  assert.equal(preview.enabled, true);
+  assert.equal(preview.totalCount, 2);
+  assert.deepEqual(
+    preview.items.map((item) => item.label),
+    ["IN url", "OUT response"],
+  );
+}));

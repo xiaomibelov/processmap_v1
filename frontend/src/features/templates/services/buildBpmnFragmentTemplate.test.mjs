@@ -31,6 +31,30 @@ test("buildBpmnFragmentTemplate maps capture pack to bpmn_fragment_v1 template",
   assert.equal(result.template.source_session_id, "sess_1");
 });
 
+test("buildBpmnFragmentTemplate keeps node semantic payload for later insert hydration", async () => {
+  const pack = createPack();
+  pack.fragment.nodes[0].semanticPayload = {
+    documentation: [{ $type: "bpmn:Documentation", text: "doc from template" }],
+    extensionElements: {
+      $type: "bpmn:ExtensionElements",
+      values: [
+        { $type: "camunda:Properties", values: [{ $type: "camunda:Property", name: "k", value: "v" }] },
+      ],
+    },
+    custom: {
+      propertyDictionaryBinding: { operationKey: "op.template" },
+    },
+  };
+  const result = await buildBpmnFragmentTemplate(async () => ({ ok: true, pack }), {
+    title: "Fragment with props",
+  });
+  assert.equal(result.ok, true);
+  const captured = result.template.payload.pack.fragment.nodes[0].semanticPayload;
+  assert.equal(captured.documentation[0].text, "doc from template");
+  assert.equal(captured.extensionElements.values[0].$type, "camunda:Properties");
+  assert.equal(captured.custom.propertyDictionaryBinding.operationKey, "op.template");
+});
+
 test("buildBpmnFragmentTemplate returns capture error", async () => {
   const result = await buildBpmnFragmentTemplate(async () => ({ ok: false, error: "no_selection" }), {
     title: "Fragment B",

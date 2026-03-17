@@ -3,11 +3,17 @@ import test from "node:test";
 import { JSDOM } from "jsdom";
 
 import {
+  addCamundaIoParameterInExtensionState,
+  createEmptyCamundaExtensionState,
+  extractCamundaInputOutputParametersFromExtensionState,
   extractCamundaExtensionsMapFromBpmnXml,
   finalizeCamundaExtensionsXml,
   hydrateCamundaExtensionsFromBpmn,
   normalizeCamundaExtensionState,
   normalizeCamundaExtensionsMap,
+  patchCamundaIoParameterInExtensionState,
+  patchCamundaInputParameterInExtensionState,
+  removeCamundaIoParameterFromExtensionState,
   syncCamundaExtensionsToBpmn,
 } from "./camundaExtensions.js";
 
@@ -452,6 +458,384 @@ test("unknown extension content survives import and export semantically", () => 
   assert.equal(roundTripXml.includes("foo:meta"), true);
   assert.equal(roundTripXml.includes("camunda:inputOutput"), true);
   assert.equal(roundTripXml.includes("camunda:executionListener"), true);
+}));
+
+test("extractCamundaInputOutputParametersFromExtensionState reads text/empty/script parameter shapes", () => withDom(() => {
+  const state = normalizeCamundaExtensionState({
+    properties: {
+      extensionProperties: [],
+      extensionListeners: [],
+    },
+    preservedExtensionElements: [
+      `<camunda:connector xmlns:camunda="http://camunda.org/schema/1.0/bpmn">
+        <camunda:inputOutput>
+          <camunda:inputParameter name="url">http://192.168.56.101:80/brickpi/sensor/color/value</camunda:inputParameter>
+          <camunda:inputParameter name="method">GET</camunda:inputParameter>
+          <camunda:inputParameter name="payload"/>
+          <camunda:outputParameter name="responseGetPieceColor">
+            <camunda:script scriptFormat="javascript">connector.getVariable("response");</camunda:script>
+          </camunda:outputParameter>
+        </camunda:inputOutput>
+        <camunda:connectorId>http-connector</camunda:connectorId>
+      </camunda:connector>`,
+    ],
+  });
+
+  const io = extractCamundaInputOutputParametersFromExtensionState(state);
+  assert.equal(io.inputRows.length, 3);
+  assert.equal(io.outputRows.length, 1);
+
+  const url = io.inputRows.find((row) => row.name === "url");
+  const payload = io.inputRows.find((row) => row.name === "payload");
+  const output = io.outputRows.find((row) => row.name === "responseGetPieceColor");
+
+  assert.equal(url?.shape, "text");
+  assert.equal(url?.value, "http://192.168.56.101:80/brickpi/sensor/color/value");
+  assert.equal(payload?.shape, "empty");
+  assert.equal(payload?.value, "");
+  assert.equal(output?.shape, "script");
+  assert.equal(output?.scriptFormat, "javascript");
+  assert.equal(output?.value.includes("connector.getVariable"), true);
+}));
+
+test("patchCamundaInputParameterInExtensionState updates preserved input parameter and keeps script output", () => withDom(() => {
+  const state = normalizeCamundaExtensionState({
+    properties: {
+      extensionProperties: [],
+      extensionListeners: [],
+    },
+    preservedExtensionElements: [
+      `<camunda:connector xmlns:camunda="http://camunda.org/schema/1.0/bpmn">
+        <camunda:inputOutput>
+          <camunda:inputParameter name="url">http://old.local/value</camunda:inputParameter>
+          <camunda:inputParameter name="payload"/>
+          <camunda:outputParameter name="responseGetPieceColor">
+            <camunda:script scriptFormat="javascript">connector.getVariable("response");</camunda:script>
+          </camunda:outputParameter>
+        </camunda:inputOutput>
+        <camunda:connectorId>http-connector</camunda:connectorId>
+      </camunda:connector>`,
+    ],
+  });
+
+  const before = extractCamundaInputOutputParametersFromExtensionState(state);
+  const urlRef = before.inputRows.find((row) => row.name === "url");
+  const payloadRef = before.inputRows.find((row) => row.name === "payload");
+
+  const nextOne = patchCamundaInputParameterInExtensionState({
+    extensionStateRaw: state,
+    parameterRef: urlRef,
+    patch: { value: "http://new.local/value" },
+  });
+  const nextTwo = patchCamundaInputParameterInExtensionState({
+    extensionStateRaw: nextOne,
+    parameterRef: payloadRef,
+    patch: { value: "{\"color\":\"red\"}", name: "payloadJson" },
+  });
+
+  const after = extractCamundaInputOutputParametersFromExtensionState(nextTwo);
+  const url = after.inputRows.find((row) => row.name === "url");
+  const payload = after.inputRows.find((row) => row.name === "payloadJson");
+  const output = after.outputRows.find((row) => row.name === "responseGetPieceColor");
+
+  assert.equal(url?.value, "http://new.local/value");
+  assert.equal(payload?.shape, "text");
+  assert.equal(payload?.value, "{\"color\":\"red\"}");
+  assert.equal(output?.shape, "script");
+  assert.equal(output?.value.includes("connector.getVariable(\"response\")"), true);
+
+  const xml = finalizeCamundaExtensionsXml({
+    xmlText: BASE_XML,
+    camundaExtensionsByElementId: {
+      Task_1: nextTwo,
+    },
+  });
+  assert.equal(xml.includes("http://new.local/value"), true);
+  assert.equal(xml.includes("payloadJson"), true);
+  assert.equal(xml.includes("connector.getVariable(\"response\")"), true);
+
+  const reloadedMap = extractCamundaExtensionsMapFromBpmnXml(xml);
+  const reloadedIo = extractCamundaInputOutputParametersFromExtensionState(reloadedMap.Task_1);
+  assert.equal(reloadedIo.inputRows.length, 2);
+  assert.equal(reloadedIo.outputRows.length, 1);
+}));
+
+test("extractCamundaInputOutputParametersFromExtensionState reads row-level showOnTask attribute", () => withDom(() => {
+  const state = normalizeCamundaExtensionState({
+    properties: {
+      extensionProperties: [],
+      extensionListeners: [],
+    },
+    preservedExtensionElements: [
+      `<camunda:connector xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:pm="http://foodproc.ai/schema/pm">
+        <camunda:inputOutput>
+          <camunda:inputParameter name="url" pm:showOnTask="true">http://old.local/value</camunda:inputParameter>
+          <camunda:outputParameter name="result">ok</camunda:outputParameter>
+        </camunda:inputOutput>
+        <camunda:connectorId>http-connector</camunda:connectorId>
+      </camunda:connector>`,
+    ],
+  });
+  const io = extractCamundaInputOutputParametersFromExtensionState(state);
+  const inputUrl = io.inputRows.find((row) => row.name === "url");
+  const outputResult = io.outputRows.find((row) => row.name === "result");
+  assert.equal(inputUrl?.showOnTask, true);
+  assert.equal(outputResult?.showOnTask, false);
+}));
+
+test("patchCamundaIoParameterInExtensionState updates output metadata without touching script body", () => withDom(() => {
+  const state = normalizeCamundaExtensionState({
+    properties: {
+      extensionProperties: [],
+      extensionListeners: [],
+    },
+    preservedExtensionElements: [
+      `<camunda:connector xmlns:camunda="http://camunda.org/schema/1.0/bpmn">
+        <camunda:inputOutput>
+          <camunda:outputParameter name="responseGetPieceColor">
+            <camunda:script scriptFormat="javascript">connector.getVariable("response");</camunda:script>
+          </camunda:outputParameter>
+        </camunda:inputOutput>
+      </camunda:connector>`,
+    ],
+  });
+  const before = extractCamundaInputOutputParametersFromExtensionState(state);
+  const outputRef = before.outputRows[0];
+  const next = patchCamundaIoParameterInExtensionState({
+    extensionStateRaw: state,
+    parameterRef: outputRef,
+    patch: {
+      name: "responseColor",
+      showOnTask: true,
+    },
+  });
+  const after = extractCamundaInputOutputParametersFromExtensionState(next);
+  const renamed = after.outputRows.find((row) => row.name === "responseColor");
+  assert.equal(renamed?.shape, "script");
+  assert.equal(renamed?.showOnTask, true);
+  assert.equal(String(renamed?.value || "").includes("connector.getVariable(\"response\")"), true);
+
+  const xml = finalizeCamundaExtensionsXml({
+    xmlText: BASE_XML,
+    camundaExtensionsByElementId: {
+      Task_1: next,
+    },
+  });
+  assert.equal(xml.includes("responseColor"), true);
+  assert.equal(xml.includes("showOnTask=\"true\""), true);
+}));
+
+test("add/remove Camunda IO parameter keeps deterministic extraction and persistence", () => withDom(() => {
+  const base = normalizeCamundaExtensionState({
+    properties: {
+      extensionProperties: [],
+      extensionListeners: [],
+    },
+    preservedExtensionElements: [
+      `<camunda:connector xmlns:camunda="http://camunda.org/schema/1.0/bpmn">
+        <camunda:inputOutput>
+          <camunda:inputParameter name="url">http://old.local/value</camunda:inputParameter>
+        </camunda:inputOutput>
+      </camunda:connector>`,
+    ],
+  });
+  const withInput = addCamundaIoParameterInExtensionState({
+    extensionStateRaw: base,
+    direction: "input",
+    draft: {
+      name: "payload",
+      value: "{\"color\":\"red\"}",
+      showOnTask: true,
+    },
+  });
+  const withOutput = addCamundaIoParameterInExtensionState({
+    extensionStateRaw: withInput,
+    direction: "output",
+    draft: {
+      name: "responseCode",
+      value: "200",
+      showOnTask: false,
+    },
+  });
+  const extracted = extractCamundaInputOutputParametersFromExtensionState(withOutput);
+  const payload = extracted.inputRows.find((row) => row.name === "payload");
+  const responseCode = extracted.outputRows.find((row) => row.name === "responseCode");
+  assert.equal(payload?.showOnTask, true);
+  assert.equal(payload?.value, "{\"color\":\"red\"}");
+  assert.equal(responseCode?.value, "200");
+
+  const removed = removeCamundaIoParameterFromExtensionState({
+    extensionStateRaw: withOutput,
+    parameterRef: responseCode,
+  });
+  const afterRemove = extractCamundaInputOutputParametersFromExtensionState(removed);
+  assert.equal(afterRemove.outputRows.some((row) => row.name === "responseCode"), false);
+  assert.equal(afterRemove.inputRows.some((row) => row.name === "payload"), true);
+
+  const xml = finalizeCamundaExtensionsXml({
+    xmlText: BASE_XML,
+    camundaExtensionsByElementId: {
+      Task_1: removed,
+    },
+  });
+  assert.equal(xml.includes("payload"), true);
+  assert.equal(xml.includes("responseCode"), false);
+  assert.equal(xml.includes("showOnTask=\"true\""), true);
+}));
+
+test("empty extension state add input/output creates exactly one row per action", () => withDom(() => {
+  const base = createEmptyCamundaExtensionState();
+  const withInput = addCamundaIoParameterInExtensionState({
+    extensionStateRaw: base,
+    direction: "input",
+    draft: { name: "a", value: "1" },
+  });
+  const afterInput = extractCamundaInputOutputParametersFromExtensionState(withInput);
+  assert.equal(afterInput.inputRows.length, 1);
+  assert.equal(afterInput.outputRows.length, 0);
+
+  const withOutput = addCamundaIoParameterInExtensionState({
+    extensionStateRaw: base,
+    direction: "output",
+    draft: { name: "out", value: "ok" },
+  });
+  const afterOutput = extractCamundaInputOutputParametersFromExtensionState(withOutput);
+  assert.equal(afterOutput.inputRows.length, 0);
+  assert.equal(afterOutput.outputRows.length, 1);
+}));
+
+test("addCamundaIoParameterInExtensionState adds exactly one input row per action for connector-backed state", () => withDom(() => {
+  const base = normalizeCamundaExtensionState({
+    properties: {
+      extensionProperties: [],
+      extensionListeners: [],
+    },
+    preservedExtensionElements: [
+      `<camunda:connector xmlns:camunda="http://camunda.org/schema/1.0/bpmn">
+        <camunda:inputOutput>
+          <camunda:inputParameter name="url">http://old.local/value</camunda:inputParameter>
+          <camunda:inputParameter name="method">GET</camunda:inputParameter>
+          <camunda:outputParameter name="response">ok</camunda:outputParameter>
+        </camunda:inputOutput>
+        <camunda:connectorId>http-connector</camunda:connectorId>
+      </camunda:connector>`,
+    ],
+  });
+  const before = extractCamundaInputOutputParametersFromExtensionState(base);
+  const once = addCamundaIoParameterInExtensionState({
+    extensionStateRaw: base,
+    direction: "input",
+    draft: { name: "payload", value: "" },
+  });
+  const afterOnce = extractCamundaInputOutputParametersFromExtensionState(once);
+  assert.equal(afterOnce.inputRows.length, before.inputRows.length + 1);
+  assert.equal(afterOnce.outputRows.length, before.outputRows.length);
+
+  const twice = addCamundaIoParameterInExtensionState({
+    extensionStateRaw: once,
+    direction: "input",
+    draft: { name: "payload_2", value: "" },
+  });
+  const afterTwice = extractCamundaInputOutputParametersFromExtensionState(twice);
+  assert.equal(afterTwice.inputRows.length, afterOnce.inputRows.length + 1);
+  assert.equal(afterTwice.outputRows.length, afterOnce.outputRows.length);
+}));
+
+test("addCamundaIoParameterInExtensionState adds exactly one output row per action for connector-backed state", () => withDom(() => {
+  const base = normalizeCamundaExtensionState({
+    properties: {
+      extensionProperties: [],
+      extensionListeners: [],
+    },
+    preservedExtensionElements: [
+      `<camunda:connector xmlns:camunda="http://camunda.org/schema/1.0/bpmn">
+        <camunda:inputOutput>
+          <camunda:inputParameter name="url">http://old.local/value</camunda:inputParameter>
+          <camunda:outputParameter name="response">ok</camunda:outputParameter>
+        </camunda:inputOutput>
+        <camunda:connectorId>http-connector</camunda:connectorId>
+      </camunda:connector>`,
+    ],
+  });
+  const before = extractCamundaInputOutputParametersFromExtensionState(base);
+  const once = addCamundaIoParameterInExtensionState({
+    extensionStateRaw: base,
+    direction: "output",
+    draft: { name: "responseCode", value: "200" },
+  });
+  const afterOnce = extractCamundaInputOutputParametersFromExtensionState(once);
+  assert.equal(afterOnce.outputRows.length, before.outputRows.length + 1);
+  assert.equal(afterOnce.inputRows.length, before.inputRows.length);
+}));
+
+test("hydrateCamundaExtensionsFromBpmn does not double-count semantically equal preserved connector fragments", () => withDom(() => {
+  const sessionMap = {
+    Task_1: {
+      properties: { extensionProperties: [], extensionListeners: [] },
+      preservedExtensionElements: [
+        `<camunda:connector xmlns:camunda="http://camunda.org/schema/1.0/bpmn"><camunda:inputOutput><camunda:inputParameter name="url">u</camunda:inputParameter><camunda:outputParameter name="out">o</camunda:outputParameter></camunda:inputOutput><camunda:connectorId>http-connector</camunda:connectorId></camunda:connector>`,
+      ],
+    },
+  };
+  const extractedMap = {
+    Task_1: {
+      properties: { extensionProperties: [], extensionListeners: [] },
+      preservedExtensionElements: [
+        `<camunda:connector xmlns:camunda="http://camunda.org/schema/1.0/bpmn">
+          <camunda:inputOutput>
+            <camunda:inputParameter name="url">u</camunda:inputParameter>
+            <camunda:outputParameter name="out">o</camunda:outputParameter>
+          </camunda:inputOutput>
+          <camunda:connectorId>http-connector</camunda:connectorId>
+        </camunda:connector>`,
+      ],
+    },
+  };
+  const hydrated = hydrateCamundaExtensionsFromBpmn({ extractedMap, sessionMetaMap: sessionMap });
+  const state = normalizeCamundaExtensionState(hydrated.nextSessionMetaMap.Task_1);
+  assert.equal(hydrated.addedPreserved, 0);
+  assert.equal(state.preservedExtensionElements.length, 1);
+  const io = extractCamundaInputOutputParametersFromExtensionState(state);
+  assert.equal(io.inputRows.length, 1);
+  assert.equal(io.outputRows.length, 1);
+}));
+
+test("freshly added camunda IO row stays singular after save/reopen hydrate cycle", () => withDom(() => {
+  const base = normalizeCamundaExtensionState({
+    properties: { extensionProperties: [], extensionListeners: [] },
+    preservedExtensionElements: [
+      `<camunda:connector xmlns:camunda="http://camunda.org/schema/1.0/bpmn">
+        <camunda:inputOutput>
+          <camunda:inputParameter name="url">http://old.local/value</camunda:inputParameter>
+        </camunda:inputOutput>
+        <camunda:connectorId>http-connector</camunda:connectorId>
+      </camunda:connector>`,
+    ],
+  });
+  const withAdded = addCamundaIoParameterInExtensionState({
+    extensionStateRaw: base,
+    direction: "input",
+    draft: { name: "payload", value: "{\"color\":\"red\"}" },
+  });
+  const beforeRoundTrip = extractCamundaInputOutputParametersFromExtensionState(withAdded);
+  assert.equal(beforeRoundTrip.inputRows.length, 2);
+
+  const xml = finalizeCamundaExtensionsXml({
+    xmlText: BASE_XML,
+    camundaExtensionsByElementId: {
+      Task_1: withAdded,
+    },
+  });
+  const extracted = extractCamundaExtensionsMapFromBpmnXml(xml);
+  const hydrated = hydrateCamundaExtensionsFromBpmn({
+    extractedMap: extracted,
+    sessionMetaMap: { Task_1: withAdded },
+  });
+  const afterRoundTripState = normalizeCamundaExtensionState(hydrated.nextSessionMetaMap.Task_1);
+  const afterRoundTrip = extractCamundaInputOutputParametersFromExtensionState(afterRoundTripState);
+  assert.equal(afterRoundTrip.inputRows.length, beforeRoundTrip.inputRows.length);
+  assert.equal(afterRoundTrip.outputRows.length, beforeRoundTrip.outputRows.length);
+  assert.equal(afterRoundTrip.inputRows.filter((row) => row.name === "payload").length, 1);
 }));
 
 test("export serializer keeps deterministic extension child ordering: unknown first, managed next, robot meta last", () => withDom(() => {
