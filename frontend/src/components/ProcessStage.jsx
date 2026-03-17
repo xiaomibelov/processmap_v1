@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import BpmnStage from "./process/BpmnStage";
 import DocStage from "./process/DocStage";
+import DodStage from "./process/DodStage";
 import InterviewStage from "./process/InterviewStage";
 import WorkspaceExplorer from "../features/explorer/WorkspaceExplorer";
 import { useAuth } from "../features/auth/AuthProvider";
@@ -15,22 +16,12 @@ import { apiGetBpmnMeta, apiGetBpmnXml } from "../lib/api/bpmnApi";
 import { apiAiQuestions } from "../lib/api/interviewApi";
 import { createAiInputHash, executeAi } from "../features/ai/aiExecutor";
 import {
-  listBpmnSnapshots,
-  clearBpmnSnapshots,
-  saveBpmnSnapshot,
-  updateBpmnSnapshotMeta,
   shortSnapshotHash,
 } from "../features/process/bpmn/snapshots/bpmnSnapshots";
-import { buildSemanticBpmnDiff } from "../features/process/bpmn/diff/semanticDiff";
 import { parseAndProjectBpmnToInterview } from "../features/process/hooks/useInterviewProjection";
 import useBpmnSync from "../features/process/hooks/useBpmnSync";
 import useProcessOrchestrator from "../features/process/hooks/useProcessOrchestrator";
 import useProcessWorkbenchController from "../features/process/hooks/useProcessWorkbenchController";
-import { normalizeElementNotesMap } from "../features/notes/elementNotes";
-import {
-  buildCoverageMatrix,
-  normalizeAiQuestionsByElementMap,
-} from "../features/notes/knowledgeTools";
 import { deriveActorsFromBpmn, sameDerivedActors } from "../features/process/lib/deriveActorsFromBpmn";
 import {
   asArray,
@@ -43,18 +34,16 @@ import {
   toNodeId,
   mergeNodesById,
   mergeEdgesByKey,
-  buildBottleneckHints,
   readFileText,
   parseBpmnToSessionGraph,
   buildClarificationHints,
 } from "../features/process/lib/processStageDomain";
 import { parseCommandToOps } from "../features/process/bpmn/ops/parseOps";
-import {
-  buildLintAutoFixPreview,
-  LINT_PROFILES,
-  runBpmnLint,
-} from "../features/process/bpmn/lint/bpmnLint";
+import useQualityDerivation from "../features/process/quality/useQualityDerivation";
+import useCoverageDerivation from "../features/process/coverage/useCoverageDerivation";
+import { useAttentionMarkerDerivation, useAttentionItemsDerivation } from "../features/process/attention/useAttentionDerivation";
 import { computeDodSnapshotFromDraft } from "../features/process/dod/computeDodSnapshot";
+import { buildDodReadinessV1 } from "../features/process/dod/buildDodReadinessV1";
 import {
   buildRobotMetaStatusByElementId,
   getRobotMetaStatus,
@@ -118,6 +107,26 @@ import {
   normalizeDrawioMeta,
   serializeDrawioMeta,
 } from "../features/process/drawio/drawioMeta";
+import {
+  buildDrawioAnchorImportDiagnostics,
+  collectBpmnNodeIdsFromDraft,
+} from "../features/process/drawio/drawioAnchors";
+import {
+  buildSessionCompanionAfterSave,
+  buildSessionCompanionAfterTemplateApply,
+  buildSessionCompanionAfterTraversal,
+  normalizeSessionCompanion,
+} from "../features/process/session-companion/sessionCompanionContracts.js";
+import { buildSessionCompanionJazzUiBridgeSnapshot } from "../features/process/session-companion/read/index.js";
+import { createSessionCompanionJazzAdapter } from "../features/process/session-companion/sessionCompanionJazzAdapter.js";
+import { createLiveDocumentJazzAdapter } from "../features/process/session-companion/liveDocumentJazzAdapter.js";
+import { appendRevisionToLedger } from "../features/process/session-companion/revisionLedgerModule.js";
+import { buildRevisionDiffView } from "../features/process/session-companion/revisionCompareModule.js";
+import { buildRevisionRestoreTransition } from "../features/process/session-companion/revisionRestoreModule.js";
+import {
+  buildSessionCompanionJazzScopeId,
+  resolveSessionCompanionLocalFirstActivation,
+} from "../features/process/session-companion/sessionCompanionLocalFirstPilot.js";
 import useTemplatesStore from "../features/templates/model/useTemplatesStore";
 import useTemplatesStageBridge from "../features/templates/services/useTemplatesStageBridge";
 import BpmnFragmentPlacementGhost from "../features/templates/ui/BpmnFragmentPlacementGhost";
@@ -138,7 +147,6 @@ import {
   buildRouteStepsFromInterviewPathSpec,
   copyText,
   coverageMarkerClass,
-  coverageReadinessPercent,
   cssEscapeAttr,
   dedupeDiagramHints,
   downloadJsonFile,
@@ -166,7 +174,6 @@ import {
   readCommandMode,
   readDiagramMode,
   readInsertBetweenCandidate,
-  readPersistMark,
   readQualityProfile,
   serializeHybridLayerMap,
   shortErr,
@@ -214,6 +221,7 @@ export default function ProcessStage({
   selectedPropertiesOverlayPreview = null,
   propertiesOverlayAlwaysEnabled = false,
   propertiesOverlayAlwaysPreviewByElementId = null,
+  drawioCompanionFocusIntent = null,
 }) {
   const sid = String(sessionId || "");
   const { user } = useAuth();
@@ -238,11 +246,22 @@ export default function ProcessStage({
   const drawioFileInputRef = useRef(null);
   const lastDraftXmlHashRef = useRef("");
   const lastAiGenerateIntentKeyRef = useRef("");
+  const lastDrawioCompanionFocusKeyRef = useRef("");
   const attentionPanelWasOpenRef = useRef(false);
   const autoPassToastJobIdRef = useRef("");
   const autoPassDocSyncInFlightRef = useRef(false);
   const autoPassDocSyncLastAttemptMsRef = useRef(0);
   const localStateResetSidRef = useRef("");
+  const sessionTruthProbeSeqRef = useRef(0);
+  const sessionTruthProbeLastRef = useRef({
+    scopeKey: "",
+    sourceSignature: "",
+    saveSignature: "",
+    versionSignature: "",
+    templateSignature: "",
+    revisionSignature: "",
+  });
+  const [drawioAnchorImportDiagnostics, setDrawioAnchorImportDiagnostics] = useState(null);
 
   const {
     genBusy,
@@ -412,6 +431,8 @@ export default function ProcessStage({
     setHybridV2BindPickMode,
     drawioMeta,
     setDrawioMeta,
+    drawioJazzAdapter,
+    drawioLocalFirstAdapterMode,
     drawioVisibilityContract,
     drawioEditorOpen,
     setDrawioEditorOpen,
@@ -424,9 +445,232 @@ export default function ProcessStage({
     hybridOpacityValue,
   } = useHybridStore({
     sid,
+    projectId: draft?.project_id || draft?.projectId || activeProjectId,
     draftBpmnMeta: draft?.bpmn_meta,
     userId: user?.id,
   });
+  const [sessionCompanionJazzMeta, setSessionCompanionJazzMeta] = useState(() => normalizeSessionCompanion({}));
+  const sessionCompanionActivation = useMemo(
+    () => resolveSessionCompanionLocalFirstActivation(),
+    [sid],
+  );
+  const sessionCompanionLocalFirstAdapterMode = useMemo(
+    () => (sessionCompanionActivation?.unsupportedState === true ? "legacy" : toText(sessionCompanionActivation?.adapterModeEffective) || "legacy"),
+    [sessionCompanionActivation?.adapterModeEffective, sessionCompanionActivation?.unsupportedState],
+  );
+  const sessionCompanionJazzPeer = useMemo(() => (
+    sessionCompanionLocalFirstAdapterMode === "jazz" ? toText(sessionCompanionActivation?.jazzPeer) : ""
+  ), [sessionCompanionActivation?.jazzPeer, sessionCompanionLocalFirstAdapterMode]);
+  const sessionCompanionJazzScopeId = useMemo(
+    () => buildSessionCompanionJazzScopeId(draft?.project_id || draft?.projectId || activeProjectId, sid),
+    [activeProjectId, draft?.projectId, draft?.project_id, sid],
+  );
+  const sessionCompanionJazzAdapter = useMemo(() => {
+    if (sessionCompanionLocalFirstAdapterMode !== "jazz" || !sessionCompanionJazzScopeId) return null;
+    return createSessionCompanionJazzAdapter({
+      peer: sessionCompanionJazzPeer,
+      scopeId: sessionCompanionJazzScopeId,
+    });
+  }, [sessionCompanionJazzPeer, sessionCompanionJazzScopeId, sessionCompanionLocalFirstAdapterMode]);
+  const liveDocumentJazzAdapter = useMemo(() => createLiveDocumentJazzAdapter({
+    adapterMode: sessionCompanionLocalFirstAdapterMode,
+    jazzAdapter: sessionCompanionJazzAdapter,
+    legacySnapshotRaw: asObject(asObject(draft?.bpmn_meta).session_companion_v1),
+  }), [
+    draft?.bpmn_meta,
+    sessionCompanionJazzAdapter,
+    sessionCompanionLocalFirstAdapterMode,
+  ]);
+  useEffect(() => {
+    if (!liveDocumentJazzAdapter.isJazzBacked) {
+      setSessionCompanionJazzMeta(normalizeSessionCompanion({}));
+      return undefined;
+    }
+    setSessionCompanionJazzMeta(normalizeSessionCompanion(liveDocumentJazzAdapter.readLiveSnapshot()));
+    const off = liveDocumentJazzAdapter.subscribeLiveSnapshot((nextSnapshot) => {
+      setSessionCompanionJazzMeta(normalizeSessionCompanion(nextSnapshot));
+    });
+    return () => {
+      off?.();
+    };
+  }, [liveDocumentJazzAdapter]);
+  const sessionCompanionLegacyMeta = useMemo(
+    () => normalizeSessionCompanion(asObject(asObject(draft?.bpmn_meta).session_companion_v1)),
+    [draft?.bpmn_meta],
+  );
+  const sessionCompanionBridgeSnapshot = useMemo(() => buildSessionCompanionJazzUiBridgeSnapshot({
+    legacyCompanionRaw: sessionCompanionLegacyMeta,
+    jazzCompanionRaw: sessionCompanionJazzMeta,
+    sessionCompanionAdapterMode: sessionCompanionLocalFirstAdapterMode,
+    activationContextRaw: sessionCompanionActivation,
+    durableSessionRaw: {
+      bpmn_xml_version: Number(draft?.bpmn_xml_version || draft?.version || 0),
+      bpmn_graph_fingerprint: toText(draft?.bpmn_graph_fingerprint),
+      updated_at: toText(draft?.updated_at || draft?.updatedAt),
+    },
+    liveDraftRaw: {
+      bpmn_xml: toText(draft?.bpmn_xml || ""),
+      bpmn_xml_version: Number(draft?.bpmn_xml_version || draft?.version || 0),
+      bpmn_graph_fingerprint: toText(draft?.bpmn_graph_fingerprint),
+    },
+    uiSaveStateRaw: {
+      saveDirtyHint: saveDirtyHint === true,
+      isManualSaveBusy: isManualSaveBusy === true,
+    },
+  }), [
+    draft?.bpmn_graph_fingerprint,
+    draft?.bpmn_xml,
+    draft?.bpmn_xml_version,
+    draft?.updatedAt,
+    draft?.updated_at,
+    draft?.version,
+    isManualSaveBusy,
+    saveDirtyHint,
+    sessionCompanionActivation,
+    sessionCompanionJazzMeta,
+    sessionCompanionLegacyMeta,
+    sessionCompanionLocalFirstAdapterMode,
+  ]);
+  const sessionCompanionMetaLive = useMemo(() => {
+    return normalizeSessionCompanion(sessionCompanionBridgeSnapshot.companion);
+  }, [sessionCompanionBridgeSnapshot.companion]);
+  const sessionSaveReadSnapshot = useMemo(
+    () => asObject(sessionCompanionBridgeSnapshot.save),
+    [sessionCompanionBridgeSnapshot.save],
+  );
+  const sessionVersionReadSnapshot = useMemo(
+    () => asObject(sessionCompanionBridgeSnapshot.version),
+    [sessionCompanionBridgeSnapshot.version],
+  );
+  const sessionTemplateProvenanceSnapshot = useMemo(
+    () => asObject(sessionCompanionBridgeSnapshot.templateProvenance),
+    [sessionCompanionBridgeSnapshot.templateProvenance],
+  );
+  const sessionRevisionHistorySnapshot = useMemo(
+    () => asObject(sessionCompanionBridgeSnapshot.revisionHistory),
+    [sessionCompanionBridgeSnapshot.revisionHistory],
+  );
+  useEffect(() => {
+    if (typeof window === "undefined" || window.__FPC_E2E__ !== true) return;
+    const projectId = toText(draft?.project_id || draft?.projectId || activeProjectId);
+    const scopeKey = `${projectId}::${sid}`;
+    const sourceMap = asObject(sessionCompanionBridgeSnapshot?.sourceMap);
+    const saveSnapshot = asObject(sessionSaveReadSnapshot);
+    const versionSnapshot = asObject(sessionVersionReadSnapshot);
+    const templateSnapshot = asObject(sessionTemplateProvenanceSnapshot);
+    const revisionSnapshot = asObject(sessionRevisionHistorySnapshot);
+    const sourceSignature = JSON.stringify({
+      bridgeMode: toText(sessionCompanionBridgeSnapshot?.bridgeMode),
+      sourceMap,
+      hasFallback: sessionCompanionBridgeSnapshot?.hasFallback === true,
+      fallbackReasons: asArray(sessionCompanionBridgeSnapshot?.fallbackReasons).map((x) => toText(x)).filter(Boolean),
+    });
+    const saveSignature = JSON.stringify({
+      status: toText(saveSnapshot.status),
+      storedRev: Number(saveSnapshot.storedRev || 0),
+      requestedBaseRev: Number(saveSnapshot.requestedBaseRev || 0),
+      effectiveSource: toText(saveSnapshot.effectiveSource),
+      isStale: saveSnapshot.isStale === true,
+      isDirty: saveSnapshot.isDirty === true,
+      isSaving: saveSnapshot.isSaving === true,
+      isFailed: saveSnapshot.isFailed === true,
+    });
+    const versionSignature = JSON.stringify({
+      xmlVersion: Number(versionSnapshot.xmlVersion || 0),
+      graphFingerprint: toText(versionSnapshot.graphFingerprint),
+      effectiveSource: toText(versionSnapshot.effectiveSource),
+      isStale: versionSnapshot.isStale === true,
+      companionXmlVersion: Number(asObject(versionSnapshot.revisionContext).companionXmlVersion || 0),
+      durableXmlVersion: Number(asObject(versionSnapshot.revisionContext).durableXmlVersion || 0),
+    });
+    const templateSignature = JSON.stringify({
+      templateId: toText(templateSnapshot.templateId),
+      templateRevision: toText(templateSnapshot.templateRevision),
+      appliedAt: toText(templateSnapshot.appliedAt),
+      effectiveSource: toText(templateSnapshot.effectiveSource),
+      isStale: templateSnapshot.isStale === true,
+      isMissing: templateSnapshot.isMissing === true,
+    });
+    const revisionSignature = JSON.stringify({
+      latestRevisionNumber: Number(revisionSnapshot.latestRevisionNumber || 0),
+      latestRevisionId: toText(revisionSnapshot.latestRevisionId),
+      totalCount: Number(revisionSnapshot.totalCount || 0),
+      effectiveSource: toText(revisionSnapshot.effectiveSource),
+      draftMatchesLatestRevision: asObject(revisionSnapshot.draftState).draftMatchesLatestRevision === true,
+    });
+    const prev = sessionTruthProbeLastRef.current || {};
+    let transitionReason = "snapshot_refresh";
+    if (toText(prev.scopeKey) !== scopeKey) {
+      transitionReason = "session_scope_changed";
+    } else if (toText(prev.sourceSignature) !== sourceSignature) {
+      transitionReason = "source_precedence_changed";
+    } else if (toText(prev.saveSignature) !== saveSignature) {
+      transitionReason = "save_snapshot_changed";
+    } else if (toText(prev.versionSignature) !== versionSignature) {
+      transitionReason = "version_snapshot_changed";
+    } else if (toText(prev.templateSignature) !== templateSignature) {
+      transitionReason = "template_snapshot_changed";
+    } else if (toText(prev.revisionSignature) !== revisionSignature) {
+      transitionReason = "revision_snapshot_changed";
+    }
+    sessionTruthProbeLastRef.current = {
+      scopeKey,
+      sourceSignature,
+      saveSignature,
+      versionSignature,
+      templateSignature,
+      revisionSignature,
+    };
+    const seq = Number(sessionTruthProbeSeqRef.current || 0) + 1;
+    sessionTruthProbeSeqRef.current = seq;
+    const snapshot = {
+      seq,
+      at: new Date().toISOString(),
+      transitionReason,
+      session: {
+        projectId,
+        sessionId: sid,
+        scopeKey,
+      },
+      bridge: {
+        mode: toText(sessionCompanionBridgeSnapshot?.bridgeMode),
+        activation: asObject(sessionCompanionBridgeSnapshot?.activation),
+        sourceMap,
+        effectiveSourceMap: asObject(sessionCompanionBridgeSnapshot?.effectiveSourceMap),
+        fallbackUsed: sessionCompanionBridgeSnapshot?.fallbackUsed === true,
+        hasFallback: sessionCompanionBridgeSnapshot?.hasFallback === true,
+        fallbackReasons: asArray(sessionCompanionBridgeSnapshot?.fallbackReasons).map((x) => toText(x)).filter(Boolean),
+        stalePayloadRejected: sessionCompanionBridgeSnapshot?.stalePayloadRejected === true,
+        latePayloadRejected: sessionCompanionBridgeSnapshot?.latePayloadRejected === true,
+        recoveryState: toText(sessionCompanionBridgeSnapshot?.recoveryState),
+        diagnosticsSeverity: toText(sessionCompanionBridgeSnapshot?.diagnosticsSeverity),
+        readinessState: toText(sessionCompanionBridgeSnapshot?.readinessState),
+        diagnostics: asObject(sessionCompanionBridgeSnapshot?.diagnostics),
+      },
+      save: saveSnapshot,
+      version: versionSnapshot,
+      templateProvenance: templateSnapshot,
+      revisionHistory: revisionSnapshot,
+    };
+    const history = Array.isArray(window.__FPC_E2E_SESSION_TRUTH_HISTORY__)
+      ? window.__FPC_E2E_SESSION_TRUTH_HISTORY__.slice(-399)
+      : [];
+    history.push(snapshot);
+    window.__FPC_E2E_SESSION_TRUTH__ = snapshot;
+    window.__FPC_E2E_SESSION_TRUTH_HISTORY__ = history;
+    window.__FPC_E2E_GET_SESSION_TRUTH__ = () => window.__FPC_E2E_SESSION_TRUTH__;
+    window.__FPC_E2E_GET_SESSION_TRUTH_HISTORY__ = () => window.__FPC_E2E_SESSION_TRUTH_HISTORY__ || [];
+  }, [
+    activeProjectId,
+    draft?.projectId,
+    draft?.project_id,
+    sessionCompanionBridgeSnapshot,
+    sessionSaveReadSnapshot,
+    sessionTemplateProvenanceSnapshot,
+    sessionRevisionHistorySnapshot,
+    sessionVersionReadSnapshot,
+    sid,
+  ]);
 
   const hasSession = !!sid;
   const isLocal = isLocalSessionId(sid);
@@ -508,14 +752,16 @@ export default function ProcessStage({
   });
 
   useEffect(() => {
-    if (localStateResetSidRef.current === sid) return;
-    localStateResetSidRef.current = sid;
+    const scopeKey = `${String(activeProjectId || "")}::${sid}`;
+    if (localStateResetSidRef.current === scopeKey) return;
+    localStateResetSidRef.current = scopeKey;
     resetLocalStateForSession({
       autoPassToastJobIdRef,
       setDiagramFocusMode,
       setDiagramFullscreenActive,
     });
-  }, [resetLocalStateForSession, setDiagramFocusMode, setDiagramFullscreenActive, sid]);
+    setDrawioAnchorImportDiagnostics(null);
+  }, [activeProjectId, resetLocalStateForSession, setDiagramFocusMode, setDiagramFullscreenActive, sid]);
 
   const queueDiagramMutation = useCallback((mutation) => {
     const kind = String(mutation?.kind || mutation || "").trim().toLowerCase();
@@ -545,11 +791,43 @@ export default function ProcessStage({
         setGenErr(shortErr(saved?.error || "Не удалось сохранить BPMN."));
         return;
       }
+      let companionError = "";
+      let publishInfo = "";
+      if (!saved?.pending) {
+        const companionResult = await persistSavedSessionCompanion({
+          source: "manual_save",
+          xml: toText(saved?.xml || draft?.bpmn_xml || ""),
+          savedAt: new Date().toISOString(),
+          storedRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
+          requestedBaseRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
+          publishRevision: true,
+          revisionSource: "publish_manual_save",
+        });
+        if (!companionResult?.ok) {
+          companionError = shortErr(companionResult?.error || "Не удалось синхронизировать companion metadata.");
+          setGenErr(companionError);
+        } else {
+          const revisionInfo = asObject(companionResult?.revision);
+          if (revisionInfo.skipped !== true && Number(revisionInfo.revisionNumber || 0) > 0) {
+            publishInfo = `Сохранено и опубликовано как r${Number(revisionInfo.revisionNumber)}.`;
+          } else if (revisionInfo.skipped === true) {
+            publishInfo = "Сохранено. Новая ревизия не создана (контент совпадает с latest).";
+          }
+        }
+      }
       setSaveDirtyHint(false);
       if (selectedElementId) {
         bpmnRef.current?.flashNode?.(selectedElementId, "sync", { label: "Synced" });
       }
-      setInfoMsg(saved?.pending ? "Сохранение поставлено в очередь (pending)." : "Сохранено.");
+      if (saved?.pending) {
+        setInfoMsg("Сохранение поставлено в очередь (pending).");
+      } else if (companionError) {
+        setInfoMsg("BPMN сохранён, companion metadata не синхронизированы.");
+      } else if (publishInfo) {
+        setInfoMsg(publishInfo);
+      } else {
+        setInfoMsg("Сохранено.");
+      }
     } catch (e) {
       setGenErr(shortErr(e?.message || e || "Не удалось сохранить BPMN."));
     } finally {
@@ -559,54 +837,16 @@ export default function ProcessStage({
 
   // TODO(tech-debt): Review/LLM tabs are temporarily hidden from UI.
   // Clarification data pipeline is kept for later re-introduction.
-  const bottlenecks = useMemo(
-    () => buildBottleneckHints(draft?.nodes, draft?.edges, draft?.questions),
-    [draft?.nodes, draft?.edges, draft?.questions],
-  );
-  const lintResult = useMemo(
-    () => runBpmnLint({
-      xmlText: draft?.bpmn_xml,
-      interview: draft?.interview,
-      nodes: draft?.nodes,
-      profileId: qualityProfileId,
-    }),
-    [draft?.bpmn_xml, draft?.interview, draft?.nodes, qualityProfileId],
-  );
-  const qualityHintsRaw = useMemo(
-    () => asArray(lintResult?.issues),
-    [lintResult],
-  );
-  const qualitySummary = useMemo(
-    () => lintResult?.summary || { total: 0, errors: 0, warns: 0 },
-    [lintResult],
-  );
-  const qualityProfile = useMemo(
-    () => lintResult?.profile || LINT_PROFILES.mvp,
-    [lintResult],
-  );
-  const qualityAutoFixPreview = useMemo(
-    () => buildLintAutoFixPreview({
-      xmlText: draft?.bpmn_xml,
-      issues: qualityHintsRaw,
-    }),
-    [draft?.bpmn_xml, qualityHintsRaw],
-  );
-  const activeHints = useMemo(
-    () => (apiClarifyHints.length ? apiClarifyHints : bottlenecks),
-    [apiClarifyHints, bottlenecks],
-  );
-  const qualityHints = useMemo(
-    () => (
-      isQualityMode
-        ? qualityHintsRaw.map((issue) => ({
-          ...issue,
-          markerClass: "fpcQualityProblem",
-          hideTag: true,
-        }))
-        : []
-    ),
-    [isQualityMode, qualityHintsRaw],
-  );
+  const {
+    bottlenecks,
+    lintResult,
+    qualityHintsRaw,
+    qualitySummary,
+    qualityProfile,
+    qualityAutoFixPreview,
+    activeHints,
+    qualityHints,
+  } = useQualityDerivation({ draft, qualityProfileId, apiClarifyHints, isQualityMode });
   const workbench = useProcessWorkbenchController({
     sessionId: sid,
     isLocal,
@@ -646,8 +886,92 @@ export default function ProcessStage({
     docToComparableJson,
     normalizeDrawioMeta,
     serializeDrawioMeta,
+    drawioJazzAdapter,
+    drawioLocalFirstAdapterMode,
+    sessionCompanionJazzAdapter,
+    sessionCompanionLocalFirstAdapterMode,
   });
   const persistBpmnMeta = sessionMetaPersist.persistBpmnMeta;
+  const persistSessionCompanion = sessionMetaPersist.persistSessionCompanion;
+  const persistSavedSessionCompanion = useCallback(async ({
+    source = "manual_save",
+    xml = "",
+    savedAt = "",
+    storedRev = 0,
+    requestedBaseRev = 0,
+    publishRevision = false,
+    revisionComment = "",
+    revisionSource = "publish_revision",
+  } = {}) => {
+    if (!sid || typeof persistSessionCompanion !== "function") return { ok: true, skipped: true };
+    let nextCompanion = buildSessionCompanionAfterSave(sessionCompanionMetaLive, {
+      draft,
+      xml,
+      source,
+      savedAt,
+      storedRev,
+      requestedBaseRev,
+    });
+    let revisionTransition = { ok: true, skipped: true, revisionNumber: 0, skipReason: "" };
+    if (publishRevision) {
+      revisionTransition = appendRevisionToLedger(nextCompanion, {
+        xml: toText(xml || draft?.bpmn_xml || ""),
+        draft,
+        liveVersionRaw: sessionVersionReadSnapshot,
+        author: {
+          id: user?.id,
+          name: user?.name || user?.username || user?.email || "",
+          email: user?.email || "",
+        },
+        comment: toText(revisionComment) || "Published via Save",
+        source: toText(revisionSource) || "publish_revision",
+        skipIfContentUnchanged: true,
+      });
+      if (!revisionTransition?.ok) {
+        return { ok: false, error: String(revisionTransition?.error || "revision_publish_failed") };
+      }
+      nextCompanion = revisionTransition.nextCompanion;
+    }
+    const persisted = await persistSessionCompanion(nextCompanion, { source: `${source}_session_companion` });
+    return {
+      ...persisted,
+      revision: {
+        skipped: revisionTransition?.skipped === true,
+        skipReason: toText(revisionTransition?.skipReason),
+        revisionNumber: Number(revisionTransition?.revisionNumber || 0),
+      },
+    };
+  }, [draft, persistSessionCompanion, sessionCompanionMetaLive, sessionVersionReadSnapshot, sid, toText, user?.email, user?.id, user?.name, user?.username]);
+  const persistTemplateAppliedSessionCompanion = useCallback(async ({
+    template = null,
+    source = "template_apply",
+    xml = "",
+    savedAt = "",
+    storedRev = 0,
+    requestedBaseRev = 0,
+  } = {}) => {
+    if (!sid || typeof persistSessionCompanion !== "function") return { ok: true, skipped: true };
+    const nextCompanion = buildSessionCompanionAfterTemplateApply(sessionCompanionMetaLive, {
+      draft,
+      xml,
+      source,
+      savedAt,
+      storedRev,
+      requestedBaseRev,
+      template,
+    });
+    return persistSessionCompanion(nextCompanion, { source: `${source}_session_companion` });
+  }, [draft, persistSessionCompanion, sessionCompanionMetaLive, sid]);
+  const persistTraversalSessionCompanion = useCallback(async (autoPassResultRaw, source = "auto_pass_result_sync") => {
+    if (!sid || typeof persistSessionCompanion !== "function") return { ok: true, skipped: true };
+    const nextCompanion = buildSessionCompanionAfterTraversal(sessionCompanionMetaLive, {
+      draft,
+      xml: toText(draft?.bpmn_xml || ""),
+      source,
+      autoPassResult: autoPassResultRaw,
+    });
+    return persistSessionCompanion(nextCompanion, { source: `${source}_session_companion` });
+  }, [draft, persistSessionCompanion, sessionCompanionMetaLive, sid, toText]);
   const applyAutoPassResultToDraft = useCallback((resultRaw, source = "auto_pass_result_sync") => {
     const result = asObject(resultRaw);
     if (!Object.keys(result).length || !sid) return false;
@@ -669,19 +993,34 @@ export default function ProcessStage({
     const metaResult = await apiGetBpmnMeta(sid);
     if (!metaResult?.ok) return false;
     const serverMeta = asObject(metaResult?.meta);
-    return applyAutoPassResultToDraft(asObject(serverMeta?.auto_pass_v1), source);
-  }, [applyAutoPassResultToDraft, sid]);
+    const result = asObject(serverMeta?.auto_pass_v1);
+    const applied = applyAutoPassResultToDraft(result, source);
+    if (applied) {
+      const persistResult = await persistTraversalSessionCompanion(result, source);
+      if (!persistResult?.ok) {
+        setGenErr(shortErr(persistResult?.error || "Не удалось синхронизировать traversal result contract."));
+      }
+    }
+    return applied;
+  }, [applyAutoPassResultToDraft, persistTraversalSessionCompanion, setGenErr, shortErr, sid]);
   const hydrateAutoPassResult = useCallback(async (jobIdRaw, source = "auto_pass_hydrate") => {
     const jobId = toText(jobIdRaw);
     for (let attempt = 0; attempt < 3; attempt += 1) {
       if (jobId) {
         const statusResult = await apiGetAutoPassStatus(sid, jobId);
         if (statusResult?.ok) {
+          const result = asObject(statusResult?.result);
           const statusApplied = applyAutoPassResultToDraft(
-            statusResult?.result,
+            result,
             `${source}_status_attempt_${attempt + 1}`,
           );
-          if (statusApplied) return true;
+          if (statusApplied) {
+            const persistResult = await persistTraversalSessionCompanion(result, `${source}_status_attempt_${attempt + 1}`);
+            if (!persistResult?.ok) {
+              setGenErr(shortErr(persistResult?.error || "Не удалось синхронизировать traversal result contract."));
+            }
+            return true;
+          }
         }
       }
       const metaApplied = await syncAutoPassResultFromServer(`${source}_meta_attempt_${attempt + 1}`);
@@ -691,7 +1030,7 @@ export default function ProcessStage({
       }
     }
     return false;
-  }, [applyAutoPassResultToDraft, sid, syncAutoPassResultFromServer]);
+  }, [applyAutoPassResultToDraft, persistTraversalSessionCompanion, setGenErr, shortErr, sid, syncAutoPassResultFromServer]);
   useEffect(() => {
     const currentSid = toText(sid);
     if (!currentSid) {
@@ -795,11 +1134,17 @@ export default function ProcessStage({
       error: "",
     });
     if (nextStatus === "completed") {
-      const applied = applyAutoPassResultToDraft(started?.result, "auto_pass_completed_sync");
+      const completedResult = asObject(started?.result);
+      const applied = applyAutoPassResultToDraft(completedResult, "auto_pass_completed_sync");
       if (!applied) {
         const hydrated = await hydrateAutoPassResult(jobId, "auto_pass_completed_sync_hydrate");
         if (!hydrated) {
           setGenErr("Автопроход завершён, но результат пока не синхронизирован. Повторите через несколько секунд.");
+        }
+      } else {
+        const persistResult = await persistTraversalSessionCompanion(completedResult, "auto_pass_completed_sync");
+        if (!persistResult?.ok) {
+          setGenErr(shortErr(persistResult?.error || "Не удалось синхронизировать traversal result contract."));
         }
       }
       if (autoPassToastJobIdRef.current !== jobId) {
@@ -813,6 +1158,7 @@ export default function ProcessStage({
     autoPassPrecheck.canRun,
     autoPassPrecheck.reason,
     hydrateAutoPassResult,
+    persistTraversalSessionCompanion,
     setInfoMsg,
     setGenErr,
     sid,
@@ -840,11 +1186,17 @@ export default function ProcessStage({
       const nextStatus = toText(polled?.job_status || polled?.status || "").toLowerCase();
       const nextProgress = Number(polled?.progress || 0);
       if (nextStatus === "completed" || nextStatus === "done") {
-        const applied = applyAutoPassResultToDraft(polled?.result, "auto_pass_completed_poll");
+        const completedResult = asObject(polled?.result);
+        const applied = applyAutoPassResultToDraft(completedResult, "auto_pass_completed_poll");
         if (!applied) {
           const hydrated = await hydrateAutoPassResult(jobId, "auto_pass_completed_poll_hydrate");
           if (!hydrated) {
             setGenErr("Автопроход завершён, но результат пока не синхронизирован. Повторите через несколько секунд.");
+          }
+        } else {
+          const persistResult = await persistTraversalSessionCompanion(completedResult, "auto_pass_completed_poll");
+          if (!persistResult?.ok) {
+            setGenErr(shortErr(persistResult?.error || "Не удалось синхронизировать traversal result contract."));
           }
         }
         setAutoPassJobState((prev) => ({
@@ -885,6 +1237,7 @@ export default function ProcessStage({
     autoPassJobState?.startedAtMs,
     autoPassJobState?.status,
     hydrateAutoPassResult,
+    persistTraversalSessionCompanion,
     setGenErr,
     setInfoMsg,
     sid,
@@ -899,22 +1252,21 @@ export default function ProcessStage({
     if (status === "failed" || status === "error") return { status: "fail", label: "Auto: fail", progress: 100 };
     return { status, label: `Auto: ${status}`, progress: Number(autoPassJobState?.progress || 0) };
   }, [autoPassJobState?.progress, autoPassJobState?.status]);
-  const attentionViewerId = useMemo(
-    () => toText(user?.id || user?.user_id || user?.email || "anon"),
-    [user?.email, user?.id, user?.user_id],
-  );
-  const attentionStorageKey = useMemo(
-    () => `pm:attention_last_opened:v1:${attentionViewerId}:${sid || "-"}`,
-    [attentionViewerId, sid],
-  );
-  const attentionMarkers = useMemo(
-    () => normalizeAttentionMarkers(asObject(draft?.bpmn_meta).attention_markers),
-    [draft?.bpmn_meta],
-  );
-  const attentionShowOnWorkspace = useMemo(
-    () => asObject(draft?.bpmn_meta).attention_show_on_workspace !== false,
-    [draft?.bpmn_meta],
-  );
+  const {
+    attentionViewerId,
+    attentionStorageKey,
+    attentionMarkers,
+    attentionShowOnWorkspace,
+    attentionMarkersWithState,
+    attentionMarkerUnreadCount,
+    attentionMarkerHomeCount,
+    customAttentionHints,
+  } = useAttentionMarkerDerivation({
+    user,
+    bpmnMeta: draft?.bpmn_meta,
+    attentionSessionLastOpenedAt,
+    sid,
+  });
   useEffect(() => {
     if (!sid) return;
     if (typeof window === "undefined") return;
@@ -932,38 +1284,6 @@ export default function ProcessStage({
       setAttentionSessionLastOpenedAt(now);
     }
   }, [attentionStorageKey, sid]);
-  const attentionMarkersWithState = useMemo(
-    () => attentionMarkers.map((marker) => {
-      const unread = isAttentionMarkerUnread(marker, attentionViewerId, attentionSessionLastOpenedAt);
-      return {
-        ...marker,
-        unread,
-      };
-    }),
-    [attentionMarkers, attentionSessionLastOpenedAt, attentionViewerId],
-  );
-  const attentionMarkerUnreadCount = useMemo(
-    () => countUnreadAttentionMarkers(attentionMarkers, attentionViewerId, attentionSessionLastOpenedAt),
-    [attentionMarkers, attentionSessionLastOpenedAt, attentionViewerId],
-  );
-  const attentionMarkerHomeCount = useMemo(
-    () => countAttentionMarkers(attentionMarkers, { showOnWorkspace: attentionShowOnWorkspace }),
-    [attentionMarkers, attentionShowOnWorkspace],
-  );
-  const customAttentionHints = useMemo(
-    () => attentionMarkersWithState
-      .filter((marker) => !marker.is_checked && marker.node_id)
-      .map((marker) => ({
-        id: marker.id,
-        nodeId: marker.node_id,
-        title: marker.message,
-        reasons: [marker.message],
-        markerClass: marker.unread ? "fpcAttentionMarkerUnread" : "fpcAttentionMarkerSeen",
-        severity: marker.unread ? "high" : "medium",
-        hideTag: true,
-      })),
-    [attentionMarkersWithState],
-  );
   const persistAttentionMeta = useCallback(async ({
     markersRaw,
     showOnWorkspaceRaw,
@@ -1456,11 +1776,16 @@ export default function ProcessStage({
     () => asArray(asObject(pathHighlightCatalog[pathHighlightTier]).sequenceKeys),
     [pathHighlightCatalog, pathHighlightTier],
   );
+  const [playbackDecisionMode, setPlaybackDecisionMode] = useState("auto_pass");
   const {
     playbackOverlayClickGuardRef,
     playbackIsPlaying,
+    playbackRuntimeSnapshot,
     playbackGateways,
     playbackGatewayChoices,
+    playbackGatewayChoiceSource,
+    playbackGatewayReadOnly,
+    playbackDecisionMode: playbackDecisionModeResolved,
     playbackGatewayPending,
     playbackAwaitingGatewayId,
     playbackGraphError,
@@ -1471,7 +1796,6 @@ export default function ProcessStage({
     playbackHighlightedBpmnIds,
     markPlaybackOverlayInteraction,
     setPlaybackGatewayChoice,
-    handlePlaybackGatewayDecision,
     handlePlaybackPrev,
     handlePlaybackNext,
     handlePlaybackReset,
@@ -1504,6 +1828,10 @@ export default function ProcessStage({
     pathHighlightSequenceKey,
     flowTierMetaMap,
     nodePathMetaMap,
+    playbackDecisionMode,
+    autoPassUiStatus: toText(autoPassUi?.status || autoPassJobState?.status || ""),
+    materializedTraversalResult: asObject(sessionCompanionMetaLive?.traversal_result_v1),
+    materializedAutoPassResult: asObject(asObject(draft?.bpmn_meta)?.auto_pass_v1),
     initialPlaybackAutoCamera: true,
     initialPlaybackSpeed: "1",
     initialPlaybackManualAtGateway: false,
@@ -1636,6 +1964,19 @@ export default function ProcessStage({
     bpmnApiRef: bpmnRef,
     bpmnStageHostRef,
     clientToDiagram,
+    onPersistedTemplateApply: async ({ template, saved }) => {
+      const result = await persistTemplateAppliedSessionCompanion({
+        template,
+        source: "template_apply",
+        xml: toText(saved?.xml || bpmnRef.current?.getXmlDraft?.() || draft?.bpmn_xml || ""),
+        savedAt: new Date().toISOString(),
+        storedRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
+        requestedBaseRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
+      });
+      if (!result?.ok) {
+        setGenErr(shortErr(result?.error || "Не удалось синхронизировать template provenance."));
+      }
+    },
   });
   const selectedBpmnElementIds = templatesBridge.selectedBpmnIds;
   const getSelectedHybridStencilTemplate = useCallback(() => {
@@ -1776,99 +2117,15 @@ export default function ProcessStage({
     && selectedInsertBetween.available !== false
     && !!selectedInsertBetween.fromId
     && !!selectedInsertBetween.toId;
-  const notesByElementMap = useMemo(
-    () => normalizeElementNotesMap(draft?.notes_by_element || draft?.notesByElementId),
-    [draft?.notes_by_element, draft?.notesByElementId],
-  );
-  const aiQuestionsByElement = useMemo(
-    () => normalizeAiQuestionsByElementMap(draft?.interview?.ai_questions_by_element || draft?.interview?.aiQuestionsByElementId),
-    [draft?.interview?.ai_questions_by_element, draft?.interview?.aiQuestionsByElementId],
-  );
-  const coverageNodes = useMemo(() => {
-    const direct = asArray(draft?.nodes);
-    if (direct.length) return direct;
-    const xml = String(draft?.bpmn_xml || "").trim();
-    if (!xml) return [];
-    const parsed = parseBpmnToSessionGraph(xml);
-    return asArray(parsed?.nodes);
-  }, [draft?.nodes, draft?.bpmn_xml]);
-  const coverageMatrix = useMemo(
-    () => buildCoverageMatrix({
-      nodes: coverageNodes,
-      notesByElement: notesByElementMap,
-      aiQuestionsByElement,
-    }),
-    [coverageNodes, notesByElementMap, aiQuestionsByElement],
-  );
-  const coverageRowsAll = useMemo(
-    () => asArray(coverageMatrix?.rows),
-    [coverageMatrix],
-  );
-  const coverageRows = useMemo(
-    () => coverageRowsAll.filter((row) => Number(row?.score || 0) > 0),
-    [coverageRowsAll],
-  );
-  const coverageById = useMemo(() => {
-    const map = {};
-    coverageRowsAll.forEach((row) => {
-      const id = toNodeId(row?.id);
-      if (!id) return;
-      map[id] = row;
-    });
-    return map;
-  }, [coverageRowsAll]);
-  const qualityIssueNodeIds = useMemo(() => {
-    const set = new Set();
-    asArray(qualityHintsRaw).forEach((issue) => {
-      const id = toNodeId(issue?.nodeId);
-      if (!id) return;
-      set.add(id);
-    });
-    return set;
-  }, [qualityHintsRaw]);
-  const coverageMinimapRows = useMemo(
-    () => coverageRowsAll
-      .filter((row) => {
-        const id = toNodeId(row?.id);
-        if (!id) return false;
-        if (Number(row?.score || 0) > 0) return true;
-        return qualityIssueNodeIds.has(id);
-      })
-      .map((row) => {
-        const id = toNodeId(row?.id);
-        return {
-          ...row,
-          id,
-          readiness: coverageReadinessPercent(row),
-          hasQualityIssue: !!(id && qualityIssueNodeIds.has(id)),
-        };
-      }),
-    [coverageRowsAll, qualityIssueNodeIds],
-  );
-  const coverageHints = useMemo(() => (
-    isCoverageMode
-      ? coverageRowsAll.map((row) => {
-        const readiness = coverageReadinessPercent(row);
-        const score = Number(row?.score || 0);
-        const severity = score >= 2 ? "high" : (score >= 1 ? "medium" : "low");
-        const reasons = [];
-        if (row?.missingNotes) reasons.push("нет заметок");
-        if (row?.missingAiQuestions) reasons.push("нет AI-вопросов");
-        if (row?.missingDurationQuality) reasons.push("нет duration/quality");
-        return {
-          nodeId: toNodeId(row?.id),
-          title: String(row?.title || row?.id || "").trim(),
-          severity,
-          reasons,
-          markerClass: coverageMarkerClass(row),
-          hideTag: true,
-          aiHint: `READY ${readiness}%`,
-          coverageScore: score,
-          coverageReadiness: readiness,
-        };
-      }).filter((item) => item.nodeId)
-      : []
-  ), [isCoverageMode, coverageRowsAll]);
+  const {
+    coverageNodes,
+    coverageMatrix,
+    coverageRowsAll,
+    coverageRows,
+    coverageById,
+    coverageMinimapRows,
+    coverageHints,
+  } = useCoverageDerivation({ draft, qualityHintsRaw, isCoverageMode });
   const reportPathStopHints = useMemo(() => {
     const debug = asObject(draft?.interview?.report_build_debug);
     const stopReason = String(debug?.stop_reason || "").trim().toUpperCase();
@@ -1938,6 +2195,38 @@ export default function ProcessStage({
       return null;
     }
   }, [hasSession, draft, lintResult]);
+  const dodReadinessV1 = useMemo(() => {
+    if (!hasSession) return null;
+    try {
+      return buildDodReadinessV1({
+        draft,
+        dodSnapshot: diagramDodSnapshot,
+        autoPassPrecheck,
+        autoPassJobState,
+        coverageMatrix,
+        context: {
+          orgId: workspaceActiveOrgId,
+          workspaceId: activeProjectWorkspaceId,
+          projectId: activeProjectId,
+          sessionId: sid,
+          folderId: draft?.folder_id || draft?.folderId || "",
+        },
+      });
+    } catch {
+      return null;
+    }
+  }, [
+    hasSession,
+    draft,
+    diagramDodSnapshot,
+    autoPassPrecheck,
+    autoPassJobState,
+    coverageMatrix,
+    workspaceActiveOrgId,
+    activeProjectWorkspaceId,
+    activeProjectId,
+    sid,
+  ]);
   const qualityOverlayCatalog = useMemo(() => {
     const quality = asObject(diagramDodSnapshot?.quality);
     const bpmnNodesById = {};
@@ -2315,6 +2604,10 @@ export default function ProcessStage({
     return seq ? `${tier} · ${seq}` : tier;
   }, [pathHighlightTier, pathHighlightSequenceKey]);
   const snapshotProjectId = String(draft?.project_id || draft?.projectId || activeProjectId || "").trim();
+  const revisionListFromBridge = useMemo(
+    () => asArray(sessionRevisionHistorySnapshot?.revisions),
+    [sessionRevisionHistorySnapshot?.revisions],
+  );
   const previewSnapshot = useMemo(
     () => asArray(versionsList).find((item) => String(item?.id || "") === String(previewSnapshotId || "")) || null,
     [versionsList, previewSnapshotId],
@@ -2337,36 +2630,21 @@ export default function ProcessStage({
   function snapshotLabel(item) {
     const explicit = String(item?.label || "").trim();
     if (explicit) return explicit;
+    const comment = String(item?.comment || "").trim();
+    if (comment) return comment;
+    const revisionNumber = Number(item?.revisionNumber || item?.rev || 0);
+    if (revisionNumber > 0) return `Revision r${revisionNumber}`;
     if (item?.pinned) return defaultCheckpointLabel(item?.ts);
     return "Без названия";
   }
 
-  const snapshotById = useMemo(() => {
-    const out = {};
-    asArray(versionsList).forEach((item) => {
-      const id = String(item?.id || "").trim();
-      if (!id) return;
-      out[id] = item;
-    });
-    return out;
-  }, [versionsList]);
-
   const semanticDiffView = useMemo(() => {
-    const baseId = String(diffBaseSnapshotId || "").trim();
-    const targetId = String(diffTargetSnapshotId || "").trim();
-    if (!baseId || !targetId) {
-      return { ok: false, error: "Выберите две версии для сравнения.", summary: null, details: null };
-    }
-    if (baseId === targetId) {
-      return { ok: false, error: "Выберите разные версии A и B.", summary: null, details: null };
-    }
-    const base = snapshotById[baseId];
-    const target = snapshotById[targetId];
-    if (!base || !target) {
-      return { ok: false, error: "Одна из выбранных версий недоступна.", summary: null, details: null };
-    }
-    return buildSemanticBpmnDiff(String(base?.xml || ""), String(target?.xml || ""));
-  }, [diffBaseSnapshotId, diffTargetSnapshotId, snapshotById]);
+    return buildRevisionDiffView({
+      revisions: asArray(versionsList),
+      baseRevisionId: diffBaseSnapshotId,
+      targetRevisionId: diffTargetSnapshotId,
+    });
+  }, [diffBaseSnapshotId, diffTargetSnapshotId, versionsList]);
 
   const refreshSnapshotVersions = useCallback(async () => {
     if (!sid) {
@@ -2374,10 +2652,7 @@ export default function ProcessStage({
       setPreviewSnapshotId("");
       return;
     }
-    const list = await listBpmnSnapshots({
-      projectId: snapshotProjectId,
-      sessionId: sid,
-    });
+    const list = revisionListFromBridge;
     // eslint-disable-next-line no-console
     console.debug(
       `UI_VERSIONS_LOAD sid=${sid} key="${snapshotScopeKey(snapshotProjectId, sid)}" count=${asArray(list).length}`,
@@ -2388,7 +2663,7 @@ export default function ProcessStage({
       if (exists) return prev;
       return asArray(list)[0]?.id || "";
     });
-  }, [sid, snapshotProjectId]);
+  }, [revisionListFromBridge, sid, snapshotProjectId]);
 
   async function openVersionsModal() {
     setVersionsOpen(true);
@@ -2400,70 +2675,17 @@ export default function ProcessStage({
     }
   }
 
-  async function createManualSnapshot(options = {}) {
-    if (!sid) return;
-    setVersionsBusy(true);
-    setGenErr("");
-    setInfoMsg("");
-    const persistBefore = Number(readPersistMark(sid)?.ts || 0);
-    try {
-      const prepared = await bpmnSync.resolveXmlForExport(tab);
-      if (!prepared?.ok) {
-        setGenErr(shortErr(prepared?.error || "Не удалось подготовить BPMN для ручной версии."));
-        return;
-      }
-      const xml = String(prepared?.xml || draft?.bpmn_xml || "");
-      if (!xml.trim()) {
-        setGenErr("Нет BPMN для сохранения версии.");
-        return;
-      }
-      // eslint-disable-next-line no-console
-      console.debug(
-        `UI_SNAPSHOT_CLICK sid=${sid} action=manual key="${snapshotScopeKey(snapshotProjectId, sid)}" `
-        + `hash=${fnv1aHex(xml)} len=${xml.length} rev=${Number(draft?.bpmn_xml_version || draft?.version || 0)} force=1`,
-      );
-      const created = await saveBpmnSnapshot({
-        projectId: snapshotProjectId,
-        sessionId: sid,
-        xml,
-        reason: "manual_checkpoint",
-        label: String(options?.label || "").trim() || `manual_${Date.now()}`,
-        rev: Number(draft?.bpmn_xml_version || draft?.version || 0),
-        force: true,
-      });
-      // eslint-disable-next-line no-console
-      console.debug(
-        `UI_SNAPSHOT_RESULT sid=${sid} action=manual ok=${created?.ok ? 1 : 0} saved=${created?.saved ? 1 : 0} `
-        + `reason=${String(created?.decisionReason || created?.error || "-")} key="${snapshotScopeKey(snapshotProjectId, sid)}"`,
-      );
-      if (!created?.ok || !created?.saved) {
-        if (created?.ok && created?.saved === false) {
-          setInfoMsg("Нет нового сохранения схемы.");
-          return;
-        }
-        setGenErr(shortErr(created?.error || "Не удалось создать ручную версию."));
-        return;
-      }
-      const persistAfter = Number(readPersistMark(sid)?.ts || 0);
-      const persistObserved = persistAfter > persistBefore;
-      setInfoMsg(persistObserved ? "Ручная версия создана." : "Ручная версия создана (нет нового сохранения схемы).");
-      await refreshSnapshotVersions();
-    } catch (error) {
-      setGenErr(shortErr(error?.message || error || "Не удалось создать ручную версию."));
-    } finally {
-      setVersionsBusy(false);
-    }
-  }
-
   async function restoreSnapshot(item) {
     const xml = String(item?.xml || "");
     if (!xml.trim()) {
       setGenErr("В выбранной версии нет XML.");
       return;
     }
+    if (typeof persistSessionCompanion !== "function") return;
     setVersionsBusy(true);
     setGenErr("");
     setInfoMsg("");
+    setDrawioAnchorImportDiagnostics(null);
     try {
       // eslint-disable-next-line no-console
       console.debug(
@@ -2475,21 +2697,40 @@ export default function ProcessStage({
         setGenErr(shortErr(imported?.error || "Не удалось восстановить версию."));
         return;
       }
-      const restored = await saveBpmnSnapshot({
-        projectId: snapshotProjectId,
-        sessionId: sid,
-        xml,
-        reason: "manual_restore",
-        rev: Number(draft?.bpmn_xml_version || draft?.version || 0),
+      const restoreTransition = buildRevisionRestoreTransition(sessionCompanionMetaLive, {
+        revisionId: String(item?.id || ""),
+        draft,
+        liveVersionRaw: sessionVersionReadSnapshot,
+        author: {
+          id: user?.id,
+          name: user?.name || user?.username || user?.email || "",
+          email: user?.email || "",
+        },
+        comment: `Restore r${Number(item?.revisionNumber || item?.rev || 0)}`,
+        source: "restore_revision",
+      });
+      if (!restoreTransition?.ok) {
+        setGenErr(shortErr(restoreTransition?.error || "Не удалось зафиксировать восстановление ревизии."));
+        return;
+      }
+      const restored = await persistSessionCompanion(restoreTransition.nextCompanion, {
+        source: "restore_revision_session_companion",
       });
       // eslint-disable-next-line no-console
       console.debug(
         `UI_SNAPSHOT_RESULT sid=${sid} action=restore ok=${restored?.ok ? 1 : 0} saved=${restored?.saved ? 1 : 0} `
         + `reason=${String(restored?.decisionReason || restored?.error || "-")} key="${snapshotScopeKey(snapshotProjectId, sid)}"`,
       );
+      if (!restored?.ok) {
+        setGenErr(shortErr(restored?.error || "Не удалось сохранить цепочку ревизий после восстановления."));
+        return;
+      }
       setTab("diagram");
       await Promise.resolve(bpmnRef.current?.fit?.());
-      setInfoMsg(`Версия восстановлена (${formatSnapshotTs(item?.ts)}).`);
+      setInfoMsg(
+        `Ревизия r${Number(item?.revisionNumber || item?.rev || 0)} восстановлена как новая latest `
+        + `r${Number(restoreTransition?.revisionNumber || 0)}.`,
+      );
       await refreshSnapshotVersions();
     } catch (error) {
       setGenErr(shortErr(error?.message || error || "Не удалось восстановить версию."));
@@ -2499,78 +2740,25 @@ export default function ProcessStage({
   }
 
   async function clearSnapshotHistory() {
-    if (!sid) return;
-    setVersionsBusy(true);
-    try {
-      const cleared = await clearBpmnSnapshots({
-        projectId: snapshotProjectId,
-        sessionId: sid,
-      });
-      if (!cleared?.ok) {
-        setGenErr("Не удалось очистить историю версий.");
-        return;
-      }
-      setVersionsList([]);
-      setPreviewSnapshotId("");
-      setInfoMsg("История версий очищена.");
-    } finally {
-      setVersionsBusy(false);
-    }
+    setGenErr("");
+    setInfoMsg("История ревизий immutable и не может быть очищена.");
   }
 
   async function updateSnapshotMeta(item, patch = {}) {
-    if (!sid) return;
-    const snapshotId = String(item?.id || "").trim();
-    if (!snapshotId) return;
-    setVersionsBusy(true);
+    void item;
+    void patch;
     setGenErr("");
-    setInfoMsg("");
-    try {
-      const patchHasPinned = Object.prototype.hasOwnProperty.call(patch, "pinned");
-      const nextPinned = Object.prototype.hasOwnProperty.call(patch, "pinned")
-        ? patch.pinned === true
-        : item?.pinned === true;
-      const requestedLabel = Object.prototype.hasOwnProperty.call(patch, "label")
-        ? String(patch?.label || "").trim()
-        : String(item?.label || "").trim();
-      const nextLabel = nextPinned ? (requestedLabel || defaultCheckpointLabel(item?.ts)) : requestedLabel;
-      const updated = await updateBpmnSnapshotMeta({
-        projectId: snapshotProjectId,
-        sessionId: sid,
-        snapshotId,
-        pinned: nextPinned,
-        label: nextLabel,
-      });
-      if (!updated?.ok) {
-        setGenErr(shortErr(updated?.error || "Не удалось обновить метаданные версии."));
-        return;
-      }
-      await refreshSnapshotVersions();
-      setInfoMsg(
-        patchHasPinned
-          ? (nextPinned ? "Версия закреплена." : "Версия откреплена.")
-          : "Название версии обновлено.",
-      );
-    } catch (error) {
-      setGenErr(shortErr(error?.message || error || "Не удалось обновить версию."));
-    } finally {
-      setVersionsBusy(false);
-    }
+    setInfoMsg("Редактирование ревизии отключено: immutable ledger.");
   }
 
   async function togglePinSnapshot(item) {
-    await updateSnapshotMeta(item, { pinned: !(item?.pinned === true) });
+    void item;
+    setInfoMsg("Pin/Unpin отключён: ревизии immutable.");
   }
 
   async function editSnapshotLabel(item) {
-    const fallback = snapshotLabel(item);
-    const current = String(item?.label || "").trim() || fallback;
-    const next = typeof window === "undefined"
-      ? current
-      : window.prompt("Название версии", current);
-    if (next == null) return;
-    const cleaned = String(next || "").trim() || fallback;
-    await updateSnapshotMeta(item, { label: cleaned });
+    void item;
+    setInfoMsg("Изменение label отключено: ревизии immutable.");
   }
 
   function openDiffForSnapshot(item) {
@@ -2786,8 +2974,10 @@ export default function ProcessStage({
         setGenErr(shortErr(flush?.error || "Не удалось сохранить BPMN после автоисправления."));
         return;
       }
-      await createManualSnapshot({ label: "Auto-fix" });
-      setInfoMsg(`Автоисправление: ${applied} опер.${failed > 0 ? ` Ошибок: ${failed}.` : ""}`);
+      setInfoMsg(
+        `Автоисправление: ${applied} опер.${failed > 0 ? ` Ошибок: ${failed}.` : ""} `
+        + "Черновик обновлён; для новой ревизии используйте Save.",
+      );
       setQualityAutoFixOpen(false);
     } catch (error) {
       setGenErr(shortErr(error?.message || error || "Автоисправление не выполнено."));
@@ -3310,6 +3500,22 @@ export default function ProcessStage({
   }, [aiGenerateIntent, sid, generateAiQuestionsForSelectedElement]);
 
   useEffect(() => {
+    const intent = drawioCompanionFocusIntent && typeof drawioCompanionFocusIntent === "object"
+      ? drawioCompanionFocusIntent
+      : null;
+    if (!intent) return;
+    const intentSid = String(intent.sid || "").trim();
+    const objectId = String(intent.objectId || "").trim();
+    if (!intentSid || intentSid !== sid || !objectId) return;
+    const intentNonce = String(intent.nonce || "").trim();
+    const intentKey = `${intentSid}:${objectId}:${intentNonce || "none"}`;
+    if (lastDrawioCompanionFocusKeyRef.current === intentKey) return;
+    lastDrawioCompanionFocusKeyRef.current = intentKey;
+    setDrawioSelectedElementId(objectId);
+    setDiagramActionLayersOpen(true);
+  }, [drawioCompanionFocusIntent, sid, setDrawioSelectedElementId, setDiagramActionLayersOpen]);
+
+  useEffect(() => {
     setToolbarMenuOpen(false);
     setDiagramActionPathOpen(false);
     setDiagramActionHybridToolsOpen(false);
@@ -3556,6 +3762,18 @@ export default function ProcessStage({
         canAutofillInterview: replaceSeedInterview || !interviewHasContent(draft?.interview),
       });
       const derivedActors = deriveActorsFromBpmn(text);
+      const currentDrawioMeta = normalizeDrawioMeta(drawioMetaRef.current);
+      const beforeBpmnNodeIds = collectBpmnNodeIdsFromDraft(draft);
+      const afterBpmnNodeIds = projected.ok
+        ? collectBpmnNodeIdsFromDraft({ nodes: projected.nextNodes })
+        : beforeBpmnNodeIds;
+      const importDiagnostics = buildDrawioAnchorImportDiagnostics({
+        beforeMeta: currentDrawioMeta,
+        beforeBpmnNodeIds,
+        afterBpmnNodeIds,
+        validationReady: projected.ok,
+      });
+      setDrawioAnchorImportDiagnostics(importDiagnostics);
       if (projected.ok) {
         const hasProjectedInterview = interviewHasContent(projected.nextInterview);
         if (hasProjectedInterview) {
@@ -3595,10 +3813,14 @@ export default function ProcessStage({
         }
         setInfoMsg(
           replaceSeedInterview
-            ? `BPMN распознан: ${projected.parsed.nodes.length} узл., ${projected.parsed.edges.length} связей. Стартовый seed BPMN заменён импортом.`
-            : `BPMN распознан: ${projected.parsed.nodes.length} узл., ${projected.parsed.edges.length} связей.`,
+            ? `BPMN распознан: ${projected.parsed.nodes.length} узл., ${projected.parsed.edges.length} связей.`
+              + `${importDiagnostics.importHasAnchorImpact ? ` Overlay anchors affected: ${importDiagnostics.affectedObjectIds.length}.` : " Overlay anchors unchanged."}`
+              + " Стартовый seed BPMN заменён импортом."
+            : `BPMN распознан: ${projected.parsed.nodes.length} узл., ${projected.parsed.edges.length} связей.`
+              + `${importDiagnostics.importHasAnchorImpact ? ` Overlay anchors affected: ${importDiagnostics.affectedObjectIds.length}.` : " Overlay anchors unchanged."}`,
         );
       } else {
+        setDrawioAnchorImportDiagnostics(null);
         setInfoMsg(projected.error || "BPMN загружен, но парсинг не выполнен.");
       }
       setApiClarifyHints([]);
@@ -3632,6 +3854,7 @@ export default function ProcessStage({
     setDrawioElementTextWidth,
     setDrawioElementStylePreset,
     setDrawioElementSize,
+    setDrawioElementAnchor,
   } = useDiagramRuntimeBridges({
     overlay: {
       sid,
@@ -3771,6 +3994,7 @@ export default function ProcessStage({
     openSelectedElementNotes,
     openSelectedElementAi,
     openReportsFromDiagram,
+    openDocFromDiagram,
     buildExecutionPlanNow,
     copyExecutionPlanFromDiagram,
     downloadExecutionPlanFromDiagram,
@@ -3913,10 +4137,10 @@ export default function ProcessStage({
     versionsOpen,
     closeVersionsDialog: stageActions.closeVersionsDialog,
     refreshSnapshotVersions,
-    createManualSnapshot,
     versionsBusy,
     hasSession,
     versionsList,
+    revisionHistorySnapshot: sessionRevisionHistorySnapshot,
     setGenErr,
     setDiffTargetSnapshotId,
     setDiffBaseSnapshotId,
@@ -3955,6 +4179,10 @@ export default function ProcessStage({
     templatesBusy,
     tab,
     availablePathTiers,
+    sessionSaveReadSnapshot,
+    sessionVersionReadSnapshot,
+    sessionTemplateProvenanceSnapshot,
+    sessionCompanionBridgeSnapshot,
     topPanelsView,
     attentionPanelsView,
     dialogsView,
@@ -3973,7 +4201,7 @@ export default function ProcessStage({
   const headerView = buildDiagramHeaderView({
     shellProps: shellVm.shellProps,
     sid,
-    saveDirtyHint,
+    saveDirtyHint: shellVm.shellProps.saveDirtyHint === true,
     handleSaveCurrentTab,
     workbench,
     tab,
@@ -4025,6 +4253,8 @@ export default function ProcessStage({
             onRecalculateRtiers={onRecalculateRtiers}
             onClose={() => setTab("diagram")}
           />
+        ) : tab === "dod" ? (
+          <DodStage readiness={dodReadinessV1} />
         ) : (
           <div className="relative h-full min-h-0">
             <div className={isInterview ? "absolute inset-0 opacity-0 pointer-events-none" : "absolute inset-0"}>
@@ -4061,6 +4291,10 @@ export default function ProcessStage({
                     templateSelectionCount,
                     openTemplatesPicker,
                     canOpenTemplatesList,
+                    sessionSaveReadSnapshot,
+                    sessionVersionReadSnapshot,
+                    sessionTemplateProvenanceSnapshot,
+                    sessionCompanionBridgeSnapshot,
                     templatesMenuOpen: templatesPickerOpen,
                     setTemplatesMenuOpen: setTemplatesPickerOpen,
                     templatesScope,
@@ -4080,6 +4314,7 @@ export default function ProcessStage({
                     canUseElementContextActions,
                     openSelectedElementAi,
                     openReportsFromDiagram,
+                    openDocFromDiagram,
                     hasSession,
                     diagramActionPlanOpen,
                     executionPlanSource,
@@ -4124,6 +4359,7 @@ export default function ProcessStage({
                     setDrawioElementTextWidth,
                     setDrawioElementStylePreset,
                     setDrawioElementSize,
+                    setDrawioElementAnchor,
                     drawioFileInputRef,
                     exportEmbeddedDrawio,
                     diagramPlanPopoverRef,
@@ -4140,6 +4376,7 @@ export default function ProcessStage({
                     executionPlanVersions,
                     shortHash,
                     diagramPlaybackPopoverRef,
+                    playbackRuntimeSnapshot,
                     playbackGraphError,
                     playbackCanRun,
                     playbackScenarioKey,
@@ -4167,13 +4404,16 @@ export default function ProcessStage({
                     setPlaybackAutoCamera,
                     playbackGateways,
                     playbackGatewayChoices,
+                    playbackGatewayChoiceSource,
+                    playbackGatewayReadOnly,
+                    playbackDecisionMode: playbackDecisionModeResolved,
+                    setPlaybackDecisionMode,
                     playbackGatewayPending,
                     playbackAwaitingGatewayId,
                     formatPlaybackGatewayTitle,
                     playbackGatewayOptionLabel,
                     markPlaybackOverlayInteraction,
                     setPlaybackGatewayChoice,
-                    handlePlaybackGatewayDecision,
                     diagramLayersPopoverRef,
                     showHybridLayer,
                     hideHybridLayer,
@@ -4209,6 +4449,8 @@ export default function ProcessStage({
                     deleteSelectedHybridIds,
                     deleteLegacyHybridMarkers,
                     drawioSelectedElementId,
+                    setDrawioSelectedElementId,
+                    drawioAnchorImportDiagnostics,
                     overlayPanelModel,
                     deleteOverlayEntity,
                     deleteDrawioElement: deleteDrawioOverlayElement,
@@ -4244,6 +4486,7 @@ export default function ProcessStage({
                     diagramActionOverflowOpen,
                     diagramOverflowPopoverRef,
                     selectedInsertBetween,
+                    selectedElementContext,
                     openInsertBetweenModal,
                     insertBetweenBusy,
                     canInsertBetween,

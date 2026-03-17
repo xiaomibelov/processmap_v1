@@ -40,10 +40,10 @@ export default function ProcessDialogs({ view = {} }) {
     versionsOpen,
     closeVersionsDialog,
     refreshSnapshotVersions,
-    createManualSnapshot,
     versionsBusy,
     hasSession,
     versionsList,
+    revisionHistorySnapshot,
     setGenErr,
     setDiffTargetSnapshotId,
     setDiffBaseSnapshotId,
@@ -215,15 +215,12 @@ export default function ProcessDialogs({ view = {} }) {
 
       <Modal
         open={versionsOpen}
-        title="История версий BPMN"
+        title="История ревизий BPMN"
         onClose={closeVersionsDialog}
         footer={(
           <>
             <button type="button" className="secondaryBtn" onClick={() => void refreshSnapshotVersions()} disabled={versionsBusy || !hasSession}>
               Обновить
-            </button>
-            <button type="button" className="secondaryBtn" onClick={() => void createManualSnapshot()} disabled={versionsBusy || !hasSession}>
-              Создать версию
             </button>
             <button
               type="button"
@@ -244,9 +241,6 @@ export default function ProcessDialogs({ view = {} }) {
             >
               Сравнить A/B
             </button>
-            <button type="button" className="secondaryBtn" onClick={() => void clearSnapshotHistory()} disabled={versionsBusy || !hasSession || versionsList.length === 0}>
-              Очистить историю
-            </button>
             <button type="button" className="primaryBtn" onClick={closeVersionsDialog}>
               Закрыть
             </button>
@@ -256,7 +250,9 @@ export default function ProcessDialogs({ view = {} }) {
         <div className="grid gap-3 lg:grid-cols-[minmax(320px,460px)_minmax(0,1fr)]" data-testid="bpmn-versions-modal">
           <div className="rounded-xl border border-border bg-panel2/45 p-2">
             <div className="mb-2 px-1 text-xs text-muted" data-testid="bpmn-versions-count">
-              Последние версии: {versionsList.length} · pinned: {asArray(versionsList).filter((item) => item?.pinned === true).length}
+              Ревизий: {versionsList.length}
+              <span> · latest: r{Number(revisionHistorySnapshot?.latestRevisionNumber || 0)}</span>
+              <span> · draft: {revisionHistorySnapshot?.draftState?.isDraftAheadOfLatestRevision ? "ahead_of_latest" : "matches_latest_or_empty"}</span>
             </div>
             <div className="max-h-[52vh] space-y-2 overflow-auto pr-1">
               {versionsList.length === 0 ? (
@@ -265,6 +261,7 @@ export default function ProcessDialogs({ view = {} }) {
                 versionsList.map((item) => {
                   const id = String(item?.id || "");
                   const active = id === String(previewSnapshotId || "");
+                  const isLatest = id === String(revisionHistorySnapshot?.latestRevisionId || "");
                   return (
                     <div
                       key={id}
@@ -274,20 +271,31 @@ export default function ProcessDialogs({ view = {} }) {
                     >
                       <div className="mb-1 flex items-center justify-between gap-2 text-xs text-muted">
                         <span>{formatSnapshotTs(item?.ts)}</span>
-                        <span className="uppercase">{String(item?.reason || "autosave")}</span>
+                        <span className="uppercase">{String(item?.reason || "manual_publish")}</span>
                       </div>
                       <div className="mb-1 flex items-center justify-between gap-2">
                         <span className="truncate text-sm font-semibold text-fg" data-testid="bpmn-version-label">
                           {snapshotLabel(item)}
                         </span>
-                        {item?.pinned ? (
-                          <span className="rounded-full border border-accent/40 bg-accentSoft/40 px-2 py-0.5 text-[10px] uppercase tracking-wide text-accent">
-                            Pinned
+                        <div className="flex items-center gap-1.5">
+                          {isLatest ? (
+                            <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-emerald-300">
+                              Latest
+                            </span>
+                          ) : null}
+                          <span className="rounded-full border border-accent/40 bg-accentSoft/20 px-2 py-0.5 text-[10px] uppercase tracking-wide text-accent">
+                            r{Number(item?.revisionNumber || item?.rev || 0)}
                           </span>
-                        ) : null}
+                        </div>
+                      </div>
+                      <div className="mb-1 text-xs text-muted">
+                        author: {String(item?.authorName || item?.authorEmail || item?.authorId || "unknown")}
                       </div>
                       <div className="mb-2 text-xs text-muted">
-                        rev: {Number(item?.rev || 0)} · hash: <span className="font-mono text-fg">{shortSnapshotHash(item?.hash || item?.xml || "")}</span> · len: {Number(item?.len || String(item?.xml || "").length)}
+                        comment: {String(item?.comment || "—")}
+                      </div>
+                      <div className="mb-2 text-xs text-muted">
+                        hash: <span className="font-mono text-fg">{shortSnapshotHash(item?.hash || item?.xml || "")}</span> · len: {Number(item?.len || String(item?.xml || "").length)}
                       </div>
                       <div className="flex flex-wrap gap-1.5">
                         <button
@@ -300,24 +308,6 @@ export default function ProcessDialogs({ view = {} }) {
                         </button>
                         <button type="button" className="secondaryBtn h-7 px-2 text-[11px]" onClick={() => downloadSnapshot(item)}>
                           Скачать .bpmn
-                        </button>
-                        <button
-                          type="button"
-                          className="secondaryBtn h-7 px-2 text-[11px]"
-                          onClick={() => void editSnapshotLabel(item)}
-                          disabled={versionsBusy}
-                          data-testid="bpmn-version-label-edit"
-                        >
-                          Label
-                        </button>
-                        <button
-                          type="button"
-                          className="secondaryBtn h-7 px-2 text-[11px]"
-                          onClick={() => void togglePinSnapshot(item)}
-                          disabled={versionsBusy}
-                          data-testid="bpmn-version-pin"
-                        >
-                          {item?.pinned ? "Unpin" : "Pin"}
                         </button>
                         <button
                           type="button"

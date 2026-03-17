@@ -237,6 +237,40 @@ function logAiOverlayTrace(tag, payload = {}) {
   console.debug(`[AI_OVERLAY] ${String(tag || "trace")} ${suffix}`.trim());
 }
 
+function shouldTraceSelectionContinuity() {
+  if (typeof window === "undefined") return false;
+  if (window.__FPC_E2E__) return true;
+  try {
+    return String(window.localStorage?.getItem("fpc_debug_selection_continuity") || "").trim() === "1";
+  } catch {
+    return false;
+  }
+}
+
+function traceSelectionContinuity(event, payload = {}) {
+  if (!shouldTraceSelectionContinuity()) return;
+  const detail = payload && typeof payload === "object" ? payload : {};
+  try {
+    const prev = Array.isArray(window.__FPC_SELECTION_CONTINUITY_LOG__) ? window.__FPC_SELECTION_CONTINUITY_LOG__ : [];
+    const next = [
+      ...prev,
+      {
+        ts: Date.now(),
+        event: String(event || "trace"),
+        ...detail,
+      },
+    ];
+    if (next.length > 200) next.splice(0, next.length - 200);
+    window.__FPC_SELECTION_CONTINUITY_LOG__ = next;
+  } catch {
+  }
+  const suffix = Object.entries(detail)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(" ");
+  // eslint-disable-next-line no-console
+  console.debug(`[SELECTION_CONTINUITY] ${String(event || "trace")}${suffix ? ` ${suffix}` : ""}`);
+}
+
 function colorFromKey(key) {
   let h = 17;
   const src = normalizeLoose(key || "sp");
@@ -1182,6 +1216,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const selectedMarkerStateRef = useRef({ viewer: "", editor: "" });
   const onDiagramMutationRef = useRef(onDiagramMutation);
   const onElementSelectionChangeRef = useRef(onElementSelectionChange);
+  const selectionImportGuardRef = useRef({ viewer: "", editor: "" });
   const onElementNotesRemapRef = useRef(onElementNotesRemap);
   const onAiQuestionsByElementChangeRef = useRef(onAiQuestionsByElementChange);
   const onSessionSyncRef = useRef(onSessionSync);
@@ -2266,6 +2301,12 @@ const BpmnStage = forwardRef(function BpmnStage({
   function emitElementSelectionChange(payload) {
     const cb = onElementSelectionChangeRef.current;
     if (typeof cb !== "function") return;
+    traceSelectionContinuity("selection_change_emit", {
+      nextSelectedId: String(payload?.id || "").trim() || "-",
+      viewerSelectedId: String(selectedMarkerStateRef.current.viewer || "").trim() || "-",
+      editorSelectedId: String(selectedMarkerStateRef.current.editor || "").trim() || "-",
+      source: String(payload?.source || (!payload ? "clear" : "unknown")).trim() || "-",
+    });
     if (!payload || !payload.id) {
       cb(null);
       return;
@@ -2306,6 +2347,73 @@ const BpmnStage = forwardRef(function BpmnStage({
       aiQuestionMissingCommentCount: aiStats.withoutComment,
       source,
     });
+  }
+
+  function beginImportSelectionGuard(kind) {
+    const mode = kind === "viewer" ? "viewer" : "editor";
+    const selectedId = String(selectedMarkerStateRef.current[mode] || "").trim();
+    selectionImportGuardRef.current[mode] = selectedId;
+    traceSelectionContinuity("import_guard_begin", {
+      mode,
+      selectedId: selectedId || "-",
+    });
+    return selectedId;
+  }
+
+  function finishImportSelectionGuard(inst, kind, reason = "import_refresh") {
+    const mode = kind === "viewer" ? "viewer" : "editor";
+    const selectedId = String(selectionImportGuardRef.current[mode] || "").trim();
+    selectionImportGuardRef.current[mode] = "";
+    clearSelectedDecor(inst, mode);
+    if (!selectedId) {
+      traceSelectionContinuity("import_guard_finish", {
+        mode,
+        reason,
+        selectedId: "-",
+        result: "clear_no_selection",
+      });
+      clearAiQuestionPanel(inst, mode);
+      emitElementSelectionChange(null);
+      return false;
+    }
+    try {
+      const registry = inst.get("elementRegistry");
+      const selected = registry?.get?.(selectedId);
+      if (!isSelectableElement(selected)) {
+        traceSelectionContinuity("import_guard_finish", {
+          mode,
+          reason,
+          selectedId,
+          result: "clear_missing_element",
+        });
+        clearAiQuestionPanel(inst, mode);
+        emitElementSelectionChange(null);
+        return false;
+      }
+      traceSelectionContinuity("import_guard_finish", {
+        mode,
+        reason,
+        selectedId,
+        result: "restore",
+      });
+      setSelectedDecor(inst, mode, selectedId);
+      emitElementSelection(selected, `${mode}.${reason}`, {
+        selectedIds: [selectedId],
+        insertBetween: buildInsertBetweenCandidate(inst, [selected]),
+      });
+      syncAiQuestionPanelWithSelection(inst, mode, selected, `${mode}.${reason}`);
+      return true;
+    } catch {
+      traceSelectionContinuity("import_guard_finish", {
+        mode,
+        reason,
+        selectedId,
+        result: "clear_error",
+      });
+      clearAiQuestionPanel(inst, mode);
+      emitElementSelectionChange(null);
+      return false;
+    }
   }
 
   function readShapeBounds(el) {
@@ -3084,6 +3192,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     };
     aiQuestionPanelTargetRef.current = { viewer: "", editor: "" };
     selectedMarkerStateRef.current = { viewer: "", editor: "" };
+    selectionImportGuardRef.current = { viewer: "", editor: "" };
     focusStateRef.current = {
       viewer: { elementId: "", timer: 0, markerClass: "fpcNodeFocus" },
       editor: { elementId: "", timer: 0, markerClass: "fpcNodeFocus" },
@@ -3168,7 +3277,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     const coordinator = ensureBpmnCoordinator();
     const loaded = await coordinator.reload({
       reason: options?.reason || "stage_load",
-      preferStore: options?.forceRemote !== true,
+      preferStore: options?.forceRemote === true ? false : options?.preferStore === true,
       rev: Number(bpmnStoreRef.current?.getState?.()?.rev || 0),
     });
 
@@ -3239,6 +3348,14 @@ const BpmnStage = forwardRef(function BpmnStage({
           const selectedList = asArray(ev?.newSelection).filter((el) => isSelectableElement(el));
           const selected = selectedList[0];
           if (!isSelectableElement(selected)) {
+            if (String(selectionImportGuardRef.current.viewer || "").trim()) {
+              traceSelectionContinuity("selection_change_suppressed", {
+                mode: "viewer",
+                source: "viewer.selection_changed",
+                guardedSelectedId: String(selectionImportGuardRef.current.viewer || "").trim(),
+              });
+              return;
+            }
             clearSelectedDecor(v, "viewer");
             emitElementSelectionChange(null);
             clearAiQuestionPanel(v, "viewer");
@@ -3346,6 +3463,14 @@ const BpmnStage = forwardRef(function BpmnStage({
             const selectedList = asArray(ev?.newSelection).filter((el) => isSelectableElement(el));
             const selected = selectedList[0];
             if (!isSelectableElement(selected)) {
+              if (String(selectionImportGuardRef.current.editor || "").trim()) {
+                traceSelectionContinuity("selection_change_suppressed", {
+                  mode: "editor",
+                  source: "editor.selection_changed",
+                  guardedSelectedId: String(selectionImportGuardRef.current.editor || "").trim(),
+                });
+                return;
+              }
               clearSelectedDecor(m, "editor");
               emitElementSelectionChange(null);
               clearAiQuestionPanel(m, "editor");
@@ -3402,6 +3527,7 @@ const BpmnStage = forwardRef(function BpmnStage({
 
   async function renderViewer(nextXml) {
     const v = await ensureViewer();
+    beginImportSelectionGuard("viewer");
     const token = runtimeTokenRef.current + 1;
     runtimeTokenRef.current = token;
     viewerReadyRef.current = false;
@@ -3448,8 +3574,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       xmlHash: fnv1aHex(String(nextXml || "")),
       registryCount,
     });
-    clearSelectedDecor(v, "viewer");
-    emitElementSelectionChange(null);
+    finishImportSelectionGuard(v, "viewer", "import_restore");
     await ensureCanvasVisibleAndFit(v, "renderViewer", String(sessionId || ""), {
       reason: "render_viewer_import",
       tab: "diagram",
@@ -3489,6 +3614,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     const sidNow = String(activeSessionRef.current || sessionId || "-");
     const xmlText = String(nextXml || "");
     const xmlHash = fnv1aHex(xmlText);
+    beginImportSelectionGuard("editor");
     const inFlight = modelerImportInFlightRef.current;
     if (
       inFlight
@@ -3602,8 +3728,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         }
       } catch {
       }
-      clearSelectedDecor(m, "editor");
-      emitElementSelectionChange(null);
+      finishImportSelectionGuard(m, "editor", "import_restore");
       await ensureCanvasVisibleAndFit(m, "renderModeler", String(sessionId || ""), {
         reason: "render_modeler_import",
         tab: "diagram",
@@ -3717,8 +3842,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       }
     } catch {
     }
-    clearSelectedDecor(m, "editor");
-    emitElementSelectionChange(null);
+    finishImportSelectionGuard(m, "editor", "create_diagram_restore");
     await ensureCanvasVisibleAndFit(m, "renderNewDiagramInModeler", String(sessionId || ""), {
       reason: "render_new_diagram",
       tab: "diagram",
@@ -3945,7 +4069,13 @@ const BpmnStage = forwardRef(function BpmnStage({
         if (force && allowForceFallback && out.trim()) {
           return { ok: true, xml: out, source: "fallback" };
         }
-        return { ok: false, error: String(flushed?.error || "saveXML failed"), xml: out };
+        return {
+          ok: false,
+          error: String(flushed?.error || "saveXML failed"),
+          status: Number(flushed?.status || 0),
+          errorCode: String(flushed?.errorCode || ""),
+          xml: out,
+        };
       }
 
       if (flushed.pending) {
@@ -3956,7 +4086,13 @@ const BpmnStage = forwardRef(function BpmnStage({
         const rev = Number(nextState.rev || 0);
         const persistedFinalXml = await ensureBpmnPersistence().saveRaw(sid, out, rev, `${source}:camunda_finalize`);
         if (!persistedFinalXml?.ok) {
-          return { ok: false, error: String(persistedFinalXml?.error || "camunda finalize persist failed"), xml: out };
+          return {
+            ok: false,
+            error: String(persistedFinalXml?.error || "camunda finalize persist failed"),
+            status: Number(persistedFinalXml?.status || 0),
+            errorCode: String(persistedFinalXml?.errorCode || ""),
+            xml: out,
+          };
         }
       }
 
@@ -3982,11 +4118,24 @@ const BpmnStage = forwardRef(function BpmnStage({
         if (force && allowForceFallback) {
           const rev = Number(bpmnStoreRef.current?.getState?.()?.rev || 0);
           const persisted = await ensureBpmnPersistence().saveRaw(sid, fallbackXml, rev, `${source}:catch_fallback`);
-          if (!persisted.ok) return { ok: false, error: String(persisted.error || msg), xml: fallbackXml };
+          if (!persisted.ok) {
+            return {
+              ok: false,
+              error: String(persisted.error || msg),
+              status: Number(persisted?.status || 0),
+              errorCode: String(persisted?.errorCode || ""),
+              xml: fallbackXml,
+            };
+          }
           return { ok: true, xml: fallbackXml, source: "fallback" };
         }
       }
-      return { ok: false, error: msg || "saveXML failed" };
+      return {
+        ok: false,
+        error: msg || "saveXML failed",
+        status: Number(e?.status || 0),
+        errorCode: String(e?.code || ""),
+      };
     }
   }
 

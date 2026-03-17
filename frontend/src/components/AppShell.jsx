@@ -5,6 +5,7 @@ import SidebarHandle from "./sidebar/SidebarHandle";
 
 export default function AppShell({
   draft,
+  shellSessionId = "",
   locked,
   left,
   leftHidden,
@@ -65,7 +66,7 @@ export default function AppShell({
   onDismissSessionNavNotice,
   onReturnToSessionList,
 }) {
-  const hasActiveSession = String(sessionId || "").trim().length > 0;
+  const hasActiveSession = String(shellSessionId || sessionId || "").trim().length > 0;
   const effectiveLeftHidden = hasActiveSession ? !!leftHidden : true;
   const workspaceClass = `workspace ${effectiveLeftHidden ? "workspace--leftHidden" : leftCompact ? "workspace--leftCompact" : ""}`.trim();
   const workspaceBackHandler = hasActiveSession
@@ -106,7 +107,7 @@ export default function AppShell({
         canManageProjectEntities={canManageProjectEntities}
         onProjectChange={onProjectChange}
         sessions={sessions}
-        sessionId={sessionId}
+        sessionId={String(shellSessionId || sessionId || "").trim()}
         sessionStatus={sessionStatus}
         onDeleteSession={onDeleteSession}
         onChangeSessionStatus={onChangeSessionStatus}

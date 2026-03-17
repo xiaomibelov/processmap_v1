@@ -5,7 +5,10 @@ export default function ProcessStageHeader({ view = {} }) {
   const {
     canSaveNow,
     saveDirtyHint,
+    showSaveActionButton,
+    saveActionText,
     saveSmartText,
+    sessionRevisionHistorySnapshot,
     handleSaveCurrentTab,
     workbench,
     tab,
@@ -30,36 +33,60 @@ export default function ProcessStageHeader({ view = {} }) {
     handleDrawioImportFile,
     topPanelsView,
   } = view;
+  const latestRevisionNumber = Number(sessionRevisionHistorySnapshot?.latestRevisionNumber || 0);
+  const hasPublishedRevision = latestRevisionNumber > 0;
+  const draftAheadOfLatest = sessionRevisionHistorySnapshot?.draftState?.isDraftAheadOfLatestRevision === true;
+  const draftStatusLabel = !hasPublishedRevision
+    ? "Unpublished"
+    : (draftAheadOfLatest ? "Draft ahead" : "Published");
+  const draftStatusTone = !hasPublishedRevision || draftAheadOfLatest ? "warn" : "ok";
 
   return (
     <div className="processHeader diagramToolbarHeader">
       <div className="diagramToolbarSlot diagramToolbarSlot--left">
-        {canSaveNow ? (
-          saveDirtyHint ? (
+        <div className="flex items-center gap-2">
+          {canSaveNow ? (
+            showSaveActionButton ? (
+              <button
+                type="button"
+                className="primaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
+                onClick={handleSaveCurrentTab}
+                title={workbench.saveTooltip}
+                data-testid="diagram-toolbar-save"
+              >
+                {saveActionText || saveSmartText}
+              </button>
+            ) : (
+              <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-save-status">
+                {saveSmartText}
+              </span>
+            )
+          ) : (
             <button
               type="button"
-              className="primaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
-              onClick={handleSaveCurrentTab}
+              className="secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
+              disabled
               title={workbench.saveTooltip}
-              data-testid="diagram-toolbar-save"
             >
-              {saveSmartText}
+              {workbench.labels.save}
             </button>
-          ) : (
-            <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-save-status">
-              {saveSmartText}
+          )}
+          {latestRevisionNumber > 0 ? (
+            <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-latest-revision">
+              r{latestRevisionNumber}
             </span>
-          )
-        ) : (
-          <button
-            type="button"
-            className="secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
-            disabled
-            title={workbench.saveTooltip}
+          ) : (
+            <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-latest-revision-empty">
+              No published revision
+            </span>
+          )}
+          <span
+            className={`badge text-[11px] ${draftStatusTone}`}
+            data-testid="diagram-toolbar-draft-vs-latest"
           >
-            {workbench.labels.save}
-          </button>
-        )}
+            {draftStatusLabel}
+          </span>
+        </div>
       </div>
 
       <div className="diagramToolbarSlot diagramToolbarSlot--center">

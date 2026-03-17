@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
+import { buildBpmnSaveFailureDiagnostics } from "../bpmn/save/saveBeforeSwitchDiagnostics.js";
 
 function toText(v) {
   return String(v || "");
@@ -7,6 +8,11 @@ function toText(v) {
 
 function asObject(x) {
   return x && typeof x === "object" && !Array.isArray(x) ? x : {};
+}
+
+function asNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
 }
 
 function fnv1aHex(input) {
@@ -71,6 +77,31 @@ function shortStack() {
   } catch {
     return "";
   }
+}
+
+function saveAttemptKindBySource(sourceText) {
+  const source = String(sourceText || "").toLowerCase();
+  if (source.includes("tab_switch")) return "tab_switch";
+  if (source.includes("beforeunload") || source.includes("pagehide") || source.includes("visibility_hidden")) {
+    return "lifecycle_flush";
+  }
+  return "manual";
+}
+
+function buildSaveFailureResult(raw = {}, context = {}) {
+  const diagnostics = buildBpmnSaveFailureDiagnostics(raw, context);
+  return {
+    ok: false,
+    xml: String(raw?.xml || ""),
+    error: diagnostics.userMessage,
+    errorClass: diagnostics.errorClass,
+    errorCode: diagnostics.errorCode,
+    status: diagnostics.status,
+    canRetry: diagnostics.canRetry,
+    canLeaveUnsafely: diagnostics.canLeaveUnsafely,
+    diagnosticsSeverity: diagnostics.diagnosticsSeverity,
+    diagnostics,
+  };
 }
 
 function escapeXml(value) {
@@ -214,6 +245,19 @@ export default function useBpmnSync({
         return false;
       }
     };
+    const requestBaseRev = asNumber(
+      draftRef.current?.bpmn_xml_version ?? draftRef.current?.version ?? 0,
+      0,
+    );
+    const failureContext = {
+      saveAttemptKind: saveAttemptKindBySource(source),
+      activeBpmnSource: "diagram_modeler",
+      sourceReason: source,
+      sessionId: sid,
+      projectId: toText(draftRef.current?.project_id || draftRef.current?.projectId || ""),
+      requestBaseRev,
+      payloadHash: fallbackXml.trim() ? fnv1aHex(fallbackXml) : "",
+    };
     if (force && isSaveInProgress()) {
       if (fallbackXml.trim()) {
         syncXmlToSession(fallbackXml, { source: `${source}:pending_flush` });
@@ -225,7 +269,15 @@ export default function useBpmnSync({
         syncXmlToSession(fallbackXml, { source: `${source}:fallback_no_modeler` });
         return { ok: true, xml: fallbackXml };
       }
-      return { ok: false, error: "Modeler недоступен для сохранения BPMN.", xml: "" };
+      return buildSaveFailureResult(
+        {
+          error: "Modeler недоступен для сохранения BPMN.",
+          errorCode: "modeler_unavailable",
+          status: 0,
+          xml: "",
+        },
+        failureContext,
+      );
     }
     try {
       const saved = await Promise.resolve(saveLocal({ force, source }));
@@ -240,7 +292,10 @@ export default function useBpmnSync({
           syncXmlToSession(fallbackXml, { source: `${source}:fallback_on_error` });
           return { ok: true, xml: fallbackXml };
         }
-        return { ok: false, error: "Не удалось сохранить BPMN перед переключением вкладки.", xml: "" };
+        return buildSaveFailureResult(saved && typeof saved === "object" ? saved : {
+          error: "Не удалось сохранить BPMN перед переключением вкладки.",
+          xml: "",
+        }, failureContext);
       }
       let savedXml = saved && typeof saved === "object"
         ? toText(saved.xml)
@@ -261,7 +316,14 @@ export default function useBpmnSync({
           });
           return { ok: true, pending: true, xml: "" };
         }
-        return { ok: false, error: "Принудительное сохранение BPMN вернуло пустой XML.", xml: "" };
+        return buildSaveFailureResult(
+          {
+            error: "Принудительное сохранение BPMN вернуло пустой XML.",
+            errorCode: "empty_xml_after_force_save",
+            xml: "",
+          },
+          failureContext,
+        );
       }
       if (savedXml.trim()) {
         logBpmnTrace("FLUSH_SAVE_XML_SELECTED", savedXml, {
@@ -284,17 +346,35 @@ export default function useBpmnSync({
         syncXmlToSession(fallbackXml, { source: `${source}:fallback_catch` });
         return { ok: true, xml: fallbackXml };
       }
-      return {
-        ok: false,
-        error: String(error?.message || error || "Не удалось сохранить BPMN перед переключением вкладки."),
-        xml: "",
-      };
+      return buildSaveFailureResult(
+        {
+          error: String(error?.message || error || "Не удалось сохранить BPMN перед переключением вкладки."),
+          status: asNumber(error?.status || 0, 0),
+          errorCode: toText(error?.code || ""),
+          xml: "",
+        },
+        failureContext,
+      );
     }
-  }, [bpmnRef, syncXmlToSession, waitForRefMethod]);
+  }, [bpmnRef, isLocal, sid, syncXmlToSession, waitForRefMethod]);
 
   const saveFromXmlDraft = useCallback(async (options = {}) => {
     const force = options?.force === true;
     const source = String(options?.source || "manual_xml").trim() || "manual_xml";
+    const requestBaseRev = asNumber(
+      draftRef.current?.bpmn_xml_version ?? draftRef.current?.version ?? 0,
+      0,
+    );
+    const xmlFallback = toText(bpmnRef.current?.getXmlDraft?.() || draftRef.current?.bpmn_xml || "");
+    const failureContext = {
+      saveAttemptKind: saveAttemptKindBySource(source),
+      activeBpmnSource: "xml_draft",
+      sourceReason: source,
+      sessionId: sid,
+      projectId: toText(draftRef.current?.project_id || draftRef.current?.projectId || ""),
+      requestBaseRev,
+      payloadHash: xmlFallback.trim() ? fnv1aHex(xmlFallback) : "",
+    };
     const hasChanges = !!bpmnRef.current?.hasXmlDraftChanges?.();
     if (!hasChanges) {
       const raw = toText(bpmnRef.current?.getXmlDraft?.() || draftRef.current?.bpmn_xml || "");
@@ -311,14 +391,21 @@ export default function useBpmnSync({
         }
       }
       const errText = saved && typeof saved === "object" ? toText(saved.error) : "";
-      return { ok: false, error: errText || "Не удалось сохранить XML перед переключением вкладки.", xml: "" };
+      return buildSaveFailureResult(
+        {
+          ...(saved && typeof saved === "object" ? saved : {}),
+          error: errText || "Не удалось сохранить XML перед переключением вкладки.",
+          xml: "",
+        },
+        failureContext,
+      );
     }
     const savedXml = saved && typeof saved === "object"
       ? toText(saved.xml)
       : toText(draftRef.current?.bpmn_xml || "");
     syncXmlToSession(savedXml, { source });
     return { ok: true, xml: savedXml, pending: false };
-  }, [bpmnRef, syncXmlToSession]);
+  }, [bpmnRef, sid, syncXmlToSession]);
 
   const flushFromActiveTab = useCallback(
     async (activeTab, options = {}) => {
