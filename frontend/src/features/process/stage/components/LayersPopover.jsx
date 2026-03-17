@@ -16,6 +16,13 @@ import {
 import { readRuntimeTextState } from "../../drawio/drawioRuntimeText.js";
 import { readDrawioDocXmlCellGeometry } from "../../drawio/drawioDocXml.js";
 import { resolveSelectedObjectUxModel } from "../../drawio/drawioSelectedObjectUx.js";
+import {
+  describeDrawioAnchor,
+  formatDrawioAnchorStatusLabel,
+  isDrawioAnchorableRow,
+  readDrawioAnchorStatus,
+  resolveDefaultDrawioAnchorRelation,
+} from "../../drawio/drawioAnchors.js";
 
 function toText(value) {
   return String(value || "").trim();
@@ -83,6 +90,7 @@ function OverlayRowsSection({
   bpmnRef,
   hybridV2BindingByHybridId,
   setHybridV2ActiveId,
+  setDrawioSelectedElementId,
   goToHybridLayerItem,
   onDeleteOverlayEntity,
 }) {
@@ -108,9 +116,20 @@ function OverlayRowsSection({
                     {entityId} · {kindLabel(entityKind)}
                     {toText(row.subtitle) ? ` · ${toText(row.subtitle)}` : ""}
                   </span>
+                  {entityKind === OVERLAY_ENTITY_KINDS.DRAWIO && toText(row.anchorIssueText) ? (
+                    <span className="hybridLayerPopoverMeta">{toText(row.anchorIssueText)}</span>
+                  ) : null}
                 </div>
                 <div className="hybridLayerPopoverActions">
                   {row.missing ? <span className="diagramIssueChip">нет привязки</span> : null}
+                  {entityKind === OVERLAY_ENTITY_KINDS.DRAWIO && toText(row.anchorStatusLabel) ? (
+                    <span className="diagramIssueChip" data-testid={`diagram-action-layers-row-anchor-${entityId}`}>
+                      {toText(row.anchorStatusLabel)}
+                    </span>
+                  ) : null}
+                  {entityKind === OVERLAY_ENTITY_KINDS.DRAWIO && toText(row.anchorTargetId) ? (
+                    <span className="diagramIssueChip">{toText(row.anchorTargetId)}</span>
+                  ) : null}
                   <button
                     type="button"
                     className="secondaryBtn h-7 px-2 text-[11px]"
@@ -128,11 +147,15 @@ function OverlayRowsSection({
                         }
                         return;
                       }
+                      if (entityKind === OVERLAY_ENTITY_KINDS.DRAWIO) {
+                        setDrawioSelectedElementId?.(entityId);
+                        return;
+                      }
                     }}
-                    disabled={entityKind === OVERLAY_ENTITY_KINDS.DRAWIO}
+                    disabled={false}
                     data-testid="diagram-action-layers-go-to"
                   >
-                    Перейти
+                    {entityKind === OVERLAY_ENTITY_KINDS.DRAWIO ? "Выбрать" : "Перейти"}
                   </button>
                   <button
                     type="button"
@@ -217,6 +240,7 @@ export default function LayersPopover({
   onSetDrawioElementTextWidth,
   onSetDrawioElementStylePreset,
   onSetDrawioElementSize,
+  onSetDrawioElementAnchor,
   onImportEmbeddedDrawioClick,
   onExportEmbeddedDrawio,
   hybridV2DocLive,
@@ -241,9 +265,12 @@ export default function LayersPopover({
   hybridV2Renderable,
   setHybridV2ActiveId,
   drawioSelectedElementId,
+  setDrawioSelectedElementId,
+  drawioAnchorImportDiagnostics,
   overlayPanelModel,
   onDeleteOverlayEntity,
   bpmnRef,
+  selectedElementContext,
   goToHybridLayerItem,
   onHideSelectedHybridItems,
   onLockSelectedHybridItems,
@@ -304,7 +331,6 @@ export default function LayersPopover({
   const selectedHybridElement = asObject(
     asArray(hybridV2Renderable?.elements).find((rowRaw) => toText(asObject(rowRaw).id) === selectedHybridId),
   );
-  const selectedLayerId = toText(selectedHybridElement?.layer_id);
   const hiddenCount = Number(asObject(panelModel.hidden).count || hybridV2HiddenCount || 0);
   const drawioStatusLabel = toText(panelDrawio.statusLabel || panelStatus.label)
     || (drawioHasPreview ? "ON" : (drawioEnabled ? "ON · preview missing · hidden" : "OFF"));
@@ -319,11 +345,15 @@ export default function LayersPopover({
   const hybridFocusActive = panelHybridLegacy.focusActive === true;
   const canHideSelected = selectedIsDrawio ? !!selectedEntityId : selectedHybridCount > 0;
   const canLockSelected = selectedIsDrawio ? !!selectedEntityId : selectedHybridCount > 0;
-  const selectedDrawioRow = useMemo(() => (
-    selectedIsDrawio
-      ? asObject(asArray(drawioState?.drawio_elements_v1).find((rowRaw) => toText(asObject(rowRaw).id) === selectedEntityId))
-      : {}
-  ), [drawioState?.drawio_elements_v1, selectedEntityId, selectedIsDrawio]);
+  const selectedDrawioRow = useMemo(() => {
+    if (!selectedIsDrawio) return {};
+    const fromPanel = asObject(drawioRows.find((rowRaw) => toText(asObject(rowRaw).entityId || asObject(rowRaw).id) === selectedEntityId));
+    if (Object.keys(fromPanel).length) return fromPanel;
+    return asObject(asArray(drawioState?.drawio_elements_v1).find((rowRaw) => toText(asObject(rowRaw).id) === selectedEntityId));
+  }, [drawioRows, drawioState?.drawio_elements_v1, selectedEntityId, selectedIsDrawio]);
+  const selectedLayerId = selectedIsDrawio
+    ? toText(selectedDrawioRow.layer_id)
+    : toText(selectedHybridElement?.layer_id);
   const selectedDrawioText = useMemo(() => {
     if (!selectedIsDrawio || !selectedEntityId) return null;
     return readDrawioTextElementContent(drawioState?.svg_cache, selectedEntityId);
@@ -388,6 +418,27 @@ export default function LayersPopover({
     && !drawioLocked
     && selectedDrawioRow.visible !== false
     && selectedDrawioRow.locked !== true;
+  const selectedDrawioAnchorStatus = selectedIsDrawio ? readDrawioAnchorStatus(selectedDrawioRow) : "unanchored";
+  const selectedDrawioAnchorEligible = selectedIsDrawio && isDrawioAnchorableRow(selectedDrawioRow);
+  const selectedDrawioAnchorTargetId = toText(asObject(selectedDrawioRow.anchor_v1).target_id || selectedDrawioRow.anchorTargetId);
+  const selectedDrawioAnchorRelation = toText(asObject(selectedDrawioRow.anchor_v1).relation || selectedDrawioRow.anchorRelation)
+    || resolveDefaultDrawioAnchorRelation(selectedDrawioRow);
+  const selectedDrawioAnchorStatusLabel = formatDrawioAnchorStatusLabel(selectedDrawioAnchorStatus);
+  const selectedDrawioAnchorInfo = describeDrawioAnchor(selectedDrawioRow, {
+    validationDeferred: drawioState?._anchor_validation_deferred === true,
+  });
+  const drawioAnchorSummary = asObject(panelDrawio.anchorSummary);
+  const importDiagnostics = asObject(drawioAnchorImportDiagnostics);
+  const [showImportAffectedOnly, setShowImportAffectedOnly] = useState(false);
+  const affectedAnchorIds = useMemo(
+    () => new Set(asArray(importDiagnostics.affectedObjectIds).map((id) => toText(id)).filter(Boolean)),
+    [importDiagnostics.affectedObjectIds],
+  );
+  const filteredDrawioRows = useMemo(() => (
+    showImportAffectedOnly
+      ? drawioRows.filter((row) => affectedAnchorIds.has(toText(asObject(row).entityId || asObject(row).id)))
+      : drawioRows
+  ), [affectedAnchorIds, drawioRows, showImportAffectedOnly]);
   const [selectedDrawioTextDraft, setSelectedDrawioTextDraft] = useState(selectedDrawioText || "");
   const [selectedDrawioTextWidthDraft, setSelectedDrawioTextWidthDraft] = useState(selectedDrawioTextState?.width ? String(selectedDrawioTextState.width) : "");
   const [selectedDrawioWidthDraft, setSelectedDrawioWidthDraft] = useState(selectedDrawioSize?.width ? String(selectedDrawioSize.width) : "");
@@ -401,7 +452,11 @@ export default function LayersPopover({
     selectedDrawioStyleSurface,
     selectedDrawioStylePresetCount: selectedDrawioStylePresets.length,
     selectedDrawioResizeSurface,
+    anchorEligible: selectedDrawioAnchorEligible,
+    anchorStatus: selectedDrawioAnchorStatus,
   }), [
+    selectedDrawioAnchorEligible,
+    selectedDrawioAnchorStatus,
     selectedDrawioResizeSurface,
     selectedDrawioStylePresets.length,
     selectedDrawioStyleSurface,
@@ -424,6 +479,11 @@ export default function LayersPopover({
     setSelectedDrawioWidthDraft(selectedDrawioSize?.width ? String(selectedDrawioSize.width) : "");
     setSelectedDrawioHeightDraft(selectedDrawioSize?.height ? String(selectedDrawioSize.height) : "");
   }, [selectedDrawioSize?.height, selectedDrawioSize?.width, selectedEntityId]);
+
+  useEffect(() => {
+    if (asArray(importDiagnostics.affectedObjectIds).length > 0) return;
+    if (showImportAffectedOnly) setShowImportAffectedOnly(false);
+  }, [importDiagnostics.affectedObjectIds, showImportAffectedOnly]);
 
   const applySelectedDrawioText = () => {
     if (!selectedDrawioTextActionEnabled || !selectedEntityId) return;
@@ -457,6 +517,15 @@ export default function LayersPopover({
       "layers_selected_drawio_resize_apply",
     );
   };
+  const canApplyDrawioAnchor = selectedIsDrawio
+    && selectedDrawioAnchorEligible
+    && !!selectedEntityId
+    && !!toText(selectedElementContext?.id)
+    && drawioEnabled
+    && drawioMode === "edit"
+    && !drawioLocked
+    && selectedDrawioRow.visible !== false
+    && selectedDrawioRow.locked !== true;
 
   if (!open) return null;
 
@@ -543,6 +612,52 @@ export default function LayersPopover({
               {drawioStatusLabel} · {drawioModeLabel} · {drawioRows.length} эл.
             </span>
           </div>
+          <div className="diagramIssueRow items-start">
+            <span>Anchors</span>
+            <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+              <span className="diagramIssueChip">anchored {Number(drawioAnchorSummary.anchored || 0)}</span>
+              <span className="diagramIssueChip">freeform {Number(drawioAnchorSummary.unanchored || 0)}</span>
+              <span className="diagramIssueChip">orphaned {Number(drawioAnchorSummary.orphaned || 0)}</span>
+              <span className="diagramIssueChip">invalid {Number(drawioAnchorSummary.invalid || 0)}</span>
+            </div>
+          </div>
+          {Object.keys(importDiagnostics).length ? (
+            <div className="diagramIssueRow items-start">
+              <span>Last BPMN import</span>
+              <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+                <span className="diagramIssueChip">
+                  {importDiagnostics.validationDeferred
+                    ? "anchor diagnostics pending"
+                    : (importDiagnostics.importHasAnchorImpact ? "anchors affected" : "no anchor impact")}
+                </span>
+                <span className="diagramIssueChip">before {Number(importDiagnostics.totalAnchoredBefore || 0)}</span>
+                <span className="diagramIssueChip">after {Number(importDiagnostics.totalAnchoredAfter || 0)}</span>
+                <span className="diagramIssueChip">orphaned {Number(importDiagnostics.orphanedCountAfterImport || 0)}</span>
+                <span className="diagramIssueChip">invalid {Number(importDiagnostics.invalidCountAfterImport || 0)}</span>
+              </div>
+            </div>
+          ) : null}
+          {importDiagnostics.importHasAnchorImpact ? (
+            <div className="diagramIssueRow">
+              <span>Review</span>
+              <div className="diagramActionPopoverActions mt-0">
+                <button
+                  type="button"
+                  className={`secondaryBtn h-7 px-2 text-[11px] ${showImportAffectedOnly ? "ring-1 ring-accent/60" : ""}`}
+                  onClick={() => setShowImportAffectedOnly((prev) => !prev)}
+                  data-testid="diagram-action-layers-import-affected-toggle"
+                >
+                  {showImportAffectedOnly ? "Показать все overlay" : "Показать affected anchors"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {drawioState?._anchor_validation_deferred === true ? (
+            <div className="diagramIssueRow">
+              <span>Anchor check</span>
+              <span className="diagramIssueChip">ожидает BPMN hydrate</span>
+            </div>
+          ) : null}
           {!drawioOpacityControlEnabled ? (
             <div className="diagramIssueRow">
               <span>Opacity</span>
@@ -552,12 +667,13 @@ export default function LayersPopover({
         </div>
 
         <OverlayRowsSection
-          title={`Draw.io elements (${drawioRows.length})`}
-          rows={drawioRows}
+          title={`Draw.io elements (${filteredDrawioRows.length}${showImportAffectedOnly ? ` / affected from ${drawioRows.length}` : ""})`}
+          rows={filteredDrawioRows}
           emptyText="Нет draw.io элементов."
           bpmnRef={bpmnRef}
           hybridV2BindingByHybridId={hybridV2BindingByHybridId}
           setHybridV2ActiveId={setHybridV2ActiveId}
+          setDrawioSelectedElementId={setDrawioSelectedElementId}
           goToHybridLayerItem={goToHybridLayerItem}
           onDeleteOverlayEntity={onDeleteOverlayEntity}
         />
@@ -920,6 +1036,105 @@ export default function LayersPopover({
             </div>
           </div>
           <div className="diagramActionPopoverEmpty">{selectedObjectUx.summary}</div>
+          {selectedIsDrawio && selectedObjectUx.showAnchorSection ? (
+            <SelectedObjectGroup
+              title="Anchor"
+              hint="explicit BPMN node id"
+              testId="diagram-action-layers-selected-group-anchor"
+            >
+              <div className="diagramIssueRow">
+                <span>Статус</span>
+                <div className="diagramActionPopoverActions mt-0">
+                  <span className="diagramIssueChip" data-testid="diagram-action-layers-selected-anchor-status">
+                    {selectedDrawioAnchorStatusLabel}
+                  </span>
+                  {selectedDrawioAnchorRelation ? (
+                    <span className="diagramIssueChip" data-testid="diagram-action-layers-selected-anchor-relation">
+                      {selectedDrawioAnchorRelation}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              <div className="diagramIssueRow items-start">
+                <span>Цель BPMN</span>
+                <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+                  <span className="diagramIssueChip" data-testid="diagram-action-layers-selected-anchor-target">
+                    {selectedDrawioAnchorTargetId || toText(selectedElementContext?.id) || "не задан"}
+                  </span>
+                  {selectedElementContext?.id ? (
+                    <span className="diagramIssueChip" data-testid="diagram-action-layers-selected-anchor-selected-bpmn">
+                      selected: {toText(selectedElementContext.id)}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              <div className="diagramIssueRow items-start">
+                <span>Состояние</span>
+                <div className="min-w-0 flex-1 text-[11px] text-slate-600">
+                  {toText(selectedDrawioAnchorInfo.issueText) || "—"}
+                </div>
+              </div>
+              <div className="diagramIssueRow items-start">
+                <span>Дальше</span>
+                <div className="min-w-0 flex-1 text-[11px] text-slate-600">
+                  {toText(selectedDrawioAnchorInfo.recoveryText) || "—"}
+                </div>
+              </div>
+              <div className="diagramActionPopoverActions mt-0">
+                <button
+                  type="button"
+                  className="secondaryBtn h-7 px-2 text-[11px]"
+                  onClick={() => {
+                    if (!canApplyDrawioAnchor) return;
+                    onSetDrawioElementAnchor?.(
+                      selectedEntityId,
+                      {
+                        target_kind: "bpmn_node",
+                        target_id: toText(selectedElementContext?.id),
+                        relation: resolveDefaultDrawioAnchorRelation(selectedDrawioRow),
+                        status: "anchored",
+                        bound_at: new Date().toISOString(),
+                      },
+                      "layers_selected_drawio_anchor_apply",
+                    );
+                  }}
+                  disabled={!canApplyDrawioAnchor}
+                  data-testid="diagram-action-layers-selected-anchor-apply"
+                >
+                  Привязать к выбранному BPMN
+                </button>
+                <button
+                  type="button"
+                  className="secondaryBtn h-7 px-2 text-[11px]"
+                  onClick={() => {
+                    if (!selectedEntityId) return;
+                    onSetDrawioElementAnchor?.(selectedEntityId, null, "layers_selected_drawio_anchor_clear");
+                  }}
+                  disabled={!selectedEntityId || selectedDrawioAnchorStatus === "unanchored"}
+                  data-testid="diagram-action-layers-selected-anchor-clear"
+                >
+                  Сделать freeform
+                </button>
+                <button
+                  type="button"
+                  className="secondaryBtn h-7 px-2 text-[11px]"
+                  onClick={() => {
+                    if (!selectedDrawioAnchorInfo.canJump) return;
+                    bpmnRef?.current?.focusNode?.(selectedDrawioAnchorTargetId, { keepPrevious: false, durationMs: 1200 });
+                  }}
+                  disabled={!selectedDrawioAnchorInfo.canJump}
+                  data-testid="diagram-action-layers-selected-anchor-focus"
+                >
+                  Показать BPMN target
+                </button>
+              </div>
+              {!selectedDrawioAnchorInfo.canJump && selectedDrawioAnchorStatus === "anchored" ? (
+                <div className="diagramActionPopoverEmpty" data-testid="diagram-action-layers-selected-anchor-deferred-note">
+                  Jump станет доступен после завершения проверки target в текущем BPMN.
+                </div>
+              ) : null}
+            </SelectedObjectGroup>
+          ) : null}
           {selectedIsDrawio && selectedObjectUx.showTextSection ? (
             <SelectedObjectGroup
               title="Текст"

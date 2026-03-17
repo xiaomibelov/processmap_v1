@@ -1,4 +1,7 @@
-import { createEmptyCamundaExtensionState } from "./camundaExtensions.js";
+import {
+  createEmptyCamundaExtensionState,
+  extractCamundaInputOutputParametersFromExtensionState,
+} from "./camundaExtensions.js";
 
 function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -27,6 +30,13 @@ function normalizeBool(value, fallback = true) {
 
 function normalizeInputMode(value) {
   return asText(value) === "free_text" ? "free_text" : "autocomplete";
+}
+
+function clampInlineText(value, limit = 96) {
+  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  if (text.length <= limit) return text;
+  return `${text.slice(0, Math.max(12, limit - 1)).trimEnd()}…`;
 }
 
 function rawExtensionPropertyRows(stateRaw) {
@@ -319,6 +329,30 @@ export function buildPropertiesOverlayPreview({
 
   const model = buildPropertyDictionaryEditorModel({ extensionStateRaw, dictionaryBundleRaw });
   const rows = [];
+  const ioRows = extractCamundaInputOutputParametersFromExtensionState(extensionStateRaw);
+  asArray(ioRows.rows).forEach((row) => {
+    const name = String(row?.name ?? "").trim();
+    if (!name) return;
+    const direction = String(row?.direction || "input").toLowerCase() === "output" ? "OUT" : "IN";
+    const shape = String(row?.shape || "text");
+    const rawValue = String(row?.value ?? "");
+    let previewValue = "";
+    if (shape === "script") {
+      const scriptFormat = String(row?.scriptFormat || "script").trim();
+      const scriptText = clampInlineText(rawValue, 72);
+      previewValue = scriptText ? `${scriptFormat}: ${scriptText}` : `${scriptFormat}: script`;
+    } else if (shape === "nested") {
+      previewValue = clampInlineText(rawValue, 72) || "[nested]";
+    } else {
+      previewValue = clampInlineText(rawValue, 72);
+    }
+    if (!previewValue) return;
+    rows.push({
+      key: `${direction}:${name}`,
+      label: `${direction} ${name}`,
+      value: previewValue,
+    });
+  });
   if (model.hasSchema) {
     asArray(model.schemaRows).forEach((row) => {
       const value = String(row?.value ?? "");

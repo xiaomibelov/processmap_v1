@@ -14,6 +14,7 @@ export default function ScenarioNav({
   sortMode = "bpmn",
   onSortMode,
   sections,
+  tierCounts = {},
   collapsedGroups,
   onToggleGroup,
   selectedScenarioId,
@@ -21,7 +22,6 @@ export default function ScenarioNav({
   scenarioTitle,
   scenarioStatusClass,
   scenarioStatusLabel,
-  scenarioStatusIcon,
   scenarioDurationLabel,
   scenarioMetrics = {},
 }) {
@@ -34,16 +34,21 @@ export default function ScenarioNav({
 
       <div className="interviewScenarioNavControls">
         <div className="interviewScenarioTabs" role="group" aria-label="Фильтр сценариев по tier">
-          {tiers.map((tier) => (
-            <button
-              key={tier}
-              type="button"
-              className={`secondaryBtn tinyBtn ${selectedTier === tier ? "isActive" : ""}`}
-              onClick={() => onSelectTier?.(tier)}
-            >
-              {tier}
-            </button>
-          ))}
+          {tiers.map((tier) => {
+            const count = Math.max(0, Number(tierCounts?.[tier] || 0));
+            return (
+              <button
+                key={tier}
+                type="button"
+                className={`secondaryBtn tinyBtn interviewScenarioTabBtn ${selectedTier === tier ? "isActive" : ""}`}
+                onClick={() => onSelectTier?.(tier)}
+                title={`${tier}: ${count}`}
+              >
+                <span className="interviewScenarioTabLabel">{tier}</span>
+                <span className="interviewScenarioTabCount">{count}</span>
+              </button>
+            );
+          })}
         </div>
 
         <input
@@ -60,9 +65,9 @@ export default function ScenarioNav({
           onChange={(event) => onSortMode?.(event.target.value)}
           aria-label="Сортировка сценариев"
         >
-          <option value="bpmn">Сортировка: BPMN</option>
-          <option value="time">Сортировка: по времени</option>
-          <option value="errors">Сортировка: по ошибкам</option>
+          <option value="bpmn">По BPMN</option>
+          <option value="time">По времени</option>
+          <option value="errors">По отклонениям</option>
         </select>
       </div>
 
@@ -78,7 +83,10 @@ export default function ScenarioNav({
                 className="interviewPathsScenarioSectionToggle"
                 onClick={() => onToggleGroup?.(key)}
               >
-                <span>{toText(section?.title)} <span className="muted">({items.length})</span></span>
+                <span className="interviewPathsScenarioSectionTitleWrap">
+                  <span>{toText(section?.title)}</span>
+                  <span className="interviewPathsScenarioSectionCount">{items.length}</span>
+                </span>
                 <span className="muted small">{isCollapsed ? "▶" : "▼"}</span>
               </button>
 
@@ -95,12 +103,13 @@ export default function ScenarioNav({
                     data-testid={`paths-scenario-item-${scenarioId}`}
                     className={`interviewPathsScenarioRailItem ${isActive ? "isActive" : ""}`}
                     onClick={() => onSelectScenario?.(scenarioId)}
+                    aria-current={isActive ? "true" : undefined}
                   >
                     <div className="interviewPathsScenarioRailMain">
                       <span className="interviewScenarioName">
                         <span className={`interviewScenarioDot ${toText(scenarioStatusClass?.(scenario))}`} aria-hidden="true" />
-                        <span title={toText(scenarioTitle?.(scenario))}>
-                          {scenarioStatusIcon?.(scenario)} {scenarioTitle?.(scenario)}
+                        <span className="interviewScenarioTitleText" title={toText(scenarioTitle?.(scenario))}>
+                          {scenarioTitle?.(scenario)}
                         </span>
                       </span>
                       <span
@@ -112,7 +121,9 @@ export default function ScenarioNav({
                       </span>
                     </div>
                     <div className="interviewPathsScenarioRailMeta muted small" data-testid={`paths-scenario-meta-${scenarioId}`}>
-                      steps {stepsCount} · time {timeLabel}
+                      <span className="interviewScenarioMetaItem">шаги {stepsCount}</span>
+                      <span className="interviewScenarioMetaItem">время {timeLabel}</span>
+                      {isActive ? <span className="interviewScenarioMetaItem isCurrent">текущий</span> : null}
                     </div>
                   </button>
                 );

@@ -144,27 +144,35 @@ export default function BoundariesBlock({
         <div>
           <div className="interviewBlockTitle">A. Границы процесса</div>
           <div className="interviewBoundsSubTitle">
-            Определите старт, промежуточные роли и финиш процесса
+            START · INTERMEDIATE · FINISH
           </div>
         </div>
-        <div className="interviewBlockTools">
-          <span className={`badge ${boundariesComplete ? "ok" : "warn"}`}>
-            {boundariesComplete ? "Границы заполнены" : "Не заполнено"}
-          </span>
+        <div className="interviewBlockTools interviewBoundsActions">
           <button
             type="button"
-            className="primaryBtn smallBtn"
+            className="primaryBtn smallBtn interviewBoundsAction interviewBoundsAction--primary"
             onClick={handleSaveBoundaries}
             title={uiPrefsSavedAt ? `Сохранено: ${new Date(uiPrefsSavedAt).toLocaleTimeString()}` : ""}
           >
             {uiPrefsDirty ? "Сохранить границы*" : "Сохранить границы"}
           </button>
-          <button type="button" className="secondaryBtn smallBtn" onClick={handleResetBoundaries}>
+          <button
+            type="button"
+            className="secondaryBtn smallBtn interviewBoundsAction interviewBoundsAction--secondary"
+            onClick={handleResetBoundaries}
+          >
             Сбросить
           </button>
-          <button type="button" className="secondaryBtn smallBtn interviewCollapseBtn" onClick={() => toggleBlock("boundaries")}>
+          <button
+            type="button"
+            className="secondaryBtn smallBtn interviewBoundsAction interviewBoundsAction--tertiary interviewCollapseBtn"
+            onClick={() => toggleBlock("boundaries")}
+          >
             {collapsed ? "Показать" : "Скрыть"}
           </button>
+          <span className={`badge interviewBoundsStatusBadge ${boundariesComplete ? "ok" : "warn"}`}>
+            {boundariesComplete ? "Границы заполнены" : "Не заполнено"}
+          </span>
         </div>
       </div>
 

@@ -560,6 +560,11 @@
   background: hsl(var(--diagram-badge-bg) / 0.9);
 }
 
+/* Keep property overlays non-interactive so they never block shape drag/select hit area. */
+.bpmnCanvas .djs-overlay.djs-overlay-fpc-properties {
+  pointer-events: none !important;
+}
+
 .fpcNodeFlashPill {
   pointer-events: none;
   min-height: 16px;

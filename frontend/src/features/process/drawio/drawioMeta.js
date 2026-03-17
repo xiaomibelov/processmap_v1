@@ -1,4 +1,5 @@
 import { extractDrawioElementIdsFromSvg } from "./drawioSvg.js";
+import { normalizeDrawioAnchor } from "./drawioAnchors.js";
 
 function asObject(value) {
   return value && typeof value === "object" ? value : {};
@@ -93,6 +94,9 @@ function normalizeDrawioLayersAndElements(valueRaw, svgCacheRaw) {
       offset_y: clampNumber(row.offset_y ?? row.offsetY, 0),
       z_index: Math.max(0, Math.round(clampNumber(row.z_index, idx, 0))),
       ...(toText(row.text || row.label) ? { text: toText(row.text || row.label) } : {}),
+      ...(normalizeDrawioAnchor(row.anchor_v1 || row.anchorV1, row) ? {
+        anchor_v1: normalizeDrawioAnchor(row.anchor_v1 || row.anchorV1, row),
+      } : {}),
     });
   });
   const shouldBootstrapElementsFromSvg = elementsMap.size === 0;
@@ -125,7 +129,7 @@ export function normalizeDrawioMeta(valueRaw) {
   const svgCache = toText(value.svg_cache || value.svgCache);
   const interactionMode = normalizeDrawioInteractionMode(value.interaction_mode || value.mode);
   const normalizedLayers = normalizeDrawioLayersAndElements(value, svgCache);
-  return {
+  const out = {
     enabled: value.enabled === true,
     interaction_mode: interactionMode,
     active_tool: normalizeDrawioActiveTool(value.active_tool || value.activeTool),
@@ -145,17 +149,70 @@ export function normalizeDrawioMeta(valueRaw) {
     drawio_elements_v1: normalizedLayers.drawio_elements_v1,
     active_layer_id: normalizedLayers.active_layer_id,
   };
+  const lifecycleCode = toText(value._lifecycle_code || value.lifecycle_code);
+  const lifecycleError = toText(value._lifecycle_error || value.lifecycle_error);
+  if (lifecycleCode) out._lifecycle_code = lifecycleCode;
+  if (lifecycleError) out._lifecycle_error = lifecycleError;
+  return out;
 }
 
-function hasDrawioPayload(valueRaw) {
+export function hasDrawioPayload(valueRaw) {
   const meta = normalizeDrawioMeta(valueRaw);
   return !!(meta.doc_xml || meta.svg_cache || meta.enabled || asArray(meta.drawio_elements_v1).length);
 }
 
-export function mergeDrawioMeta(primaryRaw, fallbackRaw = {}) {
-  const primary = normalizeDrawioMeta(primaryRaw);
+export function readDrawioLifecycleIssue(valueRaw) {
+  const meta = normalizeDrawioMeta(valueRaw);
+  const code = toText(meta._lifecycle_code);
+  const error = toText(meta._lifecycle_error);
+  if (!code && !error) return null;
+  return {
+    code: code || "lifecycle_issue",
+    error,
+  };
+}
+
+export function buildDrawioJazzSnapshot(valueRaw) {
+  const meta = normalizeDrawioMeta(valueRaw);
+  const out = {
+    enabled: meta.enabled === true,
+    locked: meta.locked === true,
+    opacity: clampNumber(meta.opacity, 1, 0.05, 1),
+    last_saved_at: toText(meta.last_saved_at),
+    doc_xml: isDrawioXml(meta.doc_xml) ? toText(meta.doc_xml) : "",
+    svg_cache: toText(meta.svg_cache),
+    page: {
+      index: Math.max(0, Math.round(clampNumber(asObject(meta.page).index, 0, 0))),
+    },
+    transform: {
+      x: clampNumber(asObject(meta.transform).x, 0),
+      y: clampNumber(asObject(meta.transform).y, 0),
+    },
+    drawio_layers_v1: asArray(meta.drawio_layers_v1),
+    drawio_elements_v1: asArray(meta.drawio_elements_v1),
+    active_layer_id: toText(meta.active_layer_id),
+  };
+  const lifecycle = readDrawioLifecycleIssue(meta);
+  if (lifecycle?.code) out._lifecycle_code = lifecycle.code;
+  if (lifecycle?.error) out._lifecycle_error = lifecycle.error;
+  return normalizeDrawioMeta(out);
+}
+
+function toMillis(isoRaw) {
+  const value = Date.parse(toText(isoRaw));
+  return Number.isFinite(value) ? value : 0;
+}
+
+export function resolvePreferredDrawioSnapshot(primaryRaw, fallbackRaw = {}) {
+  const primary = buildDrawioJazzSnapshot(primaryRaw);
   const fallback = normalizeDrawioMeta(fallbackRaw);
-  if (!hasDrawioPayload(primary) && hasDrawioPayload(fallback)) {
+  const primaryLifecycle = readDrawioLifecycleIssue(primary);
+  if (primaryLifecycle && hasDrawioPayload(fallback)) {
+    return fallback;
+  }
+  const primaryHasPayload = hasDrawioPayload(primary);
+  const fallbackHasPayload = hasDrawioPayload(fallback);
+  if (!primaryHasPayload && fallbackHasPayload) {
     return {
       ...fallback,
       enabled: primary.enabled || fallback.enabled,
@@ -163,7 +220,16 @@ export function mergeDrawioMeta(primaryRaw, fallbackRaw = {}) {
       opacity: primary.opacity || fallback.opacity,
     };
   }
+  if (primaryHasPayload && fallbackHasPayload) {
+    const primaryTs = toMillis(primary.last_saved_at);
+    const fallbackTs = toMillis(fallback.last_saved_at);
+    if (fallbackTs > primaryTs) return fallback;
+  }
   return primary;
+}
+
+export function mergeDrawioMeta(primaryRaw, fallbackRaw = {}) {
+  return resolvePreferredDrawioSnapshot(primaryRaw, fallbackRaw);
 }
 
 export function serializeDrawioMeta(valueRaw) {

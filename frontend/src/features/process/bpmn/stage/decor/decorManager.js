@@ -1194,7 +1194,7 @@ export function applyPropertiesOverlayDecor(ctx) {
 
       const anchorLeft = Number.isFinite(shapeWidth) && shapeWidth > 0 ? Math.round(shapeWidth / 2) : 68;
       const topOffset = -14;
-      const overlayId = overlays.add(resolvedElementId, {
+      const overlayId = overlays.add(resolvedElementId, "fpc-properties", {
         position: { top: topOffset, left: anchorLeft },
         html: container,
         scale: false,

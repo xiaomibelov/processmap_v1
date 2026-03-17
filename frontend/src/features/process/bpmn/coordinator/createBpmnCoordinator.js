@@ -157,7 +157,15 @@ export default function createBpmnCoordinator(options = {}) {
 
   async function doFlush(reason = "manual", options = {}) {
     const sid = currentSid();
-    if (!sid || !store) return { ok: false, rev: 0, error: "missing session" };
+    if (!sid || !store) {
+      return {
+        ok: false,
+        rev: 0,
+        status: 0,
+        errorCode: "missing_session",
+        error: "missing session",
+      };
+    }
     const state = store.getState();
     const runtime = getRuntime();
     const status = runtime?.getStatus?.() || {};
@@ -237,7 +245,13 @@ export default function createBpmnCoordinator(options = {}) {
         });
         return { ok: true, pending: true, rev };
       }
-      return { ok: false, rev, error: asText(xmlRes?.error || xmlRes?.reason || "getXml failed") };
+      return {
+        ok: false,
+        rev,
+        status: asNumber(xmlRes?.status, 0),
+        errorCode: asText(xmlRes?.reason || "runtime_get_xml_failed"),
+        error: asText(xmlRes?.error || xmlRes?.reason || "getXml failed"),
+      };
     }
 
     const xml = asText(xmlRes?.xml);
@@ -259,14 +273,21 @@ export default function createBpmnCoordinator(options = {}) {
     const startedAt = Date.now();
     const persisted = await persistRaw(sid, xml, targetRev, reason);
     if (!persisted?.ok) {
+      const status = asNumber(persisted?.status, 0);
       emit("SAVE_PERSIST_FAIL", {
         sid,
         reason,
         rev: targetRev,
-        status: asNumber(persisted?.status, 0),
+        status,
         error: asText(persisted?.error || "persist failed"),
       });
-      return { ok: false, rev: targetRev, error: asText(persisted?.error || "persist failed") };
+      return {
+        ok: false,
+        rev: targetRev,
+        status,
+        errorCode: asText(persisted?.errorCode || (status > 0 ? `http_${status}` : "persist_failed")),
+        error: asText(persisted?.error || "persist failed"),
+      };
     }
     const storedRev = asNumber(persisted?.storedRev, targetRev);
     const xmlHash = asText(persisted?.hash || fnv1aHex(xml));
@@ -282,7 +303,7 @@ export default function createBpmnCoordinator(options = {}) {
       status: asNumber(persisted?.status, 200),
       ms: Date.now() - startedAt,
     });
-    return { ok: true, rev: storedRev };
+    return { ok: true, rev: storedRev, storedRev };
   }
 
   function scheduleSave(reason = "autosave") {
@@ -384,7 +405,7 @@ export default function createBpmnCoordinator(options = {}) {
     const localXml = asText(state?.xml || "");
     const localRev = asNumber(state?.rev, 0);
     const localHash = asText(state?.lastHash || state?.hash || fnv1aHex(localXml));
-    const preferStore = optionsForReload?.preferStore !== false;
+    const preferStore = optionsForReload?.preferStore === true;
 
     if (preferStore && localXml.trim()) {
       emit("LOAD_SKIPPED_STORE_PRIORITY", {
@@ -427,6 +448,7 @@ export default function createBpmnCoordinator(options = {}) {
     const loadedRev = asNumber(loaded?.rev, 0);
     const loadedHash = asText(loaded?.hash || fnv1aHex(loadedXml));
     const source = asText(loaded?.source || "persistence");
+    const sourceReason = asText(loaded?.sourceReason || "");
 
     if (loadedRev > 0 && loadedRev < localRev) {
       emit("LOAD_SKIPPED_OLDER_REV", {
@@ -477,6 +499,7 @@ export default function createBpmnCoordinator(options = {}) {
     emit("LOAD_APPLIED", {
       sid,
       source,
+      source_reason: sourceReason,
       loaded_rev: loadedRev,
       local_rev: appliedRev,
       hash: loadedHash,
@@ -486,6 +509,7 @@ export default function createBpmnCoordinator(options = {}) {
       ok: true,
       applied: true,
       source,
+      sourceReason,
       xml: loadedXml,
       rev: appliedRev,
       loadedRev: markRev,

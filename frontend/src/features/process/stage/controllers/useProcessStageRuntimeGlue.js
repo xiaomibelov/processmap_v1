@@ -315,6 +315,18 @@ export default function useProcessStageRuntimeGlue({
     setDiagramActionOverflowOpen(false);
   }
 
+  function openDocFromDiagram() {
+    setDiagramActionPathOpen(false);
+    setDiagramActionHybridToolsOpen(false);
+    setDiagramActionPlanOpen(false);
+    setDiagramActionPlaybackOpen(false);
+    setDiagramActionRobotMetaOpen(false);
+    setRobotMetaListOpen(false);
+    setDiagramActionQualityOpen(false);
+    setDiagramActionOverflowOpen(false);
+    setTab("doc");
+  }
+
   const buildExecutionPlanNow = useCallback(async (options = {}) => {
     const suppressError = options?.suppressError === true;
     if (!suppressError) setExecutionPlanError("");
@@ -573,6 +585,7 @@ export default function useProcessStageRuntimeGlue({
     openSelectedElementNotes,
     openSelectedElementAi,
     openReportsFromDiagram,
+    openDocFromDiagram,
     buildExecutionPlanNow,
     copyExecutionPlanFromDiagram,
     downloadExecutionPlanFromDiagram,

@@ -5,6 +5,7 @@ import useOverlayMutationGateway from "../../overlay/controllers/useOverlayMutat
 import buildOverlayPanelModel from "../../overlay/models/buildOverlayPanelModel";
 import useDrawioEditorBridge from "../../drawio/controllers/useDrawioEditorBridge";
 import { normalizeDrawioInteractionMode } from "../../drawio/drawioMeta.js";
+import { applyDrawioAnchorValidation, readDrawioAnchorValidationState } from "../../drawio/drawioAnchors.js";
 import {
   buildDrawioVisibilitySelectionContract,
   shouldClearDrawioSelectionByContract,
@@ -46,10 +47,21 @@ export default function useDiagramRuntimeBridges({
     setDrawioRuntimeToolState(incoming);
   }, [overlay.drawioUiState?.active_tool]);
 
-  const drawioStateForRuntime = useMemo(() => ({
-    ...(overlay.drawioUiState && typeof overlay.drawioUiState === "object" ? overlay.drawioUiState : {}),
-    active_tool: drawioRuntimeToolState,
-  }), [drawioRuntimeToolState, overlay.drawioUiState]);
+  const drawioStateForRuntime = useMemo(() => {
+    const validation = readDrawioAnchorValidationState(runtimeGlueConfig.draft);
+    const base = {
+      ...(overlay.drawioUiState && typeof overlay.drawioUiState === "object" ? overlay.drawioUiState : {}),
+      active_tool: drawioRuntimeToolState,
+    };
+    const validated = applyDrawioAnchorValidation(base, validation.ids, validation.ready);
+    if (validation.ready !== true) {
+      return {
+        ...validated,
+        _anchor_validation_deferred: true,
+      };
+    }
+    return validated;
+  }, [drawioRuntimeToolState, overlay.drawioUiState, runtimeGlueConfig.draft]);
 
   const overlayPersistBoundary = useOverlayPersistBoundary({
     drawioMetaRef: overlay.drawioMetaRef,
@@ -250,5 +262,6 @@ export default function useDiagramRuntimeBridges({
     setDrawioElementTextWidth,
     setDrawioElementStylePreset,
     setDrawioElementSize,
+    setDrawioElementAnchor: overlayMutationGateway.setDrawioElementAnchor,
   };
 }

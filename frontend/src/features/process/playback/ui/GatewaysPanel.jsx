@@ -13,18 +13,27 @@ function toText(value) {
 export default function GatewaysPanel({
   gateways = [],
   choices = {},
+  choiceSource = "manual_local_choices",
+  readOnly = false,
   activeGatewayId = "",
   onChangeChoice,
+  showTitle = true,
 }) {
   const rows = asArray(gateways);
   const selectedMap = asObject(choices);
   return (
-    <aside className="diagramIssueListWrap" data-testid="gateways-panel">
-      <div className="muted mb-1 text-[11px]">Gateways</div>
+    <aside className="playbackGatewaysPanel" data-testid="gateways-panel">
+      {showTitle ? <div className="playbackPanelTitle">Решения gateway</div> : null}
+      <div className="playbackGatewayRowMeta" data-testid="gateways-panel-source">
+        <span>source</span>
+        <span className="diagramIssueChip">
+          {toText(choiceSource) || "manual_local_choices"}
+        </span>
+      </div>
       {!rows.length ? (
-        <div className="diagramActionPopoverEmpty text-[11px]">Нет gateway в текущем graph.</div>
+        <div className="diagramActionPopoverEmpty text-[11px]">В текущем графе нет gateway.</div>
       ) : (
-        <div className="diagramIssueList">
+        <div className="playbackGatewayList">
           {rows.map((gatewayRaw) => {
             const gateway = asObject(gatewayRaw);
             const gatewayId = toText(gateway?.gateway_id);
@@ -35,18 +44,25 @@ export default function GatewaysPanel({
             return (
               <div
                 key={`gateway_panel_${gatewayId}`}
-                className={`rounded-md border px-2 py-1.5 ${isActive ? "border-accent/70 bg-accentSoft" : "border-border bg-panel2/40"}`}
+                className={`playbackGatewayRow ${isActive ? "isActive" : ""}`}
                 data-testid={`gateway-item-${gatewayId}`}
               >
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  <span className="truncate text-[11px] font-semibold" title={gatewayName}>{gatewayName}</span>
+                <div className="playbackGatewayRowHead">
+                  <span className="truncate text-[11px] font-semibold" title={gatewayName}>
+                    {gatewayName}
+                  </span>
                   {isActive ? (
-                    <span className="diagramIssueChip" data-testid={`gateway-active-${gatewayId}`}>active</span>
+                    <span className="diagramIssueChip" data-testid={`gateway-active-${gatewayId}`}>текущий</span>
                   ) : null}
                 </div>
+                <div className="playbackGatewayRowMeta">
+                  <span>{gatewayId}</span>
+                  <span>{options.length} исход.</span>
+                </div>
                 <select
-                  className="select h-7 min-h-0 w-full text-[11px]"
+                  className="select h-8 min-h-0 w-full text-[11px]"
                   value={selectedValue}
+                  disabled={readOnly === true}
                   onChange={(event) => onChangeChoice?.(gatewayId, event.target.value)}
                   data-testid={`gateway-select-${gatewayId}`}
                 >

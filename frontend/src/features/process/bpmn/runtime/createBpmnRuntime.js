@@ -26,6 +26,62 @@ function getE2EImportDelayMs() {
   return Math.min(Math.round(raw), 5000);
 }
 
+function asElement(value) {
+  return value && typeof value === "object" && typeof value.querySelectorAll === "function" ? value : null;
+}
+
+function collectBjsContainers(containerRaw) {
+  const container = asElement(containerRaw);
+  if (!container) return [];
+  try {
+    return Array.from(container.querySelectorAll(":scope > .bjs-container"));
+  } catch {
+    return [];
+  }
+}
+
+function resolveActiveBjsContainer(instance) {
+  if (!instance || typeof instance.get !== "function") return null;
+  try {
+    const canvas = instance.get("canvas");
+    const canvasContainer = canvas?._container;
+    if (!canvasContainer || typeof canvasContainer.closest !== "function") return null;
+    return canvasContainer.closest(".bjs-container");
+  } catch {
+    return null;
+  }
+}
+
+function pruneDuplicateBjsContainers(containerRaw, preferredRaw = null) {
+  const container = asElement(containerRaw);
+  if (!container) return;
+  const containers = collectBjsContainers(container);
+  if (containers.length <= 1) return;
+  const preferred = preferredRaw && containers.includes(preferredRaw)
+    ? preferredRaw
+    : containers[containers.length - 1];
+  containers.forEach((entry) => {
+    if (entry === preferred) return;
+    try {
+      entry.remove();
+    } catch {
+      // no-op
+    }
+  });
+}
+
+function clearBjsContainers(containerRaw) {
+  const container = asElement(containerRaw);
+  if (!container) return;
+  collectBjsContainers(container).forEach((entry) => {
+    try {
+      entry.remove();
+    } catch {
+      // no-op
+    }
+  });
+}
+
 export default function createBpmnRuntime(options = {}) {
   const trace = typeof options?.trace === "function" ? options.trace : null;
   let mode = asMode(options?.mode);
@@ -152,6 +208,7 @@ export default function createBpmnRuntime(options = {}) {
     }
     mode = nextMode;
     if (instance && containerEl === container && !destroyed) {
+      pruneDuplicateBjsContainers(container, resolveActiveBjsContainer(instance));
       return instance;
     }
     if (instance && containerEl !== container) {
@@ -160,6 +217,7 @@ export default function createBpmnRuntime(options = {}) {
     if (initPromise) return initPromise;
     destroyed = false;
     initPromise = (async () => {
+      clearBjsContainers(container);
       const RuntimeCtor = await importCtor(mode);
       const ctorOptions = resolveCtorOptions(mode);
       const next = new RuntimeCtor({ container, ...ctorOptions });
@@ -374,6 +432,7 @@ export default function createBpmnRuntime(options = {}) {
   }
 
   function destroy() {
+    const prevContainer = containerEl;
     destroyed = true;
     activeToken += 1;
     ready = false;
@@ -395,6 +454,7 @@ export default function createBpmnRuntime(options = {}) {
     instance = null;
     containerEl = null;
     initPromise = null;
+    clearBjsContainers(prevContainer);
   }
 
   return {

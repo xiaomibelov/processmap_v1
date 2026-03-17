@@ -2,6 +2,7 @@ export const CAMUNDA_NAMESPACE_URI = "http://camunda.org/schema/1.0/bpmn";
 export const ZEEBE_NAMESPACE_URI = "http://camunda.org/schema/zeebe/1.0";
 export const BPMN_NAMESPACE_URI = "http://www.omg.org/spec/BPMN/20100524/MODEL";
 export const PM_NAMESPACE_URI = "http://foodproc.ai/schema/pm";
+const XMLNS_NAMESPACE_URI = "http://www.w3.org/2000/xmlns/";
 export const CAMUNDA_LISTENER_TYPES = Object.freeze(["class", "expression", "delegateExpression"]);
 export const CAMUNDA_LISTENER_EVENTS = Object.freeze(["start", "end"]);
 
@@ -64,6 +65,19 @@ function serializeXmlNode(node) {
   }
 }
 
+function serializeXmlChildren(node) {
+  if (!node || typeof XMLSerializer === "undefined") return "";
+  try {
+    const serializer = new XMLSerializer();
+    return asArray(node.childNodes)
+      .map((child) => String(serializer.serializeToString(child) || ""))
+      .join("")
+      .trim();
+  } catch {
+    return "";
+  }
+}
+
 function parseXmlDocument(xmlText) {
   if (typeof DOMParser === "undefined") return null;
   try {
@@ -75,6 +89,68 @@ function parseXmlDocument(xmlText) {
   } catch {
     return null;
   }
+}
+
+function parseExtensionFragmentNode(rawXml) {
+  const text = String(rawXml || "").trim();
+  if (!text) return null;
+  const wrapped = `<root xmlns:bpmn="${BPMN_NAMESPACE_URI}" xmlns:camunda="${CAMUNDA_NAMESPACE_URI}" xmlns:zeebe="${ZEEBE_NAMESPACE_URI}" xmlns:pm="${PM_NAMESPACE_URI}">${text}</root>`;
+  const doc = parseXmlDocument(wrapped);
+  if (!doc) return null;
+  return doc.documentElement?.firstElementChild || null;
+}
+
+function pruneWhitespaceOnlyTextNodes(node) {
+  if (!node) return;
+  const children = asArray(node.childNodes);
+  children.forEach((child) => {
+    if (child?.nodeType === 3) {
+      if (!asText(child.nodeValue)) {
+        try {
+          node.removeChild(child);
+        } catch {
+        }
+      }
+      return;
+    }
+    if (child?.nodeType === 1) {
+      pruneWhitespaceOnlyTextNodes(child);
+    }
+  });
+}
+
+function canonicalizeExtensionFragmentSignature(rawXml) {
+  const raw = String(rawXml || "").trim();
+  if (!raw) return "";
+  const parsed = parseExtensionFragmentNode(raw);
+  pruneWhitespaceOnlyTextNodes(parsed);
+  const canonical = serializeXmlNode(parsed);
+  return String(canonical || raw).trim();
+}
+
+function normalizePreservedExtensionElements(rawItems) {
+  const seenSignatures = new Set();
+  return asArray(rawItems)
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .filter((item) => {
+      const signature = canonicalizeExtensionFragmentSignature(item) || item;
+      if (seenSignatures.has(signature)) return false;
+      seenSignatures.add(signature);
+      return true;
+    });
+}
+
+function connectorKeyForExtensionFragment(rawXml) {
+  const parsed = parseExtensionFragmentNode(rawXml);
+  if (!parsed) return "";
+  if (namespaceOf(parsed) !== CAMUNDA_NAMESPACE_URI || localNameOf(parsed) !== "connector") return "";
+  const connectorIdNode = asArray(parsed.getElementsByTagName("*")).find((node) => (
+    namespaceOf(node) === CAMUNDA_NAMESPACE_URI && localNameOf(node) === "connectorId"
+  ));
+  const connectorId = asText(connectorIdNode?.textContent).toLowerCase();
+  if (!connectorId) return "";
+  return `camunda:connector:${connectorId}`;
 }
 
 function importFragmentNode(targetDoc, rawXml) {
@@ -167,9 +243,7 @@ export function normalizeCamundaExtensionState(rawValue) {
   const extensionListeners = asArray(rawProperties.extensionListeners)
     .map((item) => normalizeExtensionListener(item))
     .filter(Boolean);
-  const preservedExtensionElements = asArray(raw.preservedExtensionElements)
-    .map((item) => String(item || "").trim())
-    .filter(Boolean);
+  const preservedExtensionElements = normalizePreservedExtensionElements(raw.preservedExtensionElements);
   if (!extensionProperties.length && !extensionListeners.length && !preservedExtensionElements.length) {
     return createEmptyCamundaExtensionState();
   }
@@ -199,6 +273,375 @@ export function normalizeCamundaExtensionsMap(rawMap) {
     out[elementId] = normalized;
   });
   return out;
+}
+
+function classifyCamundaIoParameter(paramNode) {
+  const children = directChildElements(paramNode);
+  if (!children.length) {
+    const text = String(paramNode?.textContent || "").trim();
+    if (!text) return { shape: "empty", value: "" };
+    if (/^\$\{[\s\S]*\}$/.test(text)) return { shape: "expression", value: text };
+    return { shape: "text", value: text };
+  }
+  const first = children[0];
+  if (
+    children.length === 1
+    && namespaceOf(first) === CAMUNDA_NAMESPACE_URI
+    && localNameOf(first) === "script"
+  ) {
+    return {
+      shape: "script",
+      value: String(first?.textContent || ""),
+      scriptFormat: asText(first?.getAttribute?.("scriptFormat")),
+    };
+  }
+  return {
+    shape: "nested",
+    value: serializeXmlChildren(paramNode),
+  };
+}
+
+const CAMUNDA_IO_OVERLAY_ATTR_CANDIDATES = Object.freeze([
+  "pm:showOnTask",
+  "pm:show_on_task",
+  "showOnTask",
+  "show_on_task",
+]);
+
+function collectCamundaInputOutputNodes(rootNode) {
+  const ioNodes = [];
+  const seenNodes = new Set();
+  function pushIoNode(node) {
+    if (!node) return;
+    if (namespaceOf(node) !== CAMUNDA_NAMESPACE_URI) return;
+    if (localNameOf(node) !== "inputOutput") return;
+    if (seenNodes.has(node)) return;
+    seenNodes.add(node);
+    ioNodes.push(node);
+  }
+  if (
+    rootNode
+    && namespaceOf(rootNode) === CAMUNDA_NAMESPACE_URI
+    && localNameOf(rootNode) === "inputOutput"
+  ) {
+    pushIoNode(rootNode);
+  }
+  asArray(rootNode?.getElementsByTagName?.("*")).forEach((node) => {
+    pushIoNode(node);
+  });
+  return ioNodes;
+}
+
+function collectCamundaParameterNodes(ioNode, direction = "input") {
+  const local = direction === "output" ? "outputParameter" : "inputParameter";
+  return directChildElements(ioNode).filter((node) => (
+    namespaceOf(node) === CAMUNDA_NAMESPACE_URI && localNameOf(node) === local
+  ));
+}
+
+function normalizeIoParameterName(value) {
+  return String(value ?? "");
+}
+
+function normalizeBoolLike(value, fallback = false) {
+  if (typeof value === "boolean") return value;
+  if (value === null || value === undefined) return !!fallback;
+  const text = asText(value).toLowerCase();
+  if (!text) return !!fallback;
+  if (text === "false" || text === "0" || text === "no" || text === "off") return false;
+  if (text === "true" || text === "1" || text === "yes" || text === "on") return true;
+  return !!fallback;
+}
+
+function readCamundaIoShowOnTask(paramNode) {
+  const namespaced = paramNode?.getAttributeNS?.(PM_NAMESPACE_URI, "showOnTask");
+  if (namespaced !== null && namespaced !== undefined && asText(namespaced)) {
+    return normalizeBoolLike(namespaced, false);
+  }
+  for (let i = 0; i < CAMUNDA_IO_OVERLAY_ATTR_CANDIDATES.length; i += 1) {
+    const attrName = CAMUNDA_IO_OVERLAY_ATTR_CANDIDATES[i];
+    const attrValue = paramNode?.getAttribute?.(attrName);
+    if (attrValue === null || attrValue === undefined || !asText(attrValue)) continue;
+    return normalizeBoolLike(attrValue, false);
+  }
+  return false;
+}
+
+function setCamundaIoShowOnTask(paramNode, rootNode, nextValueRaw) {
+  if (!paramNode) return;
+  const nextValue = normalizeBoolLike(nextValueRaw, false);
+  if (!nextValue) {
+    try {
+      paramNode.removeAttributeNS(PM_NAMESPACE_URI, "showOnTask");
+    } catch {
+    }
+    CAMUNDA_IO_OVERLAY_ATTR_CANDIDATES.forEach((attrName) => {
+      try {
+        paramNode.removeAttribute(attrName);
+      } catch {
+      }
+    });
+    return;
+  }
+  if (rootNode && typeof rootNode.setAttributeNS === "function") {
+    const hasPmPrefix = asText(rootNode.getAttribute?.("xmlns:pm")) === PM_NAMESPACE_URI;
+    if (!hasPmPrefix) {
+      try {
+        rootNode.setAttributeNS(XMLNS_NAMESPACE_URI, "xmlns:pm", PM_NAMESPACE_URI);
+      } catch {
+      }
+    }
+  }
+  try {
+    paramNode.setAttributeNS(PM_NAMESPACE_URI, "pm:showOnTask", "true");
+  } catch {
+    paramNode.setAttribute("showOnTask", "true");
+  }
+}
+
+function resolveCamundaIoParameterNode(stateRaw, parameterRefRaw) {
+  const state = normalizeCamundaExtensionState(stateRaw);
+  const ref = parameterRefRaw && typeof parameterRefRaw === "object" ? parameterRefRaw : {};
+  const direction = String(ref.direction || "input").toLowerCase() === "output" ? "output" : "input";
+  const fragmentIndex = Number(ref.fragmentIndex);
+  const ioIndex = Number(ref.ioIndex);
+  const paramIndex = Number(ref.paramIndex);
+  if (!Number.isInteger(fragmentIndex) || fragmentIndex < 0) return { ok: false, state };
+  if (!Number.isInteger(ioIndex) || ioIndex < 0) return { ok: false, state };
+  if (!Number.isInteger(paramIndex) || paramIndex < 0) return { ok: false, state };
+  const preserved = state.preservedExtensionElements.slice();
+  const rawFragment = preserved[fragmentIndex];
+  if (!rawFragment) return { ok: false, state };
+  const rootNode = parseExtensionFragmentNode(rawFragment);
+  if (!rootNode) return { ok: false, state };
+  const ioNodes = collectCamundaInputOutputNodes(rootNode);
+  const ioNode = ioNodes[ioIndex];
+  if (!ioNode) return { ok: false, state };
+  const parameterNodes = collectCamundaParameterNodes(ioNode, direction);
+  const paramNode = parameterNodes[paramIndex];
+  if (!paramNode) return { ok: false, state };
+  return {
+    ok: true,
+    state,
+    direction,
+    fragmentIndex,
+    preserved,
+    rootNode,
+    ioNode,
+    paramNode,
+  };
+}
+
+function commitCamundaIoMutation(state, preserved, fragmentIndex, rootNode) {
+  const nextFragment = serializeXmlNode(rootNode);
+  if (!nextFragment) return state;
+  preserved[fragmentIndex] = nextFragment;
+  return normalizeCamundaExtensionState({
+    ...state,
+    preservedExtensionElements: preserved,
+  });
+}
+
+function findFirstCamundaIoTarget(preservedRaw) {
+  const preserved = Array.isArray(preservedRaw) ? preservedRaw : [];
+  for (let fragmentIndex = 0; fragmentIndex < preserved.length; fragmentIndex += 1) {
+    const rawFragment = preserved[fragmentIndex];
+    if (!rawFragment) continue;
+    const rootNode = parseExtensionFragmentNode(rawFragment);
+    if (!rootNode) continue;
+    const ioNodes = collectCamundaInputOutputNodes(rootNode);
+    if (!ioNodes.length) continue;
+    return {
+      ok: true,
+      fragmentIndex,
+      rootNode,
+      ioNode: ioNodes[0],
+    };
+  }
+
+  const rawStandaloneFragment = `<camunda:inputOutput xmlns:camunda="${CAMUNDA_NAMESPACE_URI}" xmlns:pm="${PM_NAMESPACE_URI}"></camunda:inputOutput>`;
+  const rootNode = parseExtensionFragmentNode(rawStandaloneFragment);
+  if (!rootNode) return { ok: false };
+  const nextFragmentIndex = preserved.length;
+  preserved.push(rawStandaloneFragment);
+  return {
+    ok: true,
+    fragmentIndex: nextFragmentIndex,
+    rootNode,
+    ioNode: rootNode,
+  };
+}
+
+function insertCamundaIoParameterNode(ioNode, paramNode, direction = "input") {
+  if (!ioNode || !paramNode) return;
+  if (direction === "input") {
+    const firstOutputNode = collectCamundaParameterNodes(ioNode, "output")[0] || null;
+    if (firstOutputNode) {
+      ioNode.insertBefore(paramNode, firstOutputNode);
+      return;
+    }
+  }
+  ioNode.appendChild(paramNode);
+}
+
+export function extractCamundaInputOutputParametersFromExtensionState(extensionStateRaw) {
+  const state = normalizeCamundaExtensionState(extensionStateRaw);
+  const rows = [];
+  state.preservedExtensionElements.forEach((rawXml, fragmentIndex) => {
+    const rootNode = parseExtensionFragmentNode(rawXml);
+    if (!rootNode) return;
+    const sourceType = localNameOf(rootNode) || "extension";
+    const connectorIdNode = asArray(rootNode.getElementsByTagName("*")).find((node) => (
+      namespaceOf(node) === CAMUNDA_NAMESPACE_URI && localNameOf(node) === "connectorId"
+    ));
+    const connectorId = asText(connectorIdNode?.textContent);
+    const ioNodes = collectCamundaInputOutputNodes(rootNode);
+    ioNodes.forEach((ioNode, ioIndex) => {
+      const inputs = collectCamundaParameterNodes(ioNode, "input");
+      const outputs = collectCamundaParameterNodes(ioNode, "output");
+      inputs.forEach((paramNode, paramIndex) => {
+        const parsed = classifyCamundaIoParameter(paramNode);
+        rows.push({
+          id: `io_${fragmentIndex}_${ioIndex}_in_${paramIndex}`,
+          direction: "input",
+          name: normalizeIoParameterName(paramNode?.getAttribute?.("name")),
+          shape: parsed.shape,
+          value: String(parsed.value ?? ""),
+          scriptFormat: String(parsed.scriptFormat || ""),
+          showOnTask: readCamundaIoShowOnTask(paramNode),
+          fragmentIndex,
+          ioIndex,
+          paramIndex,
+          sourceType,
+          connectorId,
+        });
+      });
+      outputs.forEach((paramNode, paramIndex) => {
+        const parsed = classifyCamundaIoParameter(paramNode);
+        rows.push({
+          id: `io_${fragmentIndex}_${ioIndex}_out_${paramIndex}`,
+          direction: "output",
+          name: normalizeIoParameterName(paramNode?.getAttribute?.("name")),
+          shape: parsed.shape,
+          value: String(parsed.value ?? ""),
+          scriptFormat: String(parsed.scriptFormat || ""),
+          showOnTask: readCamundaIoShowOnTask(paramNode),
+          fragmentIndex,
+          ioIndex,
+          paramIndex,
+          sourceType,
+          connectorId,
+        });
+      });
+    });
+  });
+
+  return {
+    rows,
+    inputRows: rows.filter((row) => row.direction === "input"),
+    outputRows: rows.filter((row) => row.direction === "output"),
+  };
+}
+
+export function patchCamundaIoParameterInExtensionState({
+  extensionStateRaw,
+  parameterRef,
+  patch,
+} = {}) {
+  const resolved = resolveCamundaIoParameterNode(extensionStateRaw, parameterRef);
+  if (!resolved.ok) return resolved.state;
+  const nextPatch = patch && typeof patch === "object" ? patch : {};
+  const {
+    state,
+    preserved,
+    fragmentIndex,
+    rootNode,
+    paramNode,
+  } = resolved;
+
+  if (Object.prototype.hasOwnProperty.call(nextPatch, "name")) {
+    paramNode.setAttribute("name", normalizeIoParameterName(nextPatch.name));
+  }
+  if (Object.prototype.hasOwnProperty.call(nextPatch, "value")) {
+    const currentShape = String(classifyCamundaIoParameter(paramNode)?.shape || "");
+    const canPatchValue = currentShape !== "script" && currentShape !== "nested";
+    if (canPatchValue || nextPatch.forceValue === true) {
+      while (paramNode.firstChild) paramNode.removeChild(paramNode.firstChild);
+      const textValue = String(nextPatch.value ?? "");
+      if (textValue) {
+        const ownerDoc = paramNode.ownerDocument;
+        paramNode.appendChild(ownerDoc.createTextNode(textValue));
+      }
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(nextPatch, "showOnTask")) {
+    setCamundaIoShowOnTask(paramNode, rootNode, !!nextPatch.showOnTask);
+  }
+
+  return commitCamundaIoMutation(state, preserved, fragmentIndex, rootNode);
+}
+
+export function patchCamundaInputParameterInExtensionState({
+  extensionStateRaw,
+  parameterRef,
+  patch,
+} = {}) {
+  const ref = parameterRef && typeof parameterRef === "object" ? parameterRef : {};
+  const direction = String(ref.direction || "input").toLowerCase();
+  if (direction !== "input") {
+    return normalizeCamundaExtensionState(extensionStateRaw);
+  }
+  return patchCamundaIoParameterInExtensionState({
+    extensionStateRaw,
+    parameterRef,
+    patch,
+  });
+}
+
+export function addCamundaIoParameterInExtensionState({
+  extensionStateRaw,
+  direction = "input",
+  draft = {},
+} = {}) {
+  const state = normalizeCamundaExtensionState(extensionStateRaw);
+  const normalizedDirection = String(direction || "input").toLowerCase() === "output" ? "output" : "input";
+  const preserved = state.preservedExtensionElements.slice();
+  const target = findFirstCamundaIoTarget(preserved);
+  if (!target.ok || !target.rootNode || !target.ioNode) return state;
+
+  const localName = normalizedDirection === "output" ? "outputParameter" : "inputParameter";
+  const ownerDoc = target.ioNode.ownerDocument;
+  if (!ownerDoc || typeof ownerDoc.createElementNS !== "function") return state;
+  const paramNode = ownerDoc.createElementNS(CAMUNDA_NAMESPACE_URI, `camunda:${localName}`);
+  paramNode.setAttribute("name", normalizeIoParameterName(draft?.name));
+  const value = String(draft?.value ?? "");
+  if (value) {
+    paramNode.appendChild(ownerDoc.createTextNode(value));
+  }
+  setCamundaIoShowOnTask(paramNode, target.rootNode, !!draft?.showOnTask);
+  insertCamundaIoParameterNode(target.ioNode, paramNode, normalizedDirection);
+  return commitCamundaIoMutation(state, preserved, target.fragmentIndex, target.rootNode);
+}
+
+export function removeCamundaIoParameterFromExtensionState({
+  extensionStateRaw,
+  parameterRef,
+} = {}) {
+  const resolved = resolveCamundaIoParameterNode(extensionStateRaw, parameterRef);
+  if (!resolved.ok) return resolved.state;
+  const {
+    state,
+    preserved,
+    fragmentIndex,
+    rootNode,
+    paramNode,
+  } = resolved;
+  try {
+    paramNode.parentNode?.removeChild?.(paramNode);
+  } catch {
+    return state;
+  }
+  return commitCamundaIoMutation(state, preserved, fragmentIndex, rootNode);
 }
 
 function hasManagedCamundaData(entryRaw) {
@@ -433,10 +876,17 @@ export function hydrateCamundaExtensionsFromBpmn({ extractedMap, sessionMetaMap 
       addedListeners += 1;
     });
 
+    const preservedSignatures = new Set(
+      nextPreserved
+        .map((item) => canonicalizeExtensionFragmentSignature(item) || String(item || "").trim())
+        .filter(Boolean),
+    );
     extractedEntry.preservedExtensionElements.forEach((rawXml) => {
       const text = String(rawXml || "").trim();
       if (!text) return;
-      if (nextPreserved.includes(text)) return;
+      const signature = canonicalizeExtensionFragmentSignature(text) || text;
+      if (preservedSignatures.has(signature)) return;
+      preservedSignatures.add(signature);
       nextPreserved.push(text);
       addedPreserved += 1;
     });
@@ -658,11 +1108,21 @@ export function finalizeCamundaExtensionsXml({ xmlText, camundaExtensionsByEleme
       })
       .map((child) => serializeXmlNode(child))
       .filter(Boolean);
-    const seenRaw = new Set();
-    const mergedRaw = [...preservedRaw, ...currentExtraRaw].filter((item) => {
-      const signature = String(item || "");
-      if (!signature || seenRaw.has(signature)) return false;
-      seenRaw.add(signature);
+    const preservedConnectorKeys = new Set(
+      preservedRaw
+        .map((item) => connectorKeyForExtensionFragment(item))
+        .filter(Boolean),
+    );
+    const seenSignatures = new Set();
+    const mergedRaw = [...preservedRaw, ...currentExtraRaw].filter((item, index) => {
+      const isCurrentExtra = index >= preservedRaw.length;
+      if (isCurrentExtra) {
+        const connectorKey = connectorKeyForExtensionFragment(item);
+        if (connectorKey && preservedConnectorKeys.has(connectorKey)) return false;
+      }
+      const signature = canonicalizeExtensionFragmentSignature(item);
+      if (!signature || seenSignatures.has(signature)) return false;
+      seenSignatures.add(signature);
       return true;
     });
     const managedNodes = buildManagedCamundaDomNodes(doc, state);

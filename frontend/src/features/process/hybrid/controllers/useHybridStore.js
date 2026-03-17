@@ -7,9 +7,16 @@ import {
   saveHybridUiPrefs,
 } from "../hybridLayerUi.js";
 import { docToComparableJson, normalizeHybridV2Doc } from "../hybridLayerV2.js";
-import { normalizeDrawioMeta, serializeDrawioMeta } from "../../drawio/drawioMeta.js";
+import { normalizeDrawioMeta, resolvePreferredDrawioSnapshot, serializeDrawioMeta } from "../../drawio/drawioMeta.js";
 import { buildDrawioVisibilitySelectionContract } from "../../drawio/domain/drawioVisibilitySelectionContract.js";
 import useDrawioPersistHydrateBoundary from "../../drawio/runtime/useDrawioPersistHydrateBoundary";
+import { createDrawioJazzSpikeAdapter } from "../../drawio/drawioJazzSpikeAdapter.js";
+import {
+  buildDrawioJazzScopeId,
+  getDrawioJazzPeer,
+  getDrawioLocalFirstAdapterMode,
+  isDrawioLocalFirstPilotEnabled,
+} from "../../drawio/drawioLocalFirstPilot.js";
 import {
   hasKnownHybridV2Session,
   markKnownHybridV2Session,
@@ -27,6 +34,7 @@ function asObject(value) {
 
 export default function useHybridStore({
   sid,
+  projectId,
   draftBpmnMeta,
   userId,
 }) {
@@ -48,6 +56,7 @@ export default function useHybridStore({
   const [hybridV2BindPickMode, setHybridV2BindPickMode] = useState(false);
   const [drawioMeta, setDrawioMeta] = useState(() => normalizeDrawioMeta({}));
   const [drawioEditorOpen, setDrawioEditorOpen] = useState(false);
+  const [drawioJazzMeta, setDrawioJazzMeta] = useState(() => normalizeDrawioMeta({}));
 
   const hybridLayerMapFromDraft = useMemo(
     () => normalizeHybridLayerMap(asObject(asObject(draftBpmnMeta).hybrid_layer_by_element_id)),
@@ -57,10 +66,32 @@ export default function useHybridStore({
     () => normalizeHybridV2Doc(asObject(asObject(draftBpmnMeta).hybrid_v2)),
     [draftBpmnMeta],
   );
-  const drawioFromDraft = useMemo(
+  const legacyDrawioFromDraft = useMemo(
     () => normalizeDrawioMeta(asObject(asObject(draftBpmnMeta).drawio)),
     [draftBpmnMeta],
   );
+  const drawioLocalFirstAdapterMode = useMemo(() => {
+    if (!isDrawioLocalFirstPilotEnabled()) return "legacy";
+    return getDrawioLocalFirstAdapterMode();
+  }, [sid]);
+  const drawioJazzPeer = useMemo(() => (
+    drawioLocalFirstAdapterMode === "jazz" ? getDrawioJazzPeer() : ""
+  ), [drawioLocalFirstAdapterMode]);
+  const drawioJazzScopeId = useMemo(
+    () => buildDrawioJazzScopeId(projectId, sid),
+    [projectId, sid],
+  );
+  const drawioJazzAdapter = useMemo(() => {
+    if (drawioLocalFirstAdapterMode !== "jazz" || !drawioJazzScopeId) return null;
+    return createDrawioJazzSpikeAdapter({
+      peer: drawioJazzPeer,
+      scopeId: drawioJazzScopeId,
+    });
+  }, [drawioJazzPeer, drawioJazzScopeId, drawioLocalFirstAdapterMode]);
+  const drawioFromDraft = useMemo(() => {
+    if (drawioLocalFirstAdapterMode !== "jazz") return legacyDrawioFromDraft;
+    return resolvePreferredDrawioSnapshot(drawioJazzMeta, legacyDrawioFromDraft);
+  }, [drawioJazzMeta, drawioLocalFirstAdapterMode, legacyDrawioFromDraft]);
   const hybridStorageKey = useMemo(() => getHybridUiStorageKey(toText(userId)), [userId]);
 
   const hybridVisible = !!hybridUiPrefs.visible || !!hybridPeekActive;
@@ -88,8 +119,23 @@ export default function useHybridStore({
     setDrawioMeta(emptyDrawio);
     drawioMetaRef.current = emptyDrawio;
     drawioPersistedMetaRef.current = emptyDrawio;
+    setDrawioJazzMeta(emptyDrawio);
     setDrawioEditorOpen(false);
   }, [sid]);
+
+  useEffect(() => {
+    if (!drawioJazzAdapter) {
+      setDrawioJazzMeta(normalizeDrawioMeta({}));
+      return undefined;
+    }
+    setDrawioJazzMeta(normalizeDrawioMeta(drawioJazzAdapter.readSharedSnapshot()));
+    const off = drawioJazzAdapter.subscribe((nextSnapshot) => {
+      setDrawioJazzMeta(normalizeDrawioMeta(nextSnapshot));
+    });
+    return () => {
+      off?.();
+    };
+  }, [drawioJazzAdapter]);
 
   useEffect(() => {
     const incoming = normalizeHybridLayerMap(hybridLayerMapFromDraft);
@@ -217,5 +263,10 @@ export default function useHybridStore({
     hybridModeEffective,
     hybridOpacityValue,
     hasKnownV2Session,
+    drawioJazzAdapter,
+    drawioJazzMeta,
+    drawioJazzScopeId,
+    drawioLocalFirstAdapterMode,
+    legacyDrawioFromDraft,
   };
 }

@@ -70,6 +70,19 @@ function getInitialTierFilter(tierFilters) {
   return selected.length === 1 ? selected[0] : "ALL";
 }
 
+function normalizePathSource(pathSourceRaw) {
+  const source = toText(pathSourceRaw).toLowerCase();
+  if (source === "node_path_meta" || source === "flow_tier") return source;
+  return "unknown";
+}
+
+function pathSourcePillLabel(pathSourceRaw) {
+  const source = normalizePathSource(pathSourceRaw);
+  if (source === "node_path_meta") return "стабильная модель · node_path_meta";
+  if (source === "flow_tier") return "устаревший источник · flow_tier";
+  return `источник · ${source}`;
+}
+
 function sortScenarios(listRaw) {
   return [...toArray(listRaw)].sort((a, b) => {
     const ao = rankClassOrder(a?.rank_class);
@@ -87,10 +100,6 @@ function scenarioContainsNodeId(scenario, nodeIdRaw) {
   const nodeId = toText(nodeIdRaw);
   if (!nodeId) return false;
   return toArray(scenario?.sequence).some((step) => toText(step?.node_id) === nodeId);
-}
-
-function scenarioOutcomeIcon(scenario) {
-  return toText(scenario?.outcome).toLowerCase() === "fail" ? "⛔" : "✅";
 }
 
 function resolveScenarioPathId(scenarioRaw) {
@@ -328,11 +337,11 @@ function buildScenarioPresentation(scenariosRaw) {
   function scenarioDisplayTitle(scenario) {
     const id = toText(scenario?.id);
     const bucket = scenarioBucket(scenario);
-    if (bucket === "P0_IDEAL") return "P0 Ideal";
-    if (bucket === "P0_ALT") return `P0 Alt #${Number(altIndexById[id] || 1)}`;
-    if (bucket === "P1_MITIGATED") return `P1 Mitigated #${Number(mitigatedIndexById[id] || 1)}`;
-    if (bucket === "P2_FAIL") return `P2 Fail #${Number(failIndexById[id] || 1)}`;
-    return toText(scenario?.label || scenario?.id || "Scenario");
+    if (bucket === "P0_IDEAL") return "P0 Идеальный";
+    if (bucket === "P0_ALT") return `P0 Альт #${Number(altIndexById[id] || 1)}`;
+    if (bucket === "P1_MITIGATED") return `P1 Смягчённый #${Number(mitigatedIndexById[id] || 1)}`;
+    if (bucket === "P2_FAIL") return `P2 Ошибка #${Number(failIndexById[id] || 1)}`;
+    return toText(scenario?.label || scenario?.id || "Сценарий");
   }
 
   return {
@@ -605,6 +614,12 @@ function parseMinutesToNullableSeconds(valueRaw) {
   return Math.round(minutes * 60);
 }
 
+function formatDurationShort(secondsRaw) {
+  const seconds = Number(secondsRaw || 0);
+  if (!Number.isFinite(seconds) || seconds <= 0) return "—";
+  return formatHHMMFromSeconds(seconds);
+}
+
 function isAbortLikeError(error) {
   if (!error) return false;
   const name = String(error?.name || "").toLowerCase();
@@ -726,9 +741,9 @@ const StepDurationEditor = memo(function StepDurationEditor({
           type="number"
           min="0"
           step="0.5"
-          placeholder={isWork ? "Work" : "Wait"}
-          aria-label={isWork ? "Work (мин)" : "Wait (мин)"}
-          title={isWork ? "Work (активная работа), минуты" : "Wait (ожидание), минуты"}
+          placeholder={isWork ? "Работа" : "Ожид."}
+          aria-label={isWork ? "Работа (мин)" : "Ожидание (мин)"}
+          title={isWork ? "Работа (активное действие), минуты" : "Ожидание (очередь/таймер), минуты"}
           value={inputValue}
           onChange={(e) => {
             const value = e.target.value;
@@ -761,12 +776,12 @@ const StepDurationEditor = memo(function StepDurationEditor({
           aria-haspopup="menu"
           aria-expanded={presetsOpen}
         >
-          {variant === "detailed" ? "Presets" : "+"}
+          {variant === "detailed" ? "Пресеты" : "+"}
         </button>
         {presetsOpen ? (
           <div className="interviewPathsPresetPopover" role="menu">
             <div className="interviewPathsPresetGroup">
-              <div className="interviewPathsPresetTitle">Work</div>
+              <div className="interviewPathsPresetTitle">Работа</div>
               <div className="interviewPathsPresetButtons">
                 {presets.map((preset) => (
                   <button
@@ -781,7 +796,7 @@ const StepDurationEditor = memo(function StepDurationEditor({
               </div>
             </div>
             <div className="interviewPathsPresetGroup">
-              <div className="interviewPathsPresetTitle">Wait</div>
+              <div className="interviewPathsPresetTitle">Ожидание</div>
               <div className="interviewPathsPresetButtons">
                 {presets.map((preset) => (
                   <button
@@ -824,11 +839,11 @@ const StepDurationEditor = memo(function StepDurationEditor({
       onKeyDown={(e) => e.stopPropagation()}
     >
       <label className="interviewPathsTimeField">
-        <span title="Работа = активное действие">Work, мин</span>
+        <span title="Работа = активное действие">Работа, мин</span>
         {renderMinutesInput("work")}
       </label>
       <label className="interviewPathsTimeField">
-        <span title="Ожидание = очередь/таймер/ожидание устройства/курьера">Wait, мин</span>
+        <span title="Ожидание = очередь/таймер/ожидание устройства/курьера">Ожидание, мин</span>
         {renderMinutesInput("wait")}
       </label>
       {renderPresets()}
@@ -865,7 +880,7 @@ const ReportApiErrorNotice = memo(function ReportApiErrorNotice({
             className="secondaryBtn tinyBtn"
             onClick={() => onCopyDetails?.(meta)}
           >
-            Copy details
+            Копировать детали
           </button>
         </details>
       ) : null}
@@ -900,7 +915,9 @@ export default function InterviewPathsView({
   const { stepById, firstStepIdByNodeId } = stepIdMaps;
   const selectedNodeIds = useMemo(() => makeSelectedNodeIdSet(selectedStepIds, stepById), [selectedStepIds, stepById]);
   const scenarios = scenarioPresentation.all;
-  const legacyColorSource = toText(vm?.path_source).toLowerCase() === "flow_tier";
+  const pathSource = normalizePathSource(vm?.path_source);
+  const pathSourceLabel = pathSourcePillLabel(pathSource);
+  const legacyColorSource = pathSource === "flow_tier";
 
   const [selectedTier, setSelectedTier] = useState(() => getInitialTierFilter(tierFilters));
   const [scenarioSearch, setScenarioSearch] = useState("");
@@ -1110,13 +1127,28 @@ export default function InterviewPathsView({
     });
     return out;
   }, [scenarios, stepTimeByNodeId]);
+  const tierTabCounts = useMemo(() => {
+    const out = { ALL: 0, P0: 0, P1: 0, P2: 0 };
+    toArray(scenarios).forEach((scenario) => {
+      out.ALL += 1;
+      const bucket = scenarioBucket(scenario);
+      if (bucket === "P0_IDEAL" || bucket === "P0_ALT") {
+        out.P0 += 1;
+      } else if (bucket === "P1_MITIGATED") {
+        out.P1 += 1;
+      } else if (bucket === "P2_FAIL") {
+        out.P2 += 1;
+      }
+    });
+    return out;
+  }, [scenarios]);
 
   const visibleSections = useMemo(() => {
     const byKey = {
-      P0_IDEAL: { key: "P0_IDEAL", title: "P0 Ideal", items: [] },
-      P0_ALT: { key: "P0_ALT", title: "P0 Alt", items: [] },
-      P1_MITIGATED: { key: "P1_MITIGATED", title: "P1 Mitigated", items: [] },
-      P2_FAIL: { key: "P2_FAIL", title: "P2 Fail", items: [] },
+      P0_IDEAL: { key: "P0_IDEAL", title: "P0 · идеал", items: [] },
+      P0_ALT: { key: "P0_ALT", title: "P0 · альтернативы", items: [] },
+      P1_MITIGATED: { key: "P1_MITIGATED", title: "P1 · смягчённые", items: [] },
+      P2_FAIL: { key: "P2_FAIL", title: "P2 · ошибки", items: [] },
     };
     toArray(visibleScenarios).forEach((scenario) => {
       const bucket = scenarioBucket(scenario);
@@ -1304,7 +1336,7 @@ export default function InterviewPathsView({
   const reportScenarioLabel = useMemo(() => {
     return toText(scenarioPresentation?.scenarioDisplayTitle?.(activeScenario))
       || toText(activeScenario?.label)
-      || "Scenario";
+      || "Сценарий";
   }, [scenarioPresentation, activeScenario]);
   const reportApiAvailable = !!toText(sessionId) && !isLocalSessionId(toText(sessionId));
   const canGenerateReport = reportApiAvailable
@@ -2429,7 +2461,6 @@ export default function InterviewPathsView({
   function pickRow(row) {
     const key = `route_${Number(row?.order_index || 0)}_${toText(row?.node_id || row?.id || row?.key)}`;
     setSelectedRouteKey(key);
-    setDetailsCollapsed(false);
     const nodeId = toText(row?.node_id);
     if (!nodeId) return;
     const stepId = toText(firstStepIdByNodeId[nodeId]);
@@ -2462,6 +2493,8 @@ export default function InterviewPathsView({
     const prevTitle = sanitizeDisplayText(routeStepRows[idx - 1]?.title, "—");
     const nextTitle = sanitizeDisplayText(routeStepRows[idx + 1]?.title, "—");
     const laneName = toText(row?.lane_name || "—");
+    const workLabel = linkedStepId ? formatDurationShort(workSec) : "—";
+    const waitLabel = linkedStepId ? formatDurationShort(waitSec) : "—";
     return (
       <div
         key={key}
@@ -2485,8 +2518,6 @@ export default function InterviewPathsView({
           <div className="interviewRouteNodeHead">
             <span className="interviewRouteNodeNo">#{orderIndex}</span>
             <span className="interviewRouteNodeTitle" title={rowTitle}>{rowTitle}</span>
-            {rowType === "decision" ? <span className="badge warn">Decision</span> : null}
-            {isDecisionDiff ? <span className="badge warn">Δ</span> : null}
           </div>
           <div className="interviewRouteNodeMeta">
             <span className="muted small interviewRouteNodeSubtitle" title={`${prevTitle} → ${nextTitle}`}>
@@ -2506,21 +2537,29 @@ export default function InterviewPathsView({
           )}
         </div>
 
-        {linkedStepId ? (
-          <StepDurationEditor
-            stepId={linkedStepId}
-            workSec={workSec}
-            waitSec={waitSec}
-            onCommitSeconds={commitDurationSeconds}
-            variant="row"
-          />
-        ) : (
-          <>
-            <div className="interviewRouteTimeCell muted small">—</div>
-            <div className="interviewRouteTimeCell muted small">—</div>
-            <div className="interviewRoutePresetCell muted small">—</div>
-          </>
-        )}
+        <div className="interviewRouteTimeCell">
+          <span className={`interviewRouteTimeValue ${workLabel === "—" ? "isEmpty" : ""}`}>{workLabel}</span>
+        </div>
+        <div className="interviewRouteTimeCell">
+          <span className={`interviewRouteTimeValue ${waitLabel === "—" ? "isEmpty" : ""}`}>{waitLabel}</span>
+        </div>
+        <div className="interviewRouteSemanticsCell">
+          {rowType === "decision" ? <span className="badge warn">Решение</span> : null}
+          {isDecisionDiff ? <span className="badge warn">Δ</span> : null}
+          {selected ? (
+            <button
+              type="button"
+              className="secondaryBtn tinyBtn"
+              onClick={(event) => {
+                event.stopPropagation();
+                setDetailsCollapsed(false);
+              }}
+              title="Открыть инспектор шага"
+            >
+              Детали
+            </button>
+          ) : null}
+        </div>
       </div>
     );
   }
@@ -2648,18 +2687,32 @@ export default function InterviewPathsView({
   return (
     <div className="interviewPathsMode interviewPathsRouteMode" data-testid="interview-paths-mode">
       <div className="interviewPathsHead">
-        <div className="interviewPathsTitle">Paths View</div>
+        <div className="interviewPathsTitle">Маршруты</div>
         {isPendingTransition ? <span className="muted small">Обновляю…</span> : null}
       </div>
 
       {!pathsCalcReady ? (
         <div className="interviewAnnotationNotice pending">
-          Подготавливаю расчёты paths/diff/aggregation в фоне…
+          Подготавливаю расчёты маршрутов в фоне…
         </div>
       ) : null}
       {pathsCalcReady && legacyColorSource ? (
-        <div className="interviewAnnotationNotice warn">
-          Legacy source: Paths построены из flow tier/цветов. Для стабильной модели выполните «Импорт из цветов» в панели выбранного BPMN-узла.
+        <div className="interviewPathsLegacyNotice" data-testid="paths-legacy-source-banner">
+          <span className="interviewPathSourcePill isLegacy">устаревший · flow_tier</span>
+          <span className="interviewPathsLegacyNoticeText">
+            Маршруты построены из flow tier/цветов.
+          </span>
+          <button
+            type="button"
+            className="secondaryBtn tinyBtn"
+            onClick={() => jumpToMode("diagram")}
+            title="Открыть диаграмму и перейти к панели «Пути и последовательность»"
+          >
+            К импорту
+          </button>
+          <span className="muted small">
+            Диаграмма → узел → «Пути и последовательность» → «Импорт из цветов».
+          </span>
         </div>
       ) : null}
 
@@ -2667,7 +2720,7 @@ export default function InterviewPathsView({
         <div className="interviewAnnotationNotice warn interviewScenarioOrderWarning">
           <div className="interviewScenarioOrderWarningHead">
             <span className="interviewScenarioOrderWarningTitle">Порядок сценария: найдено нарушение order_index</span>
-            <span className="badge warn">issues {Number(toArray(orderValidation?.violations).length || 0)}</span>
+            <span className="badge warn">проблемы {Number(toArray(orderValidation?.violations).length || 0)}</span>
           </div>
           <div className="interviewScenarioOrderWarningMeta muted small">
             Проверено пар: {Number(orderValidation?.checked_pairs || 0)}
@@ -2682,8 +2735,8 @@ export default function InterviewPathsView({
                 <div key={`order_issue_${idx + 1}`} className="interviewScenarioOrderWarningItem">
                   <span className="badge muted">#{idx + 1}</span>
                   <span className="interviewScenarioOrderWarningItemText">
-                    {`prev #${Number(issue?.prev_order_index || 0)} → cur #${Number(issue?.current_order_index || 0)} · `}
-                    {toText(issue?.node_id || issue?.title || "step")}
+                    {`пред. #${Number(issue?.prev_order_index || 0)} → тек. #${Number(issue?.current_order_index || 0)} · `}
+                    {toText(issue?.node_id || issue?.title || "шаг")}
                     {toText(issue?.scope) ? ` · scope: ${toText(issue?.scope)}` : ""}
                   </span>
                 </div>
@@ -2695,13 +2748,7 @@ export default function InterviewPathsView({
 
       <PathsLayout
         detailsCollapsed={detailsCollapsed}
-        onToggleDetails={(nextCollapsedRaw) => {
-          const nextCollapsed = !!nextCollapsedRaw;
-          setDetailsCollapsed(nextCollapsed);
-          if (nextCollapsed) {
-            setSelectedRouteKey("");
-          }
-        }}
+        onToggleDetails={(nextCollapsedRaw) => setDetailsCollapsed(!!nextCollapsedRaw)}
         hasActiveStep={!!activeRouteRow}
         left={(
           <ScenarioNav
@@ -2712,6 +2759,7 @@ export default function InterviewPathsView({
             sortMode={scenarioSortMode}
             onSortMode={setScenarioSortMode}
             sections={visibleSections}
+            tierCounts={tierTabCounts}
             collapsedGroups={collapsedScenarioGroups}
             onToggleGroup={toggleScenarioGroup}
             selectedScenarioId={selectedScenarioId}
@@ -2719,7 +2767,6 @@ export default function InterviewPathsView({
             scenarioTitle={scenarioPresentation.scenarioDisplayTitle}
             scenarioStatusClass={scenarioStatusClass}
             scenarioStatusLabel={scenarioStatusLabel}
-            scenarioStatusIcon={scenarioOutcomeIcon}
             scenarioDurationLabel={(scenario) => formatSeconds(scenarioDurationSec(scenario, stepTimeByNodeId))}
             scenarioMetrics={scenarioMetricsById}
           />
@@ -2734,6 +2781,8 @@ export default function InterviewPathsView({
               tier={normalizeTier(activeScenario?.tier) !== "None" ? normalizeTier(activeScenario?.tier) : ""}
               sequenceKey={toText(activeScenario?.sequence_key || activeScenario?.sequenceKey)}
               pathIdUsed={toText(activePathId)}
+              pathSource={pathSource}
+              pathSourceLabel={pathSourceLabel}
               reportBuildDebug={activeReportBuildDebug}
               stepsHash={currentStepsHash}
               metrics={activePathMetrics}
@@ -2770,7 +2819,7 @@ export default function InterviewPathsView({
             ) : null}
             {activeScenario?.diff_from_ideal ? (
               <div className="interviewScenarioDiff muted small">
-                Отличия от Ideal:
+                Отличия от ideal:
                 {" "}
                 {Number(toArray(activeScenario?.diff_from_ideal?.differing_gateway_decisions).length || 0)} решений,
                 {" +"}
@@ -2781,9 +2830,23 @@ export default function InterviewPathsView({
             ) : null}
 
             <PathStepList
-              title="Маршрут выбранного сценария"
+              title="Маршрут"
               rows={routeStepRows}
               renderRow={renderRouteStepRow}
+              legendItems={[
+                {
+                  key: "decision",
+                  label: "Решение",
+                  title: "Gateway-строка с выбранной веткой для сценария",
+                  tone: "info",
+                },
+                {
+                  key: "delta",
+                  label: "Δ от ideal",
+                  title: "Выбор ветки отличается от ideal (P0) маршрута",
+                  tone: "warn",
+                },
+              ]}
             />
           </div>
         )}

@@ -19,6 +19,7 @@ export default function useDrawioPersistHydrateBoundary({
     const incomingSig = serializeDrawioMeta(incoming);
     const currentMeta = normalizeDrawioMeta(drawioMetaRef.current);
     const persistedMeta = normalizeDrawioMeta(drawioPersistedMetaRef.current);
+    const incomingLifecycleCode = String(incoming?._lifecycle_code || "").trim();
     const currentSig = serializeDrawioMeta(currentMeta);
     const persistedSig = serializeDrawioMeta(persistedMeta);
 
@@ -39,7 +40,7 @@ export default function useDrawioPersistHydrateBoundary({
       });
       return;
     }
-    if (!incoming.doc_xml && !incoming.svg_cache && (currentMeta.doc_xml || currentMeta.svg_cache)) {
+    if (!incomingLifecycleCode && !incoming.doc_xml && !incoming.svg_cache && (currentMeta.doc_xml || currentMeta.svg_cache)) {
       pushDeleteTrace("drawio_hydrate_skip", {
         reason: "incoming_empty_while_current_has_payload",
         incomingSvg: Number(String(incoming?.svg_cache || "").length || 0),

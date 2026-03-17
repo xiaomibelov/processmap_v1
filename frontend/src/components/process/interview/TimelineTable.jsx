@@ -110,6 +110,14 @@ function formatMinutesInputFromSeconds(secondsRaw) {
   return String(Math.round((sec / 60) * 10) / 10);
 }
 
+function formatTimelineDuration(secondsRaw) {
+  const sec = Math.max(0, Math.round(Number(secondsRaw || 0)));
+  if (!sec) return "0м";
+  if (sec < 60) return `${sec}с`;
+  if (sec % 60 === 0) return `${Math.round(sec / 60)}м`;
+  return `${Math.round((sec / 60) * 10) / 10}м`;
+}
+
 function mergeLaneLinks(primary, secondary) {
   const byKey = {};
   [...toArray(primary), ...toArray(secondary)].forEach((laneInfo) => {
@@ -224,6 +232,8 @@ export default function TimelineTable({
   });
   const [rowMenuStepId, setRowMenuStepId] = useState("");
   const [detailsStepId, setDetailsStepId] = useState("");
+  const [activeInlineStepId, setActiveInlineStepId] = useState("");
+  const [expandedDiagnosticKey, setExpandedDiagnosticKey] = useState("");
   const [visibleLimit, setVisibleLimit] = useState(INITIAL_VISIBLE_ROWS);
   const [stepFieldDrafts, setStepFieldDrafts] = useState({});
   const tableScrollRef = useRef(null);
@@ -624,6 +634,8 @@ export default function TimelineTable({
     setCollapsedSubprocessByStepId({});
     setRowMenuStepId("");
     setDetailsStepId("");
+    setActiveInlineStepId("");
+    setExpandedDiagnosticKey("");
     setBranchStepsPanelState((prev) => ({
       ...prev,
       open: false,
@@ -839,6 +851,7 @@ export default function TimelineTable({
   function openStepDetails(stepId, select = true) {
     const key = toText(stepId);
     if (!key) return;
+    setActiveInlineStepId(key);
     setDetailsStepId((prev) => (prev === key ? "" : key));
     if (select) onToggleStepSelection?.(key, true);
   }
@@ -888,9 +901,43 @@ export default function TimelineTable({
 
   return (
     <div className="interviewTableWrap" ref={tableScrollRef}>
-      {hasNonMonotonicOrder ? (
-        <div className="interviewAnnotationNotice warn" data-testid="interview-order-warning">
-          <div>Scenario order corrupted: order_index not monotonic</div>
+      {(hasNonMonotonicOrder || firstStepNotStartWarning || (orderMode === "bpmn" && bpmnOrderFallback)) ? (
+        <div className="interviewTimelineDiagnosticsStrip">
+          {hasNonMonotonicOrder ? (
+            <button
+              type="button"
+              className="interviewTimelineDiagnosticItem warn"
+              data-testid="interview-order-warning"
+              onClick={() => setExpandedDiagnosticKey((prev) => (prev === "order" ? "" : "order"))}
+            >
+              ⚠ Порядок шагов: не монотонный ({orderViolations.length})
+            </button>
+          ) : null}
+          {firstStepNotStartWarning ? (
+            <button
+              type="button"
+              className="interviewTimelineDiagnosticItem warn"
+              data-testid="interview-start-warning"
+              onClick={() => setExpandedDiagnosticKey((prev) => (prev === "start" ? "" : "start"))}
+            >
+              ⚠ Первый шаг не StartEvent
+            </button>
+          ) : null}
+          {orderMode === "bpmn" && bpmnOrderFallback ? (
+            <button
+              type="button"
+              className="interviewTimelineDiagnosticItem warn"
+              data-testid="interview-bpmn-order-fallback-warning"
+              onClick={() => setExpandedDiagnosticKey((prev) => (prev === "fallback" ? "" : "fallback"))}
+            >
+              ⚠ Fallback порядок BPMN
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {expandedDiagnosticKey === "order" && hasNonMonotonicOrder ? (
+        <div className="interviewTimelineDiagnosticDetails">
           {orderViolations.map((issue, idx) => (
             <div key={`order_violation_${idx + 1}`} className="muted small">
               {idx + 1}. prev=#{Number(issue?.prev_order_index || 0)} → cur=#{Number(issue?.current_order_index || 0)} ({toText(issue?.node_id || issue?.title || "step")})
@@ -898,14 +945,14 @@ export default function TimelineTable({
           ))}
         </div>
       ) : null}
-      {firstStepNotStartWarning ? (
-        <div className="interviewAnnotationNotice warn" data-testid="interview-start-warning">
-          Scenario order warning: first step is not StartEvent
+      {expandedDiagnosticKey === "start" && firstStepNotStartWarning ? (
+        <div className="interviewTimelineDiagnosticDetails">
+          <span className="muted small">Scenario order warning: first step is not StartEvent.</span>
         </div>
       ) : null}
-      {orderMode === "bpmn" && bpmnOrderFallback ? (
-        <div className="interviewAnnotationNotice warn" data-testid="interview-bpmn-order-fallback-warning">
-          {toText(bpmnOrderHint) || "Fallback order: creation order."}
+      {expandedDiagnosticKey === "fallback" && orderMode === "bpmn" && bpmnOrderFallback ? (
+        <div className="interviewTimelineDiagnosticDetails">
+          <span className="muted small">{toText(bpmnOrderHint) || "Fallback order: creation order."}</span>
         </div>
       ) : null}
       <table className="interviewTable interviewTableCompact">
@@ -987,6 +1034,8 @@ export default function TimelineTable({
               const hasAi = aiCount > 0;
               const menuOpen = rowMenuStepId === stepId;
               const detailsOpen = detailsStepId === stepId;
+              const activeRow = activeInlineStepId === stepId;
+              const inlineEditorVisible = detailsOpen || activeRow;
               const incomingLaneLinks = mergeLaneLinks(
                 laneLinksByNode?.incomingByNode?.[toText(step?.node_bind_id)],
                 laneLinksByNode?.incomingByStep?.[stepId],
@@ -1114,11 +1163,14 @@ export default function TimelineTable({
                       aiCueActive ? "hasAiCue" : "",
                       isLaneActive ? "isLaneActive" : "",
                       selectedSet.has(stepId) ? "isSelected" : "",
+                      activeRow ? "isActiveRow" : "",
                     ]
                       .filter(Boolean)
                       .join(" ")}
                     style={{ "--lane-accent": laneAccent }}
                     data-step-id={stepId}
+                    onMouseDown={() => setActiveInlineStepId(stepId)}
+                    onFocusCapture={() => setActiveInlineStepId(stepId)}
                   >
                     <td>
                       <label className="interviewRowSelectCell">
@@ -1202,42 +1254,49 @@ export default function TimelineTable({
                           ? <span>· Σ {cumulativeMainlineLabel}{totalMainlineLabel && totalMainlineLabel !== "—" ? ` / ${totalMainlineLabel}` : ""}</span>
                           : null}
                       </div>
-                      <div className="interviewInlineTimeEditor">
-                        <label className="interviewInlineTimeField">
-                          <span>Work</span>
-                          <input
-                            className="input"
-                            type="number"
-                            min="0"
-                            step="0.5"
-                            value={stepTimeValue}
-                            onChange={(e) => queuePatchStepTime(step.id, e.target.value, normalizedStepTimeUnit)}
-                            onBlur={() => flushPatchStepTime(step.id, normalizedStepTimeUnit, stepDurationInput)}
-                          />
-                        </label>
-                        <div className="interviewInlineTimePresets">
-                          <button type="button" className="secondaryBtn tinyBtn" onClick={() => applyTimePreset(step.id, "work", 30, stepDurationSeconds)}>+30с</button>
-                          <button type="button" className="secondaryBtn tinyBtn" onClick={() => applyTimePreset(step.id, "work", 60, stepDurationSeconds)}>+1м</button>
-                          <button type="button" className="secondaryBtn tinyBtn" onClick={() => applyTimePreset(step.id, "work", 300, stepDurationSeconds)}>+5м</button>
-                        </div>
-                        <label className="interviewInlineTimeField">
-                          <span>Wait</span>
-                          <input
-                            className="input"
-                            type="number"
-                            min="0"
-                            step="0.5"
-                            value={stepWaitValue}
-                            onChange={(e) => queuePatchWaitTime(step.id, e.target.value)}
-                            onBlur={() => flushPatchWaitTime(step.id, stepWaitInput)}
-                          />
-                        </label>
-                        <div className="interviewInlineTimePresets">
-                          <button type="button" className="secondaryBtn tinyBtn" onClick={() => applyTimePreset(step.id, "wait", 30, stepWaitSeconds)}>+30с</button>
-                          <button type="button" className="secondaryBtn tinyBtn" onClick={() => applyTimePreset(step.id, "wait", 60, stepWaitSeconds)}>+1м</button>
-                          <button type="button" className="secondaryBtn tinyBtn" onClick={() => applyTimePreset(step.id, "wait", 300, stepWaitSeconds)}>+5м</button>
-                        </div>
+                      <div className="interviewInlineTimeSummary">
+                        <span className="interviewInlineTimeSummaryItem">Work: {formatTimelineDuration(stepDurationSeconds)}</span>
+                        <span className="interviewInlineTimeSummaryItem">Wait: {formatTimelineDuration(stepWaitSeconds)}</span>
+                        {!inlineEditorVisible ? (
+                          <button
+                            type="button"
+                            className="interviewInlineTimeEditBtn"
+                            onClick={() => setActiveInlineStepId(stepId)}
+                          >
+                            Изменить
+                          </button>
+                        ) : (
+                          <span className="interviewInlineTimeSummaryItem active">Редактирование</span>
+                        )}
                       </div>
+                      {inlineEditorVisible ? (
+                        <div className="interviewInlineTimeEditor">
+                          <label className="interviewInlineTimeField">
+                            <span>Work</span>
+                            <input
+                              className="input"
+                              type="number"
+                              min="0"
+                              step="0.5"
+                              value={stepTimeValue}
+                              onChange={(e) => queuePatchStepTime(step.id, e.target.value, normalizedStepTimeUnit)}
+                              onBlur={() => flushPatchStepTime(step.id, normalizedStepTimeUnit, stepDurationInput)}
+                            />
+                          </label>
+                          <label className="interviewInlineTimeField">
+                            <span>Wait</span>
+                            <input
+                              className="input"
+                              type="number"
+                              min="0"
+                              step="0.5"
+                              value={stepWaitValue}
+                              onChange={(e) => queuePatchWaitTime(step.id, e.target.value)}
+                              onBlur={() => flushPatchWaitTime(step.id, stepWaitInput)}
+                            />
+                          </label>
+                        </div>
+                      ) : null}
                     </td>
                     {showNodeCol ? (
                       <td>
@@ -1299,15 +1358,12 @@ export default function TimelineTable({
                         </button>
                         <button
                           type="button"
-                          className={"badge " + (stepAnnotations.length ? "ok" : "")}
+                          className="interviewStepMetaStatusBtn"
                           onClick={() => openStepDetails(step.id)}
-                          title="Открыть детали аннотаций"
+                          title="Открыть детали BPMN/аннотаций"
                         >
-                          Аннотации: {stepAnnotations.length}
+                          A:{stepAnnotations.length} · {step.node_bound ? "BPMN ok" : "Нет узла"}
                         </button>
-                        <span className={"badge " + (step.node_bound ? "ok" : "warn")}>
-                          {step.node_bound ? "BPMN ok" : "Нет узла"}
-                        </span>
                       </div>
                     </td>
                     <td>
@@ -1318,32 +1374,6 @@ export default function TimelineTable({
                           onClick={() => openStepDetails(step.id)}
                         >
                           {detailsOpen ? "Свернуть" : "Детали"}
-                        </button>
-                        <button
-                          type="button"
-                          className="secondaryBtn smallBtn"
-                          onClick={() => addAiQuestions(step)}
-                          disabled={!!aiBusyStepId}
-                        >
-                          {aiBusyStepId === step.id ? "AI..." : "AI"}
-                        </button>
-                        <button
-                          type="button"
-                          className="secondaryBtn smallBtn"
-                          onClick={() => moveStep(step.id, -1, { orderMode })}
-                          disabled={graphOrderLocked || isTimelineFiltering || absoluteIdx === 0}
-                          title={graphOrderLocked ? "Порядок шагов берётся из BPMN-схемы" : isTimelineFiltering ? "Отключите фильтры, чтобы менять порядок вручную" : ""}
-                        >
-                          ↑
-                        </button>
-                        <button
-                          type="button"
-                          className="secondaryBtn smallBtn"
-                          onClick={() => moveStep(step.id, 1, { orderMode })}
-                          disabled={graphOrderLocked || isTimelineFiltering || absoluteIdx === displayedTimelineView.length - 1}
-                          title={graphOrderLocked ? "Порядок шагов берётся из BPMN-схемы" : isTimelineFiltering ? "Отключите фильтры, чтобы менять порядок вручную" : ""}
-                        >
-                          ↓
                         </button>
                         <div className="interviewRowMenu">
                           <button
@@ -1358,6 +1388,41 @@ export default function TimelineTable({
                           </button>
                           {menuOpen ? (
                             <div className="interviewRowMenuList" data-testid="interview-step-actions-menu">
+                              <button
+                                type="button"
+                                className="interviewRowMenuItem"
+                                onClick={() => {
+                                  addAiQuestions(step);
+                                  setRowMenuStepId("");
+                                }}
+                                disabled={!!aiBusyStepId}
+                              >
+                                {aiBusyStepId === step.id ? "AI: генерация..." : "AI-вопросы"}
+                              </button>
+                              <button
+                                type="button"
+                                className="interviewRowMenuItem"
+                                onClick={() => {
+                                  moveStep(step.id, -1, { orderMode });
+                                  setRowMenuStepId("");
+                                }}
+                                disabled={graphOrderLocked || isTimelineFiltering || absoluteIdx === 0}
+                                title={graphOrderLocked ? "Порядок шагов берётся из BPMN-схемы" : isTimelineFiltering ? "Отключите фильтры, чтобы менять порядок вручную" : ""}
+                              >
+                                Сдвинуть вверх
+                              </button>
+                              <button
+                                type="button"
+                                className="interviewRowMenuItem"
+                                onClick={() => {
+                                  moveStep(step.id, 1, { orderMode });
+                                  setRowMenuStepId("");
+                                }}
+                                disabled={graphOrderLocked || isTimelineFiltering || absoluteIdx === displayedTimelineView.length - 1}
+                                title={graphOrderLocked ? "Порядок шагов берётся из BPMN-схемы" : isTimelineFiltering ? "Отключите фильтры, чтобы менять порядок вручную" : ""}
+                              >
+                                Сдвинуть вниз
+                              </button>
                               <button
                                 type="button"
                                 className="interviewRowMenuItem"

@@ -51,7 +51,26 @@ import CamundaPropertiesSection from "./sidebar/CamundaPropertiesSection";
 import AiSection from "./sidebar/AiSection";
 import NotesSection from "./sidebar/NotesSection";
 import { buildNodePathUpdatesFromFlowMeta } from "./sidebar/nodePathImport";
+import {
+  buildNodePathComparableSnapshot as buildComparableNodePathSnapshot,
+  deriveNodePathSyncState,
+  hasNodePathLocalChanges,
+} from "./sidebar/nodePathSyncState";
 import { useTldr } from "../features/tldr/hooks/useTldr";
+import {
+  getNodePathJazzPeer,
+  getNodePathLocalFirstAdapterMode,
+  isNodePathLocalFirstPilotEnabled,
+} from "../features/process/nodepath/nodePathLocalFirstPilot";
+import { createNodePathModuleAdapter } from "../features/process/nodepath/nodePathModuleAdapter";
+import { useNodePathModuleController } from "../features/process/nodepath/nodePathModuleController";
+import { createNodePathJazzSpikeAdapter } from "../features/process/nodepath/nodePathJazzSpikeAdapter";
+import { normalizeDrawioMeta } from "../features/process/drawio/drawioMeta";
+import {
+  applyDrawioAnchorValidation,
+  buildBpmnNodeOverlayCompanionSummary,
+  readDrawioAnchorValidationState,
+} from "../features/process/drawio/drawioAnchors";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -140,6 +159,14 @@ function parseStepTimeSeconds(raw) {
 
 function normalizeStepTimeUnit(raw) {
   return String(raw || "").trim().toLowerCase() === "sec" ? "sec" : "min";
+}
+
+function normalizeStepTimeDraftValue(raw) {
+  const text = String(raw ?? "").trim();
+  if (!text) return "";
+  const num = Number(text);
+  if (!Number.isFinite(num) || num < 0 || !Number.isInteger(num)) return text;
+  return String(Math.round(num));
 }
 
 function readNodeStepTimeMinutes(nodeRaw) {
@@ -379,6 +406,144 @@ function parseNodePathGraphContext(xmlText) {
       flowEndpointsById: {},
       rankByNodeId: {},
     };
+  }
+}
+
+function parseSelectedBpmnPropertyContext(xmlText, elementIdRaw) {
+  const elementId = str(elementIdRaw);
+  const xml = str(xmlText);
+  const empty = {
+    type: "",
+    general: [],
+    routing: [],
+    messaging: [],
+    execution: [],
+    vendor: [],
+    inspectOnly: [],
+  };
+  if (!elementId || !xml || typeof DOMParser === "undefined") return empty;
+  try {
+    const doc = new DOMParser().parseFromString(xml, "application/xml");
+    if (!doc || doc.getElementsByTagName("parsererror").length > 0) return empty;
+    const all = Array.from(doc.getElementsByTagName("*"));
+    const target = all.find((el) => str(el.getAttribute("id")) === elementId);
+    if (!target) return empty;
+    const local = str(target.localName).toLowerCase();
+    const general = [];
+    const routing = [];
+    const messaging = [];
+    const execution = [];
+    const vendor = [];
+    const inspectOnly = [];
+
+    const name = str(target.getAttribute("name"));
+    if (name) general.push({ key: "name", label: "Name", value: name, editable: false });
+    const processRef = str(target.getAttribute("processRef"));
+    if (processRef) general.push({ key: "processRef", label: "Process Ref", value: processRef, editable: false });
+    const sourceRef = str(target.getAttribute("sourceRef"));
+    const targetRef = str(target.getAttribute("targetRef"));
+    if (sourceRef) general.push({ key: "sourceRef", label: "Source Ref", value: sourceRef, editable: false });
+    if (targetRef) general.push({ key: "targetRef", label: "Target Ref", value: targetRef, editable: false });
+
+    const defaultFlow = str(target.getAttribute("default"));
+    if (defaultFlow) routing.push({ key: "default", label: "Default flow", value: defaultFlow, editable: false });
+    const conditionNode = Array.from(target.childNodes || []).find((child) => child?.nodeType === 1 && str(child.localName).toLowerCase() === "conditionexpression");
+    if (conditionNode) {
+      routing.push({
+        key: "conditionExpression",
+        label: "Condition expression",
+        value: str(conditionNode.textContent),
+        editable: false,
+      });
+      inspectOnly.push("conditionExpression");
+    }
+
+    const eventDefs = Array.from(target.childNodes || []).filter((child) => {
+      const childLocal = str(child?.localName).toLowerCase();
+      return child?.nodeType === 1 && (
+        childLocal === "messageeventdefinition"
+        || childLocal === "signaleventdefinition"
+      );
+    });
+    eventDefs.forEach((defNode) => {
+      const defLocal = str(defNode.localName).toLowerCase();
+      if (defLocal === "messageeventdefinition") {
+        messaging.push({
+          key: "messageRef",
+          label: "Message ref",
+          value: str(defNode.getAttribute("messageRef")),
+          editable: false,
+        });
+        inspectOnly.push("messageRef");
+      }
+      if (defLocal === "signaleventdefinition") {
+        messaging.push({
+          key: "signalRef",
+          label: "Signal ref",
+          value: str(defNode.getAttribute("signalRef")),
+          editable: false,
+        });
+        inspectOnly.push("signalRef");
+      }
+    });
+
+    const allAttrs = Array.from(target.attributes || []);
+    allAttrs.forEach((attr) => {
+      const attrName = str(attr.name);
+      const attrValue = str(attr.value);
+      if (!attrName || !attrValue) return;
+      if (attrName.startsWith("camunda:") || attrName.startsWith("activiti:")) {
+        execution.push({ key: attrName, label: attrName, value: attrValue, editable: false });
+        vendor.push({ key: attrName, label: attrName, value: attrValue, editable: false });
+        inspectOnly.push(attrName);
+      }
+    });
+
+    const extensionElements = Array.from(target.childNodes || []).find((child) => child?.nodeType === 1 && str(child.localName).toLowerCase() === "extensionelements");
+    if (extensionElements) {
+      const extensionKinds = Array.from(extensionElements.childNodes || [])
+        .filter((child) => child?.nodeType === 1)
+        .map((child) => `${str(child.prefix)}:${str(child.localName)}`.replace(/^:/, ""))
+        .filter(Boolean);
+      if (extensionKinds.length) {
+        vendor.push({
+          key: "extensionElements",
+          label: "Extension elements",
+          value: extensionKinds.join(", "),
+          editable: false,
+        });
+        inspectOnly.push("extensionElements");
+      }
+    }
+
+    if (local === "messageflow") {
+      messaging.push({
+        key: "messageFlow",
+        label: "Message handoff",
+        value: `${sourceRef || "?"} -> ${targetRef || "?"}`,
+        editable: false,
+      });
+    }
+    if (local === "participant") {
+      messaging.push({
+        key: "participant",
+        label: "Participant binding",
+        value: processRef || "No processRef",
+        editable: false,
+      });
+    }
+
+    return {
+      type: local,
+      general,
+      routing,
+      messaging,
+      execution,
+      vendor,
+      inspectOnly: Array.from(new Set(inspectOnly)),
+    };
+  } catch {
+    return empty;
   }
 }
 
@@ -765,6 +930,7 @@ export default function NotesPanel({
   onDeleteProject,
   onRenameSession,
   onDeleteSession,
+  onFocusDrawioCompanion,
   disabled,
 }) {
   const [text, setText] = useState("");
@@ -772,24 +938,35 @@ export default function NotesPanel({
   const [err, setErr] = useState("");
   const [elementText, setElementText] = useState("");
   const [elementBusy, setElementBusy] = useState(false);
+  const [elementSaveFailed, setElementSaveFailed] = useState(false);
   const [elementErr, setElementErr] = useState("");
   const [stepTimeInput, setStepTimeInput] = useState("");
   const [stepTimeBusy, setStepTimeBusy] = useState(false);
+  const [stepTimeSaveFailed, setStepTimeSaveFailed] = useState(false);
   const [stepTimeErr, setStepTimeErr] = useState("");
   const [flowHappyBusy, setFlowHappyBusy] = useState(false);
   const [flowHappyErr, setFlowHappyErr] = useState("");
   const [flowHappyInfo, setFlowHappyInfo] = useState("");
   const [nodePathBusy, setNodePathBusy] = useState(false);
+  const [nodePathApplyInFlight, setNodePathApplyInFlight] = useState(false);
+  const [nodePathApplyFailed, setNodePathApplyFailed] = useState(false);
+  const [nodePathNeedsAttention, setNodePathNeedsAttention] = useState(false);
+  const [nodePathOffline, setNodePathOffline] = useState(() => (
+    typeof navigator !== "undefined" ? navigator.onLine === false : false
+  ));
   const [nodePathErr, setNodePathErr] = useState("");
   const [nodePathInfo, setNodePathInfo] = useState("");
   const [nodePathDraftPaths, setNodePathDraftPaths] = useState([]);
   const [nodePathDraftSequence, setNodePathDraftSequence] = useState("");
   const [robotMetaDraft, setRobotMetaDraft] = useState(() => createDefaultRobotMetaV1());
   const [robotMetaBusy, setRobotMetaBusy] = useState(false);
+  const [robotMetaSaveFailed, setRobotMetaSaveFailed] = useState(false);
   const [robotMetaErr, setRobotMetaErr] = useState("");
   const [robotMetaInfo, setRobotMetaInfo] = useState("");
   const [camundaPropertiesDraft, setCamundaPropertiesDraft] = useState(() => createEmptyCamundaExtensionState());
   const [camundaPropertiesBusy, setCamundaPropertiesBusy] = useState(false);
+  const [camundaExtensionSaveFailed, setCamundaExtensionSaveFailed] = useState(false);
+  const [camundaExtensionLastAction, setCamundaExtensionLastAction] = useState("save");
   const [camundaPropertiesErr, setCamundaPropertiesErr] = useState("");
   const [camundaPropertiesInfo, setCamundaPropertiesInfo] = useState("");
   const [showPropertiesOverlayDraft, setShowPropertiesOverlayDraft] = useState(false);
@@ -804,6 +981,7 @@ export default function NotesPanel({
   const [aiBusyQid, setAiBusyQid] = useState("");
   const [aiSavedQid, setAiSavedQid] = useState("");
   const [aiCommentDraft, setAiCommentDraft] = useState({});
+  const [aiRowErrByQid, setAiRowErrByQid] = useState({});
   const [batchMode, setBatchMode] = useState(() => readBatchMode());
   const [batchText, setBatchText] = useState("");
   const [batchBusy, setBatchBusy] = useState(false);
@@ -826,6 +1004,7 @@ export default function NotesPanel({
   const advancedSectionRef = useRef(null);
   const sidebarHiddenRef = useRef(Boolean(sidebarHidden));
   const nodeEditorRef = useRef(null);
+  const nodePathDirtyBaselineRef = useRef({ nodeId: "", snapshot: null });
   const showPropertiesOverlaySyncRef = useRef({
     elementId: "",
     pending: false,
@@ -878,10 +1057,24 @@ export default function NotesPanel({
     () => readNodeStepTimeSeconds(selectedElementNode),
     [selectedElementNode],
   );
+  const stepTimeBaselineInput = useMemo(() => {
+    if (normalizedStepTimeUnit === "sec") {
+      return selectedElementStepTimeSec === null ? "" : String(selectedElementStepTimeSec);
+    }
+    return selectedElementStepTime === null ? "" : String(selectedElementStepTime);
+  }, [normalizedStepTimeUnit, selectedElementStepTime, selectedElementStepTimeSec]);
+  const stepTimeHasLocalChanges = normalizeStepTimeDraftValue(stepTimeInput) !== normalizeStepTimeDraftValue(stepTimeBaselineInput);
+  const stepTimeSyncState = stepTimeBusy
+    ? "syncing"
+    : (stepTimeSaveFailed ? "error" : (stepTimeHasLocalChanges ? "local" : "saved"));
   const selectedElementNotes = useMemo(
     () => elementNotesForId(notesByElement, selectedElementId),
     [notesByElement, selectedElementId],
   );
+  const elementHasLocalChanges = str(elementText).length > 0;
+  const elementSyncState = elementBusy
+    ? "syncing"
+    : (elementSaveFailed ? "error" : (elementHasLocalChanges ? "local" : "saved"));
   const sessionTldr = useTldr(draft);
   const aiQuestionsByElement = useMemo(
     () => normalizeAiQuestionsByElementMap(draft?.interview?.ai_questions_by_element || draft?.interview?.aiQuestionsByElementId),
@@ -939,6 +1132,31 @@ export default function NotesPanel({
     () => str(nodePathGraphContext?.nodeKindById?.[selectedElementId]).toLowerCase(),
     [nodePathGraphContext, selectedElementId],
   );
+  const selectedBpmnPropertyContext = useMemo(
+    () => parseSelectedBpmnPropertyContext(draft?.bpmn_xml, selectedElementId),
+    [draft?.bpmn_xml, selectedElementId],
+  );
+  const drawioAnchorValidationState = useMemo(
+    () => readDrawioAnchorValidationState(draft),
+    [draft],
+  );
+  const drawioCompanionMeta = useMemo(
+    () => applyDrawioAnchorValidation(
+      normalizeDrawioMeta(draft?.bpmn_meta?.drawio),
+      drawioAnchorValidationState.ids,
+      drawioAnchorValidationState.ready,
+    ),
+    [draft?.bpmn_meta?.drawio, drawioAnchorValidationState],
+  );
+  const selectedBpmnOverlayCompanionSummary = useMemo(
+    () => buildBpmnNodeOverlayCompanionSummary({
+      selectedBpmnNodeId: selectedElementId,
+      drawioMeta: drawioCompanionMeta,
+      bpmnNodeIds: drawioAnchorValidationState.ids,
+      validationReady: drawioAnchorValidationState.ready,
+    }),
+    [selectedElementId, drawioCompanionMeta, drawioAnchorValidationState],
+  );
   const isSelectedPathNode = !!selectedElementId
     && !isSelectedSequenceFlow
     && !!selectedElementNodeKind;
@@ -947,6 +1165,31 @@ export default function NotesPanel({
     () => normalizeNodePathEntry(bpmnNodePathMetaById[selectedElementId]) || { paths: [], source: "manual" },
     [bpmnNodePathMetaById, selectedElementId],
   );
+  const selectedNodePathSavedSnapshot = useMemo(
+    () => buildComparableNodePathSnapshot(selectedNodePathEntry),
+    [selectedNodePathEntry],
+  );
+  const selectedNodePathDraftSnapshot = useMemo(
+    () => buildComparableNodePathSnapshot({
+      paths: nodePathDraftPaths,
+      sequence_key: nodePathDraftSequence,
+    }),
+    [nodePathDraftPaths, nodePathDraftSequence],
+  );
+  const nodePathHasLocalChanges = useMemo(() => {
+    if (!isSelectedPathNode) return false;
+    return hasNodePathLocalChanges({
+      draft: selectedNodePathDraftSnapshot,
+      saved: selectedNodePathSavedSnapshot,
+    });
+  }, [isSelectedPathNode, selectedNodePathDraftSnapshot, selectedNodePathSavedSnapshot]);
+  const nodePathSyncState = deriveNodePathSyncState({
+    isSyncing: nodePathApplyInFlight,
+    hasError: nodePathApplyFailed,
+    needsAttention: nodePathNeedsAttention,
+    isOffline: nodePathOffline,
+    hasLocalChanges: nodePathHasLocalChanges,
+  });
   const selectedRobotMetaEntry = useMemo(
     () => normalizeRobotMetaV1(bpmnRobotMetaByElementId[selectedElementId] || createDefaultRobotMetaV1()),
     [bpmnRobotMetaByElementId, selectedElementId],
@@ -966,7 +1209,7 @@ export default function NotesPanel({
     ),
     [selectedRobotMetaEditable, robotMetaDraft, selectedRobotMetaEntry, selectedCamundaExtensionEntry],
   );
-  const selectedCamundaPropertiesEditable = selectedRobotMetaEditable;
+  const selectedCamundaPropertiesEditable = !!selectedElementId;
   const selectedRobotMetaStatus = useMemo(
     () => (selectedRobotMetaEditable ? getRobotMetaStatus(selectedRobotMetaEntry) : "none"),
     [selectedRobotMetaEditable, selectedRobotMetaEntry],
@@ -975,6 +1218,33 @@ export default function NotesPanel({
     () => (selectedRobotMetaEditable ? robotMetaMissingFields(selectedRobotMetaEntry) : []),
     [selectedRobotMetaEditable, selectedRobotMetaEntry],
   );
+  const robotMetaHasLocalChanges = useMemo(() => {
+    if (!selectedRobotMetaEditable) return false;
+    return canonicalRobotMetaString(normalizeRobotMetaV1(robotMetaDraft)) !== canonicalRobotMetaString(selectedRobotMetaEntry);
+  }, [selectedRobotMetaEditable, robotMetaDraft, selectedRobotMetaEntry]);
+  const robotMetaSyncState = robotMetaBusy
+    ? "syncing"
+    : (robotMetaSaveFailed ? "error" : (robotMetaHasLocalChanges ? "local" : "saved"));
+  const finalizedCamundaPropertiesDraft = useMemo(
+    () => normalizeCamundaExtensionState(finalizeExtensionStateWithDictionary({
+      extensionStateRaw: camundaPropertiesDraft,
+      dictionaryBundleRaw: orgPropertyDictionaryBundle,
+    })),
+    [camundaPropertiesDraft, orgPropertyDictionaryBundle],
+  );
+  const selectedCamundaExtensionCanonical = useMemo(
+    () => JSON.stringify(normalizeCamundaExtensionState(selectedCamundaExtensionEntry)),
+    [selectedCamundaExtensionEntry],
+  );
+  const finalizedCamundaPropertiesDraftCanonical = useMemo(
+    () => JSON.stringify(finalizedCamundaPropertiesDraft),
+    [finalizedCamundaPropertiesDraft],
+  );
+  const camundaExtensionHasLocalChanges = selectedCamundaPropertiesEditable
+    && finalizedCamundaPropertiesDraftCanonical !== selectedCamundaExtensionCanonical;
+  const camundaExtensionSyncState = camundaPropertiesBusy
+    ? "syncing"
+    : (camundaExtensionSaveFailed ? "error" : (camundaExtensionHasLocalChanges ? "local" : "saved"));
   const selectedElementTierLabel = useMemo(() => {
     const tags = asArray(selectedNodePathEntry?.paths).map((item) => normalizeNodePathTag(item)).filter(Boolean);
     if (!tags.length) return "";
@@ -1030,6 +1300,96 @@ export default function NotesPanel({
   const setNodePathHandler = typeof onSetNodePathAssignments === "function"
     ? onSetNodePathAssignments
     : null;
+  const nodePathLocalFirstPilotEnabled = isNodePathLocalFirstPilotEnabled();
+  const nodePathLocalFirstAdapterMode = getNodePathLocalFirstAdapterMode();
+  const nodePathJazzPeer = getNodePathJazzPeer();
+  const nodePathInternalAdapter = useMemo(() => createNodePathModuleAdapter({
+    getSnapshot: (nodeId) => (nodeId && nodeId === selectedElementId ? selectedNodePathEntry : null),
+    applyNodePathAssignments: setNodePathHandler,
+  }), [selectedElementId, selectedNodePathEntry, setNodePathHandler]);
+  const nodePathJazzAdapter = useMemo(() => createNodePathJazzSpikeAdapter({
+    peer: nodePathJazzPeer,
+    scopeId: sid,
+  }), [nodePathJazzPeer, sid]);
+  const nodePathModuleAdapter = nodePathLocalFirstAdapterMode === "jazz"
+    ? nodePathJazzAdapter
+    : nodePathInternalAdapter;
+  const nodePathModuleSnapshotVersion = useMemo(
+    () => JSON.stringify(selectedNodePathSavedSnapshot),
+    [selectedNodePathSavedSnapshot],
+  );
+  const nodePathModuleController = useNodePathModuleController({
+    enabled: nodePathLocalFirstPilotEnabled,
+    nodeId: selectedElementId,
+    editable: isSelectedPathNode,
+    disabled: !!disabled,
+    adapter: nodePathModuleAdapter,
+    snapshotVersion: nodePathModuleSnapshotVersion,
+  });
+  const resolvedNodePathController = nodePathLocalFirstPilotEnabled ? nodePathModuleController : {
+    paths: nodePathDraftPaths,
+    sequenceKey: nodePathDraftSequence,
+    syncState: nodePathSyncState,
+    busy: nodePathBusy,
+    err: nodePathErr,
+    info: nodePathInfo,
+    toggleTag: toggleNodePathTag,
+    updateSequenceKey: (value) => {
+      setNodePathApplyFailed(false);
+      setNodePathNeedsAttention(false);
+      setNodePathDraftSequence(value);
+    },
+    apply: applySelectedNodePath,
+    reset: resetSelectedNodePath,
+    acceptShared: () => {
+      setNodePathApplyFailed(false);
+      setNodePathNeedsAttention(false);
+      setNodePathErr("");
+      setNodePathInfo("Используется сохранённая версия.");
+      setNodePathDraftPaths(asArray(selectedNodePathSavedSnapshot?.paths));
+      setNodePathDraftSequence(str(selectedNodePathSavedSnapshot?.sequence_key));
+    },
+  };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!window.__FPC_E2E__) return;
+    window.__FPC_E2E_NODEPATH_CONTROLLER__ = {
+      mode: nodePathLocalFirstPilotEnabled ? nodePathLocalFirstAdapterMode : "legacy",
+      nodeId: selectedElementId,
+      editable: isSelectedPathNode,
+      paths: asArray(resolvedNodePathController.paths),
+      sequenceKey: str(resolvedNodePathController.sequenceKey),
+      syncState: str(resolvedNodePathController.syncState || "saved"),
+      busy: !!resolvedNodePathController.busy,
+      err: str(resolvedNodePathController.err),
+      info: str(resolvedNodePathController.info),
+      hasLocalChanges: !!resolvedNodePathController.hasLocalChanges,
+      needsAttention: !!resolvedNodePathController.needsAttention,
+      isOffline: !!resolvedNodePathController.isOffline,
+      sharedSnapshot: resolvedNodePathController.sharedSnapshot && typeof resolvedNodePathController.sharedSnapshot === "object"
+        ? {
+            paths: asArray(resolvedNodePathController.sharedSnapshot.paths),
+            sequence_key: str(resolvedNodePathController.sharedSnapshot.sequence_key),
+          }
+        : null,
+    };
+  }, [
+    nodePathLocalFirstPilotEnabled,
+    nodePathLocalFirstAdapterMode,
+    selectedElementId,
+    isSelectedPathNode,
+    resolvedNodePathController.paths,
+    resolvedNodePathController.sequenceKey,
+    resolvedNodePathController.syncState,
+    resolvedNodePathController.busy,
+    resolvedNodePathController.err,
+    resolvedNodePathController.info,
+    resolvedNodePathController.hasLocalChanges,
+    resolvedNodePathController.needsAttention,
+    resolvedNodePathController.isOffline,
+    resolvedNodePathController.sharedSnapshot,
+  ]);
   const aiGenerateUi = useMemo(
     () => resolveAiGenerateUiState({
       sid,
@@ -1059,6 +1419,22 @@ export default function NotesPanel({
   }, [batchText, draft?.bpmn_xml]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    function handleOnline() {
+      setNodePathOffline(false);
+    }
+    function handleOffline() {
+      setNodePathOffline(true);
+    }
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!shouldLogActorsTrace()) return;
     // eslint-disable-next-line no-console
     console.debug(
@@ -1083,8 +1459,38 @@ export default function NotesPanel({
     setNodePathErr("");
     setNodePathInfo("");
     setNodePathBusy(false);
+    setNodePathApplyInFlight(false);
+    setNodePathApplyFailed(false);
+    setNodePathNeedsAttention(false);
+    nodePathDirtyBaselineRef.current = { nodeId: "", snapshot: null };
     setBulkNodeIds([]);
   }, [selectedElementId]);
+
+  useEffect(() => {
+    const dirtyRef = nodePathDirtyBaselineRef.current || { nodeId: "", snapshot: null };
+    if (!isSelectedPathNode || !selectedElementId || !nodePathHasLocalChanges) {
+      if (dirtyRef.snapshot) {
+        nodePathDirtyBaselineRef.current = { nodeId: "", snapshot: null };
+      }
+      setNodePathNeedsAttention(false);
+      return;
+    }
+
+    if (!dirtyRef.snapshot || dirtyRef.nodeId !== selectedElementId) {
+      nodePathDirtyBaselineRef.current = {
+        nodeId: selectedElementId,
+        snapshot: selectedNodePathSavedSnapshot,
+      };
+      setNodePathNeedsAttention(false);
+      return;
+    }
+
+    const baselineDrifted = hasNodePathLocalChanges({
+      draft: selectedNodePathSavedSnapshot,
+      saved: dirtyRef.snapshot,
+    });
+    setNodePathNeedsAttention((prev) => (baselineDrifted ? true : (prev && nodePathHasLocalChanges)));
+  }, [isSelectedPathNode, selectedElementId, nodePathHasLocalChanges, selectedNodePathSavedSnapshot]);
 
   useEffect(() => {
     if (!isSelectedPathNode) {
@@ -1099,11 +1505,13 @@ export default function NotesPanel({
   useEffect(() => {
     if (!selectedRobotMetaEditable) {
       setRobotMetaDraft(createDefaultRobotMetaV1());
+      setRobotMetaSaveFailed(false);
       setRobotMetaErr("");
       setRobotMetaInfo("");
       return;
     }
     setRobotMetaDraft(selectedRobotMetaEntry);
+    setRobotMetaSaveFailed(false);
     setRobotMetaErr("");
     setRobotMetaInfo("");
   }, [selectedRobotMetaEditable, selectedRobotMetaEntry]);
@@ -1111,11 +1519,15 @@ export default function NotesPanel({
   useEffect(() => {
     if (!selectedCamundaPropertiesEditable) {
       setCamundaPropertiesDraft(createEmptyCamundaExtensionState());
+      setCamundaExtensionSaveFailed(false);
+      setCamundaExtensionLastAction("save");
       setCamundaPropertiesErr("");
       setCamundaPropertiesInfo("");
       return;
     }
     setCamundaPropertiesDraft(selectedCamundaExtensionEntry);
+    setCamundaExtensionSaveFailed(false);
+    setCamundaExtensionLastAction("save");
     setCamundaPropertiesErr("");
     setCamundaPropertiesInfo("");
   }, [selectedCamundaPropertiesEditable, selectedCamundaExtensionEntry]);
@@ -1245,6 +1657,7 @@ export default function NotesPanel({
       next[q.qid] = str(q.comment);
     });
     setAiCommentDraft(next);
+    setAiRowErrByQid({});
     setAiErr("");
     setAiSavedQid("");
   }, [selectedElementId, selectedElementAiQuestions]);
@@ -1260,14 +1673,10 @@ export default function NotesPanel({
 
   useEffect(() => {
     setStepTimeErr("");
-    let nextInput = "";
-    if (normalizedStepTimeUnit === "sec") {
-      nextInput = selectedElementStepTimeSec === null ? "" : String(selectedElementStepTimeSec);
-    } else {
-      nextInput = selectedElementStepTime === null ? "" : String(selectedElementStepTime);
-    }
+    setStepTimeSaveFailed(false);
+    const nextInput = stepTimeBaselineInput;
     setStepTimeInput((prev) => (prev === nextInput ? prev : nextInput));
-  }, [selectedElementId, selectedElementStepTime, selectedElementStepTimeSec, normalizedStepTimeUnit]);
+  }, [selectedElementId, stepTimeBaselineInput]);
 
   useEffect(() => {
     writeBatchMode(batchMode);
@@ -1422,16 +1831,20 @@ export default function NotesPanel({
     if (!selectedElementId || !t) return;
     if (disabled || elementBusy) return;
     setElementBusy(true);
+    setElementSaveFailed(false);
     setElementErr("");
     try {
       const r = onAddElementNote?.(selectedElementId, t);
       const rr = r && typeof r.then === "function" ? await r : r;
       if (rr && rr.ok === false) {
+        setElementSaveFailed(true);
         setElementErr(String(rr.error || "API error"));
         return;
       }
+      setElementSaveFailed(false);
       setElementText("");
     } catch (e) {
+      setElementSaveFailed(true);
       setElementErr(String(e?.message || e));
     } finally {
       setElementBusy(false);
@@ -1470,6 +1883,7 @@ export default function NotesPanel({
     if (raw) {
       const num = Number(raw);
       if (!Number.isFinite(num) || num < 0 || !Number.isInteger(num)) {
+        setStepTimeSaveFailed(false);
         setStepTimeErr(
           `Введите целое число ${normalizedStepTimeUnit === "sec" ? "секунд" : "минут"} (0 или больше).`,
         );
@@ -1486,11 +1900,13 @@ export default function NotesPanel({
     const prevMinutes = selectedElementStepTime;
     const prevSeconds = selectedElementStepTimeSec;
     if (nextMinutes === prevMinutes && nextSeconds === prevSeconds) {
+      setStepTimeSaveFailed(false);
       setStepTimeErr("");
       return;
     }
 
     setStepTimeBusy(true);
+    setStepTimeSaveFailed(false);
     setStepTimeErr("");
     try {
       const result = await Promise.resolve(
@@ -1500,9 +1916,13 @@ export default function NotesPanel({
         }),
       );
       if (result && result.ok === false) {
+        setStepTimeSaveFailed(true);
         setStepTimeErr(str(result.error || "Не удалось сохранить время шага."));
+        return;
       }
+      setStepTimeSaveFailed(false);
     } catch (error) {
+      setStepTimeSaveFailed(true);
       setStepTimeErr(str(error?.message || error || "Не удалось сохранить время шага."));
     } finally {
       setStepTimeBusy(false);
@@ -1569,6 +1989,8 @@ export default function NotesPanel({
   function toggleNodePathTag(tagRaw) {
     const tag = normalizeNodePathTag(tagRaw);
     if (!tag) return;
+    setNodePathApplyFailed(false);
+    setNodePathNeedsAttention(false);
     setNodePathDraftPaths((prev) => {
       const list = asArray(prev).map((item) => normalizeNodePathTag(item)).filter(Boolean);
       const has = list.includes(tag);
@@ -1582,11 +2004,15 @@ export default function NotesPanel({
     if (!setNodePathHandler || disabled || nodePathBusy) return;
     const normalizedPaths = asArray(nodePathDraftPaths).map((item) => normalizeNodePathTag(item)).filter(Boolean);
     if (!normalizedPaths.length) {
+      setNodePathApplyFailed(false);
       setNodePathErr("Выберите хотя бы один path-tag (P0/P1/P2).");
       return;
     }
     const sequenceKey = normalizeSequenceKey(nodePathDraftSequence);
     setNodePathBusy(true);
+    setNodePathApplyInFlight(true);
+    setNodePathApplyFailed(false);
+    setNodePathNeedsAttention(false);
     setNodePathErr("");
     setNodePathInfo("");
     try {
@@ -1599,13 +2025,18 @@ export default function NotesPanel({
         }], { source: "manual", from: "selected_node_paths_apply" }),
       );
       if (result && result.ok === false) {
+        setNodePathApplyFailed(true);
         setNodePathErr(str(result.error || "Не удалось сохранить разметку узла."));
         return;
       }
+      setNodePathApplyFailed(false);
+      setNodePathNeedsAttention(false);
       setNodePathInfo("Разметка узла сохранена.");
     } catch (error) {
+      setNodePathApplyFailed(true);
       setNodePathErr(str(error?.message || error || "Не удалось сохранить разметку узла."));
     } finally {
+      setNodePathApplyInFlight(false);
       setNodePathBusy(false);
     }
   }
@@ -1676,6 +2107,7 @@ export default function NotesPanel({
 
   function updateRobotMetaDraft(nextRaw) {
     setRobotMetaDraft(normalizeRobotMetaV1(nextRaw));
+    setRobotMetaSaveFailed(false);
     setRobotMetaErr("");
   }
 
@@ -1686,21 +2118,26 @@ export default function NotesPanel({
     const prevCanonical = canonicalRobotMetaString(selectedRobotMetaEntry);
     const nextCanonical = canonicalRobotMetaString(normalized);
     if (prevCanonical === nextCanonical) {
+      setRobotMetaSaveFailed(false);
       setRobotMetaErr("");
       setRobotMetaInfo("Без изменений.");
       return;
     }
     setRobotMetaBusy(true);
+    setRobotMetaSaveFailed(false);
     setRobotMetaErr("");
     setRobotMetaInfo("");
     try {
       const result = await Promise.resolve(onSetElementRobotMeta(selectedElementId, normalized));
       if (result && result.ok === false) {
+        setRobotMetaSaveFailed(true);
         setRobotMetaErr(str(result.error || "Не удалось сохранить Robot Meta."));
         return;
       }
+      setRobotMetaSaveFailed(false);
       setRobotMetaInfo("Robot Meta сохранена.");
     } catch (error) {
+      setRobotMetaSaveFailed(true);
       setRobotMetaErr(str(error?.message || error || "Не удалось сохранить Robot Meta."));
     } finally {
       setRobotMetaBusy(false);
@@ -1711,17 +2148,21 @@ export default function NotesPanel({
     if (!selectedRobotMetaEditable || !selectedElementId) return;
     if (typeof onSetElementRobotMeta !== "function" || disabled || robotMetaBusy) return;
     setRobotMetaBusy(true);
+    setRobotMetaSaveFailed(false);
     setRobotMetaErr("");
     setRobotMetaInfo("");
     try {
       const result = await Promise.resolve(onSetElementRobotMeta(selectedElementId, null, { remove: true }));
       if (result && result.ok === false) {
+        setRobotMetaSaveFailed(true);
         setRobotMetaErr(str(result.error || "Не удалось удалить Robot Meta."));
         return;
       }
       setRobotMetaDraft(createDefaultRobotMetaV1());
+      setRobotMetaSaveFailed(false);
       setRobotMetaInfo("Robot Meta удалена.");
     } catch (error) {
+      setRobotMetaSaveFailed(true);
       setRobotMetaErr(str(error?.message || error || "Не удалось удалить Robot Meta."));
     } finally {
       setRobotMetaBusy(false);
@@ -1730,6 +2171,7 @@ export default function NotesPanel({
 
   function updateCamundaPropertiesDraft(nextRaw) {
     setCamundaPropertiesDraft(nextRaw && typeof nextRaw === "object" ? nextRaw : createEmptyCamundaExtensionState());
+    setCamundaExtensionSaveFailed(false);
     setCamundaPropertiesErr("");
   }
 
@@ -1802,17 +2244,6 @@ export default function NotesPanel({
         setCamundaPropertiesErr(str(result.error || "Не удалось сохранить настройку overlay."));
         return;
       }
-      const currentElementId = str(selectedElementId);
-      setTimeout(() => {
-        const syncState = showPropertiesOverlaySyncRef.current;
-        if (str(syncState?.elementId) !== currentElementId) return;
-        if (!syncState?.pending) return;
-        showPropertiesOverlaySyncRef.current = {
-          elementId: currentElementId,
-          pending: false,
-          target: !!syncState?.target,
-        };
-      }, 1800);
       setCamundaPropertiesInfo(nextValue ? "Overlay свойств включён." : "Overlay свойств отключён.");
     } catch (error) {
       showPropertiesOverlaySyncRef.current = {
@@ -1869,21 +2300,27 @@ export default function NotesPanel({
     const prevCanonical = JSON.stringify(normalizeCamundaExtensionState(selectedCamundaExtensionEntry));
     const nextCanonical = JSON.stringify(normalizeCamundaExtensionState(normalized));
     if (prevCanonical === nextCanonical) {
+      setCamundaExtensionSaveFailed(false);
       setCamundaPropertiesErr("");
       setCamundaPropertiesInfo("Без изменений.");
       return;
     }
+    setCamundaExtensionLastAction("save");
     setCamundaPropertiesBusy(true);
+    setCamundaExtensionSaveFailed(false);
     setCamundaPropertiesErr("");
     setCamundaPropertiesInfo("");
     try {
       const result = await Promise.resolve(onSetElementCamundaExtensions(selectedElementId, normalized));
       if (result && result.ok === false) {
+        setCamundaExtensionSaveFailed(true);
         setCamundaPropertiesErr(str(result.error || "Не удалось сохранить Properties."));
         return;
       }
+      setCamundaExtensionSaveFailed(false);
       setCamundaPropertiesInfo("Properties сохранены.");
     } catch (error) {
+      setCamundaExtensionSaveFailed(true);
       setCamundaPropertiesErr(str(error?.message || error || "Не удалось сохранить Properties."));
     } finally {
       setCamundaPropertiesBusy(false);
@@ -1899,18 +2336,23 @@ export default function NotesPanel({
         ? selectedCamundaExtensionEntry.preservedExtensionElements.slice()
         : [],
     };
+    setCamundaExtensionLastAction("reset");
     setCamundaPropertiesBusy(true);
+    setCamundaExtensionSaveFailed(false);
     setCamundaPropertiesErr("");
     setCamundaPropertiesInfo("");
     try {
       const result = await Promise.resolve(onSetElementCamundaExtensions(selectedElementId, nextState));
       if (result && result.ok === false) {
+        setCamundaExtensionSaveFailed(true);
         setCamundaPropertiesErr(str(result.error || "Не удалось очистить Properties."));
         return;
       }
       setCamundaPropertiesDraft(nextState);
+      setCamundaExtensionSaveFailed(false);
       setCamundaPropertiesInfo("Properties очищены.");
     } catch (error) {
+      setCamundaExtensionSaveFailed(true);
       setCamundaPropertiesErr(str(error?.message || error || "Не удалось очистить Properties."));
     } finally {
       setCamundaPropertiesBusy(false);
@@ -2040,20 +2482,35 @@ export default function NotesPanel({
       : str(aiCommentDraft[qid] ?? question?.comment);
 
     setAiBusyQid(qid);
-    setAiErr("");
+    setAiRowErrByQid((prev) => {
+      const next = { ...(prev || {}) };
+      delete next[qid];
+      return next;
+    });
     try {
       const r = onUpdateElementAiQuestion?.(selectedElementId, qid, { status, comment });
       const rr = r && typeof r.then === "function" ? await r : r;
       if (rr && rr.ok === false) {
-        setAiErr(String(rr.error || "Не удалось сохранить AI-комментарий."));
+        setAiRowErrByQid((prev) => ({
+          ...(prev || {}),
+          [qid]: String(rr.error || "Не удалось сохранить AI-комментарий."),
+        }));
         return;
       }
+      setAiRowErrByQid((prev) => {
+        const next = { ...(prev || {}) };
+        delete next[qid];
+        return next;
+      });
       setAiSavedQid(qid);
       setTimeout(() => {
         setAiSavedQid((prev) => (prev === qid ? "" : prev));
       }, 1200);
     } catch (e) {
-      setAiErr(String(e?.message || e));
+      setAiRowErrByQid((prev) => ({
+        ...(prev || {}),
+        [qid]: String(e?.message || e || "Не удалось сохранить AI-комментарий."),
+      }));
     } finally {
       setAiBusyQid("");
     }
@@ -2180,17 +2637,22 @@ export default function NotesPanel({
                 <PathsSection
                   selectedElementId={isElementMode ? selectedElementId : ""}
                   nodePathEditable={isElementMode ? isSelectedPathNode : false}
-                  nodePathPaths={isElementMode ? nodePathDraftPaths : []}
-                  nodePathSequenceKey={isElementMode ? nodePathDraftSequence : ""}
-                  nodePathBusy={isElementMode ? nodePathBusy : false}
-                  nodePathErr={isElementMode ? nodePathErr : ""}
-                  nodePathInfo={isElementMode ? nodePathInfo : ""}
+                  nodePathPaths={isElementMode ? resolvedNodePathController.paths : []}
+                  nodePathSharedSnapshot={isElementMode ? resolvedNodePathController.sharedSnapshot : null}
+                  nodePathSequenceKey={isElementMode ? resolvedNodePathController.sequenceKey : ""}
+                  nodePathSyncState={isElementMode && isSelectedPathNode
+                    ? resolvedNodePathController.syncState
+                    : "saved"}
+                  nodePathBusy={isElementMode ? resolvedNodePathController.busy : false}
+                  nodePathErr={isElementMode ? resolvedNodePathController.err : ""}
+                  nodePathInfo={isElementMode ? resolvedNodePathController.info : ""}
                   selectedNodeCount={isElementMode ? selectedElementSelectionIds.length : 0}
                   bulkSelectionCount={isElementMode ? bulkNodeIds.length : 0}
-                  onToggleNodePathTag={toggleNodePathTag}
-                  onNodePathSequenceChange={setNodePathDraftSequence}
-                  onApplyNodePath={applySelectedNodePath}
-                  onResetNodePath={resetSelectedNodePath}
+                  onToggleNodePathTag={resolvedNodePathController.toggleTag}
+                  onNodePathSequenceChange={resolvedNodePathController.updateSequenceKey}
+                  onApplyNodePath={resolvedNodePathController.apply}
+                  onResetNodePath={resolvedNodePathController.reset}
+                  onAcceptSharedNodePath={resolvedNodePathController.acceptShared}
                   onAutoNodePathFromColors={autoNodePathFromColors}
                   onSelectBranchUntilBoundary={selectBranchUntilBoundary}
                   onApplyP1ToSelected={applyP1ForSelectedNodes}
@@ -2216,7 +2678,11 @@ export default function NotesPanel({
                 <TimeSection
                   selectedElementId={isElementMode ? selectedElementId : ""}
                   stepTimeInput={isElementMode ? stepTimeInput : ""}
-                  onStepTimeInputChange={setStepTimeInput}
+                  stepTimeSyncState={isElementMode ? stepTimeSyncState : "saved"}
+                  onStepTimeInputChange={(value) => {
+                    setStepTimeSaveFailed(false);
+                    setStepTimeInput(value);
+                  }}
                   onSaveStepTime={saveSelectedElementStepTime}
                   stepTimeBusy={isElementMode ? stepTimeBusy : false}
                   stepTimeErr={isElementMode ? stepTimeErr : ""}
@@ -2240,6 +2706,7 @@ export default function NotesPanel({
                   selectedElementId={isElementMode ? selectedElementId : ""}
                   robotMetaEditable={isElementMode ? selectedRobotMetaEditable : false}
                   robotMetaDraft={isElementMode ? robotMetaDraft : createDefaultRobotMetaV1()}
+                  robotMetaSyncState={isElementMode ? robotMetaSyncState : "saved"}
                   robotMetaBusy={isElementMode ? robotMetaBusy : false}
                   robotMetaErr={isElementMode ? robotMetaErr : ""}
                   robotMetaInfo={isElementMode ? robotMetaInfo : ""}
@@ -2260,8 +2727,12 @@ export default function NotesPanel({
               >
                 <CamundaPropertiesSection
                   selectedElementId={isElementMode ? selectedElementId : ""}
+                  selectedElementType={isElementMode ? selectedElementType : ""}
+                  selectedBpmnPropertyContext={isElementMode ? selectedBpmnPropertyContext : null}
+                  selectedBpmnOverlayCompanionSummary={isElementMode ? selectedBpmnOverlayCompanionSummary : null}
                   camundaPropertiesEditable={isElementMode ? selectedCamundaPropertiesEditable : false}
                   extensionStateDraft={isElementMode ? camundaPropertiesDraft : createEmptyCamundaExtensionState()}
+                  extensionStateSyncState={isElementMode ? camundaExtensionSyncState : "saved"}
                   extensionStateBusy={isElementMode ? camundaPropertiesBusy : false}
                   extensionStateErr={isElementMode ? camundaPropertiesErr : ""}
                   extensionStateInfo={isElementMode ? camundaPropertiesInfo : ""}
@@ -2286,6 +2757,8 @@ export default function NotesPanel({
                   })}
                   onSaveExtensionState={saveSelectedCamundaProperties}
                   onResetExtensionState={resetSelectedCamundaProperties}
+                  onRetryExtensionState={camundaExtensionLastAction === "reset" ? resetSelectedCamundaProperties : saveSelectedCamundaProperties}
+                  onFocusDrawioCompanion={onFocusDrawioCompanion}
                   disabled={disabled}
                 />
               </SidebarAccordion>
@@ -2305,7 +2778,11 @@ export default function NotesPanel({
                   selectedElementNotes={isElementMode ? selectedElementNotes : []}
                   noteCount={isElementMode ? selectedElementNotes.length : 0}
                   elementText={isElementMode ? elementText : ""}
-                  onElementTextChange={setElementText}
+                  elementSyncState={isElementMode ? elementSyncState : "saved"}
+                  onElementTextChange={(value) => {
+                    setElementSaveFailed(false);
+                    setElementText(value);
+                  }}
                   onSendElementNote={sendElementNote}
                   elementBusy={isElementMode ? elementBusy : false}
                   elementErr={isElementMode ? elementErr : ""}
@@ -2337,8 +2814,14 @@ export default function NotesPanel({
                   aiBusyQid={aiBusyQid}
                   aiSavedQid={aiSavedQid}
                   aiErr={aiErr}
+                  aiRowErrByQid={aiRowErrByQid}
                   aiCommentDraft={aiCommentDraft}
                   onAiCommentDraftChange={(qid, value) => {
+                    setAiRowErrByQid((prev) => {
+                      const next = { ...(prev || {}) };
+                      delete next[String(qid || "").trim()];
+                      return next;
+                    });
                     setAiCommentDraft((prev) => ({ ...prev, [qid]: String(value || "") }));
                   }}
                   onSaveElementAiQuestion={saveElementAiQuestion}

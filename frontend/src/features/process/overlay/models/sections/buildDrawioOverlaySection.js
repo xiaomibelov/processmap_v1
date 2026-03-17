@@ -3,6 +3,7 @@ import {
   getEditorDrawioTools,
   getRuntimeDrawioTools,
 } from "../../../drawio/domain/drawioSelectors.js";
+import { summarizeDrawioAnchorStatuses } from "../../../drawio/drawioAnchors.js";
 import { normalizeDrawioInteractionMode } from "../../../drawio/drawioMeta.js";
 
 function toText(value) {
@@ -26,6 +27,7 @@ export default function buildDrawioOverlaySection({
   const activeTool = toText(drawioState?.active_tool || "select").toLowerCase() || "select";
   const visibleOnCanvas = visibilityContract.visibleOnCanvas === true;
   const opacityControlEnabled = visibilityContract.opacityControlEnabled !== false;
+  const anchorSummary = summarizeDrawioAnchorStatuses(drawioRows);
   return {
     drawioSection: {
       enabled: overlayStatus.enabled === true,
@@ -42,6 +44,8 @@ export default function buildDrawioOverlaySection({
       opacityPct: drawioOpacity,
       opacityControlEnabled,
       visibleOnCanvas,
+      anchorSummary,
+      anchorValidationDeferred: drawioState?._anchor_validation_deferred === true,
       rows: drawioRows,
       elementCount: drawioRows.length,
       tools: {

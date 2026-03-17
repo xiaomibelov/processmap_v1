@@ -1,3 +1,5 @@
+import SidebarTrustStatus from "./SidebarTrustStatus";
+
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -25,12 +27,40 @@ function compactTime(value) {
   }
 }
 
+const ELEMENT_NOTES_STATUS_META = {
+  saved: {
+    label: "Сохранено",
+    helper: "Заметка сохранена.",
+    tone: "saved",
+    cta: null,
+  },
+  local: {
+    label: "Есть локальные изменения",
+    helper: "Текст заметки изменён локально.",
+    tone: "local",
+    cta: null,
+  },
+  syncing: {
+    label: "Синхронизация…",
+    helper: "Заметка сохраняется.",
+    tone: "syncing",
+    cta: null,
+  },
+  error: {
+    label: "Ошибка",
+    helper: "Не удалось сохранить заметку. Текст остался в редакторе.",
+    tone: "error",
+    cta: "Повторить",
+  },
+};
+
 export default function ElementNotesAccordionContent({
   selectedElementId,
   selectedElementName,
   selectedElementNotes,
   noteCount,
   elementText,
+  elementSyncState = "saved",
   onElementTextChange,
   onSendElementNote,
   elementBusy,
@@ -39,7 +69,7 @@ export default function ElementNotesAccordionContent({
   disabled,
 }) {
   const list = [...asArray(selectedElementNotes)].slice(-10).reverse();
-  const hasUnsaved = String(elementText || "").trim().length > 0;
+  const statusMeta = ELEMENT_NOTES_STATUS_META[String(elementSyncState || "").trim().toLowerCase()] || ELEMENT_NOTES_STATUS_META.saved;
 
   if (!selectedElementId) {
     return <div className="sidebarEmptyHint">Выберите узел для заметок.</div>;
@@ -47,6 +77,16 @@ export default function ElementNotesAccordionContent({
 
   return (
     <div className="sidebarControlStack">
+      <SidebarTrustStatus
+        title={<span>Заметки</span>}
+        label={statusMeta.label}
+        helper={statusMeta.helper}
+        tone={statusMeta.tone}
+        ctaLabel={statusMeta.cta}
+        onCta={onSendElementNote}
+        ctaDisabled={!!disabled || !!elementBusy}
+        testIdPrefix="element-notes-status"
+      />
       <div className="text-[11px] text-muted">
         Узел: <span className="text-fg">{selectedElementName || selectedElementId}</span>
       </div>
@@ -87,7 +127,7 @@ export default function ElementNotesAccordionContent({
         disabled={!!disabled || !!elementBusy}
       />
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] text-muted">{hasUnsaved ? "Есть несохранённые изменения" : "Сохранено"}</span>
+        <span className="text-[11px] text-muted">Ctrl/Cmd + Enter для сохранения</span>
         <button
           type="button"
           className="primaryBtn h-8 px-3 text-[11px]"

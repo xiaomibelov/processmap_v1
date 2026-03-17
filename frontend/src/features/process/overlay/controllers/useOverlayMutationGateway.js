@@ -3,6 +3,7 @@ import { OVERLAY_ENTITY_KINDS, normalizeOverlayEntityKind } from "../../drawio/d
 import { resolveCanonicalDrawioElementId } from "../../drawio/domain/drawioSelectors.js";
 import { clampDrawioOpacity, getDrawioOverlayStatus } from "../../drawio/domain/drawioVisibility.js";
 import { normalizeDrawioInteractionMode } from "../../drawio/drawioMeta.js";
+import { normalizeDrawioAnchor } from "../../drawio/drawioAnchors.js";
 import { publishDrawioNormalizationSnapshot } from "../../drawio/runtime/drawioNormalizationDiagnostics.js";
 import { buildRuntimePlacementPatch, normalizeRuntimeTool } from "../../drawio/runtime/drawioRuntimePlacement.js";
 import {
@@ -525,6 +526,47 @@ export default function useOverlayMutationGateway({
     return !!changed;
   }, [applyDrawioMutation, drawioMetaRef, normalizeDrawioMeta, publishNormalization, setGenErr, setInfoMsg]);
 
+  const setDrawioElementAnchor = useCallback((elementIdRaw, anchorRaw, source = "drawio_element_anchor") => {
+    const elementId = resolveCanonicalDrawioElementId(drawioMetaRef.current, elementIdRaw);
+    if (!elementId) return false;
+    let changed = false;
+    let invalid = false;
+    const result = applyDrawioMutation((prevRaw) => {
+      const prev = normalizeDrawioMeta(prevRaw);
+      const nextElements = asArray(prev.drawio_elements_v1).map((rowRaw) => {
+        const row = asObject(rowRaw);
+        if (toText(row.id) !== elementId) return row;
+        const nextAnchor = normalizeDrawioAnchor(anchorRaw, row);
+        invalid = !!nextAnchor && nextAnchor.status === "invalid";
+        const prevComparable = JSON.stringify(asObject(row.anchor_v1));
+        const nextComparable = nextAnchor ? JSON.stringify(nextAnchor) : "";
+        if (!nextAnchor && !row.anchor_v1) return row;
+        if (prevComparable === nextComparable) return row;
+        changed = true;
+        if (!nextAnchor) {
+          const nextRow = { ...row };
+          delete nextRow.anchor_v1;
+          return nextRow;
+        }
+        return {
+          ...row,
+          anchor_v1: nextAnchor,
+        };
+      });
+      return changed ? { ...prev, drawio_elements_v1: nextElements } : prev;
+    }, {
+      source,
+      playbackStage: source,
+      persist: true,
+    });
+    if (invalid) {
+      setInfoMsg?.("Anchor metadata сохранена как invalid: объект или target не входят в первый pilot contract.");
+      setGenErr?.("");
+    }
+    if (result.changed) publishNormalization(source);
+    return !!result.changed;
+  }, [applyDrawioMutation, drawioMetaRef, normalizeDrawioMeta, publishNormalization, setGenErr, setInfoMsg]);
+
   const getDrawioStatus = useCallback(() => getDrawioOverlayStatus(drawioMetaRef.current), [drawioMetaRef]);
 
   return {
@@ -542,6 +584,7 @@ export default function useOverlayMutationGateway({
     setDrawioElementTextWidth,
     setDrawioElementStylePreset,
     setDrawioElementSize,
+    setDrawioElementAnchor,
     getDrawioStatus,
   };
 }
