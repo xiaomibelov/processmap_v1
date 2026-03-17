@@ -5199,11 +5199,15 @@ def session_bpmn_export(
     session_id: str,
     raw: int = Query(0, description="1 = return stored bpmn_xml as-is (no regenerate/overlay)"),
     include_overlay: int = Query(1, description="1 = overlay interview annotations (ignored when raw=1)"),
+    request: Request = None,
 ):
     st = get_storage()
-    s = st.load(session_id)
+    s, oid, _ = _legacy_load_session_scoped(session_id, request)
     if not s:
         return Response(content="not found", media_type="text/plain", status_code=404)
+
+    user = _request_auth_user(request) if request is not None else {}
+    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
 
     xml_stored = str(getattr(s, "bpmn_xml", "") or "")
     has_graph = len(getattr(s, "nodes", []) or []) > 0 or len(getattr(s, "edges", []) or []) > 0
@@ -5216,7 +5220,7 @@ def session_bpmn_export(
         s.bpmn_xml = str(xml_text or "")
         s.bpmn_xml_version = int(getattr(s, "version", 0) or 0)
         s.bpmn_graph_fingerprint = current_graph_fp
-        st.save(s)
+        st.save(s, user_id=user_id, org_id=oid, is_admin=True)
 
     if raw_mode:
         if xml_stored.strip():
@@ -5276,21 +5280,33 @@ def session_bpmn_export(
 
 
 @app.put("/api/sessions/{session_id}/bpmn")
-def session_bpmn_save(session_id: str, inp: BpmnXmlIn) -> Dict[str, Any]:
-    lock = acquire_session_lock(session_id, ttl_ms=15000)
-    if not lock.acquired:
-        raise HTTPException(status_code=423, detail="Session is being updated, retry")
+def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) -> Dict[str, Any]:
+    user = _request_auth_user(request) if request is not None else {}
+    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
+    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
+    effective_is_admin = is_admin or request is None
 
-    st = get_storage()
-    s = st.load(session_id)
-    if not s:
+    sess_pre, oid, _ = _legacy_load_session_scoped(session_id, request)
+    if not sess_pre:
         return {"error": "not found"}
+    role = _org_role_for_request(request, oid) if request is not None and oid else ("org_admin" if effective_is_admin else "")
+    if not _can_edit_workspace(role, is_admin=effective_is_admin):
+        raise HTTPException(status_code=403, detail="forbidden")
 
     xml = str(inp.xml or "")
     if not xml.strip():
         return {"error": "xml is empty"}
 
+    lock = acquire_session_lock(session_id, ttl_ms=15000)
+    if not lock.acquired:
+        raise HTTPException(status_code=423, detail="Session is being updated, retry")
+
     try:
+        st = get_storage()
+        s, oid_locked, _ = _legacy_load_session_scoped(session_id, request)
+        if not s:
+            return {"error": "not found"}
+
         flow_ctx = _collect_sequence_flow_meta(xml)
         flow_ids = flow_ctx.get("flow_ids") if isinstance(flow_ctx, dict) else set()
         node_ids = flow_ctx.get("node_ids") if isinstance(flow_ctx, dict) else set()
@@ -5371,7 +5387,7 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn) -> Dict[str, Any]:
             gateway_mode_by_node=flow_ctx.get("gateway_mode_by_node"),
         )
         s.bpmn_meta = normalized_meta
-        st.save(s)
+        st.save(s, user_id=user_id, org_id=oid_locked, is_admin=True)
         _invalidate_session_caches(s, session_id=session_id, org_id=getattr(s, "org_id", "") or get_default_org_id())
         return {"ok": True, "session_id": s.id, "bytes": len(xml), "version": s.bpmn_xml_version}
     finally:
@@ -5702,6 +5718,29 @@ def _enrich_members_with_email(items_raw: Any) -> List[Dict[str, Any]]:
     return out
 
 
+def _request_org_candidates(request: Optional[Request], preferred_org_id: str) -> List[str]:
+    out: List[str] = []
+    seen: Set[str] = set()
+
+    def _push(org_id_raw: Any) -> None:
+        org_id = str(org_id_raw or "").strip()
+        if not org_id or org_id in seen:
+            return
+        seen.add(org_id)
+        out.append(org_id)
+
+    _push(preferred_org_id)
+    if request is not None:
+        user_id, is_admin = _request_user_meta(request)
+        if user_id:
+            for row in list_user_org_memberships(user_id, is_admin=is_admin):
+                if isinstance(row, dict):
+                    _push(row.get("org_id"))
+    if not out:
+        _push(get_default_org_id())
+    return out
+
+
 def _legacy_load_project_scoped(
     project_id: str,
     request: Optional[Request] = None,
@@ -5711,14 +5750,23 @@ def _legacy_load_project_scoped(
     if not pid:
         return None, oid, None
     ps = get_project_storage()
-    proj = ps.load(pid, org_id=(oid or None), is_admin=True)
+    proj: Optional[Project] = None
+    resolved_oid = oid
+    for org_candidate in _request_org_candidates(request, oid):
+        proj = ps.load(pid, org_id=(org_candidate or None), is_admin=True)
+        if proj:
+            resolved_oid = org_candidate
+            break
     if not proj:
         return None, oid, None
-    scope = _project_scope_for_request(request, oid or str(getattr(proj, "org_id", "") or "").strip() or get_default_org_id())
+    scope = _project_scope_for_request(
+        request,
+        resolved_oid or str(getattr(proj, "org_id", "") or "").strip() or get_default_org_id(),
+    )
     allowed = _scope_allowed_project_ids(scope)
     if allowed and str(getattr(proj, "id", "") or "").strip() not in allowed:
-        return None, oid, scope
-    return proj, (oid or str(getattr(proj, "org_id", "") or "").strip() or get_default_org_id()), scope
+        return None, resolved_oid, scope
+    return proj, (resolved_oid or str(getattr(proj, "org_id", "") or "").strip() or get_default_org_id()), scope
 
 
 def _legacy_load_session_scoped(
@@ -5730,15 +5778,24 @@ def _legacy_load_session_scoped(
     if not sid:
         return None, oid, None
     st = get_storage()
-    sess = st.load(sid, org_id=(oid or None), is_admin=True)
+    sess: Optional[Session] = None
+    resolved_oid = oid
+    for org_candidate in _request_org_candidates(request, oid):
+        sess = st.load(sid, org_id=(org_candidate or None), is_admin=True)
+        if sess:
+            resolved_oid = org_candidate
+            break
     if not sess:
         return None, oid, None
-    scope = _project_scope_for_request(request, oid or str(getattr(sess, "org_id", "") or "").strip() or get_default_org_id())
+    scope = _project_scope_for_request(
+        request,
+        resolved_oid or str(getattr(sess, "org_id", "") or "").strip() or get_default_org_id(),
+    )
     allowed = _scope_allowed_project_ids(scope)
     project_id = str(getattr(sess, "project_id", "") or "").strip()
     if allowed and project_id and project_id not in allowed:
-        return None, oid, scope
-    return sess, (oid or str(getattr(sess, "org_id", "") or "").strip() or get_default_org_id()), scope
+        return None, resolved_oid, scope
+    return sess, (resolved_oid or str(getattr(sess, "org_id", "") or "").strip() or get_default_org_id()), scope
 
 
 def _enterprise_manage_project_members_guard(
