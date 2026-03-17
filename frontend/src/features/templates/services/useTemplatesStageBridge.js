@@ -33,6 +33,7 @@ export default function useTemplatesStageBridge({
   bpmnApiRef,
   bpmnStageHostRef,
   clientToDiagram,
+  onPersistedTemplateApply = null,
 }) {
   const selectedElementId = toText(selectedBpmnElement?.id);
   const selectedElementName = toText(selectedBpmnElement?.name || selectedElementId);
@@ -203,6 +204,16 @@ export default function useTemplatesStageBridge({
       if (saved?.pending === true) {
         return { ok: false, error: "persist_pending_timeout", inserted };
       }
+      if (typeof onPersistedTemplateApply === "function") {
+        try {
+          await Promise.resolve(onPersistedTemplateApply({
+            template: templateRaw,
+            inserted,
+            saved,
+          }));
+        } catch {
+        }
+      }
       return {
         ...inserted,
         persisted: true,
@@ -211,7 +222,7 @@ export default function useTemplatesStageBridge({
     } catch (error) {
       return { ok: false, error: toText(error?.message || error || "insert_failed") };
     }
-  }, [bpmnApiRef, bpmnStageHostRef, clientToDiagram]);
+  }, [bpmnApiRef, bpmnStageHostRef, clientToDiagram, onPersistedTemplateApply]);
 
   const insertBpmnFragmentTemplateImmediately = useCallback(async (templateRaw, options = {}) => {
     const rect = options?.diagramContainerRect && typeof options.diagramContainerRect === "object"
