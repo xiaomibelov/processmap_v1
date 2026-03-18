@@ -1,18 +1,18 @@
 services:
   api:
     build:
-      context: ${FPC_SOURCE_ROOT:?FPC_SOURCE_ROOT must point to the runtime source root}
+      context: ${FPC_API_SOURCE_ROOT:?FPC_API_SOURCE_ROOT must point to the API runtime source root}
     volumes:
-      - ${FPC_SOURCE_ROOT:?FPC_SOURCE_ROOT must point to the runtime source root}/workspace:/app/workspace
-      - ${FPC_SOURCE_ROOT:?FPC_SOURCE_ROOT must point to the runtime source root}/backend:/app/backend
+      - ${FPC_WORKSPACE_SOURCE_ROOT:?FPC_WORKSPACE_SOURCE_ROOT must point to the workspace runtime source root}/workspace:/app/workspace
+      - ${FPC_API_SOURCE_ROOT:?FPC_API_SOURCE_ROOT must point to the API runtime source root}/backend:/app/backend
 
   frontend:
     build:
-      context: ${FPC_SOURCE_ROOT:?FPC_SOURCE_ROOT must point to the runtime source root}/frontend
+      context: ${FPC_FRONTEND_SOURCE_ROOT:?FPC_FRONTEND_SOURCE_ROOT must point to the frontend runtime source root}/frontend
       dockerfile: Dockerfile
     volumes:
-      - ${FPC_SOURCE_ROOT:?FPC_SOURCE_ROOT must point to the runtime source root}/frontend:/app
+      - ${FPC_FRONTEND_SOURCE_ROOT:?FPC_FRONTEND_SOURCE_ROOT must point to the frontend runtime source root}/frontend:/app
 
   gateway:
     volumes:
-      - ${FPC_SOURCE_ROOT:?FPC_SOURCE_ROOT must point to the runtime source root}/deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${FPC_GATEWAY_SOURCE_ROOT:?FPC_GATEWAY_SOURCE_ROOT must point to the gateway runtime source root}/deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
