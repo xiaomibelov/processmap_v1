@@ -8,6 +8,7 @@ export default function ProcessStageHeader({ view = {} }) {
     showSaveActionButton,
     saveActionText,
     saveSmartText,
+    saveUploadStatus,
     sessionRevisionHistorySnapshot,
     handleSaveCurrentTab,
     workbench,
@@ -62,15 +63,15 @@ export default function ProcessStageHeader({ view = {} }) {
               </span>
             )
           ) : (
-            <button
-              type="button"
-              className="secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
-              disabled
-              title={workbench.saveTooltip}
-            >
-              {workbench.labels.save}
-            </button>
-          )}
+              <button
+                type="button"
+                className="secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
+                disabled
+                title={workbench.saveTooltip}
+              >
+                {saveSmartText || workbench.labels.save}
+              </button>
+            )}
           {latestRevisionNumber > 0 ? (
             <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-latest-revision">
               r{latestRevisionNumber}
@@ -86,6 +87,15 @@ export default function ProcessStageHeader({ view = {} }) {
           >
             {draftStatusLabel}
           </span>
+          {saveUploadStatus?.visible ? (
+            <span
+              className={`badge text-[11px] ${String(saveUploadStatus?.tone || "").trim()}`}
+              data-testid="diagram-toolbar-save-upload-status"
+              title={String(saveUploadStatus?.title || saveUploadStatus?.label || "")}
+            >
+              {String(saveUploadStatus?.label || "")}
+            </span>
+          ) : null}
         </div>
       </div>
 

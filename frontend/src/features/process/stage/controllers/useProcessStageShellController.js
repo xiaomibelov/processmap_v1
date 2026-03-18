@@ -65,6 +65,7 @@ export default function useProcessStageShellController({
   tab,
   availablePathTiers,
   sessionSaveReadSnapshot,
+  saveUploadStatus,
   sessionVersionReadSnapshot,
   sessionTemplateProvenanceSnapshot,
   sessionCompanionBridgeSnapshot,
@@ -91,7 +92,7 @@ export default function useProcessStageShellController({
     const truthSourceMap = asObject(asObject(sessionCompanionBridgeSnapshot).sourceMap);
     return {
       canSaveNow,
-      saveSmartText: canSaveNow ? saveUi.saveSmartText : workbench.labels.save,
+      saveSmartText: hasSession ? saveUi.saveSmartText : workbench.labels.save,
       saveDirtyHint: saveUi.saveDirty,
       publishActionRequired: saveUi.publishActionRequired,
       showSaveActionButton: saveUi.showSaveActionButton,
@@ -105,6 +106,7 @@ export default function useProcessStageShellController({
         && (selectedBpmnElementIds.length > 0 || Number(selectedHybridTemplateCount || 0) > 0),
       canOpenTemplatesList: hasSession && !templatesBusy,
       hasPathHighlightData: availablePathTiers.length > 0,
+      saveUploadStatus: asObject(saveUploadStatus),
       sessionSaveReadSnapshot: saveSnapshot,
       sessionVersionReadSnapshot: asObject(sessionVersionReadSnapshot),
       sessionTemplateProvenanceSnapshot: asObject(sessionTemplateProvenanceSnapshot),
@@ -122,6 +124,7 @@ export default function useProcessStageShellController({
     isManualSaveBusy,
     isSwitchingTab,
     saveDirtyHint,
+    saveUploadStatus,
     sessionCompanionBridgeSnapshot,
     sessionSaveReadSnapshot,
     sessionTemplateProvenanceSnapshot,
