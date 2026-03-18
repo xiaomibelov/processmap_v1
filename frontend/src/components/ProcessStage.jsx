@@ -72,6 +72,7 @@ import {
 import HybridOverlayRenderer from "../features/process/hybrid/renderers/HybridOverlayRenderer";
 import useSessionMetaPersist from "../features/process/stage/controllers/useSessionMetaPersist";
 import { attachProcessStageFlushBeforeLeaveListener } from "../features/process/navigation/processLeaveFlush";
+import { flushProcessStageBeforeLeave } from "../features/process/navigation/processLeaveFlushController";
 import useProcessStageShellController from "../features/process/stage/controllers/useProcessStageShellController";
 import useBpmnCanvasController from "../features/process/stage/controllers/useBpmnCanvasController";
 import useDiagramOverlayTransform from "../features/process/stage/controllers/useDiagramOverlayTransform";
@@ -245,6 +246,7 @@ export default function ProcessStage({
   const hybridV2FileInputRef = useRef(null);
   const drawioFileInputRef = useRef(null);
   const lastDraftXmlHashRef = useRef("");
+  const lastSuccessfulPublishRef = useRef({ sessionId: "", atMs: 0, xmlHash: "" });
   const lastAiGenerateIntentKeyRef = useRef("");
   const lastDrawioCompanionFocusKeyRef = useRef("");
   const attentionPanelWasOpenRef = useRef(false);
@@ -794,6 +796,11 @@ export default function ProcessStage({
       let companionError = "";
       let publishInfo = "";
       if (!saved?.pending) {
+        lastSuccessfulPublishRef.current = {
+          sessionId: sid,
+          atMs: Date.now(),
+          xmlHash: fnv1aHex(String(saved?.xml || draft?.bpmn_xml || "")),
+        };
         const companionResult = await persistSavedSessionCompanion({
           source: "manual_save",
           xml: toText(saved?.xml || draft?.bpmn_xml || ""),
@@ -3390,62 +3397,17 @@ export default function ProcessStage({
   useEffect(() => {
     const sidValue = String(sid || "").trim();
     return attachProcessStageFlushBeforeLeaveListener(async ({ sessionId }) => {
-      const requestedSid = String(sessionId || "").trim();
-      if (!sidValue) {
-        return { ok: true, skipped: true, reason: "no_active_session" };
-      }
-      if (requestedSid && requestedSid !== sidValue) {
-        return { ok: true, skipped: true, reason: "session_mismatch" };
-      }
-      const flushTab = tab === "xml" ? "xml" : "diagram";
-      const startedAt = Date.now();
-      let attempts = 0;
-      let stableFlushCount = 0;
-      let stableXmlHash = "";
-      while (Date.now() - startedAt <= 4200) {
-        attempts += 1;
-        const flush = await bpmnSync.flushFromActiveTab(flushTab, {
-          force: true,
-          source: "leave_to_project",
-          reason: "leave_to_project",
-        });
-        if (!flush?.ok) {
-          return {
-            ok: false,
-            error: String(flush?.error || "flush_before_leave_failed"),
-            attempts,
-          };
-        }
-        if (flush?.pending) {
-          stableFlushCount = 0;
-          stableXmlHash = "";
-          await new Promise((resolve) => setTimeout(resolve, 220));
-          continue;
-        }
-        const xmlHash = fnv1aHex(String(flush?.xml || ""));
-        if (xmlHash && xmlHash === stableXmlHash) {
-          stableFlushCount += 1;
-        } else {
-          stableXmlHash = xmlHash;
-          stableFlushCount = 1;
-        }
-        if (stableFlushCount >= 2) {
-          return {
-            ok: true,
-            pending: false,
-            attempts,
-            stableXmlHash,
-          };
-        }
-        await new Promise((resolve) => setTimeout(resolve, 180));
-      }
-      return {
-        ok: false,
-        error: "flush_before_leave_pending_timeout",
-        attempts,
-      };
+      return flushProcessStageBeforeLeave({
+        requestedSessionId: sessionId,
+        activeSessionId: sidValue,
+        activeTab: tab,
+        bpmnSync,
+        saveDirtyHint,
+        hasXmlDraftChanges: !!bpmnRef.current?.hasXmlDraftChanges?.(),
+        lastSuccessfulPublish: lastSuccessfulPublishRef.current,
+      });
     });
-  }, [sid, tab, bpmnSync]);
+  }, [sid, tab, bpmnSync, saveDirtyHint]);
 
   useEffect(() => {
     // eslint-disable-next-line no-console
