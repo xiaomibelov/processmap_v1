@@ -255,6 +255,28 @@ export default function createBpmnCoordinator(options = {}) {
     }
 
     const xml = asText(xmlRes?.xml);
+    const currentXmlHash = fnv1aHex(xml);
+    const localHash = asText(state?.lastHash || state?.hash || "");
+    const localDirty = state?.dirty === true;
+    const localLastSavedRev = asNumber(state?.lastSavedRev, 0);
+    if (!localDirty && currentXmlHash && localHash && currentXmlHash === localHash && localLastSavedRev >= rev) {
+      emit("SAVE_PERSIST_SKIPPED_UNCHANGED", {
+        sid,
+        reason,
+        rev,
+        last_saved_rev: localLastSavedRev,
+        xml_len: xml.length,
+      });
+      return {
+        ok: true,
+        rev: localLastSavedRev || rev,
+        storedRev: localLastSavedRev || rev,
+        skipped: true,
+        unchanged: true,
+        xml,
+        hash: currentXmlHash,
+      };
+    }
     const refreshed = store.setXml(xml, "flush_save", { bumpRev: false, dirty: true });
     const targetRev = asNumber(refreshed?.rev, rev);
     emit("SAVE_EXECUTED", {

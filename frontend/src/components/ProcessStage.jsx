@@ -72,6 +72,10 @@ import {
 import HybridOverlayRenderer from "../features/process/hybrid/renderers/HybridOverlayRenderer";
 import useSessionMetaPersist from "../features/process/stage/controllers/useSessionMetaPersist";
 import { attachProcessStageFlushBeforeLeaveListener } from "../features/process/navigation/processLeaveFlush";
+import {
+  buildSaveUploadStatusBadge,
+  normalizeBpmnSaveLifecycleEvent,
+} from "../features/process/navigation/saveUploadStatus";
 import useProcessStageShellController from "../features/process/stage/controllers/useProcessStageShellController";
 import useBpmnCanvasController from "../features/process/stage/controllers/useBpmnCanvasController";
 import useDiagramOverlayTransform from "../features/process/stage/controllers/useDiagramOverlayTransform";
@@ -191,6 +195,18 @@ import {
 } from "../features/process/stage/utils/processStageHelpers";
 import { pushDeleteTrace } from "../features/process/stage/utils/deleteTrace";
 
+const IDLE_SAVE_UPLOAD_EVENT = Object.freeze({
+  event: "",
+  stage: "idle",
+  at: 0,
+  reason: "",
+  sessionId: "",
+  rev: 0,
+  status: 0,
+  xmlBytes: 0,
+  error: "",
+});
+
 export default function ProcessStage({
   sessionId,
   activeProjectId,
@@ -247,6 +263,7 @@ export default function ProcessStage({
   const lastDraftXmlHashRef = useRef("");
   const lastAiGenerateIntentKeyRef = useRef("");
   const lastDrawioCompanionFocusKeyRef = useRef("");
+  const saveUploadLifecycleClearTimerRef = useRef(0);
   const attentionPanelWasOpenRef = useRef(false);
   const autoPassToastJobIdRef = useRef("");
   const autoPassDocSyncInFlightRef = useRef(false);
@@ -262,6 +279,7 @@ export default function ProcessStage({
     revisionSignature: "",
   });
   const [drawioAnchorImportDiagnostics, setDrawioAnchorImportDiagnostics] = useState(null);
+  const [saveUploadLifecycleEvent, setSaveUploadLifecycleEvent] = useState(IDLE_SAVE_UPLOAD_EVENT);
 
   const {
     genBusy,
@@ -538,6 +556,10 @@ export default function ProcessStage({
     () => asObject(sessionCompanionBridgeSnapshot.save),
     [sessionCompanionBridgeSnapshot.save],
   );
+  const saveUploadStatus = useMemo(
+    () => buildSaveUploadStatusBadge(saveUploadLifecycleEvent),
+    [saveUploadLifecycleEvent],
+  );
   const sessionVersionReadSnapshot = useMemo(
     () => asObject(sessionCompanionBridgeSnapshot.version),
     [sessionCompanionBridgeSnapshot.version],
@@ -770,6 +792,34 @@ export default function ProcessStage({
     }
     queueDiagramMutationRaw(mutation);
   }, [queueDiagramMutationRaw]);
+
+  useEffect(() => {
+    return () => {
+      if (saveUploadLifecycleClearTimerRef.current) {
+        globalThis.clearTimeout(saveUploadLifecycleClearTimerRef.current);
+        saveUploadLifecycleClearTimerRef.current = 0;
+      }
+    };
+  }, []);
+
+  const onBpmnSaveLifecycleEvent = useCallback((eventRaw = null) => {
+    const next = normalizeBpmnSaveLifecycleEvent(eventRaw);
+    if (!next.stage || next.stage === "idle") return;
+    setSaveUploadLifecycleEvent(next);
+    if (saveUploadLifecycleClearTimerRef.current) {
+      globalThis.clearTimeout(saveUploadLifecycleClearTimerRef.current);
+      saveUploadLifecycleClearTimerRef.current = 0;
+    }
+    if (next.stage === "persisted" || next.stage === "skipped_unchanged") {
+      const stableAt = Number(next.at || Date.now());
+      saveUploadLifecycleClearTimerRef.current = globalThis.setTimeout(() => {
+        setSaveUploadLifecycleEvent((prev) => (
+          Number(prev?.at || 0) === stableAt ? IDLE_SAVE_UPLOAD_EVENT : prev
+        ));
+        saveUploadLifecycleClearTimerRef.current = 0;
+      }, 4200);
+    }
+  }, []);
 
   const applyDiagramMode = useCallback((nextModeRaw) => {
     const nextMode = normalizeDiagramMode(nextModeRaw);
@@ -4180,6 +4230,7 @@ export default function ProcessStage({
     tab,
     availablePathTiers,
     sessionSaveReadSnapshot,
+    saveUploadStatus,
     sessionVersionReadSnapshot,
     sessionTemplateProvenanceSnapshot,
     sessionCompanionBridgeSnapshot,
@@ -4505,6 +4556,7 @@ export default function ProcessStage({
                   onElementNotesRemap={onElementNotesRemap}
                   onAiQuestionsByElementChange={handleAiQuestionsByElementChange}
                   onSessionSync={onSessionSync}
+                  onSaveLifecycleEvent={onBpmnSaveLifecycleEvent}
                   aiQuestionsModeEnabled={isInterviewMode}
                   diagramDisplayMode={diagramMode}
                   stepTimeUnit={stepTimeUnit}

@@ -1150,6 +1150,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   onElementNotesRemap,
   onAiQuestionsByElementChange,
   onSessionSync,
+  onSaveLifecycleEvent,
   aiQuestionsModeEnabled,
   diagramDisplayMode = "normal",
   stepTimeUnit = "min",
@@ -1220,6 +1221,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const onElementNotesRemapRef = useRef(onElementNotesRemap);
   const onAiQuestionsByElementChangeRef = useRef(onAiQuestionsByElementChange);
   const onSessionSyncRef = useRef(onSessionSync);
+  const onSaveLifecycleEventRef = useRef(onSaveLifecycleEvent);
   const aiQuestionsModeEnabledRef = useRef(!!aiQuestionsModeEnabled);
   const diagramDisplayModeRef = useRef(String(diagramDisplayMode || "normal").trim().toLowerCase() || "normal");
   const stepTimeUnitRef = useRef(normalizeStepTimeUnit(stepTimeUnit));
@@ -1315,6 +1317,10 @@ const BpmnStage = forwardRef(function BpmnStage({
   useEffect(() => {
     onSessionSyncRef.current = onSessionSync;
   }, [onSessionSync]);
+
+  useEffect(() => {
+    onSaveLifecycleEventRef.current = onSaveLifecycleEvent;
+  }, [onSaveLifecycleEvent]);
 
   useEffect(() => {
     aiQuestionsModeEnabledRef.current = !!aiQuestionsModeEnabled;
@@ -1453,6 +1459,16 @@ const BpmnStage = forwardRef(function BpmnStage({
     const storeXml = String(bpmnStoreRef.current?.getState?.()?.xml || xmlDraft || xml || "");
     const sid = String(sessionId || "");
     const meta = payload && typeof payload === "object" ? payload : {};
+    if (
+      event === "SAVE_REQUESTED"
+      || event === "SAVE_EXECUTED"
+      || event === "SAVE_PERSIST_STARTED"
+      || event === "SAVE_PERSIST_DONE"
+      || event === "SAVE_PERSIST_FAIL"
+      || event === "SAVE_PERSIST_SKIPPED_UNCHANGED"
+    ) {
+      emitSaveLifecycleEvent(event, { sid, ...meta });
+    }
     if (event === "SAVE_REQUESTED") {
       const count = bumpSaveCounter("requested");
       logBpmnTrace("SAVE_REQUESTED", storeXml, { sid, ...meta, count });
@@ -1552,6 +1568,19 @@ const BpmnStage = forwardRef(function BpmnStage({
     const next = Number(prev[k] || 0) + 1;
     saveCountersRef.current = { ...prev, [k]: next };
     return next;
+  }
+
+  function emitSaveLifecycleEvent(event, payload = {}) {
+    const callback = onSaveLifecycleEventRef.current;
+    if (typeof callback !== "function") return;
+    try {
+      callback({
+        event: String(event || ""),
+        payload: payload && typeof payload === "object" ? payload : {},
+        at: Date.now(),
+      });
+    } catch {
+    }
   }
 
   function suppressViewboxEvents(delta) {
@@ -3969,6 +3998,12 @@ const BpmnStage = forwardRef(function BpmnStage({
     const rev = Number(bpmnStoreRef.current?.getState?.()?.rev || 0);
     const startedAt = Date.now();
     const persistStartCount = bumpSaveCounter("persist_started");
+    emitSaveLifecycleEvent("SAVE_PERSIST_STARTED", {
+      sid,
+      reason: hintBase,
+      rev,
+      xml_len: out.length,
+    });
     traceProcess("bpmn.persist_xml_snapshot_start", {
       sid,
       hint: hintBase,
@@ -4002,6 +4037,14 @@ const BpmnStage = forwardRef(function BpmnStage({
         ms: Date.now() - startedAt,
         count: persistFailCount,
       });
+      emitSaveLifecycleEvent("SAVE_PERSIST_FAIL", {
+        sid,
+        reason: hintBase,
+        rev,
+        status: Number(r.status || 0),
+        xml_len: out.length,
+        error: msg,
+      });
       return { ok: false, error: msg };
     }
     setErr("");
@@ -4014,6 +4057,13 @@ const BpmnStage = forwardRef(function BpmnStage({
       rev: Number(r.storedRev || rev),
       ms: Date.now() - startedAt,
       count: persistDoneCount,
+    });
+    emitSaveLifecycleEvent("SAVE_PERSIST_DONE", {
+      sid,
+      reason: hintBase,
+      rev: Number(r.storedRev || rev),
+      status: Number(r.status || 200),
+      xml_len: out.length,
     });
     applyXmlSnapshot(out, `${hintBase}(saved)`);
     return { ok: true, xml: out, source: `${hintBase}(saved)` };
@@ -4084,8 +4134,22 @@ const BpmnStage = forwardRef(function BpmnStage({
 
       if (out !== rawOut) {
         const rev = Number(nextState.rev || 0);
+        emitSaveLifecycleEvent("SAVE_PERSIST_STARTED", {
+          sid,
+          reason: `${source}:camunda_finalize`,
+          rev,
+          xml_len: out.length,
+        });
         const persistedFinalXml = await ensureBpmnPersistence().saveRaw(sid, out, rev, `${source}:camunda_finalize`);
         if (!persistedFinalXml?.ok) {
+          emitSaveLifecycleEvent("SAVE_PERSIST_FAIL", {
+            sid,
+            reason: `${source}:camunda_finalize`,
+            rev,
+            status: Number(persistedFinalXml?.status || 0),
+            xml_len: out.length,
+            error: String(persistedFinalXml?.error || "camunda finalize persist failed"),
+          });
           return {
             ok: false,
             error: String(persistedFinalXml?.error || "camunda finalize persist failed"),
@@ -4094,6 +4158,13 @@ const BpmnStage = forwardRef(function BpmnStage({
             xml: out,
           };
         }
+        emitSaveLifecycleEvent("SAVE_PERSIST_DONE", {
+          sid,
+          reason: `${source}:camunda_finalize`,
+          rev: Number(persistedFinalXml?.storedRev || rev),
+          status: Number(persistedFinalXml?.status || 200),
+          xml_len: out.length,
+        });
       }
 
       if (force) {
