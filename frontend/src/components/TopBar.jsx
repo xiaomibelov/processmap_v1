@@ -31,13 +31,6 @@ function orgIdFrom(o) {
   return String((o && (o.org_id || o.id)) || "").trim();
 }
 
-function shortActor(raw) {
-  const value = String(raw || "").trim();
-  if (!value) return "—";
-  if (value.length <= 14) return value;
-  return `${value.slice(0, 6)}…${value.slice(-4)}`;
-}
-
 function sanitizeAiStatusMessage(msg) {
   const raw = String(msg || "").trim();
   if (!raw) return "";
@@ -233,10 +226,7 @@ export default function TopBar({
     const id = effectiveProjectId;
     if (!id) return "";
     const found = projList.find((item) => projectIdFrom(item) === id);
-    const createdBy = shortActor(found?.created_by || found?.owner_user_id);
-    const updatedBy = shortActor(found?.updated_by || found?.created_by || found?.owner_user_id);
-    const title = projectTitleFrom(found || { title: id });
-    return `${title} · Created by ${createdBy} · Updated by ${updatedBy}`;
+    return projectTitleFrom(found || { title: id });
   }, [effectiveProjectId, projList]);
   const selectedSessionTitle = useMemo(() => {
     const id = effectiveSessionId;
@@ -245,15 +235,9 @@ export default function TopBar({
     const fallback = {
       title: toText(draft?.title || draft?.name || id),
       id,
-      created_by: draft?.created_by,
-      updated_by: draft?.updated_by,
-      owner_user_id: draft?.owner_user_id,
     };
-    const source = found || fallback;
-    const createdBy = shortActor(source?.created_by || source?.owner_user_id);
-    const updatedBy = shortActor(source?.updated_by || source?.created_by || source?.owner_user_id);
-    return `${sessionTitleFrom(source)} · Created by ${createdBy} · Updated by ${updatedBy}`;
-  }, [draft?.created_by, draft?.name, draft?.owner_user_id, draft?.title, draft?.updated_by, effectiveSessionId, sessList]);
+    return sessionTitleFrom(found || fallback);
+  }, [draft?.name, draft?.title, effectiveSessionId, sessList]);
   const activeOrgRole = useMemo(() => {
     const id = String(activeOrgId || "").trim();
     if (!id) return "";
@@ -313,7 +297,7 @@ export default function TopBar({
         </button>
       </div>
 
-      <div className="topbarNavCenter flex min-w-0 flex-1 items-center justify-center gap-1.5 overflow-visible md:gap-2">
+      <div className="topbarNavCenter flex min-w-0 flex-1 items-center justify-end gap-1.5 overflow-visible md:gap-2">
         {hasActiveSession ? (
           <>
             <div

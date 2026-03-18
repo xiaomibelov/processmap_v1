@@ -77,6 +77,11 @@ from .redis_cache import (
     workspace_filters_hash,
 )
 from .redis_client import runtime_status
+from .session_status import (
+    SESSION_STATUS_SET as _SESSION_STATUS_SET,
+    normalize_session_status as _normalize_session_status_base,
+    validate_session_status_transition as _validate_session_status_transition_base,
+)
 from .validators.coverage import build_questions
 from .validators.disposition import build_disposition_questions
 from .validators.loss import build_loss_questions, loss_report
@@ -205,16 +210,6 @@ _ORG_TEMPLATE_WRITE_ROLES = {"org_owner", "org_admin", "project_manager"}
 _WORKSPACE_ADMIN_ROLES = {"org_owner", "org_admin"}
 _WORKSPACE_EDITOR_ROLES = {"org_owner", "org_admin", "project_manager", "editor"}
 _WORKSPACE_VIEWER_ROLES = {"viewer", "org_viewer", "auditor"}
-_SESSION_STATUS_ORDER = ("draft", "in_progress", "review", "ready", "archived")
-_SESSION_STATUS_SET = set(_SESSION_STATUS_ORDER)
-_SESSION_STATUS_TRANSITIONS: Dict[str, Set[str]] = {
-    "draft": {"draft", "in_progress", "archived"},
-    "in_progress": {"draft", "in_progress", "review", "ready", "archived"},
-    "review": {"in_progress", "review", "ready", "archived"},
-    "ready": {"in_progress", "review", "ready", "archived"},
-    "archived": {"archived", "in_progress"},
-}
-
 _RATE_LIMIT_LOCK = threading.RLock()
 _RATE_LIMIT_BUCKETS: Dict[str, deque] = {}
 
@@ -247,36 +242,16 @@ def _can_delete_workspace_content(role_raw: Any, is_admin: bool = False) -> bool
 
 
 def _normalize_session_status(raw: Any) -> str:
-    value = str(raw or "").strip().lower()
-    aliases = {
-        "draft": "draft",
-        "in_work": "in_progress",
-        "inprogress": "in_progress",
-        "in_progress": "in_progress",
-        "review": "review",
-        "on_review": "review",
-        "ready": "ready",
-        "done": "ready",
-        "archive": "archived",
-        "archived": "archived",
-    }
-    normalized = aliases.get(value, value)
-    return normalized if normalized in _SESSION_STATUS_SET else ""
+    return _normalize_session_status_base(raw)
 
 
 def _validate_session_status_transition(current_raw: Any, next_raw: Any, *, role_raw: Any, is_admin: bool = False) -> str:
-    current_status = _normalize_session_status(current_raw) or "draft"
-    next_status = _normalize_session_status(next_raw)
-    if not next_status:
-        raise HTTPException(status_code=422, detail="invalid status")
-    if not _can_edit_workspace(role_raw, is_admin=is_admin):
-        raise HTTPException(status_code=403, detail="forbidden")
-    allowed = set(_SESSION_STATUS_TRANSITIONS.get(current_status) or {current_status})
-    if next_status not in allowed:
-        raise HTTPException(status_code=409, detail="invalid status transition")
-    if next_status == "archived" and not _can_manage_workspace(role_raw, is_admin=is_admin):
-        raise HTTPException(status_code=403, detail="forbidden")
-    return next_status
+    return _validate_session_status_transition_base(
+        current_raw,
+        next_raw,
+        can_edit=_can_edit_workspace(role_raw, is_admin=is_admin),
+        can_archive=_can_manage_workspace(role_raw, is_admin=is_admin),
+    )
 
 
 def _env_bool(name: str, default: bool = False) -> bool:

@@ -72,21 +72,25 @@ export default function ProcessStageHeader({ view = {} }) {
                 {saveSmartText || workbench.labels.save}
               </button>
             )}
-          {latestRevisionNumber > 0 ? (
-            <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-latest-revision">
-              r{latestRevisionNumber}
-            </span>
-          ) : (
-            <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-latest-revision-empty">
-              No published revision
-            </span>
-          )}
-          <span
-            className={`badge text-[11px] ${draftStatusTone}`}
-            data-testid="diagram-toolbar-draft-vs-latest"
-          >
-            {draftStatusLabel}
-          </span>
+          {hasSession ? (
+            <>
+              {latestRevisionNumber > 0 ? (
+                <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-latest-revision">
+                  r{latestRevisionNumber}
+                </span>
+              ) : (
+                <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-latest-revision-empty">
+                  No published revision
+                </span>
+              )}
+              <span
+                className={`badge text-[11px] ${draftStatusTone}`}
+                data-testid="diagram-toolbar-draft-vs-latest"
+              >
+                {draftStatusLabel}
+              </span>
+            </>
+          ) : null}
           {saveUploadStatus?.visible ? (
             <span
               className={`badge text-[11px] ${String(saveUploadStatus?.tone || "").trim()}`}

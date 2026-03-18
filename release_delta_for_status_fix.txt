@@ -1,0 +1,23 @@
+# Release Delta
+
+Base: 9ead521cbcbf1eb001151f2a8dd551bff010101e
+Branch: fix/project-status-transitions-v1
+
+Changed files:
+ M backend/app/_legacy_main.py
+ M frontend/src/App.jsx
+ M frontend/src/components/TopBar.jsx
+ M frontend/src/features/process/stage/ui/ProcessStageHeader.jsx
+?? backend/app/session_status.py
+?? backend/tests/test_session_status_transitions.py
+?? clean_worktree_setup_report.md
+?? frontend/src/App.session-status-topbar.test.mjs
+?? frontend/src/components/TopBar.header-meta.test.mjs
+?? frontend/src/features/process/stage/ui/ProcessStageHeader.revision-visibility.test.mjs
+?? frontend/src/features/workspace/sessionStatus.js
+?? frontend/src/features/workspace/sessionStatus.test.mjs
+?? header_ui_fix_note.md
+?? release_delta_for_status_fix.txt
+?? status_transition_fix_note.md
+?? status_transition_root_cause.md
+?? status_transition_validation_report.md

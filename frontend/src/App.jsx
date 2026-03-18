@@ -79,6 +79,7 @@ import { requestProcessStageFlushBeforeLeave } from "./features/process/navigati
 import { useAuth } from "./features/auth/AuthProvider";
 import { canCreateOrgTemplateForRole } from "./features/templates/model/templatesRbac";
 import { buildWorkspacePermissions } from "./features/workspace/workspacePermissions";
+import { resolveSessionStatusFromDraft } from "./features/workspace/sessionStatus";
 import useSessionRouteOrchestration, {
   readSelectionFromUrl,
   shouldPreserveSelectionRouteDuringRestore,
@@ -3430,7 +3431,7 @@ export default function App() {
         canManageProjectEntities={canManageProjectEntities}
         sessions={sessions}
         sessionId={String(draft?.session_id || "")}
-        sessionStatus={String(draft?.status || "draft")}
+        sessionStatus={resolveSessionStatusFromDraft(draft, "draft")}
         onOpenSession={openSession}
         onOpenWorkspaceSession={openWorkspaceSession}
         onDeleteSession={workspacePermissions.canDeleteSession ? deleteCurrentSession : undefined}
