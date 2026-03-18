@@ -34,6 +34,7 @@ test-results/
 frontend/test-results/
 workspace/projects/*.json
 .env
+.runtime_source.env
 archive/
 backups/
 zip/

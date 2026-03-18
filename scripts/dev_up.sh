@@ -13,4 +13,4 @@ echo "== port =="
 grep -E '^HOST_PORT=' .env || true
 
 echo "== up =="
-docker compose up --build
+exec "${PWD}/scripts/runtime_source.sh" up --build

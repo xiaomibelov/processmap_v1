@@ -1,10 +1,22 @@
 Food Process Copilot (MVP)
 
 Запуск:
-- docker compose up --build
+- зафиксировать источник кода для runtime (обязательно):
+  `scripts/runtime_source.sh pin /absolute/path/to/source-root`
+- старт:
+  `scripts/runtime_source.sh up --build`
+- проверка, что контейнеры читают именно pinned source root:
+  `scripts/runtime_source.sh doctor`
 - frontend UI (через gateway): http://localhost:${FRONTEND_PORT:-5177}
 - backend API: http://localhost:${HOST_PORT}
-- если ранее использовался сервис `app`, запустить один раз: `docker compose up -d --remove-orphans`
+- если ранее использовался сервис `app`, запустить один раз:
+  `scripts/runtime_source.sh up -d --remove-orphans`
+
+Runtime source control:
+- `scripts/runtime_source.sh show` — показать текущий `FPC_SOURCE_ROOT`.
+- `scripts/runtime_source.sh unpin` — убрать pin (последующий `up` без pin завершится ошибкой).
+- `scripts/runtime_source.sh up/down/restart/ps/logs/config` — обертка над compose c `docker-compose.source-root.yml`.
+- локальный pin хранится в `.runtime_source.env` (не коммитится).
 
 Сценарий:
 - Новая сессия
