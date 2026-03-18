@@ -1,13 +1,14 @@
 # Release Delta
 
 Base: 9ead521cbcbf1eb001151f2a8dd551bff010101e
-Current HEAD: 2ce60ff7e658ab82b42c1c4b8f3f666979f164bd
+Current HEAD: ad721f68d0f908b45fdbffe7a88b586e5d9576ac
 
 Files changed vs base:
 M	backend/app/_legacy_main.py
 A	backend/app/session_status.py
 A	backend/tests/test_session_status_transitions.py
 A	clean_worktree_setup_report.md
+A	final_status_fix_verdict.md
 M	frontend/src/App.jsx
 A	frontend/src/App.session-status-topbar.test.mjs
 A	frontend/src/components/TopBar.header-meta.test.mjs
