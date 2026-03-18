@@ -12,6 +12,7 @@ usage() {
 Usage:
   scripts/runtime_source.sh pin <source_root_path>
   scripts/runtime_source.sh pin-frontend <frontend_source_root> [<base_source_root>]
+  scripts/runtime_source.sh pin-code <code_source_root> [<base_source_root>]
   scripts/runtime_source.sh unpin
   scripts/runtime_source.sh show
   scripts/runtime_source.sh up [docker compose args...]
@@ -25,6 +26,7 @@ Usage:
 Notes:
   - "pin" writes all runtime source roots to one path.
   - "pin-frontend" pins frontend root separately; api/workspace/gateway stay on base root.
+  - "pin-code" pins frontend+api from one root; workspace/gateway stay on base root.
   - up/down/restart/ps/logs/config always use docker-compose.source-root.yml.
 USAGE
 }
@@ -175,6 +177,41 @@ pin_frontend_source_root() {
   echo "  gateway=${base_resolved}"
 }
 
+pin_code_source_root() {
+  if [[ $# -lt 1 || $# -gt 2 ]]; then
+    echo "pin-code expects 1 or 2 paths" >&2
+    usage
+    exit 1
+  fi
+
+  local code_requested="$1"
+  local code_resolved
+  local base_requested=""
+  local base_resolved=""
+  code_resolved="$(abs_path "${code_requested}")"
+  validate_source_root "${code_resolved}" "code pin" 1 1 0 0
+
+  if [[ $# -eq 2 ]]; then
+    base_requested="$2"
+    base_resolved="$(abs_path "${base_requested}")"
+  elif [[ -f "${RUNTIME_ENV_FILE}" ]]; then
+    # shellcheck disable=SC1090
+    source "${RUNTIME_ENV_FILE}"
+    base_resolved="$(abs_path "${FPC_WORKSPACE_SOURCE_ROOT:-${FPC_API_SOURCE_ROOT:-${FPC_SOURCE_ROOT:-${ROOT_DIR}}}}")"
+  else
+    base_resolved="${ROOT_DIR}"
+  fi
+
+  validate_source_root "${base_resolved}" "base pin" 0 0 1 1
+  write_runtime_env "${code_resolved}" "${code_resolved}" "${base_resolved}" "${base_resolved}" "code"
+
+  echo "pinned runtime source roots (code):"
+  echo "  frontend=${code_resolved}"
+  echo "  api=${code_resolved}"
+  echo "  workspace=${base_resolved}"
+  echo "  gateway=${base_resolved}"
+}
+
 show_source_root() {
   if [[ ! -f "${RUNTIME_ENV_FILE}" ]]; then
     echo "runtime source is not pinned"
@@ -253,6 +290,9 @@ main() {
       ;;
     pin-frontend)
       pin_frontend_source_root "$@"
+      ;;
+    pin-code)
+      pin_code_source_root "$@"
       ;;
     unpin)
       rm -f "${RUNTIME_ENV_FILE}"
