@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import TopBar from "./TopBar";
 import ProcessStage from "./ProcessStage";
 import SidebarHandle from "./sidebar/SidebarHandle";
+import { resolveSessionNavNoticeCopy } from "../features/process/navigation/sessionNavNoticeUi";
 
 export default function AppShell({
   draft,
@@ -72,6 +73,7 @@ export default function AppShell({
   const workspaceBackHandler = hasActiveSession
     ? (() => onReturnToSessionList?.())
     : (() => onProjectChange?.(""));
+  const sessionNavNoticeCopy = resolveSessionNavNoticeCopy(sessionNavNotice);
 
   useEffect(() => {
     // eslint-disable-next-line no-console
@@ -131,8 +133,8 @@ export default function AppShell({
       {sessionNavNotice ? (
         <div className="mx-3 mt-2 rounded-lg border border-warning/45 bg-warning/10 px-3 py-2 text-xs text-warning">
           <div className="flex flex-wrap items-center gap-2">
-            <strong>Сессия недоступна</strong>
-            <span className="text-warning/90">{String(sessionNavNotice?.message || "Не удалось открыть текущую сессию.")}</span>
+            <strong>{sessionNavNoticeCopy.title}</strong>
+            <span className="text-warning/90">{String(sessionNavNotice?.message || sessionNavNoticeCopy.fallbackMessage)}</span>
             {Number(sessionNavNotice?.status || 0) > 0 ? (
               <span className="badge warn">HTTP {Number(sessionNavNotice?.status || 0)}</span>
             ) : null}
