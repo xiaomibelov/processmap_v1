@@ -1,7 +1,6 @@
 # Release Delta
 
 Base: 9ead521cbcbf1eb001151f2a8dd551bff010101e
-Current HEAD: ad721f68d0f908b45fdbffe7a88b586e5d9576ac
 
 Files changed vs base:
 M	backend/app/_legacy_main.py
