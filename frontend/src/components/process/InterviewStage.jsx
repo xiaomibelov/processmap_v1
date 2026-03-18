@@ -1,4 +1,5 @@
 import { Profiler, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import ChunkMismatchBoundary from "../../shared/ui/ChunkMismatchBoundary";
 import * as InterviewUtils from "./interview/utils";
 import useInterviewDerivedState from "./interview/useInterviewDerivedState";
 import useInterviewActions from "./interview/useInterviewActions";
@@ -845,6 +846,7 @@ export default function InterviewStage({
         ) : null}
         {timelineViewMode === "paths" ? (
           <Profiler id="InterviewPathsView" onRender={handleProfilerRender}>
+            <ChunkMismatchBoundary>
             <Suspense fallback={<div className="interviewAnnotationNotice pending">Загружаю Paths View…</div>}>
               <LazyInterviewPathsView
                 active
@@ -864,6 +866,7 @@ export default function InterviewStage({
                 externalIntent={pathsUiIntent}
               />
             </Suspense>
+            </ChunkMismatchBoundary>
           </Profiler>
         ) : null}
         {timelineViewMode === "matrix" ? (
