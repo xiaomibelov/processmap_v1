@@ -881,11 +881,19 @@ export function hydrateCamundaExtensionsFromBpmn({ extractedMap, sessionMetaMap 
         .map((item) => canonicalizeExtensionFragmentSignature(item) || String(item || "").trim())
         .filter(Boolean),
     );
+    const preservedConnectorKeys = new Set(
+      nextPreserved
+        .map((item) => connectorKeyForExtensionFragment(item))
+        .filter(Boolean),
+    );
     extractedEntry.preservedExtensionElements.forEach((rawXml) => {
       const text = String(rawXml || "").trim();
       if (!text) return;
+      const connectorKey = connectorKeyForExtensionFragment(text);
+      if (connectorKey && preservedConnectorKeys.has(connectorKey)) return;
       const signature = canonicalizeExtensionFragmentSignature(text) || text;
       if (preservedSignatures.has(signature)) return;
+      if (connectorKey) preservedConnectorKeys.add(connectorKey);
       preservedSignatures.add(signature);
       nextPreserved.push(text);
       addedPreserved += 1;

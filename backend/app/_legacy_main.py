@@ -59,12 +59,14 @@ from .storage import (
     list_audit_log,
     cleanup_audit_log,
     list_workspace_snapshot_rows,
+    get_project_explorer_invalidation_targets,
 )
 from .settings import load_llm_settings, llm_status, save_llm_settings, verify_llm_settings
 from .redis_lock import acquire_session_lock
 from .redis_cache import (
     cache_get_json,
     cache_set_json,
+    explorer_invalidate_children,
     explorer_invalidate_sessions,
     invalidate_session_open,
     invalidate_tldr_session,
@@ -3263,6 +3265,7 @@ def delete_project_api(project_id: str, request: Request = None):
     is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
     if not _can_delete_workspace_content(role, is_admin=is_admin):
         raise HTTPException(status_code=403, detail="forbidden")
+    _invalidate_explorer_children_for_project(pid, oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
     st = get_storage()
     related = st.list(project_id=pid, limit=500, org_id=oid, is_admin=True)
     deleted_sessions: list[str] = []
@@ -6062,6 +6065,22 @@ def _invalidate_session_open_cache_for_session(session_id: Any) -> None:
     invalidate_session_open(sid)
 
 
+def _invalidate_explorer_children_for_project(project_id: Any, org_id: Any) -> None:
+    pid = str(project_id or "").strip()
+    oid = _resolved_org_for_cache(org_id)
+    if not pid or not oid:
+        return
+    try:
+        targets = get_project_explorer_invalidation_targets(oid, pid)
+    except Exception:
+        targets = None
+    if not targets:
+        return
+    wid = str(targets.get("workspace_id") or "").strip()
+    for folder_id in (targets.get("children_folder_ids") or []):
+        explorer_invalidate_children(oid, wid, str(folder_id or ""))
+
+
 def _invalidate_session_caches(session_obj: Any = None, *, session_id: Any = None, org_id: Any = None) -> None:
     sid = str(session_id or getattr(session_obj, "id", "") or "").strip()
     oid = _resolved_org_for_cache(org_id or getattr(session_obj, "org_id", ""))
@@ -6069,6 +6088,7 @@ def _invalidate_session_caches(session_obj: Any = None, *, session_id: Any = Non
     _invalidate_workspace_cache_for_org(oid)
     if project_id:
         explorer_invalidate_sessions(project_id)
+        _invalidate_explorer_children_for_project(project_id, oid)
     if sid:
         _invalidate_session_open_cache_for_session(sid)
         _invalidate_tldr_cache_for_session(sid)
@@ -7276,6 +7296,7 @@ def create_project(inp: CreateProjectIn, request: Request = None) -> dict:
         meta={"title": str(getattr(proj, "title", "") or "")},
     )
     _invalidate_workspace_cache_for_org(oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
+    _invalidate_explorer_children_for_project(pid, oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
     return proj.model_dump()
 
 
@@ -7332,6 +7353,7 @@ def patch_project(project_id: str, inp: UpdateProjectIn, request: Request = None
         meta={"title": str(getattr(proj, "title", "") or "")},
     )
     _invalidate_workspace_cache_for_org(oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
+    _invalidate_explorer_children_for_project(str(getattr(proj, "id", "") or project_id), oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
     return proj.model_dump()
 
 
@@ -7362,6 +7384,8 @@ def put_project(project_id: str, inp: CreateProjectIn, request: Request = None) 
         project_id=str(getattr(proj, "id", "") or project_id),
         meta={"title": str(getattr(proj, "title", "") or ""), "put": True},
     )
+    _invalidate_workspace_cache_for_org(oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
+    _invalidate_explorer_children_for_project(str(getattr(proj, "id", "") or project_id), oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
     return proj.model_dump()
 
 

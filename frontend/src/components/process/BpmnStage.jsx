@@ -2702,6 +2702,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         getNodePathMetaMap,
         getRobotMetaMap,
         getElementNotesMap,
+        findDiagramElementForHint,
         findShapeByNodeId,
         findShapeForHint,
         isShapeElement,
@@ -3398,11 +3399,11 @@ const BpmnStage = forwardRef(function BpmnStage({
           });
           syncAiQuestionPanelWithSelection(v, "viewer", selected, "viewer.selection_changed");
         });
-        eventBus.on("canvas.viewbox.changed", 1200, () => {
-          const suppressed = Number(suppressViewboxEventRef.current || 0) > 0;
-          if (!suppressed) userViewportTouchedRef.current = true;
-          const snap = getCanvasSnapshot(v);
-          logViewAction(
+          eventBus.on("canvas.viewbox.changed", 1200, () => {
+            const suppressed = Number(suppressViewboxEventRef.current || 0) > 0;
+            if (!suppressed) userViewportTouchedRef.current = true;
+            const snap = getCanvasSnapshot(v);
+            logViewAction(
             "viewbox.changed",
             snap,
             snap,
@@ -3413,14 +3414,16 @@ const BpmnStage = forwardRef(function BpmnStage({
               token: Number(runtimeTokenRef.current || 0),
             },
           );
-          emitViewboxChanged({
-            mode: "viewer",
-            suppressed,
-            snapshot: snap,
+            emitViewboxChanged({
+              mode: "viewer",
+              suppressed,
+              snapshot: snap,
+            });
+            // Recompute property overlay geometry for current zoom bucket.
+            applyPropertiesOverlayDecor(v, "viewer");
           });
-        });
-      } catch {
-      }
+        } catch {
+        }
       viewerRef.current = v;
       return v;
     })();
@@ -3533,6 +3536,8 @@ const BpmnStage = forwardRef(function BpmnStage({
               suppressed,
               snapshot: snap,
             });
+            // Recompute property overlay geometry for current zoom bucket.
+            applyPropertiesOverlayDecor(m, "editor");
           });
           modelerDecorBoundInstanceRef.current = m;
         }

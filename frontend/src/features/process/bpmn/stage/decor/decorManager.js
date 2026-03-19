@@ -1,9 +1,16 @@
+import { overlayPropertyColorByKey, normalizeOverlayPropertyKey } from "./overlayColorModel.js";
+import { buildOverlayGeometry, readOverlayCanvasZoom } from "./overlayLayoutModel.js";
+
 function runMeasure(ctx, name, run, payload) {
   const measureInterviewPerf = ctx?.callbacks?.measureInterviewPerf;
   if (typeof measureInterviewPerf === "function") {
     return measureInterviewPerf(name, run, payload);
   }
   return run();
+}
+
+function clampNumber(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
 function buildUserNotesDecorPayload(ctx) {
@@ -1073,16 +1080,6 @@ export function applyPropertiesOverlayDecor(ctx) {
     || typeof toText !== "function" || typeof asObject !== "function" || typeof asArray !== "function"
   ) return;
 
-  function toneClassForProperty(item, index) {
-    const key = toText(item?.key || item?.label || `${index}`);
-    let hash = 0;
-    for (let i = 0; i < key.length; i += 1) {
-      hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
-    }
-    const tone = (hash % 6) + 1;
-    return `fpcPropertyRow--tone${tone}`;
-  }
-
   function normalizePreviewEntry(rawPreview) {
     const preview = asObject(rawPreview);
     const elementId = toText(preview?.elementId);
@@ -1121,9 +1118,20 @@ export function applyPropertiesOverlayDecor(ctx) {
     return;
   }
 
+  const linkedPropertyFrequency = new Map();
+  previewEntries.forEach((preview) => {
+    asArray(preview?.items).forEach((item) => {
+      const linkedKey = normalizeOverlayPropertyKey(item?.key || item?.label);
+      if (!linkedKey) return;
+      linkedPropertyFrequency.set(linkedKey, Number(linkedPropertyFrequency.get(linkedKey) || 0) + 1);
+    });
+  });
+
   try {
     const overlays = inst.get("overlays");
     const registry = inst.get("elementRegistry");
+    const canvasZoom = readOverlayCanvasZoom(inst);
+    const zoomBucket = Math.round(canvasZoom * 1000) / 1000;
     const currentState = { ...asObject(refs.propertiesOverlayStateRef.current[kind]) };
     const nextState = {};
     previewEntries.forEach((preview) => {
@@ -1132,7 +1140,12 @@ export function applyPropertiesOverlayDecor(ctx) {
       const hiddenCount = Math.max(0, Number(preview?.hiddenCount || 0));
       if (!elementId || !items.length) return;
 
-      let el = getters.findShapeByNodeId(registry, elementId)
+      let el = (
+        typeof getters.findDiagramElementForHint === "function"
+          ? getters.findDiagramElementForHint(registry, { nodeId: elementId, title: elementId })
+          : null
+      )
+        || getters.findShapeByNodeId(registry, elementId)
         || getters.findShapeForHint(registry, { nodeId: elementId, title: elementId });
       if (!el) return;
 
@@ -1142,6 +1155,7 @@ export function applyPropertiesOverlayDecor(ctx) {
         elementId,
         items,
         hiddenCount,
+        zoom: zoomBucket,
       });
       const prev = asObject(currentState[resolvedElementId]);
       if (toText(prev?.signature) === signature) {
@@ -1154,25 +1168,65 @@ export function applyPropertiesOverlayDecor(ctx) {
         overlays.remove(prev.overlayId);
       }
 
+      const isConnection = typeof getters.isConnectionElement === "function" && getters.isConnectionElement(el);
       const container = document.createElement("div");
-      container.className = "fpcPropertyOverlay fpcPropertyOverlay--table";
+      container.className = isConnection
+        ? "fpcPropertyOverlay fpcPropertyOverlay--table fpcPropertyOverlay--sequence"
+        : "fpcPropertyOverlay fpcPropertyOverlay--table fpcPropertyOverlay--task";
       container.dataset.nodeId = elementId;
-      const shapeWidth = Number(el?.width || 0);
-      if (Number.isFinite(shapeWidth) && shapeWidth > 0) {
-        container.style.maxWidth = `${Math.max(Math.min(shapeWidth + 76, 280), 152)}px`;
+      container.dataset.hostType = isConnection ? "sequence" : "task";
+      const overlayGeometry = buildOverlayGeometry({ element: el, isConnection, canvasZoom });
+      container.style.width = `${overlayGeometry.width}px`;
+      container.style.maxWidth = `${overlayGeometry.width}px`;
+      if (isConnection) {
+        const sequenceMinWidth = Math.round(clampNumber(overlayGeometry.width - 4, 56, 102));
+        const sequenceFont = clampNumber(overlayGeometry.width / 12.3, 7.7, 8.9);
+        container.style.setProperty("--fpc-property-table-min-width", `${sequenceMinWidth}px`);
+        container.style.setProperty("--fpc-property-grid-columns", "minmax(24px, 41%) minmax(28px, 59%)");
+        container.style.setProperty("--fpc-property-font-size", `${sequenceFont.toFixed(2)}px`);
+        container.style.setProperty("--fpc-property-font-scale", "1.15");
+        container.style.setProperty("--fpc-property-row-padding", "1px 5px");
+        container.style.setProperty("--fpc-property-row-min-height", "14px");
+      } else {
+        const taskMinWidth = Math.round(clampNumber(overlayGeometry.width - 4, 66, 134));
+        const taskFont = clampNumber(overlayGeometry.width / 12.6, 8.1, 9.6);
+        container.style.setProperty("--fpc-property-table-min-width", `${taskMinWidth}px`);
+        container.style.setProperty("--fpc-property-grid-columns", "minmax(28px, 42%) minmax(34px, 58%)");
+        container.style.setProperty("--fpc-property-font-size", `${taskFont.toFixed(2)}px`);
+        container.style.setProperty("--fpc-property-font-scale", "1");
+        container.style.setProperty("--fpc-property-row-padding", "1px 6px");
+        container.style.setProperty("--fpc-property-row-min-height", "15px");
       }
 
       const table = document.createElement("div");
       table.className = "fpcPropertyTable";
 
-      items.forEach((item, index) => {
+      items.forEach((item) => {
         const row = document.createElement("div");
-        row.className = `fpcPropertyRow ${toneClassForProperty(item, index)}`;
+        const linkedKey = normalizeOverlayPropertyKey(item?.key || item?.label);
+        const linkedCount = Number(linkedPropertyFrequency.get(linkedKey) || 0);
+        const linkedClass = linkedKey && linkedCount > 1 ? " fpcPropertyRow--linked" : "";
+        row.className = `fpcPropertyRow${linkedClass}`;
         row.title = `${item.label}: ${item.value}`;
+        const colorModel = overlayPropertyColorByKey(linkedKey || item?.label);
+        row.style.setProperty("--fpc-property-accent", colorModel.accent);
+        row.style.setProperty("--fpc-property-bg", colorModel.background);
+        row.style.setProperty("--fpc-property-accent-shadow", colorModel.shadow);
+        if (linkedKey && linkedCount > 1) {
+          row.dataset.linkedGroup = linkedKey;
+        }
 
         const keyCell = document.createElement("span");
         keyCell.className = "fpcPropertyCell fpcPropertyCell--key";
-        keyCell.textContent = item.label;
+        const keyText = document.createElement("span");
+        keyText.className = "fpcPropertyKeyText";
+        keyText.textContent = item.label;
+        keyCell.appendChild(keyText);
+
+        const keySep = document.createElement("span");
+        keySep.className = "fpcPropertyKeySep";
+        keySep.textContent = "|";
+        keyCell.appendChild(keySep);
         row.appendChild(keyCell);
 
         const valueCell = document.createElement("span");
@@ -1192,10 +1246,8 @@ export function applyPropertiesOverlayDecor(ctx) {
       }
       container.appendChild(table);
 
-      const anchorLeft = Number.isFinite(shapeWidth) && shapeWidth > 0 ? Math.round(shapeWidth / 2) : 68;
-      const topOffset = -14;
       const overlayId = overlays.add(resolvedElementId, "fpc-properties", {
-        position: { top: topOffset, left: anchorLeft },
+        position: { top: overlayGeometry.topOffset, left: overlayGeometry.anchorLeft },
         html: container,
         scale: false,
       });

@@ -1055,7 +1055,7 @@ export function CamundaPropertiesSettings({
   const [operationOpen, setOperationOpen] = useState(false);
   const [operationPropertiesOpen, setOperationPropertiesOpen] = useState(false);
   const [additionalBpmnOpen, setAdditionalBpmnOpen] = useState(false);
-  const [camundaIoOpen, setCamundaIoOpen] = useState(true);
+  const [camundaIoOpen, setCamundaIoOpen] = useState(false);
   const [overlayCompanionsExpanded, setOverlayCompanionsExpanded] = useState(false);
   const [expandedCamundaScripts, setExpandedCamundaScripts] = useState({});
   const [expandedBpmnRows, setExpandedBpmnRows] = useState({});
@@ -1139,6 +1139,11 @@ export function CamundaPropertiesSettings({
   useEffect(() => {
     setOverlayCompanionsExpanded(false);
   }, [selectedElementId, overlayCompanionSummary.companionCount]);
+
+  useEffect(() => {
+    // Keep Camunda I/O collapsed by default when entering a node.
+    setCamundaIoOpen(false);
+  }, [selectedElementId]);
   const operationDisplayLabel = String(operationLabel || selectedOperationOption?.label || normalizedOperationKey || "").trim();
   const extensionStateStatusMetaMap = {
     saved: {

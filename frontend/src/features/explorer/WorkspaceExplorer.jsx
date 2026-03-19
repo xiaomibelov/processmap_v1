@@ -5,13 +5,15 @@
  *   [ WorkspaceSidebar ] | [ ExplorerPane / ProjectPane ]
  *
  * Rules (enforced in UI):
- *   • Folder shows only: name, child_folder_count, child_project_count (no DoD/Owner/Attention)
- *   • Project shows: name, sessions_count, owner, dod_percent, attention_count, reports_count, status
+ *   • Folder row supports two actions: chevron expand/collapse (inline) + title navigate (page)
+ *   • Inline tree is folder/project only (sessions stay on project page)
+ *   • Folder DoD uses rollup_dod_percent (null => "—")
+ *   • Project DoD uses project.dod_percent
  *   • Session shows: name, stage, owner, dod_percent, attention_count, reports_count, status
  *   • Session cannot be in folder directly — always inside project
  */
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   apiListWorkspaces,
@@ -39,6 +41,7 @@ import {
   normalizeRequestedProjectWorkspace,
   resolveExplorerWorkspaceId,
 } from "./workspaceRestore.js";
+import { buildVisibleRows, hasFolderChildren } from "./work3TreeState.js";
 
 // ─── Icons (inline SVG to avoid external deps) ────────────────────────────────
 function IcoFolder({ open = false, className = "" }) {
@@ -74,6 +77,14 @@ function IcoChevron({ right = false, className = "" }) {
         ? <path d="M4.5 2l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         : <path d="M2 4.5l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       }
+    </svg>
+  );
+}
+function IcoSpinner({ className = "" }) {
+  return (
+    <svg className={`inline-block ${className}`} width="12" height="12" viewBox="0 0 12 12" fill="none">
+      <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeOpacity="0.25" />
+      <path d="M6 1.5a4.5 4.5 0 0 1 4.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }
@@ -131,6 +142,25 @@ function ts(epoch) {
   return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "short" });
 }
 
+function activitySourceLabel(node) {
+  const sourceType = String(node?.last_activity_source_type || "").trim().toLowerCase();
+  const sourceTitle = String(node?.last_activity_source_title || "").trim();
+  if (!sourceType && !sourceTitle) return "—";
+  const typeLabel = sourceType === "session" ? "Сессия" : sourceType === "project" ? "Проект" : sourceType === "folder" ? "Папка" : "Изменение";
+  if (!sourceTitle) return typeLabel;
+  return `${typeLabel} «${sourceTitle}»`;
+}
+
+function normalizeDodPercent(percentRaw) {
+  if (percentRaw === null || percentRaw === undefined || String(percentRaw).trim() === "") return null;
+  const n = Number(percentRaw);
+  if (!Number.isFinite(n)) return null;
+  const rounded = Math.round(n);
+  if (rounded < 0) return 0;
+  if (rounded > 100) return 100;
+  return rounded;
+}
+
 function StatusBadge({ status }) {
   const normalized = String(status || "").trim().toLowerCase();
   if (["draft", "in_progress", "review", "ready", "archived"].includes(normalized)) {
@@ -152,8 +182,11 @@ function StatusBadge({ status }) {
 }
 
 function DodBar({ percent }) {
-  const pct = Math.max(0, Math.min(100, Number(percent) || 0));
-  const cls = pct >= 80 ? "bg-success" : pct >= 40 ? "bg-accent" : "bg-warning";
+  const pct = normalizeDodPercent(percent);
+  if (pct === null) {
+    return <span className="text-xs text-muted">—</span>;
+  }
+  const cls = pct <= 30 ? "bg-rose-500" : pct <= 65 ? "bg-amber-400" : pct <= 80 ? "bg-lime-500" : "bg-emerald-700";
   return (
     <span className="inline-flex items-center gap-1 text-xs text-muted">
       <span className="inline-block w-14 h-1.5 rounded-full bg-border overflow-hidden">
@@ -170,6 +203,17 @@ function MetricCell({ label, value, warn = false }) {
     <span className={`text-xs font-medium ${warn && value > 0 ? "text-warning" : "text-muted"}`}>
       {value}
     </span>
+  );
+}
+
+function LastActivityCell({ node }) {
+  const label = activitySourceLabel(node);
+  return (
+    <td className="px-2 py-2.5 text-xs text-muted">
+      <div className="w-full max-w-[168px] truncate" title={label}>
+        {label}
+      </div>
+    </td>
   );
 }
 
@@ -433,39 +477,73 @@ function ContextMenu({ items, onClose }) {
 
 // ─── Folder Row in Explorer ────────────────────────────────────────────────────
 
-function FolderRow({ folder, onClick, workspaceId, onReload, canEdit = false, canDelete = false }) {
+function FolderRow({
+  folder,
+  depth = 0,
+  expanded = false,
+  loading = false,
+  onToggleExpand,
+  onNavigate,
+  workspaceId,
+  onReload,
+  canEdit = false,
+  canDelete = false,
+}) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const expandable = hasFolderChildren(folder);
+  const leftPadding = 8 + depth * 18;
 
   const menuItems = [
-    { label: "Открыть", icon: <IcoChevron right />, action: () => onClick(folder) },
+    { label: "Открыть", icon: <IcoChevron right />, action: () => onNavigate(folder) },
+    ...(expandable ? [{ label: expanded ? "Свернуть" : "Развернуть", icon: <IcoChevron right={!expanded} />, action: () => onToggleExpand(folder) }] : []),
     ...(canEdit ? [{ label: "Переименовать", icon: <IcoEdit />, action: () => setRenaming(true) }] : []),
     ...(canDelete ? [{ separator: true }, { label: "Удалить", icon: <IcoTrash />, danger: true, action: () => setDeleting(true) }] : []),
   ];
 
   return (
     <>
-      <tr
-        className="group hover:bg-accentSoft/30 transition-colors cursor-pointer"
-        onClick={() => onClick(folder)}
-      >
-        <td className="px-3 py-2.5 w-5">
-          <IcoFolder className="text-accent/80" />
+      <tr className="group hover:bg-accentSoft/30 transition-colors">
+        <td className="px-2 py-2.5 text-sm font-medium text-fg">
+          <div className="flex min-w-0 items-center gap-2" style={{ paddingLeft: `${leftPadding}px` }}>
+            {expandable ? (
+              <button
+                type="button"
+                onClick={() => onToggleExpand(folder)}
+                className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border bg-panelAlt/70 text-muted shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${loading ? "cursor-wait border-border/70" : "border-border/70 hover:border-border hover:bg-bg hover:text-fg active:bg-panelAlt"}`}
+                disabled={loading}
+                title={expanded ? "Свернуть" : "Развернуть"}
+                aria-label={expanded ? "Свернуть папку" : "Развернуть папку"}
+              >
+                {loading ? (
+                  <IcoSpinner className="animate-spin" />
+                ) : (
+                  <IcoChevron right className={`transition-transform duration-150 ${expanded ? "rotate-90" : ""}`} />
+                )}
+              </button>
+            ) : (
+              <span className="inline-flex h-6 w-6 shrink-0 rounded-md border border-transparent" aria-hidden />
+            )}
+            <IcoFolder className="shrink-0 text-accent/80" />
+            <button className="block min-w-0 flex-1 truncate text-left hover:underline" onClick={() => onNavigate(folder)} title={folder.name}>
+              {folder.name}
+            </button>
+          </div>
         </td>
-        <td className="px-2 py-2.5 text-sm font-medium text-fg">{folder.name}</td>
         <td className="px-2 py-2.5 text-xs text-muted">Папка</td>
         <td className="px-2 py-2.5 text-xs text-muted text-center">
-          {folder.child_folder_count ?? 0}
+          {folder.child_folder_count ?? 0} / {folder.descendant_sessions_count ?? 0}
         </td>
         <td className="px-2 py-2.5 text-xs text-muted text-center">
-          {folder.child_project_count ?? 0}
+          {folder.descendant_projects_count ?? 0}
         </td>
-        <td className="px-2 py-2.5 text-xs text-muted">—</td>
+        <td className="px-2 py-2.5"><DodBar percent={folder.rollup_dod_percent} /></td>
         <td className="px-2 py-2.5 text-xs text-muted text-center">—</td>
         <td className="px-2 py-2.5 text-xs text-muted text-center">—</td>
         <td className="px-2 py-2.5 text-xs text-muted">—</td>
-        <td className="px-2 py-2.5 text-xs text-muted text-right">{ts(folder.updated_at)}</td>
+        <td className="px-2 py-2.5 text-xs text-muted text-right">{ts(folder.rollup_activity_at || folder.updated_at) || "—"}</td>
+        <LastActivityCell node={folder} />
         <td className="px-2 py-2.5 w-8 text-right relative" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={() => setMenuOpen((v) => !v)}
@@ -517,10 +595,11 @@ function FolderRow({ folder, onClick, workspaceId, onReload, canEdit = false, ca
 
 // ─── Project Row in Explorer ───────────────────────────────────────────────────
 
-function ProjectRow({ project, onClick, onReload, canRename = false, canDelete = false }) {
+function ProjectRow({ project, depth = 0, onClick, onReload, canRename = false, canDelete = false }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const leftPadding = 8 + depth * 18;
   const menuItems = [
     { label: "Открыть", icon: <IcoChevron right />, action: () => onClick(project) },
     ...(canRename ? [{ label: "Переименовать", icon: <IcoEdit />, action: () => setRenaming(true) }] : []),
@@ -528,12 +607,19 @@ function ProjectRow({ project, onClick, onReload, canRename = false, canDelete =
   ];
   return (
     <>
-      <tr className="group hover:bg-accentSoft/30 transition-colors cursor-pointer" onClick={() => onClick(project)}>
-        <td className="px-3 py-2.5 w-5"><IcoProject className="text-accent" /></td>
-        <td className="px-2 py-2.5 text-sm font-medium text-fg">{project.name}</td>
+      <tr className="group hover:bg-accentSoft/30 transition-colors">
+        <td className="px-2 py-2.5 text-sm font-medium text-fg">
+          <div className="flex min-w-0 items-center gap-2" style={{ paddingLeft: `${leftPadding}px` }}>
+            <span className="inline-flex h-6 w-6 shrink-0 rounded-md border border-transparent" aria-hidden />
+            <IcoProject className="shrink-0 text-accent" />
+            <button className="block min-w-0 flex-1 truncate text-left hover:underline" onClick={() => onClick(project)} title={project.name}>
+              {project.name}
+            </button>
+          </div>
+        </td>
         <td className="px-2 py-2.5 text-xs text-muted">Проект</td>
         <td className="px-2 py-2.5 text-center">
-          <span className="text-xs text-muted">{project.sessions_count ?? 0} сессий</span>
+          <span className="text-xs text-muted">{project.descendant_sessions_count ?? project.sessions_count ?? 0} сессий</span>
         </td>
         <td className="px-2 py-2.5">
           {project.owner
@@ -544,7 +630,8 @@ function ProjectRow({ project, onClick, onReload, canRename = false, canDelete =
         <td className="px-2 py-2.5 text-center"><MetricCell value={project.attention_count} warn /></td>
         <td className="px-2 py-2.5 text-center"><MetricCell value={project.reports_count} /></td>
         <td className="px-2 py-2.5"><StatusBadge status={project.status} /></td>
-        <td className="px-2 py-2.5 text-xs text-muted text-right">{ts(project.updated_at)}</td>
+        <td className="px-2 py-2.5 text-xs text-muted text-right">{ts(project.rollup_activity_at || project.updated_at) || "—"}</td>
+        <LastActivityCell node={project} />
         <td className="px-2 py-2.5 w-8 text-right relative" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={() => setMenuOpen((v) => !v)}
@@ -584,6 +671,57 @@ function ProjectRow({ project, onClick, onReload, canRename = false, canDelete =
   );
 }
 
+function InlineLoadingRow({ depth = 0 }) {
+  const leftPadding = 8 + depth * 18;
+  return (
+    <tr>
+      <td className="px-2 py-2.5 text-sm">
+        <div style={{ paddingLeft: `${leftPadding}px` }} className="flex min-w-0 items-center gap-2">
+          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border/60 bg-panelAlt/50 text-muted">
+            <IcoSpinner className="animate-spin" />
+          </span>
+          <span className="h-4 w-4 shrink-0" />
+          <div className="h-5 w-full max-w-[220px] animate-pulse rounded bg-border/40" />
+        </div>
+      </td>
+      <td colSpan={10} className="px-2 py-2.5" />
+    </tr>
+  );
+}
+
+function InlineEmptyRow({ depth = 0 }) {
+  const leftPadding = 8 + depth * 18;
+  return (
+    <tr>
+      <td className="px-2 py-2.5 text-xs text-muted">
+        <div style={{ paddingLeft: `${leftPadding}px` }} className="flex min-w-0 items-center gap-2">
+          <span className="inline-flex h-6 w-6 shrink-0 rounded-md border border-transparent" aria-hidden />
+          <span className="h-4 w-4 shrink-0" />
+          <span className="truncate">В папке нет вложенных папок или проектов</span>
+        </div>
+      </td>
+      <td colSpan={10} className="px-2 py-2.5" />
+    </tr>
+  );
+}
+
+function InlineErrorRow({ depth = 0, message = "" }) {
+  const leftPadding = 8 + depth * 18;
+  const text = String(message || "").trim() || "Не удалось загрузить вложенные элементы.";
+  return (
+    <tr>
+      <td className="px-2 py-2.5 text-xs text-danger/90">
+        <div style={{ paddingLeft: `${leftPadding}px` }} className="flex min-w-0 items-center gap-2">
+          <span className="inline-flex h-6 w-6 shrink-0 rounded-md border border-danger/30 bg-danger/5" aria-hidden />
+          <span className="h-4 w-4 shrink-0" />
+          <span className="truncate">{text}</span>
+        </div>
+      </td>
+      <td colSpan={10} className="px-2 py-2.5" />
+    </tr>
+  );
+}
+
 // ─── Explorer Pane (folder contents) ─────────────────────────────────────────
 
 function ExplorerPane({
@@ -599,9 +737,41 @@ function ExplorerPane({
   const [error, setError] = useState("");
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [creatingProject, setCreatingProject] = useState(false);
+  const [treeStateByContext, setTreeStateByContext] = useState({});
+  const inFlightFolderLoadsRef = useRef(new Set());
+  const contextKey = `${String(workspaceId || "").trim()}::${String(folderId || "").trim()}`;
 
-  const load = useCallback(async () => {
+  const treeState = treeStateByContext[contextKey] || {
+    expandedByFolder: {},
+    childItemsByFolder: {},
+    loadingByFolder: {},
+    loadErrorByFolder: {},
+  };
+
+  const setTreeStateForContext = useCallback((updater) => {
+    setTreeStateByContext((prev) => {
+      const current = prev[contextKey] || {
+        expandedByFolder: {},
+        childItemsByFolder: {},
+        loadingByFolder: {},
+        loadErrorByFolder: {},
+      };
+      const next = typeof updater === "function" ? updater(current) : updater;
+      if (!next || next === current) return prev;
+      return { ...prev, [contextKey]: next };
+    });
+  }, [contextKey]);
+
+  const load = useCallback(async ({ resetInlineChildren = false } = {}) => {
     if (!workspaceId) return;
+    if (resetInlineChildren) {
+      setTreeStateForContext((prev) => ({
+        ...prev,
+        childItemsByFolder: {},
+        loadingByFolder: {},
+        loadErrorByFolder: {},
+      }));
+    }
     setLoading(true);
     setError("");
     try {
@@ -613,13 +783,77 @@ function ExplorerPane({
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, folderId]);
+  }, [workspaceId, folderId, setTreeStateForContext]);
 
   useEffect(() => { load(); }, [load]);
 
-  const folders = (page?.items || []).filter((i) => i.type === "folder");
-  const projects = (page?.items || []).filter((i) => i.type === "project");
-  const isEmpty = !loading && !error && folders.length === 0 && projects.length === 0;
+  const rootItems = useMemo(() => (Array.isArray(page?.items) ? page.items : []), [page]);
+  const isEmpty = !loading && !error && rootItems.length === 0;
+
+  const visibleRows = useMemo(
+    () => buildVisibleRows({
+      rootItems,
+      expandedByFolder: treeState.expandedByFolder,
+      childItemsByFolder: treeState.childItemsByFolder,
+      loadingByFolder: treeState.loadingByFolder,
+      loadErrorByFolder: treeState.loadErrorByFolder,
+    }),
+    [rootItems, treeState.expandedByFolder, treeState.childItemsByFolder, treeState.loadingByFolder, treeState.loadErrorByFolder]
+  );
+
+  const ensureFolderChildrenLoaded = useCallback(async (targetFolderId) => {
+    const fid = String(targetFolderId || "").trim();
+    if (!workspaceId || !fid) return;
+    const alreadyLoaded = Array.isArray(treeState.childItemsByFolder?.[fid]);
+    const alreadyLoading = Boolean(treeState.loadingByFolder?.[fid]) || inFlightFolderLoadsRef.current.has(fid);
+    if (alreadyLoaded || alreadyLoading) return;
+
+    inFlightFolderLoadsRef.current.add(fid);
+    setTreeStateForContext((prev) => {
+      return {
+        ...prev,
+        loadingByFolder: { ...prev.loadingByFolder, [fid]: true },
+        loadErrorByFolder: { ...prev.loadErrorByFolder, [fid]: "" },
+      };
+    });
+    try {
+      const resp = await apiGetExplorerPage(workspaceId, fid);
+      if (!resp?.ok) throw new Error(resp?.error || "Ошибка загрузки вложенной папки");
+      const nestedPage = resp?.data || resp;
+      const items = Array.isArray(nestedPage?.items) ? nestedPage.items : [];
+      setTreeStateForContext((prev) => ({
+        ...prev,
+        childItemsByFolder: { ...prev.childItemsByFolder, [fid]: items },
+        loadErrorByFolder: { ...prev.loadErrorByFolder, [fid]: "" },
+      }));
+    } catch (e) {
+      const message = String(e?.message || "Ошибка загрузки вложенной папки");
+      setError(message);
+      setTreeStateForContext((prev) => ({
+        ...prev,
+        loadErrorByFolder: { ...prev.loadErrorByFolder, [fid]: message },
+      }));
+    } finally {
+      inFlightFolderLoadsRef.current.delete(fid);
+      setTreeStateForContext((prev) => ({
+        ...prev,
+        loadingByFolder: { ...prev.loadingByFolder, [fid]: false },
+      }));
+    }
+  }, [workspaceId, treeState.childItemsByFolder, treeState.loadingByFolder, setTreeStateForContext]);
+
+  const handleToggleExpand = useCallback((folder) => {
+    const fid = String(folder?.id || "").trim();
+    if (!fid || !hasFolderChildren(folder)) return;
+    const nextExpanded = !Boolean(treeState.expandedByFolder?.[fid]);
+    setTreeStateForContext((prev) => ({
+      ...prev,
+      expandedByFolder: { ...prev.expandedByFolder, [fid]: nextExpanded },
+    }));
+    if (nextExpanded) {
+      void ensureFolderChildrenLoaded(fid);
+    }
+  }, [treeState.expandedByFolder, setTreeStateForContext, ensureFolderChildrenLoaded]);
 
   if (loading) {
     return (
@@ -679,10 +913,22 @@ function ExplorerPane({
       {/* Table */}
       {!isEmpty ? (
         <div className="flex-1 overflow-y-auto">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full table-fixed text-left border-collapse">
+            <colgroup>
+              <col />
+              <col className="w-[72px]" />
+              <col className="w-[92px]" />
+              <col className="w-[100px]" />
+              <col className="w-[76px]" />
+              <col className="w-[36px]" />
+              <col className="w-[36px]" />
+              <col className="w-[92px]" />
+              <col className="w-[84px]" />
+              <col className="w-[144px]" />
+              <col className="w-8" />
+            </colgroup>
             <thead>
               <tr className="text-[11px] uppercase tracking-wide text-muted border-b border-border">
-                <th className="px-3 py-2 w-5" />
                 <th className="px-2 py-2">Название</th>
                 <th className="px-2 py-2">Тип</th>
                 <th className="px-2 py-2 text-center">Папки / Сессии</th>
@@ -692,31 +938,52 @@ function ExplorerPane({
                 <th className="px-2 py-2 text-center">📋</th>
                 <th className="px-2 py-2">Статус</th>
                 <th className="px-2 py-2 text-right">Обновлён</th>
+                <th className="px-2 py-2">Последнее изменение</th>
                 <th className="px-2 py-2 w-8" />
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
-              {folders.map((f) => (
-                <FolderRow
-                  key={f.id}
-                  folder={f}
-                  workspaceId={workspaceId}
-                  onClick={() => onNavigateToFolder(f.id)}
-                  onReload={load}
-                  canEdit={!!permissions?.canRenameFolder}
-                  canDelete={!!permissions?.canDeleteFolder}
-                />
-              ))}
-              {projects.map((p) => (
-                <ProjectRow
-                  key={p.id}
-                  project={p}
-                  onClick={() => onNavigateToProject(p.id)}
-                  onReload={load}
-                  canRename={!!permissions?.canRenameProject}
-                  canDelete={!!permissions?.canDeleteProject}
-                />
-              ))}
+              {visibleRows.map((row, index) => {
+                if (row.rowType === "loading") {
+                  return <InlineLoadingRow key={`loading-${row.parentId}-${index}`} depth={row.depth} />;
+                }
+                if (row.rowType === "empty") {
+                  return <InlineEmptyRow key={`empty-${row.parentId}-${index}`} depth={row.depth} />;
+                }
+                if (row.rowType === "error") {
+                  return <InlineErrorRow key={`error-${row.parentId}-${index}`} depth={row.depth} message={row.message} />;
+                }
+                if (row.rowType === "folder") {
+                  const folder = row.node;
+                  return (
+                    <FolderRow
+                      key={`folder-${folder.id}`}
+                      folder={folder}
+                      depth={row.depth}
+                      expanded={row.expanded}
+                      loading={row.loading}
+                      workspaceId={workspaceId}
+                      onToggleExpand={handleToggleExpand}
+                      onNavigate={() => onNavigateToFolder(folder.id)}
+                      onReload={() => load({ resetInlineChildren: true })}
+                      canEdit={!!permissions?.canRenameFolder}
+                      canDelete={!!permissions?.canDeleteFolder}
+                    />
+                  );
+                }
+                const project = row.node;
+                return (
+                  <ProjectRow
+                    key={`project-${project.id}`}
+                    project={project}
+                    depth={row.depth}
+                    onClick={() => onNavigateToProject(project.id)}
+                    onReload={() => load({ resetInlineChildren: true })}
+                    canRename={!!permissions?.canRenameProject}
+                    canDelete={!!permissions?.canDeleteProject}
+                  />
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -763,7 +1030,7 @@ function ExplorerPane({
           onSubmit={async (name) => {
             const resp = await apiCreateFolder(workspaceId, { name, parent_id: folderId || "" });
             if (!resp?.ok) throw new Error(resp?.error || "Не удалось создать папку");
-            load();
+            load({ resetInlineChildren: true });
           }}
         />
       ) : null}
@@ -778,7 +1045,7 @@ function ExplorerPane({
             }
             const resp = await apiCreateProject(workspaceId, folderId, { name });
             if (!resp?.ok) throw new Error(resp?.error || "Не удалось создать проект");
-            load();
+            load({ resetInlineChildren: true });
           }}
         />
       ) : null}

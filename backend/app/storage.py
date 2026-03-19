@@ -4464,60 +4464,239 @@ def delete_workspace_folder(
 
 
 def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: str) -> Dict[str, Any]:
-    """Return direct child folders and projects for given parent ('' = workspace root)."""
+    """Return direct child folders and projects for given parent ('' = workspace root).
+
+    Includes rollup activity and rollup DoD for folder rows so parent lists can
+    show truthful descendant state.
+    """
     _ensure_schema()
     oid = str(org_id or "").strip()
     wid = str(workspace_id or "").strip()
     pid = str(parent_id or "").strip()
+
+    def _safe_int(v: Any, default: int = 0) -> int:
+        try:
+            return int(v)
+        except Exception:
+            return int(default)
+
+    def _clamp_percent(v: Any) -> int:
+        n = _safe_int(v, 0)
+        if n < 0:
+            return 0
+        if n > 100:
+            return 100
+        return n
+
     with _connect() as con:
-        folder_rows = con.execute(
+        folder_rows_all = con.execute(
             """
-            SELECT f.*,
-              (SELECT COUNT(*) FROM workspace_folders cf WHERE cf.parent_id = f.id AND cf.org_id = ? AND cf.workspace_id = ? AND cf.archived_at IS NULL) AS child_folder_count,
-              (SELECT COUNT(*) FROM projects cp WHERE cp.folder_id = f.id AND cp.org_id = ? AND cp.workspace_id = ?) AS child_project_count
-            FROM workspace_folders f
-            WHERE f.org_id = ? AND f.workspace_id = ? AND f.parent_id = ? AND f.archived_at IS NULL
-            ORDER BY f.sort_order ASC, f.name ASC
+            SELECT *
+            FROM workspace_folders
+            WHERE org_id = ? AND workspace_id = ? AND archived_at IS NULL
+            ORDER BY sort_order ASC, name ASC
             """,
-            [oid, wid, oid, wid, oid, wid, pid],
+            [oid, wid],
         ).fetchall()
-        project_rows = con.execute(
+        project_rows_all = con.execute(
             """
             SELECT p.*,
               (SELECT COUNT(*) FROM sessions s WHERE s.project_id = p.id) AS sessions_count
             FROM projects p
-            WHERE p.org_id = ? AND p.workspace_id = ? AND p.folder_id = ?
+            WHERE p.org_id = ? AND p.workspace_id = ?
             ORDER BY p.updated_at DESC, p.title ASC
             """,
-            [oid, wid, pid],
+            [oid, wid],
         ).fetchall()
-    folders = []
-    for row in folder_rows:
-        d = _folder_row_to_dict(row)
-        d["child_folder_count"] = int(row["child_folder_count"] or 0)
-        d["child_project_count"] = int(row["child_project_count"] or 0)
-        folders.append(d)
-    projects = []
-    for row in project_rows:
-        p = _project_row_to_model(row)
-        passport = dict(p.passport or {})
-        projects.append({
-            "id": p.id,
-            "title": p.title,
-            "folder_id": str(getattr(p, "folder_id", "") or ""),
+        session_rows = con.execute(
+            """
+            SELECT s.project_id, s.id, s.title, s.updated_at
+            FROM sessions s
+            JOIN projects p ON p.id = s.project_id
+            WHERE p.org_id = ? AND p.workspace_id = ?
+            ORDER BY s.project_id ASC, s.updated_at DESC, s.id DESC
+            """,
+            [oid, wid],
+        ).fetchall()
+
+    folders_by_id: Dict[str, Dict[str, Any]] = {}
+    folder_children: Dict[str, List[str]] = {}
+    for row in folder_rows_all:
+        folder_dict = _folder_row_to_dict(row)
+        fid = str(folder_dict.get("id") or "")
+        if not fid:
+            continue
+        folders_by_id[fid] = folder_dict
+        parent = str(folder_dict.get("parent_id") or "")
+        folder_children.setdefault(parent, []).append(fid)
+
+    for children in folder_children.values():
+        children.sort(
+            key=lambda child_id: (
+                _safe_int((folders_by_id.get(child_id) or {}).get("sort_order"), 0),
+                str((folders_by_id.get(child_id) or {}).get("name") or "").lower(),
+            )
+        )
+
+    session_latest_by_project: Dict[str, Dict[str, Any]] = {}
+    for row in session_rows:
+        project_id = str(row["project_id"] or "")
+        if not project_id or project_id in session_latest_by_project:
+            continue
+        session_latest_by_project[project_id] = {
+            "id": str(row["id"] or ""),
+            "title": str(row["title"] or "") or "Сессия",
+            "updated_at": _safe_int(row["updated_at"], 0),
+        }
+
+    projects_by_folder: Dict[str, List[Dict[str, Any]]] = {}
+    projects_by_id: Dict[str, Dict[str, Any]] = {}
+    for row in project_rows_all:
+        project_model = _project_row_to_model(row)
+        passport = dict(project_model.passport or {})
+        project_id = str(project_model.id or "")
+        folder_id = str(getattr(project_model, "folder_id", "") or "")
+        project_updated_at = _safe_int(project_model.updated_at, 0)
+        latest_session = session_latest_by_project.get(project_id)
+        latest_session_at = _safe_int((latest_session or {}).get("updated_at"), 0)
+        use_session_source = latest_session_at > project_updated_at
+        rollup_activity_at = latest_session_at if use_session_source else project_updated_at
+        source_type = "session" if use_session_source else "project"
+        source_id = str((latest_session or {}).get("id") or project_id)
+        source_title = str((latest_session or {}).get("title") or project_model.title or "Проект")
+        dod_percent = _clamp_percent(passport.get("dod_percent", 0))
+        project_payload: Dict[str, Any] = {
+            "id": project_id,
+            "title": str(project_model.title or ""),
+            "folder_id": folder_id,
             "workspace_id": str((_row_value(row, "workspace_id") or "") or wid),
-            "owner_user_id": p.owner_user_id,
-            "org_id": p.org_id,
-            "sessions_count": int(row["sessions_count"] or 0),
+            "owner_user_id": str(project_model.owner_user_id or ""),
+            "org_id": str(project_model.org_id or oid),
+            "sessions_count": _safe_int(row["sessions_count"], 0),
             "status": str(passport.get("status", "active") or "active"),
-            "dod_percent": int(passport.get("dod_percent", 0) or 0),
-            "attention_count": int(passport.get("attention_count", 0) or 0),
-            "reports_count": int(passport.get("reports_count", 0) or 0),
+            "dod_percent": dod_percent,
+            "attention_count": _safe_int(passport.get("attention_count", 0), 0),
+            "reports_count": _safe_int(passport.get("reports_count", 0), 0),
             "description": str(passport.get("description", "") or ""),
-            "updated_at": p.updated_at,
-            "created_at": p.created_at,
+            "updated_at": project_updated_at,
+            "created_at": _safe_int(project_model.created_at, 0),
+            "self_activity_at": project_updated_at,
+            "rollup_activity_at": rollup_activity_at,
+            "last_activity_source_type": source_type,
+            "last_activity_source_id": source_id,
+            "last_activity_source_title": source_title,
+            "descendant_sessions_count": _safe_int(row["sessions_count"], 0),
+            # Project-level canonical truth remains dod_percent.
+            "rollup_dod_percent": dod_percent,
+        }
+        projects_by_folder.setdefault(folder_id, []).append(project_payload)
+        projects_by_id[project_id] = project_payload
+
+    for plist in projects_by_folder.values():
+        plist.sort(
+            key=lambda p: (
+                -_safe_int(p.get("rollup_activity_at"), 0),
+                str(p.get("title") or "").lower(),
+            )
+        )
+
+    folder_metrics: Dict[str, Dict[str, Any]] = {}
+
+    def _compute_folder_metrics(folder_id: str) -> Dict[str, Any]:
+        existing = folder_metrics.get(folder_id)
+        if existing is not None:
+            return existing
+        folder = folders_by_id.get(folder_id)
+        if folder is None:
+            result = {
+                "rollup_activity_at": 0,
+                "last_activity_source_type": "folder",
+                "last_activity_source_id": "",
+                "last_activity_source_title": "",
+                "descendant_projects_count": 0,
+                "descendant_sessions_count": 0,
+                "dod_sum": 0.0,
+                "dod_count": 0,
+            }
+            folder_metrics[folder_id] = result
+            return result
+
+        best_activity_at = _safe_int(folder.get("updated_at"), 0)
+        best_type = "folder"
+        best_id = str(folder.get("id") or "")
+        best_title = str(folder.get("name") or "Папка")
+        descendant_projects_count = 0
+        descendant_sessions_count = 0
+        dod_sum = 0.0
+        dod_count = 0
+
+        for child_folder_id in folder_children.get(folder_id, []):
+            child_metrics = _compute_folder_metrics(child_folder_id)
+            descendant_projects_count += _safe_int(child_metrics.get("descendant_projects_count"), 0)
+            descendant_sessions_count += _safe_int(child_metrics.get("descendant_sessions_count"), 0)
+            dod_sum += float(child_metrics.get("dod_sum") or 0.0)
+            dod_count += _safe_int(child_metrics.get("dod_count"), 0)
+            child_rollup_at = _safe_int(child_metrics.get("rollup_activity_at"), 0)
+            if child_rollup_at > best_activity_at:
+                best_activity_at = child_rollup_at
+                best_type = str(child_metrics.get("last_activity_source_type") or "folder")
+                best_id = str(child_metrics.get("last_activity_source_id") or child_folder_id)
+                best_title = str(child_metrics.get("last_activity_source_title") or "")
+
+        for project in projects_by_folder.get(folder_id, []):
+            descendant_projects_count += 1
+            descendant_sessions_count += _safe_int(project.get("sessions_count"), 0)
+            dod_sum += float(_safe_int(project.get("dod_percent"), 0))
+            dod_count += 1
+            project_rollup_at = _safe_int(project.get("rollup_activity_at"), 0)
+            if project_rollup_at > best_activity_at:
+                best_activity_at = project_rollup_at
+                best_type = str(project.get("last_activity_source_type") or "project")
+                best_id = str(project.get("last_activity_source_id") or project.get("id") or "")
+                best_title = str(project.get("last_activity_source_title") or project.get("title") or "")
+
+        result = {
+            "rollup_activity_at": best_activity_at,
+            "last_activity_source_type": best_type,
+            "last_activity_source_id": best_id,
+            "last_activity_source_title": best_title,
+            "descendant_projects_count": descendant_projects_count,
+            "descendant_sessions_count": descendant_sessions_count,
+            "dod_sum": dod_sum,
+            "dod_count": dod_count,
+        }
+        folder_metrics[folder_id] = result
+        return result
+
+    for folder_id in folders_by_id.keys():
+        _compute_folder_metrics(folder_id)
+
+    folder_items: List[Dict[str, Any]] = []
+    for folder_id in folder_children.get(pid, []):
+        folder = folders_by_id.get(folder_id)
+        if folder is None:
+            continue
+        metrics = folder_metrics.get(folder_id) or {}
+        dod_count = _safe_int(metrics.get("dod_count"), 0)
+        rollup_dod_percent = None
+        if dod_count > 0:
+            rollup_dod_percent = _clamp_percent(round(float(metrics.get("dod_sum") or 0.0) / float(dod_count)))
+        folder_items.append({
+            **folder,
+            "child_folder_count": len(folder_children.get(folder_id, [])),
+            "child_project_count": len(projects_by_folder.get(folder_id, [])),
+            "descendant_projects_count": _safe_int(metrics.get("descendant_projects_count"), 0),
+            "descendant_sessions_count": _safe_int(metrics.get("descendant_sessions_count"), 0),
+            "self_activity_at": _safe_int(folder.get("updated_at"), 0),
+            "rollup_activity_at": _safe_int(metrics.get("rollup_activity_at"), _safe_int(folder.get("updated_at"), 0)),
+            "last_activity_source_type": str(metrics.get("last_activity_source_type") or "folder"),
+            "last_activity_source_id": str(metrics.get("last_activity_source_id") or folder_id),
+            "last_activity_source_title": str(metrics.get("last_activity_source_title") or folder.get("name") or "Папка"),
+            "rollup_dod_percent": rollup_dod_percent,
         })
-    return {"folders": folders, "projects": projects}
+
+    project_items = list(projects_by_folder.get(pid, []))
+    return {"folders": folder_items, "projects": project_items}
 
 
 def get_workspace_folder_breadcrumb(org_id: str, workspace_id: str, folder_id: str) -> List[Dict[str, Any]]:
@@ -4616,6 +4795,60 @@ def get_project_workspace_details(org_id: str, project_id: str) -> Optional[Dict
         "org_id": str(row["org_id"] or oid),
         "workspace_id": str(row["workspace_id"] or _default_workspace_id(oid)),
         "folder_id": str(row["folder_id"] or ""),
+    }
+
+
+def get_project_explorer_invalidation_targets(org_id: str, project_id: str) -> Optional[Dict[str, Any]]:
+    """Return workspace + children-list keys to invalidate for project rollups.
+
+    children_folder_ids always includes:
+    - project folder id (for project row visibility) when non-empty
+    - every ancestor parent_id up to root ('')
+    """
+    oid = str(org_id or "").strip()
+    pid = str(project_id or "").strip()
+    if not oid or not pid:
+        return None
+    details = get_project_workspace_details(oid, pid)
+    if not details:
+        return None
+    wid = str(details.get("workspace_id") or "").strip()
+    folder_id = str(details.get("folder_id") or "").strip()
+    targets: List[str] = []
+    seen: set[str] = set()
+
+    def _add_target(raw: Any) -> None:
+        key = str(raw or "").strip()
+        if key in seen:
+            return
+        seen.add(key)
+        targets.append(key)
+
+    if folder_id:
+        _add_target(folder_id)
+        crumbs = get_workspace_folder_breadcrumb(oid, wid, folder_id)
+        breadcrumb_parent_by_id = {
+            str(item.get("id") or ""): str(item.get("parent_id") or "")
+            for item in crumbs
+            if str(item.get("id") or "").strip()
+        }
+        cursor = folder_id
+        while cursor:
+            parent = str(breadcrumb_parent_by_id.get(cursor) or "")
+            _add_target(parent)
+            if not parent:
+                break
+            cursor = parent
+    else:
+        _add_target("")
+    if "" not in seen:
+        _add_target("")
+    return {
+        "org_id": oid,
+        "workspace_id": wid,
+        "project_id": pid,
+        "folder_id": folder_id,
+        "children_folder_ids": targets,
     }
 
 
