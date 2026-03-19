@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createTemplate, deleteTemplate, listTemplates } from "../api/index.js";
+import { listTemplatesWithStatus } from "../api/index.js";
 import { countTemplatesByScope, filterTemplatesByQuery, suggestTemplates, splitTemplatesByScope } from "./templatesSelectors.js";
 import { buildTemplateFromSelection } from "../services/buildTemplateFromSelection.js";
 import { buildHybridStencilTemplate } from "../services/buildHybridStencilTemplate.js";
 import { buildBpmnFragmentTemplate } from "../services/buildBpmnFragmentTemplate.js";
 import useTemplateFoldersStore from "../folders/useTemplateFoldersStore.js";
+import { runGuardedLoader } from "../../auth/authGatedLoader.js";
 import {
   buildBpmnFragmentGhost,
   createBpmnFragmentPlacementDraft,
@@ -57,6 +59,7 @@ export default function useTemplatesStore({
   userId = "",
   orgId = "",
   canCreateOrgTemplate = false,
+  authLoaderGate = null,
   hasSession = false,
   tab = "",
   getSelectedBpmnElementIds,
@@ -103,6 +106,7 @@ export default function useTemplatesStore({
     userId,
     orgId,
     canCreateOrgFolder: canCreateOrgTemplate,
+    authLoaderGate,
     setError,
   });
 
@@ -112,34 +116,95 @@ export default function useTemplatesStore({
     : null;
   const selectedHybridCount = Number(selectedHybridStencil?.selection_count || selectedHybridStencil?.payload?.elements?.length || 0);
 
+  const loadTemplatesScope = useCallback(async (scope = "personal") => {
+    const normalizedScope = toText(scope).toLowerCase() === "org" ? "org" : "personal";
+    const guarded = await runGuardedLoader({
+      gate: authLoaderGate,
+      scope: `templates:${normalizedScope}`,
+      run: () => listTemplatesWithStatus({
+        scope: normalizedScope,
+        userId,
+        orgId: normalizedScope === "org" ? orgId : "",
+      }),
+    });
+    if (guarded.state === "skipped_auth_not_ready") {
+      return { ok: false, skipped: true, state: guarded.state, items: [] };
+    }
+    if (!guarded.ok) {
+      const message = guarded.state === "unauthorized"
+        ? "Требуется повторная авторизация для загрузки шаблонов."
+        : toText(guarded.error || "template_list_failed");
+      return {
+        ok: false,
+        skipped: false,
+        unauthorized: guarded.state === "unauthorized",
+        status: Number(guarded.status || 0),
+        state: guarded.state,
+        error: message,
+        items: [],
+      };
+    }
+    return {
+      ok: true,
+      skipped: false,
+      unauthorized: false,
+      status: Number(guarded?.data?.status || 200),
+      state: guarded.state,
+      error: "",
+      items: Array.isArray(guarded?.data?.items) ? guarded.data.items : [],
+    };
+  }, [authLoaderGate, orgId, userId]);
+
   const loadMy = useCallback(async () => {
-    const items = await listTemplates({ scope: "personal", userId, orgId: "" });
-    setMyTemplates(Array.isArray(items) ? items : []);
-    return Array.isArray(items) ? items : [];
-  }, [userId]);
+    const result = await loadTemplatesScope("personal");
+    const items = Array.isArray(result?.items) ? result.items : [];
+    setMyTemplates(items);
+    if (!result?.ok && !result?.skipped) {
+      const message = toText(result?.error || "template_list_failed");
+      setLastError(message);
+      setError?.(message);
+    }
+    return items;
+  }, [loadTemplatesScope, setError]);
 
   const loadOrg = useCallback(async () => {
     if (!orgId) {
       setOrgTemplates([]);
       return [];
     }
-    const items = await listTemplates({ scope: "org", userId, orgId });
-    setOrgTemplates(Array.isArray(items) ? items : []);
-    return Array.isArray(items) ? items : [];
-  }, [orgId, userId]);
+    const result = await loadTemplatesScope("org");
+    const items = Array.isArray(result?.items) ? result.items : [];
+    setOrgTemplates(items);
+    if (!result?.ok && !result?.skipped) {
+      const message = toText(result?.error || "template_list_failed");
+      setLastError(message);
+      setError?.(message);
+    }
+    return items;
+  }, [loadTemplatesScope, orgId, setError]);
 
   const reloadTemplates = useCallback(async () => {
     setLoading(true);
     setLastError("");
     try {
-      const loaded = await loadTemplatesForScopes({
-        userId,
-        orgId,
-        listFn: listTemplates,
-      });
-      setMyTemplates(loaded.myTemplates);
-      setOrgTemplates(loaded.orgTemplates);
-      return loaded;
+      const [personalResult, orgResult] = await Promise.all([
+        loadTemplatesScope("personal"),
+        orgId ? loadTemplatesScope("org") : Promise.resolve({ ok: true, items: [] }),
+      ]);
+      const nextMy = Array.isArray(personalResult?.items) ? personalResult.items : [];
+      const nextOrg = Array.isArray(orgResult?.items) ? orgResult.items : [];
+      setMyTemplates(nextMy);
+      setOrgTemplates(nextOrg);
+
+      const failure = [personalResult, orgResult].find(
+        (row) => row && row.ok === false && row.skipped !== true,
+      );
+      if (failure) {
+        const message = toText(failure.error || "template_list_failed");
+        setLastError(message);
+        setError?.(message);
+      }
+      return { myTemplates: nextMy, orgTemplates: nextOrg };
     } catch (error) {
       const message = toText(error?.message || error || "template_list_failed");
       setLastError(message);
@@ -148,7 +213,7 @@ export default function useTemplatesStore({
     } finally {
       setLoading(false);
     }
-  }, [orgId, setError, userId]);
+  }, [loadTemplatesScope, orgId, setError]);
 
   useEffect(() => {
     writeTemplatesEnabled(templatesEnabled);

@@ -46,15 +46,47 @@ function toPayloadTemplate(templateRaw) {
 }
 
 export async function listTemplates(params = {}) {
+  const result = await listTemplatesWithStatus(params);
+  return result?.ok ? result.items : [];
+}
+
+export async function listTemplatesWithStatus(params = {}) {
   const scope = String(params?.scope || "personal").trim().toLowerCase() === "org" ? "org" : "personal";
   const userId = String(params?.userId || "");
   const orgId = String(params?.orgId || "");
   const remote = await apiListTemplates({ scope, orgId });
   if (remote?.ok) {
-    return toNormalizedList(remote.items, { scope, user_id: userId, org_id: orgId });
+    return {
+      ok: true,
+      status: Number(remote?.status || 200),
+      scope,
+      items: toNormalizedList(remote.items, { scope, user_id: userId, org_id: orgId }),
+      source: "remote",
+      fallback: false,
+      error: "",
+    };
   }
-  if (!shouldFallbackLocal(remote)) return [];
-  return listTemplatesLocal(params);
+  if (!shouldFallbackLocal(remote)) {
+    return {
+      ok: false,
+      status: Number(remote?.status || 0),
+      scope,
+      items: [],
+      source: "remote",
+      fallback: false,
+      error: String(remote?.error || "template_list_failed"),
+    };
+  }
+  const localItems = await listTemplatesLocal(params);
+  return {
+    ok: true,
+    status: Number(remote?.status || 200),
+    scope,
+    items: Array.isArray(localItems) ? localItems : [],
+    source: "local_fallback",
+    fallback: true,
+    error: "",
+  };
 }
 
 export async function createTemplate(params = {}) {
@@ -130,14 +162,35 @@ export async function deleteTemplate(params = {}) {
 }
 
 export async function listTemplateFolders(params = {}) {
+  const result = await listTemplateFoldersWithStatus(params);
+  return result?.ok ? result.items : [];
+}
+
+export async function listTemplateFoldersWithStatus(params = {}) {
   const scope = String(params?.scope || "personal").trim().toLowerCase() === "org" ? "org" : "personal";
   const userId = String(params?.userId || "");
   const orgId = String(params?.orgId || "");
   const remote = await apiListTemplateFolders({ scope, orgId });
-  if (!remote?.ok) return [];
-  return (Array.isArray(remote.items) ? remote.items : [])
-    .map((row) => normalizeTemplateFolderRecord(row, { scope, owner_user_id: userId, org_id: orgId }))
-    .filter((row) => !!row.id);
+  if (!remote?.ok) {
+    return {
+      ok: false,
+      status: Number(remote?.status || 0),
+      scope,
+      items: [],
+      source: "remote",
+      error: String(remote?.error || "template_folders_list_failed"),
+    };
+  }
+  return {
+    ok: true,
+    status: Number(remote?.status || 200),
+    scope,
+    items: (Array.isArray(remote.items) ? remote.items : [])
+      .map((row) => normalizeTemplateFolderRecord(row, { scope, owner_user_id: userId, org_id: orgId }))
+      .filter((row) => !!row.id),
+    source: "remote",
+    error: "",
+  };
 }
 
 export async function createTemplateFolder(params = {}) {

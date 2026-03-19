@@ -34,6 +34,7 @@ import {
   getManualSessionStatusMeta,
 } from "../workspace/workspacePermissions";
 import { useAuth } from "../auth/AuthProvider.jsx";
+import { buildAuthLoaderGate, runGuardedLoader } from "../auth/authGatedLoader.js";
 import {
   canRestoreRequestedProject,
   normalizeRequestedProjectWorkspace,
@@ -1123,7 +1124,18 @@ export default function WorkspaceExplorer({
   requestProjectWorkspaceId = "",
   onClearRequestedProject,
 }) {
-  const { user, orgs } = useAuth();
+  const {
+    user,
+    orgs,
+    loading: authLoading = false,
+    isAuthed = false,
+    reauthRequired = false,
+  } = useAuth();
+  const authLoaderGate = React.useMemo(() => buildAuthLoaderGate({
+    loading: authLoading,
+    isAuthed,
+    reauthRequired,
+  }), [authLoading, isAuthed, reauthRequired]);
   const [workspaces, setWorkspaces] = useState([]);
   const [wsLoading, setWsLoading] = useState(true);
   const [wsError, setWsError] = useState("");
@@ -1148,13 +1160,32 @@ export default function WorkspaceExplorer({
   // workspace list and remount the explorer.
   useEffect(() => {
     let cancelled = false;
+    const gateNotReady = authLoaderGate.allowRun !== true;
+    if (gateNotReady) {
+      setWsLoading(false);
+      setWsError("");
+      return () => {
+        cancelled = true;
+      };
+    }
     setWsLoading(true);
     setWsError("");
-    apiListWorkspaces()
-      .then((resp) => {
+    runGuardedLoader({
+      gate: authLoaderGate,
+      scope: "workspaces",
+      run: () => apiListWorkspaces(),
+    })
+      .then((result) => {
         if (cancelled) return;
-        if (!resp?.ok) { setWsError(resp?.error || "Ошибка загрузки"); return; }
-        const raw = resp?.data;
+        if (!result?.ok) {
+          if (result?.state === "unauthorized") {
+            setWsError("Требуется повторная авторизация для загрузки workspaces.");
+            return;
+          }
+          setWsError(String(result?.error || "Ошибка загрузки"));
+          return;
+        }
+        const raw = result?.data?.data;
         const list = Array.isArray(raw) ? raw : [];
         setWorkspaces(list);
         if (!list.length) {
@@ -1167,7 +1198,7 @@ export default function WorkspaceExplorer({
       .catch((e) => { if (!cancelled) setWsError(String(e?.message || "Ошибка")); })
       .finally(() => { if (!cancelled) setWsLoading(false); });
     return () => { cancelled = true; };
-  }, [activeOrgId]);
+  }, [activeOrgId, authLoaderGate]);
 
   useEffect(() => {
     if (wsLoading) return;
@@ -1397,11 +1428,18 @@ export default function WorkspaceExplorer({
           canCreateWorkspace={permissions.canManageUsers}
           canRenameWorkspace={permissions.canRenameWorkspace}
           onWorkspaceRenamed={async () => {
-            const resp = await apiListWorkspaces();
-            if (!resp?.ok) {
-              throw new Error(resp?.error || "Не удалось обновить список workspaces");
+            const guarded = await runGuardedLoader({
+              gate: authLoaderGate,
+              scope: "workspaces",
+              run: () => apiListWorkspaces(),
+            });
+            if (!guarded?.ok) {
+              if (guarded?.state === "unauthorized") {
+                throw new Error("Требуется повторная авторизация для загрузки workspaces");
+              }
+              throw new Error(guarded?.error || "Не удалось обновить список workspaces");
             }
-            const raw = resp?.data;
+            const raw = guarded?.data?.data;
             const list = Array.isArray(raw) ? raw : [];
             setWorkspaces(list);
           }}

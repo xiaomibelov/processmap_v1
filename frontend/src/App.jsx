@@ -76,6 +76,7 @@ import useSessionMetaWriteGateway from "./features/session-meta/write/useSession
 import { buildSessionMetaWriteEnvelope } from "./features/session-meta/write/sessionMetaMergePolicy";
 import { requestProcessStageFlushBeforeLeave } from "./features/process/navigation/processLeaveFlush";
 import { useAuth } from "./features/auth/AuthProvider";
+import { buildAuthLoaderGate, runGuardedLoader } from "./features/auth/authGatedLoader.js";
 import { canCreateOrgTemplateForRole } from "./features/templates/model/templatesRbac";
 import { buildWorkspacePermissions } from "./features/workspace/workspacePermissions";
 
@@ -1048,10 +1049,24 @@ function mergeSessionDraft(prevDraft, sid, session, source = "session_sync") {
 }
 
 export default function App() {
-  const { user, orgs, activeOrgId, switchOrg, refreshOrgs } = useAuth();
+  const {
+    user,
+    orgs,
+    activeOrgId,
+    switchOrg,
+    refreshOrgs,
+    loading: authLoading = false,
+    isAuthed = false,
+    reauthRequired = false,
+  } = useAuth();
   const SESSION_MODE = "quick_skeleton";
   const [backendStatus, setBackendStatus] = useState("idle"); // idle|ok|fail
   const [backendHint, setBackendHint] = useState("");
+  const authLoaderGate = useMemo(() => buildAuthLoaderGate({
+    loading: authLoading,
+    isAuthed,
+    reauthRequired,
+  }), [authLoading, isAuthed, reauthRequired]);
 
   const [projects, setProjects] = useState([]);
   const [projectId, setProjectId] = useState("");
@@ -1422,10 +1437,26 @@ export default function App() {
   }
 
   async function refreshProjects() {
+    const gateCheck = await runGuardedLoader({
+      gate: authLoaderGate,
+      scope: "projects_gate",
+      run: () => ({ ok: true, status: 200 }),
+    });
+    if (gateCheck.state === "skipped_auth_not_ready") return;
     const ok = await refreshMeta();
     if (!ok) return;
-    const r = await apiListProjects();
-    if (!r.ok) return markFail(r.error);
+    const guardedProjects = await runGuardedLoader({
+      gate: authLoaderGate,
+      scope: "projects",
+      run: () => apiListProjects(),
+    });
+    if (!guardedProjects.ok) {
+      const failure = guardedProjects.state === "unauthorized"
+        ? "auth_required_for_projects_loader"
+        : String(guardedProjects.error || "api_list_projects_failed");
+      return markFail(guardedProjects.error || failure);
+    }
+    const r = guardedProjects.data || { ok: true, projects: [] };
     const list = ensureArray(r.projects || r.items);
     setProjects(list);
     const selectionFromUrl = readSelectionFromUrl();
@@ -1478,11 +1509,22 @@ export default function App() {
   }
 
   async function refreshLlmSettings() {
-    const r = await apiGetLlmSettings();
-    if (!r.ok) {
-      setLlmErr(String(r.error || "Не удалось загрузить настройки AI"));
-      return r;
+    const guarded = await runGuardedLoader({
+      gate: authLoaderGate,
+      scope: "llm_settings",
+      run: () => apiGetLlmSettings(),
+    });
+    if (guarded.state === "skipped_auth_not_ready") {
+      return { ok: false, skipped: true, reason: guarded.state };
     }
+    if (!guarded.ok) {
+      const err = guarded.state === "unauthorized"
+        ? "Требуется повторная авторизация для загрузки настроек AI."
+        : String(guarded.error || "Не удалось загрузить настройки AI");
+      setLlmErr(err);
+      return { ok: false, status: Number(guarded.status || 0), error: err };
+    }
+    const r = guarded.data || { ok: true, settings: {} };
     const settings = r.settings || {};
     const hasKey = !!settings.has_api_key;
     setLlmHasApiKey(hasKey);

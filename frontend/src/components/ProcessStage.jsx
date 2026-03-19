@@ -4,6 +4,7 @@ import DocStage from "./process/DocStage";
 import InterviewStage from "./process/InterviewStage";
 import WorkspaceExplorer from "../features/explorer/WorkspaceExplorer";
 import { useAuth } from "../features/auth/AuthProvider";
+import { buildAuthLoaderGate } from "../features/auth/authGatedLoader.js";
 import {
   apiPatchSession,
   apiRecompute,
@@ -216,7 +217,17 @@ export default function ProcessStage({
   propertiesOverlayAlwaysPreviewByElementId = null,
 }) {
   const sid = String(sessionId || "");
-  const { user } = useAuth();
+  const {
+    user,
+    loading: authLoading = false,
+    isAuthed = false,
+    reauthRequired = false,
+  } = useAuth();
+  const authLoaderGate = useMemo(() => buildAuthLoaderGate({
+    loading: authLoading,
+    isAuthed,
+    reauthRequired,
+  }), [authLoading, isAuthed, reauthRequired]);
   const bpmnRef = useRef(null);
   const importInputRef = useRef(null);
   const processBodyRef = useRef(null);
@@ -1653,6 +1664,7 @@ export default function ProcessStage({
     userId: toText(user?.id),
     orgId: workspaceActiveOrgId,
     canCreateOrgTemplate: !!workspaceActiveOrgId && !!canManageSharedTemplates,
+    authLoaderGate,
     hasSession,
     tab,
     getSelectedBpmnElementIds: templatesBridge.getSelectedBpmnIds,

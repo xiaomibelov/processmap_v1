@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
-import { createFolder, listFolders } from "./api.js";
+import { createFolder, listFoldersWithStatus } from "./api.js";
+import { runGuardedLoader } from "../../auth/authGatedLoader.js";
 
 function toText(value) {
   return String(value || "").trim();
@@ -9,6 +10,7 @@ export default function useTemplateFoldersStore({
   userId = "",
   orgId = "",
   canCreateOrgFolder = false,
+  authLoaderGate = null,
   setError,
 } = {}) {
   const [foldersMy, setFoldersMy] = useState([]);
@@ -22,16 +24,36 @@ export default function useTemplateFoldersStore({
       setFoldersOrg([]);
       return [];
     }
-    const items = await listFolders({
-      scope,
-      userId,
-      orgId: scope === "org" ? orgId : "",
+    const guarded = await runGuardedLoader({
+      gate: authLoaderGate,
+      scope: `template_folders:${scope}`,
+      run: () => listFoldersWithStatus({
+        scope,
+        userId,
+        orgId: scope === "org" ? orgId : "",
+      }),
     });
+    if (guarded.state === "skipped_auth_not_ready") {
+      if (scope === "org") setFoldersOrg([]);
+      else setFoldersMy([]);
+      return [];
+    }
+    if (!guarded.ok) {
+      const message = guarded.state === "unauthorized"
+        ? "Требуется повторная авторизация для загрузки папок шаблонов."
+        : toText(guarded.error || "template_folders_load_failed");
+      setFoldersError(message);
+      setError?.(message);
+      if (scope === "org") setFoldersOrg([]);
+      else setFoldersMy([]);
+      return [];
+    }
+    const items = Array.isArray(guarded?.data?.items) ? guarded.data.items : [];
     const normalized = Array.isArray(items) ? items : [];
     if (scope === "org") setFoldersOrg(normalized);
     else setFoldersMy(normalized);
     return normalized;
-  }, [orgId, userId]);
+  }, [authLoaderGate, orgId, setError, userId]);
 
   const reloadAllFolders = useCallback(async () => {
     setFoldersLoading(true);
@@ -89,4 +111,3 @@ export default function useTemplateFoldersStore({
     createFolderForScope,
   };
 }
-
