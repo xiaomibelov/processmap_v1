@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import buildProcessVersioningInterpretation from "../versioning/processVersioningInterpretation.js";
+import buildProcessSaveVisibilityState, { deriveSaveOutcomeHint } from "../visibility/processSaveVisibility.js";
 
 function asObject(value) {
   return value && typeof value === "object" ? value : {};
@@ -23,6 +24,7 @@ export default function useProcessStageShellController({
   sessionSaveReadSnapshot,
   sessionVersionReadSnapshot,
   sessionRevisionHistorySnapshot,
+  saveVisibilityActionState,
   topPanelsView,
   attentionPanelsView,
   dialogsView,
@@ -31,13 +33,23 @@ export default function useProcessStageShellController({
     const saveSnapshot = asObject(sessionSaveReadSnapshot);
     const versionSnapshot = asObject(sessionVersionReadSnapshot);
     const revisionSnapshot = asObject(sessionRevisionHistorySnapshot);
+    const outcomeHint = deriveSaveOutcomeHint(saveVisibilityActionState);
     const versioningInterpretation = buildProcessVersioningInterpretation({
       saveSnapshotRaw: saveSnapshot,
       versionSnapshotRaw: versionSnapshot,
       revisionSnapshotRaw: revisionSnapshot,
       fallbackSaveLabel: workbench.labels.save,
+      lastOutcomeHint: outcomeHint,
     });
     const saveUi = asObject(versioningInterpretation.displayModelForHeader);
+    const saveVisibility = buildProcessSaveVisibilityState({
+      actionStateRaw: saveVisibilityActionState,
+      saveSnapshotRaw: saveSnapshot,
+      versioningInterpretationRaw: versioningInterpretation,
+    });
+    const visibilityInlineMessage = String(saveVisibility.inlineMessage || "").trim();
+    const visibilityInlineTone = String(saveVisibility.inlineTone || "").trim();
+    const defaultInlineMessage = String(genErr || infoMsg || "").trim();
     const canSaveNow = (
       !!hasSession
       && !!isBpmnTab
@@ -53,8 +65,8 @@ export default function useProcessStageShellController({
       publishActionRequired: saveUi.publishActionRequired === true,
       showSaveActionButton: saveUi.showSaveActionButton === true,
       saveActionText: canSaveNow ? saveUi.saveActionText : workbench.labels.save,
-      toolbarInlineMessage: String(genErr || infoMsg || "").trim(),
-      toolbarInlineTone: genErr ? "err" : "",
+      toolbarInlineMessage: visibilityInlineMessage || defaultInlineMessage,
+      toolbarInlineTone: visibilityInlineMessage ? visibilityInlineTone : (genErr ? "err" : ""),
       canUseElementContextActions: !!selectedElementContext,
       templateSelectionCount: Math.max(Number(selectedBpmnElementIds.length || 0), Number(selectedHybridTemplateCount || 0)),
       canCreateTemplateFromSelection: hasSession
@@ -66,6 +78,7 @@ export default function useProcessStageShellController({
       sessionVersionReadSnapshot: versionSnapshot,
       sessionRevisionHistorySnapshot: revisionSnapshot,
       sessionVersioningInterpretation: versioningInterpretation,
+      sessionSaveVisibility: saveVisibility,
     };
   }, [
     availablePathTiers.length,
@@ -76,6 +89,7 @@ export default function useProcessStageShellController({
     isFlushingTab,
     isManualSaveBusy,
     isSwitchingTab,
+    saveVisibilityActionState,
     sessionRevisionHistorySnapshot,
     sessionSaveReadSnapshot,
     sessionVersionReadSnapshot,

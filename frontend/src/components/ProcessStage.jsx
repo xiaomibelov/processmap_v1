@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import BpmnStage from "./process/BpmnStage";
 import DocStage from "./process/DocStage";
 import InterviewStage from "./process/InterviewStage";
@@ -243,6 +243,12 @@ export default function ProcessStage({
   const autoPassDocSyncInFlightRef = useRef(false);
   const autoPassDocSyncLastAttemptMsRef = useRef(0);
   const localStateResetSidRef = useRef("");
+  const [saveVisibilityActionState, setSaveVisibilityActionState] = useState({
+    phase: "idle",
+    resultCode: "",
+    error: "",
+    atMs: 0,
+  });
 
   const {
     genBusy,
@@ -510,6 +516,12 @@ export default function ProcessStage({
   useEffect(() => {
     if (localStateResetSidRef.current === sid) return;
     localStateResetSidRef.current = sid;
+    setSaveVisibilityActionState({
+      phase: "idle",
+      resultCode: "",
+      error: "",
+      atMs: Date.now(),
+    });
     resetLocalStateForSession({
       autoPassToastJobIdRef,
       setDiagramFocusMode,
@@ -534,6 +546,12 @@ export default function ProcessStage({
     if (!hasSession || !isBpmnTab || isSwitchingTab || isFlushingTab || isManualSaveBusy) return;
     setGenErr("");
     setInfoMsg("");
+    setSaveVisibilityActionState({
+      phase: "in_flight",
+      resultCode: "save_pending",
+      error: "",
+      atMs: Date.now(),
+    });
     setIsManualSaveBusy(true);
     try {
       const saved = await bpmnSync.flushFromActiveTab(tab, {
@@ -542,16 +560,46 @@ export default function ProcessStage({
         reason: "manual_save",
       });
       if (!saved?.ok) {
-        setGenErr(shortErr(saved?.error || "Не удалось сохранить BPMN."));
+        const errorMessage = shortErr(saved?.error || "Не удалось сохранить BPMN.");
+        setGenErr(errorMessage);
+        setSaveVisibilityActionState({
+          phase: "failed",
+          resultCode: "save_failed",
+          error: errorMessage,
+          atMs: Date.now(),
+        });
         return;
       }
       setSaveDirtyHint(false);
       if (selectedElementId) {
         bpmnRef.current?.flashNode?.(selectedElementId, "sync", { label: "Synced" });
       }
-      setInfoMsg(saved?.pending ? "Сохранение поставлено в очередь (pending)." : "Сохранено.");
+      if (saved?.pending) {
+        setInfoMsg("Сохранение поставлено в очередь (pending).");
+        setSaveVisibilityActionState({
+          phase: "in_flight",
+          resultCode: "save_pending",
+          error: "",
+          atMs: Date.now(),
+        });
+      } else {
+        setInfoMsg("Сохранено.");
+        setSaveVisibilityActionState({
+          phase: "succeeded",
+          resultCode: "save_succeeded",
+          error: "",
+          atMs: Date.now(),
+        });
+      }
     } catch (e) {
-      setGenErr(shortErr(e?.message || e || "Не удалось сохранить BPMN."));
+      const errorMessage = shortErr(e?.message || e || "Не удалось сохранить BPMN.");
+      setGenErr(errorMessage);
+      setSaveVisibilityActionState({
+        phase: "failed",
+        resultCode: "save_failed",
+        error: errorMessage,
+        atMs: Date.now(),
+      });
     } finally {
       setIsManualSaveBusy(false);
     }
@@ -3982,6 +4030,7 @@ export default function ProcessStage({
     sessionSaveReadSnapshot,
     sessionVersionReadSnapshot,
     sessionRevisionHistorySnapshot,
+    saveVisibilityActionState,
     topPanelsView,
     attentionPanelsView,
     dialogsView,
