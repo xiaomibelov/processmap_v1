@@ -200,6 +200,8 @@ export default function useBpmnSync({
   const saveFromModeler = useCallback(async (options = {}) => {
     const force = options?.force === true;
     const source = String(options?.source || (force ? "tab_switch" : "autosave")).trim() || "autosave";
+    const isManualSaveAction = source === "manual_save";
+    const allowInFlightPendingOutcome = force && !isManualSaveAction;
     let saveLocal = bpmnRef.current?.saveLocal;
     if (force && typeof saveLocal !== "function") {
       saveLocal = await waitForRefMethod("saveLocal", 1500);
@@ -214,7 +216,7 @@ export default function useBpmnSync({
         return false;
       }
     };
-    if (force && isSaveInProgress()) {
+    if (allowInFlightPendingOutcome && isSaveInProgress()) {
       if (fallbackXml.trim()) {
         syncXmlToSession(fallbackXml, { source: `${source}:pending_flush` });
       }
@@ -230,7 +232,7 @@ export default function useBpmnSync({
     try {
       const saved = await Promise.resolve(saveLocal({ force, source }));
       if (saved === false || (saved && typeof saved === "object" && saved.ok === false)) {
-        if (force && isSaveInProgress()) {
+        if (allowInFlightPendingOutcome && isSaveInProgress()) {
           if (fallbackXml.trim()) {
             syncXmlToSession(fallbackXml, { source: `${source}:pending_on_error` });
           }
@@ -274,7 +276,7 @@ export default function useBpmnSync({
       }
       return { ok: true, xml: savedXml, pending };
     } catch (error) {
-      if (force && isSaveInProgress()) {
+      if (allowInFlightPendingOutcome && isSaveInProgress()) {
         if (fallbackXml.trim()) {
           syncXmlToSession(fallbackXml, { source: `${source}:pending_catch` });
         }
