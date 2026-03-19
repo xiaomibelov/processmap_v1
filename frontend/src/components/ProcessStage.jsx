@@ -3939,13 +3939,37 @@ export default function ProcessStage({
     diffTargetSnapshotId,
     semanticDiffView,
   });
+  const sessionSaveReadSnapshot = useMemo(() => {
+    const isSaving = isManualSaveBusy === true;
+    const isDirty = saveDirtyHint === true;
+    return {
+      isSaving,
+      isDirty,
+      isSaved: !isSaving && !isDirty,
+      status: isSaving ? "saving" : (isDirty ? "dirty" : "saved"),
+    };
+  }, [isManualSaveBusy, saveDirtyHint]);
+  const sessionVersionReadSnapshot = useMemo(() => ({
+    xmlVersion: Number(draft?.bpmn_xml_version || draft?.version || 0),
+    effectiveSource: "durable_session",
+  }), [draft?.bpmn_xml_version, draft?.version]);
+  const sessionRevisionHistorySnapshot = useMemo(() => ({
+    latestRevisionNumber: 0,
+    latestRevisionId: "",
+    totalCount: 0,
+    isMissing: true,
+    effectiveSource: "missing",
+    draftState: {
+      hasLiveDraft: hasSession && String(draft?.bpmn_xml || "").trim().length > 0,
+      isDraftAheadOfLatestRevision: saveDirtyHint === true,
+    },
+  }), [draft?.bpmn_xml, hasSession, saveDirtyHint]);
   const shellVm = useProcessStageShellController({
     hasSession,
     isBpmnTab,
     isSwitchingTab,
     isFlushingTab,
     isManualSaveBusy,
-    saveDirtyHint,
     workbench,
     genErr,
     infoMsg,
@@ -3955,6 +3979,9 @@ export default function ProcessStage({
     templatesBusy,
     tab,
     availablePathTiers,
+    sessionSaveReadSnapshot,
+    sessionVersionReadSnapshot,
+    sessionRevisionHistorySnapshot,
     topPanelsView,
     attentionPanelsView,
     dialogsView,
