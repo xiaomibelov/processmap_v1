@@ -31,7 +31,6 @@ export function deriveSessionShellTransition({
       phase === "opening"
       || phase === "restoring_session"
       || phase === "restoring_sessions"
-      || phase === "active"
     )
   );
 

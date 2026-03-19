@@ -59,3 +59,22 @@ test("shell clears only when no draft session remains and no same-session restor
     },
   );
 });
+
+test("shell clears when draft session is gone even if activation still reports active", () => {
+  assert.deepEqual(
+    deriveSessionShellTransition({
+      draftSessionId: "",
+      activationState: {
+        phase: "active",
+        sessionId: "sess_1",
+      },
+      previousShellSessionId: "sess_1",
+    }),
+    {
+      nextShellSessionId: "",
+      reason: "clear_shell",
+      resetShellState: true,
+      preserveShell: false,
+    },
+  );
+});
