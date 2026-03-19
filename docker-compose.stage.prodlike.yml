@@ -1,0 +1,11 @@
+services:
+  gateway:
+    depends_on: !override
+      api:
+        condition: service_started
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway.prod
+    image: ${STAGE_GATEWAY_IMAGE_TAG:-processmap-stage-gateway:dev}
+    volumes:
+      - ./deploy/nginx/default.prod.internal.conf:/etc/nginx/conf.d/default.conf:ro
