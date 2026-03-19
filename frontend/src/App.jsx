@@ -65,9 +65,7 @@ import {
   upsertCamundaPresentationByElementId,
 } from "./features/process/camunda/camundaPresentation";
 import { buildPropertiesOverlayPreview } from "./features/process/camunda/propertyDictionaryModel";
-import { normalizeExecutionPlanVersionList } from "./features/process/robotmeta/executionPlan";
 import { normalizeHybridLayerMap } from "./features/process/hybrid/hybridLayerUi";
-import { normalizeHybridV2Doc } from "./features/process/hybrid/hybridLayerV2";
 import { mergeDrawioMeta, normalizeDrawioMeta } from "./features/process/drawio/drawioMeta";
 import buildSessionMetaReadModel from "./features/session-meta/read/buildSessionMetaReadModel";
 import applySessionMetaHydration from "./features/session-meta/hydrate/applySessionMetaHydration";
@@ -88,6 +86,31 @@ import useSessionRouteOrchestration, {
 import useSessionActivationOrchestration from "./app/useSessionActivationOrchestration";
 import useSessionShellOrchestration from "./app/useSessionShellOrchestration";
 import { buildSessionDebugProbeSnapshot } from "./app/sessionDebugProbe";
+import {
+  mergeGlobalNotesLists,
+  normalizeGlobalNotes,
+} from "./app/sessionGlobalNotes";
+import {
+  normalizeStepTimeMinutes,
+  normalizeStepTimeSeconds,
+  readNodeStepTimeMinutes,
+  readNodeStepTimeSeconds,
+} from "./app/nodeStepTime";
+import {
+  projectIdOf,
+  projectTitleOf,
+  sessionIdOf,
+} from "./app/projectSessionSelectors";
+import {
+  emptyBpmnMeta,
+  mergeHybridV2Doc,
+  normalizeBpmnMeta,
+  normalizeExecutionPlans,
+  normalizeFlowMetaMap,
+  normalizeFlowTier,
+  normalizeNodePathEntry,
+  normalizeNodePathMetaMap,
+} from "./app/bpmnMetaNormalization";
 
 function isLocalSessionId(id) {
   return typeof id === "string" && (id === "local" || id.startsWith("local_"));
@@ -99,150 +122,6 @@ function ensureArray(x) {
 
 function ensureObject(x) {
   return x && typeof x === "object" && !Array.isArray(x) ? x : {};
-}
-
-function normalizeStepTimeMinutes(raw) {
-  if (raw === null || raw === undefined) return null;
-  if (typeof raw === "string" && !raw.trim()) return null;
-  const num = Number(raw);
-  if (!Number.isFinite(num) || num < 0) return null;
-  return Math.round(num);
-}
-
-function normalizeStepTimeSeconds(raw) {
-  if (raw === null || raw === undefined) return null;
-  if (typeof raw === "string" && !raw.trim()) return null;
-  const num = Number(raw);
-  if (!Number.isFinite(num) || num < 0) return null;
-  return Math.round(num);
-}
-
-function readNodeStepTimeMinutes(nodeRaw) {
-  const node = ensureObject(nodeRaw);
-  const params = ensureObject(node.parameters);
-  const candidates = [
-    node.step_time_min,
-    node.stepTimeMin,
-    node.duration_min,
-    node.durationMin,
-    params.step_time_min,
-    params.stepTimeMin,
-    params.duration_min,
-    params.durationMin,
-    params.duration,
-  ];
-  for (let i = 0; i < candidates.length; i += 1) {
-    const parsed = normalizeStepTimeMinutes(candidates[i]);
-    if (parsed !== null) return parsed;
-  }
-  const secondsCandidates = [
-    node.step_time_sec,
-    node.stepTimeSec,
-    node.duration_sec,
-    node.durationSec,
-    params.step_time_sec,
-    params.stepTimeSec,
-    params.duration_sec,
-    params.durationSec,
-  ];
-  for (let i = 0; i < secondsCandidates.length; i += 1) {
-    const sec = normalizeStepTimeSeconds(secondsCandidates[i]);
-    if (sec !== null) return Math.round(sec / 60);
-  }
-  return null;
-}
-
-function readNodeStepTimeSeconds(nodeRaw) {
-  const node = ensureObject(nodeRaw);
-  const params = ensureObject(node.parameters);
-  const secondsCandidates = [
-    node.step_time_sec,
-    node.stepTimeSec,
-    node.duration_sec,
-    node.durationSec,
-    params.step_time_sec,
-    params.stepTimeSec,
-    params.duration_sec,
-    params.durationSec,
-  ];
-  for (let i = 0; i < secondsCandidates.length; i += 1) {
-    const parsed = normalizeStepTimeSeconds(secondsCandidates[i]);
-    if (parsed !== null) return parsed;
-  }
-  const fallbackMinutes = readNodeStepTimeMinutes(node);
-  if (fallbackMinutes === null) return null;
-  return Math.round(fallbackMinutes * 60);
-}
-
-function normalizeGlobalNoteItem(raw, fallbackIndex = 0) {
-  const obj = raw && typeof raw === "object" ? raw : {};
-  const text = String(obj.text || obj.note || obj.notes || obj.message || raw || "").trim();
-  if (!text) return null;
-  const rawTs = obj.ts ?? obj.createdAt ?? obj.created_at ?? obj.updatedAt ?? obj.updated_at;
-  let ts = Number(rawTs);
-  if (!Number.isFinite(ts) || ts <= 0) {
-    const parsedDate = Date.parse(String(rawTs || "").trim());
-    ts = Number.isFinite(parsedDate) && parsedDate > 0 ? parsedDate : Date.now();
-  }
-  const author = String(obj.author || obj.user || obj.created_by || obj.by || "you").trim() || "you";
-  const id = String(obj.id || obj.note_id || obj.noteId || "").trim() || `note_${ts}_${fallbackIndex + 1}`;
-  return { id, text, ts, author };
-}
-
-function normalizeGlobalNotes(value) {
-  let source = [];
-  if (Array.isArray(value)) {
-    source = value;
-  } else if (value && typeof value === "object") {
-    source = [value];
-  } else {
-    const text = String(value || "").trim();
-    if (!text) source = [];
-    else {
-      try {
-        const parsed = JSON.parse(text);
-        if (Array.isArray(parsed)) source = parsed;
-        else if (parsed && typeof parsed === "object") source = [parsed];
-        else source = [{ text }];
-      } catch {
-        source = [{ text }];
-      }
-    }
-  }
-  const normalized = source
-    .map((item, idx) => normalizeGlobalNoteItem(item, idx))
-    .filter(Boolean);
-  normalized.sort((a, b) => {
-    const dt = Number(a?.ts || 0) - Number(b?.ts || 0);
-    if (dt !== 0) return dt;
-    return String(a?.id || "").localeCompare(String(b?.id || ""), "ru");
-  });
-  return normalized;
-}
-
-function mergeGlobalNotesLists(baseRaw, incomingRaw) {
-  const out = [];
-  const byId = new Set();
-  const bySignature = new Set();
-  function add(rawItem, idx) {
-    const item = normalizeGlobalNoteItem(rawItem, idx);
-    if (!item) return;
-    const id = String(item.id || "").trim();
-    const signature = `${String(item.text || "").trim().toLowerCase()}|${Number(item.ts || 0)}|${String(item.author || "").trim().toLowerCase()}`;
-    if (id && byId.has(id)) return;
-    if (signature && bySignature.has(signature)) return;
-    if (id) byId.add(id);
-    if (signature) bySignature.add(signature);
-    out.push(item);
-  }
-  normalizeGlobalNotes(baseRaw).forEach((item, idx) => add(item, idx));
-  normalizeGlobalNotes(incomingRaw).forEach((item, idx) => add(item, idx));
-  out.sort((a, b) => {
-    const dt = Number(a?.ts || 0) - Number(b?.ts || 0);
-    if (dt !== 0) return dt;
-    return String(a?.id || "").localeCompare(String(b?.id || ""), "ru");
-  });
-  return out;
 }
 
 function hasOwn(obj, key) {
@@ -343,29 +222,11 @@ function readOrgSettingsTabFromUrl() {
   }
 }
 
-function projectIdOf(p) {
-  return String((p && (p.id || p.project_id || p.slug)) || "").trim();
-}
-
-function sessionIdOf(s) {
-  return String((s && (s.id || s.session_id)) || "").trim();
-}
-
-function projectTitleOf(p) {
-  return String((p && (p.title || p.name || p.id || p.project_id || p.slug)) || "").trim();
-}
-
 const LEFT_PANEL_OPEN_KEY = "ui.sidebar.left.open";
 const LEFT_PANEL_COMPACT_KEY = "fpc_leftpanel_compact";
 const STEP_TIME_UNIT_KEY = "fpc_step_time_unit_v1";
 const BPMN_META_LOCAL_KEY_PREFIX = "fpc_bpmn_meta_v1:";
 const PROPERTIES_OVERLAY_ALWAYS_KEY_PREFIX = "fpc_properties_overlay_always_v1:";
-const FLOW_TIER_SET = new Set(["P0", "P1", "P2"]);
-const R_FLOW_TIER_SET = new Set(["R0", "R1", "R2"]);
-const FLOW_R_SOURCE_SET = new Set(["manual", "inferred"]);
-const NODE_PATH_TAG_ORDER = ["P0", "P1", "P2"];
-const NODE_PATH_TAG_SET = new Set(NODE_PATH_TAG_ORDER);
-
 function normalizeStepTimeUnit(raw) {
   return String(raw || "").trim().toLowerCase() === "sec" ? "sec" : "min";
 }
@@ -417,150 +278,6 @@ function writePropertiesOverlayAlwaysEnabled(sessionId, value) {
     window.localStorage?.setItem(key, value ? "1" : "0");
   } catch {
   }
-}
-
-function normalizeFlowTier(value) {
-  const tier = String(value || "").trim().toUpperCase();
-  return FLOW_TIER_SET.has(tier) ? tier : "";
-}
-
-function normalizeRFlowTier(value) {
-  const tier = String(value || "").trim().toUpperCase();
-  return R_FLOW_TIER_SET.has(tier) ? tier : "";
-}
-
-function normalizeFlowRSource(value) {
-  const source = String(value || "").trim().toLowerCase();
-  return FLOW_R_SOURCE_SET.has(source) ? source : "";
-}
-
-function normalizeFlowMetaEntry(rawEntry) {
-  const entry = ensureObject(rawEntry);
-  const directTier = normalizeFlowTier(entry.tier);
-  const tier = directTier || (entry.happy === true ? "P0" : (typeof rawEntry === "boolean" && rawEntry ? "P0" : ""));
-  const rtier = normalizeRFlowTier(entry.rtier);
-  if (!tier && !rtier) return null;
-  const out = {};
-  if (tier) out.tier = tier;
-  if (rtier) {
-    out.rtier = rtier;
-    const source = normalizeFlowRSource(entry.source) || "manual";
-    out.source = source;
-    const scopeStartId = String(entry.scopeStartId || entry.scope_start_id || "").trim();
-    if (scopeStartId) out.scopeStartId = scopeStartId;
-    const algoVersion = String(entry.algoVersion || entry.algo_version || "").trim();
-    if (algoVersion) out.algoVersion = algoVersion;
-    const computedAtIso = String(entry.computedAtIso || entry.computed_at_iso || "").trim();
-    if (computedAtIso) out.computedAtIso = computedAtIso;
-    const reason = String(entry.reason || "").trim();
-    if (reason) out.reason = reason;
-  }
-  return out;
-}
-
-function normalizeFlowMetaMap(rawMap) {
-  const src = ensureObject(rawMap);
-  const out = {};
-  Object.keys(src).forEach((rawFlowId) => {
-    const flowId = String(rawFlowId || "").trim();
-    if (!flowId) return;
-    const normalizedEntry = normalizeFlowMetaEntry(src[rawFlowId]);
-    if (!normalizedEntry) return;
-    out[flowId] = normalizedEntry;
-  });
-  return out;
-}
-
-function normalizeNodePathTag(value) {
-  const tag = String(value || "").trim().toUpperCase();
-  return NODE_PATH_TAG_SET.has(tag) ? tag : "";
-}
-
-function normalizeSequenceKey(value) {
-  const raw = String(value || "").trim().toLowerCase();
-  if (!raw) return "";
-  const compact = raw
-    .replace(/\s+/g, "_")
-    .replace(/[^a-z0-9_-]+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  return compact.slice(0, 64);
-}
-
-function normalizeNodePathEntry(rawEntry) {
-  const entry = ensureObject(rawEntry);
-  const pathValues = Array.isArray(entry.paths)
-    ? entry.paths
-    : (entry.path ? [entry.path] : (entry.tier ? [entry.tier] : []));
-  const seen = new Set();
-  const paths = pathValues
-    .map((item) => normalizeNodePathTag(item))
-    .filter((item) => {
-      if (!item || seen.has(item)) return false;
-      seen.add(item);
-      return true;
-    })
-    .sort((a, b) => NODE_PATH_TAG_ORDER.indexOf(a) - NODE_PATH_TAG_ORDER.indexOf(b));
-  if (!paths.length) return null;
-  const sourceRaw = String(entry.source || "").trim().toLowerCase();
-  const source = sourceRaw === "color_auto" ? "color_auto" : "manual";
-  const sequenceKey = normalizeSequenceKey(entry.sequence_key || entry.sequenceKey);
-  const out = { paths, source };
-  if (sequenceKey) out.sequence_key = sequenceKey;
-  return out;
-}
-
-function normalizeNodePathMetaMap(rawMap) {
-  const src = ensureObject(rawMap);
-  const out = {};
-  Object.keys(src).forEach((rawNodeId) => {
-    const nodeId = String(rawNodeId || "").trim();
-    if (!nodeId) return;
-    const entry = normalizeNodePathEntry(src[rawNodeId]);
-    if (!entry) return;
-    out[nodeId] = entry;
-  });
-  return out;
-}
-
-function normalizeExecutionPlans(rawList) {
-  return normalizeExecutionPlanVersionList(rawList);
-}
-
-function hybridV2EntityCount(raw) {
-  const doc = normalizeHybridV2Doc(raw);
-  return ensureArray(doc.elements).length + ensureArray(doc.edges).length;
-}
-
-function mergeHybridV2Doc(primaryRaw, fallbackRaw = {}) {
-  const primary = normalizeHybridV2Doc(primaryRaw);
-  const fallback = normalizeHybridV2Doc(fallbackRaw);
-  if (hybridV2EntityCount(primary) <= 0 && hybridV2EntityCount(fallback) > 0) {
-    return fallback;
-  }
-  return primary;
-}
-
-function normalizeBpmnMeta(raw, options = {}) {
-  const obj = ensureObject(raw);
-  return {
-    version: Number(obj.version) > 0 ? Number(obj.version) : 1,
-    flow_meta: normalizeFlowMetaMap(obj.flow_meta),
-    node_path_meta: normalizeNodePathMetaMap(obj.node_path_meta),
-    robot_meta_by_element_id: normalizeRobotMetaMap(obj.robot_meta_by_element_id),
-    camunda_extensions_by_element_id: normalizeCamundaExtensionsMap(obj.camunda_extensions_by_element_id),
-    presentation_by_element_id: normalizeCamundaPresentationMap(obj.presentation_by_element_id),
-    hybrid_layer_by_element_id: normalizeHybridLayerMap(obj.hybrid_layer_by_element_id),
-    hybrid_v2: mergeHybridV2Doc(obj.hybrid_v2, options.fallbackHybridV2),
-    drawio: mergeDrawioMeta(obj.drawio, options.fallbackDrawio),
-    execution_plans: normalizeExecutionPlans(obj.execution_plans),
-    auto_pass_v1: ensureObject(obj.auto_pass_v1),
-    session_companion_v1: normalizeSessionCompanion(obj.session_companion_v1),
-  };
-}
-
-function emptyBpmnMeta() {
-  return normalizeBpmnMeta({});
 }
 
 function readLocalBpmnMeta(sessionId) {
