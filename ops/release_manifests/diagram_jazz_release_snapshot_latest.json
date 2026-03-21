@@ -1,0 +1,241 @@
+{
+  "snapshot_type": "MANIFESTED_DIFF_TARGET",
+  "created_at_utc": "20260321T115122Z",
+  "canonical_code_truth": {
+    "source_root": "/Users/mac/PycharmProjects/processmap_clean_status_fix_v1",
+    "branch": "release/stage-full-20260319-all-updates",
+    "base_sha": "81973945a58037c53994085365c10f0107e78fe1",
+    "worktree_state": "dirty_manifested",
+    "status_porcelain_count": 28
+  },
+  "canonical_compose_truth": {
+    "compose_root": "/Users/mac/PycharmProjects/processmap_runtime_source_fix_v1",
+    "active_compose_files": [
+      "docker-compose.yml",
+      "docker-compose.source-root.yml",
+      "ops/overrides/diagram_jazz/diagram_jazz_rollback.override.yml"
+    ],
+    "override_inventory": [
+      "ops/overrides/diagram_jazz/diagram_jazz_canary.override.yml",
+      "ops/overrides/diagram_jazz/diagram_jazz_rollback.override.yml",
+      "ops/overrides/diagram_jazz/diagram_jazz_off.override.yml"
+    ]
+  },
+  "classification": {
+    "keep_in_release": [
+      "backend/app/routers/__init__.py",
+      "backend/app/storage.py",
+      "frontend/src/App.jsx",
+      "frontend/src/app/useSessionActivationOrchestration.js",
+      "frontend/src/components/process/BpmnStage.jsx",
+      "frontend/src/components/sidebar/ElementSettingsControls.jsx",
+      "frontend/src/features/process/bpmn/persistence/createBpmnPersistence.js",
+      "frontend/src/features/process/bpmn/stage/decor/decorManager.js",
+      "frontend/src/features/process/bpmn/stage/decor/overlayColorModel.js",
+      "frontend/src/features/process/bpmn/stage/wiring/bpmnWiring.js",
+      "frontend/src/features/process/camunda/camundaExtensions.js",
+      "frontend/src/features/process/camunda/propertyDictionaryModel.js",
+      "frontend/src/lib/api.js",
+      "frontend/src/lib/api/bpmnApi.js",
+      "frontend/src/lib/apiRoutes.js",
+      "frontend/src/styles/app/05/05-02-bpmn-text-contrast.css",
+      "frontend/src/styles/tailwind.css",
+      "backend/app/routers/diagram_jazz.py",
+      "backend/app/services/diagram_jazz_contract.py",
+      "backend/app/services/diagram_owner_cutover.py",
+      "backend/app/services/diagram_owner_rollback_drills.py",
+      "backend/app/services/diagram_trace_contract.py",
+      "frontend/scripts/",
+      "frontend/src/features/process/bpmn/jazz/"
+    ],
+    "keep_in_release_operational": [
+      "backend/app/services/DIAGRAM_JAZZ_BACKEND_CONTRACT_DRAFT.md",
+      "backend/app/services/DIAGRAM_OWNER_CUTOVER_CONTRACT_DRAFT.md",
+      "backend/app/services/DIAGRAM_OWNER_ROLLBACK_DRILL_MATRIX.md",
+      "backend/app/services/DIAGRAM_OWNER_ROLLBACK_PLAYBOOK.md"
+    ],
+    "archive_only": [],
+    "delete_before_release": [],
+    "move_out_of_repo_truth": [],
+    "unknown_requires_decision": []
+  },
+  "allowed_release_delta_files": [
+    "backend/app/routers/__init__.py",
+    "backend/app/storage.py",
+    "frontend/src/App.jsx",
+    "frontend/src/app/useSessionActivationOrchestration.js",
+    "frontend/src/components/process/BpmnStage.jsx",
+    "frontend/src/components/sidebar/ElementSettingsControls.jsx",
+    "frontend/src/features/process/bpmn/persistence/createBpmnPersistence.js",
+    "frontend/src/features/process/bpmn/stage/decor/decorManager.js",
+    "frontend/src/features/process/bpmn/stage/decor/overlayColorModel.js",
+    "frontend/src/features/process/bpmn/stage/wiring/bpmnWiring.js",
+    "frontend/src/features/process/camunda/camundaExtensions.js",
+    "frontend/src/features/process/camunda/propertyDictionaryModel.js",
+    "frontend/src/lib/api.js",
+    "frontend/src/lib/api/bpmnApi.js",
+    "frontend/src/lib/apiRoutes.js",
+    "frontend/src/styles/app/05/05-02-bpmn-text-contrast.css",
+    "frontend/src/styles/tailwind.css",
+    "backend/app/routers/diagram_jazz.py",
+    "backend/app/services/DIAGRAM_JAZZ_BACKEND_CONTRACT_DRAFT.md",
+    "backend/app/services/DIAGRAM_OWNER_CUTOVER_CONTRACT_DRAFT.md",
+    "backend/app/services/DIAGRAM_OWNER_ROLLBACK_DRILL_MATRIX.md",
+    "backend/app/services/DIAGRAM_OWNER_ROLLBACK_PLAYBOOK.md",
+    "backend/app/services/diagram_jazz_contract.py",
+    "backend/app/services/diagram_owner_cutover.py",
+    "backend/app/services/diagram_owner_rollback_drills.py",
+    "backend/app/services/diagram_trace_contract.py",
+    "frontend/scripts/",
+    "frontend/src/features/process/bpmn/jazz/"
+  ],
+  "forbidden_untracked_files_in_source_root": "any path not listed in allowed_release_delta_files",
+  "forbidden_runtime_overrides": "/tmp/*.override.yml in active compose chain",
+  "workspace_data_plane_note": {
+    "mount_source": "/Users/mac/PycharmProjects/foodproc_process_copilot/workspace",
+    "mount_target": "/app/workspace",
+    "classification": "data-plane companion; not code truth"
+  },
+  "file_digests": {
+    "backend/app/routers/__init__.py": {
+      "exists": true,
+      "sha256": "ce34133afb4611ba4e4b65dad1f32abb167d12de4f0ae43c92f3d05826071d13",
+      "bytes": 1038
+    },
+    "backend/app/storage.py": {
+      "exists": true,
+      "sha256": "b6c55d92a5236c410ab5f9d9777749437ee2378f2a9288f1d60b370176f1ccc6",
+      "bytes": 216957
+    },
+    "frontend/src/App.jsx": {
+      "exists": true,
+      "sha256": "43bd6f7dc7a37ef249bc73c54f0c6e84915955e30cb6853503a255aa10ca7768",
+      "bytes": 130629
+    },
+    "frontend/src/app/useSessionActivationOrchestration.js": {
+      "exists": true,
+      "sha256": "dbde3c0b27a98f73eac5e68f66d5030f2333600257680bc2db54fd17aed365c9",
+      "bytes": 15143
+    },
+    "frontend/src/components/process/BpmnStage.jsx": {
+      "exists": true,
+      "sha256": "fe70aa837a1cae04a7e7179db8a838289736cd42a11e0591c1fdddac99d4986d",
+      "bytes": 164798
+    },
+    "frontend/src/components/sidebar/ElementSettingsControls.jsx": {
+      "exists": true,
+      "sha256": "fab2a9bd634caa916163517b2f95f082ae83d24ae8a19751a4ea1cbcc7fe4ab3",
+      "bytes": 98130
+    },
+    "frontend/src/features/process/bpmn/persistence/createBpmnPersistence.js": {
+      "exists": true,
+      "sha256": "aa49dfae4cde114e5eec1540cfaa0c04c0551e81eae1f956c23fc953ae9e7c7c",
+      "bytes": 21490
+    },
+    "frontend/src/features/process/bpmn/stage/decor/decorManager.js": {
+      "exists": true,
+      "sha256": "2b93ad1c16372d556cb5832b093e102188570235c3e48f65517efb9d63fb4a5e",
+      "bytes": 52961
+    },
+    "frontend/src/features/process/bpmn/stage/decor/overlayColorModel.js": {
+      "exists": true,
+      "sha256": "7652c5f91bfcd8f774cc3f175f246c3ec6e602046ada4ca3672f1bf05e7a1e5a",
+      "bytes": 15837
+    },
+    "frontend/src/features/process/bpmn/stage/wiring/bpmnWiring.js": {
+      "exists": true,
+      "sha256": "cb8ad0cceac726636623fc528f25bcbde57f468fa091b424c50ee87d77159b67",
+      "bytes": 13716
+    },
+    "frontend/src/features/process/camunda/camundaExtensions.js": {
+      "exists": true,
+      "sha256": "1173848ed7b2243e64a3b544022fa36e53908bfc84648d6538d2b3137059fc93",
+      "bytes": 58284
+    },
+    "frontend/src/features/process/camunda/propertyDictionaryModel.js": {
+      "exists": true,
+      "sha256": "dbb844d2c63129f12b6c4d385b1b777d397eac427c609425e651d974edbd316a",
+      "bytes": 14557
+    },
+    "frontend/src/lib/api.js": {
+      "exists": true,
+      "sha256": "d8424384a0703ce97eac81f90fb5abf0da89536e2b1f325c7c4a794f1c01ae97",
+      "bytes": 83382
+    },
+    "frontend/src/lib/api/bpmnApi.js": {
+      "exists": true,
+      "sha256": "7b870094f6aa60cdd1bbcfa40b1be465da9f74cfe02c502a94a6651095b103ce",
+      "bytes": 395
+    },
+    "frontend/src/lib/apiRoutes.js": {
+      "exists": true,
+      "sha256": "80969ca52587f3e8a7d63a02a7b15477d5f42bf7c5f1bf3b92f8039249633340",
+      "bytes": 8394
+    },
+    "frontend/src/styles/app/05/05-02-bpmn-text-contrast.css": {
+      "exists": true,
+      "sha256": "699695a4deb5c2cd2f94777d7f1e85fbb53b1171c29146530af810ab8d740768",
+      "bytes": 43588
+    },
+    "frontend/src/styles/tailwind.css": {
+      "exists": true,
+      "sha256": "043b6e69fe7027e65b8655d912b3bd18eedb1276807575a40f431dec63b5bf79",
+      "bytes": 189144
+    },
+    "backend/app/routers/diagram_jazz.py": {
+      "exists": true,
+      "sha256": "20fd88b07951af8ebf7bb7da5edaecd7cc5698ba826f461bff98e0e5628d9b3e",
+      "bytes": 33175
+    },
+    "backend/app/services/DIAGRAM_JAZZ_BACKEND_CONTRACT_DRAFT.md": {
+      "exists": true,
+      "sha256": "accc18bee05a081e14c516ee4c2425bb10a710f48f5d48752ce5d49568bc00f9",
+      "bytes": 6121
+    },
+    "backend/app/services/DIAGRAM_OWNER_CUTOVER_CONTRACT_DRAFT.md": {
+      "exists": true,
+      "sha256": "b2be3ec653e065c11da334dc7aee3dce9d02ccb0524441325752f5e35c17b90a",
+      "bytes": 2335
+    },
+    "backend/app/services/DIAGRAM_OWNER_ROLLBACK_DRILL_MATRIX.md": {
+      "exists": true,
+      "sha256": "5b17aa26238c0252c2f8e8e60ac2f036ed984cdbc42ac3233f9b8ae283f458ba",
+      "bytes": 3912
+    },
+    "backend/app/services/DIAGRAM_OWNER_ROLLBACK_PLAYBOOK.md": {
+      "exists": true,
+      "sha256": "3da6c6c7190febc3c3771bfc3a47c62c0408ddfc31b39b3d1668ce1704eeac16",
+      "bytes": 3517
+    },
+    "backend/app/services/diagram_jazz_contract.py": {
+      "exists": true,
+      "sha256": "0c13c856d47b8e9d64f255938ca97ef9e7e914053379fedac26224f91755eb80",
+      "bytes": 35810
+    },
+    "backend/app/services/diagram_owner_cutover.py": {
+      "exists": true,
+      "sha256": "b08811289728b45ff53ba3730c4292e12fa117f5c3f2dd49fdccd75db6dcbfd0",
+      "bytes": 16043
+    },
+    "backend/app/services/diagram_owner_rollback_drills.py": {
+      "exists": true,
+      "sha256": "465f9fa2db189cb3ddac03f2f64e049145c0058a28fcae8b7d098d6d611f24f9",
+      "bytes": 23570
+    },
+    "backend/app/services/diagram_trace_contract.py": {
+      "exists": true,
+      "sha256": "8024eb36c05202a4a7ac86ca9cc2f1d5f537402e85dab2a89ba2a8615537ca84",
+      "bytes": 4120
+    },
+    "frontend/scripts/": {
+      "exists": false,
+      "sha256": "",
+      "bytes": 0
+    },
+    "frontend/src/features/process/bpmn/jazz/": {
+      "exists": false,
+      "sha256": "",
+      "bytes": 0
+    }
+  }
+}
