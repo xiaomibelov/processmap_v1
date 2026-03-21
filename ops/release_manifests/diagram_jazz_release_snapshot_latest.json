@@ -1,6 +1,6 @@
 {
   "snapshot_type": "MANIFESTED_DIFF_TARGET",
-  "created_at_utc": "20260321T115122Z",
+  "created_at_utc": "20260321T143500Z",
   "canonical_code_truth": {
     "source_root": "/Users/mac/PycharmProjects/processmap_clean_status_fix_v1",
     "branch": "release/stage-full-20260319-all-updates",
@@ -13,13 +13,32 @@
     "active_compose_files": [
       "docker-compose.yml",
       "docker-compose.source-root.yml",
-      "ops/overrides/diagram_jazz/diagram_jazz_rollback.override.yml"
+      "ops/overrides/diagram_jazz/diagram_jazz_canary.override.yml"
     ],
     "override_inventory": [
       "ops/overrides/diagram_jazz/diagram_jazz_canary.override.yml",
       "ops/overrides/diagram_jazz/diagram_jazz_rollback.override.yml",
       "ops/overrides/diagram_jazz/diagram_jazz_off.override.yml"
     ]
+  },
+  "operator_lock_canary_truth": {
+    "org_id": "72220dfc70d4",
+    "project_id": "07894156c5",
+    "session_id": "7cd806800d",
+    "operator_user_id": "5f34a5602c8b45098046d667ebd5cb12",
+    "allowlist_exact": "72220dfc70d4::07894156c5::7cd806800d@5f34a5602c8b45098046d667ebd5cb12",
+    "canary_override_file": "ops/overrides/diagram_jazz/diagram_jazz_canary.override.yml",
+    "rollback_override_file": "ops/overrides/diagram_jazz/diagram_jazz_rollback.override.yml",
+    "runtime_default_mode_after_drill": "rollback_to_legacy",
+    "scope_widening_forbidden": true
+  },
+  "operator_lock_fixture_policy": {
+    "fixture_email": "oplock_wrong_20260321@local",
+    "fixture_user_id": "b391ce8ab4244bd7ba3582c612d36b6d",
+    "decision": "retain_as_explicit_test_fixture",
+    "reason": "required for deterministic operator-lock negative-lane validation without mutating product code",
+    "cleanup_rule": "delete only when replaced by another documented operator-lock fixture",
+    "approved_in_contour": "post-drill-hygiene-operator-lock"
   },
   "classification": {
     "keep_in_release": [
@@ -228,14 +247,12 @@
       "bytes": 4120
     },
     "frontend/scripts/": {
-      "exists": false,
-      "sha256": "",
-      "bytes": 0
+      "exists": true,
+      "kind": "directory"
     },
     "frontend/src/features/process/bpmn/jazz/": {
-      "exists": false,
-      "sha256": "",
-      "bytes": 0
+      "exists": true,
+      "kind": "directory"
     }
   }
 }
