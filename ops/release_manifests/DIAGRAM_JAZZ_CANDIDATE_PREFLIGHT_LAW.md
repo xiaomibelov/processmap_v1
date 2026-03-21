@@ -2,6 +2,8 @@
 
 Status: mandatory before any live canary for any new candidate tuple.
 
+Current canonical boundary is three operator-locked tuples; this law remains mandatory for any tuple outside that frozen boundary before any widening/live step.
+
 ## Law
 A candidate tuple is **BLOCKED** unless all are true:
 1. `allowlist_match=true` (exact operator-locked tuple match)

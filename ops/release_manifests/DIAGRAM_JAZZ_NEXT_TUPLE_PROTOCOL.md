@@ -2,6 +2,13 @@
 
 Status: canonical operational protocol for any future candidate tuple.
 
+## Current frozen operator-lock boundary (canonical)
+- `72220dfc70d4::07894156c5::7cd806800d@5f34a5602c8b45098046d667ebd5cb12`
+- `72220dfc70d4::07894156c5::adea22eb92@5f34a5602c8b45098046d667ebd5cb12`
+- `72220dfc70d4::07894156c5::9100c0d0f9@5f34a5602c8b45098046d667ebd5cb12`
+
+Post-drill canonical runtime baseline stays rollback/legacy (`rollback override` active). No widening beyond these 3 tuples is allowed in this contour.
+
 ## Hard law
 No future candidate tuple may enter widening gate or live canary unless tuple preflight passes.
 
