@@ -1,0 +1,56 @@
+{
+  "snapshot_type": "POST_CANARY_DECISION_GATE",
+  "created_at_utc": "20260321T213016Z",
+  "contour": "diagram_to_jazz_five_tuple_operator_locked_canary",
+  "decision_token": "POST_CANARY_DECISION=BOUNDARY_PROVEN_KEEP_ROLLBACK_BASELINE",
+  "boundary_status": "FIVE_TUPLE_BOUNDARY_PROVEN_AT_CANARY_SCOPE",
+  "canary_result": "TUPLE5_LIVE_CANARY_SUCCESS",
+  "runtime_default": "rollback_to_legacy",
+  "rollout_authorized": false,
+  "widening_authorized": false,
+  "future_enablement_requires_explicit_decision_contour": true,
+  "operator_lock_semantics": "org::project::session@operator exact",
+  "allowlist_exact": [
+    "72220dfc70d4::07894156c5::7cd806800d@5f34a5602c8b45098046d667ebd5cb12",
+    "72220dfc70d4::07894156c5::adea22eb92@5f34a5602c8b45098046d667ebd5cb12",
+    "72220dfc70d4::07894156c5::9100c0d0f9@5f34a5602c8b45098046d667ebd5cb12",
+    "72220dfc70d4::07894156c5::89545252f1@5f34a5602c8b45098046d667ebd5cb12",
+    "72220dfc70d4::07894156c5::4ef13d05e1@5f34a5602c8b45098046d667ebd5cb12"
+  ],
+  "canonical_roots": {
+    "source_root": "/Users/mac/PycharmProjects/processmap_clean_status_fix_v1",
+    "compose_root": "/Users/mac/PycharmProjects/processmap_runtime_source_fix_v1"
+  },
+  "active_compose_chain": [
+    "docker-compose.yml",
+    "docker-compose.source-root.yml",
+    "ops/overrides/diagram_jazz/diagram_jazz_rollback.override.yml"
+  ],
+  "runtime_guardrails": {
+    "canary_override_active": false,
+    "rollback_override_active": true,
+    "tmp_override_present": false
+  },
+  "legacy_integrity": {
+    "tuple5_bpmn_sha256": "8afaafeef10e190ec27e66adf07258fc30f1e3a6be99b6f77fd9f2cef64b2e55",
+    "unchanged_before_after_live_and_rollback": true
+  },
+  "route_shape_tech_debt": {
+    "raw_route_status": 500,
+    "canonical_route_status": 200,
+    "classification": "non_boundary_blocker"
+  },
+  "evidence_refs": {
+    "manifest_latest": "ops/release_manifests/diagram_jazz_release_snapshot_latest.json",
+    "manifest_immutable_snapshot": "ops/release_manifests/diagram_jazz_release_snapshot_20260321T213016Z.json",
+    "tuple5_preflight_post_canary": "/tmp/tuple5_preflight_post_canary.json",
+    "tuple5_live_window": "/tmp/tuple5_live_window.json",
+    "tuple5_rollback_window": "/tmp/tuple5_rollback_window.json"
+  },
+  "closure_verdict": "DIAGRAM_JAZZ_FIVE_TUPLE_CONTOUR_CLOSED",
+  "manifest_integrity": {
+    "latest_sha256": "f09b48bbcd3b51a1e59517f8a5c9cb42eb3ead4bac74679946e72c25a5c57186",
+    "immutable_snapshot_sha256": "f09b48bbcd3b51a1e59517f8a5c9cb42eb3ead4bac74679946e72c25a5c57186",
+    "latest_equals_immutable_snapshot": true
+  }
+}
