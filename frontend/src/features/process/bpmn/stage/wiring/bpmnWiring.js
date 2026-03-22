@@ -2,6 +2,10 @@ import createBpmnRuntimeDefault from "../../runtime/createBpmnRuntime.js";
 import createBpmnStoreDefault from "../../store/createBpmnStore.js";
 import createBpmnCoordinatorDefault from "../../coordinator/createBpmnCoordinator.js";
 import createBpmnPersistenceDefault from "../../persistence/createBpmnPersistence.js";
+import {
+  DIAGRAM_JAZZ_TRACE_MARKERS,
+  resolveDiagramJazzContractDraftActivation,
+} from "../../jazz/diagramJazzContractDraft.js";
 
 function asObject(x) {
   return x && typeof x === "object" && !Array.isArray(x) ? x : {};
@@ -142,6 +146,18 @@ export function createBpmnWiring(ctxBase, deps = {}) {
     const api = asObject(ctx.api);
     const callbacks = asObject(ctx.callbacks);
     if (refs.bpmnPersistenceRef?.current) return refs.bpmnPersistenceRef.current;
+    const diagramJazzGate = resolveDiagramJazzContractDraftActivation({});
+    try {
+      if (typeof window !== "undefined") {
+        window.__FPC_DIAGRAM_JAZZ_GATE__ = diagramJazzGate;
+      }
+    } catch { /* noop */ }
+    callbacks.logBpmnTrace?.(DIAGRAM_JAZZ_TRACE_MARKERS.gateState, "", {
+      sid: String(refs.activeSessionRef?.current || ""),
+      adapter_mode: String(diagramJazzGate?.adapterModeEffective || "legacy"),
+      owner_effective_state: String(diagramJazzGate?.ownerEffectiveState || "legacy_owner"),
+      pilot_enabled: diagramJazzGate?.pilotEnabled ? 1 : 0,
+    });
     const persistence = createBpmnPersistence({
       getSessionDraft: () => readOnly.draftRef?.current || {},
       getSnapshotProjectId: () => String(readOnly.draftRef?.current?.project_id || readOnly.draftRef?.current?.projectId || values.activeProjectId || ""),

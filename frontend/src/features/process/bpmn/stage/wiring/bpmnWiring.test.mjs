@@ -182,3 +182,32 @@ test("ensureBpmnStore guards redundant setter fanout for identical snapshots", (
   });
   assert.deepEqual(calls, [["dirty", false]]);
 });
+
+test("ensureBpmnPersistence emits Jazz activation gate trace as dormant legacy", () => {
+  const ctx = createCtx();
+  const traces = [];
+  ctx.callbacks.logBpmnTrace = (event, xml, payload) => {
+    traces.push({ event, payload });
+  };
+  const deps = {
+    createBpmnStore: () => ({
+      subscribe: () => () => {},
+      getState: () => ({ xml: "" }),
+    }),
+    createBpmnPersistence: () => ({
+      saveRaw: async () => ({ ok: true }),
+      loadRaw: async () => ({ ok: true }),
+      cacheRaw: () => ({ ok: true }),
+    }),
+  };
+
+  const wiring = createBpmnWiring(() => ctx, deps);
+  wiring.ensureBpmnPersistence();
+
+  const gateTrace = traces.find((t) => t.event === "diagram_jazz_gate_state");
+  assert.ok(gateTrace, "should emit Jazz gate state trace on persistence init");
+  assert.equal(gateTrace.payload.adapter_mode, "legacy");
+  assert.equal(gateTrace.payload.owner_effective_state, "legacy_owner");
+  assert.equal(gateTrace.payload.pilot_enabled, 0);
+  assert.ok(ctx.refs.bpmnPersistenceRef.current, "persistence ref should be set");
+});
