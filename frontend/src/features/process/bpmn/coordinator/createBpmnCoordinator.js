@@ -1,3 +1,5 @@
+import createLocalMutationStaging from "./createLocalMutationStaging.js";
+
 function asText(value) {
   return String(value || "");
 }
@@ -37,6 +39,17 @@ export default function createBpmnCoordinator(options = {}) {
   let saveInFlight = false;
   let saveQueuedRev = 0;
   let flushPromise = null;
+  const localMutationStaging = createLocalMutationStaging({
+    getStore: () => store,
+    getRuntime,
+    getSessionId: currentSid,
+    onRuntimeChange: (ev) => onRuntimeChange?.(ev),
+    cacheRaw: (sid, xml, rev, reason) => cacheRaw(sid, xml, rev, reason),
+    emit: (event, payload) => emit(event, payload),
+    requestAutosave: (reason) => scheduleSave(reason),
+    asText,
+    asNumber,
+  });
 
   function emit(event, payload = {}) {
     if (!onTrace) return;
@@ -96,25 +109,7 @@ export default function createBpmnCoordinator(options = {}) {
   }
 
   async function applyRuntimeChange(ev) {
-    if (!store) return;
-    const sid = currentSid();
-    if (!sid) return;
-    onRuntimeChange?.(ev);
-    const runtime = getRuntime();
-    const status = runtime?.getStatus?.();
-    let nextXml = asText(store.getState?.()?.xml || "");
-    if (status?.ready && status?.defs) {
-      const xmlRes = await runtime.getXml({ format: true });
-      if (xmlRes?.ok) nextXml = asText(xmlRes.xml);
-    }
-    const nextState = store.setXml(nextXml, "runtime_change", { bumpRev: true, dirty: true });
-    cacheRaw(sid, nextXml, asNumber(nextState?.rev, 0), "runtime_change");
-    emit("REV_BUMP", {
-      sid,
-      rev: asNumber(nextState?.rev, 0),
-      reason: "runtime_change",
-    });
-    scheduleSave("autosave");
+    await localMutationStaging.stageRuntimeChange(ev);
   }
 
   function applyRuntimeStatus(status) {

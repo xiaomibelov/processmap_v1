@@ -9,6 +9,10 @@ import { createTemplatePackAdapter } from "../../features/process/bpmn/stage/tem
 import { createCommandOpsAdapter } from "../../features/process/bpmn/stage/ops/commandOpsAdapter";
 import { createAiQuestionPanelAdapter } from "../../features/process/bpmn/stage/ai/aiQuestionPanelAdapter";
 import { createBpmnStageImperativeApi } from "../../features/process/bpmn/stage/imperative/bpmnStageImperativeApi";
+import {
+  runImmediateEditorFanout,
+  runSettledDecorSidebarFanout,
+} from "../../features/process/bpmn/stage/fanout/postStagingFanout";
 import forceTaskResizeRulesModule from "../../features/process/bpmn/runtime/modules/forceTaskResizeRules";
 import {
   saveBpmnSnapshot,
@@ -1201,8 +1205,11 @@ const BpmnStage = forwardRef(function BpmnStage({
   const userNotesMarkerStateRef = useRef({ viewer: [], editor: [] });
   const userNotesOverlayStateRef = useRef({ viewer: [], editor: [] });
   const stepTimeOverlayStateRef = useRef({ viewer: [], editor: [] });
+  const stepTimeDecorSignatureRef = useRef({ viewer: "", editor: "" });
   const robotMetaDecorStateRef = useRef({ viewer: {}, editor: {} });
   const propertiesOverlayStateRef = useRef({ viewer: {}, editor: {} });
+  const propertiesOverlayRenderSignatureRef = useRef({ viewer: "", editor: "" });
+  const settledSelectionFanoutRef = useRef({ viewer: "", editor: "" });
   const playbackDecorStateRef = useRef({
     viewer: createPlaybackDecorRuntimeState(),
     editor: createPlaybackDecorRuntimeState(),
@@ -2378,6 +2385,38 @@ const BpmnStage = forwardRef(function BpmnStage({
     });
   }
 
+  function buildSettledSelectionFanoutSignature({ element, kind }) {
+    const mode = kind === "editor" ? "editor" : "viewer";
+    const elementId = toText(element?.id);
+    if (!elementId) return `${mode}:-`;
+    const bo = asObject(element?.businessObject);
+    const aiQuestions = getAiQuestionsForElement(elementId);
+    const aiStats = aiQuestionStats(aiQuestions);
+    const aiSignature = asArray(aiQuestions)
+      .map((itemRaw) => {
+        const item = asObject(itemRaw);
+        return [
+          toText(item?.id),
+          toText(item?.status),
+          toText(item?.comment),
+          toText(item?.question || item?.text),
+        ].join(":");
+      })
+      .join("|");
+    return [
+      mode,
+      elementId,
+      toText(bo?.name || elementId),
+      toText(bo?.$type || element?.type),
+      readLaneNameForElement(element),
+      String(getElementNoteCount(elementId)),
+      String(aiStats.total),
+      String(aiStats.done),
+      String(aiStats.withoutComment),
+      aiSignature,
+    ].join("::");
+  }
+
   function beginImportSelectionGuard(kind) {
     const mode = kind === "viewer" ? "viewer" : "editor";
     const selectedId = String(selectedMarkerStateRef.current[mode] || "").trim();
@@ -2693,8 +2732,10 @@ const BpmnStage = forwardRef(function BpmnStage({
         userNotesMarkerStateRef,
         userNotesOverlayStateRef,
         stepTimeOverlayStateRef,
+        stepTimeDecorSignatureRef,
         robotMetaDecorStateRef,
         propertiesOverlayStateRef,
+        propertiesOverlayRenderSignatureRef,
         aiQuestionPanelTargetRef,
       },
       getters: {
@@ -3208,8 +3249,10 @@ const BpmnStage = forwardRef(function BpmnStage({
     userNotesMarkerStateRef.current = { viewer: [], editor: [] };
     userNotesOverlayStateRef.current = { viewer: [], editor: [] };
     stepTimeOverlayStateRef.current = { viewer: [], editor: [] };
+    stepTimeDecorSignatureRef.current = { viewer: "", editor: "" };
     robotMetaDecorStateRef.current = { viewer: {}, editor: {} };
     propertiesOverlayStateRef.current = { viewer: {}, editor: {} };
+    propertiesOverlayRenderSignatureRef.current = { viewer: "", editor: "" };
     playbackDecorStateRef.current = {
       viewer: createPlaybackDecorRuntimeState(),
       editor: createPlaybackDecorRuntimeState(),
@@ -3486,10 +3529,13 @@ const BpmnStage = forwardRef(function BpmnStage({
             applyShapeReplacePost(m, ev, "commandStack.shape.replace.postExecute");
           });
           eventBus.on("commandStack.changed", 900, () => {
-            applyTaskTypeDecor(m, "editor");
-            applyLinkEventDecor(m, "editor");
-            applyHappyFlowDecor(m, "editor");
-            applyRobotMetaDecor(m, "editor");
+            runImmediateEditorFanout({
+              inst: m,
+              applyTaskTypeDecor,
+              applyLinkEventDecor,
+              applyHappyFlowDecor,
+              applyRobotMetaDecor,
+            });
           });
           eventBus.on("selection.changed", 2000, (ev) => {
             const selectedList = asArray(ev?.newSelection).filter((el) => isSelectableElement(el));
@@ -4509,30 +4555,23 @@ const BpmnStage = forwardRef(function BpmnStage({
   }, [draft?.bpmn_meta]);
 
   useEffect(() => {
-    if (isInterviewDecorModeOn()) {
-      clearUserNotesDecor(viewerRef.current, "viewer");
-      clearUserNotesDecor(modelerRef.current, "editor");
-    } else {
-      applyUserNotesDecor(viewerRef.current, "viewer");
-      applyUserNotesDecor(modelerRef.current, "editor");
-    }
-    applyStepTimeDecor(viewerRef.current, "viewer");
-    applyStepTimeDecor(modelerRef.current, "editor");
-    applyRobotMetaDecor(viewerRef.current, "viewer");
-    applyRobotMetaDecor(modelerRef.current, "editor");
-    applyPropertiesOverlayDecor(viewerRef.current, "viewer");
-    applyPropertiesOverlayDecor(modelerRef.current, "editor");
-    const kind = view === "editor" ? "editor" : "viewer";
-    const inst = kind === "editor" ? modelerRef.current : viewerRef.current;
-    const selectedId = String(selectedMarkerStateRef.current[kind] || "");
-    if (!inst || !selectedId) return;
-    try {
-      const registry = inst.get("elementRegistry");
-      const el = registry.get(selectedId);
-      emitElementSelection(el, `${kind}.notes_refresh`);
-      syncAiQuestionPanelWithSelection(inst, kind, el, `${kind}.notes_refresh`);
-    } catch {
-    }
+    runSettledDecorSidebarFanout({
+      viewerInst: viewerRef.current,
+      modelerInst: modelerRef.current,
+      view,
+      isInterviewDecorModeOn,
+      clearUserNotesDecor,
+      applyUserNotesDecor,
+      applyStepTimeDecor,
+      applyRobotMetaDecor,
+      applyPropertiesOverlayDecor,
+      clearPropertiesOverlayDecor,
+      selectedMarkerStateRef,
+      selectionFanoutStateRef: settledSelectionFanoutRef,
+      buildSelectionFanoutSignature: buildSettledSelectionFanoutSignature,
+      emitElementSelection,
+      syncAiQuestionPanelWithSelection,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     draft?.notes_by_element,

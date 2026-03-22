@@ -865,6 +865,10 @@ export function applyStepTimeDecor(ctx) {
     || typeof toText !== "function" || typeof normalizeStepTimeUnit !== "function"
   ) return;
   const payload = buildStepTimeDecorPayload(ctx);
+  const unit = normalizeStepTimeUnit(stepTimeUnitRef.current);
+  const stepTimeSig = toText(unit) + "|" + payload.map((i) => `${toText(i?.nodeId)}:${Number(i?.minutes)}:${Number(i?.seconds)}`).join(",");
+  const prevStepTimeSig = toText(refs.stepTimeDecorSignatureRef?.current?.[kind] || "");
+  if (prevStepTimeSig && prevStepTimeSig === stepTimeSig) return;
   runMeasure(
     ctx,
     "diagram.updateStepTimeOverlays",
@@ -891,7 +895,6 @@ export function applyStepTimeDecor(ctx) {
           if (!nodeId || !Number.isFinite(minutes) || minutes < 0) return;
           const el = getters.findShapeByNodeId(registry, nodeId) || getters.findShapeForHint(registry, { nodeId, title: nodeId });
           if (!el) return;
-          const unit = normalizeStepTimeUnit(stepTimeUnitRef.current);
           const value = unit === "sec"
             ? (Number.isFinite(seconds) && seconds >= 0 ? Math.round(seconds) : Math.round(minutes * 60))
             : Math.round(minutes);
@@ -925,6 +928,9 @@ export function applyStepTimeDecor(ctx) {
     },
     () => ({ kind, items: payload.length }),
   );
+  if (refs.stepTimeDecorSignatureRef?.current) {
+    refs.stepTimeDecorSignatureRef.current[kind] = stepTimeSig;
+  }
 }
 
 export function clearRobotMetaDecor(ctx) {
