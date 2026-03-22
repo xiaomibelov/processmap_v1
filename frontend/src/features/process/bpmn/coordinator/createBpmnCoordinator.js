@@ -307,20 +307,25 @@ export default function createBpmnCoordinator(options = {}) {
       };
     }
     const storedRev = asNumber(persisted?.storedRev, targetRev);
+    // Backend stored revision can lag behind local runtime revision.
+    // For local dirty/queue eligibility we must acknowledge at least targetRev,
+    // otherwise successful self-save can stay dirty and loop queued flushes.
+    const acknowledgedRev = Math.max(targetRev, storedRev);
     const xmlHash = asText(persisted?.hash || fnv1aHex(xml));
     cacheRaw(sid, xml, storedRev, reason);
-    store.markSaved(storedRev, xmlHash);
-    if (pendingSave && pendingSave.sessionId === sid && pendingSave.targetRev <= targetRev) {
+    store.markSaved(acknowledgedRev, xmlHash);
+    if (pendingSave && pendingSave.sessionId === sid && pendingSave.targetRev <= acknowledgedRev) {
       clearPendingSave();
     }
     emit("SAVE_PERSIST_DONE", {
       sid,
       reason,
       rev: storedRev,
+      acknowledged_rev: acknowledgedRev,
       status: asNumber(persisted?.status, 200),
       ms: Date.now() - startedAt,
     });
-    return { ok: true, rev: storedRev, storedRev };
+    return { ok: true, rev: acknowledgedRev, storedRev };
   }
 
   function scheduleSave(reason = "autosave") {
