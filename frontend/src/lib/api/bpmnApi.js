@@ -1,6 +1,8 @@
 import {
   apiGetBpmnXml,
+  apiGetDiagramJazzXml,
   apiPutBpmnXml,
+  apiPutDiagramJazzXml,
   apiDeleteBpmnXml,
   apiGetExport,
   apiGetBpmnMeta,
@@ -10,7 +12,9 @@ import {
 
 export {
   apiGetBpmnXml,
+  apiGetDiagramJazzXml,
   apiPutBpmnXml,
+  apiPutDiagramJazzXml,
   apiDeleteBpmnXml,
   apiGetExport,
   apiGetBpmnMeta,

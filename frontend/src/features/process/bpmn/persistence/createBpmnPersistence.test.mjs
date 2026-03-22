@@ -99,7 +99,14 @@ test("save then reread resolves to remote durable truth even if stale local cach
     getSessionDraft: () => ({ bpmn_xml: "<bpmn:stale_draft/>", bpmn_xml_version: 4, version: 4 }),
     apiPutBpmnXml: async (_sid, xml) => {
       remoteXml = String(xml || "");
-      return { ok: true, status: 200, storedRev: 5 };
+      return {
+        ok: true,
+        status: 200,
+        storedRev: 5,
+        syncVersionToken: "sync.5.100.aaaa1111",
+        syncBpmnVersionToken: "bpmn.5",
+        syncCollabVersionToken: "collab.100",
+      };
     },
     apiGetBpmnXml: async () => ({ ok: true, status: 200, xml: remoteXml }),
   });
@@ -107,6 +114,9 @@ test("save then reread resolves to remote durable truth even if stale local cach
   const saved = await persistence.saveRaw("sid_save_then_read", "<bpmn:durable_saved/>", 5, "manual_save");
   assert.equal(saved.ok, true);
   assert.equal(saved.source, "backend");
+  assert.equal(saved.syncVersionToken, "sync.5.100.aaaa1111");
+  assert.equal(saved.syncBpmnVersionToken, "bpmn.5");
+  assert.equal(saved.syncCollabVersionToken, "collab.100");
 
   persistence.cacheRaw("sid_save_then_read", "<bpmn:stale_cache_after_save/>", 5, "runtime_change");
 

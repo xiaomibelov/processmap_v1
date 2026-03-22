@@ -64,3 +64,70 @@ test("flushSave keeps backend persist when xml changed", async () => {
   assert.equal(result.skipped, undefined);
   assert.equal(saveCalls, 1);
 });
+
+test("flushSave forwards sync tokens from persistence save result", async () => {
+  const store = createBpmnStore({
+    xml: "<bpmn:definitions id=\"old\"/>",
+    rev: 10,
+    dirty: false,
+    lastSavedRev: 10,
+  });
+  const coordinator = createBpmnCoordinator({
+    store,
+    getSessionId: () => "sid_save_sync_tokens",
+    getRuntime: () => ({
+      getStatus: () => ({ ready: true, defs: true, token: 79 }),
+      getXml: async () => ({ ok: true, xml: "<bpmn:definitions id=\"newer\"/>", token: 79 }),
+    }),
+    persistence: {
+      saveRaw: async () => ({
+        ok: true,
+        status: 200,
+        storedRev: 11,
+        syncVersionToken: "sync.11.200.zzzz9999",
+        syncBpmnVersionToken: "bpmn.11",
+        syncCollabVersionToken: "collab.200",
+      }),
+    },
+  });
+
+  const result = await coordinator.flushSave("manual_save");
+
+  assert.equal(result.ok, true);
+  assert.equal(result.storedRev, 11);
+  assert.equal(result.syncVersionToken, "sync.11.200.zzzz9999");
+  assert.equal(result.syncBpmnVersionToken, "bpmn.11");
+  assert.equal(result.syncCollabVersionToken, "collab.200");
+});
+
+test("flushSave acknowledges local target revision when backend storedRev lags", async () => {
+  const store = createBpmnStore({
+    xml: "<bpmn:definitions id=\"old\"/>",
+    rev: 4,
+    dirty: true,
+    lastSavedRev: 2,
+  });
+  const coordinator = createBpmnCoordinator({
+    store,
+    getSessionId: () => "sid_save_lagging_stored_rev",
+    getRuntime: () => ({
+      getStatus: () => ({ ready: true, defs: true, token: 80 }),
+      getXml: async () => ({ ok: true, xml: "<bpmn:definitions id=\"new\"/>", token: 80 }),
+    }),
+    persistence: {
+      saveRaw: async () => ({
+        ok: true,
+        status: 200,
+        storedRev: 2,
+      }),
+    },
+  });
+
+  const result = await coordinator.flushSave("autosave");
+
+  assert.equal(result.ok, true);
+  assert.equal(result.storedRev, 2);
+  assert.equal(result.rev, 4);
+  assert.equal(store.getState().dirty, false);
+  assert.equal(store.getState().lastSavedRev, 4);
+});

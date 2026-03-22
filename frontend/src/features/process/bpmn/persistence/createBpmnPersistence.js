@@ -113,6 +113,10 @@ function snapshotMode(reason) {
   return "auto";
 }
 
+function normalizeDiagramJazzMode(raw) {
+  return asText(raw).trim().toLowerCase() === "jazz" ? "jazz" : "legacy";
+}
+
 export default function createBpmnPersistence(options = {}) {
   const getSessionDraft = typeof options?.getSessionDraft === "function"
     ? options.getSessionDraft
@@ -138,6 +142,19 @@ export default function createBpmnPersistence(options = {}) {
   const getSnapshotProjectId = typeof options?.getSnapshotProjectId === "function"
     ? options.getSnapshotProjectId
     : null;
+  const diagramJazz = options?.diagramJazz && typeof options.diagramJazz === "object"
+    ? options.diagramJazz
+    : {};
+  const diagramJazzActivation = diagramJazz?.activation && typeof diagramJazz.activation === "object"
+    ? diagramJazz.activation
+    : {};
+  const diagramJazzIdentity = diagramJazz?.identity && typeof diagramJazz.identity === "object"
+    ? diagramJazz.identity
+    : {};
+  const diagramJazzAdapter = diagramJazz?.adapter && typeof diagramJazz.adapter === "object"
+    ? diagramJazz.adapter
+    : null;
+  const diagramJazzMode = normalizeDiagramJazzMode(diagramJazzActivation?.adapterModeEffective || diagramJazz?.mode);
   const onTrace = typeof options?.onTrace === "function"
     ? options.onTrace
     : null;
@@ -242,6 +259,93 @@ export default function createBpmnPersistence(options = {}) {
       };
     }
 
+    if (diagramJazzMode === "jazz") {
+      const ownerState = asText(diagramJazzActivation?.ownerState || "legacy_owner");
+      if (ownerState !== "jazz_owner") {
+        const reason = asText(
+          diagramJazzActivation?.ownerBlockedReason
+          || "diagram_cutover_owner_legacy_path_locked",
+        );
+        emit("diagram_jazz_attempt_blocked_without_contract", {
+          sid,
+          operation: "read",
+          reason,
+          owner_state: ownerState,
+          scope_id: asText(diagramJazzIdentity?.scopeId || ""),
+        });
+        return {
+          ok: false,
+          status: 0,
+          errorCode: reason,
+          error: reason,
+        };
+      }
+      emit("DIAGRAM_JAZZ_READ_REQUESTED", {
+        sid,
+        scope_id: asText(diagramJazzIdentity?.scopeId || ""),
+        unsupported: diagramJazzActivation?.unsupportedState === true ? 1 : 0,
+      });
+      if (diagramJazzActivation?.unsupportedState === true) {
+        emit("diagram_jazz_attempt_blocked_without_contract", {
+          sid,
+          operation: "read",
+          reason: asText(diagramJazzActivation?.unsupportedReason || "diagram_jazz_contract_unsupported"),
+          scope_id: asText(diagramJazzIdentity?.scopeId || ""),
+        });
+        return {
+          ok: false,
+          status: 0,
+          errorCode: "diagram_jazz_contract_unsupported",
+          error: asText(
+            diagramJazzActivation?.unsupportedReason
+            || "diagram_jazz_contract_unsupported",
+          ),
+        };
+      }
+      const readDurableXml = diagramJazzAdapter && typeof diagramJazzAdapter.readDurableXml === "function"
+        ? diagramJazzAdapter.readDurableXml.bind(diagramJazzAdapter)
+        : null;
+      if (!readDurableXml) {
+        emit("diagram_jazz_attempt_blocked_without_contract", {
+          sid,
+          operation: "read",
+          reason: "diagram_jazz_contract_unimplemented",
+          scope_id: asText(diagramJazzIdentity?.scopeId || ""),
+        });
+        return {
+          ok: false,
+          status: 0,
+          errorCode: "diagram_jazz_contract_unimplemented",
+          error: "Diagram Jazz read contract draft enabled without adapter binding.",
+        };
+      }
+      const loaded = await readDurableXml({
+        sessionId: sid,
+        forceRemote,
+        identity: diagramJazzIdentity,
+        activation: diagramJazzActivation,
+      });
+      if (!loaded?.ok) {
+        return {
+          ok: false,
+          status: asNumber(loaded?.status, 0),
+          errorCode: asText(loaded?.blocked || loaded?.errorCode || "diagram_jazz_read_failed"),
+          error: asText(loaded?.error || "diagram_jazz_read_failed"),
+        };
+      }
+      const xml = asText(loaded?.xml || "");
+      const loadedRev = asNumber(loaded?.rev, 0);
+      return {
+        ok: true,
+        status: asNumber(loaded?.status, 200),
+        source: "diagram_jazz",
+        xml,
+        rev: loadedRev,
+        hash: asText(loaded?.hash || fnv1aHex(xml)),
+        sourceReason: "diagram_jazz_authoritative_read",
+      };
+    }
+
     const draft = getSessionDraft?.() || {};
     const draftXml = asText(draft?.bpmn_xml || "");
     const rev = draftRevision();
@@ -339,26 +443,6 @@ export default function createBpmnPersistence(options = {}) {
       hash: fnv1aHex(xml),
       ts: 0,
     };
-    let snapshotCandidate = null;
-    if (!xml.trim() && typeof loadLatestSnapshot === "function") {
-      try {
-        const snap = await loadLatestSnapshot({
-          projectId: snapshotProjectId(),
-          sessionId: sid,
-        });
-        const snapXml = asText(snap?.xml || "");
-        if (snapXml.trim()) {
-          snapshotCandidate = {
-            source: "snapshot",
-            xml: snapXml,
-            rev: asNumber(snap?.rev, rev),
-            hash: asText(snap?.hash || fnv1aHex(snapXml)),
-            ts: asNumber(snap?.ts, 0),
-          };
-        }
-      } catch {
-      }
-    }
     const backendHasXml = !!xml.trim();
     if (backendHasXml) {
       if (
@@ -403,37 +487,13 @@ export default function createBpmnPersistence(options = {}) {
         sourceReason: "remote_authoritative_after_remote_read",
       };
     }
-
-    const fallbackWinner = pickFreshestCandidate([localWinner, snapshotCandidate, runtimeCache]);
-    if (fallbackWinner?.source === "runtime_cache") {
-      emit("PERSISTENCE_LOAD_RUNTIME_RECOVER", {
+    if (localWinner && localWinner.hash) {
+      emit("PERSISTENCE_LOAD_LOCAL_REJECTED_REMOTE_EMPTY", {
         sid,
-        rev: fallbackWinner.rev,
-        hash: fallbackWinner.hash,
+        local_source: localWinner.source,
+        local_rev: localWinner.rev,
+        local_hash: localWinner.hash,
       });
-    } else if (fallbackWinner?.source === "snapshot") {
-      emit("PERSISTENCE_LOAD_SNAPSHOT_RECOVER", {
-        sid,
-        rev: fallbackWinner.rev,
-        hash: fallbackWinner.hash,
-      });
-    } else if (fallbackWinner?.source === "draft") {
-      emit("PERSISTENCE_LOAD_DRAFT_RECOVER", {
-        sid,
-        rev: fallbackWinner.rev,
-        hash: fallbackWinner.hash,
-      });
-    }
-    if (fallbackWinner) {
-      return {
-        ok: true,
-        status: asNumber(loaded?.status, 200),
-        source: fallbackWinner.source,
-        xml: fallbackWinner.xml,
-        rev: fallbackWinner.rev,
-        hash: fallbackWinner.hash,
-        sourceReason: "backend_empty_local_fallback",
-      };
     }
     return {
       ok: true,
@@ -462,6 +522,100 @@ export default function createBpmnPersistence(options = {}) {
         storedRev: targetRev,
         rev: targetRev,
         hash: fnv1aHex(xml),
+      };
+    }
+
+    if (diagramJazzMode === "jazz") {
+      const ownerState = asText(diagramJazzActivation?.ownerState || "legacy_owner");
+      if (ownerState !== "jazz_owner") {
+        const reason = asText(
+          diagramJazzActivation?.ownerBlockedReason
+          || "diagram_cutover_owner_legacy_path_locked",
+        );
+        emit("diagram_jazz_attempt_blocked_without_contract", {
+          sid,
+          operation: "write",
+          reason,
+          owner_state: ownerState,
+          scope_id: asText(diagramJazzIdentity?.scopeId || ""),
+        });
+        return {
+          ok: false,
+          status: 0,
+          errorCode: reason,
+          error: reason,
+        };
+      }
+      emit("DIAGRAM_JAZZ_WRITE_REQUESTED", {
+        sid,
+        scope_id: asText(diagramJazzIdentity?.scopeId || ""),
+        unsupported: diagramJazzActivation?.unsupportedState === true ? 1 : 0,
+        rev: targetRev,
+      });
+      if (diagramJazzActivation?.unsupportedState === true) {
+        emit("diagram_jazz_attempt_blocked_without_contract", {
+          sid,
+          operation: "write",
+          reason: asText(diagramJazzActivation?.unsupportedReason || "diagram_jazz_contract_unsupported"),
+          scope_id: asText(diagramJazzIdentity?.scopeId || ""),
+        });
+        return {
+          ok: false,
+          status: 0,
+          errorCode: "diagram_jazz_contract_unsupported",
+          error: asText(
+            diagramJazzActivation?.unsupportedReason
+            || "diagram_jazz_contract_unsupported",
+          ),
+        };
+      }
+      const writeDurableXml = diagramJazzAdapter && typeof diagramJazzAdapter.writeDurableXml === "function"
+        ? diagramJazzAdapter.writeDurableXml.bind(diagramJazzAdapter)
+        : null;
+      if (!writeDurableXml) {
+        emit("diagram_jazz_attempt_blocked_without_contract", {
+          sid,
+          operation: "write",
+          reason: "diagram_jazz_contract_unimplemented",
+          scope_id: asText(diagramJazzIdentity?.scopeId || ""),
+        });
+        return {
+          ok: false,
+          status: 0,
+          errorCode: "diagram_jazz_contract_unimplemented",
+          error: "Diagram Jazz write contract draft enabled without adapter binding.",
+        };
+      }
+      const saved = await writeDurableXml({
+        sessionId: sid,
+        xml,
+        rev: targetRev,
+        reason,
+        identity: diagramJazzIdentity,
+        activation: diagramJazzActivation,
+      });
+      if (!saved?.ok) {
+        return {
+          ok: false,
+          status: asNumber(saved?.status, 0),
+          errorCode: asText(saved?.blocked || saved?.errorCode || "diagram_jazz_write_failed"),
+          error: asText(saved?.error || "diagram_jazz_write_failed"),
+        };
+      }
+      const storedRev = asNumber(saved?.storedRev, asNumber(saved?.rev, targetRev));
+      writeRuntimeCache(sid, xml, storedRev, reason);
+      await maybeSaveSnapshot(sid, xml, reason, storedRev, false);
+      return {
+        ok: true,
+        status: asNumber(saved?.status, 200),
+        source: "diagram_jazz",
+        storedRev,
+        rev: storedRev,
+        hash: fnv1aHex(xml),
+        updatedAt: asNumber(saved?.updatedAt ?? saved?.updated_at, 0),
+        syncVersionToken: asText(saved?.syncVersionToken ?? saved?.sync_version_token),
+        syncBpmnVersionToken: asText(saved?.syncBpmnVersionToken ?? saved?.sync_bpmn_version_token),
+        syncCollabVersionToken: asText(saved?.syncCollabVersionToken ?? saved?.sync_collab_version_token),
       };
     }
 
@@ -507,6 +661,10 @@ export default function createBpmnPersistence(options = {}) {
       storedRev,
       rev: storedRev,
       hash: fnv1aHex(xml),
+      updatedAt: asNumber(saved?.updatedAt ?? saved?.updated_at, 0),
+      syncVersionToken: asText(saved?.syncVersionToken ?? saved?.sync_version_token),
+      syncBpmnVersionToken: asText(saved?.syncBpmnVersionToken ?? saved?.sync_bpmn_version_token),
+      syncCollabVersionToken: asText(saved?.syncCollabVersionToken ?? saved?.sync_collab_version_token),
     };
   }
 

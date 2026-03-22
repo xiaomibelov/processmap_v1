@@ -190,6 +190,7 @@ export default function createBpmnCoordinator(options = {}) {
         runtime_defs: status?.defs ? 1 : 0,
       });
       const fallbackXml = asText(state?.xml || "");
+      let fallbackAck = null;
       if (fallbackXml.trim()) {
         emit("SAVE_PERSIST_STARTED", {
           sid,
@@ -200,6 +201,7 @@ export default function createBpmnCoordinator(options = {}) {
         const startedAt = Date.now();
         const persisted = await persistRaw(sid, fallbackXml, rev, `${reason}:fallback`);
         if (persisted?.ok) {
+          fallbackAck = persisted;
           emit("SAVE_PERSIST_DONE", {
             sid,
             reason: `${reason}:fallback`,
@@ -218,7 +220,16 @@ export default function createBpmnCoordinator(options = {}) {
           });
         }
       }
-      return { ok: true, pending: true, rev };
+      return {
+        ok: true,
+        pending: true,
+        rev,
+        storedRev: asNumber(fallbackAck?.storedRev, rev),
+        updatedAt: asNumber(fallbackAck?.updatedAt ?? fallbackAck?.updated_at, 0),
+        syncVersionToken: asText(fallbackAck?.syncVersionToken ?? fallbackAck?.sync_version_token),
+        syncBpmnVersionToken: asText(fallbackAck?.syncBpmnVersionToken ?? fallbackAck?.sync_bpmn_version_token),
+        syncCollabVersionToken: asText(fallbackAck?.syncCollabVersionToken ?? fallbackAck?.sync_collab_version_token),
+      };
     }
 
     const xmlRes = await runtime.getXml({ format: true });
@@ -307,20 +318,33 @@ export default function createBpmnCoordinator(options = {}) {
       };
     }
     const storedRev = asNumber(persisted?.storedRev, targetRev);
+    // Backend stored revision can lag behind local runtime revision.
+    // For local dirty/queue eligibility we must acknowledge at least targetRev,
+    // otherwise successful self-save can stay dirty and loop queued flushes.
+    const acknowledgedRev = Math.max(targetRev, storedRev);
     const xmlHash = asText(persisted?.hash || fnv1aHex(xml));
     cacheRaw(sid, xml, storedRev, reason);
-    store.markSaved(storedRev, xmlHash);
-    if (pendingSave && pendingSave.sessionId === sid && pendingSave.targetRev <= targetRev) {
+    store.markSaved(acknowledgedRev, xmlHash);
+    if (pendingSave && pendingSave.sessionId === sid && pendingSave.targetRev <= acknowledgedRev) {
       clearPendingSave();
     }
     emit("SAVE_PERSIST_DONE", {
       sid,
       reason,
       rev: storedRev,
+      acknowledged_rev: acknowledgedRev,
       status: asNumber(persisted?.status, 200),
       ms: Date.now() - startedAt,
     });
-    return { ok: true, rev: storedRev, storedRev };
+    return {
+      ok: true,
+      rev: acknowledgedRev,
+      storedRev,
+      updatedAt: asNumber(persisted?.updatedAt ?? persisted?.updated_at, 0),
+      syncVersionToken: asText(persisted?.syncVersionToken ?? persisted?.sync_version_token),
+      syncBpmnVersionToken: asText(persisted?.syncBpmnVersionToken ?? persisted?.sync_bpmn_version_token),
+      syncCollabVersionToken: asText(persisted?.syncCollabVersionToken ?? persisted?.sync_collab_version_token),
+    };
   }
 
   function scheduleSave(reason = "autosave") {
@@ -349,7 +373,23 @@ export default function createBpmnCoordinator(options = {}) {
         if (saveQueuedRev > asNumber(state?.lastSavedRev, 0) && !result?.pending) {
           saveQueuedRev = Math.max(saveQueuedRev, localRev);
           if (localRev > asNumber(state?.lastSavedRev, 0)) {
-            return await doFlush("queued", options);
+            const queued = await doFlush("queued", options);
+            if (queued?.ok !== true || result?.ok !== true) return queued;
+            const resultSyncVersionToken = asText(result?.syncVersionToken ?? result?.sync_version_token);
+            const resultSyncBpmnVersionToken = asText(result?.syncBpmnVersionToken ?? result?.sync_bpmn_version_token);
+            const resultSyncCollabVersionToken = asText(result?.syncCollabVersionToken ?? result?.sync_collab_version_token);
+            const queuedSyncVersionToken = asText(queued?.syncVersionToken ?? queued?.sync_version_token);
+            const queuedSyncBpmnVersionToken = asText(queued?.syncBpmnVersionToken ?? queued?.sync_bpmn_version_token);
+            const queuedSyncCollabVersionToken = asText(queued?.syncCollabVersionToken ?? queued?.sync_collab_version_token);
+            const queuedUpdatedAt = asNumber(queued?.updatedAt ?? queued?.updated_at, 0);
+            const resultUpdatedAt = asNumber(result?.updatedAt ?? result?.updated_at, 0);
+            return {
+              ...queued,
+              syncVersionToken: queuedSyncVersionToken || resultSyncVersionToken,
+              syncBpmnVersionToken: queuedSyncBpmnVersionToken || resultSyncBpmnVersionToken,
+              syncCollabVersionToken: queuedSyncCollabVersionToken || resultSyncCollabVersionToken,
+              updatedAt: queuedUpdatedAt || resultUpdatedAt,
+            };
           }
         }
         return result;

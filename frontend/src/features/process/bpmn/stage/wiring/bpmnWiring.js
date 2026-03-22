@@ -2,6 +2,12 @@ import createBpmnRuntimeDefault from "../../runtime/createBpmnRuntime.js";
 import createBpmnStoreDefault from "../../store/createBpmnStore.js";
 import createBpmnCoordinatorDefault from "../../coordinator/createBpmnCoordinator.js";
 import createBpmnPersistenceDefault from "../../persistence/createBpmnPersistence.js";
+import {
+  DIAGRAM_JAZZ_TRACE_MARKERS,
+  buildDiagramJazzDocumentIdentity,
+  createDiagramJazzContractDraftAdapter,
+  resolveDiagramJazzContractDraftActivation,
+} from "../../jazz/diagramJazzContractDraft.js";
 
 function asObject(x) {
   return x && typeof x === "object" && !Array.isArray(x) ? x : {};
@@ -142,6 +148,97 @@ export function createBpmnWiring(ctxBase, deps = {}) {
     const api = asObject(ctx.api);
     const callbacks = asObject(ctx.callbacks);
     if (refs.bpmnPersistenceRef?.current) return refs.bpmnPersistenceRef.current;
+    const draftNow = readOnly.draftRef?.current || {};
+    const diagramJazzIdentity = buildDiagramJazzDocumentIdentity({
+      orgId: String(draftNow?.org_id || ""),
+      projectId: String(draftNow?.project_id || draftNow?.projectId || values.activeProjectId || ""),
+      sessionId: String(values.sessionId || ""),
+    });
+    const diagramJazzActivation = resolveDiagramJazzContractDraftActivation({
+      scopeOverride: {
+        orgId: diagramJazzIdentity?.orgId || "",
+        projectId: diagramJazzIdentity?.projectId || "",
+        sessionId: diagramJazzIdentity?.sessionId || "",
+        scopeId: diagramJazzIdentity?.scopeId || "",
+      },
+    });
+    const diagramJazzAdapter = createDiagramJazzContractDraftAdapter({
+      activation: diagramJazzActivation,
+      identity: diagramJazzIdentity,
+      apiGetDiagramJazzXml: api.apiGetDiagramJazzXml,
+      apiPutDiagramJazzXml: api.apiPutDiagramJazzXml,
+      onTrace: (event, payload = {}) => {
+        const sid = String(refs.activeSessionRef?.current || "");
+        const storeXml = String(refs.bpmnStoreRef?.current?.getState?.()?.xml || "");
+        callbacks.logBpmnTrace?.(event, storeXml, { sid, ...payload });
+      },
+    });
+    const gateTraceXml = String(refs.bpmnStoreRef?.current?.getState?.()?.xml || "");
+    callbacks.logBpmnTrace?.(DIAGRAM_JAZZ_TRACE_MARKERS.gateState, gateTraceXml, {
+      sid: String(refs.activeSessionRef?.current || ""),
+      pilot_enabled: diagramJazzActivation?.pilotEnabled ? 1 : 0,
+      adapter_requested: String(diagramJazzActivation?.adapterRequested || "legacy"),
+      adapter_mode: String(diagramJazzActivation?.adapterModeEffective || "legacy"),
+      unsupported: diagramJazzActivation?.unsupportedState ? 1 : 0,
+      unsupported_reason: String(diagramJazzActivation?.unsupportedReason || ""),
+      identity_valid: diagramJazzIdentity?.valid ? 1 : 0,
+      identity_scope: String(diagramJazzIdentity?.scopeId || ""),
+      owner_requested_state: String(diagramJazzActivation?.ownerRequestedState || "legacy_owner"),
+      owner_effective_state: String(diagramJazzActivation?.ownerEffectiveState || "legacy_owner"),
+      diagram_owner_state: String(diagramJazzActivation?.ownerState || "legacy_owner"),
+      owner_blocked_reason: String(diagramJazzActivation?.ownerBlockedReason || ""),
+      owner_rollback_active: diagramJazzActivation?.ownerRollbackActive ? 1 : 0,
+      scoped_gate_match: diagramJazzActivation?.scopedGateMatch ? 1 : 0,
+      scoped_gate_scope: String(diagramJazzActivation?.scopedGateScope || ""),
+      scoped_gate_blocked_reason: String(diagramJazzActivation?.scopedGateBlockedReason || ""),
+      scoped_gate_operator: String(diagramJazzActivation?.scopedGateOperator || ""),
+    });
+    callbacks.logBpmnTrace?.(DIAGRAM_JAZZ_TRACE_MARKERS.ownerState, gateTraceXml, {
+      sid: String(refs.activeSessionRef?.current || ""),
+      owner_requested_state: String(diagramJazzActivation?.ownerRequestedState || "legacy_owner"),
+      owner_effective_state: String(diagramJazzActivation?.ownerEffectiveState || "legacy_owner"),
+      diagram_owner_state: String(diagramJazzActivation?.ownerState || "legacy_owner"),
+      owner_blocked_reason: String(diagramJazzActivation?.ownerBlockedReason || ""),
+      owner_rollback_active: diagramJazzActivation?.ownerRollbackActive ? 1 : 0,
+      scoped_gate_match: diagramJazzActivation?.scopedGateMatch ? 1 : 0,
+      scoped_gate_scope: String(diagramJazzActivation?.scopedGateScope || ""),
+      scoped_gate_blocked_reason: String(diagramJazzActivation?.scopedGateBlockedReason || ""),
+      scoped_gate_operator: String(diagramJazzActivation?.scopedGateOperator || ""),
+    });
+    if (String(diagramJazzActivation?.ownerRequestedState || "") === "jazz_owner") {
+      callbacks.logBpmnTrace?.(DIAGRAM_JAZZ_TRACE_MARKERS.cutoverAttempt, gateTraceXml, {
+        sid: String(refs.activeSessionRef?.current || ""),
+        diagram_owner_state: String(diagramJazzActivation?.ownerState || "legacy_owner"),
+      });
+    }
+    if (String(diagramJazzActivation?.ownerEffectiveState || "") === "cutover_blocked") {
+      callbacks.logBpmnTrace?.(DIAGRAM_JAZZ_TRACE_MARKERS.cutoverBlocked, gateTraceXml, {
+        sid: String(refs.activeSessionRef?.current || ""),
+        reason: String(diagramJazzActivation?.ownerBlockedReason || ""),
+      });
+    }
+    if (String(diagramJazzActivation?.ownerEffectiveState || "") === "jazz_owner") {
+      callbacks.logBpmnTrace?.(DIAGRAM_JAZZ_TRACE_MARKERS.cutoverSuccess, gateTraceXml, {
+        sid: String(refs.activeSessionRef?.current || ""),
+      });
+    }
+    if (diagramJazzActivation?.ownerRollbackActive) {
+      callbacks.logBpmnTrace?.(DIAGRAM_JAZZ_TRACE_MARKERS.cutoverRollback, gateTraceXml, {
+        sid: String(refs.activeSessionRef?.current || ""),
+      });
+    }
+    if (String(diagramJazzActivation?.ownerBlockedReason || "").includes("invariant")) {
+      callbacks.logBpmnTrace?.(DIAGRAM_JAZZ_TRACE_MARKERS.cutoverInvariantViolation, gateTraceXml, {
+        sid: String(refs.activeSessionRef?.current || ""),
+        reason: String(diagramJazzActivation?.ownerBlockedReason || ""),
+      });
+    }
+    if (!diagramJazzAdapter?.enabled) {
+      callbacks.logBpmnTrace?.(DIAGRAM_JAZZ_TRACE_MARKERS.adapterNotActive, gateTraceXml, {
+        sid: String(refs.activeSessionRef?.current || ""),
+        adapter_mode: String(diagramJazzAdapter?.mode || "legacy"),
+      });
+    }
     const persistence = createBpmnPersistence({
       getSessionDraft: () => readOnly.draftRef?.current || {},
       getSnapshotProjectId: () => String(readOnly.draftRef?.current?.project_id || readOnly.draftRef?.current?.projectId || values.activeProjectId || ""),
@@ -151,6 +248,11 @@ export function createBpmnWiring(ctxBase, deps = {}) {
       isLocalSessionId: callbacks.isLocalSessionId,
       apiGetBpmnXml: api.apiGetBpmnXml,
       apiPutBpmnXml: api.apiPutBpmnXml,
+      diagramJazz: {
+        activation: diagramJazzActivation,
+        identity: diagramJazzIdentity,
+        adapter: diagramJazzAdapter,
+      },
       onTrace: (event, payload = {}) => {
         const sid = String(refs.activeSessionRef?.current || "");
         const storeXml = String(refs.bpmnStoreRef?.current?.getState?.()?.xml || "");
