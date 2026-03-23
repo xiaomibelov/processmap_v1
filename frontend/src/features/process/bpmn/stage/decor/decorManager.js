@@ -172,9 +172,25 @@ export function applyHappyFlowDecor(ctx) {
   if (!inst || !kind || !refs || !getters) return;
   if (typeof asObject !== "function" || typeof asArray !== "function" || typeof toText !== "function") return;
 
+  const flowMeta = getters.getFlowTierMetaMap();
+  const nodePathMeta = getters.getNodePathMetaMap();
+  const flowSigPart = flowMeta && typeof flowMeta === "object"
+    ? Object.keys(flowMeta).sort().map((k) => `${k}:${toText(flowMeta[k]?.tier)}`).join(",")
+    : "";
+  const nodePathSigPart = nodePathMeta && typeof nodePathMeta === "object"
+    ? Object.keys(nodePathMeta).sort().map((k) => {
+        const entry = asObject(nodePathMeta[k]);
+        const paths = asArray(entry?.paths).map((p) => toText(p)).sort().join("+");
+        const seq = toText(entry?.sequence_key || entry?.sequenceKey);
+        return `${k}:${paths}:${seq}`;
+      }).join(",")
+    : "";
+  const happyFlowSig = `flow[${flowSigPart}]|node[${nodePathSigPart}]`;
+  const prevHappyFlowSig = toText(refs.happyFlowDecorSignatureRef?.current?.[kind] || "");
+  if (prevHappyFlowSig && prevHappyFlowSig === happyFlowSig) return;
+
   clearHappyFlowDecor(ctx);
   try {
-    const flowMeta = getters.getFlowTierMetaMap();
     const canvas = inst.get("canvas");
     const registry = inst.get("elementRegistry");
     if (flowMeta && Object.keys(flowMeta).length) {
@@ -206,7 +222,6 @@ export function applyHappyFlowDecor(ctx) {
       });
     }
 
-    const nodePathMeta = getters.getNodePathMetaMap();
     if (nodePathMeta && Object.keys(nodePathMeta).length) {
       const shapes = registry.filter((el) => getters.isShapeElement(el) && getters.isSelectableElement(el));
       shapes.forEach((el) => {
@@ -243,6 +258,9 @@ export function applyHappyFlowDecor(ctx) {
       });
     }
   } catch {
+  }
+  if (refs.happyFlowDecorSignatureRef?.current) {
+    refs.happyFlowDecorSignatureRef.current[kind] = happyFlowSig;
   }
 }
 

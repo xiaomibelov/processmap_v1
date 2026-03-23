@@ -540,6 +540,65 @@ test("happy flow decor apply/clear is idempotent for state refs", () => {
   assert.deepEqual(refs.happyFlowStyledStateRef.current.viewer, []);
 });
 
+test("happy flow decor signature guard skips canvas rebuild when payload unchanged", () => {
+  const canvas = createMarkerCanvasMock();
+  const overlays = createOverlayMock();
+  const registry = createRegistry([
+    {
+      id: "Flow_1",
+      type: "bpmn:SequenceFlow",
+      waypoints: [{ x: 0, y: 0 }, { x: 100, y: 100 }],
+      businessObject: { id: "Flow_1", $type: "bpmn:SequenceFlow" },
+    },
+    {
+      id: "Task_1",
+      type: "bpmn:Task",
+      x: 100,
+      y: 50,
+      width: 140,
+      height: 80,
+      businessObject: { id: "Task_1", $type: "bpmn:Task" },
+    },
+  ]);
+  const inst = createInstance(registry, canvas, overlays);
+  const refs = {
+    happyFlowMarkerStateRef: { current: { viewer: [], editor: [] } },
+    happyFlowStyledStateRef: { current: { viewer: [], editor: [] } },
+    happyFlowDecorSignatureRef: { current: { viewer: "", editor: "" } },
+  };
+  let flowMeta = { Flow_1: { tier: "P0" } };
+  let nodePathMeta = { Task_1: { paths: ["P0", "P1"], sequence_key: "seq_primary" } };
+  const ctx = {
+    inst,
+    kind: "viewer",
+    refs,
+    getters: {
+      getFlowTierMetaMap: () => flowMeta,
+      getNodePathMetaMap: () => nodePathMeta,
+      isConnectionElement: (el) => Array.isArray(el?.waypoints),
+      isShapeElement: (el) => !!el && !Array.isArray(el?.waypoints),
+      isSelectableElement: () => true,
+    },
+    utils: { asArray, asObject, toText },
+  };
+
+  applyHappyFlowDecor(ctx);
+  const firstAddCount = canvas.addCalls.length;
+  assert.ok(firstAddCount > 0, "first call should add markers");
+  assert.ok(refs.happyFlowDecorSignatureRef.current.viewer, "signature should be written");
+
+  canvas.addCalls.length = 0;
+  canvas.removeCalls.length = 0;
+  applyHappyFlowDecor(ctx);
+  assert.equal(canvas.addCalls.length, 0, "second call with same data should skip canvas rebuild");
+  assert.equal(canvas.removeCalls.length, 0, "second call should not clear markers either");
+
+  flowMeta = { Flow_1: { tier: "P1" } };
+  canvas.addCalls.length = 0;
+  applyHappyFlowDecor(ctx);
+  assert.ok(canvas.addCalls.length > 0, "third call with changed data should rebuild");
+});
+
 test("robot meta decor apply/clear is idempotent and does not duplicate overlays", () => {
   const canvas = createMarkerCanvasMock();
   const overlays = createOverlayMock();
