@@ -7,6 +7,7 @@ import {
   createEmptyCamundaExtensionState,
   extractCamundaInputOutputParametersFromExtensionState,
   extractCamundaExtensionsMapFromBpmnXml,
+  extractZeebeTaskHeadersFromExtensionState,
   finalizeCamundaExtensionsXml,
   hydrateCamundaExtensionsFromBpmn,
   normalizeCamundaExtensionState,
@@ -496,6 +497,85 @@ test("extractCamundaInputOutputParametersFromExtensionState reads text/empty/scr
   assert.equal(output?.shape, "script");
   assert.equal(output?.scriptFormat, "javascript");
   assert.equal(output?.value.includes("connector.getVariable"), true);
+}));
+
+test("extractCamundaInputOutputParametersFromExtensionState reuses cached derivation for equivalent preserved fragments", () => withDom(() => {
+  const stateA = normalizeCamundaExtensionState({
+    properties: {
+      extensionProperties: [{ id: "p1", name: "container", value: "Лоток 150x55" }],
+      extensionListeners: [],
+    },
+    preservedExtensionElements: [
+      `<camunda:connector xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0">
+        <camunda:inputOutput>
+          <camunda:inputParameter name="url">http://old.local/value</camunda:inputParameter>
+        </camunda:inputOutput>
+        <zeebe:ioMapping>
+          <zeebe:input target="payload" source="= payload" />
+        </zeebe:ioMapping>
+      </camunda:connector>`,
+    ],
+  });
+  const stateB = normalizeCamundaExtensionState({
+    properties: {
+      extensionProperties: [{ id: "p2", name: "container", value: "Лоток 150x55" }],
+      extensionListeners: [],
+    },
+    preservedExtensionElements: [
+      `<camunda:connector xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0">
+        <camunda:inputOutput>
+          <camunda:inputParameter name="url">http://old.local/value</camunda:inputParameter>
+        </camunda:inputOutput>
+        <zeebe:ioMapping>
+          <zeebe:input target="payload" source="= payload" />
+        </zeebe:ioMapping>
+      </camunda:connector>`,
+    ],
+  });
+
+  const first = extractCamundaInputOutputParametersFromExtensionState(stateA, { includeZeebe: true });
+  const second = extractCamundaInputOutputParametersFromExtensionState(stateA, { includeZeebe: true });
+  const equivalent = extractCamundaInputOutputParametersFromExtensionState(stateB, { includeZeebe: true });
+  const withoutZeebe = extractCamundaInputOutputParametersFromExtensionState(stateB, { includeZeebe: false });
+
+  assert.equal(first, second);
+  assert.equal(first, equivalent);
+  assert.notEqual(first, withoutZeebe);
+  assert.equal(first.inputRows.length > withoutZeebe.inputRows.length, true);
+}));
+
+test("extractZeebeTaskHeadersFromExtensionState reuses cached derivation for equivalent preserved fragments", () => withDom(() => {
+  const stateA = normalizeCamundaExtensionState({
+    properties: {
+      extensionProperties: [],
+      extensionListeners: [],
+    },
+    preservedExtensionElements: [
+      `<zeebe:taskHeaders xmlns:zeebe="http://camunda.org/schema/zeebe/1.0">
+        <zeebe:header key="k1" value="v1" />
+      </zeebe:taskHeaders>`,
+    ],
+  });
+  const stateB = normalizeCamundaExtensionState({
+    properties: {
+      extensionProperties: [{ id: "p1", name: "note", value: "x" }],
+      extensionListeners: [],
+    },
+    preservedExtensionElements: [
+      `<zeebe:taskHeaders xmlns:zeebe="http://camunda.org/schema/zeebe/1.0">
+        <zeebe:header key="k1" value="v1" />
+      </zeebe:taskHeaders>`,
+    ],
+  });
+
+  const first = extractZeebeTaskHeadersFromExtensionState(stateA);
+  const second = extractZeebeTaskHeadersFromExtensionState(stateA);
+  const equivalent = extractZeebeTaskHeadersFromExtensionState(stateB);
+
+  assert.equal(first, second);
+  assert.equal(first, equivalent);
+  assert.equal(first.rows.length, 1);
+  assert.equal(first.rows[0].key, "k1");
 }));
 
 test("patchCamundaInputParameterInExtensionState updates preserved input parameter and keeps script output", () => withDom(() => {

@@ -7,6 +7,9 @@ export const CAMUNDA_LISTENER_TYPES = Object.freeze(["class", "expression", "del
 export const CAMUNDA_LISTENER_EVENTS = Object.freeze(["start", "end"]);
 
 let editorLocalIdSeq = 1;
+const DERIVATION_CACHE_MAX = 120;
+const camundaIoExtractionCache = new Map();
+const zeebeTaskHeadersExtractionCache = new Map();
 
 function nextEditorLocalId(prefix) {
   const safePrefix = String(prefix || "item").trim() || "item";
@@ -41,6 +44,63 @@ function asArray(value) {
 
 function asText(value) {
   return String(value ?? "").trim();
+}
+
+function fnv1aHex(input) {
+  const src = String(input || "");
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < src.length; i += 1) {
+    hash ^= src.charCodeAt(i);
+    hash = Math.imul(hash >>> 0, 0x01000193) >>> 0;
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function readBoundedDerivationCache(cache, key) {
+  if (!cache.has(key)) return null;
+  const cached = cache.get(key);
+  cache.delete(key);
+  cache.set(key, cached);
+  return cached;
+}
+
+function writeBoundedDerivationCache(cache, key, value) {
+  cache.set(key, value);
+  if (cache.size > DERIVATION_CACHE_MAX) {
+    const oldest = cache.keys().next();
+    if (!oldest.done) cache.delete(oldest.value);
+  }
+  return value;
+}
+
+function buildNormalizedPreservedFragmentsSignature(stateRaw) {
+  const state = asObject(stateRaw);
+  const preserved = asArray(state.preservedExtensionElements)
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  if (!preserved.length) return "0";
+  return `${preserved.length}:${fnv1aHex(preserved.join("\u241f"))}`;
+}
+
+function freezeCamundaIoExtractionRows(rowsRaw) {
+  return Object.freeze(asArray(rowsRaw).map((rowRaw) => Object.freeze({ ...asObject(rowRaw) })));
+}
+
+function freezeCamundaIoExtractionResult(rowsRaw) {
+  const rows = freezeCamundaIoExtractionRows(rowsRaw);
+  const inputRows = Object.freeze(rows.filter((row) => row.direction === "input"));
+  const outputRows = Object.freeze(rows.filter((row) => row.direction === "output"));
+  return Object.freeze({
+    rows,
+    inputRows,
+    outputRows,
+  });
+}
+
+function freezeZeebeTaskHeadersResult(rowsRaw) {
+  return Object.freeze({
+    rows: freezeCamundaIoExtractionRows(rowsRaw),
+  });
 }
 
 function hasElementChildren(node) {
@@ -627,6 +687,10 @@ function insertZeebeIoParameterNode(ioNode, paramNode, direction = "input") {
 export function extractCamundaInputOutputParametersFromExtensionState(extensionStateRaw, options = {}) {
   const state = normalizeCamundaExtensionState(extensionStateRaw);
   const includeZeebe = options && typeof options === "object" ? options.includeZeebe === true : false;
+  const signature = buildNormalizedPreservedFragmentsSignature(state);
+  const cacheKey = `${includeZeebe ? "1" : "0"}:${signature}`;
+  const cached = readBoundedDerivationCache(camundaIoExtractionCache, cacheKey);
+  if (cached) return cached;
   const rows = [];
   state.preservedExtensionElements.forEach((rawXml, fragmentIndex) => {
     const rootNode = parseExtensionFragmentNode(rawXml);
@@ -720,11 +784,8 @@ export function extractCamundaInputOutputParametersFromExtensionState(extensionS
     });
   });
 
-  return {
-    rows,
-    inputRows: rows.filter((row) => row.direction === "input"),
-    outputRows: rows.filter((row) => row.direction === "output"),
-  };
+  const result = freezeCamundaIoExtractionResult(rows);
+  return writeBoundedDerivationCache(camundaIoExtractionCache, cacheKey, result);
 }
 
 export function patchCamundaIoParameterInExtensionState({
@@ -929,6 +990,9 @@ function findFirstZeebeTaskHeadersTarget(preservedRaw) {
 
 export function extractZeebeTaskHeadersFromExtensionState(extensionStateRaw) {
   const state = normalizeCamundaExtensionState(extensionStateRaw);
+  const signature = buildNormalizedPreservedFragmentsSignature(state);
+  const cached = readBoundedDerivationCache(zeebeTaskHeadersExtractionCache, signature);
+  if (cached) return cached;
   const rows = [];
   state.preservedExtensionElements.forEach((rawXml, fragmentIndex) => {
     const rootNode = parseExtensionFragmentNode(rawXml);
@@ -950,7 +1014,8 @@ export function extractZeebeTaskHeadersFromExtensionState(extensionStateRaw) {
       });
     });
   });
-  return { rows };
+  const result = freezeZeebeTaskHeadersResult(rows);
+  return writeBoundedDerivationCache(zeebeTaskHeadersExtractionCache, signature, result);
 }
 
 export function patchZeebeTaskHeaderInExtensionState({
