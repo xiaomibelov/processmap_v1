@@ -117,6 +117,7 @@ import {
 } from "./app/projectSessionSelectors";
 import {
   buildSessionVersionToken,
+  deriveUnsafeLocalSessionSyncReason,
   hasUnsafeLocalSessionState,
 } from "./features/sessions/live-sync/liveSessionSyncV1";
 import useSessionSyncCoordinator from "./features/sessions/live-sync/useSessionSyncCoordinator";
@@ -1268,6 +1269,10 @@ export default function App() {
     () => hasUnsafeLocalSessionState(processUiState),
     [processUiState],
   );
+  const unsafeLocalSyncReason = useMemo(
+    () => deriveUnsafeLocalSessionSyncReason(processUiState),
+    [processUiState],
+  );
   const {
     remoteSessionSyncState,
     publishRealtimeBpmnOps,
@@ -1279,6 +1284,7 @@ export default function App() {
     isLocalSessionId,
     liveSyncLocalVersionToken,
     hasUnsafeLocalSyncState,
+    unsafeLocalSyncReason,
     onSessionSync,
     normalizeBpmnMeta,
     apiGetSession,

@@ -56,6 +56,7 @@ export default function useSessionSyncCoordinator({
   isLocalSessionId,
   liveSyncLocalVersionToken,
   hasUnsafeLocalSyncState,
+  unsafeLocalSyncReason = "",
   onSessionSync,
   normalizeBpmnMeta,
   apiGetSession,
@@ -100,6 +101,10 @@ export default function useSessionSyncCoordinator({
   useEffect(() => {
     hasUnsafeLocalSyncStateRef.current = hasUnsafeLocalSyncState === true;
   }, [hasUnsafeLocalSyncState]);
+  const unsafeLocalSyncReasonRef = useRef(toText(unsafeLocalSyncReason).toLowerCase());
+  useEffect(() => {
+    unsafeLocalSyncReasonRef.current = toText(unsafeLocalSyncReason).toLowerCase();
+  }, [unsafeLocalSyncReason]);
 
   useEffect(() => {
     const sid = toText(draftSessionId);
@@ -545,6 +550,7 @@ export default function useSessionSyncCoordinator({
           remoteVersionToken: remoteToken,
           acknowledgedRemoteVersionToken: remoteSessionSyncAcknowledgedTokenRef.current,
           unsafeLocal: hasUnsafeLocalSyncStateRef.current === true,
+          unsafeLocalReason: unsafeLocalSyncReasonRef.current,
         });
 
         // Rollback legacy save ACK can expose version-token formatting drift
@@ -577,6 +583,19 @@ export default function useSessionSyncCoordinator({
           if (remoteBpmnToken) remoteSessionSyncBpmnTokenRef.current = remoteBpmnToken;
           if (remoteCollabToken) remoteSessionSyncCollabTokenRef.current = remoteCollabToken;
           setRemoteSessionSyncState((prev) => {
+            if (prev.mode === "idle" && !prev.error && !prev.remoteToken) return prev;
+            return {
+              mode: "idle",
+              remoteToken: "",
+              remoteBpmnToken: "",
+              remoteCollabToken: "",
+              updatedAt: Number(syncState.updated_at || prev.updatedAt || 0) || 0,
+              error: "",
+            };
+          });
+        } else if (action === "defer") {
+          setRemoteSessionSyncState((prev) => {
+            if (prev.mode === "stale_pending") return prev;
             if (prev.mode === "idle" && !prev.error && !prev.remoteToken) return prev;
             return {
               mode: "idle",

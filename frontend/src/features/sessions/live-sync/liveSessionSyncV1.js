@@ -43,12 +43,15 @@ export function normalizeSessionSyncStatePayload(payloadRaw, fallbackSessionId =
 }
 
 export function hasUnsafeLocalSessionState(uiStateRaw) {
+  return !!deriveUnsafeLocalSessionSyncReason(uiStateRaw);
+}
+
+export function deriveUnsafeLocalSessionSyncReason(uiStateRaw) {
   const uiState = uiStateRaw && typeof uiStateRaw === "object" ? uiStateRaw : {};
   const save = uiState.save && typeof uiState.save === "object" ? uiState.save : {};
-  if (save.isSaving === true) return true;
-  if (save.isDirty === true) return true;
-  if (uiState.isManualSaveBusy === true) return true;
-  return false;
+  if (save.isSaving === true || uiState.isManualSaveBusy === true) return "saving";
+  if (save.isDirty === true) return "dirty";
+  return "";
 }
 
 export function decideRemoteSessionSyncAction({
@@ -56,13 +59,17 @@ export function decideRemoteSessionSyncAction({
   remoteVersionToken,
   acknowledgedRemoteVersionToken = "",
   unsafeLocal = false,
+  unsafeLocalReason = "",
 }) {
   const localToken = normalizeVersionToken(localVersionToken);
   const remoteToken = normalizeVersionToken(remoteVersionToken);
   const acknowledgedToken = normalizeVersionToken(acknowledgedRemoteVersionToken);
+  const normalizedUnsafeReason = toText(unsafeLocalReason).toLowerCase();
+  const unsafeReason = normalizedUnsafeReason || (unsafeLocal ? "dirty" : "");
   if (!remoteToken || remoteToken === localToken) return "noop";
   if (acknowledgedToken && remoteToken === acknowledgedToken) return "noop";
-  if (unsafeLocal) return "mark_stale";
+  if (unsafeReason === "saving") return "defer";
+  if (unsafeReason) return "mark_stale";
   return "auto_apply";
 }
 
