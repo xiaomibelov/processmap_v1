@@ -13,6 +13,10 @@ import {
   runImmediateEditorFanout,
   runSettledDecorSidebarFanout,
 } from "../../features/process/bpmn/stage/fanout/postStagingFanout";
+import {
+  buildTaskTypeSignature as buildTaskTypeSig,
+  buildLinkEventSignature as buildLinkEventSig,
+} from "../../features/process/bpmn/stage/fanout/decorSignature";
 import forceTaskResizeRulesModule from "../../features/process/bpmn/runtime/modules/forceTaskResizeRules";
 import {
   saveBpmnSnapshot,
@@ -1198,8 +1202,10 @@ const BpmnStage = forwardRef(function BpmnStage({
   const interviewOverlayStateRef = useRef({ viewer: [], editor: [] });
   const interviewDecorSignatureRef = useRef({ viewer: "", editor: "" });
   const taskTypeMarkerStateRef = useRef({ viewer: [], editor: [] });
+  const taskTypeSignatureRef = useRef({ viewer: "", editor: "" });
   const linkEventMarkerStateRef = useRef({ viewer: [], editor: [] });
   const linkEventStyledStateRef = useRef({ viewer: [], editor: [] });
+  const linkEventSignatureRef = useRef({ viewer: "", editor: "" });
   const happyFlowMarkerStateRef = useRef({ viewer: [], editor: [] });
   const happyFlowStyledStateRef = useRef({ viewer: [], editor: [] });
   const userNotesMarkerStateRef = useRef({ viewer: [], editor: [] });
@@ -2880,6 +2886,11 @@ const BpmnStage = forwardRef(function BpmnStage({
 
   function applyTaskTypeDecor(inst, kind) {
     if (!inst) return;
+    let sig = "";
+    try {
+      sig = buildTaskTypeSig(inst.get("elementRegistry"), isShapeElement);
+      if (sig && sig === taskTypeSignatureRef.current[kind]) return;
+    } catch { /* proceed with rebuild on error */ }
     clearTaskTypeDecor(inst, kind);
     try {
       const canvas = inst.get("canvas");
@@ -2919,6 +2930,7 @@ const BpmnStage = forwardRef(function BpmnStage({
           addTaskMarker(el.id, "fpcEndEvent");
         }
       });
+      if (sig) taskTypeSignatureRef.current[kind] = sig;
     } catch {
     }
   }
@@ -2946,6 +2958,13 @@ const BpmnStage = forwardRef(function BpmnStage({
 
   function applyLinkEventDecor(inst, kind) {
     if (!inst) return;
+    let sig = "";
+    try {
+      sig = buildLinkEventSig(inst.get("elementRegistry"), isShapeElement, {
+        hasLinkEventDefinition, readLinkEventRole, readLinkEventPairName, normalizeLinkPairKey,
+      });
+      if (sig && sig === linkEventSignatureRef.current[kind]) return;
+    } catch { /* proceed with rebuild on error */ }
     clearLinkEventDecor(inst, kind);
     try {
       const canvas = inst.get("canvas");
@@ -2980,6 +2999,7 @@ const BpmnStage = forwardRef(function BpmnStage({
           linkEventStyledStateRef.current[kind].push(el.id);
         }
       });
+      if (sig) linkEventSignatureRef.current[kind] = sig;
     } catch {
     }
   }
@@ -3244,6 +3264,8 @@ const BpmnStage = forwardRef(function BpmnStage({
     interviewOverlayStateRef.current = { viewer: [], editor: [] };
     interviewDecorSignatureRef.current = { viewer: "", editor: "" };
     taskTypeMarkerStateRef.current = { viewer: [], editor: [] };
+    taskTypeSignatureRef.current = { viewer: "", editor: "" };
+    linkEventSignatureRef.current = { viewer: "", editor: "" };
     happyFlowMarkerStateRef.current = { viewer: [], editor: [] };
     happyFlowStyledStateRef.current = { viewer: [], editor: [] };
     userNotesMarkerStateRef.current = { viewer: [], editor: [] };
