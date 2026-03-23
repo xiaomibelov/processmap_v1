@@ -134,6 +134,41 @@ test("runSettledDecorSidebarFanout skips repeated settled selection sync when si
   assert.equal(calls.filter(([name]) => name === "syncAi").length, 0);
 });
 
+test("runSettledDecorSidebarFanout skips properties overlay apply when semantic signature is unchanged", () => {
+  const calls = [];
+  const propertiesFanoutStateRef = { current: {} };
+  const baseOptions = {
+    viewerInst: {},
+    modelerInst: {},
+    view: "editor",
+    isInterviewDecorModeOn: () => false,
+    clearUserNotesDecor: () => {},
+    applyUserNotesDecor: () => {},
+    applyStepTimeDecor: () => {},
+    applyRobotMetaDecor: () => {},
+    applyPropertiesOverlayDecor: (...args) => calls.push(["props", ...args]),
+    clearPropertiesOverlayDecor: (...args) => calls.push(["clearProps", ...args]),
+    selectedMarkerStateRef: { current: {} },
+    propertiesFanoutStateRef,
+  };
+
+  runSettledDecorSidebarFanout({
+    ...baseOptions,
+    propertiesFanoutSemanticSignature: "props_sig_v1",
+  });
+  runSettledDecorSidebarFanout({
+    ...baseOptions,
+    propertiesFanoutSemanticSignature: "props_sig_v1",
+  });
+  runSettledDecorSidebarFanout({
+    ...baseOptions,
+    propertiesFanoutSemanticSignature: "props_sig_v2",
+  });
+
+  assert.equal(calls.filter(([name]) => name === "props").length, 2);
+  assert.equal(calls.filter(([name]) => name === "clearProps").length, 3);
+});
+
 function makeImmediateFanoutSpies() {
   const calls = {
     task: 0,

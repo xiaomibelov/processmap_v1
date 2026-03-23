@@ -76,6 +76,51 @@ function toText(v) {
   return String(v || "").trim();
 }
 
+function buildPropertiesOverlayPreviewSignature(previewRaw) {
+  const preview = asObject(previewRaw);
+  if (!Object.keys(preview).length) return "null";
+  const enabled = preview.enabled === true ? "1" : "0";
+  const elementId = toText(preview.elementId);
+  const hiddenCount = Number.isFinite(Number(preview.hiddenCount)) ? String(Number(preview.hiddenCount)) : "0";
+  const totalCount = Number.isFinite(Number(preview.totalCount)) ? String(Number(preview.totalCount)) : "0";
+  const itemsSignature = asArray(preview.items)
+    .map((itemRaw) => {
+      const item = asObject(itemRaw);
+      return [
+        toText(item.key),
+        toText(item.label).replace(/\s+/g, " ").trim(),
+        toText(item.value).replace(/\s+/g, " ").trim(),
+      ].join("\u241f");
+    })
+    .join("\u241e");
+  return `${enabled}|${elementId}|${hiddenCount}|${totalCount}|${itemsSignature}`;
+}
+
+function buildPropertiesOverlayAlwaysMapSignature(alwaysMapRaw) {
+  const alwaysMap = asObject(alwaysMapRaw);
+  const keys = Object.keys(alwaysMap)
+    .map((key) => toText(key))
+    .filter(Boolean)
+    .sort();
+  if (!keys.length) return "none";
+  return keys
+    .map((key) => `${key}\u241f${buildPropertiesOverlayPreviewSignature(alwaysMap[key])}`)
+    .join("\u241e");
+}
+
+function buildSettledPropertiesFanoutSemanticSignature({
+  view,
+  selectedPreviewRaw,
+  alwaysEnabledRaw,
+  alwaysPreviewByElementIdRaw,
+}) {
+  const activeKind = String(view || "viewer").trim().toLowerCase() === "editor" ? "editor" : "viewer";
+  const selectedPreviewSignature = buildPropertiesOverlayPreviewSignature(selectedPreviewRaw);
+  const alwaysEnabled = alwaysEnabledRaw === true ? "1" : "0";
+  const alwaysMapSignature = buildPropertiesOverlayAlwaysMapSignature(alwaysPreviewByElementIdRaw);
+  return `${activeKind}|${alwaysEnabled}|${selectedPreviewSignature}|${alwaysMapSignature}`;
+}
+
 function readStepTimeMinutes(nodeRaw) {
   const node = asObject(nodeRaw);
   const params = asObject(node.parameters);
@@ -1268,6 +1313,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const propertiesOverlayStateRef = useRef({ viewer: {}, editor: {} });
   const propertiesOverlayRenderSignatureRef = useRef({ viewer: "", editor: "" });
   const settledSelectionFanoutRef = useRef({ viewer: "", editor: "" });
+  const settledPropertiesFanoutRef = useRef({ viewer: "", editor: "" });
   const immediateSemanticDecorSignatureRef = useRef("");
   const playbackDecorStateRef = useRef({
     viewer: createPlaybackDecorRuntimeState(),
@@ -3402,6 +3448,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     robotMetaDecorStateRef.current = { viewer: {}, editor: {} };
     propertiesOverlayStateRef.current = { viewer: {}, editor: {} };
     propertiesOverlayRenderSignatureRef.current = { viewer: "", editor: "" };
+    settledPropertiesFanoutRef.current = { viewer: "", editor: "" };
     playbackDecorStateRef.current = {
       viewer: createPlaybackDecorRuntimeState(),
       editor: createPlaybackDecorRuntimeState(),
@@ -4954,6 +5001,20 @@ const BpmnStage = forwardRef(function BpmnStage({
       robotMetaStatusByElementId,
     ],
   );
+  const settledPropertiesFanoutSemanticSignature = useMemo(
+    () => buildSettledPropertiesFanoutSemanticSignature({
+      view,
+      selectedPreviewRaw: selectedPropertiesOverlayPreview,
+      alwaysEnabledRaw: propertiesOverlayAlwaysEnabled,
+      alwaysPreviewByElementIdRaw: propertiesOverlayAlwaysPreviewByElementId,
+    }),
+    [
+      view,
+      selectedPropertiesOverlayPreview,
+      propertiesOverlayAlwaysEnabled,
+      propertiesOverlayAlwaysPreviewByElementId,
+    ],
+  );
 
   useEffect(() => {
     immediateSemanticDecorSignatureRef.current = immediateFanoutSemanticSignature;
@@ -4993,6 +5054,8 @@ const BpmnStage = forwardRef(function BpmnStage({
       clearPropertiesOverlayDecor,
       selectedMarkerStateRef,
       selectionFanoutStateRef: settledSelectionFanoutRef,
+      propertiesFanoutStateRef: settledPropertiesFanoutRef,
+      propertiesFanoutSemanticSignature: settledPropertiesFanoutSemanticSignature,
       buildSelectionFanoutSignature: buildSettledSelectionFanoutSignature,
       emitElementSelection,
       syncAiQuestionPanelWithSelection,
@@ -5012,6 +5075,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     selectedPropertiesOverlayPreview,
     propertiesOverlayAlwaysEnabled,
     propertiesOverlayAlwaysPreviewByElementId,
+    settledPropertiesFanoutSemanticSignature,
   ]);
 
   useEffect(() => {

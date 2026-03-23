@@ -136,6 +136,18 @@ function resolveImmediateRealtimeOpsEnabled(explicitFlag) {
   return true;
 }
 
+function resolvePropertiesFanoutSemanticSignature(options, activeKind, view) {
+  const resolver = options?.getPropertiesFanoutSemanticSignature;
+  if (typeof resolver === "function") {
+    return asText(resolver({ activeKind, view })).trim();
+  }
+  const raw = options?.propertiesFanoutSemanticSignature;
+  if (raw && typeof raw === "object") {
+    return asText(raw?.[activeKind] ?? raw?.default).trim();
+  }
+  return asText(raw).trim();
+}
+
 export function runImmediateEditorFanout(options = {}) {
   const inst = options?.inst || null;
   if (!inst) return;
@@ -229,9 +241,28 @@ export function runSettledDecorSidebarFanout(options = {}) {
   const inactiveKind = activeKind === "editor" ? "viewer" : "editor";
   const activeInst = activeKind === "editor" ? modelerInst : viewerInst;
   const inactiveInst = inactiveKind === "editor" ? modelerInst : viewerInst;
-  measureSettledStep(`settled.properties.active.${activeKind}`, () => {
-    options.applyPropertiesOverlayDecor?.(activeInst, activeKind);
-  }, meta);
+  const propertiesFanoutStateRef = options?.propertiesFanoutStateRef || { current: {} };
+  const nextPropertiesSignature = resolvePropertiesFanoutSemanticSignature(options, activeKind, view);
+  const prevPropertiesSignature = asText(propertiesFanoutStateRef?.current?.[activeKind] || "");
+  const shouldSkipProperties = !!nextPropertiesSignature && nextPropertiesSignature === prevPropertiesSignature;
+  if (shouldSkipProperties) {
+    writeSettledPerf(`settled.properties.active.${activeKind}`, 0, {
+      ...meta,
+      skipped: true,
+      reason: "signature_match",
+      activeKind,
+    });
+  } else {
+    measureSettledStep(`settled.properties.active.${activeKind}`, () => {
+      options.applyPropertiesOverlayDecor?.(activeInst, activeKind);
+    }, meta);
+    if (nextPropertiesSignature) {
+      propertiesFanoutStateRef.current = {
+        ...(propertiesFanoutStateRef.current || {}),
+        [activeKind]: nextPropertiesSignature,
+      };
+    }
+  }
   measureSettledStep(`settled.properties.clear.${inactiveKind}`, () => {
     options.clearPropertiesOverlayDecor?.(inactiveInst, inactiveKind);
   }, meta);
