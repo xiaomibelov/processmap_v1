@@ -5638,7 +5638,7 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
         # Reload session from DB so response tokens use the fresh updated_at
         # written by storage.save(), preventing the frontend sync coordinator
         # from misclassifying this save as a foreign remote change.
-        s_fresh = st.load(session_id)
+        s_fresh = st.load(session_id, org_id=oid_locked, is_admin=True)
         if s_fresh is not None:
             s = s_fresh
         return {
