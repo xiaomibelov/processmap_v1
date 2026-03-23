@@ -140,3 +140,53 @@ test("when remote API is unavailable, local winner stays bounded fallback with e
   assert.equal(loaded.xml, "<bpmn:local_only/>");
   assert.equal(loaded.sourceReason, "local_no_remote_api");
 });
+
+test("saveRaw retries once on lock 423 and succeeds on second attempt", async () => {
+  window.localStorage.clear();
+  let putCalls = 0;
+  const persistence = createBpmnPersistence({
+    getSessionDraft: () => ({ bpmn_xml: "<bpmn:draft/>", bpmn_xml_version: 9, version: 9 }),
+    lock423RetryAttempts: 1,
+    lock423RetryDelayMs: 0,
+    apiPutBpmnXml: async () => {
+      putCalls += 1;
+      if (putCalls === 1) {
+        return { ok: false, status: 423, error: "Session is busy" };
+      }
+      return {
+        ok: true,
+        status: 200,
+        storedRev: 10,
+        syncVersionToken: "sync.10.1.abc",
+        syncBpmnVersionToken: "bpmn.10",
+        syncCollabVersionToken: "collab.10",
+      };
+    },
+  });
+
+  const saved = await persistence.saveRaw("sid_423_retry_success", "<bpmn:xml/>", 10, "autosave");
+  assert.equal(saved.ok, true);
+  assert.equal(saved.status, 200);
+  assert.equal(saved.storedRev, 10);
+  assert.equal(putCalls, 2);
+});
+
+test("saveRaw keeps 423 failure after bounded retry budget is exhausted", async () => {
+  window.localStorage.clear();
+  let putCalls = 0;
+  const persistence = createBpmnPersistence({
+    getSessionDraft: () => ({ bpmn_xml: "<bpmn:draft/>", bpmn_xml_version: 11, version: 11 }),
+    lock423RetryAttempts: 1,
+    lock423RetryDelayMs: 0,
+    apiPutBpmnXml: async () => {
+      putCalls += 1;
+      return { ok: false, status: 423, error: "Session is busy" };
+    },
+  });
+
+  const saved = await persistence.saveRaw("sid_423_retry_fail", "<bpmn:xml/>", 11, "autosave");
+  assert.equal(saved.ok, false);
+  assert.equal(saved.status, 423);
+  assert.equal(saved.errorCode, "http_423");
+  assert.equal(putCalls, 2);
+});

@@ -117,6 +117,13 @@ function normalizeDiagramJazzMode(raw) {
   return asText(raw).trim().toLowerCase() === "jazz" ? "jazz" : "legacy";
 }
 
+function waitMs(ms = 0) {
+  const delay = Math.max(0, asNumber(ms, 0));
+  return new Promise((resolve) => {
+    globalThis.setTimeout(resolve, delay);
+  });
+}
+
 export default function createBpmnPersistence(options = {}) {
   const getSessionDraft = typeof options?.getSessionDraft === "function"
     ? options.getSessionDraft
@@ -158,6 +165,8 @@ export default function createBpmnPersistence(options = {}) {
   const onTrace = typeof options?.onTrace === "function"
     ? options.onTrace
     : null;
+  const lock423RetryAttempts = Math.max(0, asNumber(options?.lock423RetryAttempts, 1));
+  const lock423RetryDelayMs = Math.max(0, asNumber(options?.lock423RetryDelayMs, 120));
 
   function emit(event, payload = {}) {
     if (!onTrace) return;
@@ -623,7 +632,24 @@ export default function createBpmnPersistence(options = {}) {
       return { ok: false, status: 0, error: "apiPutBpmnXml unavailable" };
     }
 
-    const saved = await apiPutBpmnXml(sid, xml, { rev: targetRev, reason });
+    let saved = await apiPutBpmnXml(sid, xml, { rev: targetRev, reason });
+    let lockRetryAttempt = 0;
+    while (
+      !saved?.ok
+      && asNumber(saved?.status, 0) === 423
+      && lockRetryAttempt < lock423RetryAttempts
+    ) {
+      lockRetryAttempt += 1;
+      emit("PERSISTENCE_SAVE_LOCK_423_RETRY", {
+        sid,
+        rev: targetRev,
+        reason,
+        attempt: lockRetryAttempt,
+        delay_ms: lock423RetryDelayMs,
+      });
+      await waitMs(lock423RetryDelayMs);
+      saved = await apiPutBpmnXml(sid, xml, { rev: targetRev, reason });
+    }
     if (!saved?.ok) {
       const status = asNumber(saved?.status, 0);
       return {
