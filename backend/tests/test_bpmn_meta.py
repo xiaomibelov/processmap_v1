@@ -640,5 +640,44 @@ class BpmnMetaApiTests(unittest.TestCase):
         self.assertEqual(persisted.get("flow_meta", {}).get("Flow_02mqvh5", {}).get("rtier"), "R2")
 
 
+    def test_bpmn_save_response_tokens_match_sync_state(self):
+        """PUT /bpmn response tokens must match GET /sync_state tokens.
+
+        Regression: storage.save() writes updated_at to DB but did not refresh
+        the in-memory session object. Token helpers computed stale tokens from
+        the old updated_at, causing the frontend sync coordinator to
+        misclassify the save as a foreign remote change on the next poll.
+        """
+        from app._legacy_main import get_session_sync_state
+
+        save_res = self.session_bpmn_save(self.sid, self.BpmnXmlIn(xml=PRUNED_BPMN_XML))
+        self.assertTrue(save_res.get("ok"))
+
+        put_sync = str(save_res.get("sync_version_token") or "").strip()
+        put_bpmn = str(save_res.get("sync_bpmn_version_token") or "").strip()
+        put_collab = str(save_res.get("sync_collab_version_token") or "").strip()
+        put_updated = int(save_res.get("updated_at") or 0)
+
+        self.assertTrue(put_sync, "PUT response must include sync_version_token")
+        self.assertTrue(put_bpmn, "PUT response must include sync_bpmn_version_token")
+        self.assertTrue(put_collab, "PUT response must include sync_collab_version_token")
+        self.assertGreater(put_updated, 0, "PUT response must include fresh updated_at")
+
+        sync_state = get_session_sync_state(self.sid)
+        ss_sync = str(sync_state.get("version_token") or "").strip()
+        ss_bpmn = str(sync_state.get("bpmn_version_token") or "").strip()
+        ss_collab = str(sync_state.get("collab_version_token") or "").strip()
+        ss_updated = int(sync_state.get("updated_at") or 0)
+
+        self.assertEqual(put_sync, ss_sync,
+                         f"sync_version_token mismatch: PUT={put_sync!r} vs sync_state={ss_sync!r}")
+        self.assertEqual(put_bpmn, ss_bpmn,
+                         f"bpmn_version_token mismatch: PUT={put_bpmn!r} vs sync_state={ss_bpmn!r}")
+        self.assertEqual(put_collab, ss_collab,
+                         f"collab_version_token mismatch: PUT={put_collab!r} vs sync_state={ss_collab!r}")
+        self.assertEqual(put_updated, ss_updated,
+                         f"updated_at mismatch: PUT={put_updated} vs sync_state={ss_updated}")
+
+
 if __name__ == "__main__":
     unittest.main()

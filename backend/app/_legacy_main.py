@@ -5635,6 +5635,12 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
         s.bpmn_meta = normalized_meta
         st.save(s, user_id=user_id, org_id=oid_locked, is_admin=True)
         _invalidate_session_caches(s, session_id=session_id, org_id=getattr(s, "org_id", "") or get_default_org_id())
+        # Reload session from DB so response tokens use the fresh updated_at
+        # written by storage.save(), preventing the frontend sync coordinator
+        # from misclassifying this save as a foreign remote change.
+        s_fresh = st.load(session_id)
+        if s_fresh is not None:
+            s = s_fresh
         return {
             "ok": True,
             "session_id": s.id,
