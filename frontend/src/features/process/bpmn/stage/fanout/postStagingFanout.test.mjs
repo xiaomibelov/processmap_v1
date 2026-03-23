@@ -133,3 +133,82 @@ test("runSettledDecorSidebarFanout skips repeated settled selection sync when si
   assert.equal(calls.filter(([name]) => name === "emitSelection").length, 0);
   assert.equal(calls.filter(([name]) => name === "syncAi").length, 0);
 });
+
+function makeImmediateFanoutSpies() {
+  const calls = {
+    task: 0,
+    link: 0,
+    happy: 0,
+    robot: 0,
+    realtime: 0,
+  };
+  return {
+    calls,
+    options: {
+      applyTaskTypeDecor: () => { calls.task += 1; },
+      applyLinkEventDecor: () => { calls.link += 1; },
+      applyHappyFlowDecor: () => { calls.happy += 1; },
+      applyRobotMetaDecor: () => { calls.robot += 1; },
+      emitRealtimeOpsFromModeler: () => { calls.realtime += 1; },
+      realtimeOpsEnabled: true,
+    },
+  };
+}
+
+test("runImmediateEditorFanout skips semantic decor subpath when semantic signature is unchanged", () => {
+  const inst = {};
+  const { calls, options } = makeImmediateFanoutSpies();
+
+  runImmediateEditorFanout({
+    inst,
+    ...options,
+    semanticDecorSignature: "meta_sig_v1",
+  });
+  runImmediateEditorFanout({
+    inst,
+    ...options,
+    semanticDecorSignature: "meta_sig_v1",
+  });
+
+  assert.equal(calls.task, 2);
+  assert.equal(calls.link, 2);
+  assert.equal(calls.happy, 1);
+  assert.equal(calls.robot, 1);
+  assert.equal(calls.realtime, 2);
+});
+
+test("runImmediateEditorFanout reapplies semantic decor when semantic signature changes", () => {
+  const inst = {};
+  const { calls, options } = makeImmediateFanoutSpies();
+
+  runImmediateEditorFanout({
+    inst,
+    ...options,
+    semanticDecorSignature: "meta_sig_v1",
+  });
+  runImmediateEditorFanout({
+    inst,
+    ...options,
+    semanticDecorSignature: "meta_sig_v2",
+  });
+
+  assert.equal(calls.happy, 2);
+  assert.equal(calls.robot, 2);
+});
+
+test("runImmediateEditorFanout keeps legacy behavior when semantic signature is not provided", () => {
+  const inst = {};
+  const { calls, options } = makeImmediateFanoutSpies();
+
+  runImmediateEditorFanout({
+    inst,
+    ...options,
+  });
+  runImmediateEditorFanout({
+    inst,
+    ...options,
+  });
+
+  assert.equal(calls.happy, 2);
+  assert.equal(calls.robot, 2);
+});

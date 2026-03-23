@@ -4,6 +4,7 @@ function asText(value) {
 
 const IMMEDIATE_FANOUT_PERF_KEY = "__FPC_IMMEDIATE_FANOUT_PERF__";
 const SETTLED_FANOUT_PERF_KEY = "__FPC_SETTLED_FANOUT_PERF__";
+const immediateSemanticDecorSignatureByInst = new WeakMap();
 
 function canMeasure() {
   return typeof globalThis?.performance?.now === "function";
@@ -139,18 +140,35 @@ export function runImmediateEditorFanout(options = {}) {
   const inst = options?.inst || null;
   if (!inst) return;
   const meta = { kind: "editor" };
+  const semanticDecorSignature = asText(
+    typeof options?.getSemanticDecorSignature === "function"
+      ? options.getSemanticDecorSignature()
+      : options?.semanticDecorSignature,
+  );
+  const prevSemanticDecorSignature = asText(immediateSemanticDecorSignatureByInst.get(inst));
+  const shouldSkipSemanticDecor = !!semanticDecorSignature && semanticDecorSignature === prevSemanticDecorSignature;
   measureImmediateStep("immediate.taskTypeDecor", () => {
     options.applyTaskTypeDecor?.(inst, "editor");
   }, meta);
   measureImmediateStep("immediate.linkEventDecor", () => {
     options.applyLinkEventDecor?.(inst, "editor");
   }, meta);
-  measureImmediateStep("immediate.happyFlowDecor", () => {
-    options.applyHappyFlowDecor?.(inst, "editor");
-  }, meta);
-  measureImmediateStep("immediate.robotMetaDecor", () => {
-    options.applyRobotMetaDecor?.(inst, "editor");
-  }, meta);
+  if (shouldSkipSemanticDecor) {
+    writeImmediatePerf("immediate.semanticDecor.skipped", 0, {
+      ...meta,
+      reason: "signature_match",
+    });
+  } else {
+    measureImmediateStep("immediate.happyFlowDecor", () => {
+      options.applyHappyFlowDecor?.(inst, "editor");
+    }, meta);
+    measureImmediateStep("immediate.robotMetaDecor", () => {
+      options.applyRobotMetaDecor?.(inst, "editor");
+    }, meta);
+    if (semanticDecorSignature) {
+      immediateSemanticDecorSignatureByInst.set(inst, semanticDecorSignature);
+    }
+  }
   const realtimeOpsEnabled = resolveImmediateRealtimeOpsEnabled(options?.realtimeOpsEnabled);
   if (!realtimeOpsEnabled) {
     writeImmediatePerf("immediate.realtimeOpsEmit.skipped", 0, {

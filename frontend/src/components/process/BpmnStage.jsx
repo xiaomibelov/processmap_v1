@@ -434,6 +434,46 @@ function buildInterviewDecorSignature(draftRaw, aiModeEnabled, displayModeRaw) {
   );
 }
 
+function buildImmediateFanoutSemanticSignature({
+  bpmnMetaRaw,
+  robotMetaOverlayFiltersRaw,
+  robotMetaStatusByElementIdRaw,
+}) {
+  const meta = asObject(bpmnMetaRaw);
+  const flowMeta = normalizeFlowTierMetaMap(meta.flow_meta);
+  const nodePathMeta = normalizeNodePathMetaMap(meta.node_path_meta);
+  const robotMeta = normalizeRobotMetaMap(meta.robot_meta_by_element_id);
+  const robotFilters = asObject(robotMetaOverlayFiltersRaw);
+  const robotStatusMap = asObject(robotMetaStatusByElementIdRaw);
+
+  const flowSig = Object.keys(flowMeta)
+    .sort((a, b) => String(a).localeCompare(String(b), "ru"))
+    .map((flowId) => `${flowId}:${toText(flowMeta[flowId]?.tier)}`)
+    .join("|");
+  const nodePathSig = Object.keys(nodePathMeta)
+    .sort((a, b) => String(a).localeCompare(String(b), "ru"))
+    .map((nodeId) => {
+      const entry = asObject(nodePathMeta[nodeId]);
+      const paths = asArray(entry?.paths).map((tag) => toText(tag)).join(",");
+      return `${nodeId}:${paths}:${toText(entry?.source)}:${toText(entry?.sequence_key || entry?.sequenceKey)}`;
+    })
+    .join("|");
+  const robotStatusSig = Object.keys(robotStatusMap)
+    .sort((a, b) => String(a).localeCompare(String(b), "ru"))
+    .map((elementId) => `${elementId}:${toText(robotStatusMap[elementId]).toLowerCase()}`)
+    .join("|");
+  const robotFiltersSig = `${robotFilters.ready === true ? 1 : 0}|${robotFilters.incomplete === true ? 1 : 0}`;
+  const robotMetaSig = canonicalRobotMetaMapString(robotMeta);
+
+  return [
+    fnv1aHex(flowSig),
+    fnv1aHex(nodePathSig),
+    fnv1aHex(robotMetaSig),
+    fnv1aHex(robotStatusSig),
+    robotFiltersSig,
+  ].join(":");
+}
+
 function shouldLogBpmnTrace() {
   if (typeof window === "undefined") return false;
   if (window.__FPC_DEBUG_BPMN__) return true;
@@ -1228,6 +1268,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const propertiesOverlayStateRef = useRef({ viewer: {}, editor: {} });
   const propertiesOverlayRenderSignatureRef = useRef({ viewer: "", editor: "" });
   const settledSelectionFanoutRef = useRef({ viewer: "", editor: "" });
+  const immediateSemanticDecorSignatureRef = useRef("");
   const playbackDecorStateRef = useRef({
     viewer: createPlaybackDecorRuntimeState(),
     editor: createPlaybackDecorRuntimeState(),
@@ -3647,6 +3688,7 @@ const BpmnStage = forwardRef(function BpmnStage({
               applyHappyFlowDecor,
               applyRobotMetaDecor,
               emitRealtimeOpsFromModeler,
+              getSemanticDecorSignature: () => immediateSemanticDecorSignatureRef.current,
             });
           });
           eventBus.on("selection.changed", 2000, (ev) => {
@@ -4900,6 +4942,22 @@ const BpmnStage = forwardRef(function BpmnStage({
       diagramDisplayMode,
     ],
   );
+  const immediateFanoutSemanticSignature = useMemo(
+    () => buildImmediateFanoutSemanticSignature({
+      bpmnMetaRaw: draft?.bpmn_meta,
+      robotMetaOverlayFiltersRaw: robotMetaOverlayFilters,
+      robotMetaStatusByElementIdRaw: robotMetaStatusByElementId,
+    }),
+    [
+      draft?.bpmn_meta,
+      robotMetaOverlayFilters,
+      robotMetaStatusByElementId,
+    ],
+  );
+
+  useEffect(() => {
+    immediateSemanticDecorSignatureRef.current = immediateFanoutSemanticSignature;
+  }, [immediateFanoutSemanticSignature]);
 
   useEffect(() => {
     applyInterviewDecor(viewerRef.current, "viewer", { signature: interviewDecorSignature });
