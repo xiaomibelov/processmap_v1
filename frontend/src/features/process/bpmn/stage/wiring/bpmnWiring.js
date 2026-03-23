@@ -5,6 +5,8 @@ import createBpmnPersistenceDefault from "../../persistence/createBpmnPersistenc
 import {
   DIAGRAM_JAZZ_TRACE_MARKERS,
   resolveDiagramJazzContractDraftActivation,
+  buildDiagramJazzDocumentIdentity,
+  createDiagramJazzContractDraftAdapter,
 } from "../../jazz/diagramJazzContractDraft.js";
 
 function asObject(x) {
@@ -158,6 +160,36 @@ export function createBpmnWiring(ctxBase, deps = {}) {
       owner_effective_state: String(diagramJazzGate?.ownerEffectiveState || "legacy_owner"),
       pilot_enabled: diagramJazzGate?.pilotEnabled ? 1 : 0,
     });
+    const draftNow = readOnly.draftRef?.current || {};
+    const diagramJazzIdentity = buildDiagramJazzDocumentIdentity({
+      orgId: String(draftNow?.org_id || ""),
+      projectId: String(draftNow?.project_id || draftNow?.projectId || values.activeProjectId || ""),
+      sessionId: String(values.sessionId || ""),
+    });
+    const diagramJazzAdapter = createDiagramJazzContractDraftAdapter({
+      activation: diagramJazzGate,
+      identity: diagramJazzIdentity,
+      onTrace: (event, payload = {}) => {
+        const sid = String(refs.activeSessionRef?.current || "");
+        callbacks.logBpmnTrace?.(event, "", { sid, ...payload });
+      },
+    });
+    try {
+      if (typeof window !== "undefined") {
+        window.__FPC_DIAGRAM_JAZZ_BOUNDARY__ = {
+          gate: diagramJazzGate,
+          identity: diagramJazzIdentity,
+          adapterEnabled: !!diagramJazzAdapter?.enabled,
+          adapterMode: String(diagramJazzAdapter?.mode || "legacy"),
+        };
+      }
+    } catch { /* noop */ }
+    if (!diagramJazzAdapter?.enabled) {
+      callbacks.logBpmnTrace?.(DIAGRAM_JAZZ_TRACE_MARKERS.adapterNotActive, "", {
+        sid: String(refs.activeSessionRef?.current || ""),
+        adapter_mode: String(diagramJazzAdapter?.mode || "legacy"),
+      });
+    }
     const persistence = createBpmnPersistence({
       getSessionDraft: () => readOnly.draftRef?.current || {},
       getSnapshotProjectId: () => String(readOnly.draftRef?.current?.project_id || readOnly.draftRef?.current?.projectId || values.activeProjectId || ""),

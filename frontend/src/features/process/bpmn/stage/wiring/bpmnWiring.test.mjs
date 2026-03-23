@@ -211,3 +211,34 @@ test("ensureBpmnPersistence emits Jazz activation gate trace as dormant legacy",
   assert.equal(gateTrace.payload.pilot_enabled, 0);
   assert.ok(ctx.refs.bpmnPersistenceRef.current, "persistence ref should be set");
 });
+
+test("ensureBpmnPersistence builds dormant Jazz identity and adapter boundary", () => {
+  const ctx = createCtx();
+  ctx.values.sessionId = "sid_jazz_boundary";
+  ctx.values.activeProjectId = "pid_jazz_boundary";
+  ctx.refs.draftRef.current = { org_id: "org_1", project_id: "pid_jazz_boundary" };
+  const traces = [];
+  ctx.callbacks.logBpmnTrace = (event, xml, payload) => {
+    traces.push({ event, payload });
+  };
+  const deps = {
+    createBpmnStore: () => ({
+      subscribe: () => () => {},
+      getState: () => ({ xml: "" }),
+    }),
+    createBpmnPersistence: () => ({
+      saveRaw: async () => ({ ok: true }),
+      loadRaw: async () => ({ ok: true }),
+      cacheRaw: () => ({ ok: true }),
+    }),
+  };
+
+  const wiring = createBpmnWiring(() => ctx, deps);
+  wiring.ensureBpmnPersistence();
+
+  const adapterTrace = traces.find((t) => t.event === "diagram_jazz_adapter_not_active");
+  assert.ok(adapterTrace, "should emit adapter-not-active trace in legacy mode");
+  assert.equal(adapterTrace.payload.adapter_mode, "legacy");
+
+  assert.ok(ctx.refs.bpmnPersistenceRef.current, "persistence should still be created");
+});
