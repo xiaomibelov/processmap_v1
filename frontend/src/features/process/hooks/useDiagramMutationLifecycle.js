@@ -6,6 +6,7 @@ import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
 import { traceProcess } from "../lib/processDebugTrace";
 import { runRealtimeOpsLane } from "../mutation-lanes/RealtimeOpsLane";
 import { runDurableSnapshotLane } from "../mutation-lanes/DurableSnapshotLane";
+import { shouldIssueInterviewPatchAfterSave } from "./mutationSaveOrdering";
 import {
   asObject,
   safeJson,
@@ -136,18 +137,33 @@ export default function useDiagramMutationLifecycle({
       }
 
       onSessionSync?.(optimisticSession);
+      const patchKeys = Object.keys(patch);
       traceProcess("diagram.autosave_optimistic_sync", {
         sid,
-        patch_keys: Object.keys(patch),
+        patch_keys: patchKeys,
       });
-      if (isLocal || isStale?.()) return true;
-      if (Object.keys(patch).length === 0) return true;
+      const staleBeforePatch = isStale?.() === true;
+      const shouldIssuePatch = shouldIssueInterviewPatchAfterSave({
+        savePending: saveRes?.pending === true,
+        isLocal: isLocal === true,
+        isStale: staleBeforePatch,
+        patchKeysCount: patchKeys.length,
+      });
+      if (!shouldIssuePatch) {
+        if (saveRes?.pending === true && patchKeys.length > 0) {
+          traceProcess("diagram.autosave_patch_deferred_pending_save", {
+            sid,
+            patch_keys: patchKeys,
+          });
+        }
+        return true;
+      }
 
       const patchRes = await apiPatchSession(sid, patch);
       traceProcess("diagram.autosave_patch_backend", {
         sid,
         ok: !!patchRes.ok,
-        patch_keys: Object.keys(patch),
+        patch_keys: patchKeys,
       });
       if (!patchRes.ok) {
         onError?.(shortErr(patchRes.error || "Не удалось синхронизировать Interview после изменения диаграммы."));
