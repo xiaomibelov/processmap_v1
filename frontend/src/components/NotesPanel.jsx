@@ -73,6 +73,7 @@ import {
 } from "../features/process/drawio/drawioAnchors";
 import { buildExecutionBridgeProjectionV1 } from "../features/execution/executionBridgeV1";
 import ExecutionBridgeSection from "./sidebar/ExecutionBridgeSection";
+import { buildPropertiesOverlayPreviewSignature } from "./sidebar/camundaPropertiesSectionMemo";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -1028,6 +1029,10 @@ export default function NotesPanel({
     pending: false,
     target: false,
   });
+  const propertiesOverlayPreviewDispatchRef = useRef({
+    draftSignature: "__init__",
+    alwaysSignature: "__init__",
+  });
 
   const derivedActors = useMemo(() => normalizeDerivedActors(draft?.actors_derived), [draft]);
   const legacyRoles = useMemo(() => normalizeRoles(draft?.roles), [draft]);
@@ -1632,8 +1637,12 @@ export default function NotesPanel({
   }, [selectedCamundaPropertiesEditable, selectedElementId, selectedCamundaPresentationEntry]);
 
   useEffect(() => {
+    const dispatchState = propertiesOverlayPreviewDispatchRef.current;
     if (!selectedElementId || !selectedCamundaPropertiesEditable) {
-      onPropertiesOverlayPreviewChange?.(null);
+      if (dispatchState.draftSignature !== "null") {
+        dispatchState.draftSignature = "null";
+        onPropertiesOverlayPreviewChange?.(null);
+      }
       return;
     }
     const nextPreview = buildPropertiesOverlayPreview({
@@ -1642,6 +1651,9 @@ export default function NotesPanel({
       dictionaryBundleRaw: orgPropertyDictionaryBundle,
       showPropertiesOverlay: showPropertiesOverlayDraft,
     });
+    const nextSignature = buildPropertiesOverlayPreviewSignature(nextPreview);
+    if (dispatchState.draftSignature === nextSignature) return;
+    dispatchState.draftSignature = nextSignature;
     onPropertiesOverlayPreviewChange?.(nextPreview);
   }, [
     selectedElementId,
@@ -1653,8 +1665,12 @@ export default function NotesPanel({
   ]);
 
   useEffect(() => {
+    const dispatchState = propertiesOverlayPreviewDispatchRef.current;
     if (!selectedElementId || !selectedCamundaPropertiesEditable) {
-      onPropertiesOverlayAlwaysPreviewChange?.(null);
+      if (dispatchState.alwaysSignature !== "null") {
+        dispatchState.alwaysSignature = "null";
+        onPropertiesOverlayAlwaysPreviewChange?.(null);
+      }
       return;
     }
     const nextAlwaysPreview = buildPropertiesOverlayPreview({
@@ -1663,6 +1679,9 @@ export default function NotesPanel({
       dictionaryBundleRaw: orgPropertyDictionaryBundle,
       showPropertiesOverlay: true,
     });
+    const nextSignature = buildPropertiesOverlayPreviewSignature(nextAlwaysPreview);
+    if (dispatchState.alwaysSignature === nextSignature) return;
+    dispatchState.alwaysSignature = nextSignature;
     onPropertiesOverlayAlwaysPreviewChange?.(nextAlwaysPreview);
   }, [
     selectedElementId,
