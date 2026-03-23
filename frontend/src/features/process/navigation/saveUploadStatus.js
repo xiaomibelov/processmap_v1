@@ -7,14 +7,6 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function formatPayloadSize(bytesRaw = 0) {
-  const bytes = Math.max(0, toNumber(bytesRaw, 0));
-  if (bytes <= 0) return "";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 export function normalizeBpmnSaveLifecycleEvent(raw = null) {
   const value = raw && typeof raw === "object" ? raw : {};
   const payload = value.payload && typeof value.payload === "object" ? value.payload : {};
@@ -41,7 +33,6 @@ export function normalizeBpmnSaveLifecycleEvent(raw = null) {
 export function buildSaveUploadStatusBadge(raw = null) {
   const event = raw && typeof raw === "object" ? raw : {};
   const stage = toText(event.stage).toLowerCase();
-  const sizeText = formatPayloadSize(event.xmlBytes);
   if (!stage || stage === "idle") {
     return {
       visible: false,
@@ -50,45 +41,14 @@ export function buildSaveUploadStatusBadge(raw = null) {
       title: "",
     };
   }
-  if (stage === "preparing") {
-    return {
-      visible: true,
-      tone: "warn",
-      label: "BPMN: подготовка сохранения",
-      title: "Подготовка BPMN перед отправкой на backend.",
-    };
-  }
-  if (stage === "uploading") {
-    return {
-      visible: true,
-      tone: "warn",
-      label: sizeText ? `BPMN: загрузка ${sizeText}` : "BPMN: загрузка",
-      title: "Выполняется отправка BPMN на backend.",
-    };
-  }
-  if (stage === "persisted") {
-    return {
-      visible: true,
-      tone: "ok",
-      label: sizeText ? `BPMN: сохранено (${sizeText})` : "BPMN: сохранено",
-      title: "Backend подтвердил сохранение BPMN.",
-    };
-  }
-  if (stage === "skipped_unchanged") {
-    return {
-      visible: true,
-      tone: "ok",
-      label: "BPMN: без изменений, повторная отправка не требуется",
-      title: "Сохранение не отправлялось, потому что XML не изменился.",
-    };
-  }
   if (stage === "failed") {
     const status = toNumber(event.status, 0);
     return {
       visible: true,
       tone: "err",
-      label: status > 0 ? `BPMN: ошибка сохранения (HTTP ${status})` : "BPMN: ошибка сохранения",
+      label: "Ошибка сохранения BPMN",
       title: toText(event.error) || "Backend не подтвердил сохранение BPMN.",
+      ...(status > 0 ? { code: `HTTP ${status}` } : {}),
     };
   }
   return {

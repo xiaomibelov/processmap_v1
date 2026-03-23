@@ -97,6 +97,13 @@ export const apiRoutes = {
     list: () => "/api/sessions",
     create: () => "/api/sessions",
     item: (sessionId) => `/api/sessions/${encode(sessionId)}`,
+    syncState: (sessionId) => `/api/sessions/${encode(sessionId)}/sync_state`,
+    collabState: (sessionId) => `/api/sessions/${encode(sessionId)}/collab_state`,
+    realtimeOps: (sessionId, options = {}) => withQuery(`/api/sessions/${encode(sessionId)}/realtime_ops`, {
+      after_seq: options?.afterSeq ?? options?.after_seq ?? "",
+      limit: options?.limit ?? "",
+    }),
+    presence: (sessionId) => `/api/sessions/${encode(sessionId)}/presence`,
     nodes: (sessionId) => `/api/sessions/${encode(sessionId)}/nodes`,
     node: (sessionId, nodeId) => `/api/sessions/${encode(sessionId)}/nodes/${encode(nodeId)}`,
     edges: (sessionId) => `/api/sessions/${encode(sessionId)}/edges`,
@@ -112,6 +119,9 @@ export const apiRoutes = {
       include_overlay: options?.includeOverlay === false ? "0" : "",
       _ts: options?.cacheBust === true ? String(Date.now()) : "",
     }),
+    diagramJazz: (sessionId, options = {}) => withQuery(`/api/sessions/${encode(sessionId)}/diagram-jazz`, {
+      provider: String(options?.provider || "").trim(),
+    }),
     bpmnMeta: (sessionId) => `/api/sessions/${encode(sessionId)}/bpmn_meta`,
     inferRtiers: (sessionId) => `/api/sessions/${encode(sessionId)}/bpmn_meta/infer_rtiers`,
     autoPass: (sessionId, options = {}) => withQuery(`/api/sessions/${encode(sessionId)}/auto-pass`, {
@@ -123,6 +133,7 @@ export const apiRoutes = {
       { steps_hash: String(stepsHash || "").trim() },
     ),
     pathReport: (sessionId, pathId, reportId) => `/api/sessions/${encode(sessionId)}/paths/${encode(pathId)}/reports/${encode(reportId)}`,
+    pathReportLegacy: (sessionId, pathId, reportId) => `/api/sessions/${encode(sessionId)}/path/${encode(pathId)}/reports/${encode(reportId)}`,
   },
   reports: {
     item: (reportId) => `/api/reports/${encode(reportId)}`,

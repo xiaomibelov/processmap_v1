@@ -493,57 +493,93 @@
   pointer-events: none;
   display: block;
   max-width: 216px;
-  transform: translate(-50%, calc(-100% - 12px));
+  transform: translate(-50%, calc(-100% - 11px));
   z-index: 17;
 }
 
 .fpcPropertyOverlay--table {
   pointer-events: none;
+  --fpc-property-hover-shadow: 0 5px 12px hsl(var(--bg) / 0.28);
+  --fpc-property-hover-border: var(--fpc-property-ring, var(--fpc-property-accent, hsl(var(--accent))));
 }
 
 .fpcPropertyTable {
-  pointer-events: none;
+  pointer-events: auto;
   display: grid;
-  gap: 4px;
+  gap: 3px;
   max-width: 100%;
   min-width: var(--fpc-property-table-min-width, 120px);
 }
 
 .fpcPropertyRow {
-  pointer-events: none;
+  pointer-events: auto;
   display: grid;
   grid-template-columns: var(--fpc-property-grid-columns, minmax(46px, 42%) minmax(64px, 58%));
   align-items: center;
-  gap: 5px;
+  gap: var(--fpc-property-row-gap, 5px);
   min-height: var(--fpc-property-row-min-height, 15px);
-  border-radius: 8px;
-  border: 1px solid hsl(var(--diagram-badge-border) / 0.66);
+  border-radius: 7px;
+  border: 1px solid var(--fpc-property-border, hsl(var(--diagram-badge-border) / 0.66));
   border-left: 3px solid var(--fpc-property-accent, #6eb2e4);
   background: var(--fpc-property-bg, hsl(var(--diagram-badge-bg) / 0.95));
-  color: hsl(var(--diagram-badge-text) / 1);
+  color: var(--fpc-property-text, hsl(var(--diagram-badge-text) / 1));
   padding: var(--fpc-property-row-padding, 2px 7px);
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--fpc-property-accent, hsl(var(--diagram-badge-border) / 0.45)) 20%, transparent) inset,
+    0 0 0 1px var(--fpc-property-border, hsl(var(--diagram-badge-border) / 0.45)) inset,
     0 3px 8px hsl(var(--bg) / 0.18);
   font-size: calc(var(--fpc-property-font-size, 9.5px) * 1.1 * var(--fpc-property-font-scale, 1));
   font-weight: 600;
   line-height: 1.2;
   letter-spacing: .01em;
+  transition: border-color .14s ease, box-shadow .14s ease, transform .14s ease, background-color .14s ease;
+}
+
+.fpcPropertyRow:hover {
+  border-color: var(--fpc-property-hover-border);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--fpc-property-ring, var(--fpc-property-accent)) 40%, transparent) inset,
+    var(--fpc-property-hover-shadow);
+  transform: translateY(-1px);
 }
 
 .fpcPropertyOverlay--sequence .fpcPropertyTable {
-  gap: 3px;
+  gap: 2px;
 }
 
 .fpcPropertyOverlay--sequence .fpcPropertyRow {
   min-height: var(--fpc-property-row-min-height, 14px);
+  border-left-width: 2px;
+  border-style: dashed;
+}
+
+.fpcPropertyOverlay--gateway .fpcPropertyTable {
+  gap: 2px;
+}
+
+.fpcPropertyOverlay--gateway .fpcPropertyRow {
+  border-left-width: 2px;
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--fpc-property-border) 72%, var(--bpmn-gateway-stroke) 28%);
+  background: color-mix(in srgb, var(--fpc-property-bg) 84%, var(--bpmn-gateway-fill) 16%);
+}
+
+.fpcPropertyOverlay--gateway .fpcPropertyKeySep {
+  color: color-mix(in srgb, var(--fpc-property-text) 68%, var(--bpmn-gateway-stroke) 32%);
 }
 
 .fpcPropertyRow--linked {
-  border-color: color-mix(in srgb, var(--fpc-property-accent, hsl(var(--accent))) 64%, hsl(var(--diagram-badge-border) / 0.66));
+  border-color: var(--fpc-property-accent, hsl(var(--accent)));
   box-shadow:
     0 0 0 1px var(--fpc-property-accent-shadow, hsl(var(--accent) / 0.24)) inset,
     0 3px 8px hsl(var(--bg) / 0.18);
+}
+
+.fpcPropertyRow.is-active,
+.fpcPropertyRow[data-active="true"],
+.fpcPropertyRow[aria-selected="true"] {
+  border-color: var(--fpc-property-accent, hsl(var(--accent)));
+  outline: 2px solid var(--fpc-property-ring, var(--fpc-property-accent, hsl(var(--accent))));
+  outline-offset: 0;
 }
 
 .fpcPropertyCell {
@@ -554,7 +590,7 @@
 }
 
 .fpcPropertyCell--key {
-  color: hsl(var(--diagram-badge-text) / 0.74);
+  color: var(--fpc-property-text, hsl(var(--diagram-badge-text) / 0.74));
   font-size: 0.86em;
   font-weight: 560;
   display: grid;
@@ -564,9 +600,18 @@
 }
 
 .fpcPropertyCell--value {
-  color: hsl(var(--diagram-badge-text) / 1);
+  color: var(--fpc-property-text, hsl(var(--diagram-badge-text) / 1));
   font-size: 1em;
   font-weight: 720;
+  text-align: right;
+}
+
+.fpcPropertyValueText {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .fpcPropertyKeyText {
@@ -577,21 +622,35 @@
 }
 
 .fpcPropertyKeySep {
-  color: hsl(var(--diagram-badge-text) / 0.58);
+  color: var(--fpc-property-text, hsl(var(--diagram-badge-text) / 0.58));
   font-weight: 700;
   line-height: 1;
+}
+
+.fpcPropertyRow[data-truncated="true"] .fpcPropertyKeyText,
+.fpcPropertyRow[data-truncated="true"] .fpcPropertyValueText {
+  text-decoration: underline dotted color-mix(in srgb, var(--fpc-property-text) 62%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
 }
 
 .fpcPropertyRow--summary {
   grid-template-columns: 1fr;
   justify-items: center;
   font-weight: 700;
-  background: hsl(var(--diagram-badge-bg) / 0.9);
+  border-left: 1px solid color-mix(in srgb, var(--diagram-badge-border) 58%, transparent);
+  background: color-mix(in srgb, hsl(var(--diagram-badge-bg) / 0.92) 86%, transparent);
 }
 
 /* Keep property overlays non-interactive so they never block shape drag/select hit area. */
 .bpmnCanvas .djs-overlay.djs-overlay-fpc-properties {
   pointer-events: none !important;
+}
+
+.bpmnCanvas .djs-overlay.djs-overlay-fpc-properties .fpcPropertyTable,
+.bpmnCanvas .djs-overlay.djs-overlay-fpc-properties .fpcPropertyRow,
+.bpmnCanvas .djs-overlay.djs-overlay-fpc-properties .fpcPropertyCell {
+  pointer-events: auto;
 }
 
 .fpcNodeFlashPill {

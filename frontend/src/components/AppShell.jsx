@@ -36,10 +36,15 @@ export default function AppShell({
   sessions,
   sessionId,
   sessionStatus,
+  sessionReviewStatus = "draft",
+  sessionReviewOpenCommentsCount = 0,
+  sessionRemoteSyncState = null,
   onOpenSession,
   onOpenWorkspaceSession,
   onDeleteSession,
   onChangeSessionStatus,
+  onChangeSessionReviewStatus,
+  onApplySessionRemoteSync,
   onNewProject,
   onNewBackendSession,
   llmHasApiKey,
@@ -57,6 +62,7 @@ export default function AppShell({
   onOpenElementNotes,
   onElementNotesRemap,
   onSessionSync,
+  onPublishRealtimeBpmnOps,
   onRecalculateRtiers,
   snapshotRestoreNotice,
   onSnapshotRestoreNoticeConsumed,
@@ -111,8 +117,13 @@ export default function AppShell({
         sessions={sessions}
         sessionId={String(shellSessionId || sessionId || "").trim()}
         sessionStatus={sessionStatus}
+        sessionReviewStatus={sessionReviewStatus}
+        sessionReviewOpenCommentsCount={sessionReviewOpenCommentsCount}
+        sessionRemoteSyncState={sessionRemoteSyncState}
         onDeleteSession={onDeleteSession}
         onChangeSessionStatus={onChangeSessionStatus}
+        onChangeSessionReviewStatus={onChangeSessionReviewStatus}
+        onApplySessionRemoteSync={onApplySessionRemoteSync}
         onOpenSession={onOpenSession}
         onOpenWorkspace={workspaceBackHandler}
         onNewProject={onNewProject}
@@ -189,10 +200,13 @@ export default function AppShell({
             onElementNotesRemap={onElementNotesRemap}
             snapshotRestoreNotice={snapshotRestoreNotice}
             onSnapshotRestoreNoticeConsumed={onSnapshotRestoreNoticeConsumed}
+            onPublishRealtimeBpmnOps={onPublishRealtimeBpmnOps}
             onRecalculateRtiers={onRecalculateRtiers}
             selectedPropertiesOverlayPreview={selectedPropertiesOverlayPreview}
             propertiesOverlayAlwaysEnabled={propertiesOverlayAlwaysEnabled}
             propertiesOverlayAlwaysPreviewByElementId={propertiesOverlayAlwaysPreviewByElementId}
+            sessionRemoteSyncState={sessionRemoteSyncState}
+            onApplySessionRemoteSync={onApplySessionRemoteSync}
           />
         </div>
       </div>

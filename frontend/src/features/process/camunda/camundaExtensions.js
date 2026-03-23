@@ -130,10 +130,16 @@ function canonicalizeExtensionFragmentSignature(rawXml) {
 
 function normalizePreservedExtensionElements(rawItems) {
   const seenSignatures = new Set();
+  const seenSingletonKeys = new Set();
   return asArray(rawItems)
     .map((item) => String(item || "").trim())
     .filter(Boolean)
     .filter((item) => {
+      const singletonKey = singletonExtensionFragmentKey(item);
+      if (singletonKey) {
+        if (seenSingletonKeys.has(singletonKey)) return false;
+        seenSingletonKeys.add(singletonKey);
+      }
       const signature = canonicalizeExtensionFragmentSignature(item) || item;
       if (seenSignatures.has(signature)) return false;
       seenSignatures.add(signature);
@@ -151,6 +157,21 @@ function connectorKeyForExtensionFragment(rawXml) {
   const connectorId = asText(connectorIdNode?.textContent).toLowerCase();
   if (!connectorId) return "";
   return `camunda:connector:${connectorId}`;
+}
+
+function singletonExtensionFragmentKey(rawXml) {
+  const parsed = parseExtensionFragmentNode(rawXml);
+  if (!parsed) return "";
+  const ns = namespaceOf(parsed);
+  const local = localNameOf(parsed);
+  if (!ns || !local) return "";
+  if (ns === ZEEBE_NAMESPACE_URI && (local === "taskDefinition" || local === "ioMapping" || local === "taskHeaders")) {
+    return `${ns}:${local}`;
+  }
+  if (ns === CAMUNDA_NAMESPACE_URI && local === "inputOutput") {
+    return `${ns}:${local}`;
+  }
+  return "";
 }
 
 function importFragmentNode(targetDoc, rawXml) {
@@ -339,6 +360,80 @@ function collectCamundaParameterNodes(ioNode, direction = "input") {
   ));
 }
 
+function collectZeebeIoMappingNodes(rootNode) {
+  const ioNodes = [];
+  const seenNodes = new Set();
+  function pushIoNode(node) {
+    if (!node) return;
+    if (namespaceOf(node) !== ZEEBE_NAMESPACE_URI) return;
+    if (localNameOf(node) !== "ioMapping") return;
+    if (seenNodes.has(node)) return;
+    seenNodes.add(node);
+    ioNodes.push(node);
+  }
+  if (
+    rootNode
+    && namespaceOf(rootNode) === ZEEBE_NAMESPACE_URI
+    && localNameOf(rootNode) === "ioMapping"
+  ) {
+    pushIoNode(rootNode);
+  }
+  asArray(rootNode?.getElementsByTagName?.("*")).forEach((node) => {
+    pushIoNode(node);
+  });
+  return ioNodes;
+}
+
+function collectZeebeParameterNodes(ioNode, direction = "input") {
+  const local = direction === "output" ? "output" : "input";
+  return directChildElements(ioNode).filter((node) => (
+    namespaceOf(node) === ZEEBE_NAMESPACE_URI && localNameOf(node) === local
+  ));
+}
+
+function collectZeebeTaskHeadersNodes(rootNode) {
+  const headerNodes = [];
+  const seenNodes = new Set();
+  function pushHeadersNode(node) {
+    if (!node) return;
+    if (namespaceOf(node) !== ZEEBE_NAMESPACE_URI) return;
+    if (localNameOf(node) !== "taskHeaders") return;
+    if (seenNodes.has(node)) return;
+    seenNodes.add(node);
+    headerNodes.push(node);
+  }
+  if (
+    rootNode
+    && namespaceOf(rootNode) === ZEEBE_NAMESPACE_URI
+    && localNameOf(rootNode) === "taskHeaders"
+  ) {
+    pushHeadersNode(rootNode);
+  }
+  asArray(rootNode?.getElementsByTagName?.("*")).forEach((node) => {
+    pushHeadersNode(node);
+  });
+  return headerNodes;
+}
+
+function collectZeebeTaskHeaderItems(taskHeadersNode) {
+  return directChildElements(taskHeadersNode).filter((node) => (
+    namespaceOf(node) === ZEEBE_NAMESPACE_URI && localNameOf(node) === "header"
+  ));
+}
+
+function hasZeebeExtensionFragment(rawXml) {
+  const rootNode = parseExtensionFragmentNode(rawXml);
+  if (!rootNode) return false;
+  if (namespaceOf(rootNode) === ZEEBE_NAMESPACE_URI) return true;
+  return asArray(rootNode.getElementsByTagName?.("*")).some((node) => namespaceOf(node) === ZEEBE_NAMESPACE_URI);
+}
+
+function detectPreferredIoNamespaceFromState(stateRaw) {
+  const state = normalizeCamundaExtensionState(stateRaw);
+  const hasZeebe = state.preservedExtensionElements.some((fragment) => hasZeebeExtensionFragment(fragment));
+  return hasZeebe ? "zeebe" : "camunda";
+}
+
 function normalizeIoParameterName(value) {
   return String(value ?? "");
 }
@@ -402,6 +497,9 @@ function setCamundaIoShowOnTask(paramNode, rootNode, nextValueRaw) {
 function resolveCamundaIoParameterNode(stateRaw, parameterRefRaw) {
   const state = normalizeCamundaExtensionState(stateRaw);
   const ref = parameterRefRaw && typeof parameterRefRaw === "object" ? parameterRefRaw : {};
+  const ioNamespace = asText(ref.ioNamespace || ref.namespace || "camunda").toLowerCase() === "zeebe"
+    ? "zeebe"
+    : "camunda";
   const direction = String(ref.direction || "input").toLowerCase() === "output" ? "output" : "input";
   const fragmentIndex = Number(ref.fragmentIndex);
   const ioIndex = Number(ref.ioIndex);
@@ -414,15 +512,20 @@ function resolveCamundaIoParameterNode(stateRaw, parameterRefRaw) {
   if (!rawFragment) return { ok: false, state };
   const rootNode = parseExtensionFragmentNode(rawFragment);
   if (!rootNode) return { ok: false, state };
-  const ioNodes = collectCamundaInputOutputNodes(rootNode);
+  const ioNodes = ioNamespace === "zeebe"
+    ? collectZeebeIoMappingNodes(rootNode)
+    : collectCamundaInputOutputNodes(rootNode);
   const ioNode = ioNodes[ioIndex];
   if (!ioNode) return { ok: false, state };
-  const parameterNodes = collectCamundaParameterNodes(ioNode, direction);
+  const parameterNodes = ioNamespace === "zeebe"
+    ? collectZeebeParameterNodes(ioNode, direction)
+    : collectCamundaParameterNodes(ioNode, direction);
   const paramNode = parameterNodes[paramIndex];
   if (!paramNode) return { ok: false, state };
   return {
     ok: true,
     state,
+    ioNamespace,
     direction,
     fragmentIndex,
     preserved,
@@ -442,20 +545,44 @@ function commitCamundaIoMutation(state, preserved, fragmentIndex, rootNode) {
   });
 }
 
-function findFirstCamundaIoTarget(preservedRaw) {
+function findFirstCamundaIoTarget(preservedRaw, preferredNamespace = "camunda") {
   const preserved = Array.isArray(preservedRaw) ? preservedRaw : [];
-  for (let fragmentIndex = 0; fragmentIndex < preserved.length; fragmentIndex += 1) {
-    const rawFragment = preserved[fragmentIndex];
-    if (!rawFragment) continue;
-    const rootNode = parseExtensionFragmentNode(rawFragment);
-    if (!rootNode) continue;
-    const ioNodes = collectCamundaInputOutputNodes(rootNode);
-    if (!ioNodes.length) continue;
+  const namespaceOrder = preferredNamespace === "zeebe"
+    ? ["zeebe", "camunda"]
+    : ["camunda", "zeebe"];
+  for (let nsIndex = 0; nsIndex < namespaceOrder.length; nsIndex += 1) {
+    const namespace = namespaceOrder[nsIndex];
+    for (let fragmentIndex = 0; fragmentIndex < preserved.length; fragmentIndex += 1) {
+      const rawFragment = preserved[fragmentIndex];
+      if (!rawFragment) continue;
+      const rootNode = parseExtensionFragmentNode(rawFragment);
+      if (!rootNode) continue;
+      const ioNodes = namespace === "zeebe"
+        ? collectZeebeIoMappingNodes(rootNode)
+        : collectCamundaInputOutputNodes(rootNode);
+      if (!ioNodes.length) continue;
+      return {
+        ok: true,
+        ioNamespace: namespace,
+        fragmentIndex,
+        rootNode,
+        ioNode: ioNodes[0],
+      };
+    }
+  }
+
+  if (preferredNamespace === "zeebe") {
+    const rawStandaloneFragment = `<zeebe:ioMapping xmlns:zeebe="${ZEEBE_NAMESPACE_URI}"></zeebe:ioMapping>`;
+    const rootNode = parseExtensionFragmentNode(rawStandaloneFragment);
+    if (!rootNode) return { ok: false };
+    const nextFragmentIndex = preserved.length;
+    preserved.push(rawStandaloneFragment);
     return {
       ok: true,
-      fragmentIndex,
+      ioNamespace: "zeebe",
+      fragmentIndex: nextFragmentIndex,
       rootNode,
-      ioNode: ioNodes[0],
+      ioNode: rootNode,
     };
   }
 
@@ -466,6 +593,7 @@ function findFirstCamundaIoTarget(preservedRaw) {
   preserved.push(rawStandaloneFragment);
   return {
     ok: true,
+    ioNamespace: "camunda",
     fragmentIndex: nextFragmentIndex,
     rootNode,
     ioNode: rootNode,
@@ -484,8 +612,21 @@ function insertCamundaIoParameterNode(ioNode, paramNode, direction = "input") {
   ioNode.appendChild(paramNode);
 }
 
-export function extractCamundaInputOutputParametersFromExtensionState(extensionStateRaw) {
+function insertZeebeIoParameterNode(ioNode, paramNode, direction = "input") {
+  if (!ioNode || !paramNode) return;
+  if (direction === "input") {
+    const firstOutputNode = collectZeebeParameterNodes(ioNode, "output")[0] || null;
+    if (firstOutputNode) {
+      ioNode.insertBefore(paramNode, firstOutputNode);
+      return;
+    }
+  }
+  ioNode.appendChild(paramNode);
+}
+
+export function extractCamundaInputOutputParametersFromExtensionState(extensionStateRaw, options = {}) {
   const state = normalizeCamundaExtensionState(extensionStateRaw);
+  const includeZeebe = options && typeof options === "object" ? options.includeZeebe === true : false;
   const rows = [];
   state.preservedExtensionElements.forEach((rawXml, fragmentIndex) => {
     const rootNode = parseExtensionFragmentNode(rawXml);
@@ -503,6 +644,7 @@ export function extractCamundaInputOutputParametersFromExtensionState(extensionS
         const parsed = classifyCamundaIoParameter(paramNode);
         rows.push({
           id: `io_${fragmentIndex}_${ioIndex}_in_${paramIndex}`,
+          ioNamespace: "camunda",
           direction: "input",
           name: normalizeIoParameterName(paramNode?.getAttribute?.("name")),
           shape: parsed.shape,
@@ -520,6 +662,7 @@ export function extractCamundaInputOutputParametersFromExtensionState(extensionS
         const parsed = classifyCamundaIoParameter(paramNode);
         rows.push({
           id: `io_${fragmentIndex}_${ioIndex}_out_${paramIndex}`,
+          ioNamespace: "camunda",
           direction: "output",
           name: normalizeIoParameterName(paramNode?.getAttribute?.("name")),
           shape: parsed.shape,
@@ -531,6 +674,47 @@ export function extractCamundaInputOutputParametersFromExtensionState(extensionS
           paramIndex,
           sourceType,
           connectorId,
+        });
+      });
+    });
+
+    if (!includeZeebe) return;
+    const zeebeIoNodes = collectZeebeIoMappingNodes(rootNode);
+    zeebeIoNodes.forEach((ioNode, ioIndex) => {
+      const inputs = collectZeebeParameterNodes(ioNode, "input");
+      const outputs = collectZeebeParameterNodes(ioNode, "output");
+      inputs.forEach((paramNode, paramIndex) => {
+        rows.push({
+          id: `io_${fragmentIndex}_${ioIndex}_in_${paramIndex}_zeebe`,
+          ioNamespace: "zeebe",
+          direction: "input",
+          name: normalizeIoParameterName(paramNode?.getAttribute?.("target")),
+          shape: "mapping",
+          value: String(paramNode?.getAttribute?.("source") || ""),
+          scriptFormat: "",
+          showOnTask: false,
+          fragmentIndex,
+          ioIndex,
+          paramIndex,
+          sourceType,
+          connectorId: "",
+        });
+      });
+      outputs.forEach((paramNode, paramIndex) => {
+        rows.push({
+          id: `io_${fragmentIndex}_${ioIndex}_out_${paramIndex}_zeebe`,
+          ioNamespace: "zeebe",
+          direction: "output",
+          name: normalizeIoParameterName(paramNode?.getAttribute?.("source")),
+          shape: "mapping",
+          value: String(paramNode?.getAttribute?.("target") || ""),
+          scriptFormat: "",
+          showOnTask: false,
+          fragmentIndex,
+          ioIndex,
+          paramIndex,
+          sourceType,
+          connectorId: "",
         });
       });
     });
@@ -553,6 +737,8 @@ export function patchCamundaIoParameterInExtensionState({
   const nextPatch = patch && typeof patch === "object" ? patch : {};
   const {
     state,
+    ioNamespace,
+    direction,
     preserved,
     fragmentIndex,
     rootNode,
@@ -560,21 +746,39 @@ export function patchCamundaIoParameterInExtensionState({
   } = resolved;
 
   if (Object.prototype.hasOwnProperty.call(nextPatch, "name")) {
-    paramNode.setAttribute("name", normalizeIoParameterName(nextPatch.name));
+    const nextName = normalizeIoParameterName(nextPatch.name);
+    if (ioNamespace === "zeebe") {
+      if (direction === "output") {
+        paramNode.setAttribute("source", nextName);
+      } else {
+        paramNode.setAttribute("target", nextName);
+      }
+    } else {
+      paramNode.setAttribute("name", nextName);
+    }
   }
   if (Object.prototype.hasOwnProperty.call(nextPatch, "value")) {
-    const currentShape = String(classifyCamundaIoParameter(paramNode)?.shape || "");
-    const canPatchValue = currentShape !== "script" && currentShape !== "nested";
-    if (canPatchValue || nextPatch.forceValue === true) {
-      while (paramNode.firstChild) paramNode.removeChild(paramNode.firstChild);
-      const textValue = String(nextPatch.value ?? "");
-      if (textValue) {
-        const ownerDoc = paramNode.ownerDocument;
-        paramNode.appendChild(ownerDoc.createTextNode(textValue));
+    if (ioNamespace === "zeebe") {
+      const nextValue = String(nextPatch.value ?? "");
+      if (direction === "output") {
+        paramNode.setAttribute("target", nextValue);
+      } else {
+        paramNode.setAttribute("source", nextValue);
+      }
+    } else {
+      const currentShape = String(classifyCamundaIoParameter(paramNode)?.shape || "");
+      const canPatchValue = currentShape !== "script" && currentShape !== "nested";
+      if (canPatchValue || nextPatch.forceValue === true) {
+        while (paramNode.firstChild) paramNode.removeChild(paramNode.firstChild);
+        const textValue = String(nextPatch.value ?? "");
+        if (textValue) {
+          const ownerDoc = paramNode.ownerDocument;
+          paramNode.appendChild(ownerDoc.createTextNode(textValue));
+        }
       }
     }
   }
-  if (Object.prototype.hasOwnProperty.call(nextPatch, "showOnTask")) {
+  if (ioNamespace === "camunda" && Object.prototype.hasOwnProperty.call(nextPatch, "showOnTask")) {
     setCamundaIoShowOnTask(paramNode, rootNode, !!nextPatch.showOnTask);
   }
 
@@ -606,12 +810,31 @@ export function addCamundaIoParameterInExtensionState({
   const state = normalizeCamundaExtensionState(extensionStateRaw);
   const normalizedDirection = String(direction || "input").toLowerCase() === "output" ? "output" : "input";
   const preserved = state.preservedExtensionElements.slice();
-  const target = findFirstCamundaIoTarget(preserved);
+  const preferredNamespace = detectPreferredIoNamespaceFromState(state);
+  const target = findFirstCamundaIoTarget(preserved, preferredNamespace);
   if (!target.ok || !target.rootNode || !target.ioNode) return state;
 
-  const localName = normalizedDirection === "output" ? "outputParameter" : "inputParameter";
+  const ioNamespace = target.ioNamespace === "zeebe" ? "zeebe" : "camunda";
   const ownerDoc = target.ioNode.ownerDocument;
   if (!ownerDoc || typeof ownerDoc.createElementNS !== "function") return state;
+
+  if (ioNamespace === "zeebe") {
+    const localName = normalizedDirection === "output" ? "output" : "input";
+    const paramNode = ownerDoc.createElementNS(ZEEBE_NAMESPACE_URI, `zeebe:${localName}`);
+    const nameValue = normalizeIoParameterName(draft?.name);
+    const valueText = String(draft?.value ?? "");
+    if (normalizedDirection === "output") {
+      paramNode.setAttribute("source", nameValue);
+      paramNode.setAttribute("target", valueText);
+    } else {
+      paramNode.setAttribute("target", nameValue);
+      paramNode.setAttribute("source", valueText);
+    }
+    insertZeebeIoParameterNode(target.ioNode, paramNode, normalizedDirection);
+    return commitCamundaIoMutation(state, preserved, target.fragmentIndex, target.rootNode);
+  }
+
+  const localName = normalizedDirection === "output" ? "outputParameter" : "inputParameter";
   const paramNode = ownerDoc.createElementNS(CAMUNDA_NAMESPACE_URI, `camunda:${localName}`);
   paramNode.setAttribute("name", normalizeIoParameterName(draft?.name));
   const value = String(draft?.value ?? "");
@@ -644,9 +867,167 @@ export function removeCamundaIoParameterFromExtensionState({
   return commitCamundaIoMutation(state, preserved, fragmentIndex, rootNode);
 }
 
+function resolveZeebeTaskHeaderNode(extensionStateRaw, headerRefRaw) {
+  const state = normalizeCamundaExtensionState(extensionStateRaw);
+  const ref = headerRefRaw && typeof headerRefRaw === "object" ? headerRefRaw : {};
+  const fragmentIndex = Number(ref.fragmentIndex);
+  const taskHeadersIndex = Number(ref.taskHeadersIndex);
+  const headerIndex = Number(ref.headerIndex);
+  if (!Number.isInteger(fragmentIndex) || fragmentIndex < 0) return { ok: false, state };
+  if (!Number.isInteger(taskHeadersIndex) || taskHeadersIndex < 0) return { ok: false, state };
+  if (!Number.isInteger(headerIndex) || headerIndex < 0) return { ok: false, state };
+  const preserved = state.preservedExtensionElements.slice();
+  const rawFragment = preserved[fragmentIndex];
+  if (!rawFragment) return { ok: false, state };
+  const rootNode = parseExtensionFragmentNode(rawFragment);
+  if (!rootNode) return { ok: false, state };
+  const taskHeadersNodes = collectZeebeTaskHeadersNodes(rootNode);
+  const taskHeadersNode = taskHeadersNodes[taskHeadersIndex];
+  if (!taskHeadersNode) return { ok: false, state };
+  const headerNodes = collectZeebeTaskHeaderItems(taskHeadersNode);
+  const headerNode = headerNodes[headerIndex];
+  if (!headerNode) return { ok: false, state };
+  return {
+    ok: true,
+    state,
+    preserved,
+    fragmentIndex,
+    rootNode,
+    taskHeadersNode,
+    headerNode,
+  };
+}
+
+function findFirstZeebeTaskHeadersTarget(preservedRaw) {
+  const preserved = Array.isArray(preservedRaw) ? preservedRaw : [];
+  for (let fragmentIndex = 0; fragmentIndex < preserved.length; fragmentIndex += 1) {
+    const rawFragment = preserved[fragmentIndex];
+    if (!rawFragment) continue;
+    const rootNode = parseExtensionFragmentNode(rawFragment);
+    if (!rootNode) continue;
+    const headersNodes = collectZeebeTaskHeadersNodes(rootNode);
+    if (!headersNodes.length) continue;
+    return {
+      ok: true,
+      fragmentIndex,
+      rootNode,
+      taskHeadersNode: headersNodes[0],
+    };
+  }
+  const rawStandaloneFragment = `<zeebe:taskHeaders xmlns:zeebe="${ZEEBE_NAMESPACE_URI}"></zeebe:taskHeaders>`;
+  const rootNode = parseExtensionFragmentNode(rawStandaloneFragment);
+  if (!rootNode) return { ok: false };
+  const fragmentIndex = preserved.length;
+  preserved.push(rawStandaloneFragment);
+  return {
+    ok: true,
+    fragmentIndex,
+    rootNode,
+    taskHeadersNode: rootNode,
+  };
+}
+
+export function extractZeebeTaskHeadersFromExtensionState(extensionStateRaw) {
+  const state = normalizeCamundaExtensionState(extensionStateRaw);
+  const rows = [];
+  state.preservedExtensionElements.forEach((rawXml, fragmentIndex) => {
+    const rootNode = parseExtensionFragmentNode(rawXml);
+    if (!rootNode) return;
+    const sourceType = localNameOf(rootNode) || "extension";
+    const taskHeadersNodes = collectZeebeTaskHeadersNodes(rootNode);
+    taskHeadersNodes.forEach((taskHeadersNode, taskHeadersIndex) => {
+      const headerNodes = collectZeebeTaskHeaderItems(taskHeadersNode);
+      headerNodes.forEach((headerNode, headerIndex) => {
+        rows.push({
+          id: `zeebe_header_${fragmentIndex}_${taskHeadersIndex}_${headerIndex}`,
+          key: String(headerNode?.getAttribute?.("key") || ""),
+          value: String(headerNode?.getAttribute?.("value") || ""),
+          fragmentIndex,
+          taskHeadersIndex,
+          headerIndex,
+          sourceType,
+        });
+      });
+    });
+  });
+  return { rows };
+}
+
+export function patchZeebeTaskHeaderInExtensionState({
+  extensionStateRaw,
+  headerRef,
+  patch,
+} = {}) {
+  const resolved = resolveZeebeTaskHeaderNode(extensionStateRaw, headerRef);
+  if (!resolved.ok) return resolved.state;
+  const {
+    state,
+    preserved,
+    fragmentIndex,
+    rootNode,
+    headerNode,
+  } = resolved;
+  const nextPatch = patch && typeof patch === "object" ? patch : {};
+  if (Object.prototype.hasOwnProperty.call(nextPatch, "key")) {
+    headerNode.setAttribute("key", String(nextPatch.key ?? ""));
+  }
+  if (Object.prototype.hasOwnProperty.call(nextPatch, "value")) {
+    headerNode.setAttribute("value", String(nextPatch.value ?? ""));
+  }
+  return commitCamundaIoMutation(state, preserved, fragmentIndex, rootNode);
+}
+
+export function addZeebeTaskHeaderInExtensionState({
+  extensionStateRaw,
+  draft = {},
+} = {}) {
+  const state = normalizeCamundaExtensionState(extensionStateRaw);
+  const preserved = state.preservedExtensionElements.slice();
+  const target = findFirstZeebeTaskHeadersTarget(preserved);
+  if (!target.ok || !target.rootNode || !target.taskHeadersNode) return state;
+  const ownerDoc = target.taskHeadersNode.ownerDocument;
+  if (!ownerDoc || typeof ownerDoc.createElementNS !== "function") return state;
+  const headerNode = ownerDoc.createElementNS(ZEEBE_NAMESPACE_URI, "zeebe:header");
+  headerNode.setAttribute("key", String(draft?.key ?? ""));
+  headerNode.setAttribute("value", String(draft?.value ?? ""));
+  target.taskHeadersNode.appendChild(headerNode);
+  return commitCamundaIoMutation(state, preserved, target.fragmentIndex, target.rootNode);
+}
+
+export function removeZeebeTaskHeaderFromExtensionState({
+  extensionStateRaw,
+  headerRef,
+} = {}) {
+  const resolved = resolveZeebeTaskHeaderNode(extensionStateRaw, headerRef);
+  if (!resolved.ok) return resolved.state;
+  const {
+    state,
+    preserved,
+    fragmentIndex,
+    rootNode,
+    headerNode,
+  } = resolved;
+  try {
+    headerNode.parentNode?.removeChild?.(headerNode);
+  } catch {
+    return state;
+  }
+  return commitCamundaIoMutation(state, preserved, fragmentIndex, rootNode);
+}
+
 function hasManagedCamundaData(entryRaw) {
   const entry = normalizeCamundaExtensionState(entryRaw);
   return entry.properties.extensionProperties.length > 0 || entry.properties.extensionListeners.length > 0;
+}
+
+function hasManagedProperties(entryRaw) {
+  const entry = normalizeCamundaExtensionState(entryRaw);
+  return entry.properties.extensionProperties.length > 0;
+}
+
+function hasManagedListeners(entryRaw) {
+  const entry = normalizeCamundaExtensionState(entryRaw);
+  return entry.properties.extensionListeners.length > 0;
 }
 
 function hasAnyCamundaState(entryRaw) {
@@ -1041,13 +1422,52 @@ export function syncCamundaExtensionsToBpmn({ modeler, camundaExtensionsByElemen
   }
 }
 
-function buildManagedCamundaDomNodes(doc, stateRaw) {
+function readDefinitionExecutionPlatform(doc) {
+  const attrs = asArray(doc?.documentElement?.attributes);
+  const executionPlatformAttr = attrs.find((attr) => (
+    localNameOf(attr) === "executionPlatform" || asText(attr?.name) === "executionPlatform"
+  ));
+  return asText(executionPlatformAttr?.value).toLowerCase();
+}
+
+function hasZeebeNamespaceDeclaration(doc) {
+  const attrs = asArray(doc?.documentElement?.attributes);
+  return attrs.some((attr) => (
+    localNameOf(attr) && localNameOf(attr).startsWith("xmlns")
+    && asText(attr?.value) === ZEEBE_NAMESPACE_URI
+  ));
+}
+
+function hasZeebeExtensionNodes(doc) {
+  const nodes = asArray(doc?.getElementsByTagName?.("*"));
+  return nodes.some((node) => namespaceOf(node) === ZEEBE_NAMESPACE_URI);
+}
+
+function shouldUseZeebePropertiesProfile(doc) {
+  const platform = readDefinitionExecutionPlatform(doc);
+  if (platform.includes("camunda cloud") || platform.includes("camunda 8") || platform.includes("zeebe")) {
+    return true;
+  }
+  if (hasZeebeExtensionNodes(doc)) return true;
+  return hasZeebeNamespaceDeclaration(doc);
+}
+
+function isManagedPropertiesNode(child) {
+  const ns = namespaceOf(child);
+  const local = localNameOf(child);
+  return local === "properties" && (ns === CAMUNDA_NAMESPACE_URI || ns === ZEEBE_NAMESPACE_URI);
+}
+
+function buildManagedCamundaDomNodes(doc, stateRaw, options = {}) {
   const state = normalizeCamundaExtensionState(stateRaw);
+  const useZeebeProperties = options.useZeebeProperties === true;
+  const propertiesNs = useZeebeProperties ? ZEEBE_NAMESPACE_URI : CAMUNDA_NAMESPACE_URI;
+  const propertiesPrefix = useZeebeProperties ? "zeebe" : "camunda";
   const nodes = [];
   if (state.properties.extensionProperties.length) {
-    const propsNode = doc.createElementNS(CAMUNDA_NAMESPACE_URI, "camunda:properties");
+    const propsNode = doc.createElementNS(propertiesNs, `${propertiesPrefix}:properties`);
     state.properties.extensionProperties.forEach((item) => {
-      const propertyNode = doc.createElementNS(CAMUNDA_NAMESPACE_URI, "camunda:property");
+      const propertyNode = doc.createElementNS(propertiesNs, `${propertiesPrefix}:property`);
       propertyNode.setAttribute("name", String(item.name || ""));
       propertyNode.setAttribute("value", String(item.value || ""));
       propsNode.appendChild(propertyNode);
@@ -1075,16 +1495,20 @@ function collectCurrentManagedCandidateIds(doc) {
       || findDirectChild(ownerNode, "extensionElements");
     if (!extensionElementsNode) return;
     const hasManaged = directChildElements(extensionElementsNode).some((child) => (
-      namespaceOf(child) === CAMUNDA_NAMESPACE_URI
-      && (localNameOf(child) === "properties" || localNameOf(child) === "executionListener")
+      isManagedPropertiesNode(child)
+      || (namespaceOf(child) === CAMUNDA_NAMESPACE_URI && localNameOf(child) === "executionListener")
     ));
     if (hasManaged) ids.add(elementId);
   });
   return ids;
 }
 
-function hasAnyManagedCamundaDataInMap(mapRaw) {
-  return Object.values(normalizeCamundaExtensionsMap(mapRaw)).some((entry) => hasManagedCamundaData(entry));
+function hasAnyManagedPropertiesInMap(mapRaw) {
+  return Object.values(normalizeCamundaExtensionsMap(mapRaw)).some((entry) => hasManagedProperties(entry));
+}
+
+function hasAnyManagedListenersInMap(mapRaw) {
+  return Object.values(normalizeCamundaExtensionsMap(mapRaw)).some((entry) => hasManagedListeners(entry));
 }
 
 export function finalizeCamundaExtensionsXml({ xmlText, camundaExtensionsByElementId } = {}) {
@@ -1093,6 +1517,7 @@ export function finalizeCamundaExtensionsXml({ xmlText, camundaExtensionsByEleme
   const doc = parseXmlDocument(rawXml);
   if (!doc) return rawXml;
   const normalizedMap = normalizeCamundaExtensionsMap(camundaExtensionsByElementId);
+  const useZeebeProperties = shouldUseZeebePropertiesProfile(doc);
   const candidateIds = collectCurrentManagedCandidateIds(doc);
   Object.keys(normalizedMap).forEach((elementId) => candidateIds.add(elementId));
 
@@ -1110,7 +1535,8 @@ export function finalizeCamundaExtensionsXml({ xmlText, camundaExtensionsByEleme
       .filter((child) => {
         const ns = namespaceOf(child);
         const localName = localNameOf(child);
-        if (ns === CAMUNDA_NAMESPACE_URI && (localName === "properties" || localName === "executionListener")) return false;
+        if (isManagedPropertiesNode(child)) return false;
+        if (ns === CAMUNDA_NAMESPACE_URI && localName === "executionListener") return false;
         if (ns === PM_NAMESPACE_URI && localName === "RobotMeta") return false;
         return true;
       })
@@ -1121,19 +1547,29 @@ export function finalizeCamundaExtensionsXml({ xmlText, camundaExtensionsByEleme
         .map((item) => connectorKeyForExtensionFragment(item))
         .filter(Boolean),
     );
+    const preservedSingletonKeys = new Set(
+      preservedRaw
+        .map((item) => singletonExtensionFragmentKey(item))
+        .filter(Boolean),
+    );
     const seenSignatures = new Set();
+    const seenSingletonKeys = new Set();
     const mergedRaw = [...preservedRaw, ...currentExtraRaw].filter((item, index) => {
       const isCurrentExtra = index >= preservedRaw.length;
+      const singletonKey = singletonExtensionFragmentKey(item);
       if (isCurrentExtra) {
         const connectorKey = connectorKeyForExtensionFragment(item);
         if (connectorKey && preservedConnectorKeys.has(connectorKey)) return false;
+        if (singletonKey && preservedSingletonKeys.has(singletonKey)) return false;
       }
+      if (singletonKey && seenSingletonKeys.has(singletonKey)) return false;
       const signature = canonicalizeExtensionFragmentSignature(item);
       if (!signature || seenSignatures.has(signature)) return false;
+      if (singletonKey) seenSingletonKeys.add(singletonKey);
       seenSignatures.add(signature);
       return true;
     });
-    const managedNodes = buildManagedCamundaDomNodes(doc, state);
+    const managedNodes = buildManagedCamundaDomNodes(doc, state, { useZeebeProperties });
     const pmNodes = currentChildren
       .filter((child) => namespaceOf(child) === PM_NAMESPACE_URI && localNameOf(child) === "RobotMeta")
       .map((child) => doc.importNode(child, true));
@@ -1153,7 +1589,14 @@ export function finalizeCamundaExtensionsXml({ xmlText, camundaExtensionsByEleme
     if (!currentExt) owner.appendChild(nextExt);
   });
 
-  if (hasAnyManagedCamundaDataInMap(normalizedMap)) {
+  if (hasAnyManagedPropertiesInMap(normalizedMap)) {
+    if (useZeebeProperties) {
+      doc.documentElement?.setAttribute("xmlns:zeebe", ZEEBE_NAMESPACE_URI);
+    } else {
+      doc.documentElement?.setAttribute("xmlns:camunda", CAMUNDA_NAMESPACE_URI);
+    }
+  }
+  if (hasAnyManagedListenersInMap(normalizedMap)) {
     doc.documentElement?.setAttribute("xmlns:camunda", CAMUNDA_NAMESPACE_URI);
   }
 

@@ -218,6 +218,7 @@ export default function ProcessStage({
   locked,
   draft,
   onSessionSync,
+  onPublishRealtimeBpmnOps = null,
   onOpenWorkspaceSession,
   onClearWorkspaceProject,
   onCreateWorkspaceProject,
@@ -239,6 +240,8 @@ export default function ProcessStage({
   propertiesOverlayAlwaysEnabled = false,
   propertiesOverlayAlwaysPreviewByElementId = null,
   drawioCompanionFocusIntent = null,
+  sessionRemoteSyncState = null,
+  onApplySessionRemoteSync = null,
 }) {
   const sid = String(sessionId || "");
   const { user } = useAuth();
@@ -757,6 +760,7 @@ export default function ProcessStage({
     bpmnSync,
     projectionHelpers,
     onSessionSync,
+    onPublishRealtimeBpmnOps,
     onError: setGenErr,
   });
 
@@ -844,7 +848,6 @@ export default function ProcessStage({
         return;
       }
       let companionError = "";
-      let publishInfo = "";
       if (!saved?.pending) {
         lastSuccessfulPublishRef.current = {
           sessionId: sid,
@@ -863,13 +866,6 @@ export default function ProcessStage({
         if (!companionResult?.ok) {
           companionError = shortErr(companionResult?.error || "Не удалось синхронизировать companion metadata.");
           setGenErr(companionError);
-        } else {
-          const revisionInfo = asObject(companionResult?.revision);
-          if (revisionInfo.skipped !== true && Number(revisionInfo.revisionNumber || 0) > 0) {
-            publishInfo = `Сохранено и опубликовано как r${Number(revisionInfo.revisionNumber)}.`;
-          } else if (revisionInfo.skipped === true) {
-            publishInfo = "Сохранено. Новая ревизия не создана (контент совпадает с latest).";
-          }
         }
       }
       setSaveDirtyHint(false);
@@ -880,10 +876,8 @@ export default function ProcessStage({
         setInfoMsg("Сохранение поставлено в очередь (pending).");
       } else if (companionError) {
         setInfoMsg("BPMN сохранён, companion metadata не синхронизированы.");
-      } else if (publishInfo) {
-        setInfoMsg(publishInfo);
       } else {
-        setInfoMsg("Сохранено.");
+        setInfoMsg("");
       }
     } catch (e) {
       setGenErr(shortErr(e?.message || e || "Не удалось сохранить BPMN."));
@@ -3473,6 +3467,7 @@ export default function ProcessStage({
 
   useEffect(() => {
     if (typeof onUiStateChange !== "function") return;
+    const saveSnapshot = asObject(sessionSaveReadSnapshot);
     onUiStateChange({
       sid,
       tab,
@@ -3484,6 +3479,14 @@ export default function ProcessStage({
       canGenerateAiQuestions,
       aiGenerateBlockReason: canGenerateAiQuestions ? "" : aiGenerateGate.reasonText,
       aiGenerateBlockReasonCode: canGenerateAiQuestions ? "" : aiGenerateGate.reasonCode,
+      isManualSaveBusy: isManualSaveBusy === true,
+      save: {
+        status: toText(saveSnapshot.status),
+        isDirty: saveSnapshot.isDirty === true,
+        isSaving: saveSnapshot.isSaving === true,
+        isStale: saveSnapshot.isStale === true,
+        isFailed: saveSnapshot.isFailed === true,
+      },
     });
   }, [
     onUiStateChange,
@@ -3497,6 +3500,8 @@ export default function ProcessStage({
     canGenerateAiQuestions,
     aiGenerateGate.reasonText,
     aiGenerateGate.reasonCode,
+    isManualSaveBusy,
+    sessionSaveReadSnapshot,
   ]);
 
   useEffect(() => {
@@ -4241,6 +4246,15 @@ export default function ProcessStage({
     topPanelsView: shellVm.panelsProps.top,
     asArray,
   });
+  const remoteSyncState = sessionRemoteSyncState && typeof sessionRemoteSyncState === "object"
+    ? sessionRemoteSyncState
+    : {};
+  const remoteSyncMode = String(remoteSyncState.mode || "").trim().toLowerCase();
+  const showDiagramRemoteSyncStale = hasSession && tab === "diagram" && remoteSyncMode === "stale_pending";
+  const remoteSyncUpdatedAt = Number(remoteSyncState.updatedAt || 0);
+  const remoteSyncUpdatedAtLabel = remoteSyncUpdatedAt > 0
+    ? new Date(remoteSyncUpdatedAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })
+    : "";
 
   return (
     <ProcessStageShell className={shellClassName}>
@@ -4270,6 +4284,34 @@ export default function ProcessStage({
           <DodStage readiness={dodReadinessV1} />
         ) : (
           <div className="relative h-full min-h-0">
+            {showDiagramRemoteSyncStale ? (
+              <div
+                className="absolute left-3 top-3 z-40 max-w-[520px] rounded-md border border-amber-300 bg-amber-50/95 px-3 py-2 text-xs text-amber-900 shadow-sm"
+                data-testid="processstage-diagram-remote-sync-stale"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <strong>Удалённые BPMN-изменения</strong>
+                  <span>Локальная диаграмма устарела. Примените обновление, чтобы синхронизировать canvas.</span>
+                  {remoteSyncUpdatedAtLabel ? (
+                    <span className="rounded border border-amber-300/80 bg-white/70 px-1.5 py-0.5 text-[10px]">
+                      {remoteSyncUpdatedAtLabel}
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="secondaryBtn tinyBtn"
+                    onClick={() => {
+                      if (typeof onApplySessionRemoteSync === "function") {
+                        void onApplySessionRemoteSync();
+                      }
+                    }}
+                    data-testid="processstage-diagram-remote-sync-apply"
+                  >
+                    Применить
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <div className={isInterview ? "absolute inset-0 opacity-0 pointer-events-none" : "absolute inset-0"}>
               <div
                 className={`bpmnStageHost h-full ${(hybridVisible && hybridUiPrefs.focus) ? "isHybridFocus" : ""}`}

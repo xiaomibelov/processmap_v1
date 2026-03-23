@@ -1,5 +1,6 @@
 from .auto_pass import router as auto_pass_router
 from .admin import router as admin_router
+from .diagram_jazz import router as diagram_jazz_router
 from .explorer import router as explorer_router
 from .org_invites import router as org_invites_router
 from .org_listing import router as org_listing_router
@@ -16,6 +17,7 @@ ROUTERS = (
     system_router,
     admin_router,
     explorer_router,
+    diagram_jazz_router,
     projects_router,
     sessions_router,
     auto_pass_router,

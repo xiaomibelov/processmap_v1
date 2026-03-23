@@ -4,8 +4,9 @@ import useAutosaveQueue from "./useAutosaveQueue";
 import { parseAndProjectBpmnToInterview } from "./useInterviewProjection";
 import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
 import { traceProcess } from "../lib/processDebugTrace";
+import { runRealtimeOpsLane } from "../mutation-lanes/RealtimeOpsLane";
+import { runDurableSnapshotLane } from "../mutation-lanes/DurableSnapshotLane";
 import {
-  asArray,
   asObject,
   safeJson,
   buildInterviewPatchPayload,
@@ -24,9 +25,12 @@ export default function useDiagramMutationLifecycle({
   bpmnSync,
   projectionHelpers,
   onSessionSync,
+  onPublishRealtimeBpmnOps,
   onError,
 }) {
   const draftRef = useRef(draft);
+  const lastDiagramChangeAtRef = useRef(0);
+  const lastRealtimeOpsDurableAtRef = useRef(0);
 
   useEffect(() => {
     draftRef.current = draft;
@@ -54,6 +58,9 @@ export default function useDiagramMutationLifecycle({
       }
 
       const xmlFromSave = String(saveRes?.xml || "");
+      const syncVersionToken = String(saveRes?.syncVersionToken || saveRes?.sync_version_token || "").trim();
+      const syncBpmnVersionToken = String(saveRes?.syncBpmnVersionToken || saveRes?.sync_bpmn_version_token || "").trim();
+      const syncCollabVersionToken = String(saveRes?.syncCollabVersionToken || saveRes?.sync_collab_version_token || "").trim();
       const draftNow = asObject(draftRef.current);
       const fallbackXml = String(draftNow?.bpmn_xml || "");
       const xml = xmlFromSave.trim() ? xmlFromSave : fallbackXml;
@@ -70,6 +77,9 @@ export default function useDiagramMutationLifecycle({
         id: sid,
         session_id: sid,
         bpmn_xml: xml,
+        ...(syncVersionToken ? { sync_version_token: syncVersionToken } : {}),
+        ...(syncBpmnVersionToken ? { sync_bpmn_version_token: syncBpmnVersionToken } : {}),
+        ...(syncCollabVersionToken ? { sync_collab_version_token: syncCollabVersionToken } : {}),
       };
 
       let optimisticSession = baseOptimistic;
@@ -164,7 +174,7 @@ export default function useDiagramMutationLifecycle({
     hasPending: hasPendingDiagramAutosave,
   } = useAutosaveQueue({
     enabled: !!sid,
-    debounceMs: 150,
+    debounceMs: 900,
     onSave: commitDiagramAutosave,
   });
 
@@ -175,14 +185,50 @@ export default function useDiagramMutationLifecycle({
   const queueDiagramMutation = useCallback(
     (mutation) => {
       if (!sid) return;
-      const mutationKind = String(mutation?.kind || mutation || "diagram.change");
-      traceProcess("diagram.queue_mutation", { sid, mutation_kind: mutationKind });
-      scheduleDiagramAutosave({
-        mutation: mutation && typeof mutation === "object" ? mutation : { kind: String(mutation || "diagram.change") },
-        at: Date.now(),
+      const mutationPayload = mutation && typeof mutation === "object"
+        ? mutation
+        : { kind: String(mutation || "diagram.change") };
+      const mutationKind = String(mutationPayload?.kind || "").trim().toLowerCase();
+      const now = Date.now();
+      if (mutationKind === "diagram.change") {
+        lastDiagramChangeAtRef.current = now;
+      }
+      runRealtimeOpsLane({
+        sid,
+        mutationPayload,
+        onPublishRealtimeBpmnOps,
+      });
+      // Realtime op stream is transport-only. Durable snapshot save must be
+      // scheduled from canonical diagram/xml mutations, not op-broadcast echoes.
+      if (mutationKind === "diagram.realtime_ops") {
+        return;
+      }
+      // Prevent duplicated autosave bursts when commandStack emits both
+      // diagram.change and diagram.realtime_ops for the same user action.
+      const isRealtimeOps = mutationKind === "diagram.realtime_ops";
+      const shouldSkipRealtimeOpsByDiagramChange =
+        isRealtimeOps && (now - Number(lastDiagramChangeAtRef.current || 0)) <= 350;
+      const shouldSkipRealtimeOpsBurst =
+        isRealtimeOps && (now - Number(lastRealtimeOpsDurableAtRef.current || 0)) <= 500;
+      const shouldSkipRealtimeOpsPendingQueue =
+        isRealtimeOps && hasPendingDiagramAutosave();
+      const shouldQueueDurableLane =
+        !shouldSkipRealtimeOpsByDiagramChange
+        && !shouldSkipRealtimeOpsBurst
+        && !shouldSkipRealtimeOpsPendingQueue;
+      if (!shouldQueueDurableLane) {
+        return;
+      }
+      if (isRealtimeOps) {
+        lastRealtimeOpsDurableAtRef.current = now;
+      }
+      runDurableSnapshotLane({
+        sid,
+        mutationPayload,
+        scheduleDiagramAutosave,
       });
     },
-    [sid, scheduleDiagramAutosave],
+    [sid, onPublishRealtimeBpmnOps, scheduleDiagramAutosave, hasPendingDiagramAutosave],
   );
 
   const flushDiagramBeforeTabSwitch = useCallback(

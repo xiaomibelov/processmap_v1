@@ -13,6 +13,7 @@ export default function useProcessOrchestrator({
   bpmnSync,
   projectionHelpers,
   onSessionSync,
+  onPublishRealtimeBpmnOps,
   onError,
 }) {
   const flushBeforeSwitchRef = useRef(async () => true);
@@ -75,6 +76,7 @@ export default function useProcessOrchestrator({
     bpmnSync,
     projectionHelpers,
     onSessionSync,
+    onPublishRealtimeBpmnOps,
     onError,
   });
 

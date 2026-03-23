@@ -147,7 +147,7 @@ test("apiGetReportVersion: treats ok+not found payload as 404", async () => {
         headers: { "Content-Type": "application/json" },
       });
     };
-    const out = await apiGetReportVersion("rpt_nf", { sessionId: "sess_1", pathId: "primary" });
+    const out = await apiGetReportVersion("rpt_nf", { sessionId: "sess_1", pathId: "primary", orgId: "" });
     assert.equal(out.ok, false);
     assert.equal(out.status, 404);
     assert.equal(calls.length, 2);
@@ -176,7 +176,7 @@ test("apiGetReportVersion: uses scoped canonical endpoint, then legacy fallback,
         headers: { "Content-Type": "application/json" },
       });
     };
-    const out = await apiGetReportVersion("rpt_scoped", { sessionId: "sess_1", pathId: "primary" });
+    const out = await apiGetReportVersion("rpt_scoped", { sessionId: "sess_1", pathId: "primary", orgId: "" });
     assert.equal(out.ok, true);
     assert.equal((out.report || {}).id, "rpt_scoped");
     assert.match(calls[0], /\/api\/sessions\/sess_1\/paths\/primary\/reports\/rpt_scoped$/);
@@ -195,7 +195,7 @@ test("apiDeleteReportVersion: uses scoped endpoint first and succeeds", async ()
       calls.push(String(input || ""));
       return new Response(null, { status: 204 });
     };
-    const out = await apiDeleteReportVersion("rpt_1", { sessionId: "sess_1", pathId: "primary" });
+    const out = await apiDeleteReportVersion("rpt_1", { sessionId: "sess_1", pathId: "primary", orgId: "" });
     assert.equal(out.ok, true);
     assert.equal(out.status, 204);
     assert.match(calls[0], /\/api\/sessions\/sess_1\/paths\/primary\/reports\/rpt_1$/);
@@ -218,7 +218,7 @@ test("apiDeleteReportVersion: falls back to /api/reports on scoped 404", async (
       }
       return new Response(null, { status: 204 });
     };
-    const out = await apiDeleteReportVersion("rpt_2", { sessionId: "sess_1", pathId: "primary" });
+    const out = await apiDeleteReportVersion("rpt_2", { sessionId: "sess_1", pathId: "primary", orgId: "" });
     assert.equal(out.ok, true);
     assert.equal(out.status, 204);
     assert.match(calls[2], /\/api\/reports\/rpt_2$/);
@@ -234,7 +234,7 @@ test("apiDeleteReportVersion: returns unsupported_endpoint on 405", async () => 
       status: 405,
       headers: { "Content-Type": "application/json" },
     });
-    const out = await apiDeleteReportVersion("rpt_3", { sessionId: "sess_1", pathId: "primary" });
+    const out = await apiDeleteReportVersion("rpt_3", { sessionId: "sess_1", pathId: "primary", orgId: "" });
     assert.equal(out.ok, false);
     assert.equal(out.status, 405);
     assert.equal(out.unsupported_endpoint, true);

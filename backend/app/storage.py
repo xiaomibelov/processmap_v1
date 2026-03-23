@@ -482,6 +482,102 @@ def _ensure_schema() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id)")
             con.execute(
                 """
+                CREATE TABLE IF NOT EXISTS session_presence (
+                  org_id TEXT NOT NULL DEFAULT '',
+                  session_id TEXT NOT NULL DEFAULT '',
+                  user_id TEXT NOT NULL DEFAULT '',
+                  first_seen_at INTEGER NOT NULL DEFAULT 0,
+                  last_seen_at INTEGER NOT NULL DEFAULT 0,
+                  expires_at INTEGER NOT NULL DEFAULT 0,
+                  PRIMARY KEY (org_id, session_id, user_id)
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_session_presence_scope ON session_presence(org_id, session_id, expires_at DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_session_presence_expires ON session_presence(expires_at)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS diagram_jazz_documents (
+                  doc_id TEXT PRIMARY KEY,
+                  provider TEXT NOT NULL DEFAULT '',
+                  contract_version TEXT NOT NULL DEFAULT '',
+                  scope_id TEXT NOT NULL DEFAULT '',
+                  doc_alias TEXT NOT NULL DEFAULT '',
+                  org_id TEXT NOT NULL DEFAULT '',
+                  project_id TEXT NOT NULL DEFAULT '',
+                  session_id TEXT NOT NULL DEFAULT '',
+                  storage_mode TEXT NOT NULL DEFAULT 'reserved',
+                  revision INTEGER NOT NULL DEFAULT 0,
+                  fingerprint TEXT NOT NULL DEFAULT '',
+                  metadata_json TEXT NOT NULL DEFAULT '{}',
+                  created_by TEXT NOT NULL DEFAULT '',
+                  updated_by TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_diagram_jazz_docs_provider_alias
+                ON diagram_jazz_documents(provider, doc_alias)
+                """
+            )
+            con.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_diagram_jazz_docs_provider_scope
+                ON diagram_jazz_documents(provider, scope_id)
+                """
+            )
+            con.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_diagram_jazz_docs_scope_tuple
+                ON diagram_jazz_documents(org_id, project_id, session_id)
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS diagram_jazz_mappings (
+                  mapping_id TEXT PRIMARY KEY,
+                  org_id TEXT NOT NULL DEFAULT '',
+                  project_id TEXT NOT NULL DEFAULT '',
+                  session_id TEXT NOT NULL DEFAULT '',
+                  scope_id TEXT NOT NULL DEFAULT '',
+                  doc_alias TEXT NOT NULL DEFAULT '',
+                  doc_id TEXT NOT NULL DEFAULT '',
+                  provider TEXT NOT NULL DEFAULT '',
+                  contract_version TEXT NOT NULL DEFAULT '',
+                  storage_mode TEXT NOT NULL DEFAULT 'reserved',
+                  revision INTEGER NOT NULL DEFAULT 0,
+                  fingerprint TEXT NOT NULL DEFAULT '',
+                  metadata_json TEXT NOT NULL DEFAULT '{}',
+                  created_by TEXT NOT NULL DEFAULT '',
+                  updated_by TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_diagram_jazz_mapping_scope_unique
+                ON diagram_jazz_mappings(org_id, project_id, session_id)
+                """
+            )
+            con.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_diagram_jazz_mapping_doc_unique
+                ON diagram_jazz_mappings(doc_id)
+                """
+            )
+            con.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_diagram_jazz_mapping_provider_scope
+                ON diagram_jazz_mappings(provider, scope_id)
+                """
+            )
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS orgs (
                   id TEXT PRIMARY KEY,
                   name TEXT NOT NULL,
@@ -713,6 +809,12 @@ def _ensure_schema() -> None:
                 con.execute("ALTER TABLE sessions ADD COLUMN created_by TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "sessions", "updated_by"):
                 con.execute("ALTER TABLE sessions ADD COLUMN updated_by TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "diagram_jazz_documents", "bpmn_xml"):
+                con.execute("ALTER TABLE diagram_jazz_documents ADD COLUMN bpmn_xml TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "diagram_jazz_documents", "payload_format"):
+                con.execute("ALTER TABLE diagram_jazz_documents ADD COLUMN payload_format TEXT NOT NULL DEFAULT 'bpmn_xml'")
+            if not _column_exists(con, "diagram_jazz_documents", "payload_updated_at"):
+                con.execute("ALTER TABLE diagram_jazz_documents ADD COLUMN payload_updated_at INTEGER NOT NULL DEFAULT 0")
             if not _column_exists(con, "org_invites", "team_name"):
                 con.execute("ALTER TABLE org_invites ADD COLUMN team_name TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "org_invites", "subgroup_name"):
@@ -1587,6 +1689,96 @@ class Storage:
             sess = _session_row_to_model(row)
             out.append(sess.model_dump())
         return out
+
+    def touch_session_presence(
+        self,
+        *,
+        org_id: str,
+        session_id: str,
+        user_id: str,
+        ttl_sec: int = 75,
+    ) -> Dict[str, Any]:
+        oid = str(org_id or "").strip() or _default_org_id()
+        sid = str(session_id or "").strip()
+        uid = str(user_id or "").strip()
+        if not sid or not uid:
+            return {"active_user_ids": [], "active_users_count": 0, "expires_at": 0}
+
+        ttl = max(15, int(ttl_sec or 75))
+        now = _now_ts()
+        expires_at = now + ttl
+        _ensure_schema()
+        with _connect() as con:
+            con.execute("DELETE FROM session_presence WHERE expires_at <= ?", [now])
+            row = con.execute(
+                """
+                SELECT first_seen_at
+                  FROM session_presence
+                 WHERE org_id = ? AND session_id = ? AND user_id = ?
+                 LIMIT 1
+                """,
+                [oid, sid, uid],
+            ).fetchone()
+            first_seen_at = int(_row_value(row, "first_seen_at") or 0) if row else now
+            con.execute(
+                """
+                INSERT INTO session_presence (
+                  org_id, session_id, user_id, first_seen_at, last_seen_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(org_id, session_id, user_id) DO UPDATE SET
+                  last_seen_at = excluded.last_seen_at,
+                  expires_at = excluded.expires_at
+                """,
+                [oid, sid, uid, first_seen_at or now, now, expires_at],
+            )
+            rows = con.execute(
+                """
+                SELECT user_id
+                  FROM session_presence
+                 WHERE org_id = ? AND session_id = ? AND expires_at > ?
+                 ORDER BY user_id ASC
+                """,
+                [oid, sid, now],
+            ).fetchall()
+            con.commit()
+
+        active_user_ids = [str(_row_value(row, "user_id") or "").strip() for row in (rows or [])]
+        active_user_ids = [value for value in active_user_ids if value]
+        return {
+            "active_user_ids": active_user_ids,
+            "active_users_count": len(active_user_ids),
+            "expires_at": expires_at,
+        }
+
+    def read_session_presence(
+        self,
+        *,
+        org_id: str,
+        session_id: str,
+    ) -> Dict[str, Any]:
+        oid = str(org_id or "").strip() or _default_org_id()
+        sid = str(session_id or "").strip()
+        if not sid:
+            return {"active_user_ids": [], "active_users_count": 0}
+
+        now = _now_ts()
+        _ensure_schema()
+        with _connect() as con:
+            con.execute("DELETE FROM session_presence WHERE expires_at <= ?", [now])
+            rows = con.execute(
+                """
+                SELECT user_id
+                  FROM session_presence
+                 WHERE org_id = ? AND session_id = ? AND expires_at > ?
+                 ORDER BY user_id ASC
+                """,
+                [oid, sid, now],
+            ).fetchall()
+            con.commit()
+
+        active_user_ids = [str(_row_value(row, "user_id") or "").strip() for row in (rows or [])]
+        active_user_ids = [value for value in active_user_ids if value]
+        return {"active_user_ids": active_user_ids, "active_users_count": len(active_user_ids)}
 
 
 def gen_project_id() -> str:
@@ -4193,6 +4385,625 @@ def startup_db_check() -> Dict[str, Any]:
 
 def get_storage() -> Storage:
     return Storage(base_dir=_db_base_dir())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Diagram Jazz durable storage foundation (default-off; service-level use only)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _diagram_jazz_doc_id(provider: str, scope_id: str) -> str:
+    provider_text = str(provider or "").strip().lower()
+    scope_text = str(scope_id or "").strip()
+    if not provider_text or not scope_text:
+        return ""
+    digest = hashlib.sha256(f"{provider_text}::{scope_text}".encode("utf-8")).hexdigest()
+    return f"djz_{digest[:24]}"
+
+
+def _diagram_jazz_payload_fingerprint(xml_text: str) -> str:
+    payload = str(xml_text or "")
+    if not payload:
+        return ""
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _diagram_jazz_doc_row_to_dict(row: Any) -> Dict[str, Any]:
+    xml_text = str((_row_value(row, "bpmn_xml") or "") or "")
+    return {
+        "doc_id": str(row["doc_id"] or ""),
+        "provider": str(row["provider"] or ""),
+        "contract_version": str(row["contract_version"] or ""),
+        "scope_id": str(row["scope_id"] or ""),
+        "doc_alias": str(row["doc_alias"] or ""),
+        "org_id": str(row["org_id"] or ""),
+        "project_id": str(row["project_id"] or ""),
+        "session_id": str(row["session_id"] or ""),
+        "storage_mode": str(row["storage_mode"] or "reserved"),
+        "revision": int(row["revision"] or 0),
+        "fingerprint": str(row["fingerprint"] or ""),
+        "bpmn_xml": xml_text,
+        "bpmn_xml_bytes": len(xml_text.encode("utf-8")) if xml_text else 0,
+        "payload_format": str((_row_value(row, "payload_format") or "bpmn_xml") or "bpmn_xml"),
+        "payload_updated_at": int((_row_value(row, "payload_updated_at") or 0) or 0),
+        "metadata": _json_loads(row["metadata_json"], {}),
+        "created_by": str(row["created_by"] or ""),
+        "updated_by": str(row["updated_by"] or ""),
+        "created_at": int(row["created_at"] or 0),
+        "updated_at": int(row["updated_at"] or 0),
+    }
+
+
+def _diagram_jazz_mapping_row_to_dict(row: Any) -> Dict[str, Any]:
+    return {
+        "mapping_id": str(row["mapping_id"] or ""),
+        "org_id": str(row["org_id"] or ""),
+        "project_id": str(row["project_id"] or ""),
+        "session_id": str(row["session_id"] or ""),
+        "scope_id": str(row["scope_id"] or ""),
+        "doc_alias": str(row["doc_alias"] or ""),
+        "doc_id": str(row["doc_id"] or ""),
+        "provider": str(row["provider"] or ""),
+        "contract_version": str(row["contract_version"] or ""),
+        "storage_mode": str(row["storage_mode"] or "reserved"),
+        "revision": int(row["revision"] or 0),
+        "fingerprint": str(row["fingerprint"] or ""),
+        "metadata": _json_loads(row["metadata_json"], {}),
+        "created_by": str(row["created_by"] or ""),
+        "updated_by": str(row["updated_by"] or ""),
+        "created_at": int(row["created_at"] or 0),
+        "updated_at": int(row["updated_at"] or 0),
+    }
+
+
+def reserve_diagram_jazz_document_record(
+    *,
+    org_id: str,
+    project_id: str,
+    session_id: str,
+    scope_id: str,
+    doc_alias: str,
+    provider: str,
+    contract_version: str,
+    storage_mode: str = "reserved",
+    revision: int = 0,
+    fingerprint: str = "",
+    metadata: Optional[Dict[str, Any]] = None,
+    requested_doc_id: Optional[str] = None,
+    actor_user_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    pid = str(project_id or "").strip()
+    sid = str(session_id or "").strip()
+    scope = str(scope_id or "").strip()
+    alias = str(doc_alias or "").strip()
+    provider_text = str(provider or "").strip().lower()
+    contract = str(contract_version or "").strip()
+    mode = str(storage_mode or "reserved").strip() or "reserved"
+    actor = str(actor_user_id or "").strip()
+    if not oid or not pid or not sid:
+        raise ValueError("diagram_jazz_identity_missing")
+    if not scope or not alias:
+        raise ValueError("diagram_jazz_identity_missing")
+    if not provider_text:
+        raise ValueError("diagram_jazz_provider_missing")
+
+    doc_id = str(requested_doc_id or "").strip() or _diagram_jazz_doc_id(provider_text, scope)
+    if not doc_id:
+        raise ValueError("diagram_jazz_doc_id_invalid")
+    now = _now_ts()
+    next_revision = max(0, int(revision or 0))
+    meta_payload = metadata if isinstance(metadata, dict) else {}
+
+    _ensure_schema()
+    with _connect() as con:
+        existing = con.execute(
+            "SELECT * FROM diagram_jazz_documents WHERE doc_id = ? LIMIT 1",
+            [doc_id],
+        ).fetchone()
+        if existing:
+            row = _diagram_jazz_doc_row_to_dict(existing)
+            mismatch = (
+                row["provider"] != provider_text
+                or row["scope_id"] != scope
+                or row["doc_alias"] != alias
+                or row["org_id"] != oid
+                or row["project_id"] != pid
+                or row["session_id"] != sid
+            )
+            if mismatch:
+                raise ValueError("diagram_jazz_document_conflict")
+            if contract and row["contract_version"] and row["contract_version"] != contract:
+                raise ValueError("diagram_jazz_contract_version_conflict")
+            merged_revision = max(int(row.get("revision", 0) or 0), next_revision)
+            merged_fingerprint = str(fingerprint or row.get("fingerprint") or "").strip()
+            merged_metadata = meta_payload if meta_payload else row.get("metadata", {})
+            con.execute(
+                """
+                UPDATE diagram_jazz_documents
+                   SET contract_version = ?,
+                       storage_mode = ?,
+                       revision = ?,
+                       fingerprint = ?,
+                       metadata_json = ?,
+                       updated_by = ?,
+                       updated_at = ?
+                 WHERE doc_id = ?
+                """,
+                [
+                    contract or row.get("contract_version") or "",
+                    mode,
+                    merged_revision,
+                    merged_fingerprint,
+                    _json_dumps(merged_metadata, {}),
+                    actor,
+                    now,
+                    doc_id,
+                ],
+            )
+            con.commit()
+            refreshed = con.execute(
+                "SELECT * FROM diagram_jazz_documents WHERE doc_id = ? LIMIT 1",
+                [doc_id],
+            ).fetchone()
+            out = _diagram_jazz_doc_row_to_dict(refreshed or existing)
+            out["created"] = False
+            return out
+
+        con.execute(
+            """
+            INSERT INTO diagram_jazz_documents (
+              doc_id, provider, contract_version, scope_id, doc_alias,
+              org_id, project_id, session_id, storage_mode, revision,
+              fingerprint, metadata_json, created_by, updated_by, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                doc_id,
+                provider_text,
+                contract,
+                scope,
+                alias,
+                oid,
+                pid,
+                sid,
+                mode,
+                next_revision,
+                str(fingerprint or "").strip(),
+                _json_dumps(meta_payload, {}),
+                actor,
+                actor,
+                now,
+                now,
+            ],
+        )
+        con.commit()
+        created = con.execute(
+            "SELECT * FROM diagram_jazz_documents WHERE doc_id = ? LIMIT 1",
+            [doc_id],
+        ).fetchone()
+    out = _diagram_jazz_doc_row_to_dict(created)
+    out["created"] = True
+    return out
+
+
+def get_diagram_jazz_mapping_record(
+    *,
+    org_id: str,
+    project_id: str,
+    session_id: str,
+    provider: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    pid = str(project_id or "").strip()
+    sid = str(session_id or "").strip()
+    provider_text = str(provider or "").strip().lower()
+    if not oid or not pid or not sid:
+        return None
+    _ensure_schema()
+    with _connect() as con:
+        if provider_text:
+            row = con.execute(
+                """
+                SELECT * FROM diagram_jazz_mappings
+                 WHERE org_id = ? AND project_id = ? AND session_id = ? AND provider = ?
+                 LIMIT 1
+                """,
+                [oid, pid, sid, provider_text],
+            ).fetchone()
+        else:
+            row = con.execute(
+                """
+                SELECT * FROM diagram_jazz_mappings
+                 WHERE org_id = ? AND project_id = ? AND session_id = ?
+                 LIMIT 1
+                """,
+                [oid, pid, sid],
+            ).fetchone()
+    if not row:
+        return None
+    return _diagram_jazz_mapping_row_to_dict(row)
+
+
+def create_diagram_jazz_mapping_record(
+    *,
+    org_id: str,
+    project_id: str,
+    session_id: str,
+    scope_id: str,
+    doc_alias: str,
+    doc_id: str,
+    provider: str,
+    contract_version: str,
+    storage_mode: str = "reserved",
+    revision: int = 0,
+    fingerprint: str = "",
+    metadata: Optional[Dict[str, Any]] = None,
+    actor_user_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    pid = str(project_id or "").strip()
+    sid = str(session_id or "").strip()
+    scope = str(scope_id or "").strip()
+    alias = str(doc_alias or "").strip()
+    did = str(doc_id or "").strip()
+    provider_text = str(provider or "").strip().lower()
+    contract = str(contract_version or "").strip()
+    mode = str(storage_mode or "reserved").strip() or "reserved"
+    actor = str(actor_user_id or "").strip()
+    if not oid or not pid or not sid:
+        raise ValueError("diagram_jazz_identity_missing")
+    if not scope or not alias or not did:
+        raise ValueError("diagram_jazz_mapping_identity_missing")
+    if not provider_text:
+        raise ValueError("diagram_jazz_provider_missing")
+
+    now = _now_ts()
+    next_revision = max(0, int(revision or 0))
+    meta_payload = metadata if isinstance(metadata, dict) else {}
+    _ensure_schema()
+
+    with _connect() as con:
+        existing_scope = con.execute(
+            """
+            SELECT * FROM diagram_jazz_mappings
+             WHERE org_id = ? AND project_id = ? AND session_id = ?
+             LIMIT 1
+            """,
+            [oid, pid, sid],
+        ).fetchone()
+        if existing_scope:
+            scope_row = _diagram_jazz_mapping_row_to_dict(existing_scope)
+            same_mapping = (
+                scope_row["doc_id"] == did
+                and scope_row["provider"] == provider_text
+                and scope_row["scope_id"] == scope
+                and scope_row["doc_alias"] == alias
+            )
+            if not same_mapping:
+                raise ValueError("diagram_jazz_mapping_conflict")
+            if contract and scope_row["contract_version"] and scope_row["contract_version"] != contract:
+                raise ValueError("diagram_jazz_contract_version_conflict")
+            merged_revision = max(int(scope_row.get("revision", 0) or 0), next_revision)
+            merged_fingerprint = str(fingerprint or scope_row.get("fingerprint") or "").strip()
+            merged_metadata = meta_payload if meta_payload else scope_row.get("metadata", {})
+            con.execute(
+                """
+                UPDATE diagram_jazz_mappings
+                   SET contract_version = ?,
+                       storage_mode = ?,
+                       revision = ?,
+                       fingerprint = ?,
+                       metadata_json = ?,
+                       updated_by = ?,
+                       updated_at = ?
+                 WHERE mapping_id = ?
+                """,
+                [
+                    contract or scope_row.get("contract_version") or "",
+                    mode,
+                    merged_revision,
+                    merged_fingerprint,
+                    _json_dumps(merged_metadata, {}),
+                    actor,
+                    now,
+                    scope_row["mapping_id"],
+                ],
+            )
+            con.commit()
+            refreshed = con.execute(
+                "SELECT * FROM diagram_jazz_mappings WHERE mapping_id = ? LIMIT 1",
+                [scope_row["mapping_id"]],
+            ).fetchone()
+            out = _diagram_jazz_mapping_row_to_dict(refreshed or existing_scope)
+            out["created"] = False
+            return out
+
+        existing_doc = con.execute(
+            "SELECT * FROM diagram_jazz_mappings WHERE doc_id = ? LIMIT 1",
+            [did],
+        ).fetchone()
+        if existing_doc:
+            doc_map = _diagram_jazz_mapping_row_to_dict(existing_doc)
+            if doc_map["org_id"] != oid or doc_map["project_id"] != pid or doc_map["session_id"] != sid:
+                raise ValueError("diagram_jazz_mapping_doc_conflict")
+
+        doc_row = con.execute(
+            "SELECT * FROM diagram_jazz_documents WHERE doc_id = ? LIMIT 1",
+            [did],
+        ).fetchone()
+        if not doc_row:
+            raise ValueError("diagram_jazz_document_missing")
+        doc_payload = _diagram_jazz_doc_row_to_dict(doc_row)
+        doc_mismatch = (
+            doc_payload["provider"] != provider_text
+            or doc_payload["scope_id"] != scope
+            or doc_payload["doc_alias"] != alias
+            or doc_payload["org_id"] != oid
+            or doc_payload["project_id"] != pid
+            or doc_payload["session_id"] != sid
+        )
+        if doc_mismatch:
+            raise ValueError("diagram_jazz_document_conflict")
+        if contract and doc_payload["contract_version"] and doc_payload["contract_version"] != contract:
+            raise ValueError("diagram_jazz_contract_version_conflict")
+
+        mapping_id = uuid.uuid4().hex[:16]
+        try:
+            con.execute(
+                """
+                INSERT INTO diagram_jazz_mappings (
+                  mapping_id, org_id, project_id, session_id, scope_id, doc_alias, doc_id,
+                  provider, contract_version, storage_mode, revision, fingerprint, metadata_json,
+                  created_by, updated_by, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    mapping_id,
+                    oid,
+                    pid,
+                    sid,
+                    scope,
+                    alias,
+                    did,
+                    provider_text,
+                    contract,
+                    mode,
+                    next_revision,
+                    str(fingerprint or "").strip(),
+                    _json_dumps(meta_payload, {}),
+                    actor,
+                    actor,
+                    now,
+                    now,
+                ],
+            )
+        except Exception as exc:
+            if isinstance(exc, sqlite3.IntegrityError) or (
+                PsycopgIntegrityError is not None and isinstance(exc, PsycopgIntegrityError)
+            ):
+                raise ValueError("diagram_jazz_mapping_conflict") from exc
+            raise
+
+        con.commit()
+        row = con.execute(
+            "SELECT * FROM diagram_jazz_mappings WHERE mapping_id = ? LIMIT 1",
+            [mapping_id],
+        ).fetchone()
+    out = _diagram_jazz_mapping_row_to_dict(row)
+    out["created"] = True
+    return out
+
+
+def validate_diagram_jazz_mapping_record(
+    *,
+    org_id: str,
+    project_id: str,
+    session_id: str,
+    scope_id: str,
+    doc_alias: str,
+    provider: str,
+    mapping: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    pid = str(project_id or "").strip()
+    sid = str(session_id or "").strip()
+    scope = str(scope_id or "").strip()
+    alias = str(doc_alias or "").strip()
+    provider_text = str(provider or "").strip().lower()
+    if not oid or not pid or not sid:
+        return {"ok": False, "reason": "diagram_jazz_identity_missing"}
+    if not scope or not alias or not provider_text:
+        return {"ok": False, "reason": "diagram_jazz_identity_missing"}
+    if not isinstance(mapping, dict):
+        return {"ok": False, "reason": "diagram_jazz_mapping_missing"}
+
+    if str(mapping.get("org_id") or "") != oid:
+        return {"ok": False, "reason": "diagram_jazz_mapping_org_mismatch"}
+    if str(mapping.get("project_id") or "") != pid:
+        return {"ok": False, "reason": "diagram_jazz_mapping_project_mismatch"}
+    if str(mapping.get("session_id") or "") != sid:
+        return {"ok": False, "reason": "diagram_jazz_mapping_session_mismatch"}
+    if str(mapping.get("scope_id") or "") != scope:
+        return {"ok": False, "reason": "diagram_jazz_mapping_scope_mismatch"}
+    if str(mapping.get("doc_alias") or "") != alias:
+        return {"ok": False, "reason": "diagram_jazz_mapping_alias_mismatch"}
+    if str(mapping.get("provider") or "").lower() != provider_text:
+        return {"ok": False, "reason": "diagram_jazz_mapping_provider_mismatch"}
+
+    doc_id = str(mapping.get("doc_id") or "").strip()
+    if not doc_id:
+        return {"ok": False, "reason": "diagram_jazz_mapping_doc_missing"}
+
+    _ensure_schema()
+    with _connect() as con:
+        doc = con.execute(
+            "SELECT * FROM diagram_jazz_documents WHERE doc_id = ? LIMIT 1",
+            [doc_id],
+        ).fetchone()
+    if not doc:
+        return {"ok": False, "reason": "diagram_jazz_document_missing"}
+    doc_payload = _diagram_jazz_doc_row_to_dict(doc)
+    if doc_payload["provider"] != provider_text:
+        return {"ok": False, "reason": "diagram_jazz_document_provider_mismatch"}
+    if doc_payload["scope_id"] != scope:
+        return {"ok": False, "reason": "diagram_jazz_document_scope_mismatch"}
+    if doc_payload["doc_alias"] != alias:
+        return {"ok": False, "reason": "diagram_jazz_document_alias_mismatch"}
+    if doc_payload["org_id"] != oid or doc_payload["project_id"] != pid or doc_payload["session_id"] != sid:
+        return {"ok": False, "reason": "diagram_jazz_document_ownership_mismatch"}
+
+    return {"ok": True, "reason": "", "doc_id": doc_id}
+
+
+def get_diagram_jazz_document_record(*, doc_id: str) -> Optional[Dict[str, Any]]:
+    did = str(doc_id or "").strip()
+    if not did:
+        return None
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            "SELECT * FROM diagram_jazz_documents WHERE doc_id = ? LIMIT 1",
+            [did],
+        ).fetchone()
+    if not row:
+        return None
+    return _diagram_jazz_doc_row_to_dict(row)
+
+
+def read_diagram_jazz_document_payload_record(
+    *,
+    doc_id: str,
+    require_payload: bool = True,
+) -> Dict[str, Any]:
+    did = str(doc_id or "").strip()
+    if not did:
+        raise ValueError("diagram_jazz_document_missing")
+    doc = get_diagram_jazz_document_record(doc_id=did)
+    if not doc:
+        raise ValueError("diagram_jazz_document_missing")
+    payload = str(doc.get("bpmn_xml") or "")
+    if require_payload and not payload.strip():
+        raise ValueError("diagram_jazz_payload_missing")
+    return doc
+
+
+def write_diagram_jazz_document_payload_record(
+    *,
+    doc_id: str,
+    bpmn_xml: str,
+    expected_revision: Optional[int] = None,
+    expected_fingerprint: str = "",
+    contract_version: str = "",
+    storage_mode: str = "active",
+    actor_user_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    did = str(doc_id or "").strip()
+    if not did:
+        raise ValueError("diagram_jazz_document_missing")
+    xml_text = str(bpmn_xml or "")
+    if not xml_text.strip():
+        raise ValueError("diagram_jazz_payload_invalid")
+
+    mode = str(storage_mode or "active").strip() or "active"
+    actor = str(actor_user_id or "").strip()
+    expected_fp = str(expected_fingerprint or "").strip()
+    now = _now_ts()
+    _ensure_schema()
+
+    with _connect() as con:
+        doc_row = con.execute(
+            "SELECT * FROM diagram_jazz_documents WHERE doc_id = ? LIMIT 1",
+            [did],
+        ).fetchone()
+        if not doc_row:
+            raise ValueError("diagram_jazz_document_missing")
+        doc_payload = _diagram_jazz_doc_row_to_dict(doc_row)
+
+        mapping_row = con.execute(
+            "SELECT * FROM diagram_jazz_mappings WHERE doc_id = ? LIMIT 1",
+            [did],
+        ).fetchone()
+        if not mapping_row:
+            raise ValueError("diagram_jazz_mapping_missing")
+        mapping_payload = _diagram_jazz_mapping_row_to_dict(mapping_row)
+
+        current_revision = int(doc_payload.get("revision", 0) or 0)
+        if expected_revision is not None and int(expected_revision) != current_revision:
+            raise ValueError("diagram_jazz_revision_conflict")
+        if expected_fp and str(doc_payload.get("fingerprint") or "") and str(doc_payload.get("fingerprint") or "") != expected_fp:
+            raise ValueError("diagram_jazz_fingerprint_conflict")
+
+        stored_revision = current_revision + 1
+        stored_fingerprint = _diagram_jazz_payload_fingerprint(xml_text)
+        contract = str(contract_version or doc_payload.get("contract_version") or "").strip()
+
+        con.execute(
+            """
+            UPDATE diagram_jazz_documents
+               SET bpmn_xml = ?,
+                   payload_format = ?,
+                   payload_updated_at = ?,
+                   contract_version = ?,
+                   storage_mode = ?,
+                   revision = ?,
+                   fingerprint = ?,
+                   updated_by = ?,
+                   updated_at = ?
+             WHERE doc_id = ?
+            """,
+            [
+                xml_text,
+                "bpmn_xml",
+                now,
+                contract,
+                mode,
+                stored_revision,
+                stored_fingerprint,
+                actor,
+                now,
+                did,
+            ],
+        )
+        con.execute(
+            """
+            UPDATE diagram_jazz_mappings
+               SET contract_version = ?,
+                   storage_mode = ?,
+                   revision = ?,
+                   fingerprint = ?,
+                   updated_by = ?,
+                   updated_at = ?
+             WHERE doc_id = ?
+            """,
+            [
+                contract,
+                mode,
+                stored_revision,
+                stored_fingerprint,
+                actor,
+                now,
+                did,
+            ],
+        )
+        con.commit()
+
+        refreshed_doc_row = con.execute(
+            "SELECT * FROM diagram_jazz_documents WHERE doc_id = ? LIMIT 1",
+            [did],
+        ).fetchone()
+        refreshed_mapping_row = con.execute(
+            "SELECT * FROM diagram_jazz_mappings WHERE doc_id = ? LIMIT 1",
+            [did],
+        ).fetchone()
+
+    refreshed_doc = _diagram_jazz_doc_row_to_dict(refreshed_doc_row or doc_row)
+    refreshed_mapping = _diagram_jazz_mapping_row_to_dict(refreshed_mapping_row or mapping_row)
+    return {
+        "doc": refreshed_doc,
+        "mapping": refreshed_mapping,
+        "stored_revision": int(refreshed_doc.get("revision", stored_revision) or stored_revision),
+        "stored_fingerprint": str(refreshed_doc.get("fingerprint") or stored_fingerprint),
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -1,5 +1,11 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { apiDeleteBpmnXml, apiGetBpmnXml, apiPutBpmnXml } from "../../lib/api/bpmnApi";
+import {
+  apiDeleteBpmnXml,
+  apiGetBpmnXml,
+  apiGetDiagramJazzXml,
+  apiPutBpmnXml,
+  apiPutDiagramJazzXml,
+} from "../../lib/api/bpmnApi";
 import { traceProcess } from "../../features/process/lib/processDebugTrace";
 import { createBpmnWiring } from "../../features/process/bpmn/stage/wiring/bpmnWiring";
 import * as decorManager from "../../features/process/bpmn/stage/decor/decorManager";
@@ -13,13 +19,23 @@ import {
   runImmediateEditorFanout,
   runSettledDecorSidebarFanout,
 } from "../../features/process/bpmn/stage/fanout/postStagingFanout";
+import {
+  buildTaskTypeSignature as buildTaskTypeSig,
+  buildLinkEventSignature as buildLinkEventSig,
+} from "../../features/process/bpmn/stage/fanout/decorSignature";
 import forceTaskResizeRulesModule from "../../features/process/bpmn/runtime/modules/forceTaskResizeRules";
 import {
   saveBpmnSnapshot,
   getLatestBpmnSnapshot,
 } from "../../features/process/bpmn/snapshots/bpmnSnapshots";
 import { applyOpsToModeler } from "../../features/process/bpmn/ops/applyOps";
+import {
+  captureRealtimeElementsSnapshot,
+  emitRealtimeOpsFromModeler as emitRealtimeOpsFromModelerLane,
+} from "../../features/process/bpmn/realtime/BpmnRealtimeOpCapture";
+import { applyBpmnRealtimeOpBatch } from "../../features/process/bpmn/realtime/BpmnRealtimeOpApply";
 import { elementNotesCount, normalizeElementNotesMap } from "../../features/notes/elementNotes";
+import { evaluateRemoteRecoveryImportBoundary } from "../../features/process/bpmn/recovery/BpmnRecoveryImportBoundary";
 import { measureInterviewPerf } from "./interview/perf";
 import pmModdleDescriptor from "../../features/process/robotmeta/pmModdleDescriptor";
 import camundaModdleDescriptor from "../../features/process/camunda/camundaModdleDescriptor";
@@ -1198,8 +1214,10 @@ const BpmnStage = forwardRef(function BpmnStage({
   const interviewOverlayStateRef = useRef({ viewer: [], editor: [] });
   const interviewDecorSignatureRef = useRef({ viewer: "", editor: "" });
   const taskTypeMarkerStateRef = useRef({ viewer: [], editor: [] });
+  const taskTypeSignatureRef = useRef({ viewer: "", editor: "" });
   const linkEventMarkerStateRef = useRef({ viewer: [], editor: [] });
   const linkEventStyledStateRef = useRef({ viewer: [], editor: [] });
+  const linkEventSignatureRef = useRef({ viewer: "", editor: "" });
   const happyFlowMarkerStateRef = useRef({ viewer: [], editor: [] });
   const happyFlowStyledStateRef = useRef({ viewer: [], editor: [] });
   const userNotesMarkerStateRef = useRef({ viewer: [], editor: [] });
@@ -1265,6 +1283,10 @@ const BpmnStage = forwardRef(function BpmnStage({
   const ensureVisibleCycleRef = useRef(0);
   const ensureEpochRef = useRef(0);
   const renderRunRef = useRef(0);
+  const lastRemoteBpmnApplyTokenRef = useRef("");
+  const realtimeElementSnapshotRef = useRef(new Map());
+  const suppressRealtimeOpsEmitRef = useRef(0);
+  const lastAppliedRealtimeOpsSeqRef = useRef(0);
   const modelerImportInFlightRef = useRef({ sid: "", xmlHash: "", promise: null });
   const robotMetaHydrateStateRef = useRef({ key: "" });
   const camundaHydrateStateRef = useRef({ key: "" });
@@ -1437,6 +1459,8 @@ const BpmnStage = forwardRef(function BpmnStage({
         getLatestBpmnSnapshot,
         apiGetBpmnXml,
         apiPutBpmnXml,
+        apiGetDiagramJazzXml,
+        apiPutDiagramJazzXml,
       },
       callbacks: {
         localKey,
@@ -1624,6 +1648,74 @@ const BpmnStage = forwardRef(function BpmnStage({
       bumpRev: false,
       dirty: false,
     });
+  }
+
+  function refreshRealtimeElementsSnapshot(inst) {
+    realtimeElementSnapshotRef.current = captureRealtimeElementsSnapshot(inst, {
+      isConnectionElement,
+      isShapeElement,
+    });
+  }
+
+  function emitRealtimeOpsFromModeler(inst, source = "command_stack") {
+    if (Number(suppressCommandStackRef.current || 0) > 0) {
+      refreshRealtimeElementsSnapshot(inst);
+      return;
+    }
+    void emitRealtimeOpsFromModelerLane({
+      inst,
+      source,
+      suppressRealtimeOpsEmitRef,
+      realtimeElementSnapshotRef,
+      isConnectionElement,
+      isShapeElement,
+      emitDiagramMutation,
+    });
+  }
+
+  async function applyRealtimeOpsOnModeler(payload = {}) {
+    const sid = toText(sessionId);
+    const batchApply = await applyBpmnRealtimeOpBatch({
+      sessionId: sid,
+      payload,
+      modeler: modelerRef.current,
+      ensureModeler,
+      isShapeElement,
+      isConnectionElement,
+      withSuppressedCommandStack,
+      suppressRealtimeOpsEmitRef,
+      refreshRealtimeElementsSnapshot,
+    });
+    if (!batchApply?.ok) {
+      return batchApply;
+    }
+    const applied = Number(batchApply.applied || 0);
+    const failed = Number(batchApply.failed || 0);
+    const changedIds = Array.isArray(batchApply.changedIds) ? batchApply.changedIds : [];
+    if (applied <= 0) {
+      return { ok: true, applied, failed, changedIds, skipped: true };
+    }
+    try {
+      const runtime = ensureModelerRuntime();
+      const xmlRes = await runtime.getXml({ format: true });
+      if (xmlRes?.ok) {
+        const syncedXml = String(xmlRes.xml || "");
+        lastModelerXmlHashRef.current = fnv1aHex(syncedXml);
+        applyXmlSnapshot(syncedXml, "realtime_remote_ops");
+        onSessionSyncRef.current?.({
+          id: sid,
+          session_id: sid,
+          bpmn_xml: syncedXml,
+          ...(toText(payload?.remoteToken) ? { _remote_version_token: toText(payload.remoteToken) } : {}),
+          ...(toText(payload?.remoteBpmnToken) ? { sync_bpmn_version_token: toText(payload.remoteBpmnToken) } : {}),
+          ...(toText(payload?.remoteCollabToken) ? { sync_collab_version_token: toText(payload.remoteCollabToken) } : {}),
+          _sync_source: "realtime_remote_ops_apply",
+        });
+      }
+    } catch {
+    }
+
+    return { ok: true, applied, failed, changedIds };
   }
 
   function emitDiagramMutation(kind, payload = {}) {
@@ -2880,6 +2972,11 @@ const BpmnStage = forwardRef(function BpmnStage({
 
   function applyTaskTypeDecor(inst, kind) {
     if (!inst) return;
+    let sig = "";
+    try {
+      sig = buildTaskTypeSig(inst.get("elementRegistry"), isShapeElement);
+      if (sig && sig === taskTypeSignatureRef.current[kind]) return;
+    } catch { /* proceed with rebuild on error */ }
     clearTaskTypeDecor(inst, kind);
     try {
       const canvas = inst.get("canvas");
@@ -2919,6 +3016,7 @@ const BpmnStage = forwardRef(function BpmnStage({
           addTaskMarker(el.id, "fpcEndEvent");
         }
       });
+      if (sig) taskTypeSignatureRef.current[kind] = sig;
     } catch {
     }
   }
@@ -2946,6 +3044,13 @@ const BpmnStage = forwardRef(function BpmnStage({
 
   function applyLinkEventDecor(inst, kind) {
     if (!inst) return;
+    let sig = "";
+    try {
+      sig = buildLinkEventSig(inst.get("elementRegistry"), isShapeElement, {
+        hasLinkEventDefinition, readLinkEventRole, readLinkEventPairName, normalizeLinkPairKey,
+      });
+      if (sig && sig === linkEventSignatureRef.current[kind]) return;
+    } catch { /* proceed with rebuild on error */ }
     clearLinkEventDecor(inst, kind);
     try {
       const canvas = inst.get("canvas");
@@ -2980,6 +3085,7 @@ const BpmnStage = forwardRef(function BpmnStage({
           linkEventStyledStateRef.current[kind].push(el.id);
         }
       });
+      if (sig) linkEventSignatureRef.current[kind] = sig;
     } catch {
     }
   }
@@ -3244,6 +3350,8 @@ const BpmnStage = forwardRef(function BpmnStage({
     interviewOverlayStateRef.current = { viewer: [], editor: [] };
     interviewDecorSignatureRef.current = { viewer: "", editor: "" };
     taskTypeMarkerStateRef.current = { viewer: [], editor: [] };
+    taskTypeSignatureRef.current = { viewer: "", editor: "" };
+    linkEventSignatureRef.current = { viewer: "", editor: "" };
     happyFlowMarkerStateRef.current = { viewer: [], editor: [] };
     happyFlowStyledStateRef.current = { viewer: [], editor: [] };
     userNotesMarkerStateRef.current = { viewer: [], editor: [] };
@@ -3280,6 +3388,9 @@ const BpmnStage = forwardRef(function BpmnStage({
     modelerReadyRef.current = false;
     userViewportTouchedRef.current = false;
     lastModelerXmlHashRef.current = "";
+    realtimeElementSnapshotRef.current = new Map();
+    suppressRealtimeOpsEmitRef.current = 0;
+    lastAppliedRealtimeOpsSeqRef.current = 0;
     modelerInstanceMetaRef.current = { id: 0, containerKey: "" };
     viewerInstanceMetaRef.current = { id: 0, containerKey: "" };
     suppressViewboxEventRef.current = 0;
@@ -3535,6 +3646,7 @@ const BpmnStage = forwardRef(function BpmnStage({
               applyLinkEventDecor,
               applyHappyFlowDecor,
               applyRobotMetaDecor,
+              emitRealtimeOpsFromModeler,
             });
           });
           eventBus.on("selection.changed", 2000, (ev) => {
@@ -3750,7 +3862,13 @@ const BpmnStage = forwardRef(function BpmnStage({
         xmlHash: fnv1aHex(String(nextXml || "")),
       });
       logBpmnTrace("importXML.modeler.before", nextXml, { sid: String(sessionId || "") });
-      const loaded = await runtime.load(String(nextXml || ""), { source: "renderModeler" });
+      suppressRealtimeOpsEmitRef.current += 1;
+      let loaded = null;
+      try {
+        loaded = await runtime.load(String(nextXml || ""), { source: "renderModeler" });
+      } finally {
+        suppressRealtimeOpsEmitRef.current = Math.max(0, Number(suppressRealtimeOpsEmitRef.current || 0) - 1);
+      }
       const afterStatus = runtime.getStatus();
       runtimeTokenRef.current = Number(afterStatus?.token || runtimeTokenRef.current || 0);
       modelerReadyRef.current = !!afterStatus?.ready && !!afterStatus?.defs;
@@ -3842,6 +3960,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       applyInterviewDecor(m, "editor");
       applyUserNotesDecor(m, "editor");
       applyStepTimeDecor(m, "editor");
+      refreshRealtimeElementsSnapshot(m);
     })();
 
     modelerImportInFlightRef.current = { sid: sidNow, xmlHash, promise: importPromise };
@@ -3951,6 +4070,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     applyInterviewDecor(m, "editor");
     applyUserNotesDecor(m, "editor");
     applyStepTimeDecor(m, "editor");
+    refreshRealtimeElementsSnapshot(m);
   }
 
   function createViewportCtx() {
@@ -4117,7 +4237,15 @@ const BpmnStage = forwardRef(function BpmnStage({
       xml_len: out.length,
     });
     applyXmlSnapshot(out, `${hintBase}(saved)`);
-    return { ok: true, xml: out, source: `${hintBase}(saved)` };
+    return {
+      ok: true,
+      xml: out,
+      source: `${hintBase}(saved)`,
+      updatedAt: Number(r?.updatedAt || r?.updated_at || 0) || 0,
+      syncVersionToken: String(r?.syncVersionToken || r?.sync_version_token || "").trim(),
+      syncBpmnVersionToken: String(r?.syncBpmnVersionToken || r?.sync_bpmn_version_token || "").trim(),
+      syncCollabVersionToken: String(r?.syncCollabVersionToken || r?.sync_collab_version_token || "").trim(),
+    };
   }
 
   async function saveLocalFromModeler(options = {}) {
@@ -4137,6 +4265,17 @@ const BpmnStage = forwardRef(function BpmnStage({
       || draft?.bpmn_xml
       || "",
     );
+    let syncVersionToken = "";
+    let syncBpmnVersionToken = "";
+    let syncCollabVersionToken = "";
+    const assignSyncTokens = (payload) => {
+      const nextVersionToken = String(payload?.syncVersionToken || payload?.sync_version_token || "").trim();
+      const nextBpmnToken = String(payload?.syncBpmnVersionToken || payload?.sync_bpmn_version_token || "").trim();
+      const nextCollabToken = String(payload?.syncCollabVersionToken || payload?.sync_collab_version_token || "").trim();
+      if (nextVersionToken) syncVersionToken = nextVersionToken;
+      if (nextBpmnToken) syncBpmnVersionToken = nextBpmnToken;
+      if (nextCollabToken) syncCollabVersionToken = nextCollabToken;
+    };
 
     try {
       if (force) {
@@ -4147,6 +4286,55 @@ const BpmnStage = forwardRef(function BpmnStage({
       }
 
       const activeModeler = modelerRef.current || runtime.getInstance?.();
+      const readActiveModelerXml = async () => {
+        if (!activeModeler || typeof activeModeler.saveXML !== "function") return "";
+        try {
+          const xmlRes = await activeModeler.saveXML({ format: true });
+          return String(xmlRes?.xml || "");
+        } catch {
+          return "";
+        }
+      };
+      const finalizeForPersist = (xmlText) => finalizeCamundaExtensionsXml({
+        xmlText: String(xmlText || ""),
+        camundaExtensionsByElementId: getCamundaExtensionsMap(),
+      });
+      const persistXmlWithReason = async (xmlToPersist, rev, reasonSuffix, failLabel) => {
+        const reasonTag = `${source}:${reasonSuffix}`;
+        const safeXml = String(xmlToPersist || "");
+        emitSaveLifecycleEvent("SAVE_PERSIST_STARTED", {
+          sid,
+          reason: reasonTag,
+          rev,
+          xml_len: safeXml.length,
+        });
+        const persisted = await ensureBpmnPersistence().saveRaw(sid, safeXml, rev, reasonTag);
+        assignSyncTokens(persisted);
+        if (!persisted?.ok) {
+          emitSaveLifecycleEvent("SAVE_PERSIST_FAIL", {
+            sid,
+            reason: reasonTag,
+            rev,
+            status: Number(persisted?.status || 0),
+            xml_len: safeXml.length,
+            error: String(persisted?.error || failLabel),
+          });
+          return {
+            ok: false,
+            error: String(persisted?.error || failLabel),
+            status: Number(persisted?.status || 0),
+            errorCode: String(persisted?.errorCode || ""),
+          };
+        }
+        emitSaveLifecycleEvent("SAVE_PERSIST_DONE", {
+          sid,
+          reason: reasonTag,
+          rev: Number(persisted?.storedRev || rev),
+          status: Number(persisted?.status || 200),
+          xml_len: safeXml.length,
+        });
+        return { ok: true };
+      };
       const robotSync = syncRobotMetaToModeler(activeModeler);
       const camundaSync = syncCamundaExtensionsToModeler(activeModeler);
       if (!robotSync?.ok && shouldLogBpmnTrace()) {
@@ -4158,13 +4346,65 @@ const BpmnStage = forwardRef(function BpmnStage({
         console.warn(`[CAMUNDA_EXT] sync_before_save_failed sid=${sid} reason=${String(camundaSync?.reason || "unknown")}`);
       }
 
+      const stateBeforeFlush = bpmnStoreRef.current?.getState?.() || {};
+      const rawBeforeFlush = String(stateBeforeFlush.xml || fallbackXml || "");
+      const outBeforeFlush = finalizeForPersist(rawBeforeFlush);
+      const modelerXmlBeforeFlush = await readActiveModelerXml();
+      const finalizedModelerBeforeFlush = modelerXmlBeforeFlush.trim() ? finalizeForPersist(modelerXmlBeforeFlush) : "";
+      const modelerBeforeFlushDiffers = finalizedModelerBeforeFlush.trim()
+        && fnv1aHex(finalizedModelerBeforeFlush) !== fnv1aHex(outBeforeFlush);
+      if (!force && stateBeforeFlush?.dirty !== true) {
+        if (modelerBeforeFlushDiffers) {
+          const rev = Number(stateBeforeFlush.rev || 0);
+          const persisted = await persistXmlWithReason(
+            finalizedModelerBeforeFlush,
+            rev,
+            "modeler_clean_sync",
+            "modeler clean sync persist failed",
+          );
+          if (!persisted.ok) {
+            return {
+              ok: false,
+              error: persisted.error,
+              status: persisted.status,
+              errorCode: persisted.errorCode,
+              xml: finalizedModelerBeforeFlush,
+            };
+          }
+          const hint = isLocalSessionId(sid) ? "local(saved)" : "backend(saved)";
+          applyXmlSnapshot(finalizedModelerBeforeFlush, hint);
+          coordinator.clearPendingWork?.(`${source}:after_modeler_clean_sync`);
+          return {
+            ok: true,
+            xml: finalizedModelerBeforeFlush,
+            source: hint,
+            syncVersionToken,
+            syncBpmnVersionToken,
+            syncCollabVersionToken,
+          };
+        }
+        return {
+          ok: true,
+          skipped: true,
+          xml: outBeforeFlush,
+          source: "clean_skip",
+          syncVersionToken,
+          syncBpmnVersionToken,
+          syncCollabVersionToken,
+        };
+      }
+
       const flushed = await coordinator.flushSave(source, { force, trigger });
+      assignSyncTokens(flushed);
       const nextState = bpmnStoreRef.current?.getState?.() || {};
       const rawOut = String(nextState.xml || fallbackXml || "");
-      const out = finalizeCamundaExtensionsXml({
-        xmlText: rawOut,
-        camundaExtensionsByElementId: getCamundaExtensionsMap(),
-      });
+      let out = finalizeForPersist(rawOut);
+      const modelerXml = await readActiveModelerXml();
+      const finalizedModelerXml = modelerXml.trim() ? finalizeForPersist(modelerXml) : "";
+      const useModelerSource = finalizedModelerXml.trim() && fnv1aHex(finalizedModelerXml) !== fnv1aHex(out);
+      if (useModelerSource) {
+        out = finalizedModelerXml;
+      }
 
       if (!flushed?.ok) {
         if (force && allowForceFallback && out.trim()) {
@@ -4180,7 +4420,30 @@ const BpmnStage = forwardRef(function BpmnStage({
       }
 
       if (flushed.pending) {
-        return { ok: true, pending: true, xml: out, source: "pending" };
+        return {
+          ok: true,
+          pending: true,
+          xml: out,
+          source: "pending",
+          syncVersionToken,
+          syncBpmnVersionToken,
+          syncCollabVersionToken,
+        };
+      }
+
+      if (useModelerSource) {
+        const rev = Number(nextState.rev || 0);
+        const persisted = await persistXmlWithReason(out, rev, "modeler_resync", "modeler resync persist failed");
+        if (!persisted.ok) {
+          return {
+            ok: false,
+            error: persisted.error,
+            status: persisted.status,
+            errorCode: persisted.errorCode,
+            xml: out,
+          };
+        }
+        coordinator.clearPendingWork?.(`${source}:after_modeler_resync`);
       }
 
       if (out !== rawOut) {
@@ -4192,6 +4455,7 @@ const BpmnStage = forwardRef(function BpmnStage({
           xml_len: out.length,
         });
         const persistedFinalXml = await ensureBpmnPersistence().saveRaw(sid, out, rev, `${source}:camunda_finalize`);
+        assignSyncTokens(persistedFinalXml);
         if (!persistedFinalXml?.ok) {
           emitSaveLifecycleEvent("SAVE_PERSIST_FAIL", {
             sid,
@@ -4229,7 +4493,14 @@ const BpmnStage = forwardRef(function BpmnStage({
       const hint = isLocalSessionId(sid) ? "local(saved)" : "backend(saved)";
       applyXmlSnapshot(out, hint);
       logBpmnTrace("saveXML.modeler.after", out, { sid, trigger });
-      return { ok: true, xml: out, source: hint };
+      return {
+        ok: true,
+        xml: out,
+        source: hint,
+        syncVersionToken,
+        syncBpmnVersionToken,
+        syncCollabVersionToken,
+      };
     } catch (e) {
       const msg = String(e?.message || e || "saveXML failed");
       if (shouldLogBpmnTrace()) {
@@ -4240,6 +4511,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         if (force && allowForceFallback) {
           const rev = Number(bpmnStoreRef.current?.getState?.()?.rev || 0);
           const persisted = await ensureBpmnPersistence().saveRaw(sid, fallbackXml, rev, `${source}:catch_fallback`);
+          assignSyncTokens(persisted);
           if (!persisted.ok) {
             return {
               ok: false,
@@ -4249,7 +4521,14 @@ const BpmnStage = forwardRef(function BpmnStage({
               xml: fallbackXml,
             };
           }
-          return { ok: true, xml: fallbackXml, source: "fallback" };
+          return {
+            ok: true,
+            xml: fallbackXml,
+            source: "fallback",
+            syncVersionToken,
+            syncBpmnVersionToken,
+            syncCollabVersionToken,
+          };
         }
       }
       return {
@@ -4314,6 +4593,9 @@ const BpmnStage = forwardRef(function BpmnStage({
     ensureEpochRef.current += 1;
     robotMetaHydrateStateRef.current = { key: "" };
     camundaHydrateStateRef.current = { key: "" };
+    lastRemoteBpmnApplyTokenRef.current = "";
+    lastAppliedRealtimeOpsSeqRef.current = 0;
+    realtimeElementSnapshotRef.current = new Map();
     destroyRuntime();
     setErr("");
     const draftNow = asObject(draftRef.current);
@@ -4347,6 +4629,91 @@ const BpmnStage = forwardRef(function BpmnStage({
     loadFromBackend(sid, token, { reason: "session_reload" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, reloadKey]);
+
+  useEffect(() => {
+    const sid = String(sessionId || "").trim();
+    if (!sid) return;
+    const payload = asObject(draft?._remote_realtime_ops);
+    const payloadSessionId = String(payload.session_id || draft?.session_id || draft?.id || "").trim();
+    if (!payloadSessionId || payloadSessionId !== sid) return;
+
+    const seqFrom = Number(payload.seq_from || payload.seqFrom || 0) || 0;
+    const seqTo = Number(payload.seq_to || payload.seqTo || 0) || 0;
+    const payloadSeq = Math.max(seqFrom, seqTo);
+    if (payloadSeq <= Number(lastAppliedRealtimeOpsSeqRef.current || 0)) return;
+
+    const items = asArray(payload.items).map((row) => asObject(row));
+    const ops = items
+      .map((row) => (row.op && typeof row.op === "object" ? row.op : row))
+      .map((row) => asObject(row))
+      .filter((row) => toText(row.kind || row.type));
+    if (!ops.length) {
+      lastAppliedRealtimeOpsSeqRef.current = Math.max(
+        Number(lastAppliedRealtimeOpsSeqRef.current || 0),
+        payloadSeq,
+      );
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      const applied = await applyRealtimeOpsOnModeler({
+        ops,
+        remoteToken: toText(payload.remote_token || payload.remoteToken),
+        remoteBpmnToken: toText(payload.remote_bpmn_token || payload.remoteBpmnToken),
+        remoteCollabToken: toText(payload.remote_collab_token || payload.remoteCollabToken),
+      });
+      if (cancelled || !applied?.ok) return;
+      lastAppliedRealtimeOpsSeqRef.current = Math.max(
+        Number(lastAppliedRealtimeOpsSeqRef.current || 0),
+        payloadSeq,
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [draft?._remote_realtime_ops, draft?.id, draft?.session_id, sessionId]);
+
+  useEffect(() => {
+    const sid = String(sessionId || "").trim();
+    if (!sid) return;
+    const draftSid = String(draft?.session_id || draft?.id || "").trim();
+    const remoteToken = String(draft?._remote_version_token || "").trim();
+    const localToken = String(draft?.sync_version_token || draft?.syncVersionToken || "").trim();
+    const forcedRemoteBpmnApplyToken = String(draft?._remote_force_bpmn_apply_token || "").trim();
+    const currentXml = String(xml || "");
+    const incomingXml = String(draft?.bpmn_xml || "");
+    const decision = evaluateRemoteRecoveryImportBoundary({
+      sessionId: sid,
+      draftSessionId: draftSid,
+      remoteVersionToken: remoteToken,
+      localVersionToken: localToken,
+      lastAppliedRemoteVersionToken: String(lastRemoteBpmnApplyTokenRef.current || "").trim(),
+      forceApplyRemoteVersionToken: forcedRemoteBpmnApplyToken,
+      xmlDirty,
+      currentXml,
+      draftXml: incomingXml,
+    });
+    if (!decision.apply) return;
+    applyXmlSnapshot(incomingXml, `recovery_${String(decision.reason || "remote_session_sync")}`);
+    lastRemoteBpmnApplyTokenRef.current = remoteToken;
+    if (shouldLogBpmnTrace()) {
+      // eslint-disable-next-line no-console
+      console.debug(
+        `[REMOTE_SYNC] apply sid=${sid} token=${remoteToken || "-"} reason=${String(decision.reason || "-")} len=${incomingXml.length} hash=${fnv1aHex(incomingXml)}`,
+      );
+    }
+  }, [
+    draft?._remote_force_bpmn_apply_token,
+    draft?._remote_version_token,
+    draft?.bpmn_xml,
+    draft?.id,
+    draft?.session_id,
+    sessionId,
+    xml,
+    xmlDirty,
+  ]);
 
   useEffect(() => {
     let cancelled = false;

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import AiToolsModal from "./AiToolsModal";
 import { useAuth } from "../features/auth/AuthProvider";
-import { getManualSessionStatusMeta } from "../features/workspace/workspacePermissions";
+import useSessionPresence from "../features/sessions/presence/useSessionPresence.js";
+import { buildSessionPresenceCopy } from "../features/sessions/presence/presenceCopy.js";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -61,6 +62,63 @@ function UserAvatarIcon({ className = "" }) {
   );
 }
 
+function PresenceUsersIcon({ className = "" }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
+      <path
+        fill="currentColor"
+        d="M9.2 12.6a3.6 3.6 0 1 0 0-7.2 3.6 3.6 0 0 0 0 7.2Zm6.3-1.2a2.95 2.95 0 1 0 0-5.9 2.95 2.95 0 0 0 0 5.9ZM3.7 19.5c0-2.83 2.93-4.93 6.77-4.93 1.82 0 3.45.47 4.68 1.28.18.12.22.36.1.53a6 6 0 0 0-.98 3.12H4.58a.88.88 0 0 1-.88-.9Zm11.84 0c0-2.16 2.27-3.8 4.9-3.8 2.63 0 4.86 1.64 4.86 3.8 0 .5-.4.9-.9.9h-7.95a5.8 5.8 0 0 0-.91-.9Z"
+      />
+    </svg>
+  );
+}
+
+const REVIEW_STATUS_OPTIONS = [
+  { value: "draft", label: "Черновик", action: "Черновик" },
+  { value: "in_review", label: "На ревью", action: "Начать ревью" },
+  { value: "changes_requested", label: "Нужны правки", action: "Запросить правки" },
+  { value: "approved", label: "Одобрено", action: "Одобрить" },
+];
+
+function normalizeReviewStatus(raw, fallback = "draft") {
+  const value = String(raw || "").trim().toLowerCase();
+  const map = {
+    draft: "draft",
+    review: "in_review",
+    in_review: "in_review",
+    changes_requested: "changes_requested",
+    in_progress: "changes_requested",
+    approved: "approved",
+    ready: "approved",
+  };
+  const normalized = map[value] || value;
+  if (REVIEW_STATUS_OPTIONS.some((item) => item.value === normalized)) return normalized;
+  return REVIEW_STATUS_OPTIONS.some((item) => item.value === fallback) ? fallback : "draft";
+}
+
+function getReviewStatusMeta(raw) {
+  const status = normalizeReviewStatus(raw, "draft");
+  const map = {
+    draft: {
+      label: "Черновик",
+      badgeClass: "border-slate-300 bg-slate-50 text-slate-700",
+    },
+    in_review: {
+      label: "На ревью",
+      badgeClass: "border-amber-300 bg-amber-50 text-amber-700",
+    },
+    changes_requested: {
+      label: "Нужны правки",
+      badgeClass: "border-rose-300 bg-rose-50 text-rose-700",
+    },
+    approved: {
+      label: "Одобрено",
+      badgeClass: "border-emerald-300 bg-emerald-50 text-emerald-700",
+    },
+  };
+  return map[status] || map.draft;
+}
+
 export default function TopBar({
   backendStatus,
   backendHint,
@@ -76,11 +134,16 @@ export default function TopBar({
   sessions,
   sessionId,
   sessionStatus = "draft",
+  sessionReviewStatus = "draft",
+  sessionReviewOpenCommentsCount = 0,
+  sessionRemoteSyncState = null,
   onOpenSession,
   onOpenWorkspace,
   onOpen,
   onDeleteSession,
   onChangeSessionStatus,
+  onChangeSessionReviewStatus,
+  onApplySessionRemoteSync,
   onNewProject,
   llmHasApiKey,
   llmBaseUrl,
@@ -105,17 +168,24 @@ export default function TopBar({
   const effectiveProjectId = toText(projectId || draftProjectId);
   const effectiveSessionId = toText(sessionId || draftSessionId);
   const hasActiveSession = effectiveSessionId.length > 0;
+  const sessionPresence = useSessionPresence({
+    sessionId: effectiveSessionId,
+    enabled: hasActiveSession,
+  });
   const [uiTheme, setUiTheme] = useState("dark");
   const [aiToolsOpen, setAiToolsOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
+  const [reviewMenuOpen, setReviewMenuOpen] = useState(false);
   const accountMenuRef = useRef(null);
   const accountButtonRef = useRef(null);
   const projectMenuRef = useRef(null);
   const projectMenuButtonRef = useRef(null);
   const sessionMenuRef = useRef(null);
   const sessionMenuButtonRef = useRef(null);
+  const reviewMenuRef = useRef(null);
+  const reviewMenuButtonRef = useRef(null);
 
   useEffect(() => {
     try {
@@ -190,6 +260,27 @@ export default function TopBar({
     };
   }, [sessionMenuOpen]);
 
+  useEffect(() => {
+    if (!reviewMenuOpen) return undefined;
+    function onPointerDown(event) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      const menu = reviewMenuRef.current;
+      const button = reviewMenuButtonRef.current;
+      if (menu?.contains(target) || button?.contains(target)) return;
+      setReviewMenuOpen(false);
+    }
+    function onKeyDown(event) {
+      if (event.key === "Escape") setReviewMenuOpen(false);
+    }
+    window.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [reviewMenuOpen]);
+
   function toggleTheme() {
     const next = uiTheme === "dark" ? "light" : "dark";
     setUiTheme(next);
@@ -254,7 +345,25 @@ export default function TopBar({
     [activeOrgId, currentOrg],
   );
   const hasMultiOrg = orgList.length > 1;
-  const sessionStatusMeta = getManualSessionStatusMeta(sessionStatus);
+  const reviewStatusMeta = getReviewStatusMeta(sessionReviewStatus);
+  const reviewStatus = normalizeReviewStatus(sessionReviewStatus, "draft");
+  const sessionReviewOpenCount = Number(sessionReviewOpenCommentsCount || 0) > 0
+    ? Number(sessionReviewOpenCommentsCount || 0)
+    : 0;
+  const sessionPresenceCount = Number(sessionPresence.otherActiveUsersCount || 0) > 0
+    ? Number(sessionPresence.otherActiveUsersCount || 0)
+    : 0;
+  const sessionPresenceCopy = useMemo(
+    () => buildSessionPresenceCopy(sessionPresenceCount),
+    [sessionPresenceCount],
+  );
+  const remoteSyncState = sessionRemoteSyncState && typeof sessionRemoteSyncState === "object"
+    ? sessionRemoteSyncState
+    : {};
+  const remoteSyncMode = String(remoteSyncState?.mode || "").trim().toLowerCase() || "idle";
+  const remoteSyncHasPending = remoteSyncMode === "stale_pending";
+  const remoteSyncHasError = remoteSyncMode === "error";
+  const remoteSyncError = toText(remoteSyncState?.error);
   const canOpenOrgSettings = Boolean(user?.is_admin) || ["org_owner", "org_admin", "auditor"].includes(activeOrgRole);
 
   async function handleLogout() {
@@ -275,6 +384,17 @@ export default function TopBar({
     setAccountMenuOpen(false);
     if (typeof window === "undefined") return;
     window.alert("Раздел «Профиль» будет доступен в следующих релизах.");
+  }
+
+  async function handleReviewStatusChange(nextStatusRaw) {
+    const nextStatus = normalizeReviewStatus(nextStatusRaw, reviewStatus);
+    if (nextStatus === reviewStatus) {
+      setReviewMenuOpen(false);
+      return;
+    }
+    const result = await Promise.resolve(onChangeSessionReviewStatus?.(nextStatus));
+    if (result && result.ok === false) return;
+    setReviewMenuOpen(false);
   }
 
   return (
@@ -301,7 +421,7 @@ export default function TopBar({
         {hasActiveSession ? (
           <>
             <div
-              className="topGroup relative flex min-w-[180px] max-w-[320px] flex-1 items-center gap-1.5 rounded-full border border-border/70 bg-panel2/40 px-2 py-1"
+              className="topGroup relative flex min-w-[148px] max-w-[228px] grow-0 items-center gap-1.5 rounded-full border border-border/70 bg-panel2/40 px-2 py-1"
               title={selectedProjectTitle}
             >
               <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.1em] text-muted">ПРОЕКТ</span>
@@ -364,20 +484,13 @@ export default function TopBar({
             </div>
 
             <div
-              className="topGroup relative flex min-w-[200px] max-w-[360px] flex-1 items-center gap-1.5 rounded-full border border-border/70 bg-panel2/40 px-2 py-1"
+              className="topGroup relative flex min-w-[164px] max-w-[244px] grow-0 items-center gap-1.5 rounded-full border border-border/70 bg-panel2/40 px-2 py-1"
               title={selectedSessionTitle}
             >
               <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.1em] text-muted">СЕССИЯ</span>
               <div className="min-w-0 flex-1 truncate px-1 text-[13px] font-semibold text-fg" data-testid="topbar-session-title">
                 {shortLabel(selectedSessionTitle, 56)}
               </div>
-              <span
-                className={`inline-flex items-center rounded-full border px-2 py-1 text-[11px] font-medium ${sessionStatusMeta.badgeClass}`}
-                title="Статус сессии"
-                data-testid="topbar-session-status"
-              >
-                {sessionStatusMeta.label}
-              </span>
               <button
                 ref={sessionMenuButtonRef}
                 type="button"
@@ -421,6 +534,95 @@ export default function TopBar({
                 </div>
               ) : null}
             </div>
+
+            <div className="topGroup relative inline-flex shrink-0 items-center gap-1">
+              <button
+                ref={reviewMenuButtonRef}
+                type="button"
+                className={`inline-flex h-8 items-center gap-1 rounded-md border px-2.5 text-[11px] font-semibold ${reviewStatusMeta.badgeClass}`}
+                title={`Review статус · ${reviewStatusMeta.label}${sessionReviewOpenCount > 0 ? ` · open ${sessionReviewOpenCount}` : ""}`}
+                data-testid="topbar-session-status"
+                onClick={() => {
+                  if (!onChangeSessionReviewStatus) return;
+                  setReviewMenuOpen((prev) => !prev);
+                }}
+              >
+                <span data-testid="topbar-session-review-status-label">{reviewStatusMeta.label}</span>
+                {sessionReviewOpenCount > 0 ? (
+                  <span
+                    className="inline-flex min-w-[18px] justify-center rounded-sm border border-current/25 px-1 text-[10px]"
+                    data-testid="topbar-session-review-open-count"
+                  >
+                    {sessionReviewOpenCount}
+                  </span>
+                ) : null}
+                {onChangeSessionReviewStatus ? <span className="text-[10px]">▾</span> : null}
+              </button>
+              {reviewMenuOpen && onChangeSessionReviewStatus ? (
+                <div
+                  ref={reviewMenuRef}
+                  className="absolute right-0 top-[calc(100%+8px)] z-[132] grid min-w-[220px] gap-1 rounded-xl border border-border bg-panel p-1.5 shadow-panel"
+                  data-testid="topbar-session-review-menu"
+                >
+                  {REVIEW_STATUS_OPTIONS.map((option) => {
+                    const active = option.value === reviewStatus;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={`secondaryBtn h-9 w-full justify-start px-3 text-left text-sm ${active ? "border-accent/45 bg-accentSoft/45 text-fg" : ""}`}
+                        onClick={() => {
+                          void handleReviewStatusChange(option.value);
+                        }}
+                        data-testid={`topbar-review-action-${option.value}`}
+                      >
+                        {option.action}
+                        <span className="ml-auto text-[11px] text-muted">{option.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+
+            {sessionPresenceCount > 0 ? (
+              <div
+                className="topGroup inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border/60 bg-transparent px-2 text-[11px] font-semibold text-muted"
+                title={sessionPresenceCopy}
+                aria-label={sessionPresenceCopy}
+                data-testid="topbar-session-presence-indicator"
+              >
+                <PresenceUsersIcon className="h-3.5 w-3.5 text-success/90" />
+                <span className="text-[12px] text-fg" data-testid="topbar-session-presence-count">
+                  {sessionPresenceCount}
+                </span>
+              </div>
+            ) : null}
+
+            {remoteSyncHasPending ? (
+              <button
+                type="button"
+                className="topGroup inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-warning/55 bg-warning/10 px-2 text-[11px] font-semibold text-warning hover:bg-warning/20"
+                title="Есть удалённые изменения в сессии. Обновить до durable truth."
+                data-testid="topbar-session-remote-sync-apply"
+                onClick={() => {
+                  void onApplySessionRemoteSync?.();
+                }}
+              >
+                <span>Удалённые изменения</span>
+                <span className="rounded-sm border border-warning/55 px-1 text-[10px]">Обновить</span>
+              </button>
+            ) : null}
+
+            {!remoteSyncHasPending && remoteSyncHasError ? (
+              <div
+                className="topGroup inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-danger/55 bg-danger/10 px-2 text-[11px] font-semibold text-danger"
+                data-testid="topbar-session-remote-sync-error"
+                title={remoteSyncError || "Ошибка live sync"}
+              >
+                Ошибка синхронизации
+              </div>
+            ) : null}
           </>
         ) : null}
       </div>

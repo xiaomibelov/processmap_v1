@@ -100,14 +100,65 @@ def norm_notes_by_element(value: Any) -> Dict[str, Any]:
             created_at = item.get("createdAt") or item.get("created_at") or item.get("ts") or int(time.time() * 1000)
             updated_at = item.get("updatedAt") or item.get("updated_at") or created_at
             note_id = str(item.get("id") or item.get("note_id") or f"note_{created_at}_{idx + 1}").strip()
-            items.append(
-                {
-                    "id": note_id or f"note_{created_at}_{idx + 1}",
-                    "text": text,
-                    "createdAt": int(created_at) if str(created_at).isdigit() else created_at,
-                    "updatedAt": int(updated_at) if str(updated_at).isdigit() else updated_at,
-                }
-            )
+            normalized_item: Dict[str, Any] = {
+                "id": note_id or f"note_{created_at}_{idx + 1}",
+                "text": text,
+                "createdAt": int(created_at) if str(created_at).isdigit() else created_at,
+                "updatedAt": int(updated_at) if str(updated_at).isdigit() else updated_at,
+            }
+
+            kind = str(item.get("kind") or item.get("type") or "").strip().lower()
+            if kind:
+                normalized_item["kind"] = kind
+
+            status_raw = str(item.get("status") or "").strip().lower()
+            if status_raw == "reopened":
+                status_raw = "open"
+            if status_raw in {"open", "resolved"}:
+                normalized_item["status"] = status_raw
+
+            session_id = str(item.get("session_id") or item.get("sessionId") or "").strip()
+            if session_id:
+                normalized_item["session_id"] = session_id
+
+            anchor_type = str(item.get("anchor_type") or item.get("anchorType") or "").strip().lower()
+            if anchor_type in {"node", "sequence_flow", "property"}:
+                normalized_item["anchor_type"] = anchor_type
+            anchor_id = str(item.get("anchor_id") or item.get("anchorId") or key).strip()
+            if anchor_id:
+                normalized_item["anchor_id"] = anchor_id
+            anchor_label = str(item.get("anchor_label") or item.get("anchorLabel") or "").strip()
+            if anchor_label:
+                normalized_item["anchor_label"] = anchor_label
+            anchor_path = str(item.get("anchor_path") or item.get("anchorPath") or "").strip()
+            if anchor_path:
+                normalized_item["anchor_path"] = anchor_path
+
+            author_user_id = str(item.get("author_user_id") or item.get("authorUserId") or "").strip()
+            if author_user_id:
+                normalized_item["author_user_id"] = author_user_id
+            author_label = str(
+                item.get("author_label")
+                or item.get("authorLabel")
+                or item.get("author")
+                or item.get("user")
+                or item.get("created_by")
+                or ""
+            ).strip()
+            if author_label:
+                normalized_item["author_label"] = author_label
+
+            resolved_by_user_id = str(item.get("resolved_by_user_id") or item.get("resolvedByUserId") or "").strip()
+            if resolved_by_user_id:
+                normalized_item["resolved_by_user_id"] = resolved_by_user_id
+            resolved_by_label = str(item.get("resolved_by_label") or item.get("resolvedByLabel") or "").strip()
+            if resolved_by_label:
+                normalized_item["resolved_by_label"] = resolved_by_label
+            resolved_at = item.get("resolved_at") or item.get("resolvedAt")
+            if str(resolved_at).isdigit():
+                normalized_item["resolved_at"] = int(resolved_at)
+
+            items.append(normalized_item)
 
         if not items:
             continue

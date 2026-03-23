@@ -14,6 +14,15 @@ import {
   withElementNoteSummary,
   withRemappedElementNotes,
 } from "./features/notes/elementNotes";
+import {
+  countOpenReviewComments,
+  flattenReviewCommentsFromNotes,
+  normalizeReviewAnchorType,
+  normalizeReviewStatus,
+  normalizeReviewV1Meta,
+  withAddedReviewComment,
+  withReviewCommentStatus,
+} from "./features/review/reviewWorkflowV1";
 import { deriveActorsFromBpmn } from "./features/process/lib/deriveActorsFromBpmn";
 import { createAiInputHash, executeAi } from "./features/ai/aiExecutor";
 
@@ -28,7 +37,11 @@ import {
   apiListSessions,
   apiCreateSession,
   apiGetSession,
+  apiGetSessionSyncState,
+  apiGetSessionCollabState,
+  apiGetSessionRealtimeOps,
   apiPatchSession,
+  apiPostSessionRealtimeOps,
   apiPostNote,
   apiDeleteProject,
   apiDeleteSession,
@@ -53,6 +66,7 @@ import {
 } from "./features/process/robotmeta/robotMeta";
 import {
   extractCamundaExtensionsMapFromBpmnXml,
+  finalizeCamundaExtensionsXml,
   hydrateCamundaExtensionsFromBpmn,
   normalizeCamundaExtensionsMap,
   removeCamundaExtensionStateByElementId,
@@ -101,6 +115,11 @@ import {
   projectTitleOf,
   sessionIdOf,
 } from "./app/projectSessionSelectors";
+import {
+  buildSessionVersionToken,
+  hasUnsafeLocalSessionState,
+} from "./features/sessions/live-sync/liveSessionSyncV1";
+import useSessionSyncCoordinator from "./features/sessions/live-sync/useSessionSyncCoordinator";
 import {
   emptyBpmnMeta,
   mergeHybridV2Doc,
@@ -156,6 +175,82 @@ function fnv1aHex(input) {
     hash = Math.imul(hash >>> 0, 0x01000193) >>> 0;
   }
   return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function stableJsonForHash(value) {
+  if (value === null) return "null";
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : "null";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "string") return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableJsonForHash(item)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    const keys = Object.keys(value).sort();
+    const pairs = keys.map((key) => `${JSON.stringify(key)}:${stableJsonForHash(value[key])}`);
+    return `{${pairs.join(",")}}`;
+  }
+  return "null";
+}
+
+function overlayExtensionStateSourceHash(extensionStateRaw) {
+  return fnv1aHex(stableJsonForHash(ensureObject(extensionStateRaw)));
+}
+
+const XML_DERIVED_META_CACHE = new Map();
+const XML_DERIVED_META_CACHE_LIMIT = 6;
+
+function readCachedXmlDerivedMeta(xmlTextRaw) {
+  const xmlText = String(xmlTextRaw || "");
+  if (!xmlText.trim()) {
+    return {
+      xmlRobotMeta: {},
+      xmlCamundaExtensions: {},
+    };
+  }
+  const key = `${xmlText.length}:${fnv1aHex(xmlText)}`;
+  const cached = XML_DERIVED_META_CACHE.get(key);
+  if (cached && typeof cached === "object") {
+    return {
+      xmlRobotMeta: normalizeRobotMetaMap(cached.xmlRobotMeta),
+      xmlCamundaExtensions: normalizeCamundaExtensionsMap(cached.xmlCamundaExtensions),
+    };
+  }
+  const next = {
+    xmlRobotMeta: normalizeRobotMetaMap(extractRobotMetaMapFromBpmnXml(xmlText)),
+    xmlCamundaExtensions: normalizeCamundaExtensionsMap(extractCamundaExtensionsMapFromBpmnXml(xmlText)),
+  };
+  XML_DERIVED_META_CACHE.set(key, next);
+  if (XML_DERIVED_META_CACHE.size > XML_DERIVED_META_CACHE_LIMIT) {
+    const oldestKey = XML_DERIVED_META_CACHE.keys().next().value;
+    if (oldestKey) XML_DERIVED_META_CACHE.delete(oldestKey);
+  }
+  return {
+    xmlRobotMeta: normalizeRobotMetaMap(next.xmlRobotMeta),
+    xmlCamundaExtensions: normalizeCamundaExtensionsMap(next.xmlCamundaExtensions),
+  };
+}
+
+function normalizeOverlayServerProjectionEntry(rawEntry, fallbackElementId = "") {
+  const entry = ensureObject(rawEntry);
+  const elementId = String(entry.elementId || fallbackElementId || "").trim();
+  const items = ensureArray(entry.items)
+    .map((rawItem) => ({
+      key: String(rawItem?.key || "").trim(),
+      label: String(rawItem?.label || "").trim(),
+      value: String(rawItem?.value || "").trim(),
+    }))
+    .filter((row) => row.label && row.value);
+  const hiddenCount = Math.max(0, Number(entry.hiddenCount || 0));
+  const totalCountRaw = Number(entry.totalCount || 0);
+  const totalCount = totalCountRaw > 0 ? totalCountRaw : items.length;
+  return {
+    enabled: entry.enabled === true && items.length > 0,
+    elementId,
+    items,
+    hiddenCount,
+    totalCount,
+  };
 }
 
 function shortStack() {
@@ -355,8 +450,10 @@ function sessionToDraft(sid, session) {
   const next = session || ensureDraftShape(sid);
   const localMeta = normalizeBpmnMeta(readLocalBpmnMeta(sid));
   const sessionMeta = normalizeBpmnMeta(ensureObject(next.bpmn_meta));
-  const xmlRobotMeta = normalizeRobotMetaMap(extractRobotMetaMapFromBpmnXml(next?.bpmn_xml || ""));
-  const xmlCamundaExtensions = normalizeCamundaExtensionsMap(extractCamundaExtensionsMapFromBpmnXml(next?.bpmn_xml || ""));
+  const {
+    xmlRobotMeta,
+    xmlCamundaExtensions,
+  } = readCachedXmlDerivedMeta(next?.bpmn_xml || "");
   const { derivedReadMeta: normalizedMeta } = buildSessionMetaReadModel({
     sessionMetaRaw: sessionMeta,
     localMetaRaw: localMeta,
@@ -804,6 +901,7 @@ export default function App() {
   const [leftCompact, setLeftCompact] = useState(() => readLeftPanelCompact());
   const [stepTimeUnit, setStepTimeUnit] = useState(() => readStepTimeUnit());
   const [showPropertiesOverlayAlways, setShowPropertiesOverlayAlways] = useState(false);
+  const propertiesOverlayProjectionCacheRef = useRef(new Map());
   const [elementNotesFocusKey, setElementNotesFocusKey] = useState(0);
   const [llmHasApiKey, setLlmHasApiKey] = useState(false);
   const [llmBaseUrl, setLlmBaseUrl] = useState("https://api.deepseek.com");
@@ -836,6 +934,18 @@ export default function App() {
     return canCreateOrgTemplateForRole(activeOrgRole, Boolean(user?.is_admin));
   }, [activeOrgRole, user?.is_admin]);
   const draftSessionId = String(draft?.session_id || "").trim();
+  const reviewMeta = useMemo(
+    () => normalizeReviewV1Meta(draft?.bpmn_meta?.review_v1),
+    [draft?.bpmn_meta?.review_v1],
+  );
+  const reviewComments = useMemo(
+    () => flattenReviewCommentsFromNotes(draft?.notes_by_element || draft?.notesByElementId, { sessionId: draftSessionId }),
+    [draft?.notes_by_element, draft?.notesByElementId, draftSessionId],
+  );
+  const reviewOpenCommentsCount = useMemo(
+    () => countOpenReviewComments(draft?.notes_by_element || draft?.notesByElementId, { sessionId: draftSessionId }),
+    [draft?.notes_by_element, draft?.notesByElementId, draftSessionId],
+  );
   const isSessionLocalMode = !draftSessionId || isLocalSessionId(draftSessionId);
   const serializeSessionMetaForBoundary = useCallback((valueRaw) => JSON.stringify(normalizeBpmnMeta(valueRaw)), []);
   const shortSessionMetaErr = useCallback((value) => String(value || "Не удалось сохранить session meta."), []);
@@ -888,6 +998,46 @@ export default function App() {
       stale: result?.stale === true,
     };
   }, [draftSessionId, markFail, markOk, onSessionSync, sessionMetaWriteGateway]);
+
+  const persistCamundaExtensionsXmlBoundary = useCallback(async ({
+    sid,
+    camundaExtensionsByElementId,
+    source = "camunda_extensions_save",
+  } = {}) => {
+    const sessionId = String(sid || "").trim();
+    if (!sessionId || isLocalSessionId(sessionId)) {
+      return { ok: true, skipped: true, reason: "local_or_missing_session" };
+    }
+    const baseXml = String(draft?.bpmn_xml || "");
+    if (!baseXml.trim()) {
+      return { ok: true, skipped: true, reason: "empty_bpmn_xml" };
+    }
+    const finalizedXml = String(finalizeCamundaExtensionsXml({
+      xmlText: baseXml,
+      camundaExtensionsByElementId: normalizeCamundaExtensionsMap(camundaExtensionsByElementId),
+    }) || "");
+    if (!finalizedXml.trim() || finalizedXml === baseXml) {
+      return { ok: true, skipped: true, reason: "no_xml_delta" };
+    }
+    const rev = Number(draft?.bpmn_xml_version || draft?.version || 0);
+    const putRes = await apiPutBpmnXml(sessionId, finalizedXml, { rev });
+    if (!putRes?.ok) {
+      return {
+        ok: false,
+        status: Number(putRes?.status || 0),
+        error: String(putRes?.error || "Не удалось синхронизировать BPMN XML после сохранения Properties."),
+      };
+    }
+    onSessionSync({
+      ...(draft && typeof draft === "object" ? draft : {}),
+      id: sessionId,
+      session_id: sessionId,
+      bpmn_xml: finalizedXml,
+      bpmn_xml_version: Number(putRes?.storedRev || rev || 0),
+      _sync_source: `${String(source || "camunda_extensions_save")}_xml_sync`,
+    });
+    return { ok: true, skipped: false };
+  }, [draft, onSessionSync]);
 
   function markOk(hint) {
     setBackendStatus("ok");
@@ -1103,6 +1253,41 @@ export default function App() {
     activationState,
   });
 
+  const liveSyncLocalVersionToken = useMemo(
+    () => buildSessionVersionToken(draft),
+    [
+      draft?.sync_version_token,
+      draft?.syncVersionToken,
+      draft?.version,
+      draft?.bpmn_xml_version,
+      draft?.updated_at,
+      draft?.updatedAt,
+    ],
+  );
+  const hasUnsafeLocalSyncState = useMemo(
+    () => hasUnsafeLocalSessionState(processUiState),
+    [processUiState],
+  );
+  const {
+    remoteSessionSyncState,
+    publishRealtimeBpmnOps,
+    applyPendingRemoteSessionSync,
+    acknowledgeSessionSyncPayload,
+  } = useSessionSyncCoordinator({
+    draftSessionId: draft?.session_id,
+    draftBpmnMeta: draft?.bpmn_meta,
+    isLocalSessionId,
+    liveSyncLocalVersionToken,
+    hasUnsafeLocalSyncState,
+    onSessionSync,
+    normalizeBpmnMeta,
+    apiGetSession,
+    apiGetSessionSyncState,
+    apiGetSessionCollabState,
+    apiGetSessionRealtimeOps,
+    apiPostSessionRealtimeOps,
+  });
+
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     if (!window.__FPC_E2E__) return undefined;
@@ -1127,6 +1312,7 @@ export default function App() {
   useEffect(() => {
     setShowPropertiesOverlayAlways(readPropertiesOverlayAlwaysEnabled(draftSessionId));
     setSelectedPropertiesOverlayAlwaysPreview(null);
+    propertiesOverlayProjectionCacheRef.current = new Map();
   }, [draftSessionId, setSelectedPropertiesOverlayAlwaysPreview]);
 
   useEffect(() => {
@@ -1137,19 +1323,60 @@ export default function App() {
     if (!showPropertiesOverlayAlways) return {};
     const currentMeta = normalizeBpmnMeta(draft?.bpmn_meta);
     const extensionMap = normalizeCamundaExtensionsMap(currentMeta.camunda_extensions_by_element_id);
+    const projection = ensureObject(currentMeta.properties_overlay_projection_v1);
+    const projectionEntriesByElementId = ensureObject(projection.entries_by_element_id);
+    const cache = propertiesOverlayProjectionCacheRef.current;
     const out = {};
+    const t0 = (typeof performance !== "undefined" && typeof performance.now === "function")
+      ? performance.now()
+      : 0;
+    let reusedCount = 0;
+    let rebuiltCount = 0;
+
     Object.keys(extensionMap).forEach((rawElementId) => {
       const elementId = String(rawElementId || "").trim();
       if (!elementId) return;
-      const preview = buildPropertiesOverlayPreview({
-        elementId,
-        extensionStateRaw: extensionMap[rawElementId],
-        showPropertiesOverlay: true,
-      });
+      const extensionStateRaw = extensionMap[rawElementId];
+      const sourceHash = overlayExtensionStateSourceHash(extensionStateRaw);
+      const cached = cache.get(elementId);
+      let preview = null;
+
+      if (cached && cached.sourceHash === sourceHash) {
+        preview = cached.preview;
+        reusedCount += 1;
+      }
+
+      if (!preview) {
+        const serverProjection = ensureObject(projectionEntriesByElementId[elementId]);
+        const serverSourceHash = String(serverProjection.source_hash || "").trim();
+        if (serverSourceHash && serverSourceHash === sourceHash) {
+          preview = normalizeOverlayServerProjectionEntry(serverProjection, elementId);
+          reusedCount += 1;
+        }
+      }
+
+      if (!preview) {
+        preview = buildPropertiesOverlayPreview({
+          elementId,
+          extensionStateRaw,
+          showPropertiesOverlay: true,
+        });
+        rebuiltCount += 1;
+      }
+
+      cache.set(elementId, { sourceHash, preview });
       if (preview?.enabled && ensureArray(preview.items).length) {
         out[elementId] = preview;
       }
     });
+
+    const liveElementIds = new Set(Object.keys(extensionMap).map((rawElementId) => String(rawElementId || "").trim()).filter(Boolean));
+    Array.from(cache.keys()).forEach((elementId) => {
+      if (!liveElementIds.has(elementId)) {
+        cache.delete(elementId);
+      }
+    });
+
     const draftPreview = ensureObject(selectedPropertiesOverlayAlwaysPreview);
     const draftElementId = String(draftPreview.elementId || "").trim();
     if (draftElementId) {
@@ -1164,8 +1391,26 @@ export default function App() {
         delete out[draftElementId];
       }
     }
+
+    if (typeof window !== "undefined") {
+      const durationMs = (typeof performance !== "undefined" && typeof performance.now === "function")
+        ? Math.max(0, performance.now() - t0)
+        : 0;
+      window.__FPC_OVERLAY_PERF__ = {
+        computedAt: Date.now(),
+        totalElements: Object.keys(extensionMap).length,
+        reusedCount,
+        rebuiltCount,
+        durationMs,
+      };
+    }
     return out;
-  }, [showPropertiesOverlayAlways, draft?.bpmn_meta, selectedPropertiesOverlayAlwaysPreview]);
+  }, [
+    showPropertiesOverlayAlways,
+    draft?.bpmn_meta,
+    selectedPropertiesOverlayAlwaysPreview,
+    propertiesOverlayProjectionCacheRef,
+  ]);
 
   const sidebarHandleSections = useMemo(() => {
     const hasActiveSession = !!String(shellSessionId || "").trim();
@@ -1549,12 +1794,25 @@ export default function App() {
     const activeSid = String(activeSessionIdRef.current || "").trim();
     if (activeSid && sid !== activeSid) return;
     const source = String(session?._sync_source || session?._source || "session_sync");
+    const sourceKey = source.trim().toLowerCase();
+    const isRemoteSyncPayload = sourceKey.startsWith("remote_session_sync_")
+      || sourceKey === "realtime_bpmn_ops_stream"
+      || sourceKey === "realtime_remote_ops_apply";
+    const normalizedSession = isRemoteSyncPayload
+      ? session
+      : {
+          ...(session && typeof session === "object" ? session : {}),
+          _remote_version_token: "",
+          _remote_force_bpmn_apply_token: "",
+          _remote_realtime_ops: null,
+        };
+    acknowledgeSessionSyncPayload?.(normalizedSession);
     setDraftPersisted((prevDraft) => {
       const hydration = applySessionMetaHydration({
         sid,
         activeSessionId: activeSid,
         source,
-        payloadRaw: session,
+        payloadRaw: normalizedSession,
         conflictGuard: sessionMetaConflictGuardRef.current,
         mergeDraft: mergeSessionDraft,
         prevDraft,
@@ -1754,6 +2012,12 @@ export default function App() {
         && prev.canGenerateAiQuestions === next.canGenerateAiQuestions
         && prev.aiGenerateBlockReason === next.aiGenerateBlockReason
         && prev.aiGenerateBlockReasonCode === next.aiGenerateBlockReasonCode
+        && prev.isManualSaveBusy === next.isManualSaveBusy
+        && ensureObject(prev.save).status === ensureObject(next.save).status
+        && ensureObject(prev.save).isDirty === ensureObject(next.save).isDirty
+        && ensureObject(prev.save).isSaving === ensureObject(next.save).isSaving
+        && ensureObject(prev.save).isStale === ensureObject(next.save).isStale
+        && ensureObject(prev.save).isFailed === ensureObject(next.save).isFailed
       ) {
         return prev;
       }
@@ -2276,6 +2540,18 @@ export default function App() {
     });
     if (!persistResult?.ok) {
       return { ok: false, error: String(persistResult?.error || "Не удалось сохранить Properties.") };
+    }
+    const xmlPersistResult = await persistCamundaExtensionsXmlBoundary({
+      sid,
+      camundaExtensionsByElementId: nextCamundaExtensionsByElementId,
+      source: "camunda_extensions_save",
+    });
+    if (!xmlPersistResult?.ok) {
+      return {
+        ok: false,
+        error: String(xmlPersistResult?.error || "Properties сохранены, но BPMN XML не синхронизирован."),
+        status: Number(xmlPersistResult?.status || 0),
+      };
     }
     return { ok: true };
   }
@@ -2814,6 +3090,164 @@ export default function App() {
     return { ok: true };
   }
 
+  async function patchReviewMeta(nextReviewMetaRaw, options = {}) {
+    const sid = String(draft?.session_id || "").trim();
+    if (!sid) return { ok: false, error: "Сессия не выбрана." };
+    const currentMeta = normalizeBpmnMeta(draft?.bpmn_meta);
+    const nextReviewMeta = normalizeReviewV1Meta(nextReviewMetaRaw);
+    const nextMeta = {
+      ...currentMeta,
+      review_v1: {
+        ...nextReviewMeta,
+        version: 1,
+      },
+    };
+
+    if (isLocalSessionId(sid)) {
+      setDraftPersisted((prev) => ({
+        ...prev,
+        bpmn_meta: nextMeta,
+      }));
+      return { ok: true, local: true };
+    }
+
+    const r = await apiPatchSession(sid, { bpmn_meta: nextMeta });
+    if (!r.ok) {
+      if (options?.markError) markFail(r.error);
+      return { ok: false, error: String(r.error || "review_meta_patch_failed") };
+    }
+    onSessionSync(r.session || {});
+    if (options?.markOk) markOk(String(options.markOk));
+    return { ok: true, session: r.session || null };
+  }
+
+  async function changeSessionReviewStatus(nextStatus, options = {}) {
+    const next = normalizeReviewStatus(nextStatus, reviewMeta?.status || "draft");
+    const actorUserId = String(user?.id || "").trim();
+    const actorLabel = String(user?.email || user?.id || "you").trim() || "you";
+    const result = await patchReviewMeta({
+      ...(reviewMeta || {}),
+      status: next,
+      updated_at: Date.now(),
+      updated_by_user_id: actorUserId,
+      updated_by_label: actorLabel,
+    }, options);
+    if (!result.ok) return result;
+    return { ok: true, status: next };
+  }
+
+  async function addAnchoredReviewComment(anchorRaw, bodyRaw) {
+    const sid = String(draft?.session_id || "").trim();
+    const body = String(bodyRaw || "").trim();
+    const anchor = anchorRaw && typeof anchorRaw === "object" ? anchorRaw : {};
+    const anchorId = String(anchor?.anchor_id || anchor?.anchorId || anchor?.id || "").trim();
+    if (!sid || !anchorId || !body) {
+      return { ok: false, error: "Требуется выбранный якорь и текст комментария." };
+    }
+    const selectedType = String(anchor?.anchor_type || anchor?.anchorType || "").trim();
+    const elementType = String(anchor?.element_type || anchor?.elementType || anchor?.type || "").trim();
+    const anchorType = normalizeReviewAnchorType(selectedType, elementType);
+    const authorUserId = String(user?.id || "").trim();
+    const authorLabel = String(user?.email || user?.id || "you").trim() || "you";
+
+    const currentMap = normalizeElementNotesMap(draft?.notes_by_element || draft?.notesByElementId);
+    const nextMap = withAddedReviewComment(currentMap, {
+      session_id: sid,
+      anchor_type: anchorType,
+      anchor_id: anchorId,
+      anchor_label: String(anchor?.anchor_label || anchor?.anchorLabel || anchor?.name || anchorId).trim() || anchorId,
+      anchor_path: String(anchor?.anchor_path || anchor?.anchorPath || "").trim(),
+      body,
+      author_user_id: authorUserId,
+      author_label: authorLabel,
+      status: "open",
+    });
+
+    if (isLocalSessionId(sid)) {
+      setDraftPersisted((d) => ({ ...d, notes_by_element: nextMap }));
+      await changeSessionReviewStatus("in_review", { markOk: "Комментарий добавлен." });
+      emitDiagramFlash({
+        sid,
+        elementId: anchorId,
+        type: "accent",
+        badgeKind: "notes",
+        label: "Review comment",
+      });
+      return { ok: true, local: true };
+    }
+
+    const r = await apiPatchSession(sid, { notes_by_element: nextMap });
+    if (!r.ok) {
+      markFail(r.error);
+      return { ok: false, error: String(r.error || "Не удалось сохранить комментарий.") };
+    }
+    onSessionSync(r.session || {});
+    await changeSessionReviewStatus("in_review");
+    emitDiagramFlash({
+      sid,
+      elementId: anchorId,
+      type: "accent",
+      badgeKind: "notes",
+      label: "Review comment",
+    });
+    markOk("Комментарий добавлен.");
+    return { ok: true };
+  }
+
+  async function setAnchoredReviewCommentStatus(commentIdRaw, nextStatusRaw) {
+    const sid = String(draft?.session_id || "").trim();
+    const commentId = String(commentIdRaw || "").trim();
+    const nextStatus = String(nextStatusRaw || "").trim().toLowerCase();
+    if (!sid || !commentId || !nextStatus) {
+      return { ok: false, error: "Комментарий не найден." };
+    }
+    const actorUserId = String(user?.id || "").trim();
+    const actorLabel = String(user?.email || user?.id || "you").trim() || "you";
+    const currentMap = normalizeElementNotesMap(draft?.notes_by_element || draft?.notesByElementId);
+    const nextMap = withReviewCommentStatus(currentMap, {
+      comment_id: commentId,
+      status: nextStatus,
+      actor_user_id: actorUserId,
+      actor_label: actorLabel,
+    });
+
+    if (isLocalSessionId(sid)) {
+      setDraftPersisted((d) => ({ ...d, notes_by_element: nextMap }));
+      return { ok: true, local: true };
+    }
+    const r = await apiPatchSession(sid, { notes_by_element: nextMap });
+    if (!r.ok) {
+      markFail(r.error);
+      return { ok: false, error: String(r.error || "Не удалось обновить статус комментария.") };
+    }
+    onSessionSync(r.session || {});
+    markOk("Статус комментария обновлён.");
+    return { ok: true };
+  }
+
+  function focusReviewAnchor(anchorRaw = {}) {
+    const sid = String(draft?.session_id || "").trim();
+    const anchorId = String(anchorRaw?.anchor_id || anchorRaw?.anchorId || "").trim();
+    if (!anchorId) return;
+    const anchorType = normalizeReviewAnchorType(anchorRaw?.anchor_type || anchorRaw?.anchorType, anchorRaw?.elementType || anchorRaw?.type);
+    if (sid) {
+      setProcessTabIntent({ sid, tab: "diagram", nonce: Date.now() });
+    }
+    focusElementNotes({
+      id: anchorId,
+      name: String(anchorRaw?.anchor_label || anchorRaw?.anchorLabel || anchorId).trim() || anchorId,
+      type: anchorType === "sequence_flow" ? "bpmn:SequenceFlow" : "bpmn:Task",
+      laneName: "",
+    }, "header_open_notes", { openSidebar: true });
+    emitDiagramFlash({
+      sid,
+      elementId: anchorId,
+      type: "accent",
+      badgeKind: "notes",
+      label: "Review anchor",
+    });
+  }
+
   // Sessions are valid even without predefined actors; keep editing flow open.
   const locked = false;
 
@@ -2937,6 +3371,15 @@ export default function App() {
         onSetElementCamundaExtensions={setElementCamundaExtensions}
         onSetElementCamundaPresentation={setElementCamundaPresentation}
         activeOrgId={activeOrgId}
+        reviewStatus={reviewMeta.status}
+        reviewComments={reviewComments}
+        reviewOpenCommentsCount={reviewOpenCommentsCount}
+        onChangeSessionReviewStatus={changeSessionReviewStatus}
+        onAddReviewComment={addAnchoredReviewComment}
+        onSetReviewCommentStatus={setAnchoredReviewCommentStatus}
+        onFocusReviewAnchor={focusReviewAnchor}
+        currentUserId={String(user?.id || "").trim()}
+        currentUserLabel={String(user?.email || user?.id || "you").trim() || "you"}
         onOpenOrgSettings={openOrgSettings}
         orgPropertyDictionaryRevision={orgPropertyDictionaryRevision}
         onOrgPropertyDictionaryChanged={notifyOrgPropertyDictionaryChanged}
@@ -2990,11 +3433,14 @@ export default function App() {
     draft,
     locked,
     projectId,
+    activeOrgId,
+    orgPropertyDictionaryRevision,
     currentProjectTitle,
     currentSessionTitle,
     selectedBpmnElement,
     processUiState,
     elementNotesFocusKey,
+    showPropertiesOverlayAlways,
     leftCompact,
     leftHidden,
     sidebarActiveSection,
@@ -3005,12 +3451,25 @@ export default function App() {
     setFlowHappyPath,
     setNodePathAssignments,
     setElementRobotMeta,
+    setElementCamundaExtensions,
+    setElementCamundaPresentation,
+    reviewMeta.status,
+    reviewComments,
+    reviewOpenCommentsCount,
+    changeSessionReviewStatus,
+    addAnchoredReviewComment,
+    setAnchoredReviewCommentStatus,
+    focusReviewAnchor,
+    openOrgSettings,
+    notifyOrgPropertyDictionaryChanged,
     openSession,
     returnToSessionList,
     openRenameDialog,
     openDeleteDialog,
     canManageProjectEntities,
     workspacePermissions,
+    user?.id,
+    user?.email,
   ]);
 
   useEffect(() => {
@@ -3149,10 +3608,15 @@ export default function App() {
         sessions={sessions}
         sessionId={String(draft?.session_id || "")}
         sessionStatus={resolveSessionStatusFromDraft(draft, "draft")}
+        sessionReviewStatus={reviewMeta.status}
+        sessionReviewOpenCommentsCount={reviewOpenCommentsCount}
+        sessionRemoteSyncState={remoteSessionSyncState}
         onOpenSession={openSession}
         onOpenWorkspaceSession={openWorkspaceSession}
         onDeleteSession={workspacePermissions.canDeleteSession ? deleteCurrentSession : undefined}
         onChangeSessionStatus={workspacePermissions.canChangeStatus ? changeCurrentSessionStatus : undefined}
+        onChangeSessionReviewStatus={workspacePermissions.canChangeStatus ? changeSessionReviewStatus : undefined}
+        onApplySessionRemoteSync={applyPendingRemoteSessionSync}
         onRefresh={async () => {
           await refreshProjects();
           await refreshSessions(projectId);
@@ -3175,6 +3639,7 @@ export default function App() {
         onOpenElementNotes={focusElementNotes}
         onElementNotesRemap={remapElementNotes}
         onSessionSync={onSessionSync}
+        onPublishRealtimeBpmnOps={publishRealtimeBpmnOps}
         onRecalculateRtiers={recalculateRtiers}
         snapshotRestoreNotice={snapshotRestoreNotice}
         onSnapshotRestoreNoticeConsumed={consumeSnapshotRestoreNotice}

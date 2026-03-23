@@ -1,5 +1,6 @@
 import { apiFetch, isPlainObject, normalizeApiErrorPayload } from "./apiClient.js";
 import { apiRoutes } from "./apiRoutes.js";
+import { normalizeSessionSyncStatePayload } from "../features/sessions/live-sync/liveSessionSyncV1.js";
 
 // Single source of truth for API calls (FPC)
 const ACCESS_TOKEN_KEY = "fpc_auth_access_token";
@@ -1176,6 +1177,154 @@ export async function apiGetSession(sessionId) {
     : r;
 }
 
+export async function apiGetSessionSyncState(sessionId) {
+  const id = String(sessionId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.sessions.syncState(id)));
+  if (r.ok && r.data && typeof r.data === "object" && String(r.data.error || "").trim()) {
+    const detail = String(r.data.error || "not found").trim() || "not found";
+    return { ok: false, status: 404, error: detail, data: r.data };
+  }
+  if (!r.ok) return r;
+  const syncState = normalizeSessionSyncStatePayload(
+    r.data && typeof r.data === "object" ? r.data : {},
+    id,
+  );
+  return {
+    ok: true,
+    status: r.status,
+    sync_state: syncState,
+  };
+}
+
+export async function apiGetSessionCollabState(sessionId) {
+  const id = String(sessionId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.sessions.collabState(id)));
+  if (r.ok && r.data && typeof r.data === "object" && String(r.data.error || "").trim()) {
+    const detail = String(r.data.error || "not found").trim() || "not found";
+    return { ok: false, status: 404, error: detail, data: r.data };
+  }
+  if (!r.ok) return r;
+  const payload = r.data && typeof r.data === "object" ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    collab_state: {
+      session_id: String(payload.session_id || id).trim(),
+      updated_at: Number(payload.updated_at || 0) || 0,
+      version_token: String(payload.version_token || "").trim(),
+      bpmn_version_token: String(payload.bpmn_version_token || "").trim(),
+      collab_version_token: String(payload.collab_version_token || "").trim(),
+      notes_by_element: isPlainObject(payload.notes_by_element) ? payload.notes_by_element : {},
+      review_v1: isPlainObject(payload.review_v1) ? payload.review_v1 : {},
+    },
+  };
+}
+
+function normalizeRealtimeOpEntry(rawItem) {
+  const item = isPlainObject(rawItem) ? rawItem : {};
+  const op = isPlainObject(item.op) ? item.op : {};
+  const payload = isPlainObject(op.payload) ? op.payload : {};
+  return {
+    seq: Number(item.seq || 0) || 0,
+    ts: Number(item.ts || 0) || 0,
+    session_id: String(item.session_id || "").trim(),
+    user_id: String(item.user_id || "").trim(),
+    client_id: String(item.client_id || "").trim(),
+    source: String(item.source || "").trim(),
+    version_token: String(item.version_token || "").trim(),
+    bpmn_version_token: String(item.bpmn_version_token || "").trim(),
+    collab_version_token: String(item.collab_version_token || "").trim(),
+    op: {
+      kind: String(op.kind || "").trim(),
+      client_ts: Number(op.client_ts || 0) || 0,
+      payload,
+    },
+  };
+}
+
+export async function apiGetSessionRealtimeOps(sessionId, options = {}) {
+  const id = String(sessionId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing session_id" };
+  const afterSeq = Math.max(0, Number(options?.afterSeq ?? options?.after_seq ?? 0) || 0);
+  const limit = Math.max(1, Math.min(240, Number(options?.limit ?? 120) || 120));
+  const r = okOrError(await request(apiRoutes.sessions.realtimeOps(id, { afterSeq, limit })));
+  if (r.ok && r.data && typeof r.data === "object" && String(r.data.error || "").trim()) {
+    const detail = String(r.data.error || "not found").trim() || "not found";
+    return { ok: false, status: 404, error: detail, data: r.data };
+  }
+  if (!r.ok) return r;
+  const payload = isPlainObject(r.data) ? r.data : {};
+  const items = Array.isArray(payload.items) ? payload.items.map(normalizeRealtimeOpEntry) : [];
+  return {
+    ok: true,
+    status: r.status,
+    realtime_ops: {
+      session_id: String(payload.session_id || id).trim(),
+      last_seq: Number(payload.last_seq || 0) || 0,
+      degraded: payload.degraded === true,
+      storage: String(payload.storage || "").trim(),
+      items,
+    },
+  };
+}
+
+export async function apiPostSessionRealtimeOps(sessionId, payloadRaw = {}) {
+  const id = String(sessionId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing session_id" };
+  const payload = isPlainObject(payloadRaw) ? payloadRaw : {};
+  const ops = Array.isArray(payload.ops) ? payload.ops : [];
+  const body = {
+    client_id: String(payload.client_id || payload.clientId || "").trim(),
+    source: String(payload.source || "diagram").trim() || "diagram",
+    version_token: String(payload.version_token || payload.versionToken || "").trim(),
+    bpmn_version_token: String(payload.bpmn_version_token || payload.bpmnVersionToken || "").trim(),
+    collab_version_token: String(payload.collab_version_token || payload.collabVersionToken || "").trim(),
+    ops,
+  };
+  if (!body.client_id) return { ok: false, status: 0, error: "missing_client_id" };
+  const r = okOrError(await request(apiRoutes.sessions.realtimeOps(id), { method: "POST", body }));
+  if (r.ok && r.data && typeof r.data === "object" && String(r.data.error || "").trim()) {
+    const detail = String(r.data.error || "not found").trim() || "not found";
+    return { ok: false, status: 404, error: detail, data: r.data };
+  }
+  if (!r.ok) return r;
+  const out = isPlainObject(r.data) ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    realtime_ops: {
+      session_id: String(out.session_id || id).trim(),
+      accepted: Number(out.accepted || 0) || 0,
+      last_seq: Number(out.last_seq || 0) || 0,
+      degraded: out.degraded === true,
+      storage: String(out.storage || "").trim(),
+    },
+  };
+}
+
+export async function apiHeartbeatSessionPresence(sessionId) {
+  const id = String(sessionId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.sessions.presence(id), { method: "POST", body: {} }));
+  if (!r.ok) return r;
+  const presence = r.data && typeof r.data === "object" ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    presence: {
+      session_id: String(presence?.session_id || id).trim(),
+      org_id: String(presence?.org_id || "").trim(),
+      active_users_count: Number(presence?.active_users_count || 0) || 0,
+      other_active_users_count: Number(presence?.other_active_users_count || 0) || 0,
+      current_user_present: Number(presence?.current_user_present ? 1 : 0) === 1,
+      expires_at: Number(presence?.expires_at || 0) || 0,
+      ttl_sec: Number(presence?.ttl_sec || 0) || 0,
+    },
+  };
+}
+
 export async function apiPatchSession(sessionId, patch) {
   const id = String(sessionId || "").trim();
   if (!id) return { ok: false, status: 0, error: "missing session_id" };
@@ -1303,8 +1452,9 @@ export async function apiAiQuestions(sessionId, payload, options = {}) {
 }
 
 function resolveReportOrgId(options = {}) {
-  const explicit = String(options?.orgId || "").trim();
-  if (explicit) return explicit;
+  if (options && Object.prototype.hasOwnProperty.call(options, "orgId")) {
+    return String(options?.orgId || "").trim();
+  }
   return String(getActiveOrgId() || "").trim();
 }
 
@@ -1509,28 +1659,56 @@ export async function apiGetReportVersion(reportId, options = {}) {
     if (!(status === 0 || status === 404 || status === 405)) return enterprise;
   }
   if (sid && pid) {
-    const scoped = await okOrError(await request(apiRoutes.sessions.pathReport(sid, pid, rid), {
+    const scopedRaw = await request(apiRoutes.sessions.pathReport(sid, pid, rid), {
       signal: options?.signal,
-    }));
-    if (scoped.ok) {
-      if (isNotFoundPayload(scoped?.data)) {
-        return {
+    });
+    if (scopedRaw.ok) {
+      if (isNotFoundPayload(scopedRaw?.data)) {
+        last = {
           ok: false,
           status: 404,
-          error: String(scoped?.data?.detail || scoped?.data?.error || "not found"),
-          data: scoped?.data || null,
-          method: scoped?.method,
-          endpoint: scoped?.endpoint,
-          url: scoped?.url,
-          response_text: scoped?.response_text,
-          text: scoped?.text,
+          error: String(scopedRaw?.data?.detail || scopedRaw?.data?.error || "not found"),
+          data: scopedRaw?.data || null,
+          method: scopedRaw?.method,
+          endpoint: scopedRaw?.endpoint,
+          url: scopedRaw?.url,
+          response_text: scopedRaw?.response_text,
+          text: scopedRaw?.text,
         };
+      } else {
+        return { ok: true, status: scopedRaw.status, report: scopedRaw.data || {} };
       }
-      return { ok: true, status: scoped.status, report: scoped.data || {} };
+    } else {
+      const scoped = okOrError(scopedRaw);
+      const scopedStatus = Number(scoped?.status || 0);
+      if (scopedStatus !== 404 && !isRetriablePathReportsStatus(scopedStatus)) return scoped;
+      last = scoped;
+      const legacyScopedRaw = await request(apiRoutes.sessions.pathReportLegacy(sid, pid, rid), {
+        signal: options?.signal,
+      });
+      if (legacyScopedRaw.ok) {
+        if (isNotFoundPayload(legacyScopedRaw?.data)) {
+          last = {
+            ok: false,
+            status: 404,
+            error: String(legacyScopedRaw?.data?.detail || legacyScopedRaw?.data?.error || "not found"),
+            data: legacyScopedRaw?.data || null,
+            method: legacyScopedRaw?.method,
+            endpoint: legacyScopedRaw?.endpoint,
+            url: legacyScopedRaw?.url,
+            response_text: legacyScopedRaw?.response_text,
+            text: legacyScopedRaw?.text,
+          };
+        } else {
+          return { ok: true, status: legacyScopedRaw.status, report: legacyScopedRaw.data || {} };
+        }
+      } else {
+        const legacyScoped = okOrError(legacyScopedRaw);
+        const legacyScopedStatus = Number(legacyScoped?.status || 0);
+        if (legacyScopedStatus !== 404 && !isRetriablePathReportsStatus(legacyScopedStatus)) return legacyScoped;
+        last = legacyScoped;
+      }
     }
-    const scopedStatus = Number(scoped?.status || 0);
-    if (scopedStatus !== 404 && !isRetriablePathReportsStatus(scopedStatus)) return scoped;
-    last = scoped;
   }
   const r = await request(apiRoutes.reports.item(rid), { signal: options?.signal });
   if (r.ok) {
@@ -1595,6 +1773,22 @@ export async function apiDeleteReportVersion(reportId, options = {}) {
       };
     }
     if (scopedStatus !== 404 && !isRetriablePathReportsStatus(scopedStatus)) return scoped;
+    const legacyScoped = okOrError(await request(apiRoutes.sessions.pathReportLegacy(sid, pid, rid), {
+      method: "DELETE",
+      signal: options?.signal,
+    }));
+    if (legacyScoped.ok) return { ok: true, status: legacyScoped.status, result: legacyScoped.data || null };
+    last = legacyScoped;
+    const legacyScopedStatus = Number(legacyScoped?.status || 0);
+    if (legacyScopedStatus === 405) {
+      return {
+        ...legacyScoped,
+        ok: false,
+        unsupported_endpoint: true,
+        error: "Delete report endpoint is not available on current backend build",
+      };
+    }
+    if (legacyScopedStatus !== 404 && !isRetriablePathReportsStatus(legacyScopedStatus)) return legacyScoped;
   }
   const r = okOrError(await request(apiRoutes.reports.item(rid), { method: "DELETE", signal: options?.signal }));
   if (r.ok) return { ok: true, status: r.status, result: r.data || null };
@@ -1643,6 +1837,154 @@ export async function apiGetBpmnXml(sessionId, options = {}) {
   return r.ok ? { ok: true, status: r.status, xml: r.text || "" } : r;
 }
 
+function normalizeDiagramJazzApiError(r, fallbackErrorCode = "diagram_jazz_api_failed") {
+  const data = isPlainObject(r?.data) ? r.data : {};
+  const blocked = String(data?.blocked || "").trim();
+  const errorCode = String(data?.error_code || blocked || "").trim() || fallbackErrorCode;
+  return {
+    ok: false,
+    status: Number(r?.status || 0),
+    error: String(data?.error || r?.error || fallbackErrorCode),
+    errorCode,
+    blocked,
+    traceId: String(data?.trace_id || "").trim(),
+    scopeId: String(data?.scope_id || "").trim(),
+    provider: String(data?.provider || "").trim(),
+    ownerRequestedState: String(data?.owner_requested_state || "").trim(),
+    ownerEffectiveState: String(data?.owner_effective_state || "").trim(),
+    ownerState: String(data?.diagram_owner_state || "").trim(),
+    ownerBlockedReason: String(data?.owner_blocked_reason || "").trim(),
+    ownerRollbackActive: Number(data?.owner_rollback_active || 0) === 1,
+    scopedGateMatch: Number(data?.scoped_gate_match || 0) === 1,
+    scopedGateScope: String(data?.scoped_gate_scope || "").trim(),
+    scopedGateBlockedReason: String(data?.scoped_gate_blocked_reason || "").trim(),
+    scopedGateOperator: String(data?.scoped_gate_operator || "").trim(),
+    correlationId: String(data?.correlation_id || "").trim(),
+    clientTraceId: String(data?.client_trace_id || "").trim(),
+    traceLayer: String(data?.trace_layer || "").trim(),
+    traceOperation: String(data?.trace_operation || "").trim(),
+    traceContractVersion: String(data?.trace_contract_version || "").trim(),
+    adapterTraceTail: Array.isArray(data?.adapter_trace_tail) ? data.adapter_trace_tail : [],
+    data,
+  };
+}
+
+function buildDiagramTraceHeaders(traceContext) {
+  const trace = isPlainObject(traceContext) ? traceContext : {};
+  const traceId = String(trace?.trace_id || trace?.traceId || "").trim();
+  const correlationId = String(trace?.correlation_id || trace?.correlationId || "").trim();
+  const layer = String(trace?.layer || "").trim();
+  const operation = String(trace?.operation || "").trim();
+  const headers = {};
+  if (traceId) headers["X-Diagram-Trace-Id"] = traceId;
+  if (correlationId) headers["X-Diagram-Correlation-Id"] = correlationId;
+  if (layer) headers["X-Diagram-Trace-Layer"] = layer;
+  if (operation) headers["X-Diagram-Trace-Op"] = operation;
+  return headers;
+}
+
+function normalizeDiagramJazzAck(rawAck) {
+  const ack = isPlainObject(rawAck) ? rawAck : {};
+  return {
+    docId: String(ack?.doc_id || "").trim(),
+    docAlias: String(ack?.doc_alias || "").trim(),
+    scopeId: String(ack?.scope_id || "").trim(),
+    provider: String(ack?.provider || "").trim(),
+    contractVersion: String(ack?.contract_version || "").trim(),
+    storedRevision: Number(ack?.stored_revision || 0) || 0,
+    storedFingerprint: String(ack?.stored_fingerprint || "").trim(),
+    updatedAt: Number(ack?.updated_at || 0) || 0,
+    payloadUpdatedAt: Number(ack?.payload_updated_at || 0) || 0,
+    mappingId: String(ack?.mapping_id || "").trim(),
+    raw: ack,
+  };
+}
+
+export async function apiGetDiagramJazzXml(sessionId, options = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id", errorCode: "missing_session_id" };
+  const provider = String(options?.provider || "").trim();
+  const url = apiRoutes.sessions.diagramJazz(sid, { provider });
+  const headers = buildDiagramTraceHeaders(options?.traceContext);
+  const r = okOrError(await request(url, { headers }));
+  if (!r.ok) return normalizeDiagramJazzApiError(r, "diagram_jazz_read_failed");
+  const data = isPlainObject(r?.data) ? r.data : {};
+  const ack = normalizeDiagramJazzAck(data?.ack);
+  return {
+    ok: true,
+    status: Number(r?.status || 200),
+    xml: String(data?.xml || ""),
+    ack,
+    traceId: String(data?.trace_id || "").trim(),
+    provider: String(data?.provider || ack.provider || provider).trim(),
+    mode: String(data?.mode || "").trim(),
+    ownerRequestedState: String(data?.owner_requested_state || "").trim(),
+    ownerEffectiveState: String(data?.owner_effective_state || "").trim(),
+    ownerState: String(data?.diagram_owner_state || "").trim(),
+    ownerBlockedReason: String(data?.owner_blocked_reason || "").trim(),
+    ownerRollbackActive: Number(data?.owner_rollback_active || 0) === 1,
+    scopedGateMatch: Number(data?.scoped_gate_match || 0) === 1,
+    scopedGateScope: String(data?.scoped_gate_scope || "").trim(),
+    scopedGateBlockedReason: String(data?.scoped_gate_blocked_reason || "").trim(),
+    scopedGateOperator: String(data?.scoped_gate_operator || "").trim(),
+    correlationId: String(data?.correlation_id || "").trim(),
+    clientTraceId: String(data?.client_trace_id || "").trim(),
+    traceContractVersion: String(data?.trace_contract_version || "").trim(),
+    sessionId: String(data?.session_id || sid).trim(),
+    adapterTraceTail: Array.isArray(data?.adapter_trace_tail) ? data.adapter_trace_tail : [],
+    data,
+  };
+}
+
+export async function apiPutDiagramJazzXml(sessionId, xml, options = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id", errorCode: "missing_session_id" };
+  const provider = String(options?.provider || "").trim();
+  const body = {
+    xml: String(xml || ""),
+  };
+  if (options?.expectedRevision !== undefined && options?.expectedRevision !== null) {
+    const expectedRevision = Number(options.expectedRevision);
+    if (Number.isFinite(expectedRevision) && expectedRevision >= 0) {
+      body.expected_revision = expectedRevision;
+    }
+  }
+  if (options?.expectedFingerprint !== undefined && options?.expectedFingerprint !== null) {
+    const expectedFingerprint = String(options.expectedFingerprint || "").trim();
+    if (expectedFingerprint) body.expected_fingerprint = expectedFingerprint;
+  }
+  if (provider) body.provider = provider;
+  const url = apiRoutes.sessions.diagramJazz(sid, { provider });
+  const headers = buildDiagramTraceHeaders(options?.traceContext);
+  const r = okOrError(await request(url, { method: "PUT", body, headers }));
+  if (!r.ok) return normalizeDiagramJazzApiError(r, "diagram_jazz_write_failed");
+  const data = isPlainObject(r?.data) ? r.data : {};
+  const ack = normalizeDiagramJazzAck(data?.ack);
+  return {
+    ok: true,
+    status: Number(r?.status || 200),
+    ack,
+    traceId: String(data?.trace_id || "").trim(),
+    provider: String(data?.provider || ack.provider || provider).trim(),
+    mode: String(data?.mode || "").trim(),
+    ownerRequestedState: String(data?.owner_requested_state || "").trim(),
+    ownerEffectiveState: String(data?.owner_effective_state || "").trim(),
+    ownerState: String(data?.diagram_owner_state || "").trim(),
+    ownerBlockedReason: String(data?.owner_blocked_reason || "").trim(),
+    ownerRollbackActive: Number(data?.owner_rollback_active || 0) === 1,
+    scopedGateMatch: Number(data?.scoped_gate_match || 0) === 1,
+    scopedGateScope: String(data?.scoped_gate_scope || "").trim(),
+    scopedGateBlockedReason: String(data?.scoped_gate_blocked_reason || "").trim(),
+    scopedGateOperator: String(data?.scoped_gate_operator || "").trim(),
+    correlationId: String(data?.correlation_id || "").trim(),
+    clientTraceId: String(data?.client_trace_id || "").trim(),
+    traceContractVersion: String(data?.trace_contract_version || "").trim(),
+    sessionId: String(data?.session_id || sid).trim(),
+    adapterTraceTail: Array.isArray(data?.adapter_trace_tail) ? data.adapter_trace_tail : [],
+    data,
+  };
+}
+
 export async function apiPutBpmnXml(sessionId, xml, options = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
@@ -1658,11 +2000,60 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
   const r = okOrError(await request(apiRoutes.sessions.bpmn(sid), { method: "PUT", body, headers }));
   if (!r.ok) return r;
   const storedRev = Number(r?.data?.version);
+  const payload = r?.data && typeof r.data === "object" ? r.data : {};
+  let syncVersionToken = String(payload?.sync_version_token || payload?.syncVersionToken || "").trim();
+  let syncBpmnVersionToken = String(payload?.sync_bpmn_version_token || payload?.syncBpmnVersionToken || "").trim();
+  let syncCollabVersionToken = String(payload?.sync_collab_version_token || payload?.syncCollabVersionToken || "").trim();
+  let updatedAt = Number(payload?.updated_at || payload?.updatedAt || 0) || 0;
+
+  // Legacy rollback save ACK can be minimal ({ok,session_id,bytes,version}) and omit
+  // canonical sync tokens. Fetch sync_state once so local client can acknowledge its own
+  // commit and avoid classifying it as foreign on the next poll cycle.
+  if (!syncVersionToken || !syncBpmnVersionToken || !syncCollabVersionToken || !updatedAt) {
+    const syncRes = await apiGetSessionSyncState(sid);
+    if (syncRes?.ok) {
+      const syncState = syncRes.sync_state && typeof syncRes.sync_state === "object" ? syncRes.sync_state : {};
+      syncVersionToken = String(syncState.version_token || syncVersionToken || "").trim();
+      syncBpmnVersionToken = String(syncState.bpmn_version_token || syncBpmnVersionToken || "").trim();
+      syncCollabVersionToken = String(syncState.collab_version_token || syncCollabVersionToken || "").trim();
+      updatedAt = Number(syncState.updated_at || updatedAt || 0) || 0;
+    }
+  }
+
+  if (shouldLogBpmnTrace()) {
+    // eslint-disable-next-line no-console
+    console.debug(
+      `[PUT_BPMN] ack sid=${sid} rev=${Number.isFinite(storedRev) ? storedRev : 0} `
+      + `sync=${syncVersionToken || "-"} bpmn=${syncBpmnVersionToken || "-"} `
+      + `collab=${syncCollabVersionToken || "-"} updatedAt=${updatedAt || 0}`,
+    );
+  }
+
+  try {
+    if (typeof window !== "undefined") {
+      window.__FPC_LAST_PUT_BPMN_ACK__ = {
+        sid,
+        ts: Date.now(),
+        storedRev: Number.isFinite(storedRev) ? storedRev : (Number.isFinite(rev) ? rev : 0),
+        updatedAt,
+        syncVersionToken,
+        syncBpmnVersionToken,
+        syncCollabVersionToken,
+      };
+    }
+  } catch {
+    // no-op
+  }
+
   return {
     ok: true,
     status: r.status,
     result: r.data,
     storedRev: Number.isFinite(storedRev) ? storedRev : (Number.isFinite(rev) ? rev : 0),
+    updatedAt,
+    syncVersionToken,
+    syncBpmnVersionToken,
+    syncCollabVersionToken,
   };
 }
 

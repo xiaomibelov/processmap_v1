@@ -2,14 +2,23 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { apiRoutes } from "./apiRoutes.js";
 
 test("apiRoutes: canonical report and session routes are stable", () => {
   assert.equal(apiRoutes.sessions.item("sess_1"), "/api/sessions/sess_1");
+  assert.equal(apiRoutes.sessions.syncState("sess_1"), "/api/sessions/sess_1/sync_state");
+  assert.equal(apiRoutes.sessions.realtimeOps("sess_1"), "/api/sessions/sess_1/realtime_ops");
+  assert.equal(
+    apiRoutes.sessions.realtimeOps("sess_1", { afterSeq: 12, limit: 40 }),
+    "/api/sessions/sess_1/realtime_ops?after_seq=12&limit=40",
+  );
+  assert.equal(apiRoutes.sessions.presence("sess_1"), "/api/sessions/sess_1/presence");
   assert.equal(apiRoutes.sessions.bpmn("sess_1"), "/api/sessions/sess_1/bpmn");
   assert.equal(apiRoutes.sessions.pathReports("sess_1", "main"), "/api/sessions/sess_1/paths/main/reports");
   assert.equal(apiRoutes.sessions.pathReport("sess_1", "main", "rpt_1"), "/api/sessions/sess_1/paths/main/reports/rpt_1");
+  assert.equal(apiRoutes.sessions.pathReportLegacy("sess_1", "main", "rpt_1"), "/api/sessions/sess_1/path/main/reports/rpt_1");
   assert.equal(apiRoutes.reports.item("rpt_1"), "/api/reports/rpt_1");
 });
 
@@ -48,7 +57,7 @@ test("apiRoutes: generated sample URLs do not have trailing slash variants", () 
 });
 
 test("api.js static guard: no literal /api strings and no endpoint fanout arrays", () => {
-  const apiJsPath = path.resolve(process.cwd(), "frontend/src/lib/api.js");
+  const apiJsPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "api.js");
   const src = fs.readFileSync(apiJsPath, "utf8");
 
   assert.equal(/["'`]\/api\//.test(src), false, "api.js must use apiRoutes (no literal /api strings)");

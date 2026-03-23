@@ -6,14 +6,18 @@ import {
   robotMetaMissingFields,
 } from "../../features/process/robotmeta/robotMeta";
 import {
+  addZeebeTaskHeaderInExtensionState,
   addCamundaIoParameterInExtensionState,
   CAMUNDA_LISTENER_EVENTS,
   CAMUNDA_LISTENER_TYPES,
   createEmptyCamundaExtensionState,
   extractCamundaInputOutputParametersFromExtensionState,
+  extractZeebeTaskHeadersFromExtensionState,
   normalizeCamundaExtensionState,
   patchCamundaIoParameterInExtensionState,
+  patchZeebeTaskHeaderInExtensionState,
   removeCamundaIoParameterFromExtensionState,
+  removeZeebeTaskHeaderFromExtensionState,
 } from "../../features/process/camunda/camundaExtensions";
 import {
   buildVisibleExtensionPropertyRows,
@@ -43,6 +47,7 @@ function camundaIoTypeLabel(shapeRaw) {
   if (shape === "empty") return "empty";
   if (shape === "script") return "script";
   if (shape === "nested") return "nested";
+  if (shape === "mapping") return "map";
   return "text";
 }
 
@@ -1056,6 +1061,7 @@ export function CamundaPropertiesSettings({
   const [operationPropertiesOpen, setOperationPropertiesOpen] = useState(false);
   const [additionalBpmnOpen, setAdditionalBpmnOpen] = useState(false);
   const [camundaIoOpen, setCamundaIoOpen] = useState(false);
+  const [zeebeTaskHeadersOpen, setZeebeTaskHeadersOpen] = useState(false);
   const [overlayCompanionsExpanded, setOverlayCompanionsExpanded] = useState(false);
   const [expandedCamundaScripts, setExpandedCamundaScripts] = useState({});
   const [expandedBpmnRows, setExpandedBpmnRows] = useState({});
@@ -1077,11 +1083,16 @@ export function CamundaPropertiesSettings({
     [state, dictionaryBundle],
   );
   const camundaIoModel = useMemo(
-    () => extractCamundaInputOutputParametersFromExtensionState(state),
+    () => extractCamundaInputOutputParametersFromExtensionState(state, { includeZeebe: true }),
+    [state],
+  );
+  const zeebeTaskHeadersModel = useMemo(
+    () => extractZeebeTaskHeadersFromExtensionState(state),
     [state],
   );
   const camundaInputRows = Array.isArray(camundaIoModel?.inputRows) ? camundaIoModel.inputRows : [];
   const camundaOutputRows = Array.isArray(camundaIoModel?.outputRows) ? camundaIoModel.outputRows : [];
+  const zeebeTaskHeaderRows = Array.isArray(zeebeTaskHeadersModel?.rows) ? zeebeTaskHeadersModel.rows : [];
   const visibleFallbackProperties = useMemo(
     () => buildVisibleExtensionPropertyRows(state).rows,
     [state],
@@ -1091,6 +1102,9 @@ export function CamundaPropertiesSettings({
     () => countVisibleExtensionPropertyRows(state),
     [state],
   );
+  const operationPropertiesCount = Array.isArray(dictionaryEditorModel?.schemaRows)
+    ? dictionaryEditorModel.schemaRows.length
+    : 0;
   const overlayCompanionSummary = selectedBpmnOverlayCompanionSummary && typeof selectedBpmnOverlayCompanionSummary === "object"
     ? selectedBpmnOverlayCompanionSummary
     : {
@@ -1104,6 +1118,7 @@ export function CamundaPropertiesSettings({
       validationDeferred: false,
     };
   const listenerCount = normalizedState.properties.extensionListeners.length;
+  const overlayCompanionCount = Number(overlayCompanionSummary?.companionCount || 0);
   const operationLabel = String(dictionaryEditorModel?.operationLabel || operationKey || "").trim();
   const normalizedOperationKey = String(operationKey || "").trim();
   const normalizedOperationOptions = useMemo(
@@ -1143,6 +1158,7 @@ export function CamundaPropertiesSettings({
   useEffect(() => {
     // Keep Camunda I/O collapsed by default when entering a node.
     setCamundaIoOpen(false);
+    setZeebeTaskHeadersOpen(false);
   }, [selectedElementId]);
   const operationDisplayLabel = String(operationLabel || selectedOperationOption?.label || normalizedOperationKey || "").trim();
   const extensionStateStatusMetaMap = {
@@ -1305,6 +1321,34 @@ export function CamundaPropertiesSettings({
     updateDraft(nextState);
   }
 
+  function updateZeebeTaskHeaderRow(rowRef, patch = {}) {
+    const nextState = patchZeebeTaskHeaderInExtensionState({
+      extensionStateRaw: state,
+      headerRef: rowRef,
+      patch,
+    });
+    updateDraft(nextState);
+  }
+
+  function addZeebeTaskHeaderRow() {
+    const nextState = addZeebeTaskHeaderInExtensionState({
+      extensionStateRaw: state,
+      draft: {
+        key: "",
+        value: "",
+      },
+    });
+    updateDraft(nextState);
+  }
+
+  function deleteZeebeTaskHeaderRow(rowRef) {
+    const nextState = removeZeebeTaskHeaderFromExtensionState({
+      extensionStateRaw: state,
+      headerRef: rowRef,
+    });
+    updateDraft(nextState);
+  }
+
   function isCamundaScriptExpanded(rowIdRaw) {
     const rowId = String(rowIdRaw || "").trim();
     if (!rowId) return false;
@@ -1392,32 +1436,32 @@ export function CamundaPropertiesSettings({
         >
           <span className="sidebarBpmnPropertyPreviewKey" title={previewName}>{previewName}</span>
           <span className="sidebarBpmnPropertyPreviewValue" title={previewValue}>{previewValue}</span>
-          <span className="sidebarBpmnPropertySummaryActions">
-            <button
-              type="button"
-              className="secondaryBtn sidebarPropertiesActionBtn sidebarPropertiesActionBtn--tiny px-2"
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                setBpmnRowExpanded(rowId, !isExpanded);
-              }}
-              disabled={!!disabled || !!extensionStateBusy}
-            >
-              {isExpanded ? "Свернуть" : "Изменить"}
-            </button>
-            <button
-              type="button"
-              className="secondaryBtn sidebarPropertiesActionBtn sidebarPropertiesActionBtn--tiny px-2"
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                deletePropertyRow(row?.id);
-              }}
-              disabled={!!disabled || !!extensionStateBusy}
-            >
-              Удалить
-            </button>
-          </span>
+          <button
+            type="button"
+            className="secondaryBtn sidebarPropertiesActionBtn sidebarPropertiesActionBtn--tiny sidebarBpmnPropertyEditBtn"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setBpmnRowExpanded(rowId, !isExpanded);
+            }}
+            disabled={!!disabled || !!extensionStateBusy}
+          >
+            {isExpanded ? "Свернуть" : "Изменить"}
+          </button>
+          <button
+            type="button"
+            className="secondaryBtn sidebarPropertiesIconBtn sidebarPropertiesIconBtn--danger"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              deletePropertyRow(row?.id);
+            }}
+            disabled={!!disabled || !!extensionStateBusy}
+            aria-label={`Удалить BPMN-свойство ${previewName}`}
+            title={`Удалить BPMN-свойство ${previewName}`}
+          >
+            ×
+          </button>
         </summary>
         {isExpanded ? (
           <div className="sidebarBpmnPropertyEditor">
@@ -1531,6 +1575,51 @@ export function CamundaPropertiesSettings({
               <div className="sidebarCamundaIoEmptyRow">{emptyText}</div>
             )}
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderZeebeTaskHeaderRow(row) {
+    const rowId = String(row?.id || "");
+    const keyValue = String(row?.key || "");
+    const valueText = String(row?.value || "");
+    return (
+      <div key={rowId} className="sidebarCamundaIoRow">
+        <div className="sidebarCamundaIoCell sidebarCamundaIoCell--name">
+          <input
+            className="sidebarCamundaIoInput"
+            placeholder="key"
+            value={keyValue}
+            onChange={(event) => updateZeebeTaskHeaderRow(row, { key: event.target.value })}
+            disabled={!!disabled || !!extensionStateBusy}
+            title={keyValue}
+          />
+        </div>
+        <div className="sidebarCamundaIoCell sidebarCamundaIoCell--type">
+          <span className="sidebarCamundaIoShape shape-text">header</span>
+        </div>
+        <div className="sidebarCamundaIoCell sidebarCamundaIoCell--value">
+          <input
+            className="sidebarCamundaIoInput"
+            placeholder="value"
+            value={valueText}
+            onChange={(event) => updateZeebeTaskHeaderRow(row, { value: event.target.value })}
+            disabled={!!disabled || !!extensionStateBusy}
+            title={valueText}
+          />
+        </div>
+        <div className="sidebarCamundaIoCell sidebarCamundaIoCell--action">
+          <button
+            type="button"
+            className="secondaryBtn sidebarCamundaIoDeleteBtn"
+            onClick={() => deleteZeebeTaskHeaderRow(row)}
+            disabled={!!disabled || !!extensionStateBusy}
+            aria-label="Удалить Zeebe task header"
+            title="Удалить header"
+          >
+            ×
+          </button>
         </div>
       </div>
     );
@@ -1670,7 +1759,11 @@ export function CamundaPropertiesSettings({
 
   const showSchemaHint = !hasDictionarySchema && !!normalizedOperationKey && !!dictionaryLoading && !dictionaryError;
   const showFallbackBlock = !hasDictionarySchema && (!normalizedOperationKey || !dictionaryLoading || !!dictionaryError);
+  const additionalBpmnCount = hasDictionarySchema
+    ? (Array.isArray(dictionaryEditorModel?.customRows) ? dictionaryEditorModel.customRows.length : 0)
+    : (showFallbackBlock ? visibleFallbackProperties.length : 0);
   const camundaIoCount = camundaInputRows.length + camundaOutputRows.length;
+  const zeebeTaskHeadersCount = zeebeTaskHeaderRows.length;
   const propertySections = [
     { key: "general", title: "General", rows: asArray(propertyContext.general) },
     { key: "routing", title: "Routing / Conditions", rows: asArray(propertyContext.routing) },
@@ -1678,42 +1771,160 @@ export function CamundaPropertiesSettings({
     { key: "execution", title: "Execution", rows: asArray(propertyContext.execution) },
     { key: "vendor", title: "Vendor extensions", rows: asArray(propertyContext.vendor) },
   ].filter((section) => section.rows.length > 0);
+  const propertyContextCount = propertySections.reduce(
+    (sum, section) => sum + asArray(section?.rows).length,
+    0,
+  );
+  const groupedPropertiesCount = operationPropertiesCount + additionalBpmnCount + propertyContextCount + overlayCompanionCount;
+  const groupedInputOutputCount = camundaIoCount + zeebeTaskHeadersCount;
 
   function renderPropertyContextSection(section) {
     const rows = asArray(section?.rows);
     if (!rows.length) return null;
+    const sectionTitle = String(section?.title || "");
     return (
       <section key={String(section?.key || "")} className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary">
         <div className="sidebarPropertiesBlockHead">
-          <div className="sidebarPropertiesBlockTitle">{String(section?.title || "")}</div>
+          <div className="sidebarPropertiesBlockTitle">{sectionTitle}</div>
+          <div className="sidebarPropertiesBlockMeta" aria-label={`Количество полей в секции ${sectionTitle}`}>
+            {rows.length}
+          </div>
           <SidebarInfoTip
-            label={`О секции ${String(section?.title || "")}`}
+            label={`О секции ${sectionTitle}`}
             text="Truthful BPMN contract, вычитанный из XML. Поля в этой секции пока inspect-only, если не вынесены в отдельный редактируемый блок ниже."
           />
         </div>
-        <div className="sidebarPropertiesRows sidebarPropertiesRows--table">
+        <div className="sidebarPropertiesRows sidebarPropertiesRows--table sidebarContextRows">
           <div className="sidebarPropertiesTableHead" role="presentation">
             <span>Свойство</span>
             <span>Значение</span>
             <span>Статус</span>
           </div>
           {rows.map((row) => (
-            <div key={`${String(section?.key || "")}_${String(row?.key || row?.label || "")}`} className="sidebarSchemaPropertyRow">
+            <div key={`${String(section?.key || "")}_${String(row?.key || row?.label || "")}`} className="sidebarSchemaPropertyRow sidebarSchemaPropertyRow--context">
               <div className="sidebarSchemaPropertyLabel">
-                <div className="sidebarSchemaPropertyHuman">{String(row?.label || row?.key || "")}</div>
-                {row?.key ? <div className="sidebarSchemaPropertyKey">{String(row.key)}</div> : null}
+                {(() => {
+                  const human = String(row?.label || row?.key || "").trim();
+                  const key = String(row?.key || "").trim();
+                  const showMeta = !!key && key.toLowerCase() !== human.toLowerCase();
+                  return (
+                    <div className="sidebarSchemaPropertyPrimaryLine">
+                      <span className="sidebarSchemaPropertyHuman">{human || "—"}</span>
+                      {showMeta ? <span className="sidebarSchemaPropertyMeta">{key}</span> : null}
+                    </div>
+                  );
+                })()}
               </div>
               <div className="sidebarSchemaPropertyValueCell">
-                <div className="sidebarFieldHint" title={String(row?.value || "")}>
+                <div className="sidebarSchemaPropertyValueText" title={String(row?.value || "")}>
                   {String(row?.value || "—")}
                 </div>
               </div>
               <div className="sidebarSchemaPropertyActionCell">
-                <span className="sidebarFieldHint">{row?.editable ? "Editable" : "Inspect-only"}</span>
+                <span className="sidebarStatusHint">{row?.editable ? "Editable" : "Inspect-only"}</span>
               </div>
             </div>
           ))}
         </div>
+      </section>
+    );
+  }
+
+  function renderOverlayCompanionsSection() {
+    return (
+      <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary" data-testid="bpmn-overlay-companions-block">
+        <div className="sidebarPropertiesBlockHead">
+          <div className="sidebarPropertiesBlockTitle">Overlay companions</div>
+          <div className="sidebarPropertiesBlockMeta" aria-label="Количество связанных overlay companions">
+            {overlayCompanionCount}
+          </div>
+          <SidebarInfoTip
+            label="О companion overlay"
+            text="Derived companion view из текущих draw.io anchors. Это не BPMN truth и не второй источник якорей."
+          />
+        </div>
+        {overlayCompanionSummary.validationDeferred ? (
+          <div className="sidebarFieldHint">Проверка overlay companions ждёт готовности BPMN hydrate.</div>
+        ) : null}
+        {!overlayCompanionSummary.validationDeferred && !overlayCompanionSummary.hasOverlayCompanions ? (
+          <div className="sidebarFieldHint">У этого BPMN узла сейчас нет связанных overlay annotations/highlights.</div>
+        ) : null}
+        {!overlayCompanionSummary.validationDeferred && overlayCompanionSummary.hasOverlayCompanions ? (
+          <>
+            <div className="sidebarFieldHint">
+              Найдено <span className="font-medium text-fg">{Number(overlayCompanionSummary.companionCount || 0)}</span>
+              {" "}overlay companions{overlayCompanionKindsLabel ? ` · ${overlayCompanionKindsLabel}` : ""}.
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <span className="sidebarBadge">anchored {Number(overlayCompanionSummary?.companionStatusSummary?.anchored || 0)}</span>
+              <span className={`sidebarBadge ${overlayCompanionSummary.hasIssues ? "sidebarBadgeWarn" : ""}`}>
+                invalid {Number(overlayCompanionSummary?.companionStatusSummary?.invalid || 0)}
+              </span>
+            </div>
+            <div className={`sidebarFieldHint mt-2 ${overlayCompanionSummary.summaryTone === "warning" ? "text-warning" : ""}`}>
+              {overlayCompanionSummary.hasIssues
+                ? `Требуют внимания: ${Number(overlayCompanionSummary.invalidCount || 0)} invalid companion(s).`
+                : `Все связанные overlay companions сейчас healthy: ${Number(overlayCompanionSummary.healthyCount || 0)}.`}
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {overlayCompanionSummary.hasMoreCompanions ? (
+                <button
+                  type="button"
+                  className="secondaryBtn px-2 py-1 text-[11px]"
+                  onClick={() => setOverlayCompanionsExpanded((prev) => !prev)}
+                  data-testid="bpmn-overlay-companions-toggle"
+                >
+                  {overlayCompanionsExpanded
+                    ? "Свернуть related overlays"
+                    : `Показать все related overlays (+${Number(overlayCompanionSummary.remainingCompanionCount || 0)})`}
+                </button>
+              ) : null}
+              {overlayCompanionSummary.companionCount > 1 ? (
+                <span className="sidebarFieldHint">
+                  Invalid companions показаны первыми, затем healthy notes/highlights.
+                </span>
+              ) : null}
+            </div>
+            <div className="sidebarPropertiesRows mt-3">
+              {visibleOverlayCompanions.map((companion) => {
+                const objectId = String(companion?.objectId || "").trim();
+                const canFocus = typeof onFocusDrawioCompanion === "function" && !!objectId;
+                const title = String(companion?.text || objectId || "").trim();
+                return (
+                  <div
+                    key={`overlay_companion_${objectId}`}
+                    className={`sidebarSchemaPropertyRow ${companion?.status === "invalid" ? "border-warning/30 bg-warning/5" : ""}`}
+                  >
+                    <div className="sidebarSchemaPropertyLabel">
+                      <div className="sidebarSchemaPropertyHuman">{title || objectId}</div>
+                      <div className="sidebarSchemaPropertyKey">
+                        {String(companion?.kind || "overlay")} · {String(companion?.statusLabel || companion?.status || "freeform")}
+                      </div>
+                    </div>
+                    <div className="sidebarSchemaPropertyValueCell">
+                      <div className="sidebarFieldHint">
+                        {String(companion?.relation || "linked")} → {String(companion?.targetId || selectedElementId || "—")}
+                      </div>
+                    </div>
+                    <div className="sidebarSchemaPropertyActionCell">
+                      <button
+                        type="button"
+                        className="secondaryBtn px-2 py-1 text-[11px]"
+                        onClick={() => {
+                          void onFocusDrawioCompanion?.(objectId);
+                        }}
+                        disabled={!canFocus}
+                        data-testid={`bpmn-overlay-companion-focus-${objectId}`}
+                      >
+                        Показать в overlay
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        ) : null}
       </section>
     );
   }
@@ -1732,6 +1943,9 @@ export function CamundaPropertiesSettings({
           {propertyCount ? <div className="sidebarPropertiesCount">{propertyCount}</div> : null}
         </div>
 
+        <div className="sidebarPropertiesGroupHead" data-testid="camunda-properties-group-general">
+          <div className="sidebarPropertiesGroupTitle">General</div>
+        </div>
         <div className="sidebarFieldHint">
           Тип: <span className="font-medium text-fg">{String(propertyContext.type || selectedElementType || "unknown")}</span>
         </div>
@@ -1759,103 +1973,6 @@ export function CamundaPropertiesSettings({
           />
           <span>Всегда показывать свойства над задачей</span>
         </label>
-
-        <div className="sidebarPropertiesDivider" />
-
-        {propertySections.map((section) => renderPropertyContextSection(section))}
-        {propertySections.length ? <div className="sidebarPropertiesDivider" /> : null}
-
-        <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary" data-testid="bpmn-overlay-companions-block">
-          <div className="sidebarPropertiesBlockHead">
-            <div className="sidebarPropertiesBlockTitle">Overlay companions</div>
-            <SidebarInfoTip
-              label="О companion overlay"
-              text="Derived companion view из текущих draw.io anchors. Это не BPMN truth и не второй источник якорей."
-            />
-          </div>
-          {overlayCompanionSummary.validationDeferred ? (
-            <div className="sidebarFieldHint">Проверка overlay companions ждёт готовности BPMN hydrate.</div>
-          ) : null}
-          {!overlayCompanionSummary.validationDeferred && !overlayCompanionSummary.hasOverlayCompanions ? (
-            <div className="sidebarFieldHint">У этого BPMN узла сейчас нет связанных overlay annotations/highlights.</div>
-          ) : null}
-          {!overlayCompanionSummary.validationDeferred && overlayCompanionSummary.hasOverlayCompanions ? (
-            <>
-              <div className="sidebarFieldHint">
-                Найдено <span className="font-medium text-fg">{Number(overlayCompanionSummary.companionCount || 0)}</span>
-                {" "}overlay companions{overlayCompanionKindsLabel ? ` · ${overlayCompanionKindsLabel}` : ""}.
-              </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                <span className="sidebarBadge">anchored {Number(overlayCompanionSummary?.companionStatusSummary?.anchored || 0)}</span>
-                <span className={`sidebarBadge ${overlayCompanionSummary.hasIssues ? "sidebarBadgeWarn" : ""}`}>
-                  invalid {Number(overlayCompanionSummary?.companionStatusSummary?.invalid || 0)}
-                </span>
-              </div>
-              <div className={`sidebarFieldHint mt-2 ${overlayCompanionSummary.summaryTone === "warning" ? "text-warning" : ""}`}>
-                {overlayCompanionSummary.hasIssues
-                  ? `Требуют внимания: ${Number(overlayCompanionSummary.invalidCount || 0)} invalid companion(s).`
-                  : `Все связанные overlay companions сейчас healthy: ${Number(overlayCompanionSummary.healthyCount || 0)}.`}
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                {overlayCompanionSummary.hasMoreCompanions ? (
-                  <button
-                    type="button"
-                    className="secondaryBtn px-2 py-1 text-[11px]"
-                    onClick={() => setOverlayCompanionsExpanded((prev) => !prev)}
-                    data-testid="bpmn-overlay-companions-toggle"
-                  >
-                    {overlayCompanionsExpanded
-                      ? "Свернуть related overlays"
-                      : `Показать все related overlays (+${Number(overlayCompanionSummary.remainingCompanionCount || 0)})`}
-                  </button>
-                ) : null}
-                {overlayCompanionSummary.companionCount > 1 ? (
-                  <span className="sidebarFieldHint">
-                    Invalid companions показаны первыми, затем healthy notes/highlights.
-                  </span>
-                ) : null}
-              </div>
-              <div className="sidebarPropertiesRows mt-3">
-                {visibleOverlayCompanions.map((companion) => {
-                  const objectId = String(companion?.objectId || "").trim();
-                  const canFocus = typeof onFocusDrawioCompanion === "function" && !!objectId;
-                  const title = String(companion?.text || objectId || "").trim();
-                  return (
-                    <div
-                      key={`overlay_companion_${objectId}`}
-                      className={`sidebarSchemaPropertyRow ${companion?.status === "invalid" ? "border-warning/30 bg-warning/5" : ""}`}
-                    >
-                      <div className="sidebarSchemaPropertyLabel">
-                        <div className="sidebarSchemaPropertyHuman">{title || objectId}</div>
-                        <div className="sidebarSchemaPropertyKey">
-                          {String(companion?.kind || "overlay")} · {String(companion?.statusLabel || companion?.status || "freeform")}
-                        </div>
-                      </div>
-                      <div className="sidebarSchemaPropertyValueCell">
-                        <div className="sidebarFieldHint">
-                          {String(companion?.relation || "linked")} → {String(companion?.targetId || selectedElementId || "—")}
-                        </div>
-                      </div>
-                      <div className="sidebarSchemaPropertyActionCell">
-                        <button
-                          type="button"
-                          className="secondaryBtn px-2 py-1 text-[11px]"
-                          onClick={() => {
-                            void onFocusDrawioCompanion?.(objectId);
-                          }}
-                          disabled={!canFocus}
-                          data-testid={`bpmn-overlay-companion-focus-${objectId}`}
-                        >
-                          Показать в overlay
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          ) : null}
-        </section>
 
         <div className="sidebarPropertiesDivider" />
 
@@ -1924,17 +2041,19 @@ export function CamundaPropertiesSettings({
           ) : null}
         </section>
 
-        <div className="sidebarPropertiesDivider" />
-
+        <div className="sidebarPropertiesGroupHead" data-testid="camunda-properties-group-properties">
+          <div className="sidebarPropertiesGroupTitle">Properties</div>
+          <div className="sidebarPropertiesGroupCount">{groupedPropertiesCount}</div>
+        </div>
         <SidebarTrustStatus
           title={<span>BPMN extension-state</span>}
-          titleTestId="camunda-extension-state-status-header"
           label={extensionStateStatusMeta.label}
           helper={extensionStateStatusMeta.helper}
           tone={extensionStateStatusMeta.tone}
           ctaLabel={extensionStateStatusMeta.cta}
           onCta={onRetryExtensionState}
           ctaDisabled={!!disabled || !!extensionStateBusy}
+          ctaVariant={String(extensionStateStatusMeta.tone || "").trim().toLowerCase() === "error" ? "primary" : "secondary"}
           testIdPrefix="camunda-extension-state-status"
         />
 
@@ -1948,6 +2067,7 @@ export function CamundaPropertiesSettings({
             >
               <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{operationPropertiesOpen ? "▾" : "▸"}</span>
               <span className="sidebarPropertiesBlockTitle">Свойства операции</span>
+              <span className="sidebarPropertiesBlockMeta">{operationPropertiesCount}</span>
             </button>
             <SidebarInfoTip
               label="О свойствах операции"
@@ -2000,6 +2120,7 @@ export function CamundaPropertiesSettings({
             >
               <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{additionalBpmnOpen ? "▾" : "▸"}</span>
               <span className="sidebarPropertiesBlockTitle">Дополнительные BPMN-свойства</span>
+              <span className="sidebarPropertiesBlockMeta">{additionalBpmnCount}</span>
             </button>
             <SidebarInfoTip
               label="О дополнительных BPMN-свойствах"
@@ -2057,6 +2178,10 @@ export function CamundaPropertiesSettings({
 
         <div className="sidebarPropertiesDivider" />
 
+        <div className="sidebarPropertiesGroupHead" data-testid="camunda-properties-group-io">
+          <div className="sidebarPropertiesGroupTitle">Input/Output</div>
+          <div className="sidebarPropertiesGroupCount">{groupedInputOutputCount}</div>
+        </div>
         <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary" data-testid="camunda-io-group">
           <div className="sidebarPropertiesBlockHead">
             <button
@@ -2066,11 +2191,12 @@ export function CamundaPropertiesSettings({
               aria-expanded={camundaIoOpen ? "true" : "false"}
             >
               <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{camundaIoOpen ? "▾" : "▸"}</span>
-              <span className="sidebarPropertiesBlockTitle">Camunda Input/Output{camundaIoCount ? ` (${camundaIoCount})` : ""}</span>
+              <span className="sidebarPropertiesBlockTitle">Camunda Input/Output</span>
+              <span className="sidebarPropertiesBlockMeta">{camundaIoCount}</span>
             </button>
             <SidebarInfoTip
-              label="О Camunda Input/Output"
-              text="Параметры camunda:inputOutput из extensionElements. Поддержаны Add input/output, удаление и компактный preview для script."
+              label="О Camunda/Zeebe Input/Output"
+              text="Параметры camunda:inputOutput и zeebe:ioMapping из extensionElements. Поддержаны Add input/output, удаление и compact preview для script."
             />
           </div>
           {camundaIoOpen ? (
@@ -2091,23 +2217,77 @@ export function CamundaPropertiesSettings({
 
         <div className="sidebarPropertiesDivider" />
 
-        <div className="sidebarPropertiesBlockHead">
-          <div className="sidebarPropertiesBlockTitle">Слушатели{listenerCount ? ` (${listenerCount})` : ""}</div>
-          <SidebarInfoTip
-            label="О слушателях"
-            text="Дополнительные BPMN listeners для текущего элемента."
-          />
+        <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary" data-testid="zeebe-task-headers-group">
+          <div className="sidebarPropertiesBlockHead">
+            <button
+              type="button"
+              className="sidebarPropertiesBlockToggle"
+              onClick={() => setZeebeTaskHeadersOpen((prev) => !prev)}
+              aria-expanded={zeebeTaskHeadersOpen ? "true" : "false"}
+            >
+              <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{zeebeTaskHeadersOpen ? "▾" : "▸"}</span>
+              <span className="sidebarPropertiesBlockTitle">Zeebe Task Headers</span>
+              <span className="sidebarPropertiesBlockMeta">{zeebeTaskHeadersCount}</span>
+            </button>
+            <SidebarInfoTip
+              label="О Zeebe Task Headers"
+              text="Параметры zeebe:taskHeaders/zeebe:header текущего элемента."
+            />
+          </div>
+          {zeebeTaskHeadersOpen ? (
+            <>
+              <div className="sidebarCamundaIoTableWrap">
+                <div className="sidebarCamundaIoTableHead" role="presentation">
+                  <span>Key</span>
+                  <span>Type</span>
+                  <span>Value</span>
+                  <span className="isCenter">Action</span>
+                </div>
+                <div className="sidebarCamundaIoTableBody">
+                  {zeebeTaskHeaderRows.length ? zeebeTaskHeaderRows.map((row) => renderZeebeTaskHeaderRow(row)) : (
+                    <div className="sidebarCamundaIoEmptyRow">Нет task headers. Добавьте первую строку.</div>
+                  )}
+                </div>
+              </div>
+              <div className="sidebarButtonRow">
+                <button
+                  type="button"
+                  className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
+                  onClick={addZeebeTaskHeaderRow}
+                  disabled={!!disabled || !!extensionStateBusy}
+                >
+                  + Добавить header
+                </button>
+              </div>
+            </>
+          ) : null}
+        </section>
+
+        <div className="sidebarPropertiesDivider" />
+
+        <div className="sidebarPropertiesGroupHead" data-testid="camunda-properties-group-listeners">
+          <div className="sidebarPropertiesGroupTitle">Listeners</div>
+          <div className="sidebarPropertiesGroupCount">{listenerCount}</div>
         </div>
-        <details
-          className="sidebarPropertiesDisclosure"
-          open={listenersOpen}
-          onToggle={(event) => setListenersOpen(!!event.currentTarget.open)}
-          data-testid="camunda-listeners-group"
-        >
-          <summary className="sidebarPropertiesDisclosureSummary">
-            {listenersOpen ? "Скрыть" : "Показать"}
-          </summary>
-          <div className="mt-2 space-y-2">
+        <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary" data-testid="camunda-listeners-group">
+          <div className="sidebarPropertiesBlockHead">
+            <button
+              type="button"
+              className="sidebarPropertiesBlockToggle"
+              onClick={() => setListenersOpen((prev) => !prev)}
+              aria-expanded={listenersOpen ? "true" : "false"}
+            >
+              <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{listenersOpen ? "▾" : "▸"}</span>
+              <span className="sidebarPropertiesBlockTitle">Слушатели</span>
+              <span className="sidebarPropertiesBlockMeta">{listenerCount}</span>
+            </button>
+            <SidebarInfoTip
+              label="О слушателях"
+              text="Дополнительные BPMN listeners для текущего элемента."
+            />
+          </div>
+          {listenersOpen ? (
+            <div className="mt-1 space-y-1.5">
             {listeners.map((row) => (
               <div key={String(row?.id || "")} className="sidebarControlRow sidebarListenerRow sidebarPropertiesInputRow">
                 <select
@@ -2139,11 +2319,13 @@ export function CamundaPropertiesSettings({
                 />
                 <button
                   type="button"
-                  className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
+                  className="secondaryBtn sidebarPropertiesIconBtn sidebarPropertiesIconBtn--danger"
                   onClick={() => deleteListenerRow(row?.id)}
                   disabled={!!disabled || !!extensionStateBusy}
+                  aria-label="Удалить слушатель"
+                  title="Удалить слушатель"
                 >
-                  Удалить
+                  ×
                 </button>
               </div>
             ))}
@@ -2157,10 +2339,13 @@ export function CamundaPropertiesSettings({
                 + Добавить слушатель
               </button>
             </div>
-          </div>
-        </details>
+            </div>
+          ) : null}
+        </section>
 
-        <div className="sidebarPropertiesFooter sidebarButtonRow">
+        <div className="sidebarPropertiesDivider" />
+
+        <div className="sidebarPropertiesFooter sidebarPropertiesFooter--sticky sidebarButtonRow">
           <button
             type="button"
             className="primaryBtn sidebarPropertiesPrimaryAction px-3"
@@ -2182,9 +2367,21 @@ export function CamundaPropertiesSettings({
             Сбросить
           </button>
         </div>
+
+        <div className="sidebarPropertiesDivider" />
+
+        {propertySections.map((section) => renderPropertyContextSection(section))}
+        {propertySections.length ? <div className="sidebarPropertiesDivider" /> : null}
+
+        {renderOverlayCompanionsSection()}
       </section>
 
-      {extensionStateInfo ? <div className="text-[11px] text-muted">{extensionStateInfo}</div> : null}
+      {(() => {
+        const infoText = String(extensionStateInfo || "").trim();
+        if (!infoText) return null;
+        if (infoText.toLowerCase() === "изменения extension-state сохранены.") return null;
+        return <div className="text-[11px] text-muted">{infoText}</div>;
+      })()}
       {extensionStateErr ? <div className="selectedNodeFieldError">{extensionStateErr}</div> : null}
     </div>
   );

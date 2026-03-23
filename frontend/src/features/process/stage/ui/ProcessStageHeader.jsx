@@ -36,11 +36,17 @@ export default function ProcessStageHeader({ view = {} }) {
   } = view;
   const latestRevisionNumber = Number(sessionRevisionHistorySnapshot?.latestRevisionNumber || 0);
   const hasPublishedRevision = latestRevisionNumber > 0;
+  const revisionLabel = `R${Math.max(0, latestRevisionNumber)}`;
   const draftAheadOfLatest = sessionRevisionHistorySnapshot?.draftState?.isDraftAheadOfLatestRevision === true;
   const draftStatusLabel = !hasPublishedRevision
     ? "Unpublished"
     : (draftAheadOfLatest ? "Draft ahead" : "Published");
   const draftStatusTone = !hasPublishedRevision || draftAheadOfLatest ? "warn" : "ok";
+  const normalizedSaveSmartText = String(saveSmartText || "").trim();
+  const showPassiveSaveStatus = (
+    normalizedSaveSmartText === "Ошибка сохранения"
+    || normalizedSaveSmartText === "Требуется обновление"
+  );
 
   return (
     <div className="processHeader diagramToolbarHeader">
@@ -57,11 +63,11 @@ export default function ProcessStageHeader({ view = {} }) {
               >
                 {saveActionText || saveSmartText}
               </button>
-            ) : (
+            ) : showPassiveSaveStatus ? (
               <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-save-status">
                 {saveSmartText}
               </span>
-            )
+            ) : null
           ) : (
               <button
                 type="button"
@@ -74,15 +80,9 @@ export default function ProcessStageHeader({ view = {} }) {
             )}
           {hasSession ? (
             <>
-              {latestRevisionNumber > 0 ? (
-                <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-latest-revision">
-                  r{latestRevisionNumber}
-                </span>
-              ) : (
-                <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-latest-revision-empty">
-                  No published revision
-                </span>
-              )}
+              <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-latest-revision">
+                {revisionLabel}
+              </span>
               <span
                 className={`badge text-[11px] ${draftStatusTone}`}
                 data-testid="diagram-toolbar-draft-vs-latest"

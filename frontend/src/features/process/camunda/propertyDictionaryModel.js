@@ -39,6 +39,22 @@ function clampInlineText(value, limit = 96) {
   return `${text.slice(0, Math.max(12, limit - 1)).trimEnd()}…`;
 }
 
+function collapseOverlayRowsByVisualSignature(rowsRaw) {
+  const rows = asArray(rowsRaw);
+  const out = [];
+  const seen = new Set();
+  rows.forEach((rowRaw) => {
+    const row = asObject(rowRaw);
+    const label = String(row.label ?? "");
+    const value = String(row.value ?? "");
+    const signature = `${label}\u241f${value}`;
+    if (seen.has(signature)) return;
+    seen.add(signature);
+    out.push(rowRaw);
+  });
+  return out;
+}
+
 function rawExtensionPropertyRows(stateRaw) {
   const state = asObject(stateRaw);
   const properties = asObject(state.properties);
@@ -386,14 +402,15 @@ export function buildPropertiesOverlayPreview({
     });
   }
 
+  const normalizedRows = collapseOverlayRowsByVisualSignature(rows);
   const normalizedLimit = Math.max(1, Math.min(5, Number(visibleLimit || 4) || 4));
-  const items = rows.slice(0, normalizedLimit);
-  const hiddenCount = Math.max(rows.length - items.length, 0);
+  const items = normalizedRows.slice(0, normalizedLimit);
+  const hiddenCount = Math.max(normalizedRows.length - items.length, 0);
   return {
     enabled: items.length > 0,
     elementId: asText(elementId),
     items,
     hiddenCount,
-    totalCount: rows.length,
+    totalCount: normalizedRows.length,
   };
 }

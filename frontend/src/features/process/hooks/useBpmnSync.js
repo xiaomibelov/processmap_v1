@@ -79,6 +79,52 @@ function shortStack() {
   }
 }
 
+function readSyncTokenSet(payload) {
+  return {
+    syncVersionToken: toText(payload?.syncVersionToken || payload?.sync_version_token || ""),
+    syncBpmnVersionToken: toText(payload?.syncBpmnVersionToken || payload?.sync_bpmn_version_token || ""),
+    syncCollabVersionToken: toText(payload?.syncCollabVersionToken || payload?.sync_collab_version_token || ""),
+  };
+}
+
+function hasSyncTokens(tokens) {
+  const item = tokens && typeof tokens === "object" ? tokens : {};
+  return !!(
+    toText(item.syncVersionToken)
+    || toText(item.syncBpmnVersionToken)
+    || toText(item.syncCollabVersionToken)
+  );
+}
+
+function mergeSyncTokenSets(...items) {
+  const out = {
+    syncVersionToken: "",
+    syncBpmnVersionToken: "",
+    syncCollabVersionToken: "",
+  };
+  items.forEach((raw) => {
+    const item = raw && typeof raw === "object" ? raw : {};
+    const syncVersionToken = toText(item.syncVersionToken);
+    const syncBpmnVersionToken = toText(item.syncBpmnVersionToken);
+    const syncCollabVersionToken = toText(item.syncCollabVersionToken);
+    if (!out.syncVersionToken && syncVersionToken) out.syncVersionToken = syncVersionToken;
+    if (!out.syncBpmnVersionToken && syncBpmnVersionToken) out.syncBpmnVersionToken = syncBpmnVersionToken;
+    if (!out.syncCollabVersionToken && syncCollabVersionToken) out.syncCollabVersionToken = syncCollabVersionToken;
+  });
+  return out;
+}
+
+function readLatestPersistAck(sessionId) {
+  if (typeof window === "undefined") return null;
+  const ack = window.__FPC_LAST_PUT_BPMN_ACK__;
+  const sid = toText(sessionId).trim();
+  if (!ack || typeof ack !== "object") return null;
+  if (toText(ack.sid).trim() !== sid) return null;
+  const tokens = readSyncTokenSet(ack);
+  if (!hasSyncTokens(tokens)) return null;
+  return tokens;
+}
+
 function saveAttemptKindBySource(sourceText) {
   const source = String(sourceText || "").toLowerCase();
   if (source.includes("tab_switch")) return "tab_switch";
@@ -165,10 +211,33 @@ export default function useBpmnSync({
   const sid = toText(sessionId).trim();
   const draftRef = useRef(draft);
   const storeUpdateCountRef = useRef(0);
+  const lastConfirmedSyncTokensRef = useRef(readSyncTokenSet(draft));
 
   useEffect(() => {
     draftRef.current = draft;
+    const draftTokens = readSyncTokenSet(draft);
+    if (!hasSyncTokens(draftTokens)) return;
+    const prev = lastConfirmedSyncTokensRef.current;
+    lastConfirmedSyncTokensRef.current = {
+      syncVersionToken: toText(prev?.syncVersionToken || draftTokens.syncVersionToken || ""),
+      syncBpmnVersionToken: toText(prev?.syncBpmnVersionToken || draftTokens.syncBpmnVersionToken || ""),
+      syncCollabVersionToken: toText(prev?.syncCollabVersionToken || draftTokens.syncCollabVersionToken || ""),
+    };
   }, [draft]);
+
+  const resolveSyncTokens = useCallback((rawTokens) => {
+    const direct = readSyncTokenSet(rawTokens);
+    const cached = lastConfirmedSyncTokensRef.current;
+    const draftTokens = readSyncTokenSet(draftRef.current);
+    const resolved = mergeSyncTokenSets(direct, cached, draftTokens);
+    if (hasSyncTokens(resolved)) {
+      lastConfirmedSyncTokensRef.current = mergeSyncTokenSets(
+        resolved,
+        lastConfirmedSyncTokensRef.current,
+      );
+    }
+    return resolved;
+  }, []);
 
   const waitForRefMethod = useCallback(
     async (methodName, timeoutMs = 1200) => {
@@ -188,6 +257,9 @@ export default function useBpmnSync({
       const xml = toText(xmlText || "");
       if (!xml.trim() || !sid) return;
       const source = String(meta?.source || "unknown").trim() || "unknown";
+      const syncVersionToken = toText(meta?.syncVersionToken || meta?.sync_version_token || "");
+      const syncBpmnVersionToken = toText(meta?.syncBpmnVersionToken || meta?.sync_bpmn_version_token || "");
+      const syncCollabVersionToken = toText(meta?.syncCollabVersionToken || meta?.sync_collab_version_token || "");
       const xmlHash = fnv1aHex(xml);
       logActorsTrace("derive start", {
         sid,
@@ -214,6 +286,7 @@ export default function useBpmnSync({
         console.debug(
           `[BPMN_STORE_SET] sid=${sid} source=${source} len=${xml.length} hash=${fnv1aHex(xml)} `
           + `rev=${Number(base?.bpmn_xml_version || base?.version || 0)} `
+          + `sync=${syncVersionToken || "-"} bpmn=${syncBpmnVersionToken || "-"} collab=${syncCollabVersionToken || "-"} `
           + `stack=${shortStack()}`,
         );
       }
@@ -222,6 +295,9 @@ export default function useBpmnSync({
         session_id: sid,
         bpmn_xml: xml,
         actors_derived: derivedActors,
+        ...(syncVersionToken ? { sync_version_token: syncVersionToken } : {}),
+        ...(syncBpmnVersionToken ? { sync_bpmn_version_token: syncBpmnVersionToken } : {}),
+        ...(syncCollabVersionToken ? { sync_collab_version_token: syncCollabVersionToken } : {}),
         _sync_source: source,
       });
     },
@@ -231,6 +307,12 @@ export default function useBpmnSync({
   const saveFromModeler = useCallback(async (options = {}) => {
     const force = options?.force === true;
     const source = String(options?.source || (force ? "tab_switch" : "autosave")).trim() || "autosave";
+    const resolveInvocationSyncTokens = (rawTokens = null) => resolveSyncTokens(
+      mergeSyncTokenSets(
+        readLatestPersistAck(sid),
+        readSyncTokenSet(rawTokens),
+      ),
+    );
     const isManualSaveAction = source === "manual_save";
     const allowInFlightPendingOutcome = force && !isManualSaveAction;
     let saveLocal = bpmnRef.current?.saveLocal;
@@ -262,13 +344,15 @@ export default function useBpmnSync({
     };
     if (allowInFlightPendingOutcome && isSaveInProgress()) {
       if (fallbackXml.trim()) {
-        syncXmlToSession(fallbackXml, { source: `${source}:pending_flush` });
+        const syncTokens = resolveInvocationSyncTokens(null);
+        syncXmlToSession(fallbackXml, { source: `${source}:pending_flush`, ...syncTokens });
       }
       return { ok: true, pending: true, reason: "save_in_progress", xml: fallbackXml };
     }
     if (typeof saveLocal !== "function") {
       if (isLocal && fallbackXml.trim()) {
-        syncXmlToSession(fallbackXml, { source: `${source}:fallback_no_modeler` });
+        const syncTokens = resolveInvocationSyncTokens(null);
+        syncXmlToSession(fallbackXml, { source: `${source}:fallback_no_modeler`, ...syncTokens });
         return { ok: true, xml: fallbackXml };
       }
       return buildSaveFailureResult(
@@ -286,12 +370,14 @@ export default function useBpmnSync({
       if (saved === false || (saved && typeof saved === "object" && saved.ok === false)) {
         if (allowInFlightPendingOutcome && isSaveInProgress()) {
           if (fallbackXml.trim()) {
-            syncXmlToSession(fallbackXml, { source: `${source}:pending_on_error` });
+            const syncTokens = resolveInvocationSyncTokens(null);
+            syncXmlToSession(fallbackXml, { source: `${source}:pending_on_error`, ...syncTokens });
           }
           return { ok: true, pending: true, reason: "save_in_progress", xml: fallbackXml };
         }
         if (force && isLocal && fallbackXml.trim()) {
-          syncXmlToSession(fallbackXml, { source: `${source}:fallback_on_error` });
+          const syncTokens = resolveInvocationSyncTokens(null);
+          syncXmlToSession(fallbackXml, { source: `${source}:fallback_on_error`, ...syncTokens });
           return { ok: true, xml: fallbackXml };
         }
         return buildSaveFailureResult(saved && typeof saved === "object" ? saved : {
@@ -302,6 +388,7 @@ export default function useBpmnSync({
       let savedXml = saved && typeof saved === "object"
         ? toText(saved.xml)
         : toText(draftRef.current?.bpmn_xml || "");
+      const syncTokens = resolveInvocationSyncTokens(saved);
       const pending = !!(saved && typeof saved === "object" && saved.pending === true);
       let selectedSource = "runtime";
       if (!savedXml.trim() && fallbackXml.trim()) {
@@ -334,18 +421,28 @@ export default function useBpmnSync({
           xml_source: selectedSource,
           pending: pending ? 1 : 0,
         });
-        syncXmlToSession(savedXml, { source });
+        syncXmlToSession(savedXml, {
+          source,
+          ...syncTokens,
+        });
       }
-      return { ok: true, xml: savedXml, pending };
+      return {
+        ok: true,
+        xml: savedXml,
+        pending,
+        ...syncTokens,
+      };
     } catch (error) {
       if (allowInFlightPendingOutcome && isSaveInProgress()) {
         if (fallbackXml.trim()) {
-          syncXmlToSession(fallbackXml, { source: `${source}:pending_catch` });
+          const syncTokens = resolveInvocationSyncTokens(null);
+          syncXmlToSession(fallbackXml, { source: `${source}:pending_catch`, ...syncTokens });
         }
         return { ok: true, pending: true, reason: "save_in_progress", xml: fallbackXml };
       }
       if (force && isLocal && fallbackXml.trim()) {
-        syncXmlToSession(fallbackXml, { source: `${source}:fallback_catch` });
+        const syncTokens = resolveInvocationSyncTokens(null);
+        syncXmlToSession(fallbackXml, { source: `${source}:fallback_catch`, ...syncTokens });
         return { ok: true, xml: fallbackXml };
       }
       return buildSaveFailureResult(
@@ -358,7 +455,7 @@ export default function useBpmnSync({
         failureContext,
       );
     }
-  }, [bpmnRef, isLocal, sid, syncXmlToSession, waitForRefMethod]);
+  }, [bpmnRef, isLocal, resolveSyncTokens, sid, syncXmlToSession, waitForRefMethod]);
 
   const saveFromXmlDraft = useCallback(async (options = {}) => {
     const force = options?.force === true;
@@ -405,8 +502,20 @@ export default function useBpmnSync({
     const savedXml = saved && typeof saved === "object"
       ? toText(saved.xml)
       : toText(draftRef.current?.bpmn_xml || "");
-    syncXmlToSession(savedXml, { source });
-    return { ok: true, xml: savedXml, pending: false };
+    syncXmlToSession(savedXml, {
+      source,
+      syncVersionToken: toText(saved?.syncVersionToken || saved?.sync_version_token || ""),
+      syncBpmnVersionToken: toText(saved?.syncBpmnVersionToken || saved?.sync_bpmn_version_token || ""),
+      syncCollabVersionToken: toText(saved?.syncCollabVersionToken || saved?.sync_collab_version_token || ""),
+    });
+    return {
+      ok: true,
+      xml: savedXml,
+      pending: false,
+      syncVersionToken: toText(saved?.syncVersionToken || saved?.sync_version_token || ""),
+      syncBpmnVersionToken: toText(saved?.syncBpmnVersionToken || saved?.sync_bpmn_version_token || ""),
+      syncCollabVersionToken: toText(saved?.syncCollabVersionToken || saved?.sync_collab_version_token || ""),
+    };
   }, [bpmnRef, sid, syncXmlToSession]);
 
   const flushFromActiveTab = useCallback(

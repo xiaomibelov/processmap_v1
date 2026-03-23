@@ -71,6 +71,8 @@ import {
   buildBpmnNodeOverlayCompanionSummary,
   readDrawioAnchorValidationState,
 } from "../features/process/drawio/drawioAnchors";
+import { buildExecutionBridgeProjectionV1 } from "../features/execution/executionBridgeV1";
+import ExecutionBridgeSection from "./sidebar/ExecutionBridgeSection";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -753,12 +755,13 @@ const NOTES_BATCH_RESULT_PREFIX = "fpc:batch_ops_result:";
 const NOTES_COVERAGE_OPEN_EVENT = "fpc:coverage_open";
 const SIDEBAR_SECTIONS_STATE_KEY = "fpc_left_sidebar_sections";
 const SIDEBAR_LAST_OPEN_KEY = "ui.sidebar.last_open.v2";
-const SIDEBAR_ACCORDION_KEYS = ["paths", "time", "robotmeta", "properties", "ai", "notes", "advanced"];
+const SIDEBAR_ACCORDION_KEYS = ["paths", "time", "robotmeta", "execution", "properties", "ai", "notes", "advanced"];
 
 const DEFAULT_SECTIONS_STATE = {
   paths: false,
   time: false,
   robotmeta: false,
+  execution: false,
   properties: false,
   ai: false,
   notes: false,
@@ -906,6 +909,15 @@ export default function NotesPanel({
   onSetElementCamundaExtensions,
   onSetElementCamundaPresentation,
   activeOrgId = "",
+  reviewStatus = "draft",
+  reviewComments = [],
+  reviewOpenCommentsCount = 0,
+  onChangeSessionReviewStatus,
+  onAddReviewComment,
+  onSetReviewCommentStatus,
+  onFocusReviewAnchor,
+  currentUserId = "",
+  currentUserLabel = "",
   onOpenOrgSettings,
   orgPropertyDictionaryRevision = 0,
   onOrgPropertyDictionaryChanged,
@@ -940,6 +952,11 @@ export default function NotesPanel({
   const [elementBusy, setElementBusy] = useState(false);
   const [elementSaveFailed, setElementSaveFailed] = useState(false);
   const [elementErr, setElementErr] = useState("");
+  const [reviewCommentText, setReviewCommentText] = useState("");
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewErr, setReviewErr] = useState("");
+  const [reviewStatusBusy, setReviewStatusBusy] = useState(false);
+  const [reviewActionBusyId, setReviewActionBusyId] = useState("");
   const [stepTimeInput, setStepTimeInput] = useState("");
   const [stepTimeBusy, setStepTimeBusy] = useState(false);
   const [stepTimeSaveFailed, setStepTimeSaveFailed] = useState(false);
@@ -998,6 +1015,7 @@ export default function NotesPanel({
   const pathsSectionRef = useRef(null);
   const timeSectionRef = useRef(null);
   const robotMetaSectionRef = useRef(null);
+  const executionSectionRef = useRef(null);
   const camundaPropertiesSectionRef = useRef(null);
   const aiSectionRef = useRef(null);
   const notesSectionRef = useRef(null);
@@ -1041,6 +1059,7 @@ export default function NotesPanel({
     [draft?.notes_by_element, draft?.notesByElementId],
   );
   const selectedElementId = str(selectedElement?.id);
+  const sid = str(draft?.session_id || draft?.id);
   const selectedElementName = str(selectedElement?.name || selectedElementId);
   const selectedElementType = str(selectedElement?.type);
   const selectedElementLaneName = str(selectedElement?.laneName || selectedElement?.lane || selectedElement?.actorRole);
@@ -1070,6 +1089,14 @@ export default function NotesPanel({
   const selectedElementNotes = useMemo(
     () => elementNotesForId(notesByElement, selectedElementId),
     [notesByElement, selectedElementId],
+  );
+  const reviewList = useMemo(
+    () => asArray(reviewComments).filter((item) => item && typeof item === "object"),
+    [reviewComments],
+  );
+  const selectedAnchorReviewComments = useMemo(
+    () => reviewList.filter((item) => str(item?.anchor_id || item?.anchorId) === selectedElementId),
+    [reviewList, selectedElementId],
   );
   const elementHasLocalChanges = str(elementText).length > 0;
   const elementSyncState = elementBusy
@@ -1106,6 +1133,27 @@ export default function NotesPanel({
     const rawMeta = draft?.bpmn_meta && typeof draft.bpmn_meta === "object" ? draft.bpmn_meta : {};
     return normalizeCamundaPresentationMap(rawMeta.presentation_by_element_id);
   }, [draft?.bpmn_meta]);
+  const executionBridgeProjection = useMemo(
+    () => buildExecutionBridgeProjectionV1({
+      sessionId: sid,
+      projectId,
+      bpmnXml: str(draft?.bpmn_xml),
+      bpmnMeta: draft?.bpmn_meta && typeof draft?.bpmn_meta === "object" ? draft.bpmn_meta : {},
+    }),
+    [sid, projectId, draft?.bpmn_xml, draft?.bpmn_meta],
+  );
+  const executionBridgeSummary = useMemo(
+    () => (executionBridgeProjection && typeof executionBridgeProjection.summary === "object"
+      ? executionBridgeProjection.summary
+      : {}),
+    [executionBridgeProjection],
+  );
+  const selectedExecutionBridgeNode = useMemo(
+    () => (selectedElementId
+      ? executionBridgeProjection?.nodes_by_id?.[selectedElementId] || null
+      : null),
+    [executionBridgeProjection, selectedElementId],
+  );
   const hasExplicitNodePathMeta = useMemo(
     () => Object.keys(bpmnNodePathMetaById).length > 0,
     [bpmnNodePathMetaById],
@@ -1136,6 +1184,24 @@ export default function NotesPanel({
     () => parseSelectedBpmnPropertyContext(draft?.bpmn_xml, selectedElementId),
     [draft?.bpmn_xml, selectedElementId],
   );
+  const knownAnchorIds = useMemo(() => {
+    const out = new Set();
+    const nodeKindById = nodePathGraphContext?.nodeKindById && typeof nodePathGraphContext.nodeKindById === "object"
+      ? nodePathGraphContext.nodeKindById
+      : {};
+    Object.keys(nodeKindById).forEach((id) => {
+      const key = str(id);
+      if (key) out.add(key);
+    });
+    const flowSourceById = flowGatewayContext?.flowSourceById && typeof flowGatewayContext.flowSourceById === "object"
+      ? flowGatewayContext.flowSourceById
+      : {};
+    Object.keys(flowSourceById).forEach((id) => {
+      const key = str(id);
+      if (key) out.add(key);
+    });
+    return out;
+  }, [flowGatewayContext, nodePathGraphContext]);
   const drawioAnchorValidationState = useMemo(
     () => readDrawioAnchorValidationState(draft),
     [draft],
@@ -1293,7 +1359,6 @@ export default function NotesPanel({
     () => asArray(coverage?.rows).filter((item) => Number(item?.score || 0) > 0),
     [coverage],
   );
-  const sid = str(draft?.session_id || draft?.id);
   const setFlowTierHandler = typeof onSetFlowPathTier === "function"
     ? onSetFlowPathTier
     : onSetFlowHappyPath;
@@ -1374,6 +1439,7 @@ export default function NotesPanel({
           }
         : null,
     };
+    window.__FPC_E2E_EXECUTION_BRIDGE__ = executionBridgeProjection;
   }, [
     nodePathLocalFirstPilotEnabled,
     nodePathLocalFirstAdapterMode,
@@ -1389,6 +1455,7 @@ export default function NotesPanel({
     resolvedNodePathController.needsAttention,
     resolvedNodePathController.isOffline,
     resolvedNodePathController.sharedSnapshot,
+    executionBridgeProjection,
   ]);
   const aiGenerateUi = useMemo(
     () => resolveAiGenerateUiState({
@@ -1464,6 +1531,12 @@ export default function NotesPanel({
     setNodePathNeedsAttention(false);
     nodePathDirtyBaselineRef.current = { nodeId: "", snapshot: null };
     setBulkNodeIds([]);
+  }, [selectedElementId]);
+
+  useEffect(() => {
+    setReviewCommentText("");
+    setReviewErr("");
+    setReviewActionBusyId("");
   }, [selectedElementId]);
 
   useEffect(() => {
@@ -1757,6 +1830,7 @@ export default function NotesPanel({
     if (key === "paths") return pathsSectionRef;
     if (key === "time") return timeSectionRef;
     if (key === "robotmeta") return robotMetaSectionRef;
+    if (key === "execution") return executionSectionRef;
     if (key === "properties") return camundaPropertiesSectionRef;
     if (key === "ai") return aiSectionRef;
     if (key === "notes") return notesSectionRef;
@@ -1773,6 +1847,7 @@ export default function NotesPanel({
       actors: "advanced",
       templates: "advanced",
       robotmeta: "robotmeta",
+      execution: "execution",
       properties: "properties",
       time: "time",
       paths: "paths",
@@ -1849,6 +1924,79 @@ export default function NotesPanel({
     } finally {
       setElementBusy(false);
     }
+  }
+
+  async function sendReviewComment() {
+    const body = str(reviewCommentText);
+    if (!selectedElementId || !body) return;
+    if (disabled || reviewBusy) return;
+    if (typeof onAddReviewComment !== "function") return;
+    setReviewBusy(true);
+    setReviewErr("");
+    try {
+      const anchorType = /(^|:)sequenceflow$/i.test(selectedElementType) ? "sequence_flow" : "node";
+      const result = await Promise.resolve(onAddReviewComment({
+        anchor_id: selectedElementId,
+        anchor_type: anchorType,
+        anchor_label: selectedElementName || selectedElementId,
+        elementType: selectedElementType,
+      }, body));
+      if (result && result.ok === false) {
+        setReviewErr(str(result.error || "Не удалось сохранить комментарий."));
+        return;
+      }
+      setReviewCommentText("");
+    } catch (error) {
+      setReviewErr(str(error?.message || error || "Не удалось сохранить комментарий."));
+    } finally {
+      setReviewBusy(false);
+    }
+  }
+
+  async function setReviewCommentLifecycle(commentId, nextStatus) {
+    const id = str(commentId);
+    if (!id) return;
+    if (disabled || reviewActionBusyId) return;
+    if (typeof onSetReviewCommentStatus !== "function") return;
+    setReviewActionBusyId(id);
+    setReviewErr("");
+    try {
+      const result = await Promise.resolve(onSetReviewCommentStatus(id, nextStatus));
+      if (result && result.ok === false) {
+        setReviewErr(str(result.error || "Не удалось обновить статус комментария."));
+      }
+    } catch (error) {
+      setReviewErr(str(error?.message || error || "Не удалось обновить статус комментария."));
+    } finally {
+      setReviewActionBusyId("");
+    }
+  }
+
+  async function setSessionReviewStatus(nextStatus) {
+    if (disabled || reviewStatusBusy) return;
+    if (typeof onChangeSessionReviewStatus !== "function") return;
+    setReviewStatusBusy(true);
+    setReviewErr("");
+    try {
+      const result = await Promise.resolve(onChangeSessionReviewStatus(nextStatus));
+      if (result && result.ok === false) {
+        setReviewErr(str(result.error || "Не удалось обновить review статус."));
+      }
+    } catch (error) {
+      setReviewErr(str(error?.message || error || "Не удалось обновить review статус."));
+    } finally {
+      setReviewStatusBusy(false);
+    }
+  }
+
+  function openReviewAnchor(commentRaw) {
+    const comment = commentRaw && typeof commentRaw === "object" ? commentRaw : {};
+    onFocusReviewAnchor?.({
+      anchor_id: str(comment?.anchor_id || comment?.anchorId),
+      anchor_type: str(comment?.anchor_type || comment?.anchorType),
+      anchor_label: str(comment?.anchor_label || comment?.anchorLabel || comment?.anchor_id || comment?.anchorId),
+      type: str(comment?.anchor_type || comment?.anchorType) === "sequence_flow" ? "bpmn:SequenceFlow" : "bpmn:Task",
+    });
   }
 
   function openCoveragePanel(payload = {}) {
@@ -2718,6 +2866,29 @@ export default function NotesPanel({
               </SidebarAccordion>
               </div>
 
+              <div ref={executionSectionRef}>
+                <SidebarAccordion
+                  sectionKey="execution"
+                  title="Execution Bridge"
+                  subtitle={isElementMode ? selectedElementId : "Выберите узел"}
+                  badge={`${Number(executionBridgeSummary.robot_ready || 0)}/${Number(executionBridgeSummary.total_nodes || 0)}`}
+                  open={!!sectionsOpen.execution}
+                  onToggle={toggleSection}
+                >
+                  <ExecutionBridgeSection
+                    sessionId={sid}
+                    projection={executionBridgeProjection}
+                    selectedElementId={isElementMode ? selectedElementId : ""}
+                    disabled={disabled}
+                  />
+                  {isElementMode && selectedExecutionBridgeNode ? (
+                    <div className="mt-2 text-[11px] text-muted">
+                      selected: {str(selectedExecutionBridgeNode.execution_classification || "unknown")}
+                    </div>
+                  ) : null}
+                </SidebarAccordion>
+              </div>
+
               <div ref={camundaPropertiesSectionRef}>
                 <SidebarAccordion
                 sectionKey="properties"
@@ -2777,6 +2948,7 @@ export default function NotesPanel({
                   selectedElementName={isElementMode ? selectedElementName : ""}
                   selectedElementNotes={isElementMode ? selectedElementNotes : []}
                   noteCount={isElementMode ? selectedElementNotes.length : 0}
+                  selectedElementType={isElementMode ? selectedElementType : ""}
                   elementText={isElementMode ? elementText : ""}
                   elementSyncState={isElementMode ? elementSyncState : "saved"}
                   onElementTextChange={(value) => {
@@ -2786,6 +2958,26 @@ export default function NotesPanel({
                   onSendElementNote={sendElementNote}
                   elementBusy={isElementMode ? elementBusy : false}
                   elementErr={isElementMode ? elementErr : ""}
+                  reviewStatus={reviewStatus}
+                  reviewStatusBusy={reviewStatusBusy}
+                  reviewComments={reviewList}
+                  reviewOpenCommentsCount={reviewOpenCommentsCount}
+                  selectedAnchorReviewComments={isElementMode ? selectedAnchorReviewComments : []}
+                  reviewCommentText={reviewCommentText}
+                  onReviewCommentTextChange={(value) => {
+                    setReviewErr("");
+                    setReviewCommentText(value);
+                  }}
+                  onSendReviewComment={sendReviewComment}
+                  reviewBusy={reviewBusy}
+                  reviewErr={reviewErr}
+                  reviewActionBusyId={reviewActionBusyId}
+                  onSetReviewCommentLifecycle={setReviewCommentLifecycle}
+                  onSetSessionReviewStatus={setSessionReviewStatus}
+                  onOpenReviewAnchor={openReviewAnchor}
+                  knownAnchorIds={knownAnchorIds}
+                  currentUserId={currentUserId}
+                  currentUserLabel={currentUserLabel}
                   onNodeEditorRef={(node) => {
                     nodeEditorRef.current = node;
                   }}

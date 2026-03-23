@@ -30,6 +30,30 @@ function readPathLength(points) {
   return length;
 }
 
+function readPathMidpoint(pointsRaw) {
+  const points = Array.isArray(pointsRaw) ? pointsRaw : [];
+  if (points.length < 2) return null;
+  const totalLength = readPathLength(points);
+  if (!(totalLength > 0)) return null;
+  const target = totalLength / 2;
+  let walked = 0;
+  for (let idx = 1; idx < points.length; idx += 1) {
+    const prev = points[idx - 1];
+    const curr = points[idx];
+    const segment = Math.hypot(curr.x - prev.x, curr.y - prev.y);
+    if (!(segment > 0)) continue;
+    if (walked + segment >= target) {
+      const ratio = (target - walked) / segment;
+      return {
+        x: prev.x + (curr.x - prev.x) * ratio,
+        y: prev.y + (curr.y - prev.y) * ratio,
+      };
+    }
+    walked += segment;
+  }
+  return points[points.length - 1];
+}
+
 function readElementBounds(element) {
   const x = asFiniteNumber(element?.x, null);
   const y = asFiniteNumber(element?.y, null);
@@ -82,9 +106,18 @@ export function buildOverlayGeometry({ element, isConnection = false, canvasZoom
     };
   }
 
-  const centerX = bounds.x + bounds.width / 2;
+  let anchorX = bounds.x + bounds.width / 2;
+  let anchorY = bounds.y + bounds.height / 2;
+  if (isConnection) {
+    const midpoint = readPathMidpoint(readWaypoints(element));
+    if (midpoint) {
+      anchorX = midpoint.x;
+      anchorY = midpoint.y;
+    }
+  }
   const elementX = asFiniteNumber(element?.x, bounds.x);
-  const anchorLeft = Math.round(Math.max(0, centerX - elementX));
+  const elementY = asFiniteNumber(element?.y, bounds.y);
+  const anchorLeft = Math.round(Math.max(0, anchorX - elementX));
 
   if (!isConnection) {
     // Task overlays should stay readable, but not dominate the task box.
@@ -103,10 +136,11 @@ export function buildOverlayGeometry({ element, isConnection = false, canvasZoom
   const dominantSpan = Math.max(bounds.width, bounds.pathLength * 0.45);
   const visualWidth = dominantSpan * zoom;
   const width = Math.round(clampNumber(visualWidth * 0.32 + 20, 52, 116));
+  const anchorTop = Math.round(clampNumber(anchorY - elementY - 20, -18, 96));
   return {
     width,
     anchorLeft,
-    topOffset: -10,
+    topOffset: anchorTop,
     zoom,
   };
 }

@@ -4,12 +4,7 @@ import {
   apiGetSession,
   apiListProjectSessions,
   apiListProjects,
-  apiPutBpmnXml,
 } from "../lib/api.js";
-import {
-  getLatestBpmnSnapshot,
-  shouldAutoRestoreFromSnapshot,
-} from "../features/process/bpmn/snapshots/bpmnSnapshots.js";
 import {
   readSelectionFromUrl,
   shouldSkipDuplicateUrlRestore,
@@ -57,7 +52,6 @@ export default function useSessionActivationOrchestration({
   logNav,
   logCreateTrace,
   logDraftTrace,
-  logSnapshotTrace,
   ensureArray,
   ensureObject,
   ensureDraftShape,
@@ -193,47 +187,7 @@ export default function useSessionActivationOrchestration({
     if (sidProject && sidProject !== String(projectId || "").trim()) {
       setProjectId(sidProject);
     }
-    const backendXml = String(nextRaw?.bpmn_xml || "");
-    const backendHash = fnv1aHex(backendXml);
-    let restoredFromSnapshot = false;
-    let restoredSnapshot = null;
     let next = nextRaw;
-
-    try {
-      const latestSnapshot = await getLatestBpmnSnapshot({
-        projectId: sidProject,
-        sessionId: sid,
-      });
-      const snapshotXml = String(latestSnapshot?.xml || "");
-      const snapshotHash = String(latestSnapshot?.hash || fnv1aHex(snapshotXml));
-      const restoreDecision = shouldAutoRestoreFromSnapshot({
-        backendXml,
-        snapshot: latestSnapshot,
-      });
-      if (restoreDecision.restore) {
-        restoredFromSnapshot = true;
-        restoredSnapshot = latestSnapshot;
-        next = {
-          ...nextRaw,
-          bpmn_xml: snapshotXml,
-        };
-        logSnapshotTrace("restore_apply", {
-          sid,
-          projectId: sidProject || "-",
-          backendLen: backendXml.length,
-          backendHash,
-          snapshotLen: snapshotXml.length,
-          snapshotHash,
-          snapshotTs: Number(latestSnapshot?.ts || 0),
-          reason: restoreDecision.reason,
-        });
-      }
-    } catch (snapshotError) {
-      logSnapshotTrace("restore_skip_error", {
-        sid,
-        error: String(snapshotError?.message || snapshotError || "snapshot_read_error"),
-      });
-    }
 
     const xml = String(next?.bpmn_xml || "");
     logDraftTrace("DRAFT_REPLACE", {
@@ -246,24 +200,7 @@ export default function useSessionActivationOrchestration({
     rememberConfirmedSessionId(sid);
     rememberActiveSessionId(sid);
     setSessionNavNotice(null);
-    if (restoredFromSnapshot && restoredSnapshot) {
-      const ts = Number(restoredSnapshot?.ts || Date.now()) || Date.now();
-      setSnapshotRestoreNotice({ sid, ts, nonce: Date.now() });
-      void (async () => {
-        const putRes = await apiPutBpmnXml(sid, xml, {
-          rev: Number(next?.bpmn_xml_version || next?.version || restoredSnapshot?.rev || 0),
-        });
-        logSnapshotTrace("restore_persist_backend", {
-          sid,
-          ok: putRes?.ok ? 1 : 0,
-          status: Number(putRes?.status || 0),
-          len: xml.length,
-          hash: fnv1aHex(xml),
-        });
-      })();
-    } else {
-      setSnapshotRestoreNotice(null);
-    }
+    setSnapshotRestoreNotice(null);
     logCreateTrace("OPEN_SESSION", {
       phase: "done",
       sid,
@@ -287,7 +224,6 @@ export default function useSessionActivationOrchestration({
     logCreateTrace,
     logDraftTrace,
     logNav,
-    logSnapshotTrace,
     markFail,
     markOk,
     openSessionReqSeqRef,

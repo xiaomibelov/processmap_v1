@@ -144,6 +144,12 @@ from .legacy.request_context import (
     request_user_email as _request_user_email,
     request_user_meta as _request_user_meta,
 )
+from .services.overlay_projection_cache import get_or_build_properties_overlay_projection_cached
+from .services.realtime_bpmn_ops_stream import (
+    append_session_realtime_ops,
+    get_session_realtime_ops_seq,
+    read_session_realtime_ops,
+)
 from .services.org_invites import (
     build_invite_create_audit_meta,
     extract_invite_token,
@@ -270,6 +276,10 @@ def _env_int(name: str, default: int) -> int:
     except Exception:
         value = int(default)
     return value
+
+
+def _session_presence_ttl_sec() -> int:
+    return max(15, _env_int("SESSION_PRESENCE_TTL_SEC", 75))
 
 
 def _rate_limit_check(key: str, limit: int, window_sec: int = 60) -> bool:
@@ -645,11 +655,101 @@ def _overlay_interview_annotations_on_bpmn_xml(sess: Session, xml_text: str) -> 
         return raw
 
 
-def _session_api_dump(sess: Session) -> Dict[str, Any]:
+def _session_api_dump(
+    sess: Session,
+    *,
+    include_overlay_projection: bool = False,
+    projection_version_token: str = "",
+) -> Dict[str, Any]:
     d = sess.model_dump()
     d["notes"] = _notes_decode(d.get("notes"))
-    d["bpmn_meta"] = _normalize_bpmn_meta(d.get("bpmn_meta"))
+    normalized_bpmn_meta = _normalize_bpmn_meta(d.get("bpmn_meta"))
+    if include_overlay_projection:
+        sid = str(getattr(sess, "id", "") or "").strip()
+        version_token = str(projection_version_token or "").strip() or session_open_version_token(sess)
+        projection_payload = get_or_build_properties_overlay_projection_cached(
+            session_id=sid,
+            version_token=version_token,
+            bpmn_meta_raw=normalized_bpmn_meta,
+            visible_limit=4,
+        )
+        if isinstance(projection_payload, dict) and projection_payload:
+            normalized_bpmn_meta = {
+                **normalized_bpmn_meta,
+                "properties_overlay_projection_v1": projection_payload,
+            }
+    d["bpmn_meta"] = normalized_bpmn_meta
+    d["sync_version_token"] = _session_sync_version_token(sess)
+    d["sync_bpmn_version_token"] = _session_bpmn_version_token(sess)
+    d["sync_collab_version_token"] = _session_collab_version_token(sess)
     return d
+
+
+def _session_sync_signature_payload(sess: Session) -> Dict[str, Any]:
+    interview = getattr(sess, "interview", {}) or {}
+    interview_map = interview if isinstance(interview, dict) else {}
+    return {
+        "version": int(getattr(sess, "version", 0) or 0),
+        "bpmn_xml_version": int(getattr(sess, "bpmn_xml_version", 0) or 0),
+        "updated_at": int(getattr(sess, "updated_at", 0) or 0),
+        "bpmn_graph_fingerprint": str(getattr(sess, "bpmn_graph_fingerprint", "") or ""),
+        "bpmn_meta": _normalize_bpmn_meta(getattr(sess, "bpmn_meta", {}) or {}),
+        "notes_by_element": _norm_notes_by_element(getattr(sess, "notes_by_element", {}) or {}),
+        "interview_status": str(interview_map.get("status") or ""),
+    }
+
+
+def _session_sync_version_token(sess: Session) -> str:
+    base_token = session_open_version_token(sess)
+    try:
+        sync_signature_payload = _session_sync_signature_payload(sess)
+        sync_signature_raw = json.dumps(
+            sync_signature_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        sync_signature = hashlib.sha1(sync_signature_raw.encode("utf-8")).hexdigest()[:12]
+        if not sync_signature:
+            return base_token
+        return f"{base_token}.{sync_signature}"
+    except Exception:
+        return base_token
+
+
+def _session_bpmn_signature_payload(sess: Session) -> Dict[str, Any]:
+    bpmn_xml_text = str(getattr(sess, "bpmn_xml", "") or "")
+    bpmn_xml_hash = hashlib.sha1(bpmn_xml_text.encode("utf-8")).hexdigest()[:16] if bpmn_xml_text else ""
+    return {
+        "bpmn_xml_version": int(getattr(sess, "bpmn_xml_version", 0) or 0),
+        "bpmn_graph_fingerprint": str(getattr(sess, "bpmn_graph_fingerprint", "") or ""),
+        "bpmn_xml_hash": bpmn_xml_hash,
+    }
+
+
+def _session_bpmn_version_token(sess: Session) -> str:
+    payload = _session_bpmn_signature_payload(sess)
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    signature = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+    return f"bpmn.{int(getattr(sess, 'bpmn_xml_version', 0) or 0)}.{signature}"
+
+
+def _session_collab_state_payload(sess: Session) -> Dict[str, Any]:
+    normalized_meta = _normalize_bpmn_meta(getattr(sess, "bpmn_meta", {}) or {})
+    review_v1_raw = normalized_meta.get("review_v1")
+    review_v1 = review_v1_raw if isinstance(review_v1_raw, dict) else {}
+    notes_by_element = _norm_notes_by_element(getattr(sess, "notes_by_element", {}) or {})
+    return {
+        "notes_by_element": notes_by_element,
+        "review_v1": review_v1,
+    }
+
+
+def _session_collab_version_token(sess: Session) -> str:
+    payload = _session_collab_state_payload(sess)
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    signature = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+    return f"collab.{int(getattr(sess, 'updated_at', 0) or 0)}.{signature}"
 
 
 def _get_report_versions_by_path(interview_raw: Any) -> Dict[str, List[Dict[str, Any]]]:
@@ -3023,7 +3123,11 @@ def get_session(session_id: str, request: Request = None) -> Dict[str, Any]:
         sid,
         version_token,
     )
-    payload = _session_api_dump(sess)
+    payload = _session_api_dump(
+        sess,
+        include_overlay_projection=True,
+        projection_version_token=version_token,
+    )
     if cache_set_json(cache_key, payload, ttl_sec=session_open_cache_ttl_sec()):
         logger.info(
             "session_open_cache: write session_id=%s version=%s",
@@ -3031,6 +3135,170 @@ def get_session(session_id: str, request: Request = None) -> Dict[str, Any]:
             version_token,
         )
     return payload
+
+
+@app.get("/api/sessions/{session_id}/sync_state")
+def get_session_sync_state(session_id: str, request: Request = None) -> Dict[str, Any]:
+    sess, _, _ = _legacy_load_session_scoped(session_id, request)
+    if not sess:
+        return {"error": "not found"}
+    sid = str(getattr(sess, "id", "") or session_id).strip()
+    version = int(getattr(sess, "version", 0) or 0)
+    bpmn_xml_version = int(getattr(sess, "bpmn_xml_version", 0) or 0)
+    updated_at = int(getattr(sess, "updated_at", 0) or 0)
+    version_token = _session_sync_version_token(sess)
+    return {
+        "ok": True,
+        "session_id": sid,
+        "version": version,
+        "bpmn_xml_version": bpmn_xml_version,
+        "updated_at": updated_at,
+        "bpmn_graph_fingerprint": str(getattr(sess, "bpmn_graph_fingerprint", "") or ""),
+        "version_token": version_token,
+        "bpmn_version_token": _session_bpmn_version_token(sess),
+        "collab_version_token": _session_collab_version_token(sess),
+        "realtime_ops_seq": int(get_session_realtime_ops_seq(sid)),
+    }
+
+
+@app.get("/api/sessions/{session_id}/collab_state")
+def get_session_collab_state(session_id: str, request: Request = None) -> Dict[str, Any]:
+    sess, _, _ = _legacy_load_session_scoped(session_id, request)
+    if not sess:
+        return {"error": "not found"}
+    sid = str(getattr(sess, "id", "") or session_id).strip()
+    collab_payload = _session_collab_state_payload(sess)
+    return {
+        "ok": True,
+        "session_id": sid,
+        "updated_at": int(getattr(sess, "updated_at", 0) or 0),
+        "version_token": _session_sync_version_token(sess),
+        "bpmn_version_token": _session_bpmn_version_token(sess),
+        "collab_version_token": _session_collab_version_token(sess),
+        "notes_by_element": collab_payload.get("notes_by_element") or {},
+        "review_v1": collab_payload.get("review_v1") or {},
+    }
+
+
+@app.get("/api/sessions/{session_id}/realtime_ops")
+def get_session_realtime_ops(
+    session_id: str,
+    after_seq: int = Query(default=0, ge=0),
+    limit: int = Query(default=120, ge=1, le=240),
+    request: Request = None,
+) -> Dict[str, Any]:
+    sess, _, _ = _legacy_load_session_scoped(session_id, request)
+    if not sess:
+        return {"error": "not found"}
+    sid = str(getattr(sess, "id", "") or session_id).strip()
+    read_result = read_session_realtime_ops(
+        sid,
+        after_seq=int(after_seq or 0),
+        limit=int(limit or 120),
+    )
+    if not isinstance(read_result, dict) or not read_result.get("ok"):
+        return {
+            "ok": False,
+            "session_id": sid,
+            "error": str((read_result or {}).get("error") or "realtime_ops_read_failed"),
+            "items": [],
+            "last_seq": int(get_session_realtime_ops_seq(sid)),
+        }
+    return {
+        "ok": True,
+        "session_id": sid,
+        "items": read_result.get("items") or [],
+        "last_seq": int(read_result.get("last_seq") or 0),
+        "degraded": bool(read_result.get("degraded")),
+        "storage": str(read_result.get("storage") or ""),
+    }
+
+
+@app.post("/api/sessions/{session_id}/realtime_ops")
+async def post_session_realtime_ops(session_id: str, request: Request) -> Dict[str, Any]:
+    user = _request_auth_user(request)
+    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
+    if not user_id:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    sess, _, _ = _legacy_load_session_scoped(session_id, request)
+    if not sess:
+        return {"error": "not found"}
+    sid = str(getattr(sess, "id", "") or session_id).strip()
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    body = payload if isinstance(payload, dict) else {}
+    client_id = str(body.get("client_id") or "").strip()
+    if not client_id:
+        raise HTTPException(status_code=422, detail="missing_client_id")
+
+    append_result = append_session_realtime_ops(
+        sid,
+        user_id=user_id,
+        client_id=client_id,
+        source=body.get("source") or "diagram",
+        version_token=body.get("version_token") or "",
+        bpmn_version_token=body.get("bpmn_version_token") or "",
+        collab_version_token=body.get("collab_version_token") or "",
+        ops=body.get("ops") if isinstance(body.get("ops"), list) else [],
+    )
+    if not isinstance(append_result, dict) or not append_result.get("ok"):
+        return {
+            "ok": False,
+            "session_id": sid,
+            "error": str((append_result or {}).get("error") or "realtime_ops_append_failed"),
+            "accepted": 0,
+            "last_seq": int(get_session_realtime_ops_seq(sid)),
+        }
+    return {
+        "ok": True,
+        "session_id": sid,
+        "accepted": int(append_result.get("accepted") or 0),
+        "last_seq": int(append_result.get("last_seq") or 0),
+        "degraded": bool(append_result.get("degraded")),
+        "storage": str(append_result.get("storage") or ""),
+    }
+
+
+@app.post("/api/sessions/{session_id}/presence")
+def heartbeat_session_presence(session_id: str, request: Request) -> Dict[str, Any]:
+    user = _request_auth_user(request)
+    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
+    if not user_id:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    sess, oid, _ = _legacy_load_session_scoped(session_id, request)
+    if not sess:
+        return {"error": "not found"}
+
+    sid = str(getattr(sess, "id", "") or session_id).strip()
+    st = get_storage()
+    snapshot = st.touch_session_presence(
+        org_id=oid,
+        session_id=sid,
+        user_id=user_id,
+        ttl_sec=_session_presence_ttl_sec(),
+    )
+    active_user_ids = [
+        str(item or "").strip()
+        for item in (snapshot.get("active_user_ids") or [])
+        if str(item or "").strip()
+    ]
+    other_active_users_count = sum(1 for uid in active_user_ids if uid != user_id)
+    return {
+        "ok": True,
+        "session_id": sid,
+        "org_id": str(oid or "").strip(),
+        "active_users_count": int(snapshot.get("active_users_count") or 0),
+        "other_active_users_count": int(other_active_users_count),
+        "current_user_id": user_id,
+        "current_user_present": user_id in set(active_user_ids),
+        "expires_at": int(snapshot.get("expires_at") or 0),
+        "ttl_sec": _session_presence_ttl_sec(),
+    }
 
 
 @app.get("/api/sessions/{session_id}/tldr")
@@ -3248,6 +3516,11 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
         meta={"keys": sorted(list(data.keys()))},
     )
     _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
+    # Reload session from DB so returned tokens use the fresh updated_at
+    # written by storage.save(), preventing self-origin sync churn.
+    sess_fresh = st.load(session_id, org_id=oid, is_admin=True)
+    if sess_fresh is not None:
+        sess = sess_fresh
     return _session_api_dump(sess)
 
 
@@ -3388,6 +3661,11 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
         meta={"put": True},
     )
     _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
+    # Reload session from DB so returned tokens use the fresh updated_at
+    # written by storage.save(), preventing self-origin sync churn.
+    sess_fresh = st.load(session_id, org_id=oid, is_admin=True)
+    if sess_fresh is not None:
+        sess = sess_fresh
     return _session_api_dump(sess)
 
 @app.post("/api/sessions/{session_id}/recompute")
@@ -5367,7 +5645,22 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
         s.bpmn_meta = normalized_meta
         st.save(s, user_id=user_id, org_id=oid_locked, is_admin=True)
         _invalidate_session_caches(s, session_id=session_id, org_id=getattr(s, "org_id", "") or get_default_org_id())
-        return {"ok": True, "session_id": s.id, "bytes": len(xml), "version": s.bpmn_xml_version}
+        # Reload session from DB so response tokens use the fresh updated_at
+        # written by storage.save(), preventing the frontend sync coordinator
+        # from misclassifying this save as a foreign remote change.
+        s_fresh = st.load(session_id, org_id=oid_locked, is_admin=True)
+        if s_fresh is not None:
+            s = s_fresh
+        return {
+            "ok": True,
+            "session_id": s.id,
+            "bytes": len(xml),
+            "version": s.bpmn_xml_version,
+            "updated_at": int(getattr(s, "updated_at", 0) or 0),
+            "sync_version_token": _session_sync_version_token(s),
+            "sync_bpmn_version_token": _session_bpmn_version_token(s),
+            "sync_collab_version_token": _session_collab_version_token(s),
+        }
     finally:
         lock.release()
 
