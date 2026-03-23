@@ -77,6 +77,7 @@ class BpmnMetaApiTests(unittest.TestCase):
             create_session,
             get_storage,
             patch_session,
+            put_session,
             session_bpmn_meta_get,
             session_bpmn_meta_patch,
             session_bpmn_meta_infer_rtiers,
@@ -95,6 +96,7 @@ class BpmnMetaApiTests(unittest.TestCase):
         self.session_bpmn_meta_patch = session_bpmn_meta_patch
         self.session_bpmn_meta_infer_rtiers = session_bpmn_meta_infer_rtiers
         self.session_bpmn_save = session_bpmn_save
+        self.put_session = put_session
 
         created = self.create_session(CreateSessionIn(title="meta test"))
         self.sid = str(created.get("id") or "")
@@ -673,6 +675,79 @@ class BpmnMetaApiTests(unittest.TestCase):
                          f"sync_version_token mismatch: PUT={put_sync!r} vs sync_state={ss_sync!r}")
         self.assertEqual(put_bpmn, ss_bpmn,
                          f"bpmn_version_token mismatch: PUT={put_bpmn!r} vs sync_state={ss_bpmn!r}")
+        self.assertEqual(put_collab, ss_collab,
+                         f"collab_version_token mismatch: PUT={put_collab!r} vs sync_state={ss_collab!r}")
+        self.assertEqual(put_updated, ss_updated,
+                         f"updated_at mismatch: PUT={put_updated} vs sync_state={ss_updated}")
+
+
+    def test_patch_session_response_tokens_match_sync_state(self):
+        """PATCH /sessions response tokens must match GET /sync_state tokens.
+
+        Regression: storage.save() writes updated_at to DB but did not refresh
+        the in-memory session object. patch_session() returned stale tokens,
+        causing the frontend sync coordinator to misclassify the save as a
+        foreign remote change on the next poll (self-origin sync churn).
+        """
+        from app._legacy_main import get_session_sync_state
+
+        # First do a PUT /bpmn so we have a known baseline
+        self.session_bpmn_save(self.sid, self.BpmnXmlIn(xml=PRUNED_BPMN_XML))
+
+        # PATCH the session (simulates interview/nodes/edges autosave)
+        patch_res = self.patch_session(
+            self.sid, self.UpdateSessionIn(interview={"q": "test"}))
+
+        patch_sync = str(patch_res.get("sync_version_token") or "").strip()
+        patch_collab = str(patch_res.get("sync_collab_version_token") or "").strip()
+        patch_updated = int(patch_res.get("updated_at") or 0)
+
+        self.assertTrue(patch_sync, "PATCH response must include sync_version_token")
+        self.assertTrue(patch_collab, "PATCH response must include sync_collab_version_token")
+        self.assertGreater(patch_updated, 0, "PATCH response must include fresh updated_at")
+
+        sync_state = get_session_sync_state(self.sid)
+        ss_sync = str(sync_state.get("version_token") or "").strip()
+        ss_collab = str(sync_state.get("collab_version_token") or "").strip()
+        ss_updated = int(sync_state.get("updated_at") or 0)
+
+        self.assertEqual(patch_sync, ss_sync,
+                         f"sync_version_token mismatch: PATCH={patch_sync!r} vs sync_state={ss_sync!r}")
+        self.assertEqual(patch_collab, ss_collab,
+                         f"collab_version_token mismatch: PATCH={patch_collab!r} vs sync_state={ss_collab!r}")
+        self.assertEqual(patch_updated, ss_updated,
+                         f"updated_at mismatch: PATCH={patch_updated} vs sync_state={ss_updated}")
+
+    def test_put_session_response_tokens_match_sync_state(self):
+        """PUT /sessions response tokens must match GET /sync_state tokens.
+
+        Same regression as PATCH — put_session() returned stale tokens after
+        storage.save() because the in-memory session was not reloaded.
+        """
+        from app._legacy_main import get_session_sync_state
+
+        # First do a PUT /bpmn so we have a known baseline
+        self.session_bpmn_save(self.sid, self.BpmnXmlIn(xml=PRUNED_BPMN_XML))
+
+        # PUT the full session (simulates full session update)
+        put_res = self.put_session(
+            self.sid, self.UpdateSessionIn(interview={"q": "test_put"}))
+
+        put_sync = str(put_res.get("sync_version_token") or "").strip()
+        put_collab = str(put_res.get("sync_collab_version_token") or "").strip()
+        put_updated = int(put_res.get("updated_at") or 0)
+
+        self.assertTrue(put_sync, "PUT response must include sync_version_token")
+        self.assertTrue(put_collab, "PUT response must include sync_collab_version_token")
+        self.assertGreater(put_updated, 0, "PUT response must include fresh updated_at")
+
+        sync_state = get_session_sync_state(self.sid)
+        ss_sync = str(sync_state.get("version_token") or "").strip()
+        ss_collab = str(sync_state.get("collab_version_token") or "").strip()
+        ss_updated = int(sync_state.get("updated_at") or 0)
+
+        self.assertEqual(put_sync, ss_sync,
+                         f"sync_version_token mismatch: PUT={put_sync!r} vs sync_state={ss_sync!r}")
         self.assertEqual(put_collab, ss_collab,
                          f"collab_version_token mismatch: PUT={put_collab!r} vs sync_state={ss_collab!r}")
         self.assertEqual(put_updated, ss_updated,
