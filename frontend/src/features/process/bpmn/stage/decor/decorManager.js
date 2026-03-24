@@ -1309,6 +1309,77 @@ function normalizeOverlayRowDisplayText({ hostType = "task", label = "", value =
   };
 }
 
+export function buildPropertiesOverlayEntryBaseSignature({
+  elementId = "",
+  hostType = "task",
+  orderIndex = -1,
+  items = [],
+  hiddenCount = 0,
+  linkedFlags = [],
+} = {}) {
+  const safeElementId = String(elementId || "").trim();
+  const safeHostType = String(hostType || "task").trim().toLowerCase() || "task";
+  const safeOrderIndex = Number.isFinite(Number(orderIndex)) ? Number(orderIndex) : -1;
+  const safeHiddenCount = Math.max(0, Number(hiddenCount || 0));
+  const safeItems = (Array.isArray(items) ? items : [])
+    .map((itemRaw) => {
+      const item = itemRaw && typeof itemRaw === "object" ? itemRaw : {};
+      return {
+        key: String(item.key || "").trim(),
+        label: String(item.label || "").trim(),
+        value: String(item.value || "").trim(),
+      };
+    })
+    .filter((item) => item.label && item.value);
+  const safeLinkedFlags = (Array.isArray(linkedFlags) ? linkedFlags : [])
+    .map((flagRaw) => Number(flagRaw || 0) > 0 ? 1 : 0);
+  return JSON.stringify({
+    elementId: safeElementId,
+    hostType: safeHostType,
+    orderIndex: safeOrderIndex,
+    items: safeItems,
+    hiddenCount: safeHiddenCount,
+    linkedFlags: safeLinkedFlags,
+  });
+}
+
+export function buildPropertiesOverlayEntryContentSignature({
+  baseSignature = "",
+  colorSignature = "",
+} = {}) {
+  return `${String(baseSignature || "").trim()}|${String(colorSignature || "").trim()}`;
+}
+
+export function buildPropertiesOverlayEntryGeometrySignature({
+  hostType = "task",
+  zoomBucket = 1,
+  width = 0,
+  topOffset = 0,
+  anchorLeft = 0,
+} = {}) {
+  const safeHostType = String(hostType || "task").trim().toLowerCase() || "task";
+  const safeZoom = Number.isFinite(Number(zoomBucket)) ? Number(zoomBucket) : 1;
+  const safeWidth = Number.isFinite(Number(width)) ? Number(width) : 0;
+  const safeTop = Number.isFinite(Number(topOffset)) ? Number(topOffset) : 0;
+  const safeLeft = Number.isFinite(Number(anchorLeft)) ? Number(anchorLeft) : 0;
+  return `${safeHostType}|${safeZoom}|${safeWidth}|${safeTop}|${safeLeft}`;
+}
+
+export function classifyPropertiesOverlayEntryOperation(prevEntryRaw, nextEntryRaw) {
+  const prevEntry = prevEntryRaw && typeof prevEntryRaw === "object" ? prevEntryRaw : null;
+  const nextEntry = nextEntryRaw && typeof nextEntryRaw === "object" ? nextEntryRaw : null;
+  if (!prevEntry && nextEntry) return "add";
+  if (prevEntry && !nextEntry) return "remove";
+  if (!prevEntry && !nextEntry) return "none";
+  const prevContent = String(prevEntry?.contentSignature || "").trim();
+  const nextContent = String(nextEntry?.contentSignature || "").trim();
+  if (!prevContent || prevContent !== nextContent) return "content_update";
+  const prevGeometry = String(prevEntry?.geometrySignature || "").trim();
+  const nextGeometry = String(nextEntry?.geometrySignature || "").trim();
+  if (!prevGeometry || prevGeometry !== nextGeometry) return "position_update";
+  return "unchanged";
+}
+
 function buildPropertiesOverlayRenderSignature({
   previewEntries,
   zoomBucket,
@@ -1365,6 +1436,139 @@ function buildPropertiesOverlayRenderSignature({
     });
   });
   return `${entries.length}:${hash >>> 0}`;
+}
+
+function applyOverlayContainerGeometry(container, hostType, overlayGeometry) {
+  if (!container || typeof container !== "object") return;
+  const width = Number(overlayGeometry?.width || 0);
+  container.style.width = `${width}px`;
+  container.style.maxWidth = `${width}px`;
+  if (hostType === "sequence") {
+    const sequenceMinWidth = Math.round(clampNumber(width - 4, 56, 102));
+    const sequenceFont = clampNumber(width / 12.3, 7.7, 8.9);
+    container.style.setProperty("--fpc-property-table-min-width", `${sequenceMinWidth}px`);
+    container.style.setProperty("--fpc-property-grid-columns", "minmax(24px, 41%) minmax(28px, 59%)");
+    container.style.setProperty("--fpc-property-font-size", `${sequenceFont.toFixed(2)}px`);
+    container.style.setProperty("--fpc-property-font-scale", "1.15");
+    container.style.setProperty("--fpc-property-row-padding", "1px 5px");
+    container.style.setProperty("--fpc-property-row-min-height", "14px");
+    container.style.setProperty("--fpc-property-row-gap", "4px");
+  } else if (hostType === "gateway") {
+    const gatewayMinWidth = Math.round(clampNumber(width - 8, 60, 122));
+    const gatewayFont = clampNumber(width / 12.8, 7.8, 9.1);
+    container.style.setProperty("--fpc-property-table-min-width", `${gatewayMinWidth}px`);
+    container.style.setProperty("--fpc-property-grid-columns", "minmax(24px, 44%) minmax(30px, 56%)");
+    container.style.setProperty("--fpc-property-font-size", `${gatewayFont.toFixed(2)}px`);
+    container.style.setProperty("--fpc-property-font-scale", "1.08");
+    container.style.setProperty("--fpc-property-row-padding", "1px 5px");
+    container.style.setProperty("--fpc-property-row-min-height", "14px");
+    container.style.setProperty("--fpc-property-row-gap", "4px");
+  } else {
+    const taskMinWidth = Math.round(clampNumber(width - 4, 66, 134));
+    const taskFont = clampNumber(width / 12.6, 8.1, 9.6);
+    container.style.setProperty("--fpc-property-table-min-width", `${taskMinWidth}px`);
+    container.style.setProperty("--fpc-property-grid-columns", "minmax(28px, 42%) minmax(34px, 58%)");
+    container.style.setProperty("--fpc-property-font-size", `${taskFont.toFixed(2)}px`);
+    container.style.setProperty("--fpc-property-font-scale", "1");
+    container.style.setProperty("--fpc-property-row-padding", "1px 6px");
+    container.style.setProperty("--fpc-property-row-min-height", "15px");
+    container.style.setProperty("--fpc-property-row-gap", "5px");
+  }
+}
+
+function buildPropertiesOverlayContainer({
+  elementId,
+  hostType,
+  items,
+  hiddenCount,
+  localColorPlan,
+  linkedPropertyFrequency,
+  normalizeOverlayRowDisplayText,
+  normalizeOverlayPropertyKey,
+  overlayPropertyColorByKey,
+  toText,
+  overlayGeometry,
+}) {
+  const container = document.createElement("div");
+  const overlayHostClass = hostType === "sequence"
+    ? "fpcPropertyOverlay--sequence"
+    : hostType === "gateway"
+      ? "fpcPropertyOverlay--gateway"
+      : "fpcPropertyOverlay--task";
+  container.className = `fpcPropertyOverlay fpcPropertyOverlay--table ${overlayHostClass}`;
+  container.dataset.nodeId = elementId;
+  container.dataset.hostType = hostType;
+  applyOverlayContainerGeometry(container, hostType, overlayGeometry);
+
+  const table = document.createElement("div");
+  table.className = "fpcPropertyTable";
+
+  items.forEach((item, itemIndex) => {
+    const labelRaw = toText(item?.label);
+    const valueRaw = toText(item?.value);
+    const row = document.createElement("div");
+    const linkedKey = normalizeOverlayPropertyKey(item?.key || item?.label);
+    const linkedCount = Number(linkedPropertyFrequency.get(linkedKey) || 0);
+    const linkedClass = linkedKey && linkedCount > 1 ? " fpcPropertyRow--linked" : "";
+    const colorModel = localColorPlan[itemIndex] || overlayPropertyColorByKey(linkedKey || item?.label);
+    const familyClass = colorModel?.familyId ? ` fpcPropertyRow--family-${toText(colorModel.familyId)}` : "";
+    const toneClass = colorModel?.toneId ? ` fpcPropertyRow--tone-${toText(colorModel.toneId)}` : "";
+    row.className = `fpcPropertyRow${linkedClass}${familyClass}${toneClass}`;
+    row.title = `${labelRaw}: ${valueRaw}`;
+    row.dataset.hostType = hostType;
+    row.dataset.familyId = toText(colorModel?.familyId);
+    row.dataset.toneId = toText(colorModel?.toneId);
+    row.style.setProperty("--fpc-property-accent", colorModel.accent);
+    row.style.setProperty("--fpc-property-bg", colorModel.background);
+    row.style.setProperty("--fpc-property-border", colorModel.border || colorModel.accent);
+    row.style.setProperty("--fpc-property-text", colorModel.text || colorModel.accent);
+    row.style.setProperty("--fpc-property-ring", colorModel.ring || colorModel.accent);
+    row.style.setProperty("--fpc-property-accent-shadow", colorModel.shadow);
+    if (linkedKey && linkedCount > 1) {
+      row.dataset.linkedGroup = linkedKey;
+    }
+    const displayText = normalizeOverlayRowDisplayText({
+      hostType,
+      label: labelRaw,
+      value: valueRaw,
+    });
+    row.dataset.truncated = displayText.labelTruncated || displayText.valueTruncated ? "true" : "false";
+
+    const keyCell = document.createElement("span");
+    keyCell.className = "fpcPropertyCell fpcPropertyCell--key";
+    keyCell.title = displayText.labelTruncated ? labelRaw : "";
+    const keyText = document.createElement("span");
+    keyText.className = "fpcPropertyKeyText";
+    keyText.textContent = displayText.label;
+    keyCell.appendChild(keyText);
+
+    const keySep = document.createElement("span");
+    keySep.className = "fpcPropertyKeySep";
+    keySep.textContent = "|";
+    keyCell.appendChild(keySep);
+    row.appendChild(keyCell);
+
+    const valueCell = document.createElement("span");
+    valueCell.className = "fpcPropertyCell fpcPropertyCell--value";
+    valueCell.title = displayText.valueTruncated ? valueRaw : "";
+    const valueText = document.createElement("span");
+    valueText.className = "fpcPropertyValueText";
+    valueText.textContent = displayText.value;
+    valueCell.appendChild(valueText);
+    row.appendChild(valueCell);
+
+    table.appendChild(row);
+  });
+
+  if (hiddenCount > 0) {
+    const moreRow = document.createElement("div");
+    moreRow.className = "fpcPropertyRow fpcPropertyRow--summary";
+    moreRow.textContent = `+${hiddenCount} ещё`;
+    moreRow.title = `Еще свойств: ${hiddenCount}`;
+    table.appendChild(moreRow);
+  }
+  container.appendChild(table);
+  return container;
 }
 
 export function applyPropertiesOverlayDecor(ctx) {
@@ -1501,7 +1705,8 @@ export function applyPropertiesOverlayDecor(ctx) {
 
         const orderedEntries = sortEntriesByReadingOrder(resolvedEntries);
         const spatialTaskWindow = [];
-        orderedEntries.forEach((entry) => {
+        let spatialWindowDirty = false;
+        orderedEntries.forEach((entry, orderIndex) => {
           const elementId = toText(entry?.elementId);
           const resolvedElementId = toText(entry?.resolvedElementId);
           const items = asArray(entry?.items);
@@ -1510,163 +1715,172 @@ export function applyPropertiesOverlayDecor(ctx) {
           const isConnection = !!entry?.isConnection;
           const hostType = toText(entry?.hostType) || (isConnection ? "sequence" : "task");
           if (!elementId || !resolvedElementId || !items.length || !el) return;
+          const prev = asObject(currentState[resolvedElementId]);
+          const linkedFlags = items.map((item) => {
+            const linkedKey = normalizeOverlayPropertyKey(item?.key || item?.label);
+            const linkedCount = Number(linkedPropertyFrequency.get(linkedKey) || 0);
+            return linkedKey && linkedCount > 1 ? 1 : 0;
+          });
+          const baseSignature = buildPropertiesOverlayEntryBaseSignature({
+            elementId,
+            hostType,
+            orderIndex,
+            items,
+            hiddenCount,
+            linkedFlags,
+          });
+          const canReusePrepared = (
+            toText(prev?.baseSignature) === baseSignature
+            && (!spatialWindowDirty || isConnection)
+            && Array.isArray(prev?.colorPlan)
+            && (!isConnection || prev?.isConnection === true)
+          );
 
-          const localColorPlan = isConnection
-            ? overlayPropertyColorPlanForItems(items)
-            : overlayPropertyColorPlanForItems(items, { spatialWindow: spatialTaskWindow });
+          let localColorPlan = [];
+          let entrySpatialSummary = null;
+          let colorSignature = "";
+          if (canReusePrepared) {
+            localColorPlan = prev.colorPlan;
+            colorSignature = toText(prev?.colorSignature);
+            entrySpatialSummary = !isConnection ? asObject(prev?.spatialSummary) : null;
+          } else {
+            localColorPlan = isConnection
+              ? overlayPropertyColorPlanForItems(items)
+              : overlayPropertyColorPlanForItems(items, { spatialWindow: spatialTaskWindow });
+            colorSignature = JSON.stringify(localColorPlan.map((color) => ({
+              familyId: toText(color?.familyId),
+              toneId: toText(color?.toneId),
+              accent: toText(color?.accent),
+              background: toText(color?.background),
+              border: toText(color?.border),
+              text: toText(color?.text),
+            })));
+            entrySpatialSummary = !isConnection ? summarizeSpatialTaskPlan(localColorPlan) : null;
+            if (!isConnection) spatialWindowDirty = true;
+          }
           if (!isConnection) {
-            spatialTaskWindow.push(summarizeSpatialTaskPlan(localColorPlan));
+            spatialTaskWindow.push(entrySpatialSummary || summarizeSpatialTaskPlan(localColorPlan));
             if (spatialTaskWindow.length > 6) spatialTaskWindow.shift();
           }
-          const colorSignature = JSON.stringify(localColorPlan.map((color) => ({
-            familyId: toText(color?.familyId),
-            toneId: toText(color?.toneId),
-            accent: toText(color?.accent),
-            background: toText(color?.background),
-            border: toText(color?.border),
-            text: toText(color?.text),
-          })));
-          const signature = JSON.stringify({
-            elementId,
+          const contentSignature = buildPropertiesOverlayEntryContentSignature({
+            baseSignature,
+            colorSignature,
+          });
+          const overlayGeometry = buildOverlayGeometry({ element: el, isConnection, canvasZoom });
+          const geometrySignature = buildPropertiesOverlayEntryGeometrySignature({
+            hostType,
+            zoomBucket,
+            width: overlayGeometry.width,
+            topOffset: overlayGeometry.topOffset,
+            anchorLeft: overlayGeometry.anchorLeft,
+          });
+          const nextEntry = {
+            elementId: resolvedElementId,
+            sourceElementId: elementId,
+            contentSignature,
+            baseSignature,
+            colorSignature,
+            geometrySignature,
+            colorPlan: localColorPlan,
+            spatialSummary: entrySpatialSummary,
+            isConnection,
             hostType,
             items,
             hiddenCount,
-            zoom: zoomBucket,
-            color: colorSignature,
-          });
-          const prev = asObject(currentState[resolvedElementId]);
-          if (toText(prev?.signature) === signature) {
-            nextState[resolvedElementId] = prev;
+            overlayGeometry,
+          };
+          const operation = classifyPropertiesOverlayEntryOperation(prev, nextEntry);
+          if (operation === "remove") {
+            return;
+          }
+
+          if (operation === "add" || operation === "content_update") {
+            if (prev?.overlayId !== null && prev?.overlayId !== undefined) {
+              overlays.remove(prev.overlayId);
+            }
+            const container = buildPropertiesOverlayContainer({
+              elementId,
+              hostType,
+              items,
+              hiddenCount,
+              localColorPlan,
+              linkedPropertyFrequency,
+              normalizeOverlayRowDisplayText,
+              normalizeOverlayPropertyKey,
+              overlayPropertyColorByKey,
+              toText,
+              overlayGeometry,
+            });
+            const overlayId = overlays.add(resolvedElementId, "fpc-properties", {
+              position: { top: overlayGeometry.topOffset, left: overlayGeometry.anchorLeft },
+              html: container,
+              scale: false,
+            });
+            nextState[resolvedElementId] = {
+              ...nextEntry,
+              overlayId,
+              container,
+            };
             delete currentState[resolvedElementId];
             return;
           }
 
+          const reusableContainer = prev?.container && typeof prev.container === "object"
+            ? prev.container
+            : null;
+          if (operation === "position_update" && reusableContainer) {
+            applyOverlayContainerGeometry(reusableContainer, hostType, overlayGeometry);
+            if (prev?.overlayId !== null && prev?.overlayId !== undefined) {
+              overlays.remove(prev.overlayId);
+            }
+            const overlayId = overlays.add(resolvedElementId, "fpc-properties", {
+              position: { top: overlayGeometry.topOffset, left: overlayGeometry.anchorLeft },
+              html: reusableContainer,
+              scale: false,
+            });
+            nextState[resolvedElementId] = {
+              ...nextEntry,
+              overlayId,
+              container: reusableContainer,
+            };
+            delete currentState[resolvedElementId];
+            return;
+          }
+
+          if (operation === "unchanged") {
+            nextState[resolvedElementId] = {
+              ...prev,
+              ...nextEntry,
+            };
+            delete currentState[resolvedElementId];
+            return;
+          }
+
+          const fallbackContainer = buildPropertiesOverlayContainer({
+            elementId,
+            hostType,
+            items,
+            hiddenCount,
+            localColorPlan,
+            linkedPropertyFrequency,
+            normalizeOverlayRowDisplayText,
+            normalizeOverlayPropertyKey,
+            overlayPropertyColorByKey,
+            toText,
+            overlayGeometry,
+          });
           if (prev?.overlayId !== null && prev?.overlayId !== undefined) {
             overlays.remove(prev.overlayId);
           }
-
-          const container = document.createElement("div");
-          const overlayHostClass = hostType === "sequence"
-            ? "fpcPropertyOverlay--sequence"
-            : hostType === "gateway"
-              ? "fpcPropertyOverlay--gateway"
-              : "fpcPropertyOverlay--task";
-          container.className = `fpcPropertyOverlay fpcPropertyOverlay--table ${overlayHostClass}`;
-          container.dataset.nodeId = elementId;
-          container.dataset.hostType = hostType;
-          const overlayGeometry = buildOverlayGeometry({ element: el, isConnection, canvasZoom });
-          container.style.width = `${overlayGeometry.width}px`;
-          container.style.maxWidth = `${overlayGeometry.width}px`;
-          if (hostType === "sequence") {
-            const sequenceMinWidth = Math.round(clampNumber(overlayGeometry.width - 4, 56, 102));
-            const sequenceFont = clampNumber(overlayGeometry.width / 12.3, 7.7, 8.9);
-            container.style.setProperty("--fpc-property-table-min-width", `${sequenceMinWidth}px`);
-            container.style.setProperty("--fpc-property-grid-columns", "minmax(24px, 41%) minmax(28px, 59%)");
-            container.style.setProperty("--fpc-property-font-size", `${sequenceFont.toFixed(2)}px`);
-            container.style.setProperty("--fpc-property-font-scale", "1.15");
-            container.style.setProperty("--fpc-property-row-padding", "1px 5px");
-            container.style.setProperty("--fpc-property-row-min-height", "14px");
-            container.style.setProperty("--fpc-property-row-gap", "4px");
-          } else if (hostType === "gateway") {
-            const gatewayMinWidth = Math.round(clampNumber(overlayGeometry.width - 8, 60, 122));
-            const gatewayFont = clampNumber(overlayGeometry.width / 12.8, 7.8, 9.1);
-            container.style.setProperty("--fpc-property-table-min-width", `${gatewayMinWidth}px`);
-            container.style.setProperty("--fpc-property-grid-columns", "minmax(24px, 44%) minmax(30px, 56%)");
-            container.style.setProperty("--fpc-property-font-size", `${gatewayFont.toFixed(2)}px`);
-            container.style.setProperty("--fpc-property-font-scale", "1.08");
-            container.style.setProperty("--fpc-property-row-padding", "1px 5px");
-            container.style.setProperty("--fpc-property-row-min-height", "14px");
-            container.style.setProperty("--fpc-property-row-gap", "4px");
-          } else {
-            const taskMinWidth = Math.round(clampNumber(overlayGeometry.width - 4, 66, 134));
-            const taskFont = clampNumber(overlayGeometry.width / 12.6, 8.1, 9.6);
-            container.style.setProperty("--fpc-property-table-min-width", `${taskMinWidth}px`);
-            container.style.setProperty("--fpc-property-grid-columns", "minmax(28px, 42%) minmax(34px, 58%)");
-            container.style.setProperty("--fpc-property-font-size", `${taskFont.toFixed(2)}px`);
-            container.style.setProperty("--fpc-property-font-scale", "1");
-            container.style.setProperty("--fpc-property-row-padding", "1px 6px");
-            container.style.setProperty("--fpc-property-row-min-height", "15px");
-            container.style.setProperty("--fpc-property-row-gap", "5px");
-          }
-
-          const table = document.createElement("div");
-          table.className = "fpcPropertyTable";
-
-          items.forEach((item, itemIndex) => {
-            const labelRaw = toText(item?.label);
-            const valueRaw = toText(item?.value);
-            const row = document.createElement("div");
-            const linkedKey = normalizeOverlayPropertyKey(item?.key || item?.label);
-            const linkedCount = Number(linkedPropertyFrequency.get(linkedKey) || 0);
-            const linkedClass = linkedKey && linkedCount > 1 ? " fpcPropertyRow--linked" : "";
-            const colorModel = localColorPlan[itemIndex] || overlayPropertyColorByKey(linkedKey || item?.label);
-            const familyClass = colorModel?.familyId ? ` fpcPropertyRow--family-${toText(colorModel.familyId)}` : "";
-            const toneClass = colorModel?.toneId ? ` fpcPropertyRow--tone-${toText(colorModel.toneId)}` : "";
-            row.className = `fpcPropertyRow${linkedClass}${familyClass}${toneClass}`;
-            row.title = `${labelRaw}: ${valueRaw}`;
-            row.dataset.hostType = hostType;
-            row.dataset.familyId = toText(colorModel?.familyId);
-            row.dataset.toneId = toText(colorModel?.toneId);
-            row.style.setProperty("--fpc-property-accent", colorModel.accent);
-            row.style.setProperty("--fpc-property-bg", colorModel.background);
-            row.style.setProperty("--fpc-property-border", colorModel.border || colorModel.accent);
-            row.style.setProperty("--fpc-property-text", colorModel.text || colorModel.accent);
-            row.style.setProperty("--fpc-property-ring", colorModel.ring || colorModel.accent);
-            row.style.setProperty("--fpc-property-accent-shadow", colorModel.shadow);
-            if (linkedKey && linkedCount > 1) {
-              row.dataset.linkedGroup = linkedKey;
-            }
-            const displayText = normalizeOverlayRowDisplayText({
-              hostType,
-              label: labelRaw,
-              value: valueRaw,
-            });
-            row.dataset.truncated = displayText.labelTruncated || displayText.valueTruncated ? "true" : "false";
-
-            const keyCell = document.createElement("span");
-            keyCell.className = "fpcPropertyCell fpcPropertyCell--key";
-            keyCell.title = displayText.labelTruncated ? labelRaw : "";
-            const keyText = document.createElement("span");
-            keyText.className = "fpcPropertyKeyText";
-            keyText.textContent = displayText.label;
-            keyCell.appendChild(keyText);
-
-            const keySep = document.createElement("span");
-            keySep.className = "fpcPropertyKeySep";
-            keySep.textContent = "|";
-            keyCell.appendChild(keySep);
-            row.appendChild(keyCell);
-
-            const valueCell = document.createElement("span");
-            valueCell.className = "fpcPropertyCell fpcPropertyCell--value";
-            valueCell.title = displayText.valueTruncated ? valueRaw : "";
-            const valueText = document.createElement("span");
-            valueText.className = "fpcPropertyValueText";
-            valueText.textContent = displayText.value;
-            valueCell.appendChild(valueText);
-            row.appendChild(valueCell);
-
-            table.appendChild(row);
-          });
-
-          if (hiddenCount > 0) {
-            const moreRow = document.createElement("div");
-            moreRow.className = "fpcPropertyRow fpcPropertyRow--summary";
-            moreRow.textContent = `+${hiddenCount} ещё`;
-            moreRow.title = `Еще свойств: ${hiddenCount}`;
-            table.appendChild(moreRow);
-          }
-          container.appendChild(table);
-
           const overlayId = overlays.add(resolvedElementId, "fpc-properties", {
             position: { top: overlayGeometry.topOffset, left: overlayGeometry.anchorLeft },
-            html: container,
+            html: fallbackContainer,
             scale: false,
           });
           nextState[resolvedElementId] = {
-            elementId: resolvedElementId,
+            ...nextEntry,
             overlayId,
-            signature,
+            container: fallbackContainer,
           };
           delete currentState[resolvedElementId];
         });
