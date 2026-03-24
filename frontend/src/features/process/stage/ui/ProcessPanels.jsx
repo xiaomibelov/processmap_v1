@@ -39,6 +39,7 @@ export default function ProcessPanels({ section = "top", view = {} }) {
     isBpmnTab,
     workbench,
     exportBpmn,
+    exportPdf,
     openVersionsModal,
     selectedElementId,
     openInsertBetweenModal,
@@ -279,6 +280,19 @@ export default function ProcessPanels({ section = "top", view = {} }) {
                 data-testid="bpmn-export-button"
               >
                 {workbench.labels.exportBpmn}
+              </button>
+              <button
+                type="button"
+                className="secondaryBtn h-7 px-2 text-[11px]"
+                onClick={() => {
+                  void exportPdf();
+                  closeToolbarMenu();
+                }}
+                disabled={!hasSession}
+                data-testid="bpmn-export-pdf-button"
+                title="Экспорт диаграммы с оверлеями в PDF"
+              >
+                Export PDF
               </button>
               <button
                 type="button"

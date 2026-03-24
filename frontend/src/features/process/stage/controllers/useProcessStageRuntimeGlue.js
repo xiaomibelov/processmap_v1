@@ -1,4 +1,5 @@
 import { useCallback, useEffect } from "react";
+import { exportDiagramToPdf } from "../utils/exportDiagramToPdf";
 
 export default function useProcessStageRuntimeGlue({
   importInputRef,
@@ -573,12 +574,22 @@ export default function useProcessStageRuntimeGlue({
     }
   }
 
+  async function exportPdf() {
+    if (!hasSession) return;
+    try {
+      await exportDiagramToPdf({ bpmnRef, sessionId: sid });
+    } catch (e) {
+      setGenErr(String(e?.message || "Не удалось экспортировать PDF."));
+    }
+  }
+
   return {
     openImportDialog,
     runToolbarReset,
     runToolbarClear,
     toggleAiBottlenecks,
     exportBpmn,
+    exportPdf,
     openClarifyNode,
     toggleAttentionFilter,
     focusAttentionItem,
