@@ -1,3 +1,4 @@
+import { memo } from "react";
 import {
   normalizeBpmnTypeLabel,
   normalizeSecondaryLine,
@@ -16,7 +17,7 @@ async function copyText(value) {
   return false;
 }
 
-export default function SelectedElementCard({
+function SelectedElementCard({
   selectedElementId,
   selectedElementName,
   selectedElementType,
@@ -96,3 +97,5 @@ export default function SelectedElementCard({
     </section>
   );
 }
+
+export default memo(SelectedElementCard);
