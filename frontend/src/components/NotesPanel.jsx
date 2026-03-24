@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   elementNotesForId,
   normalizeElementNotesMap,
@@ -1127,14 +1127,31 @@ export default function NotesPanel({
     const rawMeta = draft?.bpmn_meta && typeof draft.bpmn_meta === "object" ? draft.bpmn_meta : {};
     return normalizeCamundaExtensionsMap(rawMeta.camunda_extensions_by_element_id);
   }, [draft?.bpmn_meta]);
+  // Stabilise bpmn_meta reference: only recompute execution bridge when the
+  // meta content actually changes (shallow-new objects produced by parent
+  // renders should not trigger a full BPMN graph traversal).
+  const bpmnMetaStableRef = useRef(null);
+  const bpmnMetaSignatureRef = useRef("");
+  const rawBpmnMeta = draft?.bpmn_meta && typeof draft.bpmn_meta === "object" ? draft.bpmn_meta : {};
+  const bpmnMetaSignature = useMemo(() => {
+    try { return JSON.stringify(rawBpmnMeta); } catch { return ""; }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawBpmnMeta]);
+  if (bpmnMetaSignature !== bpmnMetaSignatureRef.current) {
+    bpmnMetaSignatureRef.current = bpmnMetaSignature;
+    bpmnMetaStableRef.current = rawBpmnMeta;
+  }
+  const stableBpmnMeta = bpmnMetaStableRef.current ?? rawBpmnMeta;
+
   const executionBridgeProjection = useMemo(
     () => buildExecutionBridgeProjectionV1({
       sessionId: sid,
       projectId,
       bpmnXml: str(draft?.bpmn_xml),
-      bpmnMeta: draft?.bpmn_meta && typeof draft?.bpmn_meta === "object" ? draft.bpmn_meta : {},
+      bpmnMeta: stableBpmnMeta,
     }),
-    [sid, projectId, draft?.bpmn_xml, draft?.bpmn_meta],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sid, projectId, draft?.bpmn_xml, bpmnMetaSignature],
   );
   const executionBridgeSummary = useMemo(
     () => (executionBridgeProjection && typeof executionBridgeProjection.summary === "object"
@@ -1602,18 +1619,39 @@ export default function NotesPanel({
         dispatchState.draftSignature = "null";
         onPropertiesOverlayPreviewChange?.(null);
       }
+      if (dispatchState.alwaysSignature !== "null") {
+        dispatchState.alwaysSignature = "null";
+        onPropertiesOverlayAlwaysPreviewChange?.(null);
+      }
       return;
     }
-    const nextPreview = buildPropertiesOverlayPreview({
+    // compute "always" preview once; derive "on-select" preview from same base args
+    const nextAlwaysPreview = buildPropertiesOverlayPreview({
       elementId: selectedElementId,
       extensionStateRaw: camundaPropertiesDraft,
       dictionaryBundleRaw: orgPropertyDictionaryBundle,
-      showPropertiesOverlay: showPropertiesOverlayOnSelect,
+      showPropertiesOverlay: true,
     });
-    const nextSignature = buildPropertiesOverlayPreviewSignature(nextPreview);
-    if (dispatchState.draftSignature === nextSignature) return;
-    dispatchState.draftSignature = nextSignature;
-    onPropertiesOverlayPreviewChange?.(nextPreview);
+    const alwaysSig = buildPropertiesOverlayPreviewSignature(nextAlwaysPreview);
+    if (dispatchState.alwaysSignature !== alwaysSig) {
+      dispatchState.alwaysSignature = alwaysSig;
+      onPropertiesOverlayAlwaysPreviewChange?.(nextAlwaysPreview);
+    }
+    const nextPreview = showPropertiesOverlayOnSelect
+      ? nextAlwaysPreview
+      : buildPropertiesOverlayPreview({
+          elementId: selectedElementId,
+          extensionStateRaw: camundaPropertiesDraft,
+          dictionaryBundleRaw: orgPropertyDictionaryBundle,
+          showPropertiesOverlay: false,
+        });
+    const draftSig = showPropertiesOverlayOnSelect
+      ? alwaysSig
+      : buildPropertiesOverlayPreviewSignature(nextPreview);
+    if (dispatchState.draftSignature !== draftSig) {
+      dispatchState.draftSignature = draftSig;
+      onPropertiesOverlayPreviewChange?.(nextPreview);
+    }
   }, [
     selectedElementId,
     selectedCamundaPropertiesEditable,
@@ -1621,32 +1659,6 @@ export default function NotesPanel({
     orgPropertyDictionaryBundle,
     showPropertiesOverlayOnSelect,
     onPropertiesOverlayPreviewChange,
-  ]);
-
-  useEffect(() => {
-    const dispatchState = propertiesOverlayPreviewDispatchRef.current;
-    if (!selectedElementId || !selectedCamundaPropertiesEditable) {
-      if (dispatchState.alwaysSignature !== "null") {
-        dispatchState.alwaysSignature = "null";
-        onPropertiesOverlayAlwaysPreviewChange?.(null);
-      }
-      return;
-    }
-    const nextAlwaysPreview = buildPropertiesOverlayPreview({
-      elementId: selectedElementId,
-      extensionStateRaw: camundaPropertiesDraft,
-      dictionaryBundleRaw: orgPropertyDictionaryBundle,
-      showPropertiesOverlay: true,
-    });
-    const nextSignature = buildPropertiesOverlayPreviewSignature(nextAlwaysPreview);
-    if (dispatchState.alwaysSignature === nextSignature) return;
-    dispatchState.alwaysSignature = nextSignature;
-    onPropertiesOverlayAlwaysPreviewChange?.(nextAlwaysPreview);
-  }, [
-    selectedElementId,
-    selectedCamundaPropertiesEditable,
-    camundaPropertiesDraft,
-    orgPropertyDictionaryBundle,
     onPropertiesOverlayAlwaysPreviewChange,
   ]);
 
@@ -1769,7 +1781,7 @@ export default function NotesPanel({
     sidebarHiddenRef.current = isHidden;
   }, [sidebarHidden]);
 
-  function toggleSection(sectionId) {
+  const toggleSection = useCallback((sectionId) => {
     const key = str(sectionId);
     if (!key || !SIDEBAR_ACCORDION_KEYS.includes(key)) return;
     setSectionsOpen((prev) => {
@@ -1782,9 +1794,9 @@ export default function NotesPanel({
       return next;
     });
     onActiveSectionChange?.(key);
-  }
+  }, [onActiveSectionChange]);
 
-  function openSectionShortcut(sectionId) {
+  const openSectionShortcut = useCallback((sectionId) => {
     const key = str(sectionId);
     if (!key || !SIDEBAR_ACCORDION_KEYS.includes(key)) return;
     onToggleSidebarCompact?.(false, "shortcut");
@@ -1800,7 +1812,7 @@ export default function NotesPanel({
     if (node && typeof node.scrollIntoView === "function") {
       node.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }
+  }, [onActiveSectionChange, onToggleSidebarCompact]);
 
   function sectionRefById(sectionId) {
     const key = str(sectionId);
@@ -2230,11 +2242,11 @@ export default function NotesPanel({
     }
   }
 
-  function updateRobotMetaDraft(nextRaw) {
+  const updateRobotMetaDraft = useCallback((nextRaw) => {
     setRobotMetaDraft(normalizeRobotMetaV1(nextRaw));
     setRobotMetaSaveFailed(false);
     setRobotMetaErr("");
-  }
+  }, []);
 
   async function saveSelectedRobotMeta() {
     if (!selectedRobotMetaEditable || !selectedElementId) return;
@@ -2294,11 +2306,46 @@ export default function NotesPanel({
     }
   }
 
-  function updateCamundaPropertiesDraft(nextRaw) {
+  const onStepTimeInputChangeCallback = useCallback((value) => {
+    setStepTimeSaveFailed(false);
+    setStepTimeInput(value);
+  }, []);
+
+  const onElementTextChangeCallback = useCallback((value) => {
+    setElementSaveFailed(false);
+    setElementText(value);
+  }, []);
+
+  const onReviewCommentTextChangeCallback = useCallback((value) => {
+    setReviewErr("");
+    setReviewCommentText(value);
+  }, []);
+
+  const onNodeEditorRefCallback = useCallback((node) => {
+    nodeEditorRef.current = node;
+  }, []);
+
+  const onToggleCollapseCallback = useCallback(() => {
+    onToggleSidebarCompact?.(!sidebarCompact, "sidebar_header");
+  }, [onToggleSidebarCompact, sidebarCompact]);
+
+  const onCloseSidebarCallback = useCallback(() => {
+    onToggleSidebarHidden?.();
+  }, [onToggleSidebarHidden]);
+
+  const onOpenDictionaryManagerCallback = useCallback(() => {
+    onOpenOrgSettings?.({
+      tab: "dictionary",
+      operationKey: selectedOperationKey,
+      dictionaryOnly: true,
+    });
+  }, [onOpenOrgSettings, selectedOperationKey]);
+
+  const updateCamundaPropertiesDraft = useCallback((nextRaw) => {
     setCamundaPropertiesDraft(nextRaw && typeof nextRaw === "object" ? nextRaw : createEmptyCamundaExtensionState());
     setCamundaExtensionSaveFailed(false);
     setCamundaPropertiesErr("");
-  }
+  }, []);
 
   async function updateSelectedOperationKey(nextOperationKeyRaw) {
     if (!selectedCamundaPropertiesEditable || !selectedElementId) return;
@@ -2700,8 +2747,8 @@ export default function NotesPanel({
         onDeleteSession={onDeleteSession}
         tierLabel={selectedElementTierLabel}
         collapsed={!!sidebarCompact}
-        onToggleCollapse={() => onToggleSidebarCompact?.(!sidebarCompact, "sidebar_header")}
-        onCloseSidebar={() => onToggleSidebarHidden?.()}
+        onToggleCollapse={onToggleCollapseCallback}
+        onCloseSidebar={onCloseSidebarCallback}
         sections={sectionShortcuts}
         showQuickNav={false}
         onSectionShortcut={openSectionShortcut}
@@ -2767,10 +2814,7 @@ export default function NotesPanel({
                   selectedElementId={isElementMode ? selectedElementId : ""}
                   stepTimeInput={isElementMode ? stepTimeInput : ""}
                   stepTimeSyncState={isElementMode ? stepTimeSyncState : "saved"}
-                  onStepTimeInputChange={(value) => {
-                    setStepTimeSaveFailed(false);
-                    setStepTimeInput(value);
-                  }}
+                  onStepTimeInputChange={onStepTimeInputChangeCallback}
                   onSaveStepTime={saveSelectedElementStepTime}
                   stepTimeBusy={isElementMode ? stepTimeBusy : false}
                   stepTimeErr={isElementMode ? stepTimeErr : ""}
@@ -2877,11 +2921,7 @@ export default function NotesPanel({
                   onExtensionStateDraftChange={updateCamundaPropertiesDraft}
                   onOperationKeyChange={updateSelectedOperationKey}
                   onAddDictionaryValue={addDictionaryValueForSelectedElement}
-                  onOpenDictionaryManager={() => onOpenOrgSettings?.({
-                    tab: "dictionary",
-                    operationKey: selectedOperationKey,
-                    dictionaryOnly: true,
-                  })}
+                  onOpenDictionaryManager={onOpenDictionaryManagerCallback}
                   onSaveExtensionState={saveSelectedCamundaProperties}
                   onResetExtensionState={resetSelectedCamundaProperties}
                   onRetryExtensionState={camundaExtensionLastAction === "reset" ? resetSelectedCamundaProperties : saveSelectedCamundaProperties}
@@ -2907,10 +2947,7 @@ export default function NotesPanel({
                   selectedElementType={isElementMode ? selectedElementType : ""}
                   elementText={isElementMode ? elementText : ""}
                   elementSyncState={isElementMode ? elementSyncState : "saved"}
-                  onElementTextChange={(value) => {
-                    setElementSaveFailed(false);
-                    setElementText(value);
-                  }}
+                  onElementTextChange={onElementTextChangeCallback}
                   onSendElementNote={sendElementNote}
                   elementBusy={isElementMode ? elementBusy : false}
                   elementErr={isElementMode ? elementErr : ""}
@@ -2920,10 +2957,7 @@ export default function NotesPanel({
                   reviewOpenCommentsCount={reviewOpenCommentsCount}
                   selectedAnchorReviewComments={isElementMode ? selectedAnchorReviewComments : []}
                   reviewCommentText={reviewCommentText}
-                  onReviewCommentTextChange={(value) => {
-                    setReviewErr("");
-                    setReviewCommentText(value);
-                  }}
+                  onReviewCommentTextChange={onReviewCommentTextChangeCallback}
                   onSendReviewComment={sendReviewComment}
                   reviewBusy={reviewBusy}
                   reviewErr={reviewErr}
@@ -2934,9 +2968,7 @@ export default function NotesPanel({
                   knownAnchorIds={knownAnchorIds}
                   currentUserId={currentUserId}
                   currentUserLabel={currentUserLabel}
-                  onNodeEditorRef={(node) => {
-                    nodeEditorRef.current = node;
-                  }}
+                  onNodeEditorRef={onNodeEditorRefCallback}
                   disabled={disabled}
                 />
               </SidebarAccordion>

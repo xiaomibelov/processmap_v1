@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -47,7 +47,7 @@ const CLASS_LABEL = {
   blocked: "blocked",
 };
 
-export default function ExecutionBridgeSection({
+function ExecutionBridgeSection({
   sessionId = "",
   projection = null,
   selectedElementId = "",
@@ -163,4 +163,6 @@ export default function ExecutionBridgeSection({
     </div>
   );
 }
+
+export default memo(ExecutionBridgeSection);
 
