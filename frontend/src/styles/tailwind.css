@@ -1801,8 +1801,8 @@
   }
 
   .sidebarRedesignStack {
-    @apply grid px-2.5 py-2;
-    gap: 8px;
+    @apply grid px-2 py-2;
+    gap: 10px;
   }
 
   .sidebarCardSurface {
@@ -1818,10 +1818,10 @@
   }
 
   .selectedElementCard {
-    @apply min-w-0 px-3 py-2;
-    border-radius: 10px;
-    border: 1px solid #EBF0F7;
-    background: #F8FAFD;
+    @apply min-w-0 px-3 py-2.5;
+    border-radius: 12px;
+    border: 1px solid #E0EAF6;
+    background: linear-gradient(160deg, #FAFDFF 0%, #F4F8FD 100%);
   }
 
   .selectedElementTitleWrap {
@@ -1871,14 +1871,14 @@
   }
 
   .sidebarSettingsHeader {
-    @apply px-2 pb-1.5;
+    @apply px-2 pb-2 pt-1;
     border-bottom: 1px solid #E7ECF4;
   }
 
   .sidebarAccordionStack {
     @apply grid overflow-visible;
-    margin-top: 0;
-    gap: 4px;
+    margin-top: 2px;
+    gap: 2px;
     border-radius: 0;
     border: 0;
     background: transparent;
@@ -3121,29 +3121,32 @@
   }
 
   .sidebarSupplementaryInfo {
-    @apply rounded-[14px] px-3 py-2.5;
-    border: 1px solid #D9E1EE;
-    background: #FFFFFF;
+    @apply rounded-[12px] px-3 py-2.5;
+    border: 1px solid #DDE7F3;
+    background: #FAFCFF;
   }
 
   .sidebarInfoList {
-    @apply mt-2 grid gap-1.5;
+    @apply mt-2 grid;
+    gap: 8px;
   }
 
   .sidebarInfoRow {
-    @apply grid items-start gap-2;
-    grid-template-columns: 120px minmax(0, 1fr);
+    @apply grid items-baseline gap-3;
+    grid-template-columns: 108px minmax(0, 1fr);
   }
 
   .sidebarInfoLabel {
     font-size: 11px;
-    color: #7E8AA3;
+    color: #8896B0;
+    white-space: nowrap;
   }
 
   .sidebarInfoValue {
     font-size: 12px;
-    color: #1F2A44;
-    word-break: break-word;
+    font-weight: 500;
+    color: #1C2B42;
+    word-break: break-all;
   }
 
   .dark .leftPanel {
