@@ -378,7 +378,7 @@ export function NodePathSettings({
               data-testid="nodepath-sequence-select"
             >
               <span className="sidebarSelectButtonText">{selectedSequenceLabel}</span>
-              <span className="sidebarSelectButtonChevron" aria-hidden="true">{sequenceOpen ? "▴" : "▾"}</span>
+              <svg viewBox="0 0 16 16" className={`sidebarSelectButtonChevron ${sequenceOpen ? "isOpen" : ""}`} aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6l4 4 4-4" /></svg>
             </button>
             {sequenceOpen ? (
               <div className="sidebarSelectPopover" role="listbox" aria-label="Последовательность">
