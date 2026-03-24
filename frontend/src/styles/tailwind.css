@@ -1801,8 +1801,8 @@
   }
 
   .sidebarRedesignStack {
-    @apply grid px-3 py-3;
-    gap: 10px;
+    @apply grid px-2.5 py-2;
+    gap: 8px;
   }
 
   .sidebarCardSurface {
@@ -1819,9 +1819,9 @@
 
   .selectedElementCard {
     @apply min-w-0 px-3 py-2;
-    border-radius: 16px;
-    border: 1px solid #E7ECF4;
-    background: #F7F9FC;
+    border-radius: 10px;
+    border: 1px solid #EBF0F7;
+    background: #F8FAFD;
   }
 
   .selectedElementTitleWrap {
@@ -1863,10 +1863,10 @@
   }
 
   .sidebarSettingsSurface {
-    @apply min-w-0 p-1.5;
-    border-radius: 18px;
-    border: 1px solid #D9E1EE;
-    background: #FFFFFF;
+    @apply min-w-0 px-0 py-0;
+    border-radius: 0;
+    border: 0;
+    background: transparent;
     box-shadow: none;
   }
 
@@ -1876,16 +1876,17 @@
   }
 
   .sidebarAccordionStack {
-    @apply mt-1.5 grid overflow-visible;
-    gap: 8px;
-    border-radius: 14px;
+    @apply grid overflow-visible;
+    margin-top: 0;
+    gap: 4px;
+    border-radius: 0;
     border: 0;
     background: transparent;
   }
 
   .sidebarAccordion {
     @apply overflow-hidden bg-transparent;
-    border-radius: 12px;
+    border-radius: 8px;
     border: 1px solid transparent;
     box-shadow: none;
   }
@@ -1895,17 +1896,17 @@
   }
 
   .sidebarAccordion.isOpen {
-    border-color: #C8D2FF;
-    background: #EEF2FF;
+    border-color: #DDE6F5;
+    background: #F5F8FD;
   }
 
   .sidebarAccordionHead {
     @apply flex w-full min-w-0 items-center justify-between gap-2 px-3 text-left transition-colors;
-    min-height: 44px;
+    min-height: 38px;
   }
 
   .sidebarAccordionHead:hover {
-    background: #F7F9FC;
+    background: #F2F5FA;
   }
 
   .sidebarAccordionTitleRow {
@@ -1913,34 +1914,34 @@
   }
 
   .sidebarAccordionTitle {
-    font-size: 15px;
+    font-size: 13px;
     font-weight: 600;
-    color: #1F2A44;
+    color: #2A3550;
   }
 
   .sidebarAccordionSubtitle {
     @apply mt-0.5 text-[11px];
-    color: #7E8AA3;
+    color: #8A96AE;
     overflow-wrap: anywhere;
   }
 
   .sidebarAccordionBadge {
-    @apply inline-flex h-5 items-center rounded-[10px] px-1.5 text-[10px] font-semibold;
-    border: 1px solid #DDE4EF;
-    background: #F1F4F8;
-    color: #66748D;
+    @apply inline-flex h-4 items-center rounded-[8px] px-1.5 text-[10px] font-semibold;
+    border: 1px solid #E2E9F4;
+    background: #F3F6FB;
+    color: #7080A0;
   }
 
   .sidebarAccordionToggle {
-    font-size: 14px;
-    color: #7E8AA3;
+    font-size: 12px;
+    color: #9AA4BE;
   }
 
   .sidebarAccordionBody {
-    @apply px-3 py-2.5;
-    border-top: 1px solid #E7ECF4;
-    background: #FCFDFE;
-    border-radius: 0 0 12px 12px;
+    @apply px-3 py-2;
+    border-top: 1px solid #E8EEF7;
+    background: #FAFCFF;
+    border-radius: 0 0 8px 8px;
   }
 
   .sidebarAccordionContent {
@@ -1962,28 +1963,6 @@
     background: transparent;
   }
 
-  .sidebarPropertiesHeader {
-    @apply flex items-center justify-between gap-2;
-    padding-bottom: 2px;
-  }
-
-  .sidebarPropertiesTitleRow {
-    @apply flex items-center gap-1.5 min-w-0;
-  }
-
-  .sidebarPropertiesTitle {
-    font-size: 13px;
-    font-weight: 600;
-    color: #1F2A44;
-  }
-
-  .sidebarPropertiesCount {
-    @apply inline-flex h-4 min-w-4 items-center justify-center rounded-[7px] px-1.5 text-[10px] font-semibold leading-none;
-    border: 1px solid #DDE4EF;
-    background: #F6F9FD;
-    color: #66748D;
-  }
-
   .sidebarPropertiesInlineToggle {
     @apply flex items-center gap-2 text-[12px];
     padding: 3px 0 5px;
@@ -1997,32 +1976,6 @@
     background: #E2E9F4;
   }
 
-  .sidebarPropertiesGroupHead {
-    @apply flex items-center gap-2;
-    margin: 5px 0 3px;
-    padding: 3px 7px;
-    border: 1px solid #D9E3F2;
-    border-radius: 8px;
-    background: linear-gradient(180deg, #FAFCFF 0%, #F3F7FD 100%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
-  }
-
-  .sidebarPropertiesGroupTitle {
-    font-size: 10px;
-    line-height: 1;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: #7887A1;
-  }
-
-  .sidebarPropertiesGroupCount {
-    @apply inline-flex h-4 min-w-4 items-center justify-center rounded-[7px] px-1.5 text-[10px] font-semibold leading-none;
-    border: 1px solid #DDE4EF;
-    background: #F6F9FD;
-    color: #66748D;
-  }
-
   .sidebarPropertiesDisplaySettings {
     padding: 4px 2px 6px;
     border-bottom: 1px solid #E7ECF4;
@@ -2032,18 +1985,18 @@
   .sidebarPropertiesBlock {
     @apply grid;
     gap: 5px;
-    padding: 6px 8px 7px;
-    margin-top: 4px;
-    border: 1px solid #DDE6F3;
-    border-radius: 10px;
-    background: #FFFFFF;
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset;
-    transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+    padding: 5px 7px 6px;
+    margin-top: 3px;
+    border: 1px solid #E8EEF8;
+    border-radius: 7px;
+    background: transparent;
+    box-shadow: none;
+    transition: border-color 140ms ease;
   }
 
   .sidebarPropertiesBlock--secondary {
-    background: #FBFDFF;
-    border-color: #E1E9F4;
+    background: transparent;
+    border-color: #EDF1F9;
   }
 
   .sidebarPropertiesBlockHead {
@@ -3236,7 +3189,6 @@
 
   .dark .sidebarAccordionTitle,
   .dark .selectedElementTitle,
-  .dark .sidebarPropertiesTitle,
   .dark .sidebarPropertiesBlockTitle,
   .dark .sidebarSchemaPropertyHuman,
   .dark .sidebarBpmnPropertyPreviewKey,
@@ -3256,8 +3208,6 @@
     color: #9BAFCC;
   }
 
-  .dark .sidebarPropertiesCount,
-  .dark .sidebarPropertiesGroupCount,
   .dark .sidebarPropertiesBlockMeta,
   .dark .leftSidebarShell .sidebarBadge,
   .dark .sidebarAccordionBadge {
@@ -3266,23 +3216,16 @@
     color: #AFC0DC;
   }
 
-  .dark .sidebarPropertiesGroupTitle,
   .dark .sidebarPropertiesStatusLabel {
     color: #8FA2C5;
   }
 
-  .dark .sidebarPropertiesGroupHead {
-    background: linear-gradient(180deg, #1A2539 0%, #172235 100%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
-  }
-
   .dark .sidebarPropertiesBlock {
-    background: #162236;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    border-color: #2A3D5C;
   }
 
   .dark .sidebarPropertiesBlock--secondary {
-    background: #152134;
+    border-color: #243450;
   }
 
   .dark .sidebarPropertiesInlineStatusRow {

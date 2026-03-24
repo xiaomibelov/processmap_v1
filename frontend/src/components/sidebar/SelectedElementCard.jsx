@@ -21,8 +21,6 @@ export default function SelectedElementCard({
   selectedElementName,
   selectedElementType,
   selectedElementLaneName,
-  noteCount,
-  aiCount,
   incomingCount = 0,
   outgoingCount = 0,
   robotMetaStatus = "none",

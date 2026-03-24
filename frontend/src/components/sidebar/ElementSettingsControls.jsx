@@ -1928,10 +1928,6 @@ export function CamundaPropertiesSettings({
   return (
     <div className="sidebarControlStack sidebarPropertiesLayout">
       <section className="sidebarPropertiesForm" data-testid="camunda-properties-group">
-        <div className="sidebarFieldHint">
-          Тип: <span className="font-medium text-fg">{String(propertyContext.type || selectedElementType || "unknown")}</span>
-        </div>
-
         <section className="sidebarPropertiesBlock">
           <div className="sidebarPropertiesBlockHead">
             <button
