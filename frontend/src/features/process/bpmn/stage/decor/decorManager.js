@@ -1309,6 +1309,43 @@ function normalizeOverlayRowDisplayText({ hostType = "task", label = "", value =
   };
 }
 
+export function buildPropertiesOverlayEntryBaseSignature({
+  elementId = "",
+  hostType = "task",
+  items = [],
+  hiddenCount = 0,
+  zoomBucket = 1,
+} = {}) {
+  const safeElementId = String(elementId || "").trim();
+  const safeHostType = String(hostType || "task").trim().toLowerCase() || "task";
+  const safeHiddenCount = Math.max(0, Number(hiddenCount || 0));
+  const safeZoomBucket = Number.isFinite(Number(zoomBucket)) ? Number(zoomBucket) : 1;
+  const safeItems = (Array.isArray(items) ? items : [])
+    .map((itemRaw) => {
+      const item = itemRaw && typeof itemRaw === "object" ? itemRaw : {};
+      return {
+        key: String(item.key || "").trim(),
+        label: String(item.label || "").trim(),
+        value: String(item.value || "").trim(),
+      };
+    })
+    .filter((item) => item.label && item.value);
+  return JSON.stringify({
+    elementId: safeElementId,
+    hostType: safeHostType,
+    items: safeItems,
+    hiddenCount: safeHiddenCount,
+    zoom: safeZoomBucket,
+  });
+}
+
+export function shouldReusePropertiesOverlayEntry(prevEntryRaw, nextBaseSignature) {
+  const prevEntry = prevEntryRaw && typeof prevEntryRaw === "object" ? prevEntryRaw : {};
+  const prevBaseSignature = String(prevEntry.baseSignature || "").trim();
+  const nextSignature = String(nextBaseSignature || "").trim();
+  return !!prevBaseSignature && !!nextSignature && prevBaseSignature === nextSignature;
+}
+
 function buildPropertiesOverlayRenderSignature({
   previewEntries,
   zoomBucket,
@@ -1510,12 +1547,33 @@ export function applyPropertiesOverlayDecor(ctx) {
           const isConnection = !!entry?.isConnection;
           const hostType = toText(entry?.hostType) || (isConnection ? "sequence" : "task");
           if (!elementId || !resolvedElementId || !items.length || !el) return;
+          const baseSignature = buildPropertiesOverlayEntryBaseSignature({
+            elementId,
+            hostType,
+            items,
+            hiddenCount,
+            zoomBucket,
+          });
+          const prev = asObject(currentState[resolvedElementId]);
+          if (shouldReusePropertiesOverlayEntry(prev, baseSignature)) {
+            nextState[resolvedElementId] = prev;
+            if (!isConnection) {
+              const prevSpatialSummary = prev?.spatialSummary;
+              if (prevSpatialSummary && typeof prevSpatialSummary === "object") {
+                spatialTaskWindow.push(prevSpatialSummary);
+                if (spatialTaskWindow.length > 6) spatialTaskWindow.shift();
+              }
+            }
+            delete currentState[resolvedElementId];
+            return;
+          }
 
           const localColorPlan = isConnection
             ? overlayPropertyColorPlanForItems(items)
             : overlayPropertyColorPlanForItems(items, { spatialWindow: spatialTaskWindow });
+          const entrySpatialSummary = isConnection ? null : summarizeSpatialTaskPlan(localColorPlan);
           if (!isConnection) {
-            spatialTaskWindow.push(summarizeSpatialTaskPlan(localColorPlan));
+            spatialTaskWindow.push(entrySpatialSummary);
             if (spatialTaskWindow.length > 6) spatialTaskWindow.shift();
           }
           const colorSignature = JSON.stringify(localColorPlan.map((color) => ({
@@ -1534,9 +1592,12 @@ export function applyPropertiesOverlayDecor(ctx) {
             zoom: zoomBucket,
             color: colorSignature,
           });
-          const prev = asObject(currentState[resolvedElementId]);
           if (toText(prev?.signature) === signature) {
-            nextState[resolvedElementId] = prev;
+            nextState[resolvedElementId] = {
+              ...prev,
+              baseSignature,
+              spatialSummary: entrySpatialSummary,
+            };
             delete currentState[resolvedElementId];
             return;
           }
@@ -1667,6 +1728,8 @@ export function applyPropertiesOverlayDecor(ctx) {
             elementId: resolvedElementId,
             overlayId,
             signature,
+            baseSignature,
+            spatialSummary: entrySpatialSummary,
           };
           delete currentState[resolvedElementId];
         });
