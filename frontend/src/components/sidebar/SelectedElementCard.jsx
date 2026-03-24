@@ -27,8 +27,6 @@ export default function SelectedElementCard({
   outgoingCount = 0,
   robotMetaStatus = "none",
   robotMetaMissing = [],
-  open,
-  onToggle,
 }) {
   const hasSelected = !!selectedElementId;
   const typeLabel = normalizeBpmnTypeLabel(selectedElementType);
@@ -44,11 +42,8 @@ export default function SelectedElementCard({
 
   return (
     <section className="sidebarCardSurface selectedElementCard">
-      <div className="mb-1 flex items-center justify-between gap-2">
+      <div className="mb-1">
         <div className="sidebarSectionCaption">Выбранный элемент</div>
-        <button type="button" className="secondaryBtn h-8 px-2.5 text-xs" onClick={onToggle}>
-          {open ? "Скрыть детали" : "Показать детали"}
-        </button>
       </div>
 
       {!hasSelected ? (

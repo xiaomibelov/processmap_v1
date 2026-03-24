@@ -324,6 +324,7 @@ const LEFT_PANEL_COMPACT_KEY = "fpc_leftpanel_compact";
 const STEP_TIME_UNIT_KEY = "fpc_step_time_unit_v1";
 const BPMN_META_LOCAL_KEY_PREFIX = "fpc_bpmn_meta_v1:";
 const PROPERTIES_OVERLAY_ALWAYS_KEY_PREFIX = "fpc_properties_overlay_always_v1:";
+const PROPERTIES_OVERLAY_ON_SELECT_KEY_PREFIX = "fpc_properties_overlay_on_select_v1:";
 function normalizeStepTimeUnit(raw) {
   return String(raw || "").trim().toLowerCase() === "sec" ? "sec" : "min";
 }
@@ -355,6 +356,11 @@ function propertiesOverlayAlwaysLocalStorageKey(sessionId) {
   return sid ? `${PROPERTIES_OVERLAY_ALWAYS_KEY_PREFIX}${sid}` : "";
 }
 
+function propertiesOverlayOnSelectLocalStorageKey(sessionId) {
+  const sid = String(sessionId || "").trim();
+  return sid ? `${PROPERTIES_OVERLAY_ON_SELECT_KEY_PREFIX}${sid}` : "";
+}
+
 function readPropertiesOverlayAlwaysEnabled(sessionId) {
   if (typeof window === "undefined") return false;
   const key = propertiesOverlayAlwaysLocalStorageKey(sessionId);
@@ -370,6 +376,28 @@ function readPropertiesOverlayAlwaysEnabled(sessionId) {
 function writePropertiesOverlayAlwaysEnabled(sessionId, value) {
   if (typeof window === "undefined") return;
   const key = propertiesOverlayAlwaysLocalStorageKey(sessionId);
+  if (!key) return;
+  try {
+    window.localStorage?.setItem(key, value ? "1" : "0");
+  } catch {
+  }
+}
+
+function readPropertiesOverlayOnSelectEnabled(sessionId) {
+  if (typeof window === "undefined") return false;
+  const key = propertiesOverlayOnSelectLocalStorageKey(sessionId);
+  if (!key) return false;
+  try {
+    const raw = String(window.localStorage?.getItem(key) || "").trim().toLowerCase();
+    return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+  } catch {
+    return false;
+  }
+}
+
+function writePropertiesOverlayOnSelectEnabled(sessionId, value) {
+  if (typeof window === "undefined") return;
+  const key = propertiesOverlayOnSelectLocalStorageKey(sessionId);
   if (!key) return;
   try {
     window.localStorage?.setItem(key, value ? "1" : "0");
@@ -913,6 +941,7 @@ export default function App() {
   const [leftCompact, setLeftCompact] = useState(() => readLeftPanelCompact());
   const [stepTimeUnit, setStepTimeUnit] = useState(() => readStepTimeUnit());
   const [showPropertiesOverlayAlways, setShowPropertiesOverlayAlways] = useState(false);
+  const [showPropertiesOverlayOnSelect, setShowPropertiesOverlayOnSelect] = useState(false);
   const propertiesOverlayProjectionCacheRef = useRef(new Map());
   const [elementNotesFocusKey, setElementNotesFocusKey] = useState(0);
   const [llmHasApiKey, setLlmHasApiKey] = useState(false);
@@ -1328,6 +1357,7 @@ export default function App() {
 
   useEffect(() => {
     setShowPropertiesOverlayAlways(readPropertiesOverlayAlwaysEnabled(draftSessionId));
+    setShowPropertiesOverlayOnSelect(readPropertiesOverlayOnSelectEnabled(draftSessionId));
     setSelectedPropertiesOverlayAlwaysPreview(null);
     propertiesOverlayProjectionCacheRef.current = new Map();
   }, [draftSessionId, setSelectedPropertiesOverlayAlwaysPreview]);
@@ -1335,6 +1365,10 @@ export default function App() {
   useEffect(() => {
     writePropertiesOverlayAlwaysEnabled(draftSessionId, !!showPropertiesOverlayAlways);
   }, [draftSessionId, showPropertiesOverlayAlways]);
+
+  useEffect(() => {
+    writePropertiesOverlayOnSelectEnabled(draftSessionId, !!showPropertiesOverlayOnSelect);
+  }, [draftSessionId, showPropertiesOverlayOnSelect]);
 
   const propertiesOverlayAlwaysPreviewByElementId = useMemo(() => {
     if (!showPropertiesOverlayAlways) return {};
@@ -3404,6 +3438,8 @@ export default function App() {
         onPropertiesOverlayAlwaysPreviewChange={setSelectedPropertiesOverlayAlwaysPreview}
         showPropertiesOverlayAlways={showPropertiesOverlayAlways}
         onShowPropertiesOverlayAlwaysChange={setShowPropertiesOverlayAlways}
+        showPropertiesOverlayOnSelect={showPropertiesOverlayOnSelect}
+        onShowPropertiesOverlayOnSelectChange={setShowPropertiesOverlayOnSelect}
         onGoToDiagram={() => {
           const sid = String(draft?.session_id || "").trim();
           if (!sid) return;
@@ -3458,6 +3494,7 @@ export default function App() {
     processUiState,
     elementNotesFocusKey,
     showPropertiesOverlayAlways,
+    showPropertiesOverlayOnSelect,
     leftCompact,
     leftHidden,
     sidebarActiveSection,

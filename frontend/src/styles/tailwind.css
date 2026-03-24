@@ -2023,10 +2023,17 @@
     color: #66748D;
   }
 
+  .sidebarPropertiesDisplaySettings {
+    padding: 4px 2px 6px;
+    border-bottom: 1px solid #E7ECF4;
+    margin-bottom: 4px;
+  }
+
   .sidebarPropertiesBlock {
     @apply grid;
     gap: 5px;
     padding: 6px 8px 7px;
+    margin-top: 4px;
     border: 1px solid #DDE6F3;
     border-radius: 10px;
     background: #FFFFFF;

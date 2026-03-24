@@ -33,7 +33,6 @@ import {
   buildPropertiesOverlayPreview,
   getOperationKeyFromRobotMeta,
 } from "../features/process/camunda/propertyDictionaryModel";
-import { normalizeCamundaPresentationMap } from "../features/process/camunda/camundaPresentation";
 import {
   apiGetOrgPropertyDictionaryBundle,
   apiListOrgPropertyDictionaryOperations,
@@ -908,7 +907,6 @@ export default function NotesPanel({
   onSetNodePathAssignments,
   onSetElementRobotMeta,
   onSetElementCamundaExtensions,
-  onSetElementCamundaPresentation,
   activeOrgId = "",
   reviewStatus = "draft",
   reviewComments = [],
@@ -926,6 +924,8 @@ export default function NotesPanel({
   onPropertiesOverlayAlwaysPreviewChange,
   showPropertiesOverlayAlways = false,
   onShowPropertiesOverlayAlwaysChange,
+  showPropertiesOverlayOnSelect = false,
+  onShowPropertiesOverlayOnSelectChange,
   onGoToDiagram,
   onProjectBreadcrumbClick,
   onSessionBreadcrumbClick,
@@ -987,7 +987,6 @@ export default function NotesPanel({
   const [camundaExtensionLastAction, setCamundaExtensionLastAction] = useState("save");
   const [camundaPropertiesErr, setCamundaPropertiesErr] = useState("");
   const [camundaPropertiesInfo, setCamundaPropertiesInfo] = useState("");
-  const [showPropertiesOverlayDraft, setShowPropertiesOverlayDraft] = useState(false);
   const [orgPropertyDictionaryOperations, setOrgPropertyDictionaryOperations] = useState([]);
   const [orgPropertyDictionaryOperationsLoading, setOrgPropertyDictionaryOperationsLoading] = useState(false);
   const [orgPropertyDictionaryBundle, setOrgPropertyDictionaryBundle] = useState(null);
@@ -1011,7 +1010,6 @@ export default function NotesPanel({
   const [startRoleErr, setStartRoleErr] = useState("");
   const [laneElementCounts, setLaneElementCounts] = useState(() => ({ byKey: {}, byLaneId: {}, byName: {} }));
   const [sectionsOpen, setSectionsOpen] = useState(() => readSectionsState());
-  const [selectedCardOpen, setSelectedCardOpen] = useState(true);
   const elementNotesSectionRef = useRef(null);
   const pathsSectionRef = useRef(null);
   const timeSectionRef = useRef(null);
@@ -1024,11 +1022,6 @@ export default function NotesPanel({
   const sidebarHiddenRef = useRef(Boolean(sidebarHidden));
   const nodeEditorRef = useRef(null);
   const nodePathDirtyBaselineRef = useRef({ nodeId: "", snapshot: null });
-  const showPropertiesOverlaySyncRef = useRef({
-    elementId: "",
-    pending: false,
-    target: false,
-  });
   const propertiesOverlayPreviewDispatchRef = useRef({
     draftSignature: "__init__",
     alwaysSignature: "__init__",
@@ -1133,10 +1126,6 @@ export default function NotesPanel({
   const bpmnCamundaExtensionsByElementId = useMemo(() => {
     const rawMeta = draft?.bpmn_meta && typeof draft.bpmn_meta === "object" ? draft.bpmn_meta : {};
     return normalizeCamundaExtensionsMap(rawMeta.camunda_extensions_by_element_id);
-  }, [draft?.bpmn_meta]);
-  const bpmnCamundaPresentationByElementId = useMemo(() => {
-    const rawMeta = draft?.bpmn_meta && typeof draft.bpmn_meta === "object" ? draft.bpmn_meta : {};
-    return normalizeCamundaPresentationMap(rawMeta.presentation_by_element_id);
   }, [draft?.bpmn_meta]);
   const executionBridgeProjection = useMemo(
     () => buildExecutionBridgeProjectionV1({
@@ -1268,10 +1257,6 @@ export default function NotesPanel({
   const selectedCamundaExtensionEntry = useMemo(
     () => normalizeCamundaExtensionState(bpmnCamundaExtensionsByElementId[selectedElementId] || createEmptyCamundaExtensionState()),
     [bpmnCamundaExtensionsByElementId, selectedElementId],
-  );
-  const selectedCamundaPresentationEntry = useMemo(
-    () => bpmnCamundaPresentationByElementId[selectedElementId] || { showPropertiesOverlay: false },
-    [bpmnCamundaPresentationByElementId, selectedElementId],
   );
   const selectedOperationKey = useMemo(
     () => getOperationKeyFromRobotMeta(
@@ -1611,32 +1596,6 @@ export default function NotesPanel({
   }, [selectedCamundaPropertiesEditable, selectedCamundaExtensionEntry]);
 
   useEffect(() => {
-    if (!selectedCamundaPropertiesEditable) {
-      showPropertiesOverlaySyncRef.current = {
-        elementId: "",
-        pending: false,
-        target: false,
-      };
-      setShowPropertiesOverlayDraft(false);
-      return;
-    }
-    const incoming = !!selectedCamundaPresentationEntry?.showPropertiesOverlay;
-    const syncState = showPropertiesOverlaySyncRef.current;
-    const sameElement = str(syncState?.elementId) === str(selectedElementId);
-    if (sameElement && syncState?.pending) {
-      if (incoming !== !!syncState.target) {
-        return;
-      }
-      showPropertiesOverlaySyncRef.current = {
-        elementId: str(selectedElementId),
-        pending: false,
-        target: incoming,
-      };
-    }
-    setShowPropertiesOverlayDraft(incoming);
-  }, [selectedCamundaPropertiesEditable, selectedElementId, selectedCamundaPresentationEntry]);
-
-  useEffect(() => {
     const dispatchState = propertiesOverlayPreviewDispatchRef.current;
     if (!selectedElementId || !selectedCamundaPropertiesEditable) {
       if (dispatchState.draftSignature !== "null") {
@@ -1649,7 +1608,7 @@ export default function NotesPanel({
       elementId: selectedElementId,
       extensionStateRaw: camundaPropertiesDraft,
       dictionaryBundleRaw: orgPropertyDictionaryBundle,
-      showPropertiesOverlay: showPropertiesOverlayDraft,
+      showPropertiesOverlay: showPropertiesOverlayOnSelect,
     });
     const nextSignature = buildPropertiesOverlayPreviewSignature(nextPreview);
     if (dispatchState.draftSignature === nextSignature) return;
@@ -1660,7 +1619,7 @@ export default function NotesPanel({
     selectedCamundaPropertiesEditable,
     camundaPropertiesDraft,
     orgPropertyDictionaryBundle,
-    showPropertiesOverlayDraft,
+    showPropertiesOverlayOnSelect,
     onPropertiesOverlayPreviewChange,
   ]);
 
@@ -1792,7 +1751,6 @@ export default function NotesPanel({
         return acc;
       }, {}),
     );
-    setSelectedCardOpen(true);
   }, [sid]);
 
   useEffect(() => {
@@ -2386,43 +2344,6 @@ export default function NotesPanel({
     }
   }
 
-  async function updateShowPropertiesOverlay(nextValueRaw) {
-    if (!selectedCamundaPropertiesEditable || !selectedElementId) return;
-    if (typeof onSetElementCamundaPresentation !== "function" || disabled || camundaPropertiesBusy) return;
-    const nextValue = !!nextValueRaw;
-    const prevValue = !!selectedCamundaPresentationEntry?.showPropertiesOverlay;
-    showPropertiesOverlaySyncRef.current = {
-      elementId: str(selectedElementId),
-      pending: true,
-      target: nextValue,
-    };
-    setShowPropertiesOverlayDraft(nextValue);
-    setCamundaPropertiesErr("");
-    setCamundaPropertiesInfo("");
-    try {
-      const result = await Promise.resolve(onSetElementCamundaPresentation(selectedElementId, { showPropertiesOverlay: nextValue }));
-      if (result && result.ok === false) {
-        showPropertiesOverlaySyncRef.current = {
-          elementId: str(selectedElementId),
-          pending: false,
-          target: prevValue,
-        };
-        setShowPropertiesOverlayDraft(prevValue);
-        setCamundaPropertiesErr(str(result.error || "Не удалось сохранить настройку overlay."));
-        return;
-      }
-      setCamundaPropertiesInfo(nextValue ? "Overlay свойств включён." : "Overlay свойств отключён.");
-    } catch (error) {
-      showPropertiesOverlaySyncRef.current = {
-        elementId: str(selectedElementId),
-        pending: false,
-        target: prevValue,
-      };
-      setShowPropertiesOverlayDraft(prevValue);
-      setCamundaPropertiesErr(str(error?.message || error || "Не удалось сохранить настройку overlay."));
-    }
-  }
-
   async function addDictionaryValueForSelectedElement(propertyKey, optionValue) {
     const oid = str(activeOrgId);
     const operationKey = str(selectedOperationKey);
@@ -2915,6 +2836,26 @@ export default function NotesPanel({
                 open={!!sectionsOpen.properties}
                 onToggle={toggleSection}
               >
+                <div className="sidebarPropertiesDisplaySettings">
+                  <label className="sidebarPropertiesInlineToggle">
+                    <input
+                      type="checkbox"
+                      checked={!!showPropertiesOverlayOnSelect}
+                      onChange={(event) => void onShowPropertiesOverlayOnSelectChange?.(!!event.target.checked)}
+                      disabled={!!disabled}
+                    />
+                    <span>Показывать свойства над задачей при выделении</span>
+                  </label>
+                  <label className="sidebarPropertiesInlineToggle">
+                    <input
+                      type="checkbox"
+                      checked={!!showPropertiesOverlayAlways}
+                      onChange={(event) => void onShowPropertiesOverlayAlwaysChange?.(!!event.target.checked)}
+                      disabled={!!disabled}
+                    />
+                    <span>Всегда показывать свойства над задачей</span>
+                  </label>
+                </div>
                 <CamundaPropertiesSection
                   selectedElementId={isElementMode ? selectedElementId : ""}
                   selectedElementType={isElementMode ? selectedElementType : ""}
@@ -2933,12 +2874,8 @@ export default function NotesPanel({
                   operationKey={isElementMode ? selectedOperationKey : ""}
                   operationOptions={isElementMode ? orgPropertyDictionaryOperations : []}
                   operationSelectionBusy={isElementMode ? (orgPropertyDictionaryOperationsLoading || robotMetaBusy) : false}
-                  showPropertiesOverlay={isElementMode ? showPropertiesOverlayDraft : false}
-                  showPropertiesOverlayAlways={!!showPropertiesOverlayAlways}
                   onExtensionStateDraftChange={updateCamundaPropertiesDraft}
                   onOperationKeyChange={updateSelectedOperationKey}
-                  onShowPropertiesOverlayChange={updateShowPropertiesOverlay}
-                  onShowPropertiesOverlayAlwaysChange={onShowPropertiesOverlayAlwaysChange}
                   onAddDictionaryValue={addDictionaryValueForSelectedElement}
                   onOpenDictionaryManager={() => onOpenOrgSettings?.({
                     tab: "dictionary",
@@ -3101,8 +3038,6 @@ export default function NotesPanel({
             outgoingCount={isElementMode ? Number(selectedElementFlowCounts.outgoing || 0) : 0}
             robotMetaStatus={selectedRobotMetaStatus}
             robotMetaMissing={selectedRobotMetaMissing}
-            open={selectedCardOpen}
-            onToggle={() => setSelectedCardOpen((prev) => !prev)}
           />
 
           <section className="sidebarSupplementaryInfo" aria-label="Дополнительная информация">

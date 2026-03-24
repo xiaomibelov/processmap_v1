@@ -1042,12 +1042,8 @@ export function CamundaPropertiesSettings({
   operationKey = "",
   operationOptions = [],
   operationSelectionBusy = false,
-  showPropertiesOverlay = false,
-  showPropertiesOverlayAlways = false,
   onExtensionStateDraftChange,
   onOperationKeyChange,
-  onShowPropertiesOverlayChange,
-  onShowPropertiesOverlayAlwaysChange,
   onAddDictionaryValue,
   onOpenDictionaryManager,
   onSaveExtensionState,
@@ -1932,49 +1928,9 @@ export function CamundaPropertiesSettings({
   return (
     <div className="sidebarControlStack sidebarPropertiesLayout">
       <section className="sidebarPropertiesForm" data-testid="camunda-properties-group">
-        <div className="sidebarPropertiesHeader">
-          <div className="sidebarPropertiesTitleRow">
-            <div className="sidebarPropertiesTitle">Свойства элемента</div>
-            <SidebarInfoTip
-              label="О секции «Свойства элемента»"
-              text="Свойства текущего BPMN-элемента. Часть значений задаётся операцией, часть хранится как BPMN extension properties."
-            />
-          </div>
-          {propertyCount ? <div className="sidebarPropertiesCount">{propertyCount}</div> : null}
-        </div>
-
-        <div className="sidebarPropertiesGroupHead" data-testid="camunda-properties-group-general">
-          <div className="sidebarPropertiesGroupTitle">General</div>
-        </div>
         <div className="sidebarFieldHint">
           Тип: <span className="font-medium text-fg">{String(propertyContext.type || selectedElementType || "unknown")}</span>
         </div>
-
-        <label className="sidebarPropertiesInlineToggle">
-          <input
-            type="checkbox"
-            checked={!!showPropertiesOverlay}
-            onChange={(event) => {
-              void onShowPropertiesOverlayChange?.(!!event.target.checked);
-            }}
-            disabled={!!disabled || !!extensionStateBusy}
-          />
-          <span>Показывать свойства над задачей при выделении</span>
-        </label>
-
-        <label className="sidebarPropertiesInlineToggle">
-          <input
-            type="checkbox"
-            checked={!!showPropertiesOverlayAlways}
-            onChange={(event) => {
-              void onShowPropertiesOverlayAlwaysChange?.(!!event.target.checked);
-            }}
-            disabled={!!disabled}
-          />
-          <span>Всегда показывать свойства над задачей</span>
-        </label>
-
-        <div className="sidebarPropertiesDivider" />
 
         <section className="sidebarPropertiesBlock">
           <div className="sidebarPropertiesBlockHead">
@@ -2041,10 +1997,6 @@ export function CamundaPropertiesSettings({
           ) : null}
         </section>
 
-        <div className="sidebarPropertiesGroupHead" data-testid="camunda-properties-group-properties">
-          <div className="sidebarPropertiesGroupTitle">Properties</div>
-          <div className="sidebarPropertiesGroupCount">{groupedPropertiesCount}</div>
-        </div>
         <SidebarTrustStatus
           title={<span>BPMN extension-state</span>}
           label={extensionStateStatusMeta.label}
@@ -2107,8 +2059,6 @@ export function CamundaPropertiesSettings({
             </>
           ) : null}
         </section>
-
-        <div className="sidebarPropertiesDivider" />
 
         <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary">
           <div className="sidebarPropertiesBlockHead">
@@ -2176,12 +2126,6 @@ export function CamundaPropertiesSettings({
           ) : null}
         </section>
 
-        <div className="sidebarPropertiesDivider" />
-
-        <div className="sidebarPropertiesGroupHead" data-testid="camunda-properties-group-io">
-          <div className="sidebarPropertiesGroupTitle">Input/Output</div>
-          <div className="sidebarPropertiesGroupCount">{groupedInputOutputCount}</div>
-        </div>
         <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary" data-testid="camunda-io-group">
           <div className="sidebarPropertiesBlockHead">
             <button
@@ -2214,8 +2158,6 @@ export function CamundaPropertiesSettings({
             </div>
           ) : null}
         </section>
-
-        <div className="sidebarPropertiesDivider" />
 
         <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary" data-testid="zeebe-task-headers-group">
           <div className="sidebarPropertiesBlockHead">
@@ -2263,12 +2205,6 @@ export function CamundaPropertiesSettings({
           ) : null}
         </section>
 
-        <div className="sidebarPropertiesDivider" />
-
-        <div className="sidebarPropertiesGroupHead" data-testid="camunda-properties-group-listeners">
-          <div className="sidebarPropertiesGroupTitle">Listeners</div>
-          <div className="sidebarPropertiesGroupCount">{listenerCount}</div>
-        </div>
         <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary" data-testid="camunda-listeners-group">
           <div className="sidebarPropertiesBlockHead">
             <button
