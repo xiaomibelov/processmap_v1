@@ -274,8 +274,8 @@ export function NodePathSettings({
           <SidebarTrustStatus
             title={<span>Пути и последовательность</span>}
             label={statusMeta.label}
-            helper={statusMeta.helper}
-            helperMeta={(resolvedSyncPreviewState === "syncing" || resolvedSyncPreviewState === "offline") ? "Редактирование доступно." : ""}
+            helper={resolvedSyncPreviewState === "error" || resolvedSyncPreviewState === "attention" ? statusMeta.helper : ""}
+            helperMeta=""
             tone={statusMeta.tone}
             ctaLabel={statusMeta.cta}
             onCta={() => {
@@ -565,19 +565,19 @@ export function StepTimeSettings({
   const stepTimeStatusMeta = {
     saved: {
       label: "Сохранено",
-      helper: "Время шага сохранено.",
+      helper: "",
       tone: "saved",
       cta: null,
     },
     local: {
       label: "Есть локальные изменения",
-      helper: "Значение времени изменено локально.",
+      helper: "",
       tone: "local",
       cta: null,
     },
     syncing: {
       label: "Синхронизация…",
-      helper: "Время шага сохраняется.",
+      helper: "",
       tone: "syncing",
       cta: null,
     },
@@ -730,19 +730,19 @@ export function RobotMetaSettings({
   const robotMetaTrustStatusMeta = {
     saved: {
       label: "Сохранено",
-      helper: "Robot Meta сохранена.",
+      helper: "",
       tone: "saved",
       cta: null,
     },
     local: {
       label: "Есть локальные изменения",
-      helper: "Есть локальные изменения.",
+      helper: "",
       tone: "local",
       cta: null,
     },
     syncing: {
       label: "Синхронизация…",
-      helper: "Robot Meta сохраняется.",
+      helper: "",
       tone: "syncing",
       cta: null,
     },
@@ -816,12 +816,14 @@ export function RobotMetaSettings({
         title={(
           <span className="inline-flex items-center gap-2">
             <span>Robot Meta</span>
-            <span
-              className={`selectedNodeChip selectedNodeChip--robotmeta ${robotMetaStatus === "ready" ? "is-ready" : ""} ${robotMetaStatus === "incomplete" ? "is-incomplete" : ""}`}
-              data-testid="robotmeta-status-chip"
-            >
-              {robotMetaStatusLabel}
-            </span>
+            {robotMetaStatus !== "none" ? (
+              <span
+                className={`selectedNodeChip selectedNodeChip--robotmeta ${robotMetaStatus === "ready" ? "is-ready" : ""} ${robotMetaStatus === "incomplete" ? "is-incomplete" : ""}`}
+                data-testid="robotmeta-status-chip"
+              >
+                {robotMetaStatusLabel}
+              </span>
+            ) : null}
           </span>
         )}
         label={trustStatusMeta.label}
@@ -1160,19 +1162,19 @@ export function CamundaPropertiesSettings({
   const extensionStateStatusMetaMap = {
     saved: {
       label: "Сохранено",
-      helper: "Изменения extension-state сохранены.",
+      helper: "",
       tone: "saved",
       cta: null,
     },
     local: {
       label: "Есть локальные изменения",
-      helper: "Есть локальные изменения в extension-state.",
+      helper: "",
       tone: "local",
       cta: null,
     },
     syncing: {
       label: "Синхронизация…",
-      helper: "Изменения extension-state сохраняются.",
+      helper: "",
       tone: "syncing",
       cta: null,
     },

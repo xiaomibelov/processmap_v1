@@ -1863,22 +1863,23 @@
   }
 
   .sidebarSettingsSurface {
-    @apply min-w-0 px-0 py-0;
-    border-radius: 0;
-    border: 0;
-    background: transparent;
-    box-shadow: none;
+    @apply min-w-0;
+    border-radius: 14px;
+    border: 1px solid #DDE8F4;
+    background: #FFFFFF;
+    box-shadow: 0 2px 10px rgba(31, 42, 68, 0.06);
+    overflow: hidden;
   }
 
   .sidebarSettingsHeader {
-    @apply px-2 pb-2 pt-1;
-    border-bottom: 1px solid #E7ECF4;
+    @apply px-3 pb-2 pt-2;
+    border-bottom: 1px solid #EEF2F9;
   }
 
   .sidebarAccordionStack {
     @apply grid overflow-visible;
-    margin-top: 2px;
-    gap: 2px;
+    margin-top: 0;
+    gap: 0;
     border-radius: 0;
     border: 0;
     background: transparent;
@@ -1886,30 +1887,26 @@
 
   .sidebarAccordion {
     background: transparent;
-    border-radius: 10px;
-    border: 1px solid transparent;
+    border-radius: 0;
+    border: none;
+    border-bottom: 1px solid #EEF2F9;
     box-shadow: none;
-    transition: border-color 0.15s ease, background 0.15s ease;
+    transition: background 0.15s ease;
   }
 
   .sidebarAccordion:last-child {
-    border-bottom: 1px solid transparent;
+    border-bottom: none;
   }
 
   .sidebarAccordion.isOpen {
-    border-color: #DDE6F5;
     background: #F5F8FD;
   }
 
   .sidebarAccordionHead {
     @apply flex w-full min-w-0 items-center justify-between gap-2 px-3 text-left;
-    min-height: 40px;
-    border-radius: 10px;
+    min-height: 42px;
+    border-radius: 0;
     transition: background 0.12s ease;
-  }
-
-  .sidebarAccordion.isOpen .sidebarAccordionHead {
-    border-radius: 10px 10px 0 0;
   }
 
   .sidebarAccordionHead:hover {
@@ -3200,7 +3197,20 @@
     background: #202D45;
   }
 
-  .dark .sidebarSettingsSurface,
+  .dark .sidebarSettingsSurface {
+    border-color: #2B3F5E;
+    background: #141F31;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  }
+
+  .dark .sidebarAccordion {
+    border-color: #243450;
+  }
+
+  .dark .sidebarAccordion.isOpen {
+    background: #1A2840;
+  }
+
   .dark .selectedElementCard,
   .dark .sidebarSupplementaryInfo {
     border-color: #314463;

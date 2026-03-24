@@ -946,6 +946,13 @@ export default function NotesPanel({
   onFocusDrawioCompanion,
   disabled,
 }) {
+  const [localShowPropertiesOverlayOnSelect, setLocalShowPropertiesOverlayOnSelect] = useState(showPropertiesOverlayOnSelect);
+  const resolvedShowPropertiesOverlayOnSelect = onShowPropertiesOverlayOnSelectChange
+    ? showPropertiesOverlayOnSelect
+    : localShowPropertiesOverlayOnSelect;
+  const resolvedOnShowPropertiesOverlayOnSelectChange = onShowPropertiesOverlayOnSelectChange
+    ?? setLocalShowPropertiesOverlayOnSelect;
+
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -1637,7 +1644,7 @@ export default function NotesPanel({
       dispatchState.alwaysSignature = alwaysSig;
       onPropertiesOverlayAlwaysPreviewChange?.(nextAlwaysPreview);
     }
-    const nextPreview = showPropertiesOverlayOnSelect
+    const nextPreview = resolvedShowPropertiesOverlayOnSelect
       ? nextAlwaysPreview
       : buildPropertiesOverlayPreview({
           elementId: selectedElementId,
@@ -1645,7 +1652,7 @@ export default function NotesPanel({
           dictionaryBundleRaw: orgPropertyDictionaryBundle,
           showPropertiesOverlay: false,
         });
-    const draftSig = showPropertiesOverlayOnSelect
+    const draftSig = resolvedShowPropertiesOverlayOnSelect
       ? alwaysSig
       : buildPropertiesOverlayPreviewSignature(nextPreview);
     if (dispatchState.draftSignature !== draftSig) {
@@ -1657,7 +1664,7 @@ export default function NotesPanel({
     selectedCamundaPropertiesEditable,
     camundaPropertiesDraft,
     orgPropertyDictionaryBundle,
-    showPropertiesOverlayOnSelect,
+    resolvedShowPropertiesOverlayOnSelect,
     onPropertiesOverlayPreviewChange,
     onPropertiesOverlayAlwaysPreviewChange,
   ]);
@@ -1756,10 +1763,9 @@ export default function NotesPanel({
 
   useEffect(() => {
     const savedKey = readLastOpenAccordionKey();
-    const nextKey = savedKey || "paths";
     setSectionsOpen(
       SIDEBAR_ACCORDION_KEYS.reduce((acc, key) => {
-        acc[key] = key === nextKey;
+        acc[key] = !!savedKey && key === savedKey;
         return acc;
       }, {}),
     );
@@ -1770,10 +1776,9 @@ export default function NotesPanel({
     const isHidden = Boolean(sidebarHidden);
     if (wasHidden && !isHidden) {
       const savedKey = readLastOpenAccordionKey();
-      const nextKey = savedKey || "paths";
       setSectionsOpen(
         SIDEBAR_ACCORDION_KEYS.reduce((acc, key) => {
-          acc[key] = key === nextKey;
+          acc[key] = !!savedKey && key === savedKey;
           return acc;
         }, {}),
       );
@@ -2884,8 +2889,8 @@ export default function NotesPanel({
                   <label className="sidebarPropertiesInlineToggle">
                     <input
                       type="checkbox"
-                      checked={!!showPropertiesOverlayOnSelect}
-                      onChange={(event) => void onShowPropertiesOverlayOnSelectChange?.(!!event.target.checked)}
+                      checked={!!resolvedShowPropertiesOverlayOnSelect}
+                      onChange={(event) => void resolvedOnShowPropertiesOverlayOnSelectChange(!!event.target.checked)}
                       disabled={!!disabled}
                     />
                     <span>Показывать свойства над задачей при выделении</span>
@@ -2941,33 +2946,14 @@ export default function NotesPanel({
               >
                 <NotesSection
                   selectedElementId={isElementMode ? selectedElementId : ""}
-                  selectedElementName={isElementMode ? selectedElementName : ""}
                   selectedElementNotes={isElementMode ? selectedElementNotes : []}
                   noteCount={isElementMode ? selectedElementNotes.length : 0}
-                  selectedElementType={isElementMode ? selectedElementType : ""}
                   elementText={isElementMode ? elementText : ""}
                   elementSyncState={isElementMode ? elementSyncState : "saved"}
                   onElementTextChange={onElementTextChangeCallback}
                   onSendElementNote={sendElementNote}
                   elementBusy={isElementMode ? elementBusy : false}
                   elementErr={isElementMode ? elementErr : ""}
-                  reviewStatus={reviewStatus}
-                  reviewStatusBusy={reviewStatusBusy}
-                  reviewComments={reviewList}
-                  reviewOpenCommentsCount={reviewOpenCommentsCount}
-                  selectedAnchorReviewComments={isElementMode ? selectedAnchorReviewComments : []}
-                  reviewCommentText={reviewCommentText}
-                  onReviewCommentTextChange={onReviewCommentTextChangeCallback}
-                  onSendReviewComment={sendReviewComment}
-                  reviewBusy={reviewBusy}
-                  reviewErr={reviewErr}
-                  reviewActionBusyId={reviewActionBusyId}
-                  onSetReviewCommentLifecycle={setReviewCommentLifecycle}
-                  onSetSessionReviewStatus={setSessionReviewStatus}
-                  onOpenReviewAnchor={openReviewAnchor}
-                  knownAnchorIds={knownAnchorIds}
-                  currentUserId={currentUserId}
-                  currentUserLabel={currentUserLabel}
                   onNodeEditorRef={onNodeEditorRefCallback}
                   disabled={disabled}
                 />
