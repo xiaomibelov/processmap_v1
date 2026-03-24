@@ -1037,3 +1037,704 @@ export function applyRobotMetaDecor(ctx) {
   } catch {
   }
 }
+
+export function clearPropertiesOverlayDecor(ctx) {
+  const inst = ctx?.inst;
+  const kind = ctx?.kind;
+  const refs = ctx?.refs;
+  const asObject = ctx?.utils?.asObject;
+  const toText = ctx?.utils?.toText;
+  if (!inst || !kind || !refs || typeof asObject !== "function" || typeof toText !== "function") return;
+  const state = asObject(refs.propertiesOverlayStateRef?.current?.[kind]);
+  try {
+    const overlays = inst.get("overlays");
+    Object.values(state).forEach((entryRaw) => {
+      const entry = asObject(entryRaw);
+      if (entry?.overlayId !== null && entry?.overlayId !== undefined) {
+        overlays.remove(entry.overlayId);
+      }
+    });
+  } catch {
+  }
+  refs.propertiesOverlayStateRef.current[kind] = {};
+  if (refs.propertiesOverlayRenderSignatureRef?.current) {
+    refs.propertiesOverlayRenderSignatureRef.current[kind] = "";
+  }
+}
+
+function readOverlayReadingPoint(elementRaw) {
+  const element = elementRaw && typeof elementRaw === "object" ? elementRaw : {};
+  const waypoints = Array.isArray(element.waypoints) ? element.waypoints : [];
+  if (waypoints.length) {
+    const first = waypoints[0] && typeof waypoints[0] === "object" ? waypoints[0] : {};
+    return {
+      x: Number(first.x || 0),
+      y: Number(first.y || 0),
+    };
+  }
+  const x = Number(element.x || 0);
+  const y = Number(element.y || 0);
+  const width = Number(element.width || 0);
+  const height = Number(element.height || 0);
+  return {
+    x: x + width / 2,
+    y: y + height / 2,
+  };
+}
+
+function readOverlayElementBounds(elementRaw) {
+  const element = elementRaw && typeof elementRaw === "object" ? elementRaw : {};
+  const waypoints = Array.isArray(element?.waypoints) ? element.waypoints : [];
+  if (waypoints.length) {
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    waypoints.forEach((pointRaw) => {
+      const point = pointRaw && typeof pointRaw === "object" ? pointRaw : {};
+      const x = Number(point?.x);
+      const y = Number(point?.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    });
+    if (Number.isFinite(minX) && Number.isFinite(minY) && Number.isFinite(maxX) && Number.isFinite(maxY)) {
+      return {
+        x: minX,
+        y: minY,
+        width: Math.max(1, maxX - minX),
+        height: Math.max(1, maxY - minY),
+      };
+    }
+  }
+  const x = Number(element?.x);
+  const y = Number(element?.y);
+  const width = Number(element?.width);
+  const height = Number(element?.height);
+  if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(width) && Number.isFinite(height)) {
+    return {
+      x,
+      y,
+      width: Math.max(1, width),
+      height: Math.max(1, height),
+    };
+  }
+  return null;
+}
+
+function readOverlayViewportContext(inst, canvasZoom) {
+  try {
+    const canvas = inst?.get?.("canvas");
+    const viewbox = canvas?.viewbox?.();
+    const x = Number(viewbox?.x);
+    const y = Number(viewbox?.y);
+    const width = Number(viewbox?.width);
+    const height = Number(viewbox?.height);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !(width > 0) || !(height > 0)) {
+      return {
+        signature: "all",
+        bounds: null,
+      };
+    }
+    const zoom = clampNumber(Number(canvasZoom || viewbox?.scale || 1), 0.2, 4);
+    const marginUnits = clampNumber(220 / zoom, 80, 960);
+    const bucketUnits = clampNumber(72 / zoom, 24, 320);
+    return {
+      signature: [
+        Math.round(x / bucketUnits),
+        Math.round(y / bucketUnits),
+        Math.round(width / bucketUnits),
+        Math.round(height / bucketUnits),
+        Math.round(marginUnits),
+      ].join(":"),
+      bounds: {
+        x: x - marginUnits,
+        y: y - marginUnits,
+        width: width + marginUnits * 2,
+        height: height + marginUnits * 2,
+      },
+    };
+  } catch {
+    return {
+      signature: "all",
+      bounds: null,
+    };
+  }
+}
+
+function isOverlayBoundsInsideViewport(boundsRaw, viewportRaw) {
+  const bounds = boundsRaw && typeof boundsRaw === "object" ? boundsRaw : null;
+  const viewport = viewportRaw && typeof viewportRaw === "object" ? viewportRaw : null;
+  if (!viewport || !bounds) return true;
+  const left = Number(bounds?.x);
+  const top = Number(bounds?.y);
+  const width = Number(bounds?.width);
+  const height = Number(bounds?.height);
+  const vx = Number(viewport?.x);
+  const vy = Number(viewport?.y);
+  const vw = Number(viewport?.width);
+  const vh = Number(viewport?.height);
+  if (
+    !Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(width) || !Number.isFinite(height)
+    || !Number.isFinite(vx) || !Number.isFinite(vy) || !Number.isFinite(vw) || !Number.isFinite(vh)
+  ) {
+    return true;
+  }
+  const right = left + Math.max(1, width);
+  const bottom = top + Math.max(1, height);
+  const viewportRight = vx + Math.max(1, vw);
+  const viewportBottom = vy + Math.max(1, vh);
+  return left <= viewportRight && right >= vx && top <= viewportBottom && bottom >= vy;
+}
+
+function sortEntriesByReadingOrder(entriesRaw) {
+  const entries = Array.isArray(entriesRaw) ? entriesRaw : [];
+  return [...entries].sort((leftRaw, rightRaw) => {
+    const left = leftRaw && typeof leftRaw === "object" ? leftRaw : {};
+    const right = rightRaw && typeof rightRaw === "object" ? rightRaw : {};
+    const leftPoint = readOverlayReadingPoint(left.el);
+    const rightPoint = readOverlayReadingPoint(right.el);
+    return (leftPoint.y - rightPoint.y) || (leftPoint.x - rightPoint.x);
+  });
+}
+
+function summarizeSpatialTaskPlan(colorPlanRaw) {
+  const colorPlan = Array.isArray(colorPlanRaw) ? colorPlanRaw : [];
+  const families = Array.from(new Set(colorPlan.map((item) => String(item?.familyId || "")).filter(Boolean)));
+  const leadTone = String(colorPlan[0]?.toneId || "");
+  const familyTonePairs = [];
+  const seenFamily = new Set();
+  colorPlan.forEach((itemRaw) => {
+    const item = itemRaw && typeof itemRaw === "object" ? itemRaw : {};
+    const familyId = String(item.familyId || "");
+    const toneId = String(item.toneId || "");
+    if (!familyId || !toneId || seenFamily.has(familyId)) return;
+    seenFamily.add(familyId);
+    familyTonePairs.push({ familyId, toneId });
+  });
+  const toneCounts = colorPlan.reduce((acc, item) => {
+    const tone = String(item?.toneId || "");
+    if (!tone) return acc;
+    acc[tone] = Number(acc[tone] || 0) + 1;
+    return acc;
+  }, {});
+  let dominantTone = "";
+  Object.entries(toneCounts).forEach(([tone, countRaw]) => {
+    const count = Number(countRaw || 0);
+    const current = Number(toneCounts[dominantTone] || 0);
+    if (!dominantTone || count > current) {
+      dominantTone = tone;
+    }
+  });
+  return { families, dominantTone, leadTone, familyTonePairs };
+}
+
+const OVERLAY_VISIBLE_LIMIT_BY_HOST = Object.freeze({
+  task: 4,
+  gateway: 3,
+  sequence: 3,
+});
+
+const OVERLAY_TEXT_LIMITS_BY_HOST = Object.freeze({
+  task: { key: 24, value: 30 },
+  gateway: { key: 20, value: 24 },
+  sequence: { key: 18, value: 22 },
+});
+
+function resolveOverlayHostType({ element, isConnection = false, getters = null } = {}) {
+  if (isConnection) return "sequence";
+  if (typeof getters?.isGatewayElement === "function" && getters.isGatewayElement(element)) {
+    return "gateway";
+  }
+  const elementType = String(
+    element?.businessObject?.$type
+    || element?.type
+    || "",
+  ).toLowerCase();
+  if (elementType.includes("gateway")) return "gateway";
+  return "task";
+}
+
+function overlayVisibleLimitByHost(hostTypeRaw) {
+  const hostType = String(hostTypeRaw || "").toLowerCase();
+  if (Object.hasOwn(OVERLAY_VISIBLE_LIMIT_BY_HOST, hostType)) {
+    return Number(OVERLAY_VISIBLE_LIMIT_BY_HOST[hostType] || OVERLAY_VISIBLE_LIMIT_BY_HOST.task);
+  }
+  return OVERLAY_VISIBLE_LIMIT_BY_HOST.task;
+}
+
+function normalizeChipTextByLimit(textRaw, maxCharsRaw) {
+  const text = String(textRaw || "").trim();
+  const maxChars = Math.max(6, Number(maxCharsRaw || 0) || 0);
+  if (!text || text.length <= maxChars) {
+    return {
+      text,
+      truncated: false,
+    };
+  }
+  return {
+    text: `${text.slice(0, Math.max(1, maxChars - 1)).trimEnd()}…`,
+    truncated: true,
+  };
+}
+
+function normalizeOverlayRowDisplayText({ hostType = "task", label = "", value = "" } = {}) {
+  const limits = OVERLAY_TEXT_LIMITS_BY_HOST[hostType] || OVERLAY_TEXT_LIMITS_BY_HOST.task;
+  const labelView = normalizeChipTextByLimit(label, limits.key);
+  const valueView = normalizeChipTextByLimit(value, limits.value);
+  return {
+    label: labelView.text,
+    value: valueView.text,
+    labelTruncated: labelView.truncated,
+    valueTruncated: valueView.truncated,
+  };
+}
+
+export function buildPropertiesOverlayEntryBaseSignature({
+  elementId = "",
+  hostType = "task",
+  items = [],
+  hiddenCount = 0,
+  zoomBucket = 1,
+} = {}) {
+  const safeElementId = String(elementId || "").trim();
+  const safeHostType = String(hostType || "task").trim().toLowerCase() || "task";
+  const safeHiddenCount = Math.max(0, Number(hiddenCount || 0));
+  const safeZoomBucket = Number.isFinite(Number(zoomBucket)) ? Number(zoomBucket) : 1;
+  const safeItems = (Array.isArray(items) ? items : [])
+    .map((itemRaw) => {
+      const item = itemRaw && typeof itemRaw === "object" ? itemRaw : {};
+      return {
+        key: String(item.key || "").trim(),
+        label: String(item.label || "").trim(),
+        value: String(item.value || "").trim(),
+      };
+    })
+    .filter((item) => item.label && item.value);
+  return JSON.stringify({
+    elementId: safeElementId,
+    hostType: safeHostType,
+    items: safeItems,
+    hiddenCount: safeHiddenCount,
+    zoom: safeZoomBucket,
+  });
+}
+
+export function shouldReusePropertiesOverlayEntry(prevEntryRaw, nextBaseSignature) {
+  const prevEntry = prevEntryRaw && typeof prevEntryRaw === "object" ? prevEntryRaw : {};
+  const prevBaseSignature = String(prevEntry.baseSignature || "").trim();
+  const nextSignature = String(nextBaseSignature || "").trim();
+  return !!prevBaseSignature && !!nextSignature && prevBaseSignature === nextSignature;
+}
+
+function buildPropertiesOverlayRenderSignature({
+  previewEntries,
+  zoomBucket,
+  alwaysEnabled,
+  viewportSignature,
+  toText,
+  asArray,
+}) {
+  const entries = asArray(previewEntries)
+    .map((entryRaw) => {
+      const entry = entryRaw && typeof entryRaw === "object" ? entryRaw : {};
+      const elementId = toText(entry?.elementId);
+      if (!elementId) return null;
+      const hiddenCount = Math.max(0, Number(entry?.hiddenCount || 0));
+      const items = asArray(entry?.items)
+        .map((itemRaw) => {
+          const item = itemRaw && typeof itemRaw === "object" ? itemRaw : {};
+          return {
+            key: toText(item?.key),
+            label: toText(item?.label),
+            value: toText(item?.value),
+          };
+        })
+        .filter((item) => item.label && item.value);
+      if (!items.length) return null;
+      return {
+        elementId,
+        hiddenCount,
+        items,
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.elementId.localeCompare(right.elementId));
+
+  let hash = 2166136261;
+  const push = (rawValue) => {
+    const value = String(rawValue || "");
+    for (let i = 0; i < value.length; i += 1) {
+      hash ^= value.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+  };
+
+  push(alwaysEnabled ? "1" : "0");
+  push(String(Number(zoomBucket || 0)));
+  push(String(viewportSignature || "all"));
+  entries.forEach((entry) => {
+    push(entry.elementId);
+    push(String(entry.hiddenCount));
+    asArray(entry.items).forEach((item) => {
+      push(item.key);
+      push(item.label);
+      push(item.value);
+    });
+  });
+  return `${entries.length}:${hash >>> 0}`;
+}
+
+export function applyPropertiesOverlayDecor(ctx) {
+  const inst = ctx?.inst;
+  const kind = ctx?.kind;
+  const refs = ctx?.refs;
+  const getters = ctx?.getters;
+  const readOnly = ctx?.readOnly;
+  const toText = ctx?.utils?.toText;
+  const asObject = ctx?.utils?.asObject;
+  const asArray = ctx?.utils?.asArray;
+  if (
+    !inst || !kind || !refs || !getters || !readOnly
+    || typeof toText !== "function" || typeof asObject !== "function" || typeof asArray !== "function"
+  ) return;
+
+  function normalizePreviewEntry(rawPreview) {
+    const preview = asObject(rawPreview);
+    const elementId = toText(preview?.elementId);
+    const items = asArray(preview?.items).map((item) => ({
+      key: toText(item?.key),
+      label: toText(item?.label),
+      value: toText(item?.value),
+    })).filter((item) => item.label && item.value);
+    const hiddenCount = Math.max(0, Number(preview?.hiddenCount || 0));
+    const enabled = preview?.enabled === true && !!elementId && items.length > 0;
+    if (!enabled) return null;
+    return {
+      elementId,
+      items,
+      hiddenCount,
+    };
+  }
+
+  const previewByElementId = {};
+  const alwaysEnabled = readOnly.propertiesOverlayAlwaysEnabledRef?.current === true;
+  if (alwaysEnabled) {
+    const alwaysMap = asObject(readOnly.propertiesOverlayAlwaysPreviewByElementIdRef?.current);
+    Object.keys(alwaysMap).forEach((rawElementId) => {
+      const normalized = normalizePreviewEntry(alwaysMap[rawElementId]);
+      if (!normalized) return;
+      previewByElementId[normalized.elementId] = normalized;
+    });
+  }
+  const selectedPreview = normalizePreviewEntry(readOnly.selectedPropertiesOverlayPreviewRef?.current);
+  if (selectedPreview) {
+    previewByElementId[selectedPreview.elementId] = selectedPreview;
+  }
+  const previewEntries = Object.values(previewByElementId);
+  if (!previewEntries.length) {
+    clearPropertiesOverlayDecor(ctx);
+    return;
+  }
+
+  const canvasZoom = readOverlayCanvasZoom(inst);
+  const zoomBucket = Math.round(canvasZoom * 1000) / 1000;
+  const viewportContext = readOverlayViewportContext(inst, canvasZoom);
+  const renderSignature = buildPropertiesOverlayRenderSignature({
+    previewEntries,
+    zoomBucket,
+    alwaysEnabled,
+    viewportSignature: viewportContext.signature,
+    toText,
+    asArray,
+  });
+  const currentPropertiesState = asObject(refs.propertiesOverlayStateRef.current[kind]);
+  const renderSignatureRef = refs.propertiesOverlayRenderSignatureRef?.current || null;
+  const prevRenderSignature = renderSignatureRef ? toText(renderSignatureRef[kind]) : "";
+  if (
+    prevRenderSignature
+    && prevRenderSignature === renderSignature
+    && Object.keys(currentPropertiesState).length > 0
+  ) {
+    return;
+  }
+
+  const linkedPropertyFrequency = new Map();
+  previewEntries.forEach((preview) => {
+    asArray(preview?.items).forEach((item) => {
+      const linkedKey = normalizeOverlayPropertyKey(item?.key || item?.label);
+      if (!linkedKey) return;
+      linkedPropertyFrequency.set(linkedKey, Number(linkedPropertyFrequency.get(linkedKey) || 0) + 1);
+    });
+  });
+
+  runMeasure(
+    ctx,
+    "diagram.updatePropertiesOverlays",
+    () => {
+      try {
+        const overlays = inst.get("overlays");
+        const registry = inst.get("elementRegistry");
+        const activeViewportBounds = viewportContext.bounds;
+        const currentState = { ...asObject(refs.propertiesOverlayStateRef.current[kind]) };
+        const nextState = {};
+        const resolvedEntries = [];
+        previewEntries.forEach((preview) => {
+          const elementId = toText(preview?.elementId);
+          const items = asArray(preview?.items);
+          const hiddenCount = Math.max(0, Number(preview?.hiddenCount || 0));
+          if (!elementId || !items.length) return;
+          const el = (
+            typeof getters.findDiagramElementForHint === "function"
+              ? getters.findDiagramElementForHint(registry, { nodeId: elementId, title: elementId })
+              : null
+          )
+            || getters.findShapeByNodeId(registry, elementId)
+            || getters.findShapeForHint(registry, { nodeId: elementId, title: elementId });
+          if (!el) return;
+          const resolvedElementId = toText(el?.id);
+          if (!resolvedElementId) return;
+          const elementBounds = readOverlayElementBounds(el);
+          if (!isOverlayBoundsInsideViewport(elementBounds, activeViewportBounds)) return;
+          const isConnection = typeof getters.isConnectionElement === "function" && getters.isConnectionElement(el);
+          const hostType = resolveOverlayHostType({ element: el, isConnection, getters });
+          const visibleLimit = overlayVisibleLimitByHost(hostType);
+          const visibleItems = items.slice(0, visibleLimit);
+          const overflowFromRenderer = Math.max(0, items.length - visibleItems.length);
+          resolvedEntries.push({
+            elementId,
+            resolvedElementId,
+            items: visibleItems,
+            hiddenCount: hiddenCount + overflowFromRenderer,
+            el,
+            isConnection,
+            hostType,
+          });
+        });
+
+        if (!resolvedEntries.length) {
+          clearPropertiesOverlayDecor(ctx);
+          return;
+        }
+
+        const orderedEntries = sortEntriesByReadingOrder(resolvedEntries);
+        const spatialTaskWindow = [];
+        orderedEntries.forEach((entry) => {
+          const elementId = toText(entry?.elementId);
+          const resolvedElementId = toText(entry?.resolvedElementId);
+          const items = asArray(entry?.items);
+          const hiddenCount = Math.max(0, Number(entry?.hiddenCount || 0));
+          const el = entry?.el;
+          const isConnection = !!entry?.isConnection;
+          const hostType = toText(entry?.hostType) || (isConnection ? "sequence" : "task");
+          if (!elementId || !resolvedElementId || !items.length || !el) return;
+          const baseSignature = buildPropertiesOverlayEntryBaseSignature({
+            elementId,
+            hostType,
+            items,
+            hiddenCount,
+            zoomBucket,
+          });
+          const prev = asObject(currentState[resolvedElementId]);
+          if (shouldReusePropertiesOverlayEntry(prev, baseSignature)) {
+            nextState[resolvedElementId] = prev;
+            if (!isConnection) {
+              const prevSpatialSummary = prev?.spatialSummary;
+              if (prevSpatialSummary && typeof prevSpatialSummary === "object") {
+                spatialTaskWindow.push(prevSpatialSummary);
+                if (spatialTaskWindow.length > 6) spatialTaskWindow.shift();
+              }
+            }
+            delete currentState[resolvedElementId];
+            return;
+          }
+
+          const localColorPlan = isConnection
+            ? overlayPropertyColorPlanForItems(items)
+            : overlayPropertyColorPlanForItems(items, { spatialWindow: spatialTaskWindow });
+          const entrySpatialSummary = isConnection ? null : summarizeSpatialTaskPlan(localColorPlan);
+          if (!isConnection) {
+            spatialTaskWindow.push(entrySpatialSummary);
+            if (spatialTaskWindow.length > 6) spatialTaskWindow.shift();
+          }
+          const colorSignature = JSON.stringify(localColorPlan.map((color) => ({
+            familyId: toText(color?.familyId),
+            toneId: toText(color?.toneId),
+            accent: toText(color?.accent),
+            background: toText(color?.background),
+            border: toText(color?.border),
+            text: toText(color?.text),
+          })));
+          const signature = JSON.stringify({
+            elementId,
+            hostType,
+            items,
+            hiddenCount,
+            zoom: zoomBucket,
+            color: colorSignature,
+          });
+          if (toText(prev?.signature) === signature) {
+            nextState[resolvedElementId] = {
+              ...prev,
+              baseSignature,
+              spatialSummary: entrySpatialSummary,
+            };
+            delete currentState[resolvedElementId];
+            return;
+          }
+
+          if (prev?.overlayId !== null && prev?.overlayId !== undefined) {
+            overlays.remove(prev.overlayId);
+          }
+
+          const container = document.createElement("div");
+          const overlayHostClass = hostType === "sequence"
+            ? "fpcPropertyOverlay--sequence"
+            : hostType === "gateway"
+              ? "fpcPropertyOverlay--gateway"
+              : "fpcPropertyOverlay--task";
+          container.className = `fpcPropertyOverlay fpcPropertyOverlay--table ${overlayHostClass}`;
+          container.dataset.nodeId = elementId;
+          container.dataset.hostType = hostType;
+          const overlayGeometry = buildOverlayGeometry({ element: el, isConnection, canvasZoom });
+          container.style.width = `${overlayGeometry.width}px`;
+          container.style.maxWidth = `${overlayGeometry.width}px`;
+          if (hostType === "sequence") {
+            const sequenceMinWidth = Math.round(clampNumber(overlayGeometry.width - 4, 56, 102));
+            const sequenceFont = clampNumber(overlayGeometry.width / 12.3, 7.7, 8.9);
+            container.style.setProperty("--fpc-property-table-min-width", `${sequenceMinWidth}px`);
+            container.style.setProperty("--fpc-property-grid-columns", "minmax(24px, 41%) minmax(28px, 59%)");
+            container.style.setProperty("--fpc-property-font-size", `${sequenceFont.toFixed(2)}px`);
+            container.style.setProperty("--fpc-property-font-scale", "1.15");
+            container.style.setProperty("--fpc-property-row-padding", "1px 5px");
+            container.style.setProperty("--fpc-property-row-min-height", "14px");
+            container.style.setProperty("--fpc-property-row-gap", "4px");
+          } else if (hostType === "gateway") {
+            const gatewayMinWidth = Math.round(clampNumber(overlayGeometry.width - 8, 60, 122));
+            const gatewayFont = clampNumber(overlayGeometry.width / 12.8, 7.8, 9.1);
+            container.style.setProperty("--fpc-property-table-min-width", `${gatewayMinWidth}px`);
+            container.style.setProperty("--fpc-property-grid-columns", "minmax(24px, 44%) minmax(30px, 56%)");
+            container.style.setProperty("--fpc-property-font-size", `${gatewayFont.toFixed(2)}px`);
+            container.style.setProperty("--fpc-property-font-scale", "1.08");
+            container.style.setProperty("--fpc-property-row-padding", "1px 5px");
+            container.style.setProperty("--fpc-property-row-min-height", "14px");
+            container.style.setProperty("--fpc-property-row-gap", "4px");
+          } else {
+            const taskMinWidth = Math.round(clampNumber(overlayGeometry.width - 4, 66, 134));
+            const taskFont = clampNumber(overlayGeometry.width / 12.6, 8.1, 9.6);
+            container.style.setProperty("--fpc-property-table-min-width", `${taskMinWidth}px`);
+            container.style.setProperty("--fpc-property-grid-columns", "minmax(28px, 42%) minmax(34px, 58%)");
+            container.style.setProperty("--fpc-property-font-size", `${taskFont.toFixed(2)}px`);
+            container.style.setProperty("--fpc-property-font-scale", "1");
+            container.style.setProperty("--fpc-property-row-padding", "1px 6px");
+            container.style.setProperty("--fpc-property-row-min-height", "15px");
+            container.style.setProperty("--fpc-property-row-gap", "5px");
+          }
+
+          const table = document.createElement("div");
+          table.className = "fpcPropertyTable";
+
+          items.forEach((item, itemIndex) => {
+            const labelRaw = toText(item?.label);
+            const valueRaw = toText(item?.value);
+            const row = document.createElement("div");
+            const linkedKey = normalizeOverlayPropertyKey(item?.key || item?.label);
+            const linkedCount = Number(linkedPropertyFrequency.get(linkedKey) || 0);
+            const linkedClass = linkedKey && linkedCount > 1 ? " fpcPropertyRow--linked" : "";
+            const colorModel = localColorPlan[itemIndex] || overlayPropertyColorByKey(linkedKey || item?.label);
+            const familyClass = colorModel?.familyId ? ` fpcPropertyRow--family-${toText(colorModel.familyId)}` : "";
+            const toneClass = colorModel?.toneId ? ` fpcPropertyRow--tone-${toText(colorModel.toneId)}` : "";
+            row.className = `fpcPropertyRow${linkedClass}${familyClass}${toneClass}`;
+            row.title = `${labelRaw}: ${valueRaw}`;
+            row.dataset.hostType = hostType;
+            row.dataset.familyId = toText(colorModel?.familyId);
+            row.dataset.toneId = toText(colorModel?.toneId);
+            row.style.setProperty("--fpc-property-accent", colorModel.accent);
+            row.style.setProperty("--fpc-property-bg", colorModel.background);
+            row.style.setProperty("--fpc-property-border", colorModel.border || colorModel.accent);
+            row.style.setProperty("--fpc-property-text", colorModel.text || colorModel.accent);
+            row.style.setProperty("--fpc-property-ring", colorModel.ring || colorModel.accent);
+            row.style.setProperty("--fpc-property-accent-shadow", colorModel.shadow);
+            if (linkedKey && linkedCount > 1) {
+              row.dataset.linkedGroup = linkedKey;
+            }
+            const displayText = normalizeOverlayRowDisplayText({
+              hostType,
+              label: labelRaw,
+              value: valueRaw,
+            });
+            row.dataset.truncated = displayText.labelTruncated || displayText.valueTruncated ? "true" : "false";
+
+            const keyCell = document.createElement("span");
+            keyCell.className = "fpcPropertyCell fpcPropertyCell--key";
+            keyCell.title = displayText.labelTruncated ? labelRaw : "";
+            const keyText = document.createElement("span");
+            keyText.className = "fpcPropertyKeyText";
+            keyText.textContent = displayText.label;
+            keyCell.appendChild(keyText);
+
+            const keySep = document.createElement("span");
+            keySep.className = "fpcPropertyKeySep";
+            keySep.textContent = "|";
+            keyCell.appendChild(keySep);
+            row.appendChild(keyCell);
+
+            const valueCell = document.createElement("span");
+            valueCell.className = "fpcPropertyCell fpcPropertyCell--value";
+            valueCell.title = displayText.valueTruncated ? valueRaw : "";
+            const valueText = document.createElement("span");
+            valueText.className = "fpcPropertyValueText";
+            valueText.textContent = displayText.value;
+            valueCell.appendChild(valueText);
+            row.appendChild(valueCell);
+
+            table.appendChild(row);
+          });
+
+          if (hiddenCount > 0) {
+            const moreRow = document.createElement("div");
+            moreRow.className = "fpcPropertyRow fpcPropertyRow--summary";
+            moreRow.textContent = `+${hiddenCount} ещё`;
+            moreRow.title = `Еще свойств: ${hiddenCount}`;
+            table.appendChild(moreRow);
+          }
+          container.appendChild(table);
+
+          const overlayId = overlays.add(resolvedElementId, "fpc-properties", {
+            position: { top: overlayGeometry.topOffset, left: overlayGeometry.anchorLeft },
+            html: container,
+            scale: false,
+          });
+          nextState[resolvedElementId] = {
+            elementId: resolvedElementId,
+            overlayId,
+            signature,
+            baseSignature,
+            spatialSummary: entrySpatialSummary,
+          };
+          delete currentState[resolvedElementId];
+        });
+
+        Object.values(currentState).forEach((entryRaw) => {
+          const entry = asObject(entryRaw);
+          if (entry?.overlayId !== null && entry?.overlayId !== undefined) {
+            overlays.remove(entry.overlayId);
+          }
+        });
+        refs.propertiesOverlayStateRef.current[kind] = nextState;
+        if (renderSignatureRef) {
+          renderSignatureRef[kind] = renderSignature;
+        }
+      } catch {
+      }
+    },
+    () => ({
+      kind,
+      entries: previewEntries.length,
+      linked: linkedPropertyFrequency.size,
+      always: alwaysEnabled ? 1 : 0,
+    }),
+  );
+}
