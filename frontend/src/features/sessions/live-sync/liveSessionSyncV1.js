@@ -60,6 +60,7 @@ export function decideRemoteSessionSyncAction({
   acknowledgedRemoteVersionToken = "",
   unsafeLocal = false,
   unsafeLocalReason = "",
+  postSaveDirtyGraceActive = false,
 }) {
   const localToken = normalizeVersionToken(localVersionToken);
   const remoteToken = normalizeVersionToken(remoteVersionToken);
@@ -69,6 +70,7 @@ export function decideRemoteSessionSyncAction({
   if (!remoteToken || remoteToken === localToken) return "noop";
   if (acknowledgedToken && remoteToken === acknowledgedToken) return "noop";
   if (unsafeReason === "saving") return "defer";
+  if (unsafeReason === "dirty" && postSaveDirtyGraceActive) return "defer";
   if (unsafeReason) return "mark_stale";
   return "auto_apply";
 }

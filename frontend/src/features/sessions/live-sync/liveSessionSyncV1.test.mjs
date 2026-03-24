@@ -73,6 +73,20 @@ test("dirty local draft still marks stale for remote mismatch", () => {
   );
 });
 
+test("post-save dirty grace defers single-window dirty mismatch", () => {
+  assert.equal(
+    decideRemoteSessionSyncAction({
+      localVersionToken: "11.4.1000",
+      remoteVersionToken: "12.5.1001",
+      acknowledgedRemoteVersionToken: "11.4.1000",
+      unsafeLocal: true,
+      unsafeLocalReason: "dirty",
+      postSaveDirtyGraceActive: true,
+    }),
+    "defer",
+  );
+});
+
 test("remote mismatch auto-applies when local state is safe", () => {
   assert.equal(
     decideRemoteSessionSyncAction({

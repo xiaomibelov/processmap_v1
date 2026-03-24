@@ -8,6 +8,7 @@ import {
 
 const LIVE_SESSION_SYNC_POLL_MS = 4_000;
 const REALTIME_BPMN_OPS_POLL_MS = 600;
+const POST_SAVE_DIRTY_GRACE_MS = LIVE_SESSION_SYNC_POLL_MS + 1_500;
 
 function toText(value) {
   return String(value || "").trim();
@@ -50,6 +51,14 @@ function shouldLogBpmnTrace() {
   }
 }
 
+function shouldActivatePostSaveDirtyGrace(sourceRaw) {
+  const source = toText(sourceRaw).toLowerCase();
+  if (!source || source === "session_sync") return false;
+  if (source.startsWith("remote_session_sync_")) return false;
+  if (source === "realtime_bpmn_ops_stream" || source === "realtime_remote_ops_apply") return false;
+  return true;
+}
+
 export default function useSessionSyncCoordinator({
   draftSessionId,
   draftBpmnMeta,
@@ -80,6 +89,7 @@ export default function useSessionSyncCoordinator({
   const remoteSessionSyncAcknowledgedTokenRef = useRef("");
   const remoteSessionSyncBpmnTokenRef = useRef("");
   const remoteSessionSyncCollabTokenRef = useRef("");
+  const postSaveDirtyGraceUntilRef = useRef(0);
 
   const realtimeBpmnOpsClientIdRef = useRef(`rt_${uid()}`);
   const realtimeBpmnOpsLastSeqRef = useRef(0);
@@ -112,6 +122,7 @@ export default function useSessionSyncCoordinator({
       remoteSessionSyncAcknowledgedTokenRef.current = "";
       remoteSessionSyncBpmnTokenRef.current = "";
       remoteSessionSyncCollabTokenRef.current = "";
+      postSaveDirtyGraceUntilRef.current = 0;
       return;
     }
     const localToken = toText(liveSyncLocalVersionTokenRef.current);
@@ -141,6 +152,7 @@ export default function useSessionSyncCoordinator({
   const acknowledgeSessionSyncPayload = useCallback((sessionRaw) => {
     const session = ensureObject(sessionRaw);
     const sid = toText(session.id || session.session_id || draftSessionId);
+    const source = toText(session._sync_source || session._source).toLowerCase();
     if (!sid) return;
 
     const sessionSyncToken = toText(buildSessionVersionToken(session));
@@ -151,6 +163,9 @@ export default function useSessionSyncCoordinator({
 
     if (acknowledgedToken) {
       remoteSessionSyncAcknowledgedTokenRef.current = acknowledgedToken;
+      if (shouldActivatePostSaveDirtyGrace(source)) {
+        postSaveDirtyGraceUntilRef.current = Date.now() + POST_SAVE_DIRTY_GRACE_MS;
+      }
       setRemoteSessionSyncState((prev) => {
         if (prev.mode !== "stale_pending") return prev;
         const prevRemote = toText(prev.remoteToken);
@@ -551,6 +566,9 @@ export default function useSessionSyncCoordinator({
           acknowledgedRemoteVersionToken: remoteSessionSyncAcknowledgedTokenRef.current,
           unsafeLocal: hasUnsafeLocalSyncStateRef.current === true,
           unsafeLocalReason: unsafeLocalSyncReasonRef.current,
+          postSaveDirtyGraceActive:
+            unsafeLocalSyncReasonRef.current === "dirty"
+            && Number(postSaveDirtyGraceUntilRef.current || 0) > Date.now(),
         });
 
         // Rollback legacy save ACK can expose version-token formatting drift
