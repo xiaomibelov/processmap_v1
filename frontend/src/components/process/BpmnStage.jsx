@@ -3369,6 +3369,9 @@ const BpmnStage = forwardRef(function BpmnStage({
     emitCurrentViewboxSnapshot(v, emitViewboxChanged, "viewer", {
       reason: "viewer_import_ready",
     });
+    // Import recreates SVG nodes; force first post-import marker reapply even if semantic signature is unchanged.
+    taskTypeSignatureRef.current.viewer = "";
+    linkEventSignatureRef.current.viewer = "";
     applyTaskTypeDecor(v, "viewer");
     applyLinkEventDecor(v, "viewer");
     applyHappyFlowDecor(v, "viewer");
@@ -3522,6 +3525,9 @@ const BpmnStage = forwardRef(function BpmnStage({
       emitCurrentViewboxSnapshot(m, emitViewboxChanged, "editor", {
         reason: "modeler_import_ready",
       });
+      // Import recreates SVG nodes; force first post-import marker reapply even if semantic signature is unchanged.
+      taskTypeSignatureRef.current.editor = "";
+      linkEventSignatureRef.current.editor = "";
       applyTaskTypeDecor(m, "editor");
       applyLinkEventDecor(m, "editor");
       applyHappyFlowDecor(m, "editor");
@@ -3632,6 +3638,9 @@ const BpmnStage = forwardRef(function BpmnStage({
         tab: "diagram",
       });
     }
+    // createDiagram also replaces diagram root; force marker reapply on the fresh DOM.
+    taskTypeSignatureRef.current.editor = "";
+    linkEventSignatureRef.current.editor = "";
     applyTaskTypeDecor(m, "editor");
     applyLinkEventDecor(m, "editor");
     applyHappyFlowDecor(m, "editor");
@@ -3975,6 +3984,14 @@ const BpmnStage = forwardRef(function BpmnStage({
       const resolvedXml = (xml && xml.trim()) ? xml : draftXml;
       const resolvedHash = fnv1aHex(resolvedXml);
       const storeEvent = lastStoreEventRef.current || {};
+      const forcePrimaryVisualDecor = (inst, kind) => {
+        if (!inst) return;
+        taskTypeSignatureRef.current[kind] = "";
+        linkEventSignatureRef.current[kind] = "";
+        applyTaskTypeDecor(inst, kind);
+        applyLinkEventDecor(inst, kind);
+        applyHappyFlowDecor(inst, kind);
+      };
       try {
         if (view === "editor" || view === "diagram") {
           const localSession = isLocalSessionId(sid);
@@ -4017,6 +4034,8 @@ const BpmnStage = forwardRef(function BpmnStage({
               suppressViewbox: suppressViewboxEvents,
             });
             if (isStale("modeler.keep_view.after")) return;
+            // Keep-view path can skip import, but visual markers must still be present on the active DOM.
+            forcePrimaryVisualDecor(modelerRef.current, "editor");
             return;
           }
           if (modelerReady && lastModelerXmlHashRef.current === resolvedHash) {
@@ -4029,6 +4048,8 @@ const BpmnStage = forwardRef(function BpmnStage({
               suppressViewbox: suppressViewboxEvents,
             });
             if (isStale("modeler.same_hash.after")) return;
+            // Same-hash fast path can bypass import; enforce visual marker consistency.
+            forcePrimaryVisualDecor(modelerRef.current, "editor");
             return;
           }
           userViewportTouchedRef.current = false;
@@ -4147,6 +4168,26 @@ const BpmnStage = forwardRef(function BpmnStage({
   }, [draft?.bpmn_meta, view]);
 
   useEffect(() => {
+    if (view === "xml") return;
+    if (!diagramReady) return;
+    const activeKind = (view === "editor" || view === "diagram") ? "editor" : "viewer";
+    const activeInst = activeKind === "editor" ? modelerRef.current : viewerRef.current;
+    if (!activeInst) return;
+    // Ensure product-visible start/end and link-pair markers are re-applied on the active DOM layer.
+    taskTypeSignatureRef.current[activeKind] = "";
+    linkEventSignatureRef.current[activeKind] = "";
+    applyTaskTypeDecor(activeInst, activeKind);
+    applyLinkEventDecor(activeInst, activeKind);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diagramReady, view, sessionId, draft?.bpmn_xml]);
+
+  useEffect(() => {
+    const inst = modelerRef.current || modelerRuntimeRef.current?.getInstance?.() || null;
+    if (!inst || !modelerReadyRef.current) return;
+    syncCamundaExtensionsToModeler(inst);
+  }, [draft?.bpmn_meta]);
+
+  useEffect(() => {
     if (isInterviewDecorModeOn()) {
       clearUserNotesDecor(viewerRef.current, "viewer");
       clearUserNotesDecor(modelerRef.current, "editor");
@@ -4169,6 +4210,25 @@ const BpmnStage = forwardRef(function BpmnStage({
       syncAiQuestionPanelWithSelection(inst, kind, el, `${kind}.notes_refresh`);
     } catch {
     }
+    runSettledDecorSidebarFanout({
+      viewerInst: viewerRef.current,
+      modelerInst: modelerRef.current,
+      view,
+      isInterviewDecorModeOn,
+      clearUserNotesDecor,
+      applyUserNotesDecor,
+      applyStepTimeDecor,
+      applyRobotMetaDecor,
+      applyPropertiesOverlayDecor,
+      clearPropertiesOverlayDecor,
+      selectedMarkerStateRef,
+      selectionFanoutStateRef: settledSelectionFanoutRef,
+      propertiesFanoutStateRef: settledPropertiesFanoutRef,
+      propertiesFanoutSemanticSignature: settledPropertiesFanoutSemanticSignature,
+      buildSelectionFanoutSignature: buildSettledSelectionFanoutSignature,
+      emitElementSelection,
+      syncAiQuestionPanelWithSelection,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     draft?.notes_by_element,
