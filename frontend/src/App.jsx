@@ -86,6 +86,7 @@ import applySessionMetaHydration from "./features/session-meta/hydrate/applySess
 import { createSessionMetaConflictGuard } from "./features/session-meta/guards/sessionMetaConflictGuard";
 import useSessionMetaWriteGateway from "./features/session-meta/write/useSessionMetaWriteGateway";
 import { buildSessionMetaWriteEnvelope } from "./features/session-meta/write/sessionMetaMergePolicy";
+import buildCamundaExtensionsXmlSyncPayload from "./features/session-meta/write/buildCamundaExtensionsXmlSyncPayload";
 import { normalizeSessionCompanion } from "./features/process/session-companion/sessionCompanionContracts.js";
 import { requestProcessStageFlushBeforeLeave } from "./features/process/navigation/processLeaveFlush";
 import { useAuth } from "./features/auth/AuthProvider";
@@ -627,6 +628,7 @@ function mergeAiQuestionsByElementMaps(prevMapRaw, incomingMapRaw) {
 function mergeSessionDraft(prevDraft, sid, session, source = "session_sync") {
   const prev = sessionToDraft(sid || null, prevDraft);
   const incomingRaw = ensureObject(session);
+  const sourceKey = String(source || "").trim().toLowerCase();
   const incomingPatchKeys = ensureArray(incomingRaw?._patch_payload_keys).map((key) => String(key || "").trim()).filter(Boolean);
   const patchHasBpmnXml = incomingPatchKeys.includes("bpmn_xml");
   const incoming = { ...incomingRaw };
@@ -651,7 +653,6 @@ function mergeSessionDraft(prevDraft, sid, session, source = "session_sync") {
       prevHash: fnv1aHex(prevXml),
     });
   } else if (incomingHasXml && incomingXml.trim() && prevXml.trim()) {
-    const sourceKey = String(source || "").trim().toLowerCase();
     const prevHash = fnv1aHex(prevXml);
     const incomingHash = fnv1aHex(incomingXml);
     const xmlChanged = incomingHash !== prevHash;
@@ -814,6 +815,16 @@ function mergeSessionDraft(prevDraft, sid, session, source = "session_sync") {
   const nextBpmnMeta = ensureObject(next?.bpmn_meta);
   const incomingBpmnMeta = ensureObject(incoming?.bpmn_meta);
   const incomingHasBpmnMeta = hasOwn(incoming, "bpmn_meta");
+  const incomingHasCamundaExtensionsMap = incomingHasBpmnMeta && hasOwn(incomingBpmnMeta, "camunda_extensions_by_element_id");
+  if (sourceKey.endsWith("_xml_sync") && incomingHasCamundaExtensionsMap) {
+    next = {
+      ...next,
+      bpmn_meta: {
+        ...nextBpmnMeta,
+        camunda_extensions_by_element_id: normalizeCamundaExtensionsMap(incomingBpmnMeta.camunda_extensions_by_element_id),
+      },
+    };
+  }
   const incomingHasPresentationMap = incomingHasBpmnMeta && hasOwn(incomingBpmnMeta, "presentation_by_element_id");
   if (!incomingHasPresentationMap) {
     const prevPresentationMap = normalizeCamundaPresentationMap(prevBpmnMeta.presentation_by_element_id);
@@ -1029,14 +1040,14 @@ export default function App() {
         error: String(putRes?.error || "Не удалось синхронизировать BPMN XML после сохранения Properties."),
       };
     }
-    onSessionSync({
-      ...(draft && typeof draft === "object" ? draft : {}),
-      id: sessionId,
-      session_id: sessionId,
-      bpmn_xml: finalizedXml,
-      bpmn_xml_version: Number(putRes?.storedRev || rev || 0),
-      _sync_source: `${String(source || "camunda_extensions_save")}_xml_sync`,
-    });
+    onSessionSync(buildCamundaExtensionsXmlSyncPayload({
+      sessionId,
+      finalizedXml,
+      camundaExtensionsByElementId,
+      storedRev: putRes?.storedRev,
+      fallbackRev: rev,
+      source: `${String(source || "camunda_extensions_save")}_xml_sync`,
+    }));
     return { ok: true, skipped: false };
   }, [draft, onSessionSync]);
 
