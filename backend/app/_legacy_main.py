@@ -423,6 +423,66 @@ def _is_legacy_seed_bpmn(xml_text: str) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# BPMN XML dedup guard — strips duplicate camunda/zeebe :property entries
+# Root cause: on each save cycle the in-browser bpmn-js model serialises
+# extension elements that have accumulated duplicate generic children; the
+# guard removes them server-side so the DB never stores bloated XML.
+# ---------------------------------------------------------------------------
+_BPMN_PROP_RE = re.compile(
+    r'<(camunda|zeebe):property\s[^>]*/?>',
+    re.IGNORECASE,
+)
+_BPMN_PROP_NAME_RE = re.compile(r'\bname=["\']([^"\']*)["\']', re.IGNORECASE)
+_BPMN_PROPS_BLOCK_RE = re.compile(
+    r'<(camunda|zeebe):properties>(.*?)</(camunda|zeebe):properties>',
+    re.IGNORECASE | re.DOTALL,
+)
+_BPMN_DEDUP_THRESHOLD = 5  # only strip when block has more than this many props
+
+
+def _dedup_bpmn_xml_properties(xml: str) -> tuple:
+    """Remove duplicate camunda/zeebe :property entries within each properties block.
+
+    Returns (cleaned_xml, total_removed_count).
+    Only touches blocks that exceed *_BPMN_DEDUP_THRESHOLD* properties to avoid
+    touching healthy XML on every save.
+    """
+    total_removed = 0
+
+    def _clean_block(m: re.Match) -> str:
+        nonlocal total_removed
+        ns = m.group(1)
+        inner = m.group(2)
+        # Fast-path: count raw occurrences before doing expensive work.
+        if inner.count(f":{ns.lower()}:property") + inner.lower().count(":property") < _BPMN_DEDUP_THRESHOLD:
+            return m.group(0)
+        seen: set = set()
+        removed = 0
+
+        def _replace_prop(pm: re.Match) -> str:
+            nonlocal removed
+            tag = pm.group(0)
+            nm = _BPMN_PROP_NAME_RE.search(tag)
+            if not nm:
+                return tag
+            key = nm.group(1).strip().lower()
+            if not key:
+                return tag
+            if key in seen:
+                removed += 1
+                return ""
+            seen.add(key)
+            return tag
+
+        cleaned_inner = _BPMN_PROP_RE.sub(_replace_prop, inner)
+        total_removed += removed
+        return f"<{ns}:properties>{cleaned_inner}</{ns}:properties>"
+
+    cleaned = _BPMN_PROPS_BLOCK_RE.sub(_clean_block, xml)
+    return cleaned, total_removed
+
+
 def _overlay_interview_annotations_on_bpmn_xml(sess: Session, xml_text: str) -> str:
     raw = str(xml_text or "").strip()
     if not raw:
@@ -5276,6 +5336,9 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn) -> Dict[str, Any]:
     xml = str(inp.xml or "")
     if not xml.strip():
         return {"error": "xml is empty"}
+
+    # Strip duplicate camunda/zeebe extension properties before persisting.
+    xml, _dedup_removed = _dedup_bpmn_xml_properties(xml)
 
     try:
         flow_ctx = _collect_sequence_flow_meta(xml)
