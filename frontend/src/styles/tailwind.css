@@ -1801,8 +1801,8 @@
   }
 
   .sidebarRedesignStack {
-    @apply grid px-3 py-3;
-    gap: 10px;
+    @apply grid px-2.5 py-2;
+    gap: 8px;
   }
 
   .sidebarCardSurface {
@@ -1819,9 +1819,9 @@
 
   .selectedElementCard {
     @apply min-w-0 px-3 py-2;
-    border-radius: 16px;
-    border: 1px solid #E7ECF4;
-    background: #F7F9FC;
+    border-radius: 10px;
+    border: 1px solid #EBF0F7;
+    background: #F8FAFD;
   }
 
   .selectedElementTitleWrap {
@@ -1863,10 +1863,10 @@
   }
 
   .sidebarSettingsSurface {
-    @apply min-w-0 p-1.5;
-    border-radius: 18px;
-    border: 1px solid #D9E1EE;
-    background: #FFFFFF;
+    @apply min-w-0 px-0 py-0;
+    border-radius: 0;
+    border: 0;
+    background: transparent;
     box-shadow: none;
   }
 
@@ -1876,16 +1876,17 @@
   }
 
   .sidebarAccordionStack {
-    @apply mt-1.5 grid overflow-visible;
-    gap: 8px;
-    border-radius: 14px;
+    @apply grid overflow-visible;
+    margin-top: 0;
+    gap: 4px;
+    border-radius: 0;
     border: 0;
     background: transparent;
   }
 
   .sidebarAccordion {
     @apply overflow-hidden bg-transparent;
-    border-radius: 12px;
+    border-radius: 8px;
     border: 1px solid transparent;
     box-shadow: none;
   }
@@ -1895,17 +1896,17 @@
   }
 
   .sidebarAccordion.isOpen {
-    border-color: #C8D2FF;
-    background: #EEF2FF;
+    border-color: #DDE6F5;
+    background: #F5F8FD;
   }
 
   .sidebarAccordionHead {
     @apply flex w-full min-w-0 items-center justify-between gap-2 px-3 text-left transition-colors;
-    min-height: 44px;
+    min-height: 38px;
   }
 
   .sidebarAccordionHead:hover {
-    background: #F7F9FC;
+    background: #F2F5FA;
   }
 
   .sidebarAccordionTitleRow {
@@ -1913,34 +1914,34 @@
   }
 
   .sidebarAccordionTitle {
-    font-size: 15px;
+    font-size: 13px;
     font-weight: 600;
-    color: #1F2A44;
+    color: #2A3550;
   }
 
   .sidebarAccordionSubtitle {
     @apply mt-0.5 text-[11px];
-    color: #7E8AA3;
+    color: #8A96AE;
     overflow-wrap: anywhere;
   }
 
   .sidebarAccordionBadge {
-    @apply inline-flex h-5 items-center rounded-[10px] px-1.5 text-[10px] font-semibold;
-    border: 1px solid #DDE4EF;
-    background: #F1F4F8;
-    color: #66748D;
+    @apply inline-flex h-4 items-center rounded-[8px] px-1.5 text-[10px] font-semibold;
+    border: 1px solid #E2E9F4;
+    background: #F3F6FB;
+    color: #7080A0;
   }
 
   .sidebarAccordionToggle {
-    font-size: 14px;
-    color: #7E8AA3;
+    font-size: 12px;
+    color: #9AA4BE;
   }
 
   .sidebarAccordionBody {
-    @apply px-3 py-2.5;
-    border-top: 1px solid #E7ECF4;
-    background: #FCFDFE;
-    border-radius: 0 0 12px 12px;
+    @apply px-3 py-2;
+    border-top: 1px solid #E8EEF7;
+    background: #FAFCFF;
+    border-radius: 0 0 8px 8px;
   }
 
   .sidebarAccordionContent {
@@ -1948,11 +1949,11 @@
   }
 
   .sidebarControlStack {
-    @apply grid gap-2;
+    @apply grid gap-1.5;
   }
 
   .sidebarPropertiesLayout {
-    @apply gap-1.5;
+    @apply gap-1;
   }
 
   .sidebarPropertiesForm {
@@ -1962,59 +1963,55 @@
     background: transparent;
   }
 
-  .sidebarPropertiesHeader {
-    @apply flex items-center justify-between gap-2;
-    padding-bottom: 4px;
-  }
-
-  .sidebarPropertiesTitleRow {
-    @apply flex items-center gap-1.5 min-w-0;
-  }
-
-  .sidebarPropertiesTitle {
-    font-size: 14px;
-    font-weight: 600;
-    color: #1F2A44;
-  }
-
-  .sidebarPropertiesCount {
-    @apply inline-flex h-4 min-w-4 items-center justify-center rounded-[9px] px-1.5 text-[10px] font-semibold;
-    border: 1px solid #DDE4EF;
-    background: #F1F4F8;
-    color: #66748D;
-  }
-
   .sidebarPropertiesInlineToggle {
-    @apply flex items-center gap-2 text-[13px];
-    padding: 4px 0 6px;
+    @apply flex items-center gap-2 text-[12px];
+    padding: 3px 0 5px;
     border-bottom: 1px solid #E7ECF4;
     color: #1F2A44;
   }
 
   .sidebarPropertiesDivider {
     @apply h-px w-full;
-    margin: 10px 0;
-    background: #E7ECF4;
+    margin: 5px 0;
+    background: #E2E9F4;
+  }
+
+  .sidebarPropertiesDisplaySettings {
+    padding: 4px 2px 6px;
+    border-bottom: 1px solid #E7ECF4;
+    margin-bottom: 4px;
   }
 
   .sidebarPropertiesBlock {
     @apply grid;
-    gap: 6px;
-    padding: 0;
+    gap: 5px;
+    padding: 5px 7px 6px;
+    margin-top: 3px;
+    border: 1px solid #E8EEF8;
+    border-radius: 7px;
+    background: transparent;
+    box-shadow: none;
+    transition: border-color 140ms ease;
   }
 
   .sidebarPropertiesBlock--secondary {
-    opacity: 0.94;
+    background: transparent;
+    border-color: #EDF1F9;
   }
 
   .sidebarPropertiesBlockHead {
     @apply flex items-center justify-between gap-2 min-w-0;
+    padding: 1px 0 2px;
+    border-bottom: 1px solid #EBF0F7;
+    transition: border-color 140ms ease;
   }
 
   .sidebarPropertiesBlockToggle {
-    @apply inline-flex items-center gap-1.5 min-w-0;
-    border: 0;
-    padding: 0;
+    @apply inline-flex items-center gap-1.5 min-w-0 transition-colors;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 1px 6px 1px 4px;
+    min-height: 20px;
     background: transparent;
     cursor: pointer;
     color: inherit;
@@ -2024,19 +2021,30 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 10px;
-    font-size: 11px;
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    border: 1px solid #D7E1EF;
+    background: #F7FAFE;
+    font-size: 10px;
     font-weight: 700;
     line-height: 1;
     color: #73829A;
   }
 
   .sidebarPropertiesBlockTitle {
-    font-size: 12px;
-    font-weight: 800;
+    font-size: 11.5px;
+    font-weight: 700;
     color: #2A3A59;
     letter-spacing: 0.01em;
     text-transform: none;
+  }
+
+  .sidebarPropertiesBlockMeta {
+    @apply inline-flex h-4 min-w-4 items-center justify-center rounded-[7px] px-1.5 text-[10px] font-semibold leading-none;
+    border: 1px solid #DDE4EF;
+    background: #F6F9FD;
+    color: #66748D;
   }
 
   .sidebarPropertiesBlockToggle:hover .sidebarPropertiesBlockTitle,
@@ -2044,8 +2052,48 @@
     color: #1F2A44;
   }
 
+  .sidebarPropertiesBlockToggle:hover {
+    border-color: #D7E1EF;
+    background: #F7FAFE;
+  }
+
+  .sidebarPropertiesBlockToggle[aria-expanded="true"] {
+    border-color: #C8D7EE;
+    background: #F2F6FC;
+  }
+
+  .sidebarPropertiesBlockToggle[aria-expanded="true"] .sidebarPropertiesBlockToggleChevron {
+    border-color: #C1D0E8;
+    background: #ECF2FB;
+    color: #546684;
+  }
+
+  .sidebarPropertiesBlock:has(.sidebarPropertiesBlockToggle[aria-expanded="true"]) {
+    border-color: #C4D4EB;
+    background: linear-gradient(180deg, #FFFFFF 0%, #F7FAFF 100%);
+    box-shadow:
+      0 0 0 1px rgba(140, 171, 220, 0.28) inset,
+      0 4px 12px rgba(31, 42, 68, 0.06);
+  }
+
+  .sidebarPropertiesBlock:has(.sidebarPropertiesBlockToggle[aria-expanded="true"]) .sidebarPropertiesBlockHead {
+    border-bottom-color: #DCE7F6;
+  }
+
+  .sidebarPropertiesBlock:has(.sidebarPropertiesBlockToggle[aria-expanded="true"]) .sidebarPropertiesBlockTitle {
+    color: #223657;
+  }
+
+  .sidebarPropertiesBlock:has(.sidebarPropertiesBlockToggle[aria-expanded="true"]) .sidebarPropertiesBlockMeta {
+    border-color: #C9D9F2;
+    background: #EEF4FF;
+    color: #4E6383;
+  }
+
   .sidebarPropertiesBlockToggle:focus-visible {
     outline: none;
+    border-color: #C8D2FF;
+    box-shadow: 0 0 0 3px rgba(79, 107, 255, 0.18);
   }
 
   .sidebarOperationSummary {
@@ -2072,20 +2120,21 @@
 
   .sidebarPropertiesRows {
     @apply grid;
-    gap: 6px;
+    gap: 3px;
   }
 
   .sidebarPropertiesRows--table {
     gap: 0;
+    border-top: 1px solid #EEF3F9;
   }
 
   .sidebarPropertiesTableHead {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.75fr) 84px;
     gap: 6px;
     align-items: center;
-    min-height: 24px;
-    padding: 0 0 4px;
+    min-height: 22px;
+    padding: 0 0 3px;
     border-bottom: 1px solid #E7ECF4;
     font-size: 11px;
     font-weight: 600;
@@ -2152,9 +2201,37 @@
   }
 
   .sidebarPropertiesFooter {
-    @apply pt-1.5;
-    margin-top: 10px;
+    @apply pt-1;
+    margin-top: 6px;
     border-top: 1px solid #E7ECF4;
+  }
+
+  .sidebarPropertiesFooter--sticky {
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    padding: 8px 0 6px;
+    margin-top: 2px;
+    border-top: 1px solid #DDE6F3;
+    background: linear-gradient(180deg, rgba(248, 251, 255, 0.9) 0%, #F8FBFF 38%, #F8FBFF 100%);
+    backdrop-filter: blur(2px);
+  }
+
+  .sidebarPropertiesInlineStatusRow {
+    @apply flex items-center justify-between gap-2;
+    margin: -1px 0 0;
+    padding: 4px 7px;
+    border: 1px solid #E2EAF5;
+    border-radius: 8px;
+    background: #F8FBFF;
+  }
+
+  .sidebarPropertiesStatusLabel {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #7E8AA3;
   }
 
   .sidebarFieldHint {
@@ -2164,11 +2241,11 @@
 
   .sidebarSchemaPropertyRow {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.75fr) 84px;
     gap: 6px;
     align-items: center;
     border-bottom: 1px solid #E7ECF4;
-    padding: 6px 0;
+    padding: 5px 0;
     border-color: #E7ECF4;
   }
 
@@ -2181,11 +2258,22 @@
     @apply min-w-0;
   }
 
+  .sidebarSchemaPropertyPrimaryLine {
+    @apply min-w-0 flex items-center gap-1.5;
+  }
+
   .sidebarSchemaPropertyHuman {
     font-size: 13px;
     font-weight: 600;
     color: #1F2A44;
     line-height: 1.2;
+  }
+
+  .sidebarSchemaPropertyMeta {
+    @apply min-w-0 truncate;
+    font-size: 10.5px;
+    color: #8897B1;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   }
 
   .sidebarSchemaPropertyKey {
@@ -2199,8 +2287,33 @@
     @apply min-w-0;
   }
 
+  .sidebarSchemaPropertyValueText {
+    @apply min-w-0;
+    font-size: 12px;
+    color: #4E5B72;
+    line-height: 1.32;
+    overflow-wrap: anywhere;
+  }
+
   .sidebarSchemaPropertyActionCell {
     @apply flex items-center justify-end;
+    min-width: 84px;
+  }
+
+  .sidebarSchemaPropertyRow--context {
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+
+  .sidebarContextRows .sidebarSchemaPropertyActionCell {
+    align-items: flex-start;
+    padding-top: 1px;
+  }
+
+  .sidebarStatusHint {
+    font-size: 10.5px;
+    color: #7E8AA3;
+    line-height: 1.2;
   }
 
   .sidebarSchemaPropertyHint {
@@ -2210,7 +2323,7 @@
 
   .sidebarBpmnPropertyItem {
     border-bottom: 1px solid #E7ECF4;
-    padding: 4px 0;
+    padding: 2px 0;
   }
 
   .sidebarBpmnPropertyItem:last-child {
@@ -2219,10 +2332,10 @@
 
   .sidebarBpmnPropertySummary {
     display: grid;
-    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.5fr) auto;
-    gap: 6px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.85fr) 70px 22px;
+    gap: 5px;
     align-items: center;
-    min-height: 34px;
+    min-height: 24px;
     cursor: pointer;
     list-style: none;
   }
@@ -2240,7 +2353,7 @@
 
   .sidebarBpmnPropertyPreviewValue {
     @apply min-w-0 truncate;
-    font-size: 13px;
+    font-size: 12.5px;
     color: #5B667A;
   }
 
@@ -2248,10 +2361,59 @@
     @apply flex items-center gap-1;
   }
 
+  .sidebarBpmnPropertyEditBtn {
+    min-width: 74px;
+    justify-content: center;
+    padding: 0 6px;
+  }
+
+  .sidebarPropertiesIconBtn {
+    @apply inline-flex items-center justify-center rounded-md transition-colors;
+    width: 22px;
+    min-width: 22px;
+    height: 22px;
+    min-height: 22px;
+    padding: 0;
+    border: 1px solid #D9E1EE;
+    background: #FFFFFF;
+    color: #7E8AA3;
+    font-size: 13px;
+    line-height: 1;
+    font-weight: 700;
+  }
+
+  .sidebarPropertiesIconBtn:hover {
+    border-color: #C8D2FF;
+    background: #F7F9FC;
+    color: #4F5D75;
+  }
+
+  .sidebarPropertiesIconBtn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(79, 107, 255, 0.18);
+  }
+
+  .sidebarPropertiesIconBtn:disabled {
+    opacity: 0.56;
+    cursor: not-allowed;
+  }
+
+  .sidebarPropertiesIconBtn--danger {
+    border-color: #E9CDD3;
+    color: #9D4157;
+    background: #FDF5F7;
+  }
+
+  .sidebarPropertiesIconBtn--danger:hover {
+    border-color: #E2B8C2;
+    background: #FAECEF;
+    color: #853246;
+  }
+
   .sidebarBpmnPropertyEditor {
     display: grid;
     gap: 6px;
-    padding: 6px 0 2px;
+    padding: 5px 0 1px;
     border-top: 1px dashed #E7ECF4;
   }
 
@@ -2267,12 +2429,16 @@
 
   .sidebarCamundaIoLayout {
     display: grid;
-    gap: 8px;
+    gap: 6px;
   }
 
   .sidebarCamundaIoSection {
     display: grid;
-    gap: 5px;
+    gap: 4px;
+    border: 1px solid #E6EDF7;
+    border-radius: 9px;
+    padding: 5px 6px;
+    background: #FCFDFF;
   }
 
   .sidebarCamundaIoSectionHead {
@@ -2287,16 +2453,16 @@
   }
 
   .sidebarCamundaIoAddBtn {
-    min-height: 28px;
-    height: 28px;
+    min-height: 30px;
+    height: 30px;
     padding: 0 8px;
-    border-radius: 8px;
+    border-radius: 9px;
     font-size: 11px;
     font-weight: 700;
   }
 
   .sidebarCamundaIoTableWrap {
-    --camunda-io-columns: minmax(132px, 1.08fr) 64px minmax(184px, 1.92fr) 34px;
+    --camunda-io-columns: minmax(124px, 1.08fr) 58px minmax(172px, 1.92fr) 30px;
     border: 1px solid #E7ECF4;
     border-radius: 10px;
     background: #FFFFFF;
@@ -2309,9 +2475,9 @@
     grid-template-columns: var(--camunda-io-columns);
     gap: 8px;
     align-items: center;
-    min-width: 500px;
-    min-height: 26px;
-    padding: 5px 8px 4px;
+    min-width: 452px;
+    min-height: 24px;
+    padding: 4px 7px 3px;
     border-bottom: 1px solid #E7ECF4;
     font-size: 10px;
     font-weight: 700;
@@ -2327,7 +2493,7 @@
   .sidebarCamundaIoTableBody {
     display: grid;
     gap: 0;
-    min-width: 500px;
+    min-width: 452px;
   }
 
   .sidebarCamundaIoRow {
@@ -2335,8 +2501,8 @@
     grid-template-columns: var(--camunda-io-columns);
     gap: 8px;
     align-items: center;
-    min-height: 32px;
-    padding: 3px 8px;
+    min-height: 30px;
+    padding: 2px 7px;
     border-bottom: 1px solid #E7ECF4;
   }
 
@@ -2370,8 +2536,8 @@
   .sidebarCamundaIoInput {
     width: 100%;
     min-width: 0;
-    min-height: 28px;
-    height: 28px;
+    min-height: 26px;
+    height: 26px;
     border: 1px solid #D9E1EE;
     border-radius: 8px;
     background: #FFFFFF;
@@ -2424,7 +2590,7 @@
   }
 
   .sidebarCamundaIoReadonlyValue {
-    min-height: 28px;
+    min-height: 26px;
     border: 1px solid #E3E9F3;
     border-radius: 8px;
     background: #F8FAFE;
@@ -2437,11 +2603,11 @@
   }
 
   .sidebarCamundaIoDeleteBtn {
-    min-height: 28px;
-    height: 28px;
-    width: 28px;
-    min-width: 28px;
-    border-radius: 8px;
+    min-height: 24px;
+    height: 24px;
+    width: 24px;
+    min-width: 24px;
+    border-radius: 7px;
     padding: 0;
     font-size: 16px;
     line-height: 1;
@@ -2456,8 +2622,8 @@
 
   .sidebarCamundaIoScriptSummary {
     @apply flex min-w-0 cursor-pointer list-none items-center gap-2;
-    min-height: 28px;
-    padding: 3px 8px;
+    min-height: 26px;
+    padding: 2px 7px;
   }
 
   .sidebarCamundaIoScriptSummary::-webkit-details-marker {
@@ -2499,8 +2665,8 @@
 
   .sidebarCamundaIoEmptyRow {
     @apply text-[11px];
-    min-height: 30px;
-    padding: 6px 8px;
+    min-height: 28px;
+    padding: 5px 7px;
     color: #7E8AA3;
   }
 
@@ -2514,7 +2680,7 @@
 
   .sidebarPropertiesForm .sidebarControlRow {
     align-items: center;
-    gap: 8px;
+    gap: 5px;
   }
 
   .sidebarPropertiesInputRow {
@@ -2522,22 +2688,26 @@
   }
 
   .sidebarPropertiesActionBtn {
-    min-height: 34px;
-    height: 34px;
-    font-size: 13px;
+    min-height: 26px;
+    height: 26px;
+    font-size: 11px;
+    padding-top: 0;
+    padding-bottom: 0;
   }
 
   .sidebarPropertiesPrimaryAction {
-    min-height: 36px;
-    height: 36px;
-    font-size: 13px;
+    min-height: 34px;
+    height: 34px;
+    font-size: 12px;
   }
 
   .sidebarPropertiesActionBtn--tiny {
-    min-height: 31px;
-    height: 31px;
-    font-size: 12px;
-    border-radius: 10px;
+    min-height: 24px;
+    height: 24px;
+    font-size: 11px;
+    border-radius: 7px;
+    padding-top: 0;
+    padding-bottom: 0;
   }
 
   .sidebarControlRowWrap {
@@ -2623,7 +2793,7 @@
   }
 
   .sidebarStatusPill {
-    @apply inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-semibold;
+    @apply inline-flex items-center justify-center rounded-[7px] px-2 py-0.5 text-[10px] font-semibold;
     border: 1px solid #DDE4EF;
     background: #F7F9FC;
     color: #66748D;
@@ -2734,6 +2904,8 @@
   .sidebarCustomPropertyRow,
   .sidebarListenerRow {
     align-items: center;
+    min-height: 30px;
+    padding: 1px 0;
   }
 
   .leftSidebarShell .sidebarIconBtn {
@@ -2843,30 +3015,55 @@
   }
 
   .sidebarPropertiesForm .primaryBtn {
-    height: 36px;
-    min-height: 36px;
-    font-size: 13px;
-    border-radius: 10px;
+    height: 34px;
+    min-height: 34px;
+    font-size: 12px;
+    border-radius: 9px;
   }
 
   .sidebarPropertiesForm .secondaryBtn {
-    height: 34px;
-    min-height: 34px;
-    font-size: 13px;
-    border-radius: 10px;
+    height: 30px;
+    min-height: 30px;
+    font-size: 11px;
+    border-radius: 9px;
+  }
+
+  .sidebarPropertiesForm .sidebarPropertiesActionBtn {
+    height: 26px;
+    min-height: 26px;
+    font-size: 11px;
+    border-radius: 7px;
+  }
+
+  .sidebarPropertiesForm .sidebarPropertiesActionBtn--tiny {
+    height: 24px;
+    min-height: 24px;
+    border-radius: 7px;
+    font-size: 11px;
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  .sidebarPropertiesForm .sidebarPropertiesIconBtn {
+    width: 20px;
+    min-width: 20px;
+    height: 20px;
+    min-height: 20px;
+    border-radius: 6px;
+    padding: 0;
   }
 
   .sidebarPropertiesForm .input,
   .sidebarPropertiesForm .select,
   .sidebarPropertiesForm textarea {
-    min-height: 35px;
-    height: 35px;
+    min-height: 32px;
+    height: 32px;
     padding-top: 4px;
     padding-bottom: 4px;
-    padding-left: 9px;
-    padding-right: 9px;
-    font-size: 13px;
-    border-radius: 10px;
+    padding-left: 8px;
+    padding-right: 8px;
+    font-size: 12px;
+    border-radius: 9px;
   }
 
   .sidebarPropertiesForm .input::placeholder,
@@ -2963,6 +3160,13 @@
   .dark .sidebarPropertiesInlineToggle,
   .dark .sidebarPropertiesFooter,
   .dark .sidebarPropertiesDivider,
+  .dark .sidebarPropertiesBlockHead,
+  .dark .sidebarPropertiesRows--table,
+  .dark .sidebarPropertiesInlineStatusRow,
+  .dark .sidebarPropertiesGroupHead,
+  .dark .sidebarPropertiesBlock,
+  .dark .sidebarPropertiesBlock--secondary,
+  .dark .sidebarCamundaIoSection,
   .dark .sidebarSchemaPropertyRow,
   .dark .sidebarBpmnPropertyItem,
   .dark .sidebarBpmnPropertyEditor,
@@ -2985,7 +3189,6 @@
 
   .dark .sidebarAccordionTitle,
   .dark .selectedElementTitle,
-  .dark .sidebarPropertiesTitle,
   .dark .sidebarPropertiesBlockTitle,
   .dark .sidebarSchemaPropertyHuman,
   .dark .sidebarBpmnPropertyPreviewKey,
@@ -3005,12 +3208,32 @@
     color: #9BAFCC;
   }
 
-  .dark .sidebarPropertiesCount,
+  .dark .sidebarPropertiesBlockMeta,
   .dark .leftSidebarShell .sidebarBadge,
   .dark .sidebarAccordionBadge {
     border-color: #3A4F73;
     background: #202E45;
     color: #AFC0DC;
+  }
+
+  .dark .sidebarPropertiesStatusLabel {
+    color: #8FA2C5;
+  }
+
+  .dark .sidebarPropertiesBlock {
+    border-color: #2A3D5C;
+  }
+
+  .dark .sidebarPropertiesBlock--secondary {
+    border-color: #243450;
+  }
+
+  .dark .sidebarPropertiesInlineStatusRow {
+    background: #1A273C;
+  }
+
+  .dark .sidebarCamundaIoSection {
+    background: #172438;
   }
 
   .dark .sidebarPropertiesTableHead,
@@ -3030,6 +3253,14 @@
   }
 
   .dark .sidebarPropertiesBlockToggleChevron {
+    color: #AFC0DC;
+    border-color: #3A4F73;
+    background: #22314B;
+  }
+
+  .dark .sidebarSectionToggleState {
+    border-color: #3A4F73;
+    background: #22314B;
     color: #AFC0DC;
   }
 
@@ -3093,6 +3324,54 @@
   .dark .sidebarPropertiesBlockToggle:hover .sidebarPropertiesBlockTitle,
   .dark .sidebarPropertiesBlockToggle:focus-visible .sidebarPropertiesBlockTitle {
     color: #F2F6FF;
+  }
+
+  .dark .sidebarPropertiesBlockToggle:hover {
+    border-color: #3A4F73;
+    background: #1F2C45;
+  }
+
+  .dark .sidebarPropertiesBlockToggle[aria-expanded="true"] {
+    border-color: #4A6297;
+    background: #23304A;
+  }
+
+  .dark .sidebarPropertiesBlockToggle[aria-expanded="true"] .sidebarPropertiesBlockToggleChevron {
+    border-color: #4A6297;
+    background: #2A3A5D;
+    color: #D7E3F9;
+  }
+
+  .dark .sidebarPropertiesBlock:has(.sidebarPropertiesBlockToggle[aria-expanded="true"]) {
+    border-color: #4A6297;
+    background: linear-gradient(180deg, #1A2740 0%, #162338 100%);
+    box-shadow:
+      0 0 0 1px rgba(91, 124, 186, 0.34) inset,
+      0 6px 14px rgba(0, 0, 0, 0.3);
+  }
+
+  .dark .sidebarPropertiesBlock:has(.sidebarPropertiesBlockToggle[aria-expanded="true"]) .sidebarPropertiesBlockHead {
+    border-bottom-color: #3C527A;
+  }
+
+  .dark .sidebarPropertiesBlock:has(.sidebarPropertiesBlockToggle[aria-expanded="true"]) .sidebarPropertiesBlockMeta {
+    border-color: #4A6297;
+    background: #243555;
+    color: #D7E3F9;
+  }
+
+  .dark .sidebarPropertiesFooter--sticky {
+    border-top-color: #334765;
+    background: linear-gradient(180deg, rgba(18, 28, 44, 0.88) 0%, #121D2C 40%, #121D2C 100%);
+  }
+
+  .dark .sidebarSchemaPropertyMeta,
+  .dark .sidebarStatusHint {
+    color: #8FA2C5;
+  }
+
+  .dark .sidebarSchemaPropertyValueText {
+    color: #B5C4DF;
   }
 
   .dark .sidebarInfoTipBubble {
@@ -3595,7 +3874,7 @@
   }
 
   .sidebarSectionsStack {
-    @apply grid gap-3.5 px-2.5 py-2.5;
+    @apply grid gap-3 px-2.5 py-2.5;
   }
 
   .sidebarSectionPanel {
@@ -3660,6 +3939,17 @@
     color: hsl(36 92% 72%);
   }
 
+  .sidebarSectionToggleState {
+    @apply inline-flex h-4 min-w-4 items-center justify-center rounded border border-border/70 text-[10px] font-semibold text-muted transition-colors;
+    background: hsl(var(--panel2) / 0.58);
+  }
+
+  .sidebarSectionHead:hover .sidebarSectionToggleState {
+    color: hsl(var(--text));
+    border-color: hsl(var(--sidebar-accent, var(--accent2)) / 0.58);
+    background: hsl(var(--sidebar-accent, var(--accent2)) / 0.2);
+  }
+
   .sidebarSummaryDot {
     @apply inline-block h-1.5 w-1.5 rounded-full;
     background: hsl(var(--sidebar-accent, var(--accent2)) / 0.95);
@@ -3687,8 +3977,8 @@
   }
 
   .sidebarSectionBody {
-    border-top: 1px solid hsl(var(--sidebar-accent, var(--accent2)) / 0.42);
-    background-image: linear-gradient(180deg, hsl(var(--sidebar-accent, var(--accent2)) / 0.12), transparent 46%);
+    border-top: 1px solid hsl(var(--sidebar-accent, var(--accent2)) / 0.34);
+    background-image: linear-gradient(180deg, hsl(var(--sidebar-accent, var(--accent2)) / 0.1), transparent 46%);
   }
 
   .sidebarDragHandle {
