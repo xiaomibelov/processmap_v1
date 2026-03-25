@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import BpmnStage from "./process/BpmnStage";
 import DocStage from "./process/DocStage";
 import DodStage from "./process/DodStage";
 import InterviewStage from "./process/InterviewStage";
@@ -69,7 +68,6 @@ import {
   matrixToDiagram,
   matrixToScreen,
 } from "../features/process/stage/utils/hybridCoords";
-import HybridOverlayRenderer from "../features/process/hybrid/renderers/HybridOverlayRenderer";
 import useSessionMetaPersist from "../features/process/stage/controllers/useSessionMetaPersist";
 import { attachProcessStageFlushBeforeLeaveListener } from "../features/process/navigation/processLeaveFlush";
 import { flushProcessStageBeforeLeave } from "../features/process/navigation/processLeaveFlushController";
@@ -85,7 +83,9 @@ import useHybridLayerViewportController from "../features/process/stage/hooks/us
 import usePlaybackController from "../features/process/stage/controllers/usePlaybackController";
 import useDiagramShellState from "../features/process/stage/orchestration/useDiagramShellState";
 import useDiagramActionsController from "../features/process/stage/orchestration/useDiagramActionsController";
-import useDiagramRuntimeBridges from "../features/process/stage/orchestration/useDiagramRuntimeBridges";
+import buildProcessDiagramOverlayLayersProps from "../features/process/stage/orchestration/buildProcessDiagramOverlayLayersProps";
+import useProcessStageDrawio from "../features/process/stage/orchestration/useProcessStageDrawio";
+import useProcessStageHybrid from "../features/process/stage/orchestration/useProcessStageHybrid";
 import useProcessStageLocalState from "../features/process/stage/orchestration/state/useProcessStageLocalState";
 import {
   buildTopPanelsView,
@@ -99,13 +99,9 @@ import ProcessPanels from "../features/process/stage/ui/ProcessPanels";
 import ProcessDialogs from "../features/process/stage/ui/ProcessDialogs";
 import ProcessStageHeader from "../features/process/stage/ui/ProcessStageHeader";
 import ProcessStageDiagramControls from "../features/process/stage/ui/ProcessStageDiagramControls";
+import ProcessDiagramOverlayLayers from "../features/process/stage/ui/ProcessDiagramOverlayLayers";
 import useHybridStore from "../features/process/hybrid/controllers/useHybridStore";
 import useHybridPersistController from "../features/process/hybrid/controllers/useHybridPersistController";
-import useHybridPipelineController from "../features/process/hybrid/controllers/useHybridPipelineController";
-import HybridContextMenu from "../features/process/hybrid/tools/HybridContextMenu";
-import HybridPersistToast from "../features/process/hybrid/ui/HybridPersistToast";
-import DrawioEditorModal from "../features/process/drawio/DrawioEditorModal";
-import DrawioOverlayRenderer from "../features/process/drawio/DrawioOverlayRenderer";
 import {
   isDrawioXml,
   mergeDrawioMeta,
@@ -115,7 +111,6 @@ import {
 import {
   buildDrawioAnchorImportDiagnostics,
   collectBpmnNodeIdsFromDraft,
-  readDrawioAnchorValidationState,
 } from "../features/process/drawio/drawioAnchors";
 import {
   buildSessionCompanionAfterSave,
@@ -135,7 +130,6 @@ import {
 } from "../features/process/session-companion/sessionCompanionLocalFirstPilot.js";
 import useTemplatesStore from "../features/templates/model/useTemplatesStore";
 import useTemplatesStageBridge from "../features/templates/services/useTemplatesStageBridge";
-import BpmnFragmentPlacementGhost from "../features/templates/ui/BpmnFragmentPlacementGhost";
 import {
   normalizeAttentionMarkers,
   createAttentionMarker,
@@ -1943,7 +1937,7 @@ export default function ProcessStage({
     handleHybridV2ElementDoubleClick,
     deleteLegacyHybridMarkers,
     hybridV2PlaybackHighlightedIds,
-  } = useHybridPipelineController({
+  } = useProcessStageHybrid({
     sid,
     tab,
     draft,
@@ -3848,11 +3842,6 @@ export default function ProcessStage({
     }
   }
 
-  const drawioAnchorValidationState = useMemo(() => readDrawioAnchorValidationState({
-    nodes: draft?.nodes,
-    bpmn_xml: draft?.bpmn_xml,
-  }), [draft?.bpmn_xml, draft?.nodes]);
-
   const {
     drawioEditorBridge,
     overlayPanelModel,
@@ -3874,7 +3863,13 @@ export default function ProcessStage({
     setDrawioElementStylePreset,
     setDrawioElementSize,
     setDrawioElementAnchor,
-  } = useDiagramRuntimeBridges({
+    openEmbeddedDrawioEditor,
+    closeEmbeddedDrawioEditor,
+    handleDrawioEditorSave,
+    exportEmbeddedDrawio,
+    handleDrawioImportFile,
+  } = useProcessStageDrawio({
+    draft,
     overlay: {
       sid,
       drawioMetaRef,
@@ -3920,8 +3915,6 @@ export default function ProcessStage({
       aiBottleneckOn,
       activeHints,
       sid,
-      draft,
-      drawioAnchorValidationState,
       tab,
       diagramHints,
       isBpmnTab,
@@ -3992,21 +3985,8 @@ export default function ProcessStage({
       serializeHybridLayerMap,
       docToComparableJson,
     },
+    setDrawioSelectedElementId,
   });
-
-  // Clear draw.io selection when switching from edit to view
-  useEffect(() => {
-    if (drawioModeEffective !== "view") return;
-    setDrawioSelectedElementId("");
-  }, [drawioModeEffective, setDrawioSelectedElementId]);
-
-  const {
-    openEmbeddedDrawioEditor,
-    closeEmbeddedDrawioEditor,
-    handleDrawioEditorSave,
-    exportEmbeddedDrawio,
-    handleDrawioImportFile,
-  } = drawioEditorBridge;
 
   const {
     openImportDialog,
@@ -4030,6 +4010,84 @@ export default function ProcessStage({
     setQualityOverlayAll,
     focusQualityOverlayItem,
   } = runtimeActions;
+
+  const diagramOverlayLayersProps = buildProcessDiagramOverlayLayersProps({
+    activeProjectId,
+    asObject,
+    bpmnFragmentPlacementActive,
+    bpmnFragmentPlacementGhost,
+    bpmnRef,
+    cleanupMissingHybridBindings,
+    clientToDiagram,
+    closeEmbeddedDrawioEditor,
+    commitDrawioOverlayMove,
+    createDrawioRuntimeElement,
+    deleteDrawioOverlayElement,
+    deleteSelectedHybridIds,
+    diagramMode,
+    draft,
+    drawioEditorOpen,
+    drawioModeEffective,
+    drawioRuntimeToolState,
+    drawioUiState,
+    drawioVisible,
+    getHybridLayerCardRefCallback,
+    getOverlayViewportMatrix,
+    handleAiQuestionsByElementChange,
+    handleBpmnSelectionChange,
+    handleDrawioEditorSave,
+    handleHybridLayerItemPointerDown,
+    handleHybridV2ElementContextMenu,
+    handleHybridV2ElementDoubleClick,
+    handleHybridV2ElementPointerDown,
+    handleHybridV2OverlayContextMenu,
+    handleHybridV2OverlayPointerDown,
+    handleHybridV2ResizeHandlePointerDown,
+    hybridDebugEnabled,
+    hybridLayerActiveElementId,
+    hybridLayerOverlayRef,
+    hybridLayerRenderRows,
+    hybridModeEffective,
+    hybridOpacityValue,
+    hybridPersist,
+    hybridPlacementHitLayerActive,
+    hybridSelection,
+    hybridTools,
+    hybridUiPrefs,
+    hybridV2ActiveId,
+    hybridV2BindingByHybridId,
+    hybridV2DocLive,
+    hybridV2PlaybackHighlightedIds,
+    hybridV2Renderable,
+    hybridV2SelectedIds,
+    hybridV2SelectedIdSet,
+    hybridVisible,
+    hybridViewportMatrix,
+    hybridViewportMatrixRef,
+    isInterviewMode,
+    onBpmnSaveLifecycleEvent,
+    onElementNotesRemap,
+    onSessionSync,
+    propertiesOverlayAlwaysEnabled,
+    propertiesOverlayAlwaysPreviewByElementId,
+    queueDiagramMutation,
+    reloadKey,
+    robotMetaOverlayEnabled,
+    robotMetaOverlayFilters,
+    robotMetaStatusByElementId,
+    selectedPropertiesOverlayPreview,
+    setDrawioElementSize,
+    setDrawioElementText,
+    setDrawioElementTextWidth,
+    setDrawioSelectedElementId,
+    setHybridLayerActiveElementId,
+    sid,
+    stepTimeUnit,
+    subscribeOverlayViewportMatrix,
+    tab,
+    toText,
+    withHybridOverlayGuard,
+  });
 
   const topPanelsView = buildTopPanelsView({
     toolbarMenuOpen,
@@ -4520,139 +4578,7 @@ export default function ProcessStage({
                     insertBetweenErrorMessage,
                   })}
                 />
-                <BpmnStage
-                  ref={bpmnRef}
-                  sessionId={sid}
-                  activeProjectId={activeProjectId}
-                  view={tab === "xml" ? "xml" : "editor"}
-                  draft={draft}
-                  reloadKey={reloadKey}
-                  onDiagramMutation={queueDiagramMutation}
-                  onElementSelectionChange={handleBpmnSelectionChange}
-                  onElementNotesRemap={onElementNotesRemap}
-                  onAiQuestionsByElementChange={handleAiQuestionsByElementChange}
-                  onSessionSync={onSessionSync}
-                  onSaveLifecycleEvent={onBpmnSaveLifecycleEvent}
-                  aiQuestionsModeEnabled={isInterviewMode}
-                  diagramDisplayMode={diagramMode}
-                  stepTimeUnit={stepTimeUnit}
-                  robotMetaOverlayEnabled={robotMetaOverlayEnabled}
-                  robotMetaOverlayFilters={robotMetaOverlayFilters}
-                  robotMetaStatusByElementId={robotMetaStatusByElementId}
-                  selectedPropertiesOverlayPreview={selectedPropertiesOverlayPreview}
-                  propertiesOverlayAlwaysEnabled={propertiesOverlayAlwaysEnabled}
-                  propertiesOverlayAlwaysPreviewByElementId={propertiesOverlayAlwaysPreviewByElementId}
-                />
-                <BpmnFragmentPlacementGhost
-                  active={bpmnFragmentPlacementActive}
-                  ghost={bpmnFragmentPlacementGhost}
-                />
-                <DrawioOverlayRenderer
-                  visible={tab === "diagram" && drawioVisible}
-                  drawioMeta={drawioUiState}
-                  drawioMode={drawioModeEffective}
-                  drawioActiveTool={drawioRuntimeToolState}
-                  overlayMatrix={hybridViewportMatrix}
-                  overlayMatrixRef={hybridViewportMatrixRef}
-                  subscribeOverlayMatrix={subscribeOverlayViewportMatrix}
-                  getOverlayMatrix={getOverlayViewportMatrix}
-                  screenToDiagram={clientToDiagram}
-                  onCommitMove={commitDrawioOverlayMove}
-                  onCommitResize={setDrawioElementSize}
-                  onCommitTextResize={setDrawioElementTextWidth}
-                  onCommitText={setDrawioElementText}
-                  onCreateElement={createDrawioRuntimeElement}
-                  onDeleteElement={deleteDrawioOverlayElement}
-                  onSelectionChange={setDrawioSelectedElementId}
-                />
-                <HybridOverlayRenderer
-                  visible={tab === "diagram" && hybridVisible}
-                  modeEffective={hybridModeEffective}
-                  uiPrefs={hybridUiPrefs}
-                  opacityValue={hybridOpacityValue}
-                  overlayRef={hybridLayerOverlayRef}
-                  placementHitLayerActive={hybridPlacementHitLayerActive}
-                  onOverlayPointerDown={handleHybridV2OverlayPointerDown}
-                  onOverlayPointerMove={hybridTools.onOverlayPointerMove}
-                  onOverlayPointerLeave={hybridTools.onOverlayPointerLeave}
-                  onOverlayContextMenu={handleHybridV2OverlayContextMenu}
-                  v2Renderable={hybridV2Renderable}
-                  v2ActiveId={hybridV2ActiveId}
-                  v2SelectedIds={hybridV2SelectedIdSet}
-                  v2PlaybackHighlightedIds={hybridV2PlaybackHighlightedIds}
-                  v2BindingByHybridId={hybridV2BindingByHybridId}
-                  onV2ElementPointerDown={handleHybridV2ElementPointerDown}
-                  onV2ElementContextMenu={handleHybridV2ElementContextMenu}
-                  onV2ElementDoubleClick={handleHybridV2ElementDoubleClick}
-                  onV2ResizeHandlePointerDown={handleHybridV2ResizeHandlePointerDown}
-                  v2GhostPreview={hybridTools.ghostPreview}
-                  v2ArrowPreview={hybridTools.arrowPreview}
-                  v2TextEditor={hybridTools.textEditor}
-                  onV2TextEditorChange={hybridTools.updateTextEditorValue}
-                  onV2TextEditorCommit={hybridTools.commitTextEditor}
-                  onV2TextEditorCancel={hybridTools.closeTextEditor}
-                  legacyRows={hybridLayerRenderRows}
-                  legacyActiveElementId={hybridLayerActiveElementId}
-                  debugEnabled={hybridDebugEnabled}
-                  onLegacyHotspotMouseDown={(event, elementId) => {
-                    withHybridOverlayGuard(event, { action: "hotspot_mousedown", elementId });
-                  }}
-                  onLegacyHotspotClick={(event, elementId) => {
-                    withHybridOverlayGuard(event, { action: "hotspot_click", elementId });
-                    setHybridLayerActiveElementId(elementId);
-                    bpmnRef.current?.focusNode?.(elementId, { keepPrevious: false, durationMs: 1200 });
-                  }}
-                  onLegacyCardMouseDown={handleHybridLayerItemPointerDown}
-                  onLegacyCardClick={(event, elementId) => {
-                    withHybridOverlayGuard(event, { action: "card_click", elementId });
-                  }}
-                  onLegacyMissingCleanupMouseDown={(event, elementId) => {
-                    withHybridOverlayGuard(event, { action: "card_missing_cleanup_mousedown", elementId });
-                  }}
-                  onLegacyMissingCleanupClick={(event, elementId) => {
-                    withHybridOverlayGuard(event, { action: "card_missing_cleanup_click", elementId });
-                    cleanupMissingHybridBindings("card_missing_cleanup");
-                  }}
-                  onLegacyCardRef={getHybridLayerCardRefCallback}
-                />
-                <HybridContextMenu
-                  menu={hybridTools.contextMenu}
-                  selectionCount={hybridSelection.selectionCount}
-                  canRename={hybridSelection.selectionCount === 1 && !!hybridV2DocLive.elements.find((row) => toText(asObject(row).id) === hybridV2ActiveId)}
-                  onClose={hybridTools.closeContextMenu}
-                  onDelete={() => {
-                    deleteSelectedHybridIds();
-                    hybridTools.closeContextMenu();
-                  }}
-                  onRename={() => {
-                    hybridTools.renameHybridItem(hybridV2ActiveId);
-                    hybridTools.closeContextMenu();
-                  }}
-                  onHide={() => {
-                    hybridTools.hideHybridIds(hybridV2SelectedIds);
-                    hybridTools.closeContextMenu();
-                  }}
-                  onLock={() => {
-                    hybridTools.lockLayersForHybridIds(hybridV2SelectedIds);
-                    hybridTools.closeContextMenu();
-                  }}
-                />
-                <HybridPersistToast
-                  visible={tab === "diagram" && !!hybridPersist.lockBusyNotice?.open}
-                  message={hybridPersist.lockBusyNotice?.message}
-                  pendingDraft={!!hybridPersist.pendingDraft}
-                  onRetry={() => {
-                    void hybridPersist.retryLast();
-                  }}
-                  onDismiss={hybridPersist.dismissLockBusyNotice}
-                />
-                <DrawioEditorModal
-                  open={drawioEditorOpen}
-                  title="Draw.io Editor"
-                  initialXml={drawioUiState.doc_xml}
-                  onSave={handleDrawioEditorSave}
-                  onClose={closeEmbeddedDrawioEditor}
-                />
+                <ProcessDiagramOverlayLayers {...diagramOverlayLayersProps} />
                 {tab === "diagram" && isCoverageMode ? (
                   <div className="coverageMiniMap" data-testid="coverage-minimap">
                     <div className="coverageMiniMapHead">
