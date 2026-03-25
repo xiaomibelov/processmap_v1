@@ -3,6 +3,9 @@ import {
   extractCamundaInputOutputParametersFromExtensionState,
 } from "./camundaExtensions.js";
 
+const propertyDictionaryEditorModelCache = new WeakMap();
+const propertiesOverlayRowsCache = new WeakMap();
+
 function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
@@ -180,6 +183,21 @@ export function shouldOfferAddDictionaryValueAction({ inputValue, options, allow
 }
 
 export function buildPropertyDictionaryEditorModel({ extensionStateRaw, dictionaryBundleRaw } = {}) {
+  const extensionStateCacheKey = extensionStateRaw && typeof extensionStateRaw === "object" ? extensionStateRaw : null;
+  const dictionaryBundleCacheKey = dictionaryBundleRaw && typeof dictionaryBundleRaw === "object" ? dictionaryBundleRaw : null;
+  if (extensionStateCacheKey) {
+    let nested = propertyDictionaryEditorModelCache.get(extensionStateCacheKey);
+    if (!nested) {
+      nested = { withBundle: new WeakMap(), withoutBundle: undefined };
+      propertyDictionaryEditorModelCache.set(extensionStateCacheKey, nested);
+    }
+    if (dictionaryBundleCacheKey) {
+      const cached = nested.withBundle.get(dictionaryBundleCacheKey);
+      if (cached) return cached;
+    } else if (nested.withoutBundle) {
+      return nested.withoutBundle;
+    }
+  }
   const extensionState = asObject(extensionStateRaw);
   const bundle = normalizeOrgPropertyDictionaryBundle(dictionaryBundleRaw);
   const rawRows = rawExtensionPropertyRows(extensionState);
@@ -193,7 +211,7 @@ export function buildPropertyDictionaryEditorModel({ extensionStateRaw, dictiona
   });
 
   if (!bundle.properties.length) {
-    return {
+    const result = {
       hasSchema: false,
       operationKey: bundle.operationKey,
       operationLabel: bundle.operationLabel,
@@ -202,6 +220,12 @@ export function buildPropertyDictionaryEditorModel({ extensionStateRaw, dictiona
       visibleRows: deduped.rows,
       duplicateLogicalKeys: deduped.duplicateLogicalKeys,
     };
+    if (extensionStateCacheKey) {
+      const cacheEntry = propertyDictionaryEditorModelCache.get(extensionStateCacheKey);
+      if (dictionaryBundleCacheKey) cacheEntry?.withBundle?.set(dictionaryBundleCacheKey, result);
+      else if (cacheEntry) cacheEntry.withoutBundle = result;
+    }
+    return result;
   }
 
   const schemaKeySet = new Set(bundle.properties.map((item) => normalizeLogicalKey(item.propertyKey)));
@@ -234,7 +258,7 @@ export function buildPropertyDictionaryEditorModel({ extensionStateRaw, dictiona
     customRows.push({ ...row, isDraft: false });
   });
 
-  return {
+  const result = {
     hasSchema: true,
     operationKey: bundle.operationKey,
     operationLabel: bundle.operationLabel,
@@ -243,6 +267,96 @@ export function buildPropertyDictionaryEditorModel({ extensionStateRaw, dictiona
     visibleRows: deduped.rows,
     duplicateLogicalKeys: Array.from(duplicateLogicalKeys),
   };
+  if (extensionStateCacheKey) {
+    const cacheEntry = propertyDictionaryEditorModelCache.get(extensionStateCacheKey);
+    if (dictionaryBundleCacheKey) cacheEntry?.withBundle?.set(dictionaryBundleCacheKey, result);
+    else if (cacheEntry) cacheEntry.withoutBundle = result;
+  }
+  return result;
+}
+
+function derivePropertiesOverlayRows({ extensionStateRaw, dictionaryBundleRaw } = {}) {
+  const extensionStateCacheKey = extensionStateRaw && typeof extensionStateRaw === "object" ? extensionStateRaw : null;
+  const dictionaryBundleCacheKey = dictionaryBundleRaw && typeof dictionaryBundleRaw === "object" ? dictionaryBundleRaw : null;
+  if (extensionStateCacheKey) {
+    let nested = propertiesOverlayRowsCache.get(extensionStateCacheKey);
+    if (!nested) {
+      nested = { withBundle: new WeakMap(), withoutBundle: undefined };
+      propertiesOverlayRowsCache.set(extensionStateCacheKey, nested);
+    }
+    if (dictionaryBundleCacheKey) {
+      const cached = nested.withBundle.get(dictionaryBundleCacheKey);
+      if (cached) return cached;
+    } else if (nested.withoutBundle) {
+      return nested.withoutBundle;
+    }
+  }
+
+  const model = buildPropertyDictionaryEditorModel({ extensionStateRaw, dictionaryBundleRaw });
+  const rows = [];
+  const ioRows = extractCamundaInputOutputParametersFromExtensionState(extensionStateRaw);
+  asArray(ioRows.rows).forEach((row) => {
+    const name = String(row?.name ?? "").trim();
+    if (!name) return;
+    const direction = String(row?.direction || "input").toLowerCase() === "output" ? "OUT" : "IN";
+    const shape = String(row?.shape || "text");
+    const rawValue = String(row?.value ?? "");
+    let previewValue = "";
+    if (shape === "script") {
+      const scriptFormat = String(row?.scriptFormat || "script").trim();
+      const scriptText = clampInlineText(rawValue, 72);
+      previewValue = scriptText ? `${scriptFormat}: ${scriptText}` : `${scriptFormat}: script`;
+    } else if (shape === "nested") {
+      previewValue = clampInlineText(rawValue, 72) || "[nested]";
+    } else {
+      previewValue = clampInlineText(rawValue, 72);
+    }
+    if (!previewValue) return;
+    rows.push({
+      key: `${direction}:${name}`,
+      label: `${direction} ${name}`,
+      value: previewValue,
+    });
+  });
+  if (model.hasSchema) {
+    asArray(model.schemaRows).forEach((row) => {
+      const value = String(row?.value ?? "");
+      if (!asText(value)) return;
+      rows.push({
+        key: asText(row?.propertyKey || row?.name),
+        label: String(row?.propertyLabel || row?.propertyKey || row?.name || ""),
+        value: value.trim(),
+      });
+    });
+    asArray(model.customRows).forEach((row) => {
+      const name = String(row?.name ?? "");
+      const value = String(row?.value ?? "");
+      if (!asText(name) || !asText(value)) return;
+      rows.push({
+        key: asText(name),
+        label: name.trim(),
+        value: value.trim(),
+      });
+    });
+  } else {
+    asArray(model.visibleRows).forEach((row) => {
+      const name = String(row?.name ?? "");
+      const value = String(row?.value ?? "");
+      if (!asText(name) || !asText(value)) return;
+      rows.push({
+        key: asText(name),
+        label: name.trim(),
+        value: value.trim(),
+      });
+    });
+  }
+  const result = rows;
+  if (extensionStateCacheKey) {
+    const cacheEntry = propertiesOverlayRowsCache.get(extensionStateCacheKey);
+    if (dictionaryBundleCacheKey) cacheEntry?.withBundle?.set(dictionaryBundleCacheKey, result);
+    else if (cacheEntry) cacheEntry.withoutBundle = result;
+  }
+  return result;
 }
 
 function rebuildExtensionPropertiesFromModel({ extensionStateRaw, model, schemaValuesByKey = {}, customRows = null, keepBlankCustomRows = true } = {}) {
@@ -327,64 +441,7 @@ export function buildPropertiesOverlayPreview({
     };
   }
 
-  const model = buildPropertyDictionaryEditorModel({ extensionStateRaw, dictionaryBundleRaw });
-  const rows = [];
-  const ioRows = extractCamundaInputOutputParametersFromExtensionState(extensionStateRaw);
-  asArray(ioRows.rows).forEach((row) => {
-    const name = String(row?.name ?? "").trim();
-    if (!name) return;
-    const direction = String(row?.direction || "input").toLowerCase() === "output" ? "OUT" : "IN";
-    const shape = String(row?.shape || "text");
-    const rawValue = String(row?.value ?? "");
-    let previewValue = "";
-    if (shape === "script") {
-      const scriptFormat = String(row?.scriptFormat || "script").trim();
-      const scriptText = clampInlineText(rawValue, 72);
-      previewValue = scriptText ? `${scriptFormat}: ${scriptText}` : `${scriptFormat}: script`;
-    } else if (shape === "nested") {
-      previewValue = clampInlineText(rawValue, 72) || "[nested]";
-    } else {
-      previewValue = clampInlineText(rawValue, 72);
-    }
-    if (!previewValue) return;
-    rows.push({
-      key: `${direction}:${name}`,
-      label: `${direction} ${name}`,
-      value: previewValue,
-    });
-  });
-  if (model.hasSchema) {
-    asArray(model.schemaRows).forEach((row) => {
-      const value = String(row?.value ?? "");
-      if (!asText(value)) return;
-      rows.push({
-        key: asText(row?.propertyKey || row?.name),
-        label: String(row?.propertyLabel || row?.propertyKey || row?.name || ""),
-        value: value.trim(),
-      });
-    });
-    asArray(model.customRows).forEach((row) => {
-      const name = String(row?.name ?? "");
-      const value = String(row?.value ?? "");
-      if (!asText(name) || !asText(value)) return;
-      rows.push({
-        key: asText(name),
-        label: name.trim(),
-        value: value.trim(),
-      });
-    });
-  } else {
-    buildVisibleExtensionPropertyRows(extensionStateRaw).rows.forEach((row) => {
-      const name = String(row?.name ?? "");
-      const value = String(row?.value ?? "");
-      if (!asText(name) || !asText(value)) return;
-      rows.push({
-        key: asText(name),
-        label: name.trim(),
-        value: value.trim(),
-      });
-    });
-  }
+  const rows = derivePropertiesOverlayRows({ extensionStateRaw, dictionaryBundleRaw });
 
   const normalizedLimit = Math.max(1, Math.min(5, Number(visibleLimit || 4) || 4));
   const hiddenCount = Math.max(rows.length - normalizedLimit, 0);

@@ -1619,6 +1619,39 @@ export default function NotesPanel({
     setCamundaPropertiesInfo("");
   }, [selectedCamundaPropertiesEditable, selectedCamundaExtensionEntry]);
 
+  const memoizedPropertiesOverlayAlwaysPreview = useMemo(() => {
+    if (!selectedElementId || !selectedCamundaPropertiesEditable) return null;
+    return buildPropertiesOverlayPreview({
+      elementId: selectedElementId,
+      extensionStateRaw: camundaPropertiesDraft,
+      dictionaryBundleRaw: orgPropertyDictionaryBundle,
+      showPropertiesOverlay: true,
+    });
+  }, [
+    selectedElementId,
+    selectedCamundaPropertiesEditable,
+    camundaPropertiesDraft,
+    orgPropertyDictionaryBundle,
+  ]);
+
+  const memoizedPropertiesOverlayPreview = useMemo(() => {
+    if (!selectedElementId || !selectedCamundaPropertiesEditable) return null;
+    if (resolvedShowPropertiesOverlayOnSelect) return memoizedPropertiesOverlayAlwaysPreview;
+    return buildPropertiesOverlayPreview({
+      elementId: selectedElementId,
+      extensionStateRaw: camundaPropertiesDraft,
+      dictionaryBundleRaw: orgPropertyDictionaryBundle,
+      showPropertiesOverlay: false,
+    });
+  }, [
+    selectedElementId,
+    selectedCamundaPropertiesEditable,
+    camundaPropertiesDraft,
+    orgPropertyDictionaryBundle,
+    resolvedShowPropertiesOverlayOnSelect,
+    memoizedPropertiesOverlayAlwaysPreview,
+  ]);
+
   useEffect(() => {
     const dispatchState = propertiesOverlayPreviewDispatchRef.current;
     if (!selectedElementId || !selectedCamundaPropertiesEditable) {
@@ -1632,26 +1665,13 @@ export default function NotesPanel({
       }
       return;
     }
-    // compute "always" preview once; derive "on-select" preview from same base args
-    const nextAlwaysPreview = buildPropertiesOverlayPreview({
-      elementId: selectedElementId,
-      extensionStateRaw: camundaPropertiesDraft,
-      dictionaryBundleRaw: orgPropertyDictionaryBundle,
-      showPropertiesOverlay: true,
-    });
+    const nextAlwaysPreview = memoizedPropertiesOverlayAlwaysPreview;
     const alwaysSig = buildPropertiesOverlayPreviewSignature(nextAlwaysPreview);
     if (dispatchState.alwaysSignature !== alwaysSig) {
       dispatchState.alwaysSignature = alwaysSig;
       onPropertiesOverlayAlwaysPreviewChange?.(nextAlwaysPreview);
     }
-    const nextPreview = resolvedShowPropertiesOverlayOnSelect
-      ? nextAlwaysPreview
-      : buildPropertiesOverlayPreview({
-          elementId: selectedElementId,
-          extensionStateRaw: camundaPropertiesDraft,
-          dictionaryBundleRaw: orgPropertyDictionaryBundle,
-          showPropertiesOverlay: false,
-        });
+    const nextPreview = memoizedPropertiesOverlayPreview;
     const draftSig = resolvedShowPropertiesOverlayOnSelect
       ? alwaysSig
       : buildPropertiesOverlayPreviewSignature(nextPreview);
@@ -1662,9 +1682,9 @@ export default function NotesPanel({
   }, [
     selectedElementId,
     selectedCamundaPropertiesEditable,
-    camundaPropertiesDraft,
-    orgPropertyDictionaryBundle,
     resolvedShowPropertiesOverlayOnSelect,
+    memoizedPropertiesOverlayAlwaysPreview,
+    memoizedPropertiesOverlayPreview,
     onPropertiesOverlayPreviewChange,
     onPropertiesOverlayAlwaysPreviewChange,
   ]);

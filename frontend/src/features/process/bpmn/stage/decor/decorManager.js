@@ -1117,6 +1117,102 @@ export function clearPropertiesOverlayDecor(ctx) {
   refs.propertiesOverlayStateRef.current[kind] = {};
 }
 
+function buildPropertiesContentSignature({ items, hiddenCount, visibleCount }) {
+  return JSON.stringify({
+    items,
+    hiddenCount,
+    visibleCount,
+  });
+}
+
+function buildPropertiesOverlayGeometrySignature({ overlayGeometry, zoomBucket, isConnection }) {
+  return JSON.stringify({
+    width: Number(overlayGeometry?.width || 0),
+    anchorLeft: Number(overlayGeometry?.anchorLeft || 0),
+    topOffset: Number(overlayGeometry?.topOffset || 0),
+    zoom: Number(zoomBucket || 0),
+    hostType: isConnection ? "sequence" : "task",
+  });
+}
+
+function applyPropertiesOverlayContainerStyle(container, overlayGeometry, isConnection) {
+  if (!container) return;
+  container.className = isConnection
+    ? "fpcPropertyOverlay fpcPropertyOverlay--table fpcPropertyOverlay--sequence"
+    : "fpcPropertyOverlay fpcPropertyOverlay--table fpcPropertyOverlay--task";
+  container.dataset.hostType = isConnection ? "sequence" : "task";
+  container.style.width = `${overlayGeometry.width}px`;
+  container.style.maxWidth = `${overlayGeometry.width}px`;
+  if (isConnection) {
+    const sequenceMinWidth = Math.round(clampNumber(overlayGeometry.width - 4, 56, 102));
+    const sequenceFont = clampNumber(overlayGeometry.width / 12.3, 7.7, 8.9);
+    container.style.setProperty("--fpc-property-table-min-width", `${sequenceMinWidth}px`);
+    container.style.setProperty("--fpc-property-grid-columns", "minmax(24px, 41%) minmax(28px, 59%)");
+    container.style.setProperty("--fpc-property-font-size", `${sequenceFont.toFixed(2)}px`);
+    container.style.setProperty("--fpc-property-font-scale", "1.15");
+    container.style.setProperty("--fpc-property-row-padding", "1px 5px");
+    container.style.setProperty("--fpc-property-row-min-height", "14px");
+  } else {
+    const taskMinWidth = Math.round(clampNumber(overlayGeometry.width - 4, 66, 134));
+    const taskFont = clampNumber(overlayGeometry.width / 12.6, 8.1, 9.6);
+    container.style.setProperty("--fpc-property-table-min-width", `${taskMinWidth}px`);
+    container.style.setProperty("--fpc-property-grid-columns", "minmax(28px, 42%) minmax(34px, 58%)");
+    container.style.setProperty("--fpc-property-font-size", `${taskFont.toFixed(2)}px`);
+    container.style.setProperty("--fpc-property-font-scale", "1");
+    container.style.setProperty("--fpc-property-row-padding", "1px 6px");
+    container.style.setProperty("--fpc-property-row-min-height", "15px");
+  }
+}
+
+function rebuildPropertiesOverlayTable({ table, items, hiddenCount, visibleCount, linkedPropertyFrequency }) {
+  if (!table) return;
+  table.textContent = "";
+  items.forEach((item, idx) => {
+    const row = document.createElement("div");
+    const linkedKey = normalizeOverlayPropertyKey(item?.key || item?.label);
+    const linkedCount = Number(linkedPropertyFrequency.get(linkedKey) || 0);
+    const linkedClass = linkedKey && linkedCount > 1 ? " fpcPropertyRow--linked" : "";
+    const overflowClass = idx >= visibleCount ? " fpcPropertyRow--overflow" : "";
+    row.className = `fpcPropertyRow${linkedClass}${overflowClass}`;
+    row.title = `${item.label}: ${item.value}`;
+    const colorModel = overlayPropertyColorByKey(linkedKey || item?.label);
+    row.style.setProperty("--fpc-property-accent", colorModel.accent);
+    row.style.setProperty("--fpc-property-bg", colorModel.background);
+    row.style.setProperty("--fpc-property-accent-shadow", colorModel.shadow);
+    if (linkedKey && linkedCount > 1) {
+      row.dataset.linkedGroup = linkedKey;
+    }
+
+    const keyCell = document.createElement("span");
+    keyCell.className = "fpcPropertyCell fpcPropertyCell--key";
+    const keyText = document.createElement("span");
+    keyText.className = "fpcPropertyKeyText";
+    keyText.textContent = item.label;
+    keyCell.appendChild(keyText);
+
+    const keySep = document.createElement("span");
+    keySep.className = "fpcPropertyKeySep";
+    keySep.textContent = "|";
+    keyCell.appendChild(keySep);
+    row.appendChild(keyCell);
+
+    const valueCell = document.createElement("span");
+    valueCell.className = "fpcPropertyCell fpcPropertyCell--value";
+    valueCell.textContent = item.value;
+    row.appendChild(valueCell);
+
+    table.appendChild(row);
+  });
+
+  if (hiddenCount > 0) {
+    const moreRow = document.createElement("div");
+    moreRow.className = "fpcPropertyRow fpcPropertyRow--summary";
+    moreRow.textContent = `+${hiddenCount} ещё`;
+    moreRow.title = `Еще свойств: ${hiddenCount}`;
+    table.appendChild(moreRow);
+  }
+}
+
 export function applyPropertiesOverlayDecor(ctx) {
   const inst = ctx?.inst;
   const kind = ctx?.kind;
@@ -1203,112 +1299,70 @@ export function applyPropertiesOverlayDecor(ctx) {
 
       const resolvedElementId = toText(el?.id);
       if (!resolvedElementId) return;
-      const signature = JSON.stringify({
-        elementId,
+      const prev = asObject(currentState[resolvedElementId]);
+      const isConnection = typeof getters.isConnectionElement === "function" && getters.isConnectionElement(el);
+      const overlayGeometry = buildOverlayGeometry({ element: el, isConnection, canvasZoom });
+      const contentSignature = buildPropertiesContentSignature({
         items,
         hiddenCount,
         visibleCount,
-        zoom: zoomBucket,
       });
-      const prev = asObject(currentState[resolvedElementId]);
-      if (toText(prev?.signature) === signature) {
+      const geometrySignature = buildPropertiesOverlayGeometrySignature({
+        overlayGeometry,
+        zoomBucket,
+        isConnection,
+      });
+      if (
+        toText(prev?.contentSignature) === contentSignature
+        && toText(prev?.geometrySignature) === geometrySignature
+      ) {
         nextState[resolvedElementId] = prev;
         delete currentState[resolvedElementId];
         return;
       }
-
-      if (prev?.overlayId !== null && prev?.overlayId !== undefined) {
-        overlays.remove(prev.overlayId);
+      let container = prev?.container instanceof HTMLElement ? prev.container : document.createElement("div");
+      let table = prev?.table instanceof HTMLElement ? prev.table : document.createElement("div");
+      if (!(prev?.table instanceof HTMLElement)) {
+        table.className = "fpcPropertyTable";
       }
-
-      const isConnection = typeof getters.isConnectionElement === "function" && getters.isConnectionElement(el);
-      const container = document.createElement("div");
-      container.className = isConnection
-        ? "fpcPropertyOverlay fpcPropertyOverlay--table fpcPropertyOverlay--sequence"
-        : "fpcPropertyOverlay fpcPropertyOverlay--table fpcPropertyOverlay--task";
       container.dataset.nodeId = elementId;
-      container.dataset.hostType = isConnection ? "sequence" : "task";
-      const overlayGeometry = buildOverlayGeometry({ element: el, isConnection, canvasZoom });
-      container.style.width = `${overlayGeometry.width}px`;
-      container.style.maxWidth = `${overlayGeometry.width}px`;
-      if (isConnection) {
-        const sequenceMinWidth = Math.round(clampNumber(overlayGeometry.width - 4, 56, 102));
-        const sequenceFont = clampNumber(overlayGeometry.width / 12.3, 7.7, 8.9);
-        container.style.setProperty("--fpc-property-table-min-width", `${sequenceMinWidth}px`);
-        container.style.setProperty("--fpc-property-grid-columns", "minmax(24px, 41%) minmax(28px, 59%)");
-        container.style.setProperty("--fpc-property-font-size", `${sequenceFont.toFixed(2)}px`);
-        container.style.setProperty("--fpc-property-font-scale", "1.15");
-        container.style.setProperty("--fpc-property-row-padding", "1px 5px");
-        container.style.setProperty("--fpc-property-row-min-height", "14px");
-      } else {
-        const taskMinWidth = Math.round(clampNumber(overlayGeometry.width - 4, 66, 134));
-        const taskFont = clampNumber(overlayGeometry.width / 12.6, 8.1, 9.6);
-        container.style.setProperty("--fpc-property-table-min-width", `${taskMinWidth}px`);
-        container.style.setProperty("--fpc-property-grid-columns", "minmax(28px, 42%) minmax(34px, 58%)");
-        container.style.setProperty("--fpc-property-font-size", `${taskFont.toFixed(2)}px`);
-        container.style.setProperty("--fpc-property-font-scale", "1");
-        container.style.setProperty("--fpc-property-row-padding", "1px 6px");
-        container.style.setProperty("--fpc-property-row-min-height", "15px");
+      applyPropertiesOverlayContainerStyle(container, overlayGeometry, isConnection);
+      if (!container.contains(table)) {
+        container.textContent = "";
+        table.className = "fpcPropertyTable";
+        container.appendChild(table);
       }
-
-      const table = document.createElement("div");
-      table.className = "fpcPropertyTable";
-
-      items.forEach((item, idx) => {
-        const row = document.createElement("div");
-        const linkedKey = normalizeOverlayPropertyKey(item?.key || item?.label);
-        const linkedCount = Number(linkedPropertyFrequency.get(linkedKey) || 0);
-        const linkedClass = linkedKey && linkedCount > 1 ? " fpcPropertyRow--linked" : "";
-        const overflowClass = idx >= visibleCount ? " fpcPropertyRow--overflow" : "";
-        row.className = `fpcPropertyRow${linkedClass}${overflowClass}`;
-        row.title = `${item.label}: ${item.value}`;
-        const colorModel = overlayPropertyColorByKey(linkedKey || item?.label);
-        row.style.setProperty("--fpc-property-accent", colorModel.accent);
-        row.style.setProperty("--fpc-property-bg", colorModel.background);
-        row.style.setProperty("--fpc-property-accent-shadow", colorModel.shadow);
-        if (linkedKey && linkedCount > 1) {
-          row.dataset.linkedGroup = linkedKey;
+      if (toText(prev?.contentSignature) !== contentSignature) {
+        rebuildPropertiesOverlayTable({
+          table,
+          items,
+          hiddenCount,
+          visibleCount,
+          linkedPropertyFrequency,
+        });
+      }
+      let overlayId = prev?.overlayId;
+      if (
+        prev?.overlayId === null
+        || prev?.overlayId === undefined
+        || toText(prev?.geometrySignature) !== geometrySignature
+      ) {
+        if (prev?.overlayId !== null && prev?.overlayId !== undefined) {
+          overlays.remove(prev.overlayId);
         }
-
-        const keyCell = document.createElement("span");
-        keyCell.className = "fpcPropertyCell fpcPropertyCell--key";
-        const keyText = document.createElement("span");
-        keyText.className = "fpcPropertyKeyText";
-        keyText.textContent = item.label;
-        keyCell.appendChild(keyText);
-
-        const keySep = document.createElement("span");
-        keySep.className = "fpcPropertyKeySep";
-        keySep.textContent = "|";
-        keyCell.appendChild(keySep);
-        row.appendChild(keyCell);
-
-        const valueCell = document.createElement("span");
-        valueCell.className = "fpcPropertyCell fpcPropertyCell--value";
-        valueCell.textContent = item.value;
-        row.appendChild(valueCell);
-
-        table.appendChild(row);
-      });
-
-      if (hiddenCount > 0) {
-        const moreRow = document.createElement("div");
-        moreRow.className = "fpcPropertyRow fpcPropertyRow--summary";
-        moreRow.textContent = `+${hiddenCount} ещё`;
-        moreRow.title = `Еще свойств: ${hiddenCount}`;
-        table.appendChild(moreRow);
+        overlayId = overlays.add(resolvedElementId, "fpc-properties", {
+          position: { top: overlayGeometry.topOffset, left: overlayGeometry.anchorLeft },
+          html: container,
+          scale: false,
+        });
       }
-      container.appendChild(table);
-
-      const overlayId = overlays.add(resolvedElementId, "fpc-properties", {
-        position: { top: overlayGeometry.topOffset, left: overlayGeometry.anchorLeft },
-        html: container,
-        scale: false,
-      });
       nextState[resolvedElementId] = {
         elementId: resolvedElementId,
         overlayId,
-        signature,
+        container,
+        table,
+        contentSignature,
+        geometrySignature,
       };
       delete currentState[resolvedElementId];
     });
