@@ -1219,7 +1219,6 @@ const BpmnStage = forwardRef(function BpmnStage({
   const stepTimeDecorSignatureRef = useRef({ viewer: "", editor: "" });
   const robotMetaDecorStateRef = useRef({ viewer: {}, editor: {} });
   const propertiesOverlayStateRef = useRef({ viewer: {}, editor: {} });
-  const propertiesOverlayRenderSignatureRef = useRef({ viewer: "", editor: "" });
   const propertiesOverlayZoomBucketRef = useRef({ viewer: "", editor: "" });
   const settledSelectionFanoutRef = useRef({ viewer: "", editor: "" });
   const playbackDecorStateRef = useRef({
@@ -2753,7 +2752,6 @@ const BpmnStage = forwardRef(function BpmnStage({
         stepTimeDecorSignatureRef,
         robotMetaDecorStateRef,
         propertiesOverlayStateRef,
-        propertiesOverlayRenderSignatureRef,
         aiQuestionPanelTargetRef,
       },
       getters: {
@@ -3279,7 +3277,6 @@ const BpmnStage = forwardRef(function BpmnStage({
     stepTimeDecorSignatureRef.current = { viewer: "", editor: "" };
     robotMetaDecorStateRef.current = { viewer: {}, editor: {} };
     propertiesOverlayStateRef.current = { viewer: {}, editor: {} };
-    propertiesOverlayRenderSignatureRef.current = { viewer: "", editor: "" };
     propertiesOverlayZoomBucketRef.current = { viewer: "", editor: "" };
     playbackDecorStateRef.current = {
       viewer: createPlaybackDecorRuntimeState(),

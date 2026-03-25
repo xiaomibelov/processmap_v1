@@ -1274,106 +1274,128 @@ export function applyPropertiesOverlayDecor(ctx) {
     });
   });
 
-  try {
-    const overlays = inst.get("overlays");
-    const registry = inst.get("elementRegistry");
-    const canvasZoom = readOverlayCanvasZoom(inst);
-    const zoomBucket = Math.round(canvasZoom * 1000) / 1000;
-    const currentState = { ...asObject(refs.propertiesOverlayStateRef.current[kind]) };
-    const nextState = {};
-    previewEntries.forEach((preview) => {
-      const elementId = toText(preview?.elementId);
-      const items = asArray(preview?.items);
-      const hiddenCount = Math.max(0, Number(preview?.hiddenCount || 0));
-      const visibleCount = Math.max(1, Number(preview?.visibleCount || items.length));
-      if (!elementId || !items.length) return;
+  const stats = {
+    kind,
+    previews: previewEntries.length,
+    reused: 0,
+    contentUpdated: 0,
+    geometryRebuilt: 0,
+    removed: 0,
+    failed: 0,
+  };
+  runMeasure(
+    ctx,
+    "diagram.updatePropertiesOverlays",
+    () => {
+      try {
+        const overlays = inst.get("overlays");
+        const registry = inst.get("elementRegistry");
+        const canvasZoom = readOverlayCanvasZoom(inst);
+        const zoomBucket = Math.round(canvasZoom * 1000) / 1000;
+        const currentState = { ...asObject(refs.propertiesOverlayStateRef.current[kind]) };
+        const nextState = {};
+        previewEntries.forEach((preview) => {
+          const elementId = toText(preview?.elementId);
+          const items = asArray(preview?.items);
+          const hiddenCount = Math.max(0, Number(preview?.hiddenCount || 0));
+          const visibleCount = Math.max(1, Number(preview?.visibleCount || items.length));
+          if (!elementId || !items.length) return;
 
-      let el = (
-        typeof getters.findDiagramElementForHint === "function"
-          ? getters.findDiagramElementForHint(registry, { nodeId: elementId, title: elementId })
-          : null
-      )
-        || getters.findShapeByNodeId(registry, elementId)
-        || getters.findShapeForHint(registry, { nodeId: elementId, title: elementId });
-      if (!el) return;
+          let el = (
+            typeof getters.findDiagramElementForHint === "function"
+              ? getters.findDiagramElementForHint(registry, { nodeId: elementId, title: elementId })
+              : null
+          )
+            || getters.findShapeByNodeId(registry, elementId)
+            || getters.findShapeForHint(registry, { nodeId: elementId, title: elementId });
+          if (!el) return;
 
-      const resolvedElementId = toText(el?.id);
-      if (!resolvedElementId) return;
-      const prev = asObject(currentState[resolvedElementId]);
-      const isConnection = typeof getters.isConnectionElement === "function" && getters.isConnectionElement(el);
-      const overlayGeometry = buildOverlayGeometry({ element: el, isConnection, canvasZoom });
-      const contentSignature = buildPropertiesContentSignature({
-        items,
-        hiddenCount,
-        visibleCount,
-      });
-      const geometrySignature = buildPropertiesOverlayGeometrySignature({
-        overlayGeometry,
-        zoomBucket,
-        isConnection,
-      });
-      if (
-        toText(prev?.contentSignature) === contentSignature
-        && toText(prev?.geometrySignature) === geometrySignature
-      ) {
-        nextState[resolvedElementId] = prev;
-        delete currentState[resolvedElementId];
-        return;
-      }
-      let container = prev?.container instanceof HTMLElement ? prev.container : document.createElement("div");
-      let table = prev?.table instanceof HTMLElement ? prev.table : document.createElement("div");
-      if (!(prev?.table instanceof HTMLElement)) {
-        table.className = "fpcPropertyTable";
-      }
-      container.dataset.nodeId = elementId;
-      applyPropertiesOverlayContainerStyle(container, overlayGeometry, isConnection);
-      if (!container.contains(table)) {
-        container.textContent = "";
-        table.className = "fpcPropertyTable";
-        container.appendChild(table);
-      }
-      if (toText(prev?.contentSignature) !== contentSignature) {
-        rebuildPropertiesOverlayTable({
-          table,
-          items,
-          hiddenCount,
-          visibleCount,
-          linkedPropertyFrequency,
+          const resolvedElementId = toText(el?.id);
+          if (!resolvedElementId) return;
+          const prev = asObject(currentState[resolvedElementId]);
+          const isConnection = typeof getters.isConnectionElement === "function" && getters.isConnectionElement(el);
+          const overlayGeometry = buildOverlayGeometry({ element: el, isConnection, canvasZoom });
+          const contentSignature = buildPropertiesContentSignature({
+            items,
+            hiddenCount,
+            visibleCount,
+          });
+          const geometrySignature = buildPropertiesOverlayGeometrySignature({
+            overlayGeometry,
+            zoomBucket,
+            isConnection,
+          });
+          if (
+            toText(prev?.contentSignature) === contentSignature
+            && toText(prev?.geometrySignature) === geometrySignature
+          ) {
+            stats.reused += 1;
+            nextState[resolvedElementId] = prev;
+            delete currentState[resolvedElementId];
+            return;
+          }
+          let container = prev?.container instanceof HTMLElement ? prev.container : document.createElement("div");
+          let table = prev?.table instanceof HTMLElement ? prev.table : document.createElement("div");
+          if (!(prev?.table instanceof HTMLElement)) {
+            table.className = "fpcPropertyTable";
+          }
+          container.dataset.nodeId = elementId;
+          applyPropertiesOverlayContainerStyle(container, overlayGeometry, isConnection);
+          if (!container.contains(table)) {
+            container.textContent = "";
+            table.className = "fpcPropertyTable";
+            container.appendChild(table);
+          }
+          if (toText(prev?.contentSignature) !== contentSignature) {
+            stats.contentUpdated += 1;
+            rebuildPropertiesOverlayTable({
+              table,
+              items,
+              hiddenCount,
+              visibleCount,
+              linkedPropertyFrequency,
+            });
+          }
+          let overlayId = prev?.overlayId;
+          if (
+            prev?.overlayId === null
+            || prev?.overlayId === undefined
+            || toText(prev?.geometrySignature) !== geometrySignature
+          ) {
+            stats.geometryRebuilt += 1;
+            if (prev?.overlayId !== null && prev?.overlayId !== undefined) {
+              overlays.remove(prev.overlayId);
+            }
+            overlayId = overlays.add(resolvedElementId, "fpc-properties", {
+              position: { top: overlayGeometry.topOffset, left: overlayGeometry.anchorLeft },
+              html: container,
+              scale: false,
+            });
+          }
+          nextState[resolvedElementId] = {
+            elementId: resolvedElementId,
+            overlayId,
+            container,
+            table,
+            contentSignature,
+            geometrySignature,
+          };
+          delete currentState[resolvedElementId];
         });
-      }
-      let overlayId = prev?.overlayId;
-      if (
-        prev?.overlayId === null
-        || prev?.overlayId === undefined
-        || toText(prev?.geometrySignature) !== geometrySignature
-      ) {
-        if (prev?.overlayId !== null && prev?.overlayId !== undefined) {
-          overlays.remove(prev.overlayId);
-        }
-        overlayId = overlays.add(resolvedElementId, "fpc-properties", {
-          position: { top: overlayGeometry.topOffset, left: overlayGeometry.anchorLeft },
-          html: container,
-          scale: false,
-        });
-      }
-      nextState[resolvedElementId] = {
-        elementId: resolvedElementId,
-        overlayId,
-        container,
-        table,
-        contentSignature,
-        geometrySignature,
-      };
-      delete currentState[resolvedElementId];
-    });
 
-    Object.values(currentState).forEach((entryRaw) => {
-      const entry = asObject(entryRaw);
-      if (entry?.overlayId !== null && entry?.overlayId !== undefined) {
-        overlays.remove(entry.overlayId);
+        Object.values(currentState).forEach((entryRaw) => {
+          const entry = asObject(entryRaw);
+          if (entry?.overlayId !== null && entry?.overlayId !== undefined) {
+            stats.removed += 1;
+            overlays.remove(entry.overlayId);
+          }
+        });
+        refs.propertiesOverlayStateRef.current[kind] = nextState;
+      } catch {
+        stats.failed = 1;
       }
-    });
-    refs.propertiesOverlayStateRef.current[kind] = nextState;
-  } catch {
-  }
+      return stats;
+    },
+    () => stats,
+  );
 }
