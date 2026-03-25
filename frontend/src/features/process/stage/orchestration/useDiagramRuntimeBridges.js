@@ -23,10 +23,14 @@ export default function useDiagramRuntimeBridges({
     normalizeRuntimeTool(overlay.drawioUiState?.active_tool) || "select"
   ));
 
+  // Session change: reset both mode and tool in one effect (batched → 1 render).
   useEffect(() => {
     setDrawioModeState(normalizeDrawioInteractionMode(overlay.drawioUiState?.interaction_mode));
+    setDrawioRuntimeToolState(normalizeRuntimeTool(overlay.drawioUiState?.active_tool) || "select");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overlay.sid]);
 
+  // Live updates: mode and tool in one effect (batched → 1 render instead of 2).
   useEffect(() => {
     const nextMode = normalizeDrawioInteractionMode(overlay.drawioUiState?.interaction_mode);
     setDrawioModeState((prevMode) => {
@@ -35,17 +39,9 @@ export default function useDiagramRuntimeBridges({
       }
       return nextMode;
     });
-  }, [overlay.drawioUiState?.enabled, overlay.drawioUiState?.interaction_mode]);
-
-  useEffect(() => {
-    setDrawioRuntimeToolState(normalizeRuntimeTool(overlay.drawioUiState?.active_tool) || "select");
-  }, [overlay.sid]);
-
-  useEffect(() => {
     const incoming = normalizeRuntimeTool(overlay.drawioUiState?.active_tool);
-    if (!incoming) return;
-    setDrawioRuntimeToolState(incoming);
-  }, [overlay.drawioUiState?.active_tool]);
+    if (incoming) setDrawioRuntimeToolState(incoming);
+  }, [overlay.drawioUiState?.enabled, overlay.drawioUiState?.interaction_mode, overlay.drawioUiState?.active_tool]);
 
   const drawioStateForRuntime = useMemo(() => {
     const validation = readDrawioAnchorValidationState(runtimeGlueConfig.draft);
