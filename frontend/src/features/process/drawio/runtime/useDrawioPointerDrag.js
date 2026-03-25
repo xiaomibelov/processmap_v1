@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   asObject,
   collectDrawioElementIdsFromTarget,
@@ -237,7 +237,6 @@ export default function useDrawioPointerDrag({
   onCreateElement,
 }) {
   bumpDrawioPerfCounter("drawio.drag.hook.renders");
-  const [draftOffset, setDraftOffset] = useState(null);
   const draftOffsetRef = useRef(null);
   const dragRef = useRef(null);
   const activePointerIdRef = useRef(null);
@@ -279,8 +278,6 @@ export default function useDrawioPointerDrag({
       moveRafRef.current = 0;
     }
     const activeDraftOffset = asObject(draftOffsetRef.current);
-    bumpDrawioPerfCounter("drawio.drag.state.setDraftOffset");
-    setDraftOffset(null);
     draftOffsetRef.current = null;
     markDrawioPerf("drawio.drag.active", false);
     markDrawioPerf("drawio.drag.lastFinishAt", Date.now());
@@ -573,8 +570,6 @@ export default function useDrawioPointerDrag({
       deltaXRaw: 0,
       deltaYRaw: 0,
     });
-    bumpDrawioPerfCounter("drawio.drag.state.setDraftOffset");
-    setDraftOffset(nextDraftOffset);
     draftOffsetRef.current = nextDraftOffset;
   }, [
     canEditElement,
@@ -673,7 +668,7 @@ export default function useDrawioPointerDrag({
   ]);
 
   return {
-    draftOffset,
+    draftOffset: draftOffsetRef.current,
   };
 }
 
