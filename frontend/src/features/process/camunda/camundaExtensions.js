@@ -1272,6 +1272,9 @@ export function hydrateCamundaExtensionsFromBpmn({ extractedMap, sessionMetaMap 
     const extractedSig = JSON.stringify(extractedEntry);
     if (sessionSig !== extractedSig) conflicts.push(elementId);
 
+    // Session meta is authoritative for managed data (properties and listeners).
+    // Do NOT merge from BPMN XML when session already has data for this element —
+    // merging would re-add properties/listeners that the user intentionally deleted.
     const nextProperties = Array.isArray(sessionEntry.properties?.extensionProperties)
       ? sessionEntry.properties.extensionProperties.slice()
       : [];
@@ -1282,46 +1285,8 @@ export function hydrateCamundaExtensionsFromBpmn({ extractedMap, sessionMetaMap 
       ? sessionEntry.preservedExtensionElements.slice()
       : [];
 
-    const logicalPropertyKeys = new Set(
-      nextProperties
-        .map((row) => asText(row?.name).toLowerCase())
-        .filter(Boolean),
-    );
-
-    extractedEntry.properties.extensionProperties.forEach((row) => {
-      const logicalKey = asText(row?.name).toLowerCase();
-      if (logicalKey && logicalPropertyKeys.has(logicalKey)) return;
-      if (logicalKey) logicalPropertyKeys.add(logicalKey);
-      nextProperties.push({
-        id: asText(row?.id) || nextEditorLocalId("prop"),
-        name: String(row?.name || ""),
-        value: String(row?.value || ""),
-      });
-      addedProperties += 1;
-    });
-
-    const listenerSignatures = new Set(
-      nextListeners.map((row) => {
-        const event = asText(row?.event);
-        const type = asText(row?.type);
-        const value = String(row?.value || "");
-        return `${event}|${type}|${value}`;
-      }),
-    );
-
-    extractedEntry.properties.extensionListeners.forEach((row) => {
-      const signature = `${asText(row?.event)}|${asText(row?.type)}|${String(row?.value || "")}`;
-      if (listenerSignatures.has(signature)) return;
-      listenerSignatures.add(signature);
-      nextListeners.push({
-        id: asText(row?.id) || nextEditorLocalId("listener"),
-        event: String(row?.event || ""),
-        type: String(row?.type || ""),
-        value: String(row?.value || ""),
-      });
-      addedListeners += 1;
-    });
-
+    // preservedExtensionElements are unmanaged XML fragments (connectors, etc.)
+    // that are not exposed in the sidebar delete UI — safe to keep merging from XML.
     const preservedSignatures = new Set(
       nextPreserved
         .map((item) => canonicalizeExtensionFragmentSignature(item) || String(item || "").trim())
