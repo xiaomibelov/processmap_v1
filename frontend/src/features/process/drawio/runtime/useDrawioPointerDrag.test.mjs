@@ -122,7 +122,7 @@ test("pointer drag: finish commit returns payload only when delta exists", () =>
   });
 });
 
-test("pointer drag: pointer/mouse dedupe guards suppress duplicate finish paths", () => {
+test("pointer drag: mousemove is deduped while pointer drag is active, mouseup remains valid fallback", () => {
   const moveReason = shouldIgnoreDragMoveEvent({
     activePointerIdRaw: 7,
     eventPointerIdRaw: NaN,
@@ -136,5 +136,12 @@ test("pointer drag: pointer/mouse dedupe guards suppress duplicate finish paths"
     eventTypeRaw: "mouseup",
     sawPointerMove: true,
   });
-  assert.equal(upReason, "compat_mouseup_while_pointer_active");
+  assert.equal(upReason, "");
+  const upReasonWithZeroPointerId = shouldIgnoreDragUpEvent({
+    activePointerIdRaw: 7,
+    eventPointerIdRaw: 0,
+    eventTypeRaw: "mouseup",
+    sawPointerMove: true,
+  });
+  assert.equal(upReasonWithZeroPointerId, "");
 });

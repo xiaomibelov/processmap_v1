@@ -53,9 +53,11 @@ function resolvePreviewNode(targetRaw, rootRaw, elementIdRaw, nodeRegistryRaw) {
 }
 
 function isPointerLikeEvent(eventTypeRaw, eventPointerIdRaw) {
-  const eventType = String(eventTypeRaw || "");
-  const eventPointerId = Number(eventPointerIdRaw);
-  return eventType.startsWith("pointer") || Number.isFinite(eventPointerId);
+  const eventType = String(eventTypeRaw || "").toLowerCase();
+  if (eventType.startsWith("pointer")) return true;
+  // Some browsers/environments expose pointerId=0 on MouseEvent.
+  // Event type is the reliable discriminator for pointer lifecycle logic.
+  return false;
 }
 
 function shouldIgnoreDragMoveEvent({
@@ -83,7 +85,6 @@ function shouldIgnoreDragUpEvent({
   activePointerIdRaw,
   eventPointerIdRaw,
   eventTypeRaw,
-  sawPointerMove,
 }) {
   const activePointerId = Number(activePointerIdRaw);
   const eventPointerId = Number(eventPointerIdRaw);
@@ -91,9 +92,8 @@ function shouldIgnoreDragUpEvent({
   if (isPointerEvent && Number.isFinite(activePointerId) && Number.isFinite(eventPointerId) && activePointerId !== eventPointerId) {
     return "pointer_id_mismatch";
   }
-  if (!isPointerEvent && Number.isFinite(activePointerId) && sawPointerMove) {
-    return "compat_mouseup_while_pointer_active";
-  }
+  // mouseup can be the only terminal event in some browsers/edge cases when
+  // pointerup is lost; treat it as a valid fallback finish signal.
   return "";
 }
 
