@@ -38,7 +38,7 @@ export default function ProcessStageHeader({ view = {} }) {
   const hasPublishedRevision = latestRevisionNumber > 0;
   const draftAheadOfLatest = sessionRevisionHistorySnapshot?.draftState?.isDraftAheadOfLatestRevision === true;
   const draftStatusLabel = !hasPublishedRevision
-    ? "Unpublished"
+    ? "Версия не опубликована"
     : (draftAheadOfLatest ? "Draft ahead" : "Published");
   const draftStatusTone = !hasPublishedRevision || draftAheadOfLatest ? "warn" : "ok";
 
@@ -80,7 +80,7 @@ export default function ProcessStageHeader({ view = {} }) {
                 </span>
               ) : (
                 <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-latest-revision-empty">
-                  No published revision
+                  R0
                 </span>
               )}
               <span
@@ -131,17 +131,7 @@ export default function ProcessStageHeader({ view = {} }) {
       </div>
 
       <div className="diagramToolbarSlot diagramToolbarSlot--right">
-        {(tab === "diagram" || tab === "interview") && hasSession ? (
-          <button
-            type="button"
-            className={`secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs ${attentionOpen ? "ring-1 ring-accent/60" : ""}`}
-            onClick={toggleAttentionPanel}
-            data-testid="attention-panel-toggle"
-            title="Открыть список узлов с пробелами"
-          >
-            Требует внимания ({attentionItemsRaw.length})
-          </button>
-        ) : null}
+        {null}
         {toolbarInlineMessage ? (
           <span
             className={`badge hidden max-w-[36ch] truncate lg:inline-flex ${toolbarInlineTone ? toolbarInlineTone : ""}`}
@@ -150,15 +140,7 @@ export default function ProcessStageHeader({ view = {} }) {
             {toolbarInlineMessage}
           </span>
         ) : null}
-        <button
-          type="button"
-          className="primaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
-          onClick={doGenerate}
-          disabled={!workbench.canGenerate}
-          title={workbench.generateTooltip}
-        >
-          {workbench.generateLabel}
-        </button>
+        {null}
         <button
           ref={toolbarMenuButtonRef}
           type="button"
