@@ -4623,7 +4623,6 @@ const BpmnStage = forwardRef(function BpmnStage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     draft?.bpmn_meta,
-    draft?.nodes,
     view,
     robotMetaOverlayEnabled,
     robotMetaOverlayFilters,

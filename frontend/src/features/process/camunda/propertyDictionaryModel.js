@@ -444,11 +444,12 @@ export function buildPropertiesOverlayPreview({
   const rows = derivePropertiesOverlayRows({ extensionStateRaw, dictionaryBundleRaw });
 
   const normalizedLimit = Math.max(1, Math.min(5, Number(visibleLimit || 4) || 4));
-  const hiddenCount = Math.max(rows.length - normalizedLimit, 0);
+  const visibleItems = rows.slice(0, normalizedLimit);
+  const hiddenCount = Math.max(rows.length - visibleItems.length, 0);
   return {
     enabled: rows.length > 0,
     elementId: asText(elementId),
-    items: rows,
+    items: visibleItems,
     visibleCount: normalizedLimit,
     hiddenCount,
     totalCount: rows.length,
