@@ -198,47 +198,24 @@ function canStartDrawioDrag({
 
 function bindPointerDragListeners({
   windowTarget,
-  docTarget,
-  rootTarget,
   onMove,
   onUp,
   onMouseMove,
   onMouseUp,
 }) {
   const win = windowTarget || null;
-  const doc = docTarget || null;
-  const root = rootTarget || null;
+  // window bubble listeners only — setPointerCapture makes doc/root capture redundant.
   win?.addEventListener?.("pointermove", onMove);
   win?.addEventListener?.("pointerup", onUp);
   win?.addEventListener?.("pointercancel", onUp);
   win?.addEventListener?.("mousemove", onMouseMove);
   win?.addEventListener?.("mouseup", onMouseUp);
-  doc?.addEventListener?.("pointermove", onMove, true);
-  doc?.addEventListener?.("pointerup", onUp, true);
-  doc?.addEventListener?.("pointercancel", onUp, true);
-  doc?.addEventListener?.("mousemove", onMouseMove, true);
-  doc?.addEventListener?.("mouseup", onMouseUp, true);
-  root?.addEventListener?.("pointermove", onMove, true);
-  root?.addEventListener?.("pointerup", onUp, true);
-  root?.addEventListener?.("pointercancel", onUp, true);
-  root?.addEventListener?.("mousemove", onMouseMove, true);
-  root?.addEventListener?.("mouseup", onMouseUp, true);
   return () => {
     win?.removeEventListener?.("pointermove", onMove);
     win?.removeEventListener?.("pointerup", onUp);
     win?.removeEventListener?.("pointercancel", onUp);
     win?.removeEventListener?.("mousemove", onMouseMove);
     win?.removeEventListener?.("mouseup", onMouseUp);
-    doc?.removeEventListener?.("pointermove", onMove, true);
-    doc?.removeEventListener?.("pointerup", onUp, true);
-    doc?.removeEventListener?.("pointercancel", onUp, true);
-    doc?.removeEventListener?.("mousemove", onMouseMove, true);
-    doc?.removeEventListener?.("mouseup", onMouseUp, true);
-    root?.removeEventListener?.("pointermove", onMove, true);
-    root?.removeEventListener?.("pointerup", onUp, true);
-    root?.removeEventListener?.("pointercancel", onUp, true);
-    root?.removeEventListener?.("mousemove", onMouseMove, true);
-    root?.removeEventListener?.("mouseup", onMouseUp, true);
   };
 }
 
@@ -347,7 +324,6 @@ export default function useDrawioPointerDrag({
 
   useEffect(() => {
     const root = rootRef.current;
-    const doc = typeof document !== "undefined" ? document : null;
     const onMove = (event) => {
       bumpDrawioPerfCounter("drawio.drag.move.events");
       const state = asObject(dragRef.current);
@@ -492,8 +468,6 @@ export default function useDrawioPointerDrag({
     };
     const unbind = bindPointerDragListeners({
       windowTarget: typeof window !== "undefined" ? window : null,
-      docTarget: doc,
-      rootTarget: root instanceof Element ? root : null,
       onMove,
       onUp,
       onMouseMove,
