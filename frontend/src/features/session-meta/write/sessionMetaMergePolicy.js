@@ -74,9 +74,7 @@ export function mergeSessionMetaForRead({
     robot_meta_by_element_id: hasKeys(sessionMeta.robot_meta_by_element_id)
       ? sessionMeta.robot_meta_by_element_id
       : localMeta.robot_meta_by_element_id,
-    camunda_extensions_by_element_id: hasKeys(sessionMeta.camunda_extensions_by_element_id)
-      ? sessionMeta.camunda_extensions_by_element_id
-      : localMeta.camunda_extensions_by_element_id,
+    camunda_extensions_by_element_id: sessionMeta.camunda_extensions_by_element_id,
     presentation_by_element_id: hasKeys(sessionMeta.presentation_by_element_id)
       ? sessionMeta.presentation_by_element_id
       : localMeta.presentation_by_element_id,
