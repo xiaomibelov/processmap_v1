@@ -20,10 +20,10 @@ jobs:
             set -e
             cd /opt/processmap/app
 
-            # Pull latest code
+            # Pull latest code — only update tracked source files, keep server configs intact
             git remote set-url origin git@github.com:xiaomibelov/processmap_v1.git
             git fetch origin main
-            git reset --hard origin/main
+            git checkout origin/main -- backend frontend Dockerfile
 
             # Rebuild and restart stage containers
             APP_ENV_FILE=.env.stage docker compose \
@@ -31,13 +31,13 @@ jobs:
               -f docker-compose.yml \
               -f docker-compose.stage.yml \
               -p processmap_stage \
-              build api gateway
+              build api
 
             APP_ENV_FILE=.env.stage docker compose \
               --env-file .env.stage \
               -f docker-compose.yml \
               -f docker-compose.stage.yml \
               -p processmap_stage \
-              up -d postgres redis api gateway
+              up -d --no-deps api
 
             echo "[deploy-stage] done"
