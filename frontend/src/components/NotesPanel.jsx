@@ -33,6 +33,7 @@ import {
   buildPropertiesOverlayPreview,
   getOperationKeyFromRobotMeta,
 } from "../features/process/camunda/propertyDictionaryModel";
+import useCamundaPropertiesOverlayPreview from "../features/process/camunda/useCamundaPropertiesOverlayPreview";
 import {
   apiGetOrgPropertyDictionaryBundle,
   apiListOrgPropertyDictionaryOperations,
@@ -72,7 +73,6 @@ import {
 } from "../features/process/drawio/drawioAnchors";
 import { buildExecutionBridgeProjectionV1 } from "../features/execution/executionBridgeV1";
 import ExecutionBridgeSection from "./sidebar/ExecutionBridgeSection";
-import { buildPropertiesOverlayPreviewSignature } from "./sidebar/camundaPropertiesSectionMemo";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -1305,21 +1305,21 @@ export default function NotesPanel({
   const robotMetaSyncState = robotMetaBusy
     ? "syncing"
     : (robotMetaSaveFailed ? "error" : (robotMetaHasLocalChanges ? "local" : "saved"));
-  const finalizedCamundaPropertiesDraft = useMemo(
-    () => normalizeCamundaExtensionState(finalizeExtensionStateWithDictionary({
-      extensionStateRaw: camundaPropertiesDraft,
-      dictionaryBundleRaw: orgPropertyDictionaryBundle,
-    })),
-    [camundaPropertiesDraft, orgPropertyDictionaryBundle],
-  );
-  const selectedCamundaExtensionCanonical = useMemo(
-    () => JSON.stringify(normalizeCamundaExtensionState(selectedCamundaExtensionEntry)),
-    [selectedCamundaExtensionEntry],
-  );
-  const finalizedCamundaPropertiesDraftCanonical = useMemo(
-    () => JSON.stringify(finalizedCamundaPropertiesDraft),
-    [finalizedCamundaPropertiesDraft],
-  );
+  const {
+    finalizedCamundaPropertiesDraft,
+    selectedCamundaExtensionCanonical,
+    finalizedCamundaPropertiesDraftCanonical,
+  } = useCamundaPropertiesOverlayPreview({
+    selectedElementId,
+    selectedCamundaPropertiesEditable,
+    camundaPropertiesDraft,
+    selectedCamundaExtensionEntry,
+    orgPropertyDictionaryBundle,
+    resolvedShowPropertiesOverlayOnSelect,
+    propertiesOverlayPreviewDispatchRef,
+    onPropertiesOverlayPreviewChange,
+    onPropertiesOverlayAlwaysPreviewChange,
+  });
   const camundaExtensionHasLocalChanges = selectedCamundaPropertiesEditable
     && finalizedCamundaPropertiesDraftCanonical !== selectedCamundaExtensionCanonical;
   const camundaExtensionSyncState = camundaPropertiesBusy
@@ -1619,75 +1619,6 @@ export default function NotesPanel({
     setCamundaPropertiesInfo("");
   }, [selectedCamundaPropertiesEditable, selectedCamundaExtensionEntry]);
 
-  const memoizedPropertiesOverlayAlwaysPreview = useMemo(() => {
-    if (!selectedElementId || !selectedCamundaPropertiesEditable) return null;
-    return buildPropertiesOverlayPreview({
-      elementId: selectedElementId,
-      extensionStateRaw: camundaPropertiesDraft,
-      dictionaryBundleRaw: orgPropertyDictionaryBundle,
-      showPropertiesOverlay: true,
-    });
-  }, [
-    selectedElementId,
-    selectedCamundaPropertiesEditable,
-    camundaPropertiesDraft,
-    orgPropertyDictionaryBundle,
-  ]);
-
-  const memoizedPropertiesOverlayPreview = useMemo(() => {
-    if (!selectedElementId || !selectedCamundaPropertiesEditable) return null;
-    if (resolvedShowPropertiesOverlayOnSelect) return memoizedPropertiesOverlayAlwaysPreview;
-    return buildPropertiesOverlayPreview({
-      elementId: selectedElementId,
-      extensionStateRaw: camundaPropertiesDraft,
-      dictionaryBundleRaw: orgPropertyDictionaryBundle,
-      showPropertiesOverlay: false,
-    });
-  }, [
-    selectedElementId,
-    selectedCamundaPropertiesEditable,
-    camundaPropertiesDraft,
-    orgPropertyDictionaryBundle,
-    resolvedShowPropertiesOverlayOnSelect,
-    memoizedPropertiesOverlayAlwaysPreview,
-  ]);
-
-  useEffect(() => {
-    const dispatchState = propertiesOverlayPreviewDispatchRef.current;
-    if (!selectedElementId || !selectedCamundaPropertiesEditable) {
-      if (dispatchState.draftSignature !== "null") {
-        dispatchState.draftSignature = "null";
-        onPropertiesOverlayPreviewChange?.(null);
-      }
-      if (dispatchState.alwaysSignature !== "null") {
-        dispatchState.alwaysSignature = "null";
-        onPropertiesOverlayAlwaysPreviewChange?.(null);
-      }
-      return;
-    }
-    const nextAlwaysPreview = memoizedPropertiesOverlayAlwaysPreview;
-    const alwaysSig = buildPropertiesOverlayPreviewSignature(nextAlwaysPreview);
-    if (dispatchState.alwaysSignature !== alwaysSig) {
-      dispatchState.alwaysSignature = alwaysSig;
-      onPropertiesOverlayAlwaysPreviewChange?.(nextAlwaysPreview);
-    }
-    const nextPreview = memoizedPropertiesOverlayPreview;
-    const draftSig = resolvedShowPropertiesOverlayOnSelect
-      ? alwaysSig
-      : buildPropertiesOverlayPreviewSignature(nextPreview);
-    if (dispatchState.draftSignature !== draftSig) {
-      dispatchState.draftSignature = draftSig;
-      onPropertiesOverlayPreviewChange?.(nextPreview);
-    }
-  }, [
-    selectedElementId,
-    selectedCamundaPropertiesEditable,
-    resolvedShowPropertiesOverlayOnSelect,
-    memoizedPropertiesOverlayAlwaysPreview,
-    memoizedPropertiesOverlayPreview,
-    onPropertiesOverlayPreviewChange,
-    onPropertiesOverlayAlwaysPreviewChange,
-  ]);
 
   useEffect(() => {
     if (!selectedCamundaPropertiesEditable || !str(activeOrgId)) {

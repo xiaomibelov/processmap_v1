@@ -11,12 +11,18 @@ import { createAiQuestionPanelAdapter } from "../../features/process/bpmn/stage/
 import { createBpmnStageImperativeApi } from "../../features/process/bpmn/stage/imperative/bpmnStageImperativeApi";
 import {
   runImmediateEditorFanout,
-  runSettledPropertiesFanout,
-  runSettledRobotMetaFanout,
-  runSettledSelectionFanout,
-  runSettledStepTimeFanout,
-  runSettledUserNotesFanout,
 } from "../../features/process/bpmn/stage/fanout/postStagingFanout";
+import { applyFullBpmnDecorSet } from "../../features/process/bpmn/stage/orchestration/runBpmnRenderDecorSync";
+import useBpmnSettledDecorFanout from "../../features/process/bpmn/stage/orchestration/useBpmnSettledDecorFanout";
+import {
+  bindModelerStageEvents,
+  bindViewerStageEvents,
+} from "../../features/process/bpmn/stage/orchestration/wireBpmnStageRuntimeEvents";
+import {
+  renderModelerDiagram,
+  renderNewDiagramInModelerRuntime,
+  renderViewerDiagram,
+} from "../../features/process/bpmn/stage/orchestration/bpmnRenderRuntimeLifecycle";
 import { readOverlayCanvasZoom } from "../../features/process/bpmn/stage/decor/overlayLayoutModel.js";
 import forceTaskResizeRulesModule from "../../features/process/bpmn/runtime/modules/forceTaskResizeRules";
 import {
@@ -3442,54 +3448,30 @@ const BpmnStage = forwardRef(function BpmnStage({
       viewerReadyRef.current = false;
       try {
         const eventBus = v.get("eventBus");
-        eventBus.on("selection.changed", 2000, (ev) => {
-          const selectedList = asArray(ev?.newSelection).filter((el) => isSelectableElement(el));
-          const selected = selectedList[0];
-          if (!isSelectableElement(selected)) {
-            if (String(selectionImportGuardRef.current.viewer || "").trim()) {
-              traceSelectionContinuity("selection_change_suppressed", {
-                mode: "viewer",
-                source: "viewer.selection_changed",
-                guardedSelectedId: String(selectionImportGuardRef.current.viewer || "").trim(),
-              });
-              return;
-            }
-            clearSelectedDecor(v, "viewer");
-            emitElementSelectionChange(null);
-            clearAiQuestionPanel(v, "viewer");
-            return;
-          }
-          setSelectedDecor(v, "viewer", selected.id);
-          const candidate = buildInsertBetweenCandidate(v, selectedList);
-          emitElementSelection(selected, "viewer.selection_changed", {
-            selectedIds: selectedList.map((item) => String(item?.id || "")),
-            insertBetween: candidate,
-          });
-          syncAiQuestionPanelWithSelection(v, "viewer", selected, "viewer.selection_changed");
+        bindViewerStageEvents({
+          eventBus,
+          inst: v,
+          isSelectableElement,
+          asArray,
+          selectionImportGuardRef,
+          traceSelectionContinuity,
+          clearSelectedDecor,
+          emitElementSelectionChange,
+          clearAiQuestionPanel,
+          setSelectedDecor,
+          buildInsertBetweenCandidate,
+          emitElementSelection,
+          syncAiQuestionPanelWithSelection,
+          suppressViewboxEventRef,
+          userViewportTouchedRef,
+          getCanvasSnapshot,
+          logViewAction,
+          view,
+          sessionId,
+          runtimeTokenRef,
+          emitViewboxChanged,
+          applyPropertiesOverlayDecorForZoomChange,
         });
-          eventBus.on("canvas.viewbox.changed", 1200, () => {
-            const suppressed = Number(suppressViewboxEventRef.current || 0) > 0;
-            if (!suppressed) userViewportTouchedRef.current = true;
-            const snap = getCanvasSnapshot(v);
-            logViewAction(
-            "viewbox.changed",
-            snap,
-            snap,
-            {
-              reason: suppressed ? "programmatic" : "user",
-              tab: view === "xml" ? "xml" : "diagram",
-              sid: String(sessionId || "-"),
-              token: Number(runtimeTokenRef.current || 0),
-            },
-          );
-            emitViewboxChanged({
-              mode: "viewer",
-              suppressed,
-              snapshot: snap,
-            });
-            // Property overlay geometry only depends on zoom bucket, not pan.
-            applyPropertiesOverlayDecorForZoomChange(v, "viewer");
-          });
         } catch {
         }
       viewerRef.current = v;
@@ -3547,69 +3529,37 @@ const BpmnStage = forwardRef(function BpmnStage({
       try {
           if (m && modelerDecorBoundInstanceRef.current !== m) {
             const eventBus = m.get("eventBus");
-          eventBus.on("commandStack.shape.replace.preExecute", 2200, (ev) => {
-            captureShapeReplacePre(ev, "commandStack.shape.replace.preExecute");
-          });
-          eventBus.on("commandStack.shape.replace.postExecute", 2200, (ev) => {
-            applyShapeReplacePost(m, ev, "commandStack.shape.replace.postExecute");
-          });
-          eventBus.on("commandStack.changed", 900, () => {
-            invalidateShapeTitleLookup(m.get("elementRegistry"));
-            runImmediateEditorFanout({
-              inst: m,
-              applyTaskTypeDecor,
-              applyLinkEventDecor,
-              applyHappyFlowDecor,
-              applyRobotMetaDecor,
-            });
-          });
-          eventBus.on("selection.changed", 2000, (ev) => {
-            const selectedList = asArray(ev?.newSelection).filter((el) => isSelectableElement(el));
-            const selected = selectedList[0];
-            if (!isSelectableElement(selected)) {
-              if (String(selectionImportGuardRef.current.editor || "").trim()) {
-                traceSelectionContinuity("selection_change_suppressed", {
-                  mode: "editor",
-                  source: "editor.selection_changed",
-                  guardedSelectedId: String(selectionImportGuardRef.current.editor || "").trim(),
-                });
-                return;
-              }
-              clearSelectedDecor(m, "editor");
-              emitElementSelectionChange(null);
-              clearAiQuestionPanel(m, "editor");
-              return;
-            }
-            setSelectedDecor(m, "editor", selected.id);
-            const candidate = buildInsertBetweenCandidate(m, selectedList);
-            emitElementSelection(selected, "editor.selection_changed", {
-              selectedIds: selectedList.map((item) => String(item?.id || "")),
-              insertBetween: candidate,
-            });
-            syncAiQuestionPanelWithSelection(m, "editor", selected, "editor.selection_changed");
-          });
-          eventBus.on("canvas.viewbox.changed", 1200, () => {
-            const suppressed = Number(suppressViewboxEventRef.current || 0) > 0;
-            if (!suppressed) userViewportTouchedRef.current = true;
-            const snap = getCanvasSnapshot(m);
-            logViewAction(
-              "viewbox.changed",
-              snap,
-              snap,
-              {
-                reason: suppressed ? "programmatic" : "user",
-                tab: view === "xml" ? "xml" : "diagram",
-                sid: String(sessionId || "-"),
-                token: Number(runtimeTokenRef.current || 0),
-              },
-            );
-            emitViewboxChanged({
-              mode: "editor",
-              suppressed,
-              snapshot: snap,
-            });
-            // Property overlay geometry only depends on zoom bucket, not pan.
-            applyPropertiesOverlayDecorForZoomChange(m, "editor");
+          bindModelerStageEvents({
+            eventBus,
+            inst: m,
+            isSelectableElement,
+            asArray,
+            selectionImportGuardRef,
+            traceSelectionContinuity,
+            clearSelectedDecor,
+            emitElementSelectionChange,
+            clearAiQuestionPanel,
+            setSelectedDecor,
+            buildInsertBetweenCandidate,
+            emitElementSelection,
+            syncAiQuestionPanelWithSelection,
+            suppressViewboxEventRef,
+            userViewportTouchedRef,
+            getCanvasSnapshot,
+            logViewAction,
+            view,
+            sessionId,
+            runtimeTokenRef,
+            emitViewboxChanged,
+            applyPropertiesOverlayDecorForZoomChange,
+            invalidateShapeTitleLookup,
+            runImmediateEditorFanout,
+            applyTaskTypeDecor,
+            applyLinkEventDecor,
+            applyHappyFlowDecor,
+            applyRobotMetaDecor,
+            captureShapeReplacePre,
+            applyShapeReplacePost,
           });
           modelerDecorBoundInstanceRef.current = m;
         }
@@ -3631,354 +3581,63 @@ const BpmnStage = forwardRef(function BpmnStage({
     }
   }
 
+  function createRenderLifecycleCtx() {
+    return {
+      ensureViewer,
+      invalidateShapeTitleLookup,
+      viewerRef,
+      beginImportSelectionGuard,
+      runtimeTokenRef,
+      viewerReadyRef,
+      logRuntimeTrace,
+      activeSessionRef,
+      sessionId,
+      viewerInstanceMetaRef,
+      fnv1aHex,
+      logImportTrace,
+      logBpmnTrace,
+      finishImportSelectionGuard,
+      ensureCanvasVisibleAndFit,
+      suppressViewboxEvents,
+      probeCanvas,
+      ensureVisibleOnInstance,
+      emitCurrentViewboxSnapshot,
+      emitViewboxChanged,
+      applyTaskTypeDecor,
+      applyLinkEventDecor,
+      applyHappyFlowDecor,
+      applyRobotMetaDecor,
+      applyBottleneckDecor,
+      applyInterviewDecor,
+      applyUserNotesDecor,
+      applyStepTimeDecor,
+      modelerImportInFlightRef,
+      modelerInstanceMetaRef,
+      ensureModelerRuntime,
+      ensureModeler,
+      waitForNonZeroRect,
+      editorEl,
+      modelerReadyRef,
+      shouldLogBpmnTrace,
+      modelerRef,
+      hydrateRobotMetaFromImportedBpmn,
+      hydrateCamundaExtensionsFromImportedBpmn,
+      waitAnimationFrame,
+      lastModelerXmlHashRef,
+      applyXmlSnapshot,
+    };
+  }
+
   async function renderViewer(nextXml) {
-    const v = await ensureViewer();
-    invalidateShapeTitleLookup(v?.get?.("elementRegistry"));
-    beginImportSelectionGuard("viewer");
-    const token = runtimeTokenRef.current + 1;
-    runtimeTokenRef.current = token;
-    viewerReadyRef.current = false;
-    logRuntimeTrace("import.start", {
-      sid: String(activeSessionRef.current || sessionId || "-"),
-      mode: "viewer",
-      token,
-      instanceId: Number(viewerInstanceMetaRef.current.id || 0),
-      containerKey: String(viewerInstanceMetaRef.current.containerKey || "-"),
-      xmlHash: fnv1aHex(String(nextXml || "")),
-      xmlLen: String(nextXml || "").length,
-    });
-    logImportTrace("start", {
-      sid: String(activeSessionRef.current || sessionId || "-"),
-      mode: "viewer",
-      token,
-      instanceId: Number(viewerInstanceMetaRef.current.id || 0),
-      containerKey: String(viewerInstanceMetaRef.current.containerKey || "-"),
-      xmlHash: fnv1aHex(String(nextXml || "")),
-    });
-    logBpmnTrace("importXML.viewer.before", nextXml, { sid: String(sessionId || "") });
-    await v.importXML(String(nextXml || ""));
-    if (token !== runtimeTokenRef.current || v !== viewerRef.current) return;
-    viewerReadyRef.current = true;
-    const registryCount = Array.isArray(v?.get?.("elementRegistry")?.getAll?.())
-      ? v.get("elementRegistry").getAll().length
-      : 0;
-    logRuntimeTrace("import.done", {
-      sid: String(activeSessionRef.current || sessionId || "-"),
-      mode: "viewer",
-      token: Number(runtimeTokenRef.current || 0),
-      instanceId: Number(viewerInstanceMetaRef.current.id || 0),
-      containerKey: String(viewerInstanceMetaRef.current.containerKey || "-"),
-      xmlHash: fnv1aHex(String(nextXml || "")),
-      xmlLen: String(nextXml || "").length,
-      registryCount,
-    });
-    logImportTrace("done", {
-      sid: String(activeSessionRef.current || sessionId || "-"),
-      mode: "viewer",
-      token: Number(runtimeTokenRef.current || 0),
-      instanceId: Number(viewerInstanceMetaRef.current.id || 0),
-      containerKey: String(viewerInstanceMetaRef.current.containerKey || "-"),
-      xmlHash: fnv1aHex(String(nextXml || "")),
-      registryCount,
-    });
-    finishImportSelectionGuard(v, "viewer", "import_restore");
-    await ensureCanvasVisibleAndFit(v, "renderViewer", String(sessionId || ""), {
-      reason: "render_viewer_import",
-      tab: "diagram",
-      token: runtimeTokenRef.current,
-      allowFit: true,
-      fitIfInvisible: true,
-      suppressViewbox: suppressViewboxEvents,
-    });
-    const importProbe = probeCanvas(v, "after_import", {
-      sid: String(sessionId || ""),
-      tab: "diagram",
-      token: runtimeTokenRef.current,
-      reason: "viewer_import",
-      expectElements: String(nextXml || "").trim().length > 0,
-    });
-    if (importProbe.invisible) {
-      await ensureVisibleOnInstance(v, {
-        reason: "viewer_import_invisible",
-        tab: "diagram",
-        expectElements: String(nextXml || "").trim().length > 0,
-      });
-    }
-    emitCurrentViewboxSnapshot(v, emitViewboxChanged, "viewer", {
-      reason: "viewer_import_ready",
-    });
-    applyTaskTypeDecor(v, "viewer");
-    applyLinkEventDecor(v, "viewer");
-    applyHappyFlowDecor(v, "viewer");
-    applyRobotMetaDecor(v, "viewer");
-    applyBottleneckDecor(v, "viewer");
-    applyInterviewDecor(v, "viewer");
-    applyUserNotesDecor(v, "viewer");
-    applyStepTimeDecor(v, "viewer");
+    return renderViewerDiagram(createRenderLifecycleCtx(), nextXml);
   }
 
   async function renderModeler(nextXml) {
-    const sidNow = String(activeSessionRef.current || sessionId || "-");
-    const xmlText = String(nextXml || "");
-    const xmlHash = fnv1aHex(xmlText);
-    beginImportSelectionGuard("editor");
-    const inFlight = modelerImportInFlightRef.current;
-    if (
-      inFlight
-      && inFlight.promise
-      && inFlight.sid === sidNow
-      && inFlight.xmlHash === xmlHash
-    ) {
-      logRuntimeTrace("import.reuse_inflight", {
-        sid: sidNow,
-        mode: "modeler",
-        token: Number(runtimeTokenRef.current || 0),
-        instanceId: Number(modelerInstanceMetaRef.current.id || 0),
-        containerKey: String(modelerInstanceMetaRef.current.containerKey || "-"),
-        xmlHash,
-      });
-      await inFlight.promise;
-      return;
-    }
-
-    const importPromise = (async () => {
-      const runtime = ensureModelerRuntime();
-      const m = await ensureModeler();
-      invalidateShapeTitleLookup(m?.get?.("elementRegistry"));
-      const layoutReady = await waitForNonZeroRect(
-        () => m?.get?.("canvas")?._container || editorEl.current,
-        {
-          sid: String(activeSessionRef.current || sessionId || "-"),
-          token: Number(runtimeTokenRef.current || 0),
-          reason: "render_modeler_before_import",
-          timeoutMs: 5000,
-        },
-      );
-      if (!layoutReady.ok) {
-        throw new Error("layout_not_ready_before_modeler_import");
-      }
-      const beforeStatus = runtime.getStatus();
-      runtimeTokenRef.current = Number(beforeStatus?.token || runtimeTokenRef.current || 0);
-      modelerReadyRef.current = false;
-      logRuntimeTrace("import.start", {
-        sid: String(activeSessionRef.current || sessionId || "-"),
-        mode: "modeler",
-        token: Number(runtimeTokenRef.current || 0),
-        instanceId: Number(modelerInstanceMetaRef.current.id || 0),
-        containerKey: String(modelerInstanceMetaRef.current.containerKey || "-"),
-        xmlHash: fnv1aHex(String(nextXml || "")),
-        xmlLen: String(nextXml || "").length,
-      });
-      logImportTrace("start", {
-        sid: String(activeSessionRef.current || sessionId || "-"),
-        mode: "modeler",
-        token: Number(runtimeTokenRef.current || 0),
-        instanceId: Number(modelerInstanceMetaRef.current.id || 0),
-        containerKey: String(modelerInstanceMetaRef.current.containerKey || "-"),
-        xmlHash: fnv1aHex(String(nextXml || "")),
-      });
-      logBpmnTrace("importXML.modeler.before", nextXml, { sid: String(sessionId || "") });
-      const loaded = await runtime.load(String(nextXml || ""), { source: "renderModeler" });
-      const afterStatus = runtime.getStatus();
-      runtimeTokenRef.current = Number(afterStatus?.token || runtimeTokenRef.current || 0);
-      modelerReadyRef.current = !!afterStatus?.ready && !!afterStatus?.defs;
-      if (shouldLogBpmnTrace()) {
-        // eslint-disable-next-line no-console
-        console.debug(
-          `[READY] sid=${String(activeSessionRef.current || sessionId || "-")} token=${Number(runtimeTokenRef.current || 0)} `
-          + `ready=${modelerReadyRef.current ? 1 : 0} defs=${afterStatus?.defs ? 1 : 0} reason=import_done`,
-        );
-      }
-      if (!loaded.ok) {
-        if (loaded.reason === "stale") return;
-        throw new Error(String(loaded.error || loaded.reason || "importXML failed"));
-      }
-      if (!m || m !== modelerRef.current) return;
-      hydrateRobotMetaFromImportedBpmn(m, nextXml, "renderModeler");
-      hydrateCamundaExtensionsFromImportedBpmn(nextXml, "renderModeler");
-      try {
-        const canvas = m.get("canvas");
-        await waitAnimationFrame();
-        suppressViewboxEvents(1);
-        try {
-          canvas?.resized?.();
-        } finally {
-          suppressViewboxEvents(-1);
-        }
-      } catch {
-      }
-      const registryCount = Array.isArray(m?.get?.("elementRegistry")?.getAll?.())
-        ? m.get("elementRegistry").getAll().length
-        : 0;
-      logRuntimeTrace("import.done", {
-        sid: String(activeSessionRef.current || sessionId || "-"),
-        mode: "modeler",
-        token: Number(runtimeTokenRef.current || 0),
-        instanceId: Number(modelerInstanceMetaRef.current.id || 0),
-        containerKey: String(modelerInstanceMetaRef.current.containerKey || "-"),
-        xmlHash: fnv1aHex(String(nextXml || "")),
-        xmlLen: String(nextXml || "").length,
-        registryCount,
-      });
-      logImportTrace("done", {
-        sid: String(activeSessionRef.current || sessionId || "-"),
-        mode: "modeler",
-        token: Number(runtimeTokenRef.current || 0),
-        instanceId: Number(modelerInstanceMetaRef.current.id || 0),
-        containerKey: String(modelerInstanceMetaRef.current.containerKey || "-"),
-        xmlHash: fnv1aHex(String(nextXml || "")),
-        registryCount,
-      });
-      lastModelerXmlHashRef.current = fnv1aHex(String(nextXml || ""));
-      try {
-        if (typeof window !== "undefined") {
-          window.__FPC_E2E_MODELER__ = m;
-        }
-      } catch {
-      }
-      finishImportSelectionGuard(m, "editor", "import_restore");
-      await ensureCanvasVisibleAndFit(m, "renderModeler", String(sessionId || ""), {
-        reason: "render_modeler_import",
-        tab: "diagram",
-        token: runtimeTokenRef.current,
-        allowFit: true,
-        fitIfInvisible: true,
-        suppressViewbox: suppressViewboxEvents,
-      });
-      const importProbe = probeCanvas(m, "after_import", {
-        sid: String(sessionId || ""),
-        tab: "diagram",
-        token: runtimeTokenRef.current,
-        reason: "modeler_import",
-        expectElements: String(nextXml || "").trim().length > 0,
-      });
-      if (importProbe.invisible) {
-        await ensureVisibleOnInstance(m, {
-          reason: "modeler_import_invisible",
-          tab: "diagram",
-          expectElements: String(nextXml || "").trim().length > 0,
-        });
-      }
-      emitCurrentViewboxSnapshot(m, emitViewboxChanged, "editor", {
-        reason: "modeler_import_ready",
-      });
-      applyTaskTypeDecor(m, "editor");
-      applyLinkEventDecor(m, "editor");
-      applyHappyFlowDecor(m, "editor");
-      applyRobotMetaDecor(m, "editor");
-      applyBottleneckDecor(m, "editor");
-      applyInterviewDecor(m, "editor");
-      applyUserNotesDecor(m, "editor");
-      applyStepTimeDecor(m, "editor");
-    })();
-
-    modelerImportInFlightRef.current = { sid: sidNow, xmlHash, promise: importPromise };
-    try {
-      await importPromise;
-    } finally {
-      const current = modelerImportInFlightRef.current;
-      if (current && current.promise === importPromise) {
-        modelerImportInFlightRef.current = { sid: "", xmlHash: "", promise: null };
-      }
-    }
+    return renderModelerDiagram(createRenderLifecycleCtx(), nextXml);
   }
 
   async function renderNewDiagramInModeler() {
-    const runtime = ensureModelerRuntime();
-    const m = await ensureModeler();
-    const layoutReady = await waitForNonZeroRect(
-      () => m?.get?.("canvas")?._container || editorEl.current,
-      {
-        sid: String(activeSessionRef.current || sessionId || "-"),
-        token: Number(runtimeTokenRef.current || 0),
-        reason: "render_new_diagram_before_create",
-        timeoutMs: 5000,
-      },
-    );
-    if (!layoutReady.ok) {
-      throw new Error("layout_not_ready_before_create_diagram");
-    }
-    const sidNow = String(activeSessionRef.current || sessionId || "");
-    if (shouldLogBpmnTrace()) {
-      // eslint-disable-next-line no-console
-      console.debug(
-        `[CREATE_DIAGRAM] start sid=${sidNow || "-"} token=${Number(runtimeTokenRef.current || 0)}`,
-      );
-    }
-    const created = await runtime.createDiagram({ source: "renderNewDiagramInModeler" });
-    const status = runtime.getStatus();
-    runtimeTokenRef.current = Number(status?.token || runtimeTokenRef.current || 0);
-    modelerReadyRef.current = !!status?.ready && !!status?.defs;
-    if (shouldLogBpmnTrace()) {
-      const probe = probeCanvas(m, "create_diagram_done", {
-        sid: sidNow || "-",
-        tab: "diagram",
-        token: runtimeTokenRef.current,
-        reason: "createDiagram_done",
-      });
-      // eslint-disable-next-line no-console
-      console.debug(
-        `[CREATE_DIAGRAM] done sid=${sidNow || "-"} token=${Number(runtimeTokenRef.current || 0)} `
-        + `defs=${status?.defs ? 1 : 0} ready=${modelerReadyRef.current ? 1 : 0} registryCount=${Number(probe?.registryCount || 0)} `
-        + `svgRect=${Math.round(Number(probe?.svgWidth || 0))}x${Math.round(Number(probe?.svgHeight || 0))}`,
-      );
-      // eslint-disable-next-line no-console
-      console.debug(
-        `[READY] sid=${sidNow || "-"} token=${Number(runtimeTokenRef.current || 0)} `
-        + `ready=${modelerReadyRef.current ? 1 : 0} defs=${status?.defs ? 1 : 0} reason=createDiagram_done`,
-      );
-    }
-    if (!created.ok) {
-      if (created.reason === "stale") return;
-      throw new Error(String(created.error || created.reason || "createDiagram failed"));
-    }
-    if (!m || m !== modelerRef.current) return;
-    try {
-      const xmlRes = await runtime.getXml({ format: true });
-      if (xmlRes?.ok) {
-        const seededXml = String(xmlRes.xml || "");
-        lastModelerXmlHashRef.current = fnv1aHex(seededXml);
-        if (seededXml.trim() && sidNow && sidNow === String(activeSessionRef.current || "")) {
-          applyXmlSnapshot(seededXml, "create_diagram_seed");
-        }
-      }
-    } catch {
-    }
-    try {
-      if (typeof window !== "undefined") {
-        window.__FPC_E2E_MODELER__ = m;
-      }
-    } catch {
-    }
-    finishImportSelectionGuard(m, "editor", "create_diagram_restore");
-    await ensureCanvasVisibleAndFit(m, "renderNewDiagramInModeler", String(sessionId || ""), {
-      reason: "render_new_diagram",
-      tab: "diagram",
-      token: runtimeTokenRef.current,
-      allowFit: true,
-      fitIfInvisible: true,
-      suppressViewbox: suppressViewboxEvents,
-    });
-    const importProbe = probeCanvas(m, "after_import", {
-      sid: String(sessionId || ""),
-      tab: "diagram",
-      token: runtimeTokenRef.current,
-      reason: "modeler_create_diagram",
-    });
-    if (importProbe.invisible) {
-      await ensureVisibleOnInstance(m, {
-        reason: "modeler_create_invisible",
-        tab: "diagram",
-      });
-    }
-    applyTaskTypeDecor(m, "editor");
-    applyLinkEventDecor(m, "editor");
-    applyHappyFlowDecor(m, "editor");
-    applyRobotMetaDecor(m, "editor");
-    applyBottleneckDecor(m, "editor");
-    applyInterviewDecor(m, "editor");
-    applyUserNotesDecor(m, "editor");
-    applyStepTimeDecor(m, "editor");
+    return renderNewDiagramInModelerRuntime(createRenderLifecycleCtx());
   }
 
   function createViewportCtx() {
@@ -4576,93 +4235,35 @@ const BpmnStage = forwardRef(function BpmnStage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft?.bpmn_meta, view]);
 
-  useEffect(() => {
-    const inst = modelerRef.current || modelerRuntimeRef.current?.getInstance?.() || null;
-    if (!inst || !modelerReadyRef.current) return;
-    syncCamundaExtensionsToModeler(inst);
-  }, [draft?.bpmn_meta]);
-
-  useEffect(() => {
-    runSettledUserNotesFanout({
-      viewerInst: viewerRef.current,
-      modelerInst: modelerRef.current,
-      view,
-      isInterviewDecorModeOn,
-      clearUserNotesDecor,
-      applyUserNotesDecor,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    draft?.notes_by_element,
-    draft?.notesByElementId,
+  useBpmnSettledDecorFanout({
+    viewerRef,
+    modelerRef,
+    modelerRuntimeRef,
+    modelerReadyRef,
     view,
+    draft,
     diagramDisplayMode,
-  ]);
-
-  useEffect(() => {
-    runSettledStepTimeFanout({
-      viewerInst: viewerRef.current,
-      modelerInst: modelerRef.current,
-      view,
-      applyStepTimeDecor,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    draft?.nodes,
-    view,
     stepTimeUnit,
-  ]);
-
-  useEffect(() => {
-    runSettledRobotMetaFanout({
-      viewerInst: viewerRef.current,
-      modelerInst: modelerRef.current,
-      view,
-      applyRobotMetaDecor,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    draft?.bpmn_meta,
-    view,
     robotMetaOverlayEnabled,
     robotMetaOverlayFilters,
     robotMetaStatusByElementId,
-  ]);
-
-  useEffect(() => {
-    runSettledPropertiesFanout({
-      viewerInst: viewerRef.current,
-      modelerInst: modelerRef.current,
-      view,
-      applyPropertiesOverlayDecor,
-      clearPropertiesOverlayDecor,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    view,
     selectedPropertiesOverlayPreview,
     propertiesOverlayAlwaysEnabled,
     propertiesOverlayAlwaysPreviewByElementId,
-  ]);
-
-  useEffect(() => {
-    runSettledSelectionFanout({
-      viewerInst: viewerRef.current,
-      modelerInst: modelerRef.current,
-      view,
-      selectedMarkerStateRef,
-      selectionFanoutStateRef: settledSelectionFanoutRef,
-      buildSelectionFanoutSignature: buildSettledSelectionFanoutSignature,
-      emitElementSelection,
-      syncAiQuestionPanelWithSelection,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    draft?.notes_by_element,
-    draft?.notesByElementId,
-    view,
-    diagramDisplayMode,
-  ]);
+    isInterviewDecorModeOn,
+    clearUserNotesDecor,
+    applyUserNotesDecor,
+    applyStepTimeDecor,
+    applyRobotMetaDecor,
+    applyPropertiesOverlayDecor,
+    clearPropertiesOverlayDecor,
+    selectedMarkerStateRef,
+    settledSelectionFanoutRef,
+    buildSettledSelectionFanoutSignature,
+    emitElementSelection,
+    syncAiQuestionPanelWithSelection,
+    syncCamundaExtensionsToModeler,
+  });
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
