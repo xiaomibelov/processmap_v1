@@ -17,6 +17,7 @@ import {
   runSettledStepTimeFanout,
   runSettledUserNotesFanout,
 } from "../../features/process/bpmn/stage/fanout/postStagingFanout";
+import { readOverlayCanvasZoom } from "../../features/process/bpmn/stage/decor/overlayLayoutModel.js";
 import forceTaskResizeRulesModule from "../../features/process/bpmn/runtime/modules/forceTaskResizeRules";
 import {
   saveBpmnSnapshot,
@@ -1212,6 +1213,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const robotMetaDecorStateRef = useRef({ viewer: {}, editor: {} });
   const propertiesOverlayStateRef = useRef({ viewer: {}, editor: {} });
   const propertiesOverlayRenderSignatureRef = useRef({ viewer: "", editor: "" });
+  const propertiesOverlayZoomBucketRef = useRef({ viewer: "", editor: "" });
   const settledSelectionFanoutRef = useRef({ viewer: "", editor: "" });
   const playbackDecorStateRef = useRef({
     viewer: createPlaybackDecorRuntimeState(),
@@ -3034,6 +3036,16 @@ const BpmnStage = forwardRef(function BpmnStage({
     return decorManager.applyPropertiesOverlayDecor(createDecorCtx(inst, kind));
   }
 
+  function applyPropertiesOverlayDecorForZoomChange(inst, kind) {
+    if (!inst) return;
+    const mode = kind === "editor" ? "editor" : "viewer";
+    const zoom = readOverlayCanvasZoom(inst);
+    const zoomBucket = String(Math.round(Number(zoom || 1) * 1000) / 1000);
+    if (propertiesOverlayZoomBucketRef.current[mode] === zoomBucket) return;
+    propertiesOverlayZoomBucketRef.current[mode] = zoomBucket;
+    applyPropertiesOverlayDecor(inst, mode);
+  }
+
   function clearPlaybackDecor(inst, kind) {
     return playbackOverlayAdapter.clearPlaybackDecor(inst, kind);
   }
@@ -3254,6 +3266,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     robotMetaDecorStateRef.current = { viewer: {}, editor: {} };
     propertiesOverlayStateRef.current = { viewer: {}, editor: {} };
     propertiesOverlayRenderSignatureRef.current = { viewer: "", editor: "" };
+    propertiesOverlayZoomBucketRef.current = { viewer: "", editor: "" };
     playbackDecorStateRef.current = {
       viewer: createPlaybackDecorRuntimeState(),
       editor: createPlaybackDecorRuntimeState(),
@@ -3463,8 +3476,8 @@ const BpmnStage = forwardRef(function BpmnStage({
               suppressed,
               snapshot: snap,
             });
-            // Recompute property overlay geometry for current zoom bucket.
-            applyPropertiesOverlayDecor(v, "viewer");
+            // Property overlay geometry only depends on zoom bucket, not pan.
+            applyPropertiesOverlayDecorForZoomChange(v, "viewer");
           });
         } catch {
         }
@@ -3583,8 +3596,8 @@ const BpmnStage = forwardRef(function BpmnStage({
               suppressed,
               snapshot: snap,
             });
-            // Recompute property overlay geometry for current zoom bucket.
-            applyPropertiesOverlayDecor(m, "editor");
+            // Property overlay geometry only depends on zoom bucket, not pan.
+            applyPropertiesOverlayDecorForZoomChange(m, "editor");
           });
           modelerDecorBoundInstanceRef.current = m;
         }
