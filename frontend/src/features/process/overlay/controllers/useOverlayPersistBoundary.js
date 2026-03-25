@@ -31,7 +31,10 @@ export default function useOverlayPersistBoundary({
   }, [normalizeDrawioMeta, persistDrawioMeta]);
 
   const applyDrawioMutation = useCallback((mutator, options = {}) => {
-    const prev = normalizeDrawioMeta(drawioMetaRef.current);
+    // drawioMetaRef.current is always already a normalized object (set via
+    // `drawioMetaRef.current = next` after every mutation). Skip redundant
+    // normalizeDrawioMeta call here — saves one full object clone per mutation.
+    const prev = drawioMetaRef.current ?? normalizeDrawioMeta(null);
     const mutated = typeof mutator === "function" ? mutator(prev) : prev;
     // Fast-path: mutators follow contract — return same `prev` ref when nothing changed.
     // Avoids double JSON.stringify(100KB+ object) on every no-op mutation.
