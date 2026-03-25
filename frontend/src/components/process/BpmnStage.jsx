@@ -53,6 +53,8 @@ import "bpmn-js/dist/assets/bpmn-js.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css";
 
+const shapeTitleLookupCache = new WeakMap();
+
 function asArray(x) {
   return Array.isArray(x) ? x : [];
 }
@@ -63,6 +65,11 @@ function asObject(x) {
 
 function toText(v) {
   return String(v || "").trim();
+}
+
+function invalidateShapeTitleLookup(registry) {
+  if (!registry || typeof registry !== "object") return;
+  shapeTitleLookupCache.delete(registry);
 }
 
 function readStepTimeMinutes(nodeRaw) {
@@ -2683,12 +2690,19 @@ const BpmnStage = forwardRef(function BpmnStage({
 
     const t = String(hint?.title || "").trim().toLowerCase();
     if (!t) return null;
-    const byName = registry.filter((el) => {
-      if (!isShapeElement(el)) return false;
-      const n = String(el?.businessObject?.name || "").trim().toLowerCase();
-      return n && n === t;
-    });
-    return byName[0] || null;
+    let titleLookup = shapeTitleLookupCache.get(registry);
+    if (!titleLookup) {
+      titleLookup = new Map();
+      const all = Array.isArray(registry?.getAll?.()) ? registry.getAll() : [];
+      all.forEach((el) => {
+        if (!isShapeElement(el)) return;
+        const name = String(el?.businessObject?.name || "").trim().toLowerCase();
+        if (!name || titleLookup.has(name)) return;
+        titleLookup.set(name, el);
+      });
+      shapeTitleLookupCache.set(registry, titleLookup);
+    }
+    return titleLookup.get(t) || null;
   }
 
   function findDiagramElementForHint(registry, hint) {
@@ -3543,6 +3557,7 @@ const BpmnStage = forwardRef(function BpmnStage({
             applyShapeReplacePost(m, ev, "commandStack.shape.replace.postExecute");
           });
           eventBus.on("commandStack.changed", 900, () => {
+            invalidateShapeTitleLookup(m.get("elementRegistry"));
             runImmediateEditorFanout({
               inst: m,
               applyTaskTypeDecor,
@@ -3621,6 +3636,7 @@ const BpmnStage = forwardRef(function BpmnStage({
 
   async function renderViewer(nextXml) {
     const v = await ensureViewer();
+    invalidateShapeTitleLookup(v?.get?.("elementRegistry"));
     beginImportSelectionGuard("viewer");
     const token = runtimeTokenRef.current + 1;
     runtimeTokenRef.current = token;
@@ -3731,6 +3747,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     const importPromise = (async () => {
       const runtime = ensureModelerRuntime();
       const m = await ensureModeler();
+      invalidateShapeTitleLookup(m?.get?.("elementRegistry"));
       const layoutReady = await waitForNonZeroRect(
         () => m?.get?.("canvas")?._container || editorEl.current,
         {
