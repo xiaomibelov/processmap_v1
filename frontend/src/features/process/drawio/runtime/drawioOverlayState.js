@@ -172,7 +172,7 @@ function applyDrawioLayerRenderState(bodyRaw, metaRaw, selectedIdRaw = "", draft
       if (!elementMap.has(elementId)) {
         let passthroughAttrs = `${String(beforeIdAttrs || "")}${afterAttrs}`;
         passthroughAttrs = mergeStyle(passthroughAttrs, "pointer-events:none;");
-        return `<${tagName}${passthroughAttrs} id="${elementId}"${isSelfClosing ? " />" : ">"}>`;
+        return `<${tagName}${passthroughAttrs} id="${elementId}"${isSelfClosing ? " />" : ">"}`;
       }
       const elementState = asObject(elementMap.get(elementId));
       const layerState = asObject(layerMap.get(toText(elementState.layer_id)));
@@ -193,7 +193,7 @@ function applyDrawioLayerRenderState(bodyRaw, metaRaw, selectedIdRaw = "", draft
       if (!/\sdata-drawio-el-id=/.test(patchedAttrs)) {
         patchedAttrs = `${patchedAttrs} data-drawio-el-id="${elementId}"`;
       }
-      return `<${tagName}${patchedAttrs} id="${elementId}"${isSelfClosing ? " />" : ">"}>`;
+      return `<${tagName}${patchedAttrs} id="${elementId}"${isSelfClosing ? " />" : ">"}`;
     },
   );
 }
