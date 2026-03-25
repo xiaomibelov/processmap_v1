@@ -38,7 +38,7 @@ export function buildSaveUiState({
   const draftAheadOfLatest = draftState.isDraftAheadOfLatestRevision === true;
   const publishActionRequired = draftAheadOfLatest || (latestRevisionNumber <= 0 && hasLiveDraft);
   const showSaveActionButton = saveDirty || publishActionRequired;
-  const saveActionText = publishActionRequired ? "Publish" : saveSmartText;
+  const saveActionText = publishActionRequired ? "Сохранить версию" : saveSmartText;
   return {
     saveSmartText,
     saveDirty,
