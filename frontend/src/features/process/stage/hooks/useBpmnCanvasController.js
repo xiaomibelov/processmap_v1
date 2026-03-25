@@ -107,6 +107,30 @@ export default function useBpmnCanvasController({
     });
   }, [getCanvasHost, toNodeId]);
 
+  const syncHybridLayerPositions = useCallback(() => {
+    const next = {};
+    hybridLayerItems.forEach((itemRaw) => {
+      const item = asObject(itemRaw);
+      const elementId = toText(item?.elementId);
+      if (!elementId) return;
+      const anchor = readHybridElementAnchor(elementId);
+      if (!anchor) return;
+      next[elementId] = anchor;
+    });
+    const prev = asObject(hybridLayerPositionsRef.current);
+    const changed = Object.keys(next).length !== Object.keys(prev).length || Object.keys(next).some((key) => {
+      const a = asObject(prev[key]);
+      const b = asObject(next[key]);
+      return Math.abs(Number(a.x || 0) - Number(b.x || 0)) > 0.5
+        || Math.abs(Number(a.y || 0) - Number(b.y || 0)) > 0.5
+        || Math.abs(Number(a.width || 0) - Number(b.width || 0)) > 0.5
+        || Math.abs(Number(a.height || 0) - Number(b.height || 0)) > 0.5;
+    });
+    if (!changed) return;
+    hybridLayerPositionsRef.current = next;
+    setHybridLayerPositions(next);
+  }, [hybridLayerItems, readHybridElementAnchor, toText]);
+
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     if (tab !== "diagram" || !hybridVisible) {
@@ -115,44 +139,44 @@ export default function useBpmnCanvasController({
       return undefined;
     }
     let canceled = false;
-    let timerId = 0;
-    const compute = () => {
-      if (canceled) return;
-      const next = {};
-      hybridLayerItems.forEach((itemRaw) => {
-        const item = asObject(itemRaw);
-        const elementId = toText(item?.elementId);
-        if (!elementId) return;
-        const anchor = readHybridElementAnchor(elementId);
-        if (!anchor) return;
-        next[elementId] = anchor;
+    let frameId = 0;
+    const intervalMs = 900;
+    const scheduleFrame = typeof window.requestAnimationFrame === "function"
+      ? window.requestAnimationFrame.bind(window)
+      : (fn) => window.setTimeout(fn, 16);
+    const cancelFrame = typeof window.cancelAnimationFrame === "function"
+      ? window.cancelAnimationFrame.bind(window)
+      : window.clearTimeout.bind(window);
+    const schedule = () => {
+      if (canceled || frameId) return;
+      frameId = scheduleFrame(() => {
+        frameId = 0;
+        if (canceled) return;
+        syncHybridLayerPositions();
       });
-      const prev = asObject(hybridLayerPositionsRef.current);
-      const changed = Object.keys(next).length !== Object.keys(prev).length || Object.keys(next).some((key) => {
-        const a = asObject(prev[key]);
-        const b = asObject(next[key]);
-        return Math.abs(Number(a.x || 0) - Number(b.x || 0)) > 0.5
-          || Math.abs(Number(a.y || 0) - Number(b.y || 0)) > 0.5
-          || Math.abs(Number(a.width || 0) - Number(b.width || 0)) > 0.5
-          || Math.abs(Number(a.height || 0) - Number(b.height || 0)) > 0.5;
-      });
-      if (changed) {
-        hybridLayerPositionsRef.current = next;
-        setHybridLayerPositions(next);
-      }
     };
-    compute();
-    timerId = window.setInterval(compute, 320);
+    const unsubscribeViewbox = typeof canvasApi?.onViewboxChanged === "function"
+      ? (canvasApi.onViewboxChanged(schedule) || (() => {}))
+      : (() => {});
+    const onResize = () => schedule();
+    window.addEventListener("resize", onResize);
+    schedule();
+    const timerId = window.setInterval(schedule, intervalMs);
     return () => {
       canceled = true;
+      if (frameId) {
+        cancelFrame(frameId);
+        frameId = 0;
+      }
       if (timerId) window.clearInterval(timerId);
+      window.removeEventListener("resize", onResize);
+      unsubscribeViewbox();
     };
   }, [
-    hybridLayerItems,
+    canvasApi,
     hybridVisible,
-    readHybridElementAnchor,
+    syncHybridLayerPositions,
     tab,
-    toText,
   ]);
 
   return {

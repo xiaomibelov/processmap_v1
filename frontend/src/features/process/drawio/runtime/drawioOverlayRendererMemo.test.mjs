@@ -63,3 +63,16 @@ test("areDrawioOverlayRendererPropsEqual detects drawio element structure change
   };
   assert.equal(areDrawioOverlayRendererPropsEqual(prev, next), false);
 });
+
+test("areDrawioOverlayRendererPropsEqual ignores non-render fields in drawio rows", () => {
+  const prev = createBaseProps();
+  const next = {
+    ...prev,
+    drawioMeta: {
+      ...prev.drawioMeta,
+      drawio_elements_v1: [{ ...prev.drawioMeta.drawio_elements_v1[0], anchor_v1: { x: 10, y: 20 } }],
+      drawio_layers_v1: [{ ...prev.drawioMeta.drawio_layers_v1[0], label: "Layer A" }],
+    },
+  };
+  assert.equal(areDrawioOverlayRendererPropsEqual(prev, next), true);
+});

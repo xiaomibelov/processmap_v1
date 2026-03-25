@@ -183,8 +183,9 @@ function DrawioOverlayRenderer({
     [parsedBody, effectiveMode, metaLocked, layerMap, elementMap],
   );
   const renderedBody = parsedBody;
+  const registryRenderedBodyRef = useRef("");
 
-  const { registryRef, getNode: getRegistryNode } = useDrawioElementNodeRegistry({
+  const { registryRef, getNode: getRegistryNode, rebuildRegistry } = useDrawioElementNodeRegistry({
     rootRef: containerRef,
     renderedBody,
   });
@@ -207,11 +208,9 @@ function DrawioOverlayRenderer({
         null,
         { layerMap, elementMap },
       );
-      registryRef.current.clear();
-      const nodes = viewportNode.querySelectorAll("[data-drawio-el-id]");
-      for (const node of nodes) {
-        const id = node.getAttribute("data-drawio-el-id");
-        if (id) registryRef.current.set(id, node);
+      if (registryRenderedBodyRef.current !== renderedBody || registryRef.current.size <= 0) {
+        rebuildRegistry();
+        registryRenderedBodyRef.current = renderedBody;
       }
       renderStateAppliedRef.current = renderStateSignature;
       if (selectedId) {
@@ -225,7 +224,9 @@ function DrawioOverlayRenderer({
     getRegistryNode,
     layerMap,
     metaLocked,
+    rebuildRegistry,
     registryRef,
+    renderedBody,
     renderStateSignature,
     selectedId,
   ]);

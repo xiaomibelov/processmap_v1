@@ -1,18 +1,47 @@
 import { asArray, asObject, toNumber } from "./drawioOverlayState.js";
 
+function toText(valueRaw) {
+  return String(valueRaw || "").trim();
+}
+
+function layerRowRenderEqual(aRaw, bRaw) {
+  const a = asObject(aRaw);
+  const b = asObject(bRaw);
+  return toText(a.id) === toText(b.id)
+    && (a.visible !== false) === (b.visible !== false)
+    && (a.locked === true) === (b.locked === true)
+    && toNumber(a.opacity, 1) === toNumber(b.opacity, 1);
+}
+
+function elementRowRenderEqual(aRaw, bRaw) {
+  const a = asObject(aRaw);
+  const b = asObject(bRaw);
+  return toText(a.id) === toText(b.id)
+    && toText(a.layer_id) === toText(b.layer_id)
+    && (a.visible !== false) === (b.visible !== false)
+    && (a.locked === true) === (b.locked === true)
+    && (a.deleted === true) === (b.deleted === true)
+    && toNumber(a.opacity, 1) === toNumber(b.opacity, 1)
+    && toNumber(a.offset_x ?? a.offsetX, 0) === toNumber(b.offset_x ?? b.offsetX, 0)
+    && toNumber(a.offset_y ?? a.offsetY, 0) === toNumber(b.offset_y ?? b.offsetY, 0);
+}
+
 /**
  * Element-wise structural comparison for drawio_layers_v1 / drawio_elements_v1.
  * O(1) on same reference, O(n) only when something actually changed.
- * Per-element JSON.stringify only for items that differ by reference.
+ * Custom row comparator avoids heavy JSON.stringify in hot render paths.
  */
-export function arraysStructuralEqual(a, b) {
+export function arraysStructuralEqual(a, b, compareRow = null) {
   if (a === b) return true;
   const aArr = Array.isArray(a) ? a : [];
   const bArr = Array.isArray(b) ? b : [];
   if (aArr.length !== bArr.length) return false;
+  const rowComparer = typeof compareRow === "function"
+    ? compareRow
+    : (left, right) => JSON.stringify(left) === JSON.stringify(right);
   for (let i = 0; i < aArr.length; i += 1) {
     if (aArr[i] === bArr[i]) continue;
-    if (JSON.stringify(aArr[i]) !== JSON.stringify(bArr[i])) return false;
+    if (!rowComparer(aArr[i], bArr[i])) return false;
   }
   return true;
 }
@@ -28,8 +57,24 @@ export function areDrawioOverlayRendererPropsEqual(prevProps, nextProps) {
   if (toNumber(asObject(prevMeta.transform).y, 0) !== toNumber(asObject(nextMeta.transform).y, 0)) return false;
   if (String(prevMeta.active_tool || "") !== String(nextMeta.active_tool || "")) return false;
   if (String(prevMeta.svg_cache || "") !== String(nextMeta.svg_cache || "")) return false;
-  if (!arraysStructuralEqual(asArray(prevMeta.drawio_layers_v1), asArray(nextMeta.drawio_layers_v1))) return false;
-  if (!arraysStructuralEqual(asArray(prevMeta.drawio_elements_v1), asArray(nextMeta.drawio_elements_v1))) return false;
+  if (
+    !arraysStructuralEqual(
+      asArray(prevMeta.drawio_layers_v1),
+      asArray(nextMeta.drawio_layers_v1),
+      layerRowRenderEqual,
+    )
+  ) {
+    return false;
+  }
+  if (
+    !arraysStructuralEqual(
+      asArray(prevMeta.drawio_elements_v1),
+      asArray(nextMeta.drawio_elements_v1),
+      elementRowRenderEqual,
+    )
+  ) {
+    return false;
+  }
   // Functions and refs: use reference equality (useCallback guarantees stability)
   if (prevProps.screenToDiagram !== nextProps.screenToDiagram) return false;
   if (prevProps.overlayMatrixRef !== nextProps.overlayMatrixRef) return false;
