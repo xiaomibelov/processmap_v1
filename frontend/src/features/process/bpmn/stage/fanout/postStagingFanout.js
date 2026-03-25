@@ -148,9 +148,6 @@ export function runImmediateEditorFanout(options = {}) {
   measureImmediateStep("immediate.happyFlowDecor", () => {
     options.applyHappyFlowDecor?.(inst, "editor");
   }, meta);
-  measureImmediateStep("immediate.robotMetaDecor", () => {
-    options.applyRobotMetaDecor?.(inst, "editor");
-  }, meta);
   const realtimeOpsEnabled = resolveImmediateRealtimeOpsEnabled(options?.realtimeOpsEnabled);
   if (!realtimeOpsEnabled) {
     writeImmediatePerf("immediate.realtimeOpsEmit.skipped", 0, {
