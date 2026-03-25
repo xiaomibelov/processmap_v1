@@ -1,0 +1,48 @@
+name: Deploy to Prod
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to prod server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGE_HOST }}
+          username: ${{ secrets.STAGE_USER }}
+          key: ${{ secrets.STAGE_SSH_KEY }}
+          command_timeout: 20m
+          script: |
+            set -e
+            cd /opt/processmap/app
+
+            # Pull latest source code only, preserve server configs
+            git remote set-url origin git@github.com:xiaomibelov/processmap_v1.git
+            git fetch origin main
+            git checkout origin/main -- backend frontend Dockerfile deploy \
+              docker-compose.yml docker-compose.prod.yml docker-compose.prod.gateway.yml \
+              docker-compose.ssl.yml Dockerfile.gateway.prod
+
+            # Rebuild api and gateway (frontend is baked into gateway image)
+            APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
+              --env-file /opt/processmap/env/prod.env \
+              -f docker-compose.yml \
+              -f docker-compose.prod.yml \
+              -f docker-compose.ssl.yml \
+              -f docker-compose.prod.gateway.yml \
+              -p app \
+              build api gateway
+
+            # Restart updated containers
+            APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
+              --env-file /opt/processmap/env/prod.env \
+              -f docker-compose.yml \
+              -f docker-compose.prod.yml \
+              -f docker-compose.ssl.yml \
+              -f docker-compose.prod.gateway.yml \
+              -p app \
+              up -d --no-deps api gateway
+
+            echo "[deploy-prod] done"
