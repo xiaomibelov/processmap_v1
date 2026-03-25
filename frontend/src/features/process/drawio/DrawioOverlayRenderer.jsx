@@ -104,7 +104,9 @@ function DrawioOverlayRenderer({
   const e = composedMatrix.e;
   const f = composedMatrix.f;
   const opacity = Math.max(0.05, Math.min(1, Number(meta.opacity || 1)));
-  const { layerMap, elementMap } = useMemo(() => buildDrawioLayerRenderMaps(runtimeMeta), [runtimeMeta]);
+  // Maps depend only on layers/elements — NOT on mode/tool/selectedId.
+  // Use drawioMeta (prop ref) directly so maps don't rebuild on tool/mode changes.
+  const { layerMap, elementMap } = useMemo(() => buildDrawioLayerRenderMaps(drawioMeta), [drawioMeta]);
   const viewportGroupRef = useRef(null);
   const containerRef = useRef(null);
   const [placementPreviewPoint, setPlacementPreviewPoint] = useState(null);
@@ -127,12 +129,17 @@ function DrawioOverlayRenderer({
     onSelectionChange,
   });
 
+  // renderedBody deps: only fields that applyDrawioLayerRenderState actually reads from meta
+  // (interaction_mode → effectiveMode, locked). Changing active_tool or opacity alone
+  // no longer triggers a full SVG re-render.
+  const metaLocked = meta.locked;
   const renderedBody = useMemo(
     () => {
       bumpDrawioPerfCounter("drawio.renderer.renderedBody.recompute");
       return applyDrawioLayerRenderState(parsedBody, runtimeMeta, selectedId, null, { layerMap, elementMap });
     },
-    [runtimeMeta, parsedBody, selectedId, layerMap, elementMap],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [parsedBody, selectedId, layerMap, elementMap, effectiveMode, metaLocked],
   );
 
   const { registryRef } = useDrawioElementNodeRegistry({
