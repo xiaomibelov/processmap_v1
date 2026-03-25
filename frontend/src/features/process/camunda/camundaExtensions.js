@@ -1259,11 +1259,9 @@ export function hydrateCamundaExtensionsFromBpmn({ extractedMap, sessionMetaMap 
     const extractedEntry = normalizeCamundaExtensionState(extracted[elementId]);
     const sessionEntryRaw = session[elementId];
     if (!sessionEntryRaw) {
-      next[elementId] = extractedEntry;
-      addedElements += 1;
-      addedProperties += extractedEntry.properties.extensionProperties.length;
-      addedListeners += extractedEntry.properties.extensionListeners.length;
-      addedPreserved += extractedEntry.preservedExtensionElements.length;
+      // sessionHasData is true here (checked above). If an element is absent from
+      // session but present in XML, it means the user intentionally deleted all its
+      // managed properties/listeners. Do NOT re-seed from XML — session wins.
       return;
     }
 
