@@ -130,9 +130,9 @@ function DrawioOverlayRenderer({
   const renderedBody = useMemo(
     () => {
       bumpDrawioPerfCounter("drawio.renderer.renderedBody.recompute");
-      return applyDrawioLayerRenderState(parsedBody, runtimeMeta, selectedId, null);
+      return applyDrawioLayerRenderState(parsedBody, runtimeMeta, selectedId, null, { layerMap, elementMap });
     },
-    [runtimeMeta, parsedBody, selectedId],
+    [runtimeMeta, parsedBody, selectedId, layerMap, elementMap],
   );
 
   const { registryRef } = useDrawioElementNodeRegistry({

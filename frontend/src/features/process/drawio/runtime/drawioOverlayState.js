@@ -152,10 +152,13 @@ function resolveDrawioPointerElementId(targetRaw, rootRaw, metaRaw, layerMap, el
   return "";
 }
 
-function applyDrawioLayerRenderState(bodyRaw, metaRaw, selectedIdRaw = "", draftOffsetRaw = null) {
+function applyDrawioLayerRenderState(bodyRaw, metaRaw, selectedIdRaw = "", draftOffsetRaw = null, prebuiltMapsRaw = null) {
   const body = String(bodyRaw || "");
   if (!body) return body;
-  const { layerMap, elementMap } = buildDrawioLayerRenderMaps(metaRaw);
+  const prebuilt = prebuiltMapsRaw && prebuiltMapsRaw.layerMap && prebuiltMapsRaw.elementMap
+    ? prebuiltMapsRaw
+    : buildDrawioLayerRenderMaps(metaRaw);
+  const { layerMap, elementMap } = prebuilt;
   const selectedId = toText(selectedIdRaw);
   const draftOffset = asObject(draftOffsetRaw);
   const draftId = toText(draftOffset.id);
