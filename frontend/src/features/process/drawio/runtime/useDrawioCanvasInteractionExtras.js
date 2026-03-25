@@ -86,6 +86,10 @@ export default function useDrawioCanvasInteractionExtras({
 
   const resizeDragRef = useRef(null);
   const resizeCleanupRef = useRef(null);
+  // metaRef: read in event handlers to remove meta from effect deps.
+  // dblclick listener no longer re-binds on every meta mutation (e.g. svg_cache update).
+  const metaRef = useRef(meta);
+  metaRef.current = meta;
 
   // ── Compute selected element bbox in diagram space ────────────────────────
   useEffect(() => {
@@ -230,7 +234,7 @@ export default function useDrawioCanvasInteractionExtras({
 
     const onDblClick = (event) => {
       if (!visible) return;
-      const mode = String(meta?.interaction_mode || meta?.drawioMode || "").toLowerCase();
+      const mode = String(metaRef.current?.interaction_mode || metaRef.current?.drawioMode || "").toLowerCase();
       if (mode && mode !== "edit") return;
       const target = event.target instanceof Element ? event.target : null;
       if (!target) return;
@@ -279,7 +283,8 @@ export default function useDrawioCanvasInteractionExtras({
 
     root.addEventListener("dblclick", onDblClick);
     return () => root.removeEventListener("dblclick", onDblClick);
-  }, [rootRef, containerRef, elementMap, meta, visible]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rootRef, containerRef, elementMap, visible]);
 
   const commitInlineText = useCallback((text) => {
     const edit = inlineEdit;
