@@ -11,7 +11,11 @@ import { createAiQuestionPanelAdapter } from "../../features/process/bpmn/stage/
 import { createBpmnStageImperativeApi } from "../../features/process/bpmn/stage/imperative/bpmnStageImperativeApi";
 import {
   runImmediateEditorFanout,
-  runSettledDecorSidebarFanout,
+  runSettledPropertiesFanout,
+  runSettledRobotMetaFanout,
+  runSettledSelectionFanout,
+  runSettledStepTimeFanout,
+  runSettledUserNotesFanout,
 } from "../../features/process/bpmn/stage/fanout/postStagingFanout";
 import forceTaskResizeRulesModule from "../../features/process/bpmn/runtime/modules/forceTaskResizeRules";
 import {
@@ -4555,17 +4559,74 @@ const BpmnStage = forwardRef(function BpmnStage({
   }, [draft?.bpmn_meta]);
 
   useEffect(() => {
-    runSettledDecorSidebarFanout({
+    runSettledUserNotesFanout({
       viewerInst: viewerRef.current,
       modelerInst: modelerRef.current,
       view,
       isInterviewDecorModeOn,
       clearUserNotesDecor,
       applyUserNotesDecor,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    draft?.notes_by_element,
+    draft?.notesByElementId,
+    view,
+    diagramDisplayMode,
+  ]);
+
+  useEffect(() => {
+    runSettledStepTimeFanout({
+      viewerInst: viewerRef.current,
+      modelerInst: modelerRef.current,
+      view,
       applyStepTimeDecor,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    draft?.nodes,
+    view,
+    stepTimeUnit,
+  ]);
+
+  useEffect(() => {
+    runSettledRobotMetaFanout({
+      viewerInst: viewerRef.current,
+      modelerInst: modelerRef.current,
+      view,
       applyRobotMetaDecor,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    draft?.bpmn_meta,
+    draft?.nodes,
+    view,
+    robotMetaOverlayEnabled,
+    robotMetaOverlayFilters,
+    robotMetaStatusByElementId,
+  ]);
+
+  useEffect(() => {
+    runSettledPropertiesFanout({
+      viewerInst: viewerRef.current,
+      modelerInst: modelerRef.current,
+      view,
       applyPropertiesOverlayDecor,
       clearPropertiesOverlayDecor,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    view,
+    selectedPropertiesOverlayPreview,
+    propertiesOverlayAlwaysEnabled,
+    propertiesOverlayAlwaysPreviewByElementId,
+  ]);
+
+  useEffect(() => {
+    runSettledSelectionFanout({
+      viewerInst: viewerRef.current,
+      modelerInst: modelerRef.current,
+      view,
       selectedMarkerStateRef,
       selectionFanoutStateRef: settledSelectionFanoutRef,
       buildSelectionFanoutSignature: buildSettledSelectionFanoutSignature,
@@ -4576,17 +4637,8 @@ const BpmnStage = forwardRef(function BpmnStage({
   }, [
     draft?.notes_by_element,
     draft?.notesByElementId,
-    draft?.nodes,
-    draft?.bpmn_meta,
     view,
     diagramDisplayMode,
-    stepTimeUnit,
-    robotMetaOverlayEnabled,
-    robotMetaOverlayFilters,
-    robotMetaStatusByElementId,
-    selectedPropertiesOverlayPreview,
-    propertiesOverlayAlwaysEnabled,
-    propertiesOverlayAlwaysPreviewByElementId,
   ]);
 
   useEffect(() => {

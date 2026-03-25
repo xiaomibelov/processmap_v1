@@ -164,18 +164,13 @@ export function runImmediateEditorFanout(options = {}) {
   }, meta);
 }
 
-export function runSettledDecorSidebarFanout(options = {}) {
+export function runSettledUserNotesFanout(options = {}) {
   const viewerInst = options?.viewerInst || null;
   const modelerInst = options?.modelerInst || null;
   const view = String(options?.view || "viewer");
   const isInterviewDecorModeOn = typeof options?.isInterviewDecorModeOn === "function"
     ? options.isInterviewDecorModeOn
     : () => false;
-  const selectedMarkerStateRef = options?.selectedMarkerStateRef || { current: {} };
-  const selectionFanoutStateRef = options?.selectionFanoutStateRef || { current: {} };
-  const buildSelectionFanoutSignature = typeof options?.buildSelectionFanoutSignature === "function"
-    ? options.buildSelectionFanoutSignature
-    : null;
   const meta = { kind: "settled", view };
 
   if (isInterviewDecorModeOn()) {
@@ -193,20 +188,39 @@ export function runSettledDecorSidebarFanout(options = {}) {
       options.applyUserNotesDecor?.(modelerInst, "editor");
     }, meta);
   }
+}
 
+export function runSettledStepTimeFanout(options = {}) {
+  const viewerInst = options?.viewerInst || null;
+  const modelerInst = options?.modelerInst || null;
+  const view = String(options?.view || "viewer");
+  const meta = { kind: "settled", view };
   measureSettledStep("settled.stepTime.viewer", () => {
     options.applyStepTimeDecor?.(viewerInst, "viewer");
   }, meta);
   measureSettledStep("settled.stepTime.editor", () => {
     options.applyStepTimeDecor?.(modelerInst, "editor");
   }, meta);
+}
+
+export function runSettledRobotMetaFanout(options = {}) {
+  const viewerInst = options?.viewerInst || null;
+  const modelerInst = options?.modelerInst || null;
+  const view = String(options?.view || "viewer");
+  const meta = { kind: "settled", view };
   measureSettledStep("settled.robotMeta.viewer", () => {
     options.applyRobotMetaDecor?.(viewerInst, "viewer");
   }, meta);
   measureSettledStep("settled.robotMeta.editor", () => {
     options.applyRobotMetaDecor?.(modelerInst, "editor");
   }, meta);
+}
 
+export function runSettledPropertiesFanout(options = {}) {
+  const viewerInst = options?.viewerInst || null;
+  const modelerInst = options?.modelerInst || null;
+  const view = String(options?.view || "viewer");
+  const meta = { kind: "settled", view };
   const activeKind = view === "editor" ? "editor" : "viewer";
   const inactiveKind = activeKind === "editor" ? "viewer" : "editor";
   const activeInst = activeKind === "editor" ? modelerInst : viewerInst;
@@ -217,7 +231,18 @@ export function runSettledDecorSidebarFanout(options = {}) {
   measureSettledStep(`settled.properties.clear.${inactiveKind}`, () => {
     options.clearPropertiesOverlayDecor?.(inactiveInst, inactiveKind);
   }, meta);
+}
 
+export function runSettledSelectionFanout(options = {}) {
+  const viewerInst = options?.viewerInst || null;
+  const modelerInst = options?.modelerInst || null;
+  const view = String(options?.view || "viewer");
+  const selectedMarkerStateRef = options?.selectedMarkerStateRef || { current: {} };
+  const selectionFanoutStateRef = options?.selectionFanoutStateRef || { current: {} };
+  const buildSelectionFanoutSignature = typeof options?.buildSelectionFanoutSignature === "function"
+    ? options.buildSelectionFanoutSignature
+    : null;
+  const meta = { kind: "settled", view };
   const selectedKind = view === "editor" ? "editor" : "viewer";
   const selectedInst = selectedKind === "editor" ? modelerInst : viewerInst;
   const selectedId = asText(selectedMarkerStateRef?.current?.[selectedKind] || "");
@@ -262,4 +287,12 @@ export function runSettledDecorSidebarFanout(options = {}) {
   } catch {
     // no-op
   }
+}
+
+export function runSettledDecorSidebarFanout(options = {}) {
+  runSettledUserNotesFanout(options);
+  runSettledStepTimeFanout(options);
+  runSettledRobotMetaFanout(options);
+  runSettledPropertiesFanout(options);
+  runSettledSelectionFanout(options);
 }
