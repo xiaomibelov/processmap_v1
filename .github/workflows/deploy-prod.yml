@@ -25,6 +25,10 @@ jobs:
               docker-compose.yml docker-compose.prod.yml docker-compose.prod.gateway.yml \
               docker-compose.ssl.yml Dockerfile.gateway.prod
 
+            # Save current images as rollback point before rebuilding
+            docker tag processmap-gateway:dev processmap-gateway:rollback 2>/dev/null || true
+            docker tag app-api:latest app-api:rollback 2>/dev/null || true
+
             # Rebuild api and gateway (frontend is baked into gateway image)
             APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
               --env-file /opt/processmap/env/prod.env \
