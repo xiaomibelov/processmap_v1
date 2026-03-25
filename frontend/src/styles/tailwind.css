@@ -1801,8 +1801,8 @@
   }
 
   .sidebarRedesignStack {
-    @apply grid px-2.5 py-2;
-    gap: 8px;
+    @apply grid px-2 py-2;
+    gap: 10px;
   }
 
   .sidebarCardSurface {
@@ -1818,10 +1818,10 @@
   }
 
   .selectedElementCard {
-    @apply min-w-0 px-3 py-2;
-    border-radius: 10px;
-    border: 1px solid #EBF0F7;
-    background: #F8FAFD;
+    @apply min-w-0 px-3 py-2.5;
+    border-radius: 12px;
+    border: 1px solid #E0EAF6;
+    background: linear-gradient(160deg, #FAFDFF 0%, #F4F8FD 100%);
   }
 
   .selectedElementTitleWrap {
@@ -1863,50 +1863,54 @@
   }
 
   .sidebarSettingsSurface {
-    @apply min-w-0 px-0 py-0;
-    border-radius: 0;
-    border: 0;
-    background: transparent;
-    box-shadow: none;
+    @apply min-w-0;
+    border-radius: 14px;
+    border: 1px solid #DDE8F4;
+    background: #FFFFFF;
+    box-shadow: 0 2px 10px rgba(31, 42, 68, 0.06);
+    overflow: hidden;
   }
 
   .sidebarSettingsHeader {
-    @apply px-2 pb-1.5;
-    border-bottom: 1px solid #E7ECF4;
+    @apply px-3 pb-2 pt-2;
+    border-bottom: 1px solid #EEF2F9;
   }
 
   .sidebarAccordionStack {
     @apply grid overflow-visible;
     margin-top: 0;
-    gap: 4px;
+    gap: 0;
     border-radius: 0;
     border: 0;
     background: transparent;
   }
 
   .sidebarAccordion {
-    @apply overflow-hidden bg-transparent;
-    border-radius: 8px;
-    border: 1px solid transparent;
+    background: transparent;
+    border-radius: 0;
+    border: none;
+    border-bottom: 1px solid #EEF2F9;
     box-shadow: none;
+    transition: background 0.15s ease;
   }
 
   .sidebarAccordion:last-child {
-    border-bottom: 1px solid transparent;
+    border-bottom: none;
   }
 
   .sidebarAccordion.isOpen {
-    border-color: #DDE6F5;
     background: #F5F8FD;
   }
 
   .sidebarAccordionHead {
-    @apply flex w-full min-w-0 items-center justify-between gap-2 px-3 text-left transition-colors;
-    min-height: 38px;
+    @apply flex w-full min-w-0 items-center justify-between gap-2 px-3 text-left;
+    min-height: 42px;
+    border-radius: 0;
+    transition: background 0.12s ease;
   }
 
   .sidebarAccordionHead:hover {
-    background: #F2F5FA;
+    background: #EEF3FA;
   }
 
   .sidebarAccordionTitleRow {
@@ -1916,32 +1920,58 @@
   .sidebarAccordionTitle {
     font-size: 13px;
     font-weight: 600;
-    color: #2A3550;
+    color: #1E2C45;
   }
 
   .sidebarAccordionSubtitle {
-    @apply mt-0.5 text-[11px];
+    @apply mt-0.5 truncate text-[11px];
     color: #8A96AE;
-    overflow-wrap: anywhere;
+    max-width: 100%;
   }
 
   .sidebarAccordionBadge {
-    @apply inline-flex h-4 items-center rounded-[8px] px-1.5 text-[10px] font-semibold;
+    @apply inline-flex h-[18px] shrink-0 items-center rounded-[8px] px-1.5 text-[10px] font-semibold;
     border: 1px solid #E2E9F4;
     background: #F3F6FB;
     color: #7080A0;
   }
 
-  .sidebarAccordionToggle {
-    font-size: 12px;
+  .sidebarAccordionChevron {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
     color: #9AA4BE;
+    transition: transform 0.2s ease, color 0.12s ease;
+  }
+
+  .sidebarAccordionChevron.isOpen {
+    transform: rotate(180deg);
+    color: #5B6B8A;
+  }
+
+  /* animated body: grid-row trick — always in DOM, animates height */
+  .sidebarAccordionBodyWrap {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .sidebarAccordion.isOpen .sidebarAccordionBodyWrap {
+    grid-template-rows: 1fr;
   }
 
   .sidebarAccordionBody {
-    @apply px-3 py-2;
-    border-top: 1px solid #E8EEF7;
+    @apply min-w-0 overflow-hidden px-3 py-0;
+    border-top: 0 solid #E8EEF7;
+    background: transparent;
+    border-radius: 0 0 10px 10px;
+    transition: padding 0.18s ease, border-top-width 0.18s ease, background 0.18s ease;
+  }
+
+  .sidebarAccordion.isOpen .sidebarAccordionBody {
+    @apply py-2.5;
+    border-top-width: 1px;
     background: #FAFCFF;
-    border-radius: 0 0 8px 8px;
   }
 
   .sidebarAccordionContent {
@@ -2719,16 +2749,17 @@
   }
 
   .sidebarSelectButton {
-    @apply flex w-full min-w-0 items-center justify-between gap-2 rounded-xl px-3 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60;
-    height: 42px;
-    border: 1px solid #D9E1EE;
+    @apply flex w-full min-w-0 items-center justify-between gap-2 rounded-[10px] px-3 text-left text-[13px] disabled:cursor-not-allowed disabled:opacity-60;
+    height: 38px;
+    border: 1px solid #D5DFF0;
     background: #FFFFFF;
     color: #1F2A44;
+    transition: border-color 0.12s ease, background 0.12s ease;
   }
 
-  .sidebarSelectButton:hover {
-    border-color: #C8D2FF;
-    background: #F7F9FC;
+  .sidebarSelectButton:hover:not(:disabled) {
+    border-color: #B0C0E8;
+    background: #F5F8FD;
   }
 
   .sidebarSelectButtonText {
@@ -2742,8 +2773,15 @@
   }
 
   .sidebarSelectButtonChevron {
-    @apply text-[11px];
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
     color: #7E8AA3;
+    transition: transform 0.18s ease;
+  }
+
+  .sidebarSelectButtonChevron.isOpen {
+    transform: rotate(180deg);
   }
 
   .sidebarSelectPopover {
@@ -2877,13 +2915,20 @@
   }
 
   .sidebarInlineTab {
-    @apply h-8 rounded-[10px] px-2.5 text-[12px] font-semibold transition-colors;
+    @apply h-8 rounded-[8px] px-3 text-[12px] font-semibold;
     color: #5B667A;
+    transition: background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+  }
+
+  .sidebarInlineTab:hover:not(:disabled) {
+    background: #E8EFFA;
+    color: #1F2A44;
   }
 
   .sidebarInlineTab.isActive {
-    background: #EEF2FF;
-    color: #1F2A44;
+    background: #FFFFFF;
+    color: #2040C4;
+    box-shadow: 0 1px 4px rgba(31, 42, 68, 0.10);
   }
 
   .sidebarAdvanced {
@@ -3073,29 +3118,32 @@
   }
 
   .sidebarSupplementaryInfo {
-    @apply rounded-[14px] px-3 py-2.5;
-    border: 1px solid #D9E1EE;
-    background: #FFFFFF;
+    @apply rounded-[12px] px-3 py-2.5;
+    border: 1px solid #DDE7F3;
+    background: #FAFCFF;
   }
 
   .sidebarInfoList {
-    @apply mt-2 grid gap-1.5;
+    @apply mt-2 grid;
+    gap: 8px;
   }
 
   .sidebarInfoRow {
-    @apply grid items-start gap-2;
-    grid-template-columns: 120px minmax(0, 1fr);
+    @apply grid items-baseline gap-3;
+    grid-template-columns: 108px minmax(0, 1fr);
   }
 
   .sidebarInfoLabel {
     font-size: 11px;
-    color: #7E8AA3;
+    color: #8896B0;
+    white-space: nowrap;
   }
 
   .sidebarInfoValue {
     font-size: 12px;
-    color: #1F2A44;
-    word-break: break-word;
+    font-weight: 500;
+    color: #1C2B42;
+    word-break: break-all;
   }
 
   .dark .leftPanel {
@@ -3149,7 +3197,20 @@
     background: #202D45;
   }
 
-  .dark .sidebarSettingsSurface,
+  .dark .sidebarSettingsSurface {
+    border-color: #2B3F5E;
+    background: #141F31;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  }
+
+  .dark .sidebarAccordion {
+    border-color: #243450;
+  }
+
+  .dark .sidebarAccordion.isOpen {
+    background: #1A2840;
+  }
+
   .dark .selectedElementCard,
   .dark .sidebarSupplementaryInfo {
     border-color: #314463;
@@ -3169,8 +3230,7 @@
   .dark .sidebarCamundaIoSection,
   .dark .sidebarSchemaPropertyRow,
   .dark .sidebarBpmnPropertyItem,
-  .dark .sidebarBpmnPropertyEditor,
-  .dark .sidebarAccordionBody {
+  .dark .sidebarBpmnPropertyEditor {
     border-color: #2F3F5E;
   }
 
@@ -3183,8 +3243,32 @@
     background: #22314B;
   }
 
-  .dark .sidebarAccordionBody {
+  .dark .sidebarAccordion.isOpen .sidebarAccordionBody {
     background: #172235;
+    border-color: #2F3F5E;
+  }
+
+  .dark .sidebarAccordionChevron {
+    color: #5B7299;
+  }
+
+  .dark .sidebarAccordionChevron.isOpen {
+    color: #8AAFD8;
+  }
+
+  .dark .sidebarInlineTab {
+    color: #8BA6CC;
+  }
+
+  .dark .sidebarInlineTab:hover:not(:disabled) {
+    background: #233149;
+    color: #C8D9F0;
+  }
+
+  .dark .sidebarInlineTab.isActive {
+    background: #1C2D47;
+    color: #7EB0FF;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.24);
   }
 
   .dark .sidebarAccordionTitle,

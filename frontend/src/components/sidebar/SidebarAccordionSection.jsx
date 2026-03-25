@@ -1,4 +1,23 @@
-export default function SidebarAccordionSection({
+import { memo } from "react";
+
+function ChevronIcon({ className }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className={className}
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 6l4 4 4-4" />
+    </svg>
+  );
+}
+
+function SidebarAccordionSection({
   sectionKey,
   title,
   subtitle = "",
@@ -15,16 +34,22 @@ export default function SidebarAccordionSection({
         onClick={() => onToggle?.(sectionKey)}
         aria-expanded={open ? "true" : "false"}
       >
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="sidebarAccordionTitleRow">
             <span className="sidebarAccordionTitle">{title}</span>
             {badge ? <span className="sidebarAccordionBadge">{badge}</span> : null}
           </div>
           {subtitle ? <div className="sidebarAccordionSubtitle">{subtitle}</div> : null}
         </div>
-        <span className="sidebarAccordionToggle" aria-hidden="true">{open ? "▾" : "▸"}</span>
+        <ChevronIcon className={`sidebarAccordionChevron ${open ? "isOpen" : ""}`} />
       </button>
-      {open ? <div className="sidebarAccordionBody">{children}</div> : null}
+      <div className="sidebarAccordionBodyWrap">
+        <div className="sidebarAccordionBody">
+          {children}
+        </div>
+      </div>
     </section>
   );
 }
+
+export default memo(SidebarAccordionSection);
