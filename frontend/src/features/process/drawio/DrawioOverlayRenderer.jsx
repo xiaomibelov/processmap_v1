@@ -23,6 +23,7 @@ import useDrawioCanvasInteractionExtras, {
   buildResizeHandleSpecs,
   getResizeHandleCursor,
 } from "./runtime/useDrawioCanvasInteractionExtras.js";
+import DrawioRichTextEditor from "./runtime/DrawioRichTextEditor.jsx";
 
 function composeOverlayMatrix(matrixRaw, txRaw, tyRaw) {
   const matrix = asObject(matrixRaw);
@@ -56,6 +57,7 @@ function DrawioOverlayRenderer({
   screenToDiagram,
   onCommitMove,
   onCommitResize,
+  onCommitTextResize,
   onCommitText,
   onCreateElement,
   onDeleteElement,
@@ -150,6 +152,7 @@ function DrawioOverlayRenderer({
     svgCache: asObject(drawioMeta).svg_cache,
     screenToDiagram,
     onCommitResize,
+    onCommitTextResize,
     onCommitText,
     visible,
   });
@@ -354,43 +357,13 @@ function DrawioOverlayRenderer({
           </g>
         </svg>
       </div>
-      {/* ── Inline text editor ── */}
+      {/* ── Inline rich text editor ── */}
       {inlineEdit ? (
-        <div
-          style={{
-            position: "absolute",
-            left: inlineEdit.left,
-            top: inlineEdit.top,
-            width: inlineEdit.width,
-            height: inlineEdit.height,
-            zIndex: 20,
-            pointerEvents: "all",
-          }}
-          data-testid="drawio-inline-text-editor"
-        >
-          <input
-            // eslint-disable-next-line jsx-a11y/no-autofocus
-            autoFocus
-            defaultValue={inlineEdit.text}
-            style={{
-              width: "100%",
-              height: "100%",
-              fontSize: 13,
-              padding: "2px 4px",
-              border: "2px solid #3b82f6",
-              borderRadius: 3,
-              background: "rgba(255,255,255,0.95)",
-              outline: "none",
-              boxSizing: "border-box",
-              textAlign: "center",
-            }}
-            onKeyDown={(ev) => {
-              if (ev.key === "Enter") { ev.preventDefault(); commitInlineText(ev.target.value); }
-              if (ev.key === "Escape") { ev.preventDefault(); cancelInlineEdit(); }
-            }}
-            onBlur={(ev) => commitInlineText(ev.target.value)}
-          />
-        </div>
+        <DrawioRichTextEditor
+          inlineEdit={inlineEdit}
+          onCommit={commitInlineText}
+          onCancel={cancelInlineEdit}
+        />
       ) : null}
     </div>
   );
@@ -422,6 +395,7 @@ function areEqual(prevProps, nextProps) {
   if (String(prevProps.getOverlayMatrix) !== String(nextProps.getOverlayMatrix)) return false;
   if (String(prevProps.onCommitMove) !== String(nextProps.onCommitMove)) return false;
   if (String(prevProps.onCommitResize) !== String(nextProps.onCommitResize)) return false;
+  if (String(prevProps.onCommitTextResize) !== String(nextProps.onCommitTextResize)) return false;
   if (String(prevProps.onCommitText) !== String(nextProps.onCommitText)) return false;
   if (String(prevProps.onCreateElement) !== String(nextProps.onCreateElement)) return false;
   if (String(prevProps.onDeleteElement) !== String(nextProps.onDeleteElement)) return false;

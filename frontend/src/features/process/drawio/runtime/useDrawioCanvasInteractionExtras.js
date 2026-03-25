@@ -75,6 +75,7 @@ export default function useDrawioCanvasInteractionExtras({
   svgCache,
   screenToDiagram,
   onCommitResize,
+  onCommitTextResize,
   onCommitText,
   visible,
 }) {
@@ -118,8 +119,8 @@ export default function useDrawioCanvasInteractionExtras({
         const tagName = (node.tagName || "").toLowerCase();
         const childTag = (node.firstElementChild?.tagName || "").toLowerCase();
         const effectiveTag = tagName === "g" ? childTag : tagName;
-        const hasResize = effectiveTag === "rect";
         const isTextSelf = tagName === "text" || tagName === "foreignobject";
+        const hasResize = effectiveTag === "rect" || isTextSelf;
         const hasText = isTextSelf || !!node.querySelector("text, foreignObject");
         setSelectedBbox({
           x: tl.x,
@@ -128,6 +129,7 @@ export default function useDrawioCanvasInteractionExtras({
           height: Math.abs(br.y - tl.y),
           hasResize,
           hasText,
+          isText: isTextSelf,
         });
       } catch {
         setSelectedBbox(null);
@@ -160,6 +162,7 @@ export default function useDrawioCanvasInteractionExtras({
       startY: startPt.y,
       startW: selectedBbox.width,
       startH: selectedBbox.height,
+      isText: !!selectedBbox.isText,
     };
 
     const onMove = (e) => {
@@ -197,10 +200,14 @@ export default function useDrawioCanvasInteractionExtras({
         dy,
       });
       if (next.width !== drag.startW || next.height !== drag.startH) {
-        onCommitResize?.(drag.elementId, {
-          width: String(next.width),
-          height: String(next.height),
-        }, "canvas_drag_resize");
+        if (drag.isText) {
+          onCommitTextResize?.(drag.elementId, next.width, "canvas_drag_resize");
+        } else {
+          onCommitResize?.(drag.elementId, {
+            width: String(next.width),
+            height: String(next.height),
+          }, "canvas_drag_resize");
+        }
       }
     };
 
@@ -213,7 +220,7 @@ export default function useDrawioCanvasInteractionExtras({
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", finish);
     window.addEventListener("pointercancel", finish);
-  }, [selectedId, selectedBbox, screenToDiagram, onCommitResize]);
+  }, [selectedId, selectedBbox, screenToDiagram, onCommitResize, onCommitTextResize]);
 
   // ── Double-click inline text edit ─────────────────────────────────────────
   useEffect(() => {

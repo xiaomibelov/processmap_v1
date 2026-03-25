@@ -4552,6 +4552,7 @@ export default function ProcessStage({
                   screenToDiagram={clientToDiagram}
                   onCommitMove={commitDrawioOverlayMove}
                   onCommitResize={setDrawioElementSize}
+                  onCommitTextResize={setDrawioElementTextWidth}
                   onCommitText={setDrawioElementText}
                   onCreateElement={createDrawioRuntimeElement}
                   onDeleteElement={deleteDrawioOverlayElement}

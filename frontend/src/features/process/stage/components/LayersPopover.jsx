@@ -760,67 +760,6 @@ export default function LayersPopover({
             </SelectedObjectGroup>
           ) : null}
 
-          {/* Текст (Draw.io) */}
-          {selectedIsDrawio && selectedObjectUx.showTextSection ? (
-            <SelectedObjectGroup
-              title="Текст"
-              hint="Enter = применить"
-              testId="diagram-action-layers-selected-group-text"
-            >
-              <div className="flex min-w-0 items-start gap-2">
-                <input
-                  type="text"
-                  className="min-w-0 flex-1 rounded border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-900"
-                  value={selectedDrawioTextDraft}
-                  onChange={(event) => setSelectedDrawioTextDraft(event.target.value)}
-                  disabled={!selectedDrawioTextActionEnabled}
-                  onKeyDown={(event) => {
-                    if (event.key !== "Enter") return;
-                    event.preventDefault();
-                    applySelectedDrawioText();
-                  }}
-                  data-testid="diagram-action-layers-selected-text-input"
-                />
-                <button
-                  type="button"
-                  className="secondaryBtn h-7 px-2 text-[11px]"
-                  onClick={applySelectedDrawioText}
-                  disabled={!selectedDrawioTextActionEnabled || selectedDrawioTextDraft === selectedDrawioText}
-                  data-testid="diagram-action-layers-selected-text-apply"
-                >
-                  ОК
-                </button>
-              </div>
-              {selectedObjectUx.showTextWidthSection ? (
-                <div className="mt-1 flex min-w-0 items-center gap-2">
-                  <span className="text-[11px] text-slate-500">Ширина</span>
-                  <input
-                    type="number"
-                    min="80"
-                    max="800"
-                    step="1"
-                    className="min-w-0 w-20 rounded border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-900"
-                    value={selectedDrawioTextWidthDraft}
-                    onChange={(event) => setSelectedDrawioTextWidthDraft(event.target.value)}
-                    disabled={!selectedDrawioTextActionEnabled}
-                    data-testid="diagram-action-layers-selected-text-width-input"
-                  />
-                  <span className="diagramIssueChip" data-testid="diagram-action-layers-selected-text-auto-height">
-                    H {Math.round(Number(selectedDrawioTextState?.height || 0))}
-                  </span>
-                  <button
-                    type="button"
-                    className="secondaryBtn h-7 px-2 text-[11px]"
-                    onClick={applySelectedDrawioTextWidth}
-                    disabled={!selectedDrawioTextActionEnabled || selectedDrawioTextWidthDraft === String(selectedDrawioTextState?.width)}
-                    data-testid="diagram-action-layers-selected-text-width-apply"
-                  >
-                    ОК
-                  </button>
-                </div>
-              ) : null}
-            </SelectedObjectGroup>
-          ) : null}
 
           {/* Стиль (Draw.io) */}
           {selectedIsDrawio && selectedObjectUx.showStyleSection ? (
