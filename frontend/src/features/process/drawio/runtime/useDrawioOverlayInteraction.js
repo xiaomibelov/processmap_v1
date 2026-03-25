@@ -10,6 +10,7 @@ export default function useDrawioOverlayInteraction({
   hasRenderable,
   createPlacementActive,
   meta,
+  metaForGate,
   layerMap,
   elementMap,
   matrixScale,
@@ -27,10 +28,14 @@ export default function useDrawioOverlayInteraction({
     matrixScaleRef.current = Math.max(0.0001, Number(matrixScale || 1));
   }, [matrixScale]);
 
+  // metaForGate is a stable minimal slice {interaction_mode, locked} that
+  // doesn't change on tool switches — keeps gate/selection callbacks stable.
+  const gateMetaRaw = metaForGate ?? meta;
+
   const gate = useDrawioInteractionGate({
     visible,
     hasRenderable,
-    meta,
+    meta: gateMetaRaw,
     layerMap,
     elementMap,
   });
@@ -38,7 +43,7 @@ export default function useDrawioOverlayInteraction({
   const selection = useDrawioSelection({
     elementMap,
     layerMap,
-    meta,
+    meta: gateMetaRaw,
     resolveElementFlags: gate.resolveElementFlags,
     onSelectionChange,
   });

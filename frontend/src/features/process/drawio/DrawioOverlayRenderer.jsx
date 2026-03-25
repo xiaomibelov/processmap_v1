@@ -112,6 +112,14 @@ function DrawioOverlayRenderer({
   const containerRef = useRef(null);
   const [placementPreviewPoint, setPlacementPreviewPoint] = useState(null);
 
+  // metaForGate contains only the fields used by interaction gate + selection
+  // (interaction_mode, locked). Tool switches don't invalidate gate/selection callbacks.
+  const metaLocked = meta.locked;
+  const metaForGate = useMemo(() => ({
+    interaction_mode: effectiveMode,
+    locked: metaLocked,
+  }), [effectiveMode, metaLocked]);
+
   const {
     rootRef,
     selectedId,
@@ -120,6 +128,7 @@ function DrawioOverlayRenderer({
     hasRenderable,
     createPlacementActive,
     meta: runtimeMeta,
+    metaForGate,
     layerMap,
     elementMap,
     matrixScale: a,
@@ -133,7 +142,6 @@ function DrawioOverlayRenderer({
   // renderedBody deps: selectedId is intentionally excluded — selection highlight
   // is applied via applyDrawioSelectionToNode (direct DOM, O(1)) in the effect below.
   // A click no longer triggers a full SVG regex re-render.
-  const metaLocked = meta.locked;
   const renderedBody = useMemo(
     () => {
       bumpDrawioPerfCounter("drawio.renderer.renderedBody.recompute");
@@ -220,25 +228,9 @@ function DrawioOverlayRenderer({
     setPlacementPreviewPoint(null);
   }, [placementPreviewEnabled]);
 
-  useEffect(() => {
-    bumpDrawioPerfCounter("drawio.renderer.bindDataAttrs.effects");
-    const root = rootRef.current;
-    if (!(root instanceof Element)) return;
-    const nodes = root.querySelectorAll("[data-testid^='drawio-el-']");
-    nodes.forEach((node) => {
-      if (!(node instanceof Element)) return;
-      const elementId = toText(node.getAttribute("id"));
-      const elementState = asObject(elementMap.get(elementId));
-      const managed = !!elementId && elementMap.has(elementId) && elementState.deleted !== true;
-      if (managed) {
-        node.setAttribute("data-drawio-el-id", elementId);
-        return;
-      }
-      if (node.hasAttribute("data-drawio-el-id")) {
-        node.removeAttribute("data-drawio-el-id");
-      }
-    });
-  }, [elementMap, renderedBody, rootRef]);
+  // data-drawio-el-id is now written directly into the SVG string by
+  // applyDrawioLayerRenderState for all managed elements, so the DOM scan
+  // that used to patch it after render is no longer needed.
 
   useEffect(() => {
     const viewportNode = viewportGroupRef.current;
