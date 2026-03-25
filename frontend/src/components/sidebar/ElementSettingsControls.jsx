@@ -1100,6 +1100,16 @@ export function CamundaPropertiesSettings({
     () => countVisibleExtensionPropertyRows(state),
     [state],
   );
+  const duplicateLogicalKeys = Array.isArray(dictionaryEditorModel?.duplicateLogicalKeys)
+    ? dictionaryEditorModel.duplicateLogicalKeys
+    : [];
+  const hasDuplicateLogicalProperties = duplicateLogicalKeys.length > 0;
+  const rawPropertyRows = properties;
+  const additionalBpmnRows = hasDuplicateLogicalProperties
+    ? rawPropertyRows
+    : (hasDictionarySchema
+      ? (Array.isArray(dictionaryEditorModel?.customRows) ? dictionaryEditorModel.customRows : [])
+      : visibleFallbackProperties);
   const operationPropertiesCount = Array.isArray(dictionaryEditorModel?.schemaRows)
     ? dictionaryEditorModel.schemaRows.length
     : 0;
@@ -1765,9 +1775,11 @@ export function CamundaPropertiesSettings({
 
   const showSchemaHint = !hasDictionarySchema && !!normalizedOperationKey && !!dictionaryLoading && !dictionaryError;
   const showFallbackBlock = !hasDictionarySchema && (!normalizedOperationKey || !dictionaryLoading || !!dictionaryError);
-  const additionalBpmnCount = hasDictionarySchema
-    ? (Array.isArray(dictionaryEditorModel?.customRows) ? dictionaryEditorModel.customRows.length : 0)
-    : (showFallbackBlock ? visibleFallbackProperties.length : 0);
+  const additionalBpmnCount = hasDuplicateLogicalProperties
+    ? additionalBpmnRows.length
+    : (hasDictionarySchema
+      ? (Array.isArray(dictionaryEditorModel?.customRows) ? dictionaryEditorModel.customRows.length : 0)
+      : (showFallbackBlock ? visibleFallbackProperties.length : 0));
   const camundaIoCount = camundaInputRows.length + camundaOutputRows.length;
   const zeebeTaskHeadersCount = zeebeTaskHeaderRows.length;
   const propertySections = [
@@ -2050,6 +2062,11 @@ export function CamundaPropertiesSettings({
                   Подгружаю свойства операции <span className="font-medium text-fg">{operationDisplayLabel || normalizedOperationKey}</span>.
                 </div>
               ) : null}
+              {hasDictionarySchema && hasDuplicateLogicalProperties ? (
+                <div className="sidebarFieldHint">
+                  Обнаружены дублирующиеся BPMN-свойства: {duplicateLogicalKeys.join(", ")}. Поля операции выше показывают только первое видимое значение для каждого ключа. Полный сырой список строк доступен в блоке «Дополнительные BPMN-свойства».
+                </div>
+              ) : null}
               {hasDictionarySchema ? (
                 <>
                   <div className="sidebarPropertiesRows sidebarPropertiesRows--table">
@@ -2105,7 +2122,39 @@ export function CamundaPropertiesSettings({
             />
           </div>
           {additionalBpmnOpen ? (
-            hasDictionarySchema ? (
+            hasDuplicateLogicalProperties ? (
+              <>
+                <div className="sidebarFieldHint">
+                  Панель показывает сырой список `extensionProperties`, потому что найдены дублирующиеся ключи: {duplicateLogicalKeys.join(", ")}. Здесь каждая строка соответствует реально сохранённой записи и удаляется отдельно.
+                </div>
+                <div className="sidebarPropertiesRows sidebarPropertiesRows--table">
+                  <div className="sidebarPropertiesTableHead" role="presentation">
+                    <span>Свойство</span>
+                    <span>Значение</span>
+                    <span>Действие</span>
+                  </div>
+                  {additionalBpmnRows.map((row) => renderCustomPropertyRow(row))}
+                </div>
+                <div className="sidebarButtonRow">
+                  <button
+                    type="button"
+                    className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
+                    onClick={addPropertyRow}
+                    disabled={!!disabled || !!extensionStateBusy}
+                  >
+                    + Добавить BPMN-свойство
+                  </button>
+                  <button
+                    type="button"
+                    className="primaryBtn sidebarPropertiesActionBtn px-2.5"
+                    onClick={() => void onSaveExtensionState?.()}
+                    disabled={!!disabled || !!extensionStateBusy}
+                  >
+                    {extensionStateBusy ? "Сохраняю..." : "Сохранить"}
+                  </button>
+                </div>
+              </>
+            ) : hasDictionarySchema ? (
               <>
                 <div className="sidebarPropertiesRows sidebarPropertiesRows--table">
                   <div className="sidebarPropertiesTableHead" role="presentation">
@@ -2113,7 +2162,7 @@ export function CamundaPropertiesSettings({
                     <span>Значение</span>
                     <span>Действие</span>
                   </div>
-                  {dictionaryEditorModel.customRows.map((row) => renderCustomPropertyRow(row))}
+                  {additionalBpmnRows.map((row) => renderCustomPropertyRow(row))}
                 </div>
                 <div className="sidebarButtonRow">
                   <button
@@ -2142,7 +2191,7 @@ export function CamundaPropertiesSettings({
                     <span>Значение</span>
                     <span>Действие</span>
                   </div>
-                  {visibleFallbackProperties.map((row) => renderCustomPropertyRow(row))}
+                  {additionalBpmnRows.map((row) => renderCustomPropertyRow(row))}
                 </div>
                 <div className="sidebarButtonRow">
                   <button
