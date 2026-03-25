@@ -80,5 +80,6 @@ export default function useDrawioOverlayInteraction({
     rootRef,
     selectedId: selection.selectedId,
     draftOffset,
+    matrixScaleRef,
   };
 }

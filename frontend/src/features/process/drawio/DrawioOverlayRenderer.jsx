@@ -47,6 +47,49 @@ function composeOverlayMatrix(matrixRaw, txRaw, tyRaw) {
   };
 }
 
+function hashText(valueRaw) {
+  const text = String(valueRaw || "");
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return String(hash >>> 0);
+}
+
+function buildDrawioRenderStateSignature(bodyRaw, effectiveModeRaw, lockedRaw, layerMap, elementMap) {
+  const parts = [
+    hashText(bodyRaw),
+    String(effectiveModeRaw || ""),
+    lockedRaw === true ? "1" : "0",
+  ];
+  layerMap.forEach((layerStateRaw, layerId) => {
+    const layerState = asObject(layerStateRaw);
+    parts.push([
+      "L",
+      layerId,
+      layerState.visible !== false ? "1" : "0",
+      layerState.locked === true ? "1" : "0",
+      toNumber(layerState.opacity, 1),
+    ].join(":"));
+  });
+  elementMap.forEach((elementStateRaw, elementId) => {
+    const elementState = asObject(elementStateRaw);
+    parts.push([
+      "E",
+      elementId,
+      toText(elementState.layer_id),
+      elementState.visible !== false ? "1" : "0",
+      elementState.locked === true ? "1" : "0",
+      elementState.deleted === true ? "1" : "0",
+      toNumber(elementState.opacity, 1),
+      toNumber(elementState.offset_x, 0),
+      toNumber(elementState.offset_y, 0),
+    ].join(":"));
+  });
+  return parts.join("|");
+}
+
 function DrawioOverlayRenderer({
   visible,
   drawioMeta,
@@ -68,7 +111,7 @@ function DrawioOverlayRenderer({
   bumpDrawioPerfCounter("drawio.renderer.renders");
   const parsed = useMemo(
     () => parseDrawioSvgCache(asObject(drawioMeta).svg_cache),
-    [drawioMeta],
+    [asObject(drawioMeta).svg_cache],
   );
   const meta = asObject(drawioMeta);
   const effectiveMode = normalizeDrawioInteractionMode(drawioMode || meta.interaction_mode);
@@ -107,10 +150,14 @@ function DrawioOverlayRenderer({
   const opacity = Math.max(0.05, Math.min(1, Number(meta.opacity || 1)));
   // Maps depend only on layers/elements — NOT on mode/tool/selectedId.
   // Use drawioMeta (prop ref) directly so maps don't rebuild on tool/mode changes.
-  const { layerMap, elementMap } = useMemo(() => buildDrawioLayerRenderMaps(drawioMeta), [drawioMeta]);
+  const { layerMap, elementMap } = useMemo(
+    () => buildDrawioLayerRenderMaps(drawioMeta),
+    [meta.drawio_elements_v1, meta.drawio_layers_v1],
+  );
   const viewportGroupRef = useRef(null);
   const containerRef = useRef(null);
   const [placementPreviewPoint, setPlacementPreviewPoint] = useState(null);
+  const renderStateCacheRef = useRef({ signature: "", body: "" });
 
   // metaForGate contains only the fields used by interaction gate + selection
   // (interaction_mode, locked). Tool switches don't invalidate gate/selection callbacks.
@@ -123,6 +170,7 @@ function DrawioOverlayRenderer({
   const {
     rootRef,
     selectedId,
+    matrixScaleRef,
   } = useDrawioOverlayInteraction({
     visible,
     hasRenderable,
@@ -142,14 +190,33 @@ function DrawioOverlayRenderer({
   // renderedBody deps: selectedId is intentionally excluded — selection highlight
   // is applied via applyDrawioSelectionToNode (direct DOM, O(1)) in the effect below.
   // A click no longer triggers a full SVG regex re-render.
-  const renderedBody = useMemo(
-    () => {
-      bumpDrawioPerfCounter("drawio.renderer.renderedBody.recompute");
-      return applyDrawioLayerRenderState(parsedBody, runtimeMeta, null, null, { layerMap, elementMap });
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [parsedBody, layerMap, elementMap, effectiveMode, metaLocked],
+  const renderStateSignature = useMemo(
+    () => buildDrawioRenderStateSignature(parsedBody, effectiveMode, metaLocked, layerMap, elementMap),
+    [parsedBody, effectiveMode, metaLocked, layerMap, elementMap],
   );
+
+  const renderedBody = useMemo(() => {
+    if (renderStateCacheRef.current.signature === renderStateSignature) {
+      bumpDrawioPerfCounter("drawio.renderer.renderedBody.reused");
+      return renderStateCacheRef.current.body;
+    }
+    bumpDrawioPerfCounter("drawio.renderer.renderedBody.recompute");
+    const nextBody = applyDrawioLayerRenderState(
+      parsedBody,
+      {
+        interaction_mode: effectiveMode,
+        locked: metaLocked,
+      },
+      null,
+      null,
+      { layerMap, elementMap },
+    );
+    renderStateCacheRef.current = {
+      signature: renderStateSignature,
+      body: nextBody,
+    };
+    return nextBody;
+  }, [effectiveMode, layerMap, elementMap, metaLocked, parsedBody, renderStateSignature]);
 
   const { registryRef, getNode: getRegistryNode } = useDrawioElementNodeRegistry({
     rootRef: containerRef,
@@ -251,9 +318,17 @@ function DrawioOverlayRenderer({
     if (typeof subscribeOverlayMatrix !== "function") return undefined;
     return subscribeOverlayMatrix((nextMatrix) => {
       applyMatrix(nextMatrix);
+      // Keep matrixScaleRef in sync without a React re-render.
+      // This allows removal of a/b/c/d from areEqual — zoom no longer triggers
+      // full re-renders; the interaction hook reads the correct scale at drag commit.
+      if (matrixScaleRef) {
+        const s = Math.max(0.0001, Number(asObject(nextMatrix).a || 1));
+        matrixScaleRef.current = s;
+      }
     });
   }, [
     getOverlayMatrix,
+    matrixScaleRef,
     overlayMatrix,
     overlayMatrixRef,
     subscribeOverlayMatrix,
@@ -283,7 +358,11 @@ function DrawioOverlayRenderer({
             left: 0,
             top: 0,
             opacity,
-            pointerEvents: resolveDrawioOverlaySvgPointerEvents(createPlacementActive),
+            pointerEvents: resolveDrawioOverlaySvgPointerEvents({
+              createPlacementActive,
+              hasRenderable,
+              effectiveMode,
+            }),
           }}
           width="100%"
           height="100%"

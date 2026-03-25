@@ -115,6 +115,7 @@ import {
 import {
   buildDrawioAnchorImportDiagnostics,
   collectBpmnNodeIdsFromDraft,
+  readDrawioAnchorValidationState,
 } from "../features/process/drawio/drawioAnchors";
 import {
   buildSessionCompanionAfterSave,
@@ -3847,6 +3848,11 @@ export default function ProcessStage({
     }
   }
 
+  const drawioAnchorValidationState = useMemo(() => readDrawioAnchorValidationState({
+    nodes: draft?.nodes,
+    bpmn_xml: draft?.bpmn_xml,
+  }), [draft?.bpmn_xml, draft?.nodes]);
+
   const {
     drawioEditorBridge,
     overlayPanelModel,
@@ -3915,6 +3921,7 @@ export default function ProcessStage({
       activeHints,
       sid,
       draft,
+      drawioAnchorValidationState,
       tab,
       diagramHints,
       isBpmnTab,

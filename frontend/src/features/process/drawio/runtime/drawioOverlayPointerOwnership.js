@@ -10,6 +10,14 @@ export function isDrawioCreatePlacementActive({
     && isExplicitDrawioCreateTool(runtimeTool);
 }
 
-export function resolveDrawioOverlaySvgPointerEvents(createPlacementActive) {
-  return createPlacementActive ? "auto" : "none";
+export function resolveDrawioOverlaySvgPointerEvents(optionsRaw) {
+  if (optionsRaw === true) return "auto";
+  if (optionsRaw === false) return "none";
+  const options = optionsRaw && typeof optionsRaw === "object" ? optionsRaw : {};
+  const createPlacementActive = options.createPlacementActive === true;
+  const hasRenderable = options.hasRenderable === true;
+  const effectiveMode = String(options.effectiveMode || "").toLowerCase();
+  if (createPlacementActive) return "auto";
+  if (hasRenderable && effectiveMode === "edit") return "auto";
+  return "none";
 }

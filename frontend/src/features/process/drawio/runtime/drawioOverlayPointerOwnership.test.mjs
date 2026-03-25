@@ -29,7 +29,20 @@ test("drawio overlay pointer ownership: only explicit create tools arm placement
   }), false);
 });
 
-test("drawio overlay pointer ownership: blank-space svg hit surface is disabled outside create mode", () => {
-  assert.equal(resolveDrawioOverlaySvgPointerEvents(true), "auto");
-  assert.equal(resolveDrawioOverlaySvgPointerEvents(false), "none");
+test("drawio overlay pointer ownership: svg hit surface stays interactive in edit mode", () => {
+  assert.equal(resolveDrawioOverlaySvgPointerEvents({
+    createPlacementActive: true,
+    hasRenderable: true,
+    effectiveMode: "edit",
+  }), "auto");
+  assert.equal(resolveDrawioOverlaySvgPointerEvents({
+    createPlacementActive: false,
+    hasRenderable: true,
+    effectiveMode: "edit",
+  }), "auto");
+  assert.equal(resolveDrawioOverlaySvgPointerEvents({
+    createPlacementActive: false,
+    hasRenderable: true,
+    effectiveMode: "view",
+  }), "none");
 });

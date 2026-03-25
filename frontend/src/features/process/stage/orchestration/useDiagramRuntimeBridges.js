@@ -43,21 +43,35 @@ export default function useDiagramRuntimeBridges({
     if (incoming) setDrawioRuntimeToolState(incoming);
   }, [overlay.drawioUiState?.enabled, overlay.drawioUiState?.interaction_mode, overlay.drawioUiState?.active_tool]);
 
+  const drawioAnchorValidationState = runtimeGlueConfig.drawioAnchorValidationState
+    && typeof runtimeGlueConfig.drawioAnchorValidationState === "object"
+    ? runtimeGlueConfig.drawioAnchorValidationState
+    : readDrawioAnchorValidationState(runtimeGlueConfig.draft);
+
   const drawioStateForRuntime = useMemo(() => {
-    const validation = readDrawioAnchorValidationState(runtimeGlueConfig.draft);
-    const base = {
-      ...(overlay.drawioUiState && typeof overlay.drawioUiState === "object" ? overlay.drawioUiState : {}),
-      active_tool: drawioRuntimeToolState,
-    };
-    const validated = applyDrawioAnchorValidation(base, validation.ids, validation.ready);
-    if (validation.ready !== true) {
+    const baseMeta = overlay.drawioUiState && typeof overlay.drawioUiState === "object"
+      ? overlay.drawioUiState
+      : {};
+    const base = String(baseMeta.active_tool || "") === String(drawioRuntimeToolState || "")
+      ? baseMeta
+      : {
+        ...baseMeta,
+        active_tool: drawioRuntimeToolState,
+      };
+    const validated = applyDrawioAnchorValidation(
+      base,
+      drawioAnchorValidationState.ids,
+      drawioAnchorValidationState.ready,
+    );
+    if (drawioAnchorValidationState.ready !== true) {
+      if (validated._anchor_validation_deferred === true) return validated;
       return {
         ...validated,
         _anchor_validation_deferred: true,
       };
     }
     return validated;
-  }, [drawioRuntimeToolState, overlay.drawioUiState, runtimeGlueConfig.draft]);
+  }, [drawioAnchorValidationState, drawioRuntimeToolState, overlay.drawioUiState]);
 
   const overlayPersistBoundary = useOverlayPersistBoundary({
     drawioMetaRef: overlay.drawioMetaRef,
