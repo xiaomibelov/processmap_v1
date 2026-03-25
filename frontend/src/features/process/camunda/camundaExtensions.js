@@ -1208,7 +1208,7 @@ export function extractCamundaExtensionsMapFromBpmnXml(xmlText) {
   return normalizeCamundaExtensionsMap(out);
 }
 
-export function hydrateCamundaExtensionsFromBpmn({ extractedMap, sessionMetaMap } = {}) {
+export function hydrateCamundaExtensionsFromBpmn({ extractedMap, sessionMetaMap, allowSeedFromBpmn = true } = {}) {
   const extracted = normalizeCamundaExtensionsMap(extractedMap);
   const session = normalizeCamundaExtensionsMap(sessionMetaMap);
   const extractedKeys = Object.keys(extracted);
@@ -1227,6 +1227,18 @@ export function hydrateCamundaExtensionsFromBpmn({ extractedMap, sessionMetaMap 
   }
   const sessionHasData = Object.keys(session).length > 0;
   if (!sessionHasData) {
+    if (!allowSeedFromBpmn) {
+      return {
+        nextSessionMetaMap: session,
+        conflicts: [],
+        adoptedFromBpmn: false,
+        source: "session_wins",
+        addedElements: 0,
+        addedProperties: 0,
+        addedListeners: 0,
+        addedPreserved: 0,
+      };
+    }
     return {
       nextSessionMetaMap: extracted,
       conflicts: [],
