@@ -490,15 +490,16 @@
 }
 
 .fpcPropertyOverlay {
-  pointer-events: none;
+  pointer-events: auto;
   display: block;
   max-width: 216px;
   transform: translate(-50%, calc(-100% - 12px));
   z-index: 17;
+  cursor: default;
 }
 
 .fpcPropertyOverlay--table {
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .fpcPropertyTable {
@@ -507,6 +508,22 @@
   gap: 4px;
   max-width: 100%;
   min-width: var(--fpc-property-table-min-width, 120px);
+}
+
+/* Overflow rows: hidden by default, shown on hover */
+.fpcPropertyRow--overflow {
+  display: none;
+}
+.fpcPropertyOverlay:hover .fpcPropertyRow--overflow {
+  display: grid;
+}
+/* On hover: hide the "+N ещё" summary since all rows are visible */
+.fpcPropertyOverlay:hover .fpcPropertyRow--summary {
+  display: none;
+}
+/* Hover: slightly elevate the overlay */
+.fpcPropertyOverlay:hover {
+  z-index: 30;
 }
 
 .fpcPropertyRow {

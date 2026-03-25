@@ -1144,6 +1144,7 @@ export function applyPropertiesOverlayDecor(ctx) {
       const elementId = toText(preview?.elementId);
       const items = asArray(preview?.items);
       const hiddenCount = Math.max(0, Number(preview?.hiddenCount || 0));
+      const visibleCount = Math.max(1, Number(preview?.visibleCount || items.length));
       if (!elementId || !items.length) return;
 
       let el = (
@@ -1161,6 +1162,7 @@ export function applyPropertiesOverlayDecor(ctx) {
         elementId,
         items,
         hiddenCount,
+        visibleCount,
         zoom: zoomBucket,
       });
       const prev = asObject(currentState[resolvedElementId]);
@@ -1207,12 +1209,13 @@ export function applyPropertiesOverlayDecor(ctx) {
       const table = document.createElement("div");
       table.className = "fpcPropertyTable";
 
-      items.forEach((item) => {
+      items.forEach((item, idx) => {
         const row = document.createElement("div");
         const linkedKey = normalizeOverlayPropertyKey(item?.key || item?.label);
         const linkedCount = Number(linkedPropertyFrequency.get(linkedKey) || 0);
         const linkedClass = linkedKey && linkedCount > 1 ? " fpcPropertyRow--linked" : "";
-        row.className = `fpcPropertyRow${linkedClass}`;
+        const overflowClass = idx >= visibleCount ? " fpcPropertyRow--overflow" : "";
+        row.className = `fpcPropertyRow${linkedClass}${overflowClass}`;
         row.title = `${item.label}: ${item.value}`;
         const colorModel = overlayPropertyColorByKey(linkedKey || item?.label);
         row.style.setProperty("--fpc-property-accent", colorModel.accent);
