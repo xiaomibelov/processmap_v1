@@ -46,26 +46,20 @@ test("pointer drag: canStartDrawioDrag allows start only when visible/renderable
 });
 
 test("pointer drag: listener binding/unbinding is symmetric", () => {
+  // Phase 1.3: reduced from 15 listeners (doc+root+win) to 5 (window-only).
+  // setPointerCapture makes doc/root capture listeners redundant.
   const win = createEventTargetSpy();
-  const doc = createEventTargetSpy();
-  const root = createEventTargetSpy();
   const noop = () => {};
   const unbind = bindPointerDragListeners({
     windowTarget: win,
-    docTarget: doc,
-    rootTarget: root,
     onMove: noop,
     onUp: noop,
     onMouseMove: noop,
     onMouseUp: noop,
   });
   assert.equal(win.calls.filter((row) => row.op === "add").length, 5);
-  assert.equal(doc.calls.filter((row) => row.op === "add").length, 5);
-  assert.equal(root.calls.filter((row) => row.op === "add").length, 5);
   unbind();
   assert.equal(win.calls.filter((row) => row.op === "remove").length, 5);
-  assert.equal(doc.calls.filter((row) => row.op === "remove").length, 5);
-  assert.equal(root.calls.filter((row) => row.op === "remove").length, 5);
 });
 
 test("pointer drag: move computes draft offset in diagram coordinates", () => {
