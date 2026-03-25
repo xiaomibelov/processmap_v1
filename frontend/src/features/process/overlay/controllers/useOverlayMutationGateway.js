@@ -54,6 +54,23 @@ function normalizeIdList(idsRaw) {
   return Array.from(new Set(asArray(idsRaw).map((row) => toText(row)).filter(Boolean)));
 }
 
+/**
+ * O(n) scan to find element by id, then O(1) splice — avoids creating new
+ * objects for all non-matching elements.
+ * Returns same array reference if id not found or patchFn returns same object.
+ */
+function patchElementById(elementsRaw, elementId, patchFn) {
+  const elements = asArray(elementsRaw);
+  const idx = elements.findIndex((rowRaw) => toText(asObject(rowRaw).id) === elementId);
+  if (idx === -1) return { elements, changed: false };
+  const row = asObject(elements[idx]);
+  const next = patchFn(row);
+  if (next === row) return { elements, changed: false };
+  const nextElements = elements.slice();
+  nextElements[idx] = next;
+  return { elements: nextElements, changed: true };
+}
+
 export default function useOverlayMutationGateway({
   sessionId,
   drawioMetaRef,
@@ -82,24 +99,15 @@ export default function useOverlayMutationGateway({
     let changed = false;
     const result = applyDrawioMutation((prevRaw) => {
       const prev = normalizeDrawioMeta(prevRaw);
-      const nextElements = asArray(prev.drawio_elements_v1).map((rowRaw) => {
-        const row = asObject(rowRaw);
-        if (toText(row.id) !== elementId) return row;
+      const patch = patchElementById(prev.drawio_elements_v1, elementId, (row) => {
         const prevX = Number(row.offset_x ?? row.offsetX ?? 0);
         const prevY = Number(row.offset_y ?? row.offsetY ?? 0);
         if (Math.abs(prevX - nextOffsetX) < 0.01 && Math.abs(prevY - nextOffsetY) < 0.01) return row;
-        changed = true;
-        return {
-          ...row,
-          offset_x: nextOffsetX,
-          offset_y: nextOffsetY,
-        };
+        return { ...row, offset_x: nextOffsetX, offset_y: nextOffsetY };
       });
-      if (!changed) return prev;
-      return {
-        ...prev,
-        drawio_elements_v1: nextElements,
-      };
+      if (!patch.changed) return prev;
+      changed = true;
+      return { ...prev, drawio_elements_v1: patch.elements };
     }, {
       source,
       playbackStage: source,
@@ -116,25 +124,25 @@ export default function useOverlayMutationGateway({
     let matchedBySvg = false;
     const result = applyDrawioMutation((prevRaw) => {
       const prev = normalizeDrawioMeta(prevRaw);
-      let changed = false;
-      const nextElements = asArray(prev.drawio_elements_v1).map((rowRaw) => {
-        const row = asObject(rowRaw);
-        if (toText(row.id) !== elementId) return row;
+      const patch = patchElementById(prev.drawio_elements_v1, elementId, (row) => {
         matchedByElements = true;
         if (row.deleted === true) return row;
-        changed = true;
-        return {
-          ...row,
-          deleted: true,
-        };
+        return { ...row, deleted: true };
       });
-      if (!changed) {
-        const svgCache = toText(prev.svg_cache);
-        const hasIdInSvg = !!svgCache && new RegExp(`\\sid\\s*=\\s*["']${escapeRegExp(elementId)}["']`).test(svgCache);
-        if (hasIdInSvg) {
-          matchedBySvg = true;
-          changed = true;
-          nextElements.push({
+      if (patch.changed) {
+        return { ...prev, drawio_elements_v1: patch.elements };
+      }
+      // Fallback: element not in list but may exist in SVG
+      const svgCache = toText(prev.svg_cache);
+      const hasIdInSvg = !!svgCache && new RegExp(`\\sid\\s*=\\s*["']${escapeRegExp(elementId)}["']`).test(svgCache);
+      if (!hasIdInSvg) return prev;
+      matchedBySvg = true;
+      const elements = asArray(prev.drawio_elements_v1);
+      return {
+        ...prev,
+        drawio_elements_v1: [
+          ...elements,
+          {
             id: elementId,
             layer_id: toText(prev.active_layer_id || asObject(asArray(prev.drawio_layers_v1)[0]).id || "DL1") || "DL1",
             visible: true,
@@ -143,14 +151,9 @@ export default function useOverlayMutationGateway({
             opacity: 1,
             offset_x: 0,
             offset_y: 0,
-            z_index: Number(nextElements.length || 0),
-          });
-        }
-      }
-      if (!changed) return prev;
-      return {
-        ...prev,
-        drawio_elements_v1: nextElements,
+            z_index: elements.length,
+          },
+        ],
       };
     }, {
       source,
@@ -301,17 +304,13 @@ export default function useOverlayMutationGateway({
     let changed = false;
     const result = applyDrawioMutation((prevRaw) => {
       const prev = normalizeDrawioMeta(prevRaw);
-      const nextElements = asArray(prev.drawio_elements_v1).map((rowRaw) => {
-        const row = asObject(rowRaw);
-        if (toText(row.id) !== elementId) return row;
+      const patch = patchElementById(prev.drawio_elements_v1, elementId, (row) => {
         if (row.visible === visible) return row;
-        changed = true;
-        return {
-          ...row,
-          visible,
-        };
+        return { ...row, visible };
       });
-      return changed ? { ...prev, drawio_elements_v1: nextElements } : prev;
+      if (!patch.changed) return prev;
+      changed = true;
+      return { ...prev, drawio_elements_v1: patch.elements };
     }, {
       source,
       playbackStage: source,
@@ -328,17 +327,13 @@ export default function useOverlayMutationGateway({
     let changed = false;
     const result = applyDrawioMutation((prevRaw) => {
       const prev = normalizeDrawioMeta(prevRaw);
-      const nextElements = asArray(prev.drawio_elements_v1).map((rowRaw) => {
-        const row = asObject(rowRaw);
-        if (toText(row.id) !== elementId) return row;
+      const patch = patchElementById(prev.drawio_elements_v1, elementId, (row) => {
         if (row.locked === locked) return row;
-        changed = true;
-        return {
-          ...row,
-          locked,
-        };
+        return { ...row, locked };
       });
-      return changed ? { ...prev, drawio_elements_v1: nextElements } : prev;
+      if (!patch.changed) return prev;
+      changed = true;
+      return { ...prev, drawio_elements_v1: patch.elements };
     }, {
       source,
       playbackStage: source,
@@ -368,15 +363,11 @@ export default function useOverlayMutationGateway({
       const nextSvgCache = nextLayout.svg || updateDrawioTextElementContent(prev.svg_cache, elementId, nextText);
       if (nextSvgCache === toText(prev.svg_cache)) return prev;
       changed = true;
-      const nextElements = asArray(prev.drawio_elements_v1).map((rowRaw) => {
-        const row = asObject(rowRaw);
-        if (toText(row.id) !== elementId) return row;
-        return {
-          ...row,
-          text: nextText,
-          label: nextText,
-        };
-      });
+      const textPatch = patchElementById(prev.drawio_elements_v1, elementId, (row) => ({
+        ...row,
+        text: nextText,
+        label: nextText,
+      }));
       return {
         ...prev,
         svg_cache: nextSvgCache,
@@ -388,7 +379,7 @@ export default function useOverlayMutationGateway({
             height: nextLayout.state?.height ?? docGeometry?.height,
           },
         ),
-        drawio_elements_v1: nextElements,
+        drawio_elements_v1: textPatch.elements,
       };
     }, {
       source,
@@ -533,27 +524,23 @@ export default function useOverlayMutationGateway({
     let invalid = false;
     const result = applyDrawioMutation((prevRaw) => {
       const prev = normalizeDrawioMeta(prevRaw);
-      const nextElements = asArray(prev.drawio_elements_v1).map((rowRaw) => {
-        const row = asObject(rowRaw);
-        if (toText(row.id) !== elementId) return row;
+      const patch = patchElementById(prev.drawio_elements_v1, elementId, (row) => {
         const nextAnchor = normalizeDrawioAnchor(anchorRaw, row);
         invalid = !!nextAnchor && nextAnchor.status === "invalid";
         const prevComparable = JSON.stringify(asObject(row.anchor_v1));
         const nextComparable = nextAnchor ? JSON.stringify(nextAnchor) : "";
         if (!nextAnchor && !row.anchor_v1) return row;
         if (prevComparable === nextComparable) return row;
-        changed = true;
         if (!nextAnchor) {
           const nextRow = { ...row };
           delete nextRow.anchor_v1;
           return nextRow;
         }
-        return {
-          ...row,
-          anchor_v1: nextAnchor,
-        };
+        return { ...row, anchor_v1: nextAnchor };
       });
-      return changed ? { ...prev, drawio_elements_v1: nextElements } : prev;
+      if (!patch.changed) return prev;
+      changed = true;
+      return { ...prev, drawio_elements_v1: patch.elements };
     }, {
       source,
       playbackStage: source,

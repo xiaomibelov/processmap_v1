@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { memo, useEffect, useMemo, useState } from "react";
 
 import { pushDeleteTrace } from "../utils/deleteTrace";
 import { OVERLAY_ENTITY_KINDS } from "../../drawio/domain/drawioEntityKinds";
@@ -82,7 +82,7 @@ function confirmOverlayDelete(entityRaw = {}) {
   return confirmDrawioDelete(id);
 }
 
-function OverlayRowsSection({
+const OverlayRowsSection = memo(function OverlayRowsSection({
   title,
   rows,
   emptyText = "Нет элементов.",
@@ -188,9 +188,9 @@ function OverlayRowsSection({
       )}
     </>
   );
-}
+});
 
-function SelectedObjectGroup({
+const SelectedObjectGroup = memo(function SelectedObjectGroup({
   title,
   hint = "",
   children,
@@ -208,7 +208,7 @@ function SelectedObjectGroup({
       <div className="space-y-2">{children}</div>
     </div>
   );
-}
+});
 
 export default function LayersPopover({
   open,
