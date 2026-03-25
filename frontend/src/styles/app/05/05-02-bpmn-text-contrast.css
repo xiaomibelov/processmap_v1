@@ -521,9 +521,29 @@
 .fpcPropertyOverlay:hover .fpcPropertyRow--summary {
   display: none;
 }
-/* Hover: slightly elevate the overlay */
+/* Hover: elevate overlay and show full untruncated text */
 .fpcPropertyOverlay:hover {
   z-index: 30;
+}
+
+.fpcPropertyOverlay:hover .fpcPropertyCell {
+  overflow: visible;
+  text-overflow: unset;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.fpcPropertyOverlay:hover .fpcPropertyKeyText {
+  overflow: visible;
+  text-overflow: unset;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.fpcPropertyOverlay:hover .fpcPropertyRow {
+  align-items: flex-start;
+  padding-top: 3px;
+  padding-bottom: 3px;
 }
 
 .fpcPropertyRow {
