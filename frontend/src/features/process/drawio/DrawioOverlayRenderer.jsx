@@ -19,6 +19,10 @@ import {
   resolveDrawioOverlaySvgPointerEvents,
 } from "./runtime/drawioOverlayPointerOwnership.js";
 import resolveDrawioOverlayRenderMatrix from "./runtime/drawioOverlayMatrix.js";
+import useDrawioCanvasInteractionExtras, {
+  buildResizeHandleSpecs,
+  getResizeHandleCursor,
+} from "./runtime/useDrawioCanvasInteractionExtras.js";
 
 function composeOverlayMatrix(matrixRaw, txRaw, tyRaw) {
   const matrix = asObject(matrixRaw);
@@ -51,6 +55,8 @@ function DrawioOverlayRenderer({
   drawioActiveTool,
   screenToDiagram,
   onCommitMove,
+  onCommitResize,
+  onCommitText,
   onCreateElement,
   onDeleteElement,
   onSelectionChange,
@@ -97,6 +103,7 @@ function DrawioOverlayRenderer({
   const opacity = Math.max(0.05, Math.min(1, Number(meta.opacity || 1)));
   const { layerMap, elementMap } = useMemo(() => buildDrawioLayerRenderMaps(runtimeMeta), [runtimeMeta]);
   const viewportGroupRef = useRef(null);
+  const containerRef = useRef(null);
   const [placementPreviewPoint, setPlacementPreviewPoint] = useState(null);
 
   const {
@@ -124,6 +131,28 @@ function DrawioOverlayRenderer({
     },
     [runtimeMeta, parsedBody, selectedId],
   );
+
+  const {
+    selectedBbox,
+    resizeDraft,
+    startResizeDrag,
+    inlineEdit,
+    commitInlineText,
+    cancelInlineEdit,
+  } = useDrawioCanvasInteractionExtras({
+    rootRef,
+    viewportGroupRef,
+    containerRef,
+    selectedId,
+    elementMap,
+    meta: runtimeMeta,
+    renderedBody,
+    svgCache: asObject(drawioMeta).svg_cache,
+    screenToDiagram,
+    onCommitResize,
+    onCommitText,
+    visible,
+  });
 
   const placementPreviewSpec = useMemo(() => (
     placementPreviewEnabled ? buildDrawioPlacementPreviewSpec(runtimeTool, placementPreviewPoint) : null
@@ -206,7 +235,7 @@ function DrawioOverlayRenderer({
       className="drawioLayerOverlay absolute inset-0 overflow-hidden"
       style={{ pointerEvents: "none", zIndex: 5 }}
       data-testid="drawio-overlay-root"
-      ref={rootRef}
+      ref={(el) => { rootRef.current = el; containerRef.current = el; }}
     >
       <div
         className="drawioLayerOverlay absolute inset-0 overflow-hidden"
@@ -277,9 +306,92 @@ function DrawioOverlayRenderer({
                 )}
               </g>
             ) : null}
+            {/* ── Resize handles ── */}
+            {selectedBbox?.hasResize && !inlineEdit ? (() => {
+              const hSize = 8 / Math.max(0.1, a);
+              const hR = 1.5 / Math.max(0.1, a);
+              const strokeW = 1.5 / Math.max(0.1, a);
+              const handles = buildResizeHandleSpecs(resizeDraft
+                ? { ...selectedBbox, width: resizeDraft.width, height: resizeDraft.height }
+                : selectedBbox);
+              return (
+                <g data-testid="drawio-resize-handles" style={{ pointerEvents: "none" }}>
+                  {resizeDraft ? (
+                    <rect
+                      x={selectedBbox.x}
+                      y={selectedBbox.y}
+                      width={resizeDraft.width}
+                      height={resizeDraft.height}
+                      fill="none"
+                      stroke="#3b82f6"
+                      strokeWidth={strokeW}
+                      strokeDasharray={`${5 / Math.max(0.1, a)} ${3 / Math.max(0.1, a)}`}
+                      style={{ pointerEvents: "none" }}
+                    />
+                  ) : null}
+                  {handles.map(({ id, cx, cy }) => (
+                    <rect
+                      key={id}
+                      x={cx - hSize / 2}
+                      y={cy - hSize / 2}
+                      width={hSize}
+                      height={hSize}
+                      rx={hR}
+                      fill="white"
+                      stroke="#3b82f6"
+                      strokeWidth={strokeW}
+                      data-drawio-resize-handle={id}
+                      style={{
+                        pointerEvents: "all",
+                        cursor: getResizeHandleCursor(id),
+                      }}
+                      onPointerDown={(ev) => startResizeDrag(ev, id)}
+                    />
+                  ))}
+                </g>
+              );
+            })() : null}
           </g>
         </svg>
       </div>
+      {/* ── Inline text editor ── */}
+      {inlineEdit ? (
+        <div
+          style={{
+            position: "absolute",
+            left: inlineEdit.left,
+            top: inlineEdit.top,
+            width: inlineEdit.width,
+            height: inlineEdit.height,
+            zIndex: 20,
+            pointerEvents: "all",
+          }}
+          data-testid="drawio-inline-text-editor"
+        >
+          <input
+            // eslint-disable-next-line jsx-a11y/no-autofocus
+            autoFocus
+            defaultValue={inlineEdit.text}
+            style={{
+              width: "100%",
+              height: "100%",
+              fontSize: 13,
+              padding: "2px 4px",
+              border: "2px solid #3b82f6",
+              borderRadius: 3,
+              background: "rgba(255,255,255,0.95)",
+              outline: "none",
+              boxSizing: "border-box",
+              textAlign: "center",
+            }}
+            onKeyDown={(ev) => {
+              if (ev.key === "Enter") { ev.preventDefault(); commitInlineText(ev.target.value); }
+              if (ev.key === "Escape") { ev.preventDefault(); cancelInlineEdit(); }
+            }}
+            onBlur={(ev) => commitInlineText(ev.target.value)}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -309,6 +421,8 @@ function areEqual(prevProps, nextProps) {
   if (String(prevProps.subscribeOverlayMatrix) !== String(nextProps.subscribeOverlayMatrix)) return false;
   if (String(prevProps.getOverlayMatrix) !== String(nextProps.getOverlayMatrix)) return false;
   if (String(prevProps.onCommitMove) !== String(nextProps.onCommitMove)) return false;
+  if (String(prevProps.onCommitResize) !== String(nextProps.onCommitResize)) return false;
+  if (String(prevProps.onCommitText) !== String(nextProps.onCommitText)) return false;
   if (String(prevProps.onCreateElement) !== String(nextProps.onCreateElement)) return false;
   if (String(prevProps.onDeleteElement) !== String(nextProps.onDeleteElement)) return false;
   if (String(prevProps.onSelectionChange) !== String(nextProps.onSelectionChange)) return false;

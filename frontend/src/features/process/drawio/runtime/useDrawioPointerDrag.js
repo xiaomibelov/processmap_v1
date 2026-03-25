@@ -616,6 +616,8 @@ export default function useDrawioPointerDrag({
     const handleStart = (event) => {
       const target = event?.target instanceof Element ? event.target : null;
       if (!target) return;
+      // Skip resize handles — they have their own drag logic
+      if (target.dataset?.drawioResizeHandle) return;
       const idChain = collectDrawioElementIdsFromTarget(target, root);
       const hitId = resolveDrawioPointerElementId(target, root, meta, layerMap, elementMap);
       traceDrawioRuntime("drawio_pointerdown", {

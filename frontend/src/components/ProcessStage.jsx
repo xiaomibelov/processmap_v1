@@ -3538,6 +3538,7 @@ export default function ProcessStage({
     setDiagramActionOverflowOpen(false);
   }, [tab, sid]);
 
+
   useEffect(() => {
     if (!availablePathTiers.length) {
       if (pathHighlightEnabled) setPathHighlightEnabled(false);
@@ -3985,6 +3986,12 @@ export default function ProcessStage({
       docToComparableJson,
     },
   });
+
+  // Clear draw.io selection when switching from edit to view
+  useEffect(() => {
+    if (drawioModeEffective !== "view") return;
+    setDrawioSelectedElementId("");
+  }, [drawioModeEffective, setDrawioSelectedElementId]);
 
   const {
     openEmbeddedDrawioEditor,
@@ -4544,6 +4551,8 @@ export default function ProcessStage({
                   getOverlayMatrix={getOverlayViewportMatrix}
                   screenToDiagram={clientToDiagram}
                   onCommitMove={commitDrawioOverlayMove}
+                  onCommitResize={setDrawioElementSize}
+                  onCommitText={setDrawioElementText}
                   onCreateElement={createDrawioRuntimeElement}
                   onDeleteElement={deleteDrawioOverlayElement}
                   onSelectionChange={setDrawioSelectedElementId}
