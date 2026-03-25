@@ -15,10 +15,29 @@ jobs:
           host: ${{ secrets.STAGE_HOST }}
           username: ${{ secrets.STAGE_USER }}
           key: ${{ secrets.STAGE_SSH_KEY }}
+          command_timeout: 10m
           script: |
             set -e
             cd /opt/processmap/app
+
+            # Pull latest code
             git remote set-url origin git@github.com:xiaomibelov/processmap_v1.git
             git fetch origin main
             git reset --hard origin/main
-            bash deploy/scripts/deploy_stage.sh .env.stage
+
+            # Rebuild and restart stage containers
+            APP_ENV_FILE=.env.stage docker compose \
+              --env-file .env.stage \
+              -f docker-compose.yml \
+              -f docker-compose.stage.yml \
+              -p processmap_stage \
+              build api gateway
+
+            APP_ENV_FILE=.env.stage docker compose \
+              --env-file .env.stage \
+              -f docker-compose.yml \
+              -f docker-compose.stage.yml \
+              -p processmap_stage \
+              up -d postgres redis api gateway
+
+            echo "[deploy-stage] done"
