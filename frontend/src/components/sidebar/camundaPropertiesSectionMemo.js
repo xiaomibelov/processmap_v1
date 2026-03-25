@@ -45,6 +45,7 @@ export function buildPropertiesOverlayPreviewSignature(previewRaw) {
   const enabled = preview.enabled === true ? "1" : "0";
   const elementId = asText(preview.elementId).trim();
   const hiddenCount = String(asNumber(preview.hiddenCount, 0));
+  const visibleCount = String(asNumber(preview.visibleCount, 0));
   const totalCount = String(asNumber(preview.totalCount, 0));
   const itemsSignature = asArray(preview.items)
     .map((itemRaw) => {
@@ -55,5 +56,5 @@ export function buildPropertiesOverlayPreviewSignature(previewRaw) {
       return `${key}\u241f${label}\u241f${value}`;
     })
     .join("\u241e");
-  return `${enabled}|${elementId}|${hiddenCount}|${totalCount}|${itemsSignature}`;
+  return `${enabled}|${elementId}|${hiddenCount}|${visibleCount}|${totalCount}|${itemsSignature}`;
 }

@@ -387,12 +387,12 @@ export function buildPropertiesOverlayPreview({
   }
 
   const normalizedLimit = Math.max(1, Math.min(5, Number(visibleLimit || 4) || 4));
-  const items = rows.slice(0, normalizedLimit);
-  const hiddenCount = Math.max(rows.length - items.length, 0);
+  const hiddenCount = Math.max(rows.length - normalizedLimit, 0);
   return {
-    enabled: items.length > 0,
+    enabled: rows.length > 0,
     elementId: asText(elementId),
-    items,
+    items: rows,
+    visibleCount: normalizedLimit,
     hiddenCount,
     totalCount: rows.length,
   };
