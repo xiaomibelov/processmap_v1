@@ -3,6 +3,7 @@ import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "
 import { parseDrawioSvgCache } from "./drawioSvg";
 import {
   applyDrawioLayerRenderState,
+  applyDrawioSelectionToNode,
   asArray,
   asObject,
   buildDrawioLayerRenderMaps,
@@ -129,23 +130,46 @@ function DrawioOverlayRenderer({
     onSelectionChange,
   });
 
-  // renderedBody deps: only fields that applyDrawioLayerRenderState actually reads from meta
-  // (interaction_mode → effectiveMode, locked). Changing active_tool or opacity alone
-  // no longer triggers a full SVG re-render.
+  // renderedBody deps: selectedId is intentionally excluded — selection highlight
+  // is applied via applyDrawioSelectionToNode (direct DOM, O(1)) in the effect below.
+  // A click no longer triggers a full SVG regex re-render.
   const metaLocked = meta.locked;
   const renderedBody = useMemo(
     () => {
       bumpDrawioPerfCounter("drawio.renderer.renderedBody.recompute");
-      return applyDrawioLayerRenderState(parsedBody, runtimeMeta, selectedId, null, { layerMap, elementMap });
+      return applyDrawioLayerRenderState(parsedBody, runtimeMeta, null, null, { layerMap, elementMap });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [parsedBody, selectedId, layerMap, elementMap, effectiveMode, metaLocked],
+    [parsedBody, layerMap, elementMap, effectiveMode, metaLocked],
   );
 
-  const { registryRef } = useDrawioElementNodeRegistry({
+  const { registryRef, getNode: getRegistryNode } = useDrawioElementNodeRegistry({
     rootRef: containerRef,
     renderedBody,
   });
+
+  // Apply selection highlight directly on the DOM node — no SVG re-render on click.
+  const prevSelectedIdRef = useRef("");
+  useEffect(() => {
+    const prevId = prevSelectedIdRef.current;
+    const nextId = selectedId || "";
+    if (prevId === nextId) return;
+    if (prevId) applyDrawioSelectionToNode(getRegistryNode(prevId), false);
+    if (nextId) applyDrawioSelectionToNode(getRegistryNode(nextId), true);
+    prevSelectedIdRef.current = nextId;
+  }, [selectedId, getRegistryNode]);
+
+  // Re-apply selection after SVG re-render (dangerouslySetInnerHTML resets DOM styles).
+  // rAF ensures registry rebuild (also rAF) has run first.
+  useEffect(() => {
+    if (!selectedId) return;
+    const rafId = requestAnimationFrame(() => {
+      applyDrawioSelectionToNode(getRegistryNode(selectedId), true);
+      prevSelectedIdRef.current = selectedId;
+    });
+    return () => cancelAnimationFrame(rafId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [renderedBody]);
 
   const {
     selectedBbox,
