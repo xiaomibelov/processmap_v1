@@ -152,14 +152,53 @@ function resolveDrawioPointerElementId(targetRaw, rootRaw, metaRaw, layerMap, el
   return "";
 }
 
-function applyDrawioLayerRenderState(bodyRaw, metaRaw, selectedIdRaw = "", draftOffsetRaw = null, prebuiltMapsRaw = null) {
+const SELECTION_STYLE = "stroke:#2563eb; stroke-width:2.4; filter: drop-shadow(0 0 2px rgba(37,99,235,.45));";
+
+/**
+ * Apply or remove selection highlight on a DOM node directly.
+ * O(1) — no SVG re-render. Call when selectedId changes.
+ */
+function applyDrawioSelectionToNode(node, selected) {
+  if (!(node instanceof Element)) return;
+  if (selected) {
+    node.setAttribute("data-drawio-selected", "1");
+    // Inject selection style properties without clobbering existing style
+    const existing = node.getAttribute("style") || "";
+    const cleaned = existing
+      .replace(/stroke\s*:[^;]+;?/gi, "")
+      .replace(/stroke-width\s*:[^;]+;?/gi, "")
+      .replace(/filter\s*:[^;]+;?/gi, "")
+      .trim()
+      .replace(/;+$/, "");
+    node.setAttribute("style", cleaned ? `${cleaned}; ${SELECTION_STYLE}` : SELECTION_STYLE);
+  } else {
+    node.removeAttribute("data-drawio-selected");
+    const existing = node.getAttribute("style") || "";
+    const cleaned = existing
+      .replace(/stroke\s*:[^;]+;?/gi, "")
+      .replace(/stroke-width\s*:[^;]+;?/gi, "")
+      .replace(/filter\s*:[^;]+;?/gi, "")
+      .trim()
+      .replace(/;+$/, "");
+    if (cleaned) {
+      node.setAttribute("style", cleaned);
+    } else {
+      // Restore the original baked-in style (no selection props) by removing override
+      node.removeAttribute("style");
+    }
+  }
+}
+
+function applyDrawioLayerRenderState(bodyRaw, metaRaw, _selectedIdRaw = "", draftOffsetRaw = null, prebuiltMapsRaw = null) {
   const body = String(bodyRaw || "");
   if (!body) return body;
   const prebuilt = prebuiltMapsRaw && prebuiltMapsRaw.layerMap && prebuiltMapsRaw.elementMap
     ? prebuiltMapsRaw
     : buildDrawioLayerRenderMaps(metaRaw);
   const { layerMap, elementMap } = prebuilt;
-  const selectedId = toText(selectedIdRaw);
+  // selectedId is intentionally NOT used here — selection is applied via
+  // applyDrawioSelectionToNode (direct DOM) so a selection change does not
+  // trigger a full SVG regex re-render.
   const draftOffset = asObject(draftOffsetRaw);
   const draftId = toText(draftOffset.id);
   const draftX = toNumber(draftOffset.offset_x, 0);
@@ -185,10 +224,8 @@ function applyDrawioLayerRenderState(bodyRaw, metaRaw, selectedIdRaw = "", draft
       const opacity = Math.max(0.05, Math.min(1, Number(layerState.opacity || 1) * Number(elementState.opacity || 1)));
       const offsetX = draftId && draftId === elementId ? draftX : toNumber(elementState.offset_x, 0);
       const offsetY = draftId && draftId === elementId ? draftY : toNumber(elementState.offset_y, 0);
-      const selected = selectedId && selectedId === elementId;
-      const selectionStyle = selected ? "stroke:#2563eb; stroke-width:2.4; filter: drop-shadow(0 0 2px rgba(37,99,235,.45));" : "";
       const patchStyle = visible
-        ? `opacity:${opacity}; pointer-events:${interactive ? "auto" : "none"}; cursor:${flags.editable ? "move" : "default"}; ${selectionStyle}`
+        ? `opacity:${opacity}; pointer-events:${interactive ? "auto" : "none"}; cursor:${flags.editable ? "move" : "default"};`
         : "display:none; opacity:0; pointer-events:none;";
       let patchedAttrs = `${String(beforeIdAttrs || "")}${afterAttrs}`;
       patchedAttrs = mergeSvgTranslate(patchedAttrs, offsetX, offsetY);
@@ -211,4 +248,5 @@ export {
   collectDrawioElementIdsFromTarget,
   resolveDrawioPointerElementId,
   applyDrawioLayerRenderState,
+  applyDrawioSelectionToNode,
 };
