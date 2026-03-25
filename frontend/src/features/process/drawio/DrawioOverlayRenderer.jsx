@@ -20,11 +20,8 @@ import {
   resolveDrawioOverlaySvgPointerEvents,
 } from "./runtime/drawioOverlayPointerOwnership.js";
 import resolveDrawioOverlayRenderMatrix from "./runtime/drawioOverlayMatrix.js";
-import useDrawioCanvasInteractionExtras, {
-  buildResizeHandleSpecs,
-  getResizeHandleCursor,
-} from "./runtime/useDrawioCanvasInteractionExtras.js";
-import DrawioRichTextEditor from "./runtime/DrawioRichTextEditor.jsx";
+import useDrawioCanvasInteractionExtras from "./runtime/useDrawioCanvasInteractionExtras.js";
+import DrawioInteractionLayer from "./runtime/DrawioInteractionLayer.jsx";
 import useDrawioElementNodeRegistry from "./runtime/useDrawioElementNodeRegistry.js";
 
 function composeOverlayMatrix(matrixRaw, txRaw, tyRaw) {
@@ -141,59 +138,6 @@ function DrawioPlacementPreview({ placementPreviewSpec }) {
   );
 }
 
-function DrawioResizeHandles({
-  selectedBbox,
-  resizeDraft,
-  scale,
-  inlineEdit,
-  startResizeDrag,
-}) {
-  if (!selectedBbox?.hasResize || inlineEdit) return null;
-  const safeScale = Math.max(0.1, Number(scale || 1));
-  const hSize = 8 / safeScale;
-  const hR = 1.5 / safeScale;
-  const strokeW = 1.5 / safeScale;
-  const handles = buildResizeHandleSpecs(resizeDraft
-    ? { ...selectedBbox, width: resizeDraft.width, height: resizeDraft.height }
-    : selectedBbox);
-  return (
-    <g data-testid="drawio-resize-handles" style={{ pointerEvents: "none" }}>
-      {resizeDraft ? (
-        <rect
-          x={selectedBbox.x}
-          y={selectedBbox.y}
-          width={resizeDraft.width}
-          height={resizeDraft.height}
-          fill="none"
-          stroke="#3b82f6"
-          strokeWidth={strokeW}
-          strokeDasharray={`${5 / safeScale} ${3 / safeScale}`}
-          style={{ pointerEvents: "none" }}
-        />
-      ) : null}
-      {handles.map(({ id, cx, cy }) => (
-        <rect
-          key={id}
-          x={cx - hSize / 2}
-          y={cy - hSize / 2}
-          width={hSize}
-          height={hSize}
-          rx={hR}
-          fill="white"
-          stroke="#3b82f6"
-          strokeWidth={strokeW}
-          data-drawio-resize-handle={id}
-          style={{
-            pointerEvents: "all",
-            cursor: getResizeHandleCursor(id),
-          }}
-          onPointerDown={(ev) => startResizeDrag(ev, id)}
-        />
-      ))}
-    </g>
-  );
-}
-
 function DrawioOverlayRenderer({
   visible,
   drawioMeta,
@@ -261,7 +205,6 @@ function DrawioOverlayRenderer({
   const viewportGroupRef = useRef(null);
   const containerRef = useRef(null);
   const [placementPreviewPoint, setPlacementPreviewPoint] = useState(null);
-  const [viewportScale, setViewportScale] = useState(Math.max(0.0001, a));
   const renderStateCacheRef = useRef({ signature: "", body: "" });
 
   // metaForGate contains only the fields used by interaction gate + selection
@@ -430,7 +373,6 @@ function DrawioOverlayRenderer({
       if (matrixScaleRef) {
         const s = Math.max(0.0001, Number(asObject(nextMatrix).a || 1));
         matrixScaleRef.current = s;
-        setViewportScale((prev) => (Math.abs(prev - s) < 0.0001 ? prev : s));
       }
     });
   }, [
@@ -483,24 +425,17 @@ function DrawioOverlayRenderer({
           >
             <DrawioManagedBody renderedBody={renderedBody} />
             <DrawioPlacementPreview placementPreviewSpec={placementPreviewSpec} />
-            <DrawioResizeHandles
-              selectedBbox={selectedBbox}
-              resizeDraft={resizeDraft}
-              scale={viewportScale}
-              inlineEdit={inlineEdit}
-              startResizeDrag={startResizeDrag}
-            />
           </g>
         </svg>
       </div>
-      {/* ── Inline rich text editor ── */}
-      {inlineEdit ? (
-        <DrawioRichTextEditor
-          inlineEdit={inlineEdit}
-          onCommit={commitInlineText}
-          onCancel={cancelInlineEdit}
-        />
-      ) : null}
+      <DrawioInteractionLayer
+        selectedBbox={selectedBbox}
+        resizeDraft={resizeDraft}
+        inlineEdit={inlineEdit}
+        startResizeDrag={startResizeDrag}
+        commitInlineText={commitInlineText}
+        cancelInlineEdit={cancelInlineEdit}
+      />
     </div>
   );
 }

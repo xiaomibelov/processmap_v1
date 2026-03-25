@@ -109,6 +109,41 @@ export default function useDrawioCanvasInteractionExtras({
     };
   }, [containerRef, readElementNode]);
 
+  const readSelectedGeometry = useCallback((elementId) => {
+    const root = rootRef.current;
+    const container = containerRef.current;
+    if (!(root instanceof Element) || !(container instanceof Element) || typeof screenToDiagram !== "function") {
+      return null;
+    }
+    const node = readElementNode(elementId);
+    if (!(node instanceof Element)) return null;
+    const rect = node.getBoundingClientRect();
+    if (rect.width < 1 && rect.height < 1) return null;
+    const tl = screenToDiagram(rect.left, rect.top);
+    const br = screenToDiagram(rect.right, rect.bottom);
+    if (!tl || !br) return null;
+    const tagName = (node.tagName || "").toLowerCase();
+    const childTag = (node.firstElementChild?.tagName || "").toLowerCase();
+    const effectiveTag = tagName === "g" ? childTag : tagName;
+    const isTextSelf = tagName === "text" || tagName === "foreignobject";
+    const hasResize = effectiveTag === "rect" || isTextSelf;
+    const hasText = isTextSelf || !!node.querySelector("text, foreignObject");
+    const containerRect = container.getBoundingClientRect();
+    return {
+      x: tl.x,
+      y: tl.y,
+      width: Math.abs(br.x - tl.x),
+      height: Math.abs(br.y - tl.y),
+      screenLeft: Math.round(rect.left - containerRect.left),
+      screenTop: Math.round(rect.top - containerRect.top),
+      screenWidth: Math.max(0, Math.round(rect.width)),
+      screenHeight: Math.max(0, Math.round(rect.height)),
+      hasResize,
+      hasText,
+      isText: isTextSelf,
+    };
+  }, [containerRef, readElementNode, rootRef, screenToDiagram]);
+
   // ── Compute selected element bbox in diagram space ────────────────────────
   useEffect(() => {
     if (!selectedId || !visible) {
@@ -116,55 +151,57 @@ export default function useDrawioCanvasInteractionExtras({
       return undefined;
     }
     const rafId = requestAnimationFrame(() => {
-      const root = rootRef.current;
-      if (!(root instanceof Element) || typeof screenToDiagram !== "function") {
-        setSelectedBbox(null);
-        return;
-      }
-      const node = readElementNode(selectedId);
-      if (!(node instanceof Element)) {
-        setSelectedBbox(null);
-        return;
-      }
       try {
-        const rect = node.getBoundingClientRect();
-        if (rect.width < 1 && rect.height < 1) {
-          setSelectedBbox(null);
-          return;
-        }
-        const tl = screenToDiagram(rect.left, rect.top);
-        const br = screenToDiagram(rect.right, rect.bottom);
-        if (!tl || !br) {
-          setSelectedBbox(null);
-          return;
-        }
-        // Detect capabilities from DOM structure
-        const tagName = (node.tagName || "").toLowerCase();
-        const childTag = (node.firstElementChild?.tagName || "").toLowerCase();
-        const effectiveTag = tagName === "g" ? childTag : tagName;
-        const isTextSelf = tagName === "text" || tagName === "foreignobject";
-        const hasResize = effectiveTag === "rect" || isTextSelf;
-        const hasText = isTextSelf || !!node.querySelector("text, foreignObject");
-        setSelectedBbox({
-          x: tl.x,
-          y: tl.y,
-          width: Math.abs(br.x - tl.x),
-          height: Math.abs(br.y - tl.y),
-          hasResize,
-          hasText,
-          isText: isTextSelf,
-        });
+        setSelectedBbox(readSelectedGeometry(selectedId));
       } catch {
         setSelectedBbox(null);
       }
     });
     return () => cancelAnimationFrame(rafId);
-  }, [readElementNode, renderedBody, selectedId, visible, rootRef, screenToDiagram]);
+  }, [readSelectedGeometry, renderedBody, selectedId, visible]);
 
   // Clear bbox when selection is cleared
   useEffect(() => {
     if (!selectedId) setSelectedBbox(null);
   }, [selectedId]);
+
+  useEffect(() => {
+    if (typeof subscribeOverlayMatrix !== "function") return undefined;
+    let rafId = 0;
+    const syncSelectionGeometry = () => {
+      if (!selectedId || !visible) return;
+      const nextBbox = readSelectedGeometry(selectedId);
+      setSelectedBbox((prev) => {
+        if (!prev && !nextBbox) return prev;
+        if (!prev || !nextBbox) return nextBbox;
+        if (
+          prev.x === nextBbox.x
+          && prev.y === nextBbox.y
+          && prev.width === nextBbox.width
+          && prev.height === nextBbox.height
+          && prev.screenLeft === nextBbox.screenLeft
+          && prev.screenTop === nextBbox.screenTop
+          && prev.screenWidth === nextBbox.screenWidth
+          && prev.screenHeight === nextBbox.screenHeight
+          && prev.hasResize === nextBbox.hasResize
+          && prev.hasText === nextBbox.hasText
+          && prev.isText === nextBbox.isText
+        ) {
+          return prev;
+        }
+        return nextBbox;
+      });
+    };
+    const unsubscribe = subscribeOverlayMatrix(() => {
+      if (!selectedId) return;
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(syncSelectionGeometry);
+    });
+    return () => {
+      cancelAnimationFrame(rafId);
+      unsubscribe?.();
+    };
+  }, [readSelectedGeometry, selectedId, subscribeOverlayMatrix, visible]);
 
   // ── Resize drag ───────────────────────────────────────────────────────────
   const startResizeDrag = useCallback((event, handleId) => {
