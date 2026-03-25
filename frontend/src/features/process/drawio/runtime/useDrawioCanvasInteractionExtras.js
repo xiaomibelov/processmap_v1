@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readDrawioTextElementContent } from "../drawioSvg.js";
 
-function toNum(v, fallback = 0) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
-}
-
 const HANDLE_CURSORS = {
   nw: "nwse-resize",
   ne: "nesw-resize",
@@ -66,7 +61,6 @@ function applyResizeHandleDelta({ handle, startW, startH, dx, dy }) {
  */
 export default function useDrawioCanvasInteractionExtras({
   rootRef,
-  viewportGroupRef,
   containerRef,
   selectedId,
   elementMap,
@@ -74,6 +68,7 @@ export default function useDrawioCanvasInteractionExtras({
   renderedBody,
   svgCache,
   screenToDiagram,
+  subscribeOverlayMatrix,
   nodeRegistry,
   onCommitResize,
   onCommitTextResize,
@@ -86,10 +81,33 @@ export default function useDrawioCanvasInteractionExtras({
 
   const resizeDragRef = useRef(null);
   const resizeCleanupRef = useRef(null);
+  const inlineEditRef = useRef(null);
   // metaRef: read in event handlers to remove meta from effect deps.
   // dblclick listener no longer re-binds on every meta mutation (e.g. svg_cache update).
   const metaRef = useRef(meta);
   metaRef.current = meta;
+  inlineEditRef.current = inlineEdit;
+
+  const readElementNode = useCallback((elementId) => {
+    const root = rootRef.current;
+    if (!(root instanceof Element) || !elementId) return null;
+    return nodeRegistry?.current?.get(elementId)
+      ?? root.querySelector(`[data-drawio-el-id="${CSS.escape(elementId)}"]`);
+  }, [nodeRegistry, rootRef]);
+
+  const readInlineEditGeometry = useCallback((elementId) => {
+    const container = containerRef.current;
+    const svgNode = readElementNode(elementId);
+    if (!(container instanceof Element) || !(svgNode instanceof Element)) return null;
+    const containerRect = container.getBoundingClientRect();
+    const svgRect = svgNode.getBoundingClientRect();
+    return {
+      left: Math.round(svgRect.left - containerRect.left),
+      top: Math.round(svgRect.top - containerRect.top),
+      width: Math.max(80, Math.round(svgRect.width)),
+      height: Math.max(28, Math.round(svgRect.height)),
+    };
+  }, [containerRef, readElementNode]);
 
   // ── Compute selected element bbox in diagram space ────────────────────────
   useEffect(() => {
@@ -103,7 +121,7 @@ export default function useDrawioCanvasInteractionExtras({
         setSelectedBbox(null);
         return;
       }
-      const node = nodeRegistry?.current?.get(selectedId) ?? root.querySelector(`[data-drawio-el-id="${CSS.escape(selectedId)}"]`);
+      const node = readElementNode(selectedId);
       if (!(node instanceof Element)) {
         setSelectedBbox(null);
         return;
@@ -141,7 +159,7 @@ export default function useDrawioCanvasInteractionExtras({
       }
     });
     return () => cancelAnimationFrame(rafId);
-  }, [selectedId, renderedBody, visible, rootRef, screenToDiagram]);
+  }, [readElementNode, renderedBody, selectedId, visible, rootRef, screenToDiagram]);
 
   // Clear bbox when selection is cleared
   useEffect(() => {
@@ -254,7 +272,7 @@ export default function useDrawioCanvasInteractionExtras({
       if (!elementState || elementState.deleted || elementState.locked) return;
 
       // Find element node
-      const svgNode = nodeRegistry?.current?.get(hitId) ?? root.querySelector(`[data-drawio-el-id="${CSS.escape(hitId)}"]`);
+      const svgNode = readElementNode(hitId);
       if (!(svgNode instanceof Element)) return;
 
       // Check if the node itself is a text/foreignObject, or has one inside
@@ -268,23 +286,51 @@ export default function useDrawioCanvasInteractionExtras({
       const currentText = readDrawioTextElementContent(svgCache, hitId) ?? (textEl.textContent || "").trim();
 
       // Position relative to container
-      const container = containerRef.current;
-      if (!(container instanceof Element)) return;
-      const containerRect = container.getBoundingClientRect();
-      const svgRect = svgNode.getBoundingClientRect();
-      const left = Math.round(svgRect.left - containerRect.left);
-      const top = Math.round(svgRect.top - containerRect.top);
-      const width = Math.max(80, Math.round(svgRect.width));
-      const height = Math.max(28, Math.round(svgRect.height));
+      const geometry = readInlineEditGeometry(hitId);
+      if (!geometry) return;
 
-      setInlineEdit({ elementId: hitId, text: currentText, left, top, width, height });
+      setInlineEdit({ elementId: hitId, text: currentText, ...geometry });
       event.preventDefault();
     };
 
     root.addEventListener("dblclick", onDblClick);
     return () => root.removeEventListener("dblclick", onDblClick);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rootRef, containerRef, elementMap, visible]);
+  }, [rootRef, containerRef, elementMap, readElementNode, readInlineEditGeometry, visible]);
+
+  // Keep inline editor aligned when viewport matrix changes without forcing
+  // a full renderer re-render on zoom/pan.
+  useEffect(() => {
+    if (typeof subscribeOverlayMatrix !== "function") return undefined;
+    let rafId = 0;
+    const unsubscribe = subscribeOverlayMatrix(() => {
+      if (!inlineEditRef.current?.elementId) return;
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(syncInlineEditGeometry);
+    });
+    const syncInlineEditGeometry = () => {
+      const edit = inlineEditRef.current;
+      if (!edit?.elementId) return;
+      const geometry = readInlineEditGeometry(edit.elementId);
+      if (!geometry) return;
+      setInlineEdit((prev) => {
+        if (!prev || prev.elementId !== edit.elementId) return prev;
+        if (
+          prev.left === geometry.left
+          && prev.top === geometry.top
+          && prev.width === geometry.width
+          && prev.height === geometry.height
+        ) {
+          return prev;
+        }
+        return { ...prev, ...geometry };
+      });
+    };
+    return () => {
+      cancelAnimationFrame(rafId);
+      unsubscribe?.();
+    };
+  }, [readInlineEditGeometry, subscribeOverlayMatrix]);
 
   const commitInlineText = useCallback((text) => {
     const edit = inlineEdit;

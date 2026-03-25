@@ -90,6 +90,110 @@ function buildDrawioRenderStateSignature(bodyRaw, effectiveModeRaw, lockedRaw, l
   return parts.join("|");
 }
 
+const DrawioManagedBody = memo(function DrawioManagedBody({ renderedBody }) {
+  return <g dangerouslySetInnerHTML={{ __html: renderedBody }} />;
+});
+
+function DrawioPlacementPreview({ placementPreviewSpec }) {
+  if (!placementPreviewSpec) return null;
+  return (
+    <g
+      data-testid={`drawio-placement-preview-${placementPreviewSpec.toolId}`}
+      style={{ pointerEvents: "none" }}
+    >
+      {placementPreviewSpec.shape === "rect" ? (
+        <rect
+          x={placementPreviewSpec.x}
+          y={placementPreviewSpec.y}
+          width={placementPreviewSpec.width}
+          height={placementPreviewSpec.height}
+          rx={placementPreviewSpec.rx}
+          fill={placementPreviewSpec.fill}
+          stroke={placementPreviewSpec.stroke}
+          strokeWidth="2"
+          strokeDasharray={placementPreviewSpec.strokeDasharray || "6 4"}
+        />
+      ) : (
+        <g>
+          <rect
+            x={placementPreviewSpec.x - 10}
+            y={placementPreviewSpec.y - 18}
+            width={placementPreviewSpec.width}
+            height={placementPreviewSpec.height}
+            fill="rgba(248,250,252,0.75)"
+            stroke={placementPreviewSpec.guideStroke}
+            strokeWidth="1.5"
+            strokeDasharray="6 4"
+            rx="6"
+          />
+          <text
+            x={placementPreviewSpec.x}
+            y={placementPreviewSpec.y}
+            fill={placementPreviewSpec.fill}
+            fontSize="16"
+            fontFamily="Arial, sans-serif"
+          >
+            {placementPreviewSpec.text}
+          </text>
+        </g>
+      )}
+    </g>
+  );
+}
+
+function DrawioResizeHandles({
+  selectedBbox,
+  resizeDraft,
+  scale,
+  inlineEdit,
+  startResizeDrag,
+}) {
+  if (!selectedBbox?.hasResize || inlineEdit) return null;
+  const safeScale = Math.max(0.1, Number(scale || 1));
+  const hSize = 8 / safeScale;
+  const hR = 1.5 / safeScale;
+  const strokeW = 1.5 / safeScale;
+  const handles = buildResizeHandleSpecs(resizeDraft
+    ? { ...selectedBbox, width: resizeDraft.width, height: resizeDraft.height }
+    : selectedBbox);
+  return (
+    <g data-testid="drawio-resize-handles" style={{ pointerEvents: "none" }}>
+      {resizeDraft ? (
+        <rect
+          x={selectedBbox.x}
+          y={selectedBbox.y}
+          width={resizeDraft.width}
+          height={resizeDraft.height}
+          fill="none"
+          stroke="#3b82f6"
+          strokeWidth={strokeW}
+          strokeDasharray={`${5 / safeScale} ${3 / safeScale}`}
+          style={{ pointerEvents: "none" }}
+        />
+      ) : null}
+      {handles.map(({ id, cx, cy }) => (
+        <rect
+          key={id}
+          x={cx - hSize / 2}
+          y={cy - hSize / 2}
+          width={hSize}
+          height={hSize}
+          rx={hR}
+          fill="white"
+          stroke="#3b82f6"
+          strokeWidth={strokeW}
+          data-drawio-resize-handle={id}
+          style={{
+            pointerEvents: "all",
+            cursor: getResizeHandleCursor(id),
+          }}
+          onPointerDown={(ev) => startResizeDrag(ev, id)}
+        />
+      ))}
+    </g>
+  );
+}
+
 function DrawioOverlayRenderer({
   visible,
   drawioMeta,
@@ -157,6 +261,7 @@ function DrawioOverlayRenderer({
   const viewportGroupRef = useRef(null);
   const containerRef = useRef(null);
   const [placementPreviewPoint, setPlacementPreviewPoint] = useState(null);
+  const [viewportScale, setViewportScale] = useState(Math.max(0.0001, a));
   const renderStateCacheRef = useRef({ signature: "", body: "" });
 
   // metaForGate contains only the fields used by interaction gate + selection
@@ -263,6 +368,7 @@ function DrawioOverlayRenderer({
     renderedBody,
     svgCache: asObject(drawioMeta).svg_cache,
     screenToDiagram,
+    subscribeOverlayMatrix,
     nodeRegistry: registryRef,
     onCommitResize,
     onCommitTextResize,
@@ -324,6 +430,7 @@ function DrawioOverlayRenderer({
       if (matrixScaleRef) {
         const s = Math.max(0.0001, Number(asObject(nextMatrix).a || 1));
         matrixScaleRef.current = s;
+        setViewportScale((prev) => (Math.abs(prev - s) < 0.0001 ? prev : s));
       }
     });
   }, [
@@ -374,95 +481,15 @@ function DrawioOverlayRenderer({
             data-testid="drawio-overlay-viewport-g"
             transform={`matrix(${a},${b},${c},${d},${e},${f})`}
           >
-            <g dangerouslySetInnerHTML={{ __html: renderedBody }} />
-            {placementPreviewSpec ? (
-              <g
-                data-testid={`drawio-placement-preview-${placementPreviewSpec.toolId}`}
-                style={{ pointerEvents: "none" }}
-              >
-                {placementPreviewSpec.shape === "rect" ? (
-                  <rect
-                    x={placementPreviewSpec.x}
-                    y={placementPreviewSpec.y}
-                    width={placementPreviewSpec.width}
-                    height={placementPreviewSpec.height}
-                    rx={placementPreviewSpec.rx}
-                    fill={placementPreviewSpec.fill}
-                    stroke={placementPreviewSpec.stroke}
-                    strokeWidth="2"
-                    strokeDasharray={placementPreviewSpec.strokeDasharray || "6 4"}
-                  />
-                ) : (
-                  <g>
-                    <rect
-                      x={placementPreviewSpec.x - 10}
-                      y={placementPreviewSpec.y - 18}
-                      width={placementPreviewSpec.width}
-                      height={placementPreviewSpec.height}
-                      fill="rgba(248,250,252,0.75)"
-                      stroke={placementPreviewSpec.guideStroke}
-                      strokeWidth="1.5"
-                      strokeDasharray="6 4"
-                      rx="6"
-                    />
-                    <text
-                      x={placementPreviewSpec.x}
-                      y={placementPreviewSpec.y}
-                      fill={placementPreviewSpec.fill}
-                      fontSize="16"
-                      fontFamily="Arial, sans-serif"
-                    >
-                      {placementPreviewSpec.text}
-                    </text>
-                  </g>
-                )}
-              </g>
-            ) : null}
-            {/* ── Resize handles ── */}
-            {selectedBbox?.hasResize && !inlineEdit ? (() => {
-              const hSize = 8 / Math.max(0.1, a);
-              const hR = 1.5 / Math.max(0.1, a);
-              const strokeW = 1.5 / Math.max(0.1, a);
-              const handles = buildResizeHandleSpecs(resizeDraft
-                ? { ...selectedBbox, width: resizeDraft.width, height: resizeDraft.height }
-                : selectedBbox);
-              return (
-                <g data-testid="drawio-resize-handles" style={{ pointerEvents: "none" }}>
-                  {resizeDraft ? (
-                    <rect
-                      x={selectedBbox.x}
-                      y={selectedBbox.y}
-                      width={resizeDraft.width}
-                      height={resizeDraft.height}
-                      fill="none"
-                      stroke="#3b82f6"
-                      strokeWidth={strokeW}
-                      strokeDasharray={`${5 / Math.max(0.1, a)} ${3 / Math.max(0.1, a)}`}
-                      style={{ pointerEvents: "none" }}
-                    />
-                  ) : null}
-                  {handles.map(({ id, cx, cy }) => (
-                    <rect
-                      key={id}
-                      x={cx - hSize / 2}
-                      y={cy - hSize / 2}
-                      width={hSize}
-                      height={hSize}
-                      rx={hR}
-                      fill="white"
-                      stroke="#3b82f6"
-                      strokeWidth={strokeW}
-                      data-drawio-resize-handle={id}
-                      style={{
-                        pointerEvents: "all",
-                        cursor: getResizeHandleCursor(id),
-                      }}
-                      onPointerDown={(ev) => startResizeDrag(ev, id)}
-                    />
-                  ))}
-                </g>
-              );
-            })() : null}
+            <DrawioManagedBody renderedBody={renderedBody} />
+            <DrawioPlacementPreview placementPreviewSpec={placementPreviewSpec} />
+            <DrawioResizeHandles
+              selectedBbox={selectedBbox}
+              resizeDraft={resizeDraft}
+              scale={viewportScale}
+              inlineEdit={inlineEdit}
+              startResizeDrag={startResizeDrag}
+            />
           </g>
         </svg>
       </div>
@@ -476,11 +503,6 @@ function DrawioOverlayRenderer({
       ) : null}
     </div>
   );
-}
-
-function num(valueRaw, fallback = 0) {
-  const value = Number(valueRaw);
-  return Number.isFinite(value) ? value : fallback;
 }
 
 /**
@@ -506,8 +528,6 @@ function areEqual(prevProps, nextProps) {
   if (String(prevProps.drawioActiveTool || "") !== String(nextProps.drawioActiveTool || "")) return false;
   const prevMeta = asObject(prevProps.drawioMeta);
   const nextMeta = asObject(nextProps.drawioMeta);
-  const prevMatrix = asObject(prevProps.overlayMatrix);
-  const nextMatrix = asObject(nextProps.overlayMatrix);
   if (toNumber(prevMeta.opacity, 1) !== toNumber(nextMeta.opacity, 1)) return false;
   if (toNumber(asObject(prevMeta.transform).x, 0) !== toNumber(asObject(nextMeta.transform).x, 0)) return false;
   if (toNumber(asObject(prevMeta.transform).y, 0) !== toNumber(asObject(nextMeta.transform).y, 0)) return false;
@@ -527,12 +547,8 @@ function areEqual(prevProps, nextProps) {
   if (prevProps.onCreateElement !== nextProps.onCreateElement) return false;
   if (prevProps.onDeleteElement !== nextProps.onDeleteElement) return false;
   if (prevProps.onSelectionChange !== nextProps.onSelectionChange) return false;
-  // Scale/rotation (a,b,c,d) affect matrixScale, interaction, and resize handle sizes → re-render.
-  // Translation (e,f) is applied via subscribeOverlayMatrix directly to DOM — no React re-render needed.
-  if (num(prevMatrix.a, 1) !== num(nextMatrix.a, 1)) return false;
-  if (num(prevMatrix.b, 0) !== num(nextMatrix.b, 0)) return false;
-  if (num(prevMatrix.c, 0) !== num(nextMatrix.c, 0)) return false;
-  if (num(prevMatrix.d, 1) !== num(nextMatrix.d, 1)) return false;
+  // overlayMatrix a/b/c/d/e/f now updates viewport DOM + live scale refs via
+  // subscribeOverlayMatrix. Zoom/pan no longer invalidates the heavy SVG body render.
   return true;
 }
 
