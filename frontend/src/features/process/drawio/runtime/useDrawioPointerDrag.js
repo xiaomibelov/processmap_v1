@@ -39,27 +39,30 @@ function applyPreviewNodeTransform({
   node.setAttribute("transform", baseTransform ? `${baseTransform} ${previewTransform}` : previewTransform);
 }
 
-function resolvePreviewNode(targetRaw, rootRaw, elementIdRaw) {
+function resolvePreviewNode(targetRaw, rootRaw, elementIdRaw, nodeRegistryRaw) {
   const target = targetRaw instanceof Element ? targetRaw : null;
   const root = rootRaw instanceof Element ? rootRaw : null;
   const elementId = normalizeElementId(elementIdRaw);
-  if (!target || !root || !elementId) return null;
-  let node = target;
-  while (node instanceof Element) {
-    if (!root.contains(node)) break;
-    if (normalizeElementId(node.getAttribute("data-drawio-el-id") || node.getAttribute("id")) === elementId) {
-      return node;
+  if (!root || !elementId) return null;
+  // Fast path: O(1) registry lookup
+  if (nodeRegistryRaw && typeof nodeRegistryRaw.get === "function") {
+    const cached = nodeRegistryRaw.get(elementId);
+    if (cached instanceof Element && root.contains(cached)) return cached;
+  }
+  // Walk up from event target (already in DOM, no scan needed)
+  if (target) {
+    let node = target;
+    while (node instanceof Element) {
+      if (!root.contains(node)) break;
+      if (normalizeElementId(node.getAttribute("data-drawio-el-id") || node.getAttribute("id")) === elementId) {
+        return node;
+      }
+      if (node === root) break;
+      node = node.parentElement;
     }
-    if (node === root) break;
-    node = node.parentElement;
   }
-  const nodes = root.querySelectorAll?.("[data-drawio-el-id], [id]") || [];
-  for (const candidate of nodes) {
-    if (!(candidate instanceof Element)) continue;
-    const candidateId = normalizeElementId(candidate.getAttribute("data-drawio-el-id") || candidate.getAttribute("id"));
-    if (candidateId === elementId) return candidate;
-  }
-  return null;
+  // Last resort: single targeted querySelector (O(1) by id attribute)
+  return root.querySelector?.(`[data-drawio-el-id="${CSS.escape(elementId)}"]`) ?? null;
 }
 
 function isPointerLikeEvent(eventTypeRaw, eventPointerIdRaw) {
@@ -241,6 +244,7 @@ function bindPointerDragListeners({
 
 export default function useDrawioPointerDrag({
   rootRef,
+  nodeRegistry,
   hasRenderable,
   visible,
   meta,
@@ -425,7 +429,7 @@ export default function useDrawioPointerDrag({
         if (changed) {
           const root = rootRef.current;
           if (!(previewNodeRef.current instanceof Element) || !(root instanceof Element) || !root.contains(previewNodeRef.current)) {
-            const liveNode = resolvePreviewNode(root, root, String(stateForPreview.id || ""));
+            const liveNode = resolvePreviewNode(root, root, String(stateForPreview.id || ""), nodeRegistry?.current);
             previewNodeRef.current = liveNode;
             previewBaseTransformRef.current = liveNode instanceof Element
               ? String(liveNode.getAttribute("transform") || "").trim()
@@ -565,7 +569,7 @@ export default function useDrawioPointerDrag({
     bumpDrawioPerfCounter("drawio.drag.starts");
     markDrawioPerf("drawio.drag.active", true);
     markDrawioPerf("drawio.drag.lastStartAt", Date.now());
-    const previewNode = resolvePreviewNode(event?.target, rootRef.current, elementId);
+    const previewNode = resolvePreviewNode(event?.target, rootRef.current, elementId, nodeRegistry?.current);
     previewNodeRef.current = previewNode;
     previewBaseTransformRef.current = previewNode instanceof Element ? String(previewNode.getAttribute("transform") || "").trim() : "";
     previewOffsetRef.current = { x: 0, y: 0 };

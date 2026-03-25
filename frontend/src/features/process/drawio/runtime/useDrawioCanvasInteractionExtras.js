@@ -74,6 +74,7 @@ export default function useDrawioCanvasInteractionExtras({
   renderedBody,
   svgCache,
   screenToDiagram,
+  nodeRegistry,
   onCommitResize,
   onCommitTextResize,
   onCommitText,
@@ -98,7 +99,7 @@ export default function useDrawioCanvasInteractionExtras({
         setSelectedBbox(null);
         return;
       }
-      const node = root.querySelector(`[data-drawio-el-id="${CSS.escape(selectedId)}"]`);
+      const node = nodeRegistry?.current?.get(selectedId) ?? root.querySelector(`[data-drawio-el-id="${CSS.escape(selectedId)}"]`);
       if (!(node instanceof Element)) {
         setSelectedBbox(null);
         return;
@@ -249,7 +250,7 @@ export default function useDrawioCanvasInteractionExtras({
       if (!elementState || elementState.deleted || elementState.locked) return;
 
       // Find element node
-      const svgNode = root.querySelector(`[data-drawio-el-id="${CSS.escape(hitId)}"]`);
+      const svgNode = nodeRegistry?.current?.get(hitId) ?? root.querySelector(`[data-drawio-el-id="${CSS.escape(hitId)}"]`);
       if (!(svgNode instanceof Element)) return;
 
       // Check if the node itself is a text/foreignObject, or has one inside

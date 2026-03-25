@@ -24,6 +24,7 @@ import useDrawioCanvasInteractionExtras, {
   getResizeHandleCursor,
 } from "./runtime/useDrawioCanvasInteractionExtras.js";
 import DrawioRichTextEditor from "./runtime/DrawioRichTextEditor.jsx";
+import useDrawioElementNodeRegistry from "./runtime/useDrawioElementNodeRegistry.js";
 
 function composeOverlayMatrix(matrixRaw, txRaw, tyRaw) {
   const matrix = asObject(matrixRaw);
@@ -108,6 +109,11 @@ function DrawioOverlayRenderer({
   const containerRef = useRef(null);
   const [placementPreviewPoint, setPlacementPreviewPoint] = useState(null);
 
+  const { registryRef, getNode } = useDrawioElementNodeRegistry({
+    rootRef: containerRef,
+    renderedBody,
+  });
+
   const {
     rootRef,
     selectedId,
@@ -120,6 +126,7 @@ function DrawioOverlayRenderer({
     elementMap,
     matrixScale: a,
     screenToDiagram,
+    nodeRegistry: registryRef,
     onCommitMove,
     onCreateElement,
     onDeleteElement,
@@ -151,6 +158,7 @@ function DrawioOverlayRenderer({
     renderedBody,
     svgCache: asObject(drawioMeta).svg_cache,
     screenToDiagram,
+    nodeRegistry: registryRef,
     onCommitResize,
     onCommitTextResize,
     onCommitText,
