@@ -1560,6 +1560,14 @@ export function CamundaPropertiesSettings({
           >
             {addLabel}
           </button>
+          <button
+            type="button"
+            className="primaryBtn sidebarCamundaIoAddBtn"
+            onClick={() => void onSaveExtensionState?.()}
+            disabled={!!disabled || !!extensionStateBusy}
+          >
+            {extensionStateBusy ? "Сохраняю..." : "Сохранить"}
+          </button>
         </div>
         <div className="sidebarCamundaIoTableWrap">
           <div className="sidebarCamundaIoTableHead" role="presentation">
@@ -1927,8 +1935,17 @@ export function CamundaPropertiesSettings({
     );
   }
 
+  function handlePropertiesKeyDown(event) {
+    if (event.key !== "Enter") return;
+    const tag = (event.target?.tagName || "").toLowerCase();
+    if (tag === "textarea" || tag === "button" || tag === "select") return;
+    event.preventDefault();
+    void onSaveExtensionState?.();
+  }
+
   return (
-    <div className="sidebarControlStack sidebarPropertiesLayout">
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+    <div className="sidebarControlStack sidebarPropertiesLayout" onKeyDown={handlePropertiesKeyDown}>
       <section className="sidebarPropertiesForm" data-testid="camunda-properties-group">
         <section className="sidebarPropertiesBlock">
           <div className="sidebarPropertiesBlockHead">
@@ -2034,14 +2051,26 @@ export function CamundaPropertiesSettings({
                 </div>
               ) : null}
               {hasDictionarySchema ? (
-                <div className="sidebarPropertiesRows sidebarPropertiesRows--table">
-                  <div className="sidebarPropertiesTableHead" role="presentation">
-                    <span>Поле</span>
-                    <span>Значение</span>
-                    <span>Действие</span>
+                <>
+                  <div className="sidebarPropertiesRows sidebarPropertiesRows--table">
+                    <div className="sidebarPropertiesTableHead" role="presentation">
+                      <span>Поле</span>
+                      <span>Значение</span>
+                      <span>Действие</span>
+                    </div>
+                    {dictionaryEditorModel.schemaRows.map((row) => renderSchemaPropertyRow(row))}
                   </div>
-                  {dictionaryEditorModel.schemaRows.map((row) => renderSchemaPropertyRow(row))}
-                </div>
+                  <div className="sidebarButtonRow">
+                    <button
+                      type="button"
+                      className="primaryBtn sidebarPropertiesActionBtn px-2.5"
+                      onClick={() => void onSaveExtensionState?.()}
+                      disabled={!!disabled || !!extensionStateBusy}
+                    >
+                      {extensionStateBusy ? "Сохраняю..." : "Сохранить"}
+                    </button>
+                  </div>
+                </>
               ) : null}
               {showFallbackBlock ? (
                 <div className="sidebarFieldHint">
@@ -2095,6 +2124,14 @@ export function CamundaPropertiesSettings({
                   >
                     + Добавить BPMN-свойство
                   </button>
+                  <button
+                    type="button"
+                    className="primaryBtn sidebarPropertiesActionBtn px-2.5"
+                    onClick={() => void onSaveExtensionState?.()}
+                    disabled={!!disabled || !!extensionStateBusy}
+                  >
+                    {extensionStateBusy ? "Сохраняю..." : "Сохранить"}
+                  </button>
                 </div>
               </>
             ) : showFallbackBlock ? (
@@ -2115,6 +2152,14 @@ export function CamundaPropertiesSettings({
                     disabled={!!disabled || !!extensionStateBusy}
                   >
                     + Добавить BPMN-свойство
+                  </button>
+                  <button
+                    type="button"
+                    className="primaryBtn sidebarPropertiesActionBtn px-2.5"
+                    onClick={() => void onSaveExtensionState?.()}
+                    disabled={!!disabled || !!extensionStateBusy}
+                  >
+                    {extensionStateBusy ? "Сохраняю..." : "Сохранить"}
                   </button>
                 </div>
               </>
@@ -2198,6 +2243,14 @@ export function CamundaPropertiesSettings({
                 >
                   + Добавить header
                 </button>
+                <button
+                  type="button"
+                  className="primaryBtn sidebarPropertiesActionBtn px-2.5"
+                  onClick={() => void onSaveExtensionState?.()}
+                  disabled={!!disabled || !!extensionStateBusy}
+                >
+                  {extensionStateBusy ? "Сохраняю..." : "Сохранить"}
+                </button>
               </div>
             </>
           ) : null}
@@ -2272,6 +2325,14 @@ export function CamundaPropertiesSettings({
               >
                 + Добавить слушатель
               </button>
+              <button
+                type="button"
+                className="primaryBtn sidebarPropertiesActionBtn px-2.5"
+                onClick={() => void onSaveExtensionState?.()}
+                disabled={!!disabled || !!extensionStateBusy}
+              >
+                {extensionStateBusy ? "Сохраняю..." : "Сохранить"}
+              </button>
             </div>
             </div>
           ) : null}
@@ -2280,16 +2341,6 @@ export function CamundaPropertiesSettings({
         <div className="sidebarPropertiesDivider" />
 
         <div className="sidebarPropertiesFooter sidebarPropertiesFooter--sticky sidebarButtonRow">
-          <button
-            type="button"
-            className="primaryBtn sidebarPropertiesPrimaryAction px-3"
-            onClick={() => {
-              void onSaveExtensionState?.();
-            }}
-            disabled={!!disabled || !!extensionStateBusy}
-          >
-            {extensionStateBusy ? "Сохраняю..." : "Сохранить"}
-          </button>
           <button
             type="button"
             className="secondaryBtn sidebarPropertiesActionBtn px-3"
