@@ -456,12 +456,12 @@ function areEqual(prevProps, nextProps) {
   if (prevProps.onCreateElement !== nextProps.onCreateElement) return false;
   if (prevProps.onDeleteElement !== nextProps.onDeleteElement) return false;
   if (prevProps.onSelectionChange !== nextProps.onSelectionChange) return false;
+  // Scale/rotation (a,b,c,d) affect matrixScale, interaction, and resize handle sizes → re-render.
+  // Translation (e,f) is applied via subscribeOverlayMatrix directly to DOM — no React re-render needed.
   if (num(prevMatrix.a, 1) !== num(nextMatrix.a, 1)) return false;
   if (num(prevMatrix.b, 0) !== num(nextMatrix.b, 0)) return false;
   if (num(prevMatrix.c, 0) !== num(nextMatrix.c, 0)) return false;
   if (num(prevMatrix.d, 1) !== num(nextMatrix.d, 1)) return false;
-  if (num(prevMatrix.e, 0) !== num(nextMatrix.e, 0)) return false;
-  if (num(prevMatrix.f, 0) !== num(nextMatrix.f, 0)) return false;
   return true;
 }
 
