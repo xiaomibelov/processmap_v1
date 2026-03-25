@@ -14,7 +14,6 @@ export default function useDrawioOverlayInteraction({
   elementMap,
   matrixScale,
   screenToDiagram,
-  nodeRegistry,
   onCommitMove,
   onCreateElement,
   onDeleteElement,
@@ -46,7 +45,6 @@ export default function useDrawioOverlayInteraction({
 
   const { draftOffset } = useDrawioPointerDrag({
     rootRef,
-    nodeRegistry,
     hasRenderable: hasRenderable || createPlacementActive,
     visible,
     meta,

@@ -244,7 +244,6 @@ function bindPointerDragListeners({
 
 export default function useDrawioPointerDrag({
   rootRef,
-  nodeRegistry,
   hasRenderable,
   visible,
   meta,
@@ -429,7 +428,7 @@ export default function useDrawioPointerDrag({
         if (changed) {
           const root = rootRef.current;
           if (!(previewNodeRef.current instanceof Element) || !(root instanceof Element) || !root.contains(previewNodeRef.current)) {
-            const liveNode = resolvePreviewNode(root, root, String(stateForPreview.id || ""), nodeRegistry?.current);
+            const liveNode = resolvePreviewNode(root, root, String(stateForPreview.id || ""), null);
             previewNodeRef.current = liveNode;
             previewBaseTransformRef.current = liveNode instanceof Element
               ? String(liveNode.getAttribute("transform") || "").trim()
@@ -569,7 +568,7 @@ export default function useDrawioPointerDrag({
     bumpDrawioPerfCounter("drawio.drag.starts");
     markDrawioPerf("drawio.drag.active", true);
     markDrawioPerf("drawio.drag.lastStartAt", Date.now());
-    const previewNode = resolvePreviewNode(event?.target, rootRef.current, elementId, nodeRegistry?.current);
+    const previewNode = resolvePreviewNode(event?.target, rootRef.current, elementId, null);
     previewNodeRef.current = previewNode;
     previewBaseTransformRef.current = previewNode instanceof Element ? String(previewNode.getAttribute("transform") || "").trim() : "";
     previewOffsetRef.current = { x: 0, y: 0 };

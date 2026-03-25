@@ -109,11 +109,6 @@ function DrawioOverlayRenderer({
   const containerRef = useRef(null);
   const [placementPreviewPoint, setPlacementPreviewPoint] = useState(null);
 
-  const { registryRef, getNode } = useDrawioElementNodeRegistry({
-    rootRef: containerRef,
-    renderedBody,
-  });
-
   const {
     rootRef,
     selectedId,
@@ -126,7 +121,6 @@ function DrawioOverlayRenderer({
     elementMap,
     matrixScale: a,
     screenToDiagram,
-    nodeRegistry: registryRef,
     onCommitMove,
     onCreateElement,
     onDeleteElement,
@@ -140,6 +134,11 @@ function DrawioOverlayRenderer({
     },
     [runtimeMeta, parsedBody, selectedId],
   );
+
+  const { registryRef } = useDrawioElementNodeRegistry({
+    rootRef: containerRef,
+    renderedBody,
+  });
 
   const {
     selectedBbox,
