@@ -1206,8 +1206,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const linkEventStyledStateRef = useRef({ viewer: [], editor: [] });
   const happyFlowMarkerStateRef = useRef({ viewer: [], editor: [] });
   const happyFlowStyledStateRef = useRef({ viewer: [], editor: [] });
-  const userNotesMarkerStateRef = useRef({ viewer: [], editor: [] });
-  const userNotesOverlayStateRef = useRef({ viewer: [], editor: [] });
+  const userNotesDecorStateRef = useRef({ viewer: {}, editor: {} });
   const stepTimeOverlayStateRef = useRef({ viewer: [], editor: [] });
   const stepTimeDecorSignatureRef = useRef({ viewer: "", editor: "" });
   const robotMetaDecorStateRef = useRef({ viewer: {}, editor: {} });
@@ -2733,8 +2732,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         interviewDecorSignatureRef,
         happyFlowMarkerStateRef,
         happyFlowStyledStateRef,
-        userNotesMarkerStateRef,
-        userNotesOverlayStateRef,
+        userNotesDecorStateRef,
         stepTimeOverlayStateRef,
         stepTimeDecorSignatureRef,
         robotMetaDecorStateRef,
@@ -3250,8 +3248,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     taskTypeMarkerStateRef.current = { viewer: [], editor: [] };
     happyFlowMarkerStateRef.current = { viewer: [], editor: [] };
     happyFlowStyledStateRef.current = { viewer: [], editor: [] };
-    userNotesMarkerStateRef.current = { viewer: [], editor: [] };
-    userNotesOverlayStateRef.current = { viewer: [], editor: [] };
+    userNotesDecorStateRef.current = { viewer: {}, editor: {} };
     stepTimeOverlayStateRef.current = { viewer: [], editor: [] };
     stepTimeDecorSignatureRef.current = { viewer: "", editor: "" };
     robotMetaDecorStateRef.current = { viewer: {}, editor: {} };

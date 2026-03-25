@@ -755,19 +755,25 @@ export function clearUserNotesDecor(ctx) {
   const inst = ctx?.inst;
   const kind = ctx?.kind;
   const refs = ctx?.refs;
-  const asArray = ctx?.utils?.asArray;
-  if (!inst || !kind || !refs || typeof asArray !== "function") return;
+  const asObject = ctx?.utils?.asObject;
+  const toText = ctx?.utils?.toText;
+  if (!inst || !kind || !refs || typeof asObject !== "function" || typeof toText !== "function") return;
   try {
     const canvas = inst.get("canvas");
     const overlays = inst.get("overlays");
-    asArray(refs.userNotesMarkerStateRef.current[kind]).forEach((m) => {
-      canvas.removeMarker(m.elementId, m.className);
+    const state = asObject(refs.userNotesDecorStateRef.current[kind]);
+    Object.values(state).forEach((entryRaw) => {
+      const entry = asObject(entryRaw);
+      const elementId = toText(entry?.elementId);
+      const markerClass = toText(entry?.markerClass);
+      if (elementId && markerClass) {
+        canvas.removeMarker(elementId, markerClass);
+      }
+      if (entry?.overlayId !== null && entry?.overlayId !== undefined) {
+        overlays.remove(entry.overlayId);
+      }
     });
-    asArray(refs.userNotesOverlayStateRef.current[kind]).forEach((id) => {
-      overlays.remove(id);
-    });
-    refs.userNotesMarkerStateRef.current[kind] = [];
-    refs.userNotesOverlayStateRef.current[kind] = [];
+    refs.userNotesDecorStateRef.current[kind] = {};
   } catch {
   }
 }
@@ -779,15 +785,19 @@ export function applyUserNotesDecor(ctx) {
   const callbacks = ctx?.callbacks;
   const getters = ctx?.getters;
   const toText = ctx?.utils?.toText;
-  if (!inst || !kind || !refs || !callbacks || !getters || typeof toText !== "function") return;
-  clearUserNotesDecor(ctx);
-  if (getters.isInterviewDecorModeOn()) return;
+  const asObject = ctx?.utils?.asObject;
+  if (!inst || !kind || !refs || !callbacks || !getters || typeof toText !== "function" || typeof asObject !== "function") return;
+  if (getters.isInterviewDecorModeOn()) {
+    clearUserNotesDecor(ctx);
+    return;
+  }
   const payload = buildUserNotesDecorPayload(ctx);
-  if (!payload.length) return;
   try {
     const canvas = inst.get("canvas");
     const overlays = inst.get("overlays");
     const registry = inst.get("elementRegistry");
+    const currentState = { ...asObject(refs.userNotesDecorStateRef.current[kind]) };
+    const nextState = {};
 
     const bindBadgeClick = (btn, onClick) => {
       btn.addEventListener("mousedown", (ev) => ev.stopPropagation());
@@ -804,9 +814,24 @@ export function applyUserNotesDecor(ctx) {
       if (!nodeId || count <= 0) return;
       const el = getters.findShapeByNodeId(registry, nodeId) || getters.findShapeForHint(registry, { nodeId, title: nodeId });
       if (!el) return;
+      const elementId = toText(el?.id);
+      if (!elementId) return;
+      const markerClass = "fpcHasUserNote";
+      const signature = `${markerClass}|${count}`;
+      const prev = asObject(currentState[elementId]);
 
-      canvas.addMarker(el.id, "fpcHasUserNote");
-      refs.userNotesMarkerStateRef.current[kind].push({ elementId: el.id, className: "fpcHasUserNote" });
+      if (toText(prev?.signature) === signature) {
+        nextState[elementId] = prev;
+        delete currentState[elementId];
+        return;
+      }
+
+      if (!toText(prev?.markerClass)) {
+        canvas.addMarker(elementId, markerClass);
+      }
+      if (prev?.overlayId !== null && prev?.overlayId !== undefined) {
+        overlays.remove(prev.overlayId);
+      }
 
       const stack = document.createElement("div");
       stack.className = "fpcNodeBadgeStack";
@@ -825,12 +850,32 @@ export function applyUserNotesDecor(ctx) {
       });
       stack.appendChild(badge);
 
-      const overlayId = overlays.add(el.id, {
+      const overlayId = overlays.add(elementId, {
         position: { top: -18, left: 2 },
         html: stack,
       });
-      refs.userNotesOverlayStateRef.current[kind].push(overlayId);
+      nextState[elementId] = {
+        elementId,
+        markerClass,
+        overlayId,
+        signature,
+      };
+      delete currentState[elementId];
     });
+
+    Object.values(currentState).forEach((entryRaw) => {
+      const entry = asObject(entryRaw);
+      const elementId = toText(entry?.elementId);
+      const markerClass = toText(entry?.markerClass);
+      if (elementId && markerClass) {
+        canvas.removeMarker(elementId, markerClass);
+      }
+      if (entry?.overlayId !== null && entry?.overlayId !== undefined) {
+        overlays.remove(entry.overlayId);
+      }
+    });
+
+    refs.userNotesDecorStateRef.current[kind] = nextState;
   } catch {
   }
 }
