@@ -237,6 +237,9 @@ export default function useDrawioPointerDrag({
   onCreateElement,
 }) {
   bumpDrawioPerfCounter("drawio.drag.hook.renders");
+  // metaRef lets handleStart read current meta without re-binding listeners on tool switch.
+  const metaRef = useRef(meta);
+  metaRef.current = meta;
   const draftOffsetRef = useRef(null);
   const dragRef = useRef(null);
   const activePointerIdRef = useRef(null);
@@ -591,7 +594,8 @@ export default function useDrawioPointerDrag({
       // Skip resize handles — they have their own drag logic
       if (target.dataset?.drawioResizeHandle) return;
       const idChain = collectDrawioElementIdsFromTarget(target, root);
-      const hitId = resolveDrawioPointerElementId(target, root, meta, layerMap, elementMap);
+      const m = metaRef.current;
+      const hitId = resolveDrawioPointerElementId(target, root, m, layerMap, elementMap);
       traceDrawioRuntime("drawio_pointerdown", {
         hitId,
         idChain,
@@ -602,10 +606,10 @@ export default function useDrawioPointerDrag({
         return;
       }
       const blockCreate = shouldBlockBpmnClickDrawioCreation({
-        enabled: meta?.enabled === true,
-        locked: meta?.locked === true,
-        interactionMode: meta?.interaction_mode,
-        toolId: meta?.active_tool,
+        enabled: m?.enabled === true,
+        locked: m?.locked === true,
+        interactionMode: m?.interaction_mode,
+        toolId: m?.active_tool,
       });
       if (!blockCreate) {
         const point = typeof screenToDiagram === "function"
@@ -615,13 +619,13 @@ export default function useDrawioPointerDrag({
           event.preventDefault();
           event.stopPropagation();
           const createdId = normalizeElementId(onCreateElement({
-            toolId: String(meta?.active_tool || ""),
+            toolId: String(m?.active_tool || ""),
             x: Number(point.x || 0),
             y: Number(point.y || 0),
           }) || "");
           traceDrawioRuntime("drawio_runtime_create_attempt", {
-            mode: String(meta?.interaction_mode || ""),
-            toolId: String(meta?.active_tool || ""),
+            mode: String(m?.interaction_mode || ""),
+            toolId: String(m?.active_tool || ""),
             x: Number(point.x || 0),
             y: Number(point.y || 0),
             createdId,
@@ -632,8 +636,8 @@ export default function useDrawioPointerDrag({
           }
         }
         traceDrawioRuntime("drawio_create_path_allowed_but_create_failed", {
-          mode: String(meta?.interaction_mode || ""),
-          toolId: String(meta?.active_tool || ""),
+          mode: String(m?.interaction_mode || ""),
+          toolId: String(m?.active_tool || ""),
         });
       }
       if (!selectedIdRef.current) return;
@@ -653,12 +657,14 @@ export default function useDrawioPointerDrag({
       root.removeEventListener("pointerdown", onPointerDown, true);
       root.removeEventListener("mousedown", onMouseDown, true);
     };
+  // meta is intentionally excluded — accessed via metaRef.current so tool switches
+  // don't re-bind the pointerdown/mousedown listeners.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     clearSelection,
     elementMap,
     hasRenderable,
     layerMap,
-    meta,
     onCreateElement,
     rootRef,
     screenToDiagram,
