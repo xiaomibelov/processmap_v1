@@ -2,7 +2,7 @@ import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "
 
 import { parseDrawioSvgCache } from "./drawioSvg";
 import {
-  applyDrawioLayerRenderState,
+  applyDrawioLayerRenderStateToDom,
   applyDrawioSelectionToNode,
   asArray,
   asObject,
@@ -205,7 +205,7 @@ function DrawioOverlayRenderer({
   const viewportGroupRef = useRef(null);
   const containerRef = useRef(null);
   const [placementPreviewPoint, setPlacementPreviewPoint] = useState(null);
-  const renderStateCacheRef = useRef({ signature: "", body: "" });
+  const renderStateAppliedRef = useRef("");
 
   // metaForGate contains only the fields used by interaction gate + selection
   // (interaction_mode, locked). Tool switches don't invalidate gate/selection callbacks.
@@ -242,34 +242,53 @@ function DrawioOverlayRenderer({
     () => buildDrawioRenderStateSignature(parsedBody, effectiveMode, metaLocked, layerMap, elementMap),
     [parsedBody, effectiveMode, metaLocked, layerMap, elementMap],
   );
-
-  const renderedBody = useMemo(() => {
-    if (renderStateCacheRef.current.signature === renderStateSignature) {
-      bumpDrawioPerfCounter("drawio.renderer.renderedBody.reused");
-      return renderStateCacheRef.current.body;
-    }
-    bumpDrawioPerfCounter("drawio.renderer.renderedBody.recompute");
-    const nextBody = applyDrawioLayerRenderState(
-      parsedBody,
-      {
-        interaction_mode: effectiveMode,
-        locked: metaLocked,
-      },
-      null,
-      null,
-      { layerMap, elementMap },
-    );
-    renderStateCacheRef.current = {
-      signature: renderStateSignature,
-      body: nextBody,
-    };
-    return nextBody;
-  }, [effectiveMode, layerMap, elementMap, metaLocked, parsedBody, renderStateSignature]);
+  const renderedBody = parsedBody;
 
   const { registryRef, getNode: getRegistryNode } = useDrawioElementNodeRegistry({
     rootRef: containerRef,
     renderedBody,
   });
+
+  useEffect(() => {
+    const viewportNode = viewportGroupRef.current;
+    if (!(viewportNode instanceof Element)) return undefined;
+    if (renderStateAppliedRef.current === renderStateSignature) {
+      bumpDrawioPerfCounter("drawio.renderer.domPatch.skipped");
+      return undefined;
+    }
+    let rafId = requestAnimationFrame(() => {
+      bumpDrawioPerfCounter("drawio.renderer.domPatch.applied");
+      applyDrawioLayerRenderStateToDom(
+        viewportNode,
+        {
+          interaction_mode: effectiveMode,
+          locked: metaLocked,
+        },
+        null,
+        { layerMap, elementMap },
+      );
+      registryRef.current.clear();
+      const nodes = viewportNode.querySelectorAll("[data-drawio-el-id]");
+      for (const node of nodes) {
+        const id = node.getAttribute("data-drawio-el-id");
+        if (id) registryRef.current.set(id, node);
+      }
+      renderStateAppliedRef.current = renderStateSignature;
+      if (selectedId) {
+        applyDrawioSelectionToNode(getRegistryNode(selectedId), true);
+      }
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [
+    effectiveMode,
+    elementMap,
+    getRegistryNode,
+    layerMap,
+    metaLocked,
+    registryRef,
+    renderStateSignature,
+    selectedId,
+  ]);
 
   // Apply selection highlight directly on the DOM node — no SVG re-render on click.
   const prevSelectedIdRef = useRef("");
