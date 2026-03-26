@@ -481,6 +481,16 @@
   background: color-mix(in srgb, hsl(var(--warning)) 22%, hsl(var(--diagram-badge-bg) / 0.95));
 }
 
+.fpcNodeBadge--cluster {
+  border-color: hsl(var(--muted-foreground) / 0.4);
+  background: hsl(var(--diagram-badge-bg) / 0.85);
+  font-size: 8px;
+  min-height: 13px;
+  padding: 0 4px;
+  pointer-events: auto;
+  cursor: default;
+}
+
 .fpcNodeBadgeFlash {
   animation: fpcBadgeFlashPop .82s cubic-bezier(.22, .88, .3, 1);
 }
