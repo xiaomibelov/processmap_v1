@@ -573,6 +573,12 @@ export function applyInterviewDecor(ctx, options = {}) {
           const el = getters.findShapeByNodeId(registry, nodeId) || getters.findShapeForHint(registry, { nodeId, title });
           if (!el) return;
 
+          // Lightweight sequence flow path: skip heavy interview badges on connections.
+          // Connections rarely have meaningful AI/DoD/Notes data, and badges on thin
+          // lines create visual noise without adding value.
+          const isConnectionEl = typeof getters.isConnectionElement === "function" && getters.isConnectionElement(el);
+          if (isConnectionEl) return;
+
           const noteCount = Number(noteMeta?.count || 0);
           if (interviewMode && noteCount > 0) {
             canvas.addMarker(el.id, "fpcHasNote");
@@ -584,15 +590,12 @@ export function applyInterviewDecor(ctx, options = {}) {
             refs.interviewMarkerStateRef.current[kind].push({ elementId: el.id, className: "fpcHasAiQuestion" });
           }
 
-          const rightStack = document.createElement("div");
-          rightStack.className = "fpcNodeBadgeStack";
-          rightStack.dataset.nodeId = nodeId;
-          rightStack.style.transform = "translateX(-100%)";
+          // Cluster mode: collect all badge candidates, render max 2 per stack,
+          // then show a compact "+N" pill for the remainder.
+          const MAX_BADGES_PER_STACK = 2;
 
-          const leftStack = document.createElement("div");
-          leftStack.className = "fpcNodeBadgeStack";
-          leftStack.dataset.nodeId = nodeId;
-          leftStack.style.alignItems = "flex-start";
+          const rightBadges = [];
+          const leftBadges = [];
 
           if (aiCount > 0) {
             const aiBadge = document.createElement("button");
@@ -606,7 +609,7 @@ export function applyInterviewDecor(ctx, options = {}) {
               callbacks.emitElementSelection(el, `${kind}.ai_badge_click`);
               callbacks.openAiQuestionPanel(inst, kind, el.id, { source: "interview_ai_badge", toggle: true });
             });
-            rightStack.appendChild(aiBadge);
+            rightBadges.push(aiBadge);
           }
 
           if (interviewMode && noteCount > 0) {
@@ -620,7 +623,7 @@ export function applyInterviewDecor(ctx, options = {}) {
               callbacks.setSelectedDecor(inst, kind, el.id);
               callbacks.emitElementSelection(el, `${kind}.notes_badge_click`);
             });
-            leftStack.appendChild(noteBadge);
+            leftBadges.push(noteBadge);
           }
 
           const dodTotal = interviewMode ? Number(dodMeta?.total || 0) : 0;
@@ -637,19 +640,46 @@ export function applyInterviewDecor(ctx, options = {}) {
               callbacks.setSelectedDecor(inst, kind, el.id);
               callbacks.emitElementSelection(el, `${kind}.dod_badge_click`);
             });
-            rightStack.appendChild(dodBadge);
+            rightBadges.push(dodBadge);
           }
+
+          // Build stacks with cluster overflow
+          const buildStack = (badges, align) => {
+            if (!badges.length) return null;
+            const stack = document.createElement("div");
+            stack.className = "fpcNodeBadgeStack";
+            stack.dataset.nodeId = nodeId;
+            if (align === "right") {
+              stack.style.transform = "translateX(-100%)";
+            } else {
+              stack.style.alignItems = "flex-start";
+            }
+            const visible = badges.slice(0, MAX_BADGES_PER_STACK);
+            const hiddenCount = badges.length - visible.length;
+            visible.forEach((badge) => stack.appendChild(badge));
+            if (hiddenCount > 0) {
+              const overflow = document.createElement("span");
+              overflow.className = "fpcNodeBadge fpcNodeBadge--cluster";
+              overflow.textContent = `+${hiddenCount}`;
+              overflow.title = badges.slice(MAX_BADGES_PER_STACK)
+                .map((b) => b.textContent).join(", ");
+              stack.appendChild(overflow);
+            }
+            return stack;
+          };
 
           const shapeWidth = Number(el?.width || 0);
           const rightAnchorLeft = Number.isFinite(shapeWidth) && shapeWidth > 0 ? shapeWidth - 2 : 96;
-          if (rightStack.childNodes.length) {
+          const rightStack = buildStack(rightBadges, "right");
+          const leftStack = buildStack(leftBadges, "left");
+          if (rightStack) {
             const rightOverlayId = overlays.add(el.id, {
               position: { top: -18, left: rightAnchorLeft },
               html: rightStack,
             });
             refs.interviewOverlayStateRef.current[kind].push(rightOverlayId);
           }
-          if (leftStack.childNodes.length) {
+          if (leftStack) {
             const leftOverlayId = overlays.add(el.id, {
               position: { top: -18, left: 2 },
               html: leftStack,
@@ -1039,6 +1069,9 @@ export function applyRobotMetaDecor(ctx) {
       const nodeId = toText(item?.elementId);
       const el = getters.findShapeByNodeId(registry, nodeId) || getters.findShapeForHint(registry, { nodeId, title: nodeId });
       if (!el) return;
+      // Lightweight sequence flow path: skip robot meta badges on connections.
+      const isConn = typeof getters.isConnectionElement === "function" && getters.isConnectionElement(el);
+      if (isConn) return;
       const elementId = toText(el?.id);
       if (!elementId) return;
       const markerClass = toText(item?.markerClass);
@@ -1314,11 +1347,25 @@ export function applyPropertiesOverlayDecor(ctx) {
           if (!resolvedElementId) return;
           const prev = asObject(currentState[resolvedElementId]);
           const isConnection = typeof getters.isConnectionElement === "function" && getters.isConnectionElement(el);
+
+          // Lightweight sequence flow path: cap visible property rows on connections
+          // to reduce DOM weight. Sequence flows are subordinate elements — showing
+          // 2 key properties + "+N" summary is sufficient.
+          const SEQUENCE_FLOW_MAX_VISIBLE = 2;
+          let effectiveItems = items;
+          let effectiveHiddenCount = hiddenCount;
+          let effectiveVisibleCount = visibleCount;
+          if (isConnection && items.length > SEQUENCE_FLOW_MAX_VISIBLE) {
+            effectiveItems = items.slice(0, SEQUENCE_FLOW_MAX_VISIBLE);
+            effectiveHiddenCount = items.length - SEQUENCE_FLOW_MAX_VISIBLE + hiddenCount;
+            effectiveVisibleCount = SEQUENCE_FLOW_MAX_VISIBLE;
+          }
+
           const overlayGeometry = buildOverlayGeometry({ element: el, isConnection, canvasZoom });
           const contentSignature = buildPropertiesContentSignature({
-            items,
-            hiddenCount,
-            visibleCount,
+            items: effectiveItems,
+            hiddenCount: effectiveHiddenCount,
+            visibleCount: effectiveVisibleCount,
           });
           const geometrySignature = buildPropertiesOverlayGeometrySignature({
             overlayGeometry,
@@ -1350,9 +1397,9 @@ export function applyPropertiesOverlayDecor(ctx) {
             stats.contentUpdated += 1;
             rebuildPropertiesOverlayTable({
               table,
-              items,
-              hiddenCount,
-              visibleCount,
+              items: effectiveItems,
+              hiddenCount: effectiveHiddenCount,
+              visibleCount: effectiveVisibleCount,
               linkedPropertyFrequency,
             });
           }

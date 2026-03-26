@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import useProcessStageRuntimeGlue from "../controllers/useProcessStageRuntimeGlue";
 import useOverlayPersistBoundary from "../../overlay/controllers/useOverlayPersistBoundary";
 import useOverlayMutationGateway from "../../overlay/controllers/useOverlayMutationGateway";
-import buildOverlayPanelModel from "../../overlay/models/buildOverlayPanelModel";
+import buildOverlayPanelModel, {
+  buildOverlayPanelModelStructure,
+  buildOverlayPanelModelSelected,
+} from "../../overlay/models/buildOverlayPanelModel";
 import useDrawioEditorBridge from "../../drawio/controllers/useDrawioEditorBridge";
 import { applyDrawioAnchorValidation, readDrawioAnchorValidationState } from "../../drawio/drawioAnchors.js";
 import {
@@ -108,7 +111,9 @@ export default function useDiagramRuntimeBridges({
     applyDrawioMutation: overlayPersistBoundary.applyDrawioMutation,
   });
 
-  const overlayPanelModel = useMemo(() => buildOverlayPanelModel({
+  // Structural model: rows, sections, tools — does NOT depend on selection.
+  // Isolated so that every click/selection change skips the heavy row+section recompute.
+  const overlayPanelModelStructure = useMemo(() => buildOverlayPanelModelStructure({
     drawioState: drawioStateForRuntime,
     drawioModeEffective: drawioModeState,
     drawioEditorStatus: drawioEditorBridge.status,
@@ -120,27 +125,42 @@ export default function useDiagramRuntimeBridges({
     hybridLayerRenderRows: overlay.hybridLayerRenderRows,
     hybridV2Renderable: overlay.hybridV2Renderable,
     hybridV2BindingByHybridId: overlay.hybridV2BindingByHybridId,
-    drawioSelectedElementId: overlay.drawioSelectedElementId,
-    hybridV2ActiveId: overlay.hybridV2ActiveId,
-    hybridV2SelectedIds: overlay.hybridV2SelectedIds,
-    legacyActiveElementId: overlay.hybridLayerActiveElementId,
   }), [
     drawioEditorBridge.status,
     drawioModeState,
-    overlay.drawioSelectedElementId,
     drawioStateForRuntime,
     overlay.hybridVisible,
-    overlay.hybridLayerActiveElementId,
     overlay.hybridLayerRenderRows,
     overlay.hybridModeEffective,
     overlay.hybridTotalCount,
     overlay.hybridUiPrefs,
-    overlay.hybridV2ActiveId,
     overlay.hybridV2BindingByHybridId,
     overlay.hybridV2HiddenCount,
     overlay.hybridV2Renderable,
+  ]);
+
+  // Selected entity: changes on every click — cheap to compute, isolated from structure.
+  const overlayPanelModelSelected = useMemo(() => buildOverlayPanelModelSelected({
+    drawioState: drawioStateForRuntime,
+    drawioSelectedElementId: overlay.drawioSelectedElementId,
+    hybridV2ActiveId: overlay.hybridV2ActiveId,
+    hybridV2SelectedIds: overlay.hybridV2SelectedIds,
+    legacyActiveElementId: overlay.hybridLayerActiveElementId,
+    hybridV2Renderable: overlay.hybridV2Renderable,
+  }), [
+    drawioStateForRuntime,
+    overlay.drawioSelectedElementId,
+    overlay.hybridLayerActiveElementId,
+    overlay.hybridV2ActiveId,
+    overlay.hybridV2Renderable,
     overlay.hybridV2SelectedIds,
   ]);
+
+  // Compose: consumers see the same shape as before.
+  const overlayPanelModel = useMemo(() => ({
+    ...overlayPanelModelStructure,
+    selected: overlayPanelModelSelected,
+  }), [overlayPanelModelStructure, overlayPanelModelSelected]);
 
   const drawioModeEffective = drawioModeState;
   const drawioVisibilityContract = useMemo(() => (

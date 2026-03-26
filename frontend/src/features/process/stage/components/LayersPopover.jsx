@@ -121,15 +121,36 @@ const OverlayRowsSection = memo(function OverlayRowsSection({
                   ) : null}
                 </div>
                 <div className="hybridLayerPopoverActions">
-                  {row.missing ? <span className="diagramIssueChip">нет привязки</span> : null}
-                  {entityKind === OVERLAY_ENTITY_KINDS.DRAWIO && toText(row.anchorStatusLabel) ? (
-                    <span className="diagramIssueChip" data-testid={`diagram-action-layers-row-anchor-${entityId}`}>
-                      {toText(row.anchorStatusLabel)}
-                    </span>
-                  ) : null}
-                  {entityKind === OVERLAY_ENTITY_KINDS.DRAWIO && toText(row.anchorTargetId) ? (
-                    <span className="diagramIssueChip">{toText(row.anchorTargetId)}</span>
-                  ) : null}
+                  {(() => {
+                    const MAX_VISIBLE_CHIPS = 2;
+                    const chips = [];
+                    if (row.missing) chips.push({ key: "missing", text: "нет привязки" });
+                    if (entityKind === OVERLAY_ENTITY_KINDS.DRAWIO && toText(row.anchorStatusLabel)) {
+                      chips.push({ key: "anchor", text: toText(row.anchorStatusLabel), testId: `diagram-action-layers-row-anchor-${entityId}` });
+                    }
+                    if (entityKind === OVERLAY_ENTITY_KINDS.DRAWIO && toText(row.anchorTargetId)) {
+                      chips.push({ key: "target", text: toText(row.anchorTargetId) });
+                    }
+                    const visible = chips.slice(0, MAX_VISIBLE_CHIPS);
+                    const hiddenCount = chips.length - visible.length;
+                    return (
+                      <>
+                        {visible.map((chip) => (
+                          <span key={chip.key} className="diagramIssueChip" data-testid={chip.testId || undefined}>
+                            {chip.text}
+                          </span>
+                        ))}
+                        {hiddenCount > 0 ? (
+                          <span
+                            className="diagramIssueChip"
+                            title={chips.slice(MAX_VISIBLE_CHIPS).map((c) => c.text).join(", ")}
+                          >
+                            +{hiddenCount}
+                          </span>
+                        ) : null}
+                      </>
+                    );
+                  })()}
                   <button
                     type="button"
                     className="secondaryBtn h-7 px-2 text-[11px]"
