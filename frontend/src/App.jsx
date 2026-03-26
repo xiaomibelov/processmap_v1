@@ -738,6 +738,32 @@ function mergeSessionDraft(prevDraft, sid, session, source = "session_sync") {
     }
   }
 
+  // Protect drawio deletion state: if local drawio has a newer last_saved_at than the
+  // incoming server snapshot, keep the local version. This prevents a race condition where
+  // Interview tab's apiPatchSession response returns before the drawio persist POST is
+  // committed to the DB — overwriting the local deletion state with a stale bootstrap.
+  if (incomingHasBpmnMeta) {
+    const prevDrawio = ensureObject(prevBpmnMeta.drawio);
+    const incomingDrawio = ensureObject(incomingBpmnMeta.drawio);
+    const prevDrawioTs = Date.parse(String(prevDrawio.last_saved_at || "")) || 0;
+    const incomingDrawioTs = Date.parse(String(incomingDrawio.last_saved_at || "")) || 0;
+    if (prevDrawioTs > 0 && prevDrawioTs > incomingDrawioTs) {
+      next = {
+        ...next,
+        bpmn_meta: {
+          ...ensureObject(next.bpmn_meta),
+          drawio: prevDrawio,
+        },
+      };
+      logDraftTrace("MERGE_KEEP_FRESHER_DRAWIO", {
+        sid: sid || "-",
+        source,
+        prevDrawioTs,
+        incomingDrawioTs,
+      });
+    }
+  }
+
   const afterXml = String(next?.bpmn_xml || "");
   logDraftTrace("DRAFT_MERGE", {
     sid: sid || "-",

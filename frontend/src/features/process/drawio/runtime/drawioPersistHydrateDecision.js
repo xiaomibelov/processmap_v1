@@ -39,6 +39,26 @@ export default function decideDrawioPersistHydrateAction({
       traceMeta,
     };
   }
+  // If current has explicit deletions and incoming has the same SVG but no deletions,
+  // the incoming is likely a stale server snapshot (bootstrap from SVG before the
+  // deletion persist was committed). Protect local deletion state.
+  const currentDeletedIds = Array.isArray(current.drawio_elements_v1)
+    ? current.drawio_elements_v1.filter((el) => el && el.deleted === true).map((el) => String(el.id || "")).filter(Boolean)
+    : [];
+  if (
+    currentDeletedIds.length > 0
+    && current.svg_cache
+    && current.svg_cache.length === (incoming.svg_cache || "").length
+    && current.svg_cache === incoming.svg_cache
+    && Array.isArray(incoming.drawio_elements_v1)
+    && incoming.drawio_elements_v1.every((el) => el && el.deleted !== true)
+  ) {
+    return {
+      action: "skip",
+      reason: "incoming_missing_local_deletions",
+      traceMeta: { ...traceMeta, deletedCount: currentDeletedIds.length },
+    };
+  }
   const persistedHasPayload = !!(persisted.doc_xml || persisted.svg_cache || persisted.enabled);
   if (currentSig === persistedSig && incomingSig !== persistedSig && persistedHasPayload) {
     return {
