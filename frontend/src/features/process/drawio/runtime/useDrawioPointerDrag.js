@@ -55,6 +55,13 @@ export default function useDrawioPointerDrag({
   // across parent re-renders that produce a new screenToDiagram function identity.
   const screenToDiagramRef = useRef(screenToDiagram);
   screenToDiagramRef.current = screenToDiagram;
+  // onCommitMoveRef: same pattern — onCommitMove comes from useOverlayMutationGateway
+  // which returns a new object every render, making onCommitMove a new function every
+  // render. Without a ref, finishDrag would be a new useCallback every render →
+  // useDrawioDragWindowLifecycle effect would re-run mid-drag → cleanup clears
+  // dragRef + captureTargetRef WITHOUT releasing pointer capture → BPMN frozen.
+  const onCommitMoveRef = useRef(onCommitMove);
+  onCommitMoveRef.current = onCommitMove;
   const draftOffsetRef = useRef(null);
   const dragRef = useRef(null);
   const activePointerIdRef = useRef(null);
@@ -129,8 +136,8 @@ export default function useDrawioPointerDrag({
     });
     bumpDrawioPerfCounter("drawio.drag.commit.calls");
     markDrawioPerf("drawio.drag.lastCommitAt", Date.now());
-    onCommitMove?.(commitPayload);
-  }, [matrixScaleRef, onCommitMove, screenToDiagramRef]);
+    onCommitMoveRef.current?.(commitPayload);
+  }, [matrixScaleRef, onCommitMoveRef, screenToDiagramRef]);
 
   useDrawioDragWindowLifecycle({
     rootRef,

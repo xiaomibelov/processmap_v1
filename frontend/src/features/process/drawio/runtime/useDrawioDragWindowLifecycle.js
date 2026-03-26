@@ -19,7 +19,7 @@ import {
   shouldIgnoreDragMoveEvent,
   shouldIgnoreDragUpEvent,
 } from "./drawioPointerDragCore.js";
-import { resetDragPreviewState } from "./drawioPointerDragSession.js";
+import { releaseDragPointerCapture, resetDragPreviewState } from "./drawioPointerDragSession.js";
 
 export default function useDrawioDragWindowLifecycle({
   rootRef,
@@ -199,6 +199,14 @@ export default function useDrawioDragWindowLifecycle({
         moveRafRef.current = 0;
       }
       pendingPointRef.current = null;
+      // Always release pointer capture before clearing refs. If the effect re-runs
+      // mid-drag (because a dep changed), cleanup must release the captured pointer
+      // or all subsequent pointer events go to the captured SVG element — freezing
+      // BPMN and any other overlay that relies on pointer events.
+      releaseDragPointerCapture({
+        captureTargetRaw: captureTargetRef.current,
+        activePointerIdRaw: activePointerIdRef.current,
+      });
       activePointerIdRef.current = null;
       sawPointerMoveRef.current = false;
       captureTargetRef.current = null;
