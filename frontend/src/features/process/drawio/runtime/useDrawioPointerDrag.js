@@ -50,6 +50,11 @@ export default function useDrawioPointerDrag({
   // metaRef lets handleStart read current meta without re-binding listeners on tool switch.
   const metaRef = useRef(meta);
   metaRef.current = meta;
+  // screenToDiagramRef lets finishDrag + lifecycle read current screenToDiagram
+  // without adding it to effect/callback deps — drag window listeners stay bound
+  // across parent re-renders that produce a new screenToDiagram function identity.
+  const screenToDiagramRef = useRef(screenToDiagram);
+  screenToDiagramRef.current = screenToDiagram;
   const draftOffsetRef = useRef(null);
   const dragRef = useRef(null);
   const activePointerIdRef = useRef(null);
@@ -106,7 +111,7 @@ export default function useDrawioPointerDrag({
       draftOffsetRaw: activeDraftOffset,
       finalEventRaw,
       pendingPointRaw: pendingPointRef.current,
-      screenToDiagram,
+      screenToDiagram: screenToDiagramRef.current,
       matrixScaleRaw: matrixScaleRef.current,
     });
     pendingPointRef.current = null;
@@ -125,11 +130,11 @@ export default function useDrawioPointerDrag({
     bumpDrawioPerfCounter("drawio.drag.commit.calls");
     markDrawioPerf("drawio.drag.lastCommitAt", Date.now());
     onCommitMove?.(commitPayload);
-  }, [matrixScaleRef, onCommitMove, screenToDiagram]);
+  }, [matrixScaleRef, onCommitMove, screenToDiagramRef]);
 
   useDrawioDragWindowLifecycle({
     rootRef,
-    screenToDiagram,
+    screenToDiagramRef,
     finishDrag,
     draftOffsetRef,
     dragRef,
@@ -166,7 +171,7 @@ export default function useDrawioPointerDrag({
       eventRaw: event,
       elementIdRaw: elementId,
       elementStateRaw: elementMap.get(elementId),
-      screenToDiagram,
+      screenToDiagram: screenToDiagramRef.current,
     });
     if (!startState) {
       traceDrawioRuntime("drawio_drag_start_skip", {
@@ -208,7 +213,7 @@ export default function useDrawioPointerDrag({
     elementMap,
     hasRenderable,
     rootRef,
-    screenToDiagram,
+    screenToDiagramRef,
     selectElement,
     visible,
   ]);
@@ -220,7 +225,7 @@ export default function useDrawioPointerDrag({
     layerMap,
     elementMap,
     dragRef,
-    screenToDiagram,
+    screenToDiagramRef,
     onCreateElement,
     selectedIdRef,
     selectElement,

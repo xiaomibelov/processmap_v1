@@ -15,7 +15,7 @@ export default function useDrawioPointerStartBinding({
   layerMap,
   elementMap,
   dragRef,
-  screenToDiagram,
+  screenToDiagramRef,
   onCreateElement,
   selectedIdRef,
   selectElement,
@@ -48,7 +48,8 @@ export default function useDrawioPointerStartBinding({
         toolId: meta?.active_tool,
       });
       if (!blockCreate) {
-        const point = typeof screenToDiagram === "function"
+        const screenToDiagram = typeof screenToDiagramRef?.current === "function" ? screenToDiagramRef.current : null;
+        const point = screenToDiagram
           ? screenToDiagram(Number(event?.clientX || 0), Number(event?.clientY || 0))
           : null;
         if (point && typeof onCreateElement === "function") {
@@ -102,7 +103,7 @@ export default function useDrawioPointerStartBinding({
     metaRef,
     onCreateElement,
     rootRef,
-    screenToDiagram,
+    screenToDiagramRef,
     selectedIdRef,
     selectElement,
     startDragByElementId,

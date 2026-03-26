@@ -23,7 +23,7 @@ import { resetDragPreviewState } from "./drawioPointerDragSession.js";
 
 export default function useDrawioDragWindowLifecycle({
   rootRef,
-  screenToDiagram,
+  screenToDiagramRef,
   finishDrag,
   draftOffsetRef,
   dragRef,
@@ -98,7 +98,7 @@ export default function useDrawioDragWindowLifecycle({
         const nextDraft = computeDraftOffsetFromPoint({
           dragStateRaw: state,
           pointRaw: pendingPointRef.current,
-          screenToDiagram,
+          screenToDiagram: screenToDiagramRef.current,
         });
         pendingPointRef.current = null;
         if (!nextDraft) return;
@@ -229,6 +229,6 @@ export default function useDrawioDragWindowLifecycle({
     previewOffsetRef,
     rootRef,
     sawPointerMoveRef,
-    screenToDiagram,
+    screenToDiagramRef,
   ]);
 }

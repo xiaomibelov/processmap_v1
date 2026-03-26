@@ -242,17 +242,10 @@ function DrawioOverlayRenderer({
     prevSelectedIdRef.current = nextId;
   }, [selectedId, getRegistryNode]);
 
-  // Re-apply selection after SVG re-render (dangerouslySetInnerHTML resets DOM styles).
-  // rAF ensures registry rebuild (also rAF) has run first.
-  useEffect(() => {
-    if (!selectedId) return;
-    const rafId = requestAnimationFrame(() => {
-      applyDrawioSelectionToNode(getRegistryNode(selectedId), true);
-      prevSelectedIdRef.current = selectedId;
-    });
-    return () => cancelAnimationFrame(rafId);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [renderedBody]);
+  // Selection after SVG re-render is handled by the renderState effect above:
+  // whenever renderedBody changes, renderStateSignature (which hashes the body) also
+  // changes → the renderState rAF runs → rebuilds registry → re-applies selection.
+  // A separate rAF here was redundant and caused a double application per render.
 
   const {
     selectedBbox,
