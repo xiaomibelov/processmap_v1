@@ -738,16 +738,24 @@ function mergeSessionDraft(prevDraft, sid, session, source = "session_sync") {
     }
   }
 
-  // Protect drawio deletion state: if local drawio has a newer last_saved_at than the
-  // incoming server snapshot, keep the local version. This prevents a race condition where
-  // Interview tab's apiPatchSession response returns before the drawio persist POST is
-  // committed to the DB — overwriting the local deletion state with a stale bootstrap.
+  // Protect drawio state from stale server responses.
+  // Two cases:
+  // 1. Timestamp guard: if local draft has a newer last_saved_at, keep local version.
+  //    Handles: Interview tab PATCH response returning before drawio persist is committed.
+  // 2. Structural guard: if incoming would clear drawio_elements_v1 to empty but local
+  //    already has tracked elements, keep local version regardless of timestamp.
+  //    Handles: rapid toggle race where prevDrawioTs = 0 (draft not yet updated by persist
+  //    response) and an out-of-order stale response with elements=[] arrives.
   if (incomingHasBpmnMeta) {
     const prevDrawio = ensureObject(prevBpmnMeta.drawio);
     const incomingDrawio = ensureObject(incomingBpmnMeta.drawio);
     const prevDrawioTs = Date.parse(String(prevDrawio.last_saved_at || "")) || 0;
     const incomingDrawioTs = Date.parse(String(incomingDrawio.last_saved_at || "")) || 0;
-    if (prevDrawioTs > 0 && prevDrawioTs > incomingDrawioTs) {
+    const prevElementCount = Array.isArray(prevDrawio.drawio_elements_v1) ? prevDrawio.drawio_elements_v1.length : 0;
+    const incomingElementCount = Array.isArray(incomingDrawio.drawio_elements_v1) ? incomingDrawio.drawio_elements_v1.length : 0;
+    const timestampRegression = prevDrawioTs > 0 && prevDrawioTs > incomingDrawioTs;
+    const structuralRegression = prevElementCount > 0 && incomingElementCount === 0 && !!prevDrawio.svg_cache;
+    if (timestampRegression || structuralRegression) {
       next = {
         ...next,
         bpmn_meta: {
@@ -760,6 +768,9 @@ function mergeSessionDraft(prevDraft, sid, session, source = "session_sync") {
         source,
         prevDrawioTs,
         incomingDrawioTs,
+        reason: timestampRegression ? "timestamp_regression" : "structural_regression",
+        prevElementCount,
+        incomingElementCount,
       });
     }
   }

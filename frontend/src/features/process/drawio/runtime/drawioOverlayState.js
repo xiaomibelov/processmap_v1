@@ -202,7 +202,10 @@ function applyDrawioNodeRenderState(node, metaRaw, layerMap, elementMap, draftOf
   const elementId = toText(node.getAttribute("id"));
   if (!elementId) return;
   if (!elementMap.has(elementId)) {
+    // Element exists in SVG but is not tracked in elementMap.
+    // Hide it completely to prevent ghost rendering (visible but non-interactive).
     node.removeAttribute("data-drawio-el-id");
+    setStyleProperty(node, "display", "none");
     setStyleProperty(node, "pointer-events", "none");
     return;
   }

@@ -27,7 +27,16 @@ export default function useDrawioPersistHydrateBoundary({
       serializeDrawioMeta,
     });
 
-    if (decision.action === "skip") {
+    // Bootstrap recovery: if the incoming snapshot (after SVG bootstrap) has elements
+    // but the current store has none, force-apply to fill the element tracking gap.
+    // This handles the case where drawio_elements_v1 was empty in the store (e.g.
+    // after a stale server response overwrote a bootstrapped state) but svg_cache
+    // still has renderable elements that need to be tracked.
+    const incomingElementCount = Array.isArray(incoming.drawio_elements_v1) ? incoming.drawio_elements_v1.length : 0;
+    const currentElementCount = Array.isArray(currentMeta.drawio_elements_v1) ? currentMeta.drawio_elements_v1.length : 0;
+    const needsBootstrapRecovery = incomingElementCount > 0 && currentElementCount === 0;
+
+    if (decision.action === "skip" && !needsBootstrapRecovery) {
       pushDeleteTrace("drawio_hydrate_skip", {
         reason: decision.reason,
         ...decision.traceMeta,
@@ -35,7 +44,7 @@ export default function useDrawioPersistHydrateBoundary({
       return;
     }
 
-    if (decision.action === "skip_and_sync_persisted_ref") {
+    if (decision.action === "skip_and_sync_persisted_ref" && !needsBootstrapRecovery) {
       drawioPersistedMetaRef.current = incoming;
       pushDeleteTrace("drawio_hydrate_skip", {
         reason: decision.reason,
