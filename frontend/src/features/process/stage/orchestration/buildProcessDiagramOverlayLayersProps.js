@@ -1,3 +1,5 @@
+import { bumpDrawioPerfCounter } from "../../drawio/runtime/drawioRuntimeProbes.js";
+
 export default function buildProcessDiagramOverlayLayersProps({
   activeProjectId,
   asObject,
@@ -36,10 +38,26 @@ export default function buildProcessDiagramOverlayLayersProps({
   hybridLayerRenderRows,
   hybridModeEffective,
   hybridOpacityValue,
-  hybridPersist,
+  hybridPersistLockBusyNoticeOpen,
+  hybridPersistLockBusyNoticeMessage,
+  hybridPersistPendingDraft,
   hybridPlacementHitLayerActive,
-  hybridSelection,
-  hybridTools,
+  hybridSelectionCount,
+  hybridContextMenu,
+  closeHybridContextMenu,
+  renameHybridItem,
+  hideHybridIds,
+  lockLayersForHybridIds,
+  retryHybridPersist,
+  dismissHybridLockBusyNotice,
+  hybridGhostPreview,
+  hybridArrowPreview,
+  hybridTextEditor,
+  updateHybridTextEditorValue,
+  commitHybridTextEditor,
+  cancelHybridTextEditor,
+  onHybridOverlayPointerMove,
+  onHybridOverlayPointerLeave,
   hybridUiPrefs,
   hybridV2ActiveId,
   hybridV2BindingByHybridId,
@@ -75,6 +93,7 @@ export default function buildProcessDiagramOverlayLayersProps({
   hybridViewportMatrix,
   hybridViewportMatrixRef,
 }) {
+  bumpDrawioPerfCounter("overlay.vm.diagramOverlayProps.builds");
   return {
     bpmnStageProps: {
       ref: bpmnRef,
@@ -129,8 +148,8 @@ export default function buildProcessDiagramOverlayLayersProps({
       overlayRef: hybridLayerOverlayRef,
       placementHitLayerActive: hybridPlacementHitLayerActive,
       onOverlayPointerDown: handleHybridV2OverlayPointerDown,
-      onOverlayPointerMove: hybridTools.onOverlayPointerMove,
-      onOverlayPointerLeave: hybridTools.onOverlayPointerLeave,
+      onOverlayPointerMove: onHybridOverlayPointerMove,
+      onOverlayPointerLeave: onHybridOverlayPointerLeave,
       onOverlayContextMenu: handleHybridV2OverlayContextMenu,
       v2Renderable: hybridV2Renderable,
       v2ActiveId: hybridV2ActiveId,
@@ -141,12 +160,12 @@ export default function buildProcessDiagramOverlayLayersProps({
       onV2ElementContextMenu: handleHybridV2ElementContextMenu,
       onV2ElementDoubleClick: handleHybridV2ElementDoubleClick,
       onV2ResizeHandlePointerDown: handleHybridV2ResizeHandlePointerDown,
-      v2GhostPreview: hybridTools.ghostPreview,
-      v2ArrowPreview: hybridTools.arrowPreview,
-      v2TextEditor: hybridTools.textEditor,
-      onV2TextEditorChange: hybridTools.updateTextEditorValue,
-      onV2TextEditorCommit: hybridTools.commitTextEditor,
-      onV2TextEditorCancel: hybridTools.closeTextEditor,
+      v2GhostPreview: hybridGhostPreview,
+      v2ArrowPreview: hybridArrowPreview,
+      v2TextEditor: hybridTextEditor,
+      onV2TextEditorChange: updateHybridTextEditorValue,
+      onV2TextEditorCommit: commitHybridTextEditor,
+      onV2TextEditorCancel: cancelHybridTextEditor,
       legacyRows: hybridLayerRenderRows,
       legacyActiveElementId: hybridLayerActiveElementId,
       debugEnabled: hybridDebugEnabled,
@@ -172,36 +191,36 @@ export default function buildProcessDiagramOverlayLayersProps({
       onLegacyCardRef: getHybridLayerCardRefCallback,
     },
     hybridContextMenuProps: {
-      menu: hybridTools.contextMenu,
-      selectionCount: hybridSelection.selectionCount,
-      canRename: hybridSelection.selectionCount === 1
+      menu: hybridContextMenu,
+      selectionCount: hybridSelectionCount,
+      canRename: hybridSelectionCount === 1
         && !!hybridV2DocLive.elements.find((row) => toText(asObject(row).id) === hybridV2ActiveId),
-      onClose: hybridTools.closeContextMenu,
+      onClose: closeHybridContextMenu,
       onDelete: () => {
         deleteSelectedHybridIds();
-        hybridTools.closeContextMenu();
+        closeHybridContextMenu();
       },
       onRename: () => {
-        hybridTools.renameHybridItem(hybridV2ActiveId);
-        hybridTools.closeContextMenu();
+        renameHybridItem(hybridV2ActiveId);
+        closeHybridContextMenu();
       },
       onHide: () => {
-        hybridTools.hideHybridIds(hybridV2SelectedIds);
-        hybridTools.closeContextMenu();
+        hideHybridIds(hybridV2SelectedIds);
+        closeHybridContextMenu();
       },
       onLock: () => {
-        hybridTools.lockLayersForHybridIds(hybridV2SelectedIds);
-        hybridTools.closeContextMenu();
+        lockLayersForHybridIds(hybridV2SelectedIds);
+        closeHybridContextMenu();
       },
     },
     hybridPersistToastProps: {
-      visible: tab === "diagram" && !!hybridPersist.lockBusyNotice?.open,
-      message: hybridPersist.lockBusyNotice?.message,
-      pendingDraft: !!hybridPersist.pendingDraft,
+      visible: tab === "diagram" && !!hybridPersistLockBusyNoticeOpen,
+      message: hybridPersistLockBusyNoticeMessage,
+      pendingDraft: !!hybridPersistPendingDraft,
       onRetry: () => {
-        void hybridPersist.retryLast();
+        void retryHybridPersist?.();
       },
-      onDismiss: hybridPersist.dismissLockBusyNotice,
+      onDismiss: dismissHybridLockBusyNotice,
     },
     drawioEditorModalProps: {
       open: drawioEditorOpen,

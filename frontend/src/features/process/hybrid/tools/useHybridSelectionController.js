@@ -197,7 +197,7 @@ export default function useHybridSelectionController({
     };
   }, [deleteSelected, enabled, isEditableTarget, modeEffective, primarySelectedId, uiLocked]);
 
-  return {
+  return useMemo(() => ({
     selectedIds,
     selectedIdSet,
     selectionCount: selectedIds.length,
@@ -210,5 +210,17 @@ export default function useHybridSelectionController({
     selectFromPointerEvent,
     hitTestAtClientPoint,
     deleteSelected,
-  };
+  }), [
+    clearSelection,
+    deleteSelected,
+    hitTestAtClientPoint,
+    primarySelectedId,
+    removeIdsFromSelection,
+    replaceSelection,
+    selectFromPointerEvent,
+    selectOnly,
+    selectedIdSet,
+    selectedIds,
+    toggleSelection,
+  ]);
 }

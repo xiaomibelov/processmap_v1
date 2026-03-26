@@ -994,7 +994,9 @@ export default function useHybridToolsController({
     setTextEditor(null);
   }, [hybridVisible, modeEffective]);
 
-  return {
+  const stencilPlacementActive = !!stencilPlacementRef.current;
+
+  return useMemo(() => ({
     docLive,
     layerById,
     bindingByHybridId,
@@ -1026,7 +1028,7 @@ export default function useHybridToolsController({
     closeContextMenu,
     ghostPreview: ghostPreviewScreen,
     ghostPreviewDiagram: ghostPreview,
-    stencilPlacementActive: !!stencilPlacementRef.current,
+    stencilPlacementActive,
     arrowPreview,
     cancelTransientState,
     renameHybridItem,
@@ -1039,5 +1041,50 @@ export default function useHybridToolsController({
     commitTextEditor,
     setImportNotice,
     bindingByBpmnId,
-  };
+  }), [
+    arrowPreview,
+    bindHybridToBpmn,
+    bindingByBpmnId,
+    bindingByHybridId,
+    cancelStencilPlacement,
+    cancelTransientState,
+    closeContextMenu,
+    closeTextEditor,
+    commitTextEditor,
+    contextMenu,
+    createEdge,
+    createElementAt,
+    docLive,
+    exportDrawio,
+    ghostPreview,
+    ghostPreviewScreen,
+    goToHybridBinding,
+    hiddenCount,
+    hideHybridIds,
+    importFile,
+    importNotice,
+    layerById,
+    lockLayersForHybridIds,
+    onElementContextMenu,
+    onElementDoubleClick,
+    onElementPointerDown,
+    onOverlayContextMenu,
+    onOverlayPointerDown,
+    onOverlayPointerLeave,
+    onOverlayPointerMove,
+    onResizeHandlePointerDown,
+    openTextEditor,
+    placeStencilAtClient,
+    renameHybridItem,
+    renderable,
+    setImportNotice,
+    setTool,
+    startStencilPlacement,
+    stencilPlacementActive,
+    textEditor,
+    toolState,
+    totalCount,
+    updateDoc,
+    updateTextEditorValue,
+  ]);
 }

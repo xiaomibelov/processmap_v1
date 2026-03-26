@@ -83,7 +83,7 @@ import useHybridLayerViewportController from "../features/process/stage/hooks/us
 import usePlaybackController from "../features/process/stage/controllers/usePlaybackController";
 import useDiagramShellState from "../features/process/stage/orchestration/useDiagramShellState";
 import useDiagramActionsController from "../features/process/stage/orchestration/useDiagramActionsController";
-import buildProcessDiagramOverlayLayersProps from "../features/process/stage/orchestration/buildProcessDiagramOverlayLayersProps";
+import useStableProcessDiagramOverlayLayersProps from "../features/process/stage/orchestration/useStableProcessDiagramOverlayLayersProps";
 import useProcessStageDrawio from "../features/process/stage/orchestration/useProcessStageDrawio";
 import useProcessStageHybrid from "../features/process/stage/orchestration/useProcessStageHybrid";
 import useProcessStageLocalState from "../features/process/stage/orchestration/state/useProcessStageLocalState";
@@ -4023,7 +4023,7 @@ export default function ProcessStage({
     focusQualityOverlayItem,
   } = runtimeActions;
 
-  const diagramOverlayLayersProps = buildProcessDiagramOverlayLayersProps({
+  const diagramOverlayLayersProps = useStableProcessDiagramOverlayLayersProps({
     activeProjectId,
     asObject,
     bpmnFragmentPlacementActive,
@@ -4061,10 +4061,26 @@ export default function ProcessStage({
     hybridLayerRenderRows,
     hybridModeEffective,
     hybridOpacityValue,
-    hybridPersist,
+    hybridPersistLockBusyNoticeOpen: !!hybridPersist.lockBusyNotice?.open,
+    hybridPersistLockBusyNoticeMessage: hybridPersist.lockBusyNotice?.message,
+    hybridPersistPendingDraft: hybridPersist.pendingDraft,
     hybridPlacementHitLayerActive,
-    hybridSelection,
-    hybridTools,
+    hybridSelectionCount: Number(hybridSelection.selectionCount || 0),
+    hybridContextMenu: hybridTools.contextMenu,
+    closeHybridContextMenu: hybridTools.closeContextMenu,
+    renameHybridItem: hybridTools.renameHybridItem,
+    hideHybridIds: hybridTools.hideHybridIds,
+    lockLayersForHybridIds: hybridTools.lockLayersForHybridIds,
+    retryHybridPersist: hybridPersist.retryLast,
+    dismissHybridLockBusyNotice: hybridPersist.dismissLockBusyNotice,
+    hybridGhostPreview: hybridTools.ghostPreview,
+    hybridArrowPreview: hybridTools.arrowPreview,
+    hybridTextEditor: hybridTools.textEditor,
+    updateHybridTextEditorValue: hybridTools.updateTextEditorValue,
+    commitHybridTextEditor: hybridTools.commitTextEditor,
+    cancelHybridTextEditor: hybridTools.closeTextEditor,
+    onHybridOverlayPointerMove: hybridTools.onOverlayPointerMove,
+    onHybridOverlayPointerLeave: hybridTools.onOverlayPointerLeave,
     hybridUiPrefs,
     hybridV2ActiveId,
     hybridV2BindingByHybridId,
