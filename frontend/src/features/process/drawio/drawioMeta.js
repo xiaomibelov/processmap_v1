@@ -99,24 +99,26 @@ function normalizeDrawioLayersAndElements(valueRaw, svgCacheRaw) {
       } : {}),
     });
   });
-  const shouldBootstrapElementsFromSvg = elementsMap.size === 0;
-  if (shouldBootstrapElementsFromSvg) {
-    const svgElementIds = extractDrawioElementIdsFromSvg(svgCacheRaw);
-    svgElementIds.forEach((id, idx) => {
-      if (elementsMap.has(id)) return;
-      elementsMap.set(id, {
-        id,
-        layer_id: activeLayerId,
-        visible: true,
-        locked: false,
-        deleted: false,
-        opacity: 1,
-        offset_x: 0,
-        offset_y: 0,
-        z_index: idx,
-      });
+  // Always bootstrap SVG elements that are not yet tracked in elementsMap.
+  // If elementsMap is non-empty (e.g. after creating a new element at runtime),
+  // old editor-created elements that exist only in svg_cache would be skipped,
+  // making them invisible/non-interactive. The guard `if (elementsMap.has(id)) return`
+  // preserves explicit state (deletions, visibility overrides) for already-tracked elements.
+  const svgElementIds = extractDrawioElementIdsFromSvg(svgCacheRaw);
+  svgElementIds.forEach((id, idx) => {
+    if (elementsMap.has(id)) return;
+    elementsMap.set(id, {
+      id,
+      layer_id: activeLayerId,
+      visible: true,
+      locked: false,
+      deleted: false,
+      opacity: 1,
+      offset_x: 0,
+      offset_y: 0,
+      z_index: idx,
     });
-  }
+  });
   return {
     drawio_layers_v1: layers,
     drawio_elements_v1: Array.from(elementsMap.values()),
