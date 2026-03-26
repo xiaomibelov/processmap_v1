@@ -34,7 +34,11 @@ export default function useDrawioPersistHydrateBoundary({
     // still has renderable elements that need to be tracked.
     const incomingElementCount = Array.isArray(incoming.drawio_elements_v1) ? incoming.drawio_elements_v1.length : 0;
     const currentElementCount = Array.isArray(currentMeta.drawio_elements_v1) ? currentMeta.drawio_elements_v1.length : 0;
-    const needsBootstrapRecovery = incomingElementCount > 0 && currentElementCount === 0;
+    // Exclude stale-behind-optimistic: that skip reason means a local persist already
+    // committed newer data, so we must NOT override it even if current is empty.
+    const needsBootstrapRecovery = incomingElementCount > 0
+      && currentElementCount === 0
+      && decision.reason !== "incoming_stale_behind_optimistic_persist";
 
     if (decision.action === "skip" && !needsBootstrapRecovery) {
       pushDeleteTrace("drawio_hydrate_skip", {

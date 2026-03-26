@@ -768,7 +768,7 @@ function mergeSessionDraft(prevDraft, sid, session, source = "session_sync") {
         source,
         prevDrawioTs,
         incomingDrawioTs,
-        reason: timestampRegression ? "timestamp_regression" : "structural_regression",
+        reason: [timestampRegression && "timestamp_regression", structuralRegression && "structural_regression"].filter(Boolean).join("+"),
         prevElementCount,
         incomingElementCount,
       });
