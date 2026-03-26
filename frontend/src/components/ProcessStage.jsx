@@ -1585,10 +1585,22 @@ export default function ProcessStage({
     getElementBBox,
     diagramToScreen,
     screenToDiagram,
+    subscribeViewboxChanging,
   } = useDiagramOverlayTransform({
     enabled: tab === "diagram" && overlayLayerVisible,
     canvasApi: bpmnCanvasApi,
   });
+
+  // Mechanic 2: imperatively hide/show the hybrid overlay container during pan/zoom.
+  // Using DOM toggle (no React setState) to avoid re-renders during panning.
+  useEffect(() => {
+    if (typeof subscribeViewboxChanging !== "function") return undefined;
+    return subscribeViewboxChanging((changing) => {
+      const el = hybridLayerOverlayRef.current;
+      if (!(el instanceof Element)) return;
+      el.style.opacity = changing ? "0" : "";
+    });
+  }, [subscribeViewboxChanging]);
   const templatesDiagramContainerRect = (() => {
     const rect = asObject(overlayContainerRect);
     const width = Number(rect.width || 0);

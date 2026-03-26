@@ -55,8 +55,11 @@ function buildHybridLayerRenderRows({
     const rawScreen = matrixToScreen(matrix, rawDiagramX, rawDiagramY);
     const rawX = Number(rawScreen.x || 0);
     const rawY = Number(rawScreen.y || 0);
+    // Safety buffer: render items slightly outside the visible area so they
+    // don't pop in when the user pans slowly toward the edge.
+    const cullBuffer = 220;
     const insideViewport = width > 0 && height > 0
-      ? (rawX >= 0 && rawX <= width && rawY >= 0 && rawY <= height)
+      ? (rawX >= -cullBuffer && rawX <= width + cullBuffer && rawY >= -cullBuffer && rawY <= height + cullBuffer)
       : true;
     const posX = Number.isFinite(maxX) ? clampNumber(rawX, minX, maxX) : rawX;
     const posY = Number.isFinite(maxY) ? clampNumber(rawY, minY, maxY) : rawY;
