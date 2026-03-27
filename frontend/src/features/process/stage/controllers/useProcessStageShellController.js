@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 function asObject(value) {
   return value && typeof value === "object" ? value : {};
@@ -151,4 +151,103 @@ export default function useProcessStageShellController({
     panelsProps,
     dialogsProps: stableDialogsProps,
   };
+}
+
+export function useProcessStageShellUiController({
+  sid,
+  tab,
+  drawioCompanionFocusIntent,
+  setDrawioSelectedElementId,
+  setDiagramActionLayersOpen,
+  setToolbarMenuOpen,
+  setDiagramActionPathOpen,
+  setDiagramActionHybridToolsOpen,
+  setDiagramActionRobotMetaOpen,
+  setRobotMetaListOpen,
+  setDiagramActionQualityOpen,
+  setDiagramActionOverflowOpen,
+  availablePathTiers,
+  availableSequenceKeysForTier,
+  pathHighlightEnabled,
+  pathHighlightTier,
+  pathHighlightSequenceKey,
+  setPathHighlightEnabled,
+  setPathHighlightTier,
+  setPathHighlightSequenceKey,
+  setCommandHistory,
+  readCommandHistory,
+}) {
+  const lastDrawioCompanionFocusKeyRef = useRef("");
+
+  useEffect(() => {
+    const intent = drawioCompanionFocusIntent && typeof drawioCompanionFocusIntent === "object"
+      ? drawioCompanionFocusIntent
+      : null;
+    if (!intent) return;
+    const intentSid = String(intent.sid || "").trim();
+    const objectId = String(intent.objectId || "").trim();
+    if (!intentSid || intentSid !== sid || !objectId) return;
+    const intentNonce = String(intent.nonce || "").trim();
+    const intentKey = `${intentSid}:${objectId}:${intentNonce || "none"}`;
+    if (lastDrawioCompanionFocusKeyRef.current === intentKey) return;
+    lastDrawioCompanionFocusKeyRef.current = intentKey;
+    setDrawioSelectedElementId(objectId);
+    setDiagramActionLayersOpen(true);
+  }, [drawioCompanionFocusIntent, setDiagramActionLayersOpen, setDrawioSelectedElementId, sid]);
+
+  useEffect(() => {
+    setToolbarMenuOpen(false);
+    setDiagramActionPathOpen(false);
+    setDiagramActionHybridToolsOpen(false);
+    setDiagramActionLayersOpen(false);
+    setDiagramActionRobotMetaOpen(false);
+    setRobotMetaListOpen(false);
+    setDiagramActionQualityOpen(false);
+    setDiagramActionOverflowOpen(false);
+  }, [
+    setDiagramActionHybridToolsOpen,
+    setDiagramActionLayersOpen,
+    setDiagramActionOverflowOpen,
+    setDiagramActionPathOpen,
+    setDiagramActionQualityOpen,
+    setDiagramActionRobotMetaOpen,
+    setRobotMetaListOpen,
+    setToolbarMenuOpen,
+    sid,
+    tab,
+  ]);
+
+  useEffect(() => {
+    if (!availablePathTiers.length) {
+      if (pathHighlightEnabled) setPathHighlightEnabled(false);
+      if (pathHighlightTier) setPathHighlightTier("");
+      if (pathHighlightSequenceKey) setPathHighlightSequenceKey("");
+      return;
+    }
+    if (!availablePathTiers.includes(pathHighlightTier)) {
+      setPathHighlightTier(availablePathTiers[0]);
+      setPathHighlightSequenceKey("");
+      return;
+    }
+    if (pathHighlightSequenceKey && !availableSequenceKeysForTier.includes(pathHighlightSequenceKey)) {
+      setPathHighlightSequenceKey("");
+    }
+  }, [
+    availablePathTiers,
+    availableSequenceKeysForTier,
+    pathHighlightEnabled,
+    pathHighlightSequenceKey,
+    pathHighlightTier,
+    setPathHighlightEnabled,
+    setPathHighlightSequenceKey,
+    setPathHighlightTier,
+  ]);
+
+  useEffect(() => {
+    if (!sid) {
+      setCommandHistory([]);
+      return;
+    }
+    setCommandHistory(readCommandHistory(sid));
+  }, [readCommandHistory, setCommandHistory, sid]);
 }

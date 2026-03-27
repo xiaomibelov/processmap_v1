@@ -75,7 +75,7 @@ import {
   buildSaveUploadStatusBadge,
   normalizeBpmnSaveLifecycleEvent,
 } from "../features/process/navigation/saveUploadStatus";
-import useProcessStageShellController from "../features/process/stage/controllers/useProcessStageShellController";
+import useProcessStageShellController, { useProcessStageShellUiController } from "../features/process/stage/controllers/useProcessStageShellController";
 import useBpmnCanvasController from "../features/process/stage/controllers/useBpmnCanvasController";
 import useDiagramOverlayTransform from "../features/process/stage/controllers/useDiagramOverlayTransform";
 import useHybridLayerAnchorController from "../features/process/stage/hooks/useBpmnCanvasController";
@@ -260,7 +260,6 @@ export default function ProcessStage({
   const lastDraftXmlHashRef = useRef("");
   const lastSuccessfulPublishRef = useRef({ sessionId: "", atMs: 0, xmlHash: "" });
   const lastAiGenerateIntentKeyRef = useRef("");
-  const lastDrawioCompanionFocusKeyRef = useRef("");
   const saveUploadLifecycleClearTimerRef = useRef(0);
   const attentionPanelWasOpenRef = useRef(false);
   const autoPassToastJobIdRef = useRef("");
@@ -3527,56 +3526,30 @@ export default function ProcessStage({
     void generateAiQuestionsForSelectedElement();
   }, [aiGenerateIntent, sid, generateAiQuestionsForSelectedElement]);
 
-  useEffect(() => {
-    const intent = drawioCompanionFocusIntent && typeof drawioCompanionFocusIntent === "object"
-      ? drawioCompanionFocusIntent
-      : null;
-    if (!intent) return;
-    const intentSid = String(intent.sid || "").trim();
-    const objectId = String(intent.objectId || "").trim();
-    if (!intentSid || intentSid !== sid || !objectId) return;
-    const intentNonce = String(intent.nonce || "").trim();
-    const intentKey = `${intentSid}:${objectId}:${intentNonce || "none"}`;
-    if (lastDrawioCompanionFocusKeyRef.current === intentKey) return;
-    lastDrawioCompanionFocusKeyRef.current = intentKey;
-    setDrawioSelectedElementId(objectId);
-    setDiagramActionLayersOpen(true);
-  }, [drawioCompanionFocusIntent, sid, setDrawioSelectedElementId, setDiagramActionLayersOpen]);
-
-  useEffect(() => {
-    setToolbarMenuOpen(false);
-    setDiagramActionPathOpen(false);
-    setDiagramActionHybridToolsOpen(false);
-    setDiagramActionLayersOpen(false);
-    setDiagramActionRobotMetaOpen(false);
-    setRobotMetaListOpen(false);
-    setDiagramActionQualityOpen(false);
-    setDiagramActionOverflowOpen(false);
-  }, [tab, sid]);
-
-
-  useEffect(() => {
-    if (!availablePathTiers.length) {
-      if (pathHighlightEnabled) setPathHighlightEnabled(false);
-      if (pathHighlightTier) setPathHighlightTier("");
-      if (pathHighlightSequenceKey) setPathHighlightSequenceKey("");
-      return;
-    }
-    if (!availablePathTiers.includes(pathHighlightTier)) {
-      setPathHighlightTier(availablePathTiers[0]);
-      setPathHighlightSequenceKey("");
-      return;
-    }
-    if (pathHighlightSequenceKey && !availableSequenceKeysForTier.includes(pathHighlightSequenceKey)) {
-      setPathHighlightSequenceKey("");
-    }
-  }, [
+  useProcessStageShellUiController({
+    sid,
+    tab,
+    drawioCompanionFocusIntent,
+    setDrawioSelectedElementId,
+    setDiagramActionLayersOpen,
+    setToolbarMenuOpen,
+    setDiagramActionPathOpen,
+    setDiagramActionHybridToolsOpen,
+    setDiagramActionRobotMetaOpen,
+    setRobotMetaListOpen,
+    setDiagramActionQualityOpen,
+    setDiagramActionOverflowOpen,
     availablePathTiers,
     availableSequenceKeysForTier,
     pathHighlightEnabled,
     pathHighlightTier,
     pathHighlightSequenceKey,
-  ]);
+    setPathHighlightEnabled,
+    setPathHighlightTier,
+    setPathHighlightSequenceKey,
+    setCommandHistory,
+    readCommandHistory,
+  });
 
   useEffect(() => {
     const xml = String(draft?.bpmn_xml || "");
@@ -3631,14 +3604,6 @@ export default function ProcessStage({
       window.removeEventListener(NOTES_BATCH_APPLY_EVENT, onBatchApply);
     };
   }, [runNotesBatchOps]);
-
-  useEffect(() => {
-    if (!sid) {
-      setCommandHistory([]);
-      return;
-    }
-    setCommandHistory(readCommandHistory(sid));
-  }, [sid]);
 
   function handleAiQuestionsByElementChange(nextMap, meta = {}) {
     const interviewNow = asObject(draft?.interview);
