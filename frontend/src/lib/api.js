@@ -822,7 +822,15 @@ export async function apiListOrgInvites(orgId) {
     r = okOrError(await request(apiRoutes.admin.organizationInvites(oid), { method: "GET" }));
   }
   const items = Array.isArray(r?.data?.items) ? r.data.items : [];
-  return r.ok ? { ok: true, status: r.status, items, count: Number(r?.data?.count || items.length || 0) } : r;
+  return r.ok
+    ? {
+      ok: true,
+      status: r.status,
+      items,
+      count: Number(r?.data?.count || items.length || 0),
+      current_invite: r?.data?.current_invite || null,
+    }
+    : r;
 }
 
 export async function apiCreateOrgInvite(orgId, payload = {}) {
@@ -834,6 +842,7 @@ export async function apiCreateOrgInvite(orgId, payload = {}) {
     job_title: String(payload?.job_title || payload?.jobTitle || "").trim(),
     role: String(payload?.role || "viewer").trim() || "viewer",
     ttl_days: Number(payload?.ttl_days || payload?.ttlDays || 7),
+    regenerate: payload?.regenerate === true,
   };
   let r = okOrError(await request(apiRoutes.orgs.invites(oid), { method: "POST", body }));
   if (!r.ok && Number(r.status || 0) === 404) {

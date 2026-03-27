@@ -5674,9 +5674,30 @@ def _validate_invite_email_config_on_boot() -> None:
         print(f"[INVITE_EMAIL] boot_warning reason={reason}")
 
 
+def _resolve_invite_base_url(request: Optional[Request], *, explicit_base_url: str = "") -> str:
+    configured = str(explicit_base_url or os.environ.get("APP_BASE_URL") or os.environ.get("PUBLIC_BASE_URL") or "").strip()
+    if configured:
+        return configured.rstrip("/")
+    if request is None:
+        return ""
+    headers = request.headers if hasattr(request, "headers") else {}
+    forwarded_proto = str(headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
+    proto = forwarded_proto or str(getattr(getattr(request, "url", None), "scheme", "") or "").strip().lower() or "https"
+    forwarded_host = str(headers.get("x-forwarded-host") or "").split(",")[0].strip()
+    host = forwarded_host or str(headers.get("host") or "").split(",")[0].strip()
+    if not host:
+        return ""
+    if host.startswith("http://") or host.startswith("https://"):
+        return host.rstrip("/")
+    return f"{proto}://{host}".rstrip("/")
+
+
 def _build_invite_link(base_url: str, token: str) -> str:
     base = str(base_url or "").strip().rstrip("/")
-    return f"{base}/accept-invite?token={token}"
+    invite_token = str(token or "").strip()
+    if not invite_token:
+        return f"{base}/accept-invite" if base else "/accept-invite"
+    return f"{base}/accept-invite?token={invite_token}"
 
 
 def _send_org_invite_email(
@@ -6986,6 +7007,29 @@ def delete_org_project_member(org_id: str, project_id: str, user_id: str, reques
     return Response(status_code=204)
 
 
+def _with_invite_links(items_raw: Any, *, base_url: str) -> List[Dict[str, Any]]:
+    rows = items_raw if isinstance(items_raw, list) else []
+    out: List[Dict[str, Any]] = []
+    for row_raw in rows:
+        row = dict(row_raw or {}) if isinstance(row_raw, dict) else {}
+        token = str(row.get("invite_key") or "").strip()
+        status = str(row.get("status") or "").strip().lower()
+        row["invite_link"] = _build_invite_link(base_url, token) if (token and status == "pending") else ""
+        out.append(row)
+    return out
+
+
+def _pick_current_org_invite(items_raw: Any) -> Dict[str, Any]:
+    rows = items_raw if isinstance(items_raw, list) else []
+    for row_raw in rows:
+        row = row_raw if isinstance(row_raw, dict) else {}
+        status = str(row.get("status") or "").strip().lower()
+        token = str(row.get("invite_key") or "").strip()
+        if status == "pending" and token:
+            return dict(row)
+    return {}
+
+
 @app.get("/api/orgs/{org_id}/invites")
 @app.get("/api/admin/organizations/{org_id}/invites")
 def list_org_invites_endpoint(org_id: str, request: Request):
@@ -6993,8 +7037,13 @@ def list_org_invites_endpoint(org_id: str, request: Request):
     _, err = _enterprise_require_org_role(request, oid, _ORG_INVITE_MANAGE_ROLES)
     if err is not None:
         return err
-    items = list_org_invites(oid, include_inactive=True)
-    return build_items_count_payload(items)
+    base_url = _resolve_invite_base_url(
+        request,
+        explicit_base_url=str(_invite_email_config().get("base_url") or ""),
+    )
+    items = _with_invite_links(list_org_invites(oid, include_inactive=True), base_url=base_url)
+    current_invite = _pick_current_org_invite(items)
+    return build_items_count_payload(items, current_invite=current_invite)
 
 
 @app.post("/api/orgs/{org_id}/invites")
@@ -7007,6 +7056,7 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
     email = str(getattr(inp, "email", "") or "").strip().lower()
     full_name = str(getattr(inp, "full_name", "") or "").strip()
     job_title = str(getattr(inp, "job_title", "") or "").strip()
+    regenerate = bool(getattr(inp, "regenerate", False))
     try:
         normalized_invite_role = normalize_invite_role(getattr(inp, "role", "viewer"))
     except ValueError as exc:
@@ -7038,6 +7088,7 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
             job_title=job_title,
             role=normalized_invite_role,
             ttl_days=ttl_days,
+            regenerate=regenerate,
         )
     except ValueError as exc:
         return _enterprise_error(422, "validation_error", str(exc))
@@ -7045,12 +7096,22 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
         return _enterprise_error(422, "validation_error", str(exc))
     token = str(created.pop("token", "") or "")
     response_payload: Dict[str, Any] = {"invite": created}
+    invite_base_url = _resolve_invite_base_url(
+        request,
+        explicit_base_url=str(_invite_email_config().get("base_url") or ""),
+    )
     if email_delivery:
         ok_cfg, _, cfg = _invite_email_config_ready()
         if not ok_cfg:
             _ = delete_org_invite(oid, str(created.get("id") or ""))
             return _enterprise_error(503, "service_unavailable", "invite_email_unavailable")
-        invite_link = _build_invite_link(str(cfg.get("base_url") or ""), token)
+        invite_link = _build_invite_link(
+            _resolve_invite_base_url(
+                request,
+                explicit_base_url=str(cfg.get("base_url") or ""),
+            ),
+            token,
+        )
         try:
             _send_org_invite_email(
                 to_email=email,
@@ -7084,10 +7145,17 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
         if expose_token and token:
             response_payload["invite_key"] = token
             response_payload["invite_token"] = token
-            cfg = _invite_email_config()
-            base_url = str(cfg.get("base_url") or "").strip()
-            response_payload["invite_link"] = _build_invite_link(base_url, token) if base_url else f"/app/org?tab=invites&org_id={oid}&token={token}"
+            response_payload["invite_link"] = _build_invite_link(invite_base_url, token)
         response_payload["delivery"] = "token"
+    audit_meta = build_invite_create_audit_meta(
+        email=email,
+        role=str(created.get("role") or ""),
+        full_name=full_name,
+        job_title=job_title,
+        delivery=str(response_payload.get("delivery") or "token"),
+        is_admin=bool(is_admin),
+    )
+    audit_meta["regenerate"] = regenerate
     _audit_log_safe(
         request,
         org_id=oid,
@@ -7095,14 +7163,7 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
         entity_type="org_invite",
         entity_id=str(created.get("id") or ""),
         status="ok",
-        meta=build_invite_create_audit_meta(
-            email=email,
-            role=str(created.get("role") or ""),
-            full_name=full_name,
-            job_title=job_title,
-            delivery=str(response_payload.get("delivery") or "token"),
-            is_admin=bool(is_admin),
-        ),
+        meta=audit_meta,
     )
     return response_payload
 

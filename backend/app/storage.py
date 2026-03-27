@@ -3867,6 +3867,7 @@ def create_org_invite(
     subgroup_name: str = "",
     invite_comment: str = "",
     ttl_days: int = 7,
+    regenerate: bool = False,
 ) -> Dict[str, Any]:
     oid = str(org_id or "").strip()
     em = _normalize_email(email)
@@ -3901,6 +3902,18 @@ def create_org_invite(
             """,
             [now, oid, now],
         )
+        if bool(regenerate):
+            con.execute(
+                """
+                UPDATE org_invites
+                   SET revoked_at = ?, revoked_by = ?
+                 WHERE org_id = ?
+                   AND email = ?
+                   AND accepted_at IS NULL
+                   AND revoked_at IS NULL
+                """,
+                [now, actor or "system_regenerate", oid, em],
+            )
         try:
             con.execute(
                 """

@@ -60,6 +60,7 @@ class OrgInviteCreateIn(BaseModel):
     job_title: Optional[str] = ""
     role: Optional[str] = "viewer"
     ttl_days: Optional[int] = 7
+    regenerate: Optional[bool] = False
     model_config = ConfigDict(extra="allow")
 
 
