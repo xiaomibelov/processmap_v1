@@ -15,7 +15,11 @@ import requests
 
 from ..exporters.bpmn import export_session_to_bpmn_xml
 from ..models import Session
-from ..storage import get_org_git_mirror_config, get_project_storage
+from ..storage import (
+    get_org_git_mirror_config,
+    get_project_storage,
+    increment_and_get_next_version,
+)
 from .org_workspace import evaluate_org_git_mirror_config
 
 _BPMN_NS = "http://www.omg.org/spec/BPMN/20100524/MODEL"
@@ -301,7 +305,7 @@ def _assemble_publish_artifacts(
     repository: str,
     branch: str,
     base_path: str,
-    previous_version_number: int,
+    version_number: int,
     now_ts: int,
 ) -> Dict[str, Any]:
     xml = _resolve_xml_for_publish(sess)
@@ -320,7 +324,7 @@ def _assemble_publish_artifacts(
         "session_id": session_id,
     }
 
-    version_number = max(0, int(previous_version_number or 0)) + 1
+    version_number = max(1, int(version_number or 1))
     version_id = f"v{version_number:03d}"
     version_file = f"versions/{version_id}.bpmn"
     published_at = _to_iso(now_ts)
@@ -731,8 +735,11 @@ def execute_git_mirror_publish(
         interview[_INTERVIEW_KEY] = state
         return {"ok": True, "state": _STATE_SKIPPED_INVALID, "interview": interview, "commit_sha": ""}
 
-    previous_version_number = _as_int((current_bpmn_existing or {}).get("version_number"), 0)
     try:
+        next_version_number = increment_and_get_next_version(
+            _as_text(getattr(sess, "id", "")),
+            org_id=org_raw,
+        )
         assembled = _assemble_publish_artifacts(
             sess,
             org_id=org_raw,
@@ -741,7 +748,7 @@ def execute_git_mirror_publish(
             repository=repository,
             branch=branch,
             base_path=base_path,
-            previous_version_number=previous_version_number,
+            version_number=next_version_number,
             now_ts=now_ts,
         )
         files = assembled.get("files") if isinstance(assembled, dict) else {}

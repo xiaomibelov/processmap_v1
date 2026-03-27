@@ -143,7 +143,7 @@ class PublishGitMirrorExecutionTest(unittest.TestCase):
         mirror = interview.get("git_mirror_publish") or {}
         self.assertEqual(str(mirror.get("mirror_state") or ""), "skipped_invalid_config")
 
-    def test_publish_ready_status_writes_full_artifact_set_for_valid_config(self):
+    def test_version_progression_monotonic(self):
         self._configure_mirror(
             git_mirror_enabled=True,
             git_provider="github",
@@ -216,6 +216,117 @@ class PublishGitMirrorExecutionTest(unittest.TestCase):
         self.assertEqual(str(mirror_second.get("mirror_state") or ""), "synced")
         self.assertEqual(int((mirror_second.get("current_bpmn") or {}).get("version_number") or 0), 2)
         self.assertEqual(str((mirror_second.get("git") or {}).get("commit_sha") or ""), "commit-sha-2")
+
+    def test_interview_payload_cannot_reset_version(self):
+        self._configure_mirror(
+            git_mirror_enabled=True,
+            git_provider="github",
+            git_repository="acme/processmap",
+            git_branch="main",
+            git_base_path="publish/base",
+        )
+
+        calls = []
+
+        def _fake_commit(*, provider, repository, branch, files, commit_message):
+            calls.append(
+                {
+                    "provider": provider,
+                    "repository": repository,
+                    "branch": branch,
+                    "files": dict(files),
+                    "commit_message": commit_message,
+                }
+            )
+            return f"commit-sha-{len(calls)}"
+
+        with mock.patch(
+            "app.services.publish_git_mirror._commit_publish_artifacts_to_provider",
+            side_effect=_fake_commit,
+        ):
+            self.patch_session(
+                self.session_id,
+                self.UpdateSessionIn(status="ready"),
+                self._request(),
+            )
+            self.patch_session(
+                self.session_id,
+                self.UpdateSessionIn(interview={"status": "in_progress"}),
+                self._request(),
+            )
+            out_second = self.patch_session(
+                self.session_id,
+                self.UpdateSessionIn(status="ready"),
+                self._request(),
+            )
+
+        self.assertEqual(len(calls), 2)
+        repo_root = (
+            f"publish/base/orgs/{self.default_org_id}/workspaces/{self.workspace_id}/"
+            f"projects/{self.project_id}/sessions/{self.session_id}"
+        )
+        manifest_second = json.loads(calls[1]["files"][f"{repo_root}/manifest.json"])
+        self.assertEqual(str((manifest_second.get("current_bpmn") or {}).get("version_id") or ""), "v002")
+        mirror_second = (out_second.get("interview") or {}).get("git_mirror_publish") or {}
+        self.assertEqual(int((mirror_second.get("current_bpmn") or {}).get("version_number") or 0), 2)
+
+    def test_interview_payload_cannot_force_version(self):
+        self._configure_mirror(
+            git_mirror_enabled=True,
+            git_provider="github",
+            git_repository="acme/processmap",
+            git_branch="main",
+            git_base_path="publish/base",
+        )
+
+        calls = []
+
+        def _fake_commit(*, provider, repository, branch, files, commit_message):
+            calls.append(
+                {
+                    "provider": provider,
+                    "repository": repository,
+                    "branch": branch,
+                    "files": dict(files),
+                    "commit_message": commit_message,
+                }
+            )
+            return f"commit-sha-{len(calls)}"
+
+        with mock.patch(
+            "app.services.publish_git_mirror._commit_publish_artifacts_to_provider",
+            side_effect=_fake_commit,
+        ):
+            self.patch_session(
+                self.session_id,
+                self.UpdateSessionIn(status="ready"),
+                self._request(),
+            )
+            self.patch_session(
+                self.session_id,
+                self.UpdateSessionIn(
+                    interview={
+                        "status": "in_progress",
+                        "git_mirror_publish": {"current_bpmn": {"version_number": 999}},
+                    }
+                ),
+                self._request(),
+            )
+            out_second = self.patch_session(
+                self.session_id,
+                self.UpdateSessionIn(status="ready"),
+                self._request(),
+            )
+
+        self.assertEqual(len(calls), 2)
+        repo_root = (
+            f"publish/base/orgs/{self.default_org_id}/workspaces/{self.workspace_id}/"
+            f"projects/{self.project_id}/sessions/{self.session_id}"
+        )
+        manifest_second = json.loads(calls[1]["files"][f"{repo_root}/manifest.json"])
+        self.assertEqual(str((manifest_second.get("current_bpmn") or {}).get("version_id") or ""), "v002")
+        mirror_second = (out_second.get("interview") or {}).get("git_mirror_publish") or {}
+        self.assertEqual(int((mirror_second.get("current_bpmn") or {}).get("version_number") or 0), 2)
 
     def test_bpmn_save_path_does_not_trigger_publish_mirror(self):
         self._configure_mirror(
