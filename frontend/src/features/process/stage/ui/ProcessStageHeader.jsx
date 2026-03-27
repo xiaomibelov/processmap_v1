@@ -1,6 +1,6 @@
 import ProcessPanels from "./ProcessPanels";
 import { getFirstPickedFile } from "./fileInputEvent.js";
-import { extractPublishGitMirrorSnapshot, getPublishGitMirrorMeta } from "../../../../shared/publishGitMirrorStatus";
+import { getPublishGitMirrorMeta } from "../../../../shared/publishGitMirrorStatus";
 
 export default function ProcessStageHeader({ view = {} }) {
   const {
@@ -43,11 +43,21 @@ export default function ProcessStageHeader({ view = {} }) {
     ? "Версия не опубликована"
     : (draftAheadOfLatest ? "Draft ahead" : "Published");
   const draftStatusTone = !hasPublishedRevision || draftAheadOfLatest ? "warn" : "ok";
-  const mirrorSnapshot = extractPublishGitMirrorSnapshot(publishGitMirrorSnapshot);
+  const mirrorSnapshot = (
+    publishGitMirrorSnapshot && typeof publishGitMirrorSnapshot === "object"
+      ? publishGitMirrorSnapshot
+      : {}
+  );
   const mirrorMeta = getPublishGitMirrorMeta(mirrorSnapshot.state);
-  const mirrorVersionLabel = mirrorSnapshot.versionNumber > 0
-    ? `v${String(mirrorSnapshot.versionNumber)}`
-    : "";
+  const mirrorVersionNumberRaw = Number(mirrorSnapshot.versionNumber);
+  const mirrorVersionNumber = Number.isFinite(mirrorVersionNumberRaw)
+    ? Math.max(0, Math.trunc(mirrorVersionNumberRaw))
+    : 0;
+  const mirrorVersionId = String(mirrorSnapshot.versionId || "").trim();
+  const mirrorLastError = String(mirrorSnapshot.lastError || "").trim();
+  const mirrorVersionLabel = mirrorVersionNumber > 0
+    ? `v${String(mirrorVersionNumber)}`
+    : mirrorVersionId;
   const mirrorBadgeLabel = mirrorVersionLabel
     ? `${mirrorMeta.label} · ${mirrorVersionLabel}`
     : mirrorMeta.label;
@@ -102,7 +112,7 @@ export default function ProcessStageHeader({ view = {} }) {
               <span
                 className={`badge text-[11px] ${mirrorMeta.processTone}`}
                 data-testid="diagram-toolbar-publish-git-mirror-status"
-                title={mirrorSnapshot.lastError || "Статус зеркалирования publish в Git"}
+                title={mirrorLastError || "Статус зеркалирования publish в Git"}
               >
                 Git mirror: {mirrorBadgeLabel}
               </span>
