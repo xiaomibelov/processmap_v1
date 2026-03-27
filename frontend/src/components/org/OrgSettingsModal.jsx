@@ -55,6 +55,15 @@ async function copyInviteValue(value) {
 
 const MEMBER_ROLES = ["org_admin", "editor", "org_viewer"];
 
+export function isGitMirrorSubmitLocked({
+  canManageMembers,
+  gitBusy,
+  busy,
+  gitConfigLoaded,
+}) {
+  return !canManageMembers || gitBusy || busy || !gitConfigLoaded;
+}
+
 export default function OrgSettingsModal({
   open,
   onClose,
@@ -95,6 +104,7 @@ export default function OrgSettingsModal({
   const [gitUpdatedAt, setGitUpdatedAt] = useState(0);
   const [gitUpdatedBy, setGitUpdatedBy] = useState("");
   const [gitBusy, setGitBusy] = useState(false);
+  const [gitConfigLoaded, setGitConfigLoaded] = useState(false);
   const [gitNotice, setGitNotice] = useState("");
 
   const canManageMembers = useMemo(() => isAdmin || ["org_owner", "org_admin"].includes(toText(activeOrgRole).toLowerCase()), [activeOrgRole, isAdmin]);
@@ -160,6 +170,7 @@ export default function OrgSettingsModal({
     if (!oid) return;
     const res = await apiGetOrgGitMirrorConfig(oid);
     if (!res.ok) {
+      setGitConfigLoaded(false);
       setError(toText(res.error || "Не удалось загрузить настройки Git mirror."));
       return;
     }
@@ -173,6 +184,7 @@ export default function OrgSettingsModal({
     setGitHealthMessage(toText(cfg.git_health_message));
     setGitUpdatedAt(Number(cfg.git_updated_at || 0));
     setGitUpdatedBy(toText(cfg.git_updated_by));
+    setGitConfigLoaded(true);
   }, [activeOrgId]);
 
   useEffect(() => {
@@ -183,6 +195,7 @@ export default function OrgSettingsModal({
     }
     let canceled = false;
     setBusy(true);
+    setGitConfigLoaded(false);
     setError("");
     void (async () => {
       await Promise.all([loadMembers(), loadInvites(), loadAudit(), loadGitMirror()]);
@@ -283,7 +296,12 @@ export default function OrgSettingsModal({
 
   async function handleSaveGitMirror(event) {
     event.preventDefault();
-    if (!canManageMembers) return;
+    if (isGitMirrorSubmitLocked({ canManageMembers, gitBusy, busy, gitConfigLoaded })) {
+      if (canManageMembers && !gitConfigLoaded) {
+        setError("Дождитесь загрузки настроек Git mirror перед сохранением.");
+      }
+      return;
+    }
     const oid = toText(activeOrgId);
     if (!oid) return;
     setGitBusy(true);
@@ -335,6 +353,7 @@ export default function OrgSettingsModal({
   ].join(" ").trim();
   const dictionaryTabActive = tab === "dictionary";
   const dictionaryVisualMode = dictionaryOnly || dictionaryTabActive;
+  const gitFormLocked = isGitMirrorSubmitLocked({ canManageMembers, gitBusy, busy, gitConfigLoaded });
 
   const oid = toText(activeOrgId);
 
@@ -620,7 +639,7 @@ export default function OrgSettingsModal({
               <input
                 type="checkbox"
                 checked={gitMirrorEnabled}
-                disabled={!canManageMembers || gitBusy}
+                disabled={gitFormLocked}
                 onChange={(e) => setGitMirrorEnabled(e.target.checked)}
               />
               Enable Git mirror
@@ -631,7 +650,7 @@ export default function OrgSettingsModal({
                 <select
                   className="input w-full"
                   value={gitProvider}
-                  disabled={!canManageMembers || gitBusy}
+                  disabled={gitFormLocked}
                   onChange={(e) => setGitProvider(e.target.value)}
                 >
                   <option value="">—</option>
@@ -646,7 +665,7 @@ export default function OrgSettingsModal({
                   type="text"
                   placeholder="owner/repo или group/subgroup/project"
                   value={gitRepository}
-                  disabled={!canManageMembers || gitBusy}
+                  disabled={gitFormLocked}
                   onChange={(e) => setGitRepository(e.target.value)}
                 />
               </label>
@@ -657,7 +676,7 @@ export default function OrgSettingsModal({
                   type="text"
                   placeholder="main"
                   value={gitBranch}
-                  disabled={!canManageMembers || gitBusy}
+                  disabled={gitFormLocked}
                   onChange={(e) => setGitBranch(e.target.value)}
                 />
               </label>
@@ -668,7 +687,7 @@ export default function OrgSettingsModal({
                   type="text"
                   placeholder="processmap/published"
                   value={gitBasePath}
-                  disabled={!canManageMembers || gitBusy}
+                  disabled={gitFormLocked}
                   onChange={(e) => setGitBasePath(e.target.value)}
                 />
               </label>
@@ -690,7 +709,7 @@ export default function OrgSettingsModal({
             </div>
             {gitNotice ? <div className="rounded-lg border border-success/40 bg-success/10 px-3 py-2 text-xs text-success">{gitNotice}</div> : null}
             {canManageMembers ? (
-              <button type="submit" className="secondaryBtn h-9 px-3 text-sm" disabled={gitBusy}>
+              <button type="submit" className="secondaryBtn h-9 px-3 text-sm" disabled={gitFormLocked}>
                 {gitBusy ? "Сохранение…" : "Сохранить Git mirror"}
               </button>
             ) : (

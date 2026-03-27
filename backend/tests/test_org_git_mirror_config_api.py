@@ -112,6 +112,31 @@ class OrgGitMirrorConfigApiTest(unittest.TestCase):
         self.assertEqual(cfg.get("git_mirror_enabled"), False)
         self.assertEqual(str(cfg.get("git_health_status") or ""), "unknown")
 
+    def test_invalid_branch_ref_formats_are_rejected(self):
+        invalid_branches = [
+            "feature//x",
+            "feature@{1}",
+            "release.lock",
+            "feature/.hidden",
+        ]
+        for branch in invalid_branches:
+            with self.subTest(branch=branch):
+                out = self.patch_org_git_mirror_endpoint(
+                    self.default_org_id,
+                    self.OrgGitMirrorPatchIn(
+                        git_mirror_enabled=True,
+                        git_provider="github",
+                        git_repository="acme/processmap",
+                        git_branch=branch,
+                        git_base_path="published/processes",
+                    ),
+                    self._request(),
+                )
+                self.assertTrue(out.get("ok"))
+                cfg = out.get("config") or {}
+                self.assertEqual(str(cfg.get("git_health_status") or ""), "invalid")
+                self.assertIn("branch", str(cfg.get("git_health_message") or "").lower())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -194,11 +194,27 @@ def _is_valid_git_branch(value: str) -> bool:
     branch = _norm_text(value)
     if not branch or branch.startswith("/") or branch.endswith("/"):
         return False
+    if branch == "@":
+        return False
+    if "//" in branch or "@{" in branch:
+        return False
     if branch.startswith(".") or branch.endswith("."):
+        return False
+    if branch.endswith(".lock"):
         return False
     if ".." in branch or " " in branch:
         return False
+    segments = branch.split("/")
+    if any(not seg for seg in segments):
+        return False
+    for seg in segments:
+        if seg.startswith("."):
+            return False
+        if seg.endswith(".lock"):
+            return False
     if any(ch in branch for ch in ["~", "^", ":", "?", "*", "[", "\\"]):
+        return False
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in branch):
         return False
     return True
 
