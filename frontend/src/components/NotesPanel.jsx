@@ -34,11 +34,7 @@ import {
   getOperationKeyFromRobotMeta,
 } from "../features/process/camunda/propertyDictionaryModel";
 import useCamundaPropertiesOverlayPreview from "../features/process/camunda/useCamundaPropertiesOverlayPreview";
-import {
-  apiGetOrgPropertyDictionaryBundle,
-  apiListOrgPropertyDictionaryOperations,
-  apiUpsertOrgPropertyDictionaryValue,
-} from "../lib/api";
+import useNotesPanelController from "./notesPanel/useNotesPanelController.js";
 import SidebarShell from "./sidebar/SidebarShell";
 import ActorsSection from "./sidebar/ActorsSection";
 import TemplatesAndTldrSection from "./sidebar/TemplatesAndTldrSection";
@@ -994,12 +990,6 @@ export default function NotesPanel({
   const [camundaExtensionLastAction, setCamundaExtensionLastAction] = useState("save");
   const [camundaPropertiesErr, setCamundaPropertiesErr] = useState("");
   const [camundaPropertiesInfo, setCamundaPropertiesInfo] = useState("");
-  const [orgPropertyDictionaryOperations, setOrgPropertyDictionaryOperations] = useState([]);
-  const [orgPropertyDictionaryOperationsLoading, setOrgPropertyDictionaryOperationsLoading] = useState(false);
-  const [orgPropertyDictionaryBundle, setOrgPropertyDictionaryBundle] = useState(null);
-  const [orgPropertyDictionaryLoading, setOrgPropertyDictionaryLoading] = useState(false);
-  const [orgPropertyDictionaryErr, setOrgPropertyDictionaryErr] = useState("");
-  const [orgPropertyDictionaryAddBusyKey, setOrgPropertyDictionaryAddBusyKey] = useState("");
   const [bulkNodeIds, setBulkNodeIds] = useState([]);
   const [aiErr, setAiErr] = useState("");
   const [aiBusyQid, setAiBusyQid] = useState("");
@@ -1290,6 +1280,21 @@ export default function NotesPanel({
     [selectedRobotMetaEditable, robotMetaDraft, selectedRobotMetaEntry, selectedCamundaExtensionEntry],
   );
   const selectedCamundaPropertiesEditable = !!selectedElementId;
+  const {
+    orgPropertyDictionaryOperations,
+    orgPropertyDictionaryOperationsLoading,
+    orgPropertyDictionaryBundle,
+    orgPropertyDictionaryLoading,
+    orgPropertyDictionaryErr,
+    orgPropertyDictionaryAddBusyKey,
+    addDictionaryValueForSelectedElement: addDictionaryValueForSelectedElementApi,
+  } = useNotesPanelController({
+    activeOrgId,
+    selectedCamundaPropertiesEditable,
+    selectedOperationKey,
+    orgPropertyDictionaryRevision,
+    onOrgPropertyDictionaryChanged,
+  });
   const selectedRobotMetaStatus = useMemo(
     () => (selectedRobotMetaEditable ? getRobotMetaStatus(selectedRobotMetaEntry) : "none"),
     [selectedRobotMetaEditable, selectedRobotMetaEntry],
@@ -1618,59 +1623,6 @@ export default function NotesPanel({
     setCamundaPropertiesErr("");
     setCamundaPropertiesInfo("");
   }, [selectedCamundaPropertiesEditable, selectedCamundaExtensionEntry]);
-
-
-  useEffect(() => {
-    if (!selectedCamundaPropertiesEditable || !str(activeOrgId)) {
-      setOrgPropertyDictionaryOperations([]);
-      setOrgPropertyDictionaryOperationsLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setOrgPropertyDictionaryOperationsLoading(true);
-    void (async () => {
-      const result = await apiListOrgPropertyDictionaryOperations(activeOrgId, { includeInactive: false });
-      if (cancelled) return;
-      if (!result.ok) {
-        setOrgPropertyDictionaryOperations([]);
-        setOrgPropertyDictionaryOperationsLoading(false);
-        return;
-      }
-      setOrgPropertyDictionaryOperations(Array.isArray(result.items) ? result.items : []);
-      setOrgPropertyDictionaryOperationsLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeOrgId, selectedCamundaPropertiesEditable, orgPropertyDictionaryRevision]);
-
-  useEffect(() => {
-    if (!selectedCamundaPropertiesEditable || !str(activeOrgId) || !str(selectedOperationKey)) {
-      setOrgPropertyDictionaryBundle(null);
-      setOrgPropertyDictionaryLoading(false);
-      setOrgPropertyDictionaryErr("");
-      setOrgPropertyDictionaryAddBusyKey("");
-      return;
-    }
-    let cancelled = false;
-    setOrgPropertyDictionaryLoading(true);
-    setOrgPropertyDictionaryErr("");
-    void (async () => {
-      const result = await apiGetOrgPropertyDictionaryBundle(activeOrgId, selectedOperationKey, { includeInactive: false });
-      if (cancelled) return;
-      if (!result.ok) {
-        setOrgPropertyDictionaryBundle(null);
-        setOrgPropertyDictionaryErr(str(result.error || "Не удалось загрузить словарь свойств."));
-        setOrgPropertyDictionaryLoading(false);
-        return;
-      }
-      setOrgPropertyDictionaryBundle(result.bundle || null);
-      setOrgPropertyDictionaryLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeOrgId, selectedCamundaPropertiesEditable, selectedOperationKey, orgPropertyDictionaryRevision]);
 
   useEffect(() => {
     const next = {};
@@ -2353,30 +2305,20 @@ export default function NotesPanel({
     const normalizedPropertyKey = str(propertyKey);
     const normalizedValue = str(optionValue);
     if (!oid || !operationKey || !normalizedPropertyKey || !normalizedValue) return { ok: false, error: "missing_dictionary_context" };
-    setOrgPropertyDictionaryAddBusyKey(normalizedPropertyKey);
     setCamundaPropertiesErr("");
+    const result = await addDictionaryValueForSelectedElementApi(normalizedPropertyKey, normalizedValue);
+    if (!result.ok) {
+      const errorText = str(result.error || "Не удалось добавить значение в словарь организации.");
+      setCamundaPropertiesErr(errorText);
+      return { ok: false, error: errorText };
+    }
     try {
-      const result = await apiUpsertOrgPropertyDictionaryValue(oid, operationKey, normalizedPropertyKey, {
-        option_value: normalizedValue,
-      });
-      if (!result.ok) {
-        const errorText = str(result.error || "Не удалось добавить значение в словарь организации.");
-        setCamundaPropertiesErr(errorText);
-        return { ok: false, error: errorText };
-      }
-      const bundleResult = await apiGetOrgPropertyDictionaryBundle(oid, operationKey, { includeInactive: false });
-      if (bundleResult.ok) {
-        setOrgPropertyDictionaryBundle(bundleResult.bundle || null);
-      }
-      onOrgPropertyDictionaryChanged?.();
       setCamundaPropertiesInfo(`Значение «${normalizedValue}» добавлено в словарь организации.`);
       return { ok: true };
     } catch (error) {
       const errorText = str(error?.message || error || "Не удалось добавить значение в словарь организации.");
       setCamundaPropertiesErr(errorText);
       return { ok: false, error: errorText };
-    } finally {
-      setOrgPropertyDictionaryAddBusyKey("");
     }
   }
 
