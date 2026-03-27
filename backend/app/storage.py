@@ -3868,6 +3868,7 @@ def create_org_invite(
     invite_comment: str = "",
     ttl_days: int = 7,
     regenerate: bool = False,
+    activate_now: bool = True,
 ) -> Dict[str, Any]:
     oid = str(org_id or "").strip()
     em = _normalize_email(email)
@@ -3890,6 +3891,7 @@ def create_org_invite(
     token = secrets.token_urlsafe(24)
     token_hash = _hash_invite_token(token)
     _ensure_schema()
+    activate_immediately = bool(activate_now)
     with _connect() as con:
         con.execute(
             """
@@ -3902,7 +3904,7 @@ def create_org_invite(
             """,
             [now, oid, now],
         )
-        if bool(regenerate):
+        if bool(regenerate) and activate_immediately:
             con.execute(
                 """
                 UPDATE org_invites
@@ -3920,7 +3922,7 @@ def create_org_invite(
                 INSERT INTO org_invites (
                   id, org_id, email, role, full_name, job_title, team_name, subgroup_name, invite_comment, invite_key, token_hash, expires_at, created_at, created_by,
                   used_at, used_by_user_id, accepted_at, accepted_by, revoked_at, revoked_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)
                 """,
                 [
                     invite_id,
@@ -3937,6 +3939,8 @@ def create_org_invite(
                     expires_at,
                     now,
                     actor,
+                    None if activate_immediately else now,
+                    None if activate_immediately else "system_regenerate_pending",
                 ],
             )
         except Exception as exc:
@@ -3980,6 +3984,89 @@ def delete_org_invite(org_id: str, invite_id: str) -> bool:
         )
         con.commit()
         return int(cur.rowcount or 0) > 0
+
+
+def get_org_invite_by_id(org_id: str, invite_id: str) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    iid = str(invite_id or "").strip()
+    if not oid or not iid:
+        return {}
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
+                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+              FROM org_invites i
+              LEFT JOIN orgs o ON o.id = i.org_id
+             WHERE i.org_id = ? AND i.id = ?
+             LIMIT 1
+            """,
+            [oid, iid],
+        ).fetchone()
+    if not row:
+        return {}
+    return _invite_row_to_dict(row)
+
+
+def promote_regenerated_org_invite(
+    org_id: str,
+    email: str,
+    invite_id: str,
+    *,
+    actor: str,
+) -> bool:
+    oid = str(org_id or "").strip()
+    em = _normalize_email(email)
+    iid = str(invite_id or "").strip()
+    who = str(actor or "").strip() or "system_regenerate"
+    if not oid or not em or not iid:
+        return False
+    now = _now_ts()
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT id
+              FROM org_invites
+             WHERE org_id = ?
+               AND id = ?
+               AND email = ?
+               AND accepted_at IS NULL
+               AND used_at IS NULL
+               AND revoked_by = 'system_regenerate_pending'
+             LIMIT 1
+            """,
+            [oid, iid, em],
+        ).fetchone()
+        if not row:
+            return False
+        con.execute(
+            """
+            UPDATE org_invites
+               SET revoked_at = ?, revoked_by = ?
+             WHERE org_id = ?
+               AND email = ?
+               AND id <> ?
+               AND accepted_at IS NULL
+               AND revoked_at IS NULL
+            """,
+            [now, who, oid, em, iid],
+        )
+        cur = con.execute(
+            """
+            UPDATE org_invites
+               SET revoked_at = NULL, revoked_by = NULL
+             WHERE org_id = ?
+               AND id = ?
+               AND email = ?
+               AND accepted_at IS NULL
+               AND used_at IS NULL
+            """,
+            [oid, iid, em],
+        )
+        con.commit()
+    return int(cur.rowcount or 0) > 0
 
 
 def preview_org_invite(

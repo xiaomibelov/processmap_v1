@@ -51,6 +51,8 @@ from .storage import (
     upsert_org_membership,
     list_org_invites,
     create_org_invite,
+    get_org_invite_by_id,
+    promote_regenerated_org_invite,
     preview_org_invite,
     accept_org_invite,
     revoke_org_invite,
@@ -5678,18 +5680,7 @@ def _resolve_invite_base_url(request: Optional[Request], *, explicit_base_url: s
     configured = str(explicit_base_url or os.environ.get("APP_BASE_URL") or os.environ.get("PUBLIC_BASE_URL") or "").strip()
     if configured:
         return configured.rstrip("/")
-    if request is None:
-        return ""
-    headers = request.headers if hasattr(request, "headers") else {}
-    forwarded_proto = str(headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
-    proto = forwarded_proto or str(getattr(getattr(request, "url", None), "scheme", "") or "").strip().lower() or "https"
-    forwarded_host = str(headers.get("x-forwarded-host") or "").split(",")[0].strip()
-    host = forwarded_host or str(headers.get("host") or "").split(",")[0].strip()
-    if not host:
-        return ""
-    if host.startswith("http://") or host.startswith("https://"):
-        return host.rstrip("/")
-    return f"{proto}://{host}".rstrip("/")
+    return ""
 
 
 def _build_invite_link(base_url: str, token: str) -> str:
@@ -7072,6 +7063,7 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
         return _enterprise_error(401, "unauthorized", "unauthorized")
     ttl_days = normalize_invite_ttl_days(getattr(inp, "ttl_days", 0), _invite_ttl_hours_default())
     email_delivery = _invite_email_enabled()
+    staged_regenerate = bool(regenerate and email_delivery)
     if email_delivery:
         ready, reason, _ = _invite_email_config_ready()
         if not ready:
@@ -7088,7 +7080,8 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
             job_title=job_title,
             role=normalized_invite_role,
             ttl_days=ttl_days,
-            regenerate=regenerate,
+            regenerate=(regenerate and not staged_regenerate),
+            activate_now=(not staged_regenerate),
         )
     except ValueError as exc:
         return _enterprise_error(422, "validation_error", str(exc))
@@ -7139,6 +7132,20 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
                 },
             )
             return _enterprise_error(502, "upstream_error", "invite_email_send_failed")
+        if staged_regenerate:
+            promoted = promote_regenerated_org_invite(
+                oid,
+                email,
+                str(created.get("id") or ""),
+                actor=uid,
+            )
+            if not promoted:
+                _ = delete_org_invite(oid, str(created.get("id") or ""))
+                return _enterprise_error(500, "server_error", "invite_regenerate_finalize_failed")
+            refreshed = get_org_invite_by_id(oid, str(created.get("id") or ""))
+            if refreshed:
+                created = refreshed
+                response_payload["invite"] = refreshed
         response_payload["delivery"] = "email"
     else:
         expose_token = _should_reveal_invite_token(request)
