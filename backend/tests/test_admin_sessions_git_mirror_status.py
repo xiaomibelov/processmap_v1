@@ -64,7 +64,49 @@ class AdminSessionsGitMirrorStatusTest(unittest.TestCase):
         self.assertEqual(str(row.get("publish_git_mirror_version_id") or ""), "")
         self.assertEqual(str(row.get("publish_git_mirror_last_error") or ""), "invalid config")
 
+    def test_collect_publish_git_mirror_metrics_for_dashboard(self):
+        from app.routers.admin import _collect_publish_git_mirror_metrics
+
+        out = _collect_publish_git_mirror_metrics(
+            sessions=[
+                {"id": "sess_synced"},
+                {"id": "sess_failed"},
+                {"id": "sess_none"},
+            ],
+            meta_map={
+                "sess_synced": {
+                    "interview": {
+                        "git_mirror_publish": {
+                            "mirror_state": "synced",
+                            "current_bpmn": {"version_number": 2, "version_id": "v002"},
+                            "last_attempt_at": 100,
+                        }
+                    }
+                },
+                "sess_failed": {
+                    "interview": {
+                        "git_mirror_publish": {
+                            "mirror_state": "failed",
+                            "current_bpmn": {"version_number": 1, "version_id": "v001"},
+                            "last_attempt_at": 200,
+                            "last_error": "push failed",
+                        }
+                    }
+                },
+            },
+        )
+
+        self.assertEqual(int(out.get("published_bpmn_versions") or 0), 3)
+        self.assertEqual(int(out.get("mirrored_to_git") or 0), 1)
+        self.assertEqual(int(out.get("failed") or 0), 1)
+        self.assertEqual(int(out.get("pending") or 0), 0)
+        self.assertEqual(int(out.get("not_attempted") or 0), 1)
+        self.assertEqual(str(out.get("latest_result_state") or ""), "failed")
+        self.assertEqual(str(out.get("latest_result_session_id") or ""), "sess_failed")
+        self.assertEqual(int(out.get("latest_result_version_number") or 0), 1)
+        self.assertEqual(str(out.get("latest_result_error") or ""), "push failed")
+        self.assertEqual(int(out.get("latest_attempt_at") or 0), 200)
+
 
 if __name__ == "__main__":
     unittest.main()
-

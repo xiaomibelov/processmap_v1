@@ -106,6 +106,70 @@ def _session_redis_mode(*, redis_runtime: Dict[str, Any], bpmn_meta_raw: Dict[st
     return "ON"
 
 
+_PUBLISH_GIT_MIRROR_DASHBOARD_STATES = (
+    "not_attempted",
+    "skipped_disabled",
+    "skipped_invalid_config",
+    "pending",
+    "synced",
+    "failed",
+)
+
+
+def _collect_publish_git_mirror_metrics(*, sessions: List[Dict[str, Any]], meta_map: Dict[str, Any]) -> Dict[str, Any]:
+    counts: Counter[str] = Counter({state: 0 for state in _PUBLISH_GIT_MIRROR_DASHBOARD_STATES})
+    published_bpmn_versions = 0
+    latest_attempt_at = 0
+    latest_result_state = "not_attempted"
+    latest_result_session_id = ""
+    latest_result_version_number = 0
+    latest_result_version_id = ""
+    latest_result_error = ""
+
+    for session in sessions:
+        row = _as_dict(session)
+        sid = _as_text(row.get("id"))
+        if not sid:
+            continue
+        meta_entry = _as_dict(meta_map.get(sid))
+        publish_mirror = _legacy_main._extract_publish_git_mirror(_as_dict(meta_entry.get("interview")))
+        state = _as_text(publish_mirror.get("state")).lower()
+        if state not in counts:
+            state = "not_attempted"
+        counts[state] += 1
+
+        version_number = max(0, _as_int(publish_mirror.get("version_number"), 0))
+        published_bpmn_versions += version_number
+
+        attempt_at = max(0, _as_int(publish_mirror.get("last_attempt_at"), 0))
+        if attempt_at < latest_attempt_at:
+            continue
+        if attempt_at == 0 and latest_attempt_at > 0:
+            continue
+        latest_attempt_at = attempt_at
+        latest_result_state = state
+        latest_result_session_id = sid
+        latest_result_version_number = version_number
+        latest_result_version_id = _as_text(publish_mirror.get("version_id"))
+        latest_result_error = _as_text(publish_mirror.get("last_error"))
+
+    return {
+        "published_bpmn_versions": int(published_bpmn_versions),
+        "not_attempted": int(counts.get("not_attempted", 0)),
+        "skipped_disabled": int(counts.get("skipped_disabled", 0)),
+        "skipped_invalid_config": int(counts.get("skipped_invalid_config", 0)),
+        "pending": int(counts.get("pending", 0)),
+        "mirrored_to_git": int(counts.get("synced", 0)),
+        "failed": int(counts.get("failed", 0)),
+        "latest_attempt_at": int(latest_attempt_at),
+        "latest_result_state": latest_result_state,
+        "latest_result_session_id": latest_result_session_id,
+        "latest_result_version_number": int(latest_result_version_number),
+        "latest_result_version_id": latest_result_version_id,
+        "latest_result_error": latest_result_error,
+    }
+
+
 def _admin_context(
     request: Request,
 ) -> Tuple[Optional[str], bool, Optional[str], Optional[str], Optional[Dict[str, Any]], Optional[Response]]:
@@ -390,6 +454,13 @@ def admin_dashboard(request: Request) -> Any:
     templates_org = list_templates(scope="org", owner_user_id="", org_id=oid or "", limit=1000)
     audit_items = list_audit_log(oid or "", limit=30)
     redis_runtime = runtime_status(force_ping=True)
+    publish_git_mirror = _collect_publish_git_mirror_metrics(sessions=sessions, meta_map=meta_map)
+    publish_latest_attempt_at = _as_int(publish_git_mirror.get("latest_attempt_at"), 0)
+    publish_latest_attempt_at_iso = (
+        datetime.fromtimestamp(publish_latest_attempt_at, tz=timezone.utc).isoformat()
+        if publish_latest_attempt_at > 0
+        else ""
+    )
 
     autopass_runs = 0
     autopass_done = 0
@@ -546,9 +617,10 @@ def admin_dashboard(request: Request) -> Any:
             "active_sessions": sum(1 for row in sessions if _as_text(row.get("status")).lower() == "in_progress"),
             "autopass_success_rate_pct": autopass_success_rate,
             "failed_jobs": failed_jobs,
-            "template_usage": len(templates_my) + len(templates_org),
             "avg_save_latency_ms": avg_save_latency_ms,
-            "redis_mode": redis_mode,
+            "published_bpmn_versions": _as_int(publish_git_mirror.get("published_bpmn_versions"), 0),
+            "mirrored_to_git": _as_int(publish_git_mirror.get("mirrored_to_git"), 0),
+            "mirror_failed": _as_int(publish_git_mirror.get("failed"), 0),
         },
         "charts": {
             "sessions_activity": points,
@@ -576,6 +648,12 @@ def admin_dashboard(request: Request) -> Any:
             "active_templates": active_templates,
             "cross_session_templates": cross_session_templates,
             "broken_anchor_templates": broken_anchor_templates,
+        },
+        "publish_git_mirror": {
+            **publish_git_mirror,
+            "latest_attempt_at_iso": publish_latest_attempt_at_iso,
+            "org_mirror_enabled": bool(org.get("git_mirror_enabled")),
+            "org_mirror_health_status": _as_text(org.get("git_health_status") or "unknown").lower() or "unknown",
         },
         "redis_health": {
             "mode": redis_mode,
