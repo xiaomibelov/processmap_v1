@@ -85,6 +85,7 @@ import useSessionRouteOrchestration, {
 } from "./app/useSessionRouteOrchestration";
 import useSessionActivationOrchestration from "./app/useSessionActivationOrchestration";
 import useSessionShellOrchestration from "./app/useSessionShellOrchestration";
+import useAppShellController from "./app/useAppShellController";
 import { buildSessionDebugProbeSnapshot } from "./app/sessionDebugProbe";
 import {
   mergeGlobalNotesLists,
@@ -831,18 +832,6 @@ export default function App() {
   const [sessionNavNotice, setSessionNavNotice] = useState(null);
   const [renameDialog, setRenameDialog] = useState({ open: false, scope: "", value: "", error: "", busy: false });
   const [deleteDialog, setDeleteDialog] = useState({ open: false, scope: "", error: "", busy: false });
-  const [orgSettingsOpen, setOrgSettingsOpen] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return String(window.location.pathname || "").startsWith("/app/org");
-  });
-  const [orgSettingsTab, setOrgSettingsTab] = useState(() => readOrgSettingsTabFromUrl());
-  const [orgSettingsOperationKey, setOrgSettingsOperationKey] = useState("");
-  const [orgSettingsDictionaryOnly, setOrgSettingsDictionaryOnly] = useState(false);
-  const [orgPropertyDictionaryRevision, setOrgPropertyDictionaryRevision] = useState(0);
-
-  const [leftHidden, setLeftHidden] = useState(() => readLeftPanelHidden());
-  const [leftCompact, setLeftCompact] = useState(() => readLeftPanelCompact());
-  const [stepTimeUnit, setStepTimeUnit] = useState(() => readStepTimeUnit());
   const [showPropertiesOverlayAlways, setShowPropertiesOverlayAlways] = useState(false);
   const [elementNotesFocusKey, setElementNotesFocusKey] = useState(0);
   const [llmHasApiKey, setLlmHasApiKey] = useState(false);
@@ -952,76 +941,6 @@ export default function App() {
       .join(" ");
     // eslint-disable-next-line no-console
     console.debug(`[NAV] session=${sid} project=${pid} route=${route} reason=${String(reason || "-")}${extra ? ` ${extra}` : ""}`);
-  }
-
-  const handleStepTimeUnitChange = useCallback((nextUnitRaw) => {
-    const nextUnit = normalizeStepTimeUnit(nextUnitRaw);
-    setStepTimeUnit((prev) => {
-      if (prev === nextUnit) return prev;
-      writeStepTimeUnit(nextUnit);
-      return nextUnit;
-    });
-  }, []);
-
-  function handleToggleLeft(source = "button") {
-    const rawSource = String(source || "button");
-    const shortcutPrefix = "global_handle:";
-    const shortcutId = rawSource.startsWith(shortcutPrefix)
-      ? String(rawSource.slice(shortcutPrefix.length) || "").trim()
-      : "";
-    setLeftHidden((prev) => {
-      const next = !prev;
-      let persisted = 0;
-      try {
-        window.sessionStorage?.setItem(LEFT_PANEL_OPEN_KEY, next ? "0" : "1");
-        persisted = 1;
-      } catch {
-        persisted = 0;
-      }
-      if (prev && !next) {
-        setLeftCompact(false);
-        try {
-          window.localStorage?.setItem(LEFT_PANEL_COMPACT_KEY, "0");
-        } catch {
-        }
-      }
-      if (prev && !next && shortcutId && shortcutId !== "open") {
-        setSidebarShortcutRequest(shortcutId);
-        setSidebarActiveSection(shortcutId);
-      }
-      // eslint-disable-next-line no-console
-      console.debug(`[UI] sidebar.toggle next=${next ? 1 : 0} source=${rawSource} persisted=${persisted}`);
-      return next;
-    });
-  }
-
-  function handleSidebarCompact(nextValue, source = "sidebar") {
-    const next = typeof nextValue === "boolean" ? nextValue : !leftCompact;
-    setLeftCompact(next);
-    try {
-      window.localStorage?.setItem(LEFT_PANEL_COMPACT_KEY, next ? "1" : "0");
-    } catch {
-    }
-    // eslint-disable-next-line no-console
-    console.debug(`[UI] sidebar.compact next=${next ? 1 : 0} source=${String(source || "sidebar")}`);
-  }
-
-  function closeLeftSidebar(source = "sidebar_close") {
-    setLeftHidden((prev) => {
-      if (prev) return true;
-      try {
-        window.sessionStorage?.setItem(LEFT_PANEL_OPEN_KEY, "0");
-      } catch {
-      }
-      // eslint-disable-next-line no-console
-      console.debug(`[UI] sidebar.force_close source=${String(source || "sidebar_close")}`);
-      return true;
-    });
-    setLeftCompact(false);
-    try {
-      window.localStorage?.setItem(LEFT_PANEL_COMPACT_KEY, "0");
-    } catch {
-    }
   }
 
   useEffect(() => {
@@ -1141,6 +1060,41 @@ export default function App() {
   } = useSessionShellOrchestration({
     draftSessionId: draft?.session_id,
     activationState,
+  });
+
+  const {
+    orgSettingsOpen,
+    setOrgSettingsOpen,
+    orgSettingsTab,
+    setOrgSettingsTab,
+    orgSettingsOperationKey,
+    orgSettingsDictionaryOnly,
+    setOrgSettingsDictionaryOnly,
+    orgPropertyDictionaryRevision,
+    openOrgSettings,
+    closeOrgSettings,
+    notifyOrgPropertyDictionaryChanged,
+    leftHidden,
+    setLeftHidden,
+    leftCompact,
+    stepTimeUnit,
+    handleStepTimeUnitChange,
+    handleToggleLeft,
+    handleSidebarCompact,
+    closeLeftSidebar,
+  } = useAppShellController({
+    initialOrgSettingsOpen: typeof window !== "undefined" && String(window.location.pathname || "").startsWith("/app/org"),
+    initialOrgSettingsTab: readOrgSettingsTabFromUrl(),
+    initialLeftHidden: readLeftPanelHidden(),
+    initialLeftCompact: readLeftPanelCompact(),
+    initialStepTimeUnit: readStepTimeUnit(),
+    normalizeOrgSettingsTab,
+    normalizeStepTimeUnit,
+    writeStepTimeUnit,
+    leftPanelOpenKey: LEFT_PANEL_OPEN_KEY,
+    leftPanelCompactKey: LEFT_PANEL_COMPACT_KEY,
+    setSidebarActiveSection,
+    setSidebarShortcutRequest,
   });
 
   useEffect(() => {
@@ -2883,51 +2837,6 @@ export default function App() {
     const found = sessions.find((item) => sessionIdOf(item) === sid);
     return String(found?.title || found?.name || draft?.title || "").trim();
   }, [sessions, draft?.session_id, draft?.title]);
-
-  const openOrgSettings = useCallback((options = {}) => {
-    const nextTab = normalizeOrgSettingsTab(options?.tab);
-    const nextDictionaryOnly = nextTab === "dictionary" && !!options?.dictionaryOnly;
-    setOrgSettingsTab(nextTab);
-    setOrgSettingsOperationKey(String(options?.operationKey || options?.operation_key || "").trim());
-    setOrgSettingsDictionaryOnly(nextDictionaryOnly);
-    setOrgSettingsOpen(true);
-    if (typeof window === "undefined") return;
-    try {
-      const url = new URL(window.location.href);
-      const pathname = String(url.pathname || "");
-      url.pathname = "/app/org";
-      if (nextTab === "members") url.searchParams.delete("tab");
-      else url.searchParams.set("tab", nextTab);
-      const nextHref = `${url.pathname}${url.search}${url.hash}`;
-      const currentHref = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-      if (nextHref === currentHref && pathname.startsWith("/app/org")) return;
-      window.history.pushState({}, "", nextHref);
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  const closeOrgSettings = useCallback(() => {
-    setOrgSettingsOpen(false);
-    setOrgSettingsOperationKey("");
-    setOrgSettingsDictionaryOnly(false);
-    if (typeof window === "undefined") return;
-    const pathname = String(window.location.pathname || "");
-    if (!pathname.startsWith("/app/org")) return;
-    try {
-      const url = new URL(window.location.href);
-      url.pathname = "/app";
-      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  const notifyOrgPropertyDictionaryChanged = useCallback(() => {
-    setOrgPropertyDictionaryRevision((prev) => prev + 1);
-  }, []);
 
   const consumeSnapshotRestoreNotice = useCallback((sessionIdRaw, nonceRaw = 0) => {
     const sid = String(sessionIdRaw || "").trim();
