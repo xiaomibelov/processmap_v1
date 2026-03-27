@@ -73,7 +73,7 @@ function logAuthTrace(tag, payload = {}) {
   console.debug(`[AUTH_TRACE] ${String(tag || "trace")} ${suffix}`.trim());
 }
 
-function normalizeNotes(value) {
+export function normalizeNotes(value) {
   if (Array.isArray(value)) return value;
   if (value && typeof value === "object") return [value];
   const text = String(value || "").trim();

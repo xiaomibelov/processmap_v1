@@ -4,6 +4,7 @@ import {
   apiRequest as request,
   fnv1aHex,
   getActiveOrgId,
+  normalizeNotes,
   okOrError,
   shouldLogBpmnTrace,
 } from "./apiCore.js";
