@@ -45,6 +45,8 @@ _ORG_FULL_ACCESS_ROLES = {"org_owner", "org_admin", "auditor"}
 _PROJECT_MEMBER_ROLES = {"project_manager", "editor", "viewer"}
 _ORG_MEMBER_ROLES = {"org_owner", "org_admin", "project_manager", "editor", "viewer", "org_viewer", "auditor"}
 _ORG_INVITE_ROLES = {"org_admin", "project_manager", "editor", "viewer", "org_viewer", "auditor"}
+_GIT_MIRROR_PROVIDERS = {"github", "gitlab"}
+_GIT_MIRROR_HEALTH_STATUSES = {"unknown", "valid", "invalid"}
 _PG_POOL_LOCK = threading.RLock()
 _PG_POOL: Any = None
 
@@ -403,6 +405,51 @@ def _column_exists(con: Any, table: str, column: str) -> bool:
     return False
 
 
+def _normalize_git_mirror_provider(value: Any) -> str:
+    provider = str(value or "").strip().lower()
+    return provider if provider in _GIT_MIRROR_PROVIDERS else ""
+
+
+def _normalize_git_mirror_health_status(value: Any) -> str:
+    status = str(value or "").strip().lower()
+    return status if status in _GIT_MIRROR_HEALTH_STATUSES else "unknown"
+
+
+def _opt_text(value: Any) -> Optional[str]:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _org_git_mirror_payload(row: Any) -> Dict[str, Any]:
+    enabled_raw = _row_value(row, "git_mirror_enabled")
+    try:
+        enabled = bool(int(enabled_raw or 0))
+    except Exception:
+        enabled = bool(enabled_raw)
+    provider = _normalize_git_mirror_provider(_row_value(row, "git_provider"))
+    repository = str(_row_value(row, "git_repository") or "").strip()
+    branch = str(_row_value(row, "git_branch") or "").strip()
+    base_path = str(_row_value(row, "git_base_path") or "").strip()
+    health_status = _normalize_git_mirror_health_status(_row_value(row, "git_health_status"))
+    health_message = str(_row_value(row, "git_health_message") or "").strip()
+    try:
+        updated_at = int(_row_value(row, "git_updated_at") or 0)
+    except Exception:
+        updated_at = 0
+    updated_by = str(_row_value(row, "git_updated_by") or "").strip()
+    return {
+        "git_mirror_enabled": bool(enabled),
+        "git_provider": provider or None,
+        "git_repository": _opt_text(repository),
+        "git_branch": _opt_text(branch),
+        "git_base_path": _opt_text(base_path),
+        "git_health_status": health_status,
+        "git_health_message": _opt_text(health_message),
+        "git_updated_at": max(0, updated_at),
+        "git_updated_by": _opt_text(updated_by),
+    }
+
+
 def _ensure_schema() -> None:
     global _SCHEMA_READY, _SCHEMA_DB_FILE
     cfg = get_db_runtime_config()
@@ -486,7 +533,16 @@ def _ensure_schema() -> None:
                   id TEXT PRIMARY KEY,
                   name TEXT NOT NULL,
                   created_at INTEGER NOT NULL DEFAULT 0,
-                  created_by TEXT NOT NULL DEFAULT ''
+                  created_by TEXT NOT NULL DEFAULT '',
+                  git_mirror_enabled INTEGER NOT NULL DEFAULT 0,
+                  git_provider TEXT NOT NULL DEFAULT '',
+                  git_repository TEXT NOT NULL DEFAULT '',
+                  git_branch TEXT NOT NULL DEFAULT '',
+                  git_base_path TEXT NOT NULL DEFAULT '',
+                  git_health_status TEXT NOT NULL DEFAULT 'unknown',
+                  git_health_message TEXT NOT NULL DEFAULT '',
+                  git_updated_at INTEGER NOT NULL DEFAULT 0,
+                  git_updated_by TEXT NOT NULL DEFAULT ''
                 )
                 """
             )
@@ -696,6 +752,24 @@ def _ensure_schema() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_audit_session ON audit_log(session_id)")
             if not _column_exists(con, "projects", "org_id"):
                 con.execute("ALTER TABLE projects ADD COLUMN org_id TEXT NOT NULL DEFAULT 'org_default'")
+            if not _column_exists(con, "orgs", "git_mirror_enabled"):
+                con.execute("ALTER TABLE orgs ADD COLUMN git_mirror_enabled INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "orgs", "git_provider"):
+                con.execute("ALTER TABLE orgs ADD COLUMN git_provider TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "orgs", "git_repository"):
+                con.execute("ALTER TABLE orgs ADD COLUMN git_repository TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "orgs", "git_branch"):
+                con.execute("ALTER TABLE orgs ADD COLUMN git_branch TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "orgs", "git_base_path"):
+                con.execute("ALTER TABLE orgs ADD COLUMN git_base_path TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "orgs", "git_health_status"):
+                con.execute("ALTER TABLE orgs ADD COLUMN git_health_status TEXT NOT NULL DEFAULT 'unknown'")
+            if not _column_exists(con, "orgs", "git_health_message"):
+                con.execute("ALTER TABLE orgs ADD COLUMN git_health_message TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "orgs", "git_updated_at"):
+                con.execute("ALTER TABLE orgs ADD COLUMN git_updated_at INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "orgs", "git_updated_by"):
+                con.execute("ALTER TABLE orgs ADD COLUMN git_updated_by TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "templates", "template_type"):
                 con.execute("ALTER TABLE templates ADD COLUMN template_type TEXT NOT NULL DEFAULT 'bpmn_selection_v1'")
             if not _column_exists(con, "templates", "folder_id"):
@@ -1796,21 +1870,36 @@ def list_org_records() -> List[Dict[str, Any]]:
     with _connect() as con:
         rows = con.execute(
             """
-            SELECT id, name, created_at, created_by
+            SELECT
+              id,
+              name,
+              created_at,
+              created_by,
+              git_mirror_enabled,
+              git_provider,
+              git_repository,
+              git_branch,
+              git_base_path,
+              git_health_status,
+              git_health_message,
+              git_updated_at,
+              git_updated_by
               FROM orgs
              ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, lower(name) ASC, id ASC
             """,
             [_default_org_id()],
         ).fetchall()
-    return [
-        {
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        item = {
             "id": str(row["id"] or ""),
             "name": str(row["name"] or row["id"] or ""),
             "created_at": int(row["created_at"] or 0),
             "created_by": str(row["created_by"] or ""),
         }
-        for row in rows
-    ]
+        item.update(_org_git_mirror_payload(row))
+        out.append(item)
+    return out
 
 
 def read_user_org_memberships_fast(user_id: str, *, is_admin: Optional[bool] = None) -> List[Dict[str, Any]]:
@@ -1858,7 +1947,20 @@ def read_user_org_memberships_fast(user_id: str, *, is_admin: Optional[bool] = N
     with _connect() as con:
         rows = con.execute(
             """
-            SELECT m.org_id AS org_id, o.name AS org_name, m.role AS role, m.created_at AS created_at
+            SELECT
+              m.org_id AS org_id,
+              o.name AS org_name,
+              m.role AS role,
+              m.created_at AS created_at,
+              o.git_mirror_enabled AS git_mirror_enabled,
+              o.git_provider AS git_provider,
+              o.git_repository AS git_repository,
+              o.git_branch AS git_branch,
+              o.git_base_path AS git_base_path,
+              o.git_health_status AS git_health_status,
+              o.git_health_message AS git_health_message,
+              o.git_updated_at AS git_updated_at,
+              o.git_updated_by AS git_updated_by
               FROM org_memberships m
               JOIN orgs o ON o.id = m.org_id
              WHERE m.user_id = ?
@@ -1866,15 +1968,17 @@ def read_user_org_memberships_fast(user_id: str, *, is_admin: Optional[bool] = N
             """,
             [uid, _default_org_id()],
         ).fetchall()
-    return [
-        {
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        item = {
             "org_id": str(row["org_id"] or ""),
             "name": str(row["org_name"] or row["org_id"] or ""),
             "role": str(row["role"] or "org_viewer"),
             "created_at": int(row["created_at"] or 0),
         }
-        for row in rows
-    ]
+        item.update(_org_git_mirror_payload(row))
+        out.append(item)
+    return out
 
 
 def list_user_org_memberships(user_id: str, *, is_admin: Optional[bool] = None) -> List[Dict[str, Any]]:
@@ -1904,7 +2008,20 @@ def list_user_org_memberships(user_id: str, *, is_admin: Optional[bool] = None) 
             con.commit()
         rows = con.execute(
             """
-            SELECT m.org_id AS org_id, o.name AS org_name, m.role AS role, m.created_at AS created_at
+            SELECT
+              m.org_id AS org_id,
+              o.name AS org_name,
+              m.role AS role,
+              m.created_at AS created_at,
+              o.git_mirror_enabled AS git_mirror_enabled,
+              o.git_provider AS git_provider,
+              o.git_repository AS git_repository,
+              o.git_branch AS git_branch,
+              o.git_base_path AS git_base_path,
+              o.git_health_status AS git_health_status,
+              o.git_health_message AS git_health_message,
+              o.git_updated_at AS git_updated_at,
+              o.git_updated_by AS git_updated_by
               FROM org_memberships m
               JOIN orgs o ON o.id = m.org_id
                 WHERE m.user_id = ?
@@ -1914,14 +2031,14 @@ def list_user_org_memberships(user_id: str, *, is_admin: Optional[bool] = None) 
         ).fetchall()
     out: List[Dict[str, Any]] = []
     for row in rows:
-        out.append(
-            {
-                "org_id": str(row["org_id"] or ""),
-                "name": str(row["org_name"] or row["org_id"] or ""),
-                "role": str(row["role"] or "org_viewer"),
-                "created_at": int(row["created_at"] or 0),
-            }
-        )
+        item = {
+            "org_id": str(row["org_id"] or ""),
+            "name": str(row["org_name"] or row["org_id"] or ""),
+            "role": str(row["role"] or "org_viewer"),
+            "created_at": int(row["created_at"] or 0),
+        }
+        item.update(_org_git_mirror_payload(row))
+        out.append(item)
     if not bool(is_admin):
         return out
     membership_by_org = {str(item.get("org_id") or ""): item for item in out}
@@ -1935,6 +2052,15 @@ def list_user_org_memberships(user_id: str, *, is_admin: Optional[bool] = None) 
                 "name": str(row.get("name") or org_id),
                 "role": "platform_admin",
                 "created_at": int(row.get("created_at") or 0),
+                "git_mirror_enabled": bool(row.get("git_mirror_enabled")),
+                "git_provider": row.get("git_provider"),
+                "git_repository": row.get("git_repository"),
+                "git_branch": row.get("git_branch"),
+                "git_base_path": row.get("git_base_path"),
+                "git_health_status": row.get("git_health_status"),
+                "git_health_message": row.get("git_health_message"),
+                "git_updated_at": int(row.get("git_updated_at") or 0),
+                "git_updated_by": row.get("git_updated_by"),
             }
         )
     out.sort(key=lambda item: (0 if str(item.get("org_id") or "") == _default_org_id() else 1, str(item.get("name") or "").lower(), str(item.get("org_id") or "")))
@@ -2135,15 +2261,43 @@ def create_org_record(name: str, *, created_by: str, org_id: Optional[str] = Non
         )
         _ensure_workspace_record(con, oid, created_by=actor)
         con.commit()
-        row = con.execute("SELECT id, name, created_at, created_by FROM orgs WHERE id = ? LIMIT 1", [oid]).fetchone()
+        row = con.execute(
+            """
+            SELECT
+              id,
+              name,
+              created_at,
+              created_by,
+              git_mirror_enabled,
+              git_provider,
+              git_repository,
+              git_branch,
+              git_base_path,
+              git_health_status,
+              git_health_message,
+              git_updated_at,
+              git_updated_by
+            FROM orgs
+            WHERE id = ? LIMIT 1
+            """,
+            [oid],
+        ).fetchone()
     if not row:
-        return {"id": oid, "name": title, "created_at": now, "created_by": actor}
-    return {
+        return {
+            "id": oid,
+            "name": title,
+            "created_at": now,
+            "created_by": actor,
+            **_org_git_mirror_payload({}),
+        }
+    out = {
         "id": str(row["id"] or ""),
         "name": str(row["name"] or ""),
         "created_at": int(row["created_at"] or 0),
         "created_by": str(row["created_by"] or ""),
     }
+    out.update(_org_git_mirror_payload(row))
+    return out
 
 
 def rename_org_record(org_id: str, name: str) -> Dict[str, Any]:
@@ -2168,15 +2322,132 @@ def rename_org_record(org_id: str, name: str) -> Dict[str, Any]:
         con.commit()
         if int(cur.rowcount or 0) <= 0:
             raise ValueError("org not found")
-        row = con.execute("SELECT id, name, created_at, created_by FROM orgs WHERE id = ? LIMIT 1", [oid]).fetchone()
+        row = con.execute(
+            """
+            SELECT
+              id,
+              name,
+              created_at,
+              created_by,
+              git_mirror_enabled,
+              git_provider,
+              git_repository,
+              git_branch,
+              git_base_path,
+              git_health_status,
+              git_health_message,
+              git_updated_at,
+              git_updated_by
+            FROM orgs
+            WHERE id = ? LIMIT 1
+            """,
+            [oid],
+        ).fetchone()
     if not row:
         raise ValueError("org not found")
-    return {
+    out = {
         "id": str(row["id"] or ""),
         "name": str(row["name"] or ""),
         "created_at": int(row["created_at"] or 0),
         "created_by": str(row["created_by"] or ""),
     }
+    out.update(_org_git_mirror_payload(row))
+    return out
+
+
+def get_org_git_mirror_config(org_id: str) -> Dict[str, Any]:
+    _ensure_schema()
+    oid = str(org_id or "").strip()
+    if not oid:
+        raise ValueError("org_id required")
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT
+              id,
+              git_mirror_enabled,
+              git_provider,
+              git_repository,
+              git_branch,
+              git_base_path,
+              git_health_status,
+              git_health_message,
+              git_updated_at,
+              git_updated_by
+            FROM orgs
+            WHERE id = ? LIMIT 1
+            """,
+            [oid],
+        ).fetchone()
+    if not row:
+        raise ValueError("org not found")
+    out = {"org_id": str(row["id"] or oid)}
+    out.update(_org_git_mirror_payload(row))
+    return out
+
+
+def update_org_git_mirror_config(
+    org_id: str,
+    *,
+    git_mirror_enabled: bool,
+    git_provider: Any,
+    git_repository: Any,
+    git_branch: Any,
+    git_base_path: Any,
+    git_health_status: Any,
+    git_health_message: Any,
+    git_updated_at: Any = None,
+    git_updated_by: Any = "",
+) -> Dict[str, Any]:
+    _ensure_schema()
+    oid = str(org_id or "").strip()
+    if not oid:
+        raise ValueError("org_id required")
+    provider = _normalize_git_mirror_provider(git_provider)
+    repository = str(git_repository or "").strip()
+    branch = str(git_branch or "").strip()
+    base_path = str(git_base_path or "").strip()
+    health_status = _normalize_git_mirror_health_status(git_health_status)
+    health_message = str(git_health_message or "").strip()
+    updated_by = str(git_updated_by or "").strip()
+    try:
+        updated_at = int(git_updated_at or 0)
+    except Exception:
+        updated_at = 0
+    if updated_at <= 0:
+        updated_at = _now_ts()
+    with _connect() as con:
+        cur = con.execute(
+            """
+            UPDATE orgs
+               SET git_mirror_enabled = ?,
+                   git_provider = ?,
+                   git_repository = ?,
+                   git_branch = ?,
+                   git_base_path = ?,
+                   git_health_status = ?,
+                   git_health_message = ?,
+                   git_updated_at = ?,
+                   git_updated_by = ?
+             WHERE id = ?
+            """,
+            [
+                1 if bool(git_mirror_enabled) else 0,
+                provider,
+                repository,
+                branch,
+                base_path,
+                health_status,
+                health_message,
+                max(0, int(updated_at)),
+                updated_by,
+                oid,
+            ],
+        )
+        con.commit()
+        if int(cur.rowcount or 0) <= 0:
+            raise ValueError("org not found")
+    return get_org_git_mirror_config(oid)
 
 
 def _normalize_project_membership_role(raw: Any) -> str:

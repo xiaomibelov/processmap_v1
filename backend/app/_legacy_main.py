@@ -41,6 +41,7 @@ from .storage import (
     get_default_org_id,
     count_org_records,
     create_org_record,
+    get_org_git_mirror_config,
     list_project_memberships,
     upsert_project_membership,
     delete_project_membership,
@@ -59,6 +60,7 @@ from .storage import (
     list_audit_log,
     cleanup_audit_log,
     list_workspace_snapshot_rows,
+    update_org_git_mirror_config,
     get_project_explorer_invalidation_targets,
 )
 from .settings import load_llm_settings, llm_status, save_llm_settings, verify_llm_settings
@@ -123,6 +125,7 @@ from .schemas.legacy_api import (
     NodePatchIn,
     NotesIn,
     OrgCreateIn,
+    OrgGitMirrorPatchIn,
     OrgPatchIn,
     OrgInviteAcceptIn,
     OrgInviteCreateIn,
@@ -153,6 +156,7 @@ from .services.org_invites import (
     normalize_invite_ttl_days,
 )
 from .services.org_workspace import (
+    evaluate_org_git_mirror_config,
     enterprise_require_org_member as _enterprise_require_org_member,
     enterprise_require_org_role as _enterprise_require_org_role,
     org_role_for_request as _org_role_for_request,
@@ -6497,6 +6501,131 @@ def patch_org_endpoint(org_id: str, inp: OrgPatchIn, request: Request) -> Dict[s
     )
     _invalidate_workspace_cache_for_org(oid)
     return org
+
+
+@app.get("/api/orgs/{org_id}/git-mirror")
+def get_org_git_mirror_endpoint(org_id: str, request: Request) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    role, err = _enterprise_require_org_member(request, oid)
+    if err is not None:
+        return err
+    _uid, is_admin = _request_user_meta(request)
+    role_l = str(role or "").strip().lower()
+    if not (is_admin or _is_role_allowed(role_l, _ORG_READ_ROLES)):
+        return _enterprise_error(403, "forbidden", "insufficient_permissions")
+    try:
+        config = get_org_git_mirror_config(oid)
+    except ValueError:
+        return _enterprise_error(404, "not_found", "not_found")
+    return {"ok": True, "org_id": oid, "config": config}
+
+
+@app.patch("/api/orgs/{org_id}/git-mirror")
+def patch_org_git_mirror_endpoint(org_id: str, inp: OrgGitMirrorPatchIn, request: Request) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    role, err = _enterprise_require_org_role(request, oid, _ORG_MEMBER_MANAGE_ROLES)
+    if err is not None:
+        return err
+    uid, is_admin = _request_user_meta(request)
+    if not _can_manage_workspace(role, is_admin=is_admin):
+        return _enterprise_error(403, "forbidden", "insufficient_permissions")
+
+    try:
+        current = get_org_git_mirror_config(oid)
+    except ValueError:
+        return _enterprise_error(404, "not_found", "not_found")
+
+    patch = inp.model_dump(exclude_unset=True)
+    candidate = {
+        "git_mirror_enabled": bool(current.get("git_mirror_enabled")),
+        "git_provider": current.get("git_provider"),
+        "git_repository": current.get("git_repository"),
+        "git_branch": current.get("git_branch"),
+        "git_base_path": current.get("git_base_path"),
+    }
+    if "git_mirror_enabled" in patch:
+        candidate["git_mirror_enabled"] = bool(patch.get("git_mirror_enabled"))
+    if "git_provider" in patch:
+        candidate["git_provider"] = patch.get("git_provider")
+    if "git_repository" in patch:
+        candidate["git_repository"] = patch.get("git_repository")
+    if "git_branch" in patch:
+        candidate["git_branch"] = patch.get("git_branch")
+    if "git_base_path" in patch:
+        candidate["git_base_path"] = patch.get("git_base_path")
+
+    evaluated = evaluate_org_git_mirror_config(candidate)
+    try:
+        saved = update_org_git_mirror_config(
+            oid,
+            git_mirror_enabled=bool(evaluated.get("git_mirror_enabled")),
+            git_provider=evaluated.get("git_provider"),
+            git_repository=evaluated.get("git_repository"),
+            git_branch=evaluated.get("git_branch"),
+            git_base_path=evaluated.get("git_base_path"),
+            git_health_status=evaluated.get("git_health_status"),
+            git_health_message=evaluated.get("git_health_message"),
+            git_updated_by=uid,
+        )
+    except ValueError:
+        return _enterprise_error(404, "not_found", "not_found")
+
+    _audit_log_safe(
+        request,
+        org_id=oid,
+        action="org.git_mirror_update",
+        entity_type="org",
+        entity_id=oid,
+        meta={
+            "actor_user_id": uid,
+            "git_mirror_enabled": bool(saved.get("git_mirror_enabled")),
+            "git_provider": str(saved.get("git_provider") or ""),
+            "git_repository": str(saved.get("git_repository") or ""),
+            "git_branch": str(saved.get("git_branch") or ""),
+            "git_base_path": str(saved.get("git_base_path") or ""),
+            "git_health_status": str(saved.get("git_health_status") or "unknown"),
+        },
+    )
+    _invalidate_workspace_cache_for_org(oid)
+    return {"ok": True, "org_id": oid, "config": saved}
+
+
+@app.post("/api/orgs/{org_id}/git-mirror/validate")
+def validate_org_git_mirror_endpoint(org_id: str, inp: OrgGitMirrorPatchIn, request: Request) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    role, err = _enterprise_require_org_role(request, oid, _ORG_MEMBER_MANAGE_ROLES)
+    if err is not None:
+        return err
+    _uid, is_admin = _request_user_meta(request)
+    if not _can_manage_workspace(role, is_admin=is_admin):
+        return _enterprise_error(403, "forbidden", "insufficient_permissions")
+
+    try:
+        current = get_org_git_mirror_config(oid)
+    except ValueError:
+        return _enterprise_error(404, "not_found", "not_found")
+
+    patch = inp.model_dump(exclude_unset=True)
+    candidate = {
+        "git_mirror_enabled": bool(current.get("git_mirror_enabled")),
+        "git_provider": current.get("git_provider"),
+        "git_repository": current.get("git_repository"),
+        "git_branch": current.get("git_branch"),
+        "git_base_path": current.get("git_base_path"),
+    }
+    if "git_mirror_enabled" in patch:
+        candidate["git_mirror_enabled"] = bool(patch.get("git_mirror_enabled"))
+    if "git_provider" in patch:
+        candidate["git_provider"] = patch.get("git_provider")
+    if "git_repository" in patch:
+        candidate["git_repository"] = patch.get("git_repository")
+    if "git_branch" in patch:
+        candidate["git_branch"] = patch.get("git_branch")
+    if "git_base_path" in patch:
+        candidate["git_base_path"] = patch.get("git_base_path")
+
+    evaluated = evaluate_org_git_mirror_config(candidate)
+    return {"ok": True, "org_id": oid, "config": evaluated}
 
 
 def list_org_members_endpoint(org_id: str, request: Request) -> Dict[str, Any]:

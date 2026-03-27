@@ -5,10 +5,12 @@ import OrgPropertyDictionaryPanel from "./OrgPropertyDictionaryPanel";
 import {
   apiAssignOrgMember,
   apiCreateOrgInvite,
+  apiGetOrgGitMirrorConfig,
   apiListOrgAudit,
   apiListOrgInvites,
   apiListOrgMembers,
   apiPatchOrg,
+  apiPatchOrgGitMirrorConfig,
   apiPatchOrgMember,
   apiRevokeOrgInvite,
 } from "../../lib/api";
@@ -83,6 +85,17 @@ export default function OrgSettingsModal({
   const [auditAction, setAuditAction] = useState("");
   const [auditStatus, setAuditStatus] = useState("");
   const [workspaceName, setWorkspaceName] = useState("");
+  const [gitMirrorEnabled, setGitMirrorEnabled] = useState(false);
+  const [gitProvider, setGitProvider] = useState("");
+  const [gitRepository, setGitRepository] = useState("");
+  const [gitBranch, setGitBranch] = useState("");
+  const [gitBasePath, setGitBasePath] = useState("");
+  const [gitHealthStatus, setGitHealthStatus] = useState("unknown");
+  const [gitHealthMessage, setGitHealthMessage] = useState("");
+  const [gitUpdatedAt, setGitUpdatedAt] = useState(0);
+  const [gitUpdatedBy, setGitUpdatedBy] = useState("");
+  const [gitBusy, setGitBusy] = useState(false);
+  const [gitNotice, setGitNotice] = useState("");
 
   const canManageMembers = useMemo(() => isAdmin || ["org_owner", "org_admin"].includes(toText(activeOrgRole).toLowerCase()), [activeOrgRole, isAdmin]);
   const canManageInvites = canManageMembers;
@@ -97,7 +110,7 @@ export default function OrgSettingsModal({
       return;
     }
     const nextTab = toText(initialTab).toLowerCase();
-    if (nextTab === "members" || nextTab === "invites" || nextTab === "audit" || nextTab === "dictionary") {
+    if (nextTab === "members" || nextTab === "invites" || nextTab === "audit" || nextTab === "git" || nextTab === "dictionary") {
       setTab(nextTab);
     } else {
       setTab("members");
@@ -142,6 +155,26 @@ export default function OrgSettingsModal({
     setAuditRows(Array.isArray(res.items) ? res.items : []);
   }, [activeOrgId, auditAction, auditStatus]);
 
+  const loadGitMirror = useCallback(async () => {
+    const oid = toText(activeOrgId);
+    if (!oid) return;
+    const res = await apiGetOrgGitMirrorConfig(oid);
+    if (!res.ok) {
+      setError(toText(res.error || "Не удалось загрузить настройки Git mirror."));
+      return;
+    }
+    const cfg = res.config || {};
+    setGitMirrorEnabled(cfg.git_mirror_enabled === true);
+    setGitProvider(toText(cfg.git_provider));
+    setGitRepository(toText(cfg.git_repository));
+    setGitBranch(toText(cfg.git_branch));
+    setGitBasePath(toText(cfg.git_base_path));
+    setGitHealthStatus(toText(cfg.git_health_status || "unknown") || "unknown");
+    setGitHealthMessage(toText(cfg.git_health_message));
+    setGitUpdatedAt(Number(cfg.git_updated_at || 0));
+    setGitUpdatedBy(toText(cfg.git_updated_by));
+  }, [activeOrgId]);
+
   useEffect(() => {
     if (!open) return;
     if (dictionaryOnly) {
@@ -152,13 +185,13 @@ export default function OrgSettingsModal({
     setBusy(true);
     setError("");
     void (async () => {
-      await Promise.all([loadMembers(), loadInvites(), loadAudit()]);
+      await Promise.all([loadMembers(), loadInvites(), loadAudit(), loadGitMirror()]);
       if (!canceled) setBusy(false);
     })();
     return () => {
       canceled = true;
     };
-  }, [open, dictionaryOnly, loadMembers, loadInvites, loadAudit]);
+  }, [open, dictionaryOnly, loadMembers, loadInvites, loadAudit, loadGitMirror]);
 
   async function handlePatchMemberRole(userId, role) {
     if (!canManageMembers) return;
@@ -248,6 +281,40 @@ export default function OrgSettingsModal({
     onRequestRefreshOrgs?.();
   }
 
+  async function handleSaveGitMirror(event) {
+    event.preventDefault();
+    if (!canManageMembers) return;
+    const oid = toText(activeOrgId);
+    if (!oid) return;
+    setGitBusy(true);
+    setGitNotice("");
+    setError("");
+    const res = await apiPatchOrgGitMirrorConfig(oid, {
+      git_mirror_enabled: gitMirrorEnabled,
+      git_provider: gitProvider || null,
+      git_repository: gitRepository || null,
+      git_branch: gitBranch || null,
+      git_base_path: gitBasePath || null,
+    });
+    setGitBusy(false);
+    if (!res.ok) {
+      setError(toText(res.error || "Не удалось сохранить настройки Git mirror."));
+      return;
+    }
+    const cfg = res.config || {};
+    setGitMirrorEnabled(cfg.git_mirror_enabled === true);
+    setGitProvider(toText(cfg.git_provider));
+    setGitRepository(toText(cfg.git_repository));
+    setGitBranch(toText(cfg.git_branch));
+    setGitBasePath(toText(cfg.git_base_path));
+    setGitHealthStatus(toText(cfg.git_health_status || "unknown") || "unknown");
+    setGitHealthMessage(toText(cfg.git_health_message));
+    setGitUpdatedAt(Number(cfg.git_updated_at || 0));
+    setGitUpdatedBy(toText(cfg.git_updated_by));
+    setGitNotice("Настройки Git mirror сохранены.");
+    onRequestRefreshOrgs?.();
+  }
+
   async function handleAssignUser(event) {
     event.preventDefault();
     if (!canManageMembers) return;
@@ -321,6 +388,7 @@ export default function OrgSettingsModal({
               <button type="button" className={tabButtonClass("members")} onClick={() => setTab("members")}>{ru.org.membersTab}</button>
               <button type="button" className={tabButtonClass("invites")} onClick={() => setTab("invites")}>{ru.org.invitesTab}</button>
               <button type="button" className={tabButtonClass("audit")} onClick={() => setTab("audit")}>{ru.org.auditTab}</button>
+              <button type="button" className={tabButtonClass("git")} onClick={() => setTab("git")}>Git mirror</button>
               <button type="button" className={tabButtonClass("dictionary")} onClick={() => setTab("dictionary")}>Справочник</button>
             </div>
           )
@@ -541,6 +609,94 @@ export default function OrgSettingsModal({
               </table>
             </div>
           </div>
+        ) : null}
+
+        {tab === "git" ? (
+          <form className="space-y-3 rounded-lg border border-border p-3" onSubmit={handleSaveGitMirror}>
+            <div className="text-xs text-muted">
+              Publish-only mirror на уровне организации. Draft/autosave не синхронизируются в Git.
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={gitMirrorEnabled}
+                disabled={!canManageMembers || gitBusy}
+                onChange={(e) => setGitMirrorEnabled(e.target.checked)}
+              />
+              Enable Git mirror
+            </label>
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+              <label>
+                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Provider</div>
+                <select
+                  className="input w-full"
+                  value={gitProvider}
+                  disabled={!canManageMembers || gitBusy}
+                  onChange={(e) => setGitProvider(e.target.value)}
+                >
+                  <option value="">—</option>
+                  <option value="github">GitHub</option>
+                  <option value="gitlab">GitLab</option>
+                </select>
+              </label>
+              <label>
+                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Repository / Project</div>
+                <input
+                  className="input w-full"
+                  type="text"
+                  placeholder="owner/repo или group/subgroup/project"
+                  value={gitRepository}
+                  disabled={!canManageMembers || gitBusy}
+                  onChange={(e) => setGitRepository(e.target.value)}
+                />
+              </label>
+              <label>
+                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Branch</div>
+                <input
+                  className="input w-full"
+                  type="text"
+                  placeholder="main"
+                  value={gitBranch}
+                  disabled={!canManageMembers || gitBusy}
+                  onChange={(e) => setGitBranch(e.target.value)}
+                />
+              </label>
+              <label>
+                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Base path</div>
+                <input
+                  className="input w-full"
+                  type="text"
+                  placeholder="processmap/published"
+                  value={gitBasePath}
+                  disabled={!canManageMembers || gitBusy}
+                  onChange={(e) => setGitBasePath(e.target.value)}
+                />
+              </label>
+            </div>
+            <div className={`rounded-lg border px-3 py-2 text-xs ${
+              gitHealthStatus === "valid"
+                ? "border-success/40 bg-success/10 text-success"
+                : gitHealthStatus === "invalid"
+                  ? "border-danger/40 bg-danger/10 text-danger"
+                  : "border-border bg-panel2/50 text-muted"
+            }`}>
+              <div className="font-semibold">Health: {gitHealthStatus || "unknown"}</div>
+              <div className="mt-1">{gitHealthMessage || "Нет диагностического сообщения."}</div>
+            </div>
+            <div className="rounded-lg border border-border bg-panel2/40 px-3 py-2 text-xs text-muted">
+              Effective target: {gitProvider || "provider: —"} · {gitRepository || "repo/project: —"} · {gitBranch ? `branch: ${gitBranch}` : "branch: —"} · {gitBasePath ? `base path: ${gitBasePath}` : "base path: —"}
+              {gitUpdatedAt > 0 ? ` · updated: ${formatTs(gitUpdatedAt)}` : ""}
+              {gitUpdatedBy ? ` · by: ${gitUpdatedBy}` : ""}
+            </div>
+            {gitNotice ? <div className="rounded-lg border border-success/40 bg-success/10 px-3 py-2 text-xs text-success">{gitNotice}</div> : null}
+            {canManageMembers ? (
+              <button type="submit" className="secondaryBtn h-9 px-3 text-sm" disabled={gitBusy}>
+                {gitBusy ? "Сохранение…" : "Сохранить Git mirror"}
+              </button>
+            ) : (
+              <div className="text-xs text-muted">Недостаточно прав для изменения конфигурации.</div>
+            )}
+          </form>
         ) : null}
 
         {tab === "audit" ? (

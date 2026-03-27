@@ -56,6 +56,8 @@ export const apiRoutes = {
       const path = `/api/orgs/${encode(orgId)}/projects/${encode(projectId)}/sessions`;
       return withQuery(path, { mode: String(mode || "").trim() });
     },
+    gitMirror: (orgId) => `/api/orgs/${encode(orgId)}/git-mirror`,
+    gitMirrorValidate: (orgId) => `/api/orgs/${encode(orgId)}/git-mirror/validate`,
     reportBuild: (orgId, sessionId) => `/api/orgs/${encode(orgId)}/sessions/${encode(sessionId)}/reports/build`,
     reportVersions: (orgId, sessionId, pathId = "", stepsHash = "") => withQuery(
       `/api/orgs/${encode(orgId)}/sessions/${encode(sessionId)}/reports/versions`,
