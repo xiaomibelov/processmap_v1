@@ -1,5 +1,9 @@
 import { useCallback, useState } from "react";
 
+function resolveInitial(initialValue) {
+  return typeof initialValue === "function" ? initialValue() : initialValue;
+}
+
 export default function useAppShellController({
   initialOrgSettingsOpen = false,
   initialOrgSettingsTab = "members",
@@ -14,15 +18,15 @@ export default function useAppShellController({
   setSidebarActiveSection,
   setSidebarShortcutRequest,
 }) {
-  const [orgSettingsOpen, setOrgSettingsOpen] = useState(initialOrgSettingsOpen);
-  const [orgSettingsTab, setOrgSettingsTab] = useState(initialOrgSettingsTab);
+  const [orgSettingsOpen, setOrgSettingsOpen] = useState(() => resolveInitial(initialOrgSettingsOpen));
+  const [orgSettingsTab, setOrgSettingsTab] = useState(() => resolveInitial(initialOrgSettingsTab));
   const [orgSettingsOperationKey, setOrgSettingsOperationKey] = useState("");
   const [orgSettingsDictionaryOnly, setOrgSettingsDictionaryOnly] = useState(false);
   const [orgPropertyDictionaryRevision, setOrgPropertyDictionaryRevision] = useState(0);
 
-  const [leftHidden, setLeftHidden] = useState(initialLeftHidden);
-  const [leftCompact, setLeftCompact] = useState(initialLeftCompact);
-  const [stepTimeUnit, setStepTimeUnit] = useState(initialStepTimeUnit);
+  const [leftHidden, setLeftHidden] = useState(() => resolveInitial(initialLeftHidden));
+  const [leftCompact, setLeftCompact] = useState(() => resolveInitial(initialLeftCompact));
+  const [stepTimeUnit, setStepTimeUnit] = useState(() => resolveInitial(initialStepTimeUnit));
 
   const handleStepTimeUnitChange = useCallback((nextUnitRaw) => {
     const nextUnit = normalizeStepTimeUnit(nextUnitRaw);
