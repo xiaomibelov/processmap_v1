@@ -1,6 +1,7 @@
 import AdminPageContainer from "../layout/AdminPageContainer";
 import AuditSummaryRow from "../components/audit/AuditSummaryRow";
 import AuditTable from "../components/audit/AuditTable";
+import AdminTablePagination from "../components/common/AdminTablePagination";
 import AdminDateRangeFilter from "../components/filters/AdminDateRangeFilter";
 import AdminFiltersBar from "../components/filters/AdminFiltersBar";
 import AdminSearchInput from "../components/filters/AdminSearchInput";
@@ -13,24 +14,16 @@ export default function AdminAuditPage({
   payload = {},
   filters = {},
   onFiltersChange,
+  paging = {},
+  onPagingChange,
 }) {
-  const rows = (payload?.items || []).filter((row) => {
-    const range = toText(filters?.dateRange);
-    if (!range) return true;
-    const nowSec = Math.round(Date.now() / 1000);
-    const ts = Number(row?.ts || 0);
-    if (!Number.isFinite(ts) || ts <= 0) return true;
-    if (range === "24h") return ts >= nowSec - 24 * 60 * 60;
-    if (range === "7d") return ts >= nowSec - 7 * 24 * 60 * 60;
-    if (range === "30d") return ts >= nowSec - 30 * 24 * 60 * 60;
-    return true;
-  });
+  const rows = payload?.items || [];
   function setPatch(patch) {
     onFiltersChange?.(updateFilterState(filters, patch));
   }
   return (
     <AdminPageContainer
-      summary={<AuditSummaryRow summary={payload?.summary || {}} />}
+      summary={<AuditSummaryRow summary={{ ...(payload?.summary || {}), total: paging?.total ?? payload?.count ?? 0 }} />}
       secondary={null}
     >
       <AdminFiltersBar
@@ -63,6 +56,14 @@ export default function AdminAuditPage({
         </div>
       </AdminFiltersBar>
       <AuditTable items={rows} />
+      <AdminTablePagination
+        total={paging?.total ?? payload?.count ?? 0}
+        page={paging?.page ?? 1}
+        pageSize={paging?.pageSize ?? 20}
+        onPageChange={(value) => onPagingChange?.({ page: value })}
+        onPageSizeChange={(value) => onPagingChange?.({ pageSize: value })}
+        testIdPrefix="admin-audit-pagination"
+      />
     </AdminPageContainer>
   );
 }

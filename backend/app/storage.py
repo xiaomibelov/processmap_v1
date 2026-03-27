@@ -4345,21 +4345,19 @@ def append_audit_log(
     return _audit_row_to_dict(row)
 
 
-def list_audit_log(
-    org_id: str,
+def _build_audit_log_where(
     *,
-    limit: int = 100,
+    org_id: str,
     action: Optional[str] = None,
     project_id: Optional[str] = None,
     session_id: Optional[str] = None,
     status: Optional[str] = None,
-) -> List[Dict[str, Any]]:
-    oid = str(org_id or "").strip()
-    if not oid:
-        return []
-    lim = max(1, min(int(limit or 100), 500))
+    q: Optional[str] = None,
+    updated_from: Optional[int] = None,
+    updated_to: Optional[int] = None,
+) -> tuple[str, List[Any]]:
     clauses = ["org_id = ?"]
-    params: List[Any] = [oid]
+    params: List[Any] = [org_id]
     action_value = str(action or "").strip()
     if action_value:
         clauses.append("action = ?")
@@ -4376,7 +4374,59 @@ def list_audit_log(
     if status_value:
         clauses.append("status = ?")
         params.append(status_value)
-    where = " AND ".join(clauses)
+    from_ts = int(updated_from or 0)
+    if from_ts > 0:
+        clauses.append("ts >= ?")
+        params.append(from_ts)
+    to_ts = int(updated_to or 0)
+    if to_ts > 0:
+        clauses.append("ts <= ?")
+        params.append(to_ts)
+    query = str(q or "").strip().lower()
+    if query:
+        like = f"%{query}%"
+        clauses.append(
+            "("
+            "LOWER(COALESCE(action, '')) LIKE ? OR "
+            "LOWER(COALESCE(actor_user_id, '')) LIKE ? OR "
+            "LOWER(COALESCE(project_id, '')) LIKE ? OR "
+            "LOWER(COALESCE(session_id, '')) LIKE ? OR "
+            "LOWER(COALESCE(entity_type, '')) LIKE ? OR "
+            "LOWER(COALESCE(entity_id, '')) LIKE ?"
+            ")"
+        )
+        params.extend([like, like, like, like, like, like])
+    return " AND ".join(clauses), params
+
+
+def list_audit_log(
+    org_id: str,
+    *,
+    limit: int = 100,
+    offset: int = 0,
+    action: Optional[str] = None,
+    project_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    status: Optional[str] = None,
+    q: Optional[str] = None,
+    updated_from: Optional[int] = None,
+    updated_to: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    if not oid:
+        return []
+    lim = max(1, min(int(limit or 100), 500))
+    off = max(0, int(offset or 0))
+    where, params = _build_audit_log_where(
+        org_id=oid,
+        action=action,
+        project_id=project_id,
+        session_id=session_id,
+        status=status,
+        q=q,
+        updated_from=updated_from,
+        updated_to=updated_to,
+    )
     _ensure_schema()
     with _connect() as con:
         rows = con.execute(
@@ -4386,10 +4436,53 @@ def list_audit_log(
              WHERE {where}
              ORDER BY ts DESC, id DESC
              LIMIT ?
+            OFFSET ?
             """,
-            [*params, lim],
+            [*params, lim, off],
         ).fetchall()
     return [_audit_row_to_dict(row) for row in rows]
+
+
+def count_audit_log(
+    org_id: str,
+    *,
+    action: Optional[str] = None,
+    project_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    status: Optional[str] = None,
+    q: Optional[str] = None,
+    updated_from: Optional[int] = None,
+    updated_to: Optional[int] = None,
+) -> int:
+    oid = str(org_id or "").strip()
+    if not oid:
+        return 0
+    where, params = _build_audit_log_where(
+        org_id=oid,
+        action=action,
+        project_id=project_id,
+        session_id=session_id,
+        status=status,
+        q=q,
+        updated_from=updated_from,
+        updated_to=updated_to,
+    )
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            f"""
+            SELECT COUNT(*)
+              FROM audit_log
+             WHERE {where}
+            """,
+            params,
+        ).fetchone()
+    if not row:
+        return 0
+    try:
+        return int(row[0] or 0)
+    except Exception:
+        return 0
 
 
 def cleanup_audit_log(org_id: str, *, retention_days: int = 90, now_ts: Optional[int] = None) -> int:

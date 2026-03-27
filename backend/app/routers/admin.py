@@ -14,6 +14,7 @@ from ..auto_pass_jobs import redis_queue_enabled
 from ..auth import AuthError, create_user, list_users as list_auth_users, update_user
 from ..redis_client import get_client, runtime_status
 from ..storage import (
+    count_audit_log,
     delete_org_membership,
     get_project_storage,
     get_storage,
@@ -788,11 +789,15 @@ def admin_patch_user(user_id: str, body: AdminUserPatchBody, request: Request) -
 def admin_projects(
     request: Request,
     q: str = Query(default=""),
+    limit: int = Query(default=20),
+    offset: int = Query(default=0),
 ) -> Any:
     _uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
     if err is not None:
         return err
-    workspace, ws_err = _workspace_payload(request, q=q, limit=500, offset=0)
+    lim = max(1, min(int(limit or 20), 50))
+    off = max(0, int(offset or 0))
+    workspace, ws_err = _workspace_payload(request, q=q, limit=5000, offset=0)
     if ws_err is not None:
         return ws_err
     projects = [_as_dict(item) for item in _as_list(workspace.get("projects"))]
@@ -815,10 +820,13 @@ def admin_projects(
             }
         )
     items.sort(key=lambda row: (-_as_int(row.get("updated_at"), 0), _as_text(row.get("project_id"))))
+    total = len(items)
+    paged = items[off:off + lim]
     return {
         "ok": True,
-        "items": items,
-        "count": len(items),
+        "items": paged,
+        "count": total,
+        "page": {"limit": lim, "offset": off, "total": total},
     }
 
 
@@ -828,11 +836,32 @@ def admin_sessions(
     q: str = Query(default=""),
     status: str = Query(default=""),
     owner_ids: str = Query(default=""),
+    updated_from: int = Query(default=0),
+    updated_to: int = Query(default=0),
+    needs_attention: int = Query(default=-1),
+    limit: int = Query(default=20),
+    offset: int = Query(default=0),
 ) -> Any:
     _uid, _is_admin, _oid, _role, scope, err = _admin_context(request)
     if err is not None:
         return err
-    workspace, ws_err = _workspace_payload(request, q=q, status=status, owner_ids=owner_ids, limit=500, offset=0)
+    lim = max(1, min(_as_int(limit, 20), 50))
+    off = max(0, _as_int(offset, 0))
+    needs_attention_raw = _as_int(needs_attention, -1)
+    needs_attention_value = None if needs_attention_raw < 0 else needs_attention_raw
+    updated_from_raw = _as_int(updated_from, 0)
+    updated_to_raw = _as_int(updated_to, 0)
+    workspace, ws_err = _workspace_payload(
+        request,
+        q=q,
+        status=status,
+        owner_ids=owner_ids,
+        updated_from=(updated_from_raw if updated_from_raw > 0 else None),
+        updated_to=(updated_to_raw if updated_to_raw > 0 else None),
+        needs_attention=needs_attention_value,
+        limit=lim,
+        offset=off,
+    )
     if ws_err is not None:
         return ws_err
     org = _as_dict(workspace.get("org"))
@@ -856,7 +885,12 @@ def admin_sessions(
         "ok": True,
         "org": {"id": _as_text(org.get("id")), "name": _as_text(org.get("name"))},
         "items": items,
-        "count": len(items),
+        "count": _as_int(_as_dict(workspace.get("page")).get("total"), len(items)),
+        "page": {
+            "limit": lim,
+            "offset": off,
+            "total": _as_int(_as_dict(workspace.get("page")).get("total"), len(items)),
+        },
     }
 
 
@@ -1107,47 +1141,54 @@ def admin_audit(
     action: str = Query(default=""),
     session_id: str = Query(default=""),
     project_id: str = Query(default=""),
-    limit: int = Query(default=200),
+    updated_from: int = Query(default=0),
+    updated_to: int = Query(default=0),
+    limit: int = Query(default=20),
+    offset: int = Query(default=0),
 ) -> Any:
     _uid, _is_admin, oid, _role, _scope, err = _admin_context(request)
     if err is not None:
         return err
-    rows = list_audit_log(
+    lim = max(1, min(_as_int(limit, 20), 50))
+    off = max(0, _as_int(offset, 0))
+    q_value = _as_text(q).lower() or None
+    updated_from_raw = _as_int(updated_from, 0)
+    updated_to_raw = _as_int(updated_to, 0)
+    from_ts = updated_from_raw if updated_from_raw > 0 else None
+    to_ts = updated_to_raw if updated_to_raw > 0 else None
+    total = count_audit_log(
         oid or "",
-        limit=max(1, min(int(limit or 200), 500)),
         action=_as_text(action) or None,
         project_id=_as_text(project_id) or None,
         session_id=_as_text(session_id) or None,
         status=_as_text(status).lower() or None,
+        q=q_value,
+        updated_from=from_ts,
+        updated_to=to_ts,
     )
-    query = _as_text(q).lower()
-    if query:
-        filtered = []
-        for row in rows:
-            item = _as_dict(row)
-            hay = " ".join(
-                [
-                    _as_text(item.get("action")),
-                    _as_text(item.get("actor_user_id")),
-                    _as_text(item.get("project_id")),
-                    _as_text(item.get("session_id")),
-                    _as_text(item.get("entity_type")),
-                    _as_text(item.get("entity_id")),
-                ]
-            ).lower()
-            if query in hay:
-                filtered.append(item)
-        rows = filtered
+    rows = list_audit_log(
+        oid or "",
+        limit=lim,
+        offset=off,
+        action=_as_text(action) or None,
+        project_id=_as_text(project_id) or None,
+        session_id=_as_text(session_id) or None,
+        status=_as_text(status).lower() or None,
+        q=q_value,
+        updated_from=from_ts,
+        updated_to=to_ts,
+    )
     status_counts = Counter(_as_text(_as_dict(item).get("status")).lower() or "unknown" for item in rows)
     actors = {_as_text(_as_dict(item).get("actor_user_id")) for item in rows if _as_text(_as_dict(item).get("actor_user_id"))}
     return {
         "ok": True,
         "summary": {
-            "total": len(rows),
+            "total": int(total),
             "ok": int(status_counts.get("ok", 0)),
             "failed": int(status_counts.get("fail", 0)),
             "unique_actors": len(actors),
         },
         "items": rows,
-        "count": len(rows),
+        "count": int(total),
+        "page": {"limit": lim, "offset": off, "total": int(total)},
     }
