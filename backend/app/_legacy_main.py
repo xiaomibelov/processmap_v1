@@ -166,6 +166,7 @@ from .services.org_workspace import (
     require_org_member_for_enterprise as _require_org_member_for_enterprise,
     require_org_role as _require_org_role,
 )
+from .services.publish_git_mirror import execute_git_mirror_publish
 from .utils.legacy_normalization import (
     norm_edges as _norm_edges,
     norm_interview as _norm_interview,
@@ -3081,6 +3082,7 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
 
     handled = False
     need_recompute = False
+    publish_requested = False
 
     if "title" in data and data["title"] is not None:
         if not _can_edit_workspace(role, is_admin=effective_is_admin):
@@ -3150,6 +3152,7 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
             is_admin=effective_is_admin,
         )
         sess.interview = {**(sess.interview or {}), "status": next_status}
+        publish_requested = next_status == "ready"
         handled = True
 
     if "nodes" in data:
@@ -3241,6 +3244,33 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
     if need_recompute:
         sess = _recompute_session(sess)
     st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
+
+    if publish_requested:
+        interview_pending = dict(getattr(sess, "interview", {}) or {})
+        mirror_pending = interview_pending.get("git_mirror_publish")
+        if not isinstance(mirror_pending, dict):
+            mirror_pending = {}
+        mirror_pending = {
+            **mirror_pending,
+            "schema_version": "git_mirror_publish_v1",
+            "mirror_state": "pending",
+            "last_attempt_at": int(time.time()),
+            "last_error": None,
+        }
+        interview_pending["git_mirror_publish"] = mirror_pending
+        sess.interview = interview_pending
+        st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
+
+        mirror_result = execute_git_mirror_publish(
+            sess,
+            org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
+            user_id=user_id,
+        )
+        next_interview = mirror_result.get("interview")
+        if isinstance(next_interview, dict):
+            sess.interview = next_interview
+            st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
+
     _audit_log_safe(
         request,
         org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
