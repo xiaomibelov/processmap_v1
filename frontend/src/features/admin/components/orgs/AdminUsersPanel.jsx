@@ -30,15 +30,20 @@ function normalizeMemberships(items = [], fallbackOrgId = "") {
   return fallbackOrgId ? [blankMembership(fallbackOrgId)] : [blankMembership("")];
 }
 
-function membershipSummary(items = []) {
-  return (Array.isArray(items) ? items : [])
-    .map((row) => {
-      const orgName = toText(row?.org_name || row?.org_id);
-      const role = formatRoleWithScope(row?.role);
-      return orgName ? `${orgName} (${role})` : role;
-    })
-    .filter(Boolean)
-    .join(", ");
+function formatTs(ts) {
+  const value = Number(ts || 0);
+  if (!Number.isFinite(value) || value <= 0) return "—";
+  try {
+    return new Date(value * 1000).toLocaleString("ru-RU", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "—";
+  }
 }
 
 export default function AdminUsersPanel({
@@ -196,39 +201,89 @@ export default function AdminUsersPanel({
       subtitle="Platform admin создаёт пользователя, назначает организацию и меняет org role per organization."
     >
       <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
-        <div className="overflow-auto rounded-[22px] border border-slate-200">
-          <table className="w-full min-w-[680px] border-collapse text-sm">
+        <div className="overflow-auto rounded-[22px] border border-slate-200 bg-white">
+          <table className="w-full min-w-[1120px] border-collapse text-sm">
             <thead className="text-left text-[11px] uppercase tracking-[0.16em] text-slate-400">
               <tr>
                 <th className="px-3 py-3">Email</th>
-                <th className="px-3 py-3">Организации и роли</th>
+                <th className="px-3 py-3">Роль платформы</th>
+                <th className="px-3 py-3">Memberships и org roles</th>
                 <th className="px-3 py-3">Статус</th>
+                <th className="px-3 py-3">Создан</th>
+                <th className="px-3 py-3">Обновлён</th>
+                <th className="px-3 py-3 text-right">Действия</th>
               </tr>
             </thead>
             <tbody>
               {users.length === 0 ? (
                 <tr className="border-t border-slate-100">
-                  <td className="px-3 py-5 text-slate-500" colSpan={3}>Пользователи пока не найдены.</td>
+                  <td className="px-3 py-5 text-slate-500" colSpan={7}>Пользователи пока не найдены.</td>
                 </tr>
               ) : null}
               {users.map((row) => {
                 const userId = toText(row?.id);
                 const selected = userId && userId === selectedUserId;
+                const rowMemberships = Array.isArray(row?.memberships) ? row.memberships : [];
                 return (
                   <tr
                     key={userId}
-                    className={`border-t border-slate-100 cursor-pointer ${selected ? "bg-amber-50/80" : ""}`}
+                    className={`border-t border-slate-100 ${selected ? "bg-amber-50/80" : "hover:bg-slate-50/70"}`}
                     onClick={() => handleSelectUser(row)}
                   >
-                    <td className="px-3 py-3 font-medium text-slate-950">{toText(row?.email) || "—"}</td>
-                    <td className="px-3 py-3 text-slate-600">
-                      {row?.is_admin ? "Все организации" : (membershipSummary(row?.memberships) || "—")}
+                    <td className="px-3 py-3 align-top">
+                      <div className="font-medium text-slate-950">{toText(row?.email) || "—"}</div>
+                      <div className="mt-1 text-xs text-slate-500">{userId || "—"}</div>
                     </td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-wrap items-center gap-2">
+                    <td className="px-3 py-3 align-top">
+                      {row?.is_admin ? (
+                        <StatusPill status="Platform admin" tone="accent" />
+                      ) : (
+                        <StatusPill status="Org member" tone="default" />
+                      )}
+                    </td>
+                    <td className="px-3 py-3 align-top">
+                      {row?.is_admin ? (
+                        <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs text-indigo-700">
+                          Доступ ко всем организациям
+                        </div>
+                      ) : rowMemberships.length > 0 ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          {rowMemberships.map((membership, index) => {
+                            const orgName = toText(membership?.org_name || membership?.org_id || "Организация");
+                            const roleLabel = formatRoleWithScope(membership?.role);
+                            return (
+                              <div key={`${userId}_membership_${index}`} className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 px-2 py-1">
+                                <span className="text-xs font-medium text-slate-700">{orgName}</span>
+                                <span className="rounded-lg border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-slate-600">{roleLabel}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <span className="text-slate-500">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3 align-top">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <StatusPill status={row?.is_active ? "active" : "disabled"} tone={row?.is_active ? "ok" : "warn"} />
-                        {row?.is_admin ? <StatusPill status="Администратор · все организации" tone="accent" /> : null}
+                        {!row?.is_admin ? (
+                          <span className="text-xs text-slate-500">{`orgs: ${rowMemberships.length}`}</span>
+                        ) : null}
                       </div>
+                    </td>
+                    <td className="px-3 py-3 align-top text-xs text-slate-600">{formatTs(row?.created_at)}</td>
+                    <td className="px-3 py-3 align-top text-xs text-slate-600">{formatTs(row?.updated_at)}</td>
+                    <td className="px-3 py-3 align-top text-right">
+                      <button
+                        type="button"
+                        className="secondaryBtn h-8 min-h-0 px-3 py-0 text-xs"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleSelectUser(row);
+                        }}
+                      >
+                        Редактировать
+                      </button>
                     </td>
                   </tr>
                 );
