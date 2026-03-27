@@ -624,6 +624,84 @@ export async function apiPatchOrg(orgId, payload = {}) {
   return r.ok ? { ok: true, status: r.status, org: r.data || {} } : r;
 }
 
+function normalizeOrgGitMirrorConfig(raw = {}, orgId = "") {
+  const data = raw && typeof raw === "object" ? raw : {};
+  return {
+    org_id: String(data.org_id || orgId || "").trim(),
+    git_mirror_enabled: data.git_mirror_enabled === true,
+    git_provider: String(data.git_provider || "").trim() || null,
+    git_repository: String(data.git_repository || "").trim() || null,
+    git_branch: String(data.git_branch || "").trim() || null,
+    git_base_path: String(data.git_base_path || "").trim() || null,
+    git_health_status: String(data.git_health_status || "unknown").trim() || "unknown",
+    git_health_message: String(data.git_health_message || "").trim() || null,
+    git_updated_at: Number(data.git_updated_at || 0),
+    git_updated_by: String(data.git_updated_by || "").trim() || null,
+  };
+}
+
+export async function apiGetOrgGitMirrorConfig(orgId) {
+  const oid = String(orgId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  const endpoint = apiRoutes.orgs.gitMirror(oid);
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  if (!r.ok) return r;
+  const raw = (r.data && typeof r.data === "object" ? r.data.config : null) || {};
+  return { ok: true, status: r.status, config: normalizeOrgGitMirrorConfig(raw, oid) };
+}
+
+export async function apiPatchOrgGitMirrorConfig(orgId, payload = {}) {
+  const oid = String(orgId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  const body = {};
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "git_mirror_enabled")) {
+    body.git_mirror_enabled = payload?.git_mirror_enabled === true;
+  }
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "git_provider")) {
+    body.git_provider = String(payload?.git_provider || "").trim() || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "git_repository")) {
+    body.git_repository = String(payload?.git_repository || "").trim() || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "git_branch")) {
+    body.git_branch = String(payload?.git_branch || "").trim() || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "git_base_path")) {
+    body.git_base_path = String(payload?.git_base_path || "").trim() || null;
+  }
+  const endpoint = apiRoutes.orgs.gitMirror(oid);
+  const r = okOrError(await request(endpoint, { method: "PATCH", body }));
+  if (!r.ok) return r;
+  const raw = (r.data && typeof r.data === "object" ? r.data.config : null) || {};
+  return { ok: true, status: r.status, config: normalizeOrgGitMirrorConfig(raw, oid) };
+}
+
+export async function apiValidateOrgGitMirrorConfig(orgId, payload = {}) {
+  const oid = String(orgId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  const body = {};
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "git_mirror_enabled")) {
+    body.git_mirror_enabled = payload?.git_mirror_enabled === true;
+  }
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "git_provider")) {
+    body.git_provider = String(payload?.git_provider || "").trim() || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "git_repository")) {
+    body.git_repository = String(payload?.git_repository || "").trim() || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "git_branch")) {
+    body.git_branch = String(payload?.git_branch || "").trim() || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "git_base_path")) {
+    body.git_base_path = String(payload?.git_base_path || "").trim() || null;
+  }
+  const endpoint = apiRoutes.orgs.gitMirrorValidate(oid);
+  const r = okOrError(await request(endpoint, { method: "POST", body }));
+  if (!r.ok) return r;
+  const raw = (r.data && typeof r.data === "object" ? r.data.config : null) || {};
+  return { ok: true, status: r.status, config: normalizeOrgGitMirrorConfig(raw, oid) };
+}
+
 export async function apiListOrgPropertyDictionaryOperations(orgId, options = {}) {
   const oid = String(orgId || "").trim();
   if (!oid) return { ok: false, status: 0, error: "missing org_id" };
