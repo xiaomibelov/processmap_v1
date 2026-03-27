@@ -102,6 +102,7 @@ import ProcessStageDiagramControls from "../features/process/stage/ui/ProcessSta
 import ProcessDiagramOverlayLayers from "../features/process/stage/ui/ProcessDiagramOverlayLayers";
 import useHybridStore from "../features/process/hybrid/controllers/useHybridStore";
 import useHybridPersistController from "../features/process/hybrid/controllers/useHybridPersistController";
+import { extractPublishGitMirrorSnapshot } from "../shared/publishGitMirrorStatus";
 import {
   isDrawioXml,
   mergeDrawioMeta,
@@ -569,6 +570,14 @@ export default function ProcessStage({
     () => asObject(sessionCompanionBridgeSnapshot.revisionHistory),
     [sessionCompanionBridgeSnapshot.revisionHistory],
   );
+  const publishGitMirrorSnapshot = useMemo(() => {
+    const topLevel = asObject(draft?.publish_git_mirror);
+    if (Object.keys(topLevel).length) {
+      return extractPublishGitMirrorSnapshot(topLevel);
+    }
+    const legacyState = asObject(asObject(draft?.interview).git_mirror_publish);
+    return extractPublishGitMirrorSnapshot(legacyState);
+  }, [draft?.interview, draft?.publish_git_mirror]);
   useEffect(() => {
     if (typeof window === "undefined" || window.__FPC_E2E__ !== true) return;
     const projectId = toText(draft?.project_id || draft?.projectId || activeProjectId);
@@ -4339,6 +4348,7 @@ export default function ProcessStage({
     drawioFileInputRef,
     handleDrawioImportFile,
     topPanelsView: shellVm.panelsProps.top,
+    publishGitMirrorSnapshot,
     asArray,
   });
 

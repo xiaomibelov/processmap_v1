@@ -1,5 +1,6 @@
 import ProcessPanels from "./ProcessPanels";
 import { getFirstPickedFile } from "./fileInputEvent.js";
+import { extractPublishGitMirrorSnapshot, getPublishGitMirrorMeta } from "../../../../shared/publishGitMirrorStatus";
 
 export default function ProcessStageHeader({ view = {} }) {
   const {
@@ -33,6 +34,7 @@ export default function ProcessStageHeader({ view = {} }) {
     drawioFileInputRef,
     handleDrawioImportFile,
     topPanelsView,
+    publishGitMirrorSnapshot,
   } = view;
   const latestRevisionNumber = Number(sessionRevisionHistorySnapshot?.latestRevisionNumber || 0);
   const hasPublishedRevision = latestRevisionNumber > 0;
@@ -41,6 +43,14 @@ export default function ProcessStageHeader({ view = {} }) {
     ? "Версия не опубликована"
     : (draftAheadOfLatest ? "Draft ahead" : "Published");
   const draftStatusTone = !hasPublishedRevision || draftAheadOfLatest ? "warn" : "ok";
+  const mirrorSnapshot = extractPublishGitMirrorSnapshot(publishGitMirrorSnapshot);
+  const mirrorMeta = getPublishGitMirrorMeta(mirrorSnapshot.state);
+  const mirrorVersionLabel = mirrorSnapshot.versionNumber > 0
+    ? `v${String(mirrorSnapshot.versionNumber)}`
+    : "";
+  const mirrorBadgeLabel = mirrorVersionLabel
+    ? `${mirrorMeta.label} · ${mirrorVersionLabel}`
+    : mirrorMeta.label;
 
   return (
     <div className="processHeader diagramToolbarHeader">
@@ -88,6 +98,13 @@ export default function ProcessStageHeader({ view = {} }) {
                 data-testid="diagram-toolbar-draft-vs-latest"
               >
                 {draftStatusLabel}
+              </span>
+              <span
+                className={`badge text-[11px] ${mirrorMeta.processTone}`}
+                data-testid="diagram-toolbar-publish-git-mirror-status"
+                title={mirrorSnapshot.lastError || "Статус зеркалирования publish в Git"}
+              >
+                Git mirror: {mirrorBadgeLabel}
               </span>
             </>
           ) : null}

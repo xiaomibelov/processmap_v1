@@ -349,6 +349,7 @@ def _session_row_for_admin(
     autopass = _as_dict(bpmn_meta.get("auto_pass_v1"))
     warnings_count = _as_int(_as_dict(row.get("dod_artifacts")).get("needs_attention"), _as_int(row.get("needs_attention"), 0))
     errors_count = _as_int(quality.get("errors"), 0)
+    publish_mirror = _legacy_main._extract_publish_git_mirror(_as_dict(meta_entry.get("interview")))
     return {
         "session_id": sid,
         "org_id": _as_text(row.get("org_id")),
@@ -366,6 +367,10 @@ def _session_row_for_admin(
         "redis_mode": _session_redis_mode(redis_runtime=redis_runtime, bpmn_meta_raw=bpmn_meta, autopass_raw=autopass),
         "warnings_count": max(0, warnings_count),
         "errors_count": max(0, errors_count),
+        "publish_git_mirror_state": _as_text(publish_mirror.get("state") or "not_attempted"),
+        "publish_git_mirror_version_number": max(0, _as_int(publish_mirror.get("version_number"), 0)),
+        "publish_git_mirror_version_id": _as_text(publish_mirror.get("version_id")),
+        "publish_git_mirror_last_error": _as_text(publish_mirror.get("last_error")),
     }
 
 
@@ -829,6 +834,7 @@ def admin_session_detail(session_id: str, request: Request) -> Any:
             project_name = _as_text(getattr(project_obj, "title", "") or project_id)
     except Exception:
         project_name = project_id
+    publish_mirror = _legacy_main._extract_publish_git_mirror(interview)
 
     detail = {
         "session_id": _as_text(getattr(sess, "id", session_id)),
@@ -841,6 +847,10 @@ def admin_session_detail(session_id: str, request: Request) -> Any:
         "status": _as_text(session_status),
         "updated_at": _as_int(getattr(sess, "updated_at", 0), 0),
         "created_at": _as_int(getattr(sess, "created_at", 0), 0),
+        "publish_git_mirror_state": _as_text(publish_mirror.get("state") or "not_attempted"),
+        "publish_git_mirror_version_number": max(0, _as_int(publish_mirror.get("version_number"), 0)),
+        "publish_git_mirror_version_id": _as_text(publish_mirror.get("version_id")),
+        "publish_git_mirror_last_error": _as_text(publish_mirror.get("last_error")),
         "tabs": {
             "overview": {
                 "summary": {

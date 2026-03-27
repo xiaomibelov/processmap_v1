@@ -338,6 +338,7 @@ export function buildDiagramHeaderView({
   drawioFileInputRef,
   handleDrawioImportFile,
   topPanelsView,
+  publishGitMirrorSnapshot,
   asArray,
 } = {}) {
   return {
@@ -368,6 +369,7 @@ export function buildDiagramHeaderView({
     drawioFileInputRef,
     handleDrawioImportFile,
     topPanelsView,
+    publishGitMirrorSnapshot,
     asArray,
   };
 }

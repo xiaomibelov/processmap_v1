@@ -654,7 +654,47 @@ def _session_api_dump(sess: Session) -> Dict[str, Any]:
     d = sess.model_dump()
     d["notes"] = _notes_decode(d.get("notes"))
     d["bpmn_meta"] = _normalize_bpmn_meta(d.get("bpmn_meta"))
+    d["publish_git_mirror"] = _extract_publish_git_mirror(d.get("interview"))
     return d
+
+
+_PUBLISH_GIT_MIRROR_STATES = {
+    "not_attempted",
+    "skipped_disabled",
+    "skipped_invalid_config",
+    "pending",
+    "synced",
+    "failed",
+}
+
+
+def _extract_publish_git_mirror(interview_raw: Any) -> Dict[str, Any]:
+    interview = interview_raw if isinstance(interview_raw, dict) else {}
+    raw = interview.get("git_mirror_publish")
+    state_src = raw if isinstance(raw, dict) else {}
+    state = str(state_src.get("mirror_state") or "").strip().lower()
+    if state not in _PUBLISH_GIT_MIRROR_STATES:
+        state = "not_attempted"
+    current_bpmn = state_src.get("current_bpmn")
+    current_bpmn = current_bpmn if isinstance(current_bpmn, dict) else {}
+    try:
+        version_number = int(current_bpmn.get("version_number") or 0)
+    except Exception:
+        version_number = 0
+    version_number = max(0, int(version_number))
+    version_id = str(current_bpmn.get("version_id") or "").strip()
+    last_error = str(state_src.get("last_error") or "").strip()
+    try:
+        last_attempt_at = int(state_src.get("last_attempt_at") or 0)
+    except Exception:
+        last_attempt_at = 0
+    return {
+        "state": state,
+        "version_number": version_number,
+        "version_id": version_id or None,
+        "last_attempt_at": max(0, int(last_attempt_at)),
+        "last_error": last_error or None,
+    }
 
 
 def _get_report_versions_by_path(interview_raw: Any) -> Dict[str, List[Dict[str, Any]]]:
