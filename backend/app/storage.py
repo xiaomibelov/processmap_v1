@@ -514,6 +514,7 @@ def _ensure_schema() -> None:
                   bpmn_xml TEXT NOT NULL DEFAULT '',
                   bpmn_xml_version INTEGER NOT NULL DEFAULT 0,
                   bpmn_graph_fingerprint TEXT NOT NULL DEFAULT '',
+                  git_mirror_version_number INTEGER NOT NULL DEFAULT 0,
                   bpmn_meta_json TEXT NOT NULL DEFAULT '{}',
                   version INTEGER NOT NULL DEFAULT 0,
                   owner_user_id TEXT NOT NULL DEFAULT '',
@@ -787,6 +788,8 @@ def _ensure_schema() -> None:
                 con.execute("ALTER TABLE sessions ADD COLUMN created_by TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "sessions", "updated_by"):
                 con.execute("ALTER TABLE sessions ADD COLUMN updated_by TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "sessions", "git_mirror_version_number"):
+                con.execute("ALTER TABLE sessions ADD COLUMN git_mirror_version_number INTEGER NOT NULL DEFAULT 0")
             if not _column_exists(con, "org_invites", "team_name"):
                 con.execute("ALTER TABLE org_invites ADD COLUMN team_name TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "org_invites", "subgroup_name"):
@@ -2448,6 +2451,62 @@ def update_org_git_mirror_config(
         if int(cur.rowcount or 0) <= 0:
             raise ValueError("org not found")
     return get_org_git_mirror_config(oid)
+
+
+def get_current_mirror_version(session_id: str, *, org_id: str | None = None) -> int:
+    _ensure_schema()
+    sid = str(session_id or "").strip()
+    oid = _scope_org_id(org_id) or _default_org_id()
+    if not sid:
+        raise ValueError("session_id required")
+    with _connect() as con:
+        row = con.execute(
+            "SELECT git_mirror_version_number FROM sessions WHERE id = ? AND org_id = ? LIMIT 1",
+            [sid, oid],
+        ).fetchone()
+    if not row:
+        raise ValueError("session not found")
+    try:
+        value = int(row["git_mirror_version_number"] or 0)
+    except Exception:
+        value = 0
+    return max(0, value)
+
+
+def increment_and_get_next_version(session_id: str, *, org_id: str | None = None) -> int:
+    _ensure_schema()
+    sid = str(session_id or "").strip()
+    oid = _scope_org_id(org_id) or _default_org_id()
+    if not sid:
+        raise ValueError("session_id required")
+    with _connect() as con:
+        cur = con.execute(
+            """
+            UPDATE sessions
+               SET git_mirror_version_number = CASE
+                   WHEN COALESCE(git_mirror_version_number, 0) < 0 THEN 1
+                   ELSE COALESCE(git_mirror_version_number, 0) + 1
+               END
+             WHERE id = ?
+               AND org_id = ?
+            """,
+            [sid, oid],
+        )
+        if int(cur.rowcount or 0) <= 0:
+            con.rollback()
+            raise ValueError("session not found")
+        row = con.execute(
+            "SELECT git_mirror_version_number FROM sessions WHERE id = ? AND org_id = ? LIMIT 1",
+            [sid, oid],
+        ).fetchone()
+        con.commit()
+    if not row:
+        raise ValueError("session not found")
+    try:
+        value = int(row["git_mirror_version_number"] or 0)
+    except Exception:
+        value = 0
+    return max(0, value)
 
 
 def _normalize_project_membership_role(raw: Any) -> str:
