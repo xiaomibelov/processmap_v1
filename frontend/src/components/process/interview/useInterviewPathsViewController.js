@@ -183,24 +183,38 @@ function stitchScenarioSequenceByLinkEvents({
   let tailNodeId = toText(next[next.length - 1]?.node_id);
   while (appendBudget > 0 && tailNodeId) {
     const outgoing = toArray(outgoingByNode[tailNodeId]);
-    if (outgoing.length) break;
     const jumpNodeId = toText(throwToCatch[tailNodeId]);
-    if (!jumpNodeId || seenNodeIds.has(jumpNodeId)) break;
-    const jumpNode = asObject(nodesById[jumpNodeId]);
+
+    let nextNodeId = "";
+    let hint = "";
+
+    if (!outgoing.length && jumpNodeId) {
+      nextNodeId = jumpNodeId;
+      hint = "link_jump";
+    } else if (outgoing.length && stitched) {
+      const sorted = [...outgoing].sort((a, b) => flowPriorityForReport(a) - flowPriorityForReport(b));
+      nextNodeId = toText(sorted[0]?.toId || sorted[0]?.to_id || sorted[0]?.target_id);
+      hint = "link_continuation";
+    } else {
+      break;
+    }
+
+    if (!nextNodeId || seenNodeIds.has(nextNodeId)) break;
+    const nextNode = asObject(nodesById[nextNodeId]);
     next.push({
-      ...buildReportNodeStub(graph, jumpNodeId),
+      ...buildReportNodeStub(graph, nextNodeId),
       order_index: next.length + 1,
-      row_type: toText(jumpNode?.kind || jumpNode?.type || "task"),
-      node_type: toText(jumpNode?.kind || jumpNode?.type || "task"),
-      title: toText(jumpNode?.name || jumpNodeId) || jumpNodeId,
+      row_type: toText(nextNode?.kind || nextNode?.type || "task"),
+      node_type: toText(nextNode?.kind || nextNode?.type || "task"),
+      title: toText(nextNode?.name || nextNodeId) || nextNodeId,
       lane_name: "",
-      lane_id: toText(jumpNode?.laneId || ""),
+      lane_id: toText(nextNode?.laneId || ""),
       decision: {},
-      report_hint: "link_jump",
+      report_hint: hint,
     });
     stitched = true;
-    seenNodeIds.add(jumpNodeId);
-    tailNodeId = jumpNodeId;
+    seenNodeIds.add(nextNodeId);
+    tailNodeId = nextNodeId;
     appendBudget -= 1;
   }
   if (!stitched) return { sequence: base, stitched: false };
@@ -349,10 +363,10 @@ function buildDecisionHintsByOrderIndexFromScenarioRows(rowsRaw) {
 function buildFlowMaps(dodSnapshot) {
   const incomingByNodeId = {};
   const outgoingByNodeId = {};
-  toArray(dodSnapshot?.flows).forEach((flowRaw) => {
+  toArray(dodSnapshot?.bpmn_flows).forEach((flowRaw) => {
     const flow = asObject(flowRaw);
-    const sourceId = toText(flow?.source_id || flow?.sourceId);
-    const targetId = toText(flow?.target_id || flow?.targetId);
+    const sourceId = toText(flow?.from_id || flow?.source_id);
+    const targetId = toText(flow?.to_id || flow?.target_id);
     if (targetId) {
       if (!incomingByNodeId[targetId]) incomingByNodeId[targetId] = [];
       incomingByNodeId[targetId].push(flow);
@@ -367,12 +381,13 @@ function buildFlowMaps(dodSnapshot) {
 
 function buildDodByNodeId(dodSnapshot) {
   const out = {};
-  toArray(dodSnapshot?.missing).forEach((itemRaw) => {
-    const item = asObject(itemRaw);
-    const nodeId = toText(item?.node_id || item?.nodeId);
+  toArray(dodSnapshot?.steps).forEach((stepRaw) => {
+    const step = asObject(stepRaw);
+    const nodeId = toText(step?.node_id || step?.nodeId);
     if (!nodeId) return;
-    if (!out[nodeId]) out[nodeId] = [];
-    out[nodeId].push(toText(item?.kind || item?.type || "missing"));
+    const missing = toArray(asObject(step?.dod)?.missingKeys);
+    if (!missing.length) return;
+    out[nodeId] = missing.map((k) => toText(k)).filter(Boolean);
   });
   return out;
 }
