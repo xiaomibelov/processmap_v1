@@ -88,8 +88,19 @@ function htmlToStorage(html) {
 export default function DrawioRichTextEditor({ inlineEdit, onCommit, onCancel }) {
   const wrapperRef = useRef(null);
   const editorRef = useRef(null);
+  const measureEditorHeightRef = useRef(() => {});
   const [hostSize, setHostSize] = useState({ width: 0, height: 0 });
   const [editorHeight, setEditorHeight] = useState(INLINE_EDITOR_FALLBACK_HEIGHT);
+
+  const measureEditorHeight = useCallback(() => {
+    const wrapper = wrapperRef.current;
+    if (!(wrapper instanceof Element)) return;
+    const rect = wrapper.getBoundingClientRect();
+    if (!Number.isFinite(rect?.height) || rect.height < 1) return;
+    const next = Math.round(rect.height);
+    setEditorHeight((prev) => (prev === next ? prev : next));
+  }, []);
+  measureEditorHeightRef.current = measureEditorHeight;
 
   // Set initial HTML content
   useEffect(() => {
@@ -104,6 +115,15 @@ export default function DrawioRichTextEditor({ inlineEdit, onCommit, onCancel })
     sel?.removeAllRanges();
     sel?.addRange(range);
     el.focus();
+    let rafId = 0;
+    if (typeof requestAnimationFrame === "function") {
+      rafId = requestAnimationFrame(() => measureEditorHeightRef.current());
+    } else {
+      measureEditorHeightRef.current();
+    }
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+    };
   }, [inlineEdit.text]);
 
   const commit = useCallback(() => {
@@ -165,19 +185,22 @@ export default function DrawioRichTextEditor({ inlineEdit, onCommit, onCancel })
 
   useLayoutEffect(() => {
     const wrapper = wrapperRef.current;
-    if (!(wrapper instanceof Element)) return;
-    const rect = wrapper.getBoundingClientRect();
-    if (rect.height < 1) return;
-    const next = Math.round(rect.height);
-    setEditorHeight((prev) => (prev === next ? prev : next));
-  }, [
-    hostSize.height,
-    hostSize.width,
-    inlineEdit.left,
-    inlineEdit.text,
-    inlineEdit.top,
-    inlineEdit.width,
-  ]);
+    const editor = editorRef.current;
+    if (!(wrapper instanceof Element)) return undefined;
+    measureEditorHeight();
+    let resizeObserver = null;
+    if (typeof ResizeObserver === "function") {
+      resizeObserver = new ResizeObserver(() => measureEditorHeight());
+      resizeObserver.observe(wrapper);
+      if (editor instanceof Element) resizeObserver.observe(editor);
+    }
+    const onInput = () => measureEditorHeight();
+    editor?.addEventListener("input", onInput);
+    return () => {
+      editor?.removeEventListener("input", onInput);
+      resizeObserver?.disconnect?.();
+    };
+  }, [measureEditorHeight]);
 
   const layout = useMemo(() => computeInlineEditorLayout({
     inlineLeft: inlineEdit.left,

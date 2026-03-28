@@ -42,6 +42,12 @@ function computeInlineEditorLayout({
   };
 }
 
+function measureEditorHeight(prevHeight, rectHeight) {
+  if (!Number.isFinite(rectHeight) || rectHeight < 1) return prevHeight;
+  const next = Math.round(rectHeight);
+  return prevHeight === next ? prevHeight : next;
+}
+
 function storageToHtml(text) {
   const lines = String(text ?? "").split("\n");
   return lines.map((line) => {
@@ -139,6 +145,57 @@ describe("DrawioRichTextEditor viewport clamp", () => {
     assert.equal(layout.left, 504);
     assert.equal(layout.top, 224);
     assert.equal(layout.width, 200);
+  });
+});
+
+describe("DrawioRichTextEditor measured-height clamp behavior", () => {
+  it("initial multiline mount can update measured height before final clamp", () => {
+    // start from fallback (pre-measure), then mount measurement yields real height.
+    let measuredHeight = INLINE_EDITOR_FALLBACK_HEIGHT;
+    measuredHeight = measureEditorHeight(measuredHeight, 96);
+    const layout = computeInlineEditorLayout({
+      inlineLeft: 10,
+      inlineTop: 110,
+      inlineWidth: 160,
+      containerWidth: 220,
+      containerHeight: 100,
+      editorHeight: measuredHeight,
+    });
+    // baseTop = 74, maxTop = 4 with measured height 96
+    assert.equal(layout.top, 4);
+  });
+
+  it("growing content height triggers re-measure and tighter bottom clamp", () => {
+    let measuredHeight = INLINE_EDITOR_FALLBACK_HEIGHT; // first render
+    let layout = computeInlineEditorLayout({
+      inlineLeft: 10,
+      inlineTop: 110,
+      inlineWidth: 160,
+      containerWidth: 220,
+      containerHeight: 100,
+      editorHeight: measuredHeight,
+    });
+    // baseTop = 74, maxTop = 28 with fallback 72
+    assert.equal(layout.top, 28);
+
+    // user adds lines => content grows => observer/input measurement updates height
+    measuredHeight = measureEditorHeight(measuredHeight, 130);
+    layout = computeInlineEditorLayout({
+      inlineLeft: 10,
+      inlineTop: 110,
+      inlineWidth: 160,
+      containerWidth: 220,
+      containerHeight: 100,
+      editorHeight: measuredHeight,
+    });
+    // maxTop = 0 with height 130
+    assert.equal(layout.top, 0);
+  });
+
+  it("ignores invalid measurements and keeps previous safe height", () => {
+    const prev = 96;
+    const next = measureEditorHeight(prev, 0);
+    assert.equal(next, prev);
   });
 });
 
