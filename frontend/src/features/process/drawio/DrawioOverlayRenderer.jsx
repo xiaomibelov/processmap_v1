@@ -114,6 +114,15 @@ function DrawioPlacementPreview({ placementPreviewSpec }) {
   );
 }
 
+export function resetDrawioRemountReconcileRefs(renderStateAppliedRef, registryRenderedBodyRef) {
+  if (renderStateAppliedRef && typeof renderStateAppliedRef === "object") {
+    renderStateAppliedRef.current = "";
+  }
+  if (registryRenderedBodyRef && typeof registryRenderedBodyRef === "object") {
+    registryRenderedBodyRef.current = "";
+  }
+}
+
 const DrawioRuntimeNotesLayer = memo(function DrawioRuntimeNotesLayer({ noteRows }) {
   const rows = Array.isArray(noteRows) ? noteRows : [];
   if (!rows.length) return null;
@@ -485,7 +494,10 @@ function DrawioOverlayRenderer({
     ty,
   ]);
 
-  if (!hasInteractionSurface) return null;
+  if (!hasInteractionSurface) {
+    resetDrawioRemountReconcileRefs(renderStateAppliedRef, registryRenderedBodyRef);
+    return null;
+  }
 
   return (
     <div
