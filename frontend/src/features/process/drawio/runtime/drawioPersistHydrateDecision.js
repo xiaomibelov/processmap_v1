@@ -14,6 +14,18 @@ function collectDeletedElementIds(metaRaw) {
     .filter(Boolean);
 }
 
+function buildIncomingDeletionMap(metaRaw) {
+  const map = new Map();
+  if (!Array.isArray(metaRaw?.drawio_elements_v1)) return map;
+  metaRaw.drawio_elements_v1.forEach((rowRaw) => {
+    const row = rowRaw && typeof rowRaw === "object" ? rowRaw : null;
+    const id = String(row?.id || "").trim();
+    if (!id) return;
+    map.set(id, row?.deleted === true);
+  });
+  return map;
+}
+
 export default function decideDrawioPersistHydrateAction({
   incoming,
   current,
@@ -51,16 +63,18 @@ export default function decideDrawioPersistHydrateAction({
   // This must be ID-based and independent from byte-exact svg_cache equality.
   const currentDeletedIds = collectDeletedElementIds(current);
   if (currentDeletedIds.length > 0) {
-    const incomingDeletedIdSet = new Set(collectDeletedElementIds(incoming));
-    const missingDeletedIds = currentDeletedIds.filter((id) => !incomingDeletedIdSet.has(id));
-    if (missingDeletedIds.length > 0) {
+    const incomingDeletionById = buildIncomingDeletionMap(incoming);
+    const resurrectedIds = currentDeletedIds.filter((id) => (
+      incomingDeletionById.has(id) && incomingDeletionById.get(id) !== true
+    ));
+    if (resurrectedIds.length > 0) {
       return {
         action: "skip",
         reason: "incoming_missing_local_deletions",
         traceMeta: {
           ...traceMeta,
           deletedCount: currentDeletedIds.length,
-          missingDeletedCount: missingDeletedIds.length,
+          resurrectedCount: resurrectedIds.length,
         },
       };
     }

@@ -34,7 +34,7 @@ function decide({ incoming, current, persisted }) {
   });
 }
 
-test("resurrection guard: blocks apply when incoming misses local deleted IDs", () => {
+test("resurrection guard: blocks apply when incoming contains deleted ID as non-deleted", () => {
   const decision = decide({
     incoming: {
       doc_xml: "<xml incoming/>",
@@ -50,6 +50,24 @@ test("resurrection guard: blocks apply when incoming misses local deleted IDs", 
   });
   assert.equal(decision.action, "skip");
   assert.equal(decision.reason, "incoming_missing_local_deletions");
+});
+
+test("resurrection guard: allows apply when local deleted ID is absent from incoming snapshot", () => {
+  const decision = decide({
+    incoming: {
+      doc_xml: "<xml incoming/>",
+      svg_cache: "<svg incoming/>",
+      drawio_elements_v1: [{ id: "shapeB", deleted: false }],
+    },
+    current: {
+      doc_xml: "<xml current/>",
+      svg_cache: "<svg current/>",
+      drawio_elements_v1: [{ id: "shapeA", deleted: true }],
+    },
+    persisted: { doc_xml: "<xml persisted/>", svg_cache: "<svg persisted/>", drawio_elements_v1: [] },
+  });
+  assert.equal(decision.action, "apply");
+  assert.equal(decision.reason, "apply_incoming_snapshot");
 });
 
 test("resurrection guard: independent from svg_cache byte equality", () => {
