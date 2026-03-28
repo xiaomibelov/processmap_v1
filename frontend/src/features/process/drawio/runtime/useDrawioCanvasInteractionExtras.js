@@ -101,6 +101,7 @@ export default function useDrawioCanvasInteractionExtras({
     if (!(container instanceof Element) || !(svgNode instanceof Element)) return null;
     const containerRect = container.getBoundingClientRect();
     const svgRect = svgNode.getBoundingClientRect();
+    if (svgRect.width < 1 && svgRect.height < 1) return null;
     return {
       left: Math.round(svgRect.left - containerRect.left),
       top: Math.round(svgRect.top - containerRect.top),
