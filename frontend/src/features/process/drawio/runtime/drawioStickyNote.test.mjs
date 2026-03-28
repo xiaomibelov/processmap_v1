@@ -2,8 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { normalizeDrawioMeta } from "../drawioMeta.js";
+import { getDrawioRenderableIdSet } from "../domain/drawioSelectors.js";
 import { buildRuntimePlacementPatch } from "./drawioRuntimePlacement.js";
 import {
+  buildDrawioNoteFallbackText,
+  buildDrawioNoteTextLines,
   isDrawioNoteRow,
   normalizeDrawioNoteRow,
   patchDrawioNoteRowSize,
@@ -40,6 +43,18 @@ test("drawio sticky note: edit text keeps value in persisted row", () => {
   const next = patchDrawioNoteRowText(row, "После");
   assert.equal(String(next.text || ""), "После");
   assert.equal(isDrawioNoteRow(next), true);
+});
+
+test("drawio sticky note: explicit empty text is preserved", () => {
+  const row = normalizeDrawioNoteRow({ id: "note_1", type: "note", text: "" });
+  assert.equal(row.text, "");
+});
+
+test("drawio sticky note: null/undefined text falls back to default", () => {
+  const undefinedTextRow = normalizeDrawioNoteRow({ id: "note_1", type: "note" });
+  const nullTextRow = normalizeDrawioNoteRow({ id: "note_2", type: "note", text: null });
+  assert.equal(undefinedTextRow.text, "Заметка");
+  assert.equal(nullTextRow.text, "Заметка");
 });
 
 test("drawio sticky note: drag move updates offset and survives normalize", () => {
@@ -94,4 +109,30 @@ test("drawio sticky note: delete keeps soft-delete row marker", () => {
   }));
   assert.equal(deleted.drawio_elements_v1.length, 1);
   assert.equal(deleted.drawio_elements_v1[0].deleted, true);
+});
+
+test("drawio sticky note: soft-deleted note is excluded from renderable set", () => {
+  const renderable = getDrawioRenderableIdSet(createBaseMeta({
+    drawio_elements_v1: [{ id: "note_1", type: "note", deleted: true }],
+  }));
+  assert.equal(renderable?.has("note_1"), false);
+});
+
+test("drawio sticky note: non-deleted note remains in renderable set", () => {
+  const renderable = getDrawioRenderableIdSet(createBaseMeta({
+    drawio_elements_v1: [{ id: "note_1", type: "note", deleted: false }],
+  }));
+  assert.equal(renderable?.has("note_1"), true);
+});
+
+test("drawio sticky note: wrapped multiline text preserves line separators in fallback reader", () => {
+  const lines = buildDrawioNoteTextLines("line1\nline2", 90, { padding: 12, fontSize: 14 });
+  const fallbackText = buildDrawioNoteFallbackText(null, lines);
+  assert.equal(fallbackText, "line1\nline2");
+});
+
+test("drawio sticky note: fallback edit text does not collapse multiline separators", () => {
+  const lines = buildDrawioNoteTextLines("line1\nline2", 90, { padding: 12, fontSize: 14 });
+  const fallbackText = buildDrawioNoteFallbackText(null, lines);
+  assert.notEqual(fallbackText, "line1line2");
 });

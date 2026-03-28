@@ -52,12 +52,22 @@ export function normalizeDrawioNoteDimensions(widthRaw, heightRaw) {
 export function normalizeDrawioNoteRow(rowRaw = {}) {
   const row = asObject(rowRaw);
   const { width, height } = normalizeDrawioNoteDimensions(row.width, row.height);
+  let text = DRAWIO_NOTE_DEFAULT_TEXT;
+  if (row.text === "") {
+    text = "";
+  } else if (row.text != null) {
+    text = toText(row.text) || DRAWIO_NOTE_DEFAULT_TEXT;
+  } else if (row.label === "") {
+    text = "";
+  } else {
+    text = toText(row.label) || DRAWIO_NOTE_DEFAULT_TEXT;
+  }
   return {
     ...row,
     type: "note",
     width,
     height,
-    text: toText(row.text || row.label) || DRAWIO_NOTE_DEFAULT_TEXT,
+    text,
     style: normalizeDrawioNoteStyle(row.style),
   };
 }
@@ -132,6 +142,18 @@ export function buildDrawioNoteTextLines(textRaw, widthRaw, options = {}) {
     if (current) lines.push(current);
   });
   return lines.length ? lines : [""];
+}
+
+export function buildDrawioNoteFallbackText(textRaw, linesRaw = []) {
+  if (textRaw != null) return String(textRaw);
+  const lines = Array.isArray(linesRaw) ? linesRaw : [];
+  if (!lines.length) return "";
+  return lines
+    .map((lineRaw) => {
+      const normalized = String(lineRaw ?? "").replace(/\u00a0/g, " ");
+      return normalized.trim() === "" ? "" : normalized;
+    })
+    .join("\n");
 }
 
 export function patchDrawioNoteRowText(rowRaw, textRaw) {

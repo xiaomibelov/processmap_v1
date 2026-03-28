@@ -28,6 +28,7 @@ import {
 } from "./runtime/drawioOverlayRendererState.js";
 import { areDrawioOverlayRendererPropsEqual } from "./runtime/drawioOverlayRendererMemo.js";
 import {
+  buildDrawioNoteFallbackText,
   buildDrawioNoteTextLines,
   isDrawioNoteRow,
   normalizeDrawioNoteRow,
@@ -121,6 +122,7 @@ const DrawioRuntimeNotesLayer = memo(function DrawioRuntimeNotesLayer({ noteRows
       {rows.map((rowRaw) => {
         const row = normalizeDrawioNoteRow(rowRaw);
         const lines = buildDrawioNoteTextLines(row.text, row.width, { padding: 12, fontSize: 14 });
+        const fallbackText = buildDrawioNoteFallbackText(row.text, lines);
         const lineHeight = 18;
         return (
           <g
@@ -129,6 +131,13 @@ const DrawioRuntimeNotesLayer = memo(function DrawioRuntimeNotesLayer({ noteRows
             data-drawio-el-id={row.id}
             data-drawio-note="1"
           >
+            {/* Keep canonical text (including explicit line breaks) for DOM fallback readers. */}
+            <text
+              data-drawio-note-source="canonical"
+              display="none"
+            >
+              {fallbackText}
+            </text>
             <rect
               x={0}
               y={0}

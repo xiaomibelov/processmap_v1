@@ -367,16 +367,24 @@ export default function LayersPopover({
   const hybridFocusActive = panelHybridLegacy.focusActive === true;
   const canHideSelected = selectedIsDrawio ? !!selectedEntityId : selectedHybridCount > 0;
   const canLockSelected = selectedIsDrawio ? !!selectedEntityId : selectedHybridCount > 0;
+  const selectedDrawioCanonicalRow = useMemo(() => {
+    if (!selectedIsDrawio) return {};
+    return asObject(asArray(drawioState?.drawio_elements_v1).find((rowRaw) => toText(asObject(rowRaw).id) === selectedEntityId));
+  }, [drawioState?.drawio_elements_v1, selectedEntityId, selectedIsDrawio]);
   const selectedDrawioRow = useMemo(() => {
     if (!selectedIsDrawio) return {};
     const fromPanel = asObject(drawioRows.find((rowRaw) => toText(asObject(rowRaw).entityId || asObject(rowRaw).id) === selectedEntityId));
     if (Object.keys(fromPanel).length) return fromPanel;
-    return asObject(asArray(drawioState?.drawio_elements_v1).find((rowRaw) => toText(asObject(rowRaw).id) === selectedEntityId));
-  }, [drawioRows, drawioState?.drawio_elements_v1, selectedEntityId, selectedIsDrawio]);
+    return selectedDrawioCanonicalRow;
+  }, [drawioRows, selectedDrawioCanonicalRow, selectedEntityId, selectedIsDrawio]);
+  const selectedDrawioRuntimeRow = useMemo(
+    () => (Object.keys(selectedDrawioCanonicalRow).length ? selectedDrawioCanonicalRow : selectedDrawioRow),
+    [selectedDrawioCanonicalRow, selectedDrawioRow],
+  );
   const selectedLayerId = selectedIsDrawio
     ? toText(selectedDrawioRow.layer_id)
     : toText(selectedHybridElement?.layer_id);
-  const selectedDrawioIsNote = selectedIsDrawio && toText(selectedDrawioRow.type).toLowerCase() === "note";
+  const selectedDrawioIsNote = selectedIsDrawio && toText(selectedDrawioRuntimeRow.type).toLowerCase() === "note";
   const selectedDrawioText = useMemo(() => {
     if (!selectedIsDrawio || !selectedEntityId) return null;
     return readDrawioTextElementContent(drawioState?.svg_cache, selectedEntityId);
@@ -398,7 +406,7 @@ export default function LayersPopover({
     [selectedDrawioStyleSurface],
   );
   const selectedDrawioStylePreset = useMemo(() => {
-    const noteStyle = asObject(selectedDrawioRow.style);
+    const noteStyle = asObject(selectedDrawioRuntimeRow.style);
     const attrs = selectedDrawioIsNote
       ? {
         fill: toText(noteStyle.bg_color),
@@ -407,7 +415,7 @@ export default function LayersPopover({
       }
       : selectedDrawioSnapshot?.attrs;
     return matchRuntimeStylePreset(selectedDrawioStyleSurface, attrs);
-  }, [selectedDrawioIsNote, selectedDrawioRow.style, selectedDrawioSnapshot?.attrs, selectedDrawioStyleSurface]);
+  }, [selectedDrawioIsNote, selectedDrawioRuntimeRow.style, selectedDrawioSnapshot?.attrs, selectedDrawioStyleSurface]);
   const selectedDrawioTextEditable = selectedDrawioText != null;
   const selectedDrawioTextState = useMemo(() => {
     if (!selectedIsDrawio || !selectedEntityId || !selectedDrawioTextEditable) return null;
@@ -427,15 +435,15 @@ export default function LayersPopover({
   }, [selectedDrawioIsNote, selectedDrawioSnapshot]);
   const selectedDrawioSize = useMemo(() => {
     if (selectedDrawioIsNote) {
-      const width = Number(selectedDrawioRow.width);
-      const height = Number(selectedDrawioRow.height);
+      const width = Number(selectedDrawioRuntimeRow.width);
+      const height = Number(selectedDrawioRuntimeRow.height);
       if (Number.isFinite(width) && Number.isFinite(height)) {
         return { width, height };
       }
       return null;
     }
     return readRuntimeResizableSize(selectedDrawioSnapshot);
-  }, [selectedDrawioIsNote, selectedDrawioRow.height, selectedDrawioRow.width, selectedDrawioSnapshot]);
+  }, [selectedDrawioIsNote, selectedDrawioRuntimeRow.height, selectedDrawioRuntimeRow.width, selectedDrawioSnapshot]);
   const selectedDrawioTextActionEnabled = selectedDrawioTextEditable
     && drawioEnabled
     && drawioMode === "edit"

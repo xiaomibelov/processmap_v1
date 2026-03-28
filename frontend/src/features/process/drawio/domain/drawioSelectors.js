@@ -57,6 +57,7 @@ export function getDrawioRenderableIdSet(drawioMetaRaw) {
   asArray(drawioMeta.drawio_elements_v1).forEach((rowRaw) => {
     const row = asObject(rowRaw);
     if (toText(row.type).toLowerCase() !== "note") return;
+    if (row.deleted === true) return;
     const id = toText(row.id);
     if (id) ids.add(id);
   });
