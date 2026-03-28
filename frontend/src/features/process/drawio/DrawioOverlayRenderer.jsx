@@ -114,12 +114,14 @@ function DrawioPlacementPreview({ placementPreviewSpec }) {
   );
 }
 
+const DRAWIO_REGISTRY_RECONCILE_RESET_SENTINEL = Symbol("drawio.registry.reconcile.reset");
+
 export function resetDrawioRemountReconcileRefs(renderStateAppliedRef, registryRenderedBodyRef) {
   if (renderStateAppliedRef && typeof renderStateAppliedRef === "object") {
     renderStateAppliedRef.current = "";
   }
   if (registryRenderedBodyRef && typeof registryRenderedBodyRef === "object") {
-    registryRenderedBodyRef.current = "";
+    registryRenderedBodyRef.current = DRAWIO_REGISTRY_RECONCILE_RESET_SENTINEL;
   }
 }
 
