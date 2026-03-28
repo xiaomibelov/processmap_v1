@@ -98,6 +98,17 @@ function hasOwnKeys(value) {
   return !!(value && typeof value === "object" && Object.keys(value).length > 0);
 }
 
+function normalizeBusinessObjectAttrs(value) {
+  const attrs = asObject(value);
+  const nested = asObject(attrs.$attrs);
+  const merged = {
+    ...nested,
+    ...attrs,
+  };
+  delete merged.$attrs;
+  return merged;
+}
+
 function restoreModdleValue(value, moddle = null) {
   if (value === null || value === undefined) return value;
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
@@ -190,12 +201,19 @@ export function rehydrateSupportedBusinessObjectPayload(targetBo, payloadRaw, { 
   if (payload.extensionElements && typeof payload.extensionElements === "object") {
     setBpmnProperty(bo, "extensionElements", restoreModdleValue(payload.extensionElements, moddle));
   }
-  const attrs = asObject(payload.attrs);
+  const attrs = normalizeBusinessObjectAttrs(payload.attrs);
   if (Object.keys(attrs).length) {
-    setBpmnProperty(bo, "$attrs", {
-      ...asObject(bo.$attrs),
-      ...attrs,
-    });
+    if (typeof bo.set === "function") {
+      Object.keys(attrs).forEach((key) => {
+        if (!key) return;
+        setBpmnProperty(bo, key, restoreModdleValue(attrs[key], moddle));
+      });
+    } else {
+      setBpmnProperty(bo, "$attrs", {
+        ...normalizeBusinessObjectAttrs(bo.$attrs),
+        ...attrs,
+      });
+    }
   }
   const custom = asObject(payload.custom);
   Object.keys(custom).forEach((key) => {

@@ -89,6 +89,57 @@ test("rehydrateSupportedBusinessObjectPayload rebuilds moddle-typed structures a
   assert.equal(bo.propertyDictionaryBinding.operationKey, "op.rehydrated");
 });
 
+test("rehydrateSupportedBusinessObjectPayload applies namespaced attrs without nested $attrs regression", () => {
+  const bo = {
+    id: "Task_C",
+    $type: "bpmn:UserTask",
+    $attrs: {},
+    _setCalls: [],
+    set(key, value) {
+      this._setCalls.push(String(key || ""));
+      const currentAttrs = this.$attrs && typeof this.$attrs === "object" && !Array.isArray(this.$attrs)
+        ? this.$attrs
+        : {};
+      if (key === "$attrs") {
+        this.$attrs = {
+          ...currentAttrs,
+          $attrs: value,
+        };
+        return;
+      }
+      this[key] = value;
+      if (String(key || "").includes(":")) {
+        this.$attrs = {
+          ...currentAttrs,
+          [key]: value,
+        };
+      }
+    },
+    get(key) {
+      if (!key) return undefined;
+      if (Object.prototype.hasOwnProperty.call(this, key)) return this[key];
+      const attrs = this.$attrs && typeof this.$attrs === "object" && !Array.isArray(this.$attrs)
+        ? this.$attrs
+        : {};
+      return attrs[key];
+    },
+  };
+
+  rehydrateSupportedBusinessObjectPayload(bo, {
+    documentation: [{ $type: "bpmn:Documentation", text: "doc attrs" }],
+    attrs: {
+      "camunda:assignee": "user_test",
+      "pm:customAttribute": "CUSTOM_TEST_VALUE",
+    },
+  });
+
+  assert.equal(bo.documentation?.[0]?.text, "doc attrs");
+  assert.equal(bo.get("camunda:assignee"), "user_test");
+  assert.equal(bo.get("pm:customAttribute"), "CUSTOM_TEST_VALUE");
+  assert.equal(bo.$attrs?.$attrs, undefined);
+  assert.equal(bo._setCalls.includes("$attrs"), false);
+});
+
 test("readTemplateNodeSemanticPayload prefers semanticPayload and falls back to legacy propsMinimal", () => {
   const semantic = readTemplateNodeSemanticPayload({
     semanticPayload: { custom: { status: "ready" } },

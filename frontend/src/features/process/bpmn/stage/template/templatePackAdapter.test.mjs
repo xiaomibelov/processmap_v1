@@ -76,6 +76,48 @@ function createModelerWithServices({
           id: `Task_new_${shapeSeq}`,
           $type: shapeDef?.type || "bpmn:Task",
           name: "",
+          $attrs: {},
+          set(key, value) {
+            const currentAttrs = this.$attrs && typeof this.$attrs === "object" && !Array.isArray(this.$attrs)
+              ? this.$attrs
+              : {};
+            if (key === "$attrs") {
+              this.$attrs = {
+                ...currentAttrs,
+                $attrs: value,
+              };
+              return;
+            }
+            if (String(key || "").includes(":")) {
+              const currentNamespaced = this.$namespaced
+                && typeof this.$namespaced === "object"
+                && !Array.isArray(this.$namespaced)
+                ? this.$namespaced
+                : {};
+              this.$namespaced = {
+                ...currentNamespaced,
+                [key]: value,
+              };
+              this.$attrs = {
+                ...currentAttrs,
+                [key]: value,
+              };
+              return;
+            }
+            this[key] = value;
+          },
+          get(key) {
+            if (!key) return undefined;
+            if (Object.prototype.hasOwnProperty.call(this, key)) return this[key];
+            const namespaced = this.$namespaced && typeof this.$namespaced === "object" && !Array.isArray(this.$namespaced)
+              ? this.$namespaced
+              : {};
+            if (Object.prototype.hasOwnProperty.call(namespaced, key)) return namespaced[key];
+            const attrs = this.$attrs && typeof this.$attrs === "object" && !Array.isArray(this.$attrs)
+              ? this.$attrs
+              : {};
+            return attrs[key];
+          },
         },
         outgoing: [],
       };
@@ -308,7 +350,7 @@ test("insertTemplatePackOnModeler creates nodes, connects sequence flows and emi
 
 test("insertTemplatePackOnModeler reapplies semantic payload to inserted node businessObject", async () => {
   const anchor = createShape("Anchor_1", 100, 100, "Anchor");
-  const { adapter, registryItems } = createModelerWithServices({
+  const { adapter, registryItems, createShapeCalls } = createModelerWithServices({
     anchorShape: anchor,
     selectionItems: [anchor],
     registryItems: [anchor],
@@ -327,7 +369,7 @@ test("insertTemplatePackOnModeler reapplies semantic payload to inserted node bu
             type: "bpmn:Task",
             name: "Copied node",
             laneHint: "lane 1",
-            di: { x: 10, y: 20 },
+            di: { x: 10, y: 20, w: 260, h: 130 },
             semanticPayload: {
               documentation: [
                 { $type: "bpmn:Documentation", text: "template doc" },
@@ -358,6 +400,8 @@ test("insertTemplatePackOnModeler reapplies semantic payload to inserted node bu
                 ],
               },
               attrs: {
+                "camunda:assignee": "user_test",
+                "pm:customAttribute": "CUSTOM_TEST_VALUE",
                 "pm:bindingKey": "binding_9000",
               },
               custom: {
@@ -386,8 +430,13 @@ test("insertTemplatePackOnModeler reapplies semantic payload to inserted node bu
   assert.equal(bo.extensionElements?.values?.[1]?.$type, "camunda:InputOutput");
   assert.equal(bo.extensionElements?.values?.[1]?.inputParameters?.[0]?.name, "in");
   assert.equal(bo.extensionElements?.values?.[2]?.$type, "pm:RobotMeta");
+  assert.equal(bo.get?.("camunda:assignee"), "user_test");
+  assert.equal(bo.get?.("pm:customAttribute"), "CUSTOM_TEST_VALUE");
   assert.equal(bo.$attrs?.["pm:bindingKey"], "binding_9000");
+  assert.equal(bo.$attrs?.$attrs, undefined);
   assert.equal(bo.propertyDictionaryBinding?.operationKey, "op.prod");
+  assert.equal(createShapeCalls[0]?.shapeDef?.width, 260);
+  assert.equal(createShapeCalls[0]?.shapeDef?.height, 130);
 });
 
 test("semantic payload survives capture -> JSON storage -> insert -> reread roundtrip without silent loss", async () => {
