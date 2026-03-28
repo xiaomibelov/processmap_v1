@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 /**
  * Pure-logic mirror of readInlineEditGeometry from useDrawioCanvasInteractionExtras.js.
  * Tests the guard that prevents offscreen editor positioning from zero-rect nodes.
+ * Note: negative geometry is valid in pipeline for partially offscreen anchors.
  */
 function readInlineEditGeometry(svgRect, containerRect) {
   if (!svgRect || !containerRect) return null;
@@ -84,5 +85,17 @@ describe("readInlineEditGeometry zero-rect guard", () => {
     const result = readInlineEditGeometry(svgRect, container);
     // Must return null, NOT { left: -200, top: -100, ... }
     assert.equal(result, null);
+  });
+
+  it("may legitimately return negative geometry for partially offscreen anchors", () => {
+    const svgRect = { left: 402.652, top: -84.369, width: 160, height: 120 };
+    const containerRect = { left: 469.652, top: 138.631, width: 704, height: 791 };
+    const result = readInlineEditGeometry(svgRect, containerRect);
+    assert.deepEqual(result, {
+      left: -67,
+      top: -223,
+      width: 160,
+      height: 120,
+    });
   });
 });
