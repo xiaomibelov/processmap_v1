@@ -473,10 +473,15 @@ export function createTemplatePackAdapter(deps = {}) {
       const parent = laneHint && safeLaneParentByName.get(laneHint)
         ? safeLaneParentByName.get(laneHint)
         : safeAnchorParent;
+      const shapeAttrs = { type };
+      const width = Number(node?.di?.w);
+      const height = Number(node?.di?.h);
+      if (width > 0) shapeAttrs.width = width;
+      if (height > 0) shapeAttrs.height = height;
       const relX = Number(node?.di?.x || 0) - minX;
       const relY = Number(node?.di?.y || 0) - minY;
       const shape = modeling.createShape(
-        elementFactory.createShape({ type }),
+        elementFactory.createShape(shapeAttrs),
         {
           x: Math.round(offsetX + relX),
           y: Math.round(offsetY + relY),
