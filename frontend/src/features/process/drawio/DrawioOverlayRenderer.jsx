@@ -131,13 +131,6 @@ const DrawioRuntimeNotesLayer = memo(function DrawioRuntimeNotesLayer({ noteRows
             data-drawio-el-id={row.id}
             data-drawio-note="1"
           >
-            {/* Keep canonical text (including explicit line breaks) for DOM fallback readers. */}
-            <text
-              data-drawio-note-source="canonical"
-              display="none"
-            >
-              {fallbackText}
-            </text>
             <rect
               x={0}
               y={0}
@@ -148,6 +141,14 @@ const DrawioRuntimeNotesLayer = memo(function DrawioRuntimeNotesLayer({ noteRows
               stroke={row.style.border_color}
               strokeWidth={2}
             />
+            {/* Keep canonical text (including explicit line breaks) for DOM fallback readers.
+                Placed after rect so geometry classification still sees rect as first child. */}
+            <text
+              data-drawio-note-source="canonical"
+              display="none"
+            >
+              {fallbackText}
+            </text>
             <text
               x={12}
               y={24}

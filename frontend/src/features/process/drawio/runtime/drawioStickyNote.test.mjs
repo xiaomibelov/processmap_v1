@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { JSDOM } from "jsdom";
 
 import { normalizeDrawioMeta } from "../drawioMeta.js";
 import { getDrawioRenderableIdSet } from "../domain/drawioSelectors.js";
@@ -24,6 +25,14 @@ function createBaseMeta(overrides = {}) {
     drawio_elements_v1: [],
     ...overrides,
   };
+}
+
+function readHasResizeByRuntimeGeometryContract(node) {
+  const tagName = String(node?.tagName || "").toLowerCase();
+  const childTag = String(node?.firstElementChild?.tagName || "").toLowerCase();
+  const effectiveTag = tagName === "g" ? childTag : tagName;
+  const isTextSelf = tagName === "text" || tagName === "foreignobject";
+  return effectiveTag === "rect" || isTextSelf;
 }
 
 test("drawio sticky note: create note adds runtime note row", () => {
@@ -135,4 +144,18 @@ test("drawio sticky note: fallback edit text does not collapse multiline separat
   const lines = buildDrawioNoteTextLines("line1\nline2", 90, { padding: 12, fontSize: 14 });
   const fallbackText = buildDrawioNoteFallbackText(null, lines);
   assert.notEqual(fallbackText, "line1line2");
+});
+
+test("drawio sticky note: geometry contract keeps rect as firstElementChild", () => {
+  const dom = new JSDOM("<svg><g data-drawio-el-id='note_1'><rect/><text data-drawio-note-source='canonical' display='none'>line1\nline2</text><text><tspan>line1</tspan><tspan dy='18'>line2</tspan></text></g></svg>");
+  const group = dom.window.document.querySelector("[data-drawio-el-id='note_1']");
+  assert.ok(group);
+  assert.equal(String(group.firstElementChild?.tagName || "").toLowerCase(), "rect");
+});
+
+test("drawio sticky note: rect-first group stays resizable by geometry classifier", () => {
+  const dom = new JSDOM("<svg><g data-drawio-el-id='note_1'><rect/><text data-drawio-note-source='canonical' display='none'>line1\nline2</text><text><tspan>line1</tspan><tspan dy='18'>line2</tspan></text></g></svg>");
+  const group = dom.window.document.querySelector("[data-drawio-el-id='note_1']");
+  assert.ok(group);
+  assert.equal(readHasResizeByRuntimeGeometryContract(group), true);
 });
