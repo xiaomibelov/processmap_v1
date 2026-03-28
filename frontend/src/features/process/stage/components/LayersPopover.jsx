@@ -49,6 +49,7 @@ const FALLBACK_TOOLS = [
   { id: "rect", icon: "▭", label: "Прямоугольник", runtimeSupported: true },
   { id: "text", icon: "T", label: "Текст", runtimeSupported: true },
   { id: "container", icon: "▣", label: "Контейнер", runtimeSupported: true },
+  { id: "note", icon: "🗒", label: "Стикер", runtimeSupported: true },
 ];
 
 function confirmHybridDelete(idsRaw, labelRaw = "") {
@@ -375,6 +376,7 @@ export default function LayersPopover({
   const selectedLayerId = selectedIsDrawio
     ? toText(selectedDrawioRow.layer_id)
     : toText(selectedHybridElement?.layer_id);
+  const selectedDrawioIsNote = selectedIsDrawio && toText(selectedDrawioRow.type).toLowerCase() === "note";
   const selectedDrawioText = useMemo(() => {
     if (!selectedIsDrawio || !selectedEntityId) return null;
     return readDrawioTextElementContent(drawioState?.svg_cache, selectedEntityId);
@@ -387,18 +389,25 @@ export default function LayersPopover({
     if (!selectedIsDrawio || !selectedEntityId) return null;
     return readDrawioDocXmlCellGeometry(drawioState?.doc_xml, selectedEntityId);
   }, [drawioState?.doc_xml, selectedEntityId, selectedIsDrawio]);
-  const selectedDrawioStyleSurface = useMemo(
-    () => resolveRuntimeStyleSurface(selectedDrawioSnapshot),
-    [selectedDrawioSnapshot],
-  );
+  const selectedDrawioStyleSurface = useMemo(() => {
+    if (selectedDrawioIsNote) return "shape";
+    return resolveRuntimeStyleSurface(selectedDrawioSnapshot);
+  }, [selectedDrawioIsNote, selectedDrawioSnapshot]);
   const selectedDrawioStylePresets = useMemo(
     () => getRuntimeStylePresets(selectedDrawioStyleSurface),
     [selectedDrawioStyleSurface],
   );
-  const selectedDrawioStylePreset = useMemo(
-    () => matchRuntimeStylePreset(selectedDrawioStyleSurface, selectedDrawioSnapshot?.attrs),
-    [selectedDrawioSnapshot?.attrs, selectedDrawioStyleSurface],
-  );
+  const selectedDrawioStylePreset = useMemo(() => {
+    const noteStyle = asObject(selectedDrawioRow.style);
+    const attrs = selectedDrawioIsNote
+      ? {
+        fill: toText(noteStyle.bg_color),
+        stroke: toText(noteStyle.border_color),
+        "stroke-width": "2",
+      }
+      : selectedDrawioSnapshot?.attrs;
+    return matchRuntimeStylePreset(selectedDrawioStyleSurface, attrs);
+  }, [selectedDrawioIsNote, selectedDrawioRow.style, selectedDrawioSnapshot?.attrs, selectedDrawioStyleSurface]);
   const selectedDrawioTextEditable = selectedDrawioText != null;
   const selectedDrawioTextState = useMemo(() => {
     if (!selectedIsDrawio || !selectedEntityId || !selectedDrawioTextEditable) return null;
@@ -412,14 +421,21 @@ export default function LayersPopover({
     selectedEntityId,
     selectedIsDrawio,
   ]);
-  const selectedDrawioResizeSurface = useMemo(
-    () => resolveRuntimeResizeSurface(selectedDrawioSnapshot),
-    [selectedDrawioSnapshot],
-  );
-  const selectedDrawioSize = useMemo(
-    () => readRuntimeResizableSize(selectedDrawioSnapshot),
-    [selectedDrawioSnapshot],
-  );
+  const selectedDrawioResizeSurface = useMemo(() => {
+    if (selectedDrawioIsNote) return "box";
+    return resolveRuntimeResizeSurface(selectedDrawioSnapshot);
+  }, [selectedDrawioIsNote, selectedDrawioSnapshot]);
+  const selectedDrawioSize = useMemo(() => {
+    if (selectedDrawioIsNote) {
+      const width = Number(selectedDrawioRow.width);
+      const height = Number(selectedDrawioRow.height);
+      if (Number.isFinite(width) && Number.isFinite(height)) {
+        return { width, height };
+      }
+      return null;
+    }
+    return readRuntimeResizableSize(selectedDrawioSnapshot);
+  }, [selectedDrawioIsNote, selectedDrawioRow.height, selectedDrawioRow.width, selectedDrawioSnapshot]);
   const selectedDrawioTextActionEnabled = selectedDrawioTextEditable
     && drawioEnabled
     && drawioMode === "edit"

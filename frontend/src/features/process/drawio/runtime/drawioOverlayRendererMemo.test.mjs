@@ -76,3 +76,33 @@ test("areDrawioOverlayRendererPropsEqual ignores non-render fields in drawio row
   };
   assert.equal(areDrawioOverlayRendererPropsEqual(prev, next), true);
 });
+
+test("areDrawioOverlayRendererPropsEqual detects note row visual changes", () => {
+  const prev = createBaseProps();
+  prev.drawioMeta.drawio_elements_v1 = [{
+    id: "note-1",
+    type: "note",
+    layer_id: "layer-1",
+    offset_x: 0,
+    offset_y: 0,
+    width: 160,
+    height: 120,
+    text: "A",
+    style: {
+      bg_color: "#fef08a",
+      border_color: "#ca8a04",
+      text_color: "#1f2937",
+    },
+  }];
+  const next = {
+    ...prev,
+    drawioMeta: {
+      ...prev.drawioMeta,
+      drawio_elements_v1: [{
+        ...prev.drawioMeta.drawio_elements_v1[0],
+        text: "B",
+      }],
+    },
+  };
+  assert.equal(areDrawioOverlayRendererPropsEqual(prev, next), false);
+});

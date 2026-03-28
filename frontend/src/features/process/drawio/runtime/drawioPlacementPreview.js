@@ -52,5 +52,20 @@ export function buildDrawioPlacementPreviewSpec(toolIdRaw, pointRaw = {}) {
       guideStroke: "#94a3b8",
     };
   }
+  if (toolId === "note") {
+    return {
+      toolId,
+      shape: "note",
+      x: x - 80,
+      y: y - 60,
+      width: 160,
+      height: 120,
+      rx: 10,
+      fill: "rgba(254,240,138,0.45)",
+      stroke: "#ca8a04",
+      text: "Заметка",
+      textColor: "#1f2937",
+    };
+  }
   return null;
 }

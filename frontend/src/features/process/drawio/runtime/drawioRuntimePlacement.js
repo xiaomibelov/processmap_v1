@@ -1,5 +1,9 @@
 import { promoteRuntimeElementIntoDrawioDoc } from "../drawioDocXml.js";
 import { buildRuntimeWrappedTextMarkup } from "../drawioRuntimeText.js";
+import {
+  buildRuntimeNoteElementRow,
+  isDrawioNoteToolId,
+} from "./drawioRuntimeNote.js";
 
 function toText(value) {
   return String(value || "").trim();
@@ -20,7 +24,7 @@ function escapeAttr(valueRaw) {
 
 function normalizeRuntimeTool(toolRaw) {
   const tool = toText(toolRaw).toLowerCase();
-  if (tool === "select" || tool === "rect" || tool === "text" || tool === "container") return tool;
+  if (tool === "select" || tool === "rect" || tool === "text" || tool === "container" || tool === "note") return tool;
   return "";
 }
 
@@ -75,6 +79,16 @@ function appendMarkupToSvgCache(svgCacheRaw, markupRaw, pointRaw = {}) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}">${markup}</svg>`;
 }
 
+function ensureSvgCache(svgCacheRaw, pointRaw = {}) {
+  const svgCache = toText(svgCacheRaw);
+  if (/<svg\b[^>]*>/i.test(svgCache)) return svgCache;
+  const pointX = toNumber(pointRaw.x, 0);
+  const pointY = toNumber(pointRaw.y, 0);
+  const width = Math.max(1200, Math.round(pointX + 400));
+  const height = Math.max(800, Math.round(pointY + 300));
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}"></svg>`;
+}
+
 function resolveRuntimeElementId(toolIdRaw, existingRowsRaw = []) {
   const toolId = normalizeRuntimeTool(toolIdRaw);
   if (!toolId) return "";
@@ -98,8 +112,17 @@ function buildRuntimeElementRow({
   layerIdRaw,
   zIndexRaw,
   toolIdRaw,
+  pointRaw,
 }) {
   const toolId = normalizeRuntimeTool(toolIdRaw);
+  if (isDrawioNoteToolId(toolId)) {
+    return buildRuntimeNoteElementRow({
+      elementId,
+      layerIdRaw,
+      zIndexRaw,
+      pointRaw,
+    });
+  }
   return {
     id: toText(elementId),
     layer_id: toText(layerIdRaw) || "DL1",
@@ -127,14 +150,17 @@ function buildRuntimePlacementPatch({
   const rows = Array.isArray(meta.drawio_elements_v1) ? meta.drawio_elements_v1 : [];
   const createdId = resolveRuntimeElementId(toolId, rows);
   if (!createdId) return { changed: false, meta, createdId: "" };
+  const noteTool = isDrawioNoteToolId(toolId);
   const markup = buildRuntimeMarkupByTool({
     toolId,
     elementId: createdId,
     x,
     y,
   });
-  if (!markup) return { changed: false, meta, createdId: "" };
-  const svgCache = appendMarkupToSvgCache(meta.svg_cache, markup, { x, y });
+  if (!noteTool && !markup) return { changed: false, meta, createdId: "" };
+  const svgCache = noteTool
+    ? ensureSvgCache(meta.svg_cache, { x, y })
+    : appendMarkupToSvgCache(meta.svg_cache, markup, { x, y });
   const layers = Array.isArray(meta.drawio_layers_v1) && meta.drawio_layers_v1.length
     ? meta.drawio_layers_v1
     : [{ id: "DL1", name: "Default", visible: true, locked: false, opacity: 1 }];
@@ -144,6 +170,7 @@ function buildRuntimePlacementPatch({
     layerIdRaw: activeLayerId,
     zIndexRaw: rows.length,
     toolIdRaw: toolId,
+    pointRaw: { x, y },
   }));
   return {
     changed: true,
@@ -153,11 +180,13 @@ function buildRuntimePlacementPatch({
       enabled: true,
       interaction_mode: "edit",
       active_tool: toolId,
-      doc_xml: promoteRuntimeElementIntoDrawioDoc(meta.doc_xml, {
-        elementId: createdId,
-        toolId,
-        point: { x, y },
-      }),
+      doc_xml: noteTool
+        ? toText(meta.doc_xml)
+        : promoteRuntimeElementIntoDrawioDoc(meta.doc_xml, {
+          elementId: createdId,
+          toolId,
+          point: { x, y },
+        }),
       svg_cache: svgCache,
       drawio_layers_v1: layers,
       active_layer_id: activeLayerId,

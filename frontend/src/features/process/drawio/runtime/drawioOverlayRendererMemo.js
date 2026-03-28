@@ -13,10 +13,18 @@ function layerRowRenderEqual(aRaw, bRaw) {
     && toNumber(a.opacity, 1) === toNumber(b.opacity, 1);
 }
 
+function noteStyleEqual(aRaw, bRaw) {
+  const a = asObject(aRaw);
+  const b = asObject(bRaw);
+  return toText(a.bg_color) === toText(b.bg_color)
+    && toText(a.border_color) === toText(b.border_color)
+    && toText(a.text_color) === toText(b.text_color);
+}
+
 function elementRowRenderEqual(aRaw, bRaw) {
   const a = asObject(aRaw);
   const b = asObject(bRaw);
-  return toText(a.id) === toText(b.id)
+  const sameBase = toText(a.id) === toText(b.id)
     && toText(a.layer_id) === toText(b.layer_id)
     && (a.visible !== false) === (b.visible !== false)
     && (a.locked === true) === (b.locked === true)
@@ -24,6 +32,17 @@ function elementRowRenderEqual(aRaw, bRaw) {
     && toNumber(a.opacity, 1) === toNumber(b.opacity, 1)
     && toNumber(a.offset_x ?? a.offsetX, 0) === toNumber(b.offset_x ?? b.offsetX, 0)
     && toNumber(a.offset_y ?? a.offsetY, 0) === toNumber(b.offset_y ?? b.offsetY, 0);
+  if (!sameBase) return false;
+  const aType = toText(a.type).toLowerCase();
+  const bType = toText(b.type).toLowerCase();
+  if (aType !== bType) return false;
+  if (aType === "note") {
+    return toNumber(a.width, 160) === toNumber(b.width, 160)
+      && toNumber(a.height, 120) === toNumber(b.height, 120)
+      && toText(a.text) === toText(b.text)
+      && noteStyleEqual(a.style, b.style);
+  }
+  return true;
 }
 
 /**

@@ -1,5 +1,10 @@
 import { extractDrawioElementIdsFromSvg } from "./drawioSvg.js";
 import { normalizeDrawioAnchor } from "./drawioAnchors.js";
+import {
+  isDrawioNoteRow,
+  normalizeDrawioNoteDimensions,
+  normalizeDrawioNoteStyle,
+} from "./runtime/drawioRuntimeNote.js";
 
 function asObject(value) {
   return value && typeof value === "object" ? value : {};
@@ -38,7 +43,7 @@ export function normalizeDrawioInteractionMode(modeRaw, fallback = DRAWIO_INTERA
 function normalizeDrawioActiveTool(toolRaw) {
   const tool = toText(toolRaw).toLowerCase();
   if (!tool) return "select";
-  if (tool === "select" || tool === "rect" || tool === "text" || tool === "container") return tool;
+  if (tool === "select" || tool === "rect" || tool === "text" || tool === "container" || tool === "note") return tool;
   return "select";
 }
 
@@ -83,6 +88,10 @@ function normalizeDrawioLayersAndElements(valueRaw, svgCacheRaw) {
     const id = toText(row.id);
     if (!id || elementsMap.has(id)) return;
     const layerIdRaw = toText(row.layer_id || row.layerId);
+    const isNote = isDrawioNoteRow(row);
+    const noteDimensions = isNote
+      ? normalizeDrawioNoteDimensions(row.width, row.height)
+      : null;
     elementsMap.set(id, {
       id,
       layer_id: layerIds.has(layerIdRaw) ? layerIdRaw : activeLayerId,
@@ -94,6 +103,12 @@ function normalizeDrawioLayersAndElements(valueRaw, svgCacheRaw) {
       offset_y: clampNumber(row.offset_y ?? row.offsetY, 0),
       z_index: Math.max(0, Math.round(clampNumber(row.z_index, idx, 0))),
       ...(toText(row.text || row.label) ? { text: toText(row.text || row.label) } : {}),
+      ...(isNote ? {
+        type: "note",
+        width: noteDimensions.width,
+        height: noteDimensions.height,
+        style: normalizeDrawioNoteStyle(row.style),
+      } : {}),
       ...(normalizeDrawioAnchor(row.anchor_v1 || row.anchorV1, row) ? {
         anchor_v1: normalizeDrawioAnchor(row.anchor_v1 || row.anchorV1, row),
       } : {}),

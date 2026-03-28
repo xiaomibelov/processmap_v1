@@ -4,6 +4,7 @@ import { parseDrawioSvgCache } from "./drawioSvg";
 import {
   applyDrawioLayerRenderStateToDom,
   applyDrawioSelectionToNode,
+  asArray,
   asObject,
   buildDrawioLayerRenderMaps,
   toNumber,
@@ -26,6 +27,11 @@ import {
   composeOverlayMatrix,
 } from "./runtime/drawioOverlayRendererState.js";
 import { areDrawioOverlayRendererPropsEqual } from "./runtime/drawioOverlayRendererMemo.js";
+import {
+  buildDrawioNoteTextLines,
+  isDrawioNoteRow,
+  normalizeDrawioNoteRow,
+} from "./runtime/drawioRuntimeNote.js";
 
 const DrawioManagedBody = memo(function DrawioManagedBody({ renderedBody }) {
   return <g dangerouslySetInnerHTML={{ __html: renderedBody }} />;
@@ -33,6 +39,35 @@ const DrawioManagedBody = memo(function DrawioManagedBody({ renderedBody }) {
 
 function DrawioPlacementPreview({ placementPreviewSpec }) {
   if (!placementPreviewSpec) return null;
+  if (placementPreviewSpec.shape === "note") {
+    return (
+      <g
+        data-testid={`drawio-placement-preview-${placementPreviewSpec.toolId}`}
+        style={{ pointerEvents: "none" }}
+      >
+        <rect
+          x={placementPreviewSpec.x}
+          y={placementPreviewSpec.y}
+          width={placementPreviewSpec.width}
+          height={placementPreviewSpec.height}
+          rx={placementPreviewSpec.rx}
+          fill={placementPreviewSpec.fill}
+          stroke={placementPreviewSpec.stroke}
+          strokeWidth="2"
+          strokeDasharray="6 4"
+        />
+        <text
+          x={placementPreviewSpec.x + 12}
+          y={placementPreviewSpec.y + 24}
+          fill={placementPreviewSpec.textColor || "#1f2937"}
+          fontSize="14"
+          fontFamily="Arial, sans-serif"
+        >
+          {placementPreviewSpec.text}
+        </text>
+      </g>
+    );
+  }
   return (
     <g
       data-testid={`drawio-placement-preview-${placementPreviewSpec.toolId}`}
@@ -78,6 +113,56 @@ function DrawioPlacementPreview({ placementPreviewSpec }) {
   );
 }
 
+const DrawioRuntimeNotesLayer = memo(function DrawioRuntimeNotesLayer({ noteRows }) {
+  const rows = Array.isArray(noteRows) ? noteRows : [];
+  if (!rows.length) return null;
+  return (
+    <g data-testid="drawio-runtime-notes-layer">
+      {rows.map((rowRaw) => {
+        const row = normalizeDrawioNoteRow(rowRaw);
+        const lines = buildDrawioNoteTextLines(row.text, row.width, { padding: 12, fontSize: 14 });
+        const lineHeight = 18;
+        return (
+          <g
+            key={row.id}
+            id={row.id}
+            data-drawio-el-id={row.id}
+            data-drawio-note="1"
+          >
+            <rect
+              x={0}
+              y={0}
+              width={row.width}
+              height={row.height}
+              rx={10}
+              fill={row.style.bg_color}
+              stroke={row.style.border_color}
+              strokeWidth={2}
+            />
+            <text
+              x={12}
+              y={24}
+              fill={row.style.text_color}
+              fontSize={14}
+              fontFamily="Arial, sans-serif"
+            >
+              {lines.map((line, index) => (
+                <tspan
+                  key={`${row.id}_line_${index}`}
+                  x={12}
+                  dy={index === 0 ? 0 : lineHeight}
+                >
+                  {line || "\u00a0"}
+                </tspan>
+              ))}
+            </text>
+          </g>
+        );
+      })}
+    </g>
+  );
+});
+
 function DrawioOverlayRenderer({
   visible,
   drawioMeta,
@@ -109,7 +194,16 @@ function DrawioOverlayRenderer({
     effectiveMode,
     runtimeTool,
   });
-  const hasRenderable = !!visible && !!parsed?.svg;
+  const runtimeNoteRows = useMemo(
+    () => asArray(meta.drawio_elements_v1)
+      .filter((rowRaw) => {
+        const row = asObject(rowRaw);
+        return isDrawioNoteRow(row) && row.deleted !== true;
+      })
+      .sort((leftRaw, rightRaw) => Number(asObject(leftRaw).z_index || 0) - Number(asObject(rightRaw).z_index || 0)),
+    [meta.drawio_elements_v1],
+  );
+  const hasRenderable = !!visible && (!!parsed?.svg || runtimeNoteRows.length > 0);
   const hasInteractionSurface = hasRenderable || createPlacementActive;
   const placementPreviewEnabled = createPlacementActive && runtimeTool !== "select";
   const parsedBody = String(parsed?.body || "");
@@ -183,6 +277,27 @@ function DrawioOverlayRenderer({
     [parsedBody, effectiveMode, metaLocked, layerMap, elementMap],
   );
   const renderedBody = parsedBody;
+  const registryRenderKey = useMemo(() => [
+    renderedBody,
+    ...runtimeNoteRows.map((rowRaw) => String(asObject(rowRaw).id || "")),
+  ].join("|"), [renderedBody, runtimeNoteRows]);
+  const interactionRenderKey = useMemo(() => [
+    renderedBody,
+    ...runtimeNoteRows.map((rowRaw) => {
+      const row = normalizeDrawioNoteRow(rowRaw);
+      return [
+        row.id,
+        row.width,
+        row.height,
+        row.offset_x,
+        row.offset_y,
+        row.text,
+        row.style.bg_color,
+        row.style.border_color,
+        row.style.text_color,
+      ].join(":");
+    }),
+  ].join("|"), [renderedBody, runtimeNoteRows]);
   const registryRenderedBodyRef = useRef("");
 
   const { registryRef, getNode: getRegistryNode, rebuildRegistry } = useDrawioElementNodeRegistry({
@@ -208,9 +323,9 @@ function DrawioOverlayRenderer({
         null,
         { layerMap, elementMap },
       );
-      if (registryRenderedBodyRef.current !== renderedBody || registryRef.current.size <= 0) {
+      if (registryRenderedBodyRef.current !== registryRenderKey || registryRef.current.size <= 0) {
         rebuildRegistry();
-        registryRenderedBodyRef.current = renderedBody;
+        registryRenderedBodyRef.current = registryRenderKey;
       }
       renderStateAppliedRef.current = renderStateSignature;
       if (selectedId) {
@@ -227,6 +342,7 @@ function DrawioOverlayRenderer({
     rebuildRegistry,
     registryRef,
     renderedBody,
+    registryRenderKey,
     renderStateSignature,
     selectedId,
   ]);
@@ -261,7 +377,7 @@ function DrawioOverlayRenderer({
     selectedId,
     elementMap,
     meta: runtimeMeta,
-    renderedBody,
+    renderedBody: interactionRenderKey,
     svgCache: asObject(drawioMeta).svg_cache,
     screenToDiagram,
     subscribeOverlayMatrix,
@@ -377,6 +493,7 @@ function DrawioOverlayRenderer({
             transform={`matrix(${a},${b},${c},${d},${e},${f})`}
           >
             <DrawioManagedBody renderedBody={renderedBody} />
+            <DrawioRuntimeNotesLayer noteRows={runtimeNoteRows} />
             <DrawioPlacementPreview placementPreviewSpec={placementPreviewSpec} />
           </g>
         </svg>

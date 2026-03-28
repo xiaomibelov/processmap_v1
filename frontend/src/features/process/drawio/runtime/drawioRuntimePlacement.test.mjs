@@ -8,6 +8,7 @@ test("drawio runtime placement: normalize tool keeps only supported runtime tool
   assert.equal(normalizeRuntimeTool("rect"), "rect");
   assert.equal(normalizeRuntimeTool("text"), "text");
   assert.equal(normalizeRuntimeTool("container"), "container");
+  assert.equal(normalizeRuntimeTool("note"), "note");
   assert.equal(normalizeRuntimeTool("ellipse"), "");
 });
 
@@ -53,4 +54,32 @@ test("drawio runtime placement: text patch bootstraps wrapped runtime text surfa
   assert.equal(String(patch.meta?.svg_cache || "").includes('data-drawio-text-width="120"'), true);
   assert.equal(String(patch.meta?.svg_cache || "").includes("<tspan"), true);
   assert.equal(String(patch.meta?.doc_xml || "").includes(String(patch.createdId || "")), true);
+});
+
+test("drawio runtime placement: note patch creates runtime note row without draw.io doc mutation", () => {
+  const sourceDoc = "<mxfile host=\"ProcessMap\" version=\"1\"><diagram id=\"page-1\" name=\"Page-1\"><mxGraphModel><root><mxCell id=\"0\"/><mxCell id=\"1\" parent=\"0\"/></root></mxGraphModel></diagram></mxfile>";
+  const patch = buildRuntimePlacementPatch({
+    metaRaw: {
+      enabled: true,
+      interaction_mode: "edit",
+      active_tool: "select",
+      doc_xml: sourceDoc,
+      svg_cache: "",
+      drawio_layers_v1: [{ id: "DL1", name: "Default", visible: true, locked: false, opacity: 1 }],
+      drawio_elements_v1: [],
+    },
+    toolIdRaw: "note",
+    pointRaw: { x: 300, y: 240 },
+  });
+  assert.equal(patch.changed, true);
+  assert.equal(String(patch.createdId || "").startsWith("note_"), true);
+  assert.equal(String(patch.meta?.active_tool || ""), "note");
+  assert.equal(String(patch.meta?.doc_xml || ""), sourceDoc);
+  const rows = Array.isArray(patch.meta?.drawio_elements_v1) ? patch.meta.drawio_elements_v1 : [];
+  const row = rows.find((entry) => String(entry?.id || "") === String(patch.createdId || ""));
+  assert.equal(String(row?.type || ""), "note");
+  assert.equal(Number.isFinite(Number(row?.width)), true);
+  assert.equal(Number.isFinite(Number(row?.height)), true);
+  assert.equal(String(row?.text || "").length > 0, true);
+  assert.equal(String(patch.meta?.svg_cache || "").includes("<svg"), true);
 });

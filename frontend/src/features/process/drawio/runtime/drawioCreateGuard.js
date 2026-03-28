@@ -4,6 +4,7 @@ const CANVAS_CREATE_TOOL_IDS = new Set([
   "rect",
   "text",
   "container",
+  "note",
 ]);
 
 function toText(value) {
