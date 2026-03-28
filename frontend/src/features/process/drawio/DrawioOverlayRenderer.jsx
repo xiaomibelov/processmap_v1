@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { parseDrawioSvgCache } from "./drawioSvg";
 import {
@@ -426,6 +426,27 @@ function DrawioOverlayRenderer({
   // data-drawio-el-id is now written directly into the SVG string by
   // applyDrawioLayerRenderState for all managed elements, so the DOM scan
   // that used to patch it after render is no longer needed.
+
+  // Eager viewport matrix sync on mount — runs before first paint so that
+  // getBoundingClientRect() returns correct geometry immediately after remount.
+  // Without this, an OFF→ON cycle with viewport pan/zoom in between would leave
+  // the <g> transform stale until the async useEffect subscription fires.
+  useLayoutEffect(() => {
+    const viewportNode = viewportGroupRef.current;
+    if (!(viewportNode instanceof Element)) return;
+    const m = resolveDrawioOverlayRenderMatrix({
+      overlayMatrix,
+      overlayMatrixRef,
+      getOverlayMatrix,
+    });
+    if (!m || typeof m.a === "undefined") return;
+    const composed = composeOverlayMatrix(m, tx, ty);
+    viewportNode.setAttribute(
+      "transform",
+      `matrix(${composed.a},${composed.b},${composed.c},${composed.d},${composed.e},${composed.f})`,
+    );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // mount-only: subscription effect handles subsequent updates
 
   useEffect(() => {
     const viewportNode = viewportGroupRef.current;
