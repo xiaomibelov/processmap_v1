@@ -1880,19 +1880,59 @@ def _normalize_drawio_meta(value: Any) -> Dict[str, Any]:
             offset_x = 0.0
         if not math.isfinite(offset_y):
             offset_y = 0.0
-        elements.append(
-            {
-                "id": element_id,
-                "layer_id": layer_id,
-                "visible": row.get("visible") is not False,
-                "locked": bool(row.get("locked")),
-                "deleted": bool(row.get("deleted")),
-                "opacity": round(max(0.05, min(1.0, element_opacity)), 3),
-                "offset_x": round(offset_x, 3),
-                "offset_y": round(offset_y, 3),
-                "z_index": max(0, z_index),
+        element_entry: Dict[str, Any] = {
+            "id": element_id,
+            "layer_id": layer_id,
+            "visible": row.get("visible") is not False,
+            "locked": bool(row.get("locked")),
+            "deleted": bool(row.get("deleted")),
+            "opacity": round(max(0.05, min(1.0, element_opacity)), 3),
+            "offset_x": round(offset_x, 3),
+            "offset_y": round(offset_y, 3),
+            "z_index": max(0, z_index),
+        }
+        row_type = str(row.get("type") or "").strip().lower()
+        if row_type == "note":
+            text_present = "text" in row
+            label_present = "label" in row
+            if text_present:
+                note_text_raw = row.get("text")
+            elif label_present:
+                note_text_raw = row.get("label")
+            else:
+                note_text_raw = "Заметка"
+            if note_text_raw is None:
+                note_text = "Заметка"
+            else:
+                note_text = str(note_text_raw)
+            try:
+                note_width = float(row.get("width", 160))
+            except Exception:
+                note_width = 160.0
+            try:
+                note_height = float(row.get("height", 120))
+            except Exception:
+                note_height = 120.0
+            if not math.isfinite(note_width):
+                note_width = 160.0
+            if not math.isfinite(note_height):
+                note_height = 120.0
+            note_style_raw = row.get("style") if isinstance(row.get("style"), dict) else {}
+            note_style = {
+                "bg_color": str(note_style_raw.get("bg_color") or "").strip() or "#fef08a",
+                "border_color": str(note_style_raw.get("border_color") or "").strip() or "#ca8a04",
+                "text_color": str(note_style_raw.get("text_color") or "").strip() or "#1f2937",
             }
-        )
+            element_entry.update(
+                {
+                    "type": "note",
+                    "text": note_text,
+                    "width": int(round(max(80.0, min(1600.0, note_width)))),
+                    "height": int(round(max(56.0, min(1600.0, note_height)))),
+                    "style": note_style,
+                }
+            )
+        elements.append(element_entry)
     return {
         "enabled": bool(raw.get("enabled")),
         "locked": bool(raw.get("locked")),

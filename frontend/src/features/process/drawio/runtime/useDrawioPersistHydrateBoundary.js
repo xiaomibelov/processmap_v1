@@ -2,6 +2,7 @@ import { useEffect } from "react";
 
 import { pushDeleteTrace } from "../../stage/utils/deleteTrace";
 import mergeDrawioHydrateDeletions from "./drawioHydrateMergeDeletions.js";
+import mergeDrawioHydrateNoteFields from "./drawioHydrateMergeNoteFields.js";
 import decideDrawioPersistHydrateAction from "./drawioPersistHydrateDecision.js";
 
 function asObject(value) {
@@ -58,9 +59,13 @@ export default function useDrawioPersistHydrateBoundary({
       return;
     }
 
-    const mergedIncoming = mergeDrawioHydrateDeletions({
+    const incomingWithMergedNoteFields = mergeDrawioHydrateNoteFields({
       current: currentMeta,
       incoming,
+    });
+    const mergedIncoming = mergeDrawioHydrateDeletions({
+      current: currentMeta,
+      incoming: incomingWithMergedNoteFields,
     });
     pushDeleteTrace("drawio_hydrate_apply", decision.traceMeta);
     setDrawioMeta(mergedIncoming);
