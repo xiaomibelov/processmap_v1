@@ -91,6 +91,7 @@ export default function DrawioRichTextEditor({ inlineEdit, onCommit, onCancel })
   const measureEditorHeightRef = useRef(() => {});
   const [hostSize, setHostSize] = useState({ width: 0, height: 0 });
   const [editorHeight, setEditorHeight] = useState(INLINE_EDITOR_FALLBACK_HEIGHT);
+  const hasResizeObserver = typeof ResizeObserver === "function";
 
   const measureEditorHeight = useCallback(() => {
     const wrapper = wrapperRef.current;
@@ -189,7 +190,7 @@ export default function DrawioRichTextEditor({ inlineEdit, onCommit, onCancel })
     if (!(wrapper instanceof Element)) return undefined;
     measureEditorHeight();
     let resizeObserver = null;
-    if (typeof ResizeObserver === "function") {
+    if (hasResizeObserver) {
       resizeObserver = new ResizeObserver(() => measureEditorHeight());
       resizeObserver.observe(wrapper);
       if (editor instanceof Element) resizeObserver.observe(editor);
@@ -200,7 +201,23 @@ export default function DrawioRichTextEditor({ inlineEdit, onCommit, onCancel })
       editor?.removeEventListener("input", onInput);
       resizeObserver?.disconnect?.();
     };
-  }, [measureEditorHeight]);
+  }, [hasResizeObserver, measureEditorHeight]);
+
+  useLayoutEffect(() => {
+    if (hasResizeObserver) return undefined;
+    measureEditorHeight();
+    return undefined;
+  }, [
+    hasResizeObserver,
+    hostSize.height,
+    hostSize.width,
+    inlineEdit.height,
+    inlineEdit.id,
+    inlineEdit.left,
+    inlineEdit.top,
+    inlineEdit.width,
+    measureEditorHeight,
+  ]);
 
   const layout = useMemo(() => computeInlineEditorLayout({
     inlineLeft: inlineEdit.left,

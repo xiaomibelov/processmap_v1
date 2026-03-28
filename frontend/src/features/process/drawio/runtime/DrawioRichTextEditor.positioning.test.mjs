@@ -48,6 +48,11 @@ function measureEditorHeight(prevHeight, rectHeight) {
   return prevHeight === next ? prevHeight : next;
 }
 
+function applyNoResizeObserverFallbackRemeasure({ hasResizeObserver, prevHeight, measuredRectHeight }) {
+  if (hasResizeObserver) return prevHeight;
+  return measureEditorHeight(prevHeight, measuredRectHeight);
+}
+
 function storageToHtml(text) {
   const lines = String(text ?? "").split("\n");
   return lines.map((line) => {
@@ -149,6 +154,20 @@ describe("DrawioRichTextEditor viewport clamp", () => {
 });
 
 describe("DrawioRichTextEditor measured-height clamp behavior", () => {
+  it("keeps ResizeObserver/input measurement path unchanged when observer exists", () => {
+    let measuredHeight = INLINE_EDITOR_FALLBACK_HEIGHT;
+    const fallbackAttempt = applyNoResizeObserverFallbackRemeasure({
+      hasResizeObserver: true,
+      prevHeight: measuredHeight,
+      measuredRectHeight: 140,
+    });
+    assert.equal(fallbackAttempt, INLINE_EDITOR_FALLBACK_HEIGHT);
+
+    // ResizeObserver/input path still updates real measured height.
+    measuredHeight = measureEditorHeight(measuredHeight, 140);
+    assert.equal(measuredHeight, 140);
+  });
+
   it("initial multiline mount can update measured height before final clamp", () => {
     // start from fallback (pre-measure), then mount measurement yields real height.
     let measuredHeight = INLINE_EDITOR_FALLBACK_HEIGHT;
@@ -192,6 +211,26 @@ describe("DrawioRichTextEditor measured-height clamp behavior", () => {
     assert.equal(layout.top, 0);
   });
 
+  it("no-ResizeObserver fallback re-measures on geometry change", () => {
+    let measuredHeight = INLINE_EDITOR_FALLBACK_HEIGHT;
+    measuredHeight = applyNoResizeObserverFallbackRemeasure({
+      hasResizeObserver: false,
+      prevHeight: measuredHeight,
+      measuredRectHeight: 130,
+    });
+    assert.equal(measuredHeight, 130);
+
+    const layout = computeInlineEditorLayout({
+      inlineLeft: 10,
+      inlineTop: 110,
+      inlineWidth: 160,
+      containerWidth: 220,
+      containerHeight: 100,
+      editorHeight: measuredHeight,
+    });
+    assert.equal(layout.top, 0);
+  });
+
   it("ignores invalid measurements and keeps previous safe height", () => {
     const prev = 96;
     const next = measureEditorHeight(prev, 0);
@@ -210,4 +249,3 @@ describe("DrawioRichTextEditor content conversion regression guard", () => {
     assert.equal(htmlToStorage(storageToHtml(src)), src);
   });
 });
-
