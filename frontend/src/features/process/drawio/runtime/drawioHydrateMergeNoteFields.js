@@ -23,6 +23,7 @@ function normalizeRows(rowsRaw) {
 export default function mergeDrawioHydrateNoteFields({
   current,
   incoming,
+  explicitEmptyNoteIds,
 }) {
   const currentMeta = asObject(current);
   const incomingMeta = asObject(incoming);
@@ -37,6 +38,9 @@ export default function mergeDrawioHydrateNoteFields({
     localNoteById.set(id, row);
   });
   if (!localNoteById.size) return incomingMeta;
+  const explicitEmptyIds = new Set(
+    asArray(explicitEmptyNoteIds).map((idRaw) => toText(idRaw)).filter(Boolean),
+  );
 
   let changed = false;
   const mergedRows = incomingRows.map((row) => {
@@ -55,6 +59,8 @@ export default function mergeDrawioHydrateNoteFields({
     };
     if (Object.prototype.hasOwnProperty.call(localNote, "text")) {
       next.text = localNote.text;
+    } else if (explicitEmptyIds.has(id)) {
+      next.text = "";
     }
     return next;
   });
@@ -65,4 +71,3 @@ export default function mergeDrawioHydrateNoteFields({
     drawio_elements_v1: mergedRows,
   };
 }
-

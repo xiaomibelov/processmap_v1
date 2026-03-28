@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { pushDeleteTrace } from "../../stage/utils/deleteTrace";
 import mergeDrawioHydrateDeletions from "./drawioHydrateMergeDeletions.js";
@@ -7,6 +7,18 @@ import decideDrawioPersistHydrateAction from "./drawioPersistHydrateDecision.js"
 
 function asObject(value) {
   return value && typeof value === "object" ? value : {};
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function toText(value) {
+  return String(value || "").trim();
+}
+
+function isNoteRow(rowRaw) {
+  return toText(asObject(rowRaw).type).toLowerCase() === "note";
 }
 
 export default function useDrawioPersistHydrateBoundary({
@@ -18,6 +30,45 @@ export default function useDrawioPersistHydrateBoundary({
   normalizeDrawioMeta,
   serializeDrawioMeta,
 }) {
+  const explicitEmptyNoteIdsRef = useRef(new Set());
+  const prevNoteTextStateRef = useRef(new Map());
+
+  useEffect(() => {
+    const nextRows = asArray(asObject(drawioMeta).drawio_elements_v1);
+    const nextState = new Map();
+    const nextExplicitEmptyIds = new Set(explicitEmptyNoteIdsRef.current);
+    const prevState = prevNoteTextStateRef.current;
+
+    nextRows.forEach((rowRaw) => {
+      const row = asObject(rowRaw);
+      const id = toText(row.id);
+      if (!id || !isNoteRow(row)) return;
+      const hasText = Object.prototype.hasOwnProperty.call(row, "text");
+      const text = hasText ? String(row.text ?? "") : "";
+      nextState.set(id, { hasText, text });
+      if (row.deleted === true) {
+        nextExplicitEmptyIds.delete(id);
+        return;
+      }
+      if (hasText) {
+        if (text === "") nextExplicitEmptyIds.add(id);
+        else nextExplicitEmptyIds.delete(id);
+        return;
+      }
+      const prev = prevState.get(id);
+      if (prev?.hasText === true && prev.text !== "") {
+        nextExplicitEmptyIds.add(id);
+      }
+    });
+
+    Array.from(nextExplicitEmptyIds).forEach((id) => {
+      if (!nextState.has(id)) nextExplicitEmptyIds.delete(id);
+    });
+
+    explicitEmptyNoteIdsRef.current = nextExplicitEmptyIds;
+    prevNoteTextStateRef.current = nextState;
+  }, [drawioMeta]);
+
   useEffect(() => {
     const incoming = normalizeDrawioMeta(drawioFromDraft);
     const currentMeta = normalizeDrawioMeta(drawioMetaRef.current);
@@ -62,6 +113,7 @@ export default function useDrawioPersistHydrateBoundary({
     const incomingWithMergedNoteFields = mergeDrawioHydrateNoteFields({
       current: currentMeta,
       incoming,
+      explicitEmptyNoteIds: Array.from(explicitEmptyNoteIdsRef.current),
     });
     const mergedIncoming = mergeDrawioHydrateDeletions({
       current: currentMeta,
