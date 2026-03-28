@@ -478,13 +478,18 @@ export function createTemplatePackAdapter(deps = {}) {
       const height = Number(node?.di?.h);
       if (width > 0) shapeAttrs.width = width;
       if (height > 0) shapeAttrs.height = height;
+      const shapeDescriptor = elementFactory.createShape(shapeAttrs);
+      const actualWidth = Number(shapeDescriptor?.width || 0);
+      const actualHeight = Number(shapeDescriptor?.height || 0);
       const relX = Number(node?.di?.x || 0) - minX;
       const relY = Number(node?.di?.y || 0) - minY;
+      const originX = Math.round(offsetX + relX);
+      const originY = Math.round(offsetY + relY);
       const shape = modeling.createShape(
-        elementFactory.createShape(shapeAttrs),
+        shapeDescriptor,
         {
-          x: Math.round(offsetX + relX),
-          y: Math.round(offsetY + relY),
+          x: originX + (actualWidth > 0 ? (actualWidth / 2) : 0),
+          y: originY + (actualHeight > 0 ? (actualHeight / 2) : 0),
         },
         parent,
       );

@@ -69,8 +69,8 @@ function createModelerWithServices({
         type: shapeDef?.type || "bpmn:Task",
         x: Number(pos?.x || 0),
         y: Number(pos?.y || 0),
-        width: 140,
-        height: 80,
+        width: Number(shapeDef?.width || 140),
+        height: Number(shapeDef?.height || 80),
         parent,
         businessObject: {
           id: `Task_new_${shapeSeq}`,
@@ -113,7 +113,10 @@ function createModelerWithServices({
 
   const elementFactory = {
     createShape(input = {}) {
-      return { ...input };
+      const shape = { ...input };
+      if (!(Number(shape?.width || 0) > 0)) shape.width = 140;
+      if (!(Number(shape?.height || 0) > 0)) shape.height = 80;
+      return shape;
     },
   };
 
@@ -304,6 +307,47 @@ test("insertTemplatePackOnModeler creates nodes, connects sequence flows and emi
   assert.equal(connectCalls.length, 2);
   assert.equal(emitCalls.length, 1);
   assert.equal(emitCalls[0][0], "diagram.template_insert");
+});
+
+test("insertTemplatePackOnModeler restores dimensions and converts stored top-left to center coordinates", async () => {
+  const anchor = createShape("Anchor_1", 100, 100, "Anchor");
+  const { adapter, createShapeCalls } = createModelerWithServices({
+    anchorShape: anchor,
+    selectionItems: [anchor],
+    registryItems: [anchor],
+  });
+
+  const payload = {
+    mode: "after",
+    pack: {
+      packId: "pack_dims_center",
+      entryNodeId: "N1",
+      exitNodeId: "N2",
+      fragment: {
+        nodes: [
+          { id: "N1", type: "bpmn:Task", name: "Wide", di: { x: 10, y: 20, w: 222, h: 111 } },
+          { id: "N2", type: "bpmn:Task", name: "Default", di: { x: 180, y: 20 } },
+        ],
+        edges: [],
+      },
+    },
+  };
+
+  const result = await adapter.insertTemplatePackOnModeler(payload);
+  assert.equal(result?.ok, true);
+  assert.equal(createShapeCalls.length, 2);
+  assert.equal(createShapeCalls[0]?.shapeDef?.width, 222);
+  assert.equal(createShapeCalls[0]?.shapeDef?.height, 111);
+  assert.equal(createShapeCalls[0]?.pos?.x, 571);
+  assert.equal(createShapeCalls[0]?.pos?.y, 139.5);
+  assert.equal(createShapeCalls[1]?.shapeDef?.width, 140);
+  assert.equal(createShapeCalls[1]?.shapeDef?.height, 80);
+  assert.equal(createShapeCalls[1]?.pos?.x, 700);
+  assert.equal(createShapeCalls[1]?.pos?.y, 124);
+
+  const firstTopLeftX = Number(createShapeCalls[0]?.pos?.x || 0) - (Number(createShapeCalls[0]?.shapeDef?.width || 0) / 2);
+  const secondTopLeftX = Number(createShapeCalls[1]?.pos?.x || 0) - (Number(createShapeCalls[1]?.shapeDef?.width || 0) / 2);
+  assert.equal(secondTopLeftX - firstTopLeftX, 170);
 });
 
 test("insertTemplatePackOnModeler reapplies semantic payload to inserted node businessObject", async () => {
