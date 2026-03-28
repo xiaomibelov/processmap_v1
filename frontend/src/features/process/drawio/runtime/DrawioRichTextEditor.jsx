@@ -1,4 +1,52 @@
-import React, { useCallback, useEffect, useRef } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
+const INLINE_EDITOR_TOP_OFFSET = 36;
+const INLINE_EDITOR_MIN_WIDTH = 120;
+const INLINE_EDITOR_FALLBACK_HEIGHT = 72;
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function toFiniteNumber(value, fallback = 0) {
+  const next = Number(value);
+  return Number.isFinite(next) ? next : fallback;
+}
+
+function computeInlineEditorLayout({
+  inlineLeft,
+  inlineTop,
+  inlineWidth,
+  containerWidth,
+  containerHeight,
+  editorHeight,
+}) {
+  const width = Math.max(INLINE_EDITOR_MIN_WIDTH, Math.round(toFiniteNumber(inlineWidth, 0)));
+  const baseLeft = Math.round(toFiniteNumber(inlineLeft, 0));
+  const baseTop = Math.round(toFiniteNumber(inlineTop, 0) - INLINE_EDITOR_TOP_OFFSET);
+  const validContainer = Number.isFinite(containerWidth)
+    && Number.isFinite(containerHeight)
+    && containerWidth > 0
+    && containerHeight > 0;
+  if (!validContainer) {
+    return { left: baseLeft, top: baseTop, width };
+  }
+  const safeHeight = Math.max(1, Math.round(toFiniteNumber(editorHeight, INLINE_EDITOR_FALLBACK_HEIGHT)));
+  const maxLeft = Math.max(0, Math.round(containerWidth) - width);
+  const maxTop = Math.max(0, Math.round(containerHeight) - safeHeight);
+  return {
+    left: clamp(baseLeft, 0, maxLeft),
+    top: clamp(baseTop, 0, maxTop),
+    width,
+  };
+}
 
 /**
  * Converts storage format (plain text + **bold** markers + \n) to contenteditable HTML.
@@ -38,7 +86,10 @@ function htmlToStorage(html) {
  * Commit: Ctrl+Enter or click outside. Cancel: Escape.
  */
 export default function DrawioRichTextEditor({ inlineEdit, onCommit, onCancel }) {
+  const wrapperRef = useRef(null);
   const editorRef = useRef(null);
+  const [hostSize, setHostSize] = useState({ width: 0, height: 0 });
+  const [editorHeight, setEditorHeight] = useState(INLINE_EDITOR_FALLBACK_HEIGHT);
 
   // Set initial HTML content
   useEffect(() => {
@@ -85,13 +136,73 @@ export default function DrawioRichTextEditor({ inlineEdit, onCommit, onCancel })
     document.execCommand("bold");
   }, []);
 
+  useLayoutEffect(() => {
+    const host = wrapperRef.current?.parentElement;
+    if (!(host instanceof Element)) return undefined;
+    const updateHostSize = () => {
+      const rect = host.getBoundingClientRect();
+      const width = Math.max(0, Math.round(rect.width));
+      const height = Math.max(0, Math.round(rect.height));
+      setHostSize((prev) => (
+        prev.width === width && prev.height === height
+          ? prev
+          : { width, height }
+      ));
+    };
+    updateHostSize();
+    const onResize = () => updateHostSize();
+    window.addEventListener("resize", onResize);
+    let resizeObserver = null;
+    if (typeof ResizeObserver === "function") {
+      resizeObserver = new ResizeObserver(updateHostSize);
+      resizeObserver.observe(host);
+    }
+    return () => {
+      window.removeEventListener("resize", onResize);
+      resizeObserver?.disconnect?.();
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!(wrapper instanceof Element)) return;
+    const rect = wrapper.getBoundingClientRect();
+    if (rect.height < 1) return;
+    const next = Math.round(rect.height);
+    setEditorHeight((prev) => (prev === next ? prev : next));
+  }, [
+    hostSize.height,
+    hostSize.width,
+    inlineEdit.left,
+    inlineEdit.text,
+    inlineEdit.top,
+    inlineEdit.width,
+  ]);
+
+  const layout = useMemo(() => computeInlineEditorLayout({
+    inlineLeft: inlineEdit.left,
+    inlineTop: inlineEdit.top,
+    inlineWidth: inlineEdit.width,
+    containerWidth: hostSize.width,
+    containerHeight: hostSize.height,
+    editorHeight,
+  }), [
+    editorHeight,
+    hostSize.height,
+    hostSize.width,
+    inlineEdit.left,
+    inlineEdit.top,
+    inlineEdit.width,
+  ]);
+
   return (
     <div
+      ref={wrapperRef}
       style={{
         position: "absolute",
-        left: inlineEdit.left,
-        top: inlineEdit.top - 36,
-        width: Math.max(inlineEdit.width, 120),
+        left: layout.left,
+        top: layout.top,
+        width: layout.width,
         zIndex: 20,
         pointerEvents: "all",
       }}
