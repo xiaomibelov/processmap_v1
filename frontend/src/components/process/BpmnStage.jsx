@@ -44,11 +44,13 @@ import {
   syncRobotMetaToBpmn,
 } from "../../features/process/robotmeta/robotMeta";
 import {
+  extractManagedCamundaExtensionStateFromBusinessObject,
   extractCamundaExtensionsMapFromBpmnXml,
   finalizeCamundaExtensionsXml,
   hydrateCamundaExtensionsFromBpmn,
   normalizeCamundaExtensionsMap,
   syncCamundaExtensionsToBpmn,
+  upsertCamundaExtensionStateByElementId,
 } from "../../features/process/camunda/camundaExtensions";
 import { normalizeExecutionPlanVersionList } from "../../features/process/robotmeta/executionPlan";
 import { normalizeHybridLayerMap } from "../../features/process/hybrid/hybridLayerUi";
@@ -2088,6 +2090,69 @@ const BpmnStage = forwardRef(function BpmnStage({
     });
   }
 
+  function seedTemplateInsertCamundaExtensions(inst, payload = {}, inserted = {}) {
+    const sid = String(activeSessionRef.current || sessionId || "").trim();
+    if (!sid || !inst) return { ok: false, seeded: 0, reason: "missing_context" };
+    const remap = asObject(inserted?.remap);
+    const templateNodes = asArray(asObject(asObject(payload?.pack).fragment).nodes);
+    if (!templateNodes.length || !Object.keys(remap).length) {
+      return { ok: true, seeded: 0, reason: "nothing_to_seed" };
+    }
+    const registry = inst.get?.("elementRegistry");
+    if (!registry || typeof registry.get !== "function") {
+      return { ok: false, seeded: 0, reason: "missing_registry" };
+    }
+
+    let nextMap = getCamundaExtensionsMap();
+    let seeded = 0;
+    templateNodes.forEach((node) => {
+      const sourceId = toText(node?.id);
+      if (!sourceId) return;
+      const targetId = toText(remap[sourceId]);
+      if (!targetId) return;
+      const target = registry.get(targetId);
+      if (!target || !isShapeElement(target)) return;
+      const state = extractManagedCamundaExtensionStateFromBusinessObject(target?.businessObject);
+      const hasManagedData = state?.properties?.extensionProperties?.length || state?.properties?.extensionListeners?.length;
+      if (!hasManagedData) return;
+      const beforeSig = JSON.stringify(asObject(nextMap[targetId]));
+      const candidateMap = upsertCamundaExtensionStateByElementId(nextMap, targetId, state);
+      const afterSig = JSON.stringify(asObject(candidateMap[targetId]));
+      if (beforeSig === afterSig) return;
+      nextMap = candidateMap;
+      seeded += 1;
+    });
+
+    if (!seeded) return { ok: true, seeded: 0, reason: "no_managed_entries" };
+
+    const currentDraft = asObject(draftRef.current);
+    const currentMeta = asObject(currentDraft.bpmn_meta);
+    const nextMeta = {
+      version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: normalizeFlowTierMetaMap(currentMeta?.flow_meta),
+      node_path_meta: normalizeNodePathMetaMap(currentMeta?.node_path_meta),
+      robot_meta_by_element_id: normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id),
+      camunda_extensions_by_element_id: normalizeCamundaExtensionsMap(nextMap),
+      hybrid_layer_by_element_id: normalizeHybridLayerMap(currentMeta?.hybrid_layer_by_element_id),
+      hybrid_v2: currentMeta?.hybrid_v2,
+      drawio: currentMeta?.drawio,
+      execution_plans: normalizeExecutionPlanVersionList(currentMeta?.execution_plans),
+    };
+
+    draftRef.current = {
+      ...currentDraft,
+      bpmn_meta: nextMeta,
+    };
+    onSessionSyncRef.current?.({
+      id: sid,
+      session_id: sid,
+      bpmn_meta: nextMeta,
+      _sync_source: "camunda_extensions_template_insert_seed",
+    });
+
+    return { ok: true, seeded };
+  }
+
   function hydrateRobotMetaFromImportedBpmn(inst, xmlText, source = "import_xml") {
     const sid = String(activeSessionRef.current || sessionId || "").trim();
     if (!sid || !inst) return { ok: false, reason: "missing_context" };
@@ -2522,7 +2587,13 @@ const BpmnStage = forwardRef(function BpmnStage({
   }
 
   async function insertTemplatePackOnModeler(payload = {}) {
-    return templatePackAdapter.insertTemplatePackOnModeler(payload);
+    const inserted = await templatePackAdapter.insertTemplatePackOnModeler(payload);
+    if (!inserted?.ok) return inserted;
+    const activeModeler = modelerRef.current;
+    if (activeModeler) {
+      seedTemplateInsertCamundaExtensions(activeModeler, payload, inserted);
+    }
+    return inserted;
   }
 
   async function applyCommandOpsOnModeler(payload = {}) {

@@ -1109,6 +1109,59 @@ function isPmRobotMetaModelEntry(entry) {
   return String(entry?.$type || "").trim() === "pm:RobotMeta";
 }
 
+function parseManagedPropertiesFromModelEntry(entryRaw) {
+  const type = String(entryRaw?.$type || "").trim();
+  if (type !== "camunda:Properties" && type !== "zeebe:Properties") return [];
+  return asArray(entryRaw?.values)
+    .map((item) => normalizeExtensionProperty({
+      id: asText(item?.id) || nextEditorLocalId("prop"),
+      name: item?.name,
+      value: item?.value,
+    }))
+    .filter(Boolean);
+}
+
+function parseManagedExecutionListenerFromModelEntry(entryRaw) {
+  const type = String(entryRaw?.$type || "").trim();
+  if (type !== "camunda:ExecutionListener") return null;
+  const event = normalizeListenerEvent(entryRaw?.event);
+  const candidates = [
+    { type: "class", value: entryRaw?.class },
+    { type: "expression", value: entryRaw?.expression },
+    { type: "delegateExpression", value: entryRaw?.delegateExpression },
+  ].filter((item) => asText(item.value));
+  if (!event || candidates.length !== 1) return null;
+  return normalizeExtensionListener({
+    id: asText(entryRaw?.id) || nextEditorLocalId("listener"),
+    event,
+    type: candidates[0].type,
+    value: String(candidates[0].value || ""),
+  });
+}
+
+export function extractManagedCamundaExtensionStateFromBusinessObject(boRaw) {
+  const bo = asObject(boRaw);
+  const extensionElements = asObject(bo.extensionElements);
+  const values = asArray(extensionElements.values);
+  if (!values.length) return createEmptyCamundaExtensionState();
+
+  const extensionProperties = [];
+  const extensionListeners = [];
+  values.forEach((entry) => {
+    extensionProperties.push(...parseManagedPropertiesFromModelEntry(entry));
+    const listener = parseManagedExecutionListenerFromModelEntry(entry);
+    if (listener) extensionListeners.push(listener);
+  });
+
+  return normalizeCamundaExtensionState({
+    properties: {
+      extensionProperties,
+      extensionListeners,
+    },
+    preservedExtensionElements: [],
+  });
+}
+
 function parseManagedExecutionListenerFromDom(node) {
   const event = normalizeListenerEvent(node?.getAttribute?.("event"));
   const classValue = node?.getAttribute?.("class");
