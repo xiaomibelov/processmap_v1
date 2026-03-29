@@ -187,6 +187,7 @@ export default function useTemplatesStageBridge({
         force: true,
         source: toText(options?.source || "template_apply"),
         trigger: "template_apply",
+        saveOwner: "template_apply",
       }));
       let attempts = 0;
       while (saved?.ok && saved?.pending === true && attempts < 20) {
@@ -196,6 +197,7 @@ export default function useTemplatesStageBridge({
           force: true,
           source: toText(options?.source || "template_apply"),
           trigger: "template_apply",
+          saveOwner: "template_apply",
         }));
       }
       if (!saved?.ok) {

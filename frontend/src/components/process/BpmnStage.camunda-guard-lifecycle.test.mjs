@@ -32,3 +32,19 @@ test("template-insert guard ids continue to flow into real camunda sync path", (
     /syncCamundaExtensionsToModeler\(activeModeler, \{\s*preserveManagedForElementIds: templateInsertClearGuardIds,\s*\}\)/,
   );
 });
+
+test("template insert claims single-writer ownership before returning insert result", () => {
+  assert.match(
+    source,
+    /const coordinator = ensureBpmnCoordinator\(\);\s*coordinator\.beginSingleWriter\?\.?\("template_apply", \{\s*ttlMs: 15000,\s*reason: "template_insert_start",/,
+  );
+});
+
+test("template-apply save forwards saveOwner into coordinator flush lane", () => {
+  assert.match(source, /const resolvedSaveOwner = isTemplateApplySave \? "template_apply" : requestedSaveOwner;/);
+  assert.match(source, /coordinator\.flushSave\(source, \{ force, trigger, saveOwner: resolvedSaveOwner \}\)/);
+});
+
+test("camunda finalize persist reuses coordinator save lane instead of direct persistence write", () => {
+  assert.match(source, /coordinator\.persistExplicitXml\(out, `\$\{source\}:camunda_finalize`, \{/);
+});

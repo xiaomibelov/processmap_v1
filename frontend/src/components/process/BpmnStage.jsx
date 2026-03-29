@@ -2655,10 +2655,18 @@ const BpmnStage = forwardRef(function BpmnStage({
   }
 
   async function insertTemplatePackOnModeler(payload = {}) {
+    const coordinator = ensureBpmnCoordinator();
+    coordinator.beginSingleWriter?.("template_apply", {
+      ttlMs: 15000,
+      reason: "template_insert_start",
+    });
     templateInsertCamundaSeedInFlightRef.current = Number(templateInsertCamundaSeedInFlightRef.current || 0) + 1;
     try {
       const inserted = await templatePackAdapter.insertTemplatePackOnModeler(payload);
-      if (!inserted?.ok) return inserted;
+      if (!inserted?.ok) {
+        coordinator.endSingleWriter?.("template_apply", "template_insert_failed");
+        return inserted;
+      }
       primeTemplateInsertCamundaClearGuard(inserted?.remap);
       const activeModeler = modelerRef.current || await ensureModeler();
       if (activeModeler) {
@@ -3982,12 +3990,21 @@ const BpmnStage = forwardRef(function BpmnStage({
     const force = options?.force === true;
     const source = String(options?.source || (force ? "tab_switch" : "autosave")).trim() || "autosave";
     const trigger = String(options?.trigger || "").trim() || "manual";
+    const requestedSaveOwner = toText(options?.saveOwner || options?.owner).toLowerCase();
+    const isTemplateApplySave = requestedSaveOwner === "template_apply" || source === "template_apply" || trigger === "template_apply";
+    const resolvedSaveOwner = isTemplateApplySave ? "template_apply" : requestedSaveOwner;
     const sid = String(sessionId || "");
     const allowForceFallback = isLocalSessionId(sid);
     if (!sid) return { ok: false, error: "missing session id" };
     ensureBpmnStore();
     const runtime = ensureModelerRuntime();
     const coordinator = ensureBpmnCoordinator();
+    if (resolvedSaveOwner) {
+      coordinator.beginSingleWriter?.(resolvedSaveOwner, {
+        ttlMs: 15000,
+        reason: `${source}:save_local`,
+      });
+    }
     const fallbackXml = String(
       bpmnStoreRef.current?.getState?.()?.xml
       || xml
@@ -4045,7 +4062,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         );
       }
 
-      const flushed = await coordinator.flushSave(source, { force, trigger });
+      const flushed = await coordinator.flushSave(source, { force, trigger, saveOwner: resolvedSaveOwner });
       const nextState = bpmnStoreRef.current?.getState?.() || {};
       const rawOut = String(nextState.xml || fallbackXml || "");
       const out = finalizeCamundaExtensionsXml({
@@ -4055,7 +4072,13 @@ const BpmnStage = forwardRef(function BpmnStage({
 
       if (!flushed?.ok) {
         if (force && allowForceFallback && out.trim()) {
+          if (resolvedSaveOwner) {
+            coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:save_local_force_fallback`);
+          }
           return { ok: true, xml: out, source: "fallback" };
+        }
+        if (resolvedSaveOwner) {
+          coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:save_local_fail`);
         }
         return {
           ok: false,
@@ -4078,7 +4101,12 @@ const BpmnStage = forwardRef(function BpmnStage({
           rev,
           xml_len: out.length,
         });
-        const persistedFinalXml = await ensureBpmnPersistence().saveRaw(sid, out, rev, `${source}:camunda_finalize`);
+        const persistedFinalXml = typeof coordinator.persistExplicitXml === "function"
+          ? await coordinator.persistExplicitXml(out, `${source}:camunda_finalize`, {
+            rev,
+            saveOwner: resolvedSaveOwner,
+          })
+          : await ensureBpmnPersistence().saveRaw(sid, out, rev, `${source}:camunda_finalize`);
         if (!persistedFinalXml?.ok) {
           emitSaveLifecycleEvent("SAVE_PERSIST_FAIL", {
             sid,
@@ -4088,6 +4116,9 @@ const BpmnStage = forwardRef(function BpmnStage({
             xml_len: out.length,
             error: String(persistedFinalXml?.error || "camunda finalize persist failed"),
           });
+          if (resolvedSaveOwner) {
+            coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:camunda_finalize_fail`);
+          }
           return {
             ok: false,
             error: String(persistedFinalXml?.error || "camunda finalize persist failed"),
@@ -4115,6 +4146,9 @@ const BpmnStage = forwardRef(function BpmnStage({
       });
       const hint = isLocalSessionId(sid) ? "local(saved)" : "backend(saved)";
       applyXmlSnapshot(out, hint);
+      if (resolvedSaveOwner) {
+        coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:save_local_done`);
+      }
       logBpmnTrace("saveXML.modeler.after", out, { sid, trigger });
       return { ok: true, xml: out, source: hint };
     } catch (e) {
@@ -4128,6 +4162,9 @@ const BpmnStage = forwardRef(function BpmnStage({
           const rev = Number(bpmnStoreRef.current?.getState?.()?.rev || 0);
           const persisted = await ensureBpmnPersistence().saveRaw(sid, fallbackXml, rev, `${source}:catch_fallback`);
           if (!persisted.ok) {
+            if (resolvedSaveOwner) {
+              coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:save_local_fallback_fail`);
+            }
             return {
               ok: false,
               error: String(persisted.error || msg),
@@ -4136,8 +4173,14 @@ const BpmnStage = forwardRef(function BpmnStage({
               xml: fallbackXml,
             };
           }
+          if (resolvedSaveOwner) {
+            coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:save_local_fallback_done`);
+          }
           return { ok: true, xml: fallbackXml, source: "fallback" };
         }
+      }
+      if (resolvedSaveOwner) {
+        coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:save_local_error`);
       }
       return {
         ok: false,
