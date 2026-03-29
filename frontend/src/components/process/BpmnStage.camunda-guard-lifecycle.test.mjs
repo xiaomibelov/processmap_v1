@@ -13,6 +13,19 @@ test("template-insert camunda clear guard is not cleared when sync is skipped", 
   );
 });
 
+test("syncCamundaExtensionsToModeler skips sync while template insert seed is in-flight", () => {
+  assert.match(
+    source,
+    /function syncCamundaExtensionsToModeler\(inst, options = \{\}\) \{\s*const templateInsertSeedInFlight = Number\(templateInsertCamundaSeedInFlightRef\.current \|\| 0\) > 0;\s*if \(templateInsertSeedInFlight\) \{\s*return \{ ok: true, changed: 0, reason: "template_insert_seed_inflight", skipped: true, preservedManagedSkips: 0 \};/,
+  );
+});
+
+test("syncCamundaExtensionsToModeler always merges template-insert guard ids into preserve list", () => {
+  assert.match(source, /const templateInsertGuardIds = readTemplateInsertCamundaClearGuardIds\(\);/);
+  assert.match(source, /\[\.\.\.explicitPreserveIds, \.\.\.templateInsertGuardIds\]/);
+  assert.match(source, /preserveManagedForElementIds,/);
+});
+
 test("template-insert guard ids continue to flow into real camunda sync path", () => {
   assert.match(
     source,

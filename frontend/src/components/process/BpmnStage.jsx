@@ -2087,10 +2087,21 @@ const BpmnStage = forwardRef(function BpmnStage({
   }
 
   function syncCamundaExtensionsToModeler(inst, options = {}) {
+    const templateInsertSeedInFlight = Number(templateInsertCamundaSeedInFlightRef.current || 0) > 0;
+    if (templateInsertSeedInFlight) {
+      return { ok: true, changed: 0, reason: "template_insert_seed_inflight", skipped: true, preservedManagedSkips: 0 };
+    }
+    const explicitPreserveIds = asArray(options?.preserveManagedForElementIds);
+    const templateInsertGuardIds = readTemplateInsertCamundaClearGuardIds();
+    const preserveManagedForElementIds = Array.from(new Set(
+      [...explicitPreserveIds, ...templateInsertGuardIds]
+        .map((value) => toText(value))
+        .filter(Boolean),
+    ));
     return syncCamundaExtensionsToBpmn({
       modeler: inst,
       camundaExtensionsByElementId: getCamundaExtensionsMap(),
-      preserveManagedForElementIds: asArray(options?.preserveManagedForElementIds),
+      preserveManagedForElementIds,
     });
   }
 
