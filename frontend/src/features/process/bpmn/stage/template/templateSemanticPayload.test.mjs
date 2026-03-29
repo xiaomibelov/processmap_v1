@@ -59,6 +59,8 @@ test("serializeSupportedBusinessObjectPayload captures full supported semantic p
   assert.equal(payload.custom.state, "validated");
   assert.equal(payload.custom.propertyDictionaryBinding.operationKey, "op.main");
   assert.equal(payload.custom.id, undefined);
+  assert.equal(payload.custom.documentation, undefined);
+  assert.equal(payload.custom.extensionElements, undefined);
   assert.equal(payload.custom.incoming, undefined);
 });
 
@@ -87,6 +89,38 @@ test("rehydrateSupportedBusinessObjectPayload rebuilds moddle-typed structures a
   assert.equal(bo.$attrs["pm:state"], "ready");
   assert.equal(bo.status, "ready");
   assert.equal(bo.propertyDictionaryBinding.operationKey, "op.rehydrated");
+});
+
+test("rehydrateSupportedBusinessObjectPayload keeps canonical extensionElements when custom branch carries legacy duplicates", () => {
+  const payload = {
+    documentation: [{ $type: "bpmn:Documentation", text: "doc canonical" }],
+    extensionElements: {
+      $type: "bpmn:ExtensionElements",
+      values: [
+        {
+          $type: "camunda:Properties",
+          values: [
+            { $type: "camunda:Property", name: "source_container_ref", value: "required" },
+            { $type: "camunda:Property", name: "source_container_state", value: "legacy|new" },
+            { $type: "camunda:Property", name: "equipment_type_id", value: "microwave" },
+            { $type: "camunda:Property", name: "equipment_ref", value: "required_runtime" },
+          ],
+        },
+      ],
+    },
+    custom: {
+      extensionElements: null,
+      documentation: [{ text: "legacy custom duplicate" }],
+      status: "ready",
+    },
+  };
+  const bo = { id: "Task_Canonical", $type: "bpmn:Task", name: "Task Canonical" };
+  rehydrateSupportedBusinessObjectPayload(bo, payload, { moddle: createMockModdle() });
+  assert.equal(bo.documentation?.[0]?.text, "doc canonical");
+  assert.equal(bo.extensionElements?.$type, "bpmn:ExtensionElements");
+  assert.equal(bo.extensionElements?.values?.[0]?.$type, "camunda:Properties");
+  assert.equal(bo.extensionElements?.values?.[0]?.values?.length, 4);
+  assert.equal(bo.status, "ready");
 });
 
 test("rehydrateSupportedBusinessObjectPayload applies namespaced attrs without nested $attrs regression", () => {
@@ -151,6 +185,37 @@ test("readTemplateNodeSemanticPayload prefers semanticPayload and falls back to 
     propsMinimal: { custom: { status: "legacy" } },
   });
   assert.equal(legacy.custom.status, "legacy");
+});
+
+test("readTemplateNodeSemanticPayload accepts snake_case payload and promotes canonical extensionElements from legacy custom branch", () => {
+  const semantic = readTemplateNodeSemanticPayload({
+    semantic_payload: {
+      business_object_attrs: { "pm:state": "from_snake" },
+      custom: {
+        extension_elements: {
+          $type: "bpmn:ExtensionElements",
+          values: [
+            {
+              $type: "camunda:Properties",
+              values: [
+                { $type: "camunda:Property", name: "equipment_ref", value: "required_runtime" },
+              ],
+            },
+          ],
+        },
+        documentation: [{ $type: "bpmn:Documentation", text: "legacy custom doc" }],
+        status: "legacy_custom_status",
+      },
+    },
+  });
+  assert.equal(semantic.attrs["pm:state"], "from_snake");
+  assert.equal(semantic.extensionElements?.$type, "bpmn:ExtensionElements");
+  assert.equal(semantic.extensionElements?.values?.[0]?.$type, "camunda:Properties");
+  assert.equal(semantic.documentation?.[0]?.text, "legacy custom doc");
+  assert.equal(semantic.custom.status, "legacy_custom_status");
+  assert.equal(semantic.custom.extensionElements, undefined);
+  assert.equal(semantic.custom.extension_elements, undefined);
+  assert.equal(semantic.custom.documentation, undefined);
 });
 
 test("field classification contract is explicit for persistent/transient/excluded template payload groups", () => {
