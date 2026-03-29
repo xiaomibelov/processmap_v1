@@ -1324,9 +1324,12 @@ export function hydrateCamundaExtensionsFromBpmn({ extractedMap, sessionMetaMap,
     const extractedEntry = normalizeCamundaExtensionState(extracted[elementId]);
     const sessionEntryRaw = session[elementId];
     if (!sessionEntryRaw) {
-      // sessionHasData is true here (checked above). If an element is absent from
-      // session but present in XML, it means the user intentionally deleted all its
-      // managed properties/listeners. Do NOT re-seed from XML — session wins.
+      if (!allowSeedFromBpmn) return;
+      next[elementId] = extractedEntry;
+      addedElements += 1;
+      addedProperties += extractedEntry.properties.extensionProperties.length;
+      addedListeners += extractedEntry.properties.extensionListeners.length;
+      addedPreserved += extractedEntry.preservedExtensionElements.length;
       return;
     }
 
@@ -1335,9 +1338,6 @@ export function hydrateCamundaExtensionsFromBpmn({ extractedMap, sessionMetaMap,
     const extractedSig = JSON.stringify(extractedEntry);
     if (sessionSig !== extractedSig) conflicts.push(elementId);
 
-    // Session meta is authoritative for managed data (properties and listeners).
-    // Do NOT merge from BPMN XML when session already has data for this element —
-    // merging would re-add properties/listeners that the user intentionally deleted.
     const nextProperties = Array.isArray(sessionEntry.properties?.extensionProperties)
       ? sessionEntry.properties.extensionProperties.slice()
       : [];
@@ -1347,6 +1347,32 @@ export function hydrateCamundaExtensionsFromBpmn({ extractedMap, sessionMetaMap,
     const nextPreserved = Array.isArray(sessionEntry.preservedExtensionElements)
       ? sessionEntry.preservedExtensionElements.slice()
       : [];
+
+    const propertyByName = new Set(
+      nextProperties
+        .map((item) => String(item?.name || "").trim())
+        .filter(Boolean),
+    );
+    extractedEntry.properties.extensionProperties.forEach((item) => {
+      const name = String(item?.name || "").trim();
+      if (!name || propertyByName.has(name)) return;
+      propertyByName.add(name);
+      nextProperties.push(item);
+      addedProperties += 1;
+    });
+
+    const listenerSignatures = new Set(
+      nextListeners
+        .map((item) => `${String(item?.event || "")}|${String(item?.type || "")}|${String(item?.value || "")}`)
+        .filter(Boolean),
+    );
+    extractedEntry.properties.extensionListeners.forEach((item) => {
+      const signature = `${String(item?.event || "")}|${String(item?.type || "")}|${String(item?.value || "")}`;
+      if (!signature || listenerSignatures.has(signature)) return;
+      listenerSignatures.add(signature);
+      nextListeners.push(item);
+      addedListeners += 1;
+    });
 
     // preservedExtensionElements are unmanaged XML fragments (connectors, etc.)
     // that are not exposed in the sidebar delete UI — safe to keep merging from XML.

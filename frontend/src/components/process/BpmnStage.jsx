@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { apiDeleteBpmnXml, apiGetBpmnXml, apiPutBpmnXml } from "../../lib/api/bpmnApi";
+import { apiPatchSession } from "../../lib/api/sessionApi";
 import { traceProcess } from "../../features/process/lib/processDebugTrace";
 import { createBpmnWiring } from "../../features/process/bpmn/stage/wiring/bpmnWiring";
 import * as decorManager from "../../features/process/bpmn/stage/decor/decorManager";
@@ -2091,6 +2092,29 @@ const BpmnStage = forwardRef(function BpmnStage({
     });
   }
 
+  async function persistSessionMetaBoundary(nextMetaRaw, options = {}) {
+    const sid = String(activeSessionRef.current || sessionId || "").trim();
+    if (!sid) return { ok: false, reason: "missing_context" };
+    if (isLocalSessionId(sid)) return { ok: true, local: true, skipped: true };
+    const source = toText(options?.source) || "bpmn_stage_session_meta_write";
+    const nextMeta = asObject(nextMetaRaw);
+    const syncRes = await apiPatchSession(sid, { bpmn_meta: nextMeta });
+    if (!syncRes?.ok) {
+      return {
+        ok: false,
+        error: String(syncRes?.error || "session_meta_patch_failed"),
+        status: Number(syncRes?.status || 0),
+      };
+    }
+    if (syncRes.session && typeof syncRes.session === "object") {
+      onSessionSyncRef.current?.({
+        ...syncRes.session,
+        _sync_source: `${source}_session_patch`,
+      });
+    }
+    return { ok: true, session: syncRes?.session || null };
+  }
+
   function seedTemplateInsertCamundaExtensions(inst, payload = {}, inserted = {}) {
     const sid = String(activeSessionRef.current || sessionId || "").trim();
     if (!sid || !inst) return { ok: false, seeded: 0, reason: "missing_context" };
@@ -2151,7 +2175,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       _sync_source: "camunda_extensions_template_insert_seed",
     });
 
-    return { ok: true, seeded };
+    return { ok: true, seeded, nextMeta };
   }
 
   function hydrateRobotMetaFromImportedBpmn(inst, xmlText, source = "import_xml") {
@@ -2594,7 +2618,30 @@ const BpmnStage = forwardRef(function BpmnStage({
       if (!inserted?.ok) return inserted;
       const activeModeler = modelerRef.current || await ensureModeler();
       if (activeModeler) {
-        seedTemplateInsertCamundaExtensions(activeModeler, payload, inserted);
+        const seedResult = seedTemplateInsertCamundaExtensions(activeModeler, payload, inserted);
+        if (seedResult?.ok && Number(seedResult?.seeded || 0) > 0 && seedResult?.nextMeta) {
+          try {
+            const persistResult = await persistSessionMetaBoundary(seedResult.nextMeta, {
+              source: "camunda_extensions_template_insert_seed",
+            });
+            if (!persistResult?.ok) {
+              // eslint-disable-next-line no-console
+              console.warn("[CAMUNDA_EXT] template insert seed persist failed", {
+                sid: String(activeSessionRef.current || sessionId || ""),
+                seeded: Number(seedResult?.seeded || 0),
+                status: Number(persistResult?.status || 0),
+                error: String(persistResult?.error || "session_meta_patch_failed"),
+              });
+            }
+          } catch (error) {
+            // eslint-disable-next-line no-console
+            console.warn("[CAMUNDA_EXT] template insert seed persist exception", {
+              sid: String(activeSessionRef.current || sessionId || ""),
+              seeded: Number(seedResult?.seeded || 0),
+              error: String(error?.message || error || "session_meta_patch_failed"),
+            });
+          }
+        }
       }
       return inserted;
     } finally {
