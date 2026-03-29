@@ -564,8 +564,10 @@ function mergeSessionDraft(prevDraft, sid, session, source = "session_sync") {
     const prevRev = Number(prev?.bpmn_xml_version || prev?.version || 0);
     const nextRev = Number(incoming?.bpmn_xml_version || incoming?.version || 0);
     const incomingHasXmlRev = hasOwn(incoming, "bpmn_xml_version") || hasOwn(incoming, "version");
+    const isPatchSessionSource =
+      sourceKey === "patch_session" || sourceKey.endsWith("_session_patch");
     const shouldSkipPatchXml =
-      sourceKey === "patch_session"
+      isPatchSessionSource
       && xmlChanged;
 
     if (shouldSkipPatchXml) {
