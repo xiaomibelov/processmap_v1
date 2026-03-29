@@ -53,6 +53,44 @@ export async function loadTemplatesForScopes({
   };
 }
 
+export async function applyBpmnFragmentTemplateImmediate({
+  template,
+  insertBpmnFragmentTemplateImmediately,
+  diagramContainerRect,
+  setPickerOpen,
+  setError,
+  setInfo,
+}) {
+  if (typeof insertBpmnFragmentTemplateImmediately !== "function") {
+    const error = "BPMN insert API недоступен.";
+    setError?.(error);
+    return { ok: false, error };
+  }
+  const inserted = await Promise.resolve(
+    insertBpmnFragmentTemplateImmediately(template, {
+      mode: "after",
+      preferPointAnchor: true,
+      persistImmediately: true,
+      source: "template_apply",
+      diagramContainerRect,
+    }),
+  );
+  if (!inserted?.ok) {
+    const error = toText(inserted?.error || "Не удалось вставить BPMN-фрагмент.");
+    setError?.(error);
+    return { ok: false, error };
+  }
+  const createdNodes = Number(inserted?.createdNodes || 0);
+  const createdEdges = Number(inserted?.createdEdges || 0);
+  setPickerOpen?.(false);
+  setInfo?.(`Inserted: ${createdNodes} nodes, ${createdEdges} flows.`);
+  return {
+    ...inserted,
+    ok: true,
+    immediate: true,
+  };
+}
+
 export default function useTemplatesStore({
   userId = "",
   orgId = "",
@@ -422,25 +460,19 @@ export default function useTemplatesStore({
       return { ok: false, error };
     }
     if (templateType === "bpmn_fragment_v1") {
-      if (typeof insertBpmnFragmentTemplateImmediately !== "function") {
-        const error = "BPMN insert API недоступен.";
-        setError?.(error);
-        return { ok: false, error };
-      }
-      const placement = startBpmnFragmentPlacement(template);
-      if (!placement?.ok) {
-        const error = toText(placement?.error || "Не удалось подготовить вставку BPMN-фрагмента.");
-        setError?.(error);
-        return { ok: false, error };
-      }
-      setPickerOpen(false);
-      setInfo?.("Выберите точку на диаграмме для вставки шаблона.");
-      return { ok: true, placement: true };
+      return await applyBpmnFragmentTemplateImmediate({
+        template,
+        insertBpmnFragmentTemplateImmediately,
+        diagramContainerRect,
+        setPickerOpen,
+        setError,
+        setInfo,
+      });
     }
     const error = "Для прямой вставки в сессию поддерживаются только BPMN fragment templates.";
     setError?.(error);
     return { ok: false, error };
-  }, [insertBpmnFragmentTemplateImmediately, setError, setInfo, startBpmnFragmentPlacement]);
+  }, [diagramContainerRect, insertBpmnFragmentTemplateImmediately, setError, setInfo, setPickerOpen]);
 
   const removeTemplate = useCallback(async (template) => {
     const item = template && typeof template === "object" ? template : {};
