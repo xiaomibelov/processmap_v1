@@ -1468,18 +1468,34 @@ function setBpmnProperty(target, key, value) {
   target[key] = value;
 }
 
-export function syncCamundaExtensionsToBpmn({ modeler, camundaExtensionsByElementId } = {}) {
+function normalizeElementIdSet(valueRaw) {
+  const out = new Set();
+  asArray(valueRaw).forEach((item) => {
+    const id = asText(item);
+    if (!id) return;
+    out.add(id);
+  });
+  return out;
+}
+
+export function syncCamundaExtensionsToBpmn({
+  modeler,
+  camundaExtensionsByElementId,
+  preserveManagedForElementIds,
+} = {}) {
   if (!modeler || typeof modeler.get !== "function") {
-    return { ok: false, changed: 0, reason: "missing_modeler" };
+    return { ok: false, changed: 0, preservedManagedSkips: 0, reason: "missing_modeler" };
   }
   try {
     const registry = modeler.get("elementRegistry");
     const moddle = modeler.get("moddle");
     if (!registry || !moddle || typeof moddle.create !== "function") {
-      return { ok: false, changed: 0, reason: "missing_services" };
+      return { ok: false, changed: 0, preservedManagedSkips: 0, reason: "missing_services" };
     }
 
+    const explicitMapEntryIds = normalizeElementIdSet(Object.keys(asObject(camundaExtensionsByElementId)));
     const normalizedMap = normalizeCamundaExtensionsMap(camundaExtensionsByElementId);
+    const preserveManagedIds = normalizeElementIdSet(preserveManagedForElementIds);
     const candidateIds = new Set(Object.keys(normalizedMap));
     asArray(registry.getAll?.()).forEach((element) => {
       const bo = element?.businessObject;
@@ -1492,6 +1508,7 @@ export function syncCamundaExtensionsToBpmn({ modeler, camundaExtensionsByElemen
     });
 
     let changed = 0;
+    let preservedManagedSkips = 0;
     candidateIds.forEach((elementId) => {
       const element = registry.get?.(elementId);
       const bo = element?.businessObject;
@@ -1499,14 +1516,21 @@ export function syncCamundaExtensionsToBpmn({ modeler, camundaExtensionsByElemen
 
       const currentExt = bo.extensionElements || null;
       const currentValues = asArray(currentExt?.values);
+      const hasCurrentManagedEntries = currentValues.some((entry) => isManagedCamundaModelEntry(entry));
       const nonManagedValues = currentValues.filter((entry) => !isManagedCamundaModelEntry(entry));
+      const hasMapEntry = Object.prototype.hasOwnProperty.call(normalizedMap, elementId);
+      const hasExplicitMapEntry = explicitMapEntryIds.has(elementId);
       const nextState = normalizedMap[elementId] || createEmptyCamundaExtensionState();
       const nextManagedEntries = createCamundaModelEntries(moddle, nextState);
       const prevManagedSig = signatureForManagedModelEntries(currentValues);
       const nextManagedSig = signatureForManagedModelEntries(nextManagedEntries);
 
       if (!nextManagedEntries.length) {
-        if (!currentValues.some((entry) => isManagedCamundaModelEntry(entry))) return;
+        if (!hasCurrentManagedEntries) return;
+        if (!hasMapEntry && !hasExplicitMapEntry && preserveManagedIds.has(elementId)) {
+          preservedManagedSkips += 1;
+          return;
+        }
         if (nonManagedValues.length) {
           setBpmnProperty(currentExt, "values", nonManagedValues);
         } else {
@@ -1526,9 +1550,14 @@ export function syncCamundaExtensionsToBpmn({ modeler, camundaExtensionsByElemen
       changed += 1;
     });
 
-    return { ok: true, changed, candidates: candidateIds.size };
+    return { ok: true, changed, candidates: candidateIds.size, preservedManagedSkips };
   } catch (error) {
-    return { ok: false, changed: 0, reason: String(error?.message || error || "sync_failed") };
+    return {
+      ok: false,
+      changed: 0,
+      preservedManagedSkips: 0,
+      reason: String(error?.message || error || "sync_failed"),
+    };
   }
 }
 

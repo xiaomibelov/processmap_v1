@@ -1268,6 +1268,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     ts: 0,
   });
   const templateInsertCamundaSeedInFlightRef = useRef(0);
+  const templateInsertCamundaClearGuardRef = useRef({ ids: [], expiresAt: 0 });
   const suppressCommandStackRef = useRef(0);
   const suppressViewboxEventRef = useRef(0);
   const modelerReadyRef = useRef(false);
@@ -2085,11 +2086,42 @@ const BpmnStage = forwardRef(function BpmnStage({
     });
   }
 
-  function syncCamundaExtensionsToModeler(inst) {
+  function syncCamundaExtensionsToModeler(inst, options = {}) {
     return syncCamundaExtensionsToBpmn({
       modeler: inst,
       camundaExtensionsByElementId: getCamundaExtensionsMap(),
+      preserveManagedForElementIds: asArray(options?.preserveManagedForElementIds),
     });
+  }
+
+  function primeTemplateInsertCamundaClearGuard(remapRaw = {}) {
+    const remap = asObject(remapRaw);
+    const ids = Array.from(new Set(
+      Object.values(remap)
+        .map((value) => toText(value))
+        .filter(Boolean),
+    ));
+    if (!ids.length) return;
+    templateInsertCamundaClearGuardRef.current = {
+      ids,
+      expiresAt: Date.now() + 15000,
+    };
+  }
+
+  function readTemplateInsertCamundaClearGuardIds() {
+    const state = asObject(templateInsertCamundaClearGuardRef.current);
+    const expiresAt = Number(state.expiresAt || 0);
+    const ids = asArray(state.ids).map((value) => toText(value)).filter(Boolean);
+    if (!ids.length) return [];
+    if (expiresAt > 0 && Date.now() > expiresAt) {
+      templateInsertCamundaClearGuardRef.current = { ids: [], expiresAt: 0 };
+      return [];
+    }
+    return ids;
+  }
+
+  function clearTemplateInsertCamundaClearGuard() {
+    templateInsertCamundaClearGuardRef.current = { ids: [], expiresAt: 0 };
   }
 
   async function persistSessionMetaBoundary(nextMetaRaw, options = {}) {
@@ -2616,6 +2648,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     try {
       const inserted = await templatePackAdapter.insertTemplatePackOnModeler(payload);
       if (!inserted?.ok) return inserted;
+      primeTemplateInsertCamundaClearGuard(inserted?.remap);
       const activeModeler = modelerRef.current || await ensureModeler();
       if (activeModeler) {
         const seedResult = seedTemplateInsertCamundaExtensions(activeModeler, payload, inserted);
@@ -3963,9 +3996,18 @@ const BpmnStage = forwardRef(function BpmnStage({
       const activeModeler = modelerRef.current || runtime.getInstance?.();
       const robotSync = syncRobotMetaToModeler(activeModeler);
       const templateInsertSeedInFlight = Number(templateInsertCamundaSeedInFlightRef.current || 0) > 0;
+      const templateInsertClearGuardIds = readTemplateInsertCamundaClearGuardIds();
       const camundaSync = templateInsertSeedInFlight
         ? { ok: true, changed: 0, reason: "template_insert_seed_inflight", skipped: true }
-        : syncCamundaExtensionsToModeler(activeModeler);
+        : syncCamundaExtensionsToModeler(activeModeler, {
+          preserveManagedForElementIds: templateInsertClearGuardIds,
+        });
+      if (
+        templateInsertClearGuardIds.length
+        && Number(camundaSync?.preservedManagedSkips || 0) === 0
+      ) {
+        clearTemplateInsertCamundaClearGuard();
+      }
       if (!robotSync?.ok && shouldLogBpmnTrace()) {
         // eslint-disable-next-line no-console
         console.warn(`[ROBOT_META] sync_before_save_failed sid=${sid} reason=${String(robotSync?.reason || "unknown")}`);
@@ -3977,6 +4019,17 @@ const BpmnStage = forwardRef(function BpmnStage({
       if (templateInsertSeedInFlight && shouldLogBpmnTrace()) {
         // eslint-disable-next-line no-console
         console.debug(`[CAMUNDA_EXT] sync_before_save_skipped sid=${sid} reason=template_insert_seed_inflight`);
+      }
+      if (
+        !templateInsertSeedInFlight
+        && templateInsertClearGuardIds.length
+        && Number(camundaSync?.preservedManagedSkips || 0) > 0
+        && shouldLogBpmnTrace()
+      ) {
+        // eslint-disable-next-line no-console
+        console.debug(
+          `[CAMUNDA_EXT] sync_before_save_preserved sid=${sid} preserved=${Number(camundaSync?.preservedManagedSkips || 0)}`,
+        );
       }
 
       const flushed = await coordinator.flushSave(source, { force, trigger });

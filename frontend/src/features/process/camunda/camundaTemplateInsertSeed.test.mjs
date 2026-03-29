@@ -81,6 +81,32 @@ function createMockModeler(elements = []) {
   };
 }
 
+function createManagedTaskBusinessObject(id = "Task_new_1") {
+  return {
+    id,
+    extensionElements: {
+      $type: "bpmn:ExtensionElements",
+      values: [
+        {
+          $type: "camunda:Properties",
+          values: [
+            { $type: "camunda:Property", name: "source_container_ref", value: "required" },
+            { $type: "camunda:Property", name: "source_container_state", value: "legacy|new" },
+            { $type: "camunda:Property", name: "equipment_type_id", value: "microwave" },
+            { $type: "camunda:Property", name: "equipment_ref", value: "required_runtime" },
+          ],
+        },
+      ],
+      set(key, value) {
+        this[key] = value;
+      },
+    },
+    set(key, value) {
+      this[key] = value;
+    },
+  };
+}
+
 test("extractManagedCamundaExtensionStateFromBusinessObject reads managed properties/listeners", () => {
   const bo = {
     id: "Task_1",
@@ -138,29 +164,7 @@ test("extractManagedCamundaExtensionStateFromBusinessObject ignores non-managed 
 });
 
 test("seeded managed state from BO survives syncCamundaExtensionsToBpmn", () => {
-  const taskBusinessObject = {
-    id: "Task_new_1",
-    extensionElements: {
-      $type: "bpmn:ExtensionElements",
-      values: [
-        {
-          $type: "camunda:Properties",
-          values: [
-            { $type: "camunda:Property", name: "source_container_ref", value: "required" },
-            { $type: "camunda:Property", name: "source_container_state", value: "legacy|new" },
-            { $type: "camunda:Property", name: "equipment_type_id", value: "microwave" },
-            { $type: "camunda:Property", name: "equipment_ref", value: "required_runtime" },
-          ],
-        },
-      ],
-      set(key, value) {
-        this[key] = value;
-      },
-    },
-    set(key, value) {
-      this[key] = value;
-    },
-  };
+  const taskBusinessObject = createManagedTaskBusinessObject("Task_new_1");
   const seededState = extractManagedCamundaExtensionStateFromBusinessObject(taskBusinessObject);
   const modeler = createMockModeler([{ id: "Task_new_1", businessObject: taskBusinessObject }]);
   const res = syncCamundaExtensionsToBpmn({
@@ -181,4 +185,57 @@ test("seeded managed state from BO survives syncCamundaExtensionsToBpmn", () => 
       { name: "equipment_ref", value: "required_runtime" },
     ],
   );
+});
+
+test("syncCamundaExtensionsToBpmn clears managed extensionElements when map entry is missing", () => {
+  const taskBusinessObject = createManagedTaskBusinessObject("Task_new_clear");
+  const modeler = createMockModeler([{ id: "Task_new_clear", businessObject: taskBusinessObject }]);
+  const res = syncCamundaExtensionsToBpmn({
+    modeler,
+    camundaExtensionsByElementId: {},
+  });
+  assert.equal(res.ok, true);
+  assert.equal(res.changed, 1);
+  assert.equal(res.preservedManagedSkips, 0);
+  assert.equal(taskBusinessObject.extensionElements, undefined);
+});
+
+test("syncCamundaExtensionsToBpmn preserves freshly-inserted managed extensionElements when id is guarded and map entry is missing", () => {
+  const taskBusinessObject = createManagedTaskBusinessObject("Task_new_guarded");
+  const modeler = createMockModeler([{ id: "Task_new_guarded", businessObject: taskBusinessObject }]);
+  const res = syncCamundaExtensionsToBpmn({
+    modeler,
+    camundaExtensionsByElementId: {},
+    preserveManagedForElementIds: ["Task_new_guarded"],
+  });
+  assert.equal(res.ok, true);
+  assert.equal(res.changed, 0);
+  assert.equal(res.preservedManagedSkips, 1);
+  const propsEntry = taskBusinessObject.extensionElements.values.find((entry) => entry?.$type === "camunda:Properties");
+  assert.ok(propsEntry);
+  assert.deepEqual(
+    propsEntry.values.map((item) => ({ name: item.name, value: item.value })),
+    [
+      { name: "source_container_ref", value: "required" },
+      { name: "source_container_state", value: "legacy|new" },
+      { name: "equipment_type_id", value: "microwave" },
+      { name: "equipment_ref", value: "required_runtime" },
+    ],
+  );
+});
+
+test("syncCamundaExtensionsToBpmn still clears managed extensionElements when map explicitly contains empty state", () => {
+  const taskBusinessObject = createManagedTaskBusinessObject("Task_new_explicit_empty");
+  const modeler = createMockModeler([{ id: "Task_new_explicit_empty", businessObject: taskBusinessObject }]);
+  const res = syncCamundaExtensionsToBpmn({
+    modeler,
+    camundaExtensionsByElementId: {
+      Task_new_explicit_empty: createEmptyCamundaExtensionState(),
+    },
+    preserveManagedForElementIds: ["Task_new_explicit_empty"],
+  });
+  assert.equal(res.ok, true);
+  assert.equal(res.changed, 1);
+  assert.equal(res.preservedManagedSkips, 0);
+  assert.equal(taskBusinessObject.extensionElements, undefined);
 });
