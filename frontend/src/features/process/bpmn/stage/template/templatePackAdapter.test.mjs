@@ -380,7 +380,10 @@ test("insertTemplatePackOnModeler reapplies semantic payload to inserted node bu
                   {
                     $type: "camunda:Properties",
                     values: [
-                      { $type: "camunda:Property", name: "robot.code", value: "R-9000" },
+                      { $type: "camunda:Property", name: "source_container_ref", value: "required" },
+                      { $type: "camunda:Property", name: "source_container_state", value: "legacy|new" },
+                      { $type: "camunda:Property", name: "equipment_type_id", value: "microwave" },
+                      { $type: "camunda:Property", name: "equipment_ref", value: "required_runtime" },
                     ],
                   },
                   {
@@ -427,6 +430,16 @@ test("insertTemplatePackOnModeler reapplies semantic payload to inserted node bu
   assert.equal(bo.documentation?.[0]?.text, "template doc");
   assert.equal(bo.extensionElements?.$type, "bpmn:ExtensionElements");
   assert.equal(bo.extensionElements?.values?.[0]?.$type, "camunda:Properties");
+  assert.equal(bo.extensionElements?.values?.[0]?.values?.length, 4);
+  assert.deepEqual(
+    bo.extensionElements?.values?.[0]?.values?.map((item) => [item?.name, item?.value]),
+    [
+      ["source_container_ref", "required"],
+      ["source_container_state", "legacy|new"],
+      ["equipment_type_id", "microwave"],
+      ["equipment_ref", "required_runtime"],
+    ],
+  );
   assert.equal(bo.extensionElements?.values?.[1]?.$type, "camunda:InputOutput");
   assert.equal(bo.extensionElements?.values?.[1]?.inputParameters?.[0]?.name, "in");
   assert.equal(bo.extensionElements?.values?.[2]?.$type, "pm:RobotMeta");

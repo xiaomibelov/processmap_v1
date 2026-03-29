@@ -1266,6 +1266,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     source: "",
     ts: 0,
   });
+  const templateInsertCamundaSeedInFlightRef = useRef(0);
   const suppressCommandStackRef = useRef(0);
   const suppressViewboxEventRef = useRef(0);
   const modelerReadyRef = useRef(false);
@@ -2587,13 +2588,21 @@ const BpmnStage = forwardRef(function BpmnStage({
   }
 
   async function insertTemplatePackOnModeler(payload = {}) {
-    const inserted = await templatePackAdapter.insertTemplatePackOnModeler(payload);
-    if (!inserted?.ok) return inserted;
-    const activeModeler = modelerRef.current;
-    if (activeModeler) {
-      seedTemplateInsertCamundaExtensions(activeModeler, payload, inserted);
+    templateInsertCamundaSeedInFlightRef.current = Number(templateInsertCamundaSeedInFlightRef.current || 0) + 1;
+    try {
+      const inserted = await templatePackAdapter.insertTemplatePackOnModeler(payload);
+      if (!inserted?.ok) return inserted;
+      const activeModeler = modelerRef.current || await ensureModeler();
+      if (activeModeler) {
+        seedTemplateInsertCamundaExtensions(activeModeler, payload, inserted);
+      }
+      return inserted;
+    } finally {
+      templateInsertCamundaSeedInFlightRef.current = Math.max(
+        0,
+        Number(templateInsertCamundaSeedInFlightRef.current || 0) - 1,
+      );
     }
-    return inserted;
   }
 
   async function applyCommandOpsOnModeler(payload = {}) {
@@ -3906,7 +3915,10 @@ const BpmnStage = forwardRef(function BpmnStage({
 
       const activeModeler = modelerRef.current || runtime.getInstance?.();
       const robotSync = syncRobotMetaToModeler(activeModeler);
-      const camundaSync = syncCamundaExtensionsToModeler(activeModeler);
+      const templateInsertSeedInFlight = Number(templateInsertCamundaSeedInFlightRef.current || 0) > 0;
+      const camundaSync = templateInsertSeedInFlight
+        ? { ok: true, changed: 0, reason: "template_insert_seed_inflight", skipped: true }
+        : syncCamundaExtensionsToModeler(activeModeler);
       if (!robotSync?.ok && shouldLogBpmnTrace()) {
         // eslint-disable-next-line no-console
         console.warn(`[ROBOT_META] sync_before_save_failed sid=${sid} reason=${String(robotSync?.reason || "unknown")}`);
@@ -3914,6 +3926,10 @@ const BpmnStage = forwardRef(function BpmnStage({
       if (!camundaSync?.ok && shouldLogBpmnTrace()) {
         // eslint-disable-next-line no-console
         console.warn(`[CAMUNDA_EXT] sync_before_save_failed sid=${sid} reason=${String(camundaSync?.reason || "unknown")}`);
+      }
+      if (templateInsertSeedInFlight && shouldLogBpmnTrace()) {
+        // eslint-disable-next-line no-console
+        console.debug(`[CAMUNDA_EXT] sync_before_save_skipped sid=${sid} reason=template_insert_seed_inflight`);
       }
 
       const flushed = await coordinator.flushSave(source, { force, trigger });
