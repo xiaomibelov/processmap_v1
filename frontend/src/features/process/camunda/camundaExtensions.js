@@ -1264,6 +1264,10 @@ export function extractCamundaExtensionsMapFromBpmnXml(xmlText) {
 export function hydrateCamundaExtensionsFromBpmn({ extractedMap, sessionMetaMap, allowSeedFromBpmn = true } = {}) {
   const extracted = normalizeCamundaExtensionsMap(extractedMap);
   const session = normalizeCamundaExtensionsMap(sessionMetaMap);
+  // Legacy callers may still pass allowSeedFromBpmn=false, but hydration now
+  // always merges missing XML-derived entries to avoid suppressing recovery
+  // when session meta key exists but is partial.
+  void allowSeedFromBpmn;
   const extractedKeys = Object.keys(extracted);
   const sessionKeys = Object.keys(session);
   if (!extractedKeys.length) {
@@ -1280,18 +1284,6 @@ export function hydrateCamundaExtensionsFromBpmn({ extractedMap, sessionMetaMap,
   }
   const sessionHasData = Object.keys(session).length > 0;
   if (!sessionHasData) {
-    if (!allowSeedFromBpmn) {
-      return {
-        nextSessionMetaMap: session,
-        conflicts: [],
-        adoptedFromBpmn: false,
-        source: "session_wins",
-        addedElements: 0,
-        addedProperties: 0,
-        addedListeners: 0,
-        addedPreserved: 0,
-      };
-    }
     return {
       nextSessionMetaMap: extracted,
       conflicts: [],
@@ -1324,7 +1316,6 @@ export function hydrateCamundaExtensionsFromBpmn({ extractedMap, sessionMetaMap,
     const extractedEntry = normalizeCamundaExtensionState(extracted[elementId]);
     const sessionEntryRaw = session[elementId];
     if (!sessionEntryRaw) {
-      if (!allowSeedFromBpmn) return;
       next[elementId] = extractedEntry;
       addedElements += 1;
       addedProperties += extractedEntry.properties.extensionProperties.length;
