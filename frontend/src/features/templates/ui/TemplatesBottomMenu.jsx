@@ -369,6 +369,7 @@ export default function TemplatesBottomMenu({
             <div className="mt-1 text-xl font-semibold text-fg">BPMN templates for the current session</div>
             <div className="mt-1 text-sm text-muted">
               Выберите BPMN fragment, посмотрите состав и вставьте его сразу в текущую сессию без placement-шага.
+              Точка авто-вставки и вставленный фрагмент будут кратко подсвечены на диаграмме.
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -534,7 +535,7 @@ export default function TemplatesBottomMenu({
                         Шаблон будет сразу вставлен в текущую BPMN-диаграмму и сразу сохранён в session через обычный BPMN write-path.
                       </div>
                       <div className="mt-2 text-xs text-muted">
-                        Без draw.io, без hybrid, без дополнительного placement-шага.
+                        Без draw.io, без hybrid, без дополнительного placement-шага. После Apply показывается краткий marker точки вставки.
                       </div>
                     </div>
                     <div className="rounded-2xl border border-border/70 bg-panel px-4 py-3">

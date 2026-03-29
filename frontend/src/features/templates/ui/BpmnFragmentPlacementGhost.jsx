@@ -15,6 +15,21 @@ export default function BpmnFragmentPlacementGhost({ ghost, active = false }) {
   const nodes = Math.max(0, Number(data.nodes || 0));
   const edges = Math.max(0, Number(data.edges || 0));
   const title = String(data.title || "BPMN fragment");
+  const mode = String(data.mode || "").toLowerCase();
+  const phase = String(data.phase || "").toLowerCase();
+  const immediateMode = mode === "immediate";
+  const statusText = immediateMode
+    ? (phase === "after_insert" ? "Фрагмент вставлен" : "Точка авто-вставки шаблона")
+    : "Точка вставки · клик для вставки · Esc отмена";
+  const borderColor = immediateMode && phase === "after_insert"
+    ? "2px solid rgba(16, 185, 129, 0.95)"
+    : "2px dashed rgba(79, 107, 255, 0.95)";
+  const fillColor = immediateMode && phase === "after_insert"
+    ? "rgba(16, 185, 129, 0.16)"
+    : "rgba(79, 107, 255, 0.14)";
+  const anchorBg = immediateMode && phase === "after_insert"
+    ? "rgba(16, 185, 129, 0.94)"
+    : "rgba(79, 107, 255, 0.94)";
   return (
     <div className="pointer-events-none absolute inset-0 z-[24]" data-testid="bpmn-fragment-placement-layer">
       <div
@@ -43,8 +58,8 @@ export default function BpmnFragmentPlacementGhost({ ghost, active = false }) {
           top: `${top}px`,
           width: `${width}px`,
           height: `${height}px`,
-          border: "2px dashed rgba(79, 107, 255, 0.95)",
-          background: "rgba(79, 107, 255, 0.14)",
+          border: borderColor,
+          background: fillColor,
           boxShadow: "0 0 0 1px rgba(79, 107, 255, 0.35), 0 10px 28px rgba(15, 23, 42, 0.22)",
         }}
       />
@@ -77,10 +92,10 @@ export default function BpmnFragmentPlacementGhost({ ghost, active = false }) {
         style={{
           left: `${Math.max(8, Math.round(anchorLeft + 14))}px`,
           top: `${Math.max(8, Math.round(anchorTop + 14))}px`,
-          background: "rgba(79, 107, 255, 0.94)",
+          background: anchorBg,
         }}
       >
-        Точка вставки · клик для вставки · Esc отмена
+        {statusText}
       </div>
     </div>
   );
