@@ -450,6 +450,47 @@
   background: color-mix(in srgb, hsl(var(--diagram-notes)) 20%, hsl(var(--diagram-badge-bg) / 0.94));
 }
 
+.fpcNodeBadge--documentation {
+  border-color: hsl(var(--diagram-ai) / 0.52);
+  background: color-mix(in srgb, hsl(var(--diagram-ai)) 14%, hsl(var(--diagram-badge-bg) / 0.96));
+  min-height: 15px;
+  padding: 0 5px;
+  font-size: 8.8px;
+}
+
+.fpcNodeBadgePopover {
+  display: none;
+  pointer-events: auto;
+  margin-top: 4px;
+  max-width: 220px;
+  border-radius: 8px;
+  border: 1px solid hsl(var(--diagram-badge-border) / 0.65);
+  background: hsl(var(--bg-elevated) / 0.98);
+  color: hsl(var(--fg) / 0.98);
+  box-shadow:
+    0 0 0 1px hsl(var(--diagram-badge-border) / 0.28) inset,
+    0 10px 24px hsl(var(--bg) / 0.28);
+  padding: 6px 8px;
+}
+
+.fpcNodeBadgePopover.isOpen {
+  display: block;
+}
+
+.fpcNodeBadgePopoverTitle {
+  font-size: 10px;
+  font-weight: 700;
+  color: hsl(var(--muted-foreground) / 0.96);
+  margin-bottom: 4px;
+}
+
+.fpcNodeBadgePopoverBody {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
 .fpcNodeBadge--time {
   border-color: hsl(var(--diagram-coverage-med) / 0.66);
   background: color-mix(in srgb, hsl(var(--diagram-coverage-med)) 18%, hsl(var(--diagram-badge-bg) / 0.94));

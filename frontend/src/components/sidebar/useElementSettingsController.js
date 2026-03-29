@@ -22,6 +22,7 @@ export default function useElementSettingsController({
   const [operationOpen, setOperationOpen] = useState(false);
   const [operationPropertiesOpen, setOperationPropertiesOpen] = useState(false);
   const [additionalBpmnOpen, setAdditionalBpmnOpen] = useState(false);
+  const [documentationOpen, setDocumentationOpen] = useState(false);
   const [camundaIoOpen, setCamundaIoOpen] = useState(false);
   const [zeebeTaskHeadersOpen, setZeebeTaskHeadersOpen] = useState(false);
   const [overlayCompanionsExpanded, setOverlayCompanionsExpanded] = useState(false);
@@ -52,6 +53,7 @@ export default function useElementSettingsController({
 
   useEffect(() => {
     // Keep Camunda I/O collapsed by default when entering a node.
+    setDocumentationOpen(false);
     setCamundaIoOpen(false);
     setZeebeTaskHeadersOpen(false);
   }, [selectedElementId]);
@@ -295,6 +297,8 @@ export default function useElementSettingsController({
     setOperationPropertiesOpen,
     additionalBpmnOpen,
     setAdditionalBpmnOpen,
+    documentationOpen,
+    setDocumentationOpen,
     camundaIoOpen,
     setCamundaIoOpen,
     zeebeTaskHeadersOpen,

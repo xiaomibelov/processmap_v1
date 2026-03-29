@@ -28,6 +28,18 @@ function buildUserNotesDecorPayload(ctx) {
   return out;
 }
 
+export function readBusinessObjectDocumentationMeta(boRaw, asArray, toText) {
+  const docs = asArray(boRaw?.documentation)
+    .map((entry) => toText(entry?.text ?? entry?.body ?? entry?.value))
+    .map((text) => String(text || "").replace(/\r\n/g, "\n").trim())
+    .filter(Boolean);
+  if (!docs.length) return null;
+  return {
+    count: docs.length,
+    text: docs.join("\n\n"),
+  };
+}
+
 function buildStepTimeDecorPayload(ctx) {
   const asArray = ctx?.utils?.asArray;
   const asObject = ctx?.utils?.asObject;
@@ -814,9 +826,21 @@ export function applyUserNotesDecor(ctx) {
   const refs = ctx?.refs;
   const callbacks = ctx?.callbacks;
   const getters = ctx?.getters;
+  const asArray = ctx?.utils?.asArray;
   const toText = ctx?.utils?.toText;
   const asObject = ctx?.utils?.asObject;
-  if (!inst || !kind || !refs || !callbacks || !getters || typeof toText !== "function" || typeof asObject !== "function") return;
+  if (
+    !inst
+    || !kind
+    || !refs
+    || !callbacks
+    || !getters
+    || typeof asArray !== "function"
+    || typeof toText !== "function"
+    || typeof asObject !== "function"
+  ) {
+    return;
+  }
   if (getters.isInterviewDecorModeOn()) {
     clearUserNotesDecor(ctx);
     return;
@@ -828,6 +852,26 @@ export function applyUserNotesDecor(ctx) {
     const registry = inst.get("elementRegistry");
     const currentState = { ...asObject(refs.userNotesDecorStateRef.current[kind]) };
     const nextState = {};
+    const notesByNodeId = {};
+    const docsByNodeId = {};
+
+    payload.forEach((item) => {
+      const nodeId = toText(item?.elementId);
+      const count = Number(item?.count || 0);
+      if (!nodeId || count <= 0) return;
+      notesByNodeId[nodeId] = count;
+    });
+
+    const allDiagramElements = typeof registry?.getAll === "function" ? asArray(registry.getAll()) : [];
+    allDiagramElements.forEach((el) => {
+      if (!getters.isShapeElement(el)) return;
+      if (typeof getters.isConnectionElement === "function" && getters.isConnectionElement(el)) return;
+      const nodeId = toText(el?.businessObject?.id || el?.id);
+      if (!nodeId) return;
+      const documentationMeta = readBusinessObjectDocumentationMeta(el?.businessObject, asArray, toText);
+      if (!documentationMeta) return;
+      docsByNodeId[nodeId] = documentationMeta;
+    });
 
     const bindBadgeClick = (btn, onClick) => {
       btn.addEventListener("mousedown", (ev) => ev.stopPropagation());
@@ -838,16 +882,34 @@ export function applyUserNotesDecor(ctx) {
       });
     };
 
-    payload.forEach((item) => {
-      const nodeId = toText(item?.elementId);
-      const count = Number(item?.count || 0);
-      if (!nodeId || count <= 0) return;
+    const closeOpenedDocumentationPopovers = (exceptPopoverNode = null) => {
+      const canvasContainer = inst?.get?.("canvas")?._container || inst?.get?.("canvas")?.getContainer?.();
+      if (!canvasContainer?.querySelectorAll) return;
+      canvasContainer.querySelectorAll(".fpcNodeBadgePopover.isOpen").forEach((popoverNode) => {
+        if (popoverNode === exceptPopoverNode) return;
+        popoverNode.classList.remove("isOpen");
+        popoverNode.hidden = true;
+      });
+    };
+
+    const targetNodeIds = new Set([
+      ...Object.keys(notesByNodeId),
+      ...Object.keys(docsByNodeId),
+    ]);
+
+    targetNodeIds.forEach((nodeId) => {
+      const count = Number(notesByNodeId[nodeId] || 0);
+      const documentationMeta = asObject(docsByNodeId[nodeId]);
+      const docsCount = Number(documentationMeta?.count || 0);
+      const docsText = toText(documentationMeta?.text);
+      if (count <= 0 && (!docsCount || !docsText)) return;
       const el = getters.findShapeByNodeId(registry, nodeId) || getters.findShapeForHint(registry, { nodeId, title: nodeId });
       if (!el) return;
       const elementId = toText(el?.id);
       if (!elementId) return;
-      const markerClass = "fpcHasUserNote";
-      const signature = `${markerClass}|${count}`;
+      const markerClass = count > 0 ? "fpcHasUserNote" : "";
+      const docsSignature = docsText ? docsText.slice(0, 240) : "";
+      const signature = `${markerClass}|notes:${count}|docs:${docsCount}|${docsSignature}`;
       const prev = asObject(currentState[elementId]);
 
       if (toText(prev?.signature) === signature) {
@@ -856,7 +918,11 @@ export function applyUserNotesDecor(ctx) {
         return;
       }
 
-      if (!toText(prev?.markerClass)) {
+      const prevMarkerClass = toText(prev?.markerClass);
+      if (prevMarkerClass && prevMarkerClass !== markerClass) {
+        canvas.removeMarker(elementId, prevMarkerClass);
+      }
+      if (markerClass && prevMarkerClass !== markerClass) {
         canvas.addMarker(elementId, markerClass);
       }
       if (prev?.overlayId !== null && prev?.overlayId !== undefined) {
@@ -868,17 +934,61 @@ export function applyUserNotesDecor(ctx) {
       stack.dataset.nodeId = nodeId;
       stack.style.alignItems = "flex-start";
 
-      const badge = document.createElement("button");
-      badge.type = "button";
-      badge.className = "fpcNodeBadge fpcNodeBadge--notes";
-      badge.dataset.badgeKind = "notes";
-      badge.textContent = `N:${count}`;
-      badge.title = `Заметок: ${count}`;
-      bindBadgeClick(badge, () => {
-        callbacks.setSelectedDecor(inst, kind, el.id);
-        callbacks.emitElementSelection(el, `${kind}.notes_badge_click`);
-      });
-      stack.appendChild(badge);
+      if (count > 0) {
+        const noteBadge = document.createElement("button");
+        noteBadge.type = "button";
+        noteBadge.className = "fpcNodeBadge fpcNodeBadge--notes";
+        noteBadge.dataset.badgeKind = "notes";
+        noteBadge.textContent = `N:${count}`;
+        noteBadge.title = `Заметок: ${count}`;
+        bindBadgeClick(noteBadge, () => {
+          callbacks.setSelectedDecor(inst, kind, el.id);
+          callbacks.emitElementSelection(el, `${kind}.notes_badge_click`);
+        });
+        stack.appendChild(noteBadge);
+      }
+
+      if (docsCount > 0 && docsText) {
+        const docsBadge = document.createElement("button");
+        docsBadge.type = "button";
+        docsBadge.className = "fpcNodeBadge fpcNodeBadge--documentation";
+        docsBadge.dataset.badgeKind = "documentation";
+        docsBadge.textContent = docsCount > 1 ? `📘:${docsCount}` : "📘";
+        docsBadge.title = docsCount > 1
+          ? `BPMN documentation: ${docsCount}`
+          : "BPMN documentation";
+
+        const popover = document.createElement("div");
+        popover.className = "fpcNodeBadgePopover";
+        popover.hidden = true;
+        popover.setAttribute("role", "dialog");
+        popover.setAttribute("aria-label", "BPMN Documentation");
+        const titleNode = document.createElement("div");
+        titleNode.className = "fpcNodeBadgePopoverTitle";
+        titleNode.textContent = docsCount > 1 ? `BPMN Documentation (${docsCount})` : "BPMN Documentation";
+        const bodyNode = document.createElement("div");
+        bodyNode.className = "fpcNodeBadgePopoverBody";
+        bodyNode.textContent = docsText;
+        popover.appendChild(titleNode);
+        popover.appendChild(bodyNode);
+
+        bindBadgeClick(docsBadge, () => {
+          callbacks.setSelectedDecor(inst, kind, el.id);
+          callbacks.emitElementSelection(el, `${kind}.documentation_badge_click`);
+          const isCurrentlyOpen = popover.classList.contains("isOpen");
+          closeOpenedDocumentationPopovers(popover);
+          if (isCurrentlyOpen) {
+            popover.classList.remove("isOpen");
+            popover.hidden = true;
+            return;
+          }
+          popover.hidden = false;
+          popover.classList.add("isOpen");
+        });
+
+        stack.appendChild(docsBadge);
+        stack.appendChild(popover);
+      }
 
       const overlayId = overlays.add(elementId, {
         position: { top: -18, left: 2 },

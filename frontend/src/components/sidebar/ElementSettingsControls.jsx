@@ -1021,6 +1021,7 @@ export function CamundaPropertiesSettings({
   selectedElementId,
   selectedElementType = "",
   selectedBpmnPropertyContext = null,
+  selectedBpmnDocumentation = [],
   selectedBpmnOverlayCompanionSummary = null,
   camundaPropertiesEditable = false,
   extensionStateDraft = null,
@@ -1054,6 +1055,8 @@ export function CamundaPropertiesSettings({
     setOperationPropertiesOpen,
     additionalBpmnOpen,
     setAdditionalBpmnOpen,
+    documentationOpen,
+    setDocumentationOpen,
     camundaIoOpen,
     setCamundaIoOpen,
     zeebeTaskHeadersOpen,
@@ -1131,6 +1134,26 @@ export function CamundaPropertiesSettings({
       issueCounts: { invalid: 0 },
       validationDeferred: false,
     };
+  const documentationRows = useMemo(
+    () => asArray(selectedBpmnDocumentation)
+      .map((entryRaw, index) => {
+        const entry = entryRaw && typeof entryRaw === "object"
+          ? entryRaw
+          : { text: entryRaw };
+        const text = String(entry?.text || "").replace(/\r\n/g, "\n").trim();
+        if (!text) return null;
+        const id = String(entry?.id || `documentation_${index + 1}`);
+        const textFormat = String(entry?.textFormat || "").trim();
+        return {
+          id,
+          text,
+          textFormat,
+        };
+      })
+      .filter(Boolean),
+    [selectedBpmnDocumentation],
+  );
+  const documentationCount = documentationRows.length;
   const listenerCount = normalizedState.properties.extensionListeners.length;
   const overlayCompanionCount = Number(overlayCompanionSummary?.companionCount || 0);
   const operationLabel = String(dictionaryEditorModel?.operationLabel || operationKey || "").trim();
@@ -1564,7 +1587,7 @@ export function CamundaPropertiesSettings({
     (sum, section) => sum + asArray(section?.rows).length,
     0,
   );
-  const groupedPropertiesCount = operationPropertiesCount + additionalBpmnCount + propertyContextCount + overlayCompanionCount;
+  const groupedPropertiesCount = operationPropertiesCount + additionalBpmnCount + documentationCount + propertyContextCount + overlayCompanionCount;
   const groupedInputOutputCount = camundaIoCount + zeebeTaskHeadersCount;
 
   function renderPropertyContextSection(section) {
@@ -1988,6 +2011,46 @@ export function CamundaPropertiesSettings({
             )
           ) : null}
         </section>
+
+        {documentationCount > 0 ? (
+          <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary" data-testid="bpmn-documentation-group">
+            <div className="sidebarPropertiesBlockHead">
+              <button
+                type="button"
+                className="sidebarPropertiesBlockToggle"
+                onClick={() => setDocumentationOpen((prev) => !prev)}
+                aria-expanded={documentationOpen ? "true" : "false"}
+              >
+                <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{documentationOpen ? "▾" : "▸"}</span>
+                <span className="sidebarPropertiesBlockTitle">BPMN Documentation</span>
+                <span className="sidebarPropertiesBlockMeta">{documentationCount}</span>
+              </button>
+              <SidebarInfoTip
+                label="О BPMN Documentation"
+                text="Read-only текст bpmn:documentation текущего элемента."
+              />
+            </div>
+            {documentationOpen ? (
+              <div className="mt-1 space-y-2">
+                {documentationRows.map((row, index) => (
+                  <div key={row.id} className="rounded-md border border-border/60 bg-panel2/40 p-2">
+                    {documentationCount > 1 ? (
+                      <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted">
+                        Documentation {index + 1}
+                      </div>
+                    ) : null}
+                    <div className="text-[11px] leading-relaxed whitespace-pre-wrap break-words text-fg">
+                      {row.text}
+                    </div>
+                    {row.textFormat ? (
+                      <div className="mt-1 text-[10px] text-muted">textFormat: {row.textFormat}</div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
 
         <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary" data-testid="camunda-io-group">
           <div className="sidebarPropertiesBlockHead">

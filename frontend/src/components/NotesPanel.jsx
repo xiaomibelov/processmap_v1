@@ -545,6 +545,34 @@ function parseSelectedBpmnPropertyContext(xmlText, elementIdRaw) {
   }
 }
 
+function parseSelectedBpmnDocumentation(xmlText, elementIdRaw) {
+  const elementId = str(elementIdRaw);
+  const xml = str(xmlText);
+  if (!elementId || !xml || typeof DOMParser === "undefined") return [];
+  try {
+    const doc = new DOMParser().parseFromString(xml, "application/xml");
+    if (!doc || doc.getElementsByTagName("parsererror").length > 0) return [];
+    const all = Array.from(doc.getElementsByTagName("*"));
+    const target = all.find((el) => str(el.getAttribute("id")) === elementId);
+    if (!target) return [];
+    return Array.from(target.childNodes || [])
+      .filter((child) => child?.nodeType === 1 && str(child?.localName).toLowerCase() === "documentation")
+      .map((child, index) => {
+        const text = String(child?.textContent || "").replace(/\r\n/g, "\n").trim();
+        if (!text) return null;
+        const textFormat = str(child?.getAttribute?.("textFormat") || child?.getAttribute?.("textformat"));
+        return {
+          id: `${elementId}_documentation_${index + 1}`,
+          text,
+          textFormat,
+        };
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 function normalizeGlobalNoteItem(raw, fallbackIndex = 0) {
   const obj = raw && typeof raw === "object" ? raw : {};
   const text = str(obj.text || obj.note || obj.notes || obj.message || raw);
@@ -1190,6 +1218,10 @@ export default function NotesPanel({
   );
   const selectedBpmnPropertyContext = useMemo(
     () => parseSelectedBpmnPropertyContext(draft?.bpmn_xml, selectedElementId),
+    [draft?.bpmn_xml, selectedElementId],
+  );
+  const selectedBpmnDocumentation = useMemo(
+    () => parseSelectedBpmnDocumentation(draft?.bpmn_xml, selectedElementId),
     [draft?.bpmn_xml, selectedElementId],
   );
   const knownAnchorIds = useMemo(() => {
@@ -2802,6 +2834,7 @@ export default function NotesPanel({
                   selectedElementId={isElementMode ? selectedElementId : ""}
                   selectedElementType={isElementMode ? selectedElementType : ""}
                   selectedBpmnPropertyContext={isElementMode ? selectedBpmnPropertyContext : null}
+                  selectedBpmnDocumentation={isElementMode ? selectedBpmnDocumentation : []}
                   selectedBpmnOverlayCompanionSummary={isElementMode ? selectedBpmnOverlayCompanionSummary : null}
                   camundaPropertiesEditable={isElementMode ? selectedCamundaPropertiesEditable : false}
                   extensionStateDraft={isElementMode ? camundaPropertiesDraft : createEmptyCamundaExtensionState()}
