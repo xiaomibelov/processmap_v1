@@ -452,7 +452,7 @@ test("insertTemplatePackOnModeler reapplies semantic payload to inserted node bu
   assert.equal(createShapeCalls[0]?.shapeDef?.height, 130);
 });
 
-test("insertTemplatePackOnModeler restores camunda properties from snake_case semantic payload shape", async () => {
+test("insertTemplatePackOnModeler rehydrates extensionElements when legacy businessObjectCustom branch carries camunda props", async () => {
   const anchor = createShape("Anchor_1", 100, 100, "Anchor");
   const { adapter, registryItems } = createModelerWithServices({
     anchorShape: anchor,
@@ -463,41 +463,38 @@ test("insertTemplatePackOnModeler restores camunda properties from snake_case se
   const payload = {
     mode: "after",
     pack: {
-      packId: "pack_snake_case_props",
+      packId: "pack_legacy_custom_ext",
       entryNodeId: "N1",
       exitNodeId: "N1",
       fragment: {
         nodes: [
           {
             id: "N1",
-            type: "bpmn:Task",
-            name: "Copied snake payload node",
+            type: "bpmn:ManualTask",
+            name: "Central task",
             laneHint: "lane 1",
-            di: { x: 10, y: 20, w: 260, h: 130 },
+            di: { x: 10, y: 20, w: 240, h: 120 },
             semanticPayload: {
               documentation: [
-                { $type: "bpmn:Documentation", text: "template doc snake" },
+                { $type: "bpmn:Documentation", text: "template doc" },
               ],
-              extension_elements: {
-                $type: "bpmn:ExtensionElements",
-                values: [
-                  {
-                    $type: "camunda:Properties",
-                    values: [
-                      { $type: "camunda:Property", name: "source_container_ref", value: "required" },
-                      { $type: "camunda:Property", name: "source_container_state", value: "legacy|new" },
-                      { $type: "camunda:Property", name: "equipment_type_id", value: "microwave" },
-                      { $type: "camunda:Property", name: "equipment_ref", value: "required_runtime" },
-                    ],
-                  },
-                ],
+              custom: {
+                status: "ready",
               },
-              business_object_attrs: {
-                "camunda:assignee": "user_snake",
-              },
-              business_object_custom: {
-                propertyDictionaryBinding: {
-                  operationKey: "op.snake",
+              businessObjectCustom: {
+                extensionElements: {
+                  $type: "bpmn:ExtensionElements",
+                  values: [
+                    {
+                      $type: "camunda:Properties",
+                      values: [
+                        { $type: "camunda:Property", name: "source_container_ref", value: "required" },
+                        { $type: "camunda:Property", name: "source_container_state", value: "legacy|new" },
+                        { $type: "camunda:Property", name: "equipment_type_id", value: "microwave" },
+                        { $type: "camunda:Property", name: "equipment_ref", value: "required_runtime" },
+                      ],
+                    },
+                  ],
                 },
               },
             },
@@ -514,7 +511,7 @@ test("insertTemplatePackOnModeler restores camunda properties from snake_case se
   const created = registryItems.find((row) => String(row?.id || "") === createdId);
   assert.ok(created);
   const bo = created?.businessObject || {};
-  assert.equal(bo.documentation?.[0]?.text, "template doc snake");
+  assert.equal(bo.documentation?.[0]?.text, "template doc");
   assert.equal(bo.extensionElements?.$type, "bpmn:ExtensionElements");
   assert.equal(bo.extensionElements?.values?.[0]?.$type, "camunda:Properties");
   assert.equal(bo.extensionElements?.values?.[0]?.values?.length, 4);
@@ -527,8 +524,7 @@ test("insertTemplatePackOnModeler restores camunda properties from snake_case se
       ["equipment_ref", "required_runtime"],
     ],
   );
-  assert.equal(bo.get?.("camunda:assignee"), "user_snake");
-  assert.equal(bo.propertyDictionaryBinding?.operationKey, "op.snake");
+  assert.equal(bo.status, "ready");
 });
 
 test("semantic payload survives capture -> JSON storage -> insert -> reread roundtrip without silent loss", async () => {

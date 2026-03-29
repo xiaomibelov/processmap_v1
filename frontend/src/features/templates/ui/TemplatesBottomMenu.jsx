@@ -347,7 +347,8 @@ export default function TemplatesBottomMenu({
 
   const handleApply = useCallback(async (templateRaw) => {
     const result = await Promise.resolve(onApply?.(templateRaw));
-    if (result?.ok !== false) {
+    const completedInsert = result?.ok === true && result?.placement !== true;
+    if (completedInsert) {
       onClose?.();
     }
     return result;
