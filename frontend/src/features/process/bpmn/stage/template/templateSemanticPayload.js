@@ -237,6 +237,16 @@ function mergeNormalizedSemanticPayload(primaryRaw, fallbackRaw) {
   if (attrs !== undefined) merged.attrs = attrs;
   else delete merged.attrs;
 
+  delete merged.extension_elements;
+  delete merged.business_object_attrs;
+  delete merged.business_object_custom;
+  delete merged.businessObjectAttrs;
+  delete merged.businessObjectCustom;
+  delete merged.props_minimal;
+  delete merged.propsMinimal;
+  delete merged.semantic_payload;
+  delete merged.semanticPayload;
+
   return merged;
 }
 

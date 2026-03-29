@@ -260,6 +260,22 @@ test("readTemplateNodeSemanticPayload merges semantic payload docs with legacy p
   assert.equal(semantic.custom?.status, "ready");
 });
 
+test("readTemplateNodeSemanticPayload drops legacy extension_elements alias when canonical extensionElements is empty", () => {
+  const semantic = readTemplateNodeSemanticPayload({
+    semantic_payload: {
+      documentation: [{ $type: "bpmn:Documentation", text: "doc only" }],
+    },
+    props_minimal: {
+      extension_elements: {},
+    },
+  });
+
+  assert.equal(semantic.documentation?.length, 1);
+  assert.equal(semantic.documentation?.[0]?.text, "doc only");
+  assert.equal(Object.prototype.hasOwnProperty.call(semantic, "extension_elements"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(semantic, "extensionElements"), false);
+});
+
 test("readTemplateNodeSemanticPayload accepts snake_case payload and promotes canonical extensionElements from legacy custom branch", () => {
   const semantic = readTemplateNodeSemanticPayload({
     semantic_payload: {
