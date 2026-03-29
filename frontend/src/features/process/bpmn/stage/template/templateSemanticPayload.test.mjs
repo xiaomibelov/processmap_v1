@@ -123,6 +123,38 @@ test("rehydrateSupportedBusinessObjectPayload keeps canonical extensionElements 
   assert.equal(bo.status, "ready");
 });
 
+test("rehydrateSupportedBusinessObjectPayload restores extensionElements from legacy businessObjectCustom branch", () => {
+  const payload = {
+    documentation: [{ $type: "bpmn:Documentation", text: "doc legacy custom branch" }],
+    custom: {
+      status: "ready",
+    },
+    businessObjectCustom: {
+      extensionElements: {
+        $type: "bpmn:ExtensionElements",
+        values: [
+          {
+            $type: "camunda:Properties",
+            values: [
+              { $type: "camunda:Property", name: "source_container_ref", value: "required" },
+              { $type: "camunda:Property", name: "source_container_state", value: "legacy|new" },
+              { $type: "camunda:Property", name: "equipment_type_id", value: "microwave" },
+              { $type: "camunda:Property", name: "equipment_ref", value: "required_runtime" },
+            ],
+          },
+        ],
+      },
+    },
+  };
+  const bo = { id: "Task_Legacy_Custom", $type: "bpmn:Task", name: "Task Legacy Custom" };
+  rehydrateSupportedBusinessObjectPayload(bo, payload, { moddle: createMockModdle() });
+  assert.equal(bo.documentation?.[0]?.text, "doc legacy custom branch");
+  assert.equal(bo.extensionElements?.$type, "bpmn:ExtensionElements");
+  assert.equal(bo.extensionElements?.values?.[0]?.$type, "camunda:Properties");
+  assert.equal(bo.extensionElements?.values?.[0]?.values?.length, 4);
+  assert.equal(bo.status, "ready");
+});
+
 test("rehydrateSupportedBusinessObjectPayload applies namespaced attrs without nested $attrs regression", () => {
   const bo = {
     id: "Task_C",
@@ -215,6 +247,38 @@ test("readTemplateNodeSemanticPayload accepts snake_case payload and promotes ca
   assert.equal(semantic.custom.status, "legacy_custom_status");
   assert.equal(semantic.custom.extensionElements, undefined);
   assert.equal(semantic.custom.extension_elements, undefined);
+  assert.equal(semantic.custom.documentation, undefined);
+});
+
+test("readTemplateNodeSemanticPayload merges custom/businessObjectCustom/business_object_custom without dropping extensionElements", () => {
+  const semantic = readTemplateNodeSemanticPayload({
+    semanticPayload: {
+      custom: {
+        status: "preferred_status",
+      },
+      businessObjectCustom: {
+        extensionElements: {
+          $type: "bpmn:ExtensionElements",
+          values: [
+            {
+              $type: "camunda:Properties",
+              values: [
+                { $type: "camunda:Property", name: "equipment_ref", value: "required_runtime" },
+              ],
+            },
+          ],
+        },
+      },
+      business_object_custom: {
+        documentation: [{ $type: "bpmn:Documentation", text: "legacy snake doc" }],
+      },
+    },
+  });
+  assert.equal(semantic.extensionElements?.$type, "bpmn:ExtensionElements");
+  assert.equal(semantic.extensionElements?.values?.[0]?.$type, "camunda:Properties");
+  assert.equal(semantic.documentation?.[0]?.text, "legacy snake doc");
+  assert.equal(semantic.custom.status, "preferred_status");
+  assert.equal(semantic.custom.extensionElements, undefined);
   assert.equal(semantic.custom.documentation, undefined);
 });
 

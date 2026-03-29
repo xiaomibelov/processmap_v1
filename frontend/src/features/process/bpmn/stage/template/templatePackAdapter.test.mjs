@@ -452,6 +452,81 @@ test("insertTemplatePackOnModeler reapplies semantic payload to inserted node bu
   assert.equal(createShapeCalls[0]?.shapeDef?.height, 130);
 });
 
+test("insertTemplatePackOnModeler rehydrates extensionElements when legacy businessObjectCustom branch carries camunda props", async () => {
+  const anchor = createShape("Anchor_1", 100, 100, "Anchor");
+  const { adapter, registryItems } = createModelerWithServices({
+    anchorShape: anchor,
+    selectionItems: [anchor],
+    registryItems: [anchor],
+  });
+
+  const payload = {
+    mode: "after",
+    pack: {
+      packId: "pack_legacy_custom_ext",
+      entryNodeId: "N1",
+      exitNodeId: "N1",
+      fragment: {
+        nodes: [
+          {
+            id: "N1",
+            type: "bpmn:ManualTask",
+            name: "Central task",
+            laneHint: "lane 1",
+            di: { x: 10, y: 20, w: 240, h: 120 },
+            semanticPayload: {
+              documentation: [
+                { $type: "bpmn:Documentation", text: "template doc" },
+              ],
+              custom: {
+                status: "ready",
+              },
+              businessObjectCustom: {
+                extensionElements: {
+                  $type: "bpmn:ExtensionElements",
+                  values: [
+                    {
+                      $type: "camunda:Properties",
+                      values: [
+                        { $type: "camunda:Property", name: "source_container_ref", value: "required" },
+                        { $type: "camunda:Property", name: "source_container_state", value: "legacy|new" },
+                        { $type: "camunda:Property", name: "equipment_type_id", value: "microwave" },
+                        { $type: "camunda:Property", name: "equipment_ref", value: "required_runtime" },
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        ],
+        edges: [],
+      },
+    },
+  };
+
+  const result = await adapter.insertTemplatePackOnModeler(payload);
+  assert.equal(result?.ok, true);
+  const createdId = String(result?.entryNodeId || "");
+  const created = registryItems.find((row) => String(row?.id || "") === createdId);
+  assert.ok(created);
+  const bo = created?.businessObject || {};
+  assert.equal(bo.documentation?.[0]?.text, "template doc");
+  assert.equal(bo.extensionElements?.$type, "bpmn:ExtensionElements");
+  assert.equal(bo.extensionElements?.values?.[0]?.$type, "camunda:Properties");
+  assert.equal(bo.extensionElements?.values?.[0]?.values?.length, 4);
+  assert.deepEqual(
+    bo.extensionElements?.values?.[0]?.values?.map((item) => [item?.name, item?.value]),
+    [
+      ["source_container_ref", "required"],
+      ["source_container_state", "legacy|new"],
+      ["equipment_type_id", "microwave"],
+      ["equipment_ref", "required_runtime"],
+    ],
+  );
+  assert.equal(bo.status, "ready");
+});
+
 test("semantic payload survives capture -> JSON storage -> insert -> reread roundtrip without silent loss", async () => {
   const source = createShape("Task_Source", 120, 80, "Template source", {
     status: "ready",

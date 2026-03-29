@@ -157,9 +157,18 @@ function readPayloadValueCandidate(payloadRaw, customRaw, keys = []) {
   return undefined;
 }
 
+function mergeLegacyCustomPayloadBranches(payloadRaw) {
+  const payload = asObject(payloadRaw);
+  return {
+    ...asObject(payload.business_object_custom),
+    ...asObject(payload.businessObjectCustom),
+    ...asObject(payload.custom),
+  };
+}
+
 function normalizeTemplateSemanticPayload(raw) {
   const payload = asObject(raw);
-  const customRaw = asObject(payload.custom || payload.businessObjectCustom || payload.business_object_custom);
+  const customRaw = mergeLegacyCustomPayloadBranches(payload);
   const documentationCandidate = readPayloadValueCandidate(payload, customRaw, ["documentation"]);
   const extensionElementsCandidate = readPayloadObjectCandidate(payload, customRaw, [
     "extensionElements",
