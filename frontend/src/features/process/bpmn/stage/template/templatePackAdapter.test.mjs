@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createTemplatePackAdapter, resolveGraphicalInsertParent } from "./templatePackAdapter.js";
+import { getTemplateB3ForensicTrace, resetTemplateB3ForensicTrace } from "./templateSemanticPayload.js";
 
 function createShape(id, x, y, name = "", boOverrides = {}) {
   const baseBusinessObject = {
@@ -525,6 +526,133 @@ test("insertTemplatePackOnModeler rehydrates extensionElements when legacy busin
     ],
   );
   assert.equal(bo.status, "ready");
+});
+
+test("forensic trace identifies first-zero transition when semanticPayload wins over props_minimal with camunda props", async () => {
+  resetTemplateB3ForensicTrace();
+  const anchor = createShape("Anchor_1", 100, 100, "Anchor");
+  const { adapter } = createModelerWithServices({
+    anchorShape: anchor,
+    selectionItems: [anchor],
+    registryItems: [anchor],
+  });
+
+  const payload = {
+    mode: "after",
+    pack: {
+      packId: "pack_forensic_b3_first_zero",
+      entryNodeId: "N1",
+      exitNodeId: "N1",
+      fragment: {
+        nodes: [
+          {
+            id: "N1",
+            type: "bpmn:Task",
+            name: "Central task forensic",
+            laneHint: "lane 1",
+            di: { x: 10, y: 20, w: 240, h: 120 },
+            semantic_payload: {
+              documentation: [
+                { $type: "bpmn:Documentation", text: "template doc" },
+              ],
+              custom: {
+                status: "ready",
+              },
+            },
+            props_minimal: {
+              extension_elements: {
+                $type: "bpmn:ExtensionElements",
+                values: [
+                  {
+                    $type: "camunda:Properties",
+                    values: [
+                      { $type: "camunda:Property", name: "source_container_ref", value: "required" },
+                      { $type: "camunda:Property", name: "source_container_state", value: "legacy|new" },
+                      { $type: "camunda:Property", name: "equipment_type_id", value: "microwave" },
+                      { $type: "camunda:Property", name: "equipment_ref", value: "required_runtime" },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        ],
+        edges: [],
+      },
+    },
+  };
+
+  const result = await adapter.insertTemplatePackOnModeler(payload);
+  assert.equal(result?.ok, true);
+
+  const trace = getTemplateB3ForensicTrace();
+  const points = trace
+    .filter((entry) => ["T1", "T2", "T3", "T4", "T5"].includes(String(entry?.point || "")))
+    .map((entry) => ({
+      point: String(entry?.point || ""),
+      camundaPropsCount: Number(
+        entry?.payload?.camundaPropsCount
+        ?? entry?.businessObject?.camundaPropsCount
+        ?? 0,
+      ),
+      docsCount: Number(
+        entry?.payload?.docsCount
+        ?? entry?.businessObject?.docsCount
+        ?? 0,
+      ),
+      extensionElementsExists: Boolean(
+        entry?.payload?.extensionElementsExists
+        ?? entry?.businessObject?.extensionElementsExists
+        ?? false,
+      ),
+      props: entry?.payload?.props || entry?.businessObject?.props || [],
+    }));
+
+  const t1 = points.find((entry) => entry.point === "T1");
+  const t2 = points.find((entry) => entry.point === "T2");
+  const t3 = points.find((entry) => entry.point === "T3");
+  const t4 = points.find((entry) => entry.point === "T4");
+  const t5 = points.find((entry) => entry.point === "T5");
+  assert.ok(t1);
+  assert.ok(t2);
+  assert.ok(t3);
+  assert.ok(t4);
+  assert.ok(t5);
+
+  assert.equal(t1.docsCount, 0);
+  assert.equal(t1.extensionElementsExists, true);
+  assert.equal(t1.camundaPropsCount, 4);
+  assert.deepEqual(t1.props, [
+    "source_container_ref=required",
+    "source_container_state=legacy|new",
+    "equipment_type_id=microwave",
+    "equipment_ref=required_runtime",
+  ]);
+  assert.equal(trace.find((entry) => entry.point === "T1")?.source, "semantic_payload");
+  assert.equal(
+    trace.find((entry) => entry.point === "T1")?.selectedPayload?.docsCount,
+    1,
+  );
+  assert.equal(
+    trace.find((entry) => entry.point === "T1")?.selectedPayload?.camundaPropsCount,
+    0,
+  );
+
+  assert.equal(t2.docsCount, 1);
+  assert.equal(t2.extensionElementsExists, false);
+  assert.equal(t2.camundaPropsCount, 0);
+  assert.equal(t3.camundaPropsCount, 0);
+  assert.equal(t4.docsCount, 1);
+  assert.equal(t4.extensionElementsExists, false);
+  assert.equal(t4.camundaPropsCount, 0);
+  assert.equal(t5.camundaPropsCount, 0);
+
+  const ordered = ["T1", "T2", "T3", "T4", "T5"];
+  const firstZero = ordered.find((point) => {
+    const row = points.find((entry) => entry.point === point);
+    return row && row.camundaPropsCount === 0;
+  });
+  assert.equal(firstZero, "T2");
 });
 
 test("semantic payload survives capture -> JSON storage -> insert -> reread roundtrip without silent loss", async () => {

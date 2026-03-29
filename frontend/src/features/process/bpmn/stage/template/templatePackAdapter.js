@@ -1,7 +1,9 @@
 import {
+  recordTemplateB3ForensicTrace,
   readTemplateNodeSemanticPayload,
   rehydrateSupportedBusinessObjectPayload,
   serializeSupportedBusinessObjectPayload,
+  summarizeBusinessObjectForTemplateB3Trace,
 } from "./templateSemanticPayload.js";
 
 function asObject(x) {
@@ -562,6 +564,13 @@ export function createTemplatePackAdapter(deps = {}) {
       pack_id: String(pack?.packId || ""),
       created_nodes: createdNodes.length,
       created_edges: createdEdges.length,
+    });
+    createdNodes.forEach((shape) => {
+      recordTemplateB3ForensicTrace("T5", {
+        nodeId: String(shape?.id || ""),
+        boId: String(shape?.businessObject?.id || ""),
+        businessObject: summarizeBusinessObjectForTemplateB3Trace(shape?.businessObject),
+      });
     });
 
     return {
