@@ -219,6 +219,47 @@ test("readTemplateNodeSemanticPayload prefers semanticPayload and falls back to 
   assert.equal(legacy.custom.status, "legacy");
 });
 
+test("readTemplateNodeSemanticPayload merges semantic payload docs with legacy props_minimal camunda properties", () => {
+  const semantic = readTemplateNodeSemanticPayload({
+    semantic_payload: {
+      documentation: [{ $type: "bpmn:Documentation", text: "doc from semantic payload" }],
+      custom: { status: "ready" },
+    },
+    props_minimal: {
+      extension_elements: {
+        $type: "bpmn:ExtensionElements",
+        values: [
+          {
+            $type: "camunda:Properties",
+            values: [
+              { $type: "camunda:Property", name: "source_container_ref", value: "required" },
+              { $type: "camunda:Property", name: "source_container_state", value: "legacy|new" },
+              { $type: "camunda:Property", name: "equipment_type_id", value: "microwave" },
+              { $type: "camunda:Property", name: "equipment_ref", value: "required_runtime" },
+            ],
+          },
+        ],
+      },
+    },
+  });
+
+  assert.equal(semantic.documentation?.length, 1);
+  assert.equal(semantic.documentation?.[0]?.text, "doc from semantic payload");
+  assert.equal(semantic.extensionElements?.$type, "bpmn:ExtensionElements");
+  assert.equal(semantic.extensionElements?.values?.[0]?.$type, "camunda:Properties");
+  assert.equal(semantic.extensionElements?.values?.[0]?.values?.length, 4);
+  assert.deepEqual(
+    semantic.extensionElements?.values?.[0]?.values?.map((item) => [item?.name, item?.value]),
+    [
+      ["source_container_ref", "required"],
+      ["source_container_state", "legacy|new"],
+      ["equipment_type_id", "microwave"],
+      ["equipment_ref", "required_runtime"],
+    ],
+  );
+  assert.equal(semantic.custom?.status, "ready");
+});
+
 test("readTemplateNodeSemanticPayload accepts snake_case payload and promotes canonical extensionElements from legacy custom branch", () => {
   const semantic = readTemplateNodeSemanticPayload({
     semantic_payload: {

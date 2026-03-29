@@ -189,6 +189,57 @@ function normalizeTemplateSemanticPayload(raw) {
   };
 }
 
+function hasNonEmptyArray(value) {
+  return Array.isArray(value) && value.length > 0;
+}
+
+function hasNonEmptyObject(value) {
+  return !!(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0);
+}
+
+function mergeNormalizedSemanticPayload(primaryRaw, fallbackRaw) {
+  const primary = asObject(primaryRaw);
+  const fallback = asObject(fallbackRaw);
+
+  const documentation = hasNonEmptyArray(primary.documentation)
+    ? primary.documentation
+    : hasNonEmptyArray(fallback.documentation)
+      ? fallback.documentation
+      : undefined;
+  const extensionElements = hasNonEmptyObject(primary.extensionElements)
+    ? primary.extensionElements
+    : hasNonEmptyObject(fallback.extensionElements)
+      ? fallback.extensionElements
+      : undefined;
+  const attrs = hasNonEmptyObject(primary.attrs)
+    ? primary.attrs
+    : hasNonEmptyObject(fallback.attrs)
+      ? fallback.attrs
+      : undefined;
+
+  const custom = {
+    ...asObject(fallback.custom),
+    ...asObject(primary.custom),
+  };
+
+  const merged = {
+    ...fallback,
+    ...primary,
+    custom,
+  };
+
+  if (documentation !== undefined) merged.documentation = documentation;
+  else delete merged.documentation;
+
+  if (extensionElements !== undefined) merged.extensionElements = extensionElements;
+  else delete merged.extensionElements;
+
+  if (attrs !== undefined) merged.attrs = attrs;
+  else delete merged.attrs;
+
+  return merged;
+}
+
 function restoreModdleValue(value, moddle = null) {
   if (value === null || value === undefined) return value;
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
@@ -299,13 +350,14 @@ export function rehydrateSupportedBusinessObjectPayload(targetBo, payloadRaw, { 
 
 export function readTemplateNodeSemanticPayload(nodeRaw) {
   const node = asObject(nodeRaw);
-  const semanticPayload = node.semanticPayload || node.semantic_payload;
-  if (semanticPayload && typeof semanticPayload === "object") {
-    return normalizeTemplateSemanticPayload(semanticPayload);
-  }
-  const propsMinimal = node.propsMinimal || node.props_minimal;
-  if (propsMinimal && typeof propsMinimal === "object") {
-    return normalizeTemplateSemanticPayload(propsMinimal);
-  }
-  return {};
+  const candidates = [
+    node.semanticPayload,
+    node.semantic_payload,
+    node.propsMinimal,
+    node.props_minimal,
+  ].filter((candidate) => candidate && typeof candidate === "object");
+  if (!candidates.length) return {};
+  return candidates
+    .map((candidate) => normalizeTemplateSemanticPayload(candidate))
+    .reduce((acc, current) => mergeNormalizedSemanticPayload(acc, current));
 }
