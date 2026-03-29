@@ -452,6 +452,85 @@ test("insertTemplatePackOnModeler reapplies semantic payload to inserted node bu
   assert.equal(createShapeCalls[0]?.shapeDef?.height, 130);
 });
 
+test("insertTemplatePackOnModeler restores camunda properties from snake_case semantic payload shape", async () => {
+  const anchor = createShape("Anchor_1", 100, 100, "Anchor");
+  const { adapter, registryItems } = createModelerWithServices({
+    anchorShape: anchor,
+    selectionItems: [anchor],
+    registryItems: [anchor],
+  });
+
+  const payload = {
+    mode: "after",
+    pack: {
+      packId: "pack_snake_case_props",
+      entryNodeId: "N1",
+      exitNodeId: "N1",
+      fragment: {
+        nodes: [
+          {
+            id: "N1",
+            type: "bpmn:Task",
+            name: "Copied snake payload node",
+            laneHint: "lane 1",
+            di: { x: 10, y: 20, w: 260, h: 130 },
+            semanticPayload: {
+              documentation: [
+                { $type: "bpmn:Documentation", text: "template doc snake" },
+              ],
+              extension_elements: {
+                $type: "bpmn:ExtensionElements",
+                values: [
+                  {
+                    $type: "camunda:Properties",
+                    values: [
+                      { $type: "camunda:Property", name: "source_container_ref", value: "required" },
+                      { $type: "camunda:Property", name: "source_container_state", value: "legacy|new" },
+                      { $type: "camunda:Property", name: "equipment_type_id", value: "microwave" },
+                      { $type: "camunda:Property", name: "equipment_ref", value: "required_runtime" },
+                    ],
+                  },
+                ],
+              },
+              business_object_attrs: {
+                "camunda:assignee": "user_snake",
+              },
+              business_object_custom: {
+                propertyDictionaryBinding: {
+                  operationKey: "op.snake",
+                },
+              },
+            },
+          },
+        ],
+        edges: [],
+      },
+    },
+  };
+
+  const result = await adapter.insertTemplatePackOnModeler(payload);
+  assert.equal(result?.ok, true);
+  const createdId = String(result?.entryNodeId || "");
+  const created = registryItems.find((row) => String(row?.id || "") === createdId);
+  assert.ok(created);
+  const bo = created?.businessObject || {};
+  assert.equal(bo.documentation?.[0]?.text, "template doc snake");
+  assert.equal(bo.extensionElements?.$type, "bpmn:ExtensionElements");
+  assert.equal(bo.extensionElements?.values?.[0]?.$type, "camunda:Properties");
+  assert.equal(bo.extensionElements?.values?.[0]?.values?.length, 4);
+  assert.deepEqual(
+    bo.extensionElements?.values?.[0]?.values?.map((item) => [item?.name, item?.value]),
+    [
+      ["source_container_ref", "required"],
+      ["source_container_state", "legacy|new"],
+      ["equipment_type_id", "microwave"],
+      ["equipment_ref", "required_runtime"],
+    ],
+  );
+  assert.equal(bo.get?.("camunda:assignee"), "user_snake");
+  assert.equal(bo.propertyDictionaryBinding?.operationKey, "op.snake");
+});
+
 test("semantic payload survives capture -> JSON storage -> insert -> reread roundtrip without silent loss", async () => {
   const source = createShape("Task_Source", 120, 80, "Template source", {
     status: "ready",

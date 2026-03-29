@@ -54,6 +54,18 @@ const DEEP_EXCLUDED_KEYS = new Set([
   "participants",
 ]);
 
+const CUSTOM_EXCLUDED_KEYS = new Set([
+  "documentation",
+  "extensionElements",
+  "extension_elements",
+  "attrs",
+  "businessObjectAttrs",
+  "business_object_attrs",
+  "custom",
+  "businessObjectCustom",
+  "business_object_custom",
+]);
+
 export const TEMPLATE_PERSISTENT_FIELD_GROUPS = Object.freeze([
   "businessObject.documentation",
   "businessObject.extensionElements",
@@ -107,6 +119,29 @@ function normalizeBusinessObjectAttrs(value) {
   };
   delete merged.$attrs;
   return merged;
+}
+
+export function normalizeTemplateSemanticPayload(raw) {
+  const payload = asObject(raw);
+  const attrs = payload.attrs
+    || payload.businessObjectAttrs
+    || payload.business_object_attrs
+    || undefined;
+  const custom = payload.custom
+    || payload.businessObjectCustom
+    || payload.business_object_custom
+    || undefined;
+  const extensionElements = payload.extensionElements
+    || payload.extension_elements
+    || asObject(custom).extensionElements
+    || asObject(custom).extension_elements
+    || undefined;
+  return {
+    ...payload,
+    extensionElements: extensionElements && typeof extensionElements === "object" ? extensionElements : undefined,
+    attrs: attrs && typeof attrs === "object" ? attrs : undefined,
+    custom: custom && typeof custom === "object" ? custom : undefined,
+  };
 }
 
 function restoreModdleValue(value, moddle = null) {
@@ -188,12 +223,7 @@ export function serializeSupportedBusinessObjectPayload(boRaw) {
 export function rehydrateSupportedBusinessObjectPayload(targetBo, payloadRaw, { moddle = null } = {}) {
   const bo = targetBo && typeof targetBo === "object" ? targetBo : null;
   if (!bo) return;
-  const payloadBase = asObject(payloadRaw);
-  const payload = {
-    ...payloadBase,
-    attrs: payloadBase.attrs || payloadBase.businessObjectAttrs || undefined,
-    custom: payloadBase.custom || payloadBase.businessObjectCustom || undefined,
-  };
+  const payload = normalizeTemplateSemanticPayload(payloadRaw);
 
   if (Array.isArray(payload.documentation)) {
     setBpmnProperty(bo, "documentation", restoreModdleValue(payload.documentation, moddle));
@@ -217,6 +247,7 @@ export function rehydrateSupportedBusinessObjectPayload(targetBo, payloadRaw, { 
   }
   const custom = asObject(payload.custom);
   Object.keys(custom).forEach((key) => {
+    if (CUSTOM_EXCLUDED_KEYS.has(key)) return;
     if (!key || ROOT_EXCLUDED_KEYS.has(key)) return;
     setBpmnProperty(bo, key, restoreModdleValue(custom[key], moddle));
   });
@@ -224,19 +255,17 @@ export function rehydrateSupportedBusinessObjectPayload(targetBo, payloadRaw, { 
 
 export function readTemplateNodeSemanticPayload(nodeRaw) {
   const node = asObject(nodeRaw);
-  function normalizePayload(raw) {
-    const payload = asObject(raw);
-    return {
-      ...payload,
-      attrs: payload.attrs || payload.businessObjectAttrs || undefined,
-      custom: payload.custom || payload.businessObjectCustom || undefined,
-    };
-  }
   if (node.semanticPayload && typeof node.semanticPayload === "object") {
-    return normalizePayload(node.semanticPayload);
+    return normalizeTemplateSemanticPayload(node.semanticPayload);
+  }
+  if (node.semantic_payload && typeof node.semantic_payload === "object") {
+    return normalizeTemplateSemanticPayload(node.semantic_payload);
   }
   if (node.propsMinimal && typeof node.propsMinimal === "object") {
-    return normalizePayload(node.propsMinimal);
+    return normalizeTemplateSemanticPayload(node.propsMinimal);
+  }
+  if (node.props_minimal && typeof node.props_minimal === "object") {
+    return normalizeTemplateSemanticPayload(node.props_minimal);
   }
   return {};
 }

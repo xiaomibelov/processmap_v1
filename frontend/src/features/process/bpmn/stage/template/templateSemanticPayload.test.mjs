@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  normalizeTemplateSemanticPayload,
   readTemplateNodeSemanticPayload,
   rehydrateSupportedBusinessObjectPayload,
   serializeSupportedBusinessObjectPayload,
@@ -151,6 +152,87 @@ test("readTemplateNodeSemanticPayload prefers semanticPayload and falls back to 
     propsMinimal: { custom: { status: "legacy" } },
   });
   assert.equal(legacy.custom.status, "legacy");
+});
+
+test("normalizeTemplateSemanticPayload promotes snake_case extension/custom/attrs without losing camunda properties", () => {
+  const normalized = normalizeTemplateSemanticPayload({
+    documentation: [{ $type: "bpmn:Documentation", text: "snake doc" }],
+    extension_elements: {
+      $type: "bpmn:ExtensionElements",
+      values: [
+        {
+          $type: "camunda:Properties",
+          values: [
+            { $type: "camunda:Property", name: "source_container_ref", value: "required" },
+            { $type: "camunda:Property", name: "source_container_state", value: "legacy|new" },
+            { $type: "camunda:Property", name: "equipment_type_id", value: "microwave" },
+            { $type: "camunda:Property", name: "equipment_ref", value: "required_runtime" },
+          ],
+        },
+      ],
+    },
+    business_object_attrs: {
+      "pm:state": "ready",
+    },
+    business_object_custom: {
+      status: "seeded",
+    },
+  });
+
+  assert.equal(normalized.documentation[0].text, "snake doc");
+  assert.equal(normalized.extensionElements.$type, "bpmn:ExtensionElements");
+  assert.equal(normalized.extensionElements.values[0].$type, "camunda:Properties");
+  assert.equal(normalized.extensionElements.values[0].values.length, 4);
+  assert.equal(normalized.attrs["pm:state"], "ready");
+  assert.equal(normalized.custom.status, "seeded");
+});
+
+test("readTemplateNodeSemanticPayload supports snake_case semantic_payload source", () => {
+  const payload = readTemplateNodeSemanticPayload({
+    semantic_payload: {
+      documentation: [{ $type: "bpmn:Documentation", text: "doc snake" }],
+      extension_elements: {
+        $type: "bpmn:ExtensionElements",
+        values: [
+          {
+            $type: "camunda:Properties",
+            values: [
+              { $type: "camunda:Property", name: "equipment_ref", value: "required_runtime" },
+            ],
+          },
+        ],
+      },
+    },
+  });
+  assert.equal(payload.documentation[0].text, "doc snake");
+  assert.equal(payload.extensionElements.$type, "bpmn:ExtensionElements");
+  assert.equal(payload.extensionElements.values[0].$type, "camunda:Properties");
+});
+
+test("rehydrateSupportedBusinessObjectPayload restores extensionElements from snake_case extension_elements payload", () => {
+  const bo = { id: "Task_Snake", $type: "bpmn:Task", name: "Snake" };
+  rehydrateSupportedBusinessObjectPayload(bo, {
+    documentation: [{ $type: "bpmn:Documentation", text: "doc from snake" }],
+    extension_elements: {
+      $type: "bpmn:ExtensionElements",
+      values: [
+        {
+          $type: "camunda:Properties",
+          values: [
+            { $type: "camunda:Property", name: "source_container_ref", value: "required" },
+            { $type: "camunda:Property", name: "source_container_state", value: "legacy|new" },
+            { $type: "camunda:Property", name: "equipment_type_id", value: "microwave" },
+            { $type: "camunda:Property", name: "equipment_ref", value: "required_runtime" },
+          ],
+        },
+      ],
+    },
+  }, { moddle: createMockModdle() });
+
+  assert.equal(bo.documentation[0].text, "doc from snake");
+  assert.equal(bo.extensionElements.$type, "bpmn:ExtensionElements");
+  assert.equal(bo.extensionElements.values[0].$type, "camunda:Properties");
+  assert.equal(bo.extensionElements.values[0].values.length, 4);
 });
 
 test("field classification contract is explicit for persistent/transient/excluded template payload groups", () => {
