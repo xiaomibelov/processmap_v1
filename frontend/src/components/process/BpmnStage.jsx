@@ -4002,8 +4002,10 @@ const BpmnStage = forwardRef(function BpmnStage({
         : syncCamundaExtensionsToModeler(activeModeler, {
           preserveManagedForElementIds: templateInsertClearGuardIds,
         });
+      const camundaSyncCompleted = Boolean(camundaSync?.ok) && !Boolean(camundaSync?.skipped);
       if (
         templateInsertClearGuardIds.length
+        && camundaSyncCompleted
         && Number(camundaSync?.preservedManagedSkips || 0) === 0
       ) {
         clearTemplateInsertCamundaClearGuard();
