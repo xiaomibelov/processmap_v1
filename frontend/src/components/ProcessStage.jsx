@@ -3789,6 +3789,7 @@ export default function ProcessStage({
         helpers: projectionHelpers,
         preferBpmn: true,
         canAutofillInterview: replaceSeedInterview || !interviewHasContent(draft?.interview),
+        replaceGraph: true,
       });
       const derivedActors = deriveActorsFromBpmn(text);
       const currentDrawioMeta = normalizeDrawioMeta(drawioMetaRef.current);
