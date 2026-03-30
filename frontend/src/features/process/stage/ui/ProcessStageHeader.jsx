@@ -41,7 +41,7 @@ export default function ProcessStageHeader({ view = {} }) {
   const draftAheadOfLatest = sessionRevisionHistorySnapshot?.draftState?.isDraftAheadOfLatestRevision === true;
   const draftStatusLabel = !hasPublishedRevision
     ? "Ревизий нет"
-    : (draftAheadOfLatest ? "Черновик впереди" : "Опубликовано");
+    : (draftAheadOfLatest ? "Черновик" : "Опубликовано");
   const draftStatusTone = !hasPublishedRevision || draftAheadOfLatest ? "warn" : "ok";
   const mirrorSnapshot = (
     publishGitMirrorSnapshot && typeof publishGitMirrorSnapshot === "object"
