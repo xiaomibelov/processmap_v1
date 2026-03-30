@@ -696,6 +696,44 @@ export async function apiGetBpmnXml(sessionId, options = {}) {
   return r.ok ? { ok: true, status: r.status, xml: r.text || "" } : r;
 }
 
+export async function apiGetBpmnVersions(sessionId, options = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const url = apiRoutes.sessions.bpmnVersions(sid, options);
+  const r = okOrError(await request(url));
+  if (!r.ok) return r;
+  const payload = r.data && typeof r.data === "object" ? r.data : {};
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  return {
+    ok: true,
+    status: r.status,
+    versions: items,
+    items,
+    count: Number(payload.count || items.length || 0),
+    session_id: String(payload.session_id || sid),
+  };
+}
+
+export async function apiRestoreBpmnVersion(sessionId, versionId) {
+  const sid = String(sessionId || "").trim();
+  const vid = String(versionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  if (!vid) return { ok: false, status: 0, error: "missing version_id" };
+  const r = okOrError(await request(apiRoutes.sessions.bpmnRestore(sid, vid), { method: "POST", body: {} }));
+  if (!r.ok) return r;
+  const payload = r.data && typeof r.data === "object" ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    result: payload,
+    session_id: String(payload.session_id || sid),
+    bpmn_xml: String(payload.bpmn_xml || ""),
+    restored_version: payload.restored_version && typeof payload.restored_version === "object"
+      ? payload.restored_version
+      : {},
+  };
+}
+
 export async function apiPutBpmnXml(sessionId, xml, options = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };

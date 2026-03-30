@@ -1810,6 +1810,54 @@ class Storage:
             )
         return out
 
+    def get_bpmn_version(
+        self,
+        session_id: str,
+        version_id: str,
+        *,
+        org_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        _ensure_schema()
+        sid = str(session_id or "").strip()
+        vid = str(version_id or "").strip()
+        if not sid or not vid:
+            return None
+        scope_org = str(org_id or "").strip()
+
+        with _connect() as con:
+            sess_row = con.execute("SELECT org_id FROM sessions WHERE id = ? LIMIT 1", [sid]).fetchone()
+            if not sess_row:
+                return None
+            session_org = str(sess_row["org_id"] or "").strip() or _default_org_id()
+            oid = scope_org or session_org
+            if oid != session_org:
+                return None
+            row = con.execute(
+                """
+                SELECT id, session_id, org_id, version_number, bpmn_xml, source_action, import_note, created_at, created_by
+                  FROM bpmn_versions
+                 WHERE session_id = ?
+                   AND org_id = ?
+                   AND id = ?
+                 LIMIT 1
+                """,
+                [sid, oid, vid],
+            ).fetchone()
+
+        if not row:
+            return None
+        return {
+            "id": str(row["id"] or ""),
+            "session_id": str(row["session_id"] or ""),
+            "org_id": str(row["org_id"] or ""),
+            "version_number": int(row["version_number"] or 0),
+            "bpmn_xml": str(row["bpmn_xml"] or ""),
+            "source_action": str(row["source_action"] or ""),
+            "import_note": str(row["import_note"] or ""),
+            "created_at": int(row["created_at"] or 0),
+            "created_by": str(row["created_by"] or ""),
+        }
+
 
 def gen_project_id() -> str:
     return uuid.uuid4().hex[:10]

@@ -114,6 +114,11 @@ export const apiRoutes = {
       include_overlay: options?.includeOverlay === false ? "0" : "",
       _ts: options?.cacheBust === true ? String(Date.now()) : "",
     }),
+    bpmnVersions: (sessionId, options = {}) => withQuery(`/api/sessions/${encode(sessionId)}/bpmn/versions`, {
+      limit: String(options?.limit || "").trim(),
+      include_xml: options?.includeXml === true ? "1" : "",
+    }),
+    bpmnRestore: (sessionId, versionId) => `/api/sessions/${encode(sessionId)}/bpmn/restore/${encode(versionId)}`,
     bpmnMeta: (sessionId) => `/api/sessions/${encode(sessionId)}/bpmn_meta`,
     inferRtiers: (sessionId) => `/api/sessions/${encode(sessionId)}/bpmn_meta/infer_rtiers`,
     autoPass: (sessionId, options = {}) => withQuery(`/api/sessions/${encode(sessionId)}/auto-pass`, {

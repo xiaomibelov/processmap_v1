@@ -5505,6 +5505,143 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
         lock.release()
 
 
+@app.get("/api/sessions/{session_id}/bpmn/versions")
+def session_bpmn_versions_list(
+    session_id: str,
+    request: Request = None,
+    limit: int = Query(100, description="Max versions to return"),
+    include_xml: int = Query(0, description="1 = include bpmn_xml payload"),
+) -> Dict[str, Any]:
+    sess, oid, _ = _legacy_load_session_scoped(session_id, request)
+    if not sess:
+        return {"error": "not found"}
+    st = get_storage()
+    include_xml_mode = int(include_xml or 0) == 1
+    rows = st.list_bpmn_versions(
+        str(getattr(sess, "id", "") or session_id),
+        org_id=oid,
+        limit=limit,
+    )
+    items: List[Dict[str, Any]] = []
+    for row in rows:
+        item = {
+            "id": str(row.get("id") or ""),
+            "session_id": str(row.get("session_id") or ""),
+            "version_number": int(row.get("version_number") or 0),
+            "source_action": str(row.get("source_action") or ""),
+            "import_note": str(row.get("import_note") or ""),
+            "created_at": int(row.get("created_at") or 0),
+            "created_by": str(row.get("created_by") or ""),
+        }
+        if include_xml_mode:
+            item["bpmn_xml"] = str(row.get("bpmn_xml") or "")
+        items.append(item)
+    return {
+        "ok": True,
+        "session_id": str(getattr(sess, "id", "") or session_id),
+        "count": len(items),
+        "items": items,
+    }
+
+
+@app.post("/api/sessions/{session_id}/bpmn/restore/{version_id}")
+def session_bpmn_restore(session_id: str, version_id: str, request: Request = None) -> Dict[str, Any]:
+    user = _request_auth_user(request) if request is not None else {}
+    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
+    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
+    effective_is_admin = is_admin or request is None
+
+    sess_pre, oid, _ = _legacy_load_session_scoped(session_id, request)
+    if not sess_pre:
+        return {"error": "not found"}
+    role = _org_role_for_request(request, oid) if request is not None and oid else ("org_admin" if effective_is_admin else "")
+    if not _can_edit_workspace(role, is_admin=effective_is_admin):
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    vid = str(version_id or "").strip()
+    if not vid:
+        return {"error": "missing_version_id"}
+
+    lock = acquire_session_lock(session_id, ttl_ms=15000)
+    if not lock.acquired:
+        raise HTTPException(status_code=423, detail="Session is being updated, retry")
+
+    try:
+        st = get_storage()
+        s, oid_locked, _ = _legacy_load_session_scoped(session_id, request)
+        if not s:
+            return {"error": "not found"}
+
+        version_row = st.get_bpmn_version(
+            str(getattr(s, "id", "") or session_id),
+            vid,
+            org_id=oid_locked,
+        )
+        if not version_row:
+            return {"error": "bpmn_version_not_found", "version_id": vid}
+
+        xml = str(version_row.get("bpmn_xml") or "")
+        if not xml.strip():
+            return {"error": "bpmn_version_xml_empty", "version_id": vid}
+
+        flow_ctx = _collect_sequence_flow_meta(xml)
+        flow_ids = flow_ctx.get("flow_ids") if isinstance(flow_ctx, dict) else set()
+        node_ids = flow_ctx.get("node_ids") if isinstance(flow_ctx, dict) else set()
+
+        current_meta = _normalize_bpmn_meta(
+            getattr(s, "bpmn_meta", {}),
+            allowed_flow_ids=flow_ids,
+            allowed_node_ids=node_ids,
+        )
+
+        s.bpmn_xml = xml
+        s.bpmn_xml_version = int(getattr(s, "version", 0) or 0)
+        s.bpmn_graph_fingerprint = _session_graph_fingerprint(s)
+        normalized_meta = _normalize_bpmn_meta(
+            current_meta,
+            allowed_flow_ids=flow_ids,
+            allowed_node_ids=node_ids,
+        )
+        normalized_meta["flow_meta"] = _enforce_gateway_tier_constraints(
+            dict(normalized_meta.get("flow_meta") or {}),
+            outgoing_by_source=flow_ctx.get("outgoing_by_source"),
+            gateway_mode_by_node=flow_ctx.get("gateway_mode_by_node"),
+        )
+        s.bpmn_meta = normalized_meta
+        st.save(s, user_id=user_id, org_id=oid_locked, is_admin=True)
+        _invalidate_session_caches(s, session_id=session_id, org_id=getattr(s, "org_id", "") or get_default_org_id())
+        _audit_log_safe(
+            request,
+            org_id=oid_locked or str(getattr(s, "org_id", "") or get_default_org_id()),
+            action="session.bpmn_restore",
+            entity_type="session",
+            entity_id=str(getattr(s, "id", "") or session_id),
+            project_id=str(getattr(s, "project_id", "") or ""),
+            session_id=str(getattr(s, "id", "") or session_id),
+            meta={
+                "version_id": str(version_row.get("id") or ""),
+                "version_number": int(version_row.get("version_number") or 0),
+            },
+        )
+        return {
+            "ok": True,
+            "session_id": str(getattr(s, "id", "") or session_id),
+            "version": int(getattr(s, "bpmn_xml_version", 0) or 0),
+            "bytes": len(xml),
+            "bpmn_xml": xml,
+            "restored_version": {
+                "id": str(version_row.get("id") or ""),
+                "version_number": int(version_row.get("version_number") or 0),
+                "source_action": str(version_row.get("source_action") or ""),
+                "import_note": str(version_row.get("import_note") or ""),
+                "created_at": int(version_row.get("created_at") or 0),
+                "created_by": str(version_row.get("created_by") or ""),
+            },
+        }
+    finally:
+        lock.release()
+
+
 @app.delete("/api/sessions/{session_id}/bpmn")
 def session_bpmn_clear(session_id: str) -> Dict[str, Any]:
     st = get_storage()

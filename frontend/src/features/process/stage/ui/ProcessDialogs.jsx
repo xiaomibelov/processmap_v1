@@ -251,8 +251,11 @@ export default function ProcessDialogs({ view = {} }) {
           <div className="rounded-xl border border-border bg-panel2/45 p-2">
             <div className="mb-2 px-1 text-xs text-muted" data-testid="bpmn-versions-count">
               Ревизий: {versionsList.length}
-              <span> · latest: r{Number(revisionHistorySnapshot?.latestRevisionNumber || 0)}</span>
-              <span> · draft: {revisionHistorySnapshot?.draftState?.isDraftAheadOfLatestRevision ? "ahead_of_latest" : "matches_latest_or_empty"}</span>
+              <span> · latest: r{Number(revisionHistorySnapshot?.latestRevisionNumber || asArray(versionsList)[0]?.revisionNumber || 0)}</span>
+              <span>
+                {" · draft: "}
+                {revisionHistorySnapshot?.draftState?.isDraftAheadOfLatestRevision ? "ahead_of_latest" : "matches_latest_or_empty"}
+              </span>
             </div>
             <div className="max-h-[52vh] space-y-2 overflow-auto pr-1">
               {versionsList.length === 0 ? (

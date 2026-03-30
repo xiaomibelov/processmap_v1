@@ -11,7 +11,12 @@ import {
   apiGetAutoPassPrecheck,
   apiGetAutoPassStatus,
 } from "../lib/api/sessionApi";
-import { apiGetBpmnMeta, apiGetBpmnXml } from "../lib/api/bpmnApi";
+import {
+  apiGetBpmnMeta,
+  apiGetBpmnXml,
+  apiGetBpmnVersions,
+  apiRestoreBpmnVersion,
+} from "../lib/api/bpmnApi";
 import { apiAiQuestions } from "../lib/api/interviewApi";
 import { createAiInputHash, executeAi } from "../features/ai/aiExecutor";
 import {
@@ -124,7 +129,6 @@ import { createSessionCompanionJazzAdapter } from "../features/process/session-c
 import { createLiveDocumentJazzAdapter } from "../features/process/session-companion/liveDocumentJazzAdapter.js";
 import { appendRevisionToLedger } from "../features/process/session-companion/revisionLedgerModule.js";
 import { buildRevisionDiffView } from "../features/process/session-companion/revisionCompareModule.js";
-import { buildRevisionRestoreTransition } from "../features/process/session-companion/revisionRestoreModule.js";
 import {
   buildSessionCompanionJazzScopeId,
   resolveSessionCompanionLocalFirstActivation,
@@ -2677,10 +2681,6 @@ export default function ProcessStage({
     return seq ? `${tier} · ${seq}` : tier;
   }, [pathHighlightTier, pathHighlightSequenceKey]);
   const snapshotProjectId = String(draft?.project_id || draft?.projectId || activeProjectId || "").trim();
-  const revisionListFromBridge = useMemo(
-    () => asArray(sessionRevisionHistorySnapshot?.revisions),
-    [sessionRevisionHistorySnapshot?.revisions],
-  );
   const previewSnapshot = useMemo(
     () => asArray(versionsList).find((item) => String(item?.id || "") === String(previewSnapshotId || "")) || null,
     [versionsList, previewSnapshotId],
@@ -2711,6 +2711,30 @@ export default function ProcessStage({
     return "Без названия";
   }
 
+  const normalizeBpmnVersionListItem = useCallback((itemRaw) => {
+    const item = itemRaw && typeof itemRaw === "object" ? itemRaw : {};
+    const xml = String(item?.bpmn_xml || item?.xml || "");
+    const versionNumber = Number(item?.version_number || item?.versionNumber || item?.revisionNumber || item?.rev || 0);
+    const createdAt = Number(item?.created_at || item?.createdAt || item?.ts || 0);
+    const sourceAction = String(item?.source_action || item?.sourceAction || item?.reason || "import_bpmn").trim() || "import_bpmn";
+    const importNote = String(item?.import_note || item?.importNote || item?.comment || "").trim();
+    const author = String(item?.created_by || item?.createdBy || item?.authorId || item?.authorName || "").trim();
+    const id = String(item?.id || "").trim();
+    return {
+      ...item,
+      id,
+      xml,
+      ts: createdAt,
+      reason: sourceAction,
+      comment: importNote,
+      revisionNumber: versionNumber,
+      rev: versionNumber,
+      authorId: author,
+      authorName: author,
+      len: Number(item?.len || xml.length || 0),
+    };
+  }, []);
+
   const semanticDiffView = useMemo(() => {
     return buildRevisionDiffView({
       revisions: asArray(versionsList),
@@ -2725,7 +2749,14 @@ export default function ProcessStage({
       setPreviewSnapshotId("");
       return;
     }
-    const list = revisionListFromBridge;
+    const loaded = await apiGetBpmnVersions(sid, { limit: 200, includeXml: true });
+    if (!loaded?.ok) {
+      setVersionsList([]);
+      setPreviewSnapshotId("");
+      setGenErr(shortErr(loaded?.error || "Не удалось загрузить BPMN версии."));
+      return;
+    }
+    const list = asArray(loaded?.versions).map((item) => normalizeBpmnVersionListItem(item));
     // eslint-disable-next-line no-console
     console.debug(
       `UI_VERSIONS_LOAD sid=${sid} key="${snapshotScopeKey(snapshotProjectId, sid)}" count=${asArray(list).length}`,
@@ -2736,7 +2767,7 @@ export default function ProcessStage({
       if (exists) return prev;
       return asArray(list)[0]?.id || "";
     });
-  }, [revisionListFromBridge, sid, snapshotProjectId]);
+  }, [normalizeBpmnVersionListItem, sid, snapshotProjectId]);
 
   async function openVersionsModal() {
     setVersionsOpen(true);
@@ -2749,61 +2780,101 @@ export default function ProcessStage({
   }
 
   async function restoreSnapshot(item) {
-    const xml = String(item?.xml || "");
-    if (!xml.trim()) {
-      setGenErr("В выбранной версии нет XML.");
+    const versionId = String(item?.id || "").trim();
+    if (!versionId) {
+      setGenErr("Не удалось определить версию для восстановления.");
       return;
     }
-    if (typeof persistSessionCompanion !== "function") return;
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm("Восстановить выбранную BPMN версию? Текущая BPMN диаграмма будет заменена.");
+      if (!confirmed) return;
+    }
     setVersionsBusy(true);
     setGenErr("");
     setInfoMsg("");
     setDrawioAnchorImportDiagnostics(null);
     try {
-      // eslint-disable-next-line no-console
-      console.debug(
-        `UI_SNAPSHOT_CLICK sid=${sid} action=restore key="${snapshotScopeKey(snapshotProjectId, sid)}" `
-        + `hash=${fnv1aHex(xml)} len=${xml.length}`,
-      );
-      const imported = await bpmnSync.importXml(xml);
-      if (!imported?.ok) {
-        setGenErr(shortErr(imported?.error || "Не удалось восстановить версию."));
-        return;
-      }
-      const restoreTransition = buildRevisionRestoreTransition(sessionCompanionMetaLive, {
-        revisionId: String(item?.id || ""),
-        draft,
-        liveVersionRaw: sessionVersionReadSnapshot,
-        author: {
-          id: user?.id,
-          name: user?.name || user?.username || user?.email || "",
-          email: user?.email || "",
-        },
-        comment: `Restore r${Number(item?.revisionNumber || item?.rev || 0)}`,
-        source: "restore_revision",
-      });
-      if (!restoreTransition?.ok) {
-        setGenErr(shortErr(restoreTransition?.error || "Не удалось зафиксировать восстановление ревизии."));
-        return;
-      }
-      const restored = await persistSessionCompanion(restoreTransition.nextCompanion, {
-        source: "restore_revision_session_companion",
-      });
-      // eslint-disable-next-line no-console
-      console.debug(
-        `UI_SNAPSHOT_RESULT sid=${sid} action=restore ok=${restored?.ok ? 1 : 0} saved=${restored?.saved ? 1 : 0} `
-        + `reason=${String(restored?.decisionReason || restored?.error || "-")} key="${snapshotScopeKey(snapshotProjectId, sid)}"`,
-      );
+      const restored = await apiRestoreBpmnVersion(sid, versionId);
       if (!restored?.ok) {
-        setGenErr(shortErr(restored?.error || "Не удалось сохранить цепочку ревизий после восстановления."));
+        setGenErr(shortErr(restored?.error || "Не удалось восстановить BPMN версию."));
         return;
+      }
+      const xml = String(restored?.bpmn_xml || item?.xml || "");
+      if (!xml.trim()) {
+        setGenErr("В выбранной версии нет XML.");
+        return;
+      }
+      const replaceSeedInterview = isLikelySeedBpmnXml(draft?.bpmn_xml);
+      const projected = parseAndProjectBpmnToInterview({
+        xmlText: xml,
+        draft,
+        helpers: projectionHelpers,
+        preferBpmn: true,
+        canAutofillInterview: replaceSeedInterview || !interviewHasContent(draft?.interview),
+        replaceGraph: true,
+      });
+      const derivedActors = deriveActorsFromBpmn(xml);
+      const currentDrawioMeta = normalizeDrawioMeta(drawioMetaRef.current);
+      const beforeBpmnNodeIds = collectBpmnNodeIdsFromDraft(draft);
+      const afterBpmnNodeIds = projected.ok
+        ? collectBpmnNodeIdsFromDraft({ nodes: projected.nextNodes })
+        : beforeBpmnNodeIds;
+      const restoreDiagnostics = buildDrawioAnchorImportDiagnostics({
+        beforeMeta: currentDrawioMeta,
+        beforeBpmnNodeIds,
+        afterBpmnNodeIds,
+        validationReady: projected.ok,
+      });
+      setDrawioAnchorImportDiagnostics(restoreDiagnostics);
+      await bpmnSync.resetBackend();
+      if (projected.ok) {
+        const hasProjectedInterview = interviewHasContent(projected.nextInterview);
+        if (hasProjectedInterview) {
+          const savePlan = markInterviewAsSaved(
+            projected.nextInterview,
+            projected.nextNodes,
+            draft?.nodes,
+            projected.nextEdges,
+            draft?.edges,
+          );
+          const optimisticSession = {
+            ...(draft || {}),
+            id: sid,
+            session_id: sid,
+            interview: projected.nextInterview,
+            bpmn_xml: xml,
+            actors_derived: derivedActors,
+            ...(savePlan.nodesChanged ? { nodes: projected.nextNodes } : {}),
+            ...(savePlan.edgesChanged ? { edges: projected.nextEdges } : {}),
+          };
+          onSessionSync?.(optimisticSession);
+          if (!isLocal) {
+            const syncRes = await apiPatchSession(sid, savePlan.patch);
+            if (syncRes.ok) {
+              const serverSession =
+                syncRes.session && typeof syncRes.session === "object"
+                  ? {
+                      ...syncRes.session,
+                      actors_derived: derivedActors,
+                    }
+                  : optimisticSession;
+              onSessionSync?.(serverSession);
+            } else {
+              setGenErr(shortErr(syncRes.error || "Не удалось сохранить Interview из BPMN версии."));
+            }
+          }
+        }
+        setInfoMsg(
+          `Версия r${Number(item?.revisionNumber || item?.rev || 0)} восстановлена: `
+          + `${projected.parsed.nodes.length} узл., ${projected.parsed.edges.length} связей.`
+          + `${restoreDiagnostics.importHasAnchorImpact ? ` Overlay anchors affected: ${restoreDiagnostics.affectedObjectIds.length}.` : " Overlay anchors unchanged."}`,
+        );
+      } else {
+        setDrawioAnchorImportDiagnostics(null);
+        setInfoMsg(projected.error || "BPMN версия восстановлена, но semantic parsing не выполнен.");
       }
       setTab("diagram");
       await Promise.resolve(bpmnRef.current?.fit?.());
-      setInfoMsg(
-        `Ревизия r${Number(item?.revisionNumber || item?.rev || 0)} восстановлена как новая latest `
-        + `r${Number(restoreTransition?.revisionNumber || 0)}.`,
-      );
       await refreshSnapshotVersions();
     } catch (error) {
       setGenErr(shortErr(error?.message || error || "Не удалось восстановить версию."));
