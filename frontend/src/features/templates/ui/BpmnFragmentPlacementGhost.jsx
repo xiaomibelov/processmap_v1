@@ -15,21 +15,10 @@ export default function BpmnFragmentPlacementGhost({ ghost, active = false }) {
   const nodes = Math.max(0, Number(data.nodes || 0));
   const edges = Math.max(0, Number(data.edges || 0));
   const title = String(data.title || "BPMN fragment");
-  const mode = String(data.mode || "").toLowerCase();
-  const phase = String(data.phase || "").toLowerCase();
-  const immediateMode = mode === "immediate";
-  const statusText = immediateMode
-    ? (phase === "after_insert" ? "Фрагмент вставлен" : "Точка авто-вставки шаблона")
-    : "Точка вставки · клик для вставки · Esc отмена";
-  const borderColor = immediateMode && phase === "after_insert"
-    ? "2px solid rgba(16, 185, 129, 0.95)"
-    : "2px dashed rgba(79, 107, 255, 0.95)";
-  const fillColor = immediateMode && phase === "after_insert"
-    ? "rgba(16, 185, 129, 0.16)"
-    : "rgba(79, 107, 255, 0.14)";
-  const anchorBg = immediateMode && phase === "after_insert"
-    ? "rgba(16, 185, 129, 0.94)"
-    : "rgba(79, 107, 255, 0.94)";
+  const statusText = "Точка вставки · клик для вставки · Esc отмена";
+  const borderColor = "2px dashed rgba(79, 107, 255, 0.95)";
+  const fillColor = "rgba(79, 107, 255, 0.14)";
+  const anchorBg = "rgba(79, 107, 255, 0.94)";
   return (
     <div className="pointer-events-none absolute inset-0 z-[24]" data-testid="bpmn-fragment-placement-layer">
       <div

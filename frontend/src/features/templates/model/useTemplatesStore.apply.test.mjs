@@ -1,113 +1,46 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { buildBpmnFragmentGhost } from "../services/applyBpmnFragmentTemplatePlacement.js";
 import {
-  applyBpmnFragmentTemplateImmediate,
-  buildImmediateInsertVisibilityGhost,
-  readInsertedTemplateElementIds,
+  activateBpmnFragmentTemplatePlacement,
+  buildCenteredBpmnFragmentPlacementDraft,
+  insertBpmnFragmentFromPlacement,
+  shouldCancelBpmnFragmentPlacementByKey,
 } from "./useTemplatesStore.js";
 
-test("applyBpmnFragmentTemplateImmediate: immediate insert returns completed success", async () => {
-  const insertCalls = [];
+test("activateBpmnFragmentTemplatePlacement: starts placement mode and closes picker", () => {
+  const startCalls = [];
   const pickerCalls = [];
   const infoCalls = [];
   const errorCalls = [];
   const template = { id: "tpl_1", template_type: "bpmn_fragment_v1" };
-  const diagramContainerRect = { left: 12, top: 24, width: 980, height: 640 };
 
-  const result = await applyBpmnFragmentTemplateImmediate({
+  const result = activateBpmnFragmentTemplatePlacement({
     template,
-    diagramContainerRect,
-    insertBpmnFragmentTemplateImmediately: async (templateArg, optionsArg) => {
-      insertCalls.push({ templateArg, optionsArg });
-      return { ok: true, createdNodes: 3, createdEdges: 2 };
+    startBpmnFragmentPlacement: (templateArg) => {
+      startCalls.push(templateArg);
+      return { ok: true };
     },
     setPickerOpen: (value) => pickerCalls.push(value),
     setInfo: (value) => infoCalls.push(String(value || "")),
     setError: (value) => errorCalls.push(String(value || "")),
   });
 
-  assert.equal(insertCalls.length, 1);
-  assert.equal(insertCalls[0].templateArg, template);
-  assert.equal(insertCalls[0].optionsArg.mode, "after");
-  assert.equal(insertCalls[0].optionsArg.preferPointAnchor, true);
-  assert.equal(insertCalls[0].optionsArg.persistImmediately, true);
-  assert.equal(insertCalls[0].optionsArg.source, "template_apply");
-  assert.equal(insertCalls[0].optionsArg.diagramContainerRect, diagramContainerRect);
+  assert.equal(startCalls.length, 1);
+  assert.equal(startCalls[0], template);
   assert.deepEqual(pickerCalls, [false]);
-  assert.deepEqual(infoCalls, ["Inserted: 3 nodes, 2 flows."]);
   assert.equal(errorCalls.length, 0);
   assert.equal(result?.ok, true);
-  assert.equal(result?.immediate, true);
+  assert.equal(result?.placement, true);
+  assert.match(infoCalls[0], /кликните ЛКМ/i);
 });
 
-test("applyBpmnFragmentTemplateImmediate: emits immediate visibility marker before and after insert", async () => {
-  const visibilityMarkers = [];
-  const result = await applyBpmnFragmentTemplateImmediate({
-    template: {
-      id: "tpl_vis_1",
-      title: "Visibility",
-      template_type: "bpmn_fragment_v1",
-      pack: {
-        fragment: {
-          nodes: [
-            { id: "A", type: "bpmn:Task", di: { x: 100, y: 100, w: 100, h: 80 } },
-          ],
-          edges: [],
-        },
-      },
-    },
-    diagramContainerRect: { left: 10, top: 20, width: 900, height: 600 },
-    insertBpmnFragmentTemplateImmediately: async () => ({
-      ok: true,
-      createdNodes: 2,
-      createdEdges: 1,
-      remap: {
-        old_a: "Activity_1",
-        old_b: "Activity_2",
-        old_flow: "Flow_1",
-      },
-      entryNodeId: "Activity_1",
-      exitNodeId: "Activity_2",
-    }),
-    emitVisibilityMarker: (payload) => visibilityMarkers.push(payload),
-  });
-
-  assert.equal(result?.ok, true);
-  assert.equal(visibilityMarkers.length, 2);
-  assert.equal(visibilityMarkers[0]?.phase, "before_insert");
-  assert.equal(visibilityMarkers[0]?.ghost?.mode, "immediate");
-  assert.equal(visibilityMarkers[1]?.phase, "after_insert");
-  assert.deepEqual(
-    visibilityMarkers[1]?.insertedIds,
-    ["Activity_1", "Activity_2", "Flow_1"],
-  );
-});
-
-test("applyBpmnFragmentTemplateImmediate: insert failure returns error and never reports success", async () => {
-  const pickerCalls = [];
-  const infoCalls = [];
+test("activateBpmnFragmentTemplatePlacement: missing placement API fails contract", () => {
   const errorCalls = [];
 
-  const result = await applyBpmnFragmentTemplateImmediate({
+  const result = activateBpmnFragmentTemplatePlacement({
     template: { id: "tpl_2", template_type: "bpmn_fragment_v1" },
-    insertBpmnFragmentTemplateImmediately: async () => ({ ok: false, error: "insert_failed" }),
-    setPickerOpen: (value) => pickerCalls.push(value),
-    setInfo: (value) => infoCalls.push(String(value || "")),
-    setError: (value) => errorCalls.push(String(value || "")),
-  });
-
-  assert.equal(result?.ok, false);
-  assert.equal(result?.error, "insert_failed");
-  assert.deepEqual(pickerCalls, []);
-  assert.deepEqual(infoCalls, []);
-  assert.deepEqual(errorCalls, ["insert_failed"]);
-});
-
-test("applyBpmnFragmentTemplateImmediate: missing insert API fails contract", async () => {
-  const errorCalls = [];
-  const result = await applyBpmnFragmentTemplateImmediate({
-    template: { id: "tpl_3", template_type: "bpmn_fragment_v1" },
     setError: (value) => errorCalls.push(String(value || "")),
   });
 
@@ -116,11 +49,32 @@ test("applyBpmnFragmentTemplateImmediate: missing insert API fails contract", as
   assert.deepEqual(errorCalls, ["BPMN insert API недоступен."]);
 });
 
-test("buildImmediateInsertVisibilityGhost: builds center marker for immediate apply", () => {
-  const ghost = buildImmediateInsertVisibilityGhost(
+test("activateBpmnFragmentTemplatePlacement: placement start failure does not close picker", () => {
+  const pickerCalls = [];
+  const infoCalls = [];
+  const errorCalls = [];
+
+  const result = activateBpmnFragmentTemplatePlacement({
+    template: { id: "tpl_3", template_type: "bpmn_fragment_v1" },
+    startBpmnFragmentPlacement: () => ({ ok: false, error: "invalid_pack" }),
+    setPickerOpen: (value) => pickerCalls.push(value),
+    setInfo: (value) => infoCalls.push(String(value || "")),
+    setError: (value) => errorCalls.push(String(value || "")),
+  });
+
+  assert.equal(result?.ok, false);
+  assert.equal(result?.error, "invalid_pack");
+  assert.deepEqual(pickerCalls, []);
+  assert.deepEqual(infoCalls, []);
+  assert.deepEqual(errorCalls, ["invalid_pack"]);
+});
+
+test("buildCenteredBpmnFragmentPlacementDraft: provides centered pointer and visible ghost before click", () => {
+  const created = buildCenteredBpmnFragmentPlacementDraft(
     {
       id: "tpl_ghost",
       title: "Ghost",
+      template_type: "bpmn_fragment_v1",
       pack: {
         fragment: {
           nodes: [
@@ -136,24 +90,58 @@ test("buildImmediateInsertVisibilityGhost: builds center marker for immediate ap
     { left: 40, top: 50, width: 1000, height: 700 },
   );
 
+  assert.equal(created?.ok, true);
+  assert.equal(created?.draft?.pointer?.x, 540);
+  assert.equal(created?.draft?.pointer?.y, 400);
+  const ghost = buildBpmnFragmentGhost(created?.draft, {
+    left: 40,
+    top: 50,
+    width: 1000,
+    height: 700,
+  });
   assert.ok(ghost);
-  assert.equal(ghost.mode, "immediate");
-  assert.equal(ghost.phase, "before_insert");
-  assert.equal(ghost.anchorLeft, 500);
-  assert.equal(ghost.anchorTop, 350);
   assert.equal(ghost.nodes, 2);
   assert.equal(ghost.edges, 1);
 });
 
-test("readInsertedTemplateElementIds: reads deduped ids from remap and entry/exit", () => {
-  const ids = readInsertedTemplateElementIds({
-    remap: {
-      a_old: "Activity_A",
-      b_old: "Activity_B",
-      f_old: "Flow_AB",
+test("buildCenteredBpmnFragmentPlacementDraft: respects invalid template as non-startable placement", () => {
+  const created = buildCenteredBpmnFragmentPlacementDraft(
+    { id: "tpl_bad", template_type: "bpmn_fragment_v1" },
+    { left: 0, top: 0, width: 800, height: 500 },
+  );
+  assert.equal(created?.ok, false);
+});
+
+test("insertBpmnFragmentFromPlacement: inserts by explicit left-click point payload", async () => {
+  const calls = [];
+  const result = await insertBpmnFragmentFromPlacement({
+    currentPlacement: { template: { id: "tpl_click" } },
+    clientX: 320,
+    clientY: 240,
+    insertBpmnFragmentTemplateAtPoint: async (draftArg, optionsArg) => {
+      calls.push({ draftArg, optionsArg });
+      return { ok: true, createdNodes: 3, createdEdges: 2 };
     },
-    entryNodeId: "Activity_A",
-    exitNodeId: "Activity_B",
   });
-  assert.deepEqual(ids, ["Activity_A", "Activity_B", "Flow_AB"]);
+  assert.equal(result?.ok, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.optionsArg?.clientX, 320);
+  assert.equal(calls[0]?.optionsArg?.clientY, 240);
+  assert.equal(calls[0]?.optionsArg?.mode, "after");
+});
+
+test("insertBpmnFragmentFromPlacement: fails when insert API is missing", async () => {
+  const result = await insertBpmnFragmentFromPlacement({
+    currentPlacement: { template: { id: "tpl_missing_api" } },
+    clientX: 10,
+    clientY: 10,
+  });
+  assert.equal(result?.ok, false);
+  assert.equal(result?.error, "BPMN insert API недоступен.");
+});
+
+test("shouldCancelBpmnFragmentPlacementByKey: returns true only for Escape", () => {
+  assert.equal(shouldCancelBpmnFragmentPlacementByKey({ key: "Escape" }), true);
+  assert.equal(shouldCancelBpmnFragmentPlacementByKey({ key: "escape" }), true);
+  assert.equal(shouldCancelBpmnFragmentPlacementByKey({ key: "Enter" }), false);
 });

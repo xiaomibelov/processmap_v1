@@ -11,62 +11,80 @@ import {
   updateBpmnFragmentPlacementPointer,
 } from "../services/applyBpmnFragmentTemplatePlacement.js";
 
-function asArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
 function toText(value) {
   return String(value || "").trim();
 }
 
 const TEMPLATES_ENABLED_KEY = "fpc_templates_mode";
-const IMMEDIATE_VISIBILITY_CLEAR_MS = 1700;
-const IMMEDIATE_VISIBILITY_ERROR_CLEAR_MS = 320;
 
-export function readInsertedTemplateElementIds(insertedRaw) {
-  const inserted = insertedRaw && typeof insertedRaw === "object" ? insertedRaw : {};
-  const ids = new Set();
-  const remap = inserted.remap && typeof inserted.remap === "object" ? inserted.remap : {};
-  Object.values(remap).forEach((value) => {
-    const id = toText(value);
-    if (id) ids.add(id);
-  });
-  const entryNodeId = toText(inserted.entryNodeId);
-  const exitNodeId = toText(inserted.exitNodeId);
-  if (entryNodeId) ids.add(entryNodeId);
-  if (exitNodeId) ids.add(exitNodeId);
-  return Array.from(ids);
-}
-
-export function buildImmediateInsertVisibilityGhost(templateRaw, diagramContainerRect) {
+export function buildCenteredBpmnFragmentPlacementDraft(templateRaw, diagramContainerRect) {
   const created = createBpmnFragmentPlacementDraft(templateRaw, { ignoreClickMs: 0 });
-  if (!created.ok || !created.draft) return null;
+  if (!created.ok || !created.draft) return created;
   const rect = diagramContainerRect && typeof diagramContainerRect === "object" ? diagramContainerRect : {};
   const width = Number(rect.width || 0);
   const height = Number(rect.height || 0);
-  let pointerX = Number.NaN;
-  let pointerY = Number.NaN;
+  const nextDraft = { ...created.draft };
   if (width > 0 && height > 0) {
-    pointerX = Number(rect.left || 0) + Math.round(width / 2);
-    pointerY = Number(rect.top || 0) + Math.round(height / 2);
+    nextDraft.pointer = {
+      x: Number(rect.left || 0) + Math.round(width / 2),
+      y: Number(rect.top || 0) + Math.round(height / 2),
+    };
   } else if (typeof window !== "undefined") {
-    pointerX = Math.round(Number(window.innerWidth || 1280) / 2);
-    pointerY = Math.round(Number(window.innerHeight || 800) / 2);
+    nextDraft.pointer = {
+      x: Math.round(Number(window.innerWidth || 1280) / 2),
+      y: Math.round(Number(window.innerHeight || 800) / 2),
+    };
   }
-  if (!Number.isFinite(pointerX) || !Number.isFinite(pointerY)) return null;
-  const ghost = buildBpmnFragmentGhost(
-    {
-      ...created.draft,
-      pointer: { x: pointerX, y: pointerY },
-    },
-    rect,
-  );
-  if (!ghost) return null;
+  return { ok: true, draft: nextDraft, error: "" };
+}
+
+export function activateBpmnFragmentTemplatePlacement({
+  template,
+  startBpmnFragmentPlacement,
+  setPickerOpen,
+  setError,
+  setInfo,
+}) {
+  if (typeof startBpmnFragmentPlacement !== "function") {
+    const error = "BPMN insert API недоступен.";
+    setError?.(error);
+    return { ok: false, error };
+  }
+  const started = startBpmnFragmentPlacement(template);
+  if (!started?.ok) {
+    const error = toText(started?.error || "Не удалось включить режим вставки BPMN-фрагмента.");
+    setError?.(error);
+    return { ok: false, error };
+  }
+  setPickerOpen?.(false);
+  setInfo?.("Режим вставки шаблона: выберите точку на диаграмме и кликните ЛКМ. Esc — отмена.");
   return {
-    ...ghost,
-    mode: "immediate",
-    phase: "before_insert",
+    ...started,
+    ok: true,
+    placement: true,
   };
+}
+
+export function shouldCancelBpmnFragmentPlacementByKey(event) {
+  return String(event?.key || "").toLowerCase() === "escape";
+}
+
+export async function insertBpmnFragmentFromPlacement({
+  currentPlacement,
+  clientX,
+  clientY,
+  insertBpmnFragmentTemplateAtPoint,
+}) {
+  if (typeof insertBpmnFragmentTemplateAtPoint !== "function") {
+    return { ok: false, error: "BPMN insert API недоступен." };
+  }
+  return await Promise.resolve(
+    insertBpmnFragmentTemplateAtPoint(currentPlacement, {
+      clientX,
+      clientY,
+      mode: "after",
+    }),
+  );
 }
 
 function readTemplatesEnabled() {
@@ -105,76 +123,6 @@ export async function loadTemplatesForScopes({
   };
 }
 
-export async function applyBpmnFragmentTemplateImmediate({
-  template,
-  insertBpmnFragmentTemplateImmediately,
-  diagramContainerRect,
-  setPickerOpen,
-  setError,
-  setInfo,
-  emitVisibilityMarker,
-}) {
-  if (typeof insertBpmnFragmentTemplateImmediately !== "function") {
-    const error = "BPMN insert API недоступен.";
-    setError?.(error);
-    return { ok: false, error };
-  }
-  const visibilityGhost = buildImmediateInsertVisibilityGhost(template, diagramContainerRect);
-  if (visibilityGhost && typeof emitVisibilityMarker === "function") {
-    emitVisibilityMarker({
-      phase: "before_insert",
-      ghost: visibilityGhost,
-      insertedIds: [],
-      createdNodes: 0,
-      createdEdges: 0,
-      at: Date.now(),
-    });
-  }
-  const inserted = await Promise.resolve(
-    insertBpmnFragmentTemplateImmediately(template, {
-      mode: "after",
-      preferPointAnchor: true,
-      persistImmediately: true,
-      source: "template_apply",
-      diagramContainerRect,
-    }),
-  );
-  if (!inserted?.ok) {
-    const error = toText(inserted?.error || "Не удалось вставить BPMN-фрагмент.");
-    if (visibilityGhost && typeof emitVisibilityMarker === "function") {
-      emitVisibilityMarker({
-        phase: "error",
-        ghost: visibilityGhost,
-        insertedIds: [],
-        createdNodes: 0,
-        createdEdges: 0,
-        at: Date.now(),
-      });
-    }
-    setError?.(error);
-    return { ok: false, error };
-  }
-  const createdNodes = Number(inserted?.createdNodes || 0);
-  const createdEdges = Number(inserted?.createdEdges || 0);
-  if (typeof emitVisibilityMarker === "function") {
-    emitVisibilityMarker({
-      phase: "after_insert",
-      ghost: visibilityGhost ? { ...visibilityGhost, phase: "after_insert" } : null,
-      insertedIds: readInsertedTemplateElementIds(inserted),
-      createdNodes,
-      createdEdges,
-      at: Date.now(),
-    });
-  }
-  setPickerOpen?.(false);
-  setInfo?.(`Inserted: ${createdNodes} nodes, ${createdEdges} flows.`);
-  return {
-    ...inserted,
-    ok: true,
-    immediate: true,
-  };
-}
-
 export default function useTemplatesStore({
   userId = "",
   orgId = "",
@@ -187,7 +135,6 @@ export default function useTemplatesStore({
   applyHybridStencilTemplate,
   captureBpmnFragmentTemplatePack,
   insertBpmnFragmentTemplateAtPoint,
-  insertBpmnFragmentTemplateImmediately,
   isDiagramClientPoint,
   diagramContainerRect,
   selectionContext = {},
@@ -211,10 +158,8 @@ export default function useTemplatesStore({
   const [orgTemplates, setOrgTemplates] = useState([]);
   const [fragmentPlacement, setFragmentPlacement] = useState(null);
   const [fragmentPlacementBusy, setFragmentPlacementBusy] = useState(false);
-  const [immediateVisibilityMarker, setImmediateVisibilityMarker] = useState(null);
   const fragmentPlacementRef = useRef(null);
   const fragmentPlacementBusyRef = useRef(false);
-  const immediateVisibilityTimerRef = useRef(0);
 
   const {
     foldersMy,
@@ -292,33 +237,6 @@ export default function useTemplatesStore({
     fragmentPlacementBusyRef.current = fragmentPlacementBusy;
   }, [fragmentPlacementBusy]);
 
-  const clearImmediateVisibilityTimer = useCallback(() => {
-    if (immediateVisibilityTimerRef.current) {
-      window.clearTimeout(immediateVisibilityTimerRef.current);
-      immediateVisibilityTimerRef.current = 0;
-    }
-  }, []);
-
-  const clearImmediateVisibilityMarker = useCallback(() => {
-    clearImmediateVisibilityTimer();
-    setImmediateVisibilityMarker(null);
-  }, [clearImmediateVisibilityTimer]);
-
-  const scheduleImmediateVisibilityClear = useCallback((msRaw = IMMEDIATE_VISIBILITY_CLEAR_MS) => {
-    const ms = Number.isFinite(Number(msRaw)) ? Math.max(0, Number(msRaw)) : IMMEDIATE_VISIBILITY_CLEAR_MS;
-    clearImmediateVisibilityTimer();
-    immediateVisibilityTimerRef.current = window.setTimeout(() => {
-      immediateVisibilityTimerRef.current = 0;
-      setImmediateVisibilityMarker(null);
-    }, ms);
-  }, [clearImmediateVisibilityTimer]);
-
-  useEffect(() => {
-    return () => {
-      clearImmediateVisibilityTimer();
-    };
-  }, [clearImmediateVisibilityTimer]);
-
   const templates = useMemo(() => [...myTemplates, ...orgTemplates], [myTemplates, orgTemplates]);
   const byScope = useMemo(() => splitTemplatesByScope(templates), [templates]);
   const foldersByScope = useMemo(() => ({
@@ -350,31 +268,6 @@ export default function useTemplatesStore({
     () => buildBpmnFragmentGhost(fragmentPlacement, diagramContainerRect),
     [diagramContainerRect, fragmentPlacement],
   );
-  const effectiveFragmentGhost = fragmentPlacementGhost || (immediateVisibilityMarker?.ghost || null);
-  const effectiveFragmentActive = !!fragmentPlacement || !!(immediateVisibilityMarker?.ghost);
-
-  const handleImmediateVisibilityMarker = useCallback((payloadRaw = {}) => {
-    const payload = payloadRaw && typeof payloadRaw === "object" ? payloadRaw : {};
-    const phase = toText(payload.phase).toLowerCase();
-    const ghostPayload = payload.ghost && typeof payload.ghost === "object" ? payload.ghost : null;
-    if (phase === "error") {
-      scheduleImmediateVisibilityClear(IMMEDIATE_VISIBILITY_ERROR_CLEAR_MS);
-      return;
-    }
-    if (!ghostPayload && phase !== "after_insert") return;
-    setImmediateVisibilityMarker((prev) => {
-      const prevGhost = prev?.ghost && typeof prev.ghost === "object" ? prev.ghost : null;
-      return {
-        phase: phase || "before_insert",
-        ghost: ghostPayload || prevGhost,
-        insertedIds: asArray(payload.insertedIds).map((row) => toText(row)).filter(Boolean),
-        createdNodes: Number(payload.createdNodes || 0),
-        createdEdges: Number(payload.createdEdges || 0),
-        at: Number(payload.at || Date.now()),
-      };
-    });
-    scheduleImmediateVisibilityClear(IMMEDIATE_VISIBILITY_CLEAR_MS);
-  }, [scheduleImmediateVisibilityClear]);
 
   const openTemplatesPicker = useCallback(async () => {
     setTemplatesEnabled(true);
@@ -560,24 +453,9 @@ export default function useTemplatesStore({
   }, [activeFolderByScope]);
 
   const startBpmnFragmentPlacement = useCallback((templateRaw) => {
-    const created = createBpmnFragmentPlacementDraft(templateRaw, { ignoreClickMs: 0 });
-    if (!created.ok) return created;
-    const rect = diagramContainerRect && typeof diagramContainerRect === "object" ? diagramContainerRect : {};
-    const width = Number(rect.width || 0);
-    const height = Number(rect.height || 0);
-    const nextDraft = { ...created.draft };
-    if (width > 0 && height > 0) {
-      nextDraft.pointer = {
-        x: Number(rect.left || 0) + Math.round(width / 2),
-        y: Number(rect.top || 0) + Math.round(height / 2),
-      };
-    } else if (typeof window !== "undefined") {
-      nextDraft.pointer = {
-        x: Math.round(Number(window.innerWidth || 1280) / 2),
-        y: Math.round(Number(window.innerHeight || 800) / 2),
-      };
-    }
-    setFragmentPlacement(nextDraft);
+    const created = buildCenteredBpmnFragmentPlacementDraft(templateRaw, diagramContainerRect);
+    if (!created.ok || !created.draft) return created;
+    setFragmentPlacement(created.draft);
     fragmentPlacementBusyRef.current = false;
     setFragmentPlacementBusy(false);
     return { ok: true, error: "" };
@@ -598,25 +476,19 @@ export default function useTemplatesStore({
       return { ok: false, error };
     }
     if (templateType === "bpmn_fragment_v1") {
-      clearImmediateVisibilityMarker();
-      return await applyBpmnFragmentTemplateImmediate({
+      return activateBpmnFragmentTemplatePlacement({
         template,
-        insertBpmnFragmentTemplateImmediately,
-        diagramContainerRect,
+        startBpmnFragmentPlacement,
         setPickerOpen,
         setError,
         setInfo,
-        emitVisibilityMarker: handleImmediateVisibilityMarker,
       });
     }
     const error = "Для прямой вставки в сессию поддерживаются только BPMN fragment templates.";
     setError?.(error);
     return { ok: false, error };
   }, [
-    clearImmediateVisibilityMarker,
-    diagramContainerRect,
-    handleImmediateVisibilityMarker,
-    insertBpmnFragmentTemplateImmediately,
+    startBpmnFragmentPlacement,
     setError,
     setInfo,
     setPickerOpen,
@@ -667,7 +539,7 @@ export default function useTemplatesStore({
     };
 
     const onKeyDown = (event) => {
-      if (String(event?.key || "").toLowerCase() !== "escape") return;
+      if (!shouldCancelBpmnFragmentPlacementByKey(event)) return;
       event.preventDefault();
       cancelBpmnFragmentPlacement("escape");
     };
@@ -689,20 +561,15 @@ export default function useTemplatesStore({
       const clientX = Number(event?.clientX);
       const clientY = Number(event?.clientY);
       if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
-      if (typeof insertBpmnFragmentTemplateAtPoint !== "function") {
-        setError?.("BPMN insert API недоступен.");
-        return;
-      }
       event.preventDefault();
       fragmentPlacementBusyRef.current = true;
       setFragmentPlacementBusy(true);
-      const inserted = await Promise.resolve(
-        insertBpmnFragmentTemplateAtPoint(current, {
-          clientX,
-          clientY,
-          mode: "after",
-        }),
-      );
+      const inserted = await insertBpmnFragmentFromPlacement({
+        currentPlacement: current,
+        clientX,
+        clientY,
+        insertBpmnFragmentTemplateAtPoint,
+      });
       if (typeof window !== "undefined" && window.__FPC_E2E__) {
         window.__FPC_E2E_TEMPLATE_FRAGMENT_INSERT__ = {
           ok: !!inserted?.ok,
@@ -791,8 +658,8 @@ export default function useTemplatesStore({
     reloadTemplatesAndFolders,
     applyTemplate,
     removeTemplate,
-    bpmnFragmentPlacementGhost: effectiveFragmentGhost,
-    bpmnFragmentPlacementActive: effectiveFragmentActive,
+    bpmnFragmentPlacementGhost: fragmentPlacementGhost,
+    bpmnFragmentPlacementActive: !!fragmentPlacement,
     bpmnFragmentPlacementBusy: fragmentPlacementBusy,
     cancelBpmnFragmentPlacement,
   };
