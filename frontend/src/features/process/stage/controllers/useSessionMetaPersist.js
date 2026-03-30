@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 
+import { apiPatchBpmnMeta } from "../../../../lib/api";
 import { pushDeleteTrace } from "../utils/deleteTrace";
 import useSessionMetaWriteGateway from "../../../session-meta/write/useSessionMetaWriteGateway";
 import {
@@ -180,6 +181,7 @@ export default function useSessionMetaPersist({
   ]);
 
   const persistDrawioMeta = useCallback(async (nextRaw, options = {}) => {
+    const source = String(options?.source || "drawio_save");
     const nextMeta = normalizeDrawioMeta(nextRaw);
     if (!nextMeta.last_saved_at) {
       nextMeta.last_saved_at = new Date().toISOString();
@@ -197,13 +199,13 @@ export default function useSessionMetaPersist({
     const needsJazzWrite = drawioLocalFirstAdapterMode === "jazz" && !!drawioJazzAdapter && nextSig !== jazzPrevSig;
     if (!needsLegacyWrite && !needsJazzWrite) {
       pushDeleteTrace("persist_drawio_meta_skipped", {
-        source: String(options?.source || "drawio_save"),
+        source,
         reason: "same_signature",
       });
       return { ok: true, skipped: true };
     }
     pushDeleteTrace("persist_drawio_meta_optimistic", {
-      source: String(options?.source || "drawio_save"),
+      source,
       svgCacheLength: Number(String(nextMeta?.svg_cache || "").length || 0),
       elementsCount: Number(Array.isArray(nextMeta?.drawio_elements_v1) ? nextMeta.drawio_elements_v1.length : 0),
       deletedCount: Number(
@@ -214,20 +216,57 @@ export default function useSessionMetaPersist({
     });
     let legacyResult = { ok: true, skipped: true };
     if (needsLegacyWrite) {
-      const mergedMeta = {
-        ...buildMetaSnapshot(),
-        drawio: nextMeta,
-      };
-      legacyResult = await persistBpmnMeta(mergedMeta, {
-        source: String(options?.source || "drawio_save"),
-      });
-      if (!legacyResult?.ok) {
-        pushDeleteTrace("persist_drawio_meta_failed", {
-          source: String(options?.source || "drawio_save"),
-          status: Number(legacyResult?.status || 0),
-          boundary: "legacy_session_meta",
+      const useVisibilityPatchPath = source === "drawio_visibility_toggle" && !isLocal && !!sid;
+      if (useVisibilityPatchPath) {
+        const prevMeta = normalizeBoundaryMeta(buildMetaSnapshot());
+        const optimisticMeta = normalizeBoundaryMeta({
+          ...prevMeta,
+          drawio: nextMeta,
         });
-        return legacyResult;
+        syncPersistedRefs(optimisticMeta);
+        const patchRes = await apiPatchBpmnMeta(sid, { drawio: nextMeta });
+        if (!patchRes?.ok) {
+          syncPersistedRefs(prevMeta);
+          onSessionSync?.(buildSessionMetaWriteEnvelope({
+            sessionId: sid,
+            bpmnMeta: prevMeta,
+            source: `${source}_rollback`,
+          }));
+          const msg = shortErr(patchRes?.error || "Не удалось сохранить Draw.io visibility.");
+          setGenErr?.(msg);
+          pushDeleteTrace("persist_drawio_meta_failed", {
+            source,
+            status: Number(patchRes?.status || 0),
+            boundary: "legacy_bpmn_meta_patch",
+          });
+          return { ok: false, error: msg, status: Number(patchRes?.status || 0) };
+        }
+        const serverMeta = normalizeBoundaryMeta(patchRes?.meta);
+        syncPersistedRefs(serverMeta);
+        onSessionSync?.(buildSessionMetaWriteEnvelope({
+          sessionId: sid,
+          bpmnMeta: serverMeta,
+          source: `${source}_bpmn_meta_patch`,
+        }));
+        legacyResult = {
+          ok: true,
+          status: Number(patchRes?.status || 0),
+          transport: "bpmn_meta_patch",
+        };
+      } else {
+        const mergedMeta = {
+          ...buildMetaSnapshot(),
+          drawio: nextMeta,
+        };
+        legacyResult = await persistBpmnMeta(mergedMeta, { source });
+        if (!legacyResult?.ok) {
+          pushDeleteTrace("persist_drawio_meta_failed", {
+            source,
+            status: Number(legacyResult?.status || 0),
+            boundary: "legacy_session_meta",
+          });
+          return legacyResult;
+        }
       }
     }
     let jazzResult = { ok: true, skipped: true };
@@ -235,7 +274,7 @@ export default function useSessionMetaPersist({
       jazzResult = await drawioJazzAdapter.applySnapshot({ snapshot: nextMeta });
       if (!jazzResult?.ok) {
         pushDeleteTrace("persist_drawio_meta_failed", {
-          source: String(options?.source || "drawio_save"),
+          source,
           status: 0,
           boundary: "drawio_jazz",
           blocked: String(jazzResult?.blocked || ""),
@@ -249,7 +288,7 @@ export default function useSessionMetaPersist({
       }
     }
     pushDeleteTrace("persist_drawio_meta_synced", {
-      source: String(options?.source || "drawio_save"),
+      source,
       bridge: needsJazzWrite ? "legacy_plus_jazz" : "legacy_only",
     });
     return {
@@ -264,9 +303,16 @@ export default function useSessionMetaPersist({
     drawioJazzAdapter,
     drawioLocalFirstAdapterMode,
     drawioPersistedMetaRef,
+    isLocal,
     normalizeDrawioMeta,
+    normalizeBoundaryMeta,
+    onSessionSync,
     persistBpmnMeta,
     serializeDrawioMeta,
+    setGenErr,
+    shortErr,
+    sid,
+    syncPersistedRefs,
   ]);
 
   const persistSessionCompanion = useCallback(async (nextRaw, options = {}) => {
