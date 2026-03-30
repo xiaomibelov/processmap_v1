@@ -8,4 +8,7 @@ test("NotesPanel derives BPMN documentation from XML and forwards it into Camund
   assert.match(source, /function parseSelectedBpmnDocumentation\(/);
   assert.match(source, /localName\)\.toLowerCase\(\) === "documentation"/);
   assert.match(source, /selectedBpmnDocumentation=\{isElementMode \? selectedBpmnDocumentation : \[\]\}/);
+  assert.match(source, /bpmnDocumentationDraftRows=\{isElementMode \? bpmnDocumentationDraftRows : \[\]\}/);
+  assert.match(source, /onSaveBpmnDocumentation=\{saveSelectedBpmnDocumentation\}/);
+  assert.match(source, /type: "setDocumentation"/);
 });

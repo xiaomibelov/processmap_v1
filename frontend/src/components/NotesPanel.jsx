@@ -558,9 +558,9 @@ function parseSelectedBpmnDocumentation(xmlText, elementIdRaw) {
     return Array.from(target.childNodes || [])
       .filter((child) => child?.nodeType === 1 && str(child?.localName).toLowerCase() === "documentation")
       .map((child, index) => {
-        const text = String(child?.textContent || "").replace(/\r\n/g, "\n").trim();
-        if (!text) return null;
+        const text = String(child?.textContent ?? "").replace(/\r\n/g, "\n");
         const textFormat = str(child?.getAttribute?.("textFormat") || child?.getAttribute?.("textformat"));
+        if (!text.length && !textFormat) return null;
         return {
           id: `${elementId}_documentation_${index + 1}`,
           text,
@@ -571,6 +571,39 @@ function parseSelectedBpmnDocumentation(xmlText, elementIdRaw) {
   } catch {
     return [];
   }
+}
+
+function normalizeDocumentationText(value) {
+  return String(value ?? "").replace(/\r\n/g, "\n");
+}
+
+function normalizeDocumentationRows(rowsRaw, options = {}) {
+  const keepEmpty = options && typeof options === "object" && options.keepEmpty === true;
+  return asArray(rowsRaw)
+    .map((entryRaw, index) => {
+      const entry = entryRaw && typeof entryRaw === "object"
+        ? entryRaw
+        : { text: entryRaw };
+      const text = normalizeDocumentationText(
+        Object.prototype.hasOwnProperty.call(entry, "text")
+          ? entry.text
+          : (Object.prototype.hasOwnProperty.call(entry, "value") ? entry.value : entryRaw),
+      );
+      const textFormat = str(entry?.textFormat || entry?.textformat);
+      if (!keepEmpty && !text.length && !textFormat) return null;
+      return {
+        id: str(entry?.id || `documentation_${index + 1}`) || `documentation_${index + 1}`,
+        text,
+        textFormat,
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildDocumentationSignature(rowsRaw) {
+  return normalizeDocumentationRows(rowsRaw)
+    .map((row) => `${row.text}\u241f${row.textFormat}`)
+    .join("\u241e");
 }
 
 function normalizeGlobalNoteItem(raw, fallbackIndex = 0) {
@@ -1018,6 +1051,12 @@ export default function NotesPanel({
   const [camundaExtensionLastAction, setCamundaExtensionLastAction] = useState("save");
   const [camundaPropertiesErr, setCamundaPropertiesErr] = useState("");
   const [camundaPropertiesInfo, setCamundaPropertiesInfo] = useState("");
+  const [bpmnDocumentationDraftRows, setBpmnDocumentationDraftRows] = useState([]);
+  const [bpmnDocumentationBusy, setBpmnDocumentationBusy] = useState(false);
+  const [bpmnDocumentationSaveFailed, setBpmnDocumentationSaveFailed] = useState(false);
+  const [bpmnDocumentationErr, setBpmnDocumentationErr] = useState("");
+  const [bpmnDocumentationInfo, setBpmnDocumentationInfo] = useState("");
+  const [bpmnDocumentationSavedSignature, setBpmnDocumentationSavedSignature] = useState("");
   const [bulkNodeIds, setBulkNodeIds] = useState([]);
   const [aiErr, setAiErr] = useState("");
   const [aiBusyQid, setAiBusyQid] = useState("");
@@ -1224,6 +1263,22 @@ export default function NotesPanel({
     () => parseSelectedBpmnDocumentation(draft?.bpmn_xml, selectedElementId),
     [draft?.bpmn_xml, selectedElementId],
   );
+  const selectedBpmnDocumentationRows = useMemo(
+    () => normalizeDocumentationRows(selectedBpmnDocumentation),
+    [selectedBpmnDocumentation],
+  );
+  const selectedBpmnDocumentationSignature = useMemo(
+    () => buildDocumentationSignature(selectedBpmnDocumentationRows),
+    [selectedBpmnDocumentationRows],
+  );
+  const bpmnDocumentationDraftSignature = useMemo(
+    () => buildDocumentationSignature(bpmnDocumentationDraftRows),
+    [bpmnDocumentationDraftRows],
+  );
+  const bpmnDocumentationHasLocalChanges = bpmnDocumentationDraftSignature !== bpmnDocumentationSavedSignature;
+  const bpmnDocumentationSyncState = bpmnDocumentationBusy
+    ? "syncing"
+    : (bpmnDocumentationSaveFailed ? "error" : (bpmnDocumentationHasLocalChanges ? "local" : "saved"));
   const knownAnchorIds = useMemo(() => {
     const out = new Set();
     const nodeKindById = nodePathGraphContext?.nodeKindById && typeof nodePathGraphContext.nodeKindById === "object"
@@ -1655,6 +1710,17 @@ export default function NotesPanel({
     setCamundaPropertiesErr("");
     setCamundaPropertiesInfo("");
   }, [selectedCamundaPropertiesEditable, selectedCamundaExtensionEntry]);
+
+  useEffect(() => {
+    const nextRows = normalizeDocumentationRows(selectedBpmnDocumentationRows);
+    const nextSignature = buildDocumentationSignature(nextRows);
+    setBpmnDocumentationDraftRows(nextRows);
+    setBpmnDocumentationSavedSignature(nextSignature);
+    setBpmnDocumentationBusy(false);
+    setBpmnDocumentationSaveFailed(false);
+    setBpmnDocumentationErr("");
+    setBpmnDocumentationInfo("");
+  }, [selectedElementId, selectedBpmnDocumentationSignature]);
 
   useEffect(() => {
     const next = {};
@@ -2287,6 +2353,13 @@ export default function NotesPanel({
     setCamundaPropertiesErr("");
   }, []);
 
+  const updateBpmnDocumentationDraft = useCallback((nextRowsRaw) => {
+    setBpmnDocumentationDraftRows(normalizeDocumentationRows(nextRowsRaw, { keepEmpty: true }));
+    setBpmnDocumentationSaveFailed(false);
+    setBpmnDocumentationErr("");
+    setBpmnDocumentationInfo("");
+  }, []);
+
   async function updateSelectedOperationKey(nextOperationKeyRaw) {
     if (!selectedCamundaPropertiesEditable || !selectedElementId) return;
     if (typeof onSetElementRobotMeta !== "function" || disabled || robotMetaBusy) return;
@@ -2423,6 +2496,72 @@ export default function NotesPanel({
       setCamundaPropertiesBusy(false);
     }
   }
+
+  async function saveSelectedBpmnDocumentation() {
+    if (!selectedElementId) return;
+    if (disabled || bpmnDocumentationBusy) return;
+    if (!sid) {
+      setBpmnDocumentationSaveFailed(true);
+      setBpmnDocumentationErr("Сессия не выбрана.");
+      setBpmnDocumentationInfo("");
+      return;
+    }
+
+    const normalizedRows = normalizeDocumentationRows(bpmnDocumentationDraftRows);
+    const nextSignature = buildDocumentationSignature(normalizedRows);
+    if (nextSignature === bpmnDocumentationSavedSignature) {
+      setBpmnDocumentationSaveFailed(false);
+      setBpmnDocumentationErr("");
+      setBpmnDocumentationInfo("Без изменений.");
+      return;
+    }
+
+    setBpmnDocumentationBusy(true);
+    setBpmnDocumentationSaveFailed(false);
+    setBpmnDocumentationErr("");
+    setBpmnDocumentationInfo("");
+    try {
+      const result = await dispatchBatchApply({
+        sid,
+        source: "bpmn_documentation_sidebar",
+        commandText: `set_documentation ${selectedElementId}`,
+        ops: [{
+          type: "setDocumentation",
+          elementId: selectedElementId,
+          documentation: normalizedRows.map((row) => ({
+            text: normalizeDocumentationText(row?.text),
+            textFormat: str(row?.textFormat),
+          })),
+        }],
+      });
+      if (!result?.ok && Number(result?.applied || 0) <= 0) {
+        setBpmnDocumentationSaveFailed(true);
+        setBpmnDocumentationErr(str(result?.error || "Не удалось сохранить BPMN documentation."));
+        return;
+      }
+      setBpmnDocumentationDraftRows(normalizedRows);
+      setBpmnDocumentationSavedSignature(nextSignature);
+      setBpmnDocumentationSaveFailed(false);
+      setBpmnDocumentationInfo(normalizedRows.length
+        ? "BPMN documentation сохранена."
+        : "BPMN documentation очищена.");
+    } catch (error) {
+      setBpmnDocumentationSaveFailed(true);
+      setBpmnDocumentationErr(str(error?.message || error || "Не удалось сохранить BPMN documentation."));
+    } finally {
+      setBpmnDocumentationBusy(false);
+    }
+  }
+
+  const resetSelectedBpmnDocumentation = useCallback(() => {
+    const nextRows = normalizeDocumentationRows(selectedBpmnDocumentationRows);
+    const nextSignature = buildDocumentationSignature(nextRows);
+    setBpmnDocumentationDraftRows(nextRows);
+    setBpmnDocumentationSavedSignature(nextSignature);
+    setBpmnDocumentationSaveFailed(false);
+    setBpmnDocumentationErr("");
+    setBpmnDocumentationInfo("Локальные изменения сброшены.");
+  }, [selectedBpmnDocumentationRows]);
 
   function selectBranchUntilBoundary() {
     if (!isSelectedPathNode || !selectedElementId) return;
@@ -2835,6 +2974,11 @@ export default function NotesPanel({
                   selectedElementType={isElementMode ? selectedElementType : ""}
                   selectedBpmnPropertyContext={isElementMode ? selectedBpmnPropertyContext : null}
                   selectedBpmnDocumentation={isElementMode ? selectedBpmnDocumentation : []}
+                  bpmnDocumentationDraftRows={isElementMode ? bpmnDocumentationDraftRows : []}
+                  bpmnDocumentationSyncState={isElementMode ? bpmnDocumentationSyncState : "saved"}
+                  bpmnDocumentationBusy={isElementMode ? bpmnDocumentationBusy : false}
+                  bpmnDocumentationErr={isElementMode ? bpmnDocumentationErr : ""}
+                  bpmnDocumentationInfo={isElementMode ? bpmnDocumentationInfo : ""}
                   selectedBpmnOverlayCompanionSummary={isElementMode ? selectedBpmnOverlayCompanionSummary : null}
                   camundaPropertiesEditable={isElementMode ? selectedCamundaPropertiesEditable : false}
                   extensionStateDraft={isElementMode ? camundaPropertiesDraft : createEmptyCamundaExtensionState()}
@@ -2856,6 +3000,9 @@ export default function NotesPanel({
                   onSaveExtensionState={saveSelectedCamundaProperties}
                   onResetExtensionState={resetSelectedCamundaProperties}
                   onRetryExtensionState={camundaExtensionLastAction === "reset" ? resetSelectedCamundaProperties : saveSelectedCamundaProperties}
+                  onBpmnDocumentationDraftChange={updateBpmnDocumentationDraft}
+                  onSaveBpmnDocumentation={saveSelectedBpmnDocumentation}
+                  onResetBpmnDocumentation={resetSelectedBpmnDocumentation}
                   onFocusDrawioCompanion={onFocusDrawioCompanion}
                   disabled={disabled}
                 />

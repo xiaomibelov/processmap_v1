@@ -42,6 +42,33 @@ function camundaIoTypeLabel(shapeRaw) {
   return "text";
 }
 
+function normalizeDocumentationText(value) {
+  return String(value ?? "").replace(/\r\n/g, "\n");
+}
+
+function normalizeDocumentationRows(rowsRaw, options = {}) {
+  const keepEmpty = options && typeof options === "object" && options.keepEmpty === true;
+  return asArray(rowsRaw)
+    .map((entryRaw, index) => {
+      const entry = entryRaw && typeof entryRaw === "object"
+        ? entryRaw
+        : { text: entryRaw };
+      const text = normalizeDocumentationText(
+        Object.prototype.hasOwnProperty.call(entry, "text")
+          ? entry.text
+          : (Object.prototype.hasOwnProperty.call(entry, "value") ? entry.value : entryRaw),
+      );
+      const textFormat = String(entry?.textFormat || entry?.textformat || "").trim();
+      if (!keepEmpty && !text.length && !textFormat) return null;
+      return {
+        id: String(entry?.id || `documentation_${index + 1}`),
+        text,
+        textFormat,
+      };
+    })
+    .filter(Boolean);
+}
+
 function normalizeNodePathTag(value) {
   const tag = String(value || "").trim().toUpperCase();
   if (tag === "P0" || tag === "P1" || tag === "P2") return tag;
@@ -1022,6 +1049,11 @@ export function CamundaPropertiesSettings({
   selectedElementType = "",
   selectedBpmnPropertyContext = null,
   selectedBpmnDocumentation = [],
+  bpmnDocumentationDraftRows = [],
+  bpmnDocumentationSyncState = "saved",
+  bpmnDocumentationBusy = false,
+  bpmnDocumentationErr = "",
+  bpmnDocumentationInfo = "",
   selectedBpmnOverlayCompanionSummary = null,
   camundaPropertiesEditable = false,
   extensionStateDraft = null,
@@ -1043,6 +1075,9 @@ export function CamundaPropertiesSettings({
   onSaveExtensionState,
   onResetExtensionState,
   onRetryExtensionState,
+  onBpmnDocumentationDraftChange,
+  onSaveBpmnDocumentation,
+  onResetBpmnDocumentation,
   onFocusDrawioCompanion,
   disabled = false,
 }) {
@@ -1134,25 +1169,41 @@ export function CamundaPropertiesSettings({
       issueCounts: { invalid: 0 },
       validationDeferred: false,
     };
-  const documentationRows = useMemo(
-    () => asArray(selectedBpmnDocumentation)
-      .map((entryRaw, index) => {
-        const entry = entryRaw && typeof entryRaw === "object"
-          ? entryRaw
-          : { text: entryRaw };
-        const text = String(entry?.text || "").replace(/\r\n/g, "\n").trim();
-        if (!text) return null;
-        const id = String(entry?.id || `documentation_${index + 1}`);
-        const textFormat = String(entry?.textFormat || "").trim();
-        return {
-          id,
-          text,
-          textFormat,
-        };
-      })
-      .filter(Boolean),
-    [selectedBpmnDocumentation],
-  );
+  const documentationRows = useMemo(() => {
+    if (asArray(bpmnDocumentationDraftRows).length) {
+      return normalizeDocumentationRows(bpmnDocumentationDraftRows, { keepEmpty: true });
+    }
+    return normalizeDocumentationRows(selectedBpmnDocumentation);
+  }, [bpmnDocumentationDraftRows, selectedBpmnDocumentation]);
+  const documentationEditable = camundaPropertiesEditable && typeof onBpmnDocumentationDraftChange === "function";
+  const documentationSyncStatus = String(bpmnDocumentationSyncState || "").trim().toLowerCase();
+  const documentationStatusMetaMap = {
+    saved: {
+      label: "Сохранено",
+      helper: "Documentation синхронизирована с BPMN.",
+      tone: "saved",
+      cta: null,
+    },
+    local: {
+      label: "Есть локальные изменения",
+      helper: "Нажмите «Сохранить», чтобы применить изменения в BPMN modeler.",
+      tone: "local",
+      cta: null,
+    },
+    syncing: {
+      label: "Синхронизация…",
+      helper: "Применяю BPMN documentation в modeler.",
+      tone: "syncing",
+      cta: null,
+    },
+    error: {
+      label: "Ошибка",
+      helper: "Не удалось применить BPMN documentation. Текст остался в форме.",
+      tone: "error",
+      cta: "Повторить",
+    },
+  };
+  const documentationStatusMeta = documentationStatusMetaMap[documentationSyncStatus] || documentationStatusMetaMap.saved;
   const documentationCount = documentationRows.length;
   const listenerCount = normalizedState.properties.extensionListeners.length;
   const overlayCompanionCount = Number(overlayCompanionSummary?.companionCount || 0);
@@ -1556,6 +1607,42 @@ export function CamundaPropertiesSettings({
           </div>
         ) : null}
       </div>
+    );
+  }
+
+  function applyDocumentationRows(nextRowsRaw) {
+    const normalizedRows = normalizeDocumentationRows(nextRowsRaw, { keepEmpty: true });
+    onBpmnDocumentationDraftChange?.(normalizedRows);
+  }
+
+  function addDocumentationRow() {
+    applyDocumentationRows([
+      ...documentationRows,
+      {
+        id: `documentation_draft_${Date.now()}`,
+        text: "",
+        textFormat: "",
+      },
+    ]);
+  }
+
+  function patchDocumentationRow(rowIdRaw, patch = {}) {
+    const rowId = String(rowIdRaw || "").trim();
+    if (!rowId) return;
+    applyDocumentationRows(documentationRows.map((row) => {
+      if (String(row?.id || "").trim() !== rowId) return row;
+      return {
+        ...row,
+        ...patch,
+      };
+    }));
+  }
+
+  function removeDocumentationRow(rowIdRaw) {
+    const rowId = String(rowIdRaw || "").trim();
+    if (!rowId) return;
+    applyDocumentationRows(
+      documentationRows.filter((row) => String(row?.id || "").trim() !== rowId),
     );
   }
 
@@ -2012,45 +2099,117 @@ export function CamundaPropertiesSettings({
           ) : null}
         </section>
 
-        {documentationCount > 0 ? (
-          <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary" data-testid="bpmn-documentation-group">
-            <div className="sidebarPropertiesBlockHead">
-              <button
-                type="button"
-                className="sidebarPropertiesBlockToggle"
-                onClick={() => setDocumentationOpen((prev) => !prev)}
-                aria-expanded={documentationOpen ? "true" : "false"}
-              >
-                <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{documentationOpen ? "▾" : "▸"}</span>
-                <span className="sidebarPropertiesBlockTitle">BPMN Documentation</span>
-                <span className="sidebarPropertiesBlockMeta">{documentationCount}</span>
-              </button>
-              <SidebarInfoTip
-                label="О BPMN Documentation"
-                text="Read-only текст bpmn:documentation текущего элемента."
+        <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary" data-testid="bpmn-documentation-group">
+          <div className="sidebarPropertiesBlockHead">
+            <button
+              type="button"
+              className="sidebarPropertiesBlockToggle"
+              onClick={() => setDocumentationOpen((prev) => !prev)}
+              aria-expanded={documentationOpen ? "true" : "false"}
+            >
+              <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{documentationOpen ? "▾" : "▸"}</span>
+              <span className="sidebarPropertiesBlockTitle">BPMN Documentation</span>
+              <span className="sidebarPropertiesBlockMeta">{documentationCount}</span>
+            </button>
+            <SidebarInfoTip
+              label="О BPMN Documentation"
+              text="Редактируемый текст bpmn:documentation текущего элемента. Сохраняется как стандартное BPMN-свойство."
+            />
+          </div>
+          {documentationOpen ? (
+            <div className="mt-1 space-y-2">
+              <SidebarTrustStatus
+                title={<span>BPMN Documentation</span>}
+                label={documentationStatusMeta.label}
+                helper={documentationStatusMeta.helper}
+                tone={documentationStatusMeta.tone}
+                ctaLabel={documentationStatusMeta.cta}
+                onCta={() => void onSaveBpmnDocumentation?.()}
+                ctaDisabled={!!disabled || !!bpmnDocumentationBusy || typeof onSaveBpmnDocumentation !== "function"}
+                ctaVariant={documentationStatusMeta.tone === "error" ? "primary" : "secondary"}
+                testIdPrefix="bpmn-documentation-status"
               />
-            </div>
-            {documentationOpen ? (
-              <div className="mt-1 space-y-2">
-                {documentationRows.map((row, index) => (
+
+              {documentationRows.length ? (
+                documentationRows.map((row, index) => (
                   <div key={row.id} className="rounded-md border border-border/60 bg-panel2/40 p-2">
-                    {documentationCount > 1 ? (
+                    {documentationRows.length > 1 ? (
                       <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted">
                         Documentation {index + 1}
                       </div>
                     ) : null}
-                    <div className="text-[11px] leading-relaxed whitespace-pre-wrap break-words text-fg">
-                      {row.text}
+                    <label className="sidebarBpmnEditorField">
+                      <span className="sidebarBpmnEditorLabel">Text</span>
+                      <textarea
+                        className="input w-full min-w-0 text-xs"
+                        value={String(row?.text ?? "")}
+                        rows={3}
+                        style={{ resize: "vertical" }}
+                        onChange={(event) => patchDocumentationRow(row.id, { text: event.target.value })}
+                        disabled={!documentationEditable || !!disabled || !!bpmnDocumentationBusy}
+                      />
+                    </label>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <label className="sidebarBpmnEditorField flex-[1_1_220px]">
+                        <span className="sidebarBpmnEditorLabel">textFormat</span>
+                        <input
+                          className="input w-full min-w-0"
+                          placeholder="например, text/plain"
+                          value={String(row?.textFormat || "")}
+                          onChange={(event) => patchDocumentationRow(row.id, { textFormat: event.target.value })}
+                          disabled={!documentationEditable || !!disabled || !!bpmnDocumentationBusy}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="secondaryBtn sidebarPropertiesIconBtn sidebarPropertiesIconBtn--danger"
+                        onClick={() => removeDocumentationRow(row.id)}
+                        disabled={!documentationEditable || !!disabled || !!bpmnDocumentationBusy}
+                        aria-label={`Удалить Documentation ${index + 1}`}
+                        title={`Удалить Documentation ${index + 1}`}
+                      >
+                        ×
+                      </button>
                     </div>
-                    {row.textFormat ? (
-                      <div className="mt-1 text-[10px] text-muted">textFormat: {row.textFormat}</div>
-                    ) : null}
                   </div>
-                ))}
+                ))
+              ) : (
+                <div className="sidebarFieldHint">
+                  Для узла пока нет BPMN documentation. Добавьте первую запись.
+                </div>
+              )}
+
+              <div className="sidebarButtonRow">
+                <button
+                  type="button"
+                  className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
+                  onClick={addDocumentationRow}
+                  disabled={!documentationEditable || !!disabled || !!bpmnDocumentationBusy}
+                >
+                  + Добавить Documentation
+                </button>
+                <button
+                  type="button"
+                  className="primaryBtn sidebarPropertiesActionBtn px-2.5"
+                  onClick={() => void onSaveBpmnDocumentation?.()}
+                  disabled={!!disabled || !!bpmnDocumentationBusy || typeof onSaveBpmnDocumentation !== "function"}
+                >
+                  {bpmnDocumentationBusy ? "Сохраняю..." : "Сохранить"}
+                </button>
+                <button
+                  type="button"
+                  className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
+                  onClick={() => void onResetBpmnDocumentation?.()}
+                  disabled={!!disabled || !!bpmnDocumentationBusy || typeof onResetBpmnDocumentation !== "function"}
+                >
+                  Сбросить
+                </button>
               </div>
-            ) : null}
-          </section>
-        ) : null}
+              {bpmnDocumentationInfo ? <div className="text-[11px] text-muted">{bpmnDocumentationInfo}</div> : null}
+              {bpmnDocumentationErr ? <div className="selectedNodeFieldError">{bpmnDocumentationErr}</div> : null}
+            </div>
+          ) : null}
+        </section>
 
         <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary" data-testid="camunda-io-group">
           <div className="sidebarPropertiesBlockHead">
