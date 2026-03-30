@@ -202,6 +202,8 @@ class SessionTitleQuestionsIn(BaseModel):
 class BpmnXmlIn(BaseModel):
     xml: str = ""
     bpmn_meta: Optional[Dict[str, Any]] = None
+    source_action: Optional[str] = None
+    import_note: Optional[str] = None
 
 
 class BpmnMetaPatchIn(BaseModel):

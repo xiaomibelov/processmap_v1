@@ -530,6 +530,27 @@ def _ensure_schema() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id)")
             con.execute(
                 """
+                CREATE TABLE IF NOT EXISTS bpmn_versions (
+                  id TEXT PRIMARY KEY,
+                  session_id TEXT NOT NULL,
+                  org_id TEXT NOT NULL DEFAULT 'org_default',
+                  version_number INTEGER NOT NULL,
+                  bpmn_xml TEXT NOT NULL DEFAULT '',
+                  source_action TEXT NOT NULL DEFAULT '',
+                  import_note TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  created_by TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            con.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_bpmn_versions_session_version ON bpmn_versions(session_id, org_id, version_number)"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_bpmn_versions_session_created ON bpmn_versions(session_id, org_id, created_at DESC)"
+            )
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS orgs (
                   id TEXT PRIMARY KEY,
                   name TEXT NOT NULL,
@@ -1663,6 +1684,130 @@ class Storage:
         for row in rows:
             sess = _session_row_to_model(row)
             out.append(sess.model_dump())
+        return out
+
+    def create_bpmn_version_snapshot(
+        self,
+        session_id: str,
+        *,
+        bpmn_xml: str,
+        source_action: str,
+        created_by: Optional[str] = None,
+        org_id: Optional[str] = None,
+        import_note: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        _ensure_schema()
+        sid = str(session_id or "").strip()
+        if not sid:
+            raise ValueError("session_id required")
+        xml = str(bpmn_xml or "")
+        if not xml.strip():
+            raise ValueError("bpmn_xml required")
+        action = str(source_action or "").strip().lower()
+        if not action:
+            raise ValueError("source_action required")
+        actor = str(created_by or "").strip()
+        note = str(import_note or "").strip()
+        now = _now_ts()
+
+        with _connect() as con:
+            sess_row = con.execute(
+                "SELECT org_id FROM sessions WHERE id = ? LIMIT 1",
+                [sid],
+            ).fetchone()
+            if not sess_row:
+                raise ValueError("session not found")
+            session_org = str(sess_row["org_id"] or "").strip() or _default_org_id()
+            scope_org = str(org_id or "").strip() or session_org
+            if scope_org != session_org:
+                raise ValueError("session belongs to another org")
+
+            row = con.execute(
+                """
+                SELECT COALESCE(MAX(version_number), 0) AS max_version
+                  FROM bpmn_versions
+                 WHERE session_id = ?
+                   AND org_id = ?
+                """,
+                [sid, scope_org],
+            ).fetchone()
+            next_version = int((row["max_version"] if row else 0) or 0) + 1
+            snapshot_id = uuid.uuid4().hex[:12]
+            con.execute(
+                """
+                INSERT INTO bpmn_versions (
+                  id, session_id, org_id, version_number, bpmn_xml,
+                  source_action, import_note, created_at, created_by
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [snapshot_id, sid, scope_org, next_version, xml, action, note, now, actor],
+            )
+            con.commit()
+
+        return {
+            "id": snapshot_id,
+            "session_id": sid,
+            "org_id": scope_org,
+            "version_number": next_version,
+            "source_action": action,
+            "created_at": now,
+            "created_by": actor,
+            "import_note": note,
+        }
+
+    def list_bpmn_versions(
+        self,
+        session_id: str,
+        *,
+        org_id: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        _ensure_schema()
+        sid = str(session_id or "").strip()
+        if not sid:
+            return []
+        scope_org = str(org_id or "").strip()
+        try:
+            lim = int(limit)
+        except Exception:
+            lim = 100
+        lim = min(max(lim, 1), 1000)
+
+        with _connect() as con:
+            sess_row = con.execute("SELECT org_id FROM sessions WHERE id = ? LIMIT 1", [sid]).fetchone()
+            if not sess_row:
+                return []
+            session_org = str(sess_row["org_id"] or "").strip() or _default_org_id()
+            oid = scope_org or session_org
+            if oid != session_org:
+                return []
+            rows = con.execute(
+                """
+                SELECT id, session_id, org_id, version_number, bpmn_xml, source_action, import_note, created_at, created_by
+                  FROM bpmn_versions
+                 WHERE session_id = ?
+                   AND org_id = ?
+                 ORDER BY version_number DESC
+                 LIMIT ?
+                """,
+                [sid, oid, lim],
+            ).fetchall()
+
+        out: List[Dict[str, Any]] = []
+        for row in rows:
+            out.append(
+                {
+                    "id": str(row["id"] or ""),
+                    "session_id": str(row["session_id"] or ""),
+                    "org_id": str(row["org_id"] or ""),
+                    "version_number": int(row["version_number"] or 0),
+                    "bpmn_xml": str(row["bpmn_xml"] or ""),
+                    "source_action": str(row["source_action"] or ""),
+                    "import_note": str(row["import_note"] or ""),
+                    "created_at": int(row["created_at"] or 0),
+                    "created_by": str(row["created_by"] or ""),
+                }
+            )
         return out
 
 

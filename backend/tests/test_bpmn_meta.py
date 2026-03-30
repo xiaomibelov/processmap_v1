@@ -293,6 +293,95 @@ class BpmnMetaApiTests(unittest.TestCase):
         after = self.session_bpmn_meta_get(self.sid)
         self.assertEqual(len(after.get("hybrid_v2", {}).get("elements", [])), 1)
 
+    def test_bpmn_import_creates_bpmn_only_version_snapshot(self):
+        st = self.get_storage()
+        before_versions = st.list_bpmn_versions(self.sid)
+        self.assertEqual(before_versions, [])
+
+        saved = self.session_bpmn_save(
+            self.sid,
+            self.BpmnXmlIn(
+                xml=PRUNED_BPMN_XML,
+                source_action="import_bpmn",
+                import_note="manual stage import",
+            ),
+        )
+        self.assertEqual(saved.get("ok"), True)
+        snapshot = saved.get("bpmn_version_snapshot", {})
+        self.assertEqual(snapshot.get("source_action"), "import_bpmn")
+        self.assertEqual(int(snapshot.get("version_number") or 0), 1)
+        self.assertEqual(snapshot.get("import_note"), "manual stage import")
+
+        versions = st.list_bpmn_versions(self.sid)
+        self.assertEqual(len(versions), 1)
+        self.assertEqual(versions[0].get("source_action"), "import_bpmn")
+        self.assertEqual(versions[0].get("import_note"), "manual stage import")
+        self.assertEqual(versions[0].get("bpmn_xml"), XOR_BPMN_XML)
+
+        current = st.load(self.sid, is_admin=True)
+        self.assertIsNotNone(current)
+        self.assertEqual(str(current.bpmn_xml or ""), PRUNED_BPMN_XML)
+
+    def test_regular_bpmn_put_does_not_create_version_snapshot(self):
+        st = self.get_storage()
+        saved = self.session_bpmn_save(
+            self.sid,
+            self.BpmnXmlIn(xml=PRUNED_BPMN_XML),
+        )
+        self.assertEqual(saved.get("ok"), True)
+        self.assertNotIn("bpmn_version_snapshot", saved)
+        self.assertEqual(st.list_bpmn_versions(self.sid), [])
+
+    def test_bpmn_import_keeps_drawio_and_hybrid_meta_after_reload(self):
+        drawio_doc = '<mxfile host="app.diagrams.net"><diagram id="d1">X</diagram></mxfile>'
+        self._seed_raw_bpmn_meta(
+            {
+                "version": 11,
+                "drawio": {
+                    "enabled": True,
+                    "doc_xml": drawio_doc,
+                    "svg_cache": '<svg xmlns="http://www.w3.org/2000/svg"><g id="Task_yes"></g></svg>',
+                    "drawio_layers_v1": [
+                        {"id": "DL1", "name": "Default", "visible": True, "locked": False, "opacity": 1},
+                    ],
+                    "drawio_elements_v1": [
+                        {"id": "Task_yes", "layer_id": "DL1", "offset_x": 12, "offset_y": -6},
+                    ],
+                },
+                "hybrid_v2": {
+                    "schema_version": 2,
+                    "layers": [{"id": "L1", "name": "Hybrid"}],
+                    "elements": [
+                        {"id": "H1", "layer_id": "L1", "type": "rect", "x": 100, "y": 120, "w": 180, "h": 70}
+                    ],
+                    "edges": [],
+                    "bindings": [{"hybrid_id": "H1", "bpmn_id": "Task_yes", "kind": "node"}],
+                    "view": {"mode": "view", "tool": "select", "active_layer_id": "L1"},
+                },
+            }
+        )
+
+        saved = self.session_bpmn_save(
+            self.sid,
+            self.BpmnXmlIn(xml=PRUNED_BPMN_XML, source_action="import_bpmn"),
+        )
+        self.assertEqual(saved.get("ok"), True)
+        self.assertIsInstance(saved.get("bpmn_version_snapshot"), dict)
+
+        immediate = self.session_bpmn_meta_get(self.sid)
+        self.assertEqual(immediate.get("drawio", {}).get("doc_xml"), drawio_doc)
+        self.assertEqual(immediate.get("drawio", {}).get("drawio_elements_v1", [{}])[0].get("id"), "Task_yes")
+        self.assertEqual(immediate.get("hybrid_v2", {}).get("elements", [{}])[0].get("id"), "H1")
+
+        st = self.get_storage()
+        reloaded = st.load(self.sid, is_admin=True)
+        self.assertIsNotNone(reloaded)
+        reloaded_meta = dict(getattr(reloaded, "bpmn_meta", {}) or {})
+        self.assertEqual(reloaded_meta.get("drawio", {}).get("doc_xml"), drawio_doc)
+        self.assertEqual(reloaded_meta.get("drawio", {}).get("drawio_elements_v1", [{}])[0].get("id"), "Task_yes")
+        self.assertEqual(reloaded_meta.get("hybrid_v2", {}).get("elements", [{}])[0].get("id"), "H1")
+        self.assertEqual(str(getattr(reloaded, "bpmn_xml", "") or ""), PRUNED_BPMN_XML)
+
     def test_patch_session_partial_bpmn_meta_preserves_hybrid_v2(self):
         self.session_bpmn_meta_patch(
             self.sid,

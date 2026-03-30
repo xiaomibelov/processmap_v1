@@ -5390,6 +5390,8 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
     xml = str(inp.xml or "")
     if not xml.strip():
         return {"error": "xml is empty"}
+    source_action = str(inp.source_action or "").strip().lower()
+    import_note = str(inp.import_note or "").strip()
 
     lock = acquire_session_lock(session_id, ttl_ms=15000)
     if not lock.acquired:
@@ -5400,6 +5402,18 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
         s, oid_locked, _ = _legacy_load_session_scoped(session_id, request)
         if not s:
             return {"error": "not found"}
+        bpmn_version_snapshot: Optional[Dict[str, Any]] = None
+        if source_action == "import_bpmn":
+            previous_xml = str(getattr(s, "bpmn_xml", "") or "")
+            if previous_xml.strip():
+                bpmn_version_snapshot = st.create_bpmn_version_snapshot(
+                    s.id,
+                    bpmn_xml=previous_xml,
+                    source_action=source_action,
+                    created_by=user_id,
+                    org_id=oid_locked,
+                    import_note=import_note,
+                )
 
         flow_ctx = _collect_sequence_flow_meta(xml)
         flow_ids = flow_ctx.get("flow_ids") if isinstance(flow_ctx, dict) else set()
@@ -5483,7 +5497,10 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
         s.bpmn_meta = normalized_meta
         st.save(s, user_id=user_id, org_id=oid_locked, is_admin=True)
         _invalidate_session_caches(s, session_id=session_id, org_id=getattr(s, "org_id", "") or get_default_org_id())
-        return {"ok": True, "session_id": s.id, "bytes": len(xml), "version": s.bpmn_xml_version}
+        out = {"ok": True, "session_id": s.id, "bytes": len(xml), "version": s.bpmn_xml_version}
+        if bpmn_version_snapshot is not None:
+            out["bpmn_version_snapshot"] = bpmn_version_snapshot
+        return out
     finally:
         lock.release()
 

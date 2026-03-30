@@ -489,7 +489,7 @@ export function createBpmnStageImperativeApi(ctxBase) {
         return false;
       }
 
-      const saved = await callbacks.persistXmlSnapshot?.(raw, "backend");
+      const saved = await callbacks.persistXmlSnapshot?.(raw, "import_bpmn");
       if (!saved?.ok) {
         state.setErr?.(`Импорт BPMN не удался: ${String(saved?.error || "не удалось сохранить на backend")}`);
         return false;

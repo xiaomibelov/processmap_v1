@@ -704,6 +704,12 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
   if (Number.isFinite(rev) && rev >= 0) {
     body.rev = rev;
   }
+  const reason = String(options?.reason || "").trim().toLowerCase();
+  if (reason === "import_bpmn") {
+    body.source_action = "import_bpmn";
+    const importNote = String(options?.importNote || "").trim();
+    if (importNote) body.import_note = importNote;
+  }
   const headers = {};
   if (options?.ifMatch !== undefined && options?.ifMatch !== null) {
     headers["If-Match"] = String(options.ifMatch);
