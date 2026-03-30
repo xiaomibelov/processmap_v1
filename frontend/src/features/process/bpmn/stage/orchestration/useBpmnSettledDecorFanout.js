@@ -6,7 +6,7 @@ import {
   runSettledSelectionFanout,
   runSettledStepTimeFanout,
   runSettledUserNotesFanout,
-} from "../fanout/postStagingFanout";
+} from "../fanout/postStagingFanout.js";
 
 export default function useBpmnSettledDecorFanout({
   viewerRef,
@@ -37,6 +37,15 @@ export default function useBpmnSettledDecorFanout({
   syncAiQuestionPanelWithSelection,
   syncCamundaExtensionsToModeler,
 }) {
+  const settledDecorRuntimeStatus = modelerRuntimeRef.current?.getStatus?.() || {};
+  const settledDecorReadySignal = [
+    Number(settledDecorRuntimeStatus?.token || 0),
+    settledDecorRuntimeStatus?.ready ? 1 : 0,
+    settledDecorRuntimeStatus?.defs ? 1 : 0,
+    viewerRef.current ? 1 : 0,
+    modelerRef.current ? 1 : 0,
+  ].join(":");
+
   useEffect(() => {
     const inst = modelerRef.current || modelerRuntimeRef.current?.getInstance?.() || null;
     if (!inst || !modelerReadyRef.current) return;
@@ -46,7 +55,7 @@ export default function useBpmnSettledDecorFanout({
   useEffect(() => {
     runSettledUserNotesFanout({
       viewerInst: viewerRef.current,
-      modelerInst: modelerRef.current,
+      modelerInst: modelerRef.current || modelerRuntimeRef.current?.getInstance?.() || null,
       view,
       isInterviewDecorModeOn,
       clearUserNotesDecor,
@@ -59,6 +68,7 @@ export default function useBpmnSettledDecorFanout({
     draft?.notesByElementId,
     draft?.notes_by_element,
     isInterviewDecorModeOn,
+    settledDecorReadySignal,
     view,
   ]);
 
