@@ -40,8 +40,8 @@ export default function ProcessStageHeader({ view = {} }) {
   const hasPublishedRevision = latestRevisionNumber > 0;
   const draftAheadOfLatest = sessionRevisionHistorySnapshot?.draftState?.isDraftAheadOfLatestRevision === true;
   const draftStatusLabel = !hasPublishedRevision
-    ? "Версия не опубликована"
-    : (draftAheadOfLatest ? "Draft ahead" : "Published");
+    ? "Ревизий нет"
+    : (draftAheadOfLatest ? "Черновик впереди" : "Опубликовано");
   const draftStatusTone = !hasPublishedRevision || draftAheadOfLatest ? "warn" : "ok";
   const mirrorSnapshot = (
     publishGitMirrorSnapshot && typeof publishGitMirrorSnapshot === "object"
@@ -112,9 +112,9 @@ export default function ProcessStageHeader({ view = {} }) {
               <span
                 className={`badge text-[11px] ${mirrorMeta.processTone}`}
                 data-testid="diagram-toolbar-publish-git-mirror-status"
-                title={mirrorLastError || "Статус зеркалирования publish в Git"}
+                title={mirrorLastError || "Статус синхронизации Git-зеркала"}
               >
-                Git mirror: {mirrorBadgeLabel}
+                Git-зеркало: {mirrorBadgeLabel}
               </span>
             </>
           ) : null}

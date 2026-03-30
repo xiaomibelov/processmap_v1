@@ -348,12 +348,34 @@ class BpmnMetaApiTests(unittest.TestCase):
         item_meta = (listed_meta.get("items") or [{}])[0]
         self.assertEqual(item_meta.get("source_action"), "import_bpmn")
         self.assertEqual(item_meta.get("import_note"), "first import")
+        self.assertGreater(int(item_meta.get("created_at_ms") or 0), 0)
+        self.assertTrue(str(item_meta.get("created_at_iso") or "").strip())
+        self.assertIsInstance(item_meta.get("author"), dict)
+        self.assertIn("author_display", item_meta)
         self.assertNotIn("bpmn_xml", item_meta)
 
         listed_full = self.session_bpmn_versions_list(self.sid, include_xml=1)
         self.assertEqual(listed_full.get("ok"), True)
         item_full = (listed_full.get("items") or [{}])[0]
         self.assertEqual(str(item_full.get("bpmn_xml") or ""), XOR_BPMN_XML)
+
+    def test_bpmn_versions_endpoint_formats_technical_author_id_to_short_display(self):
+        st = self.get_storage()
+        technical_id = "8f4b7f5fd3b146b4bf5160f8c0d9821a"
+        st.create_bpmn_version_snapshot(
+            self.sid,
+            bpmn_xml=XOR_BPMN_XML,
+            source_action="import_bpmn",
+            created_by=technical_id,
+            import_note="author format",
+        )
+
+        listed = self.session_bpmn_versions_list(self.sid, include_xml=0)
+        self.assertEqual(listed.get("ok"), True)
+        item = (listed.get("items") or [{}])[0]
+        self.assertEqual(item.get("created_by"), technical_id)
+        self.assertEqual(str(item.get("author_display") or "").startswith("Пользователь 8f4b7f5f"), True)
+        self.assertEqual(str((item.get("author") or {}).get("display_name") or "").startswith("Пользователь 8f4b7f5f"), True)
 
     def test_bpmn_restore_replaces_xml_and_preserves_overlay_layers(self):
         drawio_doc = '<mxfile host="app.diagrams.net"><diagram id="d1">X</diagram></mxfile>'
