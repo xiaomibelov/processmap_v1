@@ -2922,6 +2922,16 @@ const BpmnStage = forwardRef(function BpmnStage({
     return null;
   }
 
+  function getActiveDecorBpmnXml() {
+    const storeXml = String(bpmnStoreRef.current?.getState?.()?.xml || "");
+    if (storeXml.trim()) return storeXml;
+    const liveDraft = String(xmlDraft || "");
+    if (liveDraft.trim()) return liveDraft;
+    const propXml = String(xml || "");
+    if (propXml.trim()) return propXml;
+    return String(draftRef.current?.bpmn_xml || "");
+  }
+
   function createDecorCtx(inst, kind) {
     return {
       inst,
@@ -2962,6 +2972,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       },
       readOnly: {
         draftRef,
+        getActiveBpmnXml: getActiveDecorBpmnXml,
         diagramDisplayModeRef,
         stepTimeUnitRef,
         robotMetaOverlayEnabledRef,

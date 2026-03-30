@@ -108,7 +108,13 @@ function createRegistry(elements) {
   };
 }
 
-function createCtx({ elements = [], bpmnXml = "", notesByElement = {} } = {}) {
+function createCtx({
+  elements = [],
+  bpmnXml = "",
+  draftBpmnXml = null,
+  activeBpmnXml = undefined,
+  notesByElement = {},
+} = {}) {
   const canvas = createCanvasMock();
   const overlays = createOverlaysMock();
   const registry = createRegistry(elements);
@@ -128,7 +134,8 @@ function createCtx({ elements = [], bpmnXml = "", notesByElement = {} } = {}) {
     kind: "viewer",
     refs,
     readOnly: {
-      draftRef: { current: { bpmn_xml: bpmnXml } },
+      draftRef: { current: { bpmn_xml: draftBpmnXml === null ? bpmnXml : draftBpmnXml } },
+      getActiveBpmnXml: () => (activeBpmnXml === undefined ? bpmnXml : activeBpmnXml),
     },
     getters: {
       isInterviewDecorModeOn: () => false,
@@ -244,5 +251,33 @@ test("reload-like rerender preserves docs badge visibility", () => {
     applyUserNotesDecor(fixture.ctx);
     assert.equal(fixture.overlays.addCalls.length, 2);
     assert.equal(hasDocumentationBadge(fixture.overlays.addCalls[1]?.payload?.html), true);
+  });
+});
+
+test("stale draft XML does not override active diagram XML for docs badge", () => {
+  withDom(() => {
+    const fixture = createCtx({
+      elements: [
+        {
+          id: "Task_stale",
+          type: "bpmn:Task",
+          businessObject: { id: "Task_stale", $type: "bpmn:Task", documentation: [] },
+        },
+      ],
+      activeBpmnXml: `<?xml version="1.0" encoding="UTF-8"?>
+        <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+          <bpmn:process id="Process_1">
+            <bpmn:task id="Task_stale" />
+          </bpmn:process>
+        </bpmn:definitions>`,
+      draftBpmnXml: `<?xml version="1.0" encoding="UTF-8"?>
+        <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+          <bpmn:process id="Process_1">
+            <bpmn:task id="Task_stale"><bpmn:documentation>STALE_DOC</bpmn:documentation></bpmn:task>
+          </bpmn:process>
+        </bpmn:definitions>`,
+    });
+    applyUserNotesDecor(fixture.ctx);
+    assert.equal(fixture.overlays.addCalls.length, 0);
   });
 });

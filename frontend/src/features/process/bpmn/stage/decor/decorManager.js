@@ -867,6 +867,7 @@ export function applyUserNotesDecor(ctx) {
   const callbacks = ctx?.callbacks;
   const getters = ctx?.getters;
   const draftRef = ctx?.readOnly?.draftRef;
+  const getActiveBpmnXml = ctx?.readOnly?.getActiveBpmnXml;
   const asArray = ctx?.utils?.asArray;
   const toText = ctx?.utils?.toText;
   const asObject = ctx?.utils?.asObject;
@@ -895,7 +896,14 @@ export function applyUserNotesDecor(ctx) {
     const nextState = {};
     const notesByNodeId = {};
     const docsByNodeId = {};
-    const docsByNodeIdFromXml = extractDocumentationMetaMapFromBpmnXml(draftRef?.current?.bpmn_xml, toText);
+    const activeXml = (() => {
+      if (typeof getActiveBpmnXml === "function") {
+        const fromRuntime = toText(getActiveBpmnXml({ inst, kind }));
+        if (fromRuntime) return fromRuntime;
+      }
+      return toText(draftRef?.current?.bpmn_xml);
+    })();
+    const docsByNodeIdFromXml = extractDocumentationMetaMapFromBpmnXml(activeXml, toText);
 
     payload.forEach((item) => {
       const nodeId = toText(item?.elementId);
