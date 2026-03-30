@@ -1,6 +1,6 @@
 const PUBLISH_GIT_MIRROR_META = {
   not_attempted: {
-    label: "Не запускался",
+    label: "Запусков не было",
     processTone: "",
     adminTone: "default",
   },
@@ -87,4 +87,3 @@ export function getPublishGitMirrorMeta(stateRaw = "") {
     adminTone: toText(meta.adminTone) || "default",
   };
 }
-

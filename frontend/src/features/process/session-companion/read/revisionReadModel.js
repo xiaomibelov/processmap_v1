@@ -103,7 +103,7 @@ export default function buildSessionRevisionReadModel({
       hash: row.contentHash,
       contentHash: row.contentHash,
       reason: row.source || "manual_publish",
-      label: row.comment || `Revision r${row.revisionNumber}`,
+      label: row.comment || `Ревизия r${row.revisionNumber}`,
       pinned: false,
       rev: row.revisionNumber,
       bpmnVersion: row.bpmnVersion,
@@ -124,4 +124,3 @@ export default function buildSessionRevisionReadModel({
     },
   };
 }
-

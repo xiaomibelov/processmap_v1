@@ -227,6 +227,75 @@ def _clean_name(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
 
 
+def _to_epoch_ms(value: Any) -> int:
+    try:
+        ts = int(value or 0)
+    except Exception:
+        ts = 0
+    if ts <= 0:
+        return 0
+    # Storage persists unix seconds; UI metadata expects milliseconds.
+    if ts < 10_000_000_000:
+        return ts * 1000
+    return ts
+
+
+def _to_epoch_iso(value: Any) -> str:
+    ts_ms = _to_epoch_ms(value)
+    if ts_ms <= 0:
+        return ""
+    try:
+        return datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc).isoformat()
+    except Exception:
+        return ""
+
+
+def _looks_like_technical_actor_id(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    if not text:
+        return False
+    if re.fullmatch(r"[0-9a-f]{12,}", text):
+        return True
+    if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f-]{9,}", text):
+        return True
+    return False
+
+
+def _build_bpmn_version_author(created_by: Any) -> Dict[str, str]:
+    actor_id = str(created_by or "").strip()
+    author_email = ""
+    author_name = ""
+
+    if actor_id:
+        actor = find_user_by_id(actor_id)
+        if isinstance(actor, dict):
+            author_email = str(actor.get("email") or "").strip().lower()
+            author_name = _clean_name(
+                actor.get("name")
+                or actor.get("full_name")
+                or actor.get("display_name")
+                or "",
+            )
+        if (not author_email) and "@" in actor_id and " " not in actor_id:
+            author_email = actor_id.lower()
+
+    display = author_name or author_email
+    if not display and actor_id:
+        if _looks_like_technical_actor_id(actor_id):
+            display = f"Пользователь {actor_id[:8]}"
+        else:
+            display = actor_id
+    if not display:
+        display = "unknown"
+
+    return {
+        "id": actor_id,
+        "name": author_name,
+        "email": author_email,
+        "display_name": display,
+    }
+
+
 def _practical_role_for_org(role_raw: Any, is_admin: bool = False) -> str:
     if bool(is_admin):
         return "admin"
@@ -5524,14 +5593,23 @@ def session_bpmn_versions_list(
     )
     items: List[Dict[str, Any]] = []
     for row in rows:
+        created_at = int(row.get("created_at") or 0)
+        author = _build_bpmn_version_author(row.get("created_by"))
         item = {
             "id": str(row.get("id") or ""),
             "session_id": str(row.get("session_id") or ""),
             "version_number": int(row.get("version_number") or 0),
             "source_action": str(row.get("source_action") or ""),
             "import_note": str(row.get("import_note") or ""),
-            "created_at": int(row.get("created_at") or 0),
+            "created_at": created_at,
+            "created_at_ms": _to_epoch_ms(created_at),
+            "created_at_iso": _to_epoch_iso(created_at),
             "created_by": str(row.get("created_by") or ""),
+            "author_id": author.get("id", ""),
+            "author_name": author.get("name", ""),
+            "author_email": author.get("email", ""),
+            "author_display": author.get("display_name", ""),
+            "author": author,
         }
         if include_xml_mode:
             item["bpmn_xml"] = str(row.get("bpmn_xml") or "")
@@ -5623,6 +5701,8 @@ def session_bpmn_restore(session_id: str, version_id: str, request: Request = No
                 "version_number": int(version_row.get("version_number") or 0),
             },
         )
+        restored_created_at = int(version_row.get("created_at") or 0)
+        restored_author = _build_bpmn_version_author(version_row.get("created_by"))
         return {
             "ok": True,
             "session_id": str(getattr(s, "id", "") or session_id),
@@ -5634,8 +5714,15 @@ def session_bpmn_restore(session_id: str, version_id: str, request: Request = No
                 "version_number": int(version_row.get("version_number") or 0),
                 "source_action": str(version_row.get("source_action") or ""),
                 "import_note": str(version_row.get("import_note") or ""),
-                "created_at": int(version_row.get("created_at") or 0),
+                "created_at": restored_created_at,
+                "created_at_ms": _to_epoch_ms(restored_created_at),
+                "created_at_iso": _to_epoch_iso(restored_created_at),
                 "created_by": str(version_row.get("created_by") or ""),
+                "author_id": restored_author.get("id", ""),
+                "author_name": restored_author.get("name", ""),
+                "author_email": restored_author.get("email", ""),
+                "author_display": restored_author.get("display_name", ""),
+                "author": restored_author,
             },
         }
     finally:

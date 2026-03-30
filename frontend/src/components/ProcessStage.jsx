@@ -105,6 +105,13 @@ import ProcessDialogs from "../features/process/stage/ui/ProcessDialogs";
 import ProcessStageHeader from "../features/process/stage/ui/ProcessStageHeader";
 import ProcessStageDiagramControls from "../features/process/stage/ui/ProcessStageDiagramControls";
 import ProcessDiagramOverlayLayers from "../features/process/stage/ui/ProcessDiagramOverlayLayers";
+import {
+  formatRevisionAuthor,
+  formatRevisionTimestampRu,
+  localizeRevisionSourceAction,
+  normalizeRevisionTimestampMs,
+  resolveRevisionHistoryUiSnapshot,
+} from "../features/process/stage/ui/revisionHistoryUiModel";
 import useHybridStore from "../features/process/hybrid/controllers/useHybridStore";
 import useHybridPersistController from "../features/process/hybrid/controllers/useHybridPersistController";
 import { extractPublishGitMirrorSnapshot } from "../shared/publishGitMirrorStatus";
@@ -282,6 +289,7 @@ export default function ProcessStage({
   });
   const [drawioAnchorImportDiagnostics, setDrawioAnchorImportDiagnostics] = useState(null);
   const [saveUploadLifecycleEvent, setSaveUploadLifecycleEvent] = useState(IDLE_SAVE_UPLOAD_EVENT);
+  const [latestBpmnVersionHead, setLatestBpmnVersionHead] = useState(null);
 
   const {
     genBusy,
@@ -573,6 +581,17 @@ export default function ProcessStage({
   const sessionRevisionHistorySnapshot = useMemo(
     () => asObject(sessionCompanionBridgeSnapshot.revisionHistory),
     [sessionCompanionBridgeSnapshot.revisionHistory],
+  );
+  const revisionLatestCandidate = useMemo(
+    () => asArray(versionsList)[0] || asObject(latestBpmnVersionHead),
+    [versionsList, latestBpmnVersionHead],
+  );
+  const revisionHistoryUiSnapshot = useMemo(
+    () => resolveRevisionHistoryUiSnapshot({
+      revisionHistorySnapshotRaw: sessionRevisionHistorySnapshot,
+      latestVersionItemRaw: revisionLatestCandidate,
+    }),
+    [sessionRevisionHistorySnapshot, revisionLatestCandidate],
   );
   const publishGitMirrorSnapshot = useMemo(() => {
     const topLevel = asObject(draft?.publish_git_mirror);
@@ -876,7 +895,7 @@ export default function ProcessStage({
           if (revisionInfo.skipped !== true && Number(revisionInfo.revisionNumber || 0) > 0) {
             publishInfo = `Сохранено и опубликовано как r${Number(revisionInfo.revisionNumber)}.`;
           } else if (revisionInfo.skipped === true) {
-            publishInfo = "Сохранено. Новая ревизия не создана (контент совпадает с latest).";
+            publishInfo = "Сохранено. Новая ревизия не создана (контент совпадает с последней).";
           }
         }
       }
@@ -988,7 +1007,7 @@ export default function ProcessStage({
           name: user?.name || user?.username || user?.email || "",
           email: user?.email || "",
         },
-        comment: toText(revisionComment) || "Published via Save",
+        comment: toText(revisionComment) || "Опубликовано через сохранение",
         source: toText(revisionSource) || "publish_revision",
         skipIfContentUnchanged: true,
       });
@@ -2687,17 +2706,11 @@ export default function ProcessStage({
   );
 
   function formatSnapshotTs(ts) {
-    const n = Number(ts || 0);
-    if (!Number.isFinite(n) || n <= 0) return "—";
-    try {
-      return new Date(n).toLocaleString("ru-RU");
-    } catch {
-      return String(n);
-    }
+    return formatRevisionTimestampRu(ts);
   }
 
   function defaultCheckpointLabel(ts) {
-    return `Checkpoint ${formatSnapshotTs(ts || Date.now())}`;
+    return `Контрольная точка ${formatSnapshotTs(ts || Date.now())}`;
   }
 
   function snapshotLabel(item) {
@@ -2706,7 +2719,7 @@ export default function ProcessStage({
     const comment = String(item?.comment || "").trim();
     if (comment) return comment;
     const revisionNumber = Number(item?.revisionNumber || item?.rev || 0);
-    if (revisionNumber > 0) return `Revision r${revisionNumber}`;
+    if (revisionNumber > 0) return `Ревизия r${revisionNumber}`;
     if (item?.pinned) return defaultCheckpointLabel(item?.ts);
     return "Без названия";
   }
@@ -2715,10 +2728,23 @@ export default function ProcessStage({
     const item = itemRaw && typeof itemRaw === "object" ? itemRaw : {};
     const xml = String(item?.bpmn_xml || item?.xml || "");
     const versionNumber = Number(item?.version_number || item?.versionNumber || item?.revisionNumber || item?.rev || 0);
-    const createdAt = Number(item?.created_at || item?.createdAt || item?.ts || 0);
+    const createdAt = normalizeRevisionTimestampMs(
+      item?.created_at_ms
+      || item?.createdAtMs
+      || item?.created_at
+      || item?.createdAt
+      || item?.ts
+      || 0,
+    );
     const sourceAction = String(item?.source_action || item?.sourceAction || item?.reason || "import_bpmn").trim() || "import_bpmn";
     const importNote = String(item?.import_note || item?.importNote || item?.comment || "").trim();
-    const author = String(item?.created_by || item?.createdBy || item?.authorId || item?.authorName || "").trim();
+    const author = formatRevisionAuthor({
+      ...(asObject(item?.author)),
+      id: item?.author_id || item?.authorId || item?.created_by || item?.createdBy,
+      name: item?.author_name || item?.authorName,
+      email: item?.author_email || item?.authorEmail,
+      display: item?.author_display || item?.authorDisplay,
+    });
     const id = String(item?.id || "").trim();
     return {
       ...item,
@@ -2726,11 +2752,14 @@ export default function ProcessStage({
       xml,
       ts: createdAt,
       reason: sourceAction,
+      reasonLabel: localizeRevisionSourceAction(sourceAction),
       comment: importNote,
       revisionNumber: versionNumber,
       rev: versionNumber,
-      authorId: author,
-      authorName: author,
+      authorId: author.authorId,
+      authorName: author.authorName,
+      authorEmail: author.authorEmail,
+      authorLabel: author.label,
       len: Number(item?.len || xml.length || 0),
     };
   }, []);
@@ -2743,20 +2772,32 @@ export default function ProcessStage({
     });
   }, [diffBaseSnapshotId, diffTargetSnapshotId, versionsList]);
 
-  const refreshSnapshotVersions = useCallback(async () => {
+  const refreshSnapshotVersions = useCallback(async (options = {}) => {
     if (!sid) {
       setVersionsList([]);
       setPreviewSnapshotId("");
+      setLatestBpmnVersionHead(null);
       return;
     }
-    const loaded = await apiGetBpmnVersions(sid, { limit: 200, includeXml: true });
+    const includeXml = options?.includeXml !== false;
+    const updateList = options?.updateList !== false ? includeXml : false;
+    const fallbackLimit = includeXml ? 200 : 1;
+    const requestedLimit = Number(options?.limit || fallbackLimit);
+    const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(Math.round(requestedLimit), 500)
+      : fallbackLimit;
+    const loaded = await apiGetBpmnVersions(sid, { limit, includeXml });
     if (!loaded?.ok) {
-      setVersionsList([]);
-      setPreviewSnapshotId("");
-      setGenErr(shortErr(loaded?.error || "Не удалось загрузить BPMN версии."));
+      if (updateList) {
+        setVersionsList([]);
+        setPreviewSnapshotId("");
+      }
+      if (includeXml) setGenErr(shortErr(loaded?.error || "Не удалось загрузить BPMN версии."));
       return;
     }
     const list = asArray(loaded?.versions).map((item) => normalizeBpmnVersionListItem(item));
+    setLatestBpmnVersionHead(asArray(list)[0] || null);
+    if (!updateList) return;
     // eslint-disable-next-line no-console
     console.debug(
       `UI_VERSIONS_LOAD sid=${sid} key="${snapshotScopeKey(snapshotProjectId, sid)}" count=${asArray(list).length}`,
@@ -2768,6 +2809,14 @@ export default function ProcessStage({
       return asArray(list)[0]?.id || "";
     });
   }, [normalizeBpmnVersionListItem, sid, snapshotProjectId]);
+
+  const refreshLatestBpmnRevisionHead = useCallback(async () => {
+    await refreshSnapshotVersions({
+      includeXml: false,
+      limit: 1,
+      updateList: false,
+    });
+  }, [refreshSnapshotVersions]);
 
   async function openVersionsModal() {
     setVersionsOpen(true);
@@ -3503,6 +3552,15 @@ export default function ProcessStage({
   }, [versionsOpen, sid, draft?.bpmn_xml_version, draft?.version, refreshSnapshotVersions]);
 
   useEffect(() => {
+    if (!sid) {
+      setLatestBpmnVersionHead(null);
+      return;
+    }
+    setLatestBpmnVersionHead(null);
+    void refreshLatestBpmnRevisionHead();
+  }, [sid, draft?.bpmn_xml_version, draft?.version, refreshLatestBpmnRevisionHead]);
+
+  useEffect(() => {
     if (!diffOpen) return;
     const ids = new Set(asArray(versionsList).map((item) => String(item?.id || "")));
     if (!ids.has(String(diffTargetSnapshotId || ""))) {
@@ -3930,6 +3988,7 @@ export default function ProcessStage({
       setApiClarifyMeta(null);
       setTab("diagram");
       await Promise.resolve(bpmnRef.current?.fit?.());
+      await refreshLatestBpmnRevisionHead();
     } catch (e2) {
       setGenErr(shortErr(e2?.message || e2));
     }
@@ -4333,7 +4392,7 @@ export default function ProcessStage({
     versionsBusy,
     hasSession,
     versionsList,
-    revisionHistorySnapshot: sessionRevisionHistorySnapshot,
+    revisionHistorySnapshot: revisionHistoryUiSnapshot,
     setGenErr,
     setDiffTargetSnapshotId,
     setDiffBaseSnapshotId,
@@ -4393,7 +4452,10 @@ export default function ProcessStage({
     hasPathHighlightData,
   } = shellVm.shellProps;
   const headerView = buildDiagramHeaderView({
-    shellProps: shellVm.shellProps,
+    shellProps: {
+      ...shellVm.shellProps,
+      sessionRevisionHistorySnapshot: revisionHistoryUiSnapshot,
+    },
     sid,
     saveDirtyHint: shellVm.shellProps.saveDirtyHint === true,
     handleSaveCurrentTab,
