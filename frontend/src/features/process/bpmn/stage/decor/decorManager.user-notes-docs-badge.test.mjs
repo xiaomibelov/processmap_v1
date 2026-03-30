@@ -80,17 +80,27 @@ function createOverlaysMock() {
   let seq = 0;
   const addCalls = [];
   const removeCalls = [];
+  const overlayMap = {};
   return {
+    _overlays: overlayMap,
     addCalls,
     removeCalls,
     add(elementId, payload) {
       seq += 1;
       const id = `ov_${seq}`;
+      overlayMap[id] = {
+        id,
+        element: { id: String(elementId || "") },
+        type: "",
+        html: payload?.html || null,
+      };
       addCalls.push({ id, elementId: String(elementId || ""), payload: asObject(payload) });
       return id;
     },
     remove(id) {
-      removeCalls.push(String(id || ""));
+      const normalized = String(id || "");
+      removeCalls.push(normalized);
+      delete overlayMap[normalized];
     },
   };
 }
@@ -160,6 +170,11 @@ function createCtx({
 
 function hasDocumentationBadge(stackNode) {
   return asArray(stackNode?.childNodes).some((node) => toText(node?.dataset?.badgeKind) === "documentation");
+}
+
+function buildNotesDecorSignature({ markerClass = "", noteCount = 0, docsCount = 0, docsText = "" } = {}) {
+  const docsSignature = docsText ? String(docsText).slice(0, 240) : "";
+  return `${String(markerClass || "")}|notes:${Number(noteCount || 0)}|docs:${Number(docsCount || 0)}|${docsSignature}`;
 }
 
 test("existing task with XML documentation gets docs badge", () => {
@@ -251,6 +266,92 @@ test("reload-like rerender preserves docs badge visibility", () => {
     applyUserNotesDecor(fixture.ctx);
     assert.equal(fixture.overlays.addCalls.length, 2);
     assert.equal(hasDocumentationBadge(fixture.overlays.addCalls[1]?.payload?.html), true);
+  });
+});
+
+test("unchanged docs signature keeps live overlay without duplicates", () => {
+  withDom(() => {
+    const fixture = createCtx({
+      elements: [
+        {
+          id: "Task_stable",
+          type: "bpmn:Task",
+          businessObject: { id: "Task_stable", $type: "bpmn:Task", documentation: [] },
+        },
+      ],
+      bpmnXml: `<?xml version="1.0" encoding="UTF-8"?>
+        <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+          <bpmn:process id="Process_1">
+            <bpmn:task id="Task_stable"><bpmn:documentation>Док стабильный</bpmn:documentation></bpmn:task>
+          </bpmn:process>
+        </bpmn:definitions>`,
+    });
+    applyUserNotesDecor(fixture.ctx);
+    applyUserNotesDecor(fixture.ctx);
+    assert.equal(fixture.overlays.addCalls.length, 1);
+  });
+});
+
+test("stale previous overlay id forces docs badge re-emission", () => {
+  withDom(() => {
+    const docsText = "Из XML";
+    const fixture = createCtx({
+      elements: [
+        {
+          id: "Task_existing",
+          type: "bpmn:Task",
+          businessObject: { id: "Task_existing", $type: "bpmn:Task", documentation: [] },
+        },
+      ],
+      bpmnXml: `<?xml version="1.0" encoding="UTF-8"?>
+        <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+          <bpmn:process id="Process_1">
+            <bpmn:task id="Task_existing"><bpmn:documentation>${docsText}</bpmn:documentation></bpmn:task>
+          </bpmn:process>
+        </bpmn:definitions>`,
+    });
+    fixture.ctx.refs.userNotesDecorStateRef.current.viewer.Task_existing = {
+      elementId: "Task_existing",
+      markerClass: "",
+      overlayId: "ov_stale",
+      signature: buildNotesDecorSignature({ docsCount: 1, docsText }),
+    };
+    applyUserNotesDecor(fixture.ctx);
+    assert.equal(fixture.overlays.addCalls.length, 1);
+    assert.equal(hasDocumentationBadge(fixture.overlays.addCalls[0]?.payload?.html), true);
+    const nextEntry = fixture.ctx.refs.userNotesDecorStateRef.current.viewer.Task_existing;
+    assert.ok(nextEntry);
+    assert.notEqual(toText(nextEntry?.overlayId), "ov_stale");
+  });
+});
+
+test("docs badge emission keeps unrelated drilldown overlays intact", () => {
+  withDom(() => {
+    const fixture = createCtx({
+      elements: [
+        {
+          id: "Task_docs",
+          type: "bpmn:Task",
+          businessObject: { id: "Task_docs", $type: "bpmn:Task", documentation: [] },
+        },
+      ],
+      bpmnXml: `<?xml version="1.0" encoding="UTF-8"?>
+        <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+          <bpmn:process id="Process_1">
+            <bpmn:task id="Task_docs"><bpmn:documentation>Док</bpmn:documentation></bpmn:task>
+          </bpmn:process>
+        </bpmn:definitions>`,
+    });
+    fixture.overlays._overlays.drilldown_1 = {
+      id: "drilldown_1",
+      element: { id: "Sub_1" },
+      type: "drilldown",
+      html: createNodeElement(),
+    };
+    applyUserNotesDecor(fixture.ctx);
+    assert.equal(fixture.overlays.addCalls.length, 1);
+    assert.equal(fixture.overlays._overlays.drilldown_1?.type, "drilldown");
+    assert.ok(Object.values(fixture.overlays._overlays).some((entry) => toText(entry?.type) === "drilldown"));
   });
 });
 

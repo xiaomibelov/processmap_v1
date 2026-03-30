@@ -941,6 +941,27 @@ export function applyUserNotesDecor(ctx) {
       });
     };
 
+    const hasLiveOverlayEntry = (overlayIdRaw) => {
+      const overlayId = overlayIdRaw;
+      if (overlayId === null || overlayId === undefined || overlayId === "") return false;
+      if (typeof overlays?.get === "function") {
+        try {
+          return !!overlays.get(overlayId);
+        } catch {
+        }
+      }
+      const overlayMap = overlays && typeof overlays === "object"
+        ? (overlays._overlays && typeof overlays._overlays === "object"
+          ? overlays._overlays
+          : overlays.overlays && typeof overlays.overlays === "object"
+            ? overlays.overlays
+            : null)
+        : null;
+      if (!overlayMap) return true;
+      if (Object.prototype.hasOwnProperty.call(overlayMap, overlayId)) return true;
+      return Object.prototype.hasOwnProperty.call(overlayMap, String(overlayId));
+    };
+
     const closeOpenedDocumentationPopovers = (exceptPopoverNode = null) => {
       const canvasContainer = inst?.get?.("canvas")?._container || inst?.get?.("canvas")?.getContainer?.();
       if (!canvasContainer?.querySelectorAll) return;
@@ -971,7 +992,10 @@ export function applyUserNotesDecor(ctx) {
       const signature = `${markerClass}|notes:${count}|docs:${docsCount}|${docsSignature}`;
       const prev = asObject(currentState[elementId]);
 
-      if (toText(prev?.signature) === signature) {
+      const prevOverlayId = prev?.overlayId;
+      const canReusePrev = toText(prev?.signature) === signature
+        && (prevOverlayId === null || prevOverlayId === undefined || hasLiveOverlayEntry(prevOverlayId));
+      if (canReusePrev) {
         nextState[elementId] = prev;
         delete currentState[elementId];
         return;
