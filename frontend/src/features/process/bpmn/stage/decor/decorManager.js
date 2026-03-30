@@ -29,8 +29,21 @@ function buildUserNotesDecorPayload(ctx) {
 }
 
 export function readBusinessObjectDocumentationMeta(boRaw, asArray, toText) {
+  const readEntryText = (entryRaw) => {
+    const entry = entryRaw && typeof entryRaw === "object" ? entryRaw : {};
+    const direct = toText(entry?.text ?? entry?.body ?? entry?.value ?? entry?.$body);
+    if (direct) return direct;
+    if (typeof entry?.get === "function") {
+      try {
+        const fromGetter = toText(entry.get("text") ?? entry.get("body") ?? entry.get("value"));
+        if (fromGetter) return fromGetter;
+      } catch {
+      }
+    }
+    return "";
+  };
   const docs = asArray(boRaw?.documentation)
-    .map((entry) => toText(entry?.text ?? entry?.body ?? entry?.value))
+    .map((entry) => readEntryText(entry))
     .map((text) => String(text || "").replace(/\r\n/g, "\n").trim())
     .filter(Boolean);
   if (!docs.length) return null;
@@ -38,6 +51,33 @@ export function readBusinessObjectDocumentationMeta(boRaw, asArray, toText) {
     count: docs.length,
     text: docs.join("\n\n"),
   };
+}
+
+export function extractDocumentationMetaMapFromBpmnXml(xmlRaw, toText) {
+  const xmlText = toText(xmlRaw);
+  if (!xmlText || typeof DOMParser === "undefined") return {};
+  try {
+    const doc = new DOMParser().parseFromString(xmlText, "application/xml");
+    if (!doc || doc.getElementsByTagName("parsererror").length > 0) return {};
+    const out = {};
+    const allNodes = Array.from(doc.getElementsByTagName("*"));
+    allNodes.forEach((node) => {
+      const elementId = toText(node?.getAttribute?.("id"));
+      if (!elementId) return;
+      const docs = Array.from(node?.childNodes || [])
+        .filter((child) => child?.nodeType === 1 && toText(child?.localName).toLowerCase() === "documentation")
+        .map((child) => String(child?.textContent || "").replace(/\r\n/g, "\n").trim())
+        .filter(Boolean);
+      if (!docs.length) return;
+      out[elementId] = {
+        count: docs.length,
+        text: docs.join("\n\n"),
+      };
+    });
+    return out;
+  } catch {
+    return {};
+  }
 }
 
 function buildStepTimeDecorPayload(ctx) {
@@ -826,6 +866,7 @@ export function applyUserNotesDecor(ctx) {
   const refs = ctx?.refs;
   const callbacks = ctx?.callbacks;
   const getters = ctx?.getters;
+  const draftRef = ctx?.readOnly?.draftRef;
   const asArray = ctx?.utils?.asArray;
   const toText = ctx?.utils?.toText;
   const asObject = ctx?.utils?.asObject;
@@ -854,6 +895,7 @@ export function applyUserNotesDecor(ctx) {
     const nextState = {};
     const notesByNodeId = {};
     const docsByNodeId = {};
+    const docsByNodeIdFromXml = extractDocumentationMetaMapFromBpmnXml(draftRef?.current?.bpmn_xml, toText);
 
     payload.forEach((item) => {
       const nodeId = toText(item?.elementId);
@@ -871,6 +913,15 @@ export function applyUserNotesDecor(ctx) {
       const documentationMeta = readBusinessObjectDocumentationMeta(el?.businessObject, asArray, toText);
       if (!documentationMeta) return;
       docsByNodeId[nodeId] = documentationMeta;
+    });
+    Object.entries(asObject(docsByNodeIdFromXml)).forEach(([nodeIdRaw, metaRaw]) => {
+      const nodeId = toText(nodeIdRaw);
+      if (!nodeId || docsByNodeId[nodeId]) return;
+      const meta = asObject(metaRaw);
+      const count = Number(meta?.count || 0);
+      const text = toText(meta?.text);
+      if (!(count > 0) || !text) return;
+      docsByNodeId[nodeId] = { count, text };
     });
 
     const bindBadgeClick = (btn, onClick) => {
