@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useMemo } from "react";
 
 import {
   runSettledPropertiesFanout,
@@ -7,6 +7,26 @@ import {
   runSettledStepTimeFanout,
   runSettledUserNotesFanout,
 } from "../fanout/postStagingFanout.js";
+
+/**
+ * Stable JSON-ish signature for notes data to avoid spurious re-runs.
+ * Returns a string that changes only when actual notes content changes.
+ */
+function notesSignature(notesByElementId, notesByElement) {
+  const src = notesByElementId || notesByElement;
+  if (!src || typeof src !== "object") return "";
+  const keys = Object.keys(src);
+  if (keys.length === 0) return "";
+  keys.sort();
+  const parts = [];
+  for (let i = 0; i < keys.length; i++) {
+    const k = keys[i];
+    const entry = src[k];
+    const items = Array.isArray(entry?.items) ? entry.items : [];
+    parts.push(k + ":" + items.length);
+  }
+  return parts.join("|");
+}
 
 export default function useBpmnSettledDecorFanout({
   viewerRef,
@@ -37,88 +57,107 @@ export default function useBpmnSettledDecorFanout({
   syncAiQuestionPanelWithSelection,
   syncCamundaExtensionsToModeler,
 }) {
-  const settledDecorRuntimeStatus = modelerRuntimeRef.current?.getStatus?.() || {};
-  const settledDecorReadySignal = [
-    Number(settledDecorRuntimeStatus?.token || 0),
-    settledDecorRuntimeStatus?.ready ? 1 : 0,
-    settledDecorRuntimeStatus?.defs ? 1 : 0,
-    viewerRef.current ? 1 : 0,
-    modelerRef.current ? 1 : 0,
-  ].join(":");
+  // ── Stabilize callback refs to avoid spurious useEffect re-fires ──
+  const cbRef = useRef({});
+  cbRef.current.clearUserNotesDecor = clearUserNotesDecor;
+  cbRef.current.applyUserNotesDecor = applyUserNotesDecor;
+  cbRef.current.applyStepTimeDecor = applyStepTimeDecor;
+  cbRef.current.applyRobotMetaDecor = applyRobotMetaDecor;
+  cbRef.current.applyPropertiesOverlayDecor = applyPropertiesOverlayDecor;
+  cbRef.current.clearPropertiesOverlayDecor = clearPropertiesOverlayDecor;
+  cbRef.current.isInterviewDecorModeOn = isInterviewDecorModeOn;
+  cbRef.current.emitElementSelection = emitElementSelection;
+  cbRef.current.syncAiQuestionPanelWithSelection = syncAiQuestionPanelWithSelection;
+  cbRef.current.buildSettledSelectionFanoutSignature = buildSettledSelectionFanoutSignature;
+  cbRef.current.syncCamundaExtensionsToModeler = syncCamundaExtensionsToModeler;
 
+  // ── Stable notes signature — changes only when notes data actually changes ──
+  const notesSig = useMemo(
+    () => notesSignature(draft?.notesByElementId, draft?.notes_by_element),
+    [draft?.notesByElementId, draft?.notes_by_element],
+  );
+
+  // ── Camunda sync (unchanged logic, stabilized ref) ──
   useEffect(() => {
     const inst = modelerRef.current || modelerRuntimeRef.current?.getInstance?.() || null;
     if (!inst || !modelerReadyRef.current) return;
-    syncCamundaExtensionsToModeler(inst);
-  }, [draft?.bpmn_meta, modelerReadyRef, modelerRef, modelerRuntimeRef, syncCamundaExtensionsToModeler]);
+    cbRef.current.syncCamundaExtensionsToModeler(inst);
+  }, [draft?.bpmn_meta, modelerReadyRef, modelerRef, modelerRuntimeRef]);
 
+  // ── Notes fanout — only active view, signature-gated ──
   useEffect(() => {
+    const viewerInst = viewerRef.current;
+    const modelerInst = modelerRef.current || modelerRuntimeRef.current?.getInstance?.() || null;
     runSettledUserNotesFanout({
-      viewerInst: viewerRef.current,
-      modelerInst: modelerRef.current || modelerRuntimeRef.current?.getInstance?.() || null,
+      viewerInst: view !== "editor" ? viewerInst : null,
+      modelerInst: (view === "editor" || view === "diagram") ? modelerInst : null,
       view,
-      isInterviewDecorModeOn,
-      clearUserNotesDecor,
-      applyUserNotesDecor,
+      isInterviewDecorModeOn: cbRef.current.isInterviewDecorModeOn,
+      clearUserNotesDecor: cbRef.current.clearUserNotesDecor,
+      applyUserNotesDecor: cbRef.current.applyUserNotesDecor,
     });
   }, [
-    applyUserNotesDecor,
-    clearUserNotesDecor,
+    notesSig,
     diagramDisplayMode,
-    draft?.notesByElementId,
-    draft?.notes_by_element,
-    isInterviewDecorModeOn,
-    settledDecorReadySignal,
     view,
+    viewerRef,
+    modelerRef,
+    modelerRuntimeRef,
   ]);
 
+  // ── StepTime fanout ──
   useEffect(() => {
     runSettledStepTimeFanout({
       viewerInst: viewerRef.current,
       modelerInst: modelerRef.current,
       view,
-      applyStepTimeDecor,
+      applyStepTimeDecor: cbRef.current.applyStepTimeDecor,
     });
   }, [
-    applyStepTimeDecor,
     draft?.nodes,
     stepTimeUnit,
     view,
+    viewerRef,
+    modelerRef,
   ]);
 
+  // ── RobotMeta fanout ──
   useEffect(() => {
     runSettledRobotMetaFanout({
       viewerInst: viewerRef.current,
       modelerInst: modelerRef.current,
       view,
-      applyRobotMetaDecor,
+      applyRobotMetaDecor: cbRef.current.applyRobotMetaDecor,
     });
   }, [
-    applyRobotMetaDecor,
     draft?.bpmn_meta,
     robotMetaOverlayEnabled,
     robotMetaOverlayFilters,
     robotMetaStatusByElementId,
     view,
+    viewerRef,
+    modelerRef,
   ]);
 
+  // ── Properties fanout ──
   useEffect(() => {
     runSettledPropertiesFanout({
       viewerInst: viewerRef.current,
       modelerInst: modelerRef.current,
       view,
-      applyPropertiesOverlayDecor,
-      clearPropertiesOverlayDecor,
+      applyPropertiesOverlayDecor: cbRef.current.applyPropertiesOverlayDecor,
+      clearPropertiesOverlayDecor: cbRef.current.clearPropertiesOverlayDecor,
     });
   }, [
-    applyPropertiesOverlayDecor,
-    clearPropertiesOverlayDecor,
     propertiesOverlayAlwaysEnabled,
     propertiesOverlayAlwaysPreviewByElementId,
     selectedPropertiesOverlayPreview,
     view,
+    viewerRef,
+    modelerRef,
   ]);
 
+  // ── Selection fanout ──
   useEffect(() => {
     runSettledSelectionFanout({
       viewerInst: viewerRef.current,
@@ -126,19 +165,17 @@ export default function useBpmnSettledDecorFanout({
       view,
       selectedMarkerStateRef,
       selectionFanoutStateRef: settledSelectionFanoutRef,
-      buildSelectionFanoutSignature: buildSettledSelectionFanoutSignature,
-      emitElementSelection,
-      syncAiQuestionPanelWithSelection,
+      buildSelectionFanoutSignature: cbRef.current.buildSettledSelectionFanoutSignature,
+      emitElementSelection: cbRef.current.emitElementSelection,
+      syncAiQuestionPanelWithSelection: cbRef.current.syncAiQuestionPanelWithSelection,
     });
   }, [
-    buildSettledSelectionFanoutSignature,
+    notesSig,
     diagramDisplayMode,
-    draft?.notesByElementId,
-    draft?.notes_by_element,
-    emitElementSelection,
     selectedMarkerStateRef,
     settledSelectionFanoutRef,
-    syncAiQuestionPanelWithSelection,
     view,
+    viewerRef,
+    modelerRef,
   ]);
 }
