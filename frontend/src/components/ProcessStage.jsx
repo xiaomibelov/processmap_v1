@@ -780,6 +780,7 @@ export default function ProcessStage({
     draft,
     processTabIntent,
     bpmnRef,
+    coordinator: bpmnRef?.current,
     processBodyRef,
     bpmnSync,
     projectionHelpers,
