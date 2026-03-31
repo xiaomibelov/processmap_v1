@@ -13,7 +13,7 @@ import {
  * Returns a string that changes only when actual notes content changes.
  */
 function notesSignature(notesByElementId, notesByElement) {
-  const src = notesByElementId || notesByElement;
+  const src = notesByElement || notesByElementId;
   if (!src || typeof src !== "object") return "";
   const keys = Object.keys(src);
   if (keys.length === 0) return "";
@@ -71,6 +71,14 @@ export default function useBpmnSettledDecorFanout({
   cbRef.current.buildSettledSelectionFanoutSignature = buildSettledSelectionFanoutSignature;
   cbRef.current.syncCamundaExtensionsToModeler = syncCamundaExtensionsToModeler;
 
+  // ── Lightweight ready-signal: changes only when instances flip null↔ready ──
+  // Unlike the old settledDecorReadySignal this does NOT include token/defs
+  // which caused spurious re-fires on every modeler status tick.
+  const readySignal = [
+    viewerRef.current ? 1 : 0,
+    modelerRef.current || modelerRuntimeRef.current?.getInstance?.() ? 1 : 0,
+  ].join(":");
+
   // ── Stable notes signature — changes only when notes data actually changes ──
   const notesSig = useMemo(
     () => notesSignature(draft?.notesByElementId, draft?.notes_by_element),
@@ -98,11 +106,9 @@ export default function useBpmnSettledDecorFanout({
     });
   }, [
     notesSig,
+    readySignal,
     diagramDisplayMode,
     view,
-    viewerRef,
-    modelerRef,
-    modelerRuntimeRef,
   ]);
 
   // ── StepTime fanout ──
@@ -116,9 +122,8 @@ export default function useBpmnSettledDecorFanout({
   }, [
     draft?.nodes,
     stepTimeUnit,
+    readySignal,
     view,
-    viewerRef,
-    modelerRef,
   ]);
 
   // ── RobotMeta fanout ──
@@ -134,9 +139,8 @@ export default function useBpmnSettledDecorFanout({
     robotMetaOverlayEnabled,
     robotMetaOverlayFilters,
     robotMetaStatusByElementId,
+    readySignal,
     view,
-    viewerRef,
-    modelerRef,
   ]);
 
   // ── Properties fanout ──
@@ -152,9 +156,8 @@ export default function useBpmnSettledDecorFanout({
     propertiesOverlayAlwaysEnabled,
     propertiesOverlayAlwaysPreviewByElementId,
     selectedPropertiesOverlayPreview,
+    readySignal,
     view,
-    viewerRef,
-    modelerRef,
   ]);
 
   // ── Selection fanout ──
@@ -171,11 +174,10 @@ export default function useBpmnSettledDecorFanout({
     });
   }, [
     notesSig,
+    readySignal,
     diagramDisplayMode,
     selectedMarkerStateRef,
     settledSelectionFanoutRef,
     view,
-    viewerRef,
-    modelerRef,
   ]);
 }
