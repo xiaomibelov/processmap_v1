@@ -171,19 +171,27 @@ export function runSettledUserNotesFanout(options = {}) {
   const meta = { kind: "settled", view };
 
   if (isInterviewDecorModeOn()) {
-    measureSettledStep("settled.notes.clear.viewer", () => {
-      options.clearUserNotesDecor?.(viewerInst, "viewer");
-    }, meta);
-    measureSettledStep("settled.notes.clear.editor", () => {
-      options.clearUserNotesDecor?.(modelerInst, "editor");
-    }, meta);
+    if (viewerInst) {
+      measureSettledStep("settled.notes.clear.viewer", () => {
+        options.clearUserNotesDecor?.(viewerInst, "viewer");
+      }, meta);
+    }
+    if (modelerInst) {
+      measureSettledStep("settled.notes.clear.editor", () => {
+        options.clearUserNotesDecor?.(modelerInst, "editor");
+      }, meta);
+    }
   } else {
-    measureSettledStep("settled.notes.apply.viewer", () => {
-      options.applyUserNotesDecor?.(viewerInst, "viewer");
-    }, meta);
-    measureSettledStep("settled.notes.apply.editor", () => {
-      options.applyUserNotesDecor?.(modelerInst, "editor");
-    }, meta);
+    if (viewerInst) {
+      measureSettledStep("settled.notes.apply.viewer", () => {
+        options.applyUserNotesDecor?.(viewerInst, "viewer");
+      }, meta);
+    }
+    if (modelerInst) {
+      measureSettledStep("settled.notes.apply.editor", () => {
+        options.applyUserNotesDecor?.(modelerInst, "editor");
+      }, meta);
+    }
   }
 }
 
