@@ -45,8 +45,17 @@ export default function useSessionMetaWriteGateway({
     if (!sid || isLocal) {
       return { ok: true, local: true, writeSeq };
     }
+    const remoteWrite = typeof options?.remoteWrite === "function"
+      ? options.remoteWrite
+      : async ({ sid: writeSid, nextMeta }) => apiPatchSession(writeSid, { bpmn_meta: nextMeta });
     const runWrite = async () => {
-      const syncRes = await apiPatchSession(sid, { bpmn_meta: nextMeta });
+      const syncRes = await remoteWrite({
+        sid,
+        nextMeta,
+        prevMeta,
+        writeSeq,
+        source,
+      });
       if (writeSeq !== writeSeqRef.current) {
         return { ok: true, stale: true, dropped: true, writeSeq };
       }
@@ -64,11 +73,19 @@ export default function useSessionMetaWriteGateway({
           _sync_source: `${source}_session_patch`,
           _meta_write_seq: writeSeq,
         });
+      } else if (syncRes.meta && typeof syncRes.meta === "object") {
+        onSessionSync?.(buildSessionMetaWriteEnvelope({
+          sessionId: sid,
+          bpmnMeta: syncRes.meta,
+          source: `${source}_meta_patch`,
+          writeSeq,
+        }));
       }
       return {
         ok: true,
         writeSeq,
         session: syncRes.session && typeof syncRes.session === "object" ? syncRes.session : null,
+        meta: syncRes.meta && typeof syncRes.meta === "object" ? syncRes.meta : null,
       };
     };
 

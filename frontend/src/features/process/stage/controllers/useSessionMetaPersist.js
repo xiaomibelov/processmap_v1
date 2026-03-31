@@ -119,6 +119,7 @@ export default function useSessionMetaPersist({
     const source = String(options?.source || "bpmn_meta_save");
     const result = await writeGateway.persistSessionMeta(nextRaw, {
       source,
+      remoteWrite: typeof options?.remoteWrite === "function" ? options.remoteWrite : undefined,
       onOptimistic: ({ nextMeta }) => {
         syncPersistedRefs(nextMeta);
       },
@@ -187,7 +188,7 @@ export default function useSessionMetaPersist({
       nextMeta.last_saved_at = new Date().toISOString();
     }
     const nextSig = serializeDrawioMeta(nextMeta);
-    const legacyPrevMeta = normalizeDrawioMeta(asObject(asObject(draftBpmnMeta).drawio));
+    const legacyPrevMeta = normalizeDrawioMeta(drawioPersistedMetaRef.current);
     const legacyPrevSig = serializeDrawioMeta(legacyPrevMeta);
     const jazzPrevMeta = (
       drawioLocalFirstAdapterMode === "jazz" && drawioJazzAdapter
@@ -218,41 +219,32 @@ export default function useSessionMetaPersist({
     if (needsLegacyWrite) {
       const useVisibilityPatchPath = source === "drawio_visibility_toggle" && !isLocal && !!sid;
       if (useVisibilityPatchPath) {
-        const prevMeta = normalizeBoundaryMeta(buildMetaSnapshot());
-        const optimisticMeta = normalizeBoundaryMeta({
-          ...prevMeta,
+        const mergedMeta = {
+          ...buildMetaSnapshot(),
           drawio: nextMeta,
+        };
+        legacyResult = await persistBpmnMeta(mergedMeta, {
+          source,
+          remoteWrite: async ({ sid: writeSid, nextMeta: writeMeta }) => {
+            const drawioMeta = normalizeDrawioMeta(asObject(asObject(writeMeta).drawio));
+            const patchRes = await apiPatchBpmnMeta(writeSid, { drawio: drawioMeta });
+            if (!patchRes?.ok) return patchRes;
+            return {
+              ok: true,
+              status: Number(patchRes?.status || 0),
+              meta: normalizeBoundaryMeta(patchRes?.meta),
+              transport: "bpmn_meta_patch",
+            };
+          },
         });
-        syncPersistedRefs(optimisticMeta);
-        const patchRes = await apiPatchBpmnMeta(sid, { drawio: nextMeta });
-        if (!patchRes?.ok) {
-          syncPersistedRefs(prevMeta);
-          onSessionSync?.(buildSessionMetaWriteEnvelope({
-            sessionId: sid,
-            bpmnMeta: prevMeta,
-            source: `${source}_rollback`,
-          }));
-          const msg = shortErr(patchRes?.error || "Не удалось сохранить Draw.io visibility.");
-          setGenErr?.(msg);
+        if (!legacyResult?.ok) {
           pushDeleteTrace("persist_drawio_meta_failed", {
             source,
-            status: Number(patchRes?.status || 0),
+            status: Number(legacyResult?.status || 0),
             boundary: "legacy_bpmn_meta_patch",
           });
-          return { ok: false, error: msg, status: Number(patchRes?.status || 0) };
+          return legacyResult;
         }
-        const serverMeta = normalizeBoundaryMeta(patchRes?.meta);
-        syncPersistedRefs(serverMeta);
-        onSessionSync?.(buildSessionMetaWriteEnvelope({
-          sessionId: sid,
-          bpmnMeta: serverMeta,
-          source: `${source}_bpmn_meta_patch`,
-        }));
-        legacyResult = {
-          ok: true,
-          status: Number(patchRes?.status || 0),
-          transport: "bpmn_meta_patch",
-        };
       } else {
         const mergedMeta = {
           ...buildMetaSnapshot(),
@@ -299,20 +291,14 @@ export default function useSessionMetaPersist({
     };
   }, [
     buildMetaSnapshot,
-    draftBpmnMeta,
     drawioJazzAdapter,
     drawioLocalFirstAdapterMode,
     drawioPersistedMetaRef,
     isLocal,
     normalizeDrawioMeta,
-    normalizeBoundaryMeta,
-    onSessionSync,
     persistBpmnMeta,
     serializeDrawioMeta,
-    setGenErr,
-    shortErr,
     sid,
-    syncPersistedRefs,
   ]);
 
   const persistSessionCompanion = useCallback(async (nextRaw, options = {}) => {
