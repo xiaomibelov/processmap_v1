@@ -26,7 +26,7 @@ export default function createBpmnCoordinator(options = {}) {
   const persistence = options?.persistence && typeof options.persistence === "object"
     ? options.persistence
     : {};
-  const debounceMs = asNumber(options?.debounceMs, 180);
+  const debounceMs = asNumber(options?.debounceMs, 600);
   const onTrace = typeof options?.onTrace === "function" ? options.onTrace : null;
   const onRuntimeChange = typeof options?.onRuntimeChange === "function" ? options.onRuntimeChange : null;
   const onRuntimeStatus = typeof options?.onRuntimeStatus === "function" ? options.onRuntimeStatus : null;
@@ -41,6 +41,7 @@ export default function createBpmnCoordinator(options = {}) {
   let flushPromise = null;
   let singleWriterOwner = "";
   let singleWriterExpiresAt = 0;
+  let diagramMutationSaveActive = false;
   const localMutationStaging = createLocalMutationStaging({
     getStore: () => store,
     getRuntime,
@@ -407,6 +408,22 @@ export default function createBpmnCoordinator(options = {}) {
       });
       return;
     }
+    // If a save is already in-flight, don't start a new timer — the in-flight
+    // flushSave will check saveQueuedRev after completion and re-flush if needed.
+    if (saveInFlight) {
+      emit("SAVE_SCHEDULE_COALESCED", {
+        sid: currentSid(),
+        reason: asText(reason || "autosave"),
+      });
+      return;
+    }
+    if (diagramMutationSaveActive) {
+      emit("SAVE_SCHEDULE_DEFERRED_TO_MUTATION_LIFECYCLE", {
+        sid: currentSid(),
+        reason: asText(reason || "autosave"),
+      });
+      return;
+    }
     const state = store.getState();
     saveQueuedRev = Math.max(saveQueuedRev, asNumber(state?.rev, 0));
     clearSaveTimer();
@@ -758,10 +775,15 @@ export default function createBpmnCoordinator(options = {}) {
     clearSingleWriter("destroy");
   }
 
+  function setDiagramMutationSaveActive(active) {
+    diagramMutationSaveActive = active === true;
+  }
+
   return {
     bindRuntime,
     unbindRuntime,
     scheduleSave,
+    setDiagramMutationSaveActive,
     flushSave,
     persistExplicitXml,
     beginSingleWriter,

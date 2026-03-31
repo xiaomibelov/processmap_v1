@@ -327,6 +327,9 @@ export function createBpmnStageImperativeApi(ctxBase) {
     },
     seedFromActors: () => callbacks.seedNew?.(),
     saveLocal: (options) => callbacks.saveLocalFromModeler?.(options),
+    setDiagramMutationSaveActive: (active) => {
+      refs.bpmnCoordinatorRef?.current?.setDiagramMutationSaveActive?.(active === true);
+    },
     isFlushing: () => !!refs.bpmnCoordinatorRef?.current?.isFlushing?.(),
     saveXmlDraft: () => callbacks.saveXmlDraftText?.(),
     hasXmlDraftChanges: () => !!values.xmlDirty,
