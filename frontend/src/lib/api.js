@@ -743,8 +743,15 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
     body.rev = rev;
   }
   const reason = String(options?.reason || "").trim().toLowerCase();
-  if (reason === "import_bpmn") {
-    body.source_action = "import_bpmn";
+  const sourceAction = (
+    reason === "import_bpmn"
+    || reason === "manual_save"
+    || reason === "publish_manual_save"
+  ) ? reason : "";
+  if (sourceAction) {
+    body.source_action = sourceAction;
+  }
+  if (sourceAction === "import_bpmn") {
     const importNote = String(options?.importNote || "").trim();
     if (importNote) body.import_note = importNote;
   }

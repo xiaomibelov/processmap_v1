@@ -5442,6 +5442,27 @@ def session_bpmn_export(
     )
 
 
+_BPMN_REVISION_SNAPSHOT_ACTION_WHITELIST = {
+    "import_bpmn",
+    "manual_save",
+    "publish_manual_save",
+    "restore_bpmn_version",
+}
+
+
+def should_create_bpmn_revision_snapshot(*, previous_xml: Any, next_xml: Any, source_action: Any) -> bool:
+    action = str(source_action or "").strip().lower()
+    if action not in _BPMN_REVISION_SNAPSHOT_ACTION_WHITELIST:
+        return False
+    prev = str(previous_xml or "")
+    nxt = str(next_xml or "")
+    if not prev.strip():
+        return False
+    if not nxt.strip():
+        return False
+    return prev != nxt
+
+
 @app.put("/api/sessions/{session_id}/bpmn")
 def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) -> Dict[str, Any]:
     user = _request_auth_user(request) if request is not None else {}
@@ -5471,18 +5492,21 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
         s, oid_locked, _ = _legacy_load_session_scoped(session_id, request)
         if not s:
             return {"error": "not found"}
+        previous_xml = str(getattr(s, "bpmn_xml", "") or "")
         bpmn_version_snapshot: Optional[Dict[str, Any]] = None
-        if source_action == "import_bpmn":
-            previous_xml = str(getattr(s, "bpmn_xml", "") or "")
-            if previous_xml.strip():
-                bpmn_version_snapshot = st.create_bpmn_version_snapshot(
-                    s.id,
-                    bpmn_xml=previous_xml,
-                    source_action=source_action,
-                    created_by=user_id,
-                    org_id=oid_locked,
-                    import_note=import_note,
-                )
+        if should_create_bpmn_revision_snapshot(
+            previous_xml=previous_xml,
+            next_xml=xml,
+            source_action=source_action,
+        ):
+            bpmn_version_snapshot = st.create_bpmn_version_snapshot(
+                s.id,
+                bpmn_xml=xml,
+                source_action=source_action,
+                created_by=user_id,
+                org_id=oid_locked,
+                import_note=import_note,
+            )
 
         flow_ctx = _collect_sequence_flow_meta(xml)
         flow_ids = flow_ctx.get("flow_ids") if isinstance(flow_ctx, dict) else set()
@@ -5661,6 +5685,20 @@ def session_bpmn_restore(session_id: str, version_id: str, request: Request = No
         xml = str(version_row.get("bpmn_xml") or "")
         if not xml.strip():
             return {"error": "bpmn_version_xml_empty", "version_id": vid}
+        previous_xml = str(getattr(s, "bpmn_xml", "") or "")
+        restored_snapshot: Optional[Dict[str, Any]] = None
+        if should_create_bpmn_revision_snapshot(
+            previous_xml=previous_xml,
+            next_xml=xml,
+            source_action="restore_bpmn_version",
+        ):
+            restored_snapshot = st.create_bpmn_version_snapshot(
+                str(getattr(s, "id", "") or session_id),
+                bpmn_xml=xml,
+                source_action="restore_bpmn_version",
+                created_by=user_id,
+                org_id=oid_locked,
+            )
 
         flow_ctx = _collect_sequence_flow_meta(xml)
         flow_ids = flow_ctx.get("flow_ids") if isinstance(flow_ctx, dict) else set()
@@ -5709,6 +5747,7 @@ def session_bpmn_restore(session_id: str, version_id: str, request: Request = No
             "version": int(getattr(s, "bpmn_xml_version", 0) or 0),
             "bytes": len(xml),
             "bpmn_xml": xml,
+            "bpmn_version_snapshot": restored_snapshot,
             "restored_version": {
                 "id": str(version_row.get("id") or ""),
                 "version_number": int(version_row.get("version_number") or 0),

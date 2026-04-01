@@ -43,7 +43,6 @@ export default function ProcessDialogs({ view = {} }) {
     versionsBusy,
     hasSession,
     versionsList,
-    revisionHistorySnapshot,
     setGenErr,
     setDiffTargetSnapshotId,
     setDiffBaseSnapshotId,
@@ -251,11 +250,7 @@ export default function ProcessDialogs({ view = {} }) {
           <div className="rounded-xl border border-border bg-panel2/45 p-2">
             <div className="mb-2 px-1 text-xs text-muted" data-testid="bpmn-versions-count">
               Последние версии: {versionsList.length}
-              <span> · последняя: r{Number(revisionHistorySnapshot?.latestRevisionNumber || asArray(versionsList)[0]?.revisionNumber || 0)}</span>
-              <span>
-                {" · черновик: "}
-                {revisionHistorySnapshot?.draftState?.isDraftAheadOfLatestRevision ? "впереди последней" : "совпадает с последней или пуст"}
-              </span>
+              <span> · последняя: r{Number(asArray(versionsList)[0]?.revisionNumber || 0)}</span>
             </div>
             <div className="max-h-[52vh] space-y-2 overflow-auto pr-1">
               {versionsList.length === 0 ? (
@@ -264,7 +259,7 @@ export default function ProcessDialogs({ view = {} }) {
                 versionsList.map((item) => {
                   const id = String(item?.id || "");
                   const active = id === String(previewSnapshotId || "");
-                  const isLatest = id === String(revisionHistorySnapshot?.latestRevisionId || "");
+                  const isLatest = id === String(asArray(versionsList)[0]?.id || "");
                   return (
                     <div
                       key={id}
