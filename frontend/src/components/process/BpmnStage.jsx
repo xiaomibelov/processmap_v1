@@ -56,6 +56,12 @@ import {
 import { normalizeExecutionPlanVersionList } from "../../features/process/robotmeta/executionPlan";
 import { normalizeHybridLayerMap } from "../../features/process/hybrid/hybridLayerUi";
 import { buildExecutionGraphFromInstance } from "../../features/process/playback/buildExecutionGraph";
+import {
+  readContextMenuNativeEvent,
+  resolveBpmnContextMenuTarget,
+} from "../../features/process/bpmn/context-menu/resolveBpmnContextMenuTarget";
+import { shouldOpenBpmnContextMenu } from "../../features/process/bpmn/context-menu/shouldOpenBpmnContextMenu";
+import { executeBpmnContextMenuAction } from "../../features/process/bpmn/context-menu/executeBpmnContextMenuAction";
 
 import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-js.css";
@@ -2558,152 +2564,40 @@ const BpmnStage = forwardRef(function BpmnStage({
   function emitDiagramContextMenuDismiss(reason = "", payload = {}) {
     const cb = onDiagramContextMenuDismissRef.current;
     if (typeof cb !== "function") return;
+    const reasonIsPayload = reason && typeof reason === "object" && !Array.isArray(reason);
+    const payloadObj = reasonIsPayload ? asObject(reason) : asObject(payload);
+    const dismissReason = reasonIsPayload
+      ? toText(payloadObj?.reason)
+      : toText(reason || payloadObj?.reason);
     cb({
       sessionId: String(activeSessionRef.current || sessionId || ""),
-      reason: String(reason || "").trim() || "runtime_event",
-      ...asObject(payload),
+      reason: dismissReason || "runtime_event",
+      ...payloadObj,
     });
-  }
-
-  function isEditableDomTarget(targetRaw) {
-    if (!(targetRaw instanceof Element)) return false;
-    if (targetRaw.closest("input, textarea, select, [contenteditable='true']")) return true;
-    if (targetRaw.closest(".djs-direct-editing-parent, .bjs-powered-by")) return true;
-    return false;
-  }
-
-  function isContextMenuSuppressedByMode(nativeEvent) {
-    const state = asObject(contextMenuInteractionRef.current);
-    if (
-      state.directEditingActive
-      || state.dragInProgress
-      || state.connectInProgress
-      || state.resizeInProgress
-      || state.createInProgress
-    ) {
-      return true;
-    }
-    const target = nativeEvent?.target;
-    if (isEditableDomTarget(target)) return true;
-    const active = typeof document !== "undefined" ? document.activeElement : null;
-    if (isEditableDomTarget(active)) return true;
-    return false;
-  }
-
-  function resolveContextMenuTarget(elementRaw, scope = "") {
-    const element = elementRaw && typeof elementRaw === "object" ? elementRaw : null;
-    if (!element) return { kind: "canvas" };
-    const bpmnType = String(element?.businessObject?.$type || element?.type || "").trim();
-    const isConnection = isConnectionElement(element);
-    const isShape = isShapeElement(element);
-    return {
-      kind: isConnection ? "connection" : (scope === "canvas" ? "canvas" : "element"),
-      id: String(element?.id || "").trim(),
-      name: String(element?.businessObject?.name || "").trim(),
-      bpmnType,
-      type: bpmnType,
-      isConnection,
-      isShape,
-    };
-  }
-
-  function readDiagramPointFromClient(inst, clientXRaw, clientYRaw) {
-    const canvas = inst?.get?.("canvas");
-    const container = canvas?._container;
-    const rect = container?.getBoundingClientRect?.();
-    const vb = canvas?.viewbox?.() || {};
-    const scale = Number(vb?.scale || canvas?.zoom?.() || 1) || 1;
-    const clientX = Number(clientXRaw || 0);
-    const clientY = Number(clientYRaw || 0);
-    const relX = clientX - Number(rect?.left || 0);
-    const relY = clientY - Number(rect?.top || 0);
-    return {
-      x: Number(vb?.x || 0) + relX / scale,
-      y: Number(vb?.y || 0) + relY / scale,
-    };
-  }
-
-  async function copyToClipboard(rawValue) {
-    const text = String(rawValue || "");
-    if (!text) return false;
-    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-      try {
-        await navigator.clipboard.writeText(text);
-        return true;
-      } catch {
-      }
-    }
-    if (typeof document !== "undefined") {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.setAttribute("readonly", "true");
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      ta.style.left = "-9999px";
-      document.body.appendChild(ta);
-      ta.select();
-      try {
-        const ok = document.execCommand("copy");
-        document.body.removeChild(ta);
-        return !!ok;
-      } catch {
-        document.body.removeChild(ta);
-      }
-    }
-    return false;
-  }
-
-  function selectAndEmitElement(inst, element, source = "context_menu_action") {
-    if (!inst || !element || !isSelectableElement(element)) return false;
-    try {
-      const selection = inst.get("selection");
-      selection?.select?.([element]);
-    } catch {
-    }
-    emitElementSelection(element, source, {
-      selectedIds: [String(element?.id || "")],
-      insertBetween: buildInsertBetweenCandidate(inst, [element]),
-    });
-    return true;
-  }
-
-  function createConnectedTaskFromAnchor(inst, anchor, options = {}) {
-    if (!inst || !anchor) return { ok: false, error: "anchor_not_found" };
-    const modeling = inst.get("modeling");
-    const elementFactory = inst.get("elementFactory");
-    const x = Number(anchor?.x || 0);
-    const y = Number(anchor?.y || 0);
-    const width = Number(anchor?.width || 120);
-    const height = Number(anchor?.height || 80);
-    const offsetY = Number(options.offsetY || 0);
-    const parent = anchor?.parent || inst.get("canvas")?.getRootElement?.();
-    const task = modeling.createShape(
-      elementFactory.createShape({ type: "bpmn:Task" }),
-      {
-        x: Math.round(x + width + 220),
-        y: Math.round(y + height / 2 + offsetY),
-      },
-      parent,
-    );
-    modeling.connect(anchor, task, { type: "bpmn:SequenceFlow" });
-    selectAndEmitElement(inst, task, "context_menu_add_next");
-    return {
-      ok: true,
-      changedIds: [String(anchor?.id || ""), String(task?.id || "")],
-      createdId: String(task?.id || ""),
-    };
   }
 
   function handleDiagramContextMenuEvent({ mode = "editor", scope = "", event: runtimeEvent, inst }) {
     const cb = onDiagramContextMenuRequestRef.current;
     if (typeof cb !== "function") return;
-    const nativeEvent = runtimeEvent?.originalEvent || runtimeEvent?.srcEvent || runtimeEvent || null;
-    const rawElement = runtimeEvent?.element || runtimeEvent?.shape || runtimeEvent?.connection || null;
+
+    const nativeEvent = readContextMenuNativeEvent(runtimeEvent);
     if (!nativeEvent || typeof nativeEvent !== "object") return;
     if (nativeEvent[CONTEXT_MENU_HANDLED_FLAG] === true) return;
-    if (isContextMenuSuppressedByMode(nativeEvent)) return;
 
-    const target = resolveContextMenuTarget(rawElement, scope);
+    const openDecision = shouldOpenBpmnContextMenu({
+      nativeEvent,
+      inst,
+      interactionState: contextMenuInteractionRef.current,
+    });
+    if (openDecision?.ok !== true) return;
+
+    const target = resolveBpmnContextMenuTarget({
+      runtimeEvent,
+      scope,
+      inst,
+    });
+    if (String(target?.kind || "").toLowerCase() === "unsupported") return;
+
     const accepted = cb({
       sessionId: String(activeSessionRef.current || sessionId || ""),
       mode: String(mode || "editor"),
@@ -2713,7 +2607,6 @@ const BpmnStage = forwardRef(function BpmnStage({
       clientY: Number(nativeEvent?.clientY || 0),
       target,
     }) === true;
-
     if (accepted) {
       nativeEvent[CONTEXT_MENU_HANDLED_FLAG] = true;
       nativeEvent.preventDefault?.();
@@ -2722,151 +2615,14 @@ const BpmnStage = forwardRef(function BpmnStage({
   }
 
   async function runDiagramContextAction(payloadRaw = {}) {
-    const payload = asObject(payloadRaw);
-    const actionId = String(payload.actionId || "").trim();
-    if (!actionId) return { ok: false, error: "missing_action_id" };
-    const inst = modelerRef.current || await ensureModeler();
-    if (!inst) return { ok: false, error: "modeler_not_ready" };
-    const targetMeta = asObject(payload.target);
-    const targetId = String(targetMeta.id || "").trim();
-    const registry = inst.get("elementRegistry");
-    const modeling = inst.get("modeling");
-    const elementFactory = inst.get("elementFactory");
-    const canvas = inst.get("canvas");
-    const selection = inst.get("selection");
-    const directEditing = inst.get?.("directEditing");
-    const root = canvas?.getRootElement?.();
-    const target = targetId ? registry?.get?.(targetId) : null;
-    const clientX = Number(payload.clientX || 0);
-    const clientY = Number(payload.clientY || 0);
-    const point = readDiagramPointFromClient(inst, clientX, clientY);
-
-    const createOnCanvas = (type) => {
-      const shape = modeling.createShape(
-        elementFactory.createShape({ type }),
-        { x: Math.round(point.x), y: Math.round(point.y) },
-        root,
-      );
-      selectAndEmitElement(inst, shape, "context_menu_create");
-      emitDiagramMutation("diagram.context_menu_action", { actionId, type });
-      return { ok: true, createdId: String(shape?.id || ""), changedIds: [String(shape?.id || "")] };
-    };
-
-    try {
-      if (actionId === "create_task") return createOnCanvas("bpmn:Task");
-      if (actionId === "create_gateway") return createOnCanvas("bpmn:ExclusiveGateway");
-      if (actionId === "create_start_event") return createOnCanvas("bpmn:StartEvent");
-      if (actionId === "create_end_event") return createOnCanvas("bpmn:EndEvent");
-      if (actionId === "create_subprocess") return createOnCanvas("bpmn:SubProcess");
-      if (actionId === "add_annotation") return createOnCanvas("bpmn:TextAnnotation");
-
-      if (actionId === "paste") {
-        const copyPaste = inst.get?.("copyPaste");
-        if (!copyPaste || typeof copyPaste.paste !== "function") {
-          return { ok: false, error: "paste_unavailable" };
-        }
-        const pasted = copyPaste.paste({
-          element: root,
-          point: { x: Math.round(point.x), y: Math.round(point.y) },
-        });
-        const ids = asArray(pasted)
-          .map((item) => String(item?.id || item?.element?.id || ""))
-          .filter(Boolean);
-        if (ids[0]) {
-          const first = registry?.get?.(ids[0]);
-          if (first) selection?.select?.([first]);
-        }
-        emitDiagramMutation("diagram.context_menu_action", { actionId, count: ids.length });
-        return { ok: true, changedIds: ids };
-      }
-
-      if (!target) return { ok: false, error: "target_not_found" };
-
-      if (actionId === "rename" || actionId === "edit_label") {
-        if (directEditing && typeof directEditing.activate === "function") {
-          directEditing.activate(target);
-          return { ok: true, changedIds: [String(target.id || "")] };
-        }
-        return { ok: false, error: "direct_editing_unavailable" };
-      }
-
-      if (actionId === "open_properties") {
-        selectAndEmitElement(inst, target, "context_menu_properties");
-        return { ok: true, changedIds: [String(target.id || "")] };
-      }
-
-      if (actionId === "add_next_step") {
-        const result = createConnectedTaskFromAnchor(inst, target);
-        if (result.ok) emitDiagramMutation("diagram.context_menu_action", { actionId, targetId });
-        return result;
-      }
-
-      if (actionId === "add_outgoing_branch") {
-        const outgoingCount = asArray(target?.outgoing).filter((row) => isConnectionElement(row)).length;
-        const offsetY = outgoingCount <= 0 ? 0 : ((outgoingCount % 4) - 1.5) * 96;
-        const result = createConnectedTaskFromAnchor(inst, target, { offsetY });
-        if (result.ok) emitDiagramMutation("diagram.context_menu_action", { actionId, targetId });
-        return result;
-      }
-
-      if (actionId === "duplicate") {
-        if (!isShapeElement(target)) return { ok: false, error: "duplicate_shape_only" };
-        const type = String(target?.businessObject?.$type || target?.type || "bpmn:Task").trim();
-        const parent = target?.parent || root;
-        const next = modeling.createShape(
-          elementFactory.createShape({ type }),
-          {
-            x: Math.round(Number(target?.x || 0) + Number(target?.width || 120) / 2 + 48),
-            y: Math.round(Number(target?.y || 0) + Number(target?.height || 80) / 2 + 48),
-          },
-          parent,
-        );
-        const name = String(target?.businessObject?.name || "").trim();
-        if (name) modeling.updateLabel(next, name);
-        selectAndEmitElement(inst, next, "context_menu_duplicate");
-        emitDiagramMutation("diagram.context_menu_action", { actionId, targetId });
-        return { ok: true, createdId: String(next?.id || ""), changedIds: [String(next?.id || "")] };
-      }
-
-      if (actionId === "copy_name") {
-        const name = String(target?.businessObject?.name || "").trim();
-        if (!name) return { ok: false, error: "name_empty" };
-        const ok = await copyToClipboard(name);
-        return { ok, error: ok ? "" : "clipboard_unavailable", message: ok ? `Copied: ${name}` : "" };
-      }
-
-      if (actionId === "copy_id") {
-        const id = String(target?.id || "").trim();
-        if (!id) return { ok: false, error: "id_empty" };
-        const ok = await copyToClipboard(id);
-        return { ok, error: ok ? "" : "clipboard_unavailable", message: ok ? `Copied: ${id}` : "" };
-      }
-
-      if (actionId === "open_inside") {
-        const drilldown = inst.get?.("drilldown");
-        if (drilldown && typeof drilldown.open === "function") {
-          drilldown.open(target);
-        } else {
-          selectAndEmitElement(inst, target, "context_menu_open_inside");
-          canvas?.scrollToElement?.(target);
-        }
-        return { ok: true, changedIds: [String(target.id || "")] };
-      }
-
-      if (actionId === "delete") {
-        if (isConnectionElement(target)) modeling.removeConnection(target);
-        else modeling.removeShape(target);
-        emitDiagramMutation("diagram.context_menu_action", { actionId, targetId });
-        return { ok: true, changedIds: [targetId] };
-      }
-
-      return { ok: false, error: "unsupported_action" };
-    } catch (error) {
-      return {
-        ok: false,
-        error: String(error?.message || error || "context_action_failed"),
-      };
-    }
+    return await executeBpmnContextMenuAction({
+      payloadRaw,
+      modelerRef,
+      ensureModeler,
+      emitDiagramMutation,
+      emitElementSelection,
+      buildInsertBetweenCandidate,
+    });
   }
 
   function buildSettledSelectionFanoutSignature({ element, kind }) {

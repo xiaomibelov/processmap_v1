@@ -28,7 +28,6 @@ test("task action matrix includes add_next_step and utility actions", () => {
     "rename",
     "open_properties",
     "add_next_step",
-    "duplicate",
     "copy_name",
     "copy_id",
     "delete",
@@ -39,6 +38,7 @@ test("gateway action matrix includes add_outgoing_branch", () => {
   const ids = actionIds({ bpmnType: "bpmn:ExclusiveGateway" });
   assert.equal(ids.includes("add_outgoing_branch"), true);
   assert.equal(ids.includes("add_next_step"), false);
+  assert.equal(ids.includes("duplicate"), false);
 });
 
 test("sequence flow action matrix includes edit_label and delete only from V1 set", () => {
@@ -58,4 +58,3 @@ test("target kind detection is stable for BPMN core types", () => {
   assert.equal(resolveBpmnContextTargetKind({ bpmnType: "bpmn:UserTask" }), "task");
   assert.equal(resolveBpmnContextTargetKind({ bpmnType: "bpmn:SequenceFlow" }), "sequence_flow");
 });
-

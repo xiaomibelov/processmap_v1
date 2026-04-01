@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import {
   resolveBpmnContextMenuActions,
   resolveBpmnContextMenuHeader,
 } from "../../bpmn/context-menu/bpmnContextMenuActionMatrix";
+import useBpmnContextMenuState from "../../bpmn/context-menu/useBpmnContextMenuState";
 
 function toText(value) {
   return String(value || "").trim();
@@ -29,8 +30,6 @@ export default function useBpmnDiagramContextMenu({
   setInfoMsg,
   setGenErr,
 }) {
-  const [menu, setMenu] = useState(null);
-
   const isBlocked = useMemo(() => {
     if (!hasSession) return true;
     if (tab !== "diagram") return true;
@@ -46,13 +45,19 @@ export default function useBpmnDiagramContextMenu({
     tab,
   ]);
 
-  const closeBpmnContextMenu = useCallback(() => {
-    setMenu(null);
-  }, []);
+  const {
+    menu,
+    openMenu,
+    closeMenu: closeBpmnContextMenu,
+  } = useBpmnContextMenuState({
+    isBlocked,
+    modalOpenSignal,
+    closeAllDiagramActions,
+  });
 
   const onBpmnContextMenuDismiss = useCallback(() => {
-    setMenu(null);
-  }, []);
+    closeBpmnContextMenu();
+  }, [closeBpmnContextMenu]);
 
   const onBpmnContextMenuRequest = useCallback((payloadRaw = {}) => {
     if (isBlocked) return false;
@@ -60,8 +65,7 @@ export default function useBpmnDiagramContextMenu({
     const target = asObject(payload.target);
     const actions = resolveBpmnContextMenuActions(target);
     if (!actions.length) return false;
-    closeAllDiagramActions?.();
-    setMenu({
+    return openMenu({
       sessionId: toText(payload.sessionId),
       clientX: Number(payload.clientX || 0),
       clientY: Number(payload.clientY || 0),
@@ -69,18 +73,19 @@ export default function useBpmnDiagramContextMenu({
       target,
       actions,
     });
-    return true;
-  }, [closeAllDiagramActions, isBlocked]);
+  }, [isBlocked, openMenu]);
 
   const runBpmnContextMenuAction = useCallback(async (actionIdRaw) => {
     const actionId = toText(actionIdRaw);
     if (!menu || !actionId) return;
+
     const payload = {
       actionId,
       target: asObject(menu.target),
       clientX: Number(menu.clientX || 0),
       clientY: Number(menu.clientY || 0),
     };
+
     let result = null;
     try {
       result = await Promise.resolve(
@@ -98,33 +103,9 @@ export default function useBpmnDiagramContextMenu({
     if (toText(result?.message)) {
       setInfoMsg?.(toText(result.message));
     }
-    setMenu(null);
-  }, [bpmnRef, menu, setGenErr, setInfoMsg]);
 
-  useEffect(() => {
-    if (!menu) return undefined;
-    const onPointerDown = () => setMenu(null);
-    const onKeyDown = (event) => {
-      if (String(event?.key || "") !== "Escape") return;
-      setMenu(null);
-    };
-    window.addEventListener("mousedown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("mousedown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [menu]);
-
-  useEffect(() => {
-    if (!menu) return;
-    if (isBlocked) setMenu(null);
-  }, [isBlocked, menu]);
-
-  useEffect(() => {
-    if (!menu) return;
-    if (modalOpenSignal) setMenu(null);
-  }, [menu, modalOpenSignal]);
+    closeBpmnContextMenu();
+  }, [bpmnRef, closeBpmnContextMenu, menu, setGenErr, setInfoMsg]);
 
   return {
     bpmnContextMenu: menu,
@@ -134,4 +115,3 @@ export default function useBpmnDiagramContextMenu({
     runBpmnContextMenuAction,
   };
 }
-
