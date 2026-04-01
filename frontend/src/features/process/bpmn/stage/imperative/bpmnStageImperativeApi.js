@@ -327,6 +327,9 @@ export function createBpmnStageImperativeApi(ctxBase) {
     },
     seedFromActors: () => callbacks.seedNew?.(),
     saveLocal: (options) => callbacks.saveLocalFromModeler?.(options),
+    setDiagramMutationSaveActive: (active) => {
+      refs.bpmnCoordinatorRef?.current?.setDiagramMutationSaveActive?.(active === true);
+    },
     isFlushing: () => !!refs.bpmnCoordinatorRef?.current?.isFlushing?.(),
     saveXmlDraft: () => callbacks.saveXmlDraftText?.(),
     hasXmlDraftChanges: () => !!values.xmlDirty,
@@ -475,6 +478,16 @@ export function createBpmnStageImperativeApi(ctxBase) {
         };
       }
     },
+    runDiagramContextAction: async (payload = {}) => {
+      try {
+        return await callbacks.runDiagramContextAction?.(payload);
+      } catch (error) {
+        return {
+          ok: false,
+          error: String(error?.message || error || "context_action_failed"),
+        };
+      }
+    },
     importXmlText: async (xmlText) => {
       const raw = String(xmlText || "");
       if (!raw.trim()) return false;
@@ -489,7 +502,7 @@ export function createBpmnStageImperativeApi(ctxBase) {
         return false;
       }
 
-      const saved = await callbacks.persistXmlSnapshot?.(raw, "backend");
+      const saved = await callbacks.persistXmlSnapshot?.(raw, "import_bpmn");
       if (!saved?.ok) {
         state.setErr?.(`Импорт BPMN не удался: ${String(saved?.error || "не удалось сохранить на backend")}`);
         return false;
