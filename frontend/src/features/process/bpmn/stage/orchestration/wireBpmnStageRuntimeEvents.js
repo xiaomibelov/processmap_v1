@@ -29,6 +29,9 @@ function bindContextMenuRuntimeEvents({
       if (typeof onDiagramContextMenuEvent !== "function") return;
       const targetNode = nativeEvent?.target instanceof Element ? nativeEvent.target : null;
       if (!(targetNode instanceof Element) || !canvasContainer.contains(targetNode)) return;
+      if (targetNode.closest?.(".djs-palette, .djs-context-pad, .djs-popup, .bjs-powered-by")) return;
+      const onDiagramSurface = targetNode.closest?.("svg, [data-element-id], .djs-element, .djs-visual");
+      if (!(onDiagramSurface instanceof Element) && targetNode !== canvasContainer) return;
       const host = targetNode.closest?.("[data-element-id]");
       const elementId = String(host?.getAttribute?.("data-element-id") || "").trim();
       const element = elementId ? elementRegistry?.get?.(elementId) : null;

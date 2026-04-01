@@ -50,7 +50,6 @@ const ACTIONS_BY_KIND = Object.freeze({
     action("rename", "Rename", "primary"),
     action("open_properties", "Open Properties", "primary"),
     action("add_next_step", "Add Next Step", "primary"),
-    action("duplicate", "Duplicate", "structural"),
     action("copy_name", "Copy Name", "utility"),
     action("copy_id", "Copy ID", "utility"),
     action("delete", "Delete", "destructive", { destructive: true }),
@@ -59,7 +58,6 @@ const ACTIONS_BY_KIND = Object.freeze({
     action("rename", "Rename", "primary"),
     action("open_properties", "Open Properties", "primary"),
     action("add_outgoing_branch", "Add Outgoing Branch", "primary"),
-    action("duplicate", "Duplicate", "structural"),
     action("copy_name", "Copy Name", "utility"),
     action("copy_id", "Copy ID", "utility"),
     action("delete", "Delete", "destructive", { destructive: true }),
@@ -68,7 +66,6 @@ const ACTIONS_BY_KIND = Object.freeze({
     action("rename", "Rename", "primary"),
     action("open_properties", "Open Properties", "primary"),
     action("add_next_step", "Add Next Step", "primary"),
-    action("duplicate", "Duplicate", "structural"),
     action("copy_name", "Copy Name", "utility"),
     action("copy_id", "Copy ID", "utility"),
     action("delete", "Delete", "destructive", { destructive: true }),
@@ -76,7 +73,6 @@ const ACTIONS_BY_KIND = Object.freeze({
   end_event: [
     action("rename", "Rename", "primary"),
     action("open_properties", "Open Properties", "primary"),
-    action("duplicate", "Duplicate", "structural"),
     action("copy_name", "Copy Name", "utility"),
     action("copy_id", "Copy ID", "utility"),
     action("delete", "Delete", "destructive", { destructive: true }),
@@ -86,7 +82,6 @@ const ACTIONS_BY_KIND = Object.freeze({
     action("open_properties", "Open Properties", "primary"),
     action("open_inside", "Open Inside", "primary"),
     action("add_next_step", "Add Next Step", "primary"),
-    action("duplicate", "Duplicate", "structural"),
     action("copy_name", "Copy Name", "utility"),
     action("copy_id", "Copy ID", "utility"),
     action("delete", "Delete", "destructive", { destructive: true }),
@@ -112,4 +107,3 @@ export function resolveBpmnContextMenuHeader(targetRaw = null) {
   if (kind === "sequence_flow") return toText(target.name || target.id) || "Sequence Flow";
   return toText(target.name || target.id) || "BPMN Element";
 }
-
