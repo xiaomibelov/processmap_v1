@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { apiDeleteBpmnXml, apiGetBpmnXml, apiPutBpmnXml } from "../../lib/api/bpmnApi";
+import { apiPatchSession } from "../../lib/api/sessionApi";
 import { traceProcess } from "../../features/process/lib/processDebugTrace";
 import { createBpmnWiring } from "../../features/process/bpmn/stage/wiring/bpmnWiring";
 import * as decorManager from "../../features/process/bpmn/stage/decor/decorManager";
@@ -9,6 +10,21 @@ import { createTemplatePackAdapter } from "../../features/process/bpmn/stage/tem
 import { createCommandOpsAdapter } from "../../features/process/bpmn/stage/ops/commandOpsAdapter";
 import { createAiQuestionPanelAdapter } from "../../features/process/bpmn/stage/ai/aiQuestionPanelAdapter";
 import { createBpmnStageImperativeApi } from "../../features/process/bpmn/stage/imperative/bpmnStageImperativeApi";
+import {
+  runImmediateEditorFanout,
+} from "../../features/process/bpmn/stage/fanout/postStagingFanout";
+import { applyFullBpmnDecorSet } from "../../features/process/bpmn/stage/orchestration/runBpmnRenderDecorSync";
+import useBpmnSettledDecorFanout from "../../features/process/bpmn/stage/orchestration/useBpmnSettledDecorFanout";
+import {
+  bindModelerStageEvents,
+  bindViewerStageEvents,
+} from "../../features/process/bpmn/stage/orchestration/wireBpmnStageRuntimeEvents";
+import {
+  renderModelerDiagram,
+  renderNewDiagramInModelerRuntime,
+  renderViewerDiagram,
+} from "../../features/process/bpmn/stage/orchestration/bpmnRenderRuntimeLifecycle";
+import { readOverlayCanvasZoom } from "../../features/process/bpmn/stage/decor/overlayLayoutModel.js";
 import forceTaskResizeRulesModule from "../../features/process/bpmn/runtime/modules/forceTaskResizeRules";
 import {
   saveBpmnSnapshot,
@@ -18,6 +34,7 @@ import { applyOpsToModeler } from "../../features/process/bpmn/ops/applyOps";
 import { elementNotesCount, normalizeElementNotesMap } from "../../features/notes/elementNotes";
 import { measureInterviewPerf } from "./interview/perf";
 import pmModdleDescriptor from "../../features/process/robotmeta/pmModdleDescriptor";
+import camundaModdleDescriptor from "../../features/process/camunda/camundaModdleDescriptor";
 import {
   canonicalRobotMetaMapString,
   extractRobotMetaFromBpmn,
@@ -27,13 +44,26 @@ import {
   robotMetaMissingFields,
   syncRobotMetaToBpmn,
 } from "../../features/process/robotmeta/robotMeta";
+import {
+  extractManagedCamundaExtensionStateFromBusinessObject,
+  extractCamundaExtensionsMapFromBpmnXml,
+  finalizeCamundaExtensionsXml,
+  hydrateCamundaExtensionsFromBpmn,
+  normalizeCamundaExtensionsMap,
+  syncCamundaExtensionsToBpmn,
+  upsertCamundaExtensionStateByElementId,
+} from "../../features/process/camunda/camundaExtensions";
 import { normalizeExecutionPlanVersionList } from "../../features/process/robotmeta/executionPlan";
+import { normalizeHybridLayerMap } from "../../features/process/hybrid/hybridLayerUi";
 import { buildExecutionGraphFromInstance } from "../../features/process/playback/buildExecutionGraph";
 
 import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-js.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css";
+
+const shapeTitleLookupCache = new WeakMap();
+const CONTEXT_MENU_HANDLED_FLAG = "__fpcBpmnContextHandled";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -45,6 +75,11 @@ function asObject(x) {
 
 function toText(v) {
   return String(v || "").trim();
+}
+
+function invalidateShapeTitleLookup(registry) {
+  if (!registry || typeof registry !== "object") return;
+  shapeTitleLookupCache.delete(registry);
 }
 
 function readStepTimeMinutes(nodeRaw) {
@@ -226,6 +261,40 @@ function logAiOverlayTrace(tag, payload = {}) {
     .join(" ");
   // eslint-disable-next-line no-console
   console.debug(`[AI_OVERLAY] ${String(tag || "trace")} ${suffix}`.trim());
+}
+
+function shouldTraceSelectionContinuity() {
+  if (typeof window === "undefined") return false;
+  if (window.__FPC_E2E__) return true;
+  try {
+    return String(window.localStorage?.getItem("fpc_debug_selection_continuity") || "").trim() === "1";
+  } catch {
+    return false;
+  }
+}
+
+function traceSelectionContinuity(event, payload = {}) {
+  if (!shouldTraceSelectionContinuity()) return;
+  const detail = payload && typeof payload === "object" ? payload : {};
+  try {
+    const prev = Array.isArray(window.__FPC_SELECTION_CONTINUITY_LOG__) ? window.__FPC_SELECTION_CONTINUITY_LOG__ : [];
+    const next = [
+      ...prev,
+      {
+        ts: Date.now(),
+        event: String(event || "trace"),
+        ...detail,
+      },
+    ];
+    if (next.length > 200) next.splice(0, next.length - 200);
+    window.__FPC_SELECTION_CONTINUITY_LOG__ = next;
+  } catch {
+  }
+  const suffix = Object.entries(detail)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(" ");
+  // eslint-disable-next-line no-console
+  console.debug(`[SELECTION_CONTINUITY] ${String(event || "trace")}${suffix ? ` ${suffix}` : ""}`);
 }
 
 function colorFromKey(key) {
@@ -1107,12 +1176,18 @@ const BpmnStage = forwardRef(function BpmnStage({
   onElementNotesRemap,
   onAiQuestionsByElementChange,
   onSessionSync,
+  onSaveLifecycleEvent,
   aiQuestionsModeEnabled,
   diagramDisplayMode = "normal",
   stepTimeUnit = "min",
   robotMetaOverlayEnabled = false,
   robotMetaOverlayFilters = { ready: true, incomplete: true },
   robotMetaStatusByElementId = {},
+  selectedPropertiesOverlayPreview = null,
+  propertiesOverlayAlwaysEnabled = false,
+  propertiesOverlayAlwaysPreviewByElementId = null,
+  onDiagramContextMenuRequest = null,
+  onDiagramContextMenuDismiss = null,
 }, ref) {
   const viewerEl = useRef(null);
   const editorEl = useRef(null);
@@ -1151,10 +1226,13 @@ const BpmnStage = forwardRef(function BpmnStage({
   const linkEventStyledStateRef = useRef({ viewer: [], editor: [] });
   const happyFlowMarkerStateRef = useRef({ viewer: [], editor: [] });
   const happyFlowStyledStateRef = useRef({ viewer: [], editor: [] });
-  const userNotesMarkerStateRef = useRef({ viewer: [], editor: [] });
-  const userNotesOverlayStateRef = useRef({ viewer: [], editor: [] });
+  const userNotesDecorStateRef = useRef({ viewer: {}, editor: {} });
   const stepTimeOverlayStateRef = useRef({ viewer: [], editor: [] });
+  const stepTimeDecorSignatureRef = useRef({ viewer: "", editor: "" });
   const robotMetaDecorStateRef = useRef({ viewer: {}, editor: {} });
+  const propertiesOverlayStateRef = useRef({ viewer: {}, editor: {} });
+  const propertiesOverlayZoomBucketRef = useRef({ viewer: "", editor: "" });
+  const settledSelectionFanoutRef = useRef({ viewer: "", editor: "" });
   const playbackDecorStateRef = useRef({
     viewer: createPlaybackDecorRuntimeState(),
     editor: createPlaybackDecorRuntimeState(),
@@ -1169,15 +1247,22 @@ const BpmnStage = forwardRef(function BpmnStage({
   const selectedMarkerStateRef = useRef({ viewer: "", editor: "" });
   const onDiagramMutationRef = useRef(onDiagramMutation);
   const onElementSelectionChangeRef = useRef(onElementSelectionChange);
+  const selectionImportGuardRef = useRef({ viewer: "", editor: "" });
   const onElementNotesRemapRef = useRef(onElementNotesRemap);
   const onAiQuestionsByElementChangeRef = useRef(onAiQuestionsByElementChange);
   const onSessionSyncRef = useRef(onSessionSync);
+  const onSaveLifecycleEventRef = useRef(onSaveLifecycleEvent);
+  const onDiagramContextMenuRequestRef = useRef(onDiagramContextMenuRequest);
+  const onDiagramContextMenuDismissRef = useRef(onDiagramContextMenuDismiss);
   const aiQuestionsModeEnabledRef = useRef(!!aiQuestionsModeEnabled);
   const diagramDisplayModeRef = useRef(String(diagramDisplayMode || "normal").trim().toLowerCase() || "normal");
   const stepTimeUnitRef = useRef(normalizeStepTimeUnit(stepTimeUnit));
   const robotMetaOverlayEnabledRef = useRef(!!robotMetaOverlayEnabled);
   const robotMetaOverlayFiltersRef = useRef(asObject(robotMetaOverlayFilters));
   const robotMetaStatusByElementIdRef = useRef(asObject(robotMetaStatusByElementId));
+  const selectedPropertiesOverlayPreviewRef = useRef(asObject(selectedPropertiesOverlayPreview));
+  const propertiesOverlayAlwaysEnabledRef = useRef(!!propertiesOverlayAlwaysEnabled);
+  const propertiesOverlayAlwaysPreviewByElementIdRef = useRef(asObject(propertiesOverlayAlwaysPreviewByElementId));
   const replaceCommandStateRef = useRef({
     oldId: "",
     oldType: "",
@@ -1187,6 +1272,8 @@ const BpmnStage = forwardRef(function BpmnStage({
     source: "",
     ts: 0,
   });
+  const templateInsertCamundaSeedInFlightRef = useRef(0);
+  const templateInsertCamundaClearGuardRef = useRef({ ids: [], expiresAt: 0 });
   const suppressCommandStackRef = useRef(0);
   const suppressViewboxEventRef = useRef(0);
   const modelerReadyRef = useRef(false);
@@ -1207,6 +1294,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const renderRunRef = useRef(0);
   const modelerImportInFlightRef = useRef({ sid: "", xmlHash: "", promise: null });
   const robotMetaHydrateStateRef = useRef({ key: "" });
+  const camundaHydrateStateRef = useRef({ key: "" });
   const prevViewRef = useRef(view);
   const runtimeTokenRef = useRef(0);
   const runtimeStatusRef = useRef({
@@ -1230,6 +1318,13 @@ const BpmnStage = forwardRef(function BpmnStage({
   const flashStateRef = useRef({
     viewer: createFlashRuntimeState(),
     editor: createFlashRuntimeState(),
+  });
+  const contextMenuInteractionRef = useRef({
+    directEditingActive: false,
+    dragInProgress: false,
+    connectInProgress: false,
+    resizeInProgress: false,
+    createInProgress: false,
   });
   const prefersReducedMotionRef = useRef(false);
 
@@ -1265,6 +1360,18 @@ const BpmnStage = forwardRef(function BpmnStage({
   }, [onSessionSync]);
 
   useEffect(() => {
+    onSaveLifecycleEventRef.current = onSaveLifecycleEvent;
+  }, [onSaveLifecycleEvent]);
+
+  useEffect(() => {
+    onDiagramContextMenuRequestRef.current = onDiagramContextMenuRequest;
+  }, [onDiagramContextMenuRequest]);
+
+  useEffect(() => {
+    onDiagramContextMenuDismissRef.current = onDiagramContextMenuDismiss;
+  }, [onDiagramContextMenuDismiss]);
+
+  useEffect(() => {
     aiQuestionsModeEnabledRef.current = !!aiQuestionsModeEnabled;
   }, [aiQuestionsModeEnabled]);
 
@@ -1287,6 +1394,18 @@ const BpmnStage = forwardRef(function BpmnStage({
   useEffect(() => {
     robotMetaStatusByElementIdRef.current = asObject(robotMetaStatusByElementId);
   }, [robotMetaStatusByElementId]);
+
+  useEffect(() => {
+    selectedPropertiesOverlayPreviewRef.current = asObject(selectedPropertiesOverlayPreview);
+  }, [selectedPropertiesOverlayPreview]);
+
+  useEffect(() => {
+    propertiesOverlayAlwaysEnabledRef.current = !!propertiesOverlayAlwaysEnabled;
+  }, [propertiesOverlayAlwaysEnabled]);
+
+  useEffect(() => {
+    propertiesOverlayAlwaysPreviewByElementIdRef.current = asObject(propertiesOverlayAlwaysPreviewByElementId);
+  }, [propertiesOverlayAlwaysPreviewByElementId]);
 
   useEffect(() => {
     draftRef.current = draft;
@@ -1377,6 +1496,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     {
       forceTaskResizeRulesModule,
       pmModdleDescriptor,
+      camundaModdleDescriptor,
     },
   );
 
@@ -1388,6 +1508,16 @@ const BpmnStage = forwardRef(function BpmnStage({
     const storeXml = String(bpmnStoreRef.current?.getState?.()?.xml || xmlDraft || xml || "");
     const sid = String(sessionId || "");
     const meta = payload && typeof payload === "object" ? payload : {};
+    if (
+      event === "SAVE_REQUESTED"
+      || event === "SAVE_EXECUTED"
+      || event === "SAVE_PERSIST_STARTED"
+      || event === "SAVE_PERSIST_DONE"
+      || event === "SAVE_PERSIST_FAIL"
+      || event === "SAVE_PERSIST_SKIPPED_UNCHANGED"
+    ) {
+      emitSaveLifecycleEvent(event, { sid, ...meta });
+    }
     if (event === "SAVE_REQUESTED") {
       const count = bumpSaveCounter("requested");
       logBpmnTrace("SAVE_REQUESTED", storeXml, { sid, ...meta, count });
@@ -1487,6 +1617,19 @@ const BpmnStage = forwardRef(function BpmnStage({
     const next = Number(prev[k] || 0) + 1;
     saveCountersRef.current = { ...prev, [k]: next };
     return next;
+  }
+
+  function emitSaveLifecycleEvent(event, payload = {}) {
+    const callback = onSaveLifecycleEventRef.current;
+    if (typeof callback !== "function") return;
+    try {
+      callback({
+        event: String(event || ""),
+        payload: payload && typeof payload === "object" ? payload : {},
+        at: Date.now(),
+      });
+    } catch {
+    }
   }
 
   function suppressViewboxEvents(delta) {
@@ -1950,11 +2093,152 @@ const BpmnStage = forwardRef(function BpmnStage({
     return normalizeRobotMetaMap(meta.robot_meta_by_element_id);
   }
 
+  function getCamundaExtensionsMap() {
+    const d = asObject(draftRef.current);
+    const meta = asObject(d.bpmn_meta);
+    return normalizeCamundaExtensionsMap(meta.camunda_extensions_by_element_id);
+  }
+
   function syncRobotMetaToModeler(inst) {
     return syncRobotMetaToBpmn({
       modeler: inst,
       robotMetaByElementId: getRobotMetaMap(),
     });
+  }
+
+  function syncCamundaExtensionsToModeler(inst, options = {}) {
+    const templateInsertSeedInFlight = Number(templateInsertCamundaSeedInFlightRef.current || 0) > 0;
+    if (templateInsertSeedInFlight) {
+      return { ok: true, changed: 0, reason: "template_insert_seed_inflight", skipped: true, preservedManagedSkips: 0 };
+    }
+    const explicitPreserveIds = asArray(options?.preserveManagedForElementIds);
+    const templateInsertGuardIds = readTemplateInsertCamundaClearGuardIds();
+    const preserveManagedForElementIds = Array.from(new Set(
+      [...explicitPreserveIds, ...templateInsertGuardIds]
+        .map((value) => toText(value))
+        .filter(Boolean),
+    ));
+    return syncCamundaExtensionsToBpmn({
+      modeler: inst,
+      camundaExtensionsByElementId: getCamundaExtensionsMap(),
+      preserveManagedForElementIds,
+    });
+  }
+
+  function primeTemplateInsertCamundaClearGuard(remapRaw = {}) {
+    const remap = asObject(remapRaw);
+    const ids = Array.from(new Set(
+      Object.values(remap)
+        .map((value) => toText(value))
+        .filter(Boolean),
+    ));
+    if (!ids.length) return;
+    templateInsertCamundaClearGuardRef.current = {
+      ids,
+      expiresAt: Date.now() + 15000,
+    };
+  }
+
+  function readTemplateInsertCamundaClearGuardIds() {
+    const state = asObject(templateInsertCamundaClearGuardRef.current);
+    const expiresAt = Number(state.expiresAt || 0);
+    const ids = asArray(state.ids).map((value) => toText(value)).filter(Boolean);
+    if (!ids.length) return [];
+    if (expiresAt > 0 && Date.now() > expiresAt) {
+      templateInsertCamundaClearGuardRef.current = { ids: [], expiresAt: 0 };
+      return [];
+    }
+    return ids;
+  }
+
+  function clearTemplateInsertCamundaClearGuard() {
+    templateInsertCamundaClearGuardRef.current = { ids: [], expiresAt: 0 };
+  }
+
+  async function persistSessionMetaBoundary(nextMetaRaw, options = {}) {
+    const sid = String(activeSessionRef.current || sessionId || "").trim();
+    if (!sid) return { ok: false, reason: "missing_context" };
+    if (isLocalSessionId(sid)) return { ok: true, local: true, skipped: true };
+    const source = toText(options?.source) || "bpmn_stage_session_meta_write";
+    const nextMeta = asObject(nextMetaRaw);
+    const syncRes = await apiPatchSession(sid, { bpmn_meta: nextMeta });
+    if (!syncRes?.ok) {
+      return {
+        ok: false,
+        error: String(syncRes?.error || "session_meta_patch_failed"),
+        status: Number(syncRes?.status || 0),
+      };
+    }
+    if (syncRes.session && typeof syncRes.session === "object") {
+      onSessionSyncRef.current?.({
+        ...syncRes.session,
+        _sync_source: `${source}_session_patch`,
+      });
+    }
+    return { ok: true, session: syncRes?.session || null };
+  }
+
+  function seedTemplateInsertCamundaExtensions(inst, payload = {}, inserted = {}) {
+    const sid = String(activeSessionRef.current || sessionId || "").trim();
+    if (!sid || !inst) return { ok: false, seeded: 0, reason: "missing_context" };
+    const remap = asObject(inserted?.remap);
+    const templateNodes = asArray(asObject(asObject(payload?.pack).fragment).nodes);
+    if (!templateNodes.length || !Object.keys(remap).length) {
+      return { ok: true, seeded: 0, reason: "nothing_to_seed" };
+    }
+    const registry = inst.get?.("elementRegistry");
+    if (!registry || typeof registry.get !== "function") {
+      return { ok: false, seeded: 0, reason: "missing_registry" };
+    }
+
+    let nextMap = getCamundaExtensionsMap();
+    let seeded = 0;
+    templateNodes.forEach((node) => {
+      const sourceId = toText(node?.id);
+      if (!sourceId) return;
+      const targetId = toText(remap[sourceId]);
+      if (!targetId) return;
+      const target = registry.get(targetId);
+      if (!target || !isShapeElement(target)) return;
+      const state = extractManagedCamundaExtensionStateFromBusinessObject(target?.businessObject);
+      const hasManagedData = state?.properties?.extensionProperties?.length || state?.properties?.extensionListeners?.length;
+      if (!hasManagedData) return;
+      const beforeSig = JSON.stringify(asObject(nextMap[targetId]));
+      const candidateMap = upsertCamundaExtensionStateByElementId(nextMap, targetId, state);
+      const afterSig = JSON.stringify(asObject(candidateMap[targetId]));
+      if (beforeSig === afterSig) return;
+      nextMap = candidateMap;
+      seeded += 1;
+    });
+
+    if (!seeded) return { ok: true, seeded: 0, reason: "no_managed_entries" };
+
+    const currentDraft = asObject(draftRef.current);
+    const currentMeta = asObject(currentDraft.bpmn_meta);
+    const nextMeta = {
+      version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: normalizeFlowTierMetaMap(currentMeta?.flow_meta),
+      node_path_meta: normalizeNodePathMetaMap(currentMeta?.node_path_meta),
+      robot_meta_by_element_id: normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id),
+      camunda_extensions_by_element_id: normalizeCamundaExtensionsMap(nextMap),
+      hybrid_layer_by_element_id: normalizeHybridLayerMap(currentMeta?.hybrid_layer_by_element_id),
+      hybrid_v2: currentMeta?.hybrid_v2,
+      drawio: currentMeta?.drawio,
+      execution_plans: normalizeExecutionPlanVersionList(currentMeta?.execution_plans),
+    };
+
+    draftRef.current = {
+      ...currentDraft,
+      bpmn_meta: nextMeta,
+    };
+    onSessionSyncRef.current?.({
+      id: sid,
+      session_id: sid,
+      bpmn_meta: nextMeta,
+      _sync_source: "camunda_extensions_template_insert_seed",
+    });
+
+    return { ok: true, seeded, nextMeta };
   }
 
   function hydrateRobotMetaFromImportedBpmn(inst, xmlText, source = "import_xml") {
@@ -2017,6 +2301,10 @@ const BpmnStage = forwardRef(function BpmnStage({
       flow_meta: normalizeFlowTierMetaMap(currentMeta?.flow_meta),
       node_path_meta: normalizeNodePathMetaMap(currentMeta?.node_path_meta),
       robot_meta_by_element_id: nextMap,
+      camunda_extensions_by_element_id: normalizeCamundaExtensionsMap(currentMeta?.camunda_extensions_by_element_id),
+      hybrid_layer_by_element_id: normalizeHybridLayerMap(currentMeta?.hybrid_layer_by_element_id),
+      hybrid_v2: currentMeta?.hybrid_v2,
+      drawio: currentMeta?.drawio,
       execution_plans: normalizeExecutionPlanVersionList(currentMeta?.execution_plans),
     };
     onSessionSyncRef.current?.({
@@ -2026,6 +2314,52 @@ const BpmnStage = forwardRef(function BpmnStage({
       _sync_source: "robot_meta_bpmn_hydrate",
     });
     return { ok: true, adopted: true, extractedCount: Object.keys(extractedMap).length, conflicts: conflicts.length };
+  }
+
+  function hydrateCamundaExtensionsFromImportedBpmn(xmlText, source = "import_xml") {
+    const sid = String(activeSessionRef.current || sessionId || "").trim();
+    if (!sid) return { ok: false, reason: "missing_context" };
+
+    const currentSessionMap = getCamundaExtensionsMap();
+    const xmlHash = fnv1aHex(String(xmlText || ""));
+    const currentSessionHash = fnv1aHex(JSON.stringify(currentSessionMap));
+    const preflightKey = `${sid}|${xmlHash}|${currentSessionHash}`;
+    if (camundaHydrateStateRef.current.key === preflightKey) {
+      return { ok: true, skipped: true, reason: "dedup" };
+    }
+
+    const extractedMap = extractCamundaExtensionsMapFromBpmnXml(xmlText);
+    const hydration = hydrateCamundaExtensionsFromBpmn({
+      extractedMap,
+      sessionMetaMap: currentSessionMap,
+    });
+    const nextMap = normalizeCamundaExtensionsMap(hydration?.nextSessionMetaMap);
+    const nextHash = fnv1aHex(JSON.stringify(nextMap));
+    camundaHydrateStateRef.current.key = `${sid}|${xmlHash}|${nextHash}`;
+
+    if (!hydration?.adoptedFromBpmn || !Object.keys(nextMap).length) {
+      return { ok: true, adopted: false, extractedCount: Object.keys(extractedMap).length };
+    }
+
+    const currentMeta = asObject(asObject(draftRef.current).bpmn_meta);
+    const nextMeta = {
+      version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: normalizeFlowTierMetaMap(currentMeta?.flow_meta),
+      node_path_meta: normalizeNodePathMetaMap(currentMeta?.node_path_meta),
+      robot_meta_by_element_id: normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id),
+      camunda_extensions_by_element_id: nextMap,
+      hybrid_layer_by_element_id: normalizeHybridLayerMap(currentMeta?.hybrid_layer_by_element_id),
+      hybrid_v2: currentMeta?.hybrid_v2,
+      drawio: currentMeta?.drawio,
+      execution_plans: normalizeExecutionPlanVersionList(currentMeta?.execution_plans),
+    };
+    onSessionSyncRef.current?.({
+      id: sid,
+      session_id: sid,
+      bpmn_meta: nextMeta,
+      _sync_source: `camunda_extensions_${source}_hydrate`,
+    });
+    return { ok: true, adopted: true, extractedCount: Object.keys(extractedMap).length };
   }
 
   function isAiQuestionsModeOn() {
@@ -2173,6 +2507,12 @@ const BpmnStage = forwardRef(function BpmnStage({
   function emitElementSelectionChange(payload) {
     const cb = onElementSelectionChangeRef.current;
     if (typeof cb !== "function") return;
+    traceSelectionContinuity("selection_change_emit", {
+      nextSelectedId: String(payload?.id || "").trim() || "-",
+      viewerSelectedId: String(selectedMarkerStateRef.current.viewer || "").trim() || "-",
+      editorSelectedId: String(selectedMarkerStateRef.current.editor || "").trim() || "-",
+      source: String(payload?.source || (!payload ? "clear" : "unknown")).trim() || "-",
+    });
     if (!payload || !payload.id) {
       cb(null);
       return;
@@ -2215,6 +2555,419 @@ const BpmnStage = forwardRef(function BpmnStage({
     });
   }
 
+  function emitDiagramContextMenuDismiss(reason = "", payload = {}) {
+    const cb = onDiagramContextMenuDismissRef.current;
+    if (typeof cb !== "function") return;
+    cb({
+      sessionId: String(activeSessionRef.current || sessionId || ""),
+      reason: String(reason || "").trim() || "runtime_event",
+      ...asObject(payload),
+    });
+  }
+
+  function isEditableDomTarget(targetRaw) {
+    if (!(targetRaw instanceof Element)) return false;
+    if (targetRaw.closest("input, textarea, select, [contenteditable='true']")) return true;
+    if (targetRaw.closest(".djs-direct-editing-parent, .bjs-powered-by")) return true;
+    return false;
+  }
+
+  function isContextMenuSuppressedByMode(nativeEvent) {
+    const state = asObject(contextMenuInteractionRef.current);
+    if (
+      state.directEditingActive
+      || state.dragInProgress
+      || state.connectInProgress
+      || state.resizeInProgress
+      || state.createInProgress
+    ) {
+      return true;
+    }
+    const target = nativeEvent?.target;
+    if (isEditableDomTarget(target)) return true;
+    const active = typeof document !== "undefined" ? document.activeElement : null;
+    if (isEditableDomTarget(active)) return true;
+    return false;
+  }
+
+  function resolveContextMenuTarget(elementRaw, scope = "") {
+    const element = elementRaw && typeof elementRaw === "object" ? elementRaw : null;
+    if (!element) return { kind: "canvas" };
+    const bpmnType = String(element?.businessObject?.$type || element?.type || "").trim();
+    const isConnection = isConnectionElement(element);
+    const isShape = isShapeElement(element);
+    return {
+      kind: isConnection ? "connection" : (scope === "canvas" ? "canvas" : "element"),
+      id: String(element?.id || "").trim(),
+      name: String(element?.businessObject?.name || "").trim(),
+      bpmnType,
+      type: bpmnType,
+      isConnection,
+      isShape,
+    };
+  }
+
+  function readDiagramPointFromClient(inst, clientXRaw, clientYRaw) {
+    const canvas = inst?.get?.("canvas");
+    const container = canvas?._container;
+    const rect = container?.getBoundingClientRect?.();
+    const vb = canvas?.viewbox?.() || {};
+    const scale = Number(vb?.scale || canvas?.zoom?.() || 1) || 1;
+    const clientX = Number(clientXRaw || 0);
+    const clientY = Number(clientYRaw || 0);
+    const relX = clientX - Number(rect?.left || 0);
+    const relY = clientY - Number(rect?.top || 0);
+    return {
+      x: Number(vb?.x || 0) + relX / scale,
+      y: Number(vb?.y || 0) + relY / scale,
+    };
+  }
+
+  async function copyToClipboard(rawValue) {
+    const text = String(rawValue || "");
+    if (!text) return false;
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch {
+      }
+    }
+    if (typeof document !== "undefined") {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "true");
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        const ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+        return !!ok;
+      } catch {
+        document.body.removeChild(ta);
+      }
+    }
+    return false;
+  }
+
+  function selectAndEmitElement(inst, element, source = "context_menu_action") {
+    if (!inst || !element || !isSelectableElement(element)) return false;
+    try {
+      const selection = inst.get("selection");
+      selection?.select?.([element]);
+    } catch {
+    }
+    emitElementSelection(element, source, {
+      selectedIds: [String(element?.id || "")],
+      insertBetween: buildInsertBetweenCandidate(inst, [element]),
+    });
+    return true;
+  }
+
+  function createConnectedTaskFromAnchor(inst, anchor, options = {}) {
+    if (!inst || !anchor) return { ok: false, error: "anchor_not_found" };
+    const modeling = inst.get("modeling");
+    const elementFactory = inst.get("elementFactory");
+    const x = Number(anchor?.x || 0);
+    const y = Number(anchor?.y || 0);
+    const width = Number(anchor?.width || 120);
+    const height = Number(anchor?.height || 80);
+    const offsetY = Number(options.offsetY || 0);
+    const parent = anchor?.parent || inst.get("canvas")?.getRootElement?.();
+    const task = modeling.createShape(
+      elementFactory.createShape({ type: "bpmn:Task" }),
+      {
+        x: Math.round(x + width + 220),
+        y: Math.round(y + height / 2 + offsetY),
+      },
+      parent,
+    );
+    modeling.connect(anchor, task, { type: "bpmn:SequenceFlow" });
+    selectAndEmitElement(inst, task, "context_menu_add_next");
+    return {
+      ok: true,
+      changedIds: [String(anchor?.id || ""), String(task?.id || "")],
+      createdId: String(task?.id || ""),
+    };
+  }
+
+  function handleDiagramContextMenuEvent({ mode = "editor", scope = "", event: runtimeEvent, inst }) {
+    const cb = onDiagramContextMenuRequestRef.current;
+    if (typeof cb !== "function") return;
+    const nativeEvent = runtimeEvent?.originalEvent || runtimeEvent?.srcEvent || runtimeEvent || null;
+    const rawElement = runtimeEvent?.element || runtimeEvent?.shape || runtimeEvent?.connection || null;
+    if (!nativeEvent || typeof nativeEvent !== "object") return;
+    if (nativeEvent[CONTEXT_MENU_HANDLED_FLAG] === true) return;
+    if (isContextMenuSuppressedByMode(nativeEvent)) return;
+
+    const target = resolveContextMenuTarget(rawElement, scope);
+    const accepted = cb({
+      sessionId: String(activeSessionRef.current || sessionId || ""),
+      mode: String(mode || "editor"),
+      scope: String(scope || "canvas"),
+      source: String(runtimeEvent?.type || "diagram.contextmenu"),
+      clientX: Number(nativeEvent?.clientX || 0),
+      clientY: Number(nativeEvent?.clientY || 0),
+      target,
+    }) === true;
+
+    if (accepted) {
+      nativeEvent[CONTEXT_MENU_HANDLED_FLAG] = true;
+      nativeEvent.preventDefault?.();
+      nativeEvent.stopPropagation?.();
+    }
+  }
+
+  async function runDiagramContextAction(payloadRaw = {}) {
+    const payload = asObject(payloadRaw);
+    const actionId = String(payload.actionId || "").trim();
+    if (!actionId) return { ok: false, error: "missing_action_id" };
+    const inst = modelerRef.current || await ensureModeler();
+    if (!inst) return { ok: false, error: "modeler_not_ready" };
+    const targetMeta = asObject(payload.target);
+    const targetId = String(targetMeta.id || "").trim();
+    const registry = inst.get("elementRegistry");
+    const modeling = inst.get("modeling");
+    const elementFactory = inst.get("elementFactory");
+    const canvas = inst.get("canvas");
+    const selection = inst.get("selection");
+    const directEditing = inst.get?.("directEditing");
+    const root = canvas?.getRootElement?.();
+    const target = targetId ? registry?.get?.(targetId) : null;
+    const clientX = Number(payload.clientX || 0);
+    const clientY = Number(payload.clientY || 0);
+    const point = readDiagramPointFromClient(inst, clientX, clientY);
+
+    const createOnCanvas = (type) => {
+      const shape = modeling.createShape(
+        elementFactory.createShape({ type }),
+        { x: Math.round(point.x), y: Math.round(point.y) },
+        root,
+      );
+      selectAndEmitElement(inst, shape, "context_menu_create");
+      emitDiagramMutation("diagram.context_menu_action", { actionId, type });
+      return { ok: true, createdId: String(shape?.id || ""), changedIds: [String(shape?.id || "")] };
+    };
+
+    try {
+      if (actionId === "create_task") return createOnCanvas("bpmn:Task");
+      if (actionId === "create_gateway") return createOnCanvas("bpmn:ExclusiveGateway");
+      if (actionId === "create_start_event") return createOnCanvas("bpmn:StartEvent");
+      if (actionId === "create_end_event") return createOnCanvas("bpmn:EndEvent");
+      if (actionId === "create_subprocess") return createOnCanvas("bpmn:SubProcess");
+      if (actionId === "add_annotation") return createOnCanvas("bpmn:TextAnnotation");
+
+      if (actionId === "paste") {
+        const copyPaste = inst.get?.("copyPaste");
+        if (!copyPaste || typeof copyPaste.paste !== "function") {
+          return { ok: false, error: "paste_unavailable" };
+        }
+        const pasted = copyPaste.paste({
+          element: root,
+          point: { x: Math.round(point.x), y: Math.round(point.y) },
+        });
+        const ids = asArray(pasted)
+          .map((item) => String(item?.id || item?.element?.id || ""))
+          .filter(Boolean);
+        if (ids[0]) {
+          const first = registry?.get?.(ids[0]);
+          if (first) selection?.select?.([first]);
+        }
+        emitDiagramMutation("diagram.context_menu_action", { actionId, count: ids.length });
+        return { ok: true, changedIds: ids };
+      }
+
+      if (!target) return { ok: false, error: "target_not_found" };
+
+      if (actionId === "rename" || actionId === "edit_label") {
+        if (directEditing && typeof directEditing.activate === "function") {
+          directEditing.activate(target);
+          return { ok: true, changedIds: [String(target.id || "")] };
+        }
+        return { ok: false, error: "direct_editing_unavailable" };
+      }
+
+      if (actionId === "open_properties") {
+        selectAndEmitElement(inst, target, "context_menu_properties");
+        return { ok: true, changedIds: [String(target.id || "")] };
+      }
+
+      if (actionId === "add_next_step") {
+        const result = createConnectedTaskFromAnchor(inst, target);
+        if (result.ok) emitDiagramMutation("diagram.context_menu_action", { actionId, targetId });
+        return result;
+      }
+
+      if (actionId === "add_outgoing_branch") {
+        const outgoingCount = asArray(target?.outgoing).filter((row) => isConnectionElement(row)).length;
+        const offsetY = outgoingCount <= 0 ? 0 : ((outgoingCount % 4) - 1.5) * 96;
+        const result = createConnectedTaskFromAnchor(inst, target, { offsetY });
+        if (result.ok) emitDiagramMutation("diagram.context_menu_action", { actionId, targetId });
+        return result;
+      }
+
+      if (actionId === "duplicate") {
+        if (!isShapeElement(target)) return { ok: false, error: "duplicate_shape_only" };
+        const type = String(target?.businessObject?.$type || target?.type || "bpmn:Task").trim();
+        const parent = target?.parent || root;
+        const next = modeling.createShape(
+          elementFactory.createShape({ type }),
+          {
+            x: Math.round(Number(target?.x || 0) + Number(target?.width || 120) / 2 + 48),
+            y: Math.round(Number(target?.y || 0) + Number(target?.height || 80) / 2 + 48),
+          },
+          parent,
+        );
+        const name = String(target?.businessObject?.name || "").trim();
+        if (name) modeling.updateLabel(next, name);
+        selectAndEmitElement(inst, next, "context_menu_duplicate");
+        emitDiagramMutation("diagram.context_menu_action", { actionId, targetId });
+        return { ok: true, createdId: String(next?.id || ""), changedIds: [String(next?.id || "")] };
+      }
+
+      if (actionId === "copy_name") {
+        const name = String(target?.businessObject?.name || "").trim();
+        if (!name) return { ok: false, error: "name_empty" };
+        const ok = await copyToClipboard(name);
+        return { ok, error: ok ? "" : "clipboard_unavailable", message: ok ? `Copied: ${name}` : "" };
+      }
+
+      if (actionId === "copy_id") {
+        const id = String(target?.id || "").trim();
+        if (!id) return { ok: false, error: "id_empty" };
+        const ok = await copyToClipboard(id);
+        return { ok, error: ok ? "" : "clipboard_unavailable", message: ok ? `Copied: ${id}` : "" };
+      }
+
+      if (actionId === "open_inside") {
+        const drilldown = inst.get?.("drilldown");
+        if (drilldown && typeof drilldown.open === "function") {
+          drilldown.open(target);
+        } else {
+          selectAndEmitElement(inst, target, "context_menu_open_inside");
+          canvas?.scrollToElement?.(target);
+        }
+        return { ok: true, changedIds: [String(target.id || "")] };
+      }
+
+      if (actionId === "delete") {
+        if (isConnectionElement(target)) modeling.removeConnection(target);
+        else modeling.removeShape(target);
+        emitDiagramMutation("diagram.context_menu_action", { actionId, targetId });
+        return { ok: true, changedIds: [targetId] };
+      }
+
+      return { ok: false, error: "unsupported_action" };
+    } catch (error) {
+      return {
+        ok: false,
+        error: String(error?.message || error || "context_action_failed"),
+      };
+    }
+  }
+
+  function buildSettledSelectionFanoutSignature({ element, kind }) {
+    const mode = kind === "editor" ? "editor" : "viewer";
+    const elementId = toText(element?.id);
+    if (!elementId) return `${mode}:-`;
+    const bo = asObject(element?.businessObject);
+    const aiQuestions = getAiQuestionsForElement(elementId);
+    const aiStats = aiQuestionStats(aiQuestions);
+    const aiSignature = asArray(aiQuestions)
+      .map((itemRaw) => {
+        const item = asObject(itemRaw);
+        return [
+          toText(item?.id),
+          toText(item?.status),
+          toText(item?.comment),
+          toText(item?.question || item?.text),
+        ].join(":");
+      })
+      .join("|");
+    return [
+      mode,
+      elementId,
+      toText(bo?.name || elementId),
+      toText(bo?.$type || element?.type),
+      readLaneNameForElement(element),
+      String(getElementNoteCount(elementId)),
+      String(aiStats.total),
+      String(aiStats.done),
+      String(aiStats.withoutComment),
+      aiSignature,
+    ].join("::");
+  }
+
+  function beginImportSelectionGuard(kind) {
+    const mode = kind === "viewer" ? "viewer" : "editor";
+    const selectedId = String(selectedMarkerStateRef.current[mode] || "").trim();
+    selectionImportGuardRef.current[mode] = selectedId;
+    traceSelectionContinuity("import_guard_begin", {
+      mode,
+      selectedId: selectedId || "-",
+    });
+    return selectedId;
+  }
+
+  function finishImportSelectionGuard(inst, kind, reason = "import_refresh") {
+    const mode = kind === "viewer" ? "viewer" : "editor";
+    const selectedId = String(selectionImportGuardRef.current[mode] || "").trim();
+    selectionImportGuardRef.current[mode] = "";
+    clearSelectedDecor(inst, mode);
+    if (!selectedId) {
+      traceSelectionContinuity("import_guard_finish", {
+        mode,
+        reason,
+        selectedId: "-",
+        result: "clear_no_selection",
+      });
+      clearAiQuestionPanel(inst, mode);
+      emitElementSelectionChange(null);
+      return false;
+    }
+    try {
+      const registry = inst.get("elementRegistry");
+      const selected = registry?.get?.(selectedId);
+      if (!isSelectableElement(selected)) {
+        traceSelectionContinuity("import_guard_finish", {
+          mode,
+          reason,
+          selectedId,
+          result: "clear_missing_element",
+        });
+        clearAiQuestionPanel(inst, mode);
+        emitElementSelectionChange(null);
+        return false;
+      }
+      traceSelectionContinuity("import_guard_finish", {
+        mode,
+        reason,
+        selectedId,
+        result: "restore",
+      });
+      setSelectedDecor(inst, mode, selectedId);
+      emitElementSelection(selected, `${mode}.${reason}`, {
+        selectedIds: [selectedId],
+        insertBetween: buildInsertBetweenCandidate(inst, [selected]),
+      });
+      syncAiQuestionPanelWithSelection(inst, mode, selected, `${mode}.${reason}`);
+      return true;
+    } catch {
+      traceSelectionContinuity("import_guard_finish", {
+        mode,
+        reason,
+        selectedId,
+        result: "clear_error",
+      });
+      clearAiQuestionPanel(inst, mode);
+      emitElementSelectionChange(null);
+      return false;
+    }
+  }
+
   function readShapeBounds(el) {
     if (!el) return null;
     const x = Number(el?.x);
@@ -2236,7 +2989,53 @@ const BpmnStage = forwardRef(function BpmnStage({
   }
 
   async function insertTemplatePackOnModeler(payload = {}) {
-    return templatePackAdapter.insertTemplatePackOnModeler(payload);
+    const coordinator = ensureBpmnCoordinator();
+    coordinator.beginSingleWriter?.("template_apply", {
+      ttlMs: 15000,
+      reason: "template_insert_start",
+    });
+    templateInsertCamundaSeedInFlightRef.current = Number(templateInsertCamundaSeedInFlightRef.current || 0) + 1;
+    try {
+      const inserted = await templatePackAdapter.insertTemplatePackOnModeler(payload);
+      if (!inserted?.ok) {
+        coordinator.endSingleWriter?.("template_apply", "template_insert_failed");
+        return inserted;
+      }
+      primeTemplateInsertCamundaClearGuard(inserted?.remap);
+      const activeModeler = modelerRef.current || await ensureModeler();
+      if (activeModeler) {
+        const seedResult = seedTemplateInsertCamundaExtensions(activeModeler, payload, inserted);
+        if (seedResult?.ok && Number(seedResult?.seeded || 0) > 0 && seedResult?.nextMeta) {
+          try {
+            const persistResult = await persistSessionMetaBoundary(seedResult.nextMeta, {
+              source: "camunda_extensions_template_insert_seed",
+            });
+            if (!persistResult?.ok) {
+              // eslint-disable-next-line no-console
+              console.warn("[CAMUNDA_EXT] template insert seed persist failed", {
+                sid: String(activeSessionRef.current || sessionId || ""),
+                seeded: Number(seedResult?.seeded || 0),
+                status: Number(persistResult?.status || 0),
+                error: String(persistResult?.error || "session_meta_patch_failed"),
+              });
+            }
+          } catch (error) {
+            // eslint-disable-next-line no-console
+            console.warn("[CAMUNDA_EXT] template insert seed persist exception", {
+              sid: String(activeSessionRef.current || sessionId || ""),
+              seeded: Number(seedResult?.seeded || 0),
+              error: String(error?.message || error || "session_meta_patch_failed"),
+            });
+          }
+        }
+      }
+      return inserted;
+    } finally {
+      templateInsertCamundaSeedInFlightRef.current = Math.max(
+        0,
+        Number(templateInsertCamundaSeedInFlightRef.current || 0) - 1,
+      );
+    }
   }
 
   async function applyCommandOpsOnModeler(payload = {}) {
@@ -2409,12 +3208,19 @@ const BpmnStage = forwardRef(function BpmnStage({
 
     const t = String(hint?.title || "").trim().toLowerCase();
     if (!t) return null;
-    const byName = registry.filter((el) => {
-      if (!isShapeElement(el)) return false;
-      const n = String(el?.businessObject?.name || "").trim().toLowerCase();
-      return n && n === t;
-    });
-    return byName[0] || null;
+    let titleLookup = shapeTitleLookupCache.get(registry);
+    if (!titleLookup) {
+      titleLookup = new Map();
+      const all = Array.isArray(registry?.getAll?.()) ? registry.getAll() : [];
+      all.forEach((el) => {
+        if (!isShapeElement(el)) return;
+        const name = String(el?.businessObject?.name || "").trim().toLowerCase();
+        if (!name || titleLookup.has(name)) return;
+        titleLookup.set(name, el);
+      });
+      shapeTitleLookupCache.set(registry, titleLookup);
+    }
+    return titleLookup.get(t) || null;
   }
 
   function findDiagramElementForHint(registry, hint) {
@@ -2450,6 +3256,16 @@ const BpmnStage = forwardRef(function BpmnStage({
     return null;
   }
 
+  function getActiveDecorBpmnXml() {
+    const storeXml = String(bpmnStoreRef.current?.getState?.()?.xml || "");
+    if (storeXml.trim()) return storeXml;
+    const liveDraft = String(xmlDraft || "");
+    if (liveDraft.trim()) return liveDraft;
+    const propXml = String(xml || "");
+    if (propXml.trim()) return propXml;
+    return String(draftRef.current?.bpmn_xml || "");
+  }
+
   function createDecorCtx(inst, kind) {
     return {
       inst,
@@ -2460,10 +3276,11 @@ const BpmnStage = forwardRef(function BpmnStage({
         interviewDecorSignatureRef,
         happyFlowMarkerStateRef,
         happyFlowStyledStateRef,
-        userNotesMarkerStateRef,
-        userNotesOverlayStateRef,
+        userNotesDecorStateRef,
         stepTimeOverlayStateRef,
+        stepTimeDecorSignatureRef,
         robotMetaDecorStateRef,
+        propertiesOverlayStateRef,
         aiQuestionPanelTargetRef,
       },
       getters: {
@@ -2471,6 +3288,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         getNodePathMetaMap,
         getRobotMetaMap,
         getElementNotesMap,
+        findDiagramElementForHint,
         findShapeByNodeId,
         findShapeForHint,
         isShapeElement,
@@ -2488,11 +3306,15 @@ const BpmnStage = forwardRef(function BpmnStage({
       },
       readOnly: {
         draftRef,
+        getActiveBpmnXml: getActiveDecorBpmnXml,
         diagramDisplayModeRef,
         stepTimeUnitRef,
         robotMetaOverlayEnabledRef,
         robotMetaOverlayFiltersRef,
         robotMetaStatusByElementIdRef,
+        selectedPropertiesOverlayPreviewRef,
+        propertiesOverlayAlwaysEnabledRef,
+        propertiesOverlayAlwaysPreviewByElementIdRef,
         aiQuestionPanelTargetRef,
       },
       utils: {
@@ -2748,6 +3570,24 @@ const BpmnStage = forwardRef(function BpmnStage({
     return decorManager.applyRobotMetaDecor(createDecorCtx(inst, kind));
   }
 
+  function clearPropertiesOverlayDecor(inst, kind) {
+    return decorManager.clearPropertiesOverlayDecor(createDecorCtx(inst, kind));
+  }
+
+  function applyPropertiesOverlayDecor(inst, kind) {
+    return decorManager.applyPropertiesOverlayDecor(createDecorCtx(inst, kind));
+  }
+
+  function applyPropertiesOverlayDecorForZoomChange(inst, kind) {
+    if (!inst) return;
+    const mode = kind === "editor" ? "editor" : "viewer";
+    const zoom = readOverlayCanvasZoom(inst);
+    const zoomBucket = String(Math.round(Number(zoom || 1) * 1000) / 1000);
+    if (propertiesOverlayZoomBucketRef.current[mode] === zoomBucket) return;
+    propertiesOverlayZoomBucketRef.current[mode] = zoomBucket;
+    applyPropertiesOverlayDecor(inst, mode);
+  }
+
   function clearPlaybackDecor(inst, kind) {
     return playbackOverlayAdapter.clearPlaybackDecor(inst, kind);
   }
@@ -2962,10 +3802,12 @@ const BpmnStage = forwardRef(function BpmnStage({
     taskTypeMarkerStateRef.current = { viewer: [], editor: [] };
     happyFlowMarkerStateRef.current = { viewer: [], editor: [] };
     happyFlowStyledStateRef.current = { viewer: [], editor: [] };
-    userNotesMarkerStateRef.current = { viewer: [], editor: [] };
-    userNotesOverlayStateRef.current = { viewer: [], editor: [] };
+    userNotesDecorStateRef.current = { viewer: {}, editor: {} };
     stepTimeOverlayStateRef.current = { viewer: [], editor: [] };
+    stepTimeDecorSignatureRef.current = { viewer: "", editor: "" };
     robotMetaDecorStateRef.current = { viewer: {}, editor: {} };
+    propertiesOverlayStateRef.current = { viewer: {}, editor: {} };
+    propertiesOverlayZoomBucketRef.current = { viewer: "", editor: "" };
     playbackDecorStateRef.current = {
       viewer: createPlaybackDecorRuntimeState(),
       editor: createPlaybackDecorRuntimeState(),
@@ -2978,6 +3820,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     };
     aiQuestionPanelTargetRef.current = { viewer: "", editor: "" };
     selectedMarkerStateRef.current = { viewer: "", editor: "" };
+    selectionImportGuardRef.current = { viewer: "", editor: "" };
     focusStateRef.current = {
       viewer: { elementId: "", timer: 0, markerClass: "fpcNodeFocus" },
       editor: { elementId: "", timer: 0, markerClass: "fpcNodeFocus" },
@@ -2985,6 +3828,13 @@ const BpmnStage = forwardRef(function BpmnStage({
     flashStateRef.current = {
       viewer: createFlashRuntimeState(),
       editor: createFlashRuntimeState(),
+    };
+    contextMenuInteractionRef.current = {
+      directEditingActive: false,
+      dragInProgress: false,
+      connectInProgress: false,
+      resizeInProgress: false,
+      createInProgress: false,
     };
     viewerRef.current = null;
     modelerRef.current = null;
@@ -3062,7 +3912,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     const coordinator = ensureBpmnCoordinator();
     const loaded = await coordinator.reload({
       reason: options?.reason || "stage_load",
-      preferStore: options?.forceRemote !== true,
+      preferStore: options?.forceRemote === true ? false : options?.preferStore === true,
       rev: Number(bpmnStoreRef.current?.getState?.()?.rev || 0),
     });
 
@@ -3112,7 +3962,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       const Viewer = mod.default || mod;
       const v = new Viewer({
         container: viewerEl.current,
-        moddleExtensions: { pm: pmModdleDescriptor },
+        moddleExtensions: { pm: pmModdleDescriptor, camunda: camundaModdleDescriptor },
       });
       runtimeInstanceSeq += 1;
       viewerInstanceMetaRef.current = {
@@ -3129,46 +3979,35 @@ const BpmnStage = forwardRef(function BpmnStage({
       viewerReadyRef.current = false;
       try {
         const eventBus = v.get("eventBus");
-        eventBus.on("selection.changed", 2000, (ev) => {
-          const selectedList = asArray(ev?.newSelection).filter((el) => isSelectableElement(el));
-          const selected = selectedList[0];
-          if (!isSelectableElement(selected)) {
-            clearSelectedDecor(v, "viewer");
-            emitElementSelectionChange(null);
-            clearAiQuestionPanel(v, "viewer");
-            return;
-          }
-          setSelectedDecor(v, "viewer", selected.id);
-          const candidate = buildInsertBetweenCandidate(v, selectedList);
-          emitElementSelection(selected, "viewer.selection_changed", {
-            selectedIds: selectedList.map((item) => String(item?.id || "")),
-            insertBetween: candidate,
-          });
-          syncAiQuestionPanelWithSelection(v, "viewer", selected, "viewer.selection_changed");
+        bindViewerStageEvents({
+          eventBus,
+          inst: v,
+          isSelectableElement,
+          asArray,
+          selectionImportGuardRef,
+          traceSelectionContinuity,
+          clearSelectedDecor,
+          emitElementSelectionChange,
+          clearAiQuestionPanel,
+          setSelectedDecor,
+          buildInsertBetweenCandidate,
+          emitElementSelection,
+          syncAiQuestionPanelWithSelection,
+          suppressViewboxEventRef,
+          userViewportTouchedRef,
+          getCanvasSnapshot,
+          logViewAction,
+          view,
+          sessionId,
+          runtimeTokenRef,
+          emitViewboxChanged,
+          applyPropertiesOverlayDecorForZoomChange,
+          onDiagramContextMenuEvent: handleDiagramContextMenuEvent,
+          onDiagramContextMenuDismiss: emitDiagramContextMenuDismiss,
+          contextMenuInteractionRef,
         });
-        eventBus.on("canvas.viewbox.changed", 1200, () => {
-          const suppressed = Number(suppressViewboxEventRef.current || 0) > 0;
-          if (!suppressed) userViewportTouchedRef.current = true;
-          const snap = getCanvasSnapshot(v);
-          logViewAction(
-            "viewbox.changed",
-            snap,
-            snap,
-            {
-              reason: suppressed ? "programmatic" : "user",
-              tab: view === "xml" ? "xml" : "diagram",
-              sid: String(sessionId || "-"),
-              token: Number(runtimeTokenRef.current || 0),
-            },
-          );
-          emitViewboxChanged({
-            mode: "viewer",
-            suppressed,
-            snapshot: snap,
-          });
-        });
-      } catch {
-      }
+        } catch {
+        }
       viewerRef.current = v;
       return v;
     })();
@@ -3224,55 +4063,40 @@ const BpmnStage = forwardRef(function BpmnStage({
       try {
           if (m && modelerDecorBoundInstanceRef.current !== m) {
             const eventBus = m.get("eventBus");
-          eventBus.on("commandStack.shape.replace.preExecute", 2200, (ev) => {
-            captureShapeReplacePre(ev, "commandStack.shape.replace.preExecute");
-          });
-          eventBus.on("commandStack.shape.replace.postExecute", 2200, (ev) => {
-            applyShapeReplacePost(m, ev, "commandStack.shape.replace.postExecute");
-          });
-          eventBus.on("commandStack.changed", 900, () => {
-            applyTaskTypeDecor(m, "editor");
-            applyLinkEventDecor(m, "editor");
-            applyHappyFlowDecor(m, "editor");
-            applyRobotMetaDecor(m, "editor");
-          });
-          eventBus.on("selection.changed", 2000, (ev) => {
-            const selectedList = asArray(ev?.newSelection).filter((el) => isSelectableElement(el));
-            const selected = selectedList[0];
-            if (!isSelectableElement(selected)) {
-              clearSelectedDecor(m, "editor");
-              emitElementSelectionChange(null);
-              clearAiQuestionPanel(m, "editor");
-              return;
-            }
-            setSelectedDecor(m, "editor", selected.id);
-            const candidate = buildInsertBetweenCandidate(m, selectedList);
-            emitElementSelection(selected, "editor.selection_changed", {
-              selectedIds: selectedList.map((item) => String(item?.id || "")),
-              insertBetween: candidate,
-            });
-            syncAiQuestionPanelWithSelection(m, "editor", selected, "editor.selection_changed");
-          });
-          eventBus.on("canvas.viewbox.changed", 1200, () => {
-            const suppressed = Number(suppressViewboxEventRef.current || 0) > 0;
-            if (!suppressed) userViewportTouchedRef.current = true;
-            const snap = getCanvasSnapshot(m);
-            logViewAction(
-              "viewbox.changed",
-              snap,
-              snap,
-              {
-                reason: suppressed ? "programmatic" : "user",
-                tab: view === "xml" ? "xml" : "diagram",
-                sid: String(sessionId || "-"),
-                token: Number(runtimeTokenRef.current || 0),
-              },
-            );
-            emitViewboxChanged({
-              mode: "editor",
-              suppressed,
-              snapshot: snap,
-            });
+          bindModelerStageEvents({
+            eventBus,
+            inst: m,
+            isSelectableElement,
+            asArray,
+            selectionImportGuardRef,
+            traceSelectionContinuity,
+            clearSelectedDecor,
+            emitElementSelectionChange,
+            clearAiQuestionPanel,
+            setSelectedDecor,
+            buildInsertBetweenCandidate,
+            emitElementSelection,
+            syncAiQuestionPanelWithSelection,
+            suppressViewboxEventRef,
+            userViewportTouchedRef,
+            getCanvasSnapshot,
+            logViewAction,
+            view,
+            sessionId,
+            runtimeTokenRef,
+            emitViewboxChanged,
+            applyPropertiesOverlayDecorForZoomChange,
+            invalidateShapeTitleLookup,
+            runImmediateEditorFanout,
+            applyTaskTypeDecor,
+            applyLinkEventDecor,
+            applyHappyFlowDecor,
+            applyRobotMetaDecor,
+            captureShapeReplacePre,
+            applyShapeReplacePost,
+            onDiagramContextMenuEvent: handleDiagramContextMenuEvent,
+            onDiagramContextMenuDismiss: emitDiagramContextMenuDismiss,
+            contextMenuInteractionRef,
           });
           modelerDecorBoundInstanceRef.current = m;
         }
@@ -3294,352 +4118,63 @@ const BpmnStage = forwardRef(function BpmnStage({
     }
   }
 
+  function createRenderLifecycleCtx() {
+    return {
+      ensureViewer,
+      invalidateShapeTitleLookup,
+      viewerRef,
+      beginImportSelectionGuard,
+      runtimeTokenRef,
+      viewerReadyRef,
+      logRuntimeTrace,
+      activeSessionRef,
+      sessionId,
+      viewerInstanceMetaRef,
+      fnv1aHex,
+      logImportTrace,
+      logBpmnTrace,
+      finishImportSelectionGuard,
+      ensureCanvasVisibleAndFit,
+      suppressViewboxEvents,
+      probeCanvas,
+      ensureVisibleOnInstance,
+      emitCurrentViewboxSnapshot,
+      emitViewboxChanged,
+      applyTaskTypeDecor,
+      applyLinkEventDecor,
+      applyHappyFlowDecor,
+      applyRobotMetaDecor,
+      applyBottleneckDecor,
+      applyInterviewDecor,
+      applyUserNotesDecor,
+      applyStepTimeDecor,
+      modelerImportInFlightRef,
+      modelerInstanceMetaRef,
+      ensureModelerRuntime,
+      ensureModeler,
+      waitForNonZeroRect,
+      editorEl,
+      modelerReadyRef,
+      shouldLogBpmnTrace,
+      modelerRef,
+      hydrateRobotMetaFromImportedBpmn,
+      hydrateCamundaExtensionsFromImportedBpmn,
+      waitAnimationFrame,
+      lastModelerXmlHashRef,
+      applyXmlSnapshot,
+    };
+  }
+
   async function renderViewer(nextXml) {
-    const v = await ensureViewer();
-    const token = runtimeTokenRef.current + 1;
-    runtimeTokenRef.current = token;
-    viewerReadyRef.current = false;
-    logRuntimeTrace("import.start", {
-      sid: String(activeSessionRef.current || sessionId || "-"),
-      mode: "viewer",
-      token,
-      instanceId: Number(viewerInstanceMetaRef.current.id || 0),
-      containerKey: String(viewerInstanceMetaRef.current.containerKey || "-"),
-      xmlHash: fnv1aHex(String(nextXml || "")),
-      xmlLen: String(nextXml || "").length,
-    });
-    logImportTrace("start", {
-      sid: String(activeSessionRef.current || sessionId || "-"),
-      mode: "viewer",
-      token,
-      instanceId: Number(viewerInstanceMetaRef.current.id || 0),
-      containerKey: String(viewerInstanceMetaRef.current.containerKey || "-"),
-      xmlHash: fnv1aHex(String(nextXml || "")),
-    });
-    logBpmnTrace("importXML.viewer.before", nextXml, { sid: String(sessionId || "") });
-    await v.importXML(String(nextXml || ""));
-    if (token !== runtimeTokenRef.current || v !== viewerRef.current) return;
-    viewerReadyRef.current = true;
-    const registryCount = Array.isArray(v?.get?.("elementRegistry")?.getAll?.())
-      ? v.get("elementRegistry").getAll().length
-      : 0;
-    logRuntimeTrace("import.done", {
-      sid: String(activeSessionRef.current || sessionId || "-"),
-      mode: "viewer",
-      token: Number(runtimeTokenRef.current || 0),
-      instanceId: Number(viewerInstanceMetaRef.current.id || 0),
-      containerKey: String(viewerInstanceMetaRef.current.containerKey || "-"),
-      xmlHash: fnv1aHex(String(nextXml || "")),
-      xmlLen: String(nextXml || "").length,
-      registryCount,
-    });
-    logImportTrace("done", {
-      sid: String(activeSessionRef.current || sessionId || "-"),
-      mode: "viewer",
-      token: Number(runtimeTokenRef.current || 0),
-      instanceId: Number(viewerInstanceMetaRef.current.id || 0),
-      containerKey: String(viewerInstanceMetaRef.current.containerKey || "-"),
-      xmlHash: fnv1aHex(String(nextXml || "")),
-      registryCount,
-    });
-    clearSelectedDecor(v, "viewer");
-    emitElementSelectionChange(null);
-    await ensureCanvasVisibleAndFit(v, "renderViewer", String(sessionId || ""), {
-      reason: "render_viewer_import",
-      tab: "diagram",
-      token: runtimeTokenRef.current,
-      allowFit: true,
-      fitIfInvisible: true,
-      suppressViewbox: suppressViewboxEvents,
-    });
-    const importProbe = probeCanvas(v, "after_import", {
-      sid: String(sessionId || ""),
-      tab: "diagram",
-      token: runtimeTokenRef.current,
-      reason: "viewer_import",
-      expectElements: String(nextXml || "").trim().length > 0,
-    });
-    if (importProbe.invisible) {
-      await ensureVisibleOnInstance(v, {
-        reason: "viewer_import_invisible",
-        tab: "diagram",
-        expectElements: String(nextXml || "").trim().length > 0,
-      });
-    }
-    emitCurrentViewboxSnapshot(v, emitViewboxChanged, "viewer", {
-      reason: "viewer_import_ready",
-    });
-    applyTaskTypeDecor(v, "viewer");
-    applyLinkEventDecor(v, "viewer");
-    applyHappyFlowDecor(v, "viewer");
-    applyRobotMetaDecor(v, "viewer");
-    applyBottleneckDecor(v, "viewer");
-    applyInterviewDecor(v, "viewer");
-    applyUserNotesDecor(v, "viewer");
-    applyStepTimeDecor(v, "viewer");
+    return renderViewerDiagram(createRenderLifecycleCtx(), nextXml);
   }
 
   async function renderModeler(nextXml) {
-    const sidNow = String(activeSessionRef.current || sessionId || "-");
-    const xmlText = String(nextXml || "");
-    const xmlHash = fnv1aHex(xmlText);
-    const inFlight = modelerImportInFlightRef.current;
-    if (
-      inFlight
-      && inFlight.promise
-      && inFlight.sid === sidNow
-      && inFlight.xmlHash === xmlHash
-    ) {
-      logRuntimeTrace("import.reuse_inflight", {
-        sid: sidNow,
-        mode: "modeler",
-        token: Number(runtimeTokenRef.current || 0),
-        instanceId: Number(modelerInstanceMetaRef.current.id || 0),
-        containerKey: String(modelerInstanceMetaRef.current.containerKey || "-"),
-        xmlHash,
-      });
-      await inFlight.promise;
-      return;
-    }
-
-    const importPromise = (async () => {
-      const runtime = ensureModelerRuntime();
-      const m = await ensureModeler();
-      const layoutReady = await waitForNonZeroRect(
-        () => m?.get?.("canvas")?._container || editorEl.current,
-        {
-          sid: String(activeSessionRef.current || sessionId || "-"),
-          token: Number(runtimeTokenRef.current || 0),
-          reason: "render_modeler_before_import",
-          timeoutMs: 5000,
-        },
-      );
-      if (!layoutReady.ok) {
-        throw new Error("layout_not_ready_before_modeler_import");
-      }
-      const beforeStatus = runtime.getStatus();
-      runtimeTokenRef.current = Number(beforeStatus?.token || runtimeTokenRef.current || 0);
-      modelerReadyRef.current = false;
-      logRuntimeTrace("import.start", {
-        sid: String(activeSessionRef.current || sessionId || "-"),
-        mode: "modeler",
-        token: Number(runtimeTokenRef.current || 0),
-        instanceId: Number(modelerInstanceMetaRef.current.id || 0),
-        containerKey: String(modelerInstanceMetaRef.current.containerKey || "-"),
-        xmlHash: fnv1aHex(String(nextXml || "")),
-        xmlLen: String(nextXml || "").length,
-      });
-      logImportTrace("start", {
-        sid: String(activeSessionRef.current || sessionId || "-"),
-        mode: "modeler",
-        token: Number(runtimeTokenRef.current || 0),
-        instanceId: Number(modelerInstanceMetaRef.current.id || 0),
-        containerKey: String(modelerInstanceMetaRef.current.containerKey || "-"),
-        xmlHash: fnv1aHex(String(nextXml || "")),
-      });
-      logBpmnTrace("importXML.modeler.before", nextXml, { sid: String(sessionId || "") });
-      const loaded = await runtime.load(String(nextXml || ""), { source: "renderModeler" });
-      const afterStatus = runtime.getStatus();
-      runtimeTokenRef.current = Number(afterStatus?.token || runtimeTokenRef.current || 0);
-      modelerReadyRef.current = !!afterStatus?.ready && !!afterStatus?.defs;
-      if (shouldLogBpmnTrace()) {
-        // eslint-disable-next-line no-console
-        console.debug(
-          `[READY] sid=${String(activeSessionRef.current || sessionId || "-")} token=${Number(runtimeTokenRef.current || 0)} `
-          + `ready=${modelerReadyRef.current ? 1 : 0} defs=${afterStatus?.defs ? 1 : 0} reason=import_done`,
-        );
-      }
-      if (!loaded.ok) {
-        if (loaded.reason === "stale") return;
-        throw new Error(String(loaded.error || loaded.reason || "importXML failed"));
-      }
-      if (!m || m !== modelerRef.current) return;
-      hydrateRobotMetaFromImportedBpmn(m, nextXml, "renderModeler");
-      try {
-        const canvas = m.get("canvas");
-        await waitAnimationFrame();
-        suppressViewboxEvents(1);
-        try {
-          canvas?.resized?.();
-        } finally {
-          suppressViewboxEvents(-1);
-        }
-      } catch {
-      }
-      const registryCount = Array.isArray(m?.get?.("elementRegistry")?.getAll?.())
-        ? m.get("elementRegistry").getAll().length
-        : 0;
-      logRuntimeTrace("import.done", {
-        sid: String(activeSessionRef.current || sessionId || "-"),
-        mode: "modeler",
-        token: Number(runtimeTokenRef.current || 0),
-        instanceId: Number(modelerInstanceMetaRef.current.id || 0),
-        containerKey: String(modelerInstanceMetaRef.current.containerKey || "-"),
-        xmlHash: fnv1aHex(String(nextXml || "")),
-        xmlLen: String(nextXml || "").length,
-        registryCount,
-      });
-      logImportTrace("done", {
-        sid: String(activeSessionRef.current || sessionId || "-"),
-        mode: "modeler",
-        token: Number(runtimeTokenRef.current || 0),
-        instanceId: Number(modelerInstanceMetaRef.current.id || 0),
-        containerKey: String(modelerInstanceMetaRef.current.containerKey || "-"),
-        xmlHash: fnv1aHex(String(nextXml || "")),
-        registryCount,
-      });
-      lastModelerXmlHashRef.current = fnv1aHex(String(nextXml || ""));
-      try {
-        if (typeof window !== "undefined") {
-          window.__FPC_E2E_MODELER__ = m;
-        }
-      } catch {
-      }
-      clearSelectedDecor(m, "editor");
-      emitElementSelectionChange(null);
-      await ensureCanvasVisibleAndFit(m, "renderModeler", String(sessionId || ""), {
-        reason: "render_modeler_import",
-        tab: "diagram",
-        token: runtimeTokenRef.current,
-        allowFit: true,
-        fitIfInvisible: true,
-        suppressViewbox: suppressViewboxEvents,
-      });
-      const importProbe = probeCanvas(m, "after_import", {
-        sid: String(sessionId || ""),
-        tab: "diagram",
-        token: runtimeTokenRef.current,
-        reason: "modeler_import",
-        expectElements: String(nextXml || "").trim().length > 0,
-      });
-      if (importProbe.invisible) {
-        await ensureVisibleOnInstance(m, {
-          reason: "modeler_import_invisible",
-          tab: "diagram",
-          expectElements: String(nextXml || "").trim().length > 0,
-        });
-      }
-      emitCurrentViewboxSnapshot(m, emitViewboxChanged, "editor", {
-        reason: "modeler_import_ready",
-      });
-      applyTaskTypeDecor(m, "editor");
-      applyLinkEventDecor(m, "editor");
-      applyHappyFlowDecor(m, "editor");
-      applyRobotMetaDecor(m, "editor");
-      applyBottleneckDecor(m, "editor");
-      applyInterviewDecor(m, "editor");
-      applyUserNotesDecor(m, "editor");
-      applyStepTimeDecor(m, "editor");
-    })();
-
-    modelerImportInFlightRef.current = { sid: sidNow, xmlHash, promise: importPromise };
-    try {
-      await importPromise;
-    } finally {
-      const current = modelerImportInFlightRef.current;
-      if (current && current.promise === importPromise) {
-        modelerImportInFlightRef.current = { sid: "", xmlHash: "", promise: null };
-      }
-    }
+    return renderModelerDiagram(createRenderLifecycleCtx(), nextXml);
   }
 
   async function renderNewDiagramInModeler() {
-    const runtime = ensureModelerRuntime();
-    const m = await ensureModeler();
-    const layoutReady = await waitForNonZeroRect(
-      () => m?.get?.("canvas")?._container || editorEl.current,
-      {
-        sid: String(activeSessionRef.current || sessionId || "-"),
-        token: Number(runtimeTokenRef.current || 0),
-        reason: "render_new_diagram_before_create",
-        timeoutMs: 5000,
-      },
-    );
-    if (!layoutReady.ok) {
-      throw new Error("layout_not_ready_before_create_diagram");
-    }
-    const sidNow = String(activeSessionRef.current || sessionId || "");
-    if (shouldLogBpmnTrace()) {
-      // eslint-disable-next-line no-console
-      console.debug(
-        `[CREATE_DIAGRAM] start sid=${sidNow || "-"} token=${Number(runtimeTokenRef.current || 0)}`,
-      );
-    }
-    const created = await runtime.createDiagram({ source: "renderNewDiagramInModeler" });
-    const status = runtime.getStatus();
-    runtimeTokenRef.current = Number(status?.token || runtimeTokenRef.current || 0);
-    modelerReadyRef.current = !!status?.ready && !!status?.defs;
-    if (shouldLogBpmnTrace()) {
-      const probe = probeCanvas(m, "create_diagram_done", {
-        sid: sidNow || "-",
-        tab: "diagram",
-        token: runtimeTokenRef.current,
-        reason: "createDiagram_done",
-      });
-      // eslint-disable-next-line no-console
-      console.debug(
-        `[CREATE_DIAGRAM] done sid=${sidNow || "-"} token=${Number(runtimeTokenRef.current || 0)} `
-        + `defs=${status?.defs ? 1 : 0} ready=${modelerReadyRef.current ? 1 : 0} registryCount=${Number(probe?.registryCount || 0)} `
-        + `svgRect=${Math.round(Number(probe?.svgWidth || 0))}x${Math.round(Number(probe?.svgHeight || 0))}`,
-      );
-      // eslint-disable-next-line no-console
-      console.debug(
-        `[READY] sid=${sidNow || "-"} token=${Number(runtimeTokenRef.current || 0)} `
-        + `ready=${modelerReadyRef.current ? 1 : 0} defs=${status?.defs ? 1 : 0} reason=createDiagram_done`,
-      );
-    }
-    if (!created.ok) {
-      if (created.reason === "stale") return;
-      throw new Error(String(created.error || created.reason || "createDiagram failed"));
-    }
-    if (!m || m !== modelerRef.current) return;
-    try {
-      const xmlRes = await runtime.getXml({ format: true });
-      if (xmlRes?.ok) {
-        const seededXml = String(xmlRes.xml || "");
-        lastModelerXmlHashRef.current = fnv1aHex(seededXml);
-        if (seededXml.trim() && sidNow && sidNow === String(activeSessionRef.current || "")) {
-          applyXmlSnapshot(seededXml, "create_diagram_seed");
-        }
-      }
-    } catch {
-    }
-    try {
-      if (typeof window !== "undefined") {
-        window.__FPC_E2E_MODELER__ = m;
-      }
-    } catch {
-    }
-    clearSelectedDecor(m, "editor");
-    emitElementSelectionChange(null);
-    await ensureCanvasVisibleAndFit(m, "renderNewDiagramInModeler", String(sessionId || ""), {
-      reason: "render_new_diagram",
-      tab: "diagram",
-      token: runtimeTokenRef.current,
-      allowFit: true,
-      fitIfInvisible: true,
-      suppressViewbox: suppressViewboxEvents,
-    });
-    const importProbe = probeCanvas(m, "after_import", {
-      sid: String(sessionId || ""),
-      tab: "diagram",
-      token: runtimeTokenRef.current,
-      reason: "modeler_create_diagram",
-    });
-    if (importProbe.invisible) {
-      await ensureVisibleOnInstance(m, {
-        reason: "modeler_create_invisible",
-        tab: "diagram",
-      });
-    }
-    applyTaskTypeDecor(m, "editor");
-    applyLinkEventDecor(m, "editor");
-    applyHappyFlowDecor(m, "editor");
-    applyRobotMetaDecor(m, "editor");
-    applyBottleneckDecor(m, "editor");
-    applyInterviewDecor(m, "editor");
-    applyUserNotesDecor(m, "editor");
-    applyStepTimeDecor(m, "editor");
+    return renderNewDiagramInModelerRuntime(createRenderLifecycleCtx());
   }
 
   function createViewportCtx() {
@@ -3738,6 +4273,12 @@ const BpmnStage = forwardRef(function BpmnStage({
     const rev = Number(bpmnStoreRef.current?.getState?.()?.rev || 0);
     const startedAt = Date.now();
     const persistStartCount = bumpSaveCounter("persist_started");
+    emitSaveLifecycleEvent("SAVE_PERSIST_STARTED", {
+      sid,
+      reason: hintBase,
+      rev,
+      xml_len: out.length,
+    });
     traceProcess("bpmn.persist_xml_snapshot_start", {
       sid,
       hint: hintBase,
@@ -3771,6 +4312,14 @@ const BpmnStage = forwardRef(function BpmnStage({
         ms: Date.now() - startedAt,
         count: persistFailCount,
       });
+      emitSaveLifecycleEvent("SAVE_PERSIST_FAIL", {
+        sid,
+        reason: hintBase,
+        rev,
+        status: Number(r.status || 0),
+        xml_len: out.length,
+        error: msg,
+      });
       return { ok: false, error: msg };
     }
     setErr("");
@@ -3784,6 +4333,13 @@ const BpmnStage = forwardRef(function BpmnStage({
       ms: Date.now() - startedAt,
       count: persistDoneCount,
     });
+    emitSaveLifecycleEvent("SAVE_PERSIST_DONE", {
+      sid,
+      reason: hintBase,
+      rev: Number(r.storedRev || rev),
+      status: Number(r.status || 200),
+      xml_len: out.length,
+    });
     applyXmlSnapshot(out, `${hintBase}(saved)`);
     return { ok: true, xml: out, source: `${hintBase}(saved)` };
   }
@@ -3792,11 +4348,21 @@ const BpmnStage = forwardRef(function BpmnStage({
     const force = options?.force === true;
     const source = String(options?.source || (force ? "tab_switch" : "autosave")).trim() || "autosave";
     const trigger = String(options?.trigger || "").trim() || "manual";
+    const requestedSaveOwner = toText(options?.saveOwner || options?.owner).toLowerCase();
+    const isTemplateApplySave = requestedSaveOwner === "template_apply" || source === "template_apply" || trigger === "template_apply";
+    const resolvedSaveOwner = isTemplateApplySave ? "template_apply" : requestedSaveOwner;
     const sid = String(sessionId || "");
+    const allowForceFallback = isLocalSessionId(sid);
     if (!sid) return { ok: false, error: "missing session id" };
     ensureBpmnStore();
     const runtime = ensureModelerRuntime();
     const coordinator = ensureBpmnCoordinator();
+    if (resolvedSaveOwner) {
+      coordinator.beginSingleWriter?.(resolvedSaveOwner, {
+        ttlMs: 15000,
+        reason: `${source}:save_local`,
+      });
+    }
     const fallbackXml = String(
       bpmnStoreRef.current?.getState?.()?.xml
       || xml
@@ -3815,24 +4381,121 @@ const BpmnStage = forwardRef(function BpmnStage({
 
       const activeModeler = modelerRef.current || runtime.getInstance?.();
       const robotSync = syncRobotMetaToModeler(activeModeler);
+      const templateInsertSeedInFlight = Number(templateInsertCamundaSeedInFlightRef.current || 0) > 0;
+      const templateInsertClearGuardIds = readTemplateInsertCamundaClearGuardIds();
+      const camundaSync = templateInsertSeedInFlight
+        ? { ok: true, changed: 0, reason: "template_insert_seed_inflight", skipped: true }
+        : syncCamundaExtensionsToModeler(activeModeler, {
+          preserveManagedForElementIds: templateInsertClearGuardIds,
+        });
+      const camundaSyncCompleted = Boolean(camundaSync?.ok) && !Boolean(camundaSync?.skipped);
+      if (
+        templateInsertClearGuardIds.length
+        && camundaSyncCompleted
+        && Number(camundaSync?.preservedManagedSkips || 0) === 0
+      ) {
+        clearTemplateInsertCamundaClearGuard();
+      }
       if (!robotSync?.ok && shouldLogBpmnTrace()) {
         // eslint-disable-next-line no-console
         console.warn(`[ROBOT_META] sync_before_save_failed sid=${sid} reason=${String(robotSync?.reason || "unknown")}`);
       }
+      if (!camundaSync?.ok && shouldLogBpmnTrace()) {
+        // eslint-disable-next-line no-console
+        console.warn(`[CAMUNDA_EXT] sync_before_save_failed sid=${sid} reason=${String(camundaSync?.reason || "unknown")}`);
+      }
+      if (templateInsertSeedInFlight && shouldLogBpmnTrace()) {
+        // eslint-disable-next-line no-console
+        console.debug(`[CAMUNDA_EXT] sync_before_save_skipped sid=${sid} reason=template_insert_seed_inflight`);
+      }
+      if (
+        !templateInsertSeedInFlight
+        && templateInsertClearGuardIds.length
+        && Number(camundaSync?.preservedManagedSkips || 0) > 0
+        && shouldLogBpmnTrace()
+      ) {
+        // eslint-disable-next-line no-console
+        console.debug(
+          `[CAMUNDA_EXT] sync_before_save_preserved sid=${sid} preserved=${Number(camundaSync?.preservedManagedSkips || 0)}`,
+        );
+      }
 
-      const flushed = await coordinator.flushSave(source, { force, trigger });
+      const flushed = await coordinator.flushSave(source, { force, trigger, saveOwner: resolvedSaveOwner });
       const nextState = bpmnStoreRef.current?.getState?.() || {};
-      const out = String(nextState.xml || fallbackXml || "");
+      const rawOut = String(nextState.xml || fallbackXml || "");
+      const out = finalizeCamundaExtensionsXml({
+        xmlText: rawOut,
+        camundaExtensionsByElementId: getCamundaExtensionsMap(),
+      });
 
       if (!flushed?.ok) {
-        if (force && out.trim()) {
+        if (force && allowForceFallback && out.trim()) {
+          if (resolvedSaveOwner) {
+            coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:save_local_force_fallback`);
+          }
           return { ok: true, xml: out, source: "fallback" };
         }
-        return { ok: false, error: String(flushed?.error || "saveXML failed"), xml: out };
+        if (resolvedSaveOwner) {
+          coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:save_local_fail`);
+        }
+        return {
+          ok: false,
+          error: String(flushed?.error || "saveXML failed"),
+          status: Number(flushed?.status || 0),
+          errorCode: String(flushed?.errorCode || ""),
+          xml: out,
+        };
       }
 
       if (flushed.pending) {
         return { ok: true, pending: true, xml: out, source: "pending" };
+      }
+
+      if (out !== rawOut) {
+        const rev = Number(nextState.rev || 0);
+        emitSaveLifecycleEvent("SAVE_PERSIST_STARTED", {
+          sid,
+          reason: `${source}:camunda_finalize`,
+          rev,
+          xml_len: out.length,
+        });
+        const persistedFinalXml = typeof coordinator.persistExplicitXml === "function"
+          ? await coordinator.persistExplicitXml(out, `${source}:camunda_finalize`, {
+            rev,
+            saveOwner: resolvedSaveOwner,
+          })
+          : await ensureBpmnPersistence().saveRaw(sid, out, rev, `${source}:camunda_finalize`);
+        if (!persistedFinalXml?.ok) {
+          emitSaveLifecycleEvent("SAVE_PERSIST_FAIL", {
+            sid,
+            reason: `${source}:camunda_finalize`,
+            rev,
+            status: Number(persistedFinalXml?.status || 0),
+            xml_len: out.length,
+            error: String(persistedFinalXml?.error || "camunda finalize persist failed"),
+          });
+          if (resolvedSaveOwner) {
+            coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:camunda_finalize_fail`);
+          }
+          return {
+            ok: false,
+            error: String(persistedFinalXml?.error || "camunda finalize persist failed"),
+            status: Number(persistedFinalXml?.status || 0),
+            errorCode: String(persistedFinalXml?.errorCode || ""),
+            xml: out,
+          };
+        }
+        emitSaveLifecycleEvent("SAVE_PERSIST_DONE", {
+          sid,
+          reason: `${source}:camunda_finalize`,
+          rev: Number(persistedFinalXml?.storedRev || rev),
+          status: Number(persistedFinalXml?.status || 200),
+          xml_len: out.length,
+        });
+      }
+
+      if (force) {
+        coordinator.clearPendingWork?.(`${source}:after_force_flush`);
       }
 
       traceProcess("bpmn.save_modeler_xml", {
@@ -3841,6 +4504,9 @@ const BpmnStage = forwardRef(function BpmnStage({
       });
       const hint = isLocalSessionId(sid) ? "local(saved)" : "backend(saved)";
       applyXmlSnapshot(out, hint);
+      if (resolvedSaveOwner) {
+        coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:save_local_done`);
+      }
       logBpmnTrace("saveXML.modeler.after", out, { sid, trigger });
       return { ok: true, xml: out, source: hint };
     } catch (e) {
@@ -3850,14 +4516,36 @@ const BpmnStage = forwardRef(function BpmnStage({
         console.error(`[BPMN] saveXML.modeler.error ${msg}\n${String(e?.stack || "")}`);
       }
       if (fallbackXml.trim()) {
-        if (force) {
+        if (force && allowForceFallback) {
           const rev = Number(bpmnStoreRef.current?.getState?.()?.rev || 0);
           const persisted = await ensureBpmnPersistence().saveRaw(sid, fallbackXml, rev, `${source}:catch_fallback`);
-          if (!persisted.ok) return { ok: false, error: String(persisted.error || msg), xml: fallbackXml };
+          if (!persisted.ok) {
+            if (resolvedSaveOwner) {
+              coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:save_local_fallback_fail`);
+            }
+            return {
+              ok: false,
+              error: String(persisted.error || msg),
+              status: Number(persisted?.status || 0),
+              errorCode: String(persisted?.errorCode || ""),
+              xml: fallbackXml,
+            };
+          }
+          if (resolvedSaveOwner) {
+            coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:save_local_fallback_done`);
+          }
+          return { ok: true, xml: fallbackXml, source: "fallback" };
         }
-        return { ok: true, xml: fallbackXml, source: "fallback" };
       }
-      return { ok: false, error: msg || "saveXML failed" };
+      if (resolvedSaveOwner) {
+        coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:save_local_error`);
+      }
+      return {
+        ok: false,
+        error: msg || "saveXML failed",
+        status: Number(e?.status || 0),
+        errorCode: String(e?.code || ""),
+      };
     }
   }
 
@@ -3913,6 +4601,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     activeSessionRef.current = sid;
     ensureEpochRef.current += 1;
     robotMetaHydrateStateRef.current = { key: "" };
+    camundaHydrateStateRef.current = { key: "" };
     destroyRuntime();
     setErr("");
     const draftNow = asObject(draftRef.current);
@@ -3996,7 +4685,8 @@ const BpmnStage = forwardRef(function BpmnStage({
           if ((!xml || !xml.trim()) && draftXml.trim()) {
             applyXmlSnapshot(draftXml, srcHint || "draft");
           }
-          const modelerReady = !!modelerRef.current && !!modelerReadyRef.current && hasDefinitionsLoaded(modelerRef.current);
+          const modelerHasDefinitions = !!modelerRef.current && hasDefinitionsLoaded(modelerRef.current);
+          const modelerReady = !!modelerRef.current && !!modelerReadyRef.current && modelerHasDefinitions;
           const source = String(storeEvent.source || "");
           const reason = String(storeEvent.reason || "");
           const isInternalModelerUpdate = reason === "setXml"
@@ -4019,7 +4709,7 @@ const BpmnStage = forwardRef(function BpmnStage({
             if (isStale("modeler.keep_view.after")) return;
             return;
           }
-          if (modelerReady && lastModelerXmlHashRef.current === resolvedHash) {
+          if (modelerHasDefinitions && lastModelerXmlHashRef.current === resolvedHash) {
             if (isStale("modeler.same_hash.before")) return;
             await ensureCanvasVisibleAndFit(modelerRef.current, "renderModeler.same_hash", sid, {
               reason: "editor_same_hash",
@@ -4146,42 +4836,35 @@ const BpmnStage = forwardRef(function BpmnStage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft?.bpmn_meta, view]);
 
-  useEffect(() => {
-    if (isInterviewDecorModeOn()) {
-      clearUserNotesDecor(viewerRef.current, "viewer");
-      clearUserNotesDecor(modelerRef.current, "editor");
-    } else {
-      applyUserNotesDecor(viewerRef.current, "viewer");
-      applyUserNotesDecor(modelerRef.current, "editor");
-    }
-    applyStepTimeDecor(viewerRef.current, "viewer");
-    applyStepTimeDecor(modelerRef.current, "editor");
-    applyRobotMetaDecor(viewerRef.current, "viewer");
-    applyRobotMetaDecor(modelerRef.current, "editor");
-    const kind = view === "editor" ? "editor" : "viewer";
-    const inst = kind === "editor" ? modelerRef.current : viewerRef.current;
-    const selectedId = String(selectedMarkerStateRef.current[kind] || "");
-    if (!inst || !selectedId) return;
-    try {
-      const registry = inst.get("elementRegistry");
-      const el = registry.get(selectedId);
-      emitElementSelection(el, `${kind}.notes_refresh`);
-      syncAiQuestionPanelWithSelection(inst, kind, el, `${kind}.notes_refresh`);
-    } catch {
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    draft?.notes_by_element,
-    draft?.notesByElementId,
-    draft?.nodes,
-    draft?.bpmn_meta,
+  useBpmnSettledDecorFanout({
+    viewerRef,
+    modelerRef,
+    modelerRuntimeRef,
+    modelerReadyRef,
     view,
+    draft,
     diagramDisplayMode,
     stepTimeUnit,
     robotMetaOverlayEnabled,
     robotMetaOverlayFilters,
     robotMetaStatusByElementId,
-  ]);
+    selectedPropertiesOverlayPreview,
+    propertiesOverlayAlwaysEnabled,
+    propertiesOverlayAlwaysPreviewByElementId,
+    isInterviewDecorModeOn,
+    clearUserNotesDecor,
+    applyUserNotesDecor,
+    applyStepTimeDecor,
+    applyRobotMetaDecor,
+    applyPropertiesOverlayDecor,
+    clearPropertiesOverlayDecor,
+    selectedMarkerStateRef,
+    settledSelectionFanoutRef,
+    buildSettledSelectionFanoutSignature,
+    emitElementSelection,
+    syncAiQuestionPanelWithSelection,
+    syncCamundaExtensionsToModeler,
+  });
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -4292,6 +4975,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         persistXmlSnapshot,
         renderModeler,
         renderViewer,
+        runDiagramContextAction,
         saveLocalFromModeler,
         saveXmlDraftText,
         seedNew,
