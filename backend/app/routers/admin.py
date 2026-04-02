@@ -14,6 +14,7 @@ from ..auto_pass_jobs import redis_queue_enabled
 from ..auth import AuthError, create_user, list_users as list_auth_users, update_user
 from ..redis_client import get_client, runtime_status
 from ..storage import (
+    count_audit_log,
     delete_org_membership,
     get_project_storage,
     get_storage,
@@ -104,6 +105,70 @@ def _session_redis_mode(*, redis_runtime: Dict[str, Any], bpmn_meta_raw: Dict[st
     if _autopass_used_fallback(autopass_raw, bpmn_meta_raw):
         return "FALLBACK"
     return "ON"
+
+
+_PUBLISH_GIT_MIRROR_DASHBOARD_STATES = (
+    "not_attempted",
+    "skipped_disabled",
+    "skipped_invalid_config",
+    "pending",
+    "synced",
+    "failed",
+)
+
+
+def _collect_publish_git_mirror_metrics(*, sessions: List[Dict[str, Any]], meta_map: Dict[str, Any]) -> Dict[str, Any]:
+    counts: Counter[str] = Counter({state: 0 for state in _PUBLISH_GIT_MIRROR_DASHBOARD_STATES})
+    published_bpmn_versions = 0
+    latest_attempt_at = 0
+    latest_result_state = "not_attempted"
+    latest_result_session_id = ""
+    latest_result_version_number = 0
+    latest_result_version_id = ""
+    latest_result_error = ""
+
+    for session in sessions:
+        row = _as_dict(session)
+        sid = _as_text(row.get("id"))
+        if not sid:
+            continue
+        meta_entry = _as_dict(meta_map.get(sid))
+        publish_mirror = _legacy_main._extract_publish_git_mirror(_as_dict(meta_entry.get("interview")))
+        state = _as_text(publish_mirror.get("state")).lower()
+        if state not in counts:
+            state = "not_attempted"
+        counts[state] += 1
+
+        version_number = max(0, _as_int(publish_mirror.get("version_number"), 0))
+        published_bpmn_versions += version_number
+
+        attempt_at = max(0, _as_int(publish_mirror.get("last_attempt_at"), 0))
+        if attempt_at < latest_attempt_at:
+            continue
+        if attempt_at == 0 and latest_attempt_at > 0:
+            continue
+        latest_attempt_at = attempt_at
+        latest_result_state = state
+        latest_result_session_id = sid
+        latest_result_version_number = version_number
+        latest_result_version_id = _as_text(publish_mirror.get("version_id"))
+        latest_result_error = _as_text(publish_mirror.get("last_error"))
+
+    return {
+        "published_bpmn_versions": int(published_bpmn_versions),
+        "not_attempted": int(counts.get("not_attempted", 0)),
+        "skipped_disabled": int(counts.get("skipped_disabled", 0)),
+        "skipped_invalid_config": int(counts.get("skipped_invalid_config", 0)),
+        "pending": int(counts.get("pending", 0)),
+        "mirrored_to_git": int(counts.get("synced", 0)),
+        "failed": int(counts.get("failed", 0)),
+        "latest_attempt_at": int(latest_attempt_at),
+        "latest_result_state": latest_result_state,
+        "latest_result_session_id": latest_result_session_id,
+        "latest_result_version_number": int(latest_result_version_number),
+        "latest_result_version_id": latest_result_version_id,
+        "latest_result_error": latest_result_error,
+    }
 
 
 def _admin_context(
@@ -349,6 +414,7 @@ def _session_row_for_admin(
     autopass = _as_dict(bpmn_meta.get("auto_pass_v1"))
     warnings_count = _as_int(_as_dict(row.get("dod_artifacts")).get("needs_attention"), _as_int(row.get("needs_attention"), 0))
     errors_count = _as_int(quality.get("errors"), 0)
+    publish_mirror = _legacy_main._extract_publish_git_mirror(_as_dict(meta_entry.get("interview")))
     return {
         "session_id": sid,
         "org_id": _as_text(row.get("org_id")),
@@ -366,6 +432,10 @@ def _session_row_for_admin(
         "redis_mode": _session_redis_mode(redis_runtime=redis_runtime, bpmn_meta_raw=bpmn_meta, autopass_raw=autopass),
         "warnings_count": max(0, warnings_count),
         "errors_count": max(0, errors_count),
+        "publish_git_mirror_state": _as_text(publish_mirror.get("state") or "not_attempted"),
+        "publish_git_mirror_version_number": max(0, _as_int(publish_mirror.get("version_number"), 0)),
+        "publish_git_mirror_version_id": _as_text(publish_mirror.get("version_id")),
+        "publish_git_mirror_last_error": _as_text(publish_mirror.get("last_error")),
     }
 
 
@@ -385,6 +455,13 @@ def admin_dashboard(request: Request) -> Any:
     templates_org = list_templates(scope="org", owner_user_id="", org_id=oid or "", limit=1000)
     audit_items = list_audit_log(oid or "", limit=30)
     redis_runtime = runtime_status(force_ping=True)
+    publish_git_mirror = _collect_publish_git_mirror_metrics(sessions=sessions, meta_map=meta_map)
+    publish_latest_attempt_at = _as_int(publish_git_mirror.get("latest_attempt_at"), 0)
+    publish_latest_attempt_at_iso = (
+        datetime.fromtimestamp(publish_latest_attempt_at, tz=timezone.utc).isoformat()
+        if publish_latest_attempt_at > 0
+        else ""
+    )
 
     autopass_runs = 0
     autopass_done = 0
@@ -541,9 +618,10 @@ def admin_dashboard(request: Request) -> Any:
             "active_sessions": sum(1 for row in sessions if _as_text(row.get("status")).lower() == "in_progress"),
             "autopass_success_rate_pct": autopass_success_rate,
             "failed_jobs": failed_jobs,
-            "template_usage": len(templates_my) + len(templates_org),
             "avg_save_latency_ms": avg_save_latency_ms,
-            "redis_mode": redis_mode,
+            "published_bpmn_versions": _as_int(publish_git_mirror.get("published_bpmn_versions"), 0),
+            "mirrored_to_git": _as_int(publish_git_mirror.get("mirrored_to_git"), 0),
+            "mirror_failed": _as_int(publish_git_mirror.get("failed"), 0),
         },
         "charts": {
             "sessions_activity": points,
@@ -571,6 +649,12 @@ def admin_dashboard(request: Request) -> Any:
             "active_templates": active_templates,
             "cross_session_templates": cross_session_templates,
             "broken_anchor_templates": broken_anchor_templates,
+        },
+        "publish_git_mirror": {
+            **publish_git_mirror,
+            "latest_attempt_at_iso": publish_latest_attempt_at_iso,
+            "org_mirror_enabled": bool(org.get("git_mirror_enabled")),
+            "org_mirror_health_status": _as_text(org.get("git_health_status") or "unknown").lower() or "unknown",
         },
         "redis_health": {
             "mode": redis_mode,
@@ -705,11 +789,15 @@ def admin_patch_user(user_id: str, body: AdminUserPatchBody, request: Request) -
 def admin_projects(
     request: Request,
     q: str = Query(default=""),
+    limit: int = Query(default=20),
+    offset: int = Query(default=0),
 ) -> Any:
     _uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
     if err is not None:
         return err
-    workspace, ws_err = _workspace_payload(request, q=q, limit=500, offset=0)
+    lim = max(1, min(int(limit or 20), 50))
+    off = max(0, int(offset or 0))
+    workspace, ws_err = _workspace_payload(request, q=q, limit=5000, offset=0)
     if ws_err is not None:
         return ws_err
     projects = [_as_dict(item) for item in _as_list(workspace.get("projects"))]
@@ -732,10 +820,13 @@ def admin_projects(
             }
         )
     items.sort(key=lambda row: (-_as_int(row.get("updated_at"), 0), _as_text(row.get("project_id"))))
+    total = len(items)
+    paged = items[off:off + lim]
     return {
         "ok": True,
-        "items": items,
-        "count": len(items),
+        "items": paged,
+        "count": total,
+        "page": {"limit": lim, "offset": off, "total": total},
     }
 
 
@@ -745,11 +836,32 @@ def admin_sessions(
     q: str = Query(default=""),
     status: str = Query(default=""),
     owner_ids: str = Query(default=""),
+    updated_from: int = Query(default=0),
+    updated_to: int = Query(default=0),
+    needs_attention: int = Query(default=-1),
+    limit: int = Query(default=20),
+    offset: int = Query(default=0),
 ) -> Any:
     _uid, _is_admin, _oid, _role, scope, err = _admin_context(request)
     if err is not None:
         return err
-    workspace, ws_err = _workspace_payload(request, q=q, status=status, owner_ids=owner_ids, limit=500, offset=0)
+    lim = max(1, min(_as_int(limit, 20), 50))
+    off = max(0, _as_int(offset, 0))
+    needs_attention_raw = _as_int(needs_attention, -1)
+    needs_attention_value = None if needs_attention_raw < 0 else needs_attention_raw
+    updated_from_raw = _as_int(updated_from, 0)
+    updated_to_raw = _as_int(updated_to, 0)
+    workspace, ws_err = _workspace_payload(
+        request,
+        q=q,
+        status=status,
+        owner_ids=owner_ids,
+        updated_from=(updated_from_raw if updated_from_raw > 0 else None),
+        updated_to=(updated_to_raw if updated_to_raw > 0 else None),
+        needs_attention=needs_attention_value,
+        limit=lim,
+        offset=off,
+    )
     if ws_err is not None:
         return ws_err
     org = _as_dict(workspace.get("org"))
@@ -773,7 +885,12 @@ def admin_sessions(
         "ok": True,
         "org": {"id": _as_text(org.get("id")), "name": _as_text(org.get("name"))},
         "items": items,
-        "count": len(items),
+        "count": _as_int(_as_dict(workspace.get("page")).get("total"), len(items)),
+        "page": {
+            "limit": lim,
+            "offset": off,
+            "total": _as_int(_as_dict(workspace.get("page")).get("total"), len(items)),
+        },
     }
 
 
@@ -829,6 +946,7 @@ def admin_session_detail(session_id: str, request: Request) -> Any:
             project_name = _as_text(getattr(project_obj, "title", "") or project_id)
     except Exception:
         project_name = project_id
+    publish_mirror = _legacy_main._extract_publish_git_mirror(interview)
 
     detail = {
         "session_id": _as_text(getattr(sess, "id", session_id)),
@@ -841,6 +959,10 @@ def admin_session_detail(session_id: str, request: Request) -> Any:
         "status": _as_text(session_status),
         "updated_at": _as_int(getattr(sess, "updated_at", 0), 0),
         "created_at": _as_int(getattr(sess, "created_at", 0), 0),
+        "publish_git_mirror_state": _as_text(publish_mirror.get("state") or "not_attempted"),
+        "publish_git_mirror_version_number": max(0, _as_int(publish_mirror.get("version_number"), 0)),
+        "publish_git_mirror_version_id": _as_text(publish_mirror.get("version_id")),
+        "publish_git_mirror_last_error": _as_text(publish_mirror.get("last_error")),
         "tabs": {
             "overview": {
                 "summary": {
@@ -1019,47 +1141,54 @@ def admin_audit(
     action: str = Query(default=""),
     session_id: str = Query(default=""),
     project_id: str = Query(default=""),
-    limit: int = Query(default=200),
+    updated_from: int = Query(default=0),
+    updated_to: int = Query(default=0),
+    limit: int = Query(default=20),
+    offset: int = Query(default=0),
 ) -> Any:
     _uid, _is_admin, oid, _role, _scope, err = _admin_context(request)
     if err is not None:
         return err
-    rows = list_audit_log(
+    lim = max(1, min(_as_int(limit, 20), 50))
+    off = max(0, _as_int(offset, 0))
+    q_value = _as_text(q).lower() or None
+    updated_from_raw = _as_int(updated_from, 0)
+    updated_to_raw = _as_int(updated_to, 0)
+    from_ts = updated_from_raw if updated_from_raw > 0 else None
+    to_ts = updated_to_raw if updated_to_raw > 0 else None
+    total = count_audit_log(
         oid or "",
-        limit=max(1, min(int(limit or 200), 500)),
         action=_as_text(action) or None,
         project_id=_as_text(project_id) or None,
         session_id=_as_text(session_id) or None,
         status=_as_text(status).lower() or None,
+        q=q_value,
+        updated_from=from_ts,
+        updated_to=to_ts,
     )
-    query = _as_text(q).lower()
-    if query:
-        filtered = []
-        for row in rows:
-            item = _as_dict(row)
-            hay = " ".join(
-                [
-                    _as_text(item.get("action")),
-                    _as_text(item.get("actor_user_id")),
-                    _as_text(item.get("project_id")),
-                    _as_text(item.get("session_id")),
-                    _as_text(item.get("entity_type")),
-                    _as_text(item.get("entity_id")),
-                ]
-            ).lower()
-            if query in hay:
-                filtered.append(item)
-        rows = filtered
+    rows = list_audit_log(
+        oid or "",
+        limit=lim,
+        offset=off,
+        action=_as_text(action) or None,
+        project_id=_as_text(project_id) or None,
+        session_id=_as_text(session_id) or None,
+        status=_as_text(status).lower() or None,
+        q=q_value,
+        updated_from=from_ts,
+        updated_to=to_ts,
+    )
     status_counts = Counter(_as_text(_as_dict(item).get("status")).lower() or "unknown" for item in rows)
     actors = {_as_text(_as_dict(item).get("actor_user_id")) for item in rows if _as_text(_as_dict(item).get("actor_user_id"))}
     return {
         "ok": True,
         "summary": {
-            "total": len(rows),
+            "total": int(total),
             "ok": int(status_counts.get("ok", 0)),
             "failed": int(status_counts.get("fail", 0)),
             "unique_actors": len(actors),
         },
         "items": rows,
-        "count": len(rows),
+        "count": int(total),
+        "page": {"limit": lim, "offset": off, "total": int(total)},
     }

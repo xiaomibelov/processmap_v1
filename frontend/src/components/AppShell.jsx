@@ -2,9 +2,11 @@ import { useEffect } from "react";
 import TopBar from "./TopBar";
 import ProcessStage from "./ProcessStage";
 import SidebarHandle from "./sidebar/SidebarHandle";
+import { resolveSessionNavNoticeCopy } from "../features/process/navigation/sessionNavNoticeUi";
 
 export default function AppShell({
   draft,
+  shellSessionId = "",
   locked,
   left,
   leftHidden,
@@ -57,16 +59,21 @@ export default function AppShell({
   onSessionSync,
   onRecalculateRtiers,
   snapshotRestoreNotice,
+  onSnapshotRestoreNoticeConsumed,
+  selectedPropertiesOverlayPreview,
+  propertiesOverlayAlwaysEnabled = false,
+  propertiesOverlayAlwaysPreviewByElementId = null,
   sessionNavNotice,
   onDismissSessionNavNotice,
   onReturnToSessionList,
 }) {
-  const hasActiveSession = String(sessionId || "").trim().length > 0;
+  const hasActiveSession = String(shellSessionId || sessionId || "").trim().length > 0;
   const effectiveLeftHidden = hasActiveSession ? !!leftHidden : true;
   const workspaceClass = `workspace ${effectiveLeftHidden ? "workspace--leftHidden" : leftCompact ? "workspace--leftCompact" : ""}`.trim();
   const workspaceBackHandler = hasActiveSession
     ? (() => onReturnToSessionList?.())
     : (() => onProjectChange?.(""));
+  const sessionNavNoticeCopy = resolveSessionNavNoticeCopy(sessionNavNotice);
 
   useEffect(() => {
     // eslint-disable-next-line no-console
@@ -102,7 +109,7 @@ export default function AppShell({
         canManageProjectEntities={canManageProjectEntities}
         onProjectChange={onProjectChange}
         sessions={sessions}
-        sessionId={sessionId}
+        sessionId={String(shellSessionId || sessionId || "").trim()}
         sessionStatus={sessionStatus}
         onDeleteSession={onDeleteSession}
         onChangeSessionStatus={onChangeSessionStatus}
@@ -126,8 +133,8 @@ export default function AppShell({
       {sessionNavNotice ? (
         <div className="mx-3 mt-2 rounded-lg border border-warning/45 bg-warning/10 px-3 py-2 text-xs text-warning">
           <div className="flex flex-wrap items-center gap-2">
-            <strong>Сессия недоступна</strong>
-            <span className="text-warning/90">{String(sessionNavNotice?.message || "Не удалось открыть текущую сессию.")}</span>
+            <strong>{sessionNavNoticeCopy.title}</strong>
+            <span className="text-warning/90">{String(sessionNavNotice?.message || sessionNavNoticeCopy.fallbackMessage)}</span>
             {Number(sessionNavNotice?.status || 0) > 0 ? (
               <span className="badge warn">HTTP {Number(sessionNavNotice?.status || 0)}</span>
             ) : null}
@@ -181,7 +188,11 @@ export default function AppShell({
             onOpenElementNotes={onOpenElementNotes}
             onElementNotesRemap={onElementNotesRemap}
             snapshotRestoreNotice={snapshotRestoreNotice}
+            onSnapshotRestoreNoticeConsumed={onSnapshotRestoreNoticeConsumed}
             onRecalculateRtiers={onRecalculateRtiers}
+            selectedPropertiesOverlayPreview={selectedPropertiesOverlayPreview}
+            propertiesOverlayAlwaysEnabled={propertiesOverlayAlwaysEnabled}
+            propertiesOverlayAlwaysPreviewByElementId={propertiesOverlayAlwaysPreviewByElementId}
           />
         </div>
       </div>

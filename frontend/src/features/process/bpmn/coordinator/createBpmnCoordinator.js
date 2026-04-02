@@ -1,3 +1,5 @@
+import createLocalMutationStaging from "./createLocalMutationStaging.js";
+
 function asText(value) {
   return String(value || "");
 }
@@ -24,7 +26,7 @@ export default function createBpmnCoordinator(options = {}) {
   const persistence = options?.persistence && typeof options.persistence === "object"
     ? options.persistence
     : {};
-  const debounceMs = asNumber(options?.debounceMs, 180);
+  const debounceMs = asNumber(options?.debounceMs, 600);
   const onTrace = typeof options?.onTrace === "function" ? options.onTrace : null;
   const onRuntimeChange = typeof options?.onRuntimeChange === "function" ? options.onRuntimeChange : null;
   const onRuntimeStatus = typeof options?.onRuntimeStatus === "function" ? options.onRuntimeStatus : null;
@@ -37,6 +39,20 @@ export default function createBpmnCoordinator(options = {}) {
   let saveInFlight = false;
   let saveQueuedRev = 0;
   let flushPromise = null;
+  let singleWriterOwner = "";
+  let singleWriterExpiresAt = 0;
+  let diagramMutationSaveActive = false;
+  const localMutationStaging = createLocalMutationStaging({
+    getStore: () => store,
+    getRuntime,
+    getSessionId: currentSid,
+    onRuntimeChange: (ev) => onRuntimeChange?.(ev),
+    cacheRaw: (sid, xml, rev, reason) => cacheRaw(sid, xml, rev, reason),
+    emit: (event, payload) => emit(event, payload),
+    requestAutosave: (reason) => scheduleSave(reason),
+    asText,
+    asNumber,
+  });
 
   function emit(event, payload = {}) {
     if (!onTrace) return;
@@ -68,6 +84,77 @@ export default function createBpmnCoordinator(options = {}) {
     return asText(getSessionId?.() || "").trim();
   }
 
+  function normalizeSaveOwner(value) {
+    return asText(value || "").trim().toLowerCase();
+  }
+
+  function clearSingleWriter(reason = "clear_single_writer") {
+    const owner = singleWriterOwner;
+    singleWriterOwner = "";
+    singleWriterExpiresAt = 0;
+    if (!owner) return;
+    emit("SAVE_SINGLE_WRITER_CLEARED", {
+      sid: currentSid(),
+      owner,
+      reason: asText(reason || "clear_single_writer"),
+    });
+  }
+
+  function readSingleWriterOwner() {
+    if (!singleWriterOwner) return "";
+    if (singleWriterExpiresAt > 0 && Date.now() > singleWriterExpiresAt) {
+      clearSingleWriter("expired");
+      return "";
+    }
+    return singleWriterOwner;
+  }
+
+  function beginSingleWriter(ownerRaw, options = {}) {
+    const owner = normalizeSaveOwner(ownerRaw);
+    if (!owner) return { ok: false, owner: "" };
+    const ttlMs = Math.max(1000, asNumber(options?.ttlMs, 15000));
+    singleWriterOwner = owner;
+    singleWriterExpiresAt = Date.now() + ttlMs;
+    clearSaveTimer();
+    clearPendingReplayTimer();
+    emit("SAVE_SINGLE_WRITER_SET", {
+      sid: currentSid(),
+      owner,
+      ttl_ms: ttlMs,
+      reason: asText(options?.reason || "single_writer_begin"),
+    });
+    return { ok: true, owner, expiresAt: singleWriterExpiresAt };
+  }
+
+  function endSingleWriter(ownerRaw = "", reason = "single_writer_end") {
+    const activeOwner = readSingleWriterOwner();
+    if (!activeOwner) return { ok: true, cleared: false };
+    const owner = normalizeSaveOwner(ownerRaw);
+    if (owner && owner !== activeOwner) {
+      return {
+        ok: false,
+        cleared: false,
+        owner: activeOwner,
+      };
+    }
+    clearSingleWriter(reason);
+    return { ok: true, cleared: true };
+  }
+
+  function resolveSaveOwner(options = {}) {
+    return normalizeSaveOwner(options?.saveOwner || options?.owner);
+  }
+
+  function getSingleWriterBlock(options = {}) {
+    const activeOwner = readSingleWriterOwner();
+    if (!activeOwner) return { blocked: false, activeOwner: "" };
+    const callerOwner = resolveSaveOwner(options);
+    if (callerOwner && callerOwner === activeOwner) {
+      return { blocked: false, activeOwner };
+    }
+    return { blocked: true, activeOwner };
+  }
+
   function setPendingSave(entry) {
     pendingSave = {
       sessionId: asText(entry?.sessionId || "").trim(),
@@ -96,25 +183,7 @@ export default function createBpmnCoordinator(options = {}) {
   }
 
   async function applyRuntimeChange(ev) {
-    if (!store) return;
-    const sid = currentSid();
-    if (!sid) return;
-    onRuntimeChange?.(ev);
-    const runtime = getRuntime();
-    const status = runtime?.getStatus?.();
-    let nextXml = asText(store.getState?.()?.xml || "");
-    if (status?.ready && status?.defs) {
-      const xmlRes = await runtime.getXml({ format: true });
-      if (xmlRes?.ok) nextXml = asText(xmlRes.xml);
-    }
-    const nextState = store.setXml(nextXml, "runtime_change", { bumpRev: true, dirty: true });
-    cacheRaw(sid, nextXml, asNumber(nextState?.rev, 0), "runtime_change");
-    emit("REV_BUMP", {
-      sid,
-      rev: asNumber(nextState?.rev, 0),
-      reason: "runtime_change",
-    });
-    scheduleSave("autosave");
+    await localMutationStaging.stageRuntimeChange(ev);
   }
 
   function applyRuntimeStatus(status) {
@@ -157,7 +226,15 @@ export default function createBpmnCoordinator(options = {}) {
 
   async function doFlush(reason = "manual", options = {}) {
     const sid = currentSid();
-    if (!sid || !store) return { ok: false, rev: 0, error: "missing session" };
+    if (!sid || !store) {
+      return {
+        ok: false,
+        rev: 0,
+        status: 0,
+        errorCode: "missing_session",
+        error: "missing session",
+      };
+    }
     const state = store.getState();
     const runtime = getRuntime();
     const status = runtime?.getStatus?.() || {};
@@ -237,10 +314,38 @@ export default function createBpmnCoordinator(options = {}) {
         });
         return { ok: true, pending: true, rev };
       }
-      return { ok: false, rev, error: asText(xmlRes?.error || xmlRes?.reason || "getXml failed") };
+      return {
+        ok: false,
+        rev,
+        status: asNumber(xmlRes?.status, 0),
+        errorCode: asText(xmlRes?.reason || "runtime_get_xml_failed"),
+        error: asText(xmlRes?.error || xmlRes?.reason || "getXml failed"),
+      };
     }
 
     const xml = asText(xmlRes?.xml);
+    const currentXmlHash = fnv1aHex(xml);
+    const localHash = asText(state?.lastHash || state?.hash || "");
+    const localDirty = state?.dirty === true;
+    const localLastSavedRev = asNumber(state?.lastSavedRev, 0);
+    if (!localDirty && currentXmlHash && localHash && currentXmlHash === localHash && localLastSavedRev >= rev) {
+      emit("SAVE_PERSIST_SKIPPED_UNCHANGED", {
+        sid,
+        reason,
+        rev,
+        last_saved_rev: localLastSavedRev,
+        xml_len: xml.length,
+      });
+      return {
+        ok: true,
+        rev: localLastSavedRev || rev,
+        storedRev: localLastSavedRev || rev,
+        skipped: true,
+        unchanged: true,
+        xml,
+        hash: currentXmlHash,
+      };
+    }
     const refreshed = store.setXml(xml, "flush_save", { bumpRev: false, dirty: true });
     const targetRev = asNumber(refreshed?.rev, rev);
     emit("SAVE_EXECUTED", {
@@ -259,14 +364,21 @@ export default function createBpmnCoordinator(options = {}) {
     const startedAt = Date.now();
     const persisted = await persistRaw(sid, xml, targetRev, reason);
     if (!persisted?.ok) {
+      const status = asNumber(persisted?.status, 0);
       emit("SAVE_PERSIST_FAIL", {
         sid,
         reason,
         rev: targetRev,
-        status: asNumber(persisted?.status, 0),
+        status,
         error: asText(persisted?.error || "persist failed"),
       });
-      return { ok: false, rev: targetRev, error: asText(persisted?.error || "persist failed") };
+      return {
+        ok: false,
+        rev: targetRev,
+        status,
+        errorCode: asText(persisted?.errorCode || (status > 0 ? `http_${status}` : "persist_failed")),
+        error: asText(persisted?.error || "persist failed"),
+      };
     }
     const storedRev = asNumber(persisted?.storedRev, targetRev);
     const xmlHash = asText(persisted?.hash || fnv1aHex(xml));
@@ -282,11 +394,36 @@ export default function createBpmnCoordinator(options = {}) {
       status: asNumber(persisted?.status, 200),
       ms: Date.now() - startedAt,
     });
-    return { ok: true, rev: storedRev };
+    return { ok: true, rev: storedRev, storedRev };
   }
 
   function scheduleSave(reason = "autosave") {
     if (!store) return;
+    const lane = getSingleWriterBlock();
+    if (lane.blocked) {
+      emit("SAVE_SKIPPED_SINGLE_WRITER", {
+        sid: currentSid(),
+        reason: asText(reason || "autosave"),
+        active_owner: lane.activeOwner,
+      });
+      return;
+    }
+    // If a save is already in-flight, don't start a new timer — the in-flight
+    // flushSave will check saveQueuedRev after completion and re-flush if needed.
+    if (saveInFlight) {
+      emit("SAVE_SCHEDULE_COALESCED", {
+        sid: currentSid(),
+        reason: asText(reason || "autosave"),
+      });
+      return;
+    }
+    if (diagramMutationSaveActive) {
+      emit("SAVE_SCHEDULE_DEFERRED_TO_MUTATION_LIFECYCLE", {
+        sid: currentSid(),
+        reason: asText(reason || "autosave"),
+      });
+      return;
+    }
     const state = store.getState();
     saveQueuedRev = Math.max(saveQueuedRev, asNumber(state?.rev, 0));
     clearSaveTimer();
@@ -297,6 +434,20 @@ export default function createBpmnCoordinator(options = {}) {
   }
 
   async function flushSave(reason = "manual", options = {}) {
+    const lane = getSingleWriterBlock(options);
+    if (lane.blocked) {
+      emit("SAVE_SKIPPED_SINGLE_WRITER", {
+        sid: currentSid(),
+        reason: asText(reason || "manual"),
+        active_owner: lane.activeOwner,
+      });
+      return {
+        ok: true,
+        skipped: true,
+        singleWriterBlocked: true,
+        activeOwner: lane.activeOwner,
+      };
+    }
     clearSaveTimer();
     if (!store) return { ok: false, rev: 0, error: "store unavailable" };
     if (flushPromise) {
@@ -315,6 +466,98 @@ export default function createBpmnCoordinator(options = {}) {
           }
         }
         return result;
+      } finally {
+        saveInFlight = false;
+      }
+    })();
+    flushPromise = run;
+    try {
+      return await run;
+    } finally {
+      if (flushPromise === run) flushPromise = null;
+    }
+  }
+
+  async function persistExplicitXml(xmlText, reason = "explicit_persist", options = {}) {
+    const lane = getSingleWriterBlock(options);
+    if (lane.blocked) {
+      emit("SAVE_SKIPPED_SINGLE_WRITER", {
+        sid: currentSid(),
+        reason: asText(reason || "explicit_persist"),
+        active_owner: lane.activeOwner,
+      });
+      return {
+        ok: true,
+        skipped: true,
+        singleWriterBlocked: true,
+        activeOwner: lane.activeOwner,
+      };
+    }
+    if (!store) return { ok: false, rev: 0, error: "store unavailable" };
+    if (flushPromise) {
+      await flushPromise;
+    }
+    const run = (async () => {
+      saveInFlight = true;
+      try {
+        const sid = currentSid();
+        if (!sid) {
+          return {
+            ok: false,
+            rev: 0,
+            status: 0,
+            errorCode: "missing_session",
+            error: "missing session",
+          };
+        }
+        const state = store.getState();
+        const rev = asNumber(options?.rev, asNumber(state?.rev, 0));
+        const xml = asText(xmlText);
+        emit("SAVE_EXECUTED", {
+          sid,
+          reason,
+          rev,
+          runtime_token: 0,
+          xml_len: xml.length,
+          explicit: 1,
+        });
+        emit("SAVE_PERSIST_STARTED", {
+          sid,
+          reason,
+          rev,
+          xml_len: xml.length,
+        });
+        const startedAt = Date.now();
+        const persisted = await persistRaw(sid, xml, rev, reason);
+        if (!persisted?.ok) {
+          const status = asNumber(persisted?.status, 0);
+          emit("SAVE_PERSIST_FAIL", {
+            sid,
+            reason,
+            rev,
+            status,
+            error: asText(persisted?.error || "persist failed"),
+          });
+          return {
+            ok: false,
+            rev,
+            status,
+            errorCode: asText(persisted?.errorCode || (status > 0 ? `http_${status}` : "persist_failed")),
+            error: asText(persisted?.error || "persist failed"),
+          };
+        }
+        const storedRev = asNumber(persisted?.storedRev, rev);
+        const xmlHash = asText(persisted?.hash || fnv1aHex(xml));
+        cacheRaw(sid, xml, storedRev, reason);
+        store.markSaved(storedRev, xmlHash);
+        emit("SAVE_PERSIST_DONE", {
+          sid,
+          reason,
+          rev: storedRev,
+          status: asNumber(persisted?.status, 200),
+          ms: Date.now() - startedAt,
+        });
+        return { ok: true, rev: storedRev, storedRev };
       } finally {
         saveInFlight = false;
       }
@@ -384,7 +627,7 @@ export default function createBpmnCoordinator(options = {}) {
     const localXml = asText(state?.xml || "");
     const localRev = asNumber(state?.rev, 0);
     const localHash = asText(state?.lastHash || state?.hash || fnv1aHex(localXml));
-    const preferStore = optionsForReload?.preferStore !== false;
+    const preferStore = optionsForReload?.preferStore === true;
 
     if (preferStore && localXml.trim()) {
       emit("LOAD_SKIPPED_STORE_PRIORITY", {
@@ -427,6 +670,7 @@ export default function createBpmnCoordinator(options = {}) {
     const loadedRev = asNumber(loaded?.rev, 0);
     const loadedHash = asText(loaded?.hash || fnv1aHex(loadedXml));
     const source = asText(loaded?.source || "persistence");
+    const sourceReason = asText(loaded?.sourceReason || "");
 
     if (loadedRev > 0 && loadedRev < localRev) {
       emit("LOAD_SKIPPED_OLDER_REV", {
@@ -477,6 +721,7 @@ export default function createBpmnCoordinator(options = {}) {
     emit("LOAD_APPLIED", {
       sid,
       source,
+      source_reason: sourceReason,
       loaded_rev: loadedRev,
       local_rev: appliedRev,
       hash: loadedHash,
@@ -486,6 +731,7 @@ export default function createBpmnCoordinator(options = {}) {
       ok: true,
       applied: true,
       source,
+      sourceReason,
       xml: loadedXml,
       rev: appliedRev,
       loadedRev: markRev,
@@ -498,6 +744,8 @@ export default function createBpmnCoordinator(options = {}) {
       pendingSave: pendingSave ? { ...pendingSave } : null,
       saveInFlight,
       saveQueuedRev,
+      singleWriterOwner: readSingleWriterOwner(),
+      singleWriterExpiresAt,
       store: store?.getState?.() || null,
     };
   }
@@ -506,25 +754,45 @@ export default function createBpmnCoordinator(options = {}) {
     return !!saveInFlight || !!flushPromise;
   }
 
-  function destroy() {
+  function clearPendingWork(reason = "manual_clear") {
     clearSaveTimer();
     clearPendingReplayTimer();
     clearPendingSave();
+    const lastSavedRev = asNumber(store?.getState?.()?.lastSavedRev, 0);
+    saveQueuedRev = Math.max(saveQueuedRev, lastSavedRev);
+    emit("SAVE_QUEUE_CLEARED", {
+      reason: asText(reason || "manual_clear"),
+      last_saved_rev: lastSavedRev,
+    });
+  }
+
+  function destroy() {
+    clearPendingWork("destroy");
     unbindRuntime();
     flushPromise = null;
     saveInFlight = false;
     saveQueuedRev = 0;
+    clearSingleWriter("destroy");
+  }
+
+  function setDiagramMutationSaveActive(active) {
+    diagramMutationSaveActive = active === true;
   }
 
   return {
     bindRuntime,
     unbindRuntime,
     scheduleSave,
+    setDiagramMutationSaveActive,
     flushSave,
+    persistExplicitXml,
+    beginSingleWriter,
+    endSingleWriter,
     reload,
     syncExternalXml,
     getDebugState,
     isFlushing,
+    clearPendingWork,
     destroy,
   };
 }

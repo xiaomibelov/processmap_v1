@@ -4,11 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
-ENV_FILE="${APP_ENV_FILE:-.env}"
-
-if [ -f "$ENV_FILE" ]; then
+if [ -f .env ]; then
   set -a
-  . "$ENV_FILE"
+  . ./.env
   set +a
 fi
 

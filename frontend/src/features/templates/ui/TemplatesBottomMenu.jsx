@@ -19,8 +19,9 @@ function folderLabel(folder) {
 }
 
 function formatDateTs(tsRaw) {
-  const ts = Number(tsRaw || 0);
+  let ts = Number(tsRaw || 0);
   if (!(ts > 0)) return "—";
+  if (ts > 0 && ts < 1e12) ts *= 1000;
   try {
     return new Date(ts).toLocaleString("ru-RU");
   } catch {
@@ -346,7 +347,8 @@ export default function TemplatesBottomMenu({
 
   const handleApply = useCallback(async (templateRaw) => {
     const result = await Promise.resolve(onApply?.(templateRaw));
-    if (result?.ok !== false) {
+    const placementStarted = result?.ok === true;
+    if (placementStarted) {
       onClose?.();
     }
     return result;
@@ -366,7 +368,8 @@ export default function TemplatesBottomMenu({
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Templates</div>
             <div className="mt-1 text-xl font-semibold text-fg">BPMN templates for the current session</div>
             <div className="mt-1 text-sm text-muted">
-              Выберите BPMN fragment, посмотрите состав и вставьте его сразу в текущую сессию без placement-шага.
+              Выберите BPMN fragment и включите режим вставки.
+              После закрытия окна укажите точку на диаграмме и кликните ЛКМ, Esc отменяет placement.
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -529,10 +532,10 @@ export default function TemplatesBottomMenu({
                     <div className="rounded-2xl border border-border/70 bg-panel px-4 py-3">
                       <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Insert behavior</div>
                       <div className="mt-2 text-sm text-fg">
-                        Шаблон будет сразу вставлен в текущую BPMN-диаграмму и сразу сохранён в session через обычный BPMN write-path.
+                        После Apply окно закрывается и включается placement mode с ghost-предпросмотром под курсором.
                       </div>
                       <div className="mt-2 text-xs text-muted">
-                        Без draw.io, без hybrid, без дополнительного placement-шага.
+                        Вставка выполняется только по ЛКМ в выбранной точке на диаграмме. Esc отменяет режим вставки.
                       </div>
                     </div>
                     <div className="rounded-2xl border border-border/70 bg-panel px-4 py-3">
@@ -596,7 +599,7 @@ export default function TemplatesBottomMenu({
 
                 <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-4">
                   <div className="text-xs text-muted">
-                    Apply сразу обновит Diagram/XML в активной сессии.
+                    Apply переведёт диаграмму в режим выбора точки вставки (ЛКМ для вставки, Esc для отмены).
                   </div>
                   <div className="flex items-center gap-2">
                     <button type="button" className="secondaryBtn h-10 px-4 text-sm" onClick={onClose} disabled={busy}>

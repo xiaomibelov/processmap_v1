@@ -40,7 +40,6 @@ export default function ProcessDialogs({ view = {} }) {
     versionsOpen,
     closeVersionsDialog,
     refreshSnapshotVersions,
-    createManualSnapshot,
     versionsBusy,
     hasSession,
     versionsList,
@@ -215,15 +214,12 @@ export default function ProcessDialogs({ view = {} }) {
 
       <Modal
         open={versionsOpen}
-        title="История версий BPMN"
+        title="История ревизий BPMN"
         onClose={closeVersionsDialog}
         footer={(
           <>
             <button type="button" className="secondaryBtn" onClick={() => void refreshSnapshotVersions()} disabled={versionsBusy || !hasSession}>
               Обновить
-            </button>
-            <button type="button" className="secondaryBtn" onClick={() => void createManualSnapshot()} disabled={versionsBusy || !hasSession}>
-              Создать версию
             </button>
             <button
               type="button"
@@ -244,9 +240,6 @@ export default function ProcessDialogs({ view = {} }) {
             >
               Сравнить A/B
             </button>
-            <button type="button" className="secondaryBtn" onClick={() => void clearSnapshotHistory()} disabled={versionsBusy || !hasSession || versionsList.length === 0}>
-              Очистить историю
-            </button>
             <button type="button" className="primaryBtn" onClick={closeVersionsDialog}>
               Закрыть
             </button>
@@ -256,7 +249,8 @@ export default function ProcessDialogs({ view = {} }) {
         <div className="grid gap-3 lg:grid-cols-[minmax(320px,460px)_minmax(0,1fr)]" data-testid="bpmn-versions-modal">
           <div className="rounded-xl border border-border bg-panel2/45 p-2">
             <div className="mb-2 px-1 text-xs text-muted" data-testid="bpmn-versions-count">
-              Последние версии: {versionsList.length} · pinned: {asArray(versionsList).filter((item) => item?.pinned === true).length}
+              Последние версии: {versionsList.length}
+              <span> · последняя: r{Number(asArray(versionsList)[0]?.revisionNumber || 0)}</span>
             </div>
             <div className="max-h-[52vh] space-y-2 overflow-auto pr-1">
               {versionsList.length === 0 ? (
@@ -265,6 +259,7 @@ export default function ProcessDialogs({ view = {} }) {
                 versionsList.map((item) => {
                   const id = String(item?.id || "");
                   const active = id === String(previewSnapshotId || "");
+                  const isLatest = id === String(asArray(versionsList)[0]?.id || "");
                   return (
                     <div
                       key={id}
@@ -274,20 +269,31 @@ export default function ProcessDialogs({ view = {} }) {
                     >
                       <div className="mb-1 flex items-center justify-between gap-2 text-xs text-muted">
                         <span>{formatSnapshotTs(item?.ts)}</span>
-                        <span className="uppercase">{String(item?.reason || "autosave")}</span>
+                        <span>{String(item?.reasonLabel || item?.reason || "Импорт BPMN")}</span>
                       </div>
                       <div className="mb-1 flex items-center justify-between gap-2">
                         <span className="truncate text-sm font-semibold text-fg" data-testid="bpmn-version-label">
                           {snapshotLabel(item)}
                         </span>
-                        {item?.pinned ? (
-                          <span className="rounded-full border border-accent/40 bg-accentSoft/40 px-2 py-0.5 text-[10px] uppercase tracking-wide text-accent">
-                            Pinned
+                        <div className="flex items-center gap-1.5">
+                          {isLatest ? (
+                            <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-emerald-300">
+                              последняя
+                            </span>
+                          ) : null}
+                          <span className="rounded-full border border-accent/40 bg-accentSoft/20 px-2 py-0.5 text-[10px] uppercase tracking-wide text-accent">
+                            r{Number(item?.revisionNumber || item?.rev || 0)}
                           </span>
-                        ) : null}
+                        </div>
+                      </div>
+                      <div className="mb-1 text-xs text-muted">
+                        автор: {String(item?.authorLabel || item?.authorName || item?.authorEmail || item?.authorId || "неизвестно")}
                       </div>
                       <div className="mb-2 text-xs text-muted">
-                        rev: {Number(item?.rev || 0)} · hash: <span className="font-mono text-fg">{shortSnapshotHash(item?.hash || item?.xml || "")}</span> · len: {Number(item?.len || String(item?.xml || "").length)}
+                        комментарий: {String(item?.comment || "—")}
+                      </div>
+                      <div className="mb-2 text-xs text-muted">
+                        хэш: <span className="font-mono text-fg">{shortSnapshotHash(item?.hash || item?.xml || "")}</span> · размер: {Number(item?.len || String(item?.xml || "").length)}
                       </div>
                       <div className="flex flex-wrap gap-1.5">
                         <button
@@ -304,29 +310,11 @@ export default function ProcessDialogs({ view = {} }) {
                         <button
                           type="button"
                           className="secondaryBtn h-7 px-2 text-[11px]"
-                          onClick={() => void editSnapshotLabel(item)}
-                          disabled={versionsBusy}
-                          data-testid="bpmn-version-label-edit"
-                        >
-                          Label
-                        </button>
-                        <button
-                          type="button"
-                          className="secondaryBtn h-7 px-2 text-[11px]"
-                          onClick={() => void togglePinSnapshot(item)}
-                          disabled={versionsBusy}
-                          data-testid="bpmn-version-pin"
-                        >
-                          {item?.pinned ? "Unpin" : "Pin"}
-                        </button>
-                        <button
-                          type="button"
-                          className="secondaryBtn h-7 px-2 text-[11px]"
                           onClick={() => openDiffForSnapshot(item)}
                           disabled={versionsBusy || versionsList.length < 2}
                           data-testid="bpmn-version-diff"
                         >
-                          Diff
+                          Сравнить
                         </button>
                         <button
                           type="button"
@@ -362,7 +350,7 @@ export default function ProcessDialogs({ view = {} }) {
 
       <Modal
         open={diffOpen}
-        title="Semantic Diff BPMN"
+        title="Семантический diff BPMN"
         onClose={closeDiffDialog}
         footer={(
           <>
@@ -375,7 +363,7 @@ export default function ProcessDialogs({ view = {} }) {
         <div className="space-y-3" data-testid="bpmn-versions-diff-modal">
           <div className="grid gap-2 md:grid-cols-2">
             <label className="block space-y-1 text-xs text-muted">
-              <span>Версия A (base)</span>
+              <span>Ревизия A (база)</span>
               <select
                 className="select w-full"
                 value={String(diffBaseSnapshotId || "")}
@@ -394,7 +382,7 @@ export default function ProcessDialogs({ view = {} }) {
               </select>
             </label>
             <label className="block space-y-1 text-xs text-muted">
-              <span>Версия B (target)</span>
+              <span>Ревизия B (цель)</span>
               <select
                 className="select w-full"
                 value={String(diffTargetSnapshotId || "")}
@@ -425,18 +413,18 @@ export default function ProcessDialogs({ view = {} }) {
                   <thead className="border-b border-border text-muted">
                     <tr>
                       <th className="px-3 py-2 text-left">Сущность</th>
-                      <th className="px-3 py-2 text-right">Added</th>
-                      <th className="px-3 py-2 text-right">Removed</th>
-                      <th className="px-3 py-2 text-right">Changed</th>
+                      <th className="px-3 py-2 text-right">Добавлено</th>
+                      <th className="px-3 py-2 text-right">Удалено</th>
+                      <th className="px-3 py-2 text-right">Изменено</th>
                     </tr>
                   </thead>
                   <tbody>
                     {[
-                      { key: "tasks", title: "Tasks" },
-                      { key: "flows", title: "Flows" },
-                      { key: "lanes", title: "Lanes" },
-                      { key: "subprocess", title: "Subprocess" },
-                      { key: "conditions", title: "Conditions" },
+                      { key: "tasks", title: "Задачи" },
+                      { key: "flows", title: "Переходы" },
+                      { key: "lanes", title: "Лейны" },
+                      { key: "subprocess", title: "Подпроцессы" },
+                      { key: "conditions", title: "Условия" },
                     ].map((row) => (
                       <tr key={row.key} className="border-b border-border/60 last:border-0">
                         <td className="px-3 py-2 text-fg">{row.title}</td>
@@ -457,7 +445,7 @@ export default function ProcessDialogs({ view = {} }) {
 
               <div className="grid gap-2 md:grid-cols-2">
                 <div className="rounded-lg border border-border bg-panel px-3 py-2">
-                  <div className="mb-1 text-xs font-semibold text-fg">Changed tasks</div>
+                  <div className="mb-1 text-xs font-semibold text-fg">Изменённые задачи</div>
                   <div className="space-y-1 text-xs text-muted">
                     {asArray(semanticDiffView?.details?.tasks?.changed).slice(0, 6).map((item) => (
                       <div key={`task_changed_${item.id}`}>
@@ -468,7 +456,7 @@ export default function ProcessDialogs({ view = {} }) {
                   </div>
                 </div>
                 <div className="rounded-lg border border-border bg-panel px-3 py-2">
-                  <div className="mb-1 text-xs font-semibold text-fg">Changed conditions</div>
+                  <div className="mb-1 text-xs font-semibold text-fg">Изменённые условия</div>
                   <div className="space-y-1 text-xs text-muted">
                     {asArray(semanticDiffView?.details?.conditions?.changed).slice(0, 6).map((item) => (
                       <div key={`condition_changed_${item.key}`}>

@@ -3,11 +3,38 @@ import { apiPatchSession } from "../../../lib/api/sessionApi";
 import { parseAndProjectBpmnToInterview } from "./useInterviewProjection";
 import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
 import { traceProcess } from "../lib/processDebugTrace";
+import { buildBpmnSaveFailureDiagnostics } from "../bpmn/save/saveBeforeSwitchDiagnostics.js";
 
 function shortErr(x) {
   const s = String(x || "").trim();
   if (!s) return "";
   return s.length > 160 ? s.slice(0, 160) + "…" : s;
+}
+
+function publishTabSwitchSaveDiagnostics(diagnostics = {}) {
+  if (typeof window === "undefined") return;
+  try {
+    window.__FPC_LAST_TAB_SWITCH_SAVE_DIAGNOSTICS__ = {
+      ...diagnostics,
+      ts: Date.now(),
+    };
+  } catch {
+    // ignore diagnostics sink failures
+  }
+}
+
+function buildTabSwitchSaveFailureUiPayload(raw = {}, context = {}) {
+  const diagnostics = buildBpmnSaveFailureDiagnostics(raw, {
+    saveAttemptKind: "tab_switch",
+    activeBpmnSource: "diagram_modeler",
+    sourceReason: "tab_switch_flush_failed",
+    ...context,
+  });
+  return {
+    diagnostics,
+    message: shortErr(diagnostics.userMessage),
+    decisionReason: `flush_bpmn_failed:${diagnostics.errorClass}`,
+  };
 }
 
 function toNodeIdRaw(v) {
@@ -98,7 +125,7 @@ function normalizeTabId(tab) {
 }
 
 function isKnownTab(tab) {
-  return tab === "interview" || tab === "diagram" || tab === "xml" || tab === "doc";
+  return tab === "interview" || tab === "diagram" || tab === "xml" || tab === "doc" || tab === "dod";
 }
 
 export default function useProcessTabs({
@@ -316,7 +343,12 @@ export default function useProcessTabs({
         return { ok: true, xml: String(draftRef.current?.bpmn_xml || ""), pending: false };
       }
       if (flushBusyRef.current) {
-        return { ok: false, error: "flush_in_progress", xml: "" };
+        return {
+          ok: true,
+          pending: true,
+          xml: String(draftRef.current?.bpmn_xml || ""),
+          reason: "flush_in_progress",
+        };
       }
       flushBusyRef.current = true;
       setIsFlushingTab(true);
@@ -377,7 +409,7 @@ export default function useProcessTabs({
     const targetTab = intentTab === "editor" ? "diagram" : intentTab;
     if (!targetSid || targetSid !== sid) return;
     // TODO(tech-debt): review/llm tabs are intentionally hidden for now.
-    if (!["interview", "diagram", "xml", "doc"].includes(targetTab)) return;
+    if (!["interview", "diagram", "xml", "doc", "dod"].includes(targetTab)) return;
     const nonce = String(intent.nonce ?? "no_nonce");
     const intentKey = `${targetSid}:${targetTab}:${nonce}`;
     if (handledIntentGlobalRef.current.has(intentKey)) {
@@ -682,20 +714,36 @@ export default function useProcessTabs({
               pending: saved?.pending ? 1 : 0,
             });
             if (!saved.ok) {
-              onError?.(shortErr(saved.error || "Не удалось сохранить BPMN перед переключением вкладки."));
+              const payload = buildTabSwitchSaveFailureUiPayload(saved, {
+                activeBpmnSource: String(saved?.source || "diagram_modeler"),
+                sessionId: sid,
+                projectId: String(draftRef.current?.project_id || draftRef.current?.projectId || ""),
+                requestBaseRev: Number(draftRef.current?.bpmn_xml_version || draftRef.current?.version || 0),
+                storedRev: Number(saved?.storedRev || saved?.rev || 0),
+              });
+              publishTabSwitchSaveDiagnostics(payload.diagnostics);
+              onError?.(payload.message);
+              traceProcess("tabs.flush_bpmn_failed", {
+                sid,
+                from: current,
+                to: target,
+                error_class: payload.diagnostics.errorClass,
+                error_code: payload.diagnostics.errorCode,
+                status: payload.diagnostics.status,
+              });
               logTabDecision({
                 request: target,
                 current,
                 allow: false,
-                reason: "flush_bpmn_failed",
+                reason: payload.decisionReason,
                 sessionId: sid,
                 storeLen: traceMeta.storeLen,
                 rev: traceMeta.rev,
               });
               return;
             }
-            if (current === "diagram" && saved?.pending) {
-              pendingDiagramReplayRef.current = true;
+            if (saved?.pending) {
+              pendingDiagramReplayRef.current = current === "diagram";
               pendingTabReplayRef.current = {
                 sid: switchSid,
                 epoch: switchEpoch,
@@ -704,14 +752,14 @@ export default function useProcessTabs({
               };
               if (shouldLogTabTrace()) {
                 // eslint-disable-next-line no-console
-                console.debug(`[TAB_PENDING] sid=${switchSid || "-"} target=${target || "-"} reason=diagram_save_pending`);
+                console.debug(`[TAB_PENDING] sid=${switchSid || "-"} target=${target || "-"} reason=${String(saved?.reason || "diagram_save_pending")}`);
               }
               schedulePendingTabReplay();
               logTabDecision({
                 request: target,
                 current,
                 allow: true,
-                reason: "diagram_save_pending",
+                reason: String(saved?.reason || "diagram_save_pending"),
                 sessionId: sid,
                 storeLen: traceMeta.storeLen,
                 rev: traceMeta.rev,
@@ -827,14 +875,33 @@ export default function useProcessTabs({
                 invalidateHydrateForSession?.();
               }
             }
-	          } catch {
-            traceProcess("tabs.switch_error", { sid, current, target, error: "save_before_switch_failed" });
-            onError?.("Не удалось сохранить BPMN перед переключением вкладки.");
+	          } catch (error) {
+            const payload = buildTabSwitchSaveFailureUiPayload({
+              error: String(error?.message || error || "save_before_switch_failed"),
+              status: Number(error?.status || 0),
+              errorCode: String(error?.code || ""),
+            }, {
+              sourceReason: "tab_switch_exception",
+              sessionId: sid,
+              projectId: String(draftRef.current?.project_id || draftRef.current?.projectId || ""),
+              requestBaseRev: Number(draftRef.current?.bpmn_xml_version || draftRef.current?.version || 0),
+            });
+            publishTabSwitchSaveDiagnostics(payload.diagnostics);
+            traceProcess("tabs.switch_error", {
+              sid,
+              current,
+              target,
+              error: payload.message,
+              error_class: payload.diagnostics.errorClass,
+              error_code: payload.diagnostics.errorCode,
+              status: payload.diagnostics.status,
+            });
+            onError?.(payload.message);
             logTabDecision({
               request: target,
               current,
               allow: false,
-              reason: "switch_exception",
+              reason: `switch_exception:${payload.diagnostics.errorClass}`,
               sessionId: sid,
               storeLen: traceMeta.storeLen,
               rev: traceMeta.rev,

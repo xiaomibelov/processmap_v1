@@ -17,13 +17,7 @@ export default function SidebarHeader({
   processTitle,
   projectTitle,
   sessionTitle,
-  projectId,
   sessionId,
-  selectedNodeId,
-  aiBadgeCount,
-  notesBadgeCount,
-  actorsBadgeCount,
-  tierLabel,
   onProjectBreadcrumbClick,
   onSessionBreadcrumbClick,
   onProcessBreadcrumbClick,
@@ -59,38 +53,11 @@ export default function SidebarHeader({
   }, [menuOpen]);
 
   const onClose = onCloseSidebar || onToggleCollapse;
-  const shortId = (value) => {
-    const raw = String(value || "").trim();
-    if (!raw) return "";
-    if (raw.length <= 12) return raw;
-    return `${raw.slice(0, 6)}…${raw.slice(-4)}`;
-  };
-
-  function IdChip({ label, value, copyTitle = "" }) {
-    const raw = String(value || "").trim();
-    if (!raw) return null;
-    return (
-      <span className="sidebarContextChip" title={`${label}: ${raw}`}>
-        <span className="sidebarContextChipLabel">{label}</span>
-        <span className="sidebarContextChipValue">{shortId(raw)}</span>
-        <button
-          type="button"
-          className="sidebarContextChipCopy"
-          title={copyTitle || `Скопировать ${label}`}
-          onClick={() => {
-            void copyText(raw);
-          }}
-        >
-          ⧉
-        </button>
-      </span>
-    );
-  }
 
   return (
-    <div className="sidebarContextHeader sticky top-0 z-20 border-b border-border bg-panel/95 px-3 py-2.5 backdrop-blur">
+    <div className="sidebarContextHeader">
       <div className="mb-1.5 flex items-center justify-between gap-2">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">Контекст</div>
+        <div className="sidebarSectionCaption">Контекст процесса</div>
         <div className="relative inline-flex items-center gap-1">
           <button
             ref={buttonRef}
@@ -176,16 +143,6 @@ export default function SidebarHeader({
         >
           {processTitle || "Процесс"}
         </button>
-      </div>
-
-      <div className="sidebarContextChips mt-1">
-        <IdChip label="PID" value={projectId} copyTitle="Скопировать project id" />
-        <IdChip label="SID" value={sessionId} copyTitle="Скопировать session id" />
-        <IdChip label="Node" value={selectedNodeId} copyTitle="Скопировать node id" />
-        <span className="sidebarBadge">AI {Number(aiBadgeCount || 0)}</span>
-        <span className="sidebarBadge">Notes {Number(notesBadgeCount || 0)}</span>
-        <span className="sidebarBadge">Actors {Number(actorsBadgeCount || 0)}</span>
-        {tierLabel ? <span className="sidebarBadge">Tier {tierLabel}</span> : null}
       </div>
     </div>
   );

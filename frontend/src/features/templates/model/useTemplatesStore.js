@@ -17,6 +17,76 @@ function toText(value) {
 
 const TEMPLATES_ENABLED_KEY = "fpc_templates_mode";
 
+export function buildCenteredBpmnFragmentPlacementDraft(templateRaw, diagramContainerRect) {
+  const created = createBpmnFragmentPlacementDraft(templateRaw, { ignoreClickMs: 0 });
+  if (!created.ok || !created.draft) return created;
+  const rect = diagramContainerRect && typeof diagramContainerRect === "object" ? diagramContainerRect : {};
+  const width = Number(rect.width || 0);
+  const height = Number(rect.height || 0);
+  const nextDraft = { ...created.draft };
+  if (width > 0 && height > 0) {
+    nextDraft.pointer = {
+      x: Number(rect.left || 0) + Math.round(width / 2),
+      y: Number(rect.top || 0) + Math.round(height / 2),
+    };
+  } else if (typeof window !== "undefined") {
+    nextDraft.pointer = {
+      x: Math.round(Number(window.innerWidth || 1280) / 2),
+      y: Math.round(Number(window.innerHeight || 800) / 2),
+    };
+  }
+  return { ok: true, draft: nextDraft, error: "" };
+}
+
+export function activateBpmnFragmentTemplatePlacement({
+  template,
+  startBpmnFragmentPlacement,
+  setPickerOpen,
+  setError,
+  setInfo,
+}) {
+  if (typeof startBpmnFragmentPlacement !== "function") {
+    const error = "BPMN insert API недоступен.";
+    setError?.(error);
+    return { ok: false, error };
+  }
+  const started = startBpmnFragmentPlacement(template);
+  if (!started?.ok) {
+    const error = toText(started?.error || "Не удалось включить режим вставки BPMN-фрагмента.");
+    setError?.(error);
+    return { ok: false, error };
+  }
+  setPickerOpen?.(false);
+  setInfo?.("Режим вставки шаблона: выберите точку на диаграмме и кликните ЛКМ. Esc — отмена.");
+  return {
+    ...started,
+    ok: true,
+    placement: true,
+  };
+}
+
+export function shouldCancelBpmnFragmentPlacementByKey(event) {
+  return String(event?.key || "").toLowerCase() === "escape";
+}
+
+export async function insertBpmnFragmentFromPlacement({
+  currentPlacement,
+  clientX,
+  clientY,
+  insertBpmnFragmentTemplateAtPoint,
+}) {
+  if (typeof insertBpmnFragmentTemplateAtPoint !== "function") {
+    return { ok: false, error: "BPMN insert API недоступен." };
+  }
+  return await Promise.resolve(
+    insertBpmnFragmentTemplateAtPoint(currentPlacement, {
+      clientX,
+      clientY,
+      mode: "after",
+    }),
+  );
+}
+
 function readTemplatesEnabled() {
   if (typeof window === "undefined") return false;
   try {
@@ -65,7 +135,6 @@ export default function useTemplatesStore({
   applyHybridStencilTemplate,
   captureBpmnFragmentTemplatePack,
   insertBpmnFragmentTemplateAtPoint,
-  insertBpmnFragmentTemplateImmediately,
   isDiagramClientPoint,
   diagramContainerRect,
   selectionContext = {},
@@ -384,24 +453,9 @@ export default function useTemplatesStore({
   }, [activeFolderByScope]);
 
   const startBpmnFragmentPlacement = useCallback((templateRaw) => {
-    const created = createBpmnFragmentPlacementDraft(templateRaw, { ignoreClickMs: 0 });
-    if (!created.ok) return created;
-    const rect = diagramContainerRect && typeof diagramContainerRect === "object" ? diagramContainerRect : {};
-    const width = Number(rect.width || 0);
-    const height = Number(rect.height || 0);
-    const nextDraft = { ...created.draft };
-    if (width > 0 && height > 0) {
-      nextDraft.pointer = {
-        x: Number(rect.left || 0) + Math.round(width / 2),
-        y: Number(rect.top || 0) + Math.round(height / 2),
-      };
-    } else if (typeof window !== "undefined") {
-      nextDraft.pointer = {
-        x: Math.round(Number(window.innerWidth || 1280) / 2),
-        y: Math.round(Number(window.innerHeight || 800) / 2),
-      };
-    }
-    setFragmentPlacement(nextDraft);
+    const created = buildCenteredBpmnFragmentPlacementDraft(templateRaw, diagramContainerRect);
+    if (!created.ok || !created.draft) return created;
+    setFragmentPlacement(created.draft);
     fragmentPlacementBusyRef.current = false;
     setFragmentPlacementBusy(false);
     return { ok: true, error: "" };
@@ -422,43 +476,23 @@ export default function useTemplatesStore({
       return { ok: false, error };
     }
     if (templateType === "bpmn_fragment_v1") {
-      if (typeof insertBpmnFragmentTemplateImmediately !== "function") {
-        const error = "BPMN insert API недоступен.";
-        setError?.(error);
-        return { ok: false, error };
-      }
-      const inserted = await Promise.resolve(insertBpmnFragmentTemplateImmediately(template, {
-        diagramContainerRect,
-        mode: "after",
-        preferPointAnchor: true,
-        persistImmediately: true,
-        source: "template_apply",
-      }));
-      if (typeof window !== "undefined" && window.__FPC_E2E__) {
-        window.__FPC_E2E_TEMPLATE_FRAGMENT_INSERT__ = {
-          ok: !!inserted?.ok,
-          error: toText(inserted?.error || ""),
-          createdNodes: Number(inserted?.createdNodes || 0),
-          createdEdges: Number(inserted?.createdEdges || 0),
-          persisted: inserted?.persisted === true,
-          at: Date.now(),
-        };
-      }
-      if (!inserted?.ok) {
-        const error = toText(inserted?.error || "Не удалось вставить BPMN-фрагмент в текущую сессию.");
-        setError?.(error);
-        return { ok: false, error };
-      }
-      setPickerOpen(false);
-      const createdNodes = Number(inserted?.createdNodes || 0);
-      const createdEdges = Number(inserted?.createdEdges || 0);
-      setInfo?.(`Шаблон вставлен: ${createdNodes} узл., ${createdEdges} flow.`);
-      return { ok: true, inserted };
+      return activateBpmnFragmentTemplatePlacement({
+        template,
+        startBpmnFragmentPlacement,
+        setPickerOpen,
+        setError,
+        setInfo,
+      });
     }
     const error = "Для прямой вставки в сессию поддерживаются только BPMN fragment templates.";
     setError?.(error);
     return { ok: false, error };
-  }, [diagramContainerRect, insertBpmnFragmentTemplateImmediately, setError, setInfo]);
+  }, [
+    startBpmnFragmentPlacement,
+    setError,
+    setInfo,
+    setPickerOpen,
+  ]);
 
   const removeTemplate = useCallback(async (template) => {
     const item = template && typeof template === "object" ? template : {};
@@ -505,7 +539,7 @@ export default function useTemplatesStore({
     };
 
     const onKeyDown = (event) => {
-      if (String(event?.key || "").toLowerCase() !== "escape") return;
+      if (!shouldCancelBpmnFragmentPlacementByKey(event)) return;
       event.preventDefault();
       cancelBpmnFragmentPlacement("escape");
     };
@@ -527,20 +561,15 @@ export default function useTemplatesStore({
       const clientX = Number(event?.clientX);
       const clientY = Number(event?.clientY);
       if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
-      if (typeof insertBpmnFragmentTemplateAtPoint !== "function") {
-        setError?.("BPMN insert API недоступен.");
-        return;
-      }
       event.preventDefault();
       fragmentPlacementBusyRef.current = true;
       setFragmentPlacementBusy(true);
-      const inserted = await Promise.resolve(
-        insertBpmnFragmentTemplateAtPoint(current, {
-          clientX,
-          clientY,
-          mode: "after",
-        }),
-      );
+      const inserted = await insertBpmnFragmentFromPlacement({
+        currentPlacement: current,
+        clientX,
+        clientY,
+        insertBpmnFragmentTemplateAtPoint,
+      });
       if (typeof window !== "undefined" && window.__FPC_E2E__) {
         window.__FPC_E2E_TEMPLATE_FRAGMENT_INSERT__ = {
           ok: !!inserted?.ok,

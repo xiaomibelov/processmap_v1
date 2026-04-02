@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  applyPropertiesOverlayDecor,
   applyHappyFlowDecor,
   applyRobotMetaDecor,
+  clearPropertiesOverlayDecor,
   clearHappyFlowDecor,
   clearRobotMetaDecor,
 } from "./decorManager.js";
@@ -59,6 +61,9 @@ function createMarkerCanvasMock() {
     active,
     addCalls,
     removeCalls,
+    zoom() {
+      return 1;
+    },
     addMarker(elementId, className) {
       const key = `${String(elementId || "")}|${String(className || "")}`;
       active.add(key);
@@ -79,10 +84,18 @@ function createOverlayMock() {
   return {
     addCalls,
     removeCalls,
-    add(elementId, payload = {}) {
+    add(elementId, typeOrPayload = {}, payloadMaybe = null) {
       seq += 1;
       const id = `ov_${seq}`;
-      addCalls.push({ id, elementId: String(elementId || ""), payload });
+      let overlayType = "";
+      let payload = {};
+      if (typeof typeOrPayload === "string") {
+        overlayType = String(typeOrPayload || "");
+        payload = asObject(payloadMaybe);
+      } else {
+        payload = asObject(typeOrPayload);
+      }
+      addCalls.push({ id, elementId: String(elementId || ""), payload, overlayType });
       return id;
     },
     remove(id) {
@@ -128,13 +141,26 @@ function withDocumentStub(run) {
   const prevDocument = globalThis.document;
   globalThis.document = {
     createElement() {
-      return {
+      const styleMap = new Map();
+      const node = {
         className: "",
         textContent: "",
         title: "",
         dataset: {},
-        style: {},
+        style: {
+          setProperty(name, value) {
+            styleMap.set(String(name || ""), String(value || ""));
+          },
+          getPropertyValue(name) {
+            return styleMap.get(String(name || "")) || "";
+          },
+        },
+        childNodes: [],
+        appendChild(child) {
+          this.childNodes.push(child);
+        },
       };
+      return node;
     },
   };
   try {
@@ -143,6 +169,319 @@ function withDocumentStub(run) {
     globalThis.document = prevDocument;
   }
 }
+
+function createPropertyOverlayCtx({
+  preview,
+  alwaysEnabled = false,
+  alwaysPreviewByElementId = null,
+  elements = null,
+  zoom = 1,
+} = {}) {
+  const canvas = createMarkerCanvasMock();
+  canvas.zoom = () => Number(zoom || 1);
+  const overlays = createOverlayMock();
+  const registry = createRegistry(
+    Array.isArray(elements) && elements.length
+      ? elements
+      : [
+          {
+            id: "Task_1",
+            type: "bpmn:Task",
+            x: 100,
+            y: 50,
+            width: 140,
+            height: 80,
+            businessObject: { id: "Task_1", $type: "bpmn:Task" },
+          },
+        ],
+  );
+  const inst = createInstance(registry, canvas, overlays);
+  const refs = {
+    propertiesOverlayStateRef: { current: { viewer: {}, editor: {} } },
+  };
+  const readOnly = {
+    selectedPropertiesOverlayPreviewRef: { current: preview || null },
+    propertiesOverlayAlwaysEnabledRef: { current: !!alwaysEnabled },
+    propertiesOverlayAlwaysPreviewByElementIdRef: { current: alwaysPreviewByElementId || null },
+  };
+  return {
+    canvas,
+    overlays,
+    refs,
+    ctx: {
+      inst,
+      kind: "viewer",
+      refs,
+      readOnly,
+      getters: {
+        findShapeByNodeId: (r, id) => r.get(id),
+        findShapeForHint: (r, hint) => r.get(hint?.nodeId),
+        isConnectionElement: (el) => Array.isArray(el?.waypoints),
+      },
+      utils: {
+        asArray,
+        asObject,
+        toText,
+      },
+    },
+  };
+}
+
+test("properties overlay decor respects visibility flag and hidden preview", () => {
+  const { overlays, refs, ctx } = createPropertyOverlayCtx({
+    preview: {
+      elementId: "Task_1",
+      enabled: false,
+      items: [{ label: "Емкость", value: "Лоток 150x55" }],
+    },
+  });
+  withDocumentStub(() => {
+    applyPropertiesOverlayDecor(ctx);
+    assert.equal(overlays.addCalls.length, 0);
+    assert.deepEqual(refs.propertiesOverlayStateRef.current.viewer, {});
+  });
+});
+
+test("properties overlay decor updates immediately when preview content changes", () => {
+  const fixture = createPropertyOverlayCtx({
+    preview: {
+      elementId: "Task_1",
+      enabled: true,
+      hiddenCount: 0,
+      items: [{ label: "Емкость", value: "Лоток 150x55" }],
+    },
+  });
+  withDocumentStub(() => {
+    applyPropertiesOverlayDecor(fixture.ctx);
+    assert.equal(fixture.overlays.addCalls.length, 1);
+    assert.equal(Object.keys(fixture.refs.propertiesOverlayStateRef.current.viewer).length, 1);
+
+    fixture.ctx.readOnly.selectedPropertiesOverlayPreviewRef.current = {
+      elementId: "Task_1",
+      enabled: true,
+      hiddenCount: 1,
+      items: [
+        { label: "Емкость", value: "Гастроемкость" },
+        { label: "Оборудование", value: "Весы" },
+      ],
+    };
+    applyPropertiesOverlayDecor(fixture.ctx);
+    assert.equal(fixture.overlays.addCalls.length, 2);
+    assert.equal(fixture.overlays.removeCalls.length, 1);
+
+    clearPropertiesOverlayDecor(fixture.ctx);
+    assert.equal(Object.keys(fixture.refs.propertiesOverlayStateRef.current.viewer).length, 0);
+  });
+});
+
+test("properties overlay decor coexists with notes/time/robot overlay positions", () => {
+  const fixture = createPropertyOverlayCtx({
+    preview: {
+      elementId: "Task_1",
+      enabled: true,
+      hiddenCount: 0,
+      items: [{ label: "Емкость", value: "Лоток 150x55" }],
+    },
+  });
+  withDocumentStub(() => {
+    applyPropertiesOverlayDecor(fixture.ctx);
+    const addCall = fixture.overlays.addCalls[0];
+    assert.equal(addCall.elementId, "Task_1");
+    assert.equal(addCall.payload.position.top, -14);
+    assert.equal(addCall.payload.position.left, 70);
+    assert.equal(addCall.payload.scale, false);
+    assert.equal(addCall.overlayType, "fpc-properties");
+  });
+});
+
+test("properties overlay decor binds to preview element id and renders rows for non-empty values", () => {
+  const fixture = createPropertyOverlayCtx({
+    preview: {
+      elementId: "Task_1",
+      enabled: true,
+      hiddenCount: 1,
+      items: [
+        { label: "Ингредиент", value: "Креветки" },
+        { label: "equipment", value: "Весы" },
+      ],
+    },
+  });
+  withDocumentStub(() => {
+    applyPropertiesOverlayDecor(fixture.ctx);
+    assert.equal(fixture.overlays.addCalls.length, 1);
+    const addCall = fixture.overlays.addCalls[0];
+    assert.equal(addCall.elementId, "Task_1");
+    const container = addCall.payload.html;
+    assert.equal(container?.dataset?.nodeId, "Task_1");
+    assert.equal(Array.isArray(container?.childNodes), true);
+    assert.equal(container.childNodes.length, 1);
+    const table = container.childNodes[0];
+    assert.equal(Array.isArray(table?.childNodes), true);
+    // 2 visible property rows + 1 summary row (+hiddenCount)
+    assert.equal(table.childNodes.length, 3);
+    const firstRow = table.childNodes[0];
+    assert.ok(String(firstRow.style.getPropertyValue("--fpc-property-accent") || "").length > 0);
+    assert.ok(String(firstRow.style.getPropertyValue("--fpc-property-bg") || "").length > 0);
+  });
+});
+
+test("properties overlay decor uses connection geometry and reacts to zoom changes", () => {
+  const fixture = createPropertyOverlayCtx({
+    preview: {
+      elementId: "Flow_1",
+      enabled: true,
+      hiddenCount: 0,
+      items: [{ label: "temperature", value: "65" }],
+    },
+    elements: [
+      {
+        id: "Flow_1",
+        type: "bpmn:SequenceFlow",
+        x: 100,
+        y: 180,
+        width: 320,
+        height: 24,
+        waypoints: [
+          { x: 100, y: 190 },
+          { x: 260, y: 190 },
+          { x: 420, y: 190 },
+        ],
+        businessObject: { id: "Flow_1", $type: "bpmn:SequenceFlow" },
+      },
+    ],
+    zoom: 1,
+  });
+  withDocumentStub(() => {
+    applyPropertiesOverlayDecor(fixture.ctx);
+    assert.equal(fixture.overlays.addCalls.length, 1);
+    const firstCall = fixture.overlays.addCalls[0];
+    assert.equal(firstCall.elementId, "Flow_1");
+    assert.equal(firstCall.payload.position.left, 160);
+    assert.equal(firstCall.payload.position.top, -10);
+    const firstWidth = Number.parseInt(String(firstCall.payload.html.style.width || "0"), 10);
+    assert.ok(firstWidth >= 52 && firstWidth <= 116);
+
+    fixture.canvas.zoom = () => 0.35;
+    applyPropertiesOverlayDecor(fixture.ctx);
+    assert.equal(fixture.overlays.addCalls.length, 2);
+    assert.equal(fixture.overlays.removeCalls.length, 1);
+    const secondCall = fixture.overlays.addCalls[1];
+    const secondWidth = Number.parseInt(String(secondCall.payload.html.style.width || "0"), 10);
+    assert.ok(secondWidth <= firstWidth);
+  });
+});
+
+test("same property key keeps deterministic shared color across task and sequence overlays", () => {
+  const fixture = createPropertyOverlayCtx({
+    preview: null,
+    alwaysEnabled: true,
+    alwaysPreviewByElementId: {
+      Task_1: {
+        elementId: "Task_1",
+        enabled: true,
+        hiddenCount: 0,
+        items: [{ key: "temperature", label: "temperature", value: "65" }],
+      },
+      Flow_1: {
+        elementId: "Flow_1",
+        enabled: true,
+        hiddenCount: 0,
+        items: [{ key: "temperature", label: "temperature", value: "65" }],
+      },
+    },
+    elements: [
+      {
+        id: "Task_1",
+        type: "bpmn:Task",
+        x: 100,
+        y: 50,
+        width: 160,
+        height: 80,
+        businessObject: { id: "Task_1", $type: "bpmn:Task" },
+      },
+      {
+        id: "Flow_1",
+        type: "bpmn:SequenceFlow",
+        x: 100,
+        y: 180,
+        width: 320,
+        height: 24,
+        waypoints: [
+          { x: 100, y: 190 },
+          { x: 260, y: 190 },
+          { x: 420, y: 190 },
+        ],
+        businessObject: { id: "Flow_1", $type: "bpmn:SequenceFlow" },
+      },
+    ],
+  });
+  withDocumentStub(() => {
+    applyPropertiesOverlayDecor(fixture.ctx);
+    assert.equal(fixture.overlays.addCalls.length, 2);
+    const [firstCall, secondCall] = fixture.overlays.addCalls;
+    const firstRow = firstCall.payload.html.childNodes[0].childNodes[0];
+    const secondRow = secondCall.payload.html.childNodes[0].childNodes[0];
+    const firstAccent = firstRow.style.getPropertyValue("--fpc-property-accent");
+    const secondAccent = secondRow.style.getPropertyValue("--fpc-property-accent");
+    assert.equal(firstAccent, secondAccent);
+    assert.equal(String(firstRow.className).includes("fpcPropertyRow--linked"), true);
+    assert.equal(String(secondRow.className).includes("fpcPropertyRow--linked"), true);
+  });
+});
+
+test("properties overlay decor renders all element overlays when always mode is enabled", () => {
+  const fixture = createPropertyOverlayCtx({
+    preview: null,
+    alwaysEnabled: true,
+    alwaysPreviewByElementId: {
+      Task_1: {
+        elementId: "Task_1",
+        enabled: true,
+        hiddenCount: 0,
+        items: [{ label: "container", value: "Лоток 150x55" }],
+      },
+      Task_2: {
+        elementId: "Task_2",
+        enabled: true,
+        hiddenCount: 1,
+        items: [
+          { label: "equipment", value: "Весы" },
+          { label: "value", value: "1" },
+        ],
+      },
+    },
+    elements: [
+      {
+        id: "Task_1",
+        type: "bpmn:Task",
+        x: 100,
+        y: 50,
+        width: 140,
+        height: 80,
+        businessObject: { id: "Task_1", $type: "bpmn:Task" },
+      },
+      {
+        id: "Task_2",
+        type: "bpmn:Task",
+        x: 280,
+        y: 50,
+        width: 160,
+        height: 80,
+        businessObject: { id: "Task_2", $type: "bpmn:Task" },
+      },
+    ],
+  });
+  withDocumentStub(() => {
+    applyPropertiesOverlayDecor(fixture.ctx);
+    assert.equal(fixture.overlays.addCalls.length, 2);
+    assert.equal(Object.keys(fixture.refs.propertiesOverlayStateRef.current.viewer).length, 2);
+    const addedIds = fixture.overlays.addCalls.map((call) => call.elementId).sort();
+    assert.deepEqual(addedIds, ["Task_1", "Task_2"]);
+    fixture.overlays.addCalls.forEach((call) => {
+      assert.equal(call.overlayType, "fpc-properties");
+    });
+  });
+});
 
 test("happy flow decor apply/clear is idempotent for state refs", () => {
   const canvas = createMarkerCanvasMock();

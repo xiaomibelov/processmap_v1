@@ -8,9 +8,9 @@ function toArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
-const DEFAULT_ROW_HEIGHT = 76;
+const DEFAULT_ROW_HEIGHT = 60;
 const DEFAULT_OVERSCAN = 8;
-const ROUTE_COLUMNS_HEIGHT = 34;
+const ROUTE_COLUMNS_HEIGHT = 30;
 
 export default function PathStepList({
   title = "Маршрут",
@@ -18,6 +18,7 @@ export default function PathStepList({
   renderRow = null,
   rowHeight = DEFAULT_ROW_HEIGHT,
   overscan = DEFAULT_OVERSCAN,
+  legendItems = [],
   children,
 }) {
   const routeRows = toArray(rows);
@@ -46,7 +47,7 @@ export default function PathStepList({
 
   const virtual = useMemo(() => {
     if (!canVirtualize) return null;
-    const safeRowHeight = Math.max(52, Number(rowHeight || DEFAULT_ROW_HEIGHT));
+    const safeRowHeight = Math.max(48, Number(rowHeight || DEFAULT_ROW_HEIGHT));
     const safeOverscan = Math.max(2, Number(overscan || DEFAULT_OVERSCAN));
     const total = routeRows.length;
     const start = Math.max(0, Math.floor(scrollTop / safeRowHeight) - safeOverscan);
@@ -67,7 +68,27 @@ export default function PathStepList({
   return (
     <div className="interviewPathSteps">
       <div className="interviewPathStepsHead">
-        <div className="interviewPathsRailTitle">{toText(title) || "Маршрут"}</div>
+        <div className="interviewPathStepsHeadMain">
+          <div className="interviewPathsRailTitle">{toText(title) || "Маршрут"}</div>
+          {toArray(legendItems).length ? (
+            <div className="interviewPathStepsLegend" aria-label="Легенда маршрута">
+              {toArray(legendItems).map((item, idx) => {
+                const label = toText(item?.label || item?.title || "");
+                if (!label) return null;
+                const tone = toText(item?.tone).toLowerCase();
+                return (
+                  <span
+                    key={`route_legend_${toText(item?.key) || idx + 1}`}
+                    className={`interviewPathStepsLegendItem ${tone ? `tone-${tone}` : ""}`}
+                    title={toText(item?.title)}
+                  >
+                    {label}
+                  </span>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
       </div>
       <div
         ref={stackRef}
@@ -82,9 +103,9 @@ export default function PathStepList({
         <div className="interviewPathStepsColumns" role="presentation">
           <span>Шаг</span>
           <span>Lane</span>
-          <span>Work</span>
-          <span>Wait</span>
-          <span>Presets</span>
+          <span>Работа</span>
+          <span>Ожид.</span>
+          <span>Статус</span>
         </div>
         {canVirtualize ? (
           <div

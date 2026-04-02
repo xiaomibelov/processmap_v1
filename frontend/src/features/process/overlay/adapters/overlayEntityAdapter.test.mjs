@@ -17,6 +17,31 @@ test("overlayEntityAdapter: legacy rows keep explicit legacy kind", () => {
   assert.equal(legacyRows[1].entityId, "Collaboration_06ftemy");
 });
 
+test("overlayEntityAdapter: drawio rows expose anchored/orphaned semantics in overlay list", () => {
+  const rows = buildOverlayEntityRows({
+    drawioState: {
+      drawio_elements_v1: [
+        {
+          id: "text_1",
+          text: "Note",
+          deleted: false,
+          anchor_v1: {
+            target_kind: "bpmn_node",
+            target_id: "Task_1",
+            relation: "explains",
+            status: "anchored",
+          },
+        },
+      ],
+      svg_cache: "<svg><text id='text_1'>Note</text></svg>",
+    },
+  });
+  assert.equal(rows[0].anchorStatus, "anchored");
+  assert.equal(rows[0].anchorStatusLabel, "anchored");
+  assert.equal(rows[0].anchorTargetId, "Task_1");
+  assert.match(rows[0].anchorIssueText, /Task_1/);
+});
+
 test("overlayEntityAdapter: selected entity resolves drawio -> hybrid -> legacy", () => {
   const drawioState = {
     drawio_elements_v1: [

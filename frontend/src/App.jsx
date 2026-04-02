@@ -41,6 +41,7 @@ import {
 } from "./lib/api";
 import {
   getLatestBpmnSnapshot,
+  shouldAutoRestoreFromSnapshot,
 } from "./features/process/bpmn/snapshots/bpmnSnapshots";
 import {
   canonicalRobotMetaMapString,
@@ -50,18 +51,67 @@ import {
   upsertRobotMetaByElementId,
   validateRobotMetaV1,
 } from "./features/process/robotmeta/robotMeta";
-import { normalizeExecutionPlanVersionList } from "./features/process/robotmeta/executionPlan";
+import {
+  extractCamundaExtensionsMapFromBpmnXml,
+  hydrateCamundaExtensionsFromBpmn,
+  normalizeCamundaExtensionsMap,
+  removeCamundaExtensionStateByElementId,
+  upsertCamundaExtensionStateByElementId,
+} from "./features/process/camunda/camundaExtensions";
+import {
+  normalizeCamundaPresentationMap,
+  removeCamundaPresentationByElementId,
+  shouldResetPropertiesOverlayPreviewForSelection,
+  upsertCamundaPresentationByElementId,
+} from "./features/process/camunda/camundaPresentation";
+import { buildPropertiesOverlayPreview } from "./features/process/camunda/propertyDictionaryModel";
 import { normalizeHybridLayerMap } from "./features/process/hybrid/hybridLayerUi";
-import { normalizeHybridV2Doc } from "./features/process/hybrid/hybridLayerV2";
 import { mergeDrawioMeta, normalizeDrawioMeta } from "./features/process/drawio/drawioMeta";
 import buildSessionMetaReadModel from "./features/session-meta/read/buildSessionMetaReadModel";
 import applySessionMetaHydration from "./features/session-meta/hydrate/applySessionMetaHydration";
 import { createSessionMetaConflictGuard } from "./features/session-meta/guards/sessionMetaConflictGuard";
 import useSessionMetaWriteGateway from "./features/session-meta/write/useSessionMetaWriteGateway";
 import { buildSessionMetaWriteEnvelope } from "./features/session-meta/write/sessionMetaMergePolicy";
+import { normalizeSessionCompanion } from "./features/process/session-companion/sessionCompanionContracts.js";
+import { requestProcessStageFlushBeforeLeave } from "./features/process/navigation/processLeaveFlush";
 import { useAuth } from "./features/auth/AuthProvider";
 import { canCreateOrgTemplateForRole } from "./features/templates/model/templatesRbac";
 import { buildWorkspacePermissions } from "./features/workspace/workspacePermissions";
+import { resolveSessionStatusFromDraft } from "./features/workspace/sessionStatus";
+import useSessionRouteOrchestration, {
+  readSelectionFromUrl,
+  shouldPreserveSelectionRouteDuringRestore,
+  writeSelectionToUrl,
+} from "./app/useSessionRouteOrchestration";
+import useSessionActivationOrchestration from "./app/useSessionActivationOrchestration";
+import useSessionShellOrchestration from "./app/useSessionShellOrchestration";
+import useAppShellController from "./app/useAppShellController";
+import { buildSessionDebugProbeSnapshot } from "./app/sessionDebugProbe";
+import {
+  mergeGlobalNotesLists,
+  normalizeGlobalNotes,
+} from "./app/sessionGlobalNotes";
+import {
+  normalizeStepTimeMinutes,
+  normalizeStepTimeSeconds,
+  readNodeStepTimeMinutes,
+  readNodeStepTimeSeconds,
+} from "./app/nodeStepTime";
+import {
+  projectIdOf,
+  projectTitleOf,
+  sessionIdOf,
+} from "./app/projectSessionSelectors";
+import {
+  emptyBpmnMeta,
+  mergeHybridV2Doc,
+  normalizeBpmnMeta,
+  normalizeExecutionPlans,
+  normalizeFlowMetaMap,
+  normalizeFlowTier,
+  normalizeNodePathEntry,
+  normalizeNodePathMetaMap,
+} from "./app/bpmnMetaNormalization";
 
 function isLocalSessionId(id) {
   return typeof id === "string" && (id === "local" || id.startsWith("local_"));
@@ -73,150 +123,6 @@ function ensureArray(x) {
 
 function ensureObject(x) {
   return x && typeof x === "object" && !Array.isArray(x) ? x : {};
-}
-
-function normalizeStepTimeMinutes(raw) {
-  if (raw === null || raw === undefined) return null;
-  if (typeof raw === "string" && !raw.trim()) return null;
-  const num = Number(raw);
-  if (!Number.isFinite(num) || num < 0) return null;
-  return Math.round(num);
-}
-
-function normalizeStepTimeSeconds(raw) {
-  if (raw === null || raw === undefined) return null;
-  if (typeof raw === "string" && !raw.trim()) return null;
-  const num = Number(raw);
-  if (!Number.isFinite(num) || num < 0) return null;
-  return Math.round(num);
-}
-
-function readNodeStepTimeMinutes(nodeRaw) {
-  const node = ensureObject(nodeRaw);
-  const params = ensureObject(node.parameters);
-  const candidates = [
-    node.step_time_min,
-    node.stepTimeMin,
-    node.duration_min,
-    node.durationMin,
-    params.step_time_min,
-    params.stepTimeMin,
-    params.duration_min,
-    params.durationMin,
-    params.duration,
-  ];
-  for (let i = 0; i < candidates.length; i += 1) {
-    const parsed = normalizeStepTimeMinutes(candidates[i]);
-    if (parsed !== null) return parsed;
-  }
-  const secondsCandidates = [
-    node.step_time_sec,
-    node.stepTimeSec,
-    node.duration_sec,
-    node.durationSec,
-    params.step_time_sec,
-    params.stepTimeSec,
-    params.duration_sec,
-    params.durationSec,
-  ];
-  for (let i = 0; i < secondsCandidates.length; i += 1) {
-    const sec = normalizeStepTimeSeconds(secondsCandidates[i]);
-    if (sec !== null) return Math.round(sec / 60);
-  }
-  return null;
-}
-
-function readNodeStepTimeSeconds(nodeRaw) {
-  const node = ensureObject(nodeRaw);
-  const params = ensureObject(node.parameters);
-  const secondsCandidates = [
-    node.step_time_sec,
-    node.stepTimeSec,
-    node.duration_sec,
-    node.durationSec,
-    params.step_time_sec,
-    params.stepTimeSec,
-    params.duration_sec,
-    params.durationSec,
-  ];
-  for (let i = 0; i < secondsCandidates.length; i += 1) {
-    const parsed = normalizeStepTimeSeconds(secondsCandidates[i]);
-    if (parsed !== null) return parsed;
-  }
-  const fallbackMinutes = readNodeStepTimeMinutes(node);
-  if (fallbackMinutes === null) return null;
-  return Math.round(fallbackMinutes * 60);
-}
-
-function normalizeGlobalNoteItem(raw, fallbackIndex = 0) {
-  const obj = raw && typeof raw === "object" ? raw : {};
-  const text = String(obj.text || obj.note || obj.notes || obj.message || raw || "").trim();
-  if (!text) return null;
-  const rawTs = obj.ts ?? obj.createdAt ?? obj.created_at ?? obj.updatedAt ?? obj.updated_at;
-  let ts = Number(rawTs);
-  if (!Number.isFinite(ts) || ts <= 0) {
-    const parsedDate = Date.parse(String(rawTs || "").trim());
-    ts = Number.isFinite(parsedDate) && parsedDate > 0 ? parsedDate : Date.now();
-  }
-  const author = String(obj.author || obj.user || obj.created_by || obj.by || "you").trim() || "you";
-  const id = String(obj.id || obj.note_id || obj.noteId || "").trim() || `note_${ts}_${fallbackIndex + 1}`;
-  return { id, text, ts, author };
-}
-
-function normalizeGlobalNotes(value) {
-  let source = [];
-  if (Array.isArray(value)) {
-    source = value;
-  } else if (value && typeof value === "object") {
-    source = [value];
-  } else {
-    const text = String(value || "").trim();
-    if (!text) source = [];
-    else {
-      try {
-        const parsed = JSON.parse(text);
-        if (Array.isArray(parsed)) source = parsed;
-        else if (parsed && typeof parsed === "object") source = [parsed];
-        else source = [{ text }];
-      } catch {
-        source = [{ text }];
-      }
-    }
-  }
-  const normalized = source
-    .map((item, idx) => normalizeGlobalNoteItem(item, idx))
-    .filter(Boolean);
-  normalized.sort((a, b) => {
-    const dt = Number(a?.ts || 0) - Number(b?.ts || 0);
-    if (dt !== 0) return dt;
-    return String(a?.id || "").localeCompare(String(b?.id || ""), "ru");
-  });
-  return normalized;
-}
-
-function mergeGlobalNotesLists(baseRaw, incomingRaw) {
-  const out = [];
-  const byId = new Set();
-  const bySignature = new Set();
-  function add(rawItem, idx) {
-    const item = normalizeGlobalNoteItem(rawItem, idx);
-    if (!item) return;
-    const id = String(item.id || "").trim();
-    const signature = `${String(item.text || "").trim().toLowerCase()}|${Number(item.ts || 0)}|${String(item.author || "").trim().toLowerCase()}`;
-    if (id && byId.has(id)) return;
-    if (signature && bySignature.has(signature)) return;
-    if (id) byId.add(id);
-    if (signature) bySignature.add(signature);
-    out.push(item);
-  }
-  normalizeGlobalNotes(baseRaw).forEach((item, idx) => add(item, idx));
-  normalizeGlobalNotes(incomingRaw).forEach((item, idx) => add(item, idx));
-  out.sort((a, b) => {
-    const dt = Number(a?.ts || 0) - Number(b?.ts || 0);
-    if (dt !== 0) return dt;
-    return String(a?.id || "").localeCompare(String(b?.id || ""), "ru");
-  });
-  return out;
 }
 
 function hasOwn(obj, key) {
@@ -301,39 +207,9 @@ function logSnapshotTrace(tag, payload = {}) {
   console.debug(`[SNAPSHOT] ${String(tag || "trace")} ${suffix}`.trim());
 }
 
-function readSelectionFromUrl() {
-  if (typeof window === "undefined") return { projectId: "", sessionId: "" };
-  try {
-    const params = new URLSearchParams(window.location.search || "");
-    return {
-      projectId: String(params.get("project") || "").trim(),
-      sessionId: String(params.get("session") || "").trim(),
-    };
-  } catch {
-    return { projectId: "", sessionId: "" };
-  }
-}
-
-function writeSelectionToUrl({ projectId, sessionId }) {
-  if (typeof window === "undefined") return;
-  try {
-    const url = new URL(window.location.href);
-    if (projectId) url.searchParams.set("project", String(projectId || "").trim());
-    else url.searchParams.delete("project");
-    if (sessionId) url.searchParams.set("session", String(sessionId || "").trim());
-    else url.searchParams.delete("session");
-    const nextHref = `${url.pathname}${url.search}${url.hash}`;
-    const currentHref = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-    if (nextHref !== currentHref) {
-      window.history.replaceState(window.history.state, "", nextHref);
-    }
-  } catch {
-  }
-}
-
 function normalizeOrgSettingsTab(raw) {
   const value = String(raw || "").trim().toLowerCase();
-  if (value === "members" || value === "invites" || value === "audit") return value;
+  if (value === "members" || value === "invites" || value === "audit" || value === "dictionary") return value;
   return "members";
 }
 
@@ -347,28 +223,11 @@ function readOrgSettingsTabFromUrl() {
   }
 }
 
-function projectIdOf(p) {
-  return String((p && (p.id || p.project_id || p.slug)) || "").trim();
-}
-
-function sessionIdOf(s) {
-  return String((s && (s.id || s.session_id)) || "").trim();
-}
-
-function projectTitleOf(p) {
-  return String((p && (p.title || p.name || p.id || p.project_id || p.slug)) || "").trim();
-}
-
 const LEFT_PANEL_OPEN_KEY = "ui.sidebar.left.open";
 const LEFT_PANEL_COMPACT_KEY = "fpc_leftpanel_compact";
 const STEP_TIME_UNIT_KEY = "fpc_step_time_unit_v1";
 const BPMN_META_LOCAL_KEY_PREFIX = "fpc_bpmn_meta_v1:";
-const FLOW_TIER_SET = new Set(["P0", "P1", "P2"]);
-const R_FLOW_TIER_SET = new Set(["R0", "R1", "R2"]);
-const FLOW_R_SOURCE_SET = new Set(["manual", "inferred"]);
-const NODE_PATH_TAG_ORDER = ["P0", "P1", "P2"];
-const NODE_PATH_TAG_SET = new Set(NODE_PATH_TAG_ORDER);
-
+const PROPERTIES_OVERLAY_ALWAYS_KEY_PREFIX = "fpc_properties_overlay_always_v1:";
 function normalizeStepTimeUnit(raw) {
   return String(raw || "").trim().toLowerCase() === "sec" ? "sec" : "min";
 }
@@ -395,144 +254,31 @@ function bpmnMetaLocalStorageKey(sessionId) {
   return sid ? `${BPMN_META_LOCAL_KEY_PREFIX}${sid}` : "";
 }
 
-function normalizeFlowTier(value) {
-  const tier = String(value || "").trim().toUpperCase();
-  return FLOW_TIER_SET.has(tier) ? tier : "";
+function propertiesOverlayAlwaysLocalStorageKey(sessionId) {
+  const sid = String(sessionId || "").trim();
+  return sid ? `${PROPERTIES_OVERLAY_ALWAYS_KEY_PREFIX}${sid}` : "";
 }
 
-function normalizeRFlowTier(value) {
-  const tier = String(value || "").trim().toUpperCase();
-  return R_FLOW_TIER_SET.has(tier) ? tier : "";
-}
-
-function normalizeFlowRSource(value) {
-  const source = String(value || "").trim().toLowerCase();
-  return FLOW_R_SOURCE_SET.has(source) ? source : "";
-}
-
-function normalizeFlowMetaEntry(rawEntry) {
-  const entry = ensureObject(rawEntry);
-  const directTier = normalizeFlowTier(entry.tier);
-  const tier = directTier || (entry.happy === true ? "P0" : (typeof rawEntry === "boolean" && rawEntry ? "P0" : ""));
-  const rtier = normalizeRFlowTier(entry.rtier);
-  if (!tier && !rtier) return null;
-  const out = {};
-  if (tier) out.tier = tier;
-  if (rtier) {
-    out.rtier = rtier;
-    const source = normalizeFlowRSource(entry.source) || "manual";
-    out.source = source;
-    const scopeStartId = String(entry.scopeStartId || entry.scope_start_id || "").trim();
-    if (scopeStartId) out.scopeStartId = scopeStartId;
-    const algoVersion = String(entry.algoVersion || entry.algo_version || "").trim();
-    if (algoVersion) out.algoVersion = algoVersion;
-    const computedAtIso = String(entry.computedAtIso || entry.computed_at_iso || "").trim();
-    if (computedAtIso) out.computedAtIso = computedAtIso;
-    const reason = String(entry.reason || "").trim();
-    if (reason) out.reason = reason;
+function readPropertiesOverlayAlwaysEnabled(sessionId) {
+  if (typeof window === "undefined") return false;
+  const key = propertiesOverlayAlwaysLocalStorageKey(sessionId);
+  if (!key) return false;
+  try {
+    const raw = String(window.localStorage?.getItem(key) || "").trim().toLowerCase();
+    return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+  } catch {
+    return false;
   }
-  return out;
 }
 
-function normalizeFlowMetaMap(rawMap) {
-  const src = ensureObject(rawMap);
-  const out = {};
-  Object.keys(src).forEach((rawFlowId) => {
-    const flowId = String(rawFlowId || "").trim();
-    if (!flowId) return;
-    const normalizedEntry = normalizeFlowMetaEntry(src[rawFlowId]);
-    if (!normalizedEntry) return;
-    out[flowId] = normalizedEntry;
-  });
-  return out;
-}
-
-function normalizeNodePathTag(value) {
-  const tag = String(value || "").trim().toUpperCase();
-  return NODE_PATH_TAG_SET.has(tag) ? tag : "";
-}
-
-function normalizeSequenceKey(value) {
-  const raw = String(value || "").trim().toLowerCase();
-  if (!raw) return "";
-  const compact = raw
-    .replace(/\s+/g, "_")
-    .replace(/[^a-z0-9_-]+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  return compact.slice(0, 64);
-}
-
-function normalizeNodePathEntry(rawEntry) {
-  const entry = ensureObject(rawEntry);
-  const pathValues = Array.isArray(entry.paths)
-    ? entry.paths
-    : (entry.path ? [entry.path] : (entry.tier ? [entry.tier] : []));
-  const seen = new Set();
-  const paths = pathValues
-    .map((item) => normalizeNodePathTag(item))
-    .filter((item) => {
-      if (!item || seen.has(item)) return false;
-      seen.add(item);
-      return true;
-    })
-    .sort((a, b) => NODE_PATH_TAG_ORDER.indexOf(a) - NODE_PATH_TAG_ORDER.indexOf(b));
-  if (!paths.length) return null;
-  const sourceRaw = String(entry.source || "").trim().toLowerCase();
-  const source = sourceRaw === "color_auto" ? "color_auto" : "manual";
-  const sequenceKey = normalizeSequenceKey(entry.sequence_key || entry.sequenceKey);
-  const out = { paths, source };
-  if (sequenceKey) out.sequence_key = sequenceKey;
-  return out;
-}
-
-function normalizeNodePathMetaMap(rawMap) {
-  const src = ensureObject(rawMap);
-  const out = {};
-  Object.keys(src).forEach((rawNodeId) => {
-    const nodeId = String(rawNodeId || "").trim();
-    if (!nodeId) return;
-    const entry = normalizeNodePathEntry(src[rawNodeId]);
-    if (!entry) return;
-    out[nodeId] = entry;
-  });
-  return out;
-}
-
-function normalizeExecutionPlans(rawList) {
-  return normalizeExecutionPlanVersionList(rawList);
-}
-
-function hybridV2EntityCount(raw) {
-  const doc = normalizeHybridV2Doc(raw);
-  return ensureArray(doc.elements).length + ensureArray(doc.edges).length;
-}
-
-function mergeHybridV2Doc(primaryRaw, fallbackRaw = {}) {
-  const primary = normalizeHybridV2Doc(primaryRaw);
-  const fallback = normalizeHybridV2Doc(fallbackRaw);
-  if (hybridV2EntityCount(primary) <= 0 && hybridV2EntityCount(fallback) > 0) {
-    return fallback;
+function writePropertiesOverlayAlwaysEnabled(sessionId, value) {
+  if (typeof window === "undefined") return;
+  const key = propertiesOverlayAlwaysLocalStorageKey(sessionId);
+  if (!key) return;
+  try {
+    window.localStorage?.setItem(key, value ? "1" : "0");
+  } catch {
   }
-  return primary;
-}
-
-function normalizeBpmnMeta(raw, options = {}) {
-  const obj = ensureObject(raw);
-  return {
-    version: Number(obj.version) > 0 ? Number(obj.version) : 1,
-    flow_meta: normalizeFlowMetaMap(obj.flow_meta),
-    node_path_meta: normalizeNodePathMetaMap(obj.node_path_meta),
-    robot_meta_by_element_id: normalizeRobotMetaMap(obj.robot_meta_by_element_id),
-    hybrid_layer_by_element_id: normalizeHybridLayerMap(obj.hybrid_layer_by_element_id),
-    hybrid_v2: mergeHybridV2Doc(obj.hybrid_v2, options.fallbackHybridV2),
-    drawio: mergeDrawioMeta(obj.drawio, options.fallbackDrawio),
-    execution_plans: normalizeExecutionPlans(obj.execution_plans),
-  };
-}
-
-function emptyBpmnMeta() {
-  return normalizeBpmnMeta({});
 }
 
 function readLocalBpmnMeta(sessionId) {
@@ -611,6 +357,7 @@ function sessionToDraft(sid, session) {
   const localMeta = normalizeBpmnMeta(readLocalBpmnMeta(sid));
   const sessionMeta = normalizeBpmnMeta(ensureObject(next.bpmn_meta));
   const xmlRobotMeta = normalizeRobotMetaMap(extractRobotMetaMapFromBpmnXml(next?.bpmn_xml || ""));
+  const xmlCamundaExtensions = normalizeCamundaExtensionsMap(extractCamundaExtensionsMapFromBpmnXml(next?.bpmn_xml || ""));
   const { derivedReadMeta: normalizedMeta } = buildSessionMetaReadModel({
     sessionMetaRaw: sessionMeta,
     localMetaRaw: localMeta,
@@ -623,6 +370,14 @@ function sessionToDraft(sid, session) {
   const hasSessionRobotMeta = Object.keys(normalizeRobotMetaMap(sessionMeta.robot_meta_by_element_id)).length > 0;
   const hasXmlRobotMeta = Object.keys(xmlRobotMeta).length > 0;
   let effectiveRobotMeta = normalizedMeta.robot_meta_by_element_id;
+  const rawBpmnMetaCamunda = ensureObject(next.bpmn_meta).camunda_extensions_by_element_id;
+  const camundaFieldIsPresent = rawBpmnMetaCamunda !== null && rawBpmnMetaCamunda !== undefined;
+  const camundaHydration = hydrateCamundaExtensionsFromBpmn({
+    extractedMap: xmlCamundaExtensions,
+    sessionMetaMap: normalizedMeta.camunda_extensions_by_element_id,
+    allowSeedFromBpmn: !camundaFieldIsPresent,
+  });
+  let effectiveCamundaExtensions = normalizeCamundaExtensionsMap(camundaHydration.nextSessionMetaMap);
   if (!Object.keys(effectiveRobotMeta).length && hasXmlRobotMeta) {
     effectiveRobotMeta = xmlRobotMeta;
   }
@@ -649,10 +404,14 @@ function sessionToDraft(sid, session) {
       flow_meta: normalizedMeta.flow_meta,
       node_path_meta: normalizedMeta.node_path_meta,
       robot_meta_by_element_id: effectiveRobotMeta,
+      camunda_extensions_by_element_id: normalizeCamundaExtensionsMap(effectiveCamundaExtensions),
+      presentation_by_element_id: normalizeCamundaPresentationMap(normalizedMeta.presentation_by_element_id),
       hybrid_layer_by_element_id: normalizedMeta.hybrid_layer_by_element_id,
       hybrid_v2: normalizedMeta.hybrid_v2,
       drawio: normalizeDrawioMeta(normalizedMeta.drawio),
       execution_plans: normalizedMeta.execution_plans,
+      auto_pass_v1: ensureObject(normalizedMeta.auto_pass_v1),
+      session_companion_v1: normalizeSessionCompanion(normalizedMeta.session_companion_v1),
     },
     interview: ensureObject(next.interview),
     questions: ensureArray(next.questions),
@@ -805,8 +564,10 @@ function mergeSessionDraft(prevDraft, sid, session, source = "session_sync") {
     const prevRev = Number(prev?.bpmn_xml_version || prev?.version || 0);
     const nextRev = Number(incoming?.bpmn_xml_version || incoming?.version || 0);
     const incomingHasXmlRev = hasOwn(incoming, "bpmn_xml_version") || hasOwn(incoming, "version");
+    const isPatchSessionSource =
+      sourceKey === "patch_session" || sourceKey.endsWith("_session_patch");
     const shouldSkipPatchXml =
-      sourceKey === "patch_session"
+      isPatchSessionSource
       && xmlChanged;
 
     if (shouldSkipPatchXml) {
@@ -957,6 +718,66 @@ function mergeSessionDraft(prevDraft, sid, session, source = "session_sync") {
     };
   }
 
+  const prevBpmnMeta = ensureObject(prev?.bpmn_meta);
+  const nextBpmnMeta = ensureObject(next?.bpmn_meta);
+  const incomingBpmnMeta = ensureObject(incoming?.bpmn_meta);
+  const incomingHasBpmnMeta = hasOwn(incoming, "bpmn_meta");
+  const incomingHasPresentationMap = incomingHasBpmnMeta && hasOwn(incomingBpmnMeta, "presentation_by_element_id");
+  if (!incomingHasPresentationMap) {
+    const prevPresentationMap = normalizeCamundaPresentationMap(prevBpmnMeta.presentation_by_element_id);
+    if (Object.keys(prevPresentationMap).length > 0) {
+      next = {
+        ...next,
+        bpmn_meta: {
+          ...nextBpmnMeta,
+          presentation_by_element_id: prevPresentationMap,
+        },
+      };
+      logDraftTrace("MERGE_KEEP_PRESENTATION_BY_ELEMENT", {
+        sid: sid || "-",
+        source,
+        count: Object.keys(prevPresentationMap).length,
+      });
+    }
+  }
+
+  // Protect drawio state from stale server responses.
+  // Two cases:
+  // 1. Timestamp guard: if local draft has a newer last_saved_at, keep local version.
+  //    Handles: Interview tab PATCH response returning before drawio persist is committed.
+  // 2. Structural guard: if incoming would clear drawio_elements_v1 to empty but local
+  //    already has tracked elements, keep local version regardless of timestamp.
+  //    Handles: rapid toggle race where prevDrawioTs = 0 (draft not yet updated by persist
+  //    response) and an out-of-order stale response with elements=[] arrives.
+  if (incomingHasBpmnMeta) {
+    const prevDrawio = ensureObject(prevBpmnMeta.drawio);
+    const incomingDrawio = ensureObject(incomingBpmnMeta.drawio);
+    const prevDrawioTs = Date.parse(String(prevDrawio.last_saved_at || "")) || 0;
+    const incomingDrawioTs = Date.parse(String(incomingDrawio.last_saved_at || "")) || 0;
+    const prevElementCount = Array.isArray(prevDrawio.drawio_elements_v1) ? prevDrawio.drawio_elements_v1.length : 0;
+    const incomingElementCount = Array.isArray(incomingDrawio.drawio_elements_v1) ? incomingDrawio.drawio_elements_v1.length : 0;
+    const timestampRegression = prevDrawioTs > 0 && prevDrawioTs > incomingDrawioTs;
+    const structuralRegression = prevElementCount > 0 && incomingElementCount === 0 && !!prevDrawio.svg_cache;
+    if (timestampRegression || structuralRegression) {
+      next = {
+        ...next,
+        bpmn_meta: {
+          ...ensureObject(next.bpmn_meta),
+          drawio: prevDrawio,
+        },
+      };
+      logDraftTrace("MERGE_KEEP_FRESHER_DRAWIO", {
+        sid: sid || "-",
+        source,
+        prevDrawioTs,
+        incomingDrawioTs,
+        reason: [timestampRegression && "timestamp_regression", structuralRegression && "structural_regression"].filter(Boolean).join("+"),
+        prevElementCount,
+        incomingElementCount,
+      });
+    }
+  }
+
   const afterXml = String(next?.bpmn_xml || "");
   logDraftTrace("DRAFT_MERGE", {
     sid: sid || "-",
@@ -992,33 +813,28 @@ export default function App() {
   const [sessionFlowOpen, setSessionFlowOpen] = useState(false);
   const [sessionFlowBusy, setSessionFlowBusy] = useState(false);
   const [processTabIntent, setProcessTabIntent] = useState(null);
+  const [drawioCompanionFocusIntent, setDrawioCompanionFocusIntent] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   const openSessionReqSeqRef = useRef(0);
   const sessionMetaConflictGuardRef = useRef(createSessionMetaConflictGuard());
-  const activeSessionIdRef = useRef("");
   const suppressProjectAutoselectRef = useRef(false);
-  const initialSelectionRef = useRef(readSelectionFromUrl());
   const initialProjectSelectionConsumedRef = useRef(false);
-  const requestedSessionIdRef = useRef(String(initialSelectionRef.current?.sessionId || "").trim());
+  const {
+    initialSelectionRef,
+    requestedSessionIdRef,
+    activeSessionIdRef,
+    confirmedSessionIdRef,
+    setRequestedSessionId,
+    rememberActiveSessionId,
+    rememberConfirmedSessionId,
+    clearSessionRestoreMemory,
+  } = useSessionRouteOrchestration();
   const projectWorkspaceHintsRef = useRef(new Map());
   const [snapshotRestoreNotice, setSnapshotRestoreNotice] = useState(null);
   const [sessionNavNotice, setSessionNavNotice] = useState(null);
   const [renameDialog, setRenameDialog] = useState({ open: false, scope: "", value: "", error: "", busy: false });
   const [deleteDialog, setDeleteDialog] = useState({ open: false, scope: "", error: "", busy: false });
-  const [orgSettingsOpen, setOrgSettingsOpen] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return String(window.location.pathname || "").startsWith("/app/org");
-  });
-  const [orgSettingsTab, setOrgSettingsTab] = useState(() => readOrgSettingsTabFromUrl());
-
-  const [leftHidden, setLeftHidden] = useState(() => readLeftPanelHidden());
-  const [leftCompact, setLeftCompact] = useState(() => readLeftPanelCompact());
-  const [stepTimeUnit, setStepTimeUnit] = useState(() => readStepTimeUnit());
-  const [sidebarActiveSection, setSidebarActiveSection] = useState("selected");
-  const [sidebarShortcutRequest, setSidebarShortcutRequest] = useState("");
-  const [selectedBpmnElement, setSelectedBpmnElement] = useState(null);
-  const [processUiState, setProcessUiState] = useState(null);
-  const [aiGenerateIntent, setAiGenerateIntent] = useState(null);
+  const [showPropertiesOverlayAlways, setShowPropertiesOverlayAlways] = useState(false);
   const [elementNotesFocusKey, setElementNotesFocusKey] = useState(0);
   const [llmHasApiKey, setLlmHasApiKey] = useState(false);
   const [llmBaseUrl, setLlmBaseUrl] = useState("https://api.deepseek.com");
@@ -1129,60 +945,226 @@ export default function App() {
     console.debug(`[NAV] session=${sid} project=${pid} route=${route} reason=${String(reason || "-")}${extra ? ` ${extra}` : ""}`);
   }
 
-  const handleStepTimeUnitChange = useCallback((nextUnitRaw) => {
-    const nextUnit = normalizeStepTimeUnit(nextUnitRaw);
-    setStepTimeUnit((prev) => {
-      if (prev === nextUnit) return prev;
-      writeStepTimeUnit(nextUnit);
-      return nextUnit;
-    });
-  }, []);
+  useEffect(() => {
+    const sid = String(draft?.session_id || "").trim();
+    if (!sid) return;
+    rememberActiveSessionId(sid);
+  }, [draft?.session_id, rememberActiveSessionId]);
 
-  function handleToggleLeft(source = "button") {
-    const rawSource = String(source || "button");
-    const shortcutPrefix = "global_handle:";
-    const shortcutId = rawSource.startsWith(shortcutPrefix)
-      ? String(rawSource.slice(shortcutPrefix.length) || "").trim()
-      : "";
-    setLeftHidden((prev) => {
-      const next = !prev;
-      let persisted = 0;
-      try {
-        window.sessionStorage?.setItem(LEFT_PANEL_OPEN_KEY, next ? "0" : "1");
-        persisted = 1;
-      } catch {
-        persisted = 0;
-      }
-      if (prev && !next) {
-        setLeftCompact(false);
-        try {
-          window.localStorage?.setItem(LEFT_PANEL_COMPACT_KEY, "0");
-        } catch {
-        }
-      }
-      if (prev && !next && shortcutId && shortcutId !== "open") {
-        setSidebarShortcutRequest(shortcutId);
-        setSidebarActiveSection(shortcutId);
-      }
-      // eslint-disable-next-line no-console
-      console.debug(`[UI] sidebar.toggle next=${next ? 1 : 0} source=${rawSource} persisted=${persisted}`);
-      return next;
-    });
-  }
+  useEffect(() => {
+    sessionMetaConflictGuardRef.current = createSessionMetaConflictGuard();
+  }, [draft?.session_id]);
 
-  function handleSidebarCompact(nextValue, source = "sidebar") {
-    const next = typeof nextValue === "boolean" ? nextValue : !leftCompact;
-    setLeftCompact(next);
-    try {
-      window.localStorage?.setItem(LEFT_PANEL_COMPACT_KEY, next ? "1" : "0");
-    } catch {
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!window.__FPC_E2E__) return;
+    window.__FPC_E2E_DRAFT__ = draft;
+  }, [draft]);
+
+  useEffect(() => {
+    const sid = String(draft?.session_id || "").trim();
+    if (!sid) return;
+    writeLocalBpmnMeta(sid, draft?.bpmn_meta);
+  }, [draft?.bpmn_meta, draft?.session_id]);
+
+  async function refreshMeta() {
+    const r = await apiMeta();
+    if (r.ok) {
+      markOk("API OK");
+      return true;
     }
-    // eslint-disable-next-line no-console
-    console.debug(`[UI] sidebar.compact next=${next ? 1 : 0} source=${String(source || "sidebar")}`);
+    markFail(r.error);
+    return false;
   }
+
+  const sessionActivation = useSessionActivationOrchestration({
+    projectId,
+    setProjectId,
+    projects,
+    setProjects,
+    draft,
+    setDraftPersisted,
+    resetDraft,
+    setSessions,
+    sessionNavNotice,
+    setSessionNavNotice,
+    setSnapshotRestoreNotice,
+    refreshMeta,
+    markOk,
+    markFail,
+    logNav,
+    logCreateTrace,
+    logDraftTrace,
+    logSnapshotTrace,
+    ensureArray,
+    ensureObject,
+    ensureDraftShape,
+    sessionToDraft,
+    projectIdOf,
+    projectTitleOf,
+    sessionIdOf,
+    isLocalSessionId,
+    fnv1aHex,
+    routeOrchestration: {
+      initialSelectionRef,
+      requestedSessionIdRef,
+      activeSessionIdRef,
+      confirmedSessionIdRef,
+      setRequestedSessionId,
+      rememberActiveSessionId,
+      rememberConfirmedSessionId,
+      clearSessionRestoreMemory,
+    },
+    initialProjectSelectionConsumedRef,
+    suppressProjectAutoselectRef,
+    openSessionReqSeqRef,
+    projectWorkspaceHintsRef,
+    createLocalSessionId: () => `local_${uid()}`,
+  });
+
+  const {
+    openSession,
+    openWorkspaceSession: openWorkspaceSessionBase,
+    refreshProjects,
+    refreshSessions,
+    createLocalSession,
+    activationState,
+  } = sessionActivation;
+
+  const openWorkspaceSession = useCallback(async (sessionLike, options = {}) => {
+    const row = ensureObject(sessionLike);
+    const sid = String(row?.id || row?.session_id || sessionLike || "").trim();
+    const openTab = String(options?.openTab || "").trim().toLowerCase();
+    await openWorkspaceSessionBase(sessionLike, options);
+    if (sid && (openTab === "diagram" || openTab === "interview" || openTab === "xml" || openTab === "doc" || openTab === "dod")) {
+      setProcessTabIntent({ sid, tab: openTab, nonce: Date.now() });
+    }
+  }, [openWorkspaceSessionBase]);
+
+  const {
+    shellSessionId,
+    shellTransitionReason,
+    shellResetInfo,
+    sidebarActiveSection,
+    setSidebarActiveSection,
+    sidebarShortcutRequest,
+    setSidebarShortcutRequest,
+    selectedBpmnElement,
+    setSelectedBpmnElement,
+    selectedPropertiesOverlayPreview,
+    setSelectedPropertiesOverlayPreview,
+    selectedPropertiesOverlayAlwaysPreview,
+    setSelectedPropertiesOverlayAlwaysPreview,
+    processUiState,
+    setProcessUiState,
+    aiGenerateIntent,
+    setAiGenerateIntent,
+  } = useSessionShellOrchestration({
+    draftSessionId: draft?.session_id,
+    activationState,
+  });
+
+  const {
+    orgSettingsOpen,
+    setOrgSettingsOpen,
+    orgSettingsTab,
+    setOrgSettingsTab,
+    orgSettingsOperationKey,
+    orgSettingsDictionaryOnly,
+    setOrgSettingsDictionaryOnly,
+    orgPropertyDictionaryRevision,
+    openOrgSettings,
+    closeOrgSettings,
+    notifyOrgPropertyDictionaryChanged,
+    leftHidden,
+    setLeftHidden,
+    leftCompact,
+    stepTimeUnit,
+    handleStepTimeUnitChange,
+    handleToggleLeft,
+    handleSidebarCompact,
+    closeLeftSidebar,
+  } = useAppShellController({
+    initialOrgSettingsOpen: () => typeof window !== "undefined" && String(window.location.pathname || "").startsWith("/app/org"),
+    initialOrgSettingsTab: readOrgSettingsTabFromUrl,
+    initialLeftHidden: readLeftPanelHidden,
+    initialLeftCompact: readLeftPanelCompact,
+    initialStepTimeUnit: readStepTimeUnit,
+    normalizeOrgSettingsTab,
+    normalizeStepTimeUnit,
+    writeStepTimeUnit,
+    leftPanelOpenKey: LEFT_PANEL_OPEN_KEY,
+    leftPanelCompactKey: LEFT_PANEL_COMPACT_KEY,
+    setSidebarActiveSection,
+    setSidebarShortcutRequest,
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    if (!window.__FPC_E2E__) return undefined;
+    const e2eOpenSession = async (sessionIdRaw) => {
+      const sid = String(sessionIdRaw || "").trim();
+      if (!sid) return { ok: false, error: "missing_session_id" };
+      try {
+        await openSession(sid, { source: "e2e_helper" });
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: String(error?.message || error || "open_session_failed") };
+      }
+    };
+    window.__FPC_E2E_OPEN_SESSION__ = e2eOpenSession;
+    return () => {
+      if (window.__FPC_E2E_OPEN_SESSION__ === e2eOpenSession) {
+        window.__FPC_E2E_OPEN_SESSION__ = null;
+      }
+    };
+  }, [openSession]);
+
+  useEffect(() => {
+    setShowPropertiesOverlayAlways(readPropertiesOverlayAlwaysEnabled(draftSessionId));
+    setSelectedPropertiesOverlayAlwaysPreview(null);
+  }, [draftSessionId, setSelectedPropertiesOverlayAlwaysPreview]);
+
+  useEffect(() => {
+    writePropertiesOverlayAlwaysEnabled(draftSessionId, !!showPropertiesOverlayAlways);
+  }, [draftSessionId, showPropertiesOverlayAlways]);
+
+  const propertiesOverlayAlwaysPreviewByElementId = useMemo(() => {
+    if (!showPropertiesOverlayAlways) return {};
+    const currentMeta = normalizeBpmnMeta(draft?.bpmn_meta);
+    const extensionMap = normalizeCamundaExtensionsMap(currentMeta.camunda_extensions_by_element_id);
+    const out = {};
+    Object.keys(extensionMap).forEach((rawElementId) => {
+      const elementId = String(rawElementId || "").trim();
+      if (!elementId) return;
+      const preview = buildPropertiesOverlayPreview({
+        elementId,
+        extensionStateRaw: extensionMap[rawElementId],
+        showPropertiesOverlay: true,
+      });
+      if (preview?.enabled && ensureArray(preview.items).length) {
+        out[elementId] = preview;
+      }
+    });
+    const draftPreview = ensureObject(selectedPropertiesOverlayAlwaysPreview);
+    const draftElementId = String(draftPreview.elementId || "").trim();
+    if (draftElementId) {
+      const draftItems = ensureArray(draftPreview.items);
+      if (draftPreview.enabled === true && draftItems.length) {
+        out[draftElementId] = {
+          ...draftPreview,
+          elementId: draftElementId,
+          items: draftItems,
+        };
+      } else {
+        delete out[draftElementId];
+      }
+    }
+    return out;
+  }, [showPropertiesOverlayAlways, draft?.bpmn_meta, selectedPropertiesOverlayAlwaysPreview]);
 
   const sidebarHandleSections = useMemo(() => {
-    const hasActiveSession = !!String(draft?.session_id || "").trim();
+    const hasActiveSession = !!String(shellSessionId || "").trim();
     const selectedElementId = String(selectedBpmnElement?.id || "").trim();
     const notesMap = normalizeElementNotesMap(draft?.notes_by_element || draft?.notesByElementId);
     const aiMapRaw = draft?.interview?.ai_questions_by_element || draft?.interview?.aiQuestionsByElementId || {};
@@ -1225,7 +1207,7 @@ export default function App() {
       },
     ];
   }, [
-    draft?.session_id,
+    shellSessionId,
     selectedBpmnElement?.id,
     draft?.notes_by_element,
     draft?.notesByElementId,
@@ -1237,119 +1219,42 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    activeSessionIdRef.current = String(draft?.session_id || "").trim();
-  }, [draft?.session_id]);
-
-  useEffect(() => {
-    sessionMetaConflictGuardRef.current = createSessionMetaConflictGuard();
-  }, [draft?.session_id]);
-
-  useEffect(() => {
     if (typeof window === "undefined") return;
     if (!window.__FPC_E2E__) return;
-    window.__FPC_E2E_DRAFT__ = draft;
-  }, [draft]);
+    window.__FPC_E2E_SELECTED_ELEMENT_ID__ = String(selectedBpmnElement?.id || "").trim();
+  }, [selectedBpmnElement]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     if (!window.__FPC_E2E__) return undefined;
-    const e2eOpenSession = async (sessionIdRaw) => {
-      const sid = String(sessionIdRaw || "").trim();
-      if (!sid) return { ok: false, error: "missing_session_id" };
-      try {
-        await openSession(sid, { source: "e2e_helper" });
-        return { ok: true };
-      } catch (error) {
-        return { ok: false, error: String(error?.message || error || "open_session_failed") };
-      }
-    };
-    window.__FPC_E2E_OPEN_SESSION__ = e2eOpenSession;
+    const readSnapshot = () => buildSessionDebugProbeSnapshot({
+      routeSelection: readSelectionFromUrl(window),
+      requestedSessionId: requestedSessionIdRef.current,
+      activeSessionId: activeSessionIdRef.current,
+      confirmedSessionId: confirmedSessionIdRef.current,
+      activationState,
+      shellSessionId,
+      shellTransitionReason,
+      shellResetInfo,
+      processStageSessionId: draft?.session_id,
+    });
+    window.__FPC_E2E_SESSION_SHELL__ = readSnapshot();
+    window.__FPC_E2E_GET_SESSION_SHELL__ = readSnapshot;
     return () => {
-      if (window.__FPC_E2E_OPEN_SESSION__ === e2eOpenSession) {
-        window.__FPC_E2E_OPEN_SESSION__ = null;
+      if (window.__FPC_E2E_GET_SESSION_SHELL__ === readSnapshot) {
+        window.__FPC_E2E_GET_SESSION_SHELL__ = null;
       }
     };
-  }, [openSession]);
-
-  useEffect(() => {
-    const sid = String(draft?.session_id || "").trim();
-    if (!sid) return;
-    writeLocalBpmnMeta(sid, draft?.bpmn_meta);
-  }, [draft?.bpmn_meta, draft?.session_id]);
-
-  useEffect(() => {
-    setSelectedBpmnElement(null);
-    setProcessUiState(null);
-    setAiGenerateIntent(null);
-    setSidebarActiveSection("selected");
-    setSidebarShortcutRequest("");
-  }, [draft?.session_id]);
-
-  async function refreshMeta() {
-    const r = await apiMeta();
-    if (r.ok) {
-      markOk("API OK");
-      return true;
-    }
-    markFail(r.error);
-    return false;
-  }
-
-  async function refreshProjects() {
-    const ok = await refreshMeta();
-    if (!ok) return;
-    const r = await apiListProjects();
-    if (!r.ok) return markFail(r.error);
-    const list = ensureArray(r.projects || r.items);
-    setProjects(list);
-    const selectionFromUrl = readSelectionFromUrl();
-    const currentUrlProjectId = String(selectionFromUrl?.projectId || "").trim();
-    const bootRequestedProjectId = initialProjectSelectionConsumedRef.current
-      ? ""
-      : String(initialSelectionRef.current?.projectId || "").trim();
-    const preferredFromUrl = String(currentUrlProjectId || bootRequestedProjectId).trim();
-    initialProjectSelectionConsumedRef.current = true;
-    const suppressAutoselect = !!suppressProjectAutoselectRef.current;
-    if (suppressAutoselect) {
-      suppressProjectAutoselectRef.current = false;
-    }
-    const current = String(projectId || "").trim();
-    if (current) {
-      const existsCurrent = list.some((p) => projectIdOf(p) === current);
-      if (existsCurrent) return;
-      if (preferredFromUrl && preferredFromUrl === current) {
-        logNav("project_keep_requested_url", { projectId: current });
-        return;
-      }
-      // Current project was deleted or became unavailable; clear stale session context.
-      setProjectId("");
-      setSessions([]);
-      setSessionNavNotice(null);
-      requestedSessionIdRef.current = "";
-      resetDraft(ensureDraftShape(null));
-    }
-    if (!list.length) return;
-    if (preferredFromUrl && !list.some((p) => projectIdOf(p) === preferredFromUrl)) {
-      if (!current) {
-        setProjectId(preferredFromUrl);
-        logNav("project_restore_missing_from_list", { projectId: preferredFromUrl });
-      }
-      return;
-    }
-    const preferred = preferredFromUrl && list.some((p) => projectIdOf(p) === preferredFromUrl)
-      ? preferredFromUrl
-      : "";
-    if (!preferred && suppressAutoselect) {
-      logNav("project_autoselect_suppressed", {});
-      return;
-    }
-    if (!preferred) {
-      logNav("project_keep_home", { projects: list.length });
-      return;
-    }
-    setProjectId(preferred);
-    logNav("project_restore_from_url", { projectId: preferred });
-  }
+  }, [
+    activationState,
+    activeSessionIdRef,
+    confirmedSessionIdRef,
+    draft?.session_id,
+    requestedSessionIdRef,
+    shellResetInfo,
+    shellSessionId,
+    shellTransitionReason,
+  ]);
 
   async function refreshLlmSettings() {
     const r = await apiGetLlmSettings();
@@ -1481,222 +1386,6 @@ export default function App() {
     }
   }
 
-  async function refreshSessions(pid) {
-    const p = String(pid || "");
-    if (!p) {
-      setSessions([]);
-      return;
-    }
-    logNav("sessions_refresh_start", { projectId: p });
-    const r = await apiListProjectSessions(p);
-    if (!r.ok) {
-      markFail(r.error);
-      logNav("sessions_refresh_error", { projectId: p, status: Number(r?.status || 0), error: String(r?.error || "api_error") });
-      return;
-    }
-    markOk("API OK");
-    const nextSessions = ensureArray(r.sessions || r.items);
-    setSessions(nextSessions);
-
-    const currentSid = String(draft?.session_id || "").trim();
-    if (currentSid && !isLocalSessionId(currentSid)) {
-      const stillExists = nextSessions.some((s) => sessionIdOf(s) === currentSid);
-      if (!stillExists) {
-        setSessionNavNotice({
-          code: "MISSING_IN_LIST",
-          status: 404,
-          projectId: p,
-          sessionId: currentSid,
-          message: `Сессия ${currentSid} не найдена в текущем проекте.`,
-        });
-        logNav("session_missing_in_list", { projectId: p, sessionId: currentSid });
-      } else if (String(sessionNavNotice?.sessionId || "") === currentSid) {
-        setSessionNavNotice(null);
-      }
-    }
-
-    const requestedSid = String(requestedSessionIdRef.current || "").trim();
-    if (!requestedSid || isLocalSessionId(requestedSid)) return;
-    if (requestedSid === currentSid) return;
-    const existsRequested = nextSessions.some((s) => sessionIdOf(s) === requestedSid);
-    if (existsRequested) {
-      void openSession(requestedSid, { source: "url_restore" });
-    }
-  }
-
-  async function openSession(sessionId, options = {}) {
-    const reqSeq = openSessionReqSeqRef.current + 1;
-    openSessionReqSeqRef.current = reqSeq;
-    const sid = String(sessionId || "");
-    const source = String(options?.source || "manual_select");
-    requestedSessionIdRef.current = sid;
-    logNav("open_session_start", { sessionId: sid || "-", source });
-    logCreateTrace("OPEN_SESSION", {
-      phase: "start",
-      sid: sid || "-",
-      projectId: String(projectId || "-"),
-      reqSeq,
-    });
-    if (!sid) {
-      setSessionNavNotice(null);
-      resetDraft(ensureDraftShape(null));
-      logNav("open_session_empty", { source });
-      logCreateTrace("OPEN_SESSION", {
-        phase: "done",
-        sid: "-",
-        projectId: String(projectId || "-"),
-        bpmnLen: 0,
-        bpmnHash: fnv1aHex(""),
-        mode: "empty_sid",
-      });
-      return;
-    }
-
-    if (isLocalSessionId(sid)) {
-      setSessionNavNotice(null);
-      resetDraft(ensureDraftShape(sid));
-      logNav("open_session_local", { sessionId: sid, source });
-      logCreateTrace("OPEN_SESSION", {
-        phase: "done",
-        sid,
-        projectId: String(projectId || "-"),
-        bpmnLen: 0,
-        bpmnHash: fnv1aHex(""),
-        mode: "local",
-      });
-      return;
-    }
-
-    const r = await apiGetSession(sid);
-    if (reqSeq !== openSessionReqSeqRef.current) return;
-    if (!r.ok) {
-      const status = Number(r?.status || 0);
-      logCreateTrace("OPEN_SESSION", {
-        phase: "done",
-        sid,
-        projectId: String(projectId || "-"),
-        ok: 0,
-        error: String(r.error || "api_get_session_failed"),
-      });
-      markFail(r.error);
-      const isUnavailable = status === 401 || status === 403 || status === 404;
-      if (isUnavailable) {
-        setSessionNavNotice({
-          code: `HTTP_${status || "ERR"}`,
-          status,
-          projectId: String(projectId || ""),
-          sessionId: sid,
-          message: `Сессия недоступна: ${String(r.error || "request failed")}`,
-        });
-      }
-      logNav("open_session_error", { sessionId: sid, source, status, error: String(r?.error || "api_error") });
-      return;
-    }
-
-    const nextRaw = r.session || ensureDraftShape(sid);
-    const sidProject = String(nextRaw?.project_id || projectId || "").trim();
-    if (sidProject && sidProject !== String(projectId || "").trim()) {
-      setProjectId(sidProject);
-    }
-    const backendXml = String(nextRaw?.bpmn_xml || "");
-    const backendHash = fnv1aHex(backendXml);
-    let restoredFromSnapshot = false;
-    let restoredSnapshot = null;
-    let next = nextRaw;
-
-    try {
-      const latestSnapshot = await getLatestBpmnSnapshot({
-        projectId: sidProject,
-        sessionId: sid,
-      });
-      const snapshotXml = String(latestSnapshot?.xml || "");
-      const snapshotHash = String(latestSnapshot?.hash || fnv1aHex(snapshotXml));
-      if (snapshotXml.trim() && snapshotHash && snapshotHash !== backendHash) {
-        restoredFromSnapshot = true;
-        restoredSnapshot = latestSnapshot;
-        next = {
-          ...nextRaw,
-          bpmn_xml: snapshotXml,
-        };
-        logSnapshotTrace("restore_apply", {
-          sid,
-          projectId: sidProject || "-",
-          backendLen: backendXml.length,
-          backendHash,
-          snapshotLen: snapshotXml.length,
-          snapshotHash,
-          snapshotTs: Number(latestSnapshot?.ts || 0),
-        });
-      }
-    } catch (snapshotError) {
-      logSnapshotTrace("restore_skip_error", {
-        sid,
-        error: String(snapshotError?.message || snapshotError || "snapshot_read_error"),
-      });
-    }
-
-    const xml = String(next?.bpmn_xml || "");
-    logDraftTrace("DRAFT_REPLACE", {
-      sid,
-      source: "open_session",
-      len: xml.length,
-      hash: fnv1aHex(xml),
-      stack: shortStack(),
-    });
-    setDraftPersisted(sessionToDraft(sid, next));
-    setSessionNavNotice(null);
-    if (restoredFromSnapshot && restoredSnapshot) {
-      const ts = Number(restoredSnapshot?.ts || Date.now()) || Date.now();
-      setSnapshotRestoreNotice({ sid, ts, nonce: Date.now() });
-      void (async () => {
-        const putRes = await apiPutBpmnXml(sid, xml, {
-          rev: Number(next?.bpmn_xml_version || next?.version || restoredSnapshot?.rev || 0),
-        });
-        logSnapshotTrace("restore_persist_backend", {
-          sid,
-          ok: putRes?.ok ? 1 : 0,
-          status: Number(putRes?.status || 0),
-          len: xml.length,
-          hash: fnv1aHex(xml),
-        });
-      })();
-    }
-    logCreateTrace("OPEN_SESSION", {
-      phase: "done",
-      sid,
-      projectId: sidProject || "-",
-      bpmnLen: xml.length,
-      bpmnHash: fnv1aHex(xml),
-      ok: 1,
-    });
-    logNav("open_session_done", { sessionId: sid, projectId: sidProject || projectId, source });
-    markOk("API OK");
-  }
-
-  async function openWorkspaceSession(sessionLike, options = {}) {
-    const row = ensureObject(sessionLike);
-    const sid = String(row?.id || row?.session_id || sessionLike || "").trim();
-    const pid = String(row?.project_id || "").trim();
-    const wid = String(row?.workspace_id || "").trim();
-    const source = String(options?.source || "workspace_dashboard").trim() || "workspace_dashboard";
-    const openTab = String(options?.openTab || "").trim().toLowerCase();
-    if (!sid) return;
-    if (pid && wid) {
-      projectWorkspaceHintsRef.current.set(pid, wid);
-    }
-    if (pid && pid !== String(projectId || "").trim()) {
-      setProjectId(pid);
-    }
-    await openSession(sid, { source });
-    if (openTab === "diagram" || openTab === "interview" || openTab === "xml" || openTab === "doc") {
-      setProcessTabIntent({ sid, tab: openTab, nonce: Date.now() });
-    }
-  }
-
-  function createLocalSession() {
-    const sid = `local_${uid()}`;
-    resetDraft(ensureDraftShape(sid));
-  }
 
   async function createBackendSession(preferredTitle = "", projectIdOverride = "", aiPrepQuestions = undefined) {
     const pid = String(projectIdOverride || projectId || "");
@@ -1983,6 +1672,8 @@ export default function App() {
       : null;
     if (!next?.id) {
       setSelectedBpmnElement(null);
+      setSelectedPropertiesOverlayPreview(null);
+      setSelectedPropertiesOverlayAlwaysPreview(null);
       return;
     }
     setSelectedBpmnElement(next);
@@ -2032,7 +1723,13 @@ export default function App() {
       : null;
     if (!next?.id) {
       setSelectedBpmnElement(null);
+      setSelectedPropertiesOverlayPreview(null);
+      setSelectedPropertiesOverlayAlwaysPreview(null);
       return;
+    }
+    if (shouldResetPropertiesOverlayPreviewForSelection(selectedBpmnElement?.id, next.id)) {
+      setSelectedPropertiesOverlayPreview(null);
+      setSelectedPropertiesOverlayAlwaysPreview(null);
     }
     focusElementNotes(next, "diagram_select", { openSidebar: false });
   }
@@ -2342,6 +2039,8 @@ export default function App() {
     const currentFlowMeta = normalizeFlowMetaMap(currentMeta.flow_meta);
     const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta.node_path_meta);
     const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta.robot_meta_by_element_id);
+    const currentCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(currentMeta.camunda_extensions_by_element_id);
+    const currentPresentationByElementId = normalizeCamundaPresentationMap(currentMeta.presentation_by_element_id);
     const currentHybridLayerByElementId = normalizeHybridLayerMap(currentMeta.hybrid_layer_by_element_id);
     const currentExecutionPlans = normalizeExecutionPlans(currentMeta.execution_plans);
     const nextFlowMeta = { ...currentFlowMeta };
@@ -2369,6 +2068,8 @@ export default function App() {
       flow_meta: nextFlowMeta,
       node_path_meta: currentNodePathMeta,
       robot_meta_by_element_id: currentRobotMetaByElementId,
+      camunda_extensions_by_element_id: currentCamundaExtensionsByElementId,
+      presentation_by_element_id: currentPresentationByElementId,
       hybrid_layer_by_element_id: currentHybridLayerByElementId,
       hybrid_v2: currentMeta.hybrid_v2,
       drawio: currentMeta.drawio,
@@ -2415,6 +2116,8 @@ export default function App() {
     const currentFlowMeta = normalizeFlowMetaMap(currentMeta.flow_meta);
     const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta.node_path_meta);
     const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta.robot_meta_by_element_id);
+    const currentCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(currentMeta.camunda_extensions_by_element_id);
+    const currentPresentationByElementId = normalizeCamundaPresentationMap(currentMeta.presentation_by_element_id);
     const currentHybridLayerByElementId = normalizeHybridLayerMap(currentMeta.hybrid_layer_by_element_id);
     const currentExecutionPlans = normalizeExecutionPlans(currentMeta.execution_plans);
     const nextNodePathMeta = { ...currentNodePathMeta };
@@ -2458,6 +2161,8 @@ export default function App() {
       flow_meta: currentFlowMeta,
       node_path_meta: nextNodePathMeta,
       robot_meta_by_element_id: currentRobotMetaByElementId,
+      camunda_extensions_by_element_id: currentCamundaExtensionsByElementId,
+      presentation_by_element_id: currentPresentationByElementId,
       hybrid_layer_by_element_id: currentHybridLayerByElementId,
       hybrid_v2: currentMeta.hybrid_v2,
       drawio: currentMeta.drawio,
@@ -2483,6 +2188,8 @@ export default function App() {
     const currentFlowMeta = normalizeFlowMetaMap(currentMeta.flow_meta);
     const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta.node_path_meta);
     const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta.robot_meta_by_element_id);
+    const currentCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(currentMeta.camunda_extensions_by_element_id);
+    const currentPresentationByElementId = normalizeCamundaPresentationMap(currentMeta.presentation_by_element_id);
     const currentHybridLayerByElementId = normalizeHybridLayerMap(currentMeta.hybrid_layer_by_element_id);
     const currentExecutionPlans = normalizeExecutionPlans(currentMeta.execution_plans);
     const shouldRemove = options?.remove === true || robotMetaRaw === null;
@@ -2506,6 +2213,8 @@ export default function App() {
       flow_meta: currentFlowMeta,
       node_path_meta: currentNodePathMeta,
       robot_meta_by_element_id: nextRobotMetaByElementId,
+      camunda_extensions_by_element_id: currentCamundaExtensionsByElementId,
+      presentation_by_element_id: currentPresentationByElementId,
       hybrid_layer_by_element_id: currentHybridLayerByElementId,
       hybrid_v2: currentMeta.hybrid_v2,
       drawio: currentMeta.drawio,
@@ -2520,6 +2229,92 @@ export default function App() {
     });
     if (!persistResult?.ok) {
       return { ok: false, error: String(persistResult?.error || "Не удалось сохранить Robot Meta.") };
+    }
+    return { ok: true };
+  }
+
+  async function setElementCamundaExtensions(elementIdRaw, extensionStateRaw, options = {}) {
+    const sid = String(draft?.session_id || "").trim();
+    const elementId = String(elementIdRaw || "").trim();
+    if (!elementId) return { ok: false, error: "Не выбран BPMN-элемент." };
+
+    const currentMeta = normalizeBpmnMeta(draft?.bpmn_meta);
+    const currentFlowMeta = normalizeFlowMetaMap(currentMeta.flow_meta);
+    const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta.node_path_meta);
+    const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta.robot_meta_by_element_id);
+    const currentCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(currentMeta.camunda_extensions_by_element_id);
+    const currentPresentationByElementId = normalizeCamundaPresentationMap(currentMeta.presentation_by_element_id);
+    const currentHybridLayerByElementId = normalizeHybridLayerMap(currentMeta.hybrid_layer_by_element_id);
+    const currentExecutionPlans = normalizeExecutionPlans(currentMeta.execution_plans);
+    const shouldRemove = options?.remove === true || extensionStateRaw === null;
+    const nextCamundaExtensionsByElementId = shouldRemove
+      ? removeCamundaExtensionStateByElementId(currentCamundaExtensionsByElementId, elementId)
+      : upsertCamundaExtensionStateByElementId(currentCamundaExtensionsByElementId, elementId, extensionStateRaw);
+
+    const optimisticMeta = {
+      version: Number(currentMeta.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: currentFlowMeta,
+      node_path_meta: currentNodePathMeta,
+      robot_meta_by_element_id: currentRobotMetaByElementId,
+      camunda_extensions_by_element_id: nextCamundaExtensionsByElementId,
+      presentation_by_element_id: currentPresentationByElementId,
+      hybrid_layer_by_element_id: currentHybridLayerByElementId,
+      hybrid_v2: currentMeta.hybrid_v2,
+      drawio: currentMeta.drawio,
+      execution_plans: currentExecutionPlans,
+    };
+    const persistResult = await persistSessionMetaBoundary(optimisticMeta, {
+      source: "camunda_extensions_save",
+      successHint: sid && !isLocalSessionId(sid)
+        ? (shouldRemove ? "Properties удалены." : "Properties сохранены.")
+        : (shouldRemove ? "Properties удалены локально." : "Properties сохранены локально."),
+      failureHint: "Не удалось сохранить Properties.",
+    });
+    if (!persistResult?.ok) {
+      return { ok: false, error: String(persistResult?.error || "Не удалось сохранить Properties.") };
+    }
+    return { ok: true };
+  }
+
+  async function setElementCamundaPresentation(elementIdRaw, presentationRaw, options = {}) {
+    const sid = String(draft?.session_id || "").trim();
+    const elementId = String(elementIdRaw || "").trim();
+    if (!elementId) return { ok: false, error: "Не выбран BPMN-элемент." };
+
+    const currentMeta = normalizeBpmnMeta(draft?.bpmn_meta);
+    const currentFlowMeta = normalizeFlowMetaMap(currentMeta.flow_meta);
+    const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta.node_path_meta);
+    const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta.robot_meta_by_element_id);
+    const currentCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(currentMeta.camunda_extensions_by_element_id);
+    const currentPresentationByElementId = normalizeCamundaPresentationMap(currentMeta.presentation_by_element_id);
+    const currentHybridLayerByElementId = normalizeHybridLayerMap(currentMeta.hybrid_layer_by_element_id);
+    const currentExecutionPlans = normalizeExecutionPlans(currentMeta.execution_plans);
+    const shouldRemove = options?.remove === true || presentationRaw === null;
+    const nextPresentationByElementId = shouldRemove
+      ? removeCamundaPresentationByElementId(currentPresentationByElementId, elementId)
+      : upsertCamundaPresentationByElementId(currentPresentationByElementId, elementId, presentationRaw);
+
+    const optimisticMeta = {
+      version: Number(currentMeta.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: currentFlowMeta,
+      node_path_meta: currentNodePathMeta,
+      robot_meta_by_element_id: currentRobotMetaByElementId,
+      camunda_extensions_by_element_id: currentCamundaExtensionsByElementId,
+      presentation_by_element_id: nextPresentationByElementId,
+      hybrid_layer_by_element_id: currentHybridLayerByElementId,
+      hybrid_v2: currentMeta.hybrid_v2,
+      drawio: currentMeta.drawio,
+      execution_plans: currentExecutionPlans,
+    };
+    const persistResult = await persistSessionMetaBoundary(optimisticMeta, {
+      source: "camunda_presentation_save",
+      successHint: sid && !isLocalSessionId(sid)
+        ? "Настройка overlay сохранена."
+        : "Настройка overlay сохранена локально.",
+      failureHint: "Не удалось сохранить настройку overlay.",
+    });
+    if (!persistResult?.ok) {
+      return { ok: false, error: String(persistResult?.error || "Не удалось сохранить настройку overlay.") };
     }
     return { ok: true };
   }
@@ -2574,6 +2369,8 @@ export default function App() {
     const normalizedFlowMeta = normalizeFlowMetaMap(serverMeta?.flow_meta);
     const normalizedNodePathMeta = normalizeNodePathMetaMap(serverMeta?.node_path_meta);
     const normalizedRobotMetaByElementId = normalizeRobotMetaMap(serverMeta?.robot_meta_by_element_id);
+    const normalizedCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(serverMeta?.camunda_extensions_by_element_id);
+    const normalizedPresentationByElementId = normalizeCamundaPresentationMap(serverMeta?.presentation_by_element_id || currentMeta.presentation_by_element_id);
     const normalizedHybridLayerByElementId = normalizeHybridLayerMap(serverMeta?.hybrid_layer_by_element_id);
     const normalizedExecutionPlans = normalizeExecutionPlans(serverMeta?.execution_plans);
     const effectiveExecutionPlans = normalizedExecutionPlans.length ? normalizedExecutionPlans : currentExecutionPlans;
@@ -2582,6 +2379,8 @@ export default function App() {
       flow_meta: normalizedFlowMeta,
       node_path_meta: normalizedNodePathMeta,
       robot_meta_by_element_id: normalizedRobotMetaByElementId,
+      camunda_extensions_by_element_id: normalizedCamundaExtensionsByElementId,
+      presentation_by_element_id: normalizedPresentationByElementId,
       hybrid_layer_by_element_id: normalizedHybridLayerByElementId,
       hybrid_v2: mergeHybridV2Doc(serverMeta?.hybrid_v2, currentMeta.hybrid_v2),
       drawio: mergeDrawioMeta(serverMeta?.drawio, currentMeta.drawio),
@@ -2843,11 +2642,33 @@ export default function App() {
     return { ok: true };
   }
 
-  function returnToSessionList(reason = "manual_return") {
+  async function returnToSessionList(reason = "manual_return", options = {}) {
+    const shouldFlushBeforeLeave = options?.flushBeforeLeave !== false;
+    const sid = String(draft?.session_id || "").trim();
+    if (shouldFlushBeforeLeave && sid && !isLocalSessionId(sid)) {
+      const flushResult = await requestProcessStageFlushBeforeLeave({
+        sessionId: sid,
+        reason,
+        timeoutMs: 7000,
+      });
+      if (!flushResult?.ok) {
+        setSessionNavNotice({
+          code: "LEAVE_FLUSH_FAILED",
+          status: 0,
+          projectId: String(projectId || ""),
+          sessionId: sid,
+          message: "Не удалось сохранить изменения перед выходом в проект. Попробуйте снова.",
+        });
+        markFail(String(flushResult?.error || "flush_before_leave_failed"));
+        return { ok: false, error: String(flushResult?.error || "flush_before_leave_failed") };
+      }
+    }
     logNav("return_to_session_list", { reason });
     setSessionNavNotice(null);
-    requestedSessionIdRef.current = "";
+    closeLeftSidebar(`return_to_project:${reason}`);
+    clearSessionRestoreMemory();
     resetDraft(ensureDraftShape(null));
+    return { ok: true };
   }
 
   async function deleteCurrentProject(options = {}) {
@@ -2870,7 +2691,7 @@ export default function App() {
     setProjects((prev) => ensureArray(prev).filter((item) => projectIdOf(item) !== pid));
     setProjectId("");
     setSessions([]);
-    returnToSessionList("project_deleted");
+    await returnToSessionList("project_deleted", { flushBeforeLeave: false });
     await refreshProjects();
     markOk("API OK");
     return { ok: true };
@@ -2880,7 +2701,7 @@ export default function App() {
     if (!workspacePermissions.canDeleteSession) return { ok: false, error: "forbidden" };
     const sid = String(draft?.session_id || "");
     if (!sid || isLocalSessionId(sid)) {
-      returnToSessionList("local_session_clear");
+      await returnToSessionList("local_session_clear", { flushBeforeLeave: false });
       return { ok: true };
     }
     const skipConfirm = !!options?.skipConfirm;
@@ -2899,7 +2720,7 @@ export default function App() {
       return { ok: false, error: String(r.error || "delete_session_failed") };
     }
 
-    returnToSessionList("session_deleted");
+    await returnToSessionList("session_deleted", { flushBeforeLeave: false });
     await refreshSessions(projectId);
     markOk("API OK");
     return { ok: true };
@@ -3019,6 +2840,20 @@ export default function App() {
     return String(found?.title || found?.name || draft?.title || "").trim();
   }, [sessions, draft?.session_id, draft?.title]);
 
+  const consumeSnapshotRestoreNotice = useCallback((sessionIdRaw, nonceRaw = 0) => {
+    const sid = String(sessionIdRaw || "").trim();
+    const nonce = Number(nonceRaw || 0);
+    setSnapshotRestoreNotice((prev) => {
+      if (!prev || String(prev?.sid || "").trim() !== sid) return prev;
+      if (nonce > 0 && Number(prev?.nonce || 0) !== nonce) return prev;
+      return null;
+    });
+  }, []);
+
+  useEffect(() => {
+    setDrawioCompanionFocusIntent(null);
+  }, [projectId, draft?.session_id]);
+
   const left = useMemo(() => {
     if (phase === "no_session") {
       return (
@@ -3050,10 +2885,28 @@ export default function App() {
         onSetFlowPathTier={setFlowHappyPath}
         onSetNodePathAssignments={setNodePathAssignments}
         onSetElementRobotMeta={setElementRobotMeta}
+        onSetElementCamundaExtensions={setElementCamundaExtensions}
+        onSetElementCamundaPresentation={setElementCamundaPresentation}
+        activeOrgId={activeOrgId}
+        onOpenOrgSettings={openOrgSettings}
+        orgPropertyDictionaryRevision={orgPropertyDictionaryRevision}
+        onOrgPropertyDictionaryChanged={notifyOrgPropertyDictionaryChanged}
+        onPropertiesOverlayPreviewChange={setSelectedPropertiesOverlayPreview}
+        onPropertiesOverlayAlwaysPreviewChange={setSelectedPropertiesOverlayAlwaysPreview}
+        showPropertiesOverlayAlways={showPropertiesOverlayAlways}
+        onShowPropertiesOverlayAlwaysChange={setShowPropertiesOverlayAlways}
         onGoToDiagram={() => {
           const sid = String(draft?.session_id || "").trim();
           if (!sid) return;
           setProcessTabIntent({ sid, tab: "diagram", nonce: Date.now() });
+        }}
+        onFocusDrawioCompanion={(objectId) => {
+          const sid = String(draft?.session_id || "").trim();
+          const targetId = String(objectId || "").trim();
+          if (!sid || !targetId) return;
+          const nonce = Date.now();
+          setProcessTabIntent({ sid, tab: "diagram", nonce });
+          setDrawioCompanionFocusIntent({ sid, objectId: targetId, nonce });
         }}
         onProjectBreadcrumbClick={() => returnToSessionList("breadcrumb_project")}
         onSessionBreadcrumbClick={() => {
@@ -3125,7 +2978,7 @@ export default function App() {
     setProjectId("");
     setSessions([]);
     setSessionNavNotice(null);
-    requestedSessionIdRef.current = "";
+    clearSessionRestoreMemory();
     resetDraft(ensureDraftShape(null));
     void (async () => {
       await refreshProjects();
@@ -3145,7 +2998,9 @@ export default function App() {
       const orgOpen = pathname.startsWith("/app/org");
       setOrgSettingsOpen(orgOpen);
       if (orgOpen) {
-        setOrgSettingsTab(readOrgSettingsTabFromUrl());
+        const nextTab = readOrgSettingsTabFromUrl();
+        setOrgSettingsTab(nextTab);
+        setOrgSettingsDictionaryOnly((prev) => (nextTab === "dictionary" ? prev : false));
       }
       logNav("popstate", {
         projectId: fromUrl.projectId || "-",
@@ -3155,7 +3010,7 @@ export default function App() {
         setProjectId(fromUrl.projectId);
       }
       if (fromUrl.sessionId) {
-        requestedSessionIdRef.current = fromUrl.sessionId;
+        setRequestedSessionId(fromUrl.sessionId);
       }
     }
     window.addEventListener("popstate", onPopState);
@@ -3166,9 +3021,24 @@ export default function App() {
   useEffect(() => {
     const pid = String(projectId || "").trim();
     const sid = String(draft?.session_id || "").trim();
+    const requestedSid = String(requestedSessionIdRef.current || "").trim();
+    const fromUrl = readSelectionFromUrl();
+    if (shouldPreserveSelectionRouteDuringRestore({
+      projectId: pid,
+      sessionId: sid,
+      requestedSessionId: requestedSid,
+      urlProjectId: fromUrl.projectId,
+      urlSessionId: fromUrl.sessionId,
+    })) {
+      logNav("selection_sync_preserve_requested", {
+        projectId: pid || fromUrl.projectId || "-",
+        sessionId: requestedSid,
+      });
+      return;
+    }
     writeSelectionToUrl({ projectId: pid, sessionId: sid });
     logNav("selection_sync", { projectId: pid || "-", sessionId: sid || "-" });
-    if (sid) requestedSessionIdRef.current = sid;
+    if (sid) setRequestedSessionId(sid);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, draft?.session_id]);
 
@@ -3178,46 +3048,11 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
-  const openOrgSettings = useCallback((options = {}) => {
-    const nextTab = normalizeOrgSettingsTab(options?.tab);
-    setOrgSettingsTab(nextTab);
-    setOrgSettingsOpen(true);
-    if (typeof window === "undefined") return;
-    try {
-      const url = new URL(window.location.href);
-      const pathname = String(url.pathname || "");
-      url.pathname = "/app/org";
-      if (nextTab === "members") url.searchParams.delete("tab");
-      else url.searchParams.set("tab", nextTab);
-      const nextHref = `${url.pathname}${url.search}${url.hash}`;
-      const currentHref = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-      if (nextHref === currentHref && pathname.startsWith("/app/org")) return;
-      window.history.pushState({}, "", nextHref);
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  const closeOrgSettings = useCallback(() => {
-    setOrgSettingsOpen(false);
-    if (typeof window === "undefined") return;
-    const pathname = String(window.location.pathname || "");
-    if (!pathname.startsWith("/app/org")) return;
-    try {
-      const url = new URL(window.location.href);
-      url.pathname = "/app";
-      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    } catch {
-      // ignore
-    }
-  }, []);
-
   return (
     <>
       <AppShell
         draft={draft}
+        shellSessionId={shellSessionId}
         locked={locked}
         left={left}
         leftHidden={leftHidden}
@@ -3256,7 +3091,7 @@ export default function App() {
           }
           setProjectId(next);
           setSessionNavNotice(null);
-          requestedSessionIdRef.current = "";
+          clearSessionRestoreMemory();
           setSessions([]);
           resetDraft(ensureDraftShape(null));
         }}
@@ -3264,7 +3099,7 @@ export default function App() {
         canManageProjectEntities={canManageProjectEntities}
         sessions={sessions}
         sessionId={String(draft?.session_id || "")}
-        sessionStatus={String(draft?.status || "draft")}
+        sessionStatus={resolveSessionStatusFromDraft(draft, "draft")}
         onOpenSession={openSession}
         onOpenWorkspaceSession={openWorkspaceSession}
         onDeleteSession={workspacePermissions.canDeleteSession ? deleteCurrentSession : undefined}
@@ -3293,6 +3128,11 @@ export default function App() {
         onSessionSync={onSessionSync}
         onRecalculateRtiers={recalculateRtiers}
         snapshotRestoreNotice={snapshotRestoreNotice}
+        onSnapshotRestoreNoticeConsumed={consumeSnapshotRestoreNotice}
+        selectedPropertiesOverlayPreview={selectedPropertiesOverlayPreview}
+        propertiesOverlayAlwaysEnabled={showPropertiesOverlayAlways}
+        propertiesOverlayAlwaysPreviewByElementId={propertiesOverlayAlwaysPreviewByElementId}
+        drawioCompanionFocusIntent={drawioCompanionFocusIntent}
         sessionNavNotice={sessionNavNotice}
         onDismissSessionNavNotice={() => setSessionNavNotice(null)}
         onReturnToSessionList={() => returnToSessionList("banner_action")}
@@ -3302,11 +3142,14 @@ export default function App() {
         open={orgSettingsOpen}
         onClose={closeOrgSettings}
         initialTab={orgSettingsTab}
+        dictionaryOnly={orgSettingsDictionaryOnly}
         activeOrgId={activeOrgId}
         activeOrgRole={activeOrgRole}
         isAdmin={Boolean(user?.is_admin)}
         orgName={activeOrgName}
         onRequestRefreshOrgs={refreshOrgs}
+        initialOperationKey={orgSettingsOperationKey}
+        onDictionaryChanged={notifyOrgPropertyDictionaryChanged}
       />
 
       <ProjectWizardModal open={wizardOpen} onClose={() => setWizardOpen(false)} onCreate={createProjectFromWizard} />

@@ -53,8 +53,16 @@ export function resolveCanonicalDrawioElementId(drawioMetaRaw, idRaw) {
 export function getDrawioRenderableIdSet(drawioMetaRaw) {
   const drawioMeta = asObject(drawioMetaRaw);
   const svgCache = toText(drawioMeta.svg_cache);
-  if (!svgCache) return null;
-  return new Set(extractDrawioElementIdsFromSvg(svgCache));
+  const ids = new Set(svgCache ? extractDrawioElementIdsFromSvg(svgCache) : []);
+  asArray(drawioMeta.drawio_elements_v1).forEach((rowRaw) => {
+    const row = asObject(rowRaw);
+    if (toText(row.type).toLowerCase() !== "note") return;
+    if (row.deleted === true) return;
+    const id = toText(row.id);
+    if (id) ids.add(id);
+  });
+  if (!ids.size && !svgCache) return null;
+  return ids;
 }
 
 export function getDrawioElementById(drawioMetaRaw, idRaw, options = {}) {
@@ -91,13 +99,13 @@ const DRAWIO_RUNTIME_TOOLS = Object.freeze([
   { id: "rect", icon: "▭", label: "Прямоугольник", runtimeSupported: true, surface: "overlay" },
   { id: "text", icon: "T", label: "Текст", runtimeSupported: true, surface: "overlay" },
   { id: "container", icon: "▣", label: "Контейнер", runtimeSupported: true, surface: "overlay" },
+  { id: "note", icon: "🗒", label: "Стикер", runtimeSupported: true, surface: "overlay" },
 ]);
 
 const DRAWIO_EDITOR_TOOLS = Object.freeze([
   { id: "connector", icon: "↔", label: "Коннектор", runtimeSupported: false, surface: "editor" },
   { id: "ellipse", icon: "◯", label: "Эллипс", runtimeSupported: false, surface: "editor" },
   { id: "diamond", icon: "◇", label: "Ромб", runtimeSupported: false, surface: "editor" },
-  { id: "note", icon: "🗒", label: "Стикер", runtimeSupported: false, surface: "editor" },
   { id: "image", icon: "🖼", label: "Изображение", runtimeSupported: false, surface: "editor" },
   { id: "swimlane", icon: "≡", label: "Swimlane", runtimeSupported: false, surface: "editor" },
 ]);

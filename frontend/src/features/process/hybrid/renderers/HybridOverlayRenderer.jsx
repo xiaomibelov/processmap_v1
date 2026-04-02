@@ -1,12 +1,13 @@
-import React from "react";
+import React, { memo } from "react";
 import { asArray, asObject } from "./hybridRendererUtils.jsx";
 import HybridEdgesRenderer from "./HybridEdgesRenderer.jsx";
 import HybridElementsRenderer from "./HybridElementsRenderer.jsx";
 import HybridGhostRenderer from "./HybridGhostRenderer.jsx";
 import HybridSelectionRenderer from "./HybridSelectionRenderer.jsx";
 import HybridLegacyRenderer from "./HybridLegacyRenderer.jsx";
+import { bumpDrawioPerfCounter } from "../../drawio/runtime/drawioRuntimeProbes.js";
 
-export default function HybridOverlayRenderer({
+function HybridOverlayRenderer({
   visible,
   modeEffective,
   uiPrefs,
@@ -43,6 +44,7 @@ export default function HybridOverlayRenderer({
   onLegacyMissingCleanupClick,
   onLegacyCardRef,
 }) {
+  bumpDrawioPerfCounter("overlay.renderer.hybrid.renders");
   if (!visible) return null;
   const renderable = asObject(v2Renderable);
   const mode = String(modeEffective || "view");
@@ -182,3 +184,5 @@ export default function HybridOverlayRenderer({
     </div>
   );
 }
+
+export default memo(HybridOverlayRenderer);

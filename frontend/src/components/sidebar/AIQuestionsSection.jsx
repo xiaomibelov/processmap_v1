@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import SidebarSection from "./SidebarSection";
+import SidebarTrustStatus from "./SidebarTrustStatus";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -26,8 +27,8 @@ export default function AIQuestionsSection({
   onGenerateAiCta,
   aiGenerateCtaLabel,
   aiBusyQid,
-  aiSavedQid,
   aiErr,
+  aiRowErrByQid,
   aiCommentDraft,
   onAiCommentDraftChange,
   onSaveElementAiQuestion,
@@ -51,6 +52,32 @@ export default function AIQuestionsSection({
   const blockedReason = asText(aiGenerateHint || "");
   const generateDisabled = !!disabled || !aiGenerateAvailable || !hasSelected;
   const generateLabel = aiGenerateReasonCode === "busy" ? "В процессе..." : "Сгенерировать вопросы";
+  const aiRowStatusMeta = {
+    saved: {
+      label: "Сохранено",
+      helper: "Изменения по вопросу сохранены.",
+      tone: "saved",
+      cta: null,
+    },
+    local: {
+      label: "Есть локальные изменения",
+      helper: "Комментарий изменён локально.",
+      tone: "local",
+      cta: null,
+    },
+    syncing: {
+      label: "Синхронизация…",
+      helper: "Изменения по вопросу сохраняются.",
+      tone: "syncing",
+      cta: null,
+    },
+    error: {
+      label: "Ошибка",
+      helper: "Не удалось сохранить изменения по вопросу. Текст остался в поле.",
+      tone: "error",
+      cta: "Повторить",
+    },
+  };
 
   const content = (
     <>
@@ -109,22 +136,44 @@ export default function AIQuestionsSection({
               const busy = aiBusyQid === qid;
               const isDone = normalizeAiStatus(question?.status) === "done";
               const comment = asText(aiCommentDraft[qid] ?? question?.comment);
+              const commentBaseline = asText(question?.comment);
+              const hasLocalChanges = comment !== commentBaseline;
+              const hasRowError = !!asText(aiRowErrByQid?.[qid]);
+              const rowSyncState = busy
+                ? "syncing"
+                : (hasRowError ? "error" : (hasLocalChanges ? "local" : "saved"));
+              const rowStatusMeta = aiRowStatusMeta[rowSyncState] || aiRowStatusMeta.saved;
               return (
                 <div
                   key={qid}
                   className={`rounded-lg border border-border bg-panel2 px-2 py-2 ${isDone ? "ring-1 ring-emerald-400/40" : ""}`}
                 >
-                  <label className="flex items-start gap-2">
-                    <input
-                      type="checkbox"
-                      checked={isDone}
-                      onChange={(event) => {
-                        void onSaveElementAiQuestion?.(question, { status: event.target.checked ? "done" : "open" });
-                      }}
-                      disabled={!!disabled || busy}
-                    />
-                    <span className="text-xs text-fg">{question?.text}</span>
-                  </label>
+                  <SidebarTrustStatus
+                    title={(
+                      <label className="flex min-w-0 items-start gap-2">
+                        <input
+                          type="checkbox"
+                          checked={isDone}
+                          onChange={(event) => {
+                            void onSaveElementAiQuestion?.(question, { status: event.target.checked ? "done" : "open" });
+                          }}
+                          disabled={!!disabled || busy}
+                        />
+                        <span className="text-xs text-fg">{question?.text}</span>
+                      </label>
+                    )}
+                    titleClassName="flex items-start justify-between gap-2"
+                    label={rowStatusMeta.label}
+                    helper={rowStatusMeta.helper}
+                    tone={rowStatusMeta.tone}
+                    pillClassName="shrink-0"
+                    helperClassName="mt-1"
+                    ctaLabel={rowStatusMeta.cta}
+                    onCta={() => onSaveElementAiQuestion?.(question, { comment })}
+                    ctaDisabled={!!disabled || busy}
+                    ctaClassName="px-2"
+                    testIdPrefix={`ai-question-status-${qid}`}
+                  />
                   <textarea
                     className="input mt-2 w-full min-w-0 text-xs"
                     rows={2}
@@ -149,7 +198,7 @@ export default function AIQuestionsSection({
                       {busy ? "Сохраняю..." : "Сохранить"}
                     </button>
                     <span className="text-[11px] text-muted">
-                      {aiSavedQid === qid ? "Сохранено" : isDone ? "DONE" : "MISSING"}
+                      {isDone ? "DONE" : "MISSING"}
                     </span>
                   </div>
                 </div>

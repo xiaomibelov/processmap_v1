@@ -67,6 +67,32 @@ function readLinkEventMeta(boRaw, boTypeRaw) {
   };
 }
 
+function readEventContractMeta(boRaw, boTypeRaw) {
+  const bo = asObject(boRaw);
+  const boType = typeLower(boTypeRaw || bo?.$type);
+  const defs = asArray(bo?.eventDefinitions).map((item) => asObject(item));
+  const messageDef = defs.find((item) => typeLower(item?.$type).includes("messageeventdefinition"));
+  if (messageDef) {
+    return {
+      eventContractKind: boType.includes("throw") || boType.includes("sendtask")
+        ? "message_throw"
+        : "message_catch",
+      eventContractRef: asText(messageDef?.messageRef?.id || messageDef?.messageRef || bo?.messageRef?.id || bo?.messageRef),
+    };
+  }
+  const signalDef = defs.find((item) => typeLower(item?.$type).includes("signaleventdefinition"));
+  if (signalDef) {
+    return {
+      eventContractKind: "signal",
+      eventContractRef: asText(signalDef?.signalRef?.id || signalDef?.signalRef || bo?.signalRef?.id || bo?.signalRef),
+    };
+  }
+  return {
+    eventContractKind: "",
+    eventContractRef: "",
+  };
+}
+
 function flowSortKey(flowRaw, nodeById, outgoingOrderById) {
   const flow = asObject(flowRaw);
   const label = asText(flow?.label);
@@ -136,8 +162,25 @@ export function buildExecutionGraphFromInstance(instance) {
         };
         return;
       }
+      if (t === "bpmn:messageflow") {
+        const sourceId = asText(bo?.sourceRef?.id || element?.source?.id);
+        const targetId = asText(bo?.targetRef?.id || element?.target?.id);
+        if (!sourceId || !targetId) return;
+        flowsById[id] = {
+          id,
+          sourceId,
+          targetId,
+          label: asText(bo?.name),
+          conditionText: "",
+          hasSemanticLabel: !!asText(bo?.name),
+          boType,
+          flowKind: "message",
+        };
+        return;
+      }
       if (t === "label") return;
       const linkMeta = readLinkEventMeta(bo, boType);
+      const eventContractMeta = readEventContractMeta(bo, boType);
       nodesById[id] = {
         id,
         type: boType,
@@ -148,6 +191,8 @@ export function buildExecutionGraphFromInstance(instance) {
         parentSubprocessId: findParentSubprocessId(bo),
         linkEventKind: asText(linkMeta?.linkEventKind),
         linkEventName: asText(linkMeta?.linkEventName),
+        eventContractKind: asText(eventContractMeta?.eventContractKind),
+        eventContractRef: asText(eventContractMeta?.eventContractRef),
       };
     });
 
@@ -181,8 +226,11 @@ export function buildExecutionGraphFromInstance(instance) {
           linkEventName: "",
         };
       }
-      nodesById[sourceId].outgoingFlowIds.push(asText(flow?.id));
-      nodesById[targetId].incomingFlowIds.push(asText(flow?.id));
+      const flowKind = asText(flow?.flowKind || "sequence");
+      if (flowKind === "sequence") {
+        nodesById[sourceId].outgoingFlowIds.push(asText(flow?.id));
+        nodesById[targetId].incomingFlowIds.push(asText(flow?.id));
+      }
     });
 
     Object.values(nodesById).forEach((nodeRaw) => {

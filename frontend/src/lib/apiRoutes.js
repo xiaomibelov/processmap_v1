@@ -31,6 +31,13 @@ export const apiRoutes = {
     item: (orgId) => `/api/orgs/${encode(orgId)}`,
     members: (orgId) => `/api/orgs/${encode(orgId)}/members`,
     member: (orgId, userId) => `/api/orgs/${encode(orgId)}/members/${encode(userId)}`,
+    memberAssign: (orgId) => `/api/orgs/${encode(orgId)}/members/assign`,
+    propertyDictionaryOperations: (orgId) => `/api/orgs/${encode(orgId)}/property-dictionary/operations`,
+    propertyDictionaryOperation: (orgId, operationKey) => `/api/orgs/${encode(orgId)}/property-dictionary/operations/${encode(operationKey)}`,
+    propertyDictionaryProperties: (orgId, operationKey) => `/api/orgs/${encode(orgId)}/property-dictionary/operations/${encode(operationKey)}/properties`,
+    propertyDictionaryProperty: (orgId, operationKey, propertyKey) => `/api/orgs/${encode(orgId)}/property-dictionary/operations/${encode(operationKey)}/properties/${encode(propertyKey)}`,
+    propertyDictionaryValues: (orgId, operationKey, propertyKey) => `/api/orgs/${encode(orgId)}/property-dictionary/operations/${encode(operationKey)}/properties/${encode(propertyKey)}/values`,
+    propertyDictionaryValue: (orgId, valueId) => `/api/orgs/${encode(orgId)}/property-dictionary/values/${encode(valueId)}`,
     invites: (orgId) => `/api/orgs/${encode(orgId)}/invites`,
     inviteRevoke: (orgId, inviteId) => `/api/orgs/${encode(orgId)}/invites/${encode(inviteId)}/revoke`,
     invitesCleanup: (orgId, keepDays = "") => withQuery(`/api/orgs/${encode(orgId)}/invites/cleanup`, {
@@ -49,6 +56,8 @@ export const apiRoutes = {
       const path = `/api/orgs/${encode(orgId)}/projects/${encode(projectId)}/sessions`;
       return withQuery(path, { mode: String(mode || "").trim() });
     },
+    gitMirror: (orgId) => `/api/orgs/${encode(orgId)}/git-mirror`,
+    gitMirrorValidate: (orgId) => `/api/orgs/${encode(orgId)}/git-mirror/validate`,
     reportBuild: (orgId, sessionId) => `/api/orgs/${encode(orgId)}/sessions/${encode(sessionId)}/reports/build`,
     reportVersions: (orgId, sessionId, pathId = "", stepsHash = "") => withQuery(
       `/api/orgs/${encode(orgId)}/sessions/${encode(sessionId)}/reports/versions`,
@@ -105,6 +114,11 @@ export const apiRoutes = {
       include_overlay: options?.includeOverlay === false ? "0" : "",
       _ts: options?.cacheBust === true ? String(Date.now()) : "",
     }),
+    bpmnVersions: (sessionId, options = {}) => withQuery(`/api/sessions/${encode(sessionId)}/bpmn/versions`, {
+      limit: String(options?.limit || "").trim(),
+      include_xml: options?.includeXml === true ? "1" : "",
+    }),
+    bpmnRestore: (sessionId, versionId) => `/api/sessions/${encode(sessionId)}/bpmn/restore/${encode(versionId)}`,
     bpmnMeta: (sessionId) => `/api/sessions/${encode(sessionId)}/bpmn_meta`,
     inferRtiers: (sessionId) => `/api/sessions/${encode(sessionId)}/bpmn_meta/infer_rtiers`,
     autoPass: (sessionId, options = {}) => withQuery(`/api/sessions/${encode(sessionId)}/auto-pass`, {

@@ -3,11 +3,9 @@ import { bumpDrawioPerfCounter } from "../../drawio/runtime/drawioRuntimeProbes.
 export default function buildProcessDiagramOverlayLayersProps({
   activeProjectId,
   asObject,
-  bpmnContextMenu,
   bpmnFragmentPlacementActive,
   bpmnFragmentPlacementGhost,
   bpmnRef,
-  closeBpmnContextMenu,
   cleanupMissingHybridBindings,
   clientToDiagram,
   closeEmbeddedDrawioEditor,
@@ -50,10 +48,7 @@ export default function buildProcessDiagramOverlayLayersProps({
   renameHybridItem,
   hideHybridIds,
   lockLayersForHybridIds,
-  onBpmnContextMenuDismiss,
-  onBpmnContextMenuRequest,
   retryHybridPersist,
-  runBpmnContextMenuAction,
   dismissHybridLockBusyNotice,
   hybridGhostPreview,
   hybridArrowPreview,
@@ -122,8 +117,6 @@ export default function buildProcessDiagramOverlayLayersProps({
       selectedPropertiesOverlayPreview,
       propertiesOverlayAlwaysEnabled,
       propertiesOverlayAlwaysPreviewByElementId,
-      onDiagramContextMenuRequest: onBpmnContextMenuRequest,
-      onDiagramContextMenuDismiss: onBpmnContextMenuDismiss,
     },
     fragmentGhostProps: {
       active: bpmnFragmentPlacementActive,
@@ -219,11 +212,6 @@ export default function buildProcessDiagramOverlayLayersProps({
         lockLayersForHybridIds(hybridV2SelectedIds);
         closeHybridContextMenu();
       },
-    },
-    bpmnContextMenuProps: {
-      menu: bpmnContextMenu,
-      onClose: closeBpmnContextMenu,
-      onAction: runBpmnContextMenuAction,
     },
     hybridPersistToastProps: {
       visible: tab === "diagram" && !!hybridPersistLockBusyNoticeOpen,

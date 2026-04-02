@@ -152,11 +152,120 @@ function resolveDrawioPointerElementId(targetRaw, rootRaw, metaRaw, layerMap, el
   return "";
 }
 
-function applyDrawioLayerRenderState(bodyRaw, metaRaw, selectedIdRaw = "", draftOffsetRaw = null) {
+function setStyleProperty(node, name, value) {
+  if (!(node instanceof Element)) return;
+  if (value === null || value === undefined || value === "") {
+    node.style.removeProperty(name);
+    return;
+  }
+  node.style.setProperty(name, String(value));
+}
+
+/**
+ * Apply or remove selection highlight on a DOM node directly.
+ * O(1) — no SVG re-render. Call when selectedId changes.
+ */
+function applyDrawioSelectionToNode(node, selected) {
+  if (!(node instanceof Element)) return;
+  if (selected) {
+    node.setAttribute("data-drawio-selected", "1");
+    if (!node.hasAttribute("data-drawio-prev-stroke")) {
+      node.setAttribute("data-drawio-prev-stroke", node.style.getPropertyValue("stroke") || "");
+      node.setAttribute("data-drawio-prev-stroke-width", node.style.getPropertyValue("stroke-width") || "");
+      node.setAttribute("data-drawio-prev-filter", node.style.getPropertyValue("filter") || "");
+    }
+    setStyleProperty(node, "stroke", "#2563eb");
+    setStyleProperty(node, "stroke-width", "2.4");
+    setStyleProperty(node, "filter", "drop-shadow(0 0 2px rgba(37,99,235,.45))");
+  } else {
+    node.removeAttribute("data-drawio-selected");
+    setStyleProperty(node, "stroke", node.getAttribute("data-drawio-prev-stroke") || null);
+    setStyleProperty(node, "stroke-width", node.getAttribute("data-drawio-prev-stroke-width") || null);
+    setStyleProperty(node, "filter", node.getAttribute("data-drawio-prev-filter") || null);
+    node.removeAttribute("data-drawio-prev-stroke");
+    node.removeAttribute("data-drawio-prev-stroke-width");
+    node.removeAttribute("data-drawio-prev-filter");
+  }
+}
+
+function readBaseTransform(node) {
+  if (!(node instanceof Element)) return "";
+  const cached = node.getAttribute("data-drawio-base-transform");
+  if (cached !== null) return String(cached || "");
+  const current = String(node.getAttribute("transform") || "").trim();
+  node.setAttribute("data-drawio-base-transform", current);
+  return current;
+}
+
+function applyDrawioNodeRenderState(node, metaRaw, layerMap, elementMap, draftOffsetRaw = null) {
+  if (!(node instanceof Element)) return;
+  const elementId = toText(node.getAttribute("id"));
+  if (!elementId) return;
+  if (!elementMap.has(elementId)) {
+    // Element exists in SVG but is not tracked in elementMap.
+    // Hide it completely to prevent ghost rendering (visible but non-interactive).
+    node.removeAttribute("data-drawio-el-id");
+    setStyleProperty(node, "display", "none");
+    setStyleProperty(node, "pointer-events", "none");
+    return;
+  }
+  const elementState = asObject(elementMap.get(elementId));
+  const layerState = asObject(layerMap.get(toText(elementState.layer_id)));
+  const flags = resolveDrawioElementFlags(metaRaw, layerMap, elementMap, elementId);
+  const visible = flags.visible;
+  const interactive = flags.editable;
+  const opacity = Math.max(0.05, Math.min(1, Number(layerState.opacity || 1) * Number(elementState.opacity || 1)));
+  const draftOffset = asObject(draftOffsetRaw);
+  const draftId = toText(draftOffset.id);
+  const offsetX = draftId && draftId === elementId ? toNumber(draftOffset.offset_x, 0) : toNumber(elementState.offset_x, 0);
+  const offsetY = draftId && draftId === elementId ? toNumber(draftOffset.offset_y, 0) : toNumber(elementState.offset_y, 0);
+  const hasOffset = Math.abs(offsetX) > 0.0001 || Math.abs(offsetY) > 0.0001;
+  const baseTransform = readBaseTransform(node);
+  const nextTransform = hasOffset
+    ? `${baseTransform ? `${baseTransform} ` : ""}translate(${formatSvgNumber(offsetX)} ${formatSvgNumber(offsetY)})`
+    : baseTransform;
+  node.setAttribute("data-drawio-el-id", elementId);
+  if (nextTransform) {
+    node.setAttribute("transform", nextTransform);
+  } else {
+    node.removeAttribute("transform");
+  }
+  if (visible) {
+    setStyleProperty(node, "display", null);
+    setStyleProperty(node, "opacity", opacity);
+    setStyleProperty(node, "pointer-events", interactive ? "auto" : "none");
+    setStyleProperty(node, "cursor", interactive ? "move" : "default");
+  } else {
+    setStyleProperty(node, "display", "none");
+    setStyleProperty(node, "opacity", 0);
+    setStyleProperty(node, "pointer-events", "none");
+    setStyleProperty(node, "cursor", "default");
+  }
+}
+
+function applyDrawioLayerRenderStateToDom(rootRaw, metaRaw, draftOffsetRaw = null, prebuiltMapsRaw = null) {
+  const root = rootRaw instanceof Element ? rootRaw : null;
+  if (!root) return;
+  const prebuilt = prebuiltMapsRaw && prebuiltMapsRaw.layerMap && prebuiltMapsRaw.elementMap
+    ? prebuiltMapsRaw
+    : buildDrawioLayerRenderMaps(metaRaw);
+  const { layerMap, elementMap } = prebuilt;
+  const nodes = root.querySelectorAll("[id]");
+  for (const node of nodes) {
+    applyDrawioNodeRenderState(node, metaRaw, layerMap, elementMap, draftOffsetRaw);
+  }
+}
+
+function applyDrawioLayerRenderState(bodyRaw, metaRaw, _selectedIdRaw = "", draftOffsetRaw = null, prebuiltMapsRaw = null) {
   const body = String(bodyRaw || "");
   if (!body) return body;
-  const { layerMap, elementMap } = buildDrawioLayerRenderMaps(metaRaw);
-  const selectedId = toText(selectedIdRaw);
+  const prebuilt = prebuiltMapsRaw && prebuiltMapsRaw.layerMap && prebuiltMapsRaw.elementMap
+    ? prebuiltMapsRaw
+    : buildDrawioLayerRenderMaps(metaRaw);
+  const { layerMap, elementMap } = prebuilt;
+  // selectedId is intentionally NOT used here — selection is applied via
+  // applyDrawioSelectionToNode (direct DOM) so a selection change does not
+  // trigger a full SVG regex re-render.
   const draftOffset = asObject(draftOffsetRaw);
   const draftId = toText(draftOffset.id);
   const draftX = toNumber(draftOffset.offset_x, 0);
@@ -172,7 +281,7 @@ function applyDrawioLayerRenderState(bodyRaw, metaRaw, selectedIdRaw = "", draft
       if (!elementMap.has(elementId)) {
         let passthroughAttrs = `${String(beforeIdAttrs || "")}${afterAttrs}`;
         passthroughAttrs = mergeStyle(passthroughAttrs, "pointer-events:none;");
-        return `<${tagName}${passthroughAttrs} id="${elementId}"${isSelfClosing ? " />" : ">"}>`;
+        return `<${tagName}${passthroughAttrs} id="${elementId}"${isSelfClosing ? " />" : ">"}`;
       }
       const elementState = asObject(elementMap.get(elementId));
       const layerState = asObject(layerMap.get(toText(elementState.layer_id)));
@@ -182,10 +291,8 @@ function applyDrawioLayerRenderState(bodyRaw, metaRaw, selectedIdRaw = "", draft
       const opacity = Math.max(0.05, Math.min(1, Number(layerState.opacity || 1) * Number(elementState.opacity || 1)));
       const offsetX = draftId && draftId === elementId ? draftX : toNumber(elementState.offset_x, 0);
       const offsetY = draftId && draftId === elementId ? draftY : toNumber(elementState.offset_y, 0);
-      const selected = selectedId && selectedId === elementId;
-      const selectionStyle = selected ? "stroke:#2563eb; stroke-width:2.4; filter: drop-shadow(0 0 2px rgba(37,99,235,.45));" : "";
       const patchStyle = visible
-        ? `opacity:${opacity}; pointer-events:${interactive ? "auto" : "none"}; cursor:${flags.editable ? "move" : "default"}; ${selectionStyle}`
+        ? `opacity:${opacity}; pointer-events:${interactive ? "auto" : "none"}; cursor:${flags.editable ? "move" : "default"};`
         : "display:none; opacity:0; pointer-events:none;";
       let patchedAttrs = `${String(beforeIdAttrs || "")}${afterAttrs}`;
       patchedAttrs = mergeSvgTranslate(patchedAttrs, offsetX, offsetY);
@@ -193,7 +300,7 @@ function applyDrawioLayerRenderState(bodyRaw, metaRaw, selectedIdRaw = "", draft
       if (!/\sdata-drawio-el-id=/.test(patchedAttrs)) {
         patchedAttrs = `${patchedAttrs} data-drawio-el-id="${elementId}"`;
       }
-      return `<${tagName}${patchedAttrs} id="${elementId}"${isSelfClosing ? " />" : ">"}>`;
+      return `<${tagName}${patchedAttrs} id="${elementId}"${isSelfClosing ? " />" : ">"}`;
     },
   );
 }
@@ -208,4 +315,6 @@ export {
   collectDrawioElementIdsFromTarget,
   resolveDrawioPointerElementId,
   applyDrawioLayerRenderState,
+  applyDrawioLayerRenderStateToDom,
+  applyDrawioSelectionToNode,
 };

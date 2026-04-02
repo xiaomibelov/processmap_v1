@@ -450,6 +450,47 @@
   background: color-mix(in srgb, hsl(var(--diagram-notes)) 20%, hsl(var(--diagram-badge-bg) / 0.94));
 }
 
+.fpcNodeBadge--documentation {
+  border-color: hsl(var(--diagram-ai) / 0.52);
+  background: color-mix(in srgb, hsl(var(--diagram-ai)) 14%, hsl(var(--diagram-badge-bg) / 0.96));
+  min-height: 15px;
+  padding: 0 5px;
+  font-size: 8.8px;
+}
+
+.fpcNodeBadgePopover {
+  display: none;
+  pointer-events: auto;
+  margin-top: 4px;
+  max-width: 220px;
+  border-radius: 8px;
+  border: 1px solid hsl(var(--diagram-badge-border) / 0.65);
+  background: hsl(var(--bg-elevated) / 0.98);
+  color: hsl(var(--fg) / 0.98);
+  box-shadow:
+    0 0 0 1px hsl(var(--diagram-badge-border) / 0.28) inset,
+    0 10px 24px hsl(var(--bg) / 0.28);
+  padding: 6px 8px;
+}
+
+.fpcNodeBadgePopover.isOpen {
+  display: block;
+}
+
+.fpcNodeBadgePopoverTitle {
+  font-size: 10px;
+  font-weight: 700;
+  color: hsl(var(--muted-foreground) / 0.96);
+  margin-bottom: 4px;
+}
+
+.fpcNodeBadgePopoverBody {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
 .fpcNodeBadge--time {
   border-color: hsl(var(--diagram-coverage-med) / 0.66);
   background: color-mix(in srgb, hsl(var(--diagram-coverage-med)) 18%, hsl(var(--diagram-badge-bg) / 0.94));
@@ -481,12 +522,164 @@
   background: color-mix(in srgb, hsl(var(--warning)) 22%, hsl(var(--diagram-badge-bg) / 0.95));
 }
 
+.fpcNodeBadge--cluster {
+  border-color: hsl(var(--muted-foreground) / 0.4);
+  background: hsl(var(--diagram-badge-bg) / 0.85);
+  font-size: 8px;
+  min-height: 13px;
+  padding: 0 4px;
+  pointer-events: auto;
+  cursor: default;
+}
+
 .fpcNodeBadgeFlash {
   animation: fpcBadgeFlashPop .82s cubic-bezier(.22, .88, .3, 1);
 }
 
 .fpcNodeBadgeGhost {
   pointer-events: none;
+}
+
+.fpcPropertyOverlay {
+  pointer-events: auto;
+  display: block;
+  max-width: 216px;
+  transform: translate(-50%, calc(-100% - 12px));
+  z-index: 17;
+  cursor: default;
+}
+
+.fpcPropertyOverlay--table {
+  pointer-events: auto;
+}
+
+.fpcPropertyTable {
+  pointer-events: none;
+  display: grid;
+  gap: 4px;
+  max-width: 100%;
+  min-width: var(--fpc-property-table-min-width, 120px);
+}
+
+/* Overflow rows: hidden by default, shown on hover */
+.fpcPropertyRow--overflow {
+  display: none;
+}
+.fpcPropertyOverlay:hover .fpcPropertyRow--overflow {
+  display: grid;
+}
+/* On hover: hide the "+N ещё" summary since all rows are visible */
+.fpcPropertyOverlay:hover .fpcPropertyRow--summary {
+  display: none;
+}
+/* Hover: elevate overlay and show full untruncated text */
+.fpcPropertyOverlay:hover {
+  z-index: 30;
+}
+
+.fpcPropertyOverlay:hover .fpcPropertyCell {
+  overflow: visible;
+  text-overflow: unset;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.fpcPropertyOverlay:hover .fpcPropertyKeyText {
+  overflow: visible;
+  text-overflow: unset;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.fpcPropertyOverlay:hover .fpcPropertyRow {
+  align-items: flex-start;
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+
+.fpcPropertyRow {
+  pointer-events: none;
+  display: grid;
+  grid-template-columns: var(--fpc-property-grid-columns, minmax(46px, 42%) minmax(64px, 58%));
+  align-items: center;
+  gap: 5px;
+  min-height: var(--fpc-property-row-min-height, 15px);
+  border-radius: 8px;
+  border: 1px solid hsl(var(--diagram-badge-border) / 0.66);
+  border-left: 3px solid var(--fpc-property-accent, #6eb2e4);
+  background: var(--fpc-property-bg, hsl(var(--diagram-badge-bg) / 0.95));
+  color: hsl(var(--diagram-badge-text) / 1);
+  padding: var(--fpc-property-row-padding, 2px 7px);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--fpc-property-accent, hsl(var(--diagram-badge-border) / 0.45)) 20%, transparent) inset,
+    0 3px 8px hsl(var(--bg) / 0.18);
+  font-size: calc(var(--fpc-property-font-size, 9.5px) * 1.1 * var(--fpc-property-font-scale, 1));
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: .01em;
+}
+
+.fpcPropertyOverlay--sequence .fpcPropertyTable {
+  gap: 3px;
+}
+
+.fpcPropertyOverlay--sequence .fpcPropertyRow {
+  min-height: var(--fpc-property-row-min-height, 14px);
+}
+
+.fpcPropertyRow--linked {
+  border-color: color-mix(in srgb, var(--fpc-property-accent, hsl(var(--accent))) 64%, hsl(var(--diagram-badge-border) / 0.66));
+  box-shadow:
+    0 0 0 1px var(--fpc-property-accent-shadow, hsl(var(--accent) / 0.24)) inset,
+    0 3px 8px hsl(var(--bg) / 0.18);
+}
+
+.fpcPropertyCell {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fpcPropertyCell--key {
+  color: hsl(var(--diagram-badge-text) / 0.74);
+  font-size: 0.86em;
+  font-weight: 560;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 5px;
+}
+
+.fpcPropertyCell--value {
+  color: hsl(var(--diagram-badge-text) / 1);
+  font-size: 1em;
+  font-weight: 720;
+}
+
+.fpcPropertyKeyText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fpcPropertyKeySep {
+  color: hsl(var(--diagram-badge-text) / 0.58);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.fpcPropertyRow--summary {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  font-weight: 700;
+  background: hsl(var(--diagram-badge-bg) / 0.9);
+}
+
+/* Keep property overlays non-interactive so they never block shape drag/select hit area. */
+.bpmnCanvas .djs-overlay.djs-overlay-fpc-properties {
+  pointer-events: none !important;
 }
 
 .fpcNodeFlashPill {

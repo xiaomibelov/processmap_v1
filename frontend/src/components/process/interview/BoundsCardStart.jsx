@@ -17,9 +17,8 @@ export default function BoundsCardStart({
         <span className="interviewBoundsMiniPill start">START</span>
         <span className={`interviewBoundsState ${missing ? "warn" : "ok"}`}>{missing ? "не заполнено" : "ok"}</span>
       </div>
-      <div className="interviewBoundsCardTitle">Старт</div>
       <label className="interviewField">
-        <span>Стартовый цех / lane</span>
+        <span>Стартовый lane</span>
         <select
           className="select interviewBoundaryLaneSelect"
           value={startShop}
@@ -34,15 +33,15 @@ export default function BoundsCardStart({
         </select>
       </label>
       <label className="interviewField">
-        <span>Стартовое событие (trigger)</span>
+        <span>Trigger</span>
         <input
           className="input"
           value={trigger}
           onChange={(event) => onTriggerChange?.(event.target.value)}
-          placeholder="Напр.: поступила партия сырья"
+          placeholder="Поступила партия сырья"
         />
       </label>
-      <div className="interviewBoundsHint">С чего процесс начинается в реальности?</div>
+      <div className="interviewBoundsHint">Точка входа процесса.</div>
     </section>
   );
 }

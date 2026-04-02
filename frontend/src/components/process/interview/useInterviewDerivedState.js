@@ -5,8 +5,6 @@ import {
   toText,
   normalizeLoose,
   normalizeInterviewOrderMode,
-  dedupNames,
-  computeNodeOrder,
   collectBpmnTraversalOrderMeta,
   parseLaneMetaByNodeFromBpmnXml,
   parseSubprocessMetaByNodeFromBpmnXml,
@@ -29,6 +27,29 @@ import {
   percent,
   round1,
 } from "./utils";
+import {
+  buildActorNames,
+  buildBackendEdges,
+  buildBackendNodes,
+  buildCreationNodeOrder,
+  buildFlowMetaById,
+  buildGraphNodeOrder,
+  buildGraphNodeRank,
+  buildLaneByNodeFromXml,
+  buildNodeMetaById,
+  buildNodePathMetaByNodeId,
+  buildSubprocessCatalog,
+  buildTransitionLabelByKey,
+} from "./derivedState/interviewModelDerivation";
+import {
+  buildBoundaryLaneOptions,
+  buildFilteredTimelineView,
+  buildTimelineLaneOptions,
+  buildTimelineSubprocessOptions,
+  buildTransitionView,
+  filterBoundaryLaneOptions,
+  isTimelineFilteringActive,
+} from "./derivedState/interviewTimelineDerivation";
 import { buildTimelineView } from "./timelineViewModel";
 import { buildInterviewGraphModel } from "./graph/buildGraphModel";
 import { validateInterviewGraphModel } from "./graph/validateGraphModel";
@@ -116,13 +137,7 @@ export default function useInterviewDerivedState({
 
   const laneMetaByNodeFromXml = useMemo(() => parseLaneMetaByNodeFromBpmnXml(bpmnXml), [bpmnXml]);
   const subprocessMetaByNodeFromXml = useMemo(() => parseSubprocessMetaByNodeFromBpmnXml(bpmnXml), [bpmnXml]);
-  const laneByNodeFromXml = useMemo(() => {
-    const out = {};
-    Object.keys(laneMetaByNodeFromXml).forEach((nodeId) => {
-      out[nodeId] = toText(laneMetaByNodeFromXml[nodeId]?.name);
-    });
-    return out;
-  }, [laneMetaByNodeFromXml]);
+  const laneByNodeFromXml = useMemo(() => buildLaneByNodeFromXml(laneMetaByNodeFromXml), [laneMetaByNodeFromXml]);
   const nodeKindByIdFromXml = useMemo(() => parseNodeKindMapFromBpmnXml(bpmnXml), [bpmnXml]);
   const xmlTextAnnotationEntriesByNode = useMemo(() => extractTextAnnotationsByTarget(bpmnXml), [bpmnXml]);
   const xmlTextAnnotationsByNode = useMemo(() => parseTextAnnotationsByNodeFromBpmnXml(bpmnXml), [bpmnXml]);
@@ -131,44 +146,14 @@ export default function useInterviewDerivedState({
     [bpmnXml, laneByNodeFromXml, nodeKindByIdFromXml],
   );
 
-  const backendNodes = useMemo(() => {
-    const real = toArray(nodes)
-      .map((n) => ({
-        id: toText(n?.id),
-        title: toText(n?.title || n?.name),
-        actorRole: toText(n?.actor_role || n?.role || laneByNodeFromXml[toText(n?.id)]),
-        nodeType: toText(n?.type),
-        bpmnKind: toText(nodeKindByIdFromXml[toText(n?.id)]),
-        parameters: n?.parameters && typeof n.parameters === "object" ? n.parameters : {},
-      }))
-      .filter((n) => n.id);
-    const byId = new Map();
-    real.forEach((n) => byId.set(n.id, n));
-    virtualEventNodes.forEach((n) => {
-      if (!byId.has(n.id)) byId.set(n.id, n);
-    });
-    return Array.from(byId.values());
-  }, [nodes, laneByNodeFromXml, nodeKindByIdFromXml, virtualEventNodes]);
+  const backendNodes = useMemo(
+    () => buildBackendNodes(nodes, laneByNodeFromXml, nodeKindByIdFromXml, virtualEventNodes),
+    [nodes, laneByNodeFromXml, nodeKindByIdFromXml, virtualEventNodes],
+  );
 
-  const backendEdges = useMemo(() => {
-    return toArray(edges).map((e) => ({
-      from_id: toText(e?.from_id || e?.from || e?.source_id || e?.sourceId),
-      to_id: toText(e?.to_id || e?.to || e?.target_id || e?.targetId),
-      when: toText(e?.when || e?.label || ""),
-    }));
-  }, [edges]);
+  const backendEdges = useMemo(() => buildBackendEdges(edges), [edges]);
 
-  const actorNames = useMemo(() => {
-    const names = toArray(actorsDerived)
-      .map((x) => toText(x?.name || x?.laneName || x?.label))
-      .filter(Boolean);
-    if (names.length) return dedupNames(names);
-    return dedupNames(
-      toArray(roles)
-        .map((x) => toText(x))
-        .filter(Boolean),
-    );
-  }, [actorsDerived, roles]);
+  const actorNames = useMemo(() => buildActorNames(actorsDerived, roles), [actorsDerived, roles]);
 
   const orderModeUserSet = !!(data?.order_mode_user_set || data?.orderModeUserSet);
   const orderModeRaw = data?.order_mode || data?.orderMode || "bpmn";
@@ -178,76 +163,34 @@ export default function useInterviewDerivedState({
     : normalizedOrderMode;
   const bpmnOrderMeta = useMemo(() => collectBpmnTraversalOrderMeta(bpmnXml), [bpmnXml]);
   const xmlNodeOrder = useMemo(() => toArray(bpmnOrderMeta?.nodeIds), [bpmnOrderMeta]);
-  const creationNodeOrder = useMemo(() => {
-    const seen = new Set();
-    const out = [];
-    const orderedSteps = toArray(data.steps)
-      .map((step, idx) => ({
-        step,
-        idx,
-        orderIdx: Number(step?.order_index || step?.order || idx + 1),
-      }))
-      .sort((a, b) => {
-        if (a.orderIdx !== b.orderIdx) return a.orderIdx - b.orderIdx;
-        return a.idx - b.idx;
-      });
-    orderedSteps.forEach(({ step }) => {
-      const nodeId = toText(step?.bpmn_ref || step?.node_bind_id || step?.node_id || step?.nodeId);
-      if (!nodeId || seen.has(nodeId)) return;
-      seen.add(nodeId);
-      out.push(nodeId);
-    });
-    backendNodes.forEach((node) => {
-      const nodeId = toText(node?.id);
-      if (!nodeId || seen.has(nodeId)) return;
-      seen.add(nodeId);
-      out.push(nodeId);
-    });
-    return out;
-  }, [data.steps, backendNodes]);
+  const creationNodeOrder = useMemo(
+    () => buildCreationNodeOrder(data.steps, backendNodes),
+    [data.steps, backendNodes],
+  );
   const bpmnOrderUnavailable = !!bpmnOrderMeta?.usedFallback;
   const bpmnOrderFallback = orderMode === "bpmn" && bpmnOrderUnavailable;
   const bpmnOrderHint = bpmnOrderUnavailable
     ? `Fallback order: creation order (${bpmnFallbackMessage(bpmnOrderMeta?.fallbackReason)}).`
     : "Порядок вычислен по графу диаграммы.";
-  const graphNodeOrder = useMemo(() => {
-    const out = [];
-    const seen = new Set();
-    function pushUnique(nodeIdRaw) {
-      const nodeId = toText(nodeIdRaw);
-      if (!nodeId || seen.has(nodeId)) return;
-      seen.add(nodeId);
-      out.push(nodeId);
-    }
+  const graphNodeOrder = useMemo(
+    () => buildGraphNodeOrder({
+      backendNodes,
+      backendEdges,
+      xmlNodeOrder,
+      creationNodeOrder,
+      orderMode,
+      bpmnOrderFallback,
+    }),
+    [backendNodes, backendEdges, xmlNodeOrder, creationNodeOrder, orderMode, bpmnOrderFallback],
+  );
 
-    if (orderMode === "bpmn" && !bpmnOrderFallback && xmlNodeOrder.length) {
-      const known = new Set(backendNodes.map((n) => toText(n?.id)).filter(Boolean));
-      const fromXml = xmlNodeOrder.filter((id) => known.has(id));
-      fromXml.forEach((id) => pushUnique(id));
-    } else if (creationNodeOrder.length) {
-      creationNodeOrder.forEach((id) => pushUnique(id));
-    } else {
-      computeNodeOrder(backendNodes, backendEdges).forEach((id) => pushUnique(id));
-    }
-    backendNodes.forEach((node) => pushUnique(node?.id));
-    return out;
-  }, [backendNodes, backendEdges, xmlNodeOrder, creationNodeOrder, orderMode, bpmnOrderFallback]);
-
-  const graphNodeRank = useMemo(() => {
-    const out = {};
-    graphNodeOrder.forEach((id, idx) => {
-      out[id] = idx;
-    });
-    return out;
-  }, [graphNodeOrder]);
+  const graphNodeRank = useMemo(() => buildGraphNodeRank(graphNodeOrder), [graphNodeOrder]);
   const graphOrderLocked = orderMode === "bpmn" && !bpmnOrderFallback;
 
-  const subprocessCatalog = useMemo(() => {
-    const fromSteps = toArray(data.steps).map((x) => x?.subprocess);
-    const fromRoot = toArray(data.subprocesses);
-    const fromBackend = backendNodes.map((x) => x?.parameters?.interview_subprocess);
-    return dedupNames([...fromRoot, ...fromSteps, ...fromBackend]);
-  }, [data.steps, data.subprocesses, backendNodes]);
+  const subprocessCatalog = useMemo(
+    () => buildSubprocessCatalog(data.steps, data.subprocesses, backendNodes),
+    [data.steps, data.subprocesses, backendNodes],
+  );
 
   const timelineBaseView = useMemo(
     () =>
@@ -262,88 +205,22 @@ export default function useInterviewDerivedState({
     [data.steps, backendNodes, graphNodeRank, laneMetaByNodeFromXml, subprocessMetaByNodeFromXml, graphOrderLocked],
   );
 
-  const transitionLabelByKey = useMemo(() => {
-    const out = {};
-    toArray(data.transitions).forEach((tr) => {
-      const fromId = toText(tr?.from_node_id || tr?.from || tr?.source_id || tr?.sourceId);
-      const toId = toText(tr?.to_node_id || tr?.to || tr?.target_id || tr?.targetId);
-      if (!fromId || !toId) return;
-      out[`${fromId}__${toId}`] = toText(tr?.when || tr?.label || "");
-    });
-    return out;
-  }, [data.transitions]);
+  const transitionLabelByKey = useMemo(
+    () => buildTransitionLabelByKey(data.transitions),
+    [data.transitions],
+  );
 
-  const flowMetaById = useMemo(() => {
-    const rawMeta = asObject(sessionDraft?.bpmn_meta);
-    const rawFlowMeta = asObject(rawMeta?.flow_meta);
-    const out = {};
-    Object.keys(rawFlowMeta).forEach((rawFlowId) => {
-      const flowId = toText(rawFlowId);
-      if (!flowId) return;
-      const entry = asObject(rawFlowMeta[rawFlowId]);
-      const tier = toText(entry?.tier).toUpperCase();
-      const rtier = toText(entry?.rtier).toUpperCase();
-      if (tier === "P0" || tier === "P1" || tier === "P2") {
-        out[flowId] = { ...(out[flowId] || {}), tier };
-      }
-      if (rtier === "R0" || rtier === "R1" || rtier === "R2") {
-        out[flowId] = { ...(out[flowId] || {}), rtier };
-      }
-      if (entry?.happy) out[flowId] = { ...(out[flowId] || {}), tier: "P0" };
-    });
-    return out;
-  }, [sessionDraft?.bpmn_meta]);
+  const flowMetaById = useMemo(() => buildFlowMetaById(sessionDraft?.bpmn_meta), [sessionDraft?.bpmn_meta]);
 
-  const nodePathMetaByNodeId = useMemo(() => {
-    const rawMeta = asObject(sessionDraft?.bpmn_meta);
-    const rawNodeMeta = asObject(rawMeta?.node_path_meta);
-    const out = {};
-    Object.keys(rawNodeMeta).forEach((rawNodeId) => {
-      const nodeId = toText(rawNodeId);
-      if (!nodeId) return;
-      const entry = asObject(rawNodeMeta[rawNodeId]);
-      const seen = new Set();
-      const paths = toArray(entry?.paths)
-        .map((tag) => toText(tag).toUpperCase())
-        .filter((tag) => {
-          if (!(tag === "P0" || tag === "P1" || tag === "P2")) return false;
-          if (seen.has(tag)) return false;
-          seen.add(tag);
-          return true;
-        });
-      if (!paths.length) return;
-      out[nodeId] = {
-        paths,
-        sequence_key: toText(entry?.sequence_key || entry?.sequenceKey),
-        source: toText(entry?.source || "manual").toLowerCase() === "color_auto" ? "color_auto" : "manual",
-      };
-    });
-    return out;
-  }, [sessionDraft?.bpmn_meta]);
+  const nodePathMetaByNodeId = useMemo(
+    () => buildNodePathMetaByNodeId(sessionDraft?.bpmn_meta),
+    [sessionDraft?.bpmn_meta],
+  );
 
-  const nodeMetaById = useMemo(() => {
-    const out = {};
-    backendNodes.forEach((node) => {
-      const nodeId = toText(node?.id);
-      if (!nodeId) return;
-      out[nodeId] = {
-        title: toText(node?.title) || nodeId,
-        lane: toText(node?.actorRole),
-        kind: toText(node?.bpmnKind || nodeKindByIdFromXml[nodeId]).toLowerCase(),
-      };
-    });
-    timelineBaseView.forEach((step) => {
-      const nodeId = toText(step?.node_bind_id || step?.node_id);
-      if (!nodeId) return;
-      const prev = out[nodeId] || {};
-      out[nodeId] = {
-        title: toText(step?.action) || prev.title || nodeId,
-        lane: toText(step?.lane_name) || prev.lane || "",
-        kind: toText(step?.node_bind_kind || prev.kind || nodeKindByIdFromXml[nodeId]).toLowerCase(),
-      };
-    });
-    return out;
-  }, [backendNodes, timelineBaseView, nodeKindByIdFromXml]);
+  const nodeMetaById = useMemo(
+    () => buildNodeMetaById(backendNodes, timelineBaseView, nodeKindByIdFromXml),
+    [backendNodes, timelineBaseView, nodeKindByIdFromXml],
+  );
 
   const interviewGraph = useMemo(
     () =>
@@ -1282,323 +1159,49 @@ export default function useInterviewDerivedState({
     return out;
   }, [timelineView, data.ai_questions, aiQuestionsByElement]);
 
-  const timelineLaneOptions = useMemo(() => {
-    const byKey = {};
-    const byNameKey = {};
-    function registerLane(entry) {
-      const laneName = toText(entry?.name);
-      const laneKey = toText(entry?.key);
-      const nameKey = normalizeLoose(laneName);
-      let targetKey = "";
-      if (laneKey && byKey[laneKey]) {
-        targetKey = laneKey;
-      } else if (nameKey && byNameKey[nameKey]) {
-        targetKey = byNameKey[nameKey];
-      } else {
-        targetKey = laneKey || (nameKey ? `name::${nameKey}` : "");
-      }
-      if (!targetKey) return;
+  const timelineLaneOptions = useMemo(
+    () => buildTimelineLaneOptions(timelineView, actorNames),
+    [timelineView, actorNames],
+  );
 
-      const laneIdx = Number(entry?.idx) || 0;
-      const laneColorValue = toText(entry?.color) || laneColor(targetKey, laneIdx || 0);
-      const laneLabelValue = toText(entry?.label) || laneLabel(laneName, laneIdx || 0);
+  const boundaryLaneOptions = useMemo(
+    () => buildBoundaryLaneOptions(timelineView, actorNames),
+    [timelineView, actorNames],
+  );
 
-      if (!byKey[targetKey]) {
-        byKey[targetKey] = {
-          key: targetKey,
-          name: laneName,
-          idx: laneIdx,
-          color: laneColorValue,
-          label: laneLabelValue,
-        };
-      } else {
-        const cur = byKey[targetKey];
-        if (!cur.name && laneName) cur.name = laneName;
-        if (!cur.idx && laneIdx) cur.idx = laneIdx;
-        if (!cur.color && laneColorValue) cur.color = laneColorValue;
-        if (!cur.label && laneLabelValue) cur.label = laneLabelValue;
-      }
+  const boundaryLaneOptionsFiltered = useMemo(
+    () => filterBoundaryLaneOptions(boundaryLaneOptions, boundariesLaneFilter),
+    [boundaryLaneOptions, boundariesLaneFilter],
+  );
 
-      if (laneKey) byNameKey[laneKey] = targetKey;
-      if (nameKey) byNameKey[nameKey] = targetKey;
-    }
-
-    timelineView.forEach((step) => {
-      registerLane({
-        key: toText(step?.lane_key) || "",
-        name: toText(step?.lane_name),
-        idx: Number(step?.lane_idx) || 0,
-        color: toText(step?.lane_color),
-        label: laneLabel(step?.lane_name, step?.lane_idx),
-      });
-    });
-    toArray(actorNames)
-      .map((x) => toText(x))
-      .filter(Boolean)
-      .forEach((name, idx) => {
-        registerLane({
-          key: normalizeLoose(name) || `lane_${idx + 1}`,
-          name,
-          idx: idx + 1,
-          color: laneColor(name, idx + 1),
-          label: laneLabel(name, idx + 1),
-        });
-      });
-    const ordered = Object.values(byKey).sort((a, b) => {
-      if (a.idx !== b.idx) return a.idx - b.idx;
-      return a.name.localeCompare(b.name, "ru");
-    });
-    const seen = new Set();
-    return ordered.filter((lane) => {
-      const key = normalizeLoose(lane?.label || lane?.name);
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }, [timelineView, actorNames]);
-
-  const boundaryLaneOptions = useMemo(() => {
-    const map = new Map();
-    function registerLane(entry) {
-      const laneName = toText(entry.name);
-      const normalizedName = normalizeLoose(laneName);
-      const normalizedAlias = normalizeLoose(entry.normalized || "");
-      if (!laneName && !normalizedAlias) return;
-      const normalized = normalizedName || normalizedAlias || `lane_${map.size + 1}`;
-      const laneIdx = Number.isFinite(Number(entry.idx)) && Number(entry.idx) > 0 ? Number(entry.idx) : map.size + 1;
-      if (!map.has(normalized)) {
-        map.set(normalized, {
-          name: laneName,
-          key: normalized,
-          idx: laneIdx,
-          color: entry.color || laneColor(normalized, laneIdx),
-          label: entry.label || laneLabel(laneName, entry.idx),
-        });
-        return;
-      }
-      const existing = map.get(normalized);
-      if (!existing) return;
-      if (!existing.color && entry.color) existing.color = entry.color;
-      if (entry.label) existing.label = entry.label;
-      if (laneIdx && (!existing.idx || laneIdx < existing.idx)) existing.idx = laneIdx;
-    }
-
-    timelineView.forEach((step) => {
-      const name = toText(step?.lane_name);
-      if (!name) return;
-      registerLane({
-        name,
-        normalized: toText(step?.lane_key) || "",
-        idx: step?.lane_idx,
-        color: toText(step?.lane_color) || laneColor(name, step?.lane_idx || 0),
-        label: laneLabel(name, step?.lane_idx),
-      });
-    });
-
-    toArray(actorNames)
-      .map((x) => toText(x))
-      .filter(Boolean)
-      .forEach((name, idx) => {
-        registerLane({
-          name,
-          normalized: normalizeLoose(name),
-          idx: idx + 1,
-          color: laneColor(name, idx + 1),
-          label: laneLabel(name, idx + 1),
-        });
-      });
-
-    const out = Array.from(map.values());
-    out.sort((a, b) => {
-      if (a.idx !== b.idx) return a.idx - b.idx;
-      return a.name.localeCompare(b.name);
-    });
-    return out;
-  }, [timelineView, actorNames]);
-
-  const boundaryLaneOptionsFiltered = useMemo(() => {
-    const q = normalizeLoose(boundariesLaneFilter);
-    if (!q) return boundaryLaneOptions;
-    return boundaryLaneOptions.filter((x) => normalizeLoose(x.label).includes(q) || normalizeLoose(x.name).includes(q));
-  }, [boundaryLaneOptions, boundariesLaneFilter]);
-
-  const timelineSubprocessOptions = useMemo(() => {
-    const seen = new Set();
-    const out = [];
-    timelineView.forEach((step) => {
-      const sp = toText(step?.subprocess);
-      if (!sp) return;
-      const k = normalizeLoose(sp);
-      if (!k || seen.has(k)) return;
-      seen.add(k);
-      out.push(sp);
-    });
-    return out;
-  }, [timelineView]);
+  const timelineSubprocessOptions = useMemo(
+    () => buildTimelineSubprocessOptions(timelineView),
+    [timelineView],
+  );
 
   const deferredTimelineQuery = useDeferredValue(toText(timelineFilters?.query));
 
-  const filteredTimelineView = useMemo(() => {
-    const q = normalizeLoose(deferredTimelineQuery);
-    const laneFilter = toText(timelineFilters.lane);
-    const laneFilters = toArray(timelineFilters.lanes).map((item) => toText(item)).filter(Boolean);
-    const typeFilter = String(timelineFilters.type || "all").toLowerCase();
-    const spFilter = normalizeLoose(timelineFilters.subprocess);
-    const bindFilter = String(timelineFilters.bind || "all").toLowerCase();
-    const annotationFilter = String(timelineFilters.annotation || "all").toLowerCase();
-    const aiFilter = String(timelineFilters.ai || "all").toLowerCase();
+  const filteredTimelineView = useMemo(
+    () => buildFilteredTimelineView({
+      timelineView,
+      timelineFilters,
+      deferredTimelineQuery,
+      xmlTextAnnotationsByStepId,
+      aiQuestionMetaByStepId,
+    }),
+    [timelineView, timelineFilters, deferredTimelineQuery, xmlTextAnnotationsByStepId, aiQuestionMetaByStepId],
+  );
 
-    return timelineView.filter((step) => {
-      const stepId = toText(step?.id);
-      const xmlAnnotations = toArray(xmlTextAnnotationsByStepId?.[stepId]);
-      const hasAnnotation = xmlAnnotations.length > 0 || !!toText(step?.comment);
-      const aiMeta = aiQuestionMetaByStepId?.[stepId];
-      const hasAi = Number(aiMeta?.count || 0) > 0;
-      if (laneFilters.length) {
-        const stepLaneKey = toText(step?.lane_key) || normalizeLoose(step?.lane_name);
-        const stepLaneName = toText(step?.lane_name);
-        const laneMatched = laneFilters.some((laneValue) => {
-          const val = toText(laneValue);
-          if (!val) return false;
-          return (
-            stepLaneKey === val
-            || stepLaneName === val
-            || normalizeLoose(stepLaneName) === normalizeLoose(val)
-          );
-        });
-        if (!laneMatched) return false;
-      } else if (laneFilter && laneFilter !== "all") {
-        const stepLaneKey = toText(step?.lane_key) || normalizeLoose(step?.lane_name);
-        const stepLaneName = toText(step?.lane_name);
-        if (stepLaneKey !== laneFilter && stepLaneName !== laneFilter && normalizeLoose(stepLaneName) !== normalizeLoose(laneFilter)) return false;
-      }
-      if (typeFilter && typeFilter !== "all" && String(step?.type || "").toLowerCase() !== typeFilter) return false;
-      if (spFilter && spFilter !== "all" && normalizeLoose(step?.subprocess) !== spFilter) return false;
-      if (bindFilter === "bound" && !step?.node_bound) return false;
-      if (bindFilter === "missing" && step?.node_bound) return false;
-      if (annotationFilter === "with" && !hasAnnotation) return false;
-      if (annotationFilter === "without" && hasAnnotation) return false;
-      if (aiFilter === "with" && !hasAi) return false;
-      if (aiFilter === "without" && hasAi) return false;
-      if (q) {
-        const hay = [
-          step?.action,
-          step?.comment,
-          step?.node_bind_id,
-          step?.node_bind_title,
-          step?.subprocess,
-          step?.role,
-          step?.area,
-          step?.output,
-          xmlAnnotations.map((item) => toText(item?.text)).join(" "),
-        ]
-          .map((x) => normalizeLoose(x))
-          .join(" ");
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
-  }, [timelineView, timelineFilters, deferredTimelineQuery, xmlTextAnnotationsByStepId, aiQuestionMetaByStepId]);
-
-  const transitionView = useMemo(() => {
-    const byNode = {};
-    backendNodes.forEach((n) => {
-      const id = toText(n?.id);
-      if (!id) return;
-      byNode[id] = {
-        title: toText(n?.title) || id,
-        lane: toText(n?.actorRole),
-      };
-    });
-    timelineView.forEach((s) => {
-      const id = toText(s?.node_bind_id || s?.node_id);
-      if (!id) return;
-      const cur = byNode[id] || {};
-      byNode[id] = {
-        title: toText(s?.action) || cur.title || id,
-        lane: toText(s?.lane_name) || cur.lane || "",
-      };
-    });
-
-    const graphNoByNodeId = {};
-    timelineView.forEach((s) => {
-      const nodeId = toText(s?.node_bind_id || s?.node_id);
-      if (!nodeId || graphNoByNodeId[nodeId]) return;
-      graphNoByNodeId[nodeId] = toText(s?.seq_label || s?.seq);
-    });
-
-    const transitionByKey = {};
-    toArray(data.transitions).forEach((tr, idx) => {
-      const fromId = toText(tr?.from_node_id || tr?.from || tr?.source_id || tr?.sourceId);
-      const toId = toText(tr?.to_node_id || tr?.to || tr?.target_id || tr?.targetId);
-      if (!fromId || !toId) return;
-      transitionByKey[`${fromId}__${toId}`] = {
-        id: toText(tr?.id) || `tr_${idx + 1}`,
-        from_node_id: fromId,
-        to_node_id: toId,
-        when: toText(tr?.when || tr?.label || ""),
-      };
-    });
-
-    const out = [];
-    const seen = new Set();
-    backendEdges.forEach((e, idx) => {
-      const fromId = toText(e?.from_id);
-      const toId = toText(e?.to_id);
-      if (!fromId || !toId) return;
-      const key = `${fromId}__${toId}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-      const own = transitionByKey[key];
-      out.push({
-        id: own?.id || `edge_${idx + 1}`,
-        key,
-        from_node_id: fromId,
-        to_node_id: toId,
-        from_graph_no: toText(graphNoByNodeId[fromId]),
-        to_graph_no: toText(graphNoByNodeId[toId]),
-        from_title: toText(byNode[fromId]?.title) || fromId,
-        to_title: toText(byNode[toId]?.title) || toId,
-        from_lane: toText(byNode[fromId]?.lane),
-        to_lane: toText(byNode[toId]?.lane),
-        when: own ? toText(own.when) : toText(e?.when),
-      });
-    });
-
-    Object.values(transitionByKey).forEach((tr) => {
-      const key = `${tr.from_node_id}__${tr.to_node_id}`;
-      if (seen.has(key)) return;
-      out.push({
-        id: tr.id || key,
-        key,
-        from_node_id: tr.from_node_id,
-        to_node_id: tr.to_node_id,
-        from_graph_no: toText(graphNoByNodeId[tr.from_node_id]),
-        to_graph_no: toText(graphNoByNodeId[tr.to_node_id]),
-        from_title: toText(byNode[tr.from_node_id]?.title) || tr.from_node_id,
-        to_title: toText(byNode[tr.to_node_id]?.title) || tr.to_node_id,
-        from_lane: toText(byNode[tr.from_node_id]?.lane),
-        to_lane: toText(byNode[tr.to_node_id]?.lane),
-        when: toText(tr.when),
-      });
-    });
-
-    const rankFor = (nodeId) => {
-      const r = Number(graphNodeRank[nodeId]);
-      return Number.isFinite(r) ? r : Number.MAX_SAFE_INTEGER;
-    };
-
-    out.sort((a, b) => {
-      const ar = rankFor(a.from_node_id);
-      const br = rankFor(b.from_node_id);
-      if (ar !== br) return ar - br;
-      const at = rankFor(a.to_node_id);
-      const bt = rankFor(b.to_node_id);
-      if (at !== bt) return at - bt;
-      return String(a.key).localeCompare(String(b.key));
-    });
-    return out;
-  }, [backendEdges, backendNodes, data.transitions, graphNodeRank, timelineView]);
+  const transitionView = useMemo(
+    () => buildTransitionView({
+      backendEdges,
+      backendNodes,
+      transitions: data.transitions,
+      graphNodeRank,
+      timelineView,
+    }),
+    [backendEdges, backendNodes, data.transitions, graphNodeRank, timelineView],
+  );
 
   const visibleTimelineOptionalCols = useMemo(
     () => TIMELINE_OPTIONAL_COLUMNS.filter((col) => !hiddenTimelineCols[col.key]),
@@ -1606,27 +1209,10 @@ export default function useInterviewDerivedState({
   );
   const timelineColSpan = 3 + visibleTimelineOptionalCols.length;
 
-  const isTimelineFiltering = useMemo(() => {
-    const f = timelineFilters;
-    const tierFilters = toArray(f.tiers).map((tier) => {
-      const t = toText(tier).toUpperCase();
-      if (t === "NONE") return "None";
-      return t;
-    });
-    const tierFilterActive = tierFilters.length > 0
-      && !(tierFilters.includes("P0") && tierFilters.includes("P1") && tierFilters.includes("P2") && tierFilters.includes("None"));
-    return !!(
-      toText(f.query) ||
-      toArray(f.lanes).some((lane) => toText(lane)) ||
-      (toText(f.lane) && toText(f.lane) !== "all") ||
-      (toText(f.type) && toText(f.type) !== "all") ||
-      (toText(f.subprocess) && toText(f.subprocess) !== "all") ||
-      (toText(f.bind) && toText(f.bind) !== "all") ||
-      (toText(f.annotation) && toText(f.annotation) !== "all") ||
-      (toText(f.ai) && toText(f.ai) !== "all") ||
-      tierFilterActive
-    );
-  }, [timelineFilters]);
+  const isTimelineFiltering = useMemo(
+    () => isTimelineFilteringActive(timelineFilters),
+    [timelineFilters],
+  );
 
   useEffect(() => {
     if (!shouldDebugLoopTrace()) return;

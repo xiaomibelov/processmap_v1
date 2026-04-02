@@ -1,27 +1,16 @@
-#!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "${ROOT_DIR}"
+cd "$(git rev-parse --show-toplevel)"
 
-echo "== root =="
-pwd
+TS="$(date +%F_%H%M%S)"
+git tag -a "cp/dev_up_${TS}" -m "checkpoint: dev_up (${TS})" >/dev/null 2>&1 || true
 
 echo "== git =="
-if git rev-parse --show-toplevel >/dev/null 2>&1; then
-  git status -sb || true
-  git show -s --format='%ci %h %d %s' HEAD || true
-else
-  echo "git metadata unavailable; continuing without repository-specific actions"
-fi
-
-if [ ! -f .env ]; then
-  echo "missing .env; copy .env.example to .env before running docker compose" >&2
-  exit 1
-fi
+git status -sb || true
+git show -s --format='%ci %h %d %s' HEAD || true
 
 echo "== port =="
-grep -E '^(HOST_PORT|FRONTEND_PORT)=' .env || true
+grep -E '^HOST_PORT=' .env || true
 
 echo "== up =="
 docker compose up --build

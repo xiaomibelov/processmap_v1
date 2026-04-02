@@ -1,9 +1,16 @@
+import { overlayPropertyColorByKey, normalizeOverlayPropertyKey } from "./overlayColorModel.js";
+import { buildOverlayGeometry, readOverlayCanvasZoom } from "./overlayLayoutModel.js";
+
 function runMeasure(ctx, name, run, payload) {
   const measureInterviewPerf = ctx?.callbacks?.measureInterviewPerf;
   if (typeof measureInterviewPerf === "function") {
     return measureInterviewPerf(name, run, payload);
   }
   return run();
+}
+
+function clampNumber(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
 function buildUserNotesDecorPayload(ctx) {
@@ -19,6 +26,58 @@ function buildUserNotesDecorPayload(ctx) {
     out.push({ elementId: eid, count });
   });
   return out;
+}
+
+export function readBusinessObjectDocumentationMeta(boRaw, asArray, toText) {
+  const readEntryText = (entryRaw) => {
+    const entry = entryRaw && typeof entryRaw === "object" ? entryRaw : {};
+    const direct = toText(entry?.text ?? entry?.body ?? entry?.value ?? entry?.$body);
+    if (direct) return direct;
+    if (typeof entry?.get === "function") {
+      try {
+        const fromGetter = toText(entry.get("text") ?? entry.get("body") ?? entry.get("value"));
+        if (fromGetter) return fromGetter;
+      } catch {
+      }
+    }
+    return "";
+  };
+  const docs = asArray(boRaw?.documentation)
+    .map((entry) => readEntryText(entry))
+    .map((text) => String(text || "").replace(/\r\n/g, "\n").trim())
+    .filter(Boolean);
+  if (!docs.length) return null;
+  return {
+    count: docs.length,
+    text: docs.join("\n\n"),
+  };
+}
+
+export function extractDocumentationMetaMapFromBpmnXml(xmlRaw, toText) {
+  const xmlText = toText(xmlRaw);
+  if (!xmlText || typeof DOMParser === "undefined") return {};
+  try {
+    const doc = new DOMParser().parseFromString(xmlText, "application/xml");
+    if (!doc || doc.getElementsByTagName("parsererror").length > 0) return {};
+    const out = {};
+    const allNodes = Array.from(doc.getElementsByTagName("*"));
+    allNodes.forEach((node) => {
+      const elementId = toText(node?.getAttribute?.("id"));
+      if (!elementId) return;
+      const docs = Array.from(node?.childNodes || [])
+        .filter((child) => child?.nodeType === 1 && toText(child?.localName).toLowerCase() === "documentation")
+        .map((child) => String(child?.textContent || "").replace(/\r\n/g, "\n").trim())
+        .filter(Boolean);
+      if (!docs.length) return;
+      out[elementId] = {
+        count: docs.length,
+        text: docs.join("\n\n"),
+      };
+    });
+    return out;
+  } catch {
+    return {};
+  }
 }
 
 function buildStepTimeDecorPayload(ctx) {
@@ -566,6 +625,12 @@ export function applyInterviewDecor(ctx, options = {}) {
           const el = getters.findShapeByNodeId(registry, nodeId) || getters.findShapeForHint(registry, { nodeId, title });
           if (!el) return;
 
+          // Lightweight sequence flow path: skip heavy interview badges on connections.
+          // Connections rarely have meaningful AI/DoD/Notes data, and badges on thin
+          // lines create visual noise without adding value.
+          const isConnectionEl = typeof getters.isConnectionElement === "function" && getters.isConnectionElement(el);
+          if (isConnectionEl) return;
+
           const noteCount = Number(noteMeta?.count || 0);
           if (interviewMode && noteCount > 0) {
             canvas.addMarker(el.id, "fpcHasNote");
@@ -577,15 +642,12 @@ export function applyInterviewDecor(ctx, options = {}) {
             refs.interviewMarkerStateRef.current[kind].push({ elementId: el.id, className: "fpcHasAiQuestion" });
           }
 
-          const rightStack = document.createElement("div");
-          rightStack.className = "fpcNodeBadgeStack";
-          rightStack.dataset.nodeId = nodeId;
-          rightStack.style.transform = "translateX(-100%)";
+          // Cluster mode: collect all badge candidates, render max 2 per stack,
+          // then show a compact "+N" pill for the remainder.
+          const MAX_BADGES_PER_STACK = 2;
 
-          const leftStack = document.createElement("div");
-          leftStack.className = "fpcNodeBadgeStack";
-          leftStack.dataset.nodeId = nodeId;
-          leftStack.style.alignItems = "flex-start";
+          const rightBadges = [];
+          const leftBadges = [];
 
           if (aiCount > 0) {
             const aiBadge = document.createElement("button");
@@ -599,7 +661,7 @@ export function applyInterviewDecor(ctx, options = {}) {
               callbacks.emitElementSelection(el, `${kind}.ai_badge_click`);
               callbacks.openAiQuestionPanel(inst, kind, el.id, { source: "interview_ai_badge", toggle: true });
             });
-            rightStack.appendChild(aiBadge);
+            rightBadges.push(aiBadge);
           }
 
           if (interviewMode && noteCount > 0) {
@@ -613,7 +675,7 @@ export function applyInterviewDecor(ctx, options = {}) {
               callbacks.setSelectedDecor(inst, kind, el.id);
               callbacks.emitElementSelection(el, `${kind}.notes_badge_click`);
             });
-            leftStack.appendChild(noteBadge);
+            leftBadges.push(noteBadge);
           }
 
           const dodTotal = interviewMode ? Number(dodMeta?.total || 0) : 0;
@@ -630,19 +692,46 @@ export function applyInterviewDecor(ctx, options = {}) {
               callbacks.setSelectedDecor(inst, kind, el.id);
               callbacks.emitElementSelection(el, `${kind}.dod_badge_click`);
             });
-            rightStack.appendChild(dodBadge);
+            rightBadges.push(dodBadge);
           }
+
+          // Build stacks with cluster overflow
+          const buildStack = (badges, align) => {
+            if (!badges.length) return null;
+            const stack = document.createElement("div");
+            stack.className = "fpcNodeBadgeStack";
+            stack.dataset.nodeId = nodeId;
+            if (align === "right") {
+              stack.style.transform = "translateX(-100%)";
+            } else {
+              stack.style.alignItems = "flex-start";
+            }
+            const visible = badges.slice(0, MAX_BADGES_PER_STACK);
+            const hiddenCount = badges.length - visible.length;
+            visible.forEach((badge) => stack.appendChild(badge));
+            if (hiddenCount > 0) {
+              const overflow = document.createElement("span");
+              overflow.className = "fpcNodeBadge fpcNodeBadge--cluster";
+              overflow.textContent = `+${hiddenCount}`;
+              overflow.title = badges.slice(MAX_BADGES_PER_STACK)
+                .map((b) => b.textContent).join(", ");
+              stack.appendChild(overflow);
+            }
+            return stack;
+          };
 
           const shapeWidth = Number(el?.width || 0);
           const rightAnchorLeft = Number.isFinite(shapeWidth) && shapeWidth > 0 ? shapeWidth - 2 : 96;
-          if (rightStack.childNodes.length) {
+          const rightStack = buildStack(rightBadges, "right");
+          const leftStack = buildStack(leftBadges, "left");
+          if (rightStack) {
             const rightOverlayId = overlays.add(el.id, {
               position: { top: -18, left: rightAnchorLeft },
               html: rightStack,
             });
             refs.interviewOverlayStateRef.current[kind].push(rightOverlayId);
           }
-          if (leftStack.childNodes.length) {
+          if (leftStack) {
             const leftOverlayId = overlays.add(el.id, {
               position: { top: -18, left: 2 },
               html: leftStack,
@@ -748,19 +837,25 @@ export function clearUserNotesDecor(ctx) {
   const inst = ctx?.inst;
   const kind = ctx?.kind;
   const refs = ctx?.refs;
-  const asArray = ctx?.utils?.asArray;
-  if (!inst || !kind || !refs || typeof asArray !== "function") return;
+  const asObject = ctx?.utils?.asObject;
+  const toText = ctx?.utils?.toText;
+  if (!inst || !kind || !refs || typeof asObject !== "function" || typeof toText !== "function") return;
   try {
     const canvas = inst.get("canvas");
     const overlays = inst.get("overlays");
-    asArray(refs.userNotesMarkerStateRef.current[kind]).forEach((m) => {
-      canvas.removeMarker(m.elementId, m.className);
+    const state = asObject(refs.userNotesDecorStateRef.current[kind]);
+    Object.values(state).forEach((entryRaw) => {
+      const entry = asObject(entryRaw);
+      const elementId = toText(entry?.elementId);
+      const markerClass = toText(entry?.markerClass);
+      if (elementId && markerClass) {
+        canvas.removeMarker(elementId, markerClass);
+      }
+      if (entry?.overlayId !== null && entry?.overlayId !== undefined) {
+        overlays.remove(entry.overlayId);
+      }
     });
-    asArray(refs.userNotesOverlayStateRef.current[kind]).forEach((id) => {
-      overlays.remove(id);
-    });
-    refs.userNotesMarkerStateRef.current[kind] = [];
-    refs.userNotesOverlayStateRef.current[kind] = [];
+    refs.userNotesDecorStateRef.current[kind] = {};
   } catch {
   }
 }
@@ -771,16 +866,71 @@ export function applyUserNotesDecor(ctx) {
   const refs = ctx?.refs;
   const callbacks = ctx?.callbacks;
   const getters = ctx?.getters;
+  const draftRef = ctx?.readOnly?.draftRef;
+  const getActiveBpmnXml = ctx?.readOnly?.getActiveBpmnXml;
+  const asArray = ctx?.utils?.asArray;
   const toText = ctx?.utils?.toText;
-  if (!inst || !kind || !refs || !callbacks || !getters || typeof toText !== "function") return;
-  clearUserNotesDecor(ctx);
-  if (getters.isInterviewDecorModeOn()) return;
+  const asObject = ctx?.utils?.asObject;
+  if (
+    !inst
+    || !kind
+    || !refs
+    || !callbacks
+    || !getters
+    || typeof asArray !== "function"
+    || typeof toText !== "function"
+    || typeof asObject !== "function"
+  ) {
+    return;
+  }
+  if (getters.isInterviewDecorModeOn()) {
+    clearUserNotesDecor(ctx);
+    return;
+  }
   const payload = buildUserNotesDecorPayload(ctx);
-  if (!payload.length) return;
   try {
     const canvas = inst.get("canvas");
     const overlays = inst.get("overlays");
     const registry = inst.get("elementRegistry");
+    const currentState = { ...asObject(refs.userNotesDecorStateRef.current[kind]) };
+    const nextState = {};
+    const notesByNodeId = {};
+    const docsByNodeId = {};
+    const activeXml = (() => {
+      if (typeof getActiveBpmnXml === "function") {
+        const fromRuntime = toText(getActiveBpmnXml({ inst, kind }));
+        if (fromRuntime) return fromRuntime;
+      }
+      return toText(draftRef?.current?.bpmn_xml);
+    })();
+    const docsByNodeIdFromXml = extractDocumentationMetaMapFromBpmnXml(activeXml, toText);
+
+    payload.forEach((item) => {
+      const nodeId = toText(item?.elementId);
+      const count = Number(item?.count || 0);
+      if (!nodeId || count <= 0) return;
+      notesByNodeId[nodeId] = count;
+    });
+
+    const allDiagramElements = typeof registry?.getAll === "function" ? asArray(registry.getAll()) : [];
+    allDiagramElements.forEach((el) => {
+      if (!getters.isShapeElement(el)) return;
+      if (typeof getters.isConnectionElement === "function" && getters.isConnectionElement(el)) return;
+      const nodeId = toText(el?.businessObject?.id || el?.id);
+      if (!nodeId) return;
+      const documentationMeta = readBusinessObjectDocumentationMeta(el?.businessObject, asArray, toText);
+      if (!documentationMeta) return;
+      docsByNodeId[nodeId] = documentationMeta;
+    });
+    Object.entries(asObject(docsByNodeIdFromXml)).forEach(([nodeIdRaw, metaRaw]) => {
+      const nodeId = toText(nodeIdRaw);
+      if (!nodeId || docsByNodeId[nodeId]) return;
+      const meta = asObject(metaRaw);
+      const count = Number(meta?.count || 0);
+      const text = toText(meta?.text);
+      if (!(count > 0) || !text) return;
+      docsByNodeId[nodeId] = { count, text };
+    });
 
     const bindBadgeClick = (btn, onClick) => {
       btn.addEventListener("mousedown", (ev) => ev.stopPropagation());
@@ -791,39 +941,164 @@ export function applyUserNotesDecor(ctx) {
       });
     };
 
-    payload.forEach((item) => {
-      const nodeId = toText(item?.elementId);
-      const count = Number(item?.count || 0);
-      if (!nodeId || count <= 0) return;
+    const hasLiveOverlayEntry = (overlayIdRaw) => {
+      const overlayId = overlayIdRaw;
+      if (overlayId === null || overlayId === undefined || overlayId === "") return false;
+      if (typeof overlays?.get === "function") {
+        try {
+          return !!overlays.get(overlayId);
+        } catch {
+        }
+      }
+      const overlayMap = overlays && typeof overlays === "object"
+        ? (overlays._overlays && typeof overlays._overlays === "object"
+          ? overlays._overlays
+          : overlays.overlays && typeof overlays.overlays === "object"
+            ? overlays.overlays
+            : null)
+        : null;
+      if (!overlayMap) return true;
+      if (Object.prototype.hasOwnProperty.call(overlayMap, overlayId)) return true;
+      return Object.prototype.hasOwnProperty.call(overlayMap, String(overlayId));
+    };
+
+    const closeOpenedDocumentationPopovers = (exceptPopoverNode = null) => {
+      const canvasContainer = inst?.get?.("canvas")?._container || inst?.get?.("canvas")?.getContainer?.();
+      if (!canvasContainer?.querySelectorAll) return;
+      canvasContainer.querySelectorAll(".fpcNodeBadgePopover.isOpen").forEach((popoverNode) => {
+        if (popoverNode === exceptPopoverNode) return;
+        popoverNode.classList.remove("isOpen");
+        popoverNode.hidden = true;
+      });
+    };
+
+    const targetNodeIds = new Set([
+      ...Object.keys(notesByNodeId),
+      ...Object.keys(docsByNodeId),
+    ]);
+
+    targetNodeIds.forEach((nodeId) => {
+      const count = Number(notesByNodeId[nodeId] || 0);
+      const documentationMeta = asObject(docsByNodeId[nodeId]);
+      const docsCount = Number(documentationMeta?.count || 0);
+      const docsText = toText(documentationMeta?.text);
+      if (count <= 0 && (!docsCount || !docsText)) return;
       const el = getters.findShapeByNodeId(registry, nodeId) || getters.findShapeForHint(registry, { nodeId, title: nodeId });
       if (!el) return;
+      const elementId = toText(el?.id);
+      if (!elementId) return;
+      const markerClass = count > 0 ? "fpcHasUserNote" : "";
+      const docsSignature = docsText ? docsText.slice(0, 240) : "";
+      const signature = `${markerClass}|notes:${count}|docs:${docsCount}|${docsSignature}`;
+      const prev = asObject(currentState[elementId]);
 
-      canvas.addMarker(el.id, "fpcHasUserNote");
-      refs.userNotesMarkerStateRef.current[kind].push({ elementId: el.id, className: "fpcHasUserNote" });
+      const prevOverlayId = prev?.overlayId;
+      const canReusePrev = toText(prev?.signature) === signature
+        && (prevOverlayId === null || prevOverlayId === undefined || hasLiveOverlayEntry(prevOverlayId));
+      if (canReusePrev) {
+        nextState[elementId] = prev;
+        delete currentState[elementId];
+        return;
+      }
+
+      const prevMarkerClass = toText(prev?.markerClass);
+      if (prevMarkerClass && prevMarkerClass !== markerClass) {
+        canvas.removeMarker(elementId, prevMarkerClass);
+      }
+      if (markerClass && prevMarkerClass !== markerClass) {
+        canvas.addMarker(elementId, markerClass);
+      }
+      if (prev?.overlayId !== null && prev?.overlayId !== undefined) {
+        overlays.remove(prev.overlayId);
+      }
 
       const stack = document.createElement("div");
       stack.className = "fpcNodeBadgeStack";
       stack.dataset.nodeId = nodeId;
       stack.style.alignItems = "flex-start";
 
-      const badge = document.createElement("button");
-      badge.type = "button";
-      badge.className = "fpcNodeBadge fpcNodeBadge--notes";
-      badge.dataset.badgeKind = "notes";
-      badge.textContent = `N:${count}`;
-      badge.title = `Заметок: ${count}`;
-      bindBadgeClick(badge, () => {
-        callbacks.setSelectedDecor(inst, kind, el.id);
-        callbacks.emitElementSelection(el, `${kind}.notes_badge_click`);
-      });
-      stack.appendChild(badge);
+      if (count > 0) {
+        const noteBadge = document.createElement("button");
+        noteBadge.type = "button";
+        noteBadge.className = "fpcNodeBadge fpcNodeBadge--notes";
+        noteBadge.dataset.badgeKind = "notes";
+        noteBadge.textContent = `N:${count}`;
+        noteBadge.title = `Заметок: ${count}`;
+        bindBadgeClick(noteBadge, () => {
+          callbacks.setSelectedDecor(inst, kind, el.id);
+          callbacks.emitElementSelection(el, `${kind}.notes_badge_click`);
+        });
+        stack.appendChild(noteBadge);
+      }
 
-      const overlayId = overlays.add(el.id, {
+      if (docsCount > 0 && docsText) {
+        const docsBadge = document.createElement("button");
+        docsBadge.type = "button";
+        docsBadge.className = "fpcNodeBadge fpcNodeBadge--documentation";
+        docsBadge.dataset.badgeKind = "documentation";
+        docsBadge.textContent = docsCount > 1 ? `📘:${docsCount}` : "📘";
+        docsBadge.title = docsCount > 1
+          ? `BPMN documentation: ${docsCount}`
+          : "BPMN documentation";
+
+        const popover = document.createElement("div");
+        popover.className = "fpcNodeBadgePopover";
+        popover.hidden = true;
+        popover.setAttribute("role", "dialog");
+        popover.setAttribute("aria-label", "BPMN Documentation");
+        const titleNode = document.createElement("div");
+        titleNode.className = "fpcNodeBadgePopoverTitle";
+        titleNode.textContent = docsCount > 1 ? `BPMN Documentation (${docsCount})` : "BPMN Documentation";
+        const bodyNode = document.createElement("div");
+        bodyNode.className = "fpcNodeBadgePopoverBody";
+        bodyNode.textContent = docsText;
+        popover.appendChild(titleNode);
+        popover.appendChild(bodyNode);
+
+        bindBadgeClick(docsBadge, () => {
+          callbacks.setSelectedDecor(inst, kind, el.id);
+          callbacks.emitElementSelection(el, `${kind}.documentation_badge_click`);
+          const isCurrentlyOpen = popover.classList.contains("isOpen");
+          closeOpenedDocumentationPopovers(popover);
+          if (isCurrentlyOpen) {
+            popover.classList.remove("isOpen");
+            popover.hidden = true;
+            return;
+          }
+          popover.hidden = false;
+          popover.classList.add("isOpen");
+        });
+
+        stack.appendChild(docsBadge);
+        stack.appendChild(popover);
+      }
+
+      const overlayId = overlays.add(elementId, {
         position: { top: -18, left: 2 },
         html: stack,
       });
-      refs.userNotesOverlayStateRef.current[kind].push(overlayId);
+      nextState[elementId] = {
+        elementId,
+        markerClass,
+        overlayId,
+        signature,
+      };
+      delete currentState[elementId];
     });
+
+    Object.values(currentState).forEach((entryRaw) => {
+      const entry = asObject(entryRaw);
+      const elementId = toText(entry?.elementId);
+      const markerClass = toText(entry?.markerClass);
+      if (elementId && markerClass) {
+        canvas.removeMarker(elementId, markerClass);
+      }
+      if (entry?.overlayId !== null && entry?.overlayId !== undefined) {
+        overlays.remove(entry.overlayId);
+      }
+    });
+
+    refs.userNotesDecorStateRef.current[kind] = nextState;
   } catch {
   }
 }
@@ -858,6 +1133,10 @@ export function applyStepTimeDecor(ctx) {
     || typeof toText !== "function" || typeof normalizeStepTimeUnit !== "function"
   ) return;
   const payload = buildStepTimeDecorPayload(ctx);
+  const unit = normalizeStepTimeUnit(stepTimeUnitRef.current);
+  const stepTimeSig = toText(unit) + "|" + payload.map((i) => `${toText(i?.nodeId)}:${Number(i?.minutes)}:${Number(i?.seconds)}`).join(",");
+  const prevStepTimeSig = toText(refs.stepTimeDecorSignatureRef?.current?.[kind] || "");
+  if (prevStepTimeSig && prevStepTimeSig === stepTimeSig) return;
   runMeasure(
     ctx,
     "diagram.updateStepTimeOverlays",
@@ -884,7 +1163,6 @@ export function applyStepTimeDecor(ctx) {
           if (!nodeId || !Number.isFinite(minutes) || minutes < 0) return;
           const el = getters.findShapeByNodeId(registry, nodeId) || getters.findShapeForHint(registry, { nodeId, title: nodeId });
           if (!el) return;
-          const unit = normalizeStepTimeUnit(stepTimeUnitRef.current);
           const value = unit === "sec"
             ? (Number.isFinite(seconds) && seconds >= 0 ? Math.round(seconds) : Math.round(minutes * 60))
             : Math.round(minutes);
@@ -918,6 +1196,9 @@ export function applyStepTimeDecor(ctx) {
     },
     () => ({ kind, items: payload.length }),
   );
+  if (refs.stepTimeDecorSignatureRef?.current) {
+    refs.stepTimeDecorSignatureRef.current[kind] = stepTimeSig;
+  }
 }
 
 export function clearRobotMetaDecor(ctx) {
@@ -981,6 +1262,9 @@ export function applyRobotMetaDecor(ctx) {
       const nodeId = toText(item?.elementId);
       const el = getters.findShapeByNodeId(registry, nodeId) || getters.findShapeForHint(registry, { nodeId, title: nodeId });
       if (!el) return;
+      // Lightweight sequence flow path: skip robot meta badges on connections.
+      const isConn = typeof getters.isConnectionElement === "function" && getters.isConnectionElement(el);
+      if (isConn) return;
       const elementId = toText(el?.id);
       if (!elementId) return;
       const markerClass = toText(item?.markerClass);
@@ -1036,4 +1320,322 @@ export function applyRobotMetaDecor(ctx) {
     refs.robotMetaDecorStateRef.current[kind] = nextState;
   } catch {
   }
+}
+
+export function clearPropertiesOverlayDecor(ctx) {
+  const inst = ctx?.inst;
+  const kind = ctx?.kind;
+  const refs = ctx?.refs;
+  const asObject = ctx?.utils?.asObject;
+  const toText = ctx?.utils?.toText;
+  if (!inst || !kind || !refs || typeof asObject !== "function" || typeof toText !== "function") return;
+  const state = asObject(refs.propertiesOverlayStateRef?.current?.[kind]);
+  try {
+    const overlays = inst.get("overlays");
+    Object.values(state).forEach((entryRaw) => {
+      const entry = asObject(entryRaw);
+      if (entry?.overlayId !== null && entry?.overlayId !== undefined) {
+        overlays.remove(entry.overlayId);
+      }
+    });
+  } catch {
+  }
+  refs.propertiesOverlayStateRef.current[kind] = {};
+}
+
+function buildPropertiesContentSignature({ items, hiddenCount, visibleCount }) {
+  return JSON.stringify({
+    items,
+    hiddenCount,
+    visibleCount,
+  });
+}
+
+function buildPropertiesOverlayGeometrySignature({ overlayGeometry, zoomBucket, isConnection }) {
+  return JSON.stringify({
+    width: Number(overlayGeometry?.width || 0),
+    anchorLeft: Number(overlayGeometry?.anchorLeft || 0),
+    topOffset: Number(overlayGeometry?.topOffset || 0),
+    zoom: Number(zoomBucket || 0),
+    hostType: isConnection ? "sequence" : "task",
+  });
+}
+
+function applyPropertiesOverlayContainerStyle(container, overlayGeometry, isConnection) {
+  if (!container) return;
+  container.className = isConnection
+    ? "fpcPropertyOverlay fpcPropertyOverlay--table fpcPropertyOverlay--sequence"
+    : "fpcPropertyOverlay fpcPropertyOverlay--table fpcPropertyOverlay--task";
+  container.dataset.hostType = isConnection ? "sequence" : "task";
+  container.style.width = `${overlayGeometry.width}px`;
+  container.style.maxWidth = `${overlayGeometry.width}px`;
+  if (isConnection) {
+    const sequenceMinWidth = Math.round(clampNumber(overlayGeometry.width - 4, 56, 102));
+    const sequenceFont = clampNumber(overlayGeometry.width / 12.3, 7.7, 8.9);
+    container.style.setProperty("--fpc-property-table-min-width", `${sequenceMinWidth}px`);
+    container.style.setProperty("--fpc-property-grid-columns", "minmax(24px, 41%) minmax(28px, 59%)");
+    container.style.setProperty("--fpc-property-font-size", `${sequenceFont.toFixed(2)}px`);
+    container.style.setProperty("--fpc-property-font-scale", "1.15");
+    container.style.setProperty("--fpc-property-row-padding", "1px 5px");
+    container.style.setProperty("--fpc-property-row-min-height", "14px");
+  } else {
+    const taskMinWidth = Math.round(clampNumber(overlayGeometry.width - 4, 66, 134));
+    const taskFont = clampNumber(overlayGeometry.width / 12.6, 8.1, 9.6);
+    container.style.setProperty("--fpc-property-table-min-width", `${taskMinWidth}px`);
+    container.style.setProperty("--fpc-property-grid-columns", "minmax(28px, 42%) minmax(34px, 58%)");
+    container.style.setProperty("--fpc-property-font-size", `${taskFont.toFixed(2)}px`);
+    container.style.setProperty("--fpc-property-font-scale", "1");
+    container.style.setProperty("--fpc-property-row-padding", "1px 6px");
+    container.style.setProperty("--fpc-property-row-min-height", "15px");
+  }
+}
+
+function rebuildPropertiesOverlayTable({ table, items, hiddenCount, visibleCount, linkedPropertyFrequency }) {
+  if (!table) return;
+  table.textContent = "";
+  items.forEach((item, idx) => {
+    const row = document.createElement("div");
+    const linkedKey = normalizeOverlayPropertyKey(item?.key || item?.label);
+    const linkedCount = Number(linkedPropertyFrequency.get(linkedKey) || 0);
+    const linkedClass = linkedKey && linkedCount > 1 ? " fpcPropertyRow--linked" : "";
+    const overflowClass = idx >= visibleCount ? " fpcPropertyRow--overflow" : "";
+    row.className = `fpcPropertyRow${linkedClass}${overflowClass}`;
+    row.title = `${item.label}: ${item.value}`;
+    const colorModel = overlayPropertyColorByKey(linkedKey || item?.label);
+    row.style.setProperty("--fpc-property-accent", colorModel.accent);
+    row.style.setProperty("--fpc-property-bg", colorModel.background);
+    row.style.setProperty("--fpc-property-accent-shadow", colorModel.shadow);
+    if (linkedKey && linkedCount > 1) {
+      row.dataset.linkedGroup = linkedKey;
+    }
+
+    const keyCell = document.createElement("span");
+    keyCell.className = "fpcPropertyCell fpcPropertyCell--key";
+    const keyText = document.createElement("span");
+    keyText.className = "fpcPropertyKeyText";
+    keyText.textContent = item.label;
+    keyCell.appendChild(keyText);
+
+    const keySep = document.createElement("span");
+    keySep.className = "fpcPropertyKeySep";
+    keySep.textContent = "|";
+    keyCell.appendChild(keySep);
+    row.appendChild(keyCell);
+
+    const valueCell = document.createElement("span");
+    valueCell.className = "fpcPropertyCell fpcPropertyCell--value";
+    valueCell.textContent = item.value;
+    row.appendChild(valueCell);
+
+    table.appendChild(row);
+  });
+
+  if (hiddenCount > 0) {
+    const moreRow = document.createElement("div");
+    moreRow.className = "fpcPropertyRow fpcPropertyRow--summary";
+    moreRow.textContent = `+${hiddenCount} ещё`;
+    moreRow.title = `Еще свойств: ${hiddenCount}`;
+    table.appendChild(moreRow);
+  }
+}
+
+export function applyPropertiesOverlayDecor(ctx) {
+  const inst = ctx?.inst;
+  const kind = ctx?.kind;
+  const refs = ctx?.refs;
+  const getters = ctx?.getters;
+  const readOnly = ctx?.readOnly;
+  const toText = ctx?.utils?.toText;
+  const asObject = ctx?.utils?.asObject;
+  const asArray = ctx?.utils?.asArray;
+  if (
+    !inst || !kind || !refs || !getters || !readOnly
+    || typeof toText !== "function" || typeof asObject !== "function" || typeof asArray !== "function"
+  ) return;
+
+  function normalizePreviewEntry(rawPreview) {
+    const preview = asObject(rawPreview);
+    const elementId = toText(preview?.elementId);
+    const items = asArray(preview?.items).map((item) => ({
+      key: toText(item?.key),
+      label: toText(item?.label),
+      value: toText(item?.value),
+    })).filter((item) => item.label && item.value);
+    const hiddenCount = Math.max(0, Number(preview?.hiddenCount || 0));
+    const enabled = preview?.enabled === true && !!elementId && items.length > 0;
+    if (!enabled) return null;
+    return {
+      elementId,
+      items,
+      hiddenCount,
+    };
+  }
+
+  const previewByElementId = {};
+  const alwaysEnabled = readOnly.propertiesOverlayAlwaysEnabledRef?.current === true;
+  if (alwaysEnabled) {
+    const alwaysMap = asObject(readOnly.propertiesOverlayAlwaysPreviewByElementIdRef?.current);
+    Object.keys(alwaysMap).forEach((rawElementId) => {
+      const normalized = normalizePreviewEntry(alwaysMap[rawElementId]);
+      if (!normalized) return;
+      previewByElementId[normalized.elementId] = normalized;
+    });
+  }
+  const selectedPreview = normalizePreviewEntry(readOnly.selectedPropertiesOverlayPreviewRef?.current);
+  if (selectedPreview) {
+    previewByElementId[selectedPreview.elementId] = selectedPreview;
+  }
+  const previewEntries = Object.values(previewByElementId);
+  if (!previewEntries.length) {
+    clearPropertiesOverlayDecor(ctx);
+    return;
+  }
+
+  const linkedPropertyFrequency = new Map();
+  previewEntries.forEach((preview) => {
+    asArray(preview?.items).forEach((item) => {
+      const linkedKey = normalizeOverlayPropertyKey(item?.key || item?.label);
+      if (!linkedKey) return;
+      linkedPropertyFrequency.set(linkedKey, Number(linkedPropertyFrequency.get(linkedKey) || 0) + 1);
+    });
+  });
+
+  const stats = {
+    kind,
+    previews: previewEntries.length,
+    reused: 0,
+    contentUpdated: 0,
+    geometryRebuilt: 0,
+    removed: 0,
+    failed: 0,
+  };
+  runMeasure(
+    ctx,
+    "diagram.updatePropertiesOverlays",
+    () => {
+      try {
+        const overlays = inst.get("overlays");
+        const registry = inst.get("elementRegistry");
+        const canvasZoom = readOverlayCanvasZoom(inst);
+        const zoomBucket = Math.round(canvasZoom * 1000) / 1000;
+        const currentState = { ...asObject(refs.propertiesOverlayStateRef.current[kind]) };
+        const nextState = {};
+        previewEntries.forEach((preview) => {
+          const elementId = toText(preview?.elementId);
+          const items = asArray(preview?.items);
+          const hiddenCount = Math.max(0, Number(preview?.hiddenCount || 0));
+          const visibleCount = Math.max(1, Number(preview?.visibleCount || items.length));
+          if (!elementId || !items.length) return;
+
+          let el = (
+            typeof getters.findDiagramElementForHint === "function"
+              ? getters.findDiagramElementForHint(registry, { nodeId: elementId, title: elementId })
+              : null
+          )
+            || getters.findShapeByNodeId(registry, elementId)
+            || getters.findShapeForHint(registry, { nodeId: elementId, title: elementId });
+          if (!el) return;
+
+          const resolvedElementId = toText(el?.id);
+          if (!resolvedElementId) return;
+          const prev = asObject(currentState[resolvedElementId]);
+          const isConnection = typeof getters.isConnectionElement === "function" && getters.isConnectionElement(el);
+
+          // Lightweight sequence flow path: cap visible property rows on connections
+          // to reduce DOM weight. Sequence flows are subordinate elements — showing
+          // 2 key properties + "+N" summary is sufficient.
+          const SEQUENCE_FLOW_MAX_VISIBLE = 2;
+          let effectiveItems = items;
+          let effectiveHiddenCount = hiddenCount;
+          let effectiveVisibleCount = visibleCount;
+          if (isConnection && items.length > SEQUENCE_FLOW_MAX_VISIBLE) {
+            effectiveItems = items.slice(0, SEQUENCE_FLOW_MAX_VISIBLE);
+            effectiveHiddenCount = items.length - SEQUENCE_FLOW_MAX_VISIBLE + hiddenCount;
+            effectiveVisibleCount = SEQUENCE_FLOW_MAX_VISIBLE;
+          }
+
+          const overlayGeometry = buildOverlayGeometry({ element: el, isConnection, canvasZoom });
+          const contentSignature = buildPropertiesContentSignature({
+            items: effectiveItems,
+            hiddenCount: effectiveHiddenCount,
+            visibleCount: effectiveVisibleCount,
+          });
+          const geometrySignature = buildPropertiesOverlayGeometrySignature({
+            overlayGeometry,
+            zoomBucket,
+            isConnection,
+          });
+          if (
+            toText(prev?.contentSignature) === contentSignature
+            && toText(prev?.geometrySignature) === geometrySignature
+          ) {
+            stats.reused += 1;
+            nextState[resolvedElementId] = prev;
+            delete currentState[resolvedElementId];
+            return;
+          }
+          let container = prev?.container instanceof HTMLElement ? prev.container : document.createElement("div");
+          let table = prev?.table instanceof HTMLElement ? prev.table : document.createElement("div");
+          if (!(prev?.table instanceof HTMLElement)) {
+            table.className = "fpcPropertyTable";
+          }
+          container.dataset.nodeId = elementId;
+          applyPropertiesOverlayContainerStyle(container, overlayGeometry, isConnection);
+          if (!container.contains(table)) {
+            container.textContent = "";
+            table.className = "fpcPropertyTable";
+            container.appendChild(table);
+          }
+          if (toText(prev?.contentSignature) !== contentSignature) {
+            stats.contentUpdated += 1;
+            rebuildPropertiesOverlayTable({
+              table,
+              items: effectiveItems,
+              hiddenCount: effectiveHiddenCount,
+              visibleCount: effectiveVisibleCount,
+              linkedPropertyFrequency,
+            });
+          }
+          let overlayId = prev?.overlayId;
+          if (
+            prev?.overlayId === null
+            || prev?.overlayId === undefined
+            || toText(prev?.geometrySignature) !== geometrySignature
+          ) {
+            stats.geometryRebuilt += 1;
+            if (prev?.overlayId !== null && prev?.overlayId !== undefined) {
+              overlays.remove(prev.overlayId);
+            }
+            overlayId = overlays.add(resolvedElementId, "fpc-properties", {
+              position: { top: overlayGeometry.topOffset, left: overlayGeometry.anchorLeft },
+              html: container,
+              scale: false,
+            });
+          }
+          nextState[resolvedElementId] = {
+            elementId: resolvedElementId,
+            overlayId,
+            container,
+            table,
+            contentSignature,
+            geometrySignature,
+          };
+          delete currentState[resolvedElementId];
+        });
+
+        Object.values(currentState).forEach((entryRaw) => {
+          const entry = asObject(entryRaw);
+          if (entry?.overlayId !== null && entry?.overlayId !== undefined) {
+            stats.removed += 1;
+            overlays.remove(entry.overlayId);
+          }
+        });
+        refs.propertiesOverlayStateRef.current[kind] = nextState;
+      } catch {
+        stats.failed = 1;
+      }
+      return stats;
+    },
+    () => stats,
+  );
 }

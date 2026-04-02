@@ -30,6 +30,7 @@ import PathStepList from "./paths/PathStepList";
 import StepDetailsPanel from "./paths/StepDetailsPanel";
 import ReportsDrawer from "./paths/ReportsDrawer";
 import { buildScenarioMetrics, buildScenarioStepRows } from "./paths/scenarioMetrics.js";
+import useInterviewPathsViewController from "./useInterviewPathsViewController";
 
 function normalizeTier(raw) {
   const tier = toText(raw).toUpperCase();
@@ -70,6 +71,19 @@ function getInitialTierFilter(tierFilters) {
   return selected.length === 1 ? selected[0] : "ALL";
 }
 
+function normalizePathSource(pathSourceRaw) {
+  const source = toText(pathSourceRaw).toLowerCase();
+  if (source === "node_path_meta" || source === "flow_tier") return source;
+  return "unknown";
+}
+
+function pathSourcePillLabel(pathSourceRaw) {
+  const source = normalizePathSource(pathSourceRaw);
+  if (source === "node_path_meta") return "стабильная модель · node_path_meta";
+  if (source === "flow_tier") return "устаревший источник · flow_tier";
+  return `источник · ${source}`;
+}
+
 function sortScenarios(listRaw) {
   return [...toArray(listRaw)].sort((a, b) => {
     const ao = rankClassOrder(a?.rank_class);
@@ -87,10 +101,6 @@ function scenarioContainsNodeId(scenario, nodeIdRaw) {
   const nodeId = toText(nodeIdRaw);
   if (!nodeId) return false;
   return toArray(scenario?.sequence).some((step) => toText(step?.node_id) === nodeId);
-}
-
-function scenarioOutcomeIcon(scenario) {
-  return toText(scenario?.outcome).toLowerCase() === "fail" ? "⛔" : "✅";
 }
 
 function resolveScenarioPathId(scenarioRaw) {
@@ -328,11 +338,11 @@ function buildScenarioPresentation(scenariosRaw) {
   function scenarioDisplayTitle(scenario) {
     const id = toText(scenario?.id);
     const bucket = scenarioBucket(scenario);
-    if (bucket === "P0_IDEAL") return "P0 Ideal";
-    if (bucket === "P0_ALT") return `P0 Alt #${Number(altIndexById[id] || 1)}`;
-    if (bucket === "P1_MITIGATED") return `P1 Mitigated #${Number(mitigatedIndexById[id] || 1)}`;
-    if (bucket === "P2_FAIL") return `P2 Fail #${Number(failIndexById[id] || 1)}`;
-    return toText(scenario?.label || scenario?.id || "Scenario");
+    if (bucket === "P0_IDEAL") return "P0 Идеальный";
+    if (bucket === "P0_ALT") return `P0 Альт #${Number(altIndexById[id] || 1)}`;
+    if (bucket === "P1_MITIGATED") return `P1 Смягчённый #${Number(mitigatedIndexById[id] || 1)}`;
+    if (bucket === "P2_FAIL") return `P2 Ошибка #${Number(failIndexById[id] || 1)}`;
+    return toText(scenario?.label || scenario?.id || "Сценарий");
   }
 
   return {
@@ -605,6 +615,12 @@ function parseMinutesToNullableSeconds(valueRaw) {
   return Math.round(minutes * 60);
 }
 
+function formatDurationShort(secondsRaw) {
+  const seconds = Number(secondsRaw || 0);
+  if (!Number.isFinite(seconds) || seconds <= 0) return "—";
+  return formatHHMMFromSeconds(seconds);
+}
+
 function isAbortLikeError(error) {
   if (!error) return false;
   const name = String(error?.name || "").toLowerCase();
@@ -726,9 +742,9 @@ const StepDurationEditor = memo(function StepDurationEditor({
           type="number"
           min="0"
           step="0.5"
-          placeholder={isWork ? "Work" : "Wait"}
-          aria-label={isWork ? "Work (мин)" : "Wait (мин)"}
-          title={isWork ? "Work (активная работа), минуты" : "Wait (ожидание), минуты"}
+          placeholder={isWork ? "Работа" : "Ожид."}
+          aria-label={isWork ? "Работа (мин)" : "Ожидание (мин)"}
+          title={isWork ? "Работа (активное действие), минуты" : "Ожидание (очередь/таймер), минуты"}
           value={inputValue}
           onChange={(e) => {
             const value = e.target.value;
@@ -761,12 +777,12 @@ const StepDurationEditor = memo(function StepDurationEditor({
           aria-haspopup="menu"
           aria-expanded={presetsOpen}
         >
-          {variant === "detailed" ? "Presets" : "+"}
+          {variant === "detailed" ? "Пресеты" : "+"}
         </button>
         {presetsOpen ? (
           <div className="interviewPathsPresetPopover" role="menu">
             <div className="interviewPathsPresetGroup">
-              <div className="interviewPathsPresetTitle">Work</div>
+              <div className="interviewPathsPresetTitle">Работа</div>
               <div className="interviewPathsPresetButtons">
                 {presets.map((preset) => (
                   <button
@@ -781,7 +797,7 @@ const StepDurationEditor = memo(function StepDurationEditor({
               </div>
             </div>
             <div className="interviewPathsPresetGroup">
-              <div className="interviewPathsPresetTitle">Wait</div>
+              <div className="interviewPathsPresetTitle">Ожидание</div>
               <div className="interviewPathsPresetButtons">
                 {presets.map((preset) => (
                   <button
@@ -824,11 +840,11 @@ const StepDurationEditor = memo(function StepDurationEditor({
       onKeyDown={(e) => e.stopPropagation()}
     >
       <label className="interviewPathsTimeField">
-        <span title="Работа = активное действие">Work, мин</span>
+        <span title="Работа = активное действие">Работа, мин</span>
         {renderMinutesInput("work")}
       </label>
       <label className="interviewPathsTimeField">
-        <span title="Ожидание = очередь/таймер/ожидание устройства/курьера">Wait, мин</span>
+        <span title="Ожидание = очередь/таймер/ожидание устройства/курьера">Ожидание, мин</span>
         {renderMinutesInput("wait")}
       </label>
       {renderPresets()}
@@ -865,7 +881,7 @@ const ReportApiErrorNotice = memo(function ReportApiErrorNotice({
             className="secondaryBtn tinyBtn"
             onClick={() => onCopyDetails?.(meta)}
           >
-            Copy details
+            Копировать детали
           </button>
         </details>
       ) : null}
@@ -891,25 +907,70 @@ export default function InterviewPathsView({
   externalIntent = null,
 }) {
   const { user, orgs, activeOrgId } = useAuth();
-  const vm = interviewVM && typeof interviewVM === "object" ? interviewVM : {};
-  const [pathsCalcReady, setPathsCalcReady] = useState(false);
-  const [scenarioPresentation, setScenarioPresentation] = useState(() => buildScenarioPresentation([]));
-  const [stepMetaByNodeId, setStepMetaByNodeId] = useState({});
-  const [stepIdMaps, setStepIdMaps] = useState({ stepById: {}, firstStepIdByNodeId: {} });
-  const calcRunRef = useRef(0);
-  const { stepById, firstStepIdByNodeId } = stepIdMaps;
-  const selectedNodeIds = useMemo(() => makeSelectedNodeIdSet(selectedStepIds, stepById), [selectedStepIds, stepById]);
-  const scenarios = scenarioPresentation.all;
-  const legacyColorSource = toText(vm?.path_source).toLowerCase() === "flow_tier";
+  const {
+    vm,
+    pathsCalcReady,
+    scenarios,
+    scenarioPresentation,
+    stepById,
+    firstStepIdByNodeId,
+    pathSource,
+    pathSourceLabel,
+    legacyColorSource,
+    selectedTier,
+    setSelectedTier,
+    scenarioSearch,
+    setScenarioSearch,
+    scenarioSortMode,
+    setScenarioSortMode,
+    collapsedScenarioGroups,
+    selectedScenarioId,
+    setSelectedScenarioId,
+    selectedRouteKey,
+    setSelectedRouteKey,
+    detailsCollapsed,
+    setDetailsCollapsed,
+    isPendingTransition,
+    startTransition,
+    commitDurationSeconds,
+    stepTimeByNodeId,
+    visibleScenarios,
+    scenarioMetricsById,
+    tierTabCounts,
+    visibleSections,
+    activeScenario,
+    routeStepRows,
+    decisionByNodeId,
+    decisionByOrderIndex,
+    activePathId,
+    activePathName,
+    orderValidation,
+    showDevOrderWarning,
+    diffDecisionGatewayIds,
+    activePathMetrics,
+    reportScenarioSequenceForReport,
+    reportScenarioLabel,
+    reportBuildDebugPreview,
+    reportApiAvailable,
+    canGenerateReport,
+    activeRouteRow,
+    activeStepDetails,
+    activeStepTiming,
+    toggleScenarioGroup,
+  } = useInterviewPathsViewController({
+    active,
+    sessionId,
+    interviewData,
+    interviewVM,
+    interviewGraph,
+    tierFilters,
+    selectedStepIds,
+    pathMetrics,
+    patchStep,
+    onPerfReady,
+    dodSnapshot,
+  });
 
-  const [selectedTier, setSelectedTier] = useState(() => getInitialTierFilter(tierFilters));
-  const [scenarioSearch, setScenarioSearch] = useState("");
-  const [scenarioSortMode, setScenarioSortMode] = useState("bpmn");
-  const [collapsedScenarioGroups, setCollapsedScenarioGroups] = useState({});
-  const [selectedScenarioId, setSelectedScenarioId] = useState("");
-  const [selectedRouteKey, setSelectedRouteKey] = useState("");
-  const [detailsCollapsed, setDetailsCollapsed] = useState(true);
-  const [isPendingTransition, startTransition] = useTransition();
   const [reportLoadingCount, setReportLoadingCount] = useState(0);
   const [pendingGenerationVersions, setPendingGenerationVersions] = useState([]);
   const [reportVersionsLoading, setReportVersionsLoading] = useState(false);
@@ -959,9 +1020,7 @@ export default function InterviewPathsView({
   useEffect(() => {
     externalIntentHandledRef.current = "";
   }, [sessionId]);
-  const deferredSelectedTier = useDeferredValue(selectedTier);
   const reportLoading = reportLoadingCount > 0;
-  const stepTimeByNodeId = useMemo(() => buildStepTimeByNodeId(vm?.steps), [vm?.steps]);
   const activeOrgRole = useMemo(() => {
     const oid = toText(activeOrgId);
     if (!oid) return "";
@@ -993,157 +1052,6 @@ export default function InterviewPathsView({
   }, []);
 
   useEffect(() => {
-    if (!active) {
-      setPathsCalcReady(false);
-      return undefined;
-    }
-    const runId = ++calcRunRef.current;
-    const startMark = `interview.paths.vm.start:${runId}`;
-    const endMark = `interview.paths.vm.done:${runId}`;
-    markInterviewPerf(startMark);
-    setPathsCalcReady(false);
-    const cancelIdle = scheduleInterviewIdle(() => {
-      if (runId !== calcRunRef.current) return;
-      const nextScenarioPresentation = buildScenarioPresentation(vm?.scenarios);
-      const nextStepMetaByNodeId = buildStepMetaByNodeId(vm?.steps);
-      const nextStepIdMaps = makeStepIdMaps(vm?.steps);
-      if (runId !== calcRunRef.current) return;
-      setScenarioPresentation(nextScenarioPresentation);
-      setStepMetaByNodeId(nextStepMetaByNodeId);
-      setStepIdMaps(nextStepIdMaps);
-      setPathsCalcReady(true);
-      markInterviewPerf(endMark);
-      const durationMs = measureInterviewSpan({
-        name: `interview.paths.vm:${toText(sessionId) || "unknown"}`,
-        startMark,
-        endMark,
-        meta: () => ({
-          sid: toText(sessionId),
-          scenarios: toArray(vm?.scenarios).length,
-          steps: toArray(vm?.steps).length,
-        }),
-      });
-      onPerfReady?.({
-        phase: "paths_vm",
-        duration_ms: durationMs,
-        scenarios: toArray(vm?.scenarios).length,
-        steps: toArray(vm?.steps).length,
-      });
-    }, { timeout: 320 });
-    return () => {
-      cancelIdle?.();
-    };
-  }, [active, sessionId, vm?.scenarios, vm?.steps, onPerfReady]);
-
-  const commitDurationSeconds = useCallback((stepIdRaw, kindRaw, nextSecRaw) => {
-    const stepId = toText(stepIdRaw);
-    const kind = toText(kindRaw);
-    if (!stepId || !kind || typeof patchStep !== "function") return;
-    const sec = Number.isFinite(Number(nextSecRaw)) ? Math.max(0, Math.round(Number(nextSecRaw))) : null;
-    if (kind === "work") {
-      const min = sec === null ? "" : String(Math.round(sec / 60));
-      patchStep(stepId, "work_duration_sec", sec);
-      patchStep(stepId, "duration_sec", sec === null ? "" : sec);
-      patchStep(stepId, "step_time_sec", sec === null ? "" : sec);
-      patchStep(stepId, "duration_min", min);
-      patchStep(stepId, "step_time_min", min);
-      return;
-    }
-    const waitMin = sec === null ? "" : String(Math.round(sec / 60));
-    patchStep(stepId, "wait_duration_sec", sec);
-    patchStep(stepId, "wait_sec", sec === null ? "" : sec);
-    patchStep(stepId, "wait_min", waitMin);
-  }, [patchStep]);
-
-  useEffect(() => {
-    const fromFilters = getInitialTierFilter(tierFilters);
-    setSelectedTier((prev) => prev || fromFilters);
-  }, [tierFilters]);
-
-  const visibleScenarios = useMemo(() => {
-    const base = filterScenariosByTierView(scenarios, deferredSelectedTier);
-    const query = toText(scenarioSearch).toLowerCase();
-    const filtered = query
-      ? base.filter((scenario) => (
-        toText(scenarioPresentation.scenarioDisplayTitle(scenario)).toLowerCase().includes(query)
-        || toText(scenario?.label).toLowerCase().includes(query)
-        || toText(scenario?.id).toLowerCase().includes(query)
-      ))
-      : base;
-
-    const withTime = filtered.map((scenario) => ({
-      scenario,
-      durationSec: scenarioDurationSec(scenario, stepTimeByNodeId),
-      failRank: toText(scenario?.outcome).toLowerCase() === "fail" ? 1 : 0,
-      bpmnOrder: Number(toArray(scenario?.sequence)?.[0]?.order_index || 0),
-    }));
-
-    withTime.sort((a, b) => {
-      if (scenarioSortMode === "time") {
-        if (b.durationSec !== a.durationSec) return b.durationSec - a.durationSec;
-      } else if (scenarioSortMode === "errors") {
-        if (b.failRank !== a.failRank) return b.failRank - a.failRank;
-        const da = Number(toArray(a.scenario?.diff_from_ideal?.differing_gateway_decisions).length || 0);
-        const db = Number(toArray(b.scenario?.diff_from_ideal?.differing_gateway_decisions).length || 0);
-        if (db !== da) return db - da;
-      } else if (a.bpmnOrder !== b.bpmnOrder) {
-        return a.bpmnOrder - b.bpmnOrder;
-      }
-      return toText(scenarioPresentation.scenarioDisplayTitle(a.scenario)).localeCompare(
-        toText(scenarioPresentation.scenarioDisplayTitle(b.scenario)),
-        "ru",
-      );
-    });
-    return withTime.map((item) => item.scenario);
-  }, [deferredSelectedTier, scenarios, scenarioSearch, scenarioSortMode, scenarioPresentation, stepTimeByNodeId]);
-
-  const scenarioMetricsById = useMemo(() => {
-    const out = {};
-    toArray(scenarios).forEach((scenario) => {
-      const scenarioId = toText(scenario?.id);
-      if (!scenarioId) return;
-      const metrics = buildScenarioMetrics(scenario, stepTimeByNodeId);
-      out[scenarioId] = {
-        ...metrics,
-        total_time_sec_label: formatSeconds(metrics?.total_time_sec),
-      };
-    });
-    return out;
-  }, [scenarios, stepTimeByNodeId]);
-
-  const visibleSections = useMemo(() => {
-    const byKey = {
-      P0_IDEAL: { key: "P0_IDEAL", title: "P0 Ideal", items: [] },
-      P0_ALT: { key: "P0_ALT", title: "P0 Alt", items: [] },
-      P1_MITIGATED: { key: "P1_MITIGATED", title: "P1 Mitigated", items: [] },
-      P2_FAIL: { key: "P2_FAIL", title: "P2 Fail", items: [] },
-    };
-    toArray(visibleScenarios).forEach((scenario) => {
-      const bucket = scenarioBucket(scenario);
-      if (byKey[bucket]) byKey[bucket].items.push(scenario);
-    });
-    return ["P0_IDEAL", "P0_ALT", "P1_MITIGATED", "P2_FAIL"]
-      .map((key) => byKey[key])
-      .filter((section) => toArray(section?.items).length > 0);
-  }, [visibleScenarios]);
-
-  useEffect(() => {
-    const list = visibleScenarios;
-    if (!list.length) {
-      setSelectedScenarioId("");
-      return;
-    }
-    setSelectedScenarioId((prev) => {
-      if (prev && list.some((scenario) => toText(scenario?.id) === prev)) return prev;
-      if (deferredSelectedTier === "P0" || deferredSelectedTier === "ALL") {
-        const ideal = list.find((scenario) => toText(scenario?.rank_class).toLowerCase() === "ideal");
-        return toText(ideal?.id || list[0]?.id);
-      }
-      return toText(list[0]?.id);
-    });
-  }, [deferredSelectedTier, visibleScenarios]);
-
-  useEffect(() => {
     const intent = asObject(externalIntent);
     const intentKey = toText(intent?.key);
     if (!active || !intentKey) return;
@@ -1168,200 +1076,6 @@ export default function InterviewPathsView({
     }
     externalIntentHandledRef.current = intentKey;
   }, [externalIntent, active, sessionId, pathsCalcReady, scenarios]);
-
-  const activeScenario = useMemo(() => {
-    const list = visibleScenarios;
-    if (!list.length) return null;
-    if (selectedScenarioId) {
-      const found = list.find((scenario) => toText(scenario?.id) === selectedScenarioId);
-      if (found) return found;
-    }
-    return list[0] || null;
-  }, [visibleScenarios, selectedScenarioId]);
-
-  useEffect(() => {
-    const selectedNode = Array.from(selectedNodeIds)[0] || "";
-    if (!selectedNode) return;
-    if (activeScenario && scenarioContainsNodeId(activeScenario, selectedNode)) return;
-
-    const inVisible = visibleScenarios.find((scenario) => scenarioContainsNodeId(scenario, selectedNode));
-    if (inVisible) {
-      setSelectedScenarioId(toText(inVisible?.id));
-      return;
-    }
-    const inAny = scenarios.find((scenario) => scenarioContainsNodeId(scenario, selectedNode));
-    if (inAny) {
-      setSelectedTier(normalizeTier(inAny?.tier));
-      setSelectedScenarioId(toText(inAny?.id));
-    }
-  }, [selectedNodeIds, activeScenario, visibleScenarios, scenarios]);
-
-  const routeRows = useMemo(() => toArray(activeScenario?.rows), [activeScenario]);
-  const routeStepRows = useMemo(() => buildScenarioStepRows(activeScenario), [activeScenario]);
-  const decisionByNodeId = useMemo(
-    () => buildDecisionHintsByNodeIdFromScenarioRows(routeRows),
-    [routeRows],
-  );
-  const decisionByOrderIndex = useMemo(
-    () => buildDecisionHintsByOrderIndexFromScenarioRows(routeRows),
-    [routeRows],
-  );
-  const activePathId = useMemo(() => {
-    return resolveScenarioPathId(activeScenario);
-  }, [
-    activeScenario?.sequence_key,
-    activeScenario?.sequenceKey,
-    activeScenario?.path_id,
-    activeScenario?.pathId,
-    activeScenario?.id,
-  ]);
-  const activePathName = useMemo(() => {
-    return toText(scenarioPresentation?.scenarioDisplayTitle?.(activeScenario))
-      || toText(activeScenario?.label)
-      || toText(interviewData?.path_spec?.name || interviewData?.pathSpec?.name)
-      || activePathId;
-  }, [scenarioPresentation, activeScenario, interviewData?.path_spec, interviewData?.pathSpec, activePathId]);
-
-  useEffect(() => {
-    setSelectedRouteKey("");
-  }, [selectedScenarioId]);
-
-  useEffect(() => {
-    if (selectedRouteKey) return;
-    const selectedNode = Array.from(selectedNodeIds)[0] || "";
-    if (!selectedNode) return;
-    const row = routeStepRows.find((item) => toText(item?.node_id) === selectedNode);
-    if (row) {
-      setSelectedRouteKey(`route_${Number(row?.order_index || 0)}_${toText(row?.node_id || row?.id || row?.key)}`);
-    }
-  }, [selectedRouteKey, selectedNodeIds, routeStepRows]);
-
-  const activeRouteRow = useMemo(() => {
-    if (!selectedRouteKey) return null;
-    return routeStepRows.find((row) => `route_${Number(row?.order_index || 0)}_${toText(row?.node_id || row?.id || row?.key)}` === selectedRouteKey) || null;
-  }, [selectedRouteKey, routeStepRows]);
-  const activeRouteIndex = useMemo(() => {
-    if (!selectedRouteKey) return -1;
-    return routeStepRows.findIndex((row) => `route_${Number(row?.order_index || 0)}_${toText(row?.node_id || row?.id || row?.key)}` === selectedRouteKey);
-  }, [selectedRouteKey, routeStepRows]);
-
-  const matrixRowsForValidation = useMemo(() => {
-    if (!import.meta.env.DEV || !active || !pathsCalcReady) return [];
-    return buildScenarioMatrixRows({
-      scenario: activeScenario,
-      vmSteps: vm?.steps,
-      collapseById: {},
-      p0Mode: selectedTier === "P0",
-    });
-  }, [active, pathsCalcReady, activeScenario, vm?.steps, selectedTier]);
-  const orderValidation = useMemo(() => {
-    if (!import.meta.env.DEV) return { ok: true, firstNotStart: false };
-    return validateScenarioRowOrder(matrixRowsForValidation);
-  }, [matrixRowsForValidation]);
-  const showDevOrderWarning = !!import.meta.env.DEV && !orderValidation.ok;
-  const diffDecisionGatewayIds = useMemo(() => {
-    return new Set(
-      toArray(activeScenario?.diff_from_ideal?.differing_gateway_decisions)
-        .map((item) => toText(item?.gateway_id))
-        .filter(Boolean),
-    );
-  }, [activeScenario]);
-  const activeScenarioMetrics = useMemo(
-    () => buildScenarioMetrics(activeScenario, stepTimeByNodeId),
-    [activeScenario, stepTimeByNodeId],
-  );
-  const activePathMetrics = useMemo(() => {
-    if (!Number(activeScenarioMetrics?.steps_count || 0)) {
-      const fallback = pathMetrics && typeof pathMetrics === "object" ? pathMetrics : {};
-      const stepsCount = Number(fallback?.steps_count || 0);
-      const workTotal = Number(fallback?.work_time_total_sec || 0);
-      const waitTotal = Number(fallback?.wait_time_total_sec || 0);
-      const total = Number(fallback?.total_time_sec || workTotal + waitTotal);
-      return {
-        steps_count: stepsCount,
-        work_time_total_sec: workTotal,
-        wait_time_total_sec: waitTotal,
-        total_time_sec: total,
-      };
-    }
-    return activeScenarioMetrics;
-  }, [activeScenarioMetrics, pathMetrics]);
-  const reportScenarioSequence = useMemo(
-    () => buildScenarioSequenceForReport(activeScenario),
-    [activeScenario],
-  );
-  const reportScenarioSequenceBuild = useMemo(() => {
-    return stitchScenarioSequenceByLinkEvents({
-      scenarioSequence: reportScenarioSequence,
-      graphModel: interviewGraph,
-      dodSnapshot,
-    });
-  }, [reportScenarioSequence, interviewGraph, dodSnapshot]);
-  const reportScenarioSequenceForReport = useMemo(
-    () => toArray(reportScenarioSequenceBuild?.sequence),
-    [reportScenarioSequenceBuild],
-  );
-  const reportScenarioLabel = useMemo(() => {
-    return toText(scenarioPresentation?.scenarioDisplayTitle?.(activeScenario))
-      || toText(activeScenario?.label)
-      || "Scenario";
-  }, [scenarioPresentation, activeScenario]);
-  const reportApiAvailable = !!toText(sessionId) && !isLocalSessionId(toText(sessionId));
-  const canGenerateReport = reportApiAvailable
-    && !!toText(activePathId)
-    && pathsCalcReady
-    && Number(reportScenarioSequenceForReport.length || activePathMetrics?.steps_count || 0) >= 1;
-  const reportBuildPreviewSteps = useMemo(() => {
-    return buildManualPathReportSteps(interviewData, {
-      decisionByNodeId,
-      decisionByOrderIndex,
-      scenarioSequence: reportScenarioSequenceForReport,
-    });
-  }, [
-    interviewData?.steps,
-    interviewData?.path_spec,
-    interviewData?.pathSpec,
-    decisionByNodeId,
-    decisionByOrderIndex,
-    reportScenarioSequenceForReport,
-  ]);
-  const reportBuildDebugRouteSteps = useMemo(
-    () => normalizeDebugRouteSteps(reportBuildPreviewSteps),
-    [reportBuildPreviewSteps],
-  );
-  const reportBuildDebugPreview = useMemo(() => {
-    return {
-      ...buildReportBuildDebug({
-        sessionId,
-        selectedScenarioLabel: reportScenarioLabel,
-        pathIdUsed: activePathId,
-        scenarioRaw: activeScenario,
-        scenarioSequence: reportScenarioSequenceForReport,
-        steps: reportBuildPreviewSteps,
-        graphModel: interviewGraph,
-        dodSnapshot,
-      }),
-      selected_scenario_id: toText(activeScenario?.id),
-      scenario_tier: normalizeTier(activeScenario?.tier),
-      sequence_key: toText(activeScenario?.sequence_key || activeScenario?.sequenceKey),
-      route_steps: reportBuildDebugRouteSteps,
-      source: "scenario_selection",
-    };
-  }, [
-    sessionId,
-    reportScenarioLabel,
-    activePathId,
-    activeScenario?.id,
-    activeScenario?.tier,
-    activeScenario?.sequence_key,
-    activeScenario?.sequenceKey,
-    activeScenario,
-    reportScenarioSequenceForReport,
-    reportBuildPreviewSteps,
-    reportBuildDebugRouteSteps,
-    interviewGraph,
-    dodSnapshot,
-  ]);
   useEffect(() => {
     if (!active || !pathsCalcReady) return;
     if (typeof onReportBuildDebug !== "function") return;
@@ -2429,7 +2143,6 @@ export default function InterviewPathsView({
   function pickRow(row) {
     const key = `route_${Number(row?.order_index || 0)}_${toText(row?.node_id || row?.id || row?.key)}`;
     setSelectedRouteKey(key);
-    setDetailsCollapsed(false);
     const nodeId = toText(row?.node_id);
     if (!nodeId) return;
     const stepId = toText(firstStepIdByNodeId[nodeId]);
@@ -2462,6 +2175,8 @@ export default function InterviewPathsView({
     const prevTitle = sanitizeDisplayText(routeStepRows[idx - 1]?.title, "—");
     const nextTitle = sanitizeDisplayText(routeStepRows[idx + 1]?.title, "—");
     const laneName = toText(row?.lane_name || "—");
+    const workLabel = linkedStepId ? formatDurationShort(workSec) : "—";
+    const waitLabel = linkedStepId ? formatDurationShort(waitSec) : "—";
     return (
       <div
         key={key}
@@ -2485,8 +2200,6 @@ export default function InterviewPathsView({
           <div className="interviewRouteNodeHead">
             <span className="interviewRouteNodeNo">#{orderIndex}</span>
             <span className="interviewRouteNodeTitle" title={rowTitle}>{rowTitle}</span>
-            {rowType === "decision" ? <span className="badge warn">Decision</span> : null}
-            {isDecisionDiff ? <span className="badge warn">Δ</span> : null}
           </div>
           <div className="interviewRouteNodeMeta">
             <span className="muted small interviewRouteNodeSubtitle" title={`${prevTitle} → ${nextTitle}`}>
@@ -2506,104 +2219,32 @@ export default function InterviewPathsView({
           )}
         </div>
 
-        {linkedStepId ? (
-          <StepDurationEditor
-            stepId={linkedStepId}
-            workSec={workSec}
-            waitSec={waitSec}
-            onCommitSeconds={commitDurationSeconds}
-            variant="row"
-          />
-        ) : (
-          <>
-            <div className="interviewRouteTimeCell muted small">—</div>
-            <div className="interviewRouteTimeCell muted small">—</div>
-            <div className="interviewRoutePresetCell muted small">—</div>
-          </>
-        )}
+        <div className="interviewRouteTimeCell">
+          <span className={`interviewRouteTimeValue ${workLabel === "—" ? "isEmpty" : ""}`}>{workLabel}</span>
+        </div>
+        <div className="interviewRouteTimeCell">
+          <span className={`interviewRouteTimeValue ${waitLabel === "—" ? "isEmpty" : ""}`}>{waitLabel}</span>
+        </div>
+        <div className="interviewRouteSemanticsCell">
+          {rowType === "decision" ? <span className="badge warn">Решение</span> : null}
+          {isDecisionDiff ? <span className="badge warn">Δ</span> : null}
+          {selected ? (
+            <button
+              type="button"
+              className="secondaryBtn tinyBtn"
+              onClick={(event) => {
+                event.stopPropagation();
+                setDetailsCollapsed(false);
+              }}
+              title="Открыть инспектор шага"
+            >
+              Детали
+            </button>
+          ) : null}
+        </div>
       </div>
     );
   }
-
-  const activeLinkGroup = useMemo(() => {
-    const row = activeRouteRow;
-    const nodeId = toText(row?.node_id);
-    return linkGroupForNode(dodSnapshot?.link_groups, nodeId);
-  }, [activeRouteRow, dodSnapshot]);
-
-  const activeCounterparts = useMemo(() => {
-    const nodeId = toText(activeRouteRow?.node_id);
-    return counterpartIdsForNode(activeLinkGroup, nodeId);
-  }, [activeRouteRow, activeLinkGroup]);
-
-  const activeNodeSeqMeta = useMemo(() => {
-    if (!activeRouteRow || activeRouteIndex < 0) return {};
-    return {
-      prev: routeStepRows[activeRouteIndex - 1] || null,
-      next: routeStepRows[activeRouteIndex + 1] || null,
-    };
-  }, [activeRouteRow, activeRouteIndex, routeStepRows]);
-
-  const flowMaps = useMemo(() => buildFlowMaps(dodSnapshot), [dodSnapshot]);
-  const dodMissingByNodeId = useMemo(() => buildDodByNodeId(dodSnapshot), [dodSnapshot]);
-
-  const activeIncomingFlows = useMemo(() => {
-    const nodeId = toText(activeRouteRow?.node_id);
-    return toArray(flowMaps?.incomingByNodeId?.[nodeId]);
-  }, [activeRouteRow, flowMaps]);
-
-  const activeOutgoingFlows = useMemo(() => {
-    const nodeId = toText(activeRouteRow?.node_id);
-    return toArray(flowMaps?.outgoingByNodeId?.[nodeId]);
-  }, [activeRouteRow, flowMaps]);
-
-  const activeDodMissing = useMemo(() => {
-    const nodeId = toText(activeRouteRow?.node_id);
-    return toArray(dodMissingByNodeId?.[nodeId]);
-  }, [activeRouteRow, dodMissingByNodeId]);
-
-  const activeStepDetails = useMemo(() => {
-    if (!activeRouteRow) return null;
-    return {
-      type: toText(activeRouteRow?.node_type || activeRouteRow?.row_type || "—"),
-      lane: sanitizeDisplayText(activeRouteRow?.lane_name || stepMetaByNodeId[toText(activeRouteRow?.node_id)]?.lane_name, "—"),
-      inTitle: sanitizeDisplayText(activeNodeSeqMeta?.prev?.title, "—"),
-      outTitle: sanitizeDisplayText(activeNodeSeqMeta?.next?.title, "—"),
-      selected: sanitizeDisplayText(activeRouteRow?.decision?.selected_label, "—"),
-      aiCount: Number(stepMetaByNodeId[toText(activeRouteRow?.node_id)]?.ai_count || 0),
-      notesCount: Number(stepMetaByNodeId[toText(activeRouteRow?.node_id)]?.notes_count || 0),
-      dodMissing: activeDodMissing.length ? activeDodMissing.join(", ") : "—",
-      inputs: activeIncomingFlows.length
-        ? activeIncomingFlows.map((flow) => `${flow.id}${flow.label ? ` (${flow.label})` : ""}`).join("; ")
-        : "—",
-      outputs: activeOutgoingFlows.length
-        ? activeOutgoingFlows.map((flow) => `${flow.id}${flow.label ? ` (${flow.label})` : ""}`).join("; ")
-        : "—",
-      linkGroup: toText(activeLinkGroup?.link_key || ""),
-      counterparts: activeCounterparts,
-    };
-  }, [
-    activeRouteRow,
-    stepMetaByNodeId,
-    activeNodeSeqMeta,
-    activeDodMissing,
-    activeIncomingFlows,
-    activeOutgoingFlows,
-    activeLinkGroup,
-    activeCounterparts,
-  ]);
-  const activeStepTiming = useMemo(() => {
-    const nodeId = toText(activeRouteRow?.node_id);
-    if (!nodeId) return null;
-    const linkedStepId = toText(firstStepIdByNodeId[nodeId]);
-    if (!linkedStepId) return null;
-    const linkedStep = asObject(stepById[linkedStepId]);
-    return {
-      stepId: linkedStepId,
-      workSec: Math.max(0, Number(linkedStep?.work_duration_sec || linkedStep?.duration_sec || 0)),
-      waitSec: Math.max(0, Number(linkedStep?.wait_duration_sec || 0)),
-    };
-  }, [activeRouteRow, firstStepIdByNodeId, stepById]);
 
   const hasSelectedMarkdown = useMemo(() => {
     const selectedId = toText(selectedReportId || visibleReportVersions?.[0]?.id);
@@ -2639,27 +2280,35 @@ export default function InterviewPathsView({
     }
   }
 
-  function toggleScenarioGroup(groupKeyRaw) {
-    const groupKey = toText(groupKeyRaw);
-    if (!groupKey) return;
-    setCollapsedScenarioGroups((prev) => ({ ...asObject(prev), [groupKey]: !prev?.[groupKey] }));
-  }
-
   return (
     <div className="interviewPathsMode interviewPathsRouteMode" data-testid="interview-paths-mode">
       <div className="interviewPathsHead">
-        <div className="interviewPathsTitle">Paths View</div>
+        <div className="interviewPathsTitle">Маршруты</div>
         {isPendingTransition ? <span className="muted small">Обновляю…</span> : null}
       </div>
 
       {!pathsCalcReady ? (
         <div className="interviewAnnotationNotice pending">
-          Подготавливаю расчёты paths/diff/aggregation в фоне…
+          Подготавливаю расчёты маршрутов в фоне…
         </div>
       ) : null}
       {pathsCalcReady && legacyColorSource ? (
-        <div className="interviewAnnotationNotice warn">
-          Legacy source: Paths построены из flow tier/цветов. Для стабильной модели выполните «Импорт из цветов» в панели выбранного BPMN-узла.
+        <div className="interviewPathsLegacyNotice" data-testid="paths-legacy-source-banner">
+          <span className="interviewPathSourcePill isLegacy">устаревший · flow_tier</span>
+          <span className="interviewPathsLegacyNoticeText">
+            Маршруты построены из flow tier/цветов.
+          </span>
+          <button
+            type="button"
+            className="secondaryBtn tinyBtn"
+            onClick={() => jumpToMode("diagram")}
+            title="Открыть диаграмму и перейти к панели «Пути и последовательность»"
+          >
+            К импорту
+          </button>
+          <span className="muted small">
+            Диаграмма → узел → «Пути и последовательность» → «Импорт из цветов».
+          </span>
         </div>
       ) : null}
 
@@ -2667,7 +2316,7 @@ export default function InterviewPathsView({
         <div className="interviewAnnotationNotice warn interviewScenarioOrderWarning">
           <div className="interviewScenarioOrderWarningHead">
             <span className="interviewScenarioOrderWarningTitle">Порядок сценария: найдено нарушение order_index</span>
-            <span className="badge warn">issues {Number(toArray(orderValidation?.violations).length || 0)}</span>
+            <span className="badge warn">проблемы {Number(toArray(orderValidation?.violations).length || 0)}</span>
           </div>
           <div className="interviewScenarioOrderWarningMeta muted small">
             Проверено пар: {Number(orderValidation?.checked_pairs || 0)}
@@ -2682,8 +2331,8 @@ export default function InterviewPathsView({
                 <div key={`order_issue_${idx + 1}`} className="interviewScenarioOrderWarningItem">
                   <span className="badge muted">#{idx + 1}</span>
                   <span className="interviewScenarioOrderWarningItemText">
-                    {`prev #${Number(issue?.prev_order_index || 0)} → cur #${Number(issue?.current_order_index || 0)} · `}
-                    {toText(issue?.node_id || issue?.title || "step")}
+                    {`пред. #${Number(issue?.prev_order_index || 0)} → тек. #${Number(issue?.current_order_index || 0)} · `}
+                    {toText(issue?.node_id || issue?.title || "шаг")}
                     {toText(issue?.scope) ? ` · scope: ${toText(issue?.scope)}` : ""}
                   </span>
                 </div>
@@ -2695,13 +2344,7 @@ export default function InterviewPathsView({
 
       <PathsLayout
         detailsCollapsed={detailsCollapsed}
-        onToggleDetails={(nextCollapsedRaw) => {
-          const nextCollapsed = !!nextCollapsedRaw;
-          setDetailsCollapsed(nextCollapsed);
-          if (nextCollapsed) {
-            setSelectedRouteKey("");
-          }
-        }}
+        onToggleDetails={(nextCollapsedRaw) => setDetailsCollapsed(!!nextCollapsedRaw)}
         hasActiveStep={!!activeRouteRow}
         left={(
           <ScenarioNav
@@ -2712,6 +2355,7 @@ export default function InterviewPathsView({
             sortMode={scenarioSortMode}
             onSortMode={setScenarioSortMode}
             sections={visibleSections}
+            tierCounts={tierTabCounts}
             collapsedGroups={collapsedScenarioGroups}
             onToggleGroup={toggleScenarioGroup}
             selectedScenarioId={selectedScenarioId}
@@ -2719,7 +2363,6 @@ export default function InterviewPathsView({
             scenarioTitle={scenarioPresentation.scenarioDisplayTitle}
             scenarioStatusClass={scenarioStatusClass}
             scenarioStatusLabel={scenarioStatusLabel}
-            scenarioStatusIcon={scenarioOutcomeIcon}
             scenarioDurationLabel={(scenario) => formatSeconds(scenarioDurationSec(scenario, stepTimeByNodeId))}
             scenarioMetrics={scenarioMetricsById}
           />
@@ -2734,6 +2377,8 @@ export default function InterviewPathsView({
               tier={normalizeTier(activeScenario?.tier) !== "None" ? normalizeTier(activeScenario?.tier) : ""}
               sequenceKey={toText(activeScenario?.sequence_key || activeScenario?.sequenceKey)}
               pathIdUsed={toText(activePathId)}
+              pathSource={pathSource}
+              pathSourceLabel={pathSourceLabel}
               reportBuildDebug={activeReportBuildDebug}
               stepsHash={currentStepsHash}
               metrics={activePathMetrics}
@@ -2770,7 +2415,7 @@ export default function InterviewPathsView({
             ) : null}
             {activeScenario?.diff_from_ideal ? (
               <div className="interviewScenarioDiff muted small">
-                Отличия от Ideal:
+                Отличия от ideal:
                 {" "}
                 {Number(toArray(activeScenario?.diff_from_ideal?.differing_gateway_decisions).length || 0)} решений,
                 {" +"}
@@ -2781,9 +2426,23 @@ export default function InterviewPathsView({
             ) : null}
 
             <PathStepList
-              title="Маршрут выбранного сценария"
+              title="Маршрут"
               rows={routeStepRows}
               renderRow={renderRouteStepRow}
+              legendItems={[
+                {
+                  key: "decision",
+                  label: "Решение",
+                  title: "Gateway-строка с выбранной веткой для сценария",
+                  tone: "info",
+                },
+                {
+                  key: "delta",
+                  label: "Δ от ideal",
+                  title: "Выбор ветки отличается от ideal (P0) маршрута",
+                  tone: "warn",
+                },
+              ]}
             />
           </div>
         )}

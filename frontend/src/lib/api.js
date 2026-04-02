@@ -1,869 +1,34 @@
-import { apiFetch, isPlainObject, normalizeApiErrorPayload } from "./apiClient.js";
+import { isPlainObject } from "./apiClient.js";
 import { apiRoutes } from "./apiRoutes.js";
-
-// Single source of truth for API calls (FPC)
-const ACCESS_TOKEN_KEY = "fpc_auth_access_token";
-const ACTIVE_ORG_KEY = "fpc_active_org_id";
-const AUTH_RETRY_BLOCKLIST = new Set([
-  apiRoutes.auth.login(),
-  apiRoutes.auth.refresh(),
-  apiRoutes.auth.logout(),
-  apiRoutes.auth.invitePreview(),
-  apiRoutes.auth.inviteActivate(),
-  apiRoutes.invite.resolve(),
-  apiRoutes.invite.activate(),
-]);
-const authFailureListeners = new Set();
-
-let accessToken = "";
-let activeOrgId = "";
-let refreshInFlight = null;
-let refreshWaiters = 0;
-let requestSeq = 0;
-
-function readStoredAccessToken() {
-  if (typeof window === "undefined") return "";
-  try {
-    return String(window.localStorage?.getItem(ACCESS_TOKEN_KEY) || "").trim();
-  } catch {
-    return "";
-  }
-}
-
-accessToken = readStoredAccessToken();
-
-function readStoredActiveOrgId() {
-  if (typeof window === "undefined") return "";
-  try {
-    return String(window.localStorage?.getItem(ACTIVE_ORG_KEY) || "").trim();
-  } catch {
-    return "";
-  }
-}
-
-activeOrgId = readStoredActiveOrgId();
-
-function emitAuthFailure(reason = "unauthorized") {
-  authFailureListeners.forEach((fn) => {
-    try {
-      fn(String(reason || "unauthorized"));
-    } catch {
-      // ignore listener errors
-    }
-  });
-}
-
-function shouldLogAuthTrace() {
-  if (typeof window === "undefined") return false;
-  try {
-    const ls = window.localStorage;
-    return String(ls?.getItem("fpc_debug_trace") || "").trim() === "1"
-      || String(ls?.getItem("DEBUG_LOOP") || "").trim() === "1";
-  } catch {
-    return false;
-  }
-}
-
-function logAuthTrace(tag, payload = {}) {
-  if (!shouldLogAuthTrace()) return;
-  const suffix = Object.entries(payload || {})
-    .map(([k, v]) => `${k}=${String(v)}`)
-    .join(" ");
-  // eslint-disable-next-line no-console
-  console.debug(`[AUTH_TRACE] ${String(tag || "trace")} ${suffix}`.trim());
-}
-
-function normalizeNotes(value) {
-  if (Array.isArray(value)) return value;
-  if (value && typeof value === "object") return [value];
-  const text = String(value || "").trim();
-  if (!text) return [];
-  try {
-    const parsed = JSON.parse(text);
-    if (Array.isArray(parsed)) return parsed;
-    if (parsed && typeof parsed === "object") return [parsed];
-  } catch {
-    // keep as plain legacy text note
-  }
-  return [{ note_id: "legacy", ts: null, author: null, text }];
-}
-
-function okOrError(r) {
-  if (!r.ok) return r;
-  if (r.data && typeof r.data === "object" && !Array.isArray(r.data) && (r.data.error || r.data.detail)) {
-    const errText = String(r.data.error || r.data.detail || "");
-    const marker = errText.toLowerCase();
-    const inferredStatus = marker.includes("not found")
-      ? 404
-      : marker.includes("unauthorized")
-        ? 401
-        : marker.includes("forbidden")
-          ? 403
-          : (marker.includes("required") || marker.includes("missing") || marker.includes("invalid"))
-            ? 422
-            : (r.status || 200);
-    return {
-      ok: false,
-      status: inferredStatus,
-      error: errText,
-      data: r.data,
-      method: r.method,
-      endpoint: r.endpoint,
-      url: r.url,
-      text: r.text,
-      response_text: r.response_text || r.text,
-    };
-  }
-  return r;
-}
-
-export function getAccessToken() {
-  return String(accessToken || "");
-}
-
-export function setAccessToken(token, options = {}) {
-  const next = String(token || "").trim();
-  accessToken = next;
-  const persist = options?.persist !== false;
-  if (typeof window !== "undefined" && persist) {
-    try {
-      if (next) window.localStorage?.setItem(ACCESS_TOKEN_KEY, next);
-      else window.localStorage?.removeItem(ACCESS_TOKEN_KEY);
-    } catch {
-      // ignore storage errors
-    }
-  }
-  return accessToken;
-}
-
-export function clearAccessToken() {
-  return setAccessToken("");
-}
-
-export function getActiveOrgId() {
-  return String(activeOrgId || "");
-}
-
-export function setActiveOrgId(orgId, options = {}) {
-  const next = String(orgId || "").trim();
-  activeOrgId = next;
-  const persist = options?.persist !== false;
-  if (typeof window !== "undefined" && persist) {
-    try {
-      if (next) window.localStorage?.setItem(ACTIVE_ORG_KEY, next);
-      else window.localStorage?.removeItem(ACTIVE_ORG_KEY);
-    } catch {
-      // ignore storage errors
-    }
-  }
-  return activeOrgId;
-}
-
-export function onAuthFailure(listener) {
-  if (typeof listener !== "function") return () => {};
-  authFailureListeners.add(listener);
-  return () => authFailureListeners.delete(listener);
-}
-
-async function refreshAccessTokenLocked(meta = {}) {
-  if (refreshInFlight) {
-    refreshWaiters += 1;
-    logAuthTrace("refresh_wait", {
-      requestId: Number(meta?.requestId || 0),
-      reason: String(meta?.reason || "unknown"),
-      waiters: refreshWaiters,
-    });
-    try {
-      return await refreshInFlight;
-    } finally {
-      refreshWaiters = Math.max(0, refreshWaiters - 1);
-    }
-  }
-  logAuthTrace("refresh_start", {
-    requestId: Number(meta?.requestId || 0),
-    reason: String(meta?.reason || "unknown"),
-  });
-  refreshInFlight = (async () => {
-    const refreshResult = await apiFetch({
-      path: apiRoutes.auth.refresh(),
-      method: "POST",
-      auth: false,
-      withOrgHeader: false,
-    });
-    if (!refreshResult.ok) {
-      clearAccessToken();
-      logAuthTrace("refresh_fail", {
-        requestId: Number(meta?.requestId || 0),
-        status: Number(refreshResult.status || 0),
-      });
-      return {
-        ok: false,
-        status: Number(refreshResult.status || 0),
-        error: normalizeApiErrorPayload(refreshResult?.data) || String(refreshResult?.error || "refresh_failed"),
-      };
-    }
-
-    const payload = refreshResult.data && typeof refreshResult.data === "object" ? refreshResult.data : {};
-    const token = String(payload?.access_token || "").trim();
-    if (!token) {
-      clearAccessToken();
-      logAuthTrace("refresh_fail_missing_token", {
-        requestId: Number(meta?.requestId || 0),
-      });
-      return { ok: false, status: 500, error: "missing access_token" };
-    }
-    setAccessToken(token);
-    logAuthTrace("refresh_ok", {
-      requestId: Number(meta?.requestId || 0),
-      status: Number(refreshResult.status || 0),
-      waiters: refreshWaiters,
-    });
-    return { ok: true, status: Number(refreshResult.status || 0), access_token: token, token_type: "bearer" };
-  })();
-  try {
-    return await refreshInFlight;
-  } finally {
-    refreshInFlight = null;
-  }
-}
-
-async function request(path, opts = {}) {
-  const requestId = Number(opts.__requestId || (++requestSeq));
-  const authAttempts = Number(opts.__authAttempts || 0);
-  const endpoint = String(path || "");
-  const method = String(opts.method || "GET").toUpperCase();
-  const orgId = endpoint.startsWith("/api") && !AUTH_RETRY_BLOCKLIST.has(endpoint) && opts.auth !== false
-    ? String(getActiveOrgId() || "").trim()
-    : "";
-  const res = await apiFetch({
-    path: endpoint,
-    method,
-    headers: opts.headers,
-    body: opts.body,
-    signal: opts.signal,
-    authToken: opts.auth !== false ? getAccessToken() : "",
-    auth: opts.auth !== false,
-    orgId,
-    withOrgHeader: true,
-  });
-
-  if (
-    res.status === 401
-    && opts.auth !== false
-    && opts.retryAuth !== false
-    && !opts.__didRetryAuth
-    && !AUTH_RETRY_BLOCKLIST.has(String(path || ""))
-  ) {
-    logAuthTrace("401", {
-      requestId,
-      path: String(path || ""),
-      authAttempts,
-      retryAuth: opts.retryAuth === false ? 0 : 1,
-    });
-    if (authAttempts >= 1) {
-      logAuthTrace("401_abort_max_attempts", {
-        requestId,
-        path: String(path || ""),
-      });
-      emitAuthFailure("refresh_failed");
-    } else {
-      const refreshRes = await refreshAccessTokenLocked({
-        requestId,
-        reason: "response_401",
-      });
-      if (refreshRes?.ok) {
-        logAuthTrace("retry_after_refresh", {
-          requestId,
-          path: String(path || ""),
-          authAttempts: authAttempts + 1,
-        });
-        return request(path, {
-          ...opts,
-          __didRetryAuth: true,
-          __authAttempts: authAttempts + 1,
-          __requestId: requestId,
-        });
-      }
-      logAuthTrace("refresh_chain_failed", {
-        requestId,
-        path: String(path || ""),
-        status: Number(refreshRes?.status || 0),
-      });
-      emitAuthFailure("refresh_failed");
-    }
-  }
-  if (!res.ok && Number(res?.status || 0) === 401) {
-    logAuthTrace("401_final", {
-      requestId,
-      path: String(path || ""),
-      didRetry: opts.__didRetryAuth ? 1 : 0,
-      authAttempts,
-    });
-  }
-  return res;
-}
-
-export async function apiRequest(path, opts = {}) {
-  return request(path, opts);
-}
-
-function shouldLogBpmnTrace() {
-  if (typeof window === "undefined") return false;
-  if (window.__FPC_DEBUG_BPMN__) return true;
-  try {
-    return String(window.localStorage?.getItem("fpc_debug_bpmn") || "").trim() === "1";
-  } catch {
-    return false;
-  }
-}
-
-function fnv1aHex(input) {
-  const src = String(input || "");
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < src.length; i += 1) {
-    hash ^= src.charCodeAt(i);
-    hash = Math.imul(hash >>> 0, 0x01000193) >>> 0;
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
-
-// ------- Auth -------
-export async function apiAuthLogin(email, password) {
-  const body = {
-    email: String(email || "").trim(),
-    password: String(password || ""),
-  };
-  const r = okOrError(await request(apiRoutes.auth.login(), { method: "POST", body, auth: false, retryAuth: false }));
-  if (!r.ok) return r;
-  const token = String(r.data?.access_token || "").trim();
-  if (!token) return { ok: false, status: r.status, error: "missing access_token" };
-  setAccessToken(token);
-  return { ok: true, status: r.status, access_token: token, token_type: "bearer" };
-}
-
-export async function apiAuthRefresh(options = {}) {
-  const r = await refreshAccessTokenLocked();
-  if (!r.ok && options?.silent !== true) emitAuthFailure("refresh_failed");
-  return r;
-}
-
-export async function apiAuthInvitePreview(token) {
-  const inviteToken = String(token || "").trim();
-  if (!inviteToken) return { ok: false, status: 0, error: "missing token" };
-  const r = okOrError(await request(apiRoutes.auth.invitePreview(), {
-    method: "POST",
-    auth: false,
-    retryAuth: false,
-    body: { token: inviteToken },
-  }));
-  if (!r.ok) return r;
-  return {
-    ok: true,
-    status: r.status,
-    invite: r.data?.invite || {},
-    identity: r.data?.identity || {},
-    activation_allowed: Boolean(r.data?.activation_allowed),
-  };
-}
-
-export async function apiInviteResolve(token) {
-  return apiAuthInvitePreview(token);
-}
-
-export async function apiAuthInviteActivate({ token, password, password_confirm }) {
-  const inviteToken = String(token || "").trim();
-  const pwd = String(password || "");
-  const pwdConfirm = String(password_confirm || "");
-  if (!inviteToken) return { ok: false, status: 0, error: "missing token" };
-  if (!pwd) return { ok: false, status: 0, error: "password_required" };
-  const r = okOrError(await request(apiRoutes.auth.inviteActivate(), {
-    method: "POST",
-    auth: false,
-    retryAuth: false,
-    body: {
-      token: inviteToken,
-      password: pwd,
-      password_confirm: pwdConfirm,
-    },
-  }));
-  if (!r.ok) return r;
-  const access = String(r.data?.access_token || "").trim();
-  if (!access) return { ok: false, status: r.status, error: "missing access_token" };
-  setAccessToken(access);
-  return {
-    ok: true,
-    status: r.status,
-    access_token: access,
-    token_type: "bearer",
-    invite: r.data?.invite || {},
-    membership: r.data?.membership || {},
-    user: r.data?.user || {},
-  };
-}
-
-export async function apiInviteActivate(payload = {}) {
-  return apiAuthInviteActivate(payload);
-}
-
-export async function apiAuthLogout() {
-  const r = okOrError(await request(apiRoutes.auth.logout(), { method: "POST", auth: false, retryAuth: false }));
-  clearAccessToken();
-  return r.ok ? { ok: true, status: r.status, result: r.data || { ok: true } } : r;
-}
-
-export async function apiAuthMe() {
-  const r = okOrError(await request(apiRoutes.auth.me(), { method: "GET", retryAuth: true }));
-  if (!r.ok) return r;
-  const orgs = Array.isArray(r.data?.orgs) ? r.data.orgs : [];
-  const active_org_id = String(r.data?.active_org_id || r.data?.default_org_id || "").trim();
-  const default_org_id = String(r.data?.default_org_id || "").trim();
-  if (active_org_id) setActiveOrgId(active_org_id);
-  return {
-    ok: true,
-    status: r.status,
-    user: {
-      id: String(r.data?.id || ""),
-      email: String(r.data?.email || ""),
-      is_admin: Boolean(r.data?.is_admin),
-      active_org_id,
-      default_org_id,
-      orgs,
-    },
-  };
-}
-
-export async function apiListOrgs() {
-  const r = okOrError(await request(apiRoutes.orgs.list(), { method: "GET", retryAuth: true }));
-  if (!r.ok) return r;
-  const items = Array.isArray(r.data?.items) ? r.data.items : [];
-  const active_org_id = String(r.data?.active_org_id || "").trim();
-  const default_org_id = String(r.data?.default_org_id || "").trim();
-  if (active_org_id) setActiveOrgId(active_org_id);
-  return { ok: true, status: r.status, items, active_org_id, default_org_id };
-}
-
-export async function apiCreateOrg(name) {
-  const orgName = String(name || "").trim();
-  if (!orgName) return { ok: false, status: 0, error: "name is required" };
-  const r = okOrError(await request(apiRoutes.orgs.list(), { method: "POST", body: { name: orgName } }));
-  return r.ok ? { ok: true, status: r.status, org: r.data || {} } : r;
-}
-
-export async function apiAssignOrgMember(orgId, userId, role = "org_viewer") {
-  const oid = String(orgId || "").trim();
-  const uid = String(userId || "").trim();
-  if (!oid || !uid) return { ok: false, status: 0, error: "org_id and user_id required" };
-  const r = okOrError(await request(`/api/orgs/${encodeURIComponent(oid)}/members/assign`, {
-    method: "POST",
-    body: { user_id: uid, role: String(role || "org_viewer").trim() },
-  }));
-  return r.ok ? { ok: true, status: r.status, ...r.data } : r;
-}
-
-// ------- Templates -------
-export async function apiListTemplates({ scope = "personal", orgId = "", limit = 200 } = {}) {
-  const normalizedScope = String(scope || "").trim().toLowerCase() === "org" ? "org" : "personal";
-  const oid = String(orgId || "").trim();
-  const endpoint = (() => {
-    const base = apiRoutes.templates.list(normalizedScope, oid);
-    if (Number(limit || 0) <= 0) return base;
-    const cap = String(Math.max(1, Math.min(1000, Number(limit || 200))));
-    return `${base}${base.includes("?") ? "&" : "?"}limit=${encodeURIComponent(cap)}`;
-  })();
-  const r = okOrError(await request(endpoint, { method: "GET" }));
-  if (!r.ok) return r;
-  const items = Array.isArray(r.data?.items) ? r.data.items : [];
-  return {
-    ok: true,
-    status: r.status,
-    scope: String(r.data?.scope || normalizedScope),
-    org_id: String(r.data?.org_id || oid),
-    count: Number(r.data?.count || items.length || 0),
-    items,
-  };
-}
-
-export async function apiCreateTemplate(payload = {}) {
-  const body = {
-    scope: String(payload?.scope || "personal"),
-    template_type: String(payload?.template_type || payload?.templateType || "bpmn_selection_v1"),
-    org_id: String(payload?.org_id || payload?.orgId || ""),
-    folder_id: String(payload?.folder_id || payload?.folderId || ""),
-    name: String(payload?.name || ""),
-    description: String(payload?.description || ""),
-    payload: payload?.payload && typeof payload.payload === "object" ? payload.payload : {},
-  };
-  const r = okOrError(await request(apiRoutes.templates.create(), { method: "POST", body }));
-  if (!r.ok) return r;
-  return {
-    ok: true,
-    status: r.status,
-    item: r.data?.item || {},
-  };
-}
-
-export async function apiPatchTemplate(templateId, patch = {}) {
-  const tid = String(templateId || "").trim();
-  if (!tid) return { ok: false, status: 0, error: "missing template_id" };
-  const body = {};
-  if (patch && Object.prototype.hasOwnProperty.call(patch, "name")) body.name = String(patch.name || "");
-  if (patch && Object.prototype.hasOwnProperty.call(patch, "description")) body.description = String(patch.description || "");
-  if (patch && Object.prototype.hasOwnProperty.call(patch, "folder_id")) body.folder_id = String(patch.folder_id || "");
-  if (patch && Object.prototype.hasOwnProperty.call(patch, "payload")) body.payload = patch.payload && typeof patch.payload === "object" ? patch.payload : {};
-  if (patch && Object.prototype.hasOwnProperty.call(patch, "template_type")) body.template_type = String(patch.template_type || "");
-  const r = okOrError(await request(apiRoutes.templates.item(tid), { method: "PATCH", body }));
-  if (!r.ok) return r;
-  return {
-    ok: true,
-    status: r.status,
-    item: r.data?.item || {},
-  };
-}
-
-export async function apiDeleteTemplate(templateId) {
-  const tid = String(templateId || "").trim();
-  if (!tid) return { ok: false, status: 0, error: "missing template_id" };
-  const r = okOrError(await request(apiRoutes.templates.item(tid), { method: "DELETE" }));
-  if (!r.ok) return r;
-  return {
-    ok: true,
-    status: r.status,
-  };
-}
-
-export async function apiListTemplateFolders({ scope = "personal", orgId = "" } = {}) {
-  const normalizedScope = String(scope || "").trim().toLowerCase() === "org" ? "org" : "personal";
-  const endpoint = apiRoutes.templateFolders.list(normalizedScope, String(orgId || "").trim());
-  const r = okOrError(await request(endpoint, { method: "GET" }));
-  if (!r.ok) return r;
-  const items = Array.isArray(r.data?.items) ? r.data.items : [];
-  return {
-    ok: true,
-    status: r.status,
-    scope: String(r.data?.scope || normalizedScope),
-    org_id: String(r.data?.org_id || ""),
-    count: Number(r.data?.count || items.length || 0),
-    items,
-  };
-}
-
-export async function apiCreateTemplateFolder(payload = {}) {
-  const body = {
-    scope: String(payload?.scope || "personal"),
-    org_id: String(payload?.org_id || payload?.orgId || ""),
-    name: String(payload?.name || ""),
-    parent_id: String(payload?.parent_id || payload?.parentId || ""),
-    sort_order: Number(payload?.sort_order || payload?.sortOrder || 0),
-  };
-  const r = okOrError(await request(apiRoutes.templateFolders.create(), { method: "POST", body }));
-  if (!r.ok) return r;
-  return {
-    ok: true,
-    status: r.status,
-    item: r.data?.item || {},
-  };
-}
-
-export async function apiPatchTemplateFolder(folderId, patch = {}) {
-  const fid = String(folderId || "").trim();
-  if (!fid) return { ok: false, status: 0, error: "missing folder_id" };
-  const body = {};
-  if (patch && Object.prototype.hasOwnProperty.call(patch, "name")) body.name = String(patch.name || "");
-  if (patch && Object.prototype.hasOwnProperty.call(patch, "parent_id")) body.parent_id = String(patch.parent_id || "");
-  if (patch && Object.prototype.hasOwnProperty.call(patch, "sort_order")) body.sort_order = Number(patch.sort_order || 0);
-  const r = okOrError(await request(apiRoutes.templateFolders.item(fid), { method: "PATCH", body }));
-  if (!r.ok) return r;
-  return {
-    ok: true,
-    status: r.status,
-    item: r.data?.item || {},
-  };
-}
-
-export async function apiDeleteTemplateFolder(folderId) {
-  const fid = String(folderId || "").trim();
-  if (!fid) return { ok: false, status: 0, error: "missing folder_id" };
-  const r = okOrError(await request(apiRoutes.templateFolders.item(fid), { method: "DELETE" }));
-  if (!r.ok) return r;
-  return {
-    ok: true,
-    status: r.status,
-  };
-}
-
-// ------- Enterprise Org Settings -------
-export async function apiListOrgMembers(orgId) {
-  const oid = String(orgId || "").trim();
-  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
-  const endpoint = apiRoutes.orgs.members(oid);
-  const r = okOrError(await request(endpoint, { method: "GET" }));
-  const items = Array.isArray(r?.data?.items) ? r.data.items : [];
-  return r.ok ? { ok: true, status: r.status, items, count: Number(r?.data?.count || items.length || 0) } : r;
-}
-
-export async function apiPatchOrgMember(orgId, userId, role) {
-  const oid = String(orgId || "").trim();
-  const uid = String(userId || "").trim();
-  const nextRole = String(role || "").trim();
-  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
-  if (!uid) return { ok: false, status: 0, error: "missing user_id" };
-  if (!nextRole) return { ok: false, status: 0, error: "missing role" };
-  const endpoint = apiRoutes.orgs.member(oid, uid);
-  const r = okOrError(await request(endpoint, { method: "PATCH", body: { role: nextRole } }));
-  return r.ok ? { ok: true, status: r.status, item: r.data || {} } : r;
-}
-
-export async function apiPatchOrg(orgId, payload = {}) {
-  const oid = String(orgId || "").trim();
-  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
-  const body = {
-    name: String(payload?.name || "").trim(),
-  };
-  const endpoint = apiRoutes.orgs.item(oid);
-  const r = okOrError(await request(endpoint, { method: "PATCH", body }));
-  return r.ok ? { ok: true, status: r.status, org: r.data || {} } : r;
-}
-
-export async function apiListOrgInvites(orgId) {
-  const oid = String(orgId || "").trim();
-  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
-  let r = okOrError(await request(apiRoutes.orgs.invites(oid), { method: "GET" }));
-  if (!r.ok && Number(r.status || 0) === 404) {
-    r = okOrError(await request(apiRoutes.admin.organizationInvites(oid), { method: "GET" }));
-  }
-  const items = Array.isArray(r?.data?.items) ? r.data.items : [];
-  return r.ok ? { ok: true, status: r.status, items, count: Number(r?.data?.count || items.length || 0) } : r;
-}
-
-export async function apiCreateOrgInvite(orgId, payload = {}) {
-  const oid = String(orgId || "").trim();
-  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
-  const body = {
-    email: String(payload?.email || "").trim(),
-    full_name: String(payload?.full_name || payload?.fullName || "").trim(),
-    job_title: String(payload?.job_title || payload?.jobTitle || "").trim(),
-    role: String(payload?.role || "viewer").trim() || "viewer",
-    ttl_days: Number(payload?.ttl_days || payload?.ttlDays || 7),
-  };
-  let r = okOrError(await request(apiRoutes.orgs.invites(oid), { method: "POST", body }));
-  if (!r.ok && Number(r.status || 0) === 404) {
-    r = okOrError(await request(apiRoutes.admin.organizationInvites(oid), { method: "POST", body }));
-  }
-  return r.ok
-    ? {
-      ok: true,
-      status: r.status,
-      invite: r.data?.invite || {},
-      invite_key: r.data?.invite_key || r.data?.invite_token || "",
-      invite_token: r.data?.invite_token || r.data?.invite_key || "",
-      invite_link: r.data?.invite_link || "",
-      delivery: String(r.data?.delivery || ""),
-    }
-    : r;
-}
-
-export async function apiAcceptInviteToken(token) {
-  const inviteToken = String(token || "").trim();
-  if (!inviteToken) return { ok: false, status: 0, error: "missing token" };
-  const r = okOrError(await request(apiRoutes.misc.inviteAccept(), { method: "POST", body: { token: inviteToken } }));
-  return r.ok ? { ok: true, status: r.status, invite: r.data?.invite || {}, membership: r.data?.membership || {} } : r;
-}
-
-export async function apiRevokeOrgInvite(orgId, inviteId) {
-  const oid = String(orgId || "").trim();
-  const iid = String(inviteId || "").trim();
-  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
-  if (!iid) return { ok: false, status: 0, error: "missing invite_id" };
-  let r = okOrError(await request(apiRoutes.orgs.inviteRevoke(oid, iid), { method: "POST" }));
-  if (!r.ok && Number(r.status || 0) === 404) {
-    r = okOrError(await request(apiRoutes.admin.organizationInviteRevoke(oid, iid), { method: "POST" }));
-  }
-  return r.ok ? { ok: true, status: r.status } : r;
-}
-
-export async function apiCleanupOrgInvites(orgId, keepDays) {
-  const oid = String(orgId || "").trim();
-  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
-  const n = Number(keepDays || 0);
-  const endpoint = apiRoutes.orgs.invitesCleanup(
-    oid,
-    Number.isFinite(n) && n > 0 ? String(Math.round(n)) : "",
-  );
-  const r = okOrError(await request(endpoint, { method: "POST" }));
-  return r.ok ? { ok: true, status: r.status, deleted: Number(r.data?.deleted || 0) } : r;
-}
-
-export async function apiListOrgAudit(orgId, query = {}) {
-  const oid = String(orgId || "").trim();
-  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
-  const params = new URLSearchParams();
-  const limit = Number(query?.limit || 100);
-  if (Number.isFinite(limit) && limit > 0) params.set("limit", String(Math.min(500, Math.max(1, Math.round(limit)))));
-  const action = String(query?.action || "").trim();
-  const projectId = String(query?.project_id || query?.projectId || "").trim();
-  const sessionId = String(query?.session_id || query?.sessionId || "").trim();
-  const status = String(query?.status || "").trim();
-  if (action) params.set("action", action);
-  if (projectId) params.set("project_id", projectId);
-  if (sessionId) params.set("session_id", sessionId);
-  if (status) params.set("status", status);
-  const endpoint = apiRoutes.orgs.audit(oid) + (params.toString() ? `?${params.toString()}` : "");
-  const r = okOrError(await request(endpoint, { method: "GET" }));
-  const items = Array.isArray(r?.data?.items) ? r.data.items : [];
-  return r.ok ? { ok: true, status: r.status, items, count: Number(r?.data?.count || items.length || 0) } : r;
-}
-
-export async function apiCleanupOrgAudit(orgId, retentionDays) {
-  const oid = String(orgId || "").trim();
-  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
-  const n = Number(retentionDays || 0);
-  const endpoint = apiRoutes.orgs.auditCleanup(
-    oid,
-    Number.isFinite(n) && n > 0 ? String(Math.round(n)) : "",
-  );
-  const r = okOrError(await request(endpoint, { method: "POST" }));
-  return r.ok ? { ok: true, status: r.status, deleted: Number(r.data?.deleted || 0) } : r;
-}
-
-export async function apiGetEnterpriseWorkspace(options = {}) {
-  const explicitOrgId = String(options?.orgId || "").trim();
-  const active = String(getActiveOrgId() || "").trim();
-  const oid = explicitOrgId || active;
-  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
-  const params = new URLSearchParams();
-  const groupBy = String(options?.groupBy || "").trim().toLowerCase();
-  if (groupBy === "users" || groupBy === "projects") params.set("group_by", groupBy);
-  const q = String(options?.q || "").trim();
-  if (q) params.set("q", q);
-  const ownerIds = Array.isArray(options?.ownerIds)
-    ? options.ownerIds
-    : String(options?.ownerIds || "").split(",");
-  const ownerList = ownerIds
-    .map((item) => String(item || "").trim())
-    .filter(Boolean);
-  if (ownerList.length) params.set("owner_ids", ownerList.join(","));
-  const projectId = String(options?.projectId || "").trim();
-  if (projectId) params.set("project_id", projectId);
-  const status = String(options?.status || "").trim().toLowerCase();
-  if (status) params.set("status", status);
-  const updatedFrom = Number(options?.updatedFrom || 0);
-  if (Number.isFinite(updatedFrom) && updatedFrom > 0) params.set("updated_from", String(Math.round(updatedFrom)));
-  const updatedTo = Number(options?.updatedTo || 0);
-  if (Number.isFinite(updatedTo) && updatedTo > 0) params.set("updated_to", String(Math.round(updatedTo)));
-  if (options?.needsAttention === true || options?.needsAttention === 1) params.set("needs_attention", "1");
-  if (options?.needsAttention === false || options?.needsAttention === 0) params.set("needs_attention", "0");
-  const limit = Number(options?.limit || 50);
-  if (Number.isFinite(limit) && limit > 0) params.set("limit", String(Math.min(200, Math.max(1, Math.round(limit)))));
-  const offset = Number(options?.offset || 0);
-  if (Number.isFinite(offset) && offset >= 0) params.set("offset", String(Math.max(0, Math.round(offset))));
-  const endpoint = apiRoutes.enterprise.workspace(Object.fromEntries(params.entries()));
-  const r = okOrError(await request(endpoint, { method: "GET" }));
-  if (!r.ok) return r;
-  const data = isPlainObject(r.data) ? r.data : {};
-  return {
-    ok: true,
-    status: r.status,
-    org: isPlainObject(data.org) ? data.org : {},
-    group_by: String(data.group_by || groupBy || "users"),
-    summary: isPlainObject(data.summary) ? data.summary : {},
-    users: Array.isArray(data.users) ? data.users : [],
-    projects: Array.isArray(data.projects) ? data.projects : [],
-    sessions: Array.isArray(data.sessions) ? data.sessions : [],
-    page: isPlainObject(data.page) ? data.page : { limit: 50, offset: 0, total: 0 },
-  };
-}
-
-// ------- Admin (aggregated payloads) -------
-function normalizeAdminParams(params = {}) {
-  const out = {};
-  Object.entries(params || {}).forEach(([key, value]) => {
-    const text = String(value ?? "").trim();
-    if (!text) return;
-    out[String(key)] = text;
-  });
-  return out;
-}
-
-export async function apiAdminGetDashboard(params = {}) {
-  const endpoint = apiRoutes.admin.dashboard(normalizeAdminParams(params));
-  const r = okOrError(await request(endpoint, { method: "GET" }));
-  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
-}
-
-export async function apiAdminListOrgs() {
-  const r = okOrError(await request(apiRoutes.admin.orgs(), { method: "GET" }));
-  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
-}
-
-export async function apiAdminListUsers() {
-  const r = okOrError(await request(apiRoutes.admin.users(), { method: "GET" }));
-  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
-}
-
-export async function apiAdminCreateUser(payload = {}) {
-  const membershipsRaw = Array.isArray(payload?.memberships) ? payload.memberships : [];
-  const body = {
-    email: String(payload?.email || "").trim(),
-    password: String(payload?.password || ""),
-    is_admin: payload?.is_admin === true,
-    is_active: payload?.is_active !== false,
-    memberships: membershipsRaw.map((row) => ({
-      org_id: String(row?.org_id || "").trim(),
-      role: String(row?.role || "org_viewer").trim() || "org_viewer",
-    })).filter((row) => row.org_id),
-  };
-  const r = okOrError(await request(apiRoutes.admin.users(), { method: "POST", body }));
-  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
-}
-
-export async function apiAdminPatchUser(userId, payload = {}) {
-  const uid = String(userId || "").trim();
-  if (!uid) return { ok: false, status: 0, error: "missing user_id" };
-  const body = {};
-  if (Object.prototype.hasOwnProperty.call(payload || {}, "email")) body.email = String(payload?.email || "").trim();
-  if (Object.prototype.hasOwnProperty.call(payload || {}, "password")) body.password = String(payload?.password || "");
-  if (Object.prototype.hasOwnProperty.call(payload || {}, "is_admin")) body.is_admin = payload?.is_admin === true;
-  if (Object.prototype.hasOwnProperty.call(payload || {}, "is_active")) body.is_active = Boolean(payload?.is_active);
-  if (Object.prototype.hasOwnProperty.call(payload || {}, "memberships")) {
-    const membershipsRaw = Array.isArray(payload?.memberships) ? payload.memberships : [];
-    body.memberships = membershipsRaw.map((row) => ({
-      org_id: String(row?.org_id || "").trim(),
-      role: String(row?.role || "org_viewer").trim() || "org_viewer",
-    })).filter((row) => row.org_id);
-  }
-  const r = okOrError(await request(apiRoutes.admin.user(uid), { method: "PATCH", body }));
-  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
-}
-
-export async function apiAdminListProjects(params = {}) {
-  const endpoint = apiRoutes.admin.projects(normalizeAdminParams(params));
-  const r = okOrError(await request(endpoint, { method: "GET" }));
-  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
-}
-
-export async function apiAdminListSessions(params = {}) {
-  const endpoint = apiRoutes.admin.sessions(normalizeAdminParams(params));
-  const r = okOrError(await request(endpoint, { method: "GET" }));
-  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
-}
-
-export async function apiAdminGetSession(sessionId) {
-  const sid = String(sessionId || "").trim();
-  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
-  const r = okOrError(await request(apiRoutes.admin.session(sid), { method: "GET" }));
-  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
-}
-
-export async function apiAdminListJobs() {
-  const r = okOrError(await request(apiRoutes.admin.jobs(), { method: "GET" }));
-  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
-}
-
-export async function apiAdminListAudit(params = {}) {
-  const endpoint = apiRoutes.admin.audit(normalizeAdminParams(params));
-  const r = okOrError(await request(endpoint, { method: "GET" }));
-  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
-}
+import {
+  apiRequest as request,
+  fnv1aHex,
+  getActiveOrgId,
+  normalizeNotes,
+  okOrError,
+  shouldLogBpmnTrace,
+} from "./apiCore.js";
+
+export {
+  apiAuthInviteActivate,
+  apiAuthInvitePreview,
+  apiAuthLogin,
+  apiAuthLogout,
+  apiAuthMe,
+  apiAuthRefresh,
+  apiInviteActivate,
+  apiInviteResolve,
+  apiRequest,
+  clearAccessToken,
+  getAccessToken,
+  getActiveOrgId,
+  onAuthFailure,
+  setAccessToken,
+  setActiveOrgId,
+} from "./apiCore.js";
+
+export * from "./apiModules/adminApi.js";
+export * from "./apiModules/orgApi.js";
 
 // ------- Meta -------
 export async function apiMeta() {
@@ -1531,6 +696,44 @@ export async function apiGetBpmnXml(sessionId, options = {}) {
   return r.ok ? { ok: true, status: r.status, xml: r.text || "" } : r;
 }
 
+export async function apiGetBpmnVersions(sessionId, options = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const url = apiRoutes.sessions.bpmnVersions(sid, options);
+  const r = okOrError(await request(url));
+  if (!r.ok) return r;
+  const payload = r.data && typeof r.data === "object" ? r.data : {};
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  return {
+    ok: true,
+    status: r.status,
+    versions: items,
+    items,
+    count: Number(payload.count || items.length || 0),
+    session_id: String(payload.session_id || sid),
+  };
+}
+
+export async function apiRestoreBpmnVersion(sessionId, versionId) {
+  const sid = String(sessionId || "").trim();
+  const vid = String(versionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  if (!vid) return { ok: false, status: 0, error: "missing version_id" };
+  const r = okOrError(await request(apiRoutes.sessions.bpmnRestore(sid, vid), { method: "POST", body: {} }));
+  if (!r.ok) return r;
+  const payload = r.data && typeof r.data === "object" ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    result: payload,
+    session_id: String(payload.session_id || sid),
+    bpmn_xml: String(payload.bpmn_xml || ""),
+    restored_version: payload.restored_version && typeof payload.restored_version === "object"
+      ? payload.restored_version
+      : {},
+  };
+}
+
 export async function apiPutBpmnXml(sessionId, xml, options = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
@@ -1538,6 +741,19 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
   const rev = Number(options?.rev);
   if (Number.isFinite(rev) && rev >= 0) {
     body.rev = rev;
+  }
+  const reason = String(options?.reason || "").trim().toLowerCase();
+  const sourceAction = (
+    reason === "import_bpmn"
+    || reason === "manual_save"
+    || reason === "publish_manual_save"
+  ) ? reason : "";
+  if (sourceAction) {
+    body.source_action = sourceAction;
+  }
+  if (sourceAction === "import_bpmn") {
+    const importNote = String(options?.importNote || "").trim();
+    if (importNote) body.import_note = importNote;
   }
   const headers = {};
   if (options?.ifMatch !== undefined && options?.ifMatch !== null) {

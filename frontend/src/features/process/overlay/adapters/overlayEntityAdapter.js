@@ -1,5 +1,8 @@
 import { OVERLAY_ENTITY_KINDS } from "../../drawio/domain/drawioEntityKinds.js";
 import {
+  describeDrawioAnchor,
+} from "../../drawio/drawioAnchors.js";
+import {
   deriveSelectedDrawioElementId,
   getDrawioElementById,
   getDrawioElements,
@@ -22,6 +25,23 @@ function toReadableLabel(raw) {
   return toText(row.label || row.text || row.name || row.title || row.id) || toText(row.id);
 }
 
+function buildDrawioAnchorUi(raw, options = {}) {
+  const row = asObject(raw);
+  const described = describeDrawioAnchor(row, {
+    validationDeferred: options.validationDeferred === true,
+  });
+  const anchor = asObject(row.anchor_v1);
+  return {
+    anchorStatus: described.status,
+    anchorStatusLabel: described.statusLabel,
+    anchorTargetId: described.targetId,
+    anchorRelation: toText(anchor.relation),
+    anchorIssueText: toText(described.issueText),
+    anchorRecoveryText: toText(described.recoveryText),
+    anchorCanJump: described.canJump === true,
+  };
+}
+
 export function buildOverlayEntityRows({
   drawioState,
   hybridLayerRenderRows,
@@ -42,7 +62,11 @@ export function buildOverlayEntityRows({
       entityId: id,
       label: toReadableLabel(row),
       subtitle: `${id}${toText(row.layer_id) ? ` · ${toText(row.layer_id)}` : ""}`,
+      layer_id: toText(row.layer_id),
       missing: false,
+      ...buildDrawioAnchorUi(row, {
+        validationDeferred: asObject(drawioState)._anchor_validation_deferred === true,
+      }),
     });
   });
   v2Elements.slice(0, 60).forEach((elementRaw) => {
@@ -123,7 +147,11 @@ export function buildOverlaySelectedEntity({
       entityId: canonicalDrawioId,
       entityIds: [canonicalDrawioId],
       label: toReadableLabel(row) || canonicalDrawioId,
+      layer_id: toText(row.layer_id),
       multi: false,
+      ...buildDrawioAnchorUi(row, {
+        validationDeferred: asObject(drawioState)._anchor_validation_deferred === true,
+      }),
     };
   }
 

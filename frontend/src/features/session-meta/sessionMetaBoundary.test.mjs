@@ -7,6 +7,7 @@ import { createSessionMetaConflictGuard } from "./guards/sessionMetaConflictGuar
 import {
   buildSessionMetaSnapshot,
   buildSessionMetaWriteEnvelope,
+  mergeSessionMetaForRead,
 } from "./write/sessionMetaMergePolicy.js";
 
 function asObject(value) {
@@ -20,10 +21,14 @@ function normalizeBpmnMeta(raw) {
     flow_meta: asObject(value.flow_meta),
     node_path_meta: asObject(value.node_path_meta),
     robot_meta_by_element_id: asObject(value.robot_meta_by_element_id),
+    camunda_extensions_by_element_id: asObject(value.camunda_extensions_by_element_id),
+    presentation_by_element_id: asObject(value.presentation_by_element_id),
     hybrid_layer_by_element_id: asObject(value.hybrid_layer_by_element_id),
     hybrid_v2: asObject(value.hybrid_v2),
     drawio: asObject(value.drawio),
     execution_plans: Array.isArray(value.execution_plans) ? value.execution_plans : [],
+    auto_pass_v1: asObject(value.auto_pass_v1),
+    session_companion_v1: asObject(value.session_companion_v1),
   };
 }
 
@@ -186,7 +191,15 @@ test("drawio-only session-meta snapshot preserves BPMN-owned branches in write e
         exec: { mode: "machine", action_key: "soup.reheat" },
       },
     },
+    presentation_by_element_id: {
+      Task_yes: { showPropertiesOverlay: true },
+    },
     execution_plans: [{ id: "plan_1", label: "Primary" }],
+    auto_pass_v1: { status: "done", graph_hash: "abc123" },
+    session_companion_v1: {
+      schema_version: "session_companion_v1",
+      save_state_v1: { status: "saved" },
+    },
     drawio: {
       enabled: true,
       doc_xml: "<mxfile>old</mxfile>",
@@ -222,11 +235,52 @@ test("drawio-only session-meta snapshot preserves BPMN-owned branches in write e
   assert.deepEqual(nextMeta.flow_meta, currentMeta.flow_meta);
   assert.deepEqual(nextMeta.node_path_meta, currentMeta.node_path_meta);
   assert.deepEqual(nextMeta.robot_meta_by_element_id, currentMeta.robot_meta_by_element_id);
+  assert.deepEqual(nextMeta.presentation_by_element_id, currentMeta.presentation_by_element_id);
   assert.deepEqual(nextMeta.execution_plans, currentMeta.execution_plans);
+  assert.deepEqual(nextMeta.auto_pass_v1, currentMeta.auto_pass_v1);
+  assert.deepEqual(nextMeta.session_companion_v1, currentMeta.session_companion_v1);
   assert.equal(String(envelope.bpmn_meta.drawio.svg_cache || ""), "<svg>next</svg>");
   assert.deepEqual(envelope.bpmn_meta.flow_meta, currentMeta.flow_meta);
   assert.deepEqual(envelope.bpmn_meta.node_path_meta, currentMeta.node_path_meta);
   assert.deepEqual(envelope.bpmn_meta.robot_meta_by_element_id, currentMeta.robot_meta_by_element_id);
+  assert.deepEqual(envelope.bpmn_meta.presentation_by_element_id, currentMeta.presentation_by_element_id);
   assert.deepEqual(envelope.bpmn_meta.execution_plans, currentMeta.execution_plans);
+  assert.deepEqual(envelope.bpmn_meta.auto_pass_v1, currentMeta.auto_pass_v1);
+  assert.deepEqual(envelope.bpmn_meta.session_companion_v1, currentMeta.session_companion_v1);
   assert.equal(Object.prototype.hasOwnProperty.call(envelope, "bpmn_xml"), false);
+});
+
+test("presentation overlay state survives server read merge after session patch hydrate", () => {
+  const currentMeta = normalizeBpmnMeta({
+    presentation_by_element_id: {
+      Task_1: { showPropertiesOverlay: true },
+    },
+    camunda_extensions_by_element_id: {
+      Task_1: {
+        properties: {
+          extensionProperties: [{ id: "p1", name: "ingredient", value: "Шампиньон отварной" }],
+        },
+      },
+    },
+  });
+
+  const merged = mergeSessionMetaForRead({
+    sessionMetaRaw: normalizeBpmnMeta({
+      version: 2,
+      presentation_by_element_id: {
+        Task_1: { showPropertiesOverlay: true },
+      },
+    }),
+    localMetaRaw: currentMeta,
+    normalizeBpmnMeta,
+    normalizeHybridLayerMap,
+    mergeHybridV2Doc,
+    mergeDrawioMeta,
+    preferServerOverlay: true,
+  });
+
+  assert.deepEqual(merged.presentation_by_element_id, {
+    Task_1: { showPropertiesOverlay: true },
+  });
+  assert.deepEqual(merged.camunda_extensions_by_element_id, currentMeta.camunda_extensions_by_element_id);
 });

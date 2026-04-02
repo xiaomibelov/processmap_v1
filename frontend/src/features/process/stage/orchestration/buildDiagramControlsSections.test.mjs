@@ -15,6 +15,7 @@ test("buildDiagramControlsSections splits controls view into explicit section gr
     openPathsFromDiagram: () => {},
     templatesMenuOpen: true,
     openReportsFromDiagram: () => {},
+    openDocFromDiagram: () => {},
     diagramActionOverflowOpen: true,
   };
   const sections = buildDiagramControlsSections(base);
@@ -23,6 +24,7 @@ test("buildDiagramControlsSections splits controls view into explicit section gr
   assert.equal(sections.topbar.tab, "diagram");
   assert.equal(sections.drawioLayers.drawioUiState.enabled, true);
   assert.equal(sections.playbackAutopass.playbackCanRun, true);
+  assert.equal(typeof sections.playbackAutopass.openDocFromDiagram, "function");
   assert.equal(sections.pathsQuality.diagramActionPathOpen, true);
   assert.equal(sections.reportsTemplatesProblems.templatesMenuOpen, true);
   assert.equal(sections.overflowModes.diagramActionOverflowOpen, true);

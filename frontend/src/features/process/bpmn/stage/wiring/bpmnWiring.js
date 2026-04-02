@@ -12,6 +12,52 @@ function resolveCtx(ctxBase) {
   return asObject(ctxBase);
 }
 
+function nowMs() {
+  try {
+    if (typeof performance !== "undefined" && typeof performance.now === "function") {
+      return performance.now();
+    }
+  } catch {
+  }
+  return Date.now();
+}
+
+function recordSetterPerf(metric, durationMs, detail = {}) {
+  try {
+    if (typeof window === "undefined") return;
+    const root = window.__FPC_BPMNWIRING_FANOUT_PERF__ || (window.__FPC_BPMNWIRING_FANOUT_PERF__ = {});
+    const slot = root[metric] || (root[metric] = {
+      count: 0,
+      totalMs: 0,
+      maxMs: 0,
+      skipped: 0,
+      lastSource: "",
+      lastReason: "",
+    });
+    if (detail.skipped) {
+      slot.skipped += 1;
+    } else {
+      slot.count += 1;
+      slot.totalMs += Number(durationMs || 0);
+      slot.maxMs = Math.max(slot.maxMs, Number(durationMs || 0));
+    }
+    slot.lastSource = String(detail.source || "");
+    slot.lastReason = String(detail.reason || "");
+  } catch {
+  }
+}
+
+function applyGuardedSetter(metric, setter, nextValue, previousValue, detail = {}) {
+  if (Object.is(nextValue, previousValue)) {
+    recordSetterPerf(metric, 0, { ...detail, skipped: true });
+    return previousValue;
+  }
+  const startedAt = nowMs();
+  setter?.(nextValue);
+  recordSetterPerf(metric, nowMs() - startedAt, detail);
+  return nextValue;
+}
+
 export function createBpmnWiring(ctxBase, deps = {}) {
   const createBpmnStore = deps.createBpmnStore || createBpmnStoreDefault;
   const createBpmnPersistence = deps.createBpmnPersistence || createBpmnPersistenceDefault;
@@ -19,6 +65,7 @@ export function createBpmnWiring(ctxBase, deps = {}) {
   const createBpmnRuntime = deps.createBpmnRuntime || createBpmnRuntimeDefault;
   const forceTaskResizeRulesModule = deps.forceTaskResizeRulesModule || null;
   const pmModdleDescriptor = deps.pmModdleDescriptor || null;
+  const camundaModdleDescriptor = deps.camundaModdleDescriptor || null;
 
   function ensureBpmnStore() {
     const ctx = resolveCtx(ctxBase);
@@ -39,18 +86,40 @@ export function createBpmnWiring(ctxBase, deps = {}) {
       } catch {
       }
     }
+    refs.bpmnStoreFanoutRef = refs.bpmnStoreFanoutRef || { current: null };
+    refs.bpmnStoreFanoutRef.current = {
+      xml: String(values.xml || ""),
+      xmlDraft: String(values.xmlDraft || values.draft?.bpmn_xml || values.xml || ""),
+      dirty: false,
+    };
     refs.bpmnStoreUnsubRef.current = store.subscribe((snapshot) => {
       if (!snapshot || typeof snapshot !== "object") return;
+      const liveCtx = resolveCtx(ctxBase);
+      const liveValues = asObject(liveCtx.values);
       const nextXml = String(snapshot.xml || "");
+      const nextDirty = !!snapshot.dirty;
+      const fanoutState = refs.bpmnStoreFanoutRef?.current || {
+        xml: "",
+        xmlDraft: "",
+        dirty: false,
+      };
+      const previousXml = String(liveValues.xml || fanoutState.xml || "");
+      const previousXmlDraft = String(liveValues.xmlDraft || liveValues.draft?.bpmn_xml || fanoutState.xmlDraft || "");
+      const previousDirty = typeof fanoutState.dirty === "boolean" ? fanoutState.dirty : false;
+      const perfDetail = {
+        source: String(snapshot.source || ""),
+        reason: String(snapshot.reason || ""),
+      };
       refs.lastStoreEventRef.current = {
         source: String(snapshot.source || ""),
         reason: String(snapshot.reason || ""),
         rev: Number(snapshot.rev || 0),
         hash: String(snapshot.hash || callbacks.fnv1aHex?.(nextXml) || ""),
       };
-      state.setXml?.(nextXml);
-      state.setXmlDraft?.(nextXml);
-      state.setXmlDirty?.(!!snapshot.dirty);
+      fanoutState.xml = applyGuardedSetter("setXml", state.setXml, nextXml, previousXml, perfDetail);
+      fanoutState.xmlDraft = applyGuardedSetter("setXmlDraft", state.setXmlDraft, nextXml, previousXmlDraft, perfDetail);
+      fanoutState.dirty = applyGuardedSetter("setXmlDirty", state.setXmlDirty, nextDirty, previousDirty, perfDetail);
+      refs.bpmnStoreFanoutRef.current = fanoutState;
       if (snapshot.reason === "setXml") {
         const count = callbacks.bumpSaveCounter?.("store_updated");
         callbacks.logBpmnTrace?.("STORE_UPDATED", nextXml, {
@@ -158,7 +227,10 @@ export function createBpmnWiring(ctxBase, deps = {}) {
       getCtorOptions: (runtimeMode) => {
         if (String(runtimeMode || "").toLowerCase() !== "modeler") return {};
         const additionalModules = forceTaskResizeRulesModule ? [forceTaskResizeRulesModule] : [];
-        const moddleExtensions = pmModdleDescriptor ? { pm: pmModdleDescriptor } : {};
+        const moddleExtensions = {
+          ...(pmModdleDescriptor ? { pm: pmModdleDescriptor } : {}),
+          ...(camundaModdleDescriptor ? { camunda: camundaModdleDescriptor } : {}),
+        };
         return {
           additionalModules,
           moddleExtensions,

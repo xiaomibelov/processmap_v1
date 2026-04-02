@@ -24,6 +24,9 @@ export default function useOverlayViewportSync({
   const getViewportMatrix = enabled && typeof source.getViewportMatrix === "function"
     ? source.getViewportMatrix
     : (() => IDENTITY_MATRIX);
+  const subscribeViewboxChanging = typeof source.subscribeViewboxChanging === "function"
+    ? source.subscribeViewboxChanging
+    : (() => () => {});
 
   return useMemo(() => ({
     viewbox,
@@ -35,6 +38,7 @@ export default function useOverlayViewportSync({
     hybridViewportMatrixRef: source.matrixRef,
     subscribeOverlayViewportMatrix: subscribeViewportMatrix,
     getOverlayViewportMatrix: getViewportMatrix,
+    subscribeViewboxChanging,
     localToDiagram: source.localToDiagram,
     clientToDiagram: source.clientToDiagram,
     screenToDiagram: source.screenToDiagram,
@@ -52,6 +56,7 @@ export default function useOverlayViewportSync({
     source.screenToDiagram,
     getViewportMatrix,
     subscribeViewportMatrix,
+    subscribeViewboxChanging,
     viewbox,
     viewportMatrix,
     viewportSize,

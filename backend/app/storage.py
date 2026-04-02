@@ -45,6 +45,8 @@ _ORG_FULL_ACCESS_ROLES = {"org_owner", "org_admin", "auditor"}
 _PROJECT_MEMBER_ROLES = {"project_manager", "editor", "viewer"}
 _ORG_MEMBER_ROLES = {"org_owner", "org_admin", "project_manager", "editor", "viewer", "org_viewer", "auditor"}
 _ORG_INVITE_ROLES = {"org_admin", "project_manager", "editor", "viewer", "org_viewer", "auditor"}
+_GIT_MIRROR_PROVIDERS = {"github", "gitlab"}
+_GIT_MIRROR_HEALTH_STATUSES = {"unknown", "valid", "invalid"}
 _PG_POOL_LOCK = threading.RLock()
 _PG_POOL: Any = None
 
@@ -403,6 +405,51 @@ def _column_exists(con: Any, table: str, column: str) -> bool:
     return False
 
 
+def _normalize_git_mirror_provider(value: Any) -> str:
+    provider = str(value or "").strip().lower()
+    return provider if provider in _GIT_MIRROR_PROVIDERS else ""
+
+
+def _normalize_git_mirror_health_status(value: Any) -> str:
+    status = str(value or "").strip().lower()
+    return status if status in _GIT_MIRROR_HEALTH_STATUSES else "unknown"
+
+
+def _opt_text(value: Any) -> Optional[str]:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _org_git_mirror_payload(row: Any) -> Dict[str, Any]:
+    enabled_raw = _row_value(row, "git_mirror_enabled")
+    try:
+        enabled = bool(int(enabled_raw or 0))
+    except Exception:
+        enabled = bool(enabled_raw)
+    provider = _normalize_git_mirror_provider(_row_value(row, "git_provider"))
+    repository = str(_row_value(row, "git_repository") or "").strip()
+    branch = str(_row_value(row, "git_branch") or "").strip()
+    base_path = str(_row_value(row, "git_base_path") or "").strip()
+    health_status = _normalize_git_mirror_health_status(_row_value(row, "git_health_status"))
+    health_message = str(_row_value(row, "git_health_message") or "").strip()
+    try:
+        updated_at = int(_row_value(row, "git_updated_at") or 0)
+    except Exception:
+        updated_at = 0
+    updated_by = str(_row_value(row, "git_updated_by") or "").strip()
+    return {
+        "git_mirror_enabled": bool(enabled),
+        "git_provider": provider or None,
+        "git_repository": _opt_text(repository),
+        "git_branch": _opt_text(branch),
+        "git_base_path": _opt_text(base_path),
+        "git_health_status": health_status,
+        "git_health_message": _opt_text(health_message),
+        "git_updated_at": max(0, updated_at),
+        "git_updated_by": _opt_text(updated_by),
+    }
+
+
 def _ensure_schema() -> None:
     global _SCHEMA_READY, _SCHEMA_DB_FILE
     cfg = get_db_runtime_config()
@@ -467,6 +514,7 @@ def _ensure_schema() -> None:
                   bpmn_xml TEXT NOT NULL DEFAULT '',
                   bpmn_xml_version INTEGER NOT NULL DEFAULT 0,
                   bpmn_graph_fingerprint TEXT NOT NULL DEFAULT '',
+                  git_mirror_version_number INTEGER NOT NULL DEFAULT 0,
                   bpmn_meta_json TEXT NOT NULL DEFAULT '{}',
                   version INTEGER NOT NULL DEFAULT 0,
                   owner_user_id TEXT NOT NULL DEFAULT '',
@@ -482,11 +530,41 @@ def _ensure_schema() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id)")
             con.execute(
                 """
+                CREATE TABLE IF NOT EXISTS bpmn_versions (
+                  id TEXT PRIMARY KEY,
+                  session_id TEXT NOT NULL,
+                  org_id TEXT NOT NULL DEFAULT 'org_default',
+                  version_number INTEGER NOT NULL,
+                  bpmn_xml TEXT NOT NULL DEFAULT '',
+                  source_action TEXT NOT NULL DEFAULT '',
+                  import_note TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  created_by TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            con.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_bpmn_versions_session_version ON bpmn_versions(session_id, org_id, version_number)"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_bpmn_versions_session_created ON bpmn_versions(session_id, org_id, created_at DESC)"
+            )
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS orgs (
                   id TEXT PRIMARY KEY,
                   name TEXT NOT NULL,
                   created_at INTEGER NOT NULL DEFAULT 0,
-                  created_by TEXT NOT NULL DEFAULT ''
+                  created_by TEXT NOT NULL DEFAULT '',
+                  git_mirror_enabled INTEGER NOT NULL DEFAULT 0,
+                  git_provider TEXT NOT NULL DEFAULT '',
+                  git_repository TEXT NOT NULL DEFAULT '',
+                  git_branch TEXT NOT NULL DEFAULT '',
+                  git_base_path TEXT NOT NULL DEFAULT '',
+                  git_health_status TEXT NOT NULL DEFAULT 'unknown',
+                  git_health_message TEXT NOT NULL DEFAULT '',
+                  git_updated_at INTEGER NOT NULL DEFAULT 0,
+                  git_updated_by TEXT NOT NULL DEFAULT ''
                 )
                 """
             )
@@ -560,6 +638,86 @@ def _ensure_schema() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_template_folders_parent ON template_folders(parent_id)")
             con.execute(
                 """
+                CREATE TABLE IF NOT EXISTS org_property_dictionary_operations (
+                  id TEXT PRIMARY KEY,
+                  org_id TEXT NOT NULL,
+                  operation_key TEXT NOT NULL,
+                  operation_label TEXT NOT NULL DEFAULT '',
+                  is_active INTEGER NOT NULL DEFAULT 1,
+                  sort_order INTEGER NOT NULL DEFAULT 0,
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  created_by TEXT NOT NULL DEFAULT '',
+                  updated_by TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            con.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_org_prop_dict_ops_unique
+                ON org_property_dictionary_operations(org_id, operation_key)
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_org_prop_dict_ops_sort ON org_property_dictionary_operations(org_id, is_active, sort_order ASC, operation_key ASC)"
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS org_property_dictionary_defs (
+                  id TEXT PRIMARY KEY,
+                  org_id TEXT NOT NULL,
+                  operation_key TEXT NOT NULL,
+                  property_key TEXT NOT NULL,
+                  property_label TEXT NOT NULL DEFAULT '',
+                  input_mode TEXT NOT NULL DEFAULT 'autocomplete',
+                  allow_custom_value INTEGER NOT NULL DEFAULT 1,
+                  required INTEGER NOT NULL DEFAULT 0,
+                  is_active INTEGER NOT NULL DEFAULT 1,
+                  sort_order INTEGER NOT NULL DEFAULT 0,
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  created_by TEXT NOT NULL DEFAULT '',
+                  updated_by TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            con.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_org_prop_dict_defs_unique
+                ON org_property_dictionary_defs(org_id, operation_key, property_key)
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_org_prop_dict_defs_sort ON org_property_dictionary_defs(org_id, operation_key, is_active, sort_order ASC, property_key ASC)"
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS org_property_dictionary_values (
+                  id TEXT PRIMARY KEY,
+                  org_id TEXT NOT NULL,
+                  operation_key TEXT NOT NULL,
+                  property_key TEXT NOT NULL,
+                  option_value TEXT NOT NULL,
+                  is_active INTEGER NOT NULL DEFAULT 1,
+                  sort_order INTEGER NOT NULL DEFAULT 0,
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  created_by TEXT NOT NULL DEFAULT '',
+                  updated_by TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            con.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_org_prop_dict_values_unique
+                ON org_property_dictionary_values(org_id, operation_key, property_key, option_value)
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_org_prop_dict_values_sort ON org_property_dictionary_values(org_id, operation_key, property_key, is_active, sort_order ASC, option_value ASC)"
+            )
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS org_invites (
                   id TEXT PRIMARY KEY,
                   org_id TEXT NOT NULL,
@@ -616,6 +774,24 @@ def _ensure_schema() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_audit_session ON audit_log(session_id)")
             if not _column_exists(con, "projects", "org_id"):
                 con.execute("ALTER TABLE projects ADD COLUMN org_id TEXT NOT NULL DEFAULT 'org_default'")
+            if not _column_exists(con, "orgs", "git_mirror_enabled"):
+                con.execute("ALTER TABLE orgs ADD COLUMN git_mirror_enabled INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "orgs", "git_provider"):
+                con.execute("ALTER TABLE orgs ADD COLUMN git_provider TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "orgs", "git_repository"):
+                con.execute("ALTER TABLE orgs ADD COLUMN git_repository TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "orgs", "git_branch"):
+                con.execute("ALTER TABLE orgs ADD COLUMN git_branch TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "orgs", "git_base_path"):
+                con.execute("ALTER TABLE orgs ADD COLUMN git_base_path TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "orgs", "git_health_status"):
+                con.execute("ALTER TABLE orgs ADD COLUMN git_health_status TEXT NOT NULL DEFAULT 'unknown'")
+            if not _column_exists(con, "orgs", "git_health_message"):
+                con.execute("ALTER TABLE orgs ADD COLUMN git_health_message TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "orgs", "git_updated_at"):
+                con.execute("ALTER TABLE orgs ADD COLUMN git_updated_at INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "orgs", "git_updated_by"):
+                con.execute("ALTER TABLE orgs ADD COLUMN git_updated_by TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "templates", "template_type"):
                 con.execute("ALTER TABLE templates ADD COLUMN template_type TEXT NOT NULL DEFAULT 'bpmn_selection_v1'")
             if not _column_exists(con, "templates", "folder_id"):
@@ -633,6 +809,8 @@ def _ensure_schema() -> None:
                 con.execute("ALTER TABLE sessions ADD COLUMN created_by TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "sessions", "updated_by"):
                 con.execute("ALTER TABLE sessions ADD COLUMN updated_by TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "sessions", "git_mirror_version_number"):
+                con.execute("ALTER TABLE sessions ADD COLUMN git_mirror_version_number INTEGER NOT NULL DEFAULT 0")
             if not _column_exists(con, "org_invites", "team_name"):
                 con.execute("ALTER TABLE org_invites ADD COLUMN team_name TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "org_invites", "subgroup_name"):
@@ -1508,6 +1686,178 @@ class Storage:
             out.append(sess.model_dump())
         return out
 
+    def create_bpmn_version_snapshot(
+        self,
+        session_id: str,
+        *,
+        bpmn_xml: str,
+        source_action: str,
+        created_by: Optional[str] = None,
+        org_id: Optional[str] = None,
+        import_note: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        _ensure_schema()
+        sid = str(session_id or "").strip()
+        if not sid:
+            raise ValueError("session_id required")
+        xml = str(bpmn_xml or "")
+        if not xml.strip():
+            raise ValueError("bpmn_xml required")
+        action = str(source_action or "").strip().lower()
+        if not action:
+            raise ValueError("source_action required")
+        actor = str(created_by or "").strip()
+        note = str(import_note or "").strip()
+        now = _now_ts()
+
+        with _connect() as con:
+            sess_row = con.execute(
+                "SELECT org_id FROM sessions WHERE id = ? LIMIT 1",
+                [sid],
+            ).fetchone()
+            if not sess_row:
+                raise ValueError("session not found")
+            session_org = str(sess_row["org_id"] or "").strip() or _default_org_id()
+            scope_org = str(org_id or "").strip() or session_org
+            if scope_org != session_org:
+                raise ValueError("session belongs to another org")
+
+            row = con.execute(
+                """
+                SELECT COALESCE(MAX(version_number), 0) AS max_version
+                  FROM bpmn_versions
+                 WHERE session_id = ?
+                   AND org_id = ?
+                """,
+                [sid, scope_org],
+            ).fetchone()
+            next_version = int((row["max_version"] if row else 0) or 0) + 1
+            snapshot_id = uuid.uuid4().hex[:12]
+            con.execute(
+                """
+                INSERT INTO bpmn_versions (
+                  id, session_id, org_id, version_number, bpmn_xml,
+                  source_action, import_note, created_at, created_by
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [snapshot_id, sid, scope_org, next_version, xml, action, note, now, actor],
+            )
+            con.commit()
+
+        return {
+            "id": snapshot_id,
+            "session_id": sid,
+            "org_id": scope_org,
+            "version_number": next_version,
+            "source_action": action,
+            "created_at": now,
+            "created_by": actor,
+            "import_note": note,
+        }
+
+    def list_bpmn_versions(
+        self,
+        session_id: str,
+        *,
+        org_id: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        _ensure_schema()
+        sid = str(session_id or "").strip()
+        if not sid:
+            return []
+        scope_org = str(org_id or "").strip()
+        try:
+            lim = int(limit)
+        except Exception:
+            lim = 100
+        lim = min(max(lim, 1), 1000)
+
+        with _connect() as con:
+            sess_row = con.execute("SELECT org_id FROM sessions WHERE id = ? LIMIT 1", [sid]).fetchone()
+            if not sess_row:
+                return []
+            session_org = str(sess_row["org_id"] or "").strip() or _default_org_id()
+            oid = scope_org or session_org
+            if oid != session_org:
+                return []
+            rows = con.execute(
+                """
+                SELECT id, session_id, org_id, version_number, bpmn_xml, source_action, import_note, created_at, created_by
+                  FROM bpmn_versions
+                 WHERE session_id = ?
+                   AND org_id = ?
+                 ORDER BY version_number DESC
+                 LIMIT ?
+                """,
+                [sid, oid, lim],
+            ).fetchall()
+
+        out: List[Dict[str, Any]] = []
+        for row in rows:
+            out.append(
+                {
+                    "id": str(row["id"] or ""),
+                    "session_id": str(row["session_id"] or ""),
+                    "org_id": str(row["org_id"] or ""),
+                    "version_number": int(row["version_number"] or 0),
+                    "bpmn_xml": str(row["bpmn_xml"] or ""),
+                    "source_action": str(row["source_action"] or ""),
+                    "import_note": str(row["import_note"] or ""),
+                    "created_at": int(row["created_at"] or 0),
+                    "created_by": str(row["created_by"] or ""),
+                }
+            )
+        return out
+
+    def get_bpmn_version(
+        self,
+        session_id: str,
+        version_id: str,
+        *,
+        org_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        _ensure_schema()
+        sid = str(session_id or "").strip()
+        vid = str(version_id or "").strip()
+        if not sid or not vid:
+            return None
+        scope_org = str(org_id or "").strip()
+
+        with _connect() as con:
+            sess_row = con.execute("SELECT org_id FROM sessions WHERE id = ? LIMIT 1", [sid]).fetchone()
+            if not sess_row:
+                return None
+            session_org = str(sess_row["org_id"] or "").strip() or _default_org_id()
+            oid = scope_org or session_org
+            if oid != session_org:
+                return None
+            row = con.execute(
+                """
+                SELECT id, session_id, org_id, version_number, bpmn_xml, source_action, import_note, created_at, created_by
+                  FROM bpmn_versions
+                 WHERE session_id = ?
+                   AND org_id = ?
+                   AND id = ?
+                 LIMIT 1
+                """,
+                [sid, oid, vid],
+            ).fetchone()
+
+        if not row:
+            return None
+        return {
+            "id": str(row["id"] or ""),
+            "session_id": str(row["session_id"] or ""),
+            "org_id": str(row["org_id"] or ""),
+            "version_number": int(row["version_number"] or 0),
+            "bpmn_xml": str(row["bpmn_xml"] or ""),
+            "source_action": str(row["source_action"] or ""),
+            "import_note": str(row["import_note"] or ""),
+            "created_at": int(row["created_at"] or 0),
+            "created_by": str(row["created_by"] or ""),
+        }
+
 
 def gen_project_id() -> str:
     return uuid.uuid4().hex[:10]
@@ -1716,21 +2066,36 @@ def list_org_records() -> List[Dict[str, Any]]:
     with _connect() as con:
         rows = con.execute(
             """
-            SELECT id, name, created_at, created_by
+            SELECT
+              id,
+              name,
+              created_at,
+              created_by,
+              git_mirror_enabled,
+              git_provider,
+              git_repository,
+              git_branch,
+              git_base_path,
+              git_health_status,
+              git_health_message,
+              git_updated_at,
+              git_updated_by
               FROM orgs
              ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, lower(name) ASC, id ASC
             """,
             [_default_org_id()],
         ).fetchall()
-    return [
-        {
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        item = {
             "id": str(row["id"] or ""),
             "name": str(row["name"] or row["id"] or ""),
             "created_at": int(row["created_at"] or 0),
             "created_by": str(row["created_by"] or ""),
         }
-        for row in rows
-    ]
+        item.update(_org_git_mirror_payload(row))
+        out.append(item)
+    return out
 
 
 def read_user_org_memberships_fast(user_id: str, *, is_admin: Optional[bool] = None) -> List[Dict[str, Any]]:
@@ -1778,7 +2143,20 @@ def read_user_org_memberships_fast(user_id: str, *, is_admin: Optional[bool] = N
     with _connect() as con:
         rows = con.execute(
             """
-            SELECT m.org_id AS org_id, o.name AS org_name, m.role AS role, m.created_at AS created_at
+            SELECT
+              m.org_id AS org_id,
+              o.name AS org_name,
+              m.role AS role,
+              m.created_at AS created_at,
+              o.git_mirror_enabled AS git_mirror_enabled,
+              o.git_provider AS git_provider,
+              o.git_repository AS git_repository,
+              o.git_branch AS git_branch,
+              o.git_base_path AS git_base_path,
+              o.git_health_status AS git_health_status,
+              o.git_health_message AS git_health_message,
+              o.git_updated_at AS git_updated_at,
+              o.git_updated_by AS git_updated_by
               FROM org_memberships m
               JOIN orgs o ON o.id = m.org_id
              WHERE m.user_id = ?
@@ -1786,15 +2164,17 @@ def read_user_org_memberships_fast(user_id: str, *, is_admin: Optional[bool] = N
             """,
             [uid, _default_org_id()],
         ).fetchall()
-    return [
-        {
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        item = {
             "org_id": str(row["org_id"] or ""),
             "name": str(row["org_name"] or row["org_id"] or ""),
             "role": str(row["role"] or "org_viewer"),
             "created_at": int(row["created_at"] or 0),
         }
-        for row in rows
-    ]
+        item.update(_org_git_mirror_payload(row))
+        out.append(item)
+    return out
 
 
 def list_user_org_memberships(user_id: str, *, is_admin: Optional[bool] = None) -> List[Dict[str, Any]]:
@@ -1824,7 +2204,20 @@ def list_user_org_memberships(user_id: str, *, is_admin: Optional[bool] = None) 
             con.commit()
         rows = con.execute(
             """
-            SELECT m.org_id AS org_id, o.name AS org_name, m.role AS role, m.created_at AS created_at
+            SELECT
+              m.org_id AS org_id,
+              o.name AS org_name,
+              m.role AS role,
+              m.created_at AS created_at,
+              o.git_mirror_enabled AS git_mirror_enabled,
+              o.git_provider AS git_provider,
+              o.git_repository AS git_repository,
+              o.git_branch AS git_branch,
+              o.git_base_path AS git_base_path,
+              o.git_health_status AS git_health_status,
+              o.git_health_message AS git_health_message,
+              o.git_updated_at AS git_updated_at,
+              o.git_updated_by AS git_updated_by
               FROM org_memberships m
               JOIN orgs o ON o.id = m.org_id
                 WHERE m.user_id = ?
@@ -1834,14 +2227,14 @@ def list_user_org_memberships(user_id: str, *, is_admin: Optional[bool] = None) 
         ).fetchall()
     out: List[Dict[str, Any]] = []
     for row in rows:
-        out.append(
-            {
-                "org_id": str(row["org_id"] or ""),
-                "name": str(row["org_name"] or row["org_id"] or ""),
-                "role": str(row["role"] or "org_viewer"),
-                "created_at": int(row["created_at"] or 0),
-            }
-        )
+        item = {
+            "org_id": str(row["org_id"] or ""),
+            "name": str(row["org_name"] or row["org_id"] or ""),
+            "role": str(row["role"] or "org_viewer"),
+            "created_at": int(row["created_at"] or 0),
+        }
+        item.update(_org_git_mirror_payload(row))
+        out.append(item)
     if not bool(is_admin):
         return out
     membership_by_org = {str(item.get("org_id") or ""): item for item in out}
@@ -1855,6 +2248,15 @@ def list_user_org_memberships(user_id: str, *, is_admin: Optional[bool] = None) 
                 "name": str(row.get("name") or org_id),
                 "role": "platform_admin",
                 "created_at": int(row.get("created_at") or 0),
+                "git_mirror_enabled": bool(row.get("git_mirror_enabled")),
+                "git_provider": row.get("git_provider"),
+                "git_repository": row.get("git_repository"),
+                "git_branch": row.get("git_branch"),
+                "git_base_path": row.get("git_base_path"),
+                "git_health_status": row.get("git_health_status"),
+                "git_health_message": row.get("git_health_message"),
+                "git_updated_at": int(row.get("git_updated_at") or 0),
+                "git_updated_by": row.get("git_updated_by"),
             }
         )
     out.sort(key=lambda item: (0 if str(item.get("org_id") or "") == _default_org_id() else 1, str(item.get("name") or "").lower(), str(item.get("org_id") or "")))
@@ -2055,15 +2457,43 @@ def create_org_record(name: str, *, created_by: str, org_id: Optional[str] = Non
         )
         _ensure_workspace_record(con, oid, created_by=actor)
         con.commit()
-        row = con.execute("SELECT id, name, created_at, created_by FROM orgs WHERE id = ? LIMIT 1", [oid]).fetchone()
+        row = con.execute(
+            """
+            SELECT
+              id,
+              name,
+              created_at,
+              created_by,
+              git_mirror_enabled,
+              git_provider,
+              git_repository,
+              git_branch,
+              git_base_path,
+              git_health_status,
+              git_health_message,
+              git_updated_at,
+              git_updated_by
+            FROM orgs
+            WHERE id = ? LIMIT 1
+            """,
+            [oid],
+        ).fetchone()
     if not row:
-        return {"id": oid, "name": title, "created_at": now, "created_by": actor}
-    return {
+        return {
+            "id": oid,
+            "name": title,
+            "created_at": now,
+            "created_by": actor,
+            **_org_git_mirror_payload({}),
+        }
+    out = {
         "id": str(row["id"] or ""),
         "name": str(row["name"] or ""),
         "created_at": int(row["created_at"] or 0),
         "created_by": str(row["created_by"] or ""),
     }
+    out.update(_org_git_mirror_payload(row))
+    return out
 
 
 def rename_org_record(org_id: str, name: str) -> Dict[str, Any]:
@@ -2088,15 +2518,188 @@ def rename_org_record(org_id: str, name: str) -> Dict[str, Any]:
         con.commit()
         if int(cur.rowcount or 0) <= 0:
             raise ValueError("org not found")
-        row = con.execute("SELECT id, name, created_at, created_by FROM orgs WHERE id = ? LIMIT 1", [oid]).fetchone()
+        row = con.execute(
+            """
+            SELECT
+              id,
+              name,
+              created_at,
+              created_by,
+              git_mirror_enabled,
+              git_provider,
+              git_repository,
+              git_branch,
+              git_base_path,
+              git_health_status,
+              git_health_message,
+              git_updated_at,
+              git_updated_by
+            FROM orgs
+            WHERE id = ? LIMIT 1
+            """,
+            [oid],
+        ).fetchone()
     if not row:
         raise ValueError("org not found")
-    return {
+    out = {
         "id": str(row["id"] or ""),
         "name": str(row["name"] or ""),
         "created_at": int(row["created_at"] or 0),
         "created_by": str(row["created_by"] or ""),
     }
+    out.update(_org_git_mirror_payload(row))
+    return out
+
+
+def get_org_git_mirror_config(org_id: str) -> Dict[str, Any]:
+    _ensure_schema()
+    oid = str(org_id or "").strip()
+    if not oid:
+        raise ValueError("org_id required")
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT
+              id,
+              git_mirror_enabled,
+              git_provider,
+              git_repository,
+              git_branch,
+              git_base_path,
+              git_health_status,
+              git_health_message,
+              git_updated_at,
+              git_updated_by
+            FROM orgs
+            WHERE id = ? LIMIT 1
+            """,
+            [oid],
+        ).fetchone()
+    if not row:
+        raise ValueError("org not found")
+    out = {"org_id": str(row["id"] or oid)}
+    out.update(_org_git_mirror_payload(row))
+    return out
+
+
+def update_org_git_mirror_config(
+    org_id: str,
+    *,
+    git_mirror_enabled: bool,
+    git_provider: Any,
+    git_repository: Any,
+    git_branch: Any,
+    git_base_path: Any,
+    git_health_status: Any,
+    git_health_message: Any,
+    git_updated_at: Any = None,
+    git_updated_by: Any = "",
+) -> Dict[str, Any]:
+    _ensure_schema()
+    oid = str(org_id or "").strip()
+    if not oid:
+        raise ValueError("org_id required")
+    provider = _normalize_git_mirror_provider(git_provider)
+    repository = str(git_repository or "").strip()
+    branch = str(git_branch or "").strip()
+    base_path = str(git_base_path or "").strip()
+    health_status = _normalize_git_mirror_health_status(git_health_status)
+    health_message = str(git_health_message or "").strip()
+    updated_by = str(git_updated_by or "").strip()
+    try:
+        updated_at = int(git_updated_at or 0)
+    except Exception:
+        updated_at = 0
+    if updated_at <= 0:
+        updated_at = _now_ts()
+    with _connect() as con:
+        cur = con.execute(
+            """
+            UPDATE orgs
+               SET git_mirror_enabled = ?,
+                   git_provider = ?,
+                   git_repository = ?,
+                   git_branch = ?,
+                   git_base_path = ?,
+                   git_health_status = ?,
+                   git_health_message = ?,
+                   git_updated_at = ?,
+                   git_updated_by = ?
+             WHERE id = ?
+            """,
+            [
+                1 if bool(git_mirror_enabled) else 0,
+                provider,
+                repository,
+                branch,
+                base_path,
+                health_status,
+                health_message,
+                max(0, int(updated_at)),
+                updated_by,
+                oid,
+            ],
+        )
+        con.commit()
+        if int(cur.rowcount or 0) <= 0:
+            raise ValueError("org not found")
+    return get_org_git_mirror_config(oid)
+
+
+def get_current_mirror_version(session_id: str, *, org_id: str | None = None) -> int:
+    _ensure_schema()
+    sid = str(session_id or "").strip()
+    oid = _scope_org_id(org_id) or _default_org_id()
+    if not sid:
+        raise ValueError("session_id required")
+    with _connect() as con:
+        row = con.execute(
+            "SELECT git_mirror_version_number FROM sessions WHERE id = ? AND org_id = ? LIMIT 1",
+            [sid, oid],
+        ).fetchone()
+    if not row:
+        raise ValueError("session not found")
+    try:
+        value = int(row["git_mirror_version_number"] or 0)
+    except Exception:
+        value = 0
+    return max(0, value)
+
+
+def increment_and_get_next_version(session_id: str, *, org_id: str | None = None) -> int:
+    _ensure_schema()
+    sid = str(session_id or "").strip()
+    oid = _scope_org_id(org_id) or _default_org_id()
+    if not sid:
+        raise ValueError("session_id required")
+    with _connect() as con:
+        cur = con.execute(
+            """
+            UPDATE sessions
+               SET git_mirror_version_number = CASE
+                   WHEN COALESCE(git_mirror_version_number, 0) < 0 THEN 1
+                   ELSE COALESCE(git_mirror_version_number, 0) + 1
+               END
+             WHERE id = ?
+               AND org_id = ?
+            """,
+            [sid, oid],
+        )
+        if int(cur.rowcount or 0) <= 0:
+            con.rollback()
+            raise ValueError("session not found")
+        row = con.execute(
+            "SELECT git_mirror_version_number FROM sessions WHERE id = ? AND org_id = ? LIMIT 1",
+            [sid, oid],
+        ).fetchone()
+        con.commit()
+    if not row:
+        raise ValueError("session not found")
+    try:
+        value = int(row["git_mirror_version_number"] or 0)
+    except Exception:
+        value = 0
+    return max(0, value)
 
 
 def _normalize_project_membership_role(raw: Any) -> str:
@@ -2839,6 +3442,582 @@ def delete_template(template_id: str) -> bool:
     return int(cur.rowcount or 0) > 0
 
 
+def _normalize_org_property_dictionary_key(value: Any) -> str:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return ""
+    normalized = re.sub(r"\s+", "_", raw)
+    normalized = re.sub(r"[^a-z0-9_-]+", "_", normalized)
+    normalized = re.sub(r"_+", "_", normalized).strip("_")
+    return normalized[:120]
+
+
+def _normalize_org_property_dictionary_label(value: Any, fallback: str = "") -> str:
+    text = str(value or "").strip()
+    if text:
+        return text[:200]
+    return str(fallback or "").strip()[:200]
+
+
+def _normalize_org_property_dictionary_input_mode(value: Any) -> str:
+    mode = str(value or "").strip().lower()
+    if mode == "free_text":
+        return "free_text"
+    return "autocomplete"
+
+
+def _normalize_org_property_dictionary_bool(value: Any, *, default: bool = True) -> int:
+    if value is None:
+        return 1 if default else 0
+    if isinstance(value, bool):
+        return 1 if value else 0
+    text = str(value or "").strip().lower()
+    if text in {"0", "false", "no", "off"}:
+        return 0
+    if text in {"1", "true", "yes", "on"}:
+        return 1
+    return 1 if default else 0
+
+
+def _org_property_dictionary_operation_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    return {
+        "id": str(row["id"] or ""),
+        "organizationId": str(row["org_id"] or ""),
+        "org_id": str(row["org_id"] or ""),
+        "operationKey": str(row["operation_key"] or ""),
+        "operation_key": str(row["operation_key"] or ""),
+        "operationLabel": str(row["operation_label"] or ""),
+        "operation_label": str(row["operation_label"] or ""),
+        "isActive": bool(int(row["is_active"] or 0)),
+        "is_active": bool(int(row["is_active"] or 0)),
+        "sortOrder": int(row["sort_order"] or 0),
+        "sort_order": int(row["sort_order"] or 0),
+        "created_at": int(row["created_at"] or 0),
+        "updated_at": int(row["updated_at"] or 0),
+        "created_by": str(row["created_by"] or ""),
+        "updated_by": str(row["updated_by"] or ""),
+    }
+
+
+def _org_property_dictionary_definition_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    return {
+        "id": str(row["id"] or ""),
+        "organizationId": str(row["org_id"] or ""),
+        "org_id": str(row["org_id"] or ""),
+        "operationKey": str(row["operation_key"] or ""),
+        "operation_key": str(row["operation_key"] or ""),
+        "propertyKey": str(row["property_key"] or ""),
+        "property_key": str(row["property_key"] or ""),
+        "propertyLabel": str(row["property_label"] or ""),
+        "property_label": str(row["property_label"] or ""),
+        "inputMode": _normalize_org_property_dictionary_input_mode(row["input_mode"]),
+        "input_mode": _normalize_org_property_dictionary_input_mode(row["input_mode"]),
+        "allowCustomValue": bool(int(row["allow_custom_value"] or 0)),
+        "allow_custom_value": bool(int(row["allow_custom_value"] or 0)),
+        "required": bool(int(row["required"] or 0)),
+        "isActive": bool(int(row["is_active"] or 0)),
+        "is_active": bool(int(row["is_active"] or 0)),
+        "sortOrder": int(row["sort_order"] or 0),
+        "sort_order": int(row["sort_order"] or 0),
+        "created_at": int(row["created_at"] or 0),
+        "updated_at": int(row["updated_at"] or 0),
+        "created_by": str(row["created_by"] or ""),
+        "updated_by": str(row["updated_by"] or ""),
+    }
+
+
+def _org_property_dictionary_value_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    return {
+        "id": str(row["id"] or ""),
+        "organizationId": str(row["org_id"] or ""),
+        "org_id": str(row["org_id"] or ""),
+        "operationKey": str(row["operation_key"] or ""),
+        "operation_key": str(row["operation_key"] or ""),
+        "propertyKey": str(row["property_key"] or ""),
+        "property_key": str(row["property_key"] or ""),
+        "optionValue": str(row["option_value"] or ""),
+        "option_value": str(row["option_value"] or ""),
+        "isActive": bool(int(row["is_active"] or 0)),
+        "is_active": bool(int(row["is_active"] or 0)),
+        "sortOrder": int(row["sort_order"] or 0),
+        "sort_order": int(row["sort_order"] or 0),
+        "created_at": int(row["created_at"] or 0),
+        "updated_at": int(row["updated_at"] or 0),
+        "created_by": str(row["created_by"] or ""),
+        "updated_by": str(row["updated_by"] or ""),
+    }
+
+
+def list_org_property_dictionary_operations(
+    org_id: str,
+    *,
+    include_inactive: bool = True,
+) -> List[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    if not oid:
+        return []
+    _ensure_schema()
+    clauses = ["org_id = ?"]
+    params: List[Any] = [oid]
+    if not include_inactive:
+        clauses.append("is_active = 1")
+    with _connect() as con:
+        rows = con.execute(
+            f"""
+            SELECT id, org_id, operation_key, operation_label, is_active, sort_order, created_at, updated_at, created_by, updated_by
+              FROM org_property_dictionary_operations
+             WHERE {' AND '.join(clauses)}
+             ORDER BY sort_order ASC, lower(operation_label) ASC, lower(operation_key) ASC, id ASC
+            """,
+            params,
+        ).fetchall()
+    return [_org_property_dictionary_operation_row_to_dict(row) for row in rows]
+
+
+def get_org_property_dictionary_operation(org_id: str, operation_key: str) -> Optional[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    op_key = _normalize_org_property_dictionary_key(operation_key)
+    if not oid or not op_key:
+        return None
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT id, org_id, operation_key, operation_label, is_active, sort_order, created_at, updated_at, created_by, updated_by
+              FROM org_property_dictionary_operations
+             WHERE org_id = ? AND operation_key = ?
+             LIMIT 1
+            """,
+            [oid, op_key],
+        ).fetchone()
+    return _org_property_dictionary_operation_row_to_dict(row) if row else None
+
+
+def upsert_org_property_dictionary_operation(
+    org_id: str,
+    *,
+    operation_key: str,
+    operation_label: str = "",
+    is_active: Any = True,
+    sort_order: Any = 0,
+    actor_user_id: str = "",
+) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    op_key = _normalize_org_property_dictionary_key(operation_key)
+    if not oid:
+        raise ValueError("org_id required")
+    if not op_key:
+        raise ValueError("operation_key required")
+    label = _normalize_org_property_dictionary_label(operation_label, fallback=op_key)
+    now = _now_ts()
+    op_id = f"opd_{uuid.uuid4().hex[:12]}"
+    _ensure_schema()
+    with _connect() as con:
+        existing = con.execute(
+            "SELECT id, created_at, created_by FROM org_property_dictionary_operations WHERE org_id = ? AND operation_key = ? LIMIT 1",
+            [oid, op_key],
+        ).fetchone()
+        con.execute(
+            """
+            INSERT INTO org_property_dictionary_operations (
+              id, org_id, operation_key, operation_label, is_active, sort_order, created_at, updated_at, created_by, updated_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(org_id, operation_key) DO UPDATE SET
+              operation_label = excluded.operation_label,
+              is_active = excluded.is_active,
+              sort_order = excluded.sort_order,
+              updated_at = excluded.updated_at,
+              updated_by = excluded.updated_by
+            """,
+            [
+                str(existing["id"] if existing else op_id),
+                oid,
+                op_key,
+                label,
+                _normalize_org_property_dictionary_bool(is_active, default=True),
+                int(sort_order or 0),
+                int(existing["created_at"] or now) if existing else now,
+                now,
+                str(existing["created_by"] or actor_user_id or "") if existing else str(actor_user_id or ""),
+                str(actor_user_id or ""),
+            ],
+        )
+        con.commit()
+    out = get_org_property_dictionary_operation(oid, op_key)
+    if not out:
+        raise ValueError("operation_upsert_failed")
+    return out
+
+
+def list_org_property_dictionary_definitions(
+    org_id: str,
+    operation_key: str,
+    *,
+    include_inactive: bool = True,
+) -> List[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    op_key = _normalize_org_property_dictionary_key(operation_key)
+    if not oid or not op_key:
+        return []
+    _ensure_schema()
+    clauses = ["org_id = ?", "operation_key = ?"]
+    params: List[Any] = [oid, op_key]
+    if not include_inactive:
+        clauses.append("is_active = 1")
+    with _connect() as con:
+        rows = con.execute(
+            f"""
+            SELECT id, org_id, operation_key, property_key, property_label, input_mode, allow_custom_value, required, is_active, sort_order, created_at, updated_at, created_by, updated_by
+              FROM org_property_dictionary_defs
+             WHERE {' AND '.join(clauses)}
+             ORDER BY sort_order ASC, lower(property_label) ASC, lower(property_key) ASC, id ASC
+            """,
+            params,
+        ).fetchall()
+    return [_org_property_dictionary_definition_row_to_dict(row) for row in rows]
+
+
+def get_org_property_dictionary_definition(org_id: str, operation_key: str, property_key: str) -> Optional[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    op_key = _normalize_org_property_dictionary_key(operation_key)
+    prop_key = _normalize_org_property_dictionary_key(property_key)
+    if not oid or not op_key or not prop_key:
+        return None
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT id, org_id, operation_key, property_key, property_label, input_mode, allow_custom_value, required, is_active, sort_order, created_at, updated_at, created_by, updated_by
+              FROM org_property_dictionary_defs
+             WHERE org_id = ? AND operation_key = ? AND property_key = ?
+             LIMIT 1
+            """,
+            [oid, op_key, prop_key],
+        ).fetchone()
+    return _org_property_dictionary_definition_row_to_dict(row) if row else None
+
+
+def upsert_org_property_dictionary_definition(
+    org_id: str,
+    *,
+    operation_key: str,
+    property_key: str,
+    property_label: str = "",
+    input_mode: Any = "autocomplete",
+    allow_custom_value: Any = True,
+    required: Any = False,
+    is_active: Any = True,
+    sort_order: Any = 0,
+    actor_user_id: str = "",
+) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    op_key = _normalize_org_property_dictionary_key(operation_key)
+    prop_key = _normalize_org_property_dictionary_key(property_key)
+    if not oid:
+        raise ValueError("org_id required")
+    if not op_key:
+        raise ValueError("operation_key required")
+    if not prop_key:
+        raise ValueError("property_key required")
+    label = _normalize_org_property_dictionary_label(property_label, fallback=prop_key)
+    now = _now_ts()
+    prop_id = f"opddef_{uuid.uuid4().hex[:12]}"
+    _ensure_schema()
+    with _connect() as con:
+        existing = con.execute(
+            """
+            SELECT id, created_at, created_by
+              FROM org_property_dictionary_defs
+             WHERE org_id = ? AND operation_key = ? AND property_key = ?
+             LIMIT 1
+            """,
+            [oid, op_key, prop_key],
+        ).fetchone()
+        con.execute(
+            """
+            INSERT INTO org_property_dictionary_defs (
+              id, org_id, operation_key, property_key, property_label, input_mode, allow_custom_value, required, is_active, sort_order, created_at, updated_at, created_by, updated_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(org_id, operation_key, property_key) DO UPDATE SET
+              property_label = excluded.property_label,
+              input_mode = excluded.input_mode,
+              allow_custom_value = excluded.allow_custom_value,
+              required = excluded.required,
+              is_active = excluded.is_active,
+              sort_order = excluded.sort_order,
+              updated_at = excluded.updated_at,
+              updated_by = excluded.updated_by
+            """,
+            [
+                str(existing["id"] if existing else prop_id),
+                oid,
+                op_key,
+                prop_key,
+                label,
+                _normalize_org_property_dictionary_input_mode(input_mode),
+                _normalize_org_property_dictionary_bool(allow_custom_value, default=True),
+                _normalize_org_property_dictionary_bool(required, default=False),
+                _normalize_org_property_dictionary_bool(is_active, default=True),
+                int(sort_order or 0),
+                int(existing["created_at"] or now) if existing else now,
+                now,
+                str(existing["created_by"] or actor_user_id or "") if existing else str(actor_user_id or ""),
+                str(actor_user_id or ""),
+            ],
+        )
+        con.commit()
+    out = get_org_property_dictionary_definition(oid, op_key, prop_key)
+    if not out:
+        raise ValueError("definition_upsert_failed")
+    return out
+
+
+def delete_org_property_dictionary_definition(org_id: str, operation_key: str, property_key: str) -> bool:
+    oid = str(org_id or "").strip()
+    op_key = _normalize_org_property_dictionary_key(operation_key)
+    prop_key = _normalize_org_property_dictionary_key(property_key)
+    if not oid or not op_key or not prop_key:
+        return False
+    _ensure_schema()
+    with _connect() as con:
+        con.execute(
+            "DELETE FROM org_property_dictionary_values WHERE org_id = ? AND operation_key = ? AND property_key = ?",
+            [oid, op_key, prop_key],
+        )
+        cur = con.execute(
+            "DELETE FROM org_property_dictionary_defs WHERE org_id = ? AND operation_key = ? AND property_key = ?",
+            [oid, op_key, prop_key],
+        )
+        con.commit()
+    return int(cur.rowcount or 0) > 0
+
+
+def list_org_property_dictionary_values(
+    org_id: str,
+    operation_key: str,
+    property_key: str,
+    *,
+    include_inactive: bool = True,
+) -> List[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    op_key = _normalize_org_property_dictionary_key(operation_key)
+    prop_key = _normalize_org_property_dictionary_key(property_key)
+    if not oid or not op_key or not prop_key:
+        return []
+    _ensure_schema()
+    clauses = ["org_id = ?", "operation_key = ?", "property_key = ?"]
+    params: List[Any] = [oid, op_key, prop_key]
+    if not include_inactive:
+        clauses.append("is_active = 1")
+    with _connect() as con:
+        rows = con.execute(
+            f"""
+            SELECT id, org_id, operation_key, property_key, option_value, is_active, sort_order, created_at, updated_at, created_by, updated_by
+              FROM org_property_dictionary_values
+             WHERE {' AND '.join(clauses)}
+             ORDER BY sort_order ASC, lower(option_value) ASC, id ASC
+            """,
+            params,
+        ).fetchall()
+    return [_org_property_dictionary_value_row_to_dict(row) for row in rows]
+
+
+def get_org_property_dictionary_value_by_id(org_id: str, option_id: str) -> Optional[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    option_row_id = str(option_id or "").strip()
+    if not oid or not option_row_id:
+        return None
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT id, org_id, operation_key, property_key, option_value, is_active, sort_order, created_at, updated_at, created_by, updated_by
+              FROM org_property_dictionary_values
+             WHERE org_id = ? AND id = ?
+             LIMIT 1
+            """,
+            [oid, option_row_id],
+        ).fetchone()
+    return _org_property_dictionary_value_row_to_dict(row) if row else None
+
+
+def upsert_org_property_dictionary_value(
+    org_id: str,
+    *,
+    operation_key: str,
+    property_key: str,
+    option_value: str,
+    is_active: Any = True,
+    sort_order: Any = 0,
+    actor_user_id: str = "",
+) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    op_key = _normalize_org_property_dictionary_key(operation_key)
+    prop_key = _normalize_org_property_dictionary_key(property_key)
+    opt_value = str(option_value or "").strip()
+    if not oid:
+        raise ValueError("org_id required")
+    if not op_key:
+        raise ValueError("operation_key required")
+    if not prop_key:
+        raise ValueError("property_key required")
+    if not opt_value:
+        raise ValueError("option_value required")
+    now = _now_ts()
+    value_id = f"opdval_{uuid.uuid4().hex[:12]}"
+    _ensure_schema()
+    with _connect() as con:
+        existing = con.execute(
+            """
+            SELECT id, created_at, created_by
+              FROM org_property_dictionary_values
+             WHERE org_id = ? AND operation_key = ? AND property_key = ? AND option_value = ?
+             LIMIT 1
+            """,
+            [oid, op_key, prop_key, opt_value],
+        ).fetchone()
+        con.execute(
+            """
+            INSERT INTO org_property_dictionary_values (
+              id, org_id, operation_key, property_key, option_value, is_active, sort_order, created_at, updated_at, created_by, updated_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(org_id, operation_key, property_key, option_value) DO UPDATE SET
+              is_active = excluded.is_active,
+              sort_order = excluded.sort_order,
+              updated_at = excluded.updated_at,
+              updated_by = excluded.updated_by
+            """,
+            [
+                str(existing["id"] if existing else value_id),
+                oid,
+                op_key,
+                prop_key,
+                opt_value,
+                _normalize_org_property_dictionary_bool(is_active, default=True),
+                int(sort_order or 0),
+                int(existing["created_at"] or now) if existing else now,
+                now,
+                str(existing["created_by"] or actor_user_id or "") if existing else str(actor_user_id or ""),
+                str(actor_user_id or ""),
+            ],
+        )
+        con.commit()
+    out = None
+    values = list_org_property_dictionary_values(oid, op_key, prop_key, include_inactive=True)
+    for item in values:
+        if str(item.get("option_value") or "") == opt_value:
+            out = item
+            break
+    if not out:
+        raise ValueError("value_upsert_failed")
+    return out
+
+
+def update_org_property_dictionary_value(
+    org_id: str,
+    option_id: str,
+    *,
+    option_value: Optional[str] = None,
+    is_active: Any = None,
+    sort_order: Any = None,
+    actor_user_id: str = "",
+) -> Optional[Dict[str, Any]]:
+    current = get_org_property_dictionary_value_by_id(org_id, option_id)
+    if not current:
+        return None
+    oid = str(current.get("org_id") or "")
+    op_key = str(current.get("operation_key") or "")
+    prop_key = str(current.get("property_key") or "")
+    next_value = str(option_value if option_value is not None else current.get("option_value") or "").strip()
+    if not next_value:
+        raise ValueError("option_value required")
+    next_sort_order = int(sort_order if sort_order is not None else current.get("sort_order") or 0)
+    next_is_active = (
+        _normalize_org_property_dictionary_bool(is_active, default=bool(current.get("is_active")))
+        if is_active is not None
+        else (1 if bool(current.get("is_active")) else 0)
+    )
+    now = _now_ts()
+    _ensure_schema()
+    with _connect() as con:
+        conflict = con.execute(
+            """
+            SELECT id
+              FROM org_property_dictionary_values
+             WHERE org_id = ? AND operation_key = ? AND property_key = ? AND option_value = ? AND id != ?
+             LIMIT 1
+            """,
+            [oid, op_key, prop_key, next_value, str(option_id or "").strip()],
+        ).fetchone()
+        if conflict:
+            raise ValueError("option_value_exists")
+        con.execute(
+            """
+            UPDATE org_property_dictionary_values
+               SET option_value = ?,
+                   is_active = ?,
+                   sort_order = ?,
+                   updated_at = ?,
+                   updated_by = ?
+             WHERE org_id = ? AND id = ?
+            """,
+            [next_value, next_is_active, next_sort_order, now, str(actor_user_id or ""), oid, str(option_id or "").strip()],
+        )
+        con.commit()
+    return get_org_property_dictionary_value_by_id(oid, option_id)
+
+
+def delete_org_property_dictionary_value(org_id: str, option_id: str) -> bool:
+    oid = str(org_id or "").strip()
+    option_row_id = str(option_id or "").strip()
+    if not oid or not option_row_id:
+        return False
+    _ensure_schema()
+    with _connect() as con:
+        cur = con.execute(
+            "DELETE FROM org_property_dictionary_values WHERE org_id = ? AND id = ?",
+            [oid, option_row_id],
+        )
+        con.commit()
+    return int(cur.rowcount or 0) > 0
+
+
+def get_org_property_dictionary_bundle(
+    org_id: str,
+    operation_key: str,
+    *,
+    include_inactive: bool = False,
+) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    op_key = _normalize_org_property_dictionary_key(operation_key)
+    operation = get_org_property_dictionary_operation(oid, op_key)
+    definitions = list_org_property_dictionary_definitions(oid, op_key, include_inactive=include_inactive)
+    values_by_property: Dict[str, List[Dict[str, Any]]] = {}
+    for definition in definitions:
+        property_key = str(definition.get("property_key") or "")
+        values_by_property[property_key] = list_org_property_dictionary_values(
+            oid,
+            op_key,
+            property_key,
+            include_inactive=include_inactive,
+        )
+    properties = []
+    for definition in definitions:
+        property_key = str(definition.get("property_key") or "")
+        properties.append({
+            **definition,
+            "options": values_by_property.get(property_key, []),
+        })
+    return {
+        "org_id": oid,
+        "organizationId": oid,
+        "operation_key": op_key,
+        "operationKey": op_key,
+        "operation": operation,
+        "properties": properties,
+    }
+
+
 def list_org_invites(
     org_id: str,
     *,
@@ -2881,6 +4060,8 @@ def create_org_invite(
     subgroup_name: str = "",
     invite_comment: str = "",
     ttl_days: int = 7,
+    regenerate: bool = False,
+    activate_now: bool = True,
 ) -> Dict[str, Any]:
     oid = str(org_id or "").strip()
     em = _normalize_email(email)
@@ -2903,6 +4084,7 @@ def create_org_invite(
     token = secrets.token_urlsafe(24)
     token_hash = _hash_invite_token(token)
     _ensure_schema()
+    activate_immediately = bool(activate_now)
     with _connect() as con:
         con.execute(
             """
@@ -2915,13 +4097,25 @@ def create_org_invite(
             """,
             [now, oid, now],
         )
+        if bool(regenerate) and activate_immediately:
+            con.execute(
+                """
+                UPDATE org_invites
+                   SET revoked_at = ?, revoked_by = ?
+                 WHERE org_id = ?
+                   AND email = ?
+                   AND accepted_at IS NULL
+                   AND revoked_at IS NULL
+                """,
+                [now, actor or "system_regenerate", oid, em],
+            )
         try:
             con.execute(
                 """
                 INSERT INTO org_invites (
                   id, org_id, email, role, full_name, job_title, team_name, subgroup_name, invite_comment, invite_key, token_hash, expires_at, created_at, created_by,
                   used_at, used_by_user_id, accepted_at, accepted_by, revoked_at, revoked_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)
                 """,
                 [
                     invite_id,
@@ -2938,6 +4132,8 @@ def create_org_invite(
                     expires_at,
                     now,
                     actor,
+                    None if activate_immediately else now,
+                    None if activate_immediately else "system_regenerate_pending",
                 ],
             )
         except Exception as exc:
@@ -2981,6 +4177,89 @@ def delete_org_invite(org_id: str, invite_id: str) -> bool:
         )
         con.commit()
         return int(cur.rowcount or 0) > 0
+
+
+def get_org_invite_by_id(org_id: str, invite_id: str) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    iid = str(invite_id or "").strip()
+    if not oid or not iid:
+        return {}
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
+                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+              FROM org_invites i
+              LEFT JOIN orgs o ON o.id = i.org_id
+             WHERE i.org_id = ? AND i.id = ?
+             LIMIT 1
+            """,
+            [oid, iid],
+        ).fetchone()
+    if not row:
+        return {}
+    return _invite_row_to_dict(row)
+
+
+def promote_regenerated_org_invite(
+    org_id: str,
+    email: str,
+    invite_id: str,
+    *,
+    actor: str,
+) -> bool:
+    oid = str(org_id or "").strip()
+    em = _normalize_email(email)
+    iid = str(invite_id or "").strip()
+    who = str(actor or "").strip() or "system_regenerate"
+    if not oid or not em or not iid:
+        return False
+    now = _now_ts()
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT id
+              FROM org_invites
+             WHERE org_id = ?
+               AND id = ?
+               AND email = ?
+               AND accepted_at IS NULL
+               AND used_at IS NULL
+               AND revoked_by = 'system_regenerate_pending'
+             LIMIT 1
+            """,
+            [oid, iid, em],
+        ).fetchone()
+        if not row:
+            return False
+        con.execute(
+            """
+            UPDATE org_invites
+               SET revoked_at = ?, revoked_by = ?
+             WHERE org_id = ?
+               AND email = ?
+               AND id <> ?
+               AND accepted_at IS NULL
+               AND revoked_at IS NULL
+            """,
+            [now, who, oid, em, iid],
+        )
+        cur = con.execute(
+            """
+            UPDATE org_invites
+               SET revoked_at = NULL, revoked_by = NULL
+             WHERE org_id = ?
+               AND id = ?
+               AND email = ?
+               AND accepted_at IS NULL
+               AND used_at IS NULL
+            """,
+            [oid, iid, em],
+        )
+        con.commit()
+    return int(cur.rowcount or 0) > 0
 
 
 def preview_org_invite(
@@ -3259,21 +4538,19 @@ def append_audit_log(
     return _audit_row_to_dict(row)
 
 
-def list_audit_log(
-    org_id: str,
+def _build_audit_log_where(
     *,
-    limit: int = 100,
+    org_id: str,
     action: Optional[str] = None,
     project_id: Optional[str] = None,
     session_id: Optional[str] = None,
     status: Optional[str] = None,
-) -> List[Dict[str, Any]]:
-    oid = str(org_id or "").strip()
-    if not oid:
-        return []
-    lim = max(1, min(int(limit or 100), 500))
+    q: Optional[str] = None,
+    updated_from: Optional[int] = None,
+    updated_to: Optional[int] = None,
+) -> tuple[str, List[Any]]:
     clauses = ["org_id = ?"]
-    params: List[Any] = [oid]
+    params: List[Any] = [org_id]
     action_value = str(action or "").strip()
     if action_value:
         clauses.append("action = ?")
@@ -3290,7 +4567,59 @@ def list_audit_log(
     if status_value:
         clauses.append("status = ?")
         params.append(status_value)
-    where = " AND ".join(clauses)
+    from_ts = int(updated_from or 0)
+    if from_ts > 0:
+        clauses.append("ts >= ?")
+        params.append(from_ts)
+    to_ts = int(updated_to or 0)
+    if to_ts > 0:
+        clauses.append("ts <= ?")
+        params.append(to_ts)
+    query = str(q or "").strip().lower()
+    if query:
+        like = f"%{query}%"
+        clauses.append(
+            "("
+            "LOWER(COALESCE(action, '')) LIKE ? OR "
+            "LOWER(COALESCE(actor_user_id, '')) LIKE ? OR "
+            "LOWER(COALESCE(project_id, '')) LIKE ? OR "
+            "LOWER(COALESCE(session_id, '')) LIKE ? OR "
+            "LOWER(COALESCE(entity_type, '')) LIKE ? OR "
+            "LOWER(COALESCE(entity_id, '')) LIKE ?"
+            ")"
+        )
+        params.extend([like, like, like, like, like, like])
+    return " AND ".join(clauses), params
+
+
+def list_audit_log(
+    org_id: str,
+    *,
+    limit: int = 100,
+    offset: int = 0,
+    action: Optional[str] = None,
+    project_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    status: Optional[str] = None,
+    q: Optional[str] = None,
+    updated_from: Optional[int] = None,
+    updated_to: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    if not oid:
+        return []
+    lim = max(1, min(int(limit or 100), 500))
+    off = max(0, int(offset or 0))
+    where, params = _build_audit_log_where(
+        org_id=oid,
+        action=action,
+        project_id=project_id,
+        session_id=session_id,
+        status=status,
+        q=q,
+        updated_from=updated_from,
+        updated_to=updated_to,
+    )
     _ensure_schema()
     with _connect() as con:
         rows = con.execute(
@@ -3300,10 +4629,53 @@ def list_audit_log(
              WHERE {where}
              ORDER BY ts DESC, id DESC
              LIMIT ?
+            OFFSET ?
             """,
-            [*params, lim],
+            [*params, lim, off],
         ).fetchall()
     return [_audit_row_to_dict(row) for row in rows]
+
+
+def count_audit_log(
+    org_id: str,
+    *,
+    action: Optional[str] = None,
+    project_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    status: Optional[str] = None,
+    q: Optional[str] = None,
+    updated_from: Optional[int] = None,
+    updated_to: Optional[int] = None,
+) -> int:
+    oid = str(org_id or "").strip()
+    if not oid:
+        return 0
+    where, params = _build_audit_log_where(
+        org_id=oid,
+        action=action,
+        project_id=project_id,
+        session_id=session_id,
+        status=status,
+        q=q,
+        updated_from=updated_from,
+        updated_to=updated_to,
+    )
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            f"""
+            SELECT COUNT(*)
+              FROM audit_log
+             WHERE {where}
+            """,
+            params,
+        ).fetchone()
+    if not row:
+        return 0
+    try:
+        return int(row[0] or 0)
+    except Exception:
+        return 0
 
 
 def cleanup_audit_log(org_id: str, *, retention_days: int = 90, now_ts: Optional[int] = None) -> int:
@@ -3808,60 +5180,239 @@ def delete_workspace_folder(
 
 
 def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: str) -> Dict[str, Any]:
-    """Return direct child folders and projects for given parent ('' = workspace root)."""
+    """Return direct child folders and projects for given parent ('' = workspace root).
+
+    Includes rollup activity and rollup DoD for folder rows so parent lists can
+    show truthful descendant state.
+    """
     _ensure_schema()
     oid = str(org_id or "").strip()
     wid = str(workspace_id or "").strip()
     pid = str(parent_id or "").strip()
+
+    def _safe_int(v: Any, default: int = 0) -> int:
+        try:
+            return int(v)
+        except Exception:
+            return int(default)
+
+    def _clamp_percent(v: Any) -> int:
+        n = _safe_int(v, 0)
+        if n < 0:
+            return 0
+        if n > 100:
+            return 100
+        return n
+
     with _connect() as con:
-        folder_rows = con.execute(
+        folder_rows_all = con.execute(
             """
-            SELECT f.*,
-              (SELECT COUNT(*) FROM workspace_folders cf WHERE cf.parent_id = f.id AND cf.org_id = ? AND cf.workspace_id = ? AND cf.archived_at IS NULL) AS child_folder_count,
-              (SELECT COUNT(*) FROM projects cp WHERE cp.folder_id = f.id AND cp.org_id = ? AND cp.workspace_id = ?) AS child_project_count
-            FROM workspace_folders f
-            WHERE f.org_id = ? AND f.workspace_id = ? AND f.parent_id = ? AND f.archived_at IS NULL
-            ORDER BY f.sort_order ASC, f.name ASC
+            SELECT *
+            FROM workspace_folders
+            WHERE org_id = ? AND workspace_id = ? AND archived_at IS NULL
+            ORDER BY sort_order ASC, name ASC
             """,
-            [oid, wid, oid, wid, oid, wid, pid],
+            [oid, wid],
         ).fetchall()
-        project_rows = con.execute(
+        project_rows_all = con.execute(
             """
             SELECT p.*,
               (SELECT COUNT(*) FROM sessions s WHERE s.project_id = p.id) AS sessions_count
             FROM projects p
-            WHERE p.org_id = ? AND p.workspace_id = ? AND p.folder_id = ?
+            WHERE p.org_id = ? AND p.workspace_id = ?
             ORDER BY p.updated_at DESC, p.title ASC
             """,
-            [oid, wid, pid],
+            [oid, wid],
         ).fetchall()
-    folders = []
-    for row in folder_rows:
-        d = _folder_row_to_dict(row)
-        d["child_folder_count"] = int(row["child_folder_count"] or 0)
-        d["child_project_count"] = int(row["child_project_count"] or 0)
-        folders.append(d)
-    projects = []
-    for row in project_rows:
-        p = _project_row_to_model(row)
-        passport = dict(p.passport or {})
-        projects.append({
-            "id": p.id,
-            "title": p.title,
-            "folder_id": str(getattr(p, "folder_id", "") or ""),
+        session_rows = con.execute(
+            """
+            SELECT s.project_id, s.id, s.title, s.updated_at
+            FROM sessions s
+            JOIN projects p ON p.id = s.project_id
+            WHERE p.org_id = ? AND p.workspace_id = ?
+            ORDER BY s.project_id ASC, s.updated_at DESC, s.id DESC
+            """,
+            [oid, wid],
+        ).fetchall()
+
+    folders_by_id: Dict[str, Dict[str, Any]] = {}
+    folder_children: Dict[str, List[str]] = {}
+    for row in folder_rows_all:
+        folder_dict = _folder_row_to_dict(row)
+        fid = str(folder_dict.get("id") or "")
+        if not fid:
+            continue
+        folders_by_id[fid] = folder_dict
+        parent = str(folder_dict.get("parent_id") or "")
+        folder_children.setdefault(parent, []).append(fid)
+
+    for children in folder_children.values():
+        children.sort(
+            key=lambda child_id: (
+                _safe_int((folders_by_id.get(child_id) or {}).get("sort_order"), 0),
+                str((folders_by_id.get(child_id) or {}).get("name") or "").lower(),
+            )
+        )
+
+    session_latest_by_project: Dict[str, Dict[str, Any]] = {}
+    for row in session_rows:
+        project_id = str(row["project_id"] or "")
+        if not project_id or project_id in session_latest_by_project:
+            continue
+        session_latest_by_project[project_id] = {
+            "id": str(row["id"] or ""),
+            "title": str(row["title"] or "") or "Сессия",
+            "updated_at": _safe_int(row["updated_at"], 0),
+        }
+
+    projects_by_folder: Dict[str, List[Dict[str, Any]]] = {}
+    projects_by_id: Dict[str, Dict[str, Any]] = {}
+    for row in project_rows_all:
+        project_model = _project_row_to_model(row)
+        passport = dict(project_model.passport or {})
+        project_id = str(project_model.id or "")
+        folder_id = str(getattr(project_model, "folder_id", "") or "")
+        project_updated_at = _safe_int(project_model.updated_at, 0)
+        latest_session = session_latest_by_project.get(project_id)
+        latest_session_at = _safe_int((latest_session or {}).get("updated_at"), 0)
+        use_session_source = latest_session_at > project_updated_at
+        rollup_activity_at = latest_session_at if use_session_source else project_updated_at
+        source_type = "session" if use_session_source else "project"
+        source_id = str((latest_session or {}).get("id") or project_id)
+        source_title = str((latest_session or {}).get("title") or project_model.title or "Проект")
+        dod_percent = _clamp_percent(passport.get("dod_percent", 0))
+        project_payload: Dict[str, Any] = {
+            "id": project_id,
+            "title": str(project_model.title or ""),
+            "folder_id": folder_id,
             "workspace_id": str((_row_value(row, "workspace_id") or "") or wid),
-            "owner_user_id": p.owner_user_id,
-            "org_id": p.org_id,
-            "sessions_count": int(row["sessions_count"] or 0),
+            "owner_user_id": str(project_model.owner_user_id or ""),
+            "org_id": str(project_model.org_id or oid),
+            "sessions_count": _safe_int(row["sessions_count"], 0),
             "status": str(passport.get("status", "active") or "active"),
-            "dod_percent": int(passport.get("dod_percent", 0) or 0),
-            "attention_count": int(passport.get("attention_count", 0) or 0),
-            "reports_count": int(passport.get("reports_count", 0) or 0),
+            "dod_percent": dod_percent,
+            "attention_count": _safe_int(passport.get("attention_count", 0), 0),
+            "reports_count": _safe_int(passport.get("reports_count", 0), 0),
             "description": str(passport.get("description", "") or ""),
-            "updated_at": p.updated_at,
-            "created_at": p.created_at,
+            "updated_at": project_updated_at,
+            "created_at": _safe_int(project_model.created_at, 0),
+            "self_activity_at": project_updated_at,
+            "rollup_activity_at": rollup_activity_at,
+            "last_activity_source_type": source_type,
+            "last_activity_source_id": source_id,
+            "last_activity_source_title": source_title,
+            "descendant_sessions_count": _safe_int(row["sessions_count"], 0),
+            # Project-level canonical truth remains dod_percent.
+            "rollup_dod_percent": dod_percent,
+        }
+        projects_by_folder.setdefault(folder_id, []).append(project_payload)
+        projects_by_id[project_id] = project_payload
+
+    for plist in projects_by_folder.values():
+        plist.sort(
+            key=lambda p: (
+                -_safe_int(p.get("rollup_activity_at"), 0),
+                str(p.get("title") or "").lower(),
+            )
+        )
+
+    folder_metrics: Dict[str, Dict[str, Any]] = {}
+
+    def _compute_folder_metrics(folder_id: str) -> Dict[str, Any]:
+        existing = folder_metrics.get(folder_id)
+        if existing is not None:
+            return existing
+        folder = folders_by_id.get(folder_id)
+        if folder is None:
+            result = {
+                "rollup_activity_at": 0,
+                "last_activity_source_type": "folder",
+                "last_activity_source_id": "",
+                "last_activity_source_title": "",
+                "descendant_projects_count": 0,
+                "descendant_sessions_count": 0,
+                "dod_sum": 0.0,
+                "dod_count": 0,
+            }
+            folder_metrics[folder_id] = result
+            return result
+
+        best_activity_at = _safe_int(folder.get("updated_at"), 0)
+        best_type = "folder"
+        best_id = str(folder.get("id") or "")
+        best_title = str(folder.get("name") or "Папка")
+        descendant_projects_count = 0
+        descendant_sessions_count = 0
+        dod_sum = 0.0
+        dod_count = 0
+
+        for child_folder_id in folder_children.get(folder_id, []):
+            child_metrics = _compute_folder_metrics(child_folder_id)
+            descendant_projects_count += _safe_int(child_metrics.get("descendant_projects_count"), 0)
+            descendant_sessions_count += _safe_int(child_metrics.get("descendant_sessions_count"), 0)
+            dod_sum += float(child_metrics.get("dod_sum") or 0.0)
+            dod_count += _safe_int(child_metrics.get("dod_count"), 0)
+            child_rollup_at = _safe_int(child_metrics.get("rollup_activity_at"), 0)
+            if child_rollup_at > best_activity_at:
+                best_activity_at = child_rollup_at
+                best_type = str(child_metrics.get("last_activity_source_type") or "folder")
+                best_id = str(child_metrics.get("last_activity_source_id") or child_folder_id)
+                best_title = str(child_metrics.get("last_activity_source_title") or "")
+
+        for project in projects_by_folder.get(folder_id, []):
+            descendant_projects_count += 1
+            descendant_sessions_count += _safe_int(project.get("sessions_count"), 0)
+            dod_sum += float(_safe_int(project.get("dod_percent"), 0))
+            dod_count += 1
+            project_rollup_at = _safe_int(project.get("rollup_activity_at"), 0)
+            if project_rollup_at > best_activity_at:
+                best_activity_at = project_rollup_at
+                best_type = str(project.get("last_activity_source_type") or "project")
+                best_id = str(project.get("last_activity_source_id") or project.get("id") or "")
+                best_title = str(project.get("last_activity_source_title") or project.get("title") or "")
+
+        result = {
+            "rollup_activity_at": best_activity_at,
+            "last_activity_source_type": best_type,
+            "last_activity_source_id": best_id,
+            "last_activity_source_title": best_title,
+            "descendant_projects_count": descendant_projects_count,
+            "descendant_sessions_count": descendant_sessions_count,
+            "dod_sum": dod_sum,
+            "dod_count": dod_count,
+        }
+        folder_metrics[folder_id] = result
+        return result
+
+    for folder_id in folders_by_id.keys():
+        _compute_folder_metrics(folder_id)
+
+    folder_items: List[Dict[str, Any]] = []
+    for folder_id in folder_children.get(pid, []):
+        folder = folders_by_id.get(folder_id)
+        if folder is None:
+            continue
+        metrics = folder_metrics.get(folder_id) or {}
+        dod_count = _safe_int(metrics.get("dod_count"), 0)
+        rollup_dod_percent = None
+        if dod_count > 0:
+            rollup_dod_percent = _clamp_percent(round(float(metrics.get("dod_sum") or 0.0) / float(dod_count)))
+        folder_items.append({
+            **folder,
+            "child_folder_count": len(folder_children.get(folder_id, [])),
+            "child_project_count": len(projects_by_folder.get(folder_id, [])),
+            "descendant_projects_count": _safe_int(metrics.get("descendant_projects_count"), 0),
+            "descendant_sessions_count": _safe_int(metrics.get("descendant_sessions_count"), 0),
+            "self_activity_at": _safe_int(folder.get("updated_at"), 0),
+            "rollup_activity_at": _safe_int(metrics.get("rollup_activity_at"), _safe_int(folder.get("updated_at"), 0)),
+            "last_activity_source_type": str(metrics.get("last_activity_source_type") or "folder"),
+            "last_activity_source_id": str(metrics.get("last_activity_source_id") or folder_id),
+            "last_activity_source_title": str(metrics.get("last_activity_source_title") or folder.get("name") or "Папка"),
+            "rollup_dod_percent": rollup_dod_percent,
         })
-    return {"folders": folders, "projects": projects}
+
+    project_items = list(projects_by_folder.get(pid, []))
+    return {"folders": folder_items, "projects": project_items}
 
 
 def get_workspace_folder_breadcrumb(org_id: str, workspace_id: str, folder_id: str) -> List[Dict[str, Any]]:
@@ -3960,6 +5511,60 @@ def get_project_workspace_details(org_id: str, project_id: str) -> Optional[Dict
         "org_id": str(row["org_id"] or oid),
         "workspace_id": str(row["workspace_id"] or _default_workspace_id(oid)),
         "folder_id": str(row["folder_id"] or ""),
+    }
+
+
+def get_project_explorer_invalidation_targets(org_id: str, project_id: str) -> Optional[Dict[str, Any]]:
+    """Return workspace + children-list keys to invalidate for project rollups.
+
+    children_folder_ids always includes:
+    - project folder id (for project row visibility) when non-empty
+    - every ancestor parent_id up to root ('')
+    """
+    oid = str(org_id or "").strip()
+    pid = str(project_id or "").strip()
+    if not oid or not pid:
+        return None
+    details = get_project_workspace_details(oid, pid)
+    if not details:
+        return None
+    wid = str(details.get("workspace_id") or "").strip()
+    folder_id = str(details.get("folder_id") or "").strip()
+    targets: List[str] = []
+    seen: set[str] = set()
+
+    def _add_target(raw: Any) -> None:
+        key = str(raw or "").strip()
+        if key in seen:
+            return
+        seen.add(key)
+        targets.append(key)
+
+    if folder_id:
+        _add_target(folder_id)
+        crumbs = get_workspace_folder_breadcrumb(oid, wid, folder_id)
+        breadcrumb_parent_by_id = {
+            str(item.get("id") or ""): str(item.get("parent_id") or "")
+            for item in crumbs
+            if str(item.get("id") or "").strip()
+        }
+        cursor = folder_id
+        while cursor:
+            parent = str(breadcrumb_parent_by_id.get(cursor) or "")
+            _add_target(parent)
+            if not parent:
+                break
+            cursor = parent
+    else:
+        _add_target("")
+    if "" not in seen:
+        _add_target("")
+    return {
+        "org_id": oid,
+        "workspace_id": wid,
+        "project_id": pid,
+        "folder_id": folder_id,
+        "children_folder_ids": targets,
     }
 
 

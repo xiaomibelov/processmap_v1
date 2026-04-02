@@ -13,6 +13,8 @@ test("selected object ux model resolves runtime text controls and advanced note"
     selectedDrawioStyleSurface: "text",
     selectedDrawioStylePresetCount: 3,
     selectedDrawioResizeSurface: "",
+    anchorEligible: true,
+    anchorStatus: "anchored",
   });
   assert.equal(model.typeKey, "drawio_text");
   assert.equal(model.typeLabel, "Текстовый блок");
@@ -20,10 +22,12 @@ test("selected object ux model resolves runtime text controls and advanced note"
   assert.equal(model.showTextWidthSection, true);
   assert.equal(model.showResizeSection, false);
   assert.equal(model.showStyleSection, true);
+  assert.equal(model.showAnchorSection, true);
   assert.deepEqual(model.capabilities.map((row) => row.label), [
     "Текст",
     "Ширина текста",
     "Быстрый цвет",
+    "Anchor",
     "Скрыть",
     "Удалить",
   ]);
@@ -40,15 +44,19 @@ test("selected object ux model resolves shape controls without text controls", (
     selectedDrawioStyleSurface: "shape",
     selectedDrawioStylePresetCount: 4,
     selectedDrawioResizeSurface: "box",
+    anchorEligible: true,
+    anchorStatus: "unanchored",
   });
   assert.equal(model.typeKey, "drawio_box");
   assert.equal(model.typeLabel, "Блок / контейнер");
   assert.equal(model.showTextSection, false);
   assert.equal(model.showResizeSection, true);
   assert.equal(model.showStyleSection, true);
+  assert.equal(model.showAnchorSection, true);
   assert.deepEqual(model.capabilities.map((row) => row.label), [
     "Быстрый стиль",
     "Размер блока",
+    "Anchor",
     "Скрыть",
     "Удалить",
   ]);
@@ -68,6 +76,7 @@ test("selected object ux model degrades safely for unsupported drawio surfaces",
   assert.equal(model.showTextSection, false);
   assert.equal(model.showStyleSection, false);
   assert.equal(model.showResizeSection, false);
+  assert.equal(model.showAnchorSection, false);
   assert.deepEqual(model.capabilities.map((row) => row.label), ["Скрыть", "Удалить"]);
 });
 

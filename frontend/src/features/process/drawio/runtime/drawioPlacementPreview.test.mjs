@@ -26,3 +26,14 @@ test("drawio placement preview: text tool stays width-only and wrapping-safe", (
   assert.equal(spec.height, 30);
   assert.equal(spec.text, "Text");
 });
+
+test("drawio placement preview: note tool uses sticky-note geometry", () => {
+  const spec = buildDrawioPlacementPreviewSpec("note", { x: 260, y: 200 });
+  assert.equal(spec.toolId, "note");
+  assert.equal(spec.shape, "note");
+  assert.equal(spec.x, 180);
+  assert.equal(spec.y, 140);
+  assert.equal(spec.width, 160);
+  assert.equal(spec.height, 120);
+  assert.equal(spec.text, "Заметка");
+});

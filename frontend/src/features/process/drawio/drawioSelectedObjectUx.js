@@ -22,6 +22,9 @@ export function resolveSelectedObjectUxModel(options = {}) {
   const hasText = bool(options.selectedDrawioTextEditable) && !!options.selectedDrawioTextState;
   const hasStyle = Number(options.selectedDrawioStylePresetCount || 0) > 0;
   const hasResize = !!drawioResizeSurface;
+  const anchorStatus = toText(options.anchorStatus).toLowerCase();
+  const showAnchorSection = kind === "drawio" && !!selectedEntityId
+    && (options.anchorEligible === true || anchorStatus === "anchored" || anchorStatus === "orphaned" || anchorStatus === "invalid");
 
   const base = {
     kind,
@@ -34,6 +37,7 @@ export function resolveSelectedObjectUxModel(options = {}) {
     showTextWidthSection: false,
     showStyleSection: false,
     showResizeSection: false,
+    showAnchorSection,
     showBindingSection: kind === "hybrid",
     styleSectionLabel: "Быстрый стиль",
     resizeSectionLabel: "Размер",
@@ -56,6 +60,7 @@ export function resolveSelectedObjectUxModel(options = {}) {
           buildCapability("text", "Текст"),
           buildCapability("text_width", "Ширина текста"),
           ...(hasStyle ? [buildCapability("style", drawioStyleSurface === "text" ? "Быстрый цвет" : "Быстрый стиль")] : []),
+          buildCapability("anchor", "Anchor"),
           buildCapability("visibility", "Скрыть"),
           buildCapability("delete", "Удалить"),
         ],
@@ -81,6 +86,7 @@ export function resolveSelectedObjectUxModel(options = {}) {
         capabilities: [
           ...(hasStyle ? [buildCapability("style", drawioStyleSurface === "text" ? "Быстрый цвет" : "Быстрый стиль")] : []),
           buildCapability("size", "Размер блока"),
+          buildCapability("anchor", "Anchor"),
           buildCapability("visibility", "Скрыть"),
           buildCapability("delete", "Удалить"),
         ],

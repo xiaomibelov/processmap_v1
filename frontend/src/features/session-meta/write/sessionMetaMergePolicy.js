@@ -74,6 +74,10 @@ export function mergeSessionMetaForRead({
     robot_meta_by_element_id: hasKeys(sessionMeta.robot_meta_by_element_id)
       ? sessionMeta.robot_meta_by_element_id
       : localMeta.robot_meta_by_element_id,
+    camunda_extensions_by_element_id: sessionMeta.camunda_extensions_by_element_id,
+    presentation_by_element_id: hasKeys(sessionMeta.presentation_by_element_id)
+      ? sessionMeta.presentation_by_element_id
+      : localMeta.presentation_by_element_id,
     hybrid_layer_by_element_id: hybridLayerByElementId,
     hybrid_v2: preferServerOverlay
       ? mergeHybridV2Doc(sessionMeta.hybrid_v2, localMeta.hybrid_v2)
@@ -84,6 +88,10 @@ export function mergeSessionMetaForRead({
     execution_plans: Array.isArray(sessionMeta.execution_plans) && sessionMeta.execution_plans.length
       ? sessionMeta.execution_plans
       : localMeta.execution_plans,
+    auto_pass_v1: hasKeys(sessionMeta.auto_pass_v1) ? sessionMeta.auto_pass_v1 : localMeta.auto_pass_v1,
+    session_companion_v1: hasKeys(sessionMeta.session_companion_v1)
+      ? sessionMeta.session_companion_v1
+      : localMeta.session_companion_v1,
   };
   return normalizeBpmnMeta(nextRaw, {
     fallbackHybridV2: sessionMeta.hybrid_v2,

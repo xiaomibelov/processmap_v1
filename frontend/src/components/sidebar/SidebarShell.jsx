@@ -42,8 +42,8 @@ export default function SidebarShell({
 
   if (collapsed) {
     return (
-      <aside className="leftSidebarShell flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-panel/95">
-        <div className="leftSidebarHeader sticky top-0 z-20 border-b border-border bg-panel/95 px-2 py-2 backdrop-blur">
+      <aside className="leftSidebarShell flex h-full min-h-0 flex-col overflow-hidden">
+        <div className="leftSidebarHeader sticky top-0 z-20 px-2 py-2">
           <button
             type="button"
             className="sidebarIconBtn w-full justify-center"
@@ -89,7 +89,7 @@ export default function SidebarShell({
   }
 
   return (
-    <aside className="leftSidebarShell flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-panel/95">
+    <aside className="leftSidebarShell flex h-full min-h-0 flex-col overflow-hidden">
       <SidebarHeader
         processTitle={processTitle}
         projectTitle={projectTitle}
@@ -135,11 +135,11 @@ export default function SidebarShell({
           })}
         </div>
       ) : null}
-      {stickyContent ? <div className="leftSidebarSticky border-b border-border/70 bg-panel/92 px-3 py-2.5">{stickyContent}</div> : null}
+      {stickyContent ? <div className="leftSidebarSticky px-3 py-2.5">{stickyContent}</div> : null}
       <div className="leftSidebarBody min-h-0 flex-1 overflow-y-auto">
         {children}
       </div>
-      {bottomBar ? <div className="leftSidebarBottom border-t border-border/70 bg-panel/96 px-3 py-2">{bottomBar}</div> : null}
+      {bottomBar ? <div className="leftSidebarBottom px-3 py-2">{bottomBar}</div> : null}
     </aside>
   );
 }

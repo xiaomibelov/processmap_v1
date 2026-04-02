@@ -218,10 +218,10 @@ export function buildDialogsView({
   versionsOpen,
   closeVersionsDialog,
   refreshSnapshotVersions,
-  createManualSnapshot,
   versionsBusy,
   hasSession,
   versionsList,
+  revisionHistorySnapshot,
   setGenErr,
   setDiffTargetSnapshotId,
   setDiffBaseSnapshotId,
@@ -282,10 +282,10 @@ export function buildDialogsView({
     versionsOpen,
     closeVersionsDialog,
     refreshSnapshotVersions,
-    createManualSnapshot,
     versionsBusy,
     hasSession,
     versionsList,
+    revisionHistorySnapshot,
     setGenErr,
     setDiffTargetSnapshotId,
     setDiffBaseSnapshotId,
@@ -338,6 +338,7 @@ export function buildDiagramHeaderView({
   drawioFileInputRef,
   handleDrawioImportFile,
   topPanelsView,
+  publishGitMirrorSnapshot,
   asArray,
 } = {}) {
   return {
@@ -368,6 +369,7 @@ export function buildDiagramHeaderView({
     drawioFileInputRef,
     handleDrawioImportFile,
     topPanelsView,
+    publishGitMirrorSnapshot,
     asArray,
   };
 }

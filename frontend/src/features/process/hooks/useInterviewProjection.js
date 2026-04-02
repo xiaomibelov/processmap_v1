@@ -19,6 +19,7 @@ export function projectParsedBpmnToInterview({
   preferBpmn = true,
   canAutofillInterview = false,
   forceTimelineFromBpmn = false,
+  replaceGraph = false,
 }) {
   const h = pickHelpers(helpers);
   if (!parsed || !parsed.ok) {
@@ -39,7 +40,7 @@ export function projectParsedBpmnToInterview({
   const importedStartRoleRaw = String(parsed.start_role || "").trim();
   const importedStartRole = importedRoles.includes(importedStartRoleRaw) ? importedStartRoleRaw : (importedRoles[0] || "");
 
-  const shouldUseImportedAsBase = canAutofillInterview || !interviewHasContent(currentInterview);
+  const shouldUseImportedAsBase = replaceGraph || canAutofillInterview || !interviewHasContent(currentInterview);
   const mergedInterview = shouldUseImportedAsBase
     ? importedInterview
     : mergeInterviewData(currentInterview, importedInterview, preferBpmn ? { preferBpmn: true } : undefined);
@@ -49,8 +50,12 @@ export function projectParsedBpmnToInterview({
     mergedInterview.subprocesses = asArray(importedInterview.subprocesses).map((x) => String(x || ""));
   }
 
-  const mergedNodes = mergeNodesById(sanitizeGraphNodes(draft?.nodes), parsed.nodes);
-  const mergedEdges = mergeEdgesByKey(draft?.edges, parsed.edges);
+  const mergedNodes = replaceGraph
+    ? mergeNodesById([], parsed.nodes)
+    : mergeNodesById(sanitizeGraphNodes(draft?.nodes), parsed.nodes);
+  const mergedEdges = replaceGraph
+    ? mergeEdgesByKey([], parsed.edges)
+    : mergeEdgesByKey(draft?.edges, parsed.edges);
   const synced = enrichInterviewWithNodeBindings(mergedInterview, mergedNodes);
   const nextInterview = asObject(synced.interview);
   const nextNodes = asArray(synced.nodes);
@@ -74,6 +79,7 @@ export function parseAndProjectBpmnToInterview({
   preferBpmn = true,
   canAutofillInterview = false,
   forceTimelineFromBpmn = false,
+  replaceGraph = false,
 }) {
   const h = pickHelpers(helpers);
   const parsed = h.parseBpmnToSessionGraph(String(xmlText || ""));
@@ -85,5 +91,6 @@ export function parseAndProjectBpmnToInterview({
     preferBpmn,
     canAutofillInterview,
     forceTimelineFromBpmn,
+    replaceGraph,
   });
 }

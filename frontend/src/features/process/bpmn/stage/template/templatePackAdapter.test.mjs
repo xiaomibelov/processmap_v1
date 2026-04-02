@@ -3,7 +3,12 @@ import test from "node:test";
 
 import { createTemplatePackAdapter, resolveGraphicalInsertParent } from "./templatePackAdapter.js";
 
-function createShape(id, x, y, name = "") {
+function createShape(id, x, y, name = "", boOverrides = {}) {
+  const baseBusinessObject = {
+    id,
+    $type: "bpmn:Task",
+    name,
+  };
   return {
     id,
     type: "bpmn:Task",
@@ -12,9 +17,8 @@ function createShape(id, x, y, name = "") {
     width: 140,
     height: 80,
     businessObject: {
-      id,
-      $type: "bpmn:Task",
-      name,
+      ...baseBusinessObject,
+      ...boOverrides,
     },
     outgoing: [],
   };
@@ -72,6 +76,48 @@ function createModelerWithServices({
           id: `Task_new_${shapeSeq}`,
           $type: shapeDef?.type || "bpmn:Task",
           name: "",
+          $attrs: {},
+          set(key, value) {
+            const currentAttrs = this.$attrs && typeof this.$attrs === "object" && !Array.isArray(this.$attrs)
+              ? this.$attrs
+              : {};
+            if (key === "$attrs") {
+              this.$attrs = {
+                ...currentAttrs,
+                $attrs: value,
+              };
+              return;
+            }
+            if (String(key || "").includes(":")) {
+              const currentNamespaced = this.$namespaced
+                && typeof this.$namespaced === "object"
+                && !Array.isArray(this.$namespaced)
+                ? this.$namespaced
+                : {};
+              this.$namespaced = {
+                ...currentNamespaced,
+                [key]: value,
+              };
+              this.$attrs = {
+                ...currentAttrs,
+                [key]: value,
+              };
+              return;
+            }
+            this[key] = value;
+          },
+          get(key) {
+            if (!key) return undefined;
+            if (Object.prototype.hasOwnProperty.call(this, key)) return this[key];
+            const namespaced = this.$namespaced && typeof this.$namespaced === "object" && !Array.isArray(this.$namespaced)
+              ? this.$namespaced
+              : {};
+            if (Object.prototype.hasOwnProperty.call(namespaced, key)) return namespaced[key];
+            const attrs = this.$attrs && typeof this.$attrs === "object" && !Array.isArray(this.$attrs)
+              ? this.$attrs
+              : {};
+            return attrs[key];
+          },
         },
         outgoing: [],
       };
@@ -113,10 +159,23 @@ function createModelerWithServices({
     },
   };
 
+  const moddle = {
+    create(type, attrs = {}) {
+      const obj = {
+        $type: String(type || ""),
+        ...attrs,
+        set(key, value) {
+          this[key] = value;
+        },
+      };
+      return obj;
+    },
+  };
+
+  let selectionState = Array.isArray(selectionItems) ? selectionItems : [anchor];
   const selection = {
     get() {
-      if (Array.isArray(selectionItems)) return selectionItems;
-      return [anchor];
+      return selectionState;
     },
   };
 
@@ -142,6 +201,7 @@ function createModelerWithServices({
       if (name === "elementRegistry") return elementRegistry;
       if (name === "modeling") return modeling;
       if (name === "elementFactory") return elementFactory;
+      if (name === "moddle") return moddle;
       if (name === "canvas") return canvas;
       return null;
     },
@@ -167,6 +227,10 @@ function createModelerWithServices({
     updateLabelCalls,
     emitCalls,
     createdConnections,
+    registryItems: allRegistryItems,
+    setSelection(nextSelection = []) {
+      selectionState = Array.isArray(nextSelection) ? nextSelection : [nextSelection];
+    },
   };
 }
 
@@ -187,6 +251,65 @@ test("captureTemplatePackOnModeler returns pack with selected nodes and edges", 
   assert.equal(result.pack.fragment.edges.length, 1);
   assert.equal(result.pack.fragment.edges[0].sourceId, "Task_A");
   assert.equal(result.pack.fragment.edges[0].targetId, "Task_B");
+});
+
+test("captureTemplatePackOnModeler preserves documentation, camunda io/properties, and custom bo payload in semanticPayload", () => {
+  const source = createShape("Task_With_Props", 120, 80, "Task with props", {
+    documentation: [
+      { $type: "bpmn:Documentation", text: "doc text" },
+    ],
+    extensionElements: {
+      $type: "bpmn:ExtensionElements",
+      values: [
+        {
+          $type: "camunda:Properties",
+          values: [
+            { $type: "camunda:Property", name: "robot.code", value: "R-42" },
+          ],
+        },
+        {
+          $type: "camunda:InputOutput",
+          inputParameters: [
+            { $type: "camunda:InputParameter", name: "payload", value: "{\"foo\":1}" },
+          ],
+          outputParameters: [
+            { $type: "camunda:OutputParameter", name: "result", value: "ok" },
+          ],
+        },
+        {
+          $type: "camunda:ExecutionListener",
+          event: "start",
+          expression: "${notifyStart}",
+        },
+        {
+          $type: "pm:RobotMeta",
+          robotCode: "R-42",
+          dictionaryBinding: { operationKey: "op.pack" },
+        },
+      ],
+    },
+    $attrs: {
+      "pm:bindingKey": "binding_1",
+    },
+    propertyDictionaryBinding: {
+      operationKey: "op.pack",
+      propertyKey: "robot.code",
+    },
+  });
+  const { adapter, inst } = createModelerWithServices({
+    selectionItems: [source],
+    registryItems: [source],
+  });
+  const result = adapter.captureTemplatePackOnModeler(inst, { title: "Pack with props" });
+  assert.equal(result?.ok, true);
+  const captured = result?.pack?.fragment?.nodes?.[0]?.semanticPayload || {};
+  assert.equal(captured.documentation?.[0]?.text, "doc text");
+  assert.equal(captured.extensionElements?.values?.[0]?.$type, "camunda:Properties");
+  assert.equal(captured.extensionElements?.values?.[1]?.$type, "camunda:InputOutput");
+  assert.equal(captured.extensionElements?.values?.[1]?.inputParameters?.[0]?.name, "payload");
+  assert.equal(captured.extensionElements?.values?.[2]?.$type, "camunda:ExecutionListener");
+  assert.equal(captured.attrs?.["pm:bindingKey"], "binding_1");
+  assert.equal(captured.custom?.propertyDictionaryBinding?.operationKey, "op.pack");
 });
 
 test("insertTemplatePackOnModeler creates nodes, connects sequence flows and emits mutation", async () => {
@@ -223,6 +346,343 @@ test("insertTemplatePackOnModeler creates nodes, connects sequence flows and emi
   assert.equal(connectCalls.length, 2);
   assert.equal(emitCalls.length, 1);
   assert.equal(emitCalls[0][0], "diagram.template_insert");
+});
+
+test("insertTemplatePackOnModeler reapplies semantic payload to inserted node businessObject", async () => {
+  const anchor = createShape("Anchor_1", 100, 100, "Anchor");
+  const { adapter, registryItems, createShapeCalls } = createModelerWithServices({
+    anchorShape: anchor,
+    selectionItems: [anchor],
+    registryItems: [anchor],
+  });
+
+  const payload = {
+    mode: "after",
+    pack: {
+      packId: "pack_props_apply",
+      entryNodeId: "N1",
+      exitNodeId: "N1",
+      fragment: {
+        nodes: [
+          {
+            id: "N1",
+            type: "bpmn:Task",
+            name: "Copied node",
+            laneHint: "lane 1",
+            di: { x: 10, y: 20, w: 260, h: 130 },
+            semanticPayload: {
+              documentation: [
+                { $type: "bpmn:Documentation", text: "template doc" },
+              ],
+              extensionElements: {
+                $type: "bpmn:ExtensionElements",
+                values: [
+                  {
+                    $type: "camunda:Properties",
+                    values: [
+                      { $type: "camunda:Property", name: "source_container_ref", value: "required" },
+                      { $type: "camunda:Property", name: "source_container_state", value: "legacy|new" },
+                      { $type: "camunda:Property", name: "equipment_type_id", value: "microwave" },
+                      { $type: "camunda:Property", name: "equipment_ref", value: "required_runtime" },
+                    ],
+                  },
+                  {
+                    $type: "camunda:InputOutput",
+                    inputParameters: [
+                      { $type: "camunda:InputParameter", name: "in", value: "x" },
+                    ],
+                    outputParameters: [
+                      { $type: "camunda:OutputParameter", name: "out", value: "y" },
+                    ],
+                  },
+                  {
+                    $type: "pm:RobotMeta",
+                    robotCode: "R-9000",
+                    dictionaryBinding: { operationKey: "op.prod" },
+                  },
+                ],
+              },
+              attrs: {
+                "camunda:assignee": "user_test",
+                "pm:customAttribute": "CUSTOM_TEST_VALUE",
+                "pm:bindingKey": "binding_9000",
+              },
+              custom: {
+                propertyDictionaryBinding: {
+                  operationKey: "op.prod",
+                  propertyKey: "robot.code",
+                },
+              },
+            },
+          },
+        ],
+        edges: [],
+      },
+    },
+  };
+
+  const result = await adapter.insertTemplatePackOnModeler(payload);
+  assert.equal(result?.ok, true);
+  const createdId = String(result?.entryNodeId || "");
+  const created = registryItems.find((row) => String(row?.id || "") === createdId);
+  assert.ok(created);
+  const bo = created?.businessObject || {};
+  assert.equal(bo.documentation?.[0]?.text, "template doc");
+  assert.equal(bo.extensionElements?.$type, "bpmn:ExtensionElements");
+  assert.equal(bo.extensionElements?.values?.[0]?.$type, "camunda:Properties");
+  assert.equal(bo.extensionElements?.values?.[0]?.values?.length, 4);
+  assert.deepEqual(
+    bo.extensionElements?.values?.[0]?.values?.map((item) => [item?.name, item?.value]),
+    [
+      ["source_container_ref", "required"],
+      ["source_container_state", "legacy|new"],
+      ["equipment_type_id", "microwave"],
+      ["equipment_ref", "required_runtime"],
+    ],
+  );
+  assert.equal(bo.extensionElements?.values?.[1]?.$type, "camunda:InputOutput");
+  assert.equal(bo.extensionElements?.values?.[1]?.inputParameters?.[0]?.name, "in");
+  assert.equal(bo.extensionElements?.values?.[2]?.$type, "pm:RobotMeta");
+  assert.equal(bo.get?.("camunda:assignee"), "user_test");
+  assert.equal(bo.get?.("pm:customAttribute"), "CUSTOM_TEST_VALUE");
+  assert.equal(bo.$attrs?.["pm:bindingKey"], "binding_9000");
+  assert.equal(bo.$attrs?.$attrs, undefined);
+  assert.equal(bo.propertyDictionaryBinding?.operationKey, "op.prod");
+  assert.equal(createShapeCalls[0]?.shapeDef?.width, 260);
+  assert.equal(createShapeCalls[0]?.shapeDef?.height, 130);
+});
+
+test("insertTemplatePackOnModeler rehydrates extensionElements when legacy businessObjectCustom branch carries camunda props", async () => {
+  const anchor = createShape("Anchor_1", 100, 100, "Anchor");
+  const { adapter, registryItems } = createModelerWithServices({
+    anchorShape: anchor,
+    selectionItems: [anchor],
+    registryItems: [anchor],
+  });
+
+  const payload = {
+    mode: "after",
+    pack: {
+      packId: "pack_legacy_custom_ext",
+      entryNodeId: "N1",
+      exitNodeId: "N1",
+      fragment: {
+        nodes: [
+          {
+            id: "N1",
+            type: "bpmn:ManualTask",
+            name: "Central task",
+            laneHint: "lane 1",
+            di: { x: 10, y: 20, w: 240, h: 120 },
+            semanticPayload: {
+              documentation: [
+                { $type: "bpmn:Documentation", text: "template doc" },
+              ],
+              custom: {
+                status: "ready",
+              },
+              businessObjectCustom: {
+                extensionElements: {
+                  $type: "bpmn:ExtensionElements",
+                  values: [
+                    {
+                      $type: "camunda:Properties",
+                      values: [
+                        { $type: "camunda:Property", name: "source_container_ref", value: "required" },
+                        { $type: "camunda:Property", name: "source_container_state", value: "legacy|new" },
+                        { $type: "camunda:Property", name: "equipment_type_id", value: "microwave" },
+                        { $type: "camunda:Property", name: "equipment_ref", value: "required_runtime" },
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        ],
+        edges: [],
+      },
+    },
+  };
+
+  const result = await adapter.insertTemplatePackOnModeler(payload);
+  assert.equal(result?.ok, true);
+  const createdId = String(result?.entryNodeId || "");
+  const created = registryItems.find((row) => String(row?.id || "") === createdId);
+  assert.ok(created);
+  const bo = created?.businessObject || {};
+  assert.equal(bo.documentation?.[0]?.text, "template doc");
+  assert.equal(bo.extensionElements?.$type, "bpmn:ExtensionElements");
+  assert.equal(bo.extensionElements?.values?.[0]?.$type, "camunda:Properties");
+  assert.equal(bo.extensionElements?.values?.[0]?.values?.length, 4);
+  assert.deepEqual(
+    bo.extensionElements?.values?.[0]?.values?.map((item) => [item?.name, item?.value]),
+    [
+      ["source_container_ref", "required"],
+      ["source_container_state", "legacy|new"],
+      ["equipment_type_id", "microwave"],
+      ["equipment_ref", "required_runtime"],
+    ],
+  );
+  assert.equal(bo.status, "ready");
+});
+
+test("insertTemplatePackOnModeler merges semantic_payload docs with props_minimal camunda properties on insert", async () => {
+  const anchor = createShape("Anchor_1", 100, 100, "Anchor");
+  const { adapter, registryItems } = createModelerWithServices({
+    anchorShape: anchor,
+    selectionItems: [anchor],
+    registryItems: [anchor],
+  });
+
+  const payload = {
+    mode: "after",
+    pack: {
+      packId: "pack_semantic_props_minimal_merge",
+      entryNodeId: "N1",
+      exitNodeId: "N1",
+      fragment: {
+        nodes: [
+          {
+            id: "N1",
+            type: "bpmn:Task",
+            name: "Central merged task",
+            laneHint: "lane 1",
+            di: { x: 10, y: 20, w: 240, h: 120 },
+            semantic_payload: {
+              documentation: [
+                { $type: "bpmn:Documentation", text: "template doc" },
+              ],
+              custom: {
+                status: "ready",
+              },
+            },
+            props_minimal: {
+              extension_elements: {
+                $type: "bpmn:ExtensionElements",
+                values: [
+                  {
+                    $type: "camunda:Properties",
+                    values: [
+                      { $type: "camunda:Property", name: "source_container_ref", value: "required" },
+                      { $type: "camunda:Property", name: "source_container_state", value: "legacy|new" },
+                      { $type: "camunda:Property", name: "equipment_type_id", value: "microwave" },
+                      { $type: "camunda:Property", name: "equipment_ref", value: "required_runtime" },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        ],
+        edges: [],
+      },
+    },
+  };
+
+  const result = await adapter.insertTemplatePackOnModeler(payload);
+  assert.equal(result?.ok, true);
+  const createdId = String(result?.entryNodeId || "");
+  const created = registryItems.find((row) => String(row?.id || "") === createdId);
+  assert.ok(created);
+  const bo = created?.businessObject || {};
+  assert.equal(bo.documentation?.[0]?.text, "template doc");
+  assert.equal(bo.extensionElements?.$type, "bpmn:ExtensionElements");
+  assert.equal(bo.extensionElements?.values?.[0]?.$type, "camunda:Properties");
+  assert.equal(bo.extensionElements?.values?.[0]?.values?.length, 4);
+  assert.deepEqual(
+    bo.extensionElements?.values?.[0]?.values?.map((item) => [item?.name, item?.value]),
+    [
+      ["source_container_ref", "required"],
+      ["source_container_state", "legacy|new"],
+      ["equipment_type_id", "microwave"],
+      ["equipment_ref", "required_runtime"],
+    ],
+  );
+  assert.equal(bo.status, "ready");
+});
+
+test("semantic payload survives capture -> JSON storage -> insert -> reread roundtrip without silent loss", async () => {
+  const source = createShape("Task_Source", 120, 80, "Template source", {
+    status: "ready",
+    state: "validated",
+    documentation: [
+      { $type: "bpmn:Documentation", text: "semantic roundtrip doc" },
+    ],
+    extensionElements: {
+      $type: "bpmn:ExtensionElements",
+      values: [
+        {
+          $type: "camunda:Properties",
+          values: [
+            { $type: "camunda:Property", name: "quality", value: "gold" },
+          ],
+        },
+        {
+          $type: "camunda:InputOutput",
+          inputParameters: [
+            { $type: "camunda:InputParameter", name: "inputPayload", value: "{\"k\":\"v\"}" },
+          ],
+          outputParameters: [
+            { $type: "camunda:OutputParameter", name: "outputPayload", value: "ok" },
+          ],
+        },
+        {
+          $type: "camunda:ExecutionListener",
+          event: "end",
+          class: "com.acme.DoneListener",
+        },
+        {
+          $type: "pm:RobotMeta",
+          version: "v1",
+          json: "{\"exec\":{\"mode\":\"machine\"}}",
+        },
+      ],
+    },
+    $attrs: {
+      "pm:state": "ready",
+      "camunda:asyncBefore": "true",
+    },
+    propertyDictionaryBinding: {
+      operationKey: "qa.op",
+      propertyKey: "quality",
+    },
+  });
+  const anchor = createShape("Anchor_1", 420, 120, "Anchor");
+  const {
+    adapter,
+    inst,
+    registryItems,
+    setSelection,
+  } = createModelerWithServices({
+    selectionItems: [source],
+    registryItems: [source, anchor],
+    anchorShape: anchor,
+  });
+
+  const captured = adapter.captureTemplatePackOnModeler(inst, { title: "Roundtrip payload" });
+  assert.equal(captured?.ok, true);
+  const storedPack = JSON.parse(JSON.stringify(captured.pack));
+  const sourcePayload = storedPack?.fragment?.nodes?.[0]?.semanticPayload || {};
+  assert.equal(sourcePayload.custom?.status, "ready");
+  assert.equal(sourcePayload.custom?.state, "validated");
+  assert.equal(sourcePayload.extensionElements?.values?.length, 4);
+
+  setSelection([anchor]);
+  const inserted = await adapter.insertTemplatePackOnModeler({
+    mode: "after",
+    pack: storedPack,
+  });
+  assert.equal(inserted?.ok, true);
+
+  const insertedId = String(inserted?.entryNodeId || "");
+  const insertedNode = registryItems.find((row) => String(row?.id || "") === insertedId);
+  assert.ok(insertedNode);
+  setSelection([insertedNode]);
+  const recaptured = adapter.captureTemplatePackOnModeler(inst, { title: "Roundtrip recapture" });
+  assert.equal(recaptured?.ok, true);
+  const targetPayload = recaptured?.pack?.fragment?.nodes?.[0]?.semanticPayload || {};
+  assert.deepEqual(targetPayload, sourcePayload);
 });
 
 test("insertTemplatePackOnModeler supports point-based insert without selected anchor", async () => {

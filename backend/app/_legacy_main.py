@@ -41,6 +41,7 @@ from .storage import (
     get_default_org_id,
     count_org_records,
     create_org_record,
+    get_org_git_mirror_config,
     list_project_memberships,
     upsert_project_membership,
     delete_project_membership,
@@ -50,6 +51,8 @@ from .storage import (
     upsert_org_membership,
     list_org_invites,
     create_org_invite,
+    get_org_invite_by_id,
+    promote_regenerated_org_invite,
     preview_org_invite,
     accept_org_invite,
     revoke_org_invite,
@@ -59,12 +62,15 @@ from .storage import (
     list_audit_log,
     cleanup_audit_log,
     list_workspace_snapshot_rows,
+    update_org_git_mirror_config,
+    get_project_explorer_invalidation_targets,
 )
 from .settings import load_llm_settings, llm_status, save_llm_settings, verify_llm_settings
 from .redis_lock import acquire_session_lock
 from .redis_cache import (
     cache_get_json,
     cache_set_json,
+    explorer_invalidate_children,
     explorer_invalidate_sessions,
     invalidate_session_open,
     invalidate_tldr_session,
@@ -77,6 +83,11 @@ from .redis_cache import (
     workspace_filters_hash,
 )
 from .redis_client import runtime_status
+from .session_status import (
+    SESSION_STATUS_SET as _SESSION_STATUS_SET,
+    normalize_session_status as _normalize_session_status_base,
+    validate_session_status_transition as _validate_session_status_transition_base,
+)
 from .validators.coverage import build_questions
 from .validators.disposition import build_disposition_questions
 from .validators.loss import build_loss_questions, loss_report
@@ -116,6 +127,7 @@ from .schemas.legacy_api import (
     NodePatchIn,
     NotesIn,
     OrgCreateIn,
+    OrgGitMirrorPatchIn,
     OrgPatchIn,
     OrgInviteAcceptIn,
     OrgInviteCreateIn,
@@ -146,6 +158,7 @@ from .services.org_invites import (
     normalize_invite_ttl_days,
 )
 from .services.org_workspace import (
+    evaluate_org_git_mirror_config,
     enterprise_require_org_member as _enterprise_require_org_member,
     enterprise_require_org_role as _enterprise_require_org_role,
     org_role_for_request as _org_role_for_request,
@@ -155,6 +168,7 @@ from .services.org_workspace import (
     require_org_member_for_enterprise as _require_org_member_for_enterprise,
     require_org_role as _require_org_role,
 )
+from .services.publish_git_mirror import execute_git_mirror_publish
 from .utils.legacy_normalization import (
     norm_edges as _norm_edges,
     norm_interview as _norm_interview,
@@ -205,22 +219,81 @@ _ORG_TEMPLATE_WRITE_ROLES = {"org_owner", "org_admin", "project_manager"}
 _WORKSPACE_ADMIN_ROLES = {"org_owner", "org_admin"}
 _WORKSPACE_EDITOR_ROLES = {"org_owner", "org_admin", "project_manager", "editor"}
 _WORKSPACE_VIEWER_ROLES = {"viewer", "org_viewer", "auditor"}
-_SESSION_STATUS_ORDER = ("draft", "in_progress", "review", "ready", "archived")
-_SESSION_STATUS_SET = set(_SESSION_STATUS_ORDER)
-_SESSION_STATUS_TRANSITIONS: Dict[str, Set[str]] = {
-    "draft": {"draft", "in_progress", "archived"},
-    "in_progress": {"draft", "in_progress", "review", "ready", "archived"},
-    "review": {"in_progress", "review", "ready", "archived"},
-    "ready": {"in_progress", "review", "ready", "archived"},
-    "archived": {"archived", "in_progress"},
-}
-
 _RATE_LIMIT_LOCK = threading.RLock()
 _RATE_LIMIT_BUCKETS: Dict[str, deque] = {}
 
 
 def _clean_name(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
+
+
+def _to_epoch_ms(value: Any) -> int:
+    try:
+        ts = int(value or 0)
+    except Exception:
+        ts = 0
+    if ts <= 0:
+        return 0
+    # Storage persists unix seconds; UI metadata expects milliseconds.
+    if ts < 10_000_000_000:
+        return ts * 1000
+    return ts
+
+
+def _to_epoch_iso(value: Any) -> str:
+    ts_ms = _to_epoch_ms(value)
+    if ts_ms <= 0:
+        return ""
+    try:
+        return datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc).isoformat()
+    except Exception:
+        return ""
+
+
+def _looks_like_technical_actor_id(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    if not text:
+        return False
+    if re.fullmatch(r"[0-9a-f]{12,}", text):
+        return True
+    if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f-]{9,}", text):
+        return True
+    return False
+
+
+def _build_bpmn_version_author(created_by: Any) -> Dict[str, str]:
+    actor_id = str(created_by or "").strip()
+    author_email = ""
+    author_name = ""
+
+    if actor_id:
+        actor = find_user_by_id(actor_id)
+        if isinstance(actor, dict):
+            author_email = str(actor.get("email") or "").strip().lower()
+            author_name = _clean_name(
+                actor.get("name")
+                or actor.get("full_name")
+                or actor.get("display_name")
+                or "",
+            )
+        if (not author_email) and "@" in actor_id and " " not in actor_id:
+            author_email = actor_id.lower()
+
+    display = author_name or author_email
+    if not display and actor_id:
+        if _looks_like_technical_actor_id(actor_id):
+            display = f"Пользователь {actor_id[:8]}"
+        else:
+            display = actor_id
+    if not display:
+        display = "unknown"
+
+    return {
+        "id": actor_id,
+        "name": author_name,
+        "email": author_email,
+        "display_name": display,
+    }
 
 
 def _practical_role_for_org(role_raw: Any, is_admin: bool = False) -> str:
@@ -247,36 +320,16 @@ def _can_delete_workspace_content(role_raw: Any, is_admin: bool = False) -> bool
 
 
 def _normalize_session_status(raw: Any) -> str:
-    value = str(raw or "").strip().lower()
-    aliases = {
-        "draft": "draft",
-        "in_work": "in_progress",
-        "inprogress": "in_progress",
-        "in_progress": "in_progress",
-        "review": "review",
-        "on_review": "review",
-        "ready": "ready",
-        "done": "ready",
-        "archive": "archived",
-        "archived": "archived",
-    }
-    normalized = aliases.get(value, value)
-    return normalized if normalized in _SESSION_STATUS_SET else ""
+    return _normalize_session_status_base(raw)
 
 
 def _validate_session_status_transition(current_raw: Any, next_raw: Any, *, role_raw: Any, is_admin: bool = False) -> str:
-    current_status = _normalize_session_status(current_raw) or "draft"
-    next_status = _normalize_session_status(next_raw)
-    if not next_status:
-        raise HTTPException(status_code=422, detail="invalid status")
-    if not _can_edit_workspace(role_raw, is_admin=is_admin):
-        raise HTTPException(status_code=403, detail="forbidden")
-    allowed = set(_SESSION_STATUS_TRANSITIONS.get(current_status) or {current_status})
-    if next_status not in allowed:
-        raise HTTPException(status_code=409, detail="invalid status transition")
-    if next_status == "archived" and not _can_manage_workspace(role_raw, is_admin=is_admin):
-        raise HTTPException(status_code=403, detail="forbidden")
-    return next_status
+    return _validate_session_status_transition_base(
+        current_raw,
+        next_raw,
+        can_edit=_can_edit_workspace(role_raw, is_admin=is_admin),
+        can_archive=_can_manage_workspace(role_raw, is_admin=is_admin),
+    )
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -672,7 +725,47 @@ def _session_api_dump(sess: Session) -> Dict[str, Any]:
     d = sess.model_dump()
     d["notes"] = _notes_decode(d.get("notes"))
     d["bpmn_meta"] = _normalize_bpmn_meta(d.get("bpmn_meta"))
+    d["publish_git_mirror"] = _extract_publish_git_mirror(d.get("interview"))
     return d
+
+
+_PUBLISH_GIT_MIRROR_STATES = {
+    "not_attempted",
+    "skipped_disabled",
+    "skipped_invalid_config",
+    "pending",
+    "synced",
+    "failed",
+}
+
+
+def _extract_publish_git_mirror(interview_raw: Any) -> Dict[str, Any]:
+    interview = interview_raw if isinstance(interview_raw, dict) else {}
+    raw = interview.get("git_mirror_publish")
+    state_src = raw if isinstance(raw, dict) else {}
+    state = str(state_src.get("mirror_state") or "").strip().lower()
+    if state not in _PUBLISH_GIT_MIRROR_STATES:
+        state = "not_attempted"
+    current_bpmn = state_src.get("current_bpmn")
+    current_bpmn = current_bpmn if isinstance(current_bpmn, dict) else {}
+    try:
+        version_number = int(current_bpmn.get("version_number") or 0)
+    except Exception:
+        version_number = 0
+    version_number = max(0, int(version_number))
+    version_id = str(current_bpmn.get("version_id") or "").strip()
+    last_error = str(state_src.get("last_error") or "").strip()
+    try:
+        last_attempt_at = int(state_src.get("last_attempt_at") or 0)
+    except Exception:
+        last_attempt_at = 0
+    return {
+        "state": state,
+        "version_number": version_number,
+        "version_id": version_id or None,
+        "last_attempt_at": max(0, int(last_attempt_at)),
+        "last_error": last_error or None,
+    }
 
 
 def _get_report_versions_by_path(interview_raw: Any) -> Dict[str, List[Dict[str, Any]]]:
@@ -1856,19 +1949,59 @@ def _normalize_drawio_meta(value: Any) -> Dict[str, Any]:
             offset_x = 0.0
         if not math.isfinite(offset_y):
             offset_y = 0.0
-        elements.append(
-            {
-                "id": element_id,
-                "layer_id": layer_id,
-                "visible": row.get("visible") is not False,
-                "locked": bool(row.get("locked")),
-                "deleted": bool(row.get("deleted")),
-                "opacity": round(max(0.05, min(1.0, element_opacity)), 3),
-                "offset_x": round(offset_x, 3),
-                "offset_y": round(offset_y, 3),
-                "z_index": max(0, z_index),
+        element_entry: Dict[str, Any] = {
+            "id": element_id,
+            "layer_id": layer_id,
+            "visible": row.get("visible") is not False,
+            "locked": bool(row.get("locked")),
+            "deleted": bool(row.get("deleted")),
+            "opacity": round(max(0.05, min(1.0, element_opacity)), 3),
+            "offset_x": round(offset_x, 3),
+            "offset_y": round(offset_y, 3),
+            "z_index": max(0, z_index),
+        }
+        row_type = str(row.get("type") or "").strip().lower()
+        if row_type == "note":
+            text_present = "text" in row
+            label_present = "label" in row
+            if text_present:
+                note_text_raw = row.get("text")
+            elif label_present:
+                note_text_raw = row.get("label")
+            else:
+                note_text_raw = "Заметка"
+            if note_text_raw is None:
+                note_text = "Заметка"
+            else:
+                note_text = str(note_text_raw)
+            try:
+                note_width = float(row.get("width", 160))
+            except Exception:
+                note_width = 160.0
+            try:
+                note_height = float(row.get("height", 120))
+            except Exception:
+                note_height = 120.0
+            if not math.isfinite(note_width):
+                note_width = 160.0
+            if not math.isfinite(note_height):
+                note_height = 120.0
+            note_style_raw = row.get("style") if isinstance(row.get("style"), dict) else {}
+            note_style = {
+                "bg_color": str(note_style_raw.get("bg_color") or "").strip() or "#fef08a",
+                "border_color": str(note_style_raw.get("border_color") or "").strip() or "#ca8a04",
+                "text_color": str(note_style_raw.get("text_color") or "").strip() or "#1f2937",
             }
-        )
+            element_entry.update(
+                {
+                    "type": "note",
+                    "text": note_text,
+                    "width": int(round(max(80.0, min(1600.0, note_width)))),
+                    "height": int(round(max(56.0, min(1600.0, note_height)))),
+                    "style": note_style,
+                }
+            )
+        elements.append(element_entry)
     return {
         "enabled": bool(raw.get("enabled")),
         "locked": bool(raw.get("locked")),
@@ -3100,6 +3233,7 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
 
     handled = False
     need_recompute = False
+    publish_requested = False
 
     if "title" in data and data["title"] is not None:
         if not _can_edit_workspace(role, is_admin=effective_is_admin):
@@ -3169,6 +3303,7 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
             is_admin=effective_is_admin,
         )
         sess.interview = {**(sess.interview or {}), "status": next_status}
+        publish_requested = next_status == "ready"
         handled = True
 
     if "nodes" in data:
@@ -3208,12 +3343,25 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
         if isinstance(incoming_meta, dict):
             raw_bpmn_meta = {
                 **current_meta,
+                **incoming_meta,
                 "version": incoming_meta.get("version", current_meta.get("version", 1)),
                 "flow_meta": incoming_meta.get("flow_meta", current_meta.get("flow_meta", {})),
                 "node_path_meta": incoming_meta.get("node_path_meta", current_meta.get("node_path_meta", {})),
                 "robot_meta_by_element_id": incoming_meta.get(
                     "robot_meta_by_element_id",
                     current_meta.get("robot_meta_by_element_id", {}),
+                ),
+                "camunda_extensions_by_element_id": incoming_meta.get(
+                    "camunda_extensions_by_element_id",
+                    current_meta.get("camunda_extensions_by_element_id", {}),
+                ),
+                "presentation_by_element_id": incoming_meta.get(
+                    "presentation_by_element_id",
+                    current_meta.get("presentation_by_element_id", {}),
+                ),
+                "execution_plans": incoming_meta.get(
+                    "execution_plans",
+                    current_meta.get("execution_plans", []),
                 ),
                 "hybrid_layer_by_element_id": incoming_meta.get(
                     "hybrid_layer_by_element_id",
@@ -3247,6 +3395,33 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
     if need_recompute:
         sess = _recompute_session(sess)
     st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
+
+    if publish_requested:
+        interview_pending = dict(getattr(sess, "interview", {}) or {})
+        mirror_pending = interview_pending.get("git_mirror_publish")
+        if not isinstance(mirror_pending, dict):
+            mirror_pending = {}
+        mirror_pending = {
+            **mirror_pending,
+            "schema_version": "git_mirror_publish_v1",
+            "mirror_state": "pending",
+            "last_attempt_at": int(time.time()),
+            "last_error": None,
+        }
+        interview_pending["git_mirror_publish"] = mirror_pending
+        sess.interview = interview_pending
+        st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
+
+        mirror_result = execute_git_mirror_publish(
+            sess,
+            org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
+            user_id=user_id,
+        )
+        next_interview = mirror_result.get("interview")
+        if isinstance(next_interview, dict):
+            sess.interview = next_interview
+            st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
+
     _audit_log_safe(
         request,
         org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
@@ -3275,6 +3450,7 @@ def delete_project_api(project_id: str, request: Request = None):
     is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
     if not _can_delete_workspace_content(role, is_admin=is_admin):
         raise HTTPException(status_code=403, detail="forbidden")
+    _invalidate_explorer_children_for_project(pid, oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
     st = get_storage()
     related = st.list(project_id=pid, limit=500, org_id=oid, is_admin=True)
     deleted_sessions: list[str] = []
@@ -5186,11 +5362,15 @@ def session_bpmn_export(
     session_id: str,
     raw: int = Query(0, description="1 = return stored bpmn_xml as-is (no regenerate/overlay)"),
     include_overlay: int = Query(1, description="1 = overlay interview annotations (ignored when raw=1)"),
+    request: Request = None,
 ):
     st = get_storage()
-    s = st.load(session_id)
+    s, oid, _ = _legacy_load_session_scoped(session_id, request)
     if not s:
         return Response(content="not found", media_type="text/plain", status_code=404)
+
+    user = _request_auth_user(request) if request is not None else {}
+    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
 
     xml_stored = str(getattr(s, "bpmn_xml", "") or "")
     has_graph = len(getattr(s, "nodes", []) or []) > 0 or len(getattr(s, "edges", []) or []) > 0
@@ -5203,7 +5383,7 @@ def session_bpmn_export(
         s.bpmn_xml = str(xml_text or "")
         s.bpmn_xml_version = int(getattr(s, "version", 0) or 0)
         s.bpmn_graph_fingerprint = current_graph_fp
-        st.save(s)
+        st.save(s, user_id=user_id, org_id=oid, is_admin=True)
 
     if raw_mode:
         if xml_stored.strip():
@@ -5262,22 +5442,72 @@ def session_bpmn_export(
     )
 
 
-@app.put("/api/sessions/{session_id}/bpmn")
-def session_bpmn_save(session_id: str, inp: BpmnXmlIn) -> Dict[str, Any]:
-    lock = acquire_session_lock(session_id, ttl_ms=15000)
-    if not lock.acquired:
-        raise HTTPException(status_code=423, detail="Session is being updated, retry")
+_BPMN_REVISION_SNAPSHOT_ACTION_WHITELIST = {
+    "import_bpmn",
+    "manual_save",
+    "publish_manual_save",
+    "restore_bpmn_version",
+}
 
-    st = get_storage()
-    s = st.load(session_id)
-    if not s:
+
+def should_create_bpmn_revision_snapshot(*, previous_xml: Any, next_xml: Any, source_action: Any) -> bool:
+    action = str(source_action or "").strip().lower()
+    if action not in _BPMN_REVISION_SNAPSHOT_ACTION_WHITELIST:
+        return False
+    prev = str(previous_xml or "")
+    nxt = str(next_xml or "")
+    if not prev.strip():
+        return False
+    if not nxt.strip():
+        return False
+    return prev != nxt
+
+
+@app.put("/api/sessions/{session_id}/bpmn")
+def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) -> Dict[str, Any]:
+    user = _request_auth_user(request) if request is not None else {}
+    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
+    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
+    effective_is_admin = is_admin or request is None
+
+    sess_pre, oid, _ = _legacy_load_session_scoped(session_id, request)
+    if not sess_pre:
         return {"error": "not found"}
+    role = _org_role_for_request(request, oid) if request is not None and oid else ("org_admin" if effective_is_admin else "")
+    if not _can_edit_workspace(role, is_admin=effective_is_admin):
+        raise HTTPException(status_code=403, detail="forbidden")
 
     xml = str(inp.xml or "")
     if not xml.strip():
         return {"error": "xml is empty"}
+    source_action = str(inp.source_action or "").strip().lower()
+    import_note = str(inp.import_note or "").strip()
+
+    lock = acquire_session_lock(session_id, ttl_ms=15000)
+    if not lock.acquired:
+        raise HTTPException(status_code=423, detail="Session is being updated, retry")
 
     try:
+        st = get_storage()
+        s, oid_locked, _ = _legacy_load_session_scoped(session_id, request)
+        if not s:
+            return {"error": "not found"}
+        previous_xml = str(getattr(s, "bpmn_xml", "") or "")
+        bpmn_version_snapshot: Optional[Dict[str, Any]] = None
+        if should_create_bpmn_revision_snapshot(
+            previous_xml=previous_xml,
+            next_xml=xml,
+            source_action=source_action,
+        ):
+            bpmn_version_snapshot = st.create_bpmn_version_snapshot(
+                s.id,
+                bpmn_xml=xml,
+                source_action=source_action,
+                created_by=user_id,
+                org_id=oid_locked,
+                import_note=import_note,
+            )
+
         flow_ctx = _collect_sequence_flow_meta(xml)
         flow_ids = flow_ctx.get("flow_ids") if isinstance(flow_ctx, dict) else set()
         node_ids = flow_ctx.get("node_ids") if isinstance(flow_ctx, dict) else set()
@@ -5318,12 +5548,25 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn) -> Dict[str, Any]:
 
             raw_bpmn_meta = {
                 **current_meta,
+                **incoming_meta,
                 "version": incoming_meta.get("version", current_meta.get("version", 1)),
                 "flow_meta": incoming_meta.get("flow_meta", current_meta.get("flow_meta", {})),
                 "node_path_meta": incoming_meta.get("node_path_meta", current_meta.get("node_path_meta", {})),
                 "robot_meta_by_element_id": incoming_meta.get(
                     "robot_meta_by_element_id",
                     current_meta.get("robot_meta_by_element_id", {}),
+                ),
+                "camunda_extensions_by_element_id": incoming_meta.get(
+                    "camunda_extensions_by_element_id",
+                    current_meta.get("camunda_extensions_by_element_id", {}),
+                ),
+                "presentation_by_element_id": incoming_meta.get(
+                    "presentation_by_element_id",
+                    current_meta.get("presentation_by_element_id", {}),
+                ),
+                "execution_plans": incoming_meta.get(
+                    "execution_plans",
+                    current_meta.get("execution_plans", []),
                 ),
                 "hybrid_layer_by_element_id": merged_hybrid_layer,
                 "hybrid_v2": merged_hybrid_v2,
@@ -5345,9 +5588,182 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn) -> Dict[str, Any]:
             gateway_mode_by_node=flow_ctx.get("gateway_mode_by_node"),
         )
         s.bpmn_meta = normalized_meta
-        st.save(s)
+        st.save(s, user_id=user_id, org_id=oid_locked, is_admin=True)
         _invalidate_session_caches(s, session_id=session_id, org_id=getattr(s, "org_id", "") or get_default_org_id())
-        return {"ok": True, "session_id": s.id, "bytes": len(xml), "version": s.bpmn_xml_version}
+        out = {"ok": True, "session_id": s.id, "bytes": len(xml), "version": s.bpmn_xml_version}
+        if bpmn_version_snapshot is not None:
+            out["bpmn_version_snapshot"] = bpmn_version_snapshot
+        return out
+    finally:
+        lock.release()
+
+
+@app.get("/api/sessions/{session_id}/bpmn/versions")
+def session_bpmn_versions_list(
+    session_id: str,
+    request: Request = None,
+    limit: int = Query(100, description="Max versions to return"),
+    include_xml: int = Query(0, description="1 = include bpmn_xml payload"),
+) -> Dict[str, Any]:
+    sess, oid, _ = _legacy_load_session_scoped(session_id, request)
+    if not sess:
+        return {"error": "not found"}
+    st = get_storage()
+    include_xml_mode = int(include_xml or 0) == 1
+    rows = st.list_bpmn_versions(
+        str(getattr(sess, "id", "") or session_id),
+        org_id=oid,
+        limit=limit,
+    )
+    items: List[Dict[str, Any]] = []
+    for row in rows:
+        created_at = int(row.get("created_at") or 0)
+        author = _build_bpmn_version_author(row.get("created_by"))
+        item = {
+            "id": str(row.get("id") or ""),
+            "session_id": str(row.get("session_id") or ""),
+            "version_number": int(row.get("version_number") or 0),
+            "source_action": str(row.get("source_action") or ""),
+            "import_note": str(row.get("import_note") or ""),
+            "created_at": created_at,
+            "created_at_ms": _to_epoch_ms(created_at),
+            "created_at_iso": _to_epoch_iso(created_at),
+            "created_by": str(row.get("created_by") or ""),
+            "author_id": author.get("id", ""),
+            "author_name": author.get("name", ""),
+            "author_email": author.get("email", ""),
+            "author_display": author.get("display_name", ""),
+            "author": author,
+        }
+        if include_xml_mode:
+            item["bpmn_xml"] = str(row.get("bpmn_xml") or "")
+        items.append(item)
+    return {
+        "ok": True,
+        "session_id": str(getattr(sess, "id", "") or session_id),
+        "count": len(items),
+        "items": items,
+    }
+
+
+@app.post("/api/sessions/{session_id}/bpmn/restore/{version_id}")
+def session_bpmn_restore(session_id: str, version_id: str, request: Request = None) -> Dict[str, Any]:
+    user = _request_auth_user(request) if request is not None else {}
+    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
+    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
+    effective_is_admin = is_admin or request is None
+
+    sess_pre, oid, _ = _legacy_load_session_scoped(session_id, request)
+    if not sess_pre:
+        return {"error": "not found"}
+    role = _org_role_for_request(request, oid) if request is not None and oid else ("org_admin" if effective_is_admin else "")
+    if not _can_edit_workspace(role, is_admin=effective_is_admin):
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    vid = str(version_id or "").strip()
+    if not vid:
+        return {"error": "missing_version_id"}
+
+    lock = acquire_session_lock(session_id, ttl_ms=15000)
+    if not lock.acquired:
+        raise HTTPException(status_code=423, detail="Session is being updated, retry")
+
+    try:
+        st = get_storage()
+        s, oid_locked, _ = _legacy_load_session_scoped(session_id, request)
+        if not s:
+            return {"error": "not found"}
+
+        version_row = st.get_bpmn_version(
+            str(getattr(s, "id", "") or session_id),
+            vid,
+            org_id=oid_locked,
+        )
+        if not version_row:
+            return {"error": "bpmn_version_not_found", "version_id": vid}
+
+        xml = str(version_row.get("bpmn_xml") or "")
+        if not xml.strip():
+            return {"error": "bpmn_version_xml_empty", "version_id": vid}
+        previous_xml = str(getattr(s, "bpmn_xml", "") or "")
+        restored_snapshot: Optional[Dict[str, Any]] = None
+        if should_create_bpmn_revision_snapshot(
+            previous_xml=previous_xml,
+            next_xml=xml,
+            source_action="restore_bpmn_version",
+        ):
+            restored_snapshot = st.create_bpmn_version_snapshot(
+                str(getattr(s, "id", "") or session_id),
+                bpmn_xml=xml,
+                source_action="restore_bpmn_version",
+                created_by=user_id,
+                org_id=oid_locked,
+            )
+
+        flow_ctx = _collect_sequence_flow_meta(xml)
+        flow_ids = flow_ctx.get("flow_ids") if isinstance(flow_ctx, dict) else set()
+        node_ids = flow_ctx.get("node_ids") if isinstance(flow_ctx, dict) else set()
+
+        current_meta = _normalize_bpmn_meta(
+            getattr(s, "bpmn_meta", {}),
+            allowed_flow_ids=flow_ids,
+            allowed_node_ids=node_ids,
+        )
+
+        s.bpmn_xml = xml
+        s.bpmn_xml_version = int(getattr(s, "version", 0) or 0)
+        s.bpmn_graph_fingerprint = _session_graph_fingerprint(s)
+        normalized_meta = _normalize_bpmn_meta(
+            current_meta,
+            allowed_flow_ids=flow_ids,
+            allowed_node_ids=node_ids,
+        )
+        normalized_meta["flow_meta"] = _enforce_gateway_tier_constraints(
+            dict(normalized_meta.get("flow_meta") or {}),
+            outgoing_by_source=flow_ctx.get("outgoing_by_source"),
+            gateway_mode_by_node=flow_ctx.get("gateway_mode_by_node"),
+        )
+        s.bpmn_meta = normalized_meta
+        st.save(s, user_id=user_id, org_id=oid_locked, is_admin=True)
+        _invalidate_session_caches(s, session_id=session_id, org_id=getattr(s, "org_id", "") or get_default_org_id())
+        _audit_log_safe(
+            request,
+            org_id=oid_locked or str(getattr(s, "org_id", "") or get_default_org_id()),
+            action="session.bpmn_restore",
+            entity_type="session",
+            entity_id=str(getattr(s, "id", "") or session_id),
+            project_id=str(getattr(s, "project_id", "") or ""),
+            session_id=str(getattr(s, "id", "") or session_id),
+            meta={
+                "version_id": str(version_row.get("id") or ""),
+                "version_number": int(version_row.get("version_number") or 0),
+            },
+        )
+        restored_created_at = int(version_row.get("created_at") or 0)
+        restored_author = _build_bpmn_version_author(version_row.get("created_by"))
+        return {
+            "ok": True,
+            "session_id": str(getattr(s, "id", "") or session_id),
+            "version": int(getattr(s, "bpmn_xml_version", 0) or 0),
+            "bytes": len(xml),
+            "bpmn_xml": xml,
+            "bpmn_version_snapshot": restored_snapshot,
+            "restored_version": {
+                "id": str(version_row.get("id") or ""),
+                "version_number": int(version_row.get("version_number") or 0),
+                "source_action": str(version_row.get("source_action") or ""),
+                "import_note": str(version_row.get("import_note") or ""),
+                "created_at": restored_created_at,
+                "created_at_ms": _to_epoch_ms(restored_created_at),
+                "created_at_iso": _to_epoch_iso(restored_created_at),
+                "created_by": str(version_row.get("created_by") or ""),
+                "author_id": restored_author.get("id", ""),
+                "author_name": restored_author.get("name", ""),
+                "author_email": restored_author.get("email", ""),
+                "author_display": restored_author.get("display_name", ""),
+                "author": restored_author,
+            },
+        }
     finally:
         lock.release()
 
@@ -5580,9 +5996,19 @@ def _validate_invite_email_config_on_boot() -> None:
         print(f"[INVITE_EMAIL] boot_warning reason={reason}")
 
 
+def _resolve_invite_base_url(request: Optional[Request], *, explicit_base_url: str = "") -> str:
+    configured = str(explicit_base_url or os.environ.get("APP_BASE_URL") or os.environ.get("PUBLIC_BASE_URL") or "").strip()
+    if configured:
+        return configured.rstrip("/")
+    return ""
+
+
 def _build_invite_link(base_url: str, token: str) -> str:
     base = str(base_url or "").strip().rstrip("/")
-    return f"{base}/accept-invite?token={token}"
+    invite_token = str(token or "").strip()
+    if not invite_token:
+        return f"{base}/accept-invite" if base else "/accept-invite"
+    return f"{base}/accept-invite?token={invite_token}"
 
 
 def _send_org_invite_email(
@@ -5676,6 +6102,29 @@ def _enrich_members_with_email(items_raw: Any) -> List[Dict[str, Any]]:
     return out
 
 
+def _request_org_candidates(request: Optional[Request], preferred_org_id: str) -> List[str]:
+    out: List[str] = []
+    seen: Set[str] = set()
+
+    def _push(org_id_raw: Any) -> None:
+        org_id = str(org_id_raw or "").strip()
+        if not org_id or org_id in seen:
+            return
+        seen.add(org_id)
+        out.append(org_id)
+
+    _push(preferred_org_id)
+    if request is not None:
+        user_id, is_admin = _request_user_meta(request)
+        if user_id:
+            for row in list_user_org_memberships(user_id, is_admin=is_admin):
+                if isinstance(row, dict):
+                    _push(row.get("org_id"))
+    if not out:
+        _push(get_default_org_id())
+    return out
+
+
 def _legacy_load_project_scoped(
     project_id: str,
     request: Optional[Request] = None,
@@ -5685,14 +6134,23 @@ def _legacy_load_project_scoped(
     if not pid:
         return None, oid, None
     ps = get_project_storage()
-    proj = ps.load(pid, org_id=(oid or None), is_admin=True)
+    proj: Optional[Project] = None
+    resolved_oid = oid
+    for org_candidate in _request_org_candidates(request, oid):
+        proj = ps.load(pid, org_id=(org_candidate or None), is_admin=True)
+        if proj:
+            resolved_oid = org_candidate
+            break
     if not proj:
         return None, oid, None
-    scope = _project_scope_for_request(request, oid or str(getattr(proj, "org_id", "") or "").strip() or get_default_org_id())
+    scope = _project_scope_for_request(
+        request,
+        resolved_oid or str(getattr(proj, "org_id", "") or "").strip() or get_default_org_id(),
+    )
     allowed = _scope_allowed_project_ids(scope)
     if allowed and str(getattr(proj, "id", "") or "").strip() not in allowed:
-        return None, oid, scope
-    return proj, (oid or str(getattr(proj, "org_id", "") or "").strip() or get_default_org_id()), scope
+        return None, resolved_oid, scope
+    return proj, (resolved_oid or str(getattr(proj, "org_id", "") or "").strip() or get_default_org_id()), scope
 
 
 def _legacy_load_session_scoped(
@@ -5704,15 +6162,24 @@ def _legacy_load_session_scoped(
     if not sid:
         return None, oid, None
     st = get_storage()
-    sess = st.load(sid, org_id=(oid or None), is_admin=True)
+    sess: Optional[Session] = None
+    resolved_oid = oid
+    for org_candidate in _request_org_candidates(request, oid):
+        sess = st.load(sid, org_id=(org_candidate or None), is_admin=True)
+        if sess:
+            resolved_oid = org_candidate
+            break
     if not sess:
         return None, oid, None
-    scope = _project_scope_for_request(request, oid or str(getattr(sess, "org_id", "") or "").strip() or get_default_org_id())
+    scope = _project_scope_for_request(
+        request,
+        resolved_oid or str(getattr(sess, "org_id", "") or "").strip() or get_default_org_id(),
+    )
     allowed = _scope_allowed_project_ids(scope)
     project_id = str(getattr(sess, "project_id", "") or "").strip()
     if allowed and project_id and project_id not in allowed:
-        return None, oid, scope
-    return sess, (oid or str(getattr(sess, "org_id", "") or "").strip() or get_default_org_id()), scope
+        return None, resolved_oid, scope
+    return sess, (resolved_oid or str(getattr(sess, "org_id", "") or "").strip() or get_default_org_id()), scope
 
 
 def _enterprise_manage_project_members_guard(
@@ -6004,6 +6471,22 @@ def _invalidate_session_open_cache_for_session(session_id: Any) -> None:
     invalidate_session_open(sid)
 
 
+def _invalidate_explorer_children_for_project(project_id: Any, org_id: Any) -> None:
+    pid = str(project_id or "").strip()
+    oid = _resolved_org_for_cache(org_id)
+    if not pid or not oid:
+        return
+    try:
+        targets = get_project_explorer_invalidation_targets(oid, pid)
+    except Exception:
+        targets = None
+    if not targets:
+        return
+    wid = str(targets.get("workspace_id") or "").strip()
+    for folder_id in (targets.get("children_folder_ids") or []):
+        explorer_invalidate_children(oid, wid, str(folder_id or ""))
+
+
 def _invalidate_session_caches(session_obj: Any = None, *, session_id: Any = None, org_id: Any = None) -> None:
     sid = str(session_id or getattr(session_obj, "id", "") or "").strip()
     oid = _resolved_org_for_cache(org_id or getattr(session_obj, "org_id", ""))
@@ -6011,6 +6494,7 @@ def _invalidate_session_caches(session_obj: Any = None, *, session_id: Any = Non
     _invalidate_workspace_cache_for_org(oid)
     if project_id:
         explorer_invalidate_sessions(project_id)
+        _invalidate_explorer_children_for_project(project_id, oid)
     if sid:
         _invalidate_session_open_cache_for_session(sid)
         _invalidate_tldr_cache_for_session(sid)
@@ -6421,6 +6905,131 @@ def patch_org_endpoint(org_id: str, inp: OrgPatchIn, request: Request) -> Dict[s
     return org
 
 
+@app.get("/api/orgs/{org_id}/git-mirror")
+def get_org_git_mirror_endpoint(org_id: str, request: Request) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    role, err = _enterprise_require_org_member(request, oid)
+    if err is not None:
+        return err
+    _uid, is_admin = _request_user_meta(request)
+    role_l = str(role or "").strip().lower()
+    if not (is_admin or _is_role_allowed(role_l, _ORG_READ_ROLES)):
+        return _enterprise_error(403, "forbidden", "insufficient_permissions")
+    try:
+        config = get_org_git_mirror_config(oid)
+    except ValueError:
+        return _enterprise_error(404, "not_found", "not_found")
+    return {"ok": True, "org_id": oid, "config": config}
+
+
+@app.patch("/api/orgs/{org_id}/git-mirror")
+def patch_org_git_mirror_endpoint(org_id: str, inp: OrgGitMirrorPatchIn, request: Request) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    role, err = _enterprise_require_org_role(request, oid, _ORG_MEMBER_MANAGE_ROLES)
+    if err is not None:
+        return err
+    uid, is_admin = _request_user_meta(request)
+    if not _can_manage_workspace(role, is_admin=is_admin):
+        return _enterprise_error(403, "forbidden", "insufficient_permissions")
+
+    try:
+        current = get_org_git_mirror_config(oid)
+    except ValueError:
+        return _enterprise_error(404, "not_found", "not_found")
+
+    patch = inp.model_dump(exclude_unset=True)
+    candidate = {
+        "git_mirror_enabled": bool(current.get("git_mirror_enabled")),
+        "git_provider": current.get("git_provider"),
+        "git_repository": current.get("git_repository"),
+        "git_branch": current.get("git_branch"),
+        "git_base_path": current.get("git_base_path"),
+    }
+    if "git_mirror_enabled" in patch:
+        candidate["git_mirror_enabled"] = bool(patch.get("git_mirror_enabled"))
+    if "git_provider" in patch:
+        candidate["git_provider"] = patch.get("git_provider")
+    if "git_repository" in patch:
+        candidate["git_repository"] = patch.get("git_repository")
+    if "git_branch" in patch:
+        candidate["git_branch"] = patch.get("git_branch")
+    if "git_base_path" in patch:
+        candidate["git_base_path"] = patch.get("git_base_path")
+
+    evaluated = evaluate_org_git_mirror_config(candidate)
+    try:
+        saved = update_org_git_mirror_config(
+            oid,
+            git_mirror_enabled=bool(evaluated.get("git_mirror_enabled")),
+            git_provider=evaluated.get("git_provider"),
+            git_repository=evaluated.get("git_repository"),
+            git_branch=evaluated.get("git_branch"),
+            git_base_path=evaluated.get("git_base_path"),
+            git_health_status=evaluated.get("git_health_status"),
+            git_health_message=evaluated.get("git_health_message"),
+            git_updated_by=uid,
+        )
+    except ValueError:
+        return _enterprise_error(404, "not_found", "not_found")
+
+    _audit_log_safe(
+        request,
+        org_id=oid,
+        action="org.git_mirror_update",
+        entity_type="org",
+        entity_id=oid,
+        meta={
+            "actor_user_id": uid,
+            "git_mirror_enabled": bool(saved.get("git_mirror_enabled")),
+            "git_provider": str(saved.get("git_provider") or ""),
+            "git_repository": str(saved.get("git_repository") or ""),
+            "git_branch": str(saved.get("git_branch") or ""),
+            "git_base_path": str(saved.get("git_base_path") or ""),
+            "git_health_status": str(saved.get("git_health_status") or "unknown"),
+        },
+    )
+    _invalidate_workspace_cache_for_org(oid)
+    return {"ok": True, "org_id": oid, "config": saved}
+
+
+@app.post("/api/orgs/{org_id}/git-mirror/validate")
+def validate_org_git_mirror_endpoint(org_id: str, inp: OrgGitMirrorPatchIn, request: Request) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    role, err = _enterprise_require_org_role(request, oid, _ORG_MEMBER_MANAGE_ROLES)
+    if err is not None:
+        return err
+    _uid, is_admin = _request_user_meta(request)
+    if not _can_manage_workspace(role, is_admin=is_admin):
+        return _enterprise_error(403, "forbidden", "insufficient_permissions")
+
+    try:
+        current = get_org_git_mirror_config(oid)
+    except ValueError:
+        return _enterprise_error(404, "not_found", "not_found")
+
+    patch = inp.model_dump(exclude_unset=True)
+    candidate = {
+        "git_mirror_enabled": bool(current.get("git_mirror_enabled")),
+        "git_provider": current.get("git_provider"),
+        "git_repository": current.get("git_repository"),
+        "git_branch": current.get("git_branch"),
+        "git_base_path": current.get("git_base_path"),
+    }
+    if "git_mirror_enabled" in patch:
+        candidate["git_mirror_enabled"] = bool(patch.get("git_mirror_enabled"))
+    if "git_provider" in patch:
+        candidate["git_provider"] = patch.get("git_provider")
+    if "git_repository" in patch:
+        candidate["git_repository"] = patch.get("git_repository")
+    if "git_branch" in patch:
+        candidate["git_branch"] = patch.get("git_branch")
+    if "git_base_path" in patch:
+        candidate["git_base_path"] = patch.get("git_base_path")
+
+    evaluated = evaluate_org_git_mirror_config(candidate)
+    return {"ok": True, "org_id": oid, "config": evaluated}
+
+
 def list_org_members_endpoint(org_id: str, request: Request) -> Dict[str, Any]:
     oid = str(org_id or "").strip()
     role, err = _enterprise_require_org_member(request, oid)
@@ -6709,6 +7318,29 @@ def delete_org_project_member(org_id: str, project_id: str, user_id: str, reques
     return Response(status_code=204)
 
 
+def _with_invite_links(items_raw: Any, *, base_url: str) -> List[Dict[str, Any]]:
+    rows = items_raw if isinstance(items_raw, list) else []
+    out: List[Dict[str, Any]] = []
+    for row_raw in rows:
+        row = dict(row_raw or {}) if isinstance(row_raw, dict) else {}
+        token = str(row.get("invite_key") or "").strip()
+        status = str(row.get("status") or "").strip().lower()
+        row["invite_link"] = _build_invite_link(base_url, token) if (token and status == "pending") else ""
+        out.append(row)
+    return out
+
+
+def _pick_current_org_invite(items_raw: Any) -> Dict[str, Any]:
+    rows = items_raw if isinstance(items_raw, list) else []
+    for row_raw in rows:
+        row = row_raw if isinstance(row_raw, dict) else {}
+        status = str(row.get("status") or "").strip().lower()
+        token = str(row.get("invite_key") or "").strip()
+        if status == "pending" and token:
+            return dict(row)
+    return {}
+
+
 @app.get("/api/orgs/{org_id}/invites")
 @app.get("/api/admin/organizations/{org_id}/invites")
 def list_org_invites_endpoint(org_id: str, request: Request):
@@ -6716,8 +7348,13 @@ def list_org_invites_endpoint(org_id: str, request: Request):
     _, err = _enterprise_require_org_role(request, oid, _ORG_INVITE_MANAGE_ROLES)
     if err is not None:
         return err
-    items = list_org_invites(oid, include_inactive=True)
-    return build_items_count_payload(items)
+    base_url = _resolve_invite_base_url(
+        request,
+        explicit_base_url=str(_invite_email_config().get("base_url") or ""),
+    )
+    items = _with_invite_links(list_org_invites(oid, include_inactive=True), base_url=base_url)
+    current_invite = _pick_current_org_invite(items)
+    return build_items_count_payload(items, current_invite=current_invite)
 
 
 @app.post("/api/orgs/{org_id}/invites")
@@ -6730,6 +7367,7 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
     email = str(getattr(inp, "email", "") or "").strip().lower()
     full_name = str(getattr(inp, "full_name", "") or "").strip()
     job_title = str(getattr(inp, "job_title", "") or "").strip()
+    regenerate = bool(getattr(inp, "regenerate", False))
     try:
         normalized_invite_role = normalize_invite_role(getattr(inp, "role", "viewer"))
     except ValueError as exc:
@@ -6745,6 +7383,7 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
         return _enterprise_error(401, "unauthorized", "unauthorized")
     ttl_days = normalize_invite_ttl_days(getattr(inp, "ttl_days", 0), _invite_ttl_hours_default())
     email_delivery = _invite_email_enabled()
+    staged_regenerate = bool(regenerate and email_delivery)
     if email_delivery:
         ready, reason, _ = _invite_email_config_ready()
         if not ready:
@@ -6761,6 +7400,8 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
             job_title=job_title,
             role=normalized_invite_role,
             ttl_days=ttl_days,
+            regenerate=(regenerate and not staged_regenerate),
+            activate_now=(not staged_regenerate),
         )
     except ValueError as exc:
         return _enterprise_error(422, "validation_error", str(exc))
@@ -6768,12 +7409,22 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
         return _enterprise_error(422, "validation_error", str(exc))
     token = str(created.pop("token", "") or "")
     response_payload: Dict[str, Any] = {"invite": created}
+    invite_base_url = _resolve_invite_base_url(
+        request,
+        explicit_base_url=str(_invite_email_config().get("base_url") or ""),
+    )
     if email_delivery:
         ok_cfg, _, cfg = _invite_email_config_ready()
         if not ok_cfg:
             _ = delete_org_invite(oid, str(created.get("id") or ""))
             return _enterprise_error(503, "service_unavailable", "invite_email_unavailable")
-        invite_link = _build_invite_link(str(cfg.get("base_url") or ""), token)
+        invite_link = _build_invite_link(
+            _resolve_invite_base_url(
+                request,
+                explicit_base_url=str(cfg.get("base_url") or ""),
+            ),
+            token,
+        )
         try:
             _send_org_invite_email(
                 to_email=email,
@@ -6801,16 +7452,37 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
                 },
             )
             return _enterprise_error(502, "upstream_error", "invite_email_send_failed")
+        if staged_regenerate:
+            promoted = promote_regenerated_org_invite(
+                oid,
+                email,
+                str(created.get("id") or ""),
+                actor=uid,
+            )
+            if not promoted:
+                _ = delete_org_invite(oid, str(created.get("id") or ""))
+                return _enterprise_error(500, "server_error", "invite_regenerate_finalize_failed")
+            refreshed = get_org_invite_by_id(oid, str(created.get("id") or ""))
+            if refreshed:
+                created = refreshed
+                response_payload["invite"] = refreshed
         response_payload["delivery"] = "email"
     else:
         expose_token = _should_reveal_invite_token(request)
         if expose_token and token:
             response_payload["invite_key"] = token
             response_payload["invite_token"] = token
-            cfg = _invite_email_config()
-            base_url = str(cfg.get("base_url") or "").strip()
-            response_payload["invite_link"] = _build_invite_link(base_url, token) if base_url else f"/app/org?tab=invites&org_id={oid}&token={token}"
+            response_payload["invite_link"] = _build_invite_link(invite_base_url, token)
         response_payload["delivery"] = "token"
+    audit_meta = build_invite_create_audit_meta(
+        email=email,
+        role=str(created.get("role") or ""),
+        full_name=full_name,
+        job_title=job_title,
+        delivery=str(response_payload.get("delivery") or "token"),
+        is_admin=bool(is_admin),
+    )
+    audit_meta["regenerate"] = regenerate
     _audit_log_safe(
         request,
         org_id=oid,
@@ -6818,14 +7490,7 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
         entity_type="org_invite",
         entity_id=str(created.get("id") or ""),
         status="ok",
-        meta=build_invite_create_audit_meta(
-            email=email,
-            role=str(created.get("role") or ""),
-            full_name=full_name,
-            job_title=job_title,
-            delivery=str(response_payload.get("delivery") or "token"),
-            is_admin=bool(is_admin),
-        ),
+        meta=audit_meta,
     )
     return response_payload
 
@@ -7218,6 +7883,7 @@ def create_project(inp: CreateProjectIn, request: Request = None) -> dict:
         meta={"title": str(getattr(proj, "title", "") or "")},
     )
     _invalidate_workspace_cache_for_org(oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
+    _invalidate_explorer_children_for_project(pid, oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
     return proj.model_dump()
 
 
@@ -7274,6 +7940,7 @@ def patch_project(project_id: str, inp: UpdateProjectIn, request: Request = None
         meta={"title": str(getattr(proj, "title", "") or "")},
     )
     _invalidate_workspace_cache_for_org(oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
+    _invalidate_explorer_children_for_project(str(getattr(proj, "id", "") or project_id), oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
     return proj.model_dump()
 
 
@@ -7304,6 +7971,8 @@ def put_project(project_id: str, inp: CreateProjectIn, request: Request = None) 
         project_id=str(getattr(proj, "id", "") or project_id),
         meta={"title": str(getattr(proj, "title", "") or ""), "put": True},
     )
+    _invalidate_workspace_cache_for_org(oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
+    _invalidate_explorer_children_for_project(str(getattr(proj, "id", "") or project_id), oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
     return proj.model_dump()
 
 
