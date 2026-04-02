@@ -194,6 +194,40 @@ test("unified editing contract: full-editor-first id survives runtime continuati
   assert.equal(byId(afterEditorReopenApply, "shape_alpha")?.deleted, false);
 });
 
+test("unified editing contract: anchor_v1 survives full-editor svg rebuild for same draw.io id", () => {
+  const before = normalizeDrawioMeta({
+    enabled: true,
+    doc_xml: mxfile("anchor-lineage"),
+    svg_cache: svgWith("text_1"),
+    drawio_layers_v1: [makeLayer("DL1")],
+    active_layer_id: "DL1",
+    drawio_elements_v1: [
+      makeElement("text_1", {
+        text: "Anchored note",
+        anchor_v1: {
+          target_kind: "bpmn_node",
+          target_id: "Task_1",
+          relation: "explains",
+          status: "anchored",
+        },
+      }),
+    ],
+  });
+
+  const afterEditorApply = normalizeDrawioMeta({
+    ...before,
+    svg_cache: svgWith("text_1"),
+    drawio_elements_v1: buildElementsFromSvgMirror(before, svgWith("text_1")),
+  });
+
+  assert.deepEqual(byId(afterEditorApply, "text_1")?.anchor_v1, {
+    target_kind: "bpmn_node",
+    target_id: "Task_1",
+    relation: "explains",
+    status: "anchored",
+  });
+});
+
 test("unified editing contract: runtime-created id enters doc_xml lineage without duplicate rows", () => {
   const patch = buildRuntimePlacementPatch({
     metaRaw: {

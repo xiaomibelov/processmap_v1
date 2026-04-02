@@ -1,0 +1,117 @@
+== git state (before) ==
+## fix/step18c3f-zoom-subtree-false-v1
+?? foodproc_step15_applyanswers.sh
+?? fpc_step_14_patch_bundle.zip
+?? scripts/fix_mermaid_py_quotes_v1.py
+?? scripts/step18b2_patch_backend_start_role.py
+?? scripts/step18c3f_patch_zoom_controls.py
+?? scripts/step18c3f_patch_zoom_controls_v2.py
+?? scripts/step_14_apply_patch_bundle_v1.sh
+?? scripts/step_14_pack_current_sources_v1.sh
+?? scripts/step_14_pack_for_patch_v1.sh
+?? scripts/step_14_retry_apply_patch_bundle_v2.sh
+?? workspace/_bak_step14_2026-02-10_104335/
+?? zip/
+2026-02-11 10:54:50 +0300 9eead1e  (HEAD -> fix/step18c3f-zoom-subtree-false-v1, tag: cp/foodproc_step18c3f_hotfix_subtree_false_after_2026-02-11_105449) fix(step18c3f): prevent mermaid zoom observer freeze (subtree false)
+
+== patch CSS ==
+
+== patch JS (layout + zoom default) ==
+
+== sanity ==
+ backend/app/static/app.js     | 106 ++++++++++++++++++++++++++++++++++++++++++
+ backend/app/static/styles.css |  68 +++++++++++++++++++++++++++
+ 2 files changed, 174 insertions(+)
+
+== commit ==
+[fix/step18c3g-layout-zoom-default-v1 0a1a8f8] fix(step18c3g): workbench layout (process top) + zoom default prime
+ 2 files changed, 174 insertions(+)
+
+== pack changed files ==
+packed: zip/foodproc_step18c3g_layout_zoom_changed_files_2026-02-11_111219.zip
+
+== docker compose up ==
+#1 [internal] load local bake definitions
+#1 reading from stdin 577B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 412B done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/python:3.11-slim
+#3 ...
+
+#4 [auth] library/python:pull token for registry-1.docker.io
+#4 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/python:3.11-slim
+#3 DONE 2.0s
+
+#5 [internal] load .dockerignore
+#5 transferring context: 2B done
+#5 DONE 0.0s
+
+#6 [1/6] FROM docker.io/library/python:3.11-slim@sha256:0b23cfb7425d065008b778022a17b1551c82f8b4866ee5a7a200084b7e2eafbf
+#6 resolve docker.io/library/python:3.11-slim@sha256:0b23cfb7425d065008b778022a17b1551c82f8b4866ee5a7a200084b7e2eafbf 0.0s done
+#6 DONE 0.0s
+
+#7 [internal] load build context
+#7 transferring context: 79.16kB 0.0s done
+#7 DONE 0.0s
+
+#8 [2/6] WORKDIR /app
+#8 CACHED
+
+#9 [3/6] COPY backend/requirements.txt /app/backend/requirements.txt
+#9 CACHED
+
+#10 [4/6] RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+#10 CACHED
+
+#11 [5/6] COPY backend /app/backend
+#11 DONE 0.0s
+
+#12 [6/6] RUN mkdir -p /app/workspace/processes /app/workspace/.session_store
+#12 DONE 0.2s
+
+#13 exporting to image
+#13 exporting layers 0.1s done
+#13 exporting manifest sha256:5c1d6f5330c0201908374fa40d5ee673cce59188aea197678cc325ac4e2f4945 done
+#13 exporting config sha256:a7c07c34e785738f4d6843605d0526375d293f46d2c10707ec6b3cce08274a6b done
+#13 exporting attestation manifest sha256:f17f8e133c3738a15ddfcde39dd12624ed62247668dcef36bc2bd8f2d64c11b6 0.0s done
+#13 exporting manifest list sha256:f397c378bc9cd7b09b7c887c0595f4cdbf43f12140cec604e05f7b3246fe224b
+#13 exporting manifest list sha256:f397c378bc9cd7b09b7c887c0595f4cdbf43f12140cec604e05f7b3246fe224b done
+#13 naming to docker.io/library/foodproc_process_copilot-app:latest done
+#13 unpacking to docker.io/library/foodproc_process_copilot-app:latest 0.0s done
+#13 DONE 0.2s
+
+#14 resolving provenance for metadata file
+#14 DONE 0.0s
+ foodproc_process_copilot-app  Built
+ Container foodproc_process_copilot-app-1  Recreate
+ Container foodproc_process_copilot-app-1  Recreated
+ Container foodproc_process_copilot-app-1  Starting
+ Container foodproc_process_copilot-app-1  Started
+
+== probe ==
+000
+
+== app logs tail ==
+
+== done ==
+## fix/step18c3g-layout-zoom-default-v1
+?? foodproc_step15_applyanswers.sh
+?? fpc_step_14_patch_bundle.zip
+?? scripts/fix_mermaid_py_quotes_v1.py
+?? scripts/step18b2_patch_backend_start_role.py
+?? scripts/step18c3f_patch_zoom_controls.py
+?? scripts/step18c3f_patch_zoom_controls_v2.py
+?? scripts/step_14_apply_patch_bundle_v1.sh
+?? scripts/step_14_pack_current_sources_v1.sh
+?? scripts/step_14_pack_for_patch_v1.sh
+?? scripts/step_14_retry_apply_patch_bundle_v2.sh
+?? workspace/_bak_step14_2026-02-10_104335/
+?? workspace/_bak_step18c3g_2026-02-11_111219/
+?? zip/
+2026-02-11 11:12:19 +0300 0a1a8f8  (HEAD -> fix/step18c3g-layout-zoom-default-v1, tag: cp/foodproc_step18c3g_after_2026-02-11_111219) fix(step18c3g): workbench layout (process top) + zoom default prime

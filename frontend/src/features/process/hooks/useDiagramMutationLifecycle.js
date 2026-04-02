@@ -22,6 +22,7 @@ export default function useDiagramMutationLifecycle({
   isLocal,
   draft,
   bpmnSync,
+  coordinator,
   projectionHelpers,
   onSessionSync,
   onError,
@@ -31,6 +32,17 @@ export default function useDiagramMutationLifecycle({
   useEffect(() => {
     draftRef.current = draft;
   }, [draft]);
+
+  useEffect(() => {
+    if (typeof coordinator?.setDiagramMutationSaveActive === "function") {
+      coordinator.setDiagramMutationSaveActive(true);
+    }
+    return () => {
+      if (typeof coordinator?.setDiagramMutationSaveActive === "function") {
+        coordinator.setDiagramMutationSaveActive(false);
+      }
+    };
+  }, [coordinator]);
 
   const commitDiagramAutosave = useCallback(
     async (job, { isStale }) => {
@@ -164,7 +176,7 @@ export default function useDiagramMutationLifecycle({
     hasPending: hasPendingDiagramAutosave,
   } = useAutosaveQueue({
     enabled: !!sid,
-    debounceMs: 150,
+    debounceMs: 350,
     onSave: commitDiagramAutosave,
   });
 

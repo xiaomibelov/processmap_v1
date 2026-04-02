@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import React, { act, useEffect } from "react";
+import React, { act, useCallback, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { JSDOM } from "jsdom";
 
@@ -51,6 +51,7 @@ function OverlayHookHarness({
   onSelectionChange,
   onState,
 }) {
+  const screenToDiagram = useCallback((x, y) => ({ x, y }), []);
   const interaction = useDrawioOverlayInteraction({
     visible,
     hasRenderable,
@@ -59,7 +60,7 @@ function OverlayHookHarness({
     layerMap,
     elementMap,
     matrixScale,
-    screenToDiagram: (x, y) => ({ x, y }),
+    screenToDiagram,
     onCommitMove,
     onCreateElement,
     onDeleteElement,
@@ -206,6 +207,69 @@ test("dom integration: pointer drag updates draft state and duplicate mouseup is
     assert.equal(selections.includes("shape1"), true);
     assert.equal(states.some((row) => String(row?.draftOffset?.id || "") === "shape1"), true);
     assert.ok(moves.length <= 1);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("dom integration: mouseup fallback finishes drag when pointerup is missing", async () => {
+  const { dom, root, cleanup } = setupDom();
+  const moves = [];
+  try {
+    const maps = createMaps({});
+    await act(async () => {
+      root.render(React.createElement(OverlayHookHarness, {
+        visible: true,
+        hasRenderable: true,
+        meta: { locked: false },
+        layerMap: maps.layerMap,
+        elementMap: maps.elementMap,
+        onCommitMove: (payload) => moves.push(payload),
+        onDeleteElement: () => false,
+        onSelectionChange: () => {},
+      }));
+    });
+    await flush();
+    const shape = dom.window.document.querySelector("[data-testid='shape1']");
+    assert.ok(shape);
+
+    await dispatchWithAct(shape, createPointerLikeEvent(dom.window, "pointerdown", {
+      pointerId: 12,
+      clientX: 100,
+      clientY: 60,
+    }));
+    await dispatchWithAct(dom.window.document, createPointerLikeEvent(dom.window, "pointermove", {
+      pointerId: 12,
+      clientX: 140,
+      clientY: 90,
+    }));
+    await flush();
+    await dispatchWithAct(dom.window, new dom.window.MouseEvent("mouseup", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 140,
+      clientY: 90,
+    }));
+    await flush();
+    assert.equal(moves.length, 1, "fallback mouseup must finish and commit active drag");
+
+    await dispatchWithAct(shape, createPointerLikeEvent(dom.window, "pointerdown", {
+      pointerId: 13,
+      clientX: 160,
+      clientY: 110,
+    }));
+    await dispatchWithAct(dom.window.document, createPointerLikeEvent(dom.window, "pointermove", {
+      pointerId: 13,
+      clientX: 200,
+      clientY: 140,
+    }));
+    await dispatchWithAct(dom.window.document, createPointerLikeEvent(dom.window, "pointerup", {
+      pointerId: 13,
+      clientX: 200,
+      clientY: 140,
+    }));
+    await flush();
+    assert.equal(moves.length, 2, "drag state must be released after fallback finish");
   } finally {
     await cleanup();
   }

@@ -227,6 +227,7 @@ export default function createBpmnPersistence(options = {}) {
     const sid = asText(sessionId).trim();
     if (!sid) return { ok: false, status: 0, error: "missing session id" };
     const forceRemote = optionsForLoad?.forceRemote === true;
+    const preferLocalCandidate = optionsForLoad?.preferLocalCandidate === true;
 
     if (isLocalSessionId(sid)) {
       const xml = asText(window.localStorage?.getItem(getLocalStorageKey(sid)) || "");
@@ -237,14 +238,15 @@ export default function createBpmnPersistence(options = {}) {
         xml,
         rev: asNumber(optionsForLoad?.rev, 0),
         hash: fnv1aHex(xml),
+        sourceReason: "local_session_authoritative",
       };
     }
 
     const draft = getSessionDraft?.() || {};
     const draftXml = asText(draft?.bpmn_xml || "");
     const rev = draftRevision();
-    const runtimeCache = !forceRemote ? readRuntimeCache(sid) : null;
-    const draftCandidate = draftXml.trim()
+    const runtimeCache = forceRemote ? null : readRuntimeCache(sid);
+    const draftCandidate = (!forceRemote && draftXml.trim())
       ? {
           source: "draft",
           xml: draftXml,
@@ -253,25 +255,26 @@ export default function createBpmnPersistence(options = {}) {
           ts: 0,
         }
       : null;
-    const localWinner = pickFreshestCandidate([draftCandidate, runtimeCache]);
-    if (localWinner) {
-      emit("PERSISTENCE_LOAD_LOCAL_WINNER", {
-        sid,
-        source: localWinner.source,
-        rev: localWinner.rev,
-        hash: localWinner.hash,
-      });
-      return {
-        ok: true,
-        status: 200,
-        source: localWinner.source,
-        xml: localWinner.xml,
-        rev: localWinner.rev,
-        hash: localWinner.hash,
-      };
-    }
+    const localWinner = forceRemote ? null : pickFreshestCandidate([draftCandidate, runtimeCache]);
 
     if (typeof apiGetBpmnXml !== "function") {
+      if (localWinner) {
+        emit("PERSISTENCE_LOAD_LOCAL_WINNER_NO_REMOTE_API", {
+          sid,
+          source: localWinner.source,
+          rev: localWinner.rev,
+          hash: localWinner.hash,
+        });
+        return {
+          ok: true,
+          status: 200,
+          source: localWinner.source,
+          xml: localWinner.xml,
+          rev: localWinner.rev,
+          hash: localWinner.hash,
+          sourceReason: "local_no_remote_api",
+        };
+      }
       if (typeof loadLatestSnapshot === "function") {
         try {
           const snap = await loadLatestSnapshot({
@@ -292,6 +295,7 @@ export default function createBpmnPersistence(options = {}) {
               xml: snapXml,
               rev: asNumber(snap?.rev, rev),
               hash: asText(snap?.hash || fnv1aHex(snapXml)),
+              sourceReason: "snapshot_fallback_no_remote_api",
             };
           }
         } catch {
@@ -310,11 +314,16 @@ export default function createBpmnPersistence(options = {}) {
           xml: runtimeCache.xml,
           rev: runtimeCache.rev,
           hash: runtimeCache.hash,
+          sourceReason: "runtime_cache_fallback_no_remote_api",
         };
       }
       return { ok: false, status: 0, error: "apiGetBpmnXml unavailable" };
     }
-    const loaded = await apiGetBpmnXml(sid);
+    const loaded = await apiGetBpmnXml(sid, {
+      raw: true,
+      includeOverlay: false,
+      cacheBust: true,
+    });
     if (!loaded?.ok) {
       return {
         ok: false,
@@ -350,28 +359,80 @@ export default function createBpmnPersistence(options = {}) {
       } catch {
       }
     }
-    const winner = pickFreshestCandidate([backendCandidate, snapshotCandidate, runtimeCache]);
-    if (winner?.source === "runtime_cache") {
-      emit("PERSISTENCE_LOAD_RUNTIME_RECOVER", {
-        sid,
-        rev: winner.rev,
-        hash: winner.hash,
-      });
-    } else if (winner?.source === "snapshot") {
-      emit("PERSISTENCE_LOAD_SNAPSHOT_RECOVER", {
-        sid,
-        rev: winner.rev,
-        hash: winner.hash,
-      });
-    }
-    if (winner) {
+    const backendHasXml = !!xml.trim();
+    if (backendHasXml) {
+      if (
+        preferLocalCandidate
+        && localWinner
+        && localWinner.hash
+        && localWinner.hash !== backendCandidate.hash
+      ) {
+        emit("PERSISTENCE_LOAD_LOCAL_OVERRIDE_EXPLICIT", {
+          sid,
+          local_source: localWinner.source,
+          local_rev: localWinner.rev,
+          local_hash: localWinner.hash,
+          backend_hash: backendCandidate.hash,
+        });
+        return {
+          ok: true,
+          status: asNumber(loaded?.status, 200),
+          source: localWinner.source,
+          xml: localWinner.xml,
+          rev: localWinner.rev,
+          hash: localWinner.hash,
+          sourceReason: "explicit_local_override",
+        };
+      }
+      if (localWinner && localWinner.hash && localWinner.hash !== backendCandidate.hash) {
+        emit("PERSISTENCE_LOAD_LOCAL_REJECTED_REMOTE_AUTHORITATIVE", {
+          sid,
+          local_source: localWinner.source,
+          local_rev: localWinner.rev,
+          local_hash: localWinner.hash,
+          backend_hash: backendCandidate.hash,
+        });
+      }
       return {
         ok: true,
         status: asNumber(loaded?.status, 200),
-        source: winner.source,
-        xml: winner.xml,
-        rev: winner.rev,
-        hash: winner.hash,
+        source: "backend",
+        xml: backendCandidate.xml,
+        rev: backendCandidate.rev,
+        hash: backendCandidate.hash,
+        sourceReason: "remote_authoritative_after_remote_read",
+      };
+    }
+
+    const fallbackWinner = pickFreshestCandidate([localWinner, snapshotCandidate, runtimeCache]);
+    if (fallbackWinner?.source === "runtime_cache") {
+      emit("PERSISTENCE_LOAD_RUNTIME_RECOVER", {
+        sid,
+        rev: fallbackWinner.rev,
+        hash: fallbackWinner.hash,
+      });
+    } else if (fallbackWinner?.source === "snapshot") {
+      emit("PERSISTENCE_LOAD_SNAPSHOT_RECOVER", {
+        sid,
+        rev: fallbackWinner.rev,
+        hash: fallbackWinner.hash,
+      });
+    } else if (fallbackWinner?.source === "draft") {
+      emit("PERSISTENCE_LOAD_DRAFT_RECOVER", {
+        sid,
+        rev: fallbackWinner.rev,
+        hash: fallbackWinner.hash,
+      });
+    }
+    if (fallbackWinner) {
+      return {
+        ok: true,
+        status: asNumber(loaded?.status, 200),
+        source: fallbackWinner.source,
+        xml: fallbackWinner.xml,
+        rev: fallbackWinner.rev,
+        hash: fallbackWinner.hash,
+        sourceReason: "backend_empty_local_fallback",
       };
     }
     return {
@@ -381,6 +442,7 @@ export default function createBpmnPersistence(options = {}) {
       xml,
       rev,
       hash: fnv1aHex(xml),
+      sourceReason: "remote_empty_no_local_fallback",
     };
   }
 
@@ -409,9 +471,11 @@ export default function createBpmnPersistence(options = {}) {
 
     const saved = await apiPutBpmnXml(sid, xml, { rev: targetRev, reason });
     if (!saved?.ok) {
+      const status = asNumber(saved?.status, 0);
       return {
         ok: false,
-        status: asNumber(saved?.status, 0),
+        status,
+        errorCode: asText(saved?.errorCode || (status > 0 ? `http_${status}` : "persist_failed")),
         error: asText(saved?.error || "failed to save bpmn"),
       };
     }

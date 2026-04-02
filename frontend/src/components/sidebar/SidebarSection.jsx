@@ -19,7 +19,7 @@ export default function SidebarSection({
       <div className="sidebarSectionStripe" aria-hidden="true" />
       <button
         type="button"
-        className={`sidebarSectionHead sidebarSectionHead--${meta.tone} group w-full px-3 py-2.5 text-left`}
+        className={`sidebarSectionHead sidebarSectionHead--${meta.tone} group w-full px-2.5 py-2 text-left`}
         onClick={() => onToggle?.(sectionId)}
         aria-expanded={open ? "true" : "false"}
       >
@@ -29,9 +29,8 @@ export default function SidebarSection({
           </span>
           <div className={`sidebarSectionTitle sidebarSectionTitle--${meta.tone} text-sm font-semibold`}>{title}</div>
           {badge ? <span className={`sidebarBadge sidebarBadge--${meta.tone}`}>{badge}</span> : null}
-          <span className="ml-auto text-xs text-muted transition-colors group-hover:text-fg">
-            {open ? "Свернуть" : "Развернуть"}
-          </span>
+          <span className="ml-auto sidebarSectionToggleState" aria-hidden="true">{open ? "▾" : "▸"}</span>
+          <span className="sr-only">{open ? "Свернуть" : "Развернуть"}</span>
           <span
             className="sidebarDragHandle"
             data-sidebar-drag-handle="1"
@@ -62,13 +61,13 @@ export default function SidebarSection({
           </span>
         </div>
         {summary ? (
-          <div className="mt-1 flex items-center gap-1 text-xs text-muted">
+          <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted">
             <span className={`sidebarSummaryDot sidebarSummaryDot--${meta.tone}`} aria-hidden="true" />
             <span>{summary}</span>
           </div>
         ) : null}
       </button>
-      {open ? <div className="sidebarSectionBody px-3 pb-3">{children}</div> : null}
+      {open ? <div className="sidebarSectionBody px-2.5 pb-2.5">{children}</div> : null}
     </section>
   );
 }

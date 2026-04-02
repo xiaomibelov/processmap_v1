@@ -31,6 +31,12 @@ import {
 import { matrixToScreen } from "../../stage/utils/hybridCoords.js";
 import { updateHybridElementRect } from "../actions/hybridUpdate.js";
 import useHybridTransformController from "../controllers/useHybridTransformController.js";
+import {
+  buildBindingByHybridId,
+  buildHybridRenderable,
+  buildLayerById,
+  countHiddenHybridItems,
+} from "./hybridRenderableProjection.js";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -179,164 +185,19 @@ export default function useHybridToolsController({
     () => normalizeHybridV2Doc(hybridDoc),
     [hybridDoc],
   );
-  const layerById = useMemo(() => {
-    const out = {};
-    docLive.layers.forEach((layerRaw) => {
-      const layer = asObject(layerRaw);
-      const id = toText(layer.id);
-      if (!id) return;
-      out[id] = layer;
-    });
-    return out;
-  }, [docLive]);
-  const bindingByHybridId = useMemo(() => {
-    const out = {};
-    docLive.bindings.forEach((bindingRaw) => {
-      const binding = asObject(bindingRaw);
-      const id = toText(binding.hybrid_id);
-      if (!id) return;
-      out[id] = binding;
-    });
-    return out;
-  }, [docLive]);
+  const layerById = useMemo(() => buildLayerById(docLive), [docLive]);
+  const bindingByHybridId = useMemo(() => buildBindingByHybridId(docLive), [docLive]);
   const bindingByBpmnId = useMemo(
     () => getHybridBindingsByBpmnId(docLive),
     [docLive],
   );
-  const renderable = useMemo(() => {
-    const matrix = asObject(hybridViewportMatrix);
-    const layersById = asObject(layerById);
-    const scaleX = Math.max(0.15, Math.hypot(Number(matrix.a || 1), Number(matrix.b || 0)));
-    const scaleY = Math.max(0.15, Math.hypot(Number(matrix.c || 0), Number(matrix.d || 1)));
-    const sourceById = {};
-    docLive.elements.forEach((elementRaw) => {
-      const element = asObject(elementRaw);
-      const id = toText(element.id);
-      if (!id) return;
-      const layer = asObject(layersById[toText(element.layer_id)]);
-      if (!hybridVisible || layer.visible === false || element.visible === false) return;
-      sourceById[id] = {
-        ...element,
-        id,
-        layer,
-      };
-    });
-    const visibilityCache = {};
-    function isVisibleWithAncestors(idRaw, seen = new Set()) {
-      const id = toText(idRaw);
-      if (!id) return false;
-      if (Object.prototype.hasOwnProperty.call(visibilityCache, id)) return !!visibilityCache[id];
-      if (seen.has(id)) return false;
-      seen.add(id);
-      const row = asObject(sourceById[id]);
-      if (!row.id || row.visible === false || row.layer?.visible === false) {
-        visibilityCache[id] = false;
-        return false;
-      }
-      const parentId = toText(row.parent_id);
-      if (!parentId) {
-        visibilityCache[id] = true;
-        return true;
-      }
-      const parent = asObject(sourceById[parentId]);
-      if (!parent.id || !isVisibleWithAncestors(parentId, seen)) {
-        visibilityCache[id] = false;
-        return false;
-      }
-      visibilityCache[id] = true;
-      return true;
-    }
-    function depthOf(idRaw, seen = new Set()) {
-      const id = toText(idRaw);
-      if (!id || seen.has(id)) return 0;
-      seen.add(id);
-      const parentId = toText(asObject(sourceById[id]).parent_id);
-      if (!parentId || !sourceById[parentId]) return 0;
-      return 1 + depthOf(parentId, seen);
-    }
-    const elements = [];
-    const elementsById = {};
-    Object.keys(sourceById).forEach((id) => {
-      if (!isVisibleWithAncestors(id)) return;
-      const row = asObject(sourceById[id]);
-      const x = Number(row.x || 0);
-      const y = Number(row.y || 0);
-      const w = Number(row.w || 0);
-      const h = Number(row.h || 0);
-      const p1 = matrixToScreen(matrix, x, y);
-      const p2 = matrixToScreen(matrix, x + w, y + h);
-      const center = matrixToScreen(matrix, x + (w / 2), y + (h / 2));
-      const normalized = {
-        ...row,
-        id,
-        left: Math.min(Number(p1.x || 0), Number(p2.x || 0)),
-        top: Math.min(Number(p1.y || 0), Number(p2.y || 0)),
-        width: Math.max(18, Math.abs(Number(p2.x || 0) - Number(p1.x || 0))),
-        height: Math.max(14, Math.abs(Number(p2.y || 0) - Number(p1.y || 0))),
-        centerX: Number(center.x || 0),
-        centerY: Number(center.y || 0),
-        layerOpacity: Math.max(0.1, Math.min(1, Number(asObject(row.layer).opacity || 1))),
-        scaleX,
-        scaleY,
-        depth: depthOf(id),
-      };
-      elements.push(normalized);
-      elementsById[id] = normalized;
-    });
-    elements.sort((aRaw, bRaw) => {
-      const a = asObject(aRaw);
-      const b = asObject(bRaw);
-      const depthDiff = Number(a.depth || 0) - Number(b.depth || 0);
-      if (depthDiff !== 0) return depthDiff;
-      const aContainer = a.is_container === true || toText(a.type) === "container";
-      const bContainer = b.is_container === true || toText(b.type) === "container";
-      if (aContainer !== bContainer) return aContainer ? -1 : 1;
-      return toText(a.id).localeCompare(toText(b.id), "ru");
-    });
-    const edges = [];
-    docLive.edges.forEach((edgeRaw) => {
-      const edge = asObject(edgeRaw);
-      const id = toText(edge.id);
-      if (!id) return;
-      const layer = asObject(layersById[toText(edge.layer_id)]);
-      if (!hybridVisible || layer.visible === false || edge.visible === false) return;
-      const fromEl = asObject(elementsById[toText(asObject(edge.from).element_id)]);
-      const toEl = asObject(elementsById[toText(asObject(edge.to).element_id)]);
-      if (!fromEl.id || !toEl.id) return;
-      const points = [{ x: Number(fromEl.centerX || 0), y: Number(fromEl.centerY || 0) }];
-      asArray(edge.waypoints).forEach((pointRaw) => {
-        const point = asObject(pointRaw);
-        const screenPoint = matrixToScreen(matrix, Number(point.x || 0), Number(point.y || 0));
-        points.push({ x: Number(screenPoint.x || 0), y: Number(screenPoint.y || 0) });
-      });
-      points.push({ x: Number(toEl.centerX || 0), y: Number(toEl.centerY || 0) });
-      edges.push({
-        ...edge,
-        id,
-        layer,
-        layerOpacity: Math.max(0.1, Math.min(1, Number(layer.opacity || 1))),
-        from: fromEl,
-        to: toEl,
-        points,
-        d: points.map((point, index) => `${index === 0 ? "M" : "L"} ${Math.round(point.x * 10) / 10} ${Math.round(point.y * 10) / 10}`).join(" "),
-      });
-    });
-    return { elements, edges, elementsById };
-  }, [docLive, hybridViewportMatrix, hybridVisible, layerById]);
-  const hiddenCount = useMemo(() => {
-    let hidden = 0;
-    docLive.elements.forEach((rowRaw) => {
-      const row = asObject(rowRaw);
-      const layer = asObject(layerById[toText(row.layer_id)]);
-      if (layer.visible === false || row.visible === false) hidden += 1;
-    });
-    docLive.edges.forEach((rowRaw) => {
-      const row = asObject(rowRaw);
-      const layer = asObject(layerById[toText(row.layer_id)]);
-      if (layer.visible === false || row.visible === false) hidden += 1;
-    });
-    return hidden;
-  }, [docLive, layerById]);
+  const renderable = useMemo(() => buildHybridRenderable({
+    docLive,
+    hybridViewportMatrix,
+    hybridVisible,
+    layerById,
+  }), [docLive, hybridViewportMatrix, hybridVisible, layerById]);
+  const hiddenCount = useMemo(() => countHiddenHybridItems(docLive, layerById), [docLive, layerById]);
   const totalCount = Number(docLive.elements.length || 0) + Number(docLive.edges.length || 0);
 
   const arrowPreview = useMemo(() => {
@@ -1133,7 +994,9 @@ export default function useHybridToolsController({
     setTextEditor(null);
   }, [hybridVisible, modeEffective]);
 
-  return {
+  const stencilPlacementActive = !!stencilPlacementRef.current;
+
+  return useMemo(() => ({
     docLive,
     layerById,
     bindingByHybridId,
@@ -1165,7 +1028,7 @@ export default function useHybridToolsController({
     closeContextMenu,
     ghostPreview: ghostPreviewScreen,
     ghostPreviewDiagram: ghostPreview,
-    stencilPlacementActive: !!stencilPlacementRef.current,
+    stencilPlacementActive,
     arrowPreview,
     cancelTransientState,
     renameHybridItem,
@@ -1178,5 +1041,50 @@ export default function useHybridToolsController({
     commitTextEditor,
     setImportNotice,
     bindingByBpmnId,
-  };
+  }), [
+    arrowPreview,
+    bindHybridToBpmn,
+    bindingByBpmnId,
+    bindingByHybridId,
+    cancelStencilPlacement,
+    cancelTransientState,
+    closeContextMenu,
+    closeTextEditor,
+    commitTextEditor,
+    contextMenu,
+    createEdge,
+    createElementAt,
+    docLive,
+    exportDrawio,
+    ghostPreview,
+    ghostPreviewScreen,
+    goToHybridBinding,
+    hiddenCount,
+    hideHybridIds,
+    importFile,
+    importNotice,
+    layerById,
+    lockLayersForHybridIds,
+    onElementContextMenu,
+    onElementDoubleClick,
+    onElementPointerDown,
+    onOverlayContextMenu,
+    onOverlayPointerDown,
+    onOverlayPointerLeave,
+    onOverlayPointerMove,
+    onResizeHandlePointerDown,
+    openTextEditor,
+    placeStencilAtClient,
+    renameHybridItem,
+    renderable,
+    setImportNotice,
+    setTool,
+    startStencilPlacement,
+    stencilPlacementActive,
+    textEditor,
+    toolState,
+    totalCount,
+    updateDoc,
+    updateTextEditorValue,
+  ]);
 }

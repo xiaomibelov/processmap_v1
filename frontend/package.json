@@ -14,6 +14,8 @@
   },
   "dependencies": {
     "bpmn-js": "^18.12.0",
+    "camunda-bpmn-moddle": "^7.0.1",
+    "jazz-tools": "https://registry.npmjs.org/jazz-tools/-/jazz-tools-0.20.14.tgz",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

@@ -2,16 +2,16 @@ services:
   api:
     build: .
     env_file:
-      - ${APP_ENV_FILE:-.env}
+      - .env
     environment:
-      - FPC_DB_BACKEND=${FPC_DB_BACKEND:?FPC_DB_BACKEND is required}
-      - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required}
+      - FPC_DB_BACKEND=${FPC_DB_BACKEND:-postgres}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://fpc:fpc@postgres:5432/processmap}
       - FPC_DB_POOL_MIN_SIZE=${FPC_DB_POOL_MIN_SIZE:-1}
       - FPC_DB_POOL_MAX_SIZE=${FPC_DB_POOL_MAX_SIZE:-8}
-      - REDIS_URL=${REDIS_URL:?REDIS_URL is required}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - REDIS_REQUIRED=${REDIS_REQUIRED:-1}
     ports:
-      - "${HOST_PORT:?HOST_PORT is required}:8000"
+      - "${HOST_PORT}:8000"
     volumes:
       - ./workspace:/app/workspace
       - ./backend:/app/backend
@@ -22,11 +22,29 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      - VITE_API_PROXY_TARGET=http://api:8000
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+      - VITE_HMR_PORT=5177
+      - VITE_PORT=5177
+    command: sh -c "if [ ! -f node_modules/tailwindcss/package.json ]; then npm ci --include=dev; fi && npm run dev -- --host 0.0.0.0 --port 5177"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    depends_on:
+      - api
+    restart: unless-stopped
+
   redis:
     image: redis:7.2-alpine
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     ports:
-      - "${REDIS_PORT:?REDIS_PORT is required}:6379"
+      - "${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -38,13 +56,13 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      - POSTGRES_DB=${POSTGRES_DB:?POSTGRES_DB is required}
-      - POSTGRES_USER=${POSTGRES_USER:?POSTGRES_USER is required}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      - POSTGRES_DB=${POSTGRES_DB:-processmap}
+      - POSTGRES_USER=${POSTGRES_USER:-fpc}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-fpc}
     ports:
-      - "${POSTGRES_PORT:?POSTGRES_PORT is required}:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?POSTGRES_USER is required} -d ${POSTGRES_DB:?POSTGRES_DB is required}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fpc} -d ${POSTGRES_DB:-processmap}"]
       interval: 5s
       timeout: 3s
       retries: 30
@@ -55,13 +73,16 @@ services:
 
   gateway:
     build:
-      context: .
-      dockerfile: frontend/Dockerfile
+      context: ./frontend
+      dockerfile: Dockerfile.prod
     ports:
-      - "${FRONTEND_PORT:?FRONTEND_PORT is required}:80"
+      - "${FRONTEND_PORT:-5177}:80"
+    volumes:
+      - ./deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - api
     restart: unless-stopped
 
 volumes:
+  frontend_node_modules:
   postgres_data:

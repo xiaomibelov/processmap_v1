@@ -1,8 +1,24 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+
 import { pushDeleteTrace } from "../../stage/utils/deleteTrace";
+import mergeDrawioHydrateDeletions from "./drawioHydrateMergeDeletions.js";
+import mergeDrawioHydrateNoteFields from "./drawioHydrateMergeNoteFields.js";
+import decideDrawioPersistHydrateAction from "./drawioPersistHydrateDecision.js";
 
 function asObject(value) {
   return value && typeof value === "object" ? value : {};
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function toText(value) {
+  return String(value || "").trim();
+}
+
+function isNoteRow(rowRaw) {
+  return toText(asObject(rowRaw).type).toLowerCase() === "note";
 }
 
 export default function useDrawioPersistHydrateBoundary({
@@ -14,66 +30,99 @@ export default function useDrawioPersistHydrateBoundary({
   normalizeDrawioMeta,
   serializeDrawioMeta,
 }) {
+  const explicitEmptyNoteIdsRef = useRef(new Set());
+  const prevNoteTextStateRef = useRef(new Map());
+
+  useEffect(() => {
+    const nextRows = asArray(asObject(drawioMeta).drawio_elements_v1);
+    const nextState = new Map();
+    const nextExplicitEmptyIds = new Set(explicitEmptyNoteIdsRef.current);
+    const prevState = prevNoteTextStateRef.current;
+
+    nextRows.forEach((rowRaw) => {
+      const row = asObject(rowRaw);
+      const id = toText(row.id);
+      if (!id || !isNoteRow(row)) return;
+      const hasText = Object.prototype.hasOwnProperty.call(row, "text");
+      const text = hasText ? String(row.text ?? "") : "";
+      nextState.set(id, { hasText, text });
+      if (row.deleted === true) {
+        nextExplicitEmptyIds.delete(id);
+        return;
+      }
+      if (hasText) {
+        if (text === "") nextExplicitEmptyIds.add(id);
+        else nextExplicitEmptyIds.delete(id);
+        return;
+      }
+      const prev = prevState.get(id);
+      if (prev?.hasText === true && prev.text !== "") {
+        nextExplicitEmptyIds.add(id);
+      }
+    });
+
+    Array.from(nextExplicitEmptyIds).forEach((id) => {
+      if (!nextState.has(id)) nextExplicitEmptyIds.delete(id);
+    });
+
+    explicitEmptyNoteIdsRef.current = nextExplicitEmptyIds;
+    prevNoteTextStateRef.current = nextState;
+  }, [drawioMeta]);
+
   useEffect(() => {
     const incoming = normalizeDrawioMeta(drawioFromDraft);
-    const incomingSig = serializeDrawioMeta(incoming);
     const currentMeta = normalizeDrawioMeta(drawioMetaRef.current);
     const persistedMeta = normalizeDrawioMeta(drawioPersistedMetaRef.current);
-    const currentSig = serializeDrawioMeta(currentMeta);
-    const persistedSig = serializeDrawioMeta(persistedMeta);
+    const decision = decideDrawioPersistHydrateAction({
+      incoming,
+      current: currentMeta,
+      persisted: persistedMeta,
+      serializeDrawioMeta,
+    });
 
-    if (incomingSig === persistedSig && currentSig !== incomingSig) {
+    // Bootstrap recovery: if the incoming snapshot (after SVG bootstrap) has elements
+    // but the current store has none, force-apply to fill the element tracking gap.
+    // This handles the case where drawio_elements_v1 was empty in the store (e.g.
+    // after a stale server response overwrote a bootstrapped state) but svg_cache
+    // still has renderable elements that need to be tracked.
+    const incomingElementCount = Array.isArray(incoming.drawio_elements_v1) ? incoming.drawio_elements_v1.length : 0;
+    const currentElementCount = Array.isArray(currentMeta.drawio_elements_v1) ? currentMeta.drawio_elements_v1.length : 0;
+    // Exclude stale-behind-optimistic: that skip reason means a local persist already
+    // committed newer data, so we must NOT override it even if current is empty.
+    const needsBootstrapRecovery = incomingElementCount > 0
+      && currentElementCount === 0
+      && decision.reason !== "incoming_stale_behind_optimistic_persist";
+
+    if (decision.action === "skip" && !needsBootstrapRecovery) {
       pushDeleteTrace("drawio_hydrate_skip", {
-        reason: "incoming_equals_persisted_current_differs",
-        incomingSvg: Number(String(incoming?.svg_cache || "").length || 0),
-        currentSvg: Number(String(currentMeta?.svg_cache || "").length || 0),
+        reason: decision.reason,
+        ...decision.traceMeta,
       });
       return;
     }
-    if (incomingSig === currentSig) {
+
+    if (decision.action === "skip_and_sync_persisted_ref" && !needsBootstrapRecovery) {
       drawioPersistedMetaRef.current = incoming;
       pushDeleteTrace("drawio_hydrate_skip", {
-        reason: "incoming_equals_current",
-        incomingSvg: Number(String(incoming?.svg_cache || "").length || 0),
-        currentSvg: Number(String(currentMeta?.svg_cache || "").length || 0),
+        reason: decision.reason,
+        ...decision.traceMeta,
       });
       return;
     }
-    if (!incoming.doc_xml && !incoming.svg_cache && (currentMeta.doc_xml || currentMeta.svg_cache)) {
-      pushDeleteTrace("drawio_hydrate_skip", {
-        reason: "incoming_empty_while_current_has_payload",
-        incomingSvg: Number(String(incoming?.svg_cache || "").length || 0),
-        currentSvg: Number(String(currentMeta?.svg_cache || "").length || 0),
-      });
-      return;
-    }
-    // Guard: incoming is stale behind an optimistically persisted state.
-    // Race window: syncPersistedRefs updates drawioPersistedMetaRef synchronously
-    // in onOptimistic BEFORE a concurrent onSessionSync (e.g. from a BPMN save
-    // response) propagates through React to drawioFromDraft. In that window,
-    // persistedSig reflects the nudge offset but drawioFromDraft still carries
-    // the old server value. Conditions 1/2 do not fire (incomingSig !== persistedSig)
-    // so without this guard the stale incoming would overwrite drawioMetaRef.current
-    // and cause savePayload to read offset_x=0.
-    // Only skip when persisted has real payload (not initial-load empty), so that
-    // the initial hydrate on page load is never blocked.
-    const persistedHasPayload = !!(persistedMeta.doc_xml || persistedMeta.svg_cache || persistedMeta.enabled);
-    if (currentSig === persistedSig && incomingSig !== persistedSig && persistedHasPayload) {
-      pushDeleteTrace("drawio_hydrate_skip", {
-        reason: "incoming_stale_behind_optimistic_persist",
-        incomingSvg: Number(String(incoming?.svg_cache || "").length || 0),
-        currentSvg: Number(String(currentMeta?.svg_cache || "").length || 0),
-      });
-      return;
-    }
-    pushDeleteTrace("drawio_hydrate_apply", {
-      incomingSvg: Number(String(incoming?.svg_cache || "").length || 0),
-      incomingElements: Number(Array.isArray(incoming?.drawio_elements_v1) ? incoming.drawio_elements_v1.length : 0),
-      currentSvg: Number(String(currentMeta?.svg_cache || "").length || 0),
+
+    const incomingWithMergedNoteFields = mergeDrawioHydrateNoteFields({
+      current: currentMeta,
+      incoming,
+      explicitEmptyNoteIds: Array.from(explicitEmptyNoteIdsRef.current),
     });
-    setDrawioMeta(incoming);
-    drawioMetaRef.current = incoming;
-    drawioPersistedMetaRef.current = incoming;
+    const mergedIncoming = mergeDrawioHydrateDeletions({
+      current: currentMeta,
+      incoming: incomingWithMergedNoteFields,
+    });
+    pushDeleteTrace("drawio_hydrate_apply", decision.traceMeta);
+    setDrawioMeta(mergedIncoming);
+    drawioMetaRef.current = mergedIncoming;
+    drawioPersistedMetaRef.current = mergedIncoming;
   }, [
     drawioFromDraft,
     drawioMetaRef,

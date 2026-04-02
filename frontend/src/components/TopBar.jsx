@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import AiToolsModal from "./AiToolsModal";
 import { useAuth } from "../features/auth/AuthProvider";
-import { getManualSessionStatusMeta } from "../features/workspace/workspacePermissions";
+import { getManualSessionStatusMeta, MANUAL_SESSION_STATUSES } from "../features/workspace/workspacePermissions";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -31,18 +31,12 @@ function orgIdFrom(o) {
   return String((o && (o.org_id || o.id)) || "").trim();
 }
 
-function shortActor(raw) {
-  const value = String(raw || "").trim();
-  if (!value) return "—";
-  if (value.length <= 14) return value;
-  return `${value.slice(0, 6)}…${value.slice(-4)}`;
-}
-
 function sanitizeAiStatusMessage(msg) {
   const raw = String(msg || "").trim();
   if (!raw) return "";
   if (raw.includes("Нажмите «Проверить AI»")) return "";
   if (raw.includes("Ключ сохранён")) return "";
+  if (raw.includes("Ключ не задан")) return "";
   return raw;
 }
 
@@ -117,12 +111,15 @@ export default function TopBar({
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false);
   const accountMenuRef = useRef(null);
   const accountButtonRef = useRef(null);
   const projectMenuRef = useRef(null);
   const projectMenuButtonRef = useRef(null);
   const sessionMenuRef = useRef(null);
   const sessionMenuButtonRef = useRef(null);
+  const statusMenuRef = useRef(null);
+  const statusMenuButtonRef = useRef(null);
 
   useEffect(() => {
     try {
@@ -197,6 +194,27 @@ export default function TopBar({
     };
   }, [sessionMenuOpen]);
 
+  useEffect(() => {
+    if (!statusMenuOpen) return undefined;
+    function onPointerDown(event) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      const menu = statusMenuRef.current;
+      const button = statusMenuButtonRef.current;
+      if (menu?.contains(target) || button?.contains(target)) return;
+      setStatusMenuOpen(false);
+    }
+    function onKeyDown(event) {
+      if (event.key === "Escape") setStatusMenuOpen(false);
+    }
+    window.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [statusMenuOpen]);
+
   function toggleTheme() {
     const next = uiTheme === "dark" ? "light" : "dark";
     setUiTheme(next);
@@ -233,10 +251,7 @@ export default function TopBar({
     const id = effectiveProjectId;
     if (!id) return "";
     const found = projList.find((item) => projectIdFrom(item) === id);
-    const createdBy = shortActor(found?.created_by || found?.owner_user_id);
-    const updatedBy = shortActor(found?.updated_by || found?.created_by || found?.owner_user_id);
-    const title = projectTitleFrom(found || { title: id });
-    return `${title} · Created by ${createdBy} · Updated by ${updatedBy}`;
+    return projectTitleFrom(found || { title: id });
   }, [effectiveProjectId, projList]);
   const selectedSessionTitle = useMemo(() => {
     const id = effectiveSessionId;
@@ -245,15 +260,9 @@ export default function TopBar({
     const fallback = {
       title: toText(draft?.title || draft?.name || id),
       id,
-      created_by: draft?.created_by,
-      updated_by: draft?.updated_by,
-      owner_user_id: draft?.owner_user_id,
     };
-    const source = found || fallback;
-    const createdBy = shortActor(source?.created_by || source?.owner_user_id);
-    const updatedBy = shortActor(source?.updated_by || source?.created_by || source?.owner_user_id);
-    return `${sessionTitleFrom(source)} · Created by ${createdBy} · Updated by ${updatedBy}`;
-  }, [draft?.created_by, draft?.name, draft?.owner_user_id, draft?.title, draft?.updated_by, effectiveSessionId, sessList]);
+    return sessionTitleFrom(found || fallback);
+  }, [draft?.name, draft?.title, effectiveSessionId, sessList]);
   const activeOrgRole = useMemo(() => {
     const id = String(activeOrgId || "").trim();
     if (!id) return "";
@@ -313,11 +322,11 @@ export default function TopBar({
         </button>
       </div>
 
-      <div className="topbarNavCenter flex min-w-0 flex-1 items-center justify-center gap-1.5 overflow-visible md:gap-2">
+      <div className="topbarNavCenter flex min-w-0 flex-1 items-center justify-end gap-1.5 overflow-visible md:gap-2">
         {hasActiveSession ? (
           <>
             <div
-              className="topGroup relative flex min-w-[180px] max-w-[320px] flex-1 items-center gap-1.5 rounded-full border border-border/70 bg-panel2/40 px-2 py-1"
+              className="topGroup relative flex min-w-[100px] max-w-[180px] flex-1 items-center gap-1.5 rounded-full border border-border/70 bg-panel2/40 px-2 py-1"
               title={selectedProjectTitle}
             >
               <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.1em] text-muted">ПРОЕКТ</span>
@@ -380,20 +389,13 @@ export default function TopBar({
             </div>
 
             <div
-              className="topGroup relative flex min-w-[200px] max-w-[360px] flex-1 items-center gap-1.5 rounded-full border border-border/70 bg-panel2/40 px-2 py-1"
+              className="topGroup relative flex min-w-[120px] max-w-[200px] flex-1 items-center gap-1.5 rounded-full border border-border/70 bg-panel2/40 px-2 py-1"
               title={selectedSessionTitle}
             >
               <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.1em] text-muted">СЕССИЯ</span>
               <div className="min-w-0 flex-1 truncate px-1 text-[13px] font-semibold text-fg" data-testid="topbar-session-title">
-                {shortLabel(selectedSessionTitle, 56)}
+                {shortLabel(selectedSessionTitle, 36)}
               </div>
-              <span
-                className={`inline-flex items-center rounded-full border px-2 py-1 text-[11px] font-medium ${sessionStatusMeta.badgeClass}`}
-                title="Статус сессии"
-                data-testid="topbar-session-status"
-              >
-                {sessionStatusMeta.label}
-              </span>
               <button
                 ref={sessionMenuButtonRef}
                 type="button"
@@ -434,6 +436,43 @@ export default function TopBar({
                       Удалить сессию
                     </button>
                   ) : null}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="relative shrink-0">
+              <button
+                ref={statusMenuButtonRef}
+                type="button"
+                className={`inline-flex h-8 items-center rounded-md border px-2.5 text-[11px] font-medium transition hover:opacity-80 ${sessionStatusMeta.badgeClass}`}
+                title="Статус сессии — нажмите чтобы изменить"
+                data-testid="topbar-session-status"
+                onClick={() => setStatusMenuOpen((prev) => !prev)}
+              >
+                {sessionStatusMeta.label}
+                <svg viewBox="0 0 10 6" className="ml-1 h-2.5 w-2.5 opacity-70" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M1 1l4 4 4-4" />
+                </svg>
+              </button>
+              {statusMenuOpen ? (
+                <div
+                  ref={statusMenuRef}
+                  className="absolute left-0 top-[calc(100%+6px)] z-[130] grid min-w-[160px] gap-0.5 rounded-xl border border-border bg-panel p-1.5 shadow-panel"
+                  data-testid="topbar-status-change-menu"
+                >
+                  {MANUAL_SESSION_STATUSES.map((s) => (
+                    <button
+                      key={s.value}
+                      type="button"
+                      className={`secondaryBtn h-8 w-full justify-start px-3 text-left text-sm ${sessionStatus === s.value ? "ring-1 ring-accent/60" : ""}`}
+                      onClick={() => {
+                        setStatusMenuOpen(false);
+                        onChangeSessionStatus?.(s.value);
+                      }}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
                 </div>
               ) : null}
             </div>

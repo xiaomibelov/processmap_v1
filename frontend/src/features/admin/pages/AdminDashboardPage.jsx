@@ -2,12 +2,12 @@ import AdminPageContainer from "../layout/AdminPageContainer";
 import AutoPassOutcomesWidget from "../components/dashboard/AutoPassOutcomesWidget";
 import DashboardKpiRow from "../components/dashboard/DashboardKpiRow";
 import JobsThroughputWidget from "../components/dashboard/JobsThroughputWidget";
+import PublishGitMirrorWidget from "../components/dashboard/PublishGitMirrorWidget";
 import RecentAuditWidget from "../components/dashboard/RecentAuditWidget";
 import RedisHealthWidget from "../components/dashboard/RedisHealthWidget";
 import ReportsHealthWidget from "../components/dashboard/ReportsHealthWidget";
 import RequiresAttentionWidget from "../components/dashboard/RequiresAttentionWidget";
 import SessionsActivityWidget from "../components/dashboard/SessionsActivityWidget";
-import TemplateUsageWidget from "../components/dashboard/TemplateUsageWidget";
 
 export default function AdminDashboardPage({
   payload = {},
@@ -31,9 +31,8 @@ export default function AdminDashboardPage({
       </div>
       <div className="grid gap-4 xl:grid-cols-2">
         <RequiresAttentionWidget items={payload?.requires_attention || []} onNavigate={onNavigate} />
-        <TemplateUsageWidget payload={payload?.template_usage || {}} />
+        <PublishGitMirrorWidget payload={payload?.publish_git_mirror || {}} />
       </div>
     </AdminPageContainer>
   );
 }
-

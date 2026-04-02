@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, Optional, Set, Tuple
 
 from fastapi import HTTPException, Request
@@ -21,6 +22,9 @@ from ..utils.response_builders import build_items_count_payload, build_items_pay
 
 ORG_READ_ROLES = {"org_owner", "org_admin", "project_manager", "editor", "viewer", "org_viewer", "auditor"}
 ORG_MEMBER_READ_ROLES = {"org_owner", "org_admin", "auditor"}
+_GIT_MIRROR_PROVIDERS = {"github", "gitlab"}
+_GITHUB_REPOSITORY_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
+_GITLAB_REPOSITORY_RE = re.compile(r"^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)+$")
 
 
 def org_role_for_request(request: Request, org_id: str) -> str:
@@ -167,3 +171,96 @@ def list_org_members_payload(request: Request, org_id: str):
                 row["email"] = email
         items.append(row)
     return build_items_count_payload(items, org_id=oid)
+
+
+def _norm_provider(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    return text if text in _GIT_MIRROR_PROVIDERS else ""
+
+
+def _norm_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _norm_base_path(value: Any) -> str:
+    src = _norm_text(value).replace("\\", "/")
+    if not src:
+        return ""
+    src = re.sub(r"/+", "/", src)
+    return src.strip("/")
+
+
+def _is_valid_git_branch(value: str) -> bool:
+    branch = _norm_text(value)
+    if not branch or branch.startswith("/") or branch.endswith("/"):
+        return False
+    if branch == "@":
+        return False
+    if "//" in branch or "@{" in branch:
+        return False
+    if branch.startswith(".") or branch.endswith("."):
+        return False
+    if branch.endswith(".lock"):
+        return False
+    if ".." in branch or " " in branch:
+        return False
+    segments = branch.split("/")
+    if any(not seg for seg in segments):
+        return False
+    for seg in segments:
+        if seg.startswith("."):
+            return False
+        if seg.endswith(".lock"):
+            return False
+    if any(ch in branch for ch in ["~", "^", ":", "?", "*", "[", "\\"]):
+        return False
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in branch):
+        return False
+    return True
+
+
+def evaluate_org_git_mirror_config(config_raw: Dict[str, Any] | None) -> Dict[str, Any]:
+    config = dict(config_raw or {})
+    enabled = bool(config.get("git_mirror_enabled"))
+    provider = _norm_provider(config.get("git_provider"))
+    repository = _norm_text(config.get("git_repository"))
+    branch = _norm_text(config.get("git_branch"))
+    base_path = _norm_base_path(config.get("git_base_path"))
+
+    issues = []
+    if enabled:
+        if not provider:
+            issues.append("Provider is required when mirror is enabled.")
+        if not repository:
+            issues.append("Repository/project is required when mirror is enabled.")
+        elif provider == "github" and not _GITHUB_REPOSITORY_RE.fullmatch(repository):
+            issues.append("GitHub repository must be in owner/repo format.")
+        elif provider == "gitlab" and not _GITLAB_REPOSITORY_RE.fullmatch(repository):
+            issues.append("GitLab project must be in group/project or group/subgroup/project format.")
+        if not branch:
+            issues.append("Branch is required when mirror is enabled.")
+        elif not _is_valid_git_branch(branch):
+            issues.append("Branch contains unsupported characters.")
+        if base_path and (".." in base_path.split("/") or base_path.startswith(".")):
+            issues.append("Base path cannot contain parent traversal.")
+
+    if not enabled:
+        health_status = "unknown"
+        health_message = "Mirror is disabled."
+    elif issues:
+        health_status = "invalid"
+        health_message = " ".join(issues)
+    else:
+        health_status = "valid"
+        health_message = "Configuration is valid."
+
+    return {
+        "git_mirror_enabled": enabled,
+        "git_provider": provider or None,
+        "git_repository": repository or None,
+        "git_branch": branch or None,
+        "git_base_path": base_path or None,
+        "git_health_status": health_status,
+        "git_health_message": health_message or None,
+        "issues": issues,
+    }

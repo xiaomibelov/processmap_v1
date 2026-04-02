@@ -119,6 +119,11 @@ export default function useBpmnViewportSource({
   const frameRef = useRef(0);
   const pendingViewboxRef = useRef(null);
   const matrixSubscribersRef = useRef(new Set());
+  // viewboxChanging: true while pan/zoom is actively in flight.
+  // Updated imperatively (no React state) to avoid extra re-renders.
+  const viewboxChangingRef = useRef(false);
+  const viewboxChangingSubscribersRef = useRef(new Set());
+  const settledTimerRef = useRef(0);
 
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const [viewportMatrix, setViewportMatrix] = useState({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
@@ -171,6 +176,35 @@ export default function useBpmnViewportSource({
       } catch {
       }
     });
+  }, []);
+
+  const notifyViewboxChanging = useCallback((changing) => {
+    viewboxChangingSubscribersRef.current.forEach((listener) => {
+      try {
+        listener(changing);
+      } catch {
+      }
+    });
+  }, []);
+
+  const setViewboxChanging = useCallback((changing) => {
+    if (viewboxChangingRef.current === changing) return;
+    viewboxChangingRef.current = changing;
+    notifyViewboxChanging(changing);
+  }, [notifyViewboxChanging]);
+
+  // subscribeViewboxChanging: imperative subscription for DOM-level hide/show.
+  // Avoids React re-renders — consumers toggle CSS directly on the overlay container.
+  const subscribeViewboxChanging = useCallback((listener) => {
+    if (typeof listener !== "function") return () => {};
+    viewboxChangingSubscribersRef.current.add(listener);
+    try {
+      listener(viewboxChangingRef.current);
+    } catch {
+    }
+    return () => {
+      viewboxChangingSubscribersRef.current.delete(listener);
+    };
   }, []);
 
   const subscribeViewportMatrix = useCallback((listener) => {
@@ -237,24 +271,38 @@ export default function useBpmnViewportSource({
     });
   }, [canvasApi, notifyViewportMatrix, readContainerRect, readViewportMatrixFromDom]);
 
+  // Settled debounce: 150ms after the last viewbox event, mark changing=false.
+  const SETTLED_DELAY_MS = 150;
+
   const scheduleApply = useCallback((viewboxRaw = null) => {
-    if (hasMeaningfulViewbox(viewboxRaw)) {
-      applyViewbox(viewboxRaw);
-      return;
+    // Mark overlays as changing — subscribers hide overlay layer imperatively.
+    setViewboxChanging(true);
+    // Clear any pending settled timer.
+    if (settledTimerRef.current) {
+      clearTimeout(settledTimerRef.current);
+      settledTimerRef.current = 0;
     }
+    // Always batch through rAF — even meaningful viewboxes — so rapid pan/zoom
+    // events collapse into a single recompute per animation frame.
     pendingViewboxRef.current = viewboxRaw;
-    if (frameRef.current) return;
-    const scheduleFrame = typeof window !== "undefined" && typeof window.requestAnimationFrame === "function"
-      ? window.requestAnimationFrame.bind(window)
-      : (fn) => setTimeout(fn, 16);
-    frameRef.current = scheduleFrame(() => {
-      frameRef.current = 0;
-      const next = pendingViewboxRef.current;
-      pendingViewboxRef.current = null;
-      const fallback = canvasApi?.getViewbox?.() || {};
-      applyViewbox(hasMeaningfulViewbox(next) ? next : fallback);
-    });
-  }, [applyViewbox, canvasApi]);
+    if (!frameRef.current) {
+      const scheduleFrame = typeof window !== "undefined" && typeof window.requestAnimationFrame === "function"
+        ? window.requestAnimationFrame.bind(window)
+        : (fn) => setTimeout(fn, 16);
+      frameRef.current = scheduleFrame(() => {
+        frameRef.current = 0;
+        const next = pendingViewboxRef.current;
+        pendingViewboxRef.current = null;
+        const fallback = canvasApi?.getViewbox?.() || {};
+        applyViewbox(hasMeaningfulViewbox(next) ? next : fallback);
+        // Schedule settled signal after rAF completes.
+        settledTimerRef.current = setTimeout(() => {
+          settledTimerRef.current = 0;
+          setViewboxChanging(false);
+        }, SETTLED_DELAY_MS);
+      });
+    }
+  }, [applyViewbox, canvasApi, setViewboxChanging]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -299,8 +347,13 @@ export default function useBpmnViewportSource({
         cancelFrame(frameRef.current);
         frameRef.current = 0;
       }
+      if (settledTimerRef.current) {
+        clearTimeout(settledTimerRef.current);
+        settledTimerRef.current = 0;
+      }
+      setViewboxChanging(false);
     };
-  }, [canvasApi, enabled, notifyViewportMatrix, scheduleApply]);
+  }, [canvasApi, enabled, notifyViewportMatrix, scheduleApply, setViewboxChanging]);
 
   const localToDiagram = useCallback((localXRaw, localYRaw) => {
     const localX = clampNumber(localXRaw, 0);
@@ -345,6 +398,8 @@ export default function useBpmnViewportSource({
     viewportMatrix,
     subscribeViewportMatrix,
     getViewportMatrix,
+    subscribeViewboxChanging,
+    viewboxChangingRef,
     localToDiagram,
     clientToDiagram,
     screenToDiagram,

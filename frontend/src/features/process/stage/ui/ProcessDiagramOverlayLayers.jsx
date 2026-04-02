@@ -7,7 +7,6 @@ import { bumpDrawioPerfCounter } from "../../drawio/runtime/drawioRuntimeProbes.
 import HybridOverlayRenderer from "../../hybrid/renderers/HybridOverlayRenderer";
 import HybridContextMenu from "../../hybrid/tools/HybridContextMenu";
 import HybridPersistToast from "../../hybrid/ui/HybridPersistToast";
-import BpmnDiagramContextMenu from "../../bpmn/context-menu/BpmnDiagramContextMenu";
 
 function ProcessDiagramOverlayLayers({
   bpmnStageProps,
@@ -15,7 +14,6 @@ function ProcessDiagramOverlayLayers({
   drawioOverlayProps,
   hybridOverlayProps,
   hybridContextMenuProps,
-  bpmnContextMenuProps,
   hybridPersistToastProps,
   drawioEditorModalProps,
 }) {
@@ -27,7 +25,6 @@ function ProcessDiagramOverlayLayers({
       <DrawioOverlayRenderer {...drawioOverlayProps} />
       <HybridOverlayRenderer {...hybridOverlayProps} />
       <HybridContextMenu {...hybridContextMenuProps} />
-      <BpmnDiagramContextMenu {...bpmnContextMenuProps} />
       <HybridPersistToast {...hybridPersistToastProps} />
       <DrawioEditorModal {...drawioEditorModalProps} />
     </>

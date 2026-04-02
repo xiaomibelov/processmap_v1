@@ -7,7 +7,13 @@ function noteText(value) {
 }
 
 function noteAuthor(value) {
-  return String(value?.author || value?.user || value?.created_by || "you").trim() || "you";
+  return String(
+    value?.author_label
+    || value?.author
+    || value?.user
+    || value?.created_by
+    || "you",
+  ).trim() || "you";
 }
 
 function compactTime(value) {
@@ -27,19 +33,21 @@ function compactTime(value) {
 
 export default function ElementNotesAccordionContent({
   selectedElementId,
-  selectedElementName,
-  selectedElementNotes,
-  noteCount,
   elementText,
+  elementSyncState = "saved",
   onElementTextChange,
   onSendElementNote,
   elementBusy,
   elementErr,
+  selectedElementNotes,
+  noteCount,
   onNodeEditorRef,
   disabled,
 }) {
-  const list = [...asArray(selectedElementNotes)].slice(-10).reverse();
-  const hasUnsaved = String(elementText || "").trim().length > 0;
+  const list = [...asArray(selectedElementNotes)]
+    .filter((item) => String(item?.kind || "").trim().toLowerCase() !== "review_comment")
+    .slice(-10)
+    .reverse();
 
   if (!selectedElementId) {
     return <div className="sidebarEmptyHint">Выберите узел для заметок.</div>;
@@ -47,9 +55,6 @@ export default function ElementNotesAccordionContent({
 
   return (
     <div className="sidebarControlStack">
-      <div className="text-[11px] text-muted">
-        Узел: <span className="text-fg">{selectedElementName || selectedElementId}</span>
-      </div>
       {list.length ? (
         <div className="sidebarMiniList">
           {list.map((item, idx) => (
@@ -87,7 +92,7 @@ export default function ElementNotesAccordionContent({
         disabled={!!disabled || !!elementBusy}
       />
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] text-muted">{hasUnsaved ? "Есть несохранённые изменения" : "Сохранено"}</span>
+        <span className="text-[11px] text-muted">Ctrl/Cmd + Enter</span>
         <button
           type="button"
           className="primaryBtn h-8 px-3 text-[11px]"

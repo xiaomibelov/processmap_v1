@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "../auth/AuthProvider";
 import ErrorState from "./components/common/ErrorState";
@@ -20,31 +20,67 @@ import AdminOrgsPage from "./pages/AdminOrgsPage";
 import AdminProjectsPage from "./pages/AdminProjectsPage";
 import AdminSessionDetailPage from "./pages/AdminSessionDetailPage";
 import AdminSessionsPage from "./pages/AdminSessionsPage";
+import { mergeSearchParams, pageToOffset, parsePage, parsePageSize, rangeToTsFrom } from "./utils/adminQuery";
 import { ru } from "../../shared/i18n/ru";
 
 export default function AdminApp({
   pathname = "/admin/dashboard",
+  search = "",
   onNavigate,
 }) {
   const { user, orgs, activeOrgId, switchOrg } = useAuth();
   const route = useMemo(() => parseAdminRoute(pathname), [pathname]);
   const meta = getAdminRouteMeta(route?.section);
-  const [sessionFilters, setSessionFilters] = useState({
-    q: "",
-    status: "",
-    ownerIds: "",
-    updatedRange: "",
-    attentionOnly: false,
-  });
-  const [auditFilters, setAuditFilters] = useState({
-    q: "",
-    status: "",
-    action: "",
-    projectId: "",
-    sessionId: "",
-    dateRange: "",
-  });
   const [recentOrgInvite, setRecentOrgInvite] = useState(null);
+  const searchText = String(search || "");
+  const rawSearch = searchText.startsWith("?") ? searchText.slice(1) : searchText;
+
+  const paging = useMemo(() => {
+    const params = new URLSearchParams(rawSearch);
+    const pageSize = parsePageSize(params.get("page_size"), 20);
+    const page = parsePage(params.get("page"), 1);
+    return {
+      page,
+      pageSize,
+      offset: pageToOffset(page, pageSize),
+    };
+  }, [rawSearch]);
+
+  const projectsFilters = useMemo(() => {
+    const params = new URLSearchParams(rawSearch);
+    return { q: toText(params.get("q")) };
+  }, [rawSearch]);
+
+  const sessionFilters = useMemo(() => {
+    const params = new URLSearchParams(rawSearch);
+    const attentionRaw = toText(params.get("attention_only")).toLowerCase();
+    return {
+      q: toText(params.get("q")),
+      status: toText(params.get("status")),
+      ownerIds: toText(params.get("owner_ids")),
+      updatedRange: toText(params.get("updated_range")),
+      attentionOnly: attentionRaw === "1" || attentionRaw === "true" || attentionRaw === "yes" || attentionRaw === "on",
+    };
+  }, [rawSearch]);
+
+  const auditFilters = useMemo(() => {
+    const params = new URLSearchParams(rawSearch);
+    return {
+      q: toText(params.get("q")),
+      status: toText(params.get("status")),
+      action: toText(params.get("action")),
+      projectId: toText(params.get("project_id")),
+      sessionId: toText(params.get("session_id")),
+      dateRange: toText(params.get("date_range")),
+    };
+  }, [rawSearch]);
+
+  const updateSearchState = useCallback((patch = {}, { replace = false, resetPage = false } = {}) => {
+    const params = mergeSearchParams(rawSearch, patch, { resetPage });
+    const nextRaw = params.toString();
+    const nextPath = nextRaw ? `${pathname}?${nextRaw}` : pathname;
+    onNavigate?.(nextPath, { replace });
+  }, [onNavigate, pathname, rawSearch]);
 
   const canAccessAdmin = useMemo(() => canAccessAdminConsole(user, orgs), [orgs, user]);
   const currentOrg = useMemo(() => {
@@ -55,12 +91,22 @@ export default function AdminApp({
 
   const dashboardQ = useAdminDashboardData({ enabled: route.section === "dashboard" });
   const orgsQ = useAdminOrgsData({ enabled: route.section === "orgs" });
-  const projectsQ = useAdminProjectsData({ enabled: route.section === "projects", q: "" });
+  const projectsQ = useAdminProjectsData({
+    enabled: route.section === "projects",
+    q: projectsFilters.q,
+    limit: paging.pageSize,
+    offset: paging.offset,
+  });
   const sessionsQ = useAdminSessionsData({
     enabled: route.section === "sessions" && !toText(route.sessionId),
     q: sessionFilters.q,
     status: sessionFilters.status,
     ownerIds: sessionFilters.ownerIds,
+    updatedFrom: rangeToTsFrom(sessionFilters.updatedRange),
+    updatedTo: 0,
+    needsAttention: sessionFilters.attentionOnly ? 1 : -1,
+    limit: paging.pageSize,
+    offset: paging.offset,
   });
   const sessionDetailQ = useAdminSessionDetailData({
     enabled: route.section === "sessions" && Boolean(toText(route.sessionId)),
@@ -74,6 +120,10 @@ export default function AdminApp({
     action: auditFilters.action,
     sessionId: auditFilters.sessionId,
     projectId: auditFilters.projectId,
+    updatedFrom: rangeToTsFrom(auditFilters.dateRange),
+    updatedTo: 0,
+    limit: paging.pageSize,
+    offset: paging.offset,
   });
 
   useEffect(() => {
@@ -127,7 +177,26 @@ export default function AdminApp({
       );
     }
     if (route.section === "projects") {
-      return <AdminProjectsPage payload={projectsQ.data || {}} />;
+      return (
+        <AdminProjectsPage
+          payload={projectsQ.data || {}}
+          filters={projectsFilters}
+          onFiltersChange={(next) => {
+            updateSearchState({ q: toText(next?.q), page: "1" }, { replace: true, resetPage: true });
+          }}
+          paging={paging}
+          onPagingChange={(next) => {
+            const hasPageSize = Number(next?.pageSize || 0) > 0;
+            updateSearchState(
+              {
+                page: String(hasPageSize ? 1 : parsePage(next?.page, paging.page)),
+                page_size: String(hasPageSize ? parsePageSize(next?.pageSize, paging.pageSize) : paging.pageSize),
+              },
+              { replace: false },
+            );
+          }}
+        />
+      );
     }
     if (route.section === "sessions" && toText(route.sessionId)) {
       return (
@@ -135,7 +204,7 @@ export default function AdminApp({
           payload={sessionDetailQ.data || {}}
           loading={sessionDetailQ.loading}
           error={sessionDetailQ.error}
-          onBack={() => onNavigate?.("/admin/sessions")}
+          onBack={() => onNavigate?.(rawSearch ? `/admin/sessions?${rawSearch}` : "/admin/sessions")}
           onNavigate={onNavigate}
         />
       );
@@ -145,8 +214,31 @@ export default function AdminApp({
         <AdminSessionsPage
           payload={sessionsQ.data || {}}
           filters={sessionFilters}
-          onFiltersChange={setSessionFilters}
-          onOpenSession={(sid) => onNavigate?.(`/admin/sessions/${encodeURIComponent(toText(sid))}`)}
+          onFiltersChange={(next) => {
+            updateSearchState(
+              {
+                q: toText(next?.q),
+                status: toText(next?.status),
+                owner_ids: toText(next?.ownerIds),
+                updated_range: toText(next?.updatedRange),
+                attention_only: next?.attentionOnly ? "1" : "",
+                page: "1",
+              },
+              { replace: true, resetPage: true },
+            );
+          }}
+          paging={paging}
+          onPagingChange={(next) => {
+            const hasPageSize = Number(next?.pageSize || 0) > 0;
+            updateSearchState(
+              {
+                page: String(hasPageSize ? 1 : parsePage(next?.page, paging.page)),
+                page_size: String(hasPageSize ? parsePageSize(next?.pageSize, paging.pageSize) : paging.pageSize),
+              },
+              { replace: false },
+            );
+          }}
+          onOpenSession={(sid) => onNavigate?.(`/admin/sessions/${encodeURIComponent(toText(sid))}${rawSearch ? `?${rawSearch}` : ""}`)}
         />
       );
     }
@@ -154,7 +246,37 @@ export default function AdminApp({
       return <AdminJobsPage payload={jobsQ.data || {}} />;
     }
     if (route.section === "audit") {
-      return <AdminAuditPage payload={auditQ.data || {}} filters={auditFilters} onFiltersChange={setAuditFilters} />;
+      return (
+        <AdminAuditPage
+          payload={auditQ.data || {}}
+          filters={auditFilters}
+          onFiltersChange={(next) => {
+            updateSearchState(
+              {
+                q: toText(next?.q),
+                status: toText(next?.status),
+                action: toText(next?.action),
+                project_id: toText(next?.projectId),
+                session_id: toText(next?.sessionId),
+                date_range: toText(next?.dateRange),
+                page: "1",
+              },
+              { replace: true, resetPage: true },
+            );
+          }}
+          paging={paging}
+          onPagingChange={(next) => {
+            const hasPageSize = Number(next?.pageSize || 0) > 0;
+            updateSearchState(
+              {
+                page: String(hasPageSize ? 1 : parsePage(next?.page, paging.page)),
+                page_size: String(hasPageSize ? parsePageSize(next?.pageSize, paging.pageSize) : paging.pageSize),
+              },
+              { replace: false },
+            );
+          }}
+        />
+      );
     }
     return <ErrorState title={ru.admin.runtime.unknownRouteTitle} message={pathname} />;
   }

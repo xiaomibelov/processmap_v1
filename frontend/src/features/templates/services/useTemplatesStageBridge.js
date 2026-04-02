@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { applyTemplateToDiagram } from "./applyTemplateToDiagram";
+import { applyTemplateToDiagram } from "./applyTemplateToDiagram.js";
 import { buildBpmnFragmentInsertPayload, readTemplatePackFromTemplate } from "./applyBpmnFragmentTemplatePlacement.js";
 
 function asArray(value) {
@@ -26,6 +26,69 @@ function isFinitePoint(pointRaw) {
   return Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y));
 }
 
+function asObject(value) {
+  return value && typeof value === "object" ? value : {};
+}
+
+export function readInsertedTemplateElementIds(insertedRaw) {
+  const inserted = asObject(insertedRaw);
+  const ids = new Set();
+  const remap = asObject(inserted.remap);
+  Object.values(remap).forEach((value) => {
+    const id = toText(value);
+    if (id) ids.add(id);
+  });
+  const entryNodeId = toText(inserted.entryNodeId);
+  const exitNodeId = toText(inserted.exitNodeId);
+  if (entryNodeId) ids.add(entryNodeId);
+  if (exitNodeId) ids.add(exitNodeId);
+  return Array.from(ids);
+}
+
+function toValidBounds(boundsRaw) {
+  const bounds = asObject(boundsRaw);
+  const x = Number(bounds.x);
+  const y = Number(bounds.y);
+  const width = Number(bounds.width);
+  const height = Number(bounds.height);
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !(width > 0) || !(height > 0)) return null;
+  return { x, y, width, height };
+}
+
+function toValidViewbox(snapshotRaw) {
+  const snapshot = asObject(snapshotRaw);
+  const viewboxRaw = snapshot.viewbox && typeof snapshot.viewbox === "object" ? snapshot.viewbox : snapshot;
+  const x = Number(viewboxRaw?.x);
+  const y = Number(viewboxRaw?.y);
+  const width = Number(viewboxRaw?.width);
+  const height = Number(viewboxRaw?.height);
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !(width > 0) || !(height > 0)) return null;
+  return { x, y, width, height };
+}
+
+export function shouldNudgeViewportToElement(boundsRaw, snapshotRaw, options = {}) {
+  const bounds = toValidBounds(boundsRaw);
+  const viewbox = toValidViewbox(snapshotRaw);
+  if (!bounds || !viewbox) return false;
+  const padding = Math.max(0, Number(options.padding ?? 48));
+  const minVisibleRatio = Math.max(0, Math.min(1, Number(options.minVisibleRatio ?? 0.65)));
+  const paddedLeft = viewbox.x + padding;
+  const paddedTop = viewbox.y + padding;
+  const paddedRight = viewbox.x + viewbox.width - padding;
+  const paddedBottom = viewbox.y + viewbox.height - padding;
+  if (!(paddedRight > paddedLeft) || !(paddedBottom > paddedTop)) return true;
+  const left = bounds.x;
+  const top = bounds.y;
+  const right = bounds.x + bounds.width;
+  const bottom = bounds.y + bounds.height;
+  const overlapW = Math.max(0, Math.min(right, paddedRight) - Math.max(left, paddedLeft));
+  const overlapH = Math.max(0, Math.min(bottom, paddedBottom) - Math.max(top, paddedTop));
+  const overlapArea = overlapW * overlapH;
+  const totalArea = Math.max(1, bounds.width * bounds.height);
+  const visibleRatio = overlapArea / totalArea;
+  return visibleRatio < minVisibleRatio;
+}
+
 export default function useTemplatesStageBridge({
   selectedBpmnElement,
   draftNodes,
@@ -33,6 +96,7 @@ export default function useTemplatesStageBridge({
   bpmnApiRef,
   bpmnStageHostRef,
   clientToDiagram,
+  onPersistedTemplateApply = null,
 }) {
   const selectedElementId = toText(selectedBpmnElement?.id);
   const selectedElementName = toText(selectedBpmnElement?.name || selectedElementId);
@@ -176,6 +240,51 @@ export default function useTemplatesStageBridge({
     if (!payload) return { ok: false, error: "invalid_insert_payload" };
     try {
       const inserted = await Promise.resolve(api.insertTemplatePack(payload));
+      if (inserted?.ok) {
+        const insertedIds = readInsertedTemplateElementIds(inserted);
+        if (insertedIds.length) {
+          if (typeof api.selectElements === "function") {
+            try {
+              api.selectElements(insertedIds, {
+                focusFirst: false,
+                source: "template_apply_visibility",
+              });
+            } catch {
+            }
+          }
+          if (typeof api.flashNode === "function") {
+            insertedIds.slice(0, 8).forEach((id, index) => {
+              try {
+                api.flashNode(id, "accent", {
+                  showPill: index === 0,
+                  label: "Template inserted",
+                  durationMs: 1400,
+                });
+              } catch {
+              }
+            });
+          }
+          const focusCandidateId = toText(inserted?.entryNodeId || insertedIds[0]);
+          if (
+            focusCandidateId
+            && typeof api.getElementBounds === "function"
+            && typeof api.getCanvasSnapshot === "function"
+            && typeof api.focusNode === "function"
+          ) {
+            try {
+              const bounds = api.getElementBounds(focusCandidateId, { mode: "editor" });
+              const snapshot = api.getCanvasSnapshot({ mode: "editor" });
+              if (shouldNudgeViewportToElement(bounds, snapshot)) {
+                api.focusNode(focusCandidateId, {
+                  source: "template_apply_visibility",
+                  durationMs: 1400,
+                });
+              }
+            } catch {
+            }
+          }
+        }
+      }
       if (!inserted?.ok || options?.persistImmediately !== true) {
         return inserted;
       }
@@ -186,6 +295,7 @@ export default function useTemplatesStageBridge({
         force: true,
         source: toText(options?.source || "template_apply"),
         trigger: "template_apply",
+        saveOwner: "template_apply",
       }));
       let attempts = 0;
       while (saved?.ok && saved?.pending === true && attempts < 20) {
@@ -195,6 +305,7 @@ export default function useTemplatesStageBridge({
           force: true,
           source: toText(options?.source || "template_apply"),
           trigger: "template_apply",
+          saveOwner: "template_apply",
         }));
       }
       if (!saved?.ok) {
@@ -202,6 +313,16 @@ export default function useTemplatesStageBridge({
       }
       if (saved?.pending === true) {
         return { ok: false, error: "persist_pending_timeout", inserted };
+      }
+      if (typeof onPersistedTemplateApply === "function") {
+        try {
+          await Promise.resolve(onPersistedTemplateApply({
+            template: templateRaw,
+            inserted,
+            saved,
+          }));
+        } catch {
+        }
       }
       return {
         ...inserted,
@@ -211,7 +332,7 @@ export default function useTemplatesStageBridge({
     } catch (error) {
       return { ok: false, error: toText(error?.message || error || "insert_failed") };
     }
-  }, [bpmnApiRef, bpmnStageHostRef, clientToDiagram]);
+  }, [bpmnApiRef, bpmnStageHostRef, clientToDiagram, onPersistedTemplateApply]);
 
   const insertBpmnFragmentTemplateImmediately = useCallback(async (templateRaw, options = {}) => {
     const rect = options?.diagramContainerRect && typeof options.diagramContainerRect === "object"

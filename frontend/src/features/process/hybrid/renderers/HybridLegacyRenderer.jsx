@@ -37,10 +37,14 @@ export default function HybridLegacyRenderer({
         if (!shouldRenderLegacyCanvasRow(item)) return null;
         const elementId = toText(item.elementId);
         if (!elementId) return null;
+        // Viewport culling: skip mounting DOM nodes for items outside the visible
+        // area (with buffer). Active elements are always mounted so their card
+        // remains visible even when the hotspot is scrolled off-screen.
+        const isActive = toText(legacyActiveElementId) === elementId;
+        if (!item.insideViewport && !isActive) return null;
         const posX = Number(item.posX || 0);
         const posY = Number(item.posY || 0);
         const status = toText(item.status).toLowerCase() || "none";
-        const isActive = toText(legacyActiveElementId) === elementId;
         const showCard = mode === "edit" || isActive;
         const debugOffsetX = Number(item.rawX || 0) - posX;
         const debugOffsetY = Number(item.rawY || 0) - posY;

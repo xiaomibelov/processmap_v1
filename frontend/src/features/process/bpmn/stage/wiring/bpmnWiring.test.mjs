@@ -106,3 +106,79 @@ test("ensureBpmnCoordinator binds runtime callbacks only once", () => {
   assert.equal(bindRuntimeCalls, 1);
   assert.equal(ctx.refs.modelerRuntimeRef.current, r1);
 });
+
+test("ensureBpmnStore guards redundant setter fanout for identical snapshots", () => {
+  const ctx = createCtx();
+  const calls = [];
+  ctx.state.setXml = (value) => calls.push(["xml", value]);
+  ctx.state.setXmlDraft = (value) => calls.push(["draft", value]);
+  ctx.state.setXmlDirty = (value) => calls.push(["dirty", value]);
+
+  let subscriber = null;
+  const deps = {
+    createBpmnStore: () => ({
+      subscribe(cb) {
+        subscriber = cb;
+        cb({
+          xml: "",
+          dirty: false,
+          source: "stage_init",
+          reason: "subscribe",
+          rev: 0,
+          hash: "hash0",
+        });
+        return () => {};
+      },
+      getState: () => ({ xml: "", dirty: false, rev: 0 }),
+    }),
+  };
+
+  const wiring = createBpmnWiring(() => ctx, deps);
+  wiring.ensureBpmnStore();
+  calls.length = 0;
+
+  subscriber({
+    xml: "",
+    dirty: false,
+    source: "runtime_change",
+    reason: "setXml",
+    rev: 1,
+    hash: "hash0",
+  });
+  assert.deepEqual(calls, []);
+
+  subscriber({
+    xml: "<xml />",
+    dirty: true,
+    source: "runtime_change",
+    reason: "setXml",
+    rev: 2,
+    hash: "hash1",
+  });
+  assert.deepEqual(calls, [
+    ["xml", "<xml />"],
+    ["draft", "<xml />"],
+    ["dirty", true],
+  ]);
+
+  calls.length = 0;
+  subscriber({
+    xml: "<xml />",
+    dirty: true,
+    source: "runtime_change",
+    reason: "setXml",
+    rev: 3,
+    hash: "hash1",
+  });
+  assert.deepEqual(calls, []);
+
+  subscriber({
+    xml: "<xml />",
+    dirty: false,
+    source: "markSaved",
+    reason: "markSaved",
+    rev: 3,
+    hash: "hash1",
+  });
+  assert.deepEqual(calls, [["dirty", false]]);
+});

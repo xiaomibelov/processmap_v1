@@ -92,7 +92,6 @@ import useStableProcessDiagramOverlayLayersProps from "../features/process/stage
 import useProcessStageDrawio from "../features/process/stage/orchestration/useProcessStageDrawio";
 import useProcessStageHybrid from "../features/process/stage/orchestration/useProcessStageHybrid";
 import useProcessStageLocalState from "../features/process/stage/orchestration/state/useProcessStageLocalState";
-import useBpmnDiagramContextMenu from "../features/process/stage/hooks/useBpmnDiagramContextMenu";
 import {
   buildTopPanelsView,
   buildAttentionPanelsView,
@@ -2145,7 +2144,7 @@ export default function ProcessStage({
     bpmnFragmentPlacementGhost,
     bpmnFragmentPlacementActive,
   } = templatesStore;
-  const { closeAllDiagramActions, stageActions } = useDiagramActionsController({
+  const { stageActions } = useDiagramActionsController({
     popovers: {
       toolbarMenuOpen,
       setToolbarMenuOpen,
@@ -2215,32 +2214,6 @@ export default function ProcessStage({
     && selectedInsertBetween.available !== false
     && !!selectedInsertBetween.fromId
     && !!selectedInsertBetween.toId;
-
-  const {
-    bpmnContextMenu,
-    onBpmnContextMenuRequest,
-    onBpmnContextMenuDismiss,
-    closeBpmnContextMenu,
-    runBpmnContextMenuAction,
-  } = useBpmnDiagramContextMenu({
-    bpmnRef,
-    tab,
-    hasSession,
-    drawioEditorOpen,
-    hybridPlacementHitLayerActive,
-    hybridModeEffective,
-    modalOpenSignal: (
-      qualityAutoFixOpen
-      || insertBetweenOpen
-      || versionsOpen
-      || diffOpen
-      || createTemplateOpen
-      || drawioEditorOpen
-    ),
-    closeAllDiagramActions,
-    setInfoMsg,
-    setGenErr,
-  });
   const {
     coverageNodes,
     coverageMatrix,
@@ -4194,11 +4167,9 @@ export default function ProcessStage({
   const diagramOverlayLayersProps = useStableProcessDiagramOverlayLayersProps({
     activeProjectId,
     asObject,
-    bpmnContextMenu,
     bpmnFragmentPlacementActive,
     bpmnFragmentPlacementGhost,
     bpmnRef,
-    closeBpmnContextMenu,
     cleanupMissingHybridBindings,
     clientToDiagram,
     closeEmbeddedDrawioEditor,
@@ -4241,10 +4212,7 @@ export default function ProcessStage({
     renameHybridItem: hybridTools.renameHybridItem,
     hideHybridIds: hybridTools.hideHybridIds,
     lockLayersForHybridIds: hybridTools.lockLayersForHybridIds,
-    onBpmnContextMenuDismiss,
-    onBpmnContextMenuRequest,
     retryHybridPersist: hybridPersist.retryLast,
-    runBpmnContextMenuAction,
     dismissHybridLockBusyNotice: hybridPersist.dismissLockBusyNotice,
     hybridGhostPreview: hybridTools.ghostPreview,
     hybridArrowPreview: hybridTools.arrowPreview,

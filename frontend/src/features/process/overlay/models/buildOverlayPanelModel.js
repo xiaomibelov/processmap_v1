@@ -19,7 +19,12 @@ function bumpPanelPerfCounter() {
   store.counters = counters;
 }
 
-export default function buildOverlayPanelModel({
+/**
+ * Build the structural part of the overlay panel model (rows, sections, tools).
+ * This does NOT depend on selection state, so it can be memoized separately
+ * from the fast-changing selected entity.
+ */
+export function buildOverlayPanelModelStructure({
   drawioState,
   drawioModeEffective,
   drawioEditorStatus,
@@ -31,10 +36,6 @@ export default function buildOverlayPanelModel({
   hybridLayerRenderRows,
   hybridV2Renderable,
   hybridV2BindingByHybridId,
-  drawioSelectedElementId,
-  hybridV2ActiveId,
-  hybridV2SelectedIds,
-  legacyActiveElementId,
 } = {}) {
   bumpPanelPerfCounter();
   const overlayStatus = getDrawioOverlayStatus(drawioState);
@@ -47,14 +48,6 @@ export default function buildOverlayPanelModel({
     hybridLayerRenderRows,
     hybridV2Renderable,
     hybridV2BindingByHybridId,
-  });
-  const selected = buildOverlaySelectedEntity({
-    drawioState,
-    drawioSelectedElementId,
-    hybridV2ActiveId,
-    hybridV2SelectedIds,
-    legacyActiveElementId,
-    hybridV2Renderable,
   });
   const {
     drawioSection,
@@ -117,11 +110,6 @@ export default function buildOverlayPanelModel({
     },
     drawio: drawioSection,
     hybridLegacy: hybridLegacySection,
-    selected: {
-      ...selected,
-      displayId: toText(selected.entityId),
-      displayLabel: toText(selected.label) || "—",
-    },
     rows,
     layerGroups: {
       drawio: drawioRows,
@@ -137,5 +125,76 @@ export default function buildOverlayPanelModel({
     hidden: {
       count: Number(hybridV2HiddenCount || 0),
     },
+  };
+}
+
+/**
+ * Build the selected entity slice — changes on every click/selection.
+ * Isolated so selection changes don't recompute the full structural model.
+ */
+export function buildOverlayPanelModelSelected({
+  drawioState,
+  drawioSelectedElementId,
+  hybridV2ActiveId,
+  hybridV2SelectedIds,
+  legacyActiveElementId,
+  hybridV2Renderable,
+} = {}) {
+  const selected = buildOverlaySelectedEntity({
+    drawioState,
+    drawioSelectedElementId,
+    hybridV2ActiveId,
+    hybridV2SelectedIds,
+    legacyActiveElementId,
+    hybridV2Renderable,
+  });
+  return {
+    ...selected,
+    displayId: toText(selected.entityId),
+    displayLabel: toText(selected.label) || "—",
+  };
+}
+
+export default function buildOverlayPanelModel({
+  drawioState,
+  drawioModeEffective,
+  drawioEditorStatus,
+  hybridVisible,
+  hybridTotalCount,
+  hybridModeEffective,
+  hybridUiPrefs,
+  hybridV2HiddenCount,
+  hybridLayerRenderRows,
+  hybridV2Renderable,
+  hybridV2BindingByHybridId,
+  drawioSelectedElementId,
+  hybridV2ActiveId,
+  hybridV2SelectedIds,
+  legacyActiveElementId,
+} = {}) {
+  const structure = buildOverlayPanelModelStructure({
+    drawioState,
+    drawioModeEffective,
+    drawioEditorStatus,
+    hybridVisible,
+    hybridTotalCount,
+    hybridModeEffective,
+    hybridUiPrefs,
+    hybridV2HiddenCount,
+    hybridLayerRenderRows,
+    hybridV2Renderable,
+    hybridV2BindingByHybridId,
+  });
+  const selected = buildOverlayPanelModelSelected({
+    drawioState,
+    drawioSelectedElementId,
+    hybridV2ActiveId,
+    hybridV2SelectedIds,
+    legacyActiveElementId,
+    hybridV2Renderable,
+  });
+  return {
+    ...structure,
+    selected,
   };
 }

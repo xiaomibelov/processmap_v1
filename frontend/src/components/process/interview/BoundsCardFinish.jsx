@@ -17,9 +17,8 @@ export default function BoundsCardFinish({
         <span className="interviewBoundsMiniPill finish">FINISH</span>
         <span className={`interviewBoundsState ${missing ? "warn" : "ok"}`}>{missing ? "не заполнено" : "ok"}</span>
       </div>
-      <div className="interviewBoundsCardTitle">Финиш</div>
       <label className="interviewField">
-        <span>Финишный цех / lane</span>
+        <span>Финишный lane</span>
         <select
           className="select interviewBoundaryLaneSelect"
           value={finishShop}
@@ -34,15 +33,15 @@ export default function BoundsCardFinish({
         </select>
       </label>
       <label className="interviewField">
-        <span>Финишное состояние (готово)</span>
+        <span>Finish state</span>
         <input
           className="input"
           value={finishState}
           onChange={(event) => onFinishStateChange?.(event.target.value)}
-          placeholder="Напр.: упакованная партия"
+          placeholder="Упакованная партия"
         />
       </label>
-      <div className="interviewBoundsHint">Как понять, что процесс завершён?</div>
+      <div className="interviewBoundsHint">Критерий завершения процесса.</div>
     </section>
   );
 }

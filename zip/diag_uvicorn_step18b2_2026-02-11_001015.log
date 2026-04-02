@@ -1,0 +1,344 @@
+== git state ==
+## feat/step18b2-backend-start-role-v2
+?? foodproc_step15_applyanswers.sh
+?? fpc_step_14_patch_bundle.zip
+?? scripts/step18b2_patch_backend_start_role.py
+?? scripts/step_14_apply_patch_bundle_v1.sh
+?? scripts/step_14_pack_current_sources_v1.sh
+?? scripts/step_14_pack_for_patch_v1.sh
+?? scripts/step_14_retry_apply_patch_bundle_v2.sh
+?? workspace/_bak_step14_2026-02-10_104335/
+?? zip/
+2026-02-11 00:01:54 +0300 8b6efbd  (HEAD -> feat/step18b2-backend-start-role-v2, tag: cp/foodproc_step18b2_retry_v2_after_2026-02-11_000154) feat(step18b2): persist start_role + mermaid empty pool/lanes
+
+== recent cp tags ==
+cp/foodproc_step18b2_retry_v2_after_2026-02-11_000154
+cp/foodproc_step18b2_retry_v2_before_2026-02-11_000154
+cp/foodproc_step18b2_backend_start_role_before_2026-02-10_234604
+
+== docker compose ps ==
+NAME                             IMAGE                          COMMAND                  SERVICE   CREATED         STATUS                          PORTS
+foodproc_process_copilot-app-1   foodproc_process_copilot-app   "uvicorn backend.app…"   app       8 minutes ago   Restarting (1) 11 seconds ago   
+
+== docker compose logs (tail 300, app) ==
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/server.py", line 69, in serve
+app-1  |     await self._serve(sockets)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/server.py", line 76, in _serve
+app-1  |     config.load()
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/config.py", line 433, in load
+app-1  |     self.loaded_app = import_from_string(self.app)
+app-1  |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/importer.py", line 19, in import_from_string
+app-1  |     module = importlib.import_module(module_str)
+app-1  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+app-1  |     return _bootstrap._gcd_import(name[level:], package, level)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+app-1  |   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+app-1  |   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+app-1  |   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+app-1  |   File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+app-1  |   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+app-1  |   File "/app/backend/app/main.py", line 17, in <module>
+app-1  |     from .exporters.mermaid import render_mermaid
+app-1  |   File "/app/backend/app/exporters/mermaid.py", line 179
+app-1  |     if mode == \"lanes\" and roles:
+app-1  |                 ^
+app-1  | SyntaxError: unexpected character after line continuation character
+app-1  | Traceback (most recent call last):
+app-1  |   File "/usr/local/bin/uvicorn", line 8, in <module>
+app-1  |     sys.exit(main())
+app-1  |              ^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/click/core.py", line 1485, in __call__
+app-1  |     return self.main(*args, **kwargs)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/click/core.py", line 1406, in main
+app-1  |     rv = self.invoke(ctx)
+app-1  |          ^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/click/core.py", line 1269, in invoke
+app-1  |     return ctx.invoke(self.callback, **ctx.params)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/click/core.py", line 824, in invoke
+app-1  |     return callback(*args, **kwargs)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/main.py", line 409, in main
+app-1  |     run(
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/main.py", line 575, in run
+app-1  |     server.run()
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/server.py", line 65, in run
+app-1  |     return asyncio.run(self.serve(sockets=sockets))
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/asyncio/runners.py", line 190, in run
+app-1  |     return runner.run(main)
+app-1  |            ^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/asyncio/runners.py", line 118, in run
+app-1  |     return self._loop.run_until_complete(task)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "uvloop/loop.pyx", line 1518, in uvloop.loop.Loop.run_until_complete
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/server.py", line 69, in serve
+app-1  |     await self._serve(sockets)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/server.py", line 76, in _serve
+app-1  |     config.load()
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/config.py", line 433, in load
+app-1  |     self.loaded_app = import_from_string(self.app)
+app-1  |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/importer.py", line 19, in import_from_string
+app-1  |     module = importlib.import_module(module_str)
+app-1  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+app-1  |     return _bootstrap._gcd_import(name[level:], package, level)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+app-1  |   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+app-1  |   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+app-1  |   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+app-1  |   File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+app-1  |   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+app-1  |   File "/app/backend/app/main.py", line 17, in <module>
+app-1  |     from .exporters.mermaid import render_mermaid
+app-1  |   File "/app/backend/app/exporters/mermaid.py", line 179
+app-1  |     if mode == \"lanes\" and roles:
+app-1  |                 ^
+app-1  | SyntaxError: unexpected character after line continuation character
+app-1  | Traceback (most recent call last):
+app-1  |   File "/usr/local/bin/uvicorn", line 8, in <module>
+app-1  |     sys.exit(main())
+app-1  |              ^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/click/core.py", line 1485, in __call__
+app-1  |     return self.main(*args, **kwargs)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/click/core.py", line 1406, in main
+app-1  |     rv = self.invoke(ctx)
+app-1  |          ^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/click/core.py", line 1269, in invoke
+app-1  |     return ctx.invoke(self.callback, **ctx.params)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/click/core.py", line 824, in invoke
+app-1  |     return callback(*args, **kwargs)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/main.py", line 409, in main
+app-1  |     run(
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/main.py", line 575, in run
+app-1  |     server.run()
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/server.py", line 65, in run
+app-1  |     return asyncio.run(self.serve(sockets=sockets))
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/asyncio/runners.py", line 190, in run
+app-1  |     return runner.run(main)
+app-1  |            ^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/asyncio/runners.py", line 118, in run
+app-1  |     return self._loop.run_until_complete(task)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "uvloop/loop.pyx", line 1518, in uvloop.loop.Loop.run_until_complete
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/server.py", line 69, in serve
+app-1  |     await self._serve(sockets)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/server.py", line 76, in _serve
+app-1  |     config.load()
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/config.py", line 433, in load
+app-1  |     self.loaded_app = import_from_string(self.app)
+app-1  |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/importer.py", line 19, in import_from_string
+app-1  |     module = importlib.import_module(module_str)
+app-1  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+app-1  |     return _bootstrap._gcd_import(name[level:], package, level)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+app-1  |   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+app-1  |   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+app-1  |   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+app-1  |   File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+app-1  |   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+app-1  |   File "/app/backend/app/main.py", line 17, in <module>
+app-1  |     from .exporters.mermaid import render_mermaid
+app-1  |   File "/app/backend/app/exporters/mermaid.py", line 179
+app-1  |     if mode == \"lanes\" and roles:
+app-1  |                 ^
+app-1  | SyntaxError: unexpected character after line continuation character
+app-1  | Traceback (most recent call last):
+app-1  |   File "/usr/local/bin/uvicorn", line 8, in <module>
+app-1  |     sys.exit(main())
+app-1  |              ^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/click/core.py", line 1485, in __call__
+app-1  |     return self.main(*args, **kwargs)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/click/core.py", line 1406, in main
+app-1  |     rv = self.invoke(ctx)
+app-1  |          ^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/click/core.py", line 1269, in invoke
+app-1  |     return ctx.invoke(self.callback, **ctx.params)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/click/core.py", line 824, in invoke
+app-1  |     return callback(*args, **kwargs)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/main.py", line 409, in main
+app-1  |     run(
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/main.py", line 575, in run
+app-1  |     server.run()
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/server.py", line 65, in run
+app-1  |     return asyncio.run(self.serve(sockets=sockets))
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/asyncio/runners.py", line 190, in run
+app-1  |     return runner.run(main)
+app-1  |            ^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/asyncio/runners.py", line 118, in run
+app-1  |     return self._loop.run_until_complete(task)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "uvloop/loop.pyx", line 1518, in uvloop.loop.Loop.run_until_complete
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/server.py", line 69, in serve
+app-1  |     await self._serve(sockets)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/server.py", line 76, in _serve
+app-1  |     config.load()
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/config.py", line 433, in load
+app-1  |     self.loaded_app = import_from_string(self.app)
+app-1  |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/importer.py", line 19, in import_from_string
+app-1  |     module = importlib.import_module(module_str)
+app-1  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+app-1  |     return _bootstrap._gcd_import(name[level:], package, level)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+app-1  |   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+app-1  |   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+app-1  |   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+app-1  |   File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+app-1  |   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+app-1  |   File "/app/backend/app/main.py", line 17, in <module>
+app-1  |     from .exporters.mermaid import render_mermaid
+app-1  |   File "/app/backend/app/exporters/mermaid.py", line 179
+app-1  |     if mode == \"lanes\" and roles:
+app-1  |                 ^
+app-1  | SyntaxError: unexpected character after line continuation character
+app-1  | Traceback (most recent call last):
+app-1  |   File "/usr/local/bin/uvicorn", line 8, in <module>
+app-1  |     sys.exit(main())
+app-1  |              ^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/click/core.py", line 1485, in __call__
+app-1  |     return self.main(*args, **kwargs)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/click/core.py", line 1406, in main
+app-1  |     rv = self.invoke(ctx)
+app-1  |          ^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/click/core.py", line 1269, in invoke
+app-1  |     return ctx.invoke(self.callback, **ctx.params)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/click/core.py", line 824, in invoke
+app-1  |     return callback(*args, **kwargs)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/main.py", line 409, in main
+app-1  |     run(
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/main.py", line 575, in run
+app-1  |     server.run()
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/server.py", line 65, in run
+app-1  |     return asyncio.run(self.serve(sockets=sockets))
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/asyncio/runners.py", line 190, in run
+app-1  |     return runner.run(main)
+app-1  |            ^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/asyncio/runners.py", line 118, in run
+app-1  |     return self._loop.run_until_complete(task)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "uvloop/loop.pyx", line 1518, in uvloop.loop.Loop.run_until_complete
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/server.py", line 69, in serve
+app-1  |     await self._serve(sockets)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/server.py", line 76, in _serve
+app-1  |     config.load()
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/config.py", line 433, in load
+app-1  |     self.loaded_app = import_from_string(self.app)
+app-1  |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/importer.py", line 19, in import_from_string
+app-1  |     module = importlib.import_module(module_str)
+app-1  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+app-1  |     return _bootstrap._gcd_import(name[level:], package, level)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+app-1  |   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+app-1  |   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+app-1  |   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+app-1  |   File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+app-1  |   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+app-1  |   File "/app/backend/app/main.py", line 17, in <module>
+app-1  |     from .exporters.mermaid import render_mermaid
+app-1  |   File "/app/backend/app/exporters/mermaid.py", line 179
+app-1  |     if mode == \"lanes\" and roles:
+app-1  |                 ^
+app-1  | SyntaxError: unexpected character after line continuation character
+app-1  | Traceback (most recent call last):
+app-1  |   File "/usr/local/bin/uvicorn", line 8, in <module>
+app-1  |     sys.exit(main())
+app-1  |              ^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/click/core.py", line 1485, in __call__
+app-1  |     return self.main(*args, **kwargs)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/click/core.py", line 1406, in main
+app-1  |     rv = self.invoke(ctx)
+app-1  |          ^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/click/core.py", line 1269, in invoke
+app-1  |     return ctx.invoke(self.callback, **ctx.params)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/click/core.py", line 824, in invoke
+app-1  |     return callback(*args, **kwargs)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/main.py", line 409, in main
+app-1  |     run(
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/main.py", line 575, in run
+app-1  |     server.run()
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/server.py", line 65, in run
+app-1  |     return asyncio.run(self.serve(sockets=sockets))
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/asyncio/runners.py", line 190, in run
+app-1  |     return runner.run(main)
+app-1  |            ^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/asyncio/runners.py", line 118, in run
+app-1  |     return self._loop.run_until_complete(task)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "uvloop/loop.pyx", line 1518, in uvloop.loop.Loop.run_until_complete
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/server.py", line 69, in serve
+app-1  |     await self._serve(sockets)
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/server.py", line 76, in _serve
+app-1  |     config.load()
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/config.py", line 433, in load
+app-1  |     self.loaded_app = import_from_string(self.app)
+app-1  |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/site-packages/uvicorn/importer.py", line 19, in import_from_string
+app-1  |     module = importlib.import_module(module_str)
+app-1  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+app-1  |     return _bootstrap._gcd_import(name[level:], package, level)
+app-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app-1  |   File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+app-1  |   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+app-1  |   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+app-1  |   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+app-1  |   File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+app-1  |   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+app-1  |   File "/app/backend/app/main.py", line 17, in <module>
+app-1  |     from .exporters.mermaid import render_mermaid
+app-1  |   File "/app/backend/app/exporters/mermaid.py", line 179
+app-1  |     if mode == \"lanes\" and roles:
+app-1  |                 ^
+app-1  | SyntaxError: unexpected character after line continuation character
+
+== py_compile inside container ==
+  File "/app/backend/app/exporters/mermaid.py", line 179
+    if mode == \"lanes\" and roles:
+                ^
+SyntaxError: unexpected character after line continuation character
+
+
+== import check inside container ==
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/app/backend/app/main.py", line 17, in <module>
+    from .exporters.mermaid import render_mermaid
+  File "/app/backend/app/exporters/mermaid.py", line 179
+    if mode == \"lanes\" and roles:
+                ^
+SyntaxError: unexpected character after line continuation character
+
+
+== done ==
+log: zip/diag_uvicorn_step18b2_2026-02-11_001015.log

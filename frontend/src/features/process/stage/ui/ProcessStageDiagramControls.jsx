@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import LayersPopover from "../components/LayersPopover";
 import TemplatesBottomMenu from "../../../templates/ui/TemplatesBottomMenu";
 import GatewaysPanel from "../../playback/ui/GatewaysPanel";
@@ -97,6 +98,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     shortHash,
     diagramActionPlaybackOpen,
     diagramPlaybackPopoverRef,
+    playbackRuntimeSnapshot,
     playbackGraphError,
     playbackCanRun,
     playbackScenarioLabel,
@@ -109,12 +111,14 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     playbackEventTitle,
     playbackGateways,
     playbackGatewayChoices,
-    playbackGatewayPending,
+    playbackGatewayChoiceSource,
+    playbackGatewayReadOnly,
+    playbackDecisionMode,
+    setPlaybackDecisionMode,
     playbackAwaitingGatewayId,
     formatPlaybackGatewayTitle,
     playbackGatewayOptionLabel,
     setPlaybackGatewayChoice,
-    handlePlaybackGatewayDecision,
     handlePlaybackPrev,
     handlePlaybackTogglePlay,
     handlePlaybackNext,
@@ -130,6 +134,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     autoPassError,
     autoPassBlockedReason,
     startAutoPass,
+    openDocFromDiagram,
     markPlaybackOverlayInteraction,
   } = playbackAutopassSection;
 
@@ -200,6 +205,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     setDrawioElementTextWidth,
     setDrawioElementStylePreset,
     setDrawioElementSize,
+    setDrawioElementAnchor,
     drawioFileInputRef,
     exportEmbeddedDrawio,
     hybridV2DocLive,
@@ -225,10 +231,13 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     hybridV2Renderable,
     setHybridV2ActiveId,
     drawioSelectedElementId,
+    setDrawioSelectedElementId,
+    drawioAnchorImportDiagnostics,
     deleteOverlayEntity,
     goToHybridLayerItem,
     hideSelectedHybridItems,
     lockSelectedHybridItems,
+    selectedElementContext,
   } = drawioLayersSection;
 
   const {
@@ -238,13 +247,16 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     setRobotMetaOverlayFilters,
   } = overflowModesSection;
 
-  if (tab !== "diagram") return null;
   const autoPassState = asObject(autoPassUi);
   const autoPassStatus = toText(autoPassState?.status).toLowerCase();
   const autoPassBusy = autoPassStatus === "queued" || autoPassStatus === "running" || autoPassStatus === "starting";
   const autoPassBlocked = toText(autoPassBlockedReason).length > 0;
   const autoPassLabel = toText(autoPassState?.label) || "Auto: idle";
   const autoPassProgress = Number(autoPassState?.progress || 0);
+  const autoPassProgressPct = Math.max(
+    0,
+    Math.min(100, Math.round(autoPassProgress || (autoPassStatus === "done" ? 100 : 0))),
+  );
   const overlayStatus = asObject(overlayPanelModel?.status);
   const overlayStatusKey = toText(overlayStatus.key).toLowerCase();
   const overlayStatusLabel = overlayStatusKey === "on_preview_missing"
@@ -254,6 +266,152 @@ export default function ProcessStageDiagramControls({ view = {} }) {
       : (overlayStatusKey === "on" ? "ON" : (drawioUiState.enabled ? "ON" : "OFF")));
   const overlayStatusTitle = toText(overlayStatus.label) || (overlayStatusLabel === "ON ⚠ hidden" ? "ON · preview missing · hidden" : overlayStatusLabel);
   const unifiedOverlayPanelOpen = !!diagramActionLayersOpen || !!diagramActionHybridToolsOpen;
+  const playbackRuntime = asObject(playbackRuntimeSnapshot);
+  const playbackRuntimeProgress = asObject(playbackRuntime.progress);
+  const playbackSourceOfTruth = asObject(playbackRuntime.sourceOfTruth);
+  const playbackDiagnostics = asObject(playbackRuntime.diagnostics);
+  const playbackCurrentEventResolved = asObject(playbackRuntime.currentFrame || playbackCurrentEvent);
+  const playbackCurrentType = toText(playbackCurrentEventResolved?.type).toLowerCase();
+  const playbackDecisionModeKey = toText(playbackSourceOfTruth.mode || playbackDecisionMode) || "manual";
+  const playbackDecisionModeIsAuto = playbackDecisionModeKey === "auto_pass";
+  const canSetPlaybackDecisionMode = typeof setPlaybackDecisionMode === "function";
+  const playbackCanRunResolved = playbackRuntime.playbackCanRun === true || playbackCanRun === true;
+  const playbackIndexResolved = Number.isFinite(Number(playbackRuntimeProgress.index))
+    ? Number(playbackRuntimeProgress.index)
+    : Number(playbackIndexClamped || 0);
+  const playbackTotalResolved = Number.isFinite(Number(playbackRuntimeProgress.total))
+    ? Number(playbackRuntimeProgress.total)
+    : Number(playbackTotal || 0);
+  const playbackGatewayChoiceSourceResolved = toText(
+    playbackSourceOfTruth.choiceSource
+      || playbackRuntime.gatewayChoiceSource
+      || playbackGatewayChoiceSource,
+  ) || "manual_local_choices";
+  const playbackGatewayReadOnlyResolved = playbackSourceOfTruth.readOnly === true || playbackGatewayReadOnly === true;
+  const playbackAwaitingGatewayIdResolved = toText(playbackRuntime.pendingGatewayId || playbackAwaitingGatewayId);
+  const playbackIsPlayingResolved = playbackRuntime.runStatus === "playing"
+    || playbackRuntime.runStatus === "auto"
+    || playbackIsPlaying === true;
+  const isWaitingGatewayDecision = playbackRuntime.isWaitingGatewayDecision === true;
+  const isTerminalPlaybackState = playbackRuntime.isTerminalPlaybackState === true;
+  const isFailedTerminalState = playbackRuntime.isFailedTerminalState === true;
+  const hasMeaningfulExecutionProgress = playbackRuntime.hasMeaningfulExecutionProgress === true;
+  const playbackCurrentNodeId = toText(playbackCurrentEventResolved?.nodeId || playbackCurrentEventResolved?.gatewayId);
+  const playbackProgressLabel = toText(playbackRuntimeProgress.label)
+    || `${Math.min(playbackIndexResolved + 1, Math.max(playbackTotalResolved, 1))} / ${playbackTotalResolved}`;
+  const playbackStatusLabel = toText(playbackRuntime.runStatusLabel) || "Idle";
+  const playbackStatusTone = toText(playbackRuntime.runStatusTone);
+  const gatewayTotalCount = asArray(playbackGateways).length;
+  const playbackRouteDecisionByNodeId = asObject(playbackRuntime.routeDecisionByNodeId);
+  const knownGatewayIds = new Set(
+    asArray(playbackGateways)
+      .map((gatewayRaw) => toText(asObject(gatewayRaw).gateway_id))
+      .filter(Boolean),
+  );
+  const coveredGatewayDecisionCount = Object.keys(playbackRouteDecisionByNodeId)
+    .map((gatewayIdRaw) => toText(gatewayIdRaw))
+    .filter((gatewayId) => {
+      if (!gatewayId) return false;
+      if (!knownGatewayIds.size) return true;
+      return knownGatewayIds.has(gatewayId);
+    })
+    .length;
+  const materializedCoveragePartial = (
+    playbackDecisionModeIsAuto
+    && playbackSourceOfTruth.hasMaterialized === true
+    && gatewayTotalCount > 0
+    && coveredGatewayDecisionCount > 0
+    && coveredGatewayDecisionCount < gatewayTotalCount
+  );
+  const playbackCompletionReason = toText(playbackRuntime.completionReason);
+  const playbackAcceptanceReason = toText(playbackRuntime.acceptanceReason);
+  const playbackResetReason = toText(playbackRuntime.resetReason);
+  const playbackRestartReason = toText(playbackRuntime.restartReason);
+  const playbackTransitionReason = toText(playbackDiagnostics.lastTransitionReason);
+  const gatewayPendingCount = isWaitingGatewayDecision ? 1 : 0;
+  const shouldShowCurrentStep = hasMeaningfulExecutionProgress || isTerminalPlaybackState;
+  const shouldShowPlaybackDocCta = playbackRuntime.shouldShowDocCta === true;
+
+  const playbackPopoverOpenRef = useRef(false);
+  const [gatewaySectionExpanded, setGatewaySectionExpanded] = useState(false);
+  const [currentStepSectionExpanded, setCurrentStepSectionExpanded] = useState(false);
+  const [playbackRuntimeCollapsed, setPlaybackRuntimeCollapsed] = useState(false);
+
+  useEffect(() => {
+    if (!diagramActionPlaybackOpen) {
+      playbackPopoverOpenRef.current = false;
+      setGatewaySectionExpanded(false);
+      setCurrentStepSectionExpanded(false);
+      setPlaybackRuntimeCollapsed(false);
+      return;
+    }
+    if (!playbackPopoverOpenRef.current) {
+      playbackPopoverOpenRef.current = true;
+      setGatewaySectionExpanded(isWaitingGatewayDecision);
+      setCurrentStepSectionExpanded(false);
+      setPlaybackRuntimeCollapsed(hasMeaningfulExecutionProgress);
+    }
+  }, [diagramActionPlaybackOpen, hasMeaningfulExecutionProgress, isWaitingGatewayDecision]);
+
+  useEffect(() => {
+    if (!diagramActionPlaybackOpen) return;
+    if (isWaitingGatewayDecision) {
+      setGatewaySectionExpanded(true);
+      if (!isTerminalPlaybackState) {
+        setCurrentStepSectionExpanded(false);
+      }
+    }
+  }, [diagramActionPlaybackOpen, isTerminalPlaybackState, isWaitingGatewayDecision]);
+
+  useEffect(() => {
+    if (!diagramActionPlaybackOpen) return;
+    if (!shouldShowCurrentStep) return;
+    if (playbackIsPlayingResolved || Number(playbackIndexResolved || 0) > 0 || isTerminalPlaybackState) {
+      setCurrentStepSectionExpanded(true);
+    }
+  }, [
+    diagramActionPlaybackOpen,
+    isTerminalPlaybackState,
+    playbackIndexResolved,
+    playbackIsPlayingResolved,
+    shouldShowCurrentStep,
+  ]);
+
+  const handlePlaybackTogglePlayWithUiMode = () => {
+    const shouldCollapseAfterStart = !playbackRuntimeCollapsed
+      && !playbackIsPlayingResolved
+      && !hasMeaningfulExecutionProgress;
+    handlePlaybackTogglePlay();
+    if (shouldCollapseAfterStart) {
+      setPlaybackRuntimeCollapsed(true);
+    }
+  };
+
+  const handlePlaybackResetWithUiMode = () => {
+    handlePlaybackReset();
+    setPlaybackRuntimeCollapsed(false);
+    setGatewaySectionExpanded(false);
+    setCurrentStepSectionExpanded(false);
+  };
+
+  const handleStartAutoPassWithUiMode = () => {
+    if (!hasSession || autoPassBusy || autoPassBlocked) return;
+    void startAutoPass();
+    setPlaybackRuntimeCollapsed(true);
+  };
+
+  const handleOpenPlaybackDoc = () => {
+    if (typeof openDocFromDiagram === "function") {
+      openDocFromDiagram();
+      return;
+    }
+    if (typeof openReportsFromDiagram === "function") {
+      openReportsFromDiagram();
+    }
+  };
+
+  if (tab !== "diagram") return null;
+
   const closeDiagramPopovers = () => {
     setDiagramActionPathOpen(false);
     setDiagramActionHybridToolsOpen(false);
@@ -269,134 +427,139 @@ export default function ProcessStageDiagramControls({ view = {} }) {
   return (
     <>
       <div className="bpmnCanvasTools diagramActionBar" ref={diagramActionBarRef}>
-        <button
-          type="button"
-          className={`secondaryBtn h-8 px-2.5 text-xs ${unifiedOverlayPanelOpen ? "ring-1 ring-accent/60" : ""}`}
-          onClick={() => {
-            const next = !unifiedOverlayPanelOpen;
-            closeDiagramPopovers();
-            setDiagramActionLayersOpen(next);
-            setDiagramActionHybridToolsOpen(next);
-          }}
-          data-testid="diagram-action-layers"
-        >
-          <span>Draw.io / Overlay</span>
-          <span className="diagramActionChip" title={overlayStatusTitle}>
-            {overlayStatusLabel}
-          </span>
-        </button>
-        <span data-testid="templates-menu-button">
+        <div className="diagramActionToolbarGroup">
           <button
             type="button"
-            className="secondaryBtn h-8 px-2 text-[11px]"
+            className={`secondaryBtn diagramActionBtn ${unifiedOverlayPanelOpen ? "ring-1 ring-accent/60" : ""}`}
             onClick={() => {
-              if (templatesMenuOpen) {
-                setTemplatesMenuOpen(false);
-                return;
-              }
-              void openTemplatesPicker();
+              const next = !unifiedOverlayPanelOpen;
+              closeDiagramPopovers();
+              setDiagramActionLayersOpen(next);
+              setDiagramActionHybridToolsOpen(next);
             }}
-            disabled={!canOpenTemplatesList}
-            title="Открыть список шаблонов"
-            data-testid="btn-templates"
+            data-testid="diagram-action-layers"
           >
-            Шаблоны
+            <span>Слои</span>
+            <span className="diagramActionChip" title={overlayStatusTitle}>
+              {overlayStatusLabel}
+            </span>
           </button>
-        </span>
-        <button
-          type="button"
-          className="secondaryBtn h-8 px-2 text-[11px]"
-          onClick={() => {
-            closeDiagramPopovers();
-            openReportsFromDiagram();
-          }}
-          disabled={!hasSession}
-          title="Открыть Reports для выбранного сценария"
-          data-testid="diagram-action-reports"
-        >
-          Отчёты
-        </button>
-        <button
-          type="button"
-          className={`secondaryBtn h-8 px-2 text-[11px] ${activeQualityOverlayCount > 0 ? "ring-1 ring-accent/60" : ""}`}
-          onClick={() => {
-            const next = !diagramActionQualityOpen;
-            closeDiagramPopovers();
-            setDiagramActionQualityOpen(next);
-          }}
-          title="Проблемы на диаграмме"
-          data-testid="diagram-action-quality"
-        >
-          Проблемы {activeQualityOverlayCount > 0 ? `(${activeQualityOverlayCount})` : ""}
-        </button>
-        <button
-          type="button"
-          className={`secondaryBtn h-8 px-2 text-[11px] ${diagramFocusMode ? "ring-1 ring-accent/60" : ""}`}
-          onClick={() => {
-            setDiagramFocusMode((prev) => !prev);
-            closeDiagramPopovers();
-          }}
-          title="Скрыть второстепенные панели и сфокусироваться на диаграмме"
-          data-testid="diagram-action-focus-mode"
-        >
-          {diagramFocusMode ? "Выйти из фокуса" : "Фокус"}
-        </button>
-        <button
-          type="button"
-          className={`secondaryBtn h-8 px-2 text-[11px] ${diagramFullscreenActive ? "ring-1 ring-accent/60" : ""}`}
-          onClick={() => {
-            closeDiagramPopovers();
-            void toggleDiagramFullscreen?.();
-          }}
-          title="Fullscreen диаграммы"
-          data-testid="diagram-action-fullscreen-mode"
-        >
-          {diagramFullscreenActive ? "Выйти из fullscreen" : "Fullscreen"}
-        </button>
-        <button
-          type="button"
-          className="secondaryBtn h-8 w-8 px-0 text-sm"
-          onClick={() => {
-            const next = !diagramActionOverflowOpen;
-            closeDiagramPopovers();
-            setDiagramActionOverflowOpen(next);
-          }}
-          aria-label="Открыть дополнительные действия Diagram"
-          data-testid="diagram-action-overflow"
-        >
-          ⋯
-        </button>
-        <div className="diagramActionBarSpacer" />
-        <button
-          type="button"
-          className="iconBtn"
-          onClick={() => bpmnRef.current?.zoomOut?.()}
-          disabled={!isBpmnTab}
-          title={!isBpmnTab ? "Доступно в Diagram/XML" : "Zoom out"}
-          data-testid="diagram-zoom-out"
-        >
-          –
-        </button>
-        <button
-          type="button"
-          className="iconBtn"
-          onClick={() => bpmnRef.current?.fit?.()}
-          disabled={!isBpmnTab}
-          title={!isBpmnTab ? "Доступно в Diagram/XML" : "Fit"}
-          data-testid="diagram-zoom-fit"
-        >
-          ↔
-        </button>
-        <button
-          type="button"
-          className="iconBtn"
-          onClick={() => bpmnRef.current?.zoomIn?.()}
-          disabled={!isBpmnTab}
-          title={!isBpmnTab ? "Доступно в Diagram/XML" : "Zoom in"}
-          data-testid="diagram-zoom-in"
-        >
-          +
-        </button>
+          <span data-testid="templates-menu-button">
+            <button
+              type="button"
+              className="secondaryBtn diagramActionBtn"
+              onClick={() => {
+                if (templatesMenuOpen) {
+                  setTemplatesMenuOpen(false);
+                  return;
+                }
+                void openTemplatesPicker();
+              }}
+              disabled={!canOpenTemplatesList}
+              title="Открыть список шаблонов"
+              data-testid="btn-templates"
+            >
+              Шаблоны
+            </button>
+          </span>
+          <button
+            type="button"
+            className="secondaryBtn diagramActionBtn"
+            onClick={() => {
+              closeDiagramPopovers();
+              openReportsFromDiagram();
+            }}
+            disabled={!hasSession}
+            title="Открыть Reports для выбранного сценария"
+            data-testid="diagram-action-reports"
+          >
+            Отчёты
+          </button>
+          <button
+            type="button"
+            className={`secondaryBtn diagramActionBtn ${activeQualityOverlayCount > 0 ? "ring-1 ring-accent/60" : ""}`}
+            onClick={() => {
+              const next = !diagramActionQualityOpen;
+              closeDiagramPopovers();
+              setDiagramActionQualityOpen(next);
+            }}
+            title="Проблемы на диаграмме"
+            data-testid="diagram-action-quality"
+          >
+            Проблемы {activeQualityOverlayCount > 0 ? `(${activeQualityOverlayCount})` : ""}
+          </button>
+        </div>
+        <div className="diagramActionToolbarGroup">
+          <button
+            type="button"
+            className={`secondaryBtn diagramActionBtn ${diagramFocusMode ? "ring-1 ring-accent/60" : ""}`}
+            onClick={() => {
+              setDiagramFocusMode((prev) => !prev);
+              closeDiagramPopovers();
+            }}
+            title="Скрыть второстепенные панели и сфокусироваться на диаграмме"
+            data-testid="diagram-action-focus-mode"
+          >
+            {diagramFocusMode ? "Выход из фокуса" : "Фокус"}
+          </button>
+          <button
+            type="button"
+            className={`secondaryBtn diagramActionBtn ${diagramFullscreenActive ? "ring-1 ring-accent/60" : ""}`}
+            onClick={() => {
+              closeDiagramPopovers();
+              void toggleDiagramFullscreen?.();
+            }}
+            title="Fullscreen диаграммы"
+            data-testid="diagram-action-fullscreen-mode"
+          >
+            {diagramFullscreenActive ? "Обычный экран" : "Полный экран"}
+          </button>
+          <button
+            type="button"
+            className="secondaryBtn diagramActionBtn diagramActionBtn--icon"
+            onClick={() => {
+              const next = !diagramActionOverflowOpen;
+              closeDiagramPopovers();
+              setDiagramActionOverflowOpen(next);
+            }}
+            aria-label="Открыть дополнительные действия Diagram"
+            data-testid="diagram-action-overflow"
+          >
+            ⋯
+          </button>
+        </div>
+        <div className="diagramActionToolbarGroup diagramActionToolbarGroup--zoom">
+          <button
+            type="button"
+            className="secondaryBtn diagramActionBtn diagramActionBtn--icon"
+            onClick={() => bpmnRef.current?.zoomOut?.()}
+            disabled={!isBpmnTab}
+            title={!isBpmnTab ? "Доступно в Diagram/XML" : "Zoom out"}
+            data-testid="diagram-zoom-out"
+          >
+            –
+          </button>
+          <button
+            type="button"
+            className="secondaryBtn diagramActionBtn diagramActionBtn--icon"
+            onClick={() => bpmnRef.current?.fit?.()}
+            disabled={!isBpmnTab}
+            title={!isBpmnTab ? "Доступно в Diagram/XML" : "Fit"}
+            data-testid="diagram-zoom-fit"
+          >
+            ↔
+          </button>
+          <button
+            type="button"
+            className="secondaryBtn diagramActionBtn diagramActionBtn--icon"
+            onClick={() => bpmnRef.current?.zoomIn?.()}
+            disabled={!isBpmnTab}
+            title={!isBpmnTab ? "Доступно в Diagram/XML" : "Zoom in"}
+            data-testid="diagram-zoom-in"
+          >
+            +
+          </button>
+        </div>
       </div>
 
       {diagramActionPathOpen ? (
@@ -632,262 +795,479 @@ export default function ProcessStageDiagramControls({ view = {} }) {
       ) : null}
 
       {diagramActionPlaybackOpen ? (
-        <div className="diagramActionPopover diagramActionPopover--playback" ref={diagramPlaybackPopoverRef} data-testid="diagram-action-playback-popover">
-          <div className="diagramActionPopoverHead">
-            <span>Process Playback</span>
-            <button
-              type="button"
-              className="secondaryBtn h-7 px-2 text-[11px]"
-              onClick={() => setDiagramActionPlaybackOpen(false)}
-            >
-              Закрыть
-            </button>
+        <div
+          className={`diagramActionPopover diagramActionPopover--playback ${playbackRuntimeCollapsed ? "isCompact" : ""}`}
+          ref={diagramPlaybackPopoverRef}
+          data-testid="diagram-action-playback-popover"
+        >
+          <div className="diagramActionPopoverHead diagramActionPopoverHead--playback">
+            <div className="playbackHeaderMeta">
+              <span className="playbackHeaderTitle">Проход процесса</span>
+              <span className={`playbackStatusBadge ${playbackStatusTone}`}>{playbackStatusLabel}</span>
+            </div>
+            <div className="playbackHeaderActions">
+              {playbackRuntimeCollapsed ? (
+                <button
+                  type="button"
+                  className="secondaryBtn h-7 px-2 text-[11px]"
+                  onClick={() => setPlaybackRuntimeCollapsed(false)}
+                  data-testid="diagram-action-playback-expand"
+                >
+                  Детали
+                </button>
+              ) : (hasMeaningfulExecutionProgress ? (
+                <button
+                  type="button"
+                  className="secondaryBtn h-7 px-2 text-[11px]"
+                  onClick={() => setPlaybackRuntimeCollapsed(true)}
+                  data-testid="diagram-action-playback-collapse"
+                >
+                  Свернуть
+                </button>
+              ) : null)}
+              <button
+                type="button"
+                className="secondaryBtn h-7 px-2 text-[11px]"
+                onClick={() => setDiagramActionPlaybackOpen(false)}
+              >
+                Закрыть
+              </button>
+            </div>
           </div>
           {!!toText(playbackGraphError) ? (
-            <div className="diagramActionPopoverEmpty">
+            <div className="diagramActionPopoverEmpty mx-3 my-3">
               Graph error: {toText(playbackGraphError)}
             </div>
-          ) : !playbackCanRun ? (
-            <div className="diagramActionPopoverEmpty">
+          ) : !playbackCanRunResolved ? (
+            <div className="diagramActionPopoverEmpty mx-3 my-3">
               Нет событий playback. Нажмите Reset.
             </div>
-          ) : (
-            <>
-              <div className="diagramActionField">
-                <span>Сценарий:</span>
-                <b>{toText(playbackScenarioLabel) || "Scenario"}</b>
-                <span className="muted small">path: {toText(executionPlanSource?.pathId) || "—"}</span>
+          ) : playbackRuntimeCollapsed ? (
+            <div className="playbackCompactBody" data-testid="diagram-action-playback-compact">
+              <div className="playbackCompactMeta">
+                <span className="playbackCompactChip" title={toText(playbackScenarioLabel) || "Scenario"}>
+                  {toText(playbackScenarioLabel) || "Scenario"}
+                </span>
+                <span className="playbackCompactChip" data-testid="diagram-action-playback-progress">
+                  {playbackProgressLabel}
+                </span>
+                <span className={`playbackCompactChip ${isWaitingGatewayDecision ? "isWarning" : ""}`}>
+                  {isWaitingGatewayDecision ? "Нужно решение gateway" : playbackStatusLabel}
+                </span>
+                {playbackCurrentNodeId ? (
+                  <span className="playbackCompactNode" title={playbackCurrentNodeId}>
+                    {playbackCurrentNodeId}
+                  </span>
+                ) : null}
               </div>
-              <div className="diagramActionField">
-                <span>Scenario selector</span>
-                <select
-                  className="select h-8 min-h-0 text-xs"
-                  value={playbackScenarioKey}
-                  onChange={(event) => setPlaybackScenarioKey(toText(event.target.value) || "active")}
-                  data-testid="diagram-action-playback-scenario"
-                >
-                  {playbackScenarioOptions.map((optionRaw) => {
-                    const option = asObject(optionRaw);
-                    const key = toText(option?.key);
-                    return (
-                      <option key={`playback_scenario_${key}`} value={key}>
-                        {toText(option?.label || key)}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-              <div className="playbackDetailsLayout">
-                <GatewaysPanel
-                  gateways={playbackGateways}
-                  choices={playbackGatewayChoices}
-                  activeGatewayId={playbackAwaitingGatewayId}
-                  onChangeChoice={(gatewayId, flowId) => {
-                    setPlaybackGatewayChoice(gatewayId, flowId);
-                    const pendingGatewayId = toText(playbackGatewayPending?.gatewayId || playbackGatewayPending?.nodeId);
-                    if (pendingGatewayId && pendingGatewayId === toText(gatewayId) && toText(flowId)) {
-                      handlePlaybackGatewayDecision(gatewayId, flowId);
-                    }
-                  }}
-                />
-                <div className="playbackDetailsCol">
-                  <div className="muted mb-1 text-[11px]">Details</div>
-                  <div className="diagramIssueRows">
-                    <div className="diagramIssueRow">
-                      <span>Event</span>
-                      <b data-testid="diagram-action-playback-progress">
-                        {Math.min(playbackIndexClamped + 1, Math.max(playbackTotal, 1))} / {playbackTotal}
-                      </b>
-                    </div>
-                    <div className="diagramIssueRow">
-                      <span className="truncate" title={playbackEventTitle(playbackCurrentEvent)}>
-                        {playbackEventTitle(playbackCurrentEvent)}
-                      </span>
-                      <span className="muted small" data-testid="diagram-action-playback-event-type">
-                        {toText(playbackCurrentEvent?.type) || "—"}
-                      </span>
-                    </div>
-                    {toText(playbackCurrentEvent?.flowId) ? (
-                      <div className="diagramIssueRow">
-                        <span>flow</span>
-                        <span className="diagramIssueChip">{toText(playbackCurrentEvent?.flowId)}</span>
-                      </div>
-                    ) : null}
-                    {toText(playbackCurrentEvent?.nodeId || playbackCurrentEvent?.gatewayId) ? (
-                      <div className="diagramIssueRow">
-                        <span>node</span>
-                        <span className="diagramIssueChip">
-                          {toText(playbackCurrentEvent?.nodeId || playbackCurrentEvent?.gatewayId)}
-                        </span>
-                      </div>
-                    ) : null}
-                    {toText(playbackCurrentEvent?.reason) ? (
-                      <div className="diagramIssueRow">
-                        <span>reason</span>
-                        <span className="diagramIssueChip">{toText(playbackCurrentEvent?.reason)}</span>
-                      </div>
-                    ) : null}
-                    {toText(playbackCurrentEvent?.type) === "stop" ? (
-                      <>
-                        <div className="diagramIssueRow">
-                          <span>steps</span>
-                          <span className="diagramIssueChip">
-                            {Number(asObject(playbackCurrentEvent?.metrics)?.stepsTotal || 0)}
-                          </span>
-                        </div>
-                        <div className="diagramIssueRow">
-                          <span>variations</span>
-                          <span className="diagramIssueChip">
-                            {Number(asObject(playbackCurrentEvent?.metrics)?.variationPoints || 0)}
-                          </span>
-                        </div>
-                        <div className="diagramIssueRow">
-                          <span>decisions</span>
-                          <span className="diagramIssueChip">
-                            m:{Number(asObject(playbackCurrentEvent?.metrics)?.manualDecisionsApplied || 0)}
-                            {" / "}
-                            a:{Number(asObject(playbackCurrentEvent?.metrics)?.autoDecisionsApplied || 0)}
-                          </span>
-                        </div>
-                        <div className="diagramIssueRow">
-                          <span>flows</span>
-                          <span className="diagramIssueChip">
-                            {Number(asObject(playbackCurrentEvent?.metrics)?.flowTransitions || 0)}
-                          </span>
-                        </div>
-                      </>
-                    ) : null}
-                  </div>
-                  {asObject(playbackGatewayPending)?.type === "wait_for_gateway_decision" ? (
-                    <div className="diagramIssueListWrap mt-2">
-                      <div className="muted mb-1 text-[11px]">
-                        Gateway: {formatPlaybackGatewayTitle(playbackGatewayPending)}
-                      </div>
-                      <div className="diagramActionPopoverActions">
-                        {asArray(playbackGatewayPending?.outgoingOptions).map((optionRaw, index) => {
-                          const option = asObject(optionRaw);
-                          const flowId = toText(option?.flowId);
-                          const label = playbackGatewayOptionLabel(option, index);
-                          const targetHint = toText(option?.targetName || option?.targetId);
-                          return (
-                            <button
-                              key={`playback_gateway_option_${flowId}`}
-                              type="button"
-                              className="secondaryBtn h-7 px-2 text-[11px]"
-                              title={targetHint ? `→ ${targetHint}` : ""}
-                              onMouseDown={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                markPlaybackOverlayInteraction({
-                                  stage: "manual_gateway_button_mousedown",
-                                  gatewayId: toText(playbackGatewayPending?.gatewayId),
-                                  flowId,
-                                });
-                              }}
-                              onClick={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                setPlaybackGatewayChoice(playbackGatewayPending?.gatewayId, flowId);
-                                handlePlaybackGatewayDecision(playbackGatewayPending?.gatewayId, flowId);
-                              }}
-                            >
-                              {label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ) : null}
+              {isWaitingGatewayDecision ? (
+                <div className="playbackCompactAlert">
+                  <span>Ожидается решение gateway</span>
+                  <button
+                    type="button"
+                    className="secondaryBtn h-7 px-2 text-[11px]"
+                    onClick={() => {
+                      setPlaybackRuntimeCollapsed(false);
+                      setGatewaySectionExpanded(true);
+                    }}
+                  >
+                    Выбрать
+                  </button>
                 </div>
-              </div>
-              <div className="diagramActionPopoverActions">
+              ) : null}
+              <div className="playbackCompactControls">
                 <button
                   type="button"
-                  className="secondaryBtn h-7 px-2 text-[11px]"
-                  onClick={handlePlaybackPrev}
-                  disabled={playbackIndexClamped <= 0}
-                  data-testid="diagram-action-playback-prev"
+                  className="primaryBtn h-8 min-h-0 px-3 py-0 text-[11px]"
+                  onClick={handlePlaybackTogglePlayWithUiMode}
+                  data-testid="diagram-action-playback-compact-play"
                 >
-                  ⏮
+                  {playbackIsPlayingResolved ? "⏸ Пауза" : "▶ Продолжить"}
                 </button>
                 <button
                   type="button"
-                  className="secondaryBtn h-7 px-2 text-[11px]"
-                  onClick={handlePlaybackTogglePlay}
-                  data-testid="diagram-action-playback-play"
-                >
-                  {playbackIsPlaying ? "⏸ Pause" : "▶ Play"}
-                </button>
-                <button
-                  type="button"
-                  className="secondaryBtn h-7 px-2 text-[11px]"
+                  className="secondaryBtn h-8 px-2 text-[11px]"
                   onClick={handlePlaybackNext}
-                  data-testid="diagram-action-playback-next"
+                  data-testid="diagram-action-playback-compact-next"
                 >
-                  ⏭
+                  Следующий
                 </button>
                 <button
                   type="button"
-                  className="secondaryBtn h-7 px-2 text-[11px]"
-                  onClick={startAutoPass}
+                  className="secondaryBtn h-8 px-2 text-[11px]"
+                  onClick={handlePlaybackResetWithUiMode}
+                  data-testid="diagram-action-playback-compact-reset"
+                >
+                  Сброс
+                </button>
+                <button
+                  type="button"
+                  className="secondaryBtn h-8 px-2 text-[11px]"
+                  onClick={handleStartAutoPassWithUiMode}
                   disabled={!hasSession || autoPassBusy || autoPassBlocked}
-                  data-testid="diagram-action-playback-auto"
+                  data-testid="diagram-action-playback-compact-auto"
                   title={autoPassBlockedReason || autoPassError || "Запустить автопроход"}
                 >
                   {autoPassBusy ? "Авто…" : "Авто"}
                 </button>
                 <button
                   type="button"
-                  className="secondaryBtn h-7 px-2 text-[11px]"
-                  onClick={handlePlaybackReset}
-                  data-testid="diagram-action-playback-reset"
+                  className="secondaryBtn h-8 px-2 text-[11px]"
+                  onClick={() => setPlaybackRuntimeCollapsed(false)}
+                  data-testid="diagram-action-playback-compact-details"
                 >
-                  Reset
+                  Детали
+                </button>
+                {shouldShowPlaybackDocCta ? (
+                  <button
+                    type="button"
+                    className="secondaryBtn h-8 px-2 text-[11px]"
+                    onClick={handleOpenPlaybackDoc}
+                    data-testid="diagram-action-playback-open-doc"
+                  >
+                    Открыть DOC
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="playbackContextStrip">
+                <div className="playbackContextItem">
+                  <span>Сценарий</span>
+                  <b>{toText(playbackScenarioLabel) || "Scenario"}</b>
+                </div>
+                <div className="playbackContextItem">
+                  <span>Шаг</span>
+                  <b data-testid="diagram-action-playback-progress">{playbackProgressLabel}</b>
+                </div>
+                <div className="playbackContextItem">
+                  <span>Узел</span>
+                  <b className="truncate" title={playbackCurrentNodeId || "—"}>
+                    {playbackCurrentNodeId || "—"}
+                  </b>
+                </div>
+                <div className="playbackContextItem">
+                  <span>Path</span>
+                  <b>{toText(executionPlanSource?.pathId) || "—"}</b>
+                </div>
+              </div>
+
+              <div className="playbackMainBody">
+                <div className="playbackScenarioField">
+                  <label htmlFor="playback-scenario-select">Сценарий прохода</label>
+                  <select
+                    id="playback-scenario-select"
+                    className="select h-8 min-h-0 text-xs"
+                    value={playbackScenarioKey}
+                    onChange={(event) => setPlaybackScenarioKey(toText(event.target.value) || "active")}
+                    data-testid="diagram-action-playback-scenario"
+                  >
+                    {playbackScenarioOptions.map((optionRaw) => {
+                      const option = asObject(optionRaw);
+                      const key = toText(option?.key);
+                      return (
+                        <option key={`playback_scenario_${key}`} value={key}>
+                          {toText(option?.label || key)}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                <section className={`playbackSection ${gatewaySectionExpanded ? "isExpanded" : ""} ${isWaitingGatewayDecision ? "isWaiting" : ""}`}>
+                  <button
+                    type="button"
+                    className="playbackSectionHead"
+                    onClick={() => setGatewaySectionExpanded((prev) => !prev)}
+                    aria-expanded={gatewaySectionExpanded ? "true" : "false"}
+                    data-testid="playback-gateway-section-toggle"
+                  >
+                    <span className="playbackSectionTitle">Решения gateway</span>
+                    <span className="playbackSectionMeta">
+                      <span className={`playbackSectionState ${isWaitingGatewayDecision ? "isWarning" : ""}`}>
+                        {isWaitingGatewayDecision ? "waiting" : "none"}
+                      </span>
+                      <span className="diagramIssueChip">{`pending ${gatewayPendingCount} / ${gatewayTotalCount}`}</span>
+                      <span className="playbackSectionChevron">{gatewaySectionExpanded ? "▾" : "▸"}</span>
+                    </span>
+                  </button>
+                  {gatewaySectionExpanded ? (
+                    <div className="playbackSectionBody">
+                      <GatewaysPanel
+                        showTitle={false}
+                        gateways={playbackGateways}
+                        choices={playbackGatewayChoices}
+                        choiceSource={playbackGatewayChoiceSourceResolved}
+                        readOnly={playbackGatewayReadOnlyResolved || playbackDecisionModeIsAuto}
+                        activeGatewayId={playbackAwaitingGatewayIdResolved}
+                        onChangeChoice={(gatewayId, flowId) => {
+                          if (playbackDecisionModeIsAuto || playbackGatewayReadOnlyResolved) return;
+                          setPlaybackGatewayChoice(gatewayId, flowId);
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                </section>
+
+                {shouldShowCurrentStep ? (
+                  <section className={`playbackSection ${currentStepSectionExpanded ? "isExpanded" : ""}`}>
+                    <button
+                      type="button"
+                      className="playbackSectionHead"
+                      onClick={() => setCurrentStepSectionExpanded((prev) => !prev)}
+                      aria-expanded={currentStepSectionExpanded ? "true" : "false"}
+                      data-testid="playback-current-step-section-toggle"
+                    >
+                      <span className="playbackSectionTitle">Текущий шаг</span>
+                      <span className="playbackSectionMeta">
+                        <span className="diagramIssueChip" data-testid="diagram-action-playback-event-type">
+                          {toText(playbackCurrentEventResolved?.type) || "—"}
+                        </span>
+                        <span className="playbackSectionChevron">{currentStepSectionExpanded ? "▾" : "▸"}</span>
+                      </span>
+                    </button>
+                    {currentStepSectionExpanded ? (
+                      <div className="playbackSectionBody">
+                        <div className="playbackInfoTable">
+                          <div className="playbackInfoRow">
+                            <span>Событие</span>
+                            <b className="truncate" title={playbackEventTitle(playbackCurrentEventResolved)}>
+                              {playbackEventTitle(playbackCurrentEventResolved)}
+                            </b>
+                          </div>
+                          <div className="playbackInfoRow">
+                            <span>Тип</span>
+                            <span className="diagramIssueChip">
+                              {toText(playbackCurrentEventResolved?.type) || "—"}
+                            </span>
+                          </div>
+                          {toText(playbackCurrentEventResolved?.flowId) ? (
+                            <div className="playbackInfoRow">
+                              <span>Flow</span>
+                              <span className="diagramIssueChip">{toText(playbackCurrentEventResolved?.flowId)}</span>
+                            </div>
+                          ) : null}
+                          {toText(playbackCurrentEventResolved?.reason) ? (
+                            <div className="playbackInfoRow">
+                              <span>Причина</span>
+                              <span className="diagramIssueChip">{toText(playbackCurrentEventResolved?.reason)}</span>
+                            </div>
+                          ) : null}
+                          {playbackCurrentType === "stop" ? (
+                            <>
+                              <div className="playbackInfoRow">
+                                <span>Шагов</span>
+                                <span className="diagramIssueChip">
+                                  {Number(asObject(playbackCurrentEventResolved?.metrics)?.stepsTotal || 0)}
+                                </span>
+                              </div>
+                              <div className="playbackInfoRow">
+                                <span>Вариаций</span>
+                                <span className="diagramIssueChip">
+                                  {Number(asObject(playbackCurrentEventResolved?.metrics)?.variationPoints || 0)}
+                                </span>
+                              </div>
+                              <div className="playbackInfoRow">
+                                <span>Решения</span>
+                                <span className="diagramIssueChip">
+                                  m:{Number(asObject(playbackCurrentEventResolved?.metrics)?.manualDecisionsApplied || 0)}
+                                  {" / "}
+                                  a:{Number(asObject(playbackCurrentEventResolved?.metrics)?.autoDecisionsApplied || 0)}
+                                </span>
+                              </div>
+                              <div className="playbackInfoRow">
+                                <span>Flow-переходы</span>
+                                <span className="diagramIssueChip">
+                                  {Number(asObject(playbackCurrentEventResolved?.metrics)?.flowTransitions || 0)}
+                                </span>
+                              </div>
+                            </>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
+                  </section>
+                ) : (
+                  <section className="playbackSection playbackSection--placeholder">
+                    <div className="playbackSectionPlaceholder">
+                      Текущий шаг появится после запуска прохода.
+                    </div>
+                  </section>
+                )}
+
+                <details className="playbackAdvanced">
+                  <summary>Параметры воспроизведения</summary>
+                  <div className="playbackAdvancedBody">
+                    <div className="playbackAdvancedField">
+                      <span>Источник решений</span>
+                      <select
+                        className="select h-8 min-h-0 text-xs"
+                        value={playbackDecisionModeIsAuto ? "auto_pass" : "manual"}
+                        disabled={!canSetPlaybackDecisionMode}
+                        onChange={(event) => {
+                          if (!canSetPlaybackDecisionMode) return;
+                          const next = toText(event.target.value);
+                          if (next !== "auto_pass" && next !== "manual") return;
+                          setPlaybackDecisionMode(next);
+                        }}
+                        data-testid="diagram-action-playback-decision-mode"
+                      >
+                        <option value="auto_pass">Auto-pass truth</option>
+                        <option value="manual">Manual exploration</option>
+                      </select>
+                    </div>
+                    <div className="playbackAdvancedField">
+                      <span>Скорость</span>
+                      <select
+                        className="select h-8 min-h-0 text-xs"
+                        value={playbackSpeed}
+                        onChange={(event) => setPlaybackSpeed(toText(event.target.value) || "1")}
+                        data-testid="diagram-action-playback-speed"
+                      >
+                        <option value="0.5">0.5x</option>
+                        <option value="1">1x</option>
+                        <option value="2">2x</option>
+                        <option value="4">4x</option>
+                      </select>
+                    </div>
+                    <label className="diagramActionCheckboxRow">
+                      <input
+                        type="checkbox"
+                        checked={!!playbackManualAtGateway}
+                        disabled={playbackDecisionModeIsAuto}
+                        onChange={(event) => setPlaybackManualAtGateway(!!event.target.checked)}
+                        data-testid="diagram-action-playback-manual-gateway"
+                      />
+                      <span>Ручное решение gateway</span>
+                    </label>
+                    <label className="diagramActionCheckboxRow">
+                      <input
+                        type="checkbox"
+                        checked={!!playbackAutoCamera}
+                        onChange={(event) => setPlaybackAutoCamera(!!event.target.checked)}
+                        data-testid="diagram-action-playback-autocamera"
+                      />
+                      <span>Авто-камера</span>
+                    </label>
+                    <div className="playbackInfoRow" title={autoPassBlockedReason || autoPassError || ""}>
+                      <span>Автопроход</span>
+                      <span className="diagramIssueChip" data-testid="diagram-action-playback-auto-status">
+                        {autoPassLabel}
+                        {autoPassBusy || autoPassStatus === "done" ? ` (${autoPassProgressPct}%)` : ""}
+                      </span>
+                    </div>
+                    <div className="playbackInfoRow">
+                      <span>Pass truth</span>
+                      <span className="diagramIssueChip" data-testid="diagram-action-playback-source">
+                        {playbackGatewayChoiceSourceResolved}
+                      </span>
+                    </div>
+                    <div className="playbackInfoRow">
+                      <span>Mode/RO</span>
+                      <span className="diagramIssueChip">
+                        {playbackDecisionModeIsAuto ? "auto_pass" : "manual"}
+                        {playbackGatewayReadOnlyResolved ? " · ro" : " · rw"}
+                      </span>
+                    </div>
+                    {materializedCoveragePartial ? (
+                      <div className="playbackInfoRow">
+                        <span>Coverage</span>
+                        <span className="diagramIssueChip" data-testid="diagram-action-playback-source-coverage">
+                          materialized_partial {coveredGatewayDecisionCount}/{gatewayTotalCount}
+                        </span>
+                      </div>
+                    ) : null}
+                    <div className="playbackInfoRow">
+                      <span>Complete/Accept</span>
+                      <span className="diagramIssueChip" data-testid="diagram-action-playback-completion-acceptance">
+                        {toText(playbackCompletionReason) || "-"}
+                        {" · "}
+                        {toText(playbackAcceptanceReason) || "-"}
+                      </span>
+                    </div>
+                    <div className="playbackInfoRow">
+                      <span>Reset/Restart</span>
+                      <span className="diagramIssueChip" data-testid="diagram-action-playback-reset-restart">
+                        {toText(playbackResetReason) || "-"}
+                        {" · "}
+                        {toText(playbackRestartReason) || "-"}
+                      </span>
+                    </div>
+                    <div className="playbackInfoRow">
+                      <span>Transition</span>
+                      <span className="diagramIssueChip" data-testid="diagram-action-playback-transition-reason">
+                        {playbackTransitionReason || "-"}
+                      </span>
+                    </div>
+                    {autoPassBlocked ? (
+                      <div className="playbackInfoRow" title={autoPassBlockedReason}>
+                        <span>Проверка</span>
+                        <span className="diagramIssueChip">{toText(autoPassBlockedReason)}</span>
+                      </div>
+                    ) : null}
+                  </div>
+                </details>
+              </div>
+
+              <div className="playbackControlsBar">
+                <div className="playbackControlsMain">
+                  <button
+                    type="button"
+                    className="secondaryBtn h-8 px-2 text-[11px]"
+                    onClick={handlePlaybackPrev}
+                    disabled={playbackIndexResolved <= 0}
+                    data-testid="diagram-action-playback-prev"
+                  >
+                    ⏮ Назад
+                  </button>
+                  <button
+                    type="button"
+                    className="primaryBtn h-8 min-h-0 px-3 py-0 text-[11px]"
+                    onClick={handlePlaybackTogglePlayWithUiMode}
+                    data-testid="diagram-action-playback-play"
+                  >
+                    {playbackIsPlayingResolved ? "⏸ Пауза" : "▶ Старт"}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondaryBtn h-8 px-2 text-[11px]"
+                    onClick={handlePlaybackNext}
+                    data-testid="diagram-action-playback-next"
+                  >
+                    Вперёд ⏭
+                  </button>
+                  <button
+                    type="button"
+                    className="secondaryBtn h-8 px-2 text-[11px]"
+                    onClick={handlePlaybackResetWithUiMode}
+                    data-testid="diagram-action-playback-reset"
+                  >
+                    Сброс
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className="secondaryBtn h-8 px-2 text-[11px]"
+                  onClick={handleStartAutoPassWithUiMode}
+                  disabled={!hasSession || autoPassBusy || autoPassBlocked}
+                  data-testid="diagram-action-playback-auto"
+                  title={autoPassBlockedReason || autoPassError || "Запустить автопроход"}
+                >
+                  {autoPassBusy ? "Авто…" : "Автопроход"}
                 </button>
               </div>
-              <div className="diagramActionField">
-                <span>Speed</span>
-                <select
-                  className="select h-8 min-h-0 text-xs"
-                  value={playbackSpeed}
-                  onChange={(event) => setPlaybackSpeed(toText(event.target.value) || "1")}
-                  data-testid="diagram-action-playback-speed"
-                >
-                  <option value="0.5">0.5x</option>
-                  <option value="1">1x</option>
-                  <option value="2">2x</option>
-                  <option value="4">4x</option>
-                </select>
-              </div>
-              <label className="diagramActionCheckboxRow mt-1">
-                <input
-                  type="checkbox"
-                  checked={!!playbackManualAtGateway}
-                  onChange={(event) => setPlaybackManualAtGateway(!!event.target.checked)}
-                  data-testid="diagram-action-playback-manual-gateway"
-                />
-                <span>Manual at gateways</span>
-              </label>
-              <label className="diagramActionCheckboxRow mt-1">
-                <input
-                  type="checkbox"
-                  checked={!!playbackAutoCamera}
-                  onChange={(event) => setPlaybackAutoCamera(!!event.target.checked)}
-                  data-testid="diagram-action-playback-autocamera"
-                />
-                <span>Auto-camera</span>
-              </label>
-              <div className="diagramIssueRow mt-1" title={autoPassBlockedReason || autoPassError || ""}>
-                <span>Auto</span>
-                <span className="diagramIssueChip" data-testid="diagram-action-playback-auto-status">
-                  {autoPassLabel}
-                  {autoPassBusy || autoPassStatus === "done" ? ` (${Math.max(0, Math.min(100, Math.round(autoPassProgress || (autoPassStatus === "done" ? 100 : 0))))}%)` : ""}
-                </span>
-              </div>
-              {autoPassBlocked ? (
-                <div className="diagramIssueRow mt-1" title={autoPassBlockedReason}>
-                  <span>Auto precheck</span>
-                  <span className="diagramIssueChip">{toText(autoPassBlockedReason)}</span>
+              {shouldShowPlaybackDocCta ? (
+                <div className="playbackDocCtaRow">
+                  <span className="text-[11px] text-muted">Автопроход завершён.</span>
+                  <button
+                    type="button"
+                    className="secondaryBtn h-7 px-2 text-[11px]"
+                    onClick={handleOpenPlaybackDoc}
+                    data-testid="diagram-action-playback-open-doc"
+                  >
+                    Открыть DOC со шагами
+                  </button>
                 </div>
               ) : null}
             </>
@@ -931,6 +1311,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
         onSetDrawioElementTextWidth={setDrawioElementTextWidth}
         onSetDrawioElementStylePreset={setDrawioElementStylePreset}
         onSetDrawioElementSize={setDrawioElementSize}
+        onSetDrawioElementAnchor={setDrawioElementAnchor}
         onImportEmbeddedDrawioClick={() => drawioFileInputRef.current?.click?.()}
         onExportEmbeddedDrawio={exportEmbeddedDrawio}
         hybridV2DocLive={hybridV2DocLive}
@@ -956,9 +1337,12 @@ export default function ProcessStageDiagramControls({ view = {} }) {
         hybridV2Renderable={hybridV2Renderable}
         setHybridV2ActiveId={setHybridV2ActiveId}
         drawioSelectedElementId={drawioSelectedElementId}
+        setDrawioSelectedElementId={setDrawioSelectedElementId}
+        drawioAnchorImportDiagnostics={drawioAnchorImportDiagnostics}
         overlayPanelModel={overlayPanelModel}
         onDeleteOverlayEntity={deleteOverlayEntity}
         bpmnRef={bpmnRef}
+        selectedElementContext={selectedElementContext}
         goToHybridLayerItem={goToHybridLayerItem}
         onHideSelectedHybridItems={hideSelectedHybridItems}
         onLockSelectedHybridItems={lockSelectedHybridItems}

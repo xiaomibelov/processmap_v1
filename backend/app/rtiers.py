@@ -36,6 +36,11 @@ _GATEWAY_MODE_BY_TAG: Dict[str, str] = {
     "eventbasedgateway": "event",
 }
 
+_MESSAGE_EVENT_TAGS: Set[str] = {
+    "messageeventdefinition",
+    "signaleventdefinition",
+}
+
 _FAIL_NAME_TOKENS = (
     "fail",
     "error",
@@ -94,6 +99,7 @@ def parse_bpmn_sequence_graph(xml_text: str) -> Dict[str, Any]:
         "node_ids": set(),
         "node_type_by_id": {},
         "node_name_by_id": {},
+        "node_process_by_id": {},
         "gateway_mode_by_node": {},
         "default_flow_by_gateway": {},
         "start_event_ids": [],
@@ -102,6 +108,15 @@ def parse_bpmn_sequence_graph(xml_text: str) -> Dict[str, Any]:
         "flow_by_id": {},
         "outgoing_by_node": {},
         "incoming_by_node": {},
+        "participant_process_by_id": {},
+        "participant_name_by_id": {},
+        "message_flow_ids": set(),
+        "message_flow_by_id": {},
+        "message_outgoing_by_node": {},
+        "message_incoming_by_node": {},
+        "message_definitions_by_id": {},
+        "signal_definitions_by_id": {},
+        "event_contract_by_node": {},
     }
     if not raw:
         return empty
@@ -114,31 +129,76 @@ def parse_bpmn_sequence_graph(xml_text: str) -> Dict[str, Any]:
     node_ids: Set[str] = set()
     node_type_by_id: Dict[str, str] = {}
     node_name_by_id: Dict[str, str] = {}
+    node_process_by_id: Dict[str, str] = {}
     gateway_mode_by_node: Dict[str, str] = {}
     default_flow_by_gateway: Dict[str, str] = {}
     start_event_ids: List[str] = []
     end_event_ids: List[str] = []
+    participant_process_by_id: Dict[str, str] = {}
+    participant_name_by_id: Dict[str, str] = {}
+    message_definitions_by_id: Dict[str, Dict[str, str]] = {}
+    signal_definitions_by_id: Dict[str, Dict[str, str]] = {}
+    event_contract_by_node: Dict[str, Dict[str, str]] = {}
 
-    for el in root.iter():
+    def walk(el: Any, current_process_id: str = "") -> None:
         local = _ln_tag(str(getattr(el, "tag", "") or ""))
-        if local not in _FLOW_NODE_TAGS:
-            continue
-        node_id = _to_text(el.attrib.get("id"))
-        if not node_id:
-            continue
-        node_ids.add(node_id)
-        node_type_by_id[node_id] = local
-        node_name_by_id[node_id] = _to_text(el.attrib.get("name")) or node_id
-        if local == "startevent":
-            start_event_ids.append(node_id)
-        if local == "endevent":
-            end_event_ids.append(node_id)
-        mode = _GATEWAY_MODE_BY_TAG.get(local)
-        if mode:
-            gateway_mode_by_node[node_id] = mode
-            default_flow = _to_text(el.attrib.get("default"))
-            if default_flow:
-                default_flow_by_gateway[node_id] = default_flow
+        next_process_id = current_process_id
+        if local == "process":
+            next_process_id = _to_text(el.attrib.get("id"))
+        if local == "message":
+            message_id = _to_text(el.attrib.get("id"))
+            if message_id:
+                message_definitions_by_id[message_id] = {
+                    "id": message_id,
+                    "name": _to_text(el.attrib.get("name")) or message_id,
+                }
+        if local == "signal":
+            signal_id = _to_text(el.attrib.get("id"))
+            if signal_id:
+                signal_definitions_by_id[signal_id] = {
+                    "id": signal_id,
+                    "name": _to_text(el.attrib.get("name")) or signal_id,
+                }
+        if local == "participant":
+            participant_id = _to_text(el.attrib.get("id"))
+            process_ref = _to_text(el.attrib.get("processRef"))
+            if participant_id:
+                participant_process_by_id[participant_id] = process_ref
+                participant_name_by_id[participant_id] = _to_text(el.attrib.get("name")) or participant_id
+        if local in _FLOW_NODE_TAGS:
+            node_id = _to_text(el.attrib.get("id"))
+            if node_id:
+                node_ids.add(node_id)
+                node_type_by_id[node_id] = local
+                node_name_by_id[node_id] = _to_text(el.attrib.get("name")) or node_id
+                node_process_by_id[node_id] = next_process_id
+                if local == "startevent":
+                    start_event_ids.append(node_id)
+                if local == "endevent":
+                    end_event_ids.append(node_id)
+                mode = _GATEWAY_MODE_BY_TAG.get(local)
+                if mode:
+                    gateway_mode_by_node[node_id] = mode
+                    default_flow = _to_text(el.attrib.get("default"))
+                    if default_flow:
+                        default_flow_by_gateway[node_id] = default_flow
+                event_defs = [
+                    child for child in list(el)
+                    if _ln_tag(str(getattr(child, "tag", "") or "")) in _MESSAGE_EVENT_TAGS
+                ]
+                if event_defs:
+                    def_node = event_defs[0]
+                    def_local = _ln_tag(str(getattr(def_node, "tag", "") or ""))
+                    event_contract_by_node[node_id] = {
+                        "kind": "message" if def_local == "messageeventdefinition" else "signal",
+                        "definition_type": def_local,
+                        "ref": _to_text(def_node.attrib.get("messageRef") or def_node.attrib.get("signalRef")),
+                        "name": _to_text(el.attrib.get("name")) or node_id,
+                    }
+        for child in list(el):
+            walk(child, next_process_id)
+
+    walk(root, "")
 
     flow_ids: Set[str] = set()
     flow_by_id: Dict[str, Dict[str, str]] = {}
@@ -166,6 +226,28 @@ def parse_bpmn_sequence_graph(xml_text: str) -> Dict[str, Any]:
         outgoing_by_node.setdefault(node_id, [])
         incoming_by_node.setdefault(node_id, [])
 
+    message_flow_ids: Set[str] = set()
+    message_flow_by_id: Dict[str, Dict[str, str]] = {}
+    message_outgoing_by_node: Dict[str, List[str]] = {}
+    message_incoming_by_node: Dict[str, List[str]] = {}
+    for el in root.iter():
+        if _ln_tag(str(getattr(el, "tag", "") or "")) != "messageflow":
+            continue
+        flow_id = _to_text(el.attrib.get("id"))
+        source_id = _to_text(el.attrib.get("sourceRef"))
+        target_id = _to_text(el.attrib.get("targetRef"))
+        if not flow_id or not source_id or not target_id:
+            continue
+        message_flow_ids.add(flow_id)
+        message_flow_by_id[flow_id] = {
+            "id": flow_id,
+            "source": source_id,
+            "target": target_id,
+            "label": _to_text(el.attrib.get("name")),
+        }
+        message_outgoing_by_node.setdefault(source_id, []).append(flow_id)
+        message_incoming_by_node.setdefault(target_id, []).append(flow_id)
+
     start_event_ids = sorted(set(start_event_ids))
     end_event_ids = sorted(set(end_event_ids))
 
@@ -173,6 +255,7 @@ def parse_bpmn_sequence_graph(xml_text: str) -> Dict[str, Any]:
         "node_ids": node_ids,
         "node_type_by_id": node_type_by_id,
         "node_name_by_id": node_name_by_id,
+        "node_process_by_id": node_process_by_id,
         "gateway_mode_by_node": gateway_mode_by_node,
         "default_flow_by_gateway": default_flow_by_gateway,
         "start_event_ids": start_event_ids,
@@ -181,6 +264,15 @@ def parse_bpmn_sequence_graph(xml_text: str) -> Dict[str, Any]:
         "flow_by_id": flow_by_id,
         "outgoing_by_node": outgoing_by_node,
         "incoming_by_node": incoming_by_node,
+        "participant_process_by_id": participant_process_by_id,
+        "participant_name_by_id": participant_name_by_id,
+        "message_flow_ids": message_flow_ids,
+        "message_flow_by_id": message_flow_by_id,
+        "message_outgoing_by_node": message_outgoing_by_node,
+        "message_incoming_by_node": message_incoming_by_node,
+        "message_definitions_by_id": message_definitions_by_id,
+        "signal_definitions_by_id": signal_definitions_by_id,
+        "event_contract_by_node": event_contract_by_node,
     }
 
 

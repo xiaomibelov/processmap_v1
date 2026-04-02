@@ -33,6 +33,14 @@ class OrgPatchIn(BaseModel):
     name: str
 
 
+class OrgGitMirrorPatchIn(BaseModel):
+    git_mirror_enabled: Optional[bool] = None
+    git_provider: Optional[str] = None
+    git_repository: Optional[str] = None
+    git_branch: Optional[str] = None
+    git_base_path: Optional[str] = None
+
+
 class ProjectMemberUpsertIn(BaseModel):
     user_id: str
     role: str
@@ -52,6 +60,7 @@ class OrgInviteCreateIn(BaseModel):
     job_title: Optional[str] = ""
     role: Optional[str] = "viewer"
     ttl_days: Optional[int] = 7
+    regenerate: Optional[bool] = False
     model_config = ConfigDict(extra="allow")
 
 
@@ -193,6 +202,8 @@ class SessionTitleQuestionsIn(BaseModel):
 class BpmnXmlIn(BaseModel):
     xml: str = ""
     bpmn_meta: Optional[Dict[str, Any]] = None
+    source_action: Optional[str] = None
+    import_note: Optional[str] = None
 
 
 class BpmnMetaPatchIn(BaseModel):

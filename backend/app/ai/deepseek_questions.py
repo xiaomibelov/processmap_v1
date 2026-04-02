@@ -14,6 +14,7 @@ from ..models import Node, Question, Session
 
 
 _ALLOWED_ISSUE = {"CRITICAL", "MISSING", "VARIANT", "AMBIG", "LOSS"}
+_LLM_QUESTIONS_TIMEOUT_SEC = 90
 
 
 def _report_debug_enabled() -> bool:
@@ -1986,7 +1987,12 @@ def generate_llm_questions(
         {"role": "system", "content": _LLM_QUESTION_POLICY_PROMPT},
         {"role": "user", "content": json.dumps(user, ensure_ascii=False)},
     ]
-    obj = _deepseek_chat_json(api_key=api_key, base_url=base_url, messages=messages)
+    obj = _deepseek_chat_json(
+        api_key=api_key,
+        base_url=base_url,
+        messages=messages,
+        timeout=_LLM_QUESTIONS_TIMEOUT_SEC,
+    )
     return _normalize_questions_from_llm(
         obj,
         node_ids=node_ids,
@@ -2136,7 +2142,12 @@ def generate_llm_questions_for_node(
         {"role": "user", "content": json.dumps(user, ensure_ascii=False)},
     ]
 
-    obj = _deepseek_chat_json(api_key=api_key, base_url=base_url, messages=messages)
+    obj = _deepseek_chat_json(
+        api_key=api_key,
+        base_url=base_url,
+        messages=messages,
+        timeout=_LLM_QUESTIONS_TIMEOUT_SEC,
+    )
     out = _normalize_questions_from_llm(
         obj,
         node_ids=node_ids,

@@ -7,9 +7,21 @@ from types import SimpleNamespace
 
 
 class _DummyRequest:
-    def __init__(self, user: dict, *, active_org_id: str = "", ip: str = "127.0.0.1"):
+    def __init__(
+        self,
+        user: dict,
+        *,
+        active_org_id: str = "",
+        ip: str = "127.0.0.1",
+        host: str = "",
+        forwarded_proto: str = "",
+    ):
         self.state = SimpleNamespace(auth_user=user, active_org_id=active_org_id)
         self.headers = {"x-forwarded-for": ip}
+        if host:
+            self.headers["host"] = host
+        if forwarded_proto:
+            self.headers["x-forwarded-proto"] = forwarded_proto
 
 
 class OrgInvitesEmailFlowTest(unittest.TestCase):
@@ -48,6 +60,7 @@ class OrgInvitesEmailFlowTest(unittest.TestCase):
             OrgInviteCreateIn,
             accept_org_invite_endpoint,
             create_org_invite_endpoint,
+            list_org_invites_endpoint,
         )
         import app._legacy_main as main_mod
         from app.storage import get_default_org_id, get_storage
@@ -57,6 +70,7 @@ class OrgInvitesEmailFlowTest(unittest.TestCase):
         self.OrgInviteAcceptIn = OrgInviteAcceptIn
         self.create_org_invite_endpoint = create_org_invite_endpoint
         self.accept_org_invite_endpoint = accept_org_invite_endpoint
+        self.list_org_invites_endpoint = list_org_invites_endpoint
         self.main_mod = main_mod
         self.get_default_org_id = get_default_org_id
         _ = get_storage()
@@ -124,10 +138,10 @@ class OrgInvitesEmailFlowTest(unittest.TestCase):
             )
             con.commit()
 
-    def _mk_req(self, user: dict, *, ip: str = "127.0.0.1"):
-        return _DummyRequest(user, active_org_id=self.default_org_id, ip=ip)
+    def _mk_req(self, user: dict, *, ip: str = "127.0.0.1", host: str = "", forwarded_proto: str = ""):
+        return _DummyRequest(user, active_org_id=self.default_org_id, ip=ip, host=host, forwarded_proto=forwarded_proto)
 
-    def test_create_invite_email_enabled_sends_email_and_hides_token(self):
+    def test_base_url_builds_correct_absolute_link(self):
         calls = []
 
         def _fake_send_email(**kwargs):
@@ -196,6 +210,102 @@ class OrgInvitesEmailFlowTest(unittest.TestCase):
             req_admin,
         )
         self.assertEqual(int(getattr(second, "status_code", 0) or 0), 429)
+
+    def test_no_base_url_does_not_use_api_host(self):
+        os.environ["INVITE_EMAIL_ENABLED"] = "0"
+        os.environ.pop("APP_BASE_URL", None)
+        os.environ.pop("PUBLIC_BASE_URL", None)
+        self.main_mod._RATE_LIMIT_BUCKETS.clear()
+
+        req_admin = self._mk_req(
+            self.admin,
+            ip="10.0.0.12",
+            host="stage.processmap.ru",
+            forwarded_proto="https",
+        )
+        created = self.create_org_invite_endpoint(
+            self.default_org_id,
+            self.OrgInviteCreateIn(email="origin_fallback@local", role="Viewer", ttl_days=7),
+            req_admin,
+        )
+        self.assertTrue(isinstance(created, dict))
+        invite_link = str(created.get("invite_link") or "")
+        self.assertTrue(invite_link.startswith("/accept-invite?token="))
+        self.assertNotIn("stage.processmap.ru", invite_link)
+        self.assertFalse(invite_link.startswith("http://"))
+        self.assertFalse(invite_link.startswith("https://"))
+
+    def test_regenerate_success_replaces_invite(self):
+        calls = []
+
+        def _fake_send_email(**kwargs):
+            calls.append(kwargs)
+
+        prev_send = self.main_mod._send_org_invite_email
+        self.main_mod._send_org_invite_email = _fake_send_email
+        try:
+            req_admin = self._mk_req(self.admin, ip="10.0.0.13")
+            first = self.create_org_invite_endpoint(
+                self.default_org_id,
+                self.OrgInviteCreateIn(email="regen_success@local", role="Editor", ttl_days=7),
+                req_admin,
+            )
+            first_id = str((first.get("invite") or {}).get("id") or "")
+            self.assertTrue(first_id)
+
+            second = self.create_org_invite_endpoint(
+                self.default_org_id,
+                self.OrgInviteCreateIn(email="regen_success@local", role="Editor", ttl_days=7, regenerate=True),
+                req_admin,
+            )
+            second_id = str((second.get("invite") or {}).get("id") or "")
+            self.assertTrue(second_id)
+            self.assertNotEqual(first_id, second_id)
+            self.assertEqual(len(calls), 2)
+
+            listed = self.list_org_invites_endpoint(self.default_org_id, req_admin)
+            items = listed.get("items") or []
+            by_id = {str(row.get("id") or ""): row for row in items if isinstance(row, dict)}
+            self.assertEqual(str((by_id.get(first_id) or {}).get("status") or ""), "revoked")
+            self.assertEqual(str((by_id.get(second_id) or {}).get("status") or ""), "pending")
+            self.assertEqual(str((listed.get("current_invite") or {}).get("id") or ""), second_id)
+        finally:
+            self.main_mod._send_org_invite_email = prev_send
+
+    def test_regenerate_failure_preserves_old_invite(self):
+        calls = {"n": 0}
+
+        def _flaky_send_email(**kwargs):
+            calls["n"] += 1
+            if calls["n"] > 1:
+                raise RuntimeError("smtp_down")
+
+        prev_send = self.main_mod._send_org_invite_email
+        self.main_mod._send_org_invite_email = _flaky_send_email
+        try:
+            req_admin = self._mk_req(self.admin, ip="10.0.0.14")
+            first = self.create_org_invite_endpoint(
+                self.default_org_id,
+                self.OrgInviteCreateIn(email="regen_fail@local", role="Editor", ttl_days=7),
+                req_admin,
+            )
+            first_id = str((first.get("invite") or {}).get("id") or "")
+            self.assertTrue(first_id)
+
+            failed = self.create_org_invite_endpoint(
+                self.default_org_id,
+                self.OrgInviteCreateIn(email="regen_fail@local", role="Editor", ttl_days=7, regenerate=True),
+                req_admin,
+            )
+            self.assertEqual(int(getattr(failed, "status_code", 0) or 0), 502)
+
+            listed = self.list_org_invites_endpoint(self.default_org_id, req_admin)
+            items = listed.get("items") or []
+            by_id = {str(row.get("id") or ""): row for row in items if isinstance(row, dict)}
+            self.assertEqual(str((by_id.get(first_id) or {}).get("status") or ""), "pending")
+            self.assertEqual(str((listed.get("current_invite") or {}).get("id") or ""), first_id)
+        finally:
+            self.main_mod._send_org_invite_email = prev_send
 
 
 if __name__ == "__main__":

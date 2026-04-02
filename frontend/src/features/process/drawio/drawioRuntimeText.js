@@ -124,12 +124,38 @@ function wrapTextByWidth(textRaw, widthRaw, fontSizeRaw) {
   return lines.length ? lines : [""];
 }
 
+function renderLineSegments(lineRaw) {
+  const line = String(lineRaw ?? "");
+  const segments = [];
+  const boldPattern = /\*\*([^*]*)\*\*/g;
+  let lastIndex = 0;
+  let match = boldPattern.exec(line);
+  while (match) {
+    if (match.index > lastIndex) {
+      segments.push({ text: line.slice(lastIndex, match.index), bold: false });
+    }
+    segments.push({ text: match[1], bold: true });
+    lastIndex = match.index + match[0].length;
+    match = boldPattern.exec(line);
+  }
+  if (lastIndex < line.length) {
+    segments.push({ text: line.slice(lastIndex), bold: false });
+  }
+  if (!segments.length) return escapeAttr(line);
+  return segments.map(({ text, bold }) =>
+    bold
+      ? `<tspan font-weight="bold">${escapeAttr(text)}</tspan>`
+      : escapeAttr(text),
+  ).join("");
+}
+
 function renderWrappedTextInner({ lines = [], x = 0, y = 0, lineHeight = 20 }) {
   return lines.map((line, index) => {
+    const inner = renderLineSegments(line);
     if (index === 0) {
-      return `<tspan x="${escapeAttr(x)}" y="${escapeAttr(y)}">${escapeAttr(line)}</tspan>`;
+      return `<tspan x="${escapeAttr(x)}" y="${escapeAttr(y)}">${inner}</tspan>`;
     }
-    return `<tspan x="${escapeAttr(x)}" dy="${escapeAttr(lineHeight)}">${escapeAttr(line)}</tspan>`;
+    return `<tspan x="${escapeAttr(x)}" dy="${escapeAttr(lineHeight)}">${inner}</tspan>`;
   }).join("");
 }
 

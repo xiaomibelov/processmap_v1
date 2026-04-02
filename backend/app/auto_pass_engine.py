@@ -93,13 +93,29 @@ def build_duration_index(session: Any) -> Dict[str, Optional[int]]:
 
 def _pick_start_nodes(graph: Dict[str, Any]) -> List[str]:
     incoming_by_node = _as_dict(graph.get("incoming_by_node"))
+    node_process_by_id = _as_dict(graph.get("node_process_by_id"))
+    participant_process_by_id = _as_dict(graph.get("participant_process_by_id"))
+    message_flow_by_id = _as_dict(graph.get("message_flow_by_id"))
     top_level_start_ids = sorted(
         {_as_text(x) for x in _as_list(graph.get("top_level_start_event_ids")) if _as_text(x)}
     )
     start_ids = top_level_start_ids or sorted(
         {_as_text(x) for x in _as_list(graph.get("start_event_ids")) if _as_text(x)}
     )
+    inbound_message_process_ids: Set[str] = set()
+    for message_row_raw in message_flow_by_id.values():
+        message_row = _as_dict(message_row_raw)
+        target_ref = _as_text(message_row.get("target"))
+        process_id = _as_text(participant_process_by_id.get(target_ref)) or _as_text(node_process_by_id.get(target_ref))
+        if process_id:
+            inbound_message_process_ids.add(process_id)
     if start_ids:
+        collaboration_roots = [
+            nid for nid in start_ids
+            if _as_text(node_process_by_id.get(nid)) not in inbound_message_process_ids
+        ]
+        if collaboration_roots:
+            start_ids = collaboration_roots
         top_level_starts = [nid for nid in start_ids if len(_as_list(incoming_by_node.get(nid))) == 0]
         if top_level_starts:
             return top_level_starts
@@ -172,6 +188,7 @@ def _parse_graph_for_autopass(xml: str) -> Dict[str, Any]:
 def _compute_reachability_to_main_end(graph: Dict[str, Any]) -> Dict[str, Any]:
     outgoing_by_node = _as_dict(graph.get("outgoing_by_node"))
     flow_by_id = _as_dict(graph.get("flow_by_id"))
+    message_transitions_by_node = _build_message_transitions_by_node(graph)
     start_ids = [
         _as_text(node_id)
         for node_id in _as_list(graph.get("top_level_start_event_ids"))
@@ -226,6 +243,10 @@ def _compute_reachability_to_main_end(graph: Dict[str, Any]) -> Dict[str, Any]:
             target = _as_text(_as_dict(flow_by_id.get(fid)).get("target"))
             if target and target not in visited:
                 queue.append(target)
+        for transition in _as_list(message_transitions_by_node.get(node_id)):
+            target = _as_text(_as_dict(transition).get("target"))
+            if target and target not in visited:
+                queue.append(target)
     return {
         "ok": False,
         "code": "NO_COMPLETE_PATH_TO_END",
@@ -273,6 +294,127 @@ def _is_subprocess_like_node(node_type: str) -> bool:
 
 def _is_teleport_flow(flow_id: str) -> bool:
     return "__teleport__" in _as_text(flow_id).lower()
+
+
+def _event_scope_kind(node_type: str, event_contract: Dict[str, Any]) -> str:
+    normalized_type = _as_text(node_type).lower()
+    kind = _as_text(_as_dict(event_contract).get("kind")).lower()
+    if kind == "signal":
+        return "signal"
+    if kind == "message":
+        if "throw" in normalized_type or "sendtask" in normalized_type:
+            return "message_throw"
+        if "catch" in normalized_type or "receivetask" in normalized_type or "startevent" in normalized_type:
+            return "message_catch"
+        return "message"
+    return ""
+
+
+def _build_message_transitions_by_node(graph: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
+    node_type_by_id = _as_dict(graph.get("node_type_by_id"))
+    node_process_by_id = _as_dict(graph.get("node_process_by_id"))
+    event_contract_by_node = _as_dict(graph.get("event_contract_by_node"))
+    participant_process_by_id = _as_dict(graph.get("participant_process_by_id"))
+    message_flow_by_id = _as_dict(graph.get("message_flow_by_id"))
+    message_outgoing_by_node = _as_dict(graph.get("message_outgoing_by_node"))
+    start_event_ids = [_as_text(x) for x in _as_list(graph.get("start_event_ids")) if _as_text(x)]
+
+    message_catch_by_process: Dict[str, List[str]] = {}
+    message_catch_by_ref: Dict[str, List[str]] = {}
+    signal_catch_by_ref: Dict[str, List[str]] = {}
+    for node_id, contract_raw in event_contract_by_node.items():
+        nid = _as_text(node_id)
+        contract = _as_dict(contract_raw)
+        event_scope = _event_scope_kind(_as_text(node_type_by_id.get(nid)), contract)
+        ref = _as_text(contract.get("ref"))
+        process_id = _as_text(node_process_by_id.get(nid))
+        if event_scope == "message_catch":
+            if process_id:
+                message_catch_by_process.setdefault(process_id, []).append(nid)
+            if ref:
+                message_catch_by_ref.setdefault(ref, []).append(nid)
+        elif event_scope == "signal":
+            if ref:
+                signal_catch_by_ref.setdefault(ref, []).append(nid)
+
+    transitions_by_node: Dict[str, List[Dict[str, Any]]] = {}
+    nodes_with_explicit_message_flow: Set[str] = set()
+
+    def add_transition(source_id: str, transition: Dict[str, Any]) -> None:
+        sid = _as_text(source_id)
+        target = _as_text(_as_dict(transition).get("target"))
+        if not sid or not target:
+            return
+        transitions_by_node.setdefault(sid, []).append(transition)
+
+    for source_id, flow_ids in message_outgoing_by_node.items():
+        sid = _as_text(source_id)
+        if sid:
+            nodes_with_explicit_message_flow.add(sid)
+        for flow_id in _as_list(flow_ids):
+            row = _as_dict(message_flow_by_id.get(flow_id))
+            target_ref = _as_text(row.get("target"))
+            if not target_ref:
+                continue
+            if target_ref in node_type_by_id:
+                add_transition(sid, {
+                    "target": target_ref,
+                    "kind": "message_flow",
+                    "flow_id": _as_text(row.get("id")),
+                    "label": _as_text(row.get("label")),
+                    "externalized": True,
+                })
+                continue
+            process_ref = _as_text(participant_process_by_id.get(target_ref))
+            if not process_ref:
+                continue
+            target_candidates = [
+                node_id for node_id in _as_list(message_catch_by_process.get(process_ref))
+                if _as_text(node_id)
+            ]
+            if not target_candidates:
+                target_candidates = [
+                    node_id for node_id in start_event_ids
+                    if _as_text(node_process_by_id.get(node_id)) == process_ref
+                ]
+            for target_id in target_candidates:
+                add_transition(sid, {
+                    "target": target_id,
+                    "kind": "message_flow",
+                    "flow_id": _as_text(row.get("id")),
+                    "label": _as_text(row.get("label")),
+                    "participant_handoff": True,
+                    "externalized": True,
+                })
+
+    for node_id, contract_raw in event_contract_by_node.items():
+        nid = _as_text(node_id)
+        contract = _as_dict(contract_raw)
+        ref = _as_text(contract.get("ref"))
+        event_scope = _event_scope_kind(_as_text(node_type_by_id.get(nid)), contract)
+        if event_scope == "message_throw" and ref:
+            if nid in nodes_with_explicit_message_flow:
+                continue
+            for target_id in _as_list(message_catch_by_ref.get(ref)):
+                target = _as_text(target_id)
+                if target and target != nid:
+                    add_transition(nid, {
+                        "target": target,
+                        "kind": "message_ref",
+                        "ref": ref,
+                        "externalized": True,
+                    })
+        if event_scope == "signal" and ref:
+            for target_id in _as_list(signal_catch_by_ref.get(ref)):
+                target = _as_text(target_id)
+                if target and target != nid:
+                    add_transition(nid, {
+                        "target": target,
+                        "kind": "signal_ref",
+                        "ref": ref,
+                        "externalized": True,
+                    })
+    return transitions_by_node
 
 
 def _build_variant_payload(
@@ -335,6 +477,8 @@ def _enumerate_variants(
     node_type_by_id = _as_dict(graph.get("node_type_by_id"))
     outgoing_by_node = _as_dict(graph.get("outgoing_by_node"))
     flow_by_id = _as_dict(graph.get("flow_by_id"))
+    message_transitions_by_node = _build_message_transitions_by_node(graph)
+    event_contract_by_node = _as_dict(graph.get("event_contract_by_node"))
     gateway_mode_by_node = _as_dict(graph.get("gateway_mode_by_node"))
     default_flow_by_gateway = _as_dict(graph.get("default_flow_by_gateway"))
     top_level_end_event_ids = {
@@ -408,7 +552,6 @@ def _enumerate_variants(
             warn_once("max_variants_reached", f"Reached max_variants={max_variants}")
             return
         if depth >= max_steps:
-            truncated = True
             warn_once("max_steps_reached", f"Reached max_steps={max_steps}")
             fail_variant(
                 code="MAX_STEPS_REACHED",
@@ -434,7 +577,6 @@ def _enumerate_variants(
         next_visits = dict(visits)
         next_visits[nid] = _to_int(next_visits.get(nid), 0) + 1
         if next_visits[nid] > max_visits_per_node:
-            truncated = True
             warn_once("max_visits_reached", f"Node {nid} exceeded max_visits_per_node={max_visits_per_node}")
             fail_variant(
                 code="MAX_VISITS_REACHED",
@@ -450,6 +592,7 @@ def _enumerate_variants(
         node_name = _as_text(node_name_by_id.get(nid)) or nid
         next_task_steps = list(task_steps)
         next_detail_rows = list(detail_rows)
+        event_contract = _as_dict(event_contract_by_node.get(nid))
         if _is_task_node(node_type):
             node_duration = duration_by_node.get(nid)
             step_kind = "subprocess" if _is_subprocess_like_node(node_type) else "task"
@@ -468,6 +611,17 @@ def _enumerate_variants(
                     "name": node_name,
                     "duration_s": task_step["duration_s"],
                     "step_kind": step_kind,
+                    "bpmn_type": node_type,
+                }
+            )
+        elif _as_text(event_contract.get("kind")):
+            next_detail_rows.append(
+                {
+                    "kind": "event_contract",
+                    "node_id": nid,
+                    "name": node_name,
+                    "event_kind": _as_text(event_contract.get("kind")),
+                    "event_ref": _as_text(event_contract.get("ref")),
                     "bpmn_type": node_type,
                 }
             )
@@ -494,12 +648,20 @@ def _enumerate_variants(
             return
 
         outgoing = [_as_text(fid) for fid in _as_list(outgoing_by_node.get(nid)) if _as_text(fid)]
-        if not outgoing:
+        message_transitions = [
+            _as_dict(item)
+            for item in _as_list(message_transitions_by_node.get(nid))
+            if _as_text(_as_dict(item).get("target"))
+        ]
+        if not outgoing and not message_transitions:
             failed_code = "END_NOT_REACHED"
             failed_message = f"Traversal stopped at {nid} before reaching top-level EndEvent"
             if _is_subprocess_like_node(node_type):
                 failed_code = "NO_OUTGOING_FROM_SUBPROCESS"
                 failed_message = f"SubProcess/CallActivity {nid} has no outgoing sequence flow"
+            elif _as_text(event_contract.get("kind")):
+                failed_code = "UNRESOLVED_EVENT_CONTRACT"
+                failed_message = f"Event contract at {nid} did not resolve to a reachable handoff"
             fail_variant(
                 code=failed_code,
                 message=failed_message,
@@ -610,6 +772,37 @@ def _enumerate_variants(
                 detail_rows=branch_detail_rows,
                 visits=next_visits,
                 teleport=next_teleport,
+                depth=depth + 1,
+            )
+
+        for transition in message_transitions:
+            if len(variants) >= max_variants:
+                truncated = True
+                warn_once("max_variants_reached", f"Reached max_variants={max_variants}")
+                break
+            target = _as_text(transition.get("target"))
+            if not target:
+                continue
+            branch_detail_rows = list(next_detail_rows)
+            branch_detail_rows.append(
+                {
+                    "kind": "message_handoff",
+                    "node_id": nid,
+                    "target_id": target,
+                    "flow_id": _as_text(transition.get("flow_id")),
+                    "handoff_kind": _as_text(transition.get("kind")) or "message",
+                    "externalized": bool(transition.get("externalized")),
+                    "participant_handoff": bool(transition.get("participant_handoff")),
+                    "label": _as_text(transition.get("label")) or _as_text(transition.get("ref")),
+                }
+            )
+            traverse(
+                target,
+                task_steps=next_task_steps,
+                gateway_choices=gateway_choices,
+                detail_rows=branch_detail_rows,
+                visits=next_visits,
+                teleport=teleport,
                 depth=depth + 1,
             )
 

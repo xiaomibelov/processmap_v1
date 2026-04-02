@@ -128,6 +128,75 @@ test("suggestion scoring returns best matching packs", () => {
   assert.equal(String(suggested[0]?.packId || ""), "p1");
 });
 
+test("bpmn packs preserve semanticPayload for node portability", async () => {
+  const scope = `ut_semantic_${Date.now()}`;
+  await clearBpmnPacks({ scope });
+  const saved = await saveBpmnPack({
+    scope,
+    title: "semantic payload pack",
+    fragment: {
+      nodes: [
+        {
+          id: "task_1",
+          type: "bpmn:Task",
+          name: "Task",
+          semanticPayload: {
+            documentation: [{ $type: "bpmn:Documentation", text: "doc text" }],
+            extensionElements: {
+              $type: "bpmn:ExtensionElements",
+              values: [{ $type: "camunda:InputOutput", inputParameters: [{ $type: "camunda:InputParameter", name: "in", text: "v" }] }],
+            },
+            attrs: { "pm:state": "ready" },
+            custom: { status: "ready", propertyDictionaryBinding: { operationKey: "op.main" } },
+          },
+          di: { x: 100, y: 100, w: 140, h: 80 },
+        },
+      ],
+      edges: [],
+    },
+    entryNodeId: "task_1",
+    exitNodeId: "task_1",
+  });
+  assert.equal(saved.ok, true);
+  const listed = await listBpmnPacks({ scope });
+  assert.equal(listed.length, 1);
+  const payload = listed[0]?.fragment?.nodes?.[0]?.semanticPayload || {};
+  assert.equal(payload.documentation?.[0]?.text, "doc text");
+  assert.equal(payload.extensionElements?.values?.[0]?.$type, "camunda:InputOutput");
+  assert.equal(payload.attrs?.["pm:state"], "ready");
+  assert.equal(payload.custom?.propertyDictionaryBinding?.operationKey, "op.main");
+});
+
+test("bpmn packs legacy propsMinimal is promoted to semanticPayload for backward compatibility", async () => {
+  const scope = `ut_semantic_legacy_${Date.now()}`;
+  await clearBpmnPacks({ scope });
+  const saved = await saveBpmnPack({
+    scope,
+    title: "legacy payload pack",
+    fragment: {
+      nodes: [
+        {
+          id: "task_legacy",
+          type: "bpmn:Task",
+          name: "Task legacy",
+          propsMinimal: {
+            custom: { status: "legacy_ready" },
+          },
+          di: { x: 10, y: 10, w: 120, h: 70 },
+        },
+      ],
+      edges: [],
+    },
+    entryNodeId: "task_legacy",
+    exitNodeId: "task_legacy",
+  });
+  assert.equal(saved.ok, true);
+  const listed = await listBpmnPacks({ scope });
+  const node = listed[0]?.fragment?.nodes?.[0] || {};
+  assert.equal(node.semanticPayload?.custom?.status, "legacy_ready");
+  assert.equal(node.propsMinimal?.custom?.status, "legacy_ready");
+});
+
 function asArraySafe(value) {
   return Array.isArray(value) ? value : [];
 }

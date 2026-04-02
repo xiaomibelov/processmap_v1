@@ -28,6 +28,27 @@ async function copyInviteValue(value) {
   return false;
 }
 
+function inviteTtlDaysFromRow(rowRaw) {
+  const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
+  const createdAt = Number(row.created_at || 0);
+  const expiresAt = Number(row.expires_at || 0);
+  const deltaSeconds = Math.max(0, expiresAt - createdAt);
+  if (!Number.isFinite(deltaSeconds) || deltaSeconds <= 0) return 7;
+  return Math.min(60, Math.max(1, Math.round(deltaSeconds / 86400)));
+}
+
+function normalizeCurrentInvite(rowRaw, orgId) {
+  const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
+  const key = toText(row.invite_key);
+  const link = toText(row.invite_link);
+  if (!key && !link) return null;
+  return {
+    orgId: toText(orgId),
+    key,
+    link,
+  };
+}
+
 export default function AdminOrgInvitesPanel({
   activeOrgId = "",
   activeOrgName = "",
@@ -58,17 +79,20 @@ export default function AdminOrgInvitesPanel({
   const [inviteTtl, setInviteTtl] = useState("7");
   const [lastInviteNotice, setLastInviteNotice] = useState("");
   const [lastCreatedInvite, setLastCreatedInvite] = useState(null);
+  const [currentInvite, setCurrentInvite] = useState(null);
   const [copyState, setCopyState] = useState("");
   const visibleCreatedInvite = useMemo(() => {
     const localInvite = lastCreatedInvite && toText(lastCreatedInvite.orgId) === oid ? lastCreatedInvite : null;
     if (localInvite) return localInvite;
     const sharedInvite = recentInvite && toText(recentInvite.orgId) === oid ? recentInvite : null;
-    return sharedInvite;
-  }, [lastCreatedInvite, recentInvite, oid]);
+    if (sharedInvite) return sharedInvite;
+    return currentInvite && toText(currentInvite.orgId) === oid ? currentInvite : null;
+  }, [lastCreatedInvite, recentInvite, currentInvite, oid]);
 
   const loadInvites = useCallback(async () => {
     if (!oid) {
       setInvites([]);
+      setCurrentInvite(null);
       return;
     }
     setBusy(true);
@@ -76,11 +100,13 @@ export default function AdminOrgInvitesPanel({
     const res = await apiListOrgInvites(oid);
     if (!res.ok) {
       setInvites([]);
+      setCurrentInvite(null);
       setError(toText(res.error || ru.org.invitesLoadFailed));
       setBusy(false);
       return;
     }
     setInvites(Array.isArray(res.items) ? res.items : []);
+    setCurrentInvite(normalizeCurrentInvite(res.current_invite || null, oid));
     setBusy(false);
   }, [oid]);
 
@@ -101,6 +127,7 @@ export default function AdminOrgInvitesPanel({
       job_title: inviteJobTitle,
       role: inviteRole,
       ttl_days: Number(inviteTtl || 7),
+      regenerate: false,
     });
     if (!res.ok) {
       setError(toText(res.error || ru.org.createInviteFailed));
@@ -116,6 +143,37 @@ export default function AdminOrgInvitesPanel({
     } else {
       setLastInviteNotice(ru.org.inviteForm.inviteCreated);
     }
+    const createdInvite = {
+      orgId: oid,
+      key: toText(res.invite_token || res.invite_key),
+      link: toText(res.invite_link),
+    };
+    setLastCreatedInvite(createdInvite);
+    onInviteCreated?.(createdInvite);
+    await loadInvites();
+    onChanged?.();
+  }
+
+  async function handleRegenerateInvite(row) {
+    if (!canManageInvites || !oid) return;
+    const email = toText(row?.email).toLowerCase();
+    if (!email) return;
+    if (typeof window !== "undefined" && !window.confirm("Перевыпустить текущий инвайт для этого email?")) return;
+    setError("");
+    setCopyState("");
+    const res = await apiCreateOrgInvite(oid, {
+      email,
+      full_name: toText(row?.full_name),
+      job_title: toText(row?.job_title),
+      role: toText(row?.role) || "viewer",
+      ttl_days: inviteTtlDaysFromRow(row),
+      regenerate: true,
+    });
+    if (!res.ok) {
+      setError(toText(res.error || ru.org.createInviteFailed));
+      return;
+    }
+    setLastInviteNotice("Инвайт перевыпущен.");
     const createdInvite = {
       orgId: oid,
       key: toText(res.invite_token || res.invite_key),
@@ -318,9 +376,14 @@ export default function AdminOrgInvitesPanel({
                     <td className="px-3 py-3 text-slate-500">{formatTs(row?.used_at || row?.accepted_at)}</td>
                     <td className="px-3 py-3">
                       {canManageInvites && isPending ? (
-                        <button type="button" className="secondaryBtn h-8 min-h-0 px-3 py-0 text-xs" onClick={() => void handleRevokeInvite(inviteId)}>
-                          {ru.common.revoke}
-                        </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button type="button" className="secondaryBtn h-8 min-h-0 px-3 py-0 text-xs" onClick={() => void handleRegenerateInvite(row)}>
+                            Перевыпустить
+                          </button>
+                          <button type="button" className="secondaryBtn h-8 min-h-0 px-3 py-0 text-xs" onClick={() => void handleRevokeInvite(inviteId)}>
+                            {ru.common.revoke}
+                          </button>
+                        </div>
                       ) : (
                         <span className="text-slate-400">{ru.common.notAvailable}</span>
                       )}

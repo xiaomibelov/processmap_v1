@@ -11,6 +11,21 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function cloneJsonLike(value) {
+  if (value === null || value === undefined) return value;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => cloneJsonLike(item));
+  }
+  if (typeof value !== "object") return undefined;
+  const out = {};
+  Object.keys(value).forEach((key) => {
+    const cloned = cloneJsonLike(value[key]);
+    if (cloned !== undefined) out[key] = cloned;
+  });
+  return out;
+}
+
 function normalizeTags(tags) {
   const uniq = new Set();
   asArray(tags).forEach((item) => {
@@ -24,12 +39,19 @@ function normalizeTags(tags) {
 function normalizeNode(raw, idx = 0) {
   const item = raw && typeof raw === "object" ? raw : {};
   const di = item.di && typeof item.di === "object" ? item.di : {};
+  const legacyPropsMinimal = item.propsMinimal && typeof item.propsMinimal === "object"
+    ? cloneJsonLike(item.propsMinimal)
+    : {};
+  const semanticPayload = item.semanticPayload && typeof item.semanticPayload === "object"
+    ? cloneJsonLike(item.semanticPayload)
+    : legacyPropsMinimal;
   return {
     id: asText(item.id || `node_${idx + 1}`),
     type: asText(item.type || "bpmn:Task"),
     name: asText(item.name || ""),
     laneHint: asText(item.laneHint || ""),
-    propsMinimal: item.propsMinimal && typeof item.propsMinimal === "object" ? { ...item.propsMinimal } : {},
+    semanticPayload: semanticPayload && typeof semanticPayload === "object" ? semanticPayload : {},
+    propsMinimal: semanticPayload && typeof semanticPayload === "object" ? cloneJsonLike(semanticPayload) : {},
     di: {
       x: asNumber(di.x, 0),
       y: asNumber(di.y, 0),

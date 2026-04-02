@@ -114,6 +114,41 @@ test("buildOverlayPanelModel: drawio mode is owned by drawio state, not hybrid m
   assert.equal(model.hybridLegacy.mode, "view");
 });
 
+test("buildOverlayPanelModel: drawio anchor summary reflects mixed overlay states", () => {
+  const model = buildOverlayPanelModel({
+    drawioState: {
+      enabled: true,
+      interaction_mode: "edit",
+      opacity: 1,
+      doc_xml: "<mxfile></mxfile>",
+      svg_cache: "<svg><rect id='rect_1'/><text id='text_1'>A</text><rect id='rect_2'/><rect id='rect_3'/></svg>",
+      drawio_elements_v1: [
+        { id: "text_1", text: "A", anchor_v1: { target_kind: "bpmn_node", target_id: "Task_1", relation: "explains", status: "anchored" } },
+        { id: "rect_1", anchor_v1: { target_kind: "bpmn_node", target_id: "Task_missing", relation: "highlights", status: "orphaned" } },
+        { id: "rect_2", anchor_v1: { target_kind: "bpmn_edge", target_id: "Flow_1", relation: "highlights", status: "invalid" } },
+        { id: "rect_3" },
+      ],
+    },
+    drawioEditorStatus: {},
+    hybridVisible: true,
+    hybridTotalCount: 0,
+    hybridModeEffective: "view",
+    hybridUiPrefs: { lock: false, opacity: 80 },
+    hybridV2HiddenCount: 0,
+    hybridLayerRenderRows: [],
+    hybridV2Renderable: { elements: [] },
+    hybridV2BindingByHybridId: {},
+    drawioSelectedElementId: "",
+    hybridV2ActiveId: "",
+    hybridV2SelectedIds: [],
+    legacyActiveElementId: "",
+  });
+  assert.equal(model.drawio.anchorSummary.anchored, 1);
+  assert.equal(model.drawio.anchorSummary.orphaned, 1);
+  assert.equal(model.drawio.anchorSummary.invalid, 1);
+  assert.equal(model.drawio.anchorSummary.unanchored, 1);
+});
+
 test("buildOverlayPanelModel: hybrid focus reports actual dimming effect, not stored pref", () => {
   const hiddenModel = buildOverlayPanelModel({
     drawioState: {},

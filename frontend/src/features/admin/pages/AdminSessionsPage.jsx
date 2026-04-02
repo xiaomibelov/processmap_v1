@@ -1,5 +1,6 @@
 import AdminPageContainer from "../layout/AdminPageContainer";
 import SectionCard from "../components/common/SectionCard";
+import AdminTablePagination from "../components/common/AdminTablePagination";
 import AdminDateRangeFilter from "../components/filters/AdminDateRangeFilter";
 import AdminFiltersBar from "../components/filters/AdminFiltersBar";
 import AdminSearchInput from "../components/filters/AdminSearchInput";
@@ -15,22 +16,12 @@ export default function AdminSessionsPage({
   payload = {},
   filters = {},
   onFiltersChange,
+  paging = {},
+  onPagingChange,
   onOpenSession,
 }) {
   const rows = asArray(payload?.items);
-  const nowSec = Math.round(Date.now() / 1000);
-  const minUpdatedAt = (
-    toText(filters?.updatedRange) === "24h" ? nowSec - 24 * 60 * 60
-      : toText(filters?.updatedRange) === "7d" ? nowSec - 7 * 24 * 60 * 60
-        : toText(filters?.updatedRange) === "30d" ? nowSec - 30 * 24 * 60 * 60
-          : 0
-  );
-  const visibleRows = rows.filter((row) => {
-    if (filters?.attentionOnly && (toInt(row?.warnings_count, 0) + toInt(row?.errors_count, 0) <= 0)) return false;
-    if (minUpdatedAt > 0 && toInt(row?.updated_at, 0) < minUpdatedAt) return false;
-    return true;
-  });
-  const risky = visibleRows
+  const risky = rows
     .filter((row) => toInt(row?.warnings_count, 0) > 0 || toInt(row?.errors_count, 0) > 0)
     .sort((a, b) => (toInt(b?.warnings_count, 0) + toInt(b?.errors_count, 0)) - (toInt(a?.warnings_count, 0) + toInt(a?.errors_count, 0)))
     .slice(0, 6);
@@ -46,7 +37,7 @@ export default function AdminSessionsPage({
   }
   return (
     <AdminPageContainer
-      summary={<SessionsSummaryRow items={visibleRows} />}
+      summary={<SessionsSummaryRow items={rows} />}
       secondary={(
         <div className="grid gap-4 xl:grid-cols-2">
           <SectionCard title={ru.admin.sessionsPage.attentionTitle} subtitle={ru.admin.sessionsPage.attentionSubtitle} eyebrow={ru.admin.sessionsPage.attentionEyebrow}>
@@ -71,15 +62,15 @@ export default function AdminSessionsPage({
             <div className="grid gap-3 md:grid-cols-3">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                 <div className="text-xs text-slate-500">ON</div>
-                <div className="mt-2 text-2xl font-semibold text-slate-950">{visibleRows.filter((row) => toText(row?.redis_mode).toLowerCase() === "on").length}</div>
+                <div className="mt-2 text-2xl font-semibold text-slate-950">{rows.filter((row) => toText(row?.redis_mode).toLowerCase() === "on").length}</div>
               </div>
               <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
                 <div className="text-xs text-amber-700">{ru.admin.sessionsPage.redisFallback}</div>
-                <div className="mt-2 text-2xl font-semibold text-amber-900">{visibleRows.filter((row) => toText(row?.redis_mode).toLowerCase() === "fallback").length}</div>
+                <div className="mt-2 text-2xl font-semibold text-amber-900">{rows.filter((row) => toText(row?.redis_mode).toLowerCase() === "fallback").length}</div>
               </div>
               <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3">
                 <div className="text-xs text-rose-700">{ru.admin.sessionsPage.redisIncident}</div>
-                <div className="mt-2 text-2xl font-semibold text-rose-900">{visibleRows.filter((row) => toText(row?.redis_mode).toLowerCase() === "error").length}</div>
+                <div className="mt-2 text-2xl font-semibold text-rose-900">{rows.filter((row) => toText(row?.redis_mode).toLowerCase() === "error").length}</div>
               </div>
             </div>
           </SectionCard>
@@ -105,7 +96,15 @@ export default function AdminSessionsPage({
           <AdminToggleFilter checked={Boolean(filters?.attentionOnly)} onChange={(value) => setPatch({ attentionOnly: value })} label={ru.admin.sessionsPage.attentionOnly} />
         </div>
       </AdminFiltersBar>
-      <SessionsTable items={visibleRows} onOpenSession={onOpenSession} />
+      <SessionsTable items={rows} onOpenSession={onOpenSession} />
+      <AdminTablePagination
+        total={paging?.total ?? payload?.count ?? 0}
+        page={paging?.page ?? 1}
+        pageSize={paging?.pageSize ?? 20}
+        onPageChange={(value) => onPagingChange?.({ page: value })}
+        onPageSizeChange={(value) => onPagingChange?.({ pageSize: value })}
+        testIdPrefix="admin-sessions-pagination"
+      />
     </AdminPageContainer>
   );
 }

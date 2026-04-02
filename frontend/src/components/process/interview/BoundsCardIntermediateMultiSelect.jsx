@@ -34,10 +34,9 @@ export default function BoundsCardIntermediateMultiSelect({
         <span className="interviewBoundsMiniPill intermediate">INTERMEDIATE</span>
         <span className={`interviewBoundsState ${missing ? "warn" : "ok"}`}>{missing ? "не заполнено" : "ok"}</span>
       </div>
-      <div className="interviewBoundsCardTitle">Промежуточные роли/участки</div>
 
-      <label className="interviewField">
-        <span>Поиск/фильтр lanes</span>
+      <label className="interviewField interviewBoundsFieldCompact">
+        <span>Фильтр lanes</span>
         <input
           className="input"
           value={laneFilter}
@@ -46,64 +45,68 @@ export default function BoundsCardIntermediateMultiSelect({
         />
       </label>
 
-      <div className="interviewBoundsSelectionRow">
-        <div className="interviewBoundsSelectionLabel">Выбрано: {selected.length}</div>
-        <div className="flex items-center gap-1.5">
-          <button type="button" className="secondaryBtn smallBtn" onClick={onSelectAll}>
-            Выбрать все
-          </button>
-          <button type="button" className="secondaryBtn smallBtn" onClick={onClear}>
-            Очистить
-          </button>
+      <div className="interviewBoundsGroup interviewBoundsGroup--selection">
+        <div className="interviewBoundsSelectionRow">
+          <div className="interviewBoundsSelectionLabel">Выбрано lanes: {selected.length}</div>
+          <div className="flex items-center gap-1.5">
+            <button type="button" className="secondaryBtn smallBtn interviewBoundsActionBtn" onClick={onSelectAll}>
+              Все
+            </button>
+            <button type="button" className="secondaryBtn smallBtn interviewBoundsActionBtn" onClick={onClear}>
+              Очистить
+            </button>
+          </div>
+        </div>
+
+        <div className="interviewBoundsSelectedChips">
+          {visibleSelected.length ? (
+            visibleSelected.map((name, idx) => (
+              <span key={`sel_${normalizeLoose(name) || idx}`} className="interviewBoundaryStatusChip on">
+                {toText(name)}
+              </span>
+            ))
+          ) : (
+            <span className="interviewBoundaryStatusChip">не выбрано</span>
+          )}
+          {selectedHiddenCount > 0 ? (
+            <button type="button" className="interviewBoundaryStatusChip on" onClick={() => onToggleShowAllOptions?.(true)}>
+              +{selectedHiddenCount}
+            </button>
+          ) : null}
         </div>
       </div>
 
-      <div className="interviewBoundsSelectedChips">
-        {visibleSelected.length ? (
-          visibleSelected.map((name, idx) => (
-            <span key={`sel_${normalizeLoose(name) || idx}`} className="interviewBoundaryStatusChip on">
-              {toText(name)}
-            </span>
-          ))
-        ) : (
-          <span className="interviewBoundaryStatusChip">не выбрано</span>
-        )}
-        {selectedHiddenCount > 0 ? (
-          <button type="button" className="interviewBoundaryStatusChip on" onClick={() => onToggleShowAllOptions?.(true)}>
-            +{selectedHiddenCount}
+      <div className="interviewBoundsGroup interviewBoundsGroup--lane-list">
+        <div className="interviewBoundaryLaneList interviewBoundaryLaneList--compact">
+          {visibleOptions.map((lane) => {
+            const isSelected = selected.some((item) => normalizeLoose(item) === normalizeLoose(lane.name));
+            return (
+              <button
+                key={`mid_${lane.name}`}
+                type="button"
+                className={`interviewBoundaryLaneBtn ${isSelected ? "selected" : ""}`}
+                style={{ "--lane-accent": lane.color }}
+                onClick={() => onToggleLane?.(lane.name)}
+              >
+                <span className="interviewLaneDot" />
+                {lane.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {options.length > OPTIONS_VISIBLE_LIMIT ? (
+          <button
+            type="button"
+            className="secondaryBtn smallBtn interviewBoundsActionBtn"
+            onClick={() => onToggleShowAllOptions?.(!showAllOptions)}
+          >
+            {showAllOptions ? "Скрыть список" : `Показать все (${options.length})`}
           </button>
         ) : null}
       </div>
 
-      <div className="interviewBoundaryLaneList interviewBoundaryLaneList--compact">
-        {visibleOptions.map((lane) => {
-          const isSelected = selected.some((item) => normalizeLoose(item) === normalizeLoose(lane.name));
-          return (
-            <button
-              key={`mid_${lane.name}`}
-              type="button"
-              className={`interviewBoundaryLaneBtn ${isSelected ? "selected" : ""}`}
-              style={{ "--lane-accent": lane.color }}
-              onClick={() => onToggleLane?.(lane.name)}
-            >
-              <span className="interviewLaneDot" />
-              {lane.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {options.length > OPTIONS_VISIBLE_LIMIT ? (
-        <button
-          type="button"
-          className="secondaryBtn smallBtn mt-2"
-          onClick={() => onToggleShowAllOptions?.(!showAllOptions)}
-        >
-          {showAllOptions ? "Скрыть список" : `Показать все (${options.length})`}
-        </button>
-      ) : null}
-
-      <label className="interviewField mt-2">
+      <label className="interviewField interviewBoundsFieldCompact">
         <span>Ручной список (csv)</span>
         <input
           className="input"

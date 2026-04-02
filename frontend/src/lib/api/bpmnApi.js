@@ -1,5 +1,7 @@
 import {
   apiGetBpmnXml,
+  apiGetBpmnVersions,
+  apiRestoreBpmnVersion,
   apiPutBpmnXml,
   apiDeleteBpmnXml,
   apiGetExport,
@@ -10,6 +12,8 @@ import {
 
 export {
   apiGetBpmnXml,
+  apiGetBpmnVersions,
+  apiRestoreBpmnVersion,
   apiPutBpmnXml,
   apiDeleteBpmnXml,
   apiGetExport,

@@ -34,4 +34,8 @@ test("drawio create guard: tools route to edit mode or full editor", () => {
     resolveDrawioToolIntent({ toolId: "rect", enabled: true, locked: false }),
     { toolId: "rect", intent: "mode_edit", reason: "runtime_overlay_tool" },
   );
+  assert.deepEqual(
+    resolveDrawioToolIntent({ toolId: "note", enabled: true, locked: false }),
+    { toolId: "note", intent: "mode_edit", reason: "runtime_overlay_tool" },
+  );
 });

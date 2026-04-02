@@ -176,3 +176,26 @@ test("selectElements uses selection service and returns selected ids", () => {
     },
   ]);
 });
+
+test("importXmlText persists backend snapshot with explicit import_bpmn intent", async () => {
+  const persistCalls = [];
+  const renderCalls = [];
+  const ctx = createCtx({
+    values: { view: "viewer" },
+    callbacks: {
+      persistXmlSnapshot: async (xml, hint) => {
+        persistCalls.push({ xml, hint });
+        return { ok: true };
+      },
+      renderViewer: async (xml) => {
+        renderCalls.push(xml);
+      },
+    },
+  });
+  const api = createBpmnStageImperativeApi(ctx);
+
+  const ok = await api.importXmlText("<bpmn:definitions/>");
+  assert.equal(ok, true);
+  assert.deepEqual(persistCalls, [{ xml: "<bpmn:definitions/>", hint: "import_bpmn" }]);
+  assert.deepEqual(renderCalls, ["<bpmn:definitions/>"]);
+});

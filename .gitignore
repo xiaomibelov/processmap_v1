@@ -1,61 +1,40 @@
-# OS / IDE
 .DS_Store
 .idea/
 .vscode/
 .claude/
 .tools/
 
-# Env / secrets
-.env
-.env.local
-.env.*.local
-*.pem
-*.key
-*.crt
-
-# Python
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-.coverage.*
 .venv/
 venv/
+env/
 
-# Node / frontend
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+workspace/.session_store/
+workspace/.session_store/**
+backend/workspace/.session_store/
+backend/workspace/.session_store/**
+
 node_modules/
 dist/
 build/
-coverage/
 playwright-report/
-test-results/
-
-# Runtime data
-/workspace/
-/backend/workspace/
-deploy/logs/
-uploads/
-media/
-storage/
-
-# Databases / dumps / logs
-*.sqlite
-*.sqlite3
-*.db
-*.sql
-*.dump
+frontend/playwright-report/
+coverage/
 *.log
 *.pid
 
-# Archives / binaries / temp
-*.zip
-*.tar
-*.tar.gz
-*.tgz
-*.7z
-*.dmg
-*.tmp
-*.temp
-tmp/
+workspace/processes/*
+!workspace/processes/.keep
+artifacts/
+test-results/
+frontend/test-results/
+workspace/projects/*.json
+.env
+archive/
+backups/
+zip/
+deploy/logs/

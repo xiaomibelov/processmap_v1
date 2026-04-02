@@ -1,11 +1,16 @@
 import { useCallback } from "react";
 
+import { apiPatchBpmnMeta } from "../../../../lib/api";
 import { pushDeleteTrace } from "../utils/deleteTrace";
 import useSessionMetaWriteGateway from "../../../session-meta/write/useSessionMetaWriteGateway";
 import {
   buildSessionMetaSnapshot,
   buildSessionMetaWriteEnvelope,
 } from "../../../session-meta/write/sessionMetaMergePolicy";
+import {
+  normalizeSessionCompanion,
+  serializeSessionCompanion,
+} from "../../session-companion/sessionCompanionContracts.js";
 
 function asObject(value) {
   return value && typeof value === "object" ? value : {};
@@ -24,6 +29,8 @@ function normalizeSessionMetaBoundary(valueRaw, {
     hybrid_layer_by_element_id: hybridLayerMap,
     hybrid_v2: normalizeHybridV2Doc(value.hybrid_v2),
     drawio: normalizeDrawioMeta(value.drawio),
+    auto_pass_v1: asObject(value.auto_pass_v1),
+    session_companion_v1: normalizeSessionCompanion(value.session_companion_v1),
   };
   if (!Object.keys(hybridLayerMap).length) {
     delete out.hybrid_layer_by_element_id;
@@ -47,6 +54,10 @@ export default function useSessionMetaPersist({
   docToComparableJson,
   normalizeDrawioMeta,
   serializeDrawioMeta,
+  drawioJazzAdapter = null,
+  drawioLocalFirstAdapterMode = "legacy",
+  sessionCompanionJazzAdapter = null,
+  sessionCompanionLocalFirstAdapterMode = "legacy",
 }) {
   const normalizeBoundaryMeta = useCallback((valueRaw) => normalizeSessionMetaBoundary(valueRaw, {
     normalizeHybridLayerMap,
@@ -108,6 +119,7 @@ export default function useSessionMetaPersist({
     const source = String(options?.source || "bpmn_meta_save");
     const result = await writeGateway.persistSessionMeta(nextRaw, {
       source,
+      remoteWrite: typeof options?.remoteWrite === "function" ? options.remoteWrite : undefined,
       onOptimistic: ({ nextMeta }) => {
         syncPersistedRefs(nextMeta);
       },
@@ -170,19 +182,31 @@ export default function useSessionMetaPersist({
   ]);
 
   const persistDrawioMeta = useCallback(async (nextRaw, options = {}) => {
+    const source = String(options?.source || "drawio_save");
     const nextMeta = normalizeDrawioMeta(nextRaw);
+    if (!nextMeta.last_saved_at) {
+      nextMeta.last_saved_at = new Date().toISOString();
+    }
     const nextSig = serializeDrawioMeta(nextMeta);
-    const prevMeta = normalizeDrawioMeta(drawioPersistedMetaRef.current);
-    const prevSig = serializeDrawioMeta(prevMeta);
-    if (nextSig === prevSig) {
+    const legacyPrevMeta = normalizeDrawioMeta(drawioPersistedMetaRef.current);
+    const legacyPrevSig = serializeDrawioMeta(legacyPrevMeta);
+    const jazzPrevMeta = (
+      drawioLocalFirstAdapterMode === "jazz" && drawioJazzAdapter
+        ? normalizeDrawioMeta(drawioJazzAdapter.readSharedSnapshot())
+        : normalizeDrawioMeta({})
+    );
+    const jazzPrevSig = serializeDrawioMeta(jazzPrevMeta);
+    const needsLegacyWrite = nextSig !== legacyPrevSig;
+    const needsJazzWrite = drawioLocalFirstAdapterMode === "jazz" && !!drawioJazzAdapter && nextSig !== jazzPrevSig;
+    if (!needsLegacyWrite && !needsJazzWrite) {
       pushDeleteTrace("persist_drawio_meta_skipped", {
-        source: String(options?.source || "drawio_save"),
+        source,
         reason: "same_signature",
       });
       return { ok: true, skipped: true };
     }
     pushDeleteTrace("persist_drawio_meta_optimistic", {
-      source: String(options?.source || "drawio_save"),
+      source,
       svgCacheLength: Number(String(nextMeta?.svg_cache || "").length || 0),
       elementsCount: Number(Array.isArray(nextMeta?.drawio_elements_v1) ? nextMeta.drawio_elements_v1.length : 0),
       deletedCount: Number(
@@ -191,30 +215,147 @@ export default function useSessionMetaPersist({
           : 0,
       ),
     });
-    const mergedMeta = {
-      ...buildMetaSnapshot(),
-      drawio: nextMeta,
-    };
-    const result = await persistBpmnMeta(mergedMeta, {
-      source: String(options?.source || "drawio_save"),
-    });
-    if (!result?.ok) {
-      pushDeleteTrace("persist_drawio_meta_failed", {
-        source: String(options?.source || "drawio_save"),
-        status: Number(result?.status || 0),
-      });
-      return result;
+    let legacyResult = { ok: true, skipped: true };
+    if (needsLegacyWrite) {
+      const useVisibilityPatchPath = source === "drawio_visibility_toggle" && !isLocal && !!sid;
+      if (useVisibilityPatchPath) {
+        const mergedMeta = {
+          ...buildMetaSnapshot(),
+          drawio: nextMeta,
+        };
+        legacyResult = await persistBpmnMeta(mergedMeta, {
+          source,
+          remoteWrite: async ({ sid: writeSid, nextMeta: writeMeta }) => {
+            const drawioMeta = normalizeDrawioMeta(asObject(asObject(writeMeta).drawio));
+            const patchRes = await apiPatchBpmnMeta(writeSid, { drawio: drawioMeta });
+            if (!patchRes?.ok) return patchRes;
+            return {
+              ok: true,
+              status: Number(patchRes?.status || 0),
+              meta: normalizeBoundaryMeta(patchRes?.meta),
+              transport: "bpmn_meta_patch",
+            };
+          },
+        });
+        if (!legacyResult?.ok) {
+          pushDeleteTrace("persist_drawio_meta_failed", {
+            source,
+            status: Number(legacyResult?.status || 0),
+            boundary: "legacy_bpmn_meta_patch",
+          });
+          return legacyResult;
+        }
+      } else {
+        const mergedMeta = {
+          ...buildMetaSnapshot(),
+          drawio: nextMeta,
+        };
+        legacyResult = await persistBpmnMeta(mergedMeta, { source });
+        if (!legacyResult?.ok) {
+          pushDeleteTrace("persist_drawio_meta_failed", {
+            source,
+            status: Number(legacyResult?.status || 0),
+            boundary: "legacy_session_meta",
+          });
+          return legacyResult;
+        }
+      }
+    }
+    let jazzResult = { ok: true, skipped: true };
+    if (needsJazzWrite) {
+      jazzResult = await drawioJazzAdapter.applySnapshot({ snapshot: nextMeta });
+      if (!jazzResult?.ok) {
+        pushDeleteTrace("persist_drawio_meta_failed", {
+          source,
+          status: 0,
+          boundary: "drawio_jazz",
+          blocked: String(jazzResult?.blocked || ""),
+        });
+        return {
+          ok: false,
+          error: String(jazzResult?.error || "Не удалось сохранить Draw.io overlay в Jazz."),
+          blocked: jazzResult?.blocked || "runtime_error",
+          status: 0,
+        };
+      }
     }
     pushDeleteTrace("persist_drawio_meta_synced", {
-      source: String(options?.source || "drawio_save"),
+      source,
+      bridge: needsJazzWrite ? "legacy_plus_jazz" : "legacy_only",
     });
-    return result;
+    return {
+      ok: true,
+      legacy: legacyResult,
+      jazz: jazzResult,
+      bridge: needsJazzWrite ? "legacy_plus_jazz" : "legacy_only",
+    };
   }, [
     buildMetaSnapshot,
+    drawioJazzAdapter,
+    drawioLocalFirstAdapterMode,
     drawioPersistedMetaRef,
+    isLocal,
     normalizeDrawioMeta,
     persistBpmnMeta,
     serializeDrawioMeta,
+    sid,
+  ]);
+
+  const persistSessionCompanion = useCallback(async (nextRaw, options = {}) => {
+    const nextCompanion = normalizeSessionCompanion(nextRaw);
+    const nextSig = serializeSessionCompanion(nextCompanion);
+    const legacyPrevCompanion = normalizeSessionCompanion(asObject(asObject(draftBpmnMeta).session_companion_v1));
+    const legacyPrevSig = serializeSessionCompanion(legacyPrevCompanion);
+    const jazzPrevCompanion = (
+      sessionCompanionLocalFirstAdapterMode === "jazz" && sessionCompanionJazzAdapter
+        ? normalizeSessionCompanion(sessionCompanionJazzAdapter.readSharedSnapshot())
+        : normalizeSessionCompanion({})
+    );
+    const jazzPrevSig = serializeSessionCompanion(jazzPrevCompanion);
+    const needsLegacyWrite = nextSig !== legacyPrevSig;
+    const needsJazzWrite = (
+      sessionCompanionLocalFirstAdapterMode === "jazz"
+      && !!sessionCompanionJazzAdapter
+      && nextSig !== jazzPrevSig
+    );
+    if (!needsLegacyWrite && !needsJazzWrite) {
+      return { ok: true, skipped: true };
+    }
+    let legacyResult = { ok: true, skipped: true };
+    if (needsLegacyWrite) {
+      const mergedMeta = {
+        ...buildMetaSnapshot(),
+        session_companion_v1: nextCompanion,
+      };
+      legacyResult = await persistBpmnMeta(mergedMeta, {
+        source: String(options?.source || "session_companion_save"),
+      });
+      if (!legacyResult?.ok) return legacyResult;
+    }
+    let jazzResult = { ok: true, skipped: true };
+    if (needsJazzWrite) {
+      jazzResult = await sessionCompanionJazzAdapter.applySnapshot({ snapshot: nextCompanion });
+      if (!jazzResult?.ok) {
+        return {
+          ok: false,
+          error: String(jazzResult?.error || "Не удалось сохранить session companion в Jazz."),
+          blocked: jazzResult?.blocked || "runtime_error",
+          status: 0,
+        };
+      }
+    }
+    return {
+      ok: true,
+      legacy: legacyResult,
+      jazz: jazzResult,
+      bridge: needsJazzWrite ? "legacy_plus_jazz" : "legacy_only",
+    };
+  }, [
+    buildMetaSnapshot,
+    draftBpmnMeta,
+    persistBpmnMeta,
+    sessionCompanionJazzAdapter,
+    sessionCompanionLocalFirstAdapterMode,
   ]);
 
   return {
@@ -222,5 +363,6 @@ export default function useSessionMetaPersist({
     persistHybridLayerMap,
     persistHybridV2Doc,
     persistDrawioMeta,
+    persistSessionCompanion,
   };
 }

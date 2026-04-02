@@ -60,9 +60,11 @@ export default function TimelineControls({
   const [showMoreActions, setShowMoreActions] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [lanePickerOpen, setLanePickerOpen] = useState(false);
+  const [quickInputOpen, setQuickInputOpen] = useState(() => !!toText(quickStepDraft));
   const [laneSearch, setLaneSearch] = useState("");
   const [queryDraft, setQueryDraft] = useState(() => toText(timelineFilters?.query));
   const patchTimelineFilterRef = useRef(patchTimelineFilter);
+  const quickInputRef = useRef(null);
 
   const laneByKey = useMemo(() => {
     const out = {};
@@ -92,6 +94,22 @@ export default function TimelineControls({
       window.clearTimeout(timer);
     };
   }, [queryDraft, timelineFilters?.query]);
+
+  useEffect(() => {
+    if (!quickInputOpen || typeof quickInputRef.current?.focus !== "function") return;
+    quickInputRef.current.focus();
+  }, [quickInputOpen]);
+
+  useEffect(() => {
+    if (quickInputOpen) return;
+    if (toText(quickStepDraft)) setQuickInputOpen(true);
+  }, [quickStepDraft, quickInputOpen]);
+
+  useEffect(() => {
+    if (filtersOpen) return;
+    setLanePickerOpen(false);
+    setLaneSearch("");
+  }, [filtersOpen]);
 
   const selectedLanes = useMemo(() => {
     const fromMulti = dedupList(toArray(timelineFilters?.lanes));
@@ -169,6 +187,9 @@ export default function TimelineControls({
   }, [timelineFilters, selectedLanes.length, selectedTiers]);
 
   const activeFiltersCount = activeFilterChips.length;
+  const orderHintText = orderMode === "bpmn"
+    ? (toText(bpmnOrderHint) || "Порядок вычислен по графу диаграммы.")
+    : "Creation order: порядок шага = order_index.";
 
   function applyLaneSelection(nextList) {
     const cleaned = dedupList(nextList);
@@ -265,10 +286,62 @@ export default function TimelineControls({
           <option value="interview">Сортировка: Creation</option>
           <option value="manual" disabled>Сортировка: Manual (скоро)</option>
         </select>
+      </div>
 
-        <button type="button" className="secondaryBtn smallBtn" onClick={() => setFiltersOpen((prev) => !prev)}>
+      <div className="interviewTimelineUtilityRow">
+        <button
+          type="button"
+          className="secondaryBtn smallBtn"
+          onClick={() => setFiltersOpen((prev) => !prev)}
+          title={filterSummary}
+        >
           Фильтры ({activeFiltersCount})
         </button>
+
+        <button
+          type="button"
+          className="secondaryBtn smallBtn"
+          data-testid="binding-assistant-open"
+          onClick={() => onOpenBindingAssistant?.()}
+        >
+          Привязки ({Number(bindingIssueCount || 0)})
+        </button>
+
+        <button
+          type="button"
+          className={`secondaryBtn smallBtn ${quickInputOpen ? "isActive" : ""}`}
+          data-testid="interview-quick-input-toggle"
+          onClick={() => setQuickInputOpen((prev) => !prev)}
+          aria-expanded={quickInputOpen}
+          title="Быстрый ввод шага"
+        >
+          Quick input {quickInputOpen ? "▴" : "▾"}
+        </button>
+
+        {Number(selectedStepCount || 0) > 0 ? (
+          <button
+            type="button"
+            className="secondaryBtn smallBtn"
+            data-testid="interview-group-subprocess-btn"
+            disabled={Number(selectedStepCount || 0) < 2}
+            onClick={() => {
+              onGroupSelectedSteps?.(subprocessDraft);
+            }}
+            title={Number(selectedStepCount || 0) < 2 ? "Выберите минимум 2 шага" : "Сгруппировать выбранные шаги в подпроцесс"}
+          >
+            Выделено: {Number(selectedStepCount || 0)}
+          </button>
+        ) : null}
+
+        {isTimelineFiltering ? (
+          <button type="button" className="secondaryBtn tinyBtn" onClick={resetTimelineFilters}>
+            Сбросить фильтры
+          </button>
+        ) : null}
+
+        <span className={`muted small ${bpmnOrderFallback ? "text-amber-700" : ""}`} title={orderHintText}>
+          {orderMode === "bpmn" ? "Порядок: BPMN" : "Порядок: Creation"}
+        </span>
 
         <div className="interviewColsMenuWrap">
           <button
@@ -291,14 +364,6 @@ export default function TimelineControls({
                 <button type="button" className="secondaryBtn smallBtn" onClick={() => addStep("movement")}>+ Перемещение</button>
                 <button type="button" className="secondaryBtn smallBtn" onClick={() => addStep("waiting")}>+ Ожидание</button>
                 <button type="button" className="secondaryBtn smallBtn" onClick={() => addStep("qc")}>+ QC</button>
-                <button
-                  type="button"
-                  className="secondaryBtn smallBtn"
-                  data-testid="binding-assistant-open"
-                  onClick={() => onOpenBindingAssistant?.()}
-                >
-                  Привязки ({Number(bindingIssueCount || 0)})
-                </button>
                 <div className="col-span-2 flex flex-wrap items-center gap-2">
                   <span className="muted small">Ветки:</span>
                   <button
@@ -401,39 +466,36 @@ export default function TimelineControls({
         </div>
       </div>
 
-      {activeFiltersCount > 0 ? (
-        <div className="interviewActiveFiltersRow">
-          <span className="muted small">Активные фильтры:</span>
-          {activeFilterChips.map((chip, idx) => (
-            <span key={`active_filter_chip_${idx + 1}`} className="interviewFilterChip on">{chip}</span>
-          ))}
-          <button type="button" className="secondaryBtn tinyBtn ml-auto" onClick={resetTimelineFilters}>
-            Очистить
+      {quickInputOpen ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-panel/60 px-2.5 py-2">
+          <input
+            ref={quickInputRef}
+            className="input interviewQuickStepInput"
+            value={quickStepDraft}
+            onChange={(e) => setQuickStepDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addQuickStepFromInput(e.currentTarget.value);
+              }
+            }}
+            placeholder="Быстрый ввод шага: введите действие и нажмите Enter"
+          />
+          <button
+            type="button"
+            className="secondaryBtn smallBtn"
+            onClick={() => addQuickStepFromInput(quickStepDraft)}
+            disabled={!toText(quickStepDraft)}
+          >
+            Добавить
+          </button>
+          <button type="button" className="secondaryBtn smallBtn" onClick={() => setQuickInputOpen(false)}>
+            Скрыть
           </button>
         </div>
       ) : null}
 
-      {orderMode === "bpmn" ? (
-        <span className={`muted small ${bpmnOrderFallback ? "text-amber-700" : ""}`}>
-          {toText(bpmnOrderHint) || "Порядок вычислен по графу диаграммы."}
-        </span>
-      ) : (
-        <span className="muted small">Creation order: порядок шага = order_index.</span>
-      )}
-
-      {!filtersOpen ? (
-        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-panel/60 px-2.5 py-2 text-xs">
-          <span className="muted">{filterSummary}</span>
-          {isTimelineFiltering ? (
-            <button type="button" className="secondaryBtn smallBtn ml-auto" onClick={resetTimelineFilters}>
-              Сбросить
-            </button>
-          ) : null}
-          <button type="button" className="secondaryBtn smallBtn" onClick={() => setFiltersOpen(true)}>
-            Изменить
-          </button>
-        </div>
-      ) : (
+      {filtersOpen ? (
         <div className="interviewTimelineFilters mt-2 grid gap-2 rounded-lg border border-border/70 bg-panel/60 p-2">
           <div className="flex flex-wrap items-center gap-2">
             <input
@@ -533,27 +595,15 @@ export default function TimelineControls({
             <button type="button" className={"interviewFilterChip " + (timelineFilters.ai === "with" ? "on" : "")} data-testid="interview-filter-ai-with" onClick={() => setQuickPreset("with_ai")}>
               AI: да
             </button>
+            {activeFilterChips.map((chip, idx) => (
+              <span key={`active_filter_chip_${idx + 1}`} className="interviewFilterChip on">{chip}</span>
+            ))}
             <button type="button" className="interviewFilterChip" onClick={() => setFiltersOpen(false)}>
               Свернуть фильтры
             </button>
           </div>
         </div>
-      )}
-
-      <div className="interviewActions mt-2">
-        <input
-          className="input interviewQuickStepInput"
-          value={quickStepDraft}
-          onChange={(e) => setQuickStepDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              addQuickStepFromInput(e.currentTarget.value);
-            }
-          }}
-          placeholder="Быстрый ввод шага: введите действие и нажмите Enter"
-        />
-      </div>
+      ) : null}
     </div>
   );
 }

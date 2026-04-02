@@ -1,0 +1,386 @@
+{
+  "session_id": "afbb609e19",
+  "captured_at": "20260305_214302",
+  "auto_pass_v1": {
+    "status": null,
+    "summary": {
+      "total_variants": 450,
+      "total_variants_done": null,
+      "total_variants_failed": null
+    },
+    "variants_source_field": "variants",
+    "variants_count": 450,
+    "doc_variants_source": "auto_pass_v1.variants (legacy normalized)"
+  },
+  "variant_v003": {
+    "exists": true,
+    "status": null,
+    "end_reached": null,
+    "end_event_id": null,
+    "task_steps": [
+      {
+        "node_id": "Activity_01pgxk6",
+        "name": "Сотрудник подходит к компьютеру",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_0m37490",
+        "name": "Посмотреть состав заказа в ВВ партнер",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_17t320o",
+        "name": "Нажать кнопку \"Начать сборку\"",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1k9t4a7",
+        "name": "Открыть холодильник заморозки",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1udbo2p",
+        "name": "Взять необходимый суп с полки",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_0w4rqcg",
+        "name": "Открыть крышку",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_177u5au",
+        "name": "Выкинуть плёнку/крышку в мусорный бак",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_00xx7nl",
+        "name": "Переместить открытый суп к СВЧ печи",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1tghc67",
+        "name": "Открыть СВЧ печь",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1tsk3kf",
+        "name": "Поставить в СВЧ",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1jw2q8u",
+        "name": "Закрыть СВЧ печь",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_0238wyw",
+        "name": "Установить мощность/ таймер разогрева",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_07dw2ru",
+        "name": "Запустить СВЧ печь",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_0jgi0rk",
+        "name": "Взять контейнер и крышку для покупателя",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1r18m6r",
+        "name": "Поставить контейнер и крышку в зону сборки",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1gmqktc",
+        "name": "Открыть СВЧ печь",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1sne2zz",
+        "name": "Взять разогретый суп (достать из СВЧ)",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1273na5",
+        "name": "Перенести в зону сборки",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_0flva8y",
+        "name": "Закрыть СВЧ печь",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_03ibxr5",
+        "name": "Убедиться в температуре выше 75С*",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_0nrtdbw",
+        "name": "Взять термощуп и измерить температуру в центре супа",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1nmuo3d",
+        "name": "Взять разогретый суп (горячую тару для перелива)",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1ob89db",
+        "name": "Перенести суп над контейнером для покупателя",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_171znbt",
+        "name": "Перелить суп в контейнер для покупателя",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_0uewbw6",
+        "name": "Взять крышку от контейнера",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1croc09",
+        "name": "Укупорить суп",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_0nux093",
+        "name": "Убедится , что суп плотно закрыт",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_0th269d",
+        "name": "Взять старую тару (в которой разогревался суп)",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1qejxgi",
+        "name": "Подойти к мусорке",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_0ew2wl3",
+        "name": "Нажать педали мусорки",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_10pdewi",
+        "name": "Выбросить тару в мусорку",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_0697vcq",
+        "name": "подойти к компьютеру",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1gwr8or",
+        "name": "нажать печать этикетки",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1u7tw5g",
+        "name": "Термопринтер печатает этикетку",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_0mdfih5",
+        "name": "Забрать этикетку",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_0ksn5ed",
+        "name": "Наклеить этикетку на крышку банки с супом",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1019azk",
+        "name": "Взять фольгированный пакет",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_12z3j99",
+        "name": "Открыть пакет",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1kp4c93",
+        "name": "Взять суп",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_0ppebcj",
+        "name": "Вложить суп в пакет",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_19kt47x",
+        "name": "Взять платный топпинг",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1ggv4vy",
+        "name": "Вложить топпинги в пакет",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_0hw9udd",
+        "name": "Закрыть пакет",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_0adbnrz",
+        "name": "Распечатать этикетку курьеру",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_0mzydsr",
+        "name": "Наклеить этикетку на пакет",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_0i0it93",
+        "name": "Открыть тепловой шкаф",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1r77ain",
+        "name": "Поставить пакет в тепловой шкаф",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1d89hw2",
+        "name": "Закрыть тепловой шкаф",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1ixcfjj",
+        "name": "Нажать “заказ готов”",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_13d3wy3",
+        "name": "Собрать остатки вскрытых контейнеров, пакетов и крышек.",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1mzbowu",
+        "name": "Переместить мусор к мусорному баку",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1pypwy2",
+        "name": "Нажать педали мусорки",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_09uiqs9",
+        "name": "Утилизировать мусор",
+        "duration_s": 0
+      },
+      {
+        "node_id": "Activity_1qnjkqt",
+        "name": "Протереть протирочным материалом поверхность с дез. средством",
+        "duration_s": 0
+      }
+    ],
+    "gateway_choices": [
+      {
+        "gateway_id": "Gateway_0d27wqt",
+        "flow_id": "Flow_168fa3r",
+        "label": "Да"
+      },
+      {
+        "gateway_id": "Gateway_1qzyii9",
+        "flow_id": "Flow_0permcn",
+        "label": "С крышкой"
+      },
+      {
+        "gateway_id": "Gateway_1yytlts",
+        "flow_id": "Flow_0pbc1ut",
+        "label": "подготовить контейнер покупателя”"
+      },
+      {
+        "gateway_id": "Gateway_1ga44yx",
+        "flow_id": "Flow_0nug5zp",
+        "label": "Нет"
+      },
+      {
+        "gateway_id": "Gateway_03ygf9x",
+        "flow_id": "Flow_0i8zyee",
+        "label": "Да"
+      },
+      {
+        "gateway_id": "Gateway_1w0fah0",
+        "flow_id": "Flow_0ccm7n7",
+        "label": "Да"
+      },
+      {
+        "gateway_id": "Gateway_1idc4ex",
+        "flow_id": "Flow_1uz1iaf",
+        "label": "Нет"
+      },
+      {
+        "gateway_id": "Gateway_13frvr2",
+        "flow_id": "Flow_18fb85f",
+        "label": "Да"
+      },
+      {
+        "gateway_id": "Gateway_0c18gc8",
+        "flow_id": "Flow_1ukbutr",
+        "label": "Платный топпинг?"
+      },
+      {
+        "gateway_id": "Gateway_0hkbl1p",
+        "flow_id": "Flow_0x4q3cy",
+        "label": "Сухой"
+      },
+      {
+        "gateway_id": "Gateway_1kdlvf8",
+        "flow_id": "Flow_175fc18",
+        "label": "Нет"
+      },
+      {
+        "gateway_id": "Gateway_0ry88c7",
+        "flow_id": "Flow_1h3equa",
+        "label": "Нет"
+      },
+      {
+        "gateway_id": "Gateway_0wwckl5",
+        "flow_id": "Flow_1du8wr6",
+        "label": "Да"
+      },
+      {
+        "gateway_id": "Gateway_1y5098h",
+        "flow_id": "Flow_0iks40r",
+        "label": "Нет"
+      }
+    ],
+    "error": null
+  },
+  "variant_v003_last_three_actions": [
+    {
+      "kind": "gateway_choice",
+      "gateway_id": "Gateway_0ry88c7",
+      "flow_id": "Flow_1h3equa",
+      "label": "Нет"
+    },
+    {
+      "kind": "gateway_choice",
+      "gateway_id": "Gateway_0wwckl5",
+      "flow_id": "Flow_1du8wr6",
+      "label": "Да"
+    },
+    {
+      "kind": "gateway_choice",
+      "gateway_id": "Gateway_1y5098h",
+      "flow_id": "Flow_0iks40r",
+      "label": "Нет"
+    }
+  ]
+}

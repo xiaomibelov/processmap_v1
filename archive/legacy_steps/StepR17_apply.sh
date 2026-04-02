@@ -1,0 +1,252 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+TS="$(date +%F_%H%M%S)"
+TAG_START="cp/foodproc_frontend_r17_start_${TS}"
+TAG_DONE="cp/foodproc_frontend_r17_done_${TS}"
+BRANCH="fix/frontend-r17-process-title-canvas-v1"
+ZIP_DIR="artifacts"
+ZIP_PATH="${ZIP_DIR}/foodproc_frontend_r17_${TS}.zip"
+
+
+echo
+echo "== checkpoint tag (start) =="
+git tag -a "$TAG_START" -m "checkpoint: frontend R17 start (${TS})" >/dev/null 2>&1 || true
+echo "$TAG_START"
+
+echo
+echo "== git (before) =="
+git status -sb || true
+git show -s --format='%ci %h %d %s' HEAD || true
+
+echo
+echo "== checkout branch =="
+if git show-ref --verify --quiet "refs/heads/${BRANCH}"; then
+  git checkout "$BRANCH" >/dev/null
+else
+  git checkout -b "$BRANCH" >/dev/null
+fi
+
+echo
+echo "== ensure dirs =="
+mkdir -p frontend/src/styles "$ZIP_DIR"
+
+echo
+echo "== write theme_graphite.css (clean) =="
+cat > frontend/src/styles/theme_graphite.css <<'EOF'
+:root{
+  --bg0:#070A14;
+  --bg1:#0B1020;
+
+  --panel:rgba(255,255,255,.06);
+  --panel2:rgba(255,255,255,.04);
+  --border:rgba(255,255,255,.12);
+
+  --text:rgba(255,255,255,.92);
+  --muted:rgba(255,255,255,.62);
+
+  --ok:#2FE58C;
+  --warn:#FFBF3F;
+  --err:#FF4D4D;
+  --info:#7C5CFF;
+
+  --ring:rgba(124,92,255,.55);
+  --shadow:0 18px 55px rgba(0,0,0,.55);
+
+  --r-lg:18px;
+  --r-md:14px;
+
+  --paper0:#F1F3F7;
+  --paper1:#E7EBF2;
+  --ink:rgba(7,10,20,.92);
+  --inkMuted:rgba(7,10,20,.62);
+}
+
+html, body{ height:100%; }
+
+body{
+  color:var(--text);
+  background:
+    radial-gradient(1100px 650px at 18% 12%, rgba(124,92,255,.18), transparent 60%),
+    radial-gradient(900px 500px  at 80% 18%, rgba(47,229,140,.10), transparent 55%),
+    linear-gradient(180deg,var(--bg0),var(--bg1));
+}
+
+a{ color:inherit; }
+
+.panel,
+.leftCol,
+.processWrap{
+  background:var(--panel);
+  border:1px solid var(--border);
+  border-radius:var(--r-lg);
+  box-shadow:var(--shadow);
+  backdrop-filter: blur(14px);
+}
+
+.panelHead,
+.panelBody,
+.card,
+.small,
+.muted{
+  color:var(--text);
+}
+
+.muted{ color:var(--muted); }
+
+.card{
+  background:var(--panel2);
+  border:1px solid var(--border);
+  border-radius:var(--r-md);
+}
+
+.hr{
+  border:0;
+  border-top:1px solid rgba(255,255,255,.10);
+}
+
+.input,
+textarea{
+  width:100%;
+  padding:10px 12px;
+  border-radius:12px;
+  background: rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.12);
+  color:var(--text);
+}
+
+.input:focus,
+textarea:focus{
+  outline:2px solid var(--ring);
+  outline-offset:2px;
+  border-color: rgba(255,255,255,.18);
+}
+
+.btn,
+.primaryBtn,
+.dangerBtn,
+.smallBtn{
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.14);
+  color:var(--text);
+  background: rgba(255,255,255,.06);
+}
+
+.primaryBtn{
+  background: linear-gradient(180deg, rgba(124,92,255,.42), rgba(124,92,255,.22));
+  border-color: rgba(124,92,255,.35);
+}
+
+.dangerBtn{
+  background: linear-gradient(180deg, rgba(255,77,77,.34), rgba(255,77,77,.18));
+  border-color: rgba(255,77,77,.28);
+}
+
+.btn:focus,
+.primaryBtn:focus,
+.dangerBtn:focus,
+.smallBtn:focus{
+  outline:2px solid var(--ring);
+  outline-offset:2px;
+}
+
+.topBar{
+  background:
+    linear-gradient(180deg, rgba(20,86,150,.72), rgba(9,22,40,.72));
+  border-bottom:1px solid rgba(255,255,255,.10);
+}
+
+.topBar .brand{ color:var(--text); }
+
+.pill{
+  background: rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.12);
+  color:var(--text);
+}
+
+.badgeOk{ color:var(--ok); }
+.badgeWarn{ color:var(--warn); }
+.badgeErr{ color:var(--err); }
+
+.processHead{
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+  border-bottom:1px solid rgba(255,255,255,.10);
+}
+
+.processHead .title{
+  color:var(--text) !important;
+  background: transparent !important;
+  text-shadow: 0 1px 0 rgba(0,0,0,.35);
+}
+
+.processCanvas{
+  background: linear-gradient(180deg, var(--paper0), var(--paper1));
+  border:1px solid rgba(255,255,255,.10);
+}
+
+.processCanvas .djs-container{
+  background: transparent !important;
+}
+
+.processCanvas .djs-container .djs-background{
+  fill: transparent !important;
+}
+
+.processCanvas .bjs-powered-by,
+.processCanvas .bjs-powered-by a{
+  color: rgba(7,10,20,.55) !important;
+}
+
+.bpmnToolBtn,
+.bpmnToolBtnPrimary{
+  background: rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.14);
+  color:var(--text);
+}
+
+.bpmnToolBtnPrimary{
+  background: linear-gradient(180deg, rgba(124,92,255,.42), rgba(124,92,255,.22));
+  border-color: rgba(124,92,255,.35);
+}
+EOF
+
+echo
+echo "== build smoke =="
+if [ -d frontend/node_modules ]; then
+  ( cd frontend && npm -s run build )
+else
+  echo "skip: frontend/node_modules not found"
+fi
+
+echo
+echo "== git diff --stat =="
+git diff --stat || true
+
+echo
+echo "== git add/commit =="
+git add frontend/src/styles/theme_graphite.css || true
+if git diff --cached --quiet; then
+  echo "no staged changes"
+else
+  git commit -m "fix(frontend): process title color + softer workflow canvas" || true
+fi
+
+echo
+echo "== checkpoint tag (done) =="
+git tag -a "$TAG_DONE" -m "checkpoint: frontend R17 done (${TS})" >/dev/null 2>&1 || true
+echo "$TAG_DONE"
+
+echo
+echo "== zip artifact =="
+mkdir -p "$ZIP_DIR"
+zip -r "$ZIP_PATH" frontend -x "frontend/node_modules/*" -x "frontend/dist/*" >/dev/null
+ls -la "$ZIP_PATH" || true
+
+echo
+echo "== next =="
+echo "cd frontend && npm run dev"
+echo
+echo "rollback:"
+echo "git checkout \"$TAG_START\""

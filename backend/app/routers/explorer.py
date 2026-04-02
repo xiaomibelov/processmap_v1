@@ -314,6 +314,54 @@ def _cached_project_sessions(org_id: str, project_id: str) -> List[Dict[str, Any
     return rows
 
 
+def _invalidate_children_for_folder_chain(org_id: str, workspace_id: str, folder_id: str) -> None:
+    """Invalidate explorer children cache for a folder and all ancestor parent lists."""
+    oid = str(org_id or "").strip()
+    wid = str(workspace_id or "").strip()
+    fid = str(folder_id or "").strip()
+    targets: List[str] = []
+    seen = set()
+
+    def _add(raw: Any) -> None:
+        key = str(raw or "").strip()
+        if key in seen:
+            return
+        seen.add(key)
+        targets.append(key)
+
+    if fid:
+        _add(fid)
+        crumbs = storage.get_workspace_folder_breadcrumb(oid, wid, fid)
+        parent_by_id = {
+            str(item.get("id") or ""): str(item.get("parent_id") or "")
+            for item in crumbs
+            if str(item.get("id") or "").strip()
+        }
+        cursor = fid
+        while cursor:
+            parent_id = str(parent_by_id.get(cursor) or "")
+            _add(parent_id)
+            if not parent_id:
+                break
+            cursor = parent_id
+    else:
+        _add("")
+    if "" not in seen:
+        _add("")
+    for target_folder_id in targets:
+        explorer_invalidate_children(oid, wid, target_folder_id)
+
+
+def _invalidate_children_for_project_rollup(org_id: str, project_id: str) -> None:
+    targets = storage.get_project_explorer_invalidation_targets(org_id, project_id)
+    if not targets:
+        return
+    oid = str(targets.get("org_id") or org_id or "").strip()
+    wid = str(targets.get("workspace_id") or "").strip()
+    for folder_id in (targets.get("children_folder_ids") or []):
+        explorer_invalidate_children(oid, wid, str(folder_id or ""))
+
+
 # ─── GET /api/workspaces ──────────────────────────────────────────────────────
 
 @router.get("/api/workspaces", response_model=List[WorkspaceOut])
@@ -446,6 +494,15 @@ def get_explorer_page(
             "parent_id": f.get("parent_id", ""),
             "child_folder_count": f.get("child_folder_count", 0),
             "child_project_count": f.get("child_project_count", 0),
+            "descendant_projects_count": f.get("descendant_projects_count", 0),
+            "descendant_sessions_count": f.get("descendant_sessions_count", 0),
+            "self_activity_at": f.get("self_activity_at", f.get("updated_at", 0)),
+            "rollup_activity_at": f.get("rollup_activity_at", f.get("updated_at", 0)),
+            "last_activity_source_type": f.get("last_activity_source_type", "folder"),
+            "last_activity_source_id": f.get("last_activity_source_id", f.get("id", "")),
+            "last_activity_source_title": f.get("last_activity_source_title", f.get("name", "")),
+            "rollup_dod_percent": f.get("rollup_dod_percent"),
+            "created_at": f.get("created_at", 0),
             "updated_at": f.get("updated_at", 0),
         })
     for p in children.get("projects", []):
@@ -461,6 +518,14 @@ def get_explorer_page(
             "reports_count": p.get("reports_count", 0),
             "status": p.get("status", "active"),
             "description": p.get("description", ""),
+            "self_activity_at": p.get("self_activity_at", p.get("updated_at", 0)),
+            "rollup_activity_at": p.get("rollup_activity_at", p.get("updated_at", 0)),
+            "last_activity_source_type": p.get("last_activity_source_type", "project"),
+            "last_activity_source_id": p.get("last_activity_source_id", p.get("id", "")),
+            "last_activity_source_title": p.get("last_activity_source_title", p.get("title", "")),
+            "descendant_sessions_count": p.get("descendant_sessions_count", p.get("sessions_count", 0)),
+            "rollup_dod_percent": p.get("rollup_dod_percent", p.get("dod_percent", 0)),
+            "created_at": p.get("created_at", 0),
             "updated_at": p.get("updated_at", 0),
         })
 
@@ -497,7 +562,7 @@ def create_folder(workspace_id: str, body: CreateFolderBody, request: Request) -
 
     # ── invalidation ──────────────────────────────────────────────────────────
     # parent's children listing is now stale (new folder appeared)
-    explorer_invalidate_children(oid, wid, parent_id)
+    _invalidate_children_for_folder_chain(oid, wid, parent_id)
     return folder
 
 
@@ -543,7 +608,7 @@ def rename_folder(
 
     # ── invalidation ──────────────────────────────────────────────────────────
     parent_id = str(folder.get("parent_id", "") or "")
-    explorer_invalidate_children(oid, wid, parent_id)          # parent list: name changed
+    _invalidate_children_for_folder_chain(oid, wid, parent_id)  # parent list + ancestors
     explorer_invalidate_all_breadcrumbs_for_workspace(oid, wid)      # breadcrumbs: folder name changed
     return folder
 
@@ -582,8 +647,8 @@ def move_folder(
         raise HTTPException(status_code=422, detail=msg)
 
     # ── invalidation ──────────────────────────────────────────────────────────
-    explorer_invalidate_children(oid, wid, old_parent_id)      # folder disappeared from old parent
-    explorer_invalidate_children(oid, wid, new_parent_id)      # folder appeared in new parent
+    _invalidate_children_for_folder_chain(oid, wid, old_parent_id)
+    _invalidate_children_for_folder_chain(oid, wid, new_parent_id)
     explorer_invalidate_all_breadcrumbs_for_workspace(oid, wid)      # breadcrumbs fully reshuffled
     return folder
 
@@ -621,7 +686,7 @@ def delete_folder(
         raise HTTPException(status_code=404, detail="folder not found")
 
     # ── invalidation ──────────────────────────────────────────────────────────
-    explorer_invalidate_children(oid, wid, parent_id)          # folder gone from parent
+    _invalidate_children_for_folder_chain(oid, wid, parent_id)
     explorer_invalidate_all_breadcrumbs_for_workspace(oid, wid)      # subtree breadcrumbs gone
     return {"ok": True}
 
@@ -653,7 +718,7 @@ def create_project_in_folder(
         raise HTTPException(status_code=422, detail=str(e))
 
     # ── invalidation ──────────────────────────────────────────────────────────
-    explorer_invalidate_children(oid, wid, fid)                # project now appears in folder
+    _invalidate_children_for_folder_chain(oid, wid, fid)
     return {
         "id": pid, "name": body.name, "folder_id": fid,
         "workspace_id": wid, "status": "active", "created_by": user_id,
@@ -795,5 +860,6 @@ def create_session_in_project(
 
     # ── invalidation ──────────────────────────────────────────────────────────
     explorer_invalidate_sessions(pid)                     # session list is now stale
+    _invalidate_children_for_project_rollup(oid, pid)     # project/folder rollups changed
     return {"id": sid, "name": body.name, "project_id": pid,
             "workspace_id": wid, "status": "draft"}

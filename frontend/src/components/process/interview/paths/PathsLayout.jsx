@@ -39,15 +39,16 @@ export default function PathsLayout({
               type="button"
               className="secondaryBtn tinyBtn interviewPathsPaneCollapsedBtn"
               onClick={() => onToggleDetails?.(false)}
-              title={hasActiveStep ? "Показать детали шага" : "Показать панель деталей"}
+              title={hasActiveStep ? "Показать детали шага" : "Сначала выберите шаг в маршруте"}
+              disabled={!hasActiveStep}
             >
-              Показать
+              Инспектор
             </button>
           </div>
         ) : (
           <>
             <div className="interviewPathsPaneHead">
-              <div className="interviewPathsRailTitle">Детали шага</div>
+              <div className="interviewPathsRailTitle">Инспектор шага</div>
               <button
                 type="button"
                 className="secondaryBtn tinyBtn"

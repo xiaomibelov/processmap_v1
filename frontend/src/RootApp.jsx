@@ -236,7 +236,7 @@ function AppRoutes() {
       {showAdmin ? (
         isAuthed ? (
           canAccessAdmin ? (
-            <AdminApp pathname={pathname} onNavigate={navigate} />
+            <AdminApp pathname={pathname} search={search} onNavigate={navigate} />
           ) : (
             <div className="flex min-h-screen items-center justify-center px-4">
               <div className="w-full max-w-lg rounded-2xl border border-border bg-panel p-6">

@@ -21,7 +21,7 @@ export default function StepDetailsPanel({
   if (!active) {
     return (
       <div className="interviewPathsDetailsEmpty">
-        <div className="muted small">Выберите шаг в маршруте, чтобы открыть детали.</div>
+        <div className="muted small">Выберите шаг в маршруте и откройте инспектор для деталей.</div>
       </div>
     );
   }
@@ -30,13 +30,13 @@ export default function StepDetailsPanel({
     <div className="interviewPathsDetailsCard">
       <div className="interviewPathsDetailsTitle">{toText(active?.title) || "—"}</div>
       <div className="interviewPathsDetailsMeta muted small">
-        type: {toText(details?.type || "—")} · lane: {toText(details?.lane || "—")}
+        тип: {toText(details?.type || "—")} · lane: {toText(details?.lane || "—")}
       </div>
 
       <div className="interviewPathsDetailsList compact">
-        <div>in: {toText(details?.inTitle || "—")}</div>
-        <div>out: {toText(details?.outTitle || "—")}</div>
-        <div>selected: {toText(details?.selected || "—")}</div>
+        <div>вход: {toText(details?.inTitle || "—")}</div>
+        <div>выход: {toText(details?.outTitle || "—")}</div>
+        <div>выбранная ветка: {toText(details?.selected || "—")}</div>
         <div>AI: {Number(details?.aiCount || 0)}</div>
         <div>Заметки: {Number(details?.notesCount || 0)}</div>
       </div>
@@ -63,7 +63,7 @@ export default function StepDetailsPanel({
           data-testid="interview-paths-jump-matrix"
           onClick={() => onJumpMatrix?.()}
         >
-          Notes / AI
+          Заметки / AI
         </button>
         <button
           type="button"
@@ -80,14 +80,14 @@ export default function StepDetailsPanel({
         onClick={() => setAdvancedOpen((prev) => !prev)}
         data-testid="interview-paths-details-advanced-toggle"
       >
-        {advancedOpen ? "Скрыть advanced" : "Показать advanced"}
+        {advancedOpen ? "Скрыть тех.детали" : "Показать тех.детали"}
       </button>
 
       {advancedOpen ? (
         <div className="interviewPathsDetailsAdvanced">
-          <div>DoD missing: {toText(details?.dodMissing || "—")}</div>
-          <div>inputs: {toText(details?.inputs || "—")}</div>
-          <div>outputs: {toText(details?.outputs || "—")}</div>
+          <div>Пробелы DoD: {toText(details?.dodMissing || "—")}</div>
+          <div>входящие потоки: {toText(details?.inputs || "—")}</div>
+          <div>исходящие потоки: {toText(details?.outputs || "—")}</div>
           {details?.linkGroup ? (
             <div className="interviewPathsDetailsLinkGroup">
               <div className="muted small">link group: {toText(details?.linkGroup)}</div>

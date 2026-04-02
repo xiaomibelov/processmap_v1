@@ -814,6 +814,21 @@ export async function updateBpmnSnapshotMeta(payload = {}) {
   };
 }
 
+export function shouldAutoRestoreFromSnapshot({
+  backendXml = "",
+  snapshot = null,
+} = {}) {
+  const snapshotXml = asText(snapshot?.xml);
+  if (!snapshotXml.trim()) {
+    return { restore: false, reason: "snapshot_empty" };
+  }
+  const backend = asText(backendXml);
+  if (!backend.trim()) {
+    return { restore: true, reason: "backend_empty" };
+  }
+  return { restore: false, reason: "backend_present" };
+}
+
 export function shortSnapshotHash(xmlOrHash) {
   const raw = asText(xmlOrHash).trim();
   const hash = raw.length === 8 ? raw : fnv1aHex(raw);

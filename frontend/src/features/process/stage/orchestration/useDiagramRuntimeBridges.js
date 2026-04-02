@@ -2,14 +2,19 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import useProcessStageRuntimeGlue from "../controllers/useProcessStageRuntimeGlue";
 import useOverlayPersistBoundary from "../../overlay/controllers/useOverlayPersistBoundary";
 import useOverlayMutationGateway from "../../overlay/controllers/useOverlayMutationGateway";
-import buildOverlayPanelModel from "../../overlay/models/buildOverlayPanelModel";
+import buildOverlayPanelModel, {
+  buildOverlayPanelModelStructure,
+  buildOverlayPanelModelSelected,
+} from "../../overlay/models/buildOverlayPanelModel";
 import useDrawioEditorBridge from "../../drawio/controllers/useDrawioEditorBridge";
-import { normalizeDrawioInteractionMode } from "../../drawio/drawioMeta.js";
+import { applyDrawioAnchorValidation, readDrawioAnchorValidationState } from "../../drawio/drawioAnchors.js";
 import {
   buildDrawioVisibilitySelectionContract,
   shouldClearDrawioSelectionByContract,
 } from "../../drawio/domain/drawioVisibilitySelectionContract.js";
 import { normalizeRuntimeTool } from "../../drawio/runtime/drawioRuntimePlacement.js";
+import { normalizeDrawioInteractionMode } from "../../drawio/drawioMeta.js";
+import useDrawioRuntimeBridgeActions from "./useDrawioRuntimeBridgeActions.js";
 
 export default function useDiagramRuntimeBridges({
   overlay = {},
@@ -22,10 +27,14 @@ export default function useDiagramRuntimeBridges({
     normalizeRuntimeTool(overlay.drawioUiState?.active_tool) || "select"
   ));
 
+  // Session change: reset both mode and tool in one effect (batched → 1 render).
   useEffect(() => {
     setDrawioModeState(normalizeDrawioInteractionMode(overlay.drawioUiState?.interaction_mode));
+    setDrawioRuntimeToolState(normalizeRuntimeTool(overlay.drawioUiState?.active_tool) || "select");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overlay.sid]);
 
+  // Live updates: mode and tool in one effect (batched → 1 render instead of 2).
   useEffect(() => {
     const nextMode = normalizeDrawioInteractionMode(overlay.drawioUiState?.interaction_mode);
     setDrawioModeState((prevMode) => {
@@ -34,22 +43,39 @@ export default function useDiagramRuntimeBridges({
       }
       return nextMode;
     });
-  }, [overlay.drawioUiState?.enabled, overlay.drawioUiState?.interaction_mode]);
-
-  useEffect(() => {
-    setDrawioRuntimeToolState(normalizeRuntimeTool(overlay.drawioUiState?.active_tool) || "select");
-  }, [overlay.sid]);
-
-  useEffect(() => {
     const incoming = normalizeRuntimeTool(overlay.drawioUiState?.active_tool);
-    if (!incoming) return;
-    setDrawioRuntimeToolState(incoming);
-  }, [overlay.drawioUiState?.active_tool]);
+    if (incoming) setDrawioRuntimeToolState(incoming);
+  }, [overlay.drawioUiState?.enabled, overlay.drawioUiState?.interaction_mode, overlay.drawioUiState?.active_tool]);
 
-  const drawioStateForRuntime = useMemo(() => ({
-    ...(overlay.drawioUiState && typeof overlay.drawioUiState === "object" ? overlay.drawioUiState : {}),
-    active_tool: drawioRuntimeToolState,
-  }), [drawioRuntimeToolState, overlay.drawioUiState]);
+  const drawioAnchorValidationState = runtimeGlueConfig.drawioAnchorValidationState
+    && typeof runtimeGlueConfig.drawioAnchorValidationState === "object"
+    ? runtimeGlueConfig.drawioAnchorValidationState
+    : readDrawioAnchorValidationState(runtimeGlueConfig.draft);
+
+  const drawioStateForRuntime = useMemo(() => {
+    const baseMeta = overlay.drawioUiState && typeof overlay.drawioUiState === "object"
+      ? overlay.drawioUiState
+      : {};
+    const base = String(baseMeta.active_tool || "") === String(drawioRuntimeToolState || "")
+      ? baseMeta
+      : {
+        ...baseMeta,
+        active_tool: drawioRuntimeToolState,
+      };
+    const validated = applyDrawioAnchorValidation(
+      base,
+      drawioAnchorValidationState.ids,
+      drawioAnchorValidationState.ready,
+    );
+    if (drawioAnchorValidationState.ready !== true) {
+      if (validated._anchor_validation_deferred === true) return validated;
+      return {
+        ...validated,
+        _anchor_validation_deferred: true,
+      };
+    }
+    return validated;
+  }, [drawioAnchorValidationState, drawioRuntimeToolState, overlay.drawioUiState]);
 
   const overlayPersistBoundary = useOverlayPersistBoundary({
     drawioMetaRef: overlay.drawioMetaRef,
@@ -85,7 +111,9 @@ export default function useDiagramRuntimeBridges({
     applyDrawioMutation: overlayPersistBoundary.applyDrawioMutation,
   });
 
-  const overlayPanelModel = useMemo(() => buildOverlayPanelModel({
+  // Structural model: rows, sections, tools — does NOT depend on selection.
+  // Isolated so that every click/selection change skips the heavy row+section recompute.
+  const overlayPanelModelStructure = useMemo(() => buildOverlayPanelModelStructure({
     drawioState: drawioStateForRuntime,
     drawioModeEffective: drawioModeState,
     drawioEditorStatus: drawioEditorBridge.status,
@@ -97,94 +125,51 @@ export default function useDiagramRuntimeBridges({
     hybridLayerRenderRows: overlay.hybridLayerRenderRows,
     hybridV2Renderable: overlay.hybridV2Renderable,
     hybridV2BindingByHybridId: overlay.hybridV2BindingByHybridId,
-    drawioSelectedElementId: overlay.drawioSelectedElementId,
-    hybridV2ActiveId: overlay.hybridV2ActiveId,
-    hybridV2SelectedIds: overlay.hybridV2SelectedIds,
-    legacyActiveElementId: overlay.hybridLayerActiveElementId,
   }), [
     drawioEditorBridge.status,
     drawioModeState,
-    overlay.drawioSelectedElementId,
     drawioStateForRuntime,
     overlay.hybridVisible,
-    overlay.hybridLayerActiveElementId,
     overlay.hybridLayerRenderRows,
     overlay.hybridModeEffective,
     overlay.hybridTotalCount,
     overlay.hybridUiPrefs,
-    overlay.hybridV2ActiveId,
     overlay.hybridV2BindingByHybridId,
     overlay.hybridV2HiddenCount,
+    overlay.hybridV2Renderable,
+  ]);
+
+  // Selected entity: changes on every click — cheap to compute, isolated from structure.
+  const overlayPanelModelSelected = useMemo(() => buildOverlayPanelModelSelected({
+    drawioState: drawioStateForRuntime,
+    drawioSelectedElementId: overlay.drawioSelectedElementId,
+    hybridV2ActiveId: overlay.hybridV2ActiveId,
+    hybridV2SelectedIds: overlay.hybridV2SelectedIds,
+    legacyActiveElementId: overlay.hybridLayerActiveElementId,
+    hybridV2Renderable: overlay.hybridV2Renderable,
+  }), [
+    drawioStateForRuntime,
+    overlay.drawioSelectedElementId,
+    overlay.hybridLayerActiveElementId,
+    overlay.hybridV2ActiveId,
     overlay.hybridV2Renderable,
     overlay.hybridV2SelectedIds,
   ]);
 
-  const commitDrawioOverlayMove = useCallback((payloadRaw) => {
-    return overlayMutationGateway.moveDrawioElement(payloadRaw, "drawio_overlay_drag_end");
-  }, [overlayMutationGateway]);
+  // Compose: consumers see the same shape as before.
+  const overlayPanelModel = useMemo(() => ({
+    ...overlayPanelModelStructure,
+    selected: overlayPanelModelSelected,
+  }), [overlayPanelModelStructure, overlayPanelModelSelected]);
 
   const drawioModeEffective = drawioModeState;
   const drawioVisibilityContract = useMemo(() => (
     buildDrawioVisibilitySelectionContract(drawioStateForRuntime, { mode: drawioModeState })
   ), [drawioModeState, drawioStateForRuntime]);
 
-  const deleteDrawioOverlayElement = useCallback((elementIdRaw) => {
-    return overlayMutationGateway.deleteOverlayEntity({
-      entityKind: "drawio",
-      entityId: elementIdRaw,
-    }, "drawio_overlay_delete");
-  }, [overlayMutationGateway]);
-
   const deleteOverlayEntity = useCallback((entityRaw, source = "layers_delete_entity") => {
     return overlayMutationGateway.deleteOverlayEntity(entityRaw, source);
   }, [overlayMutationGateway]);
-
-  const toggleDrawioEnabled = useCallback(() => {
-    overlayMutationGateway.toggleDrawioVisibility("drawio_visibility_toggle");
-    const next = overlay.normalizeDrawioMeta(overlay.drawioMetaRef.current);
-    if (!next.enabled) {
-      overlay.setDrawioSelectedElementId?.("");
-    }
-  }, [
-    overlay.drawioMetaRef,
-    overlay.normalizeDrawioMeta,
-    overlay.setDrawioSelectedElementId,
-    overlayMutationGateway,
-  ]);
-
-  const setDrawioOpacity = useCallback((opacityRaw) => {
-    overlayMutationGateway.setDrawioOpacity(opacityRaw, "drawio_opacity_change");
-  }, [overlayMutationGateway]);
-
-  const setDrawioMode = useCallback((modeRaw, options = {}) => {
-    const nextMode = normalizeDrawioInteractionMode(modeRaw);
-    const activeTool = normalizeRuntimeTool(options?.toolId);
-    setDrawioModeState(nextMode);
-    if (nextMode === "edit") {
-      setDrawioRuntimeToolState(activeTool || "select");
-    } else {
-      setDrawioRuntimeToolState("select");
-    }
-    overlayMutationGateway.setDrawioInteractionMode(nextMode, {
-      source: "drawio_mode_change",
-      playbackStage: "drawio_mode_change",
-      ensureVisible: nextMode === "edit",
-      persist: true,
-      activeTool: nextMode === "edit" ? (activeTool || drawioRuntimeToolState) : "",
-    });
-    if (nextMode !== "edit") {
-      overlay.setDrawioSelectedElementId?.("");
-    }
-  }, [drawioRuntimeToolState, overlay.setDrawioSelectedElementId, overlayMutationGateway]);
-
-  const createDrawioRuntimeElement = useCallback((payloadRaw) => {
-    const payload = payloadRaw && typeof payloadRaw === "object" ? payloadRaw : {};
-    const toolId = normalizeRuntimeTool(payload.toolId) || drawioRuntimeToolState;
-    return overlayMutationGateway.createDrawioRuntimeElement({
-      ...payload,
-      toolId,
-    }, "drawio_runtime_place");
-  }, [drawioRuntimeToolState, overlayMutationGateway]);
 
   useEffect(() => {
     if (!shouldClearDrawioSelectionByContract({
@@ -198,33 +183,13 @@ export default function useDiagramRuntimeBridges({
     overlay.setDrawioSelectedElementId,
   ]);
 
-  const toggleDrawioLock = useCallback(() => {
-    overlayMutationGateway.toggleDrawioLock("drawio_lock_toggle");
-  }, [overlayMutationGateway]);
-
-  const setDrawioElementVisible = useCallback((elementIdRaw, visibleRaw, source = "drawio_element_visibility") => {
-    return overlayMutationGateway.setDrawioElementVisible(elementIdRaw, visibleRaw, source);
-  }, [overlayMutationGateway]);
-
-  const setDrawioElementLocked = useCallback((elementIdRaw, lockedRaw, source = "drawio_element_lock") => {
-    return overlayMutationGateway.setDrawioElementLocked(elementIdRaw, lockedRaw, source);
-  }, [overlayMutationGateway]);
-
-  const setDrawioElementText = useCallback((elementIdRaw, textRaw, source = "drawio_element_text") => {
-    return overlayMutationGateway.setDrawioElementText(elementIdRaw, textRaw, source);
-  }, [overlayMutationGateway]);
-
-  const setDrawioElementTextWidth = useCallback((elementIdRaw, widthRaw, source = "drawio_element_text_width") => {
-    return overlayMutationGateway.setDrawioElementTextWidth(elementIdRaw, widthRaw, source);
-  }, [overlayMutationGateway]);
-
-  const setDrawioElementStylePreset = useCallback((elementIdRaw, presetIdRaw, source = "drawio_element_style") => {
-    return overlayMutationGateway.setDrawioElementStylePreset(elementIdRaw, presetIdRaw, source);
-  }, [overlayMutationGateway]);
-
-  const setDrawioElementSize = useCallback((elementIdRaw, sizeRaw, source = "drawio_element_resize") => {
-    return overlayMutationGateway.setDrawioElementSize(elementIdRaw, sizeRaw, source);
-  }, [overlayMutationGateway]);
+  const drawioRuntimeActions = useDrawioRuntimeBridgeActions({
+    overlay,
+    overlayMutationGateway,
+    drawioRuntimeToolState,
+    setDrawioModeState,
+    setDrawioRuntimeToolState,
+  });
 
   const runtimeActions = useProcessStageRuntimeGlue(runtimeGlueConfig);
 
@@ -234,21 +199,10 @@ export default function useDiagramRuntimeBridges({
     drawioEditorBridge,
     overlayPanelModel,
     runtimeActions,
-    commitDrawioOverlayMove,
-    deleteDrawioOverlayElement,
+    ...drawioRuntimeActions,
     deleteOverlayEntity,
-    toggleDrawioEnabled,
-    setDrawioOpacity,
     drawioModeEffective,
     drawioRuntimeToolState,
-    setDrawioMode,
-    createDrawioRuntimeElement,
-    toggleDrawioLock,
-    setDrawioElementVisible,
-    setDrawioElementLocked,
-    setDrawioElementText,
-    setDrawioElementTextWidth,
-    setDrawioElementStylePreset,
-    setDrawioElementSize,
+    setDrawioElementAnchor: overlayMutationGateway.setDrawioElementAnchor,
   };
 }

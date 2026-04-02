@@ -13,6 +13,13 @@ function typeLabel(typeRaw) {
   return "bpmn selection";
 }
 
+function normalizeTimestampMs(tsRaw) {
+  let ts = Number(tsRaw || 0);
+  if (!(ts > 0)) return 0;
+  if (ts < 1e12) ts *= 1000;
+  return ts;
+}
+
 export default function TemplateItemRow({
   template,
   onApply,
@@ -28,7 +35,7 @@ export default function TemplateItemRow({
     || item.payload?.elements?.length
     || 0,
   );
-  const updatedAt = Number(item.updated_at || item.created_at || 0);
+  const updatedAt = normalizeTimestampMs(item.updated_at || item.created_at);
   const canDelete = item.can_delete !== false;
   return (
     <div

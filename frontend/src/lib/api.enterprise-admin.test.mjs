@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   apiAcceptInviteToken,
   apiCreateOrgInvite,
+  apiListOrgInvites,
   apiListOrgAudit,
   apiListOrgMembers,
   apiRevokeOrgInvite,
@@ -29,7 +30,7 @@ test("apiListOrgMembers: calls enterprise members endpoint", async () => {
   }
 });
 
-test("apiCreateOrgInvite: posts payload", async () => {
+test("apiCreateOrgInvite: posts payload with regenerate flag", async () => {
   const prevFetch = globalThis.fetch;
   const calls = [];
   try {
@@ -40,12 +41,35 @@ test("apiCreateOrgInvite: posts payload", async () => {
         headers: { "Content-Type": "application/json" },
       });
     };
-    const out = await apiCreateOrgInvite("org_1", { email: "user@local", role: "viewer", ttl_days: 5 });
+    const out = await apiCreateOrgInvite("org_1", { email: "user@local", role: "viewer", ttl_days: 5, regenerate: true });
     assert.equal(out.ok, true);
     assert.equal(String(out.invite?.id || ""), "inv_1");
     assert.equal(String(out.invite_token || ""), "tok");
     assert.match(calls[0].url, /\/api\/orgs\/org_1\/invites$/);
     assert.equal(String(calls[0].init?.method || ""), "POST");
+    const body = JSON.parse(String(calls[0].init?.body || "{}"));
+    assert.equal(body.regenerate, true);
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
+});
+
+test("apiListOrgInvites: returns current_invite from backend truth", async () => {
+  const prevFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => new Response(
+      JSON.stringify({
+        items: [{ id: "inv_1", email: "user@local", status: "pending" }],
+        count: 1,
+        current_invite: { id: "inv_1", invite_key: "tok_1", invite_link: "https://pm.local/accept-invite?token=tok_1" },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+    const out = await apiListOrgInvites("org_1");
+    assert.equal(out.ok, true);
+    assert.equal(out.count, 1);
+    assert.equal(String(out.current_invite?.id || ""), "inv_1");
+    assert.equal(String(out.current_invite?.invite_key || ""), "tok_1");
   } finally {
     globalThis.fetch = prevFetch;
   }

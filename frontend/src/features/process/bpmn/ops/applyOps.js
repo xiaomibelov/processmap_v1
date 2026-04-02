@@ -6,6 +6,10 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function hasOwn(obj, key) {
+  return Object.prototype.hasOwnProperty.call(obj || {}, key);
+}
+
 function normalizeKey(value) {
   return asText(value)
     .toLowerCase()
@@ -413,6 +417,77 @@ function applyChangeType(context, op) {
   }
 }
 
+function normalizeDocumentationText(rawText) {
+  return String(rawText ?? "").replace(/\r\n/g, "\n");
+}
+
+function normalizeDocumentationEntries(entriesRaw) {
+  return asArray(entriesRaw)
+    .map((entryRaw) => {
+      const entry = entryRaw && typeof entryRaw === "object" ? entryRaw : { text: entryRaw };
+      const rawText = hasOwn(entry, "text")
+        ? entry.text
+        : (hasOwn(entry, "value") ? entry.value : entryRaw);
+      const text = normalizeDocumentationText(rawText);
+      const textFormat = asText(entry?.textFormat || entry?.textformat);
+      if (!text.length && !textFormat) return null;
+      return { text, textFormat };
+    })
+    .filter(Boolean);
+}
+
+function resolveDocumentationEntriesFromOp(opRaw) {
+  const op = opRaw && typeof opRaw === "object" ? opRaw : {};
+  if (hasOwn(op, "documentation")) {
+    return normalizeDocumentationEntries(op.documentation);
+  }
+  if (hasOwn(op, "documentationEntries")) {
+    return normalizeDocumentationEntries(op.documentationEntries);
+  }
+  if (hasOwn(op, "documentationText") || hasOwn(op, "text")) {
+    const text = normalizeDocumentationText(hasOwn(op, "documentationText") ? op.documentationText : op.text);
+    const textFormat = asText(op?.textFormat || op?.documentationTextFormat);
+    return normalizeDocumentationEntries([{ text, textFormat }]);
+  }
+  return null;
+}
+
+function applySetDocumentation(context, op) {
+  const element = resolveElement(context.registry, op?.elementId, { allowConnections: true });
+  if (!element) return { ok: false, error: "element_not_found", changedIds: [] };
+  if (!context.modeling || typeof context.modeling.updateProperties !== "function") {
+    return { ok: false, error: "update_properties_unavailable", changedIds: [] };
+  }
+  const entries = resolveDocumentationEntriesFromOp(op);
+  if (entries === null) return { ok: false, error: "missing_documentation_payload", changedIds: [] };
+
+  const moddle = (() => {
+    try {
+      return context.modeler?.get?.("moddle") || null;
+    } catch {
+      return null;
+    }
+  })();
+  const documentation = entries.map((entry) => {
+    const attrs = { text: String(entry?.text ?? "") };
+    if (String(entry?.textFormat || "").trim()) attrs.textFormat = String(entry.textFormat).trim();
+    if (moddle && typeof moddle.create === "function") {
+      try {
+        return moddle.create("bpmn:Documentation", attrs);
+      } catch {
+      }
+    }
+    return { $type: "bpmn:Documentation", ...attrs };
+  });
+
+  try {
+    context.modeling.updateProperties(element, { documentation });
+    return { ok: true, changedIds: [String(element.id || "")] };
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error || "set_documentation_failed"), changedIds: [] };
+  }
+}
+
 function normalizeOp(raw) {
   const op = raw && typeof raw === "object" ? raw : {};
   const type = asText(op?.type || op?.op || op?.kind);
@@ -464,6 +539,7 @@ export async function applyOpsToModeler(modeler, ops = [], options = {}) {
     else if (op.type === "connect") outcome = applyConnect(context, op);
     else if (op.type === "insertBetween") outcome = applyInsertBetween(context, op);
     else if (op.type === "changeType") outcome = applyChangeType(context, op);
+    else if (op.type === "setDocumentation") outcome = applySetDocumentation(context, op);
 
     if (outcome.ok) applied += 1;
     else failed += 1;

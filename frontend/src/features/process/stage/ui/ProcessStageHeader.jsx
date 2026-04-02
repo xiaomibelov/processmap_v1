@@ -1,11 +1,16 @@
 import ProcessPanels from "./ProcessPanels";
 import { getFirstPickedFile } from "./fileInputEvent.js";
+import { getPublishGitMirrorMeta } from "../../../../shared/publishGitMirrorStatus";
 
 export default function ProcessStageHeader({ view = {} }) {
   const {
     canSaveNow,
     saveDirtyHint,
+    showSaveActionButton,
+    saveActionText,
     saveSmartText,
+    saveUploadStatus,
+    sessionRevisionHistorySnapshot,
     handleSaveCurrentTab,
     workbench,
     tab,
@@ -29,37 +34,100 @@ export default function ProcessStageHeader({ view = {} }) {
     drawioFileInputRef,
     handleDrawioImportFile,
     topPanelsView,
+    publishGitMirrorSnapshot,
   } = view;
+  const latestRevisionNumber = Number(sessionRevisionHistorySnapshot?.latestRevisionNumber || 0);
+  const hasPublishedRevision = latestRevisionNumber > 0;
+  const draftAheadOfLatest = sessionRevisionHistorySnapshot?.draftState?.isDraftAheadOfLatestRevision === true;
+  const draftStatusLabel = !hasPublishedRevision
+    ? "Ревизий нет"
+    : (draftAheadOfLatest ? "Черновик" : "Опубликовано");
+  const draftStatusTone = !hasPublishedRevision || draftAheadOfLatest ? "warn" : "ok";
+  const mirrorSnapshot = (
+    publishGitMirrorSnapshot && typeof publishGitMirrorSnapshot === "object"
+      ? publishGitMirrorSnapshot
+      : {}
+  );
+  const mirrorMeta = getPublishGitMirrorMeta(mirrorSnapshot.state);
+  const mirrorVersionNumberRaw = Number(mirrorSnapshot.versionNumber);
+  const mirrorVersionNumber = Number.isFinite(mirrorVersionNumberRaw)
+    ? Math.max(0, Math.trunc(mirrorVersionNumberRaw))
+    : 0;
+  const mirrorVersionId = String(mirrorSnapshot.versionId || "").trim();
+  const mirrorLastError = String(mirrorSnapshot.lastError || "").trim();
+  const mirrorVersionLabel = mirrorVersionNumber > 0
+    ? `v${String(mirrorVersionNumber)}`
+    : mirrorVersionId;
+  const mirrorBadgeLabel = mirrorVersionLabel
+    ? `${mirrorMeta.label} · ${mirrorVersionLabel}`
+    : mirrorMeta.label;
 
   return (
     <div className="processHeader diagramToolbarHeader">
       <div className="diagramToolbarSlot diagramToolbarSlot--left">
-        {canSaveNow ? (
-          saveDirtyHint ? (
-            <button
-              type="button"
-              className="primaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
-              onClick={handleSaveCurrentTab}
-              title={workbench.saveTooltip}
-              data-testid="diagram-toolbar-save"
-            >
-              {saveSmartText}
-            </button>
+        <div className="flex items-center gap-2">
+          {canSaveNow ? (
+            showSaveActionButton ? (
+              <button
+                type="button"
+                className="primaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
+                onClick={handleSaveCurrentTab}
+                title={workbench.saveTooltip}
+                data-testid="diagram-toolbar-save"
+              >
+                {saveActionText || saveSmartText}
+              </button>
+            ) : (
+              <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-save-status">
+                {saveSmartText}
+              </span>
+            )
           ) : (
-            <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-save-status">
-              {saveSmartText}
+              <button
+                type="button"
+                className="secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
+                disabled
+                title={workbench.saveTooltip}
+              >
+                {saveSmartText || workbench.labels.save}
+              </button>
+            )}
+          {hasSession ? (
+            <>
+              {latestRevisionNumber > 0 ? (
+                <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-latest-revision">
+                  r{latestRevisionNumber}
+                </span>
+              ) : (
+                <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-latest-revision-empty">
+                  R0
+                </span>
+              )}
+              <span
+                className={`badge text-[11px] ${draftStatusTone}`}
+                data-testid="diagram-toolbar-draft-vs-latest"
+              >
+                {draftStatusLabel}
+              </span>
+              <span
+                className={`badge text-[11px] ${mirrorMeta.processTone}`}
+                data-testid="diagram-toolbar-publish-git-mirror-status"
+                title={mirrorLastError || "Статус синхронизации Git-зеркала"}
+              >
+                Git-зеркало: {mirrorBadgeLabel}
+              </span>
+            </>
+          ) : null}
+          {saveUploadStatus?.visible ? (
+            <span
+              className={`badge text-[11px] ${String(saveUploadStatus?.tone || "").trim()}`}
+              data-testid="diagram-toolbar-save-upload-status"
+              title={String(saveUploadStatus?.title || saveUploadStatus?.label || "")}
+            >
+              {String(saveUploadStatus?.label || "")}
             </span>
-          )
-        ) : (
-          <button
-            type="button"
-            className="secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
-            disabled
-            title={workbench.saveTooltip}
-          >
-            {workbench.labels.save}
-          </button>
-        )}
+          ) : null}
+        </div>
       </div>
 
       <div className="diagramToolbarSlot diagramToolbarSlot--center">
@@ -90,17 +158,7 @@ export default function ProcessStageHeader({ view = {} }) {
       </div>
 
       <div className="diagramToolbarSlot diagramToolbarSlot--right">
-        {(tab === "diagram" || tab === "interview") && hasSession ? (
-          <button
-            type="button"
-            className={`secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs ${attentionOpen ? "ring-1 ring-accent/60" : ""}`}
-            onClick={toggleAttentionPanel}
-            data-testid="attention-panel-toggle"
-            title="Открыть список узлов с пробелами"
-          >
-            Требует внимания ({attentionItemsRaw.length})
-          </button>
-        ) : null}
+        {null}
         {toolbarInlineMessage ? (
           <span
             className={`badge hidden max-w-[36ch] truncate lg:inline-flex ${toolbarInlineTone ? toolbarInlineTone : ""}`}
@@ -109,15 +167,7 @@ export default function ProcessStageHeader({ view = {} }) {
             {toolbarInlineMessage}
           </span>
         ) : null}
-        <button
-          type="button"
-          className="primaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
-          onClick={doGenerate}
-          disabled={!workbench.canGenerate}
-          title={workbench.generateTooltip}
-        >
-          {workbench.generateLabel}
-        </button>
+        {null}
         <button
           ref={toolbarMenuButtonRef}
           type="button"

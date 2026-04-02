@@ -1,3 +1,4 @@
+import { memo } from "react";
 import {
   normalizeBpmnTypeLabel,
   normalizeSecondaryLine,
@@ -16,19 +17,15 @@ async function copyText(value) {
   return false;
 }
 
-export default function SelectedElementCard({
+function SelectedElementCard({
   selectedElementId,
   selectedElementName,
   selectedElementType,
   selectedElementLaneName,
-  noteCount,
-  aiCount,
   incomingCount = 0,
   outgoingCount = 0,
   robotMetaStatus = "none",
   robotMetaMissing = [],
-  open,
-  onToggle,
 }) {
   const hasSelected = !!selectedElementId;
   const typeLabel = normalizeBpmnTypeLabel(selectedElementType);
@@ -44,11 +41,8 @@ export default function SelectedElementCard({
 
   return (
     <section className="sidebarCardSurface selectedElementCard">
-      <div className="mb-1 flex items-center justify-between gap-2">
+      <div className="mb-1">
         <div className="sidebarSectionCaption">Выбранный элемент</div>
-        <button type="button" className="secondaryBtn h-7 px-2 text-[11px]" onClick={onToggle}>
-          {open ? "Collapse details" : "Expand details"}
-        </button>
       </div>
 
       {!hasSelected ? (
@@ -95,23 +89,13 @@ export default function SelectedElementCard({
             <span className="sidebarBadge" role="listitem">in {Number(incomingCount || 0)}</span>
             <span className="sidebarBadge" role="listitem">out {Number(outgoingCount || 0)}</span>
             <span className={`sidebarBadge sidebarBadgeRobot sidebarBadgeRobot--${robotStatusLabel}`} role="listitem" title={missing.length ? `missing: ${missing.join(", ")}` : "robot status"}>
-              robot {robotStatusLabel}
+              robot: {robotStatusLabel}
             </span>
           </div>
-          {open ? (
-            <div className="selectedElementMeta mt-2" role="list" aria-label="Свойства элемента">
-              {typeLabel ? <span className="sidebarBadge" role="listitem">Type: {typeLabel}</span> : null}
-              <span className="sidebarBadge" role="listitem">AI {Number(aiCount || 0)}</span>
-              <span className="sidebarBadge" role="listitem">Notes {Number(noteCount || 0)}</span>
-              {missing.length ? (
-                <span className="sidebarBadge" role="listitem" title={missing.join(", ")}>
-                  missing: {missing.join(", ")}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
         </>
       )}
     </section>
   );
 }
+
+export default memo(SelectedElementCard);

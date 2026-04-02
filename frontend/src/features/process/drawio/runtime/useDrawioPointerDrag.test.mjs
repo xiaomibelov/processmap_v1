@@ -46,26 +46,20 @@ test("pointer drag: canStartDrawioDrag allows start only when visible/renderable
 });
 
 test("pointer drag: listener binding/unbinding is symmetric", () => {
+  // Phase 1.3: reduced from 15 listeners (doc+root+win) to 5 (window-only).
+  // setPointerCapture makes doc/root capture listeners redundant.
   const win = createEventTargetSpy();
-  const doc = createEventTargetSpy();
-  const root = createEventTargetSpy();
   const noop = () => {};
   const unbind = bindPointerDragListeners({
     windowTarget: win,
-    docTarget: doc,
-    rootTarget: root,
     onMove: noop,
     onUp: noop,
     onMouseMove: noop,
     onMouseUp: noop,
   });
   assert.equal(win.calls.filter((row) => row.op === "add").length, 5);
-  assert.equal(doc.calls.filter((row) => row.op === "add").length, 5);
-  assert.equal(root.calls.filter((row) => row.op === "add").length, 5);
   unbind();
   assert.equal(win.calls.filter((row) => row.op === "remove").length, 5);
-  assert.equal(doc.calls.filter((row) => row.op === "remove").length, 5);
-  assert.equal(root.calls.filter((row) => row.op === "remove").length, 5);
 });
 
 test("pointer drag: move computes draft offset in diagram coordinates", () => {
@@ -128,7 +122,7 @@ test("pointer drag: finish commit returns payload only when delta exists", () =>
   });
 });
 
-test("pointer drag: pointer/mouse dedupe guards suppress duplicate finish paths", () => {
+test("pointer drag: mousemove is deduped while pointer drag is active, mouseup remains valid fallback", () => {
   const moveReason = shouldIgnoreDragMoveEvent({
     activePointerIdRaw: 7,
     eventPointerIdRaw: NaN,
@@ -142,5 +136,12 @@ test("pointer drag: pointer/mouse dedupe guards suppress duplicate finish paths"
     eventTypeRaw: "mouseup",
     sawPointerMove: true,
   });
-  assert.equal(upReason, "compat_mouseup_while_pointer_active");
+  assert.equal(upReason, "");
+  const upReasonWithZeroPointerId = shouldIgnoreDragUpEvent({
+    activePointerIdRaw: 7,
+    eventPointerIdRaw: 0,
+    eventTypeRaw: "mouseup",
+    sawPointerMove: true,
+  });
+  assert.equal(upReasonWithZeroPointerId, "");
 });

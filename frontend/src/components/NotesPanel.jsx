@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   elementNotesForId,
   normalizeElementNotesMap,
@@ -23,19 +23,52 @@ import {
   normalizeRobotMetaV1,
   robotMetaMissingFields,
 } from "../features/process/robotmeta/robotMeta";
+import {
+  createEmptyCamundaExtensionState,
+  normalizeCamundaExtensionsMap,
+  normalizeCamundaExtensionState,
+} from "../features/process/camunda/camundaExtensions";
+import {
+  finalizeExtensionStateWithDictionary,
+  buildPropertiesOverlayPreview,
+  getOperationKeyFromRobotMeta,
+} from "../features/process/camunda/propertyDictionaryModel";
+import useCamundaPropertiesOverlayPreview from "../features/process/camunda/useCamundaPropertiesOverlayPreview";
+import useNotesPanelController from "./notesPanel/useNotesPanelController.js";
 import SidebarShell from "./sidebar/SidebarShell";
 import ActorsSection from "./sidebar/ActorsSection";
 import TemplatesAndTldrSection from "./sidebar/TemplatesAndTldrSection";
-import SidebarPrimaryActions from "./sidebar/SidebarPrimaryActions";
 import SelectedElementCard from "./sidebar/SelectedElementCard";
 import SidebarAccordion from "./sidebar/SidebarAccordion";
 import PathsSection from "./sidebar/PathsSection";
 import TimeSection from "./sidebar/TimeSection";
 import RobotMetaSection from "./sidebar/RobotMetaSection";
+import CamundaPropertiesSection from "./sidebar/CamundaPropertiesSection";
 import AiSection from "./sidebar/AiSection";
 import NotesSection from "./sidebar/NotesSection";
 import { buildNodePathUpdatesFromFlowMeta } from "./sidebar/nodePathImport";
+import {
+  buildNodePathComparableSnapshot as buildComparableNodePathSnapshot,
+  deriveNodePathSyncState,
+  hasNodePathLocalChanges,
+} from "./sidebar/nodePathSyncState";
 import { useTldr } from "../features/tldr/hooks/useTldr";
+import {
+  getNodePathJazzPeer,
+  getNodePathLocalFirstAdapterMode,
+  isNodePathLocalFirstPilotEnabled,
+} from "../features/process/nodepath/nodePathLocalFirstPilot";
+import { createNodePathModuleAdapter } from "../features/process/nodepath/nodePathModuleAdapter";
+import { useNodePathModuleController } from "../features/process/nodepath/nodePathModuleController";
+import { createNodePathJazzSpikeAdapter } from "../features/process/nodepath/nodePathJazzSpikeAdapter";
+import { normalizeDrawioMeta } from "../features/process/drawio/drawioMeta";
+import {
+  applyDrawioAnchorValidation,
+  buildBpmnNodeOverlayCompanionSummary,
+  readDrawioAnchorValidationState,
+} from "../features/process/drawio/drawioAnchors";
+import { buildExecutionBridgeProjectionV1 } from "../features/execution/executionBridgeV1";
+import ExecutionBridgeSection from "./sidebar/ExecutionBridgeSection";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -104,6 +137,8 @@ function normalizeNodePathMetaMap(rawMap) {
   return out;
 }
 
+const DEFAULT_ROBOT_META_CANONICAL = canonicalRobotMetaString(createDefaultRobotMetaV1());
+
 function parseStepTimeMinutes(raw) {
   if (raw === null || raw === undefined) return null;
   if (typeof raw === "string" && !raw.trim()) return null;
@@ -122,6 +157,14 @@ function parseStepTimeSeconds(raw) {
 
 function normalizeStepTimeUnit(raw) {
   return String(raw || "").trim().toLowerCase() === "sec" ? "sec" : "min";
+}
+
+function normalizeStepTimeDraftValue(raw) {
+  const text = String(raw ?? "").trim();
+  if (!text) return "";
+  const num = Number(text);
+  if (!Number.isFinite(num) || num < 0 || !Number.isInteger(num)) return text;
+  return String(Math.round(num));
 }
 
 function readNodeStepTimeMinutes(nodeRaw) {
@@ -364,6 +407,205 @@ function parseNodePathGraphContext(xmlText) {
   }
 }
 
+function parseSelectedBpmnPropertyContext(xmlText, elementIdRaw) {
+  const elementId = str(elementIdRaw);
+  const xml = str(xmlText);
+  const empty = {
+    type: "",
+    general: [],
+    routing: [],
+    messaging: [],
+    execution: [],
+    vendor: [],
+    inspectOnly: [],
+  };
+  if (!elementId || !xml || typeof DOMParser === "undefined") return empty;
+  try {
+    const doc = new DOMParser().parseFromString(xml, "application/xml");
+    if (!doc || doc.getElementsByTagName("parsererror").length > 0) return empty;
+    const all = Array.from(doc.getElementsByTagName("*"));
+    const target = all.find((el) => str(el.getAttribute("id")) === elementId);
+    if (!target) return empty;
+    const local = str(target.localName).toLowerCase();
+    const general = [];
+    const routing = [];
+    const messaging = [];
+    const execution = [];
+    const vendor = [];
+    const inspectOnly = [];
+
+    const name = str(target.getAttribute("name"));
+    if (name) general.push({ key: "name", label: "Name", value: name, editable: false });
+    const processRef = str(target.getAttribute("processRef"));
+    if (processRef) general.push({ key: "processRef", label: "Process Ref", value: processRef, editable: false });
+    const sourceRef = str(target.getAttribute("sourceRef"));
+    const targetRef = str(target.getAttribute("targetRef"));
+    if (sourceRef) general.push({ key: "sourceRef", label: "Source Ref", value: sourceRef, editable: false });
+    if (targetRef) general.push({ key: "targetRef", label: "Target Ref", value: targetRef, editable: false });
+
+    const defaultFlow = str(target.getAttribute("default"));
+    if (defaultFlow) routing.push({ key: "default", label: "Default flow", value: defaultFlow, editable: false });
+    const conditionNode = Array.from(target.childNodes || []).find((child) => child?.nodeType === 1 && str(child.localName).toLowerCase() === "conditionexpression");
+    if (conditionNode) {
+      routing.push({
+        key: "conditionExpression",
+        label: "Condition expression",
+        value: str(conditionNode.textContent),
+        editable: false,
+      });
+      inspectOnly.push("conditionExpression");
+    }
+
+    const eventDefs = Array.from(target.childNodes || []).filter((child) => {
+      const childLocal = str(child?.localName).toLowerCase();
+      return child?.nodeType === 1 && (
+        childLocal === "messageeventdefinition"
+        || childLocal === "signaleventdefinition"
+      );
+    });
+    eventDefs.forEach((defNode) => {
+      const defLocal = str(defNode.localName).toLowerCase();
+      if (defLocal === "messageeventdefinition") {
+        messaging.push({
+          key: "messageRef",
+          label: "Message ref",
+          value: str(defNode.getAttribute("messageRef")),
+          editable: false,
+        });
+        inspectOnly.push("messageRef");
+      }
+      if (defLocal === "signaleventdefinition") {
+        messaging.push({
+          key: "signalRef",
+          label: "Signal ref",
+          value: str(defNode.getAttribute("signalRef")),
+          editable: false,
+        });
+        inspectOnly.push("signalRef");
+      }
+    });
+
+    const allAttrs = Array.from(target.attributes || []);
+    allAttrs.forEach((attr) => {
+      const attrName = str(attr.name);
+      const attrValue = str(attr.value);
+      if (!attrName || !attrValue) return;
+      if (attrName.startsWith("camunda:") || attrName.startsWith("activiti:")) {
+        execution.push({ key: attrName, label: attrName, value: attrValue, editable: false });
+        vendor.push({ key: attrName, label: attrName, value: attrValue, editable: false });
+        inspectOnly.push(attrName);
+      }
+    });
+
+    const extensionElements = Array.from(target.childNodes || []).find((child) => child?.nodeType === 1 && str(child.localName).toLowerCase() === "extensionelements");
+    if (extensionElements) {
+      const extensionKinds = Array.from(extensionElements.childNodes || [])
+        .filter((child) => child?.nodeType === 1)
+        .map((child) => `${str(child.prefix)}:${str(child.localName)}`.replace(/^:/, ""))
+        .filter(Boolean);
+      if (extensionKinds.length) {
+        vendor.push({
+          key: "extensionElements",
+          label: "Extension elements",
+          value: extensionKinds.join(", "),
+          editable: false,
+        });
+        inspectOnly.push("extensionElements");
+      }
+    }
+
+    if (local === "messageflow") {
+      messaging.push({
+        key: "messageFlow",
+        label: "Message handoff",
+        value: `${sourceRef || "?"} -> ${targetRef || "?"}`,
+        editable: false,
+      });
+    }
+    if (local === "participant") {
+      messaging.push({
+        key: "participant",
+        label: "Participant binding",
+        value: processRef || "No processRef",
+        editable: false,
+      });
+    }
+
+    return {
+      type: local,
+      general,
+      routing,
+      messaging,
+      execution,
+      vendor,
+      inspectOnly: Array.from(new Set(inspectOnly)),
+    };
+  } catch {
+    return empty;
+  }
+}
+
+function parseSelectedBpmnDocumentation(xmlText, elementIdRaw) {
+  const elementId = str(elementIdRaw);
+  const xml = str(xmlText);
+  if (!elementId || !xml || typeof DOMParser === "undefined") return [];
+  try {
+    const doc = new DOMParser().parseFromString(xml, "application/xml");
+    if (!doc || doc.getElementsByTagName("parsererror").length > 0) return [];
+    const all = Array.from(doc.getElementsByTagName("*"));
+    const target = all.find((el) => str(el.getAttribute("id")) === elementId);
+    if (!target) return [];
+    return Array.from(target.childNodes || [])
+      .filter((child) => child?.nodeType === 1 && str(child?.localName).toLowerCase() === "documentation")
+      .map((child, index) => {
+        const text = String(child?.textContent ?? "").replace(/\r\n/g, "\n");
+        const textFormat = str(child?.getAttribute?.("textFormat") || child?.getAttribute?.("textformat"));
+        if (!text.length && !textFormat) return null;
+        return {
+          id: `${elementId}_documentation_${index + 1}`,
+          text,
+          textFormat,
+        };
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function normalizeDocumentationText(value) {
+  return String(value ?? "").replace(/\r\n/g, "\n");
+}
+
+function normalizeDocumentationRows(rowsRaw, options = {}) {
+  const keepEmpty = options && typeof options === "object" && options.keepEmpty === true;
+  return asArray(rowsRaw)
+    .map((entryRaw, index) => {
+      const entry = entryRaw && typeof entryRaw === "object"
+        ? entryRaw
+        : { text: entryRaw };
+      const text = normalizeDocumentationText(
+        Object.prototype.hasOwnProperty.call(entry, "text")
+          ? entry.text
+          : (Object.prototype.hasOwnProperty.call(entry, "value") ? entry.value : entryRaw),
+      );
+      const textFormat = str(entry?.textFormat || entry?.textformat);
+      if (!keepEmpty && !text.length && !textFormat) return null;
+      return {
+        id: str(entry?.id || `documentation_${index + 1}`) || `documentation_${index + 1}`,
+        text,
+        textFormat,
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildDocumentationSignature(rowsRaw) {
+  return normalizeDocumentationRows(rowsRaw)
+    .map((row) => `${row.text}\u241f${row.textFormat}`)
+    .join("\u241e");
+}
+
 function normalizeGlobalNoteItem(raw, fallbackIndex = 0) {
   const obj = raw && typeof raw === "object" ? raw : {};
   const text = str(obj.text || obj.note || obj.notes || obj.message || raw);
@@ -570,12 +812,14 @@ const NOTES_BATCH_RESULT_PREFIX = "fpc:batch_ops_result:";
 const NOTES_COVERAGE_OPEN_EVENT = "fpc:coverage_open";
 const SIDEBAR_SECTIONS_STATE_KEY = "fpc_left_sidebar_sections";
 const SIDEBAR_LAST_OPEN_KEY = "ui.sidebar.last_open.v2";
-const SIDEBAR_ACCORDION_KEYS = ["paths", "time", "robotmeta", "ai", "notes", "advanced"];
+const SIDEBAR_ACCORDION_KEYS = ["paths", "time", "robotmeta", "execution", "properties", "ai", "notes", "advanced"];
 
 const DEFAULT_SECTIONS_STATE = {
   paths: false,
   time: false,
   robotmeta: false,
+  execution: false,
+  properties: false,
   ai: false,
   notes: false,
   advanced: false,
@@ -719,6 +963,26 @@ export default function NotesPanel({
   onSetFlowHappyPath,
   onSetNodePathAssignments,
   onSetElementRobotMeta,
+  onSetElementCamundaExtensions,
+  activeOrgId = "",
+  reviewStatus = "draft",
+  reviewComments = [],
+  reviewOpenCommentsCount = 0,
+  onChangeSessionReviewStatus,
+  onAddReviewComment,
+  onSetReviewCommentStatus,
+  onFocusReviewAnchor,
+  currentUserId = "",
+  currentUserLabel = "",
+  onOpenOrgSettings,
+  orgPropertyDictionaryRevision = 0,
+  onOrgPropertyDictionaryChanged,
+  onPropertiesOverlayPreviewChange,
+  onPropertiesOverlayAlwaysPreviewChange,
+  showPropertiesOverlayAlways = false,
+  onShowPropertiesOverlayAlwaysChange,
+  showPropertiesOverlayOnSelect = false,
+  onShowPropertiesOverlayOnSelectChange,
   onGoToDiagram,
   onProjectBreadcrumbClick,
   onSessionBreadcrumbClick,
@@ -736,34 +1000,69 @@ export default function NotesPanel({
   onDeleteProject,
   onRenameSession,
   onDeleteSession,
+  onFocusDrawioCompanion,
   disabled,
 }) {
+  const [localShowPropertiesOverlayOnSelect, setLocalShowPropertiesOverlayOnSelect] = useState(showPropertiesOverlayOnSelect);
+  const resolvedShowPropertiesOverlayOnSelect = onShowPropertiesOverlayOnSelectChange
+    ? showPropertiesOverlayOnSelect
+    : localShowPropertiesOverlayOnSelect;
+  const resolvedOnShowPropertiesOverlayOnSelectChange = onShowPropertiesOverlayOnSelectChange
+    ?? setLocalShowPropertiesOverlayOnSelect;
+
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [elementText, setElementText] = useState("");
   const [elementBusy, setElementBusy] = useState(false);
+  const [elementSaveFailed, setElementSaveFailed] = useState(false);
   const [elementErr, setElementErr] = useState("");
+  const [reviewCommentText, setReviewCommentText] = useState("");
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewErr, setReviewErr] = useState("");
+  const [reviewStatusBusy, setReviewStatusBusy] = useState(false);
+  const [reviewActionBusyId, setReviewActionBusyId] = useState("");
   const [stepTimeInput, setStepTimeInput] = useState("");
   const [stepTimeBusy, setStepTimeBusy] = useState(false);
+  const [stepTimeSaveFailed, setStepTimeSaveFailed] = useState(false);
   const [stepTimeErr, setStepTimeErr] = useState("");
   const [flowHappyBusy, setFlowHappyBusy] = useState(false);
   const [flowHappyErr, setFlowHappyErr] = useState("");
   const [flowHappyInfo, setFlowHappyInfo] = useState("");
   const [nodePathBusy, setNodePathBusy] = useState(false);
+  const [nodePathApplyInFlight, setNodePathApplyInFlight] = useState(false);
+  const [nodePathApplyFailed, setNodePathApplyFailed] = useState(false);
+  const [nodePathNeedsAttention, setNodePathNeedsAttention] = useState(false);
+  const [nodePathOffline, setNodePathOffline] = useState(() => (
+    typeof navigator !== "undefined" ? navigator.onLine === false : false
+  ));
   const [nodePathErr, setNodePathErr] = useState("");
   const [nodePathInfo, setNodePathInfo] = useState("");
   const [nodePathDraftPaths, setNodePathDraftPaths] = useState([]);
   const [nodePathDraftSequence, setNodePathDraftSequence] = useState("");
   const [robotMetaDraft, setRobotMetaDraft] = useState(() => createDefaultRobotMetaV1());
   const [robotMetaBusy, setRobotMetaBusy] = useState(false);
+  const [robotMetaSaveFailed, setRobotMetaSaveFailed] = useState(false);
   const [robotMetaErr, setRobotMetaErr] = useState("");
   const [robotMetaInfo, setRobotMetaInfo] = useState("");
+  const [camundaPropertiesDraft, setCamundaPropertiesDraft] = useState(() => createEmptyCamundaExtensionState());
+  const [camundaPropertiesBusy, setCamundaPropertiesBusy] = useState(false);
+  const [camundaExtensionSaveFailed, setCamundaExtensionSaveFailed] = useState(false);
+  const [camundaExtensionLastAction, setCamundaExtensionLastAction] = useState("save");
+  const [camundaPropertiesErr, setCamundaPropertiesErr] = useState("");
+  const [camundaPropertiesInfo, setCamundaPropertiesInfo] = useState("");
+  const [bpmnDocumentationDraftRows, setBpmnDocumentationDraftRows] = useState([]);
+  const [bpmnDocumentationBusy, setBpmnDocumentationBusy] = useState(false);
+  const [bpmnDocumentationSaveFailed, setBpmnDocumentationSaveFailed] = useState(false);
+  const [bpmnDocumentationErr, setBpmnDocumentationErr] = useState("");
+  const [bpmnDocumentationInfo, setBpmnDocumentationInfo] = useState("");
+  const [bpmnDocumentationSavedSignature, setBpmnDocumentationSavedSignature] = useState("");
   const [bulkNodeIds, setBulkNodeIds] = useState([]);
   const [aiErr, setAiErr] = useState("");
   const [aiBusyQid, setAiBusyQid] = useState("");
   const [aiSavedQid, setAiSavedQid] = useState("");
   const [aiCommentDraft, setAiCommentDraft] = useState({});
+  const [aiRowErrByQid, setAiRowErrByQid] = useState({});
   const [batchMode, setBatchMode] = useState(() => readBatchMode());
   const [batchText, setBatchText] = useState("");
   const [batchBusy, setBatchBusy] = useState(false);
@@ -775,16 +1074,22 @@ export default function NotesPanel({
   const [startRoleErr, setStartRoleErr] = useState("");
   const [laneElementCounts, setLaneElementCounts] = useState(() => ({ byKey: {}, byLaneId: {}, byName: {} }));
   const [sectionsOpen, setSectionsOpen] = useState(() => readSectionsState());
-  const [selectedCardOpen, setSelectedCardOpen] = useState(true);
   const elementNotesSectionRef = useRef(null);
   const pathsSectionRef = useRef(null);
   const timeSectionRef = useRef(null);
   const robotMetaSectionRef = useRef(null);
+  const executionSectionRef = useRef(null);
+  const camundaPropertiesSectionRef = useRef(null);
   const aiSectionRef = useRef(null);
   const notesSectionRef = useRef(null);
   const advancedSectionRef = useRef(null);
   const sidebarHiddenRef = useRef(Boolean(sidebarHidden));
   const nodeEditorRef = useRef(null);
+  const nodePathDirtyBaselineRef = useRef({ nodeId: "", snapshot: null });
+  const propertiesOverlayPreviewDispatchRef = useRef({
+    draftSignature: "__init__",
+    alwaysSignature: "__init__",
+  });
 
   const derivedActors = useMemo(() => normalizeDerivedActors(draft?.actors_derived), [draft]);
   const legacyRoles = useMemo(() => normalizeRoles(draft?.roles), [draft]);
@@ -816,6 +1121,7 @@ export default function NotesPanel({
     [draft?.notes_by_element, draft?.notesByElementId],
   );
   const selectedElementId = str(selectedElement?.id);
+  const sid = str(draft?.session_id || draft?.id);
   const selectedElementName = str(selectedElement?.name || selectedElementId);
   const selectedElementType = str(selectedElement?.type);
   const selectedElementLaneName = str(selectedElement?.laneName || selectedElement?.lane || selectedElement?.actorRole);
@@ -832,10 +1138,32 @@ export default function NotesPanel({
     () => readNodeStepTimeSeconds(selectedElementNode),
     [selectedElementNode],
   );
+  const stepTimeBaselineInput = useMemo(() => {
+    if (normalizedStepTimeUnit === "sec") {
+      return selectedElementStepTimeSec === null ? "" : String(selectedElementStepTimeSec);
+    }
+    return selectedElementStepTime === null ? "" : String(selectedElementStepTime);
+  }, [normalizedStepTimeUnit, selectedElementStepTime, selectedElementStepTimeSec]);
+  const stepTimeHasLocalChanges = normalizeStepTimeDraftValue(stepTimeInput) !== normalizeStepTimeDraftValue(stepTimeBaselineInput);
+  const stepTimeSyncState = stepTimeBusy
+    ? "syncing"
+    : (stepTimeSaveFailed ? "error" : (stepTimeHasLocalChanges ? "local" : "saved"));
   const selectedElementNotes = useMemo(
     () => elementNotesForId(notesByElement, selectedElementId),
     [notesByElement, selectedElementId],
   );
+  const reviewList = useMemo(
+    () => asArray(reviewComments).filter((item) => item && typeof item === "object"),
+    [reviewComments],
+  );
+  const selectedAnchorReviewComments = useMemo(
+    () => reviewList.filter((item) => str(item?.anchor_id || item?.anchorId) === selectedElementId),
+    [reviewList, selectedElementId],
+  );
+  const elementHasLocalChanges = str(elementText).length > 0;
+  const elementSyncState = elementBusy
+    ? "syncing"
+    : (elementSaveFailed ? "error" : (elementHasLocalChanges ? "local" : "saved"));
   const sessionTldr = useTldr(draft);
   const aiQuestionsByElement = useMemo(
     () => normalizeAiQuestionsByElementMap(draft?.interview?.ai_questions_by_element || draft?.interview?.aiQuestionsByElementId),
@@ -859,6 +1187,48 @@ export default function NotesPanel({
     const rawMeta = draft?.bpmn_meta && typeof draft.bpmn_meta === "object" ? draft.bpmn_meta : {};
     return normalizeRobotMetaMap(rawMeta.robot_meta_by_element_id);
   }, [draft?.bpmn_meta]);
+  const bpmnCamundaExtensionsByElementId = useMemo(() => {
+    const rawMeta = draft?.bpmn_meta && typeof draft.bpmn_meta === "object" ? draft.bpmn_meta : {};
+    return normalizeCamundaExtensionsMap(rawMeta.camunda_extensions_by_element_id);
+  }, [draft?.bpmn_meta]);
+  // Stabilise bpmn_meta reference: only recompute execution bridge when the
+  // meta content actually changes (shallow-new objects produced by parent
+  // renders should not trigger a full BPMN graph traversal).
+  const bpmnMetaStableRef = useRef(null);
+  const bpmnMetaSignatureRef = useRef("");
+  const rawBpmnMeta = draft?.bpmn_meta && typeof draft.bpmn_meta === "object" ? draft.bpmn_meta : {};
+  const bpmnMetaSignature = useMemo(() => {
+    try { return JSON.stringify(rawBpmnMeta); } catch { return ""; }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawBpmnMeta]);
+  if (bpmnMetaSignature !== bpmnMetaSignatureRef.current) {
+    bpmnMetaSignatureRef.current = bpmnMetaSignature;
+    bpmnMetaStableRef.current = rawBpmnMeta;
+  }
+  const stableBpmnMeta = bpmnMetaStableRef.current ?? rawBpmnMeta;
+
+  const executionBridgeProjection = useMemo(
+    () => buildExecutionBridgeProjectionV1({
+      sessionId: sid,
+      projectId,
+      bpmnXml: str(draft?.bpmn_xml),
+      bpmnMeta: stableBpmnMeta,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sid, projectId, draft?.bpmn_xml, bpmnMetaSignature],
+  );
+  const executionBridgeSummary = useMemo(
+    () => (executionBridgeProjection && typeof executionBridgeProjection.summary === "object"
+      ? executionBridgeProjection.summary
+      : {}),
+    [executionBridgeProjection],
+  );
+  const selectedExecutionBridgeNode = useMemo(
+    () => (selectedElementId
+      ? executionBridgeProjection?.nodes_by_id?.[selectedElementId] || null
+      : null),
+    [executionBridgeProjection, selectedElementId],
+  );
   const hasExplicitNodePathMeta = useMemo(
     () => Object.keys(bpmnNodePathMetaById).length > 0,
     [bpmnNodePathMetaById],
@@ -885,18 +1255,133 @@ export default function NotesPanel({
     () => str(nodePathGraphContext?.nodeKindById?.[selectedElementId]).toLowerCase(),
     [nodePathGraphContext, selectedElementId],
   );
+  const selectedBpmnPropertyContext = useMemo(
+    () => parseSelectedBpmnPropertyContext(draft?.bpmn_xml, selectedElementId),
+    [draft?.bpmn_xml, selectedElementId],
+  );
+  const selectedBpmnDocumentation = useMemo(
+    () => parseSelectedBpmnDocumentation(draft?.bpmn_xml, selectedElementId),
+    [draft?.bpmn_xml, selectedElementId],
+  );
+  const selectedBpmnDocumentationRows = useMemo(
+    () => normalizeDocumentationRows(selectedBpmnDocumentation),
+    [selectedBpmnDocumentation],
+  );
+  const selectedBpmnDocumentationSignature = useMemo(
+    () => buildDocumentationSignature(selectedBpmnDocumentationRows),
+    [selectedBpmnDocumentationRows],
+  );
+  const bpmnDocumentationDraftSignature = useMemo(
+    () => buildDocumentationSignature(bpmnDocumentationDraftRows),
+    [bpmnDocumentationDraftRows],
+  );
+  const bpmnDocumentationHasLocalChanges = bpmnDocumentationDraftSignature !== bpmnDocumentationSavedSignature;
+  const bpmnDocumentationSyncState = bpmnDocumentationBusy
+    ? "syncing"
+    : (bpmnDocumentationSaveFailed ? "error" : (bpmnDocumentationHasLocalChanges ? "local" : "saved"));
+  const knownAnchorIds = useMemo(() => {
+    const out = new Set();
+    const nodeKindById = nodePathGraphContext?.nodeKindById && typeof nodePathGraphContext.nodeKindById === "object"
+      ? nodePathGraphContext.nodeKindById
+      : {};
+    Object.keys(nodeKindById).forEach((id) => {
+      const key = str(id);
+      if (key) out.add(key);
+    });
+    const flowSourceById = flowGatewayContext?.flowSourceById && typeof flowGatewayContext.flowSourceById === "object"
+      ? flowGatewayContext.flowSourceById
+      : {};
+    Object.keys(flowSourceById).forEach((id) => {
+      const key = str(id);
+      if (key) out.add(key);
+    });
+    return out;
+  }, [flowGatewayContext, nodePathGraphContext]);
+  const drawioAnchorValidationState = useMemo(
+    () => readDrawioAnchorValidationState(draft),
+    [draft],
+  );
+  const drawioCompanionMeta = useMemo(
+    () => applyDrawioAnchorValidation(
+      normalizeDrawioMeta(draft?.bpmn_meta?.drawio),
+      drawioAnchorValidationState.ids,
+      drawioAnchorValidationState.ready,
+    ),
+    [draft?.bpmn_meta?.drawio, drawioAnchorValidationState],
+  );
+  const selectedBpmnOverlayCompanionSummary = useMemo(
+    () => buildBpmnNodeOverlayCompanionSummary({
+      selectedBpmnNodeId: selectedElementId,
+      drawioMeta: drawioCompanionMeta,
+      bpmnNodeIds: drawioAnchorValidationState.ids,
+      validationReady: drawioAnchorValidationState.ready,
+    }),
+    [selectedElementId, drawioCompanionMeta, drawioAnchorValidationState],
+  );
   const isSelectedPathNode = !!selectedElementId
     && !isSelectedSequenceFlow
     && !!selectedElementNodeKind;
+  const selectedRobotMetaEditable = !!selectedElementId && !isSelectedSequenceFlow && !!selectedElementNodeKind;
   const selectedNodePathEntry = useMemo(
     () => normalizeNodePathEntry(bpmnNodePathMetaById[selectedElementId]) || { paths: [], source: "manual" },
     [bpmnNodePathMetaById, selectedElementId],
   );
+  const selectedNodePathSavedSnapshot = useMemo(
+    () => buildComparableNodePathSnapshot(selectedNodePathEntry),
+    [selectedNodePathEntry],
+  );
+  const selectedNodePathDraftSnapshot = useMemo(
+    () => buildComparableNodePathSnapshot({
+      paths: nodePathDraftPaths,
+      sequence_key: nodePathDraftSequence,
+    }),
+    [nodePathDraftPaths, nodePathDraftSequence],
+  );
+  const nodePathHasLocalChanges = useMemo(() => {
+    if (!isSelectedPathNode) return false;
+    return hasNodePathLocalChanges({
+      draft: selectedNodePathDraftSnapshot,
+      saved: selectedNodePathSavedSnapshot,
+    });
+  }, [isSelectedPathNode, selectedNodePathDraftSnapshot, selectedNodePathSavedSnapshot]);
+  const nodePathSyncState = deriveNodePathSyncState({
+    isSyncing: nodePathApplyInFlight,
+    hasError: nodePathApplyFailed,
+    needsAttention: nodePathNeedsAttention,
+    isOffline: nodePathOffline,
+    hasLocalChanges: nodePathHasLocalChanges,
+  });
   const selectedRobotMetaEntry = useMemo(
     () => normalizeRobotMetaV1(bpmnRobotMetaByElementId[selectedElementId] || createDefaultRobotMetaV1()),
     [bpmnRobotMetaByElementId, selectedElementId],
   );
-  const selectedRobotMetaEditable = !!selectedElementId && !isSelectedSequenceFlow && !!selectedElementNodeKind;
+  const selectedCamundaExtensionEntry = useMemo(
+    () => normalizeCamundaExtensionState(bpmnCamundaExtensionsByElementId[selectedElementId] || createEmptyCamundaExtensionState()),
+    [bpmnCamundaExtensionsByElementId, selectedElementId],
+  );
+  const selectedOperationKey = useMemo(
+    () => getOperationKeyFromRobotMeta(
+      selectedRobotMetaEditable ? robotMetaDraft : selectedRobotMetaEntry,
+      selectedCamundaExtensionEntry,
+    ),
+    [selectedRobotMetaEditable, robotMetaDraft, selectedRobotMetaEntry, selectedCamundaExtensionEntry],
+  );
+  const selectedCamundaPropertiesEditable = !!selectedElementId;
+  const {
+    orgPropertyDictionaryOperations,
+    orgPropertyDictionaryOperationsLoading,
+    orgPropertyDictionaryBundle,
+    orgPropertyDictionaryLoading,
+    orgPropertyDictionaryErr,
+    orgPropertyDictionaryAddBusyKey,
+    addDictionaryValueForSelectedElement: addDictionaryValueForSelectedElementApi,
+  } = useNotesPanelController({
+    activeOrgId,
+    selectedCamundaPropertiesEditable,
+    selectedOperationKey,
+    orgPropertyDictionaryRevision,
+    onOrgPropertyDictionaryChanged,
+  });
   const selectedRobotMetaStatus = useMemo(
     () => (selectedRobotMetaEditable ? getRobotMetaStatus(selectedRobotMetaEntry) : "none"),
     [selectedRobotMetaEditable, selectedRobotMetaEntry],
@@ -905,6 +1390,33 @@ export default function NotesPanel({
     () => (selectedRobotMetaEditable ? robotMetaMissingFields(selectedRobotMetaEntry) : []),
     [selectedRobotMetaEditable, selectedRobotMetaEntry],
   );
+  const robotMetaHasLocalChanges = useMemo(() => {
+    if (!selectedRobotMetaEditable) return false;
+    return canonicalRobotMetaString(normalizeRobotMetaV1(robotMetaDraft)) !== canonicalRobotMetaString(selectedRobotMetaEntry);
+  }, [selectedRobotMetaEditable, robotMetaDraft, selectedRobotMetaEntry]);
+  const robotMetaSyncState = robotMetaBusy
+    ? "syncing"
+    : (robotMetaSaveFailed ? "error" : (robotMetaHasLocalChanges ? "local" : "saved"));
+  const {
+    finalizedCamundaPropertiesDraft,
+    selectedCamundaExtensionCanonical,
+    finalizedCamundaPropertiesDraftCanonical,
+  } = useCamundaPropertiesOverlayPreview({
+    selectedElementId,
+    selectedCamundaPropertiesEditable,
+    camundaPropertiesDraft,
+    selectedCamundaExtensionEntry,
+    orgPropertyDictionaryBundle,
+    resolvedShowPropertiesOverlayOnSelect,
+    propertiesOverlayPreviewDispatchRef,
+    onPropertiesOverlayPreviewChange,
+    onPropertiesOverlayAlwaysPreviewChange,
+  });
+  const camundaExtensionHasLocalChanges = selectedCamundaPropertiesEditable
+    && finalizedCamundaPropertiesDraftCanonical !== selectedCamundaExtensionCanonical;
+  const camundaExtensionSyncState = camundaPropertiesBusy
+    ? "syncing"
+    : (camundaExtensionSaveFailed ? "error" : (camundaExtensionHasLocalChanges ? "local" : "saved"));
   const selectedElementTierLabel = useMemo(() => {
     const tags = asArray(selectedNodePathEntry?.paths).map((item) => normalizeNodePathTag(item)).filter(Boolean);
     if (!tags.length) return "";
@@ -953,13 +1465,104 @@ export default function NotesPanel({
     () => asArray(coverage?.rows).filter((item) => Number(item?.score || 0) > 0),
     [coverage],
   );
-  const sid = str(draft?.session_id || draft?.id);
   const setFlowTierHandler = typeof onSetFlowPathTier === "function"
     ? onSetFlowPathTier
     : onSetFlowHappyPath;
   const setNodePathHandler = typeof onSetNodePathAssignments === "function"
     ? onSetNodePathAssignments
     : null;
+  const nodePathLocalFirstPilotEnabled = isNodePathLocalFirstPilotEnabled();
+  const nodePathLocalFirstAdapterMode = getNodePathLocalFirstAdapterMode();
+  const nodePathJazzPeer = getNodePathJazzPeer();
+  const nodePathInternalAdapter = useMemo(() => createNodePathModuleAdapter({
+    getSnapshot: (nodeId) => (nodeId && nodeId === selectedElementId ? selectedNodePathEntry : null),
+    applyNodePathAssignments: setNodePathHandler,
+  }), [selectedElementId, selectedNodePathEntry, setNodePathHandler]);
+  const nodePathJazzAdapter = useMemo(() => createNodePathJazzSpikeAdapter({
+    peer: nodePathJazzPeer,
+    scopeId: sid,
+  }), [nodePathJazzPeer, sid]);
+  const nodePathModuleAdapter = nodePathLocalFirstAdapterMode === "jazz"
+    ? nodePathJazzAdapter
+    : nodePathInternalAdapter;
+  const nodePathModuleSnapshotVersion = useMemo(
+    () => JSON.stringify(selectedNodePathSavedSnapshot),
+    [selectedNodePathSavedSnapshot],
+  );
+  const nodePathModuleController = useNodePathModuleController({
+    enabled: nodePathLocalFirstPilotEnabled,
+    nodeId: selectedElementId,
+    editable: isSelectedPathNode,
+    disabled: !!disabled,
+    adapter: nodePathModuleAdapter,
+    snapshotVersion: nodePathModuleSnapshotVersion,
+  });
+  const resolvedNodePathController = nodePathLocalFirstPilotEnabled ? nodePathModuleController : {
+    paths: nodePathDraftPaths,
+    sequenceKey: nodePathDraftSequence,
+    syncState: nodePathSyncState,
+    busy: nodePathBusy,
+    err: nodePathErr,
+    info: nodePathInfo,
+    toggleTag: toggleNodePathTag,
+    updateSequenceKey: (value) => {
+      setNodePathApplyFailed(false);
+      setNodePathNeedsAttention(false);
+      setNodePathDraftSequence(value);
+    },
+    apply: applySelectedNodePath,
+    reset: resetSelectedNodePath,
+    acceptShared: () => {
+      setNodePathApplyFailed(false);
+      setNodePathNeedsAttention(false);
+      setNodePathErr("");
+      setNodePathInfo("Используется сохранённая версия.");
+      setNodePathDraftPaths(asArray(selectedNodePathSavedSnapshot?.paths));
+      setNodePathDraftSequence(str(selectedNodePathSavedSnapshot?.sequence_key));
+    },
+  };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!window.__FPC_E2E__) return;
+    window.__FPC_E2E_NODEPATH_CONTROLLER__ = {
+      mode: nodePathLocalFirstPilotEnabled ? nodePathLocalFirstAdapterMode : "legacy",
+      nodeId: selectedElementId,
+      editable: isSelectedPathNode,
+      paths: asArray(resolvedNodePathController.paths),
+      sequenceKey: str(resolvedNodePathController.sequenceKey),
+      syncState: str(resolvedNodePathController.syncState || "saved"),
+      busy: !!resolvedNodePathController.busy,
+      err: str(resolvedNodePathController.err),
+      info: str(resolvedNodePathController.info),
+      hasLocalChanges: !!resolvedNodePathController.hasLocalChanges,
+      needsAttention: !!resolvedNodePathController.needsAttention,
+      isOffline: !!resolvedNodePathController.isOffline,
+      sharedSnapshot: resolvedNodePathController.sharedSnapshot && typeof resolvedNodePathController.sharedSnapshot === "object"
+        ? {
+            paths: asArray(resolvedNodePathController.sharedSnapshot.paths),
+            sequence_key: str(resolvedNodePathController.sharedSnapshot.sequence_key),
+          }
+        : null,
+    };
+    window.__FPC_E2E_EXECUTION_BRIDGE__ = executionBridgeProjection;
+  }, [
+    nodePathLocalFirstPilotEnabled,
+    nodePathLocalFirstAdapterMode,
+    selectedElementId,
+    isSelectedPathNode,
+    resolvedNodePathController.paths,
+    resolvedNodePathController.sequenceKey,
+    resolvedNodePathController.syncState,
+    resolvedNodePathController.busy,
+    resolvedNodePathController.err,
+    resolvedNodePathController.info,
+    resolvedNodePathController.hasLocalChanges,
+    resolvedNodePathController.needsAttention,
+    resolvedNodePathController.isOffline,
+    resolvedNodePathController.sharedSnapshot,
+    executionBridgeProjection,
+  ]);
   const aiGenerateUi = useMemo(
     () => resolveAiGenerateUiState({
       sid,
@@ -989,6 +1592,22 @@ export default function NotesPanel({
   }, [batchText, draft?.bpmn_xml]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    function handleOnline() {
+      setNodePathOffline(false);
+    }
+    function handleOffline() {
+      setNodePathOffline(true);
+    }
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!shouldLogActorsTrace()) return;
     // eslint-disable-next-line no-console
     console.debug(
@@ -1005,13 +1624,6 @@ export default function NotesPanel({
   }, [draft?.bpmn_xml]);
 
   useEffect(() => {
-    if (!selectedElementId) return;
-    const node = elementNotesSectionRef.current;
-    if (!node) return;
-    node.scrollIntoView({ block: "start", behavior: "smooth" });
-  }, [selectedElementId, elementNotesFocusKey]);
-
-  useEffect(() => {
     setFlowHappyInfo("");
     setFlowHappyErr("");
   }, [selectedElementId]);
@@ -1020,8 +1632,44 @@ export default function NotesPanel({
     setNodePathErr("");
     setNodePathInfo("");
     setNodePathBusy(false);
+    setNodePathApplyInFlight(false);
+    setNodePathApplyFailed(false);
+    setNodePathNeedsAttention(false);
+    nodePathDirtyBaselineRef.current = { nodeId: "", snapshot: null };
     setBulkNodeIds([]);
   }, [selectedElementId]);
+
+  useEffect(() => {
+    setReviewCommentText("");
+    setReviewErr("");
+    setReviewActionBusyId("");
+  }, [selectedElementId]);
+
+  useEffect(() => {
+    const dirtyRef = nodePathDirtyBaselineRef.current || { nodeId: "", snapshot: null };
+    if (!isSelectedPathNode || !selectedElementId || !nodePathHasLocalChanges) {
+      if (dirtyRef.snapshot) {
+        nodePathDirtyBaselineRef.current = { nodeId: "", snapshot: null };
+      }
+      setNodePathNeedsAttention(false);
+      return;
+    }
+
+    if (!dirtyRef.snapshot || dirtyRef.nodeId !== selectedElementId) {
+      nodePathDirtyBaselineRef.current = {
+        nodeId: selectedElementId,
+        snapshot: selectedNodePathSavedSnapshot,
+      };
+      setNodePathNeedsAttention(false);
+      return;
+    }
+
+    const baselineDrifted = hasNodePathLocalChanges({
+      draft: selectedNodePathSavedSnapshot,
+      saved: dirtyRef.snapshot,
+    });
+    setNodePathNeedsAttention((prev) => (baselineDrifted ? true : (prev && nodePathHasLocalChanges)));
+  }, [isSelectedPathNode, selectedElementId, nodePathHasLocalChanges, selectedNodePathSavedSnapshot]);
 
   useEffect(() => {
     if (!isSelectedPathNode) {
@@ -1036,14 +1684,43 @@ export default function NotesPanel({
   useEffect(() => {
     if (!selectedRobotMetaEditable) {
       setRobotMetaDraft(createDefaultRobotMetaV1());
+      setRobotMetaSaveFailed(false);
       setRobotMetaErr("");
       setRobotMetaInfo("");
       return;
     }
     setRobotMetaDraft(selectedRobotMetaEntry);
+    setRobotMetaSaveFailed(false);
     setRobotMetaErr("");
     setRobotMetaInfo("");
   }, [selectedRobotMetaEditable, selectedRobotMetaEntry]);
+
+  useEffect(() => {
+    if (!selectedCamundaPropertiesEditable) {
+      setCamundaPropertiesDraft(createEmptyCamundaExtensionState());
+      setCamundaExtensionSaveFailed(false);
+      setCamundaExtensionLastAction("save");
+      setCamundaPropertiesErr("");
+      setCamundaPropertiesInfo("");
+      return;
+    }
+    setCamundaPropertiesDraft(selectedCamundaExtensionEntry);
+    setCamundaExtensionSaveFailed(false);
+    setCamundaExtensionLastAction("save");
+    setCamundaPropertiesErr("");
+    setCamundaPropertiesInfo("");
+  }, [selectedCamundaPropertiesEditable, selectedCamundaExtensionEntry]);
+
+  useEffect(() => {
+    const nextRows = normalizeDocumentationRows(selectedBpmnDocumentationRows);
+    const nextSignature = buildDocumentationSignature(nextRows);
+    setBpmnDocumentationDraftRows(nextRows);
+    setBpmnDocumentationSavedSignature(nextSignature);
+    setBpmnDocumentationBusy(false);
+    setBpmnDocumentationSaveFailed(false);
+    setBpmnDocumentationErr("");
+    setBpmnDocumentationInfo("");
+  }, [selectedElementId, selectedBpmnDocumentationSignature]);
 
   useEffect(() => {
     const next = {};
@@ -1051,6 +1728,7 @@ export default function NotesPanel({
       next[q.qid] = str(q.comment);
     });
     setAiCommentDraft(next);
+    setAiRowErrByQid({});
     setAiErr("");
     setAiSavedQid("");
   }, [selectedElementId, selectedElementAiQuestions]);
@@ -1066,14 +1744,10 @@ export default function NotesPanel({
 
   useEffect(() => {
     setStepTimeErr("");
-    let nextInput = "";
-    if (normalizedStepTimeUnit === "sec") {
-      nextInput = selectedElementStepTimeSec === null ? "" : String(selectedElementStepTimeSec);
-    } else {
-      nextInput = selectedElementStepTime === null ? "" : String(selectedElementStepTime);
-    }
+    setStepTimeSaveFailed(false);
+    const nextInput = stepTimeBaselineInput;
     setStepTimeInput((prev) => (prev === nextInput ? prev : nextInput));
-  }, [selectedElementId, selectedElementStepTime, selectedElementStepTimeSec, normalizedStepTimeUnit]);
+  }, [selectedElementId, stepTimeBaselineInput]);
 
   useEffect(() => {
     writeBatchMode(batchMode);
@@ -1090,33 +1764,22 @@ export default function NotesPanel({
 
   useEffect(() => {
     const savedKey = readLastOpenAccordionKey();
-    const nextKey = savedKey || "paths";
     setSectionsOpen(
       SIDEBAR_ACCORDION_KEYS.reduce((acc, key) => {
-        acc[key] = key === nextKey;
+        acc[key] = !!savedKey && key === savedKey;
         return acc;
       }, {}),
     );
-    setSelectedCardOpen(true);
   }, [sid]);
-
-  useEffect(() => {
-    if (!isElementMode) return;
-    setSectionsOpen((prev) => {
-      if (Object.values(prev).some(Boolean)) return prev;
-      return { ...DEFAULT_SECTIONS_STATE, paths: true };
-    });
-  }, [isElementMode, selectedElementId]);
 
   useEffect(() => {
     const wasHidden = sidebarHiddenRef.current;
     const isHidden = Boolean(sidebarHidden);
     if (wasHidden && !isHidden) {
       const savedKey = readLastOpenAccordionKey();
-      const nextKey = savedKey || "paths";
       setSectionsOpen(
         SIDEBAR_ACCORDION_KEYS.reduce((acc, key) => {
-          acc[key] = key === nextKey;
+          acc[key] = !!savedKey && key === savedKey;
           return acc;
         }, {}),
       );
@@ -1124,7 +1787,7 @@ export default function NotesPanel({
     sidebarHiddenRef.current = isHidden;
   }, [sidebarHidden]);
 
-  function toggleSection(sectionId) {
+  const toggleSection = useCallback((sectionId) => {
     const key = str(sectionId);
     if (!key || !SIDEBAR_ACCORDION_KEYS.includes(key)) return;
     setSectionsOpen((prev) => {
@@ -1137,9 +1800,9 @@ export default function NotesPanel({
       return next;
     });
     onActiveSectionChange?.(key);
-  }
+  }, [onActiveSectionChange]);
 
-  function openSectionShortcut(sectionId) {
+  const openSectionShortcut = useCallback((sectionId) => {
     const key = str(sectionId);
     if (!key || !SIDEBAR_ACCORDION_KEYS.includes(key)) return;
     onToggleSidebarCompact?.(false, "shortcut");
@@ -1155,31 +1818,19 @@ export default function NotesPanel({
     if (node && typeof node.scrollIntoView === "function") {
       node.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }
+  }, [onActiveSectionChange, onToggleSidebarCompact]);
 
   function sectionRefById(sectionId) {
     const key = str(sectionId);
     if (key === "paths") return pathsSectionRef;
     if (key === "time") return timeSectionRef;
     if (key === "robotmeta") return robotMetaSectionRef;
+    if (key === "execution") return executionSectionRef;
+    if (key === "properties") return camundaPropertiesSectionRef;
     if (key === "ai") return aiSectionRef;
     if (key === "notes") return notesSectionRef;
     if (key === "advanced") return advancedSectionRef;
     return { current: null };
-  }
-
-  function openAiFromCard() {
-    openSectionShortcut("ai");
-  }
-
-  function focusNodeNotesFromCard() {
-    openSectionShortcut("notes");
-    window.setTimeout(() => {
-      try {
-        nodeEditorRef.current?.focus?.();
-      } catch {
-      }
-    }, 0);
   }
 
   useEffect(() => {
@@ -1191,6 +1842,8 @@ export default function NotesPanel({
       actors: "advanced",
       templates: "advanced",
       robotmeta: "robotmeta",
+      execution: "execution",
+      properties: "properties",
       time: "time",
       paths: "paths",
       advanced: "advanced",
@@ -1248,20 +1901,97 @@ export default function NotesPanel({
     if (!selectedElementId || !t) return;
     if (disabled || elementBusy) return;
     setElementBusy(true);
+    setElementSaveFailed(false);
     setElementErr("");
     try {
       const r = onAddElementNote?.(selectedElementId, t);
       const rr = r && typeof r.then === "function" ? await r : r;
       if (rr && rr.ok === false) {
+        setElementSaveFailed(true);
         setElementErr(String(rr.error || "API error"));
         return;
       }
+      setElementSaveFailed(false);
       setElementText("");
     } catch (e) {
+      setElementSaveFailed(true);
       setElementErr(String(e?.message || e));
     } finally {
       setElementBusy(false);
     }
+  }
+
+  async function sendReviewComment() {
+    const body = str(reviewCommentText);
+    if (!selectedElementId || !body) return;
+    if (disabled || reviewBusy) return;
+    if (typeof onAddReviewComment !== "function") return;
+    setReviewBusy(true);
+    setReviewErr("");
+    try {
+      const anchorType = /(^|:)sequenceflow$/i.test(selectedElementType) ? "sequence_flow" : "node";
+      const result = await Promise.resolve(onAddReviewComment({
+        anchor_id: selectedElementId,
+        anchor_type: anchorType,
+        anchor_label: selectedElementName || selectedElementId,
+        elementType: selectedElementType,
+      }, body));
+      if (result && result.ok === false) {
+        setReviewErr(str(result.error || "Не удалось сохранить комментарий."));
+        return;
+      }
+      setReviewCommentText("");
+    } catch (error) {
+      setReviewErr(str(error?.message || error || "Не удалось сохранить комментарий."));
+    } finally {
+      setReviewBusy(false);
+    }
+  }
+
+  async function setReviewCommentLifecycle(commentId, nextStatus) {
+    const id = str(commentId);
+    if (!id) return;
+    if (disabled || reviewActionBusyId) return;
+    if (typeof onSetReviewCommentStatus !== "function") return;
+    setReviewActionBusyId(id);
+    setReviewErr("");
+    try {
+      const result = await Promise.resolve(onSetReviewCommentStatus(id, nextStatus));
+      if (result && result.ok === false) {
+        setReviewErr(str(result.error || "Не удалось обновить статус комментария."));
+      }
+    } catch (error) {
+      setReviewErr(str(error?.message || error || "Не удалось обновить статус комментария."));
+    } finally {
+      setReviewActionBusyId("");
+    }
+  }
+
+  async function setSessionReviewStatus(nextStatus) {
+    if (disabled || reviewStatusBusy) return;
+    if (typeof onChangeSessionReviewStatus !== "function") return;
+    setReviewStatusBusy(true);
+    setReviewErr("");
+    try {
+      const result = await Promise.resolve(onChangeSessionReviewStatus(nextStatus));
+      if (result && result.ok === false) {
+        setReviewErr(str(result.error || "Не удалось обновить review статус."));
+      }
+    } catch (error) {
+      setReviewErr(str(error?.message || error || "Не удалось обновить review статус."));
+    } finally {
+      setReviewStatusBusy(false);
+    }
+  }
+
+  function openReviewAnchor(commentRaw) {
+    const comment = commentRaw && typeof commentRaw === "object" ? commentRaw : {};
+    onFocusReviewAnchor?.({
+      anchor_id: str(comment?.anchor_id || comment?.anchorId),
+      anchor_type: str(comment?.anchor_type || comment?.anchorType),
+      anchor_label: str(comment?.anchor_label || comment?.anchorLabel || comment?.anchor_id || comment?.anchorId),
+      type: str(comment?.anchor_type || comment?.anchorType) === "sequence_flow" ? "bpmn:SequenceFlow" : "bpmn:Task",
+    });
   }
 
   function openCoveragePanel(payload = {}) {
@@ -1296,6 +2026,7 @@ export default function NotesPanel({
     if (raw) {
       const num = Number(raw);
       if (!Number.isFinite(num) || num < 0 || !Number.isInteger(num)) {
+        setStepTimeSaveFailed(false);
         setStepTimeErr(
           `Введите целое число ${normalizedStepTimeUnit === "sec" ? "секунд" : "минут"} (0 или больше).`,
         );
@@ -1312,11 +2043,13 @@ export default function NotesPanel({
     const prevMinutes = selectedElementStepTime;
     const prevSeconds = selectedElementStepTimeSec;
     if (nextMinutes === prevMinutes && nextSeconds === prevSeconds) {
+      setStepTimeSaveFailed(false);
       setStepTimeErr("");
       return;
     }
 
     setStepTimeBusy(true);
+    setStepTimeSaveFailed(false);
     setStepTimeErr("");
     try {
       const result = await Promise.resolve(
@@ -1326,9 +2059,13 @@ export default function NotesPanel({
         }),
       );
       if (result && result.ok === false) {
+        setStepTimeSaveFailed(true);
         setStepTimeErr(str(result.error || "Не удалось сохранить время шага."));
+        return;
       }
+      setStepTimeSaveFailed(false);
     } catch (error) {
+      setStepTimeSaveFailed(true);
       setStepTimeErr(str(error?.message || error || "Не удалось сохранить время шага."));
     } finally {
       setStepTimeBusy(false);
@@ -1395,6 +2132,8 @@ export default function NotesPanel({
   function toggleNodePathTag(tagRaw) {
     const tag = normalizeNodePathTag(tagRaw);
     if (!tag) return;
+    setNodePathApplyFailed(false);
+    setNodePathNeedsAttention(false);
     setNodePathDraftPaths((prev) => {
       const list = asArray(prev).map((item) => normalizeNodePathTag(item)).filter(Boolean);
       const has = list.includes(tag);
@@ -1408,11 +2147,15 @@ export default function NotesPanel({
     if (!setNodePathHandler || disabled || nodePathBusy) return;
     const normalizedPaths = asArray(nodePathDraftPaths).map((item) => normalizeNodePathTag(item)).filter(Boolean);
     if (!normalizedPaths.length) {
+      setNodePathApplyFailed(false);
       setNodePathErr("Выберите хотя бы один path-tag (P0/P1/P2).");
       return;
     }
     const sequenceKey = normalizeSequenceKey(nodePathDraftSequence);
     setNodePathBusy(true);
+    setNodePathApplyInFlight(true);
+    setNodePathApplyFailed(false);
+    setNodePathNeedsAttention(false);
     setNodePathErr("");
     setNodePathInfo("");
     try {
@@ -1425,13 +2168,18 @@ export default function NotesPanel({
         }], { source: "manual", from: "selected_node_paths_apply" }),
       );
       if (result && result.ok === false) {
+        setNodePathApplyFailed(true);
         setNodePathErr(str(result.error || "Не удалось сохранить разметку узла."));
         return;
       }
+      setNodePathApplyFailed(false);
+      setNodePathNeedsAttention(false);
       setNodePathInfo("Разметка узла сохранена.");
     } catch (error) {
+      setNodePathApplyFailed(true);
       setNodePathErr(str(error?.message || error || "Не удалось сохранить разметку узла."));
     } finally {
+      setNodePathApplyInFlight(false);
       setNodePathBusy(false);
     }
   }
@@ -1500,10 +2248,11 @@ export default function NotesPanel({
     }
   }
 
-  function updateRobotMetaDraft(nextRaw) {
+  const updateRobotMetaDraft = useCallback((nextRaw) => {
     setRobotMetaDraft(normalizeRobotMetaV1(nextRaw));
+    setRobotMetaSaveFailed(false);
     setRobotMetaErr("");
-  }
+  }, []);
 
   async function saveSelectedRobotMeta() {
     if (!selectedRobotMetaEditable || !selectedElementId) return;
@@ -1512,21 +2261,26 @@ export default function NotesPanel({
     const prevCanonical = canonicalRobotMetaString(selectedRobotMetaEntry);
     const nextCanonical = canonicalRobotMetaString(normalized);
     if (prevCanonical === nextCanonical) {
+      setRobotMetaSaveFailed(false);
       setRobotMetaErr("");
       setRobotMetaInfo("Без изменений.");
       return;
     }
     setRobotMetaBusy(true);
+    setRobotMetaSaveFailed(false);
     setRobotMetaErr("");
     setRobotMetaInfo("");
     try {
       const result = await Promise.resolve(onSetElementRobotMeta(selectedElementId, normalized));
       if (result && result.ok === false) {
+        setRobotMetaSaveFailed(true);
         setRobotMetaErr(str(result.error || "Не удалось сохранить Robot Meta."));
         return;
       }
+      setRobotMetaSaveFailed(false);
       setRobotMetaInfo("Robot Meta сохранена.");
     } catch (error) {
+      setRobotMetaSaveFailed(true);
       setRobotMetaErr(str(error?.message || error || "Не удалось сохранить Robot Meta."));
     } finally {
       setRobotMetaBusy(false);
@@ -1537,22 +2291,277 @@ export default function NotesPanel({
     if (!selectedRobotMetaEditable || !selectedElementId) return;
     if (typeof onSetElementRobotMeta !== "function" || disabled || robotMetaBusy) return;
     setRobotMetaBusy(true);
+    setRobotMetaSaveFailed(false);
     setRobotMetaErr("");
     setRobotMetaInfo("");
     try {
       const result = await Promise.resolve(onSetElementRobotMeta(selectedElementId, null, { remove: true }));
       if (result && result.ok === false) {
+        setRobotMetaSaveFailed(true);
         setRobotMetaErr(str(result.error || "Не удалось удалить Robot Meta."));
         return;
       }
       setRobotMetaDraft(createDefaultRobotMetaV1());
+      setRobotMetaSaveFailed(false);
       setRobotMetaInfo("Robot Meta удалена.");
     } catch (error) {
+      setRobotMetaSaveFailed(true);
       setRobotMetaErr(str(error?.message || error || "Не удалось удалить Robot Meta."));
     } finally {
       setRobotMetaBusy(false);
     }
   }
+
+  const onStepTimeInputChangeCallback = useCallback((value) => {
+    setStepTimeSaveFailed(false);
+    setStepTimeInput(value);
+  }, []);
+
+  const onElementTextChangeCallback = useCallback((value) => {
+    setElementSaveFailed(false);
+    setElementText(value);
+  }, []);
+
+  const onReviewCommentTextChangeCallback = useCallback((value) => {
+    setReviewErr("");
+    setReviewCommentText(value);
+  }, []);
+
+  const onNodeEditorRefCallback = useCallback((node) => {
+    nodeEditorRef.current = node;
+  }, []);
+
+  const onToggleCollapseCallback = useCallback(() => {
+    onToggleSidebarCompact?.(!sidebarCompact, "sidebar_header");
+  }, [onToggleSidebarCompact, sidebarCompact]);
+
+  const onCloseSidebarCallback = useCallback(() => {
+    onToggleSidebarHidden?.();
+  }, [onToggleSidebarHidden]);
+
+  const onOpenDictionaryManagerCallback = useCallback(() => {
+    onOpenOrgSettings?.({
+      tab: "dictionary",
+      operationKey: selectedOperationKey,
+      dictionaryOnly: true,
+    });
+  }, [onOpenOrgSettings, selectedOperationKey]);
+
+  const updateCamundaPropertiesDraft = useCallback((nextRaw) => {
+    setCamundaPropertiesDraft(nextRaw && typeof nextRaw === "object" ? nextRaw : createEmptyCamundaExtensionState());
+    setCamundaExtensionSaveFailed(false);
+    setCamundaPropertiesErr("");
+  }, []);
+
+  const updateBpmnDocumentationDraft = useCallback((nextRowsRaw) => {
+    setBpmnDocumentationDraftRows(normalizeDocumentationRows(nextRowsRaw, { keepEmpty: true }));
+    setBpmnDocumentationSaveFailed(false);
+    setBpmnDocumentationErr("");
+    setBpmnDocumentationInfo("");
+  }, []);
+
+  async function updateSelectedOperationKey(nextOperationKeyRaw) {
+    if (!selectedCamundaPropertiesEditable || !selectedElementId) return;
+    if (typeof onSetElementRobotMeta !== "function" || disabled || robotMetaBusy) return;
+    const nextOperationKey = str(nextOperationKeyRaw);
+    const currentRobotMeta = normalizeRobotMetaV1(selectedRobotMetaEntry || createDefaultRobotMetaV1());
+    const nextRobotMeta = normalizeRobotMetaV1({
+      ...currentRobotMeta,
+      exec: {
+        ...(currentRobotMeta.exec || {}),
+        action_key: nextOperationKey || null,
+      },
+    });
+    const prevCanonical = canonicalRobotMetaString(currentRobotMeta);
+    const nextCanonical = canonicalRobotMetaString(nextRobotMeta);
+    if (prevCanonical === nextCanonical) return;
+    const shouldRemove = nextCanonical === DEFAULT_ROBOT_META_CANONICAL;
+    const previousDraft = robotMetaDraft;
+    setRobotMetaBusy(true);
+    setRobotMetaErr("");
+    setCamundaPropertiesErr("");
+    setCamundaPropertiesInfo("");
+    setRobotMetaDraft(shouldRemove ? createDefaultRobotMetaV1() : nextRobotMeta);
+    try {
+      const result = await Promise.resolve(
+        shouldRemove
+          ? onSetElementRobotMeta(selectedElementId, null, { remove: true })
+          : onSetElementRobotMeta(selectedElementId, nextRobotMeta),
+      );
+      if (result && result.ok === false) {
+        setRobotMetaDraft(previousDraft);
+        setCamundaPropertiesErr(str(result.error || "Не удалось сохранить операцию узла."));
+        return;
+      }
+      setCamundaPropertiesInfo(nextOperationKey
+        ? `Операция узла: ${nextOperationKey}.`
+        : "Операция узла очищена.");
+    } catch (error) {
+      setRobotMetaDraft(previousDraft);
+      setCamundaPropertiesErr(str(error?.message || error || "Не удалось сохранить операцию узла."));
+    } finally {
+      setRobotMetaBusy(false);
+    }
+  }
+
+  async function addDictionaryValueForSelectedElement(propertyKey, optionValue) {
+    const oid = str(activeOrgId);
+    const operationKey = str(selectedOperationKey);
+    const normalizedPropertyKey = str(propertyKey);
+    const normalizedValue = str(optionValue);
+    if (!oid || !operationKey || !normalizedPropertyKey || !normalizedValue) return { ok: false, error: "missing_dictionary_context" };
+    setCamundaPropertiesErr("");
+    const result = await addDictionaryValueForSelectedElementApi(normalizedPropertyKey, normalizedValue);
+    if (!result.ok) {
+      const errorText = str(result.error || "Не удалось добавить значение в словарь организации.");
+      setCamundaPropertiesErr(errorText);
+      return { ok: false, error: errorText };
+    }
+    try {
+      setCamundaPropertiesInfo(`Значение «${normalizedValue}» добавлено в словарь организации.`);
+      return { ok: true };
+    } catch (error) {
+      const errorText = str(error?.message || error || "Не удалось добавить значение в словарь организации.");
+      setCamundaPropertiesErr(errorText);
+      return { ok: false, error: errorText };
+    }
+  }
+
+  async function saveSelectedCamundaProperties() {
+    if (!selectedCamundaPropertiesEditable || !selectedElementId) return;
+    if (typeof onSetElementCamundaExtensions !== "function" || disabled || camundaPropertiesBusy) return;
+    const finalizedDraft = finalizeExtensionStateWithDictionary({
+      extensionStateRaw: camundaPropertiesDraft,
+      dictionaryBundleRaw: orgPropertyDictionaryBundle,
+    });
+    const normalized = normalizeCamundaExtensionState(finalizedDraft);
+    const prevCanonical = JSON.stringify(normalizeCamundaExtensionState(selectedCamundaExtensionEntry));
+    const nextCanonical = JSON.stringify(normalizeCamundaExtensionState(normalized));
+    if (prevCanonical === nextCanonical) {
+      setCamundaExtensionSaveFailed(false);
+      setCamundaPropertiesErr("");
+      setCamundaPropertiesInfo("Без изменений.");
+      return;
+    }
+    setCamundaExtensionLastAction("save");
+    setCamundaPropertiesBusy(true);
+    setCamundaExtensionSaveFailed(false);
+    setCamundaPropertiesErr("");
+    setCamundaPropertiesInfo("");
+    try {
+      const result = await Promise.resolve(onSetElementCamundaExtensions(selectedElementId, normalized));
+      if (result && result.ok === false) {
+        setCamundaExtensionSaveFailed(true);
+        setCamundaPropertiesErr(str(result.error || "Не удалось сохранить Properties."));
+        return;
+      }
+      setCamundaExtensionSaveFailed(false);
+      setCamundaPropertiesInfo("Properties сохранены.");
+    } catch (error) {
+      setCamundaExtensionSaveFailed(true);
+      setCamundaPropertiesErr(str(error?.message || error || "Не удалось сохранить Properties."));
+    } finally {
+      setCamundaPropertiesBusy(false);
+    }
+  }
+
+  async function resetSelectedCamundaProperties() {
+    if (!selectedCamundaPropertiesEditable || !selectedElementId) return;
+    if (typeof onSetElementCamundaExtensions !== "function" || disabled || camundaPropertiesBusy) return;
+    const nextState = {
+      ...createEmptyCamundaExtensionState(),
+      preservedExtensionElements: Array.isArray(selectedCamundaExtensionEntry?.preservedExtensionElements)
+        ? selectedCamundaExtensionEntry.preservedExtensionElements.slice()
+        : [],
+    };
+    setCamundaExtensionLastAction("reset");
+    setCamundaPropertiesBusy(true);
+    setCamundaExtensionSaveFailed(false);
+    setCamundaPropertiesErr("");
+    setCamundaPropertiesInfo("");
+    try {
+      const result = await Promise.resolve(onSetElementCamundaExtensions(selectedElementId, nextState));
+      if (result && result.ok === false) {
+        setCamundaExtensionSaveFailed(true);
+        setCamundaPropertiesErr(str(result.error || "Не удалось очистить Properties."));
+        return;
+      }
+      setCamundaPropertiesDraft(nextState);
+      setCamundaExtensionSaveFailed(false);
+      setCamundaPropertiesInfo("Properties очищены.");
+    } catch (error) {
+      setCamundaExtensionSaveFailed(true);
+      setCamundaPropertiesErr(str(error?.message || error || "Не удалось очистить Properties."));
+    } finally {
+      setCamundaPropertiesBusy(false);
+    }
+  }
+
+  async function saveSelectedBpmnDocumentation() {
+    if (!selectedElementId) return;
+    if (disabled || bpmnDocumentationBusy) return;
+    if (!sid) {
+      setBpmnDocumentationSaveFailed(true);
+      setBpmnDocumentationErr("Сессия не выбрана.");
+      setBpmnDocumentationInfo("");
+      return;
+    }
+
+    const normalizedRows = normalizeDocumentationRows(bpmnDocumentationDraftRows);
+    const nextSignature = buildDocumentationSignature(normalizedRows);
+    if (nextSignature === bpmnDocumentationSavedSignature) {
+      setBpmnDocumentationSaveFailed(false);
+      setBpmnDocumentationErr("");
+      setBpmnDocumentationInfo("Без изменений.");
+      return;
+    }
+
+    setBpmnDocumentationBusy(true);
+    setBpmnDocumentationSaveFailed(false);
+    setBpmnDocumentationErr("");
+    setBpmnDocumentationInfo("");
+    try {
+      const result = await dispatchBatchApply({
+        sid,
+        source: "bpmn_documentation_sidebar",
+        commandText: `set_documentation ${selectedElementId}`,
+        ops: [{
+          type: "setDocumentation",
+          elementId: selectedElementId,
+          documentation: normalizedRows.map((row) => ({
+            text: normalizeDocumentationText(row?.text),
+            textFormat: str(row?.textFormat),
+          })),
+        }],
+      });
+      if (!result?.ok && Number(result?.applied || 0) <= 0) {
+        setBpmnDocumentationSaveFailed(true);
+        setBpmnDocumentationErr(str(result?.error || "Не удалось сохранить BPMN documentation."));
+        return;
+      }
+      setBpmnDocumentationDraftRows(normalizedRows);
+      setBpmnDocumentationSavedSignature(nextSignature);
+      setBpmnDocumentationSaveFailed(false);
+      setBpmnDocumentationInfo(normalizedRows.length
+        ? "BPMN documentation сохранена."
+        : "BPMN documentation очищена.");
+    } catch (error) {
+      setBpmnDocumentationSaveFailed(true);
+      setBpmnDocumentationErr(str(error?.message || error || "Не удалось сохранить BPMN documentation."));
+    } finally {
+      setBpmnDocumentationBusy(false);
+    }
+  }
+
+  const resetSelectedBpmnDocumentation = useCallback(() => {
+    const nextRows = normalizeDocumentationRows(selectedBpmnDocumentationRows);
+    const nextSignature = buildDocumentationSignature(nextRows);
+    setBpmnDocumentationDraftRows(nextRows);
+    setBpmnDocumentationSavedSignature(nextSignature);
+    setBpmnDocumentationSaveFailed(false);
+    setBpmnDocumentationErr("");
+    setBpmnDocumentationInfo("Локальные изменения сброшены.");
+  }, [selectedBpmnDocumentationRows]);
 
   function selectBranchUntilBoundary() {
     if (!isSelectedPathNode || !selectedElementId) return;
@@ -1677,20 +2686,35 @@ export default function NotesPanel({
       : str(aiCommentDraft[qid] ?? question?.comment);
 
     setAiBusyQid(qid);
-    setAiErr("");
+    setAiRowErrByQid((prev) => {
+      const next = { ...(prev || {}) };
+      delete next[qid];
+      return next;
+    });
     try {
       const r = onUpdateElementAiQuestion?.(selectedElementId, qid, { status, comment });
       const rr = r && typeof r.then === "function" ? await r : r;
       if (rr && rr.ok === false) {
-        setAiErr(String(rr.error || "Не удалось сохранить AI-комментарий."));
+        setAiRowErrByQid((prev) => ({
+          ...(prev || {}),
+          [qid]: String(rr.error || "Не удалось сохранить AI-комментарий."),
+        }));
         return;
       }
+      setAiRowErrByQid((prev) => {
+        const next = { ...(prev || {}) };
+        delete next[qid];
+        return next;
+      });
       setAiSavedQid(qid);
       setTimeout(() => {
         setAiSavedQid((prev) => (prev === qid ? "" : prev));
       }, 1200);
     } catch (e) {
-      setAiErr(String(e?.message || e));
+      setAiRowErrByQid((prev) => ({
+        ...(prev || {}),
+        [qid]: String(e?.message || e || "Не удалось сохранить AI-комментарий."),
+      }));
     } finally {
       setAiBusyQid("");
     }
@@ -1792,8 +2816,8 @@ export default function NotesPanel({
         onDeleteSession={onDeleteSession}
         tierLabel={selectedElementTierLabel}
         collapsed={!!sidebarCompact}
-        onToggleCollapse={() => onToggleSidebarCompact?.(!sidebarCompact, "sidebar_header")}
-        onCloseSidebar={() => onToggleSidebarHidden?.()}
+        onToggleCollapse={onToggleCollapseCallback}
+        onCloseSidebar={onCloseSidebarCallback}
         sections={sectionShortcuts}
         showQuickNav={false}
         onSectionShortcut={openSectionShortcut}
@@ -1801,30 +2825,11 @@ export default function NotesPanel({
         bottomBar={null}
       >
         <div id="element-notes-section" ref={elementNotesSectionRef} className="sidebarRedesignStack">
-          <SelectedElementCard
-            selectedElementId={isElementMode ? selectedElementId : ""}
-            selectedElementName={isElementMode ? selectedElementName : ""}
-            selectedElementType={isElementMode ? selectedElementType : ""}
-            selectedElementLaneName={isElementMode ? selectedElementLaneName : ""}
-            noteCount={isElementMode ? selectedElementNotes.length : 0}
-            aiCount={isElementMode ? selectedElementAiQuestions.length : 0}
-            incomingCount={isElementMode ? Number(selectedElementFlowCounts.incoming || 0) : 0}
-            outgoingCount={isElementMode ? Number(selectedElementFlowCounts.outgoing || 0) : 0}
-            robotMetaStatus={selectedRobotMetaStatus}
-            robotMetaMissing={selectedRobotMetaMissing}
-            open={selectedCardOpen}
-            onToggle={() => setSelectedCardOpen((prev) => !prev)}
-          />
-
-          <SidebarPrimaryActions
-            onOpenDiagram={onGoToDiagram}
-            onOpenAi={openAiFromCard}
-            onOpenNotes={focusNodeNotesFromCard}
-          />
-
-          <section className="sidebarCardSurface sidebarSettingsSurface">
-            <div className="sidebarSectionCaption">Настройки элемента</div>
-            <div className="sidebarAccordionStack mt-2">
+          <section className="sidebarSettingsSurface">
+            <div className="sidebarSettingsHeader">
+              <div className="sidebarSectionCaption">Настройки элемента</div>
+            </div>
+            <div className="sidebarAccordionStack">
               <div ref={pathsSectionRef}>
                 <SidebarAccordion
                 sectionKey="paths"
@@ -1836,17 +2841,22 @@ export default function NotesPanel({
                 <PathsSection
                   selectedElementId={isElementMode ? selectedElementId : ""}
                   nodePathEditable={isElementMode ? isSelectedPathNode : false}
-                  nodePathPaths={isElementMode ? nodePathDraftPaths : []}
-                  nodePathSequenceKey={isElementMode ? nodePathDraftSequence : ""}
-                  nodePathBusy={isElementMode ? nodePathBusy : false}
-                  nodePathErr={isElementMode ? nodePathErr : ""}
-                  nodePathInfo={isElementMode ? nodePathInfo : ""}
+                  nodePathPaths={isElementMode ? resolvedNodePathController.paths : []}
+                  nodePathSharedSnapshot={isElementMode ? resolvedNodePathController.sharedSnapshot : null}
+                  nodePathSequenceKey={isElementMode ? resolvedNodePathController.sequenceKey : ""}
+                  nodePathSyncState={isElementMode && isSelectedPathNode
+                    ? resolvedNodePathController.syncState
+                    : "saved"}
+                  nodePathBusy={isElementMode ? resolvedNodePathController.busy : false}
+                  nodePathErr={isElementMode ? resolvedNodePathController.err : ""}
+                  nodePathInfo={isElementMode ? resolvedNodePathController.info : ""}
                   selectedNodeCount={isElementMode ? selectedElementSelectionIds.length : 0}
                   bulkSelectionCount={isElementMode ? bulkNodeIds.length : 0}
-                  onToggleNodePathTag={toggleNodePathTag}
-                  onNodePathSequenceChange={setNodePathDraftSequence}
-                  onApplyNodePath={applySelectedNodePath}
-                  onResetNodePath={resetSelectedNodePath}
+                  onToggleNodePathTag={resolvedNodePathController.toggleTag}
+                  onNodePathSequenceChange={resolvedNodePathController.updateSequenceKey}
+                  onApplyNodePath={resolvedNodePathController.apply}
+                  onResetNodePath={resolvedNodePathController.reset}
+                  onAcceptSharedNodePath={resolvedNodePathController.acceptShared}
                   onAutoNodePathFromColors={autoNodePathFromColors}
                   onSelectBranchUntilBoundary={selectBranchUntilBoundary}
                   onApplyP1ToSelected={applyP1ForSelectedNodes}
@@ -1872,7 +2882,8 @@ export default function NotesPanel({
                 <TimeSection
                   selectedElementId={isElementMode ? selectedElementId : ""}
                   stepTimeInput={isElementMode ? stepTimeInput : ""}
-                  onStepTimeInputChange={setStepTimeInput}
+                  stepTimeSyncState={isElementMode ? stepTimeSyncState : "saved"}
+                  onStepTimeInputChange={onStepTimeInputChangeCallback}
                   onSaveStepTime={saveSelectedElementStepTime}
                   stepTimeBusy={isElementMode ? stepTimeBusy : false}
                   stepTimeErr={isElementMode ? stepTimeErr : ""}
@@ -1896,6 +2907,7 @@ export default function NotesPanel({
                   selectedElementId={isElementMode ? selectedElementId : ""}
                   robotMetaEditable={isElementMode ? selectedRobotMetaEditable : false}
                   robotMetaDraft={isElementMode ? robotMetaDraft : createDefaultRobotMetaV1()}
+                  robotMetaSyncState={isElementMode ? robotMetaSyncState : "saved"}
                   robotMetaBusy={isElementMode ? robotMetaBusy : false}
                   robotMetaErr={isElementMode ? robotMetaErr : ""}
                   robotMetaInfo={isElementMode ? robotMetaInfo : ""}
@@ -1907,27 +2919,115 @@ export default function NotesPanel({
               </SidebarAccordion>
               </div>
 
+              <div ref={executionSectionRef}>
+                <SidebarAccordion
+                  sectionKey="execution"
+                  title="Execution Bridge"
+                  subtitle={isElementMode ? selectedElementId : "Выберите узел"}
+                  badge={`${Number(executionBridgeSummary.robot_ready || 0)}/${Number(executionBridgeSummary.total_nodes || 0)}`}
+                  open={!!sectionsOpen.execution}
+                  onToggle={toggleSection}
+                >
+                  <ExecutionBridgeSection
+                    sessionId={sid}
+                    projection={executionBridgeProjection}
+                    selectedElementId={isElementMode ? selectedElementId : ""}
+                    disabled={disabled}
+                  />
+                  {isElementMode && selectedExecutionBridgeNode ? (
+                    <div className="mt-2 text-[11px] text-muted">
+                      selected: {str(selectedExecutionBridgeNode.execution_classification || "unknown")}
+                    </div>
+                  ) : null}
+                </SidebarAccordion>
+              </div>
+
+              <div ref={camundaPropertiesSectionRef}>
+                <SidebarAccordion
+                sectionKey="properties"
+                title="Свойства"
+                open={!!sectionsOpen.properties}
+                onToggle={toggleSection}
+              >
+                <div className="sidebarPropertiesDisplaySettings">
+                  <label className="sidebarPropertiesInlineToggle">
+                    <input
+                      type="checkbox"
+                      checked={!!resolvedShowPropertiesOverlayOnSelect}
+                      onChange={(event) => void resolvedOnShowPropertiesOverlayOnSelectChange(!!event.target.checked)}
+                      disabled={!!disabled}
+                    />
+                    <span>Показывать свойства над задачей при выделении</span>
+                  </label>
+                  <label className="sidebarPropertiesInlineToggle">
+                    <input
+                      type="checkbox"
+                      checked={!!showPropertiesOverlayAlways}
+                      onChange={(event) => void onShowPropertiesOverlayAlwaysChange?.(!!event.target.checked)}
+                      disabled={!!disabled}
+                    />
+                    <span>Всегда показывать свойства над задачей</span>
+                  </label>
+                </div>
+                <CamundaPropertiesSection
+                  selectedElementId={isElementMode ? selectedElementId : ""}
+                  selectedElementType={isElementMode ? selectedElementType : ""}
+                  selectedBpmnPropertyContext={isElementMode ? selectedBpmnPropertyContext : null}
+                  selectedBpmnDocumentation={isElementMode ? selectedBpmnDocumentation : []}
+                  bpmnDocumentationDraftRows={isElementMode ? bpmnDocumentationDraftRows : []}
+                  bpmnDocumentationSyncState={isElementMode ? bpmnDocumentationSyncState : "saved"}
+                  bpmnDocumentationBusy={isElementMode ? bpmnDocumentationBusy : false}
+                  bpmnDocumentationErr={isElementMode ? bpmnDocumentationErr : ""}
+                  bpmnDocumentationInfo={isElementMode ? bpmnDocumentationInfo : ""}
+                  selectedBpmnOverlayCompanionSummary={isElementMode ? selectedBpmnOverlayCompanionSummary : null}
+                  camundaPropertiesEditable={isElementMode ? selectedCamundaPropertiesEditable : false}
+                  extensionStateDraft={isElementMode ? camundaPropertiesDraft : createEmptyCamundaExtensionState()}
+                  extensionStateSyncState={isElementMode ? camundaExtensionSyncState : "saved"}
+                  extensionStateBusy={isElementMode ? camundaPropertiesBusy : false}
+                  extensionStateErr={isElementMode ? camundaPropertiesErr : ""}
+                  extensionStateInfo={isElementMode ? camundaPropertiesInfo : ""}
+                  dictionaryBundle={isElementMode ? orgPropertyDictionaryBundle : null}
+                  dictionaryLoading={isElementMode ? orgPropertyDictionaryLoading : false}
+                  dictionaryError={isElementMode ? orgPropertyDictionaryErr : ""}
+                  dictionaryAddBusyKey={isElementMode ? orgPropertyDictionaryAddBusyKey : ""}
+                  operationKey={isElementMode ? selectedOperationKey : ""}
+                  operationOptions={isElementMode ? orgPropertyDictionaryOperations : []}
+                  operationSelectionBusy={isElementMode ? (orgPropertyDictionaryOperationsLoading || robotMetaBusy) : false}
+                  onExtensionStateDraftChange={updateCamundaPropertiesDraft}
+                  onOperationKeyChange={updateSelectedOperationKey}
+                  onAddDictionaryValue={addDictionaryValueForSelectedElement}
+                  onOpenDictionaryManager={onOpenDictionaryManagerCallback}
+                  onSaveExtensionState={saveSelectedCamundaProperties}
+                  onResetExtensionState={resetSelectedCamundaProperties}
+                  onRetryExtensionState={camundaExtensionLastAction === "reset" ? resetSelectedCamundaProperties : saveSelectedCamundaProperties}
+                  onBpmnDocumentationDraftChange={updateBpmnDocumentationDraft}
+                  onSaveBpmnDocumentation={saveSelectedBpmnDocumentation}
+                  onResetBpmnDocumentation={resetSelectedBpmnDocumentation}
+                  onFocusDrawioCompanion={onFocusDrawioCompanion}
+                  disabled={disabled}
+                />
+              </SidebarAccordion>
+              </div>
+
               <div ref={notesSectionRef}>
                 <SidebarAccordion
                 sectionKey="notes"
-                title="Notes"
+                title="Заметки"
                 badge={isElementMode ? String(selectedElementNotes.length) : ""}
                 open={!!sectionsOpen.notes}
                 onToggle={toggleSection}
               >
                 <NotesSection
                   selectedElementId={isElementMode ? selectedElementId : ""}
-                  selectedElementName={isElementMode ? selectedElementName : ""}
                   selectedElementNotes={isElementMode ? selectedElementNotes : []}
                   noteCount={isElementMode ? selectedElementNotes.length : 0}
                   elementText={isElementMode ? elementText : ""}
-                  onElementTextChange={setElementText}
+                  elementSyncState={isElementMode ? elementSyncState : "saved"}
+                  onElementTextChange={onElementTextChangeCallback}
                   onSendElementNote={sendElementNote}
                   elementBusy={isElementMode ? elementBusy : false}
                   elementErr={isElementMode ? elementErr : ""}
-                  onNodeEditorRef={(node) => {
-                    nodeEditorRef.current = node;
-                  }}
+                  onNodeEditorRef={onNodeEditorRefCallback}
                   disabled={disabled}
                 />
               </SidebarAccordion>
@@ -1936,7 +3036,7 @@ export default function NotesPanel({
               <div ref={aiSectionRef}>
                 <SidebarAccordion
                 sectionKey="ai"
-                title="AI Questions"
+                title="AI-вопросы"
                 badge={isElementMode ? String(selectedElementAiQuestions.length) : ""}
                 open={!!sectionsOpen.ai}
                 onToggle={toggleSection}
@@ -1953,8 +3053,14 @@ export default function NotesPanel({
                   aiBusyQid={aiBusyQid}
                   aiSavedQid={aiSavedQid}
                   aiErr={aiErr}
+                  aiRowErrByQid={aiRowErrByQid}
                   aiCommentDraft={aiCommentDraft}
                   onAiCommentDraftChange={(qid, value) => {
+                    setAiRowErrByQid((prev) => {
+                      const next = { ...(prev || {}) };
+                      delete next[String(qid || "").trim()];
+                      return next;
+                    });
                     setAiCommentDraft((prev) => ({ ...prev, [qid]: String(value || "") }));
                   }}
                   onSaveElementAiQuestion={saveElementAiQuestion}
@@ -2008,6 +3114,53 @@ export default function NotesPanel({
                     </div>
                   </details>
                 </SidebarAccordion>
+              </div>
+            </div>
+          </section>
+
+          <SelectedElementCard
+            selectedElementId={isElementMode ? selectedElementId : ""}
+            selectedElementName={isElementMode ? selectedElementName : ""}
+            selectedElementType={isElementMode ? selectedElementType : ""}
+            selectedElementLaneName={isElementMode ? selectedElementLaneName : ""}
+            noteCount={isElementMode ? selectedElementNotes.length : 0}
+            aiCount={isElementMode ? selectedElementAiQuestions.length : 0}
+            incomingCount={isElementMode ? Number(selectedElementFlowCounts.incoming || 0) : 0}
+            outgoingCount={isElementMode ? Number(selectedElementFlowCounts.outgoing || 0) : 0}
+            robotMetaStatus={selectedRobotMetaStatus}
+            robotMetaMissing={selectedRobotMetaMissing}
+          />
+
+          <section className="sidebarSupplementaryInfo" aria-label="Дополнительная информация">
+            <div className="sidebarSectionCaption">Доп. информация</div>
+            <div className="sidebarInfoList">
+              <div className="sidebarInfoRow">
+                <span className="sidebarInfoLabel">Тип элемента</span>
+                <span className="sidebarInfoValue">{isElementMode ? (selectedElementType || "—") : "—"}</span>
+              </div>
+              <div className="sidebarInfoRow">
+                <span className="sidebarInfoLabel">Внутренний ID</span>
+                <span className="sidebarInfoValue">{isElementMode ? (selectedElementId || "—") : "—"}</span>
+              </div>
+              <div className="sidebarInfoRow">
+                <span className="sidebarInfoLabel">Роль / lane</span>
+                <span className="sidebarInfoValue">{isElementMode ? (selectedElementLaneName || "—") : "—"}</span>
+              </div>
+              <div className="sidebarInfoRow">
+                <span className="sidebarInfoLabel">Связи</span>
+                <span className="sidebarInfoValue">
+                  {isElementMode
+                    ? `in ${Number(selectedElementFlowCounts.incoming || 0)} / out ${Number(selectedElementFlowCounts.outgoing || 0)}`
+                    : "—"}
+                </span>
+              </div>
+              <div className="sidebarInfoRow">
+                <span className="sidebarInfoLabel">robot</span>
+                <span className="sidebarInfoValue">{isElementMode ? (selectedRobotMetaStatus || "none") : "—"}</span>
+              </div>
+              <div className="sidebarInfoRow">
+                <span className="sidebarInfoLabel">Операция</span>
+                <span className="sidebarInfoValue">{isElementMode ? (selectedOperationKey || "—") : "—"}</span>
               </div>
             </div>
           </section>

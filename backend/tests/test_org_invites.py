@@ -23,12 +23,14 @@ class OrgInvitesApiTest(unittest.TestCase):
         self.old_invite_email_enabled = os.environ.get("INVITE_EMAIL_ENABLED")
         self.old_rl_invites = os.environ.get("RL_INVITES_PER_MIN")
         self.old_rl_accept = os.environ.get("RL_ACCEPT_PER_MIN")
+        self.old_app_base_url = os.environ.get("APP_BASE_URL")
         os.environ["PROCESS_STORAGE_DIR"] = self.tmp_sessions.name
         os.environ["PROJECT_STORAGE_DIR"] = self.tmp_projects.name
         os.environ.pop("PROCESS_DB_PATH", None)
         os.environ["INVITE_EMAIL_ENABLED"] = "0"
         os.environ["RL_INVITES_PER_MIN"] = "50"
         os.environ["RL_ACCEPT_PER_MIN"] = "50"
+        os.environ["APP_BASE_URL"] = "https://pm.local"
 
         from app.auth import create_user
         from app._legacy_main import (
@@ -96,6 +98,10 @@ class OrgInvitesApiTest(unittest.TestCase):
             os.environ.pop("RL_ACCEPT_PER_MIN", None)
         else:
             os.environ["RL_ACCEPT_PER_MIN"] = self.old_rl_accept
+        if self.old_app_base_url is None:
+            os.environ.pop("APP_BASE_URL", None)
+        else:
+            os.environ["APP_BASE_URL"] = self.old_app_base_url
         self.tmp_sessions.cleanup()
         self.tmp_projects.cleanup()
 
@@ -141,6 +147,8 @@ class OrgInvitesApiTest(unittest.TestCase):
         listed = self.list_org_invites_endpoint(self.default_org_id, req_admin)
         self.assertEqual(int(listed.get("count") or 0), 1)
         self.assertEqual(str((listed.get("items") or [{}])[0].get("status") or ""), "pending")
+        self.assertEqual(str((listed.get("current_invite") or {}).get("id") or ""), str((created.get("invite") or {}).get("id") or ""))
+        self.assertTrue(str((listed.get("current_invite") or {}).get("invite_link") or "").startswith("https://pm.local/accept-invite?token="))
 
         req_target = self._mk_req(self.user_ok)
         accepted = self.accept_org_invite_endpoint(
@@ -263,6 +271,49 @@ class OrgInvitesApiTest(unittest.TestCase):
             req_target,
         )
         self.assertEqual(int(getattr(out, "status_code", 0) or 0), 410)
+
+    def test_create_duplicate_invite_without_regenerate_returns_422(self):
+        req_admin = self._mk_req(self.admin)
+        first = self.create_org_invite_endpoint(
+            self.default_org_id,
+            self.OrgInviteCreateIn(email="invite_target@local", role="Viewer", ttl_days=7),
+            req_admin,
+        )
+        self.assertTrue(isinstance(first, dict))
+        second = self.create_org_invite_endpoint(
+            self.default_org_id,
+            self.OrgInviteCreateIn(email="invite_target@local", role="Viewer", ttl_days=7, regenerate=False),
+            req_admin,
+        )
+        self.assertEqual(int(getattr(second, "status_code", 0) or 0), 422)
+
+    def test_regenerate_invite_reissues_and_updates_current_invite(self):
+        req_admin = self._mk_req(self.admin)
+        first = self.create_org_invite_endpoint(
+            self.default_org_id,
+            self.OrgInviteCreateIn(email="invite_target@local", full_name="Иван", job_title="Оператор", role="Editor", ttl_days=7),
+            req_admin,
+        )
+        first_id = str((first.get("invite") or {}).get("id") or "")
+        self.assertTrue(first_id)
+
+        second = self.create_org_invite_endpoint(
+            self.default_org_id,
+            self.OrgInviteCreateIn(email="invite_target@local", full_name="Иван", job_title="Оператор", role="Editor", ttl_days=7, regenerate=True),
+            req_admin,
+        )
+        second_id = str((second.get("invite") or {}).get("id") or "")
+        self.assertTrue(second_id)
+        self.assertNotEqual(first_id, second_id)
+
+        listed = self.list_org_invites_endpoint(self.default_org_id, req_admin)
+        items = listed.get("items") or []
+        by_id = {str(row.get("id") or ""): row for row in items if isinstance(row, dict)}
+        self.assertEqual(str((by_id.get(first_id) or {}).get("status") or ""), "revoked")
+        self.assertEqual(str((by_id.get(second_id) or {}).get("status") or ""), "pending")
+        current = listed.get("current_invite") or {}
+        self.assertEqual(str(current.get("id") or ""), second_id)
+        self.assertTrue(str(current.get("invite_link") or "").startswith("https://pm.local/accept-invite?token="))
 
 
 if __name__ == "__main__":

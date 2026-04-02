@@ -1,3 +1,9 @@
+import {
+  readTemplateNodeSemanticPayload,
+  rehydrateSupportedBusinessObjectPayload,
+  serializeSupportedBusinessObjectPayload,
+} from "./templateSemanticPayload.js";
+
 function asObject(x) {
   return x && typeof x === "object" && !Array.isArray(x) ? x : {};
 }
@@ -283,12 +289,13 @@ export function createTemplatePackAdapter(deps = {}) {
       .map((el) => {
         const type = String(el?.businessObject?.$type || el?.type || "bpmn:Task");
         const bounds = readShapeBounds(el) || { x: 0, y: 0, width: 140, height: 80 };
+        const bo = asObject(el?.businessObject);
         return {
           id: String(el?.id || ""),
           type,
-          name: String(el?.businessObject?.name || "").trim(),
+          name: String(bo?.name || "").trim(),
           laneHint: readLaneNameForElement(el),
-          propsMinimal: {},
+          semanticPayload: serializeSupportedBusinessObjectPayload(bo),
           di: {
             x: Number(bounds.x || 0),
             y: Number(bounds.y || 0),
@@ -386,6 +393,7 @@ export function createTemplatePackAdapter(deps = {}) {
 
     const modeling = inst.get("modeling");
     const elementFactory = inst.get("elementFactory");
+    const moddle = inst.get("moddle");
     const canvas = inst.get("canvas");
     const registry = inst.get("elementRegistry");
     const laneMap = readLaneMap(inst, { isShapeElement });
@@ -465,10 +473,15 @@ export function createTemplatePackAdapter(deps = {}) {
       const parent = laneHint && safeLaneParentByName.get(laneHint)
         ? safeLaneParentByName.get(laneHint)
         : safeAnchorParent;
+      const shapeAttrs = { type };
+      const width = Number(node?.di?.w);
+      const height = Number(node?.di?.h);
+      if (width > 0) shapeAttrs.width = width;
+      if (height > 0) shapeAttrs.height = height;
       const relX = Number(node?.di?.x || 0) - minX;
       const relY = Number(node?.di?.y || 0) - minY;
       const shape = modeling.createShape(
-        elementFactory.createShape({ type }),
+        elementFactory.createShape(shapeAttrs),
         {
           x: Math.round(offsetX + relX),
           y: Math.round(offsetY + relY),
@@ -477,6 +490,11 @@ export function createTemplatePackAdapter(deps = {}) {
       );
       const label = String(node?.name || "").trim();
       if (label) modeling.updateLabel(shape, label);
+      rehydrateSupportedBusinessObjectPayload(
+        shape?.businessObject,
+        readTemplateNodeSemanticPayload(node),
+        { moddle },
+      );
       const oldId = String(node?.id || "");
       createdNodeMap[oldId] = shape;
       remap[oldId] = String(shape?.id || "");
