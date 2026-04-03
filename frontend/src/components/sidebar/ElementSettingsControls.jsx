@@ -2006,7 +2006,7 @@ export function CamundaPropertiesSettings({
             hasDuplicateLogicalProperties ? (
               <>
                 <div className="sidebarFieldHint">
-                  Панель показывает сырой список `extensionProperties`, потому что найдены дублирующиеся ключи: {duplicateLogicalKeys.join(", ")}. Здесь каждая строка соответствует реально сохранённой записи и удаляется отдельно.
+                  Панель показывает сырой список `extensionProperties`, потому что найдены дублирующиеся ключи: {duplicateLogicalKeys.join(", ")}. Удаление строки с таким ключом очищает все записи этого ключа, чтобы после Save свойство не восстанавливалось логически.
                 </div>
                 <div className="sidebarPropertiesRows sidebarPropertiesRows--table">
                   <div className="sidebarPropertiesTableHead" role="presentation">
