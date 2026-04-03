@@ -11,6 +11,7 @@ import {
   removeZeebeTaskHeaderFromExtensionState,
 } from "../../features/process/camunda/camundaExtensions";
 import { setSchemaPropertyValueInExtensionState } from "../../features/process/camunda/propertyDictionaryModel";
+import { deleteExtensionPropertyRowsByDeleteAction } from "./propertyDeleteSemantics";
 
 export default function useElementSettingsController({
   selectedElementId,
@@ -148,7 +149,7 @@ export default function useElementSettingsController({
   }
 
   function deletePropertyRow(rowId) {
-    replaceExtensionProperties(properties.filter((row) => String(row?.id || "") !== String(rowId || "")));
+    replaceExtensionProperties(deleteExtensionPropertyRowsByDeleteAction(properties, rowId));
   }
 
   function updateCamundaIoParameter(rowRef, patch = {}) {
