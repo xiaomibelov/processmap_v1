@@ -320,6 +320,50 @@ test("hydrateCamundaExtensionsFromBpmn keeps session values and appends missing 
   );
 }));
 
+test("hydrateCamundaExtensionsFromBpmn keeps managed session deletions when allowSeedFromBpmn=false", () => withDom(() => {
+  const extracted = {
+    Task_1: {
+      properties: {
+        extensionProperties: [
+          { id: "prop_xml_1", name: "container", value: "Лоток 150x55" },
+        ],
+        extensionListeners: [
+          { id: "listener_xml_1", event: "start", type: "expression", value: "${onStart}" },
+        ],
+      },
+      preservedExtensionElements: [],
+    },
+    Task_2: {
+      properties: {
+        extensionProperties: [
+          { id: "prop_xml_2", name: "equipment", value: "Весы высокоточные" },
+        ],
+        extensionListeners: [],
+      },
+      preservedExtensionElements: [],
+    },
+  };
+  const session = {
+    Task_1: {
+      properties: {
+        extensionProperties: [],
+        extensionListeners: [],
+      },
+      preservedExtensionElements: [],
+    },
+  };
+
+  const hydrated = hydrateCamundaExtensionsFromBpmn({
+    extractedMap: extracted,
+    sessionMetaMap: session,
+    allowSeedFromBpmn: false,
+  });
+  const nextMap = normalizeCamundaExtensionsMap(hydrated.nextSessionMetaMap);
+  assert.equal(hydrated.adoptedFromBpmn, false);
+  assert.equal(hydrated.source, "session_wins");
+  assert.deepEqual(Object.keys(nextMap), []);
+}));
+
 test("export serializer writes camunda:properties block with name/value only", () => withDom(() => {
   const xml = finalizeCamundaExtensionsXml({
     xmlText: BASE_XML,
