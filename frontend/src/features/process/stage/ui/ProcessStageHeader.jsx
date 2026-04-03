@@ -12,6 +12,10 @@ export default function ProcessStageHeader({ view = {} }) {
     saveUploadStatus,
     sessionRevisionHistorySnapshot,
     handleSaveCurrentTab,
+    handleUndoAction,
+    handleRedoAction,
+    canUndo,
+    canRedo,
     workbench,
     tab,
     isSwitchingTab,
@@ -126,6 +130,30 @@ export default function ProcessStageHeader({ view = {} }) {
             >
               {String(saveUploadStatus?.label || "")}
             </span>
+          ) : null}
+          {hasSession ? (
+            <>
+              <button
+                type="button"
+                className="secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
+                onClick={handleUndoAction}
+                disabled={tab !== "diagram" || canUndo !== true}
+                title="Ctrl+Z"
+                data-testid="diagram-toolbar-undo"
+              >
+                Шаг назад
+              </button>
+              <button
+                type="button"
+                className="secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
+                onClick={handleRedoAction}
+                disabled={tab !== "diagram" || canRedo !== true}
+                title="Ctrl+Y"
+                data-testid="diagram-toolbar-redo"
+              >
+                Повторить отменённое действие
+              </button>
+            </>
           ) : null}
         </div>
       </div>

@@ -20,6 +20,7 @@ function isHybridOwnershipActive(modeRaw) {
 
 export default function useBpmnDiagramContextMenu({
   bpmnRef,
+  undoRedoState = {},
   tab,
   hasSession,
   drawioEditorOpen,
@@ -62,7 +63,17 @@ export default function useBpmnDiagramContextMenu({
   const onBpmnContextMenuRequest = useCallback((payloadRaw = {}) => {
     if (isBlocked) return false;
     const payload = asObject(payloadRaw);
-    const target = asObject(payload.target);
+    const targetBase = asObject(payload.target);
+    const runtimeUndoRedo = asObject(bpmnRef?.current?.getUndoRedoState?.({ mode: "editor" }));
+    const undoRedo = {
+      canUndo: runtimeUndoRedo.canUndo === true || asObject(undoRedoState).canUndo === true,
+      canRedo: runtimeUndoRedo.canRedo === true || asObject(undoRedoState).canRedo === true,
+    };
+    const target = {
+      ...targetBase,
+      canUndo: undoRedo.canUndo,
+      canRedo: undoRedo.canRedo,
+    };
     const actions = resolveBpmnContextMenuActions(target);
     if (!actions.length) return false;
     return openMenu({
@@ -73,7 +84,7 @@ export default function useBpmnDiagramContextMenu({
       target,
       actions,
     });
-  }, [isBlocked, openMenu]);
+  }, [bpmnRef, isBlocked, openMenu, undoRedoState]);
 
   const runBpmnContextMenuAction = useCallback(async (actionIdRaw) => {
     const actionId = toText(actionIdRaw);

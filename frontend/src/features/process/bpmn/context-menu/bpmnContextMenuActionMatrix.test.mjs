@@ -12,6 +12,8 @@ function actionIds(target) {
 test("canvas action matrix includes V1 canvas actions", () => {
   const ids = actionIds({ kind: "canvas" });
   assert.deepEqual(ids, [
+    "undo",
+    "redo",
     "create_task",
     "create_gateway",
     "create_start_event",
@@ -28,6 +30,8 @@ test("task action matrix includes add_next_step and utility actions", () => {
     "rename",
     "open_properties",
     "add_next_step",
+    "undo",
+    "redo",
     "copy_name",
     "copy_id",
     "delete",
@@ -46,9 +50,23 @@ test("sequence flow action matrix includes edit_label and delete only from V1 se
   assert.deepEqual(ids, [
     "edit_label",
     "open_properties",
+    "undo",
+    "redo",
     "copy_id",
     "delete",
   ]);
+});
+
+test("undo/redo actions reflect runtime availability", () => {
+  const actions = resolveBpmnContextMenuActions({
+    kind: "canvas",
+    canUndo: false,
+    canRedo: true,
+  });
+  const undo = actions.find((item) => item.id === "undo");
+  const redo = actions.find((item) => item.id === "redo");
+  assert.equal(undo?.disabled, true);
+  assert.equal(redo?.disabled, false);
 });
 
 test("target kind detection is stable for BPMN core types", () => {

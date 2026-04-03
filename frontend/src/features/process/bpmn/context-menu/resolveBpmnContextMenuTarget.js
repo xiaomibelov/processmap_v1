@@ -20,6 +20,54 @@ function isShapeElement(el) {
   return [x, y, width, height].every(Number.isFinite);
 }
 
+function readElementType(element) {
+  return toText(element?.businessObject?.$type || element?.type).toLowerCase();
+}
+
+function isPoolLaneContainerType(typeRaw) {
+  const type = toText(typeRaw).toLowerCase();
+  return type.includes("lane") || type.includes("participant");
+}
+
+function isPoolLaneContainerElement(element) {
+  return isPoolLaneContainerType(readElementType(element));
+}
+
+function readDiagramPointFromClient(inst, nativeEvent) {
+  if (!inst || !nativeEvent) return null;
+  const canvas = inst.get?.("canvas");
+  const container = canvas?._container;
+  const rect = container?.getBoundingClientRect?.();
+  if (!rect) return null;
+  const vb = canvas?.viewbox?.() || {};
+  const scale = Number(vb?.scale || canvas?.zoom?.() || 1) || 1;
+  const clientX = Number(nativeEvent?.clientX || 0);
+  const clientY = Number(nativeEvent?.clientY || 0);
+  return {
+    x: Number(vb?.x || 0) + (clientX - Number(rect?.left || 0)) / scale,
+    y: Number(vb?.y || 0) + (clientY - Number(rect?.top || 0)) / scale,
+  };
+}
+
+function isPointInsideShape(point, shape) {
+  if (!point || !isShapeElement(shape)) return false;
+  const x = Number(point?.x || 0);
+  const y = Number(point?.y || 0);
+  const sx = Number(shape?.x || 0);
+  const sy = Number(shape?.y || 0);
+  const sw = Number(shape?.width || 0);
+  const sh = Number(shape?.height || 0);
+  return x >= sx && x <= sx + sw && y >= sy && y <= sy + sh;
+}
+
+function hasPoolLaneCanvasOwnershipAtPoint(inst, nativeEvent) {
+  if (!inst) return true;
+  const point = readDiagramPointFromClient(inst, nativeEvent);
+  if (!point) return true;
+  const all = inst.get?.("elementRegistry")?.getAll?.() || [];
+  return all.some((item) => isPoolLaneContainerElement(item) && isPointInsideShape(point, item));
+}
+
 function normalizeTargetElement(rawElement) {
   if (!rawElement || typeof rawElement !== "object") return null;
   if (rawElement?.labelTarget && typeof rawElement.labelTarget === "object") {
@@ -73,9 +121,12 @@ export function resolveBpmnContextMenuTarget({ runtimeEvent, scope = "canvas", i
   const hintedElement = hintedElementId ? registry?.get?.(hintedElementId) : null;
   const rawElement = runtimeEvent?.element || runtimeEvent?.shape || runtimeEvent?.connection || hintedElement || null;
   const element = normalizeTargetElement(rawElement);
+  const poolLaneOwnedCanvasPoint = hasPoolLaneCanvasOwnershipAtPoint(inst, nativeEvent);
 
-  if (!element) return { kind: "canvas" };
-  if (isProcessRootElement(element, inst)) return { kind: "canvas" };
+  if (!element || isProcessRootElement(element, inst) || isPoolLaneContainerElement(element)) {
+    if (poolLaneOwnedCanvasPoint) return { kind: "canvas" };
+    return { kind: "unsupported", reason: "outside_pool_lane_area" };
+  }
 
   const bpmnType = toText(element?.businessObject?.$type || element?.type);
   const isConnection = isConnectionElement(element);

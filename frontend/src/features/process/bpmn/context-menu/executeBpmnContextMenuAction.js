@@ -201,6 +201,29 @@ function readDiagramPointFromClient(inst, clientXRaw, clientYRaw) {
   };
 }
 
+function readUndoRedoAvailability(commandStack) {
+  if (!commandStack || typeof commandStack !== "object") {
+    return { canUndo: false, canRedo: false };
+  }
+  let canUndo = false;
+  let canRedo = false;
+  try {
+    canUndo = typeof commandStack.canUndo === "function"
+      ? commandStack.canUndo() === true
+      : false;
+  } catch {
+    canUndo = false;
+  }
+  try {
+    canRedo = typeof commandStack.canRedo === "function"
+      ? commandStack.canRedo() === true
+      : false;
+  } catch {
+    canRedo = false;
+  }
+  return { canUndo, canRedo };
+}
+
 async function copyToClipboard(rawValue) {
   const text = toText(rawValue);
   if (!text) return false;
@@ -326,6 +349,7 @@ export async function executeBpmnContextMenuAction({
   const canvas = inst.get("canvas");
   const selection = inst.get("selection");
   const directEditing = inst.get?.("directEditing");
+  const commandStack = inst.get?.("commandStack");
   const target = targetId ? registry?.get?.(targetId) : null;
   const point = readDiagramPointFromClient(inst, Number(payload.clientX || 0), Number(payload.clientY || 0));
 
@@ -372,6 +396,27 @@ export async function executeBpmnContextMenuAction({
   };
 
   try {
+    if (actionId === "undo" || actionId === "redo") {
+      const availability = readUndoRedoAvailability(commandStack);
+      const canRun = actionId === "undo" ? availability.canUndo : availability.canRedo;
+      if (!canRun) {
+        return {
+          ok: false,
+          error: actionId === "undo" ? "undo_unavailable" : "redo_unavailable",
+        };
+      }
+      const run = actionId === "undo" ? commandStack?.undo : commandStack?.redo;
+      if (typeof run !== "function") {
+        return {
+          ok: false,
+          error: actionId === "undo" ? "undo_unavailable" : "redo_unavailable",
+        };
+      }
+      run.call(commandStack);
+      emitMutation({ actionId });
+      return { ok: true, changedIds: [] };
+    }
+
     if (actionId === "create_task") return createOnCanvas("bpmn:Task");
     if (actionId === "create_gateway") return createOnCanvas("bpmn:ExclusiveGateway");
     if (actionId === "create_start_event") return createOnCanvas("bpmn:StartEvent");
