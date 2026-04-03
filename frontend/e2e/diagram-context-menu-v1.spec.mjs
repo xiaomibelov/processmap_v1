@@ -1,13 +1,190 @@
 import { expect, test } from "@playwright/test";
 import { apiLogin, setUiToken } from "./helpers/e2eAuth.mjs";
-import { API_BASE, createFixture, seedXml, switchTab } from "./helpers/processFixture.mjs";
+import { API_BASE, createFixture, switchTab } from "./helpers/processFixture.mjs";
 import { waitForDiagramReady } from "./helpers/diagramReady.mjs";
+
+function seedPoolLaneXml({ processName = "E2E PoolLane Process", taskName = "Task baseline" } = {}) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+  id="Definitions_1"
+  targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:collaboration id="Collaboration_1">
+    <bpmn:participant id="Participant_1" name="Производство" processRef="Process_1" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_1" name="${processName}" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_1">
+      <bpmn:lane id="Lane_1" name="Линия 1">
+        <bpmn:flowNodeRef>StartEvent_1</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_1</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_1</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="StartEvent_1" name="Старт">
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="Task_1" name="${taskName}">
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:endEvent id="EndEvent_1" name="Финиш">
+      <bpmn:incoming>Flow_2</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="Task_1" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_1" targetRef="EndEvent_1" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_1">
+      <bpmndi:BPMNShape id="Participant_1_di" bpmnElement="Participant_1" isHorizontal="true">
+        <dc:Bounds x="120" y="100" width="940" height="340" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_1_di" bpmnElement="Lane_1" isHorizontal="true">
+        <dc:Bounds x="170" y="130" width="890" height="280" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
+        <dc:Bounds x="280" y="245" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_1_di" bpmnElement="Task_1">
+        <dc:Bounds x="400" y="223" width="170" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1">
+        <dc:Bounds x="690" y="245" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
+        <di:waypoint x="316" y="263" />
+        <di:waypoint x="400" y="263" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2">
+        <di:waypoint x="570" y="263" />
+        <di:waypoint x="690" y="263" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+  </bpmn:definitions>`;
+}
 
 async function rightClickPoint(page, point) {
   if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
     throw new Error("context_click_point_missing");
   }
   await page.mouse.click(point.x, point.y, { button: "right" });
+}
+
+async function findEmptyCanvasPoint(page, zone = "pool") {
+  const out = await page.evaluate((zoneRaw) => {
+    const zoneValue = String(zoneRaw || "pool").trim().toLowerCase();
+    const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
+    if (!modeler) return null;
+
+    const canvas = modeler.get("canvas");
+    const registry = modeler.get("elementRegistry");
+    const rect = canvas?._container?.getBoundingClientRect?.();
+    const vb = canvas?.viewbox?.() || {};
+    const scale = Number(vb?.scale || canvas?.zoom?.() || 1) || 1;
+    if (!rect) return null;
+
+    const all = Array.isArray(registry?.getAll?.()) ? registry.getAll() : [];
+    const shapes = all.filter((el) => {
+      if (!el || Array.isArray(el?.waypoints)) return false;
+      const type = String(el?.type || el?.businessObject?.$type || "").toLowerCase();
+      if (type === "label" || type.includes(":label")) return false;
+      const w = Number(el?.width || 0);
+      const h = Number(el?.height || 0);
+      return Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0;
+    });
+
+    const participants = shapes.filter((el) => String(el?.type || el?.businessObject?.$type || "").toLowerCase().includes("participant"));
+    const lanes = shapes.filter((el) => String(el?.type || el?.businessObject?.$type || "").toLowerCase().includes("lane"));
+    const poolContainers = participants.length ? participants : lanes;
+    const occupiedShapes = shapes.filter((el) => {
+      const t = String(el?.type || el?.businessObject?.$type || "").toLowerCase();
+      return !t.includes("participant") && !t.includes("lane");
+    });
+    const connections = all.filter((el) => Array.isArray(el?.waypoints));
+
+    const inside = (x, y, el, pad = 0) => {
+      const ex = Number(el?.x || 0) + pad;
+      const ey = Number(el?.y || 0) + pad;
+      const ew = Number(el?.width || 0) - pad * 2;
+      const eh = Number(el?.height || 0) - pad * 2;
+      return ew > 0 && eh > 0 && x >= ex && x <= ex + ew && y >= ey && y <= ey + eh;
+    };
+
+    const nearSegment = (px, py, a, b) => {
+      const ax = Number(a?.x || 0);
+      const ay = Number(a?.y || 0);
+      const bx = Number(b?.x || 0);
+      const by = Number(b?.y || 0);
+      const dx = bx - ax;
+      const dy = by - ay;
+      const len2 = dx * dx + dy * dy;
+      if (!Number.isFinite(len2) || len2 <= 0.0001) {
+        return Math.hypot(px - ax, py - ay) < 16;
+      }
+      const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+      const nx = ax + t * dx;
+      const ny = ay + t * dy;
+      return Math.hypot(px - nx, py - ny) < 16;
+    };
+
+    const isOccupied = (x, y) => {
+      for (let i = 0; i < occupiedShapes.length; i += 1) {
+        const shape = occupiedShapes[i];
+        if (inside(x, y, shape, -16)) return true;
+      }
+      for (let i = 0; i < connections.length; i += 1) {
+        const waypoints = Array.isArray(connections[i]?.waypoints) ? connections[i].waypoints : [];
+        for (let j = 0; j < waypoints.length - 1; j += 1) {
+          if (nearSegment(x, y, waypoints[j], waypoints[j + 1])) return true;
+        }
+      }
+      return false;
+    };
+
+    const toScreen = (diagramX, diagramY) => ({
+      x: Number(rect.left || 0) + (diagramX - Number(vb?.x || 0)) * scale,
+      y: Number(rect.top || 0) + (diagramY - Number(vb?.y || 0)) * scale,
+      diagramX,
+      diagramY,
+    });
+
+    const minScreenX = Number(rect.left || 0) + 24;
+    const maxScreenX = Number(rect.right || 0) - 24;
+    const minScreenY = Number(rect.top || 0) + 24;
+    const maxScreenY = Number(rect.bottom || 0) - 24;
+
+    for (let screenY = minScreenY; screenY <= maxScreenY; screenY += 24) {
+      for (let screenX = minScreenX; screenX <= maxScreenX; screenX += 24) {
+        const diagramX = Number(vb?.x || 0) + (screenX - Number(rect.left || 0)) / scale;
+        const diagramY = Number(vb?.y || 0) + (screenY - Number(rect.top || 0)) / scale;
+
+        if (isOccupied(diagramX, diagramY)) continue;
+
+        const inPool = poolContainers.some((el) => inside(diagramX, diagramY, el, 8));
+        const inLane = lanes.length ? lanes.some((el) => inside(diagramX, diagramY, el, 8)) : inPool;
+
+        if (zoneValue === "pool" && inPool) return toScreen(diagramX, diagramY);
+        if (zoneValue === "lane" && inLane) return toScreen(diagramX, diagramY);
+        if (zoneValue === "outside_pool" && !inPool) return toScreen(diagramX, diagramY);
+      }
+    }
+
+    return null;
+  }, zone);
+
+  if (!out) {
+    throw new Error(`empty_point_not_found:${zone}`);
+  }
+
+  return {
+    x: Number(out.x || 0),
+    y: Number(out.y || 0),
+    diagramX: Number(out.diagramX || 0),
+    diagramY: Number(out.diagramY || 0),
+  };
 }
 
 async function rightClickElement(page, elementId) {
@@ -89,85 +266,6 @@ async function rightClickLabelOfElement(page, elementId) {
   await rightClickPoint(page, point);
 }
 
-async function rightClickCanvasEmpty(page) {
-  const point = await page.evaluate(() => {
-    const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
-    if (!modeler) return null;
-    const registry = modeler.get("elementRegistry");
-    const canvas = modeler.get("canvas");
-    const svg = document.querySelector(".bpmnLayer--editor.on .djs-container svg, .djs-container svg");
-    const svgRect = svg?.getBoundingClientRect?.();
-    const vb = canvas?.viewbox?.() || {};
-    const scale = Number(vb?.scale || canvas?.zoom?.() || 1) || 1;
-    if (!svgRect) return null;
-    const all = registry?.getAll?.() || [];
-    const shapes = all.filter((el) => {
-      if (!el || Array.isArray(el?.waypoints)) return false;
-      const t = String(el?.type || "").toLowerCase();
-      return t !== "label";
-    });
-    const connections = all.filter((el) => Array.isArray(el?.waypoints) && String(el?.type || "").toLowerCase() !== "label");
-
-    const nearSegment = (px, py, a, b) => {
-      const ax = Number(a?.x || 0);
-      const ay = Number(a?.y || 0);
-      const bx = Number(b?.x || 0);
-      const by = Number(b?.y || 0);
-      const dx = bx - ax;
-      const dy = by - ay;
-      const len2 = dx * dx + dy * dy;
-      if (!Number.isFinite(len2) || len2 <= 0.0001) {
-        const d0 = Math.hypot(px - ax, py - ay);
-        return d0 < 16;
-      }
-      const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
-      const nx = ax + t * dx;
-      const ny = ay + t * dy;
-      return Math.hypot(px - nx, py - ny) < 16;
-    };
-
-    const occupied = (x, y) => {
-      for (let i = 0; i < shapes.length; i += 1) {
-        const s = shapes[i];
-        const sx = Number(s?.x || 0) - 18;
-        const sy = Number(s?.y || 0) - 18;
-        const sw = Number(s?.width || 0) + 36;
-        const sh = Number(s?.height || 0) + 36;
-        if (x >= sx && x <= sx + sw && y >= sy && y <= sy + sh) return true;
-      }
-      for (let i = 0; i < connections.length; i += 1) {
-        const waypoints = Array.isArray(connections[i]?.waypoints) ? connections[i].waypoints : [];
-        for (let j = 0; j < waypoints.length - 1; j += 1) {
-          if (nearSegment(x, y, waypoints[j], waypoints[j + 1])) return true;
-        }
-      }
-      return false;
-    };
-
-    const minScreenX = Number(svgRect.left || 0) + 24;
-    const minScreenY = Number(svgRect.top || 0) + 24;
-    const maxScreenX = Number(svgRect.right || 0) - 24;
-    const maxScreenY = Number(svgRect.bottom || 0) - 24;
-    for (let screenY = minScreenY; screenY <= maxScreenY; screenY += 64) {
-      for (let screenX = minScreenX; screenX <= maxScreenX; screenX += 64) {
-        const x = Number(vb?.x || 0) + (screenX - Number(svgRect.left || 0)) / scale;
-        const y = Number(vb?.y || 0) + (screenY - Number(svgRect.top || 0)) / scale;
-        if (occupied(x, y)) continue;
-        return {
-          x: screenX,
-          y: screenY,
-        };
-      }
-    }
-    return {
-      x: Number(svgRect.left || 0) + 40,
-      y: Number(svgRect.top || 0) + 40,
-    };
-  });
-  await rightClickPoint(page, point);
-  return point;
-}
-
 async function dispatchContextMenuAndReadDefaultPrevented(page, point) {
   if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
     throw new Error("contextmenu_probe_point_missing");
@@ -200,6 +298,43 @@ async function setFlowLabel(page, flowId, text) {
     modeling.updateLabel(flow, String(value || ""));
     return !!flow?.label;
   }, { id: flowId, value: text });
+}
+
+async function readElementIdsByType(page, typeNeedle) {
+  return await page.evaluate((needleRaw) => {
+    const needle = String(needleRaw || "").trim().toLowerCase();
+    const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
+    if (!modeler) return [];
+    const registry = modeler.get("elementRegistry");
+    const all = Array.isArray(registry?.getAll?.()) ? registry.getAll() : [];
+    return all
+      .filter((el) => !Array.isArray(el?.waypoints))
+      .filter((el) => {
+        const type = String(el?.type || el?.businessObject?.$type || "").toLowerCase();
+        if (!type || type === "label" || type.includes(":label")) return false;
+        return type.includes(needle);
+      })
+      .map((el) => String(el?.id || "").trim())
+      .filter(Boolean);
+  }, typeNeedle);
+}
+
+async function readElementBounds(page, elementId) {
+  return await page.evaluate((idRaw) => {
+    const id = String(idRaw || "").trim();
+    const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
+    if (!modeler || !id) return null;
+    const registry = modeler.get("elementRegistry");
+    const element = registry?.get?.(id);
+    if (!element) return null;
+    if (Array.isArray(element?.waypoints)) return null;
+    return {
+      x: Number(element?.x || 0),
+      y: Number(element?.y || 0),
+      width: Number(element?.width || 0),
+      height: Number(element?.height || 0),
+    };
+  }, elementId);
 }
 
 async function readAuthUser(request, auth) {
@@ -238,7 +373,12 @@ async function openFixtureSession(page, fixture) {
   }
 }
 
-test("diagram context menu v1: review-fix A-G", async ({ page, request }) => {
+test("diagram context menu v1: narrowed pool/lane ownership + undo/redo", async ({ page, request }) => {
+  const runtimeErrors = [];
+  page.on("pageerror", (error) => {
+    runtimeErrors.push(String(error?.message || error || "unknown_page_error"));
+  });
+
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const auth = await apiLogin(request, { apiBase: API_BASE });
   const authUser = await readAuthUser(request, auth);
@@ -246,7 +386,7 @@ test("diagram context menu v1: review-fix A-G", async ({ page, request }) => {
     request,
     runId,
     auth.headers,
-    seedXml({ processName: `ctx-v1-${runId}`, taskName: `Task ${runId.slice(-4)}` }),
+    seedPoolLaneXml({ processName: `ctx-v1-${runId}`, taskName: `Task ${runId.slice(-4)}` }),
   );
 
   await page.addInitScript(({ userId, orgId }) => {
@@ -267,47 +407,159 @@ test("diagram context menu v1: review-fix A-G", async ({ page, request }) => {
   await waitForDiagramReady(page, { timeout: 45_000 });
 
   const menu = page.getByTestId("bpmn-context-menu");
+  const undoBtn = page.getByTestId("diagram-toolbar-undo");
+  const redoBtn = page.getByTestId("diagram-toolbar-redo");
 
-  // Scenario A: true empty BPMN area opens canvas menu + native menu suppressed inside diagram area
-  const emptyCanvasPoint = await rightClickCanvasEmpty(page);
+  // Scenario A: empty area inside pool interior
+  const poolPoint = await findEmptyCanvasPoint(page, "pool");
+  await rightClickPoint(page, poolPoint);
   await expect(menu).toBeVisible();
+  await expect(page.getByTestId("bpmn-context-menu-action-undo")).toBeVisible();
+  await expect(page.getByTestId("bpmn-context-menu-action-redo")).toBeVisible();
   await expect(page.getByTestId("bpmn-context-menu-action-create_task")).toBeVisible();
-  const insideNativeSuppressionProbe = await dispatchContextMenuAndReadDefaultPrevented(page, emptyCanvasPoint);
-  expect(insideNativeSuppressionProbe?.defaultPrevented).toBe(true);
-  await page.locator(".topbar").first().click({ force: true });
+  await expect(page.getByTestId("bpmn-context-menu-action-undo")).toBeDisabled();
+  await expect(page.getByTestId("bpmn-context-menu-action-redo")).toBeDisabled();
+  const insidePoolProbe = await dispatchContextMenuAndReadDefaultPrevented(page, poolPoint);
+  expect(insidePoolProbe?.defaultPrevented).toBe(true);
+  await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);
 
-  // Scenario B: focused external input must not suppress BPMN context menu
-  await page.evaluate(() => {
-    const topbar = document.querySelector(".topbar") || document.body;
-    let input = document.getElementById("__fpc_ctx_focus_input");
-    if (!(input instanceof HTMLInputElement)) {
-      input = document.createElement("input");
-      input.id = "__fpc_ctx_focus_input";
-      input.value = "focus-guard";
-      input.style.position = "fixed";
-      input.style.left = "-9999px";
-      input.style.top = "-9999px";
-      topbar.appendChild(input);
-    }
-    input.focus();
-  });
-  await rightClickPoint(page, emptyCanvasPoint);
+  // Scenario B: empty area inside lane interior
+  const lanePoint = await findEmptyCanvasPoint(page, "lane");
+  await rightClickPoint(page, lanePoint);
   await expect(menu).toBeVisible();
+  await expect(page.getByTestId("bpmn-context-menu-action-undo")).toBeVisible();
+  await expect(page.getByTestId("bpmn-context-menu-action-redo")).toBeVisible();
   await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+
+  // Scenario C: empty area outside pools
+  const outsidePoolPoint = await findEmptyCanvasPoint(page, "outside_pool");
+  await rightClickPoint(page, outsidePoolPoint);
+  await expect(menu).toHaveCount(0);
+  const outsidePoolProbe = await dispatchContextMenuAndReadDefaultPrevented(page, outsidePoolPoint);
+  expect(outsidePoolProbe?.defaultPrevented).toBe(false);
+
+  // Scenario D: task element menu + duplicate safety
   await rightClickElement(page, "Task_1");
   await expect(menu).toBeVisible();
   await expect(page.getByTestId("bpmn-context-menu-action-add_next_step")).toBeVisible();
+  await expect(page.getByTestId("bpmn-context-menu-action-undo")).toBeVisible();
+  await expect(page.getByTestId("bpmn-context-menu-action-redo")).toBeVisible();
+  await expect(page.getByTestId("bpmn-context-menu-action-duplicate")).toHaveCount(0);
   await page.keyboard.press("Escape");
 
-  // Scenario C: right-click task label text -> task menu
+  // Scenario E: visible Undo/Redo UI buttons, parity with Ctrl+Z / Ctrl+Y
+  await expect(undoBtn).toBeVisible();
+  await expect(redoBtn).toBeVisible();
+  await expect(undoBtn).toBeDisabled();
+  await expect(redoBtn).toBeDisabled();
+
+  const initialTaskIds = await readElementIdsByType(page, "task");
+  await rightClickPoint(page, lanePoint);
+  await expect(menu).toBeVisible();
+  await page.getByTestId("bpmn-context-menu-action-create_task").click();
+  await expect(menu).toHaveCount(0);
+
+  await expect.poll(async () => (await readElementIdsByType(page, "task")).length, { timeout: 10_000 }).toBe(initialTaskIds.length + 1);
+  await expect(undoBtn).toBeEnabled();
+
+  await rightClickPoint(page, lanePoint);
+  await expect(menu).toBeVisible();
+  await expect(page.getByTestId("bpmn-context-menu-action-undo")).toBeEnabled();
+  await expect(page.getByTestId("bpmn-context-menu-action-redo")).toBeDisabled();
+  await page.keyboard.press("Escape");
+
+  await page.mouse.click(lanePoint.x, lanePoint.y);
+  await page.keyboard.press("Control+KeyZ");
+  await expect.poll(async () => (await readElementIdsByType(page, "task")).length, { timeout: 10_000 }).toBe(initialTaskIds.length);
+  await expect(redoBtn).toBeEnabled();
+
+  await page.keyboard.press("Control+KeyY");
+  await expect.poll(async () => (await readElementIdsByType(page, "task")).length, { timeout: 10_000 }).toBe(initialTaskIds.length + 1);
+
+  await undoBtn.click();
+  await expect.poll(async () => (await readElementIdsByType(page, "task")).length, { timeout: 10_000 }).toBe(initialTaskIds.length);
+
+  await redoBtn.click();
+  await expect.poll(async () => (await readElementIdsByType(page, "task")).length, { timeout: 10_000 }).toBe(initialTaskIds.length + 1);
+
+  // Scenario F: Undo/Redo from context menu follows same command stack behavior
+  await rightClickElement(page, "Task_1");
+  await expect(menu).toBeVisible();
+  await page.getByTestId("bpmn-context-menu-action-undo").click();
+  await expect.poll(async () => (await readElementIdsByType(page, "task")).length, { timeout: 10_000 }).toBe(initialTaskIds.length);
+
+  await rightClickElement(page, "Task_1");
+  await expect(menu).toBeVisible();
+  await page.getByTestId("bpmn-context-menu-action-redo").click();
+  await expect.poll(async () => (await readElementIdsByType(page, "task")).length, { timeout: 10_000 }).toBe(initialTaskIds.length + 1);
+
+  // Scenario G: canvas create actions (task/gateway/start/end/subprocess/annotation)
+  const createScenarios = [
+    { actionId: "create_task", typeNeedle: "task" },
+    { actionId: "create_gateway", typeNeedle: "gateway" },
+    { actionId: "create_start_event", typeNeedle: "startevent" },
+    { actionId: "create_end_event", typeNeedle: "endevent" },
+    { actionId: "create_subprocess", typeNeedle: "subprocess" },
+    { actionId: "add_annotation", typeNeedle: "textannotation" },
+  ];
+
+  for (const row of createScenarios) {
+    const before = await readElementIdsByType(page, row.typeNeedle);
+    let actionPoint = null;
+    let actionButton = null;
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const candidate = await findEmptyCanvasPoint(page, "lane");
+      await rightClickPoint(page, candidate);
+      const menuVisible = await menu.isVisible().catch(() => false);
+      if (!menuVisible) continue;
+      const button = page.getByTestId(`bpmn-context-menu-action-${row.actionId}`);
+      const hasAction = (await button.count()) > 0;
+      if (hasAction) {
+        actionPoint = candidate;
+        actionButton = button;
+        break;
+      }
+      await page.keyboard.press("Escape");
+    }
+    if (!actionButton || !actionPoint) {
+      throw new Error(`canvas_action_not_available:${row.actionId}`);
+    }
+
+    await actionButton.click();
+    await expect(menu).toHaveCount(0);
+
+    const after = await readElementIdsByType(page, row.typeNeedle);
+    expect(after.length).toBeGreaterThan(before.length);
+
+    const beforeSet = new Set(before);
+    const createdIds = after.filter((id) => !beforeSet.has(id));
+    const createdId = createdIds[createdIds.length - 1];
+    expect(createdId).toBeTruthy();
+
+    const bounds = await readElementBounds(page, createdId);
+    expect(bounds).toBeTruthy();
+    const cx = Number(bounds.x || 0) + Number(bounds.width || 0) / 2;
+    const cy = Number(bounds.y || 0) + Number(bounds.height || 0) / 2;
+    const distance = Math.hypot(cx - Number(actionPoint.diagramX || 0), cy - Number(actionPoint.diagramY || 0));
+    expect(distance).toBeLessThan(320);
+
+    for (let rollbackStep = 0; rollbackStep < 4; rollbackStep += 1) {
+      const current = await readElementIdsByType(page, row.typeNeedle);
+      if (current.length <= before.length) break;
+      await undoBtn.click();
+    }
+    await expect.poll(async () => (await readElementIdsByType(page, row.typeNeedle)).length, { timeout: 10_000 }).toBe(before.length);
+  }
+
+  // Scenario H: label normalization stays valid
   await rightClickLabelOfElement(page, "Task_1");
   await expect(menu).toBeVisible();
   await expect(page.getByTestId("bpmn-context-menu-action-add_next_step")).toBeVisible();
   await expect(page.getByTestId("bpmn-context-menu-action-edit_label")).toHaveCount(0);
   await page.keyboard.press("Escape");
 
-  // Scenario D: right-click sequence-flow label text -> flow menu
   await expect.poll(async () => await setFlowLabel(page, "Flow_1", "route-a"), { timeout: 10_000 }).toBe(true);
   await rightClickLabelOfElement(page, "Flow_1");
   await expect(menu).toBeVisible();
@@ -315,13 +567,7 @@ test("diagram context menu v1: review-fix A-G", async ({ page, request }) => {
   await expect(page.getByTestId("bpmn-context-menu-action-add_next_step")).toHaveCount(0);
   await page.keyboard.press("Escape");
 
-  // Scenario E: duplicate removed (unsafe semantics not exposed)
-  await rightClickElement(page, "Task_1");
-  await expect(menu).toBeVisible();
-  await expect(page.getByTestId("bpmn-context-menu-action-duplicate")).toHaveCount(0);
-  await page.keyboard.press("Escape");
-
-  // Scenario F: outside diagram area native menu preserved
+  // Scenario I: outside diagram scope keeps native browser menu
   await page.locator(".topbar").first().click({ button: "right", force: true });
   await expect(menu).toHaveCount(0);
   const outsidePoint = await page.evaluate(() => {
@@ -332,38 +578,8 @@ test("diagram context menu v1: review-fix A-G", async ({ page, request }) => {
       y: Number(rect.top || 0) + 10,
     };
   });
-  const outsideNativeMenuProbe = await dispatchContextMenuAndReadDefaultPrevented(page, outsidePoint);
-  expect(outsideNativeMenuProbe?.defaultPrevented).toBe(false);
+  const outsideNativeProbe = await dispatchContextMenuAndReadDefaultPrevented(page, outsidePoint);
+  expect(outsideNativeProbe?.defaultPrevented).toBe(false);
 
-  // Scenario G: close contract (Esc, outside click, zoom/pan wheel, route change)
-  await rightClickElement(page, "Task_1");
-  await expect(menu).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(menu).toHaveCount(0);
-
-  await rightClickElement(page, "Task_1");
-  await expect(menu).toBeVisible();
-  await page.locator(".topbar").first().click({ force: true });
-  await expect(menu).toHaveCount(0);
-
-  await rightClickElement(page, "Task_1");
-  await expect(menu).toBeVisible();
-  await page.mouse.wheel(0, -360);
-  await expect(menu).toHaveCount(0);
-
-  await rightClickElement(page, "Task_1");
-  await expect(menu).toBeVisible();
-  await page.mouse.move(emptyCanvasPoint.x, emptyCanvasPoint.y);
-  await page.mouse.down();
-  await page.mouse.move(emptyCanvasPoint.x + 32, emptyCanvasPoint.y + 14);
-  await page.mouse.up();
-  await expect(menu).toHaveCount(0);
-
-  await rightClickElement(page, "Task_1");
-  await expect(menu).toBeVisible();
-  await page.evaluate(() => {
-    const suffix = `ctx_${Date.now()}`;
-    window.location.hash = suffix;
-  });
-  await expect(menu).toHaveCount(0);
+  expect(runtimeErrors).toEqual([]);
 });

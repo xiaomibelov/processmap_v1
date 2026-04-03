@@ -82,6 +82,24 @@ function readElementBounds(inst, elementIdRaw) {
   }
 }
 
+function readUndoRedoAvailability(inst) {
+  try {
+    const commandStack = inst?.get?.("commandStack");
+    if (!commandStack || typeof commandStack !== "object") {
+      return { canUndo: false, canRedo: false };
+    }
+    const canUndo = typeof commandStack.canUndo === "function"
+      ? commandStack.canUndo() === true
+      : false;
+    const canRedo = typeof commandStack.canRedo === "function"
+      ? commandStack.canRedo() === true
+      : false;
+    return { canUndo, canRedo };
+  } catch {
+    return { canUndo: false, canRedo: false };
+  }
+}
+
 function getSelectionService(inst) {
   try {
     return inst?.get?.("selection") || null;
@@ -334,6 +352,33 @@ export function createBpmnStageImperativeApi(ctxBase) {
     saveXmlDraft: () => callbacks.saveXmlDraftText?.(),
     hasXmlDraftChanges: () => !!values.xmlDirty,
     getXmlDraft: () => String(values.xmlDraft || ""),
+    runDiagramContextAction: async (payload = {}) => {
+      try {
+        return await callbacks.runDiagramContextAction?.(payload);
+      } catch (error) {
+        return {
+          ok: false,
+          error: String(error?.message || error || "context_action_failed"),
+        };
+      }
+    },
+    getUndoRedoState: (options = {}) => {
+      const preferred = toText(options?.kind || options?.view || options?.mode || "editor").toLowerCase();
+      const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
+      const stateOut = readUndoRedoAvailability(inst);
+      return {
+        ...stateOut,
+        ready: !!inst,
+      };
+    },
+    undo: async () => {
+      const result = await callbacks.runDiagramContextAction?.({ actionId: "undo" });
+      return result && typeof result === "object" ? result : { ok: false, error: "undo_failed" };
+    },
+    redo: async () => {
+      const result = await callbacks.runDiagramContextAction?.({ actionId: "redo" });
+      return result && typeof result === "object" ? result : { ok: false, error: "redo_failed" };
+    },
     resetBackend: () => {
       const sid = String(values.sessionId || "");
       if (!sid) return;

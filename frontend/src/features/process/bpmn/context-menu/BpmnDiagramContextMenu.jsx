@@ -79,8 +79,12 @@ export default function BpmnDiagramContextMenu({
                   type="button"
                   className={`secondaryBtn h-7 justify-start px-2 text-left text-[11px] ${
                     item?.destructive ? "text-red-300 hover:text-red-200" : ""
-                  }`}
-                  onClick={() => onAction?.(toText(item.id), item)}
+                  } ${item?.disabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                  disabled={item?.disabled === true}
+                  onClick={() => {
+                    if (item?.disabled === true) return;
+                    onAction?.(toText(item.id), item);
+                  }}
                   data-testid={`bpmn-context-menu-action-${toText(item.id)}`}
                 >
                   {toText(item.label) || toText(item.id)}
@@ -93,4 +97,3 @@ export default function BpmnDiagramContextMenu({
     </div>
   );
 }
-

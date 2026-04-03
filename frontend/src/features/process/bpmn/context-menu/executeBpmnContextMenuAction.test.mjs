@@ -8,6 +8,7 @@ function createStubModeler({
   createShapeImpl = null,
   viewbox = { x: 100, y: 50, scale: 2 },
   rect = { left: 10, top: 20 },
+  commandStack = null,
 } = {}) {
   const calls = [];
   const elementById = new Map();
@@ -99,6 +100,7 @@ function createStubModeler({
       if (key === "elementRegistry") return registry;
       if (key === "selection") return { select() {} };
       if (key === "directEditing") return { activate() {} };
+      if (key === "commandStack") return commandStack;
       return null;
     },
   };
@@ -275,4 +277,74 @@ test("canvas add annotation: initializes artifacts collection on participant pro
   assert.equal(calls.length, 1);
   assert.equal(calls[0].parent, participant);
   assert.ok(Array.isArray(participant?.businessObject?.processRef?.artifacts));
+});
+
+test("undo/redo actions route through commandStack", async () => {
+  const calls = [];
+  const commandStack = {
+    canUndo() {
+      return true;
+    },
+    canRedo() {
+      return true;
+    },
+    undo() {
+      calls.push("undo");
+    },
+    redo() {
+      calls.push("redo");
+    },
+  };
+  const { inst } = createStubModeler({
+    root: {
+      id: "Process_1",
+      type: "bpmn:Process",
+      businessObject: { $type: "bpmn:Process", flowElements: [] },
+      di: { planeElement: [] },
+      children: [],
+    },
+    registryItems: [],
+    commandStack,
+  });
+
+  const undoResult = await executeBpmnContextMenuAction({
+    payloadRaw: { actionId: "undo" },
+    modelerRef: { current: inst },
+  });
+  const redoResult = await executeBpmnContextMenuAction({
+    payloadRaw: { actionId: "redo" },
+    modelerRef: { current: inst },
+  });
+  assert.equal(undoResult.ok, true);
+  assert.equal(redoResult.ok, true);
+  assert.deepEqual(calls, ["undo", "redo"]);
+});
+
+test("undo action returns explicit unavailable error when commandStack cannot undo", async () => {
+  const { inst } = createStubModeler({
+    root: {
+      id: "Process_1",
+      type: "bpmn:Process",
+      businessObject: { $type: "bpmn:Process", flowElements: [] },
+      di: { planeElement: [] },
+      children: [],
+    },
+    registryItems: [],
+    commandStack: {
+      canUndo() {
+        return false;
+      },
+      canRedo() {
+        return false;
+      },
+    },
+  });
+
+  const result = await executeBpmnContextMenuAction({
+    payloadRaw: { actionId: "undo" },
+    modelerRef: { current: inst },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "undo_unavailable");
 });

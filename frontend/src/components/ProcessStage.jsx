@@ -89,6 +89,7 @@ import usePlaybackController from "../features/process/stage/controllers/usePlay
 import useDiagramShellState from "../features/process/stage/orchestration/useDiagramShellState";
 import useDiagramActionsController from "../features/process/stage/orchestration/useDiagramActionsController";
 import useStableProcessDiagramOverlayLayersProps from "../features/process/stage/orchestration/useStableProcessDiagramOverlayLayersProps";
+import useBpmnDiagramContextMenu from "../features/process/stage/hooks/useBpmnDiagramContextMenu";
 import useProcessStageDrawio from "../features/process/stage/orchestration/useProcessStageDrawio";
 import useProcessStageHybrid from "../features/process/stage/orchestration/useProcessStageHybrid";
 import useProcessStageLocalState from "../features/process/stage/orchestration/state/useProcessStageLocalState";
@@ -290,6 +291,7 @@ export default function ProcessStage({
   const [drawioAnchorImportDiagnostics, setDrawioAnchorImportDiagnostics] = useState(null);
   const [saveUploadLifecycleEvent, setSaveUploadLifecycleEvent] = useState(IDLE_SAVE_UPLOAD_EVENT);
   const [latestBpmnVersionHead, setLatestBpmnVersionHead] = useState(null);
+  const [diagramUndoRedoState, setDiagramUndoRedoState] = useState({ canUndo: false, canRedo: false, ready: false });
 
   const {
     genBusy,
@@ -822,6 +824,36 @@ export default function ProcessStage({
     }
     queueDiagramMutationRaw(mutation);
   }, [queueDiagramMutationRaw]);
+
+  const refreshDiagramUndoRedoState = useCallback(() => {
+    const next = asObject(bpmnRef.current?.getUndoRedoState?.({ mode: "editor" }));
+    const normalized = {
+      canUndo: next.canUndo === true,
+      canRedo: next.canRedo === true,
+      ready: next.ready === true,
+    };
+    setDiagramUndoRedoState((prev) => (
+      prev.canUndo === normalized.canUndo
+      && prev.canRedo === normalized.canRedo
+      && prev.ready === normalized.ready
+        ? prev
+        : normalized
+    ));
+  }, []);
+
+  useEffect(() => {
+    if (!hasSession || tab !== "diagram") {
+      setDiagramUndoRedoState({ canUndo: false, canRedo: false, ready: false });
+      return undefined;
+    }
+    refreshDiagramUndoRedoState();
+    const timer = window.setInterval(() => {
+      refreshDiagramUndoRedoState();
+    }, 220);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [hasSession, refreshDiagramUndoRedoState, sid, tab]);
 
   useEffect(() => {
     return () => {
@@ -2144,7 +2176,7 @@ export default function ProcessStage({
     bpmnFragmentPlacementGhost,
     bpmnFragmentPlacementActive,
   } = templatesStore;
-  const { stageActions } = useDiagramActionsController({
+  const { closeAllDiagramActions, stageActions } = useDiagramActionsController({
     popovers: {
       toolbarMenuOpen,
       setToolbarMenuOpen,
@@ -2195,6 +2227,48 @@ export default function ProcessStage({
       setTemplatesPickerOpen,
     },
   });
+  const {
+    bpmnContextMenu,
+    onBpmnContextMenuRequest,
+    onBpmnContextMenuDismiss,
+    closeBpmnContextMenu,
+    runBpmnContextMenuAction,
+  } = useBpmnDiagramContextMenu({
+    bpmnRef,
+    undoRedoState: diagramUndoRedoState,
+    tab,
+    hasSession,
+    drawioEditorOpen,
+    hybridPlacementHitLayerActive,
+    hybridModeEffective,
+    modalOpenSignal: (
+      qualityAutoFixOpen
+      || insertBetweenOpen
+      || versionsOpen
+      || diffOpen
+      || createTemplateOpen
+      || templatesPickerOpen
+    ),
+    closeAllDiagramActions,
+    setInfoMsg,
+    setGenErr,
+  });
+
+  const handleUndoAction = useCallback(async () => {
+    const result = await Promise.resolve(bpmnRef.current?.undo?.());
+    if (result && result.ok === false) {
+      setGenErr(shortErr(result.error || "Undo недоступен."));
+    }
+    refreshDiagramUndoRedoState();
+  }, [refreshDiagramUndoRedoState, setGenErr]);
+
+  const handleRedoAction = useCallback(async () => {
+    const result = await Promise.resolve(bpmnRef.current?.redo?.());
+    if (result && result.ok === false) {
+      setGenErr(shortErr(result.error || "Redo недоступен."));
+    }
+    refreshDiagramUndoRedoState();
+  }, [refreshDiagramUndoRedoState, setGenErr]);
   const aiGenerateGate = useMemo(
     () => getAiGenerateGate({
       hasSession,
@@ -4169,7 +4243,9 @@ export default function ProcessStage({
     asObject,
     bpmnFragmentPlacementActive,
     bpmnFragmentPlacementGhost,
+    bpmnContextMenu,
     bpmnRef,
+    closeBpmnContextMenu,
     cleanupMissingHybridBindings,
     clientToDiagram,
     closeEmbeddedDrawioEditor,
@@ -4235,6 +4311,8 @@ export default function ProcessStage({
     hybridViewportMatrixRef,
     isInterviewMode,
     onBpmnSaveLifecycleEvent,
+    onDiagramContextMenuDismiss: onBpmnContextMenuDismiss,
+    onDiagramContextMenuRequest: onBpmnContextMenuRequest,
     onElementNotesRemap,
     onSessionSync,
     propertiesOverlayAlwaysEnabled,
@@ -4255,6 +4333,7 @@ export default function ProcessStage({
     subscribeOverlayViewportMatrix,
     tab,
     toText,
+    runBpmnContextMenuAction,
     withHybridOverlayGuard,
   });
 
@@ -4460,6 +4539,10 @@ export default function ProcessStage({
     sid,
     saveDirtyHint: shellVm.shellProps.saveDirtyHint === true,
     handleSaveCurrentTab,
+    handleUndoAction,
+    handleRedoAction,
+    canUndo: diagramUndoRedoState.canUndo === true,
+    canRedo: diagramUndoRedoState.canRedo === true,
     workbench,
     tab,
     diagramMode,
