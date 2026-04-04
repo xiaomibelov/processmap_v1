@@ -8,8 +8,11 @@ test("buildBpmnPropertiesOverlaySchema builds compact editable schema", () => {
       elementId: "Task_1",
       elementName: "Проверка сырья",
       bpmnType: "bpmn:UserTask",
-      documentation: [{ text: "Нужно проверить входные параметры" }],
-      extensionProperties: [{ name: "priority", value: "high" }],
+      documentation: [
+        { text: "Нужно проверить входные параметры", textFormat: "text/html" },
+        { text: "Доп. описание", textFormat: "text/markdown" },
+      ],
+      extensionProperties: [{ key: "0:0:priority", name: "priority", value: "high" }],
       robotMeta: [{ key: "robot", value: "scale_01" }],
     },
   });
@@ -23,6 +26,13 @@ test("buildBpmnPropertiesOverlaySchema builds compact editable schema", () => {
   assert.equal(editable.rows.some((row) => row.id === "name"), true);
   assert.equal(editable.rows.some((row) => row.id === "documentation"), true);
   assert.equal(editable.rows.some((row) => row.kind === "extension"), true);
+  const documentationRow = editable.rows.find((row) => row.id === "documentation");
+  assert.deepEqual(documentationRow.documentationRows, [
+    { text: "Нужно проверить входные параметры", textFormat: "text/html" },
+    { text: "Доп. описание", textFormat: "text/markdown" },
+  ]);
+  const extensionRow = editable.rows.find((row) => row.kind === "extension");
+  assert.equal(extensionRow.propertyKey, "0:0:priority");
 
   const robotSection = schema.sections.find((section) => section.id === "robot_meta");
   assert.ok(robotSection);
