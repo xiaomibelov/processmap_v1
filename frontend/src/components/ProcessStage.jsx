@@ -4223,7 +4223,6 @@ export default function ProcessStage({
     asObject,
     bpmnFragmentPlacementActive,
     bpmnFragmentPlacementGhost,
-    bpmnRef,
     bpmnContextMenu,
     bpmnSubprocessPreview,
     bpmnRef,
