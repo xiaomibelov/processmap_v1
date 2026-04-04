@@ -2195,6 +2195,51 @@ export default function ProcessStage({
       setTemplatesPickerOpen,
     },
   });
+  const {
+    bpmnContextMenu,
+    bpmnSubprocessPreview,
+    onBpmnContextMenuRequest,
+    onBpmnContextMenuDismiss,
+    closeBpmnContextMenu,
+    closeBpmnSubprocessPreview,
+    openBpmnSubprocessPreviewProperties,
+    runBpmnContextMenuAction,
+  } = useBpmnDiagramContextMenu({
+    bpmnRef,
+    undoRedoState: diagramUndoRedoState,
+    tab,
+    hasSession,
+    drawioEditorOpen,
+    hybridPlacementHitLayerActive,
+    hybridModeEffective,
+    modalOpenSignal: (
+      qualityAutoFixOpen
+      || insertBetweenOpen
+      || versionsOpen
+      || diffOpen
+      || createTemplateOpen
+      || templatesPickerOpen
+    ),
+    closeAllDiagramActions,
+    setInfoMsg,
+    setGenErr,
+  });
+
+  const handleUndoAction = useCallback(async () => {
+    const result = await Promise.resolve(bpmnRef.current?.undo?.());
+    if (result && result.ok === false) {
+      setGenErr(shortErr(result.error || "Undo недоступен."));
+    }
+    refreshDiagramUndoRedoState();
+  }, [refreshDiagramUndoRedoState, setGenErr]);
+
+  const handleRedoAction = useCallback(async () => {
+    const result = await Promise.resolve(bpmnRef.current?.redo?.());
+    if (result && result.ok === false) {
+      setGenErr(shortErr(result.error || "Redo недоступен."));
+    }
+    refreshDiagramUndoRedoState();
+  }, [refreshDiagramUndoRedoState, setGenErr]);
   const aiGenerateGate = useMemo(
     () => getAiGenerateGate({
       hasSession,
@@ -4170,6 +4215,11 @@ export default function ProcessStage({
     bpmnFragmentPlacementActive,
     bpmnFragmentPlacementGhost,
     bpmnRef,
+    bpmnContextMenu,
+    bpmnSubprocessPreview,
+    bpmnRef,
+    closeBpmnContextMenu,
+    closeBpmnSubprocessPreview,
     cleanupMissingHybridBindings,
     clientToDiagram,
     closeEmbeddedDrawioEditor,
@@ -4255,6 +4305,8 @@ export default function ProcessStage({
     subscribeOverlayViewportMatrix,
     tab,
     toText,
+    runBpmnContextMenuAction,
+    openBpmnSubprocessPreviewProperties,
     withHybridOverlayGuard,
   });
 
