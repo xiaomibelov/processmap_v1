@@ -89,6 +89,8 @@ import usePlaybackController from "../features/process/stage/controllers/usePlay
 import useDiagramShellState from "../features/process/stage/orchestration/useDiagramShellState";
 import useDiagramActionsController from "../features/process/stage/orchestration/useDiagramActionsController";
 import useStableProcessDiagramOverlayLayersProps from "../features/process/stage/orchestration/useStableProcessDiagramOverlayLayersProps";
+import useBpmnDiagramContextMenu from "../features/process/stage/hooks/useBpmnDiagramContextMenu";
+import useBpmnPropertiesOverlayController from "../features/process/bpmn/context-menu/properties-overlay/useBpmnPropertiesOverlayController";
 import useProcessStageDrawio from "../features/process/stage/orchestration/useProcessStageDrawio";
 import useProcessStageHybrid from "../features/process/stage/orchestration/useProcessStageHybrid";
 import useProcessStageLocalState from "../features/process/stage/orchestration/state/useProcessStageLocalState";
@@ -105,6 +107,7 @@ import ProcessDialogs from "../features/process/stage/ui/ProcessDialogs";
 import ProcessStageHeader from "../features/process/stage/ui/ProcessStageHeader";
 import ProcessStageDiagramControls from "../features/process/stage/ui/ProcessStageDiagramControls";
 import ProcessDiagramOverlayLayers from "../features/process/stage/ui/ProcessDiagramOverlayLayers";
+import BpmnPropertiesOverlayModal from "../features/process/bpmn/context-menu/properties-overlay/BpmnPropertiesOverlayModal";
 import {
   formatRevisionAuthor,
   formatRevisionTimestampRu,
@@ -2195,6 +2198,11 @@ export default function ProcessStage({
       setTemplatesPickerOpen,
     },
   });
+  const bpmnPropertiesOverlayController = useBpmnPropertiesOverlayController({
+    bpmnRef,
+    setGenErr,
+    setInfoMsg,
+  });
   const {
     bpmnContextMenu,
     bpmnSubprocessPreview,
@@ -2223,6 +2231,7 @@ export default function ProcessStage({
     closeAllDiagramActions,
     setInfoMsg,
     setGenErr,
+    onActionResult: bpmnPropertiesOverlayController.handleContextMenuActionResult,
   });
 
   const handleUndoAction = useCallback(async () => {
@@ -4892,6 +4901,18 @@ export default function ProcessStage({
           </div>
         )}
       </div>
+
+      <BpmnPropertiesOverlayModal
+        open={bpmnPropertiesOverlayController.isOpen}
+        schema={bpmnPropertiesOverlayController.schema}
+        draftByRowId={bpmnPropertiesOverlayController.draftByRowId}
+        savingRowId={bpmnPropertiesOverlayController.savingRowId}
+        error={bpmnPropertiesOverlayController.error}
+        onClose={bpmnPropertiesOverlayController.closeOverlay}
+        onDraftChange={bpmnPropertiesOverlayController.setDraftValue}
+        onSubmit={bpmnPropertiesOverlayController.submitRowValue}
+        onCancel={bpmnPropertiesOverlayController.cancelRowEdit}
+      />
 
       <ProcessDialogs
         view={shellVm.dialogsProps}
