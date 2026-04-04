@@ -6,6 +6,8 @@ function createStubModeler({
   root,
   registryItems = [],
   createShapeImpl = null,
+  updateLabelImpl = null,
+  updatePropertiesImpl = null,
   viewbox = { x: 100, y: 50, scale: 2 },
   rect = { left: 10, top: 20 },
   commandStack = null,
@@ -46,12 +48,32 @@ function createStubModeler({
     },
     removeConnection() {
     },
-    updateLabel() {
-      const [element, value] = arguments;
+    updateLabel(element, text) {
+      const value = String(text ?? "");
       labelCalls.push({
         id: String(element?.id || ""),
-        value: String(value ?? ""),
+        value,
       });
+      if (typeof updateLabelImpl === "function") {
+        updateLabelImpl(element, text);
+      }
+    },
+    updateProperties(element, attrs) {
+      if (typeof updatePropertiesImpl === "function") {
+        updatePropertiesImpl(element, attrs);
+      }
+      if (attrs && typeof attrs === "object") {
+        const bo = element?.businessObject || (element.businessObject = {});
+        Object.keys(attrs).forEach((key) => {
+          bo[key] = attrs[key];
+        });
+      }
+    },
+  };
+
+  const moddle = {
+    create(type, attrs = {}) {
+      return { $type: String(type || ""), ...attrs };
     },
   };
 
@@ -107,6 +129,7 @@ function createStubModeler({
       if (key === "selection") return { select() {} };
       if (key === "directEditing") return { activate() {} };
       if (key === "commandStack") return commandStack;
+      if (key === "moddle") return moddle;
       return null;
     },
   };
@@ -324,6 +347,131 @@ test("undo/redo actions route through commandStack", async () => {
   assert.equal(undoResult.ok, true);
   assert.equal(redoResult.ok, true);
   assert.deepEqual(calls, ["undo", "redo"]);
+});
+
+test("open_properties returns overlay payload with BPMN fields", async () => {
+  const task = {
+    id: "Task_1",
+    type: "bpmn:Task",
+    businessObject: {
+      $type: "bpmn:Task",
+      name: "Проверка",
+      documentation: [{ $type: "bpmn:Documentation", text: "Текст документации" }],
+      extensionElements: {
+        values: [
+          {
+            $type: "camunda:Properties",
+            values: [{ $type: "camunda:Property", name: "priority", value: "high" }],
+          },
+          {
+            $type: "pm:RobotMeta",
+            robot: "scale_01",
+            retry: "3",
+          },
+        ],
+      },
+    },
+  };
+  const { inst } = createStubModeler({ root: task, registryItems: [task] });
+  const result = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "open_properties",
+      target: { id: "Task_1" },
+    },
+    modelerRef: { current: inst },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.openPropertiesOverlay?.elementId, "Task_1");
+  assert.equal(result.openPropertiesOverlay?.elementName, "Проверка");
+  assert.equal(result.openPropertiesOverlay?.bpmnType, "bpmn:Task");
+  assert.equal(Array.isArray(result.openPropertiesOverlay?.documentation), true);
+  assert.equal(result.openPropertiesOverlay?.documentation?.[0]?.text, "Текст документации");
+  assert.equal(result.openPropertiesOverlay?.extensionProperties?.[0]?.name, "priority");
+});
+
+test("properties overlay updates name through canonical modeling path", async () => {
+  const task = {
+    id: "Task_1",
+    type: "bpmn:Task",
+    businessObject: { $type: "bpmn:Task", name: "Старое имя" },
+  };
+  let updatedName = "";
+  const { inst } = createStubModeler({
+    root: task,
+    registryItems: [task],
+    updateLabelImpl: (element, text) => {
+      updatedName = String(text || "");
+      if (element?.businessObject) element.businessObject.name = updatedName;
+    },
+  });
+
+  const result = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "properties_overlay_update_name",
+      target: { id: "Task_1" },
+      value: "Новое имя",
+    },
+    modelerRef: { current: inst },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(updatedName, "Новое имя");
+  assert.equal(task.businessObject.name, "Новое имя");
+});
+
+test("properties overlay updates documentation and extension values", async () => {
+  const task = {
+    id: "Task_1",
+    type: "bpmn:Task",
+    businessObject: {
+      $type: "bpmn:Task",
+      name: "Шаг",
+      extensionElements: {
+        values: [
+          {
+            $type: "camunda:Properties",
+            values: [{ $type: "camunda:Property", name: "priority", value: "high" }],
+          },
+        ],
+      },
+    },
+  };
+  let updatePropsCalls = 0;
+  const { inst } = createStubModeler({
+    root: task,
+    registryItems: [task],
+    updatePropertiesImpl: () => {
+      updatePropsCalls += 1;
+    },
+  });
+
+  const docResult = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "properties_overlay_update_documentation",
+      target: { id: "Task_1" },
+      documentation: [{ text: "Новая документация" }],
+    },
+    modelerRef: { current: inst },
+  });
+  assert.equal(docResult.ok, true);
+  assert.equal(task.businessObject.documentation?.[0]?.text, "Новая документация");
+
+  const extResult = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "properties_overlay_update_extension_property",
+      target: { id: "Task_1" },
+      propertyName: "priority",
+      value: "low",
+    },
+    modelerRef: { current: inst },
+  });
+  assert.equal(extResult.ok, true);
+  assert.equal(
+    task.businessObject.extensionElements.values[0].values[0].value,
+    "low",
+  );
+  assert.equal(updatePropsCalls >= 2, true);
 });
 
 test("undo action returns explicit unavailable error when commandStack cannot undo", async () => {

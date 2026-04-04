@@ -32,6 +32,7 @@ export default function useBpmnDiagramContextMenu({
   closeAllDiagramActions,
   setInfoMsg,
   setGenErr,
+  onActionResult,
 }) {
   const isBlocked = useMemo(() => {
     if (!hasSession) return true;
@@ -104,6 +105,7 @@ export default function useBpmnDiagramContextMenu({
     );
     if (!menu || !actionId) return;
     const closeOnSuccess = actionRequest.closeOnSuccess !== false;
+    const actionMeta = asObject(actionRequest.actionMeta);
 
     const payload = {
       actionId,
@@ -111,6 +113,7 @@ export default function useBpmnDiagramContextMenu({
       clientX: Number(menu.clientX || 0),
       clientY: Number(menu.clientY || 0),
       value: String(actionRequest.value ?? ""),
+      actionMeta,
     };
 
     let result = null;
@@ -140,11 +143,18 @@ export default function useBpmnDiagramContextMenu({
       setInfoMsg?.(toText(result.message));
     }
 
+    onActionResult?.({
+      actionId,
+      actionMeta,
+      menu,
+      result: asObject(result),
+    });
+
     if (closeOnSuccess) {
       closeBpmnContextMenu();
     }
     return result;
-  }, [bpmnRef, closeBpmnContextMenu, menu, setGenErr, setInfoMsg]);
+  }, [bpmnRef, closeBpmnContextMenu, menu, onActionResult, setGenErr, setInfoMsg]);
 
   const openBpmnSubprocessPreviewProperties = useCallback(async () => {
     const targetId = toText(asObject(bpmnSubprocessPreview).targetId);
