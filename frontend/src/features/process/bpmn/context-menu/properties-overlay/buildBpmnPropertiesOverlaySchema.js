@@ -15,16 +15,34 @@ function toRowId(prefix, raw) {
   return `${prefix}_${key || "row"}`;
 }
 
+function normalizeDocumentationRows(rawRows) {
+  return asArray(rawRows)
+    .map((rowRaw) => {
+      const row = asObject(rowRaw);
+      const text = String(
+        Object.prototype.hasOwnProperty.call(row, "text")
+          ? row.text
+          : (Object.prototype.hasOwnProperty.call(row, "value") ? row.value : rowRaw),
+      );
+      const textFormat = toText(row?.textFormat || row?.textformat);
+      if (!text.trim() && !textFormat) return null;
+      return { text, textFormat };
+    })
+    .filter(Boolean);
+}
+
 function normalizeExtensionRows(rawRows) {
   return asArray(rawRows)
     .map((rowRaw) => {
       const row = asObject(rowRaw);
       const name = toText(row?.name || row?.key);
+      const propertyKey = toText(row?.key || name);
       if (!name) return null;
       return {
-        id: toRowId("extension", row?.key || name),
+        id: toRowId("extension", propertyKey || name),
         kind: "extension",
         propertyName: name,
+        propertyKey,
         label: `Расширение: ${name}`,
         value: String(row?.value ?? ""),
         editable: true,
@@ -62,7 +80,7 @@ export default function buildBpmnPropertiesOverlaySchema({
   const elementName = toText(payload?.elementName || target?.name || elementId);
   const bpmnType = toText(payload?.bpmnType || target?.bpmnType || target?.type);
 
-  const documentationRows = asArray(payload?.documentation);
+  const documentationRows = normalizeDocumentationRows(payload?.documentation);
   const documentationText = documentationRows.length > 0
     ? String(documentationRows[0]?.text ?? "")
     : "";
@@ -83,6 +101,7 @@ export default function buildBpmnPropertiesOverlaySchema({
       kind: "documentation",
       label: "Документация",
       value: documentationText,
+      documentationRows,
       editable: true,
     },
     ...extensionRows,

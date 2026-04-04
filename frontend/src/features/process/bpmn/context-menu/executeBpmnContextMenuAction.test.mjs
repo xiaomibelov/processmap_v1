@@ -388,6 +388,7 @@ test("open_properties returns overlay payload with BPMN fields", async () => {
   assert.equal(Array.isArray(result.openPropertiesOverlay?.documentation), true);
   assert.equal(result.openPropertiesOverlay?.documentation?.[0]?.text, "Текст документации");
   assert.equal(result.openPropertiesOverlay?.extensionProperties?.[0]?.name, "priority");
+  assert.equal(result.openPropertiesOverlay?.extensionProperties?.[0]?.key, "0:0:priority");
 });
 
 test("properties overlay updates name through canonical modeling path", async () => {
@@ -420,21 +421,17 @@ test("properties overlay updates name through canonical modeling path", async ()
   assert.equal(task.businessObject.name, "Новое имя");
 });
 
-test("properties overlay updates documentation and extension values", async () => {
+test("properties overlay updates documentation while preserving multiple entries and textFormat", async () => {
   const task = {
     id: "Task_1",
     type: "bpmn:Task",
     businessObject: {
       $type: "bpmn:Task",
       name: "Шаг",
-      extensionElements: {
-        values: [
-          {
-            $type: "camunda:Properties",
-            values: [{ $type: "camunda:Property", name: "priority", value: "high" }],
-          },
-        ],
-      },
+      documentation: [
+        { $type: "bpmn:Documentation", text: "Исходный текст", textFormat: "text/html" },
+        { $type: "bpmn:Documentation", text: "Доп. описание", textFormat: "text/markdown" },
+      ],
     },
   };
   let updatePropsCalls = 0;
@@ -450,28 +447,85 @@ test("properties overlay updates documentation and extension values", async () =
     payloadRaw: {
       actionId: "properties_overlay_update_documentation",
       target: { id: "Task_1" },
-      documentation: [{ text: "Новая документация" }],
+      documentation: [
+        { text: "Новая документация", textFormat: "text/html" },
+        { text: "Доп. описание", textFormat: "text/markdown" },
+      ],
     },
     modelerRef: { current: inst },
   });
   assert.equal(docResult.ok, true);
-  assert.equal(task.businessObject.documentation?.[0]?.text, "Новая документация");
+  assert.deepEqual(task.businessObject.documentation, [
+    { $type: "bpmn:Documentation", text: "Новая документация", textFormat: "text/html" },
+    { $type: "bpmn:Documentation", text: "Доп. описание", textFormat: "text/markdown" },
+  ]);
+  assert.equal(updatePropsCalls >= 1, true);
+});
+
+test("properties overlay updates only the targeted duplicate-named extension row and keeps undo snapshot intact", async () => {
+  const task = {
+    id: "Task_1",
+    type: "bpmn:Task",
+    businessObject: {
+      $type: "bpmn:Task",
+      name: "Шаг",
+      extensionElements: {
+        $type: "bpmn:ExtensionElements",
+        values: [
+          {
+            $type: "camunda:Properties",
+            values: [{ $type: "camunda:Property", name: "priority", value: "high" }],
+          },
+          {
+            $type: "camunda:Properties",
+            values: [{ $type: "camunda:Property", name: "priority", value: "low" }],
+          },
+        ],
+      },
+    },
+  };
+  let commandBoundaryPreviousExt = null;
+  let commandBoundaryNextExt = null;
+  let commandBoundaryPreviousValue = "";
+  const { inst } = createStubModeler({
+    root: task,
+    registryItems: [task],
+    updatePropertiesImpl: (element, attrs) => {
+      if (!attrs?.extensionElements) return;
+      commandBoundaryPreviousExt = element.businessObject.extensionElements;
+      commandBoundaryNextExt = attrs.extensionElements;
+      commandBoundaryPreviousValue = String(
+        commandBoundaryPreviousExt?.values?.[1]?.values?.[0]?.value ?? "",
+      );
+    },
+  });
 
   const extResult = await executeBpmnContextMenuAction({
     payloadRaw: {
       actionId: "properties_overlay_update_extension_property",
       target: { id: "Task_1" },
       propertyName: "priority",
-      value: "low",
+      propertyKey: "1:0:priority",
+      value: "medium",
     },
     modelerRef: { current: inst },
   });
+
   assert.equal(extResult.ok, true);
-  assert.equal(
-    task.businessObject.extensionElements.values[0].values[0].value,
-    "low",
-  );
-  assert.equal(updatePropsCalls >= 2, true);
+  assert.equal(commandBoundaryPreviousValue, "low");
+  assert.notEqual(commandBoundaryNextExt, commandBoundaryPreviousExt);
+  assert.equal(commandBoundaryPreviousExt?.values?.[0]?.values?.[0]?.value, "high");
+  assert.equal(commandBoundaryPreviousExt?.values?.[1]?.values?.[0]?.value, "low");
+  assert.equal(task.businessObject.extensionElements.values[0].values[0].value, "high");
+  assert.equal(task.businessObject.extensionElements.values[1].values[0].value, "medium");
+
+  task.businessObject.extensionElements = commandBoundaryPreviousExt;
+  assert.equal(task.businessObject.extensionElements.values[0].values[0].value, "high");
+  assert.equal(task.businessObject.extensionElements.values[1].values[0].value, "low");
+
+  task.businessObject.extensionElements = commandBoundaryNextExt;
+  assert.equal(task.businessObject.extensionElements.values[0].values[0].value, "high");
+  assert.equal(task.businessObject.extensionElements.values[1].values[0].value, "medium");
 });
 
 test("undo action returns explicit unavailable error when commandStack cannot undo", async () => {
