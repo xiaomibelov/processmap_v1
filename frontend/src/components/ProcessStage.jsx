@@ -293,6 +293,7 @@ export default function ProcessStage({
   const [drawioAnchorImportDiagnostics, setDrawioAnchorImportDiagnostics] = useState(null);
   const [saveUploadLifecycleEvent, setSaveUploadLifecycleEvent] = useState(IDLE_SAVE_UPLOAD_EVENT);
   const [latestBpmnVersionHead, setLatestBpmnVersionHead] = useState(null);
+  const [diagramUndoRedoState, setDiagramUndoRedoState] = useState({ canUndo: false, canRedo: false, ready: false });
 
   const {
     genBusy,
@@ -825,6 +826,36 @@ export default function ProcessStage({
     }
     queueDiagramMutationRaw(mutation);
   }, [queueDiagramMutationRaw]);
+
+  const refreshDiagramUndoRedoState = useCallback(() => {
+    const next = asObject(bpmnRef.current?.getUndoRedoState?.({ mode: "editor" }));
+    const normalized = {
+      canUndo: next.canUndo === true,
+      canRedo: next.canRedo === true,
+      ready: next.ready === true,
+    };
+    setDiagramUndoRedoState((prev) => (
+      prev.canUndo === normalized.canUndo
+      && prev.canRedo === normalized.canRedo
+      && prev.ready === normalized.ready
+        ? prev
+        : normalized
+    ));
+  }, []);
+
+  useEffect(() => {
+    if (!hasSession || tab !== "diagram") {
+      setDiagramUndoRedoState({ canUndo: false, canRedo: false, ready: false });
+      return undefined;
+    }
+    refreshDiagramUndoRedoState();
+    const timer = window.setInterval(() => {
+      refreshDiagramUndoRedoState();
+    }, 220);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [hasSession, refreshDiagramUndoRedoState, sid, tab]);
 
   useEffect(() => {
     return () => {
@@ -4520,6 +4551,10 @@ export default function ProcessStage({
     sid,
     saveDirtyHint: shellVm.shellProps.saveDirtyHint === true,
     handleSaveCurrentTab,
+    handleUndoAction,
+    handleRedoAction,
+    canUndo: diagramUndoRedoState.canUndo === true,
+    canRedo: diagramUndoRedoState.canRedo === true,
     workbench,
     tab,
     diagramMode,
