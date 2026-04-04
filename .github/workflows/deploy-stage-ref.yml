@@ -1,0 +1,57 @@
+name: Deploy to Stage (Explicit Ref)
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_ref:
+        description: "Git ref to deploy (branch, tag, or commit SHA)"
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy explicit ref to stage server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGE_HOST }}
+          username: ${{ secrets.STAGE_USER }}
+          key: ${{ secrets.STAGE_SSH_KEY }}
+          command_timeout: 15m
+          script: |
+            set -euo pipefail
+            cd /opt/processmap/app
+
+            DEPLOY_REF="${{ github.event.inputs.deploy_ref }}"
+            if [ -z "${DEPLOY_REF}" ]; then
+              echo "[deploy-stage-ref] deploy_ref is required"
+              exit 1
+            fi
+
+            echo "[deploy-stage-ref] requested ref: ${DEPLOY_REF}"
+            git remote set-url origin git@github.com:xiaomibelov/processmap_v1.git
+            git fetch --prune origin "${DEPLOY_REF}"
+            DEPLOY_SHA="$(git rev-parse --verify FETCH_HEAD)"
+            echo "[deploy-stage-ref] resolved sha: ${DEPLOY_SHA}"
+
+            # Pull requested source code only, preserve server configs
+            git checkout "${DEPLOY_SHA}" -- backend frontend Dockerfile deploy docker-compose.yml
+
+            # Rebuild api and gateway (frontend is baked into gateway image)
+            APP_ENV_FILE=.env.stage docker compose \
+              --env-file .env.stage \
+              -f docker-compose.yml \
+              -f docker-compose.stage.yml \
+              -p processmap_stage \
+              build api gateway
+
+            # Restart updated containers
+            APP_ENV_FILE=.env.stage docker compose \
+              --env-file .env.stage \
+              -f docker-compose.yml \
+              -f docker-compose.stage.yml \
+              -p processmap_stage \
+              up -d --no-deps api gateway
+
+            echo "[deploy-stage-ref] done ref=${DEPLOY_REF} sha=${DEPLOY_SHA}"
