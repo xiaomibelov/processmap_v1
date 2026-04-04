@@ -1,3 +1,5 @@
+import buildSubprocessPreview from "./executor/buildSubprocessPreview.js";
+
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -352,6 +354,7 @@ export async function executeBpmnContextMenuAction({
   const commandStack = inst.get?.("commandStack");
   const target = targetId ? registry?.get?.(targetId) : null;
   const point = readDiagramPointFromClient(inst, Number(payload.clientX || 0), Number(payload.clientY || 0));
+  const actionValue = String(payload.value ?? "");
 
   const emitMutation = (meta = {}) => {
     if (typeof emitDiagramMutation === "function") {
@@ -450,6 +453,15 @@ export async function executeBpmnContextMenuAction({
 
     if (!target) return { ok: false, error: "target_not_found" };
 
+    if (actionId === "quick_set_name" || actionId === "quick_set_flow_label") {
+      if (!modeling || typeof modeling.updateLabel !== "function") {
+        return { ok: false, error: "update_label_unavailable" };
+      }
+      modeling.updateLabel(target, actionValue);
+      emitMutation({ targetId, valueLength: actionValue.length });
+      return { ok: true, changedIds: [toText(target.id)].filter(Boolean) };
+    }
+
     if (actionId === "rename" || actionId === "edit_label") {
       if (directEditing && typeof directEditing.activate === "function") {
         directEditing.activate(target);
@@ -502,31 +514,30 @@ export async function executeBpmnContextMenuAction({
       const name = toText(target?.businessObject?.name);
       if (!name) return { ok: false, error: "name_empty" };
       const ok = await copyToClipboard(name);
-      return { ok, error: ok ? "" : "clipboard_unavailable", message: ok ? `Copied: ${name}` : "" };
+      return { ok, error: ok ? "" : "clipboard_unavailable", message: ok ? `Скопировано: ${name}` : "" };
     }
 
     if (actionId === "copy_id") {
       const id = toText(target?.id);
       if (!id) return { ok: false, error: "id_empty" };
       const ok = await copyToClipboard(id);
-      return { ok, error: ok ? "" : "clipboard_unavailable", message: ok ? `Copied: ${id}` : "" };
+      return { ok, error: ok ? "" : "clipboard_unavailable", message: ok ? `Скопировано: ${id}` : "" };
     }
 
     if (actionId === "open_inside") {
-      const drilldown = inst.get?.("drilldown");
-      if (drilldown && typeof drilldown.open === "function") {
-        drilldown.open(target);
-      } else {
-        selectAndEmitElement({
-          inst,
-          element: target,
-          source: "context_menu_open_inside",
-          emitElementSelection,
-          buildInsertBetweenCandidate,
-        });
-        canvas?.scrollToElement?.(target);
-      }
-      return { ok: true, changedIds: [toText(target.id)].filter(Boolean) };
+      selectAndEmitElement({
+        inst,
+        element: target,
+        source: "context_menu_open_inside_preview",
+        emitElementSelection,
+        buildInsertBetweenCandidate,
+      });
+      canvas?.scrollToElement?.(target);
+      return {
+        ok: true,
+        changedIds: [toText(target.id)].filter(Boolean),
+        openInsidePreview: buildSubprocessPreview(target),
+      };
     }
 
     if (actionId === "delete") {

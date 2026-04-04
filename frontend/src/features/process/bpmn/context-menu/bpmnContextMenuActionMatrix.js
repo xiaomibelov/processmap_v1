@@ -1,3 +1,9 @@
+import {
+  ACTION_ID_REDO,
+  ACTION_ID_UNDO,
+  readContextMenuSchemaByKind,
+} from "./schema/bpmnContextMenuSchemas.js";
+
 function toText(value) {
   return String(value || "").trim();
 }
@@ -24,21 +30,9 @@ export function resolveBpmnContextTargetKind(targetRaw = null) {
   if (type.includes("startevent")) return "start_event";
   if (type.includes("endevent")) return "end_event";
   if (type.includes("task")) return "task";
+  if (kind === "element" || !!type || !!toText(target.id)) return "generic_element";
   return "unsupported";
 }
-
-function action(id, label, group, options = {}) {
-  return {
-    id,
-    label,
-    group,
-    destructive: options.destructive === true,
-    disabled: options.disabled === true,
-  };
-}
-
-const ACTION_ID_UNDO = "undo";
-const ACTION_ID_REDO = "redo";
 
 function withUndoRedoAvailability(actionsRaw, targetRaw) {
   const actions = Array.isArray(actionsRaw) ? actionsRaw : [];
@@ -56,88 +50,40 @@ function withUndoRedoAvailability(actionsRaw, targetRaw) {
   });
 }
 
-const ACTIONS_BY_KIND = Object.freeze({
-  canvas: [
-    action(ACTION_ID_UNDO, "Шаг назад", "utility"),
-    action(ACTION_ID_REDO, "Повторить отменённое действие", "utility"),
-    action("create_task", "Создать Task", "primary"),
-    action("create_gateway", "Создать Gateway", "primary"),
-    action("create_start_event", "Создать Start Event", "primary"),
-    action("create_end_event", "Создать End Event", "primary"),
-    action("create_subprocess", "Создать Subprocess", "primary"),
-    action("paste", "Вставить", "utility"),
-    action("add_annotation", "Добавить annotation", "structural"),
-  ],
-  task: [
-    action("rename", "Rename", "primary"),
-    action("open_properties", "Open Properties", "primary"),
-    action("add_next_step", "Add Next Step", "primary"),
-    action(ACTION_ID_UNDO, "Шаг назад", "utility"),
-    action(ACTION_ID_REDO, "Повторить отменённое действие", "utility"),
-    action("copy_name", "Copy Name", "utility"),
-    action("copy_id", "Copy ID", "utility"),
-    action("delete", "Delete", "destructive", { destructive: true }),
-  ],
-  gateway: [
-    action("rename", "Rename", "primary"),
-    action("open_properties", "Open Properties", "primary"),
-    action("add_outgoing_branch", "Add Outgoing Branch", "primary"),
-    action(ACTION_ID_UNDO, "Шаг назад", "utility"),
-    action(ACTION_ID_REDO, "Повторить отменённое действие", "utility"),
-    action("copy_name", "Copy Name", "utility"),
-    action("copy_id", "Copy ID", "utility"),
-    action("delete", "Delete", "destructive", { destructive: true }),
-  ],
-  start_event: [
-    action("rename", "Rename", "primary"),
-    action("open_properties", "Open Properties", "primary"),
-    action("add_next_step", "Add Next Step", "primary"),
-    action(ACTION_ID_UNDO, "Шаг назад", "utility"),
-    action(ACTION_ID_REDO, "Повторить отменённое действие", "utility"),
-    action("copy_name", "Copy Name", "utility"),
-    action("copy_id", "Copy ID", "utility"),
-    action("delete", "Delete", "destructive", { destructive: true }),
-  ],
-  end_event: [
-    action("rename", "Rename", "primary"),
-    action("open_properties", "Open Properties", "primary"),
-    action(ACTION_ID_UNDO, "Шаг назад", "utility"),
-    action(ACTION_ID_REDO, "Повторить отменённое действие", "utility"),
-    action("copy_name", "Copy Name", "utility"),
-    action("copy_id", "Copy ID", "utility"),
-    action("delete", "Delete", "destructive", { destructive: true }),
-  ],
-  subprocess: [
-    action("rename", "Rename", "primary"),
-    action("open_properties", "Open Properties", "primary"),
-    action("open_inside", "Open Inside", "primary"),
-    action("add_next_step", "Add Next Step", "primary"),
-    action(ACTION_ID_UNDO, "Шаг назад", "utility"),
-    action(ACTION_ID_REDO, "Повторить отменённое действие", "utility"),
-    action("copy_name", "Copy Name", "utility"),
-    action("copy_id", "Copy ID", "utility"),
-    action("delete", "Delete", "destructive", { destructive: true }),
-  ],
-  sequence_flow: [
-    action("edit_label", "Edit Label", "primary"),
-    action("open_properties", "Open Properties", "primary"),
-    action(ACTION_ID_UNDO, "Шаг назад", "utility"),
-    action(ACTION_ID_REDO, "Повторить отменённое действие", "utility"),
-    action("copy_id", "Copy ID", "utility"),
-    action("delete", "Delete", "destructive", { destructive: true }),
-  ],
-});
-
 export function resolveBpmnContextMenuActions(targetRaw = null) {
   const kind = resolveBpmnContextTargetKind(targetRaw);
-  const actions = ACTIONS_BY_KIND[kind];
+  const actions = readContextMenuSchemaByKind(kind);
   return withUndoRedoAvailability(actions, targetRaw);
 }
 
 export function resolveBpmnContextMenuHeader(targetRaw = null) {
   const target = targetRaw && typeof targetRaw === "object" ? targetRaw : {};
   const kind = resolveBpmnContextTargetKind(targetRaw);
-  if (kind === "canvas") return "Canvas";
-  if (kind === "sequence_flow") return toText(target.name || target.id) || "Sequence Flow";
-  return toText(target.name || target.id) || "BPMN Element";
+  if (kind === "canvas") return "Холст";
+  if (kind === "sequence_flow") return toText(target.name || target.id) || "Переход";
+  return toText(target.name || target.id) || "Элемент BPMN";
+}
+
+export function resolveBpmnContextMenuQuickEdit(targetRaw = null) {
+  const target = targetRaw && typeof targetRaw === "object" ? targetRaw : {};
+  const kind = resolveBpmnContextTargetKind(target);
+  if (kind === "task" || kind === "subprocess") {
+    return {
+      actionId: "quick_set_name",
+      label: "Название",
+      placeholder: "Введите название шага",
+      value: toText(target.name),
+      group: "quick_properties",
+    };
+  }
+  if (kind === "sequence_flow") {
+    return {
+      actionId: "quick_set_flow_label",
+      label: "Текст перехода",
+      placeholder: "Введите текст перехода",
+      value: toText(target.name),
+      group: "quick_properties",
+    };
+  }
+  return null;
 }

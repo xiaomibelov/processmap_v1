@@ -11,6 +11,7 @@ function createStubModeler({
   commandStack = null,
 } = {}) {
   const calls = [];
+  const labelCalls = [];
   const elementById = new Map();
   registryItems.forEach((item) => {
     if (item?.id) elementById.set(String(item.id), item);
@@ -46,6 +47,11 @@ function createStubModeler({
     removeConnection() {
     },
     updateLabel() {
+      const [element, value] = arguments;
+      labelCalls.push({
+        id: String(element?.id || ""),
+        value: String(value ?? ""),
+      });
     },
   };
 
@@ -105,7 +111,7 @@ function createStubModeler({
     },
   };
 
-  return { inst, calls };
+  return { inst, calls, labelCalls };
 }
 
 test("canvas create task: resolves lane click to participant parent and guards DI/flowElements collections", async () => {
@@ -347,4 +353,136 @@ test("undo action returns explicit unavailable error when commandStack cannot un
 
   assert.equal(result.ok, false);
   assert.equal(result.error, "undo_unavailable");
+});
+
+test("quick_set_name updates BPMN label through canonical modeling.updateLabel path", async () => {
+  const task = {
+    id: "Task_1",
+    type: "bpmn:Task",
+    businessObject: { $type: "bpmn:Task", name: "Старое имя" },
+  };
+  const root = {
+    id: "Process_1",
+    type: "bpmn:Process",
+    businessObject: { $type: "bpmn:Process", flowElements: [task] },
+    di: { planeElement: [] },
+    children: [task],
+  };
+  task.parent = root;
+
+  const { inst, labelCalls } = createStubModeler({
+    root,
+    registryItems: [root, task],
+  });
+
+  const result = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "quick_set_name",
+      target: { id: "Task_1" },
+      value: "Новое имя шага",
+    },
+    modelerRef: { current: inst },
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(labelCalls, [{ id: "Task_1", value: "Новое имя шага" }]);
+});
+
+test("quick_set_flow_label updates sequence flow label", async () => {
+  const flow = {
+    id: "Flow_1",
+    type: "bpmn:SequenceFlow",
+    businessObject: { $type: "bpmn:SequenceFlow", name: "Старый текст" },
+    waypoints: [{ x: 0, y: 0 }, { x: 100, y: 100 }],
+  };
+  const root = {
+    id: "Process_1",
+    type: "bpmn:Process",
+    businessObject: { $type: "bpmn:Process", flowElements: [flow] },
+    di: { planeElement: [] },
+    children: [flow],
+  };
+  flow.parent = root;
+
+  const { inst, labelCalls } = createStubModeler({
+    root,
+    registryItems: [root, flow],
+  });
+
+  const result = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "quick_set_flow_label",
+      target: { id: "Flow_1" },
+      value: "Да",
+    },
+    modelerRef: { current: inst },
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(labelCalls, [{ id: "Flow_1", value: "Да" }]);
+});
+
+test("open_inside returns read-only subprocess preview and does not require drilldown provider", async () => {
+  const subprocess = {
+    id: "SubProcess_1",
+    type: "bpmn:SubProcess",
+    businessObject: {
+      $type: "bpmn:SubProcess",
+      name: "Подготовка",
+      flowElements: [
+        { id: "StartEvent_1", $type: "bpmn:StartEvent", name: "Начало" },
+        { id: "Task_1", $type: "bpmn:Task", name: "Проверить ёмкость" },
+        { id: "Gateway_1", $type: "bpmn:ExclusiveGateway", name: "Достаточно?" },
+        { id: "EndEvent_1", $type: "bpmn:EndEvent", name: "Завершить" },
+        { id: "Flow_1", $type: "bpmn:SequenceFlow", name: "" },
+      ],
+    },
+  };
+  const root = {
+    id: "Process_1",
+    type: "bpmn:Process",
+    businessObject: { $type: "bpmn:Process", flowElements: [subprocess] },
+    di: { planeElement: [] },
+    children: [subprocess],
+  };
+  subprocess.parent = root;
+
+  const { inst } = createStubModeler({
+    root,
+    registryItems: [root, subprocess],
+  });
+  const originalGet = inst.get.bind(inst);
+  inst.get = (key) => {
+    if (String(key || "") === "drilldown") {
+      throw new Error('No provider for "drilldown"!');
+    }
+    return originalGet(key);
+  };
+
+  const result = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "open_inside",
+      target: { id: "SubProcess_1" },
+      clientX: 220,
+      clientY: 220,
+    },
+    modelerRef: { current: inst },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.openInsidePreview?.title, "Подготовка");
+  assert.equal(result.openInsidePreview?.internalId, "SubProcess_1");
+  assert.equal(result.openInsidePreview?.summary?.stepCount, 4);
+  assert.equal(result.openInsidePreview?.summary?.transitionCount, 1);
+  assert.equal(result.openInsidePreview?.summary?.hasStart, true);
+  assert.equal(result.openInsidePreview?.summary?.hasEnd, true);
+  assert.equal(result.openInsidePreview?.summary?.hasGateway, true);
+  assert.ok(Array.isArray(result.openInsidePreview?.items));
+  assert.equal(result.openInsidePreview.items.length, 4);
+  assert.ok(Array.isArray(result.openInsidePreview.items[0]?.keyBpmnAttrs));
+  assert.ok(Array.isArray(result.openInsidePreview.items[0]?.customProperties));
+  assert.ok(Array.isArray(result.openInsidePreview.items[0]?.extensionProperties));
+  assert.ok(Array.isArray(result.openInsidePreview.items[0]?.timerAndListeners));
+  assert.ok(Array.isArray(result.openInsidePreview.items[0]?.robotMeta));
+  assert.ok(Array.isArray(result.openInsidePreview.items[0]?.executionAttrs));
 });

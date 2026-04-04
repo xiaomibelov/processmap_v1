@@ -2229,9 +2229,12 @@ export default function ProcessStage({
   });
   const {
     bpmnContextMenu,
+    bpmnSubprocessPreview,
     onBpmnContextMenuRequest,
     onBpmnContextMenuDismiss,
     closeBpmnContextMenu,
+    closeBpmnSubprocessPreview,
+    openBpmnSubprocessPreviewProperties,
     runBpmnContextMenuAction,
   } = useBpmnDiagramContextMenu({
     bpmnRef,
@@ -4244,8 +4247,10 @@ export default function ProcessStage({
     bpmnFragmentPlacementActive,
     bpmnFragmentPlacementGhost,
     bpmnContextMenu,
+    bpmnSubprocessPreview,
     bpmnRef,
     closeBpmnContextMenu,
+    closeBpmnSubprocessPreview,
     cleanupMissingHybridBindings,
     clientToDiagram,
     closeEmbeddedDrawioEditor,
@@ -4334,6 +4339,7 @@ export default function ProcessStage({
     tab,
     toText,
     runBpmnContextMenuAction,
+    openBpmnSubprocessPreviewProperties,
     withHybridOverlayGuard,
   });
 

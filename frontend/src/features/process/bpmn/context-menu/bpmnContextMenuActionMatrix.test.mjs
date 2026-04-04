@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   resolveBpmnContextMenuActions,
+  resolveBpmnContextMenuHeader,
+  resolveBpmnContextMenuQuickEdit,
   resolveBpmnContextTargetKind,
 } from "./bpmnContextMenuActionMatrix.js";
 
@@ -12,22 +14,21 @@ function actionIds(target) {
 test("canvas action matrix includes V1 canvas actions", () => {
   const ids = actionIds({ kind: "canvas" });
   assert.deepEqual(ids, [
-    "undo",
-    "redo",
     "create_task",
     "create_gateway",
     "create_start_event",
     "create_end_event",
     "create_subprocess",
-    "paste",
     "add_annotation",
+    "undo",
+    "redo",
+    "paste",
   ]);
 });
 
 test("task action matrix includes add_next_step and utility actions", () => {
   const ids = actionIds({ bpmnType: "bpmn:Task" });
   assert.deepEqual(ids, [
-    "rename",
     "open_properties",
     "add_next_step",
     "undo",
@@ -36,6 +37,12 @@ test("task action matrix includes add_next_step and utility actions", () => {
     "copy_id",
     "delete",
   ]);
+});
+
+test("subprocess action matrix keeps open_inside action with updated label", () => {
+  const actions = resolveBpmnContextMenuActions({ bpmnType: "bpmn:SubProcess" });
+  const openInside = actions.find((item) => item.id === "open_inside");
+  assert.equal(openInside?.label, "Открыть подпроцесс");
 });
 
 test("gateway action matrix includes add_outgoing_branch", () => {
@@ -48,7 +55,6 @@ test("gateway action matrix includes add_outgoing_branch", () => {
 test("sequence flow action matrix includes edit_label and delete only from V1 set", () => {
   const ids = actionIds({ bpmnType: "bpmn:SequenceFlow", isConnection: true });
   assert.deepEqual(ids, [
-    "edit_label",
     "open_properties",
     "undo",
     "redo",
@@ -75,4 +81,44 @@ test("target kind detection is stable for BPMN core types", () => {
   assert.equal(resolveBpmnContextTargetKind({ bpmnType: "bpmn:EndEvent" }), "end_event");
   assert.equal(resolveBpmnContextTargetKind({ bpmnType: "bpmn:UserTask" }), "task");
   assert.equal(resolveBpmnContextTargetKind({ bpmnType: "bpmn:SequenceFlow" }), "sequence_flow");
+  assert.equal(resolveBpmnContextTargetKind({ kind: "element", bpmnType: "bpmn:TextAnnotation" }), "generic_element");
+});
+
+test("generic BPMN element falls back to utility actions", () => {
+  const ids = actionIds({ kind: "element", bpmnType: "bpmn:TextAnnotation", id: "TextAnnotation_1" });
+  assert.deepEqual(ids, [
+    "undo",
+    "redo",
+    "copy_id",
+  ]);
+});
+
+test("quick edit descriptor is provided for task name and flow label", () => {
+  const taskQuick = resolveBpmnContextMenuQuickEdit({ bpmnType: "bpmn:UserTask", name: "Проверка" });
+  assert.deepEqual(taskQuick, {
+    actionId: "quick_set_name",
+    label: "Название",
+    placeholder: "Введите название шага",
+    value: "Проверка",
+    group: "quick_properties",
+  });
+
+  const flowQuick = resolveBpmnContextMenuQuickEdit({
+    bpmnType: "bpmn:SequenceFlow",
+    isConnection: true,
+    name: "Да",
+  });
+  assert.deepEqual(flowQuick, {
+    actionId: "quick_set_flow_label",
+    label: "Текст перехода",
+    placeholder: "Введите текст перехода",
+    value: "Да",
+    group: "quick_properties",
+  });
+});
+
+test("headers are localized in russian", () => {
+  assert.equal(resolveBpmnContextMenuHeader({ kind: "canvas" }), "Холст");
+  assert.equal(resolveBpmnContextMenuHeader({ bpmnType: "bpmn:SequenceFlow", name: "" }), "Переход");
+  assert.equal(resolveBpmnContextMenuHeader({ bpmnType: "bpmn:Task", name: "" }), "Элемент BPMN");
 });

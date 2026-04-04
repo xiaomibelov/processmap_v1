@@ -28,14 +28,13 @@ function isBpmnOwnedEditableDomTarget(targetRaw, inst) {
   if (!isEditableDomTarget(targetRaw)) return false;
   if (isBpmnDirectEditingTarget(targetRaw)) return true;
   if (!isWithinCanvasContainer(targetRaw, inst)) return false;
-  return !!targetRaw.closest?.(".djs-popup, .djs-context-pad, .djs-palette");
+  return !!targetRaw.closest?.(".djs-popup, .djs-palette");
 }
 
 function isExcludedModeOwnerTarget(targetRaw) {
   if (!isElementNode(targetRaw)) return false;
   return !!targetRaw.closest?.([
     ".djs-palette",
-    ".djs-context-pad",
     ".djs-popup",
     ".bjs-powered-by",
     ".drawioInteractionLayer",
