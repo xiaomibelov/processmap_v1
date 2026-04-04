@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import buildBpmnPropertiesOverlaySchema from "./buildBpmnPropertiesOverlaySchema";
+import buildBpmnPropertiesOverlaySchema from "./buildBpmnPropertiesOverlaySchema.js";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -11,6 +11,35 @@ function asObject(value) {
 
 function toText(value) {
   return String(value || "").trim();
+}
+
+function normalizeDocumentationRows(rawRows) {
+  return asArray(rawRows)
+    .map((rowRaw) => {
+      const row = asObject(rowRaw);
+      const text = String(
+        Object.prototype.hasOwnProperty.call(row, "text")
+          ? row.text
+          : (Object.prototype.hasOwnProperty.call(row, "value") ? row.value : rowRaw),
+      );
+      const textFormat = toText(row?.textFormat || row?.textformat);
+      if (!text.trim() && !textFormat) return null;
+      return { text, textFormat };
+    })
+    .filter(Boolean);
+}
+
+function buildDocumentationSaveRows(rowRaw, value) {
+  const row = asObject(rowRaw);
+  const existingRows = normalizeDocumentationRows(row?.documentationRows);
+  if (!existingRows.length) {
+    return [{ text: String(value ?? "") }];
+  }
+  return existingRows.map((entry, index) => (
+    index === 0
+      ? { ...entry, text: String(value ?? "") }
+      : { ...entry }
+  ));
 }
 
 function buildRowValueMap(schemaRaw) {
@@ -60,7 +89,7 @@ function buildSaveActionPayload({ rowRaw, value, elementId }) {
       actionId: "properties_overlay_update_documentation",
       elementId: toText(elementId),
       target,
-      documentation: [{ text: String(value ?? "") }],
+      documentation: buildDocumentationSaveRows(row, value),
     };
   }
 
@@ -70,6 +99,7 @@ function buildSaveActionPayload({ rowRaw, value, elementId }) {
       elementId: toText(elementId),
       target,
       propertyName: toText(row?.propertyName),
+      propertyKey: toText(row?.propertyKey),
       value,
     };
   }

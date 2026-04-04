@@ -12,6 +12,70 @@ function toText(value) {
   return String(value || "").trim();
 }
 
+const MODDLE_CLONE_EXCLUDED_KEYS = new Set([
+  "$parent",
+  "parent",
+  "businessObject",
+  "source",
+  "target",
+  "sourceRef",
+  "targetRef",
+  "incoming",
+  "outgoing",
+  "di",
+  "labelTarget",
+  "labels",
+  "children",
+  "flowElements",
+  "laneSet",
+  "lanes",
+  "processRef",
+  "rootElements",
+  "collaborationRef",
+  "participants",
+]);
+
+function setBpmnProperty(target, key, value) {
+  if (!target) return;
+  if (typeof target.set === "function") {
+    target.set(key, value);
+    return;
+  }
+  target[key] = value;
+}
+
+function cloneBpmnModdleValue(value, moddle, seen = new WeakMap()) {
+  if (value === null || value === undefined) return value;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => cloneBpmnModdleValue(item, moddle, seen))
+      .filter((item) => item !== undefined);
+  }
+  if (typeof value !== "object") return undefined;
+  if (seen.has(value)) return seen.get(value);
+
+  const type = toText(value?.$type || value?.type);
+  const canCreateModdle = !!(type && moddle && typeof moddle.create === "function");
+  const out = canCreateModdle ? moddle.create(type) : {};
+  seen.set(value, out);
+
+  Object.keys(value).forEach((key) => {
+    if (!key || key === "$type" || MODDLE_CLONE_EXCLUDED_KEYS.has(key)) return;
+    const item = value[key];
+    if (typeof item === "function") return;
+    const cloned = cloneBpmnModdleValue(item, moddle, seen);
+    if (cloned !== undefined) {
+      setBpmnProperty(out, key, cloned);
+    }
+  });
+
+  if (!canCreateModdle && type) {
+    out.$type = type;
+  }
+  return out;
+}
+
 function isConnectionElement(el) {
   return !!el && Array.isArray(el?.waypoints);
 }
@@ -197,35 +261,47 @@ function updateElementDocumentation({
 }
 
 function updateExtensionPropertyValue({
+  inst,
   modeling,
   element,
   propertyNameRaw,
+  propertyKeyRaw,
   nextValueRaw,
 }) {
   if (!modeling || typeof modeling.updateProperties !== "function") {
     return { ok: false, error: "update_properties_unavailable" };
   }
+  const propertyKey = toText(propertyKeyRaw);
   const propertyName = toText(propertyNameRaw);
-  if (!propertyName) return { ok: false, error: "missing_property_name" };
+  if (!propertyKey && !propertyName) return { ok: false, error: "missing_property_name" };
   const bo = asObject(element?.businessObject);
-  const ext = asObject(bo?.extensionElements);
-  const values = asArray(ext?.values);
+  const ext = bo?.extensionElements || null;
+  if (!ext) return { ok: false, error: "extension_property_not_found" };
+
+  const moddle = inst?.get?.("moddle");
+  const nextExt = cloneBpmnModdleValue(ext, moddle);
+  const values = asArray(nextExt?.values);
   let found = false;
-  values.forEach((containerRaw) => {
+  values.forEach((containerRaw, containerIndex) => {
     const container = asObject(containerRaw);
     const type = toText(container?.$type || container?.type || "").toLowerCase();
     if (!type.endsWith(":properties")) return;
-    asArray(container?.values).forEach((propRaw) => {
+    asArray(container?.values).forEach((propRaw, propIndex) => {
       const prop = asObject(propRaw);
       const name = toText(prop?.name || prop?.key || prop?.id);
-      if (name !== propertyName) return;
-      prop.value = String(nextValueRaw ?? "");
+      const propertyKeyCandidate = `${containerIndex}:${propIndex}:${name}`;
+      if (propertyKey) {
+        if (propertyKeyCandidate !== propertyKey) return;
+      } else if (name !== propertyName) {
+        return;
+      }
+      setBpmnProperty(prop, "value", String(nextValueRaw ?? ""));
       found = true;
     });
   });
   if (!found) return { ok: false, error: "extension_property_not_found" };
   try {
-    modeling.updateProperties(element, { extensionElements: ext });
+    modeling.updateProperties(element, { extensionElements: nextExt });
     return { ok: true };
   } catch (error) {
     return {
@@ -711,9 +787,11 @@ export async function executeBpmnContextMenuAction({
 
     if (actionId === "properties_overlay_update_extension_property") {
       const result = updateExtensionPropertyValue({
+        inst,
         modeling,
         element: target,
         propertyNameRaw: payload.propertyName,
+        propertyKeyRaw: payload.propertyKey,
         nextValueRaw: payload.value,
       });
       if (!result.ok) return { ok: false, error: result.error || "extension_property_update_failed" };
