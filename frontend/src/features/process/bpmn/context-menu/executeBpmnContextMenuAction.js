@@ -50,6 +50,191 @@ function hasSemanticFlowElements(el) {
   return false;
 }
 
+function normalizeDocumentationRows(rawRows) {
+  return asArray(rawRows)
+    .map((rowRaw) => {
+      const row = asObject(rowRaw);
+      const text = String(
+        Object.prototype.hasOwnProperty.call(row, "text")
+          ? row.text
+          : (Object.prototype.hasOwnProperty.call(row, "value") ? row.value : rowRaw),
+      );
+      const textFormat = toText(row?.textFormat || row?.textformat);
+      if (!text.trim() && !textFormat) return null;
+      return { text, textFormat };
+    })
+    .filter(Boolean);
+}
+
+function readDocumentationRowsFromElement(element) {
+  const docs = asArray(element?.businessObject?.documentation);
+  return docs
+    .map((docRaw) => {
+      const doc = asObject(docRaw);
+      const text = String(doc?.text ?? "");
+      const textFormat = toText(doc?.textFormat || doc?.textformat);
+      if (!text.trim() && !textFormat) return null;
+      return { text, textFormat };
+    })
+    .filter(Boolean);
+}
+
+function readExtensionPropertiesFromElement(element) {
+  const ext = asObject(element?.businessObject?.extensionElements);
+  const values = asArray(ext?.values);
+  const rows = [];
+  values.forEach((containerRaw, containerIndex) => {
+    const container = asObject(containerRaw);
+    const containerType = toText(container?.$type || container?.type || "");
+    const normalized = containerType.toLowerCase();
+    if (!normalized.endsWith(":properties")) return;
+    const props = asArray(container?.values);
+    props.forEach((propRaw, propIndex) => {
+      const prop = asObject(propRaw);
+      const name = toText(prop?.name || prop?.key || prop?.id);
+      if (!name) return;
+      rows.push({
+        key: `${containerIndex}:${propIndex}:${name}`,
+        containerIndex,
+        propIndex,
+        name,
+        value: String(prop?.value ?? ""),
+        containerType,
+      });
+    });
+  });
+  return rows;
+}
+
+function readRobotMetaFromElement(element) {
+  const ext = asObject(element?.businessObject?.extensionElements);
+  const values = asArray(ext?.values);
+  const rows = [];
+  values.forEach((entryRaw) => {
+    const entry = asObject(entryRaw);
+    const type = toText(entry?.$type || entry?.type || "");
+    if (!type.toLowerCase().startsWith("pm:")) return;
+    Object.keys(entry).forEach((keyRaw) => {
+      const key = toText(keyRaw);
+      if (!key || key.startsWith("$")) return;
+      if (key === "id" || key === "values" || key === "extensionElements") return;
+      const value = entry[key];
+      if (value === null || value === undefined || typeof value === "function") return;
+      if (typeof value === "object") return;
+      const textValue = String(value);
+      if (!textValue.trim()) return;
+      rows.push({ key, value: textValue, sourceType: type });
+    });
+  });
+  return rows;
+}
+
+function buildPropertiesOverlayPayload(element) {
+  if (!element) return null;
+  const bo = asObject(element?.businessObject);
+  return {
+    elementId: toText(element?.id),
+    elementName: toText(bo?.name || element?.id),
+    bpmnType: toText(bo?.$type || element?.type),
+    documentation: readDocumentationRowsFromElement(element),
+    extensionProperties: readExtensionPropertiesFromElement(element),
+    robotMeta: readRobotMetaFromElement(element),
+  };
+}
+
+function updateElementName(modeling, element, nameRaw) {
+  const name = String(nameRaw ?? "");
+  if (!modeling || !element) return { ok: false, error: "target_not_found" };
+  try {
+    if (typeof modeling.updateLabel === "function") {
+      modeling.updateLabel(element, name);
+      return { ok: true };
+    }
+  } catch {
+  }
+  try {
+    if (typeof modeling.updateProperties === "function") {
+      modeling.updateProperties(element, { name });
+      return { ok: true };
+    }
+  } catch (error) {
+    return { ok: false, error: toText(error?.message || error || "rename_failed") || "rename_failed" };
+  }
+  return { ok: false, error: "rename_unavailable" };
+}
+
+function updateElementDocumentation({
+  inst,
+  modeling,
+  element,
+  documentationRowsRaw,
+}) {
+  if (!modeling || typeof modeling.updateProperties !== "function") {
+    return { ok: false, error: "update_properties_unavailable" };
+  }
+  const rows = normalizeDocumentationRows(documentationRowsRaw);
+  const moddle = inst?.get?.("moddle");
+  const documentation = rows.map((row) => {
+    const attrs = { text: String(row?.text ?? "") };
+    if (toText(row?.textFormat)) attrs.textFormat = toText(row.textFormat);
+    if (moddle && typeof moddle.create === "function") {
+      try {
+        return moddle.create("bpmn:Documentation", attrs);
+      } catch {
+      }
+    }
+    return { $type: "bpmn:Documentation", ...attrs };
+  });
+  try {
+    modeling.updateProperties(element, { documentation });
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: toText(error?.message || error || "set_documentation_failed") || "set_documentation_failed",
+    };
+  }
+}
+
+function updateExtensionPropertyValue({
+  modeling,
+  element,
+  propertyNameRaw,
+  nextValueRaw,
+}) {
+  if (!modeling || typeof modeling.updateProperties !== "function") {
+    return { ok: false, error: "update_properties_unavailable" };
+  }
+  const propertyName = toText(propertyNameRaw);
+  if (!propertyName) return { ok: false, error: "missing_property_name" };
+  const bo = asObject(element?.businessObject);
+  const ext = asObject(bo?.extensionElements);
+  const values = asArray(ext?.values);
+  let found = false;
+  values.forEach((containerRaw) => {
+    const container = asObject(containerRaw);
+    const type = toText(container?.$type || container?.type || "").toLowerCase();
+    if (!type.endsWith(":properties")) return;
+    asArray(container?.values).forEach((propRaw) => {
+      const prop = asObject(propRaw);
+      const name = toText(prop?.name || prop?.key || prop?.id);
+      if (name !== propertyName) return;
+      prop.value = String(nextValueRaw ?? "");
+      found = true;
+    });
+  });
+  if (!found) return { ok: false, error: "extension_property_not_found" };
+  try {
+    modeling.updateProperties(element, { extensionElements: ext });
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: toText(error?.message || error || "extension_property_update_failed") || "extension_property_update_failed",
+    };
+  }
+}
+
 function isSafeFlowParent(el) {
   const type = readElementType(el);
   if (!type) return false;
@@ -344,7 +529,7 @@ export async function executeBpmnContextMenuAction({
   if (!inst) return { ok: false, error: "modeler_not_ready" };
 
   const targetMeta = asObject(payload.target);
-  const targetId = toText(targetMeta.id);
+  const targetId = toText(targetMeta.id || payload.elementId);
   const registry = inst.get("elementRegistry");
   const modeling = inst.get("modeling");
   const elementFactory = inst.get("elementFactory");
@@ -478,7 +663,72 @@ export async function executeBpmnContextMenuAction({
         emitElementSelection,
         buildInsertBetweenCandidate,
       });
-      return { ok: true, changedIds: [toText(target.id)].filter(Boolean) };
+      return {
+        ok: true,
+        changedIds: [toText(target.id)].filter(Boolean),
+        openPropertiesOverlay: buildPropertiesOverlayPayload(target),
+      };
+    }
+
+    if (actionId === "properties_overlay_update_name") {
+      const result = updateElementName(modeling, target, payload.value);
+      if (!result.ok) return { ok: false, error: result.error || "rename_failed" };
+      selectAndEmitElement({
+        inst,
+        element: target,
+        source: "properties_overlay_update_name",
+        emitElementSelection,
+        buildInsertBetweenCandidate,
+      });
+      return {
+        ok: true,
+        changedIds: [toText(target.id)].filter(Boolean),
+        openPropertiesOverlay: buildPropertiesOverlayPayload(target),
+      };
+    }
+
+    if (actionId === "properties_overlay_update_documentation") {
+      const result = updateElementDocumentation({
+        inst,
+        modeling,
+        element: target,
+        documentationRowsRaw: payload.documentation,
+      });
+      if (!result.ok) return { ok: false, error: result.error || "set_documentation_failed" };
+      selectAndEmitElement({
+        inst,
+        element: target,
+        source: "properties_overlay_update_documentation",
+        emitElementSelection,
+        buildInsertBetweenCandidate,
+      });
+      return {
+        ok: true,
+        changedIds: [toText(target.id)].filter(Boolean),
+        openPropertiesOverlay: buildPropertiesOverlayPayload(target),
+      };
+    }
+
+    if (actionId === "properties_overlay_update_extension_property") {
+      const result = updateExtensionPropertyValue({
+        modeling,
+        element: target,
+        propertyNameRaw: payload.propertyName,
+        nextValueRaw: payload.value,
+      });
+      if (!result.ok) return { ok: false, error: result.error || "extension_property_update_failed" };
+      selectAndEmitElement({
+        inst,
+        element: target,
+        source: "properties_overlay_update_extension_property",
+        emitElementSelection,
+        buildInsertBetweenCandidate,
+      });
+      return {
+        ok: true,
+        changedIds: [toText(target.id)].filter(Boolean),
+        openPropertiesOverlay: buildPropertiesOverlayPayload(target),
+      };
     }
 
     if (actionId === "add_next_step") {
