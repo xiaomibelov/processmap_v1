@@ -125,7 +125,7 @@
 
   .diagramToolbarHeader {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: center;
     column-gap: 8px;
     min-height: 46px;
@@ -137,11 +137,13 @@
   }
 
   .diagramToolbarSlot--left {
-    @apply flex items-center;
+    @apply flex items-center overflow-hidden;
   }
 
   .diagramToolbarSlot--center {
     @apply flex min-w-0 items-center justify-center;
+    justify-self: center;
+    width: max-content;
   }
 
   .diagramToolbarSlot--center .seg {
@@ -152,10 +154,24 @@
   }
 
   .diagramToolbarSlot--right {
-    @apply flex items-center gap-1.5;
+    @apply flex items-center justify-end gap-1.5;
     min-width: 0;
     overflow: hidden;
     white-space: nowrap;
+  }
+
+  .diagramToolbarRightStatus {
+    @apply hidden min-w-0 items-center gap-1.5 lg:flex;
+    overflow: hidden;
+  }
+
+  .diagramToolbarRightStatus .badge {
+    max-width: 28ch;
+    @apply truncate;
+  }
+
+  .diagramToolbarRightActions {
+    @apply flex shrink-0 items-center gap-1;
   }
 
   .diagramToolbarContext {

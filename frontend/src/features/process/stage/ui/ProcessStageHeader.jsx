@@ -65,6 +65,9 @@ export default function ProcessStageHeader({ view = {} }) {
   const mirrorBadgeLabel = mirrorVersionLabel
     ? `${mirrorMeta.label} · ${mirrorVersionLabel}`
     : mirrorMeta.label;
+  const showSaveStatusBadge = canSaveNow && !showSaveActionButton;
+  const canRunUndo = tab === "diagram" && canUndo === true;
+  const canRunRedo = tab === "diagram" && canRedo === true;
 
   return (
     <div className="processHeader diagramToolbarHeader">
@@ -81,11 +84,7 @@ export default function ProcessStageHeader({ view = {} }) {
               >
                 {saveActionText || saveSmartText}
               </button>
-            ) : (
-              <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-save-status">
-                {saveSmartText}
-              </span>
-            )
+            ) : null
           ) : (
               <button
                 type="button"
@@ -113,46 +112,6 @@ export default function ProcessStageHeader({ view = {} }) {
               >
                 {draftStatusLabel}
               </span>
-              <span
-                className={`badge text-[11px] ${mirrorMeta.processTone}`}
-                data-testid="diagram-toolbar-publish-git-mirror-status"
-                title={mirrorLastError || "Статус синхронизации Git-зеркала"}
-              >
-                Git-зеркало: {mirrorBadgeLabel}
-              </span>
-            </>
-          ) : null}
-          {saveUploadStatus?.visible ? (
-            <span
-              className={`badge text-[11px] ${String(saveUploadStatus?.tone || "").trim()}`}
-              data-testid="diagram-toolbar-save-upload-status"
-              title={String(saveUploadStatus?.title || saveUploadStatus?.label || "")}
-            >
-              {String(saveUploadStatus?.label || "")}
-            </span>
-          ) : null}
-          {hasSession ? (
-            <>
-              <button
-                type="button"
-                className="secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
-                onClick={handleUndoAction}
-                disabled={tab !== "diagram" || canUndo !== true}
-                title="Ctrl+Z"
-                data-testid="diagram-toolbar-undo"
-              >
-                Шаг назад
-              </button>
-              <button
-                type="button"
-                className="secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
-                onClick={handleRedoAction}
-                disabled={tab !== "diagram" || canRedo !== true}
-                title="Ctrl+Y"
-                data-testid="diagram-toolbar-redo"
-              >
-                Повторить отменённое действие
-              </button>
             </>
           ) : null}
         </div>
@@ -186,7 +145,31 @@ export default function ProcessStageHeader({ view = {} }) {
       </div>
 
       <div className="diagramToolbarSlot diagramToolbarSlot--right">
-        {null}
+        <div className="diagramToolbarRightStatus">
+          {showSaveStatusBadge ? (
+            <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-save-status" title={saveSmartText}>
+              {saveSmartText}
+            </span>
+          ) : null}
+          {saveUploadStatus?.visible ? (
+            <span
+              className={`badge text-[11px] ${String(saveUploadStatus?.tone || "").trim()}`}
+              data-testid="diagram-toolbar-save-upload-status"
+              title={String(saveUploadStatus?.title || saveUploadStatus?.label || "")}
+            >
+              {String(saveUploadStatus?.label || "")}
+            </span>
+          ) : null}
+          {hasSession ? (
+            <span
+              className={`badge text-[11px] ${mirrorMeta.processTone}`}
+              data-testid="diagram-toolbar-publish-git-mirror-status"
+              title={mirrorLastError || "Статус синхронизации Git-зеркала"}
+            >
+              Git-зеркало: {mirrorBadgeLabel}
+            </span>
+          ) : null}
+        </div>
         {toolbarInlineMessage ? (
           <span
             className={`badge hidden max-w-[36ch] truncate lg:inline-flex ${toolbarInlineTone ? toolbarInlineTone : ""}`}
@@ -195,18 +178,45 @@ export default function ProcessStageHeader({ view = {} }) {
             {toolbarInlineMessage}
           </span>
         ) : null}
-        {null}
-        <button
-          ref={toolbarMenuButtonRef}
-          type="button"
-          className="secondaryBtn h-8 w-9 px-0 text-sm"
-          onClick={toggleToolbarMenu}
-          aria-expanded={toolbarMenuOpen ? "true" : "false"}
-          aria-label="Открыть меню действий"
-          data-testid="diagram-toolbar-overflow-toggle"
-        >
-          ⋯
-        </button>
+        <div className="diagramToolbarRightActions">
+          {hasSession ? (
+            <>
+              <button
+                type="button"
+                className="secondaryBtn h-8 w-8 px-0 text-base leading-none"
+                onClick={handleUndoAction}
+                disabled={!canRunUndo}
+                title="Шаг назад"
+                aria-label="Шаг назад"
+                data-testid="diagram-toolbar-undo"
+              >
+                <span aria-hidden="true">↶</span>
+              </button>
+              <button
+                type="button"
+                className="secondaryBtn h-8 w-8 px-0 text-base leading-none"
+                onClick={handleRedoAction}
+                disabled={!canRunRedo}
+                title="Повторить отменённое действие"
+                aria-label="Повторить отменённое действие"
+                data-testid="diagram-toolbar-redo"
+              >
+                <span aria-hidden="true">↷</span>
+              </button>
+            </>
+          ) : null}
+          <button
+            ref={toolbarMenuButtonRef}
+            type="button"
+            className="secondaryBtn h-8 w-9 px-0 text-sm"
+            onClick={toggleToolbarMenu}
+            aria-expanded={toolbarMenuOpen ? "true" : "false"}
+            aria-label="Открыть меню действий"
+            data-testid="diagram-toolbar-overflow-toggle"
+          >
+            ⋯
+          </button>
+        </div>
       </div>
 
       <input ref={importInputRef} type="file" accept=".bpmn,.xml,text/xml,application/xml" style={{ display: "none" }} onChange={onImportPicked} />
