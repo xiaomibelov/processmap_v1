@@ -2178,7 +2178,7 @@ export default function ProcessStage({
     bpmnFragmentPlacementGhost,
     bpmnFragmentPlacementActive,
   } = templatesStore;
-  const { stageActions } = useDiagramActionsController({
+  const { closeAllDiagramActions, stageActions } = useDiagramActionsController({
     popovers: {
       toolbarMenuOpen,
       setToolbarMenuOpen,
