@@ -89,6 +89,8 @@ import usePlaybackController from "../features/process/stage/controllers/usePlay
 import useDiagramShellState from "../features/process/stage/orchestration/useDiagramShellState";
 import useDiagramActionsController from "../features/process/stage/orchestration/useDiagramActionsController";
 import useStableProcessDiagramOverlayLayersProps from "../features/process/stage/orchestration/useStableProcessDiagramOverlayLayersProps";
+import useBpmnDiagramContextMenu from "../features/process/stage/hooks/useBpmnDiagramContextMenu";
+import useBpmnPropertiesOverlayController from "../features/process/bpmn/context-menu/properties-overlay/useBpmnPropertiesOverlayController";
 import useProcessStageDrawio from "../features/process/stage/orchestration/useProcessStageDrawio";
 import useProcessStageHybrid from "../features/process/stage/orchestration/useProcessStageHybrid";
 import useProcessStageLocalState from "../features/process/stage/orchestration/state/useProcessStageLocalState";
@@ -105,6 +107,7 @@ import ProcessDialogs from "../features/process/stage/ui/ProcessDialogs";
 import ProcessStageHeader from "../features/process/stage/ui/ProcessStageHeader";
 import ProcessStageDiagramControls from "../features/process/stage/ui/ProcessStageDiagramControls";
 import ProcessDiagramOverlayLayers from "../features/process/stage/ui/ProcessDiagramOverlayLayers";
+import BpmnPropertiesOverlayModal from "../features/process/bpmn/context-menu/properties-overlay/BpmnPropertiesOverlayModal";
 import {
   formatRevisionAuthor,
   formatRevisionTimestampRu,
@@ -2195,6 +2198,57 @@ export default function ProcessStage({
       setTemplatesPickerOpen,
     },
   });
+  const bpmnPropertiesOverlayController = useBpmnPropertiesOverlayController({
+    bpmnRef,
+    setGenErr,
+    setInfoMsg,
+  });
+  const {
+    bpmnContextMenu,
+    bpmnSubprocessPreview,
+    onBpmnContextMenuRequest,
+    onBpmnContextMenuDismiss,
+    closeBpmnContextMenu,
+    closeBpmnSubprocessPreview,
+    openBpmnSubprocessPreviewProperties,
+    runBpmnContextMenuAction,
+  } = useBpmnDiagramContextMenu({
+    bpmnRef,
+    undoRedoState: diagramUndoRedoState,
+    tab,
+    hasSession,
+    drawioEditorOpen,
+    hybridPlacementHitLayerActive,
+    hybridModeEffective,
+    modalOpenSignal: (
+      qualityAutoFixOpen
+      || insertBetweenOpen
+      || versionsOpen
+      || diffOpen
+      || createTemplateOpen
+      || templatesPickerOpen
+    ),
+    closeAllDiagramActions,
+    setInfoMsg,
+    setGenErr,
+    onActionResult: bpmnPropertiesOverlayController.handleContextMenuActionResult,
+  });
+
+  const handleUndoAction = useCallback(async () => {
+    const result = await Promise.resolve(bpmnRef.current?.undo?.());
+    if (result && result.ok === false) {
+      setGenErr(shortErr(result.error || "Undo недоступен."));
+    }
+    refreshDiagramUndoRedoState();
+  }, [refreshDiagramUndoRedoState, setGenErr]);
+
+  const handleRedoAction = useCallback(async () => {
+    const result = await Promise.resolve(bpmnRef.current?.redo?.());
+    if (result && result.ok === false) {
+      setGenErr(shortErr(result.error || "Redo недоступен."));
+    }
+    refreshDiagramUndoRedoState();
+  }, [refreshDiagramUndoRedoState, setGenErr]);
   const aiGenerateGate = useMemo(
     () => getAiGenerateGate({
       hasSession,
@@ -4170,6 +4224,11 @@ export default function ProcessStage({
     bpmnFragmentPlacementActive,
     bpmnFragmentPlacementGhost,
     bpmnRef,
+    bpmnContextMenu,
+    bpmnSubprocessPreview,
+    bpmnRef,
+    closeBpmnContextMenu,
+    closeBpmnSubprocessPreview,
     cleanupMissingHybridBindings,
     clientToDiagram,
     closeEmbeddedDrawioEditor,
@@ -4255,6 +4314,8 @@ export default function ProcessStage({
     subscribeOverlayViewportMatrix,
     tab,
     toText,
+    runBpmnContextMenuAction,
+    openBpmnSubprocessPreviewProperties,
     withHybridOverlayGuard,
   });
 
@@ -4840,6 +4901,18 @@ export default function ProcessStage({
           </div>
         )}
       </div>
+
+      <BpmnPropertiesOverlayModal
+        open={bpmnPropertiesOverlayController.isOpen}
+        schema={bpmnPropertiesOverlayController.schema}
+        draftByRowId={bpmnPropertiesOverlayController.draftByRowId}
+        savingRowId={bpmnPropertiesOverlayController.savingRowId}
+        error={bpmnPropertiesOverlayController.error}
+        onClose={bpmnPropertiesOverlayController.closeOverlay}
+        onDraftChange={bpmnPropertiesOverlayController.setDraftValue}
+        onSubmit={bpmnPropertiesOverlayController.submitRowValue}
+        onCancel={bpmnPropertiesOverlayController.cancelRowEdit}
+      />
 
       <ProcessDialogs
         view={shellVm.dialogsProps}

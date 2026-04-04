@@ -5,7 +5,11 @@ export default function buildProcessDiagramOverlayLayersProps({
   asObject,
   bpmnFragmentPlacementActive,
   bpmnFragmentPlacementGhost,
+  bpmnContextMenu,
+  bpmnSubprocessPreview,
   bpmnRef,
+  closeBpmnSubprocessPreview,
+  closeBpmnContextMenu,
   cleanupMissingHybridBindings,
   clientToDiagram,
   closeEmbeddedDrawioEditor,
@@ -89,6 +93,8 @@ export default function buildProcessDiagramOverlayLayersProps({
   subscribeOverlayViewportMatrix,
   tab,
   toText,
+  runBpmnContextMenuAction,
+  openBpmnSubprocessPreviewProperties,
   withHybridOverlayGuard,
   hybridViewportMatrix,
   hybridViewportMatrixRef,
@@ -117,6 +123,18 @@ export default function buildProcessDiagramOverlayLayersProps({
       selectedPropertiesOverlayPreview,
       propertiesOverlayAlwaysEnabled,
       propertiesOverlayAlwaysPreviewByElementId,
+    },
+    bpmnContextMenuProps: {
+      menu: bpmnContextMenu,
+      onAction: (actionRequest) => {
+        return runBpmnContextMenuAction?.(actionRequest);
+      },
+      onClose: closeBpmnContextMenu,
+    },
+    bpmnSubprocessPreviewProps: {
+      preview: bpmnSubprocessPreview,
+      onClose: closeBpmnSubprocessPreview,
+      onOpenProperties: () => openBpmnSubprocessPreviewProperties?.(),
     },
     fragmentGhostProps: {
       active: bpmnFragmentPlacementActive,
