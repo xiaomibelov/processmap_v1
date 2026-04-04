@@ -108,23 +108,7 @@ export default function ProcessStageHeader({ view = {} }) {
               >
                 {draftStatusLabel}
               </span>
-              <span
-                className={`badge text-[11px] ${mirrorMeta.processTone}`}
-                data-testid="diagram-toolbar-publish-git-mirror-status"
-                title={mirrorLastError || "Статус синхронизации Git-зеркала"}
-              >
-                Git-зеркало: {mirrorBadgeLabel}
-              </span>
             </>
-          ) : null}
-          {saveUploadStatus?.visible ? (
-            <span
-              className={`badge text-[11px] ${String(saveUploadStatus?.tone || "").trim()}`}
-              data-testid="diagram-toolbar-save-upload-status"
-              title={String(saveUploadStatus?.title || saveUploadStatus?.label || "")}
-            >
-              {String(saveUploadStatus?.label || "")}
-            </span>
           ) : null}
         </div>
       </div>
