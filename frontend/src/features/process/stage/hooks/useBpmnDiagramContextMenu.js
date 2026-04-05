@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import {
   buildBpmnContextMenuExecutionRequest,
   buildBpmnContextMenuViewModel,
 } from "../../bpmn/context-menu/bpmnContextMenuActionMatrix.js";
 import useBpmnContextMenuState from "../../bpmn/context-menu/useBpmnContextMenuState.js";
+import { isBpmnDiagramContextMenuBlocked } from "./bpmnDiagramContextMenuBlockState.js";
 
 function toText(value) {
   return String(value || "").trim();
@@ -11,11 +12,6 @@ function toText(value) {
 
 function asObject(value) {
   return value && typeof value === "object" ? value : {};
-}
-
-function isHybridOwnershipActive(modeRaw) {
-  const mode = toText(modeRaw).toLowerCase();
-  return mode === "edit" || mode === "place" || mode === "bind";
 }
 
 export default function useBpmnDiagramContextMenu({
@@ -33,12 +29,13 @@ export default function useBpmnDiagramContextMenu({
   onActionResult,
 }) {
   const isBlocked = useMemo(() => {
-    if (!hasSession) return true;
-    if (tab !== "diagram") return true;
-    if (drawioEditorOpen) return true;
-    if (hybridPlacementHitLayerActive) return true;
-    if (isHybridOwnershipActive(hybridModeEffective)) return true;
-    return false;
+    return isBpmnDiagramContextMenuBlocked({
+      hasSession,
+      tab,
+      drawioEditorOpen,
+      hybridPlacementHitLayerActive,
+      hybridModeEffective,
+    });
   }, [
     drawioEditorOpen,
     hasSession,
@@ -60,10 +57,6 @@ export default function useBpmnDiagramContextMenu({
   const onBpmnContextMenuDismiss = useCallback(() => {
     closeBpmnContextMenu();
   }, [closeBpmnContextMenu]);
-  const [bpmnSubprocessPreview, setBpmnSubprocessPreview] = useState(null);
-  const closeBpmnSubprocessPreview = useCallback(() => {
-    setBpmnSubprocessPreview(null);
-  }, []);
 
   const emitActionResult = useCallback(({
     actionId,
@@ -117,15 +110,6 @@ export default function useBpmnDiagramContextMenu({
       return result;
     }
 
-    if (result?.openInsidePreview && typeof result.openInsidePreview === "object") {
-      setBpmnSubprocessPreview({
-        ...asObject(result.openInsidePreview),
-        targetId: toText(asObject(result.openInsidePreview).targetId || asObject(menu.target).id),
-      });
-      closeBpmnContextMenu();
-      return result;
-    }
-
     if (toText(result?.message)) {
       setInfoMsg?.(toText(result.message));
     }
@@ -143,57 +127,11 @@ export default function useBpmnDiagramContextMenu({
     return result;
   }, [bpmnRef, closeBpmnContextMenu, emitActionResult, menu, setGenErr, setInfoMsg]);
 
-  const openBpmnSubprocessPreviewProperties = useCallback(async () => {
-    const preview = asObject(bpmnSubprocessPreview);
-    const targetId = toText(preview.targetId);
-    if (!targetId) return { ok: false, error: "preview_target_missing" };
-    const previewMenu = {
-      target: { id: targetId, kind: "element" },
-      clientX: Number(preview.clientX || 0),
-      clientY: Number(preview.clientY || 0),
-    };
-    let result = null;
-    try {
-      result = await Promise.resolve(
-        bpmnRef?.current?.runDiagramContextAction?.({
-          actionId: "open_properties",
-          target: asObject(previewMenu.target),
-          clientX: Number(previewMenu.clientX || 0),
-          clientY: Number(previewMenu.clientY || 0),
-          value: "",
-        }),
-      );
-    } catch (error) {
-      result = { ok: false, error: String(error?.message || error || "context_action_failed") };
-    }
-    if (!result?.ok) {
-      setGenErr?.(toText(result?.error || "Не удалось открыть свойства подпроцесса."));
-      return result;
-    }
-    setBpmnSubprocessPreview(null);
-    if (toText(result?.message)) setInfoMsg?.(toText(result.message));
-    emitActionResult({
-      actionId: "open_properties",
-      actionMeta: {},
-      menu: previewMenu,
-      result,
-    });
-    return result;
-  }, [bpmnRef, bpmnSubprocessPreview, emitActionResult, setGenErr, setInfoMsg]);
-
-  useEffect(() => {
-    if (!isBlocked) return;
-    setBpmnSubprocessPreview(null);
-  }, [isBlocked]);
-
   return {
     bpmnContextMenu: menu,
     onBpmnContextMenuRequest,
     onBpmnContextMenuDismiss,
     closeBpmnContextMenu,
     runBpmnContextMenuAction,
-    bpmnSubprocessPreview,
-    closeBpmnSubprocessPreview,
-    openBpmnSubprocessPreviewProperties,
   };
 }
