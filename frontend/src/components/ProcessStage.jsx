@@ -90,6 +90,7 @@ import useDiagramShellState from "../features/process/stage/orchestration/useDia
 import useDiagramActionsController from "../features/process/stage/orchestration/useDiagramActionsController";
 import useStableProcessDiagramOverlayLayersProps from "../features/process/stage/orchestration/useStableProcessDiagramOverlayLayersProps";
 import useBpmnDiagramContextMenu from "../features/process/stage/hooks/useBpmnDiagramContextMenu";
+import useBpmnSubprocessPreview from "../features/process/stage/hooks/useBpmnSubprocessPreview";
 import useProcessStageDrawio from "../features/process/stage/orchestration/useProcessStageDrawio";
 import useProcessStageHybrid from "../features/process/stage/orchestration/useProcessStageHybrid";
 import useProcessStageLocalState from "../features/process/stage/orchestration/state/useProcessStageLocalState";
@@ -2229,12 +2230,9 @@ export default function ProcessStage({
   });
   const {
     bpmnContextMenu,
-    bpmnSubprocessPreview,
     onBpmnContextMenuRequest,
     onBpmnContextMenuDismiss,
     closeBpmnContextMenu,
-    closeBpmnSubprocessPreview,
-    openBpmnSubprocessPreviewProperties,
     runBpmnContextMenuAction,
   } = useBpmnDiagramContextMenu({
     bpmnRef,
@@ -2256,6 +2254,34 @@ export default function ProcessStage({
     setInfoMsg,
     setGenErr,
   });
+  const {
+    bpmnSubprocessPreview,
+    closeBpmnSubprocessPreview,
+    openBpmnSubprocessPreviewProperties,
+    handleBpmnContextActionResult,
+  } = useBpmnSubprocessPreview({
+    bpmnRef,
+    hasSession,
+    tab,
+    drawioEditorOpen,
+    hybridPlacementHitLayerActive,
+    hybridModeEffective,
+    setInfoMsg,
+    setGenErr,
+  });
+  const handleBpmnContextMenuAction = useCallback(async (actionRequest) => {
+    const result = await Promise.resolve(runBpmnContextMenuAction?.(actionRequest));
+    handleBpmnContextActionResult(result, {
+      menuTarget: bpmnContextMenu?.target,
+      closeContextMenu: closeBpmnContextMenu,
+    });
+    return result;
+  }, [
+    bpmnContextMenu,
+    closeBpmnContextMenu,
+    handleBpmnContextActionResult,
+    runBpmnContextMenuAction,
+  ]);
 
   const handleUndoAction = useCallback(async () => {
     const result = await Promise.resolve(bpmnRef.current?.undo?.());
@@ -4338,7 +4364,7 @@ export default function ProcessStage({
     subscribeOverlayViewportMatrix,
     tab,
     toText,
-    runBpmnContextMenuAction,
+    runBpmnContextMenuAction: handleBpmnContextMenuAction,
     openBpmnSubprocessPreviewProperties,
     withHybridOverlayGuard,
   });
