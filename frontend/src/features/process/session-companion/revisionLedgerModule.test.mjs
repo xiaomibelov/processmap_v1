@@ -157,3 +157,43 @@ test("publish after restore remains monotonic and preserves history", () => {
     [4, 3, 2, 1],
   );
 });
+
+test("authoritative backend revision number drives ledger numbering", () => {
+  const published = appendRevisionToLedger({}, {
+    xml: "<definitions id='D'><task id='Task_A'/></definitions>",
+    comment: "published",
+    source: "publish_manual_save",
+    createdAt: "2026-03-17T14:00:00.000Z",
+    authoritativeRevisionNumber: 8,
+    authoritativeRevisionId: "ver_8",
+  });
+
+  assert.equal(published.ok, true);
+  assert.equal(published.revisionNumber, 8);
+  assert.equal(published.nextCompanion.revision_ledger_v1.latest_revision_number, 8);
+  assert.equal(published.nextCompanion.revision_ledger_v1.revisions[0].revision_id, "ver_8");
+});
+
+test("authoritative backend revision skip guard avoids duplicate append on replay", () => {
+  const first = appendRevisionToLedger({}, {
+    xml: "<definitions id='D'><task id='Task_A'/></definitions>",
+    comment: "published",
+    source: "publish_manual_save",
+    createdAt: "2026-03-17T14:00:00.000Z",
+    authoritativeRevisionNumber: 8,
+    authoritativeRevisionId: "ver_8",
+  });
+  const replay = appendRevisionToLedger(first.nextCompanion, {
+    xml: "<definitions id='D'><task id='Task_A'/></definitions>",
+    comment: "published-replay",
+    source: "publish_manual_save",
+    createdAt: "2026-03-17T14:01:00.000Z",
+    authoritativeRevisionNumber: 8,
+    authoritativeRevisionId: "ver_8",
+  });
+
+  assert.equal(replay.ok, true);
+  assert.equal(replay.skipped, true);
+  assert.equal(replay.skipReason, "existing_authoritative_revision");
+  assert.equal(replay.nextCompanion.revision_ledger_v1.revisions.length, 1);
+});

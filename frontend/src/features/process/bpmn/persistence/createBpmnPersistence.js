@@ -507,6 +507,9 @@ export default function createBpmnPersistence(options = {}) {
       storedRev,
       rev: storedRev,
       hash: fnv1aHex(xml),
+      bpmnVersionSnapshot: saved?.bpmnVersionSnapshot && typeof saved.bpmnVersionSnapshot === "object"
+        ? saved.bpmnVersionSnapshot
+        : null,
     };
   }
 

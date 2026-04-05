@@ -337,7 +337,15 @@ export default function useBpmnSync({
         });
         syncXmlToSession(savedXml, { source });
       }
-      return { ok: true, xml: savedXml, pending };
+      return {
+        ok: true,
+        xml: savedXml,
+        pending,
+        storedRev: Number(saved?.storedRev || saved?.rev || 0),
+        bpmnVersionSnapshot: saved?.bpmnVersionSnapshot && typeof saved.bpmnVersionSnapshot === "object"
+          ? saved.bpmnVersionSnapshot
+          : null,
+      };
     } catch (error) {
       if (allowInFlightPendingOutcome && isSaveInProgress()) {
         if (fallbackXml.trim()) {
@@ -407,7 +415,15 @@ export default function useBpmnSync({
       ? toText(saved.xml)
       : toText(draftRef.current?.bpmn_xml || "");
     syncXmlToSession(savedXml, { source });
-    return { ok: true, xml: savedXml, pending: false };
+    return {
+      ok: true,
+      xml: savedXml,
+      pending: false,
+      storedRev: Number(saved?.storedRev || saved?.rev || 0),
+      bpmnVersionSnapshot: saved?.bpmnVersionSnapshot && typeof saved.bpmnVersionSnapshot === "object"
+        ? saved.bpmnVersionSnapshot
+        : null,
+    };
   }, [bpmnRef, sid, syncXmlToSession]);
 
   const flushFromActiveTab = useCallback(

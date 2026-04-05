@@ -117,6 +117,30 @@ test("save then reread resolves to remote durable truth even if stale local cach
   assert.equal(loaded.sourceReason, "remote_authoritative_after_remote_read");
 });
 
+test("saveRaw propagates backend bpmn version snapshot for canonical revision UI", async () => {
+  window.localStorage.clear();
+  const persistence = createBpmnPersistence({
+    getSessionDraft: () => ({ bpmn_xml: "<bpmn:baseline/>", bpmn_xml_version: 7, version: 7 }),
+    apiPutBpmnXml: async () => ({
+      ok: true,
+      status: 200,
+      storedRev: 8,
+      bpmnVersionSnapshot: {
+        id: "ver_8",
+        version_number: 8,
+        source_action: "publish_manual_save",
+      },
+    }),
+    apiGetBpmnXml: async () => ({ ok: true, status: 200, xml: "<bpmn:baseline/>" }),
+  });
+
+  const saved = await persistence.saveRaw("sid_publish_truth", "<bpmn:published/>", 8, "publish_manual_save");
+
+  assert.equal(saved.ok, true);
+  assert.equal(saved.bpmnVersionSnapshot?.id, "ver_8");
+  assert.equal(saved.bpmnVersionSnapshot?.version_number, 8);
+});
+
 test("when remote API is unavailable, local winner stays bounded fallback with explicit tag", async () => {
   window.localStorage.clear();
   const persistence = createBpmnPersistence({
