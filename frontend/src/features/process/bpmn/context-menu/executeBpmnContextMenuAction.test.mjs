@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { executeBpmnContextMenuAction } from "./executeBpmnContextMenuAction.js";
+import {
+  createBpmnContextMenuActionExecutor,
+  executeBpmnContextMenuAction,
+} from "./executeBpmnContextMenuAction.js";
 
 function createStubModeler({
   root,
@@ -456,6 +459,50 @@ test("open_properties preserves selection handoff through context menu action en
         selectedIds: Array.isArray(extra?.selectedIds) ? extra.selectedIds.slice() : [],
       });
     },
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(selectionEvents, [{
+    id: "Task_1",
+    source: "context_menu_properties",
+    selectedIds: ["Task_1"],
+  }]);
+});
+
+test("private context-menu executor preserves canonical open_properties selection handoff", async () => {
+  const task = {
+    id: "Task_1",
+    type: "bpmn:Task",
+    businessObject: { $type: "bpmn:Task", name: "Approve" },
+  };
+  const root = {
+    id: "Process_1",
+    type: "bpmn:Process",
+    businessObject: { $type: "bpmn:Process", flowElements: [task] },
+    di: { planeElement: [] },
+    children: [task],
+  };
+  task.parent = root;
+  const selectionEvents = [];
+
+  const { inst } = createStubModeler({
+    root,
+    registryItems: [root, task],
+  });
+  const executeAction = createBpmnContextMenuActionExecutor({
+    modelerRef: { current: inst },
+    emitElementSelection(element, source, extra) {
+      selectionEvents.push({
+        id: String(element?.id || ""),
+        source: String(source || ""),
+        selectedIds: Array.isArray(extra?.selectedIds) ? extra.selectedIds.slice() : [],
+      });
+    },
+  });
+
+  const result = await executeAction({
+    actionId: "open_properties",
+    target: { id: "Task_1" },
   });
 
   assert.equal(result.ok, true);

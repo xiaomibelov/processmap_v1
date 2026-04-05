@@ -140,12 +140,32 @@ function resolveCtx(ctxBase) {
   return asObject(ctxBase);
 }
 
+function normalizeDiagramContextActionResult(resultRaw, fallbackErrorRaw) {
+  const fallbackError = toText(fallbackErrorRaw) || "context_action_failed";
+  const result = asObject(resultRaw);
+  if (result.ok === true) return result;
+  if (result.ok === false) {
+    return {
+      ...result,
+      error: toText(result.error) || fallbackError,
+    };
+  }
+  return { ok: false, error: fallbackError };
+}
+
 export function createBpmnStageImperativeApi(ctxBase) {
   const ctx = resolveCtx(ctxBase);
   const refs = asObject(ctx.refs);
   const values = asObject(ctx.values);
   const state = asObject(ctx.state);
   const callbacks = asObject(ctx.callbacks);
+  const executeDiagramContextAction = (
+    typeof callbacks.executeDiagramContextAction === "function"
+      ? callbacks.executeDiagramContextAction
+      : (typeof callbacks.runDiagramContextAction === "function"
+          ? callbacks.runDiagramContextAction
+          : null)
+  );
 
   const getReadyInstance = (preferredModeRaw = "") => {
     const preferredMode = toText(preferredModeRaw).toLowerCase();
@@ -219,6 +239,24 @@ export function createBpmnStageImperativeApi(ctxBase) {
       })
       .catch(() => {
       });
+  };
+  const runDiagramContextActionRequest = async (
+    payload = {},
+    fallbackErrorRaw = "context_action_unavailable",
+  ) => {
+    const fallbackError = toText(fallbackErrorRaw) || "context_action_failed";
+    if (typeof executeDiagramContextAction !== "function") {
+      return { ok: false, error: fallbackError };
+    }
+    try {
+      const result = await Promise.resolve(executeDiagramContextAction(payload));
+      return normalizeDiagramContextActionResult(result, fallbackError);
+    } catch (error) {
+      return {
+        ok: false,
+        error: toText(error?.message || error || fallbackError),
+      };
+    }
   };
 
   return {
@@ -352,16 +390,10 @@ export function createBpmnStageImperativeApi(ctxBase) {
     saveXmlDraft: () => callbacks.saveXmlDraftText?.(),
     hasXmlDraftChanges: () => !!values.xmlDirty,
     getXmlDraft: () => String(values.xmlDraft || ""),
-    runDiagramContextAction: async (payload = {}) => {
-      try {
-        return await callbacks.runDiagramContextAction?.(payload);
-      } catch (error) {
-        return {
-          ok: false,
-          error: String(error?.message || error || "context_action_failed"),
-        };
-      }
-    },
+    runDiagramContextAction: async (payload = {}) => await runDiagramContextActionRequest(
+      payload,
+      "context_action_unavailable",
+    ),
     getUndoRedoState: (options = {}) => {
       const preferred = toText(options?.kind || options?.view || options?.mode || "editor").toLowerCase();
       const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
@@ -372,12 +404,10 @@ export function createBpmnStageImperativeApi(ctxBase) {
       };
     },
     undo: async () => {
-      const result = await callbacks.runDiagramContextAction?.({ actionId: "undo" });
-      return result && typeof result === "object" ? result : { ok: false, error: "undo_failed" };
+      return await runDiagramContextActionRequest({ actionId: "undo" }, "undo_failed");
     },
     redo: async () => {
-      const result = await callbacks.runDiagramContextAction?.({ actionId: "redo" });
-      return result && typeof result === "object" ? result : { ok: false, error: "redo_failed" };
+      return await runDiagramContextActionRequest({ actionId: "redo" }, "redo_failed");
     },
     resetBackend: () => {
       const sid = String(values.sessionId || "");

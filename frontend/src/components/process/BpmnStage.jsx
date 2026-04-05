@@ -61,7 +61,7 @@ import {
   resolveBpmnContextMenuTarget,
 } from "../../features/process/bpmn/context-menu/resolveBpmnContextMenuTarget";
 import { shouldOpenBpmnContextMenu } from "../../features/process/bpmn/context-menu/shouldOpenBpmnContextMenu";
-import { executeBpmnContextMenuAction } from "../../features/process/bpmn/context-menu/executeBpmnContextMenuAction";
+import { createBpmnContextMenuActionExecutor } from "../../features/process/bpmn/context-menu/executeBpmnContextMenuAction";
 
 import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-js.css";
@@ -2614,16 +2614,19 @@ const BpmnStage = forwardRef(function BpmnStage({
     }
   }
 
-  async function runDiagramContextAction(payloadRaw = {}) {
-    return await executeBpmnContextMenuAction({
-      payloadRaw,
-      modelerRef,
-      ensureModeler,
-      emitDiagramMutation,
-      emitElementSelection,
-      buildInsertBetweenCandidate,
-    });
-  }
+  const executeDiagramContextAction = useMemo(() => createBpmnContextMenuActionExecutor({
+    modelerRef,
+    ensureModeler,
+    emitDiagramMutation,
+    emitElementSelection,
+    buildInsertBetweenCandidate,
+  }), [
+    modelerRef,
+    ensureModeler,
+    emitDiagramMutation,
+    emitElementSelection,
+    buildInsertBetweenCandidate,
+  ]);
 
   function buildSettledSelectionFanoutSignature({ element, kind }) {
     const mode = kind === "editor" ? "editor" : "viewer";
@@ -4731,7 +4734,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         persistXmlSnapshot,
         renderModeler,
         renderViewer,
-        runDiagramContextAction,
+        executeDiagramContextAction,
         saveLocalFromModeler,
         saveXmlDraftText,
         seedNew,
