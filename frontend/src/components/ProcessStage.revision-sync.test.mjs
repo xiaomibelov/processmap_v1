@@ -15,3 +15,7 @@ test("ProcessStage derives unified revision UI snapshot and uses it for header a
   assert.equal(source.includes("sessionRevisionHistorySnapshot: revisionHistoryUiSnapshot"), true);
 });
 
+test("manual save forwards explicit publish intent for backend version snapshots", () => {
+  const source = fs.readFileSync(path.join(__dirname, "ProcessStage.jsx"), "utf8");
+  assert.equal(source.includes('persistReason: "publish_manual_save"'), true);
+});

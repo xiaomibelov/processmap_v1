@@ -5456,9 +5456,11 @@ def should_create_bpmn_revision_snapshot(*, previous_xml: Any, next_xml: Any, so
         return False
     prev = str(previous_xml or "")
     nxt = str(next_xml or "")
-    if not prev.strip():
-        return False
     if not nxt.strip():
+        return False
+    if action == "publish_manual_save":
+        return bool(prev.strip())
+    if not prev.strip():
         return False
     return prev != nxt
 
