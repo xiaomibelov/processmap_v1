@@ -461,7 +461,19 @@ export function bindViewerStageEvents({
   runtimeTokenRef,
   emitViewboxChanged,
   applyPropertiesOverlayDecorForZoomChange,
+  onDiagramContextMenuEvent,
+  onDiagramContextMenuDismiss,
+  contextMenuInteractionRef,
 }) {
+  bindContextMenuRuntimeEvents({
+    eventBus,
+    inst,
+    mode: "viewer",
+    onDiagramContextMenuEvent,
+    onDiagramContextMenuDismiss,
+    contextMenuInteractionRef,
+  });
+
   eventBus.on("selection.changed", 2000, (ev) => {
     const suppressDismiss = consumeContextMenuSelectionDismissGuard(contextMenuInteractionRef);
     if (!suppressDismiss && typeof onDiagramContextMenuDismiss === "function") {
@@ -493,6 +505,9 @@ export function bindViewerStageEvents({
   });
 
   eventBus.on("canvas.viewbox.changed", 1200, () => {
+    if (typeof onDiagramContextMenuDismiss === "function") {
+      onDiagramContextMenuDismiss({ mode: "viewer", reason: "viewbox_changed" });
+    }
     const suppressed = Number(suppressViewboxEventRef.current || 0) > 0;
     if (!suppressed) userViewportTouchedRef.current = true;
     const snap = getCanvasSnapshot(inst);
@@ -539,6 +554,9 @@ export function bindModelerStageEvents({
   runtimeTokenRef,
   emitViewboxChanged,
   applyPropertiesOverlayDecorForZoomChange,
+  onDiagramContextMenuEvent,
+  onDiagramContextMenuDismiss,
+  contextMenuInteractionRef,
   invalidateShapeTitleLookup,
   runImmediateEditorFanout,
   applyTaskTypeDecor,
@@ -548,6 +566,15 @@ export function bindModelerStageEvents({
   captureShapeReplacePre,
   applyShapeReplacePost,
 }) {
+  bindContextMenuRuntimeEvents({
+    eventBus,
+    inst,
+    mode: "editor",
+    onDiagramContextMenuEvent,
+    onDiagramContextMenuDismiss,
+    contextMenuInteractionRef,
+  });
+
   eventBus.on("commandStack.shape.replace.preExecute", 2200, (ev) => {
     captureShapeReplacePre(ev, "commandStack.shape.replace.preExecute");
   });
@@ -594,6 +621,9 @@ export function bindModelerStageEvents({
     syncAiQuestionPanelWithSelection(inst, "editor", selected, "editor.selection_changed");
   });
   eventBus.on("canvas.viewbox.changed", 1200, () => {
+    if (typeof onDiagramContextMenuDismiss === "function") {
+      onDiagramContextMenuDismiss({ mode: "editor", reason: "viewbox_changed" });
+    }
     const suppressed = Number(suppressViewboxEventRef.current || 0) > 0;
     if (!suppressed) userViewportTouchedRef.current = true;
     const snap = getCanvasSnapshot(inst);

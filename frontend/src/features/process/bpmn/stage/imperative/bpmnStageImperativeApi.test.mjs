@@ -88,6 +88,7 @@ test("createBpmnStageImperativeApi exposes expected public methods", () => {
     "setPlaybackFrame",
     "insertTemplatePack",
     "applyCommandOps",
+    "runDiagramContextAction",
   ];
   methods.forEach((name) => {
     assert.equal(typeof api[name], "function", `${name} should be a function`);
@@ -198,4 +199,34 @@ test("importXmlText persists backend snapshot with explicit import_bpmn intent",
   assert.equal(ok, true);
   assert.deepEqual(persistCalls, [{ xml: "<bpmn:definitions/>", hint: "import_bpmn" }]);
   assert.deepEqual(renderCalls, ["<bpmn:definitions/>"]);
+});
+
+test("runDiagramContextAction proxies payload to callback result", async () => {
+  const calls = [];
+  const ctx = createCtx({
+    callbacks: {
+      runDiagramContextAction: async (payload) => {
+        calls.push(payload);
+        return { ok: true, actionId: payload.actionId };
+      },
+    },
+  });
+  const api = createBpmnStageImperativeApi(ctx);
+
+  const payload = { actionId: "open_inside", target: { id: "SubProcess_1" } };
+  const result = await api.runDiagramContextAction(payload);
+
+  assert.deepEqual(calls, [payload]);
+  assert.deepEqual(result, { ok: true, actionId: "open_inside" });
+});
+
+test("runDiagramContextAction returns bounded unavailable error when callback is missing", async () => {
+  const api = createBpmnStageImperativeApi(createCtx());
+
+  const result = await api.runDiagramContextAction({ actionId: "open_inside" });
+
+  assert.deepEqual(result, {
+    ok: false,
+    error: "context_action_unavailable",
+  });
 });
