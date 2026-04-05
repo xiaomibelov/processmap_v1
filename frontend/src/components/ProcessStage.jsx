@@ -4324,6 +4324,8 @@ export default function ProcessStage({
     hybridViewportMatrixRef,
     isInterviewMode,
     onBpmnSaveLifecycleEvent,
+    onDiagramContextMenuDismiss: onBpmnContextMenuDismiss,
+    onDiagramContextMenuRequest: onBpmnContextMenuRequest,
     onElementNotesRemap,
     onSessionSync,
     propertiesOverlayAlwaysEnabled,
