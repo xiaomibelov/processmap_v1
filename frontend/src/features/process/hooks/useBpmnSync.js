@@ -231,6 +231,7 @@ export default function useBpmnSync({
   const saveFromModeler = useCallback(async (options = {}) => {
     const force = options?.force === true;
     const source = String(options?.source || (force ? "tab_switch" : "autosave")).trim() || "autosave";
+    const persistReason = String(options?.persistReason || source).trim() || source;
     const isManualSaveAction = source === "manual_save";
     const allowInFlightPendingOutcome = force && !isManualSaveAction;
     let saveLocal = bpmnRef.current?.saveLocal;
@@ -282,7 +283,7 @@ export default function useBpmnSync({
       );
     }
     try {
-      const saved = await Promise.resolve(saveLocal({ force, source }));
+      const saved = await Promise.resolve(saveLocal({ force, source, persistReason }));
       if (saved === false || (saved && typeof saved === "object" && saved.ok === false)) {
         if (allowInFlightPendingOutcome && isSaveInProgress()) {
           if (fallbackXml.trim()) {

@@ -4100,6 +4100,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   async function saveLocalFromModeler(options = {}) {
     const force = options?.force === true;
     const source = String(options?.source || (force ? "tab_switch" : "autosave")).trim() || "autosave";
+    const persistReason = String(options?.persistReason || source).trim() || source;
     const trigger = String(options?.trigger || "").trim() || "manual";
     const requestedSaveOwner = toText(options?.saveOwner || options?.owner).toLowerCase();
     const isTemplateApplySave = requestedSaveOwner === "template_apply" || source === "template_apply" || trigger === "template_apply";
@@ -4173,7 +4174,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         );
       }
 
-      const flushed = await coordinator.flushSave(source, { force, trigger, saveOwner: resolvedSaveOwner });
+      const flushed = await coordinator.flushSave(persistReason, { force, trigger, saveOwner: resolvedSaveOwner });
       const nextState = bpmnStoreRef.current?.getState?.() || {};
       const rawOut = String(flushed?.xml || nextState.xml || fallbackXml || "");
       const out = transformPersistedXml(rawOut);
@@ -4205,20 +4206,20 @@ const BpmnStage = forwardRef(function BpmnStage({
         const rev = Number(nextState.rev || 0);
         emitSaveLifecycleEvent("SAVE_PERSIST_STARTED", {
           sid,
-          reason: `${source}:camunda_finalize`,
+          reason: `${persistReason}:camunda_finalize`,
           rev,
           xml_len: out.length,
         });
         const persistedFinalXml = typeof coordinator.persistExplicitXml === "function"
-          ? await coordinator.persistExplicitXml(out, `${source}:camunda_finalize`, {
+          ? await coordinator.persistExplicitXml(out, `${persistReason}:camunda_finalize`, {
             rev,
             saveOwner: resolvedSaveOwner,
           })
-          : await ensureBpmnPersistence().saveRaw(sid, out, rev, `${source}:camunda_finalize`);
+          : await ensureBpmnPersistence().saveRaw(sid, out, rev, `${persistReason}:camunda_finalize`);
         if (!persistedFinalXml?.ok) {
           emitSaveLifecycleEvent("SAVE_PERSIST_FAIL", {
             sid,
-            reason: `${source}:camunda_finalize`,
+            reason: `${persistReason}:camunda_finalize`,
             rev,
             status: Number(persistedFinalXml?.status || 0),
             xml_len: out.length,
@@ -4237,7 +4238,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         }
         emitSaveLifecycleEvent("SAVE_PERSIST_DONE", {
           sid,
-          reason: `${source}:camunda_finalize`,
+          reason: `${persistReason}:camunda_finalize`,
           rev: Number(persistedFinalXml?.storedRev || rev),
           status: Number(persistedFinalXml?.status || 200),
           xml_len: out.length,
