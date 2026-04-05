@@ -11,12 +11,20 @@ export default function useBpmnContextMenuState({
     setMenu(null);
   }, []);
 
-  const openMenu = useCallback((nextMenu) => {
+  const requestOpenMenu = useCallback((requestRaw, buildMenuViewModel) => {
+    if (isBlocked) return false;
+    const nextMenu = typeof buildMenuViewModel === "function"
+      ? buildMenuViewModel(requestRaw)
+      : requestRaw;
     if (!nextMenu || typeof nextMenu !== "object") return false;
     closeAllDiagramActions?.();
     setMenu(nextMenu);
     return true;
-  }, [closeAllDiagramActions]);
+  }, [closeAllDiagramActions, isBlocked]);
+
+  const openMenu = useCallback((nextMenu) => {
+    return requestOpenMenu(nextMenu);
+  }, [requestOpenMenu]);
 
   useEffect(() => {
     if (!menu) return undefined;
@@ -58,6 +66,7 @@ export default function useBpmnContextMenuState({
 
   return {
     menu,
+    requestOpenMenu,
     openMenu,
     closeMenu,
   };

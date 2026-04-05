@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import React, { act, useEffect } from "react";
+import React, { act, useEffect, useMemo, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import { JSDOM } from "jsdom";
 
 import useBpmnDiagramContextMenu from "./useBpmnDiagramContextMenu.js";
+import useBpmnSubprocessPreview from "./useBpmnSubprocessPreview.js";
 import useBpmnPropertiesOverlayController from "../../bpmn/context-menu/properties-overlay/useBpmnPropertiesOverlayController.js";
 
 function HookHarness({ apiRef, bpmnRef }) {
@@ -27,10 +28,50 @@ function HookHarness({ apiRef, bpmnRef }) {
     setGenErr: () => {},
     onActionResult: overlay.handleContextMenuActionResult,
   });
+  const preview = useBpmnSubprocessPreview({
+    bpmnRef,
+    hasSession: true,
+    tab: "diagram",
+    drawioEditorOpen: false,
+    hybridPlacementHitLayerActive: false,
+    hybridModeEffective: "",
+    setInfoMsg: () => {},
+    setGenErr: () => {},
+  });
+
+  const handleBpmnContextMenuAction = useCallback(async (actionRequest) => {
+    const result = await contextMenu.runBpmnContextMenuAction(actionRequest);
+    preview.handleBpmnContextActionResult(result, {
+      menuTarget: contextMenu.bpmnContextMenu?.target,
+      closeContextMenu: contextMenu.closeBpmnContextMenu,
+    });
+    return result;
+  }, [contextMenu, preview]);
+
+  const openPreviewProperties = useCallback(async () => {
+    const targetId = String(preview.bpmnSubprocessPreview?.targetId || "");
+    const result = await preview.openBpmnSubprocessPreviewProperties();
+    overlay.handleContextMenuActionResult({
+      actionId: "open_properties",
+      menu: {
+        target: { id: targetId, kind: "element" },
+      },
+      result,
+    });
+    return result;
+  }, [overlay, preview]);
+
+  const api = useMemo(() => ({
+    overlay,
+    contextMenu,
+    preview,
+    handleBpmnContextMenuAction,
+    openPreviewProperties,
+  }), [contextMenu, handleBpmnContextMenuAction, openPreviewProperties, overlay, preview]);
 
   useEffect(() => {
-    apiRef.current = { overlay, contextMenu };
-  }, [apiRef, contextMenu, overlay]);
+    apiRef.current = api;
+  }, [api, apiRef]);
 
   return null;
 }
@@ -149,13 +190,13 @@ test("direct context-menu open_properties still opens overlay for the subprocess
     await openSubprocessMenu(apiRef);
 
     await act(async () => {
-      await apiRef.current.contextMenu.runBpmnContextMenuAction("open_properties");
+      await apiRef.current.handleBpmnContextMenuAction("open_properties");
     });
 
     assert.equal(apiRef.current.overlay.isOpen, true);
     assert.equal(apiRef.current.overlay.schema?.elementId, "SubProcess_1");
     assert.equal(apiRef.current.overlay.schema?.bpmnType, "bpmn:SubProcess");
-    assert.equal(apiRef.current.contextMenu.bpmnSubprocessPreview, null);
+    assert.equal(apiRef.current.preview.bpmnSubprocessPreview, null);
   } finally {
     await cleanup();
   }
@@ -174,17 +215,17 @@ test("preview modal open properties closes preview and opens overlay for the sam
     await openSubprocessMenu(apiRef);
 
     await act(async () => {
-      await apiRef.current.contextMenu.runBpmnContextMenuAction("open_inside");
+      await apiRef.current.handleBpmnContextMenuAction("open_inside");
     });
 
-    assert.equal(apiRef.current.contextMenu.bpmnSubprocessPreview?.targetId, "SubProcess_1");
+    assert.equal(apiRef.current.preview.bpmnSubprocessPreview?.targetId, "SubProcess_1");
     assert.equal(apiRef.current.overlay.isOpen, false);
 
     await act(async () => {
-      await apiRef.current.contextMenu.openBpmnSubprocessPreviewProperties();
+      await apiRef.current.openPreviewProperties();
     });
 
-    assert.equal(apiRef.current.contextMenu.bpmnSubprocessPreview, null);
+    assert.equal(apiRef.current.preview.bpmnSubprocessPreview, null);
     assert.equal(apiRef.current.overlay.isOpen, true);
     assert.equal(apiRef.current.overlay.schema?.elementId, "SubProcess_1");
     assert.equal(apiRef.current.overlay.schema?.elementName, "Подпроцесс");

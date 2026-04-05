@@ -313,7 +313,73 @@ export function readContextMenuNativeEvent(runtimeEvent) {
   return runtimeEvent?.originalEvent || runtimeEvent?.srcEvent || runtimeEvent;
 }
 
-export function resolveBpmnContextMenuTarget({ runtimeEvent, scope = "canvas", inst } = {}) {
+function asObject(value) {
+  return value && typeof value === "object" ? value : {};
+}
+
+function buildContextMenuTarget(element, inst) {
+  if (isCanvasContainerElement(element, inst)) {
+    return { kind: "canvas" };
+  }
+  if (!element) {
+    return { kind: "canvas" };
+  }
+  const bpmnType = toText(element?.businessObject?.$type || element?.type);
+  const isConnection = isConnectionElement(element);
+  return {
+    kind: isConnection ? "connection" : "element",
+    id: toText(element?.id),
+    name: toText(element?.businessObject?.name),
+    bpmnType,
+    type: bpmnType,
+    isConnection,
+    isShape: isShapeElement(element),
+  };
+}
+
+function buildResolutionResult({
+  element = null,
+  target = { kind: "canvas" },
+  runtimeType = "",
+  scope = "canvas",
+  meta = {},
+}) {
+  const targetOut = asObject(target);
+  const metaOut = asObject(meta);
+  return {
+    element,
+    target: { ...targetOut },
+    meta: { ...metaOut },
+    snapshot: {
+      source: "resolve",
+      runtimeType,
+      scope,
+      ...metaOut,
+      target: { ...targetOut },
+    },
+  };
+}
+
+function readCachedContextMenuResolution(runtimeEvent, scope = "canvas") {
+  const cached = asObject(runtimeEvent?.contextMenuResolution);
+  const cachedTarget = asObject(cached.target);
+  if (!toText(cachedTarget.kind)) return null;
+  const cachedMeta = asObject(cached.meta);
+  const runtimeType = toText(runtimeEvent?.type || cached?.snapshot?.runtimeType).toLowerCase();
+  const scopeOut = toText(scope || cached?.snapshot?.scope) || "canvas";
+  return buildResolutionResult({
+    element: normalizeTargetElement(cached.element),
+    target: cachedTarget,
+    runtimeType,
+    scope: scopeOut,
+    meta: cachedMeta,
+  });
+}
+
+export function resolveBpmnContextMenuRuntimeResolution({ runtimeEvent, scope = "canvas", inst } = {}) {
+  const cached = readCachedContextMenuResolution(runtimeEvent, scope);
+  if (cached) return cached;
+
   const nativeEvent = readContextMenuNativeEvent(runtimeEvent);
   const canvasContainer = inst?.get?.("canvas")?._container;
   const stageHost = canvasContainer?.closest?.(".bpmnStageHost") || canvasContainer;
@@ -322,25 +388,31 @@ export function resolveBpmnContextMenuTarget({ runtimeEvent, scope = "canvas", i
   const isNativeContextMenu = runtimeType === "native.contextmenu";
 
   if (isElementNode(eventTargetNode) && isElementNode(stageHost) && !stageHost.contains(eventTargetNode)) {
-    const target = { kind: "unsupported", reason: "outside_canvas" };
-    writeContextDebugSnapshot({ source: "resolve", runtimeType, scope, target });
-    return target;
+    return buildResolutionResult({
+      target: { kind: "unsupported", reason: "outside_canvas" },
+      runtimeType,
+      scope,
+    });
   }
 
   if (isElementNode(eventTargetNode) && isElementNode(canvasContainer) && !canvasContainer.contains(eventTargetNode)) {
     const insideCanvasRect = isPointInsideRectByEventTarget(nativeEvent, canvasContainer);
     const insideStageRect = isPointInsideRectByEventTarget(nativeEvent, stageHost);
     if (!insideCanvasRect && !insideStageRect) {
-      const target = { kind: "unsupported", reason: "outside_canvas" };
-      writeContextDebugSnapshot({ source: "resolve", runtimeType, scope, target });
-      return target;
+      return buildResolutionResult({
+        target: { kind: "unsupported", reason: "outside_canvas" },
+        runtimeType,
+        scope,
+      });
     }
   }
 
   if (isExcludedDiagramUiTarget(eventTargetNode)) {
-    const target = { kind: "unsupported", reason: "excluded_ui_surface" };
-    writeContextDebugSnapshot({ source: "resolve", runtimeType, scope, target });
-    return target;
+    return buildResolutionResult({
+      target: { kind: "unsupported", reason: "excluded_ui_surface" },
+      runtimeType,
+      scope,
+    });
   }
 
   const registry = inst?.get?.("elementRegistry");
@@ -399,56 +471,39 @@ export function resolveBpmnContextMenuTarget({ runtimeEvent, scope = "canvas", i
     }
   }
 
-  if (isCanvasContainerElement(element, inst)) {
-    const target = { kind: "canvas" };
-    writeContextDebugSnapshot({
-      source: "resolve",
-      runtimeType,
-      scope,
-      hintedElementId: toText(hintedElement?.id),
-      runtimeElementId: toText(runtimeElement?.id),
-      strictNativeSemanticHitId: toText(strictNativeSemanticHit?.id),
-      strictNativeSemanticHitAcceptedId: toText(strictNativeSemanticHitAccepted?.id),
-      target,
-    });
-    return target;
-  }
-
-  if (!element) {
-    const target = { kind: "canvas" };
-    writeContextDebugSnapshot({
-      source: "resolve",
-      runtimeType,
-      scope,
-      hintedElementId: toText(hintedElement?.id),
-      runtimeElementId: toText(runtimeElement?.id),
-      strictNativeSemanticHitId: toText(strictNativeSemanticHit?.id),
-      strictNativeSemanticHitAcceptedId: toText(strictNativeSemanticHitAccepted?.id),
-      target,
-    });
-    return target;
-  }
-
-  const bpmnType = toText(element?.businessObject?.$type || element?.type);
-  const isConnection = isConnectionElement(element);
-  const target = {
-    kind: isConnection ? "connection" : "element",
-    id: toText(element?.id),
-    name: toText(element?.businessObject?.name),
-    bpmnType,
-    type: bpmnType,
-    isConnection,
-    isShape: isShapeElement(element),
-  };
-  writeContextDebugSnapshot({
-    source: "resolve",
+  return buildResolutionResult({
+    element,
+    target: buildContextMenuTarget(element, inst),
     runtimeType,
     scope,
-    hintedElementId: toText(hintedElement?.id),
-    runtimeElementId: toText(runtimeElement?.id),
-    strictNativeSemanticHitId: toText(strictNativeSemanticHit?.id),
-    strictNativeSemanticHitAcceptedId: toText(strictNativeSemanticHitAccepted?.id),
-    target,
+    meta: {
+      hintedElementId: toText(hintedElement?.id),
+      hintedElementType: readElementType(hintedElement),
+      runtimeElementId: toText(runtimeElement?.id),
+      runtimeElementType: readElementType(runtimeElement),
+      topSemanticDomHitId: toText(topSemanticDomHit?.id),
+      topSemanticDomHitType: readElementType(topSemanticDomHit),
+      nearestSemanticByPointId: toText(nearestSemanticByPoint?.id),
+      nearestSemanticByPointType: readElementType(nearestSemanticByPoint),
+      strictConnectionByPointId: toText(strictConnectionByPoint?.id),
+      strictConnectionByPointType: readElementType(strictConnectionByPoint),
+      strictShapeByPointId: toText(strictShapeByPoint?.id),
+      strictShapeByPointType: readElementType(strictShapeByPoint),
+      strictNativeSemanticHitId: toText(strictNativeSemanticHit?.id),
+      strictNativeSemanticHitAcceptedId: toText(strictNativeSemanticHitAccepted?.id),
+      finalElementId: toText(element?.id),
+      finalElementType: readElementType(element),
+      finalElementIsCanvasContainer: isCanvasContainerElement(element, inst),
+    },
   });
-  return target;
+}
+
+export function resolveBpmnContextMenuTarget({ runtimeEvent, scope = "canvas", inst } = {}) {
+  const resolution = resolveBpmnContextMenuRuntimeResolution({
+    runtimeEvent,
+    scope,
+    inst,
+  });
+  writeContextDebugSnapshot(resolution.snapshot);
+  return resolution.target;
 }

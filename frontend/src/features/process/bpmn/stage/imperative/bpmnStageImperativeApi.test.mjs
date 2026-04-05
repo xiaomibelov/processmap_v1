@@ -93,6 +93,7 @@ test("createBpmnStageImperativeApi exposes expected public methods", () => {
   methods.forEach((name) => {
     assert.equal(typeof api[name], "function", `${name} should be a function`);
   });
+  assert.equal("executeDiagramContextAction" in api, false);
 });
 
 test("focusNode proxies to focusNodeOnInstance with same args", () => {
@@ -201,32 +202,79 @@ test("importXmlText persists backend snapshot with explicit import_bpmn intent",
   assert.deepEqual(renderCalls, ["<bpmn:definitions/>"]);
 });
 
-test("runDiagramContextAction proxies payload to callback result", async () => {
+test("runDiagramContextAction remains the only public context-action entry and proxies executor results", async () => {
   const calls = [];
   const ctx = createCtx({
     callbacks: {
-      runDiagramContextAction: async (payload) => {
+      executeDiagramContextAction: async (payload) => {
         calls.push(payload);
-        return { ok: true, actionId: payload.actionId };
+        return { ok: true, changedIds: ["Task_1"] };
       },
     },
   });
   const api = createBpmnStageImperativeApi(ctx);
 
-  const payload = { actionId: "open_inside", target: { id: "SubProcess_1" } };
-  const result = await api.runDiagramContextAction(payload);
+  const result = await api.runDiagramContextAction({
+    actionId: "open_properties",
+    target: { id: "Task_1", kind: "element" },
+  });
 
-  assert.deepEqual(calls, [payload]);
-  assert.deepEqual(result, { ok: true, actionId: "open_inside" });
+  assert.deepEqual(calls, [{
+    actionId: "open_properties",
+    target: { id: "Task_1", kind: "element" },
+  }]);
+  assert.deepEqual(result, { ok: true, changedIds: ["Task_1"] });
+  assert.equal("executeDiagramContextAction" in api, false);
 });
 
-test("runDiagramContextAction returns bounded unavailable error when callback is missing", async () => {
+test("runDiagramContextAction returns explicit unavailable result without private executor", async () => {
   const api = createBpmnStageImperativeApi(createCtx());
-
-  const result = await api.runDiagramContextAction({ actionId: "open_inside" });
-
+  const result = await api.runDiagramContextAction({ actionId: "open_properties" });
   assert.deepEqual(result, {
     ok: false,
     error: "context_action_unavailable",
   });
+});
+
+test("runDiagramContextAction no longer accepts legacy private callback alias", async () => {
+  const legacyCalls = [];
+  const api = createBpmnStageImperativeApi(createCtx({
+    callbacks: {
+      runDiagramContextAction: async (payload) => {
+        legacyCalls.push(payload);
+        return { ok: true, changedIds: ["Task_1"] };
+      },
+    },
+  }));
+
+  const result = await api.runDiagramContextAction({ actionId: "open_properties" });
+
+  assert.deepEqual(legacyCalls, []);
+  assert.deepEqual(result, {
+    ok: false,
+    error: "context_action_unavailable",
+  });
+});
+
+test("undo and redo route through the same private context-action executor boundary", async () => {
+  const calls = [];
+  const ctx = createCtx({
+    callbacks: {
+      executeDiagramContextAction: async (payload) => {
+        calls.push(payload);
+        return { ok: true, changedIds: [] };
+      },
+    },
+  });
+  const api = createBpmnStageImperativeApi(ctx);
+
+  const undoResult = await api.undo();
+  const redoResult = await api.redo();
+
+  assert.deepEqual(calls, [
+    { actionId: "undo" },
+    { actionId: "redo" },
+  ]);
+  assert.deepEqual(undoResult, { ok: true, changedIds: [] });
+  assert.deepEqual(redoResult, { ok: true, changedIds: [] });
 });

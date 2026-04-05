@@ -12,6 +12,10 @@ function toLower(value) {
   return toText(value).toLowerCase();
 }
 
+function asObject(value) {
+  return value && typeof value === "object" ? value : {};
+}
+
 function normalizeBpmnType(targetRaw) {
   const target = targetRaw && typeof targetRaw === "object" ? targetRaw : {};
   return toLower(target.bpmnType || target.type || target.elementType);
@@ -86,4 +90,67 @@ export function resolveBpmnContextMenuQuickEdit(targetRaw = null) {
     };
   }
   return null;
+}
+
+export function buildBpmnContextMenuViewModel({
+  payloadRaw = {},
+  runtimeUndoRedoState = {},
+  fallbackUndoRedoState = {},
+} = {}) {
+  const payload = asObject(payloadRaw);
+  const targetBase = asObject(payload.target);
+  const runtimeUndoRedo = asObject(runtimeUndoRedoState);
+  const fallbackUndoRedo = asObject(fallbackUndoRedoState);
+  const target = {
+    ...targetBase,
+    canUndo: runtimeUndoRedo.canUndo === true || fallbackUndoRedo.canUndo === true,
+    canRedo: runtimeUndoRedo.canRedo === true || fallbackUndoRedo.canRedo === true,
+  };
+  const kind = resolveBpmnContextTargetKind(target);
+  const actions = resolveBpmnContextMenuActions(target);
+  if (!actions.length) return null;
+  return {
+    sessionId: toText(payload.sessionId),
+    clientX: Number(payload.clientX || 0),
+    clientY: Number(payload.clientY || 0),
+    header: resolveBpmnContextMenuHeader(target),
+    kind,
+    target,
+    actions,
+    quickEdit: resolveBpmnContextMenuQuickEdit(target),
+  };
+}
+
+export function normalizeBpmnContextMenuActionRequest(actionRequestRaw = {}) {
+  const actionRequest = asObject(actionRequestRaw);
+  const actionId = toText(
+    typeof actionRequestRaw === "string"
+      ? actionRequestRaw
+      : (actionRequest.actionId || actionRequest.id),
+  );
+  if (!actionId) return null;
+  return {
+    actionId,
+    closeOnSuccess: actionRequest.closeOnSuccess !== false,
+    value: String(actionRequest.value ?? ""),
+  };
+}
+
+export function buildBpmnContextMenuExecutionRequest({
+  menuRaw = {},
+  actionRequestRaw = {},
+} = {}) {
+  const menu = asObject(menuRaw);
+  const actionRequest = normalizeBpmnContextMenuActionRequest(actionRequestRaw);
+  if (!actionRequest) return null;
+  return {
+    actionRequest,
+    payload: {
+      actionId: actionRequest.actionId,
+      target: asObject(menu.target),
+      clientX: Number(menu.clientX || 0),
+      clientY: Number(menu.clientY || 0),
+      value: actionRequest.value,
+    },
+  };
 }

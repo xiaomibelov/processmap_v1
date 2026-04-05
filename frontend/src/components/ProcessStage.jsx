@@ -91,6 +91,7 @@ import useDiagramActionsController from "../features/process/stage/orchestration
 import useStableProcessDiagramOverlayLayersProps from "../features/process/stage/orchestration/useStableProcessDiagramOverlayLayersProps";
 import useBpmnDiagramContextMenu from "../features/process/stage/hooks/useBpmnDiagramContextMenu";
 import useBpmnPropertiesOverlayController from "../features/process/bpmn/context-menu/properties-overlay/useBpmnPropertiesOverlayController";
+import useBpmnSubprocessPreview from "../features/process/stage/hooks/useBpmnSubprocessPreview";
 import useProcessStageDrawio from "../features/process/stage/orchestration/useProcessStageDrawio";
 import useProcessStageHybrid from "../features/process/stage/orchestration/useProcessStageHybrid";
 import useProcessStageLocalState from "../features/process/stage/orchestration/state/useProcessStageLocalState";
@@ -2236,12 +2237,9 @@ export default function ProcessStage({
   });
   const {
     bpmnContextMenu,
-    bpmnSubprocessPreview,
     onBpmnContextMenuRequest,
     onBpmnContextMenuDismiss,
     closeBpmnContextMenu,
-    closeBpmnSubprocessPreview,
-    openBpmnSubprocessPreviewProperties,
     runBpmnContextMenuAction,
   } = useBpmnDiagramContextMenu({
     bpmnRef,
@@ -2264,6 +2262,52 @@ export default function ProcessStage({
     setGenErr,
     onActionResult: bpmnPropertiesOverlayController.handleContextMenuActionResult,
   });
+  const {
+    bpmnSubprocessPreview,
+    closeBpmnSubprocessPreview,
+    openBpmnSubprocessPreviewProperties,
+    handleBpmnContextActionResult,
+  } = useBpmnSubprocessPreview({
+    bpmnRef,
+    hasSession,
+    tab,
+    drawioEditorOpen,
+    hybridPlacementHitLayerActive,
+    hybridModeEffective,
+    setInfoMsg,
+    setGenErr,
+  });
+  const handleBpmnContextMenuAction = useCallback(async (actionRequest) => {
+    const result = await Promise.resolve(runBpmnContextMenuAction?.(actionRequest));
+    handleBpmnContextActionResult(result, {
+      menuTarget: bpmnContextMenu?.target,
+      closeContextMenu: closeBpmnContextMenu,
+    });
+    return result;
+  }, [
+    bpmnContextMenu,
+    closeBpmnContextMenu,
+    handleBpmnContextActionResult,
+    runBpmnContextMenuAction,
+  ]);
+  const handleBpmnSubprocessPreviewOpenProperties = useCallback(async () => {
+    const result = await Promise.resolve(openBpmnSubprocessPreviewProperties?.());
+    bpmnPropertiesOverlayController.handleContextMenuActionResult({
+      actionId: "open_properties",
+      menu: {
+        target: {
+          id: toText(bpmnSubprocessPreview?.targetId),
+          kind: "element",
+        },
+      },
+      result,
+    });
+    return result;
+  }, [
+    bpmnPropertiesOverlayController,
+    bpmnSubprocessPreview,
+    openBpmnSubprocessPreviewProperties,
+  ]);
 
   const handleUndoAction = useCallback(async () => {
     const result = await Promise.resolve(bpmnRef.current?.undo?.());
@@ -4346,8 +4390,8 @@ export default function ProcessStage({
     subscribeOverlayViewportMatrix,
     tab,
     toText,
-    runBpmnContextMenuAction,
-    openBpmnSubprocessPreviewProperties,
+    runBpmnContextMenuAction: handleBpmnContextMenuAction,
+    openBpmnSubprocessPreviewProperties: handleBpmnSubprocessPreviewOpenProperties,
     withHybridOverlayGuard,
   });
 
