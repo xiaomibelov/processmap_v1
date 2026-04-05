@@ -54,6 +54,7 @@ function createCtx() {
     probeCanvas: () => {},
     emitDiagramMutation: () => {},
     trackRuntimeStatus: () => {},
+    transformPersistedXml: (xml) => String(xml || ""),
     fnv1aHex: () => "hash",
   };
   return { refs, values, state, readOnly, api, callbacks };
@@ -105,6 +106,40 @@ test("ensureBpmnCoordinator binds runtime callbacks only once", () => {
   assert.equal(createRuntimeCalls, 1);
   assert.equal(bindRuntimeCalls, 1);
   assert.equal(ctx.refs.modelerRuntimeRef.current, r1);
+});
+
+test("ensureBpmnCoordinator forwards xml transform hook into coordinator", () => {
+  const ctx = createCtx();
+  const calls = [];
+  ctx.callbacks.transformPersistedXml = (xmlText, meta) => {
+    calls.push({ xmlText: String(xmlText || ""), meta });
+    return "<bpmn:definitions id=\"finalized\"/>";
+  };
+  let capturedOptions = null;
+  const deps = {
+    createBpmnStore: () => ({
+      subscribe: () => () => {},
+      getState: () => ({ xml: "" }),
+    }),
+    createBpmnPersistence: () => ({
+      saveRaw: async () => ({ ok: true }),
+      loadRaw: async () => ({ ok: true }),
+      cacheRaw: () => ({ ok: true }),
+    }),
+    createBpmnCoordinator: (options) => {
+      capturedOptions = options;
+      return { bindRuntime() {} };
+    },
+  };
+
+  const wiring = createBpmnWiring(() => ctx, deps);
+  wiring.ensureBpmnCoordinator();
+
+  const transformed = capturedOptions.transformPersistedXml("<bpmn:definitions id=\"raw\"/>", { reason: "autosave" });
+  assert.equal(transformed, "<bpmn:definitions id=\"finalized\"/>");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].xmlText, "<bpmn:definitions id=\"raw\"/>");
+  assert.equal(calls[0].meta.reason, "autosave");
 });
 
 test("ensureBpmnStore guards redundant setter fanout for identical snapshots", () => {

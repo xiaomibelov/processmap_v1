@@ -64,3 +64,37 @@ test("flushSave keeps backend persist when xml changed", async () => {
   assert.equal(result.skipped, undefined);
   assert.equal(saveCalls, 1);
 });
+
+test("flushSave persists transformed xml in a single write", async () => {
+  const store = createBpmnStore({
+    xml: "<bpmn:definitions id=\"old\"/>",
+    rev: 8,
+    dirty: true,
+    lastSavedRev: 0,
+  });
+  const persisted = [];
+  const coordinator = createBpmnCoordinator({
+    store,
+    getSessionId: () => "sid_transform_once",
+    getRuntime: () => ({
+      getStatus: () => ({ ready: true, defs: true, token: 79 }),
+      getXml: async () => ({ ok: true, xml: "<bpmn:definitions id=\"raw\"/>", token: 79 }),
+    }),
+    transformPersistedXml: (xmlText) => String(xmlText || "").replace("id=\"raw\"", "id=\"finalized\""),
+    persistence: {
+      saveRaw: async (_sid, xml, rev) => {
+        persisted.push({ xml: String(xml || ""), rev: Number(rev || 0) });
+        return { ok: true, status: 200, storedRev: 9 };
+      },
+    },
+  });
+
+  const result = await coordinator.flushSave("manual_save");
+
+  assert.equal(result.ok, true);
+  assert.equal(persisted.length, 1);
+  assert.equal(persisted[0].xml, "<bpmn:definitions id=\"finalized\"/>");
+  assert.equal(result.xml, "<bpmn:definitions id=\"finalized\"/>");
+  assert.equal(result.xmlAlreadyTransformed, true);
+  assert.equal(store.getState().xml, "<bpmn:definitions id=\"finalized\"/>");
+});
