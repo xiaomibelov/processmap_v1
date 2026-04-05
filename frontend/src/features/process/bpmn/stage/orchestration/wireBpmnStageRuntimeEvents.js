@@ -461,6 +461,7 @@ export function bindViewerStageEvents({
   runtimeTokenRef,
   emitViewboxChanged,
   applyPropertiesOverlayDecorForZoomChange,
+  contextMenuInteractionRef,
 }) {
   eventBus.on("selection.changed", 2000, (ev) => {
     const suppressDismiss = consumeContextMenuSelectionDismissGuard(contextMenuInteractionRef);
@@ -539,6 +540,7 @@ export function bindModelerStageEvents({
   runtimeTokenRef,
   emitViewboxChanged,
   applyPropertiesOverlayDecorForZoomChange,
+  contextMenuInteractionRef,
   invalidateShapeTitleLookup,
   runImmediateEditorFanout,
   applyTaskTypeDecor,

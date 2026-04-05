@@ -1245,6 +1245,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const onDiagramMutationRef = useRef(onDiagramMutation);
   const onElementSelectionChangeRef = useRef(onElementSelectionChange);
   const selectionImportGuardRef = useRef({ viewer: "", editor: "" });
+  const contextMenuInteractionRef = useRef({ contextMenuOpenedAtMs: 0 });
   const onElementNotesRemapRef = useRef(onElementNotesRemap);
   const onAiQuestionsByElementChangeRef = useRef(onAiQuestionsByElementChange);
   const onSessionSyncRef = useRef(onSessionSync);
@@ -3661,6 +3662,7 @@ const BpmnStage = forwardRef(function BpmnStage({
           runtimeTokenRef,
           emitViewboxChanged,
           applyPropertiesOverlayDecorForZoomChange,
+          contextMenuInteractionRef,
         });
         } catch {
         }
@@ -3742,6 +3744,7 @@ const BpmnStage = forwardRef(function BpmnStage({
             runtimeTokenRef,
             emitViewboxChanged,
             applyPropertiesOverlayDecorForZoomChange,
+            contextMenuInteractionRef,
             invalidateShapeTitleLookup,
             runImmediateEditorFanout,
             applyTaskTypeDecor,
