@@ -144,9 +144,7 @@ export function createBpmnStageImperativeApi(ctxBase) {
   const executeDiagramContextAction = (
     typeof callbacks.executeDiagramContextAction === "function"
       ? callbacks.executeDiagramContextAction
-      : (typeof callbacks.runDiagramContextAction === "function"
-          ? callbacks.runDiagramContextAction
-          : null)
+      : null
   );
 
   const getReadyInstance = (preferredModeRaw = "") => {

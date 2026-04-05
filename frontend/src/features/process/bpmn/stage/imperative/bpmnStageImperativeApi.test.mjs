@@ -236,6 +236,26 @@ test("runDiagramContextAction returns explicit unavailable result without privat
   });
 });
 
+test("runDiagramContextAction no longer accepts legacy private callback alias", async () => {
+  const legacyCalls = [];
+  const api = createBpmnStageImperativeApi(createCtx({
+    callbacks: {
+      runDiagramContextAction: async (payload) => {
+        legacyCalls.push(payload);
+        return { ok: true, changedIds: ["Task_1"] };
+      },
+    },
+  }));
+
+  const result = await api.runDiagramContextAction({ actionId: "open_properties" });
+
+  assert.deepEqual(legacyCalls, []);
+  assert.deepEqual(result, {
+    ok: false,
+    error: "context_action_unavailable",
+  });
+});
+
 test("undo and redo route through the same private context-action executor boundary", async () => {
   const calls = [];
   const ctx = createCtx({
