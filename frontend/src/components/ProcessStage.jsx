@@ -932,6 +932,7 @@ export default function ProcessStage({
         force: tab === "diagram",
         source: "manual_save",
         reason: "manual_save",
+        persistReason: "publish_manual_save",
       });
       if (!saved?.ok) {
         setGenErr(shortErr(saved?.error || "Не удалось сохранить BPMN."));
