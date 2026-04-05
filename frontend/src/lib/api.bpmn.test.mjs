@@ -32,7 +32,7 @@ test("apiPutBpmnXml sends source_action import_bpmn for explicit import reason",
   }
 });
 
-test("apiPutBpmnXml does not send source_action for regular save reasons", async () => {
+test("apiPutBpmnXml does not send source_action for generic save reasons outside snapshot whitelist", async () => {
   const prevFetch = globalThis.fetch;
   const calls = [];
   try {
@@ -46,7 +46,7 @@ test("apiPutBpmnXml does not send source_action for regular save reasons", async
 
     const out = await apiPutBpmnXml("sess_1", "<bpmn:definitions/>", {
       rev: 3,
-      reason: "manual_save",
+      reason: "save",
     });
 
     assert.equal(out.ok, true);
@@ -54,6 +54,36 @@ test("apiPutBpmnXml does not send source_action for regular save reasons", async
     assert.equal("source_action" in body, false);
     assert.equal("import_note" in body, false);
     assert.equal(body.rev, 3);
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
+});
+
+test("apiPutBpmnXml exposes backend bpmn version snapshot as canonical publish truth", async () => {
+  const prevFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      ok: true,
+      version: 8,
+      bpmn_version_snapshot: {
+        id: "ver_8",
+        version_number: 8,
+        source_action: "publish_manual_save",
+      },
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const out = await apiPutBpmnXml("sess_1", "<bpmn:definitions/>", {
+      rev: 8,
+      reason: "publish_manual_save",
+    });
+
+    assert.equal(out.ok, true);
+    assert.equal(out.bpmnVersionSnapshot?.id, "ver_8");
+    assert.equal(out.bpmnVersionSnapshot?.version_number, 8);
+    assert.equal(out.bpmnVersionSnapshot?.source_action, "publish_manual_save");
   } finally {
     globalThis.fetch = prevFetch;
   }
