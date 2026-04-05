@@ -34,31 +34,15 @@ test("native contextmenu excludes overlay toolbar surfaces", () => {
     "context menu interception must remain bounded to canvas rect",
   );
   assert.ok(
-    source.includes("document.elementsFromPoint"),
-    "native contextmenu must recover BPMN element from client point fallback",
+    source.includes("resolveBpmnContextMenuRuntimeResolution"),
+    "native contextmenu must delegate semantic hit resolution into shared runtime-target seam",
   );
   assert.ok(
-    source.includes("rankContextMenuCandidate"),
-    "client-point recovery must rank BPMN element candidates above lane/background",
+    source.includes("contextMenuResolution: resolution"),
+    "shared runtime-target resolution must be forwarded downstream without local semantic recomputation",
   );
   assert.ok(
-    source.includes("candidates.sort"),
-    "candidate resolution must not rely on first-hit lane/background order",
-  );
-  assert.ok(
-    source.includes("resolveNearestElementFromDiagramPoint"),
-    "lane-only hits must fallback to nearest BPMN element around cursor",
-  );
-  assert.ok(
-    source.includes("preferConnection: true"),
-    "container-host fallback must prefer nearby connection hits before generic nearest shape",
-  );
-  assert.ok(
-    source.includes("semanticByStackOrder"),
-    "top semantic DOM hit must win before rank fallback so flow/body hits are not stolen by container fallback",
-  );
-  assert.ok(
-    source.includes("!element || isContainerLikeBpmnElement(element)"),
-    "lane/participant host hits must trigger client-point recovery to prefer real BPMN shape/flow",
+    source.includes('scope: resolution?.target?.kind === "canvas" ? "canvas" : "element"'),
+    "runtime-target seam must be the owner of body-vs-label semantic scope classification",
   );
 });
