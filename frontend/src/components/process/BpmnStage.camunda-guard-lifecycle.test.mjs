@@ -42,7 +42,8 @@ test("template insert claims single-writer ownership before returning insert res
 
 test("template-apply save forwards saveOwner into coordinator flush lane", () => {
   assert.match(source, /const resolvedSaveOwner = isTemplateApplySave \? "template_apply" : requestedSaveOwner;/);
-  assert.match(source, /coordinator\.flushSave\(source, \{ force, trigger, saveOwner: resolvedSaveOwner \}\)/);
+  assert.match(source, /const persistReason = String\(options\?\.persistReason \|\| source\)\.trim\(\) \|\| source;/);
+  assert.match(source, /coordinator\.flushSave\(persistReason, \{ force, trigger, saveOwner: resolvedSaveOwner \}\)/);
 });
 
 test("save path exposes camunda finalize transform to coordinator before first persist", () => {
@@ -52,5 +53,5 @@ test("save path exposes camunda finalize transform to coordinator before first p
 
 test("camunda finalize explicit persist remains only as fallback when flush output is not yet transformed", () => {
   assert.match(source, /if \(out !== rawOut && flushed\?\.xmlAlreadyTransformed !== true\) \{/);
-  assert.match(source, /coordinator\.persistExplicitXml\(out, `\$\{source\}:camunda_finalize`, \{/);
+  assert.match(source, /coordinator\.persistExplicitXml\(out, `\$\{persistReason\}:camunda_finalize`, \{/);
 });

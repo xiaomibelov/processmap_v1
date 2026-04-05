@@ -336,6 +336,29 @@ class BpmnMetaApiTests(unittest.TestCase):
         self.assertNotIn("bpmn_version_snapshot", saved)
         self.assertEqual(st.list_bpmn_versions(self.sid), [])
 
+    def test_publish_manual_save_creates_version_snapshot_even_when_xml_matches_current_backend_state(self):
+        st = self.get_storage()
+        initial = self.session_bpmn_save(
+            self.sid,
+            self.BpmnXmlIn(xml=PRUNED_BPMN_XML),
+        )
+        self.assertEqual(initial.get("ok"), True)
+        self.assertNotIn("bpmn_version_snapshot", initial)
+
+        published = self.session_bpmn_save(
+            self.sid,
+            self.BpmnXmlIn(xml=PRUNED_BPMN_XML, source_action="publish_manual_save"),
+        )
+        self.assertEqual(published.get("ok"), True)
+        snapshot = published.get("bpmn_version_snapshot", {})
+        self.assertEqual(snapshot.get("source_action"), "publish_manual_save")
+        self.assertEqual(int(snapshot.get("version_number") or 0), 1)
+
+        versions = st.list_bpmn_versions(self.sid)
+        self.assertEqual(len(versions), 1)
+        self.assertEqual(versions[0].get("source_action"), "publish_manual_save")
+        self.assertEqual(versions[0].get("bpmn_xml"), PRUNED_BPMN_XML)
+
     def test_bpmn_versions_endpoint_returns_metadata_and_optional_xml(self):
         self.session_bpmn_save(
             self.sid,
