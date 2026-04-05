@@ -256,6 +256,61 @@ test("runDiagramContextAction no longer accepts legacy private callback alias", 
   });
 });
 
+test("getUndoRedoState reads availability from commandStack without runtime error", () => {
+  const commandStack = {
+    canUndo: () => true,
+    canRedo: () => false,
+  };
+  const viewer = {
+    id: "viewer",
+    get(service) {
+      if (service === "commandStack") return commandStack;
+      return null;
+    },
+  };
+  const api = createBpmnStageImperativeApi(createCtx({
+    refs: {
+      viewerRef: { current: viewer },
+    },
+    values: {
+      view: "viewer",
+    },
+  }));
+
+  const state = api.getUndoRedoState({ mode: "viewer" });
+
+  assert.deepEqual(state, {
+    canUndo: true,
+    canRedo: false,
+    ready: true,
+  });
+});
+
+test("getUndoRedoState returns bounded false state when commandStack is unavailable", () => {
+  const viewer = {
+    id: "viewer",
+    get() {
+      return null;
+    },
+  };
+  const api = createBpmnStageImperativeApi(createCtx({
+    refs: {
+      viewerRef: { current: viewer },
+    },
+    values: {
+      view: "viewer",
+    },
+  }));
+
+  const state = api.getUndoRedoState({ mode: "viewer" });
+
+  assert.deepEqual(state, {
+    canUndo: false,
+    canRedo: false,
+    ready: true,
+  });
+});
+
 test("undo and redo route through the same private context-action executor boundary", async () => {
   const calls = [];
   const ctx = createCtx({
