@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  resolveBpmnContextMenuActions,
-  resolveBpmnContextMenuHeader,
-  resolveBpmnContextMenuQuickEdit,
-  resolveBpmnContextTargetKind,
+  buildBpmnContextMenuExecutionRequest,
+  buildBpmnContextMenuViewModel,
 } from "../../bpmn/context-menu/bpmnContextMenuActionMatrix";
 import useBpmnContextMenuState from "../../bpmn/context-menu/useBpmnContextMenuState";
 
@@ -50,7 +48,7 @@ export default function useBpmnDiagramContextMenu({
 
   const {
     menu,
-    openMenu,
+    requestOpenMenu,
     closeMenu: closeBpmnContextMenu,
   } = useBpmnContextMenuState({
     isBlocked,
@@ -66,52 +64,26 @@ export default function useBpmnDiagramContextMenu({
     setBpmnSubprocessPreview(null);
   }, []);
 
-  const onBpmnContextMenuRequest = useCallback((payloadRaw = {}) => {
-    if (isBlocked) return false;
-    const payload = asObject(payloadRaw);
-    const targetBase = asObject(payload.target);
-    const runtimeUndoRedo = asObject(bpmnRef?.current?.getUndoRedoState?.({ mode: "editor" }));
-    const undoRedo = {
-      canUndo: runtimeUndoRedo.canUndo === true || asObject(undoRedoState).canUndo === true,
-      canRedo: runtimeUndoRedo.canRedo === true || asObject(undoRedoState).canRedo === true,
-    };
-    const target = {
-      ...targetBase,
-      canUndo: undoRedo.canUndo,
-      canRedo: undoRedo.canRedo,
-    };
-    const targetKind = resolveBpmnContextTargetKind(target);
-    const actions = resolveBpmnContextMenuActions(target);
-    if (!actions.length) return false;
-    return openMenu({
-      sessionId: toText(payload.sessionId),
-      clientX: Number(payload.clientX || 0),
-      clientY: Number(payload.clientY || 0),
-      header: resolveBpmnContextMenuHeader(target),
-      kind: targetKind,
-      target,
-      actions,
-      quickEdit: resolveBpmnContextMenuQuickEdit(target),
+  const buildMenuViewModel = useCallback((payloadRaw = {}) => {
+    return buildBpmnContextMenuViewModel({
+      payloadRaw,
+      runtimeUndoRedoState: asObject(bpmnRef?.current?.getUndoRedoState?.({ mode: "editor" })),
+      fallbackUndoRedoState: undoRedoState,
     });
-  }, [bpmnRef, isBlocked, openMenu, undoRedoState]);
+  }, [bpmnRef, undoRedoState]);
+
+  const onBpmnContextMenuRequest = useCallback((payloadRaw = {}) => {
+    return requestOpenMenu(payloadRaw, buildMenuViewModel);
+  }, [buildMenuViewModel, requestOpenMenu]);
 
   const runBpmnContextMenuAction = useCallback(async (actionRequestRaw) => {
-    const actionRequest = asObject(actionRequestRaw);
-    const actionId = toText(
-      typeof actionRequestRaw === "string"
-        ? actionRequestRaw
-        : (actionRequest.actionId || actionRequest.id),
-    );
-    if (!menu || !actionId) return;
-    const closeOnSuccess = actionRequest.closeOnSuccess !== false;
-
-    const payload = {
-      actionId,
-      target: asObject(menu.target),
-      clientX: Number(menu.clientX || 0),
-      clientY: Number(menu.clientY || 0),
-      value: String(actionRequest.value ?? ""),
-    };
+    const executionRequest = buildBpmnContextMenuExecutionRequest({
+      menuRaw: menu,
+      actionRequestRaw,
+    });
+    if (!executionRequest) return;
+    const { actionRequest, payload } = executionRequest;
+    const closeOnSuccess = actionRequest.closeOnSuccess;
 
     let result = null;
     try {

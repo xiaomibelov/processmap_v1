@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { normalizeBpmnContextMenuActionRequest } from "./bpmnContextMenuActionMatrix";
 import BpmnContextMenuActionSection from "./ui/BpmnContextMenuActionSection";
 import BpmnContextMenuQuickField from "./ui/BpmnContextMenuQuickField";
 import { groupContextMenuActions } from "./ui/contextMenuGroups";
@@ -27,21 +28,19 @@ export default function BpmnDiagramContextMenu({
     menu,
     reflowKey: `${groups.length}:${toText(menu?.target?.id)}:${toText(menu?.quickEdit?.actionId)}`,
   });
-  const quick = useBpmnQuickEditController({
-    menu,
-    onAction,
-  });
 
-  const runAction = useCallback(async (actionId, options = {}) => {
-    if (typeof onAction !== "function") return null;
+  const dispatchActionRequest = useCallback(async (actionRequestRaw) => {
+    const actionRequest = normalizeBpmnContextMenuActionRequest(actionRequestRaw);
+    if (!actionRequest || typeof onAction !== "function") return null;
     return await Promise.resolve(
-      onAction({
-        actionId: toText(actionId),
-        closeOnSuccess: options.closeOnSuccess !== false,
-        value: String(options.value ?? ""),
-      }),
+      onAction(actionRequest),
     );
   }, [onAction]);
+  const quick = useBpmnQuickEditController({
+    quickEdit: menu?.quickEdit,
+    targetId: toText(menu?.target?.id),
+    dispatchActionRequest,
+  });
 
   if (!menu || !groups.length) return null;
 
@@ -96,7 +95,10 @@ export default function BpmnDiagramContextMenu({
             group={row.group}
             items={row.items}
             onAction={async (actionId) => {
-              await runAction(actionId, { closeOnSuccess: true });
+              await dispatchActionRequest({
+                actionId,
+                closeOnSuccess: true,
+              });
             }}
           />
         ))}
@@ -104,4 +106,3 @@ export default function BpmnDiagramContextMenu({
     </div>
   );
 }
-
