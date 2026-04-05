@@ -82,6 +82,24 @@ function readElementBounds(inst, elementIdRaw) {
   }
 }
 
+function readUndoRedoAvailability(inst) {
+  try {
+    const commandStack = inst?.get?.("commandStack");
+    if (!commandStack || typeof commandStack !== "object") {
+      return { canUndo: false, canRedo: false };
+    }
+    const canUndo = typeof commandStack.canUndo === "function"
+      ? commandStack.canUndo() === true
+      : false;
+    const canRedo = typeof commandStack.canRedo === "function"
+      ? commandStack.canRedo() === true
+      : false;
+    return { canUndo, canRedo };
+  } catch {
+    return { canUndo: false, canRedo: false };
+  }
+}
+
 function getSelectionService(inst) {
   try {
     return inst?.get?.("selection") || null;
