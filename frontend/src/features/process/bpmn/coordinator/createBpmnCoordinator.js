@@ -23,6 +23,9 @@ export default function createBpmnCoordinator(options = {}) {
   const store = options?.store;
   const getRuntime = typeof options?.getRuntime === "function" ? options.getRuntime : () => null;
   const getSessionId = typeof options?.getSessionId === "function" ? options.getSessionId : () => "";
+  const transformPersistedXml = typeof options?.transformPersistedXml === "function"
+    ? options.transformPersistedXml
+    : null;
   const persistence = options?.persistence && typeof options.persistence === "object"
     ? options.persistence
     : {};
@@ -206,6 +209,34 @@ export default function createBpmnCoordinator(options = {}) {
     return await saveRaw(sid, xml, rev, reason);
   }
 
+  function preparePersistedXml(xmlText, meta = {}) {
+    const rawXml = asText(xmlText);
+    if (!transformPersistedXml) {
+      return {
+        xml: rawXml,
+        transformed: false,
+      };
+    }
+    try {
+      const nextXml = asText(transformPersistedXml(rawXml, meta));
+      if (!nextXml) {
+        return {
+          xml: rawXml,
+          transformed: false,
+        };
+      }
+      return {
+        xml: nextXml,
+        transformed: nextXml !== rawXml,
+      };
+    } catch {
+      return {
+        xml: rawXml,
+        transformed: false,
+      };
+    }
+  }
+
   function cacheRaw(sid, xml, rev, reason) {
     const cacheRawFn = persistence?.cacheRaw;
     if (typeof cacheRawFn !== "function") return { ok: false, source: "runtime_cache" };
@@ -323,7 +354,15 @@ export default function createBpmnCoordinator(options = {}) {
       };
     }
 
-    const xml = asText(xmlRes?.xml);
+    const rawXml = asText(xmlRes?.xml);
+    const prepared = preparePersistedXml(rawXml, {
+      sid,
+      reason,
+      rev,
+      runtimeToken: asNumber(xmlRes?.token, 0),
+      source: "flush_save",
+    });
+    const xml = prepared.xml;
     const currentXmlHash = fnv1aHex(xml);
     const localHash = asText(state?.lastHash || state?.hash || "");
     const localDirty = state?.dirty === true;
@@ -344,6 +383,7 @@ export default function createBpmnCoordinator(options = {}) {
         unchanged: true,
         xml,
         hash: currentXmlHash,
+        xmlAlreadyTransformed: prepared.transformed,
       };
     }
     const refreshed = store.setXml(xml, "flush_save", { bumpRev: false, dirty: true });
@@ -394,7 +434,13 @@ export default function createBpmnCoordinator(options = {}) {
       status: asNumber(persisted?.status, 200),
       ms: Date.now() - startedAt,
     });
-    return { ok: true, rev: storedRev, storedRev };
+    return {
+      ok: true,
+      rev: storedRev,
+      storedRev,
+      xml,
+      xmlAlreadyTransformed: prepared.transformed,
+    };
   }
 
   function scheduleSave(reason = "autosave") {

@@ -45,6 +45,12 @@ test("template-apply save forwards saveOwner into coordinator flush lane", () =>
   assert.match(source, /coordinator\.flushSave\(source, \{ force, trigger, saveOwner: resolvedSaveOwner \}\)/);
 });
 
-test("camunda finalize persist reuses coordinator save lane instead of direct persistence write", () => {
+test("save path exposes camunda finalize transform to coordinator before first persist", () => {
+  assert.match(source, /function transformPersistedXml\(xmlText\) \{/);
+  assert.match(source, /transformPersistedXml,/);
+});
+
+test("camunda finalize explicit persist remains only as fallback when flush output is not yet transformed", () => {
+  assert.match(source, /if \(out !== rawOut && flushed\?\.xmlAlreadyTransformed !== true\) \{/);
   assert.match(source, /coordinator\.persistExplicitXml\(out, `\$\{source\}:camunda_finalize`, \{/);
 });
