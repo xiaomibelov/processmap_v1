@@ -624,6 +624,50 @@ test("quick_set_flow_label updates sequence flow label", async () => {
   assert.deepEqual(labelCalls, [{ id: "Flow_1", value: "Да" }]);
 });
 
+test("open_properties preserves selection handoff through context menu action entry", async () => {
+  const task = {
+    id: "Task_1",
+    type: "bpmn:Task",
+    businessObject: { $type: "bpmn:Task", name: "Approve" },
+  };
+  const root = {
+    id: "Process_1",
+    type: "bpmn:Process",
+    businessObject: { $type: "bpmn:Process", flowElements: [task] },
+    di: { planeElement: [] },
+    children: [task],
+  };
+  task.parent = root;
+  const selectionEvents = [];
+
+  const { inst } = createStubModeler({
+    root,
+    registryItems: [root, task],
+  });
+
+  const result = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "open_properties",
+      target: { id: "Task_1" },
+    },
+    modelerRef: { current: inst },
+    emitElementSelection(element, source, extra) {
+      selectionEvents.push({
+        id: String(element?.id || ""),
+        source: String(source || ""),
+        selectedIds: Array.isArray(extra?.selectedIds) ? extra.selectedIds.slice() : [],
+      });
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(selectionEvents, [{
+    id: "Task_1",
+    source: "context_menu_properties",
+    selectedIds: ["Task_1"],
+  }]);
+});
+
 test("open_inside returns read-only subprocess preview and does not require drilldown provider", async () => {
   const subprocess = {
     id: "SubProcess_1",

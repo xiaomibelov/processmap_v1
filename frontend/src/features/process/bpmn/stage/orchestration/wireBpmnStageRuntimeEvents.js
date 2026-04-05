@@ -1,3 +1,5 @@
+import { resolveBpmnContextMenuRuntimeResolution } from "../../context-menu/resolveBpmnContextMenuTarget.js";
+
 function setInteractionFlag(ref, key, active) {
   if (!ref || !ref.current || typeof ref.current !== "object") return;
   ref.current[key] = active === true;
@@ -63,210 +65,6 @@ function isPointInsideCanvasRect(nativeEvent, canvasContainer) {
     && clientY <= Number(rect.bottom || 0);
 }
 
-function readElementTypeLower(elementRaw) {
-  const element = normalizeTargetElement(elementRaw);
-  return String(element?.businessObject?.$type || element?.type || "").trim().toLowerCase();
-}
-
-function normalizeTargetElement(elementRaw) {
-  const element = elementRaw && typeof elementRaw === "object" ? elementRaw : null;
-  if (!element) return null;
-  if (element?.labelTarget && typeof element.labelTarget === "object") {
-    return element.labelTarget;
-  }
-  return element;
-}
-
-function rankContextMenuCandidate(elementRaw) {
-  const element = normalizeTargetElement(elementRaw);
-  if (!element) return -1;
-  const type = readElementTypeLower(element);
-  const isConnection = Array.isArray(element?.waypoints);
-  if (type.includes("task") || type.includes("activity")) return 400;
-  if (type.includes("gateway")) return 390;
-  if (type.includes("event")) return 380;
-  if (isConnection || type.includes("sequenceflow")) return 370;
-  if (type.includes("subprocess")) return 360;
-  if (type.includes("annotation")) return 350;
-  if (type.includes("lane") || type.includes("participant")) return 100;
-  if (type.includes("process") || type.includes("collaboration")) return 50;
-  return 300;
-}
-
-function isContainerLikeBpmnElement(elementRaw) {
-  const type = readElementTypeLower(elementRaw);
-  return type.includes("lane")
-    || type.includes("participant")
-    || type.includes("process")
-    || type.includes("collaboration");
-}
-
-function readDiagramPointFromClient(nativeEvent, canvas) {
-  const rect = canvas?._container?.getBoundingClientRect?.();
-  if (!rect) return null;
-  const clientX = Number(nativeEvent?.clientX);
-  const clientY = Number(nativeEvent?.clientY);
-  if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return null;
-  const vb = canvas?.viewbox?.() || {};
-  const scale = Number(vb?.scale || canvas?.zoom?.() || 1) || 1;
-  return {
-    x: Number(vb?.x || 0) + (clientX - Number(rect.left || 0)) / scale,
-    y: Number(vb?.y || 0) + (clientY - Number(rect.top || 0)) / scale,
-    scale,
-  };
-}
-
-function distanceToRect(point, elementRaw) {
-  const el = elementRaw && typeof elementRaw === "object" ? elementRaw : {};
-  const px = Number(point?.x || 0);
-  const py = Number(point?.y || 0);
-  const x = Number(el?.x || 0);
-  const y = Number(el?.y || 0);
-  const w = Number(el?.width || 0);
-  const h = Number(el?.height || 0);
-  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
-    return Number.POSITIVE_INFINITY;
-  }
-  const dx = Math.max(x - px, 0, px - (x + w));
-  const dy = Math.max(y - py, 0, py - (y + h));
-  return Math.hypot(dx, dy);
-}
-
-function distanceToConnection(point, elementRaw) {
-  const waypoints = Array.isArray(elementRaw?.waypoints) ? elementRaw.waypoints : [];
-  if (waypoints.length < 2) return Number.POSITIVE_INFINITY;
-  const px = Number(point?.x || 0);
-  const py = Number(point?.y || 0);
-  let best = Number.POSITIVE_INFINITY;
-  for (let i = 0; i < waypoints.length - 1; i += 1) {
-    const a = waypoints[i];
-    const b = waypoints[i + 1];
-    const ax = Number(a?.x || 0);
-    const ay = Number(a?.y || 0);
-    const bx = Number(b?.x || 0);
-    const by = Number(b?.y || 0);
-    const dx = bx - ax;
-    const dy = by - ay;
-    const len2 = dx * dx + dy * dy;
-    let dist = Number.POSITIVE_INFINITY;
-    if (len2 <= 0.0001) {
-      dist = Math.hypot(px - ax, py - ay);
-    } else {
-      const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
-      const nx = ax + t * dx;
-      const ny = ay + t * dy;
-      dist = Math.hypot(px - nx, py - ny);
-    }
-    if (dist < best) best = dist;
-  }
-  return best;
-}
-
-function resolveNearestElementFromDiagramPoint({
-  nativeEvent,
-  canvas,
-  elementRegistry,
-  preferConnection = false,
-  strictHitOnly = false,
-}) {
-  if (!canvas || !elementRegistry || typeof elementRegistry?.getAll !== "function") return null;
-  const point = readDiagramPointFromClient(nativeEvent, canvas);
-  if (!point) return null;
-  const all = elementRegistry.getAll?.() || [];
-  const seen = new Set();
-  const eligible = all
-    .map((itemRaw) => normalizeTargetElement(itemRaw))
-    .filter((item) => {
-      if (!item || typeof item !== "object") return false;
-      const itemId = String(item?.id || "").trim();
-      if (!itemId || seen.has(itemId)) return false;
-      seen.add(itemId);
-      if (isContainerLikeBpmnElement(item)) return false;
-      return true;
-    });
-  if (!eligible.length) return null;
-  const scale = Math.max(Number(point.scale || 1), 0.1);
-  const threshold = Math.max(6, 18 / scale);
-  const strictShapeThreshold = 0.5;
-  const strictConnectionThreshold = Math.max(4, 10 / scale);
-  let best = null;
-  let bestConnection = null;
-  for (let i = 0; i < eligible.length; i += 1) {
-    const item = eligible[i];
-    const isConnection = Array.isArray(item?.waypoints);
-    const dist = isConnection ? distanceToConnection(point, item) : distanceToRect(point, item);
-    if (!Number.isFinite(dist)) continue;
-    if (!best || dist < best.dist) best = { item, dist };
-    if (isConnection && (!bestConnection || dist < bestConnection.dist)) {
-      bestConnection = { item, dist };
-    }
-  }
-  if (strictHitOnly === true) {
-    if (preferConnection === true && bestConnection && bestConnection.dist <= strictConnectionThreshold) {
-      return bestConnection.item || null;
-    }
-    if (!best) return null;
-    const bestIsConnection = Array.isArray(best?.item?.waypoints);
-    const strictThreshold = bestIsConnection ? strictConnectionThreshold : strictShapeThreshold;
-    if (best.dist > strictThreshold) return null;
-    return best.item || null;
-  }
-
-  if (preferConnection === true && bestConnection && bestConnection.dist <= threshold) {
-    return bestConnection.item || null;
-  }
-  if (!best || best.dist > threshold) return null;
-  return best.item || null;
-}
-
-function resolveElementFromClientPoint({
-  nativeEvent,
-  ownerContainer,
-  canvasContainer,
-  canvas,
-  elementRegistry,
-}) {
-  if (!(ownerContainer instanceof Element)) return null;
-  if (!(canvasContainer instanceof Element)) return null;
-  if (!elementRegistry || typeof elementRegistry?.get !== "function") return null;
-  if (typeof document === "undefined" || typeof document.elementsFromPoint !== "function") return null;
-  const clientX = Number(nativeEvent?.clientX);
-  const clientY = Number(nativeEvent?.clientY);
-  if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return null;
-  const nodes = document.elementsFromPoint(clientX, clientY);
-  if (!Array.isArray(nodes) || nodes.length === 0) return null;
-  const candidates = [];
-  const seen = new Set();
-  for (let i = 0; i < nodes.length; i += 1) {
-    const node = nodes[i];
-    if (!(node instanceof Element)) continue;
-    if (!ownerContainer.contains(node) && !canvasContainer.contains(node)) continue;
-    const elementId = String(node.closest?.("[data-element-id]")?.getAttribute?.("data-element-id") || "").trim();
-    if (!elementId) continue;
-    if (seen.has(elementId)) continue;
-    seen.add(elementId);
-    const element = normalizeTargetElement(elementRegistry.get(elementId));
-    if (!element) continue;
-    candidates.push({
-      element,
-      stackIndex: i,
-      rank: rankContextMenuCandidate(element),
-    });
-  }
-  if (!candidates.length) return null;
-  const semanticByStackOrder = candidates
-    .filter((candidate) => !isContainerLikeBpmnElement(candidate.element))
-    .sort((a, b) => a.stackIndex - b.stackIndex);
-  if (semanticByStackOrder.length) {
-    return semanticByStackOrder[0].element || null;
-  }
-  candidates.sort((a, b) => {
-    if (b.rank !== a.rank) return b.rank - a.rank;
-    return a.stackIndex - b.stackIndex;
-  });
-  return candidates[0]?.element || null;
-}
-
 function bindContextMenuRuntimeEvents({
   eventBus,
   inst,
@@ -323,58 +121,40 @@ function bindContextMenuRuntimeEvents({
         ? effectiveTargetNode.closest?.("[data-element-id]")
         : null;
       const elementId = canvasContainer.contains(host) ? String(host?.getAttribute?.("data-element-id") || "").trim() : "";
-      let element = elementId ? elementRegistry?.get?.(elementId) : null;
-      const nearestByPoint = resolveNearestElementFromDiagramPoint({
-        nativeEvent,
-        canvas,
-        elementRegistry,
-        strictHitOnly: true,
+      const hintedElement = elementId ? elementRegistry?.get?.(elementId) : null;
+      const resolution = resolveBpmnContextMenuRuntimeResolution({
+        runtimeEvent: {
+          type: "native.contextmenu",
+          element: hintedElement,
+          originalEvent: nativeEvent,
+        },
+        scope: hintedElement ? "element" : "canvas",
+        inst,
       });
-      const nearestConnectionByPoint = resolveNearestElementFromDiagramPoint({
-        nativeEvent,
-        canvas,
-        elementRegistry,
-        preferConnection: true,
-        strictHitOnly: true,
-      });
-      if (!element || isContainerLikeBpmnElement(element)) {
-        const recoveredFromStack = resolveElementFromClientPoint({
-          nativeEvent,
-          ownerContainer: contextMenuOwner,
-          canvasContainer,
-          canvas,
-          elementRegistry,
-        });
-        if (recoveredFromStack) {
-          element = recoveredFromStack;
-        } else if (hasOwnedTargetNode && nearestConnectionByPoint) {
-          element = nearestConnectionByPoint;
-        } else if (hasOwnedTargetNode && nearestByPoint) {
-          element = nearestByPoint;
-        }
-      }
+      if (resolution?.target?.kind === "unsupported") return;
       writeNativeContextDebugSnapshot({
         source: "wire.native.contextmenu",
         clientX: Number(nativeEvent?.clientX || 0),
         clientY: Number(nativeEvent?.clientY || 0),
         hasOwnedTargetNode,
         hostElementId: elementId,
-        hostElementType: readElementTypeLower(elementId ? elementRegistry?.get?.(elementId) : null),
-        nearestByPointId: String(nearestByPoint?.id || ""),
-        nearestByPointType: readElementTypeLower(nearestByPoint),
-        nearestConnectionByPointId: String(nearestConnectionByPoint?.id || ""),
-        nearestConnectionByPointType: readElementTypeLower(nearestConnectionByPoint),
-        finalElementId: String(element?.id || ""),
-        finalElementType: readElementTypeLower(element),
-        finalElementIsContainer: isContainerLikeBpmnElement(element),
+        hostElementType: String(resolution?.meta?.hintedElementType || ""),
+        nearestByPointId: String(resolution?.meta?.nearestSemanticByPointId || ""),
+        nearestByPointType: String(resolution?.meta?.nearestSemanticByPointType || ""),
+        nearestConnectionByPointId: String(resolution?.meta?.strictConnectionByPointId || ""),
+        nearestConnectionByPointType: String(resolution?.meta?.strictConnectionByPointType || ""),
+        finalElementId: String(resolution?.meta?.finalElementId || ""),
+        finalElementType: String(resolution?.meta?.finalElementType || ""),
+        finalElementIsContainer: resolution?.meta?.finalElementIsCanvasContainer === true,
       });
       markContextMenuOpen(contextMenuInteractionRef);
       onDiagramContextMenuEvent({
         mode,
-        scope: element ? "element" : "canvas",
+        scope: resolution?.target?.kind === "canvas" ? "canvas" : "element",
         event: {
           originalEvent: nativeEvent,
-          element,
+          element: resolution?.element || null,
+          contextMenuResolution: resolution,
           type: "native.contextmenu",
         },
         inst,

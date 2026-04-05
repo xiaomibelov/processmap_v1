@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolveBpmnContextMenuTarget } from "./resolveBpmnContextMenuTarget.js";
+import {
+  resolveBpmnContextMenuRuntimeResolution,
+  resolveBpmnContextMenuTarget,
+} from "./resolveBpmnContextMenuTarget.js";
 
 function createCanvasInst({ viewbox = { x: 0, y: 0, scale: 1 }, registryItems = [] } = {}) {
   const byId = {};
@@ -71,6 +74,205 @@ test("resolve target: label hit normalizes to owner element", () => {
   assert.equal(target.id, "Task_1");
   assert.equal(target.bpmnType, "bpmn:Task");
   assert.equal(target.name, "Approve");
+});
+
+test("runtime resolution: task body and task label converge to the same semantic task target", () => {
+  class FakeElement {
+    constructor({ elementId = "", parent = null, stageHost = false } = {}) {
+      this._elementId = String(elementId || "").trim();
+      this.parentElement = parent;
+      this._isStageHost = stageHost === true;
+    }
+
+    contains(node) {
+      let cursor = node;
+      while (cursor) {
+        if (cursor === this) return true;
+        cursor = cursor.parentElement || null;
+      }
+      return false;
+    }
+
+    closest(selector) {
+      const needle = String(selector || "").trim();
+      if (needle === "[data-element-id]") {
+        let cursor = this;
+        while (cursor) {
+          if (cursor._elementId) return cursor;
+          cursor = cursor.parentElement || null;
+        }
+        return null;
+      }
+      if (needle === ".bpmnStageHost") {
+        let cursor = this;
+        while (cursor) {
+          if (cursor._isStageHost) return cursor;
+          cursor = cursor.parentElement || null;
+        }
+      }
+      return null;
+    }
+
+    getAttribute(name) {
+      if (String(name || "").trim() !== "data-element-id") return "";
+      return this._elementId;
+    }
+
+    getBoundingClientRect() {
+      return {
+        left: 80,
+        top: 80,
+        right: 980,
+        bottom: 780,
+        width: 900,
+        height: 700,
+      };
+    }
+  }
+
+  const previousElement = globalThis.Element;
+  const previousDocument = globalThis.document;
+
+  const stageHost = new FakeElement({ stageHost: true });
+  const canvasContainer = new FakeElement({ parent: stageHost });
+  const bodyNode = new FakeElement({ elementId: "Task_1", parent: canvasContainer });
+  const labelNode = new FakeElement({ elementId: "label_Task_1", parent: canvasContainer });
+  const task = {
+    id: "Task_1",
+    type: "bpmn:Task",
+    x: 120,
+    y: 120,
+    width: 160,
+    height: 80,
+    businessObject: { $type: "bpmn:Task", name: "Approve" },
+  };
+  const label = {
+    id: "label_Task_1",
+    type: "label",
+    labelTarget: task,
+  };
+  let activeNodes = [bodyNode];
+
+  globalThis.Element = FakeElement;
+  globalThis.document = {
+    elementsFromPoint() {
+      return activeNodes;
+    },
+  };
+
+  try {
+    const inst = {
+      get(key) {
+        if (key === "canvas") {
+          return {
+            _container: canvasContainer,
+            viewbox() {
+              return { x: 0, y: 0, scale: 1 };
+            },
+            zoom() {
+              return 1;
+            },
+          };
+        }
+        if (key === "elementRegistry") {
+          return {
+            get(idRaw) {
+              const id = String(idRaw || "").trim();
+              if (id === "Task_1") return task;
+              if (id === "label_Task_1") return label;
+              return null;
+            },
+            getAll() {
+              return [task, label];
+            },
+          };
+        }
+        return null;
+      },
+    };
+
+    const bodyResolution = resolveBpmnContextMenuRuntimeResolution({
+      runtimeEvent: {
+        type: "native.contextmenu",
+        originalEvent: {
+          clientX: 180,
+          clientY: 160,
+          target: bodyNode,
+        },
+      },
+      scope: "element",
+      inst,
+    });
+
+    activeNodes = [labelNode];
+
+    const labelResolution = resolveBpmnContextMenuRuntimeResolution({
+      runtimeEvent: {
+        type: "native.contextmenu",
+        originalEvent: {
+          clientX: 180,
+          clientY: 160,
+          target: labelNode,
+        },
+      },
+      scope: "element",
+      inst,
+    });
+
+    assert.equal(bodyResolution.element?.id, "Task_1");
+    assert.equal(labelResolution.element?.id, "Task_1");
+    assert.equal(bodyResolution.target.kind, "element");
+    assert.equal(labelResolution.target.kind, "element");
+    assert.equal(bodyResolution.target.id, "Task_1");
+    assert.equal(labelResolution.target.id, "Task_1");
+    assert.deepEqual(labelResolution.target, bodyResolution.target);
+  } finally {
+    if (previousElement === undefined) {
+      delete globalThis.Element;
+    } else {
+      globalThis.Element = previousElement;
+    }
+    if (previousDocument === undefined) {
+      delete globalThis.document;
+    } else {
+      globalThis.document = previousDocument;
+    }
+  }
+});
+
+test("resolve target: precomputed native runtime resolution is reused without target drift", () => {
+  const runtimeResolution = {
+    element: {
+      id: "Task_1",
+      type: "bpmn:Task",
+      businessObject: { $type: "bpmn:Task", name: "Approve" },
+    },
+    target: {
+      kind: "element",
+      id: "Task_1",
+      name: "Approve",
+      bpmnType: "bpmn:Task",
+      type: "bpmn:Task",
+      isConnection: false,
+      isShape: true,
+    },
+    meta: {
+      finalElementId: "Task_1",
+      finalElementType: "bpmn:task",
+    },
+  };
+
+  const target = resolveBpmnContextMenuTarget({
+    runtimeEvent: {
+      type: "native.contextmenu",
+      contextMenuResolution: runtimeResolution,
+      originalEvent: { clientX: 180, clientY: 160, target: null },
+    },
+    scope: "element",
+    inst: null,
+  });
+
+  assert.deepEqual(target, runtimeResolution.target);
 });
 
 test("resolve target: root process normalizes to canvas", () => {
