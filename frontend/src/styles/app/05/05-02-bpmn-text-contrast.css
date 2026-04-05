@@ -434,6 +434,13 @@
     0 0 0 4px hsl(var(--focus-ring) / 0.42);
 }
 
+.fpcNodeBadge--time {
+  min-height: 17px;
+  padding: 0 7px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
 .fpcNodeBadge--ai {
   border-color: hsl(var(--diagram-ai) / 0.76);
   background: color-mix(in srgb, hsl(var(--diagram-ai)) 28%, hsl(var(--diagram-badge-bg) / 0.94));

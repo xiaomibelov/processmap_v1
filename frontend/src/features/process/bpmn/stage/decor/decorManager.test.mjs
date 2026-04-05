@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  applyStepTimeDecor,
   applyPropertiesOverlayDecor,
   applyHappyFlowDecor,
   applyRobotMetaDecor,
@@ -139,34 +140,48 @@ function createInstance(registry, canvas, overlays) {
 
 function withDocumentStub(run) {
   const prevDocument = globalThis.document;
-  globalThis.document = {
-    createElement() {
+  const prevHTMLElement = globalThis.HTMLElement;
+  class StubHTMLElement {
+    constructor() {
       const styleMap = new Map();
-      const node = {
-        className: "",
-        textContent: "",
-        title: "",
-        dataset: {},
-        style: {
-          setProperty(name, value) {
-            styleMap.set(String(name || ""), String(value || ""));
-          },
-          getPropertyValue(name) {
-            return styleMap.get(String(name || "")) || "";
-          },
+      this.className = "";
+      this.textContent = "";
+      this.title = "";
+      this.dataset = {};
+      this.style = {
+        setProperty(name, value) {
+          styleMap.set(String(name || ""), String(value || ""));
         },
-        childNodes: [],
-        appendChild(child) {
-          this.childNodes.push(child);
+        getPropertyValue(name) {
+          return styleMap.get(String(name || "")) || "";
         },
       };
-      return node;
+      this.childNodes = [];
+    }
+
+    addEventListener() {
+    }
+
+    appendChild(child) {
+      this.childNodes.push(child);
+      return child;
+    }
+
+    contains(child) {
+      return this === child || this.childNodes.includes(child);
+    }
+  }
+  globalThis.HTMLElement = StubHTMLElement;
+  globalThis.document = {
+    createElement() {
+      return new StubHTMLElement();
     },
   };
   try {
     run();
   } finally {
     globalThis.document = prevDocument;
+    globalThis.HTMLElement = prevHTMLElement;
   }
 }
 
@@ -227,6 +242,79 @@ function createPropertyOverlayCtx({
   };
 }
 
+function createStepTimeDecorCtx({
+  elements = null,
+  nodes = null,
+  zoom = 1,
+  stepTimeUnit = "min",
+} = {}) {
+  const canvas = createMarkerCanvasMock();
+  canvas.zoom = () => Number(zoom || 1);
+  const overlays = createOverlayMock();
+  const registry = createRegistry(
+    Array.isArray(elements) && elements.length
+      ? elements
+      : [
+          {
+            id: "Task_1",
+            type: "bpmn:Task",
+            x: 100,
+            y: 50,
+            width: 140,
+            height: 80,
+            businessObject: { id: "Task_1", $type: "bpmn:Task" },
+          },
+        ],
+  );
+  const inst = createInstance(registry, canvas, overlays);
+  const refs = {
+    stepTimeOverlayStateRef: { current: { viewer: [], editor: [] } },
+    stepTimeDecorSignatureRef: { current: { viewer: "", editor: "" } },
+  };
+  const readOnly = {
+    draftRef: {
+      current: {
+        nodes: Array.isArray(nodes) && nodes.length
+          ? nodes
+          : [{ id: "Task_1", stepTimeMin: 5 }],
+      },
+    },
+    stepTimeUnitRef: { current: stepTimeUnit },
+  };
+  return {
+    overlays,
+    refs,
+    ctx: {
+      inst,
+      kind: "viewer",
+      refs,
+      readOnly,
+      getters: {
+        findShapeByNodeId: (r, id) => r.get(id),
+        findShapeForHint: (r, hint) => r.get(hint?.nodeId),
+      },
+      callbacks: {
+        setSelectedDecor: () => {},
+        emitElementSelection: () => {},
+      },
+      utils: {
+        asArray,
+        asObject,
+        toText,
+        normalizeStepTimeUnit: (value) => (toText(value).toLowerCase() === "sec" ? "sec" : "min"),
+        readStepTimeMinutes: (node) => {
+          const minutes = Number(node?.stepTimeMin);
+          return Number.isFinite(minutes) && minutes >= 0 ? minutes : null;
+        },
+        readStepTimeSeconds: (node) => {
+          const seconds = Number(node?.stepTimeSec);
+          return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
+        },
+      },
+    },
+  };
+}
+
 test("properties overlay decor respects visibility flag and hidden preview", () => {
   const { overlays, refs, ctx } = createPropertyOverlayCtx({
     preview: {
@@ -266,8 +354,9 @@ test("properties overlay decor updates immediately when preview content changes"
       ],
     };
     applyPropertiesOverlayDecor(fixture.ctx);
-    assert.equal(fixture.overlays.addCalls.length, 2);
-    assert.equal(fixture.overlays.removeCalls.length, 1);
+    assert.equal(fixture.overlays.addCalls.length, 1);
+    assert.equal(fixture.overlays.removeCalls.length, 0);
+    assert.equal(Object.keys(fixture.refs.propertiesOverlayStateRef.current.viewer).length, 1);
 
     clearPropertiesOverlayDecor(fixture.ctx);
     assert.equal(Object.keys(fixture.refs.propertiesOverlayStateRef.current.viewer).length, 0);
@@ -368,6 +457,24 @@ test("properties overlay decor uses connection geometry and reacts to zoom chang
     const secondCall = fixture.overlays.addCalls[1];
     const secondWidth = Number.parseInt(String(secondCall.payload.html.style.width || "0"), 10);
     assert.ok(secondWidth <= firstWidth);
+  });
+});
+
+test("step time decor clamps badge readability on zoom-out without changing anchor geometry", () => {
+  const fixture = createStepTimeDecorCtx({
+    zoom: 0.35,
+    nodes: [{ id: "Task_1", stepTimeMin: 3 }],
+  });
+  withDocumentStub(() => {
+    applyStepTimeDecor(fixture.ctx);
+    assert.equal(fixture.overlays.addCalls.length, 1);
+    const addCall = fixture.overlays.addCalls[0];
+    assert.equal(addCall.elementId, "Task_1");
+    assert.equal(addCall.payload.position.left, 138);
+    assert.equal(addCall.payload.position.top, 81);
+    assert.deepEqual(addCall.payload.scale, { min: 0.8 });
+    assert.equal(addCall.payload.html.className, "fpcNodeBadge fpcNodeBadge--time");
+    assert.equal(addCall.payload.html.textContent, "3 мин");
   });
 });
 
