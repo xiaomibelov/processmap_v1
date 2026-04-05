@@ -440,6 +440,9 @@ export default function createBpmnCoordinator(options = {}) {
       storedRev,
       xml,
       xmlAlreadyTransformed: prepared.transformed,
+      bpmnVersionSnapshot: persisted?.bpmnVersionSnapshot && typeof persisted.bpmnVersionSnapshot === "object"
+        ? persisted.bpmnVersionSnapshot
+        : null,
     };
   }
 
@@ -603,7 +606,14 @@ export default function createBpmnCoordinator(options = {}) {
           status: asNumber(persisted?.status, 200),
           ms: Date.now() - startedAt,
         });
-        return { ok: true, rev: storedRev, storedRev };
+        return {
+          ok: true,
+          rev: storedRev,
+          storedRev,
+          bpmnVersionSnapshot: persisted?.bpmnVersionSnapshot && typeof persisted.bpmnVersionSnapshot === "object"
+            ? persisted.bpmnVersionSnapshot
+            : null,
+        };
       } finally {
         saveInFlight = false;
       }

@@ -50,6 +50,8 @@ export function appendRevisionToLedger(companionRaw, {
   source = "manual_publish",
   createdAt = "",
   restoredFromRevisionId = "",
+  authoritativeRevisionNumber = 0,
+  authoritativeRevisionId = "",
   skipIfContentUnchanged = false,
 } = {}) {
   const xmlText = String(xml || "");
@@ -75,10 +77,38 @@ export function appendRevisionToLedger(companionRaw, {
       revisionNumber: Number(ledger.latest_revision_number || 0),
     };
   }
-  const revisionNumber = resolveNextRevisionNumber(ledger);
+  const authoritativeNumber = Number(authoritativeRevisionNumber || 0);
+  const revisionNumber = authoritativeNumber > 0
+    ? Math.max(0, Math.round(authoritativeNumber))
+    : resolveNextRevisionNumber(ledger);
   const at = toText(createdAt) || new Date().toISOString();
   const authorRow = normalizeAuthor(author);
   const liveVersion = asObject(liveVersionRaw);
+  const existingAuthoritativeRevision = revisionNumber > 0
+    ? ledger.revisions.find((row) => {
+      const rowNumber = Number(row?.revision_number || 0);
+      const rowId = toText(row?.revision_id);
+      return rowNumber === revisionNumber || (
+        toText(authoritativeRevisionId)
+        && rowId
+        && rowId === toText(authoritativeRevisionId)
+      );
+    })
+    : null;
+  if (
+    existingAuthoritativeRevision
+    && toText(existingAuthoritativeRevision.content_hash) === xmlHash
+  ) {
+    return {
+      ok: true,
+      skipped: true,
+      skipReason: "existing_authoritative_revision",
+      error: "",
+      nextCompanion: companion,
+      appendedRevision: null,
+      revisionNumber,
+    };
+  }
   const bpmnVersion = buildBpmnVersionCarrier({
     draft,
     xml: xmlText,
@@ -88,7 +118,8 @@ export function appendRevisionToLedger(companionRaw, {
   if (Number(liveVersion.xmlVersion || 0) > 0) {
     bpmnVersion.xml_version = Math.max(Number(bpmnVersion.xml_version || 0), Number(liveVersion.xmlVersion || 0));
   }
-  const revisionId = `rev_${revisionNumber}_${fnv1aHex(`${at}|${xmlText}`).slice(0, 10)}`;
+  const revisionId = toText(authoritativeRevisionId)
+    || `rev_${revisionNumber}_${fnv1aHex(`${at}|${xmlText}`).slice(0, 10)}`;
   const entry = normalizeRevisionEntry({
     revision_id: revisionId,
     revision_number: revisionNumber,

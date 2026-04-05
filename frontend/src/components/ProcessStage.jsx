@@ -941,6 +941,8 @@ export default function ProcessStage({
       let companionError = "";
       let publishInfo = "";
       if (!saved?.pending) {
+        const backendVersionSnapshot = asObject(saved?.bpmnVersionSnapshot);
+        const backendRevisionNumber = Number(backendVersionSnapshot.version_number || 0);
         lastSuccessfulPublishRef.current = {
           sessionId: sid,
           atMs: Date.now(),
@@ -954,15 +956,21 @@ export default function ProcessStage({
           requestedBaseRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
           publishRevision: true,
           revisionSource: "publish_manual_save",
+          authoritativeRevision: backendVersionSnapshot,
         });
         if (!companionResult?.ok) {
           companionError = shortErr(companionResult?.error || "Не удалось синхронизировать companion metadata.");
           setGenErr(companionError);
         } else {
-          const revisionInfo = asObject(companionResult?.revision);
-          if (revisionInfo.skipped !== true && Number(revisionInfo.revisionNumber || 0) > 0) {
-            publishInfo = `Сохранено и опубликовано как r${Number(revisionInfo.revisionNumber)}.`;
-          } else if (revisionInfo.skipped === true) {
+          if (backendRevisionNumber > 0) {
+            publishInfo = `Сохранено и опубликовано как r${backendRevisionNumber}.`;
+          } else {
+            const revisionInfo = asObject(companionResult?.revision);
+            if (revisionInfo.skipped === true) {
+              publishInfo = "Сохранено. Новая ревизия не создана (контент совпадает с последней).";
+            }
+          }
+          if (!publishInfo && asObject(companionResult?.revision).skipped === true) {
             publishInfo = "Сохранено. Новая ревизия не создана (контент совпадает с последней).";
           }
         }
@@ -1054,6 +1062,7 @@ export default function ProcessStage({
     publishRevision = false,
     revisionComment = "",
     revisionSource = "publish_revision",
+    authoritativeRevision = null,
   } = {}) => {
     if (!sid || typeof persistSessionCompanion !== "function") return { ok: true, skipped: true };
     let nextCompanion = buildSessionCompanionAfterSave(sessionCompanionMetaLive, {
@@ -1066,6 +1075,7 @@ export default function ProcessStage({
     });
     let revisionTransition = { ok: true, skipped: true, revisionNumber: 0, skipReason: "" };
     if (publishRevision) {
+      const normalizedAuthoritativeRevision = asObject(authoritativeRevision);
       revisionTransition = appendRevisionToLedger(nextCompanion, {
         xml: toText(xml || draft?.bpmn_xml || ""),
         draft,
@@ -1076,7 +1086,10 @@ export default function ProcessStage({
           email: user?.email || "",
         },
         comment: toText(revisionComment) || "Опубликовано через сохранение",
-        source: toText(revisionSource) || "publish_revision",
+        source: toText(normalizedAuthoritativeRevision.source_action || revisionSource) || "publish_revision",
+        createdAt: toText(normalizedAuthoritativeRevision.created_at_iso || normalizedAuthoritativeRevision.created_at || savedAt),
+        authoritativeRevisionNumber: Number(normalizedAuthoritativeRevision.version_number || 0),
+        authoritativeRevisionId: toText(normalizedAuthoritativeRevision.id),
         skipIfContentUnchanged: true,
       });
       if (!revisionTransition?.ok) {

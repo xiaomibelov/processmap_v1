@@ -762,11 +762,15 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
   const r = okOrError(await request(apiRoutes.sessions.bpmn(sid), { method: "PUT", body, headers }));
   if (!r.ok) return r;
   const storedRev = Number(r?.data?.version);
+  const bpmnVersionSnapshot = r?.data?.bpmn_version_snapshot && typeof r.data.bpmn_version_snapshot === "object"
+    ? r.data.bpmn_version_snapshot
+    : null;
   return {
     ok: true,
     status: r.status,
     result: r.data,
     storedRev: Number.isFinite(storedRev) ? storedRev : (Number.isFinite(rev) ? rev : 0),
+    bpmnVersionSnapshot,
   };
 }
 

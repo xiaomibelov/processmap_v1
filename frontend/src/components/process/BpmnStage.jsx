@@ -4259,7 +4259,15 @@ const BpmnStage = forwardRef(function BpmnStage({
         coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:save_local_done`);
       }
       logBpmnTrace("saveXML.modeler.after", out, { sid, trigger });
-      return { ok: true, xml: out, source: hint };
+      return {
+        ok: true,
+        xml: out,
+        source: hint,
+        storedRev: Number(flushed?.storedRev || flushed?.rev || nextState.rev || 0),
+        bpmnVersionSnapshot: flushed?.bpmnVersionSnapshot && typeof flushed.bpmnVersionSnapshot === "object"
+          ? flushed.bpmnVersionSnapshot
+          : null,
+      };
     } catch (e) {
       const msg = String(e?.message || e || "saveXML failed");
       if (shouldLogBpmnTrace()) {
