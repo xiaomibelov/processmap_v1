@@ -587,6 +587,25 @@ function createConnectedTaskFromAnchor({
   };
 }
 
+export function createBpmnContextMenuActionExecutor({
+  modelerRef,
+  ensureModeler,
+  emitDiagramMutation,
+  emitElementSelection,
+  buildInsertBetweenCandidate,
+} = {}) {
+  return async function executeBpmnContextMenuActionRequest(payloadRaw = {}) {
+    return await executeBpmnContextMenuAction({
+      payloadRaw,
+      modelerRef,
+      ensureModeler,
+      emitDiagramMutation,
+      emitElementSelection,
+      buildInsertBetweenCandidate,
+    });
+  };
+}
+
 export async function executeBpmnContextMenuAction({
   payloadRaw = {},
   modelerRef,
