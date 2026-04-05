@@ -183,6 +183,10 @@ export function createBpmnWiring(ctxBase, deps = {}) {
             : { ok: false, source: "runtime_cache" }
         ),
       },
+      transformPersistedXml: (xmlText, meta = {}) => {
+        const transformed = callbacks.transformPersistedXml?.(xmlText, meta);
+        return typeof transformed === "string" ? transformed : String(xmlText || "");
+      },
       onTrace: callbacks.onCoordinatorTrace,
       onRuntimeChange: (ev) => {
         if (refs.suppressCommandStackRef?.current > 0) return;

@@ -1490,6 +1490,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         probeCanvas,
         emitDiagramMutation,
         trackRuntimeStatus,
+        transformPersistedXml,
         fnv1aHex,
       },
     }),
@@ -2097,6 +2098,13 @@ const BpmnStage = forwardRef(function BpmnStage({
     const d = asObject(draftRef.current);
     const meta = asObject(d.bpmn_meta);
     return normalizeCamundaExtensionsMap(meta.camunda_extensions_by_element_id);
+  }
+
+  function transformPersistedXml(xmlText) {
+    return finalizeCamundaExtensionsXml({
+      xmlText,
+      camundaExtensionsByElementId: getCamundaExtensionsMap(),
+    });
   }
 
   function syncRobotMetaToModeler(inst) {
@@ -4167,11 +4175,8 @@ const BpmnStage = forwardRef(function BpmnStage({
 
       const flushed = await coordinator.flushSave(source, { force, trigger, saveOwner: resolvedSaveOwner });
       const nextState = bpmnStoreRef.current?.getState?.() || {};
-      const rawOut = String(nextState.xml || fallbackXml || "");
-      const out = finalizeCamundaExtensionsXml({
-        xmlText: rawOut,
-        camundaExtensionsByElementId: getCamundaExtensionsMap(),
-      });
+      const rawOut = String(flushed?.xml || nextState.xml || fallbackXml || "");
+      const out = transformPersistedXml(rawOut);
 
       if (!flushed?.ok) {
         if (force && allowForceFallback && out.trim()) {
@@ -4196,7 +4201,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         return { ok: true, pending: true, xml: out, source: "pending" };
       }
 
-      if (out !== rawOut) {
+      if (out !== rawOut && flushed?.xmlAlreadyTransformed !== true) {
         const rev = Number(nextState.rev || 0);
         emitSaveLifecycleEvent("SAVE_PERSIST_STARTED", {
           sid,
