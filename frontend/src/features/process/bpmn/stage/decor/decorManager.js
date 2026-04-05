@@ -109,6 +109,8 @@ function buildStepTimeDecorPayload(ctx) {
     .filter(Boolean);
 }
 
+const STEP_TIME_BADGE_MIN_SCALE = 0.8;
+
 function buildRobotMetaDecorPayload(ctx) {
   const toText = ctx?.utils?.toText;
   const asObject = ctx?.utils?.asObject;
@@ -1188,6 +1190,7 @@ export function applyStepTimeDecor(ctx) {
           const overlayId = overlays.add(el.id, {
             position: { left: anchorLeft, top: anchorTop },
             html: badge,
+            scale: { min: STEP_TIME_BADGE_MIN_SCALE },
           });
           refs.stepTimeOverlayStateRef.current[kind].push(overlayId);
         });
