@@ -207,6 +207,8 @@ import {
 } from "../features/process/stage/utils/processStageHelpers";
 import { pushDeleteTrace } from "../features/process/stage/utils/deleteTrace";
 
+const DIAGRAM_UNDO_REDO_VISIBLE_POLL_MS = 2000;
+
 const IDLE_SAVE_UPLOAD_EVENT = Object.freeze({
   event: "",
   stage: "idle",
@@ -820,14 +822,6 @@ export default function ProcessStage({
     setDrawioAnchorImportDiagnostics(null);
   }, [activeProjectId, resetLocalStateForSession, setDiagramFocusMode, setDiagramFullscreenActive, sid]);
 
-  const queueDiagramMutation = useCallback((mutation) => {
-    const kind = String(mutation?.kind || mutation || "").trim().toLowerCase();
-    if (kind.startsWith("diagram.") || kind.startsWith("xml.")) {
-      setSaveDirtyHint(true);
-    }
-    queueDiagramMutationRaw(mutation);
-  }, [queueDiagramMutationRaw]);
-
   const refreshDiagramUndoRedoState = useCallback(() => {
     const next = asObject(bpmnRef.current?.getUndoRedoState?.({ mode: "editor" }));
     const normalized = {
@@ -844,17 +838,54 @@ export default function ProcessStage({
     ));
   }, []);
 
+  const queueDiagramMutation = useCallback((mutation) => {
+    const kind = String(mutation?.kind || mutation || "").trim().toLowerCase();
+    if (kind.startsWith("diagram.") || kind.startsWith("xml.")) {
+      setSaveDirtyHint(true);
+      refreshDiagramUndoRedoState();
+    }
+    queueDiagramMutationRaw(mutation);
+  }, [queueDiagramMutationRaw, refreshDiagramUndoRedoState]);
+
   useEffect(() => {
     if (!hasSession || tab !== "diagram") {
       setDiagramUndoRedoState({ canUndo: false, canRedo: false, ready: false });
       return undefined;
     }
-    refreshDiagramUndoRedoState();
-    const timer = window.setInterval(() => {
+
+    let timer = 0;
+
+    const clearRefreshTimer = () => {
+      if (timer) {
+        window.clearTimeout(timer);
+        timer = 0;
+      }
+    };
+
+    const scheduleRefresh = () => {
+      clearRefreshTimer();
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return;
+      }
+      timer = window.setTimeout(() => {
+        refreshDiagramUndoRedoState();
+        scheduleRefresh();
+      }, DIAGRAM_UNDO_REDO_VISIBLE_POLL_MS);
+    };
+
+    const handleForegroundRefresh = () => {
       refreshDiagramUndoRedoState();
-    }, 220);
+      scheduleRefresh();
+    };
+
+    handleForegroundRefresh();
+    window.addEventListener("focus", handleForegroundRefresh);
+    document.addEventListener("visibilitychange", handleForegroundRefresh);
+
     return () => {
-      window.clearInterval(timer);
+      window.removeEventListener("focus", handleForegroundRefresh);
+      document.removeEventListener("visibilitychange", handleForegroundRefresh);
+      clearRefreshTimer();
     };
   }, [hasSession, refreshDiagramUndoRedoState, sid, tab]);
 
