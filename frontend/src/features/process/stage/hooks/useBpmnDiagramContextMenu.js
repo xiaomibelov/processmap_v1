@@ -4,8 +4,8 @@ import {
   resolveBpmnContextMenuHeader,
   resolveBpmnContextMenuQuickEdit,
   resolveBpmnContextTargetKind,
-} from "../../bpmn/context-menu/bpmnContextMenuActionMatrix";
-import useBpmnContextMenuState from "../../bpmn/context-menu/useBpmnContextMenuState";
+} from "../../bpmn/context-menu/bpmnContextMenuActionMatrix.js";
+import useBpmnContextMenuState from "../../bpmn/context-menu/useBpmnContextMenuState.js";
 
 function toText(value) {
   return String(value || "").trim();
@@ -66,6 +66,21 @@ export default function useBpmnDiagramContextMenu({
   const closeBpmnSubprocessPreview = useCallback(() => {
     setBpmnSubprocessPreview(null);
   }, []);
+
+  const emitActionResult = useCallback(({
+    actionId,
+    actionMeta = {},
+    menu: menuRaw,
+    result,
+  } = {}) => {
+    if (!toText(actionId)) return;
+    onActionResult?.({
+      actionId: toText(actionId),
+      actionMeta: asObject(actionMeta),
+      menu: asObject(menuRaw),
+      result: asObject(result),
+    });
+  }, [onActionResult]);
 
   const onBpmnContextMenuRequest = useCallback((payloadRaw = {}) => {
     if (isBlocked) return false;
@@ -143,7 +158,7 @@ export default function useBpmnDiagramContextMenu({
       setInfoMsg?.(toText(result.message));
     }
 
-    onActionResult?.({
+    emitActionResult({
       actionId,
       actionMeta,
       menu,
@@ -154,19 +169,25 @@ export default function useBpmnDiagramContextMenu({
       closeBpmnContextMenu();
     }
     return result;
-  }, [bpmnRef, closeBpmnContextMenu, menu, onActionResult, setGenErr, setInfoMsg]);
+  }, [bpmnRef, closeBpmnContextMenu, emitActionResult, menu, setGenErr, setInfoMsg]);
 
   const openBpmnSubprocessPreviewProperties = useCallback(async () => {
-    const targetId = toText(asObject(bpmnSubprocessPreview).targetId);
+    const preview = asObject(bpmnSubprocessPreview);
+    const targetId = toText(preview.targetId);
     if (!targetId) return { ok: false, error: "preview_target_missing" };
+    const previewMenu = {
+      target: { id: targetId, kind: "element" },
+      clientX: Number(preview.clientX || 0),
+      clientY: Number(preview.clientY || 0),
+    };
     let result = null;
     try {
       result = await Promise.resolve(
         bpmnRef?.current?.runDiagramContextAction?.({
           actionId: "open_properties",
-          target: { id: targetId, kind: "element" },
-          clientX: Number(asObject(bpmnSubprocessPreview).clientX || 0),
-          clientY: Number(asObject(bpmnSubprocessPreview).clientY || 0),
+          target: asObject(previewMenu.target),
+          clientX: Number(previewMenu.clientX || 0),
+          clientY: Number(previewMenu.clientY || 0),
           value: "",
         }),
       );
@@ -179,8 +200,14 @@ export default function useBpmnDiagramContextMenu({
     }
     setBpmnSubprocessPreview(null);
     if (toText(result?.message)) setInfoMsg?.(toText(result.message));
+    emitActionResult({
+      actionId: "open_properties",
+      actionMeta: {},
+      menu: previewMenu,
+      result,
+    });
     return result;
-  }, [bpmnRef, bpmnSubprocessPreview, setGenErr, setInfoMsg]);
+  }, [bpmnRef, bpmnSubprocessPreview, emitActionResult, setGenErr, setInfoMsg]);
 
   useEffect(() => {
     if (!isBlocked) return;
