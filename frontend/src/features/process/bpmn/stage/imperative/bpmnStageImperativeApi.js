@@ -478,6 +478,20 @@ export function createBpmnStageImperativeApi(ctxBase) {
         };
       }
     },
+    runDiagramContextAction: async (payload = {}) => {
+      try {
+        const result = await callbacks.runDiagramContextAction?.(payload);
+        return asObject(result)?.ok ? result : {
+          ok: false,
+          error: toText(asObject(result)?.error) || "context_action_unavailable",
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          error: String(error?.message || error || "context_action_failed"),
+        };
+      }
+    },
     importXmlText: async (xmlText) => {
       const raw = String(xmlText || "");
       if (!raw.trim()) return false;

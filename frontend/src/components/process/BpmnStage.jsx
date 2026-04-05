@@ -61,6 +61,7 @@ import {
   resolveBpmnContextMenuTarget,
 } from "../../features/process/bpmn/context-menu/resolveBpmnContextMenuTarget";
 import { shouldOpenBpmnContextMenu } from "../../features/process/bpmn/context-menu/shouldOpenBpmnContextMenu";
+import { executeBpmnContextMenuAction } from "../../features/process/bpmn/context-menu/executeBpmnContextMenuAction";
 
 import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-js.css";
@@ -4709,6 +4710,14 @@ const BpmnStage = forwardRef(function BpmnStage({
         saveLocalFromModeler,
         saveXmlDraftText,
         seedNew,
+        runDiagramContextAction: async (payload = {}) => executeBpmnContextMenuAction({
+          payloadRaw: payload,
+          modelerRef,
+          ensureModeler,
+          emitDiagramMutation,
+          emitElementSelection,
+          buildInsertBetweenCandidate,
+        }),
       },
     };
   }
