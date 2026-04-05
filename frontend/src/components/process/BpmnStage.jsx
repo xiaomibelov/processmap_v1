@@ -56,6 +56,11 @@ import {
 import { normalizeExecutionPlanVersionList } from "../../features/process/robotmeta/executionPlan";
 import { normalizeHybridLayerMap } from "../../features/process/hybrid/hybridLayerUi";
 import { buildExecutionGraphFromInstance } from "../../features/process/playback/buildExecutionGraph";
+import {
+  readContextMenuNativeEvent,
+  resolveBpmnContextMenuTarget,
+} from "../../features/process/bpmn/context-menu/resolveBpmnContextMenuTarget";
+import { shouldOpenBpmnContextMenu } from "../../features/process/bpmn/context-menu/shouldOpenBpmnContextMenu";
 
 import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-js.css";
@@ -63,6 +68,7 @@ import "bpmn-js/dist/assets/bpmn-font/css/bpmn.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css";
 
 const shapeTitleLookupCache = new WeakMap();
+const CONTEXT_MENU_HANDLED_FLAG = "__fpcBpmnContextHandled";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -1185,6 +1191,8 @@ const BpmnStage = forwardRef(function BpmnStage({
   selectedPropertiesOverlayPreview = null,
   propertiesOverlayAlwaysEnabled = false,
   propertiesOverlayAlwaysPreviewByElementId = null,
+  onDiagramContextMenuRequest = null,
+  onDiagramContextMenuDismiss = null,
 }, ref) {
   const viewerEl = useRef(null);
   const editorEl = useRef(null);
@@ -1250,6 +1258,8 @@ const BpmnStage = forwardRef(function BpmnStage({
   const onAiQuestionsByElementChangeRef = useRef(onAiQuestionsByElementChange);
   const onSessionSyncRef = useRef(onSessionSync);
   const onSaveLifecycleEventRef = useRef(onSaveLifecycleEvent);
+  const onDiagramContextMenuRequestRef = useRef(onDiagramContextMenuRequest);
+  const onDiagramContextMenuDismissRef = useRef(onDiagramContextMenuDismiss);
   const aiQuestionsModeEnabledRef = useRef(!!aiQuestionsModeEnabled);
   const diagramDisplayModeRef = useRef(String(diagramDisplayMode || "normal").trim().toLowerCase() || "normal");
   const stepTimeUnitRef = useRef(normalizeStepTimeUnit(stepTimeUnit));
@@ -1351,6 +1361,14 @@ const BpmnStage = forwardRef(function BpmnStage({
   useEffect(() => {
     onSaveLifecycleEventRef.current = onSaveLifecycleEvent;
   }, [onSaveLifecycleEvent]);
+
+  useEffect(() => {
+    onDiagramContextMenuRequestRef.current = onDiagramContextMenuRequest;
+  }, [onDiagramContextMenuRequest]);
+
+  useEffect(() => {
+    onDiagramContextMenuDismissRef.current = onDiagramContextMenuDismiss;
+  }, [onDiagramContextMenuDismiss]);
 
   useEffect(() => {
     aiQuestionsModeEnabledRef.current = !!aiQuestionsModeEnabled;
@@ -2536,6 +2554,59 @@ const BpmnStage = forwardRef(function BpmnStage({
     });
   }
 
+  function emitDiagramContextMenuDismiss(reason = "", payload = {}) {
+    const cb = onDiagramContextMenuDismissRef.current;
+    if (typeof cb !== "function") return;
+    const reasonIsPayload = reason && typeof reason === "object" && !Array.isArray(reason);
+    const payloadObj = reasonIsPayload ? asObject(reason) : asObject(payload);
+    const dismissReason = reasonIsPayload
+      ? toText(payloadObj?.reason)
+      : toText(reason || payloadObj?.reason);
+    cb({
+      sessionId: String(activeSessionRef.current || sessionId || ""),
+      reason: dismissReason || "runtime_event",
+      ...payloadObj,
+    });
+  }
+
+  function handleDiagramContextMenuEvent({ mode = "editor", scope = "", event: runtimeEvent, inst }) {
+    const cb = onDiagramContextMenuRequestRef.current;
+    if (typeof cb !== "function") return;
+
+    const nativeEvent = readContextMenuNativeEvent(runtimeEvent);
+    if (!nativeEvent || typeof nativeEvent !== "object") return;
+    if (nativeEvent[CONTEXT_MENU_HANDLED_FLAG] === true) return;
+
+    const openDecision = shouldOpenBpmnContextMenu({
+      nativeEvent,
+      inst,
+      interactionState: contextMenuInteractionRef.current,
+    });
+    if (openDecision?.ok !== true) return;
+
+    const target = resolveBpmnContextMenuTarget({
+      runtimeEvent,
+      scope,
+      inst,
+    });
+    if (String(target?.kind || "").toLowerCase() === "unsupported") return;
+
+    const accepted = cb({
+      sessionId: String(activeSessionRef.current || sessionId || ""),
+      mode: String(mode || "editor"),
+      scope: String(scope || "canvas"),
+      source: String(runtimeEvent?.type || "diagram.contextmenu"),
+      clientX: Number(nativeEvent?.clientX || 0),
+      clientY: Number(nativeEvent?.clientY || 0),
+      target,
+    }) === true;
+    if (accepted) {
+      nativeEvent[CONTEXT_MENU_HANDLED_FLAG] = true;
+      nativeEvent.preventDefault?.();
+      nativeEvent.stopPropagation?.();
+    }
+  }
+
   function buildSettledSelectionFanoutSignature({ element, kind }) {
     const mode = kind === "editor" ? "editor" : "viewer";
     const elementId = toText(element?.id);
@@ -3662,6 +3733,8 @@ const BpmnStage = forwardRef(function BpmnStage({
           runtimeTokenRef,
           emitViewboxChanged,
           applyPropertiesOverlayDecorForZoomChange,
+          onDiagramContextMenuEvent: handleDiagramContextMenuEvent,
+          onDiagramContextMenuDismiss: emitDiagramContextMenuDismiss,
           contextMenuInteractionRef,
         });
         } catch {
@@ -3744,6 +3817,8 @@ const BpmnStage = forwardRef(function BpmnStage({
             runtimeTokenRef,
             emitViewboxChanged,
             applyPropertiesOverlayDecorForZoomChange,
+            onDiagramContextMenuEvent: handleDiagramContextMenuEvent,
+            onDiagramContextMenuDismiss: emitDiagramContextMenuDismiss,
             contextMenuInteractionRef,
             invalidateShapeTitleLookup,
             runImmediateEditorFanout,
