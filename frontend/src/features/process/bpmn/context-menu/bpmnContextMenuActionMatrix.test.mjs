@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildBpmnContextMenuExecutionRequest,
+  buildBpmnContextMenuViewModel,
+  normalizeBpmnContextMenuActionRequest,
   resolveBpmnContextMenuActions,
   resolveBpmnContextMenuHeader,
   resolveBpmnContextMenuQuickEdit,
@@ -115,6 +118,91 @@ test("quick edit descriptor is provided for task name and flow label", () => {
     value: "Да",
     group: "quick_properties",
   });
+});
+
+test("task menu view model is stable across task body and task label request sources", () => {
+  const taskTarget = {
+    kind: "element",
+    id: "Task_1",
+    bpmnType: "bpmn:Task",
+    type: "bpmn:Task",
+    name: "Проверка",
+  };
+  const bodyModel = buildBpmnContextMenuViewModel({
+    payloadRaw: {
+      sessionId: "SID_1",
+      clientX: 220,
+      clientY: 160,
+      source: "body.contextmenu",
+      target: taskTarget,
+    },
+    runtimeUndoRedoState: { canUndo: true, canRedo: false },
+  });
+  const labelModel = buildBpmnContextMenuViewModel({
+    payloadRaw: {
+      sessionId: "SID_1",
+      clientX: 220,
+      clientY: 160,
+      source: "label.contextmenu",
+      target: { ...taskTarget },
+    },
+    runtimeUndoRedoState: { canUndo: true, canRedo: false },
+  });
+
+  assert.deepEqual(labelModel, bodyModel);
+  assert.equal(bodyModel?.kind, "task");
+  assert.equal(bodyModel?.quickEdit?.actionId, "quick_set_name");
+});
+
+test("execution request keeps downstream open_properties boundary stable", () => {
+  const menu = buildBpmnContextMenuViewModel({
+    payloadRaw: {
+      sessionId: "SID_1",
+      clientX: 320,
+      clientY: 140,
+      target: {
+        kind: "element",
+        id: "Task_1",
+        bpmnType: "bpmn:Task",
+        type: "bpmn:Task",
+        name: "Проверка",
+      },
+    },
+  });
+  const execution = buildBpmnContextMenuExecutionRequest({
+    menuRaw: menu,
+    actionRequestRaw: { actionId: "open_properties" },
+  });
+
+  assert.deepEqual(execution, {
+    actionRequest: {
+      actionId: "open_properties",
+      closeOnSuccess: true,
+      value: "",
+    },
+    payload: {
+      actionId: "open_properties",
+      target: menu.target,
+      clientX: 320,
+      clientY: 140,
+      value: "",
+    },
+  });
+});
+
+test("action request normalization keeps quick edit close semantics explicit", () => {
+  assert.deepEqual(
+    normalizeBpmnContextMenuActionRequest({
+      actionId: "quick_set_name",
+      value: "Новое имя",
+      closeOnSuccess: false,
+    }),
+    {
+      actionId: "quick_set_name",
+      closeOnSuccess: false,
+      value: "Новое имя",
+    },
+  );
 });
 
 test("headers are localized in russian", () => {

@@ -9,15 +9,16 @@ function asObject(value) {
 }
 
 export default function useBpmnQuickEditController({
-  menu,
-  onAction,
+  quickEdit: quickEditRaw,
+  targetId = "",
+  dispatchActionRequest,
 } = {}) {
-  const quickEdit = asObject(menu?.quickEdit);
+  const quickEdit = asObject(quickEditRaw);
   const quickActionId = toText(quickEdit?.actionId);
   const quickLabel = toText(quickEdit?.label);
   const quickPlaceholder = toText(quickEdit?.placeholder);
   const quickValueFromMenu = String(quickEdit?.value ?? "");
-  const quickKey = `${toText(menu?.target?.id)}::${quickActionId}`;
+  const quickKey = `${toText(targetId)}::${quickActionId}`;
   const hasQuickEdit = !!quickActionId && !!quickLabel;
 
   const inputRef = useRef(null);
@@ -37,10 +38,10 @@ export default function useBpmnQuickEditController({
   }, [hasQuickEdit, quickKey]);
 
   const submitQuickEdit = useCallback(async () => {
-    if (!hasQuickEdit || typeof onAction !== "function") return;
+    if (!hasQuickEdit || typeof dispatchActionRequest !== "function") return;
     if (quickDraft === lastCommittedValue) return;
     const result = await Promise.resolve(
-      onAction({
+      dispatchActionRequest({
         actionId: quickActionId,
         value: quickDraft,
         closeOnSuccess: false,
@@ -49,7 +50,7 @@ export default function useBpmnQuickEditController({
     if (result?.ok === true || result === undefined) {
       setLastCommittedValue(quickDraft);
     }
-  }, [hasQuickEdit, lastCommittedValue, onAction, quickActionId, quickDraft]);
+  }, [dispatchActionRequest, hasQuickEdit, lastCommittedValue, quickActionId, quickDraft]);
 
   const onInputKeyDown = useCallback((event) => {
     if (event.key === "Enter") {
@@ -87,4 +88,3 @@ export default function useBpmnQuickEditController({
     onInputBlur,
   };
 }
-
