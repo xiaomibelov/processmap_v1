@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import useProcessStageRuntimeGlue from "../controllers/useProcessStageRuntimeGlue";
 import useOverlayPersistBoundary from "../../overlay/controllers/useOverlayPersistBoundary";
 import useOverlayMutationGateway from "../../overlay/controllers/useOverlayMutationGateway";
-import buildOverlayPanelModel, {
+import {
   buildOverlayPanelModelStructure,
   buildOverlayPanelModelSelected,
 } from "../../overlay/models/buildOverlayPanelModel";
@@ -111,9 +111,31 @@ export default function useDiagramRuntimeBridges({
     applyDrawioMutation: overlayPersistBoundary.applyDrawioMutation,
   });
 
-  // Structural model: rows, sections, tools — does NOT depend on selection.
-  // Isolated so that every click/selection change skips the heavy row+section recompute.
-  const overlayPanelModelStructure = useMemo(() => buildOverlayPanelModelStructure({
+  const overlayPanelOpen = overlay.overlayPanelOpen === true;
+
+  const overlayPanelClosedStructureInput = useMemo(() => ({
+    panelVisible: false,
+    drawioState: drawioStateForRuntime,
+    drawioModeEffective: drawioModeState,
+    drawioEditorStatus: drawioEditorBridge.status,
+    hybridVisible: overlay.hybridVisible,
+    hybridTotalCount: overlay.hybridTotalCount,
+    hybridModeEffective: overlay.hybridModeEffective,
+    hybridUiPrefs: overlay.hybridUiPrefs,
+    hybridV2HiddenCount: overlay.hybridV2HiddenCount,
+  }), [
+    drawioEditorBridge.status,
+    drawioModeState,
+    drawioStateForRuntime,
+    overlay.hybridVisible,
+    overlay.hybridModeEffective,
+    overlay.hybridTotalCount,
+    overlay.hybridUiPrefs,
+    overlay.hybridV2HiddenCount,
+  ]);
+
+  const overlayPanelOpenStructureInput = useMemo(() => ({
+    panelVisible: true,
     drawioState: drawioStateForRuntime,
     drawioModeEffective: drawioModeState,
     drawioEditorStatus: drawioEditorBridge.status,
@@ -138,6 +160,16 @@ export default function useDiagramRuntimeBridges({
     overlay.hybridV2HiddenCount,
     overlay.hybridV2Renderable,
   ]);
+
+  const overlayPanelActiveStructureInput = overlayPanelOpen
+    ? overlayPanelOpenStructureInput
+    : overlayPanelClosedStructureInput;
+
+  // Structural model: rows, sections, tools — does NOT depend on selection.
+  // Keep only the lightweight summary surface hot while the panel is closed.
+  const overlayPanelModelStructure = useMemo(() => buildOverlayPanelModelStructure(
+    overlayPanelActiveStructureInput,
+  ), [overlayPanelActiveStructureInput]);
 
   // Selected entity: changes on every click — cheap to compute, isolated from structure.
   const overlayPanelModelSelected = useMemo(() => buildOverlayPanelModelSelected({
