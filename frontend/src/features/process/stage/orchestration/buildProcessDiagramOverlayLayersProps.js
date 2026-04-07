@@ -1,8 +1,11 @@
 import { bumpDrawioPerfCounter } from "../../drawio/runtime/drawioRuntimeProbes.js";
 
-export default function buildProcessDiagramOverlayLayersProps({
+function asPlainObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+export function buildBpmnDiagramOverlayLayersProps({
   activeProjectId,
-  asObject,
   bpmnFragmentPlacementActive,
   bpmnFragmentPlacementGhost,
   bpmnContextMenu,
@@ -10,67 +13,10 @@ export default function buildProcessDiagramOverlayLayersProps({
   bpmnRef,
   closeBpmnSubprocessPreview,
   closeBpmnContextMenu,
-  cleanupMissingHybridBindings,
-  clientToDiagram,
-  closeEmbeddedDrawioEditor,
-  commitDrawioOverlayMove,
-  createDrawioRuntimeElement,
-  deleteDrawioOverlayElement,
-  deleteSelectedHybridIds,
   diagramMode,
   draft,
-  drawioEditorOpen,
-  drawioModeEffective,
-  drawioRuntimeToolState,
-  drawioUiState,
-  drawioVisible,
-  getHybridLayerCardRefCallback,
-  getOverlayViewportMatrix,
   handleAiQuestionsByElementChange,
   handleBpmnSelectionChange,
-  handleDrawioEditorSave,
-  handleHybridLayerItemPointerDown,
-  handleHybridV2ElementContextMenu,
-  handleHybridV2ElementDoubleClick,
-  handleHybridV2ElementPointerDown,
-  handleHybridV2OverlayContextMenu,
-  handleHybridV2OverlayPointerDown,
-  handleHybridV2ResizeHandlePointerDown,
-  hybridDebugEnabled,
-  hybridLayerActiveElementId,
-  hybridLayerOverlayRef,
-  hybridLayerRenderRows,
-  hybridModeEffective,
-  hybridOpacityValue,
-  hybridPersistLockBusyNoticeOpen,
-  hybridPersistLockBusyNoticeMessage,
-  hybridPersistPendingDraft,
-  hybridPlacementHitLayerActive,
-  hybridSelectionCount,
-  hybridContextMenu,
-  closeHybridContextMenu,
-  renameHybridItem,
-  hideHybridIds,
-  lockLayersForHybridIds,
-  retryHybridPersist,
-  dismissHybridLockBusyNotice,
-  hybridGhostPreview,
-  hybridArrowPreview,
-  hybridTextEditor,
-  updateHybridTextEditorValue,
-  commitHybridTextEditor,
-  cancelHybridTextEditor,
-  onHybridOverlayPointerMove,
-  onHybridOverlayPointerLeave,
-  hybridUiPrefs,
-  hybridV2ActiveId,
-  hybridV2BindingByHybridId,
-  hybridV2DocLive,
-  hybridV2PlaybackHighlightedIds,
-  hybridV2Renderable,
-  hybridV2SelectedIds,
-  hybridV2SelectedIdSet,
-  hybridVisible,
   isInterviewMode,
   onBpmnSaveLifecycleEvent,
   onDiagramContextMenuDismiss,
@@ -85,21 +31,11 @@ export default function buildProcessDiagramOverlayLayersProps({
   robotMetaOverlayFilters,
   robotMetaStatusByElementId,
   selectedPropertiesOverlayPreview,
-  setDrawioElementSize,
-  setDrawioElementText,
-  setDrawioElementTextWidth,
-  setDrawioSelectedElementId,
-  setHybridLayerActiveElementId,
   sid,
   stepTimeUnit,
-  subscribeOverlayViewportMatrix,
   tab,
-  toText,
   runBpmnContextMenuAction,
   openBpmnSubprocessPreviewProperties,
-  withHybridOverlayGuard,
-  hybridViewportMatrix,
-  hybridViewportMatrixRef,
 }) {
   bumpDrawioPerfCounter("overlay.vm.diagramOverlayProps.builds");
   return {
@@ -144,9 +80,37 @@ export default function buildProcessDiagramOverlayLayersProps({
       active: bpmnFragmentPlacementActive,
       ghost: bpmnFragmentPlacementGhost,
     },
+  };
+}
+
+export function buildDrawioDiagramOverlayLayersProps({
+  clientToDiagram,
+  closeEmbeddedDrawioEditor,
+  commitDrawioOverlayMove,
+  createDrawioRuntimeElement,
+  deleteDrawioOverlayElement,
+  drawioEditorOpen,
+  drawioModeEffective,
+  drawioRuntimeToolState,
+  drawioUiState,
+  drawioVisible,
+  getOverlayViewportMatrix,
+  handleDrawioEditorSave,
+  hybridViewportMatrix,
+  hybridViewportMatrixRef,
+  setDrawioElementSize,
+  setDrawioElementText,
+  setDrawioElementTextWidth,
+  setDrawioSelectedElementId,
+  subscribeOverlayViewportMatrix,
+  tab,
+}) {
+  bumpDrawioPerfCounter("overlay.vm.drawioOverlayProps.builds");
+  const drawioMeta = asPlainObject(drawioUiState);
+  return {
     drawioOverlayProps: {
       visible: tab === "diagram" && drawioVisible,
-      drawioMeta: drawioUiState,
+      drawioMeta,
       drawioMode: drawioModeEffective,
       drawioActiveTool: drawioRuntimeToolState,
       overlayMatrix: hybridViewportMatrix,
@@ -162,6 +126,73 @@ export default function buildProcessDiagramOverlayLayersProps({
       onDeleteElement: deleteDrawioOverlayElement,
       onSelectionChange: setDrawioSelectedElementId,
     },
+    drawioEditorModalProps: {
+      open: drawioEditorOpen,
+      title: "Draw.io Editor",
+      initialXml: drawioMeta.doc_xml,
+      onSave: handleDrawioEditorSave,
+      onClose: closeEmbeddedDrawioEditor,
+    },
+  };
+}
+
+export function buildHybridDiagramOverlayLayersProps({
+  asObject,
+  bpmnRef,
+  cancelHybridTextEditor,
+  cleanupMissingHybridBindings,
+  closeHybridContextMenu,
+  commitHybridTextEditor,
+  deleteSelectedHybridIds,
+  dismissHybridLockBusyNotice,
+  getHybridLayerCardRefCallback,
+  handleHybridLayerItemPointerDown,
+  handleHybridV2ElementContextMenu,
+  handleHybridV2ElementDoubleClick,
+  handleHybridV2ElementPointerDown,
+  handleHybridV2OverlayContextMenu,
+  handleHybridV2OverlayPointerDown,
+  handleHybridV2ResizeHandlePointerDown,
+  hideHybridIds,
+  hybridArrowPreview,
+  hybridContextMenu,
+  hybridDebugEnabled,
+  hybridGhostPreview,
+  hybridLayerActiveElementId,
+  hybridLayerOverlayRef,
+  hybridLayerRenderRows,
+  hybridModeEffective,
+  hybridOpacityValue,
+  hybridPersistLockBusyNoticeMessage,
+  hybridPersistLockBusyNoticeOpen,
+  hybridPersistPendingDraft,
+  hybridPlacementHitLayerActive,
+  hybridSelectionCount,
+  hybridTextEditor,
+  hybridUiPrefs,
+  hybridV2ActiveId,
+  hybridV2BindingByHybridId,
+  hybridV2DocLive,
+  hybridV2PlaybackHighlightedIds,
+  hybridV2Renderable,
+  hybridV2SelectedIds,
+  hybridV2SelectedIdSet,
+  hybridVisible,
+  lockLayersForHybridIds,
+  onHybridOverlayPointerLeave,
+  onHybridOverlayPointerMove,
+  renameHybridItem,
+  retryHybridPersist,
+  setHybridLayerActiveElementId,
+  tab,
+  toText,
+  updateHybridTextEditorValue,
+  withHybridOverlayGuard,
+}) {
+  bumpDrawioPerfCounter("overlay.vm.hybridOverlayProps.builds");
+  const normalizeObject = typeof asObject === "function" ? asObject : asPlainObject;
+  const hybridDocLive = asPlainObject(hybridV2DocLive);
+  return {
     hybridOverlayProps: {
       visible: tab === "diagram" && hybridVisible,
       modeEffective: hybridModeEffective,
@@ -216,7 +247,7 @@ export default function buildProcessDiagramOverlayLayersProps({
       menu: hybridContextMenu,
       selectionCount: hybridSelectionCount,
       canRename: hybridSelectionCount === 1
-        && !!hybridV2DocLive.elements.find((row) => toText(asObject(row).id) === hybridV2ActiveId),
+        && !!hybridDocLive.elements?.find((row) => toText(normalizeObject(row).id) === hybridV2ActiveId),
       onClose: closeHybridContextMenu,
       onDelete: () => {
         deleteSelectedHybridIds();
@@ -244,12 +275,13 @@ export default function buildProcessDiagramOverlayLayersProps({
       },
       onDismiss: dismissHybridLockBusyNotice,
     },
-    drawioEditorModalProps: {
-      open: drawioEditorOpen,
-      title: "Draw.io Editor",
-      initialXml: drawioUiState.doc_xml,
-      onSave: handleDrawioEditorSave,
-      onClose: closeEmbeddedDrawioEditor,
-    },
+  };
+}
+
+export default function buildProcessDiagramOverlayLayersProps(input) {
+  return {
+    ...buildBpmnDiagramOverlayLayersProps(input),
+    ...buildDrawioDiagramOverlayLayersProps(input),
+    ...buildHybridDiagramOverlayLayersProps(input),
   };
 }
