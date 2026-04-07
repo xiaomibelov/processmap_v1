@@ -19,36 +19,36 @@ function bumpPanelPerfCounter() {
   store.counters = counters;
 }
 
-/**
- * Build the structural part of the overlay panel model (rows, sections, tools).
- * This does NOT depend on selection state, so it can be memoized separately
- * from the fast-changing selected entity.
- */
-export function buildOverlayPanelModelStructure({
+function buildOverlayPanelCommonState({
   drawioState,
   drawioModeEffective,
   drawioEditorStatus,
-  hybridVisible,
-  hybridTotalCount,
-  hybridModeEffective,
-  hybridUiPrefs,
-  hybridV2HiddenCount,
-  hybridLayerRenderRows,
-  hybridV2Renderable,
-  hybridV2BindingByHybridId,
 } = {}) {
-  bumpPanelPerfCounter();
   const overlayStatus = getDrawioOverlayStatus(drawioState);
   const drawioVisibilityContract = buildDrawioVisibilitySelectionContract(drawioState, {
     mode: drawioModeEffective,
   });
   const editorState = drawioEditorStatus && typeof drawioEditorStatus === "object" ? drawioEditorStatus : {};
-  const rows = buildOverlayEntityRows({
-    drawioState,
-    hybridLayerRenderRows,
-    hybridV2Renderable,
-    hybridV2BindingByHybridId,
-  });
+  return {
+    overlayStatus,
+    drawioVisibilityContract,
+    editorState,
+  };
+}
+
+function buildOverlayPanelStructureResult({
+  drawioState,
+  hybridV2HiddenCount,
+  rows,
+  hybridTotalCount,
+  hybridVisible,
+  hybridUiPrefs,
+  hybridModeEffective,
+  overlayStatus,
+  drawioVisibilityContract,
+  editorState,
+  drawioModeEffective,
+} = {}) {
   const {
     drawioSection,
     toolsAll,
@@ -129,6 +129,58 @@ export function buildOverlayPanelModelStructure({
 }
 
 /**
+ * Build the structural part of the overlay panel model (rows, sections, tools).
+ * This does NOT depend on selection state, so it can be memoized separately
+ * from the fast-changing selected entity.
+ */
+export function buildOverlayPanelModelStructure({
+  panelVisible = true,
+  drawioState,
+  drawioModeEffective,
+  drawioEditorStatus,
+  hybridVisible,
+  hybridTotalCount,
+  hybridModeEffective,
+  hybridUiPrefs,
+  hybridV2HiddenCount,
+  hybridLayerRenderRows,
+  hybridV2Renderable,
+  hybridV2BindingByHybridId,
+} = {}) {
+  bumpPanelPerfCounter();
+  const {
+    overlayStatus,
+    drawioVisibilityContract,
+    editorState,
+  } = buildOverlayPanelCommonState({
+    drawioState,
+    drawioModeEffective,
+    drawioEditorStatus,
+  });
+  const rows = panelVisible === true
+    ? buildOverlayEntityRows({
+      drawioState,
+      hybridLayerRenderRows,
+      hybridV2Renderable,
+      hybridV2BindingByHybridId,
+    })
+    : [];
+  return buildOverlayPanelStructureResult({
+    drawioState,
+    hybridV2HiddenCount,
+    rows,
+    hybridTotalCount,
+    hybridVisible,
+    hybridUiPrefs,
+    hybridModeEffective,
+    overlayStatus,
+    drawioVisibilityContract,
+    editorState,
+    drawioModeEffective,
+  });
+}
+
+/**
  * Build the selected entity slice — changes on every click/selection.
  * Isolated so selection changes don't recompute the full structural model.
  */
@@ -156,6 +208,7 @@ export function buildOverlayPanelModelSelected({
 }
 
 export default function buildOverlayPanelModel({
+  panelVisible = true,
   drawioState,
   drawioModeEffective,
   drawioEditorStatus,
@@ -173,6 +226,7 @@ export default function buildOverlayPanelModel({
   legacyActiveElementId,
 } = {}) {
   const structure = buildOverlayPanelModelStructure({
+    panelVisible,
     drawioState,
     drawioModeEffective,
     drawioEditorStatus,

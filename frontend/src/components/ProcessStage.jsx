@@ -4218,6 +4218,7 @@ export default function ProcessStage({
       drawioVisibilityContract,
       drawioVisible,
       setDrawioSelectedElementId,
+      overlayPanelOpen: !!diagramActionLayersOpen || !!diagramActionHybridToolsOpen,
       hybridVisible,
       hybridTotalCount,
       hybridModeEffective,

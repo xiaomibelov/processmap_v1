@@ -191,3 +191,47 @@ test("buildOverlayPanelModel: hybrid focus reports actual dimming effect, not st
   assert.equal(visibleModel.hybridLegacy.focusActive, true);
   assert.equal(visibleModel.hybridLegacy.focus, true);
 });
+
+test("buildOverlayPanelModel: closed panel keeps status fresh without entity rows", () => {
+  const model = buildOverlayPanelModel({
+    panelVisible: false,
+    drawioState: {
+      enabled: true,
+      interaction_mode: "edit",
+      opacity: 0.7,
+      doc_xml: "<mxfile></mxfile>",
+      svg_cache: "<svg><rect id='shape1'/></svg>",
+      drawio_elements_v1: [{ id: "shape1", deleted: false }],
+    },
+    drawioEditorStatus: {
+      editorAvailable: true,
+      editorOpened: false,
+      editorStatus: "saved",
+      saved: true,
+      previewAvailable: true,
+      overlayEnabled: true,
+      docAvailable: true,
+    },
+    hybridVisible: true,
+    hybridTotalCount: 4,
+    hybridModeEffective: "view",
+    hybridUiPrefs: { lock: true, opacity: 55, focus: true },
+    hybridV2HiddenCount: 3,
+    hybridLayerRenderRows: [{ elementId: "legacy_1", title: "Legacy 1", hasCenter: true }],
+    hybridV2Renderable: { elements: [{ id: "hybrid_1", name: "Hybrid 1" }] },
+    hybridV2BindingByHybridId: { hybrid_1: { bpmn_id: "Task_1" } },
+  });
+
+  assert.equal(model.status.overlayEnabled, true);
+  assert.equal(model.status.mode, "edit");
+  assert.equal(model.drawio.opacityPct, 70);
+  assert.equal(model.editor.status, "saved");
+  assert.equal(model.hybridLegacy.visible, true);
+  assert.equal(model.hybridLegacy.totalCount, 4);
+  assert.equal(model.hidden.count, 3);
+  assert.deepEqual(model.rows, []);
+  assert.equal(model.layerGroups.hasAny, false);
+  assert.deepEqual(model.layerGroups.drawio, []);
+  assert.deepEqual(model.layerGroups.hybrid, []);
+  assert.deepEqual(model.layerGroups.legacy, []);
+});
