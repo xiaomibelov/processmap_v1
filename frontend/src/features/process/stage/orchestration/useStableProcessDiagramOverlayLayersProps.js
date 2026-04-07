@@ -1,5 +1,9 @@
 import { useRef } from "react";
-import buildProcessDiagramOverlayLayersProps from "./buildProcessDiagramOverlayLayersProps";
+import {
+  buildBpmnDiagramOverlayLayersProps,
+  buildDrawioDiagramOverlayLayersProps,
+  buildHybridDiagramOverlayLayersProps,
+} from "./buildProcessDiagramOverlayLayersProps";
 import { bumpDrawioPerfCounter } from "../../drawio/runtime/drawioRuntimeProbes.js";
 
 function hasOwn(obj, key) {
@@ -54,38 +58,232 @@ function collectChangedInputKeys(prevRaw, nextRaw) {
   return changed;
 }
 
+function pickInput(rawInput, keys) {
+  const input = rawInput && typeof rawInput === "object" ? rawInput : {};
+  const picked = {};
+  keys.forEach((key) => {
+    if (hasOwn(input, key)) picked[key] = input[key];
+  });
+  return picked;
+}
+
+const BPMN_INPUT_KEYS = [
+  "activeProjectId",
+  "asObject",
+  "bpmnFragmentPlacementActive",
+  "bpmnFragmentPlacementGhost",
+  "bpmnContextMenu",
+  "bpmnSubprocessPreview",
+  "bpmnRef",
+  "closeBpmnContextMenu",
+  "closeBpmnSubprocessPreview",
+  "diagramMode",
+  "draft",
+  "handleAiQuestionsByElementChange",
+  "handleBpmnSelectionChange",
+  "isInterviewMode",
+  "onBpmnSaveLifecycleEvent",
+  "onDiagramContextMenuDismiss",
+  "onDiagramContextMenuRequest",
+  "onElementNotesRemap",
+  "onSessionSync",
+  "propertiesOverlayAlwaysEnabled",
+  "propertiesOverlayAlwaysPreviewByElementId",
+  "queueDiagramMutation",
+  "reloadKey",
+  "robotMetaOverlayEnabled",
+  "robotMetaOverlayFilters",
+  "robotMetaStatusByElementId",
+  "selectedPropertiesOverlayPreview",
+  "sid",
+  "stepTimeUnit",
+  "tab",
+  "runBpmnContextMenuAction",
+  "openBpmnSubprocessPreviewProperties",
+];
+
+const DRAWIO_BASE_KEYS = [
+  "tab",
+  "drawioVisible",
+  "drawioEditorOpen",
+];
+
+const DRAWIO_OVERLAY_KEYS = [
+  "clientToDiagram",
+  "commitDrawioOverlayMove",
+  "createDrawioRuntimeElement",
+  "deleteDrawioOverlayElement",
+  "drawioModeEffective",
+  "drawioRuntimeToolState",
+  "drawioUiState",
+  "getOverlayViewportMatrix",
+  "hybridViewportMatrix",
+  "hybridViewportMatrixRef",
+  "setDrawioElementSize",
+  "setDrawioElementText",
+  "setDrawioElementTextWidth",
+  "setDrawioSelectedElementId",
+  "subscribeOverlayViewportMatrix",
+];
+
+const DRAWIO_EDITOR_KEYS = [
+  "closeEmbeddedDrawioEditor",
+  "drawioUiState",
+  "handleDrawioEditorSave",
+];
+
+const HYBRID_BASE_KEYS = [
+  "tab",
+  "hybridVisible",
+  "hybridContextMenu",
+  "hybridPersistLockBusyNoticeOpen",
+];
+
+const HYBRID_OVERLAY_KEYS = [
+  "asObject",
+  "bpmnRef",
+  "cancelHybridTextEditor",
+  "cleanupMissingHybridBindings",
+  "commitHybridTextEditor",
+  "getHybridLayerCardRefCallback",
+  "handleHybridLayerItemPointerDown",
+  "handleHybridV2ElementContextMenu",
+  "handleHybridV2ElementDoubleClick",
+  "handleHybridV2ElementPointerDown",
+  "handleHybridV2OverlayContextMenu",
+  "handleHybridV2OverlayPointerDown",
+  "handleHybridV2ResizeHandlePointerDown",
+  "hybridArrowPreview",
+  "hybridDebugEnabled",
+  "hybridGhostPreview",
+  "hybridLayerActiveElementId",
+  "hybridLayerOverlayRef",
+  "hybridLayerRenderRows",
+  "hybridModeEffective",
+  "hybridOpacityValue",
+  "hybridPlacementHitLayerActive",
+  "hybridTextEditor",
+  "hybridUiPrefs",
+  "hybridV2ActiveId",
+  "hybridV2BindingByHybridId",
+  "hybridV2PlaybackHighlightedIds",
+  "hybridV2Renderable",
+  "hybridV2SelectedIdSet",
+  "onHybridOverlayPointerLeave",
+  "onHybridOverlayPointerMove",
+  "setHybridLayerActiveElementId",
+  "toText",
+  "withHybridOverlayGuard",
+];
+
+const HYBRID_MENU_KEYS = [
+  "asObject",
+  "closeHybridContextMenu",
+  "deleteSelectedHybridIds",
+  "hideHybridIds",
+  "hybridSelectionCount",
+  "hybridV2ActiveId",
+  "hybridV2DocLive",
+  "hybridV2SelectedIds",
+  "lockLayersForHybridIds",
+  "renameHybridItem",
+  "toText",
+];
+
+const HYBRID_TOAST_KEYS = [
+  "dismissHybridLockBusyNotice",
+  "hybridPersistLockBusyNoticeMessage",
+  "hybridPersistLockBusyNoticeOpen",
+  "hybridPersistPendingDraft",
+  "retryHybridPersist",
+  "tab",
+];
+
+function selectDrawioInput(input) {
+  const selected = pickInput(input, DRAWIO_BASE_KEYS);
+  if (input?.tab === "diagram" && input?.drawioVisible) {
+    Object.assign(selected, pickInput(input, DRAWIO_OVERLAY_KEYS));
+  }
+  if (input?.drawioEditorOpen) {
+    Object.assign(selected, pickInput(input, DRAWIO_EDITOR_KEYS));
+  }
+  return selected;
+}
+
+function selectHybridInput(input) {
+  const selected = pickInput(input, HYBRID_BASE_KEYS);
+  if (input?.tab === "diagram" && input?.hybridVisible) {
+    Object.assign(selected, pickInput(input, HYBRID_OVERLAY_KEYS));
+  }
+  if (input?.hybridContextMenu) {
+    Object.assign(selected, pickInput(input, HYBRID_MENU_KEYS));
+  }
+  if (input?.tab === "diagram" && input?.hybridPersistLockBusyNoticeOpen) {
+    Object.assign(selected, pickInput(input, HYBRID_TOAST_KEYS));
+  }
+  return selected;
+}
+
+function readMemoizedSegment(cache, input, build, perfKeyBase, changedKeyPrefix) {
+  if (cache.output && areInputsShallowEqual(cache.input, input)) {
+    bumpDrawioPerfCounter(`${perfKeyBase}.cacheHit`);
+    return cache.output;
+  }
+  bumpDrawioPerfCounter(`${perfKeyBase}.cacheMiss`);
+  const changedKeys = collectChangedInputKeys(cache.input, input);
+  if (changedKeyPrefix && changedKeys.length > 0) {
+    const sample = changedKeys.slice(0, 12);
+    sample.forEach((key) => {
+      bumpDrawioPerfCounter(`${changedKeyPrefix}${String(key)}`);
+    });
+    if (changedKeys.length > sample.length) {
+      bumpDrawioPerfCounter(`${changedKeyPrefix}__other`);
+    }
+  }
+  const output = build(input);
+  cache.input = input;
+  cache.output = output;
+  return output;
+}
+
 export default function useStableProcessDiagramOverlayLayersProps(inputRaw) {
   const functionRefs = useRef({});
   const stableFunctionByKey = useRef({});
-  const cacheRef = useRef({
-    input: null,
-    output: null,
+  const segmentCacheRef = useRef({
+    bpmn: { input: null, output: null },
+    drawio: { input: null, output: null },
+    hybrid: { input: null, output: null },
   });
   const normalizedInput = normalizeInputForMemo(
     inputRaw,
     functionRefs.current,
     stableFunctionByKey.current,
   );
-  const cache = cacheRef.current;
-  if (cache.output && areInputsShallowEqual(cache.input, normalizedInput)) {
-    bumpDrawioPerfCounter("overlay.vm.diagramOverlayProps.cacheHit");
-    return cache.output;
-  }
-  const changedKeys = collectChangedInputKeys(cache.input, normalizedInput);
-  bumpDrawioPerfCounter("overlay.vm.diagramOverlayProps.cacheMiss");
-  if (changedKeys.length > 0) {
-    const sample = changedKeys.slice(0, 12);
-    sample.forEach((key) => {
-      bumpDrawioPerfCounter(`overlay.vm.input.changed.${String(key)}`);
-    });
-    if (changedKeys.length > sample.length) {
-      bumpDrawioPerfCounter("overlay.vm.input.changed.__other");
-    }
-  }
-  const output = buildProcessDiagramOverlayLayersProps(normalizedInput);
-  cacheRef.current = {
-    input: normalizedInput,
-    output,
+  const bpmnInput = pickInput(normalizedInput, BPMN_INPUT_KEYS);
+  const drawioInput = selectDrawioInput(normalizedInput);
+  const hybridInput = selectHybridInput(normalizedInput);
+  const segments = segmentCacheRef.current;
+  return {
+    ...readMemoizedSegment(
+      segments.bpmn,
+      bpmnInput,
+      buildBpmnDiagramOverlayLayersProps,
+      "overlay.vm.diagramOverlayProps",
+      "overlay.vm.input.changed.",
+    ),
+    ...readMemoizedSegment(
+      segments.drawio,
+      drawioInput,
+      buildDrawioDiagramOverlayLayersProps,
+      "overlay.vm.drawioOverlayProps",
+      "overlay.vm.drawioInput.changed.",
+    ),
+    ...readMemoizedSegment(
+      segments.hybrid,
+      hybridInput,
+      buildHybridDiagramOverlayLayersProps,
+      "overlay.vm.hybridOverlayProps",
+      "overlay.vm.hybridInput.changed.",
+    ),
   };
-  return output;
 }
