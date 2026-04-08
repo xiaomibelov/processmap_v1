@@ -296,6 +296,7 @@ export default function ProcessStage({
   const [drawioAnchorImportDiagnostics, setDrawioAnchorImportDiagnostics] = useState(null);
   const [saveUploadLifecycleEvent, setSaveUploadLifecycleEvent] = useState(IDLE_SAVE_UPLOAD_EVENT);
   const [latestBpmnVersionHead, setLatestBpmnVersionHead] = useState(null);
+  const [latestBpmnVersionHeadStatus, setLatestBpmnVersionHeadStatus] = useState("idle");
   const [diagramUndoRedoState, setDiagramUndoRedoState] = useState({ canUndo: false, canRedo: false, ready: false });
 
   const {
@@ -597,8 +598,9 @@ export default function ProcessStage({
     () => resolveRevisionHistoryUiSnapshot({
       revisionHistorySnapshotRaw: sessionRevisionHistorySnapshot,
       latestVersionItemRaw: revisionLatestCandidate,
+      latestVersionStatusRaw: latestBpmnVersionHeadStatus,
     }),
-    [sessionRevisionHistorySnapshot, revisionLatestCandidate],
+    [sessionRevisionHistorySnapshot, revisionLatestCandidate, latestBpmnVersionHeadStatus],
   );
   const publishGitMirrorSnapshot = useMemo(() => {
     const topLevel = asObject(draft?.publish_git_mirror);
@@ -2952,26 +2954,31 @@ export default function ProcessStage({
       setVersionsList([]);
       setPreviewSnapshotId("");
       setLatestBpmnVersionHead(null);
+      if (options?.trackHeadStatus === true) setLatestBpmnVersionHeadStatus("idle");
       return;
     }
     const includeXml = options?.includeXml !== false;
     const updateList = options?.updateList !== false ? includeXml : false;
+    const trackHeadStatus = options?.trackHeadStatus === true;
     const fallbackLimit = includeXml ? 200 : 1;
     const requestedLimit = Number(options?.limit || fallbackLimit);
     const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
       ? Math.min(Math.round(requestedLimit), 500)
       : fallbackLimit;
+    if (trackHeadStatus) setLatestBpmnVersionHeadStatus("loading");
     const loaded = await apiGetBpmnVersions(sid, { limit, includeXml });
     if (!loaded?.ok) {
       if (updateList) {
         setVersionsList([]);
         setPreviewSnapshotId("");
       }
+      if (trackHeadStatus) setLatestBpmnVersionHeadStatus("failed");
       if (includeXml) setGenErr(shortErr(loaded?.error || "Не удалось загрузить BPMN версии."));
       return;
     }
     const list = asArray(loaded?.versions).map((item) => normalizeBpmnVersionListItem(item));
     setLatestBpmnVersionHead(asArray(list)[0] || null);
+    if (trackHeadStatus) setLatestBpmnVersionHeadStatus("ready");
     if (!updateList) return;
     // eslint-disable-next-line no-console
     console.debug(
@@ -2990,6 +2997,7 @@ export default function ProcessStage({
       includeXml: false,
       limit: 1,
       updateList: false,
+      trackHeadStatus: true,
     });
   }, [refreshSnapshotVersions]);
 
@@ -3729,9 +3737,11 @@ export default function ProcessStage({
   useEffect(() => {
     if (!sid) {
       setLatestBpmnVersionHead(null);
+      setLatestBpmnVersionHeadStatus("idle");
       return;
     }
     setLatestBpmnVersionHead(null);
+    setLatestBpmnVersionHeadStatus("loading");
     void refreshLatestBpmnRevisionHead();
   }, [sid, draft?.bpmn_xml_version, draft?.version, refreshLatestBpmnRevisionHead]);
 
