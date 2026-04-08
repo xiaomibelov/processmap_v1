@@ -59,6 +59,8 @@ export function mergeSessionMetaForRead({
 }) {
   const sessionMeta = normalizeBpmnMeta(asObject(sessionMetaRaw));
   const localMeta = normalizeBpmnMeta(asObject(localMetaRaw));
+  const serverCamundaExtensionsByElementId = asObject(sessionMeta.camunda_extensions_by_element_id);
+  const localCamundaExtensionsByElementId = asObject(localMeta.camunda_extensions_by_element_id);
   const serverHybridLayerByElementId = normalizeHybridLayerMap(sessionMeta.hybrid_layer_by_element_id);
   const localHybridLayerByElementId = normalizeHybridLayerMap(localMeta.hybrid_layer_by_element_id);
   const hybridLayerByElementId = preferServerOverlay
@@ -67,6 +69,12 @@ export function mergeSessionMetaForRead({
       ...serverHybridLayerByElementId,
       ...localHybridLayerByElementId,
     };
+  const camundaExtensionsByElementId = preferServerOverlay
+    ? (hasKeys(serverCamundaExtensionsByElementId) ? serverCamundaExtensionsByElementId : localCamundaExtensionsByElementId)
+    : {
+      ...serverCamundaExtensionsByElementId,
+      ...localCamundaExtensionsByElementId,
+    };
   const nextRaw = {
     version: Number(sessionMeta.version) > 0 ? Number(sessionMeta.version) : 1,
     flow_meta: hasKeys(sessionMeta.flow_meta) ? sessionMeta.flow_meta : localMeta.flow_meta,
@@ -74,7 +82,7 @@ export function mergeSessionMetaForRead({
     robot_meta_by_element_id: hasKeys(sessionMeta.robot_meta_by_element_id)
       ? sessionMeta.robot_meta_by_element_id
       : localMeta.robot_meta_by_element_id,
-    camunda_extensions_by_element_id: sessionMeta.camunda_extensions_by_element_id,
+    camunda_extensions_by_element_id: camundaExtensionsByElementId,
     presentation_by_element_id: hasKeys(sessionMeta.presentation_by_element_id)
       ? sessionMeta.presentation_by_element_id
       : localMeta.presentation_by_element_id,

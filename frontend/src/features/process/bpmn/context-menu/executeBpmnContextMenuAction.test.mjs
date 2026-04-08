@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { resetBpmnElementClipboardForTests } from "../copy-paste/bpmnElementClipboard.js";
 import {
   createBpmnContextMenuActionExecutor,
   executeBpmnContextMenuAction,
@@ -17,6 +18,7 @@ function createStubModeler({
 } = {}) {
   const calls = [];
   const labelCalls = [];
+  const selected = [];
   const elementById = new Map();
   registryItems.forEach((item) => {
     if (item?.id) elementById.set(String(item.id), item);
@@ -33,16 +35,18 @@ function createStubModeler({
       if (typeof createShapeImpl === "function") {
         return createShapeImpl(shapeLike, pos, parent);
       }
-      return {
+      const created = {
         id: `Created_${calls.length}`,
         type: String(shapeLike?.type || ""),
-        businessObject: { $type: String(shapeLike?.type || "") },
+        businessObject: shapeLike?.businessObject || { $type: String(shapeLike?.type || "") },
         x: Number(pos?.x || 0),
         y: Number(pos?.y || 0),
         width: 120,
         height: 80,
         parent,
       };
+      elementById.set(String(created.id), created);
+      return created;
     },
     connect() {
       return null;
@@ -123,13 +127,23 @@ function createStubModeler({
       if (key === "elementFactory") {
         return {
           createShape(input = {}) {
-            return { type: String(input?.type || "") };
+            return { ...input, type: String(input?.type || "") };
           },
         };
       }
       if (key === "canvas") return canvas;
       if (key === "elementRegistry") return registry;
-      if (key === "selection") return { select() {} };
+      if (key === "selection") {
+        return {
+          select(items = []) {
+            selected.length = 0;
+            items.forEach((item) => selected.push(item));
+          },
+          get() {
+            return selected.slice();
+          },
+        };
+      }
       if (key === "directEditing") return { activate() {} };
       if (key === "commandStack") return commandStack;
       if (key === "moddle") return moddle;
@@ -137,8 +151,12 @@ function createStubModeler({
     },
   };
 
-  return { inst, calls, labelCalls };
+  return { inst, calls, labelCalls, selected };
 }
+
+test.afterEach(() => {
+  resetBpmnElementClipboardForTests();
+});
 
 test("canvas create task: resolves lane click to participant parent and guards DI/flowElements collections", async () => {
   const root = {
@@ -778,4 +796,124 @@ test("open_inside returns read-only subprocess preview and does not require dril
   assert.ok(Array.isArray(result.openInsidePreview.items[0]?.timerAndListeners));
   assert.ok(Array.isArray(result.openInsidePreview.items[0]?.robotMeta));
   assert.ok(Array.isArray(result.openInsidePreview.items[0]?.executionAttrs));
+});
+
+test("copy_element captures semantic payload and paste restores it with a new id", async () => {
+  const task = {
+    id: "Task_1",
+    type: "bpmn:Task",
+    x: 120,
+    y: 160,
+    width: 140,
+    height: 90,
+    businessObject: {
+      $type: "bpmn:Task",
+      name: "Исходный шаг",
+      documentation: [{ $type: "bpmn:Documentation", text: "copy-doc-text" }],
+      extensionElements: {
+        $type: "bpmn:ExtensionElements",
+        values: [
+          {
+            $type: "camunda:Properties",
+            values: [{ $type: "camunda:Property", name: "priority", value: "high" }],
+          },
+        ],
+      },
+      $attrs: { "pm:kind": "robot" },
+      pmCustomFlag: "flag-1",
+    },
+  };
+  const root = {
+    id: "Process_1",
+    type: "bpmn:Process",
+    businessObject: { $type: "bpmn:Process", flowElements: [task] },
+    di: { planeElement: [] },
+    children: [task],
+  };
+  task.parent = root;
+
+  const { inst, selected } = createStubModeler({
+    root,
+    registryItems: [root, task],
+  });
+
+  const copyResult = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "copy_element",
+      target: { id: "Task_1" },
+    },
+    modelerRef: { current: inst },
+  });
+  assert.equal(copyResult.ok, true);
+
+  const pasteResult = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "paste",
+      target: { id: "Task_1" },
+    },
+    modelerRef: { current: inst },
+  });
+
+  assert.equal(pasteResult.ok, true);
+  assert.equal(pasteResult.createdId === "Task_1", false);
+  const pasted = selected[0];
+  assert.equal(pasted?.businessObject?.name, "Исходный шаг");
+  assert.equal(pasted?.businessObject?.documentation?.[0]?.text, "copy-doc-text");
+  assert.equal(
+    pasted?.businessObject?.extensionElements?.values?.[0]?.values?.[0]?.value,
+    "high",
+  );
+  assert.equal(
+    pasted?.businessObject?.["pm:kind"] || pasted?.businessObject?.$attrs?.["pm:kind"],
+    "robot",
+  );
+  assert.equal(pasted?.businessObject?.pmCustomFlag, "flag-1");
+  assert.equal(Number(pasted?.x || 0) > Number(task.x || 0), true);
+});
+
+test("semantic paste falls back to clicked canvas point when no target shape is present", async () => {
+  const task = {
+    id: "Task_1",
+    type: "bpmn:Task",
+    x: 120,
+    y: 160,
+    width: 140,
+    height: 90,
+    businessObject: { $type: "bpmn:Task", name: "Исходный шаг" },
+  };
+  const root = {
+    id: "Process_1",
+    type: "bpmn:Process",
+    businessObject: { $type: "bpmn:Process", flowElements: [task] },
+    di: { planeElement: [] },
+    children: [task],
+  };
+  task.parent = root;
+  const { inst, calls } = createStubModeler({
+    root,
+    registryItems: [root, task],
+    viewbox: { x: 100, y: 50, scale: 2 },
+    rect: { left: 10, top: 20 },
+  });
+
+  await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "copy_element",
+      target: { id: "Task_1" },
+    },
+    modelerRef: { current: inst },
+  });
+
+  const pasteResult = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "paste",
+      clientX: 210,
+      clientY: 220,
+      target: { kind: "canvas" },
+    },
+    modelerRef: { current: inst },
+  });
+
+  assert.equal(pasteResult.ok, true);
+  assert.deepEqual(calls[calls.length - 1]?.pos, { x: 200, y: 150 });
 });

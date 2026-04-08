@@ -1,4 +1,12 @@
 import buildSubprocessPreview from "./executor/buildSubprocessPreview.js";
+import {
+  canCopyBpmnElement,
+  copyBpmnElementToClipboard,
+  hasCopiedBpmnElementSnapshot,
+  pasteCopiedBpmnElementFromClipboard,
+  readCopiedBpmnElementSnapshot,
+  resolveBpmnPastePoint,
+} from "../copy-paste/bpmnElementClipboard.js";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -593,6 +601,8 @@ export function createBpmnContextMenuActionExecutor({
   emitDiagramMutation,
   emitElementSelection,
   buildInsertBetweenCandidate,
+  cloneCompanionStateForCopiedElement,
+  buildCopyElementOptions,
 } = {}) {
   return async function executeBpmnContextMenuActionRequest(payloadRaw = {}) {
     return await executeBpmnContextMenuAction({
@@ -602,6 +612,8 @@ export function createBpmnContextMenuActionExecutor({
       emitDiagramMutation,
       emitElementSelection,
       buildInsertBetweenCandidate,
+      cloneCompanionStateForCopiedElement,
+      buildCopyElementOptions,
     });
   };
 }
@@ -613,6 +625,8 @@ export async function executeBpmnContextMenuAction({
   emitDiagramMutation,
   emitElementSelection,
   buildInsertBetweenCandidate,
+  cloneCompanionStateForCopiedElement,
+  buildCopyElementOptions,
 } = {}) {
   const payload = asObject(payloadRaw);
   const actionId = toText(payload.actionId);
@@ -708,6 +722,64 @@ export async function executeBpmnContextMenuAction({
     if (actionId === "add_annotation") return createOnCanvas("bpmn:TextAnnotation");
 
     if (actionId === "paste") {
+      if (hasCopiedBpmnElementSnapshot()) {
+        const semanticSnapshot = readCopiedBpmnElementSnapshot();
+        const parentResolved = resolveCanvasCreateParent(inst, point);
+        const root = parentResolved.root;
+        const hasExplicitClientPoint = (
+          Object.prototype.hasOwnProperty.call(payload, "clientX")
+          || Object.prototype.hasOwnProperty.call(payload, "clientY")
+        );
+        const fallbackPoint = hasExplicitClientPoint ? point : null;
+        const parent = hasShapeBounds(target)
+          ? (resolveCreateShapeParent(target?.parent || target, root) || parentResolved.parent || root)
+          : (parentResolved.parent || root);
+        if (!parent) return { ok: false, error: "paste_parent_missing" };
+        const pastePoint = resolveBpmnPastePoint({
+          target,
+          fallbackPoint,
+        });
+        if (!pastePoint) return { ok: false, error: "paste_point_missing" };
+        ensureRootPlaneCollection(root);
+        if (toText(semanticSnapshot?.type).toLowerCase().includes("textannotation")) {
+          ensureArtifactsCollection(parent);
+        } else {
+          ensureFlowElementsCollection(parent);
+        }
+        const semanticPaste = pasteCopiedBpmnElementFromClipboard({
+          modeling,
+          elementFactory,
+          moddle: inst.get?.("moddle"),
+          parent,
+          point: pastePoint,
+        });
+        if (!semanticPaste.ok) return semanticPaste;
+        const created = semanticPaste.createdElement || null;
+        if (created) {
+          if (typeof cloneCompanionStateForCopiedElement === "function") {
+            cloneCompanionStateForCopiedElement({
+              sourceElementId: toText(semanticSnapshot?.sourceElementId),
+              targetElementId: toText(created?.id),
+              semanticPayload: semanticSnapshot?.semanticPayload,
+              inst,
+            });
+          }
+          selectAndEmitElement({
+            inst,
+            element: created,
+            source: "context_menu_paste",
+            emitElementSelection,
+            buildInsertBetweenCandidate,
+          });
+        }
+        emitMutation({ count: semanticPaste.changedIds?.length || 0, source: "semantic_clipboard" });
+        return {
+          ok: true,
+          changedIds: asArray(semanticPaste.changedIds),
+          createdId: toText(created?.id),
+        };
+      }
+
       const copyPaste = inst.get?.("copyPaste");
       if (!copyPaste || typeof copyPaste.paste !== "function") {
         return { ok: false, error: "paste_unavailable" };
@@ -727,7 +799,7 @@ export async function executeBpmnContextMenuAction({
         const first = registry?.get?.(ids[0]);
         if (first) selection?.select?.([first]);
       }
-      emitMutation({ count: ids.length });
+      emitMutation({ count: ids.length, source: "native_copy_paste" });
       return { ok: true, changedIds: ids };
     }
 
@@ -862,6 +934,24 @@ export async function executeBpmnContextMenuAction({
       if (!name) return { ok: false, error: "name_empty" };
       const ok = await copyToClipboard(name);
       return { ok, error: ok ? "" : "clipboard_unavailable", message: ok ? `Скопировано: ${name}` : "" };
+    }
+
+    if (actionId === "copy_element") {
+      if (!canCopyBpmnElement(target)) {
+        return { ok: false, error: "copy_element_unsupported" };
+      }
+      const copied = copyBpmnElementToClipboard(
+        target,
+        typeof buildCopyElementOptions === "function"
+          ? buildCopyElementOptions({ inst, element: target })
+          : {},
+      );
+      if (!copied.ok) return copied;
+      return {
+        ok: true,
+        changedIds: [toText(target?.id)].filter(Boolean),
+        message: "Элемент скопирован",
+      };
     }
 
     if (actionId === "copy_id") {

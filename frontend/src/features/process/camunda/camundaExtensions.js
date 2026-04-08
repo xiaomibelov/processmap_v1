@@ -1184,7 +1184,7 @@ function parseManagedExecutionListenerFromDom(node) {
 function parseManagedPropertiesBlockFromDom(node, expectedNamespaceUri = CAMUNDA_NAMESPACE_URI) {
   const children = directChildElements(node);
   const onlyPropertyChildren = children.every((child) => (
-    namespaceOf(child) === expectedNamespaceUri && localNameOf(child) === "property"
+    namespaceOf(child) === expectedNamespaceUri && localNameOf(child).toLowerCase() === "property"
   ));
   if (!onlyPropertyChildren) return null;
   const items = children
@@ -1219,14 +1219,15 @@ export function extractCamundaExtensionsMapFromBpmnXml(xmlText) {
     directChildElements(extensionElementsNode).forEach((child) => {
       const childNamespace = namespaceOf(child);
       const childLocalName = localNameOf(child);
+      const childLocalNameLower = childLocalName.toLowerCase();
 
-      if (childNamespace === PM_NAMESPACE_URI && childLocalName === "RobotMeta") {
+      if (childNamespace === PM_NAMESPACE_URI && childLocalNameLower === "robotmeta") {
         return;
       }
 
       if (
         (childNamespace === CAMUNDA_NAMESPACE_URI || childNamespace === ZEEBE_NAMESPACE_URI)
-        && childLocalName === "properties"
+        && childLocalNameLower === "properties"
       ) {
         const parsedProperties = parseManagedPropertiesBlockFromDom(child, childNamespace);
         if (parsedProperties) {
@@ -1235,7 +1236,7 @@ export function extractCamundaExtensionsMapFromBpmnXml(xmlText) {
         }
       }
 
-      if (childNamespace === CAMUNDA_NAMESPACE_URI && childLocalName === "executionListener") {
+      if (childNamespace === CAMUNDA_NAMESPACE_URI && childLocalNameLower === "executionlistener") {
         const parsedListener = parseManagedExecutionListenerFromDom(child);
         if (parsedListener) {
           managedListeners.push(parsedListener);

@@ -45,6 +45,7 @@ import {
   syncRobotMetaToBpmn,
 } from "../../features/process/robotmeta/robotMeta";
 import {
+  normalizeCamundaExtensionState,
   extractManagedCamundaExtensionStateFromBusinessObject,
   extractCamundaExtensionsMapFromBpmnXml,
   finalizeCamundaExtensionsXml,
@@ -62,6 +63,11 @@ import {
 } from "../../features/process/bpmn/context-menu/resolveBpmnContextMenuTarget";
 import { shouldOpenBpmnContextMenu } from "../../features/process/bpmn/context-menu/shouldOpenBpmnContextMenu";
 import { createBpmnContextMenuActionExecutor } from "../../features/process/bpmn/context-menu/executeBpmnContextMenuAction";
+import {
+  canCopyBpmnElement,
+  copyBpmnElementToClipboard,
+  hasCopiedBpmnElementSnapshot,
+} from "../../features/process/bpmn/copy-paste/bpmnElementClipboard";
 
 import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-js.css";
@@ -81,6 +87,21 @@ function asObject(x) {
 
 function toText(v) {
   return String(v || "").trim();
+}
+
+function cloneJsonValue(value) {
+  if (value === null || value === undefined) return value;
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return value;
+  }
+}
+
+function isEditableKeyTarget(target) {
+  const tag = String(target?.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "textarea" || tag === "select") return true;
+  return String(target?.getAttribute?.("contenteditable") || "").toLowerCase() === "true";
 }
 
 function invalidateShapeTitleLookup(registry) {
@@ -2100,6 +2121,82 @@ const BpmnStage = forwardRef(function BpmnStage({
     return normalizeCamundaExtensionsMap(meta.camunda_extensions_by_element_id);
   }
 
+  function resolveSourceCamundaExtensionState(elementIdRaw, draftLike = null) {
+    const elementId = toText(elementIdRaw);
+    if (!elementId) return null;
+    const draftValue = asObject(draftLike || draftRef.current);
+    const currentMeta = asObject(draftValue.bpmn_meta);
+    const currentMap = normalizeCamundaExtensionsMap(currentMeta?.camunda_extensions_by_element_id);
+    if (currentMap[elementId]) return currentMap[elementId];
+    const draftXml = String(draftValue?.bpmn_xml || "");
+    if (!draftXml) return null;
+    const extractedMap = normalizeCamundaExtensionsMap(extractCamundaExtensionsMapFromBpmnXml(draftXml));
+    return extractedMap[elementId] || null;
+  }
+
+  function resolveCamundaStateFromSemanticPayload(payloadRaw) {
+    const payload = asObject(payloadRaw);
+    const extensionElements = asObject(payload.extensionElements);
+    const values = asArray(extensionElements.values);
+    if (!values.length) return null;
+    const extensionProperties = [];
+    const extensionListeners = [];
+    values.forEach((entryRaw) => {
+      const entry = asObject(entryRaw);
+      const type = toText(entry?.$type || entry?.type).toLowerCase();
+      if (type === "camunda:properties") {
+        asArray(entry.values).forEach((itemRaw) => {
+          const item = asObject(itemRaw);
+          const name = toText(item?.name);
+          if (!name) return;
+          extensionProperties.push({
+            name,
+            value: String(item?.value ?? ""),
+          });
+        });
+        return;
+      }
+      if (type !== "camunda:executionlistener") return;
+      const event = toText(entry?.event);
+      const classValue = toText(entry?.class);
+      const expressionValue = toText(entry?.expression);
+      const delegateExpressionValue = toText(entry?.delegateExpression);
+      if (event && classValue) {
+        extensionListeners.push({ event, type: "class", value: classValue });
+        return;
+      }
+      if (event && expressionValue) {
+        extensionListeners.push({ event, type: "expression", value: expressionValue });
+        return;
+      }
+      if (event && delegateExpressionValue) {
+        extensionListeners.push({ event, type: "delegateExpression", value: delegateExpressionValue });
+      }
+    });
+    if (!extensionProperties.length && !extensionListeners.length) return null;
+    return normalizeCamundaExtensionState({
+      properties: {
+        extensionProperties,
+        extensionListeners,
+      },
+      preservedExtensionElements: [],
+    });
+  }
+
+  function buildCopyElementOptions({ inst = null, element = null } = {}) {
+    const activeInst = inst || modelerRef.current;
+    const elementId = toText(element?.id || element?.businessObject?.id);
+    if (activeInst) {
+      syncRobotMetaToModeler(activeInst);
+      syncCamundaExtensionsToModeler(activeInst, {
+        preserveManagedForElementIds: elementId ? [elementId] : [],
+      });
+    }
+    return {
+      camundaExtensionState: elementId ? resolveSourceCamundaExtensionState(elementId) : null,
+    };
+  }
+
   function transformPersistedXml(xmlText) {
     return finalizeCamundaExtensionsXml({
       xmlText,
@@ -2370,6 +2467,85 @@ const BpmnStage = forwardRef(function BpmnStage({
     return { ok: true, adopted: true, extractedCount: Object.keys(extractedMap).length };
   }
 
+  function cloneCompanionStateForCopiedElement({
+    sourceElementId: sourceElementIdRaw,
+    targetElementId: targetElementIdRaw,
+    semanticPayload: semanticPayloadRaw,
+    inst = null,
+  } = {}) {
+    const sourceElementId = toText(sourceElementIdRaw);
+    const targetElementId = toText(targetElementIdRaw);
+    if (!sourceElementId || !targetElementId || sourceElementId === targetElementId) {
+      return { ok: false, reason: "missing_target" };
+    }
+    const currentDraft = asObject(draftRef.current);
+    const currentMeta = asObject(currentDraft.bpmn_meta);
+    const robotMetaMap = normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id);
+    const camundaMap = normalizeCamundaExtensionsMap(currentMeta?.camunda_extensions_by_element_id);
+    const sourceCamundaState = camundaMap[sourceElementId]
+      || resolveSourceCamundaExtensionState(sourceElementId, currentDraft)
+      || resolveCamundaStateFromSemanticPayload(semanticPayloadRaw);
+
+    const nextRobotMeta = robotMetaMap[sourceElementId]
+      ? normalizeRobotMetaMap({
+          ...robotMetaMap,
+          [targetElementId]: cloneJsonValue(robotMetaMap[sourceElementId]),
+        })
+      : robotMetaMap;
+    const nextCamunda = sourceCamundaState
+      ? normalizeCamundaExtensionsMap({
+          ...camundaMap,
+          [targetElementId]: cloneJsonValue(sourceCamundaState),
+        })
+      : camundaMap;
+
+    const robotChanged = JSON.stringify(nextRobotMeta[targetElementId] || null)
+      !== JSON.stringify(robotMetaMap[targetElementId] || null);
+    const camundaChanged = JSON.stringify(nextCamunda[targetElementId] || null)
+      !== JSON.stringify(camundaMap[targetElementId] || null);
+    if (!robotChanged && !camundaChanged) {
+      return { ok: true, skipped: true, copiedRobotMeta: false, copiedCamunda: false };
+    }
+
+    const nextMeta = {
+      version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: normalizeFlowTierMetaMap(currentMeta?.flow_meta),
+      node_path_meta: normalizeNodePathMetaMap(currentMeta?.node_path_meta),
+      robot_meta_by_element_id: nextRobotMeta,
+      camunda_extensions_by_element_id: nextCamunda,
+      hybrid_layer_by_element_id: normalizeHybridLayerMap(currentMeta?.hybrid_layer_by_element_id),
+      hybrid_v2: currentMeta?.hybrid_v2,
+      drawio: currentMeta?.drawio,
+      execution_plans: normalizeExecutionPlanVersionList(currentMeta?.execution_plans),
+    };
+
+    draftRef.current = {
+      ...currentDraft,
+      bpmn_meta: nextMeta,
+    };
+    const sid = String(activeSessionRef.current || sessionId || "").trim();
+    if (sid) {
+      onSessionSyncRef.current?.({
+        id: sid,
+        session_id: sid,
+        bpmn_meta: nextMeta,
+        _sync_source: "bpmn_copy_paste_companion_clone",
+      });
+    }
+
+    const activeInst = inst || modelerRef.current;
+    if (activeInst) {
+      if (robotChanged) syncRobotMetaToModeler(activeInst);
+      if (camundaChanged) {
+        syncCamundaExtensionsToModeler(activeInst, {
+          preserveManagedForElementIds: [targetElementId],
+        });
+      }
+    }
+
+    return { ok: true, copiedRobotMeta: robotChanged, copiedCamunda: camundaChanged };
+  }
+
   function isAiQuestionsModeOn() {
     return !!aiQuestionsModeEnabledRef.current;
   }
@@ -2622,12 +2798,16 @@ const BpmnStage = forwardRef(function BpmnStage({
     emitDiagramMutation,
     emitElementSelection,
     buildInsertBetweenCandidate,
+    cloneCompanionStateForCopiedElement,
+    buildCopyElementOptions,
   }), [
     modelerRef,
     ensureModeler,
     emitDiagramMutation,
     emitElementSelection,
     buildInsertBetweenCandidate,
+    cloneCompanionStateForCopiedElement,
+    buildCopyElementOptions,
   ]);
   function buildSettledSelectionFanoutSignature({ element, kind }) {
     const mode = kind === "editor" ? "editor" : "viewer";
@@ -4671,6 +4851,42 @@ const BpmnStage = forwardRef(function BpmnStage({
     return () => window.removeEventListener("keydown", onEsc);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onKeyDown = (event) => {
+      if (view !== "editor") return;
+      if (event?.defaultPrevented) return;
+      if (event?.repeat) return;
+      if (!(event?.ctrlKey || event?.metaKey) || event?.altKey) return;
+      if (isEditableKeyTarget(event?.target)) return;
+      const key = String(event?.key || "").toLowerCase();
+      if (key !== "c" && key !== "v") return;
+
+      const inst = modelerRef.current;
+      const currentSelection = asArray(inst?.get?.("selection")?.get?.());
+      const selectedElement = currentSelection[0] || null;
+
+      if (key === "c") {
+        if (!canCopyBpmnElement(selectedElement)) return;
+        event.preventDefault();
+        copyBpmnElementToClipboard(
+          selectedElement,
+          buildCopyElementOptions({ inst, element: selectedElement }),
+        );
+        return;
+      }
+
+      if (!hasCopiedBpmnElementSnapshot()) return;
+      event.preventDefault();
+      void Promise.resolve(executeDiagramContextAction({
+        actionId: "paste",
+        ...(selectedElement ? { target: { id: toText(selectedElement?.id) } } : {}),
+      }));
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [executeDiagramContextAction, view]);
 
   useEffect(() => {
     return () => {

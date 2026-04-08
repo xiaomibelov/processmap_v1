@@ -28,6 +28,8 @@ const ACTIONS_BY_KIND = Object.freeze({
     action("add_next_step", "Добавить следующий шаг", "actions"),
     action(ACTION_ID_UNDO, "Шаг назад", "history"),
     action(ACTION_ID_REDO, "Повторить отменённое действие", "history"),
+    action("copy_element", "Скопировать элемент", "service"),
+    action("paste", "Вставить рядом", "service"),
     action("copy_name", "Копировать имя", "service"),
     action("copy_id", "Копировать ID", "service"),
     action("delete", "Удалить", "destructive", { destructive: true }),
@@ -38,6 +40,8 @@ const ACTIONS_BY_KIND = Object.freeze({
     action("add_outgoing_branch", "Добавить исходящую ветку", "actions"),
     action(ACTION_ID_UNDO, "Шаг назад", "history"),
     action(ACTION_ID_REDO, "Повторить отменённое действие", "history"),
+    action("copy_element", "Скопировать элемент", "service"),
+    action("paste", "Вставить рядом", "service"),
     action("copy_name", "Копировать имя", "service"),
     action("copy_id", "Копировать ID", "service"),
     action("delete", "Удалить", "destructive", { destructive: true }),
@@ -48,6 +52,8 @@ const ACTIONS_BY_KIND = Object.freeze({
     action("add_next_step", "Добавить следующий шаг", "actions"),
     action(ACTION_ID_UNDO, "Шаг назад", "history"),
     action(ACTION_ID_REDO, "Повторить отменённое действие", "history"),
+    action("copy_element", "Скопировать элемент", "service"),
+    action("paste", "Вставить рядом", "service"),
     action("copy_name", "Копировать имя", "service"),
     action("copy_id", "Копировать ID", "service"),
     action("delete", "Удалить", "destructive", { destructive: true }),
@@ -57,6 +63,8 @@ const ACTIONS_BY_KIND = Object.freeze({
     action("open_properties", "Открыть свойства", "actions"),
     action(ACTION_ID_UNDO, "Шаг назад", "history"),
     action(ACTION_ID_REDO, "Повторить отменённое действие", "history"),
+    action("copy_element", "Скопировать элемент", "service"),
+    action("paste", "Вставить рядом", "service"),
     action("copy_name", "Копировать имя", "service"),
     action("copy_id", "Копировать ID", "service"),
     action("delete", "Удалить", "destructive", { destructive: true }),
@@ -67,6 +75,8 @@ const ACTIONS_BY_KIND = Object.freeze({
     action("add_next_step", "Добавить следующий шаг", "actions"),
     action(ACTION_ID_UNDO, "Шаг назад", "history"),
     action(ACTION_ID_REDO, "Повторить отменённое действие", "history"),
+    action("copy_element", "Скопировать элемент", "service"),
+    action("paste", "Вставить рядом", "service"),
     action("copy_name", "Копировать имя", "service"),
     action("copy_id", "Копировать ID", "service"),
     action("delete", "Удалить", "destructive", { destructive: true }),
@@ -81,6 +91,8 @@ const ACTIONS_BY_KIND = Object.freeze({
   generic_element: [
     action(ACTION_ID_UNDO, "Шаг назад", "history"),
     action(ACTION_ID_REDO, "Повторить отменённое действие", "history"),
+    action("copy_element", "Скопировать элемент", "service"),
+    action("paste", "Вставить рядом", "service"),
     action("copy_id", "Копировать ID", "service"),
   ],
 });
@@ -90,4 +102,3 @@ export function readContextMenuSchemaByKind(kindRaw) {
   const schema = Array.isArray(ACTIONS_BY_KIND[kind]) ? ACTIONS_BY_KIND[kind] : [];
   return schema.map((item) => ({ ...item }));
 }
-
