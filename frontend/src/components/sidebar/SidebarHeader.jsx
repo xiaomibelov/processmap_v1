@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import AppRouteLink from "../navigation/AppRouteLink";
+import { buildAppWorkspaceHref } from "../../features/navigation/appLinkBehavior";
 
 async function copyText(value) {
   const text = String(value || "").trim();
@@ -16,6 +18,7 @@ async function copyText(value) {
 export default function SidebarHeader({
   processTitle,
   projectTitle,
+  projectId,
   sessionTitle,
   sessionId,
   onProjectBreadcrumbClick,
@@ -31,6 +34,8 @@ export default function SidebarHeader({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
   const buttonRef = useRef(null);
+  const projectHref = buildAppWorkspaceHref({ projectId });
+  const sessionHref = buildAppWorkspaceHref({ projectId, sessionId });
 
   useEffect(() => {
     if (!menuOpen) return undefined;
@@ -117,23 +122,23 @@ export default function SidebarHeader({
       </div>
 
       <div className="sidebarBreadcrumbRow">
-        <button
-          type="button"
+        <AppRouteLink
           className="sidebarBreadcrumbBtn"
+          href={projectHref}
           title={projectTitle || "Проект"}
-          onClick={() => onProjectBreadcrumbClick?.()}
+          onNavigate={() => onProjectBreadcrumbClick?.()}
         >
           {projectTitle || "Проект"}
-        </button>
+        </AppRouteLink>
         <span className="sidebarBreadcrumbSep">/</span>
-        <button
-          type="button"
+        <AppRouteLink
           className="sidebarBreadcrumbBtn"
+          href={sessionHref}
           title={sessionTitle || sessionId || "Сессия"}
-          onClick={() => onSessionBreadcrumbClick?.()}
+          onNavigate={() => onSessionBreadcrumbClick?.()}
         >
           {sessionTitle || sessionId || "Сессия"}
-        </button>
+        </AppRouteLink>
         <span className="sidebarBreadcrumbSep">/</span>
         <button
           type="button"
