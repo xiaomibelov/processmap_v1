@@ -135,6 +135,77 @@ test("paste clipboard snapshot creates new shape and rehydrates semantic payload
   assert.equal(created[0].businessObject.pmCustomFlag, "flag-1");
 });
 
+test("collapsed subprocess paste creates businessObject id before createShape runs", () => {
+  resetBpmnElementClipboardForTests();
+  copyBpmnElementToClipboard({
+    id: "Activity_1",
+    type: "bpmn:SubProcess",
+    x: 100,
+    y: 120,
+    width: 180,
+    height: 120,
+    collapsed: true,
+    di: { isExpanded: false },
+    businessObject: {
+      $type: "bpmn:SubProcess",
+      name: "Collapsed copy",
+    },
+  });
+
+  const calls = [];
+  const result = pasteCopiedBpmnElementFromClipboard({
+    modeling: {
+      createShape(shapeLike, pos, parent) {
+        calls.push({
+          shapeId: shapeLike.id,
+          businessObjectId: shapeLike.businessObject?.id || "",
+          diId: shapeLike.di?.id || "",
+        });
+        return {
+          id: shapeLike.id || "Activity_2",
+          type: shapeLike.type,
+          x: pos.x,
+          y: pos.y,
+          width: shapeLike.width,
+          height: shapeLike.height,
+          parent,
+          collapsed: true,
+          businessObject: shapeLike.businessObject || { $type: shapeLike.type },
+          di: shapeLike.di || { id: "undefined_di", isExpanded: false },
+        };
+      },
+      updateLabel(element, name) {
+        element.businessObject.name = name;
+      },
+    },
+    elementFactory: {
+      _bpmnFactory: {
+        create(type) {
+          return { $type: type, id: "Activity_2" };
+        },
+      },
+      createShape(attrs) {
+        return {
+          ...attrs,
+          id: attrs.businessObject?.id || attrs.id,
+          di: attrs.businessObject?.id
+            ? { id: `${attrs.businessObject.id}_di`, isExpanded: false }
+            : { id: "undefined_di", isExpanded: false },
+        };
+      },
+    },
+    moddle: createMockModdle(),
+    parent: { id: "Process_1" },
+    point: { x: 300, y: 240 },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].businessObjectId, "Activity_2");
+  assert.equal(calls[0].shapeId, "Activity_2");
+  assert.equal(calls[0].diId, "Activity_2_di");
+});
+
 test("resolveBpmnPastePoint prefers nearby offset for selected target and falls back to snapshot source point", () => {
   resetBpmnElementClipboardForTests();
   copyBpmnElementToClipboard({
