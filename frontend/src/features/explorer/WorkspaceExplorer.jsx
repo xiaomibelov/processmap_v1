@@ -1057,6 +1057,7 @@ function ExplorerPane({
 function SessionRow({
   session,
   onOpen,
+  isOpening = false,
   onReload,
   onSessionPatched,
   canRename = false,
@@ -1073,6 +1074,7 @@ function SessionRow({
   }, [session.status]);
 
   function handleRowOpen(event) {
+    if (isOpening) return;
     const target = event?.target;
     if (target instanceof Element && target.closest("a[href],button,select,input,textarea,label,[data-stop-row-open='1']")) {
       return;
@@ -1086,14 +1088,19 @@ function SessionRow({
   });
   return (
     <>
-      <tr className="group hover:bg-accentSoft/30 transition-colors cursor-pointer" onClick={handleRowOpen}>
+      <tr
+        className={`group transition-colors cursor-pointer ${isOpening ? "bg-accentSoft/20" : "hover:bg-accentSoft/30"}`}
+        onClick={handleRowOpen}
+        aria-busy={isOpening ? "true" : undefined}
+      >
         <td className="px-3 py-2.5 w-5"><IcoSession className="text-muted" /></td>
         <td className="px-2 py-2.5 text-sm font-medium text-fg">
           <AppRouteLink
-            className="block min-w-0 truncate hover:underline"
+            className={`block min-w-0 truncate ${isOpening ? "cursor-progress text-muted" : "hover:underline"}`}
             href={sessionHref}
             onNavigate={() => onOpen(session)}
             title={session.name}
+            aria-busy={isOpening ? "true" : undefined}
           >
             {session.name}
           </AppRouteLink>
@@ -1145,11 +1152,19 @@ function SessionRow({
         <td className="px-2 py-2.5 text-right">
           <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
             <AppRouteLink
-              className="primaryBtn h-7 px-3 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+              className={`primaryBtn h-7 px-3 text-xs transition-opacity ${isOpening ? "opacity-100 cursor-progress" : "opacity-0 group-hover:opacity-100"}`}
               href={sessionHref}
               onNavigate={() => onOpen(session)}
+              aria-busy={isOpening ? "true" : undefined}
             >
-              Открыть →
+              {isOpening ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <IcoSpinner className="animate-spin" />
+                  Открывается...
+                </span>
+              ) : (
+                "Открыть →"
+              )}
             </AppRouteLink>
             {(canRename || canDelete) ? (
               <div className="relative">
@@ -1217,6 +1232,8 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
+  const [openingSessionId, setOpeningSessionId] = useState("");
+  const openingSessionIdRef = useRef("");
 
   const load = useCallback(async () => {
     if (!workspaceId || !projectId) return;
@@ -1234,6 +1251,10 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   }, [workspaceId, projectId]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    openingSessionIdRef.current = "";
+    setOpeningSessionId("");
+  }, [projectId]);
 
   const handleSessionPatched = useCallback((sessionId, patch = {}) => {
     const sid = String(sessionId || "").trim();
@@ -1258,6 +1279,22 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   const proj = page?.project;
   const sessions = page?.sessions || [];
   const isEmpty = !loading && !error && sessions.length === 0;
+  const handleOpenSessionRequest = useCallback(async (sessionLike) => {
+    const row = sessionLike && typeof sessionLike === "object" ? sessionLike : {};
+    const sid = String(row?.id || row?.session_id || "").trim();
+    if (!sid) return;
+    if (openingSessionIdRef.current) return;
+    openingSessionIdRef.current = sid;
+    setOpeningSessionId(sid);
+    try {
+      await onOpenSession?.(sessionLike);
+    } finally {
+      if (openingSessionIdRef.current === sid) {
+        openingSessionIdRef.current = "";
+        setOpeningSessionId((prev) => (prev === sid ? "" : prev));
+      }
+    }
+  }, [onOpenSession]);
 
   const backCrumbs = breadcrumbBase || [];
 
@@ -1362,7 +1399,8 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                 <SessionRow
                   key={s.id}
                   session={s}
-                  onOpen={(sess) => onOpenSession({
+                  isOpening={openingSessionId === String(s.id || s.session_id || "").trim()}
+                  onOpen={(sess) => handleOpenSessionRequest({
                     ...sess,
                     project_id: projectId,
                     workspace_id: workspaceId,
