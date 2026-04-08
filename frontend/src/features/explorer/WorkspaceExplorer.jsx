@@ -33,6 +33,8 @@ import {
 import { useAuth } from "../auth/AuthProvider.jsx";
 import { buildVisibleRows, hasFolderChildren } from "./work3TreeState.js";
 import { useWorkspaceExplorerController } from "./useWorkspaceExplorerController.js";
+import AppRouteLink from "../../components/navigation/AppRouteLink.jsx";
+import { buildAppWorkspaceHref } from "../navigation/appLinkBehavior.js";
 
 // ─── Icons (inline SVG to avoid external deps) ────────────────────────────────
 function IcoFolder({ open = false, className = "" }) {
@@ -1071,6 +1073,10 @@ function SessionRow({
     }
     onOpen(session);
   }
+  const sessionHref = buildAppWorkspaceHref({
+    projectId: session?.project_id,
+    sessionId: session?.id || session?.session_id,
+  });
   return (
     <>
       <tr className="group hover:bg-accentSoft/30 transition-colors cursor-pointer" onClick={handleRowOpen}>
@@ -1122,12 +1128,13 @@ function SessionRow({
         <td className="px-2 py-2.5 text-xs text-muted text-right">{ts(session.updated_at)}</td>
         <td className="px-2 py-2.5 text-right">
           <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-            <button
-              onClick={() => onOpen(session)}
+            <AppRouteLink
               className="primaryBtn h-7 px-3 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+              href={sessionHref}
+              onNavigate={() => onOpen(session)}
             >
               Открыть →
-            </button>
+            </AppRouteLink>
             {(canRename || canDelete) ? (
               <div className="relative">
                 <button
