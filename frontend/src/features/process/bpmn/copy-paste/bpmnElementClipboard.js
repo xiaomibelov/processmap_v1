@@ -418,9 +418,18 @@ function ensureCreatedDiagramElementId(element) {
   return setOptionalModdleId(created.di, nextDiagramId);
 }
 
+function resolveBusinessObjectFactory({ bpmnFactory = null, elementFactory = null, moddle = null } = {}) {
+  if (bpmnFactory && typeof bpmnFactory.create === "function") return bpmnFactory;
+  const fromElementFactory = elementFactory?._bpmnFactory;
+  if (fromElementFactory && typeof fromElementFactory.create === "function") return fromElementFactory;
+  if (moddle && typeof moddle.create === "function") return moddle;
+  return null;
+}
+
 export function pasteCopiedBpmnElementFromClipboard({
   modeling,
   elementFactory,
+  bpmnFactory = null,
   moddle = null,
   parent = null,
   point = null,
@@ -443,9 +452,12 @@ export function pasteCopiedBpmnElementFromClipboard({
   if (Number.isFinite(snapshot.width) && snapshot.width > 0) shapeAttrs.width = snapshot.width;
   if (Number.isFinite(snapshot.height) && snapshot.height > 0) shapeAttrs.height = snapshot.height;
   if (typeof snapshot.isExpanded === "boolean") shapeAttrs.isExpanded = snapshot.isExpanded;
-  if (moddle && typeof moddle.create === "function") {
+  const businessObjectFactory = resolveBusinessObjectFactory({ bpmnFactory, elementFactory, moddle });
+  if (businessObjectFactory && typeof businessObjectFactory.create === "function") {
     try {
-      shapeAttrs.businessObject = moddle.create(snapshot.type);
+      // Collapsed subprocess plane creation happens during shape.create, so the
+      // semantic BO must already have a stable id before we hand it to bpmn-js.
+      shapeAttrs.businessObject = businessObjectFactory.create(snapshot.type);
     } catch {
     }
   }
