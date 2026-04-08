@@ -36,6 +36,8 @@ test("task action matrix includes add_next_step and utility actions", () => {
     "add_next_step",
     "undo",
     "redo",
+    "copy_element",
+    "paste",
     "copy_name",
     "copy_id",
     "delete",
@@ -92,6 +94,8 @@ test("generic BPMN element falls back to utility actions", () => {
   assert.deepEqual(ids, [
     "undo",
     "redo",
+    "copy_element",
+    "paste",
     "copy_id",
   ]);
 });

@@ -10,6 +10,18 @@ import {
   TEMPLATE_PERSISTENT_FIELD_GROUPS,
   TEMPLATE_TRANSIENT_FIELD_GROUPS,
 } from "./templateSemanticPayload.js";
+import camundaModdleDescriptor from "../../../camunda/camundaModdleDescriptor.js";
+import pmModdleDescriptor from "../../../robotmeta/pmModdleDescriptor.js";
+
+async function importRealBpmnModdleOrSkip(t) {
+  try {
+    const mod = await import("bpmn-moddle");
+    return mod?.BpmnModdle || null;
+  } catch (error) {
+    t.skip(`bpmn-moddle unavailable in current runtime: ${String(error?.code || error?.message || error)}`);
+    return null;
+  }
+}
 
 function createMockModdle() {
   return {
@@ -52,6 +64,7 @@ test("serializeSupportedBusinessObjectPayload captures full supported semantic p
     incoming: [{ id: "Flow_1" }],
   };
   const payload = serializeSupportedBusinessObjectPayload(bo);
+  assert.equal(payload.documentation[0].$type, "bpmn:Documentation");
   assert.equal(payload.documentation[0].text, "doc");
   assert.equal(payload.extensionElements.values[0].$type, "camunda:Properties");
   assert.equal(payload.attrs["pm:state"], "ready");
@@ -153,6 +166,62 @@ test("rehydrateSupportedBusinessObjectPayload restores extensionElements from le
   assert.equal(bo.extensionElements?.values?.[0]?.$type, "camunda:Properties");
   assert.equal(bo.extensionElements?.values?.[0]?.values?.length, 4);
   assert.equal(bo.status, "ready");
+});
+
+test("semantic payload strips unsafe generic namespace artifacts and still round-trips safe camunda data", async (t) => {
+  const BpmnModdle = await importRealBpmnModdleOrSkip(t);
+  if (!BpmnModdle) return;
+  const moddle = new BpmnModdle({
+    camunda: camundaModdleDescriptor,
+    pm: pmModdleDescriptor,
+  });
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+  xmlns:pm="https://processmap.ru/schema/pm"
+  id="Definitions_1"
+  targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_1" isExecutable="false">
+    <bpmn:userTask id="Task_1" name="Source Task" pm:kind="robot">
+      <bpmn:documentation textFormat="text/plain">copy-doc-text</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:Properties>
+          <camunda:Property name="priority" value="high" />
+        </camunda:Properties>
+        <pm:RobotMeta system="sap" action="approve" />
+      </bpmn:extensionElements>
+    </bpmn:userTask>
+  </bpmn:process>
+</bpmn:definitions>`;
+  const { rootElement } = await moddle.fromXML(xml);
+  const task = rootElement.rootElements[0].flowElements[0];
+
+  const payload = serializeSupportedBusinessObjectPayload(task);
+  assert.equal(payload.documentation?.[0]?.$type, "bpmn:Documentation");
+  assert.equal(payload.documentation?.[0]?.text, "copy-doc-text");
+  assert.equal(payload.extensionElements?.values?.length, 1);
+  assert.equal(payload.extensionElements?.values?.[0]?.$type, "camunda:Properties");
+  assert.equal(payload.extensionElements?.values?.[0]?.values?.[0]?.value, "high");
+  assert.equal(payload.attrs?.["ns0:kind"], undefined);
+
+  const target = moddle.create("bpmn:UserTask", { id: "Task_2" });
+  rehydrateSupportedBusinessObjectPayload(target, payload, { moddle });
+  assert.equal(target.documentation?.[0]?.$type, "bpmn:Documentation");
+  assert.equal(target.documentation?.[0]?.text, "copy-doc-text");
+  assert.equal(target.extensionElements?.values?.[0]?.$type, "camunda:Properties");
+  assert.equal(target.extensionElements?.values?.[0]?.values?.[0]?.value, "high");
+
+  const defs = moddle.create("bpmn:Definitions", {
+    id: "Definitions_2",
+    targetNamespace: "http://bpmn.io/schema/bpmn",
+    rootElements: [moddle.create("bpmn:Process", { id: "Process_2", isExecutable: false, flowElements: [target] })],
+  });
+  const out = await moddle.toXML(defs, { format: true });
+  assert.equal(typeof out?.xml, "string");
+  assert.equal(/camunda:(Property|property)/.test(out.xml), true);
+  assert.equal(/name=["']priority["'][^>]*value=["']high["']/.test(out.xml), true);
+  assert.equal(out.xml.includes("ns0:"), false);
 });
 
 test("rehydrateSupportedBusinessObjectPayload applies namespaced attrs without nested $attrs regression", () => {
