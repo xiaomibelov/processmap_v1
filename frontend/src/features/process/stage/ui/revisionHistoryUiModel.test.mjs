@@ -45,8 +45,30 @@ test("resolveRevisionHistoryUiSnapshot uses latest version item as canonical rev
       id: "ver_6",
       revisionNumber: 6,
     },
+    latestVersionStatusRaw: "ready",
   });
   assert.equal(resolved.latestRevisionNumber, 6);
   assert.equal(resolved.latestRevisionId, "ver_6");
+  assert.equal(resolved.latestPublishedRevisionNumber, 6);
+  assert.equal(resolved.latestPublishedRevisionId, "ver_6");
+  assert.equal(resolved.latestPublishedRevisionStatus, "ready");
+  assert.equal(resolved.latestLedgerRevisionNumber, 1);
 });
 
+test("resolveRevisionHistoryUiSnapshot keeps companion ledger separate while authoritative head is still loading", () => {
+  const resolved = resolveRevisionHistoryUiSnapshot({
+    revisionHistorySnapshotRaw: {
+      latestRevisionNumber: 41,
+      latestRevisionId: "ledger_r41",
+      draftState: { isDraftAheadOfLatestRevision: false },
+    },
+    latestVersionItemRaw: null,
+    latestVersionStatusRaw: "loading",
+  });
+  assert.equal(resolved.latestRevisionNumber, 41);
+  assert.equal(resolved.latestPublishedRevisionNumber, 0);
+  assert.equal(resolved.latestPublishedRevisionStatus, "loading");
+  assert.equal(resolved.latestPublishedRevisionResolved, false);
+  assert.equal(resolved.latestLedgerRevisionNumber, 41);
+  assert.equal(resolved.latestLedgerRevisionId, "ledger_r41");
+});

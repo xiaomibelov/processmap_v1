@@ -12,6 +12,14 @@ function asObject(value) {
   return value && typeof value === "object" ? value : {};
 }
 
+function normalizePublishedRevisionStatus(value) {
+  const text = toText(value).toLowerCase();
+  if (text === "loading") return "loading";
+  if (text === "ready") return "ready";
+  if (text === "failed") return "failed";
+  return "idle";
+}
+
 function isLikelyEmail(value) {
   const text = toText(value);
   return !!text && text.includes("@") && !text.includes(" ");
@@ -103,23 +111,41 @@ export function formatRevisionAuthor(authorRaw = null) {
 export function resolveRevisionHistoryUiSnapshot({
   revisionHistorySnapshotRaw = null,
   latestVersionItemRaw = null,
+  latestVersionStatusRaw = "idle",
 } = {}) {
   const revisionHistorySnapshot = asObject(revisionHistorySnapshotRaw);
   const latestVersionItem = asObject(latestVersionItemRaw);
+  const latestPublishedRevisionStatus = normalizePublishedRevisionStatus(latestVersionStatusRaw);
+  const latestPublishedRevisionNumber = Math.max(
+    0,
+    toInt(latestVersionItem.revisionNumber || latestVersionItem.rev || latestVersionItem.version_number, 0),
+  );
+  const latestPublishedRevisionId = toText(
+    latestVersionItem.id
+    || latestVersionItem.revisionId,
+  );
+  const latestLedgerRevisionNumber = Math.max(
+    0,
+    toInt(revisionHistorySnapshot.latestRevisionNumber, 0),
+  );
+  const latestLedgerRevisionId = toText(revisionHistorySnapshot.latestRevisionId);
   const latestRevisionNumber = Math.max(
     0,
-    toInt(latestVersionItem.revisionNumber || latestVersionItem.rev || latestVersionItem.version_number, 0)
-    || toInt(revisionHistorySnapshot.latestRevisionNumber, 0),
+    latestPublishedRevisionNumber || latestLedgerRevisionNumber,
   );
   const latestRevisionId = toText(
-    latestVersionItem.id
-    || latestVersionItem.revisionId
-    || revisionHistorySnapshot.latestRevisionId,
+    latestPublishedRevisionId
+    || latestLedgerRevisionId,
   );
   return {
     ...revisionHistorySnapshot,
     latestRevisionNumber,
     latestRevisionId,
+    latestPublishedRevisionNumber,
+    latestPublishedRevisionId,
+    latestPublishedRevisionStatus,
+    latestPublishedRevisionResolved: latestPublishedRevisionStatus === "ready" || latestPublishedRevisionStatus === "failed",
+    latestLedgerRevisionNumber,
+    latestLedgerRevisionId,
   };
 }
-

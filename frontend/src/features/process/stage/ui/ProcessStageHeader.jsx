@@ -1,5 +1,6 @@
 import ProcessPanels from "./ProcessPanels";
 import { getFirstPickedFile } from "./fileInputEvent.js";
+import { resolvePublishedRevisionBadgeView } from "./revisionBadgePolicy.js";
 import { getPublishGitMirrorMeta } from "../../../../shared/publishGitMirrorStatus";
 
 export default function ProcessStageHeader({ view = {} }) {
@@ -42,6 +43,7 @@ export default function ProcessStageHeader({ view = {} }) {
   } = view;
   const latestRevisionNumber = Number(sessionRevisionHistorySnapshot?.latestRevisionNumber || 0);
   const hasPublishedRevision = latestRevisionNumber > 0;
+  const publishedRevisionBadge = resolvePublishedRevisionBadgeView(sessionRevisionHistorySnapshot);
   const draftAheadOfLatest = sessionRevisionHistorySnapshot?.draftState?.isDraftAheadOfLatestRevision === true;
   const draftStatusLabel = !hasPublishedRevision
     ? "Ревизий нет"
@@ -97,15 +99,13 @@ export default function ProcessStageHeader({ view = {} }) {
             )}
           {hasSession ? (
             <>
-              {latestRevisionNumber > 0 ? (
-                <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-latest-revision">
-                  r{latestRevisionNumber}
-                </span>
-              ) : (
-                <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-latest-revision-empty">
-                  R0
-                </span>
-              )}
+              <span
+                className="badge text-[11px] text-muted"
+                data-testid={publishedRevisionBadge.testId}
+                title={publishedRevisionBadge.title || undefined}
+              >
+                {publishedRevisionBadge.text}
+              </span>
               <span
                 className={`badge text-[11px] ${draftStatusTone}`}
                 data-testid="diagram-toolbar-draft-vs-latest"
