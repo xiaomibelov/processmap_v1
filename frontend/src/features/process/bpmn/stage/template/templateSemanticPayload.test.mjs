@@ -224,6 +224,44 @@ test("semantic payload strips unsafe generic namespace artifacts and still round
   assert.equal(out.xml.includes("ns0:"), false);
 });
 
+test("rehydrateSupportedBusinessObjectPayload restores unknown safe namespaced extension entries as generic moddle elements", async (t) => {
+  const BpmnModdle = await importRealBpmnModdleOrSkip(t);
+  if (!BpmnModdle) return;
+  const moddle = new BpmnModdle({
+    camunda: camundaModdleDescriptor,
+    pm: pmModdleDescriptor,
+  });
+  const target = moddle.create("bpmn:UserTask", { id: "Task_Unknown_Generic" });
+
+  rehydrateSupportedBusinessObjectPayload(target, {
+    extensionElements: {
+      $type: "bpmn:ExtensionElements",
+      values: [
+        { $type: "pm:UnknownMeta", foo: "bar" },
+      ],
+    },
+  }, { moddle });
+
+  const unknownEntry = target.extensionElements?.values?.[0];
+  assert.equal(unknownEntry?.$type, "pm:UnknownMeta");
+  assert.equal(unknownEntry?.$descriptor?.isGeneric, true);
+  assert.equal(unknownEntry?.foo, "bar");
+
+  const defs = moddle.create("bpmn:Definitions", {
+    id: "Definitions_Generic",
+    targetNamespace: "http://bpmn.io/schema/bpmn",
+    rootElements: [moddle.create("bpmn:Process", {
+      id: "Process_Generic",
+      isExecutable: false,
+      flowElements: [target],
+    })],
+  });
+  const out = await moddle.toXML(defs, { format: true });
+  assert.equal(typeof out?.xml, "string");
+  assert.equal(out.xml.includes("pm:UnknownMeta"), true);
+  assert.equal(out.xml.includes("foo=\"bar\""), true);
+});
+
 test("rehydrateSupportedBusinessObjectPayload applies namespaced attrs without nested $attrs regression", () => {
   const bo = {
     id: "Task_C",

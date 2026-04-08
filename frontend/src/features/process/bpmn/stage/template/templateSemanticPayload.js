@@ -68,6 +68,13 @@ const DEEP_EXCLUDED_KEYS = new Set([
   "participants",
 ]);
 
+const GENERIC_NAMESPACE_URI_BY_PREFIX = Object.freeze({
+  bpmn: "http://www.omg.org/spec/BPMN/20100524/MODEL",
+  camunda: "http://camunda.org/schema/1.0/bpmn",
+  zeebe: "http://camunda.org/schema/zeebe/1.0",
+  pm: "http://processmap.ai/schema/bpmn/1.0",
+});
+
 export const TEMPLATE_PERSISTENT_FIELD_GROUPS = Object.freeze([
   "businessObject.documentation",
   "businessObject.extensionElements",
@@ -279,6 +286,26 @@ function hasNonEmptyObject(value) {
   return !!(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0);
 }
 
+function resolveGenericNamespaceUri(typeRaw) {
+  const type = toText(typeRaw);
+  if (!type.includes(":")) return "";
+  const prefix = toText(type.split(":")[0]).toLowerCase();
+  return GENERIC_NAMESPACE_URI_BY_PREFIX[prefix] || "";
+}
+
+function createGenericModdleValue(typeRaw, payloadRaw, moddle = null) {
+  const type = toText(typeRaw);
+  const payload = asObject(payloadRaw);
+  const namespaceUri = resolveGenericNamespaceUri(type);
+  if (!type || !namespaceUri) return null;
+  if (!moddle || typeof moddle.createAny !== "function") return null;
+  try {
+    return moddle.createAny(type, namespaceUri, payload);
+  } catch {
+    return null;
+  }
+}
+
 function mergeNormalizedSemanticPayload(primaryRaw, fallbackRaw) {
   const primary = asObject(primaryRaw);
   const fallback = asObject(fallbackRaw);
@@ -336,7 +363,9 @@ function restoreModdleValue(value, moddle = null) {
   if (value === null || value === undefined) return value;
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
   if (Array.isArray(value)) {
-    return value.map((item) => restoreModdleValue(item, moddle));
+    return value
+      .map((item) => restoreModdleValue(item, moddle))
+      .filter((item) => item !== undefined);
   }
   if (typeof value !== "object") return undefined;
   const raw = asObject(value);
@@ -352,6 +381,8 @@ function restoreModdleValue(value, moddle = null) {
     try {
       return moddle.create(type, payload);
     } catch {
+      const genericValue = createGenericModdleValue(type, payload, moddle);
+      if (genericValue) return genericValue;
       return { $type: type, ...payload };
     }
   }
