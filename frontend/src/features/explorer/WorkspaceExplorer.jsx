@@ -593,6 +593,7 @@ function ProjectRow({ project, depth = 0, onClick, onReload, canRename = false, 
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const leftPadding = 8 + depth * 18;
+  const projectHref = buildAppWorkspaceHref({ projectId: project?.id || project?.project_id });
   const menuItems = [
     { label: "Открыть", icon: <IcoChevron right />, action: () => onClick(project) },
     ...(canRename ? [{ label: "Переименовать", icon: <IcoEdit />, action: () => setRenaming(true) }] : []),
@@ -605,9 +606,14 @@ function ProjectRow({ project, depth = 0, onClick, onReload, canRename = false, 
           <div className="flex min-w-0 items-center gap-2" style={{ paddingLeft: `${leftPadding}px` }}>
             <span className="inline-flex h-6 w-6 shrink-0 rounded-md border border-transparent" aria-hidden />
             <IcoProject className="shrink-0 text-accent" />
-            <button className="block min-w-0 flex-1 truncate text-left hover:underline" onClick={() => onClick(project)} title={project.name}>
+            <AppRouteLink
+              className="block min-w-0 flex-1 truncate text-left hover:underline"
+              href={projectHref}
+              onNavigate={() => onClick(project)}
+              title={project.name}
+            >
               {project.name}
-            </button>
+            </AppRouteLink>
           </div>
         </td>
         <td className="px-2 py-2.5 text-xs text-muted">Проект</td>
@@ -1068,9 +1074,10 @@ function SessionRow({
 
   function handleRowOpen(event) {
     const target = event?.target;
-    if (target instanceof Element && target.closest("button,select,input,textarea,label,[data-stop-row-open='1']")) {
+    if (target instanceof Element && target.closest("a[href],button,select,input,textarea,label,[data-stop-row-open='1']")) {
       return;
     }
+    if (!shouldHandleClientNavigation(event)) return;
     onOpen(session);
   }
   const sessionHref = buildAppWorkspaceHref({
@@ -1081,7 +1088,16 @@ function SessionRow({
     <>
       <tr className="group hover:bg-accentSoft/30 transition-colors cursor-pointer" onClick={handleRowOpen}>
         <td className="px-3 py-2.5 w-5"><IcoSession className="text-muted" /></td>
-        <td className="px-2 py-2.5 text-sm font-medium text-fg">{session.name}</td>
+        <td className="px-2 py-2.5 text-sm font-medium text-fg">
+          <AppRouteLink
+            className="block min-w-0 truncate hover:underline"
+            href={sessionHref}
+            onNavigate={() => onOpen(session)}
+            title={session.name}
+          >
+            {session.name}
+          </AppRouteLink>
+        </td>
         <td className="px-2 py-2.5">
           {canChangeStatus ? (
             <select
