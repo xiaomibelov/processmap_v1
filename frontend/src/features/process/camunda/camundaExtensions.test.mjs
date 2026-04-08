@@ -195,6 +195,30 @@ test("import parser reads zeebe:properties into internal extensionProperties", (
   );
 }));
 
+test("import parser treats uppercase camunda:Properties tags as managed properties instead of preserved raw fragments", () => withDom(() => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+  <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+    xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+    id="Defs_1" targetNamespace="http://bpmn.io/schema/bpmn">
+    <bpmn:process id="Process_1" isExecutable="true">
+      <bpmn:userTask id="Task_1">
+        <bpmn:extensionElements>
+          <camunda:Properties>
+            <camunda:Property name="priority" value="high" />
+          </camunda:Properties>
+        </bpmn:extensionElements>
+      </bpmn:userTask>
+    </bpmn:process>
+  </bpmn:definitions>`;
+  const extracted = extractCamundaExtensionsMapFromBpmnXml(xml);
+  const state = normalizeCamundaExtensionState(extracted.Task_1);
+  assert.deepEqual(
+    state.properties.extensionProperties.map((item) => ({ name: item.name, value: item.value })),
+    [{ name: "priority", value: "high" }],
+  );
+  assert.deepEqual(state.preservedExtensionElements, []);
+}));
+
 test("import parser reads camunda:executionListener type mapping", () => withDom(() => {
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
   <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"

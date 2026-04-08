@@ -97,6 +97,7 @@ function cloneSerializableDeep(value, seen = new WeakSet()) {
   seen.add(value);
   const out = {};
   Object.keys(value).forEach((key) => {
+    if (key.startsWith("$")) return;
     if (DEEP_EXCLUDED_KEYS.has(key)) return;
     const item = value[key];
     if (typeof item === "function") return;
@@ -133,6 +134,87 @@ function normalizeBusinessObjectAttrs(value) {
   };
   delete merged.$attrs;
   return merged;
+}
+
+function isUnsafeGenericNamespaceKey(keyRaw) {
+  const key = toText(keyRaw);
+  if (!key) return false;
+  return /^ns\d+:/i.test(key);
+}
+
+function isSafeNamespacedKey(keyRaw) {
+  const key = toText(keyRaw);
+  if (!key) return false;
+  if (!key.includes(":")) return true;
+  return /^(bpmn|camunda|zeebe|pm):/i.test(key);
+}
+
+function sanitizeBusinessObjectAttrs(value) {
+  const attrs = normalizeBusinessObjectAttrs(value);
+  const out = {};
+  Object.keys(attrs).forEach((key) => {
+    if (!key) return;
+    if (isUnsafeGenericNamespaceKey(key)) return;
+    if (!isSafeNamespacedKey(key)) return;
+    out[key] = attrs[key];
+  });
+  return out;
+}
+
+function sanitizeDocumentationPayload(valueRaw) {
+  const items = Array.isArray(valueRaw) ? valueRaw : [];
+  const nextItems = items
+    .map((itemRaw) => {
+      const item = asObject(itemRaw);
+      const text = Object.prototype.hasOwnProperty.call(item, "text")
+        ? String(item.text ?? "")
+        : "";
+      const textFormat = Object.prototype.hasOwnProperty.call(item, "textFormat")
+        ? String(item.textFormat ?? "")
+        : "";
+      const out = {
+        $type: "bpmn:Documentation",
+        text,
+      };
+      if (textFormat) out.textFormat = textFormat;
+      return out;
+    })
+    .filter((item) => item.text || item.textFormat);
+  return nextItems.length ? nextItems : undefined;
+}
+
+function sanitizeExtensionElementsPayload(valueRaw) {
+  const value = asObject(valueRaw);
+  if (!hasOwnKeys(value)) return undefined;
+  const out = {};
+  if (toText(value.$type)) out.$type = toText(value.$type);
+  if (Array.isArray(value.values)) {
+    const nextValues = value.values
+      .map((entryRaw) => sanitizeExtensionEntryPayload(entryRaw))
+      .filter(Boolean);
+    if (nextValues.length) out.values = nextValues;
+  }
+  return hasOwnKeys(out) ? out : undefined;
+}
+
+function sanitizeExtensionEntryPayload(entryRaw) {
+  const entry = asObject(entryRaw);
+  const type = toText(entry.$type || entry.type);
+  if (!type) return undefined;
+  if (isUnsafeGenericNamespaceKey(type)) return undefined;
+  if (!isSafeNamespacedKey(type)) return undefined;
+  const cloned = cloneSerializableDeep(entry);
+  if (!cloned || typeof cloned !== "object") return undefined;
+  cloned.$type = type;
+  if (Array.isArray(entry.values)) {
+    cloned.values = entry.values
+      .map((itemRaw) => sanitizeExtensionEntryPayload(itemRaw))
+      .filter(Boolean);
+    if (!cloned.values.length && /:properties$/i.test(type)) {
+      return undefined;
+    }
+  }
+  return cloned;
 }
 
 function readPayloadObjectCandidate(payloadRaw, customRaw, keys = []) {
@@ -263,6 +345,7 @@ function restoreModdleValue(value, moddle = null) {
     const payload = {};
     Object.keys(raw).forEach((key) => {
       if (key === "$type") return;
+      if (key.startsWith("$")) return;
       if (DEEP_EXCLUDED_KEYS.has(key)) return;
       payload[key] = restoreModdleValue(raw[key], moddle);
     });
@@ -274,6 +357,7 @@ function restoreModdleValue(value, moddle = null) {
   }
   const out = {};
   Object.keys(raw).forEach((key) => {
+    if (key.startsWith("$")) return;
     if (DEEP_EXCLUDED_KEYS.has(key)) return;
     out[key] = restoreModdleValue(raw[key], moddle);
   });
@@ -296,17 +380,17 @@ export function serializeSupportedBusinessObjectPayload(boRaw) {
   const bo = asObject(boRaw);
   const payload = {};
 
-  const documentation = cloneSerializableDeep(bo.documentation);
+  const documentation = sanitizeDocumentationPayload(bo.documentation);
   if (Array.isArray(documentation) && documentation.length) {
     payload.documentation = documentation;
   }
 
-  const extensionElements = cloneSerializableDeep(bo.extensionElements);
-  if (hasOwnKeys(extensionElements)) {
-    payload.extensionElements = extensionElements;
+  const sanitizedExtensionElements = sanitizeExtensionElementsPayload(bo.extensionElements);
+  if (hasOwnKeys(sanitizedExtensionElements)) {
+    payload.extensionElements = sanitizedExtensionElements;
   }
 
-  const attrs = cloneSerializableDeep(bo.$attrs);
+  const attrs = sanitizeBusinessObjectAttrs(cloneSerializableDeep(bo.$attrs));
   if (hasOwnKeys(attrs)) {
     payload.attrs = attrs;
   }
