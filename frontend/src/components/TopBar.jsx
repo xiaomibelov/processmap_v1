@@ -2,8 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import AiToolsModal from "./AiToolsModal";
 import { useAuth } from "../features/auth/AuthProvider";
 import { getManualSessionStatusMeta, MANUAL_SESSION_STATUSES } from "../features/workspace/workspacePermissions";
-import AppRouteLink from "./navigation/AppRouteLink";
-import { buildAppWorkspaceHref } from "../features/navigation/appLinkBehavior";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -108,8 +106,6 @@ export default function TopBar({
   const effectiveProjectId = toText(projectId || draftProjectId);
   const effectiveSessionId = toText(sessionId || draftSessionId);
   const hasActiveSession = effectiveSessionId.length > 0;
-  const workspaceHref = buildAppWorkspaceHref();
-  const projectHref = buildAppWorkspaceHref({ projectId: effectiveProjectId });
   const [uiTheme, setUiTheme] = useState("dark");
   const [aiToolsOpen, setAiToolsOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
@@ -315,15 +311,15 @@ export default function TopBar({
         >
           <span className="bg-gradient-to-r from-fg via-fg to-accent bg-clip-text text-transparent [text-shadow:0_1px_0_rgba(0,0,0,.14)]">ProcessMap</span>
         </div>
-        <AppRouteLink
+        <button
+          type="button"
           className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-3 py-0 text-sm"
-          href={hasActiveSession ? projectHref : workspaceHref}
-          onNavigate={() => onOpenWorkspace?.()}
+          onClick={() => onOpenWorkspace?.()}
           title={hasActiveSession ? "Вернуться к проекту" : "Вернуться к списку проектов"}
           data-testid="topbar-back-projects"
         >
           {hasActiveSession ? "← К проекту" : "← Проекты"}
-        </AppRouteLink>
+        </button>
       </div>
 
       <div className="topbarNavCenter flex min-w-0 flex-1 items-center justify-end gap-1.5 overflow-visible md:gap-2">
@@ -354,16 +350,16 @@ export default function TopBar({
                   className="absolute right-1 top-[calc(100%+8px)] z-[130] grid min-w-[220px] gap-1 rounded-xl border border-border bg-panel p-1.5 shadow-panel"
                   data-testid="topbar-project-actions-menu"
                 >
-                  <AppRouteLink
+                  <button
+                    type="button"
                     className="secondaryBtn h-9 w-full justify-start px-3 text-left text-sm"
-                    href={workspaceHref}
                     onClick={() => {
                       setProjectMenuOpen(false);
+                      onOpenWorkspace?.();
                     }}
-                    onNavigate={() => onOpenWorkspace?.()}
                   >
                     ← Проекты
-                  </AppRouteLink>
+                  </button>
                   <button
                     type="button"
                     className="secondaryBtn h-9 w-full justify-start px-3 text-left text-sm"
@@ -417,16 +413,16 @@ export default function TopBar({
                   className="absolute right-1 top-[calc(100%+8px)] z-[130] grid min-w-[220px] gap-1 rounded-xl border border-border bg-panel p-1.5 shadow-panel"
                   data-testid="topbar-session-actions-menu"
                 >
-                  <AppRouteLink
+                  <button
+                    type="button"
                     className="secondaryBtn h-9 w-full justify-start px-3 text-left text-sm"
-                    href={projectHref}
                     onClick={() => {
                       setSessionMenuOpen(false);
+                      onOpenWorkspace?.();
                     }}
-                    onNavigate={() => onOpenWorkspace?.()}
                   >
                     К списку сессий
-                  </AppRouteLink>
+                  </button>
                   {canManageProjectEntities ? (
                     <button
                       type="button"
