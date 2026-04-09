@@ -5616,6 +5616,7 @@ def session_bpmn_versions_list(
         str(getattr(sess, "id", "") or session_id),
         org_id=oid,
         limit=limit,
+        include_xml=include_xml_mode,
     )
     items: List[Dict[str, Any]] = []
     for row in rows:
@@ -5645,6 +5646,45 @@ def session_bpmn_versions_list(
         "session_id": str(getattr(sess, "id", "") or session_id),
         "count": len(items),
         "items": items,
+    }
+
+
+@app.get("/api/sessions/{session_id}/bpmn/versions/{version_id}")
+def session_bpmn_version_detail(session_id: str, version_id: str, request: Request = None) -> Dict[str, Any]:
+    sess, oid, _ = _legacy_load_session_scoped(session_id, request)
+    if not sess:
+        return {"error": "not found"}
+    st = get_storage()
+    row = st.get_bpmn_version(
+        str(getattr(sess, "id", "") or session_id),
+        version_id,
+        org_id=oid,
+    )
+    if not row:
+        return {"error": "bpmn_version_not_found", "version_id": str(version_id or "")}
+    created_at = int(row.get("created_at") or 0)
+    author = _build_bpmn_version_author(row.get("created_by"))
+    item = {
+        "id": str(row.get("id") or ""),
+        "session_id": str(row.get("session_id") or ""),
+        "version_number": int(row.get("version_number") or 0),
+        "source_action": str(row.get("source_action") or ""),
+        "import_note": str(row.get("import_note") or ""),
+        "created_at": created_at,
+        "created_at_ms": _to_epoch_ms(created_at),
+        "created_at_iso": _to_epoch_iso(created_at),
+        "created_by": str(row.get("created_by") or ""),
+        "author_id": author.get("id", ""),
+        "author_name": author.get("name", ""),
+        "author_email": author.get("email", ""),
+        "author_display": author.get("display_name", ""),
+        "author": author,
+        "bpmn_xml": str(row.get("bpmn_xml") or ""),
+    }
+    return {
+        "ok": True,
+        "session_id": str(getattr(sess, "id", "") or session_id),
+        "item": item,
     }
 
 

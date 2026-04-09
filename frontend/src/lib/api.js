@@ -714,6 +714,24 @@ export async function apiGetBpmnVersions(sessionId, options = {}) {
   };
 }
 
+export async function apiGetBpmnVersion(sessionId, versionId) {
+  const sid = String(sessionId || "").trim();
+  const vid = String(versionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  if (!vid) return { ok: false, status: 0, error: "missing version_id" };
+  const r = okOrError(await request(apiRoutes.sessions.bpmnVersion(sid, vid)));
+  if (!r.ok) return r;
+  const payload = r.data && typeof r.data === "object" ? r.data : {};
+  const item = payload.item && typeof payload.item === "object" ? payload.item : {};
+  return {
+    ok: true,
+    status: r.status,
+    item,
+    version: item,
+    session_id: String(payload.session_id || sid),
+  };
+}
+
 export async function apiRestoreBpmnVersion(sessionId, versionId) {
   const sid = String(sessionId || "").trim();
   const vid = String(versionId || "").trim();

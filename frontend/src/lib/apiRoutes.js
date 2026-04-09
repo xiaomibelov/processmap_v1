@@ -118,6 +118,7 @@ export const apiRoutes = {
       limit: String(options?.limit || "").trim(),
       include_xml: options?.includeXml === true ? "1" : "",
     }),
+    bpmnVersion: (sessionId, versionId) => `/api/sessions/${encode(sessionId)}/bpmn/versions/${encode(versionId)}`,
     bpmnRestore: (sessionId, versionId) => `/api/sessions/${encode(sessionId)}/bpmn/restore/${encode(versionId)}`,
     bpmnMeta: (sessionId) => `/api/sessions/${encode(sessionId)}/bpmn_meta`,
     inferRtiers: (sessionId) => `/api/sessions/${encode(sessionId)}/bpmn_meta/infer_rtiers`,
