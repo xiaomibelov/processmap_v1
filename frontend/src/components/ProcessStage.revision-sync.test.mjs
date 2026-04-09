@@ -22,3 +22,13 @@ test("manual save forwards explicit publish intent for backend version snapshots
   assert.equal(source.includes("authoritativeRevision: backendVersionSnapshot"), true);
   assert.equal(source.includes("Сохранено и опубликовано как r${backendRevisionNumber}."), true);
 });
+
+test("versions modal first load is headers-only and XML is loaded lazily", () => {
+  const source = fs.readFileSync(path.join(__dirname, "ProcessStage.jsx"), "utf8");
+  assert.equal(source.includes("const BPMN_VERSION_HEADERS_LIMIT = 50;"), true);
+  assert.equal(source.includes("await refreshSnapshotVersions({ includeXml: false, limit: BPMN_VERSION_HEADERS_LIMIT });"), true);
+  assert.equal(source.includes("apiGetBpmnVersion"), true);
+  assert.equal(source.includes("const ensureBpmnVersionXml = useCallback"), true);
+  assert.equal(source.includes("setVersionsLoadState(\"loading\")"), true);
+  assert.equal(source.includes("setVersionsLoadState(asArray(list).length > 0 ? \"ready\" : \"empty\")"), true);
+});

@@ -43,6 +43,8 @@ export default function ProcessDialogs({ view = {} }) {
     versionsBusy,
     hasSession,
     versionsList,
+    versionsLoadState,
+    versionsLoadError,
     setGenErr,
     setDiffTargetSnapshotId,
     setDiffBaseSnapshotId,
@@ -50,6 +52,7 @@ export default function ProcessDialogs({ view = {} }) {
     clearSnapshotHistory,
     previewSnapshotId,
     setPreviewSnapshotId,
+    previewSnapshotVersion,
     formatSnapshotTs,
     snapshotLabel,
     shortSnapshotHash,
@@ -251,10 +254,27 @@ export default function ProcessDialogs({ view = {} }) {
             <div className="mb-2 px-1 text-xs text-muted" data-testid="bpmn-versions-count">
               Последние версии: {versionsList.length}
               <span> · последняя: r{Number(asArray(versionsList)[0]?.revisionNumber || 0)}</span>
+              <div className="mt-1 text-[11px] text-muted">
+                Текущий BPMN сохраняется отдельно от ревизий. Пустая история не означает, что черновик не сохранён.
+              </div>
             </div>
             <div className="max-h-[52vh] space-y-2 overflow-auto pr-1">
-              {versionsList.length === 0 ? (
-                <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted">История пуста.</div>
+              {versionsLoadState === "loading" ? (
+                <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted" data-testid="bpmn-versions-loading">
+                  Загружаем историю ревизий...
+                </div>
+              ) : versionsLoadState === "failed" ? (
+                <div className="rounded-lg border border-red-500/35 bg-red-500/10 px-3 py-2 text-sm text-red-200" data-testid="bpmn-versions-error">
+                  Не удалось загрузить историю ревизий: {String(versionsLoadError || "ошибка загрузки")}
+                </div>
+              ) : versionsLoadState === "empty" || (versionsLoadState === "ready" && versionsList.length === 0) ? (
+                <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted" data-testid="bpmn-versions-empty">
+                  Ревизий пока нет. Текущий BPMN может быть сохранён как черновик; ревизия создаётся отдельным действием.
+                </div>
+              ) : versionsList.length === 0 ? (
+                <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted" data-testid="bpmn-versions-idle">
+                  История ревизий ещё не загружена.
+                </div>
               ) : (
                 versionsList.map((item) => {
                   const id = String(item?.id || "");
@@ -299,18 +319,18 @@ export default function ProcessDialogs({ view = {} }) {
                         <button
                           type="button"
                           className="secondaryBtn h-7 px-2 text-[11px]"
-                          onClick={() => setPreviewSnapshotId(id)}
+                          onClick={() => void (previewSnapshotVersion ? previewSnapshotVersion(item) : setPreviewSnapshotId(id))}
                           data-testid="bpmn-version-preview"
                         >
                           Предпросмотр XML
                         </button>
-                        <button type="button" className="secondaryBtn h-7 px-2 text-[11px]" onClick={() => downloadSnapshot(item)}>
+                        <button type="button" className="secondaryBtn h-7 px-2 text-[11px]" onClick={() => void downloadSnapshot(item)}>
                           Скачать .bpmn
                         </button>
                         <button
                           type="button"
                           className="secondaryBtn h-7 px-2 text-[11px]"
-                          onClick={() => openDiffForSnapshot(item)}
+                          onClick={() => void openDiffForSnapshot(item)}
                           disabled={versionsBusy || versionsList.length < 2}
                           data-testid="bpmn-version-diff"
                         >
@@ -337,12 +357,18 @@ export default function ProcessDialogs({ view = {} }) {
               {previewSnapshot ? `XML предпросмотр · ${formatSnapshotTs(previewSnapshot.ts)}` : "Выберите версию слева"}
             </div>
             <div className="min-h-0 flex-1 p-3">
-              <textarea
-                className="xmlEditorTextarea h-full min-h-[44vh] w-full"
-                value={String(previewSnapshot?.xml || "")}
-                readOnly
-                data-testid="bpmn-version-preview-xml"
-              />
+              {previewSnapshot && !String(previewSnapshot?.xml || "").trim() ? (
+                <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted" data-testid="bpmn-version-preview-lazy">
+                  XML этой ревизии подгружается по требованию. Нажмите «Предпросмотр XML», если загрузка ещё не началась.
+                </div>
+              ) : (
+                <textarea
+                  className="xmlEditorTextarea h-full min-h-[44vh] w-full"
+                  value={String(previewSnapshot?.xml || "")}
+                  readOnly
+                  data-testid="bpmn-version-preview-xml"
+                />
+              )}
             </div>
           </div>
         </div>

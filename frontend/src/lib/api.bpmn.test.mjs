@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { apiGetBpmnVersions, apiPutBpmnXml, apiRestoreBpmnVersion } from "./api.js";
+import { apiGetBpmnVersion, apiGetBpmnVersions, apiPutBpmnXml, apiRestoreBpmnVersion } from "./api.js";
 
 test("apiPutBpmnXml sends source_action import_bpmn for explicit import reason", async () => {
   const prevFetch = globalThis.fetch;
@@ -113,6 +113,60 @@ test("apiGetBpmnVersions reads backend list and include_xml query", async () => 
     assert.equal(out.count, 1);
     assert.equal(out.versions[0]?.id, "v1");
     assert.match(calls[0], /\/api\/sessions\/sess_1\/bpmn\/versions\?limit=20&include_xml=1$/);
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
+});
+
+test("apiGetBpmnVersions defaults to headers-only list without include_xml", async () => {
+  const prevFetch = globalThis.fetch;
+  const calls = [];
+  try {
+    globalThis.fetch = async (input) => {
+      calls.push(String(input || ""));
+      return new Response(JSON.stringify({
+        ok: true,
+        session_id: "sess_1",
+        count: 1,
+        items: [
+          { id: "v1", version_number: 4, source_action: "import_bpmn" },
+        ],
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    const out = await apiGetBpmnVersions("sess_1", { limit: 50 });
+    assert.equal(out.ok, true);
+    assert.equal(out.versions[0]?.bpmn_xml, undefined);
+    assert.equal(calls[0], "/api/sessions/sess_1/bpmn/versions?limit=50");
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
+});
+
+test("apiGetBpmnVersion lazily reads one version with xml payload", async () => {
+  const prevFetch = globalThis.fetch;
+  const calls = [];
+  try {
+    globalThis.fetch = async (input) => {
+      calls.push(String(input || ""));
+      return new Response(JSON.stringify({
+        ok: true,
+        session_id: "sess_1",
+        item: { id: "ver_2", version_number: 2, bpmn_xml: "<xml/>" },
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    const out = await apiGetBpmnVersion("sess_1", "ver_2");
+    assert.equal(out.ok, true);
+    assert.equal(out.item?.id, "ver_2");
+    assert.equal(out.item?.bpmn_xml, "<xml/>");
+    assert.equal(calls[0], "/api/sessions/sess_1/bpmn/versions/ver_2");
   } finally {
     globalThis.fetch = prevFetch;
   }
