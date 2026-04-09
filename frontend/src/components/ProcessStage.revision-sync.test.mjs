@@ -24,6 +24,8 @@ test("manual save forwards explicit publish intent for backend version snapshots
   assert.equal(source.includes('setLatestBpmnVersionHeadStatus("ready");'), true);
   assert.equal(source.includes("authoritativeRevision: backendVersionSnapshot"), true);
   assert.equal(source.includes("Опубликовано как версия R${backendRevisionNumber}."), true);
+  assert.equal(source.includes("} else if (publishInfo) {"), true);
+  assert.equal(source.includes("setInfoMsg(publishInfo);"), true);
   assert.equal(source.includes("Черновик сохранён."), true);
 });
 
