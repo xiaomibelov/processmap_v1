@@ -19,8 +19,12 @@ test("manual save forwards explicit publish intent for backend version snapshots
   const source = fs.readFileSync(path.join(__dirname, "ProcessStage.jsx"), "utf8");
   assert.equal(source.includes('persistReason: "publish_manual_save"'), true);
   assert.equal(source.includes("const backendVersionSnapshot = asObject(saved?.bpmnVersionSnapshot);"), true);
+  assert.equal(source.includes("const normalizedBackendVersionSnapshot = normalizeBpmnVersionListItem(backendVersionSnapshot);"), true);
+  assert.equal(source.includes("setLatestBpmnVersionHead(normalizedBackendVersionSnapshot);"), true);
+  assert.equal(source.includes('setLatestBpmnVersionHeadStatus("ready");'), true);
   assert.equal(source.includes("authoritativeRevision: backendVersionSnapshot"), true);
-  assert.equal(source.includes("Сохранено и опубликовано как r${backendRevisionNumber}."), true);
+  assert.equal(source.includes("Опубликовано как версия R${backendRevisionNumber}."), true);
+  assert.equal(source.includes("Черновик сохранён."), true);
 });
 
 test("versions modal first load is headers-only and XML is loaded lazily", () => {

@@ -950,7 +950,23 @@ export default function ProcessStage({
       let publishInfo = "";
       if (!saved?.pending) {
         const backendVersionSnapshot = asObject(saved?.bpmnVersionSnapshot);
-        const backendRevisionNumber = Number(backendVersionSnapshot.version_number || 0);
+        const normalizedBackendVersionSnapshot = normalizeBpmnVersionListItem(backendVersionSnapshot);
+        const backendRevisionNumber = Number(normalizedBackendVersionSnapshot.revisionNumber || 0);
+        if (backendRevisionNumber > 0) {
+          const backendVersionId = String(normalizedBackendVersionSnapshot.id || "").trim();
+          setLatestBpmnVersionHead(normalizedBackendVersionSnapshot);
+          setLatestBpmnVersionHeadStatus("ready");
+          setVersionsList((prev) => {
+            const current = asArray(prev);
+            const deduped = backendVersionId
+              ? current.filter((item) => String(item?.id || "").trim() !== backendVersionId)
+              : current.filter((item) => Number(item?.revisionNumber || item?.rev || item?.version_number || 0) !== backendRevisionNumber);
+            return [normalizedBackendVersionSnapshot, ...deduped];
+          });
+          setVersionsLoadState("ready");
+          setVersionsLoadError("");
+          setPreviewSnapshotId((prev) => prev || backendVersionId);
+        }
         lastSuccessfulPublishRef.current = {
           sessionId: sid,
           atMs: Date.now(),
@@ -971,15 +987,15 @@ export default function ProcessStage({
           setGenErr(companionError);
         } else {
           if (backendRevisionNumber > 0) {
-            publishInfo = `Сохранено и опубликовано как r${backendRevisionNumber}.`;
+            publishInfo = `Опубликовано как версия R${backendRevisionNumber}.`;
           } else {
             const revisionInfo = asObject(companionResult?.revision);
             if (revisionInfo.skipped === true) {
-              publishInfo = "Сохранено. Новая ревизия не создана (контент совпадает с последней).";
+              publishInfo = "Черновик сохранён. Новая версия не создана: контент совпадает с последней.";
             }
           }
           if (!publishInfo && asObject(companionResult?.revision).skipped === true) {
-            publishInfo = "Сохранено. Новая ревизия не создана (контент совпадает с последней).";
+            publishInfo = "Черновик сохранён. Новая версия не создана: контент совпадает с последней.";
           }
         }
       }
@@ -989,12 +1005,14 @@ export default function ProcessStage({
       }
       if (saved?.pending) {
         setInfoMsg("Сохранение поставлено в очередь (pending).");
+      } else if (companionError && publishInfo) {
+        setInfoMsg(`${publishInfo} Companion metadata не синхронизированы.`);
       } else if (companionError) {
         setInfoMsg("BPMN сохранён, companion metadata не синхронизированы.");
       } else if (publishInfo) {
         setInfoMsg(publishInfo);
       } else {
-        setInfoMsg("Сохранено.");
+        setInfoMsg("Черновик сохранён.");
       }
     } catch (e) {
       setGenErr(shortErr(e?.message || e || "Не удалось сохранить BPMN."));
