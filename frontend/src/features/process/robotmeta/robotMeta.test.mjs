@@ -234,6 +234,40 @@ test("syncRobotMetaToBpmn removes only pm:RobotMeta when meta is absent", () => 
   assert.equal(taskBusinessObject.extensionElements.values.filter((v) => v.$type === "camunda:Properties").length, 1);
 });
 
+test("syncRobotMetaToBpmn preserves existing pm:RobotMeta for guarded copied ids when session meta is still stale", () => {
+  const taskBusinessObject = {
+    id: "Task_copy_1",
+    extensionElements: {
+      $type: "bpmn:ExtensionElements",
+      values: [
+        { $type: "camunda:Properties", values: [] },
+        {
+          $type: "pm:RobotMeta",
+          version: "v1",
+          json: "{\"robot_meta_version\":\"v1\",\"exec\":{\"mode\":\"machine\",\"executor\":\"manual_ui\",\"action_key\":\"approve\",\"timeout_sec\":30}}",
+        },
+      ],
+      set(key, value) {
+        this[key] = value;
+      },
+    },
+    set(key, value) {
+      this[key] = value;
+    },
+  };
+  const modeler = createMockModeler([{ id: "Task_copy_1", businessObject: taskBusinessObject }]);
+
+  const res = syncRobotMetaToBpmn({
+    modeler,
+    robotMetaByElementId: {},
+    preserveExistingForElementIds: ["Task_copy_1"],
+  });
+  assert.equal(res.ok, true);
+  assert.equal(res.changed, 0);
+  assert.equal(taskBusinessObject.extensionElements.values.filter((v) => v.$type === "pm:RobotMeta").length, 1);
+  assert.equal(taskBusinessObject.extensionElements.values.filter((v) => v.$type === "camunda:Properties").length, 1);
+});
+
 test("extractRobotMetaFromBpmn trims strings and skips unsupported/bad entries", () => {
   const warnings = [];
   const modeler = createMockModeler([
