@@ -4,6 +4,8 @@ export default function useProcessStageDialogState() {
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [versionsBusy, setVersionsBusy] = useState(false);
   const [versionsList, setVersionsList] = useState([]);
+  const [versionsLoadState, setVersionsLoadState] = useState("idle");
+  const [versionsLoadError, setVersionsLoadError] = useState("");
   const [previewSnapshotId, setPreviewSnapshotId] = useState("");
   const [diffOpen, setDiffOpen] = useState(false);
   const [diffBaseSnapshotId, setDiffBaseSnapshotId] = useState("");
@@ -19,6 +21,8 @@ export default function useProcessStageDialogState() {
     setVersionsOpen(false);
     setVersionsBusy(false);
     setVersionsList([]);
+    setVersionsLoadState("idle");
+    setVersionsLoadError("");
     setPreviewSnapshotId("");
     setDiffOpen(false);
     setDiffBaseSnapshotId("");
@@ -38,6 +42,10 @@ export default function useProcessStageDialogState() {
     setVersionsBusy,
     versionsList,
     setVersionsList,
+    versionsLoadState,
+    setVersionsLoadState,
+    versionsLoadError,
+    setVersionsLoadError,
     previewSnapshotId,
     setPreviewSnapshotId,
     diffOpen,

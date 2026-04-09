@@ -10,6 +10,7 @@ test("apiRoutes: canonical report and session routes are stable", () => {
   assert.equal(apiRoutes.sessions.bpmn("sess_1"), "/api/sessions/sess_1/bpmn");
   assert.equal(apiRoutes.sessions.bpmnVersions("sess_1"), "/api/sessions/sess_1/bpmn/versions");
   assert.equal(apiRoutes.sessions.bpmnVersions("sess_1", { includeXml: true, limit: 50 }), "/api/sessions/sess_1/bpmn/versions?limit=50&include_xml=1");
+  assert.equal(apiRoutes.sessions.bpmnVersion("sess_1", "ver_1"), "/api/sessions/sess_1/bpmn/versions/ver_1");
   assert.equal(apiRoutes.sessions.bpmnRestore("sess_1", "ver_1"), "/api/sessions/sess_1/bpmn/restore/ver_1");
   assert.equal(apiRoutes.sessions.pathReports("sess_1", "main"), "/api/sessions/sess_1/paths/main/reports");
   assert.equal(apiRoutes.sessions.pathReport("sess_1", "main", "rpt_1"), "/api/sessions/sess_1/paths/main/reports/rpt_1");

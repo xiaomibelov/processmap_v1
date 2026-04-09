@@ -81,6 +81,7 @@ class BpmnMetaApiTests(unittest.TestCase):
             session_bpmn_meta_patch,
             session_bpmn_meta_infer_rtiers,
             session_bpmn_save,
+            session_bpmn_version_detail,
             session_bpmn_versions_list,
             session_bpmn_restore,
         )
@@ -97,6 +98,7 @@ class BpmnMetaApiTests(unittest.TestCase):
         self.session_bpmn_meta_patch = session_bpmn_meta_patch
         self.session_bpmn_meta_infer_rtiers = session_bpmn_meta_infer_rtiers
         self.session_bpmn_save = session_bpmn_save
+        self.session_bpmn_version_detail = session_bpmn_version_detail
         self.session_bpmn_versions_list = session_bpmn_versions_list
         self.session_bpmn_restore = session_bpmn_restore
 
@@ -316,11 +318,15 @@ class BpmnMetaApiTests(unittest.TestCase):
         self.assertEqual(int(snapshot.get("version_number") or 0), 1)
         self.assertEqual(snapshot.get("import_note"), "manual stage import")
 
-        versions = st.list_bpmn_versions(self.sid)
+        versions_meta = st.list_bpmn_versions(self.sid)
+        self.assertEqual(len(versions_meta), 1)
+        self.assertNotIn("bpmn_xml", versions_meta[0])
+
+        versions = st.list_bpmn_versions(self.sid, include_xml=True)
         self.assertEqual(len(versions), 1)
         self.assertEqual(versions[0].get("source_action"), "import_bpmn")
         self.assertEqual(versions[0].get("import_note"), "manual stage import")
-        self.assertEqual(versions[0].get("bpmn_xml"), XOR_BPMN_XML)
+        self.assertEqual(versions[0].get("bpmn_xml"), PRUNED_BPMN_XML)
 
         current = st.load(self.sid, is_admin=True)
         self.assertIsNotNone(current)
@@ -354,7 +360,7 @@ class BpmnMetaApiTests(unittest.TestCase):
         self.assertEqual(snapshot.get("source_action"), "publish_manual_save")
         self.assertEqual(int(snapshot.get("version_number") or 0), 1)
 
-        versions = st.list_bpmn_versions(self.sid)
+        versions = st.list_bpmn_versions(self.sid, include_xml=True)
         self.assertEqual(len(versions), 1)
         self.assertEqual(versions[0].get("source_action"), "publish_manual_save")
         self.assertEqual(versions[0].get("bpmn_xml"), PRUNED_BPMN_XML)
@@ -380,7 +386,13 @@ class BpmnMetaApiTests(unittest.TestCase):
         listed_full = self.session_bpmn_versions_list(self.sid, include_xml=1)
         self.assertEqual(listed_full.get("ok"), True)
         item_full = (listed_full.get("items") or [{}])[0]
-        self.assertEqual(str(item_full.get("bpmn_xml") or ""), XOR_BPMN_XML)
+        self.assertEqual(str(item_full.get("bpmn_xml") or ""), PRUNED_BPMN_XML)
+
+        detail = self.session_bpmn_version_detail(self.sid, item_meta.get("id"))
+        self.assertEqual(detail.get("ok"), True)
+        detail_item = detail.get("item") or {}
+        self.assertEqual(detail_item.get("source_action"), "import_bpmn")
+        self.assertEqual(str(detail_item.get("bpmn_xml") or ""), PRUNED_BPMN_XML)
 
     def test_bpmn_versions_endpoint_formats_technical_author_id_to_short_display(self):
         st = self.get_storage()

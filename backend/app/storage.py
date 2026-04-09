@@ -1761,6 +1761,7 @@ class Storage:
         *,
         org_id: Optional[str] = None,
         limit: int = 100,
+        include_xml: bool = False,
     ) -> List[Dict[str, Any]]:
         _ensure_schema()
         sid = str(session_id or "").strip()
@@ -1781,9 +1782,14 @@ class Storage:
             oid = scope_org or session_org
             if oid != session_org:
                 return []
+            columns = (
+                "id, session_id, org_id, version_number, bpmn_xml, source_action, import_note, created_at, created_by"
+                if include_xml
+                else "id, session_id, org_id, version_number, source_action, import_note, created_at, created_by"
+            )
             rows = con.execute(
-                """
-                SELECT id, session_id, org_id, version_number, bpmn_xml, source_action, import_note, created_at, created_by
+                f"""
+                SELECT {columns}
                   FROM bpmn_versions
                  WHERE session_id = ?
                    AND org_id = ?
@@ -1795,19 +1801,19 @@ class Storage:
 
         out: List[Dict[str, Any]] = []
         for row in rows:
-            out.append(
-                {
-                    "id": str(row["id"] or ""),
-                    "session_id": str(row["session_id"] or ""),
-                    "org_id": str(row["org_id"] or ""),
-                    "version_number": int(row["version_number"] or 0),
-                    "bpmn_xml": str(row["bpmn_xml"] or ""),
-                    "source_action": str(row["source_action"] or ""),
-                    "import_note": str(row["import_note"] or ""),
-                    "created_at": int(row["created_at"] or 0),
-                    "created_by": str(row["created_by"] or ""),
-                }
-            )
+            item = {
+                "id": str(row["id"] or ""),
+                "session_id": str(row["session_id"] or ""),
+                "org_id": str(row["org_id"] or ""),
+                "version_number": int(row["version_number"] or 0),
+                "source_action": str(row["source_action"] or ""),
+                "import_note": str(row["import_note"] or ""),
+                "created_at": int(row["created_at"] or 0),
+                "created_by": str(row["created_by"] or ""),
+            }
+            if include_xml:
+                item["bpmn_xml"] = str(row["bpmn_xml"] or "")
+            out.append(item)
         return out
 
     def get_bpmn_version(

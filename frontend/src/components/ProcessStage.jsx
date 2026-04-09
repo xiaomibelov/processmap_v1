@@ -13,6 +13,7 @@ import {
 } from "../lib/api/sessionApi";
 import {
   apiGetBpmnMeta,
+  apiGetBpmnVersion,
   apiGetBpmnXml,
   apiGetBpmnVersions,
   apiRestoreBpmnVersion,
@@ -208,6 +209,7 @@ import {
 import { pushDeleteTrace } from "../features/process/stage/utils/deleteTrace";
 
 const DIAGRAM_UNDO_REDO_VISIBLE_POLL_MS = 2000;
+const BPMN_VERSION_HEADERS_LIMIT = 50;
 
 const IDLE_SAVE_UPLOAD_EVENT = Object.freeze({
   event: "",
@@ -326,6 +328,10 @@ export default function ProcessStage({
     setVersionsBusy,
     versionsList,
     setVersionsList,
+    versionsLoadState,
+    setVersionsLoadState,
+    versionsLoadError,
+    setVersionsLoadError,
     previewSnapshotId,
     setPreviewSnapshotId,
     diffOpen,
@@ -2903,7 +2909,9 @@ export default function ProcessStage({
 
   const normalizeBpmnVersionListItem = useCallback((itemRaw) => {
     const item = itemRaw && typeof itemRaw === "object" ? itemRaw : {};
-    const xml = String(item?.bpmn_xml || item?.xml || "");
+    const hasXml = Object.prototype.hasOwnProperty.call(item, "bpmn_xml")
+      || Object.prototype.hasOwnProperty.call(item, "xml");
+    const xml = hasXml ? String(item?.bpmn_xml || item?.xml || "") : "";
     const versionNumber = Number(item?.version_number || item?.versionNumber || item?.revisionNumber || item?.rev || 0);
     const createdAt = normalizeRevisionTimestampMs(
       item?.created_at_ms
@@ -2937,7 +2945,8 @@ export default function ProcessStage({
       authorName: author.authorName,
       authorEmail: author.authorEmail,
       authorLabel: author.label,
-      len: Number(item?.len || xml.length || 0),
+      hasXml,
+      len: Number(item?.len || (hasXml ? xml.length : 0) || 0),
     };
   }, []);
 
@@ -2953,27 +2962,39 @@ export default function ProcessStage({
     if (!sid) {
       setVersionsList([]);
       setPreviewSnapshotId("");
+      setVersionsLoadState("idle");
+      setVersionsLoadError("");
       setLatestBpmnVersionHead(null);
       if (options?.trackHeadStatus === true) setLatestBpmnVersionHeadStatus("idle");
       return;
     }
-    const includeXml = options?.includeXml !== false;
-    const updateList = options?.updateList !== false ? includeXml : false;
+    const includeXml = options?.includeXml === true;
+    const updateList = options?.updateList !== false;
     const trackHeadStatus = options?.trackHeadStatus === true;
-    const fallbackLimit = includeXml ? 200 : 1;
+    const fallbackLimit = includeXml ? 200 : BPMN_VERSION_HEADERS_LIMIT;
     const requestedLimit = Number(options?.limit || fallbackLimit);
     const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
       ? Math.min(Math.round(requestedLimit), 500)
       : fallbackLimit;
     if (trackHeadStatus) setLatestBpmnVersionHeadStatus("loading");
-    const loaded = await apiGetBpmnVersions(sid, { limit, includeXml });
+    if (updateList) {
+      setVersionsLoadState("loading");
+      setVersionsLoadError("");
+    }
+    let loaded = null;
+    try {
+      loaded = await apiGetBpmnVersions(sid, { limit, includeXml });
+    } catch (error) {
+      loaded = { ok: false, error: error?.message || error || "Не удалось загрузить BPMN версии." };
+    }
     if (!loaded?.ok) {
       if (updateList) {
         setVersionsList([]);
         setPreviewSnapshotId("");
+        setVersionsLoadState("failed");
+        setVersionsLoadError(shortErr(loaded?.error || "Не удалось загрузить BPMN версии."));
       }
       if (trackHeadStatus) setLatestBpmnVersionHeadStatus("failed");
-      if (includeXml) setGenErr(shortErr(loaded?.error || "Не удалось загрузить BPMN версии."));
       return;
     }
     const list = asArray(loaded?.versions).map((item) => normalizeBpmnVersionListItem(item));
@@ -2985,12 +3006,46 @@ export default function ProcessStage({
       `UI_VERSIONS_LOAD sid=${sid} key="${snapshotScopeKey(snapshotProjectId, sid)}" count=${asArray(list).length}`,
     );
     setVersionsList(asArray(list));
+    setVersionsLoadState(asArray(list).length > 0 ? "ready" : "empty");
+    setVersionsLoadError("");
     setPreviewSnapshotId((prev) => {
       const exists = asArray(list).some((item) => String(item?.id || "") === String(prev || ""));
       if (exists) return prev;
       return asArray(list)[0]?.id || "";
     });
   }, [normalizeBpmnVersionListItem, sid, snapshotProjectId]);
+
+  const ensureBpmnVersionXml = useCallback(async (versionOrId) => {
+    const versionId = String(
+      typeof versionOrId === "object" ? versionOrId?.id : versionOrId,
+    ).trim();
+    if (!sid || !versionId) return null;
+    const existing = asArray(versionsList).find((item) => String(item?.id || "") === versionId);
+    if (existing?.hasXml === true || String(existing?.xml || "").trim()) return existing;
+    setVersionsBusy(true);
+    setVersionsLoadError("");
+    try {
+      let loaded = null;
+      try {
+        loaded = await apiGetBpmnVersion(sid, versionId);
+      } catch (error) {
+        loaded = { ok: false, error: error?.message || error || "Не удалось загрузить XML версии." };
+      }
+      if (!loaded?.ok) {
+        const reason = shortErr(loaded?.error || "Не удалось загрузить XML версии.");
+        setVersionsLoadError(reason);
+        setGenErr(reason);
+        return null;
+      }
+      const normalized = normalizeBpmnVersionListItem(loaded?.item || loaded?.version || {});
+      setVersionsList((prev) => asArray(prev).map((item) => (
+        String(item?.id || "") === versionId ? { ...item, ...normalized, hasXml: true } : item
+      )));
+      return normalized;
+    } finally {
+      setVersionsBusy(false);
+    }
+  }, [normalizeBpmnVersionListItem, sid, versionsList]);
 
   const refreshLatestBpmnRevisionHead = useCallback(async () => {
     await refreshSnapshotVersions({
@@ -3005,7 +3060,7 @@ export default function ProcessStage({
     setVersionsOpen(true);
     setVersionsBusy(true);
     try {
-      await refreshSnapshotVersions();
+      await refreshSnapshotVersions({ includeXml: false, limit: BPMN_VERSION_HEADERS_LIMIT });
     } finally {
       setVersionsBusy(false);
     }
@@ -3137,7 +3192,14 @@ export default function ProcessStage({
     setInfoMsg("Изменение label отключено: ревизии immutable.");
   }
 
-  function openDiffForSnapshot(item) {
+  async function previewSnapshotVersion(itemOrId) {
+    const versionId = String(typeof itemOrId === "object" ? itemOrId?.id : itemOrId).trim();
+    if (!versionId) return;
+    setPreviewSnapshotId(versionId);
+    await ensureBpmnVersionXml(versionId);
+  }
+
+  async function openDiffForSnapshot(item) {
     const targetId = String(item?.id || "").trim();
     if (!targetId) return;
     const list = asArray(versionsList);
@@ -3152,6 +3214,10 @@ export default function ProcessStage({
     setDiffBaseSnapshotId(baseId);
     setDiffTargetSnapshotId(targetId);
     setDiffOpen(true);
+    await Promise.all([
+      ensureBpmnVersionXml(baseId),
+      ensureBpmnVersionXml(targetId),
+    ]);
   }
 
   function pushCommandHistory(commandText) {
@@ -3250,8 +3316,9 @@ export default function ProcessStage({
     }
   }
 
-  function downloadSnapshot(item) {
-    const xml = String(item?.xml || "");
+  async function downloadSnapshot(item) {
+    const loaded = String(item?.xml || "").trim() ? item : await ensureBpmnVersionXml(item);
+    const xml = String(loaded?.xml || "");
     if (!xml.trim()) return;
     const base = String(draft?.title || sid || "process")
       .trim()
@@ -3755,6 +3822,14 @@ export default function ProcessStage({
       setDiffBaseSnapshotId(String(asArray(versionsList)[1]?.id || asArray(versionsList)[0]?.id || ""));
     }
   }, [diffOpen, versionsList, diffBaseSnapshotId, diffTargetSnapshotId]);
+
+  useEffect(() => {
+    if (!diffOpen) return;
+    const ids = [diffBaseSnapshotId, diffTargetSnapshotId].map((id) => String(id || "").trim()).filter(Boolean);
+    ids.forEach((id) => {
+      void ensureBpmnVersionXml(id);
+    });
+  }, [diffOpen, diffBaseSnapshotId, diffTargetSnapshotId, ensureBpmnVersionXml]);
 
   useEffect(() => {
     writeCommandMode(commandModeEnabled);
@@ -4586,6 +4661,8 @@ export default function ProcessStage({
     versionsBusy,
     hasSession,
     versionsList,
+    versionsLoadState,
+    versionsLoadError,
     revisionHistorySnapshot: revisionHistoryUiSnapshot,
     setGenErr,
     setDiffTargetSnapshotId,
@@ -4594,6 +4671,7 @@ export default function ProcessStage({
     clearSnapshotHistory,
     previewSnapshotId,
     setPreviewSnapshotId,
+    previewSnapshotVersion,
     formatSnapshotTs,
     snapshotLabel,
     shortSnapshotHash,

@@ -17,3 +17,13 @@ test("revision dialogs use RU labels for metadata surface", () => {
   assert.equal(source.includes("хэш:"), true);
   assert.equal(source.includes("размер:"), true);
 });
+
+test("revision dialogs separate loading, empty, and error states", () => {
+  const source = fs.readFileSync(path.join(__dirname, "ProcessDialogs.jsx"), "utf8");
+  assert.equal(source.includes('versionsLoadState === "loading"'), true);
+  assert.equal(source.includes('data-testid="bpmn-versions-loading"'), true);
+  assert.equal(source.includes('data-testid="bpmn-versions-empty"'), true);
+  assert.equal(source.includes('data-testid="bpmn-versions-error"'), true);
+  assert.equal(source.includes("Пустая история не означает, что черновик не сохранён."), true);
+  assert.equal(source.includes("История пуста."), false);
+});
