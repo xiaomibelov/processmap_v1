@@ -38,9 +38,11 @@ import camundaModdleDescriptor from "../../features/process/camunda/camundaModdl
 import {
   canonicalRobotMetaMapString,
   extractRobotMetaFromBpmn,
+  extractRobotMetaMapFromBpmnXml,
   getRobotMetaStatus,
   hydrateRobotMetaFromBpmn,
   normalizeRobotMetaMap,
+  parseRobotMetaJson,
   robotMetaMissingFields,
   syncRobotMetaToBpmn,
 } from "../../features/process/robotmeta/robotMeta";
@@ -87,6 +89,15 @@ function asObject(x) {
 
 function toText(v) {
   return String(v || "").trim();
+}
+
+function publishE2ESaveProbe(patch = {}) {
+  if (typeof window === "undefined" || window.__FPC_E2E__ !== true) return;
+  const prev = asObject(window.__FPC_E2E_LAST_SAVE_PROBE__);
+  window.__FPC_E2E_LAST_SAVE_PROBE__ = {
+    ...prev,
+    ...asObject(patch),
+  };
 }
 
 function cloneJsonValue(value) {
@@ -1302,6 +1313,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   });
   const templateInsertCamundaSeedInFlightRef = useRef(0);
   const templateInsertCamundaClearGuardRef = useRef({ ids: [], expiresAt: 0 });
+  const copyPasteRobotMetaPreserveGuardRef = useRef({ ids: [], expiresAt: 0 });
   const suppressCommandStackRef = useRef(0);
   const suppressViewboxEventRef = useRef(0);
   const modelerReadyRef = useRef(false);
@@ -2115,6 +2127,19 @@ const BpmnStage = forwardRef(function BpmnStage({
     return normalizeRobotMetaMap(meta.robot_meta_by_element_id);
   }
 
+  function resolveSourceRobotMetaState(elementIdRaw, draftLike = null) {
+    const elementId = toText(elementIdRaw);
+    if (!elementId) return null;
+    const draftValue = asObject(draftLike || draftRef.current);
+    const currentMeta = asObject(draftValue.bpmn_meta);
+    const currentMap = normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id);
+    if (currentMap[elementId]) return currentMap[elementId];
+    const draftXml = String(draftValue?.bpmn_xml || "");
+    if (!draftXml) return null;
+    const extractedMap = normalizeRobotMetaMap(extractRobotMetaMapFromBpmnXml(draftXml));
+    return extractedMap[elementId] || null;
+  }
+
   function getCamundaExtensionsMap() {
     const d = asObject(draftRef.current);
     const meta = asObject(d.bpmn_meta);
@@ -2183,17 +2208,39 @@ const BpmnStage = forwardRef(function BpmnStage({
     });
   }
 
+  function resolveRobotMetaStateFromSemanticPayload(payloadRaw) {
+    const payload = asObject(payloadRaw);
+    const extensionElements = asObject(payload.extensionElements);
+    const values = asArray(extensionElements.values);
+    const robotMetaEntry = values.find((entry) => /pm:robotmeta$/i.test(toText(entry?.$type || entry?.type)));
+    if (!robotMetaEntry) return null;
+    return parseRobotMetaJson(String(robotMetaEntry?.json || "")) || null;
+  }
+
   function buildCopyElementOptions({ inst = null, element = null } = {}) {
     const activeInst = inst || modelerRef.current;
     const elementId = toText(element?.id || element?.businessObject?.id);
+    const elementType = toText(element?.businessObject?.$type || element?.type).toLowerCase();
     if (activeInst) {
       syncRobotMetaToModeler(activeInst);
       syncCamundaExtensionsToModeler(activeInst, {
         preserveManagedForElementIds: elementId ? [elementId] : [],
       });
     }
+    let nativeTree = null;
+    if (activeInst && elementId && elementType.includes("subprocess")) {
+      try {
+        const copyPaste = activeInst.get?.("copyPaste");
+        if (copyPaste && typeof copyPaste.copy === "function") {
+          nativeTree = copyPaste.copy([element]);
+        }
+      } catch {
+        nativeTree = null;
+      }
+    }
     return {
       camundaExtensionState: elementId ? resolveSourceCamundaExtensionState(elementId) : null,
+      nativeTree,
     };
   }
 
@@ -2204,10 +2251,43 @@ const BpmnStage = forwardRef(function BpmnStage({
     });
   }
 
-  function syncRobotMetaToModeler(inst) {
+  function primeCopyPasteRobotMetaPreserveGuard(idsRaw = []) {
+    const ids = Array.from(new Set(
+      asArray(idsRaw)
+        .map((value) => toText(value))
+        .filter(Boolean),
+    ));
+    if (!ids.length) return;
+    copyPasteRobotMetaPreserveGuardRef.current = {
+      ids,
+      expiresAt: Date.now() + 15000,
+    };
+  }
+
+  function readCopyPasteRobotMetaPreserveIds() {
+    const state = asObject(copyPasteRobotMetaPreserveGuardRef.current);
+    const expiresAt = Number(state.expiresAt || 0);
+    const ids = asArray(state.ids).map((value) => toText(value)).filter(Boolean);
+    if (!ids.length) return [];
+    if (expiresAt > 0 && Date.now() > expiresAt) {
+      copyPasteRobotMetaPreserveGuardRef.current = { ids: [], expiresAt: 0 };
+      return [];
+    }
+    return ids;
+  }
+
+  function syncRobotMetaToModeler(inst, options = {}) {
+    const explicitPreserveIds = asArray(options?.preserveExistingForElementIds);
+    const copyPasteGuardIds = readCopyPasteRobotMetaPreserveIds();
+    const preserveExistingForElementIds = Array.from(new Set(
+      [...explicitPreserveIds, ...copyPasteGuardIds]
+        .map((value) => toText(value))
+        .filter(Boolean),
+    ));
     return syncRobotMetaToBpmn({
       modeler: inst,
       robotMetaByElementId: getRobotMetaMap(),
+      preserveExistingForElementIds,
     });
   }
 
@@ -2470,40 +2550,71 @@ const BpmnStage = forwardRef(function BpmnStage({
   function cloneCompanionStateForCopiedElement({
     sourceElementId: sourceElementIdRaw,
     targetElementId: targetElementIdRaw,
+    remap: remapRaw = {},
     semanticPayload: semanticPayloadRaw,
     inst = null,
   } = {}) {
-    const sourceElementId = toText(sourceElementIdRaw);
-    const targetElementId = toText(targetElementIdRaw);
-    if (!sourceElementId || !targetElementId || sourceElementId === targetElementId) {
+    const remapEntries = Object.entries(asObject(remapRaw))
+      .map(([sourceIdRaw, targetIdRaw]) => [toText(sourceIdRaw), toText(targetIdRaw)])
+      .filter(([sourceId, targetId]) => sourceId && targetId && sourceId !== targetId);
+    if (!remapEntries.length) {
+      const sourceElementId = toText(sourceElementIdRaw);
+      const targetElementId = toText(targetElementIdRaw);
+      if (sourceElementId && targetElementId && sourceElementId !== targetElementId) {
+        remapEntries.push([sourceElementId, targetElementId]);
+      }
+    }
+    if (!remapEntries.length) {
       return { ok: false, reason: "missing_target" };
     }
     const currentDraft = asObject(draftRef.current);
     const currentMeta = asObject(currentDraft.bpmn_meta);
     const robotMetaMap = normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id);
     const camundaMap = normalizeCamundaExtensionsMap(currentMeta?.camunda_extensions_by_element_id);
-    const sourceCamundaState = camundaMap[sourceElementId]
-      || resolveSourceCamundaExtensionState(sourceElementId, currentDraft)
-      || resolveCamundaStateFromSemanticPayload(semanticPayloadRaw);
+    let nextRobotMeta = robotMetaMap;
+    let nextCamunda = camundaMap;
+    let copiedRobotMetaCount = 0;
+    let copiedCamundaCount = 0;
+    const targetIdsWithRobotMeta = [];
+    const targetIdsWithManagedCamunda = [];
 
-    const nextRobotMeta = robotMetaMap[sourceElementId]
-      ? normalizeRobotMetaMap({
-          ...robotMetaMap,
-          [targetElementId]: cloneJsonValue(robotMetaMap[sourceElementId]),
-        })
-      : robotMetaMap;
-    const nextCamunda = sourceCamundaState
-      ? normalizeCamundaExtensionsMap({
-          ...camundaMap,
+    remapEntries.forEach(([sourceElementId, targetElementId], index) => {
+      const sourceRobotMetaState = resolveSourceRobotMetaState(sourceElementId, currentDraft)
+        || (index === 0 ? resolveRobotMetaStateFromSemanticPayload(semanticPayloadRaw) : null);
+      const sourceCamundaState = nextCamunda[sourceElementId]
+        || resolveSourceCamundaExtensionState(sourceElementId, currentDraft)
+        || (index === 0 ? resolveCamundaStateFromSemanticPayload(semanticPayloadRaw) : null);
+
+      if (sourceRobotMetaState) {
+        const beforeSig = JSON.stringify(nextRobotMeta[targetElementId] || null);
+        const candidateMap = normalizeRobotMetaMap({
+          ...nextRobotMeta,
+          [targetElementId]: cloneJsonValue(sourceRobotMetaState),
+        });
+        const afterSig = JSON.stringify(candidateMap[targetElementId] || null);
+        if (beforeSig !== afterSig) {
+          nextRobotMeta = candidateMap;
+          copiedRobotMetaCount += 1;
+          targetIdsWithRobotMeta.push(targetElementId);
+        }
+      }
+
+      if (sourceCamundaState) {
+        const beforeSig = JSON.stringify(nextCamunda[targetElementId] || null);
+        const candidateMap = normalizeCamundaExtensionsMap({
+          ...nextCamunda,
           [targetElementId]: cloneJsonValue(sourceCamundaState),
-        })
-      : camundaMap;
+        });
+        const afterSig = JSON.stringify(candidateMap[targetElementId] || null);
+        if (beforeSig !== afterSig) {
+          nextCamunda = candidateMap;
+          copiedCamundaCount += 1;
+          targetIdsWithManagedCamunda.push(targetElementId);
+        }
+      }
+    });
 
-    const robotChanged = JSON.stringify(nextRobotMeta[targetElementId] || null)
-      !== JSON.stringify(robotMetaMap[targetElementId] || null);
-    const camundaChanged = JSON.stringify(nextCamunda[targetElementId] || null)
-      !== JSON.stringify(camundaMap[targetElementId] || null);
-    if (!robotChanged && !camundaChanged) {
+    if (!copiedRobotMetaCount && !copiedCamundaCount) {
       return { ok: true, skipped: true, copiedRobotMeta: false, copiedCamunda: false };
     }
 
@@ -2533,17 +2644,32 @@ const BpmnStage = forwardRef(function BpmnStage({
       });
     }
 
+    if (copiedRobotMetaCount) {
+      primeCopyPasteRobotMetaPreserveGuard(targetIdsWithRobotMeta);
+    }
+
     const activeInst = inst || modelerRef.current;
     if (activeInst) {
-      if (robotChanged) syncRobotMetaToModeler(activeInst);
-      if (camundaChanged) {
+      if (copiedRobotMetaCount) {
+        syncRobotMetaToModeler(activeInst, {
+          preserveExistingForElementIds: targetIdsWithRobotMeta,
+        });
+      }
+      if (copiedCamundaCount) {
         syncCamundaExtensionsToModeler(activeInst, {
-          preserveManagedForElementIds: [targetElementId],
+          preserveManagedForElementIds: targetIdsWithManagedCamunda,
         });
       }
     }
 
-    return { ok: true, copiedRobotMeta: robotChanged, copiedCamunda: camundaChanged };
+    return {
+      ok: true,
+      copiedRobotMeta: copiedRobotMetaCount > 0,
+      copiedCamunda: copiedCamundaCount > 0,
+      copiedRobotMetaCount,
+      copiedCamundaCount,
+      remap: Object.fromEntries(remapEntries),
+    };
   }
 
   function isAiQuestionsModeOn() {
@@ -4354,10 +4480,36 @@ const BpmnStage = forwardRef(function BpmnStage({
         );
       }
 
+      if (activeModeler && typeof activeModeler.saveXML === "function") {
+        try {
+          const probeOut = await activeModeler.saveXML({ format: true });
+          publishE2ESaveProbe({
+            sid,
+            source,
+            persistReason,
+            beforeFlushXml: String(probeOut?.xml || ""),
+          });
+        } catch {
+          publishE2ESaveProbe({
+            sid,
+            source,
+            persistReason,
+            beforeFlushXml: "",
+          });
+        }
+      }
+
       const flushed = await coordinator.flushSave(persistReason, { force, trigger, saveOwner: resolvedSaveOwner });
       const nextState = bpmnStoreRef.current?.getState?.() || {};
       const rawOut = String(flushed?.xml || nextState.xml || fallbackXml || "");
       const out = transformPersistedXml(rawOut);
+      publishE2ESaveProbe({
+        sid,
+        source,
+        persistReason,
+        rawOut,
+        transformedOut: out,
+      });
 
       if (!flushed?.ok) {
         if (force && allowForceFallback && out.trim()) {
@@ -4541,6 +4693,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     ensureEpochRef.current += 1;
     robotMetaHydrateStateRef.current = { key: "" };
     camundaHydrateStateRef.current = { key: "" };
+    copyPasteRobotMetaPreserveGuardRef.current = { ids: [], expiresAt: 0 };
     destroyRuntime();
     setErr("");
     const draftNow = asObject(draftRef.current);

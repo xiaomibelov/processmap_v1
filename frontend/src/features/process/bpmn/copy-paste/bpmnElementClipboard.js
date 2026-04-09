@@ -3,6 +3,10 @@ import {
   serializeSupportedBusinessObjectPayload,
 } from "../stage/template/templateSemanticPayload.js";
 
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
 function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
@@ -11,14 +15,24 @@ function toText(value) {
   return String(value || "").trim();
 }
 
-function cloneDeep(value) {
+function cloneDeep(value, seen = new WeakMap()) {
   if (value === null || value === undefined) return value;
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
-  if (Array.isArray(value)) return value.map((item) => cloneDeep(item));
+  if (typeof value !== "object") return undefined;
+  if (seen.has(value)) return seen.get(value);
+  if (Array.isArray(value)) {
+    const out = [];
+    seen.set(value, out);
+    value.forEach((item) => {
+      out.push(cloneDeep(item, seen));
+    });
+    return out;
+  }
   if (typeof value !== "object") return undefined;
   const out = {};
+  seen.set(value, out);
   Object.keys(value).forEach((key) => {
-    const cloned = cloneDeep(value[key]);
+    const cloned = cloneDeep(value[key], seen);
     if (cloned !== undefined) out[key] = cloned;
   });
   return out;
@@ -222,6 +236,46 @@ function readIsExpanded(element) {
   return undefined;
 }
 
+function isSubprocessClipboardType(typeRaw) {
+  return toText(typeRaw).toLowerCase().includes("subprocess");
+}
+
+function collectSourceIdsFromCopyTree(treeRaw) {
+  const tree = asObject(treeRaw);
+  const out = [];
+  Object.keys(tree)
+    .sort((a, b) => Number(a || 0) - Number(b || 0))
+    .forEach((depth) => {
+      asArray(tree[depth]).forEach((descriptorRaw) => {
+        const descriptor = asObject(descriptorRaw);
+        const id = toText(descriptor.id);
+        if (id) out.push(id);
+      });
+    });
+  return Array.from(new Set(out));
+}
+
+function buildNativeTreeSnapshot(element, options = {}) {
+  const nativeTree = asObject(options?.nativeTree);
+  const descriptorIds = collectSourceIdsFromCopyTree(nativeTree);
+  if (!descriptorIds.length) return null;
+  return {
+    schema: "fpc.bpmn.element.clipboard.v2",
+    mode: "native_tree",
+    sourceElementId: toText(element?.id),
+    type: readBpmnType(element),
+    name: toText(element?.businessObject?.name),
+    width: Number(element?.width || 0),
+    height: Number(element?.height || 0),
+    sourcePosition: {
+      x: Number(element?.x || 0),
+      y: Number(element?.y || 0),
+    },
+    sourceDescriptorIds: descriptorIds,
+    nativeTree,
+  };
+}
+
 function shouldUseUpdateLabel(element) {
   const type = readBpmnType(element).toLowerCase();
   return !!type && !type.includes("textannotation");
@@ -237,8 +291,21 @@ function readClipboardStore() {
   return null;
 }
 
+function cloneClipboardSnapshot(snapshot) {
+  if (!snapshot) return null;
+  if (snapshot?.mode === "native_tree" && snapshot?.nativeTree) {
+    return {
+      ...snapshot,
+      sourcePosition: cloneDeep(snapshot?.sourcePosition || {}),
+      sourceDescriptorIds: asArray(snapshot?.sourceDescriptorIds).slice(),
+      nativeTree: snapshot.nativeTree,
+    };
+  }
+  return cloneDeep(snapshot);
+}
+
 function writeClipboardSnapshot(snapshot) {
-  const cloned = snapshot ? cloneDeep(snapshot) : null;
+  const cloned = cloneClipboardSnapshot(snapshot);
   copiedElementSnapshot = cloned;
   const store = readClipboardStore();
   if (store) {
@@ -249,9 +316,9 @@ function writeClipboardSnapshot(snapshot) {
 function readStoredClipboardSnapshot() {
   const store = readClipboardStore();
   if (store && store[GLOBAL_CLIPBOARD_KEY]) {
-    return cloneDeep(store[GLOBAL_CLIPBOARD_KEY]);
+    return cloneClipboardSnapshot(store[GLOBAL_CLIPBOARD_KEY]);
   }
-  return copiedElementSnapshot ? cloneDeep(copiedElementSnapshot) : null;
+  return copiedElementSnapshot ? cloneClipboardSnapshot(copiedElementSnapshot) : null;
 }
 
 export function resetBpmnElementClipboardForTests() {
@@ -282,6 +349,18 @@ export function hasCopiedBpmnElementSnapshot() {
 export function copyBpmnElementToClipboard(element, options = {}) {
   if (!canCopyBpmnElement(element)) {
     return { ok: false, error: "copy_element_unsupported" };
+  }
+  const nativeTreeSnapshot = isSubprocessClipboardType(readBpmnType(element))
+    ? buildNativeTreeSnapshot(element, options)
+    : null;
+  if (nativeTreeSnapshot) {
+    const isExpanded = readIsExpanded(element);
+    if (typeof isExpanded === "boolean") nativeTreeSnapshot.isExpanded = isExpanded;
+    writeClipboardSnapshot(nativeTreeSnapshot);
+    return {
+      ok: true,
+      snapshot: readCopiedBpmnElementSnapshot(),
+    };
   }
   const semanticPayload = mergeCamundaExtensionStateIntoSemanticPayload(
     serializeSupportedBusinessObjectPayload(element?.businessObject),
@@ -426,6 +505,63 @@ function resolveBusinessObjectFactory({ bpmnFactory = null, elementFactory = nul
   return null;
 }
 
+function pasteCopiedBpmnTreeFromClipboard({
+  snapshot,
+  copyPaste,
+  eventBus,
+  parent,
+  point,
+} = {}) {
+  const sourceIds = asArray(snapshot?.sourceDescriptorIds)
+    .map((value) => toText(value))
+    .filter(Boolean);
+  const resolvedSourceIds = sourceIds.length ? sourceIds : collectSourceIdsFromCopyTree(snapshot?.nativeTree);
+  let cacheRef = null;
+  const handlePasteElement = (context = {}) => {
+    if (context?.cache && typeof context.cache === "object") {
+      cacheRef = context.cache;
+    }
+  };
+  if (typeof eventBus?.on === "function") {
+    eventBus.on("copyPaste.pasteElement", handlePasteElement);
+  }
+  let pasted = [];
+  try {
+    pasted = asArray(copyPaste?.paste?.({
+      element: parent,
+      point: {
+        x: Math.round(Number(point?.x || 0)),
+        y: Math.round(Number(point?.y || 0)),
+      },
+      tree: snapshot?.nativeTree,
+    }));
+  } finally {
+    if (typeof eventBus?.off === "function") {
+      eventBus.off("copyPaste.pasteElement", handlePasteElement);
+    }
+  }
+  const remap = {};
+  resolvedSourceIds.forEach((sourceId) => {
+    const created = cacheRef?.[sourceId];
+    const targetId = toText(created?.id || created?.element?.id || created?.businessObject?.id);
+    if (targetId) remap[sourceId] = targetId;
+  });
+  const changedIds = Array.from(new Set([
+    ...pasted.map((item) => toText(item?.id || item?.element?.id)).filter(Boolean),
+    ...Object.values(remap).map((value) => toText(value)).filter(Boolean),
+  ]));
+  const createdElement = cacheRef?.[toText(snapshot?.sourceElementId)] || pasted[0] || null;
+  if (!createdElement && !changedIds.length) {
+    return { ok: false, error: "paste_create_failed" };
+  }
+  return {
+    ok: true,
+    createdElement,
+    changedIds,
+    remap,
+  };
+}
+
 export function pasteCopiedBpmnElementFromClipboard({
   modeling,
   elementFactory,
@@ -433,6 +569,8 @@ export function pasteCopiedBpmnElementFromClipboard({
   moddle = null,
   parent = null,
   point = null,
+  copyPaste = null,
+  eventBus = null,
 } = {}) {
   const snapshot = readCopiedBpmnElementSnapshot();
   if (!snapshot) return { ok: false, error: "clipboard_empty" };
@@ -440,6 +578,18 @@ export function pasteCopiedBpmnElementFromClipboard({
   const resolvedPoint = asObject(point);
   if (!Number.isFinite(Number(resolvedPoint?.x)) || !Number.isFinite(Number(resolvedPoint?.y))) {
     return { ok: false, error: "paste_point_missing" };
+  }
+  if (snapshot?.mode === "native_tree" && snapshot?.nativeTree) {
+    if (!copyPaste || typeof copyPaste.paste !== "function") {
+      return { ok: false, error: "copy_paste_unavailable" };
+    }
+    return pasteCopiedBpmnTreeFromClipboard({
+      snapshot,
+      copyPaste,
+      eventBus,
+      parent,
+      point: resolvedPoint,
+    });
   }
   if (!modeling || typeof modeling.createShape !== "function") {
     return { ok: false, error: "modeling_unavailable" };

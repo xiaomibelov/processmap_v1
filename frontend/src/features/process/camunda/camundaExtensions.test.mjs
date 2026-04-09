@@ -635,7 +635,7 @@ test("extractCamundaInputOutputParametersFromExtensionState reads row-level show
       extensionListeners: [],
     },
     preservedExtensionElements: [
-      `<camunda:connector xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:pm="http://foodproc.ai/schema/pm">
+      `<camunda:connector xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:pm="http://processmap.ai/schema/bpmn/1.0">
         <camunda:inputOutput>
           <camunda:inputParameter name="url" pm:showOnTask="true">http://old.local/value</camunda:inputParameter>
           <camunda:outputParameter name="result">ok</camunda:outputParameter>
@@ -910,7 +910,7 @@ test("export serializer keeps deterministic extension child ordering: unknown fi
   const xml = finalizeCamundaExtensionsXml({
     xmlText: `<?xml version="1.0" encoding="UTF-8"?>
     <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
-      xmlns:pm="http://foodproc.ai/schema/pm"
+      xmlns:pm="http://processmap.ai/schema/bpmn/1.0"
       id="Defs_1" targetNamespace="http://bpmn.io/schema/bpmn">
       <bpmn:process id="Process_1" isExecutable="true">
         <bpmn:task id="Task_1">

@@ -1,7 +1,9 @@
+import { PM_ROBOT_META_NAMESPACE } from "../robotmeta/pmModdleDescriptor.js";
+
 export const CAMUNDA_NAMESPACE_URI = "http://camunda.org/schema/1.0/bpmn";
 export const ZEEBE_NAMESPACE_URI = "http://camunda.org/schema/zeebe/1.0";
 export const BPMN_NAMESPACE_URI = "http://www.omg.org/spec/BPMN/20100524/MODEL";
-export const PM_NAMESPACE_URI = "http://foodproc.ai/schema/pm";
+export const PM_NAMESPACE_URI = PM_ROBOT_META_NAMESPACE;
 const XMLNS_NAMESPACE_URI = "http://www.w3.org/2000/xmlns/";
 export const CAMUNDA_LISTENER_TYPES = Object.freeze(["class", "expression", "delegateExpression"]);
 export const CAMUNDA_LISTENER_EVENTS = Object.freeze(["start", "end"]);

@@ -498,7 +498,11 @@ export function hydrateRobotMetaFromBpmn({ extractedMap, sessionMetaMap } = {}) 
   };
 }
 
-export function syncRobotMetaToBpmn({ modeler, robotMetaByElementId } = {}) {
+export function syncRobotMetaToBpmn({
+  modeler,
+  robotMetaByElementId,
+  preserveExistingForElementIds = [],
+} = {}) {
   if (!modeler || typeof modeler.get !== "function") {
     return { ok: false, changed: 0, reason: "missing_modeler" };
   }
@@ -511,6 +515,11 @@ export function syncRobotMetaToBpmn({ modeler, robotMetaByElementId } = {}) {
     }
 
     const normalizedMap = normalizeRobotMetaMap(robotMetaByElementId);
+    const preserveExistingIdSet = new Set(
+      asArray(preserveExistingForElementIds)
+        .map((value) => asText(value))
+        .filter(Boolean),
+    );
     const candidateIds = new Set(
       Object.keys(normalizedMap)
         .map((value) => asText(value))
@@ -541,6 +550,7 @@ export function syncRobotMetaToBpmn({ modeler, robotMetaByElementId } = {}) {
 
       if (!nextMeta) {
         if (!robotEntries.length) return;
+        if (preserveExistingIdSet.has(elementId)) return;
         if (ext) {
           if (nonRobotValues.length) {
             setBpmnProperty(ext, "values", nonRobotValues);
