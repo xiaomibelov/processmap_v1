@@ -761,11 +761,14 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
     body.rev = rev;
   }
   const reason = String(options?.reason || "").trim().toLowerCase();
-  const sourceAction = (
-    reason === "import_bpmn"
-    || reason === "manual_save"
-    || reason === "publish_manual_save"
-  ) ? reason : "";
+  let sourceAction = "";
+  if (reason === "import_bpmn") {
+    sourceAction = "import_bpmn";
+  } else if (reason === "manual_save" || reason.startsWith("manual_save:")) {
+    sourceAction = "manual_save";
+  } else if (reason === "publish_manual_save" || reason.startsWith("publish_manual_save:")) {
+    sourceAction = "publish_manual_save";
+  }
   if (sourceAction) {
     body.source_action = sourceAction;
   }
