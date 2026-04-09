@@ -51,7 +51,10 @@ test("save path exposes camunda finalize transform to coordinator before first p
   assert.match(source, /transformPersistedXml,/);
 });
 
-test("camunda finalize explicit persist remains only as fallback when flush output is not yet transformed", () => {
+test("camunda finalize explicit persist keeps canonical transport reason while preserving debug suffix in lifecycle logs", () => {
   assert.match(source, /if \(out !== rawOut && flushed\?\.xmlAlreadyTransformed !== true\) \{/);
-  assert.match(source, /coordinator\.persistExplicitXml\(out, `\$\{persistReason\}:camunda_finalize`, \{/);
+  assert.match(source, /const transportPersistReason = persistReason;/);
+  assert.match(source, /const finalizeLifecycleReason = `\$\{persistReason\}:camunda_finalize`;/);
+  assert.match(source, /coordinator\.persistExplicitXml\(out, transportPersistReason, \{/);
+  assert.match(source, /ensureBpmnPersistence\(\)\.saveRaw\(sid, out, rev, transportPersistReason\)/);
 });

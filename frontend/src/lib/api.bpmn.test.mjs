@@ -89,6 +89,38 @@ test("apiPutBpmnXml exposes backend bpmn version snapshot as canonical publish t
   }
 });
 
+test("apiPutBpmnXml normalizes publish/manual save reason prefixes into canonical source_action", async () => {
+  const prevFetch = globalThis.fetch;
+  const calls = [];
+  try {
+    globalThis.fetch = async (input, init) => {
+      calls.push({ url: String(input || ""), init });
+      return new Response(JSON.stringify({ ok: true, version: 9 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    const publishOut = await apiPutBpmnXml("sess_1", "<bpmn:definitions/>", {
+      rev: 9,
+      reason: "publish_manual_save:camunda_finalize",
+    });
+    const manualOut = await apiPutBpmnXml("sess_1", "<bpmn:definitions/>", {
+      rev: 10,
+      reason: "manual_save:camunda_finalize",
+    });
+
+    assert.equal(publishOut.ok, true);
+    assert.equal(manualOut.ok, true);
+    const publishBody = JSON.parse(String(calls[0]?.init?.body || "{}"));
+    const manualBody = JSON.parse(String(calls[1]?.init?.body || "{}"));
+    assert.equal(publishBody.source_action, "publish_manual_save");
+    assert.equal(manualBody.source_action, "manual_save");
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
+});
+
 test("apiGetBpmnVersions reads backend list and include_xml query", async () => {
   const prevFetch = globalThis.fetch;
   const calls = [];
