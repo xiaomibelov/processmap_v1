@@ -34,7 +34,7 @@ test("draft ahead keeps publish action visible even when save dirty flag is fals
   });
   assert.equal(ui.showSaveActionButton, true);
   assert.equal(ui.publishActionRequired, true);
-  assert.equal(ui.saveActionText, "Publish");
+  assert.equal(ui.saveActionText, "Сохранить версию");
 });
 
 test("first publish is available when no revisions exist yet and live draft exists", () => {
@@ -51,7 +51,7 @@ test("first publish is available when no revisions exist yet and live draft exis
   });
   assert.equal(ui.showSaveActionButton, true);
   assert.equal(ui.publishActionRequired, true);
-  assert.equal(ui.saveActionText, "Publish");
+  assert.equal(ui.saveActionText, "Сохранить версию");
 });
 
 test("clean published state without draft-ahead hides save action button", () => {
@@ -68,5 +68,5 @@ test("clean published state without draft-ahead hides save action button", () =>
   });
   assert.equal(ui.showSaveActionButton, false);
   assert.equal(ui.publishActionRequired, false);
-  assert.equal(ui.saveActionText, "Сохранено ✓");
+  assert.equal(ui.saveActionText, "Черновик сохранён");
 });
