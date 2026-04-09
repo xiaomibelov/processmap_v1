@@ -77,6 +77,44 @@ test("serializeSupportedBusinessObjectPayload captures full supported semantic p
   assert.equal(payload.custom.incoming, undefined);
 });
 
+test("serializeSupportedBusinessObjectPayload strips unsafe BPMN IO branches from subprocess custom payload", () => {
+  const bo = {
+    id: "SubProcess_Unsafe",
+    $type: "bpmn:SubProcess",
+    name: "Unsafe subprocess",
+    documentation: [{ $type: "bpmn:Documentation", text: "doc" }],
+    extensionElements: {
+      $type: "bpmn:ExtensionElements",
+      values: [
+        {
+          $type: "camunda:Properties",
+          values: [{ $type: "camunda:Property", name: "k", value: "v" }],
+        },
+      ],
+    },
+    properties: [
+      {
+        id: "Property_1",
+        name: "__targetRef_placeholder",
+      },
+    ],
+    dataInputAssociations: [
+      {
+        id: "DataInputAssociation_1",
+        sourceRef: [{ id: "DataStoreReference_1" }],
+        targetRef: { id: "Property_1" },
+      },
+    ],
+  };
+
+  const payload = serializeSupportedBusinessObjectPayload(bo);
+
+  assert.equal(payload.documentation?.[0]?.text, "doc");
+  assert.equal(payload.extensionElements?.values?.[0]?.$type, "camunda:Properties");
+  assert.equal(payload.custom?.properties, undefined);
+  assert.equal(payload.custom?.dataInputAssociations, undefined);
+});
+
 test("rehydrateSupportedBusinessObjectPayload rebuilds moddle-typed structures and custom fields", () => {
   const payload = {
     documentation: [{ $type: "bpmn:Documentation", text: "doc rehydrated" }],
@@ -222,6 +260,112 @@ test("semantic payload strips unsafe generic namespace artifacts and still round
   assert.equal(/camunda:(Property|property)/.test(out.xml), true);
   assert.equal(/name=["']priority["'][^>]*value=["']high["']/.test(out.xml), true);
   assert.equal(out.xml.includes("ns0:"), false);
+});
+
+test("rehydrateSupportedBusinessObjectPayload restores unknown safe namespaced extension entries as generic moddle elements", async (t) => {
+  const BpmnModdle = await importRealBpmnModdleOrSkip(t);
+  if (!BpmnModdle) return;
+  const moddle = new BpmnModdle({
+    camunda: camundaModdleDescriptor,
+    pm: pmModdleDescriptor,
+  });
+  const target = moddle.create("bpmn:UserTask", { id: "Task_Unknown_Generic" });
+
+  rehydrateSupportedBusinessObjectPayload(target, {
+    extensionElements: {
+      $type: "bpmn:ExtensionElements",
+      values: [
+        { $type: "pm:UnknownMeta", foo: "bar" },
+      ],
+    },
+  }, { moddle });
+
+  const unknownEntry = target.extensionElements?.values?.[0];
+  assert.equal(unknownEntry?.$type, "pm:UnknownMeta");
+  assert.equal(unknownEntry?.$descriptor?.isGeneric, true);
+  assert.equal(unknownEntry?.foo, "bar");
+
+  const defs = moddle.create("bpmn:Definitions", {
+    id: "Definitions_Generic",
+    targetNamespace: "http://bpmn.io/schema/bpmn",
+    rootElements: [moddle.create("bpmn:Process", {
+      id: "Process_Generic",
+      isExecutable: false,
+      flowElements: [target],
+    })],
+  });
+  const out = await moddle.toXML(defs, { format: true });
+  assert.equal(typeof out?.xml, "string");
+  assert.equal(out.xml.includes("pm:UnknownMeta"), true);
+  assert.equal(out.xml.includes("foo=\"bar\""), true);
+});
+
+test("subprocess payload without unsafe BPMN IO branches round-trips through real moddle saveXML", async (t) => {
+  const BpmnModdle = await importRealBpmnModdleOrSkip(t);
+  if (!BpmnModdle) return;
+  const moddle = new BpmnModdle({
+    camunda: camundaModdleDescriptor,
+    pm: pmModdleDescriptor,
+  });
+
+  const source = moddle.create("bpmn:SubProcess", {
+    id: "SubProcess_Source",
+    name: "Collapsed source",
+  });
+  source.documentation = [
+    moddle.create("bpmn:Documentation", {
+      text: "copy-doc-text",
+    }),
+  ];
+  source.extensionElements = moddle.create("bpmn:ExtensionElements", {
+    values: [
+      moddle.create("camunda:Properties", {
+        values: [
+          moddle.create("camunda:Property", {
+            name: "ingredient",
+            value: "soup",
+          }),
+        ],
+      }),
+    ],
+  });
+  source.properties = [
+    moddle.create("bpmn:Property", {
+      id: "Property_1",
+      name: "__targetRef_placeholder",
+    }),
+  ];
+  source.dataInputAssociations = [
+    moddle.create("bpmn:DataInputAssociation", {
+      id: "DataInputAssociation_1",
+    }),
+  ];
+
+  const payload = serializeSupportedBusinessObjectPayload(source);
+  assert.equal(payload.custom?.properties, undefined);
+  assert.equal(payload.custom?.dataInputAssociations, undefined);
+
+  const target = moddle.create("bpmn:SubProcess", {
+    id: "SubProcess_Target",
+    name: "Collapsed target",
+  });
+  rehydrateSupportedBusinessObjectPayload(target, payload, { moddle });
+
+  const defs = moddle.create("bpmn:Definitions", {
+    id: "Definitions_SubProcess",
+    targetNamespace: "http://bpmn.io/schema/bpmn",
+    rootElements: [moddle.create("bpmn:Process", {
+      id: "Process_SubProcess",
+      isExecutable: false,
+      flowElements: [target],
+    })],
+  });
+  const out = await moddle.toXML(defs, { format: true });
+  assert.equal(typeof out?.xml, "string");
+  assert.equal(out.xml.includes("SubProcess_Target"), true);
+  assert.equal(out.xml.includes("copy-doc-text"), true);
+  assert.equal(out.xml.includes("DataInputAssociation_1"), false);
+  assert.equal(out.xml.includes("Property_1"), false);
 });
 
 test("rehydrateSupportedBusinessObjectPayload applies namespaced attrs without nested $attrs regression", () => {
