@@ -529,7 +529,7 @@ test("properties overlay preview includes Camunda IO rows", () => withDom(() => 
         extensionProperties: [],
       },
       preservedExtensionElements: [
-        `<camunda:connector xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:pm="http://foodproc.ai/schema/pm">
+        `<camunda:connector xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:pm="http://processmap.ai/schema/bpmn/1.0">
           <camunda:inputOutput>
             <camunda:inputParameter name="url" pm:showOnTask="true">http://192.168.56.101/robot</camunda:inputParameter>
             <camunda:outputParameter name="response" pm:showOnTask="true">

@@ -750,6 +750,8 @@ export async function executeBpmnContextMenuAction({
           modeling,
           elementFactory,
           moddle: inst.get?.("moddle"),
+          copyPaste: inst.get?.("copyPaste"),
+          eventBus: inst.get?.("eventBus"),
           parent,
           point: pastePoint,
         });
@@ -760,6 +762,7 @@ export async function executeBpmnContextMenuAction({
             cloneCompanionStateForCopiedElement({
               sourceElementId: toText(semanticSnapshot?.sourceElementId),
               targetElementId: toText(created?.id),
+              remap: asObject(semanticPaste?.remap),
               semanticPayload: semanticSnapshot?.semanticPayload,
               inst,
             });

@@ -15,6 +15,8 @@ function createStubModeler({
   viewbox = { x: 100, y: 50, scale: 2 },
   rect = { left: 10, top: 20 },
   commandStack = null,
+  copyPaste = null,
+  eventBus = null,
 } = {}) {
   const calls = [];
   const labelCalls = [];
@@ -146,6 +148,8 @@ function createStubModeler({
       }
       if (key === "directEditing") return { activate() {} };
       if (key === "commandStack") return commandStack;
+      if (key === "copyPaste") return copyPaste;
+      if (key === "eventBus") return eventBus;
       if (key === "moddle") return moddle;
       return null;
     },
@@ -869,6 +873,128 @@ test("copy_element captures semantic payload and paste restores it with a new id
   );
   assert.equal(pasted?.businessObject?.pmCustomFlag, "flag-1");
   assert.equal(Number(pasted?.x || 0) > Number(task.x || 0), true);
+});
+
+test("subprocess copy_element uses native subtree paste and clones companion state by remap", async () => {
+  const subprocess = {
+    id: "SubProcess_1",
+    type: "bpmn:SubProcess",
+    x: 220,
+    y: 120,
+    width: 300,
+    height: 180,
+    businessObject: {
+      $type: "bpmn:SubProcess",
+      name: "Expanded Source",
+      flowElements: [
+        { id: "InnerTask_1", $type: "bpmn:Task", name: "Inner task" },
+      ],
+    },
+  };
+  const root = {
+    id: "Process_1",
+    type: "bpmn:Process",
+    businessObject: { $type: "bpmn:Process", flowElements: [subprocess] },
+    di: { planeElement: [] },
+    children: [subprocess],
+  };
+  subprocess.parent = root;
+
+  const pasteListeners = new Set();
+  const copyPaste = {
+    copy(elements) {
+      assert.equal(elements[0], subprocess);
+      return {
+        0: [
+          { id: "SubProcess_1", type: "bpmn:SubProcess" },
+          { id: "InnerTask_1", type: "bpmn:Task", parent: "SubProcess_1" },
+        ],
+      };
+    },
+    paste() {
+      const cache = {
+        SubProcess_1: {
+          id: "SubProcess_2",
+          type: "bpmn:SubProcess",
+          businessObject: { $type: "bpmn:SubProcess", name: "Expanded Source" },
+        },
+        InnerTask_1: {
+          id: "InnerTask_2",
+          type: "bpmn:Task",
+          businessObject: { $type: "bpmn:Task", name: "Inner task" },
+        },
+      };
+      pasteListeners.forEach((listener) => listener({
+        cache,
+        descriptor: { id: "SubProcess_1" },
+      }));
+      return [cache.SubProcess_1, cache.InnerTask_1];
+    },
+  };
+  const eventBus = {
+    on(eventName, listener) {
+      if (String(eventName || "") === "copyPaste.pasteElement") {
+        pasteListeners.add(listener);
+      }
+    },
+    off(eventName, listener) {
+      if (String(eventName || "") === "copyPaste.pasteElement") {
+        pasteListeners.delete(listener);
+      }
+    },
+  };
+  const cloneCalls = [];
+
+  const { inst, selected } = createStubModeler({
+    root,
+    registryItems: [root, subprocess],
+    copyPaste,
+    eventBus,
+  });
+
+  const copyResult = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "copy_element",
+      target: { id: "SubProcess_1" },
+    },
+    modelerRef: { current: inst },
+    buildCopyElementOptions() {
+      return {
+        nativeTree: copyPaste.copy([subprocess]),
+      };
+    },
+  });
+  assert.equal(copyResult.ok, true);
+
+  const pasteResult = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "paste",
+      target: { id: "SubProcess_1" },
+    },
+    modelerRef: { current: inst },
+    cloneCompanionStateForCopiedElement(payload) {
+      cloneCalls.push(payload);
+    },
+    emitElementSelection(element) {
+      selected.length = 0;
+      selected.push(element);
+    },
+  });
+
+  assert.equal(pasteResult.ok, true);
+  assert.equal(pasteResult.createdId, "SubProcess_2");
+  assert.deepEqual(pasteResult.changedIds.sort(), ["InnerTask_2", "SubProcess_2"]);
+  assert.equal(selected[0]?.id, "SubProcess_2");
+  assert.deepEqual(cloneCalls, [{
+    sourceElementId: "SubProcess_1",
+    targetElementId: "SubProcess_2",
+    remap: {
+      SubProcess_1: "SubProcess_2",
+      InnerTask_1: "InnerTask_2",
+    },
+    semanticPayload: undefined,
+    inst,
+  }]);
 });
 
 test("semantic paste falls back to clicked canvas point when no target shape is present", async () => {
