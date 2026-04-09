@@ -3,6 +3,10 @@ import { getFirstPickedFile } from "./fileInputEvent.js";
 import { resolvePublishedRevisionBadgeView } from "./revisionBadgePolicy.js";
 import { getPublishGitMirrorMeta } from "../../../../shared/publishGitMirrorStatus";
 
+function toText(value) {
+  return String(value || "").trim();
+}
+
 export default function ProcessStageHeader({ view = {} }) {
   const {
     canSaveNow,
@@ -68,6 +72,10 @@ export default function ProcessStageHeader({ view = {} }) {
     ? `${mirrorMeta.label} · ${mirrorVersionLabel}`
     : mirrorMeta.label;
   const showSaveStatusBadge = canSaveNow && !showSaveActionButton;
+  const toolbarMessage = toText(toolbarInlineMessage);
+  const suppressDraftSavedBadge = /^Опубликовано как версия R\d+\.$/.test(toolbarMessage)
+    && toText(saveSmartText) === "Черновик сохранён";
+  const showGenericSaveStatusBadge = showSaveStatusBadge && !suppressDraftSavedBadge;
   const canRunUndo = tab === "diagram" && canUndo === true;
   const canRunRedo = tab === "diagram" && canRedo === true;
 
@@ -146,7 +154,7 @@ export default function ProcessStageHeader({ view = {} }) {
 
       <div className="diagramToolbarSlot diagramToolbarSlot--right">
         <div className="diagramToolbarRightStatus">
-          {showSaveStatusBadge ? (
+          {showGenericSaveStatusBadge ? (
             <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-save-status" title={saveSmartText}>
               {saveSmartText}
             </span>
