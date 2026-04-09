@@ -206,6 +206,93 @@ test("collapsed subprocess paste creates businessObject id before createShape ru
   assert.equal(calls[0].diId, "Activity_2_di");
 });
 
+test("copy clipboard snapshot stores native tree for subprocess subtree copy", () => {
+  resetBpmnElementClipboardForTests();
+  const copied = copyBpmnElementToClipboard({
+    id: "SubProcess_1",
+    type: "bpmn:SubProcess",
+    x: 100,
+    y: 120,
+    width: 220,
+    height: 160,
+    businessObject: {
+      $type: "bpmn:SubProcess",
+      name: "Expanded Source",
+      flowElements: [
+        { id: "InnerTask_1", $type: "bpmn:Task", name: "Inner task" },
+      ],
+    },
+  }, {
+    nativeTree: {
+      0: [
+        { id: "SubProcess_1", type: "bpmn:SubProcess" },
+        { id: "InnerTask_1", type: "bpmn:Task", parent: "SubProcess_1" },
+      ],
+    },
+  });
+
+  const snapshot = readCopiedBpmnElementSnapshot();
+  assert.equal(copied.ok, true);
+  assert.equal(snapshot?.mode, "native_tree");
+  assert.deepEqual(snapshot?.sourceDescriptorIds, ["SubProcess_1", "InnerTask_1"]);
+  assert.equal(snapshot?.nativeTree?.[0]?.[1]?.id, "InnerTask_1");
+});
+
+test("paste clipboard native tree uses direct copyPaste path and exposes remap", () => {
+  resetBpmnElementClipboardForTests();
+  copyBpmnElementToClipboard({
+    id: "SubProcess_1",
+    type: "bpmn:SubProcess",
+    x: 100,
+    y: 120,
+    width: 220,
+    height: 160,
+    businessObject: {
+      $type: "bpmn:SubProcess",
+      name: "Expanded Source",
+    },
+  }, {
+    nativeTree: {
+      0: [
+        { id: "SubProcess_1", type: "bpmn:SubProcess" },
+        { id: "InnerTask_1", type: "bpmn:Task", parent: "SubProcess_1" },
+      ],
+    },
+  });
+
+  const listeners = new Set();
+  const result = pasteCopiedBpmnElementFromClipboard({
+    copyPaste: {
+      paste() {
+        const cache = {
+          SubProcess_1: { id: "SubProcess_2" },
+          InnerTask_1: { id: "InnerTask_2" },
+        };
+        listeners.forEach((listener) => listener({ cache, descriptor: { id: "SubProcess_1" } }));
+        return [cache.SubProcess_1, cache.InnerTask_1];
+      },
+    },
+    eventBus: {
+      on(eventName, listener) {
+        if (String(eventName || "") === "copyPaste.pasteElement") listeners.add(listener);
+      },
+      off(eventName, listener) {
+        if (String(eventName || "") === "copyPaste.pasteElement") listeners.delete(listener);
+      },
+    },
+    parent: { id: "Process_1" },
+    point: { x: 320, y: 260 },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.createdElement?.id, "SubProcess_2");
+  assert.deepEqual(result.remap, {
+    SubProcess_1: "SubProcess_2",
+    InnerTask_1: "InnerTask_2",
+  });
+  assert.deepEqual(result.changedIds, ["SubProcess_2", "InnerTask_2"]);
+});
+
 test("resolveBpmnPastePoint prefers nearby offset for selected target and falls back to snapshot source point", () => {
   resetBpmnElementClipboardForTests();
   copyBpmnElementToClipboard({
