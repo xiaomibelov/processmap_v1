@@ -132,6 +132,11 @@ export const apiRoutes = {
     ),
     pathReport: (sessionId, pathId, reportId) => `/api/sessions/${encode(sessionId)}/paths/${encode(pathId)}/reports/${encode(reportId)}`,
   },
+  clipboard: {
+    bpmn: () => "/api/clipboard/bpmn",
+    bpmnCopy: () => "/api/clipboard/bpmn/copy",
+    bpmnPaste: () => "/api/clipboard/bpmn/paste",
+  },
   reports: {
     item: (reportId) => `/api/reports/${encode(reportId)}`,
   },
