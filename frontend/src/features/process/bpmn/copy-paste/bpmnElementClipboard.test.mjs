@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { BpmnModdle } from "bpmn-moddle";
 import {
   canCopyBpmnElement,
   copyBpmnElementToClipboard,
@@ -8,6 +9,8 @@ import {
   resetBpmnElementClipboardForTests,
   resolveBpmnPastePoint,
 } from "./bpmnElementClipboard.js";
+import camundaModdleDescriptor from "../../camunda/camundaModdleDescriptor.js";
+import pmModdleDescriptor from "../../robotmeta/pmModdleDescriptor.js";
 
 function createMockModdle() {
   return {
@@ -18,6 +21,12 @@ function createMockModdle() {
       };
     },
   };
+}
+
+async function importTaskBusinessObjectFromXml(xml) {
+  const moddle = new BpmnModdle({ camunda: camundaModdleDescriptor, pm: pmModdleDescriptor });
+  const { rootElement } = await moddle.fromXML(xml, "bpmn:Definitions");
+  return rootElement.rootElements[0].flowElements.find((entry) => entry?.id === "Task_1") || null;
 }
 
 test("copy clipboard snapshot preserves supported semantic payload and omits ids", () => {
@@ -369,6 +378,90 @@ test("copy clipboard snapshot merges draft camunda state when source businessObj
   assert.equal(props?.values?.[0]?.value, "high");
   assert.equal(
     snapshot?.semanticPayload?.extensionElements?.values?.filter((entry) => entry?.$type === "pm:RobotMeta").length,
+    1,
+  );
+});
+
+test("imported managed camunda properties survive copy/paste roundtrip together with docs and robot meta", async () => {
+  resetBpmnElementClipboardForTests();
+  const taskBusinessObject = await importTaskBusinessObjectFromXml(`<?xml version="1.0" encoding="UTF-8"?>
+  <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+    xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+    xmlns:pm="http://processmap.ai/schema/bpmn/1.0"
+    id="Defs_1" targetNamespace="http://bpmn.io/schema/bpmn">
+    <bpmn:process id="Process_1" isExecutable="true">
+      <bpmn:task id="Task_1" name="Шаг из XML">
+        <bpmn:documentation textFormat="text/plain">docs</bpmn:documentation>
+        <bpmn:extensionElements>
+          <camunda:Properties>
+            <camunda:Property name="priority" value="high" />
+          </camunda:Properties>
+          <pm:RobotMeta version="v1">{"robot_meta_version":"v1"}</pm:RobotMeta>
+        </bpmn:extensionElements>
+      </bpmn:task>
+    </bpmn:process>
+  </bpmn:definitions>`);
+
+  assert.equal(taskBusinessObject?.extensionElements?.values?.some((entry) => entry?.$type === "camunda:Properties"), true);
+
+  const copied = copyBpmnElementToClipboard({
+    id: "Task_1",
+    type: "bpmn:Task",
+    x: 100,
+    y: 120,
+    width: 140,
+    height: 90,
+    businessObject: taskBusinessObject,
+  });
+  const snapshot = readCopiedBpmnElementSnapshot();
+
+  assert.equal(copied.ok, true);
+  assert.equal(snapshot?.semanticPayload?.documentation?.[0]?.text, "docs");
+  assert.equal(snapshot?.semanticPayload?.extensionElements?.values?.some((entry) => entry?.$type === "camunda:Properties"), true);
+  assert.equal(snapshot?.semanticPayload?.extensionElements?.values?.filter((entry) => entry?.$type === "pm:RobotMeta").length, 1);
+
+  const created = [];
+  const result = pasteCopiedBpmnElementFromClipboard({
+    modeling: {
+      createShape(shapeLike, pos, parent) {
+        const shape = {
+          id: "Task_2",
+          type: shapeLike.type,
+          x: pos.x,
+          y: pos.y,
+          width: shapeLike.width,
+          height: shapeLike.height,
+          parent,
+          businessObject: shapeLike.businessObject || { $type: shapeLike.type },
+          di: { id: "Task_2_di" },
+        };
+        created.push(shape);
+        return shape;
+      },
+      updateLabel(element, name) {
+        element.businessObject.name = name;
+      },
+    },
+    elementFactory: {
+      createShape(attrs) {
+        return { ...attrs };
+      },
+    },
+    moddle: createMockModdle(),
+    parent: { id: "Process_1" },
+    point: { x: 320, y: 240 },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(created.length, 1);
+  assert.equal(created[0].businessObject.documentation?.[0]?.text, "docs");
+  const propsEntry = created[0].businessObject.extensionElements?.values?.find((entry) => entry?.$type === "camunda:Properties");
+  assert.deepEqual(
+    propsEntry?.values?.map((entry) => ({ name: entry.name, value: entry.value })),
+    [{ name: "priority", value: "high" }],
+  );
+  assert.equal(
+    created[0].businessObject.extensionElements?.values?.filter((entry) => entry?.$type === "pm:RobotMeta").length,
     1,
   );
 });
