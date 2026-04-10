@@ -1313,6 +1313,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   });
   const templateInsertCamundaSeedInFlightRef = useRef(0);
   const templateInsertCamundaClearGuardRef = useRef({ ids: [], expiresAt: 0 });
+  const importCamundaPreserveGuardRef = useRef({ ids: [], expiresAt: 0 });
   const copyPasteRobotMetaPreserveGuardRef = useRef({ ids: [], expiresAt: 0 });
   const suppressCommandStackRef = useRef(0);
   const suppressViewboxEventRef = useRef(0);
@@ -2298,16 +2299,27 @@ const BpmnStage = forwardRef(function BpmnStage({
     }
     const explicitPreserveIds = asArray(options?.preserveManagedForElementIds);
     const templateInsertGuardIds = readTemplateInsertCamundaClearGuardIds();
+    const importPreserveGuardIds = readImportCamundaPreserveGuardIds();
     const preserveManagedForElementIds = Array.from(new Set(
-      [...explicitPreserveIds, ...templateInsertGuardIds]
+      [...explicitPreserveIds, ...templateInsertGuardIds, ...importPreserveGuardIds]
         .map((value) => toText(value))
         .filter(Boolean),
     ));
-    return syncCamundaExtensionsToBpmn({
+    const syncResult = syncCamundaExtensionsToBpmn({
       modeler: inst,
       camundaExtensionsByElementId: getCamundaExtensionsMap(),
       preserveManagedForElementIds,
     });
+    const importGuardWasUsed = importPreserveGuardIds.length > 0;
+    const syncCompleted = Boolean(syncResult?.ok) && !Boolean(syncResult?.skipped);
+    if (
+      importGuardWasUsed
+      && syncCompleted
+      && Number(syncResult?.preservedManagedSkips || 0) === 0
+    ) {
+      clearImportCamundaPreserveGuard();
+    }
+    return syncResult;
   }
 
   function primeTemplateInsertCamundaClearGuard(remapRaw = {}) {
@@ -2338,6 +2350,35 @@ const BpmnStage = forwardRef(function BpmnStage({
 
   function clearTemplateInsertCamundaClearGuard() {
     templateInsertCamundaClearGuardRef.current = { ids: [], expiresAt: 0 };
+  }
+
+  function primeImportCamundaPreserveGuard(idsRaw = []) {
+    const ids = Array.from(new Set(
+      asArray(idsRaw)
+        .map((value) => toText(value))
+        .filter(Boolean),
+    ));
+    if (!ids.length) return;
+    importCamundaPreserveGuardRef.current = {
+      ids,
+      expiresAt: Date.now() + 15000,
+    };
+  }
+
+  function readImportCamundaPreserveGuardIds() {
+    const state = asObject(importCamundaPreserveGuardRef.current);
+    const expiresAt = Number(state.expiresAt || 0);
+    const ids = asArray(state.ids).map((value) => toText(value)).filter(Boolean);
+    if (!ids.length) return [];
+    if (expiresAt > 0 && Date.now() > expiresAt) {
+      importCamundaPreserveGuardRef.current = { ids: [], expiresAt: 0 };
+      return [];
+    }
+    return ids;
+  }
+
+  function clearImportCamundaPreserveGuard() {
+    importCamundaPreserveGuardRef.current = { ids: [], expiresAt: 0 };
   }
 
   async function persistSessionMetaBoundary(nextMetaRaw, options = {}) {
@@ -2514,6 +2555,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     }
 
     const extractedMap = extractCamundaExtensionsMapFromBpmnXml(xmlText);
+    const extractedElementIds = Object.keys(normalizeCamundaExtensionsMap(extractedMap));
     const hydration = hydrateCamundaExtensionsFromBpmn({
       extractedMap,
       sessionMetaMap: currentSessionMap,
@@ -2526,7 +2568,8 @@ const BpmnStage = forwardRef(function BpmnStage({
       return { ok: true, adopted: false, extractedCount: Object.keys(extractedMap).length };
     }
 
-    const currentMeta = asObject(asObject(draftRef.current).bpmn_meta);
+    const currentDraft = asObject(draftRef.current);
+    const currentMeta = asObject(currentDraft.bpmn_meta);
     const nextMeta = {
       version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
       flow_meta: normalizeFlowTierMetaMap(currentMeta?.flow_meta),
@@ -2537,6 +2580,13 @@ const BpmnStage = forwardRef(function BpmnStage({
       hybrid_v2: currentMeta?.hybrid_v2,
       drawio: currentMeta?.drawio,
       execution_plans: normalizeExecutionPlanVersionList(currentMeta?.execution_plans),
+    };
+    if (extractedElementIds.length) {
+      primeImportCamundaPreserveGuard(extractedElementIds);
+    }
+    draftRef.current = {
+      ...currentDraft,
+      bpmn_meta: nextMeta,
     };
     onSessionSyncRef.current?.({
       id: sid,
@@ -4695,6 +4745,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     ensureEpochRef.current += 1;
     robotMetaHydrateStateRef.current = { key: "" };
     camundaHydrateStateRef.current = { key: "" };
+    importCamundaPreserveGuardRef.current = { ids: [], expiresAt: 0 };
     copyPasteRobotMetaPreserveGuardRef.current = { ids: [], expiresAt: 0 };
     destroyRuntime();
     setErr("");
