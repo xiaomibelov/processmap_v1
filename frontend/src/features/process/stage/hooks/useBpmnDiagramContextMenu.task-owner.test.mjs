@@ -156,3 +156,65 @@ test("task-menu hook still opens task context menu with task quick-edit contract
   }
 });
 
+test("context menu action error does not render raw object text", async () => {
+  const { root, cleanup } = setupDom();
+  let latest = null;
+  const errors = [];
+  try {
+    await renderHarness(root, {
+      expose: (value) => {
+        latest = value;
+      },
+      hookProps: {
+        bpmnRef: {
+          current: {
+            getUndoRedoState: () => ({ canUndo: false, canRedo: false }),
+            runDiagramContextAction: async () => ({
+              ok: false,
+              error: {
+                code: "forced_clipboard_structured_error",
+                message: "Не удалось вставить элемент",
+              },
+            }),
+          },
+        },
+        undoRedoState: {},
+        tab: "diagram",
+        hasSession: true,
+        drawioEditorOpen: false,
+        hybridPlacementHitLayerActive: false,
+        hybridModeEffective: "",
+        modalOpenSignal: false,
+        closeAllDiagramActions: () => {},
+        setInfoMsg: () => {},
+        setGenErr: (message) => errors.push(String(message || "")),
+      },
+    });
+
+    await act(async () => {
+      latest.onBpmnContextMenuRequest({
+        sessionId: "SID_1",
+        clientX: 220,
+        clientY: 160,
+        source: "task.body.contextmenu",
+        target: {
+          kind: "element",
+          id: "Task_1",
+          bpmnType: "bpmn:Task",
+          type: "bpmn:Task",
+          name: "Проверка",
+        },
+      });
+    });
+    await flush();
+
+    await act(async () => {
+      await latest.runBpmnContextMenuAction({ actionId: "paste" });
+    });
+
+    assert.equal(errors.at(-1), "Не удалось вставить элемент");
+    assert.notEqual(errors.at(-1), "[object Object]");
+  } finally {
+    await cleanup();
+  }
+});
