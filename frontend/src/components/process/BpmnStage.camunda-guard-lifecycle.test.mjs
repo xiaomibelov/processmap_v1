@@ -22,8 +22,25 @@ test("syncCamundaExtensionsToModeler skips sync while template insert seed is in
 
 test("syncCamundaExtensionsToModeler always merges template-insert guard ids into preserve list", () => {
   assert.match(source, /const templateInsertGuardIds = readTemplateInsertCamundaClearGuardIds\(\);/);
-  assert.match(source, /\[\.\.\.explicitPreserveIds, \.\.\.templateInsertGuardIds\]/);
+  assert.match(source, /\[\.\.\.explicitPreserveIds, \.\.\.templateInsertGuardIds(?:, \.\.\.importPreserveGuardIds)?\]/);
   assert.match(source, /preserveManagedForElementIds,/);
+});
+
+test("import hydrate keeps managed camunda entries alive until adopted meta is available to sync", () => {
+  assert.match(source, /const importCamundaPreserveGuardRef = useRef\(\{ ids: \[\], expiresAt: 0 \}\);/);
+  assert.match(source, /const importPreserveGuardIds = readImportCamundaPreserveGuardIds\(\);/);
+  assert.match(source, /\[\.\.\.explicitPreserveIds, \.\.\.templateInsertGuardIds, \.\.\.importPreserveGuardIds\]/);
+  assert.match(source, /primeImportCamundaPreserveGuard\(extractedElementIds\);/);
+  assert.match(source, /draftRef\.current = \{\s*\.\.\.currentDraft,\s*bpmn_meta: nextMeta,\s*\};/);
+});
+
+test("import preserve guard self-clears after a real sync no longer needs preservation", () => {
+  assert.match(source, /const importGuardWasUsed = importPreserveGuardIds\.length > 0;/);
+  assert.match(source, /const syncCompleted = Boolean\(syncResult\?\.ok\) && !Boolean\(syncResult\?\.skipped\);/);
+  assert.match(
+    source,
+    /if \(\s*importGuardWasUsed\s*&& syncCompleted\s*&& Number\(syncResult\?\.preservedManagedSkips \|\| 0\) === 0\s*\)\s*\{\s*clearImportCamundaPreserveGuard\(\);/,
+  );
 });
 
 test("template-insert guard ids continue to flow into real camunda sync path", () => {
