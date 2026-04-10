@@ -2692,6 +2692,28 @@ const BpmnStage = forwardRef(function BpmnStage({
         bpmn_meta: nextMeta,
         _sync_source: "bpmn_copy_paste_companion_clone",
       });
+      void persistSessionMetaBoundary(nextMeta, {
+        source: "bpmn_copy_paste_companion_clone",
+      }).then((persistResult) => {
+        if (!persistResult?.ok) {
+          // eslint-disable-next-line no-console
+          console.warn("[CAMUNDA_EXT] copy/paste companion clone persist failed", {
+            sid,
+            copiedRobotMeta: copiedRobotMetaCount,
+            copiedCamunda: copiedCamundaCount,
+            status: Number(persistResult?.status || 0),
+            error: String(persistResult?.error || "session_meta_patch_failed"),
+          });
+        }
+      }).catch((error) => {
+        // eslint-disable-next-line no-console
+        console.warn("[CAMUNDA_EXT] copy/paste companion clone persist exception", {
+          sid,
+          copiedRobotMeta: copiedRobotMetaCount,
+          copiedCamunda: copiedCamundaCount,
+          error: String(error?.message || error || "session_meta_patch_failed"),
+        });
+      });
     }
 
     if (copiedRobotMetaCount) {

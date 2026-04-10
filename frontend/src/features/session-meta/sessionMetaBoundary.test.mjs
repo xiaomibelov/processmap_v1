@@ -284,3 +284,52 @@ test("presentation overlay state survives server read merge after session patch 
   });
   assert.deepEqual(merged.camunda_extensions_by_element_id, currentMeta.camunda_extensions_by_element_id);
 });
+
+test("session-meta read merge keeps local copied camunda entries when server patch is missing newly pasted ids", () => {
+  const localMeta = normalizeBpmnMeta({
+    camunda_extensions_by_element_id: {
+      Task_1: {
+        properties: {
+          extensionProperties: [{ id: "p1", name: "priority", value: "high" }],
+        },
+      },
+      Activity_1: {
+        properties: {
+          extensionProperties: [{ id: "p2", name: "priority", value: "high" }],
+        },
+      },
+    },
+  });
+
+  const merged = mergeSessionMetaForRead({
+    sessionMetaRaw: normalizeBpmnMeta({
+      version: 2,
+      camunda_extensions_by_element_id: {
+        Task_1: {
+          properties: {
+            extensionProperties: [{ id: "p1", name: "priority", value: "high" }],
+          },
+        },
+      },
+    }),
+    localMetaRaw: localMeta,
+    normalizeBpmnMeta,
+    normalizeHybridLayerMap,
+    mergeHybridV2Doc,
+    mergeDrawioMeta,
+    preferServerOverlay: true,
+  });
+
+  assert.deepEqual(merged.camunda_extensions_by_element_id, {
+    Task_1: {
+      properties: {
+        extensionProperties: [{ id: "p1", name: "priority", value: "high" }],
+      },
+    },
+    Activity_1: {
+      properties: {
+        extensionProperties: [{ id: "p2", name: "priority", value: "high" }],
+      },
+    },
+  });
+});

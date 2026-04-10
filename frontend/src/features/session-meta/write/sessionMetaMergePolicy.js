@@ -70,7 +70,10 @@ export function mergeSessionMetaForRead({
       ...localHybridLayerByElementId,
     };
   const camundaExtensionsByElementId = preferServerOverlay
-    ? (hasKeys(serverCamundaExtensionsByElementId) ? serverCamundaExtensionsByElementId : localCamundaExtensionsByElementId)
+    ? {
+      ...localCamundaExtensionsByElementId,
+      ...serverCamundaExtensionsByElementId,
+    }
     : {
       ...serverCamundaExtensionsByElementId,
       ...localCamundaExtensionsByElementId,
