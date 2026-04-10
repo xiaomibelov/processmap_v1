@@ -18,6 +18,8 @@ from .models import (
     ClipboardFragmentNode,
     ClipboardPasteResponse,
     ClipboardSubprocessPayload,
+    ClipboardTaskElement,
+    ClipboardTaskPayload,
 )
 from .xml_codec import (
     _BPMN_NS,
@@ -75,6 +77,15 @@ def _parse_target_bpmn(xml_text: str) -> tuple[ET.Element, ET.Element, ET.Elemen
     if plane is None:
         raise ClipboardMaterializationError(422, "invalid_target_bpmn_xml", "target BPMN has no BPMNPlane element")
     return root, process, plane
+
+
+def _default_task_dimensions(element_type: str) -> tuple[float, float]:
+    local = str(element_type or "").strip()
+    if local in {"startEvent", "endEvent"}:
+        return 36.0, 36.0
+    if local in {"exclusiveGateway", "inclusiveGateway", "parallelGateway", "eventBasedGateway"}:
+        return 50.0, 50.0
+    return 120.0, 80.0
 
 
 def _collect_existing_ids(root: ET.Element) -> Set[str]:
@@ -188,6 +199,29 @@ def _build_node_xml(node: ClipboardFragmentNode, *, new_id: str, id_map: Dict[st
     return elem
 
 
+def _build_task_xml(element: ClipboardTaskElement, *, new_id: str) -> ET.Element:
+    tag = f"{{{_BPMN_NS}}}{element.element_type}"
+    elem = ET.Element(tag)
+    elem.attrib["id"] = new_id
+    if str(element.name or "").strip():
+        elem.attrib["name"] = str(element.name)
+    for key, value in dict(element.bpmn_attributes or {}).items():
+        if str(key or "").strip() in {"id", "name"}:
+            continue
+        elem.attrib[attr_name_from_key(str(key))] = str(value)
+    if str(element.documentation or "").strip():
+        documentation = ET.SubElement(elem, f"{{{_BPMN_NS}}}documentation")
+        documentation.text = str(element.documentation)
+    ext = build_extension_elements(dict(element.extension_elements or {}))
+    if ext is not None:
+        elem.append(ext)
+    for child_payload in list(element.extra_children or []):
+        if not isinstance(child_payload, dict):
+            continue
+        elem.append(build_tree(child_payload))
+    return elem
+
+
 def _build_edge_xml(edge: ClipboardFragmentEdge, *, new_id: str, id_map: Dict[str, str]) -> ET.Element:
     elem = ET.Element(
         f"{{{_BPMN_NS}}}sequenceFlow",
@@ -248,6 +282,34 @@ def _append_di_shape(plane: ET.Element, *, bpmn_element_id: str, node: Clipboard
             "y": f"{float(bounds.y) + float(delta_y):.1f}",
             "width": f"{float(bounds.width):.1f}",
             "height": f"{float(bounds.height):.1f}",
+        },
+    )
+
+
+def _append_basic_di_shape(
+    plane: ET.Element,
+    *,
+    bpmn_element_id: str,
+    element_type: str,
+    x: float,
+    y: float,
+    existing_ids: Set[str],
+) -> None:
+    width, height = _default_task_dimensions(element_type)
+    shape_id = _allocate_new_id(existing_ids, prefix="BPMNShape", hint=bpmn_element_id)
+    shape = ET.SubElement(
+        plane,
+        f"{{{_BPMNDI_NS}}}BPMNShape",
+        attrib={"id": shape_id, "bpmnElement": bpmn_element_id},
+    )
+    ET.SubElement(
+        shape,
+        f"{{{_DC_NS}}}Bounds",
+        attrib={
+            "x": f"{float(x):.1f}",
+            "y": f"{float(y):.1f}",
+            "width": f"{float(width):.1f}",
+            "height": f"{float(height):.1f}",
         },
     )
 
@@ -349,6 +411,104 @@ def _merge_payload_state_into_session(
     normalized_meta["flow_meta"] = flow_meta
     session_obj.nodes = nodes
     session_obj.notes_by_element = notes_by_element
+
+
+def _merge_task_state_into_session(
+    *,
+    session_obj: Session,
+    payload: ClipboardTaskPayload,
+    new_id: str,
+    normalized_meta: Dict[str, Any],
+) -> None:
+    nodes = list(getattr(session_obj, "nodes", []) or [])
+    existing_node_ids = {str(getattr(node, "id", "") or "").strip() for node in nodes}
+    notes_by_element = dict(getattr(session_obj, "notes_by_element", {}) or {})
+
+    if isinstance(payload.element.session_node, dict) and new_id not in existing_node_ids:
+        cloned = _clone_session_node(payload.element.session_node, new_id=new_id)
+        if cloned is not None:
+            nodes.append(cloned)
+            existing_node_ids.add(new_id)
+
+    for key, value in dict(payload.element.task_local_state or {}).items():
+        if key == "notes_by_element":
+            notes_by_element[new_id] = stable_json(value)
+            continue
+        target_map = normalized_meta.get(key)
+        if not isinstance(target_map, dict):
+            target_map = {}
+        target_map[new_id] = stable_json(value)
+        normalized_meta[key] = target_map
+
+    session_obj.nodes = nodes
+    session_obj.notes_by_element = notes_by_element
+
+
+def materialize_task_payload_into_session(
+    *,
+    payload: ClipboardTaskPayload,
+    target_session_id: str,
+    request: Request,
+) -> ClipboardPasteResponse:
+    target_session, target_org_id, user_id = _load_target_session_for_edit(target_session_id, request)
+
+    lock = acquire_session_lock(str(target_session.id or target_session_id), ttl_ms=15000)
+    if not lock.acquired:
+        raise ClipboardMaterializationError(423, "lock_busy", "target session is being updated, retry")
+
+    try:
+        root, process, plane = _parse_target_bpmn(str(getattr(target_session, "bpmn_xml", "") or ""))
+        existing_ids = _collect_existing_ids(root)
+        new_id = _allocate_new_id(existing_ids, prefix=str(payload.element.element_type or "Node"), hint=str(payload.context.source_element_id or "task"))
+        target_x, target_y = _target_origin(plane)
+        task_elem = _build_task_xml(payload.element, new_id=new_id)
+        process.append(task_elem)
+        _append_basic_di_shape(
+            plane,
+            bpmn_element_id=new_id,
+            element_type=str(payload.element.element_type or ""),
+            x=float(target_x),
+            y=float(target_y),
+            existing_ids=existing_ids,
+        )
+
+        xml_text = ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8", errors="replace")
+        flow_ctx = _legacy_main._collect_sequence_flow_meta(xml_text)
+        current_meta = _legacy_main._normalize_bpmn_meta(getattr(target_session, "bpmn_meta", {}))
+        raw_meta = stable_json(current_meta) if isinstance(current_meta, dict) else {}
+        if not isinstance(raw_meta, dict):
+            raw_meta = {}
+        _merge_task_state_into_session(
+            session_obj=target_session,
+            payload=payload,
+            new_id=new_id,
+            normalized_meta=raw_meta,
+        )
+        target_session.bpmn_xml = xml_text
+        target_session.bpmn_xml_version = int(getattr(target_session, "version", 0) or 0)
+        target_session.bpmn_graph_fingerprint = _legacy_main._session_graph_fingerprint(target_session)
+        target_session.bpmn_meta = _legacy_main._normalize_bpmn_meta(
+            raw_meta,
+            allowed_flow_ids=flow_ctx.get("flow_ids") if isinstance(flow_ctx, dict) else None,
+            allowed_node_ids=flow_ctx.get("node_ids") if isinstance(flow_ctx, dict) else None,
+        )
+        st = _legacy_main.get_storage()
+        st.save(target_session, user_id=user_id, org_id=target_org_id, is_admin=True)
+        _legacy_main._invalidate_session_caches(
+            target_session,
+            session_id=str(target_session.id or target_session_id),
+            org_id=target_org_id or getattr(target_session, "org_id", "") or _legacy_main.get_default_org_id(),
+        )
+        return ClipboardPasteResponse(
+            clipboard_item_type=str(payload.clipboard_item_type),
+            target_session_id=str(target_session.id or target_session_id),
+            pasted_root_element_id=str(new_id),
+            created_node_ids=[str(new_id)],
+            created_edge_ids=[],
+            schema_version=str(payload.schema_version),
+        )
+    finally:
+        lock.release()
 
 
 def materialize_subprocess_payload_into_session(

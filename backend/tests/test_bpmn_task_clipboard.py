@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -44,6 +45,40 @@ SAMPLE_BPMN_XML = """<?xml version="1.0" encoding="UTF-8"?>
     <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_1" targetRef="Gateway_1" />
     <bpmn:sequenceFlow id="Flow_3" sourceRef="Gateway_1" targetRef="EndEvent_1" />
   </bpmn:process>
+</bpmn:definitions>
+"""
+
+TARGET_BPMN_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions
+  xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+  id="Definitions_Target"
+  targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_Target" isExecutable="false">
+    <bpmn:startEvent id="TargetStart">
+      <bpmn:outgoing>TargetFlow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:endEvent id="TargetEnd">
+      <bpmn:incoming>TargetFlow_1</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="TargetFlow_1" sourceRef="TargetStart" targetRef="TargetEnd" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_Target">
+    <bpmndi:BPMNPlane id="BPMNPlane_Target" bpmnElement="Process_Target">
+      <bpmndi:BPMNShape id="Shape_TargetStart" bpmnElement="TargetStart">
+        <dc:Bounds x="120" y="180" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_TargetEnd" bpmnElement="TargetEnd">
+        <dc:Bounds x="260" y="180" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_TargetFlow_1" bpmnElement="TargetFlow_1">
+        <di:waypoint x="156" y="198" />
+        <di:waypoint x="260" y="198" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
 </bpmn:definitions>
 """
 
@@ -124,9 +159,11 @@ class BpmnTaskClipboardTests(unittest.TestCase):
         )
         from app.clipboard.api import (
             ClipboardCopyIn,
+            ClipboardPasteIn,
             clear_current_bpmn_clipboard,
             copy_bpmn_task_to_clipboard,
             get_current_bpmn_clipboard,
+            paste_bpmn_clipboard,
         )
         from app.clipboard.redis_store import ClipboardRedisStore, clipboard_key, clipboard_ttl_sec
         from app.clipboard.serializer import ClipboardSerializationError, serialize_task_clipboard_payload
@@ -142,9 +179,11 @@ class BpmnTaskClipboardTests(unittest.TestCase):
         self.get_storage = get_storage
         self.session_bpmn_save = session_bpmn_save
         self.ClipboardCopyIn = ClipboardCopyIn
+        self.ClipboardPasteIn = ClipboardPasteIn
         self.clear_current_bpmn_clipboard = clear_current_bpmn_clipboard
         self.copy_bpmn_task_to_clipboard = copy_bpmn_task_to_clipboard
         self.get_current_bpmn_clipboard = get_current_bpmn_clipboard
+        self.paste_bpmn_clipboard = paste_bpmn_clipboard
         self.ClipboardRedisStore = ClipboardRedisStore
         self.clipboard_key = clipboard_key
         self.clipboard_ttl_sec = clipboard_ttl_sec
@@ -175,6 +214,15 @@ class BpmnTaskClipboardTests(unittest.TestCase):
         self.assertTrue(self.session_id)
         self.upsert_project_membership(self.org_id, self.project_id, str(self.peer.get("id") or ""), "editor")
         self.assertTrue(bool(self.session_bpmn_save(self.session_id, self.BpmnXmlIn(xml=SAMPLE_BPMN_XML), self._req(self.owner)).get("ok")))
+        target_session = self.create_project_session(
+            self.project_id,
+            self.CreateSessionIn(title="Clipboard Target Session"),
+            "quick_skeleton",
+            request=self._req(self.owner),
+        )
+        self.target_session_id = str(target_session.get("id") or "")
+        self.assertTrue(self.target_session_id)
+        self.assertTrue(bool(self.session_bpmn_save(self.target_session_id, self.BpmnXmlIn(xml=TARGET_BPMN_XML), self._req(self.owner)).get("ok")))
         self._seed_task_local_state()
 
     def tearDown(self):
@@ -368,11 +416,75 @@ class BpmnTaskClipboardTests(unittest.TestCase):
             self.assertEqual(bool(peer_body.get("empty")), True)
             self.assertIsNone(peer_body.get("item"))
 
+    def test_task_copy_and_paste_roundtrip_restores_task_semantics(self):
+        fake = _FakeRedis()
+        with patch("app.redis_cache.get_client", return_value=fake):
+            copy_out = self.copy_bpmn_task_to_clipboard(
+                self.ClipboardCopyIn(session_id=self.session_id, element_id="Task_1"),
+                self._req(self.owner),
+            )
+            copy_status, copy_body = _read_response(copy_out)
+            self.assertEqual(copy_status, 200)
+            self.assertEqual(str(copy_body.get("clipboard_item_type") or ""), "bpmn_task")
+
+            read_out = self.get_current_bpmn_clipboard(self._req(self.owner))
+            read_status, read_body = _read_response(read_out)
+            self.assertEqual(read_status, 200)
+            self.assertEqual(bool(read_body.get("empty")), False)
+            self.assertEqual(str((read_body.get("item") or {}).get("clipboard_item_type") or ""), "bpmn_task")
+
+            paste_out = self.paste_bpmn_clipboard(
+                self.ClipboardPasteIn(session_id=self.target_session_id),
+                self._req(self.owner),
+            )
+            paste_status, paste_body = _read_response(paste_out)
+            self.assertEqual(paste_status, 200)
+            self.assertTrue(bool(paste_body.get("ok")))
+            pasted_task_id = str(paste_body.get("pasted_root_element_id") or "")
+            self.assertTrue(pasted_task_id)
+            self.assertEqual(list(paste_body.get("created_edge_ids") or []), [])
+            self.assertEqual(list(paste_body.get("created_node_ids") or []), [pasted_task_id])
+
+        st = self.get_storage()
+        reloaded = st.load(self.target_session_id, org_id=self.org_id, is_admin=True)
+        self.assertIsNotNone(reloaded)
+        root = ET.fromstring(str(getattr(reloaded, "bpmn_xml", "") or ""))
+        tasks = [elem for elem in root.iter() if elem.tag.endswith("userTask")]
+        pasted_task = next((elem for elem in tasks if str(elem.attrib.get("id") or "") == pasted_task_id), None)
+        self.assertIsNotNone(pasted_task)
+        self.assertNotEqual(pasted_task_id, "Task_1")
+        self.assertEqual(str(pasted_task.attrib.get("name") or ""), "Approve request")
+        self.assertEqual(str(pasted_task.attrib.get("{http://camunda.org/schema/1.0/bpmn}assignee") or ""), "ops")
+
+        documentation = next((child for child in list(pasted_task) if child.tag.endswith("documentation")), None)
+        self.assertEqual(str("".join(documentation.itertext()) if documentation is not None else ""), "Review the incoming request")
+        prop = next((elem for elem in pasted_task.iter() if elem.tag.endswith("property") and str(elem.attrib.get("name") or "") == "priority"), None)
+        self.assertIsNotNone(prop)
+        self.assertEqual(str(prop.attrib.get("value") or ""), "high")
+
+        meta = getattr(reloaded, "bpmn_meta", {}) if isinstance(getattr(reloaded, "bpmn_meta", {}), dict) else {}
+        self.assertIn(pasted_task_id, meta.get("camunda_extensions_by_element_id", {}))
+        self.assertEqual(
+            meta.get("camunda_extensions_by_element_id", {}).get(pasted_task_id, {}).get("properties", [{}])[0].get("value"),
+            "high",
+        )
+        self.assertIn(pasted_task_id, meta.get("robot_meta_by_element_id", {}))
+        self.assertIn(pasted_task_id, meta.get("presentation_by_element_id", {}))
+        self.assertIn(pasted_task_id, meta.get("hybrid_layer_by_element_id", {}))
+        self.assertIn(pasted_task_id, meta.get("node_path_meta", {}))
+        self.assertIn(pasted_task_id, getattr(reloaded, "notes_by_element", {}))
+        self.assertTrue(any(str(getattr(node, "id", "") or "") == pasted_task_id for node in list(getattr(reloaded, "nodes", []) or [])))
+
+        second_reload = st.load(self.target_session_id, org_id=self.org_id, is_admin=True)
+        self.assertIn(pasted_task_id, getattr(second_reload, "bpmn_meta", {}).get("camunda_extensions_by_element_id", {}))
+        self.assertIn(pasted_task_id, getattr(second_reload, "notes_by_element", {}))
+
     def test_app_factory_includes_clipboard_route_without_breaking_existing_router_registration(self):
         app = self.create_app()
         paths = {str(route.path) for route in app.routes}
         self.assertIn("/api/clipboard/bpmn", paths)
         self.assertIn("/api/clipboard/bpmn/copy", paths)
+        self.assertIn("/api/clipboard/bpmn/paste", paths)
         self.assertIn("/api/templates", paths)
 
 
