@@ -175,6 +175,62 @@ UNSUPPORTED_SUBPROCESS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+PLACEHOLDER_PROPERTY_SUBPROCESS_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_Placeholder" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_Placeholder" isExecutable="false">
+    <bpmn:subProcess id="StageLikeSubProcess_1" name="Add ingredient cream">
+      <bpmn:property id="Property_placeholder_1" name="__targetRef_placeholder" />
+      <bpmn:dataInputAssociation id="DataInputAssociation_placeholder_1">
+        <bpmn:sourceRef>NestedTask_1</bpmn:sourceRef>
+        <bpmn:targetRef>Property_placeholder_1</bpmn:targetRef>
+      </bpmn:dataInputAssociation>
+      <bpmn:subProcess id="NestedSubProcess_1" name="Add ingredient">
+        <bpmn:startEvent id="NestedStart_1">
+          <bpmn:outgoing>NestedFlow_1</bpmn:outgoing>
+        </bpmn:startEvent>
+        <bpmn:task id="NestedTask_1" name="Weigh ingredient">
+          <bpmn:incoming>NestedFlow_1</bpmn:incoming>
+          <bpmn:outgoing>NestedFlow_2</bpmn:outgoing>
+        </bpmn:task>
+        <bpmn:intermediateThrowEvent id="NestedThrow_1">
+          <bpmn:incoming>NestedFlow_2</bpmn:incoming>
+        </bpmn:intermediateThrowEvent>
+        <bpmn:sequenceFlow id="NestedFlow_1" sourceRef="NestedStart_1" targetRef="NestedTask_1" />
+        <bpmn:sequenceFlow id="NestedFlow_2" sourceRef="NestedTask_1" targetRef="NestedThrow_1" />
+      </bpmn:subProcess>
+    </bpmn:subProcess>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_Placeholder">
+    <bpmndi:BPMNPlane id="BPMNPlane_Placeholder" bpmnElement="Process_Placeholder">
+      <bpmndi:BPMNShape id="StageLikeSubProcess_1_di" bpmnElement="StageLikeSubProcess_1" isExpanded="true">
+        <dc:Bounds x="200" y="140" width="520" height="260" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="NestedSubProcess_1_di" bpmnElement="NestedSubProcess_1" isExpanded="true">
+        <dc:Bounds x="250" y="180" width="420" height="180" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="NestedStart_1_di" bpmnElement="NestedStart_1">
+        <dc:Bounds x="290" y="245" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="NestedTask_1_di" bpmnElement="NestedTask_1">
+        <dc:Bounds x="380" y="223" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="NestedThrow_1_di" bpmnElement="NestedThrow_1">
+        <dc:Bounds x="560" y="245" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="NestedFlow_1_di" bpmnElement="NestedFlow_1">
+        <di:waypoint x="326" y="263" />
+        <di:waypoint x="380" y="263" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="NestedFlow_2_di" bpmnElement="NestedFlow_2">
+        <di:waypoint x="500" y="263" />
+        <di:waypoint x="560" y="263" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
+"""
+
+
 def _local(tag: str) -> str:
     return str(tag or "").split("}", 1)[-1]
 
@@ -387,6 +443,20 @@ class BpmnSubprocessClipboardTests(unittest.TestCase):
         }
         st.save(sess, user_id=str(self.owner.get("id") or ""), org_id=self.org_id, is_admin=True)
 
+    def _create_session_with_xml(self, *, title: str, xml: str) -> str:
+        project = self.create_project(self.CreateProjectIn(title=f"{title} Project"), self._req(self.owner))
+        project_id = str(project.get("id") or "")
+        session = self.create_project_session(
+            project_id,
+            self.CreateSessionIn(title=title),
+            "quick_skeleton",
+            request=self._req(self.owner),
+        )
+        session_id = str(session.get("id") or "")
+        self.assertTrue(session_id)
+        self.assertTrue(bool(self.session_bpmn_save(session_id, self.BpmnXmlIn(xml=xml), self._req(self.owner)).get("ok")))
+        return session_id
+
     def test_serializer_builds_normalized_subprocess_payload(self):
         sess = self.get_storage().load(self.source_session_id, org_id=self.org_id, is_admin=True)
         payload = self.serialize_clipboard_payload(
@@ -504,6 +574,103 @@ class BpmnSubprocessClipboardTests(unittest.TestCase):
         second_reload = st.load(self.target_session_id, org_id=self.org_id, is_admin=True)
         self.assertIn(inner_task_id, getattr(second_reload, "bpmn_meta", {}).get("camunda_extensions_by_element_id", {}))
         self.assertIn(flow_happy_id, getattr(second_reload, "bpmn_meta", {}).get("flow_meta", {}))
+
+    def test_stage_like_placeholder_property_subprocess_roundtrip_remaps_auxiliary_refs(self):
+        source_session_id = self._create_session_with_xml(
+            title="Stage-like placeholder subprocess",
+            xml=PLACEHOLDER_PROPERTY_SUBPROCESS_XML,
+        )
+        sess = self.get_storage().load(source_session_id, org_id=self.org_id, is_admin=True)
+        payload = self.serialize_clipboard_payload(
+            session_obj=sess,
+            element_id="StageLikeSubProcess_1",
+            copied_by_user_id=str(self.owner.get("id") or ""),
+            copied_at=1730001234,
+            source_org_id=self.org_id,
+        )
+        self.assertIsInstance(payload, self.ClipboardSubprocessPayload)
+        self.assertEqual(payload.root.old_id, "StageLikeSubProcess_1")
+        self.assertEqual({node.old_id for node in payload.fragment.nodes}, {"NestedSubProcess_1", "NestedStart_1", "NestedTask_1", "NestedThrow_1"})
+        property_payload = next(
+            child for child in list(payload.root.extra_children or [])
+            if str(child.get("type") or "") == "property"
+        )
+        self.assertEqual(str((property_payload.get("attributes") or {}).get("id") or ""), "Property_placeholder_1")
+        self.assertEqual(str((property_payload.get("attributes") or {}).get("name") or ""), "__targetRef_placeholder")
+        input_association = next(
+            child for child in list(payload.root.extra_children or [])
+            if str(child.get("type") or "") == "dataInputAssociation"
+        )
+        self.assertEqual(str((input_association.get("attributes") or {}).get("id") or ""), "DataInputAssociation_placeholder_1")
+        target_ref = next(
+            child for child in list(input_association.get("children") or [])
+            if str(child.get("type") or "") == "targetRef"
+        )
+        self.assertEqual(str(target_ref.get("text") or ""), "Property_placeholder_1")
+
+        fake = _FakeRedis()
+        with patch("app.redis_cache.get_client", return_value=fake):
+            copy_out = self.copy_bpmn_element_to_clipboard(
+                self.ClipboardCopyIn(session_id=source_session_id, element_id="StageLikeSubProcess_1"),
+                self._req(self.owner),
+            )
+            copy_status, copy_body = _read_response(copy_out)
+            self.assertEqual(copy_status, 200)
+            self.assertEqual(str(copy_body.get("clipboard_item_type") or ""), "bpmn_subprocess_subtree")
+            self.assertEqual(str(copy_body.get("schema_version") or ""), "pm_bpmn_subprocess_subtree_clipboard_v2")
+
+            preview_out = self.get_current_bpmn_clipboard(self._req(self.owner))
+            preview_status, preview_body = _read_response(preview_out)
+            self.assertEqual(preview_status, 200)
+            self.assertEqual(bool(preview_body.get("empty")), False)
+
+            paste_out = self.paste_bpmn_clipboard(
+                self.ClipboardPasteIn(session_id=self.target_session_id),
+                self._req(self.owner),
+            )
+            paste_status, paste_body = _read_response(paste_out)
+            self.assertEqual(paste_status, 200)
+            self.assertTrue(bool(paste_body.get("ok")))
+            self.assertEqual(len(set(paste_body.get("created_node_ids") or [])), 5)
+            self.assertEqual(len(set(paste_body.get("created_edge_ids") or [])), 2)
+
+        reloaded = self.get_storage().load(self.target_session_id, org_id=self.org_id, is_admin=True)
+        self.assertIsNotNone(reloaded)
+        xml_text = str(getattr(reloaded, "bpmn_xml", "") or "")
+        root = ET.fromstring(xml_text)
+        pasted_root_id = str(paste_body.get("pasted_root_element_id") or "")
+        pasted_subprocess = next(
+            (el for el in _iter_local(root, "subProcess") if str(el.attrib.get("id") or "").strip() == pasted_root_id),
+            None,
+        )
+        self.assertIsNotNone(pasted_subprocess)
+
+        pasted_property = next(
+            (el for el in list(pasted_subprocess) if _local(el.tag) == "property" and str(el.attrib.get("name") or "") == "__targetRef_placeholder"),
+            None,
+        )
+        self.assertIsNotNone(pasted_property)
+        pasted_property_id = str(pasted_property.attrib.get("id") or "")
+        self.assertTrue(pasted_property_id)
+        self.assertNotEqual(pasted_property_id, "Property_placeholder_1")
+
+        pasted_input_association = next(
+            (el for el in list(pasted_subprocess) if _local(el.tag) == "dataInputAssociation"),
+            None,
+        )
+        self.assertIsNotNone(pasted_input_association)
+        self.assertNotEqual(str(pasted_input_association.attrib.get("id") or ""), "DataInputAssociation_placeholder_1")
+        pasted_target_ref = next((el for el in _iter_local(pasted_input_association, "targetRef")), None)
+        pasted_source_ref = next((el for el in _iter_local(pasted_input_association, "sourceRef")), None)
+        self.assertIsNotNone(pasted_target_ref)
+        self.assertEqual(str("".join(pasted_target_ref.itertext()) or "").strip(), pasted_property_id)
+        self.assertIsNotNone(pasted_source_ref)
+        remapped_source_ref = str("".join(pasted_source_ref.itertext()) or "").strip()
+        self.assertNotEqual(remapped_source_ref, "NestedTask_1")
+        self.assertTrue(any(str(el.attrib.get("id") or "").strip() == remapped_source_ref for el in pasted_subprocess.iter()))
+        self.assertIn(pasted_property_id, xml_text)
+        self.assertNotIn('id="Property_placeholder_1"', xml_text)
+        self.assertNotIn(">Property_placeholder_1<", xml_text)
 
     def test_unsupported_subprocess_topology_rejects_clearly(self):
         extra_project = self.create_project(self.CreateProjectIn(title="Unsupported Project"), self._req(self.owner))

@@ -81,7 +81,7 @@ def _parse_target_bpmn(xml_text: str) -> tuple[ET.Element, ET.Element, ET.Elemen
 
 def _default_task_dimensions(element_type: str) -> tuple[float, float]:
     local = str(element_type or "").strip()
-    if local in {"startEvent", "endEvent"}:
+    if local in {"startEvent", "endEvent", "intermediateThrowEvent"}:
         return 36.0, 36.0
     if local in {"exclusiveGateway", "inclusiveGateway", "parallelGateway", "eventBasedGateway"}:
         return 50.0, 50.0
@@ -176,6 +176,32 @@ def _remap_attribute_value(value: Any, id_map: Dict[str, str]) -> str:
     return str(id_map.get(text, text))
 
 
+def _collect_payload_tree_id_hints(payload: Any, out: Dict[str, str]) -> None:
+    if not isinstance(payload, dict):
+        return
+    attrs = payload.get("attributes")
+    old_id = str(attrs.get("id") or "").strip() if isinstance(attrs, dict) else ""
+    if old_id:
+        out.setdefault(old_id, str(payload.get("type") or "Aux"))
+    for child in payload.get("children") if isinstance(payload.get("children"), list) else []:
+        _collect_payload_tree_id_hints(child, out)
+
+
+def _collect_auxiliary_id_hints(
+    *,
+    nodes: Iterable[ClipboardFragmentNode],
+    edges: Iterable[ClipboardFragmentEdge],
+) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    for node in nodes:
+        for child_payload in list(node.extra_children or []):
+            _collect_payload_tree_id_hints(child_payload, out)
+    for edge in edges:
+        for child_payload in list(edge.extra_children or []):
+            _collect_payload_tree_id_hints(child_payload, out)
+    return out
+
+
 def _build_node_xml(node: ClipboardFragmentNode, *, new_id: str, id_map: Dict[str, str]) -> ET.Element:
     tag = f"{{{_BPMN_NS}}}{node.element_type}"
     elem = ET.Element(tag)
@@ -195,7 +221,7 @@ def _build_node_xml(node: ClipboardFragmentNode, *, new_id: str, id_map: Dict[st
     for child_payload in list(node.extra_children or []):
         if not isinstance(child_payload, dict):
             continue
-        elem.append(build_tree(child_payload))
+        elem.append(build_tree(child_payload, id_map=id_map))
     return elem
 
 
@@ -218,7 +244,7 @@ def _build_task_xml(element: ClipboardTaskElement, *, new_id: str) -> ET.Element
     for child_payload in list(element.extra_children or []):
         if not isinstance(child_payload, dict):
             continue
-        elem.append(build_tree(child_payload))
+        elem.append(build_tree(child_payload, id_map={new_id: new_id}))
     return elem
 
 
@@ -243,7 +269,7 @@ def _build_edge_xml(edge: ClipboardFragmentEdge, *, new_id: str, id_map: Dict[st
     for child_payload in list(edge.extra_children or []):
         if not isinstance(child_payload, dict):
             continue
-        elem.append(build_tree(child_payload))
+        elem.append(build_tree(child_payload, id_map=id_map))
     return elem
 
 
@@ -541,6 +567,12 @@ def materialize_subprocess_payload_into_session(
         edge_id_map: Dict[str, str] = {}
         for edge in list(payload.fragment.edges or []):
             edge_id_map[edge.old_id] = _allocate_new_id(existing_ids, prefix="Flow", hint=edge.old_id)
+        auxiliary_id_hints = _collect_auxiliary_id_hints(nodes=all_nodes, edges=payload.fragment.edges or [])
+        auxiliary_id_map: Dict[str, str] = {}
+        for old_id, element_type in sorted(auxiliary_id_hints.items()):
+            prefix = _safe_id_base(str(element_type or "Aux"), "Aux")
+            auxiliary_id_map[old_id] = _allocate_new_id(existing_ids, prefix=prefix, hint=old_id)
+        remap_id_map = {**id_map, **edge_id_map, **auxiliary_id_map}
 
         min_x, min_y, _max_x, _max_y = _compute_fragment_bbox(payload.root, list(payload.fragment.nodes or []))
         target_x, target_y = _target_origin(plane)
@@ -549,7 +581,7 @@ def materialize_subprocess_payload_into_session(
 
         xml_node_by_old_id: Dict[str, ET.Element] = {}
         for node in all_nodes:
-            xml_node_by_old_id[node.old_id] = _build_node_xml(node, new_id=id_map[node.old_id], id_map={**id_map, **edge_id_map})
+            xml_node_by_old_id[node.old_id] = _build_node_xml(node, new_id=id_map[node.old_id], id_map=remap_id_map)
 
         # Attach hierarchy first.
         root_elem = xml_node_by_old_id[payload.root.old_id]
@@ -568,7 +600,7 @@ def materialize_subprocess_payload_into_session(
         all_edges = list(payload.fragment.edges or [])
         edge_xml_by_old_id: Dict[str, ET.Element] = {}
         for edge in all_edges:
-            edge_xml_by_old_id[edge.old_id] = _build_edge_xml(edge, new_id=edge_id_map[edge.old_id], id_map=id_map)
+            edge_xml_by_old_id[edge.old_id] = _build_edge_xml(edge, new_id=edge_id_map[edge.old_id], id_map=remap_id_map)
         _append_edge_refs(
             {id_map[node.old_id]: xml_node_by_old_id[node.old_id] for node in all_nodes},
             edge_id_map,

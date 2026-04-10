@@ -8,6 +8,27 @@ _BPMN_NS = "http://www.omg.org/spec/BPMN/20100524/MODEL"
 _BPMNDI_NS = "http://www.omg.org/spec/BPMN/20100524/DI"
 _DC_NS = "http://www.omg.org/spec/DD/20100524/DC"
 _DI_NS = "http://www.omg.org/spec/DD/20100524/DI"
+_TREE_TEXT_ID_REF_LOCALS = {
+    "attachedToRef",
+    "bpmnElement",
+    "calledElement",
+    "dataObjectRef",
+    "dataStoreRef",
+    "default",
+    "errorRef",
+    "escalationRef",
+    "eventDefinitionRef",
+    "flowNodeRef",
+    "inputDataRef",
+    "itemSubjectRef",
+    "messageRef",
+    "operationRef",
+    "outputDataRef",
+    "processRef",
+    "signalRef",
+    "sourceRef",
+    "targetRef",
+}
 
 
 def split_tag(tag: Any) -> Tuple[str, str]:
@@ -72,7 +93,12 @@ def serialize_tree(elem: ET.Element) -> Dict[str, Any]:
     }
 
 
-def build_tree(payload: Dict[str, Any]) -> ET.Element:
+def _should_remap_tree_text(local: str) -> bool:
+    name = str(local or "").strip()
+    return bool(name) and (name in _TREE_TEXT_ID_REF_LOCALS or name.endswith("Ref"))
+
+
+def build_tree(payload: Dict[str, Any], *, id_map: Optional[Dict[str, str]] = None) -> ET.Element:
     ns = str(payload.get("namespace") or "").strip()
     local = str(payload.get("type") or "").strip()
     tag = f"{{{ns}}}{local}" if ns else local
@@ -81,14 +107,20 @@ def build_tree(payload: Dict[str, Any]) -> ET.Element:
     if isinstance(attrs, dict):
         for key, value in attrs.items():
             name = attr_name_from_key(str(key))
-            elem.attrib[name] = str(value)
+            text = str(value)
+            if isinstance(id_map, dict) and text:
+                text = str(id_map.get(text, text))
+            elem.attrib[name] = text
     text = payload.get("text")
     if text not in (None, ""):
-        elem.text = str(text)
+        text_value = str(text)
+        if isinstance(id_map, dict) and text_value and _should_remap_tree_text(local):
+            text_value = str(id_map.get(text_value, text_value))
+        elem.text = text_value
     for child_payload in payload.get("children") if isinstance(payload.get("children"), list) else []:
         if not isinstance(child_payload, dict):
             continue
-        elem.append(build_tree(child_payload))
+        elem.append(build_tree(child_payload, id_map=id_map))
     return elem
 
 
