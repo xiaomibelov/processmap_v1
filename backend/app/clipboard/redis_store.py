@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 import os
-import time
 from typing import Any, Optional
 
 from ..redis_cache import cache_delete_key, cache_get_json, cache_set_json
-from .models import ClipboardTaskPayload
+from .models import ClipboardPayload
 
 _DEFAULT_TTL_SEC = 60 * 60
 
 
 def clipboard_ttl_sec() -> int:
-    raw = str(os.environ.get("BPMN_TASK_CLIPBOARD_TTL_SEC", "") or "").strip()
+    raw = str(os.environ.get("BPMN_CLIPBOARD_TTL_SEC", os.environ.get("BPMN_TASK_CLIPBOARD_TTL_SEC", "")) or "").strip()
     try:
         value = int(raw) if raw else _DEFAULT_TTL_SEC
     except Exception:
@@ -22,14 +21,14 @@ def clipboard_ttl_sec() -> int:
 def clipboard_key(*, user_id: str, org_id: str) -> str:
     uid = str(user_id or "").strip() or "anonymous"
     oid = str(org_id or "").strip() or "default"
-    return f"pm:clipboard:org:{oid}:user:{uid}:bpmn_task:v1"
+    return f"pm:clipboard:org:{oid}:user:{uid}:bpmn:v2"
 
 
 class ClipboardRedisStore:
     def __init__(self, *, client: Any = None) -> None:
         self._client = client
 
-    def put(self, *, user_id: str, org_id: str, payload: ClipboardTaskPayload) -> bool:
+    def put(self, *, user_id: str, org_id: str, payload: ClipboardPayload) -> bool:
         return bool(
             cache_set_json(
                 clipboard_key(user_id=user_id, org_id=org_id),
