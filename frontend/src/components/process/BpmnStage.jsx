@@ -65,10 +65,9 @@ import {
 } from "../../features/process/bpmn/context-menu/resolveBpmnContextMenuTarget";
 import { shouldOpenBpmnContextMenu } from "../../features/process/bpmn/context-menu/shouldOpenBpmnContextMenu";
 import { createBpmnContextMenuActionExecutor } from "../../features/process/bpmn/context-menu/executeBpmnContextMenuAction";
+import { createBackendBpmnClipboardController } from "../../features/process/bpmn/clipboard/backendBpmnClipboardController";
 import {
   canCopyBpmnElement,
-  copyBpmnElementToClipboard,
-  hasCopiedBpmnElementSnapshot,
 } from "../../features/process/bpmn/copy-paste/bpmnElementClipboard";
 
 import "bpmn-js/dist/assets/diagram-js.css";
@@ -2998,6 +2997,20 @@ const BpmnStage = forwardRef(function BpmnStage({
     buildInsertBetweenCandidate,
     cloneCompanionStateForCopiedElement,
     buildCopyElementOptions,
+    backendClipboard: createBackendBpmnClipboardController({
+      getSessionId: () => String(activeSessionRef.current || sessionId || ""),
+      refreshAfterPaste: async ({ sessionId: pastedSessionId }) => {
+        const sid = String(pastedSessionId || activeSessionRef.current || sessionId || "").trim();
+        if (!sid) return { ok: false, error: "missing_session_id" };
+        const token = loadTokenRef.current + 1;
+        loadTokenRef.current = token;
+        await loadFromBackend(sid, token, {
+          forceRemote: true,
+          reason: "backend_clipboard_paste",
+        });
+        return { ok: true };
+      },
+    }),
   }), [
     modelerRef,
     ensureModeler,
@@ -3006,6 +3019,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     buildInsertBetweenCandidate,
     cloneCompanionStateForCopiedElement,
     buildCopyElementOptions,
+    sessionId,
   ]);
   function buildSettledSelectionFanoutSignature({ element, kind }) {
     const mode = kind === "editor" ? "editor" : "viewer";
@@ -5098,14 +5112,13 @@ const BpmnStage = forwardRef(function BpmnStage({
       if (key === "c") {
         if (!canCopyBpmnElement(selectedElement)) return;
         event.preventDefault();
-        copyBpmnElementToClipboard(
-          selectedElement,
-          buildCopyElementOptions({ inst, element: selectedElement }),
-        );
+        void Promise.resolve(executeDiagramContextAction({
+          actionId: "copy_element",
+          target: { id: toText(selectedElement?.id) },
+        }));
         return;
       }
 
-      if (!hasCopiedBpmnElementSnapshot()) return;
       event.preventDefault();
       void Promise.resolve(executeDiagramContextAction({
         actionId: "paste",

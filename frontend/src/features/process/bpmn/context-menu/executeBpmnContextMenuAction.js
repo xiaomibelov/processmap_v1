@@ -603,6 +603,7 @@ export function createBpmnContextMenuActionExecutor({
   buildInsertBetweenCandidate,
   cloneCompanionStateForCopiedElement,
   buildCopyElementOptions,
+  backendClipboard,
 } = {}) {
   return async function executeBpmnContextMenuActionRequest(payloadRaw = {}) {
     return await executeBpmnContextMenuAction({
@@ -614,6 +615,7 @@ export function createBpmnContextMenuActionExecutor({
       buildInsertBetweenCandidate,
       cloneCompanionStateForCopiedElement,
       buildCopyElementOptions,
+      backendClipboard,
     });
   };
 }
@@ -627,6 +629,7 @@ export async function executeBpmnContextMenuAction({
   buildInsertBetweenCandidate,
   cloneCompanionStateForCopiedElement,
   buildCopyElementOptions,
+  backendClipboard,
 } = {}) {
   const payload = asObject(payloadRaw);
   const actionId = toText(payload.actionId);
@@ -722,7 +725,7 @@ export async function executeBpmnContextMenuAction({
     if (actionId === "add_annotation") return createOnCanvas("bpmn:TextAnnotation");
 
     if (actionId === "paste") {
-      if (hasCopiedBpmnElementSnapshot()) {
+      const pasteLocalClipboard = () => {
         const semanticSnapshot = readCopiedBpmnElementSnapshot();
         const parentResolved = resolveCanvasCreateParent(inst, point);
         const root = parentResolved.root;
@@ -781,6 +784,45 @@ export async function executeBpmnContextMenuAction({
           changedIds: asArray(semanticPaste.changedIds),
           createdId: toText(created?.id),
         };
+      };
+
+      if (backendClipboard && typeof backendClipboard.pasteIntoSession === "function") {
+        const backendPaste = await backendClipboard.pasteIntoSession({
+          sessionId: toText(payload.sessionId),
+        });
+        if (backendPaste?.ok) {
+          const ids = [
+            toText(backendPaste?.pasted_root_element_id),
+            ...asArray(backendPaste?.created_node_ids).map(toText),
+            ...asArray(backendPaste?.created_edge_ids).map(toText),
+          ].filter(Boolean);
+          emitMutation({
+            count: ids.length,
+            source: "backend_clipboard",
+            clipboardItemType: toText(backendPaste?.clipboard_item_type),
+          });
+          return {
+            ok: true,
+            backendClipboard: true,
+            changedIds: Array.from(new Set(ids)),
+            createdId: toText(backendPaste?.pasted_root_element_id),
+            clipboardItemType: toText(backendPaste?.clipboard_item_type),
+            schemaVersion: toText(backendPaste?.schema_version),
+            message: "Элемент вставлен из backend clipboard",
+          };
+        }
+        const backendError = toText(backendPaste?.error || backendPaste?.code || backendPaste?.detail);
+        const canFallbackToLocal = (
+          hasCopiedBpmnElementSnapshot()
+          && (Number(backendPaste?.status || 0) === 404 || backendError === "clipboard_empty")
+        );
+        if (!canFallbackToLocal) {
+          return backendPaste || { ok: false, error: "backend_clipboard_paste_failed" };
+        }
+      }
+
+      if (hasCopiedBpmnElementSnapshot()) {
+        return pasteLocalClipboard();
       }
 
       const copyPaste = inst.get?.("copyPaste");
@@ -943,6 +985,16 @@ export async function executeBpmnContextMenuAction({
       if (!canCopyBpmnElement(target)) {
         return { ok: false, error: "copy_element_unsupported" };
       }
+      let backendCopy = null;
+      if (backendClipboard && typeof backendClipboard.copyElement === "function") {
+        backendCopy = await backendClipboard.copyElement({
+          sessionId: toText(payload.sessionId),
+          elementId: toText(target?.id),
+        });
+        if (!backendCopy?.ok) {
+          return backendCopy || { ok: false, error: "backend_clipboard_copy_failed" };
+        }
+      }
       const copied = copyBpmnElementToClipboard(
         target,
         typeof buildCopyElementOptions === "function"
@@ -952,8 +1004,11 @@ export async function executeBpmnContextMenuAction({
       if (!copied.ok) return copied;
       return {
         ok: true,
+        backendClipboard: !!backendCopy,
+        clipboardItemType: toText(backendCopy?.clipboard_item_type),
+        schemaVersion: toText(backendCopy?.schema_version),
         changedIds: [toText(target?.id)].filter(Boolean),
-        message: "Элемент скопирован",
+        message: backendCopy ? "Элемент скопирован в backend clipboard" : "Элемент скопирован",
       };
     }
 
