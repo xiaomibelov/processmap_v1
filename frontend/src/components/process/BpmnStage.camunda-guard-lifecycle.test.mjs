@@ -43,6 +43,13 @@ test("import preserve guard self-clears after a real sync no longer needs preser
   );
 });
 
+test("copy-paste companion clone persists copied session meta so delayed hydrates cannot replay poorer backend truth", () => {
+  assert.match(
+    source,
+    /_sync_source: "bpmn_copy_paste_companion_clone",[\s\S]*persistSessionMetaBoundary\(nextMeta, \{\s*source: "bpmn_copy_paste_companion_clone",\s*\}\)/,
+  );
+});
+
 test("template-insert guard ids continue to flow into real camunda sync path", () => {
   assert.match(
     source,
