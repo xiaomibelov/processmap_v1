@@ -13,7 +13,7 @@ test.afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-function installFetchStub(responsePayload = { ok: true }) {
+function installFetchStub(responsePayload = { ok: true }, { status = 200 } = {}) {
   const calls = [];
   globalThis.fetch = async (url, options = {}) => {
     calls.push({
@@ -22,7 +22,7 @@ function installFetchStub(responsePayload = { ok: true }) {
       body: options.body ? JSON.parse(String(options.body)) : null,
     });
     return new Response(JSON.stringify(responsePayload), {
-      status: 200,
+      status,
       headers: { "content-type": "application/json" },
     });
   };
@@ -73,4 +73,20 @@ test("backend clipboard API client respects read/paste/clear endpoint contracts"
   await clearBackendBpmnClipboard();
   assert.equal(calls[2]?.url, "/api/clipboard/bpmn");
   assert.equal(calls[2]?.method, "DELETE");
+});
+
+test("backend clipboard API client normalizes structured backend errors", async () => {
+  installFetchStub({
+    detail: {
+      code: "forced_clipboard_structured_error",
+      message: "Clipboard item не поддерживается",
+    },
+  }, { status: 422 });
+
+  const result = await pasteBackendBpmnClipboard({ sessionId: "Session_B" });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 422);
+  assert.equal(result.error, "Clipboard item не поддерживается");
+  assert.notEqual(result.error, "[object Object]");
 });

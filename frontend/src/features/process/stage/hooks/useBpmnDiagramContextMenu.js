@@ -14,6 +14,31 @@ function asObject(value) {
   return value && typeof value === "object" ? value : {};
 }
 
+function describeContextActionError(value, fallback = "Не удалось выполнить действие диаграммы.") {
+  if (!value) return toText(fallback);
+  if (typeof value === "string") return toText(value) || toText(fallback);
+  if (Array.isArray(value)) {
+    const text = value
+      .map((item) => describeContextActionError(item, ""))
+      .filter(Boolean)
+      .join("; ");
+    return text || toText(fallback);
+  }
+  if (typeof value === "object") {
+    const text = describeContextActionError(value.message, "")
+      || describeContextActionError(value.error, "")
+      || describeContextActionError(value.detail, "")
+      || describeContextActionError(value.code, "");
+    if (text) return text;
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return toText(fallback);
+    }
+  }
+  return toText(value) || toText(fallback);
+}
+
 export default function useBpmnDiagramContextMenu({
   bpmnRef,
   undoRedoState = {},
@@ -102,11 +127,11 @@ export default function useBpmnDiagramContextMenu({
         bpmnRef?.current?.runDiagramContextAction?.(payload),
       );
     } catch (error) {
-      result = { ok: false, error: String(error?.message || error || "context_action_failed") };
+      result = { ok: false, error: describeContextActionError(error, "context_action_failed") };
     }
 
     if (!result?.ok) {
-      setGenErr?.(toText(result?.error || "Не удалось выполнить действие диаграммы."));
+      setGenErr?.(describeContextActionError(result?.error || result, "Не удалось выполнить действие диаграммы."));
       return result;
     }
 
