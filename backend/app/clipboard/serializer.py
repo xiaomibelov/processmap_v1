@@ -44,11 +44,17 @@ _SUPPORTED_SUBTREE_NODE_TYPES = {
     *list(_SUPPORTED_TASK_TYPES),
     "startEvent",
     "endEvent",
+    "intermediateThrowEvent",
     "exclusiveGateway",
     "inclusiveGateway",
     "parallelGateway",
     "eventBasedGateway",
     "subProcess",
+}
+_SUPPORTED_AUXILIARY_SUBTREE_ELEMENT_TYPES = {
+    "dataInputAssociation",
+    "dataOutputAssociation",
+    "property",
 }
 _TASK_LOCAL_META_FIELDS = {
     "node_path_meta",
@@ -328,7 +334,13 @@ def _serialize_subprocess_payload(
     def walk(node: ET.Element, *, parent_old_id: str, depth: int) -> None:
         node_id = str(node.attrib.get("id") or "").strip()
         lname = local_name(node.tag)
-        if str(getattr(node, "tag", "") or "").startswith(f"{{{_BPMN_NS}}}") and node_id and lname not in _SUPPORTED_SUBTREE_NODE_TYPES and lname != "sequenceFlow":
+        if (
+            str(getattr(node, "tag", "") or "").startswith(f"{{{_BPMN_NS}}}")
+            and node_id
+            and lname not in _SUPPORTED_SUBTREE_NODE_TYPES
+            and lname not in _SUPPORTED_AUXILIARY_SUBTREE_ELEMENT_TYPES
+            and lname != "sequenceFlow"
+        ):
             raise ClipboardSerializationError(
                 "unsupported_subprocess_topology",
                 f"subprocess subtree contains unsupported BPMN node type: {lname}",
