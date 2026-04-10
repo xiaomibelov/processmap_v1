@@ -9,12 +9,36 @@ function toText(value) {
   return String(value || "").trim();
 }
 
+function describeErrorValue(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value.trim();
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => describeErrorValue(item))
+      .filter(Boolean)
+      .join("; ");
+  }
+  if (typeof value === "object") {
+    const direct = describeErrorValue(value.message)
+      || describeErrorValue(value.error)
+      || describeErrorValue(value.detail)
+      || describeErrorValue(value.code);
+    if (direct) return direct;
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value || "").trim();
+    }
+  }
+  return String(value || "").trim();
+}
+
 function normalizeError(resultRaw, fallbackError) {
   const result = resultRaw && typeof resultRaw === "object" ? resultRaw : {};
   return {
     ok: false,
     status: Number(result.status || 0),
-    error: toText(result.error || result.detail || result.message || fallbackError),
+    error: describeErrorValue(result.error || result.detail || result.message) || toText(fallbackError),
     data: result.data || null,
   };
 }
