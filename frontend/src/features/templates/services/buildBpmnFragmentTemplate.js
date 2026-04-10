@@ -15,7 +15,6 @@ function hasUnsupportedFragmentNode(nodeRaw) {
   const type = toText(nodeRaw?.type || nodeRaw?.$type).toLowerCase();
   if (!type) return false;
   if (type.includes("boundaryevent")) return true;
-  if (type.includes("subprocess")) return true;
   return false;
 }
 

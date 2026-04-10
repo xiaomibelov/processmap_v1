@@ -19,7 +19,8 @@ function toText(v) {
 function isTemplateNodeType(typeRaw) {
   const type = String(typeRaw || "").trim().toLowerCase();
   if (!type) return false;
-  if (type.includes("participant") || type.includes("lane") || type.includes("process")) return false;
+  if (type.includes("participant") || type.includes("lane")) return false;
+  if (type === "bpmn:process" || type.endsWith(":process")) return false;
   if (type.includes("label")) return false;
   return true;
 }
@@ -34,8 +35,11 @@ function isUnsupportedFragmentNodeType(typeRaw) {
   const type = String(typeRaw || "").trim().toLowerCase();
   if (!type) return false;
   if (type.includes("boundaryevent")) return true;
-  if (type.includes("subprocess")) return true;
   return false;
+}
+
+function isSubprocessType(typeRaw) {
+  return String(typeRaw || "").trim().toLowerCase().includes("subprocess");
 }
 
 function isLaneContainerType(typeRaw) {
@@ -96,6 +100,170 @@ function readSelectionSnapshot(itemsRaw) {
     supportedNode: isTemplateNodeType(readElementType(el)),
     unsupportedFragmentNode: isUnsupportedFragmentNodeType(readElementType(el)),
   }));
+}
+
+function createElementIndex(allElementsRaw) {
+  const index = new Map();
+  asArray(allElementsRaw).forEach((entry) => {
+    const id = toText(entry?.id);
+    if (id) index.set(id, entry);
+  });
+  return index;
+}
+
+function findRegistryElementById(elementIndex, idRaw) {
+  const id = toText(idRaw);
+  if (!id) return null;
+  return elementIndex.get(id) || null;
+}
+
+function sortTemplateNodes(nodesRaw) {
+  return asArray(nodesRaw)
+    .slice()
+    .sort((aRaw, bRaw) => {
+      const a = asObject(aRaw);
+      const b = asObject(bRaw);
+      return Number(a.nestingDepth || 0) - Number(b.nestingDepth || 0)
+        || Number(a?.di?.x || 0) - Number(b?.di?.x || 0)
+        || Number(a?.di?.y || 0) - Number(b?.di?.y || 0)
+        || toText(a.id).localeCompare(toText(b.id));
+    });
+}
+
+function sortTemplateEdges(edgesRaw) {
+  return asArray(edgesRaw)
+    .slice()
+    .sort((aRaw, bRaw) => toText(aRaw?.id).localeCompare(toText(bRaw?.id)));
+}
+
+function buildTemplateEdgeItem(elementRaw, fallbackRaw = {}) {
+  const element = asObject(elementRaw);
+  const fallback = asObject(fallbackRaw);
+  const bo = asObject(element.businessObject);
+  const sourceId = toText(element?.source?.id || fallback?.sourceRef?.id);
+  const targetId = toText(element?.target?.id || fallback?.targetRef?.id);
+  if (!sourceId || !targetId) return null;
+  return {
+    id: toText(element.id || fallback.id),
+    sourceId,
+    targetId,
+    when: toText(bo.name || fallback.name),
+  };
+}
+
+function buildTemplateNodeItem(elementRaw, fallbackRaw = {}) {
+  const element = asObject(elementRaw);
+  const fallback = asObject(fallbackRaw);
+  const bo = asObject(element.businessObject);
+  const type = toText(bo.$type || element.type || fallback.$type || fallback.type || "bpmn:Task");
+  const bounds = readShapeBounds(element) || {
+    x: Number(fallback.x || 0),
+    y: Number(fallback.y || 0),
+    width: Math.max(24, Number(fallback.width || 140)),
+    height: Math.max(24, Number(fallback.height || 80)),
+  };
+  return {
+    id: toText(element.id || fallback.id),
+    type,
+    name: toText(bo.name || fallback.name),
+    laneHint: "",
+    semanticPayload: serializeSupportedBusinessObjectPayload(bo || fallback),
+    di: {
+      x: Number(bounds.x || 0),
+      y: Number(bounds.y || 0),
+      w: Number(bounds.width || 140),
+      h: Number(bounds.height || 80),
+    },
+  };
+}
+
+function collectSubprocessSubtreeIntoPack(flowElementsRaw, state, context = {}) {
+  const flowElements = asArray(flowElementsRaw);
+  const elementIndex = context.elementIndex instanceof Map ? context.elementIndex : new Map();
+  const parentNodeId = toText(context.parentNodeId);
+  const nestingDepth = Math.max(1, Number(context.nestingDepth || 1));
+  flowElements.forEach((entryRaw) => {
+    const entry = asObject(entryRaw);
+    const id = toText(entry.id);
+    const type = toText(entry.$type || entry.type);
+    if (!id || !type) return;
+    state.sourceIds.add(id);
+    const registryElement = findRegistryElementById(elementIndex, id);
+    if (isTemplateConnectionType(type)) {
+      if (state.seenEdges.has(id)) return;
+      const edge = buildTemplateEdgeItem(registryElement, entry);
+      if (!edge) return;
+      state.seenEdges.add(id);
+      state.edges.push(edge);
+      return;
+    }
+    if (!isTemplateNodeType(type) || state.seenNodes.has(id)) return;
+    state.seenNodes.add(id);
+    state.nodes.push({
+      ...buildTemplateNodeItem(registryElement, entry),
+      laneHint: "",
+      parentNodeId,
+      nestingDepth,
+    });
+    if (isSubprocessType(type)) {
+      collectSubprocessSubtreeIntoPack(entry.flowElements, state, {
+        elementIndex,
+        parentNodeId: id,
+        nestingDepth: nestingDepth + 1,
+      });
+    }
+  });
+}
+
+function buildSubprocessTemplatePack(inst, subprocessElement, options = {}, deps = {}) {
+  const subprocess = asObject(subprocessElement);
+  const subprocessId = toText(subprocess.id);
+  if (!subprocessId) return null;
+  const allElements = asArray(inst?.get?.("elementRegistry")?.getAll?.());
+  const elementIndex = createElementIndex(allElements);
+  const state = {
+    nodes: [],
+    edges: [],
+    seenNodes: new Set(),
+    seenEdges: new Set(),
+    sourceIds: new Set([subprocessId]),
+  };
+  state.nodes.push({
+    ...buildTemplateNodeItem(subprocessElement, subprocess.businessObject),
+    laneHint: typeof deps.readLaneNameForElement === "function" ? deps.readLaneNameForElement(subprocessElement) : "",
+    parentNodeId: "",
+    nestingDepth: 0,
+  });
+  state.seenNodes.add(subprocessId);
+  collectSubprocessSubtreeIntoPack(asObject(subprocess.businessObject).flowElements, state, {
+    elementIndex,
+    parentNodeId: subprocessId,
+    nestingDepth: 1,
+  });
+
+  return {
+    title: String(options?.title || "").trim() || createTemplateTitle([subprocessElement]),
+    tags: ["subprocess", "subtree"],
+    captureMode: "subprocess_subtree",
+    sourceRootId: subprocessId,
+    sourceDescriptorIds: Array.from(state.sourceIds),
+    fragment: {
+      nodes: sortTemplateNodes(state.nodes).filter((item) => toText(item.id)),
+      edges: sortTemplateEdges(state.edges),
+      annotations: [],
+    },
+    entryNodeId: subprocessId,
+    exitNodeId: subprocessId,
+    hints: {
+      defaultLaneName: typeof deps.readLaneNameForElement === "function" ? deps.readLaneNameForElement(subprocessElement) : "",
+      defaultActor: typeof deps.readLaneNameForElement === "function" ? deps.readLaneNameForElement(subprocessElement) : "",
+      suggestedInsertMode: "after",
+    },
+    diagnostics: {
+      subtreeSourceIds: Array.from(state.sourceIds),
+      subtreeFlowElementCount: Math.max(0, state.sourceIds.size - 1),
+    },
+  };
 }
 
 function createTemplateTitle(selectedNodes) {
@@ -254,6 +422,7 @@ export function createTemplatePackAdapter(deps = {}) {
     } catch {
       rawSelection = [];
     }
+
     const selectionSnapshot = readSelectionSnapshot(rawSelection);
     const selectedNodes = selectTemplateNodes(inst, { isShapeElement });
     if (!selectedNodes.length) {
@@ -269,6 +438,38 @@ export function createTemplatePackAdapter(deps = {}) {
             .filter(Boolean),
         },
       };
+    }
+
+    if (selectedNodes.length === 1 && isSubprocessType(readElementType(selectedNodes[0]))) {
+      const subprocessPack = buildSubprocessTemplatePack(inst, selectedNodes[0], options, {
+        readLaneNameForElement,
+      });
+      if (subprocessPack) {
+        logPackDebug("capture", {
+          sid: String(getSessionId() || "-"),
+          selectedNodes: subprocessPack.fragment.nodes.length,
+          selectedEdges: subprocessPack.fragment.edges.length,
+          entry: subprocessPack.entryNodeId || "-",
+          exit: subprocessPack.exitNodeId || "-",
+          captureMode: subprocessPack.captureMode,
+        });
+        return {
+          ok: true,
+          pack: subprocessPack,
+          diagnostics: {
+            rawSelection: selectionSnapshot,
+            normalizedSelection: subprocessPack.fragment.nodes.map((node) => ({
+              id: toText(node.id),
+              type: toText(node.type),
+              laneHint: toText(node.laneHint),
+            })),
+            unsupportedSelectionTypes: selectionSnapshot
+              .filter((row) => row.unsupportedFragmentNode)
+              .map((row) => row.type)
+              .filter(Boolean),
+          },
+        };
+      }
     }
 
     const selectedIds = new Set(selectedNodes.map((el) => String(el?.id || "").trim()).filter(Boolean));
@@ -387,10 +588,6 @@ export function createTemplatePackAdapter(deps = {}) {
     const pack = payload?.pack && typeof payload.pack === "object" ? payload.pack : null;
     if (!pack) return { ok: false, error: "missing_pack" };
 
-    const nodes = asArray(pack?.fragment?.nodes).filter((node) => String(node?.id || "").trim());
-    const edges = asArray(pack?.fragment?.edges).filter((edge) => String(edge?.sourceId || "").trim() && String(edge?.targetId || "").trim());
-    if (!nodes.length) return { ok: false, error: "empty_pack" };
-
     const modeling = inst.get("modeling");
     const elementFactory = inst.get("elementFactory");
     const moddle = inst.get("moddle");
@@ -453,6 +650,9 @@ export function createTemplatePackAdapter(deps = {}) {
 
     const modeRaw = String(payload?.mode || "after").trim();
     const mode = modeRaw === "between" && anchor ? "between" : "after";
+    const nodes = sortTemplateNodes(asArray(pack?.fragment?.nodes).filter((node) => String(node?.id || "").trim()));
+    const edges = asArray(pack?.fragment?.edges).filter((edge) => String(edge?.sourceId || "").trim() && String(edge?.targetId || "").trim());
+    if (!nodes.length) return { ok: false, error: "empty_pack" };
     const minX = Math.min(...nodes.map((node) => Number(node?.di?.x || 0)));
     const minY = Math.min(...nodes.map((node) => Number(node?.di?.y || 0)));
     const offsetX = anchor
@@ -470,14 +670,18 @@ export function createTemplatePackAdapter(deps = {}) {
       const type = String(node?.type || "bpmn:Task").trim() || "bpmn:Task";
       if (!isTemplateNodeType(type)) continue;
       const laneHint = String(node?.laneHint || "").trim().toLowerCase();
-      const parent = laneHint && safeLaneParentByName.get(laneHint)
-        ? safeLaneParentByName.get(laneHint)
-        : safeAnchorParent;
+      const parentNodeId = toText(node?.parentNodeId);
+      const nestedParent = parentNodeId ? createdNodeMap[parentNodeId] : null;
+      const parent = nestedParent
+        || (laneHint && safeLaneParentByName.get(laneHint)
+          ? safeLaneParentByName.get(laneHint)
+          : safeAnchorParent);
       const shapeAttrs = { type };
       const width = Number(node?.di?.w);
       const height = Number(node?.di?.h);
       if (width > 0) shapeAttrs.width = width;
       if (height > 0) shapeAttrs.height = height;
+      if (isSubprocessType(type)) shapeAttrs.isExpanded = true;
       const relX = Number(node?.di?.x || 0) - minX;
       const relY = Number(node?.di?.y || 0) - minY;
       const shape = modeling.createShape(
