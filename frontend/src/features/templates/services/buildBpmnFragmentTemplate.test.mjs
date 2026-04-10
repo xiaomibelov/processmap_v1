@@ -88,3 +88,31 @@ test("buildBpmnFragmentTemplate rejects unsupported fragment node types", async 
   assert.equal(result.error, "unsupported_fragment_nodes");
   assert.match(String(result.warning || ""), /boundaryevent/i);
 });
+
+test("buildBpmnFragmentTemplate allows subprocess subtree template when pack carries serializable subtree capture", async () => {
+  const pack = {
+    title: "Subprocess subtree",
+    captureMode: "subprocess_subtree",
+    sourceRootId: "SubProcess_1",
+    sourceDescriptorIds: ["SubProcess_1", "InnerTask_1", "Flow_1"],
+    fragment: {
+      nodes: [
+        { id: "SubProcess_1", type: "bpmn:SubProcess", nestingDepth: 0, di: { x: 10, y: 20, w: 320, h: 220 } },
+        { id: "InnerTask_1", type: "bpmn:Task", parentNodeId: "SubProcess_1", nestingDepth: 1, di: { x: 80, y: 90, w: 120, h: 80 } },
+      ],
+      edges: [
+        { id: "Flow_1", sourceId: "InnerTask_1", targetId: "InnerTask_1" },
+      ],
+    },
+    entryNodeId: "SubProcess_1",
+    exitNodeId: "SubProcess_1",
+  };
+  const result = await buildBpmnFragmentTemplate(async () => ({ ok: true, pack }), {
+    title: "Subprocess fragment",
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.template.template_type, "bpmn_fragment_v1");
+  assert.equal(result.template.payload.pack.captureMode, "subprocess_subtree");
+  assert.equal(result.template.payload.pack.fragment.nodes[0].type, "bpmn:SubProcess");
+  assert.equal(result.template.payload.pack.fragment.nodes[1].parentNodeId, "SubProcess_1");
+});

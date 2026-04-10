@@ -39,12 +39,32 @@ function createSequence(id, source, target, name = "") {
   };
 }
 
+function createSubprocess(id, x, y, name = "Subprocess", flowElements = []) {
+  return {
+    id,
+    type: "bpmn:SubProcess",
+    x,
+    y,
+    width: 320,
+    height: 220,
+    businessObject: {
+      id,
+      $type: "bpmn:SubProcess",
+      name,
+      flowElements,
+    },
+    outgoing: [],
+  };
+}
+
 function createModelerWithServices({
   selectionItems = [],
   registryItems = [],
   anchorShape = null,
   rootDi = null,
   rootElement = null,
+  copyPaste = null,
+  eventBus = null,
 } = {}) {
   const connectCalls = [];
   const createShapeCalls = [];
@@ -52,9 +72,30 @@ function createModelerWithServices({
   const emitCalls = [];
   const createdConnections = [];
 
+  function appendToFlowParent(parent, businessObject) {
+    if (!parent || !businessObject) return;
+    const parentBo = parent.businessObject && typeof parent.businessObject === "object" ? parent.businessObject : {};
+    if (Array.isArray(parentBo.flowElements)) {
+      parentBo.flowElements.push(businessObject);
+      return;
+    }
+    if (parentBo.processRef && Array.isArray(parentBo.processRef.flowElements)) {
+      parentBo.processRef.flowElements.push(businessObject);
+    }
+  }
+
   let shapeSeq = 0;
   let connSeq = 0;
-  const root = rootElement || { id: "Process_1", type: "bpmn:Process", di: rootDi };
+  const root = rootElement || {
+    id: "Process_1",
+    type: "bpmn:Process",
+    di: rootDi,
+    businessObject: {
+      id: "Process_1",
+      $type: "bpmn:Process",
+      flowElements: [],
+    },
+  };
   const anchor = anchorShape || createShape("Anchor_1", 100, 100, "Anchor");
   const allRegistryItems = [...registryItems];
 
@@ -64,19 +105,25 @@ function createModelerWithServices({
         root.di.planeElement.push({ id: `DI_${shapeSeq + 1}` });
       }
       shapeSeq += 1;
+      const type = shapeDef?.type || "bpmn:Task";
+      const width = Number(shapeDef?.width || 140);
+      const height = Number(shapeDef?.height || 80);
       const shape = {
         id: `Task_new_${shapeSeq}`,
-        type: shapeDef?.type || "bpmn:Task",
+        type,
         x: Number(pos?.x || 0),
         y: Number(pos?.y || 0),
-        width: 140,
-        height: 80,
+        width,
+        height,
         parent,
+        children: [],
+        di: typeof shapeDef?.isExpanded === "boolean" ? { isExpanded: shapeDef.isExpanded } : undefined,
         businessObject: {
           id: `Task_new_${shapeSeq}`,
-          $type: shapeDef?.type || "bpmn:Task",
+          $type: type,
           name: "",
           $attrs: {},
+          ...(String(type).includes("SubProcess") ? { flowElements: [] } : {}),
           set(key, value) {
             const currentAttrs = this.$attrs && typeof this.$attrs === "object" && !Array.isArray(this.$attrs)
               ? this.$attrs
@@ -121,6 +168,10 @@ function createModelerWithServices({
         },
         outgoing: [],
       };
+      if (parent?.children && Array.isArray(parent.children)) {
+        parent.children.push(shape);
+      }
+      appendToFlowParent(parent, shape.businessObject);
       createShapeCalls.push({ shapeDef, pos, parent, createdId: shape.id });
       allRegistryItems.push(shape);
       return shape;
@@ -131,11 +182,13 @@ function createModelerWithServices({
     },
     connect(source, target, attrs = {}) {
       connSeq += 1;
+      const parent = source?.parent || target?.parent || null;
       const conn = {
         id: `Flow_new_${connSeq}`,
         type: attrs?.type || "bpmn:SequenceFlow",
         source,
         target,
+        parent,
         businessObject: {
           id: `Flow_new_${connSeq}`,
           $type: attrs?.type || "bpmn:SequenceFlow",
@@ -146,6 +199,7 @@ function createModelerWithServices({
       if (source?.outgoing && Array.isArray(source.outgoing)) {
         source.outgoing.push(conn);
       }
+      appendToFlowParent(parent, conn.businessObject);
       createdConnections.push(conn);
       return conn;
     },
@@ -177,6 +231,9 @@ function createModelerWithServices({
     get() {
       return selectionState;
     },
+    select(nextSelection = []) {
+      selectionState = Array.isArray(nextSelection) ? nextSelection : [nextSelection];
+    },
   };
 
   const elementRegistry = {
@@ -203,6 +260,8 @@ function createModelerWithServices({
       if (name === "elementFactory") return elementFactory;
       if (name === "moddle") return moddle;
       if (name === "canvas") return canvas;
+      if (name === "copyPaste") return copyPaste;
+      if (name === "eventBus") return eventBus;
       return null;
     },
   };
@@ -251,6 +310,113 @@ test("captureTemplatePackOnModeler returns pack with selected nodes and edges", 
   assert.equal(result.pack.fragment.edges.length, 1);
   assert.equal(result.pack.fragment.edges[0].sourceId, "Task_A");
   assert.equal(result.pack.fragment.edges[0].targetId, "Task_B");
+});
+
+test("captureTemplatePackOnModeler captures selected subprocess subtree as serializable template pack", () => {
+  const innerStart = {
+    id: "StartEvent_1",
+    type: "bpmn:StartEvent",
+    x: 150,
+    y: 170,
+    width: 36,
+    height: 36,
+    businessObject: {
+      id: "StartEvent_1",
+      $type: "bpmn:StartEvent",
+      name: "Start",
+    },
+    outgoing: [],
+  };
+  const innerTask = createShape("InnerTask_1", 240, 150, "Inner task");
+  innerTask.parent = { id: "SubProcess_1" };
+  const innerEnd = {
+    id: "EndEvent_1",
+    type: "bpmn:EndEvent",
+    x: 390,
+    y: 170,
+    width: 36,
+    height: 36,
+    businessObject: {
+      id: "EndEvent_1",
+      $type: "bpmn:EndEvent",
+      name: "End",
+    },
+    outgoing: [],
+  };
+  const flowA = createSequence("Flow_1", innerStart, innerTask);
+  const flowB = createSequence("Flow_2", innerTask, innerEnd);
+  const subprocess = createSubprocess("SubProcess_1", 120, 120, "Expanded subprocess", [
+    {
+      id: "StartEvent_1",
+      $type: "bpmn:StartEvent",
+      name: "Start",
+    },
+    {
+      id: "InnerTask_1",
+      $type: "bpmn:Task",
+      name: "Inner task",
+    },
+    {
+      id: "EndEvent_1",
+      $type: "bpmn:EndEvent",
+      name: "End",
+    },
+    {
+      id: "Flow_1",
+      $type: "bpmn:SequenceFlow",
+      sourceRef: { id: "StartEvent_1" },
+      targetRef: { id: "InnerTask_1" },
+    },
+    {
+      id: "Flow_2",
+      $type: "bpmn:SequenceFlow",
+      sourceRef: { id: "InnerTask_1" },
+      targetRef: { id: "EndEvent_1" },
+    },
+  ]);
+  innerStart.parent = subprocess;
+  innerTask.parent = subprocess;
+  innerEnd.parent = subprocess;
+  const { adapter, inst } = createModelerWithServices({
+    selectionItems: [subprocess],
+    registryItems: [subprocess, innerStart, innerTask, innerEnd, flowA, flowB],
+  });
+
+  const result = adapter.captureTemplatePackOnModeler(inst, { title: "Subprocess template" });
+  assert.equal(result?.ok, true);
+  assert.equal(result?.pack?.captureMode, "subprocess_subtree");
+  assert.equal(result?.pack?.sourceRootId, "SubProcess_1");
+  assert.deepEqual(result?.pack?.sourceDescriptorIds, [
+    "SubProcess_1",
+    "StartEvent_1",
+    "InnerTask_1",
+    "EndEvent_1",
+    "Flow_1",
+    "Flow_2",
+  ]);
+  assert.deepEqual(
+    result?.pack?.fragment?.nodes?.map((node) => node.id),
+    ["SubProcess_1", "StartEvent_1", "InnerTask_1", "EndEvent_1"],
+  );
+  assert.deepEqual(
+    result?.pack?.fragment?.nodes?.map((node) => ({
+      id: node.id,
+      parentNodeId: node.parentNodeId || "",
+      nestingDepth: node.nestingDepth,
+    })),
+    [
+      { id: "SubProcess_1", parentNodeId: "", nestingDepth: 0 },
+      { id: "StartEvent_1", parentNodeId: "SubProcess_1", nestingDepth: 1 },
+      { id: "InnerTask_1", parentNodeId: "SubProcess_1", nestingDepth: 1 },
+      { id: "EndEvent_1", parentNodeId: "SubProcess_1", nestingDepth: 1 },
+    ],
+  );
+  assert.deepEqual(
+    result?.pack?.fragment?.edges?.map((edge) => edge.id),
+    ["Flow_1", "Flow_2"],
+  );
+  assert.equal(result?.pack?.entryNodeId, "SubProcess_1");
+  assert.equal(result?.pack?.exitNodeId, "SubProcess_1");
 });
 
 test("captureTemplatePackOnModeler preserves documentation, camunda io/properties, and custom bo payload in semanticPayload", () => {
@@ -727,6 +893,59 @@ test("insertTemplatePackOnModeler supports point-based insert without selected a
   assert.equal(createShapeCalls.length, 2);
   assert.equal(connectCalls.length, 1);
   assert.equal(result?.anchorByPoint, true);
+});
+
+test("insertTemplatePackOnModeler recreates subprocess subtree from serializable fragment pack", async () => {
+  const anchor = createShape("Anchor_1", 100, 100, "Anchor");
+  const { adapter, connectCalls, createShapeCalls, registryItems } = createModelerWithServices({
+    anchorShape: anchor,
+    selectionItems: [anchor],
+    registryItems: [anchor],
+  });
+  const result = await adapter.insertTemplatePackOnModeler({
+    mode: "after",
+    pack: {
+      captureMode: "subprocess_subtree",
+      entryNodeId: "SubProcess_1",
+      exitNodeId: "SubProcess_1",
+      fragment: {
+        nodes: [
+          { id: "SubProcess_1", type: "bpmn:SubProcess", name: "Expanded subprocess", di: { x: 120, y: 120, w: 320, h: 220 }, nestingDepth: 0 },
+          { id: "StartEvent_1", type: "bpmn:StartEvent", name: "Inner start", parentNodeId: "SubProcess_1", nestingDepth: 1, di: { x: 150, y: 170, w: 36, h: 36 } },
+          { id: "InnerTask_1", type: "bpmn:Task", name: "Inner task", parentNodeId: "SubProcess_1", nestingDepth: 1, di: { x: 240, y: 150, w: 140, h: 80 } },
+          { id: "EndEvent_1", type: "bpmn:EndEvent", name: "Inner end", parentNodeId: "SubProcess_1", nestingDepth: 1, di: { x: 390, y: 170, w: 36, h: 36 } },
+        ],
+        edges: [
+          { id: "Flow_1", sourceId: "StartEvent_1", targetId: "InnerTask_1" },
+          { id: "Flow_2", sourceId: "InnerTask_1", targetId: "EndEvent_1" },
+        ],
+      },
+    },
+  });
+
+  assert.equal(result?.ok, true);
+  assert.equal(result?.createdNodes, 4);
+  assert.equal(result?.createdEdges, 2);
+  assert.equal(connectCalls.length, 3);
+  assert.equal(createShapeCalls[0]?.shapeDef?.isExpanded, true);
+  assert.equal(connectCalls.some((call) => call?.targetId === result?.entryNodeId), true);
+  const createdSubprocess = registryItems.find((item) => item.id === result?.entryNodeId);
+  assert.equal(createdSubprocess?.type, "bpmn:SubProcess");
+  const innerChildren = registryItems.filter((item) => String(item?.parent?.id || "") === String(createdSubprocess?.id || ""));
+  assert.deepEqual(
+    innerChildren.map((item) => item.businessObject?.$type),
+    ["bpmn:StartEvent", "bpmn:Task", "bpmn:EndEvent"],
+  );
+  assert.deepEqual(
+    createdSubprocess?.businessObject?.flowElements?.map((entry) => entry?.$type),
+    [
+      "bpmn:StartEvent",
+      "bpmn:Task",
+      "bpmn:EndEvent",
+      "bpmn:SequenceFlow",
+      "bpmn:SequenceFlow",
+    ],
+  );
 });
 
 test("insertTemplatePackOnModeler initializes missing root planeElement before first createShape", async () => {
