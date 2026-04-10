@@ -802,6 +802,192 @@ test("open_inside returns read-only subprocess preview and does not require dril
   assert.ok(Array.isArray(result.openInsidePreview.items[0]?.executionAttrs));
 });
 
+test("copy_element calls backend clipboard copy and still keeps local in-tab snapshot", async () => {
+  const task = {
+    id: "Task_1",
+    type: "bpmn:UserTask",
+    x: 120,
+    y: 160,
+    width: 140,
+    height: 90,
+    businessObject: {
+      $type: "bpmn:UserTask",
+      name: "Backend copied task",
+      documentation: [{ $type: "bpmn:Documentation", text: "docs" }],
+    },
+  };
+  const root = {
+    id: "Process_1",
+    type: "bpmn:Process",
+    businessObject: { $type: "bpmn:Process", flowElements: [task] },
+    di: { planeElement: [] },
+    children: [task],
+  };
+  task.parent = root;
+  const backendCalls = [];
+  const { inst } = createStubModeler({ root, registryItems: [root, task] });
+
+  const result = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "copy_element",
+      sessionId: "Session_A",
+      target: { id: "Task_1" },
+    },
+    modelerRef: { current: inst },
+    backendClipboard: {
+      async copyElement(payload) {
+        backendCalls.push(payload);
+        return {
+          ok: true,
+          clipboard_item_type: "bpmn_task",
+          schema_version: "pm_bpmn_task_clipboard_v1",
+          copied_name: "Backend copied task",
+        };
+      },
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.backendClipboard, true);
+  assert.equal(result.clipboardItemType, "bpmn_task");
+  assert.deepEqual(backendCalls, [{ sessionId: "Session_A", elementId: "Task_1" }]);
+  assert.equal(result.message, "Элемент скопирован в backend clipboard");
+});
+
+test("subprocess copy_element calls backend clipboard copy before local native-tree convenience snapshot", async () => {
+  const subprocess = {
+    id: "SubProcess_1",
+    type: "bpmn:SubProcess",
+    x: 220,
+    y: 120,
+    width: 300,
+    height: 180,
+    businessObject: {
+      $type: "bpmn:SubProcess",
+      name: "Backend subprocess",
+      flowElements: [{ id: "InnerTask_1", $type: "bpmn:Task", name: "Inner" }],
+    },
+  };
+  const root = {
+    id: "Process_1",
+    type: "bpmn:Process",
+    businessObject: { $type: "bpmn:Process", flowElements: [subprocess] },
+    di: { planeElement: [] },
+    children: [subprocess],
+  };
+  subprocess.parent = root;
+  const backendCalls = [];
+  const { inst } = createStubModeler({ root, registryItems: [root, subprocess] });
+
+  const result = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "copy_element",
+      sessionId: "Session_A",
+      target: { id: "SubProcess_1" },
+    },
+    modelerRef: { current: inst },
+    backendClipboard: {
+      async copyElement(payload) {
+        backendCalls.push(payload);
+        return {
+          ok: true,
+          clipboard_item_type: "bpmn_subprocess_subtree",
+          schema_version: "pm_bpmn_subprocess_subtree_clipboard_v2",
+          copied_name: "Backend subprocess",
+        };
+      },
+    },
+    buildCopyElementOptions() {
+      return {
+        nativeTree: {
+          0: [{ id: "SubProcess_1", type: "bpmn:SubProcess" }],
+          1: [{ id: "InnerTask_1", type: "bpmn:Task", parent: "SubProcess_1" }],
+        },
+      };
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.backendClipboard, true);
+  assert.equal(result.clipboardItemType, "bpmn_subprocess_subtree");
+  assert.deepEqual(backendCalls, [{ sessionId: "Session_A", elementId: "SubProcess_1" }]);
+});
+
+test("paste uses backend clipboard when target tab has no local snapshot", async () => {
+  const root = {
+    id: "Process_1",
+    type: "bpmn:Process",
+    businessObject: { $type: "bpmn:Process", flowElements: [] },
+    di: { planeElement: [] },
+    children: [],
+  };
+  const backendCalls = [];
+  const mutationEvents = [];
+  const { inst, calls } = createStubModeler({ root, registryItems: [root] });
+
+  const result = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "paste",
+      sessionId: "Session_B",
+      target: { kind: "canvas" },
+    },
+    modelerRef: { current: inst },
+    backendClipboard: {
+      async pasteIntoSession(payload) {
+        backendCalls.push(payload);
+        return {
+          ok: true,
+          clipboard_item_type: "bpmn_task",
+          schema_version: "pm_bpmn_task_clipboard_v1",
+          pasted_root_element_id: "Task_Pasted_1",
+          created_node_ids: ["Task_Pasted_1"],
+          created_edge_ids: [],
+        };
+      },
+    },
+    emitDiagramMutation(kind, payload) {
+      mutationEvents.push({ kind, payload });
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.backendClipboard, true);
+  assert.equal(result.createdId, "Task_Pasted_1");
+  assert.equal(result.clipboardItemType, "bpmn_task");
+  assert.deepEqual(backendCalls, [{ sessionId: "Session_B" }]);
+  assert.equal(calls.length, 0);
+  assert.equal(mutationEvents[0]?.payload?.source, "backend_clipboard");
+});
+
+test("backend clipboard empty state returns explicit paste failure without local snapshot", async () => {
+  const root = {
+    id: "Process_1",
+    type: "bpmn:Process",
+    businessObject: { $type: "bpmn:Process", flowElements: [] },
+    di: { planeElement: [] },
+    children: [],
+  };
+  const { inst, calls } = createStubModeler({ root, registryItems: [root] });
+
+  const result = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "paste",
+      sessionId: "Session_B",
+      target: { kind: "canvas" },
+    },
+    modelerRef: { current: inst },
+    backendClipboard: {
+      async pasteIntoSession() {
+        return { ok: false, status: 404, error: "clipboard_empty" };
+      },
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "clipboard_empty");
+  assert.equal(calls.length, 0);
+});
+
 test("copy_element captures semantic payload and paste restores it with a new id", async () => {
   const task = {
     id: "Task_1",
