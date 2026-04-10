@@ -8,8 +8,13 @@ from fastapi import Request
 
 from .. import _legacy_main
 from ..legacy.request_context import request_active_org_id, request_user_meta
-from .materializer import ClipboardMaterializationError, materialize_subprocess_payload_into_session
+from .materializer import (
+    ClipboardMaterializationError,
+    materialize_subprocess_payload_into_session,
+    materialize_task_payload_into_session,
+)
 from .models import (
+    CLIPBOARD_TASK_ITEM_TYPE,
     CLIPBOARD_SUBPROCESS_ITEM_TYPE,
     ClipboardClearResponse,
     ClipboardCopyResponse,
@@ -43,9 +48,11 @@ def _require_user(request: Request) -> tuple[str, bool]:
 
 def _parse_clipboard_payload(raw_payload: dict) -> ClipboardPayload:
     item_type = str((raw_payload or {}).get("clipboard_item_type") or "").strip()
+    if item_type == CLIPBOARD_TASK_ITEM_TYPE:
+        return ClipboardTaskPayload.model_validate(raw_payload)
     if item_type == CLIPBOARD_SUBPROCESS_ITEM_TYPE:
         return ClipboardSubprocessPayload.model_validate(raw_payload)
-    return ClipboardTaskPayload.model_validate(raw_payload)
+    raise ClipboardServiceError(422, "invalid_clipboard_payload", "invalid_clipboard_payload")
 
 
 def _preview_from_payload(payload: ClipboardPayload, *, ttl_sec: int) -> ClipboardPreview:
@@ -135,14 +142,24 @@ class ClipboardService:
         except Exception as exc:
             self._store.clear(user_id=user_id, org_id=active_org_id)
             raise ClipboardServiceError(422, "invalid_clipboard_payload", "invalid_clipboard_payload") from exc
-        if not isinstance(payload, ClipboardSubprocessPayload):
-            raise ClipboardServiceError(422, "unsupported_clipboard_item_type", "clipboard paste supports subprocess subtree in this contour")
-        try:
-            return materialize_subprocess_payload_into_session(
-                payload=payload,
+
+        paste_handlers = {
+            CLIPBOARD_TASK_ITEM_TYPE: lambda p: materialize_task_payload_into_session(
+                payload=p,
                 target_session_id=session_id,
                 request=request,
-            )
+            ),
+            CLIPBOARD_SUBPROCESS_ITEM_TYPE: lambda p: materialize_subprocess_payload_into_session(
+                payload=p,
+                target_session_id=session_id,
+                request=request,
+            ),
+        }
+        handler = paste_handlers.get(str(payload.clipboard_item_type or ""))
+        if handler is None:
+            raise ClipboardServiceError(422, "unsupported_clipboard_item_type", "unsupported clipboard item type")
+        try:
+            return handler(payload)
         except ClipboardMaterializationError as exc:
             raise ClipboardServiceError(exc.status_code, exc.code, exc.message) from exc
 
