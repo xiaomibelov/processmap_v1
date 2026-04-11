@@ -692,6 +692,53 @@ class BpmnSubprocessClipboardTests(unittest.TestCase):
         self.assertEqual(status, 422)
         self.assertEqual(str(((body.get("error") or {}).get("code") or "")), "unsupported_subprocess_topology")
 
+    def test_failed_copy_clears_stale_clipboard_item(self):
+        extra_project = self.create_project(self.CreateProjectIn(title="Unsupported Project"), self._req(self.owner))
+        bad_session = self.create_project_session(
+            str(extra_project.get("id") or ""),
+            self.CreateSessionIn(title="Bad Session"),
+            "quick_skeleton",
+            request=self._req(self.owner),
+        )
+        bad_session_id = str(bad_session.get("id") or "")
+        self.assertTrue(bool(self.session_bpmn_save(bad_session_id, self.BpmnXmlIn(xml=UNSUPPORTED_SUBPROCESS_XML), self._req(self.owner)).get("ok")))
+
+        fake = _FakeRedis()
+        with patch("app.redis_cache.get_client", return_value=fake):
+            good_copy_out = self.copy_bpmn_element_to_clipboard(
+                self.ClipboardCopyIn(session_id=self.source_session_id, element_id="SubProcess_1"),
+                self._req(self.owner),
+            )
+            good_copy_status, good_copy_body = _read_response(good_copy_out)
+            self.assertEqual(good_copy_status, 200)
+            self.assertEqual(str(good_copy_body.get("clipboard_item_type") or ""), "bpmn_subprocess_subtree")
+
+            key = self.clipboard_key(user_id=str(self.owner.get("id") or ""), org_id=self.org_id)
+            self.assertIsNotNone(fake.get(key))
+
+            failed_copy_out = self.copy_bpmn_element_to_clipboard(
+                self.ClipboardCopyIn(session_id=bad_session_id, element_id="SubProcess_Bad"),
+                self._req(self.owner),
+            )
+            failed_copy_status, failed_copy_body = _read_response(failed_copy_out)
+            self.assertEqual(failed_copy_status, 422)
+            self.assertEqual(str(((failed_copy_body.get("error") or {}).get("code") or "")), "unsupported_subprocess_topology")
+            self.assertIsNone(fake.get(key))
+
+            preview_out = self.get_current_bpmn_clipboard(self._req(self.owner))
+            preview_status, preview_body = _read_response(preview_out)
+            self.assertEqual(preview_status, 200)
+            self.assertEqual(bool(preview_body.get("empty")), True)
+            self.assertIsNone(preview_body.get("item"))
+
+            paste_out = self.paste_bpmn_clipboard(
+                self.ClipboardPasteIn(session_id=self.target_session_id),
+                self._req(self.owner),
+            )
+            paste_status, paste_body = _read_response(paste_out)
+            self.assertEqual(paste_status, 404)
+            self.assertEqual(str(((paste_body.get("error") or {}).get("code") or "")), "clipboard_empty")
+
 
 if __name__ == "__main__":
     unittest.main()
