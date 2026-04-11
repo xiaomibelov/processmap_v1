@@ -68,6 +68,7 @@ _STRICT_EXTERNAL_AUXILIARY_REF_LOCALS = {
     "targetRef",
 }
 _SUPPORTED_EXTERNAL_DATASTORE_TYPE = "dataStoreReference"
+_INTERNAL_DEDICATED_PLANE_MARKER = "__pm_dedicated_plane"
 _TASK_LOCAL_META_FIELDS = {
     "node_path_meta",
     "robot_meta_by_element_id",
@@ -441,13 +442,19 @@ def _serialize_subprocess_payload(
     root_shape_entry = main_shape_map.get(root_old_id) if isinstance(main_shape_map, dict) else {}
     root_shape_attrs = dict(root_shape_entry.get("shape_attributes") or {}) if isinstance(root_shape_entry, dict) else {}
     root_is_collapsed = str(root_shape_attrs.get("isExpanded") or "").strip().lower() == "false"
-    if root_is_collapsed:
-        plane_shape_map, plane_edge_map, _subprocess_plane = collect_di_maps_for_bpmn_element(xml_root, root_old_id)
+    plane_shape_map, plane_edge_map, _subprocess_plane = collect_di_maps_for_bpmn_element(xml_root, root_old_id)
+    plane_has_subtree_di = any(str(node_id or "").strip() != root_old_id for node_id in dict(plane_shape_map or {})) or bool(plane_edge_map)
+    if root_is_collapsed or plane_has_subtree_di:
         for node_id, entry in dict(plane_shape_map or {}).items():
             if str(node_id or "").strip() == root_old_id:
                 continue
             shape_map[str(node_id)] = entry
         edge_map.update(dict(plane_edge_map or {}))
+        if plane_has_subtree_di and not root_is_collapsed:
+            root_shape_attrs[_INTERNAL_DEDICATED_PLANE_MARKER] = "true"
+            if isinstance(root_shape_entry, dict):
+                root_shape_entry["shape_attributes"] = dict(root_shape_attrs)
+                shape_map[root_old_id] = root_shape_entry
 
     node_ids: Set[str] = set()
     parent_by_id: Dict[str, str] = {}

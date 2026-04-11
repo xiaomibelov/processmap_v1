@@ -300,6 +300,8 @@ def _append_di_shape(plane: ET.Element, *, bpmn_element_id: str, node: Clipboard
     shape_id = _allocate_new_id(existing_ids, prefix="BPMNShape", hint=bpmn_element_id)
     attrs = {"id": shape_id, "bpmnElement": bpmn_element_id}
     for key, value in dict(node.di_shape_attributes or {}).items():
+        if str(key or "").startswith("__pm_"):
+            continue
         attrs[str(key)] = str(value)
     shape = ET.SubElement(plane, f"{{{_BPMNDI_NS}}}BPMNShape", attrib=attrs)
     ET.SubElement(
@@ -329,6 +331,17 @@ def _is_collapsed_subprocess_root(node: ClipboardFragmentNode) -> bool:
     return (
         str(node.element_type or "").strip() == "subProcess"
         and str((node.di_shape_attributes or {}).get("isExpanded") or "").strip().lower() == "false"
+    )
+
+
+def _uses_dedicated_subprocess_plane(payload: ClipboardSubprocessPayload) -> bool:
+    if str(payload.root.element_type or "").strip() != "subProcess":
+        return False
+    root_attrs = dict(payload.root.di_shape_attributes or {})
+    if str(root_attrs.get("__pm_dedicated_plane") or "").strip().lower() == "true":
+        return True
+    return _is_collapsed_subprocess_root(payload.root) and any(
+        getattr(node, "di_bounds", None) is not None for node in list(payload.fragment.nodes or [])
     )
 
 
@@ -613,9 +626,7 @@ def materialize_subprocess_payload_into_session(
         remap_id_map = {**id_map, **edge_id_map, **auxiliary_id_map}
 
         target_x, target_y = _target_origin(plane)
-        plane_backed_collapsed = _is_collapsed_subprocess_root(payload.root) and any(
-            getattr(node, "di_bounds", None) is not None for node in list(payload.fragment.nodes or [])
-        )
+        plane_backed_collapsed = _uses_dedicated_subprocess_plane(payload)
         subprocess_plane = plane
         if plane_backed_collapsed and payload.root.di_bounds is not None:
             root_delta_x = target_x - float(payload.root.di_bounds.x)

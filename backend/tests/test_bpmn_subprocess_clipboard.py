@@ -234,6 +234,9 @@ PLANE_BACKED_COLLAPSED_SUBPROCESS_XML = """<?xml version="1.0" encoding="UTF-8"?
 """
 
 
+PLANE_BACKED_SUBPROCESS_WITHOUT_IS_EXPANDED_MARKER_XML = PLANE_BACKED_COLLAPSED_SUBPROCESS_XML.replace(' isExpanded="false"', "")
+
+
 UNSUPPORTED_SUBPROCESS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="Definitions_Bad" targetNamespace="http://bpmn.io/schema/bpmn">
   <bpmn:process id="Process_Bad" isExecutable="false">
@@ -949,6 +952,82 @@ class BpmnSubprocessClipboardTests(unittest.TestCase):
 
         subprocess_plane_waypoints = list(_iter_local(subprocess_plane, "waypoint"))
         self.assertEqual(len(subprocess_plane_waypoints), 4)
+
+        second_reload = self.get_storage().load(self.target_session_id, org_id=self.org_id, is_admin=True)
+        self.assertIn(f'bpmnElement="{pasted_root_id}"', str(getattr(second_reload, "bpmn_xml", "") or ""))
+
+    def test_plane_backed_subprocess_without_isexpanded_marker_roundtrip_restores_subtree_and_plane(self):
+        source_session_id = self._create_session_with_xml(
+            title="Plane backed subprocess without isExpanded marker",
+            xml=PLANE_BACKED_SUBPROCESS_WITHOUT_IS_EXPANDED_MARKER_XML,
+        )
+        sess = self.get_storage().load(source_session_id, org_id=self.org_id, is_admin=True)
+        payload = self.serialize_clipboard_payload(
+            session_obj=sess,
+            element_id="CollapsedSubProcess_1",
+            copied_by_user_id=str(self.owner.get("id") or ""),
+            copied_at=1730001222,
+            source_org_id=self.org_id,
+        )
+        self.assertIsInstance(payload, self.ClipboardSubprocessPayload)
+        self.assertEqual(payload.root.old_id, "CollapsedSubProcess_1")
+        self.assertEqual(str((payload.root.di_shape_attributes or {}).get("isExpanded") or ""), "")
+        self.assertTrue(all(node.di_bounds is not None for node in payload.fragment.nodes))
+        self.assertTrue(all(len(list(edge.di_waypoints or [])) == 2 for edge in payload.fragment.edges))
+
+        fake = _FakeRedis()
+        with patch("app.redis_cache.get_client", return_value=fake):
+            copy_out = self.copy_bpmn_element_to_clipboard(
+                self.ClipboardCopyIn(session_id=source_session_id, element_id="CollapsedSubProcess_1"),
+                self._req(self.owner),
+            )
+            copy_status, copy_body = _read_response(copy_out)
+            self.assertEqual(copy_status, 200)
+            self.assertEqual(str(copy_body.get("clipboard_item_type") or ""), "bpmn_subprocess_subtree")
+
+            paste_out = self.paste_bpmn_clipboard(
+                self.ClipboardPasteIn(session_id=self.target_session_id),
+                self._req(self.owner),
+            )
+            paste_status, paste_body = _read_response(paste_out)
+            self.assertEqual(paste_status, 200)
+            self.assertTrue(bool(paste_body.get("ok")))
+
+        reloaded = self.get_storage().load(self.target_session_id, org_id=self.org_id, is_admin=True)
+        self.assertIsNotNone(reloaded)
+        root = ET.fromstring(str(getattr(reloaded, "bpmn_xml", "") or ""))
+        pasted_root_id = str(paste_body.get("pasted_root_element_id") or "")
+        created_node_ids = set(paste_body.get("created_node_ids") or [])
+        created_edge_ids = set(paste_body.get("created_edge_ids") or [])
+        created_node_ids.discard(pasted_root_id)
+
+        main_plane = next(
+            (plane for plane in _iter_local(root, "BPMNPlane") if str(plane.attrib.get("bpmnElement") or "").strip() == "Process_Target"),
+            None,
+        )
+        self.assertIsNotNone(main_plane)
+        main_shape_elements = {
+            str(shape.attrib.get("bpmnElement") or "").strip()
+            for shape in _iter_local(main_plane, "BPMNShape")
+        }
+        self.assertIn(pasted_root_id, main_shape_elements)
+        self.assertFalse(created_node_ids & main_shape_elements)
+
+        subprocess_plane = next(
+            (plane for plane in _iter_local(root, "BPMNPlane") if str(plane.attrib.get("bpmnElement") or "").strip() == pasted_root_id),
+            None,
+        )
+        self.assertIsNotNone(subprocess_plane)
+        inner_shape_ids = {
+            str(shape.attrib.get("bpmnElement") or "").strip()
+            for shape in _iter_local(subprocess_plane, "BPMNShape")
+        }
+        inner_edge_ids = {
+            str(edge.attrib.get("bpmnElement") or "").strip()
+            for edge in _iter_local(subprocess_plane, "BPMNEdge")
+        }
+        self.assertEqual(inner_shape_ids, created_node_ids)
+        self.assertEqual(inner_edge_ids, created_edge_ids)
 
         second_reload = self.get_storage().load(self.target_session_id, org_id=self.org_id, is_admin=True)
         self.assertIn(f'bpmnElement="{pasted_root_id}"', str(getattr(second_reload, "bpmn_xml", "") or ""))
