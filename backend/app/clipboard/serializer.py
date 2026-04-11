@@ -9,6 +9,7 @@ from ..models import Session
 from .models import (
     CLIPBOARD_SUBPROCESS_ITEM_TYPE,
     ClipboardContext,
+    ClipboardExternalDependency,
     ClipboardFragment,
     ClipboardFragmentEdge,
     ClipboardFragmentNode,
@@ -66,6 +67,7 @@ _STRICT_EXTERNAL_AUXILIARY_REF_LOCALS = {
     "sourceRef",
     "targetRef",
 }
+_SUPPORTED_EXTERNAL_DATASTORE_TYPE = "dataStoreReference"
 _TASK_LOCAL_META_FIELDS = {
     "node_path_meta",
     "robot_meta_by_element_id",
@@ -211,13 +213,34 @@ def _iter_tree_ref_texts(payload: Any, *, path: Optional[List[str]] = None) -> L
     return out
 
 
-def _validate_no_external_auxiliary_refs(
+def _serialize_external_dependency(
     *,
+    session_obj: Session,
+    elem: ET.Element,
+    old_id: str,
+    shape_map: Dict[str, Dict[str, Any]],
+) -> ClipboardExternalDependency:
+    dependency_payload = _serialize_fragment_node(
+        session_obj=session_obj,
+        elem=elem,
+        old_id=old_id,
+        parent_old_id="",
+        nesting_depth=0,
+        shape_map=shape_map,
+    )
+    return ClipboardExternalDependency.model_validate(dependency_payload.model_dump())
+
+
+def _collect_supported_external_datastore_dependencies(
+    *,
+    session_obj: Session,
+    xml_root: ET.Element,
     root_payload: ClipboardFragmentNode,
     nodes: List[ClipboardFragmentNode],
     edges: List[ClipboardFragmentEdge],
     node_ids: Set[str],
-) -> None:
+    shape_map: Dict[str, Dict[str, Any]],
+) -> List[ClipboardExternalDependency]:
     allowed_ids: Set[str] = set(node_ids)
     allowed_ids.update(str(edge.old_id or "").strip() for edge in list(edges or []))
 
@@ -230,16 +253,33 @@ def _validate_no_external_auxiliary_refs(
     for payload_tree in all_extra_children:
         allowed_ids.update(_tree_payload_ids(payload_tree))
 
+    external_dependencies: Dict[str, ClipboardExternalDependency] = {}
     for payload_tree in all_extra_children:
         if str(payload_tree.get("type") or "").strip() not in _STRICT_EXTERNAL_AUXILIARY_REF_TYPES:
             continue
         for ref_path, ref_value in _iter_tree_ref_texts(payload_tree):
-            if str(ref_value or "").strip() in allowed_ids:
+            safe_ref_value = str(ref_value or "").strip()
+            if safe_ref_value in allowed_ids:
+                continue
+            dependency_elem = find_xml_element(xml_root, safe_ref_value)
+            dependency_type = local_name(dependency_elem.tag) if dependency_elem is not None else ""
+            if dependency_elem is not None and dependency_type == _SUPPORTED_EXTERNAL_DATASTORE_TYPE:
+                if safe_ref_value not in external_dependencies:
+                    external_dependencies[safe_ref_value] = _serialize_external_dependency(
+                        session_obj=session_obj,
+                        elem=dependency_elem,
+                        old_id=safe_ref_value,
+                        shape_map=shape_map,
+                    )
+                allowed_ids.add(safe_ref_value)
+                for child_payload in list(external_dependencies[safe_ref_value].extra_children or []):
+                    allowed_ids.update(_tree_payload_ids(child_payload))
                 continue
             raise ClipboardSerializationError(
                 "external_auxiliary_ref_outside_subtree",
-                f"subprocess subtree contains auxiliary ref outside copied boundary: {ref_path} -> {ref_value}",
+                f"subprocess subtree contains auxiliary ref outside copied boundary: {ref_path} -> {safe_ref_value}",
             )
+    return [external_dependencies[old_id] for old_id in sorted(external_dependencies)]
 
 
 def _build_metadata(copied_by_user_id: str, copied_at: int) -> ClipboardMetadata:
@@ -496,11 +536,14 @@ def _serialize_subprocess_payload(
 
     walk_edges(root_elem, parent_old_id=root_old_id)
 
-    _validate_no_external_auxiliary_refs(
+    external_dependencies = _collect_supported_external_datastore_dependencies(
+        session_obj=session_obj,
+        xml_root=xml_root,
         root_payload=root_payload,
         nodes=nodes,
         edges=edges,
         node_ids=node_ids,
+        shape_map=shape_map,
     )
 
     return ClipboardSubprocessPayload(
@@ -508,6 +551,7 @@ def _serialize_subprocess_payload(
         metadata=_build_metadata(copied_by_user_id, copied_at),
         root=root_payload,
         fragment=ClipboardFragment(nodes=nodes, edges=edges),
+        external_dependencies=external_dependencies,
     )
 
 
