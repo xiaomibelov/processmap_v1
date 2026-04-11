@@ -115,6 +115,45 @@ test("serializeSupportedBusinessObjectPayload preserves conditionExpression safe
   assert.equal(target.conditionExpression?.attrs, undefined);
 });
 
+test("serializeSupportedBusinessObjectPayload preserves Zeebe properties from generic extensionElements children", () => {
+  const payload = serializeSupportedBusinessObjectPayload({
+    id: "Flow_0u28r14",
+    $type: "bpmn:SequenceFlow",
+    name: "Да",
+    extensionElements: {
+      $type: "bpmn:ExtensionElements",
+      $children: [
+        {
+          $type: "ns2:properties",
+          $descriptor: { ns: { uri: ZEEBE_NAMESPACE_URI } },
+          $children: [
+            {
+              $type: "ns2:property",
+              $descriptor: { ns: { uri: ZEEBE_NAMESPACE_URI } },
+              $attrs: {
+                name: "container_condition",
+                value: "Закрыта",
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  assert.equal(payload.extensionElements?.$type, "bpmn:ExtensionElements");
+  assert.equal(payload.extensionElements?.values?.[0]?.$type, "zeebe:Properties");
+  assert.equal(payload.extensionElements?.values?.[0]?.values?.[0]?.$type, "zeebe:Property");
+  assert.equal(payload.extensionElements?.values?.[0]?.values?.[0]?.name, "container_condition");
+  assert.equal(payload.extensionElements?.values?.[0]?.values?.[0]?.value, "Закрыта");
+
+  const target = { id: "Flow_Target", $type: "bpmn:SequenceFlow" };
+  rehydrateSupportedBusinessObjectPayload(target, payload, { moddle: createMockModdle() });
+  assert.equal(target.extensionElements?.values?.[0]?.$type, "zeebe:Properties");
+  assert.equal(target.extensionElements?.values?.[0]?.values?.[0]?.name, "container_condition");
+  assert.equal(target.extensionElements?.values?.[0]?.values?.[0]?.value, "Закрыта");
+});
+
 test("serializeSupportedBusinessObjectPayload strips unsafe BPMN IO branches from subprocess custom payload", () => {
   const bo = {
     id: "SubProcess_Unsafe",
@@ -372,7 +411,10 @@ test("sequenceFlow semantic payload round-trips through real moddle XML", async 
   assert.equal(target.documentation?.[0]?.text, "edge-doc-text");
   assert.equal(target.extensionElements?.values?.[0]?.values?.[0]?.value, "high");
   assert.equal(target.extensionElements?.values?.[1]?.$type, "zeebe:Properties");
-  assert.equal(target.extensionElements?.values?.[1]?.values?.[0]?.value, "количество из задания");
+  assert.equal(
+    (target.extensionElements?.values?.[1]?.values || target.extensionElements?.values?.[1]?.$children)?.[0]?.value,
+    "количество из задания",
+  );
   assert.equal(target.conditionExpression?.body, "${approved}");
   assert.equal(target.conditionExpression?.language, "javascript");
   assert.equal(target.conditionExpression?.$attrs?.["xsi:type"], "bpmn:tFormalExpression");
@@ -400,6 +442,65 @@ test("sequenceFlow semantic payload round-trips through real moddle XML", async 
   assert.equal(out.xml.includes("language=\"javascript\""), true);
   assert.equal(out.xml.includes("pm:exprKind=\"approval\""), true);
   assert.equal(out.xml.includes("pm:edgeCode=\"E-42\""), true);
+});
+
+test("generic Zeebe children on sequenceFlow rehydrate to real BPMN XML", async (t) => {
+  const BpmnModdle = await importRealBpmnModdleOrSkip(t);
+  if (!BpmnModdle) return;
+  const moddle = new BpmnModdle({
+    camunda: camundaModdleDescriptor,
+    pm: pmModdleDescriptor,
+  });
+  const start = moddle.create("bpmn:StartEvent", { id: "Start_Zeebe" });
+  const task = moddle.create("bpmn:Task", { id: "Task_Zeebe" });
+  const payload = serializeSupportedBusinessObjectPayload({
+    id: "Flow_0u28r14",
+    $type: "bpmn:SequenceFlow",
+    name: "Да",
+    extensionElements: {
+      $type: "bpmn:ExtensionElements",
+      $children: [
+        {
+          $type: "ns2:properties",
+          $descriptor: { ns: { uri: ZEEBE_NAMESPACE_URI } },
+          $children: [
+            {
+              $type: "ns2:property",
+              $descriptor: { ns: { uri: ZEEBE_NAMESPACE_URI } },
+              $attrs: {
+                name: "container_condition",
+                value: "Закрыта",
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const target = moddle.create("bpmn:SequenceFlow", {
+    id: "Flow_Target_Zeebe",
+    name: "Да",
+    sourceRef: start,
+    targetRef: task,
+  });
+  rehydrateSupportedBusinessObjectPayload(target, readTemplateEdgeSemanticPayload({ semanticPayload: payload }), { moddle });
+
+  const defs = moddle.create("bpmn:Definitions", {
+    id: "Definitions_Zeebe",
+    targetNamespace: "http://bpmn.io/schema/bpmn",
+    rootElements: [moddle.create("bpmn:Process", {
+      id: "Process_Zeebe",
+      isExecutable: false,
+      flowElements: [start, task, target],
+    })],
+  });
+  const out = await moddle.toXML(defs, { format: true });
+  assert.equal(typeof out?.xml, "string");
+  assert.equal(out.xml.includes("Flow_Target_Zeebe"), true);
+  assert.equal(out.xml.includes("name=\"Да\""), true);
+  assert.equal(/zeebe:(Properties|properties)/.test(out.xml), true);
+  assert.equal(/zeebe:(Property|property)/.test(out.xml), true);
+  assert.equal(/name=["']container_condition["'][^>]*value=["']Закрыта["']/.test(out.xml), true);
 });
 
 test("rehydrateSupportedBusinessObjectPayload restores unknown safe namespaced extension entries as generic moddle elements", async (t) => {
