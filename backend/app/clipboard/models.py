@@ -65,6 +65,10 @@ class ClipboardFragmentNode(ClipboardElementBase):
     di_shape_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class ClipboardExternalDependency(ClipboardFragmentNode):
+    dependency_kind: Literal["external_datastore"] = "external_datastore"
+
+
 class ClipboardFragmentEdge(BaseModel):
     old_id: str
     parent_old_id: str = ""
@@ -91,6 +95,7 @@ class ClipboardSubprocessPayload(BaseModel):
     metadata: ClipboardMetadata
     root: ClipboardFragmentNode
     fragment: ClipboardFragment
+    external_dependencies: List[ClipboardExternalDependency] = Field(default_factory=list)
 
 
 class ClipboardPreview(BaseModel):
