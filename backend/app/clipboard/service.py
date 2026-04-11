@@ -84,6 +84,7 @@ class ClipboardService:
         sess, resolved_org_id, _scope = _legacy_main._legacy_load_session_scoped(session_id, request)
         if not sess:
             raise ClipboardServiceError(404, "not_found", "not_found")
+        active_org_id = str(request_active_org_id(request) or resolved_org_id or "").strip()
         copied_at = int(time.time())
         try:
             payload = serialize_clipboard_payload(
@@ -94,10 +95,10 @@ class ClipboardService:
                 source_org_id=resolved_org_id,
             )
         except ClipboardSerializationError as exc:
+            self._store.clear(user_id=user_id, org_id=active_org_id)
             status = 404 if exc.code == "element_not_found" else 422
             raise ClipboardServiceError(status, exc.code, exc.message) from exc
 
-        active_org_id = str(request_active_org_id(request) or resolved_org_id or "").strip()
         if not self._store.put(user_id=user_id, org_id=active_org_id, payload=payload):
             raise ClipboardServiceError(503, "clipboard_store_unavailable", "clipboard_store_unavailable")
         ttl = clipboard_ttl_sec()
