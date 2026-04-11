@@ -231,6 +231,97 @@ PLACEHOLDER_PROPERTY_SUBPROCESS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+INLINE_DATASTORE_SUBPROCESS_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_DataStore" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_DataStore" isExecutable="false">
+    <bpmn:subProcess id="StageLikeDataStoreSubProcess_1" name="Check vessel closure">
+      <bpmn:property id="Property_data_store_1" name="__targetRef_placeholder" />
+      <bpmn:dataInputAssociation id="DataInputAssociation_data_store_1">
+        <bpmn:sourceRef>DataStoreReference_1</bpmn:sourceRef>
+        <bpmn:targetRef>Property_data_store_1</bpmn:targetRef>
+      </bpmn:dataInputAssociation>
+      <bpmn:startEvent id="StageDataStoreStart_1">
+        <bpmn:outgoing>StageDataStoreFlow_1</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:task id="StageDataStoreTask_1" name="Inspect lid">
+        <bpmn:incoming>StageDataStoreFlow_1</bpmn:incoming>
+        <bpmn:outgoing>StageDataStoreFlow_2</bpmn:outgoing>
+      </bpmn:task>
+      <bpmn:exclusiveGateway id="StageDataStoreGateway_1" name="Closed?">
+        <bpmn:incoming>StageDataStoreFlow_2</bpmn:incoming>
+        <bpmn:outgoing>StageDataStoreFlow_3</bpmn:outgoing>
+      </bpmn:exclusiveGateway>
+      <bpmn:intermediateThrowEvent id="StageDataStoreThrow_1">
+        <bpmn:incoming>StageDataStoreFlow_3</bpmn:incoming>
+        <bpmn:outgoing>StageDataStoreFlow_4</bpmn:outgoing>
+      </bpmn:intermediateThrowEvent>
+      <bpmn:task id="StageDataStoreTask_2" name="Seal vessel">
+        <bpmn:incoming>StageDataStoreFlow_4</bpmn:incoming>
+        <bpmn:outgoing>StageDataStoreFlow_5</bpmn:outgoing>
+      </bpmn:task>
+      <bpmn:endEvent id="StageDataStoreEnd_1">
+        <bpmn:incoming>StageDataStoreFlow_5</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="StageDataStoreFlow_1" sourceRef="StageDataStoreStart_1" targetRef="StageDataStoreTask_1" />
+      <bpmn:sequenceFlow id="StageDataStoreFlow_2" sourceRef="StageDataStoreTask_1" targetRef="StageDataStoreGateway_1" />
+      <bpmn:sequenceFlow id="StageDataStoreFlow_3" sourceRef="StageDataStoreGateway_1" targetRef="StageDataStoreThrow_1" />
+      <bpmn:sequenceFlow id="StageDataStoreFlow_4" sourceRef="StageDataStoreThrow_1" targetRef="StageDataStoreTask_2" />
+      <bpmn:sequenceFlow id="StageDataStoreFlow_5" sourceRef="StageDataStoreTask_2" targetRef="StageDataStoreEnd_1" />
+      <bpmn:dataStoreReference id="DataStoreReference_1" name="Closure source" />
+    </bpmn:subProcess>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_DataStore">
+    <bpmndi:BPMNPlane id="BPMNPlane_DataStore" bpmnElement="Process_DataStore">
+      <bpmndi:BPMNShape id="StageLikeDataStoreSubProcess_1_di" bpmnElement="StageLikeDataStoreSubProcess_1" isExpanded="true">
+        <dc:Bounds x="160" y="120" width="620" height="300" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StageDataStoreStart_1_di" bpmnElement="StageDataStoreStart_1">
+        <dc:Bounds x="220" y="230" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StageDataStoreTask_1_di" bpmnElement="StageDataStoreTask_1">
+        <dc:Bounds x="310" y="208" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StageDataStoreGateway_1_di" bpmnElement="StageDataStoreGateway_1">
+        <dc:Bounds x="480" y="223" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StageDataStoreThrow_1_di" bpmnElement="StageDataStoreThrow_1">
+        <dc:Bounds x="580" y="230" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StageDataStoreTask_2_di" bpmnElement="StageDataStoreTask_2">
+        <dc:Bounds x="660" y="208" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StageDataStoreEnd_1_di" bpmnElement="StageDataStoreEnd_1">
+        <dc:Bounds x="840" y="230" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DataStoreReference_1_di" bpmnElement="DataStoreReference_1">
+        <dc:Bounds x="500" y="330" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="StageDataStoreFlow_1_di" bpmnElement="StageDataStoreFlow_1">
+        <di:waypoint x="256" y="248" />
+        <di:waypoint x="310" y="248" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="StageDataStoreFlow_2_di" bpmnElement="StageDataStoreFlow_2">
+        <di:waypoint x="430" y="248" />
+        <di:waypoint x="480" y="248" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="StageDataStoreFlow_3_di" bpmnElement="StageDataStoreFlow_3">
+        <di:waypoint x="530" y="248" />
+        <di:waypoint x="580" y="248" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="StageDataStoreFlow_4_di" bpmnElement="StageDataStoreFlow_4">
+        <di:waypoint x="616" y="248" />
+        <di:waypoint x="660" y="248" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="StageDataStoreFlow_5_di" bpmnElement="StageDataStoreFlow_5">
+        <di:waypoint x="780" y="248" />
+        <di:waypoint x="840" y="248" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
+"""
+
+
 def _local(tag: str) -> str:
     return str(tag or "").split("}", 1)[-1]
 
@@ -671,6 +762,114 @@ class BpmnSubprocessClipboardTests(unittest.TestCase):
         self.assertIn(pasted_property_id, xml_text)
         self.assertNotIn('id="Property_placeholder_1"', xml_text)
         self.assertNotIn(">Property_placeholder_1<", xml_text)
+
+    def test_inline_datastore_subprocess_roundtrip_remaps_datastore_and_association_refs(self):
+        source_session_id = self._create_session_with_xml(
+            title="Inline datastore subprocess",
+            xml=INLINE_DATASTORE_SUBPROCESS_XML,
+        )
+        sess = self.get_storage().load(source_session_id, org_id=self.org_id, is_admin=True)
+        payload = self.serialize_clipboard_payload(
+            session_obj=sess,
+            element_id="StageLikeDataStoreSubProcess_1",
+            copied_by_user_id=str(self.owner.get("id") or ""),
+            copied_at=1730002345,
+            source_org_id=self.org_id,
+        )
+        self.assertIsInstance(payload, self.ClipboardSubprocessPayload)
+        self.assertEqual(payload.root.old_id, "StageLikeDataStoreSubProcess_1")
+        self.assertEqual(
+            {node.old_id for node in payload.fragment.nodes},
+            {
+                "DataStoreReference_1",
+                "StageDataStoreStart_1",
+                "StageDataStoreTask_1",
+                "StageDataStoreGateway_1",
+                "StageDataStoreThrow_1",
+                "StageDataStoreTask_2",
+                "StageDataStoreEnd_1",
+            },
+        )
+        datastore_payload = next(node for node in payload.fragment.nodes if node.old_id == "DataStoreReference_1")
+        self.assertEqual(datastore_payload.element_type, "dataStoreReference")
+        self.assertEqual(str(datastore_payload.name or ""), "Closure source")
+        input_association = next(
+            child for child in list(payload.root.extra_children or [])
+            if str(child.get("type") or "") == "dataInputAssociation"
+        )
+        source_ref = next(
+            child for child in list(input_association.get("children") or [])
+            if str(child.get("type") or "") == "sourceRef"
+        )
+        target_ref = next(
+            child for child in list(input_association.get("children") or [])
+            if str(child.get("type") or "") == "targetRef"
+        )
+        self.assertEqual(str(source_ref.get("text") or ""), "DataStoreReference_1")
+        self.assertEqual(str(target_ref.get("text") or ""), "Property_data_store_1")
+
+        fake = _FakeRedis()
+        with patch("app.redis_cache.get_client", return_value=fake):
+            copy_out = self.copy_bpmn_element_to_clipboard(
+                self.ClipboardCopyIn(session_id=source_session_id, element_id="StageLikeDataStoreSubProcess_1"),
+                self._req(self.owner),
+            )
+            copy_status, copy_body = _read_response(copy_out)
+            self.assertEqual(copy_status, 200)
+            self.assertEqual(str(copy_body.get("clipboard_item_type") or ""), "bpmn_subprocess_subtree")
+
+            preview_out = self.get_current_bpmn_clipboard(self._req(self.owner))
+            preview_status, preview_body = _read_response(preview_out)
+            self.assertEqual(preview_status, 200)
+            self.assertEqual(bool(preview_body.get("empty")), False)
+
+            paste_out = self.paste_bpmn_clipboard(
+                self.ClipboardPasteIn(session_id=self.target_session_id),
+                self._req(self.owner),
+            )
+            paste_status, paste_body = _read_response(paste_out)
+            self.assertEqual(paste_status, 200)
+            self.assertTrue(bool(paste_body.get("ok")))
+            self.assertEqual(len(set(paste_body.get("created_node_ids") or [])), 8)
+            self.assertEqual(len(set(paste_body.get("created_edge_ids") or [])), 5)
+
+        reloaded = self.get_storage().load(self.target_session_id, org_id=self.org_id, is_admin=True)
+        self.assertIsNotNone(reloaded)
+        xml_text = str(getattr(reloaded, "bpmn_xml", "") or "")
+        root = ET.fromstring(xml_text)
+        pasted_root_id = str(paste_body.get("pasted_root_element_id") or "")
+        pasted_subprocess = next(
+            (el for el in _iter_local(root, "subProcess") if str(el.attrib.get("id") or "").strip() == pasted_root_id),
+            None,
+        )
+        self.assertIsNotNone(pasted_subprocess)
+
+        pasted_datastore = next((el for el in list(pasted_subprocess) if _local(el.tag) == "dataStoreReference"), None)
+        self.assertIsNotNone(pasted_datastore)
+        pasted_datastore_id = str(pasted_datastore.attrib.get("id") or "")
+        self.assertTrue(pasted_datastore_id)
+        self.assertNotEqual(pasted_datastore_id, "DataStoreReference_1")
+
+        pasted_property = next((el for el in list(pasted_subprocess) if _local(el.tag) == "property"), None)
+        self.assertIsNotNone(pasted_property)
+        pasted_property_id = str(pasted_property.attrib.get("id") or "")
+        self.assertTrue(pasted_property_id)
+        self.assertNotEqual(pasted_property_id, "Property_data_store_1")
+
+        pasted_input_association = next(
+            (el for el in list(pasted_subprocess) if _local(el.tag) == "dataInputAssociation"),
+            None,
+        )
+        self.assertIsNotNone(pasted_input_association)
+        pasted_source_ref = next((el for el in _iter_local(pasted_input_association, "sourceRef")), None)
+        pasted_target_ref = next((el for el in _iter_local(pasted_input_association, "targetRef")), None)
+        self.assertIsNotNone(pasted_source_ref)
+        self.assertIsNotNone(pasted_target_ref)
+        self.assertEqual(str("".join(pasted_source_ref.itertext()) or "").strip(), pasted_datastore_id)
+        self.assertEqual(str("".join(pasted_target_ref.itertext()) or "").strip(), pasted_property_id)
+        self.assertIn(pasted_datastore_id, xml_text)
+        self.assertNotIn('id="DataStoreReference_1"', xml_text)
+        self.assertNotIn(">DataStoreReference_1<", xml_text)
 
     def test_unsupported_subprocess_topology_rejects_clearly(self):
         extra_project = self.create_project(self.CreateProjectIn(title="Unsupported Project"), self._req(self.owner))

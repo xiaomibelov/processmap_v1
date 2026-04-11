@@ -45,6 +45,7 @@ _SUPPORTED_SUBTREE_NODE_TYPES = {
     "startEvent",
     "endEvent",
     "intermediateThrowEvent",
+    "dataStoreReference",
     "exclusiveGateway",
     "inclusiveGateway",
     "parallelGateway",
