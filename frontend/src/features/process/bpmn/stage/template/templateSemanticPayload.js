@@ -86,6 +86,8 @@ const GENERIC_NAMESPACE_URI_BY_PREFIX = Object.freeze({
   pm: "http://processmap.ai/schema/bpmn/1.0",
 });
 
+const ZEEBE_NAMESPACE_URI = "http://camunda.org/schema/zeebe/1.0";
+
 export const TEMPLATE_PERSISTENT_FIELD_GROUPS = Object.freeze([
   "businessObject.documentation",
   "businessObject.extensionElements",
@@ -225,8 +227,13 @@ function sanitizeExtensionElementsPayload(valueRaw) {
   if (!hasOwnKeys(value)) return undefined;
   const out = {};
   if (toText(value.$type)) out.$type = toText(value.$type);
-  if (Array.isArray(value.values)) {
-    const nextValues = value.values
+  const sourceValues = Array.isArray(value.values)
+    ? value.values
+    : Array.isArray(value.$children)
+      ? value.$children
+      : [];
+  if (sourceValues.length) {
+    const nextValues = sourceValues
       .map((entryRaw) => sanitizeExtensionEntryPayload(entryRaw))
       .filter(Boolean);
     if (nextValues.length) out.values = nextValues;
@@ -264,6 +271,8 @@ function sanitizeConditionExpressionPayload(valueRaw) {
 
 function sanitizeExtensionEntryPayload(entryRaw) {
   const entry = asObject(entryRaw);
+  const zeebeProperties = sanitizeZeebePropertiesPayload(entry);
+  if (zeebeProperties) return zeebeProperties;
   const type = toText(entry.$type || entry.type);
   if (!type) return undefined;
   if (isUnsafeGenericNamespaceKey(type)) return undefined;
@@ -280,6 +289,69 @@ function sanitizeExtensionEntryPayload(entryRaw) {
     }
   }
   return cloned;
+}
+
+function readModdleNamespaceUri(valueRaw) {
+  const value = asObject(valueRaw);
+  const descriptor = asObject(value.$descriptor);
+  const ns = asObject(descriptor.ns);
+  return toText(ns.uri || ns.xmlns || ns.url);
+}
+
+function readModdleLocalName(valueRaw) {
+  const value = asObject(valueRaw);
+  const type = toText(value.$type || value.type);
+  if (!type) return "";
+  return toText(type.includes(":") ? type.split(":").pop() : type).toLowerCase();
+}
+
+function hasZeebeNamespace(valueRaw) {
+  const value = asObject(valueRaw);
+  const type = toText(value.$type || value.type);
+  if (/^zeebe:/i.test(type)) return true;
+  return readModdleNamespaceUri(value) === ZEEBE_NAMESPACE_URI;
+}
+
+function readZeebePropertyAttribute(entryRaw, key) {
+  const entry = asObject(entryRaw);
+  if (Object.prototype.hasOwnProperty.call(entry, key)) return entry[key];
+  const attrs = asObject(entry.$attrs);
+  if (Object.prototype.hasOwnProperty.call(attrs, key)) return attrs[key];
+  return undefined;
+}
+
+function sanitizeZeebePropertyPayload(entryRaw) {
+  const entry = asObject(entryRaw);
+  if (readModdleLocalName(entry) !== "property") return undefined;
+  if (!hasZeebeNamespace(entry)) return undefined;
+  const name = readZeebePropertyAttribute(entry, "name");
+  if (name === undefined || name === null) return undefined;
+  const out = {
+    $type: "zeebe:Property",
+    name: String(name),
+  };
+  const value = readZeebePropertyAttribute(entry, "value");
+  if (value !== undefined && value !== null) out.value = String(value);
+  return out;
+}
+
+function sanitizeZeebePropertiesPayload(entryRaw) {
+  const entry = asObject(entryRaw);
+  if (readModdleLocalName(entry) !== "properties") return undefined;
+  if (!hasZeebeNamespace(entry)) return undefined;
+  const sourceValues = Array.isArray(entry.values)
+    ? entry.values
+    : Array.isArray(entry.$children)
+      ? entry.$children
+      : [];
+  const values = sourceValues
+    .map((itemRaw) => sanitizeZeebePropertyPayload(itemRaw))
+    .filter(Boolean);
+  if (!values.length) return undefined;
+  return {
+    $type: "zeebe:Properties",
+    values,
+  };
 }
 
 function readPayloadObjectCandidate(payloadRaw, customRaw, keys = []) {
@@ -369,6 +441,43 @@ function createGenericModdleValue(typeRaw, payloadRaw, moddle = null) {
   }
 }
 
+function restoreZeebeExtensionValue(raw, moddle = null) {
+  const value = asObject(raw);
+  const type = toText(value.$type || value.type);
+  if (!/^zeebe:/i.test(type)) return null;
+  if (!moddle || typeof moddle.createAny !== "function") return null;
+  const localName = readModdleLocalName(value);
+  if (localName === "property") {
+    const name = readZeebePropertyAttribute(value, "name");
+    if (name === undefined || name === null) return null;
+    const payload = { name: String(name) };
+    const propertyValue = readZeebePropertyAttribute(value, "value");
+    if (propertyValue !== undefined && propertyValue !== null) payload.value = String(propertyValue);
+    try {
+      return moddle.createAny(type, ZEEBE_NAMESPACE_URI, payload);
+    } catch {
+      return null;
+    }
+  }
+  if (localName === "properties") {
+    const sourceValues = Array.isArray(value.values)
+      ? value.values
+      : Array.isArray(value.$children)
+        ? value.$children
+        : [];
+    const children = sourceValues
+      .map((itemRaw) => restoreZeebeExtensionValue(itemRaw, moddle))
+      .filter(Boolean);
+    if (!children.length) return null;
+    try {
+      return moddle.createAny(type, ZEEBE_NAMESPACE_URI, { $children: children });
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 function mergeNormalizedSemanticPayload(primaryRaw, fallbackRaw) {
   const primary = asObject(primaryRaw);
   const fallback = asObject(fallbackRaw);
@@ -442,6 +551,8 @@ function restoreModdleValue(value, moddle = null) {
   if (typeof value !== "object") return undefined;
   const raw = asObject(value);
   const type = toText(raw.$type);
+  const zeebeValue = restoreZeebeExtensionValue(raw, moddle);
+  if (zeebeValue) return zeebeValue;
   if (type && moddle && typeof moddle.create === "function") {
     const payload = {};
     Object.keys(raw).forEach((key) => {
