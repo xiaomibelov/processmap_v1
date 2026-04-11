@@ -1,4 +1,5 @@
 import {
+  readTemplateEdgeSemanticPayload,
   readTemplateNodeSemanticPayload,
   rehydrateSupportedBusinessObjectPayload,
   serializeSupportedBusinessObjectPayload,
@@ -143,11 +144,13 @@ function buildTemplateEdgeItem(elementRaw, fallbackRaw = {}) {
   const sourceId = toText(element?.source?.id || fallback?.sourceRef?.id);
   const targetId = toText(element?.target?.id || fallback?.targetRef?.id);
   if (!sourceId || !targetId) return null;
+  const payloadSource = Object.keys(bo).length ? bo : fallback;
   return {
     id: toText(element.id || fallback.id),
     sourceId,
     targetId,
     when: toText(bo.name || fallback.name),
+    semanticPayload: serializeSupportedBusinessObjectPayload(payloadSource),
   };
 }
 
@@ -314,12 +317,17 @@ function readLaneMap(inst, deps = {}) {
   return map;
 }
 
-function connectSequenceFlow(modeling, source, target, when = "") {
+function connectSequenceFlow(modeling, source, target, when = "", options = {}) {
   if (!modeling || !source || !target) return null;
   try {
     const conn = modeling.connect(source, target, { type: "bpmn:SequenceFlow" });
     const label = String(when || "").trim();
     if (conn && label) modeling.updateLabel(conn, label);
+    rehydrateSupportedBusinessObjectPayload(
+      conn?.businessObject,
+      readTemplateEdgeSemanticPayload(options?.edge),
+      { moddle: options?.moddle || null },
+    );
     return conn || null;
   } catch {
     return null;
@@ -508,12 +516,9 @@ export function createTemplatePackAdapter(deps = {}) {
       .filter((item) => item.id)
       .sort((a, b) => Number(a.di.x || 0) - Number(b.di.x || 0) || Number(a.di.y || 0) - Number(b.di.y || 0));
 
-    const edgeItems = selectedEdges.map((edge) => ({
-      id: String(edge?.id || ""),
-      sourceId: String(edge?.source?.id || ""),
-      targetId: String(edge?.target?.id || ""),
-      when: String(edge?.businessObject?.name || "").trim(),
-    }));
+    const edgeItems = selectedEdges
+      .map((edge) => buildTemplateEdgeItem(edge))
+      .filter(Boolean);
 
     const incomingCount = new Map();
     const outgoingCount = new Map();
@@ -712,7 +717,7 @@ export function createTemplatePackAdapter(deps = {}) {
       const source = createdNodeMap[String(edge?.sourceId || "")];
       const target = createdNodeMap[String(edge?.targetId || "")];
       if (!source || !target) continue;
-      const conn = connectSequenceFlow(modeling, source, target, edge?.when);
+      const conn = connectSequenceFlow(modeling, source, target, edge?.when, { edge, moddle });
       if (!conn) continue;
       const oldId = String(edge?.id || "");
       remap[oldId] = String(conn?.id || "");
