@@ -21,6 +21,7 @@ from .models import (
 from .xml_codec import (
     _BPMN_NS,
     collect_di_maps,
+    collect_di_maps_for_bpmn_element,
     extract_documentation,
     find_xml_element,
     local_name,
@@ -391,10 +392,22 @@ def _serialize_subprocess_payload(
     if local_name(root_elem.tag) not in _SUPPORTED_SUBPROCESS_ROOT_TYPES:
         raise ClipboardSerializationError("unsupported_element_type", "clipboard v2 supports only subprocess subtree root")
     xml_root = _load_xml_root(str(getattr(session_obj, "bpmn_xml", "") or ""))
-    shape_map, edge_map, _plane = collect_di_maps(xml_root)
     root_old_id = str(element_id or "").strip()
     if not root_old_id:
         raise ClipboardSerializationError("validation_error", "element_id is required")
+    main_shape_map, main_edge_map, _plane = collect_di_maps(xml_root)
+    shape_map = dict(main_shape_map or {})
+    edge_map = dict(main_edge_map or {})
+    root_shape_entry = main_shape_map.get(root_old_id) if isinstance(main_shape_map, dict) else {}
+    root_shape_attrs = dict(root_shape_entry.get("shape_attributes") or {}) if isinstance(root_shape_entry, dict) else {}
+    root_is_collapsed = str(root_shape_attrs.get("isExpanded") or "").strip().lower() == "false"
+    if root_is_collapsed:
+        plane_shape_map, plane_edge_map, _subprocess_plane = collect_di_maps_for_bpmn_element(xml_root, root_old_id)
+        for node_id, entry in dict(plane_shape_map or {}).items():
+            if str(node_id or "").strip() == root_old_id:
+                continue
+            shape_map[str(node_id)] = entry
+        edge_map.update(dict(plane_edge_map or {}))
 
     node_ids: Set[str] = set()
     parent_by_id: Dict[str, str] = {}
