@@ -486,6 +486,99 @@ test("captureTemplatePackOnModeler captures selected subprocess subtree as seria
   assert.equal(result?.pack?.exitNodeId, "SubProcess_1");
 });
 
+test("captureTemplatePackOnModeler preserves Zeebe properties on subprocess internal sequenceFlow", () => {
+  const innerStart = {
+    id: "Event_0fxe2x2",
+    type: "bpmn:StartEvent",
+    x: 150,
+    y: 170,
+    width: 36,
+    height: 36,
+    businessObject: {
+      id: "Event_0fxe2x2",
+      $type: "bpmn:StartEvent",
+      name: "",
+    },
+    outgoing: [],
+  };
+  const gateway = {
+    id: "Gateway_0sjnk02",
+    type: "bpmn:ExclusiveGateway",
+    x: 260,
+    y: 165,
+    width: 50,
+    height: 50,
+    businessObject: {
+      id: "Gateway_0sjnk02",
+      $type: "bpmn:ExclusiveGateway",
+      name: "Крышка закрыта?",
+    },
+    outgoing: [],
+  };
+  const throwEvent = {
+    id: "Event_0yfyogk",
+    type: "bpmn:IntermediateThrowEvent",
+    x: 400,
+    y: 170,
+    width: 36,
+    height: 36,
+    businessObject: {
+      id: "Event_0yfyogk",
+      $type: "bpmn:IntermediateThrowEvent",
+      name: "",
+    },
+    outgoing: [],
+  };
+  const flow = createSequence("Flow_0u28r14", gateway, throwEvent, "Да", {
+    extensionElements: {
+      $type: "bpmn:ExtensionElements",
+      $children: [
+        {
+          $type: "ns2:properties",
+          $descriptor: { ns: { uri: "http://camunda.org/schema/zeebe/1.0" } },
+          $children: [
+            {
+              $type: "ns2:property",
+              $descriptor: { ns: { uri: "http://camunda.org/schema/zeebe/1.0" } },
+              $attrs: {
+                name: "container_condition",
+                value: "Закрыта",
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const startFlow = createSequence("Flow_1tps8zi", innerStart, gateway);
+  const subprocess = createSubprocess("Activity_16kdr1o", 120, 120, "Проверить закрытие емкости", [
+    innerStart.businessObject,
+    gateway.businessObject,
+    throwEvent.businessObject,
+    startFlow.businessObject,
+    flow.businessObject,
+  ]);
+  innerStart.parent = subprocess;
+  gateway.parent = subprocess;
+  throwEvent.parent = subprocess;
+  startFlow.parent = subprocess;
+  flow.parent = subprocess;
+  const { adapter, inst } = createModelerWithServices({
+    selectionItems: [subprocess],
+    registryItems: [subprocess, innerStart, gateway, throwEvent, startFlow, flow],
+  });
+
+  const result = adapter.captureTemplatePackOnModeler(inst, { title: "Subprocess Zeebe edge" });
+  assert.equal(result?.ok, true);
+  const edgePayload = result?.pack?.fragment?.edges?.find((edge) => edge.id === "Flow_0u28r14");
+  assert.equal(edgePayload?.when, "Да");
+  assert.equal(edgePayload?.semanticPayload?.extensionElements?.$type, "bpmn:ExtensionElements");
+  assert.equal(edgePayload?.semanticPayload?.extensionElements?.values?.[0]?.$type, "zeebe:Properties");
+  assert.equal(edgePayload?.semanticPayload?.extensionElements?.values?.[0]?.values?.[0]?.$type, "zeebe:Property");
+  assert.equal(edgePayload?.semanticPayload?.extensionElements?.values?.[0]?.values?.[0]?.name, "container_condition");
+  assert.equal(edgePayload?.semanticPayload?.extensionElements?.values?.[0]?.values?.[0]?.value, "Закрыта");
+});
+
 test("captureTemplatePackOnModeler preserves documentation, camunda io/properties, and custom bo payload in semanticPayload", () => {
   const source = createShape("Task_With_Props", 120, 80, "Task with props", {
     documentation: [
