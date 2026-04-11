@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  readTemplateEdgeSemanticPayload,
   readTemplateNodeSemanticPayload,
   rehydrateSupportedBusinessObjectPayload,
   serializeSupportedBusinessObjectPayload,
@@ -260,6 +261,83 @@ test("semantic payload strips unsafe generic namespace artifacts and still round
   assert.equal(/camunda:(Property|property)/.test(out.xml), true);
   assert.equal(/name=["']priority["'][^>]*value=["']high["']/.test(out.xml), true);
   assert.equal(out.xml.includes("ns0:"), false);
+});
+
+test("sequenceFlow semantic payload round-trips through real moddle XML", async (t) => {
+  const BpmnModdle = await importRealBpmnModdleOrSkip(t);
+  if (!BpmnModdle) return;
+  const moddle = new BpmnModdle({
+    camunda: camundaModdleDescriptor,
+    pm: pmModdleDescriptor,
+  });
+
+  const start = moddle.create("bpmn:StartEvent", { id: "Start_1" });
+  const task = moddle.create("bpmn:Task", { id: "Task_1" });
+  const source = moddle.create("bpmn:SequenceFlow", {
+    id: "Flow_Source",
+    name: "approved",
+    sourceRef: start,
+    targetRef: task,
+  });
+  source.documentation = [
+    moddle.create("bpmn:Documentation", {
+      text: "edge-doc-text",
+    }),
+  ];
+  source.extensionElements = moddle.create("bpmn:ExtensionElements", {
+    values: [
+      moddle.create("camunda:Properties", {
+        values: [
+          moddle.create("camunda:Property", {
+            name: "risk",
+            value: "high",
+          }),
+        ],
+      }),
+    ],
+  });
+  source.conditionExpression = moddle.create("bpmn:FormalExpression", {
+    body: "${approved}",
+  });
+  source.set("pm:edgeCode", "E-42");
+
+  const payload = serializeSupportedBusinessObjectPayload(source);
+  assert.equal(payload.documentation?.[0]?.text, "edge-doc-text");
+  assert.equal(payload.extensionElements?.values?.[0]?.values?.[0]?.value, "high");
+  assert.equal(payload.conditionExpression?.body, "${approved}");
+  assert.equal(payload.attrs?.["pm:edgeCode"], "E-42");
+  assert.equal(payload.custom?.sourceRef, undefined);
+  assert.equal(payload.custom?.targetRef, undefined);
+
+  const target = moddle.create("bpmn:SequenceFlow", {
+    id: "Flow_Target",
+    name: "approved",
+    sourceRef: start,
+    targetRef: task,
+  });
+  rehydrateSupportedBusinessObjectPayload(target, readTemplateEdgeSemanticPayload({ semanticPayload: payload }), { moddle });
+  assert.equal(target.documentation?.[0]?.text, "edge-doc-text");
+  assert.equal(target.extensionElements?.values?.[0]?.values?.[0]?.value, "high");
+  assert.equal(target.conditionExpression?.body, "${approved}");
+  assert.equal(target.get("pm:edgeCode"), "E-42");
+
+  const defs = moddle.create("bpmn:Definitions", {
+    id: "Definitions_Flow",
+    targetNamespace: "http://bpmn.io/schema/bpmn",
+    rootElements: [moddle.create("bpmn:Process", {
+      id: "Process_Flow",
+      isExecutable: false,
+      flowElements: [start, task, target],
+    })],
+  });
+  const out = await moddle.toXML(defs, { format: true });
+  assert.equal(typeof out?.xml, "string");
+  assert.equal(out.xml.includes("Flow_Target"), true);
+  assert.equal(out.xml.includes("edge-doc-text"), true);
+  assert.equal(/camunda:(Property|property)/.test(out.xml), true);
+  assert.equal(/name=["']risk["'][^>]*value=["']high["']/.test(out.xml), true);
+  assert.equal(out.xml.includes("${approved}"), true);
+  assert.equal(out.xml.includes("pm:edgeCode=\"E-42\""), true);
 });
 
 test("rehydrateSupportedBusinessObjectPayload restores unknown safe namespaced extension entries as generic moddle elements", async (t) => {
@@ -555,6 +633,7 @@ test("readTemplateNodeSemanticPayload merges custom/businessObjectCustom/busines
 test("field classification contract is explicit for persistent/transient/excluded template payload groups", () => {
   assert.equal(TEMPLATE_PERSISTENT_FIELD_GROUPS.includes("businessObject.documentation"), true);
   assert.equal(TEMPLATE_PERSISTENT_FIELD_GROUPS.includes("businessObject.extensionElements"), true);
+  assert.equal(TEMPLATE_PERSISTENT_FIELD_GROUPS.includes("businessObject.conditionExpression"), true);
   assert.equal(TEMPLATE_PERSISTENT_FIELD_GROUPS.includes("businessObject.$attrs"), true);
   assert.equal(TEMPLATE_TRANSIENT_FIELD_GROUPS.some((row) => String(row).includes("diagram-runtime state")), true);
   assert.equal(TEMPLATE_EXCLUDED_ROOT_KEYS.includes("incoming"), true);
