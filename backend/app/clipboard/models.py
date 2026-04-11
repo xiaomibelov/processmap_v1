@@ -76,7 +76,7 @@ class ClipboardFragmentEdge(BaseModel):
     target_old_id: str
     name: str = ""
     bpmn_attributes: Dict[str, Any] = Field(default_factory=dict)
-    condition_expression: str = ""
+    condition_expression: Union[str, Dict[str, Any]] = ""
     edge_local_state: Dict[str, Any] = Field(default_factory=dict)
     extra_children: List[Dict[str, Any]] = Field(default_factory=list)
     di_waypoints: List[ClipboardDiWaypoint] = Field(default_factory=list)
