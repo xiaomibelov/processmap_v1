@@ -314,6 +314,40 @@ def _append_di_shape(plane: ET.Element, *, bpmn_element_id: str, node: Clipboard
     )
 
 
+def _reserve_related_id(existing_ids: Set[str], preferred: str, *, fallback_prefix: str) -> str:
+    base = _safe_id_base(preferred, fallback_prefix)
+    candidate = base
+    suffix = 2
+    while candidate in existing_ids:
+        candidate = f"{base}_{suffix}"
+        suffix += 1
+    existing_ids.add(candidate)
+    return candidate
+
+
+def _is_collapsed_subprocess_root(node: ClipboardFragmentNode) -> bool:
+    return (
+        str(node.element_type or "").strip() == "subProcess"
+        and str((node.di_shape_attributes or {}).get("isExpanded") or "").strip().lower() == "false"
+    )
+
+
+def _create_subprocess_plane(root: ET.Element, *, subprocess_id: str, existing_ids: Set[str]) -> ET.Element:
+    diagram = ET.SubElement(
+        root,
+        f"{{{_BPMNDI_NS}}}BPMNDiagram",
+        attrib={"id": _reserve_related_id(existing_ids, f"{subprocess_id}_diagram", fallback_prefix="BPMNDiagram")},
+    )
+    return ET.SubElement(
+        diagram,
+        f"{{{_BPMNDI_NS}}}BPMNPlane",
+        attrib={
+            "id": _reserve_related_id(existing_ids, f"{subprocess_id}_plane", fallback_prefix="BPMNPlane"),
+            "bpmnElement": str(subprocess_id or ""),
+        },
+    )
+
+
 def _append_basic_di_shape(
     plane: ET.Element,
     *,
@@ -576,10 +610,27 @@ def materialize_subprocess_payload_into_session(
             auxiliary_id_map[old_id] = _allocate_new_id(existing_ids, prefix=prefix, hint=old_id)
         remap_id_map = {**id_map, **edge_id_map, **auxiliary_id_map}
 
-        min_x, min_y, _max_x, _max_y = _compute_fragment_bbox(payload.root, list(payload.fragment.nodes or []))
         target_x, target_y = _target_origin(plane)
-        delta_x = target_x - min_x
-        delta_y = target_y - min_y
+        plane_backed_collapsed = _is_collapsed_subprocess_root(payload.root) and any(
+            getattr(node, "di_bounds", None) is not None for node in list(payload.fragment.nodes or [])
+        )
+        subprocess_plane = plane
+        if plane_backed_collapsed and payload.root.di_bounds is not None:
+            root_delta_x = target_x - float(payload.root.di_bounds.x)
+            root_delta_y = target_y - float(payload.root.di_bounds.y)
+            inner_delta_x = 0.0
+            inner_delta_y = 0.0
+            subprocess_plane = _create_subprocess_plane(
+                root,
+                subprocess_id=id_map[payload.root.old_id],
+                existing_ids=existing_ids,
+            )
+        else:
+            min_x, min_y, _max_x, _max_y = _compute_fragment_bbox(payload.root, list(payload.fragment.nodes or []))
+            root_delta_x = target_x - min_x
+            root_delta_y = target_y - min_y
+            inner_delta_x = root_delta_x
+            inner_delta_y = root_delta_y
 
         xml_node_by_old_id: Dict[str, ET.Element] = {}
         for node in all_nodes:
@@ -617,12 +668,15 @@ def materialize_subprocess_payload_into_session(
 
         # BPMNDI
         for node in all_nodes:
+            target_plane = plane if node.old_id == payload.root.old_id else subprocess_plane
+            node_delta_x = root_delta_x if node.old_id == payload.root.old_id else inner_delta_x
+            node_delta_y = root_delta_y if node.old_id == payload.root.old_id else inner_delta_y
             _append_di_shape(
-                plane,
+                target_plane,
                 bpmn_element_id=id_map[node.old_id],
                 node=node,
-                delta_x=delta_x,
-                delta_y=delta_y,
+                delta_x=node_delta_x,
+                delta_y=node_delta_y,
                 existing_ids=existing_ids,
             )
         for edge in all_edges:
@@ -631,13 +685,13 @@ def materialize_subprocess_payload_into_session(
             if source_node is None or target_node is None:
                 raise ClipboardMaterializationError(422, "invalid_clipboard_payload", "edge refs point outside subprocess subtree")
             _append_di_edge(
-                plane,
+                subprocess_plane,
                 bpmn_element_id=edge_id_map[edge.old_id],
                 edge=edge,
                 source_node=source_node,
                 target_node=target_node,
-                delta_x=delta_x,
-                delta_y=delta_y,
+                delta_x=inner_delta_x,
+                delta_y=inner_delta_y,
                 existing_ids=existing_ids,
             )
 
