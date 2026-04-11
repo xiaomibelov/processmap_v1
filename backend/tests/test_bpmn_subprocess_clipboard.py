@@ -451,6 +451,61 @@ EXTERNAL_AUXILIARY_REF_SUBPROCESS_XML = """<?xml version="1.0" encoding="UTF-8"?
 """
 
 
+EXTERNAL_NON_DATASTORE_AUXILIARY_REF_SUBPROCESS_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_ExternalAuxTask" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_ExternalAuxTask" isExecutable="false">
+    <bpmn:task id="ExternalTask_1" name="Shared task ref" />
+    <bpmn:subProcess id="SubProcess_ExternalAuxTask_1" name="Check vessel closure">
+      <bpmn:property id="Property_external_aux_task_1" name="__targetRef_placeholder" />
+      <bpmn:dataInputAssociation id="DataInputAssociation_external_aux_task_1">
+        <bpmn:sourceRef>ExternalTask_1</bpmn:sourceRef>
+        <bpmn:targetRef>Property_external_aux_task_1</bpmn:targetRef>
+      </bpmn:dataInputAssociation>
+      <bpmn:startEvent id="ExternalAuxTaskStart_1">
+        <bpmn:outgoing>ExternalAuxTaskFlow_1</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:task id="ExternalAuxTaskInner_1" name="Inspect lid">
+        <bpmn:incoming>ExternalAuxTaskFlow_1</bpmn:incoming>
+        <bpmn:outgoing>ExternalAuxTaskFlow_2</bpmn:outgoing>
+      </bpmn:task>
+      <bpmn:intermediateThrowEvent id="ExternalAuxTaskThrow_1">
+        <bpmn:incoming>ExternalAuxTaskFlow_2</bpmn:incoming>
+      </bpmn:intermediateThrowEvent>
+      <bpmn:sequenceFlow id="ExternalAuxTaskFlow_1" sourceRef="ExternalAuxTaskStart_1" targetRef="ExternalAuxTaskInner_1" />
+      <bpmn:sequenceFlow id="ExternalAuxTaskFlow_2" sourceRef="ExternalAuxTaskInner_1" targetRef="ExternalAuxTaskThrow_1" />
+    </bpmn:subProcess>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_ExternalAuxTask">
+    <bpmndi:BPMNPlane id="BPMNPlane_ExternalAuxTask" bpmnElement="Process_ExternalAuxTask">
+      <bpmndi:BPMNShape id="ExternalTask_1_di" bpmnElement="ExternalTask_1">
+        <dc:Bounds x="90" y="260" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SubProcess_ExternalAuxTask_1_di" bpmnElement="SubProcess_ExternalAuxTask_1" isExpanded="true">
+        <dc:Bounds x="220" y="140" width="420" height="220" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ExternalAuxTaskStart_1_di" bpmnElement="ExternalAuxTaskStart_1">
+        <dc:Bounds x="270" y="235" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ExternalAuxTaskInner_1_di" bpmnElement="ExternalAuxTaskInner_1">
+        <dc:Bounds x="370" y="213" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ExternalAuxTaskThrow_1_di" bpmnElement="ExternalAuxTaskThrow_1">
+        <dc:Bounds x="540" y="235" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="ExternalAuxTaskFlow_1_di" bpmnElement="ExternalAuxTaskFlow_1">
+        <di:waypoint x="306" y="253" />
+        <di:waypoint x="370" y="253" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="ExternalAuxTaskFlow_2_di" bpmnElement="ExternalAuxTaskFlow_2">
+        <di:waypoint x="490" y="253" />
+        <di:waypoint x="540" y="253" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
+"""
+
+
 def _local(tag: str) -> str:
     return str(tag or "").split("}", 1)[-1]
 
@@ -995,27 +1050,40 @@ class BpmnSubprocessClipboardTests(unittest.TestCase):
         self.assertNotIn('id="Property_placeholder_1"', xml_text)
         self.assertNotIn(">Property_placeholder_1<", xml_text)
 
-    def test_external_auxiliary_ref_outside_subtree_rejects_with_explicit_error(self):
+    def test_external_datastore_dependency_is_captured_in_payload(self):
         source_session_id = self._create_session_with_xml(
             title="External auxiliary ref subprocess",
             xml=EXTERNAL_AUXILIARY_REF_SUBPROCESS_XML,
         )
         sess = self.get_storage().load(source_session_id, org_id=self.org_id, is_admin=True)
-        with self.assertRaises(self.ClipboardSerializationError) as ctx:
-            self.serialize_clipboard_payload(
-                session_obj=sess,
-                element_id="SubProcess_ExternalAux_1",
-                copied_by_user_id=str(self.owner.get("id") or ""),
-                copied_at=1730003456,
-                source_org_id=self.org_id,
-            )
-        exc = ctx.exception
-        self.assertEqual(exc.code, "external_auxiliary_ref_outside_subtree")
-        self.assertIn("outside copied boundary", str(exc.message))
-        self.assertIn("dataInputAssociation.sourceRef", str(exc.message))
-        self.assertIn("DataStoreReference_External", str(exc.message))
+        payload = self.serialize_clipboard_payload(
+            session_obj=sess,
+            element_id="SubProcess_ExternalAux_1",
+            copied_by_user_id=str(self.owner.get("id") or ""),
+            copied_at=1730003456,
+            source_org_id=self.org_id,
+        )
+        self.assertIsInstance(payload, self.ClipboardSubprocessPayload)
+        self.assertEqual(payload.root.old_id, "SubProcess_ExternalAux_1")
+        self.assertEqual({node.old_id for node in payload.fragment.nodes}, {"ExternalAuxStart_1", "ExternalAuxTask_1", "ExternalAuxThrow_1"})
+        self.assertEqual(len(list(payload.external_dependencies or [])), 1)
+        datastore_dependency = payload.external_dependencies[0]
+        self.assertEqual(datastore_dependency.old_id, "DataStoreReference_External")
+        self.assertEqual(datastore_dependency.element_type, "dataStoreReference")
+        self.assertEqual(str(datastore_dependency.name or ""), "Shared closure source")
+        self.assertIsNotNone(datastore_dependency.di_bounds)
+        self.assertNotIn("DataStoreReference_External", {node.old_id for node in payload.fragment.nodes})
+        input_association = next(
+            child for child in list(payload.root.extra_children or [])
+            if str(child.get("type") or "") == "dataInputAssociation"
+        )
+        source_ref = next(
+            child for child in list(input_association.get("children") or [])
+            if str(child.get("type") or "") == "sourceRef"
+        )
+        self.assertEqual(str(source_ref.get("text") or ""), "DataStoreReference_External")
 
-    def test_external_auxiliary_ref_copy_rejects_and_does_not_create_payload(self):
+    def test_external_datastore_dependency_roundtrip_creates_remapped_datastore_and_refs(self):
         source_session_id = self._create_session_with_xml(
             title="External auxiliary ref subprocess",
             xml=EXTERNAL_AUXILIARY_REF_SUBPROCESS_XML,
@@ -1027,29 +1095,82 @@ class BpmnSubprocessClipboardTests(unittest.TestCase):
                 self._req(self.owner),
             )
             copy_status, copy_body = _read_response(copy_out)
-            self.assertEqual(copy_status, 422)
-            self.assertEqual(
-                str(((copy_body.get("error") or {}).get("code") or "")),
-                "external_auxiliary_ref_outside_subtree",
-            )
-            self.assertIn(
-                "outside copied boundary",
-                str(((copy_body.get("error") or {}).get("message") or "")),
-            )
+            self.assertEqual(copy_status, 200)
+            self.assertEqual(str(copy_body.get("clipboard_item_type") or ""), "bpmn_subprocess_subtree")
 
             preview_out = self.get_current_bpmn_clipboard(self._req(self.owner))
             preview_status, preview_body = _read_response(preview_out)
             self.assertEqual(preview_status, 200)
-            self.assertEqual(bool(preview_body.get("empty")), True)
-            self.assertIsNone(preview_body.get("item"))
+            self.assertEqual(bool(preview_body.get("empty")), False)
+            self.assertEqual(str((preview_body.get("item") or {}).get("element_type") or ""), "subProcess")
 
             paste_out = self.paste_bpmn_clipboard(
                 self.ClipboardPasteIn(session_id=self.target_session_id),
                 self._req(self.owner),
             )
             paste_status, paste_body = _read_response(paste_out)
-            self.assertEqual(paste_status, 404)
-            self.assertEqual(str(((paste_body.get("error") or {}).get("code") or "")), "clipboard_empty")
+            self.assertEqual(paste_status, 200)
+            self.assertTrue(bool(paste_body.get("ok")))
+            self.assertEqual(len(set(paste_body.get("created_node_ids") or [])), 5)
+            self.assertEqual(len(set(paste_body.get("created_edge_ids") or [])), 2)
+
+        reloaded = self.get_storage().load(self.target_session_id, org_id=self.org_id, is_admin=True)
+        self.assertIsNotNone(reloaded)
+        xml_text = str(getattr(reloaded, "bpmn_xml", "") or "")
+        root = ET.fromstring(xml_text)
+        pasted_root_id = str(paste_body.get("pasted_root_element_id") or "")
+        pasted_subprocess = next(
+            (el for el in _iter_local(root, "subProcess") if str(el.attrib.get("id") or "").strip() == pasted_root_id),
+            None,
+        )
+        self.assertIsNotNone(pasted_subprocess)
+
+        pasted_datastore = next((el for el in list(pasted_subprocess) if _local(el.tag) == "dataStoreReference"), None)
+        self.assertIsNotNone(pasted_datastore)
+        pasted_datastore_id = str(pasted_datastore.attrib.get("id") or "")
+        self.assertTrue(pasted_datastore_id)
+        self.assertNotEqual(pasted_datastore_id, "DataStoreReference_External")
+
+        pasted_property = next((el for el in list(pasted_subprocess) if _local(el.tag) == "property"), None)
+        self.assertIsNotNone(pasted_property)
+        pasted_property_id = str(pasted_property.attrib.get("id") or "")
+        self.assertTrue(pasted_property_id)
+        self.assertNotEqual(pasted_property_id, "Property_external_aux_1")
+
+        pasted_input_association = next(
+            (el for el in list(pasted_subprocess) if _local(el.tag) == "dataInputAssociation"),
+            None,
+        )
+        self.assertIsNotNone(pasted_input_association)
+        pasted_source_ref = next((el for el in _iter_local(pasted_input_association, "sourceRef")), None)
+        pasted_target_ref = next((el for el in _iter_local(pasted_input_association, "targetRef")), None)
+        self.assertIsNotNone(pasted_source_ref)
+        self.assertIsNotNone(pasted_target_ref)
+        self.assertEqual(str("".join(pasted_source_ref.itertext()) or "").strip(), pasted_datastore_id)
+        self.assertEqual(str("".join(pasted_target_ref.itertext()) or "").strip(), pasted_property_id)
+        self.assertIn(pasted_datastore_id, set(paste_body.get("created_node_ids") or []))
+        self.assertNotIn('id="DataStoreReference_External"', xml_text)
+
+        second_reload = self.get_storage().load(self.target_session_id, org_id=self.org_id, is_admin=True)
+        self.assertIn(pasted_datastore_id, str(getattr(second_reload, "bpmn_xml", "") or ""))
+
+    def test_external_non_datastore_auxiliary_ref_still_rejects(self):
+        source_session_id = self._create_session_with_xml(
+            title="External task auxiliary ref subprocess",
+            xml=EXTERNAL_NON_DATASTORE_AUXILIARY_REF_SUBPROCESS_XML,
+        )
+        sess = self.get_storage().load(source_session_id, org_id=self.org_id, is_admin=True)
+        with self.assertRaises(self.ClipboardSerializationError) as ctx:
+            self.serialize_clipboard_payload(
+                session_obj=sess,
+                element_id="SubProcess_ExternalAuxTask_1",
+                copied_by_user_id=str(self.owner.get("id") or ""),
+                copied_at=1730003555,
+                source_org_id=self.org_id,
+            )
+        exc = ctx.exception
+        self.assertEqual(exc.code, "external_auxiliary_ref_outside_subtree")
+        self.assertIn("ExternalTask_1", str(exc.message))
 
     def test_inline_datastore_subprocess_roundtrip_remaps_datastore_and_association_refs(self):
         source_session_id = self._create_session_with_xml(
