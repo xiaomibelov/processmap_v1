@@ -24,7 +24,7 @@ function createShape(id, x, y, name = "", boOverrides = {}) {
   };
 }
 
-function createSequence(id, source, target, name = "") {
+function createSequence(id, source, target, name = "", boOverrides = {}) {
   return {
     id,
     type: "bpmn:SequenceFlow",
@@ -35,6 +35,7 @@ function createSequence(id, source, target, name = "") {
       id,
       $type: "bpmn:SequenceFlow",
       name,
+      ...boOverrides,
     },
   };
 }
@@ -186,6 +187,7 @@ function createModelerWithServices({
       const conn = {
         id: `Flow_new_${connSeq}`,
         type: attrs?.type || "bpmn:SequenceFlow",
+        waypoints: [{ x: 0, y: 0 }, { x: 10, y: 10 }],
         source,
         target,
         parent,
@@ -310,6 +312,55 @@ test("captureTemplatePackOnModeler returns pack with selected nodes and edges", 
   assert.equal(result.pack.fragment.edges.length, 1);
   assert.equal(result.pack.fragment.edges[0].sourceId, "Task_A");
   assert.equal(result.pack.fragment.edges[0].targetId, "Task_B");
+});
+
+test("captureTemplatePackOnModeler captures sequenceFlow semantic payload beyond thin edge fields", () => {
+  const a = createShape("Task_A", 120, 80, "A");
+  const b = createShape("Task_B", 320, 120, "B");
+  const ab = createSequence("Flow_With_Props", a, b, "approved", {
+    documentation: [
+      { $type: "bpmn:Documentation", text: "edge doc" },
+    ],
+    extensionElements: {
+      $type: "bpmn:ExtensionElements",
+      values: [
+        {
+          $type: "camunda:Properties",
+          values: [
+            { $type: "camunda:Property", name: "risk", value: "high" },
+          ],
+        },
+      ],
+    },
+    conditionExpression: {
+      $type: "bpmn:FormalExpression",
+      body: "${approved}",
+    },
+    $attrs: {
+      "pm:edgeCode": "E-42",
+    },
+    auditClass: "critical",
+  });
+  const { adapter, inst } = createModelerWithServices({
+    selectionItems: [a, b],
+    registryItems: [a, b, ab],
+  });
+
+  const result = adapter.captureTemplatePackOnModeler(inst, { title: "Pack A-B" });
+  assert.equal(result?.ok, true);
+  const edgePayload = result?.pack?.fragment?.edges?.[0] || {};
+  assert.deepEqual(
+    Object.keys(edgePayload).sort(),
+    ["id", "semanticPayload", "sourceId", "targetId", "when"].sort(),
+  );
+  assert.equal(edgePayload.id, "Flow_With_Props");
+  assert.equal(edgePayload.when, "approved");
+  assert.equal(edgePayload.semanticPayload?.documentation?.[0]?.text, "edge doc");
+  assert.equal(edgePayload.semanticPayload?.extensionElements?.values?.[0]?.$type, "camunda:Properties");
+  assert.equal(edgePayload.semanticPayload?.extensionElements?.values?.[0]?.values?.[0]?.value, "high");
+  assert.equal(edgePayload.semanticPayload?.conditionExpression?.body, "${approved}");
+  assert.equal(edgePayload.semanticPayload?.attrs?.["pm:edgeCode"], "E-42");
+  assert.equal(edgePayload.semanticPayload?.custom?.auditClass, "critical");
 });
 
 test("captureTemplatePackOnModeler captures selected subprocess subtree as serializable template pack", () => {
@@ -512,6 +563,72 @@ test("insertTemplatePackOnModeler creates nodes, connects sequence flows and emi
   assert.equal(connectCalls.length, 2);
   assert.equal(emitCalls.length, 1);
   assert.equal(emitCalls[0][0], "diagram.template_insert");
+});
+
+test("insertTemplatePackOnModeler reapplies sequenceFlow semantic payload to created connection", async () => {
+  const anchor = createShape("Anchor_1", 100, 100, "Anchor");
+  const { adapter, createdConnections } = createModelerWithServices({
+    anchorShape: anchor,
+    selectionItems: [anchor],
+    registryItems: [anchor],
+  });
+
+  const payload = {
+    mode: "after",
+    pack: {
+      packId: "pack_edge_props",
+      entryNodeId: "N1",
+      exitNodeId: "N2",
+      fragment: {
+        nodes: [
+          { id: "N1", type: "bpmn:Task", name: "First", di: { x: 10, y: 20 } },
+          { id: "N2", type: "bpmn:Task", name: "Second", di: { x: 180, y: 20 } },
+        ],
+        edges: [
+          {
+            id: "E1",
+            sourceId: "N1",
+            targetId: "N2",
+            when: "approved",
+            semanticPayload: {
+              documentation: [{ $type: "bpmn:Documentation", text: "edge doc" }],
+              extensionElements: {
+                $type: "bpmn:ExtensionElements",
+                values: [
+                  {
+                    $type: "camunda:Properties",
+                    values: [{ $type: "camunda:Property", name: "risk", value: "high" }],
+                  },
+                ],
+              },
+              conditionExpression: {
+                $type: "bpmn:FormalExpression",
+                body: "${approved}",
+              },
+              attrs: {
+                "pm:edgeCode": "E-42",
+              },
+              custom: {
+                auditClass: "critical",
+              },
+            },
+          },
+        ],
+      },
+    },
+  };
+
+  const result = await adapter.insertTemplatePackOnModeler(payload);
+  assert.equal(result?.ok, true);
+  assert.equal(result?.createdEdges, 1);
+  const bo = createdConnections[0]?.businessObject || {};
+  assert.equal(bo.name, "approved");
+  assert.equal(bo.documentation?.[0]?.text, "edge doc");
+  assert.equal(bo.extensionElements?.values?.[0]?.$type, "camunda:Properties");
+  assert.equal(bo.extensionElements?.values?.[0]?.values?.[0]?.value, "high");
+  assert.equal(bo.conditionExpression?.body, "${approved}");
+  assert.equal(bo.$attrs?.["pm:edgeCode"], "E-42");
+  assert.equal(bo.auditClass, "critical");
 });
 
 test("insertTemplatePackOnModeler reapplies semantic payload to inserted node businessObject", async () => {
@@ -818,6 +935,7 @@ test("semantic payload survives capture -> JSON storage -> insert -> reread roun
   const {
     adapter,
     inst,
+    createdConnections,
     registryItems,
     setSelection,
   } = createModelerWithServices({
@@ -848,6 +966,79 @@ test("semantic payload survives capture -> JSON storage -> insert -> reread roun
   const recaptured = adapter.captureTemplatePackOnModeler(inst, { title: "Roundtrip recapture" });
   assert.equal(recaptured?.ok, true);
   const targetPayload = recaptured?.pack?.fragment?.nodes?.[0]?.semanticPayload || {};
+  assert.deepEqual(targetPayload, sourcePayload);
+});
+
+test("sequenceFlow semantic payload survives capture -> JSON storage -> insert -> recapture", async () => {
+  const a = createShape("Task_A", 120, 80, "A");
+  const b = createShape("Task_B", 320, 120, "B");
+  const ab = createSequence("Flow_Edge_Roundtrip", a, b, "approved", {
+    documentation: [
+      { $type: "bpmn:Documentation", text: "edge roundtrip doc" },
+    ],
+    extensionElements: {
+      $type: "bpmn:ExtensionElements",
+      values: [
+        {
+          $type: "camunda:Properties",
+          values: [
+            { $type: "camunda:Property", name: "risk", value: "high" },
+          ],
+        },
+      ],
+    },
+    conditionExpression: {
+      $type: "bpmn:FormalExpression",
+      body: "${approved}",
+    },
+    $attrs: {
+      "pm:edgeCode": "E-42",
+    },
+    auditClass: "critical",
+  });
+  const anchor = createShape("Anchor_1", 560, 120, "Anchor");
+  const {
+    adapter,
+    inst,
+    createdConnections,
+    registryItems,
+    setSelection,
+  } = createModelerWithServices({
+    selectionItems: [a, b],
+    registryItems: [a, b, ab, anchor],
+    anchorShape: anchor,
+  });
+
+  const captured = adapter.captureTemplatePackOnModeler(inst, { title: "Edge roundtrip payload" });
+  assert.equal(captured?.ok, true);
+  const storedPack = JSON.parse(JSON.stringify(captured.pack));
+  const sourcePayload = storedPack?.fragment?.edges?.[0]?.semanticPayload || {};
+  assert.equal(sourcePayload.documentation?.[0]?.text, "edge roundtrip doc");
+  assert.equal(sourcePayload.extensionElements?.values?.[0]?.values?.[0]?.value, "high");
+  assert.equal(sourcePayload.conditionExpression?.body, "${approved}");
+  assert.equal(sourcePayload.attrs?.["pm:edgeCode"], "E-42");
+  assert.equal(sourcePayload.custom?.auditClass, "critical");
+
+  setSelection([anchor]);
+  const inserted = await adapter.insertTemplatePackOnModeler({
+    mode: "after",
+    pack: storedPack,
+  });
+  assert.equal(inserted?.ok, true);
+
+  const insertedNodeIds = Object.values(inserted?.remap || {})
+    .map((id) => String(id || ""))
+    .filter((id) => id.startsWith("Task_new_"));
+  const insertedNodes = insertedNodeIds
+    .map((id) => registryItems.find((row) => String(row?.id || "") === id))
+    .filter(Boolean);
+  assert.equal(insertedNodes.length, 2);
+  registryItems.push(...createdConnections);
+  setSelection(insertedNodes);
+
+  const recaptured = adapter.captureTemplatePackOnModeler(inst, { title: "Edge roundtrip recapture" });
+  assert.equal(recaptured?.ok, true);
+  const targetPayload = recaptured?.pack?.fragment?.edges?.[0]?.semanticPayload || {};
   assert.deepEqual(targetPayload, sourcePayload);
 });
 

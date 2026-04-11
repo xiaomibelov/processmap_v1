@@ -12,6 +12,7 @@ const ROOT_EXCLUDED_KEYS = new Set([
   "$type",
   "documentation",
   "extensionElements",
+  "conditionExpression",
   "$parent",
   "incoming",
   "outgoing",
@@ -88,6 +89,7 @@ const GENERIC_NAMESPACE_URI_BY_PREFIX = Object.freeze({
 export const TEMPLATE_PERSISTENT_FIELD_GROUPS = Object.freeze([
   "businessObject.documentation",
   "businessObject.extensionElements",
+  "businessObject.conditionExpression",
   "businessObject.$attrs",
   "businessObject.custom.* (except excluded/transient keys)",
 ]);
@@ -214,6 +216,22 @@ function sanitizeExtensionElementsPayload(valueRaw) {
   return hasOwnKeys(out) ? out : undefined;
 }
 
+function sanitizeConditionExpressionPayload(valueRaw) {
+  const value = asObject(valueRaw);
+  if (!hasOwnKeys(value)) return undefined;
+  const type = toText(value.$type || "bpmn:FormalExpression") || "bpmn:FormalExpression";
+  if (!isSafeNamespacedKey(type)) return undefined;
+  const out = {
+    $type: type,
+  };
+  ["body", "language", "evaluatesToTypeRef"].forEach((key) => {
+    if (!Object.prototype.hasOwnProperty.call(value, key)) return;
+    const cloned = cloneSerializableDeep(value[key]);
+    if (cloned !== undefined) out[key] = cloned;
+  });
+  return hasOwnKeys(out) ? out : undefined;
+}
+
 function sanitizeExtensionEntryPayload(entryRaw) {
   const entry = asObject(entryRaw);
   const type = toText(entry.$type || entry.type);
@@ -273,6 +291,10 @@ function normalizeTemplateSemanticPayload(raw) {
     "extensionElements",
     "extension_elements",
   ]);
+  const conditionExpressionCandidate = readPayloadObjectCandidate(payload, customRaw, [
+    "conditionExpression",
+    "condition_expression",
+  ]);
   const attrsCandidate = readPayloadObjectCandidate(payload, customRaw, [
     "attrs",
     "businessObjectAttrs",
@@ -283,6 +305,7 @@ function normalizeTemplateSemanticPayload(raw) {
     ...payload,
     documentation: Array.isArray(documentationCandidate) ? documentationCandidate : undefined,
     extensionElements: extensionElementsCandidate,
+    conditionExpression: conditionExpressionCandidate,
     attrs: attrsCandidate,
     custom: sanitizedCustom,
   };
@@ -330,6 +353,11 @@ function mergeNormalizedSemanticPayload(primaryRaw, fallbackRaw) {
     : hasNonEmptyObject(fallback.extensionElements)
       ? fallback.extensionElements
       : undefined;
+  const conditionExpression = hasNonEmptyObject(primary.conditionExpression)
+    ? primary.conditionExpression
+    : hasNonEmptyObject(fallback.conditionExpression)
+      ? fallback.conditionExpression
+      : undefined;
   const attrs = hasNonEmptyObject(primary.attrs)
     ? primary.attrs
     : hasNonEmptyObject(fallback.attrs)
@@ -353,10 +381,14 @@ function mergeNormalizedSemanticPayload(primaryRaw, fallbackRaw) {
   if (extensionElements !== undefined) merged.extensionElements = extensionElements;
   else delete merged.extensionElements;
 
+  if (conditionExpression !== undefined) merged.conditionExpression = conditionExpression;
+  else delete merged.conditionExpression;
+
   if (attrs !== undefined) merged.attrs = attrs;
   else delete merged.attrs;
 
   delete merged.extension_elements;
+  delete merged.condition_expression;
   delete merged.business_object_attrs;
   delete merged.business_object_custom;
   delete merged.businessObjectAttrs;
@@ -431,6 +463,11 @@ export function serializeSupportedBusinessObjectPayload(boRaw) {
     payload.extensionElements = sanitizedExtensionElements;
   }
 
+  const sanitizedConditionExpression = sanitizeConditionExpressionPayload(bo.conditionExpression);
+  if (hasOwnKeys(sanitizedConditionExpression)) {
+    payload.conditionExpression = sanitizedConditionExpression;
+  }
+
   const attrs = sanitizeBusinessObjectAttrs(cloneSerializableDeep(bo.$attrs));
   if (hasOwnKeys(attrs)) {
     payload.attrs = attrs;
@@ -462,6 +499,9 @@ export function rehydrateSupportedBusinessObjectPayload(targetBo, payloadRaw, { 
   if (payload.extensionElements && typeof payload.extensionElements === "object") {
     setBpmnProperty(bo, "extensionElements", restoreModdleValue(payload.extensionElements, moddle));
   }
+  if (payload.conditionExpression && typeof payload.conditionExpression === "object") {
+    setBpmnProperty(bo, "conditionExpression", restoreModdleValue(payload.conditionExpression, moddle));
+  }
   const attrs = normalizeBusinessObjectAttrs(payload.attrs);
   if (Object.keys(attrs).length) {
     if (typeof bo.set === "function") {
@@ -490,6 +530,18 @@ export function readTemplateNodeSemanticPayload(nodeRaw) {
     node.semantic_payload,
     node.propsMinimal,
     node.props_minimal,
+  ].filter((candidate) => candidate && typeof candidate === "object");
+  if (!candidates.length) return {};
+  return candidates
+    .map((candidate) => normalizeTemplateSemanticPayload(candidate))
+    .reduce((acc, current) => mergeNormalizedSemanticPayload(acc, current));
+}
+
+export function readTemplateEdgeSemanticPayload(edgeRaw) {
+  const edge = asObject(edgeRaw);
+  const candidates = [
+    edge.semanticPayload,
+    edge.semantic_payload,
   ].filter((candidate) => candidate && typeof candidate === "object");
   if (!candidates.length) return {};
   return candidates
