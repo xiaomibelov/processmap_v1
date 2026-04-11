@@ -462,6 +462,8 @@ def _merge_payload_state_into_session(
     apply_node_state(payload.root)
     for node in list(payload.fragment.nodes or []):
         apply_node_state(node)
+    for dependency in list(payload.external_dependencies or []):
+        apply_node_state(dependency)
     flow_meta = normalized_meta.get("flow_meta")
     if not isinstance(flow_meta, dict):
         flow_meta = {}
@@ -592,10 +594,10 @@ def materialize_subprocess_payload_into_session(
         root, process, plane = _parse_target_bpmn(str(getattr(target_session, "bpmn_xml", "") or ""))
         existing_ids = _collect_existing_ids(root)
         node_by_old_id, children_by_parent = _build_node_maps(payload)
-        edges_by_parent = _build_edge_map(payload)
+        dependency_nodes = list(payload.external_dependencies or [])
 
         id_map: Dict[str, str] = {}
-        all_nodes = [payload.root, *list(payload.fragment.nodes or [])]
+        all_nodes = [payload.root, *list(payload.fragment.nodes or []), *dependency_nodes]
         for node in all_nodes:
             prefix = "SubProcess" if str(node.element_type or "") == "subProcess" else str(node.element_type or "Node")
             id_map[node.old_id] = _allocate_new_id(existing_ids, prefix=prefix, hint=node.old_id)
@@ -649,6 +651,11 @@ def materialize_subprocess_payload_into_session(
                 raise ClipboardMaterializationError(422, "invalid_clipboard_payload", "subprocess node hierarchy is incomplete")
             parent_elem.append(child_elem)
             queue.extend(children_by_parent.get(node.old_id, []))
+        for dependency in dependency_nodes:
+            dependency_elem = xml_node_by_old_id.get(dependency.old_id)
+            if dependency_elem is None:
+                raise ClipboardMaterializationError(422, "invalid_clipboard_payload", "external dependency payload is incomplete")
+            root_elem.append(dependency_elem)
 
         all_edges = list(payload.fragment.edges or [])
         edge_xml_by_old_id: Dict[str, ET.Element] = {}
