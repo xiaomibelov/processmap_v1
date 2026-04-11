@@ -356,10 +356,10 @@ def _serialize_fragment_edge(
                 y=float(point.get("y", 0.0) or 0.0),
             )
         )
-    condition_expression = ""
+    condition_expression: Any = ""
     for child in list(elem):
         if local_name(child.tag) == "conditionExpression":
-            condition_expression = str("".join(child.itertext()) or "").strip()
+            condition_expression = serialize_tree(child)
             break
     from .xml_codec import attr_key
 
