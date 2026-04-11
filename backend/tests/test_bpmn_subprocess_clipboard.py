@@ -160,6 +160,80 @@ TARGET_BPMN_XML = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+PLANE_BACKED_COLLAPSED_SUBPROCESS_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_CollapsedPlane" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_CollapsedPlane" isExecutable="false">
+    <bpmn:startEvent id="CollapsedStartEvent_1" name="Start">
+      <bpmn:outgoing>CollapsedFlow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:subProcess id="CollapsedSubProcess_1" name="Collapsed Source">
+      <bpmn:incoming>CollapsedFlow_1</bpmn:incoming>
+      <bpmn:outgoing>CollapsedFlow_2</bpmn:outgoing>
+      <bpmn:startEvent id="CollapsedSubStart_1">
+        <bpmn:outgoing>CollapsedSubFlow_1</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:task id="CollapsedInnerTask_1" name="Inner task">
+        <bpmn:incoming>CollapsedSubFlow_1</bpmn:incoming>
+        <bpmn:outgoing>CollapsedSubFlow_2</bpmn:outgoing>
+      </bpmn:task>
+      <bpmn:endEvent id="CollapsedSubEnd_1">
+        <bpmn:incoming>CollapsedSubFlow_2</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="CollapsedSubFlow_1" sourceRef="CollapsedSubStart_1" targetRef="CollapsedInnerTask_1" />
+      <bpmn:sequenceFlow id="CollapsedSubFlow_2" sourceRef="CollapsedInnerTask_1" targetRef="CollapsedSubEnd_1" />
+    </bpmn:subProcess>
+    <bpmn:task id="CollapsedNeighborTask_1" name="Neighbor task">
+      <bpmn:incoming>CollapsedFlow_2</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="CollapsedFlow_1" sourceRef="CollapsedStartEvent_1" targetRef="CollapsedSubProcess_1" />
+    <bpmn:sequenceFlow id="CollapsedFlow_2" sourceRef="CollapsedSubProcess_1" targetRef="CollapsedNeighborTask_1" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_CollapsedPlane_Main">
+    <bpmndi:BPMNPlane id="BPMNPlane_CollapsedPlane_Main" bpmnElement="Process_CollapsedPlane">
+      <bpmndi:BPMNShape id="CollapsedStartEvent_1_di" bpmnElement="CollapsedStartEvent_1">
+        <dc:Bounds x="160" y="160" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="CollapsedSubProcess_1_di" bpmnElement="CollapsedSubProcess_1" isExpanded="false">
+        <dc:Bounds x="260" y="128" width="180" height="110" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="CollapsedNeighborTask_1_di" bpmnElement="CollapsedNeighborTask_1">
+        <dc:Bounds x="540" y="143" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="CollapsedFlow_1_di" bpmnElement="CollapsedFlow_1">
+        <di:waypoint x="196" y="178" />
+        <di:waypoint x="260" y="183" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="CollapsedFlow_2_di" bpmnElement="CollapsedFlow_2">
+        <di:waypoint x="440" y="183" />
+        <di:waypoint x="540" y="183" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+  <bpmndi:BPMNDiagram id="CollapsedSubProcess_1_diagram">
+    <bpmndi:BPMNPlane id="CollapsedSubProcess_1_plane" bpmnElement="CollapsedSubProcess_1">
+      <bpmndi:BPMNShape id="CollapsedSubStart_1_di" bpmnElement="CollapsedSubStart_1">
+        <dc:Bounds x="120" y="120" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="CollapsedInnerTask_1_di" bpmnElement="CollapsedInnerTask_1">
+        <dc:Bounds x="220" y="98" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="CollapsedSubEnd_1_di" bpmnElement="CollapsedSubEnd_1">
+        <dc:Bounds x="440" y="120" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="CollapsedSubFlow_1_di" bpmnElement="CollapsedSubFlow_1">
+        <di:waypoint x="156" y="138" />
+        <di:waypoint x="220" y="138" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="CollapsedSubFlow_2_di" bpmnElement="CollapsedSubFlow_2">
+        <di:waypoint x="360" y="138" />
+        <di:waypoint x="440" y="138" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
+"""
+
+
 UNSUPPORTED_SUBPROCESS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="Definitions_Bad" targetNamespace="http://bpmn.io/schema/bpmn">
   <bpmn:process id="Process_Bad" isExecutable="false">
@@ -721,6 +795,108 @@ class BpmnSubprocessClipboardTests(unittest.TestCase):
         second_reload = st.load(self.target_session_id, org_id=self.org_id, is_admin=True)
         self.assertIn(inner_task_id, getattr(second_reload, "bpmn_meta", {}).get("camunda_extensions_by_element_id", {}))
         self.assertIn(flow_happy_id, getattr(second_reload, "bpmn_meta", {}).get("flow_meta", {}))
+
+    def test_plane_backed_collapsed_subprocess_roundtrip_restores_subtree_and_plane(self):
+        source_session_id = self._create_session_with_xml(
+            title="Plane backed collapsed subprocess",
+            xml=PLANE_BACKED_COLLAPSED_SUBPROCESS_XML,
+        )
+        sess = self.get_storage().load(source_session_id, org_id=self.org_id, is_admin=True)
+        payload = self.serialize_clipboard_payload(
+            session_obj=sess,
+            element_id="CollapsedSubProcess_1",
+            copied_by_user_id=str(self.owner.get("id") or ""),
+            copied_at=1730001111,
+            source_org_id=self.org_id,
+        )
+        self.assertIsInstance(payload, self.ClipboardSubprocessPayload)
+        self.assertEqual(payload.root.old_id, "CollapsedSubProcess_1")
+        self.assertEqual(str((payload.root.di_shape_attributes or {}).get("isExpanded") or ""), "false")
+        self.assertEqual(
+            {node.old_id for node in payload.fragment.nodes},
+            {"CollapsedSubStart_1", "CollapsedInnerTask_1", "CollapsedSubEnd_1"},
+        )
+        self.assertTrue(all(node.di_bounds is not None for node in payload.fragment.nodes))
+        self.assertTrue(all(len(list(edge.di_waypoints or [])) == 2 for edge in payload.fragment.edges))
+
+        fake = _FakeRedis()
+        with patch("app.redis_cache.get_client", return_value=fake):
+            copy_out = self.copy_bpmn_element_to_clipboard(
+                self.ClipboardCopyIn(session_id=source_session_id, element_id="CollapsedSubProcess_1"),
+                self._req(self.owner),
+            )
+            copy_status, copy_body = _read_response(copy_out)
+            self.assertEqual(copy_status, 200)
+            self.assertEqual(str(copy_body.get("clipboard_item_type") or ""), "bpmn_subprocess_subtree")
+
+            preview_out = self.get_current_bpmn_clipboard(self._req(self.owner))
+            preview_status, preview_body = _read_response(preview_out)
+            self.assertEqual(preview_status, 200)
+            self.assertEqual(bool(preview_body.get("empty")), False)
+
+            paste_out = self.paste_bpmn_clipboard(
+                self.ClipboardPasteIn(session_id=self.target_session_id),
+                self._req(self.owner),
+            )
+            paste_status, paste_body = _read_response(paste_out)
+            self.assertEqual(paste_status, 200)
+            self.assertTrue(bool(paste_body.get("ok")))
+            self.assertEqual(len(set(paste_body.get("created_node_ids") or [])), 4)
+            self.assertEqual(len(set(paste_body.get("created_edge_ids") or [])), 2)
+
+        reloaded = self.get_storage().load(self.target_session_id, org_id=self.org_id, is_admin=True)
+        self.assertIsNotNone(reloaded)
+        xml_text = str(getattr(reloaded, "bpmn_xml", "") or "")
+        root = ET.fromstring(xml_text)
+        pasted_root_id = str(paste_body.get("pasted_root_element_id") or "")
+        self.assertTrue(pasted_root_id)
+
+        process_subprocess = next(
+            (el for el in _iter_local(root, "subProcess") if str(el.attrib.get("id") or "").strip() == pasted_root_id),
+            None,
+        )
+        self.assertIsNotNone(process_subprocess)
+        self.assertEqual(
+            {str(el.attrib.get("id") or "").strip() for el in _iter_local(process_subprocess, "sequenceFlow")},
+            set(paste_body.get("created_edge_ids") or []),
+        )
+
+        main_plane = next(
+            (plane for plane in _iter_local(root, "BPMNPlane") if str(plane.attrib.get("bpmnElement") or "").strip() == "Process_Target"),
+            None,
+        )
+        self.assertIsNotNone(main_plane)
+        main_root_shape = next(
+            (shape for shape in _iter_local(main_plane, "BPMNShape") if str(shape.attrib.get("bpmnElement") or "").strip() == pasted_root_id),
+            None,
+        )
+        self.assertIsNotNone(main_root_shape)
+        self.assertEqual(str(main_root_shape.attrib.get("isExpanded") or ""), "false")
+
+        subprocess_plane = next(
+            (plane for plane in _iter_local(root, "BPMNPlane") if str(plane.attrib.get("bpmnElement") or "").strip() == pasted_root_id),
+            None,
+        )
+        self.assertIsNotNone(subprocess_plane)
+
+        inner_shape_ids = {
+            str(shape.attrib.get("bpmnElement") or "").strip()
+            for shape in _iter_local(subprocess_plane, "BPMNShape")
+        }
+        inner_edge_ids = {
+            str(edge.attrib.get("bpmnElement") or "").strip()
+            for edge in _iter_local(subprocess_plane, "BPMNEdge")
+        }
+        created_node_ids = set(paste_body.get("created_node_ids") or [])
+        created_node_ids.discard(pasted_root_id)
+        self.assertEqual(inner_shape_ids, created_node_ids)
+        self.assertEqual(inner_edge_ids, set(paste_body.get("created_edge_ids") or []))
+
+        subprocess_plane_waypoints = list(_iter_local(subprocess_plane, "waypoint"))
+        self.assertEqual(len(subprocess_plane_waypoints), 4)
+
+        second_reload = self.get_storage().load(self.target_session_id, org_id=self.org_id, is_admin=True)
+        self.assertIn(f'bpmnElement="{pasted_root_id}"', str(getattr(second_reload, "bpmn_xml", "") or ""))
 
     def test_stage_like_placeholder_property_subprocess_roundtrip_remaps_auxiliary_refs(self):
         source_session_id = self._create_session_with_xml(

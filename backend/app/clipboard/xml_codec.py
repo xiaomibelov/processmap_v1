@@ -173,8 +173,16 @@ def build_extension_elements(payload: Dict[str, Any]) -> Optional[ET.Element]:
     return ext if len(list(ext)) > 0 else None
 
 
-def collect_di_maps(root: ET.Element) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Dict[str, Any]], Optional[ET.Element]]:
-    plane = next(iter_local(root, "BPMNPlane"), None)
+def find_bpmn_plane(root: ET.Element, *, bpmn_element_id: str = "") -> Optional[ET.Element]:
+    safe_bpmn_element_id = str(bpmn_element_id or "").strip()
+    for plane in iter_local(root, "BPMNPlane"):
+        if safe_bpmn_element_id and str(plane.attrib.get("bpmnElement") or "").strip() != safe_bpmn_element_id:
+            continue
+        return plane
+    return None
+
+
+def collect_plane_di_maps(plane: Optional[ET.Element]) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Dict[str, Any]], Optional[ET.Element]]:
     shape_map: Dict[str, Dict[str, Any]] = {}
     edge_map: Dict[str, Dict[str, Any]] = {}
     if plane is None:
@@ -225,6 +233,14 @@ def collect_di_maps(root: ET.Element) -> Tuple[Dict[str, Dict[str, Any]], Dict[s
     return shape_map, edge_map, plane
 
 
+def collect_di_maps(root: ET.Element) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Dict[str, Any]], Optional[ET.Element]]:
+    return collect_plane_di_maps(find_bpmn_plane(root))
+
+
+def collect_di_maps_for_bpmn_element(root: ET.Element, bpmn_element_id: str) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Dict[str, Any]], Optional[ET.Element]]:
+    return collect_plane_di_maps(find_bpmn_plane(root, bpmn_element_id=bpmn_element_id))
+
+
 __all__ = [
     "_BPMN_NS",
     "_BPMNDI_NS",
@@ -234,9 +250,12 @@ __all__ = [
     "attr_name_from_key",
     "build_extension_elements",
     "build_tree",
+    "collect_di_maps_for_bpmn_element",
     "collect_di_maps",
+    "collect_plane_di_maps",
     "extract_documentation",
     "find_xml_element",
+    "find_bpmn_plane",
     "iter_local",
     "local_name",
     "serialize_extension_elements",
