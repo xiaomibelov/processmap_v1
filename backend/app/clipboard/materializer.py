@@ -83,6 +83,8 @@ def _default_task_dimensions(element_type: str) -> tuple[float, float]:
     local = str(element_type or "").strip()
     if local in {"startEvent", "endEvent", "intermediateThrowEvent"}:
         return 36.0, 36.0
+    if local == "dataStoreReference":
+        return 50.0, 50.0
     if local in {"exclusiveGateway", "inclusiveGateway", "parallelGateway", "eventBasedGateway"}:
         return 50.0, 50.0
     return 120.0, 80.0
