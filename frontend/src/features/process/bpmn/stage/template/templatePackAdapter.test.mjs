@@ -330,11 +330,22 @@ test("captureTemplatePackOnModeler captures sequenceFlow semantic payload beyond
             { $type: "camunda:Property", name: "risk", value: "high" },
           ],
         },
+        {
+          $type: "zeebe:Properties",
+          values: [
+            { $type: "zeebe:Property", name: "ingredient_value", value: "количество из задания" },
+          ],
+        },
       ],
     },
     conditionExpression: {
       $type: "bpmn:FormalExpression",
       body: "${approved}",
+      language: "javascript",
+      $attrs: {
+        "xsi:type": "bpmn:tFormalExpression",
+        "pm:exprKind": "approval",
+      },
     },
     $attrs: {
       "pm:edgeCode": "E-42",
@@ -358,7 +369,12 @@ test("captureTemplatePackOnModeler captures sequenceFlow semantic payload beyond
   assert.equal(edgePayload.semanticPayload?.documentation?.[0]?.text, "edge doc");
   assert.equal(edgePayload.semanticPayload?.extensionElements?.values?.[0]?.$type, "camunda:Properties");
   assert.equal(edgePayload.semanticPayload?.extensionElements?.values?.[0]?.values?.[0]?.value, "high");
+  assert.equal(edgePayload.semanticPayload?.extensionElements?.values?.[1]?.$type, "zeebe:Properties");
+  assert.equal(edgePayload.semanticPayload?.extensionElements?.values?.[1]?.values?.[0]?.value, "количество из задания");
   assert.equal(edgePayload.semanticPayload?.conditionExpression?.body, "${approved}");
+  assert.equal(edgePayload.semanticPayload?.conditionExpression?.language, "javascript");
+  assert.equal(edgePayload.semanticPayload?.conditionExpression?.attrs?.["xsi:type"], "bpmn:tFormalExpression");
+  assert.equal(edgePayload.semanticPayload?.conditionExpression?.attrs?.["pm:exprKind"], "approval");
   assert.equal(edgePayload.semanticPayload?.attrs?.["pm:edgeCode"], "E-42");
   assert.equal(edgePayload.semanticPayload?.custom?.auditClass, "critical");
 });
@@ -599,11 +615,20 @@ test("insertTemplatePackOnModeler reapplies sequenceFlow semantic payload to cre
                     $type: "camunda:Properties",
                     values: [{ $type: "camunda:Property", name: "risk", value: "high" }],
                   },
+                  {
+                    $type: "zeebe:Properties",
+                    values: [{ $type: "zeebe:Property", name: "ingredient_value", value: "количество из задания" }],
+                  },
                 ],
               },
               conditionExpression: {
                 $type: "bpmn:FormalExpression",
                 body: "${approved}",
+                language: "javascript",
+                attrs: {
+                  "xsi:type": "bpmn:tFormalExpression",
+                  "pm:exprKind": "approval",
+                },
               },
               attrs: {
                 "pm:edgeCode": "E-42",
@@ -626,7 +651,12 @@ test("insertTemplatePackOnModeler reapplies sequenceFlow semantic payload to cre
   assert.equal(bo.documentation?.[0]?.text, "edge doc");
   assert.equal(bo.extensionElements?.values?.[0]?.$type, "camunda:Properties");
   assert.equal(bo.extensionElements?.values?.[0]?.values?.[0]?.value, "high");
+  assert.equal(bo.extensionElements?.values?.[1]?.$type, "zeebe:Properties");
+  assert.equal(bo.extensionElements?.values?.[1]?.values?.[0]?.value, "количество из задания");
   assert.equal(bo.conditionExpression?.body, "${approved}");
+  assert.equal(bo.conditionExpression?.language, "javascript");
+  assert.equal(bo.conditionExpression?.["xsi:type"], "bpmn:tFormalExpression");
+  assert.equal(bo.conditionExpression?.["pm:exprKind"], "approval");
   assert.equal(bo.$attrs?.["pm:edgeCode"], "E-42");
   assert.equal(bo.auditClass, "critical");
 });
