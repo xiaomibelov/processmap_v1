@@ -14,7 +14,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 
 SOURCE_BPMN_XML = """<?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="Definitions_Source" targetNamespace="http://bpmn.io/schema/bpmn">
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:pm="http://processmap.ai/schema/bpmn/1.0" id="Definitions_Source" targetNamespace="http://bpmn.io/schema/bpmn">
   <bpmn:process id="Process_Source" isExecutable="false">
     <bpmn:startEvent id="StartEvent_1" name="Start">
       <bpmn:outgoing>Flow_to_sub</bpmn:outgoing>
@@ -54,7 +54,18 @@ SOURCE_BPMN_XML = """<?xml version="1.0" encoding="UTF-8"?>
       </bpmn:endEvent>
       <bpmn:sequenceFlow id="SF_1" sourceRef="SubStart_1" targetRef="InnerTask_1" />
       <bpmn:sequenceFlow id="SF_2" sourceRef="InnerTask_1" targetRef="Gateway_1" />
-      <bpmn:sequenceFlow id="SF_3" sourceRef="Gateway_1" targetRef="ServiceTask_1" name="happy" />
+      <bpmn:sequenceFlow id="SF_3" sourceRef="Gateway_1" targetRef="ServiceTask_1" name="happy">
+        <bpmn:documentation>Edge SF_3 doc</bpmn:documentation>
+        <bpmn:extensionElements>
+          <camunda:properties>
+            <camunda:property name="edge_priority" value="high" />
+          </camunda:properties>
+          <zeebe:properties>
+            <zeebe:property name="container_condition" value="Закрыта" />
+          </zeebe:properties>
+        </bpmn:extensionElements>
+        <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression" language="javascript" pm:exprKind="approval">${approved}</bpmn:conditionExpression>
+      </bpmn:sequenceFlow>
       <bpmn:sequenceFlow id="SF_4" sourceRef="ServiceTask_1" targetRef="SubEnd_1" />
     </bpmn:subProcess>
     <bpmn:endEvent id="EndEvent_1" name="End">
@@ -763,6 +774,19 @@ class BpmnSubprocessClipboardTests(unittest.TestCase):
         flow_sf3 = next(edge for edge in payload.fragment.edges if edge.old_id == "SF_3")
         self.assertEqual(flow_sf3.name, "happy")
         self.assertEqual(flow_sf3.edge_local_state.get("tier"), "P0")
+        self.assertIsInstance(flow_sf3.condition_expression, dict)
+        self.assertEqual(str((flow_sf3.condition_expression or {}).get("type") or ""), "conditionExpression")
+        self.assertEqual(str((flow_sf3.condition_expression or {}).get("text") or ""), "${approved}")
+        attrs = (flow_sf3.condition_expression or {}).get("attributes") or {}
+        self.assertEqual(
+            str(attrs.get("http://www.w3.org/2001/XMLSchema-instance::type") or ""),
+            "bpmn:tFormalExpression",
+        )
+        self.assertEqual(str(attrs.get("language") or ""), "javascript")
+        self.assertEqual(
+            str(attrs.get("http://processmap.ai/schema/bpmn/1.0::exprKind") or ""),
+            "approval",
+        )
 
     def test_copy_and_paste_roundtrip_restores_inner_semantics_with_new_ids(self):
         fake = _FakeRedis()
@@ -831,6 +855,26 @@ class BpmnSubprocessClipboardTests(unittest.TestCase):
         self.assertNotEqual(flow_happy_id, "SF_3")
         self.assertIn(str(flow_happy.attrib.get("sourceRef") or ""), created_node_ids)
         self.assertIn(str(flow_happy.attrib.get("targetRef") or ""), created_node_ids)
+        flow_happy_doc = next(_iter_local(flow_happy, "documentation"), None)
+        self.assertEqual(str("".join(flow_happy_doc.itertext()) if flow_happy_doc is not None else ""), "Edge SF_3 doc")
+        flow_happy_camunda_prop = next((el for el in _iter_local(flow_happy, "property") if str(el.attrib.get("name") or "") == "edge_priority"), None)
+        self.assertIsNotNone(flow_happy_camunda_prop)
+        self.assertEqual(str(flow_happy_camunda_prop.attrib.get("value") or ""), "high")
+        flow_happy_zeebe_prop = next((el for el in _iter_local(flow_happy, "property") if str(el.attrib.get("name") or "") == "container_condition"), None)
+        self.assertIsNotNone(flow_happy_zeebe_prop)
+        self.assertEqual(str(flow_happy_zeebe_prop.attrib.get("value") or ""), "Закрыта")
+        flow_happy_condition = next(_iter_local(flow_happy, "conditionExpression"), None)
+        self.assertIsNotNone(flow_happy_condition)
+        self.assertEqual(str("".join(flow_happy_condition.itertext()) or "").strip(), "${approved}")
+        self.assertEqual(
+            str(flow_happy_condition.attrib.get("{http://www.w3.org/2001/XMLSchema-instance}type") or ""),
+            "bpmn:tFormalExpression",
+        )
+        self.assertEqual(str(flow_happy_condition.attrib.get("language") or ""), "javascript")
+        self.assertEqual(
+            str(flow_happy_condition.attrib.get("{http://processmap.ai/schema/bpmn/1.0}exprKind") or ""),
+            "approval",
+        )
 
         meta = getattr(reloaded, "bpmn_meta", {}) if isinstance(getattr(reloaded, "bpmn_meta", {}), dict) else {}
         self.assertIn(inner_task_id, meta.get("camunda_extensions_by_element_id", {}))
@@ -853,6 +897,58 @@ class BpmnSubprocessClipboardTests(unittest.TestCase):
         second_reload = st.load(self.target_session_id, org_id=self.org_id, is_admin=True)
         self.assertIn(inner_task_id, getattr(second_reload, "bpmn_meta", {}).get("camunda_extensions_by_element_id", {}))
         self.assertIn(flow_happy_id, getattr(second_reload, "bpmn_meta", {}).get("flow_meta", {}))
+        second_root = ET.fromstring(str(getattr(second_reload, "bpmn_xml", "") or ""))
+        second_flow_happy = next((el for el in _iter_local(second_root, "sequenceFlow") if str(el.attrib.get("id") or "") == flow_happy_id), None)
+        self.assertIsNotNone(second_flow_happy)
+        second_condition = next(_iter_local(second_flow_happy, "conditionExpression"), None)
+        self.assertIsNotNone(second_condition)
+        self.assertEqual(
+            str(second_condition.attrib.get("{http://www.w3.org/2001/XMLSchema-instance}type") or ""),
+            "bpmn:tFormalExpression",
+        )
+        self.assertEqual(str(second_condition.attrib.get("language") or ""), "javascript")
+        self.assertEqual(
+            str(second_condition.attrib.get("{http://processmap.ai/schema/bpmn/1.0}exprKind") or ""),
+            "approval",
+        )
+
+    def test_copy_and_paste_accepts_legacy_string_condition_expression_payload(self):
+        fake = _FakeRedis()
+        owner_user_id = str(self.owner.get("id") or "")
+        with patch("app.redis_cache.get_client", return_value=fake):
+            copy_out = self.copy_bpmn_element_to_clipboard(
+                self.ClipboardCopyIn(session_id=self.source_session_id, element_id="SubProcess_1"),
+                self._req(self.owner),
+            )
+            copy_status, _copy_body = _read_response(copy_out)
+            self.assertEqual(copy_status, 200)
+
+            cache_key = self.clipboard_key(user_id=owner_user_id, org_id=self.org_id)
+            raw_payload = json.loads(str(fake.store.get(cache_key) or "{}"))
+            edges = ((raw_payload.get("fragment") or {}).get("edges") or [])
+            for edge in edges:
+                if str(edge.get("old_id") or "") == "SF_3":
+                    edge["condition_expression"] = "${legacy_approved}"
+                    break
+            fake.store[cache_key] = json.dumps(raw_payload, ensure_ascii=False)
+
+            paste_out = self.paste_bpmn_clipboard(
+                self.ClipboardPasteIn(session_id=self.target_session_id),
+                self._req(self.owner),
+            )
+            paste_status, paste_body = _read_response(paste_out)
+            self.assertEqual(paste_status, 200)
+            self.assertTrue(bool(paste_body.get("ok")))
+
+        st = self.get_storage()
+        reloaded = st.load(self.target_session_id, org_id=self.org_id, is_admin=True)
+        self.assertIsNotNone(reloaded)
+        root = ET.fromstring(str(getattr(reloaded, "bpmn_xml", "") or ""))
+        flow_happy = next((el for el in _iter_local(root, "sequenceFlow") if str(el.attrib.get("name") or "") == "happy"), None)
+        self.assertIsNotNone(flow_happy)
+        flow_happy_condition = next(_iter_local(flow_happy, "conditionExpression"), None)
+        self.assertIsNotNone(flow_happy_condition)
+        self.assertEqual(str("".join(flow_happy_condition.itertext()) or "").strip(), "${legacy_approved}")
 
     def test_plane_backed_collapsed_subprocess_roundtrip_restores_subtree_and_plane(self):
         source_session_id = self._create_session_with_xml(
