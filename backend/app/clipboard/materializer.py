@@ -265,9 +265,17 @@ def _build_edge_xml(edge: ClipboardFragmentEdge, *, new_id: str, id_map: Dict[st
         if str(key or "").strip() in {"id", "name", "sourceRef", "targetRef"}:
             continue
         elem.attrib[attr_name_from_key(str(key))] = _remap_attribute_value(value, id_map)
-    if str(edge.condition_expression or "").strip():
+    condition_payload = edge.condition_expression
+    if isinstance(condition_payload, dict):
+        try:
+            cond = build_tree(condition_payload, id_map=id_map)
+            if str(local_name(cond.tag) or "").strip() == "conditionExpression":
+                elem.append(cond)
+        except Exception:
+            pass
+    elif str(condition_payload or "").strip():
         cond = ET.SubElement(elem, f"{{{_BPMN_NS}}}conditionExpression")
-        cond.text = str(edge.condition_expression)
+        cond.text = str(condition_payload)
     for child_payload in list(edge.extra_children or []):
         if not isinstance(child_payload, dict):
             continue
