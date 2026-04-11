@@ -57,6 +57,14 @@ _SUPPORTED_AUXILIARY_SUBTREE_ELEMENT_TYPES = {
     "dataOutputAssociation",
     "property",
 }
+_STRICT_EXTERNAL_AUXILIARY_REF_TYPES = {
+    "dataInputAssociation",
+    "dataOutputAssociation",
+}
+_STRICT_EXTERNAL_AUXILIARY_REF_LOCALS = {
+    "sourceRef",
+    "targetRef",
+}
 _TASK_LOCAL_META_FIELDS = {
     "node_path_meta",
     "robot_meta_by_element_id",
@@ -170,6 +178,67 @@ def _build_context(session_obj: Session, element_id: str, source_org_id: str) ->
         source_element_id=str(element_id or "").strip(),
         source_org_id=str(source_org_id or getattr(session_obj, "org_id", "") or "").strip(),
     )
+
+
+def _tree_payload_ids(payload: Any) -> Set[str]:
+    out: Set[str] = set()
+    if not isinstance(payload, dict):
+        return out
+    attrs = payload.get("attributes")
+    if isinstance(attrs, dict):
+        payload_id = str(attrs.get("id") or "").strip()
+        if payload_id:
+            out.add(payload_id)
+    for child in payload.get("children") if isinstance(payload.get("children"), list) else []:
+        out.update(_tree_payload_ids(child))
+    return out
+
+
+def _iter_tree_ref_texts(payload: Any, *, path: Optional[List[str]] = None) -> List[tuple[str, str]]:
+    if not isinstance(payload, dict):
+        return []
+    current_path = list(path or [])
+    payload_type = str(payload.get("type") or "").strip()
+    if payload_type:
+        current_path.append(payload_type)
+    out: List[tuple[str, str]] = []
+    text_value = str(payload.get("text") or "").strip()
+    if payload_type in _STRICT_EXTERNAL_AUXILIARY_REF_LOCALS and text_value:
+        out.append((".".join(current_path), text_value))
+    for child in payload.get("children") if isinstance(payload.get("children"), list) else []:
+        out.extend(_iter_tree_ref_texts(child, path=current_path))
+    return out
+
+
+def _validate_no_external_auxiliary_refs(
+    *,
+    root_payload: ClipboardFragmentNode,
+    nodes: List[ClipboardFragmentNode],
+    edges: List[ClipboardFragmentEdge],
+    node_ids: Set[str],
+) -> None:
+    allowed_ids: Set[str] = set(node_ids)
+    allowed_ids.update(str(edge.old_id or "").strip() for edge in list(edges or []))
+
+    all_extra_children: List[Dict[str, Any]] = []
+    for node in [root_payload, *list(nodes or [])]:
+        all_extra_children.extend(list(node.extra_children or []))
+    for edge in list(edges or []):
+        all_extra_children.extend(list(edge.extra_children or []))
+
+    for payload_tree in all_extra_children:
+        allowed_ids.update(_tree_payload_ids(payload_tree))
+
+    for payload_tree in all_extra_children:
+        if str(payload_tree.get("type") or "").strip() not in _STRICT_EXTERNAL_AUXILIARY_REF_TYPES:
+            continue
+        for ref_path, ref_value in _iter_tree_ref_texts(payload_tree):
+            if str(ref_value or "").strip() in allowed_ids:
+                continue
+            raise ClipboardSerializationError(
+                "external_auxiliary_ref_outside_subtree",
+                f"subprocess subtree contains auxiliary ref outside copied boundary: {ref_path} -> {ref_value}",
+            )
 
 
 def _build_metadata(copied_by_user_id: str, copied_at: int) -> ClipboardMetadata:
@@ -413,6 +482,13 @@ def _serialize_subprocess_payload(
                 walk_edges(child, parent_old_id=str(child.attrib.get("id") or "").strip())
 
     walk_edges(root_elem, parent_old_id=root_old_id)
+
+    _validate_no_external_auxiliary_refs(
+        root_payload=root_payload,
+        nodes=nodes,
+        edges=edges,
+        node_ids=node_ids,
+    )
 
     return ClipboardSubprocessPayload(
         context=_build_context(session_obj, root_old_id, source_org_id),

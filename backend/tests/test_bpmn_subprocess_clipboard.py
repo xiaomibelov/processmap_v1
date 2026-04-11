@@ -322,6 +322,61 @@ INLINE_DATASTORE_SUBPROCESS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+EXTERNAL_AUXILIARY_REF_SUBPROCESS_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_ExternalAux" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_ExternalAux" isExecutable="false">
+    <bpmn:dataStoreReference id="DataStoreReference_External" name="Shared closure source" />
+    <bpmn:subProcess id="SubProcess_ExternalAux_1" name="Check vessel closure">
+      <bpmn:property id="Property_external_aux_1" name="__targetRef_placeholder" />
+      <bpmn:dataInputAssociation id="DataInputAssociation_external_aux_1">
+        <bpmn:sourceRef>DataStoreReference_External</bpmn:sourceRef>
+        <bpmn:targetRef>Property_external_aux_1</bpmn:targetRef>
+      </bpmn:dataInputAssociation>
+      <bpmn:startEvent id="ExternalAuxStart_1">
+        <bpmn:outgoing>ExternalAuxFlow_1</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:task id="ExternalAuxTask_1" name="Inspect lid">
+        <bpmn:incoming>ExternalAuxFlow_1</bpmn:incoming>
+        <bpmn:outgoing>ExternalAuxFlow_2</bpmn:outgoing>
+      </bpmn:task>
+      <bpmn:intermediateThrowEvent id="ExternalAuxThrow_1">
+        <bpmn:incoming>ExternalAuxFlow_2</bpmn:incoming>
+      </bpmn:intermediateThrowEvent>
+      <bpmn:sequenceFlow id="ExternalAuxFlow_1" sourceRef="ExternalAuxStart_1" targetRef="ExternalAuxTask_1" />
+      <bpmn:sequenceFlow id="ExternalAuxFlow_2" sourceRef="ExternalAuxTask_1" targetRef="ExternalAuxThrow_1" />
+    </bpmn:subProcess>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_ExternalAux">
+    <bpmndi:BPMNPlane id="BPMNPlane_ExternalAux" bpmnElement="Process_ExternalAux">
+      <bpmndi:BPMNShape id="DataStoreReference_External_di" bpmnElement="DataStoreReference_External">
+        <dc:Bounds x="90" y="260" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SubProcess_ExternalAux_1_di" bpmnElement="SubProcess_ExternalAux_1" isExpanded="true">
+        <dc:Bounds x="180" y="140" width="420" height="220" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ExternalAuxStart_1_di" bpmnElement="ExternalAuxStart_1">
+        <dc:Bounds x="230" y="235" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ExternalAuxTask_1_di" bpmnElement="ExternalAuxTask_1">
+        <dc:Bounds x="330" y="213" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ExternalAuxThrow_1_di" bpmnElement="ExternalAuxThrow_1">
+        <dc:Bounds x="500" y="235" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="ExternalAuxFlow_1_di" bpmnElement="ExternalAuxFlow_1">
+        <di:waypoint x="266" y="253" />
+        <di:waypoint x="330" y="253" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="ExternalAuxFlow_2_di" bpmnElement="ExternalAuxFlow_2">
+        <di:waypoint x="450" y="253" />
+        <di:waypoint x="500" y="253" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
+"""
+
+
 def _local(tag: str) -> str:
     return str(tag or "").split("}", 1)[-1]
 
@@ -414,7 +469,7 @@ class BpmnSubprocessClipboardTests(unittest.TestCase):
             paste_bpmn_clipboard,
         )
         from app.clipboard.redis_store import clipboard_key
-        from app.clipboard.serializer import ClipboardSubprocessPayload, serialize_clipboard_payload
+        from app.clipboard.serializer import ClipboardSerializationError, ClipboardSubprocessPayload, serialize_clipboard_payload
         from app.models import Node
         from app.storage import get_default_org_id, upsert_org_membership, upsert_project_membership
 
@@ -431,6 +486,7 @@ class BpmnSubprocessClipboardTests(unittest.TestCase):
         self.get_current_bpmn_clipboard = get_current_bpmn_clipboard
         self.paste_bpmn_clipboard = paste_bpmn_clipboard
         self.clipboard_key = clipboard_key
+        self.ClipboardSerializationError = ClipboardSerializationError
         self.ClipboardSubprocessPayload = ClipboardSubprocessPayload
         self.serialize_clipboard_payload = serialize_clipboard_payload
         self.Node = Node
@@ -762,6 +818,62 @@ class BpmnSubprocessClipboardTests(unittest.TestCase):
         self.assertIn(pasted_property_id, xml_text)
         self.assertNotIn('id="Property_placeholder_1"', xml_text)
         self.assertNotIn(">Property_placeholder_1<", xml_text)
+
+    def test_external_auxiliary_ref_outside_subtree_rejects_with_explicit_error(self):
+        source_session_id = self._create_session_with_xml(
+            title="External auxiliary ref subprocess",
+            xml=EXTERNAL_AUXILIARY_REF_SUBPROCESS_XML,
+        )
+        sess = self.get_storage().load(source_session_id, org_id=self.org_id, is_admin=True)
+        with self.assertRaises(self.ClipboardSerializationError) as ctx:
+            self.serialize_clipboard_payload(
+                session_obj=sess,
+                element_id="SubProcess_ExternalAux_1",
+                copied_by_user_id=str(self.owner.get("id") or ""),
+                copied_at=1730003456,
+                source_org_id=self.org_id,
+            )
+        exc = ctx.exception
+        self.assertEqual(exc.code, "external_auxiliary_ref_outside_subtree")
+        self.assertIn("outside copied boundary", str(exc.message))
+        self.assertIn("dataInputAssociation.sourceRef", str(exc.message))
+        self.assertIn("DataStoreReference_External", str(exc.message))
+
+    def test_external_auxiliary_ref_copy_rejects_and_does_not_create_payload(self):
+        source_session_id = self._create_session_with_xml(
+            title="External auxiliary ref subprocess",
+            xml=EXTERNAL_AUXILIARY_REF_SUBPROCESS_XML,
+        )
+        fake = _FakeRedis()
+        with patch("app.redis_cache.get_client", return_value=fake):
+            copy_out = self.copy_bpmn_element_to_clipboard(
+                self.ClipboardCopyIn(session_id=source_session_id, element_id="SubProcess_ExternalAux_1"),
+                self._req(self.owner),
+            )
+            copy_status, copy_body = _read_response(copy_out)
+            self.assertEqual(copy_status, 422)
+            self.assertEqual(
+                str(((copy_body.get("error") or {}).get("code") or "")),
+                "external_auxiliary_ref_outside_subtree",
+            )
+            self.assertIn(
+                "outside copied boundary",
+                str(((copy_body.get("error") or {}).get("message") or "")),
+            )
+
+            preview_out = self.get_current_bpmn_clipboard(self._req(self.owner))
+            preview_status, preview_body = _read_response(preview_out)
+            self.assertEqual(preview_status, 200)
+            self.assertEqual(bool(preview_body.get("empty")), True)
+            self.assertIsNone(preview_body.get("item"))
+
+            paste_out = self.paste_bpmn_clipboard(
+                self.ClipboardPasteIn(session_id=self.target_session_id),
+                self._req(self.owner),
+            )
+            paste_status, paste_body = _read_response(paste_out)
+            self.assertEqual(paste_status, 404)
+            self.assertEqual(str(((paste_body.get("error") or {}).get("code") or "")), "clipboard_empty")
 
     def test_inline_datastore_subprocess_roundtrip_remaps_datastore_and_association_refs(self):
         source_session_id = self._create_session_with_xml(
