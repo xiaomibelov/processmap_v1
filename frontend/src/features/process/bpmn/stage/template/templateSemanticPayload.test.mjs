@@ -38,6 +38,8 @@ function createMockModdle() {
   };
 }
 
+const ZEEBE_NAMESPACE_URI = "http://camunda.org/schema/zeebe/1.0";
+
 test("serializeSupportedBusinessObjectPayload captures full supported semantic payload", () => {
   const bo = {
     id: "Task_A",
@@ -76,6 +78,41 @@ test("serializeSupportedBusinessObjectPayload captures full supported semantic p
   assert.equal(payload.custom.documentation, undefined);
   assert.equal(payload.custom.extensionElements, undefined);
   assert.equal(payload.custom.incoming, undefined);
+});
+
+test("serializeSupportedBusinessObjectPayload preserves conditionExpression safe attrs", () => {
+  const payload = serializeSupportedBusinessObjectPayload({
+    id: "Flow_Full_1",
+    $type: "bpmn:SequenceFlow",
+    name: "approved",
+    conditionExpression: {
+      $type: "bpmn:FormalExpression",
+      body: "${approved}",
+      language: "javascript",
+      $attrs: {
+        "xsi:type": "bpmn:tFormalExpression",
+        "pm:exprKind": "approval",
+        "ns0:leak": "drop",
+      },
+      "pm:exprScope": "edge",
+    },
+  });
+
+  assert.equal(payload.conditionExpression?.body, "${approved}");
+  assert.equal(payload.conditionExpression?.language, "javascript");
+  assert.equal(payload.conditionExpression?.attrs?.["xsi:type"], "bpmn:tFormalExpression");
+  assert.equal(payload.conditionExpression?.attrs?.["pm:exprKind"], "approval");
+  assert.equal(payload.conditionExpression?.attrs?.["pm:exprScope"], "edge");
+  assert.equal(payload.conditionExpression?.attrs?.["ns0:leak"], undefined);
+
+  const target = { id: "Flow_Target", $type: "bpmn:SequenceFlow" };
+  rehydrateSupportedBusinessObjectPayload(target, payload, { moddle: createMockModdle() });
+  assert.equal(target.conditionExpression?.body, "${approved}");
+  assert.equal(target.conditionExpression?.language, "javascript");
+  assert.equal(target.conditionExpression?.["xsi:type"], "bpmn:tFormalExpression");
+  assert.equal(target.conditionExpression?.["pm:exprKind"], "approval");
+  assert.equal(target.conditionExpression?.["pm:exprScope"], "edge");
+  assert.equal(target.conditionExpression?.attrs, undefined);
 });
 
 test("serializeSupportedBusinessObjectPayload strips unsafe BPMN IO branches from subprocess custom payload", () => {
@@ -294,17 +331,33 @@ test("sequenceFlow semantic payload round-trips through real moddle XML", async 
           }),
         ],
       }),
+      moddle.createAny("zeebe:Properties", ZEEBE_NAMESPACE_URI, {
+        values: [
+          moddle.createAny("zeebe:Property", ZEEBE_NAMESPACE_URI, {
+            name: "ingredient_value",
+            value: "количество из задания",
+          }),
+        ],
+      }),
     ],
   });
   source.conditionExpression = moddle.create("bpmn:FormalExpression", {
     body: "${approved}",
+    language: "javascript",
   });
+  source.conditionExpression.set("xsi:type", "bpmn:tFormalExpression");
+  source.conditionExpression.set("pm:exprKind", "approval");
   source.set("pm:edgeCode", "E-42");
 
   const payload = serializeSupportedBusinessObjectPayload(source);
   assert.equal(payload.documentation?.[0]?.text, "edge-doc-text");
   assert.equal(payload.extensionElements?.values?.[0]?.values?.[0]?.value, "high");
+  assert.equal(payload.extensionElements?.values?.[1]?.$type, "zeebe:Properties");
+  assert.equal(payload.extensionElements?.values?.[1]?.values?.[0]?.value, "количество из задания");
   assert.equal(payload.conditionExpression?.body, "${approved}");
+  assert.equal(payload.conditionExpression?.language, "javascript");
+  assert.equal(payload.conditionExpression?.attrs?.["xsi:type"], "bpmn:tFormalExpression");
+  assert.equal(payload.conditionExpression?.attrs?.["pm:exprKind"], "approval");
   assert.equal(payload.attrs?.["pm:edgeCode"], "E-42");
   assert.equal(payload.custom?.sourceRef, undefined);
   assert.equal(payload.custom?.targetRef, undefined);
@@ -318,7 +371,12 @@ test("sequenceFlow semantic payload round-trips through real moddle XML", async 
   rehydrateSupportedBusinessObjectPayload(target, readTemplateEdgeSemanticPayload({ semanticPayload: payload }), { moddle });
   assert.equal(target.documentation?.[0]?.text, "edge-doc-text");
   assert.equal(target.extensionElements?.values?.[0]?.values?.[0]?.value, "high");
+  assert.equal(target.extensionElements?.values?.[1]?.$type, "zeebe:Properties");
+  assert.equal(target.extensionElements?.values?.[1]?.values?.[0]?.value, "количество из задания");
   assert.equal(target.conditionExpression?.body, "${approved}");
+  assert.equal(target.conditionExpression?.language, "javascript");
+  assert.equal(target.conditionExpression?.$attrs?.["xsi:type"], "bpmn:tFormalExpression");
+  assert.equal(target.conditionExpression?.$attrs?.["pm:exprKind"], "approval");
   assert.equal(target.get("pm:edgeCode"), "E-42");
 
   const defs = moddle.create("bpmn:Definitions", {
@@ -336,7 +394,11 @@ test("sequenceFlow semantic payload round-trips through real moddle XML", async 
   assert.equal(out.xml.includes("edge-doc-text"), true);
   assert.equal(/camunda:(Property|property)/.test(out.xml), true);
   assert.equal(/name=["']risk["'][^>]*value=["']high["']/.test(out.xml), true);
+  assert.equal(/zeebe:(Properties|properties)/.test(out.xml), true);
   assert.equal(out.xml.includes("${approved}"), true);
+  assert.equal(out.xml.includes("xsi:type=\"bpmn:tFormalExpression\""), true);
+  assert.equal(out.xml.includes("language=\"javascript\""), true);
+  assert.equal(out.xml.includes("pm:exprKind=\"approval\""), true);
   assert.equal(out.xml.includes("pm:edgeCode=\"E-42\""), true);
 });
 
