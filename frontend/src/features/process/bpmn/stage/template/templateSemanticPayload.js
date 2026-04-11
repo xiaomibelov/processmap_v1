@@ -180,6 +180,24 @@ function sanitizeBusinessObjectAttrs(value) {
   return out;
 }
 
+function isSafeConditionExpressionAttrKey(keyRaw) {
+  const key = toText(keyRaw);
+  if (!key) return false;
+  if (isUnsafeGenericNamespaceKey(key)) return false;
+  if (key === "xsi:type") return true;
+  return isSafeNamespacedKey(key);
+}
+
+function sanitizeConditionExpressionAttrs(value) {
+  const attrs = normalizeBusinessObjectAttrs(value);
+  const out = {};
+  Object.keys(attrs).forEach((key) => {
+    if (!isSafeConditionExpressionAttrKey(key)) return;
+    out[key] = attrs[key];
+  });
+  return out;
+}
+
 function sanitizeDocumentationPayload(valueRaw) {
   const items = Array.isArray(valueRaw) ? valueRaw : [];
   const nextItems = items
@@ -229,6 +247,18 @@ function sanitizeConditionExpressionPayload(valueRaw) {
     const cloned = cloneSerializableDeep(value[key]);
     if (cloned !== undefined) out[key] = cloned;
   });
+  const attrs = sanitizeConditionExpressionAttrs(cloneSerializableDeep(value.$attrs));
+  Object.keys(value).forEach((key) => {
+    if (!key || key === "$type" || key.startsWith("$")) return;
+    if (key === "body" || key === "language" || key === "evaluatesToTypeRef") return;
+    if (!key.includes(":")) return;
+    if (!isSafeConditionExpressionAttrKey(key)) return;
+    const cloned = cloneSerializableDeep(value[key]);
+    if (cloned !== undefined) attrs[key] = cloned;
+  });
+  if (hasOwnKeys(attrs)) {
+    out.attrs = attrs;
+  }
   return hasOwnKeys(out) ? out : undefined;
 }
 
@@ -449,6 +479,29 @@ function setBpmnProperty(target, key, value) {
   target[key] = value;
 }
 
+function restoreConditionExpressionPayload(payloadRaw, moddle = null) {
+  const payload = asObject(payloadRaw);
+  const conditionExpression = restoreModdleValue(payload, moddle);
+  if (!conditionExpression || typeof conditionExpression !== "object") return conditionExpression;
+
+  delete conditionExpression.attrs;
+  const attrs = sanitizeConditionExpressionAttrs(cloneSerializableDeep(payload.attrs));
+  if (!hasOwnKeys(attrs)) return conditionExpression;
+
+  if (typeof conditionExpression.set === "function") {
+    Object.keys(attrs).forEach((key) => {
+      if (!key) return;
+      setBpmnProperty(conditionExpression, key, restoreModdleValue(attrs[key], moddle));
+    });
+  } else {
+    setBpmnProperty(conditionExpression, "$attrs", {
+      ...normalizeBusinessObjectAttrs(conditionExpression.$attrs),
+      ...attrs,
+    });
+  }
+  return conditionExpression;
+}
+
 export function serializeSupportedBusinessObjectPayload(boRaw) {
   const bo = asObject(boRaw);
   const payload = {};
@@ -500,7 +553,7 @@ export function rehydrateSupportedBusinessObjectPayload(targetBo, payloadRaw, { 
     setBpmnProperty(bo, "extensionElements", restoreModdleValue(payload.extensionElements, moddle));
   }
   if (payload.conditionExpression && typeof payload.conditionExpression === "object") {
-    setBpmnProperty(bo, "conditionExpression", restoreModdleValue(payload.conditionExpression, moddle));
+    setBpmnProperty(bo, "conditionExpression", restoreConditionExpressionPayload(payload.conditionExpression, moddle));
   }
   const attrs = normalizeBusinessObjectAttrs(payload.attrs);
   if (Object.keys(attrs).length) {
