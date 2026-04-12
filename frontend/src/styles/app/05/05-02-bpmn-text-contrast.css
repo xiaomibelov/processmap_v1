@@ -623,8 +623,14 @@
   gap: 3px;
 }
 
+.fpcPropertyOverlay--sequence {
+  transform: translate(-50%, -50%);
+}
+
 .fpcPropertyOverlay--sequence .fpcPropertyRow {
   min-height: var(--fpc-property-row-min-height, 14px);
+  border-style: dashed;
+  border-left-style: dashed;
 }
 
 .fpcPropertyRow--linked {
