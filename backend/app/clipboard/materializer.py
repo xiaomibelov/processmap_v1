@@ -26,6 +26,7 @@ from .xml_codec import (
     _BPMNDI_NS,
     _DC_NS,
     _DI_NS,
+    attr_key,
     attr_name_from_key,
     build_extension_elements,
     build_tree,
@@ -33,6 +34,7 @@ from .xml_codec import (
     find_xml_element,
     iter_local,
     local_name,
+    serialize_extension_elements,
     stable_json,
 )
 
@@ -164,6 +166,108 @@ def _build_node_maps(payload: ClipboardSubprocessPayload) -> tuple[Dict[str, Cli
     for rows in children_by_parent.values():
         rows.sort(key=lambda item: (int(item.nesting_depth or 0), str(item.old_id or "")))
     return node_by_old_id, children_by_parent
+
+
+def _normalize_match_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _normalize_properties_map(raw: Any) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    if not isinstance(raw, dict):
+        return out
+    for key, value in raw.items():
+        safe_key = _normalize_match_text(key)
+        if not safe_key:
+            continue
+        out[safe_key] = _normalize_match_text(value)
+    return out
+
+
+def _payload_datastore_name(node: ClipboardFragmentNode) -> str:
+    direct_name = _normalize_match_text(getattr(node, "name", ""))
+    if direct_name:
+        return direct_name
+    attrs = dict(getattr(node, "bpmn_attributes", {}) or {})
+    return _normalize_match_text(attrs.get("name"))
+
+
+def _payload_datastore_required_attrs(node: ClipboardFragmentNode) -> Dict[str, str]:
+    attrs = dict(getattr(node, "bpmn_attributes", {}) or {})
+    out: Dict[str, str] = {}
+    for key, value in attrs.items():
+        safe_key = _normalize_match_text(key)
+        if not safe_key or safe_key in {"id", "name"}:
+            continue
+        out[safe_key] = _normalize_match_text(value)
+    return out
+
+
+def _payload_datastore_camunda_properties(node: ClipboardFragmentNode) -> Dict[str, str]:
+    ext = dict(getattr(node, "extension_elements", {}) or {})
+    return _normalize_properties_map(ext.get("camunda_properties"))
+
+
+def _element_datastore_attrs(elem: ET.Element) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    for key, value in dict(elem.attrib or {}).items():
+        safe_key = _normalize_match_text(attr_key(str(key)))
+        if not safe_key or safe_key == "id":
+            continue
+        out[safe_key] = _normalize_match_text(value)
+    return out
+
+
+def _element_datastore_camunda_properties(elem: ET.Element) -> Dict[str, str]:
+    serialized = serialize_extension_elements(elem)
+    if not isinstance(serialized, dict):
+        return {}
+    return _normalize_properties_map(serialized.get("camunda_properties"))
+
+
+def _datastore_candidate_is_compatible(*, dependency: ClipboardFragmentNode, candidate_elem: ET.Element) -> bool:
+    dependency_name = _payload_datastore_name(dependency)
+    if not dependency_name:
+        return False
+    candidate_name = _normalize_match_text(candidate_elem.attrib.get("name"))
+    if candidate_name != dependency_name:
+        return False
+    required_attrs = _payload_datastore_required_attrs(dependency)
+    if required_attrs:
+        candidate_attrs = _element_datastore_attrs(candidate_elem)
+        for key, value in required_attrs.items():
+            if candidate_attrs.get(key) != value:
+                return False
+    dependency_props = _payload_datastore_camunda_properties(dependency)
+    if dependency_props:
+        candidate_props = _element_datastore_camunda_properties(candidate_elem)
+        if candidate_props != dependency_props:
+            return False
+    return True
+
+
+def _resolve_external_datastore_reuse_map(
+    *,
+    root: ET.Element,
+    dependency_nodes: List[ClipboardFragmentNode],
+) -> Dict[str, str]:
+    candidates = list(iter_local(root, "dataStoreReference"))
+    if not candidates:
+        return {}
+    out: Dict[str, str] = {}
+    for dependency in list(dependency_nodes or []):
+        if _normalize_match_text(getattr(dependency, "element_type", "")) != "dataStoreReference":
+            continue
+        matches: List[str] = []
+        for candidate in candidates:
+            candidate_id = _normalize_match_text(candidate.attrib.get("id"))
+            if not candidate_id:
+                continue
+            if _datastore_candidate_is_compatible(dependency=dependency, candidate_elem=candidate):
+                matches.append(candidate_id)
+        if matches:
+            out[_normalize_match_text(dependency.old_id)] = sorted(matches)[0]
+    return out
 
 
 def _build_edge_map(payload: ClipboardSubprocessPayload) -> Dict[str, List[ClipboardFragmentEdge]]:
@@ -456,6 +560,7 @@ def _merge_payload_state_into_session(
     id_map: Dict[str, str],
     edge_id_map: Dict[str, str],
     normalized_meta: Dict[str, Any],
+    skip_node_old_ids: Optional[Set[str]] = None,
 ) -> None:
     nodes = list(getattr(session_obj, "nodes", []) or [])
     existing_node_ids = {str(getattr(node, "id", "") or "").strip() for node in nodes}
@@ -483,7 +588,10 @@ def _merge_payload_state_into_session(
     apply_node_state(payload.root)
     for node in list(payload.fragment.nodes or []):
         apply_node_state(node)
+    skip_ids = set(skip_node_old_ids or set())
     for dependency in list(payload.external_dependencies or []):
+        if str(dependency.old_id or "").strip() in skip_ids:
+            continue
         apply_node_state(dependency)
     flow_meta = normalized_meta.get("flow_meta")
     if not isinstance(flow_meta, dict):
@@ -616,10 +724,18 @@ def materialize_subprocess_payload_into_session(
         existing_ids = _collect_existing_ids(root)
         node_by_old_id, children_by_parent = _build_node_maps(payload)
         dependency_nodes = list(payload.external_dependencies or [])
+        reused_dependency_id_map = _resolve_external_datastore_reuse_map(
+            root=root,
+            dependency_nodes=dependency_nodes,
+        )
 
         id_map: Dict[str, str] = {}
         all_nodes = [payload.root, *list(payload.fragment.nodes or []), *dependency_nodes]
         for node in all_nodes:
+            reused_id = reused_dependency_id_map.get(str(node.old_id or "").strip())
+            if reused_id:
+                id_map[node.old_id] = str(reused_id)
+                continue
             prefix = "SubProcess" if str(node.element_type or "") == "subProcess" else str(node.element_type or "Node")
             id_map[node.old_id] = _allocate_new_id(existing_ids, prefix=prefix, hint=node.old_id)
 
@@ -655,6 +771,8 @@ def materialize_subprocess_payload_into_session(
 
         xml_node_by_old_id: Dict[str, ET.Element] = {}
         for node in all_nodes:
+            if str(node.old_id or "").strip() in reused_dependency_id_map:
+                continue
             xml_node_by_old_id[node.old_id] = _build_node_xml(node, new_id=id_map[node.old_id], id_map=remap_id_map)
 
         # Attach hierarchy first.
@@ -671,6 +789,8 @@ def materialize_subprocess_payload_into_session(
             parent_elem.append(child_elem)
             queue.extend(children_by_parent.get(node.old_id, []))
         for dependency in dependency_nodes:
+            if str(dependency.old_id or "").strip() in reused_dependency_id_map:
+                continue
             dependency_elem = xml_node_by_old_id.get(dependency.old_id)
             if dependency_elem is None:
                 raise ClipboardMaterializationError(422, "invalid_clipboard_payload", "external dependency payload is incomplete")
@@ -681,7 +801,11 @@ def materialize_subprocess_payload_into_session(
         for edge in all_edges:
             edge_xml_by_old_id[edge.old_id] = _build_edge_xml(edge, new_id=edge_id_map[edge.old_id], id_map=remap_id_map)
         _append_edge_refs(
-            {id_map[node.old_id]: xml_node_by_old_id[node.old_id] for node in all_nodes},
+            {
+                id_map[node.old_id]: xml_node_by_old_id[node.old_id]
+                for node in all_nodes
+                if node.old_id in xml_node_by_old_id
+            },
             edge_id_map,
             all_edges,
             id_map,
@@ -694,6 +818,8 @@ def materialize_subprocess_payload_into_session(
 
         # BPMNDI
         for node in all_nodes:
+            if str(node.old_id or "").strip() in reused_dependency_id_map:
+                continue
             target_plane = plane if node.old_id == payload.root.old_id else subprocess_plane
             node_delta_x = root_delta_x if node.old_id == payload.root.old_id else inner_delta_x
             node_delta_y = root_delta_y if node.old_id == payload.root.old_id else inner_delta_y
@@ -733,6 +859,7 @@ def materialize_subprocess_payload_into_session(
             id_map=id_map,
             edge_id_map=edge_id_map,
             normalized_meta=raw_meta,
+            skip_node_old_ids=set(reused_dependency_id_map.keys()),
         )
         target_session.bpmn_xml = xml_text
         target_session.bpmn_xml_version = int(getattr(target_session, "version", 0) or 0)
@@ -753,7 +880,11 @@ def materialize_subprocess_payload_into_session(
             clipboard_item_type=str(payload.clipboard_item_type),
             target_session_id=str(target_session.id or target_session_id),
             pasted_root_element_id=str(id_map.get(payload.root.old_id) or ""),
-            created_node_ids=[str(id_map[node.old_id]) for node in all_nodes],
+            created_node_ids=[
+                str(id_map[node.old_id])
+                for node in all_nodes
+                if str(node.old_id or "").strip() not in reused_dependency_id_map
+            ],
             created_edge_ids=[str(edge_id_map[edge.old_id]) for edge in all_edges],
             schema_version=str(payload.schema_version),
         )
