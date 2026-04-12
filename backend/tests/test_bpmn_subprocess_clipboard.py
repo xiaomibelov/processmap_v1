@@ -411,9 +411,15 @@ INLINE_DATASTORE_SUBPROCESS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 
 
 EXTERNAL_AUXILIARY_REF_SUBPROCESS_XML = """<?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_ExternalAux" targetNamespace="http://bpmn.io/schema/bpmn">
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_ExternalAux" targetNamespace="http://bpmn.io/schema/bpmn">
   <bpmn:process id="Process_ExternalAux" isExecutable="false">
-    <bpmn:dataStoreReference id="DataStoreReference_External" name="Shared closure source" />
+    <bpmn:dataStoreReference id="DataStoreReference_External" name="Shared closure source">
+      <bpmn:extensionElements>
+        <zeebe:properties>
+          <zeebe:property name="tara" value="Ящик внутриоборотный" />
+        </zeebe:properties>
+      </bpmn:extensionElements>
+    </bpmn:dataStoreReference>
     <bpmn:subProcess id="SubProcess_ExternalAux_1" name="Check vessel closure">
       <bpmn:property id="Property_external_aux_1" name="__targetRef_placeholder" />
       <bpmn:dataInputAssociation id="DataInputAssociation_external_aux_1">
@@ -463,6 +469,140 @@ EXTERNAL_AUXILIARY_REF_SUBPROCESS_XML = """<?xml version="1.0" encoding="UTF-8"?
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>
 """
+
+
+SUBPROCESS_WITH_INTERNAL_AND_EXTERNAL_DATASTORE_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_ExternalReuse" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_ExternalReuse" isExecutable="false">
+    <bpmn:dataStoreReference id="DataStoreReference_External" name="Shared closure source">
+      <bpmn:extensionElements>
+        <zeebe:properties>
+          <zeebe:property name="tara" value="Ящик внутриоборотный" />
+        </zeebe:properties>
+      </bpmn:extensionElements>
+    </bpmn:dataStoreReference>
+    <bpmn:subProcess id="SubProcess_DataStoreReuse_1" name="Check vessel closure">
+      <bpmn:property id="Property_reuse_1" name="__targetRef_placeholder" />
+      <bpmn:dataInputAssociation id="DataInputAssociation_reuse_1">
+        <bpmn:sourceRef>DataStoreReference_External</bpmn:sourceRef>
+        <bpmn:targetRef>Property_reuse_1</bpmn:targetRef>
+      </bpmn:dataInputAssociation>
+      <bpmn:dataOutputAssociation id="DataOutputAssociation_reuse_1">
+        <bpmn:targetRef>DataStoreReference_Internal</bpmn:targetRef>
+      </bpmn:dataOutputAssociation>
+      <bpmn:startEvent id="ReuseStart_1">
+        <bpmn:outgoing>ReuseFlow_1</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:task id="ReuseTask_1" name="Inspect lid">
+        <bpmn:incoming>ReuseFlow_1</bpmn:incoming>
+        <bpmn:outgoing>ReuseFlow_2</bpmn:outgoing>
+      </bpmn:task>
+      <bpmn:endEvent id="ReuseEnd_1">
+        <bpmn:incoming>ReuseFlow_2</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="ReuseFlow_1" sourceRef="ReuseStart_1" targetRef="ReuseTask_1" />
+      <bpmn:sequenceFlow id="ReuseFlow_2" sourceRef="ReuseTask_1" targetRef="ReuseEnd_1" />
+      <bpmn:dataStoreReference id="DataStoreReference_Internal">
+        <bpmn:extensionElements>
+          <zeebe:properties>
+            <zeebe:property name="tara" value="Ящик внутриоборотный" />
+          </zeebe:properties>
+        </bpmn:extensionElements>
+      </bpmn:dataStoreReference>
+    </bpmn:subProcess>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_ExternalReuse">
+    <bpmndi:BPMNPlane id="BPMNPlane_ExternalReuse" bpmnElement="Process_ExternalReuse">
+      <bpmndi:BPMNShape id="DataStoreReference_External_di" bpmnElement="DataStoreReference_External">
+        <dc:Bounds x="90" y="280" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SubProcess_DataStoreReuse_1_di" bpmnElement="SubProcess_DataStoreReuse_1" isExpanded="true">
+        <dc:Bounds x="180" y="140" width="450" height="240" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ReuseStart_1_di" bpmnElement="ReuseStart_1">
+        <dc:Bounds x="230" y="235" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ReuseTask_1_di" bpmnElement="ReuseTask_1">
+        <dc:Bounds x="330" y="213" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ReuseEnd_1_di" bpmnElement="ReuseEnd_1">
+        <dc:Bounds x="500" y="235" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DataStoreReference_Internal_di" bpmnElement="DataStoreReference_Internal">
+        <dc:Bounds x="410" y="300" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="ReuseFlow_1_di" bpmnElement="ReuseFlow_1">
+        <di:waypoint x="266" y="253" />
+        <di:waypoint x="330" y="253" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="ReuseFlow_2_di" bpmnElement="ReuseFlow_2">
+        <di:waypoint x="450" y="253" />
+        <di:waypoint x="500" y="253" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
+"""
+
+
+TARGET_BPMN_WITH_COMPATIBLE_EXTERNAL_DATASTORE_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_TargetCompatibleDataStore" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_TargetCompatibleDataStore" isExecutable="false">
+    <bpmn:dataStoreReference id="ExistingSharedDataStore_1" name="Shared closure source">
+      <bpmn:extensionElements>
+        <zeebe:properties>
+          <zeebe:property name="tara" value="Ящик внутриоборотный" />
+        </zeebe:properties>
+      </bpmn:extensionElements>
+    </bpmn:dataStoreReference>
+    <bpmn:startEvent id="TargetCompatibleStart_1">
+      <bpmn:outgoing>TargetCompatibleFlow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="TargetCompatibleTask_1" name="Existing task">
+      <bpmn:incoming>TargetCompatibleFlow_1</bpmn:incoming>
+      <bpmn:outgoing>TargetCompatibleFlow_2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="TargetCompatibleEnd_1">
+      <bpmn:incoming>TargetCompatibleFlow_2</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="TargetCompatibleFlow_1" sourceRef="TargetCompatibleStart_1" targetRef="TargetCompatibleTask_1" />
+    <bpmn:sequenceFlow id="TargetCompatibleFlow_2" sourceRef="TargetCompatibleTask_1" targetRef="TargetCompatibleEnd_1" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_TargetCompatibleDataStore">
+    <bpmndi:BPMNPlane id="BPMNPlane_TargetCompatibleDataStore" bpmnElement="Process_TargetCompatibleDataStore">
+      <bpmndi:BPMNShape id="ExistingSharedDataStore_1_di" bpmnElement="ExistingSharedDataStore_1">
+        <dc:Bounds x="90" y="250" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TargetCompatibleStart_1_di" bpmnElement="TargetCompatibleStart_1">
+        <dc:Bounds x="170" y="130" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TargetCompatibleTask_1_di" bpmnElement="TargetCompatibleTask_1">
+        <dc:Bounds x="260" y="108" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TargetCompatibleEnd_1_di" bpmnElement="TargetCompatibleEnd_1">
+        <dc:Bounds x="450" y="130" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="TargetCompatibleFlow_1_di" bpmnElement="TargetCompatibleFlow_1">
+        <di:waypoint x="206" y="148" />
+        <di:waypoint x="260" y="148" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="TargetCompatibleFlow_2_di" bpmnElement="TargetCompatibleFlow_2">
+        <di:waypoint x="380" y="148" />
+        <di:waypoint x="450" y="148" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
+"""
+
+
+TARGET_BPMN_WITH_MISMATCHED_EXTERNAL_DATASTORE_XML = TARGET_BPMN_WITH_COMPATIBLE_EXTERNAL_DATASTORE_XML.replace(
+    'name="tara" value="Ящик внутриоборотный"',
+    'name="tara" value="Другой контейнер"',
+).replace(
+    "ExistingSharedDataStore_1",
+    "ExistingSharedDataStoreMismatch_1",
+)
 
 
 EXTERNAL_NON_DATASTORE_AUXILIARY_REF_SUBPROCESS_XML = """<?xml version="1.0" encoding="UTF-8"?>
@@ -1258,6 +1398,33 @@ class BpmnSubprocessClipboardTests(unittest.TestCase):
         )
         self.assertEqual(str(source_ref.get("text") or ""), "DataStoreReference_External")
 
+    def test_payload_preserves_internal_and_external_datastore_boundary(self):
+        source_session_id = self._create_session_with_xml(
+            title="Subprocess with internal and external datastore",
+            xml=SUBPROCESS_WITH_INTERNAL_AND_EXTERNAL_DATASTORE_XML,
+        )
+        sess = self.get_storage().load(source_session_id, org_id=self.org_id, is_admin=True)
+        payload = self.serialize_clipboard_payload(
+            session_obj=sess,
+            element_id="SubProcess_DataStoreReuse_1",
+            copied_by_user_id=str(self.owner.get("id") or ""),
+            copied_at=1730003560,
+            source_org_id=self.org_id,
+        )
+        self.assertIsInstance(payload, self.ClipboardSubprocessPayload)
+        self.assertEqual(payload.root.old_id, "SubProcess_DataStoreReuse_1")
+        fragment_ids = {node.old_id for node in payload.fragment.nodes}
+        self.assertIn("DataStoreReference_Internal", fragment_ids)
+        self.assertNotIn("DataStoreReference_External", fragment_ids)
+        self.assertEqual(len(list(payload.external_dependencies or [])), 1)
+        dependency = payload.external_dependencies[0]
+        self.assertEqual(dependency.old_id, "DataStoreReference_External")
+        self.assertEqual(str(dependency.name or ""), "Shared closure source")
+        self.assertEqual(
+            str(((dependency.extension_elements or {}).get("camunda_properties") or {}).get("tara") or ""),
+            "Ящик внутриоборотный",
+        )
+
     def test_external_datastore_dependency_roundtrip_creates_remapped_datastore_and_refs(self):
         source_session_id = self._create_session_with_xml(
             title="External auxiliary ref subprocess",
@@ -1328,6 +1495,220 @@ class BpmnSubprocessClipboardTests(unittest.TestCase):
 
         second_reload = self.get_storage().load(self.target_session_id, org_id=self.org_id, is_admin=True)
         self.assertIn(pasted_datastore_id, str(getattr(second_reload, "bpmn_xml", "") or ""))
+
+    def test_external_datastore_dependency_reuses_compatible_target_datastore(self):
+        source_session_id = self._create_session_with_xml(
+            title="Subprocess with internal and external datastore",
+            xml=SUBPROCESS_WITH_INTERNAL_AND_EXTERNAL_DATASTORE_XML,
+        )
+        target_session_id = self._create_session_with_xml(
+            title="Target with compatible external datastore",
+            xml=TARGET_BPMN_WITH_COMPATIBLE_EXTERNAL_DATASTORE_XML,
+        )
+
+        fake = _FakeRedis()
+        with patch("app.redis_cache.get_client", return_value=fake):
+            copy_out = self.copy_bpmn_element_to_clipboard(
+                self.ClipboardCopyIn(session_id=source_session_id, element_id="SubProcess_DataStoreReuse_1"),
+                self._req(self.owner),
+            )
+            copy_status, copy_body = _read_response(copy_out)
+            self.assertEqual(copy_status, 200)
+            self.assertEqual(str(copy_body.get("clipboard_item_type") or ""), "bpmn_subprocess_subtree")
+
+            paste_out = self.paste_bpmn_clipboard(
+                self.ClipboardPasteIn(session_id=target_session_id),
+                self._req(self.owner),
+            )
+            paste_status, paste_body = _read_response(paste_out)
+            self.assertEqual(paste_status, 200)
+            self.assertTrue(bool(paste_body.get("ok")))
+            self.assertEqual(len(set(paste_body.get("created_node_ids") or [])), 5)
+            self.assertEqual(len(set(paste_body.get("created_edge_ids") or [])), 2)
+            self.assertNotIn("ExistingSharedDataStore_1", set(paste_body.get("created_node_ids") or []))
+
+        reloaded = self.get_storage().load(target_session_id, org_id=self.org_id, is_admin=True)
+        self.assertIsNotNone(reloaded)
+        root = ET.fromstring(str(getattr(reloaded, "bpmn_xml", "") or ""))
+        pasted_root_id = str(paste_body.get("pasted_root_element_id") or "")
+        created_node_ids = set(paste_body.get("created_node_ids") or [])
+        pasted_subprocess = next(
+            (el for el in _iter_local(root, "subProcess") if str(el.attrib.get("id") or "").strip() == pasted_root_id),
+            None,
+        )
+        self.assertIsNotNone(pasted_subprocess)
+
+        pasted_datastores = [el for el in list(pasted_subprocess) if _local(el.tag) == "dataStoreReference"]
+        self.assertEqual(len(pasted_datastores), 1)
+        internal_datastore = pasted_datastores[0]
+        internal_datastore_id = str(internal_datastore.attrib.get("id") or "")
+        self.assertTrue(internal_datastore_id)
+        self.assertEqual(str(internal_datastore.attrib.get("name") or ""), "")
+        self.assertNotEqual(internal_datastore_id, "DataStoreReference_Internal")
+        self.assertIn(internal_datastore_id, created_node_ids)
+
+        input_association = next((el for el in list(pasted_subprocess) if _local(el.tag) == "dataInputAssociation"), None)
+        self.assertIsNotNone(input_association)
+        source_ref = next((el for el in _iter_local(input_association, "sourceRef")), None)
+        target_ref = next((el for el in _iter_local(input_association, "targetRef")), None)
+        self.assertIsNotNone(source_ref)
+        self.assertIsNotNone(target_ref)
+        self.assertEqual(str("".join(source_ref.itertext()) or "").strip(), "ExistingSharedDataStore_1")
+
+        output_association = next((el for el in list(pasted_subprocess) if _local(el.tag) == "dataOutputAssociation"), None)
+        self.assertIsNotNone(output_association)
+        output_target_ref = next((el for el in _iter_local(output_association, "targetRef")), None)
+        self.assertIsNotNone(output_target_ref)
+        self.assertEqual(str("".join(output_target_ref.itertext()) or "").strip(), internal_datastore_id)
+
+        process_elem = next(_iter_local(root, "process"), None)
+        self.assertIsNotNone(process_elem)
+        process_datastore_ids = {
+            str(el.attrib.get("id") or "").strip()
+            for el in list(process_elem)
+            if _local(el.tag) == "dataStoreReference"
+        }
+        self.assertEqual(process_datastore_ids, {"ExistingSharedDataStore_1"})
+
+        reused_datastore = next(
+            (
+                el
+                for el in _iter_local(root, "dataStoreReference")
+                if str(el.attrib.get("id") or "").strip() == "ExistingSharedDataStore_1"
+            ),
+            None,
+        )
+        self.assertIsNotNone(reused_datastore)
+        reused_tara_prop = next(
+            (el for el in _iter_local(reused_datastore, "property") if str(el.attrib.get("name") or "") == "tara"),
+            None,
+        )
+        self.assertIsNotNone(reused_tara_prop)
+        self.assertEqual(str(reused_tara_prop.attrib.get("value") or ""), "Ящик внутриоборотный")
+
+        second_reload = self.get_storage().load(target_session_id, org_id=self.org_id, is_admin=True)
+        second_root = ET.fromstring(str(getattr(second_reload, "bpmn_xml", "") or ""))
+        second_subprocess = next(
+            (el for el in _iter_local(second_root, "subProcess") if str(el.attrib.get("id") or "").strip() == pasted_root_id),
+            None,
+        )
+        self.assertIsNotNone(second_subprocess)
+        second_input_association = next((el for el in list(second_subprocess) if _local(el.tag) == "dataInputAssociation"), None)
+        self.assertIsNotNone(second_input_association)
+        second_source_ref = next((el for el in _iter_local(second_input_association, "sourceRef")), None)
+        self.assertIsNotNone(second_source_ref)
+        self.assertEqual(str("".join(second_source_ref.itertext()) or "").strip(), "ExistingSharedDataStore_1")
+
+    def test_external_datastore_dependency_creates_new_when_target_datastore_is_incompatible(self):
+        source_session_id = self._create_session_with_xml(
+            title="Subprocess with internal and external datastore",
+            xml=SUBPROCESS_WITH_INTERNAL_AND_EXTERNAL_DATASTORE_XML,
+        )
+        target_session_id = self._create_session_with_xml(
+            title="Target with mismatched external datastore",
+            xml=TARGET_BPMN_WITH_MISMATCHED_EXTERNAL_DATASTORE_XML,
+        )
+
+        fake = _FakeRedis()
+        with patch("app.redis_cache.get_client", return_value=fake):
+            copy_out = self.copy_bpmn_element_to_clipboard(
+                self.ClipboardCopyIn(session_id=source_session_id, element_id="SubProcess_DataStoreReuse_1"),
+                self._req(self.owner),
+            )
+            copy_status, copy_body = _read_response(copy_out)
+            self.assertEqual(copy_status, 200)
+            self.assertEqual(str(copy_body.get("clipboard_item_type") or ""), "bpmn_subprocess_subtree")
+
+            paste_out = self.paste_bpmn_clipboard(
+                self.ClipboardPasteIn(session_id=target_session_id),
+                self._req(self.owner),
+            )
+            paste_status, paste_body = _read_response(paste_out)
+            self.assertEqual(paste_status, 200)
+            self.assertTrue(bool(paste_body.get("ok")))
+            self.assertEqual(len(set(paste_body.get("created_node_ids") or [])), 6)
+            self.assertEqual(len(set(paste_body.get("created_edge_ids") or [])), 2)
+
+        reloaded = self.get_storage().load(target_session_id, org_id=self.org_id, is_admin=True)
+        self.assertIsNotNone(reloaded)
+        root = ET.fromstring(str(getattr(reloaded, "bpmn_xml", "") or ""))
+        pasted_root_id = str(paste_body.get("pasted_root_element_id") or "")
+        created_node_ids = set(paste_body.get("created_node_ids") or [])
+        pasted_subprocess = next(
+            (el for el in _iter_local(root, "subProcess") if str(el.attrib.get("id") or "").strip() == pasted_root_id),
+            None,
+        )
+        self.assertIsNotNone(pasted_subprocess)
+
+        pasted_datastores = [el for el in list(pasted_subprocess) if _local(el.tag) == "dataStoreReference"]
+        self.assertEqual(len(pasted_datastores), 2)
+        external_datastore = next(
+            (el for el in pasted_datastores if str(el.attrib.get("name") or "").strip() == "Shared closure source"),
+            None,
+        )
+        internal_datastore = next(
+            (el for el in pasted_datastores if str(el.attrib.get("name") or "").strip() == ""),
+            None,
+        )
+        self.assertIsNotNone(external_datastore)
+        self.assertIsNotNone(internal_datastore)
+
+        external_datastore_id = str(external_datastore.attrib.get("id") or "")
+        internal_datastore_id = str(internal_datastore.attrib.get("id") or "")
+        self.assertTrue(external_datastore_id)
+        self.assertTrue(internal_datastore_id)
+        self.assertNotEqual(external_datastore_id, "DataStoreReference_External")
+        self.assertNotEqual(external_datastore_id, "ExistingSharedDataStoreMismatch_1")
+        self.assertIn(external_datastore_id, created_node_ids)
+        self.assertIn(internal_datastore_id, created_node_ids)
+
+        input_association = next((el for el in list(pasted_subprocess) if _local(el.tag) == "dataInputAssociation"), None)
+        self.assertIsNotNone(input_association)
+        source_ref = next((el for el in _iter_local(input_association, "sourceRef")), None)
+        self.assertIsNotNone(source_ref)
+        self.assertEqual(str("".join(source_ref.itertext()) or "").strip(), external_datastore_id)
+
+        output_association = next((el for el in list(pasted_subprocess) if _local(el.tag) == "dataOutputAssociation"), None)
+        self.assertIsNotNone(output_association)
+        output_target_ref = next((el for el in _iter_local(output_association, "targetRef")), None)
+        self.assertIsNotNone(output_target_ref)
+        self.assertEqual(str("".join(output_target_ref.itertext()) or "").strip(), internal_datastore_id)
+
+        process_elem = next(_iter_local(root, "process"), None)
+        self.assertIsNotNone(process_elem)
+        process_datastore_ids = {
+            str(el.attrib.get("id") or "").strip()
+            for el in list(process_elem)
+            if _local(el.tag) == "dataStoreReference"
+        }
+        self.assertEqual(process_datastore_ids, {"ExistingSharedDataStoreMismatch_1"})
+
+        created_external_tara_prop = next(
+            (el for el in _iter_local(external_datastore, "property") if str(el.attrib.get("name") or "") == "tara"),
+            None,
+        )
+        self.assertIsNotNone(created_external_tara_prop)
+        self.assertEqual(str(created_external_tara_prop.attrib.get("value") or ""), "Ящик внутриоборотный")
+
+        all_shared_datastores = [
+            el
+            for el in _iter_local(root, "dataStoreReference")
+            if str(el.attrib.get("name") or "").strip() == "Shared closure source"
+        ]
+        self.assertEqual(len(all_shared_datastores), 2)
+
+        second_reload = self.get_storage().load(target_session_id, org_id=self.org_id, is_admin=True)
+        second_root = ET.fromstring(str(getattr(second_reload, "bpmn_xml", "") or ""))
+        second_subprocess = next(
+            (el for el in _iter_local(second_root, "subProcess") if str(el.attrib.get("id") or "").strip() == pasted_root_id),
+            None,
+        )
+        self.assertIsNotNone(second_subprocess)
+        second_input_association = next((el for el in list(second_subprocess) if _local(el.tag) == "dataInputAssociation"), None)
+        self.assertIsNotNone(second_input_association)
+        second_source_ref = next((el for el in _iter_local(second_input_association, "sourceRef")), None)
+        self.assertIsNotNone(second_source_ref)
+        self.assertEqual(str("".join(second_source_ref.itertext()) or "").strip(), external_datastore_id)
 
     def test_external_non_datastore_auxiliary_ref_still_rejects(self):
         source_session_id = self._create_session_with_xml(
