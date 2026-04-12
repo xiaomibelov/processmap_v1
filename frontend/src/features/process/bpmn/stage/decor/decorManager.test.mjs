@@ -139,12 +139,16 @@ function createInstance(registry, canvas, overlays) {
 
 function withDocumentStub(run) {
   const prevDocument = globalThis.document;
+  const prevHTMLElement = globalThis.HTMLElement;
+  class HTMLElementStub {}
+  globalThis.HTMLElement = HTMLElementStub;
   globalThis.document = {
     createElement() {
       const styleMap = new Map();
-      const node = {
+      const node = new HTMLElementStub();
+      let textContent = "";
+      Object.assign(node, {
         className: "",
-        textContent: "",
         title: "",
         dataset: {},
         style: {
@@ -159,7 +163,19 @@ function withDocumentStub(run) {
         appendChild(child) {
           this.childNodes.push(child);
         },
-      };
+        contains(child) {
+          return this.childNodes.includes(child);
+        },
+      });
+      Object.defineProperty(node, "textContent", {
+        get() {
+          return textContent;
+        },
+        set(nextValue) {
+          textContent = String(nextValue ?? "");
+          this.childNodes = [];
+        },
+      });
       return node;
     },
   };
@@ -167,6 +183,7 @@ function withDocumentStub(run) {
     run();
   } finally {
     globalThis.document = prevDocument;
+    globalThis.HTMLElement = prevHTMLElement;
   }
 }
 
@@ -266,8 +283,13 @@ test("properties overlay decor updates immediately when preview content changes"
       ],
     };
     applyPropertiesOverlayDecor(fixture.ctx);
-    assert.equal(fixture.overlays.addCalls.length, 2);
-    assert.equal(fixture.overlays.removeCalls.length, 1);
+    assert.equal(fixture.overlays.addCalls.length, 1);
+    assert.equal(fixture.overlays.removeCalls.length, 0);
+    const entry = fixture.refs.propertiesOverlayStateRef.current.viewer.Task_1;
+    const rows = entry?.table?.childNodes || [];
+    assert.equal(rows.length, 3);
+    assert.equal(rows[0]?.title, "Емкость: Гастроемкость");
+    assert.equal(rows[1]?.title, "Оборудование: Весы");
 
     clearPropertiesOverlayDecor(fixture.ctx);
     assert.equal(Object.keys(fixture.refs.propertiesOverlayStateRef.current.viewer).length, 0);
@@ -368,6 +390,198 @@ test("properties overlay decor uses connection geometry and reacts to zoom chang
     const secondCall = fixture.overlays.addCalls[1];
     const secondWidth = Number.parseInt(String(secondCall.payload.html.style.width || "0"), 10);
     assert.ok(secondWidth <= firstWidth);
+  });
+});
+
+test("properties overlay decor builds sequence preview from zeebe properties in BO when always mode is enabled", () => {
+  const fixture = createPropertyOverlayCtx({
+    preview: null,
+    alwaysEnabled: true,
+    alwaysPreviewByElementId: {},
+    elements: [
+      {
+        id: "Flow_1",
+        type: "bpmn:SequenceFlow",
+        x: 100,
+        y: 180,
+        width: 320,
+        height: 24,
+        waypoints: [
+          { x: 100, y: 190 },
+          { x: 260, y: 190 },
+          { x: 420, y: 190 },
+        ],
+        businessObject: {
+          id: "Flow_1",
+          $type: "bpmn:SequenceFlow",
+          name: "Да",
+          extensionElements: {
+            values: [
+              {
+                $type: "zeebe:Properties",
+                values: [
+                  { $type: "zeebe:Property", name: "container_condition", value: "Закрыта" },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    ],
+  });
+  withDocumentStub(() => {
+    applyPropertiesOverlayDecor(fixture.ctx);
+    assert.equal(fixture.overlays.addCalls.length, 1);
+    const call = fixture.overlays.addCalls[0];
+    assert.equal(call.elementId, "Flow_1");
+    assert.equal(call.overlayType, "fpc-properties");
+    const firstRow = call.payload.html.childNodes[0].childNodes[0];
+    assert.equal(firstRow?.title, "container_condition: Закрыта");
+    assert.equal(firstRow.childNodes[0]?.childNodes[0]?.textContent, "container_condition");
+    assert.equal(firstRow.childNodes[1]?.textContent, "Закрыта");
+    assert.notEqual(firstRow.childNodes[0]?.childNodes[0]?.textContent, "Да");
+  });
+});
+
+test("sequence fallback overlay remains available after clear/reapply cycle", () => {
+  const fixture = createPropertyOverlayCtx({
+    preview: null,
+    alwaysEnabled: true,
+    alwaysPreviewByElementId: {},
+    elements: [
+      {
+        id: "Flow_1",
+        type: "bpmn:SequenceFlow",
+        x: 100,
+        y: 180,
+        width: 320,
+        height: 24,
+        waypoints: [
+          { x: 100, y: 190 },
+          { x: 260, y: 190 },
+          { x: 420, y: 190 },
+        ],
+        businessObject: {
+          id: "Flow_1",
+          $type: "bpmn:SequenceFlow",
+          extensionElements: {
+            values: [
+              {
+                $type: "zeebe:Properties",
+                values: [
+                  { $type: "zeebe:Property", name: "container_condition", value: "Закрыта" },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    ],
+  });
+  withDocumentStub(() => {
+    applyPropertiesOverlayDecor(fixture.ctx);
+    assert.equal(fixture.overlays.addCalls.length, 1);
+    clearPropertiesOverlayDecor(fixture.ctx);
+    assert.equal(Object.keys(fixture.refs.propertiesOverlayStateRef.current.viewer).length, 0);
+
+    applyPropertiesOverlayDecor(fixture.ctx);
+    assert.equal(fixture.overlays.addCalls.length, 2);
+    assert.equal(Object.keys(fixture.refs.propertiesOverlayStateRef.current.viewer).length, 1);
+    const row = fixture.overlays.addCalls[1].payload.html.childNodes[0].childNodes[0];
+    assert.equal(row.childNodes[0]?.childNodes[0]?.textContent, "container_condition");
+    assert.equal(row.childNodes[1]?.textContent, "Закрыта");
+  });
+});
+
+test("properties overlay decor supports generic $children extension shape for sequence flow properties", () => {
+  const fixture = createPropertyOverlayCtx({
+    preview: null,
+    alwaysEnabled: true,
+    alwaysPreviewByElementId: {},
+    elements: [
+      {
+        id: "Flow_1",
+        type: "bpmn:SequenceFlow",
+        x: 100,
+        y: 180,
+        width: 320,
+        height: 24,
+        waypoints: [
+          { x: 100, y: 190 },
+          { x: 260, y: 190 },
+          { x: 420, y: 190 },
+        ],
+        businessObject: {
+          id: "Flow_1",
+          $type: "bpmn:SequenceFlow",
+          extensionElements: {
+            $children: [
+              {
+                localName: "properties",
+                namespaceURI: "http://camunda.org/schema/zeebe/1.0",
+                $children: [
+                  {
+                    localName: "property",
+                    namespaceURI: "http://camunda.org/schema/zeebe/1.0",
+                    $attrs: {
+                      name: "container_condition",
+                      value: "Закрыта",
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    ],
+  });
+  withDocumentStub(() => {
+    applyPropertiesOverlayDecor(fixture.ctx);
+    assert.equal(fixture.overlays.addCalls.length, 1);
+    const firstRow = fixture.overlays.addCalls[0].payload.html.childNodes[0].childNodes[0];
+    assert.equal(firstRow.childNodes[0]?.childNodes[0]?.textContent, "container_condition");
+    assert.equal(firstRow.childNodes[1]?.textContent, "Закрыта");
+  });
+});
+
+test("properties overlay decor does not create sequence overlay for unsupported extension entries", () => {
+  const fixture = createPropertyOverlayCtx({
+    preview: null,
+    alwaysEnabled: true,
+    alwaysPreviewByElementId: {},
+    elements: [
+      {
+        id: "Flow_1",
+        type: "bpmn:SequenceFlow",
+        x: 100,
+        y: 180,
+        width: 320,
+        height: 24,
+        waypoints: [
+          { x: 100, y: 190 },
+          { x: 260, y: 190 },
+          { x: 420, y: 190 },
+        ],
+        businessObject: {
+          id: "Flow_1",
+          $type: "bpmn:SequenceFlow",
+          extensionElements: {
+            values: [
+              {
+                $type: "zeebe:TaskDefinition",
+                type: "ship",
+              },
+            ],
+          },
+        },
+      },
+    ],
+  });
+  withDocumentStub(() => {
+    applyPropertiesOverlayDecor(fixture.ctx);
+    assert.equal(fixture.overlays.addCalls.length, 0);
+    assert.deepEqual(fixture.refs.propertiesOverlayStateRef.current.viewer, {});
   });
 });
 
