@@ -83,6 +83,8 @@ export async function insertBpmnFragmentFromPlacement({
       clientX,
       clientY,
       mode: "after",
+      persistImmediately: true,
+      source: "template_apply",
     }),
   );
 }
