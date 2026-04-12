@@ -30,6 +30,31 @@ function readPathLength(points) {
   return length;
 }
 
+function readPathMidpoint(points) {
+  if (!Array.isArray(points) || points.length === 0) return null;
+  if (points.length === 1) return { x: points[0].x, y: points[0].y };
+  const totalLength = readPathLength(points);
+  if (!Number.isFinite(totalLength) || totalLength <= 0) return null;
+  const half = totalLength / 2;
+  let traversed = 0;
+  for (let idx = 1; idx < points.length; idx += 1) {
+    const prev = points[idx - 1];
+    const curr = points[idx];
+    const segmentLength = Math.hypot(curr.x - prev.x, curr.y - prev.y);
+    if (!Number.isFinite(segmentLength) || segmentLength <= 0) continue;
+    if (traversed + segmentLength >= half) {
+      const ratio = (half - traversed) / segmentLength;
+      return {
+        x: prev.x + (curr.x - prev.x) * ratio,
+        y: prev.y + (curr.y - prev.y) * ratio,
+      };
+    }
+    traversed += segmentLength;
+  }
+  const last = points[points.length - 1];
+  return { x: last.x, y: last.y };
+}
+
 function readElementBounds(element) {
   const x = asFiniteNumber(element?.x, null);
   const y = asFiniteNumber(element?.y, null);
@@ -77,16 +102,15 @@ export function buildOverlayGeometry({ element, isConnection = false, canvasZoom
     return {
       width: isConnection ? 58 : 72,
       anchorLeft: isConnection ? 29 : 36,
-      topOffset: isConnection ? -10 : -14,
+      topOffset: isConnection ? 0 : -14,
       zoom,
     };
   }
 
-  const centerX = bounds.x + bounds.width / 2;
-  const elementX = asFiniteNumber(element?.x, bounds.x);
-  const anchorLeft = Math.round(Math.max(0, centerX - elementX));
-
   if (!isConnection) {
+    const centerX = bounds.x + bounds.width / 2;
+    const elementX = asFiniteNumber(element?.x, bounds.x);
+    const anchorLeft = Math.round(Math.max(0, centerX - elementX));
     // Task overlays should stay readable, but not dominate the task box.
     const visualWidth = bounds.width * zoom;
     // Widen task overlays by ~20% total (about +10% per side).
@@ -99,6 +123,15 @@ export function buildOverlayGeometry({ element, isConnection = false, canvasZoom
     };
   }
 
+  const points = readWaypoints(element);
+  const midpoint = readPathMidpoint(points);
+  const anchorX = midpoint?.x ?? (bounds.x + bounds.width / 2);
+  const anchorY = midpoint?.y ?? (bounds.y + bounds.height / 2);
+  const elementX = asFiniteNumber(element?.x, bounds.x);
+  const elementY = asFiniteNumber(element?.y, bounds.y);
+  const anchorLeft = Math.round(Math.max(0, anchorX - elementX));
+  const topOffset = Math.round(anchorY - elementY);
+
   // Sequence overlays should be smaller than task overlays and stay subordinate.
   const dominantSpan = Math.max(bounds.width, bounds.pathLength * 0.45);
   const visualWidth = dominantSpan * zoom;
@@ -106,7 +139,7 @@ export function buildOverlayGeometry({ element, isConnection = false, canvasZoom
   return {
     width,
     anchorLeft,
-    topOffset: -10,
+    topOffset,
     zoom,
   };
 }
