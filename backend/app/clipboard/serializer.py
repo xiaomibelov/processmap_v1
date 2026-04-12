@@ -68,6 +68,10 @@ _STRICT_EXTERNAL_AUXILIARY_REF_LOCALS = {
     "targetRef",
 }
 _SUPPORTED_EXTERNAL_DATASTORE_TYPE = "dataStoreReference"
+_SUPPORTED_SUBTREE_EDGE_TYPES = {
+    "sequenceFlow",
+    "messageFlow",
+}
 _INTERNAL_DEDICATED_PLANE_MARKER = "__pm_dedicated_plane"
 _TASK_LOCAL_META_FIELDS = {
     "node_path_meta",
@@ -151,7 +155,7 @@ def _node_extra_children(elem: ET.Element) -> List[Dict[str, Any]]:
             continue
         if str(getattr(child, "tag", "") or "").startswith(f"{{{_BPMN_NS}}}") and lname in _SUPPORTED_SUBTREE_NODE_TYPES:
             continue
-        if str(getattr(child, "tag", "") or "").startswith(f"{{{_BPMN_NS}}}") and lname == "sequenceFlow":
+        if str(getattr(child, "tag", "") or "").startswith(f"{{{_BPMN_NS}}}") and lname in _SUPPORTED_SUBTREE_EDGE_TYPES:
             continue
         out.append(serialize_tree(child))
     return out
@@ -255,6 +259,30 @@ def _collect_supported_external_datastore_dependencies(
         allowed_ids.update(_tree_payload_ids(payload_tree))
 
     external_dependencies: Dict[str, ClipboardExternalDependency] = {}
+
+    def register_external_datastore_dependency(ref_value: str) -> None:
+        safe_ref_value = str(ref_value or "").strip()
+        if not safe_ref_value:
+            return
+        dependency_elem = find_xml_element(xml_root, safe_ref_value)
+        dependency_type = local_name(dependency_elem.tag) if dependency_elem is not None else ""
+        if dependency_elem is not None and dependency_type == _SUPPORTED_EXTERNAL_DATASTORE_TYPE:
+            if safe_ref_value not in external_dependencies:
+                external_dependencies[safe_ref_value] = _serialize_external_dependency(
+                    session_obj=session_obj,
+                    elem=dependency_elem,
+                    old_id=safe_ref_value,
+                    shape_map=shape_map,
+                )
+            allowed_ids.add(safe_ref_value)
+            for child_payload in list(external_dependencies[safe_ref_value].extra_children or []):
+                allowed_ids.update(_tree_payload_ids(child_payload))
+            return
+        raise ClipboardSerializationError(
+            "external_auxiliary_ref_outside_subtree",
+            f"subprocess subtree contains auxiliary ref outside copied boundary: {safe_ref_value}",
+        )
+
     for payload_tree in all_extra_children:
         if str(payload_tree.get("type") or "").strip() not in _STRICT_EXTERNAL_AUXILIARY_REF_TYPES:
             continue
@@ -262,24 +290,30 @@ def _collect_supported_external_datastore_dependencies(
             safe_ref_value = str(ref_value or "").strip()
             if safe_ref_value in allowed_ids:
                 continue
-            dependency_elem = find_xml_element(xml_root, safe_ref_value)
-            dependency_type = local_name(dependency_elem.tag) if dependency_elem is not None else ""
-            if dependency_elem is not None and dependency_type == _SUPPORTED_EXTERNAL_DATASTORE_TYPE:
-                if safe_ref_value not in external_dependencies:
-                    external_dependencies[safe_ref_value] = _serialize_external_dependency(
-                        session_obj=session_obj,
-                        elem=dependency_elem,
-                        old_id=safe_ref_value,
-                        shape_map=shape_map,
-                    )
-                allowed_ids.add(safe_ref_value)
-                for child_payload in list(external_dependencies[safe_ref_value].extra_children or []):
-                    allowed_ids.update(_tree_payload_ids(child_payload))
+            try:
+                register_external_datastore_dependency(safe_ref_value)
+            except ClipboardSerializationError as exc:
+                raise ClipboardSerializationError(
+                    "external_auxiliary_ref_outside_subtree",
+                    f"subprocess subtree contains auxiliary ref outside copied boundary: {ref_path} -> {safe_ref_value}",
+                ) from exc
+
+    for edge in list(edges or []):
+        if str(getattr(edge, "edge_type", "sequenceFlow") or "").strip() != "messageFlow":
+            continue
+        for endpoint_key, endpoint_id in (
+            ("sourceRef", str(edge.source_old_id or "").strip()),
+            ("targetRef", str(edge.target_old_id or "").strip()),
+        ):
+            if not endpoint_id or endpoint_id in allowed_ids:
                 continue
-            raise ClipboardSerializationError(
-                "external_auxiliary_ref_outside_subtree",
-                f"subprocess subtree contains auxiliary ref outside copied boundary: {ref_path} -> {safe_ref_value}",
-            )
+            try:
+                register_external_datastore_dependency(endpoint_id)
+            except ClipboardSerializationError as exc:
+                raise ClipboardSerializationError(
+                    "external_auxiliary_ref_outside_subtree",
+                    f"subprocess subtree contains messageFlow ref outside copied boundary: {edge.old_id}.{endpoint_key} -> {endpoint_id}",
+                ) from exc
     return [external_dependencies[old_id] for old_id in sorted(external_dependencies)]
 
 
@@ -340,6 +374,7 @@ def _serialize_fragment_edge(
     session_obj: Session,
     elem: ET.Element,
     old_id: str,
+    edge_type: str,
     parent_old_id: str,
     edge_map: Dict[str, Dict[str, Any]],
 ) -> ClipboardFragmentEdge:
@@ -365,6 +400,7 @@ def _serialize_fragment_edge(
 
     return ClipboardFragmentEdge(
         old_id=old_id,
+        edge_type=str(edge_type or "sequenceFlow"),
         parent_old_id=str(parent_old_id or ""),
         source_old_id=str(elem.attrib.get("sourceRef") or "").strip(),
         target_old_id=str(elem.attrib.get("targetRef") or "").strip(),
@@ -469,7 +505,7 @@ def _serialize_subprocess_payload(
             and node_id
             and lname not in _SUPPORTED_SUBTREE_NODE_TYPES
             and lname not in _SUPPORTED_AUXILIARY_SUBTREE_ELEMENT_TYPES
-            and lname != "sequenceFlow"
+            and lname not in _SUPPORTED_SUBTREE_EDGE_TYPES
         ):
             raise ClipboardSerializationError(
                 "unsupported_subprocess_topology",
@@ -486,7 +522,10 @@ def _serialize_subprocess_payload(
             next_parent = parent_old_id
             next_depth = depth
         for child in list(node):
-            if str(getattr(child, "tag", "") or "").startswith(f"{{{_BPMN_NS}}}") and local_name(child.tag) == "sequenceFlow":
+            if (
+                str(getattr(child, "tag", "") or "").startswith(f"{{{_BPMN_NS}}}")
+                and local_name(child.tag) in _SUPPORTED_SUBTREE_EDGE_TYPES
+            ):
                 continue
             walk(child, parent_old_id=next_parent, depth=next_depth)
 
@@ -515,24 +554,62 @@ def _serialize_subprocess_payload(
 
     edges: List[ClipboardFragmentEdge] = []
 
+    def resolve_element_type_by_id(element_id: str) -> str:
+        safe_id = str(element_id or "").strip()
+        if not safe_id:
+            return ""
+        known = elem_by_id.get(safe_id)
+        if known is not None:
+            return local_name(known.tag)
+        resolved = find_xml_element(xml_root, safe_id)
+        if resolved is None:
+            return ""
+        return local_name(resolved.tag)
+
     def walk_edges(container: ET.Element, *, parent_old_id: str) -> None:
         container_id = str(container.attrib.get("id") or "").strip() or parent_old_id
         for child in list(container):
             lname = local_name(child.tag)
-            if str(getattr(child, "tag", "") or "").startswith(f"{{{_BPMN_NS}}}") and lname == "sequenceFlow":
+            if str(getattr(child, "tag", "") or "").startswith(f"{{{_BPMN_NS}}}") and lname in _SUPPORTED_SUBTREE_EDGE_TYPES:
                 old_id = str(child.attrib.get("id") or "").strip()
                 src = str(child.attrib.get("sourceRef") or "").strip()
                 dst = str(child.attrib.get("targetRef") or "").strip()
-                if not old_id or src not in node_ids or dst not in node_ids:
+                src_in_subtree = src in node_ids
+                dst_in_subtree = dst in node_ids
+                if not old_id or not src or not dst:
+                    raise ClipboardSerializationError(
+                        "unsupported_subprocess_topology",
+                        f"subprocess subtree contains {lname} with incomplete refs",
+                    )
+                if lname == "sequenceFlow" and (not src_in_subtree or not dst_in_subtree):
                     raise ClipboardSerializationError(
                         "unsupported_subprocess_topology",
                         "subprocess subtree contains sequenceFlow refs outside supported subtree",
                     )
+                if lname == "messageFlow":
+                    src_type = resolve_element_type_by_id(src)
+                    dst_type = resolve_element_type_by_id(dst)
+                    has_datastore_endpoint = src_type == _SUPPORTED_EXTERNAL_DATASTORE_TYPE or dst_type == _SUPPORTED_EXTERNAL_DATASTORE_TYPE
+                    if not has_datastore_endpoint:
+                        continue
+                    if not src_in_subtree and src_type != _SUPPORTED_EXTERNAL_DATASTORE_TYPE:
+                        raise ClipboardSerializationError(
+                            "unsupported_subprocess_topology",
+                            "subprocess subtree contains messageFlow source outside supported subtree",
+                        )
+                    if not dst_in_subtree and dst_type != _SUPPORTED_EXTERNAL_DATASTORE_TYPE:
+                        raise ClipboardSerializationError(
+                            "unsupported_subprocess_topology",
+                            "subprocess subtree contains messageFlow target outside supported subtree",
+                        )
+                    if not src_in_subtree and not dst_in_subtree:
+                        continue
                 edges.append(
                     _serialize_fragment_edge(
                         session_obj=session_obj,
                         elem=child,
                         old_id=old_id,
+                        edge_type=lname,
                         parent_old_id=container_id,
                         edge_map=edge_map,
                     )
