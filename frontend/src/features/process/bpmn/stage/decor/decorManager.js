@@ -1439,6 +1439,108 @@ function rebuildPropertiesOverlayTable({ table, items, hiddenCount, visibleCount
   }
 }
 
+const CAMUNDA_EXTENSION_NAMESPACE_URI = "http://camunda.org/schema/1.0/bpmn";
+const ZEEBE_EXTENSION_NAMESPACE_URI = "http://camunda.org/schema/zeebe/1.0";
+
+function readSequenceOverlayTypeName(raw, toText) {
+  return toText(
+    raw?.$type
+    || raw?.type
+    || raw?.$descriptor?.name
+    || raw?.nodeName
+    || raw?.localName,
+  ).toLowerCase();
+}
+
+function readSequenceOverlayNamespaceUri(raw, asObject, toText) {
+  const descriptorUri = toText(raw?.$descriptor?.ns?.uri).toLowerCase();
+  if (descriptorUri) return descriptorUri;
+  const directUri = toText(raw?.$ns?.uri || raw?.namespaceURI || raw?.namespaceUri).toLowerCase();
+  if (directUri) return directUri;
+  const attrs = asObject(raw?.$attrs);
+  const xmlns = toText(attrs.xmlns || attrs["xmlns:camunda"] || attrs["xmlns:zeebe"]).toLowerCase();
+  return xmlns;
+}
+
+function readSequenceOverlayChildren(raw, asArray) {
+  const out = [];
+  asArray(raw?.values).forEach((entry) => out.push(entry));
+  asArray(raw?.$children).forEach((entry) => out.push(entry));
+  asArray(raw?.children).forEach((entry) => out.push(entry));
+  return out;
+}
+
+function isSupportedSequencePropertiesContainer(raw, asObject, toText) {
+  const typeName = readSequenceOverlayTypeName(raw, toText);
+  if (typeName === "zeebe:properties" || typeName === "camunda:properties") return true;
+  if (typeName.endsWith(":properties")) return true;
+  if (typeName !== "properties") return false;
+  const nsUri = readSequenceOverlayNamespaceUri(raw, asObject, toText);
+  return nsUri === CAMUNDA_EXTENSION_NAMESPACE_URI || nsUri === ZEEBE_EXTENSION_NAMESPACE_URI;
+}
+
+function isSupportedSequencePropertyEntry(raw, asObject, toText) {
+  const typeName = readSequenceOverlayTypeName(raw, toText);
+  if (typeName === "zeebe:property" || typeName === "camunda:property") return true;
+  if (typeName.endsWith(":property")) return true;
+  if (typeName !== "property") return false;
+  const nsUri = readSequenceOverlayNamespaceUri(raw, asObject, toText);
+  return nsUri === CAMUNDA_EXTENSION_NAMESPACE_URI || nsUri === ZEEBE_EXTENSION_NAMESPACE_URI;
+}
+
+function readSequenceOverlayField(raw, fieldName, asObject, toText) {
+  const direct = toText(raw?.[fieldName]);
+  if (direct) return direct;
+  const attrs = asObject(raw?.$attrs);
+  const attrDirect = toText(attrs[fieldName]);
+  if (attrDirect) return attrDirect;
+  const attrKey = Object.keys(attrs).find((keyRaw) => {
+    const key = toText(keyRaw).toLowerCase();
+    return key === fieldName || key.endsWith(`:${fieldName}`);
+  });
+  if (attrKey) {
+    const fromAttr = toText(attrs[attrKey]);
+    if (fromAttr) return fromAttr;
+  }
+  if (typeof raw?.get === "function") {
+    try {
+      const fromGetter = toText(raw.get(fieldName));
+      if (fromGetter) return fromGetter;
+    } catch {
+    }
+  }
+  return "";
+}
+
+function buildSequenceOverlayItemsFromBusinessObject(boRaw, { asArray, asObject, toText }) {
+  const bo = asObject(boRaw);
+  const extensionElements = asObject(bo?.extensionElements);
+  const extensionEntries = readSequenceOverlayChildren(extensionElements, asArray);
+  if (!extensionEntries.length) return [];
+
+  const dedupe = new Set();
+  const out = [];
+  extensionEntries.forEach((entryRaw) => {
+    if (!isSupportedSequencePropertiesContainer(entryRaw, asObject, toText)) return;
+    const propertyEntries = readSequenceOverlayChildren(entryRaw, asArray);
+    propertyEntries.forEach((propertyRaw) => {
+      if (!isSupportedSequencePropertyEntry(propertyRaw, asObject, toText)) return;
+      const name = readSequenceOverlayField(propertyRaw, "name", asObject, toText);
+      const value = readSequenceOverlayField(propertyRaw, "value", asObject, toText);
+      if (!name || !value) return;
+      const sig = `${name}\u241f${value}`;
+      if (dedupe.has(sig)) return;
+      dedupe.add(sig);
+      out.push({
+        key: name,
+        label: name,
+        value,
+      });
+    });
+  });
+  return out;
+}
+
 export function applyPropertiesOverlayDecor(ctx) {
   const inst = ctx?.inst;
   const kind = ctx?.kind;
@@ -1484,6 +1586,31 @@ export function applyPropertiesOverlayDecor(ctx) {
   const selectedPreview = normalizePreviewEntry(readOnly.selectedPropertiesOverlayPreviewRef?.current);
   if (selectedPreview) {
     previewByElementId[selectedPreview.elementId] = selectedPreview;
+  }
+  if (alwaysEnabled) {
+    try {
+      const registry = inst.get("elementRegistry");
+      const allDiagramElements = typeof registry?.getAll === "function"
+        ? asArray(registry.getAll())
+        : (typeof registry?.filter === "function" ? asArray(registry.filter(() => true)) : []);
+      allDiagramElements.forEach((el) => {
+        const isConnection = typeof getters.isConnectionElement === "function" && getters.isConnectionElement(el);
+        if (!isConnection) return;
+        const elementType = toText(el?.businessObject?.$type || el?.type).toLowerCase();
+        if (elementType !== "bpmn:sequenceflow" && elementType !== "sequenceflow") return;
+        const elementId = toText(el?.businessObject?.id || el?.id);
+        if (!elementId || previewByElementId[elementId]) return;
+        const items = buildSequenceOverlayItemsFromBusinessObject(el?.businessObject, { asArray, asObject, toText });
+        if (!items.length) return;
+        previewByElementId[elementId] = {
+          elementId,
+          enabled: true,
+          items,
+          hiddenCount: 0,
+        };
+      });
+    } catch {
+    }
   }
   const previewEntries = Object.values(previewByElementId);
   if (!previewEntries.length) {
