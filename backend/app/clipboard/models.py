@@ -71,6 +71,7 @@ class ClipboardExternalDependency(ClipboardFragmentNode):
 
 class ClipboardFragmentEdge(BaseModel):
     old_id: str
+    edge_type: str = "sequenceFlow"
     parent_old_id: str = ""
     source_old_id: str
     target_old_id: str

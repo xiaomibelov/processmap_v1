@@ -32,6 +32,70 @@ function isTemplateConnectionType(typeRaw) {
   return type.includes("sequenceflow");
 }
 
+function isTemplateCaptureConnectionType(typeRaw) {
+  const type = String(typeRaw || "").trim().toLowerCase();
+  if (!type) return false;
+  return type.includes("sequenceflow") || type.includes("messageflow");
+}
+
+function isDataStoreType(typeRaw) {
+  return String(typeRaw || "").trim().toLowerCase().includes("datastorereference");
+}
+
+function readConnectionEndpointType(elementRaw, fallbackRaw, endpointKey) {
+  const element = asObject(elementRaw);
+  const fallback = asObject(fallbackRaw);
+  const fallbackKey = endpointKey === "source" ? "sourceRef" : "targetRef";
+  const endpoint = asObject(element?.[endpointKey] || fallback?.[fallbackKey]);
+  return toText(endpoint?.businessObject?.$type || endpoint?.type || endpoint?.$type);
+}
+
+function isMessageFlowToDatastoreElement(elementRaw, fallbackRaw = {}) {
+  const element = asObject(elementRaw);
+  const fallback = asObject(fallbackRaw);
+  const type = toText(
+    element?.businessObject?.$type
+    || element?.type
+    || fallback?.$type
+    || fallback?.type,
+  ).toLowerCase();
+  if (!type.includes("messageflow")) return false;
+  const sourceType = readConnectionEndpointType(element, fallback, "source");
+  const targetType = readConnectionEndpointType(element, fallback, "target");
+  return isDataStoreType(sourceType) || isDataStoreType(targetType);
+}
+
+function normalizeTemplateEdgeType(elementRaw, fallbackRaw = {}) {
+  const element = asObject(elementRaw);
+  const fallback = asObject(fallbackRaw);
+  const rawType = toText(
+    element?.businessObject?.$type
+    || element?.type
+    || fallback?.$type
+    || fallback?.type,
+  );
+  const normalized = rawType.toLowerCase();
+  if (normalized.includes("messageflow")) return "bpmn:MessageFlow";
+  return "bpmn:SequenceFlow";
+}
+
+function isSupportedTemplateEdgeForCapture(elementRaw, fallbackRaw = {}) {
+  const element = asObject(elementRaw);
+  const fallback = asObject(fallbackRaw);
+  const type = toText(
+    element?.businessObject?.$type
+    || element?.type
+    || fallback?.$type
+    || fallback?.type,
+  );
+  if (!isTemplateCaptureConnectionType(type)) return false;
+  const normalized = String(type || "").trim().toLowerCase();
+  if (normalized.includes("messageflow")) {
+    return isMessageFlowToDatastoreElement(element, fallback);
+  }
+  return true;
+}
+
 function isUnsupportedFragmentNodeType(typeRaw) {
   const type = String(typeRaw || "").trim().toLowerCase();
   if (!type) return false;
@@ -140,6 +204,7 @@ function sortTemplateEdges(edgesRaw) {
 function buildTemplateEdgeItem(elementRaw, fallbackRaw = {}) {
   const element = asObject(elementRaw);
   const fallback = asObject(fallbackRaw);
+  if (!isSupportedTemplateEdgeForCapture(element, fallback)) return null;
   const bo = asObject(element.businessObject);
   const sourceId = toText(element?.source?.id || fallback?.sourceRef?.id);
   const targetId = toText(element?.target?.id || fallback?.targetRef?.id);
@@ -147,6 +212,7 @@ function buildTemplateEdgeItem(elementRaw, fallbackRaw = {}) {
   const payloadSource = Object.keys(bo).length ? bo : fallback;
   return {
     id: toText(element.id || fallback.id),
+    edgeType: normalizeTemplateEdgeType(element, fallback),
     sourceId,
     targetId,
     when: toText(bo.name || fallback.name),
@@ -192,7 +258,7 @@ function collectSubprocessSubtreeIntoPack(flowElementsRaw, state, context = {}) 
     if (!id || !type) return;
     state.sourceIds.add(id);
     const registryElement = findRegistryElementById(elementIndex, id);
-    if (isTemplateConnectionType(type)) {
+    if (isTemplateCaptureConnectionType(type)) {
       if (state.seenEdges.has(id)) return;
       const edge = buildTemplateEdgeItem(registryElement, entry);
       if (!edge) return;
@@ -326,6 +392,32 @@ function connectSequenceFlow(modeling, source, target, when = "", options = {}) 
     rehydrateSupportedBusinessObjectPayload(
       conn?.businessObject,
       readTemplateEdgeSemanticPayload(options?.edge),
+      { moddle: options?.moddle || null },
+    );
+    return conn || null;
+  } catch {
+    return null;
+  }
+}
+
+function connectTemplateEdge(modeling, source, target, edgeRaw = {}, options = {}) {
+  const edge = asObject(edgeRaw);
+  const edgeType = String(edge?.edgeType || "bpmn:SequenceFlow").trim() || "bpmn:SequenceFlow";
+  if (edgeType === "bpmn:MessageFlow" && !(isDataStoreType(source?.type || source?.businessObject?.$type)
+    || isDataStoreType(target?.type || target?.businessObject?.$type))) {
+    return null;
+  }
+  if (edgeType === "bpmn:SequenceFlow") {
+    return connectSequenceFlow(modeling, source, target, edge?.when, options);
+  }
+  if (!modeling || !source || !target) return null;
+  try {
+    const conn = modeling.connect(source, target, { type: edgeType });
+    const label = String(edge?.when || "").trim();
+    if (conn && label) modeling.updateLabel(conn, label);
+    rehydrateSupportedBusinessObjectPayload(
+      conn?.businessObject,
+      readTemplateEdgeSemanticPayload(edge),
       { moddle: options?.moddle || null },
     );
     return conn || null;
@@ -487,7 +579,8 @@ export function createTemplatePackAdapter(deps = {}) {
       .filter((el) => {
         if (!isConnectionElement(el)) return false;
         const type = String(el?.businessObject?.$type || el?.type || "");
-        if (!isTemplateConnectionType(type)) return false;
+        if (!isTemplateCaptureConnectionType(type)) return false;
+        if (!isSupportedTemplateEdgeForCapture(el)) return false;
         const sourceId = String(el?.source?.id || "").trim();
         const targetId = String(el?.target?.id || "").trim();
         return selectedIds.has(sourceId) && selectedIds.has(targetId);
@@ -717,7 +810,7 @@ export function createTemplatePackAdapter(deps = {}) {
       const source = createdNodeMap[String(edge?.sourceId || "")];
       const target = createdNodeMap[String(edge?.targetId || "")];
       if (!source || !target) continue;
-      const conn = connectSequenceFlow(modeling, source, target, edge?.when, { edge, moddle });
+      const conn = connectTemplateEdge(modeling, source, target, edge, { edge, moddle });
       if (!conn) continue;
       const oldId = String(edge?.id || "");
       remap[oldId] = String(conn?.id || "");

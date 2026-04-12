@@ -331,6 +331,13 @@ def _build_node_xml(node: ClipboardFragmentNode, *, new_id: str, id_map: Dict[st
     return elem
 
 
+def _normalize_edge_type(edge: ClipboardFragmentEdge) -> str:
+    edge_type = str(getattr(edge, "edge_type", "") or "").strip()
+    if edge_type == "messageFlow":
+        return "messageFlow"
+    return "sequenceFlow"
+
+
 def _build_task_xml(element: ClipboardTaskElement, *, new_id: str) -> ET.Element:
     tag = f"{{{_BPMN_NS}}}{element.element_type}"
     elem = ET.Element(tag)
@@ -355,8 +362,9 @@ def _build_task_xml(element: ClipboardTaskElement, *, new_id: str) -> ET.Element
 
 
 def _build_edge_xml(edge: ClipboardFragmentEdge, *, new_id: str, id_map: Dict[str, str]) -> ET.Element:
+    edge_type = _normalize_edge_type(edge)
     elem = ET.Element(
-        f"{{{_BPMN_NS}}}sequenceFlow",
+        f"{{{_BPMN_NS}}}{edge_type}",
         attrib={
             "id": new_id,
             "sourceRef": str(id_map.get(edge.source_old_id, edge.source_old_id)),
@@ -369,17 +377,18 @@ def _build_edge_xml(edge: ClipboardFragmentEdge, *, new_id: str, id_map: Dict[st
         if str(key or "").strip() in {"id", "name", "sourceRef", "targetRef"}:
             continue
         elem.attrib[attr_name_from_key(str(key))] = _remap_attribute_value(value, id_map)
-    condition_payload = edge.condition_expression
-    if isinstance(condition_payload, dict):
-        try:
-            cond = build_tree(condition_payload, id_map=id_map)
-            if str(local_name(cond.tag) or "").strip() == "conditionExpression":
-                elem.append(cond)
-        except Exception:
-            pass
-    elif str(condition_payload or "").strip():
-        cond = ET.SubElement(elem, f"{{{_BPMN_NS}}}conditionExpression")
-        cond.text = str(condition_payload)
+    if edge_type == "sequenceFlow":
+        condition_payload = edge.condition_expression
+        if isinstance(condition_payload, dict):
+            try:
+                cond = build_tree(condition_payload, id_map=id_map)
+                if str(local_name(cond.tag) or "").strip() == "conditionExpression":
+                    elem.append(cond)
+            except Exception:
+                pass
+        elif str(condition_payload or "").strip():
+            cond = ET.SubElement(elem, f"{{{_BPMN_NS}}}conditionExpression")
+            cond.text = str(condition_payload)
     for child_payload in list(edge.extra_children or []):
         if not isinstance(child_payload, dict):
             continue
@@ -391,6 +400,8 @@ def _append_edge_refs(node_elements: Dict[str, ET.Element], edge_ids: Dict[str, 
     outgoing_by_node: Dict[str, List[str]] = {}
     incoming_by_node: Dict[str, List[str]] = {}
     for edge in edges:
+        if _normalize_edge_type(edge) != "sequenceFlow":
+            continue
         new_edge_id = edge_ids.get(edge.old_id)
         src_new = id_map.get(edge.source_old_id)
         dst_new = id_map.get(edge.target_old_id)
@@ -724,6 +735,8 @@ def materialize_subprocess_payload_into_session(
         existing_ids = _collect_existing_ids(root)
         node_by_old_id, children_by_parent = _build_node_maps(payload)
         dependency_nodes = list(payload.external_dependencies or [])
+        for dependency in dependency_nodes:
+            node_by_old_id[str(dependency.old_id or "").strip()] = dependency
         reused_dependency_id_map = _resolve_external_datastore_reuse_map(
             root=root,
             dependency_nodes=dependency_nodes,
@@ -741,7 +754,8 @@ def materialize_subprocess_payload_into_session(
 
         edge_id_map: Dict[str, str] = {}
         for edge in list(payload.fragment.edges or []):
-            edge_id_map[edge.old_id] = _allocate_new_id(existing_ids, prefix="Flow", hint=edge.old_id)
+            edge_prefix = "MessageFlow" if _normalize_edge_type(edge) == "messageFlow" else "Flow"
+            edge_id_map[edge.old_id] = _allocate_new_id(existing_ids, prefix=edge_prefix, hint=edge.old_id)
         auxiliary_id_hints = _collect_auxiliary_id_hints(nodes=all_nodes, edges=payload.fragment.edges or [])
         auxiliary_id_map: Dict[str, str] = {}
         for old_id, element_type in sorted(auxiliary_id_hints.items()):
