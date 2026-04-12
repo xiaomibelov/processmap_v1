@@ -40,6 +40,40 @@ function createSequence(id, source, target, name = "", boOverrides = {}) {
   };
 }
 
+function createMessageFlow(id, source, target, name = "", boOverrides = {}) {
+  return {
+    id,
+    type: "bpmn:MessageFlow",
+    waypoints: [{ x: 0, y: 0 }, { x: 10, y: 10 }],
+    source,
+    target,
+    businessObject: {
+      id,
+      $type: "bpmn:MessageFlow",
+      name,
+      ...boOverrides,
+    },
+  };
+}
+
+function createDataStoreReference(id, x, y, name = "Store", boOverrides = {}) {
+  return {
+    id,
+    type: "bpmn:DataStoreReference",
+    x,
+    y,
+    width: 50,
+    height: 50,
+    businessObject: {
+      id,
+      $type: "bpmn:DataStoreReference",
+      name,
+      ...boOverrides,
+    },
+    outgoing: [],
+  };
+}
+
 function createSubprocess(id, x, y, name = "Subprocess", flowElements = []) {
   return {
     id,
@@ -362,9 +396,10 @@ test("captureTemplatePackOnModeler captures sequenceFlow semantic payload beyond
   const edgePayload = result?.pack?.fragment?.edges?.[0] || {};
   assert.deepEqual(
     Object.keys(edgePayload).sort(),
-    ["id", "semanticPayload", "sourceId", "targetId", "when"].sort(),
+    ["edgeType", "id", "semanticPayload", "sourceId", "targetId", "when"].sort(),
   );
   assert.equal(edgePayload.id, "Flow_With_Props");
+  assert.equal(edgePayload.edgeType, "bpmn:SequenceFlow");
   assert.equal(edgePayload.when, "approved");
   assert.equal(edgePayload.semanticPayload?.documentation?.[0]?.text, "edge doc");
   assert.equal(edgePayload.semanticPayload?.extensionElements?.values?.[0]?.$type, "camunda:Properties");
@@ -377,6 +412,39 @@ test("captureTemplatePackOnModeler captures sequenceFlow semantic payload beyond
   assert.equal(edgePayload.semanticPayload?.conditionExpression?.attrs?.["pm:exprKind"], "approval");
   assert.equal(edgePayload.semanticPayload?.attrs?.["pm:edgeCode"], "E-42");
   assert.equal(edgePayload.semanticPayload?.custom?.auditClass, "critical");
+});
+
+test("captureTemplatePackOnModeler captures messageFlow with datastore endpoint", () => {
+  const task = createShape("Task_A", 120, 80, "Inspect");
+  const dataStore = createDataStoreReference("DataStore_1", 340, 90, "Closure source");
+  const flow = createMessageFlow("MessageFlow_1", task, dataStore, "snapshot");
+  const { adapter, inst } = createModelerWithServices({
+    selectionItems: [task, dataStore],
+    registryItems: [task, dataStore, flow],
+  });
+
+  const result = adapter.captureTemplatePackOnModeler(inst, { title: "MessageFlow pack" });
+  assert.equal(result?.ok, true);
+  assert.equal(result?.pack?.fragment?.edges?.length, 1);
+  const edge = result?.pack?.fragment?.edges?.[0] || {};
+  assert.equal(edge.id, "MessageFlow_1");
+  assert.equal(edge.edgeType, "bpmn:MessageFlow");
+  assert.equal(edge.sourceId, "Task_A");
+  assert.equal(edge.targetId, "DataStore_1");
+});
+
+test("captureTemplatePackOnModeler ignores messageFlow without datastore endpoint", () => {
+  const a = createShape("Task_A", 120, 80, "A");
+  const b = createShape("Task_B", 340, 90, "B");
+  const flow = createMessageFlow("MessageFlow_1", a, b, "unsupported");
+  const { adapter, inst } = createModelerWithServices({
+    selectionItems: [a, b],
+    registryItems: [a, b, flow],
+  });
+
+  const result = adapter.captureTemplatePackOnModeler(inst, { title: "Unsupported messageFlow pack" });
+  assert.equal(result?.ok, true);
+  assert.equal(result?.pack?.fragment?.edges?.length, 0);
 });
 
 test("captureTemplatePackOnModeler captures selected subprocess subtree as serializable template pack", () => {
@@ -752,6 +820,42 @@ test("insertTemplatePackOnModeler reapplies sequenceFlow semantic payload to cre
   assert.equal(bo.conditionExpression?.["pm:exprKind"], "approval");
   assert.equal(bo.$attrs?.["pm:edgeCode"], "E-42");
   assert.equal(bo.auditClass, "critical");
+});
+
+test("insertTemplatePackOnModeler creates messageFlow for datastore endpoint edge", async () => {
+  const anchor = createShape("Anchor_1", 100, 100, "Anchor");
+  const { adapter, createdConnections, inst } = createModelerWithServices({
+    anchorShape: anchor,
+    selectionItems: [anchor],
+    registryItems: [anchor],
+  });
+  const payload = {
+    mode: "after",
+    pack: {
+      packId: "pack_messageflow",
+      entryNodeId: "Task_1",
+      exitNodeId: "Store_1",
+      fragment: {
+        nodes: [
+          { id: "Task_1", type: "bpmn:Task", name: "Task", di: { x: 20, y: 20, w: 120, h: 80 } },
+          { id: "Store_1", type: "bpmn:DataStoreReference", name: "Store", di: { x: 220, y: 35, w: 50, h: 50 } },
+        ],
+        edges: [
+          { id: "MF_1", edgeType: "bpmn:MessageFlow", sourceId: "Task_1", targetId: "Store_1", when: "send" },
+        ],
+      },
+    },
+  };
+
+  const result = await adapter.insertTemplatePackOnModeler(payload);
+  assert.equal(result?.ok, true);
+  assert.equal(result?.createdEdges, 1);
+  const messageFlow = createdConnections.find((conn) => conn.businessObject?.$type === "bpmn:MessageFlow");
+  assert.ok(messageFlow);
+  assert.equal(messageFlow.businessObject?.name, "send");
+  const rootBo = inst.get("canvas")?.getRootElement?.()?.businessObject || {};
+  const flowElements = Array.isArray(rootBo.flowElements) ? rootBo.flowElements : [];
+  assert.ok(flowElements.some((el) => el?.$type === "bpmn:MessageFlow"));
 });
 
 test("insertTemplatePackOnModeler reapplies semantic payload to inserted node businessObject", async () => {

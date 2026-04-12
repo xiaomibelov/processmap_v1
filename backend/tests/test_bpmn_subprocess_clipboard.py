@@ -471,6 +471,67 @@ EXTERNAL_AUXILIARY_REF_SUBPROCESS_XML = """<?xml version="1.0" encoding="UTF-8"?
 """
 
 
+MESSAGEFLOW_EXTERNAL_DATASTORE_SUBPROCESS_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_MessageFlowExternalDs" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_MessageFlowExternalDs" isExecutable="false">
+    <bpmn:dataStoreReference id="DataStoreReference_External" name="Shared closure source">
+      <bpmn:extensionElements>
+        <zeebe:properties>
+          <zeebe:property name="tara" value="Ящик внутриоборотный" />
+        </zeebe:properties>
+      </bpmn:extensionElements>
+    </bpmn:dataStoreReference>
+    <bpmn:subProcess id="SubProcess_MessageFlowDs_1" name="Message flow to datastore">
+      <bpmn:startEvent id="MsgStart_1">
+        <bpmn:outgoing>MsgSeq_1</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:task id="MsgTask_1" name="Inspect lid">
+        <bpmn:incoming>MsgSeq_1</bpmn:incoming>
+        <bpmn:outgoing>MsgSeq_2</bpmn:outgoing>
+      </bpmn:task>
+      <bpmn:endEvent id="MsgEnd_1">
+        <bpmn:incoming>MsgSeq_2</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="MsgSeq_1" sourceRef="MsgStart_1" targetRef="MsgTask_1" />
+      <bpmn:sequenceFlow id="MsgSeq_2" sourceRef="MsgTask_1" targetRef="MsgEnd_1" />
+      <bpmn:messageFlow id="MsgFlow_to_external_store_1" sourceRef="MsgTask_1" targetRef="DataStoreReference_External" name="status update" />
+    </bpmn:subProcess>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_MessageFlowExternalDs">
+    <bpmndi:BPMNPlane id="BPMNPlane_MessageFlowExternalDs" bpmnElement="Process_MessageFlowExternalDs">
+      <bpmndi:BPMNShape id="DataStoreReference_External_di" bpmnElement="DataStoreReference_External">
+        <dc:Bounds x="80" y="280" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SubProcess_MessageFlowDs_1_di" bpmnElement="SubProcess_MessageFlowDs_1" isExpanded="true">
+        <dc:Bounds x="170" y="140" width="430" height="230" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="MsgStart_1_di" bpmnElement="MsgStart_1">
+        <dc:Bounds x="220" y="235" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="MsgTask_1_di" bpmnElement="MsgTask_1">
+        <dc:Bounds x="320" y="213" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="MsgEnd_1_di" bpmnElement="MsgEnd_1">
+        <dc:Bounds x="500" y="235" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="MsgSeq_1_di" bpmnElement="MsgSeq_1">
+        <di:waypoint x="256" y="253" />
+        <di:waypoint x="320" y="253" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MsgSeq_2_di" bpmnElement="MsgSeq_2">
+        <di:waypoint x="440" y="253" />
+        <di:waypoint x="500" y="253" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MsgFlow_to_external_store_1_di" bpmnElement="MsgFlow_to_external_store_1">
+        <di:waypoint x="320" y="260" />
+        <di:waypoint x="130" y="305" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
+"""
+
+
 SUBPROCESS_WITH_INTERNAL_AND_EXTERNAL_DATASTORE_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_ExternalReuse" targetNamespace="http://bpmn.io/schema/bpmn">
   <bpmn:process id="Process_ExternalReuse" isExecutable="false">
@@ -1425,6 +1486,33 @@ class BpmnSubprocessClipboardTests(unittest.TestCase):
             "Ящик внутриоборотный",
         )
 
+    def test_messageflow_to_external_datastore_is_captured_in_payload(self):
+        source_session_id = self._create_session_with_xml(
+            title="MessageFlow datastore subprocess",
+            xml=MESSAGEFLOW_EXTERNAL_DATASTORE_SUBPROCESS_XML,
+        )
+        sess = self.get_storage().load(source_session_id, org_id=self.org_id, is_admin=True)
+        payload = self.serialize_clipboard_payload(
+            session_obj=sess,
+            element_id="SubProcess_MessageFlowDs_1",
+            copied_by_user_id=str(self.owner.get("id") or ""),
+            copied_at=1730003660,
+            source_org_id=self.org_id,
+        )
+        self.assertIsInstance(payload, self.ClipboardSubprocessPayload)
+        self.assertEqual(payload.root.old_id, "SubProcess_MessageFlowDs_1")
+        self.assertEqual(len(list(payload.external_dependencies or [])), 1)
+        dependency = payload.external_dependencies[0]
+        self.assertEqual(dependency.old_id, "DataStoreReference_External")
+        message_flow = next(
+            (edge for edge in list(payload.fragment.edges or []) if str(edge.old_id or "") == "MsgFlow_to_external_store_1"),
+            None,
+        )
+        self.assertIsNotNone(message_flow)
+        self.assertEqual(str(message_flow.edge_type or ""), "messageFlow")
+        self.assertEqual(str(message_flow.source_old_id or ""), "MsgTask_1")
+        self.assertEqual(str(message_flow.target_old_id or ""), "DataStoreReference_External")
+
     def test_external_datastore_dependency_roundtrip_creates_remapped_datastore_and_refs(self):
         source_session_id = self._create_session_with_xml(
             title="External auxiliary ref subprocess",
@@ -1495,6 +1583,62 @@ class BpmnSubprocessClipboardTests(unittest.TestCase):
 
         second_reload = self.get_storage().load(self.target_session_id, org_id=self.org_id, is_admin=True)
         self.assertIn(pasted_datastore_id, str(getattr(second_reload, "bpmn_xml", "") or ""))
+
+    def test_messageflow_external_datastore_roundtrip_reuses_target_datastore_and_remaps_refs(self):
+        source_session_id = self._create_session_with_xml(
+            title="MessageFlow datastore subprocess",
+            xml=MESSAGEFLOW_EXTERNAL_DATASTORE_SUBPROCESS_XML,
+        )
+        target_session_id = self._create_session_with_xml(
+            title="Target with compatible external datastore",
+            xml=TARGET_BPMN_WITH_COMPATIBLE_EXTERNAL_DATASTORE_XML,
+        )
+
+        fake = _FakeRedis()
+        with patch("app.redis_cache.get_client", return_value=fake):
+            copy_out = self.copy_bpmn_element_to_clipboard(
+                self.ClipboardCopyIn(session_id=source_session_id, element_id="SubProcess_MessageFlowDs_1"),
+                self._req(self.owner),
+            )
+            copy_status, copy_body = _read_response(copy_out)
+            self.assertEqual(copy_status, 200)
+            self.assertEqual(str(copy_body.get("clipboard_item_type") or ""), "bpmn_subprocess_subtree")
+
+            paste_out = self.paste_bpmn_clipboard(
+                self.ClipboardPasteIn(session_id=target_session_id),
+                self._req(self.owner),
+            )
+            paste_status, paste_body = _read_response(paste_out)
+            self.assertEqual(paste_status, 200)
+            self.assertTrue(bool(paste_body.get("ok")))
+            self.assertEqual(len(set(paste_body.get("created_edge_ids") or [])), 3)
+            self.assertNotIn("ExistingSharedDataStore_1", set(paste_body.get("created_node_ids") or []))
+
+        reloaded = self.get_storage().load(target_session_id, org_id=self.org_id, is_admin=True)
+        self.assertIsNotNone(reloaded)
+        xml_text = str(getattr(reloaded, "bpmn_xml", "") or "")
+        root = ET.fromstring(xml_text)
+        pasted_root_id = str(paste_body.get("pasted_root_element_id") or "")
+        pasted_subprocess = next(
+            (el for el in _iter_local(root, "subProcess") if str(el.attrib.get("id") or "").strip() == pasted_root_id),
+            None,
+        )
+        self.assertIsNotNone(pasted_subprocess)
+
+        pasted_message_flow = next(
+            (el for el in list(pasted_subprocess) if _local(el.tag) == "messageFlow"),
+            None,
+        )
+        self.assertIsNotNone(pasted_message_flow)
+        self.assertIn(str(pasted_message_flow.attrib.get("id") or "").strip(), set(paste_body.get("created_edge_ids") or []))
+        self.assertEqual(str(pasted_message_flow.attrib.get("targetRef") or ""), "ExistingSharedDataStore_1")
+        self.assertNotEqual(str(pasted_message_flow.attrib.get("sourceRef") or ""), "MsgTask_1")
+
+        parsed_again = ET.fromstring(xml_text)
+        self.assertIsNotNone(parsed_again)
+        second_reload = self.get_storage().load(target_session_id, org_id=self.org_id, is_admin=True)
+        second_xml = str(getattr(second_reload, "bpmn_xml", "") or "")
+        self.assertIn('targetRef="ExistingSharedDataStore_1"', second_xml)
 
     def test_external_datastore_dependency_reuses_compatible_target_datastore(self):
         source_session_id = self._create_session_with_xml(
