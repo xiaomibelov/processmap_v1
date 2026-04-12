@@ -313,6 +313,8 @@ test("properties overlay decor coexists with notes/time/robot overlay positions"
     assert.equal(addCall.payload.position.left, 70);
     assert.equal(addCall.payload.scale, false);
     assert.equal(addCall.overlayType, "fpc-properties");
+    assert.equal(String(addCall.payload.html.className || "").includes("fpcPropertyOverlay--task"), true);
+    assert.equal(addCall.payload.html?.dataset?.hostType, "task");
   });
 });
 
@@ -362,11 +364,12 @@ test("properties overlay decor uses connection geometry and reacts to zoom chang
         x: 100,
         y: 180,
         width: 320,
-        height: 24,
+        height: 40,
         waypoints: [
           { x: 100, y: 190 },
-          { x: 260, y: 190 },
-          { x: 420, y: 190 },
+          { x: 400, y: 190 },
+          { x: 400, y: 220 },
+          { x: 420, y: 220 },
         ],
         businessObject: { id: "Flow_1", $type: "bpmn:SequenceFlow" },
       },
@@ -378,8 +381,10 @@ test("properties overlay decor uses connection geometry and reacts to zoom chang
     assert.equal(fixture.overlays.addCalls.length, 1);
     const firstCall = fixture.overlays.addCalls[0];
     assert.equal(firstCall.elementId, "Flow_1");
-    assert.equal(firstCall.payload.position.left, 160);
-    assert.equal(firstCall.payload.position.top, -10);
+    assert.equal(firstCall.payload.position.left, 175);
+    assert.equal(firstCall.payload.position.top, 10);
+    assert.equal(String(firstCall.payload.html.className || "").includes("fpcPropertyOverlay--sequence"), true);
+    assert.equal(firstCall.payload.html?.dataset?.hostType, "sequence");
     const firstWidth = Number.parseInt(String(firstCall.payload.html.style.width || "0"), 10);
     assert.ok(firstWidth >= 52 && firstWidth <= 116);
 
