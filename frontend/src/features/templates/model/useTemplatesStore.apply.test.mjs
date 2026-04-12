@@ -128,6 +128,8 @@ test("insertBpmnFragmentFromPlacement: inserts by explicit left-click point payl
   assert.equal(calls[0]?.optionsArg?.clientX, 320);
   assert.equal(calls[0]?.optionsArg?.clientY, 240);
   assert.equal(calls[0]?.optionsArg?.mode, "after");
+  assert.equal(calls[0]?.optionsArg?.persistImmediately, true);
+  assert.equal(calls[0]?.optionsArg?.source, "template_apply");
 });
 
 test("insertBpmnFragmentFromPlacement: fails when insert API is missing", async () => {
@@ -138,6 +140,20 @@ test("insertBpmnFragmentFromPlacement: fails when insert API is missing", async 
   });
   assert.equal(result?.ok, false);
   assert.equal(result?.error, "BPMN insert API недоступен.");
+});
+
+test("insertBpmnFragmentFromPlacement: propagates explicit persist failure outcome", async () => {
+  const result = await insertBpmnFragmentFromPlacement({
+    currentPlacement: { template: { id: "tpl_persist_fail" } },
+    clientX: 100,
+    clientY: 80,
+    insertBpmnFragmentTemplateAtPoint: async () => ({
+      ok: false,
+      error: "persist_failed",
+    }),
+  });
+  assert.equal(result?.ok, false);
+  assert.equal(result?.error, "persist_failed");
 });
 
 test("shouldCancelBpmnFragmentPlacementByKey: returns true only for Escape", () => {
