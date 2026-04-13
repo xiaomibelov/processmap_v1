@@ -4907,6 +4907,8 @@ export default function ProcessStage({
                     diagramActionPathOpen,
                     diagramPathPopoverRef,
                     diagramSearchPopoverRef,
+                    diagramSearchMode: diagramSearch.mode,
+                    setDiagramSearchMode: diagramSearch.setMode,
                     diagramSearchQuery: diagramSearch.query,
                     setDiagramSearchQuery: diagramSearch.setQuery,
                     diagramSearchResults: diagramSearch.results,

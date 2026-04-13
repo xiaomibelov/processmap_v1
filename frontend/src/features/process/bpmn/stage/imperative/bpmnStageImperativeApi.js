@@ -609,6 +609,15 @@ export function createBpmnStageImperativeApi(ctxBase) {
       const registry = getRegistryService(inst);
       return readSearchableElementsFromRegistry(registry);
     },
+    listSearchableProperties: (options = {}) => {
+      const preferred = toText(options?.kind || options?.view || options?.mode).toLowerCase();
+      const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
+      if (!inst) return [];
+      if (typeof callbacks.listSearchablePropertiesOnInstance === "function") {
+        return asArray(callbacks.listSearchablePropertiesOnInstance(inst));
+      }
+      return [];
+    },
     clearSearchHighlights: (options = {}) => {
       const preferred = toText(options?.kind || options?.view || options?.mode).toLowerCase();
       const viewerOk = callbacks.clearSearchHighlightsOnInstance?.(refs.viewerRef?.current, "viewer") === true;
