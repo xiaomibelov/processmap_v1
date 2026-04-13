@@ -134,6 +134,29 @@ def _read_response(out):
     return 200, out if isinstance(out, dict) else {}
 
 
+def _local_name(tag: str) -> str:
+    return str(tag or "").rsplit("}", 1)[-1]
+
+
+def _find_shape_bounds_for_element(root: ET.Element, element_id: str):
+    safe_id = str(element_id or "").strip()
+    if not safe_id:
+        return None
+    for shape in root.iter():
+        if _local_name(shape.tag) != "BPMNShape":
+            continue
+        if str(shape.attrib.get("bpmnElement") or "").strip() != safe_id:
+            continue
+        bounds = next((child for child in list(shape) if _local_name(child.tag) == "Bounds"), None)
+        if bounds is None:
+            return None
+        try:
+            return float(bounds.attrib.get("x", "0") or 0), float(bounds.attrib.get("y", "0") or 0)
+        except Exception:
+            return None
+    return None
+
+
 class BpmnTaskClipboardTests(unittest.TestCase):
     def setUp(self):
         self.tmp_sessions = tempfile.TemporaryDirectory()
@@ -478,6 +501,115 @@ class BpmnTaskClipboardTests(unittest.TestCase):
         second_reload = st.load(self.target_session_id, org_id=self.org_id, is_admin=True)
         self.assertIn(pasted_task_id, getattr(second_reload, "bpmn_meta", {}).get("camunda_extensions_by_element_id", {}))
         self.assertIn(pasted_task_id, getattr(second_reload, "notes_by_element", {}))
+
+    def test_task_paste_uses_cursor_placement_hint_for_cross_session_target(self):
+        fake = _FakeRedis()
+        requested_x = 742.0
+        requested_y = 316.0
+        with patch("app.redis_cache.get_client", return_value=fake):
+            copy_out = self.copy_bpmn_task_to_clipboard(
+                self.ClipboardCopyIn(session_id=self.session_id, element_id="Task_1"),
+                self._req(self.owner),
+            )
+            copy_status, _ = _read_response(copy_out)
+            self.assertEqual(copy_status, 200)
+
+            paste_out = self.paste_bpmn_clipboard(
+                self.ClipboardPasteIn(session_id=self.target_session_id, x=requested_x, y=requested_y),
+                self._req(self.owner),
+            )
+            paste_status, paste_body = _read_response(paste_out)
+            self.assertEqual(paste_status, 200)
+            self.assertTrue(bool(paste_body.get("ok")))
+            pasted_task_id = str(paste_body.get("pasted_root_element_id") or "")
+            self.assertTrue(pasted_task_id)
+
+        reloaded = self.get_storage().load(self.target_session_id, org_id=self.org_id, is_admin=True)
+        self.assertIsNotNone(reloaded)
+        root = ET.fromstring(str(getattr(reloaded, "bpmn_xml", "") or ""))
+        bounds = _find_shape_bounds_for_element(root, pasted_task_id)
+        self.assertIsNotNone(bounds)
+        actual_x, actual_y = bounds
+        self.assertAlmostEqual(actual_x, requested_x, places=4)
+        self.assertAlmostEqual(actual_y, requested_y, places=4)
+
+    def test_task_paste_uses_cursor_placement_hint_for_same_session_target(self):
+        fake = _FakeRedis()
+        requested_x = 684.0
+        requested_y = 264.0
+        with patch("app.redis_cache.get_client", return_value=fake):
+            copy_out = self.copy_bpmn_task_to_clipboard(
+                self.ClipboardCopyIn(session_id=self.session_id, element_id="Task_1"),
+                self._req(self.owner),
+            )
+            copy_status, _ = _read_response(copy_out)
+            self.assertEqual(copy_status, 200)
+
+            first_paste_out = self.paste_bpmn_clipboard(
+                self.ClipboardPasteIn(session_id=self.target_session_id, x=520.0, y=220.0),
+                self._req(self.owner),
+            )
+            first_paste_status, first_paste_body = _read_response(first_paste_out)
+            self.assertEqual(first_paste_status, 200)
+            first_pasted_task_id = str(first_paste_body.get("pasted_root_element_id") or "")
+            self.assertTrue(first_pasted_task_id)
+
+            second_copy_out = self.copy_bpmn_task_to_clipboard(
+                self.ClipboardCopyIn(session_id=self.target_session_id, element_id=first_pasted_task_id),
+                self._req(self.owner),
+            )
+            second_copy_status, _ = _read_response(second_copy_out)
+            self.assertEqual(second_copy_status, 200)
+
+            paste_out = self.paste_bpmn_clipboard(
+                self.ClipboardPasteIn(session_id=self.target_session_id, x=requested_x, y=requested_y),
+                self._req(self.owner),
+            )
+            paste_status, paste_body = _read_response(paste_out)
+            self.assertEqual(paste_status, 200)
+            self.assertTrue(bool(paste_body.get("ok")))
+            pasted_task_id = str(paste_body.get("pasted_root_element_id") or "")
+            self.assertTrue(pasted_task_id)
+
+        reloaded = self.get_storage().load(self.target_session_id, org_id=self.org_id, is_admin=True)
+        self.assertIsNotNone(reloaded)
+        root = ET.fromstring(str(getattr(reloaded, "bpmn_xml", "") or ""))
+        bounds = _find_shape_bounds_for_element(root, pasted_task_id)
+        self.assertIsNotNone(bounds)
+        actual_x, actual_y = bounds
+        self.assertAlmostEqual(actual_x, requested_x, places=4)
+        self.assertAlmostEqual(actual_y, requested_y, places=4)
+
+    def test_task_paste_without_placement_hint_uses_target_origin_fallback(self):
+        fake = _FakeRedis()
+        expected_x = 376.0
+        expected_y = 120.0
+        with patch("app.redis_cache.get_client", return_value=fake):
+            copy_out = self.copy_bpmn_task_to_clipboard(
+                self.ClipboardCopyIn(session_id=self.session_id, element_id="Task_1"),
+                self._req(self.owner),
+            )
+            copy_status, _ = _read_response(copy_out)
+            self.assertEqual(copy_status, 200)
+
+            paste_out = self.paste_bpmn_clipboard(
+                self.ClipboardPasteIn(session_id=self.target_session_id),
+                self._req(self.owner),
+            )
+            paste_status, paste_body = _read_response(paste_out)
+            self.assertEqual(paste_status, 200)
+            self.assertTrue(bool(paste_body.get("ok")))
+            pasted_task_id = str(paste_body.get("pasted_root_element_id") or "")
+            self.assertTrue(pasted_task_id)
+
+        reloaded = self.get_storage().load(self.target_session_id, org_id=self.org_id, is_admin=True)
+        self.assertIsNotNone(reloaded)
+        root = ET.fromstring(str(getattr(reloaded, "bpmn_xml", "") or ""))
+        bounds = _find_shape_bounds_for_element(root, pasted_task_id)
+        self.assertIsNotNone(bounds)
+        actual_x, actual_y = bounds
+        self.assertAlmostEqual(actual_x, expected_x, places=4)
+        self.assertAlmostEqual(actual_y, expected_y, places=4)
 
     def test_app_factory_includes_clipboard_route_without_breaking_existing_router_registration(self):
         app = self.create_app()

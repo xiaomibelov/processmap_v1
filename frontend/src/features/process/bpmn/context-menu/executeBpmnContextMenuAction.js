@@ -725,14 +725,25 @@ export async function executeBpmnContextMenuAction({
     if (actionId === "add_annotation") return createOnCanvas("bpmn:TextAnnotation");
 
     if (actionId === "paste") {
+      const hasExplicitClientPoint = (
+        Object.prototype.hasOwnProperty.call(payload, "clientX")
+        || Object.prototype.hasOwnProperty.call(payload, "clientY")
+      );
+      const backendPastePlacement = (
+        hasExplicitClientPoint
+        && Number.isFinite(Number(point.x))
+        && Number.isFinite(Number(point.y))
+      )
+        ? {
+          x: Math.round(Number(point.x)),
+          y: Math.round(Number(point.y)),
+        }
+        : null;
+
       const pasteLocalClipboard = () => {
         const semanticSnapshot = readCopiedBpmnElementSnapshot();
         const parentResolved = resolveCanvasCreateParent(inst, point);
         const root = parentResolved.root;
-        const hasExplicitClientPoint = (
-          Object.prototype.hasOwnProperty.call(payload, "clientX")
-          || Object.prototype.hasOwnProperty.call(payload, "clientY")
-        );
         const fallbackPoint = hasExplicitClientPoint ? point : null;
         const parent = hasShapeBounds(target)
           ? (resolveCreateShapeParent(target?.parent || target, root) || parentResolved.parent || root)
@@ -789,6 +800,7 @@ export async function executeBpmnContextMenuAction({
       if (backendClipboard && typeof backendClipboard.pasteIntoSession === "function") {
         const backendPaste = await backendClipboard.pasteIntoSession({
           sessionId: toText(payload.sessionId),
+          placement: backendPastePlacement,
         });
         if (backendPaste?.ok) {
           const ids = [
