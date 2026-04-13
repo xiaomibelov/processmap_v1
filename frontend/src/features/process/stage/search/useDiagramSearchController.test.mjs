@@ -151,3 +151,68 @@ test("useDiagramSearchController syncs highlights and uses existing focus path f
     await cleanup();
   }
 });
+
+test("useDiagramSearchController recomputes results on mutation trigger and clears stale highlights on session switch", async () => {
+  const { root, cleanup } = setupDom();
+  let latest = null;
+  let open = true;
+  let currentSessionId = "sid_1";
+  let elements = [
+    { elementId: "Task_A", name: "Alpha", type: "bpmn:Task" },
+  ];
+  const clearCalls = [];
+
+  const bpmnRef = {
+    current: {
+      listSearchableElements: () => elements,
+      setSearchHighlights: () => true,
+      clearSearchHighlights: () => {
+        clearCalls.push(true);
+        return true;
+      },
+    },
+  };
+
+  try {
+    const makeProps = (mutationVersion) => ({
+      bpmnRef,
+      requestDiagramFocus: () => {},
+      sessionId: currentSessionId,
+      reloadKey: 1,
+      diagramXml: "<bpmn:definitions/>",
+      mutationVersion,
+      isOpen: open,
+      setOpen: (next) => {
+        open = next === true;
+      },
+      isEnabled: true,
+    });
+
+    await renderHarness(root, makeProps(0), (value) => {
+      latest = value;
+    });
+    await act(async () => {
+      latest.setQuery("lane");
+    });
+    assert.equal(latest.results.length, 0);
+
+    elements = [
+      { elementId: "Lane_1", name: "Lane A", type: "bpmn:Lane" },
+    ];
+    await renderHarness(root, makeProps(1), (value) => {
+      latest = value;
+    });
+    assert.equal(latest.results.length, 1);
+    assert.equal(latest.results[0]?.elementId, "Lane_1");
+
+    const clearCountBeforeSessionSwitch = clearCalls.length;
+    currentSessionId = "sid_2";
+    await renderHarness(root, makeProps(1), (value) => {
+      latest = value;
+    });
+    assert.equal(open, false);
+    assert.ok(clearCalls.length > clearCountBeforeSessionSwitch);
+  } finally {
+    await cleanup();
+  }
+});
