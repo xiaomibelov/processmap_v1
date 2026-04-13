@@ -169,6 +169,72 @@ function readElementBounds(inst, elementIdRaw) {
   }
 }
 
+function toTypeLabel(typeRaw) {
+  const type = toText(typeRaw);
+  if (!type) return "";
+  const short = toText(type.split(":").pop());
+  return short || type;
+}
+
+function readVisibleLabelForElement(element) {
+  const directLabel = toText(
+    element?.label?.businessObject?.name
+      || element?.label?.businessObject?.text
+      || element?.label?.businessObject?.label,
+  );
+  if (directLabel) return directLabel;
+  return toText(
+    element?.businessObject?.label
+      || element?.businessObject?.text,
+  );
+}
+
+function readSearchableElementsFromRegistry(registry) {
+  const out = [];
+  const seen = new Set();
+  const all = asArray(registry?.getAll?.());
+
+  const labelByTargetId = new Map();
+  all.forEach((elementRaw) => {
+    const element = asObject(elementRaw);
+    const isLabel = toText(element?.type).toLowerCase() === "label";
+    if (!isLabel) return;
+    const targetId = toText(element?.labelTarget?.id || element?.businessObject?.labelTarget?.id);
+    if (!targetId || labelByTargetId.has(targetId)) return;
+    const labelText = toText(element?.businessObject?.name || element?.businessObject?.text || element?.businessObject?.label);
+    if (!labelText) return;
+    labelByTargetId.set(targetId, labelText);
+  });
+
+  all.forEach((elementRaw) => {
+    const element = asObject(elementRaw);
+    const elementId = toText(element?.id);
+    if (!elementId || seen.has(elementId)) return;
+    const isLabel = toText(element?.type).toLowerCase() === "label";
+    if (isLabel) return;
+    const hasWaypoints = Array.isArray(element?.waypoints) && element.waypoints.length > 0;
+    const hasBounds = Number.isFinite(Number(element?.x)) && Number.isFinite(Number(element?.y));
+    if (!hasWaypoints && !hasBounds) return;
+    const bo = asObject(element?.businessObject);
+    const type = toText(bo?.$type || element?.type);
+    if (!type.toLowerCase().startsWith("bpmn:")) return;
+    const name = toText(bo?.name);
+    const label = toText(labelByTargetId.get(elementId) || readVisibleLabelForElement(element));
+    const title = toText(label || name || elementId) || elementId;
+    out.push({
+      elementId,
+      name,
+      label,
+      title,
+      type,
+      typeLabel: toTypeLabel(type),
+    });
+    seen.add(elementId);
+  });
+
+  return out;
+}
+
 function readUndoRedoAvailability(inst) {
   try {
     const commandStack = inst?.get?.("commandStack");
@@ -532,6 +598,38 @@ export function createBpmnStageImperativeApi(ctxBase) {
       refs.bottlenecksRef.current = [];
       callbacks.clearBottleneckDecor?.(refs.viewerRef?.current, "viewer");
       callbacks.clearBottleneckDecor?.(refs.modelerRef?.current, "editor");
+    },
+    listSearchableElements: (options = {}) => {
+      const preferred = toText(options?.kind || options?.view || options?.mode).toLowerCase();
+      const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
+      if (!inst) return [];
+      if (typeof callbacks.listSearchableElementsOnInstance === "function") {
+        return asArray(callbacks.listSearchableElementsOnInstance(inst));
+      }
+      const registry = getRegistryService(inst);
+      return readSearchableElementsFromRegistry(registry);
+    },
+    clearSearchHighlights: (options = {}) => {
+      const preferred = toText(options?.kind || options?.view || options?.mode).toLowerCase();
+      const viewerOk = callbacks.clearSearchHighlightsOnInstance?.(refs.viewerRef?.current, "viewer") === true;
+      const editorOk = callbacks.clearSearchHighlightsOnInstance?.(refs.modelerRef?.current, "editor") === true;
+      if (viewerOk || editorOk) return true;
+      const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
+      if (!inst) return false;
+      return callbacks.clearSearchHighlightsOnInstance?.(inst, getInstanceKind(inst)) === true;
+    },
+    setSearchHighlights: (payload = {}, options = {}) => {
+      const preferred = toText(options?.kind || options?.view || options?.mode).toLowerCase();
+      const data = {
+        matchElementIds: asArray(payload?.matchElementIds || payload?.matches || payload?.ids),
+        activeElementId: toText(payload?.activeElementId || payload?.activeId),
+      };
+      const viewerOk = callbacks.setSearchHighlightsOnInstance?.(refs.viewerRef?.current, "viewer", data) === true;
+      const editorOk = callbacks.setSearchHighlightsOnInstance?.(refs.modelerRef?.current, "editor", data) === true;
+      if (viewerOk || editorOk) return true;
+      const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
+      if (!inst) return false;
+      return callbacks.setSearchHighlightsOnInstance?.(inst, getInstanceKind(inst), data) === true;
     },
     focusNode: (nodeId, options = {}) => {
       const nid = String(nodeId || "").trim();

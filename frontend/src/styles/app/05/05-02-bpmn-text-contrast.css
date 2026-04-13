@@ -264,6 +264,29 @@
   stroke-width: 2.3px !important;
 }
 
+.bpmnCanvas .djs-element.fpcSearchMatch:not(.fpcSearchActive):not(.fpcElementSelected):not(.fpcQualityProblem):not(.fpcQualityIssueFocus):not(.fpcNodeFlashAccent):not(.fpcNodeFlashAi):not(.fpcNodeFlashNotes):not(.fpcNodeFlashSync):not(.fpcNodeFlashFlow) .djs-visual > :is(rect, circle, ellipse, polygon, path) {
+  stroke: color-mix(in srgb, hsl(var(--diagram-select)) 68%, #fef08a) !important;
+  stroke-width: 2px !important;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, hsl(var(--diagram-select-glow) / 0.42) 64%, transparent));
+}
+
+.bpmnCanvas .djs-element.fpcSearchActive:not(.fpcElementSelected):not(.fpcQualityProblem):not(.fpcQualityIssueFocus):not(.fpcNodeFlashAccent):not(.fpcNodeFlashAi):not(.fpcNodeFlashNotes):not(.fpcNodeFlashSync):not(.fpcNodeFlashFlow) .djs-visual > :is(rect, circle, ellipse, polygon, path) {
+  stroke: color-mix(in srgb, hsl(var(--diagram-jump)) 82%, #fde047) !important;
+  stroke-width: 2.45px !important;
+  filter: drop-shadow(0 0 8px color-mix(in srgb, hsl(var(--diagram-jump)) 48%, transparent));
+}
+
+.bpmnCanvas .djs-connection.fpcSearchMatch:not(.fpcSearchActive):not(.fpcElementSelected):not(.fpcQualityProblem):not(.fpcQualityIssueFocus):not(.fpcNodeFlashAccent):not(.fpcNodeFlashAi):not(.fpcNodeFlashNotes):not(.fpcNodeFlashSync):not(.fpcNodeFlashFlow) .djs-visual > path[data-corner-radius] {
+  stroke: color-mix(in srgb, hsl(var(--diagram-select)) 70%, #fde68a) !important;
+  stroke-width: 2.2px !important;
+}
+
+.bpmnCanvas .djs-connection.fpcSearchActive:not(.fpcElementSelected):not(.fpcQualityProblem):not(.fpcQualityIssueFocus):not(.fpcNodeFlashAccent):not(.fpcNodeFlashAi):not(.fpcNodeFlashNotes):not(.fpcNodeFlashSync):not(.fpcNodeFlashFlow) .djs-visual > path[data-corner-radius] {
+  stroke: color-mix(in srgb, hsl(var(--diagram-jump)) 80%, #facc15) !important;
+  stroke-width: 2.7px !important;
+  filter: drop-shadow(0 0 7px color-mix(in srgb, hsl(var(--diagram-jump)) 46%, transparent));
+}
+
 .bpmnCanvas .djs-element.fpcCoverageReady:not(.fpcElementSelected) .djs-visual > :is(rect, circle, ellipse, polygon, path) {
   stroke: color-mix(in srgb, var(--bpmn-coverage-ready) 74%, #d9f99d) !important;
   stroke-width: 2.2px !important;
