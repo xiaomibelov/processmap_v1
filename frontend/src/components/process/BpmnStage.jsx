@@ -2134,6 +2134,43 @@ const BpmnStage = forwardRef(function BpmnStage({
     }
   }
 
+  function listSearchablePropertiesOnInstance(inst) {
+    if (!inst) return [];
+    try {
+      const registry = inst.get("elementRegistry");
+      const elements = listSearchableElementsOnInstance(inst);
+      const result = [];
+
+      elements.forEach((elementRow) => {
+        const elementId = toText(elementRow?.elementId);
+        if (!elementId) return;
+        const runtimeElement = registry?.get?.(elementId);
+        const state = extractManagedCamundaExtensionStateFromBusinessObject(runtimeElement?.businessObject);
+        const extensionProperties = asArray(asObject(state?.properties).extensionProperties);
+        if (!extensionProperties.length) return;
+
+        extensionProperties.forEach((propertyRaw, propertyIndex) => {
+          const propertyName = toText(propertyRaw?.name);
+          const propertyValue = toText(propertyRaw?.value);
+          if (!propertyName && !propertyValue) return;
+          result.push({
+            searchId: `${elementId}::prop_${Math.max(0, Number(propertyIndex) || 0)}`,
+            elementId,
+            elementTitle: toText(elementRow?.title) || elementId,
+            elementType: toText(elementRow?.type),
+            elementTypeLabel: toText(elementRow?.typeLabel),
+            propertyName,
+            propertyValue,
+            propertyIndex: Math.max(0, Number(propertyIndex) || 0),
+          });
+        });
+      });
+      return result;
+    } catch {
+      return [];
+    }
+  }
+
   function clearSearchHighlightsOnInstance(inst, kind) {
     if (!inst) return false;
     const mode = kind === "editor" ? "editor" : "viewer";
@@ -5296,6 +5333,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         applyBottleneckDecor,
         clearBottleneckDecor,
         listSearchableElementsOnInstance,
+        listSearchablePropertiesOnInstance,
         setSearchHighlightsOnInstance,
         clearSearchHighlightsOnInstance,
         focusNodeOnInstance,
