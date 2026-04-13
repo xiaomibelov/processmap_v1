@@ -15,6 +15,8 @@ export default function useDiagramActionPopovers({
   setDiagramActionLayersOpen,
   diagramActionRobotMetaOpen,
   setDiagramActionRobotMetaOpen,
+  diagramActionSearchOpen,
+  setDiagramActionSearchOpen,
   robotMetaListOpen,
   setRobotMetaListOpen,
   setRobotMetaListSearch,
@@ -32,6 +34,7 @@ export default function useDiagramActionPopovers({
   diagramLayersPopoverRef,
   diagramRobotMetaPopoverRef,
   diagramRobotMetaListRef,
+  diagramSearchPopoverRef,
   diagramQualityPopoverRef,
   diagramOverflowPopoverRef,
   hybridLayerOverlayRef,
@@ -46,6 +49,7 @@ export default function useDiagramActionPopovers({
     setDiagramActionPlaybackOpen(false);
     setDiagramActionLayersOpen(false);
     setDiagramActionRobotMetaOpen(false);
+    setDiagramActionSearchOpen(false);
     setRobotMetaListOpen(false);
     setDiagramActionQualityOpen(false);
     setDiagramActionOverflowOpen(false);
@@ -57,6 +61,7 @@ export default function useDiagramActionPopovers({
     setDiagramActionPlanOpen,
     setDiagramActionPlaybackOpen,
     setDiagramActionQualityOpen,
+    setDiagramActionSearchOpen,
     setDiagramActionRobotMetaOpen,
     setRobotMetaListOpen,
   ]);
@@ -91,6 +96,7 @@ export default function useDiagramActionPopovers({
       && !diagramActionPlaybackOpen
       && !diagramActionLayersOpen
       && !diagramActionRobotMetaOpen
+      && !diagramActionSearchOpen
       && !diagramActionQualityOpen
       && !diagramActionOverflowOpen
       && !robotMetaListOpen) return undefined;
@@ -119,6 +125,7 @@ export default function useDiagramActionPopovers({
         diagramLayersPopoverRef.current,
         diagramRobotMetaPopoverRef.current,
         diagramRobotMetaListRef.current,
+        diagramSearchPopoverRef.current,
         diagramQualityPopoverRef.current,
         diagramOverflowPopoverRef.current,
         hybridLayerOverlayRef.current,
@@ -147,6 +154,7 @@ export default function useDiagramActionPopovers({
     diagramActionPlanOpen,
     diagramActionPlaybackOpen,
     diagramActionQualityOpen,
+    diagramActionSearchOpen,
     diagramActionRobotMetaOpen,
     diagramHybridToolsPopoverRef,
     diagramLayersPopoverRef,
@@ -157,6 +165,7 @@ export default function useDiagramActionPopovers({
     diagramQualityPopoverRef,
     diagramRobotMetaListRef,
     diagramRobotMetaPopoverRef,
+    diagramSearchPopoverRef,
     hybridLayerOverlayRef,
     logPlaybackDebug,
     playbackOverlayClickGuardRef,
