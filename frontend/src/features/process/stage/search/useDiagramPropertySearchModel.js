@@ -30,6 +30,7 @@ export function normalizeDiagramPropertySearchEntry(raw) {
   const elementType = toText(item.elementType || item.type || item.bpmnType);
   const elementTypeLabel = toTypeLabel(item.elementTypeLabel || item.typeLabel || elementType);
   const elementTitle = toText(item.elementTitle || item.title || item.elementName || elementId) || elementId;
+  const sourcePath = toText(item.sourcePath || item.path);
   const propertyIndex = Number(item.propertyIndex);
   const entryKey = toText(item.searchId || item.entryKey) || [
     elementId,
@@ -53,6 +54,7 @@ export function normalizeDiagramPropertySearchEntry(raw) {
     elementTypeLabel,
     propertyName,
     propertyValue,
+    sourcePath,
     searchText,
   };
 }
