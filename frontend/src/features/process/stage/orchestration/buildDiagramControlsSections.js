@@ -225,6 +225,8 @@ const SEARCH_KEYS = [
   "diagramActionSearchOpen",
   "setDiagramActionSearchOpen",
   "diagramSearchPopoverRef",
+  "diagramSearchMode",
+  "setDiagramSearchMode",
   "diagramSearchQuery",
   "setDiagramSearchQuery",
   "diagramSearchResults",

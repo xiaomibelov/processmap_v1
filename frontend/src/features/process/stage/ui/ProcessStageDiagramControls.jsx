@@ -246,6 +246,8 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     diagramActionSearchOpen,
     setDiagramActionSearchOpen,
     diagramSearchPopoverRef,
+    diagramSearchMode,
+    setDiagramSearchMode,
     diagramSearchQuery,
     setDiagramSearchQuery,
     diagramSearchResults,
@@ -827,6 +829,8 @@ export default function ProcessStageDiagramControls({ view = {} }) {
       <DiagramSearchPopover
         open={diagramActionSearchOpen}
         popoverRef={diagramSearchPopoverRef}
+        mode={diagramSearchMode}
+        onModeChange={setDiagramSearchMode}
         query={diagramSearchQuery}
         onQueryChange={setDiagramSearchQuery}
         results={diagramSearchResults}
