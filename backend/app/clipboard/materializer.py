@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import time
 import uuid
 import xml.etree.ElementTree as ET
@@ -155,6 +156,21 @@ def _target_origin(plane: ET.Element) -> tuple[float, float]:
         max_x = max(max_x, x + w)
         min_y = min(min_y, y)
     return max_x + 80.0, max(80.0, min_y)
+
+
+def _resolve_target_origin(
+    plane: ET.Element,
+    placement_hint: Optional[Dict[str, Any]] = None,
+) -> tuple[float, float]:
+    hint = placement_hint if isinstance(placement_hint, dict) else {}
+    try:
+        x = float(hint.get("x"))
+        y = float(hint.get("y"))
+    except (TypeError, ValueError):
+        return _target_origin(plane)
+    if not (math.isfinite(x) and math.isfinite(y)):
+        return _target_origin(plane)
+    return x, y
 
 
 def _build_node_maps(payload: ClipboardSubprocessPayload) -> tuple[Dict[str, ClipboardFragmentNode], Dict[str, List[ClipboardFragmentNode]]]:
@@ -653,6 +669,7 @@ def materialize_task_payload_into_session(
     payload: ClipboardTaskPayload,
     target_session_id: str,
     request: Request,
+    placement_hint: Optional[Dict[str, Any]] = None,
 ) -> ClipboardPasteResponse:
     target_session, target_org_id, user_id = _load_target_session_for_edit(target_session_id, request)
 
@@ -664,7 +681,7 @@ def materialize_task_payload_into_session(
         root, process, plane = _parse_target_bpmn(str(getattr(target_session, "bpmn_xml", "") or ""))
         existing_ids = _collect_existing_ids(root)
         new_id = _allocate_new_id(existing_ids, prefix=str(payload.element.element_type or "Node"), hint=str(payload.context.source_element_id or "task"))
-        target_x, target_y = _target_origin(plane)
+        target_x, target_y = _resolve_target_origin(plane, placement_hint=placement_hint)
         task_elem = _build_task_xml(payload.element, new_id=new_id)
         process.append(task_elem)
         _append_basic_di_shape(
@@ -720,6 +737,7 @@ def materialize_subprocess_payload_into_session(
     payload: ClipboardSubprocessPayload,
     target_session_id: str,
     request: Request,
+    placement_hint: Optional[Dict[str, Any]] = None,
 ) -> ClipboardPasteResponse:
     target_session, target_org_id, user_id = _load_target_session_for_edit(target_session_id, request)
     if str(payload.context.source_session_id or "").strip() == str(target_session_id or "").strip():
@@ -763,7 +781,7 @@ def materialize_subprocess_payload_into_session(
             auxiliary_id_map[old_id] = _allocate_new_id(existing_ids, prefix=prefix, hint=old_id)
         remap_id_map = {**id_map, **edge_id_map, **auxiliary_id_map}
 
-        target_x, target_y = _target_origin(plane)
+        target_x, target_y = _resolve_target_origin(plane, placement_hint=placement_hint)
         plane_backed_collapsed = _uses_dedicated_subprocess_plane(payload)
         subprocess_plane = plane
         if plane_backed_collapsed and payload.root.di_bounds is not None:
