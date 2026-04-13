@@ -210,6 +210,63 @@ test("focusNode proxies to focusNodeOnInstance with same args", () => {
   ]);
 });
 
+test("focusNode bypasses editor direct runtime focus when centerInViewport=true", () => {
+  const runtimeFocusCalls = [];
+  const focusCalls = [];
+  const ctx = createCtx({
+    values: {
+      view: "editor",
+    },
+    refs: {
+      modelerRuntimeRef: {
+        current: {
+          zoomIn: () => false,
+          zoomOut: () => false,
+          fit: () => false,
+          focus: (nodeId) => {
+            runtimeFocusCalls.push(nodeId);
+            return true;
+          },
+        },
+      },
+    },
+    callbacks: {
+      focusNodeOnInstance: (inst, kind, nodeId, options) => {
+        focusCalls.push({ inst, kind, nodeId, options });
+        return kind === "editor";
+      },
+    },
+  });
+  const api = createBpmnStageImperativeApi(ctx);
+  const ok = api.focusNode("Task_2", {
+    source: "diagram_search_next",
+    centerInViewport: true,
+  });
+
+  assert.equal(ok, true);
+  assert.deepEqual(runtimeFocusCalls, []);
+  assert.deepEqual(focusCalls, [
+    {
+      inst: ctx.refs.viewerRef.current,
+      kind: "viewer",
+      nodeId: "Task_2",
+      options: {
+        source: "diagram_search_next",
+        centerInViewport: true,
+      },
+    },
+    {
+      inst: ctx.refs.modelerRef.current,
+      kind: "editor",
+      nodeId: "Task_2",
+      options: {
+        source: "diagram_search_next",
+        centerInViewport: true,
+      },
+    },
+  ]);
+});
+
 test("selectElements uses selection service and returns selected ids", () => {
   const selected = [];
   const selectionService = {
