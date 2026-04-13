@@ -42,6 +42,7 @@ export default function useProcessStagePanelState() {
   const [diagramActionLayersOpen, setDiagramActionLayersOpen] = useState(false);
   const [diagramActionRobotMetaOpen, setDiagramActionRobotMetaOpen] = useState(false);
   const [diagramActionQualityOpen, setDiagramActionQualityOpen] = useState(false);
+  const [diagramActionSearchOpen, setDiagramActionSearchOpen] = useState(false);
   const [diagramActionOverflowOpen, setDiagramActionOverflowOpen] = useState(false);
   const [drawioSelectedElementId, setDrawioSelectedElementId] = useState("");
   const [pathHighlightEnabled, setPathHighlightEnabled] = useState(false);
@@ -76,6 +77,7 @@ export default function useProcessStagePanelState() {
     setDiagramActionLayersOpen(false);
     setDiagramActionRobotMetaOpen(false);
     setDiagramActionQualityOpen(false);
+    setDiagramActionSearchOpen(false);
     setDiagramActionOverflowOpen(false);
     setDrawioSelectedElementId("");
     setPathHighlightEnabled(false);
@@ -125,6 +127,8 @@ export default function useProcessStagePanelState() {
     setDiagramActionRobotMetaOpen,
     diagramActionQualityOpen,
     setDiagramActionQualityOpen,
+    diagramActionSearchOpen,
+    setDiagramActionSearchOpen,
     diagramActionOverflowOpen,
     setDiagramActionOverflowOpen,
     drawioSelectedElementId,
