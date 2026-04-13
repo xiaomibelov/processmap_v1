@@ -1274,6 +1274,10 @@ const BpmnStage = forwardRef(function BpmnStage({
     viewer: createPlaybackDecorRuntimeState(),
     editor: createPlaybackDecorRuntimeState(),
   });
+  const searchHighlightMarkerStateRef = useRef({
+    viewer: { passive: [], active: "" },
+    editor: { passive: [], active: "" },
+  });
   const playbackBboxCacheRef = useRef({ viewer: {}, editor: {} });
   const focusMarkerStateRef = useRef({ viewer: [], editor: [] });
   const aiQuestionPanelStateRef = useRef({
@@ -2071,6 +2075,121 @@ const BpmnStage = forwardRef(function BpmnStage({
       applySelectionFocusDecor(inst, kind, el);
       selectedMarkerStateRef.current[kind] = eid;
     } catch {
+    }
+  }
+
+  function isSearchTargetElement(element) {
+    if (!element) return false;
+    if (String(element?.type || "").toLowerCase() === "label") return false;
+    return isShapeElement(element) || isConnectionElement(element);
+  }
+
+  function listSearchableElementsOnInstance(inst) {
+    if (!inst) return [];
+    try {
+      const registry = inst.get("elementRegistry");
+      const all = asArray(registry?.getAll?.());
+      const labelByTargetId = new Map();
+      all.forEach((elementRaw) => {
+        const element = asObject(elementRaw);
+        if (String(element?.type || "").toLowerCase() !== "label") return;
+        const targetId = toText(element?.labelTarget?.id || element?.businessObject?.labelTarget?.id);
+        if (!targetId || labelByTargetId.has(targetId)) return;
+        const labelText = toText(element?.businessObject?.name || element?.businessObject?.text || element?.businessObject?.label);
+        if (!labelText) return;
+        labelByTargetId.set(targetId, labelText);
+      });
+
+      const result = [];
+      const seen = new Set();
+      all.forEach((elementRaw) => {
+        const element = asObject(elementRaw);
+        if (!isSearchTargetElement(element)) return;
+        const elementId = toText(element?.id);
+        if (!elementId || seen.has(elementId)) return;
+        const bo = asObject(element?.businessObject);
+        const type = toText(bo?.$type || element?.type);
+        if (!type.toLowerCase().startsWith("bpmn:")) return;
+        const name = toText(bo?.name);
+        const label = toText(
+          labelByTargetId.get(elementId)
+            || element?.label?.businessObject?.name
+            || element?.label?.businessObject?.text
+            || element?.businessObject?.label
+            || element?.businessObject?.text,
+        );
+        result.push({
+          elementId,
+          name,
+          label,
+          title: toText(label || name || elementId) || elementId,
+          type,
+          typeLabel: toText(type.split(":").pop()) || type,
+        });
+        seen.add(elementId);
+      });
+      return result;
+    } catch {
+      return [];
+    }
+  }
+
+  function clearSearchHighlightsOnInstance(inst, kind) {
+    if (!inst) return false;
+    const mode = kind === "editor" ? "editor" : "viewer";
+    const runtime = asObject(searchHighlightMarkerStateRef.current[mode]);
+    try {
+      const canvas = inst.get("canvas");
+      asArray(runtime.passive).forEach((elementId) => {
+        const eid = toText(elementId);
+        if (!eid) return;
+        canvas.removeMarker(eid, "fpcSearchMatch");
+      });
+      const activeId = toText(runtime.active);
+      if (activeId) {
+        canvas.removeMarker(activeId, "fpcSearchActive");
+      }
+      searchHighlightMarkerStateRef.current[mode] = { passive: [], active: "" };
+      return true;
+    } catch {
+      searchHighlightMarkerStateRef.current[mode] = { passive: [], active: "" };
+      return false;
+    }
+  }
+
+  function setSearchHighlightsOnInstance(inst, kind, payload = {}) {
+    if (!inst) return false;
+    const mode = kind === "editor" ? "editor" : "viewer";
+    clearSearchHighlightsOnInstance(inst, mode);
+    try {
+      const canvas = inst.get("canvas");
+      const registry = inst.get("elementRegistry");
+      const ids = Array.from(new Set(
+        asArray(payload?.matchElementIds)
+          .map((idRaw) => toText(idRaw))
+          .filter(Boolean),
+      ));
+      const passive = [];
+      ids.forEach((elementId) => {
+        const element = registry?.get?.(elementId);
+        if (!isSearchTargetElement(element)) return;
+        canvas.addMarker(elementId, "fpcSearchMatch");
+        passive.push(elementId);
+      });
+      const activeIdRaw = toText(payload?.activeElementId);
+      const activeElement = activeIdRaw ? registry?.get?.(activeIdRaw) : null;
+      const activeId = isSearchTargetElement(activeElement) ? activeIdRaw : "";
+      if (activeId) {
+        canvas.addMarker(activeId, "fpcSearchActive");
+      }
+      searchHighlightMarkerStateRef.current[mode] = {
+        passive,
+        active: activeId,
+      };
+      return true;
+    } catch {
+      searchHighlightMarkerStateRef.current[mode] = { passive: [], active: "" };
+      return false;
     }
   }
 
@@ -5176,6 +5295,9 @@ const BpmnStage = forwardRef(function BpmnStage({
         apiDeleteBpmnXml,
         applyBottleneckDecor,
         clearBottleneckDecor,
+        listSearchableElementsOnInstance,
+        setSearchHighlightsOnInstance,
+        clearSearchHighlightsOnInstance,
         focusNodeOnInstance,
         preparePlaybackCache,
         buildExecutionGraphFromInstance,

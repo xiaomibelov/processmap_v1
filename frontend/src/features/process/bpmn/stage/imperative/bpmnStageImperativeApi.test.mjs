@@ -83,6 +83,9 @@ test("createBpmnStageImperativeApi exposes expected public methods", () => {
     "saveXmlDraft",
     "resetBackend",
     "focusNode",
+    "listSearchableElements",
+    "setSearchHighlights",
+    "clearSearchHighlights",
     "setCanvasViewboxX",
     "getSelectedElementIds",
     "selectElements",
@@ -95,6 +98,93 @@ test("createBpmnStageImperativeApi exposes expected public methods", () => {
     assert.equal(typeof api[name], "function", `${name} should be a function`);
   });
   assert.equal("executeDiagramContextAction" in api, false);
+});
+
+test("listSearchableElements reads semantic BPMN elements and skips label nodes", () => {
+  const registry = {
+    getAll() {
+      return [
+        {
+          id: "Task_1",
+          type: "bpmn:Task",
+          x: 100,
+          y: 80,
+          width: 120,
+          height: 80,
+          businessObject: { $type: "bpmn:Task", name: "Approve" },
+        },
+        { id: "Flow_1", type: "bpmn:SequenceFlow", waypoints: [{ x: 0, y: 0 }, { x: 10, y: 10 }], businessObject: { $type: "bpmn:SequenceFlow", name: "to done" } },
+        { id: "Label_Task_1", type: "label", labelTarget: { id: "Task_1" }, businessObject: { text: "Approve label" } },
+      ];
+    },
+  };
+  const viewer = {
+    id: "viewer",
+    get(service) {
+      if (service === "elementRegistry") return registry;
+      return null;
+    },
+  };
+  const api = createBpmnStageImperativeApi(createCtx({
+    refs: {
+      viewerRef: { current: viewer },
+      modelerRef: { current: null },
+    },
+    values: { view: "viewer" },
+  }));
+
+  const rows = api.listSearchableElements({ mode: "viewer" });
+  assert.deepEqual(rows.map((row) => row.elementId), ["Task_1", "Flow_1"]);
+  assert.equal(rows[0].label, "Approve label");
+  assert.equal(rows[1].typeLabel, "SequenceFlow");
+});
+
+test("setSearchHighlights and clearSearchHighlights proxy to instance callbacks", () => {
+  const calls = [];
+  const clearCalls = [];
+  const viewer = { id: "viewer" };
+  const modeler = { id: "modeler" };
+  const api = createBpmnStageImperativeApi(createCtx({
+    refs: {
+      viewerRef: { current: viewer },
+      modelerRef: { current: modeler },
+    },
+    callbacks: {
+      setSearchHighlightsOnInstance: (inst, kind, payload) => {
+        calls.push({ inst, kind, payload });
+        return true;
+      },
+      clearSearchHighlightsOnInstance: (inst, kind) => {
+        clearCalls.push({ inst, kind });
+        return true;
+      },
+    },
+  }));
+
+  const setOk = api.setSearchHighlights({
+    matchElementIds: ["Task_1", "Task_2"],
+    activeElementId: "Task_2",
+  });
+  const clearOk = api.clearSearchHighlights();
+
+  assert.equal(setOk, true);
+  assert.equal(clearOk, true);
+  assert.deepEqual(calls, [
+    {
+      inst: viewer,
+      kind: "viewer",
+      payload: { matchElementIds: ["Task_1", "Task_2"], activeElementId: "Task_2" },
+    },
+    {
+      inst: modeler,
+      kind: "editor",
+      payload: { matchElementIds: ["Task_1", "Task_2"], activeElementId: "Task_2" },
+    },
+  ]);
+  assert.deepEqual(clearCalls, [
+    { inst: viewer, kind: "viewer" },
+    { inst: modeler, kind: "editor" },
+  ]);
 });
 
 test("focusNode proxies to focusNodeOnInstance with same args", () => {

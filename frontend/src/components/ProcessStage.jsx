@@ -96,6 +96,7 @@ import useBpmnSubprocessPreview from "../features/process/stage/hooks/useBpmnSub
 import useProcessStageDrawio from "../features/process/stage/orchestration/useProcessStageDrawio";
 import useProcessStageHybrid from "../features/process/stage/orchestration/useProcessStageHybrid";
 import useProcessStageLocalState from "../features/process/stage/orchestration/state/useProcessStageLocalState";
+import useDiagramSearchController from "../features/process/stage/search/useDiagramSearchController";
 import {
   buildTopPanelsView,
   buildAttentionPanelsView,
@@ -271,6 +272,7 @@ export default function ProcessStage({
   const diagramLayersPopoverRef = useRef(null);
   const diagramRobotMetaPopoverRef = useRef(null);
   const diagramRobotMetaListRef = useRef(null);
+  const diagramSearchPopoverRef = useRef(null);
   const diagramQualityPopoverRef = useRef(null);
   const diagramOverflowPopoverRef = useRef(null);
   const bpmnStageHostRef = useRef(null);
@@ -301,6 +303,7 @@ export default function ProcessStage({
   const [latestBpmnVersionHead, setLatestBpmnVersionHead] = useState(null);
   const [latestBpmnVersionHeadStatus, setLatestBpmnVersionHeadStatus] = useState("idle");
   const [diagramUndoRedoState, setDiagramUndoRedoState] = useState({ canUndo: false, canRedo: false, ready: false });
+  const [diagramSearchMutationVersion, setDiagramSearchMutationVersion] = useState(0);
 
   const {
     genBusy,
@@ -406,6 +409,8 @@ export default function ProcessStage({
     setDiagramActionRobotMetaOpen,
     diagramActionQualityOpen,
     setDiagramActionQualityOpen,
+    diagramActionSearchOpen,
+    setDiagramActionSearchOpen,
     diagramActionOverflowOpen,
     setDiagramActionOverflowOpen,
     drawioSelectedElementId,
@@ -851,10 +856,23 @@ export default function ProcessStage({
     const kind = String(mutation?.kind || mutation || "").trim().toLowerCase();
     if (kind.startsWith("diagram.") || kind.startsWith("xml.")) {
       setSaveDirtyHint(true);
+      setDiagramSearchMutationVersion((prev) => prev + 1);
       refreshDiagramUndoRedoState();
     }
     queueDiagramMutationRaw(mutation);
   }, [queueDiagramMutationRaw, refreshDiagramUndoRedoState]);
+
+  const diagramSearch = useDiagramSearchController({
+    bpmnRef,
+    requestDiagramFocus,
+    sessionId: sid,
+    reloadKey,
+    diagramXml: draft?.bpmn_xml,
+    mutationVersion: diagramSearchMutationVersion,
+    isOpen: diagramActionSearchOpen,
+    setOpen: setDiagramActionSearchOpen,
+    isEnabled: hasSession && tab === "diagram" && !isInterview,
+  });
 
   useEffect(() => {
     if (!hasSession || tab !== "diagram") {
@@ -2267,6 +2285,8 @@ export default function ProcessStage({
       setDiagramActionLayersOpen,
       diagramActionRobotMetaOpen,
       setDiagramActionRobotMetaOpen,
+      diagramActionSearchOpen,
+      setDiagramActionSearchOpen,
       robotMetaListOpen,
       setRobotMetaListOpen,
       setRobotMetaListSearch,
@@ -2284,6 +2304,7 @@ export default function ProcessStage({
       diagramLayersPopoverRef,
       diagramRobotMetaPopoverRef,
       diagramRobotMetaListRef,
+      diagramSearchPopoverRef,
       diagramQualityPopoverRef,
       diagramOverflowPopoverRef,
       hybridLayerOverlayRef,
@@ -4827,6 +4848,8 @@ export default function ProcessStage({
                     setDiagramActionRobotMetaOpen,
                     setRobotMetaListOpen,
                     setDiagramActionQualityOpen,
+                    diagramActionSearchOpen,
+                    setDiagramActionSearchOpen,
                     setDiagramActionOverflowOpen,
                     diagramFocusMode,
                     setDiagramFocusMode,
@@ -4883,6 +4906,14 @@ export default function ProcessStage({
                     isBpmnTab,
                     diagramActionPathOpen,
                     diagramPathPopoverRef,
+                    diagramSearchPopoverRef,
+                    diagramSearchQuery: diagramSearch.query,
+                    setDiagramSearchQuery: diagramSearch.setQuery,
+                    diagramSearchResults: diagramSearch.results,
+                    diagramSearchActiveIndex: diagramSearch.activeIndex,
+                    handleDiagramSearchPrev: diagramSearch.prev,
+                    handleDiagramSearchNext: diagramSearch.next,
+                    selectDiagramSearchResult: diagramSearch.selectIndex,
                     hasPathHighlightData,
                     setPathHighlightEnabled,
                     availablePathTiers,

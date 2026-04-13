@@ -221,6 +221,19 @@ const PATHS_QUALITY_KEYS = [
   "focusRobotMetaItem",
 ];
 
+const SEARCH_KEYS = [
+  "diagramActionSearchOpen",
+  "setDiagramActionSearchOpen",
+  "diagramSearchPopoverRef",
+  "diagramSearchQuery",
+  "setDiagramSearchQuery",
+  "diagramSearchResults",
+  "diagramSearchActiveIndex",
+  "handleDiagramSearchPrev",
+  "handleDiagramSearchNext",
+  "selectDiagramSearchResult",
+];
+
 const REPORTS_TEMPLATES_PROBLEMS_KEYS = [
   "templatesMenuOpen",
   "setTemplatesMenuOpen",
@@ -298,6 +311,10 @@ export function buildDiagramSecondaryActionsSectionView(view = {}) {
   return pick(view, REPORTS_TEMPLATES_PROBLEMS_KEYS);
 }
 
+export function buildDiagramSearchSectionView(view = {}) {
+  return pick(view, SEARCH_KEYS);
+}
+
 export function buildDiagramOverflowSectionView(view = {}) {
   return pick(view, OVERFLOW_MODES_KEYS);
 }
@@ -309,6 +326,7 @@ export default function buildDiagramControlsSections(view = {}) {
     playbackAutopass: buildDiagramPlaybackSectionView(view),
     pathsQuality: buildDiagramPathsQualitySectionView(view),
     reportsTemplatesProblems: buildDiagramSecondaryActionsSectionView(view),
+    search: buildDiagramSearchSectionView(view),
     overflowModes: buildDiagramOverflowSectionView(view),
   };
 }

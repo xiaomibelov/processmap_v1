@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import LayersPopover from "../components/LayersPopover";
 import TemplatesBottomMenu from "../../../templates/ui/TemplatesBottomMenu";
 import GatewaysPanel from "../../playback/ui/GatewaysPanel";
+import DiagramSearchPopover from "./DiagramSearchPopover";
 
 function ensureObject(value) {
   return value && typeof value === "object" ? value : {};
@@ -16,6 +17,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
   const playbackAutopassSection = useSectionedContract ? ensureObject(sections.playbackAutopass) : legacyView;
   const pathsQualitySection = useSectionedContract ? ensureObject(sections.pathsQuality) : legacyView;
   const reportsTemplatesProblemsSection = useSectionedContract ? ensureObject(sections.reportsTemplatesProblems) : legacyView;
+  const searchSection = useSectionedContract ? ensureObject(sections.search) : legacyView;
   const overflowModesSection = useSectionedContract ? ensureObject(sections.overflowModes) : legacyView;
 
   const {
@@ -241,11 +243,25 @@ export default function ProcessStageDiagramControls({ view = {} }) {
   } = drawioLayersSection;
 
   const {
+    diagramActionSearchOpen,
+    setDiagramActionSearchOpen,
+    diagramSearchPopoverRef,
+    diagramSearchQuery,
+    setDiagramSearchQuery,
+    diagramSearchResults,
+    diagramSearchActiveIndex,
+    handleDiagramSearchPrev,
+    handleDiagramSearchNext,
+    selectDiagramSearchResult,
+  } = searchSection;
+
+  const {
     diagramOverflowPopoverRef,
     robotMetaOverlayEnabled,
     setRobotMetaOverlayEnabled,
     setRobotMetaOverlayFilters,
   } = overflowModesSection;
+  const setSearchOpenSafe = typeof setDiagramActionSearchOpen === "function" ? setDiagramActionSearchOpen : () => {};
 
   const autoPassState = asObject(autoPassUi);
   const autoPassStatus = toText(autoPassState?.status).toLowerCase();
@@ -419,6 +435,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     setDiagramActionPlaybackOpen(false);
     setDiagramActionLayersOpen(false);
     setDiagramActionRobotMetaOpen(false);
+    setSearchOpenSafe(false);
     setRobotMetaListOpen(false);
     setDiagramActionQualityOpen(false);
     setDiagramActionOverflowOpen(false);
@@ -490,6 +507,19 @@ export default function ProcessStageDiagramControls({ view = {} }) {
           </button>
         </div>
         <div className="diagramActionToolbarGroup">
+          <button
+            type="button"
+            className={`secondaryBtn diagramActionBtn ${diagramActionSearchOpen ? "ring-1 ring-accent/60" : ""}`}
+            onClick={() => {
+              const next = !diagramActionSearchOpen;
+              closeDiagramPopovers();
+              setSearchOpenSafe(next);
+            }}
+            title="Поиск элементов диаграммы"
+            data-testid="diagram-action-search"
+          >
+            Поиск
+          </button>
           <button
             type="button"
             className={`secondaryBtn diagramActionBtn ${diagramFocusMode ? "ring-1 ring-accent/60" : ""}`}
@@ -793,6 +823,19 @@ export default function ProcessStageDiagramControls({ view = {} }) {
           ) : null}
         </div>
       ) : null}
+
+      <DiagramSearchPopover
+        open={diagramActionSearchOpen}
+        popoverRef={diagramSearchPopoverRef}
+        query={diagramSearchQuery}
+        onQueryChange={setDiagramSearchQuery}
+        results={diagramSearchResults}
+        activeIndex={Number.isFinite(Number(diagramSearchActiveIndex)) ? Number(diagramSearchActiveIndex) : -1}
+        onPrev={handleDiagramSearchPrev}
+        onNext={handleDiagramSearchNext}
+        onSelect={selectDiagramSearchResult}
+        onClose={() => setSearchOpenSafe(false)}
+      />
 
       {diagramActionPlaybackOpen ? (
         <div
