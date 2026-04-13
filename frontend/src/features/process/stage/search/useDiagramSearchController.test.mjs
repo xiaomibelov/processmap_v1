@@ -239,8 +239,9 @@ test("useDiagramSearchController supports properties mode with active-only highl
           elementTitle: "Call Worker",
           elementType: "bpmn:ServiceTask",
           elementTypeLabel: "ServiceTask",
-          propertyName: "topic",
-          propertyValue: "inventory",
+          propertyName: "container_tara",
+          propertyValue: "Кастрюля",
+          sourcePath: "extensionElements.values[0].name/value",
         },
         {
           searchId: "Task_B::prop_0",
@@ -286,7 +287,7 @@ test("useDiagramSearchController supports properties mode with active-only highl
       latest.setMode("properties");
     });
     await act(async () => {
-      latest.setQuery("inv");
+      latest.setQuery("container_tara");
     });
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 16));
@@ -295,11 +296,20 @@ test("useDiagramSearchController supports properties mode with active-only highl
     assert.equal(latest.mode, "properties");
     assert.equal(latest.results.length, 1);
     assert.equal(latest.activeResult?.elementId, "Task_A");
-    assert.equal(latest.activeResult?.propertyName, "topic");
+    assert.equal(latest.activeResult?.propertyName, "container_tara");
     assert.deepEqual(highlightCalls.at(-1), {
       matchElementIds: [],
       activeElementId: "Task_A",
     });
+
+    await act(async () => {
+      latest.setQuery("Кастрюля");
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 16));
+    });
+    assert.equal(latest.results.length, 1);
+    assert.equal(latest.activeResult?.propertyValue, "Кастрюля");
 
     await act(async () => {
       latest.setQuery("r");
