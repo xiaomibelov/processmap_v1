@@ -10,6 +10,7 @@ import {
 } from "./viewportScrubberMath.js";
 
 const DEFAULT_MIN_THUMB_WIDTH_PX = 28;
+const DEFAULT_KEYBOARD_STEP_RATIO = 0.12;
 const EMPTY_RANGE = Object.freeze({
   contentMinX: 0,
   contentWidth: 0,
@@ -35,6 +36,38 @@ function asObject(value) {
 function toFiniteNumber(valueRaw, fallback = 0) {
   const value = Number(valueRaw);
   return Number.isFinite(value) ? value : fallback;
+}
+
+export function resolveViewportScrubberKeyboardTargetX(
+  rangeRaw = {},
+  currentViewboxXRaw = 0,
+  key = "",
+  options = {},
+) {
+  const range = asObject(rangeRaw);
+  if (range.canScroll !== true) return null;
+
+  const minX = toFiniteNumber(range.contentMinX, 0);
+  const maxX = toFiniteNumber(range.maxViewboxX, minX);
+  const currentX = clampNumber(toFiniteNumber(currentViewboxXRaw, minX), minX, maxX);
+  const viewboxWidth = Math.max(0, toFiniteNumber(range.viewboxWidth, 0));
+
+  const fallbackStep = Math.max(24, viewboxWidth * DEFAULT_KEYBOARD_STEP_RATIO);
+  const rawStep = toFiniteNumber(options.step, fallbackStep);
+  const step = Math.max(8, rawStep);
+
+  switch (String(key || "")) {
+    case "ArrowLeft":
+      return clampNumber(currentX - step, minX, maxX);
+    case "ArrowRight":
+      return clampNumber(currentX + step, minX, maxX);
+    case "Home":
+      return minX;
+    case "End":
+      return maxX;
+    default:
+      return null;
+  }
 }
 
 function normalizeSnapshot(snapshotRaw = {}) {
@@ -251,6 +284,36 @@ export default function useViewportScrubberModel({
     thumbRef.current = node instanceof Element ? node : null;
   }, []);
 
+  const onThumbKeyDown = useCallback((event) => {
+    if (!active) return;
+    if (viewStateRef.current.canScroll !== true) return;
+
+    const key = String(event?.key || "");
+    const pendingX = toFiniteNumber(
+      pendingViewboxXRef.current,
+      toFiniteNumber(rangeRef.current?.viewboxX, 0),
+    );
+
+    const nextX = resolveViewportScrubberKeyboardTargetX(
+      rangeRef.current,
+      pendingX,
+      key,
+    );
+    if (!Number.isFinite(nextX)) return;
+
+    event.preventDefault();
+    scheduleSetViewboxX(nextX);
+  }, [active, scheduleSetViewboxX]);
+
+  const travelWidth = Math.max(0, toFiniteNumber(viewState.range?.travelWidth, 0));
+  const progressFraction = travelWidth > 0
+    ? clampNumber(
+      (toFiniteNumber(viewState.range?.viewboxX, 0) - toFiniteNumber(viewState.range?.contentMinX, 0)) / travelWidth,
+      0,
+      1,
+    )
+    : 0;
+
   useEffect(() => {
     if (!active) {
       stopDrag();
@@ -323,6 +386,13 @@ export default function useViewportScrubberModel({
       width: `${viewState.thumbWidthPercent}%`,
       left: `${viewState.thumbLeftPercent}%`,
     },
+    thumbAria: {
+      valueMin: 0,
+      valueMax: 100,
+      valueNow: Math.round(progressFraction * 100),
+      valueText: `${Math.round(progressFraction * 100)}%`,
+    },
+    onThumbKeyDown,
     setTrackRef,
     setThumbRef,
     refreshFromCanvas,
