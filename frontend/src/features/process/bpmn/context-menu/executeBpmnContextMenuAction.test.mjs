@@ -954,9 +954,51 @@ test("paste uses backend clipboard when target tab has no local snapshot", async
   assert.equal(result.backendClipboard, true);
   assert.equal(result.createdId, "Task_Pasted_1");
   assert.equal(result.clipboardItemType, "bpmn_task");
-  assert.deepEqual(backendCalls, [{ sessionId: "Session_B" }]);
+  assert.deepEqual(backendCalls, [{ sessionId: "Session_B", placement: null }]);
   assert.equal(calls.length, 0);
   assert.equal(mutationEvents[0]?.payload?.source, "backend_clipboard");
+});
+
+test("paste passes cursor placement hint to backend clipboard when client point is provided", async () => {
+  const root = {
+    id: "Process_1",
+    type: "bpmn:Process",
+    businessObject: { $type: "bpmn:Process", flowElements: [] },
+    di: { planeElement: [] },
+    children: [],
+  };
+  const backendCalls = [];
+  const { inst } = createStubModeler({ root, registryItems: [root] });
+
+  const result = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "paste",
+      sessionId: "Session_B",
+      target: { kind: "canvas" },
+      clientX: 410,
+      clientY: 220,
+    },
+    modelerRef: { current: inst },
+    backendClipboard: {
+      async pasteIntoSession(payload) {
+        backendCalls.push(payload);
+        return {
+          ok: true,
+          clipboard_item_type: "bpmn_task",
+          schema_version: "pm_bpmn_task_clipboard_v1",
+          pasted_root_element_id: "Task_Pasted_2",
+          created_node_ids: ["Task_Pasted_2"],
+          created_edge_ids: [],
+        };
+      },
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(backendCalls, [{
+    sessionId: "Session_B",
+    placement: { x: 300, y: 150 },
+  }]);
 });
 
 test("backend clipboard empty state returns explicit paste failure without local snapshot", async () => {

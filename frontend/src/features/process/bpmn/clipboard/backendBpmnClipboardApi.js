@@ -67,6 +67,19 @@ function normalizeOkResult(resultRaw, fallback = {}) {
   };
 }
 
+function asFiniteNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizePastePlacement(placementRaw) {
+  const placement = isObject(placementRaw) ? placementRaw : {};
+  const x = asFiniteNumber(placement.x);
+  const y = asFiniteNumber(placement.y);
+  if (x === null || y === null) return null;
+  return { x, y };
+}
+
 export async function copyBackendBpmnClipboard({ sessionId = "", elementId = "" } = {}) {
   const sid = toText(sessionId);
   const eid = toText(elementId);
@@ -87,14 +100,18 @@ export async function readBackendBpmnClipboard() {
   }), { empty: true, item: null });
 }
 
-export async function pasteBackendBpmnClipboard({ sessionId = "" } = {}) {
+export async function pasteBackendBpmnClipboard({ sessionId = "", placement = null } = {}) {
   const sid = toText(sessionId);
   if (!sid) return { ok: false, status: 0, error: "missing_session_id" };
+  const body = { session_id: sid };
+  const normalizedPlacement = normalizePastePlacement(placement);
+  if (normalizedPlacement) {
+    body.x = normalizedPlacement.x;
+    body.y = normalizedPlacement.y;
+  }
   return normalizeOkResult(await apiRequest(apiRoutes.clipboard.bpmnPaste(), {
     method: "POST",
-    body: {
-      session_id: sid,
-    },
+    body,
   }));
 }
 
