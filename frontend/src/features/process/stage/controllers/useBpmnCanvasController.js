@@ -33,6 +33,33 @@ function normalizeViewbox(raw) {
   };
 }
 
+function normalizeCanvasSnapshot(raw) {
+  const snapshot = asObject(raw);
+  const viewbox = normalizeViewbox(asObject(snapshot.viewbox));
+  const innerRaw = asObject(asObject(snapshot.viewbox).inner);
+  const outerRaw = asObject(asObject(snapshot.viewbox).outer);
+  const width = Math.max(0, toNumber(snapshot.width, 0));
+  const height = Math.max(0, toNumber(snapshot.height, 0));
+  return {
+    width,
+    height,
+    zoom: Math.max(0, toNumber(snapshot.zoom, viewbox.scale)),
+    viewbox: {
+      ...viewbox,
+      inner: {
+        x: toNumber(innerRaw.x, viewbox.x),
+        y: toNumber(innerRaw.y, viewbox.y),
+        width: Math.max(viewbox.width, toNumber(innerRaw.width, viewbox.width)),
+        height: Math.max(viewbox.height, toNumber(innerRaw.height, viewbox.height)),
+      },
+      outer: {
+        width: Math.max(0, toNumber(outerRaw.width, width)),
+        height: Math.max(0, toNumber(outerRaw.height, height)),
+      },
+    },
+  };
+}
+
 function viewboxSig(viewboxRaw) {
   const viewbox = normalizeViewbox(viewboxRaw);
   return [
@@ -78,12 +105,12 @@ export default function useBpmnCanvasController({
   }, [bpmnRef, bpmnStageHostRef]);
 
   const getViewbox = useCallback(() => {
-    const snapshot = asObject(bpmnRef?.current?.getCanvasSnapshot?.({ mode: "editor" }));
-    const fromSnapshot = {
-      ...asObject(snapshot.viewbox),
-      scale: snapshot.zoom ?? asObject(snapshot.viewbox).scale,
-    };
-    return normalizeViewbox(fromSnapshot);
+    const snapshot = normalizeCanvasSnapshot(bpmnRef?.current?.getCanvasSnapshot?.({ mode: "editor" }));
+    return normalizeViewbox(snapshot.viewbox);
+  }, [bpmnRef]);
+
+  const getViewportSnapshot = useCallback(() => {
+    return normalizeCanvasSnapshot(bpmnRef?.current?.getCanvasSnapshot?.());
   }, [bpmnRef]);
 
   const getElementBBox = useCallback((bpmnIdRaw) => {
@@ -148,11 +175,29 @@ export default function useBpmnCanvasController({
     };
   }, [bpmnRef, getViewbox]);
 
+  const setViewboxX = useCallback((nextXRaw, options = {}) => {
+    const nextX = Number(nextXRaw);
+    if (!Number.isFinite(nextX)) return false;
+    const setter = bpmnRef?.current?.setCanvasViewboxX;
+    if (typeof setter !== "function") return false;
+    return setter(nextX, { ...asObject(options) }) === true;
+  }, [bpmnRef]);
+
   return useMemo(() => ({
     getViewbox,
+    getViewportSnapshot,
     onViewboxChanged,
     getElementBBox,
     getElementAnchor,
     getCanvasContainerEl,
-  }), [getCanvasContainerEl, getElementAnchor, getElementBBox, getViewbox, onViewboxChanged]);
+    setViewboxX,
+  }), [
+    getCanvasContainerEl,
+    getElementAnchor,
+    getElementBBox,
+    getViewbox,
+    getViewportSnapshot,
+    onViewboxChanged,
+    setViewboxX,
+  ]);
 }
