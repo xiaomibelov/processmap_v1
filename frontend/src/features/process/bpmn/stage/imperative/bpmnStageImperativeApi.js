@@ -635,8 +635,11 @@ export function createBpmnStageImperativeApi(ctxBase) {
       const nid = String(nodeId || "").trim();
       if (!nid) return false;
       const markerClass = String(options?.markerClass || "").trim();
+      const centerInViewport = options?.centerInViewport === true;
       if (values.view === "editor") {
-        const direct = markerClass ? false : refs.modelerRuntimeRef?.current?.focus?.(nid);
+        const direct = markerClass || centerInViewport
+          ? false
+          : refs.modelerRuntimeRef?.current?.focus?.(nid);
         if (direct) return true;
       }
       const viewerOk = callbacks.focusNodeOnInstance?.(refs.viewerRef?.current, "viewer", nid, options);
