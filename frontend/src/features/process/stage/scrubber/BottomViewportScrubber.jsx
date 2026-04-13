@@ -1,4 +1,5 @@
 import useScrubberVisibilityPreference from "./useScrubberVisibilityPreference";
+import { resolveScrubberVisibilityState } from "./scrubberVisibilityState";
 import useViewportScrubberModel from "./useViewportScrubberModel";
 
 export default function BottomViewportScrubber({
@@ -8,11 +9,17 @@ export default function BottomViewportScrubber({
 } = {}) {
   const visibility = useScrubberVisibilityPreference();
   const scrubberModel = useViewportScrubberModel({
-    active: active && visibility.visible,
+    active,
     canvasApi,
   });
 
-  if (!active) return null;
+  const visibilityState = resolveScrubberVisibilityState({
+    active,
+    manualHidden: visibility.hidden,
+    canScroll: scrubberModel.canScroll,
+  });
+
+  if (visibilityState === "inactive") return null;
 
   const rightInset = avoidCoverageMinimap ? "min(340px, 46vw)" : "12px";
 
@@ -22,7 +29,7 @@ export default function BottomViewportScrubber({
       style={{ "--fpc-scrubber-right-inset": rightInset }}
       data-testid="bpmn-viewport-scrubber-layer"
     >
-      {visibility.visible ? (
+      {visibilityState === "interactive" ? (
         <div className="bpmnViewportScrubber" data-testid="bpmn-viewport-scrubber">
           <button
             type="button"
@@ -46,10 +53,10 @@ export default function BottomViewportScrubber({
           >
             <button
               type="button"
-              className={`bpmnViewportScrubberThumb ${scrubberModel.canScroll ? "" : "isDisabled"}`}
+              className="bpmnViewportScrubberThumb"
               style={scrubberModel.thumbStyle}
               ref={scrubberModel.setThumbRef}
-              disabled={!scrubberModel.canScroll}
+              disabled={false}
               role="slider"
               aria-orientation="horizontal"
               aria-keyshortcuts="ArrowLeft ArrowRight Home End"
@@ -63,6 +70,17 @@ export default function BottomViewportScrubber({
               data-testid="bpmn-viewport-scrubber-thumb"
             />
           </div>
+        </div>
+      ) : visibilityState === "auto-collapsed" ? (
+        <div
+          className="bpmnViewportScrubberAutoCollapsed"
+          role="status"
+          aria-live="polite"
+          title="Скрыто автоматически: горизонтальная навигация сейчас не нужна"
+          data-testid="bpmn-viewport-scrubber-auto-collapsed"
+        >
+          <span className="bpmnViewportScrubberControlIcon" aria-hidden="true">i</span>
+          <span className="bpmnViewportScrubberControlText">Scrubber auto-collapsed</span>
         </div>
       ) : (
         <button
