@@ -1,0 +1,69 @@
+import useScrubberVisibilityPreference from "./useScrubberVisibilityPreference";
+import useViewportScrubberModel from "./useViewportScrubberModel";
+
+export default function BottomViewportScrubber({
+  active = true,
+  canvasApi,
+  avoidCoverageMinimap = false,
+} = {}) {
+  const visibility = useScrubberVisibilityPreference();
+  const scrubberModel = useViewportScrubberModel({
+    active: active && visibility.visible,
+    canvasApi,
+  });
+
+  if (!active) return null;
+
+  const rightInset = avoidCoverageMinimap ? "min(340px, 46vw)" : "12px";
+
+  return (
+    <div
+      className="bpmnViewportScrubberLayer"
+      style={{ "--fpc-scrubber-right-inset": rightInset }}
+      data-testid="bpmn-viewport-scrubber-layer"
+    >
+      {visibility.visible ? (
+        <div className="bpmnViewportScrubber" data-testid="bpmn-viewport-scrubber">
+          <button
+            type="button"
+            className="bpmnViewportScrubberToggle"
+            onClick={visibility.hide}
+            title="Скрыть навигацию по области"
+            aria-label="Скрыть нижнюю навигацию"
+          >
+            Hide scrubber
+          </button>
+
+          <div
+            className={`bpmnViewportScrubberTrack ${scrubberModel.canScroll ? "isInteractive" : ""}`}
+            ref={scrubberModel.setTrackRef}
+            aria-label="Горизонтальная навигация по диаграмме"
+            data-testid="bpmn-viewport-scrubber-track"
+          >
+            <button
+              type="button"
+              className="bpmnViewportScrubberThumb"
+              style={scrubberModel.thumbStyle}
+              ref={scrubberModel.setThumbRef}
+              disabled={!scrubberModel.canScroll}
+              data-scrubber-thumb="true"
+              aria-label="Перетащить видимую область"
+              data-testid="bpmn-viewport-scrubber-thumb"
+            />
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="bpmnViewportScrubberHandle"
+          onClick={visibility.show}
+          title="Показать нижнюю навигацию"
+          aria-label="Показать нижнюю навигацию"
+          data-testid="bpmn-viewport-scrubber-show"
+        >
+          Show scrubber
+        </button>
+      )}
+    </div>
+  );
+}

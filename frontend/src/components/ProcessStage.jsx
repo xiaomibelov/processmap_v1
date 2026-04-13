@@ -109,6 +109,7 @@ import ProcessDialogs from "../features/process/stage/ui/ProcessDialogs";
 import ProcessStageHeader from "../features/process/stage/ui/ProcessStageHeader";
 import ProcessStageDiagramControls from "../features/process/stage/ui/ProcessStageDiagramControls";
 import ProcessDiagramOverlayLayers from "../features/process/stage/ui/ProcessDiagramOverlayLayers";
+import BottomViewportScrubber from "../features/process/stage/scrubber/BottomViewportScrubber";
 import BpmnPropertiesOverlayModal from "../features/process/bpmn/context-menu/properties-overlay/BpmnPropertiesOverlayModal";
 import {
   formatRevisionAuthor,
@@ -5045,6 +5046,11 @@ export default function ProcessStage({
                   })}
                 />
                 <ProcessDiagramOverlayLayers {...diagramOverlayLayersProps} />
+                <BottomViewportScrubber
+                  active={tab === "diagram" && !isInterview}
+                  canvasApi={bpmnCanvasApi}
+                  avoidCoverageMinimap={tab === "diagram" && isCoverageMode}
+                />
                 {tab === "diagram" && isCoverageMode ? (
                   <div className="coverageMiniMap" data-testid="coverage-minimap">
                     <div className="coverageMiniMapHead">

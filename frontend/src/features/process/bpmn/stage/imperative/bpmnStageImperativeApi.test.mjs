@@ -83,6 +83,7 @@ test("createBpmnStageImperativeApi exposes expected public methods", () => {
     "saveXmlDraft",
     "resetBackend",
     "focusNode",
+    "setCanvasViewboxX",
     "getSelectedElementIds",
     "selectElements",
     "setPlaybackFrame",
@@ -332,4 +333,54 @@ test("undo and redo route through the same private context-action executor bound
   ]);
   assert.deepEqual(undoResult, { ok: true, changedIds: [] });
   assert.deepEqual(redoResult, { ok: true, changedIds: [] });
+});
+
+test("setCanvasViewboxX clamps target x into canvas inner range", () => {
+  const viewboxCalls = [];
+  const canvas = {
+    viewbox(next) {
+      if (next && typeof next === "object") {
+        viewboxCalls.push(next);
+        return next;
+      }
+      return {
+        x: 120,
+        y: 40,
+        width: 300,
+        height: 200,
+        inner: {
+          x: 0,
+          width: 1000,
+        },
+      };
+    },
+  };
+  const viewer = {
+    id: "viewer",
+    get(service) {
+      if (service === "canvas") return canvas;
+      return null;
+    },
+  };
+  const userViewportTouchedRef = { current: false };
+  const api = createBpmnStageImperativeApi(createCtx({
+    refs: {
+      viewerRef: { current: viewer },
+      userViewportTouchedRef,
+    },
+    values: {
+      view: "viewer",
+    },
+  }));
+
+  const ok = api.setCanvasViewboxX(9999, { mode: "viewer" });
+
+  assert.equal(ok, true);
+  assert.deepEqual(viewboxCalls, [{
+    x: 700,
+    y: 40,
+    width: 300,
+    height: 200,
+  }]);
+  assert.equal(userViewportTouchedRef.current, true);
 });
