@@ -69,6 +69,7 @@ import { createBackendBpmnClipboardController } from "../../features/process/bpm
 import {
   canCopyBpmnElement,
 } from "../../features/process/bpmn/copy-paste/bpmnElementClipboard";
+import extractCamundaZeebePropertyEntriesFromBusinessObject from "../../features/process/stage/search/extractCamundaZeebePropertyEntries";
 
 import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-js.css";
@@ -2145,22 +2146,23 @@ const BpmnStage = forwardRef(function BpmnStage({
         const elementId = toText(elementRow?.elementId);
         if (!elementId) return;
         const runtimeElement = registry?.get?.(elementId);
-        const state = extractManagedCamundaExtensionStateFromBusinessObject(runtimeElement?.businessObject);
-        const extensionProperties = asArray(asObject(state?.properties).extensionProperties);
-        if (!extensionProperties.length) return;
+        const extensionEntries = extractCamundaZeebePropertyEntriesFromBusinessObject(runtimeElement?.businessObject);
+        if (!extensionEntries.length) return;
 
-        extensionProperties.forEach((propertyRaw, propertyIndex) => {
-          const propertyName = toText(propertyRaw?.name);
-          const propertyValue = toText(propertyRaw?.value);
+        extensionEntries.forEach((propertyRaw, propertyIndex) => {
+          const propertyName = toText(propertyRaw?.propertyName || propertyRaw?.name);
+          const propertyValue = toText(propertyRaw?.propertyValue || propertyRaw?.value);
+          const sourcePath = toText(propertyRaw?.sourcePath);
           if (!propertyName && !propertyValue) return;
           result.push({
-            searchId: `${elementId}::prop_${Math.max(0, Number(propertyIndex) || 0)}`,
+            searchId: `${elementId}::prop_${Math.max(0, Number(propertyIndex) || 0)}::${sourcePath || "entry"}`,
             elementId,
             elementTitle: toText(elementRow?.title) || elementId,
             elementType: toText(elementRow?.type),
             elementTypeLabel: toText(elementRow?.typeLabel),
             propertyName,
             propertyValue,
+            sourcePath,
             propertyIndex: Math.max(0, Number(propertyIndex) || 0),
           });
         });
