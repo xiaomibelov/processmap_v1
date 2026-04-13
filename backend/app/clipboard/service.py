@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi import Request
 
@@ -74,6 +75,18 @@ def _preview_from_payload(payload: ClipboardPayload, *, ttl_sec: int) -> Clipboa
         expires_at=copied_at + int(ttl_sec or 0),
     )
 
+def _normalize_paste_placement_hint(raw_hint: Any) -> Optional[Dict[str, float]]:
+    if not isinstance(raw_hint, dict):
+        return None
+    try:
+        x = float(raw_hint.get("x"))
+        y = float(raw_hint.get("y"))
+    except (TypeError, ValueError):
+        return None
+    if not (math.isfinite(x) and math.isfinite(y)):
+        return None
+    return {"x": x, "y": y}
+
 
 class ClipboardService:
     def __init__(self, *, store: Optional[ClipboardRedisStore] = None) -> None:
@@ -132,7 +145,13 @@ class ClipboardService:
             item=_preview_from_payload(payload, ttl_sec=clipboard_ttl_sec()),
         )
 
-    def paste_clipboard(self, *, session_id: str, request: Request) -> ClipboardPasteResponse:
+    def paste_clipboard(
+        self,
+        *,
+        session_id: str,
+        request: Request,
+        placement_hint: Optional[Dict[str, Any]] = None,
+    ) -> ClipboardPasteResponse:
         user_id, _is_admin = _require_user(request)
         active_org_id = str(request_active_org_id(request) or "").strip()
         raw_payload = self._store.get(user_id=user_id, org_id=active_org_id)
@@ -144,16 +163,19 @@ class ClipboardService:
             self._store.clear(user_id=user_id, org_id=active_org_id)
             raise ClipboardServiceError(422, "invalid_clipboard_payload", "invalid_clipboard_payload") from exc
 
+        normalized_placement_hint = _normalize_paste_placement_hint(placement_hint)
         paste_handlers = {
             CLIPBOARD_TASK_ITEM_TYPE: lambda p: materialize_task_payload_into_session(
                 payload=p,
                 target_session_id=session_id,
                 request=request,
+                placement_hint=normalized_placement_hint,
             ),
             CLIPBOARD_SUBPROCESS_ITEM_TYPE: lambda p: materialize_subprocess_payload_into_session(
                 payload=p,
                 target_session_id=session_id,
                 request=request,
+                placement_hint=normalized_placement_hint,
             ),
         }
         handler = paste_handlers.get(str(payload.clipboard_item_type or ""))

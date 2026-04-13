@@ -83,10 +83,10 @@ export function createBackendBpmnClipboardController({
       return result;
     },
 
-    async pasteIntoSession({ sessionId = "" } = {}) {
+    async pasteIntoSession({ sessionId = "", placement = null } = {}) {
       const sid = resolveSessionId(sessionId);
       if (!sid) return normalizeError({}, "missing_session_id");
-      const result = await client.paste({ sessionId: sid });
+      const result = await client.paste({ sessionId: sid, placement });
       if (!result?.ok) return normalizeError(result, "backend_clipboard_paste_failed");
       let refresh = null;
       if (typeof refreshAfterPaste === "function") {

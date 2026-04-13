@@ -75,6 +75,22 @@ test("backend clipboard API client respects read/paste/clear endpoint contracts"
   assert.equal(calls[2]?.method, "DELETE");
 });
 
+test("backend clipboard API client includes placement hint in paste request when provided", async () => {
+  const calls = installFetchStub({ ok: true });
+
+  await pasteBackendBpmnClipboard({
+    sessionId: "Session_B",
+    placement: { x: 312.4, y: 188.6 },
+  });
+  assert.equal(calls[0]?.url, "/api/clipboard/bpmn/paste");
+  assert.equal(calls[0]?.method, "POST");
+  assert.deepEqual(calls[0]?.body, {
+    session_id: "Session_B",
+    x: 312.4,
+    y: 188.6,
+  });
+});
+
 test("backend clipboard API client normalizes structured backend errors", async () => {
   installFetchStub({
     detail: {
