@@ -39,6 +39,8 @@ export default function BottomViewportScrubber({
             className={`bpmnViewportScrubberTrack ${scrubberModel.canScroll ? "isInteractive" : "isDisabled"}`}
             ref={scrubberModel.setTrackRef}
             aria-label="Горизонтальная навигация по диаграмме"
+            role="group"
+            aria-disabled={!scrubberModel.canScroll}
             title={scrubberModel.canScroll ? "Drag thumb or click track to move viewport" : "Entire diagram fits current viewport width"}
             data-testid="bpmn-viewport-scrubber-track"
           >
@@ -48,6 +50,14 @@ export default function BottomViewportScrubber({
               style={scrubberModel.thumbStyle}
               ref={scrubberModel.setThumbRef}
               disabled={!scrubberModel.canScroll}
+              role="slider"
+              aria-orientation="horizontal"
+              aria-keyshortcuts="ArrowLeft ArrowRight Home End"
+              aria-valuemin={scrubberModel.thumbAria.valueMin}
+              aria-valuemax={scrubberModel.thumbAria.valueMax}
+              aria-valuenow={scrubberModel.thumbAria.valueNow}
+              aria-valuetext={scrubberModel.thumbAria.valueText}
+              onKeyDown={scrubberModel.onThumbKeyDown}
               data-scrubber-thumb="true"
               aria-label="Перетащить видимую область"
               data-testid="bpmn-viewport-scrubber-thumb"
