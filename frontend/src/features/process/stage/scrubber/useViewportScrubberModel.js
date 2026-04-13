@@ -124,6 +124,8 @@ export default function useViewportScrubberModel({
   minThumbWidthPx = DEFAULT_MIN_THUMB_WIDTH_PX,
 } = {}) {
   const [viewState, setViewState] = useState(EMPTY_VIEW_STATE);
+  const [trackNode, setTrackNode] = useState(null);
+  const [thumbNode, setThumbNode] = useState(null);
 
   const viewStateRef = useRef(viewState);
   const rangeRef = useRef(EMPTY_RANGE);
@@ -277,11 +279,15 @@ export default function useViewportScrubberModel({
   }, [active, scheduleSetViewboxX]);
 
   const setTrackRef = useCallback((node) => {
-    trackRef.current = node instanceof Element ? node : null;
+    const nextNode = node instanceof Element ? node : null;
+    trackRef.current = nextNode;
+    setTrackNode((current) => (current === nextNode ? current : nextNode));
   }, []);
 
   const setThumbRef = useCallback((node) => {
-    thumbRef.current = node instanceof Element ? node : null;
+    const nextNode = node instanceof Element ? node : null;
+    thumbRef.current = nextNode;
+    setThumbNode((current) => (current === nextNode ? current : nextNode));
   }, []);
 
   const onThumbKeyDown = useCallback((event) => {
@@ -332,8 +338,8 @@ export default function useViewportScrubberModel({
       refreshFromCanvas();
     }) || (() => {});
 
-    const trackEl = trackRef.current;
-    const thumbEl = thumbRef.current;
+    const trackEl = trackNode;
+    const thumbEl = thumbNode;
     const handleNativeTrackDown = (event) => onTrackPointerDown(event);
     const handleNativeThumbDown = (event) => onThumbPointerDown(event);
 
@@ -341,9 +347,9 @@ export default function useViewportScrubberModel({
     thumbEl?.addEventListener?.("pointerdown", handleNativeThumbDown);
 
     let stopResizeObserver = () => {};
-    if (typeof window !== "undefined" && typeof window.ResizeObserver === "function" && trackRef.current instanceof Element) {
+    if (typeof window !== "undefined" && typeof window.ResizeObserver === "function" && trackEl instanceof Element) {
       const observer = new window.ResizeObserver(() => refreshFromCanvas());
-      observer.observe(trackRef.current);
+      observer.observe(trackEl);
       stopResizeObserver = () => observer.disconnect();
     }
 
@@ -377,6 +383,8 @@ export default function useViewportScrubberModel({
     onThumbPointerDown,
     onTrackPointerDown,
     refreshFromCanvas,
+    thumbNode,
+    trackNode,
     stopDrag,
   ]);
 
