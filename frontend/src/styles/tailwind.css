@@ -315,6 +315,59 @@
     pointer-events: auto;
   }
 
+  .bpmnViewportScrubberLayer {
+    @apply pointer-events-none absolute bottom-3 left-3 flex justify-center;
+    right: var(--fpc-scrubber-right-inset, 12px);
+    z-index: 24;
+  }
+
+  .bpmnViewportScrubber {
+    @apply pointer-events-auto grid w-full max-w-[640px] gap-1.5;
+  }
+
+  .bpmnViewportScrubberToggle {
+    @apply ml-auto h-6 rounded-full border border-border/70 bg-panel px-2 text-[10px] font-semibold text-muted transition-colors;
+    backdrop-filter: blur(6px);
+    opacity: 0.92;
+  }
+
+  .bpmnViewportScrubberToggle:hover {
+    @apply border-border text-fg;
+  }
+
+  .bpmnViewportScrubberTrack {
+    @apply relative h-3 rounded-full border border-border/65 bg-panel2/75;
+    box-shadow: inset 0 0 0 1px hsl(var(--bg) / 0.15);
+    pointer-events: auto;
+    touch-action: none;
+  }
+
+  .bpmnViewportScrubberTrack.isInteractive {
+    cursor: pointer;
+  }
+
+  .bpmnViewportScrubberThumb {
+    @apply absolute top-1/2 h-5 min-w-[28px] rounded-full border border-border/80 bg-panel shadow-panel;
+    transform: translateY(-50%);
+    box-shadow: 0 0 0 1px hsl(var(--bg) / 0.22);
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .bpmnViewportScrubberThumb:active {
+    cursor: grabbing;
+  }
+
+  .bpmnViewportScrubberHandle {
+    @apply pointer-events-auto h-6 rounded-full border border-border/70 bg-panel px-3 text-[10px] font-semibold text-muted shadow-panel;
+    backdrop-filter: blur(6px);
+    opacity: 0.94;
+  }
+
+  .bpmnViewportScrubberHandle:hover {
+    @apply border-border text-fg;
+  }
+
   .diagramActionBar {
     @apply max-w-[calc(100%-24px)] min-w-0 gap-1.5 rounded-xl border-border/80 bg-panel/95 p-1.5;
     max-width: min(1040px, calc(100% - 24px));

@@ -10,17 +10,87 @@ function toText(value) {
   return String(value || "").trim();
 }
 
+function toFiniteNumber(valueRaw, fallback = 0) {
+  const value = Number(valueRaw);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function clampNumber(valueRaw, minRaw, maxRaw) {
+  const min = toFiniteNumber(minRaw, 0);
+  const max = toFiniteNumber(maxRaw, min);
+  const value = toFiniteNumber(valueRaw, min);
+  if (min > max) return clampNumber(value, max, min);
+  if (value < min) return min;
+  if (value > max) return max;
+  return value;
+}
+
+function readContentBoundsFromRegistry(registry) {
+  const elements = asArray(registry?.getAll?.());
+  if (!elements.length) return null;
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+
+  elements.forEach((elementRaw) => {
+    const element = asObject(elementRaw);
+    if (element.type === "label") return;
+    if (Array.isArray(element.waypoints) && element.waypoints.length) {
+      element.waypoints.forEach((pointRaw) => {
+        const point = asObject(pointRaw);
+        const x = toFiniteNumber(point.x, Number.NaN);
+        const y = toFiniteNumber(point.y, Number.NaN);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y);
+      });
+      return;
+    }
+
+    const x = toFiniteNumber(element.x, Number.NaN);
+    const y = toFiniteNumber(element.y, Number.NaN);
+    const width = Math.max(0, toFiniteNumber(element.width, 0));
+    const height = Math.max(0, toFiniteNumber(element.height, 0));
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    if (!(width > 0) || !(height > 0)) return;
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x + width);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y + height);
+  });
+
+  if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+    return null;
+  }
+  return {
+    x: minX,
+    y: minY,
+    width: Math.max(0, maxX - minX),
+    height: Math.max(0, maxY - minY),
+  };
+}
+
 function readCanvasSnapshot(inst) {
   try {
     const canvas = inst?.get?.("canvas");
     const registry = inst?.get?.("elementRegistry");
     const container = canvas?._container;
     const rect = container?.getBoundingClientRect?.() || { left: 0, top: 0, width: 0, height: 0 };
-    const vb = canvas?.viewbox?.() || {};
+    const vb = asObject(canvas?.viewbox?.() || {});
+    const inner = asObject(vb.inner);
+    const outer = asObject(vb.outer);
     const zoom = Number(canvas?.zoom?.() || 0);
     const count = asArray(registry?.getAll?.()).length;
+    const contentBounds = readContentBoundsFromRegistry(registry);
     const width = Number(rect?.width || container?.clientWidth || 0);
     const height = Number(rect?.height || container?.clientHeight || 0);
+    const viewboxWidth = Math.max(0, toFiniteNumber(vb?.width, 0));
+    const viewboxHeight = Math.max(0, toFiniteNumber(vb?.height, 0));
+    const viewboxX = toFiniteNumber(vb?.x, 0);
+    const viewboxY = toFiniteNumber(vb?.y, 0);
     return {
       width: Number.isFinite(width) ? width : 0,
       height: Number.isFinite(height) ? height : 0,
@@ -28,10 +98,20 @@ function readCanvasSnapshot(inst) {
       top: Number(rect?.top || 0),
       zoom: Number.isFinite(zoom) ? zoom : 0,
       viewbox: {
-        x: Number(vb?.x || 0),
-        y: Number(vb?.y || 0),
-        width: Number(vb?.width || 0),
-        height: Number(vb?.height || 0),
+        x: viewboxX,
+        y: viewboxY,
+        width: viewboxWidth,
+        height: viewboxHeight,
+        inner: {
+          x: toFiniteNumber(inner.x, toFiniteNumber(contentBounds?.x, viewboxX)),
+          y: toFiniteNumber(inner.y, toFiniteNumber(contentBounds?.y, viewboxY)),
+          width: Math.max(viewboxWidth, toFiniteNumber(inner.width, toFiniteNumber(contentBounds?.width, viewboxWidth))),
+          height: Math.max(viewboxHeight, toFiniteNumber(inner.height, toFiniteNumber(contentBounds?.height, viewboxHeight))),
+        },
+        outer: {
+          width: Math.max(0, toFiniteNumber(outer.width, width)),
+          height: Math.max(0, toFiniteNumber(outer.height, height)),
+        },
       },
       count,
     };
@@ -42,7 +122,14 @@ function readCanvasSnapshot(inst) {
       left: 0,
       top: 0,
       zoom: 0,
-      viewbox: { x: 0, y: 0, width: 0, height: 0 },
+      viewbox: {
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        inner: { x: 0, y: 0, width: 0, height: 0 },
+        outer: { width: 0, height: 0 },
+      },
       count: 0,
     };
   }
@@ -588,6 +675,41 @@ export function createBpmnStageImperativeApi(ctxBase) {
       const preferred = toText(options?.kind || options?.view || options?.mode).toLowerCase();
       const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
       return readCanvasSnapshot(inst);
+    },
+    setCanvasViewboxX: (nextXRaw, options = {}) => {
+      const preferred = toText(options?.kind || options?.view || options?.mode).toLowerCase();
+      const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
+      if (!inst) return false;
+      try {
+        const canvas = inst.get("canvas");
+        if (!canvas || typeof canvas.viewbox !== "function") return false;
+        const current = asObject(canvas.viewbox() || {});
+        const registry = inst.get("elementRegistry");
+        const contentBounds = readContentBoundsFromRegistry(registry);
+        const width = Math.max(0, toFiniteNumber(current.width, 0));
+        const height = Math.max(0, toFiniteNumber(current.height, 0));
+        if (!(width > 0) || !(height > 0)) return false;
+        const y = toFiniteNumber(current.y, 0);
+        const currentX = toFiniteNumber(current.x, 0);
+        const inner = asObject(current.inner);
+        const minX = toFiniteNumber(inner.x, toFiniteNumber(contentBounds?.x, currentX));
+        const innerWidth = Math.max(
+          width,
+          toFiniteNumber(inner.width, toFiniteNumber(contentBounds?.width, width)),
+        );
+        const maxX = minX + Math.max(0, innerWidth - width);
+        const nextX = clampNumber(nextXRaw, minX, maxX);
+        canvas.viewbox({
+          x: nextX,
+          y,
+          width,
+          height,
+        });
+        refs.userViewportTouchedRef.current = true;
+        return true;
+      } catch {
+        return false;
+      }
     },
     getElementBounds: (elementId, options = {}) => {
       const preferred = toText(options?.kind || options?.view || options?.mode).toLowerCase();
