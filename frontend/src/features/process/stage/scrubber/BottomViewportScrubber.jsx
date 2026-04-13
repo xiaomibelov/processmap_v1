@@ -31,18 +31,20 @@ export default function BottomViewportScrubber({
             title="Скрыть навигацию по области"
             aria-label="Скрыть нижнюю навигацию"
           >
-            Hide scrubber
+            <span className="bpmnViewportScrubberControlIcon" aria-hidden="true">v</span>
+            <span className="bpmnViewportScrubberControlText">Hide scrubber</span>
           </button>
 
           <div
-            className={`bpmnViewportScrubberTrack ${scrubberModel.canScroll ? "isInteractive" : ""}`}
+            className={`bpmnViewportScrubberTrack ${scrubberModel.canScroll ? "isInteractive" : "isDisabled"}`}
             ref={scrubberModel.setTrackRef}
             aria-label="Горизонтальная навигация по диаграмме"
+            title={scrubberModel.canScroll ? "Drag thumb or click track to move viewport" : "Entire diagram fits current viewport width"}
             data-testid="bpmn-viewport-scrubber-track"
           >
             <button
               type="button"
-              className="bpmnViewportScrubberThumb"
+              className={`bpmnViewportScrubberThumb ${scrubberModel.canScroll ? "" : "isDisabled"}`}
               style={scrubberModel.thumbStyle}
               ref={scrubberModel.setThumbRef}
               disabled={!scrubberModel.canScroll}
@@ -61,7 +63,8 @@ export default function BottomViewportScrubber({
           aria-label="Показать нижнюю навигацию"
           data-testid="bpmn-viewport-scrubber-show"
         >
-          Show scrubber
+          <span className="bpmnViewportScrubberControlIcon" aria-hidden="true">^</span>
+          <span className="bpmnViewportScrubberControlText">Show scrubber</span>
         </button>
       )}
     </div>

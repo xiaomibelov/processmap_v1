@@ -326,13 +326,26 @@
   }
 
   .bpmnViewportScrubberToggle {
-    @apply ml-auto h-6 rounded-full border border-border/70 bg-panel px-2 text-[10px] font-semibold text-muted transition-colors;
+    @apply ml-auto inline-flex h-7 items-center gap-1 rounded-full border border-border/75 bg-panel/95 px-2.5 text-[11px] font-semibold text-muted transition-colors;
     backdrop-filter: blur(6px);
-    opacity: 0.92;
+    box-shadow: 0 8px 20px hsl(var(--bg) / 0.22);
+    opacity: 0.96;
   }
 
   .bpmnViewportScrubberToggle:hover {
     @apply border-border text-fg;
+    background: hsl(var(--panel) / 0.98);
+  }
+
+  .bpmnViewportScrubberControlIcon {
+    @apply inline-flex h-4 w-4 items-center justify-center rounded-full border border-border/60 text-[10px] leading-none;
+    background: hsl(var(--panel2) / 0.88);
+    color: hsl(var(--muted));
+    flex-shrink: 0;
+  }
+
+  .bpmnViewportScrubberControlText {
+    @apply whitespace-nowrap;
   }
 
   .bpmnViewportScrubberTrack {
@@ -346,6 +359,17 @@
     cursor: pointer;
   }
 
+  .bpmnViewportScrubberTrack.isInteractive:hover {
+    border-color: hsl(var(--border) / 0.9);
+    background: hsl(var(--panel2) / 0.86);
+  }
+
+  .bpmnViewportScrubberTrack.isDisabled {
+    cursor: default;
+    border-color: hsl(var(--border) / 0.5);
+    background: hsl(var(--panel2) / 0.5);
+  }
+
   .bpmnViewportScrubberThumb {
     @apply absolute top-1/2 h-5 min-w-[28px] rounded-full border border-border/80 bg-panel shadow-panel;
     transform: translateY(-50%);
@@ -354,18 +378,41 @@
     touch-action: none;
   }
 
+  .bpmnViewportScrubberTrack.isInteractive:hover .bpmnViewportScrubberThumb {
+    border-color: hsl(var(--border));
+    box-shadow: 0 0 0 1px hsl(var(--bg) / 0.3), 0 4px 12px hsl(var(--bg) / 0.3);
+  }
+
   .bpmnViewportScrubberThumb:active {
     cursor: grabbing;
+    transform: translateY(-50%) scale(1.02);
+  }
+
+  .bpmnViewportScrubberThumb:disabled,
+  .bpmnViewportScrubberThumb.isDisabled {
+    cursor: default;
+    border-color: hsl(var(--border) / 0.55);
+    background: hsl(var(--panel2) / 0.58);
+    box-shadow: none;
+    opacity: 0.72;
   }
 
   .bpmnViewportScrubberHandle {
-    @apply pointer-events-auto h-6 rounded-full border border-border/70 bg-panel px-3 text-[10px] font-semibold text-muted shadow-panel;
+    @apply pointer-events-auto inline-flex h-7 min-w-[124px] items-center justify-center gap-1.5 rounded-full border border-border/75 bg-panel/95 px-3 text-[11px] font-semibold text-muted shadow-panel transition-colors;
     backdrop-filter: blur(6px);
-    opacity: 0.94;
+    box-shadow: 0 10px 24px hsl(var(--bg) / 0.3);
+    opacity: 0.98;
   }
 
   .bpmnViewportScrubberHandle:hover {
     @apply border-border text-fg;
+    background: hsl(var(--panel) / 0.99);
+  }
+
+  .bpmnViewportScrubberHandle:hover .bpmnViewportScrubberControlIcon,
+  .bpmnViewportScrubberToggle:hover .bpmnViewportScrubberControlIcon {
+    border-color: hsl(var(--border));
+    color: hsl(var(--fg));
   }
 
   .diagramActionBar {
