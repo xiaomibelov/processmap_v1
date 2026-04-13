@@ -418,6 +418,13 @@
     opacity: 0.98;
   }
 
+  .bpmnViewportScrubberAutoCollapsed {
+    @apply pointer-events-none inline-flex h-7 items-center gap-1.5 rounded-full border border-border/60 bg-panel/95 px-2.5 text-[10px] font-semibold text-muted;
+    backdrop-filter: blur(6px);
+    box-shadow: 0 8px 18px hsl(var(--bg) / 0.2);
+    opacity: 0.92;
+  }
+
   .bpmnViewportScrubberHandle:hover {
     @apply border-border text-fg;
     background: hsl(var(--panel) / 0.99);
