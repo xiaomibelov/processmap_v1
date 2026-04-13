@@ -75,11 +75,13 @@ test("normalizeDiagramPropertySearchEntry normalizes property and element fields
     elementType: "bpmn:ServiceTask",
     propertyName: "Retries",
     propertyValue: "3",
+    sourcePath: "extensionElements.values[0].retries",
   });
   assert.equal(row.entryKey, "Task_1::prop_1");
   assert.equal(row.elementTypeLabel, "ServiceTask");
   assert.equal(row.propertyName, "Retries");
   assert.equal(row.propertyValue, "3");
+  assert.equal(row.sourcePath, "extensionElements.values[0].retries");
 });
 
 test("collectDiagramPropertySearchResults matches only by property name/value (case-insensitive)", () => {
