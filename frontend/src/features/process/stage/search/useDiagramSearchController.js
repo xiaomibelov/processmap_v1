@@ -52,6 +52,7 @@ export default function useDiagramSearchController({
     requestDiagramFocus?.(elementId, {
       source: `diagram_search_${source}`,
       clearExistingSelection: true,
+      centerInViewport: true,
     });
   }, [requestDiagramFocus]);
 

@@ -10,6 +10,11 @@ function toText(v) {
   return String(v || "").trim();
 }
 
+function toFiniteNumber(valueRaw, fallback = 0) {
+  const value = Number(valueRaw);
+  return Number.isFinite(value) ? value : fallback;
+}
+
 function resolveCtx(ctxBase) {
   if (typeof ctxBase === "function") return asObject(ctxBase());
   return asObject(ctxBase);
@@ -863,6 +868,27 @@ export function createPlaybackOverlayAdapter(ctxBase) {
     state.markerClass = "fpcNodeFocus";
   }
 
+  function centerPointInViewport(canvas, centerRaw) {
+    const center = asObject(centerRaw);
+    const centerX = toFiniteNumber(center.x, Number.NaN);
+    const centerY = toFiniteNumber(center.y, Number.NaN);
+    if (!canvas || !Number.isFinite(centerX) || !Number.isFinite(centerY)) return false;
+    if (typeof canvas.viewbox !== "function") return false;
+
+    const current = asObject(canvas.viewbox() || {});
+    const width = toFiniteNumber(current.width, 0);
+    const height = toFiniteNumber(current.height, 0);
+    if (!(width > 0) || !(height > 0)) return false;
+
+    canvas.viewbox({
+      x: centerX - width / 2,
+      y: centerY - height / 2,
+      width,
+      height,
+    });
+    return true;
+  }
+
   function focusNodeOnInstance(inst, kind, nodeId, options = {}) {
     if (!inst) return false;
     const { getters, callbacks } = getCtx();
@@ -881,6 +907,7 @@ export function createPlaybackOverlayAdapter(ctxBase) {
         ? Math.max(0.45, Math.min(1.6, targetZoomRaw))
         : null;
       const clearExistingSelection = options?.clearExistingSelection === true;
+      const centerInViewport = options?.centerInViewport === true;
 
       const center = {
         x: Number(el.x || 0) + Number(el.width || 0) / 2,
@@ -891,15 +918,30 @@ export function createPlaybackOverlayAdapter(ctxBase) {
         callbacks.clearSelectedDecor(inst, kind);
       }
 
-      if (typeof canvas.scrollToElement === "function") {
-        canvas.scrollToElement(el, { top: 170, bottom: 170, left: 250, right: 250 });
-      }
-      if (targetZoom !== null) {
-        canvas.zoom(targetZoom, center);
+      if (centerInViewport) {
+        if (targetZoom !== null) {
+          canvas.zoom(targetZoom, center);
+        } else {
+          const z = canvas.zoom();
+          if (!Number.isFinite(z) || z < 0.8) {
+            canvas.zoom(1, center);
+          }
+        }
+        const centered = centerPointInViewport(canvas, center);
+        if (!centered && typeof canvas.scrollToElement === "function") {
+          canvas.scrollToElement(el, { top: 170, bottom: 170, left: 250, right: 250 });
+        }
       } else {
-        const z = canvas.zoom();
-        if (!Number.isFinite(z) || z < 0.8) {
-          canvas.zoom(1, center);
+        if (typeof canvas.scrollToElement === "function") {
+          canvas.scrollToElement(el, { top: 170, bottom: 170, left: 250, right: 250 });
+        }
+        if (targetZoom !== null) {
+          canvas.zoom(targetZoom, center);
+        } else {
+          const z = canvas.zoom();
+          if (!Number.isFinite(z) || z < 0.8) {
+            canvas.zoom(1, center);
+          }
         }
       }
 

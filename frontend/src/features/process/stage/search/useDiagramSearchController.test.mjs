@@ -131,12 +131,14 @@ test("useDiagramSearchController syncs highlights and uses existing focus path f
     });
     assert.equal(latest.activeResult?.elementId, "Task_B");
     assert.equal(focusCalls.at(-1)?.elementId, "Task_B");
+    assert.equal(focusCalls.at(-1)?.options?.centerInViewport, true);
 
     await act(async () => {
       latest.selectIndex(0);
     });
     assert.equal(latest.activeResult?.elementId, "Task_A");
     assert.equal(focusCalls.at(-1)?.elementId, "Task_A");
+    assert.equal(focusCalls.at(-1)?.options?.centerInViewport, true);
 
     const clearCountBeforeNoResults = clearCalls.length;
     await act(async () => {

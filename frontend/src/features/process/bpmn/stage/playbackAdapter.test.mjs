@@ -40,9 +40,28 @@ function createCanvasMock() {
   const addMarkerCalls = [];
   const removeMarkerCalls = [];
   const styleProps = new Map();
+  const scrollToElementCalls = [];
+  const zoomCalls = [];
+  const viewboxSetCalls = [];
+  let zoomLevel = 1;
+  let currentViewbox = {
+    x: 0,
+    y: 0,
+    width: 1200,
+    height: 700,
+    inner: {
+      x: 0,
+      y: 0,
+      width: 2200,
+      height: 1600,
+    },
+  };
   return {
     addMarkerCalls,
     removeMarkerCalls,
+    scrollToElementCalls,
+    zoomCalls,
+    viewboxSetCalls,
     _container: {
       style: {
         setProperty(name, value) {
@@ -56,12 +75,42 @@ function createCanvasMock() {
     removeMarker(elementId, className) {
       removeMarkerCalls.push({ elementId: String(elementId || ""), className: String(className || "") });
     },
-    viewbox(next) {
-      if (next) return next;
-      return { x: 0, y: 0, width: 1200, height: 700 };
+    scrollToElement(element, options = {}) {
+      scrollToElementCalls.push({
+        elementId: String(element?.id || ""),
+        options,
+      });
     },
-    zoom() {
-      return 1;
+    viewbox(next) {
+      if (next) {
+        const normalized = {
+          ...currentViewbox,
+          x: Number(next.x || 0),
+          y: Number(next.y || 0),
+          width: Number(next.width || currentViewbox.width || 0),
+          height: Number(next.height || currentViewbox.height || 0),
+        };
+        viewboxSetCalls.push(normalized);
+        currentViewbox = {
+          ...currentViewbox,
+          ...normalized,
+        };
+        return currentViewbox;
+      }
+      return { ...currentViewbox };
+    },
+    zoom(nextZoom, center) {
+      if (Number.isFinite(Number(nextZoom))) {
+        zoomLevel = Number(nextZoom);
+        zoomCalls.push({
+          zoom: zoomLevel,
+          center: {
+            x: Number(center?.x || 0),
+            y: Number(center?.y || 0),
+          },
+        });
+      }
+      return zoomLevel;
     },
   };
 }
@@ -284,5 +333,77 @@ test("applyPlaybackFrameOnInstance applies flow/node markers and overlay for fra
     assert.equal(overlays.addCalls[0].elementId, "Task_B");
     assert.equal(refs.playbackDecorStateRef.current.viewer.flowId, "Flow_1");
     assert.equal(refs.playbackDecorStateRef.current.viewer.nodeId, "Task_B");
+  });
+});
+
+test("focusNodeOnInstance centers element in viewport when centerInViewport=true", () => {
+  withDomStubs(() => {
+    const canvas = createCanvasMock();
+    const overlays = createOverlaysMock();
+    const registry = createRegistryMock();
+    const inst = createInstance(canvas, overlays, registry);
+    const refs = {
+      playbackDecorStateRef: ref({
+        viewer: createPlaybackDecorRuntimeState(),
+        editor: createPlaybackDecorRuntimeState(),
+      }),
+      playbackBboxCacheRef: ref({ viewer: {}, editor: {} }),
+      flashStateRef: ref({ viewer: createFlashRuntimeState(), editor: createFlashRuntimeState() }),
+      focusStateRef: ref({
+        viewer: { elementId: "", timer: 0, markerClass: "fpcNodeFocus" },
+        editor: { elementId: "", timer: 0, markerClass: "fpcNodeFocus" },
+      }),
+    };
+    const adapter = createAdapterWithRefs(refs);
+
+    const ok = adapter.focusNodeOnInstance(inst, "viewer", "Task_1", {
+      centerInViewport: true,
+      clearExistingSelection: true,
+      source: "diagram_search_next",
+    });
+
+    assert.equal(ok, true);
+    assert.equal(canvas.scrollToElementCalls.length, 0);
+    assert.equal(canvas.viewboxSetCalls.length > 0, true);
+    assert.equal(canvas.viewboxSetCalls.at(-1)?.x, -440);
+    assert.equal(canvas.viewboxSetCalls.at(-1)?.y, -250);
+    assert.deepEqual(canvas.addMarkerCalls.at(-1), {
+      elementId: "Task_1",
+      className: "fpcNodeFocus",
+    });
+  });
+});
+
+test("focusNodeOnInstance keeps legacy scroll behavior without centerInViewport flag", () => {
+  withDomStubs(() => {
+    const canvas = createCanvasMock();
+    const overlays = createOverlaysMock();
+    const registry = createRegistryMock();
+    const inst = createInstance(canvas, overlays, registry);
+    const refs = {
+      playbackDecorStateRef: ref({
+        viewer: createPlaybackDecorRuntimeState(),
+        editor: createPlaybackDecorRuntimeState(),
+      }),
+      playbackBboxCacheRef: ref({ viewer: {}, editor: {} }),
+      flashStateRef: ref({ viewer: createFlashRuntimeState(), editor: createFlashRuntimeState() }),
+      focusStateRef: ref({
+        viewer: { elementId: "", timer: 0, markerClass: "fpcNodeFocus" },
+        editor: { elementId: "", timer: 0, markerClass: "fpcNodeFocus" },
+      }),
+    };
+    const adapter = createAdapterWithRefs(refs);
+
+    const ok = adapter.focusNodeOnInstance(inst, "viewer", "Task_1", {
+      source: "legacy_caller",
+    });
+
+    assert.equal(ok, true);
+    assert.equal(canvas.scrollToElementCalls.length, 1);
+    assert.equal(canvas.viewboxSetCalls.length, 0);
+    assert.deepEqual(canvas.scrollToElementCalls[0], {
+      elementId: "Task_1",
+      options: { top: 170, bottom: 170, left: 250, right: 250 },
+    });
   });
 });
