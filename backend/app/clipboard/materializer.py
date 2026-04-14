@@ -678,6 +678,8 @@ def materialize_task_payload_into_session(
         raise ClipboardMaterializationError(423, "lock_busy", "target session is being updated, retry")
 
     try:
+        previous_xml = str(getattr(target_session, "bpmn_xml", "") or "")
+        current_diagram_state_version = int(getattr(target_session, "diagram_state_version", 0) or 0)
         root, process, plane = _parse_target_bpmn(str(getattr(target_session, "bpmn_xml", "") or ""))
         existing_ids = _collect_existing_ids(root)
         new_id = _allocate_new_id(existing_ids, prefix=str(payload.element.element_type or "Node"), hint=str(payload.context.source_element_id or "task"))
@@ -714,6 +716,24 @@ def materialize_task_payload_into_session(
             allowed_node_ids=flow_ctx.get("node_ids") if isinstance(flow_ctx, dict) else None,
         )
         st = _legacy_main.get_storage()
+        if previous_xml != xml_text and str(xml_text or "").strip():
+            st.create_bpmn_version_snapshot(
+                str(getattr(target_session, "id", "") or target_session_id),
+                bpmn_xml=xml_text,
+                source_action="clipboard_paste_task",
+                diagram_state_version=current_diagram_state_version + 1,
+                created_by=user_id,
+                org_id=target_org_id,
+            )
+        changed_keys = ["bpmn_meta", "nodes", "notes_by_element"]
+        if previous_xml != xml_text:
+            changed_keys.insert(0, "bpmn_xml")
+        _legacy_main._mark_diagram_truth_write(
+            target_session,
+            changed_keys=changed_keys,
+            actor_user_id=user_id,
+            actor_label=user_id,
+        )
         st.save(target_session, user_id=user_id, org_id=target_org_id, is_admin=True)
         _legacy_main._invalidate_session_caches(
             target_session,
@@ -749,6 +769,8 @@ def materialize_subprocess_payload_into_session(
         raise ClipboardMaterializationError(423, "lock_busy", "target session is being updated, retry")
 
     try:
+        previous_xml = str(getattr(target_session, "bpmn_xml", "") or "")
+        current_diagram_state_version = int(getattr(target_session, "diagram_state_version", 0) or 0)
         root, process, plane = _parse_target_bpmn(str(getattr(target_session, "bpmn_xml", "") or ""))
         existing_ids = _collect_existing_ids(root)
         node_by_old_id, children_by_parent = _build_node_maps(payload)
@@ -902,6 +924,24 @@ def materialize_subprocess_payload_into_session(
             allowed_node_ids=flow_ctx.get("node_ids") if isinstance(flow_ctx, dict) else None,
         )
         st = _legacy_main.get_storage()
+        if previous_xml != xml_text and str(xml_text or "").strip():
+            st.create_bpmn_version_snapshot(
+                str(getattr(target_session, "id", "") or target_session_id),
+                bpmn_xml=xml_text,
+                source_action="clipboard_paste_subprocess",
+                diagram_state_version=current_diagram_state_version + 1,
+                created_by=user_id,
+                org_id=target_org_id,
+            )
+        changed_keys = ["bpmn_meta", "nodes", "edges", "notes_by_element"]
+        if previous_xml != xml_text:
+            changed_keys.insert(0, "bpmn_xml")
+        _legacy_main._mark_diagram_truth_write(
+            target_session,
+            changed_keys=changed_keys,
+            actor_user_id=user_id,
+            actor_label=user_id,
+        )
         st.save(target_session, user_id=user_id, org_id=target_org_id, is_admin=True)
         _legacy_main._invalidate_session_caches(
             target_session,
