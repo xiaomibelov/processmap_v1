@@ -342,6 +342,7 @@ export default function useBpmnSync({
         xml: savedXml,
         pending,
         storedRev: Number(saved?.storedRev || saved?.rev || 0),
+        diagramStateVersion: Number(saved?.diagramStateVersion || 0),
         bpmnVersionSnapshot: saved?.bpmnVersionSnapshot && typeof saved.bpmnVersionSnapshot === "object"
           ? saved.bpmnVersionSnapshot
           : null,
@@ -420,6 +421,7 @@ export default function useBpmnSync({
       xml: savedXml,
       pending: false,
       storedRev: Number(saved?.storedRev || saved?.rev || 0),
+      diagramStateVersion: Number(saved?.diagramStateVersion || 0),
       bpmnVersionSnapshot: saved?.bpmnVersionSnapshot && typeof saved.bpmnVersionSnapshot === "object"
         ? saved.bpmnVersionSnapshot
         : null,
