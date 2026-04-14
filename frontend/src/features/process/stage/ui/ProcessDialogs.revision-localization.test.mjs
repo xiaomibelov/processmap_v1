@@ -11,6 +11,8 @@ test("revision dialogs use RU labels for metadata surface", () => {
   const source = fs.readFileSync(path.join(__dirname, "ProcessDialogs.jsx"), "utf8");
   assert.equal(source.includes("Последние версии:"), true);
   assert.equal(source.includes("последняя"), true);
+  assert.equal(source.includes("Версия"), true);
+  assert.equal(source.includes("r{Number("), false);
   assert.equal(source.includes("черновик"), true);
   assert.equal(source.includes("автор:"), true);
   assert.equal(source.includes("комментарий:"), true);
