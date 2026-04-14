@@ -90,10 +90,14 @@ export default function ProcessStageHeader({ view = {} }) {
   ].join(" ")).replace(/\s+/g, " ").trim();
   const showConflictActions = isConflictState && saveConflictActions?.visible === true;
   const saveConflictBusy = saveConflictActions?.busy === true;
+  const showUploadStatusBadge = saveUploadStatus?.visible && !showConflictActions;
   const toolbarMessage = toText(toolbarInlineMessage);
+  const toolbarMessageLooksLikeConflict = /(?:конфликт|conflict|http\s*409|stale|верси)/i.test(toolbarMessage);
+  const showToolbarInlineBadge = !!toolbarInlineMessage && !(showConflictActions && toolbarMessageLooksLikeConflict);
+  const showSaveStatusBadgeResolved = showSaveStatusBadge && !showConflictActions;
   const suppressDraftSavedBadge = /^Опубликовано как версия R\d+\.$/.test(toolbarMessage)
     && toText(saveSmartText) === "Черновик сохранён";
-  const showGenericSaveStatusBadge = showSaveStatusBadge && !suppressDraftSavedBadge;
+  const showGenericSaveStatusBadge = showSaveStatusBadgeResolved && !suppressDraftSavedBadge;
   const canRunUndo = tab === "diagram" && canUndo === true;
   const canRunRedo = tab === "diagram" && canRedo === true;
 
@@ -177,7 +181,7 @@ export default function ProcessStageHeader({ view = {} }) {
               {saveSmartText}
             </span>
           ) : null}
-          {saveUploadStatus?.visible ? (
+          {showUploadStatusBadge ? (
             <span
               className={`badge text-[11px] ${String(saveUploadStatus?.tone || "").trim()}`}
               data-testid="diagram-toolbar-save-upload-status"
@@ -198,15 +202,23 @@ export default function ProcessStageHeader({ view = {} }) {
         </div>
         {showConflictActions ? (
           <div
-            className="mt-1 flex flex-wrap items-center gap-1.5"
-            data-testid="diagram-toolbar-save-conflict-actions"
+            className="mt-1 flex flex-wrap items-start gap-1.5 rounded-md border border-rose-300 bg-rose-50 px-2 py-1"
+            data-testid="diagram-toolbar-save-conflict-panel"
           >
-            <span
-              className="badge text-[11px] err max-w-[48ch] truncate"
-              title={String(saveUploadStatus?.title || conflictSummaryText || "")}
-            >
-              {conflictSummaryText || "Конфликт версии BPMN"}
-            </span>
+            <div className="max-w-[52ch] text-[11px] leading-4">
+              <div className="font-semibold text-rose-900" data-testid="diagram-toolbar-save-conflict-title">
+                {conflictSummaryText || "Конфликт версии BPMN"}
+              </div>
+              {toText(saveUploadStatus?.title) ? (
+                <div
+                  className="text-rose-800"
+                  data-testid="diagram-toolbar-save-conflict-context"
+                  title={String(saveUploadStatus?.title || "")}
+                >
+                  {String(saveUploadStatus?.title || "")}
+                </div>
+              ) : null}
+            </div>
             <button
               type="button"
               className="secondaryBtn h-7 px-2 text-[11px]"
@@ -237,7 +249,7 @@ export default function ProcessStageHeader({ view = {} }) {
             </button>
           </div>
         ) : null}
-        {toolbarInlineMessage ? (
+        {showToolbarInlineBadge ? (
           <span
             className={`badge hidden max-w-[36ch] truncate lg:inline-flex ${toolbarInlineTone ? toolbarInlineTone : ""}`}
             title={toolbarInlineMessage}
