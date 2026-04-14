@@ -87,6 +87,7 @@ import {
   buildSaveUploadStatusBadge,
   normalizeBpmnSaveLifecycleEvent,
 } from "../features/process/navigation/saveUploadStatus";
+import { deriveLeaveNavigationRisk } from "../features/process/navigation/leaveNavigationGuardModel";
 import useProcessStageShellController from "../features/process/stage/controllers/useProcessStageShellController";
 import useBpmnCanvasController from "../features/process/stage/controllers/useBpmnCanvasController";
 import useDiagramOverlayTransform from "../features/process/stage/controllers/useDiagramOverlayTransform";
@@ -686,6 +687,14 @@ export default function ProcessStage({
   const saveUploadStatus = useMemo(
     () => buildSaveUploadStatusBadge(saveUploadLifecycleEvent),
     [saveUploadLifecycleEvent],
+  );
+  const leaveNavigationRisk = useMemo(
+    () => deriveLeaveNavigationRisk({
+      hasSession,
+      saveSnapshotRaw: sessionSaveReadSnapshot,
+      saveUploadStatusRaw: saveUploadStatus,
+    }),
+    [hasSession, saveUploadStatus, sessionSaveReadSnapshot],
   );
   const showSaveConflictModal = saveUploadStatus?.state === "conflict" && !saveConflictNoticeDismissed;
   const saveConflictModalView = useMemo(() => buildSaveConflictModalView({
@@ -4107,6 +4116,7 @@ export default function ProcessStage({
       canGenerateAiQuestions,
       aiGenerateBlockReason: canGenerateAiQuestions ? "" : aiGenerateGate.reasonText,
       aiGenerateBlockReasonCode: canGenerateAiQuestions ? "" : aiGenerateGate.reasonCode,
+      leaveNavigationRisk,
     });
   }, [
     onUiStateChange,
@@ -4120,6 +4130,7 @@ export default function ProcessStage({
     canGenerateAiQuestions,
     aiGenerateGate.reasonText,
     aiGenerateGate.reasonCode,
+    leaveNavigationRisk,
   ]);
 
   useEffect(() => {
