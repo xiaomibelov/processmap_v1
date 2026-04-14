@@ -351,3 +351,69 @@ test("useDiagramSearchController supports properties mode with active-only highl
     await cleanup();
   }
 });
+
+test("useDiagramSearchController refreshes property source on first query without tab switch when source becomes ready late", async () => {
+  const { root, cleanup } = setupDom();
+  let latest = null;
+  let open = true;
+  let propertyCalls = 0;
+
+  const bpmnRef = {
+    current: {
+      listSearchableElements: () => [],
+      listSearchableProperties: () => {
+        propertyCalls += 1;
+        if (propertyCalls < 2) return [];
+        return [
+          {
+            searchId: "Task_A::prop_0",
+            elementId: "Task_A",
+            elementTitle: "Call Worker",
+            elementType: "bpmn:ServiceTask",
+            elementTypeLabel: "ServiceTask",
+            propertyName: "container_tara",
+            propertyValue: "Кастрюля",
+            sourcePath: "extensionElements.values[0].name/value",
+          },
+        ];
+      },
+      setSearchHighlights: () => true,
+      clearSearchHighlights: () => true,
+    },
+  };
+
+  try {
+    await renderHarness(root, {
+      bpmnRef,
+      requestDiagramFocus: () => {},
+      sessionId: "sid_delayed_props",
+      reloadKey: 1,
+      diagramXml: "<bpmn:definitions/>",
+      mutationVersion: 0,
+      isOpen: open,
+      setOpen: (next) => {
+        open = next === true;
+      },
+      isEnabled: true,
+    }, (value) => {
+      latest = value;
+    });
+
+    await act(async () => {
+      latest.setMode("properties");
+    });
+    await act(async () => {
+      latest.setQuery("container_tara");
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 220));
+    });
+
+    assert.ok(propertyCalls >= 2);
+    assert.equal(latest.results.length, 1);
+    assert.equal(latest.results[0]?.propertyName, "container_tara");
+    assert.equal(latest.results[0]?.propertyValue, "Кастрюля");
+  } finally {
+    await cleanup();
+  }
+});
