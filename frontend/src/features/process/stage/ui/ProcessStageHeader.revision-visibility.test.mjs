@@ -10,9 +10,14 @@ const __dirname = path.dirname(__filename);
 test("revision badges are rendered only when session is active", () => {
   const source = fs.readFileSync(path.join(__dirname, "ProcessStageHeader.jsx"), "utf8");
   const guardIdx = source.indexOf("{hasSession ? (");
-  const noRevisionIdx = source.indexOf("Ревизий нет");
-  const publishedIdx = source.indexOf("Опубликовано");
+  const revisionBadgeIdx = source.indexOf("resolvePublishedRevisionBadgeView");
+  const draftSyncIdx = source.indexOf("Черновик синхронизирован");
+  const draftDirtyIdx = source.indexOf("Есть несохранённые изменения");
   assert.ok(guardIdx !== -1, "hasSession visibility guard must exist");
-  assert.ok(noRevisionIdx !== -1, "fallback revision label must exist");
-  assert.ok(publishedIdx !== -1, "published revision label must exist");
+  assert.ok(revisionBadgeIdx !== -1, "published revision badge resolver must be used");
+  assert.ok(draftSyncIdx !== -1, "draft synchronized label must exist");
+  assert.ok(draftDirtyIdx !== -1, "draft dirty label must exist");
+  assert.equal(source.includes("R0"), false);
+  assert.equal(source.includes("r?"), false);
+  assert.equal(source.includes("r…"), false);
 });
