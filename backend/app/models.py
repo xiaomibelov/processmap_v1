@@ -87,8 +87,13 @@ class Session(BaseModel):
     ai_llm_state: Dict[str, Any] = Field(default_factory=dict)
     bpmn_xml: str = ""
     bpmn_xml_version: int = 0
+    diagram_state_version: int = 0
     bpmn_graph_fingerprint: str = ""
     bpmn_meta: Dict[str, Any] = Field(default_factory=dict)
+    diagram_last_write_actor_user_id: str = Field(default="", exclude=True)
+    diagram_last_write_actor_label: str = Field(default="", exclude=True)
+    diagram_last_write_at: int = Field(default=0, exclude=True)
+    diagram_last_write_changed_keys: List[str] = Field(default_factory=list, exclude=True)
     version: int = 0
     owner_user_id: str = ""
     org_id: str = ""
