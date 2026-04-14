@@ -4,6 +4,7 @@ import {
   mergeInterviewData,
   toNodeId,
 } from "../../lib/processStageDomain";
+import { shortUserFacingError } from "../../lib/userFacingErrorText";
 import { normalizeHybridLayerMap } from "../../hybrid/hybridLayerUi";
 import { buildManualPathReportSteps } from "../../../../components/process/interview/services/pathReport";
 
@@ -88,9 +89,7 @@ function isLocalSessionId(id) {
 }
 
 function shortErr(x) {
-  const s = String(x || "").trim();
-  if (!s) return "";
-  return s.length > 160 ? `${s.slice(0, 160)}…` : s;
+  return shortUserFacingError(x, 160);
 }
 
 async function copyText(textRaw) {
