@@ -89,6 +89,37 @@ test("apiPutBpmnXml exposes backend bpmn version snapshot as canonical publish t
   }
 });
 
+test("apiPutBpmnXml sends base_diagram_state_version and returns diagramStateVersion from backend ack", async () => {
+  const prevFetch = globalThis.fetch;
+  const calls = [];
+  try {
+    globalThis.fetch = async (input, init) => {
+      calls.push({ url: String(input || ""), init });
+      return new Response(JSON.stringify({
+        ok: true,
+        version: 5,
+        diagram_state_version: 9,
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    const out = await apiPutBpmnXml("sess_1", "<bpmn:definitions/>", {
+      rev: 5,
+      baseDiagramStateVersion: 8,
+      reason: "manual_save",
+    });
+
+    assert.equal(out.ok, true);
+    assert.equal(out.diagramStateVersion, 9);
+    const body = JSON.parse(String(calls[0]?.init?.body || "{}"));
+    assert.equal(body.base_diagram_state_version, 8);
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
+});
+
 test("apiPutBpmnXml normalizes publish/manual save reason prefixes into canonical source_action", async () => {
   const prevFetch = globalThis.fetch;
   const calls = [];

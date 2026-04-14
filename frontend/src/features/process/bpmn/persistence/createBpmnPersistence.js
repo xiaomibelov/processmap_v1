@@ -213,6 +213,49 @@ export default function createBpmnPersistence(options = {}) {
     return byBpmnVersion || bySessionVersion || 0;
   }
 
+  function readDraftDiagramStateVersion() {
+    const draft = getSessionDraft?.() || {};
+    const value = asNumber(
+      draft?.diagram_state_version ?? draft?.diagramStateVersion,
+      -1,
+    );
+    if (!Number.isFinite(value) || value < 0) return null;
+    return Math.round(value);
+  }
+
+  let knownDiagramStateVersion = readDraftDiagramStateVersion();
+  let knownDiagramStateVersionSid = "";
+
+  function resolveBaseDiagramStateVersion(sessionId = "") {
+    const sid = asText(sessionId).trim();
+    if (sid && sid !== knownDiagramStateVersionSid) {
+      knownDiagramStateVersionSid = sid;
+      knownDiagramStateVersion = readDraftDiagramStateVersion();
+    }
+    const draftVersion = readDraftDiagramStateVersion();
+    if (draftVersion !== null) {
+      if (
+        knownDiagramStateVersion === null
+        || !Number.isFinite(knownDiagramStateVersion)
+        || draftVersion > knownDiagramStateVersion
+      ) {
+        knownDiagramStateVersion = draftVersion;
+      }
+      return Math.max(0, Math.round(knownDiagramStateVersion));
+    }
+    if (knownDiagramStateVersion !== null && Number.isFinite(knownDiagramStateVersion)) {
+      return Math.max(0, Math.round(knownDiagramStateVersion));
+    }
+    return 0;
+  }
+
+  function rememberDiagramStateVersion(raw) {
+    const next = asNumber(raw, -1);
+    if (!Number.isFinite(next) || next < 0) return null;
+    knownDiagramStateVersion = Math.round(next);
+    return knownDiagramStateVersion;
+  }
+
   function snapshotProjectId() {
     if (typeof getSnapshotProjectId === "function") {
       return asText(getSnapshotProjectId()).trim();
@@ -524,10 +567,16 @@ export default function createBpmnPersistence(options = {}) {
       return { ok: false, status: 0, error: "apiPutBpmnXml unavailable" };
     }
 
-    const saved = await apiPutBpmnXml(sid, xml, { rev: targetRev, reason });
+    const baseDiagramStateVersion = resolveBaseDiagramStateVersion(sid);
+    const saved = await apiPutBpmnXml(sid, xml, {
+      rev: targetRev,
+      reason,
+      baseDiagramStateVersion,
+    });
     if (!saved?.ok) {
       const status = asNumber(saved?.status, 0);
       const errorDetails = resolvePersistErrorDetails(saved);
+      rememberDiagramStateVersion(errorDetails?.server_current_version ?? errorDetails?.serverCurrentVersion);
       const errorCode = asText(
         saved?.errorCode
         || errorDetails.code
@@ -543,6 +592,7 @@ export default function createBpmnPersistence(options = {}) {
       };
     }
     const storedRev = asNumber(saved?.storedRev, targetRev);
+    const storedDiagramStateVersion = rememberDiagramStateVersion(saved?.diagramStateVersion);
     // eslint-disable-next-line no-console
     console.debug(
       `PERSIST_OK sid=${sid} rev=${storedRev} hash=${fnv1aHex(xml)} len=${xml.length} `
@@ -553,6 +603,7 @@ export default function createBpmnPersistence(options = {}) {
         window.__FPC_LAST_PERSIST_OK__ = {
           sid,
           rev: storedRev,
+          diagramStateVersion: storedDiagramStateVersion ?? 0,
           hash: fnv1aHex(xml),
           len: xml.length,
           ts: Date.now(),
@@ -569,6 +620,7 @@ export default function createBpmnPersistence(options = {}) {
       source: "backend",
       storedRev,
       rev: storedRev,
+      diagramStateVersion: storedDiagramStateVersion ?? 0,
       hash: fnv1aHex(xml),
       bpmnVersionSnapshot: saved?.bpmnVersionSnapshot && typeof saved.bpmnVersionSnapshot === "object"
         ? saved.bpmnVersionSnapshot
