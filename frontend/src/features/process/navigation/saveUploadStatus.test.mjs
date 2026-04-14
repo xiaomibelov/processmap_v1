@@ -54,3 +54,56 @@ test("badge shows failed status with http code when available", () => {
   assert.match(badge.label, /HTTP 409/);
   assert.match(badge.title, /conflict/i);
 });
+
+test("normalize maps 409 conflict payload object to explicit conflict stage", () => {
+  const event = normalizeBpmnSaveLifecycleEvent({
+    event: "SAVE_PERSIST_FAIL",
+    payload: {
+      sid: "sid_conflict",
+      status: 409,
+      error_code: "http_409",
+      error_details: {
+        code: "DIAGRAM_STATE_CONFLICT",
+        session_id: "sid_conflict",
+        client_base_version: 12,
+        server_current_version: 13,
+        server_last_write: {
+          actor_label: "Иван",
+          at: 1776147496,
+          changed_keys: ["bpmn_xml", "bpmn_meta"],
+        },
+      },
+      error: { detail: "stale write blocked" },
+    },
+  });
+
+  assert.equal(event.stage, "conflict");
+  assert.equal(event.state, "conflict");
+  assert.equal(event.conflict?.code, "DIAGRAM_STATE_CONFLICT");
+  assert.equal(event.conflict?.clientBaseVersion, 12);
+  assert.equal(event.conflict?.serverCurrentVersion, 13);
+  assert.equal(event.conflict?.actorLabel, "Иван");
+});
+
+test("conflict badge renders readable context and never shows [object Object]", () => {
+  const badge = buildSaveUploadStatusBadge({
+    stage: "conflict",
+    status: 409,
+    error: { detail: { code: "DIAGRAM_STATE_CONFLICT" } },
+    conflict: {
+      code: "DIAGRAM_STATE_CONFLICT",
+      clientBaseVersion: 345,
+      serverCurrentVersion: 349,
+      actorLabel: "Мария",
+      at: 1776147496,
+      changedKeys: ["bpmn_xml", "nodes"],
+    },
+  });
+
+  assert.equal(badge.visible, true);
+  assert.equal(badge.state, "conflict");
+  assert.match(badge.label, /конфликт сохранения/i);
+  assert.equal(String(badge.title).includes("[object Object]"), false);
+  assert.match(badge.title, /Мария/);
+  assert.match(badge.title, /bpmn_xml/);
+});

@@ -5,6 +5,7 @@ import InterviewStage from "./process/InterviewStage";
 import WorkspaceExplorer from "../features/explorer/WorkspaceExplorer";
 import { useAuth } from "../features/auth/AuthProvider";
 import {
+  apiGetSession,
   apiPatchSession,
   apiRecompute,
   apiStartAutoPass,
@@ -216,13 +217,17 @@ const BPMN_VERSION_HEADERS_LIMIT = 50;
 const IDLE_SAVE_UPLOAD_EVENT = Object.freeze({
   event: "",
   stage: "idle",
+  state: "saved",
   at: 0,
   reason: "",
   sessionId: "",
   rev: 0,
   status: 0,
   xmlBytes: 0,
+  errorCode: "",
   error: "",
+  errorDetails: null,
+  conflict: null,
 });
 
 export default function ProcessStage({
@@ -300,6 +305,8 @@ export default function ProcessStage({
   });
   const [drawioAnchorImportDiagnostics, setDrawioAnchorImportDiagnostics] = useState(null);
   const [saveUploadLifecycleEvent, setSaveUploadLifecycleEvent] = useState(IDLE_SAVE_UPLOAD_EVENT);
+  const [saveConflictNoticeDismissed, setSaveConflictNoticeDismissed] = useState(false);
+  const [saveConflictActionBusy, setSaveConflictActionBusy] = useState(false);
   const [latestBpmnVersionHead, setLatestBpmnVersionHead] = useState(null);
   const [latestBpmnVersionHeadStatus, setLatestBpmnVersionHeadStatus] = useState("idle");
   const [diagramUndoRedoState, setDiagramUndoRedoState] = useState({ canUndo: false, canRedo: false, ready: false });
@@ -928,6 +935,9 @@ export default function ProcessStage({
   const onBpmnSaveLifecycleEvent = useCallback((eventRaw = null) => {
     const next = normalizeBpmnSaveLifecycleEvent(eventRaw);
     if (!next.stage || next.stage === "idle") return;
+    if (next.stage === "conflict") {
+      setSaveConflictNoticeDismissed(false);
+    }
     setSaveUploadLifecycleEvent(next);
     if (saveUploadLifecycleClearTimerRef.current) {
       globalThis.clearTimeout(saveUploadLifecycleClearTimerRef.current);
@@ -943,6 +953,54 @@ export default function ProcessStage({
       }, 4200);
     }
   }, []);
+
+  const dismissSaveConflictNotice = useCallback(() => {
+    setSaveConflictNoticeDismissed(true);
+  }, []);
+
+  const reloadSessionAfterSaveConflict = useCallback(async ({ discardLocal = false } = {}) => {
+    if (!sid || saveConflictActionBusy) return { ok: false, error: "busy_or_missing_session" };
+    setSaveConflictActionBusy(true);
+    setGenErr("");
+    try {
+      const fetched = await apiGetSession(sid);
+      if (fetched?.ok && fetched?.session && typeof fetched.session === "object") {
+        onSessionSync?.({
+          ...fetched.session,
+          _sync_source: "save_conflict_refresh",
+        });
+      }
+      await bpmnSync.resetBackend();
+      setSaveDirtyHint(false);
+      setSaveUploadLifecycleEvent(IDLE_SAVE_UPLOAD_EVENT);
+      setSaveConflictNoticeDismissed(true);
+      setInfoMsg(
+        discardLocal
+          ? "Локальные изменения отброшены. Загружена серверная версия сессии."
+          : "Сессия обновлена с сервера. Проверьте изменения и повторите сохранение при необходимости.",
+      );
+      if (!fetched?.ok) {
+        const warning = shortErr(fetched?.error || "Не удалось полностью обновить сессию.");
+        setGenErr(warning);
+        return { ok: false, error: warning };
+      }
+      return { ok: true };
+    } catch (error) {
+      const message = shortErr(error?.message || error || "Не удалось обновить сессию после конфликта.");
+      setGenErr(message);
+      return { ok: false, error: message };
+    } finally {
+      setSaveConflictActionBusy(false);
+    }
+  }, [bpmnSync, onSessionSync, saveConflictActionBusy, setGenErr, sid]);
+
+  const handleSaveConflictRefresh = useCallback(() => {
+    void reloadSessionAfterSaveConflict({ discardLocal: false });
+  }, [reloadSessionAfterSaveConflict]);
+
+  const handleSaveConflictDiscardLocal = useCallback(() => {
+    void reloadSessionAfterSaveConflict({ discardLocal: true });
+  }, [reloadSessionAfterSaveConflict]);
 
   const applyDiagramMode = useCallback((nextModeRaw) => {
     const nextMode = normalizeDiagramMode(nextModeRaw);
@@ -4767,6 +4825,13 @@ export default function ProcessStage({
     shellProps: {
       ...shellVm.shellProps,
       sessionRevisionHistorySnapshot: revisionHistoryUiSnapshot,
+      saveConflictActions: {
+        visible: saveUploadStatus?.state === "conflict" && !saveConflictNoticeDismissed,
+        busy: saveConflictActionBusy === true,
+        onRefreshSession: handleSaveConflictRefresh,
+        onStay: dismissSaveConflictNotice,
+        onDiscardLocalChanges: handleSaveConflictDiscardLocal,
+      },
     },
     sid,
     saveDirtyHint: shellVm.shellProps.saveDirtyHint === true,
