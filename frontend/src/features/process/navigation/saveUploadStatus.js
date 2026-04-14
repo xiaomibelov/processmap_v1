@@ -1,3 +1,5 @@
+import { buildConflictChangedSummary } from "../lib/conflictChangedFieldsHumanization.js";
+
 function toText(value) {
   if (typeof value === "string") return value.trim();
   if (typeof value === "number" || typeof value === "boolean") return String(value).trim();
@@ -148,9 +150,7 @@ function buildConflictTitle(conflict = null, fallbackText = "") {
   if (actor || atText) {
     lines.push(`Последнее изменение: ${actor || "неизвестный пользователь"}${atText ? `, ${atText}` : ""}.`);
   }
-  if (details.changedKeys.length) {
-    lines.push(`Изменённые поля: ${details.changedKeys.join(", ")}.`);
-  }
+  lines.push(buildConflictChangedSummary(details.changedKeys).text);
   if (toText(fallbackText) && toText(fallbackText) !== "[object Object]") {
     lines.push(`Детали: ${toText(fallbackText)}.`);
   }
