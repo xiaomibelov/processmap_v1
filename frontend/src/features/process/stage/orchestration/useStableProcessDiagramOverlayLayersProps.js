@@ -87,6 +87,8 @@ const BPMN_INPUT_KEYS = [
   "onDiagramContextMenuRequest",
   "onElementNotesRemap",
   "onSessionSync",
+  "getBaseDiagramStateVersion",
+  "rememberDiagramStateVersion",
   "propertiesOverlayAlwaysEnabled",
   "propertiesOverlayAlwaysPreviewByElementId",
   "queueDiagramMutation",
