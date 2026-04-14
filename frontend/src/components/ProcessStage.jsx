@@ -114,11 +114,13 @@ import ProcessDiagramOverlayLayers from "../features/process/stage/ui/ProcessDia
 import BottomViewportScrubber from "../features/process/stage/scrubber/BottomViewportScrubber";
 import BpmnPropertiesOverlayModal from "../features/process/bpmn/context-menu/properties-overlay/BpmnPropertiesOverlayModal";
 import {
+  classifyRevisionSourceAction,
   formatRevisionAuthor,
   formatRevisionTimestampRu,
   localizeRevisionSourceAction,
   normalizeRevisionTimestampMs,
   resolveRevisionHistoryUiSnapshot,
+  splitMeaningfulAndTechnicalRevisions,
 } from "../features/process/stage/ui/revisionHistoryUiModel";
 import useHybridStore from "../features/process/hybrid/controllers/useHybridStore";
 import useHybridPersistController from "../features/process/hybrid/controllers/useHybridPersistController";
@@ -3062,6 +3064,8 @@ export default function ProcessStage({
       || 0,
     );
     const sourceAction = String(item?.source_action || item?.sourceAction || item?.reason || "import_bpmn").trim() || "import_bpmn";
+    const sourceClassification = classifyRevisionSourceAction(sourceAction);
+    const normalizedSourceAction = String(sourceClassification.action || sourceAction || "import_bpmn").trim() || "import_bpmn";
     const importNote = String(item?.import_note || item?.importNote || item?.comment || "").trim();
     const author = formatRevisionAuthor({
       ...(asObject(item?.author)),
@@ -3076,8 +3080,11 @@ export default function ProcessStage({
       id,
       xml,
       ts: createdAt,
-      reason: sourceAction,
-      reasonLabel: localizeRevisionSourceAction(sourceAction),
+      reason: normalizedSourceAction,
+      reasonLabel: localizeRevisionSourceAction(normalizedSourceAction),
+      reasonBucket: String(sourceClassification.bucket || "meaningful"),
+      isMeaningfulRevision: sourceClassification.isMeaningful !== false,
+      isTechnicalRevision: sourceClassification.isTechnical === true,
       comment: importNote,
       revisionNumber: versionNumber,
       rev: versionNumber,
@@ -3137,13 +3144,16 @@ export default function ProcessStage({
       if (trackHeadStatus) setLatestBpmnVersionHeadStatus("failed");
       return;
     }
-    const list = asArray(loaded?.versions).map((item) => normalizeBpmnVersionListItem(item));
+    const normalizedList = asArray(loaded?.versions).map((item) => normalizeBpmnVersionListItem(item));
+    const revisionSplit = splitMeaningfulAndTechnicalRevisions(normalizedList);
+    const list = asArray(revisionSplit.meaningful);
     setLatestBpmnVersionHead(asArray(list)[0] || null);
     if (trackHeadStatus) setLatestBpmnVersionHeadStatus("ready");
     if (!updateList) return;
     // eslint-disable-next-line no-console
     console.debug(
-      `UI_VERSIONS_LOAD sid=${sid} key="${snapshotScopeKey(snapshotProjectId, sid)}" count=${asArray(list).length}`,
+      `UI_VERSIONS_LOAD sid=${sid} key="${snapshotScopeKey(snapshotProjectId, sid)}" `
+      + `meaningful_count=${asArray(list).length} technical_count=${asArray(revisionSplit.technical).length}`,
     );
     setVersionsList(asArray(list));
     setVersionsLoadState(asArray(list).length > 0 ? "ready" : "empty");

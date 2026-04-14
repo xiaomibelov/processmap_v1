@@ -2,10 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  classifyRevisionSourceAction,
   formatRevisionAuthor,
   formatRevisionTimestampRu,
+  localizeRevisionSourceAction,
   normalizeRevisionTimestampMs,
   resolveRevisionHistoryUiSnapshot,
+  splitMeaningfulAndTechnicalRevisions,
 } from "./revisionHistoryUiModel.js";
 
 test("normalizeRevisionTimestampMs converts unix seconds to milliseconds", () => {
@@ -71,4 +74,35 @@ test("resolveRevisionHistoryUiSnapshot keeps companion ledger separate while aut
   assert.equal(resolved.latestPublishedRevisionResolved, false);
   assert.equal(resolved.latestLedgerRevisionNumber, 41);
   assert.equal(resolved.latestLedgerRevisionId, "ledger_r41");
+});
+
+test("classifyRevisionSourceAction separates meaningful and technical revisions by source_action", () => {
+  const meaningful = classifyRevisionSourceAction("publish_manual_save");
+  assert.equal(meaningful.isMeaningful, true);
+  assert.equal(meaningful.isTechnical, false);
+  assert.equal(meaningful.bucket, "meaningful");
+
+  const technical = classifyRevisionSourceAction("manual_save");
+  assert.equal(technical.isMeaningful, false);
+  assert.equal(technical.isTechnical, true);
+  assert.equal(technical.bucket, "technical");
+});
+
+test("splitMeaningfulAndTechnicalRevisions keeps autosave traces out of main list", () => {
+  const split = splitMeaningfulAndTechnicalRevisions([
+    { id: "r1", reason: "manual_save" },
+    { id: "r2", reason: "publish_manual_save" },
+    { id: "r3", reason: "import_bpmn" },
+    { id: "r4", reason: "autosave" },
+  ]);
+  assert.deepEqual(split.meaningful.map((entry) => entry.id), ["r2", "r3"]);
+  assert.deepEqual(split.technical.map((entry) => entry.id), ["r1", "r4"]);
+});
+
+test("unknown source action remains meaningful and does not break rendering", () => {
+  const classification = classifyRevisionSourceAction("custom_domain_action");
+  assert.equal(classification.isMeaningful, true);
+  assert.equal(classification.isTechnical, false);
+  assert.equal(classification.known, false);
+  assert.equal(localizeRevisionSourceAction("custom_domain_action"), "custom_domain_action");
 });
