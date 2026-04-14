@@ -1,3 +1,5 @@
+import { buildConflictChangedSummary } from "../../lib/conflictChangedFieldsHumanization.js";
+
 function toText(value) {
   return String(value || "").trim();
 }
@@ -81,12 +83,12 @@ export function buildSaveConflictModalView({
   const changedKeys = Array.isArray(conflict.changedKeys)
     ? conflict.changedKeys.map((item) => toText(item)).filter(Boolean)
     : [];
-  const changedKeysText = changedKeys.length ? changedKeys.slice(0, 5).join(", ") : "";
+  const changedSummary = buildConflictChangedSummary(changedKeys);
   const atText = formatConflictMoment(conflict.at);
   const contextLines = [
     `Серверная версия: ${serverVersion}. Ваша базовая версия: ${clientVersion}.`,
     actorLabel ? `Последнее изменение: ${actorLabel}${atText ? `, ${atText}` : ""}.` : "",
-    changedKeysText ? `Изменённые поля: ${changedKeysText}.` : "",
+    changedSummary.text,
     fallbackText && fallbackText !== "[object Object]" ? `Детали: ${fallbackText}.` : "",
   ].filter(Boolean);
   return {
