@@ -4595,7 +4595,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       count: persistStartCount,
     });
     logBpmnTrace("persist.put.before", out, { sid, hint: hintBase, rev });
-    const r = await ensureBpmnPersistence().saveRaw(sid, out, rev, hintBase);
+      const r = await ensureBpmnPersistence().saveRaw(sid, out, rev, hintBase);
     traceProcess("bpmn.persist_xml_snapshot_backend", {
       sid,
       hint: hintBase,
@@ -4620,10 +4620,18 @@ const BpmnStage = forwardRef(function BpmnStage({
         reason: hintBase,
         rev,
         status: Number(r.status || 0),
+        error_code: String(r.errorCode || ""),
+        error_details: r.errorDetails && typeof r.errorDetails === "object" ? r.errorDetails : null,
         xml_len: out.length,
         error: msg,
       });
-      return { ok: false, error: msg };
+      return {
+        ok: false,
+        error: msg,
+        status: Number(r.status || 0),
+        errorCode: String(r.errorCode || ""),
+        errorDetails: r.errorDetails && typeof r.errorDetails === "object" ? r.errorDetails : null,
+      };
     }
     setErr("");
     logBpmnTrace("persist.put.done", out, { sid, hint: hintBase, status: r.status || 200 });
@@ -4770,6 +4778,7 @@ const BpmnStage = forwardRef(function BpmnStage({
           error: String(flushed?.error || "saveXML failed"),
           status: Number(flushed?.status || 0),
           errorCode: String(flushed?.errorCode || ""),
+          errorDetails: flushed?.errorDetails && typeof flushed.errorDetails === "object" ? flushed.errorDetails : null,
           xml: out,
         };
       }
@@ -4800,6 +4809,12 @@ const BpmnStage = forwardRef(function BpmnStage({
             reason: finalizeLifecycleReason,
             rev,
             status: Number(persistedFinalXml?.status || 0),
+            error_code: String(persistedFinalXml?.errorCode || ""),
+            error_details: (
+              persistedFinalXml?.errorDetails && typeof persistedFinalXml.errorDetails === "object"
+                ? persistedFinalXml.errorDetails
+                : null
+            ),
             xml_len: out.length,
             error: String(persistedFinalXml?.error || "camunda finalize persist failed"),
           });
@@ -4811,6 +4826,11 @@ const BpmnStage = forwardRef(function BpmnStage({
             error: String(persistedFinalXml?.error || "camunda finalize persist failed"),
             status: Number(persistedFinalXml?.status || 0),
             errorCode: String(persistedFinalXml?.errorCode || ""),
+            errorDetails: (
+              persistedFinalXml?.errorDetails && typeof persistedFinalXml.errorDetails === "object"
+                ? persistedFinalXml.errorDetails
+                : null
+            ),
             xml: out,
           };
         }
@@ -4865,6 +4885,7 @@ const BpmnStage = forwardRef(function BpmnStage({
               error: String(persisted.error || msg),
               status: Number(persisted?.status || 0),
               errorCode: String(persisted?.errorCode || ""),
+              errorDetails: persisted?.errorDetails && typeof persisted.errorDetails === "object" ? persisted.errorDetails : null,
               xml: fallbackXml,
             };
           }
@@ -4882,6 +4903,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         error: msg || "saveXML failed",
         status: Number(e?.status || 0),
         errorCode: String(e?.code || ""),
+        errorDetails: e?.details && typeof e.details === "object" ? e.details : null,
       };
     }
   }

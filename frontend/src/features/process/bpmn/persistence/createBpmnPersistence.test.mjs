@@ -154,3 +154,37 @@ test("when remote API is unavailable, local winner stays bounded fallback with e
   assert.equal(loaded.xml, "<bpmn:local_only/>");
   assert.equal(loaded.sourceReason, "local_no_remote_api");
 });
+
+test("saveRaw keeps structured conflict details from backend 409 payload", async () => {
+  window.localStorage.clear();
+  const persistence = createBpmnPersistence({
+    getSessionDraft: () => ({ bpmn_xml: "<bpmn:baseline/>", bpmn_xml_version: 10, version: 10 }),
+    apiPutBpmnXml: async () => ({
+      ok: false,
+      status: 409,
+      error: "[object Object]",
+      data: {
+        detail: {
+          code: "DIAGRAM_STATE_CONFLICT",
+          session_id: "sid_conflict",
+          client_base_version: 10,
+          server_current_version: 11,
+          server_last_write: {
+            actor_label: "user_2",
+            at: 1776147496,
+            changed_keys: ["bpmn_xml"],
+          },
+        },
+      },
+    }),
+  });
+
+  const saved = await persistence.saveRaw("sid_conflict", "<bpmn:new/>", 10, "manual_save");
+
+  assert.equal(saved.ok, false);
+  assert.equal(saved.status, 409);
+  assert.equal(saved.errorCode, "DIAGRAM_STATE_CONFLICT");
+  assert.match(String(saved.error || ""), /конфликт версии BPMN/i);
+  assert.equal(saved.errorDetails?.code, "DIAGRAM_STATE_CONFLICT");
+  assert.equal(saved.errorDetails?.server_current_version, 11);
+});

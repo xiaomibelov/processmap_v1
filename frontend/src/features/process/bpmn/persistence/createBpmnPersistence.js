@@ -7,6 +7,61 @@ function asNumber(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function asObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function tryParseObjectJson(raw) {
+  const text = asText(raw).trim();
+  if (!text) return {};
+  try {
+    const parsed = JSON.parse(text);
+    return asObject(parsed);
+  } catch {
+    return {};
+  }
+}
+
+function resolvePersistErrorDetails(saved = null) {
+  const value = asObject(saved);
+  const data = asObject(value.data);
+  const direct = asObject(value.errorDetails || value.error_details);
+  if (Object.keys(direct).length) return direct;
+  const detailObject = asObject(data.detail);
+  if (Object.keys(detailObject).length) return detailObject;
+  const parsedDetail = tryParseObjectJson(data.detail);
+  if (Object.keys(parsedDetail).length) return parsedDetail;
+  const parsedError = tryParseObjectJson(value.error);
+  if (Object.keys(parsedError).length) return parsedError;
+  if (typeof data.code === "string" && data.code.trim()) return data;
+  return {};
+}
+
+function resolvePersistErrorText(saved = null, fallback = "", details = {}, status = 0) {
+  const value = asObject(saved);
+  const data = asObject(value.data);
+  const directText = asText(value.error || data.error || data.message || "");
+  if (directText && directText !== "[object Object]") return directText;
+  const detailMessage = asText(
+    details.message
+    || details.detail
+    || details.reason
+    || details.error,
+  );
+  if (detailMessage && detailMessage !== "[object Object]") return detailMessage;
+  const code = asText(details.code || data.code).toUpperCase();
+  if (code === "DIAGRAM_STATE_CONFLICT") {
+    return "Конфликт версии BPMN. Обновите сессию и повторите сохранение.";
+  }
+  if (code === "DIAGRAM_STATE_BASE_VERSION_REQUIRED") {
+    return "Сохранение отклонено: отсутствует базовая версия диаграммы.";
+  }
+  if (Number(status || 0) === 409) {
+    return "Конфликт версии BPMN. Обновите сессию и повторите сохранение.";
+  }
+  return asText(fallback || "failed to save bpmn");
+}
+
 function fnv1aHex(input) {
   const src = asText(input);
   let hash = 0x811c9dc5;
@@ -472,11 +527,19 @@ export default function createBpmnPersistence(options = {}) {
     const saved = await apiPutBpmnXml(sid, xml, { rev: targetRev, reason });
     if (!saved?.ok) {
       const status = asNumber(saved?.status, 0);
+      const errorDetails = resolvePersistErrorDetails(saved);
+      const errorCode = asText(
+        saved?.errorCode
+        || errorDetails.code
+        || (status > 0 ? `http_${status}` : "persist_failed"),
+      );
+      const errorText = resolvePersistErrorText(saved, "failed to save bpmn", errorDetails, status);
       return {
         ok: false,
         status,
-        errorCode: asText(saved?.errorCode || (status > 0 ? `http_${status}` : "persist_failed")),
-        error: asText(saved?.error || "failed to save bpmn"),
+        errorCode,
+        error: errorText,
+        errorDetails: Object.keys(errorDetails).length ? errorDetails : null,
       };
     }
     const storedRev = asNumber(saved?.storedRev, targetRev);
