@@ -1027,7 +1027,7 @@ export default function App() {
   });
 
   const {
-    openSessionWithLeaveGuard,
+    openSession,
     openWorkspaceSession: openWorkspaceSessionBase,
     refreshProjects,
     refreshSessions,
@@ -2701,8 +2701,9 @@ export default function App() {
 
   async function returnToSessionList(reason = "manual_return", options = {}) {
     const shouldFlushBeforeLeave = options?.flushBeforeLeave !== false;
+    const shouldRunLeaveGuard = options?.skipLeaveGuard !== true;
     const sid = String(draft?.session_id || "").trim();
-    if (sid && !confirmLeaveIfUnsafe(reason)) {
+    if (sid && shouldRunLeaveGuard && !confirmLeaveIfUnsafe(reason)) {
       return { ok: false, cancelled: true, error: "leave_guard_cancelled" };
     }
     if (shouldFlushBeforeLeave && sid && !isLocalSessionId(sid)) {
@@ -2751,7 +2752,7 @@ export default function App() {
     setProjects((prev) => ensureArray(prev).filter((item) => projectIdOf(item) !== pid));
     setProjectId("");
     setSessions([]);
-    await returnToSessionList("project_deleted", { flushBeforeLeave: false });
+    await returnToSessionList("project_deleted", { flushBeforeLeave: false, skipLeaveGuard: true });
     await refreshProjects();
     markOk("API OK");
     return { ok: true };
@@ -2761,7 +2762,7 @@ export default function App() {
     if (!workspacePermissions.canDeleteSession) return { ok: false, error: "forbidden" };
     const sid = String(draft?.session_id || "");
     if (!sid || isLocalSessionId(sid)) {
-      await returnToSessionList("local_session_clear", { flushBeforeLeave: false });
+      await returnToSessionList("local_session_clear", { flushBeforeLeave: false, skipLeaveGuard: true });
       return { ok: true };
     }
     const skipConfirm = !!options?.skipConfirm;
@@ -2780,7 +2781,7 @@ export default function App() {
       return { ok: false, error: String(r.error || "delete_session_failed") };
     }
 
-    await returnToSessionList("session_deleted", { flushBeforeLeave: false });
+    await returnToSessionList("session_deleted", { flushBeforeLeave: false, skipLeaveGuard: true });
     await refreshSessions(projectId);
     markOk("API OK");
     return { ok: true };
