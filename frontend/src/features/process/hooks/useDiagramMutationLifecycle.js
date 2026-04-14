@@ -2,14 +2,13 @@ import { useCallback, useEffect, useRef } from "react";
 import { apiPatchSession } from "../../../lib/api/sessionApi";
 import useAutosaveQueue from "./useAutosaveQueue";
 import { parseAndProjectBpmnToInterview } from "./useInterviewProjection";
+import { buildDiagramSessionPatchFromProjection } from "./diagramSessionPatchContract";
 import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
 import { traceProcess } from "../lib/processDebugTrace";
 import { shortUserFacingError } from "../lib/userFacingErrorText";
 import {
   asArray,
   asObject,
-  safeJson,
-  buildInterviewPatchPayload,
 } from "../lib/processStageDomain";
 
 function shortErr(x) {
@@ -101,19 +100,15 @@ export default function useDiagramMutationLifecycle({
           const nextInterview = asObject(projected.nextInterview);
           const nextNodes = asArray(projected.nextNodes);
           const nextEdges = asArray(projected.nextEdges);
-
-          const savePlan = buildInterviewPatchPayload(
-            nextInterview,
-            nextNodes,
-            draftNow?.nodes,
-            nextEdges,
-            draftNow?.edges,
-          );
-          const interviewChanged = safeJson(nextInterview) !== safeJson(draftNow?.interview);
-
-          if (interviewChanged) patch.interview = nextInterview;
-          if (savePlan.nodesChanged) patch.nodes = nextNodes;
-          if (savePlan.edgesChanged) patch.edges = nextEdges;
+          const patchPlan = buildDiagramSessionPatchFromProjection({
+            draftInterviewRaw: draftNow?.interview,
+            nextInterviewRaw: nextInterview,
+            nextNodesRaw: nextNodes,
+            draftNodesRaw: draftNow?.nodes,
+            nextEdgesRaw: nextEdges,
+            draftEdgesRaw: draftNow?.edges,
+          });
+          patch = patchPlan.patch;
 
           optimisticSession = {
             ...baseOptimistic,
@@ -167,12 +162,19 @@ export default function useDiagramMutationLifecycle({
       }
 
       if (isStale?.()) return true;
-      const patchedSession = patchRes.session && typeof patchRes.session === "object"
-        ? patchRes.session
-        : optimisticSession;
-      onSessionSync?.({
-        ...patchedSession,
+      const patchAck = asObject(patchRes.session);
+      const patchAckVersion = Number(patchAck?.diagram_state_version ?? patchAck?.diagramStateVersion);
+      const patchAckPayload = {
+        id: sid,
+        session_id: sid,
         actors_derived: asArray(optimisticSession?.actors_derived),
+        _sync_source: "diagram.autosave_patch_ack",
+      };
+      if (Number.isFinite(patchAckVersion) && patchAckVersion >= 0) {
+        patchAckPayload.diagram_state_version = Math.round(patchAckVersion);
+      }
+      onSessionSync?.({
+        ...patchAckPayload,
       });
       return true;
     },
