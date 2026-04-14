@@ -9,6 +9,15 @@ function asNumber(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function asObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function normalizeErrorDetails(value) {
+  const details = asObject(value);
+  return Object.keys(details).length ? details : null;
+}
+
 function fnv1aHex(input) {
   const src = asText(input);
   let hash = 0x811c9dc5;
@@ -314,12 +323,20 @@ export default function createBpmnCoordinator(options = {}) {
           });
           // Keep dirty=true to force true runtime save when ready.
         } else {
+          const status = asNumber(persisted?.status, 0);
+          const errorCode = asText(
+            persisted?.errorCode
+            || (status > 0 ? `http_${status}` : "persist_failed"),
+          );
+          const errorDetails = normalizeErrorDetails(persisted?.errorDetails);
           emit("SAVE_PERSIST_FAIL", {
             sid,
             reason: `${reason}:fallback`,
             rev,
-            status: asNumber(persisted?.status, 0),
+            status,
+            error_code: errorCode,
             error: asText(persisted?.error || "persist fallback failed"),
+            error_details: errorDetails,
           });
         }
       }
@@ -405,19 +422,27 @@ export default function createBpmnCoordinator(options = {}) {
     const persisted = await persistRaw(sid, xml, targetRev, reason);
     if (!persisted?.ok) {
       const status = asNumber(persisted?.status, 0);
+      const errorCode = asText(
+        persisted?.errorCode
+        || (status > 0 ? `http_${status}` : "persist_failed"),
+      );
+      const errorDetails = normalizeErrorDetails(persisted?.errorDetails);
       emit("SAVE_PERSIST_FAIL", {
         sid,
         reason,
         rev: targetRev,
         status,
+        error_code: errorCode,
         error: asText(persisted?.error || "persist failed"),
+        error_details: errorDetails,
       });
       return {
         ok: false,
         rev: targetRev,
         status,
-        errorCode: asText(persisted?.errorCode || (status > 0 ? `http_${status}` : "persist_failed")),
+        errorCode,
         error: asText(persisted?.error || "persist failed"),
+        errorDetails,
       };
     }
     const storedRev = asNumber(persisted?.storedRev, targetRev);
@@ -580,19 +605,27 @@ export default function createBpmnCoordinator(options = {}) {
         const persisted = await persistRaw(sid, xml, rev, reason);
         if (!persisted?.ok) {
           const status = asNumber(persisted?.status, 0);
+          const errorCode = asText(
+            persisted?.errorCode
+            || (status > 0 ? `http_${status}` : "persist_failed"),
+          );
+          const errorDetails = normalizeErrorDetails(persisted?.errorDetails);
           emit("SAVE_PERSIST_FAIL", {
             sid,
             reason,
             rev,
             status,
+            error_code: errorCode,
             error: asText(persisted?.error || "persist failed"),
+            error_details: errorDetails,
           });
           return {
             ok: false,
             rev,
             status,
-            errorCode: asText(persisted?.errorCode || (status > 0 ? `http_${status}` : "persist_failed")),
+            errorCode,
             error: asText(persisted?.error || "persist failed"),
+            errorDetails,
           };
         }
         const storedRev = asNumber(persisted?.storedRev, rev);
