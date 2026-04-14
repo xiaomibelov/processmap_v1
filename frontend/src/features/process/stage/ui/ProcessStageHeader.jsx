@@ -7,16 +7,6 @@ function toText(value) {
   return String(value || "").trim();
 }
 
-function hasNumericVersion(value) {
-  const num = Number(value);
-  return Number.isFinite(num) && num >= 0;
-}
-
-function formatVersionForLabel(value) {
-  if (!hasNumericVersion(value)) return "?";
-  return String(Math.round(Number(value)));
-}
-
 export default function ProcessStageHeader({ view = {} }) {
   const {
     canSaveNow,
@@ -84,29 +74,12 @@ export default function ProcessStageHeader({ view = {} }) {
     : mirrorMeta.label;
   const showSaveStatusBadge = canSaveNow && !showSaveActionButton;
   const isConflictState = toText(saveUploadStatus?.state) === "conflict";
-  const conflictMeta = isConflictState ? (saveUploadStatus?.conflict || {}) : {};
-  const hasServerVersion = hasNumericVersion(conflictMeta?.serverCurrentVersion);
-  const hasClientVersion = hasNumericVersion(conflictMeta?.clientBaseVersion);
-  const conflictVersionSummary = (
-    hasServerVersion || hasClientVersion
-      ? `srv ${formatVersionForLabel(conflictMeta?.serverCurrentVersion)} / base ${formatVersionForLabel(conflictMeta?.clientBaseVersion)}`
-      : ""
-  );
-  const conflictKeysSummary = Array.isArray(conflictMeta?.changedKeys) && conflictMeta.changedKeys.length
-    ? ` · ${conflictMeta.changedKeys.slice(0, 3).join(", ")}`
-    : "";
-  const conflictSummaryText = ([
-    "Конфликт версии BPMN",
-    conflictVersionSummary ? `(${conflictVersionSummary})` : "",
-    conflictKeysSummary,
-  ].join(" ")).replace(/\s+/g, " ").trim();
-  const showConflictActions = isConflictState && saveConflictActions?.visible === true;
-  const saveConflictBusy = saveConflictActions?.busy === true;
-  const showUploadStatusBadge = saveUploadStatus?.visible && !showConflictActions;
+  const showConflictModalActive = isConflictState && saveConflictActions?.visible === true;
+  const showUploadStatusBadge = saveUploadStatus?.visible && !showConflictModalActive;
   const toolbarMessage = toText(toolbarInlineMessage);
   const toolbarMessageLooksLikeConflict = /(?:конфликт|conflict|http\s*409|stale|верси)/i.test(toolbarMessage);
-  const showToolbarInlineBadge = !!toolbarInlineMessage && !(showConflictActions && toolbarMessageLooksLikeConflict);
-  const showSaveStatusBadgeResolved = showSaveStatusBadge && !showConflictActions;
+  const showToolbarInlineBadge = !!toolbarInlineMessage && !(showConflictModalActive && toolbarMessageLooksLikeConflict);
+  const showSaveStatusBadgeResolved = showSaveStatusBadge && !showConflictModalActive;
   const suppressDraftSavedBadge = /^Опубликовано как версия R\d+\.$/.test(toolbarMessage)
     && toText(saveSmartText) === "Черновик сохранён";
   const showGenericSaveStatusBadge = showSaveStatusBadgeResolved && !suppressDraftSavedBadge;
@@ -212,55 +185,6 @@ export default function ProcessStageHeader({ view = {} }) {
             </span>
           ) : null}
         </div>
-        {showConflictActions ? (
-          <div
-            className="mt-1 flex flex-wrap items-start gap-1.5 rounded-md border border-rose-300 bg-rose-50 px-2 py-1"
-            data-testid="diagram-toolbar-save-conflict-panel"
-          >
-            <div className="max-w-[52ch] text-[11px] leading-4">
-              <div className="font-semibold text-rose-900" data-testid="diagram-toolbar-save-conflict-title">
-                {conflictSummaryText || "Конфликт версии BPMN"}
-              </div>
-              {toText(saveUploadStatus?.title) ? (
-                <div
-                  className="text-rose-800"
-                  data-testid="diagram-toolbar-save-conflict-context"
-                  title={String(saveUploadStatus?.title || "")}
-                >
-                  {String(saveUploadStatus?.title || "")}
-                </div>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              className="secondaryBtn h-7 px-2 text-[11px]"
-              onClick={saveConflictActions?.onRefreshSession}
-              disabled={saveConflictBusy}
-              data-testid="diagram-toolbar-save-conflict-refresh"
-            >
-              Обновить сессию
-            </button>
-            <button
-              type="button"
-              className="secondaryBtn h-7 px-2 text-[11px]"
-              onClick={saveConflictActions?.onStay}
-              disabled={saveConflictBusy}
-              data-testid="diagram-toolbar-save-conflict-stay"
-            >
-              Остаться
-            </button>
-            <button
-              type="button"
-              className="secondaryBtn h-7 px-2 text-[11px]"
-              onClick={saveConflictActions?.onDiscardLocalChanges}
-              disabled={saveConflictBusy}
-              data-testid="diagram-toolbar-save-conflict-discard"
-              title="Отбросить локальные изменения и загрузить серверную версию"
-            >
-              Отбросить локальные изменения
-            </button>
-          </div>
-        ) : null}
         {showToolbarInlineBadge ? (
           <span
             className={`badge hidden max-w-[36ch] truncate lg:inline-flex ${toolbarInlineTone ? toolbarInlineTone : ""}`}
