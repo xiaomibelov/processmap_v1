@@ -362,6 +362,31 @@ def _json_loads(value: Any, fallback: Any) -> Any:
         return fallback
 
 
+def _build_diagram_truth_payload(sess: Session) -> Dict[str, Any]:
+    return {
+        "roles": list(getattr(sess, "roles", []) or []),
+        "start_role": getattr(sess, "start_role", None),
+        "notes": str(getattr(sess, "notes", "") or ""),
+        "notes_by_element": getattr(sess, "notes_by_element", {}) or {},
+        "interview": getattr(sess, "interview", {}) or {},
+        "nodes": getattr(sess, "nodes", []) or [],
+        "edges": getattr(sess, "edges", []) or [],
+        "questions": getattr(sess, "questions", []) or [],
+        "bpmn_xml": str(getattr(sess, "bpmn_xml", "") or ""),
+        "bpmn_meta": getattr(sess, "bpmn_meta", {}) or {},
+    }
+
+
+def _diagram_truth_payload_hash(sess: Session) -> str:
+    payload = _build_diagram_truth_payload(sess)
+    raw = _json_dumps(payload, {})
+    try:
+        normalized = json.dumps(json.loads(raw), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    except Exception:
+        normalized = raw
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 def _owner_clause(owner_user_id: str, is_admin: bool) -> Tuple[str, List[Any]]:
     if is_admin or not owner_user_id:
         return "", []
@@ -540,6 +565,7 @@ def _ensure_schema() -> None:
                   session_id TEXT NOT NULL,
                   org_id TEXT NOT NULL DEFAULT 'org_default',
                   version_number INTEGER NOT NULL,
+                  diagram_state_version INTEGER NOT NULL DEFAULT 0,
                   bpmn_xml TEXT NOT NULL DEFAULT '',
                   source_action TEXT NOT NULL DEFAULT '',
                   import_note TEXT NOT NULL DEFAULT '',
@@ -553,6 +579,31 @@ def _ensure_schema() -> None:
             )
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_bpmn_versions_session_created ON bpmn_versions(session_id, org_id, created_at DESC)"
+            )
+            con.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_bpmn_versions_session_diagram_state ON bpmn_versions(session_id, org_id, diagram_state_version) WHERE diagram_state_version > 0"
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS session_state_versions (
+                  id TEXT PRIMARY KEY,
+                  session_id TEXT NOT NULL,
+                  org_id TEXT NOT NULL DEFAULT 'org_default',
+                  diagram_state_version INTEGER NOT NULL,
+                  parent_diagram_state_version INTEGER NOT NULL DEFAULT 0,
+                  changed_keys_json TEXT NOT NULL DEFAULT '[]',
+                  payload_hash TEXT NOT NULL DEFAULT '',
+                  actor_user_id TEXT NOT NULL DEFAULT '',
+                  actor_label TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_state_versions_session_diagram_state ON session_state_versions(session_id, org_id, diagram_state_version)"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_session_state_versions_session_created ON session_state_versions(session_id, org_id, created_at DESC)"
             )
             con.execute(
                 """
@@ -826,6 +877,33 @@ def _ensure_schema() -> None:
                 con.execute("ALTER TABLE sessions ADD COLUMN diagram_last_write_at INTEGER NOT NULL DEFAULT 0")
             if not _column_exists(con, "sessions", "diagram_last_write_changed_keys_json"):
                 con.execute("ALTER TABLE sessions ADD COLUMN diagram_last_write_changed_keys_json TEXT NOT NULL DEFAULT '[]'")
+            if not _column_exists(con, "bpmn_versions", "diagram_state_version"):
+                con.execute("ALTER TABLE bpmn_versions ADD COLUMN diagram_state_version INTEGER NOT NULL DEFAULT 0")
+            con.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_bpmn_versions_session_diagram_state ON bpmn_versions(session_id, org_id, diagram_state_version) WHERE diagram_state_version > 0"
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS session_state_versions (
+                  id TEXT PRIMARY KEY,
+                  session_id TEXT NOT NULL,
+                  org_id TEXT NOT NULL DEFAULT 'org_default',
+                  diagram_state_version INTEGER NOT NULL,
+                  parent_diagram_state_version INTEGER NOT NULL DEFAULT 0,
+                  changed_keys_json TEXT NOT NULL DEFAULT '[]',
+                  payload_hash TEXT NOT NULL DEFAULT '',
+                  actor_user_id TEXT NOT NULL DEFAULT '',
+                  actor_label TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_state_versions_session_diagram_state ON session_state_versions(session_id, org_id, diagram_state_version)"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_session_state_versions_session_created ON session_state_versions(session_id, org_id, created_at DESC)"
+            )
             if not _column_exists(con, "org_invites", "team_name"):
                 con.execute("ALTER TABLE org_invites ADD COLUMN team_name TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "org_invites", "subgroup_name"):
@@ -1524,10 +1602,20 @@ class Storage:
             raise ValueError("session id is required")
         now = _now_ts()
         with _connect() as con:
-            existing = con.execute("SELECT owner_user_id, created_at, org_id, created_by FROM sessions WHERE id = ? LIMIT 1", [sid]).fetchone()
+            existing = con.execute(
+                """
+                SELECT owner_user_id, created_at, org_id, created_by, bpmn_xml, diagram_state_version
+                  FROM sessions
+                 WHERE id = ?
+                 LIMIT 1
+                """,
+                [sid],
+            ).fetchone()
             existing_owner = str(existing["owner_user_id"] or "") if existing else ""
             existing_org = str(existing["org_id"] or "") if existing else ""
             existing_created_by = str(existing["created_by"] or "") if existing else ""
+            existing_bpmn_xml = str(existing["bpmn_xml"] or "") if existing else ""
+            existing_diagram_state_version = int(existing["diagram_state_version"] or 0) if existing else 0
             if existing and not admin and owner_scope and existing_owner and existing_owner != owner_scope:
                 raise PermissionError("session belongs to another user")
             if existing and existing_org and org_scope and existing_org != org_scope:
@@ -1634,6 +1722,43 @@ class Storage:
                 """,
                 values,
             )
+            next_diagram_state_version = int(values.get("diagram_state_version") or 0)
+            accepted_diagram_write = bool(existing) and next_diagram_state_version > existing_diagram_state_version
+            bpmn_xml_changed = str(values.get("bpmn_xml") or "") != existing_bpmn_xml
+            if accepted_diagram_write and not bpmn_xml_changed:
+                trace_id = uuid.uuid4().hex[:12]
+                payload_hash = _diagram_truth_payload_hash(s)
+                changed_keys_raw = getattr(s, "diagram_last_write_changed_keys", [])
+                changed_keys = []
+                if isinstance(changed_keys_raw, list):
+                    for key in changed_keys_raw:
+                        txt = str(key or "").strip()
+                        if txt:
+                            changed_keys.append(txt)
+                changed_keys = sorted(set(changed_keys))
+                created_at_ts = int(getattr(s, "diagram_last_write_at", 0) or 0) or now
+                actor_user_id = str(getattr(s, "diagram_last_write_actor_user_id", "") or "")
+                actor_label = str(getattr(s, "diagram_last_write_actor_label", "") or "")
+                con.execute(
+                    """
+                    INSERT INTO session_state_versions (
+                      id, session_id, org_id, diagram_state_version, parent_diagram_state_version,
+                      changed_keys_json, payload_hash, actor_user_id, actor_label, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        trace_id,
+                        sid,
+                        str(values.get("org_id") or _default_org_id()),
+                        next_diagram_state_version,
+                        existing_diagram_state_version,
+                        _json_dumps(changed_keys, []),
+                        payload_hash,
+                        actor_user_id,
+                        actor_label,
+                        created_at_ts,
+                    ],
+                )
             con.commit()
 
     def delete(
@@ -1730,6 +1855,7 @@ class Storage:
         *,
         bpmn_xml: str,
         source_action: str,
+        diagram_state_version: Optional[int] = None,
         created_by: Optional[str] = None,
         org_id: Optional[str] = None,
         import_note: Optional[str] = None,
@@ -1746,6 +1872,9 @@ class Storage:
             raise ValueError("source_action required")
         actor = str(created_by or "").strip()
         note = str(import_note or "").strip()
+        diagram_version: int = int(diagram_state_version or 0)
+        if diagram_version < 0:
+            diagram_version = 0
         now = _now_ts()
 
         with _connect() as con:
@@ -1774,11 +1903,11 @@ class Storage:
             con.execute(
                 """
                 INSERT INTO bpmn_versions (
-                  id, session_id, org_id, version_number, bpmn_xml,
+                  id, session_id, org_id, version_number, diagram_state_version, bpmn_xml,
                   source_action, import_note, created_at, created_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                [snapshot_id, sid, scope_org, next_version, xml, action, note, now, actor],
+                [snapshot_id, sid, scope_org, next_version, diagram_version, xml, action, note, now, actor],
             )
             con.commit()
 
@@ -1787,6 +1916,7 @@ class Storage:
             "session_id": sid,
             "org_id": scope_org,
             "version_number": next_version,
+            "diagram_state_version": diagram_version,
             "source_action": action,
             "created_at": now,
             "created_by": actor,
@@ -1821,9 +1951,9 @@ class Storage:
             if oid != session_org:
                 return []
             columns = (
-                "id, session_id, org_id, version_number, bpmn_xml, source_action, import_note, created_at, created_by"
+                "id, session_id, org_id, version_number, diagram_state_version, bpmn_xml, source_action, import_note, created_at, created_by"
                 if include_xml
-                else "id, session_id, org_id, version_number, source_action, import_note, created_at, created_by"
+                else "id, session_id, org_id, version_number, diagram_state_version, source_action, import_note, created_at, created_by"
             )
             rows = con.execute(
                 f"""
@@ -1844,6 +1974,7 @@ class Storage:
                 "session_id": str(row["session_id"] or ""),
                 "org_id": str(row["org_id"] or ""),
                 "version_number": int(row["version_number"] or 0),
+                "diagram_state_version": int(row["diagram_state_version"] or 0),
                 "source_action": str(row["source_action"] or ""),
                 "import_note": str(row["import_note"] or ""),
                 "created_at": int(row["created_at"] or 0),
@@ -1878,7 +2009,7 @@ class Storage:
                 return None
             row = con.execute(
                 """
-                SELECT id, session_id, org_id, version_number, bpmn_xml, source_action, import_note, created_at, created_by
+                SELECT id, session_id, org_id, version_number, diagram_state_version, bpmn_xml, source_action, import_note, created_at, created_by
                   FROM bpmn_versions
                  WHERE session_id = ?
                    AND org_id = ?
@@ -1895,12 +2026,70 @@ class Storage:
             "session_id": str(row["session_id"] or ""),
             "org_id": str(row["org_id"] or ""),
             "version_number": int(row["version_number"] or 0),
+            "diagram_state_version": int(row["diagram_state_version"] or 0),
             "bpmn_xml": str(row["bpmn_xml"] or ""),
             "source_action": str(row["source_action"] or ""),
             "import_note": str(row["import_note"] or ""),
             "created_at": int(row["created_at"] or 0),
             "created_by": str(row["created_by"] or ""),
         }
+
+    def list_session_state_versions(
+        self,
+        session_id: str,
+        *,
+        org_id: Optional[str] = None,
+        limit: int = 200,
+    ) -> List[Dict[str, Any]]:
+        _ensure_schema()
+        sid = str(session_id or "").strip()
+        if not sid:
+            return []
+        scope_org = str(org_id or "").strip()
+        try:
+            lim = int(limit)
+        except Exception:
+            lim = 200
+        lim = min(max(lim, 1), 1000)
+
+        with _connect() as con:
+            sess_row = con.execute("SELECT org_id FROM sessions WHERE id = ? LIMIT 1", [sid]).fetchone()
+            if not sess_row:
+                return []
+            session_org = str(sess_row["org_id"] or "").strip() or _default_org_id()
+            oid = scope_org or session_org
+            if oid != session_org:
+                return []
+            rows = con.execute(
+                """
+                SELECT id, session_id, org_id, diagram_state_version, parent_diagram_state_version,
+                       changed_keys_json, payload_hash, actor_user_id, actor_label, created_at
+                  FROM session_state_versions
+                 WHERE session_id = ?
+                   AND org_id = ?
+                 ORDER BY diagram_state_version DESC
+                 LIMIT ?
+                """,
+                [sid, oid, lim],
+            ).fetchall()
+
+        out: List[Dict[str, Any]] = []
+        for row in rows:
+            out.append(
+                {
+                    "id": str(row["id"] or ""),
+                    "session_id": str(row["session_id"] or ""),
+                    "org_id": str(row["org_id"] or ""),
+                    "diagram_state_version": int(row["diagram_state_version"] or 0),
+                    "parent_diagram_state_version": int(row["parent_diagram_state_version"] or 0),
+                    "changed_keys": _json_loads(row["changed_keys_json"], []),
+                    "payload_hash": str(row["payload_hash"] or ""),
+                    "actor_user_id": str(row["actor_user_id"] or ""),
+                    "actor_label": str(row["actor_label"] or ""),
+                    "created_at": int(row["created_at"] or 0),
+                }
+            )
+        return out
 
 
 def gen_project_id() -> str:
