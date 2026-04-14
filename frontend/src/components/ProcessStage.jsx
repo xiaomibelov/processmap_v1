@@ -87,6 +87,7 @@ import {
   buildSaveUploadStatusBadge,
   normalizeBpmnSaveLifecycleEvent,
 } from "../features/process/navigation/saveUploadStatus";
+import { resolveManualSaveOutcomeUi } from "../features/process/navigation/manualSaveOutcomeUi";
 import { deriveLeaveNavigationRisk } from "../features/process/navigation/leaveNavigationGuardModel";
 import useProcessStageShellController from "../features/process/stage/controllers/useProcessStageShellController";
 import useBpmnCanvasController from "../features/process/stage/controllers/useBpmnCanvasController";
@@ -1126,7 +1127,11 @@ export default function ProcessStage({
         persistReason: "publish_manual_save",
       });
       if (!saved?.ok) {
-        setGenErr(shortErr(saved?.error || "Не удалось сохранить BPMN."));
+        const failedOutcomeUi = resolveManualSaveOutcomeUi({
+          primarySaveOk: false,
+          primarySaveError: shortErr(saved?.error || "Не удалось сохранить BPMN."),
+        });
+        setGenErr(failedOutcomeUi.genErr);
         return;
       }
       let companionError = "";
@@ -1172,7 +1177,6 @@ export default function ProcessStage({
         });
         if (!companionResult?.ok) {
           companionError = shortErr(companionResult?.error || "Не удалось синхронизировать companion metadata.");
-          setGenErr(companionError);
         } else {
           if (backendRevisionNumber > 0) {
             publishInfo = `Опубликована версия ${backendRevisionNumber}.`;
@@ -1191,16 +1195,17 @@ export default function ProcessStage({
       if (selectedElementId) {
         bpmnRef.current?.flashNode?.(selectedElementId, "sync", { label: "Synced" });
       }
-      if (saved?.pending) {
-        setInfoMsg("Сохранение поставлено в очередь (pending).");
-      } else if (companionError && publishInfo) {
-        setInfoMsg(`${publishInfo} Companion metadata не синхронизированы.`);
-      } else if (companionError) {
-        setInfoMsg("BPMN сохранён, companion metadata не синхронизированы.");
-      } else if (publishInfo) {
-        setInfoMsg(publishInfo);
-      } else {
-        setInfoMsg("Черновик сохранён.");
+      const successOutcomeUi = resolveManualSaveOutcomeUi({
+        primarySaveOk: true,
+        primarySavePending: saved?.pending === true,
+        companionError,
+        publishInfo,
+      });
+      if (successOutcomeUi.genErr) {
+        setGenErr(successOutcomeUi.genErr);
+      }
+      if (successOutcomeUi.infoMsg) {
+        setInfoMsg(successOutcomeUi.infoMsg);
       }
     } catch (e) {
       setGenErr(shortErr(e?.message || e || "Не удалось сохранить BPMN."));
