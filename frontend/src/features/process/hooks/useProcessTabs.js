@@ -4,11 +4,10 @@ import { parseAndProjectBpmnToInterview } from "./useInterviewProjection";
 import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
 import { traceProcess } from "../lib/processDebugTrace";
 import { buildBpmnSaveFailureDiagnostics } from "../bpmn/save/saveBeforeSwitchDiagnostics.js";
+import { shortUserFacingError } from "../lib/userFacingErrorText";
 
 function shortErr(x) {
-  const s = String(x || "").trim();
-  if (!s) return "";
-  return s.length > 160 ? s.slice(0, 160) + "…" : s;
+  return shortUserFacingError(x, 160);
 }
 
 function publishTabSwitchSaveDiagnostics(diagnostics = {}) {

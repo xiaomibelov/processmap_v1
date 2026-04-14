@@ -88,10 +88,43 @@ export function normalizeNotes(value) {
   return [{ note_id: "legacy", ts: null, author: null, text }];
 }
 
+function normalizeApiErrorText(raw, depth = 0) {
+  if (depth > 3) return "";
+  if (typeof raw === "string") {
+    const text = raw.trim();
+    return text && text !== "[object Object]" ? text : "";
+  }
+  if (typeof raw === "number" || typeof raw === "boolean") {
+    return String(raw).trim();
+  }
+  if (!raw || typeof raw !== "object") return "";
+
+  const value = raw;
+  const direct = normalizeApiErrorText(
+    value.message
+    || value.error
+    || value.reason
+    || value.title
+    || value.detail,
+    depth + 1,
+  );
+  if (direct) return direct;
+
+  const code = normalizeApiErrorText(value.code, depth + 1);
+  if (code) return code;
+
+  try {
+    const json = JSON.stringify(value);
+    return typeof json === "string" && json !== "{}" ? json : "";
+  } catch {
+    return "";
+  }
+}
+
 export function okOrError(r) {
   if (!r.ok) return r;
   if (r.data && typeof r.data === "object" && !Array.isArray(r.data) && (r.data.error || r.data.detail)) {
-    const errText = String(r.data.error || r.data.detail || "");
+    const errText = normalizeApiErrorText(r.data.error || r.data.detail || r.data) || "request failed";
     const marker = errText.toLowerCase();
     const inferredStatus = marker.includes("not found")
       ? 404
