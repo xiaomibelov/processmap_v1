@@ -253,7 +253,12 @@ export default function ProcessDialogs({ view = {} }) {
           <div className="rounded-xl border border-border bg-panel2/45 p-2">
             <div className="mb-2 px-1 text-xs text-muted" data-testid="bpmn-versions-count">
               Последние версии: {versionsList.length}
-              <span> · последняя: r{Number(asArray(versionsList)[0]?.revisionNumber || 0)}</span>
+              <span>
+                {" "}
+                · последняя: {Number(asArray(versionsList)[0]?.revisionNumber || 0) > 0
+                  ? `Версия ${Number(asArray(versionsList)[0]?.revisionNumber || 0)}`
+                  : "не опубликовано"}
+              </span>
               <div className="mt-1 text-[11px] text-muted">
                 Текущий BPMN сохраняется отдельно от ревизий. Пустая история не означает, что черновик не сохранён.
               </div>
@@ -302,7 +307,9 @@ export default function ProcessDialogs({ view = {} }) {
                             </span>
                           ) : null}
                           <span className="rounded-full border border-accent/40 bg-accentSoft/20 px-2 py-0.5 text-[10px] uppercase tracking-wide text-accent">
-                            r{Number(item?.revisionNumber || item?.rev || 0)}
+                            {Number(item?.revisionNumber || item?.rev || 0) > 0
+                              ? `версия ${Number(item?.revisionNumber || item?.rev || 0)}`
+                              : "черновик"}
                           </span>
                         </div>
                       </div>

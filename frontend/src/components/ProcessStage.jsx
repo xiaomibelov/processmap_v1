@@ -1166,7 +1166,7 @@ export default function ProcessStage({
           setGenErr(companionError);
         } else {
           if (backendRevisionNumber > 0) {
-            publishInfo = `Опубликовано как версия R${backendRevisionNumber}.`;
+            publishInfo = `Опубликована версия ${backendRevisionNumber}.`;
           } else {
             const revisionInfo = asObject(companionResult?.revision);
             if (revisionInfo.skipped === true) {
@@ -3107,7 +3107,7 @@ export default function ProcessStage({
     const comment = String(item?.comment || "").trim();
     if (comment) return comment;
     const revisionNumber = Number(item?.revisionNumber || item?.rev || 0);
-    if (revisionNumber > 0) return `Ревизия r${revisionNumber}`;
+    if (revisionNumber > 0) return `Версия ${revisionNumber}`;
     if (item?.pinned) return defaultCheckpointLabel(item?.ts);
     return "Без названия";
   }
@@ -3370,7 +3370,7 @@ export default function ProcessStage({
           }
         }
         setInfoMsg(
-          `Версия r${Number(item?.revisionNumber || item?.rev || 0)} восстановлена: `
+          `Версия ${Number(item?.revisionNumber || item?.rev || 0)} восстановлена: `
           + `${projected.parsed.nodes.length} узл., ${projected.parsed.edges.length} связей.`
           + `${restoreDiagnostics.importHasAnchorImpact ? ` Overlay anchors affected: ${restoreDiagnostics.affectedObjectIds.length}.` : " Overlay anchors unchanged."}`,
         );

@@ -12,35 +12,30 @@ export function resolvePublishedRevisionBadgeView(snapshotRaw = null) {
   const latestRevisionNumber = toInt(snapshot.latestRevisionNumber);
   const latestPublishedRevisionNumber = toInt(snapshot.latestPublishedRevisionNumber);
   const latestPublishedRevisionStatus = toText(snapshot.latestPublishedRevisionStatus).toLowerCase() || "idle";
-  const hasPublishedRevision = latestRevisionNumber > 0;
+  const fallbackPublishedRevisionNumber = latestRevisionNumber > 0 ? latestRevisionNumber : 0;
   const hasAuthoritativePublishedRevision = latestPublishedRevisionStatus === "ready" && latestPublishedRevisionNumber > 0;
-  const authoritativeRevisionPending = latestPublishedRevisionStatus === "loading" || latestPublishedRevisionStatus === "idle";
-  const authoritativeRevisionFailed = latestPublishedRevisionStatus === "failed";
+  const hasFallbackPublishedRevision = fallbackPublishedRevisionNumber > 0;
 
   if (hasAuthoritativePublishedRevision) {
     return {
       testId: "diagram-toolbar-latest-revision",
-      text: `r${latestPublishedRevisionNumber}`,
-      title: "",
+      text: `Версия ${latestPublishedRevisionNumber}`,
+      title: "Последняя опубликованная версия",
     };
   }
-  if (authoritativeRevisionPending && hasPublishedRevision) {
+  if (hasFallbackPublishedRevision) {
+    const pendingTitle = latestPublishedRevisionStatus === "loading" || latestPublishedRevisionStatus === "idle"
+      ? "Сверяем последнюю опубликованную версию"
+      : "Отображается последняя доступная опубликованная версия";
     return {
-      testId: "diagram-toolbar-latest-revision-pending",
-      text: "r…",
-      title: "Сверяем опубликованную ревизию",
-    };
-  }
-  if (authoritativeRevisionFailed) {
-    return {
-      testId: "diagram-toolbar-latest-revision-unavailable",
-      text: "r?",
-      title: "Не удалось проверить опубликованную ревизию",
+      testId: "diagram-toolbar-latest-revision-fallback",
+      text: `Версия ${fallbackPublishedRevisionNumber}`,
+      title: pendingTitle,
     };
   }
   return {
     testId: "diagram-toolbar-latest-revision-empty",
-    text: "R0",
-    title: "",
+    text: "Не опубликовано",
+    title: "Опубликованных версий нет",
   };
 }
