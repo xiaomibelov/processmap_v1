@@ -42,6 +42,7 @@ export default function useSessionMetaPersist({
   sid,
   isLocal,
   draftBpmnMeta,
+  getBaseDiagramStateVersion,
   onSessionSync,
   setGenErr,
   shortErr,
@@ -95,6 +96,7 @@ export default function useSessionMetaPersist({
     normalizeMeta: normalizeBoundaryMeta,
     serializeMeta: serializeBoundaryMeta,
     getPersistedMeta: buildMetaSnapshot,
+    getBaseDiagramStateVersion,
     onSessionSync,
     shortErr,
     setGenErr,
@@ -225,9 +227,14 @@ export default function useSessionMetaPersist({
         };
         legacyResult = await persistBpmnMeta(mergedMeta, {
           source,
-          remoteWrite: async ({ sid: writeSid, nextMeta: writeMeta }) => {
+          remoteWrite: async ({ sid: writeSid, nextMeta: writeMeta, baseDiagramStateVersion }) => {
             const drawioMeta = normalizeDrawioMeta(asObject(asObject(writeMeta).drawio));
-            const patchRes = await apiPatchBpmnMeta(writeSid, { drawio: drawioMeta });
+            const payload = { drawio: drawioMeta };
+            const baseVersion = Number(baseDiagramStateVersion);
+            if (Number.isFinite(baseVersion) && baseVersion >= 0) {
+              payload.base_diagram_state_version = Math.round(baseVersion);
+            }
+            const patchRes = await apiPatchBpmnMeta(writeSid, payload);
             if (!patchRes?.ok) return patchRes;
             return {
               ok: true,

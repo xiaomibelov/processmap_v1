@@ -188,3 +188,36 @@ test("saveRaw keeps structured conflict details from backend 409 payload", async
   assert.equal(saved.errorDetails?.code, "DIAGRAM_STATE_CONFLICT");
   assert.equal(saved.errorDetails?.server_current_version, 11);
 });
+
+test("saveRaw sends base diagram state version and updates it from successful ack", async () => {
+  window.localStorage.clear();
+  const putCalls = [];
+  const persistence = createBpmnPersistence({
+    getSessionDraft: () => ({
+      bpmn_xml: "<bpmn:baseline/>",
+      bpmn_xml_version: 1,
+      version: 1,
+      diagram_state_version: 0,
+    }),
+    apiPutBpmnXml: async (_sid, _xml, options) => {
+      putCalls.push(options);
+      return {
+        ok: true,
+        status: 200,
+        storedRev: Number(options?.rev || 0),
+        diagramStateVersion: putCalls.length,
+      };
+    },
+  });
+
+  const first = await persistence.saveRaw("sid_base_flow", "<bpmn:first/>", 1, "manual_save");
+  const second = await persistence.saveRaw("sid_base_flow", "<bpmn:second/>", 2, "manual_save");
+
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  assert.equal(first.diagramStateVersion, 1);
+  assert.equal(second.diagramStateVersion, 2);
+  assert.equal(putCalls.length, 2);
+  assert.equal(putCalls[0]?.baseDiagramStateVersion, 0);
+  assert.equal(putCalls[1]?.baseDiagramStateVersion, 1);
+});

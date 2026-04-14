@@ -760,6 +760,13 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
   if (Number.isFinite(rev) && rev >= 0) {
     body.rev = rev;
   }
+  const baseDiagramStateVersion = Number(
+    options?.baseDiagramStateVersion
+    ?? options?.base_diagram_state_version,
+  );
+  if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
+    body.base_diagram_state_version = Math.round(baseDiagramStateVersion);
+  }
   const reason = String(options?.reason || "").trim().toLowerCase();
   let sourceAction = "";
   if (reason === "import_bpmn") {
@@ -783,6 +790,7 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
   const r = okOrError(await request(apiRoutes.sessions.bpmn(sid), { method: "PUT", body, headers }));
   if (!r.ok) return r;
   const storedRev = Number(r?.data?.version);
+  const diagramStateVersion = Number(r?.data?.diagram_state_version);
   const bpmnVersionSnapshot = r?.data?.bpmn_version_snapshot && typeof r.data.bpmn_version_snapshot === "object"
     ? r.data.bpmn_version_snapshot
     : null;
@@ -791,6 +799,7 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
     status: r.status,
     result: r.data,
     storedRev: Number.isFinite(storedRev) ? storedRev : (Number.isFinite(rev) ? rev : 0),
+    diagramStateVersion: Number.isFinite(diagramStateVersion) ? Math.round(diagramStateVersion) : 0,
     bpmnVersionSnapshot,
   };
 }
