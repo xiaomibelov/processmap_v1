@@ -513,6 +513,11 @@ def _ensure_schema() -> None:
                   ai_llm_state_json TEXT NOT NULL DEFAULT '{}',
                   bpmn_xml TEXT NOT NULL DEFAULT '',
                   bpmn_xml_version INTEGER NOT NULL DEFAULT 0,
+                  diagram_state_version INTEGER NOT NULL DEFAULT 0,
+                  diagram_last_write_actor_user_id TEXT NOT NULL DEFAULT '',
+                  diagram_last_write_actor_label TEXT NOT NULL DEFAULT '',
+                  diagram_last_write_at INTEGER NOT NULL DEFAULT 0,
+                  diagram_last_write_changed_keys_json TEXT NOT NULL DEFAULT '[]',
                   bpmn_graph_fingerprint TEXT NOT NULL DEFAULT '',
                   git_mirror_version_number INTEGER NOT NULL DEFAULT 0,
                   bpmn_meta_json TEXT NOT NULL DEFAULT '{}',
@@ -811,6 +816,16 @@ def _ensure_schema() -> None:
                 con.execute("ALTER TABLE sessions ADD COLUMN updated_by TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "sessions", "git_mirror_version_number"):
                 con.execute("ALTER TABLE sessions ADD COLUMN git_mirror_version_number INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "sessions", "diagram_state_version"):
+                con.execute("ALTER TABLE sessions ADD COLUMN diagram_state_version INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "sessions", "diagram_last_write_actor_user_id"):
+                con.execute("ALTER TABLE sessions ADD COLUMN diagram_last_write_actor_user_id TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "sessions", "diagram_last_write_actor_label"):
+                con.execute("ALTER TABLE sessions ADD COLUMN diagram_last_write_actor_label TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "sessions", "diagram_last_write_at"):
+                con.execute("ALTER TABLE sessions ADD COLUMN diagram_last_write_at INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "sessions", "diagram_last_write_changed_keys_json"):
+                con.execute("ALTER TABLE sessions ADD COLUMN diagram_last_write_changed_keys_json TEXT NOT NULL DEFAULT '[]'")
             if not _column_exists(con, "org_invites", "team_name"):
                 con.execute("ALTER TABLE org_invites ADD COLUMN team_name TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "org_invites", "subgroup_name"):
@@ -1359,6 +1374,14 @@ def _session_row_to_model(row: sqlite3.Row) -> Session:
         "ai_llm_state": _json_loads(row["ai_llm_state_json"], {}),
         "bpmn_xml": str(row["bpmn_xml"] or ""),
         "bpmn_xml_version": int(row["bpmn_xml_version"] or 0),
+        "diagram_state_version": int((row["diagram_state_version"] if "diagram_state_version" in keys else 0) or 0),
+        "diagram_last_write_actor_user_id": str((row["diagram_last_write_actor_user_id"] if "diagram_last_write_actor_user_id" in keys else "") or ""),
+        "diagram_last_write_actor_label": str((row["diagram_last_write_actor_label"] if "diagram_last_write_actor_label" in keys else "") or ""),
+        "diagram_last_write_at": int((row["diagram_last_write_at"] if "diagram_last_write_at" in keys else 0) or 0),
+        "diagram_last_write_changed_keys": _json_loads(
+            (row["diagram_last_write_changed_keys_json"] if "diagram_last_write_changed_keys_json" in keys else "[]"),
+            [],
+        ),
         "bpmn_graph_fingerprint": str(row["bpmn_graph_fingerprint"] or ""),
         "bpmn_meta": _json_loads(row["bpmn_meta_json"], {}),
         "version": int(row["version"] or 0),
@@ -1446,6 +1469,7 @@ class Storage:
             ai_llm_state={},
             bpmn_xml="",
             bpmn_xml_version=0,
+            diagram_state_version=0,
             version=2,
             owner_user_id=owner,
             org_id=org,
@@ -1538,6 +1562,11 @@ class Storage:
                 "ai_llm_state_json": _json_dumps(getattr(s, "ai_llm_state", {}), {}),
                 "bpmn_xml": str(getattr(s, "bpmn_xml", "") or ""),
                 "bpmn_xml_version": int(getattr(s, "bpmn_xml_version", 0) or 0),
+                "diagram_state_version": int(getattr(s, "diagram_state_version", 0) or 0),
+                "diagram_last_write_actor_user_id": str(getattr(s, "diagram_last_write_actor_user_id", "") or ""),
+                "diagram_last_write_actor_label": str(getattr(s, "diagram_last_write_actor_label", "") or ""),
+                "diagram_last_write_at": int(getattr(s, "diagram_last_write_at", 0) or 0),
+                "diagram_last_write_changed_keys_json": _json_dumps(getattr(s, "diagram_last_write_changed_keys", []), []),
                 "bpmn_graph_fingerprint": str(getattr(s, "bpmn_graph_fingerprint", "") or ""),
                 "bpmn_meta_json": _json_dumps(getattr(s, "bpmn_meta", {}), {}),
                 "version": int(getattr(s, "version", 0) or 0),
@@ -1554,13 +1583,17 @@ class Storage:
                   id, title, roles_json, start_role, project_id, mode, notes, notes_by_element_json,
                   interview_json, nodes_json, edges_json, questions_json, mermaid, mermaid_simple, mermaid_lanes,
                   normalized_json, resources_json, analytics_json, ai_llm_state_json,
-                  bpmn_xml, bpmn_xml_version, bpmn_graph_fingerprint, bpmn_meta_json, version,
+                  bpmn_xml, bpmn_xml_version, diagram_state_version,
+                  diagram_last_write_actor_user_id, diagram_last_write_actor_label, diagram_last_write_at,
+                  diagram_last_write_changed_keys_json, bpmn_graph_fingerprint, bpmn_meta_json, version,
                   owner_user_id, org_id, created_by, updated_by, created_at, updated_at
                 ) VALUES (
                   :id, :title, :roles_json, :start_role, :project_id, :mode, :notes, :notes_by_element_json,
                   :interview_json, :nodes_json, :edges_json, :questions_json, :mermaid, :mermaid_simple, :mermaid_lanes,
                   :normalized_json, :resources_json, :analytics_json, :ai_llm_state_json,
-                  :bpmn_xml, :bpmn_xml_version, :bpmn_graph_fingerprint, :bpmn_meta_json, :version,
+                  :bpmn_xml, :bpmn_xml_version, :diagram_state_version,
+                  :diagram_last_write_actor_user_id, :diagram_last_write_actor_label, :diagram_last_write_at,
+                  :diagram_last_write_changed_keys_json, :bpmn_graph_fingerprint, :bpmn_meta_json, :version,
                   :owner_user_id, :org_id, :created_by, :updated_by, :created_at, :updated_at
                 )
                 ON CONFLICT(id) DO UPDATE SET
@@ -1584,6 +1617,11 @@ class Storage:
                   ai_llm_state_json=excluded.ai_llm_state_json,
                   bpmn_xml=excluded.bpmn_xml,
                   bpmn_xml_version=excluded.bpmn_xml_version,
+                  diagram_state_version=excluded.diagram_state_version,
+                  diagram_last_write_actor_user_id=excluded.diagram_last_write_actor_user_id,
+                  diagram_last_write_actor_label=excluded.diagram_last_write_actor_label,
+                  diagram_last_write_at=excluded.diagram_last_write_at,
+                  diagram_last_write_changed_keys_json=excluded.diagram_last_write_changed_keys_json,
                   bpmn_graph_fingerprint=excluded.bpmn_graph_fingerprint,
                   bpmn_meta_json=excluded.bpmn_meta_json,
                   version=excluded.version,

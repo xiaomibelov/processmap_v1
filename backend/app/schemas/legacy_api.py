@@ -102,6 +102,8 @@ class UpdateSessionIn(BaseModel):
     edges: Optional[Any] = None
     questions: Optional[Any] = None
     bpmn_meta: Optional[Any] = None
+    base_diagram_state_version: Optional[int] = None
+    base_bpmn_xml_version: Optional[int] = None
     model_config = ConfigDict(extra="allow")
 
 
@@ -130,12 +132,18 @@ def norm_project_session_mode(mode: str | None) -> str | None:
 
 class NotesIn(BaseModel):
     notes: str
+    base_diagram_state_version: Optional[int] = None
+    base_bpmn_xml_version: Optional[int] = None
+    rev: Optional[int] = None
 
 
 class AnswerIn(BaseModel):
     question_id: str
     answer: str
     node_id: Optional[str] = None
+    base_diagram_state_version: Optional[int] = None
+    base_bpmn_xml_version: Optional[int] = None
+    rev: Optional[int] = None
 
 
 class NodePatchIn(BaseModel):
@@ -147,6 +155,9 @@ class NodePatchIn(BaseModel):
     duration_min: Optional[int] = None
     parameters: Optional[Dict[str, Any]] = None
     disposition: Optional[Dict[str, Any]] = None
+    base_diagram_state_version: Optional[int] = None
+    base_bpmn_xml_version: Optional[int] = None
+    rev: Optional[int] = None
 
 
 class CreateNodeIn(BaseModel):
@@ -159,12 +170,18 @@ class CreateNodeIn(BaseModel):
     duration_min: Optional[int] = None
     parameters: Optional[Dict[str, Any]] = None
     disposition: Optional[Dict[str, Any]] = None
+    base_diagram_state_version: Optional[int] = None
+    base_bpmn_xml_version: Optional[int] = None
+    rev: Optional[int] = None
 
 
 class CreateEdgeIn(BaseModel):
     from_id: str
     to_id: str
     when: Optional[str] = None
+    base_diagram_state_version: Optional[int] = None
+    base_bpmn_xml_version: Optional[int] = None
+    rev: Optional[int] = None
 
 
 class GlossaryAddIn(BaseModel):
@@ -204,6 +221,9 @@ class BpmnXmlIn(BaseModel):
     bpmn_meta: Optional[Dict[str, Any]] = None
     source_action: Optional[str] = None
     import_note: Optional[str] = None
+    base_diagram_state_version: Optional[int] = None
+    base_bpmn_xml_version: Optional[int] = None
+    rev: Optional[int] = None
 
 
 class BpmnMetaPatchIn(BaseModel):
@@ -227,6 +247,8 @@ class BpmnMetaPatchIn(BaseModel):
     hybrid_layer_by_element_id: Optional[Dict[str, Any]] = None
     hybrid_v2: Optional[Dict[str, Any]] = None
     drawio: Optional[Dict[str, Any]] = None
+    base_diagram_state_version: Optional[int] = None
+    base_bpmn_xml_version: Optional[int] = None
     model_config = ConfigDict(extra="allow")
 
 
@@ -234,6 +256,16 @@ class InferRtiersIn(BaseModel):
     scopeStartId: Optional[str] = None
     successEndIds: Optional[List[str]] = None
     failEndIds: Optional[List[str]] = None
+    base_diagram_state_version: Optional[int] = None
+    base_bpmn_xml_version: Optional[int] = None
+    model_config = ConfigDict(extra="allow")
+
+
+class BpmnRestoreIn(BaseModel):
+    base_diagram_state_version: Optional[int] = None
+    base_bpmn_xml_version: Optional[int] = None
+    rev: Optional[int] = None
+    model_config = ConfigDict(extra="allow")
 
 
 class CreatePathReportVersionIn(BaseModel):
