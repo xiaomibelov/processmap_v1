@@ -68,6 +68,7 @@ test("normalize maps 409 conflict payload object to explicit conflict stage", ()
         client_base_version: 12,
         server_current_version: 13,
         server_last_write: {
+          actor_user_id: "user_42",
           actor_label: "Иван",
           at: 1776147496,
           changed_keys: ["bpmn_xml", "bpmn_meta"],
@@ -82,6 +83,7 @@ test("normalize maps 409 conflict payload object to explicit conflict stage", ()
   assert.equal(event.conflict?.code, "DIAGRAM_STATE_CONFLICT");
   assert.equal(event.conflict?.clientBaseVersion, 12);
   assert.equal(event.conflict?.serverCurrentVersion, 13);
+  assert.equal(event.conflict?.actorUserId, "user_42");
   assert.equal(event.conflict?.actorLabel, "Иван");
 });
 

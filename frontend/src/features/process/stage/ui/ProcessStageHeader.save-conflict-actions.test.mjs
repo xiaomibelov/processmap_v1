@@ -11,50 +11,43 @@ function readHeaderSource() {
   return fs.readFileSync(path.join(__dirname, "ProcessStageHeader.jsx"), "utf8");
 }
 
-test("header renders explicit conflict action controls for 409 save conflicts", () => {
+function readProcessStageSource() {
+  return fs.readFileSync(path.join(__dirname, "../../../../components/ProcessStage.jsx"), "utf8");
+}
+
+test("conflict actions are rendered in central modal flow, not in header inline panel", () => {
+  const processStageSource = readProcessStageSource();
   const source = readHeaderSource();
   assert.ok(
-    source.includes('data-testid="diagram-toolbar-save-conflict-panel"'),
-    "conflict primary panel test id must exist",
+    processStageSource.includes("ProcessStageSaveConflictModal"),
+    "ProcessStage must render dedicated conflict modal",
   );
   assert.ok(
-    source.includes('data-testid="diagram-toolbar-save-conflict-title"'),
-    "conflict title surface must exist",
+    processStageSource.includes("buildSaveConflictModalView"),
+    "ProcessStage must build actor-aware conflict modal view",
   );
   assert.ok(
-    source.includes("Обновить сессию"),
-    "refresh action label must be rendered",
-  );
-  assert.ok(
-    source.includes("Отбросить локальные изменения"),
-    "discard local action label must be rendered",
-  );
-  assert.ok(
-    source.includes("diagram-toolbar-save-conflict-refresh"),
-    "refresh button test id must exist",
+    source.includes('data-testid="diagram-toolbar-save-conflict-panel"') === false,
+    "header inline conflict panel must be removed",
   );
 });
 
-test("header dedupes competing conflict surfaces when primary panel is visible", () => {
+test("header dedupes competing conflict surfaces while modal is active", () => {
   const source = readHeaderSource();
   assert.ok(
-    source.includes("const showUploadStatusBadge = saveUploadStatus?.visible && !showConflictActions;"),
+    source.includes("const showConflictModalActive = isConflictState && saveConflictActions?.visible === true;"),
+    "header should derive modal-active conflict state from controller",
+  );
+  assert.ok(
+    source.includes("const showUploadStatusBadge = saveUploadStatus?.visible && !showConflictModalActive;"),
     "save upload badge must be suppressed while conflict panel is visible",
   );
   assert.ok(
-    source.includes("const showToolbarInlineBadge = !!toolbarInlineMessage && !(showConflictActions && toolbarMessageLooksLikeConflict);"),
+    source.includes("const showToolbarInlineBadge = !!toolbarInlineMessage && !(showConflictModalActive && toolbarMessageLooksLikeConflict);"),
     "toolbar inline conflict message must be suppressed when conflict panel is visible",
   );
-});
-
-test("header conflict summary keeps numeric version zero instead of unknown placeholder", () => {
-  const source = readHeaderSource();
   assert.ok(
-    source.includes("function formatVersionForLabel(value)"),
-    "header should normalize conflict version labels through explicit formatter",
-  );
-  assert.ok(
-    source.includes("srv ${formatVersionForLabel(conflictMeta?.serverCurrentVersion)} / base ${formatVersionForLabel(conflictMeta?.clientBaseVersion)}"),
-    "conflict summary should render srv/base via formatter",
+    source.includes("const showSaveStatusBadgeResolved = showSaveStatusBadge && !showConflictModalActive;"),
+    "generic save badge should also be suppressed while modal is active",
   );
 });
