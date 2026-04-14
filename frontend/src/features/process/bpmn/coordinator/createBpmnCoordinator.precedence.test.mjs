@@ -124,6 +124,12 @@ test("flushSave propagates conflict status for tab-switch diagnostics classifica
         ok: false,
         status: 409,
         error: "revision conflict",
+        errorDetails: {
+          code: "DIAGRAM_STATE_CONFLICT",
+          session_id: "sid_conflict",
+          client_base_version: 9,
+          server_current_version: 10,
+        },
       }),
     },
   });
@@ -133,4 +139,6 @@ test("flushSave propagates conflict status for tab-switch diagnostics classifica
   assert.equal(saved.status, 409);
   assert.equal(saved.errorCode, "http_409");
   assert.match(String(saved.error || ""), /conflict/i);
+  assert.equal(saved.errorDetails?.code, "DIAGRAM_STATE_CONFLICT");
+  assert.equal(saved.errorDetails?.server_current_version, 10);
 });
