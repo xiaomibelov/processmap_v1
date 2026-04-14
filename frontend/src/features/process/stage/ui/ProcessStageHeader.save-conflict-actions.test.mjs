@@ -14,8 +14,12 @@ function readHeaderSource() {
 test("header renders explicit conflict action controls for 409 save conflicts", () => {
   const source = readHeaderSource();
   assert.ok(
-    source.includes('data-testid="diagram-toolbar-save-conflict-actions"'),
-    "conflict action cluster test id must exist",
+    source.includes('data-testid="diagram-toolbar-save-conflict-panel"'),
+    "conflict primary panel test id must exist",
+  );
+  assert.ok(
+    source.includes('data-testid="diagram-toolbar-save-conflict-title"'),
+    "conflict title surface must exist",
   );
   assert.ok(
     source.includes("Обновить сессию"),
@@ -28,5 +32,17 @@ test("header renders explicit conflict action controls for 409 save conflicts", 
   assert.ok(
     source.includes("diagram-toolbar-save-conflict-refresh"),
     "refresh button test id must exist",
+  );
+});
+
+test("header dedupes competing conflict surfaces when primary panel is visible", () => {
+  const source = readHeaderSource();
+  assert.ok(
+    source.includes("const showUploadStatusBadge = saveUploadStatus?.visible && !showConflictActions;"),
+    "save upload badge must be suppressed while conflict panel is visible",
+  );
+  assert.ok(
+    source.includes("const showToolbarInlineBadge = !!toolbarInlineMessage && !(showConflictActions && toolbarMessageLooksLikeConflict);"),
+    "toolbar inline conflict message must be suppressed when conflict panel is visible",
   );
 });

@@ -14,7 +14,7 @@ test("version-aware publish message suppresses duplicate generic draft-saved bad
     true,
   );
   assert.equal(
-    source.includes('const showGenericSaveStatusBadge = showSaveStatusBadge && !suppressDraftSavedBadge;'),
+    source.includes('const showGenericSaveStatusBadge = showSaveStatusBadgeResolved && !suppressDraftSavedBadge;'),
     true,
   );
   assert.equal(source.includes("{showGenericSaveStatusBadge ? ("), true);
