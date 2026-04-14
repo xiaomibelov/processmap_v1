@@ -678,6 +678,7 @@ export default function ProcessStage({
     sessionCompanionLegacyMeta,
     sessionCompanionLocalFirstAdapterMode,
   ]);
+  const hasSession = !!sid;
   const sessionCompanionMetaLive = useMemo(() => {
     return normalizeSessionCompanion(sessionCompanionBridgeSnapshot.companion);
   }, [sessionCompanionBridgeSnapshot.companion]);
@@ -857,7 +858,6 @@ export default function ProcessStage({
     sid,
   ]);
 
-  const hasSession = !!sid;
   const isLocal = isLocalSessionId(sid);
   // Track the last project that had an active session so the explorer can
   // navigate back to it when the session is closed.
