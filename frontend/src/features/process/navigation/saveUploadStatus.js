@@ -42,6 +42,7 @@ function normalizeConflictPayload(raw = null) {
   const clientBaseVersion = toOptionalNonNegativeNumber(value.client_base_version ?? value.clientBaseVersion);
   const serverCurrentVersion = toOptionalNonNegativeNumber(value.server_current_version ?? value.serverCurrentVersion);
   const lastWrite = asObject(value.server_last_write || value.serverLastWrite);
+  const actorUserId = toText(lastWrite.actor_user_id || lastWrite.actorUserId);
   const actorLabel = toText(lastWrite.actor_label || lastWrite.actorLabel || lastWrite.actor_user_id || lastWrite.actorUserId);
   const at = toNumber(lastWrite.at, 0);
   const changedKeys = asArray(lastWrite.changed_keys || lastWrite.changedKeys)
@@ -53,6 +54,7 @@ function normalizeConflictPayload(raw = null) {
     sessionId,
     clientBaseVersion,
     serverCurrentVersion,
+    actorUserId,
     actorLabel,
     at,
     changedKeys,
@@ -82,6 +84,7 @@ function resolveConflictPayload({ status = 0, errorCode = "", errorDetails = nul
       sessionId: "",
       clientBaseVersion: null,
       serverCurrentVersion: null,
+      actorUserId: "",
       actorLabel: "",
       at: 0,
       changedKeys: [],

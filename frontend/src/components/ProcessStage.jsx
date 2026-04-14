@@ -111,8 +111,10 @@ import ProcessDialogs from "../features/process/stage/ui/ProcessDialogs";
 import ProcessStageHeader from "../features/process/stage/ui/ProcessStageHeader";
 import ProcessStageDiagramControls from "../features/process/stage/ui/ProcessStageDiagramControls";
 import ProcessDiagramOverlayLayers from "../features/process/stage/ui/ProcessDiagramOverlayLayers";
+import ProcessStageSaveConflictModal from "../features/process/stage/ui/ProcessStageSaveConflictModal";
 import BottomViewportScrubber from "../features/process/stage/scrubber/BottomViewportScrubber";
 import BpmnPropertiesOverlayModal from "../features/process/bpmn/context-menu/properties-overlay/BpmnPropertiesOverlayModal";
+import { buildSaveConflictModalView } from "../features/process/stage/ui/saveConflictModalModel";
 import {
   classifyRevisionSourceAction,
   formatRevisionAuthor,
@@ -631,6 +633,12 @@ export default function ProcessStage({
     () => buildSaveUploadStatusBadge(saveUploadLifecycleEvent),
     [saveUploadLifecycleEvent],
   );
+  const showSaveConflictModal = saveUploadStatus?.state === "conflict" && !saveConflictNoticeDismissed;
+  const saveConflictModalView = useMemo(() => buildSaveConflictModalView({
+    conflictRaw: saveUploadStatus?.conflict,
+    currentUserIdRaw: toText(user?.id || user?.user_id || user?.email),
+    fallbackTextRaw: saveUploadStatus?.title || saveUploadStatus?.error,
+  }), [saveUploadStatus?.conflict, saveUploadStatus?.error, saveUploadStatus?.title, toText, user?.email, user?.id, user?.user_id]);
   const sessionVersionReadSnapshot = useMemo(
     () => asObject(sessionCompanionBridgeSnapshot.version),
     [sessionCompanionBridgeSnapshot.version],
@@ -4878,7 +4886,7 @@ export default function ProcessStage({
       ...shellVm.shellProps,
       sessionRevisionHistorySnapshot: revisionHistoryUiSnapshot,
       saveConflictActions: {
-        visible: saveUploadStatus?.state === "conflict" && !saveConflictNoticeDismissed,
+        visible: showSaveConflictModal,
         busy: saveConflictActionBusy === true,
         onRefreshSession: handleSaveConflictRefresh,
         onStay: dismissSaveConflictNotice,
@@ -5304,6 +5312,14 @@ export default function ProcessStage({
 
       <ProcessDialogs
         view={shellVm.dialogsProps}
+      />
+      <ProcessStageSaveConflictModal
+        open={showSaveConflictModal}
+        busy={saveConflictActionBusy === true}
+        view={saveConflictModalView}
+        onRefreshSession={handleSaveConflictRefresh}
+        onStay={dismissSaveConflictNotice}
+        onDiscardLocalChanges={handleSaveConflictDiscardLocal}
       />
     </ProcessStageShell>
   );
