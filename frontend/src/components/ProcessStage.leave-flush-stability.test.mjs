@@ -7,6 +7,8 @@ const controllerSource = fs.readFileSync(new URL("../features/process/navigation
 
 test("leave-to-project flush waits for stable non-pending XML before allowing navigation", () => {
   assert.match(stageSource, /flushProcessStageBeforeLeave/);
+  assert.match(stageSource, /deriveLeaveNavigationRisk/);
+  assert.match(stageSource, /leaveNavigationRisk/);
   assert.match(controllerSource, /stableFlushCount/);
   assert.match(controllerSource, /stableXmlHash/);
   assert.match(controllerSource, /if \(stableFlushCount >= 2\)/);
