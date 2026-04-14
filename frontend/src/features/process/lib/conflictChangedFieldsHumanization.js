@@ -40,8 +40,10 @@ const CHANGED_KEY_GROUPS = [
 function resolveHumanLabelForChangedKey(key) {
   const normalized = normalizeChangedKey(key);
   if (!normalized) return "";
-  const matched = CHANGED_KEY_GROUPS.find((group) => group.matches.some((token) => normalized === token || normalized.startsWith(`${token}_`)));
-  return matched?.label || "";
+  const exactMatched = CHANGED_KEY_GROUPS.find((group) => group.matches.some((token) => normalized === token));
+  if (exactMatched?.label) return exactMatched.label;
+  const prefixMatched = CHANGED_KEY_GROUPS.find((group) => group.matches.some((token) => normalized.startsWith(`${token}_`)));
+  return prefixMatched?.label || "";
 }
 
 export function humanizeConflictChangedKeys(rawChangedKeys = []) {
