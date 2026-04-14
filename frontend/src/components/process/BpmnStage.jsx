@@ -1214,6 +1214,8 @@ const BpmnStage = forwardRef(function BpmnStage({
   onElementNotesRemap,
   onAiQuestionsByElementChange,
   onSessionSync,
+  getBaseDiagramStateVersion = null,
+  rememberDiagramStateVersion = null,
   onSaveLifecycleEvent,
   aiQuestionsModeEnabled,
   diagramDisplayMode = "normal",
@@ -1511,6 +1513,8 @@ const BpmnStage = forwardRef(function BpmnStage({
       },
       readOnly: {
         draftRef,
+        getBaseDiagramStateVersion,
+        rememberDiagramStateVersion,
       },
       api: {
         saveBpmnSnapshot,
@@ -2561,6 +2565,14 @@ const BpmnStage = forwardRef(function BpmnStage({
       };
     }
     if (syncRes.session && typeof syncRes.session === "object") {
+      const ackVersion = Number(syncRes.session?.diagram_state_version ?? syncRes.session?.diagramStateVersion);
+      if (Number.isFinite(ackVersion) && ackVersion >= 0) {
+        try {
+          rememberDiagramStateVersion?.(Math.round(ackVersion), { sessionId: sid });
+        } catch {
+          // no-op
+        }
+      }
       onSessionSyncRef.current?.({
         ...syncRes.session,
         _sync_source: `${source}_session_patch`,

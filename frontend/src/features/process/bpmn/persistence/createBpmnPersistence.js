@@ -184,6 +184,12 @@ export default function createBpmnPersistence(options = {}) {
   const apiPutBpmnXml = typeof options?.apiPutBpmnXml === "function"
     ? options.apiPutBpmnXml
     : null;
+  const getExternalBaseDiagramStateVersion = typeof options?.getBaseDiagramStateVersion === "function"
+    ? options.getBaseDiagramStateVersion
+    : null;
+  const rememberExternalDiagramStateVersion = typeof options?.rememberDiagramStateVersion === "function"
+    ? options.rememberDiagramStateVersion
+    : null;
   const saveSnapshot = typeof options?.saveSnapshot === "function"
     ? options.saveSnapshot
     : null;
@@ -226,11 +232,29 @@ export default function createBpmnPersistence(options = {}) {
   let knownDiagramStateVersion = readDraftDiagramStateVersion();
   let knownDiagramStateVersionSid = "";
 
+  function readExternalBaseDiagramStateVersion() {
+    if (typeof getExternalBaseDiagramStateVersion !== "function") return null;
+    const raw = Number(getExternalBaseDiagramStateVersion());
+    if (!Number.isFinite(raw) || raw < 0) return null;
+    return Math.round(raw);
+  }
+
   function resolveBaseDiagramStateVersion(sessionId = "") {
     const sid = asText(sessionId).trim();
     if (sid && sid !== knownDiagramStateVersionSid) {
       knownDiagramStateVersionSid = sid;
       knownDiagramStateVersion = readDraftDiagramStateVersion();
+    }
+    const externalVersion = readExternalBaseDiagramStateVersion();
+    if (
+      externalVersion !== null
+      && (
+        knownDiagramStateVersion === null
+        || !Number.isFinite(knownDiagramStateVersion)
+        || externalVersion > knownDiagramStateVersion
+      )
+    ) {
+      knownDiagramStateVersion = externalVersion;
     }
     const draftVersion = readDraftDiagramStateVersion();
     if (draftVersion !== null) {
@@ -249,10 +273,21 @@ export default function createBpmnPersistence(options = {}) {
     return 0;
   }
 
-  function rememberDiagramStateVersion(raw) {
+  function rememberDiagramStateVersion(raw, sessionId = "") {
     const next = asNumber(raw, -1);
     if (!Number.isFinite(next) || next < 0) return null;
+    const sid = asText(sessionId).trim();
+    if (sid) {
+      knownDiagramStateVersionSid = sid;
+    }
     knownDiagramStateVersion = Math.round(next);
+    if (typeof rememberExternalDiagramStateVersion === "function") {
+      try {
+        rememberExternalDiagramStateVersion(knownDiagramStateVersion, { sessionId: sid });
+      } catch {
+        // no-op
+      }
+    }
     return knownDiagramStateVersion;
   }
 
@@ -576,7 +611,10 @@ export default function createBpmnPersistence(options = {}) {
     if (!saved?.ok) {
       const status = asNumber(saved?.status, 0);
       const errorDetails = resolvePersistErrorDetails(saved);
-      rememberDiagramStateVersion(errorDetails?.server_current_version ?? errorDetails?.serverCurrentVersion);
+      rememberDiagramStateVersion(
+        errorDetails?.server_current_version ?? errorDetails?.serverCurrentVersion,
+        sid,
+      );
       const errorCode = asText(
         saved?.errorCode
         || errorDetails.code
@@ -592,7 +630,7 @@ export default function createBpmnPersistence(options = {}) {
       };
     }
     const storedRev = asNumber(saved?.storedRev, targetRev);
-    const storedDiagramStateVersion = rememberDiagramStateVersion(saved?.diagramStateVersion);
+    const storedDiagramStateVersion = rememberDiagramStateVersion(saved?.diagramStateVersion, sid);
     // eslint-disable-next-line no-console
     console.debug(
       `PERSIST_OK sid=${sid} rev=${storedRev} hash=${fnv1aHex(xml)} len=${xml.length} `

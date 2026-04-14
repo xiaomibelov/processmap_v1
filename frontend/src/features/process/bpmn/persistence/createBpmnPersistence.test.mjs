@@ -221,3 +221,91 @@ test("saveRaw sends base diagram state version and updates it from successful ac
   assert.equal(putCalls[0]?.baseDiagramStateVersion, 0);
   assert.equal(putCalls[1]?.baseDiagramStateVersion, 1);
 });
+
+test("saveRaw uses externally updated diagram state context for subsequent writes", async () => {
+  window.localStorage.clear();
+  const putCalls = [];
+  let externalVersion = 0;
+  const remembered = [];
+  const persistence = createBpmnPersistence({
+    getSessionDraft: () => ({
+      bpmn_xml: "<bpmn:baseline/>",
+      bpmn_xml_version: 1,
+      version: 1,
+      diagram_state_version: 0,
+    }),
+    getBaseDiagramStateVersion: () => externalVersion,
+    rememberDiagramStateVersion: (next, options = {}) => {
+      const value = Number(next);
+      if (!Number.isFinite(value) || value < 0) return null;
+      externalVersion = Math.round(value);
+      remembered.push({ version: externalVersion, sessionId: String(options?.sessionId || "") });
+      return externalVersion;
+    },
+    apiPutBpmnXml: async (_sid, _xml, options) => {
+      putCalls.push(options);
+      return {
+        ok: true,
+        status: 200,
+        storedRev: Number(options?.rev || 0),
+        diagramStateVersion: Number(options?.baseDiagramStateVersion || 0) + 1,
+      };
+    },
+  });
+
+  const first = await persistence.saveRaw("sid_ext_ctx", "<bpmn:first/>", 1, "manual_save");
+  assert.equal(first.ok, true);
+  assert.equal(putCalls[0]?.baseDiagramStateVersion, 0);
+  assert.equal(externalVersion, 1);
+
+  // Simulate another accepted diagram-truth write path that advanced server/client version.
+  externalVersion = 3;
+
+  const second = await persistence.saveRaw("sid_ext_ctx", "<bpmn:second/>", 2, "manual_save");
+  assert.equal(second.ok, true);
+  assert.equal(putCalls[1]?.baseDiagramStateVersion, 3);
+  assert.equal(second.diagramStateVersion, 4);
+  assert.equal(externalVersion, 4);
+  assert.equal(remembered.some((entry) => entry.sessionId === "sid_ext_ctx" && entry.version === 4), true);
+});
+
+test("saveRaw publishes conflict server_current_version into external diagram state context", async () => {
+  window.localStorage.clear();
+  let externalVersion = 5;
+  const remembered = [];
+  const persistence = createBpmnPersistence({
+    getSessionDraft: () => ({
+      bpmn_xml: "<bpmn:baseline/>",
+      bpmn_xml_version: 5,
+      version: 5,
+      diagram_state_version: 5,
+    }),
+    getBaseDiagramStateVersion: () => externalVersion,
+    rememberDiagramStateVersion: (next, options = {}) => {
+      const value = Number(next);
+      if (!Number.isFinite(value) || value < 0) return null;
+      externalVersion = Math.round(value);
+      remembered.push({ version: externalVersion, sessionId: String(options?.sessionId || "") });
+      return externalVersion;
+    },
+    apiPutBpmnXml: async () => ({
+      ok: false,
+      status: 409,
+      data: {
+        detail: {
+          code: "DIAGRAM_STATE_CONFLICT",
+          session_id: "sid_conflict_ctx",
+          client_base_version: 5,
+          server_current_version: 9,
+        },
+      },
+    }),
+  });
+
+  const saved = await persistence.saveRaw("sid_conflict_ctx", "<bpmn:new/>", 6, "manual_save");
+  assert.equal(saved.ok, false);
+  assert.equal(saved.status, 409);
+  assert.equal(saved.errorCode, "DIAGRAM_STATE_CONFLICT");
+  assert.equal(externalVersion, 9);
+  assert.equal(remembered.some((entry) => entry.sessionId === "sid_conflict_ctx" && entry.version === 9), true);
+});
