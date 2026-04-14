@@ -75,6 +75,11 @@ import {
   matrixToDiagram,
   matrixToScreen,
 } from "../features/process/stage/utils/hybridCoords";
+import {
+  isDiagramVersionSessionMatch,
+  normalizeDiagramSessionId,
+  resolveDiagramBaseVersionForActiveSession,
+} from "../features/process/stage/utils/diagramVersionContext";
 import useSessionMetaPersist from "../features/process/stage/controllers/useSessionMetaPersist";
 import { attachProcessStageFlushBeforeLeaveListener } from "../features/process/navigation/processLeaveFlush";
 import { flushProcessStageBeforeLeave } from "../features/process/navigation/processLeaveFlushController";
@@ -343,10 +348,59 @@ export default function ProcessStage({
   }, [resolveDraftDiagramStateVersion, sid]);
 
   const getBaseDiagramStateVersion = useCallback(() => {
-    const raw = Number(diagramStateVersionRef.current);
-    if (!Number.isFinite(raw) || raw < 0) return 0;
-    return Math.round(raw);
-  }, []);
+    const baseVersion = resolveDiagramBaseVersionForActiveSession({
+      activeSessionId: sid,
+      storedSessionId: diagramStateVersionSidRef.current,
+      storedVersion: diagramStateVersionRef.current,
+    });
+    if (baseVersion === null) return undefined;
+    return baseVersion;
+  }, [sid]);
+
+  const rememberDiagramStateVersion = useCallback((rawVersion, options = {}) => {
+    const next = Number(rawVersion);
+    if (!Number.isFinite(next) || next < 0) return null;
+    const normalized = Math.round(next);
+    const optionSid = normalizeDiagramSessionId(options?.sessionId || options?.sid || "");
+    const currentSid = normalizeDiagramSessionId(sid);
+    const targetSid = optionSid || currentSid;
+    if (!isDiagramVersionSessionMatch(currentSid, targetSid)) return null;
+    if (diagramStateVersionSidRef.current !== currentSid) {
+      diagramStateVersionSidRef.current = currentSid;
+      diagramStateVersionRef.current = normalized;
+      return normalized;
+    }
+    const prev = Number(diagramStateVersionRef.current);
+    if (!Number.isFinite(prev) || normalized > prev) {
+      diagramStateVersionRef.current = normalized;
+    }
+    return Math.round(Number(diagramStateVersionRef.current) || 0);
+  }, [sid]);
+
+  const syncDiagramStateVersionFromSession = useCallback((sessionLikeRaw, options = {}) => {
+    const sessionLike = asObject(sessionLikeRaw);
+    const currentSid = normalizeDiagramSessionId(sid);
+    const sessionSid = normalizeDiagramSessionId(
+      sessionLike?.session_id
+      || sessionLike?.id
+      || options?.sessionId
+      || sid
+      || "",
+    );
+    if (!isDiagramVersionSessionMatch(currentSid, sessionSid)) return null;
+    const rawVersion = sessionLike?.diagram_state_version ?? sessionLike?.diagramStateVersion;
+    return rememberDiagramStateVersion(rawVersion, { sessionId: currentSid });
+  }, [asObject, rememberDiagramStateVersion, sid]);
+
+  const onSessionSyncWithVersion = useCallback((sessionLikeRaw) => {
+    const sessionLike = asObject(sessionLikeRaw);
+    const currentSid = normalizeDiagramSessionId(sid);
+    const sessionSid = normalizeDiagramSessionId(sessionLike?.session_id || sessionLike?.id || sid || "");
+    if (!isDiagramVersionSessionMatch(currentSid, sessionSid)) return false;
+    syncDiagramStateVersionFromSession(sessionLikeRaw);
+    onSessionSync?.(sessionLikeRaw);
+    return true;
+  }, [asObject, onSessionSync, sid, syncDiagramStateVersionFromSession]);
 
   const {
     genBusy,
@@ -828,7 +882,7 @@ export default function ProcessStage({
     isLocal,
     draft,
     bpmnRef,
-    onSessionSync,
+    onSessionSync: onSessionSyncWithVersion,
     apiGetBpmnXml,
   });
 
@@ -855,7 +909,7 @@ export default function ProcessStage({
     bpmnSync,
     projectionHelpers,
     getBaseDiagramStateVersion,
-    onSessionSync,
+    onSessionSync: onSessionSyncWithVersion,
     onError: setGenErr,
   });
 
@@ -1008,7 +1062,7 @@ export default function ProcessStage({
     try {
       const fetched = await apiGetSession(sid);
       if (fetched?.ok && fetched?.session && typeof fetched.session === "object") {
-        onSessionSync?.({
+        onSessionSyncWithVersion?.({
           ...fetched.session,
           _sync_source: "save_conflict_refresh",
         });
@@ -1035,7 +1089,7 @@ export default function ProcessStage({
     } finally {
       setSaveConflictActionBusy(false);
     }
-  }, [bpmnSync, onSessionSync, saveConflictActionBusy, setGenErr, sid]);
+  }, [bpmnSync, onSessionSyncWithVersion, saveConflictActionBusy, setGenErr, sid]);
 
   const handleSaveConflictRefresh = useCallback(() => {
     void reloadSessionAfterSaveConflict({ discardLocal: false });
@@ -1186,7 +1240,7 @@ export default function ProcessStage({
     isLocal,
     draftBpmnMeta: draft?.bpmn_meta,
     getBaseDiagramStateVersion,
-    onSessionSync,
+    onSessionSync: onSessionSyncWithVersion,
     setGenErr,
     shortErr,
     hybridLayerPersistedMapRef,
@@ -1301,14 +1355,14 @@ export default function ProcessStage({
       ...currentMeta,
       auto_pass_v1: result,
     };
-    onSessionSync?.({
-      id: sid,
-      session_id: sid,
-      bpmn_meta: nextMeta,
-      _sync_source: source,
-    });
+      onSessionSyncWithVersion?.({
+        id: sid,
+        session_id: sid,
+        bpmn_meta: nextMeta,
+        _sync_source: source,
+      });
     return true;
-  }, [draft?.bpmn_meta, onSessionSync, sid]);
+  }, [draft?.bpmn_meta, onSessionSyncWithVersion, sid]);
   const syncAutoPassResultFromServer = useCallback(async (source = "auto_pass_result_server_sync") => {
     if (!sid) return false;
     const metaResult = await apiGetBpmnMeta(sid);
@@ -3293,7 +3347,7 @@ export default function ProcessStage({
             ...(savePlan.nodesChanged ? { nodes: projected.nextNodes } : {}),
             ...(savePlan.edgesChanged ? { edges: projected.nextEdges } : {}),
           };
-          onSessionSync?.(optimisticSession);
+          onSessionSyncWithVersion?.(optimisticSession);
           if (!isLocal) {
             const syncPatchPayload = { ...savePlan.patch };
             const baseDiagramStateVersion = Number(getBaseDiagramStateVersion());
@@ -3309,7 +3363,7 @@ export default function ProcessStage({
                       actors_derived: derivedActors,
                     }
                   : optimisticSession;
-              onSessionSync?.(serverSession);
+              onSessionSyncWithVersion?.(serverSession);
             } else {
               setGenErr(shortErr(syncRes.error || "Не удалось сохранить Interview из BPMN версии."));
             }
@@ -3754,7 +3808,7 @@ export default function ProcessStage({
         setGenErr(errText);
         return;
       }
-      onSessionSync?.({
+      onSessionSyncWithVersion?.({
         ...payload,
         _sync_source: "diagram_ai_questions_generate",
       });
@@ -3792,7 +3846,7 @@ export default function ProcessStage({
     aiGenerateGate.reasonText,
     sid,
     selectedElementId,
-    onSessionSync,
+    onSessionSyncWithVersion,
     handleAiQuestionsByElementChange,
     applyClarifyFromSession,
     draft?.interview,
@@ -4225,13 +4279,13 @@ export default function ProcessStage({
       count: derivedActors.length,
     });
     if (sameDerivedActors(draft?.actors_derived, derivedActors)) return;
-    onSessionSync?.({
+    onSessionSyncWithVersion?.({
       id: sid,
       session_id: sid,
       actors_derived: derivedActors,
       _sync_source: "actors_derive_effect",
     });
-  }, [sid, draft?.bpmn_xml, draft?.actors_derived, onSessionSync]);
+  }, [sid, draft?.bpmn_xml, draft?.actors_derived, onSessionSyncWithVersion]);
 
   function applyClarifyFromSession(updated, fallbackNodes) {
     const review = buildClarificationHints(updated?.questions, updated?.nodes || fallbackNodes || []);
@@ -4377,7 +4431,7 @@ export default function ProcessStage({
             ...(savePlan.nodesChanged ? { nodes: projected.nextNodes } : {}),
             ...(savePlan.edgesChanged ? { edges: projected.nextEdges } : {}),
           };
-          onSessionSync?.(optimisticSession);
+          onSessionSyncWithVersion?.(optimisticSession);
           if (!isLocal) {
             const syncPatchPayload = { ...savePlan.patch };
             const baseDiagramStateVersion = Number(getBaseDiagramStateVersion());
@@ -4393,7 +4447,7 @@ export default function ProcessStage({
                       actors_derived: derivedActors,
                     }
                   : optimisticSession;
-              onSessionSync?.(serverSession);
+              onSessionSyncWithVersion?.(serverSession);
             } else {
               setGenErr(shortErr(syncRes.error || "Не удалось сохранить Interview из BPMN."));
             }
@@ -4539,7 +4593,7 @@ export default function ProcessStage({
       setExecutionPlanPreview,
       setExecutionPlanSaveBusy,
       setQualityOverlayFilters,
-      onSessionSync,
+      onSessionSync: onSessionSyncWithVersion,
       onOpenElementNotes,
       requestDiagramFocus,
       applyClarifyFromSession,
@@ -4561,6 +4615,7 @@ export default function ProcessStage({
       apiGetBpmnXml,
       apiPatchSession,
       getBaseDiagramStateVersion,
+      rememberDiagramStateVersion,
       buildExecutionPlan,
       appendExecutionPlanVersionEntry,
       copyText,
@@ -4672,7 +4727,9 @@ export default function ProcessStage({
     onDiagramContextMenuDismiss: onBpmnContextMenuDismiss,
     onDiagramContextMenuRequest: onBpmnContextMenuRequest,
     onElementNotesRemap,
-    onSessionSync,
+    onSessionSync: onSessionSyncWithVersion,
+    getBaseDiagramStateVersion,
+    rememberDiagramStateVersion,
     propertiesOverlayAlwaysEnabled,
     propertiesOverlayAlwaysPreviewByElementId,
     queueDiagramMutation,
