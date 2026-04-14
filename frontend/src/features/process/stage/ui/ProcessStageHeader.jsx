@@ -50,10 +50,10 @@ export default function ProcessStageHeader({ view = {} }) {
   const hasPublishedRevision = latestRevisionNumber > 0;
   const publishedRevisionBadge = resolvePublishedRevisionBadgeView(sessionRevisionHistorySnapshot);
   const draftAheadOfLatest = sessionRevisionHistorySnapshot?.draftState?.isDraftAheadOfLatestRevision === true;
-  const draftStatusLabel = !hasPublishedRevision
-    ? "Ревизий нет"
-    : (draftAheadOfLatest ? "Черновик" : "Опубликовано");
-  const draftStatusTone = !hasPublishedRevision || draftAheadOfLatest ? "warn" : "ok";
+  const draftStatusLabel = draftAheadOfLatest
+    ? "Есть несохранённые изменения"
+    : "Черновик синхронизирован";
+  const draftStatusTone = draftAheadOfLatest ? "warn" : "ok";
   const mirrorSnapshot = (
     publishGitMirrorSnapshot && typeof publishGitMirrorSnapshot === "object"
       ? publishGitMirrorSnapshot
@@ -80,7 +80,7 @@ export default function ProcessStageHeader({ view = {} }) {
   const toolbarMessageLooksLikeConflict = /(?:конфликт|conflict|http\s*409|stale|верси)/i.test(toolbarMessage);
   const showToolbarInlineBadge = !!toolbarInlineMessage && !(showConflictModalActive && toolbarMessageLooksLikeConflict);
   const showSaveStatusBadgeResolved = showSaveStatusBadge && !showConflictModalActive;
-  const suppressDraftSavedBadge = /^Опубликовано как версия R\d+\.$/.test(toolbarMessage)
+  const suppressDraftSavedBadge = /^Опубликована версия \d+\.$/.test(toolbarMessage)
     && toText(saveSmartText) === "Черновик сохранён";
   const showGenericSaveStatusBadge = showSaveStatusBadgeResolved && !suppressDraftSavedBadge;
   const canRunUndo = tab === "diagram" && canUndo === true;
@@ -121,12 +121,14 @@ export default function ProcessStageHeader({ view = {} }) {
               >
                 {publishedRevisionBadge.text}
               </span>
-              <span
-                className={`badge text-[11px] ${draftStatusTone}`}
-                data-testid="diagram-toolbar-draft-vs-latest"
-              >
-                {draftStatusLabel}
-              </span>
+              {hasPublishedRevision || draftAheadOfLatest ? (
+                <span
+                  className={`badge text-[11px] ${draftStatusTone}`}
+                  data-testid="diagram-toolbar-draft-vs-latest"
+                >
+                  {draftStatusLabel}
+                </span>
+              ) : null}
             </>
           ) : null}
         </div>
