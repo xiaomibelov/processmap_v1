@@ -144,6 +144,16 @@ export function createBpmnWiring(ctxBase, deps = {}) {
     if (refs.bpmnPersistenceRef?.current) return refs.bpmnPersistenceRef.current;
     const persistence = createBpmnPersistence({
       getSessionDraft: () => readOnly.draftRef?.current || {},
+      getBaseDiagramStateVersion: () => {
+        const raw = Number(readOnly.getBaseDiagramStateVersion?.());
+        if (!Number.isFinite(raw) || raw < 0) return null;
+        return Math.round(raw);
+      },
+      rememberDiagramStateVersion: (version, options = {}) => {
+        const value = Number(version);
+        if (!Number.isFinite(value) || value < 0) return null;
+        return readOnly.rememberDiagramStateVersion?.(Math.round(value), options) ?? null;
+      },
       getSnapshotProjectId: () => String(readOnly.draftRef?.current?.project_id || readOnly.draftRef?.current?.projectId || values.activeProjectId || ""),
       saveSnapshot: api.saveBpmnSnapshot,
       loadLatestSnapshot: api.getLatestBpmnSnapshot,
