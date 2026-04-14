@@ -4,6 +4,7 @@ import useAutosaveQueue from "./useAutosaveQueue";
 import { parseAndProjectBpmnToInterview } from "./useInterviewProjection";
 import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
 import { traceProcess } from "../lib/processDebugTrace";
+import { shortUserFacingError } from "../lib/userFacingErrorText";
 import {
   asArray,
   asObject,
@@ -12,9 +13,7 @@ import {
 } from "../lib/processStageDomain";
 
 function shortErr(x) {
-  const s = String(x || "").trim();
-  if (!s) return "";
-  return s.length > 160 ? `${s.slice(0, 160)}…` : s;
+  return shortUserFacingError(x, 160);
 }
 
 export default function useDiagramMutationLifecycle({
