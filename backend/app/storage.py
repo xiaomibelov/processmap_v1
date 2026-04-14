@@ -581,9 +581,6 @@ def _ensure_schema() -> None:
                 "CREATE INDEX IF NOT EXISTS idx_bpmn_versions_session_created ON bpmn_versions(session_id, org_id, created_at DESC)"
             )
             con.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_bpmn_versions_session_diagram_state ON bpmn_versions(session_id, org_id, diagram_state_version) WHERE diagram_state_version > 0"
-            )
-            con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS session_state_versions (
                   id TEXT PRIMARY KEY,
