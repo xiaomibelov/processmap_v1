@@ -107,7 +107,8 @@ test("conflict badge renders readable context and never shows [object Object]", 
   assert.match(badge.label, /конфликт сохранения/i);
   assert.equal(String(badge.title).includes("[object Object]"), false);
   assert.match(badge.title, /Мария/);
-  assert.match(badge.title, /bpmn_xml/);
+  assert.match(badge.title, /Изменена схема/);
+  assert.match(badge.title, /Изменены узлы и связи/);
 });
 
 test("conflict badge preserves zero server version instead of replacing it with unknown marker", () => {
