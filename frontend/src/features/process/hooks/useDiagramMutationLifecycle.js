@@ -144,11 +144,22 @@ export default function useDiagramMutationLifecycle({
       if (isLocal || isStale?.()) return true;
       if (Object.keys(patch).length === 0) return true;
 
-      const patchRes = await apiPatchSession(sid, patch);
+      const saveDiagramStateVersion = Number(saveRes?.diagramStateVersion);
+      const patchPayload = { ...patch };
+      if (Number.isFinite(saveDiagramStateVersion) && saveDiagramStateVersion >= 0) {
+        patchPayload.base_diagram_state_version = Math.round(saveDiagramStateVersion);
+      }
+
+      const patchRes = await apiPatchSession(sid, patchPayload);
       traceProcess("diagram.autosave_patch_backend", {
         sid,
         ok: !!patchRes.ok,
-        patch_keys: Object.keys(patch),
+        patch_keys: Object.keys(patchPayload),
+        base_diagram_state_version: (
+          Number.isFinite(saveDiagramStateVersion) && saveDiagramStateVersion >= 0
+            ? Math.round(saveDiagramStateVersion)
+            : null
+        ),
       });
       if (!patchRes.ok) {
         onError?.(shortErr(patchRes.error || "Не удалось синхронизировать Interview после изменения диаграммы."));
