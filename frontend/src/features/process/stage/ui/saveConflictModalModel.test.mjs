@@ -45,6 +45,9 @@ test("buildSaveConflictModalView returns actor-aware copy and explicit action hi
   assert.match(view.title, /другой пользователь/i);
   assert.match(view.contextLines.join(" "), /Серверная версия:\s*8/i);
   assert.match(view.contextLines.join(" "), /Ваша базовая версия:\s*7/i);
+  assert.match(view.contextLines.join(" "), /Изменения на сервере:/i);
+  assert.match(view.contextLines.join(" "), /Изменена схема/i);
+  assert.equal(/bpmn_xml|nodes/i.test(view.contextLines.join(" ")), false);
   assert.equal(view.actions.refreshLabel, "Обновить сессию");
   assert.match(view.actions.refreshHint, /заменены/i);
 });
