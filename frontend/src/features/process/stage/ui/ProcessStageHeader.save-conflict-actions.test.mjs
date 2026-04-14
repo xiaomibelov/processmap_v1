@@ -46,3 +46,15 @@ test("header dedupes competing conflict surfaces when primary panel is visible",
     "toolbar inline conflict message must be suppressed when conflict panel is visible",
   );
 });
+
+test("header conflict summary keeps numeric version zero instead of unknown placeholder", () => {
+  const source = readHeaderSource();
+  assert.ok(
+    source.includes("function formatVersionForLabel(value)"),
+    "header should normalize conflict version labels through explicit formatter",
+  );
+  assert.ok(
+    source.includes("srv ${formatVersionForLabel(conflictMeta?.serverCurrentVersion)} / base ${formatVersionForLabel(conflictMeta?.clientBaseVersion)}"),
+    "conflict summary should render srv/base via formatter",
+  );
+});

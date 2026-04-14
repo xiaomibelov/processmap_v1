@@ -107,3 +107,22 @@ test("conflict badge renders readable context and never shows [object Object]", 
   assert.match(badge.title, /Мария/);
   assert.match(badge.title, /bpmn_xml/);
 });
+
+test("conflict badge preserves zero server version instead of replacing it with unknown marker", () => {
+  const badge = buildSaveUploadStatusBadge({
+    stage: "conflict",
+    status: 409,
+    conflict: {
+      code: "DIAGRAM_STATE_CONFLICT",
+      clientBaseVersion: 1,
+      serverCurrentVersion: 0,
+      actorLabel: "",
+      at: 0,
+      changedKeys: [],
+    },
+  });
+
+  assert.equal(badge.visible, true);
+  assert.match(badge.title, /Серверная версия:\s*0\./);
+  assert.match(badge.title, /Ваша базовая:\s*1\./);
+});

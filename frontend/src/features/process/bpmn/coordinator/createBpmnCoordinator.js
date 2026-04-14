@@ -457,12 +457,14 @@ export default function createBpmnCoordinator(options = {}) {
       reason,
       rev: storedRev,
       status: asNumber(persisted?.status, 200),
+      diagram_state_version: asNumber(persisted?.diagramStateVersion, 0),
       ms: Date.now() - startedAt,
     });
     return {
       ok: true,
       rev: storedRev,
       storedRev,
+      diagramStateVersion: asNumber(persisted?.diagramStateVersion, 0),
       xml,
       xmlAlreadyTransformed: prepared.transformed,
       bpmnVersionSnapshot: persisted?.bpmnVersionSnapshot && typeof persisted.bpmnVersionSnapshot === "object"
@@ -637,12 +639,14 @@ export default function createBpmnCoordinator(options = {}) {
           reason,
           rev: storedRev,
           status: asNumber(persisted?.status, 200),
+          diagram_state_version: asNumber(persisted?.diagramStateVersion, 0),
           ms: Date.now() - startedAt,
         });
         return {
           ok: true,
           rev: storedRev,
           storedRev,
+          diagramStateVersion: asNumber(persisted?.diagramStateVersion, 0),
           bpmnVersionSnapshot: persisted?.bpmnVersionSnapshot && typeof persisted.bpmnVersionSnapshot === "object"
             ? persisted.bpmnVersionSnapshot
             : null,

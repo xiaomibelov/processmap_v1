@@ -7,6 +7,16 @@ function toText(value) {
   return String(value || "").trim();
 }
 
+function hasNumericVersion(value) {
+  const num = Number(value);
+  return Number.isFinite(num) && num >= 0;
+}
+
+function formatVersionForLabel(value) {
+  if (!hasNumericVersion(value)) return "?";
+  return String(Math.round(Number(value)));
+}
+
 export default function ProcessStageHeader({ view = {} }) {
   const {
     canSaveNow,
@@ -75,9 +85,11 @@ export default function ProcessStageHeader({ view = {} }) {
   const showSaveStatusBadge = canSaveNow && !showSaveActionButton;
   const isConflictState = toText(saveUploadStatus?.state) === "conflict";
   const conflictMeta = isConflictState ? (saveUploadStatus?.conflict || {}) : {};
+  const hasServerVersion = hasNumericVersion(conflictMeta?.serverCurrentVersion);
+  const hasClientVersion = hasNumericVersion(conflictMeta?.clientBaseVersion);
   const conflictVersionSummary = (
-    Number(conflictMeta?.serverCurrentVersion || 0) > 0 || Number(conflictMeta?.clientBaseVersion || 0) > 0
-      ? `srv ${Number(conflictMeta?.serverCurrentVersion || 0) || "?"} / base ${Number(conflictMeta?.clientBaseVersion || 0) || "?"}`
+    hasServerVersion || hasClientVersion
+      ? `srv ${formatVersionForLabel(conflictMeta?.serverCurrentVersion)} / base ${formatVersionForLabel(conflictMeta?.clientBaseVersion)}`
       : ""
   );
   const conflictKeysSummary = Array.isArray(conflictMeta?.changedKeys) && conflictMeta.changedKeys.length

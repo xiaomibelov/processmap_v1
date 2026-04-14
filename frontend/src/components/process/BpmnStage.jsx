@@ -4649,10 +4649,16 @@ const BpmnStage = forwardRef(function BpmnStage({
       reason: hintBase,
       rev: Number(r.storedRev || rev),
       status: Number(r.status || 200),
+      diagram_state_version: Number(r.diagramStateVersion || 0),
       xml_len: out.length,
     });
     applyXmlSnapshot(out, `${hintBase}(saved)`);
-    return { ok: true, xml: out, source: `${hintBase}(saved)` };
+    return {
+      ok: true,
+      xml: out,
+      source: `${hintBase}(saved)`,
+      diagramStateVersion: Number(r.diagramStateVersion || 0),
+    };
   }
 
   async function saveLocalFromModeler(options = {}) {
@@ -4839,6 +4845,7 @@ const BpmnStage = forwardRef(function BpmnStage({
           reason: finalizeLifecycleReason,
           rev: Number(persistedFinalXml?.storedRev || rev),
           status: Number(persistedFinalXml?.status || 200),
+          diagram_state_version: Number(persistedFinalXml?.diagramStateVersion || 0),
           xml_len: out.length,
         });
       }
@@ -4862,6 +4869,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         xml: out,
         source: hint,
         storedRev: Number(flushed?.storedRev || flushed?.rev || nextState.rev || 0),
+        diagramStateVersion: Number(flushed?.diagramStateVersion || 0),
         bpmnVersionSnapshot: flushed?.bpmnVersionSnapshot && typeof flushed.bpmnVersionSnapshot === "object"
           ? flushed.bpmnVersionSnapshot
           : null,

@@ -294,6 +294,8 @@ export default function ProcessStage({
   const autoPassDocSyncInFlightRef = useRef(false);
   const autoPassDocSyncLastAttemptMsRef = useRef(0);
   const localStateResetSidRef = useRef("");
+  const diagramStateVersionSidRef = useRef("");
+  const diagramStateVersionRef = useRef(0);
   const sessionTruthProbeSeqRef = useRef(0);
   const sessionTruthProbeLastRef = useRef({
     scopeKey: "",
@@ -311,6 +313,36 @@ export default function ProcessStage({
   const [latestBpmnVersionHeadStatus, setLatestBpmnVersionHeadStatus] = useState("idle");
   const [diagramUndoRedoState, setDiagramUndoRedoState] = useState({ canUndo: false, canRedo: false, ready: false });
   const [diagramSearchMutationVersion, setDiagramSearchMutationVersion] = useState(0);
+
+  const resolveDraftDiagramStateVersion = useCallback(() => {
+    const raw = Number(draft?.diagram_state_version ?? draft?.diagramStateVersion);
+    if (!Number.isFinite(raw) || raw < 0) return null;
+    return Math.round(raw);
+  }, [draft?.diagramStateVersion, draft?.diagram_state_version]);
+
+  useEffect(() => {
+    const currentSid = String(sid || "");
+    const nextVersion = resolveDraftDiagramStateVersion();
+    if (!currentSid) {
+      diagramStateVersionSidRef.current = "";
+      diagramStateVersionRef.current = 0;
+      return;
+    }
+    if (diagramStateVersionSidRef.current !== currentSid) {
+      diagramStateVersionSidRef.current = currentSid;
+      diagramStateVersionRef.current = nextVersion ?? 0;
+      return;
+    }
+    if (nextVersion !== null) {
+      diagramStateVersionRef.current = nextVersion;
+    }
+  }, [resolveDraftDiagramStateVersion, sid]);
+
+  const getBaseDiagramStateVersion = useCallback(() => {
+    const raw = Number(diagramStateVersionRef.current);
+    if (!Number.isFinite(raw) || raw < 0) return 0;
+    return Math.round(raw);
+  }, []);
 
   const {
     genBusy,
@@ -1026,6 +1058,10 @@ export default function ProcessStage({
       let companionError = "";
       let publishInfo = "";
       if (!saved?.pending) {
+        const savedDiagramStateVersion = Number(saved?.diagramStateVersion);
+        if (Number.isFinite(savedDiagramStateVersion) && savedDiagramStateVersion >= 0) {
+          diagramStateVersionRef.current = Math.round(savedDiagramStateVersion);
+        }
         const backendVersionSnapshot = asObject(saved?.bpmnVersionSnapshot);
         const normalizedBackendVersionSnapshot = normalizeBpmnVersionListItem(backendVersionSnapshot);
         const backendRevisionNumber = Number(normalizedBackendVersionSnapshot.revisionNumber || 0);
@@ -1055,6 +1091,7 @@ export default function ProcessStage({
           savedAt: new Date().toISOString(),
           storedRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
           requestedBaseRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
+          baseDiagramStateVersion: getBaseDiagramStateVersion(),
           publishRevision: true,
           revisionSource: "publish_manual_save",
           authoritativeRevision: backendVersionSnapshot,
@@ -1137,6 +1174,7 @@ export default function ProcessStage({
     sid,
     isLocal,
     draftBpmnMeta: draft?.bpmn_meta,
+    getBaseDiagramStateVersion,
     onSessionSync,
     setGenErr,
     shortErr,
@@ -1162,6 +1200,7 @@ export default function ProcessStage({
     savedAt = "",
     storedRev = 0,
     requestedBaseRev = 0,
+    baseDiagramStateVersion = null,
     publishRevision = false,
     revisionComment = "",
     revisionSource = "publish_revision",
@@ -1200,7 +1239,10 @@ export default function ProcessStage({
       }
       nextCompanion = revisionTransition.nextCompanion;
     }
-    const persisted = await persistSessionCompanion(nextCompanion, { source: `${source}_session_companion` });
+    const persisted = await persistSessionCompanion(nextCompanion, {
+      source: `${source}_session_companion`,
+      baseDiagramStateVersion,
+    });
     return {
       ...persisted,
       revision: {

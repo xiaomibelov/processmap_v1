@@ -9,6 +9,14 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function toOptionalNonNegativeNumber(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string" && !value.trim()) return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n);
+}
+
 function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
@@ -31,15 +39,15 @@ function normalizeConflictPayload(raw = null) {
   const value = asObject(raw);
   const code = toText(value.code).toUpperCase();
   const sessionId = toText(value.session_id || value.sessionId);
-  const clientBaseVersion = toNumber(value.client_base_version ?? value.clientBaseVersion, 0);
-  const serverCurrentVersion = toNumber(value.server_current_version ?? value.serverCurrentVersion, 0);
+  const clientBaseVersion = toOptionalNonNegativeNumber(value.client_base_version ?? value.clientBaseVersion);
+  const serverCurrentVersion = toOptionalNonNegativeNumber(value.server_current_version ?? value.serverCurrentVersion);
   const lastWrite = asObject(value.server_last_write || value.serverLastWrite);
   const actorLabel = toText(lastWrite.actor_label || lastWrite.actorLabel || lastWrite.actor_user_id || lastWrite.actorUserId);
   const at = toNumber(lastWrite.at, 0);
   const changedKeys = asArray(lastWrite.changed_keys || lastWrite.changedKeys)
     .map((item) => toText(item))
     .filter(Boolean);
-  if (!code && !serverCurrentVersion && !clientBaseVersion) return null;
+  if (!code && serverCurrentVersion === null && clientBaseVersion === null) return null;
   return {
     code,
     sessionId,
@@ -72,8 +80,8 @@ function resolveConflictPayload({ status = 0, errorCode = "", errorDetails = nul
     return {
       code: code || "DIAGRAM_STATE_CONFLICT",
       sessionId: "",
-      clientBaseVersion: 0,
-      serverCurrentVersion: 0,
+      clientBaseVersion: null,
+      serverCurrentVersion: null,
       actorLabel: "",
       at: 0,
       changedKeys: [],
@@ -127,8 +135,10 @@ function buildConflictTitle(conflict = null, fallbackText = "") {
     return toText(fallbackText) || "Конфликт версии BPMN. Обновите сессию.";
   }
   lines.push("Сервер отклонил сохранение: версия сессии изменилась.");
-  if (details.serverCurrentVersion > 0 || details.clientBaseVersion > 0) {
-    lines.push(`Серверная версия: ${details.serverCurrentVersion || "?"}. Ваша базовая: ${details.clientBaseVersion || "?"}.`);
+  if (details.serverCurrentVersion !== null || details.clientBaseVersion !== null) {
+    const serverVersionText = details.serverCurrentVersion === null ? "?" : String(details.serverCurrentVersion);
+    const clientVersionText = details.clientBaseVersion === null ? "?" : String(details.clientBaseVersion);
+    lines.push(`Серверная версия: ${serverVersionText}. Ваша базовая: ${clientVersionText}.`);
   }
   const actor = toText(details.actorLabel);
   const atText = formatConflictMoment(details.at);
