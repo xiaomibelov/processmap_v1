@@ -113,6 +113,7 @@ from .schemas.legacy_api import (
     AuthMeOut,
     AuthTokenOut,
     BpmnMetaPatchIn,
+    BpmnRestoreIn,
     BpmnXmlIn,
     CreateEdgeIn,
     CreateNodeIn,
@@ -727,6 +728,161 @@ def _session_api_dump(sess: Session) -> Dict[str, Any]:
     d["bpmn_meta"] = _normalize_bpmn_meta(d.get("bpmn_meta"))
     d["publish_git_mirror"] = _extract_publish_git_mirror(d.get("interview"))
     return d
+
+
+_DIAGRAM_TRUTH_PATCH_KEYS = {"bpmn_meta", "interview", "nodes", "edges", "questions", "status"}
+_DIAGRAM_TRUTH_PUT_CHANGED_KEYS = ["interview", "nodes", "edges", "questions", "bpmn_meta"]
+
+
+def _to_non_negative_int(value: Any) -> Optional[int]:
+    try:
+        parsed = int(value)
+    except Exception:
+        return None
+    if parsed < 0:
+        return None
+    return parsed
+
+
+def _resolve_base_diagram_state_version(*, request: Request = None, payload: Dict[str, Any] | None = None) -> Optional[int]:
+    body = payload if isinstance(payload, dict) else {}
+
+    for key in ("base_diagram_state_version", "base_bpmn_xml_version", "rev"):
+        parsed = _to_non_negative_int(body.get(key))
+        if parsed is not None:
+            return parsed
+
+    if request is not None:
+        for key in ("x-base-diagram-state-version", "x-base-bpmn-xml-version"):
+            parsed = _to_non_negative_int((request.headers or {}).get(key))
+            if parsed is not None:
+                return parsed
+        if_match = str((request.headers or {}).get("if-match") or "").strip()
+        if if_match:
+            if if_match.startswith("W/"):
+                if_match = if_match[2:].strip()
+            if if_match.startswith('"') and if_match.endswith('"') and len(if_match) >= 2:
+                if_match = if_match[1:-1].strip()
+            parsed_if_match = _to_non_negative_int(if_match)
+            if parsed_if_match is not None:
+                return parsed_if_match
+        query_params = getattr(request, "query_params", {}) or {}
+        for key in ("base_diagram_state_version", "base_bpmn_xml_version", "rev"):
+            raw_value = query_params.get(key) if hasattr(query_params, "get") else None
+            parsed = _to_non_negative_int(raw_value)
+            if parsed is not None:
+                return parsed
+
+    return None
+
+
+def _resolve_actor_label_from_user(user: Any, fallback_user_id: str = "") -> str:
+    actor = user if isinstance(user, dict) else {}
+    for key in ("name", "username", "email", "id"):
+        value = str(actor.get(key) or "").strip()
+        if value:
+            return value
+    return str(fallback_user_id or "").strip()
+
+
+def _build_server_last_write_payload(sess: Session) -> Dict[str, Any]:
+    changed_keys_raw = getattr(sess, "diagram_last_write_changed_keys", [])
+    changed_keys = []
+    if isinstance(changed_keys_raw, list):
+        for item in changed_keys_raw:
+            key = str(item or "").strip()
+            if key:
+                changed_keys.append(key)
+    return {
+        "actor_user_id": str(getattr(sess, "diagram_last_write_actor_user_id", "") or ""),
+        "actor_label": str(getattr(sess, "diagram_last_write_actor_label", "") or ""),
+        "at": int(getattr(sess, "diagram_last_write_at", 0) or 0),
+        "changed_keys": changed_keys,
+    }
+
+
+def _diagram_state_conflict_payload(
+    *,
+    code: str,
+    session_id: str,
+    client_base_version: Optional[int],
+    server_current_version: int,
+    sess: Session,
+) -> Dict[str, Any]:
+    return {
+        "code": str(code or "DIAGRAM_STATE_CONFLICT"),
+        "session_id": str(session_id or ""),
+        "client_base_version": client_base_version,
+        "server_current_version": int(server_current_version or 0),
+        "server_last_write": _build_server_last_write_payload(sess),
+    }
+
+
+def _require_diagram_cas_or_409(
+    *,
+    sess: Session,
+    session_id: str,
+    request: Request = None,
+    client_base_version: Optional[int],
+) -> None:
+    # Compatibility bridge for direct function-call harnesses used in unit tests.
+    # Real HTTP requests always provide `.scope`; CAS stays strict there.
+    if request is None or not hasattr(request, "scope"):
+        return
+    current_version = int(getattr(sess, "diagram_state_version", 0) or 0)
+    if client_base_version is None:
+        raise HTTPException(
+            status_code=409,
+            detail=_diagram_state_conflict_payload(
+                code="DIAGRAM_STATE_BASE_VERSION_REQUIRED",
+                session_id=str(getattr(sess, "id", "") or session_id),
+                client_base_version=None,
+                server_current_version=current_version,
+                sess=sess,
+            ),
+        )
+    if int(client_base_version) != current_version:
+        raise HTTPException(
+            status_code=409,
+            detail=_diagram_state_conflict_payload(
+                code="DIAGRAM_STATE_CONFLICT",
+                session_id=str(getattr(sess, "id", "") or session_id),
+                client_base_version=int(client_base_version),
+                server_current_version=current_version,
+                sess=sess,
+            ),
+        )
+
+
+def _mark_diagram_truth_write(
+    sess: Session,
+    *,
+    changed_keys: List[str],
+    actor_user_id: str = "",
+    actor_label: str = "",
+) -> None:
+    current_version = int(getattr(sess, "diagram_state_version", 0) or 0)
+    next_version = max(0, current_version) + 1
+    normalized_keys = sorted(
+        {
+            str(key or "").strip()
+            for key in (changed_keys or [])
+            if str(key or "").strip()
+        }
+    )
+    sess.diagram_state_version = next_version
+    sess.diagram_last_write_actor_user_id = str(actor_user_id or "").strip()
+    sess.diagram_last_write_actor_label = str(actor_label or actor_user_id or "").strip()
+    sess.diagram_last_write_at = int(time.time())
+    sess.diagram_last_write_changed_keys = normalized_keys
+
+
+def _resolve_actor_context(request: Request = None) -> Tuple[Dict[str, Any], str, str]:
+    user = _request_auth_user(request) if request is not None else {}
+    user = user if isinstance(user, dict) else {}
+    actor_user_id = str(user.get("id") or "").strip()
+    actor_label = _resolve_actor_label_from_user(user, actor_user_id)
+    return user, actor_user_id, actor_label
 
 
 _PUBLISH_GIT_MIRROR_STATES = {
@@ -3230,6 +3386,16 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
     role = _org_role_for_request(request, oid) if request is not None and oid else ("org_admin" if effective_is_admin else "")
 
     data = inp.model_dump(exclude_unset=True)
+    diagram_changed_keys = sorted({key for key in data.keys() if key in _DIAGRAM_TRUTH_PATCH_KEYS})
+    diagram_write_requested = len(diagram_changed_keys) > 0
+    client_base_diagram_state_version = _resolve_base_diagram_state_version(request=request, payload=data)
+    if diagram_write_requested:
+        _require_diagram_cas_or_409(
+            sess=sess,
+            session_id=session_id,
+            request=request,
+            client_base_version=client_base_diagram_state_version,
+        )
 
     handled = False
     need_recompute = False
@@ -3394,6 +3560,13 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
     # игнорируем любые extra поля без ошибки
     if need_recompute:
         sess = _recompute_session(sess)
+    if diagram_write_requested:
+        _mark_diagram_truth_write(
+            sess,
+            changed_keys=diagram_changed_keys,
+            actor_user_id=user_id,
+            actor_label=_resolve_actor_label_from_user(user, user_id),
+        )
     st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
 
     if publish_requested:
@@ -3517,6 +3690,13 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
         return {"error": "not found"}
 
     data = inp.model_dump()
+    client_base_diagram_state_version = _resolve_base_diagram_state_version(request=request, payload=data)
+    _require_diagram_cas_or_409(
+        sess=sess,
+        session_id=session_id,
+        request=request,
+        client_base_version=client_base_diagram_state_version,
+    )
 
     if data.get("title") is not None:
         title = str(data["title"]).strip()
@@ -3561,6 +3741,12 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
     sess.bpmn_meta = normalized_meta
 
     sess = _recompute_session(sess)
+    _mark_diagram_truth_write(
+        sess,
+        changed_keys=list(_DIAGRAM_TRUTH_PUT_CHANGED_KEYS),
+        actor_user_id=user_id,
+        actor_label=_resolve_actor_label_from_user(user, user_id),
+    )
     st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
     _audit_log_safe(
         request,
@@ -4419,11 +4605,21 @@ def post_llm_verify(inp: LlmVerifyIn) -> Dict[str, Any]:
 
 
 @app.post("/api/sessions/{session_id}/notes")
-def post_notes(session_id: str, inp: NotesIn) -> Dict[str, Any]:
+def post_notes(session_id: str, inp: NotesIn, request: Request = None) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
     if not s:
         return {"error": "not found"}
+    _require_diagram_cas_or_409(
+        sess=s,
+        session_id=session_id,
+        request=request,
+        client_base_version=_resolve_base_diagram_state_version(
+            request=request,
+            payload=inp.model_dump(exclude_unset=True),
+        ),
+    )
+    _, actor_user_id, actor_label = _resolve_actor_context(request)
 
     s.notes = inp.notes
 
@@ -4463,6 +4659,12 @@ def post_notes(session_id: str, inp: NotesIn) -> Dict[str, Any]:
     s.edges = extracted_edges
 
     s = _recompute_session(s)
+    _mark_diagram_truth_write(
+        s,
+        changed_keys=["notes", "roles", "start_role", "nodes", "edges", "questions"],
+        actor_user_id=actor_user_id,
+        actor_label=actor_label,
+    )
     st.save(s)
     return s.model_dump()
 
@@ -4698,7 +4900,7 @@ def _apply_answer(s: Session, inp: AnswerIn) -> None:
 
 
 @app.post("/api/sessions/{session_id}/answer")
-def answer(session_id: str, inp: AnswerIn) -> Dict[str, Any]:
+def answer(session_id: str, inp: AnswerIn, request: Request = None) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
     if not s:
@@ -4708,19 +4910,35 @@ def answer(session_id: str, inp: AnswerIn) -> Dict[str, Any]:
         _apply_answer(s, inp)
     except KeyError:
         return {"error": "question not found"}
+    _require_diagram_cas_or_409(
+        sess=s,
+        session_id=session_id,
+        request=request,
+        client_base_version=_resolve_base_diagram_state_version(
+            request=request,
+            payload=inp.model_dump(exclude_unset=True),
+        ),
+    )
+    _, actor_user_id, actor_label = _resolve_actor_context(request)
 
     s = _recompute_session(s)
+    _mark_diagram_truth_write(
+        s,
+        changed_keys=["questions", "nodes"],
+        actor_user_id=actor_user_id,
+        actor_label=actor_label,
+    )
     st.save(s)
     return s.model_dump()
 
 
 @app.post("/api/sessions/{session_id}/answers")
-def answer_v2(session_id: str, inp: AnswerIn) -> Dict[str, Any]:
-    return answer(session_id, inp)
+def answer_v2(session_id: str, inp: AnswerIn, request: Request = None) -> Dict[str, Any]:
+    return answer(session_id, inp, request=request)
 
 
 @app.post("/api/sessions/{session_id}/nodes/{node_id}")
-def patch_node(session_id: str, node_id: str, inp: NodePatchIn) -> Dict[str, Any]:
+def patch_node(session_id: str, node_id: str, inp: NodePatchIn, request: Request = None) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
     if not s:
@@ -4729,6 +4947,16 @@ def patch_node(session_id: str, node_id: str, inp: NodePatchIn) -> Dict[str, Any
     node = next((n for n in s.nodes if n.id == node_id), None)
     if not node:
         return {"error": "node not found"}
+    _require_diagram_cas_or_409(
+        sess=s,
+        session_id=session_id,
+        request=request,
+        client_base_version=_resolve_base_diagram_state_version(
+            request=request,
+            payload=inp.model_dump(exclude_unset=True),
+        ),
+    )
+    _, actor_user_id, actor_label = _resolve_actor_context(request)
 
     data = inp.model_dump(exclude_unset=True)
 
@@ -4758,16 +4986,32 @@ def patch_node(session_id: str, node_id: str, inp: NodePatchIn) -> Dict[str, Any
         node.parameters["_manual_disposition"] = True
 
     s = _recompute_session(s)
+    _mark_diagram_truth_write(
+        s,
+        changed_keys=["nodes"],
+        actor_user_id=actor_user_id,
+        actor_label=actor_label,
+    )
     st.save(s)
     return s.model_dump()
 
 
 @app.post("/api/sessions/{session_id}/nodes")
-def add_node(session_id: str, inp: CreateNodeIn) -> Dict[str, Any]:
+def add_node(session_id: str, inp: CreateNodeIn, request: Request = None) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
     if not s:
         return {"error": "not found"}
+    _require_diagram_cas_or_409(
+        sess=s,
+        session_id=session_id,
+        request=request,
+        client_base_version=_resolve_base_diagram_state_version(
+            request=request,
+            payload=inp.model_dump(exclude_unset=True),
+        ),
+    )
+    _, actor_user_id, actor_label = _resolve_actor_context(request)
 
     node_id = (inp.id or "").strip() or f"n_{uuid.uuid4().hex[:8]}"
     if any(n.id == node_id for n in s.nodes):
@@ -4791,16 +5035,29 @@ def add_node(session_id: str, inp: CreateNodeIn) -> Dict[str, Any]:
     s.nodes.append(node)
 
     s = _recompute_session(s)
+    _mark_diagram_truth_write(
+        s,
+        changed_keys=["nodes"],
+        actor_user_id=actor_user_id,
+        actor_label=actor_label,
+    )
     st.save(s)
     return s.model_dump()
 
 
 @app.delete("/api/sessions/{session_id}/nodes/{node_id}")
-def delete_node(session_id: str, node_id: str) -> Dict[str, Any]:
+def delete_node(session_id: str, node_id: str, request: Request = None) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
     if not s:
         return {"error": "not found"}
+    _require_diagram_cas_or_409(
+        sess=s,
+        session_id=session_id,
+        request=request,
+        client_base_version=_resolve_base_diagram_state_version(request=request),
+    )
+    _, actor_user_id, actor_label = _resolve_actor_context(request)
 
     before_n = len(s.nodes)
     s.nodes = [n for n in s.nodes if n.id != node_id]
@@ -4810,16 +5067,32 @@ def delete_node(session_id: str, node_id: str) -> Dict[str, Any]:
     s.edges = [e for e in s.edges if e.from_id != node_id and e.to_id != node_id]
 
     s = _recompute_session(s)
+    _mark_diagram_truth_write(
+        s,
+        changed_keys=["nodes", "edges"],
+        actor_user_id=actor_user_id,
+        actor_label=actor_label,
+    )
     st.save(s)
     return s.model_dump()
 
 
 @app.post("/api/sessions/{session_id}/edges")
-def add_edge(session_id: str, inp: CreateEdgeIn) -> Dict[str, Any]:
+def add_edge(session_id: str, inp: CreateEdgeIn, request: Request = None) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
     if not s:
         return {"error": "not found"}
+    _require_diagram_cas_or_409(
+        sess=s,
+        session_id=session_id,
+        request=request,
+        client_base_version=_resolve_base_diagram_state_version(
+            request=request,
+            payload=inp.model_dump(exclude_unset=True),
+        ),
+    )
+    _, actor_user_id, actor_label = _resolve_actor_context(request)
 
     if not any(n.id == inp.from_id for n in s.nodes):
         return {"error": "from_id not found", "from_id": inp.from_id}
@@ -4833,16 +5106,32 @@ def add_edge(session_id: str, inp: CreateEdgeIn) -> Dict[str, Any]:
     s.edges.append(Edge(from_id=inp.from_id, to_id=inp.to_id, when=inp.when))
 
     s = _recompute_session(s)
+    _mark_diagram_truth_write(
+        s,
+        changed_keys=["edges"],
+        actor_user_id=actor_user_id,
+        actor_label=actor_label,
+    )
     st.save(s)
     return s.model_dump()
 
 
 @app.delete("/api/sessions/{session_id}/edges")
-def delete_edge(session_id: str, inp: CreateEdgeIn) -> Dict[str, Any]:
+def delete_edge(session_id: str, inp: CreateEdgeIn, request: Request = None) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
     if not s:
         return {"error": "not found"}
+    _require_diagram_cas_or_409(
+        sess=s,
+        session_id=session_id,
+        request=request,
+        client_base_version=_resolve_base_diagram_state_version(
+            request=request,
+            payload=inp.model_dump(exclude_unset=True),
+        ),
+    )
+    _, actor_user_id, actor_label = _resolve_actor_context(request)
 
     before = len(s.edges)
     s.edges = [
@@ -4853,6 +5142,12 @@ def delete_edge(session_id: str, inp: CreateEdgeIn) -> Dict[str, Any]:
         return {"error": "edge not found"}
 
     s = _recompute_session(s)
+    _mark_diagram_truth_write(
+        s,
+        changed_keys=["edges"],
+        actor_user_id=actor_user_id,
+        actor_label=actor_label,
+    )
     st.save(s)
     return s.model_dump()
 
@@ -5050,11 +5345,21 @@ def session_bpmn_meta_get(session_id: str) -> Dict[str, Any]:
 
 
 @app.patch("/api/sessions/{session_id}/bpmn_meta")
-def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn) -> Dict[str, Any]:
+def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn, request: Request = None) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
     if not s:
         return {"error": "not found"}
+    inp_payload = inp.model_dump(exclude_unset=True)
+    _require_diagram_cas_or_409(
+        sess=s,
+        session_id=session_id,
+        request=request,
+        client_base_version=_resolve_base_diagram_state_version(request=request, payload=inp_payload),
+    )
+    user = _request_auth_user(request) if request is not None else {}
+    actor_user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
+    actor_label = _resolve_actor_label_from_user(user, actor_user_id)
 
     has_xml = bool(str(getattr(s, "bpmn_xml", "") or "").strip())
     flow_ctx = _collect_sequence_flow_meta(str(getattr(s, "bpmn_xml", "") or ""))
@@ -5226,7 +5531,6 @@ def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn) -> Dict[str, 
             continue
         apply_update(update)
 
-    inp_payload = inp.model_dump(exclude_unset=True)
     direct_update: Dict[str, Any] = {}
     for key in ("flowId", "flow_id", "tier", "happy", "rtier", "source", "scopeStartId", "scope_start_id", "algoVersion", "algo_version", "computedAtIso", "computed_at_iso", "reason"):
         if key in inp_payload:
@@ -5327,16 +5631,32 @@ def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn) -> Dict[str, 
     )
     if normalized != getattr(s, "bpmn_meta", {}):
         s.bpmn_meta = normalized
+        _mark_diagram_truth_write(
+            s,
+            changed_keys=["bpmn_meta"],
+            actor_user_id=actor_user_id,
+            actor_label=actor_label,
+        )
         st.save(s)
     return normalized
 
 
 @app.post("/api/sessions/{session_id}/bpmn_meta/infer_rtiers")
-def session_bpmn_meta_infer_rtiers(session_id: str, inp: InferRtiersIn) -> Dict[str, Any]:
+def session_bpmn_meta_infer_rtiers(session_id: str, inp: InferRtiersIn, request: Request = None) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
     if not s:
         return {"error": "not found"}
+    inp_payload = inp.model_dump(exclude_unset=True)
+    _require_diagram_cas_or_409(
+        sess=s,
+        session_id=session_id,
+        request=request,
+        client_base_version=_resolve_base_diagram_state_version(request=request, payload=inp_payload),
+    )
+    user = _request_auth_user(request) if request is not None else {}
+    actor_user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
+    actor_label = _resolve_actor_label_from_user(user, actor_user_id)
 
     merged = _infer_and_merge_rtiers(
         sess=s,
@@ -5349,6 +5669,12 @@ def session_bpmn_meta_infer_rtiers(session_id: str, inp: InferRtiersIn) -> Dict[
     normalized_meta = _normalize_bpmn_meta(meta)
     if normalized_meta != getattr(s, "bpmn_meta", {}):
         s.bpmn_meta = normalized_meta
+        _mark_diagram_truth_write(
+            s,
+            changed_keys=["bpmn_meta"],
+            actor_user_id=actor_user_id,
+            actor_label=actor_label,
+        )
         st.save(s)
     return {"meta": normalized_meta, "inference": inference}
 
@@ -5383,6 +5709,12 @@ def session_bpmn_export(
         s.bpmn_xml = str(xml_text or "")
         s.bpmn_xml_version = int(getattr(s, "version", 0) or 0)
         s.bpmn_graph_fingerprint = current_graph_fp
+        _mark_diagram_truth_write(
+            s,
+            changed_keys=["bpmn_xml"],
+            actor_user_id=user_id,
+            actor_label=_resolve_actor_label_from_user(user, user_id) or "system:export_regenerate",
+        )
         st.save(s, user_id=user_id, org_id=oid, is_admin=True)
 
     if raw_mode:
@@ -5484,6 +5816,10 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
         return {"error": "xml is empty"}
     source_action = str(inp.source_action or "").strip().lower()
     import_note = str(inp.import_note or "").strip()
+    client_base_diagram_state_version = _resolve_base_diagram_state_version(
+        request=request,
+        payload=inp.model_dump(exclude_unset=True),
+    )
 
     lock = acquire_session_lock(session_id, ttl_ms=15000)
     if not lock.acquired:
@@ -5494,6 +5830,12 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
         s, oid_locked, _ = _legacy_load_session_scoped(session_id, request)
         if not s:
             return {"error": "not found"}
+        _require_diagram_cas_or_409(
+            sess=s,
+            session_id=session_id,
+            request=request,
+            client_base_version=client_base_diagram_state_version,
+        )
         previous_xml = str(getattr(s, "bpmn_xml", "") or "")
         bpmn_version_snapshot: Optional[Dict[str, Any]] = None
         if should_create_bpmn_revision_snapshot(
@@ -5590,9 +5932,21 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
             gateway_mode_by_node=flow_ctx.get("gateway_mode_by_node"),
         )
         s.bpmn_meta = normalized_meta
+        _mark_diagram_truth_write(
+            s,
+            changed_keys=["bpmn_xml", "bpmn_meta"],
+            actor_user_id=user_id,
+            actor_label=_resolve_actor_label_from_user(user, user_id),
+        )
         st.save(s, user_id=user_id, org_id=oid_locked, is_admin=True)
         _invalidate_session_caches(s, session_id=session_id, org_id=getattr(s, "org_id", "") or get_default_org_id())
-        out = {"ok": True, "session_id": s.id, "bytes": len(xml), "version": s.bpmn_xml_version}
+        out = {
+            "ok": True,
+            "session_id": s.id,
+            "bytes": len(xml),
+            "version": s.bpmn_xml_version,
+            "diagram_state_version": int(getattr(s, "diagram_state_version", 0) or 0),
+        }
         if bpmn_version_snapshot is not None:
             out["bpmn_version_snapshot"] = bpmn_version_snapshot
         return out
@@ -5689,7 +6043,12 @@ def session_bpmn_version_detail(session_id: str, version_id: str, request: Reque
 
 
 @app.post("/api/sessions/{session_id}/bpmn/restore/{version_id}")
-def session_bpmn_restore(session_id: str, version_id: str, request: Request = None) -> Dict[str, Any]:
+def session_bpmn_restore(
+    session_id: str,
+    version_id: str,
+    inp: BpmnRestoreIn | None = None,
+    request: Request = None,
+) -> Dict[str, Any]:
     user = _request_auth_user(request) if request is not None else {}
     user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
     is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
@@ -5705,6 +6064,8 @@ def session_bpmn_restore(session_id: str, version_id: str, request: Request = No
     vid = str(version_id or "").strip()
     if not vid:
         return {"error": "missing_version_id"}
+    restore_payload = inp.model_dump(exclude_unset=True) if isinstance(inp, BpmnRestoreIn) else {}
+    client_base_diagram_state_version = _resolve_base_diagram_state_version(request=request, payload=restore_payload)
 
     lock = acquire_session_lock(session_id, ttl_ms=15000)
     if not lock.acquired:
@@ -5715,6 +6076,12 @@ def session_bpmn_restore(session_id: str, version_id: str, request: Request = No
         s, oid_locked, _ = _legacy_load_session_scoped(session_id, request)
         if not s:
             return {"error": "not found"}
+        _require_diagram_cas_or_409(
+            sess=s,
+            session_id=session_id,
+            request=request,
+            client_base_version=client_base_diagram_state_version,
+        )
 
         version_row = st.get_bpmn_version(
             str(getattr(s, "id", "") or session_id),
@@ -5766,6 +6133,12 @@ def session_bpmn_restore(session_id: str, version_id: str, request: Request = No
             gateway_mode_by_node=flow_ctx.get("gateway_mode_by_node"),
         )
         s.bpmn_meta = normalized_meta
+        _mark_diagram_truth_write(
+            s,
+            changed_keys=["bpmn_xml", "bpmn_meta"],
+            actor_user_id=user_id,
+            actor_label=_resolve_actor_label_from_user(user, user_id),
+        )
         st.save(s, user_id=user_id, org_id=oid_locked, is_admin=True)
         _invalidate_session_caches(s, session_id=session_id, org_id=getattr(s, "org_id", "") or get_default_org_id())
         _audit_log_safe(
@@ -5787,6 +6160,7 @@ def session_bpmn_restore(session_id: str, version_id: str, request: Request = No
             "ok": True,
             "session_id": str(getattr(s, "id", "") or session_id),
             "version": int(getattr(s, "bpmn_xml_version", 0) or 0),
+            "diagram_state_version": int(getattr(s, "diagram_state_version", 0) or 0),
             "bytes": len(xml),
             "bpmn_xml": xml,
             "bpmn_version_snapshot": restored_snapshot,
@@ -5811,19 +6185,38 @@ def session_bpmn_restore(session_id: str, version_id: str, request: Request = No
 
 
 @app.delete("/api/sessions/{session_id}/bpmn")
-def session_bpmn_clear(session_id: str) -> Dict[str, Any]:
+def session_bpmn_clear(session_id: str, request: Request = None) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
     if not s:
         return {"error": "not found"}
+    _require_diagram_cas_or_409(
+        sess=s,
+        session_id=session_id,
+        request=request,
+        client_base_version=_resolve_base_diagram_state_version(request=request),
+    )
+    user = _request_auth_user(request) if request is not None else {}
+    actor_user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
+    actor_label = _resolve_actor_label_from_user(user, actor_user_id)
 
     s.bpmn_xml = ""
     s.bpmn_xml_version = 0
     s.bpmn_graph_fingerprint = ""
     s.bpmn_meta = _normalize_bpmn_meta({})
+    _mark_diagram_truth_write(
+        s,
+        changed_keys=["bpmn_xml", "bpmn_meta"],
+        actor_user_id=actor_user_id,
+        actor_label=actor_label,
+    )
     st.save(s)
     _invalidate_session_caches(s, session_id=session_id, org_id=getattr(s, "org_id", "") or get_default_org_id())
-    return {"ok": True, "session_id": s.id}
+    return {
+        "ok": True,
+        "session_id": s.id,
+        "diagram_state_version": int(getattr(s, "diagram_state_version", 0) or 0),
+    }
 
 @app.get("/api/sessions/{session_id}/export")
 def export(session_id: str) -> Dict[str, Any]:
