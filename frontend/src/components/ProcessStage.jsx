@@ -854,6 +854,7 @@ export default function ProcessStage({
     processBodyRef,
     bpmnSync,
     projectionHelpers,
+    getBaseDiagramStateVersion,
     onSessionSync,
     onError: setGenErr,
   });
@@ -3294,7 +3295,12 @@ export default function ProcessStage({
           };
           onSessionSync?.(optimisticSession);
           if (!isLocal) {
-            const syncRes = await apiPatchSession(sid, savePlan.patch);
+            const syncPatchPayload = { ...savePlan.patch };
+            const baseDiagramStateVersion = Number(getBaseDiagramStateVersion());
+            if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
+              syncPatchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);
+            }
+            const syncRes = await apiPatchSession(sid, syncPatchPayload);
             if (syncRes.ok) {
               const serverSession =
                 syncRes.session && typeof syncRes.session === "object"
@@ -4373,7 +4379,12 @@ export default function ProcessStage({
           };
           onSessionSync?.(optimisticSession);
           if (!isLocal) {
-            const syncRes = await apiPatchSession(sid, savePlan.patch);
+            const syncPatchPayload = { ...savePlan.patch };
+            const baseDiagramStateVersion = Number(getBaseDiagramStateVersion());
+            if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
+              syncPatchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);
+            }
+            const syncRes = await apiPatchSession(sid, syncPatchPayload);
             if (syncRes.ok) {
               const serverSession =
                 syncRes.session && typeof syncRes.session === "object"
@@ -4549,6 +4560,7 @@ export default function ProcessStage({
       apiAiQuestions,
       apiGetBpmnXml,
       apiPatchSession,
+      getBaseDiagramStateVersion,
       buildExecutionPlan,
       appendExecutionPlanVersionEntry,
       copyText,
