@@ -302,7 +302,7 @@ class BpmnMetaApiTests(unittest.TestCase):
     def test_bpmn_import_creates_bpmn_only_version_snapshot(self):
         st = self.get_storage()
         before_versions = st.list_bpmn_versions(self.sid)
-        self.assertEqual(before_versions, [])
+        before_count = len(before_versions)
 
         saved = self.session_bpmn_save(
             self.sid,
@@ -315,15 +315,15 @@ class BpmnMetaApiTests(unittest.TestCase):
         self.assertEqual(saved.get("ok"), True)
         snapshot = saved.get("bpmn_version_snapshot", {})
         self.assertEqual(snapshot.get("source_action"), "import_bpmn")
-        self.assertEqual(int(snapshot.get("version_number") or 0), 1)
+        self.assertEqual(int(snapshot.get("version_number") or 0), before_count + 1)
         self.assertEqual(snapshot.get("import_note"), "manual stage import")
 
         versions_meta = st.list_bpmn_versions(self.sid)
-        self.assertEqual(len(versions_meta), 1)
+        self.assertEqual(len(versions_meta), before_count + 1)
         self.assertNotIn("bpmn_xml", versions_meta[0])
 
         versions = st.list_bpmn_versions(self.sid, include_xml=True)
-        self.assertEqual(len(versions), 1)
+        self.assertEqual(len(versions), before_count + 1)
         self.assertEqual(versions[0].get("source_action"), "import_bpmn")
         self.assertEqual(versions[0].get("import_note"), "manual stage import")
         self.assertEqual(versions[0].get("bpmn_xml"), PRUNED_BPMN_XML)
@@ -332,40 +332,42 @@ class BpmnMetaApiTests(unittest.TestCase):
         self.assertIsNotNone(current)
         self.assertEqual(str(current.bpmn_xml or ""), PRUNED_BPMN_XML)
 
-    def test_regular_bpmn_put_does_not_create_version_snapshot(self):
+    def test_regular_bpmn_put_with_xml_change_creates_version_snapshot(self):
         st = self.get_storage()
+        before_count = len(st.list_bpmn_versions(self.sid))
         saved = self.session_bpmn_save(
             self.sid,
             self.BpmnXmlIn(xml=PRUNED_BPMN_XML),
         )
         self.assertEqual(saved.get("ok"), True)
-        self.assertNotIn("bpmn_version_snapshot", saved)
-        self.assertEqual(st.list_bpmn_versions(self.sid), [])
+        snapshot = saved.get("bpmn_version_snapshot", {})
+        self.assertTrue(str(snapshot.get("id") or "").strip())
+        self.assertEqual(str(snapshot.get("source_action") or ""), "manual_save")
+        self.assertEqual(len(st.list_bpmn_versions(self.sid)), before_count + 1)
 
-    def test_publish_manual_save_creates_version_snapshot_even_when_xml_matches_current_backend_state(self):
+    def test_publish_manual_save_with_unchanged_xml_uses_non_bpmn_trace_parity(self):
         st = self.get_storage()
         initial = self.session_bpmn_save(
             self.sid,
             self.BpmnXmlIn(xml=PRUNED_BPMN_XML),
         )
         self.assertEqual(initial.get("ok"), True)
-        self.assertNotIn("bpmn_version_snapshot", initial)
+        self.assertIsInstance(initial.get("bpmn_version_snapshot"), dict)
+        before_versions = len(st.list_bpmn_versions(self.sid))
 
         published = self.session_bpmn_save(
             self.sid,
             self.BpmnXmlIn(xml=PRUNED_BPMN_XML, source_action="publish_manual_save"),
         )
         self.assertEqual(published.get("ok"), True)
-        snapshot = published.get("bpmn_version_snapshot", {})
-        self.assertEqual(snapshot.get("source_action"), "publish_manual_save")
-        self.assertEqual(int(snapshot.get("version_number") or 0), 1)
-
-        versions = st.list_bpmn_versions(self.sid, include_xml=True)
-        self.assertEqual(len(versions), 1)
-        self.assertEqual(versions[0].get("source_action"), "publish_manual_save")
-        self.assertEqual(versions[0].get("bpmn_xml"), PRUNED_BPMN_XML)
+        self.assertNotIn("bpmn_version_snapshot", published)
+        after_versions = st.list_bpmn_versions(self.sid, include_xml=True)
+        self.assertEqual(len(after_versions), before_versions)
+        state_versions = st.list_session_state_versions(self.sid)
+        self.assertGreaterEqual(len(state_versions), 1)
 
     def test_bpmn_versions_endpoint_returns_metadata_and_optional_xml(self):
+        before_count = int((self.session_bpmn_versions_list(self.sid, include_xml=0) or {}).get("count") or 0)
         self.session_bpmn_save(
             self.sid,
             self.BpmnXmlIn(xml=PRUNED_BPMN_XML, source_action="import_bpmn", import_note="first import"),
@@ -373,7 +375,7 @@ class BpmnMetaApiTests(unittest.TestCase):
 
         listed_meta = self.session_bpmn_versions_list(self.sid, include_xml=0)
         self.assertEqual(listed_meta.get("ok"), True)
-        self.assertEqual(int(listed_meta.get("count") or 0), 1)
+        self.assertEqual(int(listed_meta.get("count") or 0), before_count + 1)
         item_meta = (listed_meta.get("items") or [{}])[0]
         self.assertEqual(item_meta.get("source_action"), "import_bpmn")
         self.assertEqual(item_meta.get("import_note"), "first import")
@@ -441,6 +443,12 @@ class BpmnMetaApiTests(unittest.TestCase):
             }
         )
 
+        baseline_versions = self.session_bpmn_versions_list(self.sid, include_xml=0)
+        baseline_items = baseline_versions.get("items") or []
+        self.assertTrue(len(baseline_items) >= 1)
+        baseline_snapshot_id = str(baseline_items[0].get("id") or "")
+        self.assertTrue(baseline_snapshot_id)
+
         imported = self.session_bpmn_save(
             self.sid,
             self.BpmnXmlIn(xml=PRUNED_BPMN_XML, source_action="import_bpmn", import_note="restore checkpoint"),
@@ -449,10 +457,10 @@ class BpmnMetaApiTests(unittest.TestCase):
         snapshot = imported.get("bpmn_version_snapshot", {})
         self.assertTrue(str(snapshot.get("id") or "").strip())
 
-        restored = self.session_bpmn_restore(self.sid, str(snapshot.get("id") or ""))
+        restored = self.session_bpmn_restore(self.sid, baseline_snapshot_id)
         self.assertEqual(restored.get("ok"), True)
         self.assertEqual(str(restored.get("bpmn_xml") or ""), XOR_BPMN_XML)
-        self.assertEqual(str((restored.get("restored_version") or {}).get("id") or ""), str(snapshot.get("id") or ""))
+        self.assertEqual(str((restored.get("restored_version") or {}).get("id") or ""), baseline_snapshot_id)
 
         st = self.get_storage()
         reloaded = st.load(self.sid, is_admin=True)
