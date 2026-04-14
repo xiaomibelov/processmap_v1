@@ -97,6 +97,7 @@ export default function useInterviewSyncLifecycle({
   onSessionSync,
   bpmnSync,
   projectionHelpers,
+  getBaseDiagramStateVersion,
   onError,
 }) {
   const interviewLastSavedRef = useRef("{}");
@@ -150,7 +151,12 @@ export default function useInterviewSyncLifecycle({
         });
       }
 
-      const patchRes = await apiPatchSession(sid, patch);
+      const patchPayload = { ...patch };
+      const baseDiagramStateVersion = Number(getBaseDiagramStateVersion?.());
+      if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
+        patchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);
+      }
+      const patchRes = await apiPatchSession(sid, patchPayload);
       if (isSessionStale()) return true;
       if (hasAiQuestionsByElement) {
         const sessionInterview = asObject(patchRes?.session?.interview);
@@ -175,7 +181,7 @@ export default function useInterviewSyncLifecycle({
         sid,
         edit_seq: editSeq,
         ok: !!patchRes.ok,
-        patch_keys: Object.keys(patch),
+        patch_keys: Object.keys(patchPayload),
       });
       if (!patchRes.ok) {
         onError?.(shortErr(patchRes.error || "Не удалось сохранить Interview"));
@@ -295,7 +301,7 @@ export default function useInterviewSyncLifecycle({
       });
       return true;
     },
-    [sid, isLocal, onSessionSync, bpmnSync, onError],
+    [sid, isLocal, onSessionSync, bpmnSync, getBaseDiagramStateVersion, onError],
   );
 
   const {
@@ -523,7 +529,12 @@ export default function useInterviewSyncLifecycle({
         interviewHashAfter: fnv1aHex(nextHash),
         xmlHash: fnv1aHex(xml),
       });
-      const r = await apiPatchSession(sid, savePlan.patch);
+      const hydratePatchPayload = { ...savePlan.patch };
+      const baseDiagramStateVersion = Number(getBaseDiagramStateVersion?.());
+      if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
+        hydratePatchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);
+      }
+      const r = await apiPatchSession(sid, hydratePatchPayload);
       if (isHydrateStale()) return;
       if (!r.ok && !cancelled) {
         onError?.(shortErr(r.error || "Не удалось заполнить Interview из BPMN"));
@@ -548,7 +559,7 @@ export default function useInterviewSyncLifecycle({
     return () => {
       cancelled = true;
     };
-  }, [sid, isLocal, isInterview, draft, onSessionSync, bpmnSync, projectionHelpers, onError]);
+  }, [sid, isLocal, isInterview, draft, onSessionSync, bpmnSync, projectionHelpers, getBaseDiagramStateVersion, onError]);
 
   const handleInterviewChange = useCallback(
     (nextInterview, mutationMeta = null) => {

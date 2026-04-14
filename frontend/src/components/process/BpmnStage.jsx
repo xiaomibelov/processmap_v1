@@ -2544,7 +2544,15 @@ const BpmnStage = forwardRef(function BpmnStage({
     if (isLocalSessionId(sid)) return { ok: true, local: true, skipped: true };
     const source = toText(options?.source) || "bpmn_stage_session_meta_write";
     const nextMeta = asObject(nextMetaRaw);
-    const syncRes = await apiPatchSession(sid, { bpmn_meta: nextMeta });
+    const syncPatchPayload = { bpmn_meta: nextMeta };
+    const currentDraft = asObject(draftRef.current);
+    const baseDiagramStateVersion = Number(
+      currentDraft?.diagram_state_version ?? currentDraft?.diagramStateVersion,
+    );
+    if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
+      syncPatchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);
+    }
+    const syncRes = await apiPatchSession(sid, syncPatchPayload);
     if (!syncRes?.ok) {
       return {
         ok: false,

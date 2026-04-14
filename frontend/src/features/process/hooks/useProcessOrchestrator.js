@@ -13,6 +13,7 @@ export default function useProcessOrchestrator({
   processBodyRef,
   bpmnSync,
   projectionHelpers,
+  getBaseDiagramStateVersion,
   onSessionSync,
   onError,
 }) {
@@ -39,6 +40,7 @@ export default function useProcessOrchestrator({
     processBodyRef,
     bpmnSync,
     projectionHelpers,
+    getBaseDiagramStateVersion,
     onSessionSync,
     flushInterviewBeforeTabSwitch: (currentTab, targetTab) =>
       flushBeforeSwitchRef.current?.(currentTab, targetTab),
@@ -63,6 +65,7 @@ export default function useProcessOrchestrator({
     onSessionSync,
     bpmnSync,
     projectionHelpers,
+    getBaseDiagramStateVersion,
     onError,
   });
 
