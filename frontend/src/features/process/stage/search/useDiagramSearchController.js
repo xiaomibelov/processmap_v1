@@ -3,6 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useDiagramSearchModel from "./useDiagramSearchModel.js";
 import useDiagramPropertySearchModel from "./useDiagramPropertySearchModel.js";
 
+const PROPERTY_REFRESH_RETRY_LIMIT = 5;
+const PROPERTY_REFRESH_RETRY_DELAY_MS = 80;
+
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -125,6 +128,32 @@ export default function useDiagramSearchController({
     mutationVersion,
     diagramXml,
     reloadKey,
+  ]);
+
+  useEffect(() => {
+    if (!isEnabled || !isOpen || mode !== "properties" || !propertyModel.hasQuery) return;
+    let cancelled = false;
+    let timer = 0;
+    let attempts = 0;
+    const retryRefresh = () => {
+      if (cancelled) return;
+      const rows = refreshProperties();
+      attempts += 1;
+      if (rows.length || attempts >= PROPERTY_REFRESH_RETRY_LIMIT) return;
+      timer = globalThis.setTimeout(retryRefresh, PROPERTY_REFRESH_RETRY_DELAY_MS);
+    };
+    retryRefresh();
+    return () => {
+      cancelled = true;
+      if (timer) globalThis.clearTimeout(timer);
+    };
+  }, [
+    isEnabled,
+    isOpen,
+    mode,
+    propertyModel.hasQuery,
+    propertyModel.query,
+    refreshProperties,
   ]);
 
   useEffect(() => {
