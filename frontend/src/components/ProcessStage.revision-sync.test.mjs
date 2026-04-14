@@ -38,3 +38,11 @@ test("versions modal first load is headers-only and XML is loaded lazily", () =>
   assert.equal(source.includes("setVersionsLoadState(\"loading\")"), true);
   assert.equal(source.includes("setVersionsLoadState(asArray(list).length > 0 ? \"ready\" : \"empty\")"), true);
 });
+
+test("versions history keeps meaningful revisions and filters technical traces", () => {
+  const source = fs.readFileSync(path.join(__dirname, "ProcessStage.jsx"), "utf8");
+  assert.equal(source.includes("splitMeaningfulAndTechnicalRevisions"), true);
+  assert.equal(source.includes("const list = asArray(revisionSplit.meaningful);"), true);
+  assert.equal(source.includes("meaningful_count="), true);
+  assert.equal(source.includes("technical_count="), true);
+});
