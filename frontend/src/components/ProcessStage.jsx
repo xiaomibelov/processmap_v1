@@ -75,6 +75,11 @@ import {
   matrixToDiagram,
   matrixToScreen,
 } from "../features/process/stage/utils/hybridCoords";
+import {
+  isDiagramVersionSessionMatch,
+  normalizeDiagramSessionId,
+  resolveDiagramBaseVersionForActiveSession,
+} from "../features/process/stage/utils/diagramVersionContext";
 import useSessionMetaPersist from "../features/process/stage/controllers/useSessionMetaPersist";
 import { attachProcessStageFlushBeforeLeaveListener } from "../features/process/navigation/processLeaveFlush";
 import { flushProcessStageBeforeLeave } from "../features/process/navigation/processLeaveFlushController";
@@ -343,21 +348,25 @@ export default function ProcessStage({
   }, [resolveDraftDiagramStateVersion, sid]);
 
   const getBaseDiagramStateVersion = useCallback(() => {
-    const raw = Number(diagramStateVersionRef.current);
-    if (!Number.isFinite(raw) || raw < 0) return 0;
-    return Math.round(raw);
-  }, []);
+    const baseVersion = resolveDiagramBaseVersionForActiveSession({
+      activeSessionId: sid,
+      storedSessionId: diagramStateVersionSidRef.current,
+      storedVersion: diagramStateVersionRef.current,
+    });
+    if (baseVersion === null) return undefined;
+    return baseVersion;
+  }, [sid]);
 
   const rememberDiagramStateVersion = useCallback((rawVersion, options = {}) => {
     const next = Number(rawVersion);
     if (!Number.isFinite(next) || next < 0) return null;
     const normalized = Math.round(next);
-    const optionSid = String(options?.sessionId || options?.sid || "").trim();
-    const currentSid = String(sid || "").trim();
+    const optionSid = normalizeDiagramSessionId(options?.sessionId || options?.sid || "");
+    const currentSid = normalizeDiagramSessionId(sid);
     const targetSid = optionSid || currentSid;
-    if (!targetSid) return null;
-    if (diagramStateVersionSidRef.current !== targetSid) {
-      diagramStateVersionSidRef.current = targetSid;
+    if (!isDiagramVersionSessionMatch(currentSid, targetSid)) return null;
+    if (diagramStateVersionSidRef.current !== currentSid) {
+      diagramStateVersionSidRef.current = currentSid;
       diagramStateVersionRef.current = normalized;
       return normalized;
     }
@@ -370,21 +379,28 @@ export default function ProcessStage({
 
   const syncDiagramStateVersionFromSession = useCallback((sessionLikeRaw, options = {}) => {
     const sessionLike = asObject(sessionLikeRaw);
-    const sessionSid = String(
+    const currentSid = normalizeDiagramSessionId(sid);
+    const sessionSid = normalizeDiagramSessionId(
       sessionLike?.session_id
       || sessionLike?.id
       || options?.sessionId
       || sid
       || "",
-    ).trim();
+    );
+    if (!isDiagramVersionSessionMatch(currentSid, sessionSid)) return null;
     const rawVersion = sessionLike?.diagram_state_version ?? sessionLike?.diagramStateVersion;
-    return rememberDiagramStateVersion(rawVersion, { sessionId: sessionSid });
+    return rememberDiagramStateVersion(rawVersion, { sessionId: currentSid });
   }, [asObject, rememberDiagramStateVersion, sid]);
 
   const onSessionSyncWithVersion = useCallback((sessionLikeRaw) => {
+    const sessionLike = asObject(sessionLikeRaw);
+    const currentSid = normalizeDiagramSessionId(sid);
+    const sessionSid = normalizeDiagramSessionId(sessionLike?.session_id || sessionLike?.id || sid || "");
+    if (!isDiagramVersionSessionMatch(currentSid, sessionSid)) return false;
     syncDiagramStateVersionFromSession(sessionLikeRaw);
     onSessionSync?.(sessionLikeRaw);
-  }, [onSessionSync, syncDiagramStateVersionFromSession]);
+    return true;
+  }, [asObject, onSessionSync, sid, syncDiagramStateVersionFromSession]);
 
   const {
     genBusy,

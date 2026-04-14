@@ -17,6 +17,8 @@ test("ProcessStage keeps version context via dedicated remember/sync seam", () =
   assert.equal(source.includes("const syncDiagramStateVersionFromSession = useCallback"), true);
   assert.equal(source.includes("const onSessionSyncWithVersion = useCallback"), true);
   assert.equal(source.includes("syncDiagramStateVersionFromSession(sessionLikeRaw);"), true);
+  assert.equal(source.includes("isDiagramVersionSessionMatch(currentSid, targetSid)"), true);
+  assert.equal(source.includes("resolveDiagramBaseVersionForActiveSession"), true);
 });
 
 test("ProcessStage routes orchestration and overlay writes through onSessionSyncWithVersion", () => {
@@ -25,4 +27,5 @@ test("ProcessStage routes orchestration and overlay writes through onSessionSync
   assert.equal(source.includes("getBaseDiagramStateVersion,"), true);
   assert.equal(source.includes("rememberDiagramStateVersion,"), true);
   assert.equal(source.includes("onSessionSyncWithVersion?.(serverSession);"), true);
+  assert.equal(source.includes("if (!isDiagramVersionSessionMatch(currentSid, sessionSid)) return false;"), true);
 });
