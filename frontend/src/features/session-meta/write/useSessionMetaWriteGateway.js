@@ -47,14 +47,25 @@ export default function useSessionMetaWriteGateway({
       return { ok: true, local: true, writeSeq };
     }
     const resolveBaseDiagramStateVersion = () => {
-      const fromOption = Number(options?.baseDiagramStateVersion);
-      if (Number.isFinite(fromOption) && fromOption >= 0) return Math.round(fromOption);
-      const fromGateway = Number(
+      const fromOptionRaw = Number(options?.baseDiagramStateVersion);
+      const fromOptionNormalized = Number.isFinite(fromOptionRaw) && fromOptionRaw >= 0
+        ? Math.round(fromOptionRaw)
+        : null;
+      const fromGatewayRaw = Number(
         typeof getBaseDiagramStateVersion === "function"
           ? getBaseDiagramStateVersion()
           : NaN,
       );
-      if (Number.isFinite(fromGateway) && fromGateway >= 0) return Math.round(fromGateway);
+      const fromGatewayNormalized = Number.isFinite(fromGatewayRaw) && fromGatewayRaw >= 0
+        ? Math.round(fromGatewayRaw)
+        : null;
+      if (fromOptionNormalized !== null && fromGatewayNormalized !== null) {
+        if (fromOptionNormalized <= 0 && fromGatewayNormalized > 0) return fromGatewayNormalized;
+        if (fromGatewayNormalized <= 0 && fromOptionNormalized > 0) return fromOptionNormalized;
+        return Math.max(fromOptionNormalized, fromGatewayNormalized);
+      }
+      if (fromOptionNormalized !== null) return fromOptionNormalized;
+      if (fromGatewayNormalized !== null) return fromGatewayNormalized;
       return null;
     };
     const baseDiagramStateVersion = resolveBaseDiagramStateVersion();

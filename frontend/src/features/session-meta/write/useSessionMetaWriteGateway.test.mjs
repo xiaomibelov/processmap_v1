@@ -21,4 +21,12 @@ test("session meta gateway includes base_diagram_state_version in default patch 
     source.includes("baseDiagramStateVersion,"),
     true,
   );
+  assert.equal(
+    source.includes("if (fromOptionNormalized <= 0 && fromGatewayNormalized > 0) return fromGatewayNormalized;"),
+    true,
+  );
+  assert.equal(
+    source.includes("return Math.max(fromOptionNormalized, fromGatewayNormalized);"),
+    true,
+  );
 });
