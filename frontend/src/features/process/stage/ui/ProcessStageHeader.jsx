@@ -46,13 +46,17 @@ export default function ProcessStageHeader({ view = {} }) {
     topPanelsView,
     publishGitMirrorSnapshot,
   } = view;
-  const latestRevisionNumber = Number(sessionRevisionHistorySnapshot?.latestRevisionNumber || 0);
-  const hasPublishedRevision = latestRevisionNumber > 0;
+  const latestPublishedRevisionNumber = Number(sessionRevisionHistorySnapshot?.latestPublishedRevisionNumber || 0);
+  const hasPublishedRevision = latestPublishedRevisionNumber > 0;
   const publishedRevisionBadge = resolvePublishedRevisionBadgeView(sessionRevisionHistorySnapshot);
   const draftAheadOfLatest = sessionRevisionHistorySnapshot?.draftState?.isDraftAheadOfLatestRevision === true;
+  const showDraftRelationBadge = hasPublishedRevision || draftAheadOfLatest;
   const draftStatusLabel = draftAheadOfLatest
-    ? "Есть несохранённые изменения"
-    : "Черновик синхронизирован";
+    ? "Черновик новее последней версии"
+    : "Черновик совпадает с последней версией";
+  const draftStatusTitle = draftAheadOfLatest
+    ? "В черновике есть изменения, которые ещё не попали в опубликованную историю."
+    : "Черновик синхронизирован с последней опубликованной версией.";
   const draftStatusTone = draftAheadOfLatest ? "warn" : "ok";
   const mirrorSnapshot = (
     publishGitMirrorSnapshot && typeof publishGitMirrorSnapshot === "object"
@@ -77,12 +81,31 @@ export default function ProcessStageHeader({ view = {} }) {
   const showConflictModalActive = isConflictState && saveConflictActions?.visible === true;
   const showUploadStatusBadge = saveUploadStatus?.visible && !showConflictModalActive;
   const toolbarMessage = toText(toolbarInlineMessage);
+  const toolbarMessageNormalized = toolbarMessage.replace(/[.!]+$/g, "").trim().toLowerCase();
+  const saveSmartTextNormalized = toText(saveSmartText).replace(/[.!]+$/g, "").trim().toLowerCase();
+  const isDraftSavedToolbarMessage = (
+    toolbarMessageNormalized === "черновик сохранён"
+    || toolbarMessageNormalized === "черновик синхронизирован"
+  );
+  const hasPrimaryDraftStatusSurface = showSaveStatusBadge || showDraftRelationBadge;
   const toolbarMessageLooksLikeConflict = /(?:конфликт|conflict|http\s*409|stale|верси)/i.test(toolbarMessage);
-  const showToolbarInlineBadge = !!toolbarInlineMessage && !(showConflictModalActive && toolbarMessageLooksLikeConflict);
+  const showToolbarInlineBadge = !!toolbarInlineMessage
+    && !(showConflictModalActive && toolbarMessageLooksLikeConflict)
+    && !(
+      isDraftSavedToolbarMessage
+      && hasPrimaryDraftStatusSurface
+      && (
+        !saveSmartTextNormalized
+        || toolbarMessageNormalized === saveSmartTextNormalized
+        || saveSmartTextNormalized === "черновик сохранён"
+      )
+    );
   const showSaveStatusBadgeResolved = showSaveStatusBadge && !showConflictModalActive;
   const suppressDraftSavedBadge = /^Опубликована версия \d+\.$/.test(toolbarMessage)
     && toText(saveSmartText) === "Черновик сохранён";
-  const showGenericSaveStatusBadge = showSaveStatusBadgeResolved && !suppressDraftSavedBadge;
+  const showGenericSaveStatusBadge = showSaveStatusBadgeResolved
+    && !suppressDraftSavedBadge
+    && !showDraftRelationBadge;
   const canRunUndo = tab === "diagram" && canUndo === true;
   const canRunRedo = tab === "diagram" && canRedo === true;
 
@@ -121,10 +144,11 @@ export default function ProcessStageHeader({ view = {} }) {
               >
                 {publishedRevisionBadge.text}
               </span>
-              {hasPublishedRevision || draftAheadOfLatest ? (
+              {showDraftRelationBadge ? (
                 <span
                   className={`badge text-[11px] ${draftStatusTone}`}
                   data-testid="diagram-toolbar-draft-vs-latest"
+                  title={draftStatusTitle}
                 >
                   {draftStatusLabel}
                 </span>

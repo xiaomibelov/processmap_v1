@@ -261,6 +261,7 @@ export default function ProcessDialogs({ view = {} }) {
               </span>
               <div className="mt-1 text-[11px] text-muted">
                 Текущий BPMN сохраняется отдельно от ревизий. Пустая история не означает, что черновик не сохранён.
+                Новая ревизия появляется при отдельном meaningful-действии или при реальном изменении XML.
               </div>
             </div>
             <div className="max-h-[52vh] space-y-2 overflow-auto pr-1">
