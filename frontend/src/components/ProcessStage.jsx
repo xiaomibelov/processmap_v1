@@ -1139,7 +1139,7 @@ export default function ProcessStage({
       if (!saved?.pending) {
         const savedDiagramStateVersion = Number(saved?.diagramStateVersion);
         if (Number.isFinite(savedDiagramStateVersion) && savedDiagramStateVersion >= 0) {
-          diagramStateVersionRef.current = Math.round(savedDiagramStateVersion);
+          rememberDiagramStateVersion(savedDiagramStateVersion, { sessionId: sid });
         }
         const backendVersionSnapshot = asObject(saved?.bpmnVersionSnapshot);
         const normalizedBackendVersionSnapshot = normalizeBpmnVersionListItem(backendVersionSnapshot);
@@ -1164,31 +1164,29 @@ export default function ProcessStage({
           atMs: Date.now(),
           xmlHash: fnv1aHex(String(saved?.xml || draft?.bpmn_xml || "")),
         };
-        const companionResult = await persistSavedSessionCompanion({
-          source: "manual_save",
-          xml: toText(saved?.xml || draft?.bpmn_xml || ""),
-          savedAt: new Date().toISOString(),
-          storedRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
-          requestedBaseRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
-          baseDiagramStateVersion: getBaseDiagramStateVersion(),
-          publishRevision: true,
-          revisionSource: "publish_manual_save",
-          authoritativeRevision: backendVersionSnapshot,
-        });
-        if (!companionResult?.ok) {
-          companionError = shortErr(companionResult?.error || "Не удалось синхронизировать companion metadata.");
-        } else {
-          if (backendRevisionNumber > 0) {
-            publishInfo = `Опубликована версия ${backendRevisionNumber}.`;
-          } else {
-            const revisionInfo = asObject(companionResult?.revision);
-            if (revisionInfo.skipped === true) {
-              publishInfo = "Черновик сохранён. Новая версия не создана: контент совпадает с последней.";
-            }
-          }
-          if (!publishInfo && asObject(companionResult?.revision).skipped === true) {
+        const shouldSyncCompanion = backendRevisionNumber > 0;
+        if (shouldSyncCompanion) {
+          const companionResult = await persistSavedSessionCompanion({
+            source: "manual_save",
+            xml: toText(saved?.xml || draft?.bpmn_xml || ""),
+            savedAt: new Date().toISOString(),
+            storedRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
+            requestedBaseRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
+            baseDiagramStateVersion: getBaseDiagramStateVersion(),
+            publishRevision: true,
+            revisionSource: "publish_manual_save",
+            authoritativeRevision: backendVersionSnapshot,
+          });
+          if (!companionResult?.ok) {
+            companionError = shortErr(companionResult?.error || "Не удалось синхронизировать companion metadata.");
+          } else if (!publishInfo && asObject(companionResult?.revision).skipped === true) {
             publishInfo = "Черновик сохранён. Новая версия не создана: контент совпадает с последней.";
           }
+        } else {
+          publishInfo = "Черновик сохранён. Новая версия не создана: нет изменений схемы.";
+        }
+        if (backendRevisionNumber > 0 && !publishInfo) {
+          publishInfo = `Опубликована версия ${backendRevisionNumber}.`;
         }
       }
       setSaveDirtyHint(false);
