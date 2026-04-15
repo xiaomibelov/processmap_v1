@@ -7,6 +7,7 @@ import {
   formatRevisionTimestampRu,
   localizeRevisionSourceAction,
   normalizeRevisionTimestampMs,
+  resolveRevisionHistoryEmptyState,
   resolveRevisionHistoryUiSnapshot,
   splitMeaningfulAndTechnicalRevisions,
 } from "./revisionHistoryUiModel.js";
@@ -105,4 +106,37 @@ test("unknown source action remains meaningful and does not break rendering", ()
   assert.equal(classification.isTechnical, false);
   assert.equal(classification.known, false);
   assert.equal(localizeRevisionSourceAction("custom_domain_action"), "custom_domain_action");
+});
+
+test("resolveRevisionHistoryEmptyState returns true empty message for real empty history", () => {
+  const emptyState = resolveRevisionHistoryEmptyState({
+    versionsLoadStateRaw: "empty",
+    meaningfulCountRaw: 0,
+    technicalCountRaw: 0,
+    serverEntriesCountRaw: 0,
+  });
+  assert.equal(emptyState.kind, "true_empty");
+  assert.equal(emptyState.message.includes("Ревизий пока нет."), true);
+});
+
+test("resolveRevisionHistoryEmptyState returns filtered message when only technical entries exist", () => {
+  const emptyState = resolveRevisionHistoryEmptyState({
+    versionsLoadStateRaw: "empty",
+    meaningfulCountRaw: 0,
+    technicalCountRaw: 3,
+    serverEntriesCountRaw: 3,
+  });
+  assert.equal(emptyState.kind, "technical_filtered");
+  assert.equal(emptyState.message.includes("Технические сохранения скрыты"), true);
+});
+
+test("resolveRevisionHistoryEmptyState is disabled when meaningful revisions are visible", () => {
+  const emptyState = resolveRevisionHistoryEmptyState({
+    versionsLoadStateRaw: "ready",
+    meaningfulCountRaw: 2,
+    technicalCountRaw: 1,
+    serverEntriesCountRaw: 3,
+  });
+  assert.equal(emptyState.kind, "none");
+  assert.equal(emptyState.message, "");
 });
