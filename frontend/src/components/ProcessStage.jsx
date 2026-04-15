@@ -1139,12 +1139,26 @@ export default function ProcessStage({
       let companionError = "";
       let publishInfo = "";
       if (!saved?.pending) {
-        const savedDiagramStateVersion = Number(saved?.diagramStateVersion);
-        if (Number.isFinite(savedDiagramStateVersion) && savedDiagramStateVersion >= 0) {
-          rememberDiagramStateVersion(savedDiagramStateVersion, { sessionId: sid });
-        }
         const backendVersionSnapshot = asObject(saved?.bpmnVersionSnapshot);
         const normalizedBackendVersionSnapshot = normalizeBpmnVersionListItem(backendVersionSnapshot);
+        const savedDiagramStateVersion = Number(saved?.diagramStateVersion);
+        const snapshotDiagramStateVersion = Number(
+          normalizedBackendVersionSnapshot.diagramStateVersion
+          ?? normalizedBackendVersionSnapshot.diagram_state_version,
+        );
+        const baseCandidates = [
+          savedDiagramStateVersion,
+          snapshotDiagramStateVersion,
+          Number(getBaseDiagramStateVersion()),
+        ]
+          .filter((value) => Number.isFinite(value) && value >= 0)
+          .map((value) => Math.round(value));
+        const companionBaseDiagramStateVersion = baseCandidates.length
+          ? Math.max(...baseCandidates)
+          : null;
+        if (Number.isFinite(companionBaseDiagramStateVersion) && companionBaseDiagramStateVersion >= 0) {
+          rememberDiagramStateVersion(companionBaseDiagramStateVersion, { sessionId: sid });
+        }
         const backendRevisionNumber = Number(normalizedBackendVersionSnapshot.revisionNumber || 0);
         if (backendRevisionNumber > 0) {
           const backendVersionId = String(normalizedBackendVersionSnapshot.id || "").trim();
@@ -1168,21 +1182,27 @@ export default function ProcessStage({
         };
         const shouldSyncCompanion = backendRevisionNumber > 0;
         if (shouldSyncCompanion) {
-          const companionResult = await persistSavedSessionCompanion({
-            source: "manual_save",
-            xml: toText(saved?.xml || draft?.bpmn_xml || ""),
-            savedAt: new Date().toISOString(),
-            storedRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
-            requestedBaseRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
-            baseDiagramStateVersion: getBaseDiagramStateVersion(),
-            publishRevision: true,
-            revisionSource: "publish_manual_save",
-            authoritativeRevision: backendVersionSnapshot,
-          });
-          if (!companionResult?.ok) {
-            companionError = shortErr(companionResult?.error || "Не удалось синхронизировать companion metadata.");
-          } else if (!publishInfo && asObject(companionResult?.revision).skipped === true) {
-            publishInfo = "Черновик сохранён. Новая версия не создана: контент совпадает с последней.";
+          const hasCompanionBaseDiagramStateVersion = (
+            Number.isFinite(companionBaseDiagramStateVersion)
+            && companionBaseDiagramStateVersion > 0
+          );
+          if (hasCompanionBaseDiagramStateVersion) {
+            const companionResult = await persistSavedSessionCompanion({
+              source: "manual_save",
+              xml: toText(saved?.xml || draft?.bpmn_xml || ""),
+              savedAt: new Date().toISOString(),
+              storedRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
+              requestedBaseRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
+              baseDiagramStateVersion: companionBaseDiagramStateVersion,
+              publishRevision: true,
+              revisionSource: "publish_manual_save",
+              authoritativeRevision: backendVersionSnapshot,
+            });
+            if (!companionResult?.ok) {
+              companionError = shortErr(companionResult?.error || "Не удалось синхронизировать companion metadata.");
+            } else if (!publishInfo && asObject(companionResult?.revision).skipped === true) {
+              publishInfo = "Черновик сохранён. Новая версия не создана: контент совпадает с последней.";
+            }
           }
         } else {
           publishInfo = "Черновик сохранён. Новая версия не создана: нет изменений схемы.";
