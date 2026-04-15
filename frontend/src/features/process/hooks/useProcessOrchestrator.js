@@ -78,6 +78,7 @@ export default function useProcessOrchestrator({
     draft,
     bpmnSync,
     coordinator,
+    getBaseDiagramStateVersion,
     projectionHelpers,
     onSessionSync,
     onError,

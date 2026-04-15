@@ -19,7 +19,11 @@ test("diagram mutation autosave propagates base_diagram_state_version to seconda
     true,
   );
   assert.equal(
-    source.includes("patchPayload.base_diagram_state_version = Math.round(saveDiagramStateVersion);"),
+    source.includes("const versionContextBase = Number(getBaseDiagramStateVersion?.());"),
+    true,
+  );
+  assert.equal(
+    source.includes("base_diagram_state_version: resolvedBaseDiagramStateVersion,"),
     true,
   );
   assert.equal(
