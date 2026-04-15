@@ -246,3 +246,38 @@ export function resolveRevisionHistoryUiSnapshot({
     latestLedgerRevisionId,
   };
 }
+
+export function resolveRevisionHistoryEmptyState({
+  versionsLoadStateRaw = "idle",
+  meaningfulCountRaw = 0,
+  technicalCountRaw = 0,
+  serverEntriesCountRaw = 0,
+} = {}) {
+  const versionsLoadState = toText(versionsLoadStateRaw).toLowerCase();
+  const meaningfulCount = Math.max(0, toInt(meaningfulCountRaw, 0));
+  const technicalCount = Math.max(0, toInt(technicalCountRaw, 0));
+  const serverEntriesCount = Math.max(0, toInt(serverEntriesCountRaw, 0));
+  const isEmptySurface = versionsLoadState === "empty" || (versionsLoadState === "ready" && meaningfulCount === 0);
+  if (!isEmptySurface) {
+    return {
+      kind: "none",
+      message: "",
+    };
+  }
+  if (meaningfulCount === 0 && technicalCount > 0 && serverEntriesCount > 0) {
+    return {
+      kind: "technical_filtered",
+      message: "Пользовательских ревизий пока нет. Технические сохранения скрыты; черновик хранится отдельно.",
+    };
+  }
+  if (meaningfulCount === 0 && serverEntriesCount > 0) {
+    return {
+      kind: "filtered",
+      message: "История получена, но пользовательские ревизии пока недоступны. Черновик хранится отдельно.",
+    };
+  }
+  return {
+    kind: "true_empty",
+    message: "Ревизий пока нет. Текущий BPMN может быть сохранён как черновик; ревизия создаётся отдельным действием.",
+  };
+}

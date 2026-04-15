@@ -322,6 +322,8 @@ export default function ProcessStage({
   const [saveConflictActionBusy, setSaveConflictActionBusy] = useState(false);
   const [latestBpmnVersionHead, setLatestBpmnVersionHead] = useState(null);
   const [latestBpmnVersionHeadStatus, setLatestBpmnVersionHeadStatus] = useState("idle");
+  const [versionsServerEntriesCount, setVersionsServerEntriesCount] = useState(0);
+  const [versionsTechnicalEntriesCount, setVersionsTechnicalEntriesCount] = useState(0);
   const [diagramUndoRedoState, setDiagramUndoRedoState] = useState({ canUndo: false, canRedo: false, ready: false });
   const [diagramSearchMutationVersion, setDiagramSearchMutationVersion] = useState(0);
 
@@ -3186,6 +3188,8 @@ export default function ProcessStage({
       setPreviewSnapshotId("");
       setVersionsLoadState("idle");
       setVersionsLoadError("");
+      setVersionsServerEntriesCount(0);
+      setVersionsTechnicalEntriesCount(0);
       setLatestBpmnVersionHead(null);
       if (options?.trackHeadStatus === true) setLatestBpmnVersionHeadStatus("idle");
       return;
@@ -3215,6 +3219,8 @@ export default function ProcessStage({
         setPreviewSnapshotId("");
         setVersionsLoadState("failed");
         setVersionsLoadError(shortErr(loaded?.error || "Не удалось загрузить BPMN версии."));
+        setVersionsServerEntriesCount(0);
+        setVersionsTechnicalEntriesCount(0);
       }
       if (trackHeadStatus) setLatestBpmnVersionHeadStatus("failed");
       return;
@@ -3222,14 +3228,18 @@ export default function ProcessStage({
     const normalizedList = asArray(loaded?.versions).map((item) => normalizeBpmnVersionListItem(item));
     const revisionSplit = splitMeaningfulAndTechnicalRevisions(normalizedList);
     const list = asArray(revisionSplit.meaningful);
+    const technicalList = asArray(revisionSplit.technical);
+    const serverEntriesCount = asArray(normalizedList).length;
     setLatestBpmnVersionHead(asArray(list)[0] || null);
     if (trackHeadStatus) setLatestBpmnVersionHeadStatus("ready");
     if (!updateList) return;
     // eslint-disable-next-line no-console
     console.debug(
       `UI_VERSIONS_LOAD sid=${sid} key="${snapshotScopeKey(snapshotProjectId, sid)}" `
-      + `meaningful_count=${asArray(list).length} technical_count=${asArray(revisionSplit.technical).length}`,
+      + `meaningful_count=${asArray(list).length} technical_count=${technicalList.length}`,
     );
+    setVersionsServerEntriesCount(serverEntriesCount);
+    setVersionsTechnicalEntriesCount(technicalList.length);
     setVersionsList(asArray(list));
     setVersionsLoadState(asArray(list).length > 0 ? "ready" : "empty");
     setVersionsLoadError("");
@@ -4904,6 +4914,8 @@ export default function ProcessStage({
     versionsList,
     versionsLoadState,
     versionsLoadError,
+    versionsServerEntriesCount,
+    versionsTechnicalEntriesCount,
     revisionHistorySnapshot: revisionHistoryUiSnapshot,
     setGenErr,
     setDiffTargetSnapshotId,

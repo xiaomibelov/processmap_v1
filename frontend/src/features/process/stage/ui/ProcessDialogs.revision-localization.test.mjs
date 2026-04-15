@@ -30,3 +30,10 @@ test("revision dialogs separate loading, empty, and error states", () => {
   assert.equal(source.includes("Новая ревизия появляется при отдельном meaningful-действии или при реальном изменении XML."), true);
   assert.equal(source.includes("История пуста."), false);
 });
+
+test("revision dialogs align empty state text with filtered technical history", () => {
+  const source = fs.readFileSync(path.join(__dirname, "ProcessDialogs.jsx"), "utf8");
+  assert.equal(source.includes("resolveRevisionHistoryEmptyState"), true);
+  assert.equal(source.includes("revisionEmptyState.message"), true);
+  assert.equal(source.includes("скрыто технических"), true);
+});
