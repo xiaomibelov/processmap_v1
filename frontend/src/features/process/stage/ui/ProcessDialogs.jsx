@@ -1,5 +1,6 @@
 import Modal from "../../../../shared/ui/Modal";
 import CreateTemplateModal from "../../../templates/ui/CreateTemplateModal";
+import { resolveRevisionHistoryEmptyState } from "./revisionHistoryUiModel";
 
 export default function ProcessDialogs({ view = {} }) {
   const {
@@ -45,6 +46,8 @@ export default function ProcessDialogs({ view = {} }) {
     versionsList,
     versionsLoadState,
     versionsLoadError,
+    versionsServerEntriesCount,
+    versionsTechnicalEntriesCount,
     setGenErr,
     setDiffTargetSnapshotId,
     setDiffBaseSnapshotId,
@@ -70,6 +73,12 @@ export default function ProcessDialogs({ view = {} }) {
     setDiffTargetSnapshotId: setDiffTargetId,
     semanticDiffView,
   } = view;
+  const revisionEmptyState = resolveRevisionHistoryEmptyState({
+    versionsLoadStateRaw: versionsLoadState,
+    meaningfulCountRaw: Array.isArray(versionsList) ? versionsList.length : 0,
+    technicalCountRaw: Number(versionsTechnicalEntriesCount || 0),
+    serverEntriesCountRaw: Number(versionsServerEntriesCount || 0),
+  });
 
   return (
     <>
@@ -259,6 +268,12 @@ export default function ProcessDialogs({ view = {} }) {
                   ? `Версия ${Number(asArray(versionsList)[0]?.revisionNumber || 0)}`
                   : "не опубликовано"}
               </span>
+              {Number(versionsTechnicalEntriesCount || 0) > 0 ? (
+                <span>
+                  {" "}
+                  · скрыто технических: {Number(versionsTechnicalEntriesCount || 0)}
+                </span>
+              ) : null}
               <div className="mt-1 text-[11px] text-muted">
                 Текущий BPMN сохраняется отдельно от ревизий. Пустая история не означает, что черновик не сохранён.
                 Новая ревизия появляется при отдельном meaningful-действии или при реальном изменении XML.
@@ -275,7 +290,7 @@ export default function ProcessDialogs({ view = {} }) {
                 </div>
               ) : versionsLoadState === "empty" || (versionsLoadState === "ready" && versionsList.length === 0) ? (
                 <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted" data-testid="bpmn-versions-empty">
-                  Ревизий пока нет. Текущий BPMN может быть сохранён как черновик; ревизия создаётся отдельным действием.
+                  {String(revisionEmptyState.message || "Ревизий пока нет. Текущий BPMN может быть сохранён как черновик; ревизия создаётся отдельным действием.")}
                 </div>
               ) : versionsList.length === 0 ? (
                 <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted" data-testid="bpmn-versions-idle">
