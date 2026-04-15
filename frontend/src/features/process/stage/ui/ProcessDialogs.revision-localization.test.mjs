@@ -27,5 +27,6 @@ test("revision dialogs separate loading, empty, and error states", () => {
   assert.equal(source.includes('data-testid="bpmn-versions-empty"'), true);
   assert.equal(source.includes('data-testid="bpmn-versions-error"'), true);
   assert.equal(source.includes("Пустая история не означает, что черновик не сохранён."), true);
+  assert.equal(source.includes("Новая ревизия появляется при отдельном meaningful-действии или при реальном изменении XML."), true);
   assert.equal(source.includes("История пуста."), false);
 });
