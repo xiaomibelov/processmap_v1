@@ -703,9 +703,10 @@ export default function ProcessStage({
   const showSaveConflictModal = saveUploadStatus?.state === "conflict" && !saveConflictNoticeDismissed;
   const saveConflictModalView = useMemo(() => buildSaveConflictModalView({
     conflictRaw: saveUploadStatus?.conflict,
+    currentUserRaw: user,
     currentUserIdRaw: toText(user?.id || user?.user_id || user?.email),
     fallbackTextRaw: saveUploadStatus?.title || saveUploadStatus?.error,
-  }), [saveUploadStatus?.conflict, saveUploadStatus?.error, saveUploadStatus?.title, toText, user?.email, user?.id, user?.user_id]);
+  }), [saveUploadStatus?.conflict, saveUploadStatus?.error, saveUploadStatus?.title, toText, user]);
   const sessionVersionReadSnapshot = useMemo(
     () => asObject(sessionCompanionBridgeSnapshot.version),
     [sessionCompanionBridgeSnapshot.version],
