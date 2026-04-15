@@ -43,7 +43,9 @@ test("header dedupes competing conflict surfaces while modal is active", () => {
     "save upload badge must be suppressed while conflict panel is visible",
   );
   assert.ok(
-    source.includes("const showToolbarInlineBadge = !!toolbarInlineMessage && !(showConflictModalActive && toolbarMessageLooksLikeConflict);"),
+    source.includes("const showToolbarInlineBadge = !!toolbarInlineMessage")
+      && source.includes("!(showConflictModalActive && toolbarMessageLooksLikeConflict)")
+      && source.includes("isDraftSavedToolbarMessage"),
     "toolbar inline conflict message must be suppressed when conflict panel is visible",
   );
   assert.ok(
