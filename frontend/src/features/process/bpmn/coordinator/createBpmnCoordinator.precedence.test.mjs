@@ -18,6 +18,7 @@ function createStore(initialState = {}) {
     xml: String(initialState.xml || ""),
     rev: Number(initialState.rev || 0),
     dirty: initialState.dirty === true,
+    lastSavedRev: Number(initialState.lastSavedRev || 0),
     lastHash: fnv1aHex(String(initialState.xml || "")),
   };
   return {
@@ -43,7 +44,33 @@ function createStore(initialState = {}) {
         lastHash: String(hash || state.lastHash || ""),
       };
     },
+    markSaved(rev, hash) {
+      const targetRev = Number(rev || state.rev || 0);
+      state = {
+        ...state,
+        dirty: false,
+        lastSavedRev: Math.max(Number(state.lastSavedRev || 0), targetRev),
+        lastHash: String(hash || state.lastHash || ""),
+      };
+    },
   };
+}
+
+async function withWindowTimers(run) {
+  const prevWindow = globalThis.window;
+  globalThis.window = {
+    setTimeout: (...args) => setTimeout(...args),
+    clearTimeout: (...args) => clearTimeout(...args),
+  };
+  try {
+    return await run();
+  } finally {
+    if (prevWindow === undefined) {
+      delete globalThis.window;
+    } else {
+      globalThis.window = prevWindow;
+    }
+  }
 }
 
 test("reload is remote-first by default and does not silently skip on existing store xml", async () => {
@@ -141,4 +168,139 @@ test("flushSave propagates conflict status for tab-switch diagnostics classifica
   assert.match(String(saved.error || ""), /conflict/i);
   assert.equal(saved.errorDetails?.code, "DIAGRAM_STATE_CONFLICT");
   assert.equal(saved.errorDetails?.server_current_version, 10);
+});
+
+test("stale conflict from other-user path stops save cycle without hidden queued retry", async () => {
+  await withWindowTimers(async () => {
+    const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true, lastSavedRev: 8 });
+    const saveCalls = [];
+    const coordinator = createBpmnCoordinator({
+      debounceMs: 10_000,
+      store,
+      getSessionId: () => "sid_conflict_other_user",
+      getRuntime: () => ({
+        getStatus: () => ({ ready: true, defs: true, token: 5 }),
+        getXml: async () => ({ ok: true, xml: "<bpmn:new/>", token: 5 }),
+      }),
+      persistence: {
+        saveRaw: async () => {
+          saveCalls.push("saveRaw");
+          if (saveCalls.length === 1) {
+            return {
+              ok: false,
+              status: 409,
+              error: "revision conflict",
+              errorDetails: {
+                code: "DIAGRAM_STATE_CONFLICT",
+                session_id: "sid_conflict_other_user",
+                client_base_version: 9,
+                server_current_version: 10,
+                server_last_write: { actor_user_id: "user_b" },
+              },
+            };
+          }
+          return { ok: true, status: 200, storedRev: 10 };
+        },
+      },
+    });
+
+    coordinator.scheduleSave("autosave");
+    const saved = await coordinator.flushSave("manual_save");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    assert.equal(saved.ok, false);
+    assert.equal(saved.status, 409);
+    assert.equal(saved.errorDetails?.code, "DIAGRAM_STATE_CONFLICT");
+    assert.equal(saveCalls.length, 1);
+  });
+});
+
+test("stale conflict from same-user multi-tab path also stops hidden retry in same cycle", async () => {
+  await withWindowTimers(async () => {
+    const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true, lastSavedRev: 8 });
+    const saveCalls = [];
+    const coordinator = createBpmnCoordinator({
+      debounceMs: 10_000,
+      store,
+      getSessionId: () => "sid_conflict_same_user",
+      getRuntime: () => ({
+        getStatus: () => ({ ready: true, defs: true, token: 6 }),
+        getXml: async () => ({ ok: true, xml: "<bpmn:new/>", token: 6 }),
+      }),
+      persistence: {
+        saveRaw: async () => {
+          saveCalls.push("saveRaw");
+          if (saveCalls.length === 1) {
+            return {
+              ok: false,
+              status: 409,
+              error: "revision conflict",
+              errorDetails: {
+                code: "DIAGRAM_STATE_CONFLICT",
+                session_id: "sid_conflict_same_user",
+                client_base_version: 9,
+                server_current_version: 10,
+                server_last_write: { actor_user_id: "user_a" },
+              },
+            };
+          }
+          return { ok: true, status: 200, storedRev: 10 };
+        },
+      },
+    });
+
+    coordinator.scheduleSave("autosave");
+    const saved = await coordinator.flushSave("manual_save");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    assert.equal(saved.ok, false);
+    assert.equal(saved.status, 409);
+    assert.equal(saved.errorDetails?.code, "DIAGRAM_STATE_CONFLICT");
+    assert.equal(saveCalls.length, 1);
+  });
+});
+
+test("new explicit save action after stale conflict still persists normally", async () => {
+  await withWindowTimers(async () => {
+    const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true, lastSavedRev: 8 });
+    const saveCalls = [];
+    const coordinator = createBpmnCoordinator({
+      debounceMs: 10_000,
+      store,
+      getSessionId: () => "sid_conflict_followup",
+      getRuntime: () => ({
+        getStatus: () => ({ ready: true, defs: true, token: 7 }),
+        getXml: async () => ({ ok: true, xml: "<bpmn:after_conflict/>", token: 7 }),
+      }),
+      persistence: {
+        saveRaw: async () => {
+          saveCalls.push("saveRaw");
+          if (saveCalls.length === 1) {
+            return {
+              ok: false,
+              status: 409,
+              error: "revision conflict",
+              errorDetails: {
+                code: "DIAGRAM_STATE_CONFLICT",
+                session_id: "sid_conflict_followup",
+                client_base_version: 9,
+                server_current_version: 10,
+              },
+            };
+          }
+          return { ok: true, status: 200, storedRev: 10 };
+        },
+      },
+    });
+
+    coordinator.scheduleSave("autosave");
+    const first = await coordinator.flushSave("manual_save");
+    assert.equal(first.ok, false);
+    assert.equal(first.status, 409);
+    assert.equal(saveCalls.length, 1);
+
+    const second = await coordinator.flushSave("manual_save");
+    assert.equal(second.ok, true);
+    assert.equal(saveCalls.length, 2);
+  });
 });

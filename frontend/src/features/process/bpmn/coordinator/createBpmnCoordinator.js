@@ -18,6 +18,20 @@ function normalizeErrorDetails(value) {
   return Object.keys(details).length ? details : null;
 }
 
+function isDiagramStateConflictResult(result) {
+  const status = asNumber(result?.status, 0);
+  if (status !== 409) return false;
+  const details = asObject(result?.errorDetails);
+  const code = asText(result?.errorCode || details?.code).trim().toUpperCase();
+  if (!code) return true;
+  return (
+    code === "HTTP_409"
+    || code.includes("DIAGRAM_STATE_CONFLICT")
+    || code.includes("BASE_VERSION_REQUIRED")
+    || code.includes("CONFLICT")
+  );
+}
+
 function fnv1aHex(input) {
   const src = asText(input);
   let hash = 0x811c9dc5;
@@ -535,6 +549,19 @@ export default function createBpmnCoordinator(options = {}) {
         const result = await doFlush(reason, options);
         const state = store.getState();
         const localRev = asNumber(state?.rev, 0);
+        if (isDiagramStateConflictResult(result) && !result?.pending) {
+          const lastSavedRev = asNumber(state?.lastSavedRev, 0);
+          saveQueuedRev = Math.max(lastSavedRev, 0);
+          emit("SAVE_QUEUE_ABORTED_ON_CONFLICT", {
+            sid: currentSid(),
+            reason: asText(reason || "manual"),
+            local_rev: localRev,
+            last_saved_rev: lastSavedRev,
+            status: asNumber(result?.status, 409),
+            error_code: asText(result?.errorCode || asObject(result?.errorDetails)?.code || "http_409"),
+          });
+          return result;
+        }
         if (saveQueuedRev > asNumber(state?.lastSavedRev, 0) && !result?.pending) {
           saveQueuedRev = Math.max(saveQueuedRev, localRev);
           if (localRev > asNumber(state?.lastSavedRev, 0)) {
