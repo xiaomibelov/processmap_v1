@@ -119,8 +119,12 @@ export default function useSessionMetaPersist({
 
   const persistBpmnMeta = useCallback(async (nextRaw, options = {}) => {
     const source = String(options?.source || "bpmn_meta_save");
+    const baseDiagramStateVersion = Number(options?.baseDiagramStateVersion);
     const result = await writeGateway.persistSessionMeta(nextRaw, {
       source,
+      baseDiagramStateVersion: Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0
+        ? Math.round(baseDiagramStateVersion)
+        : undefined,
       remoteWrite: typeof options?.remoteWrite === "function" ? options.remoteWrite : undefined,
       onOptimistic: ({ nextMeta }) => {
         syncPersistedRefs(nextMeta);
@@ -334,8 +338,12 @@ export default function useSessionMetaPersist({
         ...buildMetaSnapshot(),
         session_companion_v1: nextCompanion,
       };
+      const baseDiagramStateVersion = Number(options?.baseDiagramStateVersion);
       legacyResult = await persistBpmnMeta(mergedMeta, {
         source: String(options?.source || "session_companion_save"),
+        baseDiagramStateVersion: Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0
+          ? Math.round(baseDiagramStateVersion)
+          : undefined,
       });
       if (!legacyResult?.ok) return legacyResult;
     }
