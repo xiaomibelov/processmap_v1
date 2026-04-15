@@ -39,7 +39,15 @@ test("manual save keeps companion sync failure as secondary warning surface", ()
     true,
   );
   assert.equal(
-    source.includes("if (shouldSyncCompanion) {"),
+    source.includes("const companionBaseDiagramStateVersion = baseCandidates.length"),
+    true,
+  );
+  assert.equal(
+    source.includes("const hasCompanionBaseDiagramStateVersion = ("),
+    true,
+  );
+  assert.equal(
+    source.includes("if (hasCompanionBaseDiagramStateVersion) {"),
     true,
   );
   assert.equal(
@@ -47,7 +55,7 @@ test("manual save keeps companion sync failure as secondary warning surface", ()
     true,
   );
   assert.equal(
-    source.includes("rememberDiagramStateVersion(savedDiagramStateVersion, { sessionId: sid });"),
+    source.includes("rememberDiagramStateVersion(companionBaseDiagramStateVersion, { sessionId: sid });"),
     true,
   );
   assert.equal(
