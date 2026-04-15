@@ -3,6 +3,7 @@ import { apiPatchSession } from "../../../lib/api/sessionApi";
 import useAutosaveQueue from "./useAutosaveQueue";
 import { parseAndProjectBpmnToInterview } from "./useInterviewProjection";
 import { buildDiagramSessionPatchFromProjection } from "./diagramSessionPatchContract";
+import { resolveDiagramMutationSecondaryPatchBaseVersion } from "./diagramMutationSecondaryBaseVersion";
 import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
 import { traceProcess } from "../lib/processDebugTrace";
 import { shortUserFacingError } from "../lib/userFacingErrorText";
@@ -22,6 +23,8 @@ export default function useDiagramMutationLifecycle({
   bpmnSync,
   coordinator,
   projectionHelpers,
+  getBaseDiagramStateVersion,
+  rememberDiagramStateVersion,
   onSessionSync,
   onError,
 }) {
@@ -139,10 +142,15 @@ export default function useDiagramMutationLifecycle({
       if (isLocal || isStale?.()) return true;
       if (Object.keys(patch).length === 0) return true;
 
-      const saveDiagramStateVersion = Number(saveRes?.diagramStateVersion);
+      const secondaryBaseDiagramStateVersion = resolveDiagramMutationSecondaryPatchBaseVersion({
+        sid,
+        saveResult: saveRes,
+        rememberDiagramStateVersion,
+        getBaseDiagramStateVersion,
+      });
       const patchPayload = { ...patch };
-      if (Number.isFinite(saveDiagramStateVersion) && saveDiagramStateVersion >= 0) {
-        patchPayload.base_diagram_state_version = Math.round(saveDiagramStateVersion);
+      if (secondaryBaseDiagramStateVersion !== null) {
+        patchPayload.base_diagram_state_version = secondaryBaseDiagramStateVersion;
       }
 
       const patchRes = await apiPatchSession(sid, patchPayload);
@@ -150,11 +158,7 @@ export default function useDiagramMutationLifecycle({
         sid,
         ok: !!patchRes.ok,
         patch_keys: Object.keys(patchPayload),
-        base_diagram_state_version: (
-          Number.isFinite(saveDiagramStateVersion) && saveDiagramStateVersion >= 0
-            ? Math.round(saveDiagramStateVersion)
-            : null
-        ),
+        base_diagram_state_version: secondaryBaseDiagramStateVersion,
       });
       if (!patchRes.ok) {
         onError?.(shortErr(patchRes.error || "Не удалось синхронизировать Interview после изменения диаграммы."));
@@ -178,7 +182,16 @@ export default function useDiagramMutationLifecycle({
       });
       return true;
     },
-    [sid, bpmnSync, projectionHelpers, onSessionSync, isLocal, onError],
+    [
+      sid,
+      bpmnSync,
+      projectionHelpers,
+      onSessionSync,
+      isLocal,
+      onError,
+      getBaseDiagramStateVersion,
+      rememberDiagramStateVersion,
+    ],
   );
 
   const {
