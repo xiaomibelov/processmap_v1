@@ -14,6 +14,7 @@ export default function useProcessOrchestrator({
   bpmnSync,
   projectionHelpers,
   getBaseDiagramStateVersion,
+  rememberDiagramStateVersion,
   onSessionSync,
   onError,
 }) {
@@ -79,6 +80,8 @@ export default function useProcessOrchestrator({
     bpmnSync,
     coordinator,
     projectionHelpers,
+    getBaseDiagramStateVersion,
+    rememberDiagramStateVersion,
     onSessionSync,
     onError,
   });

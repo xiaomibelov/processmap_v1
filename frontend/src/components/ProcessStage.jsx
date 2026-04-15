@@ -921,6 +921,7 @@ export default function ProcessStage({
     bpmnSync,
     projectionHelpers,
     getBaseDiagramStateVersion,
+    rememberDiagramStateVersion,
     onSessionSync: onSessionSyncWithVersion,
     onError: setGenErr,
   });
