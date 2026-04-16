@@ -1343,6 +1343,7 @@ export default function ProcessStage({
     const persisted = await persistSessionCompanion(nextCompanion, {
       source: `${source}_session_companion`,
       baseDiagramStateVersion,
+      savedXml: toText(xml || draft?.bpmn_xml || ""),
     });
     return {
       ...persisted,
