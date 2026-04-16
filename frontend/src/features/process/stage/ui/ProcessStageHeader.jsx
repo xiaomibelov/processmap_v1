@@ -78,7 +78,10 @@ export default function ProcessStageHeader({ view = {} }) {
     : mirrorMeta.label;
   const showSaveStatusBadge = canSaveNow && !showSaveActionButton;
   const isConflictState = toText(saveUploadStatus?.state) === "conflict";
+  const hasDominantConflictState = isConflictState;
   const showConflictModalActive = isConflictState && saveConflictActions?.visible === true;
+  const showDraftRelationBadgeResolved = showDraftRelationBadge && !hasDominantConflictState;
+  const showSaveStatusBadgeResolved = showSaveStatusBadge && !hasDominantConflictState;
   const showUploadStatusBadge = saveUploadStatus?.visible && !showConflictModalActive;
   const toolbarMessage = toText(toolbarInlineMessage);
   const toolbarMessageNormalized = toolbarMessage.replace(/[.!]+$/g, "").trim().toLowerCase();
@@ -87,9 +90,10 @@ export default function ProcessStageHeader({ view = {} }) {
     toolbarMessageNormalized === "черновик сохранён"
     || toolbarMessageNormalized === "черновик синхронизирован"
   );
-  const hasPrimaryDraftStatusSurface = showSaveStatusBadge || showDraftRelationBadge;
+  const hasPrimaryDraftStatusSurface = showSaveStatusBadgeResolved || showDraftRelationBadgeResolved;
   const toolbarMessageLooksLikeConflict = /(?:конфликт|conflict|http\s*409|stale|верси)/i.test(toolbarMessage);
   const showToolbarInlineBadge = !!toolbarInlineMessage
+    && !hasDominantConflictState
     && !(showConflictModalActive && toolbarMessageLooksLikeConflict)
     && !(
       isDraftSavedToolbarMessage
@@ -100,12 +104,11 @@ export default function ProcessStageHeader({ view = {} }) {
         || saveSmartTextNormalized === "черновик сохранён"
       )
     );
-  const showSaveStatusBadgeResolved = showSaveStatusBadge && !showConflictModalActive;
   const suppressDraftSavedBadge = /^Опубликована версия \d+\.$/.test(toolbarMessage)
     && toText(saveSmartText) === "Черновик сохранён";
   const showGenericSaveStatusBadge = showSaveStatusBadgeResolved
     && !suppressDraftSavedBadge
-    && !showDraftRelationBadge;
+    && !showDraftRelationBadgeResolved;
   const canRunUndo = tab === "diagram" && canUndo === true;
   const canRunRedo = tab === "diagram" && canRedo === true;
 
@@ -144,7 +147,7 @@ export default function ProcessStageHeader({ view = {} }) {
               >
                 {publishedRevisionBadge.text}
               </span>
-              {showDraftRelationBadge ? (
+              {showDraftRelationBadgeResolved ? (
                 <span
                   className={`badge text-[11px] ${draftStatusTone}`}
                   data-testid="diagram-toolbar-draft-vs-latest"

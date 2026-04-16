@@ -44,12 +44,17 @@ test("header dedupes competing conflict surfaces while modal is active", () => {
   );
   assert.ok(
     source.includes("const showToolbarInlineBadge = !!toolbarInlineMessage")
+      && source.includes("&& !hasDominantConflictState")
       && source.includes("!(showConflictModalActive && toolbarMessageLooksLikeConflict)")
       && source.includes("isDraftSavedToolbarMessage"),
-    "toolbar inline conflict message must be suppressed when conflict panel is visible",
+    "toolbar inline message must be suppressed when conflict is the dominant state",
   );
   assert.ok(
-    source.includes("const showSaveStatusBadgeResolved = showSaveStatusBadge && !showConflictModalActive;"),
-    "generic save badge should also be suppressed while modal is active",
+    source.includes("const showSaveStatusBadgeResolved = showSaveStatusBadge && !hasDominantConflictState;"),
+    "generic save badge should be suppressed while conflict is active",
+  );
+  assert.ok(
+    source.includes("const showDraftRelationBadgeResolved = showDraftRelationBadge && !hasDominantConflictState;"),
+    "draft-vs-latest badge should not compete with conflict state",
   );
 });

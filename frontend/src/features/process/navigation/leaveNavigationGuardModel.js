@@ -33,6 +33,7 @@ export function deriveLeaveNavigationRisk({
   const isDirty = saveSnapshot.isDirty === true;
   const isFailed = saveSnapshot.isFailed === true || uploadState === "save_failed";
   const isStale = saveSnapshot.isStale === true;
+  const hasUnsavedLocalChanges = isDirty;
 
   if (isSaving) {
     return {
@@ -41,32 +42,32 @@ export function deriveLeaveNavigationRisk({
       message: "Сохранение ещё не завершено. Если уйти сейчас, часть изменений может не сохраниться.",
     };
   }
-  if (isConflict) {
+  if (isConflict && hasUnsavedLocalChanges) {
     return {
       unsafe: true,
       reason: "save_conflict",
       message: "Есть конфликт сохранения. Если уйти сейчас, несохранённые локальные изменения могут потеряться.",
     };
   }
-  if (isDirty) {
-    return {
-      unsafe: true,
-      reason: "unsaved_changes",
-      message: "Есть несохранённые изменения. Если уйти сейчас, они будут потеряны.",
-    };
-  }
-  if (isFailed) {
+  if (isFailed && hasUnsavedLocalChanges) {
     return {
       unsafe: true,
       reason: "save_failed",
       message: "Последняя попытка сохранения завершилась ошибкой. Если уйти сейчас, изменения могут потеряться.",
     };
   }
-  if (isStale) {
+  if (isStale && hasUnsavedLocalChanges) {
     return {
       unsafe: true,
       reason: "save_stale",
       message: "Состояние требует синхронизации. Если уйти сейчас, часть изменений может потеряться.",
+    };
+  }
+  if (hasUnsavedLocalChanges) {
+    return {
+      unsafe: true,
+      reason: "unsaved_changes",
+      message: "Есть несохранённые изменения. Если уйти сейчас, они будут потеряны.",
     };
   }
   return {

@@ -283,7 +283,28 @@ export default function useBpmnSync({
       );
     }
     try {
-      const saved = await Promise.resolve(saveLocal({ force, source, persistReason }));
+      let saved = await Promise.resolve(saveLocal({ force, source, persistReason }));
+      let pendingRetryAttempt = 0;
+      while (
+        force
+        && saved
+        && typeof saved === "object"
+        && saved.ok !== false
+        && saved.pending === true
+        && pendingRetryAttempt < 3
+      ) {
+        pendingRetryAttempt += 1;
+        await new Promise((resolve) => window.setTimeout(resolve, 90 * pendingRetryAttempt));
+        saved = await Promise.resolve(saveLocal({ force, source, persistReason }));
+      }
+      if (pendingRetryAttempt > 0) {
+        logBpmnTrace("FLUSH_SAVE_PENDING_RETRY_DONE", fallbackXml, {
+          sid,
+          source,
+          attempts: pendingRetryAttempt,
+          still_pending: saved && typeof saved === "object" && saved.pending === true ? 1 : 0,
+        });
+      }
       if (saved === false || (saved && typeof saved === "object" && saved.ok === false)) {
         if (allowInFlightPendingOutcome && isSaveInProgress()) {
           if (fallbackXml.trim()) {
