@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import { apiDeleteBpmnXml, apiGetBpmnXml, apiPutBpmnXml } from "../../lib/api/bpmnApi";
 import { apiPatchSession } from "../../lib/api/sessionApi";
 import { traceProcess } from "../../features/process/lib/processDebugTrace";
+import { shouldCanonicalRePersistManualSave } from "../../features/process/bpmn/save/manualSaveCanonicalXml";
 import { createBpmnWiring } from "../../features/process/bpmn/stage/wiring/bpmnWiring";
 import * as decorManager from "../../features/process/bpmn/stage/decor/decorManager";
 import * as viewportRecovery from "../../features/process/bpmn/stage/viewport/viewportRecovery";
@@ -4718,6 +4719,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       }
 
       const activeModeler = modelerRef.current || runtime.getInstance?.();
+      let preFlushXml = "";
       const robotSync = syncRobotMetaToModeler(activeModeler);
       const templateInsertSeedInFlight = Number(templateInsertCamundaSeedInFlightRef.current || 0) > 0;
       const templateInsertClearGuardIds = readTemplateInsertCamundaClearGuardIds();
@@ -4761,13 +4763,15 @@ const BpmnStage = forwardRef(function BpmnStage({
       if (activeModeler && typeof activeModeler.saveXML === "function") {
         try {
           const probeOut = await activeModeler.saveXML({ format: true });
+          preFlushXml = String(probeOut?.xml || "");
           publishE2ESaveProbe({
             sid,
             source,
             persistReason,
-            beforeFlushXml: String(probeOut?.xml || ""),
+            beforeFlushXml: preFlushXml,
           });
         } catch {
+          preFlushXml = "";
           publishE2ESaveProbe({
             sid,
             source,
@@ -4870,29 +4874,111 @@ const BpmnStage = forwardRef(function BpmnStage({
         });
       }
 
+      let finalOut = out;
+      let finalStoredRev = Number(flushed?.storedRev || flushed?.rev || nextState.rev || 0);
+      let finalDiagramStateVersion = Number(flushed?.diagramStateVersion || 0);
+      let finalVersionSnapshot = (
+        flushed?.bpmnVersionSnapshot && typeof flushed.bpmnVersionSnapshot === "object"
+          ? flushed.bpmnVersionSnapshot
+          : null
+      );
+
+      if (shouldCanonicalRePersistManualSave({
+        source,
+        persistReason,
+        canonicalXml: preFlushXml,
+        persistedXml: finalOut,
+      })) {
+        const canonicalOut = transformPersistedXml(preFlushXml);
+        const canonicalPersistReason = `${persistReason}:manual_canonical_repersist`;
+        emitSaveLifecycleEvent("SAVE_PERSIST_STARTED", {
+          sid,
+          reason: canonicalPersistReason,
+          rev: Number(finalStoredRev || 0),
+          xml_len: canonicalOut.length,
+        });
+        const canonicalPersisted = typeof coordinator.persistExplicitXml === "function"
+          ? await coordinator.persistExplicitXml(canonicalOut, canonicalPersistReason, {
+            rev: Number(finalStoredRev || 0),
+            saveOwner: resolvedSaveOwner,
+          })
+          : await ensureBpmnPersistence().saveRaw(sid, canonicalOut, Number(finalStoredRev || 0), canonicalPersistReason);
+        if (!canonicalPersisted?.ok) {
+          emitSaveLifecycleEvent("SAVE_PERSIST_FAIL", {
+            sid,
+            reason: canonicalPersistReason,
+            rev: Number(finalStoredRev || 0),
+            status: Number(canonicalPersisted?.status || 0),
+            error_code: String(canonicalPersisted?.errorCode || ""),
+            error_details: (
+              canonicalPersisted?.errorDetails && typeof canonicalPersisted.errorDetails === "object"
+                ? canonicalPersisted.errorDetails
+                : null
+            ),
+            xml_len: canonicalOut.length,
+            error: String(canonicalPersisted?.error || "manual canonical persist failed"),
+          });
+          if (resolvedSaveOwner) {
+            coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:manual_canonical_repersist_fail`);
+          }
+          return {
+            ok: false,
+            error: String(canonicalPersisted?.error || "manual canonical persist failed"),
+            status: Number(canonicalPersisted?.status || 0),
+            errorCode: String(canonicalPersisted?.errorCode || ""),
+            errorDetails: (
+              canonicalPersisted?.errorDetails && typeof canonicalPersisted.errorDetails === "object"
+                ? canonicalPersisted.errorDetails
+                : null
+            ),
+            xml: finalOut,
+          };
+        }
+        emitSaveLifecycleEvent("SAVE_PERSIST_DONE", {
+          sid,
+          reason: canonicalPersistReason,
+          rev: Number(canonicalPersisted?.storedRev || finalStoredRev || 0),
+          status: Number(canonicalPersisted?.status || 200),
+          diagram_state_version: Number(canonicalPersisted?.diagramStateVersion || finalDiagramStateVersion || 0),
+          xml_len: canonicalOut.length,
+        });
+        publishE2ESaveProbe({
+          sid,
+          source,
+          persistReason,
+          manualCanonicalRePersist: true,
+          manualCanonicalRePersistReason: canonicalPersistReason,
+          manualCanonicalXml: canonicalOut,
+        });
+        finalOut = canonicalOut;
+        finalStoredRev = Number(canonicalPersisted?.storedRev || finalStoredRev || 0);
+        finalDiagramStateVersion = Number(canonicalPersisted?.diagramStateVersion || finalDiagramStateVersion || 0);
+        if (canonicalPersisted?.bpmnVersionSnapshot && typeof canonicalPersisted.bpmnVersionSnapshot === "object") {
+          finalVersionSnapshot = canonicalPersisted.bpmnVersionSnapshot;
+        }
+      }
+
       if (force) {
         coordinator.clearPendingWork?.(`${source}:after_force_flush`);
       }
 
       traceProcess("bpmn.save_modeler_xml", {
         sid,
-        xml_len: out.length,
+        xml_len: finalOut.length,
       });
       const hint = isLocalSessionId(sid) ? "local(saved)" : "backend(saved)";
-      applyXmlSnapshot(out, hint);
+      applyXmlSnapshot(finalOut, hint);
       if (resolvedSaveOwner) {
         coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:save_local_done`);
       }
-      logBpmnTrace("saveXML.modeler.after", out, { sid, trigger });
+      logBpmnTrace("saveXML.modeler.after", finalOut, { sid, trigger });
       return {
         ok: true,
-        xml: out,
+        xml: finalOut,
         source: hint,
-        storedRev: Number(flushed?.storedRev || flushed?.rev || nextState.rev || 0),
-        diagramStateVersion: Number(flushed?.diagramStateVersion || 0),
-        bpmnVersionSnapshot: flushed?.bpmnVersionSnapshot && typeof flushed.bpmnVersionSnapshot === "object"
-          ? flushed.bpmnVersionSnapshot
-          : null,
+        storedRev: finalStoredRev,
+        diagramStateVersion: finalDiagramStateVersion,
+        bpmnVersionSnapshot: finalVersionSnapshot,
       };
     } catch (e) {
       const msg = String(e?.message || e || "saveXML failed");
