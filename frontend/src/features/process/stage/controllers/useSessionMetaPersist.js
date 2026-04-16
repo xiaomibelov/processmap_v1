@@ -11,6 +11,9 @@ import {
   normalizeSessionCompanion,
   serializeSessionCompanion,
 } from "../../session-companion/sessionCompanionContracts.js";
+import {
+  rebaseSessionMetaCamundaFromSavedXml,
+} from "./sessionCompanionCamundaRebase.js";
 
 function asObject(value) {
   return value && typeof value === "object" ? value : {};
@@ -334,10 +337,10 @@ export default function useSessionMetaPersist({
     }
     let legacyResult = { ok: true, skipped: true };
     if (needsLegacyWrite) {
-      const mergedMeta = {
+      const mergedMeta = rebaseSessionMetaCamundaFromSavedXml({
         ...buildMetaSnapshot(),
         session_companion_v1: nextCompanion,
-      };
+      }, options?.savedXml);
       const baseDiagramStateVersion = Number(options?.baseDiagramStateVersion);
       legacyResult = await persistBpmnMeta(mergedMeta, {
         source: String(options?.source || "session_companion_save"),

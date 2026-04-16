@@ -3,6 +3,7 @@ import { apiPatchSession } from "../../../lib/api/sessionApi";
 import useAutosaveQueue from "./useAutosaveQueue";
 import { parseAndProjectBpmnToInterview } from "./useInterviewProjection";
 import { buildDiagramSessionPatchFromProjection } from "./diagramSessionPatchContract";
+import { resolveDiagramMutationSecondaryPatchBaseVersion } from "./diagramMutationSecondaryBaseVersion";
 import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
 import { traceProcess } from "../lib/processDebugTrace";
 import { shortUserFacingError } from "../lib/userFacingErrorText";
@@ -22,6 +23,8 @@ export default function useDiagramMutationLifecycle({
   bpmnSync,
   coordinator,
   projectionHelpers,
+  getBaseDiagramStateVersion,
+  rememberDiagramStateVersion,
   onSessionSync,
   onError,
 }) {
@@ -61,6 +64,13 @@ export default function useDiagramMutationLifecycle({
         const errLabel = mutationKind.startsWith("xml.") ? "XML" : "BPMN";
         onError?.(shortErr(saveRes?.error || `Не удалось сохранить ${errLabel} после изменения.`));
         return false;
+      }
+      if (saveRes?.pending) {
+        traceProcess("diagram.autosave_pending_primary", {
+          sid,
+          mutation_kind: mutationKind,
+        });
+        return true;
       }
 
       const xmlFromSave = String(saveRes?.xml || "");
@@ -139,22 +149,30 @@ export default function useDiagramMutationLifecycle({
       if (isLocal || isStale?.()) return true;
       if (Object.keys(patch).length === 0) return true;
 
-      const saveDiagramStateVersion = Number(saveRes?.diagramStateVersion);
-      const patchPayload = { ...patch };
-      if (Number.isFinite(saveDiagramStateVersion) && saveDiagramStateVersion >= 0) {
-        patchPayload.base_diagram_state_version = Math.round(saveDiagramStateVersion);
+      const secondaryBaseDiagramStateVersion = resolveDiagramMutationSecondaryPatchBaseVersion({
+        sid,
+        saveResult: saveRes,
+        rememberDiagramStateVersion,
+        getBaseDiagramStateVersion,
+      });
+      if (secondaryBaseDiagramStateVersion === null) {
+        traceProcess("diagram.autosave_patch_skipped_missing_base", {
+          sid,
+          mutation_kind: mutationKind,
+        });
+        return true;
       }
+      const patchPayload = {
+        ...patch,
+        base_diagram_state_version: secondaryBaseDiagramStateVersion,
+      };
 
       const patchRes = await apiPatchSession(sid, patchPayload);
       traceProcess("diagram.autosave_patch_backend", {
         sid,
         ok: !!patchRes.ok,
         patch_keys: Object.keys(patchPayload),
-        base_diagram_state_version: (
-          Number.isFinite(saveDiagramStateVersion) && saveDiagramStateVersion >= 0
-            ? Math.round(saveDiagramStateVersion)
-            : null
-        ),
+        base_diagram_state_version: secondaryBaseDiagramStateVersion,
       });
       if (!patchRes.ok) {
         onError?.(shortErr(patchRes.error || "Не удалось синхронизировать Interview после изменения диаграммы."));
@@ -178,7 +196,16 @@ export default function useDiagramMutationLifecycle({
       });
       return true;
     },
-    [sid, bpmnSync, projectionHelpers, onSessionSync, isLocal, onError],
+    [
+      sid,
+      bpmnSync,
+      projectionHelpers,
+      onSessionSync,
+      isLocal,
+      onError,
+      getBaseDiagramStateVersion,
+      rememberDiagramStateVersion,
+    ],
   );
 
   const {

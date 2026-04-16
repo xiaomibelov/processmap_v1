@@ -8,6 +8,52 @@ function normalizeIdentity(value) {
   return toText(value).toLowerCase();
 }
 
+function normalizeIdentitySet(values = []) {
+  const out = new Set();
+  values.forEach((value) => {
+    const normalized = normalizeIdentity(value);
+    if (normalized) out.add(normalized);
+  });
+  return out;
+}
+
+function hasIntersection(left = new Set(), right = new Set()) {
+  for (const value of left) {
+    if (right.has(value)) return true;
+  }
+  return false;
+}
+
+function looksLikeEmail(value) {
+  const text = toText(value);
+  return !!text && text.includes("@");
+}
+
+function resolveCurrentIdentitySet({
+  currentUserRaw = null,
+  currentUserIdRaw = "",
+} = {}) {
+  const user = currentUserRaw && typeof currentUserRaw === "object" ? currentUserRaw : {};
+  return normalizeIdentitySet([
+    currentUserIdRaw,
+    user.id,
+    user.user_id,
+    user.email,
+    user.username,
+    user.login,
+  ]);
+}
+
+function resolveConflictActorIdentitySet(conflict = {}) {
+  const actorUserId = toText(conflict.actorUserId || conflict.actor_user_id);
+  const actorEmail = toText(conflict.actorEmail || conflict.actor_email);
+  const actorLabel = toText(conflict.actorLabel || conflict.actor_label);
+  const actorUsername = toText(conflict.actorUsername || conflict.actor_username);
+  const actorCandidates = [actorUserId, actorEmail, actorUsername];
+  if (looksLikeEmail(actorLabel)) actorCandidates.push(actorLabel);
+  return normalizeIdentitySet(actorCandidates);
+}
+
 function hasNumericVersion(value) {
   const num = Number(value);
   return Number.isFinite(num) && num >= 0;
@@ -30,22 +76,29 @@ function formatConflictMoment(epochSeconds = 0) {
 
 export function classifySaveConflictActor({
   conflictRaw = null,
+  currentUserRaw = null,
   currentUserIdRaw = "",
 } = {}) {
   const conflict = conflictRaw && typeof conflictRaw === "object" ? conflictRaw : {};
   const actorUserId = toText(conflict.actorUserId || conflict.actor_user_id);
   const actorLabel = toText(conflict.actorLabel || conflict.actor_label || actorUserId);
-  const currentUserId = toText(currentUserIdRaw);
-  const actorNorm = normalizeIdentity(actorUserId);
-  const currentNorm = normalizeIdentity(currentUserId);
-  if (actorNorm && currentNorm && actorNorm === currentNorm) {
+  const actorIdentitySet = resolveConflictActorIdentitySet(conflict);
+  const currentIdentitySet = resolveCurrentIdentitySet({
+    currentUserRaw,
+    currentUserIdRaw,
+  });
+  if (
+    actorIdentitySet.size > 0
+    && currentIdentitySet.size > 0
+    && hasIntersection(actorIdentitySet, currentIdentitySet)
+  ) {
     return {
-      kind: "same_user",
+      kind: "same_user_other_tab",
       actorUserId,
       actorLabel,
     };
   }
-  if (actorNorm) {
+  if (actorIdentitySet.size > 0 && currentIdentitySet.size > 0) {
     return {
       kind: "other_user",
       actorUserId,
@@ -53,7 +106,7 @@ export function classifySaveConflictActor({
     };
   }
   return {
-    kind: "unknown",
+    kind: "fallback_unknown",
     actorUserId: "",
     actorLabel: "",
   };
@@ -61,20 +114,25 @@ export function classifySaveConflictActor({
 
 export function buildSaveConflictModalView({
   conflictRaw = null,
+  currentUserRaw = null,
   currentUserIdRaw = "",
   fallbackTextRaw = "",
 } = {}) {
   const conflict = conflictRaw && typeof conflictRaw === "object" ? conflictRaw : {};
-  const actorMode = classifySaveConflictActor({ conflictRaw: conflict, currentUserIdRaw });
+  const actorMode = classifySaveConflictActor({
+    conflictRaw: conflict,
+    currentUserRaw,
+    currentUserIdRaw,
+  });
   const fallbackText = toText(fallbackTextRaw);
   const title = actorMode.kind === "other_user"
     ? "Сессию изменил другой пользователь"
-    : (actorMode.kind === "same_user"
+    : (actorMode.kind === "same_user_other_tab"
       ? "Сессия уже обновлена в другой вашей вкладке"
       : "Конфликт версии сессии");
   const lead = actorMode.kind === "other_user"
     ? "Ваше сохранение остановлено, чтобы не перезаписать изменения другого пользователя."
-    : (actorMode.kind === "same_user"
+    : (actorMode.kind === "same_user_other_tab"
       ? "Ваше сохранение остановлено, потому что сервер уже содержит более новую версию из вашего другого контекста."
       : "Сервер отклонил сохранение, потому что версия сессии изменилась.");
   const serverVersion = formatVersionForLabel(conflict.serverCurrentVersion);

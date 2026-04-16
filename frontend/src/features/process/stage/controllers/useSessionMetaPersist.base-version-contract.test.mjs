@@ -36,3 +36,12 @@ test("persistSessionCompanion forwards base_diagram_state_version into legacy me
     true,
   );
 });
+
+test("persistSessionCompanion aligns camunda extension map with saved XML when provided", () => {
+  const source = readSource();
+  assert.equal(source.includes("rebaseSessionMetaCamundaFromSavedXml"), true);
+  assert.equal(
+    source.includes("const mergedMeta = rebaseSessionMetaCamundaFromSavedXml({"),
+    true,
+  );
+});
