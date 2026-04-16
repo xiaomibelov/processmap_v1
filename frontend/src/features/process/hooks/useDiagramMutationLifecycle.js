@@ -65,6 +65,13 @@ export default function useDiagramMutationLifecycle({
         onError?.(shortErr(saveRes?.error || `Не удалось сохранить ${errLabel} после изменения.`));
         return false;
       }
+      if (saveRes?.pending) {
+        traceProcess("diagram.autosave_pending_primary", {
+          sid,
+          mutation_kind: mutationKind,
+        });
+        return true;
+      }
 
       const xmlFromSave = String(saveRes?.xml || "");
       const draftNow = asObject(draftRef.current);
@@ -148,10 +155,17 @@ export default function useDiagramMutationLifecycle({
         rememberDiagramStateVersion,
         getBaseDiagramStateVersion,
       });
-      const patchPayload = { ...patch };
-      if (secondaryBaseDiagramStateVersion !== null) {
-        patchPayload.base_diagram_state_version = secondaryBaseDiagramStateVersion;
+      if (secondaryBaseDiagramStateVersion === null) {
+        traceProcess("diagram.autosave_patch_skipped_missing_base", {
+          sid,
+          mutation_kind: mutationKind,
+        });
+        return true;
       }
+      const patchPayload = {
+        ...patch,
+        base_diagram_state_version: secondaryBaseDiagramStateVersion,
+      };
 
       const patchRes = await apiPatchSession(sid, patchPayload);
       traceProcess("diagram.autosave_patch_backend", {

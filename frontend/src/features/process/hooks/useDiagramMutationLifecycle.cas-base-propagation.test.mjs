@@ -27,7 +27,7 @@ test("diagram mutation autosave propagates base_diagram_state_version to seconda
     true,
   );
   assert.equal(
-    source.includes("patchPayload.base_diagram_state_version = secondaryBaseDiagramStateVersion;"),
+    source.includes("base_diagram_state_version: secondaryBaseDiagramStateVersion,"),
     true,
   );
   assert.equal(
