@@ -16,7 +16,7 @@ export const PROCESS_WORKBENCH_CONFIG = {
     ],
   },
   labels: {
-    save: "Save",
+    save: "Сохранить сессию",
     importBpmn: "Импорт BPMN",
     exportBpmn: "Export BPMN",
     generate: "Сгенерировать процесс",
@@ -27,9 +27,9 @@ export const PROCESS_WORKBENCH_CONFIG = {
     ai: "✦ AI",
   },
   tooltips: {
-    saveDisabled: "Доступно в Diagram/XML",
+    saveDisabled: "Сохранение сессии доступно в Diagram/XML",
     saveLocal: "Сохранить XML локально",
-    saveBackend: "Сохранить XML на backend",
+    saveBackend: "Сохранить текущее состояние сессии",
     importNoSession: "Сначала выберите сессию",
     importInterview: "Импорт доступен в BPMN-режиме (Diagram/XML)",
     importReady: "Загрузить BPMN/XML файл",

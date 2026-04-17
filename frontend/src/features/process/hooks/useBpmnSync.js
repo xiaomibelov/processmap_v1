@@ -418,6 +418,8 @@ export default function useBpmnSync({
         ok: true,
         xml: savedXml,
         pending,
+        skipped: saved?.skipped === true || saved?.unchanged === true,
+        unchanged: saved?.unchanged === true,
         storedRev: Number(saved?.storedRev || saved?.rev || 0),
         diagramStateVersion: Number(saved?.diagramStateVersion || 0),
         bpmnVersionSnapshot: saved?.bpmnVersionSnapshot && typeof saved.bpmnVersionSnapshot === "object"
@@ -468,7 +470,7 @@ export default function useBpmnSync({
     if (!hasChanges) {
       const raw = toText(bpmnRef.current?.getXmlDraft?.() || draftRef.current?.bpmn_xml || "");
       syncXmlToSession(raw, { source: `${source}:no_changes` });
-      return { ok: true, xml: raw, pending: false };
+      return { ok: true, xml: raw, pending: false, skipped: true, unchanged: true };
     }
     const saved = await Promise.resolve(bpmnRef.current?.saveXmlDraft?.());
     if (saved === false || (saved && typeof saved === "object" && saved.ok === false)) {
@@ -497,6 +499,8 @@ export default function useBpmnSync({
       ok: true,
       xml: savedXml,
       pending: false,
+      skipped: saved?.skipped === true || saved?.unchanged === true,
+      unchanged: saved?.unchanged === true,
       storedRev: Number(saved?.storedRev || saved?.rev || 0),
       diagramStateVersion: Number(saved?.diagramStateVersion || 0),
       bpmnVersionSnapshot: saved?.bpmnVersionSnapshot && typeof saved.bpmnVersionSnapshot === "object"

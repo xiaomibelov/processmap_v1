@@ -7,11 +7,11 @@ export function resolveManualSaveOutcomeUi({
   primarySavePending = false,
   primarySaveError = "",
   companionError = "",
-  publishInfo = "",
+  saveInfo = "",
 } = {}) {
   const primaryErrorText = toText(primarySaveError);
   const companionErrorText = toText(companionError);
-  const publishInfoText = toText(publishInfo);
+  const saveInfoText = toText(saveInfo);
 
   if (!primarySaveOk) {
     return {
@@ -35,18 +35,18 @@ export function resolveManualSaveOutcomeUi({
     return {
       primaryState: "primary_saved_companion_warning",
       genErr: "",
-      infoMsg: publishInfoText
-        ? `${publishInfoText} Companion metadata не синхронизированы.`
-        : "BPMN сохранён, companion metadata не синхронизированы.",
+      infoMsg: saveInfoText
+        ? `${saveInfoText} Companion metadata не синхронизированы.`
+        : "Сессия сохранена, companion metadata не синхронизированы.",
       companionSeverity: "warning",
     };
   }
 
-  if (publishInfoText) {
+  if (saveInfoText) {
     return {
       primaryState: "primary_saved_published",
       genErr: "",
-      infoMsg: publishInfoText,
+      infoMsg: saveInfoText,
       companionSeverity: "none",
     };
   }

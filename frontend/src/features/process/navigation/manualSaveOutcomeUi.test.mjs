@@ -8,7 +8,7 @@ test("manual save success + companion success keeps primary success state", () =
     primarySaveOk: true,
     primarySavePending: false,
     companionError: "",
-    publishInfo: "",
+    saveInfo: "",
   });
 
   assert.equal(ui.primaryState, "primary_saved");
@@ -22,14 +22,44 @@ test("manual save success + companion failure is surfaced as secondary warning",
     primarySaveOk: true,
     primarySavePending: false,
     companionError: "session_meta_patch_failed",
-    publishInfo: "Опубликована версия 7.",
+    saveInfo: "Сессия сохранена.",
   });
 
   assert.equal(ui.primaryState, "primary_saved_companion_warning");
   assert.equal(ui.genErr, "");
   assert.equal(ui.companionSeverity, "warning");
-  assert.match(ui.infoMsg, /Опубликована версия 7\./);
+  assert.match(ui.infoMsg, /Сессия сохранена\./);
   assert.match(ui.infoMsg, /Companion metadata не синхронизированы\./);
+});
+
+test("manual save no-op stays in session-save semantics and avoids revision wording", () => {
+  const ui = resolveManualSaveOutcomeUi({
+    primarySaveOk: true,
+    primarySavePending: false,
+    companionError: "",
+    saveInfo: "Сессия уже сохранена: изменений схемы нет.",
+  });
+
+  assert.equal(ui.primaryState, "primary_saved_published");
+  assert.equal(ui.genErr, "");
+  assert.equal(ui.companionSeverity, "none");
+  assert.match(ui.infoMsg, /Сессия уже сохранена/i);
+  assert.equal(ui.infoMsg.toLowerCase().includes("верси"), false);
+});
+
+test("explicit revision creation keeps revision-specific success copy", () => {
+  const ui = resolveManualSaveOutcomeUi({
+    primarySaveOk: true,
+    primarySavePending: false,
+    companionError: "",
+    saveInfo: "Создана новая ревизия.",
+  });
+
+  assert.equal(ui.primaryState, "primary_saved_published");
+  assert.equal(ui.genErr, "");
+  assert.equal(ui.companionSeverity, "none");
+  assert.match(ui.infoMsg, /Создана новая ревизия\./);
+  assert.equal(ui.infoMsg.toLowerCase().includes("сессия сохранена"), false);
 });
 
 test("manual save primary failure stays primary error", () => {
