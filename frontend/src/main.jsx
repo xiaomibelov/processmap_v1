@@ -1,6 +1,8 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import RootApp from "./RootApp";
+import FrontendErrorBoundary from "./features/telemetry/FrontendErrorBoundary";
+import { installGlobalFrontendTelemetry } from "./features/telemetry/telemetryClient";
 import "./styles/tailwind.css";
 import "./styles/legacy/legacy_bpmn.css";
 
@@ -15,8 +17,12 @@ try {
   document.documentElement.classList.add("dark");
 }
 
+installGlobalFrontendTelemetry();
+
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <RootApp />
+    <FrontendErrorBoundary>
+      <RootApp />
+    </FrontendErrorBoundary>
   </React.StrictMode>
 );
