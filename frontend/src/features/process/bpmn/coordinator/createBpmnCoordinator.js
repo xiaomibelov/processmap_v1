@@ -357,41 +357,46 @@ export default function createBpmnCoordinator(options = {}) {
       return { ok: true, pending: true, rev };
     }
 
-    const xmlRes = await runtime.getXml({ format: true });
-    if (!xmlRes?.ok) {
-      if (xmlRes?.reason === "not_ready" || xmlRes?.reason === "stale") {
-        setPendingSave({
-          sessionId: sid,
-          runtimeToken: asNumber(runtime.getStatus?.()?.token, 0),
-          targetRev: rev,
-          reason,
-        });
-        emit("SAVE_SKIPPED_NOT_READY", {
-          sid,
-          reason,
+    const xmlOverride = asText(options?.xmlOverride);
+    let runtimeToken = 0;
+    let rawXml = xmlOverride;
+    if (!rawXml.trim()) {
+      const xmlRes = await runtime.getXml({ format: true });
+      if (!xmlRes?.ok) {
+        if (xmlRes?.reason === "not_ready" || xmlRes?.reason === "stale") {
+          setPendingSave({
+            sessionId: sid,
+            runtimeToken: asNumber(runtime.getStatus?.()?.token, 0),
+            targetRev: rev,
+            reason,
+          });
+          emit("SAVE_SKIPPED_NOT_READY", {
+            sid,
+            reason,
+            rev,
+            runtime_ready: runtime.getStatus?.()?.ready ? 1 : 0,
+            runtime_defs: runtime.getStatus?.()?.defs ? 1 : 0,
+            save_reason: asText(xmlRes?.reason),
+          });
+          return { ok: true, pending: true, rev };
+        }
+        return {
+          ok: false,
           rev,
-          runtime_ready: runtime.getStatus?.()?.ready ? 1 : 0,
-          runtime_defs: runtime.getStatus?.()?.defs ? 1 : 0,
-          save_reason: asText(xmlRes?.reason),
-        });
-        return { ok: true, pending: true, rev };
+          status: asNumber(xmlRes?.status, 0),
+          errorCode: asText(xmlRes?.reason || "runtime_get_xml_failed"),
+          error: asText(xmlRes?.error || xmlRes?.reason || "getXml failed"),
+        };
       }
-      return {
-        ok: false,
-        rev,
-        status: asNumber(xmlRes?.status, 0),
-        errorCode: asText(xmlRes?.reason || "runtime_get_xml_failed"),
-        error: asText(xmlRes?.error || xmlRes?.reason || "getXml failed"),
-      };
+      rawXml = asText(xmlRes?.xml);
+      runtimeToken = asNumber(xmlRes?.token, 0);
     }
-
-    const rawXml = asText(xmlRes?.xml);
     const prepared = preparePersistedXml(rawXml, {
       sid,
       reason,
       rev,
-      runtimeToken: asNumber(xmlRes?.token, 0),
-      source: "flush_save",
+      runtimeToken,
+      source: xmlOverride.trim() ? "flush_save_override" : "flush_save",
     });
     const xml = prepared.xml;
     const currentXmlHash = fnv1aHex(xml);
@@ -423,7 +428,7 @@ export default function createBpmnCoordinator(options = {}) {
       sid,
       reason,
       rev: targetRev,
-      runtime_token: asNumber(xmlRes?.token, 0),
+      runtime_token: runtimeToken,
       xml_len: xml.length,
     });
     emit("SAVE_PERSIST_STARTED", {

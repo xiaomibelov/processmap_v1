@@ -5,6 +5,7 @@ import {
   isManualSaveSource,
   normalizeXmlForSaveComparison,
   shouldCanonicalRePersistManualSave,
+  shouldUseCanonicalPrimaryManualSave,
 } from "./manualSaveCanonicalXml.js";
 
 test("isManualSaveSource matches manual save source and publish_manual_save reason", () => {
@@ -49,5 +50,37 @@ test("shouldCanonicalRePersistManualSave returns false when normalized XML is eq
     persistReason: "publish_manual_save",
     canonicalXml,
     persistedXml,
+  }), false);
+});
+
+test("shouldUseCanonicalPrimaryManualSave returns true when manual-save primary candidate diverges", () => {
+  const canonicalXml = "<bpmn:userTask id=\"Task_1\" name=\"NEW\"/>";
+  const primaryCandidateXml = "<bpmn:userTask id=\"Task_1\" name=\"OLD\"/>";
+  assert.equal(shouldUseCanonicalPrimaryManualSave({
+    source: "manual_save",
+    persistReason: "publish_manual_save",
+    canonicalXml,
+    primaryCandidateXml,
+  }), true);
+});
+
+test("shouldUseCanonicalPrimaryManualSave returns true when manual-save primary candidate is empty", () => {
+  const canonicalXml = "<bpmn:userTask id=\"Task_1\" name=\"NEW\"/>";
+  assert.equal(shouldUseCanonicalPrimaryManualSave({
+    source: "manual_save",
+    persistReason: "publish_manual_save",
+    canonicalXml,
+    primaryCandidateXml: "",
+  }), true);
+});
+
+test("shouldUseCanonicalPrimaryManualSave returns false when normalized XML is equal", () => {
+  const canonicalXml = `<bpmn:userTask id="Task_1" name="KEEP"/>`;
+  const primaryCandidateXml = `<bpmn:userTask id="Task_1"\n name="KEEP" />`;
+  assert.equal(shouldUseCanonicalPrimaryManualSave({
+    source: "manual_save",
+    persistReason: "publish_manual_save",
+    canonicalXml,
+    primaryCandidateXml,
   }), false);
 });

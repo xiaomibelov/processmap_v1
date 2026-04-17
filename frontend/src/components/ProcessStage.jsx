@@ -24,6 +24,7 @@ import { createAiInputHash, executeAi } from "../features/ai/aiExecutor";
 import {
   shortSnapshotHash,
 } from "../features/process/bpmn/snapshots/bpmnSnapshots";
+import { buildManualSaveProjectionSyncPlan } from "../features/process/bpmn/save/manualSaveProjectionSync.js";
 import { parseAndProjectBpmnToInterview } from "../features/process/hooks/useInterviewProjection";
 import useBpmnSync from "../features/process/hooks/useBpmnSync";
 import useProcessOrchestrator from "../features/process/hooks/useProcessOrchestrator";
@@ -1042,6 +1043,7 @@ export default function ProcessStage({
     markInterviewAsSaved,
     handleInterviewChange,
     queueDiagramMutation: queueDiagramMutationRaw,
+    cancelPendingDiagramAutosave,
   } = useProcessOrchestrator({
     sid,
     isLocal,
@@ -1325,6 +1327,7 @@ export default function ProcessStage({
       let companionError = "";
       let publishInfo = "";
       if (!saved?.pending) {
+        const savedXml = toText(saved?.xml || draft?.bpmn_xml || "");
         const backendVersionSnapshot = asObject(saved?.bpmnVersionSnapshot);
         const normalizedBackendVersionSnapshot = normalizeBpmnVersionListItem(backendVersionSnapshot);
         const savedDiagramStateVersion = Number(saved?.diagramStateVersion);
@@ -1348,7 +1351,7 @@ export default function ProcessStage({
         const acceptedSnapshot = buildOwnerSnapshot({
           id: sid,
           session_id: sid,
-          bpmn_xml: toText(saved?.xml || draft?.bpmn_xml || ""),
+          bpmn_xml: savedXml,
           bpmn_xml_version: Number(
             normalizedBackendVersionSnapshot.revisionNumber
             || saved?.storedRev
@@ -1400,7 +1403,7 @@ export default function ProcessStage({
         lastSuccessfulPublishRef.current = {
           sessionId: sid,
           atMs: Date.now(),
-          xmlHash: fnv1aHex(String(saved?.xml || draft?.bpmn_xml || "")),
+          xmlHash: fnv1aHex(savedXml),
         };
         const shouldSyncCompanion = backendRevisionNumber > 0;
         if (shouldSyncCompanion) {
@@ -1409,13 +1412,85 @@ export default function ProcessStage({
             && companionBaseDiagramStateVersion > 0
           );
           if (hasCompanionBaseDiagramStateVersion) {
+            let nextCompanionBaseDiagramStateVersion = companionBaseDiagramStateVersion;
+            const manualProjectionPlan = buildManualSaveProjectionSyncPlan({
+              xmlText: savedXml,
+              draft,
+              projectionHelpers,
+            });
+            if (!manualProjectionPlan?.ok) {
+              companionError = shortErr(
+                manualProjectionPlan?.error
+                || "Не удалось подготовить projection sync после сохранения диаграммы.",
+              );
+            } else {
+              const projectionPatch = asObject(manualProjectionPlan.patch);
+              if (Object.keys(projectionPatch).length > 0) {
+                markInterviewAsSaved(
+                  manualProjectionPlan.nextInterview,
+                  manualProjectionPlan.nextNodes,
+                  draft?.nodes,
+                  manualProjectionPlan.nextEdges,
+                  draft?.edges,
+                );
+                onSessionSyncWithVersion?.({
+                  id: sid,
+                  session_id: sid,
+                  actors_derived: asArray(manualProjectionPlan.derivedActors),
+                  ...(projectionPatch.interview ? { interview: manualProjectionPlan.nextInterview } : {}),
+                  ...(projectionPatch.nodes ? { nodes: manualProjectionPlan.nextNodes } : {}),
+                  ...(projectionPatch.edges ? { edges: manualProjectionPlan.nextEdges } : {}),
+                  _sync_source: "manual_save_projection_sync",
+                });
+                if (!isLocal) {
+                  const syncPatchPayload = {
+                    ...projectionPatch,
+                    base_diagram_state_version: Math.round(companionBaseDiagramStateVersion),
+                  };
+                  const syncRes = await apiPatchSession(sid, syncPatchPayload);
+                  if (!syncRes?.ok) {
+                    companionError = shortErr(
+                      syncRes?.error
+                      || "Не удалось синхронизировать graph projection после сохранения BPMN.",
+                    );
+                  } else {
+                    const syncAckVersion = Number(
+                      syncRes?.session?.diagram_state_version
+                      ?? syncRes?.session?.diagramStateVersion,
+                    );
+                    if (Number.isFinite(syncAckVersion) && syncAckVersion > 0) {
+                      nextCompanionBaseDiagramStateVersion = Math.round(syncAckVersion);
+                      rememberDiagramStateVersion(nextCompanionBaseDiagramStateVersion, { sessionId: sid });
+                    }
+                    onSessionSyncWithVersion?.({
+                      ...(syncRes?.session && typeof syncRes.session === "object" ? syncRes.session : {}),
+                      id: sid,
+                      session_id: sid,
+                      actors_derived: asArray(manualProjectionPlan.derivedActors),
+                      _sync_source: "manual_save_projection_patch_ack",
+                    });
+                  }
+                }
+              }
+            }
+            if (!companionError) {
             const companionResult = await persistSavedSessionCompanion({
               source: "manual_save",
-              xml: toText(saved?.xml || draft?.bpmn_xml || ""),
+              xml: savedXml,
               savedAt: new Date().toISOString(),
-              storedRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
-              requestedBaseRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
-              baseDiagramStateVersion: companionBaseDiagramStateVersion,
+              storedRev: Number(
+                acceptedSnapshot?.bpmn_xml_version
+                || normalizedBackendVersionSnapshot.revisionNumber
+                || saved?.storedRev
+                || 0,
+              ),
+              requestedBaseRev: Number(
+                acceptedSnapshot?.bpmn_xml_version
+                || normalizedBackendVersionSnapshot.revisionNumber
+                || saved?.storedRev
+                || 0,
+              ),
+              baseDiagramStateVersion: nextCompanionBaseDiagramStateVersion,
               publishRevision: true,
               revisionSource: "publish_manual_save",
               authoritativeRevision: backendVersionSnapshot,
@@ -1425,6 +1500,7 @@ export default function ProcessStage({
             } else if (!publishInfo && asObject(companionResult?.revision).skipped === true) {
               publishInfo = "Черновик сохранён. Новая версия не создана: контент совпадает с последней.";
             }
+            }
           }
         } else {
           publishInfo = "Черновик сохранён. Новая версия не создана: нет изменений схемы.";
@@ -1432,6 +1508,7 @@ export default function ProcessStage({
         if (backendRevisionNumber > 0 && !publishInfo) {
           publishInfo = `Опубликована версия ${backendRevisionNumber}.`;
         }
+        cancelPendingDiagramAutosave?.();
       }
       setSaveDirtyHint(false);
       if (selectedElementId) {
