@@ -50,6 +50,7 @@ export default function TelemetryEventsFilters({
       activeFilters={[
         { label: "session_id", value: filters?.session_id },
         { label: "request_id", value: filters?.request_id },
+        { label: "correlation_id", value: filters?.correlation_id },
         { label: "user_id", value: filters?.user_id },
         { label: "org_id", value: filters?.org_id },
         { label: "runtime_id", value: filters?.runtime_id },
@@ -63,6 +64,7 @@ export default function TelemetryEventsFilters({
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <AdminSearchInput testId="telemetry-filter-session-id" value={toText(filters?.session_id)} onChange={(value) => setPatch({ session_id: value })} placeholder="session_id" />
         <AdminSearchInput testId="telemetry-filter-request-id" value={toText(filters?.request_id)} onChange={(value) => setPatch({ request_id: value })} placeholder="request_id" />
+        <AdminSearchInput testId="telemetry-filter-correlation-id" value={toText(filters?.correlation_id)} onChange={(value) => setPatch({ correlation_id: value })} placeholder="correlation_id" />
         <AdminSearchInput testId="telemetry-filter-user-id" value={toText(filters?.user_id)} onChange={(value) => setPatch({ user_id: value })} placeholder="user_id" />
         <AdminSearchInput testId="telemetry-filter-org-id" value={toText(filters?.org_id)} onChange={(value) => setPatch({ org_id: value })} placeholder="org_id" />
         <AdminSearchInput testId="telemetry-filter-runtime-id" value={toText(filters?.runtime_id)} onChange={(value) => setPatch({ runtime_id: value })} placeholder="runtime_id" />
