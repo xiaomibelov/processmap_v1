@@ -1298,7 +1298,7 @@ export default function ProcessStage({
     setDiagramMode(nextMode);
   }, []);
 
-  async function handleSaveCurrentTab() {
+  async function runManualSaveAction({ createRevision = false } = {}) {
     if (!hasSession || !isBpmnTab || isSwitchingTab || isFlushingTab || isManualSaveBusy) return;
     const truthOwner = ensureSessionWorkspaceTruthOwner();
     truthOwner?.saveSessionStart({ source: "manual_save" });
@@ -1306,11 +1306,12 @@ export default function ProcessStage({
     setInfoMsg("");
     setIsManualSaveBusy(true);
     try {
+      const persistReason = createRevision ? "publish_manual_save" : "manual_save";
       const saved = await bpmnSync.flushFromActiveTab(tab, {
         force: tab === "diagram",
         source: "manual_save",
         reason: "manual_save",
-        persistReason: "publish_manual_save",
+        persistReason,
       });
       if (!saved?.ok) {
         truthOwner?.saveSessionFailed({
@@ -1325,7 +1326,7 @@ export default function ProcessStage({
         return;
       }
       let companionError = "";
-      let publishInfo = "";
+      let saveInfo = "";
       if (!saved?.pending) {
         const savedXml = toText(saved?.xml || draft?.bpmn_xml || "");
         const backendVersionSnapshot = asObject(saved?.bpmnVersionSnapshot);
@@ -1474,39 +1475,57 @@ export default function ProcessStage({
               }
             }
             if (!companionError) {
-            const companionResult = await persistSavedSessionCompanion({
-              source: "manual_save",
-              xml: savedXml,
-              savedAt: new Date().toISOString(),
-              storedRev: Number(
-                acceptedSnapshot?.bpmn_xml_version
-                || normalizedBackendVersionSnapshot.revisionNumber
-                || saved?.storedRev
-                || 0,
-              ),
-              requestedBaseRev: Number(
-                acceptedSnapshot?.bpmn_xml_version
-                || normalizedBackendVersionSnapshot.revisionNumber
-                || saved?.storedRev
-                || 0,
-              ),
-              baseDiagramStateVersion: nextCompanionBaseDiagramStateVersion,
-              publishRevision: true,
-              revisionSource: "publish_manual_save",
-              authoritativeRevision: backendVersionSnapshot,
-            });
-            if (!companionResult?.ok) {
-              companionError = shortErr(companionResult?.error || "Не удалось синхронизировать companion metadata.");
-            } else if (!publishInfo && asObject(companionResult?.revision).skipped === true) {
-              publishInfo = "Черновик сохранён. Новая версия не создана: контент совпадает с последней.";
-            }
+              const companionResult = await persistSavedSessionCompanion({
+                source: "manual_save",
+                xml: savedXml,
+                savedAt: new Date().toISOString(),
+                storedRev: Number(
+                  acceptedSnapshot?.bpmn_xml_version
+                  || normalizedBackendVersionSnapshot.revisionNumber
+                  || saved?.storedRev
+                  || 0,
+                ),
+                requestedBaseRev: Number(
+                  acceptedSnapshot?.bpmn_xml_version
+                  || normalizedBackendVersionSnapshot.revisionNumber
+                  || saved?.storedRev
+                  || 0,
+                ),
+                baseDiagramStateVersion: (
+                  Number.isFinite(nextCompanionBaseDiagramStateVersion)
+                  && nextCompanionBaseDiagramStateVersion > 0
+                )
+                  ? Math.round(nextCompanionBaseDiagramStateVersion)
+                  : getBaseDiagramStateVersion(),
+                publishRevision: createRevision,
+                revisionComment: createRevision ? "Ревизия создана вручную" : "",
+                revisionSource: createRevision ? "publish_manual_save" : "manual_save",
+                authoritativeRevision: backendVersionSnapshot,
+              });
+              if (!companionResult?.ok) {
+                companionError = shortErr(companionResult?.error || "Не удалось синхронизировать companion metadata.");
+                saveInfo = createRevision
+                  ? "Сессия сохранена, но создание новой ревизии не подтверждено."
+                  : "Сессия сохранена.";
+              } else if (createRevision) {
+                const revisionInfo = asObject(companionResult?.revision);
+                saveInfo = revisionInfo.skipped === true
+                  ? "Новая ревизия не создана: сохранённых изменений нет."
+                  : "Создана новая ревизия.";
+              } else {
+                saveInfo = saved?.skipped === true
+                  ? "Сессия уже сохранена: изменений схемы нет."
+                  : "Сессия сохранена.";
+              }
             }
           }
         } else {
-          publishInfo = "Черновик сохранён. Новая версия не создана: нет изменений схемы.";
+          saveInfo = createRevision
+            ? "Новая ревизия не создана: сохранённых изменений нет."
+            : "Сессия уже сохранена: изменений схемы нет.";
         }
-        if (backendRevisionNumber > 0 && !publishInfo) {
-          publishInfo = `Опубликована версия ${backendRevisionNumber}.`;
+        if (!saveInfo && !companionError) {
+          saveInfo = createRevision ? "Создана новая ревизия." : "Сессия сохранена.";
         }
         cancelPendingDiagramAutosave?.();
       }
@@ -1518,7 +1537,7 @@ export default function ProcessStage({
         primarySaveOk: true,
         primarySavePending: saved?.pending === true,
         companionError,
-        publishInfo,
+        saveInfo,
       });
       if (successOutcomeUi.genErr) {
         setGenErr(successOutcomeUi.genErr);
@@ -1535,6 +1554,14 @@ export default function ProcessStage({
     } finally {
       setIsManualSaveBusy(false);
     }
+  }
+
+  async function handleSaveCurrentTab() {
+    await runManualSaveAction({ createRevision: false });
+  }
+
+  async function handleCreateRevisionAction() {
+    await runManualSaveAction({ createRevision: true });
   }
 
   // TODO(tech-debt): Review/LLM tabs are temporarily hidden from UI.
@@ -4001,7 +4028,7 @@ export default function ProcessStage({
       }
       setInfoMsg(
         `Автоисправление: ${applied} опер.${failed > 0 ? ` Ошибок: ${failed}.` : ""} `
-        + "Черновик обновлён; для новой ревизии используйте Save.",
+        + "Черновик обновлён; для новой ревизии используйте «Создать новую ревизию».",
       );
       setQualityAutoFixOpen(false);
     } catch (error) {
@@ -5333,6 +5360,7 @@ export default function ProcessStage({
     sid,
     saveDirtyHint: shellVm.shellProps.saveDirtyHint === true,
     handleSaveCurrentTab,
+    handleCreateRevisionAction,
     handleUndoAction,
     handleRedoAction,
     canUndo: diagramUndoRedoState.canUndo === true,
