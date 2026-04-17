@@ -77,7 +77,19 @@ class AdminErrorEventsRetrievalTest(unittest.TestCase):
             os.environ["FPC_DB_BACKEND"] = self.old_backend
         self.tmp.cleanup()
 
-    def _append(self, *, event_id: str, occurred_at: int, event_type: str, source: str, request_id: str = "", session_id: str = "", runtime_id: str = "", severity: str = "error"):
+    def _append(
+        self,
+        *,
+        event_id: str,
+        occurred_at: int,
+        event_type: str,
+        source: str,
+        request_id: str = "",
+        correlation_id: str = "",
+        session_id: str = "",
+        runtime_id: str = "",
+        severity: str = "error",
+    ):
         self.append_error_event(
             id=event_id,
             schema_version=1,
@@ -95,7 +107,7 @@ class AdminErrorEventsRetrievalTest(unittest.TestCase):
             runtime_id=runtime_id,
             tab_id="tab_timeline",
             request_id=request_id,
-            correlation_id="corr_timeline" if request_id else "",
+            correlation_id=correlation_id,
             app_version="test",
             git_sha="abc123",
             fingerprint=f"fp_{event_id}",
@@ -114,6 +126,7 @@ class AdminErrorEventsRetrievalTest(unittest.TestCase):
             event_type="api_failure",
             source="frontend",
             request_id="req_incident_1",
+            correlation_id="corr_incident_1",
             session_id="sess_timeline",
             runtime_id="rt_timeline",
         )
@@ -123,6 +136,17 @@ class AdminErrorEventsRetrievalTest(unittest.TestCase):
             event_type="backend_exception",
             source="backend",
             request_id="req_incident_1",
+            correlation_id="corr_incident_1",
+            session_id="sess_timeline",
+            runtime_id="",
+        )
+        self._append(
+            event_id="evt_backend_async",
+            occurred_at=115,
+            event_type="backend_async_exception",
+            source="backend",
+            request_id="",
+            correlation_id="corr_incident_1",
             session_id="sess_timeline",
             runtime_id="",
         )
@@ -132,6 +156,7 @@ class AdminErrorEventsRetrievalTest(unittest.TestCase):
             event_type="save_reload_anomaly",
             source="frontend",
             request_id="req_save_1",
+            correlation_id="corr_save_1",
             session_id="sess_timeline",
             runtime_id="rt_timeline",
         )
@@ -139,11 +164,32 @@ class AdminErrorEventsRetrievalTest(unittest.TestCase):
             event_id="evt_domain_invariant",
             occurred_at=300,
             event_type="domain_invariant_violation",
-            source="frontend",
+            source="backend",
             request_id="req_domain_1",
+            correlation_id="rpt_path_report_1",
             session_id="sess_timeline",
             runtime_id="rt_timeline",
             severity="warn",
+        )
+        self._append(
+            event_id="evt_path_report_async",
+            occurred_at=310,
+            event_type="backend_async_exception",
+            source="backend",
+            request_id="",
+            correlation_id="rpt_path_report_1",
+            session_id="sess_timeline",
+            runtime_id="",
+        )
+        self._append(
+            event_id="evt_sparse_no_correlation",
+            occurred_at=320,
+            event_type="backend_async_exception",
+            source="backend",
+            request_id="",
+            correlation_id="",
+            session_id="sess_timeline",
+            runtime_id="",
         )
         self._append(
             event_id="evt_other_session",
@@ -151,6 +197,7 @@ class AdminErrorEventsRetrievalTest(unittest.TestCase):
             event_type="api_failure",
             source="frontend",
             request_id="req_other",
+            correlation_id="corr_other",
             session_id="sess_other",
             runtime_id="rt_other",
         )
@@ -159,6 +206,7 @@ class AdminErrorEventsRetrievalTest(unittest.TestCase):
         params = {
             "session_id": "",
             "request_id": "",
+            "correlation_id": "",
             "user_id": "",
             "org_id": "",
             "runtime_id": "",
@@ -178,8 +226,19 @@ class AdminErrorEventsRetrievalTest(unittest.TestCase):
         out = self._query(session_id="sess_timeline")
         self.assertTrue(bool(out.get("ok")))
         items = out.get("items") or []
-        self.assertEqual([item.get("occurred_at") for item in items], [100, 110, 200, 300])
-        self.assertEqual([item.get("id") for item in items], ["evt_api_failure", "evt_backend_exception", "evt_save_reload", "evt_domain_invariant"])
+        self.assertEqual([item.get("occurred_at") for item in items], [100, 110, 115, 200, 300, 310, 320])
+        self.assertEqual(
+            [item.get("id") for item in items],
+            [
+                "evt_api_failure",
+                "evt_backend_exception",
+                "evt_backend_async",
+                "evt_save_reload",
+                "evt_domain_invariant",
+                "evt_path_report_async",
+                "evt_sparse_no_correlation",
+            ],
+        )
         self.assertEqual((out.get("timeline") or {}).get("deduped"), False)
         self.assertNotIn("forbidden-secret", json.dumps(out, ensure_ascii=False))
         self.assertEqual(((items[0].get("context_json") or {}).get("request_body") or {}).get("_redacted"), "payload")
@@ -191,6 +250,31 @@ class AdminErrorEventsRetrievalTest(unittest.TestCase):
         self.assertEqual([item.get("event_type") for item in items], ["api_failure", "backend_exception"])
         self.assertEqual([item.get("source") for item in items], ["frontend", "backend"])
         self.assertTrue(all(item.get("request_id") == "req_incident_1" for item in items))
+
+    def test_query_by_correlation_id_returns_raw_ordered_cross_type_timeline(self):
+        out = self._query(correlation_id="corr_incident_1")
+        self.assertTrue(bool(out.get("ok")))
+        self.assertEqual((out.get("filters") or {}).get("correlation_id"), "corr_incident_1")
+        items = out.get("items") or []
+        self.assertEqual(
+            [item.get("id") for item in items],
+            ["evt_api_failure", "evt_backend_exception", "evt_backend_async"],
+        )
+        self.assertEqual([item.get("occurred_at") for item in items], [100, 110, 115])
+        self.assertEqual(
+            [item.get("event_type") for item in items],
+            ["api_failure", "backend_exception", "backend_async_exception"],
+        )
+        self.assertTrue(all(item.get("correlation_id") == "corr_incident_1" for item in items))
+
+    def test_query_by_path_report_correlation_id_returns_related_rows(self):
+        out = self._query(correlation_id="rpt_path_report_1")
+        items = out.get("items") or []
+        self.assertEqual(
+            [item.get("id") for item in items],
+            ["evt_domain_invariant", "evt_path_report_async"],
+        )
+        self.assertEqual([item.get("occurred_at") for item in items], [300, 310])
 
     def test_event_id_endpoint_returns_exact_item(self):
         out = self.admin_error_event_detail("evt_backend_exception", self.request)
@@ -205,6 +289,7 @@ class AdminErrorEventsRetrievalTest(unittest.TestCase):
             self.viewer_request,
             session_id="sess_timeline",
             request_id="",
+            correlation_id="",
             user_id="",
             org_id="",
             runtime_id="",
@@ -240,6 +325,12 @@ class AdminErrorEventsRetrievalTest(unittest.TestCase):
         self.assertEqual(out.get("items"), [])
         self.assertEqual(out.get("count"), 0)
         self.assertEqual((out.get("page") or {}).get("total"), 0)
+
+    def test_sparse_rows_without_correlation_id_do_not_match_correlation_filter(self):
+        out = self._query(correlation_id="corr_missing")
+        self.assertTrue(bool(out.get("ok")))
+        self.assertEqual(out.get("items"), [])
+        self.assertEqual(out.get("count"), 0)
 
 
 if __name__ == "__main__":

@@ -19,10 +19,12 @@ export default function TelemetryEventDetailPanel({
   selectedEventId = "",
   loading = false,
   error = "",
+  onPivotCorrelationId,
   onClose,
 }) {
   const event = asObject(item);
   const id = toText(event?.id || selectedEventId);
+  const correlationId = toText(event?.correlation_id);
   if (!id) {
     return (
       <SectionCard title={ru.admin.telemetryPage.detail.title} subtitle={ru.admin.telemetryPage.detail.pickRow}>
@@ -76,7 +78,7 @@ export default function TelemetryEventDetailPanel({
           columnsClassName="md:grid-cols-2 xl:grid-cols-4"
           items={[
             { label: "request_id", value: toText(event?.request_id || "—") },
-            { label: "correlation_id", value: toText(event?.correlation_id || "—") },
+            { label: "correlation_id", value: correlationId || "—" },
             { label: "session_id", value: toText(event?.session_id || "—") },
             { label: "runtime_id", value: toText(event?.runtime_id || "—") },
             { label: "tab_id", value: toText(event?.tab_id || "—") },
@@ -85,6 +87,25 @@ export default function TelemetryEventDetailPanel({
             { label: "project_id", value: toText(event?.project_id || "—") },
           ]}
         />
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="mb-2 text-[10px] uppercase tracking-[0.18em] text-slate-400">{ru.admin.telemetryPage.detail.related}</div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              className="secondaryBtn h-9 min-h-0 rounded-xl px-3 py-0 text-xs disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => onPivotCorrelationId?.(correlationId)}
+              disabled={!correlationId}
+              data-testid="telemetry-pivot-correlation-id"
+            >
+              {ru.admin.telemetryPage.detail.sameCorrelation}
+            </button>
+            <span className="text-xs text-slate-500" data-testid="telemetry-pivot-correlation-caption">
+              {correlationId
+                ? `${ru.admin.telemetryPage.detail.correlationValuePrefix}${correlationId}`
+                : ru.admin.telemetryPage.detail.noCorrelation}
+            </span>
+          </div>
+        </div>
         <KeyValueGrid
           columnsClassName="md:grid-cols-2 xl:grid-cols-4"
           items={[
