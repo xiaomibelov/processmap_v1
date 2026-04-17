@@ -62,6 +62,7 @@ export function parseAdminRoute(pathnameRaw) {
     sessions: ru.admin.sections.sessions,
     jobs: ru.admin.sections.jobs,
     audit: ru.admin.sections.audit,
+    telemetry: ru.admin.sections.telemetry,
   };
   return {
     section,

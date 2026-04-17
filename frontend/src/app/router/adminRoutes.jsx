@@ -9,6 +9,7 @@ export const adminRoutes = [
   { path: "/admin/sessions/:sessionId", section: "sessions_detail" },
   { path: ADMIN_ROUTE_META.jobs.path, section: "jobs" },
   { path: ADMIN_ROUTE_META.audit.path, section: "audit" },
+  { path: ADMIN_ROUTE_META.telemetry.path, section: "telemetry" },
 ];
 
 export function resolveAdminRoute(pathname = "/admin/dashboard") {
@@ -19,4 +20,3 @@ export function resolveAdminRoute(pathname = "/admin/dashboard") {
     meta: ADMIN_ROUTE_META[section] || ADMIN_ROUTE_META.dashboard,
   };
 }
-

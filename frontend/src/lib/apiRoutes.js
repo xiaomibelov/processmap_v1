@@ -160,6 +160,8 @@ export const apiRoutes = {
     session: (sessionId) => `/api/admin/sessions/${encode(sessionId)}`,
     jobs: () => "/api/admin/jobs",
     audit: (params = {}) => withQuery("/api/admin/audit", params),
+    errorEvents: (params = {}) => withQuery("/api/admin/error-events", params),
+    errorEvent: (eventId) => `/api/admin/error-events/${encode(eventId)}`,
   },
   misc: {
     meta: () => "/api/meta",
