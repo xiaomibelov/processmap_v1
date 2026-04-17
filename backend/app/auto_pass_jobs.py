@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
+from .error_events.background import capture_backend_async_exception
 from .redis_client import get_client, runtime_status
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ _MEMORY_LOCK = threading.RLock()
 _WORKER_THREAD: Optional[threading.Thread] = None
 _WORKER_LOCK = threading.RLock()
 _WORKER_PROCESSOR: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None
+_EXPECTED_WORKER_FAILURE_CODES = {"AUTO_PASS_NO_SUCCESSFUL_VARIANTS", "LOCK_BUSY"}
 
 
 def _now_iso() -> str:
@@ -49,6 +51,37 @@ def _read_json(raw: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(payload, dict):
         return None
     return payload
+
+
+def _is_expected_worker_failure(exc: Exception) -> bool:
+    code = str(exc or "").strip().upper()
+    return code in _EXPECTED_WORKER_FAILURE_CODES
+
+
+def _capture_worker_processor_exception(exc: Exception, job_payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if _is_expected_worker_failure(exc):
+        return None
+    payload = job_payload if isinstance(job_payload, dict) else {}
+    job_id = str(payload.get("job_id") or "").strip()
+    run_id = str(payload.get("run_id") or "").strip()
+    return capture_backend_async_exception(
+        exc,
+        task_name="auto_pass_worker",
+        execution_scope="worker",
+        user_id=str(payload.get("user_id") or "").strip() or None,
+        org_id=str(payload.get("org_id") or "").strip() or None,
+        session_id=str(payload.get("session_id") or "").strip() or None,
+        request_id=str(payload.get("request_id") or "").strip() or None,
+        correlation_id=run_id or job_id or None,
+        context_json={
+            "job_id": job_id,
+            "run_id": run_id,
+            "mode": str(payload.get("mode") or "").strip(),
+            "max_variants": payload.get("max_variants"),
+            "max_steps": payload.get("max_steps"),
+            "max_visits_per_node": payload.get("max_visits_per_node"),
+        },
+    )
 
 
 def _write_redis_status(job_id: str, payload: Dict[str, Any]) -> bool:
@@ -147,6 +180,7 @@ def _worker_loop() -> None:
             )
         except Exception as exc:
             logger.exception("auto_pass_jobs: job failed job=%s", job_id)
+            _capture_worker_processor_exception(exc, job_payload)
             set_job_status(
                 job_id,
                 {
