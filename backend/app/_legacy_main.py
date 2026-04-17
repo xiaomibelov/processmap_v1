@@ -87,6 +87,7 @@ from .redis_client import runtime_status
 from .error_events import get_or_create_backend_request_id
 from .error_events.background import capture_backend_async_exception
 from .error_events.domain import capture_backend_domain_invariant_violation
+from .auto_pass_telemetry import capture_auto_pass_failed_state
 from .session_status import (
     SESSION_STATUS_SET as _SESSION_STATUS_SET,
     normalize_session_status as _normalize_session_status_base,
@@ -2695,6 +2696,43 @@ def _normalize_bpmn_meta(
     return out
 
 
+def _capture_persisted_auto_pass_failed_state(
+    sess: Session,
+    *,
+    request: Request = None,
+    route: str = "",
+    org_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    bpmn_meta = _normalize_bpmn_meta(getattr(sess, "bpmn_meta", {}))
+    auto_pass = bpmn_meta.get("auto_pass_v1") if isinstance(bpmn_meta, dict) else {}
+    if not isinstance(auto_pass, dict) or str(auto_pass.get("status") or "").strip().lower() != "failed":
+        return None
+    req_id: Optional[str] = None
+    if request is not None:
+        req_id, _ = get_or_create_backend_request_id(request)
+    auth_user = _request_auth_user(request) if request is not None else {}
+    actor_id = str(user_id or "").strip()
+    if not actor_id and isinstance(auth_user, dict):
+        actor_id = str(auth_user.get("id") or "").strip()
+    actor_id = actor_id or str(getattr(sess, "updated_by", "") or getattr(sess, "created_by", "") or "").strip()
+    oid = str(org_id or getattr(sess, "org_id", "") or get_default_org_id()).strip()
+    sid = str(getattr(sess, "id", "") or "").strip()
+    return capture_auto_pass_failed_state(
+        auto_pass,
+        session_id=sid or None,
+        project_id=str(getattr(sess, "project_id", "") or "").strip() or None,
+        user_id=actor_id or None,
+        org_id=oid or None,
+        route=route or (f"/api/sessions/{sid}" if sid else "/api/sessions/{session_id}"),
+        request_id=req_id,
+        run_id=str(auto_pass.get("run_id") or "").strip() or None,
+        job_id=str(auto_pass.get("job_id") or "").strip() or None,
+        operation="auto_pass_persisted_state",
+        dedupe=True,
+    )
+
+
 def _enforce_gateway_tier_constraints(
     flow_meta: Dict[str, Dict[str, Any]],
     *,
@@ -3547,6 +3585,7 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
     handled = False
     need_recompute = False
     publish_requested = False
+    auto_pass_state_write_requested = False
 
     if "title" in data and data["title"] is not None:
         if not _can_edit_workspace(role, is_admin=effective_is_admin):
@@ -3654,6 +3693,7 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
         )
         incoming_meta = data.get("bpmn_meta")
         if isinstance(incoming_meta, dict):
+            auto_pass_state_write_requested = "auto_pass_v1" in incoming_meta
             raw_bpmn_meta = {
                 **current_meta,
                 **incoming_meta,
@@ -3715,6 +3755,14 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
             actor_label=_resolve_actor_label_from_user(user, user_id),
         )
     st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
+    if auto_pass_state_write_requested:
+        _capture_persisted_auto_pass_failed_state(
+            sess,
+            request=request,
+            route=f"/api/sessions/{session_id}",
+            org_id=oid,
+            user_id=user_id,
+        )
 
     if publish_requested:
         interview_pending = dict(getattr(sess, "interview", {}) or {})
@@ -3875,6 +3923,10 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
     flow_ids = flow_ctx.get("flow_ids")
     node_ids = flow_ctx.get("node_ids")
     raw_bpmn_meta = data.get("bpmn_meta") if data.get("bpmn_meta") is not None else getattr(sess, "bpmn_meta", {})
+    auto_pass_state_write_requested = (
+        isinstance(data.get("bpmn_meta"), dict)
+        and "auto_pass_v1" in data.get("bpmn_meta")
+    )
     normalized_meta = _normalize_bpmn_meta(
         raw_bpmn_meta,
         allowed_flow_ids=flow_ids if sess_xml.strip() else None,
@@ -3895,6 +3947,14 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
         actor_label=_resolve_actor_label_from_user(user, user_id),
     )
     st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
+    if auto_pass_state_write_requested:
+        _capture_persisted_auto_pass_failed_state(
+            sess,
+            request=request,
+            route=f"/api/sessions/{session_id}",
+            org_id=oid,
+            user_id=user_id,
+        )
     _audit_log_safe(
         request,
         org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
@@ -6039,8 +6099,10 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
             allowed_flow_ids=flow_ids,
             allowed_node_ids=node_ids,
         )
+        auto_pass_state_write_requested = False
         if isinstance(inp.bpmn_meta, dict):
             incoming_meta = inp.bpmn_meta
+            auto_pass_state_write_requested = "auto_pass_v1" in incoming_meta
             incoming_hybrid_layer = incoming_meta.get("hybrid_layer_by_element_id")
             current_hybrid_layer = current_meta.get("hybrid_layer_by_element_id", {})
             if isinstance(incoming_hybrid_layer, dict):
@@ -6121,6 +6183,14 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
             actor_label=_resolve_actor_label_from_user(user, user_id),
         )
         st.save(s, user_id=user_id, org_id=oid_locked, is_admin=True)
+        if auto_pass_state_write_requested:
+            _capture_persisted_auto_pass_failed_state(
+                s,
+                request=request,
+                route=f"/api/sessions/{session_id}/bpmn",
+                org_id=oid_locked,
+                user_id=user_id,
+            )
         _invalidate_session_caches(s, session_id=session_id, org_id=getattr(s, "org_id", "") or get_default_org_id())
         out = {
             "ok": True,
