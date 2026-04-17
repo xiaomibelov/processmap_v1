@@ -16,6 +16,7 @@ test("apiAdminListErrorEvents: requests admin error-events list with filter quer
     };
     const out = await apiAdminListErrorEvents({
       request_id: "req_1",
+      correlation_id: "corr_1",
       session_id: "sess_1",
       runtime_id: "rt_1",
       event_type: "backend_exception",
@@ -33,6 +34,7 @@ test("apiAdminListErrorEvents: requests admin error-events list with filter quer
     const url = new URL(calls[0].url, "http://local");
     assert.equal(url.pathname, "/api/admin/error-events");
     assert.equal(url.searchParams.get("request_id"), "req_1");
+    assert.equal(url.searchParams.get("correlation_id"), "corr_1");
     assert.equal(url.searchParams.get("session_id"), "sess_1");
     assert.equal(url.searchParams.get("runtime_id"), "rt_1");
     assert.equal(url.searchParams.get("event_type"), "backend_exception");

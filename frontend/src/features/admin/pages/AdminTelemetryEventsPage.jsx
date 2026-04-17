@@ -34,6 +34,7 @@ export default function AdminTelemetryEventsPage({
   onFiltersChange,
   onFiltersReset,
   onOpenDetail,
+  onPivotCorrelationId,
   onCloseDetail,
 }) {
   const rows = asArray(payload?.items);
@@ -55,6 +56,7 @@ export default function AdminTelemetryEventsPage({
         selectedEventId={selectedEventId}
         loading={detailLoading}
         error={detailError}
+        onPivotCorrelationId={onPivotCorrelationId}
         onClose={onCloseDetail}
       />
     </AdminPageContainer>

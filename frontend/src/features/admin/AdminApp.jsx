@@ -22,7 +22,12 @@ import AdminProjectsPage from "./pages/AdminProjectsPage";
 import AdminSessionDetailPage from "./pages/AdminSessionDetailPage";
 import AdminSessionsPage from "./pages/AdminSessionsPage";
 import AdminTelemetryEventsPage from "./pages/AdminTelemetryEventsPage";
-import { buildTelemetrySearchPatch, DEFAULT_TELEMETRY_FILTERS, parseTelemetryFiltersFromSearch } from "./utils/adminTelemetryQuery";
+import {
+  buildTelemetryCorrelationPivotFilters,
+  buildTelemetrySearchPatch,
+  DEFAULT_TELEMETRY_FILTERS,
+  parseTelemetryFiltersFromSearch,
+} from "./utils/adminTelemetryQuery";
 import { mergeSearchParams, pageToOffset, parsePage, parsePageSize, rangeToTsFrom } from "./utils/adminQuery";
 import { ru } from "../../shared/i18n/ru";
 
@@ -329,6 +334,19 @@ export default function AdminApp({
             const id = toText(eventId);
             if (!id) return;
             updateSearchState({ event_id: id }, { replace: false });
+          }}
+          onPivotCorrelationId={(correlationId) => {
+            const value = toText(correlationId);
+            if (!value) return;
+            updateSearchState(
+              {
+                ...buildTelemetrySearchPatch(buildTelemetryCorrelationPivotFilters(telemetryFilters, value)),
+                event_id: "",
+                page: "",
+                page_size: "",
+              },
+              { replace: false, resetPage: false },
+            );
           }}
           onCloseDetail={() => updateSearchState({ event_id: "" }, { replace: false })}
         />
