@@ -2,7 +2,10 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import { apiDeleteBpmnXml, apiGetBpmnXml, apiPutBpmnXml } from "../../lib/api/bpmnApi";
 import { apiPatchSession } from "../../lib/api/sessionApi";
 import { traceProcess } from "../../features/process/lib/processDebugTrace";
-import { shouldCanonicalRePersistManualSave } from "../../features/process/bpmn/save/manualSaveCanonicalXml";
+import {
+  shouldCanonicalRePersistManualSave,
+  shouldUseCanonicalPrimaryManualSave,
+} from "../../features/process/bpmn/save/manualSaveCanonicalXml";
 import { createBpmnWiring } from "../../features/process/bpmn/stage/wiring/bpmnWiring";
 import * as decorManager from "../../features/process/bpmn/stage/decor/decorManager";
 import * as viewportRecovery from "../../features/process/bpmn/stage/viewport/viewportRecovery";
@@ -4686,6 +4689,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     const force = options?.force === true;
     const source = String(options?.source || (force ? "tab_switch" : "autosave")).trim() || "autosave";
     const persistReason = String(options?.persistReason || source).trim() || source;
+    const requestedXmlOverride = String(options?.xmlOverride || "");
     const trigger = String(options?.trigger || "").trim() || "manual";
     const requestedSaveOwner = toText(options?.saveOwner || options?.owner).toLowerCase();
     const isTemplateApplySave = requestedSaveOwner === "template_apply" || source === "template_apply" || trigger === "template_apply";
@@ -4781,7 +4785,34 @@ const BpmnStage = forwardRef(function BpmnStage({
         }
       }
 
-      const flushed = await coordinator.flushSave(persistReason, { force, trigger, saveOwner: resolvedSaveOwner });
+      const currentState = bpmnStoreRef.current?.getState?.() || {};
+      const primaryCandidateXml = String(currentState.xml || fallbackXml || "");
+      const shouldUseCanonicalPrimaryPersist = shouldUseCanonicalPrimaryManualSave({
+        source,
+        persistReason,
+        canonicalXml: preFlushXml,
+        primaryCandidateXml,
+      });
+      if (shouldUseCanonicalPrimaryPersist) {
+        publishE2ESaveProbe({
+          sid,
+          source,
+          persistReason,
+          manualCanonicalPrimaryPersist: true,
+          manualCanonicalPrimaryCandidateXml: primaryCandidateXml,
+          manualCanonicalPrimaryXml: preFlushXml,
+        });
+      }
+
+      const primaryXmlOverride = requestedXmlOverride.trim()
+        ? requestedXmlOverride
+        : (shouldUseCanonicalPrimaryPersist ? preFlushXml : "");
+      const flushed = await coordinator.flushSave(persistReason, {
+        force,
+        trigger,
+        saveOwner: resolvedSaveOwner,
+        xmlOverride: primaryXmlOverride,
+      });
       const nextState = bpmnStoreRef.current?.getState?.() || {};
       const rawOut = String(flushed?.xml || nextState.xml || fallbackXml || "");
       const out = transformPersistedXml(rawOut);
@@ -4883,10 +4914,13 @@ const BpmnStage = forwardRef(function BpmnStage({
           : null
       );
 
+      const canonicalComparisonXml = shouldUseCanonicalPrimaryPersist
+        ? transformPersistedXml(preFlushXml)
+        : preFlushXml;
       if (shouldCanonicalRePersistManualSave({
         source,
         persistReason,
-        canonicalXml: preFlushXml,
+        canonicalXml: canonicalComparisonXml,
         persistedXml: finalOut,
       })) {
         const canonicalOut = transformPersistedXml(preFlushXml);

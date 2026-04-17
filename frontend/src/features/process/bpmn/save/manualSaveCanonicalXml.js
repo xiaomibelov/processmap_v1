@@ -16,6 +16,20 @@ function isManualSaveSource(sourceRaw = "", persistReasonRaw = "") {
     || persistReason.includes("publish_manual_save");
 }
 
+export function shouldUseCanonicalPrimaryManualSave({
+  source = "",
+  persistReason = "",
+  canonicalXml = "",
+  primaryCandidateXml = "",
+} = {}) {
+  if (!isManualSaveSource(source, persistReason)) return false;
+  const canonicalNormalized = normalizeXmlForSaveComparison(canonicalXml);
+  const primaryCandidateNormalized = normalizeXmlForSaveComparison(primaryCandidateXml);
+  if (!canonicalNormalized) return false;
+  if (!primaryCandidateNormalized) return true;
+  return canonicalNormalized !== primaryCandidateNormalized;
+}
+
 export function shouldCanonicalRePersistManualSave({
   source = "",
   persistReason = "",
