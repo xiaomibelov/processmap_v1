@@ -17,6 +17,8 @@ function joinUrl(path) {
   return `${API_BASE}/${p}`;
 }
 
+export { API_BASE, joinUrl, readApiBase };
+
 export function normalizeApiErrorPayload(payload) {
   if (!payload) return "";
   if (typeof payload === "string") return payload;
@@ -55,6 +57,7 @@ export async function apiFetch({
   auth = true,
   orgId = "",
   withOrgHeader = true,
+  requestId = "",
 }) {
   const endpoint = String(path || "");
   const requestMethod = String(method || "GET").toUpperCase();
@@ -68,6 +71,9 @@ export async function apiFetch({
   }
   if (withOrgHeader && endpoint.startsWith("/api") && orgId && !requestHeaders.has("X-Org-Id")) {
     requestHeaders.set("X-Org-Id", String(orgId || "").trim());
+  }
+  if (endpoint.startsWith("/api") && requestId && !requestHeaders.has("X-Client-Request-Id")) {
+    requestHeaders.set("X-Client-Request-Id", String(requestId || "").trim());
   }
   if (hasBody && isPlainObject(requestBody)) {
     if (!requestHeaders.has("Content-Type")) requestHeaders.set("Content-Type", "application/json");
@@ -101,6 +107,7 @@ export async function apiFetch({
       request_url: url,
       request_method: requestMethod,
       response_text: "",
+      request_id: String(requestId || "").trim(),
     };
   }
 
@@ -126,6 +133,7 @@ export async function apiFetch({
       endpoint,
       url,
       response_text: text,
+      request_id: String(requestId || "").trim(),
     };
   }
 
@@ -137,6 +145,7 @@ export async function apiFetch({
     method: requestMethod,
     endpoint,
     url,
+    request_id: String(requestId || "").trim(),
   };
 }
 

@@ -1,5 +1,6 @@
 import { apiFetch, normalizeApiErrorPayload } from "./apiClient.js";
 import { apiRoutes } from "./apiRoutes.js";
+import { createClientRequestId, reportApiFailureEvent } from "../features/telemetry/telemetryClient.js";
 
 // Single source of truth for API calls (FPC)
 const ACCESS_TOKEN_KEY = "fpc_auth_access_token";
@@ -135,6 +136,15 @@ export function okOrError(r) {
           : (marker.includes("required") || marker.includes("missing") || marker.includes("invalid"))
             ? 422
             : (r.status || 200);
+    void reportApiFailureEvent({
+      method: r.method || "GET",
+      endpoint: r.endpoint || "",
+      url: r.url || "",
+      status: inferredStatus,
+      requestId: String(r.request_id || ""),
+      error: errText,
+      errorName: "ok_error_payload",
+    });
     return {
       ok: false,
       status: inferredStatus,
@@ -145,6 +155,7 @@ export function okOrError(r) {
       url: r.url,
       text: r.text,
       response_text: r.response_text || r.text,
+      request_id: r.request_id || "",
     };
   }
   return r;
@@ -262,6 +273,7 @@ async function refreshAccessTokenLocked(meta = {}) {
 
 async function request(path, opts = {}) {
   const requestId = Number(opts.__requestId || (++requestSeq));
+  const clientRequestId = String(opts.__clientRequestId || createClientRequestId("api"));
   const authAttempts = Number(opts.__authAttempts || 0);
   const endpoint = String(path || "");
   const method = String(opts.method || "GET").toUpperCase();
@@ -278,6 +290,7 @@ async function request(path, opts = {}) {
     auth: opts.auth !== false,
     orgId,
     withOrgHeader: true,
+    requestId: clientRequestId,
   });
 
   if (
@@ -315,6 +328,7 @@ async function request(path, opts = {}) {
           __didRetryAuth: true,
           __authAttempts: authAttempts + 1,
           __requestId: requestId,
+          __clientRequestId: clientRequestId,
         });
       }
       logAuthTrace("refresh_chain_failed", {
@@ -333,6 +347,20 @@ async function request(path, opts = {}) {
       authAttempts,
     });
   }
+  if (!res.ok && opts.telemetry !== false && String(endpoint || "") !== String(apiRoutes.misc.telemetryErrorEvents())) {
+    void reportApiFailureEvent({
+      method,
+      endpoint,
+      url: res?.url || "",
+      status: Number(res?.status || 0),
+      requestId: String(res?.request_id || clientRequestId || ""),
+      aborted: res?.aborted === true,
+      error: normalizeApiErrorPayload(res?.data) || String(res?.error || "request_failed"),
+      errorName: String(res?.error_name || ""),
+      authAttempts,
+    });
+  }
+  res.request_id = String(res?.request_id || clientRequestId || "");
   return res;
 }
 
