@@ -10,6 +10,7 @@ function toInt(value, fallback = 0) {
 export const TELEMETRY_EVENT_FILTER_KEYS = [
   "session_id",
   "request_id",
+  "correlation_id",
   "user_id",
   "org_id",
   "runtime_id",
@@ -26,6 +27,7 @@ export const TELEMETRY_LIMIT_MAX = 100;
 export const DEFAULT_TELEMETRY_FILTERS = {
   session_id: "",
   request_id: "",
+  correlation_id: "",
   user_id: "",
   org_id: "",
   runtime_id: "",
@@ -98,6 +100,18 @@ export function buildTelemetrySearchPatch(filtersRaw = {}) {
   out.order = order === "asc" ? "" : order;
   out.event_id = toText(filters.event_id);
   return out;
+}
+
+export function buildTelemetryCorrelationPivotFilters(filtersRaw = {}, correlationIdRaw = "") {
+  const filters = { ...DEFAULT_TELEMETRY_FILTERS, ...(filtersRaw || {}) };
+  return {
+    ...DEFAULT_TELEMETRY_FILTERS,
+    org_id: toText(filters.org_id),
+    limit: normalizeTelemetryLimit(filters.limit),
+    order: normalizeTelemetryOrder(filters.order),
+    correlation_id: toText(correlationIdRaw),
+    event_id: "",
+  };
 }
 
 export function hasTelemetryFilterValue(filtersRaw = {}) {
