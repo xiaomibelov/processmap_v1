@@ -167,6 +167,7 @@ export const apiRoutes = {
     meta: () => "/api/meta",
     glossaryAdd: () => "/api/glossary/add",
     inviteAccept: () => "/api/invites/accept",
+    telemetryErrorEvents: () => "/api/telemetry/error-events",
   },
 };
 

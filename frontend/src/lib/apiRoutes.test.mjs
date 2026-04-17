@@ -52,7 +52,11 @@ test("apiRoutes: generated sample URLs do not have trailing slash variants", () 
 });
 
 test("api.js static guard: no literal /api strings and no endpoint fanout arrays", () => {
-  const apiJsPath = path.resolve(process.cwd(), "frontend/src/lib/api.js");
+  const apiJsPath = [
+    path.resolve(process.cwd(), "src/lib/api.js"),
+    path.resolve(process.cwd(), "frontend/src/lib/api.js"),
+  ].find((candidate) => fs.existsSync(candidate));
+  assert.ok(apiJsPath, "api.js must be reachable from repo root or frontend cwd");
   const src = fs.readFileSync(apiJsPath, "utf8");
 
   assert.equal(/["'`]\/api\//.test(src), false, "api.js must use apiRoutes (no literal /api strings)");

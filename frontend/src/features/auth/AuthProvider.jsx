@@ -11,6 +11,7 @@ import {
   getAccessToken,
   onAuthFailure,
 } from "../../lib/api";
+import { setTelemetryUserContext } from "../telemetry/telemetryClient.js";
 
 const AuthContext = createContext(null);
 
@@ -139,6 +140,13 @@ export function AuthProvider({ children }) {
       unsub();
     };
   }, [applyAnonymous, hydrateUser]);
+
+  useEffect(() => {
+    setTelemetryUserContext({
+      userId: String(user?.id || "").trim(),
+      orgId: String(activeOrgId || "").trim(),
+    });
+  }, [activeOrgId, user?.id]);
 
   const login = useCallback(async (email, password) => {
     const loginRes = await apiAuthLogin(email, password);

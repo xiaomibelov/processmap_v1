@@ -9,6 +9,17 @@ import {
   setActiveOrgId,
 } from "./api.js";
 
+function isTelemetryEventUrl(input) {
+  return String(input || "").includes("/api/telemetry/error-events");
+}
+
+function telemetryAcceptedResponse() {
+  return new Response(JSON.stringify({ ok: true }), {
+    status: 201,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 test("apiListPathReportVersions: returns 404 when path reports endpoint is unavailable", async () => {
   const prevFetch = globalThis.fetch;
   try {
@@ -49,7 +60,9 @@ test("apiCreatePathReportVersion: does not fallback on 504 (fallback only on 404
   const calls = [];
   try {
     globalThis.fetch = async (input) => {
-      calls.push(String(input || ""));
+      const url = String(input || "");
+      if (isTelemetryEventUrl(url)) return telemetryAcceptedResponse();
+      calls.push(url);
       return new Response("<html>504 Gateway Time-out</html>", {
         status: 504,
         headers: { "Content-Type": "text/html" },
@@ -84,7 +97,9 @@ test("apiListPathReportVersions: does not fallback on 504 (fallback only on 404/
   const calls = [];
   try {
     globalThis.fetch = async (input) => {
-      calls.push(String(input || ""));
+      const url = String(input || "");
+      if (isTelemetryEventUrl(url)) return telemetryAcceptedResponse();
+      calls.push(url);
       return new Response("<html>504 Gateway Time-out</html>", {
         status: 504,
         headers: { "Content-Type": "text/html" },
@@ -119,7 +134,9 @@ test("apiGetReportVersion: uses canonical /api/reports endpoint and stops on 404
   const calls = [];
   try {
     globalThis.fetch = async (input) => {
-      calls.push(String(input || ""));
+      const url = String(input || "");
+      if (isTelemetryEventUrl(url)) return telemetryAcceptedResponse();
+      calls.push(url);
       return new Response(JSON.stringify({ detail: "Not Found" }), {
         status: 404,
         headers: { "Content-Type": "application/json" },
@@ -141,7 +158,9 @@ test("apiGetReportVersion: treats ok+not found payload as 404", async () => {
   try {
     setActiveOrgId("", { persist: false });
     globalThis.fetch = async (input) => {
-      calls.push(String(input || ""));
+      const url = String(input || "");
+      if (isTelemetryEventUrl(url)) return telemetryAcceptedResponse();
+      calls.push(url);
       return new Response(JSON.stringify({ error: "not found" }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -158,14 +177,15 @@ test("apiGetReportVersion: treats ok+not found payload as 404", async () => {
   }
 });
 
-test("apiGetReportVersion: uses scoped canonical endpoint, then legacy fallback, then /api/reports", async () => {
+test("apiGetReportVersion: uses scoped canonical endpoint, then /api/reports", async () => {
   const prevFetch = globalThis.fetch;
   const calls = [];
   try {
     globalThis.fetch = async (input) => {
       const url = String(input || "");
+      if (isTelemetryEventUrl(url)) return telemetryAcceptedResponse();
       calls.push(url);
-      if (calls.length < 3) {
+      if (calls.length < 2) {
         return new Response(JSON.stringify({ detail: "Not Found" }), {
           status: 404,
           headers: { "Content-Type": "application/json" },
@@ -180,8 +200,7 @@ test("apiGetReportVersion: uses scoped canonical endpoint, then legacy fallback,
     assert.equal(out.ok, true);
     assert.equal((out.report || {}).id, "rpt_scoped");
     assert.match(calls[0], /\/api\/sessions\/sess_1\/paths\/primary\/reports\/rpt_scoped$/);
-    assert.match(calls[1], /\/api\/sessions\/sess_1\/path\/primary\/reports\/rpt_scoped$/);
-    assert.match(calls[2], /\/api\/reports\/rpt_scoped$/);
+    assert.match(calls[1], /\/api\/reports\/rpt_scoped$/);
   } finally {
     globalThis.fetch = prevFetch;
   }
