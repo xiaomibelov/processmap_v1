@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from .. import _legacy_main
 from ..auto_pass_engine import compute_auto_pass_precheck, compute_auto_pass_v1
+from ..auto_pass_telemetry import capture_auto_pass_failed_state
 from ..auto_pass_jobs import (
     enqueue_job,
     ensure_worker_running,
@@ -17,7 +18,6 @@ from ..auto_pass_jobs import (
     set_job_status,
 )
 from ..error_events import get_or_create_backend_request_id
-from ..error_events.domain import capture_backend_domain_invariant_violation
 from ..redis_client import runtime_status
 from ..redis_lock import acquire_session_lock
 
@@ -139,62 +139,23 @@ def _mark_auto_pass_running(
         lock.release()
 
 
-def _warning_codes(result: Dict[str, Any]) -> list[str]:
-    out: list[str] = []
-    seen: set[str] = set()
-    for item in result.get("warnings") or []:
-        code = ""
-        if isinstance(item, dict):
-            code = str(item.get("code") or "").strip()
-        else:
-            code = str(item or "").strip()
-        if not code or code in seen:
-            continue
-        seen.add(code)
-        out.append(code)
-    return out[:20]
-
-
 def _emit_auto_pass_domain_anomaly(result: Dict[str, Any], job_payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     data = result if isinstance(result, dict) else {}
-    if str(data.get("status") or "").strip().lower() != "failed":
-        return None
     payload = job_payload if isinstance(job_payload, dict) else {}
     session_id = str(payload.get("session_id") or "").strip()
-    error_code = str(data.get("error_code") or "AUTO_PASS_FAILED").strip() or "AUTO_PASS_FAILED"
-    run_id = str(data.get("run_id") or payload.get("run_id") or "").strip()
-    job_id = str(payload.get("job_id") or "").strip()
-    summary = data.get("summary") if isinstance(data.get("summary"), dict) else {}
-    failed_reasons = summary.get("failed_reasons") if isinstance(summary.get("failed_reasons"), dict) else {}
-    limits = data.get("limits") if isinstance(data.get("limits"), dict) else _normalize_limits(payload)
-    return capture_backend_domain_invariant_violation(
-        domain="auto_pass",
-        invariant_name=error_code,
-        message=f"AutoPass final semantic failure: {error_code}",
-        severity="error",
+    return capture_auto_pass_failed_state(
+        data,
         user_id=str(payload.get("user_id") or "").strip() or None,
         org_id=str(payload.get("org_id") or "").strip() or None,
         session_id=session_id or None,
         project_id=str(payload.get("project_id") or "").strip() or None,
         route=f"/api/sessions/{session_id}/auto-pass" if session_id else "/api/sessions/{session_id}/auto-pass",
         request_id=str(payload.get("request_id") or "").strip() or None,
-        correlation_id=run_id or job_id or None,
-        context_json={
-            "operation": "auto_pass_run",
-            "job_id": job_id,
-            "run_id": run_id,
-            "error_code": error_code,
-            "graph_hash": str(data.get("graph_hash") or "").strip(),
-            "limits": limits if isinstance(limits, dict) else {},
-            "summary": {
-                "total_variants": int(summary.get("total_variants") or 0),
-                "total_variants_done": int(summary.get("total_variants_done") or 0),
-                "total_variants_failed": int(summary.get("total_variants_failed") or 0),
-                "failed_reasons": failed_reasons,
-                "truncated": bool(summary.get("truncated")),
-            },
-            "warning_codes": _warning_codes(data),
-        },
+        run_id=str(payload.get("run_id") or "").strip() or None,
+        job_id=str(payload.get("job_id") or "").strip() or None,
+        operation="auto_pass_run",
+        limits_fallback=_normalize_limits(payload),
+        dedupe=True,
     )
 
 

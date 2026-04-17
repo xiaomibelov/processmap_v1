@@ -188,6 +188,85 @@ class BackendDomainAnomalyTelemetryTest(unittest.TestCase):
         self.assertIsNone(out)
         self.assertEqual(self._domain_rows(), [])
 
+    def test_persisted_auto_pass_failed_state_from_session_patch_emits_once(self):
+        from app._legacy_main import UpdateSessionIn, get_storage, patch_session
+        from app.storage import get_default_org_id
+
+        st = get_storage()
+        org_id = get_default_org_id()
+        sid = st.create(
+            title="auto pass persisted failure",
+            project_id="proj_persisted_auto_pass",
+            user_id="user_persisted_auto_pass",
+            org_id=org_id,
+        )
+        result = self._failed_result()
+        result["run_id"] = "run_persisted_auto_pass"
+        result["error_message"] = "secret persisted message"
+
+        patched = patch_session(
+            sid,
+            UpdateSessionIn(bpmn_meta={"auto_pass_v1": result}),
+            request=None,
+        )
+
+        self.assertEqual((patched.get("bpmn_meta") or {}).get("auto_pass_v1", {}).get("status"), "failed")
+        rows = self._domain_rows()
+        self.assertEqual(len(rows), 1)
+        stored = rows[0]
+        self.assertEqual(stored.get("event_type"), "domain_invariant_violation")
+        self.assertEqual(stored.get("correlation_id"), "run_persisted_auto_pass")
+        self.assertEqual(stored.get("session_id"), sid)
+        self.assertEqual(stored.get("project_id"), "proj_persisted_auto_pass")
+        self.assertEqual(stored.get("user_id"), "user_persisted_auto_pass")
+        self.assertEqual(stored.get("org_id"), org_id)
+        self.assertEqual(stored.get("route"), f"/api/sessions/{sid}")
+        context = stored.get("context_json") or {}
+        self.assertEqual(context.get("domain"), "auto_pass")
+        self.assertEqual(context.get("operation"), "auto_pass_persisted_state")
+        self.assertEqual(context.get("run_id"), "run_persisted_auto_pass")
+        self.assertEqual(context.get("error_code"), "NO_COMPLETE_PATH_TO_END")
+        self.assertNotIn("secret persisted message", json.dumps(stored, ensure_ascii=False))
+
+        patch_session(
+            sid,
+            UpdateSessionIn(bpmn_meta={"auto_pass_v1": result}),
+            request=None,
+        )
+        self.assertEqual(len(self._domain_rows()), 1)
+
+    def test_persisted_auto_pass_done_state_does_not_emit_anomaly_noise(self):
+        from app._legacy_main import UpdateSessionIn, get_storage, patch_session
+
+        st = get_storage()
+        sid = st.create(title="auto pass persisted success", project_id="proj_done_auto_pass")
+        patch_session(
+            sid,
+            UpdateSessionIn(
+                bpmn_meta={
+                    "auto_pass_v1": {
+                        "schema_version": "auto_pass_v1.1",
+                        "status": "done",
+                        "run_id": "run_persisted_done",
+                        "summary": {"total_variants": 1, "total_variants_done": 1, "total_variants_failed": 0},
+                        "variants": [
+                            {
+                                "variant_id": "V001",
+                                "status": "done",
+                                "end_reached": True,
+                                "end_event_id": "End_1",
+                                "task_steps": [],
+                                "gateway_choices": [],
+                            }
+                        ],
+                    }
+                }
+            ),
+            request=None,
+        )
+
+        self.assertEqual(self._domain_rows(), [])
+
     def test_request_path_backend_exception_taxonomy_is_not_changed(self):
         from app.error_events import build_backend_exception_event
 
