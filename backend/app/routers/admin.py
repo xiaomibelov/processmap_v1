@@ -1182,6 +1182,7 @@ def admin_error_events(
     request: Request,
     session_id: str = Query(default=""),
     request_id: str = Query(default=""),
+    correlation_id: str = Query(default=""),
     user_id: str = Query(default=""),
     org_id: str = Query(default=""),
     runtime_id: str = Query(default=""),
@@ -1212,6 +1213,7 @@ def admin_error_events(
     filters = {
         "session_id": _as_text(session_id) or None,
         "request_id": _as_text(request_id) or None,
+        "correlation_id": _as_text(correlation_id) or None,
         "user_id": _as_text(user_id) or None,
         "org_id": effective_org_id,
         "runtime_id": _as_text(runtime_id) or None,

@@ -859,6 +859,7 @@ def _ensure_schema() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_project ON error_events(project_id)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_request ON error_events(request_id)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_runtime ON error_events(runtime_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_correlation ON error_events(correlation_id)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_fingerprint ON error_events(fingerprint)")
             if not _column_exists(con, "projects", "org_id"):
                 con.execute("ALTER TABLE projects ADD COLUMN org_id TEXT NOT NULL DEFAULT 'org_default'")
@@ -5121,6 +5122,7 @@ def _build_error_events_where(
     *,
     session_id: Optional[str] = None,
     request_id: Optional[str] = None,
+    correlation_id: Optional[str] = None,
     user_id: Optional[str] = None,
     org_id: Optional[str] = None,
     runtime_id: Optional[str] = None,
@@ -5142,6 +5144,7 @@ def _build_error_events_where(
 
     _eq("session_id", session_id)
     _eq("request_id", request_id)
+    _eq("correlation_id", correlation_id)
     _eq("user_id", user_id)
     _eq("org_id", org_id)
     _eq("runtime_id", runtime_id)
@@ -5161,6 +5164,7 @@ def list_error_events(
     *,
     session_id: Optional[str] = None,
     request_id: Optional[str] = None,
+    correlation_id: Optional[str] = None,
     user_id: Optional[str] = None,
     org_id: Optional[str] = None,
     runtime_id: Optional[str] = None,
@@ -5179,6 +5183,7 @@ def list_error_events(
     where, params = _build_error_events_where(
         session_id=session_id,
         request_id=request_id,
+        correlation_id=correlation_id,
         user_id=user_id,
         org_id=org_id,
         runtime_id=runtime_id,
@@ -5210,6 +5215,7 @@ def count_error_events(
     *,
     session_id: Optional[str] = None,
     request_id: Optional[str] = None,
+    correlation_id: Optional[str] = None,
     user_id: Optional[str] = None,
     org_id: Optional[str] = None,
     runtime_id: Optional[str] = None,
@@ -5222,6 +5228,7 @@ def count_error_events(
     where, params = _build_error_events_where(
         session_id=session_id,
         request_id=request_id,
+        correlation_id=correlation_id,
         user_id=user_id,
         org_id=org_id,
         runtime_id=runtime_id,

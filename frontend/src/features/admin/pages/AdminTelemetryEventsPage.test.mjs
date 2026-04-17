@@ -114,6 +114,7 @@ function samplePayload() {
         severity: "error",
         message: "API failed for save",
         request_id: "req_incident",
+        correlation_id: "corr_incident",
         session_id: "sess_timeline",
         runtime_id: "rt_tab",
         route: "/api/sessions/sess_timeline",
@@ -127,6 +128,7 @@ function samplePayload() {
         severity: "error",
         message: "Unhandled backend exception",
         request_id: "req_incident",
+        correlation_id: "corr_incident",
         session_id: "sess_timeline",
         runtime_id: "",
         route: "/api/sessions/sess_timeline",
@@ -220,6 +222,85 @@ test("AdminTelemetryEventsPage: timeline open detail action emits selected event
     });
     await flush();
     assert.equal(openedEventId, "evt_backend_exception");
+  } finally {
+    await env.cleanup();
+  }
+});
+
+test("AdminTelemetryEventsPage: detail pivot emits same correlation_id timeline request", async () => {
+  let pivotedCorrelationId = "";
+  const env = await renderPage({
+    payload: samplePayload(),
+    filters: { request_id: "req_incident", limit: 50, order: "asc" },
+    detailPayload: sampleDetail(),
+    selectedEventId: "evt_backend_exception",
+    onPivotCorrelationId: (value) => {
+      pivotedCorrelationId = value;
+    },
+  });
+  try {
+    const button = env.container.querySelector('[data-testid="telemetry-pivot-correlation-id"]');
+    assert.ok(button);
+    assert.equal(button.disabled, false);
+    await act(async () => {
+      button.dispatchEvent(new env.dom.window.MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
+    assert.equal(pivotedCorrelationId, "corr_incident");
+    assert.match(env.container.textContent || "", /corr_incident/);
+  } finally {
+    await env.cleanup();
+  }
+});
+
+test("AdminTelemetryEventsPage: sparse detail row keeps correlation pivot safely disabled", async () => {
+  const env = await renderPage({
+    payload: {
+      ok: true,
+      count: 1,
+      page: { limit: 50, offset: 0, total: 1, order: "asc" },
+      timeline: { deduped: false, order: "asc" },
+      items: [{
+        id: "evt_sparse",
+        occurred_at: 120,
+        ingested_at: 121,
+        source: "backend",
+        event_type: "backend_async_exception",
+        severity: "error",
+        message: "Sparse row",
+        request_id: "",
+        correlation_id: "",
+        session_id: "sess_sparse",
+        runtime_id: "",
+        route: "/api/jobs/run",
+      }],
+    },
+    filters: { correlation_id: "", limit: 50, order: "asc" },
+    detailPayload: {
+      ok: true,
+      item: {
+        id: "evt_sparse",
+        schema_version: 1,
+        occurred_at: 120,
+        ingested_at: 121,
+        source: "backend",
+        event_type: "backend_async_exception",
+        severity: "error",
+        message: "Sparse row",
+        request_id: "",
+        correlation_id: "",
+        session_id: "sess_sparse",
+        runtime_id: "",
+        context_json: { safe: "ok" },
+      },
+    },
+    selectedEventId: "evt_sparse",
+  });
+  try {
+    const button = env.container.querySelector('[data-testid="telemetry-pivot-correlation-id"]');
+    assert.ok(button);
+    assert.equal(button.disabled, true);
+    assert.match(env.container.textContent || "", /correlation_id отсутствует/i);
   } finally {
     await env.cleanup();
   }
