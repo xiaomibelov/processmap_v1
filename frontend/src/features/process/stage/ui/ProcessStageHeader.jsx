@@ -18,6 +18,7 @@ export default function ProcessStageHeader({ view = {} }) {
     saveConflictActions,
     sessionRevisionHistorySnapshot,
     handleSaveCurrentTab,
+    handleCreateRevisionAction,
     handleUndoAction,
     handleRedoAction,
     canUndo,
@@ -104,11 +105,23 @@ export default function ProcessStageHeader({ view = {} }) {
         || saveSmartTextNormalized === "черновик сохранён"
       )
     );
-  const suppressDraftSavedBadge = /^Опубликована версия \d+\.$/.test(toolbarMessage)
+  const suppressDraftSavedBadge = /^Сессия (?:уже )?сохранена(?:[:.].*)?$/i.test(toolbarMessage)
     && toText(saveSmartText) === "Черновик сохранён";
   const showGenericSaveStatusBadge = showSaveStatusBadgeResolved
     && !suppressDraftSavedBadge
     && !showDraftRelationBadgeResolved;
+  const publishActionRequired = draftAheadOfLatest
+    || (latestPublishedRevisionNumber <= 0 && sessionRevisionHistorySnapshot?.draftState?.hasLiveDraft === true);
+  const canCreateRevisionFromCurrentState = canSaveNow
+    && (saveDirtyHint || publishActionRequired)
+    && typeof handleCreateRevisionAction === "function";
+  const revisionActionTitle = !canSaveNow
+    ? "Создание ревизии доступно в Diagram/XML"
+    : (
+      saveDirtyHint || publishActionRequired
+        ? "Создать новую ревизию из текущего состояния сессии"
+        : "Новых изменений для новой ревизии нет."
+    );
   const canRunUndo = tab === "diagram" && canUndo === true;
   const canRunRedo = tab === "diagram" && canRedo === true;
 
@@ -138,6 +151,18 @@ export default function ProcessStageHeader({ view = {} }) {
                 {saveSmartText || workbench.labels.save}
               </button>
             )}
+          {hasSession ? (
+            <button
+              type="button"
+              className="secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
+              onClick={handleCreateRevisionAction}
+              disabled={!canCreateRevisionFromCurrentState}
+              title={revisionActionTitle}
+              data-testid="diagram-toolbar-create-revision"
+            >
+              Создать новую ревизию
+            </button>
+          ) : null}
           {hasSession ? (
             <>
               <span

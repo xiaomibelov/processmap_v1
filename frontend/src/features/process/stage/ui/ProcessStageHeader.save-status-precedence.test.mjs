@@ -7,10 +7,10 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-test("version-aware publish message suppresses duplicate generic draft-saved badge", () => {
+test("session-save confirmation suppresses duplicate generic draft-saved badge", () => {
   const source = fs.readFileSync(path.join(__dirname, "ProcessStageHeader.jsx"), "utf8");
   assert.equal(
-    source.includes('const suppressDraftSavedBadge = /^Опубликована версия \\d+\\.$/.test(toolbarMessage)'),
+    source.includes('const suppressDraftSavedBadge = /^Сессия (?:уже )?сохранена(?:[:.].*)?$/i.test(toolbarMessage)'),
     true,
   );
   assert.equal(
