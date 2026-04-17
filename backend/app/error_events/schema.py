@@ -434,3 +434,124 @@ def build_backend_exception_event(request: Request, exc: Exception) -> ErrorEven
     }
     event["fingerprint"] = compute_fingerprint(event)
     return ErrorEventStored(**event)
+
+
+def build_backend_async_exception_event(
+    exc: Exception,
+    *,
+    task_name: str,
+    execution_scope: str = "background",
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+    route: Optional[str] = None,
+    request_id: Optional[str] = None,
+    correlation_id: Optional[str] = None,
+    context_json: Optional[Mapping[str, Any]] = None,
+) -> ErrorEventStored:
+    now_ts = _now_ts()
+    normalized_task = _normalize_text(task_name, max_len=160) or "background_task"
+    normalized_scope = _normalize_slug(execution_scope) or "background"
+    exception_type = _normalize_text(type(exc).__name__, max_len=160) or "Exception"
+    exception_module = _normalize_text(type(exc).__module__, max_len=240)
+    caller_context = dict(context_json or {})
+    context = redact_context_json(
+        {
+            **caller_context,
+            "execution_scope": normalized_scope,
+            "task_name": normalized_task,
+            "exception_type": exception_type,
+            "exception_module": exception_module,
+            "stack": _compact_exception_frames(exc),
+            "_server": {
+                "capture": "backend_async_exception_capture",
+                "request_id_source": "provided" if _normalize_nullable_id(request_id) else "absent",
+            },
+        }
+    )
+    event = {
+        "id": f"evt_{uuid.uuid4().hex[:12]}",
+        "schema_version": SCHEMA_VERSION,
+        "occurred_at": now_ts,
+        "ingested_at": now_ts,
+        "source": "backend",
+        "event_type": "backend_async_exception",
+        "severity": "error",
+        "message": f"Unhandled background exception in {normalized_task}: {exception_type}",
+        "user_id": _normalize_nullable_id(user_id),
+        "org_id": _normalize_nullable_id(org_id),
+        "session_id": _normalize_nullable_id(session_id),
+        "project_id": _normalize_nullable_id(project_id),
+        "route": _normalize_route(route) or None,
+        "runtime_id": None,
+        "tab_id": None,
+        "request_id": _normalize_nullable_id(request_id),
+        "correlation_id": _normalize_nullable_id(correlation_id),
+        "app_version": None,
+        "git_sha": None,
+        "fingerprint": "",
+        "context_json": context,
+    }
+    event["fingerprint"] = compute_fingerprint(event)
+    return ErrorEventStored(**event)
+
+
+def build_backend_domain_invariant_event(
+    *,
+    domain: str,
+    invariant_name: str,
+    message: str,
+    severity: str = "error",
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+    route: Optional[str] = None,
+    request_id: Optional[str] = None,
+    correlation_id: Optional[str] = None,
+    context_json: Optional[Mapping[str, Any]] = None,
+) -> ErrorEventStored:
+    now_ts = _now_ts()
+    normalized_domain = _normalize_slug(domain) or "backend_domain"
+    normalized_invariant = _normalize_slug(invariant_name) or "domain_invariant"
+    severity_norm = str(severity or "").strip().lower()
+    if severity_norm not in _ALLOWED_SEVERITIES:
+        severity_norm = "error"
+    context = redact_context_json(
+        {
+            **dict(context_json or {}),
+            "domain": normalized_domain,
+            "invariant_name": normalized_invariant,
+            "_server": {
+                "capture": "backend_domain_invariant",
+                "request_id_source": "provided" if _normalize_nullable_id(request_id) else "absent",
+            },
+        }
+    )
+    event = {
+        "id": f"evt_{uuid.uuid4().hex[:12]}",
+        "schema_version": SCHEMA_VERSION,
+        "occurred_at": now_ts,
+        "ingested_at": now_ts,
+        "source": "backend",
+        "event_type": "domain_invariant_violation",
+        "severity": severity_norm,
+        "message": _normalize_text(message, max_len=_MAX_TEXT)
+        or f"Backend domain invariant violation: {normalized_domain}/{normalized_invariant}",
+        "user_id": _normalize_nullable_id(user_id),
+        "org_id": _normalize_nullable_id(org_id),
+        "session_id": _normalize_nullable_id(session_id),
+        "project_id": _normalize_nullable_id(project_id),
+        "route": _normalize_route(route) or None,
+        "runtime_id": None,
+        "tab_id": None,
+        "request_id": _normalize_nullable_id(request_id),
+        "correlation_id": _normalize_nullable_id(correlation_id),
+        "app_version": None,
+        "git_sha": None,
+        "fingerprint": "",
+        "context_json": context,
+    }
+    event["fingerprint"] = compute_fingerprint(event)
+    return ErrorEventStored(**event)
