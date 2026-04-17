@@ -858,6 +858,7 @@ def _ensure_schema() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_session ON error_events(session_id)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_project ON error_events(project_id)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_request ON error_events(request_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_runtime ON error_events(runtime_id)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_fingerprint ON error_events(fingerprint)")
             if not _column_exists(con, "projects", "org_id"):
                 con.execute("ALTER TABLE projects ADD COLUMN org_id TEXT NOT NULL DEFAULT 'org_default'")
@@ -5114,6 +5115,138 @@ def get_error_event(event_id: str) -> Optional[Dict[str, Any]]:
     if not row:
         return None
     return _error_event_row_to_dict(row)
+
+
+def _build_error_events_where(
+    *,
+    session_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    runtime_id: Optional[str] = None,
+    event_type: Optional[str] = None,
+    source: Optional[str] = None,
+    severity: Optional[str] = None,
+    occurred_from: Optional[int] = None,
+    occurred_to: Optional[int] = None,
+) -> Tuple[str, List[Any]]:
+    clauses: List[str] = ["1 = 1"]
+    params: List[Any] = []
+
+    def _eq(column: str, value: Optional[str]) -> None:
+        text = str(value or "").strip()
+        if not text:
+            return
+        clauses.append(f"{column} = ?")
+        params.append(text)
+
+    _eq("session_id", session_id)
+    _eq("request_id", request_id)
+    _eq("user_id", user_id)
+    _eq("org_id", org_id)
+    _eq("runtime_id", runtime_id)
+    _eq("event_type", event_type)
+    _eq("source", source)
+    _eq("severity", severity)
+    if occurred_from is not None and int(occurred_from or 0) > 0:
+        clauses.append("occurred_at >= ?")
+        params.append(int(occurred_from or 0))
+    if occurred_to is not None and int(occurred_to or 0) > 0:
+        clauses.append("occurred_at <= ?")
+        params.append(int(occurred_to or 0))
+    return " AND ".join(clauses), params
+
+
+def list_error_events(
+    *,
+    session_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    runtime_id: Optional[str] = None,
+    event_type: Optional[str] = None,
+    source: Optional[str] = None,
+    severity: Optional[str] = None,
+    occurred_from: Optional[int] = None,
+    occurred_to: Optional[int] = None,
+    limit: int = 50,
+    offset: int = 0,
+    order: str = "asc",
+) -> List[Dict[str, Any]]:
+    lim = max(1, min(int(limit or 50), 100))
+    off = max(0, int(offset or 0))
+    direction = "DESC" if str(order or "").strip().lower() == "desc" else "ASC"
+    where, params = _build_error_events_where(
+        session_id=session_id,
+        request_id=request_id,
+        user_id=user_id,
+        org_id=org_id,
+        runtime_id=runtime_id,
+        event_type=event_type,
+        source=source,
+        severity=severity,
+        occurred_from=occurred_from,
+        occurred_to=occurred_to,
+    )
+    _ensure_schema()
+    with _connect() as con:
+        rows = con.execute(
+            f"""
+            SELECT id, schema_version, occurred_at, ingested_at, source, event_type, severity, message,
+                   user_id, org_id, session_id, project_id, route, runtime_id, tab_id, request_id,
+                   correlation_id, app_version, git_sha, fingerprint, context_json
+              FROM error_events
+             WHERE {where}
+             ORDER BY occurred_at {direction}, ingested_at {direction}, id {direction}
+             LIMIT ?
+            OFFSET ?
+            """,
+            [*params, lim, off],
+        ).fetchall()
+    return [_error_event_row_to_dict(row) for row in rows]
+
+
+def count_error_events(
+    *,
+    session_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    runtime_id: Optional[str] = None,
+    event_type: Optional[str] = None,
+    source: Optional[str] = None,
+    severity: Optional[str] = None,
+    occurred_from: Optional[int] = None,
+    occurred_to: Optional[int] = None,
+) -> int:
+    where, params = _build_error_events_where(
+        session_id=session_id,
+        request_id=request_id,
+        user_id=user_id,
+        org_id=org_id,
+        runtime_id=runtime_id,
+        event_type=event_type,
+        source=source,
+        severity=severity,
+        occurred_from=occurred_from,
+        occurred_to=occurred_to,
+    )
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            f"""
+            SELECT COUNT(*)
+              FROM error_events
+             WHERE {where}
+            """,
+            params,
+        ).fetchone()
+    if not row:
+        return 0
+    try:
+        return int(row[0] or 0)
+    except Exception:
+        return 0
 
 
 def cleanup_error_events(*, retention_days: int = 30, now_ts: Optional[int] = None) -> int:
