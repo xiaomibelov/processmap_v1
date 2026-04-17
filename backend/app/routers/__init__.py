@@ -1,6 +1,7 @@
 from .auto_pass import router as auto_pass_router
 from .admin import router as admin_router
 from .clipboard import router as clipboard_router
+from .error_events import router as error_events_router
 from .explorer import router as explorer_router
 from .org_invites import router as org_invites_router
 from .org_listing import router as org_listing_router
@@ -16,6 +17,7 @@ from .templates import router as templates_router
 ROUTERS = (
     system_router,
     admin_router,
+    error_events_router,
     explorer_router,
     projects_router,
     sessions_router,

@@ -825,6 +825,41 @@ def _ensure_schema() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_audit_org_action ON audit_log(org_id, action)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_audit_project ON audit_log(project_id)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_audit_session ON audit_log(session_id)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS error_events (
+                  id TEXT PRIMARY KEY,
+                  schema_version INTEGER NOT NULL DEFAULT 1,
+                  occurred_at INTEGER NOT NULL DEFAULT 0,
+                  ingested_at INTEGER NOT NULL DEFAULT 0,
+                  source TEXT NOT NULL DEFAULT '',
+                  event_type TEXT NOT NULL DEFAULT '',
+                  severity TEXT NOT NULL DEFAULT 'error',
+                  message TEXT NOT NULL DEFAULT '',
+                  user_id TEXT,
+                  org_id TEXT,
+                  session_id TEXT,
+                  project_id TEXT,
+                  route TEXT,
+                  runtime_id TEXT,
+                  tab_id TEXT,
+                  request_id TEXT,
+                  correlation_id TEXT,
+                  app_version TEXT,
+                  git_sha TEXT,
+                  fingerprint TEXT NOT NULL DEFAULT '',
+                  context_json TEXT NOT NULL DEFAULT '{}'
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_occurred_at ON error_events(occurred_at DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_user ON error_events(user_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_org ON error_events(org_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_session ON error_events(session_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_project ON error_events(project_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_request ON error_events(request_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_runtime ON error_events(runtime_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_fingerprint ON error_events(fingerprint)")
             if not _column_exists(con, "projects", "org_id"):
                 con.execute("ALTER TABLE projects ADD COLUMN org_id TEXT NOT NULL DEFAULT 'org_default'")
             if not _column_exists(con, "orgs", "git_mirror_enabled"):
@@ -3059,6 +3094,32 @@ def _audit_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     }
 
 
+def _error_event_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    return {
+        "id": str(row["id"] or ""),
+        "schema_version": int(row["schema_version"] or 1),
+        "occurred_at": int(row["occurred_at"] or 0),
+        "ingested_at": int(row["ingested_at"] or 0),
+        "source": str(row["source"] or ""),
+        "event_type": str(row["event_type"] or ""),
+        "severity": str(row["severity"] or "error"),
+        "message": str(row["message"] or ""),
+        "user_id": str(row["user_id"] or "") if row["user_id"] is not None else "",
+        "org_id": str(row["org_id"] or "") if row["org_id"] is not None else "",
+        "session_id": str(row["session_id"] or "") if row["session_id"] is not None else "",
+        "project_id": str(row["project_id"] or "") if row["project_id"] is not None else "",
+        "route": str(row["route"] or "") if row["route"] is not None else "",
+        "runtime_id": str(row["runtime_id"] or "") if row["runtime_id"] is not None else "",
+        "tab_id": str(row["tab_id"] or "") if row["tab_id"] is not None else "",
+        "request_id": str(row["request_id"] or "") if row["request_id"] is not None else "",
+        "correlation_id": str(row["correlation_id"] or "") if row["correlation_id"] is not None else "",
+        "app_version": str(row["app_version"] or "") if row["app_version"] is not None else "",
+        "git_sha": str(row["git_sha"] or "") if row["git_sha"] is not None else "",
+        "fingerprint": str(row["fingerprint"] or ""),
+        "context_json": _json_loads(row["context_json"], {}),
+    }
+
+
 def _hash_invite_token(token: str) -> str:
     return hashlib.sha256(str(token or "").encode("utf-8")).hexdigest()
 
@@ -4923,6 +4984,283 @@ def cleanup_audit_log(org_id: str, *, retention_days: int = 90, now_ts: Optional
              WHERE org_id = ? AND ts > 0 AND ts < ?
             """,
             [oid, threshold],
+        )
+        con.commit()
+        return int(cur.rowcount or 0)
+
+
+def append_error_event(
+    *,
+    id: str,
+    schema_version: int,
+    occurred_at: int,
+    ingested_at: int,
+    source: str,
+    event_type: str,
+    severity: str,
+    message: str,
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+    route: Optional[str] = None,
+    runtime_id: Optional[str] = None,
+    tab_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    correlation_id: Optional[str] = None,
+    app_version: Optional[str] = None,
+    git_sha: Optional[str] = None,
+    fingerprint: str = "",
+    context_json: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    event_id = str(id or "").strip()
+    src = str(source or "").strip()
+    etype = str(event_type or "").strip()
+    sev = str(severity or "").strip().lower() or "error"
+    text = str(message or "").strip()
+    fp = str(fingerprint or "").strip()
+    if not event_id or not src or not etype or not text or not fp:
+        raise ValueError("id, source, event_type, message and fingerprint are required")
+    payload = _json_dumps(context_json if isinstance(context_json, dict) else {}, {})
+    _ensure_schema()
+    with _connect() as con:
+        con.execute(
+            """
+            INSERT INTO error_events (
+              id, schema_version, occurred_at, ingested_at, source, event_type, severity, message,
+              user_id, org_id, session_id, project_id, route, runtime_id, tab_id, request_id,
+              correlation_id, app_version, git_sha, fingerprint, context_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                event_id,
+                int(schema_version or 1),
+                int(occurred_at or 0),
+                int(ingested_at or 0),
+                src,
+                etype,
+                sev,
+                text,
+                str(user_id or "").strip() or None,
+                str(org_id or "").strip() or None,
+                str(session_id or "").strip() or None,
+                str(project_id or "").strip() or None,
+                str(route or "").strip() or None,
+                str(runtime_id or "").strip() or None,
+                str(tab_id or "").strip() or None,
+                str(request_id or "").strip() or None,
+                str(correlation_id or "").strip() or None,
+                str(app_version or "").strip() or None,
+                str(git_sha or "").strip() or None,
+                fp,
+                payload,
+            ],
+        )
+        con.commit()
+        row = con.execute(
+            """
+            SELECT id, schema_version, occurred_at, ingested_at, source, event_type, severity, message,
+                   user_id, org_id, session_id, project_id, route, runtime_id, tab_id, request_id,
+                   correlation_id, app_version, git_sha, fingerprint, context_json
+              FROM error_events
+             WHERE id = ?
+             LIMIT 1
+            """,
+            [event_id],
+        ).fetchone()
+    if not row:
+        return {
+            "id": event_id,
+            "schema_version": int(schema_version or 1),
+            "occurred_at": int(occurred_at or 0),
+            "ingested_at": int(ingested_at or 0),
+            "source": src,
+            "event_type": etype,
+            "severity": sev,
+            "message": text,
+            "user_id": str(user_id or ""),
+            "org_id": str(org_id or ""),
+            "session_id": str(session_id or ""),
+            "project_id": str(project_id or ""),
+            "route": str(route or ""),
+            "runtime_id": str(runtime_id or ""),
+            "tab_id": str(tab_id or ""),
+            "request_id": str(request_id or ""),
+            "correlation_id": str(correlation_id or ""),
+            "app_version": str(app_version or ""),
+            "git_sha": str(git_sha or ""),
+            "fingerprint": fp,
+            "context_json": context_json if isinstance(context_json, dict) else {},
+        }
+    return _error_event_row_to_dict(row)
+
+
+def get_error_event(event_id: str) -> Optional[Dict[str, Any]]:
+    eid = str(event_id or "").strip()
+    if not eid:
+        return None
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT id, schema_version, occurred_at, ingested_at, source, event_type, severity, message,
+                   user_id, org_id, session_id, project_id, route, runtime_id, tab_id, request_id,
+                   correlation_id, app_version, git_sha, fingerprint, context_json
+              FROM error_events
+             WHERE id = ?
+             LIMIT 1
+            """,
+            [eid],
+        ).fetchone()
+    if not row:
+        return None
+    return _error_event_row_to_dict(row)
+
+
+def _build_error_events_where(
+    *,
+    session_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    runtime_id: Optional[str] = None,
+    event_type: Optional[str] = None,
+    source: Optional[str] = None,
+    severity: Optional[str] = None,
+    occurred_from: Optional[int] = None,
+    occurred_to: Optional[int] = None,
+) -> Tuple[str, List[Any]]:
+    clauses: List[str] = ["1 = 1"]
+    params: List[Any] = []
+
+    def _eq(column: str, value: Optional[str]) -> None:
+        text = str(value or "").strip()
+        if not text:
+            return
+        clauses.append(f"{column} = ?")
+        params.append(text)
+
+    _eq("session_id", session_id)
+    _eq("request_id", request_id)
+    _eq("user_id", user_id)
+    _eq("org_id", org_id)
+    _eq("runtime_id", runtime_id)
+    _eq("event_type", event_type)
+    _eq("source", source)
+    _eq("severity", severity)
+    if occurred_from is not None and int(occurred_from or 0) > 0:
+        clauses.append("occurred_at >= ?")
+        params.append(int(occurred_from or 0))
+    if occurred_to is not None and int(occurred_to or 0) > 0:
+        clauses.append("occurred_at <= ?")
+        params.append(int(occurred_to or 0))
+    return " AND ".join(clauses), params
+
+
+def list_error_events(
+    *,
+    session_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    runtime_id: Optional[str] = None,
+    event_type: Optional[str] = None,
+    source: Optional[str] = None,
+    severity: Optional[str] = None,
+    occurred_from: Optional[int] = None,
+    occurred_to: Optional[int] = None,
+    limit: int = 50,
+    offset: int = 0,
+    order: str = "asc",
+) -> List[Dict[str, Any]]:
+    lim = max(1, min(int(limit or 50), 100))
+    off = max(0, int(offset or 0))
+    direction = "DESC" if str(order or "").strip().lower() == "desc" else "ASC"
+    where, params = _build_error_events_where(
+        session_id=session_id,
+        request_id=request_id,
+        user_id=user_id,
+        org_id=org_id,
+        runtime_id=runtime_id,
+        event_type=event_type,
+        source=source,
+        severity=severity,
+        occurred_from=occurred_from,
+        occurred_to=occurred_to,
+    )
+    _ensure_schema()
+    with _connect() as con:
+        rows = con.execute(
+            f"""
+            SELECT id, schema_version, occurred_at, ingested_at, source, event_type, severity, message,
+                   user_id, org_id, session_id, project_id, route, runtime_id, tab_id, request_id,
+                   correlation_id, app_version, git_sha, fingerprint, context_json
+              FROM error_events
+             WHERE {where}
+             ORDER BY occurred_at {direction}, ingested_at {direction}, id {direction}
+             LIMIT ?
+            OFFSET ?
+            """,
+            [*params, lim, off],
+        ).fetchall()
+    return [_error_event_row_to_dict(row) for row in rows]
+
+
+def count_error_events(
+    *,
+    session_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    runtime_id: Optional[str] = None,
+    event_type: Optional[str] = None,
+    source: Optional[str] = None,
+    severity: Optional[str] = None,
+    occurred_from: Optional[int] = None,
+    occurred_to: Optional[int] = None,
+) -> int:
+    where, params = _build_error_events_where(
+        session_id=session_id,
+        request_id=request_id,
+        user_id=user_id,
+        org_id=org_id,
+        runtime_id=runtime_id,
+        event_type=event_type,
+        source=source,
+        severity=severity,
+        occurred_from=occurred_from,
+        occurred_to=occurred_to,
+    )
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            f"""
+            SELECT COUNT(*)
+              FROM error_events
+             WHERE {where}
+            """,
+            params,
+        ).fetchone()
+    if not row:
+        return 0
+    try:
+        return int(row[0] or 0)
+    except Exception:
+        return 0
+
+
+def cleanup_error_events(*, retention_days: int = 30, now_ts: Optional[int] = None) -> int:
+    retention = max(1, int(retention_days or 30))
+    now = int(now_ts or 0) or _now_ts()
+    threshold = now - retention * 24 * 60 * 60
+    _ensure_schema()
+    with _connect() as con:
+        cur = con.execute(
+            """
+            DELETE FROM error_events
+             WHERE ingested_at > 0 AND ingested_at < ?
+            """,
+            [threshold],
         )
         con.commit()
         return int(cur.rowcount or 0)
