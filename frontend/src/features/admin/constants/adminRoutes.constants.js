@@ -7,6 +7,7 @@ export const ADMIN_SECTIONS = {
   sessions: "sessions",
   jobs: "jobs",
   audit: "audit",
+  telemetry: "telemetry",
 };
 
 export const ADMIN_ROUTE_META = {
@@ -39,6 +40,11 @@ export const ADMIN_ROUTE_META = {
     title: ru.admin.route.audit.title,
     subtitle: ru.admin.route.audit.subtitle,
     path: "/admin/audit",
+  },
+  [ADMIN_SECTIONS.telemetry]: {
+    title: ru.admin.route.telemetry.title,
+    subtitle: ru.admin.route.telemetry.subtitle,
+    path: "/admin/telemetry",
   },
 };
 
