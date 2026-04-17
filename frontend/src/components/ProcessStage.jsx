@@ -24,6 +24,7 @@ import { createAiInputHash, executeAi } from "../features/ai/aiExecutor";
 import {
   shortSnapshotHash,
 } from "../features/process/bpmn/snapshots/bpmnSnapshots";
+import { buildManualSaveProjectionSyncPlan } from "../features/process/bpmn/save/manualSaveProjectionSync.js";
 import { parseAndProjectBpmnToInterview } from "../features/process/hooks/useInterviewProjection";
 import useBpmnSync from "../features/process/hooks/useBpmnSync";
 import useProcessOrchestrator from "../features/process/hooks/useProcessOrchestrator";
@@ -150,6 +151,12 @@ import {
   buildSessionCompanionAfterTraversal,
   normalizeSessionCompanion,
 } from "../features/process/session-companion/sessionCompanionContracts.js";
+import { createSessionWorkspaceTruthOwner } from "../features/process/workspace-truth/sessionWorkspaceTruthOwner.js";
+import {
+  buildWorkspaceTruthSnapshotFromSession,
+  classifyWorkspaceSyncSource,
+  resolveWorkspaceMutationCommand,
+} from "../features/process/workspace-truth/sessionWorkspaceTruthOwnerBoundary.js";
 import { buildSessionCompanionJazzUiBridgeSnapshot } from "../features/process/session-companion/read/index.js";
 import { createSessionCompanionJazzAdapter } from "../features/process/session-companion/sessionCompanionJazzAdapter.js";
 import { createLiveDocumentJazzAdapter } from "../features/process/session-companion/liveDocumentJazzAdapter.js";
@@ -326,6 +333,54 @@ export default function ProcessStage({
   const [versionsTechnicalEntriesCount, setVersionsTechnicalEntriesCount] = useState(0);
   const [diagramUndoRedoState, setDiagramUndoRedoState] = useState({ canUndo: false, canRedo: false, ready: false });
   const [diagramSearchMutationVersion, setDiagramSearchMutationVersion] = useState(0);
+  const sessionWorkspaceTruthOwnerRef = useRef(null);
+  const sessionWorkspaceTruthOwnerSidRef = useRef("");
+
+  const buildOwnerSnapshot = useCallback((sessionLikeRaw, source = "session_sync") => {
+    return buildWorkspaceTruthSnapshotFromSession(sessionLikeRaw, {
+      fallbackSessionId: sid,
+      source,
+    });
+  }, [sid]);
+
+  const ensureSessionWorkspaceTruthOwner = useCallback(() => {
+    const currentSid = normalizeDiagramSessionId(sid);
+    if (!currentSid) {
+      sessionWorkspaceTruthOwnerRef.current = null;
+      sessionWorkspaceTruthOwnerSidRef.current = "";
+      return null;
+    }
+    if (
+      sessionWorkspaceTruthOwnerRef.current
+      && sessionWorkspaceTruthOwnerSidRef.current === currentSid
+    ) {
+      return sessionWorkspaceTruthOwnerRef.current;
+    }
+    const durableSnapshot = buildOwnerSnapshot({
+      id: currentSid,
+      session_id: currentSid,
+      bpmn_xml: toText(draft?.bpmn_xml || ""),
+      bpmn_xml_version: Number(draft?.bpmn_xml_version || draft?.version || 0),
+      diagram_state_version: Number(draft?.diagram_state_version ?? draft?.diagramStateVersion ?? 0),
+      bpmn_graph_fingerprint: toText(draft?.bpmn_graph_fingerprint || ""),
+    }, "draft_seed");
+    sessionWorkspaceTruthOwnerRef.current = createSessionWorkspaceTruthOwner({
+      sessionId: currentSid,
+      durableSnapshot,
+    });
+    sessionWorkspaceTruthOwnerSidRef.current = currentSid;
+    return sessionWorkspaceTruthOwnerRef.current;
+  }, [
+    buildOwnerSnapshot,
+    draft?.bpmn_graph_fingerprint,
+    draft?.bpmn_xml,
+    draft?.bpmn_xml_version,
+    draft?.diagramStateVersion,
+    draft?.diagram_state_version,
+    draft?.version,
+    sid,
+    toText,
+  ]);
 
   const resolveDraftDiagramStateVersion = useCallback(() => {
     const raw = Number(draft?.diagram_state_version ?? draft?.diagramStateVersion);
@@ -401,10 +456,87 @@ export default function ProcessStage({
     const currentSid = normalizeDiagramSessionId(sid);
     const sessionSid = normalizeDiagramSessionId(sessionLike?.session_id || sessionLike?.id || sid || "");
     if (!isDiagramVersionSessionMatch(currentSid, sessionSid)) return false;
-    syncDiagramStateVersionFromSession(sessionLikeRaw);
-    onSessionSync?.(sessionLikeRaw);
+    const source = toText(sessionLike?._sync_source || sessionLike?._source || "session_sync");
+    const owner = ensureSessionWorkspaceTruthOwner();
+    let payload = sessionLike;
+    if (owner && sessionLike && typeof sessionLike === "object") {
+      const sanitizeResult = owner.sanitizeIncomingSessionSyncPayload(sessionLike, { source });
+      payload = asObject(sanitizeResult?.payload);
+      const sourceClass = classifyWorkspaceSyncSource(source);
+      const snapshot = buildOwnerSnapshot(payload, source || "session_sync");
+      const hasXml = String(snapshot?.bpmn_xml || "").trim().length > 0;
+      if (hasXml && sourceClass.isPrimaryAcceptedSource) {
+        owner.saveSessionAccepted({
+          source,
+          primaryAck: snapshot,
+          durableSnapshot: snapshot,
+        });
+      } else if (hasXml && sourceClass.isDurableReloadSource) {
+        owner.reloadSession({
+          source,
+          durableSnapshot: snapshot,
+        });
+      } else if (hasXml && sourceClass.isPrimaryTruthSource && !sourceClass.isProjectionSource) {
+        owner.reloadSession({
+          source: `${source || "session_sync"}:truth_sync`,
+          durableSnapshot: snapshot,
+        });
+      }
+    }
+    syncDiagramStateVersionFromSession(payload);
+    onSessionSync?.(payload);
     return true;
-  }, [asObject, onSessionSync, sid, syncDiagramStateVersionFromSession]);
+  }, [
+    asObject,
+    buildOwnerSnapshot,
+    ensureSessionWorkspaceTruthOwner,
+    onSessionSync,
+    sid,
+    syncDiagramStateVersionFromSession,
+    toText,
+  ]);
+
+  useEffect(() => {
+    const owner = ensureSessionWorkspaceTruthOwner();
+    if (!owner) return;
+    const currentSid = normalizeDiagramSessionId(sid);
+    if (!currentSid) return;
+    const draftSnapshot = buildOwnerSnapshot({
+      id: currentSid,
+      session_id: currentSid,
+      bpmn_xml: toText(draft?.bpmn_xml || ""),
+      bpmn_xml_version: Number(draft?.bpmn_xml_version || draft?.version || 0),
+      diagram_state_version: Number(draft?.diagram_state_version ?? draft?.diagramStateVersion ?? 0),
+      bpmn_graph_fingerprint: toText(draft?.bpmn_graph_fingerprint || ""),
+    }, "draft_hydrate");
+    const accepted = asObject(owner.getState()?.acceptedSnapshot);
+    const acceptedXml = String(accepted?.xml || "");
+    const draftXml = String(draftSnapshot?.bpmn_xml || "");
+    const acceptedVersion = Number(accepted?.xmlVersion || 0);
+    const draftVersion = Number(draftSnapshot?.bpmn_xml_version || 0);
+    const shouldHydrateOwner = (
+      (draftXml.trim() && draftXml !== acceptedXml)
+      || (draftVersion > 0 && draftVersion > acceptedVersion)
+    );
+    if (shouldHydrateOwner) {
+      owner.reloadSession({
+        source: "draft_hydrate",
+        durableSnapshot: draftSnapshot,
+      });
+    }
+  }, [
+    asObject,
+    buildOwnerSnapshot,
+    draft?.bpmn_graph_fingerprint,
+    draft?.bpmn_xml,
+    draft?.bpmn_xml_version,
+    draft?.diagramStateVersion,
+    draft?.diagram_state_version,
+    draft?.version,
+    ensureSessionWorkspaceTruthOwner,
+    sid,
+    toText,
+  ]);
 
   const {
     genBusy,
@@ -911,6 +1043,7 @@ export default function ProcessStage({
     markInterviewAsSaved,
     handleInterviewChange,
     queueDiagramMutation: queueDiagramMutationRaw,
+    cancelPendingDiagramAutosave,
   } = useProcessOrchestrator({
     sid,
     isLocal,
@@ -976,9 +1109,56 @@ export default function ProcessStage({
       setSaveDirtyHint(true);
       setDiagramSearchMutationVersion((prev) => prev + 1);
       refreshDiagramUndoRedoState();
+      const owner = ensureSessionWorkspaceTruthOwner();
+      if (owner) {
+        const command = resolveWorkspaceMutationCommand(kind);
+        const mutationSnapshot = buildOwnerSnapshot({
+          id: sid,
+          session_id: sid,
+          bpmn_xml: toText(draft?.bpmn_xml || ""),
+          bpmn_xml_version: Number(draft?.bpmn_xml_version || draft?.version || 0),
+          diagram_state_version: Number(getBaseDiagramStateVersion() ?? draft?.diagram_state_version ?? draft?.diagramStateVersion ?? 0),
+          bpmn_graph_fingerprint: toText(draft?.bpmn_graph_fingerprint || ""),
+        }, `mutation:${kind || "diagram.change"}`);
+        if (command === "applyPropertyChange") {
+          owner.applyPropertyChange({
+            patch: mutationSnapshot,
+            reason: kind || "diagram.property.change",
+          });
+        } else if (command === "applyTemplate") {
+          owner.applyTemplate({
+            patch: mutationSnapshot,
+            reason: kind || "diagram.template.apply",
+          });
+        } else if (command === "applyCopyPaste") {
+          owner.applyCopyPaste({
+            patch: mutationSnapshot,
+            reason: kind || "diagram.copy_paste",
+          });
+        } else {
+          owner.applyDiagramEdit({
+            patch: mutationSnapshot,
+            reason: kind || "diagram.change",
+          });
+        }
+      }
     }
     queueDiagramMutationRaw(mutation);
-  }, [queueDiagramMutationRaw, refreshDiagramUndoRedoState]);
+  }, [
+    buildOwnerSnapshot,
+    draft?.bpmn_graph_fingerprint,
+    draft?.bpmn_xml,
+    draft?.bpmn_xml_version,
+    draft?.diagramStateVersion,
+    draft?.diagram_state_version,
+    draft?.version,
+    ensureSessionWorkspaceTruthOwner,
+    getBaseDiagramStateVersion,
+    queueDiagramMutationRaw,
+    refreshDiagramUndoRedoState,
+    sid,
+    toText,
+  ]);
 
   const diagramSearch = useDiagramSearchController({
     bpmnRef,
@@ -1120,6 +1300,8 @@ export default function ProcessStage({
 
   async function handleSaveCurrentTab() {
     if (!hasSession || !isBpmnTab || isSwitchingTab || isFlushingTab || isManualSaveBusy) return;
+    const truthOwner = ensureSessionWorkspaceTruthOwner();
+    truthOwner?.saveSessionStart({ source: "manual_save" });
     setGenErr("");
     setInfoMsg("");
     setIsManualSaveBusy(true);
@@ -1131,6 +1313,10 @@ export default function ProcessStage({
         persistReason: "publish_manual_save",
       });
       if (!saved?.ok) {
+        truthOwner?.saveSessionFailed({
+          source: "manual_save_failed",
+          error: shortErr(saved?.error || "Не удалось сохранить BPMN."),
+        });
         const failedOutcomeUi = resolveManualSaveOutcomeUi({
           primarySaveOk: false,
           primarySaveError: shortErr(saved?.error || "Не удалось сохранить BPMN."),
@@ -1141,6 +1327,7 @@ export default function ProcessStage({
       let companionError = "";
       let publishInfo = "";
       if (!saved?.pending) {
+        const savedXml = toText(saved?.xml || draft?.bpmn_xml || "");
         const backendVersionSnapshot = asObject(saved?.bpmnVersionSnapshot);
         const normalizedBackendVersionSnapshot = normalizeBpmnVersionListItem(backendVersionSnapshot);
         const savedDiagramStateVersion = Number(saved?.diagramStateVersion);
@@ -1161,6 +1348,42 @@ export default function ProcessStage({
         if (Number.isFinite(companionBaseDiagramStateVersion) && companionBaseDiagramStateVersion >= 0) {
           rememberDiagramStateVersion(companionBaseDiagramStateVersion, { sessionId: sid });
         }
+        const acceptedSnapshot = buildOwnerSnapshot({
+          id: sid,
+          session_id: sid,
+          bpmn_xml: savedXml,
+          bpmn_xml_version: Number(
+            normalizedBackendVersionSnapshot.revisionNumber
+            || saved?.storedRev
+            || draft?.bpmn_xml_version
+            || draft?.version
+            || 0
+          ),
+          diagram_state_version: Number(
+            companionBaseDiagramStateVersion
+            ?? saved?.diagramStateVersion
+            ?? getBaseDiagramStateVersion()
+            ?? draft?.diagram_state_version
+            ?? draft?.diagramStateVersion
+            ?? 0
+          ),
+          bpmn_graph_fingerprint: toText(saved?.graphFingerprint || draft?.bpmn_graph_fingerprint || ""),
+        }, "manual_save");
+        truthOwner?.saveSessionAccepted({
+          source: "manual_save",
+          primaryAck: {
+            ...acceptedSnapshot,
+            bpmnVersionSnapshot: {
+              id: String(normalizedBackendVersionSnapshot.id || ""),
+              revisionNumber: Number(
+                normalizedBackendVersionSnapshot.revisionNumber
+                || acceptedSnapshot?.bpmn_xml_version
+                || 0
+              ),
+            },
+          },
+          durableSnapshot: acceptedSnapshot,
+        });
         const backendRevisionNumber = Number(normalizedBackendVersionSnapshot.revisionNumber || 0);
         if (backendRevisionNumber > 0) {
           const backendVersionId = String(normalizedBackendVersionSnapshot.id || "").trim();
@@ -1180,7 +1403,7 @@ export default function ProcessStage({
         lastSuccessfulPublishRef.current = {
           sessionId: sid,
           atMs: Date.now(),
-          xmlHash: fnv1aHex(String(saved?.xml || draft?.bpmn_xml || "")),
+          xmlHash: fnv1aHex(savedXml),
         };
         const shouldSyncCompanion = backendRevisionNumber > 0;
         if (shouldSyncCompanion) {
@@ -1189,13 +1412,85 @@ export default function ProcessStage({
             && companionBaseDiagramStateVersion > 0
           );
           if (hasCompanionBaseDiagramStateVersion) {
+            let nextCompanionBaseDiagramStateVersion = companionBaseDiagramStateVersion;
+            const manualProjectionPlan = buildManualSaveProjectionSyncPlan({
+              xmlText: savedXml,
+              draft,
+              projectionHelpers,
+            });
+            if (!manualProjectionPlan?.ok) {
+              companionError = shortErr(
+                manualProjectionPlan?.error
+                || "Не удалось подготовить projection sync после сохранения диаграммы.",
+              );
+            } else {
+              const projectionPatch = asObject(manualProjectionPlan.patch);
+              if (Object.keys(projectionPatch).length > 0) {
+                markInterviewAsSaved(
+                  manualProjectionPlan.nextInterview,
+                  manualProjectionPlan.nextNodes,
+                  draft?.nodes,
+                  manualProjectionPlan.nextEdges,
+                  draft?.edges,
+                );
+                onSessionSyncWithVersion?.({
+                  id: sid,
+                  session_id: sid,
+                  actors_derived: asArray(manualProjectionPlan.derivedActors),
+                  ...(projectionPatch.interview ? { interview: manualProjectionPlan.nextInterview } : {}),
+                  ...(projectionPatch.nodes ? { nodes: manualProjectionPlan.nextNodes } : {}),
+                  ...(projectionPatch.edges ? { edges: manualProjectionPlan.nextEdges } : {}),
+                  _sync_source: "manual_save_projection_sync",
+                });
+                if (!isLocal) {
+                  const syncPatchPayload = {
+                    ...projectionPatch,
+                    base_diagram_state_version: Math.round(companionBaseDiagramStateVersion),
+                  };
+                  const syncRes = await apiPatchSession(sid, syncPatchPayload);
+                  if (!syncRes?.ok) {
+                    companionError = shortErr(
+                      syncRes?.error
+                      || "Не удалось синхронизировать graph projection после сохранения BPMN.",
+                    );
+                  } else {
+                    const syncAckVersion = Number(
+                      syncRes?.session?.diagram_state_version
+                      ?? syncRes?.session?.diagramStateVersion,
+                    );
+                    if (Number.isFinite(syncAckVersion) && syncAckVersion > 0) {
+                      nextCompanionBaseDiagramStateVersion = Math.round(syncAckVersion);
+                      rememberDiagramStateVersion(nextCompanionBaseDiagramStateVersion, { sessionId: sid });
+                    }
+                    onSessionSyncWithVersion?.({
+                      ...(syncRes?.session && typeof syncRes.session === "object" ? syncRes.session : {}),
+                      id: sid,
+                      session_id: sid,
+                      actors_derived: asArray(manualProjectionPlan.derivedActors),
+                      _sync_source: "manual_save_projection_patch_ack",
+                    });
+                  }
+                }
+              }
+            }
+            if (!companionError) {
             const companionResult = await persistSavedSessionCompanion({
               source: "manual_save",
-              xml: toText(saved?.xml || draft?.bpmn_xml || ""),
+              xml: savedXml,
               savedAt: new Date().toISOString(),
-              storedRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
-              requestedBaseRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
-              baseDiagramStateVersion: companionBaseDiagramStateVersion,
+              storedRev: Number(
+                acceptedSnapshot?.bpmn_xml_version
+                || normalizedBackendVersionSnapshot.revisionNumber
+                || saved?.storedRev
+                || 0,
+              ),
+              requestedBaseRev: Number(
+                acceptedSnapshot?.bpmn_xml_version
+                || normalizedBackendVersionSnapshot.revisionNumber
+                || saved?.storedRev
+                || 0,
+              ),
+              baseDiagramStateVersion: nextCompanionBaseDiagramStateVersion,
               publishRevision: true,
               revisionSource: "publish_manual_save",
               authoritativeRevision: backendVersionSnapshot,
@@ -1205,6 +1500,7 @@ export default function ProcessStage({
             } else if (!publishInfo && asObject(companionResult?.revision).skipped === true) {
               publishInfo = "Черновик сохранён. Новая версия не создана: контент совпадает с последней.";
             }
+            }
           }
         } else {
           publishInfo = "Черновик сохранён. Новая версия не создана: нет изменений схемы.";
@@ -1212,6 +1508,7 @@ export default function ProcessStage({
         if (backendRevisionNumber > 0 && !publishInfo) {
           publishInfo = `Опубликована версия ${backendRevisionNumber}.`;
         }
+        cancelPendingDiagramAutosave?.();
       }
       setSaveDirtyHint(false);
       if (selectedElementId) {
@@ -1230,6 +1527,10 @@ export default function ProcessStage({
         setInfoMsg(successOutcomeUi.infoMsg);
       }
     } catch (e) {
+      truthOwner?.saveSessionFailed({
+        source: "manual_save_failed",
+        error: shortErr(e?.message || e || "Не удалось сохранить BPMN."),
+      });
       setGenErr(shortErr(e?.message || e || "Не удалось сохранить BPMN."));
     } finally {
       setIsManualSaveBusy(false);
@@ -2389,6 +2690,24 @@ export default function ProcessStage({
     bpmnStageHostRef,
     clientToDiagram,
     onPersistedTemplateApply: async ({ template, saved }) => {
+      const owner = ensureSessionWorkspaceTruthOwner();
+      const snapshot = buildOwnerSnapshot({
+        id: sid,
+        session_id: sid,
+        bpmn_xml: toText(saved?.xml || bpmnRef.current?.getXmlDraft?.() || draft?.bpmn_xml || ""),
+        bpmn_xml_version: Number(saved?.storedRev || draft?.bpmn_xml_version || draft?.version || 0),
+        diagram_state_version: Number(saved?.diagramStateVersion || getBaseDiagramStateVersion() || 0),
+        bpmn_graph_fingerprint: toText(saved?.graphFingerprint || draft?.bpmn_graph_fingerprint || ""),
+      }, "template_apply");
+      owner?.applyTemplate({
+        patch: snapshot,
+        reason: "template_apply",
+      });
+      owner?.saveSessionAccepted({
+        source: "template_apply",
+        primaryAck: snapshot,
+        durableSnapshot: snapshot,
+      });
       const result = await persistTemplateAppliedSessionCompanion({
         template,
         source: "template_apply",

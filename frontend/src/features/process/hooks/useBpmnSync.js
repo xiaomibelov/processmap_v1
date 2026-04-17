@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef } from "react";
 import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
 import { buildBpmnSaveFailureDiagnostics } from "../bpmn/save/saveBeforeSwitchDiagnostics.js";
+import {
+  isLifecycleFlushSource,
+  resolveLifecycleFlushGuardSignal,
+} from "../bpmn/save/lifecycleFlushGuardSignal.js";
 
 function toText(v) {
   return String(v || "");
@@ -241,6 +245,29 @@ export default function useBpmnSync({
     const fallbackXml = toText(
       bpmnRef.current?.getXmlDraft?.() || draftRef.current?.bpmn_xml || "",
     );
+    const saveDebugState = bpmnRef.current?.getSaveDebugState?.() || null;
+    let lifecycleGuardSignal = null;
+    let lifecycleXmlOverride = "";
+    if (isLifecycleFlushSource(source)) {
+      let liveRuntimeXml = "";
+      try {
+        const runtimeXmlRes = await Promise.resolve(
+          bpmnRef.current?.getRuntimeXmlSnapshot?.({ format: true }),
+        );
+        liveRuntimeXml = toText(runtimeXmlRes?.xml || "");
+      } catch {
+        liveRuntimeXml = "";
+      }
+      lifecycleGuardSignal = resolveLifecycleFlushGuardSignal({
+        source,
+        saveDebugState,
+        liveRuntimeXml,
+        fallbackXml,
+      });
+      if (!lifecycleGuardSignal?.skip && lifecycleGuardSignal?.hasFreshDirtyDelta) {
+        lifecycleXmlOverride = toText(lifecycleGuardSignal?.liveRuntimeXml || "");
+      }
+    }
     const isSaveInProgress = () => {
       try {
         return !!bpmnRef.current?.isFlushing?.();
@@ -261,6 +288,25 @@ export default function useBpmnSync({
       requestBaseRev,
       payloadHash: fallbackXml.trim() ? fnv1aHex(fallbackXml) : "",
     };
+    if (lifecycleGuardSignal?.skip) {
+      if (fallbackXml.trim()) {
+        syncXmlToSession(fallbackXml, { source: `${source}:skip_no_dirty_delta` });
+      }
+      logBpmnTrace("FLUSH_SAVE_SKIPPED_NO_DIRTY_DELTA", fallbackXml, {
+        sid,
+        source,
+        rev: asNumber(lifecycleGuardSignal?.rev, 0),
+        last_saved_rev: asNumber(lifecycleGuardSignal?.lastSavedRev, 0),
+        fresh_delta: lifecycleGuardSignal?.hasFreshDirtyDelta ? 1 : 0,
+      });
+      return {
+        ok: true,
+        skipped: true,
+        pending: false,
+        reason: "lifecycle_no_dirty_delta",
+        xml: fallbackXml,
+      };
+    }
     if (allowInFlightPendingOutcome && isSaveInProgress()) {
       if (fallbackXml.trim()) {
         syncXmlToSession(fallbackXml, { source: `${source}:pending_flush` });
@@ -283,7 +329,12 @@ export default function useBpmnSync({
       );
     }
     try {
-      let saved = await Promise.resolve(saveLocal({ force, source, persistReason }));
+      let saved = await Promise.resolve(saveLocal({
+        force,
+        source,
+        persistReason,
+        xmlOverride: lifecycleXmlOverride,
+      }));
       let pendingRetryAttempt = 0;
       while (
         force
@@ -295,7 +346,12 @@ export default function useBpmnSync({
       ) {
         pendingRetryAttempt += 1;
         await new Promise((resolve) => window.setTimeout(resolve, 90 * pendingRetryAttempt));
-        saved = await Promise.resolve(saveLocal({ force, source, persistReason }));
+        saved = await Promise.resolve(saveLocal({
+          force,
+          source,
+          persistReason,
+          xmlOverride: lifecycleXmlOverride,
+        }));
       }
       if (pendingRetryAttempt > 0) {
         logBpmnTrace("FLUSH_SAVE_PENDING_RETRY_DONE", fallbackXml, {
