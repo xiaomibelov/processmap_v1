@@ -6,6 +6,8 @@ import {
   apiAdminListOrgs,
   apiAdminListProjects,
   apiAdminListSessions,
+  apiAdminListErrorEvents,
+  apiAdminGetErrorEvent,
 } from "../../../lib/api";
 
 export {
@@ -16,4 +18,6 @@ export {
   apiAdminGetSession,
   apiAdminListJobs,
   apiAdminListAudit,
+  apiAdminListErrorEvents,
+  apiAdminGetErrorEvent,
 };

@@ -84,6 +84,9 @@ from .redis_cache import (
     workspace_filters_hash,
 )
 from .redis_client import runtime_status
+from .error_events import get_or_create_backend_request_id
+from .error_events.background import capture_backend_async_exception
+from .error_events.domain import capture_backend_domain_invariant_violation
 from .session_status import (
     SESSION_STATUS_SET as _SESSION_STATUS_SET,
     normalize_session_status as _normalize_session_status_base,
@@ -1281,6 +1284,72 @@ def _delete_report_version_global(
     return None
 
 
+def _path_report_warning_codes(row_raw: Any) -> List[str]:
+    row = row_raw if isinstance(row_raw, dict) else {}
+    out: List[str] = []
+    seen: Set[str] = set()
+    for item in row.get("warnings_json") or []:
+        code = ""
+        if isinstance(item, dict):
+            code = str(item.get("code") or "").strip()
+        else:
+            code = str(item or "").strip()
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        out.append(code)
+    return out[:20]
+
+
+def _emit_path_report_domain_anomaly(
+    report_row: Dict[str, Any],
+    *,
+    session_id: str,
+    path_id: str,
+    org_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    route: Optional[str] = None,
+    error_code: str = "path_report_generation_failed",
+    error_class: str = "",
+) -> Optional[Dict[str, Any]]:
+    row = report_row if isinstance(report_row, dict) else {}
+    if str(row.get("status") or "").strip().lower() != "error":
+        return None
+    sid = str(session_id or row.get("session_id") or "").strip()
+    pid = str(path_id or row.get("path_id") or "").strip()
+    rid = str(row.get("id") or row.get("report_id") or "").strip()
+    code = str(error_code or "path_report_generation_failed").strip() or "path_report_generation_failed"
+    return capture_backend_domain_invariant_violation(
+        domain="path_report",
+        invariant_name=code,
+        message=f"Path report final semantic failure: {code}",
+        severity="error",
+        user_id=str(user_id or "").strip() or None,
+        org_id=str(org_id or "").strip() or None,
+        session_id=sid or None,
+        project_id=str(project_id or "").strip() or None,
+        route=str(route or "").strip() or (f"/api/sessions/{sid}/paths/{pid}/reports" if sid and pid else None),
+        request_id=str(request_id or "").strip() or None,
+        correlation_id=rid or None,
+        context_json={
+            "operation": "path_report_generation",
+            "report_id": rid,
+            "report_version_id": rid,
+            "path_id": pid,
+            "version": int(row.get("version") or 0),
+            "steps_hash": str(row.get("steps_hash") or "").strip(),
+            "status": str(row.get("status") or "").strip().lower(),
+            "error_code": code,
+            "error_class": str(error_class or "").strip(),
+            "model": str(row.get("model") or "").strip(),
+            "prompt_template_version": str(row.get("prompt_template_version") or "").strip(),
+            "warning_codes": _path_report_warning_codes(row),
+        },
+    )
+
+
 def _run_path_report_generation_async(
     session_id: str,
     path_id: str,
@@ -1289,6 +1358,10 @@ def _run_path_report_generation_async(
     prompt_template_version: str,
     model_name: str,
     org_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    route: Optional[str] = None,
 ) -> None:
     sid = str(session_id or "").strip()
     pid = str(path_id or "").strip()
@@ -1302,7 +1375,7 @@ def _run_path_report_generation_async(
     _set_report_active(rid, True)
 
     try:
-        def _finish_error(message: str) -> None:
+        def _finish_error(message: str, *, error_code: str = "path_report_generation_failed", error_class: str = "") -> None:
             text = str(message or "deepseek failed")
 
             def _apply(row: Dict[str, Any]) -> None:
@@ -1310,19 +1383,36 @@ def _run_path_report_generation_async(
                 row["error_message"] = text
                 row["warnings_json"] = row.get("warnings_json") or []
 
-            _patch_report_version_row(sid, pid, rid, _apply, org_id=org_scope, is_admin=True)
+            patched = _patch_report_version_row(sid, pid, rid, _apply, org_id=org_scope, is_admin=True)
+            if isinstance(patched, dict):
+                _emit_path_report_domain_anomaly(
+                    patched,
+                    session_id=sid,
+                    path_id=pid,
+                    org_id=org_scope,
+                    user_id=user_id,
+                    project_id=project_id,
+                    request_id=request_id,
+                    route=route,
+                    error_code=error_code,
+                    error_class=error_class,
+                )
 
         llm = load_llm_settings()
         api_key = str(llm.get("api_key") or "").strip()
         base_url = str(llm.get("base_url") or "").strip()
         if not api_key:
-            _finish_error("deepseek api_key is not set")
+            _finish_error("deepseek api_key is not set", error_code="missing_api_key")
             return
 
         try:
             from .ai.deepseek_questions import generate_path_report
         except Exception as e:
-            _finish_error(f"deepseek questions module not available: {e}")
+            _finish_error(
+                f"deepseek questions module not available: {e}",
+                error_code="module_unavailable",
+                error_class=type(e).__name__,
+            )
             return
 
         try:
@@ -1347,10 +1437,18 @@ def _run_path_report_generation_async(
                     )
                     used_compact_retry = True
                 except Exception as second_error:
-                    _finish_error(f"deepseek failed: {second_error}")
+                    _finish_error(
+                        f"deepseek failed: {second_error}",
+                        error_code="provider_failed_after_compact_retry",
+                        error_class=type(second_error).__name__,
+                    )
                     return
             else:
-                _finish_error(f"deepseek failed: {first_error}")
+                _finish_error(
+                    f"deepseek failed: {first_error}",
+                    error_code="provider_failed",
+                    error_class=type(first_error).__name__,
+                )
                 return
 
         if used_compact_retry and isinstance(report_result, dict):
@@ -1380,6 +1478,54 @@ def _run_path_report_generation_async(
         _patch_report_version_row(sid, pid, rid, _apply_success, org_id=org_scope, is_admin=True)
     finally:
         _set_report_active(rid, False)
+
+
+def _run_path_report_generation_with_capture(
+    *,
+    session_id: str,
+    path_id: str,
+    report_id: str,
+    request_payload_json: Dict[str, Any],
+    prompt_template_version: str,
+    model_name: str,
+    org_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    route: Optional[str] = None,
+) -> None:
+    try:
+        _run_path_report_generation_async(
+            session_id=session_id,
+            path_id=path_id,
+            report_id=report_id,
+            request_payload_json=request_payload_json,
+            prompt_template_version=prompt_template_version,
+            model_name=model_name,
+            org_id=org_id,
+            user_id=user_id,
+            project_id=project_id,
+            request_id=request_id,
+            route=route,
+        )
+    except Exception as exc:
+        capture_backend_async_exception(
+            exc,
+            task_name="path_report_generation",
+            execution_scope="background",
+            org_id=str(org_id or "").strip() or None,
+            session_id=str(session_id or "").strip() or None,
+            project_id=str(project_id or "").strip() or None,
+            request_id=str(request_id or "").strip() or None,
+            correlation_id=str(report_id or "").strip() or None,
+            context_json={
+                "path_id": str(path_id or "").strip(),
+                "report_id": str(report_id or "").strip(),
+                "prompt_template_version": str(prompt_template_version or "").strip(),
+                "model_name": str(model_name or "").strip(),
+            },
+        )
+        raise
 
 
 def _find_report_version(sess: Session, report_id: str) -> Optional[Dict[str, Any]]:
@@ -4244,6 +4390,16 @@ def _create_path_report_version_core(
 
     llm = load_llm_settings()
     model_name = str(llm.get("model") or "deepseek-chat").strip() or "deepseek-chat"
+    user_id = ""
+    request_id = ""
+    route = f"/api/sessions/{sid}/paths/{pid}/reports"
+    if request is not None:
+        user_id = str(_request_user_meta(request)[0] or "").strip()
+        request_id = get_or_create_backend_request_id(request)[0]
+        request_path = str(getattr(getattr(request, "url", None), "path", "") or "").strip()
+        if request_path:
+            route = request_path
+    project_id = str(getattr(s, "project_id", "") or "").strip()
     lock = _report_session_lock(sid)
     with lock:
         s = st.load(sid, org_id=org_scope, is_admin=admin)
@@ -4301,12 +4457,16 @@ def _create_path_report_version_core(
         "prompt_template_version": prompt_template_version,
         "model_name": model_name,
         "org_id": org_scope,
+        "user_id": user_id,
+        "project_id": project_id,
+        "request_id": request_id,
+        "route": route,
     }
     if sync_mode:
-        _run_path_report_generation_async(**worker_kwargs)
+        _run_path_report_generation_with_capture(**worker_kwargs)
     else:
         worker = threading.Thread(
-            target=_run_path_report_generation_async,
+            target=_run_path_report_generation_with_capture,
             kwargs=worker_kwargs,
             daemon=True,
             name=f"path-report-{report_id}",

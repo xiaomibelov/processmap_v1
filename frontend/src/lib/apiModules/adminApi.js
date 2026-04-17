@@ -92,3 +92,16 @@ export async function apiAdminListAudit(params = {}) {
   const r = okOrError(await request(endpoint, { method: "GET" }));
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
+
+export async function apiAdminListErrorEvents(params = {}) {
+  const endpoint = apiRoutes.admin.errorEvents(normalizeAdminParams(params));
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminGetErrorEvent(eventId) {
+  const id = String(eventId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing event_id" };
+  const r = okOrError(await request(apiRoutes.admin.errorEvent(id), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
