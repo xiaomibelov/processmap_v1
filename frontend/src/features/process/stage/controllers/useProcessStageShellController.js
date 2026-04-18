@@ -11,16 +11,16 @@ function toText(value) {
 function buildSaveSmartTextFromSnapshot(saveSnapshotRaw, fallbackRaw = "") {
   const saveSnapshot = asObject(saveSnapshotRaw);
   if (saveSnapshot.isSaving === true) return "Сохранение...";
-  if (saveSnapshot.isDirty === true) return "Сохранить";
+  if (saveSnapshot.isDirty === true) return "Сохранить сессию";
   if (saveSnapshot.isFailed === true) return "Ошибка сохранения";
   if (saveSnapshot.isStale === true) return "Требуется синхронизация";
   if (saveSnapshot.isSaved === true) return "Черновик сохранён";
   const status = toText(saveSnapshot.status);
   if (status === "saved") return "Черновик сохранён";
-  if (status === "dirty") return "Сохранить";
+  if (status === "dirty") return "Сохранить сессию";
   if (status === "saving") return "Сохранение...";
   if (status === "failed") return "Ошибка сохранения";
-  return toText(fallbackRaw) || "Сохранение";
+  return toText(fallbackRaw) || "Сохранить сессию";
 }
 
 export function buildSaveUiState({
@@ -37,8 +37,8 @@ export function buildSaveUiState({
   const hasLiveDraft = draftState.hasLiveDraft === true;
   const draftAheadOfLatest = draftState.isDraftAheadOfLatestRevision === true;
   const publishActionRequired = draftAheadOfLatest || (latestRevisionNumber <= 0 && hasLiveDraft);
-  const showSaveActionButton = saveDirty || publishActionRequired;
-  const saveActionText = publishActionRequired ? "Сохранить версию" : saveSmartText;
+  const showSaveActionButton = true;
+  const saveActionText = "Сохранить сессию";
   return {
     saveSmartText,
     saveDirty,

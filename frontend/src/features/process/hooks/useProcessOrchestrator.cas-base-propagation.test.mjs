@@ -14,5 +14,6 @@ function readSource() {
 test("orchestrator forwards getBaseDiagramStateVersion into tabs and interview lifecycles", () => {
   const source = readSource();
   const mentions = source.match(/getBaseDiagramStateVersion,/g) || [];
-  assert.equal(mentions.length >= 3, true);
+  assert.equal(mentions.length >= 4, true);
+  assert.equal(source.includes("rememberDiagramStateVersion,"), true);
 });

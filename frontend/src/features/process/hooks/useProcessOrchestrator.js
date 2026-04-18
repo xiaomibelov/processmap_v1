@@ -14,6 +14,7 @@ export default function useProcessOrchestrator({
   bpmnSync,
   projectionHelpers,
   getBaseDiagramStateVersion,
+  rememberDiagramStateVersion,
   onSessionSync,
   onError,
 }) {
@@ -72,6 +73,7 @@ export default function useProcessOrchestrator({
   const {
     queueDiagramMutation,
     flushDiagramBeforeTabSwitch,
+    cancelPendingDiagramAutosave,
   } = useDiagramMutationLifecycle({
     sid,
     isLocal,
@@ -79,6 +81,8 @@ export default function useProcessOrchestrator({
     bpmnSync,
     coordinator,
     projectionHelpers,
+    getBaseDiagramStateVersion,
+    rememberDiagramStateVersion,
     onSessionSync,
     onError,
   });
@@ -104,5 +108,6 @@ export default function useProcessOrchestrator({
     markInterviewAsSaved,
     handleInterviewChange,
     queueDiagramMutation,
+    cancelPendingDiagramAutosave,
   };
 }

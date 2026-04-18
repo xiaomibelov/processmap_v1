@@ -537,6 +537,28 @@ export function createBpmnStageImperativeApi(ctxBase) {
     setDiagramMutationSaveActive: (active) => {
       refs.bpmnCoordinatorRef?.current?.setDiagramMutationSaveActive?.(active === true);
     },
+    getSaveDebugState: () => refs.bpmnCoordinatorRef?.current?.getDebugState?.() || null,
+    getRuntimeXmlSnapshot: async (options = {}) => {
+      const modeler = refs.modelerRef?.current || refs.modelerRuntimeRef?.current?.getInstance?.();
+      if (modeler && typeof modeler.saveXML === "function") {
+        const out = await modeler.saveXML({ format: options?.format !== false });
+        return {
+          ok: true,
+          xml: String(out?.xml || ""),
+          token: Number(refs.modelerRuntimeRef?.current?.getStatus?.()?.token || 0),
+          source: "modeler_saveXML",
+        };
+      }
+      const runtime = refs.modelerRuntimeRef?.current;
+      if (!runtime || typeof runtime.getXml !== "function") {
+        return { ok: false, xml: "" };
+      }
+      const out = await runtime.getXml({ format: options?.format !== false });
+      return {
+        ...(out && typeof out === "object" ? out : { ok: false, xml: "" }),
+        source: "runtime_getXml",
+      };
+    },
     isFlushing: () => !!refs.bpmnCoordinatorRef?.current?.isFlushing?.(),
     saveXmlDraft: () => callbacks.saveXmlDraftText?.(),
     hasXmlDraftChanges: () => !!values.xmlDirty,
