@@ -170,7 +170,7 @@ test("flushSave propagates conflict status for tab-switch diagnostics classifica
   assert.equal(saved.errorDetails?.server_current_version, 10);
 });
 
-test("stale conflict from other-user path stops save cycle without hidden queued retry", async () => {
+test("stale conflict from other-user path resolves in single flush via deterministic auto-retry", async () => {
   await withWindowTimers(async () => {
     const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true, lastSavedRev: 8 });
     const saveCalls = [];
@@ -208,14 +208,14 @@ test("stale conflict from other-user path stops save cycle without hidden queued
     const saved = await coordinator.flushSave("manual_save");
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    assert.equal(saved.ok, false);
-    assert.equal(saved.status, 409);
-    assert.equal(saved.errorDetails?.code, "DIAGRAM_STATE_CONFLICT");
-    assert.equal(saveCalls.length, 1);
+    assert.equal(saved.ok, true);
+    assert.equal(saved.staleRetryApplied, true);
+    assert.equal(saved.staleRetryAttempts, 1);
+    assert.equal(saveCalls.length, 2);
   });
 });
 
-test("stale conflict from same-user multi-tab path also stops hidden retry in same cycle", async () => {
+test("stale conflict from same-user multi-tab path resolves in single flush via deterministic auto-retry", async () => {
   await withWindowTimers(async () => {
     const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true, lastSavedRev: 8 });
     const saveCalls = [];
@@ -253,10 +253,10 @@ test("stale conflict from same-user multi-tab path also stops hidden retry in sa
     const saved = await coordinator.flushSave("manual_save");
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    assert.equal(saved.ok, false);
-    assert.equal(saved.status, 409);
-    assert.equal(saved.errorDetails?.code, "DIAGRAM_STATE_CONFLICT");
-    assert.equal(saveCalls.length, 1);
+    assert.equal(saved.ok, true);
+    assert.equal(saved.staleRetryApplied, true);
+    assert.equal(saved.staleRetryAttempts, 1);
+    assert.equal(saveCalls.length, 2);
   });
 });
 
@@ -295,9 +295,10 @@ test("new explicit save action after stale conflict still persists normally", as
 
     coordinator.scheduleSave("autosave");
     const first = await coordinator.flushSave("manual_save");
-    assert.equal(first.ok, false);
-    assert.equal(first.status, 409);
-    assert.equal(saveCalls.length, 1);
+    assert.equal(first.ok, true);
+    assert.equal(first.staleRetryApplied, true);
+    assert.equal(first.staleRetryAttempts, 1);
+    assert.equal(saveCalls.length, 2);
 
     const second = await coordinator.flushSave("manual_save");
     assert.equal(second.ok, true);
@@ -305,7 +306,7 @@ test("new explicit save action after stale conflict still persists normally", as
   });
 });
 
-test("stale conflict replay preserves publish intent marker in live 409 -> autosave replay branch", async () => {
+test("stale conflict auto-retry preserves publish intent marker within same flush", async () => {
   await withWindowTimers(async () => {
     const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true, lastSavedRev: 8 });
     const reasons = [];
@@ -339,17 +340,15 @@ test("stale conflict replay preserves publish intent marker in live 409 -> autos
     });
 
     const first = await coordinator.flushSave("publish_manual_save");
-    assert.equal(first.ok, false);
-    assert.equal(first.status, 409);
-
-    const second = await coordinator.flushSave("autosave");
-    assert.equal(second.ok, true);
-    assert.deepEqual(reasons, ["publish_manual_save", "publish_manual_save:conflict_replay"]);
+    assert.equal(first.ok, true);
+    assert.equal(first.staleRetryApplied, true);
+    assert.equal(first.staleRetryAttempts, 1);
+    assert.deepEqual(reasons, ["publish_manual_save", "publish_manual_save"]);
     assert.equal(coordinator.getDebugState().conflictReplayReason, "");
   });
 });
 
-test("stale conflict replay preserves manual save intent marker for session-save path", async () => {
+test("stale conflict auto-retry preserves manual save intent marker within same flush", async () => {
   await withWindowTimers(async () => {
     const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true, lastSavedRev: 8 });
     const reasons = [];
@@ -383,12 +382,10 @@ test("stale conflict replay preserves manual save intent marker for session-save
     });
 
     const first = await coordinator.flushSave("manual_save");
-    assert.equal(first.ok, false);
-    assert.equal(first.status, 409);
-
-    const second = await coordinator.flushSave("autosave");
-    assert.equal(second.ok, true);
-    assert.deepEqual(reasons, ["manual_save", "manual_save:conflict_replay"]);
+    assert.equal(first.ok, true);
+    assert.equal(first.staleRetryApplied, true);
+    assert.equal(first.staleRetryAttempts, 1);
+    assert.deepEqual(reasons, ["manual_save", "manual_save"]);
     assert.equal(coordinator.getDebugState().conflictReplayReason, "");
   });
 });
@@ -428,7 +425,7 @@ test("queued replay keeps publish_manual_save intent marker for explicit revisio
   });
 });
 
-test("conflict-like retry branch still preserves publish_manual_save intent marker", async () => {
+test("conflict-like stale retry branch preserves publish_manual_save intent marker", async () => {
   await withWindowTimers(async () => {
     const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true, lastSavedRev: 8 });
     const reasons = [];
@@ -464,7 +461,7 @@ test("conflict-like retry branch still preserves publish_manual_save intent mark
     const saved = await coordinator.flushSave("publish_manual_save");
 
     assert.equal(saved.ok, true);
-    assert.deepEqual(reasons, ["publish_manual_save", "publish_manual_save:queued"]);
+    assert.deepEqual(reasons, ["publish_manual_save", "publish_manual_save"]);
   });
 });
 
@@ -501,4 +498,142 @@ test("queued replay keeps manual_save intent marker for ordinary session save", 
     assert.equal(saved.ok, true);
     assert.deepEqual(reasons, ["manual_save", "manual_save:queued"]);
   });
+});
+
+test("flushSave performs deterministic single stale conflict auto-retry and resolves without conflict fail event", async () => {
+  const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true });
+  const traces = [];
+  let saveCalls = 0;
+  const coordinator = createBpmnCoordinator({
+    store,
+    getSessionId: () => "sid_conflict_retry_ok",
+    getRuntime: () => ({
+      getStatus: () => ({ ready: true, defs: true, token: 5 }),
+      getXml: async () => ({ ok: true, xml: "<bpmn:new/>", token: 5 }),
+    }),
+    onTrace: (event, payload) => traces.push({ event, payload }),
+    persistence: {
+      saveRaw: async () => {
+        saveCalls += 1;
+        if (saveCalls === 1) {
+          return {
+            ok: false,
+            status: 409,
+            errorDetails: {
+              code: "DIAGRAM_STATE_CONFLICT",
+              session_id: "sid_conflict_retry_ok",
+              client_base_version: 9,
+              server_current_version: 10,
+            },
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          storedRev: 10,
+          diagramStateVersion: 10,
+        };
+      },
+    },
+  });
+
+  const saved = await coordinator.flushSave("manual_save");
+
+  assert.equal(saved.ok, true);
+  assert.equal(saved.staleRetryApplied, true);
+  assert.equal(saved.staleRetryAttempts, 1);
+  assert.equal(saveCalls, 2);
+  assert.equal(traces.some((entry) => entry.event === "SAVE_STALE_CONFLICT_RETRY"), true);
+  assert.equal(traces.some((entry) => entry.event === "SAVE_PERSIST_FAIL"), false);
+  const doneEvent = traces.find((entry) => entry.event === "SAVE_PERSIST_DONE");
+  assert.equal(Number(doneEvent?.payload?.stale_retry_applied || 0), 1);
+});
+
+test("flushSave emits conflict fail when stale conflict auto-retry cannot recover", async () => {
+  const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true });
+  const traces = [];
+  let saveCalls = 0;
+  const coordinator = createBpmnCoordinator({
+    store,
+    getSessionId: () => "sid_conflict_retry_fail",
+    getRuntime: () => ({
+      getStatus: () => ({ ready: true, defs: true, token: 6 }),
+      getXml: async () => ({ ok: true, xml: "<bpmn:new/>", token: 6 }),
+    }),
+    onTrace: (event, payload) => traces.push({ event, payload }),
+    persistence: {
+      saveRaw: async () => {
+        saveCalls += 1;
+        return {
+          ok: false,
+          status: 409,
+          errorDetails: {
+            code: "DIAGRAM_STATE_CONFLICT",
+            session_id: "sid_conflict_retry_fail",
+            client_base_version: 9,
+            server_current_version: 10,
+          },
+        };
+      },
+    },
+  });
+
+  const saved = await coordinator.flushSave("manual_save");
+
+  assert.equal(saved.ok, false);
+  assert.equal(saved.status, 409);
+  assert.equal(saved.staleRetryAttempts, 1);
+  assert.equal(saveCalls, 2);
+  assert.equal(traces.some((entry) => entry.event === "SAVE_STALE_CONFLICT_RETRY"), true);
+  const failEvent = traces.find((entry) => entry.event === "SAVE_PERSIST_FAIL");
+  assert.equal(Number(failEvent?.payload?.stale_retry_attempts || 0), 1);
+});
+
+test("stale conflict auto-retry preserves publish intent reason across attempts", async () => {
+  const store = createStore({ xml: "<bpmn:publish/>", rev: 14, dirty: true });
+  const persistReasons = [];
+  let saveCalls = 0;
+  const coordinator = createBpmnCoordinator({
+    store,
+    getSessionId: () => "sid_publish_retry",
+    getRuntime: () => ({
+      getStatus: () => ({ ready: true, defs: true, token: 7 }),
+      getXml: async () => ({ ok: true, xml: "<bpmn:publish/>", token: 7 }),
+    }),
+    persistence: {
+      saveRaw: async (_sid, _xml, _rev, reason) => {
+        persistReasons.push(String(reason || ""));
+        saveCalls += 1;
+        if (saveCalls === 1) {
+          return {
+            ok: false,
+            status: 409,
+            errorDetails: {
+              code: "DIAGRAM_STATE_CONFLICT",
+              session_id: "sid_publish_retry",
+              client_base_version: 14,
+              server_current_version: 15,
+            },
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          storedRev: 15,
+          diagramStateVersion: 15,
+          bpmnVersionSnapshot: {
+            id: "v_15",
+            version_number: 15,
+            source_action: "publish_manual_save",
+          },
+        };
+      },
+    },
+  });
+
+  const saved = await coordinator.flushSave("publish_manual_save");
+
+  assert.equal(saved.ok, true);
+  assert.equal(saved.staleRetryApplied, true);
+  assert.deepEqual(persistReasons, ["publish_manual_save", "publish_manual_save"]);
 });
