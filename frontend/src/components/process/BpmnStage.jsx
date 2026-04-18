@@ -4840,6 +4840,7 @@ const BpmnStage = forwardRef(function BpmnStage({
           status: Number(flushed?.status || 0),
           errorCode: String(flushed?.errorCode || ""),
           errorDetails: flushed?.errorDetails && typeof flushed.errorDetails === "object" ? flushed.errorDetails : null,
+          staleRetryAttempts: Number(flushed?.staleRetryAttempts || 0),
           xml: out,
         };
       }
@@ -5012,6 +5013,8 @@ const BpmnStage = forwardRef(function BpmnStage({
         source: hint,
         storedRev: finalStoredRev,
         diagramStateVersion: finalDiagramStateVersion,
+        staleRetryApplied: flushed?.staleRetryApplied === true,
+        staleRetryAttempts: Number(flushed?.staleRetryAttempts || 0),
         bpmnVersionSnapshot: finalVersionSnapshot,
       };
     } catch (e) {

@@ -52,6 +52,22 @@ function buildQueuedReplayReason(reasonRaw) {
   return `${reason}:queued`;
 }
 
+function normalizeErrorCode(value) {
+  return asText(value).trim().toUpperCase();
+}
+
+function isStaleConflictFailure(saved = null) {
+  const value = saved && typeof saved === "object" ? saved : {};
+  const status = asNumber(value?.status, 0);
+  const errorCode = normalizeErrorCode(value?.errorCode);
+  const errorDetails = normalizeErrorDetails(value?.errorDetails);
+  const detailsCode = normalizeErrorCode(errorDetails?.code);
+  return (
+    status === 409
+    || errorCode === "DIAGRAM_STATE_CONFLICT"
+    || detailsCode === "DIAGRAM_STATE_CONFLICT"
+  );
+}
 function fnv1aHex(input) {
   const src = asText(input);
   let hash = 0x811c9dc5;
@@ -463,7 +479,28 @@ export default function createBpmnCoordinator(options = {}) {
       xml_len: xml.length,
     });
     const startedAt = Date.now();
-    const persisted = await persistRaw(sid, xml, targetRev, reason);
+    const staleConflictRetryEnabled = options?.staleConflictRetryEnabled !== false;
+    const staleConflictRetryMaxAttempts = Math.max(0, asNumber(options?.staleConflictRetryMaxAttempts, 1));
+    let staleRetryAttempts = 0;
+    let persisted = await persistRaw(sid, xml, targetRev, reason);
+    while (
+      !persisted?.ok
+      && staleConflictRetryEnabled
+      && staleRetryAttempts < staleConflictRetryMaxAttempts
+      && isStaleConflictFailure(persisted)
+    ) {
+      staleRetryAttempts += 1;
+      emit("SAVE_STALE_CONFLICT_RETRY", {
+        sid,
+        reason,
+        rev: targetRev,
+        retry_attempt: staleRetryAttempts,
+        status: asNumber(persisted?.status, 0),
+        error_code: normalizeErrorCode(persisted?.errorCode),
+        error_details: normalizeErrorDetails(persisted?.errorDetails),
+      });
+      persisted = await persistRaw(sid, xml, targetRev, reason);
+    }
     if (!persisted?.ok) {
       const status = asNumber(persisted?.status, 0);
       const errorCode = asText(
@@ -479,6 +516,7 @@ export default function createBpmnCoordinator(options = {}) {
         error_code: errorCode,
         error: asText(persisted?.error || "persist failed"),
         error_details: errorDetails,
+        stale_retry_attempts: staleRetryAttempts,
       });
       return {
         ok: false,
@@ -487,6 +525,7 @@ export default function createBpmnCoordinator(options = {}) {
         errorCode,
         error: asText(persisted?.error || "persist failed"),
         errorDetails,
+        staleRetryAttempts,
       };
     }
     const storedRev = asNumber(persisted?.storedRev, targetRev);
@@ -503,6 +542,8 @@ export default function createBpmnCoordinator(options = {}) {
       status: asNumber(persisted?.status, 200),
       diagram_state_version: asNumber(persisted?.diagramStateVersion, 0),
       ms: Date.now() - startedAt,
+      stale_retry_applied: staleRetryAttempts > 0 ? 1 : 0,
+      stale_retry_attempts: staleRetryAttempts,
     });
     return {
       ok: true,
@@ -511,6 +552,8 @@ export default function createBpmnCoordinator(options = {}) {
       diagramStateVersion: asNumber(persisted?.diagramStateVersion, 0),
       xml,
       xmlAlreadyTransformed: prepared.transformed,
+      staleRetryApplied: staleRetryAttempts > 0,
+      staleRetryAttempts,
       bpmnVersionSnapshot: persisted?.bpmnVersionSnapshot && typeof persisted.bpmnVersionSnapshot === "object"
         ? persisted.bpmnVersionSnapshot
         : null,
