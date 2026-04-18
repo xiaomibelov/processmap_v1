@@ -15,7 +15,7 @@ test("header exposes distinct actions for session save and revision creation", (
   const source = readHeaderSource();
   assert.ok(source.includes('data-testid="diagram-toolbar-save"'));
   assert.ok(source.includes('data-testid="diagram-toolbar-create-revision"'));
-  assert.ok(source.includes("{saveActionText || saveSmartText}"));
+  assert.ok(source.includes('{saveActionText || "Сохранить сессию"}'));
   assert.ok(source.includes("Создать новую ревизию"));
 });
 
@@ -26,4 +26,11 @@ test("revision action availability is separated from session-save copy", () => {
   assert.ok(source.includes('const revisionActionTitle = !canSaveNow'));
   assert.ok(source.includes('"Новых изменений для новой ревизии нет."'));
   assert.equal(source.includes("Сохранить версию"), false);
+});
+
+test("session-save action stays visible as reassurance control whenever session is open", () => {
+  const source = readHeaderSource();
+  assert.ok(source.includes("{hasSession ? ("));
+  assert.ok(source.includes("onClick={handleSaveCurrentTab}"));
+  assert.equal(source.includes("showSaveActionButton ? ("), false);
 });
