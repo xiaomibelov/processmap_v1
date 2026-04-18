@@ -85,3 +85,17 @@ test("manual save conflict remains primary error and is not downgraded", () => {
   assert.equal(ui.infoMsg, "");
   assert.equal(ui.companionSeverity, "none");
 });
+
+test("manual save stale auto-retry is surfaced as explicit non-blocking info", () => {
+  const ui = resolveManualSaveOutcomeUi({
+    primarySaveOk: true,
+    staleRetryApplied: true,
+    publishInfo: "Опубликована версия 8.",
+  });
+
+  assert.equal(ui.primaryState, "primary_saved_published");
+  assert.equal(ui.genErr, "");
+  assert.match(ui.infoMsg, /Опубликована версия 8\./);
+  assert.match(ui.infoMsg, /автоматически повторено на актуальной версии/i);
+  assert.equal(ui.companionSeverity, "none");
+});

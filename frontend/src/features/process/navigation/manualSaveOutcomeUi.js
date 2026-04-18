@@ -8,10 +8,15 @@ export function resolveManualSaveOutcomeUi({
   primarySaveError = "",
   companionError = "",
   saveInfo = "",
+  publishInfo = "",
+  staleRetryApplied = false,
 } = {}) {
   const primaryErrorText = toText(primarySaveError);
   const companionErrorText = toText(companionError);
-  const saveInfoText = toText(saveInfo);
+  const primaryInfoText = toText(publishInfo) || toText(saveInfo);
+  const staleRetryNotice = staleRetryApplied
+    ? "Обнаружена более новая версия на сервере: сохранение автоматически повторено на актуальной версии."
+    : "";
 
   if (!primarySaveOk) {
     return {
@@ -32,21 +37,22 @@ export function resolveManualSaveOutcomeUi({
   }
 
   if (companionErrorText) {
+    const baseInfo = primaryInfoText
+      ? `${primaryInfoText} Companion metadata не синхронизированы.`
+      : "BPMN сохранён, companion metadata не синхронизированы.";
     return {
       primaryState: "primary_saved_companion_warning",
       genErr: "",
-      infoMsg: saveInfoText
-        ? `${saveInfoText} Companion metadata не синхронизированы.`
-        : "Сессия сохранена, companion metadata не синхронизированы.",
+      infoMsg: [baseInfo, staleRetryNotice].filter(Boolean).join(" "),
       companionSeverity: "warning",
     };
   }
 
-  if (saveInfoText) {
+  if (primaryInfoText) {
     return {
       primaryState: "primary_saved_published",
       genErr: "",
-      infoMsg: saveInfoText,
+      infoMsg: [primaryInfoText, staleRetryNotice].filter(Boolean).join(" "),
       companionSeverity: "none",
     };
   }
@@ -54,7 +60,7 @@ export function resolveManualSaveOutcomeUi({
   return {
     primaryState: "primary_saved",
     genErr: "",
-    infoMsg: "Черновик сохранён.",
+    infoMsg: staleRetryNotice || "Черновик сохранён.",
     companionSeverity: "none",
   };
 }
