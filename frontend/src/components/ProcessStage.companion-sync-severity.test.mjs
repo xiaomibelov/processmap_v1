@@ -51,7 +51,7 @@ test("manual save keeps companion sync failure as secondary warning surface", ()
     true,
   );
   assert.equal(
-    source.includes("publishInfo = \"Черновик сохранён. Новая версия не создана: нет изменений схемы.\";"),
+    source.includes("saveInfo = revisionInfo.skipped === true"),
     true,
   );
   assert.equal(
@@ -61,5 +61,9 @@ test("manual save keeps companion sync failure as secondary warning surface", ()
   assert.equal(
     source.includes("diagramStateVersionRef.current = Math.round(savedDiagramStateVersion);"),
     false,
+  );
+  assert.equal(
+    source.includes("staleRetryApplied: saved?.staleRetryApplied === true,"),
+    true,
   );
 });
