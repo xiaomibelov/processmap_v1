@@ -261,7 +261,7 @@ export default function ProcessDialogs({ view = {} }) {
         <div className="grid gap-3 lg:grid-cols-[minmax(320px,460px)_minmax(0,1fr)]" data-testid="bpmn-versions-modal">
           <div className="rounded-xl border border-border bg-panel2/45 p-2">
             <div className="mb-2 px-1 text-xs text-muted" data-testid="bpmn-versions-count">
-              Последние версии: {versionsList.length}
+              Пользовательские ревизии: {versionsList.length}
               <span>
                 {" "}
                 · последняя: {Number(asArray(versionsList)[0]?.revisionNumber || 0) > 0
@@ -276,7 +276,7 @@ export default function ProcessDialogs({ view = {} }) {
               ) : null}
               <div className="mt-1 text-[11px] text-muted">
                 Текущий BPMN сохраняется отдельно от ревизий. Пустая история не означает, что черновик не сохранён.
-                Новая ревизия появляется при отдельном meaningful-действии или при реальном изменении XML.
+                Новая ревизия появляется отдельным действием при значимом изменении схемы.
               </div>
             </div>
             <div className="max-h-[52vh] space-y-2 overflow-auto pr-1">
@@ -325,7 +325,7 @@ export default function ProcessDialogs({ view = {} }) {
                           <span className="rounded-full border border-accent/40 bg-accentSoft/20 px-2 py-0.5 text-[10px] uppercase tracking-wide text-accent">
                             {Number(item?.revisionNumber || item?.rev || 0) > 0
                               ? `версия ${Number(item?.revisionNumber || item?.rev || 0)}`
-                              : "черновик"}
+                              : "без номера ревизии"}
                           </span>
                         </div>
                       </div>
