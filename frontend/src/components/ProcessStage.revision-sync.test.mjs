@@ -33,7 +33,8 @@ test("session save and explicit revision action stay separated by contract", () 
   assert.equal(source.includes("Сессия сохранена."), true);
   assert.equal(source.includes("Сессия уже сохранена: изменений схемы нет."), true);
   assert.equal(source.includes("Создана новая ревизия."), true);
-  assert.equal(source.includes("Новая ревизия не создана: сохранённых изменений нет."), true);
+  assert.equal(source.includes("Новая ревизия не создана: значимых изменений нет."), true);
+  assert.equal(source.includes("Новая ревизия не создана: сохранённых изменений нет."), false);
   assert.equal(source.includes("saveInfo,"), true);
   assert.equal(source.includes('persistReason: "manual_save"'), false);
   assert.equal(source.includes("Новая версия не создана"), false);

@@ -1858,7 +1858,7 @@ export default function ProcessStage({
               } else if (createRevision) {
                 const revisionInfo = asObject(companionResult?.revision);
                 saveInfo = revisionInfo.skipped === true
-                  ? "Новая ревизия не создана: сохранённых изменений нет."
+                  ? "Новая ревизия не создана: значимых изменений нет."
                   : "Создана новая ревизия.";
               } else {
                 saveInfo = saved?.skipped === true
@@ -1869,7 +1869,7 @@ export default function ProcessStage({
           }
         } else {
           saveInfo = createRevision
-            ? "Новая ревизия не создана: сохранённых изменений нет."
+            ? "Новая ревизия не создана: значимых изменений нет."
             : "Сессия уже сохранена: изменений схемы нет.";
         }
         if (!saveInfo && !companionError) {
