@@ -1886,6 +1886,7 @@ export default function ProcessStage({
         primarySavePending: saved?.pending === true,
         companionError,
         saveInfo,
+        staleRetryApplied: saved?.staleRetryApplied === true,
       });
       if (successOutcomeUi.genErr) {
         setGenErr(successOutcomeUi.genErr);
