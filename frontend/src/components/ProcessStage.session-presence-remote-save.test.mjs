@@ -62,3 +62,12 @@ test("passive remote-save notice is queued for manual refresh while own-writes s
     true,
   );
 });
+
+test("bpmnSync is initialized before passive refresh callback to avoid TDZ boot crash", () => {
+  const source = readSource();
+  const bpmnSyncInitIdx = source.indexOf("const bpmnSync = useBpmnSync({");
+  const passiveRefreshIdx = source.indexOf("const applyPendingRemoteSaveRefresh = useCallback(async () => {");
+  assert.notEqual(bpmnSyncInitIdx, -1);
+  assert.notEqual(passiveRefreshIdx, -1);
+  assert.equal(bpmnSyncInitIdx < passiveRefreshIdx, true);
+});
