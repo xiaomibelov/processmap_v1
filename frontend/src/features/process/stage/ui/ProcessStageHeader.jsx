@@ -128,7 +128,7 @@ export default function ProcessStageHeader({ view = {} }) {
     : (
       saveDirtyHint || publishActionRequired
         ? "Создать новую ревизию из текущего состояния сессии"
-        : "Новых изменений для новой ревизии нет."
+        : "Новых изменений для новой ревизии нет. Измените схему и попробуйте снова."
     );
   const canRunUndo = tab === "diagram" && canUndo === true;
   const canRunRedo = tab === "diagram" && canRedo === true;
