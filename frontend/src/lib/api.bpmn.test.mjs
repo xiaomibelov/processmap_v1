@@ -148,19 +148,33 @@ test("apiPutBpmnXml normalizes publish/manual save reason prefixes into canonica
       rev: 12,
       reason: "manual_save:queued",
     });
+    const publishConflictReplayOut = await apiPutBpmnXml("sess_1", "<bpmn:definitions/>", {
+      rev: 13,
+      reason: "publish_manual_save:conflict_replay",
+    });
+    const manualConflictReplayOut = await apiPutBpmnXml("sess_1", "<bpmn:definitions/>", {
+      rev: 14,
+      reason: "manual_save:conflict_replay",
+    });
 
     assert.equal(publishOut.ok, true);
     assert.equal(manualOut.ok, true);
     assert.equal(publishQueuedOut.ok, true);
     assert.equal(manualQueuedOut.ok, true);
+    assert.equal(publishConflictReplayOut.ok, true);
+    assert.equal(manualConflictReplayOut.ok, true);
     const publishBody = JSON.parse(String(calls[0]?.init?.body || "{}"));
     const manualBody = JSON.parse(String(calls[1]?.init?.body || "{}"));
     const publishQueuedBody = JSON.parse(String(calls[2]?.init?.body || "{}"));
     const manualQueuedBody = JSON.parse(String(calls[3]?.init?.body || "{}"));
+    const publishConflictReplayBody = JSON.parse(String(calls[4]?.init?.body || "{}"));
+    const manualConflictReplayBody = JSON.parse(String(calls[5]?.init?.body || "{}"));
     assert.equal(publishBody.source_action, "publish_manual_save");
     assert.equal(manualBody.source_action, "manual_save");
     assert.equal(publishQueuedBody.source_action, "publish_manual_save");
     assert.equal(manualQueuedBody.source_action, "manual_save");
+    assert.equal(publishConflictReplayBody.source_action, "publish_manual_save");
+    assert.equal(manualConflictReplayBody.source_action, "manual_save");
   } finally {
     globalThis.fetch = prevFetch;
   }
