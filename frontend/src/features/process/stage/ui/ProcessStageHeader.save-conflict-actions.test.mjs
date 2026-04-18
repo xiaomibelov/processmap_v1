@@ -39,16 +39,26 @@ test("header dedupes competing conflict surfaces while modal is active", () => {
     "header should derive modal-active conflict state from controller",
   );
   assert.ok(
-    source.includes("const showUploadStatusBadge = saveUploadStatus?.visible && !showConflictModalActive;"),
-    "save upload badge must be suppressed while conflict panel is visible",
+    source.includes("const uploadStatusState = toText(saveUploadStatus?.state);")
+      && source.includes("const showUploadStatusBadge = saveUploadStatus?.visible")
+      && source.includes("&& !showConflictModalActive")
+      && source.includes("(uploadStatusState === \"save_failed\" || uploadStatusState === \"conflict\")"),
+    "upload status badge must hide technical progress noise and stay only for conflict/error states",
   );
   assert.ok(
-    source.includes("const showToolbarInlineBadge = !!toolbarInlineMessage && !(showConflictModalActive && toolbarMessageLooksLikeConflict);"),
-    "toolbar inline conflict message must be suppressed when conflict panel is visible",
+    source.includes("const showToolbarInlineBadge = !!toolbarInlineMessage")
+      && source.includes("&& !hasDominantConflictState")
+      && source.includes("!(showConflictModalActive && toolbarMessageLooksLikeConflict)")
+      && source.includes("isDraftSavedToolbarMessage"),
+    "toolbar inline message must be suppressed when conflict is the dominant state",
   );
   assert.ok(
-    source.includes("const showSaveStatusBadgeResolved = showSaveStatusBadge && !showConflictModalActive;"),
-    "generic save badge should also be suppressed while modal is active",
+    source.includes("const showSaveStatusBadgeResolved = showSaveStatusBadge && !hasDominantConflictState;"),
+    "generic save badge should be suppressed while conflict is active",
+  );
+  assert.ok(
+    source.includes("const showDraftRelationBadgeResolved = showDraftRelationBadge && !hasDominantConflictState;"),
+    "draft-vs-latest badge should not compete with conflict state",
   );
   assert.ok(
     source.includes("const showSessionPresenceBadge = hasSession && sessionPresenceView?.visible === true && !showConflictModalActive;"),

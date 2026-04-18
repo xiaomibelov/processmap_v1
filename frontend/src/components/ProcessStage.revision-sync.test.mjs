@@ -13,20 +13,31 @@ test("ProcessStage derives unified revision UI snapshot and uses it for header a
   assert.equal(source.includes("const revisionHistoryUiSnapshot = useMemo"), true);
   assert.equal(source.includes("revisionHistorySnapshot: revisionHistoryUiSnapshot"), true);
   assert.equal(source.includes("sessionRevisionHistorySnapshot: revisionHistoryUiSnapshot"), true);
+  assert.equal(source.includes("handleCreateRevisionAction,"), true);
 });
 
-test("manual save forwards explicit publish intent for backend version snapshots", () => {
+test("session save and explicit revision action stay separated by contract", () => {
   const source = fs.readFileSync(path.join(__dirname, "ProcessStage.jsx"), "utf8");
-  assert.equal(source.includes('persistReason: "publish_manual_save"'), true);
+  assert.equal(source.includes("async function runManualSaveAction({ createRevision = false } = {})"), true);
+  assert.equal(source.includes("async function handleCreateRevisionAction()"), true);
+  assert.equal(source.includes("await runManualSaveAction({ createRevision: true });"), true);
+  assert.equal(source.includes('const persistReason = createRevision ? "publish_manual_save" : "manual_save";'), true);
+  assert.equal(source.includes("publishRevision: createRevision"), true);
+  assert.equal(source.includes('revisionSource: createRevision ? "publish_manual_save" : "manual_save"'), true);
   assert.equal(source.includes("const backendVersionSnapshot = asObject(saved?.bpmnVersionSnapshot);"), true);
   assert.equal(source.includes("const normalizedBackendVersionSnapshot = normalizeBpmnVersionListItem(backendVersionSnapshot);"), true);
   assert.equal(source.includes("setLatestBpmnVersionHead(normalizedBackendVersionSnapshot);"), true);
   assert.equal(source.includes('setLatestBpmnVersionHeadStatus("ready");'), true);
   assert.equal(source.includes("authoritativeRevision: backendVersionSnapshot"), true);
-  assert.equal(source.includes("Опубликована версия ${backendRevisionNumber}."), true);
-  assert.equal(source.includes("} else if (publishInfo) {"), true);
-  assert.equal(source.includes("setInfoMsg(publishInfo);"), true);
-  assert.equal(source.includes("Черновик сохранён."), true);
+  assert.equal(source.includes("const shouldSyncCompanion = backendRevisionNumber > 0;"), true);
+  assert.equal(source.includes("Сессия сохранена."), true);
+  assert.equal(source.includes("Сессия уже сохранена: изменений схемы нет."), true);
+  assert.equal(source.includes("Создана новая ревизия."), true);
+  assert.equal(source.includes("Новая ревизия не создана: сохранённых изменений нет."), true);
+  assert.equal(source.includes("saveInfo,"), true);
+  assert.equal(source.includes('persistReason: "manual_save"'), false);
+  assert.equal(source.includes("Новая версия не создана"), false);
+  assert.equal(source.includes("resolveManualSaveOutcomeUi"), true);
 });
 
 test("versions modal first load is headers-only and XML is loaded lazily", () => {

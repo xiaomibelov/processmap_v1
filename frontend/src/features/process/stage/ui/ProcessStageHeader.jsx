@@ -11,13 +11,13 @@ export default function ProcessStageHeader({ view = {} }) {
   const {
     canSaveNow,
     saveDirtyHint,
-    showSaveActionButton,
     saveActionText,
     saveSmartText,
     saveUploadStatus,
     saveConflictActions,
     sessionRevisionHistorySnapshot,
     handleSaveCurrentTab,
+    handleCreateRevisionAction,
     handleUndoAction,
     handleRedoAction,
     canUndo,
@@ -48,13 +48,17 @@ export default function ProcessStageHeader({ view = {} }) {
     sessionPresenceView,
     remoteSaveHighlightView,
   } = view;
-  const latestRevisionNumber = Number(sessionRevisionHistorySnapshot?.latestRevisionNumber || 0);
-  const hasPublishedRevision = latestRevisionNumber > 0;
+  const latestPublishedRevisionNumber = Number(sessionRevisionHistorySnapshot?.latestPublishedRevisionNumber || 0);
+  const hasPublishedRevision = latestPublishedRevisionNumber > 0;
   const publishedRevisionBadge = resolvePublishedRevisionBadgeView(sessionRevisionHistorySnapshot);
   const draftAheadOfLatest = sessionRevisionHistorySnapshot?.draftState?.isDraftAheadOfLatestRevision === true;
+  const showDraftRelationBadge = hasPublishedRevision || draftAheadOfLatest;
   const draftStatusLabel = draftAheadOfLatest
-    ? "Есть несохранённые изменения"
-    : "Черновик синхронизирован";
+    ? "Черновик новее последней версии"
+    : "Черновик совпадает с последней версией";
+  const draftStatusTitle = draftAheadOfLatest
+    ? "В черновике есть изменения, которые ещё не попали в опубликованную историю."
+    : "Черновик синхронизирован с последней опубликованной версией.";
   const draftStatusTone = draftAheadOfLatest ? "warn" : "ok";
   const mirrorSnapshot = (
     publishGitMirrorSnapshot && typeof publishGitMirrorSnapshot === "object"
@@ -74,20 +78,58 @@ export default function ProcessStageHeader({ view = {} }) {
   const mirrorBadgeLabel = mirrorVersionLabel
     ? `${mirrorMeta.label} · ${mirrorVersionLabel}`
     : mirrorMeta.label;
-  const showSaveStatusBadge = canSaveNow && !showSaveActionButton;
+  const saveStatusText = toText(saveSmartText);
+  const showSaveStatusBadge = hasSession && !!saveStatusText && saveStatusText !== "Сохранить сессию";
   const isConflictState = toText(saveUploadStatus?.state) === "conflict";
+  const hasDominantConflictState = isConflictState;
   const showConflictModalActive = isConflictState && saveConflictActions?.visible === true;
-  const showUploadStatusBadge = saveUploadStatus?.visible && !showConflictModalActive;
+  const showDraftRelationBadgeResolved = showDraftRelationBadge && !hasDominantConflictState;
+  const showSaveStatusBadgeResolved = showSaveStatusBadge && !hasDominantConflictState;
+  const uploadStatusState = toText(saveUploadStatus?.state);
+  const showUploadStatusBadge = saveUploadStatus?.visible
+    && !showConflictModalActive
+    && (uploadStatusState === "save_failed" || uploadStatusState === "conflict");
   const showSessionPresenceBadge = hasSession && sessionPresenceView?.visible === true && !showConflictModalActive;
   const showRemoteSaveHighlightBadge = remoteSaveHighlightView?.visible === true && !showConflictModalActive;
   const showRemoteSaveRefreshAction = showRemoteSaveHighlightBadge && typeof remoteSaveHighlightView?.onRefreshSession === "function";
   const toolbarMessage = toText(toolbarInlineMessage);
+  const toolbarMessageNormalized = toolbarMessage.replace(/[.!]+$/g, "").trim().toLowerCase();
+  const saveSmartTextNormalized = toText(saveSmartText).replace(/[.!]+$/g, "").trim().toLowerCase();
+  const isDraftSavedToolbarMessage = (
+    toolbarMessageNormalized === "черновик сохранён"
+    || toolbarMessageNormalized === "черновик синхронизирован"
+  );
+  const hasPrimaryDraftStatusSurface = showSaveStatusBadgeResolved || showDraftRelationBadgeResolved;
   const toolbarMessageLooksLikeConflict = /(?:конфликт|conflict|http\s*409|stale|верси)/i.test(toolbarMessage);
-  const showToolbarInlineBadge = !!toolbarInlineMessage && !(showConflictModalActive && toolbarMessageLooksLikeConflict);
-  const showSaveStatusBadgeResolved = showSaveStatusBadge && !showConflictModalActive;
-  const suppressDraftSavedBadge = /^Опубликована версия \d+\.$/.test(toolbarMessage)
+  const showToolbarInlineBadge = !!toolbarInlineMessage
+    && !hasDominantConflictState
+    && !(showConflictModalActive && toolbarMessageLooksLikeConflict)
+    && !(
+      isDraftSavedToolbarMessage
+      && hasPrimaryDraftStatusSurface
+      && (
+        !saveSmartTextNormalized
+        || toolbarMessageNormalized === saveSmartTextNormalized
+        || saveSmartTextNormalized === "черновик сохранён"
+      )
+    );
+  const suppressDraftSavedBadge = /^Сессия (?:уже )?сохранена(?:[:.].*)?$/i.test(toolbarMessage)
     && toText(saveSmartText) === "Черновик сохранён";
-  const showGenericSaveStatusBadge = showSaveStatusBadgeResolved && !suppressDraftSavedBadge;
+  const showGenericSaveStatusBadge = showSaveStatusBadgeResolved
+    && !suppressDraftSavedBadge
+    && !showDraftRelationBadgeResolved;
+  const publishActionRequired = draftAheadOfLatest
+    || (latestPublishedRevisionNumber <= 0 && sessionRevisionHistorySnapshot?.draftState?.hasLiveDraft === true);
+  const canCreateRevisionFromCurrentState = canSaveNow
+    && (saveDirtyHint || publishActionRequired)
+    && typeof handleCreateRevisionAction === "function";
+  const revisionActionTitle = !canSaveNow
+    ? "Создание ревизии доступно в Diagram/XML"
+    : (
+      saveDirtyHint || publishActionRequired
+        ? "Создать новую ревизию из текущего состояния сессии"
+        : "Новых изменений для новой ревизии нет."
+    );
   const canRunUndo = tab === "diagram" && canUndo === true;
   const canRunRedo = tab === "diagram" && canRedo === true;
 
@@ -95,18 +137,16 @@ export default function ProcessStageHeader({ view = {} }) {
     <div className="processHeader diagramToolbarHeader">
       <div className="diagramToolbarSlot diagramToolbarSlot--left">
         <div className="flex items-center gap-2">
-          {canSaveNow ? (
-            showSaveActionButton ? (
-              <button
-                type="button"
-                className="primaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
-                onClick={handleSaveCurrentTab}
-                title={workbench.saveTooltip}
-                data-testid="diagram-toolbar-save"
-              >
-                {saveActionText || saveSmartText}
-              </button>
-            ) : null
+          {hasSession ? (
+            <button
+              type="button"
+              className="primaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
+              onClick={handleSaveCurrentTab}
+              title={workbench.saveTooltip}
+              data-testid="diagram-toolbar-save"
+            >
+              {saveActionText || "Сохранить сессию"}
+            </button>
           ) : (
               <button
                 type="button"
@@ -114,9 +154,21 @@ export default function ProcessStageHeader({ view = {} }) {
                 disabled
                 title={workbench.saveTooltip}
               >
-                {saveSmartText || workbench.labels.save}
+                {workbench.labels.save}
               </button>
             )}
+          {hasSession ? (
+            <button
+              type="button"
+              className="secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
+              onClick={handleCreateRevisionAction}
+              disabled={!canCreateRevisionFromCurrentState}
+              title={revisionActionTitle}
+              data-testid="diagram-toolbar-create-revision"
+            >
+              Создать новую ревизию
+            </button>
+          ) : null}
           {hasSession ? (
             <>
               <span
@@ -126,10 +178,11 @@ export default function ProcessStageHeader({ view = {} }) {
               >
                 {publishedRevisionBadge.text}
               </span>
-              {hasPublishedRevision || draftAheadOfLatest ? (
+              {showDraftRelationBadgeResolved ? (
                 <span
                   className={`badge text-[11px] ${draftStatusTone}`}
                   data-testid="diagram-toolbar-draft-vs-latest"
+                  title={draftStatusTitle}
                 >
                   {draftStatusLabel}
                 </span>

@@ -17,10 +17,10 @@ test("dirty save snapshot keeps save action button visible", () => {
   });
   assert.equal(ui.showSaveActionButton, true);
   assert.equal(ui.publishActionRequired, false);
-  assert.equal(ui.saveActionText, "Сохранить");
+  assert.equal(ui.saveActionText, "Сохранить сессию");
 });
 
-test("draft ahead keeps publish action visible even when save dirty flag is false", () => {
+test("draft ahead keeps save action visible and keeps publish requirement for revision action", () => {
   const ui = buildSaveUiState({
     saveSnapshotRaw: { isDirty: false, status: "stale" },
     revisionSnapshotRaw: {
@@ -34,10 +34,10 @@ test("draft ahead keeps publish action visible even when save dirty flag is fals
   });
   assert.equal(ui.showSaveActionButton, true);
   assert.equal(ui.publishActionRequired, true);
-  assert.equal(ui.saveActionText, "Сохранить версию");
+  assert.equal(ui.saveActionText, "Сохранить сессию");
 });
 
-test("first publish is available when no revisions exist yet and live draft exists", () => {
+test("first publish requirement does not hide session-save reassurance button", () => {
   const ui = buildSaveUiState({
     saveSnapshotRaw: { isDirty: false, status: "saved" },
     revisionSnapshotRaw: {
@@ -51,10 +51,10 @@ test("first publish is available when no revisions exist yet and live draft exis
   });
   assert.equal(ui.showSaveActionButton, true);
   assert.equal(ui.publishActionRequired, true);
-  assert.equal(ui.saveActionText, "Сохранить версию");
+  assert.equal(ui.saveActionText, "Сохранить сессию");
 });
 
-test("clean published state without draft-ahead hides save action button", () => {
+test("clean published state keeps session-save reassurance button visible", () => {
   const ui = buildSaveUiState({
     saveSnapshotRaw: { isDirty: false, status: "saved" },
     revisionSnapshotRaw: {
@@ -66,7 +66,39 @@ test("clean published state without draft-ahead hides save action button", () =>
     },
     fallbackLabel: "Save",
   });
-  assert.equal(ui.showSaveActionButton, false);
+  assert.equal(ui.showSaveActionButton, true);
   assert.equal(ui.publishActionRequired, false);
-  assert.equal(ui.saveActionText, "Черновик сохранён");
+  assert.equal(ui.saveActionText, "Сохранить сессию");
+});
+
+test("save action label no longer uses revision semantics", () => {
+  const ui = buildSaveUiState({
+    saveSnapshotRaw: { isDirty: false, status: "stale" },
+    revisionSnapshotRaw: {
+      latestRevisionNumber: 2,
+      draftState: {
+        hasLiveDraft: true,
+        isDraftAheadOfLatestRevision: true,
+      },
+    },
+    fallbackLabel: "Save",
+  });
+  assert.equal(ui.saveActionText, "Сохранить сессию");
+  assert.equal(ui.saveActionText.toLowerCase().includes("верси"), false);
+});
+
+test("session-save button visibility remains decoupled from publish requirement", () => {
+  const ui = buildSaveUiState({
+    saveSnapshotRaw: { isDirty: false, status: "saved" },
+    revisionSnapshotRaw: {
+      latestRevisionNumber: 5,
+      draftState: {
+        hasLiveDraft: true,
+        isDraftAheadOfLatestRevision: true,
+      },
+    },
+    fallbackLabel: "Save",
+  });
+  assert.equal(ui.publishActionRequired, true);
+  assert.equal(ui.showSaveActionButton, true);
 });

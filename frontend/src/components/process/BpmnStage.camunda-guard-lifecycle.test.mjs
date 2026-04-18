@@ -67,7 +67,15 @@ test("template insert claims single-writer ownership before returning insert res
 test("template-apply save forwards saveOwner into coordinator flush lane", () => {
   assert.match(source, /const resolvedSaveOwner = isTemplateApplySave \? "template_apply" : requestedSaveOwner;/);
   assert.match(source, /const persistReason = String\(options\?\.persistReason \|\| source\)\.trim\(\) \|\| source;/);
-  assert.match(source, /coordinator\.flushSave\(persistReason, \{ force, trigger, saveOwner: resolvedSaveOwner \}\)/);
+  assert.match(source, /const requestedXmlOverride = String\(options\?\.xmlOverride \|\| ""\);/);
+  assert.match(
+    source,
+    /const primaryXmlOverride = requestedXmlOverride\.trim\(\)\s*\?\s*requestedXmlOverride\s*:\s*\(shouldUseCanonicalPrimaryPersist \? preFlushXml : ""\);/,
+  );
+  assert.match(
+    source,
+    /coordinator\.flushSave\(persistReason, \{\s*force,\s*trigger,\s*saveOwner: resolvedSaveOwner,\s*xmlOverride: primaryXmlOverride,\s*\}\)/,
+  );
 });
 
 test("save path exposes camunda finalize transform to coordinator before first persist", () => {

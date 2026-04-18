@@ -11,6 +11,9 @@ import {
   normalizeSessionCompanion,
   serializeSessionCompanion,
 } from "../../session-companion/sessionCompanionContracts.js";
+import {
+  rebaseSessionMetaCamundaFromSavedXml,
+} from "./sessionCompanionCamundaRebase.js";
 
 function asObject(value) {
   return value && typeof value === "object" ? value : {};
@@ -119,8 +122,12 @@ export default function useSessionMetaPersist({
 
   const persistBpmnMeta = useCallback(async (nextRaw, options = {}) => {
     const source = String(options?.source || "bpmn_meta_save");
+    const baseDiagramStateVersion = Number(options?.baseDiagramStateVersion);
     const result = await writeGateway.persistSessionMeta(nextRaw, {
       source,
+      baseDiagramStateVersion: Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0
+        ? Math.round(baseDiagramStateVersion)
+        : undefined,
       remoteWrite: typeof options?.remoteWrite === "function" ? options.remoteWrite : undefined,
       onOptimistic: ({ nextMeta }) => {
         syncPersistedRefs(nextMeta);
@@ -330,12 +337,16 @@ export default function useSessionMetaPersist({
     }
     let legacyResult = { ok: true, skipped: true };
     if (needsLegacyWrite) {
-      const mergedMeta = {
+      const mergedMeta = rebaseSessionMetaCamundaFromSavedXml({
         ...buildMetaSnapshot(),
         session_companion_v1: nextCompanion,
-      };
+      }, options?.savedXml);
+      const baseDiagramStateVersion = Number(options?.baseDiagramStateVersion);
       legacyResult = await persistBpmnMeta(mergedMeta, {
         source: String(options?.source || "session_companion_save"),
+        baseDiagramStateVersion: Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0
+          ? Math.round(baseDiagramStateVersion)
+          : undefined,
       });
       if (!legacyResult?.ok) return legacyResult;
     }
