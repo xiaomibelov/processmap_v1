@@ -32,6 +32,19 @@ function isDiagramStateConflictResult(result) {
   );
 }
 
+function isIntentPreservingReason(reasonRaw) {
+  const reason = asText(reasonRaw).trim().toLowerCase();
+  if (!reason) return false;
+  return reason.startsWith("manual_save") || reason.startsWith("publish_manual_save");
+}
+
+function buildConflictReplayReason(reasonRaw) {
+  const reason = asText(reasonRaw).trim();
+  if (!isIntentPreservingReason(reason)) return "";
+  if (reason.endsWith(":conflict_replay")) return reason;
+  return `${reason}:conflict_replay`;
+}
+
 function buildQueuedReplayReason(reasonRaw) {
   const reason = asText(reasonRaw).trim();
   if (!reason || reason === "queued") return "queued";
@@ -71,6 +84,7 @@ export default function createBpmnCoordinator(options = {}) {
   let pendingSave = null;
   let saveInFlight = false;
   let saveQueuedRev = 0;
+  let conflictReplayReason = "";
   let flushPromise = null;
   let singleWriterOwner = "";
   let singleWriterExpiresAt = 0;
@@ -111,6 +125,10 @@ export default function createBpmnCoordinator(options = {}) {
   function clearPendingSave() {
     pendingSave = null;
     clearPendingReplayTimer();
+  }
+
+  function clearConflictReplayReason() {
+    conflictReplayReason = "";
   }
 
   function currentSid() {
@@ -558,15 +576,37 @@ export default function createBpmnCoordinator(options = {}) {
     const run = (async () => {
       saveInFlight = true;
       try {
-        const result = await doFlush(reason, options);
+        const incomingReason = asText(reason || "manual");
+        let effectiveReason = incomingReason;
+        if (conflictReplayReason && !isIntentPreservingReason(incomingReason)) {
+          effectiveReason = conflictReplayReason;
+          emit("SAVE_CONFLICT_INTENT_REPLAY", {
+            sid: currentSid(),
+            incoming_reason: incomingReason,
+            replay_reason: effectiveReason,
+          });
+          clearConflictReplayReason();
+        }
+        const result = await doFlush(effectiveReason, options);
         const state = store.getState();
         const localRev = asNumber(state?.rev, 0);
         if (isDiagramStateConflictResult(result) && !result?.pending) {
           const lastSavedRev = asNumber(state?.lastSavedRev, 0);
           saveQueuedRev = Math.max(lastSavedRev, 0);
+          if (isIntentPreservingReason(effectiveReason)) {
+            conflictReplayReason = buildConflictReplayReason(effectiveReason);
+            emit("SAVE_CONFLICT_INTENT_ARMED", {
+              sid: currentSid(),
+              reason: conflictReplayReason,
+              status: asNumber(result?.status, 409),
+              error_code: asText(result?.errorCode || asObject(result?.errorDetails)?.code || "http_409"),
+            });
+          } else {
+            clearConflictReplayReason();
+          }
           emit("SAVE_QUEUE_ABORTED_ON_CONFLICT", {
             sid: currentSid(),
-            reason: asText(reason || "manual"),
+            reason: asText(effectiveReason || "manual"),
             local_rev: localRev,
             last_saved_rev: lastSavedRev,
             status: asNumber(result?.status, 409),
@@ -574,10 +614,13 @@ export default function createBpmnCoordinator(options = {}) {
           });
           return result;
         }
+        if (result?.ok && !result?.pending) {
+          clearConflictReplayReason();
+        }
         if (saveQueuedRev > asNumber(state?.lastSavedRev, 0) && !result?.pending) {
           saveQueuedRev = Math.max(saveQueuedRev, localRev);
           if (localRev > asNumber(state?.lastSavedRev, 0)) {
-            return await doFlush(buildQueuedReplayReason(reason), options);
+            return await doFlush(buildQueuedReplayReason(effectiveReason), options);
           }
         }
         return result;
@@ -876,6 +919,7 @@ export default function createBpmnCoordinator(options = {}) {
       pendingSave: pendingSave ? { ...pendingSave } : null,
       saveInFlight,
       saveQueuedRev,
+      conflictReplayReason,
       singleWriterOwner: readSingleWriterOwner(),
       singleWriterExpiresAt,
       store: store?.getState?.() || null,
@@ -890,6 +934,7 @@ export default function createBpmnCoordinator(options = {}) {
     clearSaveTimer();
     clearPendingReplayTimer();
     clearPendingSave();
+    clearConflictReplayReason();
     const lastSavedRev = asNumber(store?.getState?.()?.lastSavedRev, 0);
     saveQueuedRev = Math.max(saveQueuedRev, lastSavedRev);
     emit("SAVE_QUEUE_CLEARED", {
@@ -904,6 +949,7 @@ export default function createBpmnCoordinator(options = {}) {
     flushPromise = null;
     saveInFlight = false;
     saveQueuedRev = 0;
+    clearConflictReplayReason();
     clearSingleWriter("destroy");
   }
 
