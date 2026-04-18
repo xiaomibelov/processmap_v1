@@ -123,6 +123,14 @@ import BottomViewportScrubber from "../features/process/stage/scrubber/BottomVie
 import BpmnPropertiesOverlayModal from "../features/process/bpmn/context-menu/properties-overlay/BpmnPropertiesOverlayModal";
 import { buildSaveConflictModalView } from "../features/process/stage/ui/saveConflictModalModel";
 import {
+  buildSessionPresenceView,
+  upsertSessionPresenceActor,
+} from "../features/process/stage/ui/sessionPresenceModel";
+import {
+  buildRemoteSaveHighlightView,
+  deriveRemoteChangedElementIds,
+} from "../features/process/stage/ui/remoteSaveHighlightModel";
+import {
   classifyRevisionSourceAction,
   formatRevisionAuthor,
   formatRevisionTimestampRu,
@@ -224,6 +232,9 @@ import { pushDeleteTrace } from "../features/process/stage/utils/deleteTrace";
 
 const DIAGRAM_UNDO_REDO_VISIBLE_POLL_MS = 2000;
 const BPMN_VERSION_HEADERS_LIMIT = 50;
+const SESSION_PRESENCE_TTL_MS = 180000;
+const SESSION_PRESENCE_HEARTBEAT_MS = 45000;
+const REMOTE_SESSION_SYNC_POLL_MS = 9000;
 
 const IDLE_SAVE_UPLOAD_EVENT = Object.freeze({
   event: "",
@@ -240,6 +251,44 @@ const IDLE_SAVE_UPLOAD_EVENT = Object.freeze({
   errorDetails: null,
   conflict: null,
 });
+
+function readServerLastWriteFromSession(sessionLikeRaw = null) {
+  const sessionLike = sessionLikeRaw && typeof sessionLikeRaw === "object" ? sessionLikeRaw : {};
+  const actorUserId = String(
+    sessionLike.diagram_last_write_actor_user_id
+    || sessionLike.diagramLastWriteActorUserId
+    || "",
+  ).trim();
+  const actorLabel = String(
+    sessionLike.diagram_last_write_actor_label
+    || sessionLike.diagramLastWriteActorLabel
+    || actorUserId
+    || "",
+  ).trim();
+  const at = Number(
+    sessionLike.diagram_last_write_at
+    ?? sessionLike.diagramLastWriteAt
+    ?? 0,
+  );
+  const changedKeysRaw = (
+    Array.isArray(sessionLike.diagram_last_write_changed_keys)
+      ? sessionLike.diagram_last_write_changed_keys
+      : (
+        Array.isArray(sessionLike.diagramLastWriteChangedKeys)
+          ? sessionLike.diagramLastWriteChangedKeys
+          : []
+      )
+  );
+  const changedKeys = changedKeysRaw
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  return {
+    actorUserId,
+    actorLabel,
+    at: Number.isFinite(at) && at > 0 ? Math.round(at) : 0,
+    changedKeys,
+  };
+}
 
 export default function ProcessStage({
   sessionId,
@@ -316,6 +365,7 @@ export default function ProcessStage({
     templateSignature: "",
     revisionSignature: "",
   });
+  const remoteSessionPollInFlightRef = useRef(false);
   const [drawioAnchorImportDiagnostics, setDrawioAnchorImportDiagnostics] = useState(null);
   const [saveUploadLifecycleEvent, setSaveUploadLifecycleEvent] = useState(IDLE_SAVE_UPLOAD_EVENT);
   const [saveConflictNoticeDismissed, setSaveConflictNoticeDismissed] = useState(false);
@@ -324,6 +374,9 @@ export default function ProcessStage({
   const [latestBpmnVersionHeadStatus, setLatestBpmnVersionHeadStatus] = useState("idle");
   const [diagramUndoRedoState, setDiagramUndoRedoState] = useState({ canUndo: false, canRedo: false, ready: false });
   const [diagramSearchMutationVersion, setDiagramSearchMutationVersion] = useState(0);
+  const [sessionPresenceActors, setSessionPresenceActors] = useState([]);
+  const [remoteSaveHighlightBadge, setRemoteSaveHighlightBadge] = useState(null);
+  const [remoteSaveHighlightBusy, setRemoteSaveHighlightBusy] = useState(false);
 
   const resolveDraftDiagramStateVersion = useCallback(() => {
     const raw = Number(draft?.diagram_state_version ?? draft?.diagramStateVersion);
@@ -679,6 +732,40 @@ export default function ProcessStage({
     sessionCompanionLocalFirstAdapterMode,
   ]);
   const hasSession = !!sid;
+  const currentUserId = toText(user?.id || user?.user_id || user?.email);
+  const currentUserLabel = toText(user?.name || user?.username || user?.email || currentUserId || "Вы");
+  const recordPresenceActor = useCallback((actorRaw, options = {}) => {
+    if (!sid) return;
+    setSessionPresenceActors((prev) => upsertSessionPresenceActor(prev, actorRaw, {
+      nowMs: Number(options?.nowMs || Date.now()),
+      ttlMs: SESSION_PRESENCE_TTL_MS,
+      minTouchMs: Number(options?.minTouchMs ?? 15000),
+      maxActors: 12,
+    }));
+  }, [sid]);
+
+  useEffect(() => {
+    if (!hasSession || !sid || !currentUserId) {
+      setSessionPresenceActors([]);
+      return undefined;
+    }
+    recordPresenceActor({
+      userId: currentUserId,
+      label: currentUserLabel || "Вы",
+      lastSeenAt: Date.now(),
+    }, { minTouchMs: 0 });
+    const timer = window.setInterval(() => {
+      recordPresenceActor({
+        userId: currentUserId,
+        label: currentUserLabel || "Вы",
+        lastSeenAt: Date.now(),
+      });
+    }, SESSION_PRESENCE_HEARTBEAT_MS);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [currentUserId, currentUserLabel, hasSession, recordPresenceActor, sid]);
+
   const sessionCompanionMetaLive = useMemo(() => {
     return normalizeSessionCompanion(sessionCompanionBridgeSnapshot.companion);
   }, [sessionCompanionBridgeSnapshot.companion]);
@@ -690,6 +777,12 @@ export default function ProcessStage({
     () => buildSaveUploadStatusBadge(saveUploadLifecycleEvent),
     [saveUploadLifecycleEvent],
   );
+  const sessionPresenceView = useMemo(() => buildSessionPresenceView({
+    actorsRaw: sessionPresenceActors,
+    currentUserIdRaw: currentUserId,
+    nowMs: Date.now(),
+    ttlMs: SESSION_PRESENCE_TTL_MS,
+  }), [currentUserId, sessionPresenceActors]);
   const leaveNavigationRisk = useMemo(
     () => deriveLeaveNavigationRisk({
       hasSession,
@@ -859,6 +952,261 @@ export default function ProcessStage({
   ]);
 
   const isLocal = isLocalSessionId(sid);
+  const clearRemoteSaveHighlightBadge = useCallback(() => {
+    setRemoteSaveHighlightBadge(null);
+    setRemoteSaveHighlightBusy(false);
+  }, []);
+
+  useEffect(() => {
+    clearRemoteSaveHighlightBadge();
+  }, [clearRemoteSaveHighlightBadge, sid]);
+
+  const applyPendingRemoteSaveRefresh = useCallback(async () => {
+    if (!sid || !hasSession || isLocal) return { ok: false, reason: "refresh_disabled" };
+    const pending = remoteSaveHighlightBadge && typeof remoteSaveHighlightBadge === "object"
+      ? remoteSaveHighlightBadge
+      : null;
+    const serverSession = pending?.serverSession && typeof pending.serverSession === "object"
+      ? pending.serverSession
+      : null;
+    if (!serverSession) return { ok: false, reason: "no_pending_remote_snapshot" };
+    const localUnsafe = (
+      saveDirtyHint === true
+      || isManualSaveBusy === true
+      || asObject(sessionSaveReadSnapshot).isDirty === true
+      || toText(saveUploadStatus?.state) === "saving"
+      || toText(saveUploadStatus?.state) === "conflict"
+    );
+    if (localUnsafe) {
+      const message = "Нельзя обновить сессию: есть локальные несохранённые изменения.";
+      setGenErr(message);
+      return { ok: false, reason: "local_state_unsafe_for_remote_apply", error: message };
+    }
+    setRemoteSaveHighlightBusy(true);
+    setGenErr("");
+    try {
+      const serverVersion = Number(serverSession?.diagram_state_version ?? serverSession?.diagramStateVersion);
+      onSessionSyncWithVersion?.({
+        ...serverSession,
+        _sync_source: "passive_remote_refresh_action",
+      });
+      if (Number.isFinite(serverVersion) && serverVersion >= 0) {
+        rememberDiagramStateVersion(serverVersion, { sessionId: sid });
+      }
+      await bpmnSync.resetBackend();
+      setSaveDirtyHint(false);
+      const changedElementIds = Array.isArray(pending?.changedElementIds)
+        ? pending.changedElementIds
+        : [];
+      changedElementIds.forEach((elementId, index) => {
+        const delayMs = index * 80;
+        window.setTimeout(() => {
+          bpmnRef.current?.flashNode?.(elementId, "sync", { label: "Remote" });
+        }, delayMs);
+      });
+      setRemoteSaveHighlightBadge(null);
+      setInfoMsg("Сессия обновлена до актуального состояния.");
+      return { ok: true, changedCount: changedElementIds.length };
+    } catch (error) {
+      const message = shortErr(error?.message || error || "Не удалось обновить сессию.");
+      setGenErr(message);
+      return { ok: false, reason: "refresh_failed", error: message };
+    } finally {
+      setRemoteSaveHighlightBusy(false);
+    }
+  }, [
+    asObject,
+    bpmnSync,
+    hasSession,
+    isLocal,
+    isManualSaveBusy,
+    onSessionSyncWithVersion,
+    rememberDiagramStateVersion,
+    remoteSaveHighlightBadge,
+    saveDirtyHint,
+    saveUploadStatus?.state,
+    setGenErr,
+    setInfoMsg,
+    setSaveDirtyHint,
+    sessionSaveReadSnapshot,
+    shortErr,
+    sid,
+    toText,
+  ]);
+
+  const applyRemoteSaveHighlightFromServerSession = useCallback((sessionRaw, source = "remote_poll") => {
+    const serverSession = asObject(sessionRaw);
+    const currentSid = normalizeDiagramSessionId(sid);
+    const sessionSid = normalizeDiagramSessionId(serverSession?.session_id || serverSession?.id || "");
+    if (!isDiagramVersionSessionMatch(currentSid, sessionSid)) {
+      return { ok: false, reason: "sid_mismatch" };
+    }
+    const serverVersion = Number(serverSession?.diagram_state_version ?? serverSession?.diagramStateVersion);
+    if (!Number.isFinite(serverVersion) || serverVersion < 0) {
+      return { ok: false, reason: "missing_server_version" };
+    }
+    const knownBaseVersion = Number(getBaseDiagramStateVersion());
+    const fallbackVersion = Number(draft?.diagram_state_version ?? draft?.diagramStateVersion ?? 0);
+    const localVersion = Number.isFinite(knownBaseVersion) && knownBaseVersion >= 0
+      ? Math.round(knownBaseVersion)
+      : (Number.isFinite(fallbackVersion) && fallbackVersion >= 0 ? Math.round(fallbackVersion) : 0);
+    if (Math.round(serverVersion) <= localVersion) {
+      return { ok: false, reason: "not_newer_than_local" };
+    }
+    const serverVersionRounded = Math.round(serverVersion);
+    const lastWrite = readServerLastWriteFromSession(serverSession);
+    if (lastWrite.actorUserId || lastWrite.actorLabel) {
+      recordPresenceActor({
+        userId: lastWrite.actorUserId,
+        label: lastWrite.actorLabel,
+        lastSeenAt: lastWrite.at > 0 ? lastWrite.at * 1000 : Date.now(),
+      }, { minTouchMs: 0 });
+    }
+    const sameActor = (
+      currentUserId
+      && lastWrite.actorUserId
+      && String(currentUserId).trim().toLowerCase() === String(lastWrite.actorUserId).trim().toLowerCase()
+    );
+    if (sameActor) {
+      onSessionSyncWithVersion?.({
+        ...serverSession,
+        _sync_source: `${source}_self_actor_sync`,
+      });
+      rememberDiagramStateVersion(serverVersionRounded, { sessionId: currentSid });
+      setRemoteSaveHighlightBadge(null);
+      return { ok: true, applied: true, highlighted: false, sameActor: true };
+    }
+    const localUnsafe = (
+      saveDirtyHint === true
+      || isManualSaveBusy === true
+      || asObject(sessionSaveReadSnapshot).isDirty === true
+      || toText(saveUploadStatus?.state) === "saving"
+      || toText(saveUploadStatus?.state) === "conflict"
+    );
+    if (localUnsafe) {
+      return { ok: false, reason: "local_state_unsafe_for_remote_notice" };
+    }
+    const nextXml = toText(serverSession?.bpmn_xml || "");
+    if (!nextXml) {
+      return { ok: false, reason: "missing_server_xml" };
+    }
+    const prevXml = toText(draft?.bpmn_xml || "");
+    const changedElementIds = deriveRemoteChangedElementIds({
+      previousXmlRaw: prevXml,
+      nextXmlRaw: nextXml,
+      changedKeysRaw: lastWrite.changedKeys,
+      maxIds: 12,
+    });
+    const badgeView = buildRemoteSaveHighlightView({
+      actorLabelRaw: lastWrite.actorLabel,
+      changedElementIdsRaw: changedElementIds,
+      changedKeysRaw: lastWrite.changedKeys,
+      atRaw: lastWrite.at,
+    });
+    setRemoteSaveHighlightBadge((prev) => {
+      const prevVersion = Number(prev?.serverVersion || 0);
+      if (Number.isFinite(prevVersion) && prevVersion >= serverVersionRounded) {
+        return prev;
+      }
+      return {
+        ...badgeView,
+        serverVersion: serverVersionRounded,
+        source: toText(source),
+        serverSession,
+      };
+    });
+    return { ok: true, applied: false, highlighted: true, pendingRefresh: true, changedCount: changedElementIds.length };
+  }, [
+    asObject,
+    currentUserId,
+    draft?.bpmn_xml,
+    draft?.diagramStateVersion,
+    draft?.diagram_state_version,
+    getBaseDiagramStateVersion,
+    isManualSaveBusy,
+    onSessionSyncWithVersion,
+    recordPresenceActor,
+    rememberDiagramStateVersion,
+    saveDirtyHint,
+    saveUploadStatus?.state,
+    sessionSaveReadSnapshot,
+    sid,
+    toText,
+  ]);
+
+  const pollRemoteSessionSnapshot = useCallback(async (reason = "interval") => {
+    if (!sid || !hasSession || isLocal) return { ok: false, reason: "poll_disabled" };
+    if (remoteSessionPollInFlightRef.current) return { ok: false, reason: "poll_busy" };
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      return { ok: false, reason: "poll_hidden" };
+    }
+    remoteSessionPollInFlightRef.current = true;
+    try {
+      const fetched = await apiGetSession(sid);
+      if (!fetched?.ok) return { ok: false, reason: "fetch_failed", status: Number(fetched?.status || 0) };
+      const sessionLike = asObject(fetched?.session || fetched?.result || {});
+      const currentSid = normalizeDiagramSessionId(sid);
+      const fetchedSid = normalizeDiagramSessionId(sessionLike?.session_id || sessionLike?.id || "");
+      if (!isDiagramVersionSessionMatch(currentSid, fetchedSid)) {
+        return { ok: false, reason: "poll_sid_mismatch" };
+      }
+      const lastWrite = readServerLastWriteFromSession(sessionLike);
+      if (lastWrite.actorUserId || lastWrite.actorLabel) {
+        recordPresenceActor({
+          userId: lastWrite.actorUserId,
+          label: lastWrite.actorLabel,
+          lastSeenAt: lastWrite.at > 0 ? lastWrite.at * 1000 : Date.now(),
+        }, { minTouchMs: 0 });
+      }
+      return applyRemoteSaveHighlightFromServerSession(sessionLike, `remote_poll_${reason}`);
+    } finally {
+      remoteSessionPollInFlightRef.current = false;
+    }
+  }, [applyRemoteSaveHighlightFromServerSession, asObject, hasSession, isLocal, recordPresenceActor, sid]);
+
+  useEffect(() => {
+    if (!sid || !hasSession || isLocal) return undefined;
+    let disposed = false;
+    const runPoll = (reason = "interval") => {
+      if (disposed) return;
+      void pollRemoteSessionSnapshot(reason);
+    };
+    runPoll("mount");
+    const intervalId = window.setInterval(() => {
+      runPoll("interval");
+    }, REMOTE_SESSION_SYNC_POLL_MS);
+    const handleForeground = () => {
+      runPoll("foreground");
+    };
+    window.addEventListener("focus", handleForeground);
+    document.addEventListener("visibilitychange", handleForeground);
+    return () => {
+      disposed = true;
+      window.removeEventListener("focus", handleForeground);
+      document.removeEventListener("visibilitychange", handleForeground);
+      window.clearInterval(intervalId);
+    };
+  }, [hasSession, isLocal, pollRemoteSessionSnapshot, sid]);
+
+  const remoteSaveHighlightView = useMemo(() => {
+    const value = remoteSaveHighlightBadge && typeof remoteSaveHighlightBadge === "object"
+      ? remoteSaveHighlightBadge
+      : {};
+    const hasServerSession = value.serverSession && typeof value.serverSession === "object";
+    return {
+      visible: value.visible === true && hasServerSession,
+      label: toText(value.label),
+      title: toText(value.title),
+      actorLabel: toText(value.actorLabel),
+      changedElementIds: Array.isArray(value.changedElementIds) ? value.changedElementIds : [],
+      at: Number(value.at || 0),
+      refreshLabel: toText(value.refreshLabel) || "Обновить сессию",
+      refreshHint: toText(value.refreshHint) || "Загрузить актуальное состояние сессии с сервера.",
+      busy: remoteSaveHighlightBusy === true,
+      onRefreshSession: hasServerSession ? applyPendingRemoteSaveRefresh : undefined,
+    };
+  }, [applyPendingRemoteSaveRefresh, remoteSaveHighlightBadge, remoteSaveHighlightBusy, toText]);
+
   // Track the last project that had an active session so the explorer can
   // navigate back to it when the session is closed.
   const lastSessionProjectIdRef = useRef("");
@@ -5009,6 +5357,8 @@ export default function ProcessStage({
     handleDrawioImportFile,
     topPanelsView: shellVm.panelsProps.top,
     publishGitMirrorSnapshot,
+    sessionPresenceView,
+    remoteSaveHighlightView,
     asArray,
   });
 

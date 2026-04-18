@@ -349,6 +349,8 @@ export function buildDiagramHeaderView({
   handleDrawioImportFile,
   topPanelsView,
   publishGitMirrorSnapshot,
+  sessionPresenceView,
+  remoteSaveHighlightView,
   asArray,
 } = {}) {
   return {
@@ -384,6 +386,8 @@ export function buildDiagramHeaderView({
     handleDrawioImportFile,
     topPanelsView,
     publishGitMirrorSnapshot,
+    sessionPresenceView,
+    remoteSaveHighlightView,
     asArray,
   };
 }

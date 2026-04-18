@@ -45,6 +45,8 @@ export default function ProcessStageHeader({ view = {} }) {
     handleDrawioImportFile,
     topPanelsView,
     publishGitMirrorSnapshot,
+    sessionPresenceView,
+    remoteSaveHighlightView,
   } = view;
   const latestRevisionNumber = Number(sessionRevisionHistorySnapshot?.latestRevisionNumber || 0);
   const hasPublishedRevision = latestRevisionNumber > 0;
@@ -76,6 +78,9 @@ export default function ProcessStageHeader({ view = {} }) {
   const isConflictState = toText(saveUploadStatus?.state) === "conflict";
   const showConflictModalActive = isConflictState && saveConflictActions?.visible === true;
   const showUploadStatusBadge = saveUploadStatus?.visible && !showConflictModalActive;
+  const showSessionPresenceBadge = hasSession && sessionPresenceView?.visible === true && !showConflictModalActive;
+  const showRemoteSaveHighlightBadge = remoteSaveHighlightView?.visible === true && !showConflictModalActive;
+  const showRemoteSaveRefreshAction = showRemoteSaveHighlightBadge && typeof remoteSaveHighlightView?.onRefreshSession === "function";
   const toolbarMessage = toText(toolbarInlineMessage);
   const toolbarMessageLooksLikeConflict = /(?:конфликт|conflict|http\s*409|stale|верси)/i.test(toolbarMessage);
   const showToolbarInlineBadge = !!toolbarInlineMessage && !(showConflictModalActive && toolbarMessageLooksLikeConflict);
@@ -163,6 +168,40 @@ export default function ProcessStageHeader({ view = {} }) {
 
       <div className="diagramToolbarSlot diagramToolbarSlot--right">
         <div className="diagramToolbarRightStatus">
+          {showSessionPresenceBadge ? (
+            <span
+              className="badge text-[11px] text-muted"
+              data-testid="diagram-toolbar-session-presence"
+              title={String(sessionPresenceView?.title || "")}
+            >
+              {String(sessionPresenceView?.label || "")}
+            </span>
+          ) : null}
+          {showRemoteSaveHighlightBadge ? (
+            <>
+              <span
+                className="badge text-[11px] info"
+                data-testid="diagram-toolbar-remote-save-highlight"
+                title={String(remoteSaveHighlightView?.title || remoteSaveHighlightView?.label || "")}
+              >
+                {String(remoteSaveHighlightView?.label || "")}
+              </span>
+              {showRemoteSaveRefreshAction ? (
+                <button
+                  type="button"
+                  className="secondaryBtn h-7 whitespace-nowrap px-2 text-[11px]"
+                  onClick={() => void remoteSaveHighlightView?.onRefreshSession?.()}
+                  disabled={remoteSaveHighlightView?.busy === true}
+                  title={String(remoteSaveHighlightView?.refreshHint || "")}
+                  data-testid="diagram-toolbar-remote-save-refresh"
+                >
+                  {remoteSaveHighlightView?.busy === true
+                    ? "Обновляем..."
+                    : String(remoteSaveHighlightView?.refreshLabel || "Обновить сессию")}
+                </button>
+              ) : null}
+            </>
+          ) : null}
           {showGenericSaveStatusBadge ? (
             <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-save-status" title={saveSmartText}>
               {saveSmartText}
