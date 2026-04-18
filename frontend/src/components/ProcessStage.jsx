@@ -1087,6 +1087,15 @@ export default function ProcessStage({
   ]);
 
   const isLocal = isLocalSessionId(sid);
+  const bpmnSync = useBpmnSync({
+    sessionId: sid,
+    isLocal,
+    draft,
+    bpmnRef,
+    onSessionSync: onSessionSyncWithVersion,
+    apiGetBpmnXml,
+  });
+
   const clearRemoteSaveHighlightBadge = useCallback(() => {
     setRemoteSaveHighlightBadge(null);
     setRemoteSaveHighlightBusy(false);
@@ -1369,15 +1378,6 @@ export default function ProcessStage({
     }),
     [],
   );
-
-  const bpmnSync = useBpmnSync({
-    sessionId: sid,
-    isLocal,
-    draft,
-    bpmnRef,
-    onSessionSync: onSessionSyncWithVersion,
-    apiGetBpmnXml,
-  });
 
   const {
     tab,
