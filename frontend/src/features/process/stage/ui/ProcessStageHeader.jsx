@@ -11,7 +11,6 @@ export default function ProcessStageHeader({ view = {} }) {
   const {
     canSaveNow,
     saveDirtyHint,
-    showSaveActionButton,
     saveActionText,
     saveSmartText,
     saveUploadStatus,
@@ -77,13 +76,17 @@ export default function ProcessStageHeader({ view = {} }) {
   const mirrorBadgeLabel = mirrorVersionLabel
     ? `${mirrorMeta.label} · ${mirrorVersionLabel}`
     : mirrorMeta.label;
-  const showSaveStatusBadge = canSaveNow && !showSaveActionButton;
+  const saveStatusText = toText(saveSmartText);
+  const showSaveStatusBadge = hasSession && !!saveStatusText && saveStatusText !== "Сохранить сессию";
   const isConflictState = toText(saveUploadStatus?.state) === "conflict";
   const hasDominantConflictState = isConflictState;
   const showConflictModalActive = isConflictState && saveConflictActions?.visible === true;
   const showDraftRelationBadgeResolved = showDraftRelationBadge && !hasDominantConflictState;
   const showSaveStatusBadgeResolved = showSaveStatusBadge && !hasDominantConflictState;
-  const showUploadStatusBadge = saveUploadStatus?.visible && !showConflictModalActive;
+  const uploadStatusState = toText(saveUploadStatus?.state);
+  const showUploadStatusBadge = saveUploadStatus?.visible
+    && !showConflictModalActive
+    && (uploadStatusState === "save_failed" || uploadStatusState === "conflict");
   const toolbarMessage = toText(toolbarInlineMessage);
   const toolbarMessageNormalized = toolbarMessage.replace(/[.!]+$/g, "").trim().toLowerCase();
   const saveSmartTextNormalized = toText(saveSmartText).replace(/[.!]+$/g, "").trim().toLowerCase();
@@ -129,18 +132,16 @@ export default function ProcessStageHeader({ view = {} }) {
     <div className="processHeader diagramToolbarHeader">
       <div className="diagramToolbarSlot diagramToolbarSlot--left">
         <div className="flex items-center gap-2">
-          {canSaveNow ? (
-            showSaveActionButton ? (
-              <button
-                type="button"
-                className="primaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
-                onClick={handleSaveCurrentTab}
-                title={workbench.saveTooltip}
-                data-testid="diagram-toolbar-save"
-              >
-                {saveActionText || saveSmartText}
-              </button>
-            ) : null
+          {hasSession ? (
+            <button
+              type="button"
+              className="primaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
+              onClick={handleSaveCurrentTab}
+              title={workbench.saveTooltip}
+              data-testid="diagram-toolbar-save"
+            >
+              {saveActionText || "Сохранить сессию"}
+            </button>
           ) : (
               <button
                 type="button"
@@ -148,7 +149,7 @@ export default function ProcessStageHeader({ view = {} }) {
                 disabled
                 title={workbench.saveTooltip}
               >
-                {saveSmartText || workbench.labels.save}
+                {workbench.labels.save}
               </button>
             )}
           {hasSession ? (
