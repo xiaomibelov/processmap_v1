@@ -24,7 +24,7 @@ test("revision action availability is separated from session-save copy", () => {
   assert.ok(source.includes("const canCreateRevisionFromCurrentState = canSaveNow"));
   assert.ok(source.includes("saveDirtyHint || publishActionRequired"));
   assert.ok(source.includes('const revisionActionTitle = !canSaveNow'));
-  assert.ok(source.includes('"Новых изменений для новой ревизии нет."'));
+  assert.ok(source.includes('"Новых изменений для новой ревизии нет. Измените схему и попробуйте снова."'));
   assert.equal(source.includes("Сохранить версию"), false);
 });
 
