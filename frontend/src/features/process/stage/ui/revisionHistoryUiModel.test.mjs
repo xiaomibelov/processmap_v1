@@ -100,6 +100,15 @@ test("splitMeaningfulAndTechnicalRevisions keeps autosave traces out of main lis
   assert.deepEqual(split.technical.map((entry) => entry.id), ["r1", "r4"]);
 });
 
+test("splitMeaningfulAndTechnicalRevisions preserves latest meaningful head when top raw row is technical", () => {
+  const split = splitMeaningfulAndTechnicalRevisions([
+    { id: "r34", version_number: 34, source_action: "manual_save" },
+    { id: "r33", version_number: 33, source_action: "publish_manual_save" },
+  ]);
+  assert.equal(split.meaningful[0]?.id, "r33");
+  assert.equal(split.technical[0]?.id, "r34");
+});
+
 test("unknown source action remains meaningful and does not break rendering", () => {
   const classification = classifyRevisionSourceAction("custom_domain_action");
   assert.equal(classification.isMeaningful, true);
