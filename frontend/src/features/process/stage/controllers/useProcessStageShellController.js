@@ -37,8 +37,8 @@ export function buildSaveUiState({
   const hasLiveDraft = draftState.hasLiveDraft === true;
   const draftAheadOfLatest = draftState.isDraftAheadOfLatestRevision === true;
   const publishActionRequired = draftAheadOfLatest || (latestRevisionNumber <= 0 && hasLiveDraft);
-  const showSaveActionButton = saveDirty;
-  const saveActionText = showSaveActionButton ? "Сохранить сессию" : saveSmartText;
+  const showSaveActionButton = true;
+  const saveActionText = "Сохранить сессию";
   return {
     saveSmartText,
     saveDirty,
