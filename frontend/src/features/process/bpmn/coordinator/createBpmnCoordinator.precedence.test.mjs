@@ -305,6 +305,94 @@ test("new explicit save action after stale conflict still persists normally", as
   });
 });
 
+test("stale conflict replay preserves publish intent marker in live 409 -> autosave replay branch", async () => {
+  await withWindowTimers(async () => {
+    const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true, lastSavedRev: 8 });
+    const reasons = [];
+    const coordinator = createBpmnCoordinator({
+      debounceMs: 10_000,
+      store,
+      getSessionId: () => "sid_publish_stale_replay_runtime",
+      getRuntime: () => ({
+        getStatus: () => ({ ready: true, defs: true, token: 14 }),
+        getXml: async () => ({ ok: true, xml: "<bpmn:publish_stale_replay/>", token: 14 }),
+      }),
+      persistence: {
+        saveRaw: async (_sid, _xml, _rev, reason) => {
+          reasons.push(String(reason || ""));
+          if (reasons.length === 1) {
+            return {
+              ok: false,
+              status: 409,
+              error: "revision conflict",
+              errorDetails: {
+                code: "DIAGRAM_STATE_CONFLICT",
+                session_id: "sid_publish_stale_replay_runtime",
+                client_base_version: 9,
+                server_current_version: 10,
+              },
+            };
+          }
+          return { ok: true, status: 200, storedRev: 10 };
+        },
+      },
+    });
+
+    const first = await coordinator.flushSave("publish_manual_save");
+    assert.equal(first.ok, false);
+    assert.equal(first.status, 409);
+
+    const second = await coordinator.flushSave("autosave");
+    assert.equal(second.ok, true);
+    assert.deepEqual(reasons, ["publish_manual_save", "publish_manual_save:conflict_replay"]);
+    assert.equal(coordinator.getDebugState().conflictReplayReason, "");
+  });
+});
+
+test("stale conflict replay preserves manual save intent marker for session-save path", async () => {
+  await withWindowTimers(async () => {
+    const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true, lastSavedRev: 8 });
+    const reasons = [];
+    const coordinator = createBpmnCoordinator({
+      debounceMs: 10_000,
+      store,
+      getSessionId: () => "sid_manual_stale_replay_runtime",
+      getRuntime: () => ({
+        getStatus: () => ({ ready: true, defs: true, token: 15 }),
+        getXml: async () => ({ ok: true, xml: "<bpmn:manual_stale_replay/>", token: 15 }),
+      }),
+      persistence: {
+        saveRaw: async (_sid, _xml, _rev, reason) => {
+          reasons.push(String(reason || ""));
+          if (reasons.length === 1) {
+            return {
+              ok: false,
+              status: 409,
+              error: "revision conflict",
+              errorDetails: {
+                code: "DIAGRAM_STATE_CONFLICT",
+                session_id: "sid_manual_stale_replay_runtime",
+                client_base_version: 9,
+                server_current_version: 10,
+              },
+            };
+          }
+          return { ok: true, status: 200, storedRev: 10 };
+        },
+      },
+    });
+
+    const first = await coordinator.flushSave("manual_save");
+    assert.equal(first.ok, false);
+    assert.equal(first.status, 409);
+
+    const second = await coordinator.flushSave("autosave");
+    assert.equal(second.ok, true);
+    assert.deepEqual(reasons, ["manual_save", "manual_save:conflict_replay"]);
+    assert.equal(coordinator.getDebugState().conflictReplayReason, "");
+  });
+});
+
 test("queued replay keeps publish_manual_save intent marker for explicit revision action", async () => {
   await withWindowTimers(async () => {
     const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true, lastSavedRev: 8 });
