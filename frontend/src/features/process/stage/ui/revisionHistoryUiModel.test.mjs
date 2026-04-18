@@ -48,6 +48,7 @@ test("resolveRevisionHistoryUiSnapshot uses latest version item as canonical rev
     latestVersionItemRaw: {
       id: "ver_6",
       revisionNumber: 6,
+      source_action: "publish_manual_save",
     },
     latestVersionStatusRaw: "ready",
   });
@@ -77,6 +78,25 @@ test("resolveRevisionHistoryUiSnapshot keeps companion ledger separate while aut
   assert.equal(resolved.latestLedgerRevisionId, "ledger_r41");
 });
 
+test("resolveRevisionHistoryUiSnapshot applies fail-closed policy for unknown latest source action", () => {
+  const resolved = resolveRevisionHistoryUiSnapshot({
+    revisionHistorySnapshotRaw: {
+      latestRevisionNumber: 5,
+      latestRevisionId: "ledger_r5",
+    },
+    latestVersionItemRaw: {
+      id: "ver_6",
+      revisionNumber: 6,
+      source_action: "custom_domain_action",
+    },
+    latestVersionStatusRaw: "ready",
+  });
+  assert.equal(resolved.latestPublishedRevisionNumber, 0);
+  assert.equal(resolved.latestPublishedRevisionAllowed, false);
+  assert.equal(resolved.latestPublishedRevisionTaxonomy, "unknown");
+  assert.equal(resolved.latestRevisionNumber, 5);
+});
+
 test("classifyRevisionSourceAction separates meaningful and technical revisions by source_action", () => {
   const meaningful = classifyRevisionSourceAction("publish_manual_save");
   assert.equal(meaningful.isMeaningful, true);
@@ -95,9 +115,11 @@ test("splitMeaningfulAndTechnicalRevisions keeps autosave traces out of main lis
     { id: "r2", reason: "publish_manual_save" },
     { id: "r3", reason: "import_bpmn" },
     { id: "r4", reason: "autosave" },
+    { id: "r5", reason: "custom_domain_action" },
   ]);
   assert.deepEqual(split.meaningful.map((entry) => entry.id), ["r2", "r3"]);
-  assert.deepEqual(split.technical.map((entry) => entry.id), ["r1", "r4"]);
+  assert.deepEqual(split.technical.map((entry) => entry.id), ["r1", "r4", "r5"]);
+  assert.deepEqual(split.unknown.map((entry) => entry.id), ["r5"]);
 });
 
 test("splitMeaningfulAndTechnicalRevisions preserves latest meaningful head when top raw row is technical", () => {
@@ -109,12 +131,16 @@ test("splitMeaningfulAndTechnicalRevisions preserves latest meaningful head when
   assert.equal(split.technical[0]?.id, "r34");
 });
 
-test("unknown source action remains meaningful and does not break rendering", () => {
+test("unknown source action is fail-closed and does not break rendering", () => {
   const classification = classifyRevisionSourceAction("custom_domain_action");
-  assert.equal(classification.isMeaningful, true);
+  assert.equal(classification.isMeaningful, false);
   assert.equal(classification.isTechnical, false);
+  assert.equal(classification.isUnknown, true);
+  assert.equal(classification.allowInPublishedBadge, false);
+  assert.equal(classification.allowInRevisionHistory, false);
+  assert.equal(classification.allowInFileVersions, false);
   assert.equal(classification.known, false);
-  assert.equal(localizeRevisionSourceAction("custom_domain_action"), "custom_domain_action");
+  assert.equal(localizeRevisionSourceAction("custom_domain_action"), "Неизвестное действие (custom_domain_action)");
 });
 
 test("resolveRevisionHistoryEmptyState returns true empty message for real empty history", () => {

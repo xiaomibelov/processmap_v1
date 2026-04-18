@@ -1,3 +1,5 @@
+import { classifyRevisionHistoryEvent } from "./revisionEventClassifier.js";
+
 function toText(value) {
   return String(value || "").trim();
 }
@@ -10,7 +12,19 @@ function toInt(value) {
 export function resolvePublishedRevisionBadgeView(snapshotRaw = null) {
   const snapshot = snapshotRaw && typeof snapshotRaw === "object" ? snapshotRaw : {};
   const latestPublishedRevisionNumber = toInt(snapshot.latestPublishedRevisionNumber);
-  const hasExplicitPublishedRevision = latestPublishedRevisionNumber > 0;
+  const latestPublishedRevisionAllowed = snapshot.latestPublishedRevisionAllowed !== false;
+  const latestPublishedRevisionAction = toText(
+    snapshot.latestPublishedRevisionSourceAction
+    || snapshot.latestPublishedRevisionAction
+    || "",
+  );
+  const actionClassification = classifyRevisionHistoryEvent(latestPublishedRevisionAction);
+  const allowByAction = latestPublishedRevisionAction
+    ? actionClassification.allowInPublishedBadge === true
+    : true;
+  const hasExplicitPublishedRevision = latestPublishedRevisionNumber > 0
+    && latestPublishedRevisionAllowed
+    && allowByAction;
 
   if (hasExplicitPublishedRevision) {
     return {

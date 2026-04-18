@@ -1734,7 +1734,7 @@ export default function ProcessStage({
           durableSnapshot: acceptedSnapshot,
         });
         const backendRevisionNumber = Number(normalizedBackendVersionSnapshot.revisionNumber || 0);
-        const backendSnapshotIsMeaningful = normalizedBackendVersionSnapshot.isTechnicalRevision !== true;
+        const backendSnapshotIsMeaningful = normalizedBackendVersionSnapshot.allowInPublishedBadge === true;
         if (backendRevisionNumber > 0 && backendSnapshotIsMeaningful) {
           const backendVersionId = String(normalizedBackendVersionSnapshot.id || "").trim();
           setLatestBpmnVersionHead(normalizedBackendVersionSnapshot);
@@ -3879,8 +3879,13 @@ export default function ProcessStage({
       reason: normalizedSourceAction,
       reasonLabel: localizeRevisionSourceAction(normalizedSourceAction),
       reasonBucket: String(sourceClassification.bucket || "meaningful"),
+      reasonTaxonomy: String(sourceClassification.taxonomy || sourceClassification.bucket || "unknown"),
       isMeaningfulRevision: sourceClassification.isMeaningful !== false,
       isTechnicalRevision: sourceClassification.isTechnical === true,
+      isUnknownRevision: sourceClassification.isUnknown === true,
+      allowInPublishedBadge: sourceClassification.allowInPublishedBadge === true,
+      allowInRevisionHistory: sourceClassification.allowInRevisionHistory === true,
+      allowInFileVersions: sourceClassification.allowInFileVersions === true,
       comment: importNote,
       revisionNumber: versionNumber,
       rev: versionNumber,
