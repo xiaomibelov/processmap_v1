@@ -32,6 +32,13 @@ function isDiagramStateConflictResult(result) {
   );
 }
 
+function buildQueuedReplayReason(reasonRaw) {
+  const reason = asText(reasonRaw).trim();
+  if (!reason || reason === "queued") return "queued";
+  if (reason.endsWith(":queued")) return reason;
+  return `${reason}:queued`;
+}
+
 function fnv1aHex(input) {
   const src = asText(input);
   let hash = 0x811c9dc5;
@@ -570,7 +577,7 @@ export default function createBpmnCoordinator(options = {}) {
         if (saveQueuedRev > asNumber(state?.lastSavedRev, 0) && !result?.pending) {
           saveQueuedRev = Math.max(saveQueuedRev, localRev);
           if (localRev > asNumber(state?.lastSavedRev, 0)) {
-            return await doFlush("queued", options);
+            return await doFlush(buildQueuedReplayReason(reason), options);
           }
         }
         return result;
