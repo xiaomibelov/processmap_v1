@@ -304,3 +304,113 @@ test("new explicit save action after stale conflict still persists normally", as
     assert.equal(saveCalls.length, 2);
   });
 });
+
+test("queued replay keeps publish_manual_save intent marker for explicit revision action", async () => {
+  await withWindowTimers(async () => {
+    const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true, lastSavedRev: 8 });
+    const reasons = [];
+    const coordinator = createBpmnCoordinator({
+      debounceMs: 10_000,
+      store,
+      getSessionId: () => "sid_publish_replay_reason",
+      getRuntime: () => ({
+        getStatus: () => ({ ready: true, defs: true, token: 11 }),
+        getXml: async () => ({ ok: true, xml: "<bpmn:publish_retry/>", token: 11 }),
+      }),
+      persistence: {
+        saveRaw: async (_sid, _xml, _rev, reason) => {
+          reasons.push(String(reason || ""));
+          if (reasons.length === 1) {
+            return {
+              ok: false,
+              status: 500,
+              error: "temporary save failure",
+            };
+          }
+          return { ok: true, status: 200, storedRev: 10 };
+        },
+      },
+    });
+
+    coordinator.scheduleSave("autosave");
+    const saved = await coordinator.flushSave("publish_manual_save");
+
+    assert.equal(saved.ok, true);
+    assert.deepEqual(reasons, ["publish_manual_save", "publish_manual_save:queued"]);
+  });
+});
+
+test("conflict-like retry branch still preserves publish_manual_save intent marker", async () => {
+  await withWindowTimers(async () => {
+    const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true, lastSavedRev: 8 });
+    const reasons = [];
+    const coordinator = createBpmnCoordinator({
+      debounceMs: 10_000,
+      store,
+      getSessionId: () => "sid_publish_conflict_like_retry",
+      getRuntime: () => ({
+        getStatus: () => ({ ready: true, defs: true, token: 13 }),
+        getXml: async () => ({ ok: true, xml: "<bpmn:publish_conflict_like/>", token: 13 }),
+      }),
+      persistence: {
+        saveRaw: async (_sid, _xml, _rev, reason) => {
+          reasons.push(String(reason || ""));
+          if (reasons.length === 1) {
+            return {
+              ok: false,
+              status: 0,
+              errorCode: "DIAGRAM_STATE_CONFLICT",
+              errorDetails: {
+                code: "DIAGRAM_STATE_CONFLICT",
+                client_base_version: 0,
+                server_current_version: 3,
+              },
+            };
+          }
+          return { ok: true, status: 200, storedRev: 10 };
+        },
+      },
+    });
+
+    coordinator.scheduleSave("autosave");
+    const saved = await coordinator.flushSave("publish_manual_save");
+
+    assert.equal(saved.ok, true);
+    assert.deepEqual(reasons, ["publish_manual_save", "publish_manual_save:queued"]);
+  });
+});
+
+test("queued replay keeps manual_save intent marker for ordinary session save", async () => {
+  await withWindowTimers(async () => {
+    const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true, lastSavedRev: 8 });
+    const reasons = [];
+    const coordinator = createBpmnCoordinator({
+      debounceMs: 10_000,
+      store,
+      getSessionId: () => "sid_manual_replay_reason",
+      getRuntime: () => ({
+        getStatus: () => ({ ready: true, defs: true, token: 12 }),
+        getXml: async () => ({ ok: true, xml: "<bpmn:manual_retry/>", token: 12 }),
+      }),
+      persistence: {
+        saveRaw: async (_sid, _xml, _rev, reason) => {
+          reasons.push(String(reason || ""));
+          if (reasons.length === 1) {
+            return {
+              ok: false,
+              status: 500,
+              error: "temporary save failure",
+            };
+          }
+          return { ok: true, status: 200, storedRev: 10 };
+        },
+      },
+    });
+
+    coordinator.scheduleSave("autosave");
+    const saved = await coordinator.flushSave("manual_save");
+
+    assert.equal(saved.ok, true);
+    assert.deepEqual(reasons, ["manual_save", "manual_save:queued"]);
+  });
+});
