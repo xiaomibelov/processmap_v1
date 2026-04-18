@@ -1299,7 +1299,7 @@ export default function ProcessStage({
   }, []);
 
   async function runManualSaveAction({ createRevision = false } = {}) {
-    if (!hasSession || !isBpmnTab || isSwitchingTab || isFlushingTab || isManualSaveBusy) return;
+    if (!hasSession || isSwitchingTab || isFlushingTab || isManualSaveBusy) return;
     const truthOwner = ensureSessionWorkspaceTruthOwner();
     truthOwner?.saveSessionStart({ source: "manual_save" });
     setGenErr("");
