@@ -1,3 +1,9 @@
+import {
+  classifyRevisionHistoryEvent,
+  localizeRevisionHistoryEventAction,
+  normalizeRevisionSourceAction,
+} from "./revisionEventClassifier.js";
+
 function toText(value) {
   return String(value || "").trim();
 }
@@ -15,33 +21,6 @@ function asObject(value) {
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
-
-function normalizeRevisionSourceAction(value) {
-  return toText(value).toLowerCase();
-}
-
-const TECHNICAL_REVISION_SOURCE_ACTIONS = new Set([
-  "autosave",
-  // Backend fallback for source_action-less BPMN saves; in current flows this is
-  // primarily technical autosave/parity traffic.
-  "manual_save",
-  "tab_switch",
-  "pending_replay",
-  "runtime_change",
-  "queued",
-  "lifecycle_flush",
-  "sync",
-]);
-
-const MEANINGFUL_REVISION_SOURCE_ACTIONS = new Set([
-  "publish_manual_save",
-  "manual_publish",
-  "manual_publish_revision",
-  "import_bpmn",
-  "restore_bpmn",
-  "restore_revision",
-  "session.bpmn_restore",
-]);
 
 function normalizePublishedRevisionStatus(value) {
   const text = toText(value).toLowerCase();
@@ -89,56 +68,22 @@ export function formatRevisionTimestampRu(value) {
 }
 
 export function localizeRevisionSourceAction(actionRaw) {
-  const action = normalizeRevisionSourceAction(actionRaw);
-  if (action === "import_bpmn") return "Импорт BPMN";
-  if (action === "restore_bpmn" || action === "session.bpmn_restore") return "Восстановление BPMN";
-  if (action === "manual_publish" || action === "publish_manual_save") return "Ручная публикация";
-  if (action === "manual_publish_revision") return "Ручная публикация";
-  if (action === "autosave") return "Автосохранение";
-  if (action === "manual_save") return "Техническое автосохранение";
-  return action || "Ревизия BPMN";
+  return localizeRevisionHistoryEventAction(actionRaw);
 }
 
 export function classifyRevisionSourceAction(actionRaw) {
-  const action = normalizeRevisionSourceAction(actionRaw);
-  if (!action) {
-    return {
-      action: "",
-      bucket: "meaningful",
-      isMeaningful: true,
-      isTechnical: false,
-      known: false,
-    };
-  }
-  if (TECHNICAL_REVISION_SOURCE_ACTIONS.has(action) || action.includes("autosave")) {
-    return {
-      action,
-      bucket: "technical",
-      isMeaningful: false,
-      isTechnical: true,
-      known: true,
-    };
-  }
-  if (
-    MEANINGFUL_REVISION_SOURCE_ACTIONS.has(action)
-    || action.includes("publish")
-    || action.includes("import")
-    || action.includes("restore")
-  ) {
-    return {
-      action,
-      bucket: "meaningful",
-      isMeaningful: true,
-      isTechnical: false,
-      known: true,
-    };
-  }
+  const classification = classifyRevisionHistoryEvent(actionRaw);
   return {
-    action,
-    bucket: "meaningful",
-    isMeaningful: true,
-    isTechnical: false,
-    known: false,
+    action: classification.action,
+    bucket: classification.taxonomy,
+    taxonomy: classification.taxonomy,
+    isMeaningful: classification.isMeaningful,
+    isTechnical: classification.isTechnical,
+    isUnknown: classification.isUnknown,
+    allowInPublishedBadge: classification.allowInPublishedBadge,
+    allowInRevisionHistory: classification.allowInRevisionHistory,
+    allowInFileVersions: classification.allowInFileVersions,
+    known: classification.known,
   };
 }
 
@@ -146,12 +91,14 @@ export function splitMeaningfulAndTechnicalRevisions(entriesRaw = []) {
   const all = asArray(entriesRaw);
   const meaningful = [];
   const technical = [];
+  const unknown = [];
   all.forEach((entryRaw) => {
     const entry = asObject(entryRaw);
     const sourceAction = entry.source_action || entry.sourceAction || entry.reason;
     const classification = classifyRevisionSourceAction(sourceAction);
-    if (classification.isTechnical) {
+    if (classification.allowInRevisionHistory !== true) {
       technical.push(entryRaw);
+      if (classification.isUnknown) unknown.push(entryRaw);
       return;
     }
     meaningful.push(entryRaw);
@@ -160,6 +107,7 @@ export function splitMeaningfulAndTechnicalRevisions(entriesRaw = []) {
     all,
     meaningful,
     technical,
+    unknown,
   };
 }
 
@@ -213,14 +161,27 @@ export function resolveRevisionHistoryUiSnapshot({
   const revisionHistorySnapshot = asObject(revisionHistorySnapshotRaw);
   const latestVersionItem = asObject(latestVersionItemRaw);
   const latestPublishedRevisionStatus = normalizePublishedRevisionStatus(latestVersionStatusRaw);
-  const latestPublishedRevisionNumber = Math.max(
+  const latestPublishedRevisionSourceAction = normalizeRevisionSourceAction(
+    latestVersionItem.source_action
+    || latestVersionItem.sourceAction
+    || latestVersionItem.reason
+    || "",
+  );
+  const latestPublishedRevisionClassification = classifyRevisionSourceAction(latestPublishedRevisionSourceAction);
+  const rawLatestPublishedRevisionNumber = Math.max(
     0,
     toInt(latestVersionItem.revisionNumber || latestVersionItem.rev || latestVersionItem.version_number, 0),
   );
-  const latestPublishedRevisionId = toText(
+  const rawLatestPublishedRevisionId = toText(
     latestVersionItem.id
     || latestVersionItem.revisionId,
   );
+  const latestPublishedRevisionAllowed = (
+    rawLatestPublishedRevisionNumber > 0
+    && latestPublishedRevisionClassification.allowInPublishedBadge === true
+  );
+  const latestPublishedRevisionNumber = latestPublishedRevisionAllowed ? rawLatestPublishedRevisionNumber : 0;
+  const latestPublishedRevisionId = latestPublishedRevisionAllowed ? rawLatestPublishedRevisionId : "";
   const latestLedgerRevisionNumber = Math.max(
     0,
     toInt(revisionHistorySnapshot.latestRevisionNumber, 0),
@@ -240,6 +201,9 @@ export function resolveRevisionHistoryUiSnapshot({
     latestRevisionId,
     latestPublishedRevisionNumber,
     latestPublishedRevisionId,
+    latestPublishedRevisionAllowed,
+    latestPublishedRevisionSourceAction,
+    latestPublishedRevisionTaxonomy: latestPublishedRevisionClassification.taxonomy || "unknown",
     latestPublishedRevisionStatus,
     latestPublishedRevisionResolved: latestPublishedRevisionStatus === "ready" || latestPublishedRevisionStatus === "failed",
     latestLedgerRevisionNumber,

@@ -61,7 +61,7 @@ test("versions history keeps meaningful revisions and filters technical traces",
 
 test("manual save technical snapshots do not advance published-head UI state", () => {
   const source = fs.readFileSync(path.join(__dirname, "ProcessStage.jsx"), "utf8");
-  assert.equal(source.includes("const backendSnapshotIsMeaningful = normalizedBackendVersionSnapshot.isTechnicalRevision !== true;"), true);
+  assert.equal(source.includes("const backendSnapshotIsMeaningful = normalizedBackendVersionSnapshot.allowInPublishedBadge === true;"), true);
   assert.equal(source.includes("if (backendRevisionNumber > 0 && backendSnapshotIsMeaningful)"), true);
 });
 

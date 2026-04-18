@@ -60,10 +60,25 @@ test("explicit published revision value is the only source for version badge", (
     latestRevisionNumber: 999,
     latestPublishedRevisionNumber: 7,
     latestPublishedRevisionStatus: "idle",
+    latestPublishedRevisionSourceAction: "publish_manual_save",
   });
   assert.deepEqual(badge, {
     testId: "diagram-toolbar-latest-revision",
     text: "Версия 7",
     title: "Последняя опубликованная версия",
+  });
+});
+
+test("unknown published action is fail-closed and does not advance badge", () => {
+  const badge = resolvePublishedRevisionBadgeView({
+    latestRevisionNumber: 999,
+    latestPublishedRevisionNumber: 7,
+    latestPublishedRevisionStatus: "ready",
+    latestPublishedRevisionSourceAction: "custom_domain_action",
+  });
+  assert.deepEqual(badge, {
+    testId: "diagram-toolbar-latest-revision-empty",
+    text: "Не опубликовано",
+    title: "Опубликованных версий нет",
   });
 });
