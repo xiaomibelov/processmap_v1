@@ -1734,7 +1734,8 @@ export default function ProcessStage({
           durableSnapshot: acceptedSnapshot,
         });
         const backendRevisionNumber = Number(normalizedBackendVersionSnapshot.revisionNumber || 0);
-        if (backendRevisionNumber > 0) {
+        const backendSnapshotIsMeaningful = normalizedBackendVersionSnapshot.isTechnicalRevision !== true;
+        if (backendRevisionNumber > 0 && backendSnapshotIsMeaningful) {
           const backendVersionId = String(normalizedBackendVersionSnapshot.id || "").trim();
           setLatestBpmnVersionHead(normalizedBackendVersionSnapshot);
           setLatestBpmnVersionHeadStatus("ready");
@@ -4003,7 +4004,7 @@ export default function ProcessStage({
   const refreshLatestBpmnRevisionHead = useCallback(async () => {
     await refreshSnapshotVersions({
       includeXml: false,
-      limit: 1,
+      limit: BPMN_VERSION_HEADERS_LIMIT,
       updateList: false,
       trackHeadStatus: true,
     });
