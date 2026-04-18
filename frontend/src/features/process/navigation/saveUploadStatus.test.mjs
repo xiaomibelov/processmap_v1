@@ -42,6 +42,28 @@ test("badge hides unchanged skip technical details from user surface", () => {
   assert.equal(badge.label.includes("BPMN"), false);
 });
 
+test("badge surfaces deterministic stale auto-retry persisted path", () => {
+  const event = normalizeBpmnSaveLifecycleEvent({
+    event: "SAVE_PERSIST_DONE",
+    payload: {
+      sid: "sid_retry",
+      status: 200,
+      stale_retry_applied: 1,
+      stale_retry_attempts: 1,
+    },
+  });
+
+  assert.equal(event.stage, "persisted");
+  assert.equal(event.staleRetryApplied, true);
+  assert.equal(event.staleRetryAttempts, 1);
+
+  const badge = buildSaveUploadStatusBadge(event);
+  assert.equal(badge.visible, true);
+  assert.equal(badge.tone, "ok");
+  assert.match(badge.label, /после синхронизации версии/i);
+  assert.match(badge.title, /автоматически повторено/i);
+});
+
 test("badge shows failed status with http code when available", () => {
   const badge = buildSaveUploadStatusBadge({
     stage: "failed",

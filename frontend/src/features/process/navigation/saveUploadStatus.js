@@ -211,6 +211,20 @@ export function normalizeBpmnSaveLifecycleEvent(raw = null) {
     error: errorText,
     errorDetails: Object.keys(errorDetails).length ? errorDetails : null,
     conflict,
+    staleRetryApplied: (
+      payload.stale_retry_applied === true
+      || Number(payload.stale_retry_applied || 0) > 0
+      || value.staleRetryApplied === true
+    ),
+    staleRetryAttempts: Math.max(
+      0,
+      toNumber(
+        payload.stale_retry_attempts
+        ?? value.staleRetryAttempts
+        ?? 0,
+        0,
+      ),
+    ),
   };
 }
 
@@ -249,11 +263,20 @@ export function buildSaveUploadStatusBadge(raw = null) {
     };
   }
   if (stage === "persisted") {
+    const staleRetryApplied = event.staleRetryApplied === true;
+    const staleRetryAttempts = Math.max(0, toNumber(event.staleRetryAttempts, 0));
+    const staleSuffix = staleRetryApplied
+      ? (staleRetryAttempts > 0 ? ` (retry ${staleRetryAttempts})` : "")
+      : "";
     return {
-      visible: false,
+      visible: staleRetryApplied,
       tone: "ok",
-      label: "Сессия сохранена",
-      title: "Черновик сессии сохранён.",
+      label: staleRetryApplied
+        ? `Сессия сохранена после синхронизации версии${staleSuffix}`
+        : "Сессия сохранена",
+      title: staleRetryApplied
+        ? "Обнаружена более новая серверная версия. Сохранение автоматически повторено на актуальной версии."
+        : "Черновик сессии сохранён.",
       state,
       conflict: null,
     };
