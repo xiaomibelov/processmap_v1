@@ -58,6 +58,7 @@ import {
   removeCamundaExtensionStateByElementId,
   upsertCamundaExtensionStateByElementId,
 } from "./features/process/camunda/camundaExtensions";
+import { persistCamundaExtensionsViaCanonicalXmlBoundary } from "./features/process/camunda/camundaExtensionsSaveBoundary";
 import {
   normalizeCamundaPresentationMap,
   removeCamundaPresentationByElementId,
@@ -2320,16 +2321,30 @@ export default function App() {
       drawio: currentMeta.drawio,
       execution_plans: currentExecutionPlans,
     };
-    const persistResult = await persistSessionMetaBoundary(optimisticMeta, {
-      source: "camunda_extensions_save",
-      successHint: sid && !isLocalSessionId(sid)
-        ? (shouldRemove ? "Properties удалены." : "Properties сохранены.")
-        : (shouldRemove ? "Properties удалены локально." : "Properties сохранены локально."),
-      failureHint: "Не удалось сохранить Properties.",
+    const baseDiagramStateVersion = Number(
+      draft?.diagram_state_version
+      ?? draft?.bpmn_xml_version
+      ?? draft?.version
+      ?? 0,
+    );
+    const persistResult = await persistCamundaExtensionsViaCanonicalXmlBoundary({
+      sessionIdRaw: sid,
+      isLocal: isLocalSessionId(sid),
+      currentXmlRaw: draft?.bpmn_xml,
+      nextMetaRaw: optimisticMeta,
+      nextCamundaExtensionsByElementIdRaw: nextCamundaExtensionsByElementId,
+      baseDiagramStateVersionRaw: baseDiagramStateVersion,
+      apiPutBpmnXml,
+      apiGetSession,
+      onSessionSync,
+      syncSource: "camunda_extensions_xml_boundary_save",
     });
     if (!persistResult?.ok) {
       return { ok: false, error: String(persistResult?.error || "Не удалось сохранить Properties.") };
     }
+    markOk(sid && !isLocalSessionId(sid)
+      ? (shouldRemove ? "Properties удалены." : "Properties сохранены.")
+      : (shouldRemove ? "Properties удалены локально." : "Properties сохранены локально."));
     return { ok: true };
   }
 

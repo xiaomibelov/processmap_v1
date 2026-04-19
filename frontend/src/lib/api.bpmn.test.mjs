@@ -120,6 +120,44 @@ test("apiPutBpmnXml sends base_diagram_state_version and returns diagramStateVer
   }
 });
 
+test("apiPutBpmnXml forwards optional bpmn_meta payload through canonical XML boundary", async () => {
+  const prevFetch = globalThis.fetch;
+  const calls = [];
+  try {
+    globalThis.fetch = async (input, init) => {
+      calls.push({ url: String(input || ""), init });
+      return new Response(JSON.stringify({
+        ok: true,
+        version: 6,
+        diagram_state_version: 10,
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    const out = await apiPutBpmnXml("sess_1", "<bpmn:definitions/>", {
+      reason: "manual_save:camunda_extensions",
+      baseDiagramStateVersion: 9,
+      bpmnMeta: {
+        version: 1,
+        camunda_extensions_by_element_id: {
+          Task_1: { properties: { extensionProperties: [{ id: "p1", name: "foo", value: "bar" }] } },
+        },
+      },
+    });
+
+    assert.equal(out.ok, true);
+    const body = JSON.parse(String(calls[0]?.init?.body || "{}"));
+    assert.equal(body.base_diagram_state_version, 9);
+    assert.equal(body.source_action, "manual_save");
+    assert.equal(typeof body.bpmn_meta, "object");
+    assert.equal(body.bpmn_meta.camunda_extensions_by_element_id.Task_1.properties.extensionProperties[0].name, "foo");
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
+});
+
 test("apiPutBpmnXml normalizes publish/manual save reason prefixes into canonical source_action", async () => {
   const prevFetch = globalThis.fetch;
   const calls = [];
