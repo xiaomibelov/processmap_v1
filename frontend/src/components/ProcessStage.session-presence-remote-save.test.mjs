@@ -18,7 +18,19 @@ test("session presence and remote-save highlight path is read-only and does not 
     true,
   );
   assert.equal(
+    source.includes("const head = await apiGetBpmnVersions(sid, { limit: 1 });"),
+    true,
+  );
+  assert.equal(
     source.includes("const fetched = await apiGetSession(sid);"),
+    true,
+  );
+  assert.equal(
+    source.includes("reason: \"head_not_newer\""),
+    true,
+  );
+  assert.equal(
+    source.includes("const seenBaselineVersion = Math.max(seenVersionRounded, localVersionRounded);"),
     true,
   );
 
