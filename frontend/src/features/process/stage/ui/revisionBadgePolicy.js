@@ -10,7 +10,8 @@ function toInt(value) {
 export function resolvePublishedRevisionBadgeView(snapshotRaw = null) {
   const snapshot = snapshotRaw && typeof snapshotRaw === "object" ? snapshotRaw : {};
   const latestPublishedRevisionNumber = toInt(snapshot.latestPublishedRevisionNumber);
-  const hasExplicitPublishedRevision = latestPublishedRevisionNumber > 0;
+  const latestPublishedRevisionAllowed = snapshot.latestPublishedRevisionAllowed !== false;
+  const hasExplicitPublishedRevision = latestPublishedRevisionAllowed && latestPublishedRevisionNumber > 0;
 
   if (hasExplicitPublishedRevision) {
     return {
