@@ -373,6 +373,7 @@ export default function ProcessStage({
     revisionSignature: "",
   });
   const remoteSessionPollInFlightRef = useRef(false);
+  const remoteSessionPollSeenDiagramStateVersionRef = useRef(0);
   const [drawioAnchorImportDiagnostics, setDrawioAnchorImportDiagnostics] = useState(null);
   const [saveUploadLifecycleEvent, setSaveUploadLifecycleEvent] = useState(IDLE_SAVE_UPLOAD_EVENT);
   const [saveConflictNoticeDismissed, setSaveConflictNoticeDismissed] = useState(false);
@@ -1286,6 +1287,35 @@ export default function ProcessStage({
     }
     remoteSessionPollInFlightRef.current = true;
     try {
+      const head = await apiGetBpmnVersions(sid, { limit: 1 });
+      if (!head?.ok) {
+        return { ok: false, reason: "head_fetch_failed", status: Number(head?.status || 0) };
+      }
+      const headItems = Array.isArray(head?.versions)
+        ? head.versions
+        : (Array.isArray(head?.items) ? head.items : []);
+      const latestHead = asObject(headItems[0] || {});
+      const headVersion = Number(latestHead?.diagram_state_version ?? latestHead?.diagramStateVersion);
+      const headVersionRounded = Number.isFinite(headVersion) && headVersion > 0 ? Math.round(headVersion) : 0;
+      if (!headVersionRounded) {
+        return { ok: false, reason: "head_missing_version" };
+      }
+      const knownBaseVersion = Number(getBaseDiagramStateVersion());
+      const fallbackVersion = Number(draft?.diagram_state_version ?? draft?.diagramStateVersion ?? 0);
+      const localVersionRounded = Number.isFinite(knownBaseVersion) && knownBaseVersion >= 0
+        ? Math.round(knownBaseVersion)
+        : (Number.isFinite(fallbackVersion) && fallbackVersion >= 0 ? Math.round(fallbackVersion) : 0);
+      const seenVersion = Number(remoteSessionPollSeenDiagramStateVersionRef.current || 0);
+      const seenVersionRounded = Number.isFinite(seenVersion) && seenVersion > 0 ? Math.round(seenVersion) : 0;
+      const seenBaselineVersion = Math.max(seenVersionRounded, localVersionRounded);
+      if (headVersionRounded <= seenBaselineVersion) {
+        return {
+          ok: false,
+          reason: "head_not_newer",
+          serverVersion: headVersionRounded,
+          seenVersion: seenBaselineVersion,
+        };
+      }
       const fetched = await apiGetSession(sid);
       if (!fetched?.ok) return { ok: false, reason: "fetch_failed", status: Number(fetched?.status || 0) };
       const sessionLike = asObject(fetched?.session || fetched?.result || {});
@@ -1302,11 +1332,37 @@ export default function ProcessStage({
           lastSeenAt: lastWrite.at > 0 ? lastWrite.at * 1000 : Date.now(),
         }, { minTouchMs: 0 });
       }
+      const serverVersion = Number(sessionLike?.diagram_state_version ?? sessionLike?.diagramStateVersion);
+      if (Number.isFinite(serverVersion) && serverVersion > 0) {
+        remoteSessionPollSeenDiagramStateVersionRef.current = Math.max(
+          seenBaselineVersion,
+          Math.round(serverVersion),
+        );
+      } else {
+        remoteSessionPollSeenDiagramStateVersionRef.current = Math.max(
+          seenBaselineVersion,
+          headVersionRounded,
+        );
+      }
       return applyRemoteSaveHighlightFromServerSession(sessionLike, `remote_poll_${reason}`);
     } finally {
       remoteSessionPollInFlightRef.current = false;
     }
-  }, [applyRemoteSaveHighlightFromServerSession, asObject, hasSession, isLocal, recordPresenceActor, sid]);
+  }, [
+    applyRemoteSaveHighlightFromServerSession,
+    asObject,
+    draft?.diagramStateVersion,
+    draft?.diagram_state_version,
+    getBaseDiagramStateVersion,
+    hasSession,
+    isLocal,
+    recordPresenceActor,
+    sid,
+  ]);
+
+  useEffect(() => {
+    remoteSessionPollSeenDiagramStateVersionRef.current = 0;
+  }, [hasSession, isLocal, sid]);
 
   useEffect(() => {
     if (!sid || !hasSession || isLocal) return undefined;
