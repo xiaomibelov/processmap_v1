@@ -270,6 +270,19 @@ function isVersionsHeadBootstrapEndpoint(endpoint = "", url = "") {
   return String(parsed.searchParams.get("limit") || "").trim() === "1";
 }
 
+function isProjectBootstrapAbortEndpoint(endpoint = "", url = "") {
+  const fromEndpoint = parseUrlLike(endpoint);
+  const fromUrl = parseUrlLike(url);
+  const parsed = fromEndpoint || fromUrl;
+  if (!parsed) return false;
+  const path = String(parsed.pathname || "");
+  if (/^\/api\/projects\/[^/]+\/sessions$/i.test(path)) return true;
+  if (/^\/api\/projects\/[^/]+\/explorer$/i.test(path)) {
+    return String(parsed.searchParams.get("workspace_id") || "").trim().length > 0;
+  }
+  return false;
+}
+
 function shouldSuppressApiFailureNoise({
   method = "GET",
   endpoint = "",
@@ -280,10 +293,12 @@ function shouldSuppressApiFailureNoise({
 } = {}) {
   if (String(method || "GET").toUpperCase() !== "GET") return false;
   if (Number(status || 0) !== 0) return false;
-  if (!isVersionsHeadBootstrapEndpoint(endpoint, url)) return false;
   const name = String(errorName || "").trim().toLowerCase();
-  if (aborted === true) return true;
-  return name === "aborterror" || name === "typeerror";
+  const abortLike = aborted === true || name === "aborterror" || name === "typeerror";
+  if (!abortLike) return false;
+  if (isVersionsHeadBootstrapEndpoint(endpoint, url)) return true;
+  if (isProjectBootstrapAbortEndpoint(endpoint, url)) return true;
+  return false;
 }
 
 function shouldSuppressEvent(event, options = {}) {
