@@ -61,7 +61,7 @@ test("versions history keeps meaningful revisions and filters technical traces",
 
 test("manual save technical snapshots do not advance published-head UI state", () => {
   const source = fs.readFileSync(path.join(__dirname, "ProcessStage.jsx"), "utf8");
-  assert.equal(source.includes("const backendSnapshotIsMeaningful = normalizedBackendVersionSnapshot.isTechnicalRevision !== true;"), true);
+  assert.equal(source.includes("const backendSnapshotIsMeaningful = normalizedBackendVersionSnapshot.isMeaningfulRevision === true;"), true);
   assert.equal(source.includes("if (backendRevisionNumber > 0 && backendSnapshotIsMeaningful)"), true);
 });
 
@@ -70,4 +70,11 @@ test("published head refresh scans meaningful window instead of raw single top r
   assert.equal(source.includes("const BPMN_VERSION_HEADERS_LIMIT = 50;"), true);
   assert.equal(source.includes("limit: BPMN_VERSION_HEADERS_LIMIT,"), true);
   assert.equal(source.includes("limit: 1,"), false);
+});
+
+test("versions refresh tracks unknown events as hidden non-meaningful lineage", () => {
+  const source = fs.readFileSync(path.join(__dirname, "ProcessStage.jsx"), "utf8");
+  assert.equal(source.includes("const unknownList = asArray(revisionSplit.unknown);"), true);
+  assert.equal(source.includes("setVersionsTechnicalEntriesCount(hiddenNonMeaningfulList.length);"), true);
+  assert.equal(source.includes("unknown_count="), true);
 });

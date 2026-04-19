@@ -67,3 +67,15 @@ test("explicit published revision value is the only source for version badge", (
     title: "Последняя опубликованная версия",
   });
 });
+
+test("badge stays unpublished when published number is present but explicitly disallowed", () => {
+  const badge = resolvePublishedRevisionBadgeView({
+    latestPublishedRevisionNumber: 12,
+    latestPublishedRevisionAllowed: false,
+  });
+  assert.deepEqual(badge, {
+    testId: "diagram-toolbar-latest-revision-empty",
+    text: "Не опубликовано",
+    title: "Опубликованных версий нет",
+  });
+});
