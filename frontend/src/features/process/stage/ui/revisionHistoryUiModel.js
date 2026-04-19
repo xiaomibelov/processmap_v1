@@ -16,32 +16,11 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
-function normalizeRevisionSourceAction(value) {
-  return toText(value).toLowerCase();
-}
-
-const TECHNICAL_REVISION_SOURCE_ACTIONS = new Set([
-  "autosave",
-  // Backend fallback for source_action-less BPMN saves; in current flows this is
-  // primarily technical autosave/parity traffic.
-  "manual_save",
-  "tab_switch",
-  "pending_replay",
-  "runtime_change",
-  "queued",
-  "lifecycle_flush",
-  "sync",
-]);
-
-const MEANINGFUL_REVISION_SOURCE_ACTIONS = new Set([
-  "publish_manual_save",
-  "manual_publish",
-  "manual_publish_revision",
-  "import_bpmn",
-  "restore_bpmn",
-  "restore_revision",
-  "session.bpmn_restore",
-]);
+import {
+  classifyRevisionEventAction,
+  localizeRevisionEventAction,
+  normalizeRevisionEventAction,
+} from "./revisionEventClassifier.js";
 
 function normalizePublishedRevisionStatus(value) {
   const text = toText(value).toLowerCase();
@@ -89,77 +68,38 @@ export function formatRevisionTimestampRu(value) {
 }
 
 export function localizeRevisionSourceAction(actionRaw) {
-  const action = normalizeRevisionSourceAction(actionRaw);
-  if (action === "import_bpmn") return "Импорт BPMN";
-  if (action === "restore_bpmn" || action === "session.bpmn_restore") return "Восстановление BPMN";
-  if (action === "manual_publish" || action === "publish_manual_save") return "Ручная публикация";
-  if (action === "manual_publish_revision") return "Ручная публикация";
-  if (action === "autosave") return "Автосохранение";
-  if (action === "manual_save") return "Техническое автосохранение";
-  return action || "Ревизия BPMN";
+  return localizeRevisionEventAction(actionRaw);
 }
 
 export function classifyRevisionSourceAction(actionRaw) {
-  const action = normalizeRevisionSourceAction(actionRaw);
-  if (!action) {
-    return {
-      action: "",
-      bucket: "meaningful",
-      isMeaningful: true,
-      isTechnical: false,
-      known: false,
-    };
-  }
-  if (TECHNICAL_REVISION_SOURCE_ACTIONS.has(action) || action.includes("autosave")) {
-    return {
-      action,
-      bucket: "technical",
-      isMeaningful: false,
-      isTechnical: true,
-      known: true,
-    };
-  }
-  if (
-    MEANINGFUL_REVISION_SOURCE_ACTIONS.has(action)
-    || action.includes("publish")
-    || action.includes("import")
-    || action.includes("restore")
-  ) {
-    return {
-      action,
-      bucket: "meaningful",
-      isMeaningful: true,
-      isTechnical: false,
-      known: true,
-    };
-  }
-  return {
-    action,
-    bucket: "meaningful",
-    isMeaningful: true,
-    isTechnical: false,
-    known: false,
-  };
+  return classifyRevisionEventAction(actionRaw);
 }
 
 export function splitMeaningfulAndTechnicalRevisions(entriesRaw = []) {
   const all = asArray(entriesRaw);
   const meaningful = [];
   const technical = [];
+  const unknown = [];
   all.forEach((entryRaw) => {
     const entry = asObject(entryRaw);
     const sourceAction = entry.source_action || entry.sourceAction || entry.reason;
     const classification = classifyRevisionSourceAction(sourceAction);
+    if (classification.allowInRevisionHistory === true) {
+      meaningful.push(entryRaw);
+      return;
+    }
     if (classification.isTechnical) {
       technical.push(entryRaw);
       return;
     }
-    meaningful.push(entryRaw);
+    unknown.push(entryRaw);
   });
   return {
     all,
     meaningful,
     technical,
+    unknown,
+    nonMeaningful: [...technical, ...unknown],
   };
 }
 
@@ -213,13 +153,24 @@ export function resolveRevisionHistoryUiSnapshot({
   const revisionHistorySnapshot = asObject(revisionHistorySnapshotRaw);
   const latestVersionItem = asObject(latestVersionItemRaw);
   const latestPublishedRevisionStatus = normalizePublishedRevisionStatus(latestVersionStatusRaw);
+  const latestVersionAction = normalizeRevisionEventAction(
+    latestVersionItem.source_action || latestVersionItem.sourceAction || latestVersionItem.reason,
+  );
+  const latestVersionClassification = classifyRevisionSourceAction(latestVersionAction);
+  const latestPublishedRevisionAllowed = latestVersionClassification.allowInPublishedBadge === true;
   const latestPublishedRevisionNumber = Math.max(
     0,
-    toInt(latestVersionItem.revisionNumber || latestVersionItem.rev || latestVersionItem.version_number, 0),
+    latestPublishedRevisionAllowed
+      ? toInt(latestVersionItem.revisionNumber || latestVersionItem.rev || latestVersionItem.version_number, 0)
+      : 0,
   );
   const latestPublishedRevisionId = toText(
-    latestVersionItem.id
-    || latestVersionItem.revisionId,
+    latestPublishedRevisionAllowed
+      ? (
+        latestVersionItem.id
+        || latestVersionItem.revisionId
+      )
+      : "",
   );
   const latestLedgerRevisionNumber = Math.max(
     0,
@@ -240,6 +191,10 @@ export function resolveRevisionHistoryUiSnapshot({
     latestRevisionId,
     latestPublishedRevisionNumber,
     latestPublishedRevisionId,
+    latestPublishedRevisionAllowed,
+    latestPublishedRevisionAction: latestVersionAction,
+    latestPublishedRevisionBucket: latestVersionClassification.bucket || "unknown",
+    latestPublishedRevisionKnown: latestVersionClassification.known === true,
     latestPublishedRevisionStatus,
     latestPublishedRevisionResolved: latestPublishedRevisionStatus === "ready" || latestPublishedRevisionStatus === "failed",
     latestLedgerRevisionNumber,

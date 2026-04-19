@@ -1790,7 +1790,7 @@ export default function ProcessStage({
           durableSnapshot: acceptedSnapshot,
         });
         const backendRevisionNumber = Number(normalizedBackendVersionSnapshot.revisionNumber || 0);
-        const backendSnapshotIsMeaningful = normalizedBackendVersionSnapshot.isTechnicalRevision !== true;
+        const backendSnapshotIsMeaningful = normalizedBackendVersionSnapshot.isMeaningfulRevision === true;
         if (backendRevisionNumber > 0 && backendSnapshotIsMeaningful) {
           const backendVersionId = String(normalizedBackendVersionSnapshot.id || "").trim();
           setLatestBpmnVersionHead(normalizedBackendVersionSnapshot);
@@ -4004,6 +4004,8 @@ export default function ProcessStage({
     const revisionSplit = splitMeaningfulAndTechnicalRevisions(normalizedList);
     const list = asArray(revisionSplit.meaningful);
     const technicalList = asArray(revisionSplit.technical);
+    const unknownList = asArray(revisionSplit.unknown);
+    const hiddenNonMeaningfulList = asArray(revisionSplit.nonMeaningful);
     const serverEntriesCount = asArray(normalizedList).length;
     setLatestBpmnVersionHead(asArray(list)[0] || null);
     if (trackHeadStatus) setLatestBpmnVersionHeadStatus("ready");
@@ -4011,10 +4013,10 @@ export default function ProcessStage({
     // eslint-disable-next-line no-console
     console.debug(
       `UI_VERSIONS_LOAD sid=${sid} key="${snapshotScopeKey(snapshotProjectId, sid)}" `
-      + `meaningful_count=${asArray(list).length} technical_count=${technicalList.length}`,
+      + `meaningful_count=${asArray(list).length} technical_count=${technicalList.length} unknown_count=${unknownList.length}`,
     );
     setVersionsServerEntriesCount(serverEntriesCount);
-    setVersionsTechnicalEntriesCount(technicalList.length);
+    setVersionsTechnicalEntriesCount(hiddenNonMeaningfulList.length);
     setVersionsList(asArray(list));
     setVersionsLoadState(asArray(list).length > 0 ? "ready" : "empty");
     setVersionsLoadError("");

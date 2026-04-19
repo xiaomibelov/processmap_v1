@@ -48,6 +48,7 @@ test("resolveRevisionHistoryUiSnapshot uses latest version item as canonical rev
     latestVersionItemRaw: {
       id: "ver_6",
       revisionNumber: 6,
+      source_action: "publish_manual_save",
     },
     latestVersionStatusRaw: "ready",
   });
@@ -109,12 +110,35 @@ test("splitMeaningfulAndTechnicalRevisions preserves latest meaningful head when
   assert.equal(split.technical[0]?.id, "r34");
 });
 
-test("unknown source action remains meaningful and does not break rendering", () => {
+test("unknown source action is fail-closed and does not enter meaningful surfaces", () => {
   const classification = classifyRevisionSourceAction("custom_domain_action");
-  assert.equal(classification.isMeaningful, true);
+  assert.equal(classification.isMeaningful, false);
   assert.equal(classification.isTechnical, false);
+  assert.equal(classification.isUnknown, true);
+  assert.equal(classification.allowInRevisionHistory, false);
+  assert.equal(classification.allowInFileVersions, false);
+  assert.equal(classification.allowInPublishedBadge, false);
   assert.equal(classification.known, false);
   assert.equal(localizeRevisionSourceAction("custom_domain_action"), "custom_domain_action");
+});
+
+test("resolveRevisionHistoryUiSnapshot keeps published head empty for unknown latest action", () => {
+  const resolved = resolveRevisionHistoryUiSnapshot({
+    revisionHistorySnapshotRaw: {
+      latestRevisionNumber: 4,
+      latestRevisionId: "ledger_r4",
+    },
+    latestVersionItemRaw: {
+      id: "raw_99",
+      revisionNumber: 99,
+      source_action: "custom_domain_action",
+    },
+    latestVersionStatusRaw: "ready",
+  });
+  assert.equal(resolved.latestPublishedRevisionAllowed, false);
+  assert.equal(resolved.latestPublishedRevisionNumber, 0);
+  assert.equal(resolved.latestPublishedRevisionId, "");
+  assert.equal(resolved.latestRevisionNumber, 4);
 });
 
 test("resolveRevisionHistoryEmptyState returns true empty message for real empty history", () => {
