@@ -249,6 +249,43 @@ function isTelemetryPath(path) {
   return text === TELEMETRY_PATH || text.endsWith(TELEMETRY_PATH);
 }
 
+function parseUrlLike(input) {
+  const raw = String(input || "").trim();
+  if (!raw) return null;
+  try {
+    return new URL(raw, "http://local");
+  } catch {
+    return null;
+  }
+}
+
+function isVersionsHeadBootstrapEndpoint(endpoint = "", url = "") {
+  const fromEndpoint = parseUrlLike(endpoint);
+  const fromUrl = parseUrlLike(url);
+  const parsed = fromEndpoint || fromUrl;
+  if (!parsed) return false;
+  const path = String(parsed.pathname || "");
+  const isSessionVersionsPath = /^\/api\/sessions\/[^/]+\/bpmn\/versions$/i.test(path);
+  if (!isSessionVersionsPath) return false;
+  return String(parsed.searchParams.get("limit") || "").trim() === "1";
+}
+
+function shouldSuppressApiFailureNoise({
+  method = "GET",
+  endpoint = "",
+  url = "",
+  status = 0,
+  aborted = false,
+  errorName = "",
+} = {}) {
+  if (String(method || "GET").toUpperCase() !== "GET") return false;
+  if (Number(status || 0) !== 0) return false;
+  if (!isVersionsHeadBootstrapEndpoint(endpoint, url)) return false;
+  const name = String(errorName || "").trim().toLowerCase();
+  if (aborted === true) return true;
+  return name === "aborterror" || name === "typeerror";
+}
+
 function shouldSuppressEvent(event, options = {}) {
   if (options?.allowTelemetrySelf === true) return false;
   if (telemetrySendDepth > 1) return true;
@@ -403,6 +440,16 @@ export function reportApiFailureEvent({
   const endpointText = normalizeText(endpoint, MAX_ROUTE);
   if (isTelemetryPath(endpointText) || isTelemetryPath(url)) {
     return Promise.resolve({ ok: false, skipped: "telemetry_self_noise" });
+  }
+  if (shouldSuppressApiFailureNoise({
+    method,
+    endpoint: endpointText,
+    url,
+    status,
+    aborted,
+    errorName,
+  })) {
+    return Promise.resolve({ ok: false, skipped: "versions_head_cancel_race_noise" });
   }
   return sendTelemetryEvent({
     source: "frontend",
