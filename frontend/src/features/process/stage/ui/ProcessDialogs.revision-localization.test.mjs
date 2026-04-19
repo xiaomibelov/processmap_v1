@@ -16,7 +16,8 @@ test("revision dialogs use RU labels for metadata surface", () => {
   assert.equal(source.includes("r{Number("), false);
   assert.equal(source.includes(': "черновик"'), false);
   assert.equal(source.includes(': "без номера ревизии"'), true);
-  assert.equal(source.includes("автор:"), true);
+  assert.equal(source.includes("кто изменил:"), true);
+  assert.equal(source.includes("что изменилось:"), true);
   assert.equal(source.includes("комментарий:"), true);
   assert.equal(source.includes("хэш:"), true);
   assert.equal(source.includes("размер:"), true);
@@ -30,6 +31,7 @@ test("revision dialogs separate loading, empty, and error states", () => {
   assert.equal(source.includes('data-testid="bpmn-versions-error"'), true);
   assert.equal(source.includes("Пустая история не означает, что черновик не сохранён."), true);
   assert.equal(source.includes("Новая ревизия появляется отдельным действием при значимом изменении схемы."), true);
+  assert.equal(source.includes("Чтобы понять, кто и что изменил, используйте compare-first"), true);
   assert.equal(source.includes("История пуста."), false);
 });
 

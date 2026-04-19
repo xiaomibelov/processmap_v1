@@ -277,6 +277,7 @@ export default function ProcessDialogs({ view = {} }) {
               <div className="mt-1 text-[11px] text-muted">
                 Текущий BPMN сохраняется отдельно от ревизий. Пустая история не означает, что черновик не сохранён.
                 Новая ревизия появляется отдельным действием при значимом изменении схемы.
+                Чтобы понять, кто и что изменил, используйте compare-first: «Сравнить A/B» или «Сравнить» у нужной ревизии.
               </div>
             </div>
             <div className="max-h-[52vh] space-y-2 overflow-auto pr-1">
@@ -330,10 +331,13 @@ export default function ProcessDialogs({ view = {} }) {
                         </div>
                       </div>
                       <div className="mb-1 text-xs text-muted">
-                        автор: {String(item?.authorLabel || item?.authorName || item?.authorEmail || item?.authorId || "неизвестно")}
+                        кто изменил: {String(item?.authorLabel || item?.authorName || item?.authorEmail || item?.authorId || "неизвестно")}
                       </div>
                       <div className="mb-2 text-xs text-muted">
                         комментарий: {String(item?.comment || "—")}
+                      </div>
+                      <div className="mb-2 text-xs text-muted">
+                        что изменилось: откройте «Сравнить» для diff с соседней ревизией.
                       </div>
                       <div className="mb-2 text-xs text-muted">
                         хэш: <span className="font-mono text-fg">{shortSnapshotHash(item?.hash || item?.xml || "")}</span> · размер: {Number(item?.len || String(item?.xml || "").length)}
