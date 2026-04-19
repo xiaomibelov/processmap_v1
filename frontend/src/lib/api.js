@@ -783,6 +783,10 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
     const importNote = String(options?.importNote || "").trim();
     if (importNote) body.import_note = importNote;
   }
+  const bpmnMeta = options?.bpmnMeta ?? options?.bpmn_meta;
+  if (isPlainObject(bpmnMeta)) {
+    body.bpmn_meta = bpmnMeta;
+  }
   const headers = {};
   if (options?.ifMatch !== undefined && options?.ifMatch !== null) {
     headers["If-Match"] = String(options.ifMatch);
