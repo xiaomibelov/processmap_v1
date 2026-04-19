@@ -130,3 +130,106 @@ test("okOrError emits api_failure for 200 responses carrying error payloads", as
   assert.equal(payload.request_id, out.request_id);
   assert.equal(fetchCalls.length, 2);
 });
+
+test("apiRequest suppresses telemetry api_failure for cancel-race on versions bootstrap head", async () => {
+  const localStorage = createStorage();
+  const sessionStorage = createStorage();
+  localStorage.setItem("fpc_active_org_id", "org_alpha");
+  global.window = {
+    location: {
+      href: "http://local/app?project=proj_1&session=sess_boot",
+      pathname: "/app",
+      search: "?project=proj_1&session=sess_boot",
+      hash: "",
+    },
+    localStorage,
+    sessionStorage,
+  };
+
+  const fetchCalls = [];
+  global.fetch = async (url, init) => {
+    const text = String(url || "");
+    fetchCalls.push({ url: text, init });
+    if (text.includes("/api/sessions/sess_boot/bpmn/versions?limit=1")) {
+      throw new TypeError("Failed to fetch");
+    }
+    if (text.includes("/api/telemetry/error-events")) {
+      return new Response(JSON.stringify({ ok: true, item: { id: "evt_noise_should_not_exist" } }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  const telemetry = await import("../features/telemetry/telemetryClient.js");
+  telemetry.__resetTelemetryForTests();
+  const apiCore = await import("./apiCore.js");
+
+  const out = await apiCore.apiRequest("/api/sessions/sess_boot/bpmn/versions?limit=1", {
+    method: "GET",
+    auth: false,
+    retryAuth: false,
+  });
+
+  assert.equal(out.ok, false);
+  assert.equal(out.status, 0);
+  assert.equal(out.error_name, "TypeError");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(telemetry.getTelemetryDebugState().accepted.length, 0);
+  assert.equal(fetchCalls.filter((item) => item.url.includes("/api/telemetry/error-events")).length, 0);
+});
+
+test("apiRequest still emits telemetry api_failure for real versions endpoint failure", async () => {
+  const localStorage = createStorage();
+  const sessionStorage = createStorage();
+  localStorage.setItem("fpc_active_org_id", "org_alpha");
+  global.window = {
+    location: {
+      href: "http://local/app?project=proj_1&session=sess_500",
+      pathname: "/app",
+      search: "?project=proj_1&session=sess_500",
+      hash: "",
+    },
+    localStorage,
+    sessionStorage,
+  };
+
+  const fetchCalls = [];
+  global.fetch = async (url, init) => {
+    const text = String(url || "");
+    fetchCalls.push({ url: text, init });
+    if (text.includes("/api/telemetry/error-events")) {
+      return new Response(JSON.stringify({ ok: true, item: { id: "evt_api_500" } }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ detail: "server exploded" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  const telemetry = await import("../features/telemetry/telemetryClient.js");
+  telemetry.__resetTelemetryForTests();
+  const apiCore = await import("./apiCore.js");
+
+  const out = await apiCore.apiRequest("/api/sessions/sess_500/bpmn/versions?limit=1", {
+    method: "GET",
+    auth: false,
+    retryAuth: false,
+  });
+
+  assert.equal(out.ok, false);
+  assert.equal(out.status, 500);
+  await waitFor(() => telemetry.getTelemetryDebugState().accepted.length === 1);
+  const payload = telemetry.getTelemetryDebugState().accepted[0]?.payload || {};
+  assert.equal(payload.event_type, "api_failure");
+  assert.equal(payload.context_json.endpoint, "/api/sessions/sess_500/bpmn/versions?limit=1");
+  assert.equal(payload.context_json.status, 500);
+  assert.equal(fetchCalls.filter((item) => item.url.includes("/api/telemetry/error-events")).length, 1);
+});
