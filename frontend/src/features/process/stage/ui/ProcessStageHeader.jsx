@@ -10,6 +10,7 @@ function toText(value) {
 export default function ProcessStageHeader({ view = {} }) {
   const {
     canSaveNow,
+    canCreateRevisionNow,
     saveActionText,
     saveSmartText,
     saveUploadStatus,
@@ -117,13 +118,12 @@ export default function ProcessStageHeader({ view = {} }) {
   const suppressDraftSavedBadge = /^Сессия (?:уже )?сохранена(?:[:.].*)?$/i.test(toolbarMessage)
     && (
       toText(saveSmartText) === "Черновик сохранён"
-      || toText(saveSmartText) === "Сохранено внутри версии"
     );
   const showGenericSaveStatusBadge = showSaveStatusBadgeResolved
     && !suppressDraftSavedBadge;
-  const canCreateRevisionFromCurrentState = canSaveNow
+  const canCreateRevisionFromCurrentState = canCreateRevisionNow !== false
     && typeof handleCreateRevisionAction === "function";
-  const revisionActionTitle = !canSaveNow
+  const revisionActionTitle = !canCreateRevisionFromCurrentState
     ? "Создание версии доступно в Diagram/XML"
     : "Создать новую версию из текущего состояния сессии";
   const canRunUndo = tab === "diagram" && canUndo === true;
