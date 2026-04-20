@@ -338,6 +338,65 @@ test("apiRequest suppresses telemetry api_failure for cancel-race on project exp
   assert.equal(fetchCalls.filter((item) => item.url.includes("/api/telemetry/error-events")).length, 0);
 });
 
+test("apiRequest suppresses telemetry api_failure for cancel-race on global bootstrap endpoints", async () => {
+  const localStorage = createStorage();
+  const sessionStorage = createStorage();
+  localStorage.setItem("fpc_active_org_id", "org_alpha");
+  global.window = {
+    location: {
+      href: "http://local/app?project=proj_1&session=sess_boot_global",
+      pathname: "/app",
+      search: "?project=proj_1&session=sess_boot_global",
+      hash: "",
+    },
+    localStorage,
+    sessionStorage,
+  };
+
+  const fetchCalls = [];
+  const noisyEndpoints = new Set([
+    "/api/workspaces",
+    "/api/settings/llm",
+    "/api/explorer?workspace_id=ws_1",
+  ]);
+  global.fetch = async (url, init) => {
+    const text = String(url || "");
+    fetchCalls.push({ url: text, init });
+    for (const endpoint of noisyEndpoints) {
+      if (text.includes(endpoint)) throw new TypeError("Failed to fetch");
+    }
+    if (text.includes("/api/telemetry/error-events")) {
+      return new Response(JSON.stringify({ ok: true, item: { id: "evt_global_noise_should_not_exist" } }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  const telemetry = await import("../features/telemetry/telemetryClient.js");
+  telemetry.__resetTelemetryForTests();
+  const apiCore = await import("./apiCore.js");
+
+  for (const endpoint of noisyEndpoints) {
+    const out = await apiCore.apiRequest(endpoint, {
+      method: "GET",
+      auth: false,
+      retryAuth: false,
+    });
+    assert.equal(out.ok, false);
+    assert.equal(out.status, 0);
+    assert.equal(out.error_name, "TypeError");
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(telemetry.getTelemetryDebugState().accepted.length, 0);
+  assert.equal(fetchCalls.filter((item) => item.url.includes("/api/telemetry/error-events")).length, 0);
+});
+
 test("apiRequest still emits telemetry api_failure for real project bootstrap endpoint failure", async () => {
   const localStorage = createStorage();
   const sessionStorage = createStorage();
@@ -385,6 +444,57 @@ test("apiRequest still emits telemetry api_failure for real project bootstrap en
   const payload = telemetry.getTelemetryDebugState().accepted[0]?.payload || {};
   assert.equal(payload.event_type, "api_failure");
   assert.equal(payload.context_json.endpoint, "/api/projects/proj_1/sessions");
+  assert.equal(payload.context_json.status, 503);
+  assert.equal(fetchCalls.filter((item) => item.url.includes("/api/telemetry/error-events")).length, 1);
+});
+
+test("apiRequest still emits telemetry api_failure for real global bootstrap endpoint failure", async () => {
+  const localStorage = createStorage();
+  const sessionStorage = createStorage();
+  localStorage.setItem("fpc_active_org_id", "org_alpha");
+  global.window = {
+    location: {
+      href: "http://local/app?project=proj_1&session=sess_503_global",
+      pathname: "/app",
+      search: "?project=proj_1&session=sess_503_global",
+      hash: "",
+    },
+    localStorage,
+    sessionStorage,
+  };
+
+  const fetchCalls = [];
+  global.fetch = async (url, init) => {
+    const text = String(url || "");
+    fetchCalls.push({ url: text, init });
+    if (text.includes("/api/telemetry/error-events")) {
+      return new Response(JSON.stringify({ ok: true, item: { id: "evt_global_503" } }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ detail: "upstream unavailable" }), {
+      status: 503,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  const telemetry = await import("../features/telemetry/telemetryClient.js");
+  telemetry.__resetTelemetryForTests();
+  const apiCore = await import("./apiCore.js");
+
+  const out = await apiCore.apiRequest("/api/workspaces", {
+    method: "GET",
+    auth: false,
+    retryAuth: false,
+  });
+
+  assert.equal(out.ok, false);
+  assert.equal(out.status, 503);
+  await waitFor(() => telemetry.getTelemetryDebugState().accepted.length === 1);
+  const payload = telemetry.getTelemetryDebugState().accepted[0]?.payload || {};
+  assert.equal(payload.event_type, "api_failure");
+  assert.equal(payload.context_json.endpoint, "/api/workspaces");
   assert.equal(payload.context_json.status, 503);
   assert.equal(fetchCalls.filter((item) => item.url.includes("/api/telemetry/error-events")).length, 1);
 });
