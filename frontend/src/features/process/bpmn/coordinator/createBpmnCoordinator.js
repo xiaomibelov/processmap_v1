@@ -62,6 +62,18 @@ function normalizeErrorCode(value) {
   return asText(value).trim().toUpperCase();
 }
 
+function classifySaveTrigger(reasonRaw = "", options = {}) {
+  const reason = asText(reasonRaw).trim().toLowerCase();
+  if (options?.fromPending === true || reason.includes("pending_replay")) return "pending_replay";
+  if (reason.includes("beforeunload") || reason.includes("pagehide") || reason.includes("visibility_hidden")) {
+    return "beforeunload_reload_flush";
+  }
+  if (reason.includes("reload")) return "hydration_reload";
+  if (reason.includes("autosave")) return "autosave";
+  if (reason.includes("manual")) return "manual_save";
+  return "other";
+}
+
 function isStaleConflictFailure(saved = null) {
   const value = saved && typeof saved === "object" ? saved : {};
   const status = asNumber(value?.status, 0);
@@ -343,6 +355,14 @@ export default function createBpmnCoordinator(options = {}) {
     emit("SAVE_REQUESTED", {
       sid,
       reason,
+      trigger_class: classifySaveTrigger(reason, options),
+      from_pending: options?.fromPending ? 1 : 0,
+      force: options?.force ? 1 : 0,
+      trigger: asText(options?.trigger || ""),
+      save_owner: resolveSaveOwner(options),
+      xml_override: asText(options?.xmlOverride).trim() ? 1 : 0,
+      save_in_flight: saveInFlight ? 1 : 0,
+      queued_rev: saveQueuedRev,
       rev,
       dirty: state?.dirty ? 1 : 0,
       runtime_ready: status?.ready ? 1 : 0,
@@ -369,6 +389,9 @@ export default function createBpmnCoordinator(options = {}) {
         emit("SAVE_PERSIST_STARTED", {
           sid,
           reason: `${reason}:fallback`,
+          trigger_class: classifySaveTrigger(reason, options),
+          save_path: "not_ready_fallback",
+          from_pending: options?.fromPending ? 1 : 0,
           rev,
           xml_len: fallbackXml.length,
         });
@@ -482,6 +505,9 @@ export default function createBpmnCoordinator(options = {}) {
     emit("SAVE_EXECUTED", {
       sid,
       reason,
+      trigger_class: classifySaveTrigger(reason, options),
+      from_pending: options?.fromPending ? 1 : 0,
+      save_owner: resolveSaveOwner(options),
       rev: targetRev,
       runtime_token: runtimeToken,
       xml_len: xml.length,
@@ -489,6 +515,9 @@ export default function createBpmnCoordinator(options = {}) {
     emit("SAVE_PERSIST_STARTED", {
       sid,
       reason,
+      trigger_class: classifySaveTrigger(reason, options),
+      save_path: "runtime_flush",
+      from_pending: options?.fromPending ? 1 : 0,
       rev: targetRev,
       xml_len: xml.length,
     });
@@ -603,6 +632,15 @@ export default function createBpmnCoordinator(options = {}) {
     }
     const state = store.getState();
     saveQueuedRev = Math.max(saveQueuedRev, asNumber(state?.rev, 0));
+    emit("SAVE_SCHEDULED", {
+      sid: currentSid(),
+      reason: asText(reason || "autosave"),
+      trigger_class: classifySaveTrigger(reason),
+      rev: asNumber(state?.rev, 0),
+      dirty: state?.dirty ? 1 : 0,
+      queued_rev: saveQueuedRev,
+      save_in_flight: saveInFlight ? 1 : 0,
+    });
     clearSaveTimer();
     saveTimer = window.setTimeout(() => {
       saveTimer = 0;
@@ -731,6 +769,7 @@ export default function createBpmnCoordinator(options = {}) {
         emit("SAVE_EXECUTED", {
           sid,
           reason,
+          trigger_class: classifySaveTrigger(reason, options),
           rev,
           runtime_token: 0,
           xml_len: xml.length,
@@ -739,6 +778,8 @@ export default function createBpmnCoordinator(options = {}) {
         emit("SAVE_PERSIST_STARTED", {
           sid,
           reason,
+          trigger_class: classifySaveTrigger(reason, options),
+          save_path: "explicit_persist",
           rev,
           xml_len: xml.length,
         });
