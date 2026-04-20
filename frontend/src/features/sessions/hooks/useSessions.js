@@ -7,6 +7,16 @@ import {
   apiListSessions,
 } from "../../../lib/api";
 
+function shouldTraceSessionsFallback() {
+  if (typeof window === "undefined") return false;
+  if (window.__FPC_TRACE_SESSIONS_FALLBACK__ === true) return true;
+  try {
+    return window.localStorage?.getItem("fpc:trace-sessions-fallback") === "1";
+  } catch {
+    return false;
+  }
+}
+
 function sessionIdFrom(s) {
   return (s && (s.session_id || s.id)) || "";
 }
@@ -18,6 +28,16 @@ export default function useSessions({ projectId = "", onOk, onFail } = {}) {
     async (pidArg) => {
       const pid = typeof pidArg === "string" ? pidArg : projectId;
       const useProject = typeof pid === "string" && pid.trim().length > 0;
+      if (shouldTraceSessionsFallback()) {
+        // eslint-disable-next-line no-console
+        console.info("[TRACE_SESSIONS_FALLBACK]", {
+          label: "refreshSessions",
+          timestamp: Date.now(),
+          pidArg: typeof pidArg === "string" ? pidArg : "(from hook projectId)",
+          resolvedPid: pid,
+          branch: useProject ? "project-scoped" : "global-fallback",
+        });
+      }
 
       const r = useProject ? await apiListProjectSessions(pid) : await apiListSessions();
       if (!r.ok) {
