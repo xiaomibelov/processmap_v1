@@ -29,11 +29,14 @@ test("session save and explicit revision action stay separated by contract", () 
   assert.equal(source.includes("setLatestBpmnVersionHead(normalizedBackendVersionSnapshot);"), true);
   assert.equal(source.includes('setLatestBpmnVersionHeadStatus("ready");'), true);
   assert.equal(source.includes("authoritativeRevision: backendVersionSnapshot"), true);
+  assert.equal(source.includes("skipIfContentUnchanged: false"), true);
   assert.equal(source.includes("const shouldSyncCompanion = backendRevisionNumber > 0;"), true);
   assert.equal(source.includes("Сессия сохранена."), true);
   assert.equal(source.includes("Сессия уже сохранена: изменений схемы нет."), true);
-  assert.equal(source.includes("Создана новая ревизия."), true);
-  assert.equal(source.includes("Новая ревизия не создана: значимых изменений нет."), true);
+  assert.equal(source.includes('revisionComment: createRevision ? "Версия создана вручную" : ""'), true);
+  assert.equal(source.includes("Создана новая версия."), true);
+  assert.equal(source.includes("Сессия сохранена, но создание новой версии не подтверждено."), true);
+  assert.equal(source.includes("Новая ревизия не создана: значимых изменений нет."), false);
   assert.equal(source.includes("Новая ревизия не создана: сохранённых изменений нет."), false);
   assert.equal(source.includes("saveInfo,"), true);
   assert.equal(source.includes('persistReason: "manual_save"'), false);
