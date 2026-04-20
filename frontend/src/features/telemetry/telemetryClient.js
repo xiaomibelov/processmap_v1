@@ -283,6 +283,20 @@ function isProjectBootstrapAbortEndpoint(endpoint = "", url = "") {
   return false;
 }
 
+function isGlobalBootstrapAbortEndpoint(endpoint = "", url = "") {
+  const fromEndpoint = parseUrlLike(endpoint);
+  const fromUrl = parseUrlLike(url);
+  const parsed = fromEndpoint || fromUrl;
+  if (!parsed) return false;
+  const path = String(parsed.pathname || "");
+  if (/^\/api\/workspaces$/i.test(path)) return true;
+  if (/^\/api\/settings\/llm$/i.test(path)) return true;
+  if (/^\/api\/explorer$/i.test(path)) {
+    return String(parsed.searchParams.get("workspace_id") || "").trim().length > 0;
+  }
+  return false;
+}
+
 function shouldSuppressApiFailureNoise({
   method = "GET",
   endpoint = "",
@@ -298,6 +312,7 @@ function shouldSuppressApiFailureNoise({
   if (!abortLike) return false;
   if (isVersionsHeadBootstrapEndpoint(endpoint, url)) return true;
   if (isProjectBootstrapAbortEndpoint(endpoint, url)) return true;
+  if (isGlobalBootstrapAbortEndpoint(endpoint, url)) return true;
   return false;
 }
 
