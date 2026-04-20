@@ -18,6 +18,7 @@ test("dirty save snapshot keeps save action button visible", () => {
   assert.equal(ui.showSaveActionButton, true);
   assert.equal(ui.publishActionRequired, false);
   assert.equal(ui.saveActionText, "Сохранить сессию");
+  assert.equal(ui.saveSmartText, "Сохранить сессию");
 });
 
 test("draft ahead keeps save action visible and keeps publish requirement for revision action", () => {
@@ -52,6 +53,7 @@ test("first publish requirement does not hide session-save reassurance button", 
   assert.equal(ui.showSaveActionButton, true);
   assert.equal(ui.publishActionRequired, true);
   assert.equal(ui.saveActionText, "Сохранить сессию");
+  assert.equal(ui.saveSmartText, "Сохранено внутри версии");
 });
 
 test("clean published state keeps session-save reassurance button visible", () => {
@@ -69,6 +71,7 @@ test("clean published state keeps session-save reassurance button visible", () =
   assert.equal(ui.showSaveActionButton, true);
   assert.equal(ui.publishActionRequired, false);
   assert.equal(ui.saveActionText, "Сохранить сессию");
+  assert.equal(ui.saveSmartText, "Сохранено внутри версии");
 });
 
 test("save action label no longer uses revision semantics", () => {
@@ -101,4 +104,40 @@ test("session-save button visibility remains decoupled from publish requirement"
   });
   assert.equal(ui.publishActionRequired, true);
   assert.equal(ui.showSaveActionButton, true);
+});
+
+test("save smart text transitions through dirty -> saving -> saved within version", () => {
+  const dirty = buildSaveUiState({
+    saveSnapshotRaw: { isDirty: true, status: "dirty" },
+    revisionSnapshotRaw: { latestRevisionNumber: 3, draftState: { hasLiveDraft: true } },
+    fallbackLabel: "Save",
+  });
+  const saving = buildSaveUiState({
+    saveSnapshotRaw: { isSaving: true, status: "saving" },
+    revisionSnapshotRaw: { latestRevisionNumber: 3, draftState: { hasLiveDraft: true } },
+    fallbackLabel: "Save",
+  });
+  const saved = buildSaveUiState({
+    saveSnapshotRaw: { isSaved: true, status: "saved" },
+    revisionSnapshotRaw: { latestRevisionNumber: 3, draftState: { hasLiveDraft: true } },
+    fallbackLabel: "Save",
+  });
+  assert.equal(dirty.saveSmartText, "Сохранить сессию");
+  assert.equal(saving.saveSmartText, "Сохранение...");
+  assert.equal(saved.saveSmartText, "Сохранено внутри версии");
+});
+
+test("save smart text returns to dirty state after next xml mutation", () => {
+  const saved = buildSaveUiState({
+    saveSnapshotRaw: { isSaved: true, status: "saved", isDirty: false },
+    revisionSnapshotRaw: { latestRevisionNumber: 7, draftState: { hasLiveDraft: true } },
+    fallbackLabel: "Save",
+  });
+  const dirtyAgain = buildSaveUiState({
+    saveSnapshotRaw: { isSaved: false, isDirty: true, status: "dirty" },
+    revisionSnapshotRaw: { latestRevisionNumber: 7, draftState: { hasLiveDraft: true } },
+    fallbackLabel: "Save",
+  });
+  assert.equal(saved.saveSmartText, "Сохранено внутри версии");
+  assert.equal(dirtyAgain.saveSmartText, "Сохранить сессию");
 });
