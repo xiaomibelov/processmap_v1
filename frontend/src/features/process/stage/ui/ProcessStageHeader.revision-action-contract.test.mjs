@@ -21,8 +21,8 @@ test("header exposes distinct actions for session save and revision creation", (
 
 test("revision action availability is separated from session-save copy", () => {
   const source = readHeaderSource();
-  assert.ok(source.includes("const canCreateRevisionFromCurrentState = canSaveNow"));
-  assert.ok(source.includes('const revisionActionTitle = !canSaveNow'));
+  assert.ok(source.includes("const canCreateRevisionFromCurrentState = canCreateRevisionNow !== false"));
+  assert.ok(source.includes('const revisionActionTitle = !canCreateRevisionFromCurrentState'));
   assert.ok(source.includes('"Создать новую версию из текущего состояния сессии"'));
   assert.ok(source.includes('"Создание версии доступно в Diagram/XML"'));
   assert.equal(source.includes("Сохранить версию"), false);

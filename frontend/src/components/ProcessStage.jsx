@@ -1704,6 +1704,10 @@ export default function ProcessStage({
 
   async function runManualSaveAction({ createRevision = false } = {}) {
     if (!hasSession || isSwitchingTab || isFlushingTab || isManualSaveBusy) return;
+    if (createRevision) {
+      // Cancel queued autosave to avoid race against explicit version creation.
+      cancelPendingDiagramAutosave?.();
+    }
     const truthOwner = ensureSessionWorkspaceTruthOwner();
     truthOwner?.saveSessionStart({ source: "manual_save" });
     setGenErr("");
