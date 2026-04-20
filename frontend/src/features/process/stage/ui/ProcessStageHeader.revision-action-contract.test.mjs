@@ -16,15 +16,15 @@ test("header exposes distinct actions for session save and revision creation", (
   assert.ok(source.includes('data-testid="diagram-toolbar-save"'));
   assert.ok(source.includes('data-testid="diagram-toolbar-create-revision"'));
   assert.ok(source.includes('{saveActionText || "Сохранить сессию"}'));
-  assert.ok(source.includes("Создать новую ревизию"));
+  assert.ok(source.includes("Создать новую версию"));
 });
 
 test("revision action availability is separated from session-save copy", () => {
   const source = readHeaderSource();
   assert.ok(source.includes("const canCreateRevisionFromCurrentState = canSaveNow"));
-  assert.ok(source.includes("saveDirtyHint || publishActionRequired"));
   assert.ok(source.includes('const revisionActionTitle = !canSaveNow'));
-  assert.ok(source.includes('"Новых изменений для новой ревизии нет. Измените схему и попробуйте снова."'));
+  assert.ok(source.includes('"Создать новую версию из текущего состояния сессии"'));
+  assert.ok(source.includes('"Создание версии доступно в Diagram/XML"'));
   assert.equal(source.includes("Сохранить версию"), false);
 });
 
