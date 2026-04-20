@@ -1353,6 +1353,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     ready: false,
     destroyed: false,
   });
+  const userMutationObservedRef = useRef(false);
   const saveCountersRef = useRef({
     requested: 0,
     skipped_not_ready: 0,
@@ -1555,6 +1556,40 @@ const BpmnStage = forwardRef(function BpmnStage({
     const storeXml = String(bpmnStoreRef.current?.getState?.()?.xml || xmlDraft || xml || "");
     const sid = String(sessionId || "");
     const meta = payload && typeof payload === "object" ? payload : {};
+    const runtimeStatus = asObject(modelerRuntimeRef.current?.getStatus?.() || runtimeStatusRef.current);
+    const coordinatorDebug = asObject(bpmnCoordinatorRef.current?.getDebugState?.());
+    const projectId = String(draftRef.current?.project_id || draftRef.current?.projectId || activeProjectId || "");
+    const traceableCausalEvent = [
+      "SAVE_SCHEDULED",
+      "SAVE_REQUESTED",
+      "SAVE_SKIPPED_NOT_READY",
+      "SAVE_EXECUTED",
+      "SAVE_PERSIST_STARTED",
+      "SAVE_PERSIST_DONE",
+      "SAVE_PERSIST_FAIL",
+      "PENDING_SAVE_SET",
+      "PENDING_SAVE_REPLAY",
+      "API_PUT_BPMN_XML_ENTRY",
+      "API_PUT_BPMN_XML_RESULT",
+    ].includes(String(event || "").trim());
+    if (traceableCausalEvent) {
+      traceProcess("bpmn.causal_trace", {
+        sid,
+        project_id: projectId,
+        event: String(event || "unknown"),
+        source_hint: String(srcHint || ""),
+        is_bootstrap_phase: runtimeStatus?.ready && runtimeStatus?.defs ? 0 : 1,
+        is_hydrating: String(srcHint || "").includes("bootstrap") || String(srcHint || "").includes("reload") ? 1 : 0,
+        runtime_ready: runtimeStatus?.ready ? 1 : 0,
+        runtime_defs: runtimeStatus?.defs ? 1 : 0,
+        runtime_token: Number(runtimeStatus?.token || 0),
+        user_mutation_observed: userMutationObservedRef.current ? 1 : 0,
+        has_pending_autosave: coordinatorDebug?.pendingSave ? 1 : 0,
+        autosave_queue_rev: Number(coordinatorDebug?.saveQueuedRev || 0),
+        save_in_flight: coordinatorDebug?.saveInFlight ? 1 : 0,
+        payload: cloneJsonValue(meta),
+      });
+    }
     if (
       event === "SAVE_REQUESTED"
       || event === "SAVE_EXECUTED"
@@ -1724,6 +1759,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       mutation_kind: mutationKind,
       payload_keys: Object.keys(payload || {}),
     });
+    userMutationObservedRef.current = true;
     cb({
       kind: mutationKind,
       ...payload,
@@ -5109,6 +5145,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       console.debug(`[SESSION] activate sid=${sid || "-"} prevSid=${prevSid || "-"} tab=${view === "xml" ? "xml" : "diagram"}`);
     }
     activeSessionRef.current = sid;
+    userMutationObservedRef.current = false;
     ensureEpochRef.current += 1;
     robotMetaHydrateStateRef.current = { key: "" };
     camundaHydrateStateRef.current = { key: "" };
@@ -5139,8 +5176,54 @@ const BpmnStage = forwardRef(function BpmnStage({
   }, [sessionId]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const sid = String(sessionId || "");
+    const readProjectId = () => String(
+      draftRef.current?.project_id
+      || draftRef.current?.projectId
+      || activeProjectId
+      || "",
+    );
+    const onBeforeUnload = () => {
+      traceProcess("bpmn.lifecycle.beforeunload", {
+        sid,
+        project_id: readProjectId(),
+        view: String(view || "diagram"),
+        user_mutation_observed: userMutationObservedRef.current ? 1 : 0,
+      });
+    };
+    const onPageHide = (event) => {
+      traceProcess("bpmn.lifecycle.pagehide", {
+        sid,
+        project_id: readProjectId(),
+        persisted: event?.persisted ? 1 : 0,
+        view: String(view || "diagram"),
+        user_mutation_observed: userMutationObservedRef.current ? 1 : 0,
+      });
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "hidden") return;
+      traceProcess("bpmn.lifecycle.visibility_hidden", {
+        sid,
+        project_id: readProjectId(),
+        view: String(view || "diagram"),
+        user_mutation_observed: userMutationObservedRef.current ? 1 : 0,
+      });
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    window.addEventListener("pagehide", onPageHide);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      window.removeEventListener("pagehide", onPageHide);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [activeProjectId, sessionId, view]);
+
+  useEffect(() => {
     const sid = String(sessionId || "");
     activeSessionRef.current = sid;
+    userMutationObservedRef.current = false;
     const token = loadTokenRef.current + 1;
     loadTokenRef.current = token;
     if (!sid) return;
