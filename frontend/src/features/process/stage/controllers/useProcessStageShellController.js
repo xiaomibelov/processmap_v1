@@ -89,9 +89,17 @@ export default function useProcessStageShellController({
       && !isManualSaveBusy
       && saveSnapshot.isSaving !== true
     );
+    const canCreateRevisionNow = (
+      !!hasSession
+      && !!isBpmnTab
+      && !isSwitchingTab
+      && !isFlushingTab
+      && !isManualSaveBusy
+    );
     const truthSourceMap = asObject(asObject(sessionCompanionBridgeSnapshot).sourceMap);
     return {
       canSaveNow,
+      canCreateRevisionNow,
       saveSmartText: hasSession ? saveUi.saveSmartText : workbench.labels.save,
       saveDirtyHint: saveUi.saveDirty,
       publishActionRequired: saveUi.publishActionRequired,
