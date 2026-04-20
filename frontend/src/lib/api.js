@@ -9,6 +9,29 @@ import {
   shouldLogBpmnTrace,
 } from "./apiCore.js";
 
+function shouldTraceSessionsFallback() {
+  if (typeof window === "undefined") return false;
+  if (window.__FPC_TRACE_SESSIONS_FALLBACK__ === true) return true;
+  try {
+    return window.localStorage?.getItem("fpc:trace-sessions-fallback") === "1";
+  } catch {
+    return false;
+  }
+}
+
+function compactStackMarker(limit = 3) {
+  try {
+    const raw = String(new Error().stack || "");
+    const lines = raw
+      .split("\n")
+      .slice(2, 2 + Number(limit || 3))
+      .map((line) => line.trim().replace(/^at\s+/, ""));
+    return lines.join(" <- ");
+  } catch {
+    return "";
+  }
+}
+
 export {
   apiAuthInviteActivate,
   apiAuthInvitePreview,
@@ -190,6 +213,14 @@ export async function apiDeleteOrgProjectMember(orgId, projectId, userId) {
 
 // ------- Sessions (legacy / fallback) -------
 export async function apiListSessions() {
+  if (shouldTraceSessionsFallback()) {
+    // eslint-disable-next-line no-console
+    console.info("[TRACE_SESSIONS_FALLBACK]", {
+      label: "apiListSessions",
+      timestamp: Date.now(),
+      stack: compactStackMarker(),
+    });
+  }
   const r = okOrError(await request(apiRoutes.sessions.list()));
   // backend returns {items, count}
   const list = Array.isArray(r.data) ? r.data : Array.isArray(r.data?.items) ? r.data.items : [];
