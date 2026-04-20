@@ -168,6 +168,18 @@ function snapshotMode(reason) {
   return "auto";
 }
 
+function classifyPersistTrigger(reasonRaw = "") {
+  const reason = asText(reasonRaw).trim().toLowerCase();
+  if (reason.includes("beforeunload") || reason.includes("pagehide") || reason.includes("visibility_hidden")) {
+    return "beforeunload_reload_flush";
+  }
+  if (reason.includes("pending_replay")) return "pending_replay";
+  if (reason.includes("reload")) return "hydration_reload";
+  if (reason.includes("autosave")) return "autosave";
+  if (reason.includes("manual")) return "manual_save";
+  return "other";
+}
+
 export default function createBpmnPersistence(options = {}) {
   const getSessionDraft = typeof options?.getSessionDraft === "function"
     ? options.getSessionDraft
@@ -603,10 +615,33 @@ export default function createBpmnPersistence(options = {}) {
     }
 
     const baseDiagramStateVersion = resolveBaseDiagramStateVersion(sid);
+    emit("API_PUT_BPMN_XML_ENTRY", {
+      sid,
+      reason: asText(reason || "save"),
+      trigger_class: classifyPersistTrigger(reason),
+      rev: targetRev,
+      xml_len: xml.length,
+      draft_rev: draftRevision(),
+      known_diagram_state_version: asNumber(knownDiagramStateVersion, -1),
+      base_diagram_state_version: asNumber(baseDiagramStateVersion, -1),
+      local_session: isLocalSessionId(sid) ? 1 : 0,
+    });
     const saved = await apiPutBpmnXml(sid, xml, {
       rev: targetRev,
       reason,
       baseDiagramStateVersion,
+    });
+    emit("API_PUT_BPMN_XML_RESULT", {
+      sid,
+      reason: asText(reason || "save"),
+      trigger_class: classifyPersistTrigger(reason),
+      rev: targetRev,
+      ok: saved?.ok ? 1 : 0,
+      status: asNumber(saved?.status, 0),
+      error_code: asText(saved?.errorCode || ""),
+      error: asText(saved?.error || ""),
+      diagram_state_version: asNumber(saved?.diagramStateVersion, -1),
+      stored_rev: asNumber(saved?.storedRev, targetRev),
     });
     if (!saved?.ok) {
       const status = asNumber(saved?.status, 0);
