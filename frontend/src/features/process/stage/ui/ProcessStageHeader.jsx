@@ -10,7 +10,6 @@ function toText(value) {
 export default function ProcessStageHeader({ view = {} }) {
   const {
     canSaveNow,
-    saveDirtyHint,
     saveActionText,
     saveSmartText,
     saveUploadStatus,
@@ -118,18 +117,11 @@ export default function ProcessStageHeader({ view = {} }) {
   const showGenericSaveStatusBadge = showSaveStatusBadgeResolved
     && !suppressDraftSavedBadge
     && !showDraftRelationBadgeResolved;
-  const publishActionRequired = draftAheadOfLatest
-    || (latestPublishedRevisionNumber <= 0 && sessionRevisionHistorySnapshot?.draftState?.hasLiveDraft === true);
   const canCreateRevisionFromCurrentState = canSaveNow
-    && (saveDirtyHint || publishActionRequired)
     && typeof handleCreateRevisionAction === "function";
   const revisionActionTitle = !canSaveNow
-    ? "Создание ревизии доступно в Diagram/XML"
-    : (
-      saveDirtyHint || publishActionRequired
-        ? "Создать новую ревизию из текущего состояния сессии"
-        : "Новых изменений для новой ревизии нет. Измените схему и попробуйте снова."
-    );
+    ? "Создание версии доступно в Diagram/XML"
+    : "Создать новую версию из текущего состояния сессии";
   const canRunUndo = tab === "diagram" && canUndo === true;
   const canRunRedo = tab === "diagram" && canRedo === true;
 
@@ -166,7 +158,7 @@ export default function ProcessStageHeader({ view = {} }) {
               title={revisionActionTitle}
               data-testid="diagram-toolbar-create-revision"
             >
-              Создать новую ревизию
+              Создать новую версию
             </button>
           ) : null}
           {hasSession ? (
