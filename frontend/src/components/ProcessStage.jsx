@@ -1926,7 +1926,7 @@ export default function ProcessStage({
                 }
               } else {
                 saveInfo = saved?.skipped === true
-                  ? "Сессия уже сохранена: изменений схемы нет."
+                  ? "Сохранено внутри версии."
                   : "Сессия сохранена.";
               }
             }
@@ -1934,7 +1934,7 @@ export default function ProcessStage({
         } else {
           saveInfo = createRevision
             ? "Сессия сохранена, но создание новой версии не подтверждено."
-            : "Сессия уже сохранена: изменений схемы нет.";
+            : "Сохранено внутри версии.";
         }
         if (!saveInfo && !companionError) {
           saveInfo = createRevision ? "Создана новая версия." : "Сессия сохранена.";
