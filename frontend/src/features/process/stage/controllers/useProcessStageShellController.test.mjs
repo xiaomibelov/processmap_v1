@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { buildSaveUiState } from "./useProcessStageShellController.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 test("dirty save snapshot keeps save action button visible", () => {
   const ui = buildSaveUiState({
@@ -140,4 +146,12 @@ test("save smart text returns to dirty state after next xml mutation", () => {
   });
   assert.equal(saved.saveSmartText, "Сохранено внутри версии");
   assert.equal(dirtyAgain.saveSmartText, "Сохранить сессию");
+});
+
+test("create-version availability is decoupled from transient saving state", () => {
+  const source = fs.readFileSync(path.join(__dirname, "useProcessStageShellController.js"), "utf8");
+  assert.equal(source.includes("const canSaveNow = ("), true);
+  assert.equal(source.includes("&& saveSnapshot.isSaving !== true"), true);
+  assert.equal(source.includes("const canCreateRevisionNow = ("), true);
+  assert.equal(source.includes("canCreateRevisionNow,"), true);
 });

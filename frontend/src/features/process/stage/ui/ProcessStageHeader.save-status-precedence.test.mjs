@@ -7,16 +7,20 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-test("session-save confirmation suppresses duplicate generic draft-saved badge", () => {
+test("session-save confirmation no longer suppresses \"Сохранено внутри версии\" badge", () => {
   const source = fs.readFileSync(path.join(__dirname, "ProcessStageHeader.jsx"), "utf8");
   assert.equal(
     source.includes('const suppressDraftSavedBadge = /^Сессия (?:уже )?сохранена(?:[:.].*)?$/i.test(toolbarMessage)'),
     true,
   );
   assert.equal(
+    source.includes("toText(saveSmartText) === \"Черновик сохранён\""),
+    true,
+  );
+  assert.equal(source.includes("toText(saveSmartText) === \"Сохранено внутри версии\""), false);
+  assert.equal(
     source.includes("const showGenericSaveStatusBadge = showSaveStatusBadgeResolved")
-      && source.includes("&& !suppressDraftSavedBadge")
-      && source.includes("&& !showDraftRelationBadgeResolved;"),
+      && source.includes("&& !suppressDraftSavedBadge"),
     true,
   );
   assert.equal(source.includes("{showGenericSaveStatusBadge ? ("), true);
