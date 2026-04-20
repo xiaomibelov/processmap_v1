@@ -1903,20 +1903,23 @@ export default function ProcessStage({
                   ? Math.round(nextCompanionBaseDiagramStateVersion)
                   : getBaseDiagramStateVersion(),
                 publishRevision: createRevision,
-                revisionComment: createRevision ? "Ревизия создана вручную" : "",
+                revisionComment: createRevision ? "Версия создана вручную" : "",
                 revisionSource: createRevision ? "publish_manual_save" : "manual_save",
                 authoritativeRevision: backendVersionSnapshot,
               });
               if (!companionResult?.ok) {
                 companionError = shortErr(companionResult?.error || "Не удалось синхронизировать companion metadata.");
                 saveInfo = createRevision
-                  ? "Сессия сохранена, но создание новой ревизии не подтверждено."
+                  ? "Сессия сохранена, но создание новой версии не подтверждено."
                   : "Сессия сохранена.";
               } else if (createRevision) {
                 const revisionInfo = asObject(companionResult?.revision);
-                saveInfo = revisionInfo.skipped === true
-                  ? "Новая ревизия не создана: значимых изменений нет."
-                  : "Создана новая ревизия.";
+                if (revisionInfo.skipped === true) {
+                  companionError = companionError || "Создание новой версии не подтверждено.";
+                  saveInfo = "Сессия сохранена, но создание новой версии не подтверждено.";
+                } else {
+                  saveInfo = "Создана новая версия.";
+                }
               } else {
                 saveInfo = saved?.skipped === true
                   ? "Сессия уже сохранена: изменений схемы нет."
@@ -1926,11 +1929,11 @@ export default function ProcessStage({
           }
         } else {
           saveInfo = createRevision
-            ? "Новая ревизия не создана: значимых изменений нет."
+            ? "Сессия сохранена, но создание новой версии не подтверждено."
             : "Сессия уже сохранена: изменений схемы нет.";
         }
         if (!saveInfo && !companionError) {
-          saveInfo = createRevision ? "Создана новая ревизия." : "Сессия сохранена.";
+          saveInfo = createRevision ? "Создана новая версия." : "Сессия сохранена.";
         }
         cancelPendingDiagramAutosave?.();
       }
@@ -2067,7 +2070,7 @@ export default function ProcessStage({
         createdAt: toText(normalizedAuthoritativeRevision.created_at_iso || normalizedAuthoritativeRevision.created_at || savedAt),
         authoritativeRevisionNumber: Number(normalizedAuthoritativeRevision.version_number || 0),
         authoritativeRevisionId: toText(normalizedAuthoritativeRevision.id),
-        skipIfContentUnchanged: true,
+        skipIfContentUnchanged: false,
       });
       if (!revisionTransition?.ok) {
         return { ok: false, error: String(revisionTransition?.error || "revision_publish_failed") };
@@ -4436,7 +4439,7 @@ export default function ProcessStage({
       }
       setInfoMsg(
         `Автоисправление: ${applied} опер.${failed > 0 ? ` Ошибок: ${failed}.` : ""} `
-        + "Черновик обновлён; для новой ревизии используйте «Создать новую ревизию».",
+        + "Черновик обновлён; для новой версии используйте «Создать новую версию».",
       );
       setQualityAutoFixOpen(false);
     } catch (error) {
