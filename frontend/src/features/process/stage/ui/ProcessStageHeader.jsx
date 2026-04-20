@@ -96,6 +96,7 @@ export default function ProcessStageHeader({ view = {} }) {
   const saveSmartTextNormalized = toText(saveSmartText).replace(/[.!]+$/g, "").trim().toLowerCase();
   const isDraftSavedToolbarMessage = (
     toolbarMessageNormalized === "черновик сохранён"
+    || toolbarMessageNormalized === "сохранено внутри версии"
     || toolbarMessageNormalized === "черновик синхронизирован"
   );
   const hasPrimaryDraftStatusSurface = showSaveStatusBadgeResolved || showDraftRelationBadgeResolved;
@@ -110,13 +111,16 @@ export default function ProcessStageHeader({ view = {} }) {
         !saveSmartTextNormalized
         || toolbarMessageNormalized === saveSmartTextNormalized
         || saveSmartTextNormalized === "черновик сохранён"
+        || saveSmartTextNormalized === "сохранено внутри версии"
       )
     );
   const suppressDraftSavedBadge = /^Сессия (?:уже )?сохранена(?:[:.].*)?$/i.test(toolbarMessage)
-    && toText(saveSmartText) === "Черновик сохранён";
+    && (
+      toText(saveSmartText) === "Черновик сохранён"
+      || toText(saveSmartText) === "Сохранено внутри версии"
+    );
   const showGenericSaveStatusBadge = showSaveStatusBadgeResolved
-    && !suppressDraftSavedBadge
-    && !showDraftRelationBadgeResolved;
+    && !suppressDraftSavedBadge;
   const canCreateRevisionFromCurrentState = canSaveNow
     && typeof handleCreateRevisionAction === "function";
   const revisionActionTitle = !canSaveNow

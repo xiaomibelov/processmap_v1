@@ -14,9 +14,9 @@ function buildSaveSmartTextFromSnapshot(saveSnapshotRaw, fallbackRaw = "") {
   if (saveSnapshot.isDirty === true) return "Сохранить сессию";
   if (saveSnapshot.isFailed === true) return "Ошибка сохранения";
   if (saveSnapshot.isStale === true) return "Требуется синхронизация";
-  if (saveSnapshot.isSaved === true) return "Черновик сохранён";
+  if (saveSnapshot.isSaved === true) return "Сохранено внутри версии";
   const status = toText(saveSnapshot.status);
-  if (status === "saved") return "Черновик сохранён";
+  if (status === "saved") return "Сохранено внутри версии";
   if (status === "dirty") return "Сохранить сессию";
   if (status === "saving") return "Сохранение...";
   if (status === "failed") return "Ошибка сохранения";
