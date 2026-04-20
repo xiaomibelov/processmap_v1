@@ -38,6 +38,12 @@ function isIntentPreservingReason(reasonRaw) {
   return reason.startsWith("manual_save") || reason.startsWith("publish_manual_save");
 }
 
+function isPublishManualSaveReason(reasonRaw) {
+  const reason = asText(reasonRaw).trim().toLowerCase();
+  if (!reason) return false;
+  return reason.startsWith("publish_manual_save");
+}
+
 function buildConflictReplayReason(reasonRaw) {
   const reason = asText(reasonRaw).trim();
   if (!isIntentPreservingReason(reason)) return "";
@@ -444,7 +450,15 @@ export default function createBpmnCoordinator(options = {}) {
     const localHash = asText(state?.lastHash || state?.hash || "");
     const localDirty = state?.dirty === true;
     const localLastSavedRev = asNumber(state?.lastSavedRev, 0);
-    if (!localDirty && currentXmlHash && localHash && currentXmlHash === localHash && localLastSavedRev >= rev) {
+    const explicitPublishManualSave = isPublishManualSaveReason(reason);
+    if (
+      !explicitPublishManualSave
+      && !localDirty
+      && currentXmlHash
+      && localHash
+      && currentXmlHash === localHash
+      && localLastSavedRev >= rev
+    ) {
       emit("SAVE_PERSIST_SKIPPED_UNCHANGED", {
         sid,
         reason,
