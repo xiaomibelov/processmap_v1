@@ -65,6 +65,40 @@ test("flushSave keeps backend persist when xml changed", async () => {
   assert.equal(saveCalls, 1);
 });
 
+test("publish_manual_save bypasses unchanged skip and still persists", async () => {
+  const store = createBpmnStore({
+    xml: "<bpmn:definitions id=\"same\"/>",
+    rev: 7,
+    dirty: false,
+    lastSavedRev: 7,
+  });
+  let saveCalls = 0;
+  const reasons = [];
+  const coordinator = createBpmnCoordinator({
+    store,
+    getSessionId: () => "sid_publish_same_payload",
+    getRuntime: () => ({
+      getStatus: () => ({ ready: true, defs: true, token: 79 }),
+      getXml: async () => ({ ok: true, xml: "<bpmn:definitions id=\"same\"/>", token: 79 }),
+    }),
+    persistence: {
+      saveRaw: async (_sid, _xml, _rev, reason) => {
+        saveCalls += 1;
+        reasons.push(String(reason || ""));
+        return { ok: true, status: 200, storedRev: 8 };
+      },
+    },
+  });
+
+  const result = await coordinator.flushSave("publish_manual_save");
+
+  assert.equal(result.ok, true);
+  assert.equal(result.skipped, undefined);
+  assert.equal(result.unchanged, undefined);
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(reasons, ["publish_manual_save"]);
+});
+
 test("flushSave persists transformed xml in a single write", async () => {
   const store = createBpmnStore({
     xml: "<bpmn:definitions id=\"old\"/>",
