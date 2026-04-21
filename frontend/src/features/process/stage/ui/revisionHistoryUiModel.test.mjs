@@ -36,6 +36,9 @@ test("formatRevisionAuthor prefers human-readable fields and shortens technical 
 
   const shortTech = formatRevisionAuthor({ id: "8f4b7f5fd3b146b4bf5160f8c0d9821a" });
   assert.equal(shortTech.label.startsWith("Пользователь "), true);
+
+  const unknown = formatRevisionAuthor({});
+  assert.equal(unknown.label, "Автор не указан");
 });
 
 test("resolveRevisionHistoryUiSnapshot uses latest version item as canonical revision number", () => {
@@ -149,7 +152,7 @@ test("resolveRevisionHistoryEmptyState returns true empty message for real empty
     serverEntriesCountRaw: 0,
   });
   assert.equal(emptyState.kind, "true_empty");
-  assert.equal(emptyState.message.includes("Ревизий пока нет."), true);
+  assert.equal(emptyState.message.includes("Версий пока нет."), true);
 });
 
 test("resolveRevisionHistoryEmptyState returns filtered message when only technical entries exist", () => {
@@ -160,6 +163,7 @@ test("resolveRevisionHistoryEmptyState returns filtered message when only techni
     serverEntriesCountRaw: 3,
   });
   assert.equal(emptyState.kind, "technical_filtered");
+  assert.equal(emptyState.message.includes("Пользовательских версий пока нет."), true);
   assert.equal(emptyState.message.includes("Технические сохранения скрыты"), true);
 });
 
