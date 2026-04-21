@@ -16,6 +16,9 @@ test("save ack toast anchors to header notification slot and keeps safe fallback
   assert.equal(source.includes('kind: "header-slot"'), true);
   assert.equal(source.includes('kind: "diagram-toolbar"'), true);
   assert.equal(source.includes("HEADER_TOAST_PREFERRED_WIDTH_PX"), true);
+  assert.equal(source.includes("HEADER_TOAST_VERTICAL_OFFSET_PX"), true);
+  assert.equal(source.includes("const headerTopFloor = VIEWPORT_GAP_PX + HEADER_TOAST_VERTICAL_OFFSET_PX;"), true);
+  assert.equal(source.includes("+ HEADER_TOAST_VERTICAL_OFFSET_PX"), true);
   assert.equal(source.includes("const hasRoomOnLeft = availableLeft >= TOAST_MIN_WIDTH_PX;"), true);
   assert.equal(source.includes("Fallback для узкого viewport"), true);
   assert.equal(source.includes("fixed bottom-5 left-1/2"), true);
