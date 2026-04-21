@@ -15,8 +15,14 @@ test("header exposes distinct actions for session save and revision creation", (
   const source = readHeaderSource();
   assert.ok(source.includes('data-testid="diagram-toolbar-save"'));
   assert.ok(source.includes('data-testid="diagram-toolbar-create-revision"'));
-  assert.ok(source.includes('{saveActionText || "Сохранить сессию"}'));
-  assert.ok(source.includes("Создать новую версию"));
+  assert.ok(source.includes('data-testid="diagram-toolbar-version-chip"'));
+  assert.ok(source.includes("{resolvedSaveActionText}"));
+  assert.ok(source.includes("{resolvedCreateRevisionActionText}"));
+  const versionChipIdx = source.indexOf('data-testid="diagram-toolbar-version-chip"');
+  const createVersionIdx = source.indexOf('data-testid="diagram-toolbar-create-revision"');
+  const saveIdx = source.indexOf('data-testid="diagram-toolbar-save"');
+  assert.ok(versionChipIdx !== -1 && createVersionIdx !== -1 && saveIdx !== -1);
+  assert.ok(versionChipIdx < createVersionIdx && createVersionIdx < saveIdx);
 });
 
 test("revision action availability is separated from session-save copy", () => {
@@ -24,7 +30,8 @@ test("revision action availability is separated from session-save copy", () => {
   assert.ok(source.includes("const canCreateRevisionFromCurrentState = canCreateRevisionNow !== false"));
   assert.ok(source.includes('const revisionActionTitle = !canCreateRevisionFromCurrentState'));
   assert.ok(source.includes('"Создать новую версию из текущего состояния сессии"'));
-  assert.ok(source.includes('"Создание версии доступно в Diagram/XML"'));
+  assert.ok(source.includes('"Новая версия создаётся только при изменениях черновика в Diagram/XML"'));
+  assert.equal(source.includes('"Создание версии доступно в Diagram/XML"'), false);
   assert.equal(source.includes("Сохранить версию"), false);
 });
 
