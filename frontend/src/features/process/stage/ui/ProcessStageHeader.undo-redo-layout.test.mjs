@@ -33,12 +33,13 @@ test("undo/redo controls use compact icon buttons with russian accessibility lab
   );
 });
 
-test("right header cluster keeps save status badge and hides git mirror technical badge", () => {
+test("right header cluster keeps notification anchor and hides git mirror technical badge", () => {
   const source = readHeaderSource();
   const rightClusterIdx = source.indexOf('className="diagramToolbarRightStatus"');
-  const saveStatusIdx = source.indexOf('data-testid="diagram-toolbar-save-status"');
+  const notificationAnchorIdx = source.indexOf('data-testid="diagram-toolbar-notification-anchor"');
   assert.ok(rightClusterIdx !== -1, "right status cluster must exist");
-  assert.ok(saveStatusIdx > rightClusterIdx, "save status badge must be inside right status cluster");
+  assert.ok(notificationAnchorIdx > rightClusterIdx, "notification anchor must be inside right status cluster");
+  assert.equal(source.includes('data-testid="diagram-toolbar-save-status"'), false);
   assert.equal(source.includes('data-testid="diagram-toolbar-publish-git-mirror-status"'), false);
   assert.equal(source.includes("Git-зеркало:"), false);
 });

@@ -170,6 +170,10 @@
     @apply truncate;
   }
 
+  .diagramToolbarNotificationAnchor {
+    @apply inline-flex h-8 w-px shrink-0 opacity-0 pointer-events-none;
+  }
+
   .diagramToolbarRightActions {
     @apply flex shrink-0 items-center gap-1;
   }
