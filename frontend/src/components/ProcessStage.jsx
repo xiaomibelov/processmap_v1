@@ -243,7 +243,7 @@ const BPMN_VERSION_HEADERS_LIMIT = 50;
 const SESSION_PRESENCE_TTL_MS = 180000;
 const SESSION_PRESENCE_HEARTBEAT_MS = 45000;
 const REMOTE_SESSION_SYNC_POLL_MS = 9000;
-const SAVE_ACK_TOAST_HIDE_MS = 1500;
+const SAVE_ACK_TOAST_HIDE_MS = 4000;
 
 const IDLE_SAVE_UPLOAD_EVENT = Object.freeze({
   event: "",
@@ -875,6 +875,7 @@ export default function ProcessStage({
     tone: "success",
     message: "",
   });
+  const [manualSaveIntent, setManualSaveIntent] = useState("");
   const showSaveAckToast = useCallback((messageRaw, toneRaw = "success") => {
     const message = toText(messageRaw);
     if (!message) return;
@@ -1748,7 +1749,9 @@ export default function ProcessStage({
     truthOwner?.saveSessionStart({ source: "manual_save" });
     setGenErr("");
     setInfoMsg("");
+    setManualSaveIntent(createRevision ? "create_revision" : "save_session");
     setIsManualSaveBusy(true);
+    showSaveAckToast("Сохранение...", "info");
     try {
       const persistReason = createRevision ? "publish_manual_save" : "manual_save";
       const saved = await bpmnSync.flushFromActiveTab(tab, {
@@ -1764,7 +1767,7 @@ export default function ProcessStage({
         });
         const failedOutcomeUi = resolveManualSaveOutcomeUi({
           primarySaveOk: false,
-          primarySaveError: shortErr(saved?.error || "Не удалось сохранить BPMN."),
+          primarySaveError: shortErr(saved?.error || "Не удалось сохранить."),
         });
         showSaveAckToast(failedOutcomeUi.genErr, "error");
         return;
@@ -1950,30 +1953,30 @@ export default function ProcessStage({
               if (!companionResult?.ok) {
                 companionError = shortErr(companionResult?.error || "Не удалось синхронизировать companion metadata.");
                 saveInfo = createRevision
-                  ? "BPMN сохранён, но создание новой версии не подтверждено."
-                  : "Черновик BPMN сохранён.";
+                  ? "Сохранено внутри версии, но создание новой версии не подтверждено."
+                  : "Сохранено внутри версии.";
               } else if (createRevision) {
                 const revisionInfo = asObject(companionResult?.revision);
                 if (revisionInfo.skipped === true) {
                   companionError = companionError || "Создание новой версии не подтверждено.";
-                  saveInfo = "BPMN сохранён, но создание новой версии не подтверждено.";
+                  saveInfo = "Сохранено внутри версии, но создание новой версии не подтверждено.";
                 } else {
-                  saveInfo = "Создана новая версия BPMN.";
+                  saveInfo = "Создана новая версия.";
                 }
               } else {
                 saveInfo = saved?.skipped === true
-                  ? "Черновик BPMN уже актуален."
-                  : "Черновик BPMN сохранён.";
+                  ? "Сохранено внутри версии."
+                  : "Сохранено внутри версии.";
               }
             }
           }
         } else {
           saveInfo = createRevision
-            ? "BPMN сохранён, но создание новой версии не подтверждено."
-            : "Черновик BPMN сохранён.";
+            ? "Сохранено внутри версии, но создание новой версии не подтверждено."
+            : "Сохранено внутри версии.";
         }
         if (!saveInfo && !companionError) {
-          saveInfo = createRevision ? "Создана новая версия BPMN." : "Черновик BPMN сохранён.";
+          saveInfo = createRevision ? "Создана новая версия." : "Сохранено внутри версии.";
         }
         cancelPendingDiagramAutosave?.();
       }
@@ -1996,11 +1999,12 @@ export default function ProcessStage({
     } catch (e) {
       truthOwner?.saveSessionFailed({
         source: "manual_save_failed",
-        error: shortErr(e?.message || e || "Не удалось сохранить BPMN."),
+        error: shortErr(e?.message || e || "Не удалось сохранить."),
       });
-      showSaveAckToast(shortErr(e?.message || e || "Не удалось сохранить BPMN."), "error");
+      showSaveAckToast(shortErr(e?.message || e || "Не удалось сохранить."), "error");
     } finally {
       setIsManualSaveBusy(false);
+      setManualSaveIntent("");
     }
   }
 
@@ -5765,6 +5769,7 @@ export default function ProcessStage({
     isSwitchingTab,
     isFlushingTab,
     isManualSaveBusy,
+    manualSaveIntent,
     saveDirtyHint,
     workbench,
     genErr,

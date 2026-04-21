@@ -155,3 +155,22 @@ test("create-version availability is decoupled from transient saving state", () 
   assert.equal(source.includes("const canCreateRevisionNow = ("), true);
   assert.equal(source.includes("canCreateRevisionNow,"), true);
 });
+
+test("manual save busy state exposes explicit transitional labels", () => {
+  const saveBusy = buildSaveUiState({
+    saveSnapshotRaw: { isSaving: true, status: "saving" },
+    revisionSnapshotRaw: { latestRevisionNumber: 4, draftState: { hasLiveDraft: true } },
+    isManualSaveBusy: true,
+    manualSaveIntent: "save_session",
+  });
+  const createBusy = buildSaveUiState({
+    saveSnapshotRaw: { isSaving: true, status: "saving" },
+    revisionSnapshotRaw: { latestRevisionNumber: 4, draftState: { hasLiveDraft: true } },
+    isManualSaveBusy: true,
+    manualSaveIntent: "create_revision",
+  });
+  assert.equal(saveBusy.saveActionText, "Сохранение...");
+  assert.equal(saveBusy.createRevisionActionText, "Создать новую версию");
+  assert.equal(createBusy.saveActionText, "Сохранить сессию");
+  assert.equal(createBusy.createRevisionActionText, "Сохранение...");
+});

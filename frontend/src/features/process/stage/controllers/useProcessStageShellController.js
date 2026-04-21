@@ -27,6 +27,8 @@ export function buildSaveUiState({
   saveSnapshotRaw = null,
   revisionSnapshotRaw = null,
   fallbackLabel = "Сохранение",
+  isManualSaveBusy = false,
+  manualSaveIntent = "",
 } = {}) {
   const saveSnapshot = asObject(saveSnapshotRaw);
   const revisionSnapshot = asObject(revisionSnapshotRaw);
@@ -38,13 +40,21 @@ export function buildSaveUiState({
   const draftAheadOfLatest = draftState.isDraftAheadOfLatestRevision === true;
   const publishActionRequired = draftAheadOfLatest || (latestRevisionNumber <= 0 && hasLiveDraft);
   const showSaveActionButton = true;
-  const saveActionText = "Сохранить сессию";
+  const normalizedIntent = toText(manualSaveIntent).toLowerCase();
+  const saveInProgress = isManualSaveBusy === true || saveSnapshot.isSaving === true;
+  const saveActionText = saveInProgress && normalizedIntent !== "create_revision"
+    ? "Сохранение..."
+    : "Сохранить сессию";
+  const createRevisionActionText = saveInProgress && normalizedIntent === "create_revision"
+    ? "Сохранение..."
+    : "Создать новую версию";
   return {
     saveSmartText,
     saveDirty,
     publishActionRequired,
     showSaveActionButton,
     saveActionText,
+    createRevisionActionText,
   };
 }
 
@@ -54,6 +64,7 @@ export default function useProcessStageShellController({
   isSwitchingTab,
   isFlushingTab,
   isManualSaveBusy,
+  manualSaveIntent,
   saveDirtyHint,
   workbench,
   genErr,
@@ -80,6 +91,8 @@ export default function useProcessStageShellController({
       saveSnapshotRaw: saveSnapshot,
       revisionSnapshotRaw: revisionSnapshot,
       fallbackLabel: workbench.labels.save,
+      isManualSaveBusy: isManualSaveBusy === true,
+      manualSaveIntent,
     });
     const canSaveNow = (
       !!hasSession
@@ -104,7 +117,8 @@ export default function useProcessStageShellController({
       saveDirtyHint: saveUi.saveDirty,
       publishActionRequired: saveUi.publishActionRequired,
       showSaveActionButton: saveUi.showSaveActionButton,
-      saveActionText: canSaveNow ? saveUi.saveActionText : workbench.labels.save,
+      saveActionText: hasSession ? saveUi.saveActionText : workbench.labels.save,
+      createRevisionActionText: hasSession ? saveUi.createRevisionActionText : "Создать новую версию",
       toolbarInlineMessage: String(genErr || infoMsg || "").trim(),
       toolbarInlineTone: genErr ? "err" : "",
       canUseElementContextActions: !!selectedElementContext,
@@ -130,6 +144,7 @@ export default function useProcessStageShellController({
     isBpmnTab,
     isFlushingTab,
     isManualSaveBusy,
+    manualSaveIntent,
     isSwitchingTab,
     saveDirtyHint,
     saveUploadStatus,
