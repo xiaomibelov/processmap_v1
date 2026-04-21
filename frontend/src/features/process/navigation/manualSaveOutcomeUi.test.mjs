@@ -13,7 +13,7 @@ test("manual save success + companion success keeps primary success state", () =
 
   assert.equal(ui.primaryState, "primary_saved");
   assert.equal(ui.genErr, "");
-  assert.equal(ui.infoMsg, "Черновик сохранён.");
+  assert.equal(ui.infoMsg, "Черновик BPMN сохранён.");
   assert.equal(ui.companionSeverity, "none");
 });
 
@@ -29,7 +29,7 @@ test("manual save success + companion failure is surfaced as secondary warning",
   assert.equal(ui.genErr, "");
   assert.equal(ui.companionSeverity, "warning");
   assert.match(ui.infoMsg, /Сессия сохранена\./);
-  assert.match(ui.infoMsg, /Companion metadata не синхронизированы\./);
+  assert.match(ui.infoMsg, /Метаданные версии пока не синхронизированы\./);
 });
 
 test("manual save no-op stays in session-save semantics and avoids revision wording", () => {
