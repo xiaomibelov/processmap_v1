@@ -9,6 +9,8 @@ function toText(value) {
 export default function ProcessStageHeader({ view = {} }) {
   const {
     canCreateRevisionNow,
+    createRevisionNoDiffHintVisible,
+    createRevisionNoDiffHintText,
     saveActionText,
     createRevisionActionText,
     saveSmartText,
@@ -97,9 +99,13 @@ export default function ProcessStageHeader({ view = {} }) {
   const showGenericSaveStatusBadge = showSaveStatusBadgeResolved;
   const canCreateRevisionFromCurrentState = canCreateRevisionNow !== false
     && typeof handleCreateRevisionAction === "function";
-  const revisionActionTitle = !canCreateRevisionFromCurrentState
-    ? "Новая версия создаётся только при изменениях черновика в Diagram/XML"
-    : "Создать новую версию из текущего состояния сессии";
+  const showCreateRevisionNoDiffHint = hasSession
+    && createRevisionNoDiffHintVisible === true;
+  const revisionActionTitle = showCreateRevisionNoDiffHint
+    ? "Новая версия не будет создана: нет новых изменений с последней версии."
+    : (!canCreateRevisionFromCurrentState
+      ? "Создание новой версии временно недоступно."
+      : "Создать новую версию из текущего состояния сессии");
   const canRunUndo = tab === "diagram" && canUndo === true;
   const canRunRedo = tab === "diagram" && canRedo === true;
 
@@ -117,16 +123,27 @@ export default function ProcessStageHeader({ view = {} }) {
             </span>
           ) : null}
           {hasSession ? (
-            <button
-              type="button"
-              className="secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
-              onClick={handleCreateRevisionAction}
-              disabled={!canCreateRevisionFromCurrentState}
-              title={revisionActionTitle}
-              data-testid="diagram-toolbar-create-revision"
-            >
-              {resolvedCreateRevisionActionText}
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                className="secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
+                onClick={handleCreateRevisionAction}
+                disabled={!canCreateRevisionFromCurrentState}
+                title={revisionActionTitle}
+                data-testid="diagram-toolbar-create-revision"
+              >
+                {resolvedCreateRevisionActionText}
+              </button>
+              {showCreateRevisionNoDiffHint ? (
+                <span
+                  className="badge text-[11px] text-muted"
+                  title={revisionActionTitle}
+                  data-testid="diagram-toolbar-create-revision-no-diff-hint"
+                >
+                  {toText(createRevisionNoDiffHintText) || "Нет новых изменений для новой версии"}
+                </span>
+              ) : null}
+            </div>
           ) : null}
           {hasSession ? (
             <button
