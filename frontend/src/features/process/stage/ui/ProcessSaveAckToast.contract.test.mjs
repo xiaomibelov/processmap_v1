@@ -13,5 +13,8 @@ test("save ack toast anchors left of diagram toolbar with safe fallback", () => 
   assert.equal(source.includes("const hasRoomOnLeft = availableLeft >= TOAST_MIN_WIDTH_PX;"), true);
   assert.equal(source.includes("Fallback для узкого viewport"), true);
   assert.equal(source.includes("fixed bottom-5 left-1/2"), true);
-  assert.equal(source.includes("bg-cyan-500/18"), true);
+  assert.equal(source.includes("bg-emerald-500/30"), true);
+  assert.equal(source.includes("bg-amber-500/40"), true);
+  assert.equal(source.includes("bg-rose-600/40"), true);
+  assert.equal(source.includes("bg-sky-500/30"), true);
 });
