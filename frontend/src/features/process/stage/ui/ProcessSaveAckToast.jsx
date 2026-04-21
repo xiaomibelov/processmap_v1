@@ -6,6 +6,7 @@ const TOAST_MAX_WIDTH_PX = 560;
 const TOAST_MIN_WIDTH_PX = 240;
 const TOAST_ESTIMATED_HEIGHT_PX = 56;
 const HEADER_TOAST_PREFERRED_WIDTH_PX = 460;
+const HEADER_TOAST_VERTICAL_OFFSET_PX = 8;
 
 function resolveToneClass(tone) {
   if (tone === "error") {
@@ -125,6 +126,7 @@ export default function ProcessSaveAckToast({
     );
 
     if (toolbarRect.kind === "header-anchor" || toolbarRect.kind === "header-slot") {
+      const headerTopFloor = VIEWPORT_GAP_PX + HEADER_TOAST_VERTICAL_OFFSET_PX;
       const availableLeft = Math.max(
         TOAST_MIN_WIDTH_PX,
         toolbarRect.right - VIEWPORT_GAP_PX,
@@ -143,8 +145,10 @@ export default function ProcessSaveAckToast({
       const top = Math.min(
         viewportHeight - TOAST_ESTIMATED_HEIGHT_PX - VIEWPORT_GAP_PX,
         Math.max(
-          VIEWPORT_GAP_PX,
-          toolbarRect.top + (toolbarRect.height - TOAST_ESTIMATED_HEIGHT_PX) / 2,
+          headerTopFloor,
+          toolbarRect.top
+            + (toolbarRect.height - TOAST_ESTIMATED_HEIGHT_PX) / 2
+            + HEADER_TOAST_VERTICAL_OFFSET_PX,
         ),
       );
       return {
