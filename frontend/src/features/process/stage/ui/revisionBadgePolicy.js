@@ -22,7 +22,7 @@ export function resolvePublishedRevisionBadgeView(snapshotRaw = null) {
   }
   return {
     testId: "diagram-toolbar-latest-revision-empty",
-    text: "Не опубликовано",
+    text: "Нет опубликованных версий",
     title: "Опубликованных версий нет",
   };
 }

@@ -24,7 +24,7 @@ test("latest ledger revision alone does not masquerade as published version", ()
   });
   assert.deepEqual(badge, {
     testId: "diagram-toolbar-latest-revision-empty",
-    text: "Не опубликовано",
+    text: "Нет опубликованных версий",
     title: "Опубликованных версий нет",
   });
 });
@@ -37,7 +37,7 @@ test("technical-only revision head does not appear as published badge", () => {
   });
   assert.deepEqual(badge, {
     testId: "diagram-toolbar-latest-revision-empty",
-    text: "Не опубликовано",
+    text: "Нет опубликованных версий",
     title: "Опубликованных версий нет",
   });
 });
@@ -50,7 +50,7 @@ test("published revision badge shows explicit no-publish state instead of pseudo
   });
   assert.deepEqual(badge, {
     testId: "diagram-toolbar-latest-revision-empty",
-    text: "Не опубликовано",
+    text: "Нет опубликованных версий",
     title: "Опубликованных версий нет",
   });
 });
@@ -75,7 +75,7 @@ test("badge stays unpublished when published number is present but explicitly di
   });
   assert.deepEqual(badge, {
     testId: "diagram-toolbar-latest-revision-empty",
-    text: "Не опубликовано",
+    text: "Нет опубликованных версий",
     title: "Опубликованных версий нет",
   });
 });
