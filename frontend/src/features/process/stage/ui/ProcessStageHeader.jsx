@@ -81,9 +81,15 @@ export default function ProcessStageHeader({ view = {} }) {
     || toolbarMessageNormalized === "сохранено внутри версии"
     || toolbarMessageNormalized === "черновик синхронизирован"
   );
+  const isSaveVersionToolbarMessage = (
+    isDraftSavedToolbarMessage
+    || toolbarMessageNormalized === "создана новая версия bpmn"
+    || toolbarMessageNormalized === "новая версия не создана: нет изменений"
+  );
   const hasPrimaryDraftStatusSurface = showSaveStatusBadgeResolved;
   const toolbarMessageLooksLikeConflict = /(?:конфликт|conflict|http\s*409|stale|верси)/i.test(toolbarMessage);
   const showToolbarInlineBadge = !!toolbarInlineMessage
+    && !isSaveVersionToolbarMessage
     && !hasDominantConflictState
     && !(showConflictModalActive && toolbarMessageLooksLikeConflict)
     && !(
@@ -197,6 +203,11 @@ export default function ProcessStageHeader({ view = {} }) {
 
       <div className="diagramToolbarSlot diagramToolbarSlot--right">
         <div className="diagramToolbarRightStatus">
+          <span
+            className="diagramToolbarNotificationAnchor"
+            data-testid="diagram-toolbar-notification-anchor"
+            aria-hidden="true"
+          />
           {showSessionPresenceBadge ? (
             <span
               className="badge text-[11px] text-muted"
@@ -230,11 +241,6 @@ export default function ProcessStageHeader({ view = {} }) {
                 </button>
               ) : null}
             </>
-          ) : null}
-          {showGenericSaveStatusBadge ? (
-            <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-save-status" title={saveSmartText}>
-              {saveSmartText}
-            </span>
           ) : null}
           {showUploadStatusBadge ? (
             <span
