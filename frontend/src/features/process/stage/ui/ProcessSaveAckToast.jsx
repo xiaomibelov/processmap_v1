@@ -8,15 +8,15 @@ const TOAST_ESTIMATED_HEIGHT_PX = 56;
 
 function resolveToneClass(tone) {
   if (tone === "error") {
-    return "border-rose-500/55 bg-rose-500/18 text-rose-50";
+    return "border-rose-300/80 bg-rose-600/40 text-rose-50 shadow-[0_10px_28px_hsl(346_84%_30%_/_0.45)]";
   }
   if (tone === "warning") {
-    return "border-amber-500/55 bg-amber-500/18 text-amber-50";
+    return "border-amber-300/80 bg-amber-500/40 text-amber-50 shadow-[0_10px_28px_hsl(36_100%_30%_/_0.38)]";
   }
   if (tone === "info") {
-    return "border-sky-500/55 bg-sky-500/18 text-sky-50";
+    return "border-sky-300/75 bg-sky-500/30 text-sky-50 shadow-[0_10px_26px_hsl(205_88%_34%_/_0.34)]";
   }
-  return "border-cyan-500/55 bg-cyan-500/18 text-cyan-50";
+  return "border-emerald-300/80 bg-emerald-500/30 text-emerald-50 shadow-[0_10px_28px_hsl(154_70%_24%_/_0.40)]";
 }
 
 export default function ProcessSaveAckToast({
