@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 
 const VIEWPORT_GAP_PX = 12;
 const TOOLBAR_GAP_PX = 12;
-const TOAST_MAX_WIDTH_PX = 560;
-const TOAST_MIN_WIDTH_PX = 240;
-const TOAST_ESTIMATED_HEIGHT_PX = 56;
-const HEADER_TOAST_PREFERRED_WIDTH_PX = 460;
+const TOAST_MAX_WIDTH_PX = 420;
+const TOAST_MIN_WIDTH_PX = 220;
+const TOAST_ESTIMATED_HEIGHT_PX = 52;
+const HEADER_TOAST_PREFERRED_WIDTH_PX = 360;
 const HEADER_TOAST_VERTICAL_OFFSET_PX = 8;
+const TOAST_EXIT_ANIMATION_MS = 280;
 
 function resolveToneClass(tone) {
   if (tone === "error") {
@@ -28,11 +29,44 @@ export default function ProcessSaveAckToast({
 } = {}) {
   const normalizedMessage = String(message || "").trim();
   const shouldRender = visible === true && normalizedMessage.length > 0;
+  const [isMounted, setIsMounted] = useState(shouldRender);
+  const [isShown, setIsShown] = useState(shouldRender);
 
   const [toolbarRect, setToolbarRect] = useState(null);
 
   useEffect(() => {
-    if (visible !== true) {
+    let exitTimerId = 0;
+    let rafId = 0;
+    const hasWindow = typeof window !== "undefined";
+
+    if (shouldRender) {
+      setIsMounted(true);
+      if (!hasWindow) {
+        setIsShown(true);
+      } else {
+        rafId = window.requestAnimationFrame(() => {
+          setIsShown(true);
+        });
+      }
+    } else if (isMounted) {
+      setIsShown(false);
+      if (!hasWindow) {
+        setIsMounted(false);
+      } else {
+        exitTimerId = window.setTimeout(() => {
+          setIsMounted(false);
+        }, TOAST_EXIT_ANIMATION_MS);
+      }
+    }
+
+    return () => {
+      if (hasWindow && rafId) window.cancelAnimationFrame(rafId);
+      if (hasWindow && exitTimerId) window.clearTimeout(exitTimerId);
+    };
+  }, [isMounted, shouldRender]);
+
+  useEffect(() => {
+    if (isMounted !== true) {
       setToolbarRect(null);
       return undefined;
     }
@@ -111,7 +145,7 @@ export default function ProcessSaveAckToast({
       window.removeEventListener("resize", updateToolbarRect);
       window.removeEventListener("scroll", updateToolbarRect, true);
     };
-  }, [visible]);
+  }, [isMounted]);
 
   const containerStyle = useMemo(() => {
     if (!toolbarRect || typeof window === "undefined") return null;
@@ -204,11 +238,11 @@ export default function ProcessSaveAckToast({
     };
   }, [toolbarRect]);
 
-  if (!shouldRender) return null;
+  if (!isMounted) return null;
 
   const containerClassName = containerStyle
-    ? "pointer-events-none fixed z-[130] w-[min(92vw,560px)]"
-    : "pointer-events-none fixed bottom-5 left-1/2 z-[130] w-[min(92vw,560px)] -translate-x-1/2 sm:bottom-6";
+    ? "pointer-events-none fixed z-[130] w-[min(92vw,420px)]"
+    : "pointer-events-none fixed bottom-5 left-1/2 z-[130] w-[min(92vw,420px)] -translate-x-1/2 sm:bottom-6";
   const toneClass = resolveToneClass(String(tone || "").trim());
   return (
     <div
@@ -218,7 +252,7 @@ export default function ProcessSaveAckToast({
       <div
         role="status"
         aria-live="polite"
-        className={`rounded-xl border px-4 py-2.5 text-sm font-semibold shadow-2xl backdrop-blur ${toneClass}`}
+        className={`rounded-xl border px-3.5 py-2 text-[13px] font-medium leading-5 shadow-2xl backdrop-blur transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${isShown ? "translate-y-0 opacity-100" : "-translate-y-1 opacity-0"} ${toneClass}`}
         data-testid="process-save-ack-toast"
       >
         {normalizedMessage}
