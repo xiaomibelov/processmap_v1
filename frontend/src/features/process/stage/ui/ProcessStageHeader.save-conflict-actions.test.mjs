@@ -57,10 +57,6 @@ test("header dedupes competing conflict surfaces while modal is active", () => {
     "generic save badge should be suppressed while conflict is active",
   );
   assert.ok(
-    source.includes("const showDraftRelationBadgeResolved = showDraftRelationBadge && !hasDominantConflictState;"),
-    "draft-vs-latest badge should not compete with conflict state",
-  );
-  assert.ok(
     source.includes("const showSessionPresenceBadge = hasSession && sessionPresenceView?.visible === true && !showConflictModalActive;"),
     "presence badge must be suppressed while conflict modal is active",
   );

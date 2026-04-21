@@ -5,18 +5,19 @@ const TOOLBAR_GAP_PX = 12;
 const TOAST_MAX_WIDTH_PX = 560;
 const TOAST_MIN_WIDTH_PX = 240;
 const TOAST_ESTIMATED_HEIGHT_PX = 56;
+const HEADER_TOAST_PREFERRED_WIDTH_PX = 460;
 
 function resolveToneClass(tone) {
   if (tone === "error") {
-    return "border-rose-300/80 bg-rose-600/40 text-rose-50 shadow-[0_10px_28px_hsl(346_84%_30%_/_0.45)]";
+    return "border-rose-300/90 bg-rose-100/95 text-rose-900 shadow-[0_10px_28px_hsl(346_68%_32%_/_0.24)]";
   }
   if (tone === "warning") {
-    return "border-amber-300/80 bg-amber-500/40 text-amber-50 shadow-[0_10px_28px_hsl(36_100%_30%_/_0.38)]";
+    return "border-amber-300/90 bg-amber-100/95 text-amber-900 shadow-[0_10px_28px_hsl(36_88%_32%_/_0.20)]";
   }
   if (tone === "info") {
-    return "border-sky-300/75 bg-sky-500/30 text-sky-50 shadow-[0_10px_26px_hsl(205_88%_34%_/_0.34)]";
+    return "border-sky-300/90 bg-sky-100/95 text-sky-900 shadow-[0_10px_26px_hsl(205_88%_34%_/_0.18)]";
   }
-  return "border-emerald-300/80 bg-emerald-500/30 text-emerald-50 shadow-[0_10px_28px_hsl(154_70%_24%_/_0.40)]";
+  return "border-emerald-300/90 bg-emerald-100/95 text-emerald-900 shadow-[0_10px_28px_hsl(154_55%_30%_/_0.20)]";
 }
 
 export default function ProcessSaveAckToast({
@@ -37,12 +38,56 @@ export default function ProcessSaveAckToast({
     if (typeof document === "undefined" || typeof window === "undefined") return undefined;
 
     const updateToolbarRect = () => {
-      const toolbarNode = document.querySelector(".diagramActionBar");
-      if (!toolbarNode || typeof toolbarNode.getBoundingClientRect !== "function") {
+      const headerAnchorNode = document.querySelector('[data-testid="diagram-toolbar-notification-anchor"]');
+      if (headerAnchorNode && typeof headerAnchorNode.getBoundingClientRect === "function") {
+        const rect = headerAnchorNode.getBoundingClientRect();
+        if (
+          Number.isFinite(rect.left)
+          && Number.isFinite(rect.top)
+          && rect.width > 0
+          && rect.height > 0
+        ) {
+          setToolbarRect({
+            left: rect.left,
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+            width: rect.width,
+            height: rect.height,
+            kind: "header-anchor",
+          });
+          return;
+        }
+      }
+
+      const headerSlotNode = document.querySelector(".diagramToolbarSlot--right");
+      if (headerSlotNode && typeof headerSlotNode.getBoundingClientRect === "function") {
+        const rect = headerSlotNode.getBoundingClientRect();
+        if (
+          Number.isFinite(rect.left)
+          && Number.isFinite(rect.top)
+          && rect.width > 0
+          && rect.height > 0
+        ) {
+          setToolbarRect({
+            left: rect.left,
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+            width: rect.width,
+            height: rect.height,
+            kind: "header-slot",
+          });
+          return;
+        }
+      }
+
+      const diagramToolbarNode = document.querySelector(".diagramActionBar");
+      if (!diagramToolbarNode || typeof diagramToolbarNode.getBoundingClientRect !== "function") {
         setToolbarRect(null);
         return;
       }
-      const rect = toolbarNode.getBoundingClientRect();
+      const rect = diagramToolbarNode.getBoundingClientRect();
       if (!Number.isFinite(rect.left) || !Number.isFinite(rect.top)) {
         setToolbarRect(null);
         return;
@@ -54,6 +99,7 @@ export default function ProcessSaveAckToast({
         bottom: rect.bottom,
         width: rect.width,
         height: rect.height,
+        kind: "diagram-toolbar",
       });
     };
 
@@ -77,6 +123,38 @@ export default function ProcessSaveAckToast({
       TOAST_MIN_WIDTH_PX,
       Math.min(TOAST_MAX_WIDTH_PX, viewportWidth - VIEWPORT_GAP_PX * 2),
     );
+
+    if (toolbarRect.kind === "header-anchor" || toolbarRect.kind === "header-slot") {
+      const availableLeft = Math.max(
+        TOAST_MIN_WIDTH_PX,
+        toolbarRect.right - VIEWPORT_GAP_PX,
+      );
+      const width = Math.max(
+        TOAST_MIN_WIDTH_PX,
+        Math.min(maxWidthByViewport, HEADER_TOAST_PREFERRED_WIDTH_PX, availableLeft),
+      );
+      const left = Math.max(
+        VIEWPORT_GAP_PX,
+        Math.min(
+          toolbarRect.right - width,
+          viewportWidth - VIEWPORT_GAP_PX - width,
+        ),
+      );
+      const top = Math.min(
+        viewportHeight - TOAST_ESTIMATED_HEIGHT_PX - VIEWPORT_GAP_PX,
+        Math.max(
+          VIEWPORT_GAP_PX,
+          toolbarRect.top + (toolbarRect.height - TOAST_ESTIMATED_HEIGHT_PX) / 2,
+        ),
+      );
+      return {
+        position: "fixed",
+        left: `${Math.round(left)}px`,
+        top: `${Math.round(top)}px`,
+        width: `${Math.round(width)}px`,
+      };
+    }
+
     const availableLeft = toolbarRect.left - VIEWPORT_GAP_PX - TOOLBAR_GAP_PX;
     const hasRoomOnLeft = availableLeft >= TOAST_MIN_WIDTH_PX;
 
