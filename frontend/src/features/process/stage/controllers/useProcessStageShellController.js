@@ -39,6 +39,7 @@ export function buildSaveUiState({
   const hasLiveDraft = draftState.hasLiveDraft === true;
   const draftAheadOfLatest = draftState.isDraftAheadOfLatestRevision === true;
   const publishActionRequired = draftAheadOfLatest || (latestRevisionNumber <= 0 && hasLiveDraft);
+  const createRevisionNoDiff = publishActionRequired !== true;
   const showSaveActionButton = true;
   const normalizedIntent = toText(manualSaveIntent).toLowerCase();
   const saveInProgress = isManualSaveBusy === true || saveSnapshot.isSaving === true;
@@ -52,6 +53,7 @@ export function buildSaveUiState({
     saveSmartText,
     saveDirty,
     publishActionRequired,
+    createRevisionNoDiff,
     showSaveActionButton,
     saveActionText,
     createRevisionActionText,
@@ -111,6 +113,15 @@ export default function useProcessStageShellController({
       && saveSnapshot.isSaving !== true
       && saveUi.publishActionRequired === true
     );
+    const showCreateRevisionNoDiffHint = (
+      !!hasSession
+      && !!isBpmnTab
+      && !isSwitchingTab
+      && !isFlushingTab
+      && !isManualSaveBusy
+      && saveSnapshot.isSaving !== true
+      && saveUi.createRevisionNoDiff === true
+    );
     const truthSourceMap = asObject(asObject(sessionCompanionBridgeSnapshot).sourceMap);
     return {
       canSaveNow,
@@ -121,6 +132,10 @@ export default function useProcessStageShellController({
       showSaveActionButton: saveUi.showSaveActionButton,
       saveActionText: hasSession ? saveUi.saveActionText : workbench.labels.save,
       createRevisionActionText: hasSession ? saveUi.createRevisionActionText : "Создать новую версию",
+      createRevisionNoDiffHintVisible: showCreateRevisionNoDiffHint,
+      createRevisionNoDiffHintText: showCreateRevisionNoDiffHint
+        ? "Нет новых изменений для новой версии"
+        : "",
       toolbarInlineMessage: String(genErr || infoMsg || "").trim(),
       toolbarInlineTone: genErr ? "err" : "",
       canUseElementContextActions: !!selectedElementContext,
