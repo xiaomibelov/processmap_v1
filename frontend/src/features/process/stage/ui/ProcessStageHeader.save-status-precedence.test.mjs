@@ -9,20 +9,8 @@ const __dirname = path.dirname(__filename);
 
 test("session-save confirmation no longer suppresses \"Сохранено внутри версии\" badge", () => {
   const source = fs.readFileSync(path.join(__dirname, "ProcessStageHeader.jsx"), "utf8");
-  assert.equal(
-    source.includes('const suppressDraftSavedBadge = /^Сессия (?:уже )?сохранена(?:[:.].*)?$/i.test(toolbarMessage)'),
-    true,
-  );
-  assert.equal(
-    source.includes("toText(saveSmartText) === \"Черновик сохранён\""),
-    true,
-  );
-  assert.equal(source.includes("toText(saveSmartText) === \"Сохранено внутри версии\""), false);
-  assert.equal(
-    source.includes("const showGenericSaveStatusBadge = showSaveStatusBadgeResolved")
-      && source.includes("&& !suppressDraftSavedBadge"),
-    true,
-  );
+  assert.equal(source.includes('toolbarMessageNormalized === "сохранено внутри версии"'), true);
+  assert.equal(source.includes("const showGenericSaveStatusBadge = showSaveStatusBadgeResolved;"), true);
   assert.equal(source.includes("{showGenericSaveStatusBadge ? ("), true);
 });
 
@@ -31,7 +19,7 @@ test("draft save inline message is suppressed when primary draft status surface 
   assert.equal(source.includes("const isDraftSavedToolbarMessage = ("), true);
   assert.equal(source.includes('toolbarMessageNormalized === "черновик сохранён"'), true);
   assert.equal(source.includes('toolbarMessageNormalized === "черновик синхронизирован"'), true);
-  assert.equal(source.includes("const hasPrimaryDraftStatusSurface = showSaveStatusBadgeResolved || showDraftRelationBadgeResolved;"), true);
+  assert.equal(source.includes("const hasPrimaryDraftStatusSurface = showSaveStatusBadgeResolved;"), true);
   assert.equal(
     source.includes("&& !(")
       && source.includes("isDraftSavedToolbarMessage")
@@ -43,10 +31,6 @@ test("draft save inline message is suppressed when primary draft status surface 
 test("conflict state dominates and suppresses success-like draft/sync surfaces", () => {
   const source = fs.readFileSync(path.join(__dirname, "ProcessStageHeader.jsx"), "utf8");
   assert.equal(source.includes("const hasDominantConflictState = isConflictState;"), true);
-  assert.equal(
-    source.includes("const showDraftRelationBadgeResolved = showDraftRelationBadge && !hasDominantConflictState;"),
-    true,
-  );
   assert.equal(
     source.includes("const showSaveStatusBadgeResolved = showSaveStatusBadge && !hasDominantConflictState;"),
     true,
