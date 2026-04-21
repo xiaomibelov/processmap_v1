@@ -23,6 +23,7 @@ test("dirty save snapshot keeps save action button visible", () => {
   });
   assert.equal(ui.showSaveActionButton, true);
   assert.equal(ui.publishActionRequired, false);
+  assert.equal(ui.createRevisionNoDiff, true);
   assert.equal(ui.saveActionText, "Сохранить сессию");
   assert.equal(ui.saveSmartText, "Сохранить сессию");
 });
@@ -41,6 +42,7 @@ test("draft ahead keeps save action visible and keeps publish requirement for re
   });
   assert.equal(ui.showSaveActionButton, true);
   assert.equal(ui.publishActionRequired, true);
+  assert.equal(ui.createRevisionNoDiff, false);
   assert.equal(ui.saveActionText, "Сохранить сессию");
 });
 
@@ -58,6 +60,7 @@ test("first publish requirement does not hide session-save reassurance button", 
   });
   assert.equal(ui.showSaveActionButton, true);
   assert.equal(ui.publishActionRequired, true);
+  assert.equal(ui.createRevisionNoDiff, false);
   assert.equal(ui.saveActionText, "Сохранить сессию");
   assert.equal(ui.saveSmartText, "Сохранено внутри версии");
 });
@@ -76,6 +79,7 @@ test("clean published state keeps session-save reassurance button visible", () =
   });
   assert.equal(ui.showSaveActionButton, true);
   assert.equal(ui.publishActionRequired, false);
+  assert.equal(ui.createRevisionNoDiff, true);
   assert.equal(ui.saveActionText, "Сохранить сессию");
   assert.equal(ui.saveSmartText, "Сохранено внутри версии");
 });
@@ -109,6 +113,7 @@ test("session-save button visibility remains decoupled from publish requirement"
     fallbackLabel: "Save",
   });
   assert.equal(ui.publishActionRequired, true);
+  assert.equal(ui.createRevisionNoDiff, false);
   assert.equal(ui.showSaveActionButton, true);
 });
 
@@ -154,6 +159,9 @@ test("create-version availability requires publishActionRequired and respects sa
   assert.equal(source.includes("&& saveSnapshot.isSaving !== true"), true);
   assert.equal(source.includes("const canCreateRevisionNow = ("), true);
   assert.equal(source.includes("&& saveUi.publishActionRequired === true"), true);
+  assert.equal(source.includes("const showCreateRevisionNoDiffHint = ("), true);
+  assert.equal(source.includes("&& saveUi.createRevisionNoDiff === true"), true);
+  assert.equal(source.includes("createRevisionNoDiffHintVisible: showCreateRevisionNoDiffHint"), true);
   assert.equal(source.includes("canCreateRevisionNow,"), true);
 });
 
@@ -174,4 +182,29 @@ test("manual save busy state exposes explicit transitional labels", () => {
   assert.equal(saveBusy.createRevisionActionText, "Создать новую версию");
   assert.equal(createBusy.saveActionText, "Сохранить сессию");
   assert.equal(createBusy.createRevisionActionText, "Сохранение...");
+});
+
+test("create-version no-diff flag is explicit in clean state", () => {
+  const noDiff = buildSaveUiState({
+    saveSnapshotRaw: { isDirty: false, status: "saved" },
+    revisionSnapshotRaw: {
+      latestRevisionNumber: 9,
+      draftState: {
+        hasLiveDraft: true,
+        isDraftAheadOfLatestRevision: false,
+      },
+    },
+  });
+  const hasDiff = buildSaveUiState({
+    saveSnapshotRaw: { isDirty: true, status: "dirty" },
+    revisionSnapshotRaw: {
+      latestRevisionNumber: 9,
+      draftState: {
+        hasLiveDraft: true,
+        isDraftAheadOfLatestRevision: true,
+      },
+    },
+  });
+  assert.equal(noDiff.createRevisionNoDiff, true);
+  assert.equal(hasDiff.createRevisionNoDiff, false);
 });
