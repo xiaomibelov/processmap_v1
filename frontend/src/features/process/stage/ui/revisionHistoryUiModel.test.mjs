@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  applyUserFacingRevisionNumbers,
   classifyRevisionSourceAction,
   formatRevisionAuthor,
   formatRevisionTimestampRu,
@@ -41,26 +42,31 @@ test("formatRevisionAuthor prefers human-readable fields and shortens technical 
   assert.equal(unknown.label, "Автор не указан");
 });
 
-test("resolveRevisionHistoryUiSnapshot uses latest version item as canonical revision number", () => {
+test("resolveRevisionHistoryUiSnapshot keeps user-facing revision number independent from technical snapshot number", () => {
   const resolved = resolveRevisionHistoryUiSnapshot({
     revisionHistorySnapshotRaw: {
-      latestRevisionNumber: 1,
-      latestRevisionId: "legacy_r1",
+      latestRevisionNumber: 12,
+      latestRevisionDisplayNumber: 4,
+      totalCount: 4,
+      latestRevisionId: "ledger_r4",
       draftState: { isDraftAheadOfLatestRevision: false },
     },
     latestVersionItemRaw: {
       id: "ver_6",
       revisionNumber: 6,
+      technicalRevisionNumber: 6,
       source_action: "publish_manual_save",
     },
     latestVersionStatusRaw: "ready",
   });
-  assert.equal(resolved.latestRevisionNumber, 6);
+  assert.equal(resolved.latestRevisionNumber, 4);
   assert.equal(resolved.latestRevisionId, "ver_6");
-  assert.equal(resolved.latestPublishedRevisionNumber, 6);
+  assert.equal(resolved.latestPublishedRevisionNumber, 4);
+  assert.equal(resolved.latestPublishedRevisionTechnicalNumber, 6);
   assert.equal(resolved.latestPublishedRevisionId, "ver_6");
   assert.equal(resolved.latestPublishedRevisionStatus, "ready");
-  assert.equal(resolved.latestLedgerRevisionNumber, 1);
+  assert.equal(resolved.latestLedgerRevisionNumber, 4);
+  assert.equal(resolved.latestLedgerRevisionTechnicalNumber, 12);
 });
 
 test("resolveRevisionHistoryUiSnapshot keeps companion ledger separate while authoritative head is still loading", () => {
@@ -111,6 +117,32 @@ test("splitMeaningfulAndTechnicalRevisions preserves latest meaningful head when
   ]);
   assert.equal(split.meaningful[0]?.id, "r33");
   assert.equal(split.technical[0]?.id, "r34");
+});
+
+test("applyUserFacingRevisionNumbers maps meaningful entries to contiguous user-facing sequence", () => {
+  const list = applyUserFacingRevisionNumbers({
+    meaningfulRevisionsRaw: [
+      { id: "r10", revisionNumber: 10, technicalRevisionNumber: 10 },
+      { id: "r7", revisionNumber: 7, technicalRevisionNumber: 7 },
+      { id: "r5", revisionNumber: 5, technicalRevisionNumber: 5 },
+    ],
+    revisionHistorySnapshotRaw: {
+      latestRevisionDisplayNumber: 3,
+      totalCount: 3,
+    },
+  });
+  assert.deepEqual(
+    list.map((row) => ({
+      id: row.id,
+      revisionNumber: row.revisionNumber,
+      technicalRevisionNumber: row.technicalRevisionNumber,
+    })),
+    [
+      { id: "r10", revisionNumber: 3, technicalRevisionNumber: 10 },
+      { id: "r7", revisionNumber: 2, technicalRevisionNumber: 7 },
+      { id: "r5", revisionNumber: 1, technicalRevisionNumber: 5 },
+    ],
+  );
 });
 
 test("unknown source action is fail-closed and does not enter meaningful surfaces", () => {

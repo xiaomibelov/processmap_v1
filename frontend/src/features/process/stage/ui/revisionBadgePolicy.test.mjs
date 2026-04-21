@@ -11,7 +11,7 @@ test("published revision badge uses authoritative backend head when ready", () =
   });
   assert.deepEqual(badge, {
     testId: "diagram-toolbar-latest-revision",
-    text: "Версия 40",
+    text: "V. 40",
     title: "Последняя опубликованная версия",
   });
 });
@@ -63,7 +63,7 @@ test("explicit published revision value is the only source for version badge", (
   });
   assert.deepEqual(badge, {
     testId: "diagram-toolbar-latest-revision",
-    text: "Версия 7",
+    text: "V. 7",
     title: "Последняя опубликованная версия",
   });
 });
