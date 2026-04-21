@@ -16,7 +16,7 @@ export function resolvePublishedRevisionBadgeView(snapshotRaw = null) {
   if (hasExplicitPublishedRevision) {
     return {
       testId: "diagram-toolbar-latest-revision",
-      text: `Версия ${latestPublishedRevisionNumber}`,
+      text: `V. ${latestPublishedRevisionNumber}`,
       title: "Последняя опубликованная версия",
     };
   }

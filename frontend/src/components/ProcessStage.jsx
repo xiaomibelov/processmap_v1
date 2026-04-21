@@ -133,6 +133,7 @@ import {
   deriveRemoteChangedElementIds,
 } from "../features/process/stage/ui/remoteSaveHighlightModel";
 import {
+  applyUserFacingRevisionNumbers,
   classifyRevisionSourceAction,
   formatRevisionAuthor,
   formatRevisionTimestampRu,
@@ -1833,14 +1834,21 @@ export default function ProcessStage({
         const backendSnapshotIsMeaningful = normalizedBackendVersionSnapshot.isMeaningfulRevision === true;
         if (backendRevisionNumber > 0 && backendSnapshotIsMeaningful) {
           const backendVersionId = String(normalizedBackendVersionSnapshot.id || "").trim();
-          setLatestBpmnVersionHead(normalizedBackendVersionSnapshot);
+          const nextMeaningfulHead = applyUserFacingRevisionNumbers({
+            meaningfulRevisionsRaw: [normalizedBackendVersionSnapshot],
+            revisionHistorySnapshotRaw: sessionRevisionHistorySnapshot,
+          })[0] || normalizedBackendVersionSnapshot;
+          setLatestBpmnVersionHead(nextMeaningfulHead);
           setLatestBpmnVersionHeadStatus("ready");
           setVersionsList((prev) => {
             const current = asArray(prev);
             const deduped = backendVersionId
               ? current.filter((item) => String(item?.id || "").trim() !== backendVersionId)
               : current.filter((item) => Number(item?.revisionNumber || item?.rev || item?.version_number || 0) !== backendRevisionNumber);
-            return [normalizedBackendVersionSnapshot, ...deduped];
+            return applyUserFacingRevisionNumbers({
+              meaningfulRevisionsRaw: [normalizedBackendVersionSnapshot, ...deduped],
+              revisionHistorySnapshotRaw: sessionRevisionHistorySnapshot,
+            });
           });
           setVersionsLoadState("ready");
           setVersionsLoadError("");
@@ -1950,13 +1958,13 @@ export default function ProcessStage({
               if (!companionResult?.ok) {
                 companionError = shortErr(companionResult?.error || "Не удалось синхронизировать companion metadata.");
                 saveInfo = createRevision
-                  ? "BPMN сохранён, но создание новой версии не подтверждено."
+                  ? "Создана новая версия BPMN. Метаданные синхронизировать не удалось."
                   : "Черновик BPMN сохранён.";
               } else if (createRevision) {
                 const revisionInfo = asObject(companionResult?.revision);
                 if (revisionInfo.skipped === true) {
-                  companionError = companionError || "Создание новой версии не подтверждено.";
-                  saveInfo = "BPMN сохранён, но создание новой версии не подтверждено.";
+                  companionError = companionError || "Новая версия не создана: нет изменений.";
+                  saveInfo = "Новая версия не создана: нет изменений.";
                 } else {
                   saveInfo = "Создана новая версия BPMN.";
                 }
@@ -1969,7 +1977,7 @@ export default function ProcessStage({
           }
         } else {
           saveInfo = createRevision
-            ? "BPMN сохранён, но создание новой версии не подтверждено."
+            ? "Новая версия не создана: нет изменений."
             : "Черновик BPMN сохранён.";
         }
         if (!saveInfo && !companionError) {
@@ -3980,6 +3988,7 @@ export default function ProcessStage({
       isMeaningfulRevision: sourceClassification.isMeaningful !== false,
       isTechnicalRevision: sourceClassification.isTechnical === true,
       comment: importNote,
+      technicalRevisionNumber: versionNumber,
       revisionNumber: versionNumber,
       rev: versionNumber,
       authorId: author.authorId,
@@ -4049,7 +4058,11 @@ export default function ProcessStage({
     const unknownList = asArray(revisionSplit.unknown);
     const hiddenNonMeaningfulList = asArray(revisionSplit.nonMeaningful);
     const serverEntriesCount = asArray(normalizedList).length;
-    setLatestBpmnVersionHead(asArray(list)[0] || null);
+    const listWithUserFacingNumbers = applyUserFacingRevisionNumbers({
+      meaningfulRevisionsRaw: list,
+      revisionHistorySnapshotRaw: sessionRevisionHistorySnapshot,
+    });
+    setLatestBpmnVersionHead(asArray(listWithUserFacingNumbers)[0] || null);
     if (trackHeadStatus) setLatestBpmnVersionHeadStatus("ready");
     if (!updateList) return;
     // eslint-disable-next-line no-console
@@ -4059,15 +4072,15 @@ export default function ProcessStage({
     );
     setVersionsServerEntriesCount(serverEntriesCount);
     setVersionsTechnicalEntriesCount(hiddenNonMeaningfulList.length);
-    setVersionsList(asArray(list));
-    setVersionsLoadState(asArray(list).length > 0 ? "ready" : "empty");
+    setVersionsList(asArray(listWithUserFacingNumbers));
+    setVersionsLoadState(asArray(listWithUserFacingNumbers).length > 0 ? "ready" : "empty");
     setVersionsLoadError("");
     setPreviewSnapshotId((prev) => {
-      const exists = asArray(list).some((item) => String(item?.id || "") === String(prev || ""));
+      const exists = asArray(listWithUserFacingNumbers).some((item) => String(item?.id || "") === String(prev || ""));
       if (exists) return prev;
-      return asArray(list)[0]?.id || "";
+      return asArray(listWithUserFacingNumbers)[0]?.id || "";
     });
-  }, [normalizeBpmnVersionListItem, sid, snapshotProjectId]);
+  }, [applyUserFacingRevisionNumbers, normalizeBpmnVersionListItem, sessionRevisionHistorySnapshot, sid, snapshotProjectId]);
 
   const ensureBpmnVersionXml = useCallback(async (versionOrId) => {
     const versionId = String(
