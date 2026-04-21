@@ -138,7 +138,7 @@ export function formatRevisionAuthor(authorRaw = null) {
   }
 
   return {
-    label: "неизвестно",
+    label: "Автор не указан",
     authorId: "",
     authorName: "",
     authorEmail: "",
@@ -222,17 +222,17 @@ export function resolveRevisionHistoryEmptyState({
   if (meaningfulCount === 0 && technicalCount > 0 && serverEntriesCount > 0) {
     return {
       kind: "technical_filtered",
-      message: "Пользовательских ревизий пока нет. Технические сохранения скрыты; черновик хранится отдельно.",
+      message: "Пользовательских версий пока нет. Технические сохранения скрыты; черновик хранится отдельно.",
     };
   }
   if (meaningfulCount === 0 && serverEntriesCount > 0) {
     return {
       kind: "filtered",
-      message: "История получена, но пользовательские ревизии пока недоступны. Черновик хранится отдельно.",
+      message: "История получена, но пользовательские версии пока недоступны. Черновик хранится отдельно.",
     };
   }
   return {
     kind: "true_empty",
-    message: "Ревизий пока нет. Текущий BPMN может быть сохранён как черновик; ревизия создаётся отдельным действием.",
+    message: "Версий пока нет. Текущий BPMN может быть сохранён как черновик; новая версия создаётся отдельным действием.",
   };
 }

@@ -4231,24 +4231,24 @@ export default function ProcessStage({
 
   async function clearSnapshotHistory() {
     setGenErr("");
-    setInfoMsg("История ревизий immutable и не может быть очищена.");
+    setInfoMsg("История версий неизменяема и не может быть очищена.");
   }
 
   async function updateSnapshotMeta(item, patch = {}) {
     void item;
     void patch;
     setGenErr("");
-    setInfoMsg("Редактирование ревизии отключено: immutable ledger.");
+    setInfoMsg("Редактирование версии отключено: журнал неизменяем.");
   }
 
   async function togglePinSnapshot(item) {
     void item;
-    setInfoMsg("Pin/Unpin отключён: ревизии immutable.");
+    setInfoMsg("Закрепление версии отключено: журнал неизменяем.");
   }
 
   async function editSnapshotLabel(item) {
     void item;
-    setInfoMsg("Изменение label отключено: ревизии immutable.");
+    setInfoMsg("Переименование версии отключено: журнал неизменяем.");
   }
 
   async function previewSnapshotVersion(itemOrId) {
