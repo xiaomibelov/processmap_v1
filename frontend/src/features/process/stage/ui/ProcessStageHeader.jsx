@@ -54,11 +54,11 @@ export default function ProcessStageHeader({ view = {} }) {
   const draftAheadOfLatest = sessionRevisionHistorySnapshot?.draftState?.isDraftAheadOfLatestRevision === true;
   const showDraftRelationBadge = hasPublishedRevision || draftAheadOfLatest;
   const draftStatusLabel = draftAheadOfLatest
-    ? "Черновик новее последней версии"
-    : "Черновик совпадает с последней версией";
+    ? "Есть изменения в черновике"
+    : "Черновик синхронизирован";
   const draftStatusTitle = draftAheadOfLatest
-    ? "В черновике есть изменения, которые ещё не попали в опубликованную историю."
-    : "Черновик синхронизирован с последней опубликованной версией.";
+    ? "Сохраните черновик или создайте новую версию, чтобы зафиксировать изменения."
+    : "Черновик синхронизирован с последней пользовательской версией.";
   const draftStatusTone = draftAheadOfLatest ? "warn" : "ok";
   const mirrorSnapshot = (
     publishGitMirrorSnapshot && typeof publishGitMirrorSnapshot === "object"
@@ -124,7 +124,7 @@ export default function ProcessStageHeader({ view = {} }) {
   const canCreateRevisionFromCurrentState = canCreateRevisionNow !== false
     && typeof handleCreateRevisionAction === "function";
   const revisionActionTitle = !canCreateRevisionFromCurrentState
-    ? "Создание версии доступно в Diagram/XML"
+    ? "Новая версия создаётся только при изменениях черновика в Diagram/XML"
     : "Создать новую версию из текущего состояния сессии";
   const canRunUndo = tab === "diagram" && canUndo === true;
   const canRunRedo = tab === "diagram" && canRedo === true;

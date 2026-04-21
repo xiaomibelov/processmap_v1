@@ -148,10 +148,11 @@ test("save smart text returns to dirty state after next xml mutation", () => {
   assert.equal(dirtyAgain.saveSmartText, "Сохранить сессию");
 });
 
-test("create-version availability is decoupled from transient saving state", () => {
+test("create-version availability requires publishActionRequired and respects saving guard", () => {
   const source = fs.readFileSync(path.join(__dirname, "useProcessStageShellController.js"), "utf8");
   assert.equal(source.includes("const canSaveNow = ("), true);
   assert.equal(source.includes("&& saveSnapshot.isSaving !== true"), true);
   assert.equal(source.includes("const canCreateRevisionNow = ("), true);
+  assert.equal(source.includes("&& saveUi.publishActionRequired === true"), true);
   assert.equal(source.includes("canCreateRevisionNow,"), true);
 });

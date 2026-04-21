@@ -11,8 +11,8 @@ test("revision badges are rendered only when session is active", () => {
   const source = fs.readFileSync(path.join(__dirname, "ProcessStageHeader.jsx"), "utf8");
   const guardIdx = source.indexOf("{hasSession ? (");
   const revisionBadgeIdx = source.indexOf("resolvePublishedRevisionBadgeView");
-  const draftSyncIdx = source.indexOf("Черновик совпадает с последней версией");
-  const draftDirtyIdx = source.indexOf("Черновик новее последней версии");
+  const draftSyncIdx = source.indexOf("Черновик синхронизирован");
+  const draftDirtyIdx = source.indexOf("Есть изменения в черновике");
   assert.ok(guardIdx !== -1, "hasSession visibility guard must exist");
   assert.ok(revisionBadgeIdx !== -1, "published revision badge resolver must be used");
   assert.ok(draftSyncIdx !== -1, "draft vs latest synced label must exist");
