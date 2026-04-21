@@ -30,7 +30,8 @@ test("revision action availability is separated from session-save copy", () => {
   assert.ok(source.includes("const canCreateRevisionFromCurrentState = canCreateRevisionNow !== false"));
   assert.ok(source.includes('const revisionActionTitle = !canCreateRevisionFromCurrentState'));
   assert.ok(source.includes('"Создать новую версию из текущего состояния сессии"'));
-  assert.ok(source.includes('"Создание версии доступно в Diagram/XML"'));
+  assert.ok(source.includes('"Новая версия создаётся только при изменениях черновика в Diagram/XML"'));
+  assert.equal(source.includes('"Создание версии доступно в Diagram/XML"'), false);
   assert.equal(source.includes("Сохранить версию"), false);
 });
 

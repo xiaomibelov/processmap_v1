@@ -103,6 +103,57 @@ export function splitMeaningfulAndTechnicalRevisions(entriesRaw = []) {
   };
 }
 
+export function applyUserFacingRevisionNumbers({
+  meaningfulRevisionsRaw = [],
+  revisionHistorySnapshotRaw = null,
+} = {}) {
+  const meaningful = asArray(meaningfulRevisionsRaw);
+  if (meaningful.length === 0) return [];
+  const revisionHistorySnapshot = asObject(revisionHistorySnapshotRaw);
+  const ledgerTotalCount = Math.max(0, toInt(revisionHistorySnapshot.totalCount, 0));
+  const ledgerDisplayNumber = Math.max(
+    0,
+    toInt(
+      revisionHistorySnapshot.latestRevisionDisplayNumber
+      || revisionHistorySnapshot.latestUserFacingRevisionNumber
+      || revisionHistorySnapshot.latestRevisionNumber,
+      0,
+    ),
+  );
+  const headDisplayNumber = Math.max(
+    0,
+    toInt(
+      asObject(meaningful[0]).userFacingRevisionNumber
+      || asObject(meaningful[0]).revisionDisplayNumber,
+      0,
+    ),
+  );
+  const displayHead = Math.max(meaningful.length, ledgerTotalCount, ledgerDisplayNumber, headDisplayNumber);
+  return meaningful.map((entryRaw, index) => {
+    const entry = asObject(entryRaw);
+    const technicalRevisionNumber = Math.max(
+      0,
+      toInt(
+        entry.technicalRevisionNumber
+        || entry.version_number
+        || entry.versionNumber
+        || entry.revisionNumber
+        || entry.rev,
+        0,
+      ),
+    );
+    const userFacingRevisionNumber = Math.max(1, displayHead - index);
+    return {
+      ...entry,
+      technicalRevisionNumber,
+      userFacingRevisionNumber,
+      revisionDisplayNumber: userFacingRevisionNumber,
+      revisionNumber: userFacingRevisionNumber,
+      rev: userFacingRevisionNumber,
+    };
+  });
+}
+
 export function formatRevisionAuthor(authorRaw = null) {
   const author = asObject(authorRaw);
   const authorId = toText(
@@ -158,10 +209,47 @@ export function resolveRevisionHistoryUiSnapshot({
   );
   const latestVersionClassification = classifyRevisionSourceAction(latestVersionAction);
   const latestPublishedRevisionAllowed = latestVersionClassification.allowInPublishedBadge === true;
+  const latestPublishedRevisionTechnicalNumber = Math.max(
+    0,
+    toInt(
+      latestVersionItem.technicalRevisionNumber
+      || latestVersionItem.version_number
+      || latestVersionItem.versionNumber
+      || latestVersionItem.revisionNumber
+      || latestVersionItem.rev,
+      0,
+    ),
+  );
+  const latestPublishedRevisionDisplayNumber = Math.max(
+    0,
+    toInt(
+      latestVersionItem.userFacingRevisionNumber
+      || latestVersionItem.revisionDisplayNumber,
+      0,
+    ),
+  );
+  const latestLedgerRevisionTechnicalNumber = Math.max(
+    0,
+    toInt(revisionHistorySnapshot.latestRevisionNumber, 0),
+  );
+  const latestLedgerRevisionNumber = Math.max(
+    0,
+    toInt(
+      revisionHistorySnapshot.latestRevisionDisplayNumber
+      || revisionHistorySnapshot.latestUserFacingRevisionNumber
+      || revisionHistorySnapshot.totalCount
+      || revisionHistorySnapshot.latestRevisionNumber,
+      0,
+    ),
+  );
   const latestPublishedRevisionNumber = Math.max(
     0,
     latestPublishedRevisionAllowed
-      ? toInt(latestVersionItem.revisionNumber || latestVersionItem.rev || latestVersionItem.version_number, 0)
+      ? (
+        latestLedgerRevisionNumber
+        || latestPublishedRevisionDisplayNumber
+        || (latestPublishedRevisionTechnicalNumber > 0 ? 1 : 0)
+      )
       : 0,
   );
   const latestPublishedRevisionId = toText(
@@ -171,10 +259,6 @@ export function resolveRevisionHistoryUiSnapshot({
         || latestVersionItem.revisionId
       )
       : "",
-  );
-  const latestLedgerRevisionNumber = Math.max(
-    0,
-    toInt(revisionHistorySnapshot.latestRevisionNumber, 0),
   );
   const latestLedgerRevisionId = toText(revisionHistorySnapshot.latestRevisionId);
   const latestRevisionNumber = Math.max(
@@ -190,6 +274,7 @@ export function resolveRevisionHistoryUiSnapshot({
     latestRevisionNumber,
     latestRevisionId,
     latestPublishedRevisionNumber,
+    latestPublishedRevisionTechnicalNumber,
     latestPublishedRevisionId,
     latestPublishedRevisionAllowed,
     latestPublishedRevisionAction: latestVersionAction,
@@ -198,6 +283,7 @@ export function resolveRevisionHistoryUiSnapshot({
     latestPublishedRevisionStatus,
     latestPublishedRevisionResolved: latestPublishedRevisionStatus === "ready" || latestPublishedRevisionStatus === "failed",
     latestLedgerRevisionNumber,
+    latestLedgerRevisionTechnicalNumber,
     latestLedgerRevisionId,
   };
 }

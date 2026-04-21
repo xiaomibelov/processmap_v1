@@ -108,6 +108,8 @@ export default function useProcessStageShellController({
       && !isSwitchingTab
       && !isFlushingTab
       && !isManualSaveBusy
+      && saveSnapshot.isSaving !== true
+      && saveUi.publishActionRequired === true
     );
     const truthSourceMap = asObject(asObject(sessionCompanionBridgeSnapshot).sourceMap);
     return {

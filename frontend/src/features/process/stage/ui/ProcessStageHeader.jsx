@@ -98,7 +98,7 @@ export default function ProcessStageHeader({ view = {} }) {
   const canCreateRevisionFromCurrentState = canCreateRevisionNow !== false
     && typeof handleCreateRevisionAction === "function";
   const revisionActionTitle = !canCreateRevisionFromCurrentState
-    ? "Создание версии доступно в Diagram/XML"
+    ? "Новая версия создаётся только при изменениях черновика в Diagram/XML"
     : "Создать новую версию из текущего состояния сессии";
   const canRunUndo = tab === "diagram" && canUndo === true;
   const canRunRedo = tab === "diagram" && canRedo === true;
