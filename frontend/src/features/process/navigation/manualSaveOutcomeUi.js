@@ -38,8 +38,8 @@ export function resolveManualSaveOutcomeUi({
 
   if (companionErrorText) {
     const baseInfo = primaryInfoText
-      ? `${primaryInfoText} Companion metadata не синхронизированы.`
-      : "BPMN сохранён, companion metadata не синхронизированы.";
+      ? `${primaryInfoText} Метаданные версии пока не синхронизированы.`
+      : "BPMN сохранён, но метаданные версии пока не синхронизированы.";
     return {
       primaryState: "primary_saved_companion_warning",
       genErr: "",
@@ -60,7 +60,7 @@ export function resolveManualSaveOutcomeUi({
   return {
     primaryState: "primary_saved",
     genErr: "",
-    infoMsg: staleRetryNotice || "Черновик сохранён.",
+    infoMsg: staleRetryNotice || "Черновик BPMN сохранён.",
     companionSeverity: "none",
   };
 }

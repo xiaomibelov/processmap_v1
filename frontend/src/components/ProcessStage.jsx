@@ -117,6 +117,7 @@ import ProcessStageShell from "../features/process/stage/ui/ProcessStageShell";
 import ProcessPanels from "../features/process/stage/ui/ProcessPanels";
 import ProcessDialogs from "../features/process/stage/ui/ProcessDialogs";
 import ProcessStageHeader from "../features/process/stage/ui/ProcessStageHeader";
+import ProcessSaveAckToast from "../features/process/stage/ui/ProcessSaveAckToast";
 import ProcessStageDiagramControls from "../features/process/stage/ui/ProcessStageDiagramControls";
 import ProcessDiagramOverlayLayers from "../features/process/stage/ui/ProcessDiagramOverlayLayers";
 import ProcessStageSaveConflictModal from "../features/process/stage/ui/ProcessStageSaveConflictModal";
@@ -242,6 +243,7 @@ const BPMN_VERSION_HEADERS_LIMIT = 50;
 const SESSION_PRESENCE_TTL_MS = 180000;
 const SESSION_PRESENCE_HEARTBEAT_MS = 45000;
 const REMOTE_SESSION_SYNC_POLL_MS = 9000;
+const SAVE_ACK_TOAST_HIDE_MS = 1500;
 
 const IDLE_SAVE_UPLOAD_EVENT = Object.freeze({
   event: "",
@@ -867,6 +869,40 @@ export default function ProcessStage({
     sessionCompanionLocalFirstAdapterMode,
   ]);
   const hasSession = !!sid;
+  const saveAckToastTimerRef = useRef(0);
+  const [saveAckToast, setSaveAckToast] = useState({
+    visible: false,
+    tone: "success",
+    message: "",
+  });
+  const showSaveAckToast = useCallback((messageRaw, toneRaw = "success") => {
+    const message = toText(messageRaw);
+    if (!message) return;
+    const tone = toText(toneRaw) || "success";
+    if (typeof window !== "undefined" && saveAckToastTimerRef.current) {
+      window.clearTimeout(saveAckToastTimerRef.current);
+      saveAckToastTimerRef.current = 0;
+    }
+    setSaveAckToast({
+      visible: true,
+      tone,
+      message,
+    });
+    if (typeof window === "undefined") return;
+    saveAckToastTimerRef.current = window.setTimeout(() => {
+      setSaveAckToast((prev) => ({
+        ...prev,
+        visible: false,
+      }));
+      saveAckToastTimerRef.current = 0;
+    }, SAVE_ACK_TOAST_HIDE_MS);
+  }, [toText]);
+  useEffect(() => () => {
+    if (typeof window === "undefined") return;
+    if (!saveAckToastTimerRef.current) return;
+    window.clearTimeout(saveAckToastTimerRef.current);
+    saveAckToastTimerRef.current = 0;
+  }, []);
   const currentUserId = toText(user?.id || user?.user_id || user?.email);
   const currentUserLabel = toText(user?.name || user?.username || user?.email || currentUserId || "Вы");
   const recordPresenceActor = useCallback((actorRaw, options = {}) => {
@@ -1730,7 +1766,7 @@ export default function ProcessStage({
           primarySaveOk: false,
           primarySaveError: shortErr(saved?.error || "Не удалось сохранить BPMN."),
         });
-        setGenErr(failedOutcomeUi.genErr);
+        showSaveAckToast(failedOutcomeUi.genErr, "error");
         return;
       }
       let companionError = "";
@@ -1914,30 +1950,30 @@ export default function ProcessStage({
               if (!companionResult?.ok) {
                 companionError = shortErr(companionResult?.error || "Не удалось синхронизировать companion metadata.");
                 saveInfo = createRevision
-                  ? "Сессия сохранена, но создание новой версии не подтверждено."
-                  : "Сессия сохранена.";
+                  ? "BPMN сохранён, но создание новой версии не подтверждено."
+                  : "Черновик BPMN сохранён.";
               } else if (createRevision) {
                 const revisionInfo = asObject(companionResult?.revision);
                 if (revisionInfo.skipped === true) {
                   companionError = companionError || "Создание новой версии не подтверждено.";
-                  saveInfo = "Сессия сохранена, но создание новой версии не подтверждено.";
+                  saveInfo = "BPMN сохранён, но создание новой версии не подтверждено.";
                 } else {
-                  saveInfo = "Создана новая версия.";
+                  saveInfo = "Создана новая версия BPMN.";
                 }
               } else {
                 saveInfo = saved?.skipped === true
-                  ? "Сохранено внутри версии."
-                  : "Сессия сохранена.";
+                  ? "Черновик BPMN уже актуален."
+                  : "Черновик BPMN сохранён.";
               }
             }
           }
         } else {
           saveInfo = createRevision
-            ? "Сессия сохранена, но создание новой версии не подтверждено."
-            : "Сохранено внутри версии.";
+            ? "BPMN сохранён, но создание новой версии не подтверждено."
+            : "Черновик BPMN сохранён.";
         }
         if (!saveInfo && !companionError) {
-          saveInfo = createRevision ? "Создана новая версия." : "Сессия сохранена.";
+          saveInfo = createRevision ? "Создана новая версия BPMN." : "Черновик BPMN сохранён.";
         }
         cancelPendingDiagramAutosave?.();
       }
@@ -1952,18 +1988,17 @@ export default function ProcessStage({
         saveInfo,
         staleRetryApplied: saved?.staleRetryApplied === true,
       });
-      if (successOutcomeUi.genErr) {
-        setGenErr(successOutcomeUi.genErr);
-      }
-      if (successOutcomeUi.infoMsg) {
-        setInfoMsg(successOutcomeUi.infoMsg);
-      }
+      const outcomeMessage = toText(successOutcomeUi.genErr) || toText(successOutcomeUi.infoMsg);
+      const outcomeTone = successOutcomeUi.genErr
+        ? "error"
+        : (successOutcomeUi.companionSeverity === "warning" ? "warning" : "success");
+      showSaveAckToast(outcomeMessage, outcomeTone);
     } catch (e) {
       truthOwner?.saveSessionFailed({
         source: "manual_save_failed",
         error: shortErr(e?.message || e || "Не удалось сохранить BPMN."),
       });
-      setGenErr(shortErr(e?.message || e || "Не удалось сохранить BPMN."));
+      showSaveAckToast(shortErr(e?.message || e || "Не удалось сохранить BPMN."), "error");
     } finally {
       setIsManualSaveBusy(false);
     }
@@ -5812,6 +5847,11 @@ export default function ProcessStage({
   return (
     <ProcessStageShell className={shellClassName}>
       <ProcessStageHeader view={headerView} />
+      <ProcessSaveAckToast
+        visible={saveAckToast.visible === true}
+        message={saveAckToast.message}
+        tone={saveAckToast.tone}
+      />
 
       <div
         className={bodyClassName}
