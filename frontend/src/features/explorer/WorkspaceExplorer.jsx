@@ -25,7 +25,7 @@ import {
   apiGetProjectPage,
   apiCreateSession,
 } from "./explorerApi.js";
-import { apiDeleteProject, apiDeleteSession, apiPatchProject, apiPatchSession } from "../../lib/api";
+import { apiDeleteProject, apiDeleteSession, apiGetSession, apiPatchProject, apiPatchSession } from "../../lib/api";
 import {
   MANUAL_SESSION_STATUSES,
   getManualSessionStatusMeta,
@@ -152,6 +152,33 @@ function normalizeDodPercent(percentRaw) {
   if (rounded < 0) return 0;
   if (rounded > 100) return 100;
   return rounded;
+}
+
+function formatSessionPatchError(resp, fallback = "Не удалось сменить статус") {
+  const detail = resp?.data?.detail;
+  if (detail && typeof detail === "object") {
+    const code = String(detail.code || "").trim();
+    if (code === "DIAGRAM_STATE_BASE_VERSION_REQUIRED") {
+      return "Не удалось сменить статус: требуется актуальная версия диаграммы. Обновите страницу и повторите.";
+    }
+    if (code === "DIAGRAM_STATE_CONFLICT") {
+      return "Не удалось сменить статус: обнаружен конфликт версии диаграммы. Обновите страницу и повторите.";
+    }
+    try {
+      const packed = JSON.stringify(detail);
+      if (packed && packed !== "{}") return `${fallback}: ${packed}`;
+    } catch {
+      // ignore serialization errors
+    }
+  }
+
+  const err = String(resp?.error || "").trim();
+  if (err && err !== "[object Object]") return err;
+
+  if (Number(resp?.status || 0) === 409) {
+    return "Не удалось сменить статус: конфликт версии диаграммы. Обновите страницу и повторите.";
+  }
+  return fallback;
 }
 
 function StatusBadge({ status }) {
@@ -1121,13 +1148,28 @@ function SessionRow({
                 const next = String(e.target.value || "").trim();
                 if (!next || next === String(session.status || "draft")) return;
                 setPendingStatus(next);
-                const resp = await apiPatchSession(session.id, { status: next });
-                if (!resp?.ok) {
+
+                const sessionSnapshot = await apiGetSession(session.id);
+                const baseVersion = Number(sessionSnapshot?.session?.diagram_state_version);
+                if (!sessionSnapshot?.ok || !Number.isFinite(baseVersion) || baseVersion < 0) {
                   setPendingStatus(String(session.status || "draft"));
-                  window.alert(String(resp?.error || "Не удалось сменить статус"));
+                  window.alert(formatSessionPatchError(sessionSnapshot, "Не удалось получить актуальную версию сессии"));
                   return;
                 }
-                onSessionPatched?.(session.id, { status: next, updated_at: Math.floor(Date.now() / 1000) });
+
+                const resp = await apiPatchSession(session.id, {
+                  status: next,
+                  base_diagram_state_version: baseVersion,
+                });
+                if (!resp?.ok) {
+                  setPendingStatus(String(session.status || "draft"));
+                  window.alert(formatSessionPatchError(resp));
+                  return;
+                }
+                onSessionPatched?.(session.id, {
+                  status: String(resp?.session?.interview?.status || next),
+                  updated_at: Number(resp?.session?.updated_at || Math.floor(Date.now() / 1000)),
+                });
                 onReload?.();
               }}
             >
