@@ -123,3 +123,64 @@ test("persistCamundaExtensionsViaCanonicalXmlBoundary does not write metadata-on
   assert.equal(putCalls.length, 0);
   assert.equal(syncCalls.length, 0);
 });
+
+test("persistCamundaExtensionsViaCanonicalXmlBoundary retries once on diagram-state conflict with fresh base version", async () => {
+  const putCalls = [];
+  const getCalls = [];
+  const syncCalls = [];
+  let putAttempt = 0;
+
+  const out = await persistCamundaExtensionsViaCanonicalXmlBoundary({
+    sessionIdRaw: "sess_conflict",
+    isLocal: false,
+    currentXmlRaw: BASE_XML,
+    nextMetaRaw: NEXT_META,
+    nextCamundaExtensionsByElementIdRaw: NEXT_META.camunda_extensions_by_element_id,
+    baseDiagramStateVersionRaw: 5,
+    buildCanonicalXml: ({ xmlText }) => `${xmlText}<!--changed-->`,
+    apiPutBpmnXml: async (sid, xml, options) => {
+      putAttempt += 1;
+      putCalls.push({ sid, xml, options });
+      if (putAttempt === 1) {
+        return {
+          ok: false,
+          status: 409,
+          error: "DIAGRAM_STATE_CONFLICT",
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        storedRev: 11,
+        diagramStateVersion: 12,
+      };
+    },
+    apiGetSession: async (sid) => {
+      getCalls.push(sid);
+      return {
+        ok: true,
+        session: {
+          id: sid,
+          session_id: sid,
+          bpmn_xml: "<server-xml/>",
+          bpmn_meta: { version: 2, flow_meta: { Flow_1: { tier: "P1" } } },
+          diagram_state_version: 9,
+          bpmn_xml_version: 9,
+          version: 9,
+        },
+      };
+    },
+    onSessionSync: (payload) => {
+      syncCalls.push(payload);
+    },
+  });
+
+  assert.equal(out.ok, true);
+  assert.equal(putCalls.length, 2);
+  assert.equal(putCalls[0].options.baseDiagramStateVersion, 5);
+  assert.equal(putCalls[1].options.baseDiagramStateVersion, 9);
+  assert.equal(putCalls[1].options.reason, "manual_save:camunda_extensions");
+  assert.equal(putCalls[1].options.bpmnMeta.flow_meta.Flow_1.tier, "P1");
+  assert.equal(getCalls.length >= 2, true);
+  assert.equal(syncCalls.length, 1);
+});
