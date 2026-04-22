@@ -181,6 +181,29 @@ function formatSessionPatchError(resp, fallback = "Не удалось смен�
   return fallback;
 }
 
+const EXPLORER_COLUMN_PROFILES = {
+  tree: {
+    showSignalColumns: false,
+  },
+  sessions: {
+    showSignalColumns: true,
+  },
+};
+
+function EntityTypePill({ type }) {
+  const normalized = String(type || "").trim().toLowerCase();
+  if (normalized === "folder") {
+    return <span className="inline-flex items-center rounded-full border border-sky-300/40 bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-300">Папка</span>;
+  }
+  if (normalized === "project") {
+    return <span className="inline-flex items-center rounded-full border border-violet-300/40 bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-violet-300">Проект</span>;
+  }
+  if (normalized === "session") {
+    return <span className="inline-flex items-center rounded-full border border-emerald-300/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-300">Сессия</span>;
+  }
+  return <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted">—</span>;
+}
+
 function StatusBadge({ status }) {
   const normalized = String(status || "").trim().toLowerCase();
   if (["draft", "in_progress", "review", "ready", "archived"].includes(normalized)) {
@@ -226,11 +249,11 @@ function MetricCell({ label, value, warn = false }) {
   );
 }
 
-function LastActivityCell({ node }) {
+function LastActivityCell({ node, maxWidthClass = "max-w-[220px]" }) {
   const label = activitySourceLabel(node);
   return (
     <td className="px-2 py-2.5 text-xs text-muted">
-      <div className="w-full max-w-[168px] truncate" title={label}>
+      <div className={`w-full ${maxWidthClass} truncate`} title={label}>
         {label}
       </div>
     </td>
@@ -508,12 +531,14 @@ function FolderRow({
   onReload,
   canEdit = false,
   canDelete = false,
+  showSignalColumns = false,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const expandable = hasFolderChildren(folder);
   const leftPadding = 8 + depth * 18;
+  const dodPercent = normalizeDodPercent(folder.rollup_dod_percent);
 
   const menuItems = [
     { label: "Открыть", icon: <IcoChevron right />, action: () => onNavigate(folder) },
@@ -533,8 +558,9 @@ function FolderRow({
                 onClick={() => onToggleExpand(folder)}
                 className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border bg-panelAlt/70 text-muted shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${loading ? "cursor-wait border-border/70" : "border-border/70 hover:border-border hover:bg-bg hover:text-fg active:bg-panelAlt"}`}
                 disabled={loading}
-                title={expanded ? "Свернуть" : "Развернуть"}
-                aria-label={expanded ? "Свернуть папку" : "Развернуть папку"}
+                title={expanded ? "Скрыть вложенные папки и проекты" : "Показать вложенные папки и проекты"}
+                aria-label={expanded ? `Скрыть вложенные элементы папки ${folder.name}` : `Показать вложенные элементы папки ${folder.name}`}
+                aria-expanded={expanded ? "true" : "false"}
               >
                 {loading ? (
                   <IcoSpinner className="animate-spin" />
@@ -551,23 +577,27 @@ function FolderRow({
             </button>
           </div>
         </td>
-        <td className="px-2 py-2.5 text-xs text-muted">Папка</td>
+        <td className="px-2 py-2.5 text-xs text-muted"><EntityTypePill type="folder" /></td>
         <td className="px-2 py-2.5 text-xs text-muted text-center">
           {folder.child_folder_count ?? 0} / {folder.descendant_sessions_count ?? 0}
         </td>
         <td className="px-2 py-2.5 text-xs text-muted text-center">
-          {folder.descendant_projects_count ?? 0}
+          <span className="text-[11px] text-muted/80">Проектов: {folder.descendant_projects_count ?? 0}</span>
         </td>
-        <td className="px-2 py-2.5"><DodBar percent={folder.rollup_dod_percent} /></td>
-        <td className="px-2 py-2.5 text-xs text-muted text-center">—</td>
-        <td className="px-2 py-2.5 text-xs text-muted text-center">—</td>
+        <td className="px-2 py-2.5">
+          {dodPercent && dodPercent > 0 ? <DodBar percent={dodPercent} /> : <span className="text-xs text-muted/70">—</span>}
+        </td>
+        {showSignalColumns ? <td className="px-2 py-2.5 text-xs text-muted text-center">—</td> : null}
+        {showSignalColumns ? <td className="px-2 py-2.5 text-xs text-muted text-center">—</td> : null}
         <td className="px-2 py-2.5 text-xs text-muted">—</td>
         <td className="px-2 py-2.5 text-xs text-muted text-right">{ts(folder.rollup_activity_at || folder.updated_at) || "—"}</td>
         <LastActivityCell node={folder} />
         <td className="px-2 py-2.5 w-8 text-right relative" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={() => setMenuOpen((v) => !v)}
-            className="opacity-0 group-hover:opacity-100 text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
+            className="opacity-60 group-hover:opacity-100 text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
+            title="Действия с папкой"
+            aria-label="Действия с папкой"
           >
             ···
           </button>
@@ -615,11 +645,13 @@ function FolderRow({
 
 // ─── Project Row in Explorer ───────────────────────────────────────────────────
 
-function ProjectRow({ project, depth = 0, onClick, onReload, canRename = false, canDelete = false }) {
+function ProjectRow({ project, depth = 0, onClick, onReload, canRename = false, canDelete = false, showSignalColumns = false }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const leftPadding = 8 + depth * 18;
+  const dodPercent = normalizeDodPercent(project.dod_percent);
+  const normalizedStatus = String(project.status || "").trim().toLowerCase();
   const projectHref = buildAppWorkspaceHref({ projectId: project?.id || project?.project_id });
   const menuItems = [
     { label: "Открыть", icon: <IcoChevron right />, action: () => onClick(project) },
@@ -643,25 +675,33 @@ function ProjectRow({ project, depth = 0, onClick, onReload, canRename = false, 
             </AppRouteLink>
           </div>
         </td>
-        <td className="px-2 py-2.5 text-xs text-muted">Проект</td>
+        <td className="px-2 py-2.5 text-xs text-muted"><EntityTypePill type="project" /></td>
         <td className="px-2 py-2.5 text-center">
           <span className="text-xs text-muted">{project.descendant_sessions_count ?? project.sessions_count ?? 0} сессий</span>
         </td>
         <td className="px-2 py-2.5">
           {project.owner
-            ? <span className="text-xs text-muted truncate block max-w-[100px]">{project.owner.name || project.owner.id}</span>
-            : <span className="text-xs text-muted">—</span>}
+            ? <span className="text-[11px] text-muted/80 truncate block max-w-[130px]" title={project.owner.name || project.owner.id}>Owner: {project.owner.name || project.owner.id}</span>
+            : <span className="text-xs text-muted/70">—</span>}
         </td>
-        <td className="px-2 py-2.5"><DodBar percent={project.dod_percent} /></td>
-        <td className="px-2 py-2.5 text-center"><MetricCell value={project.attention_count} warn /></td>
-        <td className="px-2 py-2.5 text-center"><MetricCell value={project.reports_count} /></td>
-        <td className="px-2 py-2.5"><StatusBadge status={project.status} /></td>
+        <td className="px-2 py-2.5">
+          {dodPercent && dodPercent > 0 ? <DodBar percent={dodPercent} /> : <span className="text-xs text-muted/70">—</span>}
+        </td>
+        {showSignalColumns ? <td className="px-2 py-2.5 text-center"><MetricCell value={project.attention_count} warn /></td> : null}
+        {showSignalColumns ? <td className="px-2 py-2.5 text-center"><MetricCell value={project.reports_count} /></td> : null}
+        <td className="px-2 py-2.5">
+          {!normalizedStatus || normalizedStatus === "active"
+            ? <span className="text-xs text-muted/70">—</span>
+            : <StatusBadge status={project.status} />}
+        </td>
         <td className="px-2 py-2.5 text-xs text-muted text-right">{ts(project.rollup_activity_at || project.updated_at) || "—"}</td>
         <LastActivityCell node={project} />
         <td className="px-2 py-2.5 w-8 text-right relative" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={() => setMenuOpen((v) => !v)}
-            className="opacity-0 group-hover:opacity-100 text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
+            className="opacity-60 group-hover:opacity-100 text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
+            title="Действия с проектом"
+            aria-label="Действия с проектом"
           >···</button>
           {menuOpen && <ContextMenu items={menuItems} onClose={() => setMenuOpen(false)} />}
         </td>
@@ -697,7 +737,7 @@ function ProjectRow({ project, depth = 0, onClick, onReload, canRename = false, 
   );
 }
 
-function InlineLoadingRow({ depth = 0 }) {
+function InlineLoadingRow({ depth = 0, colSpan = 8 }) {
   const leftPadding = 8 + depth * 18;
   return (
     <tr>
@@ -710,12 +750,12 @@ function InlineLoadingRow({ depth = 0 }) {
           <div className="h-5 w-full max-w-[220px] animate-pulse rounded bg-border/40" />
         </div>
       </td>
-      <td colSpan={10} className="px-2 py-2.5" />
+      <td colSpan={colSpan} className="px-2 py-2.5" />
     </tr>
   );
 }
 
-function InlineEmptyRow({ depth = 0 }) {
+function InlineEmptyRow({ depth = 0, colSpan = 8 }) {
   const leftPadding = 8 + depth * 18;
   return (
     <tr>
@@ -726,12 +766,12 @@ function InlineEmptyRow({ depth = 0 }) {
           <span className="truncate">В папке нет вложенных папок или проектов</span>
         </div>
       </td>
-      <td colSpan={10} className="px-2 py-2.5" />
+      <td colSpan={colSpan} className="px-2 py-2.5" />
     </tr>
   );
 }
 
-function InlineErrorRow({ depth = 0, message = "" }) {
+function InlineErrorRow({ depth = 0, message = "", colSpan = 8 }) {
   const leftPadding = 8 + depth * 18;
   const text = String(message || "").trim() || "Не удалось загрузить вложенные элементы.";
   return (
@@ -743,7 +783,7 @@ function InlineErrorRow({ depth = 0, message = "" }) {
           <span className="truncate">{text}</span>
         </div>
       </td>
-      <td colSpan={10} className="px-2 py-2.5" />
+      <td colSpan={colSpan} className="px-2 py-2.5" />
     </tr>
   );
 }
@@ -815,6 +855,8 @@ function ExplorerPane({
 
   const rootItems = useMemo(() => (Array.isArray(page?.items) ? page.items : []), [page]);
   const isEmpty = !loading && !error && rootItems.length === 0;
+  const treeColumnProfile = EXPLORER_COLUMN_PROFILES.tree;
+  const inlineColSpan = treeColumnProfile.showSignalColumns ? 10 : 8;
 
   const visibleRows = useMemo(
     () => buildVisibleRows({
@@ -942,15 +984,15 @@ function ExplorerPane({
           <table className="w-full table-fixed text-left border-collapse">
             <colgroup>
               <col />
-              <col className="w-[72px]" />
+              <col className="w-[88px]" />
+              <col className="w-[108px]" />
+              <col className="w-[126px]" />
               <col className="w-[92px]" />
-              <col className="w-[100px]" />
-              <col className="w-[76px]" />
-              <col className="w-[36px]" />
-              <col className="w-[36px]" />
-              <col className="w-[92px]" />
-              <col className="w-[84px]" />
-              <col className="w-[144px]" />
+              {treeColumnProfile.showSignalColumns ? <col className="w-[36px]" /> : null}
+              {treeColumnProfile.showSignalColumns ? <col className="w-[36px]" /> : null}
+              <col className="w-[108px]" />
+              <col className="w-[104px]" />
+              <col className="w-[220px]" />
               <col className="w-8" />
             </colgroup>
             <thead>
@@ -958,10 +1000,10 @@ function ExplorerPane({
                 <th className="px-2 py-2">Название</th>
                 <th className="px-2 py-2">Тип</th>
                 <th className="px-2 py-2 text-center">Папки / Сессии</th>
-                <th className="px-2 py-2">Owner / Проекты</th>
+                <th className="px-2 py-2" title="Для папок: количество проектов, для проектов: владелец">Контекст</th>
                 <th className="px-2 py-2">DoD</th>
-                <th className="px-2 py-2 text-center">⚠</th>
-                <th className="px-2 py-2 text-center">📋</th>
+                {treeColumnProfile.showSignalColumns ? <th className="px-2 py-2 text-center">⚠</th> : null}
+                {treeColumnProfile.showSignalColumns ? <th className="px-2 py-2 text-center">📋</th> : null}
                 <th className="px-2 py-2">Статус</th>
                 <th className="px-2 py-2 text-right">Обновлён</th>
                 <th className="px-2 py-2">Последнее изменение</th>
@@ -971,13 +1013,13 @@ function ExplorerPane({
             <tbody className="divide-y divide-border/50">
               {visibleRows.map((row, index) => {
                 if (row.rowType === "loading") {
-                  return <InlineLoadingRow key={`loading-${row.parentId}-${index}`} depth={row.depth} />;
+                  return <InlineLoadingRow key={`loading-${row.parentId}-${index}`} depth={row.depth} colSpan={inlineColSpan} />;
                 }
                 if (row.rowType === "empty") {
-                  return <InlineEmptyRow key={`empty-${row.parentId}-${index}`} depth={row.depth} />;
+                  return <InlineEmptyRow key={`empty-${row.parentId}-${index}`} depth={row.depth} colSpan={inlineColSpan} />;
                 }
                 if (row.rowType === "error") {
-                  return <InlineErrorRow key={`error-${row.parentId}-${index}`} depth={row.depth} message={row.message} />;
+                  return <InlineErrorRow key={`error-${row.parentId}-${index}`} depth={row.depth} message={row.message} colSpan={inlineColSpan} />;
                 }
                 if (row.rowType === "folder") {
                   const folder = row.node;
@@ -994,6 +1036,7 @@ function ExplorerPane({
                       onReload={() => load({ resetInlineChildren: true })}
                       canEdit={!!permissions?.canRenameFolder}
                       canDelete={!!permissions?.canDeleteFolder}
+                      showSignalColumns={treeColumnProfile.showSignalColumns}
                     />
                   );
                 }
@@ -1007,6 +1050,7 @@ function ExplorerPane({
                     onReload={() => load({ resetInlineChildren: true })}
                     canRename={!!permissions?.canRenameProject}
                     canDelete={!!permissions?.canDeleteProject}
+                    showSignalColumns={treeColumnProfile.showSignalColumns}
                   />
                 );
               })}
@@ -1090,6 +1134,7 @@ function SessionRow({
   canRename = false,
   canDelete = false,
   canChangeStatus = false,
+  showSignalColumns = true,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -1188,8 +1233,16 @@ function SessionRow({
             : <span className="text-xs text-muted">—</span>}
         </td>
         <td className="px-2 py-2.5"><DodBar percent={session.dod_percent} /></td>
-        <td className="px-2 py-2.5 text-center"><MetricCell value={session.attention_count} warn /></td>
-        <td className="px-2 py-2.5 text-center"><MetricCell value={session.reports_count} /></td>
+        {showSignalColumns ? (
+          <td className="px-2 py-2.5 text-center" title="Требует внимания">
+            <MetricCell value={session.attention_count} warn />
+          </td>
+        ) : null}
+        {showSignalColumns ? (
+          <td className="px-2 py-2.5 text-center" title="Заметки и отчёты">
+            <MetricCell value={session.reports_count} />
+          </td>
+        ) : null}
         <td className="px-2 py-2.5 text-xs text-muted text-right">{ts(session.updated_at)}</td>
         <td className="px-2 py-2.5 text-right">
           <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
@@ -1321,6 +1374,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   const proj = page?.project;
   const sessions = page?.sessions || [];
   const isEmpty = !loading && !error && sessions.length === 0;
+  const sessionColumnProfile = EXPLORER_COLUMN_PROFILES.sessions;
   const handleOpenSessionRequest = useCallback(async (sessionLike) => {
     const row = sessionLike && typeof sessionLike === "object" ? sessionLike : {};
     const sid = String(row?.id || row?.session_id || "").trim();
@@ -1430,8 +1484,16 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                 <th className="px-2 py-2">Стадия</th>
                 <th className="px-2 py-2">Owner</th>
                 <th className="px-2 py-2">DoD</th>
-                <th className="px-2 py-2 text-center">⚠</th>
-                <th className="px-2 py-2 text-center">📋</th>
+                {sessionColumnProfile.showSignalColumns ? (
+                  <th className="px-2 py-2 text-center" title="Требует внимания" aria-label="Колонка Требует внимания">
+                    <span aria-hidden>⚠</span>
+                  </th>
+                ) : null}
+                {sessionColumnProfile.showSignalColumns ? (
+                  <th className="px-2 py-2 text-center" title="Заметки и отчёты" aria-label="Колонка заметок и отчётов">
+                    <span aria-hidden>📋</span>
+                  </th>
+                ) : null}
                 <th className="px-2 py-2 text-right">Обновлена</th>
                 <th className="px-2 py-2" />
               </tr>
@@ -1452,6 +1514,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                   canRename={!!permissions?.canRenameSession}
                   canDelete={!!permissions?.canDeleteSession}
                   canChangeStatus={!!permissions?.canChangeStatus}
+                  showSignalColumns={sessionColumnProfile.showSignalColumns}
                 />
               ))}
             </tbody>
