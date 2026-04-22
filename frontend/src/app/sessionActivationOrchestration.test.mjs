@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { shouldAttemptRequestedSessionRestore } from "./useSessionActivationOrchestration.js";
+import {
+  buildSnapshotRestorePutOptions,
+  shouldAttemptRequestedSessionRestore,
+} from "./useSessionActivationOrchestration.js";
 
 test("requested session restore runs only when a requested backend session still needs activation", () => {
   assert.equal(
@@ -42,4 +45,38 @@ test("requested session restore runs only when a requested backend session still
     }),
     false,
   );
+});
+
+test("snapshot restore PUT options propagate diagram CAS base from fetched session state", () => {
+  const options = buildSnapshotRestorePutOptions({
+    sessionLike: {
+      version: 41,
+      bpmn_xml_version: 41,
+      diagram_state_version: 133,
+    },
+    restoredSnapshot: {
+      rev: 41,
+    },
+  });
+
+  assert.deepEqual(options, {
+    rev: 41,
+    baseDiagramStateVersion: 133,
+  });
+});
+
+test("snapshot restore PUT options fall back to snapshot rev when session rev is missing", () => {
+  const options = buildSnapshotRestorePutOptions({
+    sessionLike: {
+      diagramStateVersion: 9,
+    },
+    restoredSnapshot: {
+      rev: 5,
+    },
+  });
+
+  assert.deepEqual(options, {
+    rev: 5,
+    baseDiagramStateVersion: 9,
+  });
 });
