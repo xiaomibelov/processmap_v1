@@ -14,6 +14,34 @@ function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
+function isDiagramStateConflict(saveResult) {
+  const status = Number(saveResult?.status || 0);
+  if (status === 409) return true;
+  const marker = `${String(saveResult?.error || "")} ${String(saveResult?.text || "")}`.toUpperCase();
+  return marker.includes("DIAGRAM_STATE_CONFLICT");
+}
+
+function pickDiagramStateBaseVersion(sessionLike) {
+  const raw = sessionLike && typeof sessionLike === "object"
+    ? sessionLike.diagram_state_version ?? sessionLike.bpmn_xml_version ?? sessionLike.version
+    : null;
+  return toNonNegativeIntOrNull(raw);
+}
+
+function buildRetryMeta({
+  latestMetaRaw,
+  previousMetaRaw,
+  nextCamundaExtensionsByElementId,
+}) {
+  const latestMeta = asObject(latestMetaRaw);
+  const previousMeta = asObject(previousMetaRaw);
+  return {
+    ...previousMeta,
+    ...latestMeta,
+    camunda_extensions_by_element_id: nextCamundaExtensionsByElementId,
+  };
+}
+
 function buildFallbackSessionPatch({
   sid,
   nextXml,
@@ -116,11 +144,42 @@ export async function persistCamundaExtensionsViaCanonicalXmlBoundary({
     return { ok: false, status: 0, error: "apiPutBpmnXml unavailable" };
   }
 
-  const saveRes = await apiPutBpmnXml(sid, nextXml, {
+  let persistedXml = nextXml;
+  let persistedMeta = nextMeta;
+  let saveRes = await apiPutBpmnXml(sid, nextXml, {
     reason: "manual_save:camunda_extensions",
     baseDiagramStateVersion: toNonNegativeIntOrNull(baseDiagramStateVersionRaw),
     bpmnMeta: nextMeta,
   });
+
+  if (!saveRes?.ok && isDiagramStateConflict(saveRes) && typeof apiGetSession === "function") {
+    const latest = await apiGetSession(sid);
+    if (latest?.ok && latest.session && typeof latest.session === "object") {
+      const retryMeta = buildRetryMeta({
+        latestMetaRaw: latest.session?.bpmn_meta,
+        previousMetaRaw: nextMeta,
+        nextCamundaExtensionsByElementId,
+      });
+      const rebased = buildCamundaExtensionsCanonicalXml({
+        currentXmlRaw: latest.session?.bpmn_xml,
+        nextCamundaExtensionsByElementIdRaw: nextCamundaExtensionsByElementId,
+        buildCanonicalXml,
+      });
+      if (rebased.nextXml && rebased.nextXml !== rebased.currentXml) {
+        const retryBaseVersion = pickDiagramStateBaseVersion(latest.session);
+        const retryRes = await apiPutBpmnXml(sid, rebased.nextXml, {
+          reason: "manual_save:camunda_extensions",
+          baseDiagramStateVersion: retryBaseVersion,
+          bpmnMeta: retryMeta,
+        });
+        if (retryRes?.ok) {
+          saveRes = retryRes;
+          persistedXml = rebased.nextXml;
+          persistedMeta = retryMeta;
+        }
+      }
+    }
+  }
 
   if (!saveRes?.ok) {
     return {
@@ -145,8 +204,8 @@ export async function persistCamundaExtensionsViaCanonicalXmlBoundary({
     onSessionSync?.(
       buildFallbackSessionPatch({
         sid,
-        nextXml,
-        nextMeta,
+        nextXml: persistedXml,
+        nextMeta: persistedMeta,
         storedRev: Number(saveRes?.storedRev || 0),
         diagramStateVersion: Number(saveRes?.diagramStateVersion || 0),
         syncSource,
@@ -159,8 +218,8 @@ export async function persistCamundaExtensionsViaCanonicalXmlBoundary({
     status: Number(saveRes?.status || 200),
     storedRev: Number(saveRes?.storedRev || 0),
     diagramStateVersion: Number(saveRes?.diagramStateVersion || 0),
-    nextXml,
-    nextMeta,
+    nextXml: persistedXml,
+    nextMeta: persistedMeta,
     nextCamundaExtensionsByElementId,
   };
 }
