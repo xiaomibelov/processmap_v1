@@ -5851,6 +5851,115 @@ def patch_note_thread_status(
     return get_note_thread(tid, org_id=oid or None)
 
 
+def _notes_aggregate_payload(count: Any) -> Dict[str, Any]:
+    try:
+        value = int(count or 0)
+    except Exception:
+        value = 0
+    if value < 0:
+        value = 0
+    return {"open_notes_count": value, "has_open_notes": value > 0}
+
+
+def get_session_open_notes_aggregate(session_id: str, *, org_id: Optional[str] = None) -> Dict[str, Any]:
+    """Read-time Notes MVP-1 aggregate for a single session."""
+    _ensure_schema()
+    sid = str(session_id or "").strip()
+    if not sid:
+        return _notes_aggregate_payload(0)
+    oid = str(org_id or "").strip()
+    filters = ["session_id = ?", "status = 'open'"]
+    params: List[Any] = [sid]
+    if oid:
+        filters.append("org_id = ?")
+        params.append(oid)
+    with _connect() as con:
+        row = con.execute(
+            f"SELECT COUNT(*) AS open_notes_count FROM note_threads WHERE {' AND '.join(filters)}",
+            params,
+        ).fetchone()
+    return _notes_aggregate_payload(_row_value(row, "open_notes_count", 0))
+
+
+def get_project_open_notes_aggregate(project_id: str, *, org_id: Optional[str] = None) -> Dict[str, Any]:
+    """Read-time Notes MVP-1 aggregate for all sessions in a project."""
+    _ensure_schema()
+    pid = str(project_id or "").strip()
+    if not pid:
+        return _notes_aggregate_payload(0)
+    oid = str(org_id or "").strip()
+    filters = ["s.project_id = ?", "nt.status = 'open'"]
+    params: List[Any] = [pid]
+    if oid:
+        filters.append("s.org_id = ?")
+        filters.append("nt.org_id = ?")
+        params.extend([oid, oid])
+    with _connect() as con:
+        row = con.execute(
+            f"""
+            SELECT COUNT(*) AS open_notes_count
+            FROM note_threads nt
+            JOIN sessions s ON s.id = nt.session_id
+            WHERE {' AND '.join(filters)}
+            """,
+            params,
+        ).fetchone()
+    return _notes_aggregate_payload(_row_value(row, "open_notes_count", 0))
+
+
+def get_folder_open_notes_aggregate(
+    folder_id: str,
+    *,
+    org_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    allowed_project_ids: Optional[Iterable[str]] = None,
+) -> Dict[str, Any]:
+    """Read-time Notes MVP-1 aggregate for projects in a folder subtree."""
+    _ensure_schema()
+    fid = str(folder_id or "").strip()
+    oid = str(org_id or "").strip()
+    wid = str(workspace_id or "").strip()
+    if not fid or not oid or not wid:
+        return _notes_aggregate_payload(0)
+    allowed_projects = None
+    if allowed_project_ids is not None:
+        allowed_projects = [str(item or "").strip() for item in allowed_project_ids if str(item or "").strip()]
+        if not allowed_projects:
+            return _notes_aggregate_payload(0)
+    project_scope_sql = ""
+    params: List[Any] = [fid, oid, wid, oid, wid, oid, wid]
+    if allowed_projects is not None:
+        placeholders = ", ".join(["?"] * len(allowed_projects))
+        project_scope_sql = f" AND p.id IN ({placeholders})"
+        params.extend(allowed_projects)
+    with _connect() as con:
+        row = con.execute(
+            f"""
+            WITH RECURSIVE folder_tree(id) AS (
+              SELECT id
+              FROM workspace_folders
+              WHERE id = ? AND org_id = ? AND workspace_id = ? AND archived_at IS NULL
+              UNION ALL
+              SELECT wf.id
+              FROM workspace_folders wf
+              JOIN folder_tree ft ON wf.parent_id = ft.id
+              WHERE wf.org_id = ? AND wf.workspace_id = ? AND wf.archived_at IS NULL
+            )
+            SELECT COUNT(*) AS open_notes_count
+            FROM note_threads nt
+            JOIN sessions s ON s.id = nt.session_id AND s.org_id = nt.org_id
+            JOIN projects p ON p.id = s.project_id AND p.org_id = s.org_id
+            WHERE nt.status = 'open'
+              AND nt.org_id = ?
+              AND p.workspace_id = ?
+              AND p.folder_id IN (SELECT id FROM folder_tree)
+              {project_scope_sql}
+            """,
+            params,
+        ).fetchone()
+    return _notes_aggregate_payload(_row_value(row, "open_notes_count", 0))
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Workspace Folder CRUD
 # ─────────────────────────────────────────────────────────────────────────────
