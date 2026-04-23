@@ -28,6 +28,32 @@ function buildUserNotesDecorPayload(ctx) {
   return out;
 }
 
+function buildNotesBadge(countRaw, bindBadgeClick, onClick) {
+  const count = Number(countRaw || 0);
+  if (!(count > 0)) return null;
+  const noteBadge = document.createElement("button");
+  noteBadge.type = "button";
+  noteBadge.className = "fpcNodeBadge fpcNodeBadge--notes";
+  noteBadge.dataset.badgeKind = "notes";
+  noteBadge.title = count > 1 ? `Заметки элемента: ${count}` : "Заметки элемента";
+  noteBadge.setAttribute("aria-label", noteBadge.title);
+
+  const icon = document.createElement("span");
+  icon.className = "fpcNodeBadgeIcon fpcNodeBadgeIcon--notes";
+  icon.textContent = "✎";
+  noteBadge.appendChild(icon);
+
+  if (count > 1) {
+    const countPill = document.createElement("span");
+    countPill.className = "fpcNodeBadgeCount";
+    countPill.textContent = count > 99 ? "99+" : String(count);
+    noteBadge.appendChild(countPill);
+  }
+
+  bindBadgeClick(noteBadge, onClick);
+  return noteBadge;
+}
+
 export function readBusinessObjectDocumentationMeta(boRaw, asArray, toText) {
   const readEntryText = (entryRaw) => {
     const entry = entryRaw && typeof entryRaw === "object" ? entryRaw : {};
@@ -665,17 +691,11 @@ export function applyInterviewDecor(ctx, options = {}) {
           }
 
           if (interviewMode && noteCount > 0) {
-            const noteBadge = document.createElement("button");
-            noteBadge.type = "button";
-            noteBadge.className = "fpcNodeBadge fpcNodeBadge--notes";
-            noteBadge.dataset.badgeKind = "notes";
-            noteBadge.textContent = `N:${noteCount}`;
-            noteBadge.title = `Заметок: ${noteCount}`;
-            bindBadgeClick(noteBadge, () => {
+            const noteBadge = buildNotesBadge(noteCount, bindBadgeClick, () => {
               callbacks.setSelectedDecor(inst, kind, el.id);
               callbacks.emitElementSelection(el, `${kind}.notes_badge_click`);
             });
-            leftBadges.push(noteBadge);
+            if (noteBadge) leftBadges.push(noteBadge);
           }
 
           const dodTotal = interviewMode ? Number(dodMeta?.total || 0) : 0;
@@ -1018,17 +1038,11 @@ export function applyUserNotesDecor(ctx) {
       stack.style.alignItems = "flex-start";
 
       if (count > 0) {
-        const noteBadge = document.createElement("button");
-        noteBadge.type = "button";
-        noteBadge.className = "fpcNodeBadge fpcNodeBadge--notes";
-        noteBadge.dataset.badgeKind = "notes";
-        noteBadge.textContent = `N:${count}`;
-        noteBadge.title = `Заметок: ${count}`;
-        bindBadgeClick(noteBadge, () => {
+        const noteBadge = buildNotesBadge(count, bindBadgeClick, () => {
           callbacks.setSelectedDecor(inst, kind, el.id);
           callbacks.emitElementSelection(el, `${kind}.notes_badge_click`);
         });
-        stack.appendChild(noteBadge);
+        if (noteBadge) stack.appendChild(noteBadge);
       }
 
       if (docsCount > 0 && docsText) {
