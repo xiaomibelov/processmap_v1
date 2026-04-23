@@ -361,6 +361,45 @@ export async function apiPostNote(sessionId, payload) {
   return { ok: true, status: r.status, session, result: session };
 }
 
+export async function apiListNoteThreads(sessionId, filters = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.sessions.noteThreads(sid, filters)));
+  if (!r.ok) return r;
+  const items = Array.isArray(r.data?.items) ? r.data.items : [];
+  return {
+    ok: true,
+    status: r.status,
+    items,
+    threads: items,
+    count: Number(r.data?.count || items.length || 0),
+  };
+}
+
+export async function apiCreateNoteThread(sessionId, payload = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const body = isPlainObject(payload) ? payload : {};
+  const r = okOrError(await request(apiRoutes.sessions.noteThreads(sid), { method: "POST", body }));
+  return r.ok ? { ok: true, status: r.status, thread: r.data?.thread || null } : r;
+}
+
+export async function apiAddNoteThreadComment(threadId, payload = {}) {
+  const tid = String(threadId || "").trim();
+  if (!tid) return { ok: false, status: 0, error: "missing thread_id" };
+  const body = isPlainObject(payload) ? payload : {};
+  const r = okOrError(await request(apiRoutes.noteThreads.comments(tid), { method: "POST", body }));
+  return r.ok ? { ok: true, status: r.status, thread: r.data?.thread || null } : r;
+}
+
+export async function apiPatchNoteThread(threadId, patch = {}) {
+  const tid = String(threadId || "").trim();
+  if (!tid) return { ok: false, status: 0, error: "missing thread_id" };
+  const body = isPlainObject(patch) ? patch : {};
+  const r = okOrError(await request(apiRoutes.noteThreads.item(tid), { method: "PATCH", body }));
+  return r.ok ? { ok: true, status: r.status, thread: r.data?.thread || null } : r;
+}
+
 export async function apiPostAnswer(sessionId, payload) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
