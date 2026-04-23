@@ -25,7 +25,7 @@ import {
   apiGetProjectPage,
   apiCreateSession,
 } from "./explorerApi.js";
-import { apiDeleteProject, apiDeleteSession, apiGetSession, apiPatchProject, apiPatchSession } from "../../lib/api";
+import { apiDeleteProject, apiDeleteSession, apiGetSession, apiGetSessionNoteAggregate, apiPatchProject, apiPatchSession } from "../../lib/api";
 import {
   MANUAL_SESSION_STATUSES,
   getManualSessionStatusMeta,
@@ -34,6 +34,7 @@ import { useAuth } from "../auth/AuthProvider.jsx";
 import { buildVisibleRows, hasFolderChildren } from "./work3TreeState.js";
 import { useWorkspaceExplorerController } from "./useWorkspaceExplorerController.js";
 import AppRouteLink from "../../components/navigation/AppRouteLink.jsx";
+import NotesAggregateBadge from "../../components/NotesAggregateBadge.jsx";
 import { buildAppWorkspaceHref } from "../navigation/appLinkBehavior.js";
 
 // ─── Icons (inline SVG to avoid external deps) ────────────────────────────────
@@ -189,6 +190,58 @@ const EXPLORER_COLUMN_PROFILES = {
     showSignalColumns: true,
   },
 };
+
+const noteAggregateCache = new Map();
+
+function sessionNoteAggregateCacheKey(sessionId) {
+  return `session:${String(sessionId || "").trim()}`;
+}
+
+function useSessionNoteAggregate(sessionId) {
+  const sid = String(sessionId || "").trim();
+  const cacheKey = sessionNoteAggregateCacheKey(sid);
+  const [aggregate, setAggregate] = useState(() => noteAggregateCache.get(cacheKey) || null);
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!sid) {
+      setAggregate(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+    const cached = noteAggregateCache.get(cacheKey) || null;
+    if (cached) {
+      setAggregate(cached);
+    }
+    void apiGetSessionNoteAggregate(sid).then((result) => {
+      if (cancelled || !result?.ok) return;
+      const nextAggregate = result.aggregate || null;
+      noteAggregateCache.set(cacheKey, nextAggregate);
+      setAggregate(nextAggregate);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [cacheKey, refreshTick, sid]);
+
+  useEffect(() => {
+    if (!sid || typeof window === "undefined") return undefined;
+    const handleChanged = (event) => {
+      const changedSessionId = String(event?.detail?.sessionId || "").trim();
+      if (changedSessionId !== sid) return;
+      noteAggregateCache.delete(cacheKey);
+      setRefreshTick((value) => value + 1);
+    };
+    window.addEventListener("processmap:notes-aggregate-changed", handleChanged);
+    return () => {
+      window.removeEventListener("processmap:notes-aggregate-changed", handleChanged);
+    };
+  }, [cacheKey, sid]);
+
+  return aggregate;
+}
 
 function EntityTypePill({ type }) {
   const normalized = String(type || "").trim().toLowerCase();
@@ -1158,6 +1211,7 @@ function SessionRow({
   const [renaming, setRenaming] = useState(false);
   const [pendingStatus, setPendingStatus] = useState(String(session.status || "draft"));
   const sessionStatusMeta = getManualSessionStatusMeta(pendingStatus);
+  const notesAggregate = useSessionNoteAggregate(session?.id || session?.session_id);
 
   useEffect(() => {
     setPendingStatus(String(session.status || "draft"));
@@ -1195,10 +1249,13 @@ function SessionRow({
             >
               {session.name}
             </AppRouteLink>
-            <span className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-normal text-accent/75">
-              <span>{isOpening ? "Открываем сессию" : "Открыть сессию"}</span>
-              <IcoChevron right className="text-[10px]" />
-            </span>
+            <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5">
+              <span className="inline-flex items-center gap-1 text-[11px] font-normal text-accent/75">
+                <span>{isOpening ? "Открываем сессию" : "Открыть сессию"}</span>
+                <IcoChevron right className="text-[10px]" />
+              </span>
+              <NotesAggregateBadge aggregate={notesAggregate} compact />
+            </div>
           </div>
         </td>
         <td className="px-2 py-2.5">
