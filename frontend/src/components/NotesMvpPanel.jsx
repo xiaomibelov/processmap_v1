@@ -168,6 +168,7 @@ export default function NotesMvpPanel({
   sessionTitle = "",
   selectedElement = null,
   disabled = false,
+  externalOpenRequest = null,
 }) {
   const sid = text(sessionId);
   const selectedElementId = text(selectedElement?.id);
@@ -298,6 +299,20 @@ export default function NotesMvpPanel({
     setAggregate(null);
     setCreateOpen(false);
   }, [sid]);
+
+  useEffect(() => {
+    const request = externalOpenRequest && typeof externalOpenRequest === "object" ? externalOpenRequest : null;
+    if (!sid || !request?.requestKey) return;
+    const nextScopeFilter = text(request.scopeFilter);
+    setOpen(true);
+    setCreateOpen(false);
+    setError("");
+    setSearchQuery("");
+    if (nextScopeFilter) {
+      setScopeFilter(nextScopeFilter);
+    }
+    setSelectedThreadId("");
+  }, [externalOpenRequest, sid]);
 
   function openPanel() {
     setOpen(true);
