@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AppShell from "./components/AppShell";
 import NotesPanel from "./components/NotesPanel";
+import NotesMvpPanel from "./components/NotesMvpPanel";
 import NoSession from "./components/stages/NoSession";
 import ProjectWizardModal from "./components/ProjectWizardModal";
 import SessionFlowModal from "./components/SessionFlowModal";
@@ -3244,6 +3245,13 @@ export default function App() {
         sessionNavNotice={sessionNavNotice}
         onDismissSessionNavNotice={() => setSessionNavNotice(null)}
         onReturnToSessionList={() => returnToSessionList("banner_action")}
+      />
+
+      <NotesMvpPanel
+        sessionId={String(draft?.session_id || "")}
+        sessionTitle={currentSessionTitle}
+        selectedElement={selectedBpmnElement}
+        disabled={locked || isSessionLocalMode}
       />
 
       <OrgSettingsModal

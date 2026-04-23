@@ -103,6 +103,11 @@ export const apiRoutes = {
     node: (sessionId, nodeId) => `/api/sessions/${encode(sessionId)}/nodes/${encode(nodeId)}`,
     edges: (sessionId) => `/api/sessions/${encode(sessionId)}/edges`,
     notes: (sessionId) => `/api/sessions/${encode(sessionId)}/notes`,
+    noteThreads: (sessionId, filters = {}) => withQuery(`/api/sessions/${encode(sessionId)}/note-threads`, {
+      status: String(filters?.status || "").trim(),
+      scope_type: String(filters?.scopeType || filters?.scope_type || "").trim(),
+      element_id: String(filters?.elementId || filters?.element_id || "").trim(),
+    }),
     answer: (sessionId) => `/api/sessions/${encode(sessionId)}/answer`,
     answers: (sessionId) => `/api/sessions/${encode(sessionId)}/answers`,
     aiQuestions: (sessionId) => `/api/sessions/${encode(sessionId)}/ai/questions`,
@@ -139,6 +144,10 @@ export const apiRoutes = {
   },
   reports: {
     item: (reportId) => `/api/reports/${encode(reportId)}`,
+  },
+  noteThreads: {
+    item: (threadId) => `/api/note-threads/${encode(threadId)}`,
+    comments: (threadId) => `/api/note-threads/${encode(threadId)}/comments`,
   },
   llm: {
     sessionTitleQuestions: () => "/api/llm/session-title/questions",
