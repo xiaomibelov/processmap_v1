@@ -190,6 +190,7 @@ export default function NotesMvpPanel({
   sessionTitle = "",
   selectedElement = null,
   legacyElementNotesMap = null,
+  onAddLegacyElementNote = null,
   disabled = false,
   externalOpenRequest = null,
 }) {
@@ -215,6 +216,7 @@ export default function NotesMvpPanel({
     session: "",
   });
   const [commentDraftByThread, setCommentDraftByThread] = useState({});
+  const [legacyDraftByThread, setLegacyDraftByThread] = useState({});
   const [aggregate, setAggregate] = useState(null);
   const [aggregateRefreshTick, setAggregateRefreshTick] = useState(0);
 
@@ -274,6 +276,7 @@ export default function NotesMvpPanel({
   const selectedThreadIsLegacyBridge = isLegacyBridgeThread(selectedThread);
 
   const commentDraft = commentDraftByThread[text(selectedThread?.id)] || "";
+  const legacyDraft = legacyDraftByThread[text(selectedThread?.id)] || "";
 
   const refreshAggregate = useCallback(async () => {
     if (!sid) {
@@ -408,6 +411,27 @@ export default function NotesMvpPanel({
     setBusy("");
   }
 
+  async function addLegacyElementNote() {
+    const threadId = text(selectedThread?.id);
+    const elementId = text(scopeRef(selectedThread).element_id);
+    const body = text(legacyDraft);
+    if (!threadId || !elementId || !body || disabled || !selectedThreadIsLegacyBridge || typeof onAddLegacyElementNote !== "function") {
+      return;
+    }
+    setBusy(`legacy:${threadId}`);
+    setError("");
+    const result = await onAddLegacyElementNote(elementId, body);
+    if (!result?.ok) {
+      setError(errorText(result, "Не удалось сохранить локальную заметку элемента."));
+      setBusy("");
+      return;
+    }
+    setLegacyDraftByThread((prev) => ({ ...prev, [threadId]: "" }));
+    setAggregateRefreshTick((value) => value + 1);
+    emitNotesAggregateChanged(sid);
+    setBusy("");
+  }
+
   async function patchStatus(status) {
     const threadId = text(selectedThread?.id);
     const nextStatus = text(status);
@@ -501,7 +525,7 @@ export default function NotesMvpPanel({
                         </div>
                         {selectedThreadIsLegacyBridge ? (
                           <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
-                            Это read-only bridge из legacy `notes_by_element`. История показана для совместимости, но новые ответы и смена статуса здесь не поддерживаются.
+                            Это compatibility bridge из legacy `notes_by_element`. История и TL;DR видны здесь, а новая локальная заметка по выбранному элементу записывается напрямую в legacy-модель без thread API и без удаления старого sidebar.
                           </div>
                         ) : null}
                       </div>
@@ -549,8 +573,32 @@ export default function NotesMvpPanel({
 
                   {selectedThreadIsLegacyBridge ? (
                     <div className="border-t border-border bg-panel px-5 py-4">
-                      <div className="rounded-2xl border border-dashed border-border bg-bg/40 px-4 py-3 text-sm text-muted">
-                        Для новых ответов создайте discussion в новом Notes domain. Этот блок показывает только legacy local notes по выбранному элементу.
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <div className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Локальная заметка элемента</div>
+                        <div className="text-[11px] text-muted">Пишется в legacy `notes_by_element` для режима совместимости.</div>
+                      </div>
+                      <textarea
+                        className="textarea min-h-[88px] w-full text-sm"
+                        value={legacyDraft}
+                        onChange={(event) => {
+                          const threadId = text(selectedThread?.id);
+                          setLegacyDraftByThread((prev) => ({ ...prev, [threadId]: event.target.value }));
+                        }}
+                        placeholder="Добавьте локальную заметку по выбранному элементу..."
+                        disabled={disabled || typeof onAddLegacyElementNote !== "function"}
+                      />
+                      <div className="mt-3 flex items-center justify-between gap-3">
+                        <div className="text-[11px] leading-relaxed text-muted">
+                          TL;DR остаётся видимым выше. Ответы в thread API и смена статуса для legacy-записей здесь по-прежнему не используются.
+                        </div>
+                        <button
+                          type="button"
+                          className="primaryBtn smallBtn"
+                          onClick={addLegacyElementNote}
+                          disabled={busy.startsWith("legacy:") || !text(legacyDraft) || disabled || typeof onAddLegacyElementNote !== "function"}
+                        >
+                          {busy.startsWith("legacy:") ? "Сохраняем..." : "Сохранить локальную заметку"}
+                        </button>
                       </div>
                     </div>
                   ) : (
