@@ -193,15 +193,15 @@ const EXPLORER_COLUMN_PROFILES = {
 function EntityTypePill({ type }) {
   const normalized = String(type || "").trim().toLowerCase();
   if (normalized === "folder") {
-    return <span className="inline-flex items-center rounded-full border border-sky-300/65 bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">Папка</span>;
+    return <span className="inline-flex items-center rounded-full border border-sky-300/65 bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-100">Папка</span>;
   }
   if (normalized === "project") {
-    return <span className="inline-flex items-center rounded-full border border-violet-300/65 bg-violet-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-200">Проект</span>;
+    return <span className="inline-flex items-center rounded-full border border-violet-300/65 bg-violet-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-100">Проект</span>;
   }
   if (normalized === "session") {
-    return <span className="inline-flex items-center rounded-full border border-emerald-300/65 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">Сессия</span>;
+    return <span className="inline-flex items-center rounded-full border border-emerald-300/65 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-100">Сессия</span>;
   }
-  return <span className="inline-flex items-center rounded-full border border-border/80 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted/85">—</span>;
+  return <span className="inline-flex items-center rounded-full border border-border/80 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-fg/70">—</span>;
 }
 
 function StatusBadge({ status }) {
@@ -241,7 +241,7 @@ function DodBar({ percent }) {
 }
 
 function MetricCell({ label, value, warn = false }) {
-  if (!value) return <span className="text-[10px] text-muted/40"> </span>;
+  if (!value) return <span className="text-[10px] text-muted/50"> </span>;
   return (
     <span className={`text-xs font-medium ${warn && value > 0 ? "text-warning" : "text-muted"}`}>
       {value}
@@ -252,7 +252,7 @@ function MetricCell({ label, value, warn = false }) {
 function LastActivityCell({ node, maxWidthClass = "max-w-[220px]", quiet = false }) {
   const label = activitySourceLabel(node);
   return (
-    <td className={`px-2 py-2.5 text-xs ${quiet ? "text-muted/85" : "text-muted"}`}>
+    <td className={`px-2 py-2.5 text-xs ${quiet ? "text-fg/65" : "text-muted"}`}>
       <div className={`w-full ${maxWidthClass} truncate`} title={label}>
         {label}
       </div>
@@ -600,15 +600,15 @@ function FolderRow({
           {folder.child_folder_count ?? 0} / {folder.descendant_sessions_count ?? 0}
         </td>
         <td className="px-2 py-2.5 text-xs text-muted text-center">
-          <span className="text-[11px] text-muted/75">Проектов: {folder.descendant_projects_count ?? 0}</span>
+          <span className="text-[11px] text-fg/60">Проектов: {folder.descendant_projects_count ?? 0}</span>
         </td>
         <td className="px-2 py-2.5">
           {dodPercent && dodPercent > 0 ? <DodBar percent={dodPercent} /> : <span className="text-xs text-muted/70">—</span>}
         </td>
         {showSignalColumns ? <td className="px-2 py-2.5 text-xs text-muted text-center">—</td> : null}
         {showSignalColumns ? <td className="px-2 py-2.5 text-xs text-muted text-center">—</td> : null}
-        <td className="px-2 py-2.5 text-xs text-muted/60">—</td>
-        <td className="px-2 py-2.5 text-xs text-muted/80 text-right">{ts(folder.rollup_activity_at || folder.updated_at) || "—"}</td>
+        <td className="px-2 py-2.5 text-xs text-muted/70">—</td>
+        <td className="px-2 py-2.5 text-xs text-fg/60 text-right">{ts(folder.rollup_activity_at || folder.updated_at) || "—"}</td>
         <LastActivityCell node={folder} maxWidthClass="max-w-[180px]" quiet />
         <td className="px-2 py-2.5 w-8 text-right relative" onClick={(e) => e.stopPropagation()}>
           <button
@@ -699,7 +699,7 @@ function ProjectRow({ project, depth = 0, onClick, onReload, canRename = false, 
         </td>
         <td className="px-2 py-2.5">
           {project.owner
-            ? <span className="text-[11px] text-muted/75 truncate block max-w-[120px]" title={project.owner.name || project.owner.id}>Owner: {project.owner.name || project.owner.id}</span>
+            ? <span className="text-[11px] text-fg/60 truncate block max-w-[120px]" title={project.owner.name || project.owner.id}>Owner: {project.owner.name || project.owner.id}</span>
             : <span className="text-xs text-muted/70">—</span>}
         </td>
         <td className="px-2 py-2.5">
@@ -709,10 +709,10 @@ function ProjectRow({ project, depth = 0, onClick, onReload, canRename = false, 
         {showSignalColumns ? <td className="px-2 py-2.5 text-center"><MetricCell value={project.reports_count} /></td> : null}
         <td className="px-2 py-2.5">
           {!normalizedStatus || normalizedStatus === "active"
-            ? <span className="text-xs text-muted/60">—</span>
+            ? <span className="text-xs text-muted/70">—</span>
             : <StatusBadge status={project.status} />}
         </td>
-        <td className="px-2 py-2.5 text-xs text-muted/80 text-right">{ts(project.rollup_activity_at || project.updated_at) || "—"}</td>
+        <td className="px-2 py-2.5 text-xs text-fg/60 text-right">{ts(project.rollup_activity_at || project.updated_at) || "—"}</td>
         <LastActivityCell node={project} maxWidthClass="max-w-[180px]" quiet />
         <td className="px-2 py-2.5 w-8 text-right relative" onClick={(e) => e.stopPropagation()}>
           <button
@@ -1014,7 +1014,7 @@ function ExplorerPane({
               <col className="w-8" />
             </colgroup>
             <thead>
-              <tr className="border-b border-border/80 bg-panelAlt/25 text-[11px] uppercase tracking-wide text-muted/90">
+              <tr className="border-b border-border/80 bg-panelAlt/25 text-[11px] uppercase tracking-wide text-fg/65">
                 <th className="px-2 py-2">Название</th>
                 <th className="px-2 py-2">Тип</th>
                 <th className="px-2 py-2 text-center">Папки / Сессии</th>
@@ -1250,11 +1250,11 @@ function SessionRow({
             <StatusBadge status={session.status} />
           )}
         </td>
-        <td className="px-2 py-2.5 text-[11px] text-muted/85">{session.stage || "—"}</td>
+        <td className="px-2 py-2.5 text-[11px] text-fg/65">{session.stage || "—"}</td>
         <td className="px-2 py-2.5">
           {session.owner
-            ? <span className="text-[11px] text-muted/85 truncate block max-w-[88px]" title={session.owner.name || session.owner.id}>{session.owner.name || session.owner.id}</span>
-            : <span className="text-[11px] text-muted/55">—</span>}
+            ? <span className="text-[11px] text-fg/65 truncate block max-w-[88px]" title={session.owner.name || session.owner.id}>{session.owner.name || session.owner.id}</span>
+            : <span className="text-[11px] text-muted/65">—</span>}
         </td>
         <td className="px-2 py-2.5"><DodBar percent={session.dod_percent} /></td>
         {showSignalColumns ? (
@@ -1267,7 +1267,7 @@ function SessionRow({
             <MetricCell value={session.reports_count} />
           </td>
         ) : null}
-        <td className="px-2 py-2.5 text-[11px] text-muted/85 text-right">{ts(session.updated_at)}</td>
+        <td className="px-2 py-2.5 text-[11px] text-fg/65 text-right">{ts(session.updated_at)}</td>
         <td className="px-2 py-2.5 text-right">
           <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
             <AppRouteLink
@@ -1533,7 +1533,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
               <col className="w-[124px]" />
             </colgroup>
             <thead>
-              <tr className="border-b border-border/80 bg-panelAlt/25 text-[11px] uppercase tracking-wide text-muted/90">
+              <tr className="border-b border-border/80 bg-panelAlt/25 text-[11px] uppercase tracking-wide text-fg/65">
                 <th className="px-3 py-2 w-5" />
                 <th className="px-2 py-2">Название</th>
                 <th className="px-2 py-2">Статус</th>
