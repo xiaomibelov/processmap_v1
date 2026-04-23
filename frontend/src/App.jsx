@@ -3265,6 +3265,7 @@ export default function App() {
         sessionId={String(draft?.session_id || "")}
         sessionTitle={currentSessionTitle}
         selectedElement={selectedBpmnElement}
+        legacyElementNotesMap={draft?.notes_by_element || draft?.notesByElementId || null}
         disabled={locked || isSessionLocalMode}
         externalOpenRequest={notesPanelOpenRequest}
       />
