@@ -35,7 +35,7 @@ import { buildVisibleRows, hasFolderChildren } from "./work3TreeState.js";
 import { useWorkspaceExplorerController } from "./useWorkspaceExplorerController.js";
 import AppRouteLink from "../../components/navigation/AppRouteLink.jsx";
 import NotesAggregateBadge from "../../components/NotesAggregateBadge.jsx";
-import { buildAppWorkspaceHref } from "../navigation/appLinkBehavior.js";
+import { buildAppWorkspaceHref, shouldHandleClientNavigation } from "../navigation/appLinkBehavior.js";
 
 // ─── Icons (inline SVG to avoid external deps) ────────────────────────────────
 function IcoFolder({ open = false, className = "" }) {
