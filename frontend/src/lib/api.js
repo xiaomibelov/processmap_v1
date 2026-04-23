@@ -376,6 +376,45 @@ export async function apiListNoteThreads(sessionId, filters = {}) {
   };
 }
 
+function normalizeNoteAggregate(data, fallback = {}) {
+  const count = Math.max(0, Number(data?.open_notes_count || 0) || 0);
+  return {
+    ...fallback,
+    ...(isPlainObject(data) ? data : {}),
+    open_notes_count: count,
+    has_open_notes: Boolean(data?.has_open_notes || count > 0),
+  };
+}
+
+export async function apiGetSessionNoteAggregate(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.sessions.noteAggregate(sid)));
+  return r.ok
+    ? { ok: true, status: r.status, aggregate: normalizeNoteAggregate(r.data, { scope_type: "session", session_id: sid }) }
+    : r;
+}
+
+export async function apiGetProjectNoteAggregate(projectId) {
+  const pid = String(projectId || "").trim();
+  if (!pid) return { ok: false, status: 0, error: "missing project_id" };
+  const r = okOrError(await request(apiRoutes.noteAggregates.project(pid)));
+  return r.ok
+    ? { ok: true, status: r.status, aggregate: normalizeNoteAggregate(r.data, { scope_type: "project", project_id: pid }) }
+    : r;
+}
+
+export async function apiGetFolderNoteAggregate(folderId, workspaceId) {
+  const fid = String(folderId || "").trim();
+  const wid = String(workspaceId || "").trim();
+  if (!fid) return { ok: false, status: 0, error: "missing folder_id" };
+  if (!wid) return { ok: false, status: 0, error: "missing workspace_id" };
+  const r = okOrError(await request(apiRoutes.noteAggregates.folder(fid, wid)));
+  return r.ok
+    ? { ok: true, status: r.status, aggregate: normalizeNoteAggregate(r.data, { scope_type: "folder", folder_id: fid, workspace_id: wid }) }
+    : r;
+}
+
 export async function apiCreateNoteThread(sessionId, payload = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
