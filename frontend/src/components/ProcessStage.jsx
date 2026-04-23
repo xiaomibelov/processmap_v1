@@ -4724,7 +4724,7 @@ export default function ProcessStage({
       return;
     }
     if (source.includes("notes_badge_click")) {
-      onOpenElementNotes?.(selected, "header_open_notes");
+      onOpenElementNotes?.(selected, "notes_marker_open");
     }
   }
 

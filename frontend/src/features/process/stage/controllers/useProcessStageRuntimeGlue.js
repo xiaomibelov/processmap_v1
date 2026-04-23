@@ -284,7 +284,7 @@ export default function useProcessStageRuntimeGlue({
 
   function openSelectedElementNotes() {
     if (!selectedElementContext) return;
-    onOpenElementNotes?.(selectedElementContext, "header_open_notes");
+    onOpenElementNotes?.(selectedElementContext, "selected_element_notes_open");
     setDiagramActionOverflowOpen(false);
   }
 
