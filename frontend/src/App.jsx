@@ -1750,6 +1750,9 @@ export default function App() {
     }
     if (source === "header_open_ai") {
       setSidebarActiveSection("ai");
+    } else if (source === "header_open_notes") {
+      setSidebarActiveSection("notes");
+      setSidebarShortcutRequest("notes");
     } else {
       setSidebarActiveSection("selected");
     }
