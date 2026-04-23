@@ -241,7 +241,7 @@ function DodBar({ percent }) {
 }
 
 function MetricCell({ label, value, warn = false }) {
-  if (!value) return <span className="text-muted text-xs">—</span>;
+  if (!value) return <span className="text-[10px] text-muted/30"> </span>;
   return (
     <span className={`text-xs font-medium ${warn && value > 0 ? "text-warning" : "text-muted"}`}>
       {value}
@@ -249,10 +249,10 @@ function MetricCell({ label, value, warn = false }) {
   );
 }
 
-function LastActivityCell({ node, maxWidthClass = "max-w-[220px]" }) {
+function LastActivityCell({ node, maxWidthClass = "max-w-[220px]", quiet = false }) {
   const label = activitySourceLabel(node);
   return (
-    <td className="px-2 py-2.5 text-xs text-muted">
+    <td className={`px-2 py-2.5 text-xs ${quiet ? "text-muted/75" : "text-muted"}`}>
       <div className={`w-full ${maxWidthClass} truncate`} title={label}>
         {label}
       </div>
@@ -272,6 +272,24 @@ function SummaryPill({ label, value, tone = "default" }) {
       <span className="uppercase tracking-[0.14em] text-[10px] opacity-60">{label}</span>
       <span className="font-medium whitespace-nowrap">{value}</span>
     </div>
+  );
+}
+
+function BreadcrumbChip({ children, active = false, onClick }) {
+  const className = active
+    ? "inline-flex max-w-[180px] items-center truncate rounded-full border border-accent/35 bg-accent/10 px-2.5 py-1 text-xs font-medium text-fg"
+    : "inline-flex max-w-[180px] items-center truncate rounded-full border border-border bg-panelAlt/50 px-2.5 py-1 text-xs text-muted transition-colors hover:border-border/80 hover:bg-panelAlt hover:text-fg";
+  if (typeof onClick === "function") {
+    return (
+      <button type="button" onClick={onClick} className={className}>
+        <span className="truncate">{children}</span>
+      </button>
+    );
+  }
+  return (
+    <span className={className}>
+      <span className="truncate">{children}</span>
+    </span>
   );
 }
 
@@ -582,20 +600,20 @@ function FolderRow({
           {folder.child_folder_count ?? 0} / {folder.descendant_sessions_count ?? 0}
         </td>
         <td className="px-2 py-2.5 text-xs text-muted text-center">
-          <span className="text-[11px] text-muted/80">Проектов: {folder.descendant_projects_count ?? 0}</span>
+          <span className="text-[11px] text-muted/65">Проектов: {folder.descendant_projects_count ?? 0}</span>
         </td>
         <td className="px-2 py-2.5">
           {dodPercent && dodPercent > 0 ? <DodBar percent={dodPercent} /> : <span className="text-xs text-muted/70">—</span>}
         </td>
         {showSignalColumns ? <td className="px-2 py-2.5 text-xs text-muted text-center">—</td> : null}
         {showSignalColumns ? <td className="px-2 py-2.5 text-xs text-muted text-center">—</td> : null}
-        <td className="px-2 py-2.5 text-xs text-muted">—</td>
-        <td className="px-2 py-2.5 text-xs text-muted text-right">{ts(folder.rollup_activity_at || folder.updated_at) || "—"}</td>
-        <LastActivityCell node={folder} />
+        <td className="px-2 py-2.5 text-xs text-muted/50">—</td>
+        <td className="px-2 py-2.5 text-xs text-muted/70 text-right">{ts(folder.rollup_activity_at || folder.updated_at) || "—"}</td>
+        <LastActivityCell node={folder} maxWidthClass="max-w-[180px]" quiet />
         <td className="px-2 py-2.5 w-8 text-right relative" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={() => setMenuOpen((v) => !v)}
-            className="opacity-60 group-hover:opacity-100 text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
+            className="opacity-45 group-hover:opacity-100 text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
             title="Действия с папкой"
             aria-label="Действия с папкой"
           >
@@ -681,7 +699,7 @@ function ProjectRow({ project, depth = 0, onClick, onReload, canRename = false, 
         </td>
         <td className="px-2 py-2.5">
           {project.owner
-            ? <span className="text-[11px] text-muted/80 truncate block max-w-[130px]" title={project.owner.name || project.owner.id}>Owner: {project.owner.name || project.owner.id}</span>
+            ? <span className="text-[11px] text-muted/65 truncate block max-w-[120px]" title={project.owner.name || project.owner.id}>Owner: {project.owner.name || project.owner.id}</span>
             : <span className="text-xs text-muted/70">—</span>}
         </td>
         <td className="px-2 py-2.5">
@@ -691,15 +709,15 @@ function ProjectRow({ project, depth = 0, onClick, onReload, canRename = false, 
         {showSignalColumns ? <td className="px-2 py-2.5 text-center"><MetricCell value={project.reports_count} /></td> : null}
         <td className="px-2 py-2.5">
           {!normalizedStatus || normalizedStatus === "active"
-            ? <span className="text-xs text-muted/70">—</span>
+            ? <span className="text-xs text-muted/50">—</span>
             : <StatusBadge status={project.status} />}
         </td>
-        <td className="px-2 py-2.5 text-xs text-muted text-right">{ts(project.rollup_activity_at || project.updated_at) || "—"}</td>
-        <LastActivityCell node={project} />
+        <td className="px-2 py-2.5 text-xs text-muted/70 text-right">{ts(project.rollup_activity_at || project.updated_at) || "—"}</td>
+        <LastActivityCell node={project} maxWidthClass="max-w-[180px]" quiet />
         <td className="px-2 py-2.5 w-8 text-right relative" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={() => setMenuOpen((v) => !v)}
-            className="opacity-60 group-hover:opacity-100 text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
+            className="opacity-45 group-hover:opacity-100 text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
             title="Действия с проектом"
             aria-label="Действия с проектом"
           >···</button>
@@ -986,13 +1004,13 @@ function ExplorerPane({
               <col />
               <col className="w-[88px]" />
               <col className="w-[108px]" />
-              <col className="w-[126px]" />
+              <col className="w-[112px]" />
               <col className="w-[92px]" />
               {treeColumnProfile.showSignalColumns ? <col className="w-[36px]" /> : null}
               {treeColumnProfile.showSignalColumns ? <col className="w-[36px]" /> : null}
-              <col className="w-[108px]" />
-              <col className="w-[104px]" />
-              <col className="w-[220px]" />
+              <col className="w-[88px]" />
+              <col className="w-[96px]" />
+              <col className="w-[180px]" />
               <col className="w-8" />
             </colgroup>
             <thead>
@@ -1167,20 +1185,26 @@ function SessionRow({
       >
         <td className="px-3 py-2.5 w-5"><IcoSession className="text-muted" /></td>
         <td className="px-2 py-2.5 text-sm font-medium text-fg">
-          <AppRouteLink
-            className={`block min-w-0 truncate ${isOpening ? "cursor-progress text-muted" : "hover:underline"}`}
-            href={sessionHref}
-            onNavigate={() => onOpen(session)}
-            title={session.name}
-            aria-busy={isOpening ? "true" : undefined}
-          >
-            {session.name}
-          </AppRouteLink>
+          <div className="min-w-0">
+            <AppRouteLink
+              className={`block min-w-0 truncate ${isOpening ? "cursor-progress text-muted" : "hover:underline"}`}
+              href={sessionHref}
+              onNavigate={() => onOpen(session)}
+              title={session.name}
+              aria-busy={isOpening ? "true" : undefined}
+            >
+              {session.name}
+            </AppRouteLink>
+            <span className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-normal text-accent/75">
+              <span>{isOpening ? "Открываем сессию" : "Открыть сессию"}</span>
+              <IcoChevron right className="text-[10px]" />
+            </span>
+          </div>
         </td>
         <td className="px-2 py-2.5">
           {canChangeStatus ? (
             <select
-              className={`h-8 min-h-0 w-[150px] rounded-full border px-3 text-xs font-medium outline-none transition-colors ${sessionStatusMeta.selectClass}`}
+              className={`h-8 min-h-0 w-[138px] rounded-full border px-3 text-xs font-medium outline-none transition-colors ${sessionStatusMeta.selectClass}`}
               value={String(session.status || "draft")}
               onPointerDown={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
@@ -1226,11 +1250,11 @@ function SessionRow({
             <StatusBadge status={session.status} />
           )}
         </td>
-        <td className="px-2 py-2.5 text-xs text-muted">{session.stage || "—"}</td>
+        <td className="px-2 py-2.5 text-[11px] text-muted/80">{session.stage || "—"}</td>
         <td className="px-2 py-2.5">
           {session.owner
-            ? <span className="text-xs text-muted truncate block max-w-[100px]">{session.owner.name || session.owner.id}</span>
-            : <span className="text-xs text-muted">—</span>}
+            ? <span className="text-[11px] text-muted/80 truncate block max-w-[88px]" title={session.owner.name || session.owner.id}>{session.owner.name || session.owner.id}</span>
+            : <span className="text-[11px] text-muted/45">—</span>}
         </td>
         <td className="px-2 py-2.5"><DodBar percent={session.dod_percent} /></td>
         {showSignalColumns ? (
@@ -1243,11 +1267,11 @@ function SessionRow({
             <MetricCell value={session.reports_count} />
           </td>
         ) : null}
-        <td className="px-2 py-2.5 text-xs text-muted text-right">{ts(session.updated_at)}</td>
+        <td className="px-2 py-2.5 text-[11px] text-muted/75 text-right">{ts(session.updated_at)}</td>
         <td className="px-2 py-2.5 text-right">
           <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
             <AppRouteLink
-              className={`primaryBtn h-7 px-3 text-xs transition-opacity ${isOpening ? "opacity-100 cursor-progress" : "opacity-0 group-hover:opacity-100"}`}
+              className={`secondaryBtn h-7 min-h-0 px-3 text-xs whitespace-nowrap transition-colors ${isOpening ? "cursor-progress" : "hover:border-accent/40 hover:text-fg"}`}
               href={sessionHref}
               onNavigate={() => onOpen(session)}
               aria-busy={isOpening ? "true" : undefined}
@@ -1258,15 +1282,17 @@ function SessionRow({
                   Открывается...
                 </span>
               ) : (
-                "Открыть →"
+                "Открыть"
               )}
             </AppRouteLink>
             {(canRename || canDelete) ? (
               <div className="relative">
                 <button
                   type="button"
-                  className="opacity-0 group-hover:opacity-100 text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded border border-transparent text-muted transition-colors hover:border-border hover:bg-panelAlt hover:text-fg"
                   onClick={() => setMenuOpen((v) => !v)}
+                  title="Действия сессии"
+                  aria-label="Действия сессии"
                 >
                   ···
                 </button>
@@ -1393,6 +1419,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   }, [onOpenSession]);
 
   const backCrumbs = breadcrumbBase || [];
+  const parentCrumb = backCrumbs.length ? backCrumbs[backCrumbs.length - 1] : null;
 
   if (loading) {
     return (
@@ -1412,15 +1439,32 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       {/* Header */}
       <div className="px-4 pt-3 pb-2 border-b border-border flex-shrink-0">
-        {/* Breadcrumb */}
-        <nav className="flex items-center gap-1 text-sm text-muted mb-2">
-          {backCrumbs.map((c, i) => (
-            <React.Fragment key={`${c.type}-${c.id}`}>
-              {i > 0 && <IcoChevron right className="text-muted/50 shrink-0" />}
-              <button onClick={() => onBack(c)} className="hover:text-fg hover:underline truncate max-w-[140px]">{c.name}</button>
-            </React.Fragment>
-          ))}
-        </nav>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          {parentCrumb ? (
+            <button
+              type="button"
+              onClick={() => onBack(parentCrumb)}
+              className="secondaryBtn h-8 min-h-0 px-3 text-xs font-medium"
+            >
+              ← Назад к разделу
+            </button>
+          ) : null}
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted/70">Навигация</span>
+            {backCrumbs.map((c, i) => (
+              <React.Fragment key={`${c.type}-${c.id}`}>
+                {i > 0 && <IcoChevron right className="shrink-0 text-muted/35" />}
+                <BreadcrumbChip onClick={() => onBack(c)}>{c.name}</BreadcrumbChip>
+              </React.Fragment>
+            ))}
+            {proj ? (
+              <>
+                {backCrumbs.length ? <IcoChevron right className="shrink-0 text-muted/35" /> : null}
+                <BreadcrumbChip active>{proj.name}</BreadcrumbChip>
+              </>
+            ) : null}
+          </div>
+        </div>
 
         {/* Project info strip */}
         {proj && (
@@ -1476,6 +1520,18 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
       ) : (
         <div className="flex-1 overflow-y-auto">
           <table className="w-full text-left border-collapse">
+            <colgroup>
+              <col className="w-5" />
+              <col />
+              <col className="w-[154px]" />
+              <col className="w-[92px]" />
+              <col className="w-[96px]" />
+              <col className="w-[90px]" />
+              {sessionColumnProfile.showSignalColumns ? <col className="w-[42px]" /> : null}
+              {sessionColumnProfile.showSignalColumns ? <col className="w-[42px]" /> : null}
+              <col className="w-[104px]" />
+              <col className="w-[124px]" />
+            </colgroup>
             <thead>
               <tr className="text-[11px] uppercase tracking-wide text-muted border-b border-border">
                 <th className="px-3 py-2 w-5" />
