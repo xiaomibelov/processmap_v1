@@ -15,10 +15,10 @@ const STATUS_OPTIONS = [
 ];
 
 const SCOPE_OPTIONS = [
-  { value: "all", label: "Все scopes" },
+  { value: "all", label: "Все контексты" },
   { value: "diagram_element", label: "Элемент" },
   { value: "diagram", label: "Диаграмма" },
-  { value: "session", label: "Сессия" },
+  { value: "session", label: "Общее" },
 ];
 
 function text(value) {
@@ -51,16 +51,20 @@ function scopeLabel(thread) {
     return text(scopeRef.element_name || scopeRef.element_title || scopeRef.element_id) || "Элемент";
   }
   if (scopeType === "diagram") return "Диаграмма";
-  if (scopeType === "session") return "Сессия";
-  return scopeType || "Scope";
+  if (scopeType === "session") return "Общее обсуждение";
+  return scopeType || "Контекст";
 }
 
 function scopeBadge(thread) {
   const scopeType = text(thread?.scope_type);
   if (scopeType === "diagram_element") return "ЭЛЕМЕНТ";
   if (scopeType === "diagram") return "ДИАГРАММА";
-  if (scopeType === "session") return "СЕССИЯ";
-  return "NOTE";
+  if (scopeType === "session") return "ОБЩЕЕ";
+  return "ЗАМЕТКА";
+}
+
+function scopeStatusLabel(status) {
+  return text(status) === "resolved" ? "решено" : "открыто";
 }
 
 function firstCommentText(thread) {
@@ -128,6 +132,31 @@ export default function NotesMvpPanel({
   const commentDraft = commentDraftByThread[text(selectedThread?.id)] || "";
   const canUseSelectedElementScope = !!selectedElementId;
   const canCreateCurrentScope = createScope !== "diagram_element" || canUseSelectedElementScope;
+  const selectedElementName = text(selectedElement?.name || selectedElementId);
+  const contextOptions = useMemo(() => [
+    {
+      value: "session",
+      label: "Общее",
+      helper: "Для всей сессии",
+      disabled: false,
+    },
+    {
+      value: "diagram",
+      label: "Диаграмма",
+      helper: "Для текущей схемы",
+      disabled: false,
+    },
+    {
+      value: "diagram_element",
+      label: canUseSelectedElementScope ? `Элемент: ${selectedElementName}` : "Элемент",
+      helper: canUseSelectedElementScope ? "К выбранному BPMN-элементу" : "Сначала выберите элемент",
+      disabled: !canUseSelectedElementScope,
+    },
+  ], [canUseSelectedElementScope, selectedElementName]);
+  const createContextHint = useMemo(() => {
+    const current = contextOptions.find((item) => item.value === createScope);
+    return current?.helper || "Выберите контекст заметки";
+  }, [contextOptions, createScope]);
 
   const refreshAggregate = useCallback(async () => {
     if (!sid) {
@@ -268,54 +297,54 @@ export default function NotesMvpPanel({
     <>
       {!open ? (
         <div className="fixed bottom-5 right-5 z-[86] flex max-w-[min(92vw,560px)] flex-wrap justify-end gap-2">
-          <button type="button" className="primaryBtn smallBtn shadow-panel" onClick={() => openForScope("session")} disabled={disabled}>
+          <button type="button" className="primaryBtn smallBtn shadow-panel" onClick={() => openForScope("session")} disabled={disabled} title="Открыть заметки">
             <span className="inline-flex items-center gap-2">
+              <span aria-hidden="true">▤</span>
               <span>Заметки</span>
               <NotesAggregateBadge aggregate={aggregate} compact className="bg-white/70 px-1.5 py-0 text-[10px]" />
             </span>
-          </button>
-          <button type="button" className="secondaryBtn smallBtn shadow-panel" onClick={() => openForScope("diagram")} disabled={disabled}>
-            К диаграмме
-          </button>
-          <button
-            type="button"
-            className="secondaryBtn smallBtn shadow-panel"
-            onClick={() => openForScope("diagram_element")}
-            disabled={disabled || !canUseSelectedElementScope}
-            title={canUseSelectedElementScope ? "Создать заметку к выбранному BPMN-элементу" : "Сначала выберите BPMN-элемент"}
-          >
-            К элементу
           </button>
         </div>
       ) : null}
 
       {open ? (
-        <div className="fixed inset-y-0 right-0 z-[88] flex w-[min(720px,96vw)] flex-col border-l border-border bg-panel shadow-panel">
-          <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
-            <div className="min-w-0">
-              <div className="text-sm font-black text-fg">Notes MVP-1</div>
-              <div className="mt-0.5 truncate text-xs text-muted">
-                {text(sessionTitle) || "Сессия"} · новые заметки отдельно от legacy notes
+        <div className="fixed bottom-4 right-4 top-16 z-[88] flex w-[min(700px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-border bg-panel shadow-panel max-sm:bottom-2 max-sm:right-2 max-sm:top-14 max-sm:w-[calc(100vw-1rem)]">
+          <div className="border-b border-border bg-bg/45 px-4 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="text-base font-black text-fg">Заметки</div>
+                  <NotesAggregateBadge aggregate={aggregate} className="bg-white/80" />
+                </div>
+                <div className="mt-1 truncate text-xs text-muted">
+                  {text(sessionTitle) || "Сессия"} · обсуждения и контекстные заметки
+                </div>
               </div>
+              <button type="button" className="secondaryBtn smallBtn" onClick={() => setOpen(false)} aria-label="Закрыть заметки">
+                Закрыть
+              </button>
             </div>
-            <button type="button" className="secondaryBtn smallBtn" onClick={() => setOpen(false)}>
-              Закрыть
-            </button>
           </div>
 
           <div className="grid min-h-0 flex-1 grid-cols-[minmax(230px,300px)_1fr] gap-0 overflow-hidden max-lg:grid-cols-1">
             <div className="flex min-h-0 flex-col border-r border-border bg-bg/35 p-3 max-lg:border-b max-lg:border-r-0">
-              <div className="grid grid-cols-2 gap-2">
-                <select className="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-                  {STATUS_OPTIONS.map((item) => (
-                    <option key={item.value} value={item.value}>{item.label}</option>
-                  ))}
-                </select>
-                <select className="select" value={scopeFilter} onChange={(event) => setScopeFilter(event.target.value)}>
-                  {SCOPE_OPTIONS.map((item) => (
-                    <option key={item.value} value={item.value}>{item.label}</option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-2 gap-2" aria-label="Фильтры заметок">
+                <label className="grid gap-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">
+                  Статус
+                  <select className="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                    {STATUS_OPTIONS.map((item) => (
+                      <option key={item.value} value={item.value}>{item.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">
+                  Контекст
+                  <select className="select" value={scopeFilter} onChange={(event) => setScopeFilter(event.target.value)}>
+                    {SCOPE_OPTIONS.map((item) => (
+                      <option key={item.value} value={item.value}>{item.label}</option>
+                    ))}
+                  </select>
+                </label>
               </div>
 
               {scopeFilter === "diagram_element" ? (
@@ -331,7 +360,10 @@ export default function NotesMvpPanel({
               ) : null}
 
               <div className="mt-3 flex items-center justify-between gap-2">
-                <div className="text-xs font-bold uppercase tracking-[0.14em] text-muted">Threads</div>
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-[0.14em] text-muted">Обсуждения</div>
+                  <div className="text-[11px] text-muted">{loading ? "Обновляем список..." : `Найдено: ${threads.length}`}</div>
+                </div>
                 <button type="button" className="secondaryBtn tinyBtn" onClick={fetchThreads} disabled={loading}>
                   {loading ? "..." : "Обновить"}
                 </button>
@@ -353,7 +385,7 @@ export default function NotesMvpPanel({
                           <div className="mb-1 flex items-center gap-2">
                             <span className="badge">{scopeBadge(thread)}</span>
                             <span className={`badge ${text(thread?.status) === "resolved" ? "ok" : "warn"}`}>
-                              {text(thread?.status) === "resolved" ? "resolved" : "open"}
+                              {scopeStatusLabel(thread?.status)}
                             </span>
                           </div>
                           <div className="truncate text-sm font-bold text-fg">{scopeLabel(thread)}</div>
@@ -365,7 +397,7 @@ export default function NotesMvpPanel({
                   </div>
                 ) : (
                   <div className="rounded-xl border border-dashed border-border p-3 text-xs text-muted">
-                    {loading ? "Загрузка заметок..." : "Заметок по текущему фильтру нет."}
+                    {loading ? "Загружаем заметки..." : "По текущим фильтрам заметок нет."}
                   </div>
                 )}
               </div>
@@ -373,46 +405,44 @@ export default function NotesMvpPanel({
 
             <div className="flex min-h-0 flex-col overflow-hidden">
               <div className="border-b border-border p-3">
-                <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    className={`secondaryBtn tinyBtn ${createScope === "session" ? "isActive" : ""}`}
-                    onClick={() => setCreateScope("session")}
-                  >
-                    Сессия
-                  </button>
-                  <button
-                    type="button"
-                    className={`secondaryBtn tinyBtn ${createScope === "diagram" ? "isActive" : ""}`}
-                    onClick={() => setCreateScope("diagram")}
-                  >
-                    Диаграмма
-                  </button>
-                  <button
-                    type="button"
-                    className={`secondaryBtn tinyBtn ${createScope === "diagram_element" ? "isActive" : ""}`}
-                    onClick={() => setCreateScope("diagram_element")}
-                    disabled={!canUseSelectedElementScope}
-                    title={canUseSelectedElementScope ? selectedElementId : "Выберите BPMN-элемент"}
-                  >
-                    Элемент
-                  </button>
+                <div className="mb-2">
+                  <div className="text-xs font-bold uppercase tracking-[0.14em] text-muted">Новая заметка</div>
+                  <div className="mt-1 text-xs text-muted">Выберите, к чему относится обсуждение.</div>
+                </div>
+                <div className="mb-2 flex flex-wrap items-center gap-2" aria-label="Контекст новой заметки">
+                  {contextOptions.map((item) => {
+                    const active = createScope === item.value;
+                    return (
+                      <button
+                        key={item.value}
+                        type="button"
+                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                          active
+                            ? "border-accent bg-accent/10 text-fg shadow-sm"
+                            : "border-border bg-panel/80 text-muted hover:border-accent/50 hover:text-fg"
+                        }`}
+                        onClick={() => setCreateScope(item.value)}
+                        disabled={item.disabled}
+                        title={item.helper}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
                 </div>
                 <textarea
                   className="textarea min-h-[86px] w-full"
                   value={createDraft}
                   onChange={(event) => setCreateDraftByScope((prev) => ({ ...prev, [createScope]: event.target.value }))}
-                  placeholder={createScope === "diagram_element" && selectedElementId ? `Заметка к элементу ${selectedElementId}` : "Новая заметка..."}
+                  placeholder={createScope === "diagram_element" && selectedElementId ? `Что важно зафиксировать по элементу ${selectedElementName}?` : "Напишите заметку или начните обсуждение..."}
                   disabled={disabled || !canCreateCurrentScope}
                 />
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs text-muted">
-                    {createScope === "diagram_element"
-                      ? (selectedElementId ? `Scope: element ${selectedElementId}` : "Scope: element не выбран")
-                      : `Scope: ${createScope}`}
+                    {createContextHint}
                   </div>
                   <button type="button" className="primaryBtn smallBtn" onClick={createThread} disabled={busy === "create" || !text(createDraft) || !canCreateCurrentScope}>
-                    {busy === "create" ? "Создание..." : "Создать thread"}
+                    {busy === "create" ? "Создаём..." : "Создать заметку"}
                   </button>
                 </div>
               </div>
@@ -431,16 +461,16 @@ export default function NotesMvpPanel({
                         <div>
                           <div className="text-sm font-black text-fg">{scopeLabel(selectedThread)}</div>
                           <div className="text-xs text-muted">
-                            {scopeBadge(selectedThread)} · {text(selectedThread.status) || "open"} · {formatDate(selectedThread.updated_at)}
+                            {scopeBadge(selectedThread)} · {scopeStatusLabel(selectedThread.status)} · {formatDate(selectedThread.updated_at)}
                           </div>
                         </div>
                         {text(selectedThread.status) === "resolved" ? (
                           <button type="button" className="secondaryBtn smallBtn" onClick={() => patchStatus("open")} disabled={busy.startsWith("status:")}>
-                            Reopen
+                            Открыть снова
                           </button>
                         ) : (
                           <button type="button" className="secondaryBtn smallBtn" onClick={() => patchStatus("resolved")} disabled={busy.startsWith("status:")}>
-                            Resolve
+                            Решить
                           </button>
                         )}
                       </div>
@@ -478,7 +508,7 @@ export default function NotesMvpPanel({
                   </div>
                 ) : (
                   <div className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">
-                    Выберите thread слева или создайте новую заметку.
+                    Выберите обсуждение слева или создайте новую заметку.
                   </div>
                 )}
               </div>
