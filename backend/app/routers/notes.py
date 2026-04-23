@@ -7,7 +7,12 @@ from pydantic import BaseModel, Field
 
 from .. import storage
 from ..legacy.request_context import require_authenticated_user, request_active_org_id
-from ..services.org_workspace import can_edit_workspace, project_access_allowed, require_org_member_for_enterprise
+from ..services.org_workspace import (
+    can_edit_workspace,
+    project_access_allowed,
+    project_scope_for_request,
+    require_org_member_for_enterprise,
+)
 
 router = APIRouter(tags=["notes"])
 
@@ -24,6 +29,42 @@ class AddNoteCommentBody(BaseModel):
 
 class PatchNoteThreadBody(BaseModel):
     status: str
+
+
+def _load_project_for_notes(request: Request, project_id: str) -> tuple[Any, str, str]:
+    user_id = require_authenticated_user(request)
+    org_id = request_active_org_id(request)
+    require_org_member_for_enterprise(request, org_id)
+    pid = str(project_id or "").strip()
+    if not pid:
+        raise HTTPException(status_code=404, detail="project not found")
+    if not project_access_allowed(request, org_id, pid):
+        raise HTTPException(status_code=404, detail="project not found")
+    project = storage.get_project_storage().load(pid, org_id=org_id, is_admin=True)
+    if not project:
+        raise HTTPException(status_code=404, detail="project not found")
+    return project, org_id, user_id
+
+
+def _load_folder_for_notes(request: Request, folder_id: str, workspace_id: str) -> tuple[Dict[str, Any], str, str, str, Optional[list[str]]]:
+    user_id = require_authenticated_user(request)
+    org_id = request_active_org_id(request)
+    require_org_member_for_enterprise(request, org_id)
+    wid = str(workspace_id or "").strip()
+    if not wid:
+        raise HTTPException(status_code=422, detail="workspace_id required")
+    folder = storage.get_workspace_folder(org_id, wid, folder_id)
+    if not folder:
+        raise HTTPException(status_code=404, detail="folder not found")
+    scope = project_scope_for_request(request, org_id)
+    allowed_project_ids = None
+    if str((scope or {}).get("mode") or "") != "all":
+        allowed_project_ids = [
+            str(item or "").strip()
+            for item in ((scope or {}).get("project_ids") or [])
+            if str(item or "").strip()
+        ]
+    return folder, org_id, wid, user_id, allowed_project_ids
 
 
 def _load_session_for_notes(request: Request, session_id: str, *, write: bool) -> tuple[Any, str, str]:
@@ -63,6 +104,32 @@ def _load_thread_session_for_notes(request: Request, thread_id: str, *, write: b
 
 def _validation_error(exc: ValueError) -> HTTPException:
     return HTTPException(status_code=422, detail=str(exc) or "validation error")
+
+
+@router.get("/api/sessions/{session_id}/note-aggregate")
+def get_session_note_aggregate(session_id: str, request: Request) -> Dict[str, Any]:
+    _sess, org_id, _user_id = _load_session_for_notes(request, session_id, write=False)
+    aggregate = storage.get_session_open_notes_aggregate(session_id, org_id=org_id)
+    return {"scope_type": "session", "session_id": session_id, **aggregate}
+
+
+@router.get("/api/projects/{project_id}/note-aggregate")
+def get_project_note_aggregate(project_id: str, request: Request) -> Dict[str, Any]:
+    _project, org_id, _user_id = _load_project_for_notes(request, project_id)
+    aggregate = storage.get_project_open_notes_aggregate(project_id, org_id=org_id)
+    return {"scope_type": "project", "project_id": project_id, **aggregate}
+
+
+@router.get("/api/folders/{folder_id}/note-aggregate")
+def get_folder_note_aggregate(folder_id: str, request: Request, workspace_id: str) -> Dict[str, Any]:
+    _folder, org_id, wid, _user_id, allowed_project_ids = _load_folder_for_notes(request, folder_id, workspace_id)
+    aggregate = storage.get_folder_open_notes_aggregate(
+        folder_id,
+        org_id=org_id,
+        workspace_id=wid,
+        allowed_project_ids=allowed_project_ids,
+    )
+    return {"scope_type": "folder", "folder_id": folder_id, "workspace_id": wid, **aggregate}
 
 
 @router.post("/api/sessions/{session_id}/note-threads", status_code=201)
