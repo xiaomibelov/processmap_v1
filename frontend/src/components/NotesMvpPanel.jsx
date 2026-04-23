@@ -6,6 +6,10 @@ import {
   apiListNoteThreads,
   apiPatchNoteThread,
 } from "../lib/api";
+import {
+  buildLegacyElementBridgeThread,
+  injectLegacyBridgeThread,
+} from "../features/notes/legacyNotesBridge.js";
 import NotesAggregateBadge from "./NotesAggregateBadge.jsx";
 
 const STATUS_OPTIONS = [
@@ -79,6 +83,10 @@ function scopeMeta(thread) {
   return { short: "Контекст", long: scopeType || "Контекст", relation: scopeType || "Контекст" };
 }
 
+function isLegacyBridgeThread(thread) {
+  return Boolean(thread?.legacy_bridge);
+}
+
 function statusLabel(status) {
   return text(status) === "resolved" ? "Закрыто" : "Открыто";
 }
@@ -89,15 +97,29 @@ function statusTone(status) {
     : "border-sky-300 bg-sky-50 text-sky-900";
 }
 
+function threadStatusLabel(thread) {
+  return isLegacyBridgeThread(thread) ? "Legacy" : statusLabel(thread?.status);
+}
+
+function threadStatusTone(thread) {
+  return isLegacyBridgeThread(thread)
+    ? "border-amber-300 bg-amber-50 text-amber-900"
+    : statusTone(thread?.status);
+}
+
 function firstComment(thread) {
   return asArray(thread?.comments)[0] || null;
 }
 
 function threadPreview(thread) {
+  if (isLegacyBridgeThread(thread)) {
+    return text(thread?.legacy_summary) || text(firstComment(thread)?.body) || "Локальные заметки элемента";
+  }
   return text(firstComment(thread)?.body) || "Без текста";
 }
 
 function threadTitle(thread) {
+  if (isLegacyBridgeThread(thread)) return "Локальные заметки элемента";
   const preview = threadPreview(thread)
     .split("\n")
     .map(text)
@@ -167,6 +189,7 @@ export default function NotesMvpPanel({
   sessionId,
   sessionTitle = "",
   selectedElement = null,
+  legacyElementNotesMap = null,
   disabled = false,
   externalOpenRequest = null,
 }) {
@@ -220,9 +243,21 @@ export default function NotesMvpPanel({
     },
   ], [canUseSelectedElementScope, selectedElementName]);
 
+  const legacyBridgeThread = useMemo(() => buildLegacyElementBridgeThread({
+    notesMap: legacyElementNotesMap,
+    elementId: selectedElementId,
+    elementName: selectedElementName,
+    elementType: text(selectedElement?.type),
+  }), [legacyElementNotesMap, selectedElement?.type, selectedElementId, selectedElementName]);
+
+  const displayThreads = useMemo(() => {
+    if (scopeFilter !== "selected_element") return asArray(threads);
+    return injectLegacyBridgeThread(threads, legacyBridgeThread);
+  }, [legacyBridgeThread, scopeFilter, threads]);
+
   const visibleThreads = useMemo(() => {
     const query = text(searchQuery).toLowerCase();
-    const filtered = asArray(threads).filter((thread) => {
+    const filtered = asArray(displayThreads).filter((thread) => {
       if (!query) return true;
       return threadSearchText(thread).includes(query);
     });
@@ -231,11 +266,12 @@ export default function NotesMvpPanel({
       return sortOrder === "oldest" ? -delta : delta;
     });
     return filtered;
-  }, [searchQuery, sortOrder, threads]);
+  }, [displayThreads, searchQuery, sortOrder]);
 
   const selectedThread = useMemo(() => {
     return visibleThreads.find((item) => text(item?.id) === selectedThreadId) || visibleThreads[0] || null;
   }, [selectedThreadId, visibleThreads]);
+  const selectedThreadIsLegacyBridge = isLegacyBridgeThread(selectedThread);
 
   const commentDraft = commentDraftByThread[text(selectedThread?.id)] || "";
 
@@ -354,7 +390,7 @@ export default function NotesMvpPanel({
   async function addComment() {
     const threadId = text(selectedThread?.id);
     const body = text(commentDraft);
-    if (!threadId || !body || disabled) return;
+    if (!threadId || !body || disabled || selectedThreadIsLegacyBridge) return;
     setBusy(`comment:${threadId}`);
     setError("");
     const result = await apiAddNoteThreadComment(threadId, { body });
@@ -375,7 +411,7 @@ export default function NotesMvpPanel({
   async function patchStatus(status) {
     const threadId = text(selectedThread?.id);
     const nextStatus = text(status);
-    if (!threadId || !nextStatus || disabled) return;
+    if (!threadId || !nextStatus || disabled || selectedThreadIsLegacyBridge) return;
     setBusy(`status:${threadId}`);
     setError("");
     const result = await apiPatchNoteThread(threadId, { status: nextStatus });
@@ -454,8 +490,8 @@ export default function NotesMvpPanel({
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <div className="text-xl font-black leading-snug text-fg">{threadTitle(selectedThread)}</div>
-                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${statusTone(selectedThread?.status)}`}>
-                            {statusLabel(selectedThread?.status)}
+                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${threadStatusTone(selectedThread)}`}>
+                            {threadStatusLabel(selectedThread)}
                           </span>
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
@@ -463,20 +499,31 @@ export default function NotesMvpPanel({
                           <span>Последняя активность: {formatDate(threadUpdatedAt(selectedThread)) || "сейчас"}</span>
                           <span>Сообщений: {asArray(selectedThread.comments).length}</span>
                         </div>
+                        {selectedThreadIsLegacyBridge ? (
+                          <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
+                            Это read-only bridge из legacy `notes_by_element`. История показана для совместимости, но новые ответы и смена статуса здесь не поддерживаются.
+                          </div>
+                        ) : null}
                       </div>
-                      {text(selectedThread.status) === "resolved" ? (
+                      {!selectedThreadIsLegacyBridge && text(selectedThread.status) === "resolved" ? (
                         <button type="button" className="secondaryBtn smallBtn" onClick={() => patchStatus("open")} disabled={busy.startsWith("status:")}>
                           Вернуть в открытые
                         </button>
-                      ) : (
+                      ) : !selectedThreadIsLegacyBridge ? (
                         <button type="button" className="secondaryBtn smallBtn" onClick={() => patchStatus("resolved")} disabled={busy.startsWith("status:")}>
                           Закрыть обсуждение
                         </button>
-                      )}
+                      ) : null}
                     </div>
                   </div>
 
                   <div className="min-h-0 overflow-auto bg-bg/15 px-5 py-4">
+                    {selectedThreadIsLegacyBridge && text(selectedThread?.legacy_summary) ? (
+                      <div className="mb-3 rounded-2xl border border-amber-200/80 bg-panel px-4 py-3 shadow-sm">
+                        <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-amber-900">Legacy summary</div>
+                        <div className="mt-1 text-sm leading-relaxed text-fg">{text(selectedThread.legacy_summary)}</div>
+                      </div>
+                    ) : null}
                     <div className="grid gap-3">
                       {asArray(selectedThread.comments).map((comment, idx) => {
                         const author = authorLabel(comment?.author_user_id);
@@ -500,27 +547,35 @@ export default function NotesMvpPanel({
                     </div>
                   </div>
 
-                  <div className="border-t border-border bg-panel px-5 py-4">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <div className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Ответить</div>
-                      <div className="text-[11px] text-muted">Сообщение добавится в текущее обсуждение.</div>
+                  {selectedThreadIsLegacyBridge ? (
+                    <div className="border-t border-border bg-panel px-5 py-4">
+                      <div className="rounded-2xl border border-dashed border-border bg-bg/40 px-4 py-3 text-sm text-muted">
+                        Для новых ответов создайте discussion в новом Notes domain. Этот блок показывает только legacy local notes по выбранному элементу.
+                      </div>
                     </div>
-                    <textarea
-                      className="textarea min-h-[88px] w-full text-sm"
-                      value={commentDraft}
-                      onChange={(event) => {
-                        const threadId = text(selectedThread?.id);
-                        setCommentDraftByThread((prev) => ({ ...prev, [threadId]: event.target.value }));
-                      }}
-                      placeholder="Напишите сообщение..."
-                      disabled={disabled}
-                    />
-                    <div className="mt-3 flex items-center justify-end gap-3">
-                      <button type="button" className="primaryBtn smallBtn" onClick={addComment} disabled={busy.startsWith("comment:") || !text(commentDraft)}>
-                        {busy.startsWith("comment:") ? "Отправляем..." : "Отправить"}
-                      </button>
+                  ) : (
+                    <div className="border-t border-border bg-panel px-5 py-4">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <div className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Ответить</div>
+                        <div className="text-[11px] text-muted">Сообщение добавится в текущее обсуждение.</div>
+                      </div>
+                      <textarea
+                        className="textarea min-h-[88px] w-full text-sm"
+                        value={commentDraft}
+                        onChange={(event) => {
+                          const threadId = text(selectedThread?.id);
+                          setCommentDraftByThread((prev) => ({ ...prev, [threadId]: event.target.value }));
+                        }}
+                        placeholder="Напишите сообщение..."
+                        disabled={disabled}
+                      />
+                      <div className="mt-3 flex items-center justify-end gap-3">
+                        <button type="button" className="primaryBtn smallBtn" onClick={addComment} disabled={busy.startsWith("comment:") || !text(commentDraft)}>
+                          {busy.startsWith("comment:") ? "Отправляем..." : "Отправить"}
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               ) : (
                 <div className="flex min-h-full flex-1 items-center justify-center bg-bg/15 p-8 text-center">
@@ -539,7 +594,7 @@ export default function NotesMvpPanel({
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted">Обсуждения</div>
-                    <div className="truncate text-[11px] text-muted">{loading ? "Обновляем..." : `${visibleThreads.length} из ${threads.length}`}</div>
+                    <div className="truncate text-[11px] text-muted">{loading ? "Обновляем..." : `${visibleThreads.length} из ${displayThreads.length}`}</div>
                   </div>
                   <button
                     type="button"
@@ -675,8 +730,8 @@ export default function NotesMvpPanel({
                               <div className="line-clamp-2 text-[13px] font-black leading-snug text-fg">{threadTitle(thread)}</div>
                               <div className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted">{threadPreview(thread)}</div>
                             </div>
-                            <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${statusTone(thread?.status)}`}>
-                              {statusLabel(thread?.status)}
+                            <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${threadStatusTone(thread)}`}>
+                              {threadStatusLabel(thread)}
                             </span>
                           </div>
                           <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
