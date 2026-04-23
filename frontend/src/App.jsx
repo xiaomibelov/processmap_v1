@@ -3266,6 +3266,7 @@ export default function App() {
         sessionTitle={currentSessionTitle}
         selectedElement={selectedBpmnElement}
         legacyElementNotesMap={draft?.notes_by_element || draft?.notesByElementId || null}
+        onAddLegacyElementNote={addElementNote}
         disabled={locked || isSessionLocalMode}
         externalOpenRequest={notesPanelOpenRequest}
       />
