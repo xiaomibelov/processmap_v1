@@ -842,6 +842,7 @@ export default function App() {
   const [deleteDialog, setDeleteDialog] = useState({ open: false, scope: "", error: "", busy: false });
   const [showPropertiesOverlayAlways, setShowPropertiesOverlayAlways] = useState(false);
   const [elementNotesFocusKey, setElementNotesFocusKey] = useState(0);
+  const [notesPanelOpenRequest, setNotesPanelOpenRequest] = useState(null);
   const [llmHasApiKey, setLlmHasApiKey] = useState(false);
   const [llmBaseUrl, setLlmBaseUrl] = useState("https://api.deepseek.com");
   const [llmSaving, setLlmSaving] = useState(false);
@@ -1733,6 +1734,10 @@ export default function App() {
       return;
     }
     setSelectedBpmnElement(next);
+    const shouldOpenNotesPanel = (
+      source === "notes_marker_open"
+      || source === "selected_element_notes_open"
+    );
     const shouldOpenSidebar = (
       options?.openSidebar === true
       || source === "header_open_notes"
@@ -1755,6 +1760,12 @@ export default function App() {
       setSidebarShortcutRequest("notes");
     } else {
       setSidebarActiveSection("selected");
+    }
+    if (shouldOpenNotesPanel) {
+      setNotesPanelOpenRequest({
+        requestKey: `${Date.now()}:${next.id}:${source}`,
+        scopeFilter: "selected_element",
+      });
     }
     setElementNotesFocusKey((x) => x + 1);
     if (shouldLogDraftTrace()) {
@@ -3255,6 +3266,7 @@ export default function App() {
         sessionTitle={currentSessionTitle}
         selectedElement={selectedBpmnElement}
         disabled={locked || isSessionLocalMode}
+        externalOpenRequest={notesPanelOpenRequest}
       />
 
       <OrgSettingsModal
