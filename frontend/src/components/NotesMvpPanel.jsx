@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   apiAddNoteThreadComment,
   apiCreateNoteThread,
+  apiGetSessionNoteAggregate,
   apiListNoteThreads,
   apiPatchNoteThread,
 } from "../lib/api";
+import NotesAggregateBadge from "./NotesAggregateBadge.jsx";
 
 const STATUS_OPTIONS = [
   { value: "open", label: "Открытые" },
@@ -82,6 +84,15 @@ function buildScopeRef(scopeType, selectedElement) {
   return {};
 }
 
+function emitNotesAggregateChanged(sessionId) {
+  if (typeof window === "undefined") return;
+  const sid = text(sessionId);
+  if (!sid) return;
+  window.dispatchEvent(new CustomEvent("processmap:notes-aggregate-changed", {
+    detail: { sessionId: sid },
+  }));
+}
+
 export default function NotesMvpPanel({
   sessionId,
   sessionTitle = "",
@@ -106,6 +117,8 @@ export default function NotesMvpPanel({
     session: "",
   });
   const [commentDraftByThread, setCommentDraftByThread] = useState({});
+  const [aggregate, setAggregate] = useState(null);
+  const [aggregateRefreshTick, setAggregateRefreshTick] = useState(0);
 
   const selectedThread = useMemo(() => {
     return threads.find((item) => text(item?.id) === selectedThreadId) || threads[0] || null;
@@ -115,6 +128,17 @@ export default function NotesMvpPanel({
   const commentDraft = commentDraftByThread[text(selectedThread?.id)] || "";
   const canUseSelectedElementScope = !!selectedElementId;
   const canCreateCurrentScope = createScope !== "diagram_element" || canUseSelectedElementScope;
+
+  const refreshAggregate = useCallback(async () => {
+    if (!sid) {
+      setAggregate(null);
+      return;
+    }
+    const result = await apiGetSessionNoteAggregate(sid);
+    if (result?.ok) {
+      setAggregate(result.aggregate || null);
+    }
+  }, [sid]);
 
   const fetchThreads = useCallback(async (options = {}) => {
     if (!sid || !open) return;
@@ -149,9 +173,14 @@ export default function NotesMvpPanel({
   }, [fetchThreads]);
 
   useEffect(() => {
+    void refreshAggregate();
+  }, [aggregateRefreshTick, refreshAggregate]);
+
+  useEffect(() => {
     setThreads([]);
     setSelectedThreadId("");
     setError("");
+    setAggregate(null);
   }, [sid]);
 
   function openForScope(scopeType) {
@@ -187,6 +216,8 @@ export default function NotesMvpPanel({
     setCreateDraftByScope((prev) => ({ ...prev, [scopeKey]: "" }));
     setSelectedThreadId(nextThreadId);
     await fetchThreads({ preferredThreadId: nextThreadId });
+    setAggregateRefreshTick((value) => value + 1);
+    emitNotesAggregateChanged(sid);
     setCreateDraftByScope((prev) => (prev[scopeKey] ? { ...prev, [scopeKey]: "" } : prev));
     setBusy("");
   }
@@ -206,6 +237,8 @@ export default function NotesMvpPanel({
     setCommentDraftByThread((prev) => ({ ...prev, [threadId]: "" }));
     setSelectedThreadId(threadId);
     await fetchThreads({ preferredThreadId: threadId });
+    setAggregateRefreshTick((value) => value + 1);
+    emitNotesAggregateChanged(sid);
     setCommentDraftByThread((prev) => (prev[threadId] ? { ...prev, [threadId]: "" } : prev));
     setBusy("");
   }
@@ -224,6 +257,8 @@ export default function NotesMvpPanel({
     }
     setSelectedThreadId(threadId);
     await fetchThreads();
+    setAggregateRefreshTick((value) => value + 1);
+    emitNotesAggregateChanged(sid);
     setBusy("");
   }
 
@@ -234,7 +269,10 @@ export default function NotesMvpPanel({
       {!open ? (
         <div className="fixed bottom-5 right-5 z-[86] flex max-w-[min(92vw,560px)] flex-wrap justify-end gap-2">
           <button type="button" className="primaryBtn smallBtn shadow-panel" onClick={() => openForScope("session")} disabled={disabled}>
-            Заметки
+            <span className="inline-flex items-center gap-2">
+              <span>Заметки</span>
+              <NotesAggregateBadge aggregate={aggregate} compact className="bg-white/70 px-1.5 py-0 text-[10px]" />
+            </span>
           </button>
           <button type="button" className="secondaryBtn smallBtn shadow-panel" onClick={() => openForScope("diagram")} disabled={disabled}>
             К диаграмме

@@ -103,6 +103,7 @@ export const apiRoutes = {
     node: (sessionId, nodeId) => `/api/sessions/${encode(sessionId)}/nodes/${encode(nodeId)}`,
     edges: (sessionId) => `/api/sessions/${encode(sessionId)}/edges`,
     notes: (sessionId) => `/api/sessions/${encode(sessionId)}/notes`,
+    noteAggregate: (sessionId) => `/api/sessions/${encode(sessionId)}/note-aggregate`,
     noteThreads: (sessionId, filters = {}) => withQuery(`/api/sessions/${encode(sessionId)}/note-threads`, {
       status: String(filters?.status || "").trim(),
       scope_type: String(filters?.scopeType || filters?.scope_type || "").trim(),
@@ -148,6 +149,12 @@ export const apiRoutes = {
   noteThreads: {
     item: (threadId) => `/api/note-threads/${encode(threadId)}`,
     comments: (threadId) => `/api/note-threads/${encode(threadId)}/comments`,
+  },
+  noteAggregates: {
+    project: (projectId) => `/api/projects/${encode(projectId)}/note-aggregate`,
+    folder: (folderId, workspaceId) => withQuery(`/api/folders/${encode(folderId)}/note-aggregate`, {
+      workspace_id: String(workspaceId || "").trim(),
+    }),
   },
   llm: {
     sessionTitleQuestions: () => "/api/llm/session-title/questions",
