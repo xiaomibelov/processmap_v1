@@ -440,6 +440,72 @@ def _normalize_git_mirror_health_status(value: Any) -> str:
     return status if status in _GIT_MIRROR_HEALTH_STATUSES else "unknown"
 
 
+NOTE_SCOPE_TYPES = {"diagram_element", "diagram", "session"}
+NOTE_THREAD_STATUSES = {"open", "resolved"}
+
+
+def _normalize_note_scope(scope_type: Any, scope_ref: Any) -> Tuple[str, Dict[str, Any]]:
+    normalized_type = str(scope_type or "").strip().lower()
+    if normalized_type not in NOTE_SCOPE_TYPES:
+        raise ValueError("invalid scope_type")
+    raw_ref = scope_ref if isinstance(scope_ref, dict) else {}
+    if normalized_type == "diagram_element":
+        element_id = str(raw_ref.get("element_id") or "").strip()
+        if not element_id:
+            raise ValueError("element_id required")
+        return normalized_type, {"element_id": element_id}
+    return normalized_type, {}
+
+
+def _normalize_note_status(status: Any) -> str:
+    normalized = str(status or "").strip().lower()
+    if normalized not in NOTE_THREAD_STATUSES:
+        raise ValueError("invalid status")
+    return normalized
+
+
+def _note_thread_row_to_dict(row: Any) -> Dict[str, Any]:
+    return {
+        "id": str(_row_value(row, "id") or ""),
+        "org_id": str(_row_value(row, "org_id") or ""),
+        "workspace_id": str(_row_value(row, "workspace_id") or ""),
+        "project_id": str(_row_value(row, "project_id") or ""),
+        "session_id": str(_row_value(row, "session_id") or ""),
+        "scope_type": str(_row_value(row, "scope_type") or ""),
+        "scope_ref": _json_loads(_row_value(row, "scope_ref_json"), {}),
+        "status": str(_row_value(row, "status") or "open"),
+        "created_by": str(_row_value(row, "created_by") or ""),
+        "created_at": int(_row_value(row, "created_at") or 0),
+        "updated_at": int(_row_value(row, "updated_at") or 0),
+        "resolved_by": str(_row_value(row, "resolved_by") or ""),
+        "resolved_at": int(_row_value(row, "resolved_at") or 0),
+    }
+
+
+def _note_comment_row_to_dict(row: Any) -> Dict[str, Any]:
+    return {
+        "id": str(_row_value(row, "id") or ""),
+        "thread_id": str(_row_value(row, "thread_id") or ""),
+        "author_user_id": str(_row_value(row, "author_user_id") or ""),
+        "body": str(_row_value(row, "body") or ""),
+        "created_at": int(_row_value(row, "created_at") or 0),
+        "updated_at": int(_row_value(row, "updated_at") or 0),
+    }
+
+
+def _project_workspace_id_for_session(con: Any, sess: Session, org_id: str) -> str:
+    project_id = str(getattr(sess, "project_id", "") or "").strip()
+    if not project_id:
+        return ""
+    row = con.execute(
+        "SELECT workspace_id FROM projects WHERE id = ? AND org_id = ? LIMIT 1",
+        [project_id, str(org_id or "").strip() or _default_org_id()],
+    ).fetchone()
+    if not row:
+        return ""
+    return str(_row_value(row, "workspace_id") or "").strip()
+
+
 def _opt_text(value: Any) -> Optional[str]:
     text = str(value or "").strip()
     return text or None
@@ -602,6 +668,40 @@ def _ensure_schema() -> None:
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_session_state_versions_session_created ON session_state_versions(session_id, org_id, created_at DESC)"
             )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS note_threads (
+                  id TEXT PRIMARY KEY,
+                  org_id TEXT NOT NULL DEFAULT 'org_default',
+                  workspace_id TEXT NOT NULL DEFAULT '',
+                  project_id TEXT NOT NULL DEFAULT '',
+                  session_id TEXT NOT NULL,
+                  scope_type TEXT NOT NULL,
+                  scope_ref_json TEXT NOT NULL DEFAULT '{}',
+                  status TEXT NOT NULL DEFAULT 'open',
+                  created_by TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  resolved_by TEXT NOT NULL DEFAULT '',
+                  resolved_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_threads_session_status ON note_threads(session_id, org_id, status, updated_at DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_threads_project_status ON note_threads(project_id, org_id, status)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS note_comments (
+                  id TEXT PRIMARY KEY,
+                  thread_id TEXT NOT NULL,
+                  author_user_id TEXT NOT NULL DEFAULT '',
+                  body TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_comments_thread_created ON note_comments(thread_id, created_at ASC)")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS orgs (
@@ -937,6 +1037,40 @@ def _ensure_schema() -> None:
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_session_state_versions_session_created ON session_state_versions(session_id, org_id, created_at DESC)"
             )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS note_threads (
+                  id TEXT PRIMARY KEY,
+                  org_id TEXT NOT NULL DEFAULT 'org_default',
+                  workspace_id TEXT NOT NULL DEFAULT '',
+                  project_id TEXT NOT NULL DEFAULT '',
+                  session_id TEXT NOT NULL,
+                  scope_type TEXT NOT NULL,
+                  scope_ref_json TEXT NOT NULL DEFAULT '{}',
+                  status TEXT NOT NULL DEFAULT 'open',
+                  created_by TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  resolved_by TEXT NOT NULL DEFAULT '',
+                  resolved_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_threads_session_status ON note_threads(session_id, org_id, status, updated_at DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_threads_project_status ON note_threads(project_id, org_id, status)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS note_comments (
+                  id TEXT PRIMARY KEY,
+                  thread_id TEXT NOT NULL,
+                  author_user_id TEXT NOT NULL DEFAULT '',
+                  body TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_comments_thread_created ON note_comments(thread_id, created_at ASC)")
             if not _column_exists(con, "org_invites", "team_name"):
                 con.execute("ALTER TABLE org_invites ADD COLUMN team_name TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "org_invites", "subgroup_name"):
@@ -5484,6 +5618,237 @@ def startup_db_check() -> Dict[str, Any]:
 
 def get_storage() -> Storage:
     return Storage(base_dir=_db_base_dir())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Notes MVP-1 truth storage
+# ─────────────────────────────────────────────────────────────────────────────
+
+def create_note_thread(
+    sess: Session,
+    *,
+    scope_type: Any,
+    scope_ref: Any,
+    body: Any,
+    actor_user_id: str,
+    org_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    _ensure_schema()
+    text = str(body or "").strip()
+    if not text:
+        raise ValueError("body required")
+    normalized_scope_type, normalized_scope_ref = _normalize_note_scope(scope_type, scope_ref)
+    sid = str(getattr(sess, "id", "") or "").strip()
+    if not sid:
+        raise ValueError("session_id required")
+    oid = str(org_id or getattr(sess, "org_id", "") or "").strip() or _default_org_id()
+    project_id = str(getattr(sess, "project_id", "") or "").strip()
+    actor = str(actor_user_id or "").strip()
+    now = _now_ts()
+    thread_id = uuid.uuid4().hex[:12]
+    comment_id = uuid.uuid4().hex[:12]
+    with _connect() as con:
+        workspace_id = _project_workspace_id_for_session(con, sess, oid)
+        con.execute(
+            """
+            INSERT INTO note_threads (
+              id, org_id, workspace_id, project_id, session_id, scope_type, scope_ref_json,
+              status, created_by, created_at, updated_at, resolved_by, resolved_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, '', 0)
+            """,
+            [
+                thread_id,
+                oid,
+                workspace_id,
+                project_id,
+                sid,
+                normalized_scope_type,
+                _json_dumps(normalized_scope_ref, {}),
+                actor,
+                now,
+                now,
+            ],
+        )
+        con.execute(
+            """
+            INSERT INTO note_comments (id, thread_id, author_user_id, body, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [comment_id, thread_id, actor, text, now, now],
+        )
+        con.commit()
+    thread = get_note_thread(thread_id, org_id=oid)
+    if not thread:
+        raise RuntimeError("note thread was not persisted")
+    return thread
+
+
+def get_note_thread(thread_id: str, *, org_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    _ensure_schema()
+    tid = str(thread_id or "").strip()
+    if not tid:
+        return None
+    oid = str(org_id or "").strip()
+    filters = ["id = ?"]
+    params: List[Any] = [tid]
+    if oid:
+        filters.append("org_id = ?")
+        params.append(oid)
+    with _connect() as con:
+        thread_row = con.execute(
+            f"SELECT * FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
+            params,
+        ).fetchone()
+        if not thread_row:
+            return None
+        comment_rows = con.execute(
+            "SELECT * FROM note_comments WHERE thread_id = ? ORDER BY created_at ASC, id ASC",
+            [tid],
+        ).fetchall()
+    thread = _note_thread_row_to_dict(thread_row)
+    thread["comments"] = [_note_comment_row_to_dict(row) for row in comment_rows]
+    return thread
+
+
+def list_note_threads(
+    session_id: str,
+    *,
+    org_id: Optional[str] = None,
+    status: Optional[str] = None,
+    scope_type: Optional[str] = None,
+    element_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    _ensure_schema()
+    sid = str(session_id or "").strip()
+    if not sid:
+        return []
+    normalized_status = _normalize_note_status(status) if status is not None and str(status or "").strip() else None
+    normalized_scope_type = None
+    if scope_type is not None and str(scope_type or "").strip():
+        normalized_scope_type, _ = _normalize_note_scope(scope_type, {"element_id": "__filter__"} if str(scope_type or "").strip().lower() == "diagram_element" else {})
+    filters = ["session_id = ?"]
+    params: List[Any] = [sid]
+    oid = str(org_id or "").strip()
+    if oid:
+        filters.append("org_id = ?")
+        params.append(oid)
+    if normalized_status:
+        filters.append("status = ?")
+        params.append(normalized_status)
+    if normalized_scope_type:
+        filters.append("scope_type = ?")
+        params.append(normalized_scope_type)
+    with _connect() as con:
+        thread_rows = con.execute(
+            f"SELECT * FROM note_threads WHERE {' AND '.join(filters)} ORDER BY updated_at DESC, created_at DESC",
+            params,
+        ).fetchall()
+        thread_ids = [str(_row_value(row, "id") or "") for row in thread_rows]
+        comment_rows: Dict[str, List[Dict[str, Any]]] = {tid: [] for tid in thread_ids if tid}
+        if thread_ids:
+            placeholders = ", ".join(["?"] * len(thread_ids))
+            for row in con.execute(
+                f"SELECT * FROM note_comments WHERE thread_id IN ({placeholders}) ORDER BY created_at ASC, id ASC",
+                thread_ids,
+            ).fetchall():
+                comment = _note_comment_row_to_dict(row)
+                comment_rows.setdefault(str(comment.get("thread_id") or ""), []).append(comment)
+    element_filter = str(element_id or "").strip()
+    out: List[Dict[str, Any]] = []
+    for row in thread_rows:
+        thread = _note_thread_row_to_dict(row)
+        if element_filter:
+            if thread.get("scope_type") != "diagram_element":
+                continue
+            scope_ref = thread.get("scope_ref") if isinstance(thread.get("scope_ref"), dict) else {}
+            if str(scope_ref.get("element_id") or "").strip() != element_filter:
+                continue
+        thread["comments"] = comment_rows.get(str(thread.get("id") or ""), [])
+        out.append(thread)
+    return out
+
+
+def add_note_comment(
+    thread_id: str,
+    *,
+    body: Any,
+    actor_user_id: str,
+    org_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    _ensure_schema()
+    text = str(body or "").strip()
+    if not text:
+        raise ValueError("body required")
+    tid = str(thread_id or "").strip()
+    if not tid:
+        return None
+    oid = str(org_id or "").strip()
+    filters = ["id = ?"]
+    params: List[Any] = [tid]
+    if oid:
+        filters.append("org_id = ?")
+        params.append(oid)
+    actor = str(actor_user_id or "").strip()
+    now = _now_ts()
+    comment_id = uuid.uuid4().hex[:12]
+    with _connect() as con:
+        thread_row = con.execute(
+            f"SELECT id FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
+            params,
+        ).fetchone()
+        if not thread_row:
+            return None
+        con.execute(
+            """
+            INSERT INTO note_comments (id, thread_id, author_user_id, body, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [comment_id, tid, actor, text, now, now],
+        )
+        con.execute("UPDATE note_threads SET updated_at = ? WHERE id = ?", [now, tid])
+        con.commit()
+    return get_note_thread(tid, org_id=oid or None)
+
+
+def patch_note_thread_status(
+    thread_id: str,
+    *,
+    status: Any,
+    actor_user_id: str,
+    org_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    _ensure_schema()
+    next_status = _normalize_note_status(status)
+    tid = str(thread_id or "").strip()
+    if not tid:
+        return None
+    oid = str(org_id or "").strip()
+    filters = ["id = ?"]
+    params: List[Any] = [tid]
+    if oid:
+        filters.append("org_id = ?")
+        params.append(oid)
+    actor = str(actor_user_id or "").strip()
+    now = _now_ts()
+    resolved_by = actor if next_status == "resolved" else ""
+    resolved_at = now if next_status == "resolved" else 0
+    with _connect() as con:
+        thread_row = con.execute(
+            f"SELECT id FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
+            params,
+        ).fetchone()
+        if not thread_row:
+            return None
+        con.execute(
+            """
+            UPDATE note_threads
+               SET status = ?, updated_at = ?, resolved_by = ?, resolved_at = ?
+             WHERE id = ?
+            """,
+            [next_status, now, resolved_by, resolved_at, tid],
+        )
+        con.commit()
+    return get_note_thread(tid, org_id=oid or None)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
