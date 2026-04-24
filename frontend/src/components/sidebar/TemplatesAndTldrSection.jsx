@@ -1,5 +1,4 @@
 import SidebarSection from "./SidebarSection";
-import TldrCard from "../../features/tldr/ui/TldrCard";
 
 export default function TemplatesAndTldrSection({
   open,
@@ -7,27 +6,18 @@ export default function TemplatesAndTldrSection({
   contentOnly = false,
   selectedElementId,
   selectedTemplate,
-  tldr,
   disabled,
   elementBusy,
   onInsertTemplate,
-  onRefreshTldr,
-  tldrRefreshing = false,
   templateErr,
 }) {
   const hasSelected = !!selectedElementId;
-  const hasTldr = !tldr?.empty && !!String(tldr?.summary || "").trim();
   const summary = hasSelected
-    ? `Шаблон: ${selectedTemplate?.title || "—"} · TL;DR: ${hasTldr ? "готово" : "нет"}`
-    : `TL;DR: ${hasTldr ? "готово" : "нет данных"}`;
+    ? `Шаблон: ${selectedTemplate?.title || "—"}`
+    : "Выберите узел для шаблона";
 
   const content = (
     <>
-      <TldrCard
-        tldr={tldr}
-        refreshing={tldrRefreshing}
-        onRefresh={onRefreshTldr}
-      />
       {!hasSelected ? (
         <div className="mt-2 rounded-md border border-dashed border-border px-2 py-2 text-xs text-muted">
           Выберите узел на диаграмме, чтобы вставлять шаблоны.
@@ -62,11 +52,10 @@ export default function TemplatesAndTldrSection({
   return (
     <SidebarSection
       sectionId="templates"
-      title="Шаблоны и TL;DR"
+      title="Шаблоны"
       summary={summary}
       open={open}
       onToggle={onToggle}
-      badge={hasTldr ? "LIVE" : ""}
     >
       {content}
     </SidebarSection>

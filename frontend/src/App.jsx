@@ -8,6 +8,7 @@ import ProjectWizardModal from "./components/ProjectWizardModal";
 import SessionFlowModal from "./components/SessionFlowModal";
 import OrgSettingsModal from "./components/org/OrgSettingsModal";
 import Modal from "./shared/ui/Modal";
+import DerivedContextSurface from "./features/tldr/ui/DerivedContextSurface";
 import useSessionStore from "./features/sessions/hooks/useSessionStore";
 import {
   normalizeElementNotesMap,
@@ -1232,7 +1233,6 @@ export default function App() {
     const actorsCount = Array.isArray(draft?.actors_derived) && draft.actors_derived.length
       ? draft.actors_derived.length
       : (Array.isArray(draft?.roles) ? draft.roles.length : 0);
-    const hasSummary = !!String(notesMap?.[selectedElementId]?.summary || notesMap?.[selectedElementId]?.meta?.summary || "").trim();
     return [
       {
         id: "selected",
@@ -1257,8 +1257,8 @@ export default function App() {
       },
       {
         id: "templates",
-        title: "Шаблоны / TL;DR",
-        count: hasSummary ? 1 : 0,
+        title: "Шаблоны",
+        count: selectedElementId ? 1 : 0,
         active: sidebarActiveSection === "templates",
         muted: !hasActiveSession,
       },
@@ -1266,8 +1266,6 @@ export default function App() {
   }, [
     shellSessionId,
     selectedBpmnElement?.id,
-    draft?.notes_by_element,
-    draft?.notesByElementId,
     draft?.interview?.ai_questions_by_element,
     draft?.interview?.aiQuestionsByElementId,
     draft?.actors_derived,
@@ -3269,6 +3267,11 @@ export default function App() {
         onAddLegacyElementNote={addElementNote}
         disabled={locked || isSessionLocalMode}
         externalOpenRequest={notesPanelOpenRequest}
+      />
+
+      <DerivedContextSurface
+        draft={draft}
+        sessionTitle={currentSessionTitle}
       />
 
       <OrgSettingsModal
