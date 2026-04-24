@@ -10,6 +10,10 @@ import {
   buildLegacyElementBridgeThread,
   injectLegacyBridgeThread,
 } from "../features/notes/legacyNotesBridge.js";
+import {
+  formatTemplateNoteText,
+  getNoteTemplatePreset,
+} from "../features/notes/knowledgeTools.js";
 import NotesAggregateBadge from "./NotesAggregateBadge.jsx";
 
 const STATUS_OPTIONS = [
@@ -197,6 +201,7 @@ export default function NotesMvpPanel({
   const sid = text(sessionId);
   const selectedElementId = text(selectedElement?.id);
   const selectedElementName = text(selectedElement?.name || selectedElementId);
+  const selectedElementType = text(selectedElement?.type);
 
   const [open, setOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -244,6 +249,11 @@ export default function NotesMvpPanel({
       disabled: !canUseSelectedElementScope,
     },
   ], [canUseSelectedElementScope, selectedElementName]);
+
+  const selectedTemplate = useMemo(
+    () => getNoteTemplatePreset(selectedElementType),
+    [selectedElementType],
+  );
 
   const legacyBridgeThread = useMemo(() => buildLegacyElementBridgeThread({
     notesMap: legacyElementNotesMap,
@@ -432,6 +442,28 @@ export default function NotesMvpPanel({
     setBusy("");
   }
 
+  async function insertLegacyTemplateNote() {
+    const threadId = text(selectedThread?.id);
+    const elementId = text(scopeRef(selectedThread).element_id);
+    if (!threadId || !elementId || disabled || !selectedThreadIsLegacyBridge || typeof onAddLegacyElementNote !== "function") {
+      return;
+    }
+    const templateText = formatTemplateNoteText(selectedTemplate, {
+      elementName: text(scopeRef(selectedThread).element_name || selectedElementName || elementId),
+    });
+    setBusy(`legacy:${threadId}`);
+    setError("");
+    const result = await onAddLegacyElementNote(elementId, templateText);
+    if (!result?.ok) {
+      setError(errorText(result, "Не удалось вставить шаблон локальной заметки."));
+      setBusy("");
+      return;
+    }
+    setAggregateRefreshTick((value) => value + 1);
+    emitNotesAggregateChanged(sid);
+    setBusy("");
+  }
+
   async function patchStatus(status) {
     const threadId = text(selectedThread?.id);
     const nextStatus = text(status);
@@ -591,14 +623,24 @@ export default function NotesMvpPanel({
                         <div className="text-[11px] leading-relaxed text-muted">
                           TL;DR остаётся видимым выше. Ответы в thread API и смена статуса для legacy-записей здесь по-прежнему не используются.
                         </div>
-                        <button
-                          type="button"
-                          className="primaryBtn smallBtn"
-                          onClick={addLegacyElementNote}
-                          disabled={busy.startsWith("legacy:") || !text(legacyDraft) || disabled || typeof onAddLegacyElementNote !== "function"}
-                        >
-                          {busy.startsWith("legacy:") ? "Сохраняем..." : "Сохранить локальную заметку"}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            className="secondaryBtn smallBtn"
+                            onClick={insertLegacyTemplateNote}
+                            disabled={busy.startsWith("legacy:") || disabled || typeof onAddLegacyElementNote !== "function"}
+                          >
+                            {busy.startsWith("legacy:") ? "Вставляем..." : "Вставить шаблон"}
+                          </button>
+                          <button
+                            type="button"
+                            className="primaryBtn smallBtn"
+                            onClick={addLegacyElementNote}
+                            disabled={busy.startsWith("legacy:") || !text(legacyDraft) || disabled || typeof onAddLegacyElementNote !== "function"}
+                          >
+                            {busy.startsWith("legacy:") ? "Сохраняем..." : "Сохранить локальную заметку"}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ) : (
