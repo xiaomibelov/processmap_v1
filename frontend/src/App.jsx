@@ -844,6 +844,7 @@ export default function App() {
   const [showPropertiesOverlayAlways, setShowPropertiesOverlayAlways] = useState(false);
   const [elementNotesFocusKey, setElementNotesFocusKey] = useState(0);
   const [notesPanelOpenRequest, setNotesPanelOpenRequest] = useState(null);
+  const [notesDiscussionsOpen, setNotesDiscussionsOpen] = useState(false);
   const [llmHasApiKey, setLlmHasApiKey] = useState(false);
   const [llmBaseUrl, setLlmBaseUrl] = useState("https://api.deepseek.com");
   const [llmSaving, setLlmSaving] = useState(false);
@@ -3283,11 +3284,13 @@ export default function App() {
         onAddLegacyElementNote={addElementNote}
         disabled={locked || isSessionLocalMode}
         externalOpenRequest={notesPanelOpenRequest}
+        onOpenChange={setNotesDiscussionsOpen}
       />
 
       <DerivedContextSurface
         draft={draft}
         sessionTitle={currentSessionTitle}
+        hidden={notesDiscussionsOpen}
       />
 
       <OrgSettingsModal
