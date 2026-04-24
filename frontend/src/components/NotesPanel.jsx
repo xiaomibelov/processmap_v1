@@ -2787,7 +2787,7 @@ export default function NotesPanel({
     {
       id: "advanced",
       title: "Шаблоны и акторы",
-      count: Number(roles.length || 0),
+      count: undefined,
       active: !!sectionsOpen.advanced || String(activeSectionId || "") === "advanced",
       muted: false,
     },
@@ -3071,7 +3071,7 @@ export default function NotesPanel({
                 <SidebarAccordion
                   sectionKey="advanced"
                   title="Шаблоны и акторы"
-                  badge={String(roles.length || 0)}
+                  badge=""
                   open={!!sectionsOpen.advanced}
                   onToggle={toggleSection}
                 >
