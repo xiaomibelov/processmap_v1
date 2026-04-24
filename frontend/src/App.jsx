@@ -1772,6 +1772,21 @@ export default function App() {
     }
   }
 
+  function openNotesDiscussions(options = {}) {
+    const scopeRaw = String(options?.scopeFilter || "all").trim();
+    const scopeFilter = (
+      scopeRaw === "session"
+      || scopeRaw === "diagram"
+      || scopeRaw === "selected_element"
+      || scopeRaw === "all"
+    ) ? scopeRaw : "all";
+    const source = String(options?.source || "toolbar_open_discussions").trim() || "toolbar_open_discussions";
+    setNotesPanelOpenRequest({
+      requestKey: `${Date.now()}:${scopeFilter}:${source}`,
+      scopeFilter,
+    });
+  }
+
   function handleBpmnElementSelect(element) {
     const selectedIds = ensureArray(element?.selectedIds)
       .map((item) => String(item || "").trim())
@@ -3245,6 +3260,7 @@ export default function App() {
         selectedBpmnElement={selectedBpmnElement}
         onBpmnElementSelect={handleBpmnElementSelect}
         onOpenElementNotes={focusElementNotes}
+        onOpenNotesDiscussions={openNotesDiscussions}
         onElementNotesRemap={remapElementNotes}
         onSessionSync={onSessionSync}
         onRecalculateRtiers={recalculateRtiers}
