@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   apiAddNoteThreadComment,
   apiCreateNoteThread,
@@ -224,10 +224,14 @@ export default function NotesMvpPanel({
   const [legacyDraftByThread, setLegacyDraftByThread] = useState({});
   const [aggregate, setAggregate] = useState(null);
   const [aggregateRefreshTick, setAggregateRefreshTick] = useState(0);
+  const panelRef = useRef(null);
 
   const createDraft = createDraftByScope[createScope] || "";
   const canUseSelectedElementScope = !!selectedElementId;
   const canCreateCurrentScope = createScope !== "diagram_element" || canUseSelectedElementScope;
+  const createPlaceholder = createScope === "diagram_element" && selectedElementId
+    ? `Опишите суть вопроса по элементу ${selectedElementName}`
+    : "Опишите суть вопроса";
 
   const createScopeOptions = useMemo(() => [
     {
@@ -363,6 +367,20 @@ export default function NotesMvpPanel({
     setSelectedThreadId("");
   }, [externalOpenRequest, sid]);
 
+  useEffect(() => {
+    if (!open) return undefined;
+    function handlePointerDown(event) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (panelRef.current?.contains(target)) return;
+      if (target instanceof Element && target.closest?.("[data-notes-panel-trigger='true']")) return;
+      setOpen(false);
+      setCreateOpen(false);
+    }
+    window.addEventListener("pointerdown", handlePointerDown, true);
+    return () => window.removeEventListener("pointerdown", handlePointerDown, true);
+  }, [open]);
+
   function openPanel() {
     setOpen(true);
     setCreateOpen(false);
@@ -491,47 +509,64 @@ export default function NotesMvpPanel({
         <div className="fixed bottom-5 right-5 z-[86] flex max-w-[min(92vw,560px)] flex-wrap justify-end gap-2">
           <button
             type="button"
-            className="group inline-flex items-center gap-2 rounded-full border border-sky-300/80 bg-sky-50 px-4 py-2 text-sm font-black text-sky-950 shadow-panel transition hover:-translate-y-0.5 hover:border-sky-400 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+            className="group inline-flex items-center gap-2 rounded-full border border-border bg-panel/90 px-3 py-1.5 text-xs font-bold text-fg shadow-panel transition hover:border-sky-300 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
             onClick={openPanel}
             disabled={disabled}
-            title="Открыть заметки"
+            title="Открыть обсуждения"
+            data-notes-panel-trigger="true"
           >
-            <span className="grid h-7 w-7 place-items-center rounded-full bg-sky-500/15 text-base text-sky-900" aria-hidden="true">✎</span>
-            <span>Заметки</span>
-            <NotesAggregateBadge aggregate={aggregate} compact className="border-sky-300 bg-white/80 px-1.5 py-0 text-[10px]" />
+            <span className="grid h-6 w-6 place-items-center rounded-full bg-sky-500/10 text-sm text-sky-900" aria-hidden="true">✎</span>
+            <span>Обсуждения</span>
+            <NotesAggregateBadge aggregate={aggregate} compact className="border-border bg-white/85 px-1.5 py-0 text-[10px]" />
           </button>
         </div>
       ) : null}
 
       {open ? (
-        <div className="fixed bottom-5 right-5 top-16 z-[88] flex w-[min(980px,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-[30px] border border-border bg-panel shadow-panel transition-all duration-200 max-lg:bottom-3 max-lg:right-3 max-lg:w-[calc(100vw-1.5rem)] max-sm:top-14">
+        <div
+          ref={panelRef}
+          className="fixed bottom-5 right-5 top-16 z-[88] flex w-[min(1040px,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-[30px] border border-border bg-panel shadow-panel transition-all duration-200 max-lg:bottom-3 max-lg:right-3 max-lg:w-[calc(100vw-1.5rem)] max-sm:top-14"
+        >
           <div className="border-b border-border bg-gradient-to-r from-sky-50 via-panel to-panel px-5 py-4">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="grid h-8 w-8 place-items-center rounded-2xl border border-sky-300/80 bg-white text-sky-900" aria-hidden="true">✎</span>
-                  <div className="text-lg font-black text-fg">Заметки и обсуждение</div>
+                  <div className="text-lg font-black text-fg">Обсуждения</div>
                   <NotesAggregateBadge aggregate={aggregate} className="bg-white/85" />
                 </div>
                 <div className="mt-1 truncate text-xs text-muted">
                   {text(sessionTitle) || "Сессия"} · обсуждения по сессии, диаграмме и выбранным элементам
                 </div>
               </div>
-              <button
-                type="button"
-                className="secondaryBtn smallBtn"
-                onClick={() => {
-                  setOpen(false);
-                  setCreateOpen(false);
-                }}
-                aria-label="Скрыть заметки"
-              >
-                Скрыть
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className={`primaryBtn smallBtn ${createOpen ? "ring-1 ring-sky-300" : ""}`}
+                  onClick={() => {
+                    setCreateOpen(true);
+                    setError("");
+                  }}
+                  disabled={disabled}
+                >
+                  + Новое обсуждение
+                </button>
+                <button
+                  type="button"
+                  className="secondaryBtn smallBtn"
+                  onClick={() => {
+                    setOpen(false);
+                    setCreateOpen(false);
+                  }}
+                  aria-label="Скрыть обсуждения"
+                >
+                  Скрыть
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className="grid min-h-0 flex-1 grid-cols-[1fr_minmax(282px,320px)] overflow-hidden max-lg:grid-cols-1">
+          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(300px,340px)] overflow-hidden max-lg:grid-cols-1">
             <section className="flex min-h-0 flex-col overflow-hidden border-r border-border bg-panel max-lg:border-b max-lg:border-r-0">
               {error ? (
                 <div className="mx-4 mt-4 rounded-xl border border-danger/50 bg-danger/10 px-3 py-2 text-xs text-danger">
@@ -539,7 +574,72 @@ export default function NotesMvpPanel({
                 </div>
               ) : null}
 
-              {selectedThread ? (
+              {createOpen ? (
+                <div className="flex min-h-0 flex-1 items-center justify-center bg-bg/15 px-5 py-6">
+                  <div className="flex w-full max-w-3xl flex-col rounded-[28px] border border-sky-200 bg-panel shadow-sm">
+                    <div className="border-b border-border bg-sky-50/70 px-6 py-5">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="text-2xl font-black text-fg">Новое обсуждение</div>
+                          <div className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
+                            Обсуждение создаётся в thread API и открывается в основном рабочем pane. Контекст остаётся меткой, а не отдельным режимом.
+                          </div>
+                        </div>
+                        <button type="button" className="secondaryBtn smallBtn" onClick={() => setCreateOpen(false)}>
+                          Отмена
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid gap-4 px-6 py-5">
+                      <label className="grid gap-2">
+                        <span className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Контекст обсуждения</span>
+                        <select
+                          className="select h-11 min-h-0 w-full text-sm"
+                          value={createScope}
+                          onChange={(event) => setCreateScope(event.target.value)}
+                        >
+                          {createScopeOptions.map((item) => (
+                            <option key={item.value} value={item.value} disabled={item.disabled}>{item.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="rounded-2xl border border-border bg-bg/40 px-4 py-3 text-sm leading-relaxed text-muted">
+                        {(createScopeOptions.find((item) => item.value === createScope) || {}).helper || "Выберите контекст обсуждения"}
+                      </div>
+                      <label className="grid gap-2">
+                        <span className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Суть вопроса</span>
+                        <textarea
+                          className="textarea min-h-[220px] w-full text-sm leading-relaxed"
+                          value={createDraft}
+                          onChange={(event) => setCreateDraftByScope((prev) => ({ ...prev, [createScope]: event.target.value }))}
+                          placeholder={createPlaceholder}
+                          disabled={disabled || !canCreateCurrentScope}
+                        />
+                      </label>
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="text-sm text-muted">
+                          {createScope === "diagram_element" && !canCreateCurrentScope
+                            ? "Для заметки по элементу сначала выберите BPMN-элемент на диаграмме."
+                            : "Новая тема будет создана без unread/new семантики: в текущем source truth доступен только общий count открытых обсуждений."}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button type="button" className="secondaryBtn smallBtn" onClick={() => setCreateOpen(false)}>
+                            Отмена
+                          </button>
+                          <button
+                            type="button"
+                            className="primaryBtn smallBtn"
+                            onClick={createThread}
+                            disabled={busy === "create" || !text(createDraft) || !canCreateCurrentScope}
+                          >
+                            {busy === "create" ? "Создаём..." : "Создать обсуждение"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : selectedThread ? (
                 <div className="grid min-h-0 flex-1 grid-rows-[auto_1fr_auto] overflow-hidden">
                   <div className="border-b border-border bg-panel/95 px-5 py-4">
                     <div className="flex items-start justify-between gap-4">
@@ -672,7 +772,7 @@ export default function NotesMvpPanel({
                   <div className="max-w-md rounded-3xl border border-dashed border-border bg-panel/70 px-6 py-8">
                     <div className="text-lg font-black text-fg">Выберите обсуждение</div>
                     <div className="mt-2 text-sm leading-relaxed text-muted">
-                      Справа можно найти существующую заметку, а через кнопку «Создать заметку» начать новую.
+                      Справа можно найти существующую тему, а через кнопку «+ Новое обсуждение» в шапке открыть большой compose-pane.
                     </div>
                   </div>
                 </div>
@@ -683,64 +783,66 @@ export default function NotesMvpPanel({
               <div className="rounded-2xl border border-border bg-panel/90 p-3 shadow-sm">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted">Обсуждения</div>
+                    <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted">Список обсуждений</div>
                     <div className="truncate text-[11px] text-muted">{loading ? "Обновляем..." : `${visibleThreads.length} из ${displayThreads.length}`}</div>
                   </div>
-                  <button
-                    type="button"
-                    className={`primaryBtn tinyBtn h-8 px-2.5 text-[11px] ${createOpen ? "ring-1 ring-sky-300" : ""}`}
-                    onClick={() => setCreateOpen((prev) => !prev)}
-                    disabled={disabled}
-                  >
-                    Создать заметку
+                  <button type="button" className="secondaryBtn tinyBtn h-9 px-3 text-xs" onClick={fetchThreads} disabled={loading}>
+                    {loading ? "Обновляем..." : "↻ Обновить"}
                   </button>
                 </div>
 
-                <div className="mt-2 grid gap-2">
-                  <div className="grid grid-cols-[1fr_auto] gap-2">
+                <div className="mt-3 grid gap-3">
+                  <label className="grid gap-1">
+                    <span className="text-[11px] font-semibold text-muted">Поиск</span>
                     <input
                       type="search"
-                      className="input h-8 min-h-0 text-xs"
+                      className="input h-10 min-h-0 text-sm"
                       value={searchQuery}
                       onChange={(event) => setSearchQuery(event.target.value)}
-                      placeholder="Поиск"
+                      placeholder="Поиск по обсуждениям"
                       aria-label="Поиск по обсуждениям"
                     />
-                    <button type="button" className="secondaryBtn tinyBtn h-8 px-2.5 text-[11px]" onClick={fetchThreads} disabled={loading}>
-                      {loading ? "..." : "↻"}
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <select
-                      className="select h-8 min-h-0 text-[11px]"
-                      value={statusFilter}
-                      onChange={(event) => setStatusFilter(event.target.value)}
-                      aria-label="Фильтр по статусу"
-                    >
-                      {STATUS_OPTIONS.map((item) => (
-                        <option key={item.value} value={item.value}>{item.label}</option>
-                      ))}
-                    </select>
-                    <select
-                      className="select h-8 min-h-0 text-[11px]"
-                      value={scopeFilter}
-                      onChange={(event) => setScopeFilter(event.target.value)}
-                      aria-label="Фильтр по контексту"
-                    >
-                      {CONTEXT_FILTER_OPTIONS.map((item) => (
-                        <option key={item.value} value={item.value}>{item.label}</option>
-                      ))}
-                    </select>
-                    <select
-                      className="select h-8 min-h-0 text-[11px]"
-                      value={sortOrder}
-                      onChange={(event) => setSortOrder(event.target.value)}
-                      aria-label="Порядок сортировки"
-                    >
-                      {SORT_OPTIONS.map((item) => (
-                        <option key={item.value} value={item.value}>{item.label}</option>
-                      ))}
-                    </select>
+                  </label>
+                  <div className="grid gap-2">
+                    <label className="grid gap-1">
+                      <span className="text-[11px] font-semibold text-muted">Статус</span>
+                      <select
+                        className="select h-10 min-h-0 w-full text-sm"
+                        value={statusFilter}
+                        onChange={(event) => setStatusFilter(event.target.value)}
+                        aria-label="Фильтр по статусу"
+                      >
+                        {STATUS_OPTIONS.map((item) => (
+                          <option key={item.value} value={item.value}>{item.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-[11px] font-semibold text-muted">Контекст</span>
+                      <select
+                        className="select h-10 min-h-0 w-full text-sm"
+                        value={scopeFilter}
+                        onChange={(event) => setScopeFilter(event.target.value)}
+                        aria-label="Фильтр по контексту"
+                      >
+                        {CONTEXT_FILTER_OPTIONS.map((item) => (
+                          <option key={item.value} value={item.value}>{item.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-[11px] font-semibold text-muted">Порядок</span>
+                      <select
+                        className="select h-10 min-h-0 w-full text-sm"
+                        value={sortOrder}
+                        onChange={(event) => setSortOrder(event.target.value)}
+                        aria-label="Порядок сортировки"
+                      >
+                        {SORT_OPTIONS.map((item) => (
+                          <option key={item.value} value={item.value}>{item.label}</option>
+                        ))}
+                      </select>
+                    </label>
                   </div>
                   {scopeFilter === "selected_element" && !canUseSelectedElementScope ? (
                     <div className="rounded-xl border border-border bg-bg/60 px-2.5 py-2 text-[11px] text-muted">
@@ -749,57 +851,6 @@ export default function NotesMvpPanel({
                   ) : null}
                 </div>
               </div>
-
-              {createOpen ? (
-                <div className="mt-2 rounded-2xl border border-sky-200 bg-sky-50/70 p-3 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-sm font-black text-fg">Новая заметка</div>
-                      <div className="mt-1 text-[11px] text-muted">Контекст остаётся меткой, а не отдельным режимом работы.</div>
-                    </div>
-                    <button type="button" className="secondaryBtn tinyBtn h-8 px-2.5 text-[11px]" onClick={() => setCreateOpen(false)}>
-                      Скрыть
-                    </button>
-                  </div>
-                  <div className="mt-3 grid gap-2">
-                    <label className="grid gap-1 text-[11px] font-semibold text-muted">
-                      <span>Относится к</span>
-                      <select
-                        className="select h-8 min-h-0 text-[11px]"
-                        value={createScope}
-                        onChange={(event) => setCreateScope(event.target.value)}
-                      >
-                        {createScopeOptions.map((item) => (
-                          <option key={item.value} value={item.value} disabled={item.disabled}>{item.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <div className="text-[11px] text-muted">
-                      {(createScopeOptions.find((item) => item.value === createScope) || {}).helper || "Выберите контекст заметки"}
-                    </div>
-                    <textarea
-                      className="textarea min-h-[74px] w-full text-sm"
-                      value={createDraft}
-                      onChange={(event) => setCreateDraftByScope((prev) => ({ ...prev, [createScope]: event.target.value }))}
-                      placeholder={createScope === "diagram_element" && selectedElementId ? `О чём важно написать по элементу ${selectedElementName}?` : "О чём эта заметка?"}
-                      disabled={disabled || !canCreateCurrentScope}
-                    />
-                    <div className="flex items-center justify-end gap-2">
-                      <button type="button" className="secondaryBtn tinyBtn h-8 px-2.5 text-[11px]" onClick={() => setCreateOpen(false)}>
-                        Отмена
-                      </button>
-                      <button
-                        type="button"
-                        className="primaryBtn tinyBtn h-8 px-2.5 text-[11px]"
-                        onClick={createThread}
-                        disabled={busy === "create" || !text(createDraft) || !canCreateCurrentScope}
-                      >
-                        {busy === "create" ? "Создаём..." : "Создать заметку"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
 
               <div className="mt-2 min-h-0 flex-1 overflow-auto pr-1">
                 {visibleThreads.length ? (
@@ -813,7 +864,10 @@ export default function NotesMvpPanel({
                           key={threadId}
                           type="button"
                           className={`rounded-2xl border px-3 py-2.5 text-left transition ${active ? "border-sky-400 bg-sky-500/10 shadow-sm" : "border-border bg-panel/85 hover:border-sky-300 hover:bg-white"}`}
-                          onClick={() => setSelectedThreadId(threadId)}
+                          onClick={() => {
+                            setCreateOpen(false);
+                            setSelectedThreadId(threadId);
+                          }}
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
