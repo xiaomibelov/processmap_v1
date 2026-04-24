@@ -8,12 +8,13 @@ function text(value) {
 export default function DerivedContextSurface({
   draft,
   sessionTitle = "",
+  hidden = false,
 }) {
   const sid = text(draft?.session_id);
   const tldr = useTldr(draft);
   const hasActiveSession = !!sid;
 
-  if (!hasActiveSession) return null;
+  if (!hasActiveSession || hidden) return null;
 
   return (
     <div
