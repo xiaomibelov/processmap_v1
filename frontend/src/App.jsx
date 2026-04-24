@@ -845,6 +845,7 @@ export default function App() {
   const [elementNotesFocusKey, setElementNotesFocusKey] = useState(0);
   const [notesPanelOpenRequest, setNotesPanelOpenRequest] = useState(null);
   const [notesDiscussionsOpen, setNotesDiscussionsOpen] = useState(false);
+  const notesPanelRef = useRef(null);
   const [llmHasApiKey, setLlmHasApiKey] = useState(false);
   const [llmBaseUrl, setLlmBaseUrl] = useState("https://api.deepseek.com");
   const [llmSaving, setLlmSaving] = useState(false);
@@ -1782,10 +1783,12 @@ export default function App() {
       || scopeRaw === "all"
     ) ? scopeRaw : "all";
     const source = String(options?.source || "toolbar_open_discussions").trim() || "toolbar_open_discussions";
-    setNotesPanelOpenRequest({
+    const request = {
       requestKey: `${Date.now()}:${scopeFilter}:${source}`,
       scopeFilter,
-    });
+    };
+    notesPanelRef.current?.openFromExternalRequest?.(request);
+    setNotesPanelOpenRequest(request);
   }
 
   function handleBpmnElementSelect(element) {
@@ -3277,6 +3280,7 @@ export default function App() {
       />
 
       <NotesMvpPanel
+        ref={notesPanelRef}
         sessionId={String(draft?.session_id || "")}
         sessionTitle={currentSessionTitle}
         selectedElement={selectedBpmnElement}
