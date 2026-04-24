@@ -24,7 +24,7 @@ test("Discussions surface uses unified discussions labeling and hides the floati
 test("Derived context is hidden in the active diagram discussions workflow", () => {
   assert.match(appSource, /const \[notesDiscussionsOpen, setNotesDiscussionsOpen\] = useState\(false\);/);
   assert.match(appSource, /<NotesMvpPanel[\s\S]*onOpenChange=\{setNotesDiscussionsOpen\}/);
-  assert.match(appSource, /<DerivedContextSurface[\s\S]*hidden=\{notesDiscussionsOpen \|\| tab === "diagram"\}/);
+  assert.match(appSource, /<DerivedContextSurface[\s\S]*hidden=\{notesDiscussionsOpen\}/);
   assert.match(derivedSource, /export default function DerivedContextSurface\(\{[\s\S]*hidden = false,/);
   assert.match(derivedSource, /if \(!hasActiveSession \|\| hidden\) return null;/);
 });
