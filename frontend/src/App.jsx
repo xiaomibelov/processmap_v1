@@ -3290,7 +3290,7 @@ export default function App() {
       <DerivedContextSurface
         draft={draft}
         sessionTitle={currentSessionTitle}
-        hidden={notesDiscussionsOpen}
+        hidden={notesDiscussionsOpen || processUiState?.tab === "diagram"}
       />
 
       <OrgSettingsModal
