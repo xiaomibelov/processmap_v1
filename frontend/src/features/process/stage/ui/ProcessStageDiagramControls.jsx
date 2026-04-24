@@ -475,6 +475,12 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     setDiagramActionOverflowOpen(false);
   };
 
+  const handleOpenNotesDiscussions = () => {
+    if (!hasSession) return;
+    closeDiagramPopovers();
+    openNotesDiscussions?.();
+  };
+
   return (
     <>
       <div className="bpmnCanvasTools diagramActionBar" ref={diagramActionBarRef}>
@@ -528,11 +534,8 @@ export default function ProcessStageDiagramControls({ view = {} }) {
           </button>
           <button
             type="button"
-            className="primaryBtn diagramActionBtn"
-            onClick={() => {
-              closeDiagramPopovers();
-              openNotesDiscussions?.();
-            }}
+            className="primaryBtn diagramActionBtn relative z-[1]"
+            onClick={handleOpenNotesDiscussions}
             disabled={!hasSession}
             title="Открыть обсуждения"
             data-testid="diagram-action-notes"
@@ -547,19 +550,6 @@ export default function ProcessStageDiagramControls({ view = {} }) {
               className="border-sky-200/80 bg-white/85 px-1.5 py-0 text-[10px] text-sky-950"
             />
           </button>
-          <button
-            type="button"
-            className={`secondaryBtn diagramActionBtn ${activeQualityOverlayCount > 0 ? "ring-1 ring-accent/60" : ""}`}
-            onClick={() => {
-              const next = !diagramActionQualityOpen;
-              closeDiagramPopovers();
-              setDiagramActionQualityOpen(next);
-            }}
-            title="Проблемы на диаграмме"
-            data-testid="diagram-action-quality"
-          >
-            Проблемы {activeQualityOverlayCount > 0 ? `(${activeQualityOverlayCount})` : ""}
-          </button>
         </div>
         <div className="diagramActionToolbarGroup">
           <button
@@ -573,6 +563,17 @@ export default function ProcessStageDiagramControls({ view = {} }) {
             title="Поиск элементов диаграммы"
             data-testid="diagram-action-search"
           >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              className="h-3.5 w-3.5 shrink-0"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            >
+              <circle cx="7" cy="7" r="4.5" />
+              <path d="M10.5 10.5L14 14" strokeLinecap="round" />
+            </svg>
             Поиск
           </button>
           <button

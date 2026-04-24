@@ -538,7 +538,7 @@ export default function NotesMvpPanel({
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="grid h-8 w-8 place-items-center rounded-2xl border border-sky-300/80 bg-white text-sky-900" aria-hidden="true">✎</span>
                   <div className="text-lg font-black text-fg">Обсуждения</div>
-                  <NotesAggregateBadge aggregate={aggregate} label="Обсуждения" className="bg-white/85" />
+                  <NotesAggregateBadge aggregate={aggregate} compact label="Обсуждения" className="bg-white/85" />
                 </div>
                 <div className="mt-1 truncate text-xs text-muted">{text(sessionTitle) || "Сессия"}</div>
               </div>
