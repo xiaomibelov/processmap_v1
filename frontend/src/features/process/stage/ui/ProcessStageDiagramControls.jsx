@@ -546,6 +546,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
             <NotesAggregateBadge
               aggregate={notesAggregate}
               compact
+              compactNumericOnly
               label="Обсуждения"
               className="border-sky-200/80 bg-white/85 px-1.5 py-0 text-[10px] text-sky-950"
             />
