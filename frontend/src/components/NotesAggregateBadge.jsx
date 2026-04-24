@@ -9,18 +9,20 @@ export default function NotesAggregateBadge({
   count,
   className = "",
   compact = false,
+  label = "Заметки",
 }) {
   const openCount = normalizeCount(count ?? aggregate?.open_notes_count);
   if (openCount <= 0) return null;
 
-  const label = compact ? `Заметки ${openCount}` : `Открытые заметки: ${openCount}`;
+  const chipLabel = String(label || "Заметки").trim() || "Заметки";
+  const ariaLabel = compact ? `${chipLabel} ${openCount}` : `Открытые ${chipLabel.toLowerCase()}: ${openCount}`;
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full border border-sky-300/70 bg-sky-500/10 px-2 py-0.5 text-[11px] font-semibold text-sky-800 ${className}`}
-      title={label}
-      aria-label={label}
+      title={ariaLabel}
+      aria-label={ariaLabel}
     >
-      <span>Заметки</span>
+      <span>{chipLabel}</span>
       <span className="tabular-nums">{openCount}</span>
     </span>
   );

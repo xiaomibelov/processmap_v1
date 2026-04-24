@@ -197,6 +197,7 @@ export default function NotesMvpPanel({
   onAddLegacyElementNote = null,
   disabled = false,
   externalOpenRequest = null,
+  onOpenChange = null,
 }) {
   const sid = text(sessionId);
   const selectedElementId = text(selectedElement?.id);
@@ -381,6 +382,10 @@ export default function NotesMvpPanel({
     return () => window.removeEventListener("pointerdown", handlePointerDown, true);
   }, [open]);
 
+  useEffect(() => {
+    onOpenChange?.(open);
+  }, [onOpenChange, open]);
+
   function openPanel() {
     setOpen(true);
     setCreateOpen(false);
@@ -391,7 +396,7 @@ export default function NotesMvpPanel({
     const body = text(createDraft);
     if (!body) return;
     if (!canCreateCurrentScope) {
-      setError("Для заметки по элементу сначала выберите BPMN-элемент.");
+      setError("Для обсуждения по элементу сначала выберите BPMN-элемент.");
       return;
     }
     const scopeKey = createScope;
@@ -403,7 +408,7 @@ export default function NotesMvpPanel({
       body,
     });
     if (!result.ok) {
-      setError(errorText(result, "Не удалось создать заметку."));
+      setError(errorText(result, "Не удалось создать обсуждение."));
       setBusy("");
       return;
     }
@@ -506,7 +511,7 @@ export default function NotesMvpPanel({
   return (
     <>
       {!open ? (
-        <div className="fixed bottom-5 right-5 z-[86] flex max-w-[min(92vw,560px)] flex-wrap justify-end gap-2">
+        <div className="fixed bottom-5 right-5 z-[86] hidden max-w-[min(92vw,560px)] flex-wrap justify-end gap-2 max-lg:flex lg:hidden">
           <button
             type="button"
             className="group inline-flex items-center gap-2 rounded-full border border-border bg-panel/90 px-3 py-1.5 text-xs font-bold text-fg shadow-panel transition hover:border-sky-300 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
@@ -517,7 +522,7 @@ export default function NotesMvpPanel({
           >
             <span className="grid h-6 w-6 place-items-center rounded-full bg-sky-500/10 text-sm text-sky-900" aria-hidden="true">✎</span>
             <span>Обсуждения</span>
-            <NotesAggregateBadge aggregate={aggregate} compact className="border-border bg-white/85 px-1.5 py-0 text-[10px]" />
+            <NotesAggregateBadge aggregate={aggregate} compact label="Обсуждения" className="border-border bg-white/85 px-1.5 py-0 text-[10px]" />
           </button>
         </div>
       ) : null}
@@ -533,11 +538,9 @@ export default function NotesMvpPanel({
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="grid h-8 w-8 place-items-center rounded-2xl border border-sky-300/80 bg-white text-sky-900" aria-hidden="true">✎</span>
                   <div className="text-lg font-black text-fg">Обсуждения</div>
-                  <NotesAggregateBadge aggregate={aggregate} className="bg-white/85" />
+                  <NotesAggregateBadge aggregate={aggregate} label="Обсуждения" className="bg-white/85" />
                 </div>
-                <div className="mt-1 truncate text-xs text-muted">
-                  {text(sessionTitle) || "Сессия"} · обсуждения по сессии, диаграмме и выбранным элементам
-                </div>
+                <div className="mt-1 truncate text-xs text-muted">{text(sessionTitle) || "Сессия"}</div>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -566,7 +569,7 @@ export default function NotesMvpPanel({
             </div>
           </div>
 
-          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(300px,340px)] overflow-hidden max-lg:grid-cols-1">
+          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(280px,320px)] overflow-hidden max-lg:grid-cols-1">
             <section className="flex min-h-0 flex-col overflow-hidden border-r border-border bg-panel max-lg:border-b max-lg:border-r-0">
               {error ? (
                 <div className="mx-4 mt-4 rounded-xl border border-danger/50 bg-danger/10 px-3 py-2 text-xs text-danger">
@@ -575,14 +578,14 @@ export default function NotesMvpPanel({
               ) : null}
 
               {createOpen ? (
-                <div className="flex min-h-0 flex-1 items-center justify-center bg-bg/15 px-5 py-6">
-                  <div className="flex w-full max-w-3xl flex-col rounded-[28px] border border-sky-200 bg-panel shadow-sm">
-                    <div className="border-b border-border bg-sky-50/70 px-6 py-5">
+                <div className="flex min-h-0 flex-1 overflow-auto bg-bg/10 px-4 py-4 sm:px-5 sm:py-5">
+                  <div className="flex w-full max-w-3xl flex-col self-start rounded-[28px] border border-sky-200 bg-panel shadow-sm">
+                    <div className="border-b border-border bg-sky-50/70 px-5 py-4 sm:px-6 sm:py-5">
                       <div className="flex items-start justify-between gap-4">
                         <div className="min-w-0">
                           <div className="text-2xl font-black text-fg">Новое обсуждение</div>
                           <div className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
-                            Обсуждение создаётся в thread API и открывается в основном рабочем pane. Контекст остаётся меткой, а не отдельным режимом.
+                            Сформулируйте вопрос и, если нужно, укажите контекст обсуждения.
                           </div>
                         </div>
                         <button type="button" className="secondaryBtn smallBtn" onClick={() => setCreateOpen(false)}>
@@ -590,7 +593,7 @@ export default function NotesMvpPanel({
                         </button>
                       </div>
                     </div>
-                    <div className="grid gap-4 px-6 py-5">
+                    <div className="grid gap-4 px-5 py-4 sm:px-6 sm:py-5">
                       <label className="grid gap-2">
                         <span className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Контекст обсуждения</span>
                         <select
@@ -609,7 +612,7 @@ export default function NotesMvpPanel({
                       <label className="grid gap-2">
                         <span className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Суть вопроса</span>
                         <textarea
-                          className="textarea min-h-[220px] w-full text-sm leading-relaxed"
+                          className="textarea min-h-[180px] w-full text-sm leading-relaxed"
                           value={createDraft}
                           onChange={(event) => setCreateDraftByScope((prev) => ({ ...prev, [createScope]: event.target.value }))}
                           placeholder={createPlaceholder}
@@ -619,7 +622,7 @@ export default function NotesMvpPanel({
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="text-sm text-muted">
                           {createScope === "diagram_element" && !canCreateCurrentScope
-                            ? "Для заметки по элементу сначала выберите BPMN-элемент на диаграмме."
+                            ? "Для обсуждения по элементу сначала выберите BPMN-элемент на диаграмме."
                             : "Новая тема будет создана без unread/new семантики: в текущем source truth доступен только общий count открытых обсуждений."}
                         </div>
                         <div className="flex items-center gap-2">
@@ -641,7 +644,7 @@ export default function NotesMvpPanel({
                 </div>
               ) : selectedThread ? (
                 <div className="grid min-h-0 flex-1 grid-rows-[auto_1fr_auto] overflow-hidden">
-                  <div className="border-b border-border bg-panel/95 px-5 py-4">
+                  <div className="border-b border-border bg-panel/95 px-4 py-3.5 sm:px-5 sm:py-4">
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
@@ -657,7 +660,7 @@ export default function NotesMvpPanel({
                         </div>
                         {selectedThreadIsLegacyBridge ? (
                           <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
-                            Это compatibility bridge из legacy `notes_by_element`. История и TL;DR видны здесь, а новая локальная заметка по выбранному элементу записывается напрямую в legacy-модель без thread API и без удаления старого sidebar.
+                            Это compatibility bridge из legacy `notes_by_element`. История видна здесь, а новая локальная заметка по выбранному элементу записывается напрямую в legacy-модель без thread API и без удаления старого sidebar.
                           </div>
                         ) : null}
                       </div>
@@ -673,18 +676,19 @@ export default function NotesMvpPanel({
                     </div>
                   </div>
 
-                  <div className="min-h-0 overflow-auto bg-bg/15 px-5 py-4">
-                    {selectedThreadIsLegacyBridge && text(selectedThread?.legacy_summary) ? (
-                      <div className="mb-3 rounded-2xl border border-amber-200/80 bg-panel px-4 py-3 shadow-sm">
-                        <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-amber-900">Legacy summary</div>
-                        <div className="mt-1 text-sm leading-relaxed text-fg">{text(selectedThread.legacy_summary)}</div>
-                      </div>
-                    ) : null}
-                    <div className="grid gap-3">
+                  <div className="min-h-0 overflow-auto bg-bg/10 px-4 py-3.5 sm:px-5 sm:py-4">
+                    <div className="flex min-h-full flex-col justify-end gap-3">
+                      {selectedThreadIsLegacyBridge && text(selectedThread?.legacy_summary) ? (
+                        <div className="rounded-2xl border border-amber-200/80 bg-panel px-4 py-3 shadow-sm">
+                          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-amber-900">Legacy summary</div>
+                          <div className="mt-1 text-sm leading-relaxed text-fg">{text(selectedThread.legacy_summary)}</div>
+                        </div>
+                      ) : null}
+                      <div className="grid gap-2.5">
                       {asArray(selectedThread.comments).map((comment, idx) => {
                         const author = authorLabel(comment?.author_user_id);
                         return (
-                          <article key={text(comment?.id) || `comment_${idx + 1}`} className="rounded-2xl border border-border bg-panel p-4 shadow-sm">
+                          <article key={text(comment?.id) || `comment_${idx + 1}`} className="rounded-xl border border-border bg-panel p-3.5 shadow-sm">
                             <div className="flex items-start gap-3">
                               <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-sky-500/10 text-xs font-black text-sky-900">
                                 {authorInitials(author)}
@@ -700,11 +704,12 @@ export default function NotesMvpPanel({
                           </article>
                         );
                       })}
+                      </div>
                     </div>
                   </div>
 
                   {selectedThreadIsLegacyBridge ? (
-                    <div className="border-t border-border bg-panel px-5 py-4">
+                    <div className="border-t border-border bg-panel/95 px-4 py-3.5 sm:px-5 sm:py-4">
                       <div className="mb-2 flex items-center justify-between gap-2">
                         <div className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Локальная заметка элемента</div>
                         <div className="text-[11px] text-muted">Пишется в legacy `notes_by_element` для режима совместимости.</div>
@@ -721,7 +726,7 @@ export default function NotesMvpPanel({
                       />
                       <div className="mt-3 flex items-center justify-between gap-3">
                         <div className="text-[11px] leading-relaxed text-muted">
-                          TL;DR остаётся видимым выше. Ответы в thread API и смена статуса для legacy-записей здесь по-прежнему не используются.
+                          Ответы в thread API и смена статуса для legacy-записей здесь по-прежнему не используются.
                         </div>
                         <div className="flex items-center gap-2">
                           <button
@@ -744,13 +749,13 @@ export default function NotesMvpPanel({
                       </div>
                     </div>
                   ) : (
-                    <div className="border-t border-border bg-panel px-5 py-4">
+                    <div className="border-t border-border bg-panel/95 px-4 py-3.5 sm:px-5 sm:py-4">
                       <div className="mb-2 flex items-center justify-between gap-2">
                         <div className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Ответить</div>
                         <div className="text-[11px] text-muted">Сообщение добавится в текущее обсуждение.</div>
                       </div>
                       <textarea
-                        className="textarea min-h-[88px] w-full text-sm"
+                        className="textarea min-h-[84px] w-full text-sm"
                         value={commentDraft}
                         onChange={(event) => {
                           const threadId = text(selectedThread?.id);
@@ -768,46 +773,46 @@ export default function NotesMvpPanel({
                   )}
                 </div>
               ) : (
-                <div className="flex min-h-full flex-1 items-center justify-center bg-bg/15 p-8 text-center">
-                  <div className="max-w-md rounded-3xl border border-dashed border-border bg-panel/70 px-6 py-8">
+                <div className="flex min-h-full flex-1 items-center justify-center bg-bg/10 p-6 text-center">
+                  <div className="max-w-sm rounded-3xl border border-dashed border-border bg-panel/70 px-5 py-6">
                     <div className="text-lg font-black text-fg">Выберите обсуждение</div>
                     <div className="mt-2 text-sm leading-relaxed text-muted">
-                      Справа можно найти существующую тему, а через кнопку «+ Новое обсуждение» в шапке открыть большой compose-pane.
+                      Справа можно выбрать существующую тему или создать новую через кнопку в шапке.
                     </div>
                   </div>
                 </div>
               )}
             </section>
 
-            <aside className="flex min-h-0 flex-col bg-bg/35 p-3">
-              <div className="rounded-2xl border border-border bg-panel/90 p-3 shadow-sm">
+            <aside className="flex min-h-0 flex-col bg-bg/25 p-2.5">
+              <div className="rounded-xl border border-border/80 bg-panel/80 p-2.5 shadow-sm">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted">Список обсуждений</div>
+                    <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted">Навигация по обсуждениям</div>
                     <div className="truncate text-[11px] text-muted">{loading ? "Обновляем..." : `${visibleThreads.length} из ${displayThreads.length}`}</div>
                   </div>
-                  <button type="button" className="secondaryBtn tinyBtn h-9 px-3 text-xs" onClick={fetchThreads} disabled={loading}>
-                    {loading ? "Обновляем..." : "↻ Обновить"}
+                  <button type="button" className="secondaryBtn tinyBtn h-8 px-2.5 text-[11px]" onClick={fetchThreads} disabled={loading}>
+                    {loading ? "..." : "↻"}
                   </button>
                 </div>
 
-                <div className="mt-3 grid gap-3">
+                <div className="mt-2.5 grid gap-2.5">
                   <label className="grid gap-1">
-                    <span className="text-[11px] font-semibold text-muted">Поиск</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">Поиск</span>
                     <input
                       type="search"
-                      className="input h-10 min-h-0 text-sm"
+                      className="input h-9 min-h-0 text-sm"
                       value={searchQuery}
                       onChange={(event) => setSearchQuery(event.target.value)}
                       placeholder="Поиск по обсуждениям"
                       aria-label="Поиск по обсуждениям"
                     />
                   </label>
-                  <div className="grid gap-2">
+                  <div className="grid gap-2 sm:grid-cols-2">
                     <label className="grid gap-1">
-                      <span className="text-[11px] font-semibold text-muted">Статус</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">Статус</span>
                       <select
-                        className="select h-10 min-h-0 w-full text-sm"
+                        className="select h-9 min-h-0 w-full text-sm"
                         value={statusFilter}
                         onChange={(event) => setStatusFilter(event.target.value)}
                         aria-label="Фильтр по статусу"
@@ -818,9 +823,9 @@ export default function NotesMvpPanel({
                       </select>
                     </label>
                     <label className="grid gap-1">
-                      <span className="text-[11px] font-semibold text-muted">Контекст</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">Контекст</span>
                       <select
-                        className="select h-10 min-h-0 w-full text-sm"
+                        className="select h-9 min-h-0 w-full text-sm"
                         value={scopeFilter}
                         onChange={(event) => setScopeFilter(event.target.value)}
                         aria-label="Фильтр по контексту"
@@ -831,9 +836,9 @@ export default function NotesMvpPanel({
                       </select>
                     </label>
                     <label className="grid gap-1">
-                      <span className="text-[11px] font-semibold text-muted">Порядок</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">Порядок</span>
                       <select
-                        className="select h-10 min-h-0 w-full text-sm"
+                        className="select h-9 min-h-0 w-full text-sm"
                         value={sortOrder}
                         onChange={(event) => setSortOrder(event.target.value)}
                         aria-label="Порядок сортировки"
@@ -863,7 +868,7 @@ export default function NotesMvpPanel({
                         <button
                           key={threadId}
                           type="button"
-                          className={`rounded-2xl border px-3 py-2.5 text-left transition ${active ? "border-sky-400 bg-sky-500/10 shadow-sm" : "border-border bg-panel/85 hover:border-sky-300 hover:bg-white"}`}
+                          className={`rounded-xl border px-2.5 py-2 text-left transition ${active ? "border-sky-400 bg-sky-500/10 shadow-sm" : "border-border/80 bg-panel/80 hover:border-sky-300 hover:bg-white"}`}
                           onClick={() => {
                             setCreateOpen(false);
                             setSelectedThreadId(threadId);
@@ -871,8 +876,8 @@ export default function NotesMvpPanel({
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
-                              <div className="line-clamp-2 text-[13px] font-black leading-snug text-fg">{threadTitle(thread)}</div>
-                              <div className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted">{threadPreview(thread)}</div>
+                              <div className="line-clamp-2 text-[12px] font-black leading-snug text-fg">{threadTitle(thread)}</div>
+                              <div className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-muted">{threadPreview(thread)}</div>
                             </div>
                             <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${threadStatusTone(thread)}`}>
                               {threadStatusLabel(thread)}
