@@ -24,7 +24,7 @@ test("Discussions surface uses unified discussions labeling and hides the floati
 test("Derived context is hidden in the active diagram discussions workflow", () => {
   assert.match(appSource, /const \[notesDiscussionsOpen, setNotesDiscussionsOpen\] = useState\(false\);/);
   assert.match(appSource, /<NotesMvpPanel[\s\S]*onOpenChange=\{setNotesDiscussionsOpen\}/);
-  assert.match(appSource, /<DerivedContextSurface[\s\S]*hidden=\{notesDiscussionsOpen\}/);
+  assert.match(appSource, /<DerivedContextSurface[\s\S]*hidden=\{notesDiscussionsOpen \|\| processUiState\?\.tab === "diagram"\}/);
   assert.match(derivedSource, /export default function DerivedContextSurface\(\{[\s\S]*hidden = false,/);
   assert.match(derivedSource, /if \(!hasActiveSession \|\| hidden\) return null;/);
 });
@@ -36,7 +36,9 @@ test("Legacy bridge copy no longer claims TL;DR is inside the discussions viewpo
 
 test("Top toolbar keeps discussions as the primary entry and removes conflicting actions", () => {
   assert.match(diagramControlsSource, /const handleOpenNotesDiscussions = \(\) => \{/);
+  assert.match(diagramControlsSource, /className=\"bpmnCanvasTools diagramActionBar z-\[92\] pointer-events-auto\"/);
   assert.match(diagramControlsSource, /className=\"primaryBtn diagramActionBtn relative z-\[1\]\"/);
+  assert.match(diagramControlsSource, /data-notes-panel-trigger=\"true\"/);
   assert.doesNotMatch(diagramControlsSource, /data-testid="diagram-action-quality"/);
   assert.match(diagramControlsSource, /data-testid="diagram-action-search"[\s\S]*<svg/);
 });
