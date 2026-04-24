@@ -2786,7 +2786,7 @@ export default function NotesPanel({
     },
     {
       id: "advanced",
-      title: "Advanced",
+      title: "Шаблоны и акторы",
       count: Number(roles.length || 0),
       active: !!sectionsOpen.advanced || String(activeSectionId || "") === "advanced",
       muted: false,
@@ -3070,13 +3070,13 @@ export default function NotesPanel({
               <div ref={advancedSectionRef}>
                 <SidebarAccordion
                   sectionKey="advanced"
-                  title="Advanced / Debug"
+                  title="Шаблоны и акторы"
                   badge={String(roles.length || 0)}
                   open={!!sectionsOpen.advanced}
                   onToggle={toggleSection}
                 >
                   <details className="sidebarAdvanced" data-testid="sidebar-advanced-templates">
-                    <summary className="sidebarAdvancedSummary">Templates</summary>
+                    <summary className="sidebarAdvancedSummary">Шаблон заметки</summary>
                     <div className="mt-2">
                       <TemplatesAndTldrSection
                         contentOnly
@@ -3092,7 +3092,7 @@ export default function NotesPanel({
                     </div>
                   </details>
                   <details className="sidebarAdvanced mt-2" data-testid="sidebar-advanced-actors">
-                    <summary className="sidebarAdvancedSummary">Actors</summary>
+                    <summary className="sidebarAdvancedSummary">Акторы</summary>
                     <div className="mt-2">
                       <ActorsSection
                         contentOnly
