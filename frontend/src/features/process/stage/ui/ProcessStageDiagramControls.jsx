@@ -483,7 +483,11 @@ export default function ProcessStageDiagramControls({ view = {} }) {
 
   return (
     <>
-      <div className="bpmnCanvasTools diagramActionBar z-[92] pointer-events-auto" ref={diagramActionBarRef}>
+      <div
+        className="bpmnCanvasTools diagramActionBar z-[92] pointer-events-auto"
+        ref={diagramActionBarRef}
+        style={{ zIndex: 92, pointerEvents: "auto" }}
+      >
         <div className="diagramActionToolbarGroup">
           <button
             type="button"

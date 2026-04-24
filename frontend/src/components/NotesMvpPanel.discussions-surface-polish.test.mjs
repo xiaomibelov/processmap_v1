@@ -37,6 +37,7 @@ test("Legacy bridge copy no longer claims TL;DR is inside the discussions viewpo
 test("Top toolbar keeps discussions as the primary entry and removes conflicting actions", () => {
   assert.match(diagramControlsSource, /const handleOpenNotesDiscussions = \(\) => \{/);
   assert.match(diagramControlsSource, /className=\"bpmnCanvasTools diagramActionBar z-\[92\] pointer-events-auto\"/);
+  assert.match(diagramControlsSource, /style=\{\{ zIndex: 92, pointerEvents: "auto" \}\}/);
   assert.match(diagramControlsSource, /className=\"primaryBtn diagramActionBtn relative z-\[1\]\"/);
   assert.match(diagramControlsSource, /data-notes-panel-trigger=\"true\"/);
   assert.doesNotMatch(diagramControlsSource, /data-testid="diagram-action-quality"/);
