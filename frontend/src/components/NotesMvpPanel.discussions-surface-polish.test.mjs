@@ -43,3 +43,13 @@ test("Top toolbar keeps discussions as the primary entry and removes conflicting
   assert.doesNotMatch(diagramControlsSource, /data-testid="diagram-action-quality"/);
   assert.match(diagramControlsSource, /data-testid="diagram-action-search"[\s\S]*<svg/);
 });
+
+test("Discussions toolbar uses an explicit App to NotesMvpPanel open bridge", () => {
+  assert.match(appSource, /const notesPanelRef = useRef\(null\);/);
+  assert.match(appSource, /notesPanelRef\.current\?\.openFromExternalRequest\?\.\(request\);/);
+  assert.match(appSource, /<NotesMvpPanel[\s\S]*ref=\{notesPanelRef\}/);
+  assert.match(notesMvpPanelSource, /const NotesMvpPanel = forwardRef\(function NotesMvpPanel/);
+  assert.match(notesMvpPanelSource, /useImperativeHandle\(ref, \(\) => \(\{/);
+  assert.match(notesMvpPanelSource, /openFromExternalRequest\(request\) \{/);
+  assert.match(notesMvpPanelSource, /applyExternalOpenRequest\(externalOpenRequest\);/);
+});
