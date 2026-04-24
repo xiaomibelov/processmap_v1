@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import {
   apiAddNoteThreadComment,
   apiCreateNoteThread,
@@ -189,7 +189,7 @@ function emitNotesAggregateChanged(sessionId) {
   }));
 }
 
-export default function NotesMvpPanel({
+const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   sessionId,
   sessionTitle = "",
   selectedElement = null,
@@ -198,7 +198,7 @@ export default function NotesMvpPanel({
   disabled = false,
   externalOpenRequest = null,
   onOpenChange = null,
-}) {
+}, ref) {
   const sid = text(sessionId);
   const selectedElementId = text(selectedElement?.id);
   const selectedElementName = text(selectedElement?.name || selectedElementId);
@@ -354,9 +354,9 @@ export default function NotesMvpPanel({
     setCreateOpen(false);
   }, [sid]);
 
-  useEffect(() => {
-    const request = externalOpenRequest && typeof externalOpenRequest === "object" ? externalOpenRequest : null;
-    if (!sid || !request?.requestKey) return;
+  const applyExternalOpenRequest = useCallback((requestLike) => {
+    const request = requestLike && typeof requestLike === "object" ? requestLike : null;
+    if (!sid || !request?.requestKey) return false;
     const nextScopeFilter = text(request.scopeFilter);
     setOpen(true);
     setCreateOpen(false);
@@ -366,7 +366,18 @@ export default function NotesMvpPanel({
       setScopeFilter(nextScopeFilter);
     }
     setSelectedThreadId("");
-  }, [externalOpenRequest, sid]);
+    return true;
+  }, [sid]);
+
+  useImperativeHandle(ref, () => ({
+    openFromExternalRequest(request) {
+      return applyExternalOpenRequest(request);
+    },
+  }), [applyExternalOpenRequest]);
+
+  useEffect(() => {
+    applyExternalOpenRequest(externalOpenRequest);
+  }, [applyExternalOpenRequest, externalOpenRequest]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -905,4 +916,6 @@ export default function NotesMvpPanel({
       ) : null}
     </>
   );
-}
+});
+
+export default NotesMvpPanel;
