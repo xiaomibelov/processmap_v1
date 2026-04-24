@@ -13,8 +13,8 @@ export default function TemplatesAndTldrSection({
 }) {
   const hasSelected = !!selectedElementId;
   const summary = hasSelected
-    ? `Шаблон: ${selectedTemplate?.title || "—"}`
-    : "Выберите узел для шаблона";
+    ? `Готовый шаблон: ${selectedTemplate?.title || "—"}`
+    : "Выберите узел, чтобы использовать шаблон";
 
   const content = (
     <>
@@ -25,13 +25,13 @@ export default function TemplatesAndTldrSection({
       ) : (
         <>
           <div className="mt-2">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Шаблоны</div>
-            <div className="mt-1 rounded-md border border-border bg-panel2 px-2 py-2 text-xs text-muted">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Готовый шаблон</div>
+            <div className="mt-1 rounded-lg border border-border bg-panel2 px-3 py-2 text-xs leading-relaxed text-muted">
               {selectedTemplate?.title || "Шаблон заметки"} · {selectedTemplate?.bullets?.length || 0} полей
             </div>
             <button
               type="button"
-              className="primaryBtn mt-2 w-full"
+              className="primaryBtn mt-2 h-9 w-full text-[12px]"
               onClick={() => {
                 void onInsertTemplate?.();
               }}
@@ -52,7 +52,7 @@ export default function TemplatesAndTldrSection({
   return (
     <SidebarSection
       sectionId="templates"
-      title="Шаблоны"
+      title="Шаблон заметки"
       summary={summary}
       open={open}
       onToggle={onToggle}

@@ -1748,6 +1748,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
                 openSelectedElementNotes();
               }}
               disabled={!canUseElementContextActions}
+              title="Открыть заметки по выбранному узлу"
             >
               Заметки
             </button>
