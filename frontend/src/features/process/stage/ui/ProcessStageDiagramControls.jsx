@@ -3,6 +3,8 @@ import LayersPopover from "../components/LayersPopover";
 import TemplatesBottomMenu from "../../../templates/ui/TemplatesBottomMenu";
 import GatewaysPanel from "../../playback/ui/GatewaysPanel";
 import DiagramSearchPopover from "./DiagramSearchPopover";
+import { apiGetSessionNoteAggregate } from "../../../../lib/api";
+import NotesAggregateBadge from "../../../../components/NotesAggregateBadge.jsx";
 
 function ensureObject(value) {
   return value && typeof value === "object" ? value : {};
@@ -50,6 +52,11 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     diagramActionQualityOpen,
     diagramActionOverflowOpen,
   } = topbarSection;
+  const discussionsSessionId = toText(legacyView.sessionId);
+  const openNotesDiscussions = typeof legacyView.openNotesDiscussions === "function"
+    ? legacyView.openNotesDiscussions
+    : null;
+  const [notesAggregate, setNotesAggregate] = useState(null);
 
   const {
     templatesMenuOpen,
@@ -395,6 +402,31 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     shouldShowCurrentStep,
   ]);
 
+  useEffect(() => {
+    if (!hasSession || !discussionsSessionId) {
+      setNotesAggregate(null);
+      return undefined;
+    }
+    let cancelled = false;
+    async function refreshNotesAggregate() {
+      const result = await apiGetSessionNoteAggregate(discussionsSessionId);
+      if (cancelled) return;
+      setNotesAggregate(result?.ok ? (result.aggregate || null) : null);
+    }
+    void refreshNotesAggregate();
+    function handleNotesAggregateChanged(event) {
+      const detail = ensureObject(event?.detail);
+      const detailSessionId = toText(detail.sessionId);
+      if (detailSessionId && detailSessionId !== discussionsSessionId) return;
+      void refreshNotesAggregate();
+    }
+    window.addEventListener("processmap:notes-aggregate-changed", handleNotesAggregateChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("processmap:notes-aggregate-changed", handleNotesAggregateChanged);
+    };
+  }, [discussionsSessionId, hasSession, toText]);
+
   const handlePlaybackTogglePlayWithUiMode = () => {
     const shouldCollapseAfterStart = !playbackRuntimeCollapsed
       && !playbackIsPlayingResolved
@@ -493,6 +525,26 @@ export default function ProcessStageDiagramControls({ view = {} }) {
             data-testid="diagram-action-reports"
           >
             Отчёты
+          </button>
+          <button
+            type="button"
+            className="primaryBtn diagramActionBtn"
+            onClick={() => {
+              closeDiagramPopovers();
+              openNotesDiscussions?.();
+            }}
+            disabled={!hasSession}
+            title="Открыть обсуждения"
+            data-testid="diagram-action-notes"
+            data-notes-panel-trigger="true"
+          >
+            <span aria-hidden="true">✎</span>
+            <span>Обсуждения</span>
+            <NotesAggregateBadge
+              aggregate={notesAggregate}
+              compact
+              className="border-sky-200/80 bg-white/85 px-1.5 py-0 text-[10px] text-sky-950"
+            />
           </button>
           <button
             type="button"
