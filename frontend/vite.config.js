@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -15,9 +17,58 @@ const allowedHosts = Array.from(
     ...extraAllowedHosts,
   ])
 );
+const stageDeployFingerprintMeta = loadStageDeployFingerprintMeta();
+const stageDeployFingerprintBanner = stageDeployFingerprintMeta
+  ? `/* processmap-stage-deploy requested_ref=${stageDeployFingerprintMeta.requestedRef} resolved_sha=${stageDeployFingerprintMeta.resolvedSha} fingerprint=${stageDeployFingerprintMeta.fingerprint} */\n`
+  : "";
+
+function loadStageDeployFingerprintMeta() {
+  const sourceFile = path.resolve(
+    process.cwd(),
+    process.env.STAGE_DEPLOY_FINGERPRINT_FILE || ".stage-deploy-fingerprint.json"
+  );
+  if (!fs.existsSync(sourceFile)) return null;
+
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(sourceFile, "utf8"));
+  } catch (error) {
+    throw new Error(
+      `stage deploy fingerprint file is invalid (${sourceFile}): ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+
+  const requestedRef = String(parsed?.requested_ref || "").trim();
+  const resolvedSha = String(parsed?.resolved_sha || "").trim();
+  const fingerprint = String(parsed?.fingerprint || "").trim();
+
+  if (!requestedRef || !resolvedSha || !fingerprint) {
+    throw new Error(`stage deploy fingerprint file is incomplete (${sourceFile})`);
+  }
+
+  return {
+    sourceFile,
+    requestedRef,
+    resolvedSha,
+    fingerprint,
+  };
+}
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: "stage-deploy-fingerprint-banner",
+      generateBundle(_, bundle) {
+        if (!stageDeployFingerprintBanner) return;
+        for (const artifact of Object.values(bundle)) {
+          if (artifact.type !== "chunk") continue;
+          if (!artifact.fileName.endsWith(".js")) continue;
+          artifact.code = `${stageDeployFingerprintBanner}${artifact.code}`;
+        }
+      },
+    },
+  ],
   server: {
     host: true,
     port: vitePort,

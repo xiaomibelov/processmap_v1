@@ -21,6 +21,12 @@ jobs:
             cd /opt/processmap/app
 
             REQUESTED_REF="main"
+            FRESHNESS_SOURCE_FILE="frontend/.stage-deploy-fingerprint.json"
+            cleanup_freshness_source() {
+              rm -f "${FRESHNESS_SOURCE_FILE}"
+            }
+            trap cleanup_freshness_source EXIT
+
             echo "[deploy-stage] requested ref: ${REQUESTED_REF}"
 
             # Pull latest source code only, preserve server configs
@@ -29,6 +35,10 @@ jobs:
             DEPLOY_SHA="$(git rev-parse --verify origin/main)"
             echo "[deploy-stage] resolved sha: ${DEPLOY_SHA}"
             git checkout "${DEPLOY_SHA}" -- backend frontend Dockerfile deploy docker-compose.yml
+
+            deploy/scripts/stage_freshness_proof.sh prepare-source \
+              --requested-ref "${REQUESTED_REF}" \
+              --resolved-sha "${DEPLOY_SHA}"
 
             # Rebuild api and gateway (frontend is baked into gateway image)
             APP_ENV_FILE=.env.stage docker compose \
@@ -46,7 +56,7 @@ jobs:
               -p processmap_stage \
               up -d --no-deps api gateway
 
-            deploy/scripts/stage_freshness_proof.sh \
+            deploy/scripts/stage_freshness_proof.sh verify-chain \
               --requested-ref "${REQUESTED_REF}" \
               --resolved-sha "${DEPLOY_SHA}"
 
