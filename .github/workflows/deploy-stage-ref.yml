@@ -54,4 +54,8 @@ jobs:
               -p processmap_stage \
               up -d --no-deps api gateway
 
+            deploy/scripts/stage_freshness_proof.sh \
+              --requested-ref "${DEPLOY_REF}" \
+              --resolved-sha "${DEPLOY_SHA}"
+
             echo "[deploy-stage-ref] done ref=${DEPLOY_REF} sha=${DEPLOY_SHA}"
