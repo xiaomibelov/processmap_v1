@@ -10,6 +10,14 @@ function ensureObject(value) {
   return value && typeof value === "object" ? value : {};
 }
 
+function clickNotesPanelFloatingTrigger() {
+  if (typeof document === "undefined") return false;
+  const trigger = document.querySelector("[data-testid='notes-panel-floating-trigger']");
+  if (!(trigger instanceof HTMLButtonElement)) return false;
+  trigger.click();
+  return true;
+}
+
 export default function ProcessStageDiagramControls({ view = {} }) {
   const legacyView = ensureObject(view);
   const sections = ensureObject(legacyView.sections);
@@ -481,7 +489,9 @@ export default function ProcessStageDiagramControls({ view = {} }) {
   const handleOpenNotesDiscussions = () => {
     if (!hasSession) return;
     closeDiagramPopovers();
-    latestOpenNotesDiscussionsRef.current?.();
+    const openedFromBridge = latestOpenNotesDiscussionsRef.current?.() === true;
+    if (openedFromBridge) return;
+    clickNotesPanelFloatingTrigger();
   };
 
   return (
