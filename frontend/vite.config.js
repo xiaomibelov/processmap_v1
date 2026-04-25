@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { appVersionInfo } from "./src/config/appVersion.js";
 
 const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || "http://127.0.0.1:8011";
 const vitePort = Number(process.env.VITE_PORT || 5177);
@@ -55,6 +56,9 @@ function loadStageDeployFingerprintMeta() {
 }
 
 export default defineConfig({
+  define: {
+    "import.meta.env.VITE_APP_VERSION": JSON.stringify(appVersionInfo.currentVersion),
+  },
   plugins: [
     react(),
     {
