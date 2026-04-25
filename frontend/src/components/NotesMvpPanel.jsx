@@ -530,6 +530,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
             disabled={disabled}
             title="Открыть обсуждения"
             data-notes-panel-trigger="true"
+            data-testid="notes-panel-floating-trigger"
           >
             <span className="grid h-6 w-6 place-items-center rounded-full bg-sky-500/10 text-sm text-sky-900" aria-hidden="true">✎</span>
             <span>Обсуждения</span>
