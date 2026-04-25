@@ -3,6 +3,7 @@ import TopBar from "./TopBar";
 import ProcessStage from "./ProcessStage";
 import SidebarHandle from "./sidebar/SidebarHandle";
 import { resolveSessionNavNoticeCopy } from "../features/process/navigation/sessionNavNoticeUi";
+import { appVersionInfo } from "../config/appVersion.js";
 
 export default function AppShell({
   draft,
@@ -74,6 +75,10 @@ export default function AppShell({
     ? (() => onReturnToSessionList?.())
     : (() => onProjectChange?.(""));
   const sessionNavNoticeCopy = resolveSessionNavNoticeCopy(sessionNavNotice);
+  const latestChangeEntry = Array.isArray(appVersionInfo.changelog) ? appVersionInfo.changelog[0] : null;
+  const latestChangeSummary = Array.isArray(latestChangeEntry?.changes)
+    ? String(latestChangeEntry.changes[0] || "").trim()
+    : "";
 
   useEffect(() => {
     // eslint-disable-next-line no-console
@@ -197,8 +202,9 @@ export default function AppShell({
         </div>
       </div>
 
-      <div className="footerHint border-t border-border px-4 py-2 text-xs text-muted">
-        Навигация: мышь — пан/зум на схеме · ✦ AI — подсветить узкие места на узлах
+      <div className="footerHint border-t border-border px-4 py-2 text-xs text-muted" data-testid="app-version-footer">
+        <span className="font-semibold text-fg">Версия {appVersionInfo.currentVersion}</span>
+        {latestChangeSummary ? <span> · {latestChangeSummary}</span> : null}
       </div>
     </div>
   );
