@@ -15,3 +15,10 @@ test("AppShell uses shellSessionId for shell continuity while keeping ProcessSta
   assert.match(source, /<TopBar[\s\S]*sessionId=\{String\(shellSessionId \|\| sessionId \|\| ""\)\.trim\(\)\}/);
   assert.match(source, /<ProcessStage[\s\S]*sessionId=\{sessionId\}/);
 });
+
+test("AppShell replaces legacy footer helper copy with app version source of truth", () => {
+  assert.match(source, /import \{ appVersionInfo \} from "\.\.\/config\/appVersion\.js"/);
+  assert.match(source, /data-testid="app-version-footer"/);
+  assert.match(source, /Версия \{appVersionInfo\.currentVersion\}/);
+  assert.doesNotMatch(source, /Навигация: мышь — пан\/зум на схеме · ✦ AI — подсветить узкие места на узлах/);
+});
