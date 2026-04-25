@@ -53,7 +53,8 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     diagramActionOverflowOpen,
   } = topbarSection;
   const discussionsSessionId = toText(legacyView.sessionId);
-  const openNotesDiscussions = typeof legacyView.openNotesDiscussions === "function"
+  const latestOpenNotesDiscussionsRef = useRef(null);
+  latestOpenNotesDiscussionsRef.current = typeof legacyView.openNotesDiscussions === "function"
     ? legacyView.openNotesDiscussions
     : null;
   const [notesAggregate, setNotesAggregate] = useState(null);
@@ -478,7 +479,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
   const handleOpenNotesDiscussions = () => {
     if (!hasSession) return;
     closeDiagramPopovers();
-    openNotesDiscussions?.();
+    latestOpenNotesDiscussionsRef.current?.();
   };
 
   return (
