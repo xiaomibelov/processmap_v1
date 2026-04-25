@@ -1787,8 +1787,9 @@ export default function App() {
       requestKey: `${Date.now()}:${scopeFilter}:${source}`,
       scopeFilter,
     };
-    notesPanelRef.current?.openFromExternalRequest?.(request);
+    const openedFromRef = notesPanelRef.current?.openFromExternalRequest?.(request) === true;
     setNotesPanelOpenRequest(request);
+    return openedFromRef;
   }
 
   function handleBpmnElementSelect(element) {

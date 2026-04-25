@@ -16,6 +16,7 @@ test("Discussions surface uses unified discussions labeling and hides the floati
   assert.match(badgeSource, /\{compact && compactNumericOnly \? null : <span>\{chipLabel\}<\/span>\}/);
   assert.match(notesMvpPanelSource, /NotesAggregateBadge aggregate=\{aggregate\} compact compactNumericOnly label="Обсуждения"/);
   assert.match(notesMvpPanelSource, /NotesAggregateBadge aggregate=\{aggregate\} compact compactNumericOnly label="Обсуждения" className="bg-white\/85"/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-panel-floating-trigger"/);
   assert.match(notesMvpPanelSource, /className="fixed bottom-5 right-5 z-\[86\] hidden[\s\S]*max-lg:flex lg:hidden"/);
   assert.match(diagramControlsSource, /NotesAggregateBadge[\s\S]*compactNumericOnly[\s\S]*label="Обсуждения"/);
   assert.match(workspaceExplorerSource, /<NotesAggregateBadge aggregate=\{notesAggregate\} compact \/>/);
@@ -36,11 +37,13 @@ test("Legacy bridge copy no longer claims TL;DR is inside the discussions viewpo
 
 test("Top toolbar keeps discussions as the primary entry and removes conflicting actions", () => {
   assert.match(diagramControlsSource, /const handleOpenNotesDiscussions = \(\) => \{/);
+  assert.match(diagramControlsSource, /function clickNotesPanelFloatingTrigger\(\) \{/);
   assert.match(diagramControlsSource, /const explicitOpenNotesDiscussions = typeof topbarSection\.openNotesDiscussions === "function"/);
   assert.match(diagramControlsSource, /const latestOpenNotesDiscussionsRef = useRef\(null\);/);
   assert.match(diagramControlsSource, /latestOpenNotesDiscussionsRef\.current = explicitOpenNotesDiscussions/);
   assert.match(diagramControlsSource, /\|\| \(typeof legacyView\.openNotesDiscussions === "function" \? legacyView\.openNotesDiscussions : null\)/);
-  assert.match(diagramControlsSource, /latestOpenNotesDiscussionsRef\.current\?\.\(\);/);
+  assert.match(diagramControlsSource, /const openedFromBridge = latestOpenNotesDiscussionsRef\.current\?\.\(\) === true;/);
+  assert.match(diagramControlsSource, /clickNotesPanelFloatingTrigger\(\);/);
   assert.match(diagramControlsSource, /className=\"bpmnCanvasTools diagramActionBar z-\[92\] pointer-events-auto\"/);
   assert.match(diagramControlsSource, /style=\{\{ zIndex: 92, pointerEvents: "auto" \}\}/);
   assert.match(diagramControlsSource, /className=\"primaryBtn diagramActionBtn relative z-\[1\]\"/);
@@ -51,7 +54,8 @@ test("Top toolbar keeps discussions as the primary entry and removes conflicting
 
 test("Discussions toolbar uses an explicit App to NotesMvpPanel open bridge", () => {
   assert.match(appSource, /const notesPanelRef = useRef\(null\);/);
-  assert.match(appSource, /notesPanelRef\.current\?\.openFromExternalRequest\?\.\(request\);/);
+  assert.match(appSource, /const openedFromRef = notesPanelRef\.current\?\.openFromExternalRequest\?\.\(request\) === true;/);
+  assert.match(appSource, /return openedFromRef;/);
   assert.match(appSource, /<NotesMvpPanel[\s\S]*ref=\{notesPanelRef\}/);
   assert.match(notesMvpPanelSource, /const NotesMvpPanel = forwardRef\(function NotesMvpPanel/);
   assert.match(notesMvpPanelSource, /useImperativeHandle\(ref, \(\) => \(\{/);
