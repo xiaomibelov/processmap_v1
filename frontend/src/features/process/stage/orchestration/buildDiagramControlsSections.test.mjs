@@ -7,6 +7,7 @@ test("buildDiagramControlsSections splits controls view into explicit section gr
   const base = {
     tab: "diagram",
     diagramActionBarRef: { current: null },
+    openNotesDiscussions: () => {},
     setDiagramActionLayersOpen: () => {},
     drawioUiState: { enabled: true },
     diagramActionPlaybackOpen: true,
@@ -26,6 +27,7 @@ test("buildDiagramControlsSections splits controls view into explicit section gr
 
   assert.equal(typeof sections, "object");
   assert.equal(sections.topbar.tab, "diagram");
+  assert.equal(typeof sections.topbar.openNotesDiscussions, "function");
   assert.equal(sections.drawioLayers.drawioUiState.enabled, true);
   assert.equal(sections.playbackAutopass.playbackCanRun, true);
   assert.equal(typeof sections.playbackAutopass.openDocFromDiagram, "function");

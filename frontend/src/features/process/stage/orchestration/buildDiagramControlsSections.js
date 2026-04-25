@@ -34,6 +34,7 @@ const TOPBAR_KEYS = [
   "drawioUiState",
   "overlayPanelModel",
   "hasSession",
+  "openNotesDiscussions",
   "activeQualityOverlayCount",
   "diagramActionQualityOpen",
   "diagramActionOverflowOpen",
