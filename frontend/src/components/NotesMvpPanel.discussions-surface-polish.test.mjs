@@ -36,8 +36,10 @@ test("Legacy bridge copy no longer claims TL;DR is inside the discussions viewpo
 
 test("Top toolbar keeps discussions as the primary entry and removes conflicting actions", () => {
   assert.match(diagramControlsSource, /const handleOpenNotesDiscussions = \(\) => \{/);
+  assert.match(diagramControlsSource, /const explicitOpenNotesDiscussions = typeof topbarSection\.openNotesDiscussions === "function"/);
   assert.match(diagramControlsSource, /const latestOpenNotesDiscussionsRef = useRef\(null\);/);
-  assert.match(diagramControlsSource, /latestOpenNotesDiscussionsRef\.current = typeof legacyView\.openNotesDiscussions === \"function\"/);
+  assert.match(diagramControlsSource, /latestOpenNotesDiscussionsRef\.current = explicitOpenNotesDiscussions/);
+  assert.match(diagramControlsSource, /\|\| \(typeof legacyView\.openNotesDiscussions === "function" \? legacyView\.openNotesDiscussions : null\)/);
   assert.match(diagramControlsSource, /latestOpenNotesDiscussionsRef\.current\?\.\(\);/);
   assert.match(diagramControlsSource, /className=\"bpmnCanvasTools diagramActionBar z-\[92\] pointer-events-auto\"/);
   assert.match(diagramControlsSource, /style=\{\{ zIndex: 92, pointerEvents: "auto" \}\}/);
