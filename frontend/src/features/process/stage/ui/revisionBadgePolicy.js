@@ -9,38 +9,20 @@ function toInt(value) {
 
 export function resolvePublishedRevisionBadgeView(snapshotRaw = null) {
   const snapshot = snapshotRaw && typeof snapshotRaw === "object" ? snapshotRaw : {};
-  const latestRevisionNumber = toInt(snapshot.latestRevisionNumber);
   const latestPublishedRevisionNumber = toInt(snapshot.latestPublishedRevisionNumber);
-  const latestPublishedRevisionStatus = toText(snapshot.latestPublishedRevisionStatus).toLowerCase() || "idle";
-  const hasPublishedRevision = latestRevisionNumber > 0;
-  const hasAuthoritativePublishedRevision = latestPublishedRevisionStatus === "ready" && latestPublishedRevisionNumber > 0;
-  const authoritativeRevisionPending = latestPublishedRevisionStatus === "loading" || latestPublishedRevisionStatus === "idle";
-  const authoritativeRevisionFailed = latestPublishedRevisionStatus === "failed";
+  const latestPublishedRevisionAllowed = snapshot.latestPublishedRevisionAllowed !== false;
+  const hasExplicitPublishedRevision = latestPublishedRevisionAllowed && latestPublishedRevisionNumber > 0;
 
-  if (hasAuthoritativePublishedRevision) {
+  if (hasExplicitPublishedRevision) {
     return {
       testId: "diagram-toolbar-latest-revision",
-      text: `r${latestPublishedRevisionNumber}`,
-      title: "",
-    };
-  }
-  if (authoritativeRevisionPending && hasPublishedRevision) {
-    return {
-      testId: "diagram-toolbar-latest-revision-pending",
-      text: "r…",
-      title: "Сверяем опубликованную ревизию",
-    };
-  }
-  if (authoritativeRevisionFailed) {
-    return {
-      testId: "diagram-toolbar-latest-revision-unavailable",
-      text: "r?",
-      title: "Не удалось проверить опубликованную ревизию",
+      text: `V. ${latestPublishedRevisionNumber}`,
+      title: "Последняя опубликованная версия",
     };
   }
   return {
     testId: "diagram-toolbar-latest-revision-empty",
-    text: "R0",
-    title: "",
+    text: "Нет опубликованных версий",
+    title: "Опубликованных версий нет",
   };
 }

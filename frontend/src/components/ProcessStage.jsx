@@ -5,6 +5,7 @@ import InterviewStage from "./process/InterviewStage";
 import WorkspaceExplorer from "../features/explorer/WorkspaceExplorer";
 import { useAuth } from "../features/auth/AuthProvider";
 import {
+  apiGetSession,
   apiPatchSession,
   apiRecompute,
   apiStartAutoPass,
@@ -23,6 +24,7 @@ import { createAiInputHash, executeAi } from "../features/ai/aiExecutor";
 import {
   shortSnapshotHash,
 } from "../features/process/bpmn/snapshots/bpmnSnapshots";
+import { buildManualSaveProjectionSyncPlan } from "../features/process/bpmn/save/manualSaveProjectionSync.js";
 import { parseAndProjectBpmnToInterview } from "../features/process/hooks/useInterviewProjection";
 import useBpmnSync from "../features/process/hooks/useBpmnSync";
 import useProcessOrchestrator from "../features/process/hooks/useProcessOrchestrator";
@@ -74,6 +76,11 @@ import {
   matrixToDiagram,
   matrixToScreen,
 } from "../features/process/stage/utils/hybridCoords";
+import {
+  isDiagramVersionSessionMatch,
+  normalizeDiagramSessionId,
+  resolveDiagramBaseVersionForActiveSession,
+} from "../features/process/stage/utils/diagramVersionContext";
 import useSessionMetaPersist from "../features/process/stage/controllers/useSessionMetaPersist";
 import { attachProcessStageFlushBeforeLeaveListener } from "../features/process/navigation/processLeaveFlush";
 import { flushProcessStageBeforeLeave } from "../features/process/navigation/processLeaveFlushController";
@@ -81,6 +88,8 @@ import {
   buildSaveUploadStatusBadge,
   normalizeBpmnSaveLifecycleEvent,
 } from "../features/process/navigation/saveUploadStatus";
+import { resolveManualSaveOutcomeUi } from "../features/process/navigation/manualSaveOutcomeUi";
+import { deriveLeaveNavigationRisk } from "../features/process/navigation/leaveNavigationGuardModel";
 import useProcessStageShellController from "../features/process/stage/controllers/useProcessStageShellController";
 import useBpmnCanvasController from "../features/process/stage/controllers/useBpmnCanvasController";
 import useDiagramOverlayTransform from "../features/process/stage/controllers/useDiagramOverlayTransform";
@@ -108,16 +117,30 @@ import ProcessStageShell from "../features/process/stage/ui/ProcessStageShell";
 import ProcessPanels from "../features/process/stage/ui/ProcessPanels";
 import ProcessDialogs from "../features/process/stage/ui/ProcessDialogs";
 import ProcessStageHeader from "../features/process/stage/ui/ProcessStageHeader";
+import ProcessSaveAckToast from "../features/process/stage/ui/ProcessSaveAckToast";
 import ProcessStageDiagramControls from "../features/process/stage/ui/ProcessStageDiagramControls";
 import ProcessDiagramOverlayLayers from "../features/process/stage/ui/ProcessDiagramOverlayLayers";
+import ProcessStageSaveConflictModal from "../features/process/stage/ui/ProcessStageSaveConflictModal";
 import BottomViewportScrubber from "../features/process/stage/scrubber/BottomViewportScrubber";
 import BpmnPropertiesOverlayModal from "../features/process/bpmn/context-menu/properties-overlay/BpmnPropertiesOverlayModal";
+import { buildSaveConflictModalView } from "../features/process/stage/ui/saveConflictModalModel";
 import {
+  buildSessionPresenceView,
+  upsertSessionPresenceActor,
+} from "../features/process/stage/ui/sessionPresenceModel";
+import {
+  buildRemoteSaveHighlightView,
+  deriveRemoteChangedElementIds,
+} from "../features/process/stage/ui/remoteSaveHighlightModel";
+import {
+  applyUserFacingRevisionNumbers,
+  classifyRevisionSourceAction,
   formatRevisionAuthor,
   formatRevisionTimestampRu,
   localizeRevisionSourceAction,
   normalizeRevisionTimestampMs,
   resolveRevisionHistoryUiSnapshot,
+  splitMeaningfulAndTechnicalRevisions,
 } from "../features/process/stage/ui/revisionHistoryUiModel";
 import useHybridStore from "../features/process/hybrid/controllers/useHybridStore";
 import useHybridPersistController from "../features/process/hybrid/controllers/useHybridPersistController";
@@ -138,6 +161,12 @@ import {
   buildSessionCompanionAfterTraversal,
   normalizeSessionCompanion,
 } from "../features/process/session-companion/sessionCompanionContracts.js";
+import { createSessionWorkspaceTruthOwner } from "../features/process/workspace-truth/sessionWorkspaceTruthOwner.js";
+import {
+  buildWorkspaceTruthSnapshotFromSession,
+  classifyWorkspaceSyncSource,
+  resolveWorkspaceMutationCommand,
+} from "../features/process/workspace-truth/sessionWorkspaceTruthOwnerBoundary.js";
 import { buildSessionCompanionJazzUiBridgeSnapshot } from "../features/process/session-companion/read/index.js";
 import { createSessionCompanionJazzAdapter } from "../features/process/session-companion/sessionCompanionJazzAdapter.js";
 import { createLiveDocumentJazzAdapter } from "../features/process/session-companion/liveDocumentJazzAdapter.js";
@@ -212,18 +241,64 @@ import { pushDeleteTrace } from "../features/process/stage/utils/deleteTrace";
 
 const DIAGRAM_UNDO_REDO_VISIBLE_POLL_MS = 2000;
 const BPMN_VERSION_HEADERS_LIMIT = 50;
+const SESSION_PRESENCE_TTL_MS = 180000;
+const SESSION_PRESENCE_HEARTBEAT_MS = 45000;
+const REMOTE_SESSION_SYNC_POLL_MS = 9000;
+const SAVE_ACK_TOAST_HIDE_MS = 4000;
 
 const IDLE_SAVE_UPLOAD_EVENT = Object.freeze({
   event: "",
   stage: "idle",
+  state: "saved",
   at: 0,
   reason: "",
   sessionId: "",
   rev: 0,
   status: 0,
   xmlBytes: 0,
+  errorCode: "",
   error: "",
+  errorDetails: null,
+  conflict: null,
 });
+
+function readServerLastWriteFromSession(sessionLikeRaw = null) {
+  const sessionLike = sessionLikeRaw && typeof sessionLikeRaw === "object" ? sessionLikeRaw : {};
+  const actorUserId = String(
+    sessionLike.diagram_last_write_actor_user_id
+    || sessionLike.diagramLastWriteActorUserId
+    || "",
+  ).trim();
+  const actorLabel = String(
+    sessionLike.diagram_last_write_actor_label
+    || sessionLike.diagramLastWriteActorLabel
+    || actorUserId
+    || "",
+  ).trim();
+  const at = Number(
+    sessionLike.diagram_last_write_at
+    ?? sessionLike.diagramLastWriteAt
+    ?? 0,
+  );
+  const changedKeysRaw = (
+    Array.isArray(sessionLike.diagram_last_write_changed_keys)
+      ? sessionLike.diagram_last_write_changed_keys
+      : (
+        Array.isArray(sessionLike.diagramLastWriteChangedKeys)
+          ? sessionLike.diagramLastWriteChangedKeys
+          : []
+      )
+  );
+  const changedKeys = changedKeysRaw
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  return {
+    actorUserId,
+    actorLabel,
+    at: Number.isFinite(at) && at > 0 ? Math.round(at) : 0,
+    changedKeys,
+  };
+}
 
 export default function ProcessStage({
   sessionId,
@@ -248,6 +323,7 @@ export default function ProcessStage({
   selectedBpmnElement,
   onBpmnElementSelect,
   onOpenElementNotes,
+  onOpenNotesDiscussions,
   onElementNotesRemap,
   onRecalculateRtiers,
   snapshotRestoreNotice,
@@ -289,6 +365,8 @@ export default function ProcessStage({
   const autoPassDocSyncInFlightRef = useRef(false);
   const autoPassDocSyncLastAttemptMsRef = useRef(0);
   const localStateResetSidRef = useRef("");
+  const diagramStateVersionSidRef = useRef("");
+  const diagramStateVersionRef = useRef(0);
   const sessionTruthProbeSeqRef = useRef(0);
   const sessionTruthProbeLastRef = useRef({
     scopeKey: "",
@@ -298,12 +376,225 @@ export default function ProcessStage({
     templateSignature: "",
     revisionSignature: "",
   });
+  const remoteSessionPollInFlightRef = useRef(false);
+  const remoteSessionPollSeenDiagramStateVersionRef = useRef(0);
   const [drawioAnchorImportDiagnostics, setDrawioAnchorImportDiagnostics] = useState(null);
   const [saveUploadLifecycleEvent, setSaveUploadLifecycleEvent] = useState(IDLE_SAVE_UPLOAD_EVENT);
+  const [saveConflictNoticeDismissed, setSaveConflictNoticeDismissed] = useState(false);
+  const [saveConflictActionBusy, setSaveConflictActionBusy] = useState(false);
   const [latestBpmnVersionHead, setLatestBpmnVersionHead] = useState(null);
   const [latestBpmnVersionHeadStatus, setLatestBpmnVersionHeadStatus] = useState("idle");
+  const [versionsServerEntriesCount, setVersionsServerEntriesCount] = useState(0);
+  const [versionsTechnicalEntriesCount, setVersionsTechnicalEntriesCount] = useState(0);
   const [diagramUndoRedoState, setDiagramUndoRedoState] = useState({ canUndo: false, canRedo: false, ready: false });
   const [diagramSearchMutationVersion, setDiagramSearchMutationVersion] = useState(0);
+  const [sessionPresenceActors, setSessionPresenceActors] = useState([]);
+  const [remoteSaveHighlightBadge, setRemoteSaveHighlightBadge] = useState(null);
+  const [remoteSaveHighlightBusy, setRemoteSaveHighlightBusy] = useState(false);
+  const sessionWorkspaceTruthOwnerRef = useRef(null);
+  const sessionWorkspaceTruthOwnerSidRef = useRef("");
+
+  const buildOwnerSnapshot = useCallback((sessionLikeRaw, source = "session_sync") => {
+    return buildWorkspaceTruthSnapshotFromSession(sessionLikeRaw, {
+      fallbackSessionId: sid,
+      source,
+    });
+  }, [sid]);
+
+  const ensureSessionWorkspaceTruthOwner = useCallback(() => {
+    const currentSid = normalizeDiagramSessionId(sid);
+    if (!currentSid) {
+      sessionWorkspaceTruthOwnerRef.current = null;
+      sessionWorkspaceTruthOwnerSidRef.current = "";
+      return null;
+    }
+    if (
+      sessionWorkspaceTruthOwnerRef.current
+      && sessionWorkspaceTruthOwnerSidRef.current === currentSid
+    ) {
+      return sessionWorkspaceTruthOwnerRef.current;
+    }
+    const durableSnapshot = buildOwnerSnapshot({
+      id: currentSid,
+      session_id: currentSid,
+      bpmn_xml: toText(draft?.bpmn_xml || ""),
+      bpmn_xml_version: Number(draft?.bpmn_xml_version || draft?.version || 0),
+      diagram_state_version: Number(draft?.diagram_state_version ?? draft?.diagramStateVersion ?? 0),
+      bpmn_graph_fingerprint: toText(draft?.bpmn_graph_fingerprint || ""),
+    }, "draft_seed");
+    sessionWorkspaceTruthOwnerRef.current = createSessionWorkspaceTruthOwner({
+      sessionId: currentSid,
+      durableSnapshot,
+    });
+    sessionWorkspaceTruthOwnerSidRef.current = currentSid;
+    return sessionWorkspaceTruthOwnerRef.current;
+  }, [
+    buildOwnerSnapshot,
+    draft?.bpmn_graph_fingerprint,
+    draft?.bpmn_xml,
+    draft?.bpmn_xml_version,
+    draft?.diagramStateVersion,
+    draft?.diagram_state_version,
+    draft?.version,
+    sid,
+    toText,
+  ]);
+
+  const resolveDraftDiagramStateVersion = useCallback(() => {
+    const raw = Number(draft?.diagram_state_version ?? draft?.diagramStateVersion);
+    if (!Number.isFinite(raw) || raw < 0) return null;
+    return Math.round(raw);
+  }, [draft?.diagramStateVersion, draft?.diagram_state_version]);
+
+  useEffect(() => {
+    const currentSid = String(sid || "");
+    const nextVersion = resolveDraftDiagramStateVersion();
+    if (!currentSid) {
+      diagramStateVersionSidRef.current = "";
+      diagramStateVersionRef.current = 0;
+      return;
+    }
+    if (diagramStateVersionSidRef.current !== currentSid) {
+      diagramStateVersionSidRef.current = currentSid;
+      diagramStateVersionRef.current = nextVersion ?? 0;
+      return;
+    }
+    if (nextVersion !== null) {
+      diagramStateVersionRef.current = nextVersion;
+    }
+  }, [resolveDraftDiagramStateVersion, sid]);
+
+  const getBaseDiagramStateVersion = useCallback(() => {
+    const baseVersion = resolveDiagramBaseVersionForActiveSession({
+      activeSessionId: sid,
+      storedSessionId: diagramStateVersionSidRef.current,
+      storedVersion: diagramStateVersionRef.current,
+    });
+    if (baseVersion === null) return undefined;
+    return baseVersion;
+  }, [sid]);
+
+  const rememberDiagramStateVersion = useCallback((rawVersion, options = {}) => {
+    const next = Number(rawVersion);
+    if (!Number.isFinite(next) || next < 0) return null;
+    const normalized = Math.round(next);
+    const optionSid = normalizeDiagramSessionId(options?.sessionId || options?.sid || "");
+    const currentSid = normalizeDiagramSessionId(sid);
+    const targetSid = optionSid || currentSid;
+    if (!isDiagramVersionSessionMatch(currentSid, targetSid)) return null;
+    if (diagramStateVersionSidRef.current !== currentSid) {
+      diagramStateVersionSidRef.current = currentSid;
+      diagramStateVersionRef.current = normalized;
+      return normalized;
+    }
+    const prev = Number(diagramStateVersionRef.current);
+    if (!Number.isFinite(prev) || normalized > prev) {
+      diagramStateVersionRef.current = normalized;
+    }
+    return Math.round(Number(diagramStateVersionRef.current) || 0);
+  }, [sid]);
+
+  const syncDiagramStateVersionFromSession = useCallback((sessionLikeRaw, options = {}) => {
+    const sessionLike = asObject(sessionLikeRaw);
+    const currentSid = normalizeDiagramSessionId(sid);
+    const sessionSid = normalizeDiagramSessionId(
+      sessionLike?.session_id
+      || sessionLike?.id
+      || options?.sessionId
+      || sid
+      || "",
+    );
+    if (!isDiagramVersionSessionMatch(currentSid, sessionSid)) return null;
+    const rawVersion = sessionLike?.diagram_state_version ?? sessionLike?.diagramStateVersion;
+    return rememberDiagramStateVersion(rawVersion, { sessionId: currentSid });
+  }, [asObject, rememberDiagramStateVersion, sid]);
+
+  const onSessionSyncWithVersion = useCallback((sessionLikeRaw) => {
+    const sessionLike = asObject(sessionLikeRaw);
+    const currentSid = normalizeDiagramSessionId(sid);
+    const sessionSid = normalizeDiagramSessionId(sessionLike?.session_id || sessionLike?.id || sid || "");
+    if (!isDiagramVersionSessionMatch(currentSid, sessionSid)) return false;
+    const source = toText(sessionLike?._sync_source || sessionLike?._source || "session_sync");
+    const owner = ensureSessionWorkspaceTruthOwner();
+    let payload = sessionLike;
+    if (owner && sessionLike && typeof sessionLike === "object") {
+      const sanitizeResult = owner.sanitizeIncomingSessionSyncPayload(sessionLike, { source });
+      payload = asObject(sanitizeResult?.payload);
+      const sourceClass = classifyWorkspaceSyncSource(source);
+      const snapshot = buildOwnerSnapshot(payload, source || "session_sync");
+      const hasXml = String(snapshot?.bpmn_xml || "").trim().length > 0;
+      if (hasXml && sourceClass.isPrimaryAcceptedSource) {
+        owner.saveSessionAccepted({
+          source,
+          primaryAck: snapshot,
+          durableSnapshot: snapshot,
+        });
+      } else if (hasXml && sourceClass.isDurableReloadSource) {
+        owner.reloadSession({
+          source,
+          durableSnapshot: snapshot,
+        });
+      } else if (hasXml && sourceClass.isPrimaryTruthSource && !sourceClass.isProjectionSource) {
+        owner.reloadSession({
+          source: `${source || "session_sync"}:truth_sync`,
+          durableSnapshot: snapshot,
+        });
+      }
+    }
+    syncDiagramStateVersionFromSession(payload);
+    onSessionSync?.(payload);
+    return true;
+  }, [
+    asObject,
+    buildOwnerSnapshot,
+    ensureSessionWorkspaceTruthOwner,
+    onSessionSync,
+    sid,
+    syncDiagramStateVersionFromSession,
+    toText,
+  ]);
+
+  useEffect(() => {
+    const owner = ensureSessionWorkspaceTruthOwner();
+    if (!owner) return;
+    const currentSid = normalizeDiagramSessionId(sid);
+    if (!currentSid) return;
+    const draftSnapshot = buildOwnerSnapshot({
+      id: currentSid,
+      session_id: currentSid,
+      bpmn_xml: toText(draft?.bpmn_xml || ""),
+      bpmn_xml_version: Number(draft?.bpmn_xml_version || draft?.version || 0),
+      diagram_state_version: Number(draft?.diagram_state_version ?? draft?.diagramStateVersion ?? 0),
+      bpmn_graph_fingerprint: toText(draft?.bpmn_graph_fingerprint || ""),
+    }, "draft_hydrate");
+    const accepted = asObject(owner.getState()?.acceptedSnapshot);
+    const acceptedXml = String(accepted?.xml || "");
+    const draftXml = String(draftSnapshot?.bpmn_xml || "");
+    const acceptedVersion = Number(accepted?.xmlVersion || 0);
+    const draftVersion = Number(draftSnapshot?.bpmn_xml_version || 0);
+    const shouldHydrateOwner = (
+      (draftXml.trim() && draftXml !== acceptedXml)
+      || (draftVersion > 0 && draftVersion > acceptedVersion)
+    );
+    if (shouldHydrateOwner) {
+      owner.reloadSession({
+        source: "draft_hydrate",
+        durableSnapshot: draftSnapshot,
+      });
+    }
+  }, [
+    asObject,
+    buildOwnerSnapshot,
+    draft?.bpmn_graph_fingerprint,
+    draft?.bpmn_xml,
+    draft?.bpmn_xml_version,
+    draft?.diagramStateVersion,
+    draft?.diagram_state_version,
+    draft?.version,
+    ensureSessionWorkspaceTruthOwner,
+    sid,
+    toText,
+  ]);
 
   const {
     genBusy,
@@ -579,6 +870,76 @@ export default function ProcessStage({
     sessionCompanionLegacyMeta,
     sessionCompanionLocalFirstAdapterMode,
   ]);
+  const hasSession = !!sid;
+  const saveAckToastTimerRef = useRef(0);
+  const [saveAckToast, setSaveAckToast] = useState({
+    visible: false,
+    tone: "success",
+    message: "",
+  });
+  const [manualSaveIntent, setManualSaveIntent] = useState("");
+  const showSaveAckToast = useCallback((messageRaw, toneRaw = "success") => {
+    const message = toText(messageRaw);
+    if (!message) return;
+    const tone = toText(toneRaw) || "success";
+    if (typeof window !== "undefined" && saveAckToastTimerRef.current) {
+      window.clearTimeout(saveAckToastTimerRef.current);
+      saveAckToastTimerRef.current = 0;
+    }
+    setSaveAckToast({
+      visible: true,
+      tone,
+      message,
+    });
+    if (typeof window === "undefined") return;
+    saveAckToastTimerRef.current = window.setTimeout(() => {
+      setSaveAckToast((prev) => ({
+        ...prev,
+        visible: false,
+      }));
+      saveAckToastTimerRef.current = 0;
+    }, SAVE_ACK_TOAST_HIDE_MS);
+  }, [toText]);
+  useEffect(() => () => {
+    if (typeof window === "undefined") return;
+    if (!saveAckToastTimerRef.current) return;
+    window.clearTimeout(saveAckToastTimerRef.current);
+    saveAckToastTimerRef.current = 0;
+  }, []);
+  const currentUserId = toText(user?.id || user?.user_id || user?.email);
+  const currentUserLabel = toText(user?.name || user?.username || user?.email || currentUserId || "Вы");
+  const recordPresenceActor = useCallback((actorRaw, options = {}) => {
+    if (!sid) return;
+    setSessionPresenceActors((prev) => upsertSessionPresenceActor(prev, actorRaw, {
+      nowMs: Number(options?.nowMs || Date.now()),
+      ttlMs: SESSION_PRESENCE_TTL_MS,
+      minTouchMs: Number(options?.minTouchMs ?? 15000),
+      maxActors: 12,
+    }));
+  }, [sid]);
+
+  useEffect(() => {
+    if (!hasSession || !sid || !currentUserId) {
+      setSessionPresenceActors([]);
+      return undefined;
+    }
+    recordPresenceActor({
+      userId: currentUserId,
+      label: currentUserLabel || "Вы",
+      lastSeenAt: Date.now(),
+    }, { minTouchMs: 0 });
+    const timer = window.setInterval(() => {
+      recordPresenceActor({
+        userId: currentUserId,
+        label: currentUserLabel || "Вы",
+        lastSeenAt: Date.now(),
+      });
+    }, SESSION_PRESENCE_HEARTBEAT_MS);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [currentUserId, currentUserLabel, hasSession, recordPresenceActor, sid]);
+
   const sessionCompanionMetaLive = useMemo(() => {
     return normalizeSessionCompanion(sessionCompanionBridgeSnapshot.companion);
   }, [sessionCompanionBridgeSnapshot.companion]);
@@ -590,6 +951,27 @@ export default function ProcessStage({
     () => buildSaveUploadStatusBadge(saveUploadLifecycleEvent),
     [saveUploadLifecycleEvent],
   );
+  const sessionPresenceView = useMemo(() => buildSessionPresenceView({
+    actorsRaw: sessionPresenceActors,
+    currentUserIdRaw: currentUserId,
+    nowMs: Date.now(),
+    ttlMs: SESSION_PRESENCE_TTL_MS,
+  }), [currentUserId, sessionPresenceActors]);
+  const leaveNavigationRisk = useMemo(
+    () => deriveLeaveNavigationRisk({
+      hasSession,
+      saveSnapshotRaw: sessionSaveReadSnapshot,
+      saveUploadStatusRaw: saveUploadStatus,
+    }),
+    [hasSession, saveUploadStatus, sessionSaveReadSnapshot],
+  );
+  const showSaveConflictModal = saveUploadStatus?.state === "conflict" && !saveConflictNoticeDismissed;
+  const saveConflictModalView = useMemo(() => buildSaveConflictModalView({
+    conflictRaw: saveUploadStatus?.conflict,
+    currentUserRaw: user,
+    currentUserIdRaw: toText(user?.id || user?.user_id || user?.email),
+    fallbackTextRaw: saveUploadStatus?.title || saveUploadStatus?.error,
+  }), [saveUploadStatus?.conflict, saveUploadStatus?.error, saveUploadStatus?.title, toText, user]);
   const sessionVersionReadSnapshot = useMemo(
     () => asObject(sessionCompanionBridgeSnapshot.version),
     [sessionCompanionBridgeSnapshot.version],
@@ -744,8 +1126,326 @@ export default function ProcessStage({
     sid,
   ]);
 
-  const hasSession = !!sid;
   const isLocal = isLocalSessionId(sid);
+  const bpmnSync = useBpmnSync({
+    sessionId: sid,
+    isLocal,
+    draft,
+    bpmnRef,
+    onSessionSync: onSessionSyncWithVersion,
+    apiGetBpmnXml,
+  });
+
+  const clearRemoteSaveHighlightBadge = useCallback(() => {
+    setRemoteSaveHighlightBadge(null);
+    setRemoteSaveHighlightBusy(false);
+  }, []);
+
+  useEffect(() => {
+    clearRemoteSaveHighlightBadge();
+  }, [clearRemoteSaveHighlightBadge, sid]);
+
+  const applyPendingRemoteSaveRefresh = useCallback(async () => {
+    if (!sid || !hasSession || isLocal) return { ok: false, reason: "refresh_disabled" };
+    const pending = remoteSaveHighlightBadge && typeof remoteSaveHighlightBadge === "object"
+      ? remoteSaveHighlightBadge
+      : null;
+    const serverSession = pending?.serverSession && typeof pending.serverSession === "object"
+      ? pending.serverSession
+      : null;
+    if (!serverSession) return { ok: false, reason: "no_pending_remote_snapshot" };
+    const localUnsafe = (
+      saveDirtyHint === true
+      || isManualSaveBusy === true
+      || asObject(sessionSaveReadSnapshot).isDirty === true
+      || toText(saveUploadStatus?.state) === "saving"
+      || toText(saveUploadStatus?.state) === "conflict"
+    );
+    if (localUnsafe) {
+      const message = "Нельзя обновить сессию: есть локальные несохранённые изменения.";
+      setGenErr(message);
+      return { ok: false, reason: "local_state_unsafe_for_remote_apply", error: message };
+    }
+    setRemoteSaveHighlightBusy(true);
+    setGenErr("");
+    try {
+      const serverVersion = Number(serverSession?.diagram_state_version ?? serverSession?.diagramStateVersion);
+      onSessionSyncWithVersion?.({
+        ...serverSession,
+        _sync_source: "passive_remote_refresh_action",
+      });
+      if (Number.isFinite(serverVersion) && serverVersion >= 0) {
+        rememberDiagramStateVersion(serverVersion, { sessionId: sid });
+      }
+      await bpmnSync.resetBackend();
+      setSaveDirtyHint(false);
+      const changedElementIds = Array.isArray(pending?.changedElementIds)
+        ? pending.changedElementIds
+        : [];
+      changedElementIds.forEach((elementId, index) => {
+        const delayMs = index * 80;
+        window.setTimeout(() => {
+          bpmnRef.current?.flashNode?.(elementId, "sync", { label: "Remote" });
+        }, delayMs);
+      });
+      setRemoteSaveHighlightBadge(null);
+      setInfoMsg("Сессия обновлена до актуального состояния.");
+      return { ok: true, changedCount: changedElementIds.length };
+    } catch (error) {
+      const message = shortErr(error?.message || error || "Не удалось обновить сессию.");
+      setGenErr(message);
+      return { ok: false, reason: "refresh_failed", error: message };
+    } finally {
+      setRemoteSaveHighlightBusy(false);
+    }
+  }, [
+    asObject,
+    bpmnSync,
+    hasSession,
+    isLocal,
+    isManualSaveBusy,
+    onSessionSyncWithVersion,
+    rememberDiagramStateVersion,
+    remoteSaveHighlightBadge,
+    saveDirtyHint,
+    saveUploadStatus?.state,
+    setGenErr,
+    setInfoMsg,
+    setSaveDirtyHint,
+    sessionSaveReadSnapshot,
+    shortErr,
+    sid,
+    toText,
+  ]);
+
+  const applyRemoteSaveHighlightFromServerSession = useCallback((sessionRaw, source = "remote_poll") => {
+    const serverSession = asObject(sessionRaw);
+    const currentSid = normalizeDiagramSessionId(sid);
+    const sessionSid = normalizeDiagramSessionId(serverSession?.session_id || serverSession?.id || "");
+    if (!isDiagramVersionSessionMatch(currentSid, sessionSid)) {
+      return { ok: false, reason: "sid_mismatch" };
+    }
+    const serverVersion = Number(serverSession?.diagram_state_version ?? serverSession?.diagramStateVersion);
+    if (!Number.isFinite(serverVersion) || serverVersion < 0) {
+      return { ok: false, reason: "missing_server_version" };
+    }
+    const knownBaseVersion = Number(getBaseDiagramStateVersion());
+    const fallbackVersion = Number(draft?.diagram_state_version ?? draft?.diagramStateVersion ?? 0);
+    const localVersion = Number.isFinite(knownBaseVersion) && knownBaseVersion >= 0
+      ? Math.round(knownBaseVersion)
+      : (Number.isFinite(fallbackVersion) && fallbackVersion >= 0 ? Math.round(fallbackVersion) : 0);
+    if (Math.round(serverVersion) <= localVersion) {
+      return { ok: false, reason: "not_newer_than_local" };
+    }
+    const serverVersionRounded = Math.round(serverVersion);
+    const lastWrite = readServerLastWriteFromSession(serverSession);
+    if (lastWrite.actorUserId || lastWrite.actorLabel) {
+      recordPresenceActor({
+        userId: lastWrite.actorUserId,
+        label: lastWrite.actorLabel,
+        lastSeenAt: lastWrite.at > 0 ? lastWrite.at * 1000 : Date.now(),
+      }, { minTouchMs: 0 });
+    }
+    const sameActor = (
+      currentUserId
+      && lastWrite.actorUserId
+      && String(currentUserId).trim().toLowerCase() === String(lastWrite.actorUserId).trim().toLowerCase()
+    );
+    if (sameActor) {
+      onSessionSyncWithVersion?.({
+        ...serverSession,
+        _sync_source: `${source}_self_actor_sync`,
+      });
+      rememberDiagramStateVersion(serverVersionRounded, { sessionId: currentSid });
+      setRemoteSaveHighlightBadge(null);
+      return { ok: true, applied: true, highlighted: false, sameActor: true };
+    }
+    const localUnsafe = (
+      saveDirtyHint === true
+      || isManualSaveBusy === true
+      || asObject(sessionSaveReadSnapshot).isDirty === true
+      || toText(saveUploadStatus?.state) === "saving"
+      || toText(saveUploadStatus?.state) === "conflict"
+    );
+    if (localUnsafe) {
+      return { ok: false, reason: "local_state_unsafe_for_remote_notice" };
+    }
+    const nextXml = toText(serverSession?.bpmn_xml || "");
+    if (!nextXml) {
+      return { ok: false, reason: "missing_server_xml" };
+    }
+    const prevXml = toText(draft?.bpmn_xml || "");
+    const changedElementIds = deriveRemoteChangedElementIds({
+      previousXmlRaw: prevXml,
+      nextXmlRaw: nextXml,
+      changedKeysRaw: lastWrite.changedKeys,
+      maxIds: 12,
+    });
+    const badgeView = buildRemoteSaveHighlightView({
+      actorLabelRaw: lastWrite.actorLabel,
+      changedElementIdsRaw: changedElementIds,
+      changedKeysRaw: lastWrite.changedKeys,
+      atRaw: lastWrite.at,
+    });
+    setRemoteSaveHighlightBadge((prev) => {
+      const prevVersion = Number(prev?.serverVersion || 0);
+      if (Number.isFinite(prevVersion) && prevVersion >= serverVersionRounded) {
+        return prev;
+      }
+      return {
+        ...badgeView,
+        serverVersion: serverVersionRounded,
+        source: toText(source),
+        serverSession,
+      };
+    });
+    return { ok: true, applied: false, highlighted: true, pendingRefresh: true, changedCount: changedElementIds.length };
+  }, [
+    asObject,
+    currentUserId,
+    draft?.bpmn_xml,
+    draft?.diagramStateVersion,
+    draft?.diagram_state_version,
+    getBaseDiagramStateVersion,
+    isManualSaveBusy,
+    onSessionSyncWithVersion,
+    recordPresenceActor,
+    rememberDiagramStateVersion,
+    saveDirtyHint,
+    saveUploadStatus?.state,
+    sessionSaveReadSnapshot,
+    sid,
+    toText,
+  ]);
+
+  const pollRemoteSessionSnapshot = useCallback(async (reason = "interval") => {
+    if (!sid || !hasSession || isLocal) return { ok: false, reason: "poll_disabled" };
+    if (remoteSessionPollInFlightRef.current) return { ok: false, reason: "poll_busy" };
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      return { ok: false, reason: "poll_hidden" };
+    }
+    remoteSessionPollInFlightRef.current = true;
+    try {
+      const head = await apiGetBpmnVersions(sid, { limit: 1 });
+      if (!head?.ok) {
+        return { ok: false, reason: "head_fetch_failed", status: Number(head?.status || 0) };
+      }
+      const headItems = Array.isArray(head?.versions)
+        ? head.versions
+        : (Array.isArray(head?.items) ? head.items : []);
+      const latestHead = asObject(headItems[0] || {});
+      const headVersion = Number(latestHead?.diagram_state_version ?? latestHead?.diagramStateVersion);
+      const headVersionRounded = Number.isFinite(headVersion) && headVersion > 0 ? Math.round(headVersion) : 0;
+      if (!headVersionRounded) {
+        return { ok: false, reason: "head_missing_version" };
+      }
+      const knownBaseVersion = Number(getBaseDiagramStateVersion());
+      const fallbackVersion = Number(draft?.diagram_state_version ?? draft?.diagramStateVersion ?? 0);
+      const localVersionRounded = Number.isFinite(knownBaseVersion) && knownBaseVersion >= 0
+        ? Math.round(knownBaseVersion)
+        : (Number.isFinite(fallbackVersion) && fallbackVersion >= 0 ? Math.round(fallbackVersion) : 0);
+      const seenVersion = Number(remoteSessionPollSeenDiagramStateVersionRef.current || 0);
+      const seenVersionRounded = Number.isFinite(seenVersion) && seenVersion > 0 ? Math.round(seenVersion) : 0;
+      const seenBaselineVersion = Math.max(seenVersionRounded, localVersionRounded);
+      if (headVersionRounded <= seenBaselineVersion) {
+        return {
+          ok: false,
+          reason: "head_not_newer",
+          serverVersion: headVersionRounded,
+          seenVersion: seenBaselineVersion,
+        };
+      }
+      const fetched = await apiGetSession(sid);
+      if (!fetched?.ok) return { ok: false, reason: "fetch_failed", status: Number(fetched?.status || 0) };
+      const sessionLike = asObject(fetched?.session || fetched?.result || {});
+      const currentSid = normalizeDiagramSessionId(sid);
+      const fetchedSid = normalizeDiagramSessionId(sessionLike?.session_id || sessionLike?.id || "");
+      if (!isDiagramVersionSessionMatch(currentSid, fetchedSid)) {
+        return { ok: false, reason: "poll_sid_mismatch" };
+      }
+      const lastWrite = readServerLastWriteFromSession(sessionLike);
+      if (lastWrite.actorUserId || lastWrite.actorLabel) {
+        recordPresenceActor({
+          userId: lastWrite.actorUserId,
+          label: lastWrite.actorLabel,
+          lastSeenAt: lastWrite.at > 0 ? lastWrite.at * 1000 : Date.now(),
+        }, { minTouchMs: 0 });
+      }
+      const serverVersion = Number(sessionLike?.diagram_state_version ?? sessionLike?.diagramStateVersion);
+      if (Number.isFinite(serverVersion) && serverVersion > 0) {
+        remoteSessionPollSeenDiagramStateVersionRef.current = Math.max(
+          seenBaselineVersion,
+          Math.round(serverVersion),
+        );
+      } else {
+        remoteSessionPollSeenDiagramStateVersionRef.current = Math.max(
+          seenBaselineVersion,
+          headVersionRounded,
+        );
+      }
+      return applyRemoteSaveHighlightFromServerSession(sessionLike, `remote_poll_${reason}`);
+    } finally {
+      remoteSessionPollInFlightRef.current = false;
+    }
+  }, [
+    applyRemoteSaveHighlightFromServerSession,
+    asObject,
+    draft?.diagramStateVersion,
+    draft?.diagram_state_version,
+    getBaseDiagramStateVersion,
+    hasSession,
+    isLocal,
+    recordPresenceActor,
+    sid,
+  ]);
+
+  useEffect(() => {
+    remoteSessionPollSeenDiagramStateVersionRef.current = 0;
+  }, [hasSession, isLocal, sid]);
+
+  useEffect(() => {
+    if (!sid || !hasSession || isLocal) return undefined;
+    let disposed = false;
+    const runPoll = (reason = "interval") => {
+      if (disposed) return;
+      void pollRemoteSessionSnapshot(reason);
+    };
+    runPoll("mount");
+    const intervalId = window.setInterval(() => {
+      runPoll("interval");
+    }, REMOTE_SESSION_SYNC_POLL_MS);
+    const handleForeground = () => {
+      runPoll("foreground");
+    };
+    window.addEventListener("focus", handleForeground);
+    document.addEventListener("visibilitychange", handleForeground);
+    return () => {
+      disposed = true;
+      window.removeEventListener("focus", handleForeground);
+      document.removeEventListener("visibilitychange", handleForeground);
+      window.clearInterval(intervalId);
+    };
+  }, [hasSession, isLocal, pollRemoteSessionSnapshot, sid]);
+
+  const remoteSaveHighlightView = useMemo(() => {
+    const value = remoteSaveHighlightBadge && typeof remoteSaveHighlightBadge === "object"
+      ? remoteSaveHighlightBadge
+      : {};
+    const hasServerSession = value.serverSession && typeof value.serverSession === "object";
+    return {
+      visible: value.visible === true && hasServerSession,
+      label: toText(value.label),
+      title: toText(value.title),
+      actorLabel: toText(value.actorLabel),
+      changedElementIds: Array.isArray(value.changedElementIds) ? value.changedElementIds : [],
+      at: Number(value.at || 0),
+      refreshLabel: toText(value.refreshLabel) || "Обновить сессию",
+      refreshHint: toText(value.refreshHint) || "Загрузить актуальное состояние сессии с сервера.",
+      busy: remoteSaveHighlightBusy === true,
+      onRefreshSession: hasServerSession ? applyPendingRemoteSaveRefresh : undefined,
+    };
+  }, [applyPendingRemoteSaveRefresh, remoteSaveHighlightBadge, remoteSaveHighlightBusy, toText]);
+
   // Track the last project that had an active session so the explorer can
   // navigate back to it when the session is closed.
   const lastSessionProjectIdRef = useRef("");
@@ -774,15 +1474,6 @@ export default function ProcessStage({
     [],
   );
 
-  const bpmnSync = useBpmnSync({
-    sessionId: sid,
-    isLocal,
-    draft,
-    bpmnRef,
-    onSessionSync,
-    apiGetBpmnXml,
-  });
-
   const {
     tab,
     setTab,
@@ -795,6 +1486,7 @@ export default function ProcessStage({
     markInterviewAsSaved,
     handleInterviewChange,
     queueDiagramMutation: queueDiagramMutationRaw,
+    cancelPendingDiagramAutosave,
   } = useProcessOrchestrator({
     sid,
     isLocal,
@@ -805,7 +1497,9 @@ export default function ProcessStage({
     processBodyRef,
     bpmnSync,
     projectionHelpers,
-    onSessionSync,
+    getBaseDiagramStateVersion,
+    rememberDiagramStateVersion,
+    onSessionSync: onSessionSyncWithVersion,
     onError: setGenErr,
   });
 
@@ -858,9 +1552,56 @@ export default function ProcessStage({
       setSaveDirtyHint(true);
       setDiagramSearchMutationVersion((prev) => prev + 1);
       refreshDiagramUndoRedoState();
+      const owner = ensureSessionWorkspaceTruthOwner();
+      if (owner) {
+        const command = resolveWorkspaceMutationCommand(kind);
+        const mutationSnapshot = buildOwnerSnapshot({
+          id: sid,
+          session_id: sid,
+          bpmn_xml: toText(draft?.bpmn_xml || ""),
+          bpmn_xml_version: Number(draft?.bpmn_xml_version || draft?.version || 0),
+          diagram_state_version: Number(getBaseDiagramStateVersion() ?? draft?.diagram_state_version ?? draft?.diagramStateVersion ?? 0),
+          bpmn_graph_fingerprint: toText(draft?.bpmn_graph_fingerprint || ""),
+        }, `mutation:${kind || "diagram.change"}`);
+        if (command === "applyPropertyChange") {
+          owner.applyPropertyChange({
+            patch: mutationSnapshot,
+            reason: kind || "diagram.property.change",
+          });
+        } else if (command === "applyTemplate") {
+          owner.applyTemplate({
+            patch: mutationSnapshot,
+            reason: kind || "diagram.template.apply",
+          });
+        } else if (command === "applyCopyPaste") {
+          owner.applyCopyPaste({
+            patch: mutationSnapshot,
+            reason: kind || "diagram.copy_paste",
+          });
+        } else {
+          owner.applyDiagramEdit({
+            patch: mutationSnapshot,
+            reason: kind || "diagram.change",
+          });
+        }
+      }
     }
     queueDiagramMutationRaw(mutation);
-  }, [queueDiagramMutationRaw, refreshDiagramUndoRedoState]);
+  }, [
+    buildOwnerSnapshot,
+    draft?.bpmn_graph_fingerprint,
+    draft?.bpmn_xml,
+    draft?.bpmn_xml_version,
+    draft?.diagramStateVersion,
+    draft?.diagram_state_version,
+    draft?.version,
+    ensureSessionWorkspaceTruthOwner,
+    getBaseDiagramStateVersion,
+    queueDiagramMutationRaw,
+    refreshDiagramUndoRedoState,
+    sid,
+    toText,
+  ]);
 
   const diagramSearch = useDiagramSearchController({
     bpmnRef,
@@ -928,6 +1669,9 @@ export default function ProcessStage({
   const onBpmnSaveLifecycleEvent = useCallback((eventRaw = null) => {
     const next = normalizeBpmnSaveLifecycleEvent(eventRaw);
     if (!next.stage || next.stage === "idle") return;
+    if (next.stage === "conflict") {
+      setSaveConflictNoticeDismissed(false);
+    }
     setSaveUploadLifecycleEvent(next);
     if (saveUploadLifecycleClearTimerRef.current) {
       globalThis.clearTimeout(saveUploadLifecycleClearTimerRef.current);
@@ -944,43 +1688,171 @@ export default function ProcessStage({
     }
   }, []);
 
+  const dismissSaveConflictNotice = useCallback(() => {
+    setSaveConflictNoticeDismissed(true);
+  }, []);
+
+  const reloadSessionAfterSaveConflict = useCallback(async ({ discardLocal = false } = {}) => {
+    if (!sid || saveConflictActionBusy) return { ok: false, error: "busy_or_missing_session" };
+    setSaveConflictActionBusy(true);
+    setGenErr("");
+    try {
+      const fetched = await apiGetSession(sid);
+      if (fetched?.ok && fetched?.session && typeof fetched.session === "object") {
+        onSessionSyncWithVersion?.({
+          ...fetched.session,
+          _sync_source: "save_conflict_refresh",
+        });
+      }
+      await bpmnSync.resetBackend();
+      setSaveDirtyHint(false);
+      setSaveUploadLifecycleEvent(IDLE_SAVE_UPLOAD_EVENT);
+      setSaveConflictNoticeDismissed(true);
+      setInfoMsg(
+        discardLocal
+          ? "Локальные изменения отброшены. Загружена серверная версия сессии."
+          : "Сессия обновлена с сервера. Проверьте изменения и повторите сохранение при необходимости.",
+      );
+      if (!fetched?.ok) {
+        const warning = shortErr(fetched?.error || "Не удалось полностью обновить сессию.");
+        setGenErr(warning);
+        return { ok: false, error: warning };
+      }
+      return { ok: true };
+    } catch (error) {
+      const message = shortErr(error?.message || error || "Не удалось обновить сессию после конфликта.");
+      setGenErr(message);
+      return { ok: false, error: message };
+    } finally {
+      setSaveConflictActionBusy(false);
+    }
+  }, [bpmnSync, onSessionSyncWithVersion, saveConflictActionBusy, setGenErr, sid]);
+
+  const handleSaveConflictRefresh = useCallback(() => {
+    void reloadSessionAfterSaveConflict({ discardLocal: false });
+  }, [reloadSessionAfterSaveConflict]);
+
+  const handleSaveConflictDiscardLocal = useCallback(() => {
+    void reloadSessionAfterSaveConflict({ discardLocal: true });
+  }, [reloadSessionAfterSaveConflict]);
+
   const applyDiagramMode = useCallback((nextModeRaw) => {
     const nextMode = normalizeDiagramMode(nextModeRaw);
     setDiagramMode(nextMode);
   }, []);
 
-  async function handleSaveCurrentTab() {
-    if (!hasSession || !isBpmnTab || isSwitchingTab || isFlushingTab || isManualSaveBusy) return;
+  async function runManualSaveAction({ createRevision = false } = {}) {
+    if (!hasSession || isSwitchingTab || isFlushingTab || isManualSaveBusy) return;
+    if (createRevision) {
+      // Cancel queued autosave to avoid race against explicit version creation.
+      cancelPendingDiagramAutosave?.();
+    }
+    const truthOwner = ensureSessionWorkspaceTruthOwner();
+    truthOwner?.saveSessionStart({ source: "manual_save" });
     setGenErr("");
     setInfoMsg("");
+    setManualSaveIntent(createRevision ? "create_revision" : "save_session");
     setIsManualSaveBusy(true);
+    showSaveAckToast("Сохранение...", "info");
     try {
+      const persistReason = createRevision ? "publish_manual_save" : "manual_save";
       const saved = await bpmnSync.flushFromActiveTab(tab, {
         force: tab === "diagram",
         source: "manual_save",
         reason: "manual_save",
-        persistReason: "publish_manual_save",
+        persistReason,
       });
       if (!saved?.ok) {
-        setGenErr(shortErr(saved?.error || "Не удалось сохранить BPMN."));
+        truthOwner?.saveSessionFailed({
+          source: "manual_save_failed",
+          error: shortErr(saved?.error || "Не удалось сохранить BPMN."),
+        });
+        const failedOutcomeUi = resolveManualSaveOutcomeUi({
+          primarySaveOk: false,
+          primarySaveError: shortErr(saved?.error || "Не удалось сохранить."),
+        });
+        showSaveAckToast(failedOutcomeUi.genErr, "error");
         return;
       }
       let companionError = "";
-      let publishInfo = "";
+      let saveInfo = "";
       if (!saved?.pending) {
+        const savedXml = toText(saved?.xml || draft?.bpmn_xml || "");
         const backendVersionSnapshot = asObject(saved?.bpmnVersionSnapshot);
         const normalizedBackendVersionSnapshot = normalizeBpmnVersionListItem(backendVersionSnapshot);
+        const savedDiagramStateVersion = Number(saved?.diagramStateVersion);
+        const snapshotDiagramStateVersion = Number(
+          normalizedBackendVersionSnapshot.diagramStateVersion
+          ?? normalizedBackendVersionSnapshot.diagram_state_version,
+        );
+        const baseCandidates = [
+          savedDiagramStateVersion,
+          snapshotDiagramStateVersion,
+          Number(getBaseDiagramStateVersion()),
+        ]
+          .filter((value) => Number.isFinite(value) && value >= 0)
+          .map((value) => Math.round(value));
+        const companionBaseDiagramStateVersion = baseCandidates.length
+          ? Math.max(...baseCandidates)
+          : null;
+        if (Number.isFinite(companionBaseDiagramStateVersion) && companionBaseDiagramStateVersion >= 0) {
+          rememberDiagramStateVersion(companionBaseDiagramStateVersion, { sessionId: sid });
+        }
+        const acceptedSnapshot = buildOwnerSnapshot({
+          id: sid,
+          session_id: sid,
+          bpmn_xml: savedXml,
+          bpmn_xml_version: Number(
+            normalizedBackendVersionSnapshot.revisionNumber
+            || saved?.storedRev
+            || draft?.bpmn_xml_version
+            || draft?.version
+            || 0
+          ),
+          diagram_state_version: Number(
+            companionBaseDiagramStateVersion
+            ?? saved?.diagramStateVersion
+            ?? getBaseDiagramStateVersion()
+            ?? draft?.diagram_state_version
+            ?? draft?.diagramStateVersion
+            ?? 0
+          ),
+          bpmn_graph_fingerprint: toText(saved?.graphFingerprint || draft?.bpmn_graph_fingerprint || ""),
+        }, "manual_save");
+        truthOwner?.saveSessionAccepted({
+          source: "manual_save",
+          primaryAck: {
+            ...acceptedSnapshot,
+            bpmnVersionSnapshot: {
+              id: String(normalizedBackendVersionSnapshot.id || ""),
+              revisionNumber: Number(
+                normalizedBackendVersionSnapshot.revisionNumber
+                || acceptedSnapshot?.bpmn_xml_version
+                || 0
+              ),
+            },
+          },
+          durableSnapshot: acceptedSnapshot,
+        });
         const backendRevisionNumber = Number(normalizedBackendVersionSnapshot.revisionNumber || 0);
-        if (backendRevisionNumber > 0) {
+        const backendSnapshotIsMeaningful = normalizedBackendVersionSnapshot.isMeaningfulRevision === true;
+        if (backendRevisionNumber > 0 && backendSnapshotIsMeaningful) {
           const backendVersionId = String(normalizedBackendVersionSnapshot.id || "").trim();
-          setLatestBpmnVersionHead(normalizedBackendVersionSnapshot);
+          const nextMeaningfulHead = applyUserFacingRevisionNumbers({
+            meaningfulRevisionsRaw: [normalizedBackendVersionSnapshot],
+            revisionHistorySnapshotRaw: sessionRevisionHistorySnapshot,
+          })[0] || normalizedBackendVersionSnapshot;
+          setLatestBpmnVersionHead(nextMeaningfulHead);
           setLatestBpmnVersionHeadStatus("ready");
           setVersionsList((prev) => {
             const current = asArray(prev);
             const deduped = backendVersionId
               ? current.filter((item) => String(item?.id || "").trim() !== backendVersionId)
               : current.filter((item) => Number(item?.revisionNumber || item?.rev || item?.version_number || 0) !== backendRevisionNumber);
-            return [normalizedBackendVersionSnapshot, ...deduped];
+            return applyUserFacingRevisionNumbers({
+              meaningfulRevisionsRaw: [normalizedBackendVersionSnapshot, ...deduped],
+              revisionHistorySnapshotRaw: sessionRevisionHistorySnapshot,
+            });
           });
           setVersionsLoadState("ready");
           setVersionsLoadError("");
@@ -989,55 +1861,168 @@ export default function ProcessStage({
         lastSuccessfulPublishRef.current = {
           sessionId: sid,
           atMs: Date.now(),
-          xmlHash: fnv1aHex(String(saved?.xml || draft?.bpmn_xml || "")),
+          xmlHash: fnv1aHex(savedXml),
         };
-        const companionResult = await persistSavedSessionCompanion({
-          source: "manual_save",
-          xml: toText(saved?.xml || draft?.bpmn_xml || ""),
-          savedAt: new Date().toISOString(),
-          storedRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
-          requestedBaseRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
-          publishRevision: true,
-          revisionSource: "publish_manual_save",
-          authoritativeRevision: backendVersionSnapshot,
-        });
-        if (!companionResult?.ok) {
-          companionError = shortErr(companionResult?.error || "Не удалось синхронизировать companion metadata.");
-          setGenErr(companionError);
-        } else {
-          if (backendRevisionNumber > 0) {
-            publishInfo = `Опубликовано как версия R${backendRevisionNumber}.`;
-          } else {
-            const revisionInfo = asObject(companionResult?.revision);
-            if (revisionInfo.skipped === true) {
-              publishInfo = "Черновик сохранён. Новая версия не создана: контент совпадает с последней.";
+        const shouldSyncCompanion = backendRevisionNumber > 0;
+        if (shouldSyncCompanion) {
+          const hasCompanionBaseDiagramStateVersion = (
+            Number.isFinite(companionBaseDiagramStateVersion)
+            && companionBaseDiagramStateVersion > 0
+          );
+          if (hasCompanionBaseDiagramStateVersion) {
+            let nextCompanionBaseDiagramStateVersion = companionBaseDiagramStateVersion;
+            const manualProjectionPlan = buildManualSaveProjectionSyncPlan({
+              xmlText: savedXml,
+              draft,
+              projectionHelpers,
+            });
+            if (!manualProjectionPlan?.ok) {
+              companionError = shortErr(
+                manualProjectionPlan?.error
+                || "Не удалось подготовить projection sync после сохранения диаграммы.",
+              );
+            } else {
+              const projectionPatch = asObject(manualProjectionPlan.patch);
+              if (Object.keys(projectionPatch).length > 0) {
+                markInterviewAsSaved(
+                  manualProjectionPlan.nextInterview,
+                  manualProjectionPlan.nextNodes,
+                  draft?.nodes,
+                  manualProjectionPlan.nextEdges,
+                  draft?.edges,
+                );
+                onSessionSyncWithVersion?.({
+                  id: sid,
+                  session_id: sid,
+                  actors_derived: asArray(manualProjectionPlan.derivedActors),
+                  ...(projectionPatch.interview ? { interview: manualProjectionPlan.nextInterview } : {}),
+                  ...(projectionPatch.nodes ? { nodes: manualProjectionPlan.nextNodes } : {}),
+                  ...(projectionPatch.edges ? { edges: manualProjectionPlan.nextEdges } : {}),
+                  _sync_source: "manual_save_projection_sync",
+                });
+                if (!isLocal) {
+                  const syncPatchPayload = {
+                    ...projectionPatch,
+                    base_diagram_state_version: Math.round(companionBaseDiagramStateVersion),
+                  };
+                  const syncRes = await apiPatchSession(sid, syncPatchPayload);
+                  if (!syncRes?.ok) {
+                    companionError = shortErr(
+                      syncRes?.error
+                      || "Не удалось синхронизировать graph projection после сохранения BPMN.",
+                    );
+                  } else {
+                    const syncAckVersion = Number(
+                      syncRes?.session?.diagram_state_version
+                      ?? syncRes?.session?.diagramStateVersion,
+                    );
+                    if (Number.isFinite(syncAckVersion) && syncAckVersion > 0) {
+                      nextCompanionBaseDiagramStateVersion = Math.round(syncAckVersion);
+                      rememberDiagramStateVersion(nextCompanionBaseDiagramStateVersion, { sessionId: sid });
+                    }
+                    onSessionSyncWithVersion?.({
+                      ...(syncRes?.session && typeof syncRes.session === "object" ? syncRes.session : {}),
+                      id: sid,
+                      session_id: sid,
+                      actors_derived: asArray(manualProjectionPlan.derivedActors),
+                      _sync_source: "manual_save_projection_patch_ack",
+                    });
+                  }
+                }
+              }
+            }
+            if (!companionError) {
+              const companionResult = await persistSavedSessionCompanion({
+                source: "manual_save",
+                xml: savedXml,
+                savedAt: new Date().toISOString(),
+                storedRev: Number(
+                  acceptedSnapshot?.bpmn_xml_version
+                  || normalizedBackendVersionSnapshot.revisionNumber
+                  || saved?.storedRev
+                  || 0,
+                ),
+                requestedBaseRev: Number(
+                  acceptedSnapshot?.bpmn_xml_version
+                  || normalizedBackendVersionSnapshot.revisionNumber
+                  || saved?.storedRev
+                  || 0,
+                ),
+                baseDiagramStateVersion: (
+                  Number.isFinite(nextCompanionBaseDiagramStateVersion)
+                  && nextCompanionBaseDiagramStateVersion > 0
+                )
+                  ? Math.round(nextCompanionBaseDiagramStateVersion)
+                  : getBaseDiagramStateVersion(),
+                publishRevision: createRevision,
+                revisionComment: createRevision ? "Версия создана вручную" : "",
+                revisionSource: createRevision ? "publish_manual_save" : "manual_save",
+                authoritativeRevision: backendVersionSnapshot,
+              });
+              if (!companionResult?.ok) {
+                companionError = shortErr(companionResult?.error || "Не удалось синхронизировать companion metadata.");
+                saveInfo = createRevision
+                  ? "Создана новая версия BPMN. Метаданные синхронизировать не удалось."
+                  : "Сохранено внутри версии.";
+              } else if (createRevision) {
+                const revisionInfo = asObject(companionResult?.revision);
+                if (revisionInfo.skipped === true) {
+                  companionError = companionError || "Новая версия не создана: нет изменений.";
+                  saveInfo = "Новая версия не создана: нет изменений.";
+                } else {
+                  saveInfo = "Создана новая версия BPMN.";
+                }
+              } else {
+                saveInfo = saved?.skipped === true
+                  ? "Сохранено внутри версии."
+                  : "Сохранено внутри версии.";
+              }
             }
           }
-          if (!publishInfo && asObject(companionResult?.revision).skipped === true) {
-            publishInfo = "Черновик сохранён. Новая версия не создана: контент совпадает с последней.";
-          }
+        } else {
+          saveInfo = createRevision
+            ? "Новая версия не создана: нет изменений."
+            : "Сохранено внутри версии.";
         }
+        if (!saveInfo && !companionError) {
+          saveInfo = createRevision ? "Создана новая версия BPMN." : "Сохранено внутри версии.";
+        }
+        cancelPendingDiagramAutosave?.();
       }
       setSaveDirtyHint(false);
       if (selectedElementId) {
         bpmnRef.current?.flashNode?.(selectedElementId, "sync", { label: "Synced" });
       }
-      if (saved?.pending) {
-        setInfoMsg("Сохранение поставлено в очередь (pending).");
-      } else if (companionError && publishInfo) {
-        setInfoMsg(`${publishInfo} Companion metadata не синхронизированы.`);
-      } else if (companionError) {
-        setInfoMsg("BPMN сохранён, companion metadata не синхронизированы.");
-      } else if (publishInfo) {
-        setInfoMsg(publishInfo);
-      } else {
-        setInfoMsg("Черновик сохранён.");
-      }
+      const successOutcomeUi = resolveManualSaveOutcomeUi({
+        primarySaveOk: true,
+        primarySavePending: saved?.pending === true,
+        companionError,
+        saveInfo,
+        staleRetryApplied: saved?.staleRetryApplied === true,
+      });
+      const outcomeMessage = toText(successOutcomeUi.genErr) || toText(successOutcomeUi.infoMsg);
+      const outcomeTone = successOutcomeUi.genErr
+        ? "error"
+        : (successOutcomeUi.companionSeverity === "warning" ? "warning" : "success");
+      showSaveAckToast(outcomeMessage, outcomeTone);
     } catch (e) {
-      setGenErr(shortErr(e?.message || e || "Не удалось сохранить BPMN."));
+      truthOwner?.saveSessionFailed({
+        source: "manual_save_failed",
+        error: shortErr(e?.message || e || "Не удалось сохранить."),
+      });
+      showSaveAckToast(shortErr(e?.message || e || "Не удалось сохранить."), "error");
     } finally {
       setIsManualSaveBusy(false);
+      setManualSaveIntent("");
     }
+  }
+
+  async function handleSaveCurrentTab() {
+    await runManualSaveAction({ createRevision: false });
+  }
+
+  async function handleCreateRevisionAction() {
+    await runManualSaveAction({ createRevision: true });
   }
 
   // TODO(tech-debt): Review/LLM tabs are temporarily hidden from UI.
@@ -1079,7 +2064,8 @@ export default function ProcessStage({
     sid,
     isLocal,
     draftBpmnMeta: draft?.bpmn_meta,
-    onSessionSync,
+    getBaseDiagramStateVersion,
+    onSessionSync: onSessionSyncWithVersion,
     setGenErr,
     shortErr,
     hybridLayerPersistedMapRef,
@@ -1104,6 +2090,7 @@ export default function ProcessStage({
     savedAt = "",
     storedRev = 0,
     requestedBaseRev = 0,
+    baseDiagramStateVersion = null,
     publishRevision = false,
     revisionComment = "",
     revisionSource = "publish_revision",
@@ -1135,14 +2122,18 @@ export default function ProcessStage({
         createdAt: toText(normalizedAuthoritativeRevision.created_at_iso || normalizedAuthoritativeRevision.created_at || savedAt),
         authoritativeRevisionNumber: Number(normalizedAuthoritativeRevision.version_number || 0),
         authoritativeRevisionId: toText(normalizedAuthoritativeRevision.id),
-        skipIfContentUnchanged: true,
+        skipIfContentUnchanged: false,
       });
       if (!revisionTransition?.ok) {
         return { ok: false, error: String(revisionTransition?.error || "revision_publish_failed") };
       }
       nextCompanion = revisionTransition.nextCompanion;
     }
-    const persisted = await persistSessionCompanion(nextCompanion, { source: `${source}_session_companion` });
+    const persisted = await persistSessionCompanion(nextCompanion, {
+      source: `${source}_session_companion`,
+      baseDiagramStateVersion,
+      savedXml: toText(xml || draft?.bpmn_xml || ""),
+    });
     return {
       ...persisted,
       revision: {
@@ -1190,14 +2181,14 @@ export default function ProcessStage({
       ...currentMeta,
       auto_pass_v1: result,
     };
-    onSessionSync?.({
-      id: sid,
-      session_id: sid,
-      bpmn_meta: nextMeta,
-      _sync_source: source,
-    });
+      onSessionSyncWithVersion?.({
+        id: sid,
+        session_id: sid,
+        bpmn_meta: nextMeta,
+        _sync_source: source,
+      });
     return true;
-  }, [draft?.bpmn_meta, onSessionSync, sid]);
+  }, [draft?.bpmn_meta, onSessionSyncWithVersion, sid]);
   const syncAutoPassResultFromServer = useCallback(async (source = "auto_pass_result_server_sync") => {
     if (!sid) return false;
     const metaResult = await apiGetBpmnMeta(sid);
@@ -2187,6 +3178,24 @@ export default function ProcessStage({
     bpmnStageHostRef,
     clientToDiagram,
     onPersistedTemplateApply: async ({ template, saved }) => {
+      const owner = ensureSessionWorkspaceTruthOwner();
+      const snapshot = buildOwnerSnapshot({
+        id: sid,
+        session_id: sid,
+        bpmn_xml: toText(saved?.xml || bpmnRef.current?.getXmlDraft?.() || draft?.bpmn_xml || ""),
+        bpmn_xml_version: Number(saved?.storedRev || draft?.bpmn_xml_version || draft?.version || 0),
+        diagram_state_version: Number(saved?.diagramStateVersion || getBaseDiagramStateVersion() || 0),
+        bpmn_graph_fingerprint: toText(saved?.graphFingerprint || draft?.bpmn_graph_fingerprint || ""),
+      }, "template_apply");
+      owner?.applyTemplate({
+        patch: snapshot,
+        reason: "template_apply",
+      });
+      owner?.saveSessionAccepted({
+        source: "template_apply",
+        primaryAck: snapshot,
+        durableSnapshot: snapshot,
+      });
       const result = await persistTemplateAppliedSessionCompanion({
         template,
         source: "template_apply",
@@ -2942,7 +3951,7 @@ export default function ProcessStage({
     const comment = String(item?.comment || "").trim();
     if (comment) return comment;
     const revisionNumber = Number(item?.revisionNumber || item?.rev || 0);
-    if (revisionNumber > 0) return `Ревизия r${revisionNumber}`;
+    if (revisionNumber > 0) return `Версия ${revisionNumber}`;
     if (item?.pinned) return defaultCheckpointLabel(item?.ts);
     return "Без названия";
   }
@@ -2962,6 +3971,8 @@ export default function ProcessStage({
       || 0,
     );
     const sourceAction = String(item?.source_action || item?.sourceAction || item?.reason || "import_bpmn").trim() || "import_bpmn";
+    const sourceClassification = classifyRevisionSourceAction(sourceAction);
+    const normalizedSourceAction = String(sourceClassification.action || sourceAction || "import_bpmn").trim() || "import_bpmn";
     const importNote = String(item?.import_note || item?.importNote || item?.comment || "").trim();
     const author = formatRevisionAuthor({
       ...(asObject(item?.author)),
@@ -2976,9 +3987,13 @@ export default function ProcessStage({
       id,
       xml,
       ts: createdAt,
-      reason: sourceAction,
-      reasonLabel: localizeRevisionSourceAction(sourceAction),
+      reason: normalizedSourceAction,
+      reasonLabel: localizeRevisionSourceAction(normalizedSourceAction),
+      reasonBucket: String(sourceClassification.bucket || "meaningful"),
+      isMeaningfulRevision: sourceClassification.isMeaningful !== false,
+      isTechnicalRevision: sourceClassification.isTechnical === true,
       comment: importNote,
+      technicalRevisionNumber: versionNumber,
       revisionNumber: versionNumber,
       rev: versionNumber,
       authorId: author.authorId,
@@ -3004,6 +4019,8 @@ export default function ProcessStage({
       setPreviewSnapshotId("");
       setVersionsLoadState("idle");
       setVersionsLoadError("");
+      setVersionsServerEntriesCount(0);
+      setVersionsTechnicalEntriesCount(0);
       setLatestBpmnVersionHead(null);
       if (options?.trackHeadStatus === true) setLatestBpmnVersionHeadStatus("idle");
       return;
@@ -3033,27 +4050,42 @@ export default function ProcessStage({
         setPreviewSnapshotId("");
         setVersionsLoadState("failed");
         setVersionsLoadError(shortErr(loaded?.error || "Не удалось загрузить BPMN версии."));
+        setVersionsServerEntriesCount(0);
+        setVersionsTechnicalEntriesCount(0);
       }
       if (trackHeadStatus) setLatestBpmnVersionHeadStatus("failed");
       return;
     }
-    const list = asArray(loaded?.versions).map((item) => normalizeBpmnVersionListItem(item));
-    setLatestBpmnVersionHead(asArray(list)[0] || null);
+    const normalizedList = asArray(loaded?.versions).map((item) => normalizeBpmnVersionListItem(item));
+    const revisionSplit = splitMeaningfulAndTechnicalRevisions(normalizedList);
+    const list = asArray(revisionSplit.meaningful);
+    const technicalList = asArray(revisionSplit.technical);
+    const unknownList = asArray(revisionSplit.unknown);
+    const hiddenNonMeaningfulList = asArray(revisionSplit.nonMeaningful);
+    const serverEntriesCount = asArray(normalizedList).length;
+    const listWithUserFacingNumbers = applyUserFacingRevisionNumbers({
+      meaningfulRevisionsRaw: list,
+      revisionHistorySnapshotRaw: sessionRevisionHistorySnapshot,
+    });
+    setLatestBpmnVersionHead(asArray(listWithUserFacingNumbers)[0] || null);
     if (trackHeadStatus) setLatestBpmnVersionHeadStatus("ready");
     if (!updateList) return;
     // eslint-disable-next-line no-console
     console.debug(
-      `UI_VERSIONS_LOAD sid=${sid} key="${snapshotScopeKey(snapshotProjectId, sid)}" count=${asArray(list).length}`,
+      `UI_VERSIONS_LOAD sid=${sid} key="${snapshotScopeKey(snapshotProjectId, sid)}" `
+      + `meaningful_count=${asArray(list).length} technical_count=${technicalList.length} unknown_count=${unknownList.length}`,
     );
-    setVersionsList(asArray(list));
-    setVersionsLoadState(asArray(list).length > 0 ? "ready" : "empty");
+    setVersionsServerEntriesCount(serverEntriesCount);
+    setVersionsTechnicalEntriesCount(hiddenNonMeaningfulList.length);
+    setVersionsList(asArray(listWithUserFacingNumbers));
+    setVersionsLoadState(asArray(listWithUserFacingNumbers).length > 0 ? "ready" : "empty");
     setVersionsLoadError("");
     setPreviewSnapshotId((prev) => {
-      const exists = asArray(list).some((item) => String(item?.id || "") === String(prev || ""));
+      const exists = asArray(listWithUserFacingNumbers).some((item) => String(item?.id || "") === String(prev || ""));
       if (exists) return prev;
-      return asArray(list)[0]?.id || "";
+      return asArray(listWithUserFacingNumbers)[0]?.id || "";
     });
-  }, [normalizeBpmnVersionListItem, sid, snapshotProjectId]);
+  }, [applyUserFacingRevisionNumbers, normalizeBpmnVersionListItem, sessionRevisionHistorySnapshot, sid, snapshotProjectId]);
 
   const ensureBpmnVersionXml = useCallback(async (versionOrId) => {
     const versionId = String(
@@ -3090,7 +4122,7 @@ export default function ProcessStage({
   const refreshLatestBpmnRevisionHead = useCallback(async () => {
     await refreshSnapshotVersions({
       includeXml: false,
-      limit: 1,
+      limit: BPMN_VERSION_HEADERS_LIMIT,
       updateList: false,
       trackHeadStatus: true,
     });
@@ -3174,9 +4206,14 @@ export default function ProcessStage({
             ...(savePlan.nodesChanged ? { nodes: projected.nextNodes } : {}),
             ...(savePlan.edgesChanged ? { edges: projected.nextEdges } : {}),
           };
-          onSessionSync?.(optimisticSession);
+          onSessionSyncWithVersion?.(optimisticSession);
           if (!isLocal) {
-            const syncRes = await apiPatchSession(sid, savePlan.patch);
+            const syncPatchPayload = { ...savePlan.patch };
+            const baseDiagramStateVersion = Number(getBaseDiagramStateVersion());
+            if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
+              syncPatchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);
+            }
+            const syncRes = await apiPatchSession(sid, syncPatchPayload);
             if (syncRes.ok) {
               const serverSession =
                 syncRes.session && typeof syncRes.session === "object"
@@ -3185,14 +4222,14 @@ export default function ProcessStage({
                       actors_derived: derivedActors,
                     }
                   : optimisticSession;
-              onSessionSync?.(serverSession);
+              onSessionSyncWithVersion?.(serverSession);
             } else {
               setGenErr(shortErr(syncRes.error || "Не удалось сохранить Interview из BPMN версии."));
             }
           }
         }
         setInfoMsg(
-          `Версия r${Number(item?.revisionNumber || item?.rev || 0)} восстановлена: `
+          `Версия ${Number(item?.revisionNumber || item?.rev || 0)} восстановлена: `
           + `${projected.parsed.nodes.length} узл., ${projected.parsed.edges.length} связей.`
           + `${restoreDiagnostics.importHasAnchorImpact ? ` Overlay anchors affected: ${restoreDiagnostics.affectedObjectIds.length}.` : " Overlay anchors unchanged."}`,
         );
@@ -3212,24 +4249,24 @@ export default function ProcessStage({
 
   async function clearSnapshotHistory() {
     setGenErr("");
-    setInfoMsg("История ревизий immutable и не может быть очищена.");
+    setInfoMsg("История версий неизменяема и не может быть очищена.");
   }
 
   async function updateSnapshotMeta(item, patch = {}) {
     void item;
     void patch;
     setGenErr("");
-    setInfoMsg("Редактирование ревизии отключено: immutable ledger.");
+    setInfoMsg("Редактирование версии отключено: журнал неизменяем.");
   }
 
   async function togglePinSnapshot(item) {
     void item;
-    setInfoMsg("Pin/Unpin отключён: ревизии immutable.");
+    setInfoMsg("Закрепление версии отключено: журнал неизменяем.");
   }
 
   async function editSnapshotLabel(item) {
     void item;
-    setInfoMsg("Изменение label отключено: ревизии immutable.");
+    setInfoMsg("Переименование версии отключено: журнал неизменяем.");
   }
 
   async function previewSnapshotVersion(itemOrId) {
@@ -3459,7 +4496,7 @@ export default function ProcessStage({
       }
       setInfoMsg(
         `Автоисправление: ${applied} опер.${failed > 0 ? ` Ошибок: ${failed}.` : ""} `
-        + "Черновик обновлён; для новой ревизии используйте Save.",
+        + "Черновик обновлён; для новой версии используйте «Создать новую версию».",
       );
       setQualityAutoFixOpen(false);
     } catch (error) {
@@ -3630,7 +4667,7 @@ export default function ProcessStage({
         setGenErr(errText);
         return;
       }
-      onSessionSync?.({
+      onSessionSyncWithVersion?.({
         ...payload,
         _sync_source: "diagram_ai_questions_generate",
       });
@@ -3668,7 +4705,7 @@ export default function ProcessStage({
     aiGenerateGate.reasonText,
     sid,
     selectedElementId,
-    onSessionSync,
+    onSessionSyncWithVersion,
     handleAiQuestionsByElementChange,
     applyClarifyFromSession,
     draft?.interview,
@@ -3688,7 +4725,7 @@ export default function ProcessStage({
       return;
     }
     if (source.includes("notes_badge_click")) {
-      onOpenElementNotes?.(selected, "header_open_notes");
+      onOpenElementNotes?.(selected, "notes_marker_open");
     }
   }
 
@@ -3929,6 +4966,7 @@ export default function ProcessStage({
       canGenerateAiQuestions,
       aiGenerateBlockReason: canGenerateAiQuestions ? "" : aiGenerateGate.reasonText,
       aiGenerateBlockReasonCode: canGenerateAiQuestions ? "" : aiGenerateGate.reasonCode,
+      leaveNavigationRisk,
     });
   }, [
     onUiStateChange,
@@ -3942,6 +4980,7 @@ export default function ProcessStage({
     canGenerateAiQuestions,
     aiGenerateGate.reasonText,
     aiGenerateGate.reasonCode,
+    leaveNavigationRisk,
   ]);
 
   useEffect(() => {
@@ -4101,13 +5140,13 @@ export default function ProcessStage({
       count: derivedActors.length,
     });
     if (sameDerivedActors(draft?.actors_derived, derivedActors)) return;
-    onSessionSync?.({
+    onSessionSyncWithVersion?.({
       id: sid,
       session_id: sid,
       actors_derived: derivedActors,
       _sync_source: "actors_derive_effect",
     });
-  }, [sid, draft?.bpmn_xml, draft?.actors_derived, onSessionSync]);
+  }, [sid, draft?.bpmn_xml, draft?.actors_derived, onSessionSyncWithVersion]);
 
   function applyClarifyFromSession(updated, fallbackNodes) {
     const review = buildClarificationHints(updated?.questions, updated?.nodes || fallbackNodes || []);
@@ -4253,9 +5292,14 @@ export default function ProcessStage({
             ...(savePlan.nodesChanged ? { nodes: projected.nextNodes } : {}),
             ...(savePlan.edgesChanged ? { edges: projected.nextEdges } : {}),
           };
-          onSessionSync?.(optimisticSession);
+          onSessionSyncWithVersion?.(optimisticSession);
           if (!isLocal) {
-            const syncRes = await apiPatchSession(sid, savePlan.patch);
+            const syncPatchPayload = { ...savePlan.patch };
+            const baseDiagramStateVersion = Number(getBaseDiagramStateVersion());
+            if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
+              syncPatchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);
+            }
+            const syncRes = await apiPatchSession(sid, syncPatchPayload);
             if (syncRes.ok) {
               const serverSession =
                 syncRes.session && typeof syncRes.session === "object"
@@ -4264,7 +5308,7 @@ export default function ProcessStage({
                       actors_derived: derivedActors,
                     }
                   : optimisticSession;
-              onSessionSync?.(serverSession);
+              onSessionSyncWithVersion?.(serverSession);
             } else {
               setGenErr(shortErr(syncRes.error || "Не удалось сохранить Interview из BPMN."));
             }
@@ -4410,7 +5454,7 @@ export default function ProcessStage({
       setExecutionPlanPreview,
       setExecutionPlanSaveBusy,
       setQualityOverlayFilters,
-      onSessionSync,
+      onSessionSync: onSessionSyncWithVersion,
       onOpenElementNotes,
       requestDiagramFocus,
       applyClarifyFromSession,
@@ -4431,6 +5475,8 @@ export default function ProcessStage({
       apiAiQuestions,
       apiGetBpmnXml,
       apiPatchSession,
+      getBaseDiagramStateVersion,
+      rememberDiagramStateVersion,
       buildExecutionPlan,
       appendExecutionPlanVersionEntry,
       copyText,
@@ -4542,7 +5588,9 @@ export default function ProcessStage({
     onDiagramContextMenuDismiss: onBpmnContextMenuDismiss,
     onDiagramContextMenuRequest: onBpmnContextMenuRequest,
     onElementNotesRemap,
-    onSessionSync,
+    onSessionSync: onSessionSyncWithVersion,
+    getBaseDiagramStateVersion,
+    rememberDiagramStateVersion,
     propertiesOverlayAlwaysEnabled,
     propertiesOverlayAlwaysPreviewByElementId,
     queueDiagramMutation,
@@ -4703,6 +5751,8 @@ export default function ProcessStage({
     versionsList,
     versionsLoadState,
     versionsLoadError,
+    versionsServerEntriesCount,
+    versionsTechnicalEntriesCount,
     revisionHistorySnapshot: revisionHistoryUiSnapshot,
     setGenErr,
     setDiffTargetSnapshotId,
@@ -4733,6 +5783,7 @@ export default function ProcessStage({
     isSwitchingTab,
     isFlushingTab,
     isManualSaveBusy,
+    manualSaveIntent,
     saveDirtyHint,
     workbench,
     genErr,
@@ -4767,10 +5818,18 @@ export default function ProcessStage({
     shellProps: {
       ...shellVm.shellProps,
       sessionRevisionHistorySnapshot: revisionHistoryUiSnapshot,
+      saveConflictActions: {
+        visible: showSaveConflictModal,
+        busy: saveConflictActionBusy === true,
+        onRefreshSession: handleSaveConflictRefresh,
+        onStay: dismissSaveConflictNotice,
+        onDiscardLocalChanges: handleSaveConflictDiscardLocal,
+      },
     },
     sid,
     saveDirtyHint: shellVm.shellProps.saveDirtyHint === true,
     handleSaveCurrentTab,
+    handleCreateRevisionAction,
     handleUndoAction,
     handleRedoAction,
     canUndo: diagramUndoRedoState.canUndo === true,
@@ -4799,12 +5858,19 @@ export default function ProcessStage({
     handleDrawioImportFile,
     topPanelsView: shellVm.panelsProps.top,
     publishGitMirrorSnapshot,
+    sessionPresenceView,
+    remoteSaveHighlightView,
     asArray,
   });
 
   return (
     <ProcessStageShell className={shellClassName}>
       <ProcessStageHeader view={headerView} />
+      <ProcessSaveAckToast
+        visible={saveAckToast.visible === true}
+        message={saveAckToast.message}
+        tone={saveAckToast.tone}
+      />
 
       <div
         className={bodyClassName}
@@ -4866,6 +5932,11 @@ export default function ProcessStage({
                     templateSelectionCount,
                     openTemplatesPicker,
                     canOpenTemplatesList,
+                    sessionId: sid,
+                    openNotesDiscussions: () => onOpenNotesDiscussions?.({
+                      scopeFilter: "all",
+                      source: "diagram_action_bar",
+                    }),
                     sessionSaveReadSnapshot,
                     sessionVersionReadSnapshot,
                     sessionTemplateProvenanceSnapshot,
@@ -4907,6 +5978,8 @@ export default function ProcessStage({
                     diagramActionPathOpen,
                     diagramPathPopoverRef,
                     diagramSearchPopoverRef,
+                    diagramSearchMode: diagramSearch.mode,
+                    setDiagramSearchMode: diagramSearch.setMode,
                     diagramSearchQuery: diagramSearch.query,
                     setDiagramSearchQuery: diagramSearch.setQuery,
                     diagramSearchResults: diagramSearch.results,
@@ -5185,6 +6258,14 @@ export default function ProcessStage({
 
       <ProcessDialogs
         view={shellVm.dialogsProps}
+      />
+      <ProcessStageSaveConflictModal
+        open={showSaveConflictModal}
+        busy={saveConflictActionBusy === true}
+        view={saveConflictModalView}
+        onRefreshSession={handleSaveConflictRefresh}
+        onStay={dismissSaveConflictNotice}
+        onDiscardLocalChanges={handleSaveConflictDiscardLocal}
       />
     </ProcessStageShell>
   );

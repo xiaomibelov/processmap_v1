@@ -39,6 +39,24 @@ export function shouldAttemptRequestedSessionRestore({
   });
 }
 
+export function buildSnapshotRestorePutOptions({
+  sessionLike,
+  restoredSnapshot,
+} = {}) {
+  const session = sessionLike && typeof sessionLike === "object" ? sessionLike : {};
+  const snapshot = restoredSnapshot && typeof restoredSnapshot === "object" ? restoredSnapshot : {};
+  const rev = Number(session?.bpmn_xml_version ?? session?.version ?? snapshot?.rev ?? 0);
+  const baseDiagramStateVersion = Number(session?.diagram_state_version ?? session?.diagramStateVersion);
+  const options = {};
+  if (Number.isFinite(rev) && rev >= 0) {
+    options.rev = Math.round(rev);
+  }
+  if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
+    options.baseDiagramStateVersion = Math.round(baseDiagramStateVersion);
+  }
+  return options;
+}
+
 export default function useSessionActivationOrchestration({
   projectId,
   setProjectId,
@@ -250,9 +268,10 @@ export default function useSessionActivationOrchestration({
       const ts = Number(restoredSnapshot?.ts || Date.now()) || Date.now();
       setSnapshotRestoreNotice({ sid, ts, nonce: Date.now() });
       void (async () => {
-        const putRes = await apiPutBpmnXml(sid, xml, {
-          rev: Number(next?.bpmn_xml_version || next?.version || restoredSnapshot?.rev || 0),
-        });
+        const putRes = await apiPutBpmnXml(sid, xml, buildSnapshotRestorePutOptions({
+          sessionLike: nextRaw,
+          restoredSnapshot,
+        }));
         logSnapshotTrace("restore_persist_backend", {
           sid,
           ok: putRes?.ok ? 1 : 0,

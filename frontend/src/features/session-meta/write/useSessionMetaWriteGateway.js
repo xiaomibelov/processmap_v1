@@ -13,6 +13,7 @@ export default function useSessionMetaWriteGateway({
   normalizeMeta,
   serializeMeta,
   getPersistedMeta,
+  getBaseDiagramStateVersion,
   onSessionSync,
   shortErr,
   setGenErr,
@@ -45,9 +46,38 @@ export default function useSessionMetaWriteGateway({
     if (!sid || isLocal) {
       return { ok: true, local: true, writeSeq };
     }
+    const resolveBaseDiagramStateVersion = () => {
+      const fromOptionRaw = Number(options?.baseDiagramStateVersion);
+      const fromOptionNormalized = Number.isFinite(fromOptionRaw) && fromOptionRaw >= 0
+        ? Math.round(fromOptionRaw)
+        : null;
+      const fromGatewayRaw = Number(
+        typeof getBaseDiagramStateVersion === "function"
+          ? getBaseDiagramStateVersion()
+          : NaN,
+      );
+      const fromGatewayNormalized = Number.isFinite(fromGatewayRaw) && fromGatewayRaw >= 0
+        ? Math.round(fromGatewayRaw)
+        : null;
+      if (fromOptionNormalized !== null && fromGatewayNormalized !== null) {
+        if (fromOptionNormalized <= 0 && fromGatewayNormalized > 0) return fromGatewayNormalized;
+        if (fromGatewayNormalized <= 0 && fromOptionNormalized > 0) return fromOptionNormalized;
+        return Math.max(fromOptionNormalized, fromGatewayNormalized);
+      }
+      if (fromOptionNormalized !== null) return fromOptionNormalized;
+      if (fromGatewayNormalized !== null) return fromGatewayNormalized;
+      return null;
+    };
+    const baseDiagramStateVersion = resolveBaseDiagramStateVersion();
     const remoteWrite = typeof options?.remoteWrite === "function"
       ? options.remoteWrite
-      : async ({ sid: writeSid, nextMeta }) => apiPatchSession(writeSid, { bpmn_meta: nextMeta });
+      : async ({ sid: writeSid, nextMeta: writeMeta, baseDiagramStateVersion: baseVersion }) => {
+        const payload = { bpmn_meta: writeMeta };
+        if (Number.isFinite(baseVersion) && baseVersion >= 0) {
+          payload.base_diagram_state_version = Math.round(baseVersion);
+        }
+        return apiPatchSession(writeSid, payload);
+      };
     const runWrite = async () => {
       const syncRes = await remoteWrite({
         sid,
@@ -55,6 +85,7 @@ export default function useSessionMetaWriteGateway({
         prevMeta,
         writeSeq,
         source,
+        baseDiagramStateVersion,
       });
       if (writeSeq !== writeSeqRef.current) {
         return { ok: true, stale: true, dropped: true, writeSeq };
@@ -94,6 +125,7 @@ export default function useSessionMetaWriteGateway({
       .then(runWrite);
     return pendingWriteRef.current;
   }, [
+    getBaseDiagramStateVersion,
     getPersistedMeta,
     isLocal,
     normalizeMeta,

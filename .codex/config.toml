@@ -1,0 +1,5 @@
+# ProcessMap Codex/GSD project baseline (bounded, minimal).
+# Без абсолютных путей и без расширенной кастомизации.
+
+[features]
+codex_hooks = true

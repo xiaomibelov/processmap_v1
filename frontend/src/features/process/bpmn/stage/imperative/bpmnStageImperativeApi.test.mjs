@@ -84,6 +84,7 @@ test("createBpmnStageImperativeApi exposes expected public methods", () => {
     "resetBackend",
     "focusNode",
     "listSearchableElements",
+    "listSearchableProperties",
     "setSearchHighlights",
     "clearSearchHighlights",
     "setCanvasViewboxX",
@@ -137,6 +138,49 @@ test("listSearchableElements reads semantic BPMN elements and skips label nodes"
   assert.deepEqual(rows.map((row) => row.elementId), ["Task_1", "Flow_1"]);
   assert.equal(rows[0].label, "Approve label");
   assert.equal(rows[1].typeLabel, "SequenceFlow");
+});
+
+test("listSearchableProperties proxies managed property records from stage callback", () => {
+  const viewer = { id: "viewer" };
+  const calls = [];
+  const api = createBpmnStageImperativeApi(createCtx({
+    refs: {
+      viewerRef: { current: viewer },
+      modelerRef: { current: null },
+    },
+    values: { view: "viewer" },
+    callbacks: {
+      listSearchablePropertiesOnInstance: (inst) => {
+        calls.push(inst);
+        return [
+          {
+            searchId: "Task_A::prop_0",
+            elementId: "Task_A",
+            elementTitle: "Call Worker",
+            elementType: "bpmn:ServiceTask",
+            elementTypeLabel: "ServiceTask",
+            propertyName: "topic",
+            propertyValue: "inventory",
+          },
+        ];
+      },
+    },
+  }));
+
+  const rows = api.listSearchableProperties({ mode: "viewer" });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0], viewer);
+  assert.deepEqual(rows, [
+    {
+      searchId: "Task_A::prop_0",
+      elementId: "Task_A",
+      elementTitle: "Call Worker",
+      elementType: "bpmn:ServiceTask",
+      elementTypeLabel: "ServiceTask",
+      propertyName: "topic",
+      propertyValue: "inventory",
+    },
+  ]);
 });
 
 test("setSearchHighlights and clearSearchHighlights proxy to instance callbacks", () => {

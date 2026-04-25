@@ -13,20 +13,33 @@ test("ProcessStage derives unified revision UI snapshot and uses it for header a
   assert.equal(source.includes("const revisionHistoryUiSnapshot = useMemo"), true);
   assert.equal(source.includes("revisionHistorySnapshot: revisionHistoryUiSnapshot"), true);
   assert.equal(source.includes("sessionRevisionHistorySnapshot: revisionHistoryUiSnapshot"), true);
+  assert.equal(source.includes("handleCreateRevisionAction,"), true);
 });
 
-test("manual save forwards explicit publish intent for backend version snapshots", () => {
+test("session save and explicit revision action stay separated by contract", () => {
   const source = fs.readFileSync(path.join(__dirname, "ProcessStage.jsx"), "utf8");
-  assert.equal(source.includes('persistReason: "publish_manual_save"'), true);
+  assert.equal(source.includes("async function runManualSaveAction({ createRevision = false } = {})"), true);
+  assert.equal(source.includes("async function handleCreateRevisionAction()"), true);
+  assert.equal(source.includes("await runManualSaveAction({ createRevision: true });"), true);
+  assert.equal(source.includes('const persistReason = createRevision ? "publish_manual_save" : "manual_save";'), true);
+  assert.equal(source.includes("publishRevision: createRevision"), true);
+  assert.equal(source.includes('revisionSource: createRevision ? "publish_manual_save" : "manual_save"'), true);
   assert.equal(source.includes("const backendVersionSnapshot = asObject(saved?.bpmnVersionSnapshot);"), true);
   assert.equal(source.includes("const normalizedBackendVersionSnapshot = normalizeBpmnVersionListItem(backendVersionSnapshot);"), true);
-  assert.equal(source.includes("setLatestBpmnVersionHead(normalizedBackendVersionSnapshot);"), true);
+  assert.equal(source.includes("setLatestBpmnVersionHead(nextMeaningfulHead);"), true);
   assert.equal(source.includes('setLatestBpmnVersionHeadStatus("ready");'), true);
   assert.equal(source.includes("authoritativeRevision: backendVersionSnapshot"), true);
-  assert.equal(source.includes("Опубликовано как версия R${backendRevisionNumber}."), true);
-  assert.equal(source.includes("} else if (publishInfo) {"), true);
-  assert.equal(source.includes("setInfoMsg(publishInfo);"), true);
-  assert.equal(source.includes("Черновик сохранён."), true);
+  assert.equal(source.includes("skipIfContentUnchanged: false"), true);
+  assert.equal(source.includes("const shouldSyncCompanion = backendRevisionNumber > 0;"), true);
+  assert.equal(source.includes('revisionComment: createRevision ? "Версия создана вручную" : ""'), true);
+  assert.equal(source.includes("Создана новая версия BPMN."), true);
+  assert.equal(source.includes("Создана новая версия BPMN. Метаданные синхронизировать не удалось."), true);
+  assert.equal(source.includes("Новая версия не создана: нет изменений."), true);
+  assert.equal(source.includes("cancelPendingDiagramAutosave?.();"), true);
+  assert.equal(source.includes("saveInfo,"), true);
+  assert.equal(source.includes('persistReason: "manual_save"'), false);
+  assert.equal(source.includes("создание новой версии не подтверждено"), false);
+  assert.equal(source.includes("resolveManualSaveOutcomeUi"), true);
 });
 
 test("versions modal first load is headers-only and XML is loaded lazily", () => {
@@ -36,5 +49,34 @@ test("versions modal first load is headers-only and XML is loaded lazily", () =>
   assert.equal(source.includes("apiGetBpmnVersion"), true);
   assert.equal(source.includes("const ensureBpmnVersionXml = useCallback"), true);
   assert.equal(source.includes("setVersionsLoadState(\"loading\")"), true);
-  assert.equal(source.includes("setVersionsLoadState(asArray(list).length > 0 ? \"ready\" : \"empty\")"), true);
+  assert.equal(source.includes("setVersionsLoadState(asArray(listWithUserFacingNumbers).length > 0 ? \"ready\" : \"empty\")"), true);
+});
+
+test("versions history keeps meaningful revisions and filters technical traces", () => {
+  const source = fs.readFileSync(path.join(__dirname, "ProcessStage.jsx"), "utf8");
+  assert.equal(source.includes("splitMeaningfulAndTechnicalRevisions"), true);
+  assert.equal(source.includes("applyUserFacingRevisionNumbers"), true);
+  assert.equal(source.includes("const list = asArray(revisionSplit.meaningful);"), true);
+  assert.equal(source.includes("meaningful_count="), true);
+  assert.equal(source.includes("technical_count="), true);
+});
+
+test("manual save technical snapshots do not advance published-head UI state", () => {
+  const source = fs.readFileSync(path.join(__dirname, "ProcessStage.jsx"), "utf8");
+  assert.equal(source.includes("const backendSnapshotIsMeaningful = normalizedBackendVersionSnapshot.isMeaningfulRevision === true;"), true);
+  assert.equal(source.includes("if (backendRevisionNumber > 0 && backendSnapshotIsMeaningful)"), true);
+});
+
+test("published head refresh scans meaningful window instead of raw single top row", () => {
+  const source = fs.readFileSync(path.join(__dirname, "ProcessStage.jsx"), "utf8");
+  assert.equal(source.includes("const BPMN_VERSION_HEADERS_LIMIT = 50;"), true);
+  assert.equal(source.includes("limit: BPMN_VERSION_HEADERS_LIMIT,"), true);
+  assert.equal(source.includes("limit: 1,"), false);
+});
+
+test("versions refresh tracks unknown events as hidden non-meaningful lineage", () => {
+  const source = fs.readFileSync(path.join(__dirname, "ProcessStage.jsx"), "utf8");
+  assert.equal(source.includes("const unknownList = asArray(revisionSplit.unknown);"), true);
+  assert.equal(source.includes("setVersionsTechnicalEntriesCount(hiddenNonMeaningfulList.length);"), true);
+  assert.equal(source.includes("unknown_count="), true);
 });

@@ -469,8 +469,46 @@
 }
 
 .fpcNodeBadge--notes {
-  border-color: hsl(var(--diagram-notes) / 0.66);
-  background: color-mix(in srgb, hsl(var(--diagram-notes)) 20%, hsl(var(--diagram-badge-bg) / 0.94));
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 17px;
+  padding: 0 5px 0 6px;
+  border-color: hsl(var(--diagram-notes) / 0.58);
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, hsl(var(--diagram-notes)) 18%, hsl(var(--diagram-badge-bg) / 0.98)) 0%,
+      color-mix(in srgb, hsl(var(--diagram-notes)) 10%, hsl(var(--diagram-badge-bg) / 0.94)) 100%);
+  color: color-mix(in srgb, hsl(var(--diagram-notes)) 56%, hsl(var(--diagram-badge-text) / 0.98));
+}
+
+.fpcNodeBadgeIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.fpcNodeBadgeIcon--notes {
+  width: 11px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.fpcNodeBadgeCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 4px;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--diagram-notes) / 0.22);
+  background: hsl(var(--bg-elevated) / 0.72);
+  color: hsl(var(--diagram-badge-text) / 0.94);
+  font-size: 8.2px;
+  font-weight: 800;
+  letter-spacing: 0;
 }
 
 .fpcNodeBadge--documentation {

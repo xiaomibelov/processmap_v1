@@ -13,6 +13,7 @@ import useAdminOrgsData from "./hooks/useAdminOrgsData";
 import useAdminProjectsData from "./hooks/useAdminProjectsData";
 import useAdminSessionDetailData from "./hooks/useAdminSessionDetailData";
 import useAdminSessionsData from "./hooks/useAdminSessionsData";
+import { useAdminTelemetryErrorEventDetailData, useAdminTelemetryErrorEventsData } from "./hooks/useAdminTelemetryData";
 import AdminAuditPage from "./pages/AdminAuditPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 import AdminJobsPage from "./pages/AdminJobsPage";
@@ -20,6 +21,13 @@ import AdminOrgsPage from "./pages/AdminOrgsPage";
 import AdminProjectsPage from "./pages/AdminProjectsPage";
 import AdminSessionDetailPage from "./pages/AdminSessionDetailPage";
 import AdminSessionsPage from "./pages/AdminSessionsPage";
+import AdminTelemetryEventsPage from "./pages/AdminTelemetryEventsPage";
+import {
+  buildTelemetryCorrelationPivotFilters,
+  buildTelemetrySearchPatch,
+  DEFAULT_TELEMETRY_FILTERS,
+  parseTelemetryFiltersFromSearch,
+} from "./utils/adminTelemetryQuery";
 import { mergeSearchParams, pageToOffset, parsePage, parsePageSize, rangeToTsFrom } from "./utils/adminQuery";
 import { ru } from "../../shared/i18n/ru";
 
@@ -75,6 +83,8 @@ export default function AdminApp({
     };
   }, [rawSearch]);
 
+  const telemetryFilters = useMemo(() => parseTelemetryFiltersFromSearch(rawSearch), [rawSearch]);
+
   const updateSearchState = useCallback((patch = {}, { replace = false, resetPage = false } = {}) => {
     const params = mergeSearchParams(rawSearch, patch, { resetPage });
     const nextRaw = params.toString();
@@ -125,6 +135,14 @@ export default function AdminApp({
     limit: paging.pageSize,
     offset: paging.offset,
   });
+  const telemetryQ = useAdminTelemetryErrorEventsData({
+    enabled: route.section === "telemetry",
+    filters: telemetryFilters,
+  });
+  const telemetryDetailQ = useAdminTelemetryErrorEventDetailData({
+    enabled: route.section === "telemetry" && Boolean(toText(telemetryFilters.event_id)),
+    eventId: telemetryFilters.event_id,
+  });
 
   useEffect(() => {
     if (route.isRoot) onNavigate?.("/admin/dashboard", { replace: true });
@@ -146,6 +164,7 @@ export default function AdminApp({
     if (route.section === "sessions") return sessionsQ;
     if (route.section === "jobs") return jobsQ;
     if (route.section === "audit") return auditQ;
+    if (route.section === "telemetry") return telemetryQ;
     return { loading: false, error: "", data: null };
   })();
 
@@ -153,10 +172,10 @@ export default function AdminApp({
     if (!canAccessAdmin) {
       return <ErrorState title={ru.admin.runtime.accessDeniedTitle} message={ru.admin.runtime.accessDeniedMessage} />;
     }
-    if (activeQuery.loading) {
+    if (route.section !== "telemetry" && activeQuery.loading) {
       return <LoadingBlock label={ru.admin.runtime.loadingSection} />;
     }
-    if (activeQuery.error) {
+    if (route.section !== "telemetry" && activeQuery.error) {
       return <ErrorState title={ru.admin.runtime.dataErrorTitle} message={activeQuery.error} />;
     }
     if (route.section === "dashboard") {
@@ -275,6 +294,61 @@ export default function AdminApp({
               { replace: false },
             );
           }}
+        />
+      );
+    }
+    if (route.section === "telemetry") {
+      return (
+        <AdminTelemetryEventsPage
+          payload={telemetryQ.data || {}}
+          filters={telemetryFilters}
+          loading={telemetryQ.loading}
+          error={telemetryQ.error}
+          detailPayload={telemetryDetailQ.data || null}
+          detailLoading={telemetryDetailQ.loading}
+          detailError={telemetryDetailQ.error}
+          selectedEventId={telemetryFilters.event_id}
+          onFiltersChange={(next) => {
+            updateSearchState(
+              {
+                ...buildTelemetrySearchPatch(next),
+                event_id: "",
+                page: "",
+                page_size: "",
+              },
+              { replace: true, resetPage: false },
+            );
+          }}
+          onFiltersReset={() => {
+            updateSearchState(
+              {
+                ...buildTelemetrySearchPatch(DEFAULT_TELEMETRY_FILTERS),
+                event_id: "",
+                page: "",
+                page_size: "",
+              },
+              { replace: true, resetPage: false },
+            );
+          }}
+          onOpenDetail={(eventId) => {
+            const id = toText(eventId);
+            if (!id) return;
+            updateSearchState({ event_id: id }, { replace: false });
+          }}
+          onPivotCorrelationId={(correlationId) => {
+            const value = toText(correlationId);
+            if (!value) return;
+            updateSearchState(
+              {
+                ...buildTelemetrySearchPatch(buildTelemetryCorrelationPivotFilters(telemetryFilters, value)),
+                event_id: "",
+                page: "",
+                page_size: "",
+              },
+              { replace: false, resetPage: false },
+            );
+          }}
+          onCloseDetail={() => updateSearchState({ event_id: "" }, { replace: false })}
         />
       );
     }

@@ -2,19 +2,18 @@ import { useCallback, useEffect, useRef } from "react";
 import { apiPatchSession } from "../../../lib/api/sessionApi";
 import useAutosaveQueue from "./useAutosaveQueue";
 import { parseAndProjectBpmnToInterview } from "./useInterviewProjection";
+import { buildDiagramSessionPatchFromProjection } from "./diagramSessionPatchContract";
+import { resolveDiagramMutationSecondaryPatchBaseVersion } from "./diagramMutationSecondaryBaseVersion";
 import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
 import { traceProcess } from "../lib/processDebugTrace";
+import { shortUserFacingError } from "../lib/userFacingErrorText";
 import {
   asArray,
   asObject,
-  safeJson,
-  buildInterviewPatchPayload,
 } from "../lib/processStageDomain";
 
 function shortErr(x) {
-  const s = String(x || "").trim();
-  if (!s) return "";
-  return s.length > 160 ? `${s.slice(0, 160)}…` : s;
+  return shortUserFacingError(x, 160);
 }
 
 export default function useDiagramMutationLifecycle({
@@ -24,6 +23,8 @@ export default function useDiagramMutationLifecycle({
   bpmnSync,
   coordinator,
   projectionHelpers,
+  getBaseDiagramStateVersion,
+  rememberDiagramStateVersion,
   onSessionSync,
   onError,
 }) {
@@ -64,6 +65,13 @@ export default function useDiagramMutationLifecycle({
         onError?.(shortErr(saveRes?.error || `Не удалось сохранить ${errLabel} после изменения.`));
         return false;
       }
+      if (saveRes?.pending) {
+        traceProcess("diagram.autosave_pending_primary", {
+          sid,
+          mutation_kind: mutationKind,
+        });
+        return true;
+      }
 
       const xmlFromSave = String(saveRes?.xml || "");
       const draftNow = asObject(draftRef.current);
@@ -102,19 +110,15 @@ export default function useDiagramMutationLifecycle({
           const nextInterview = asObject(projected.nextInterview);
           const nextNodes = asArray(projected.nextNodes);
           const nextEdges = asArray(projected.nextEdges);
-
-          const savePlan = buildInterviewPatchPayload(
-            nextInterview,
-            nextNodes,
-            draftNow?.nodes,
-            nextEdges,
-            draftNow?.edges,
-          );
-          const interviewChanged = safeJson(nextInterview) !== safeJson(draftNow?.interview);
-
-          if (interviewChanged) patch.interview = nextInterview;
-          if (savePlan.nodesChanged) patch.nodes = nextNodes;
-          if (savePlan.edgesChanged) patch.edges = nextEdges;
+          const patchPlan = buildDiagramSessionPatchFromProjection({
+            draftInterviewRaw: draftNow?.interview,
+            nextInterviewRaw: nextInterview,
+            nextNodesRaw: nextNodes,
+            draftNodesRaw: draftNow?.nodes,
+            nextEdgesRaw: nextEdges,
+            draftEdgesRaw: draftNow?.edges,
+          });
+          patch = patchPlan.patch;
 
           optimisticSession = {
             ...baseOptimistic,
@@ -145,11 +149,30 @@ export default function useDiagramMutationLifecycle({
       if (isLocal || isStale?.()) return true;
       if (Object.keys(patch).length === 0) return true;
 
-      const patchRes = await apiPatchSession(sid, patch);
+      const secondaryBaseDiagramStateVersion = resolveDiagramMutationSecondaryPatchBaseVersion({
+        sid,
+        saveResult: saveRes,
+        rememberDiagramStateVersion,
+        getBaseDiagramStateVersion,
+      });
+      if (secondaryBaseDiagramStateVersion === null) {
+        traceProcess("diagram.autosave_patch_skipped_missing_base", {
+          sid,
+          mutation_kind: mutationKind,
+        });
+        return true;
+      }
+      const patchPayload = {
+        ...patch,
+        base_diagram_state_version: secondaryBaseDiagramStateVersion,
+      };
+
+      const patchRes = await apiPatchSession(sid, patchPayload);
       traceProcess("diagram.autosave_patch_backend", {
         sid,
         ok: !!patchRes.ok,
-        patch_keys: Object.keys(patch),
+        patch_keys: Object.keys(patchPayload),
+        base_diagram_state_version: secondaryBaseDiagramStateVersion,
       });
       if (!patchRes.ok) {
         onError?.(shortErr(patchRes.error || "Не удалось синхронизировать Interview после изменения диаграммы."));
@@ -157,16 +180,32 @@ export default function useDiagramMutationLifecycle({
       }
 
       if (isStale?.()) return true;
-      const patchedSession = patchRes.session && typeof patchRes.session === "object"
-        ? patchRes.session
-        : optimisticSession;
-      onSessionSync?.({
-        ...patchedSession,
+      const patchAck = asObject(patchRes.session);
+      const patchAckVersion = Number(patchAck?.diagram_state_version ?? patchAck?.diagramStateVersion);
+      const patchAckPayload = {
+        id: sid,
+        session_id: sid,
         actors_derived: asArray(optimisticSession?.actors_derived),
+        _sync_source: "diagram.autosave_patch_ack",
+      };
+      if (Number.isFinite(patchAckVersion) && patchAckVersion >= 0) {
+        patchAckPayload.diagram_state_version = Math.round(patchAckVersion);
+      }
+      onSessionSync?.({
+        ...patchAckPayload,
       });
       return true;
     },
-    [sid, bpmnSync, projectionHelpers, onSessionSync, isLocal, onError],
+    [
+      sid,
+      bpmnSync,
+      projectionHelpers,
+      onSessionSync,
+      isLocal,
+      onError,
+      getBaseDiagramStateVersion,
+      rememberDiagramStateVersion,
+    ],
   );
 
   const {
@@ -213,5 +252,6 @@ export default function useDiagramMutationLifecycle({
   return {
     queueDiagramMutation,
     flushDiagramBeforeTabSwitch,
+    cancelPendingDiagramAutosave: cancelDiagramAutosave,
   };
 }

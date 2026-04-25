@@ -362,6 +362,31 @@ def _json_loads(value: Any, fallback: Any) -> Any:
         return fallback
 
 
+def _build_diagram_truth_payload(sess: Session) -> Dict[str, Any]:
+    return {
+        "roles": list(getattr(sess, "roles", []) or []),
+        "start_role": getattr(sess, "start_role", None),
+        "notes": str(getattr(sess, "notes", "") or ""),
+        "notes_by_element": getattr(sess, "notes_by_element", {}) or {},
+        "interview": getattr(sess, "interview", {}) or {},
+        "nodes": getattr(sess, "nodes", []) or [],
+        "edges": getattr(sess, "edges", []) or [],
+        "questions": getattr(sess, "questions", []) or [],
+        "bpmn_xml": str(getattr(sess, "bpmn_xml", "") or ""),
+        "bpmn_meta": getattr(sess, "bpmn_meta", {}) or {},
+    }
+
+
+def _diagram_truth_payload_hash(sess: Session) -> str:
+    payload = _build_diagram_truth_payload(sess)
+    raw = _json_dumps(payload, {})
+    try:
+        normalized = json.dumps(json.loads(raw), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    except Exception:
+        normalized = raw
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 def _owner_clause(owner_user_id: str, is_admin: bool) -> Tuple[str, List[Any]]:
     if is_admin or not owner_user_id:
         return "", []
@@ -413,6 +438,72 @@ def _normalize_git_mirror_provider(value: Any) -> str:
 def _normalize_git_mirror_health_status(value: Any) -> str:
     status = str(value or "").strip().lower()
     return status if status in _GIT_MIRROR_HEALTH_STATUSES else "unknown"
+
+
+NOTE_SCOPE_TYPES = {"diagram_element", "diagram", "session"}
+NOTE_THREAD_STATUSES = {"open", "resolved"}
+
+
+def _normalize_note_scope(scope_type: Any, scope_ref: Any) -> Tuple[str, Dict[str, Any]]:
+    normalized_type = str(scope_type or "").strip().lower()
+    if normalized_type not in NOTE_SCOPE_TYPES:
+        raise ValueError("invalid scope_type")
+    raw_ref = scope_ref if isinstance(scope_ref, dict) else {}
+    if normalized_type == "diagram_element":
+        element_id = str(raw_ref.get("element_id") or "").strip()
+        if not element_id:
+            raise ValueError("element_id required")
+        return normalized_type, {"element_id": element_id}
+    return normalized_type, {}
+
+
+def _normalize_note_status(status: Any) -> str:
+    normalized = str(status or "").strip().lower()
+    if normalized not in NOTE_THREAD_STATUSES:
+        raise ValueError("invalid status")
+    return normalized
+
+
+def _note_thread_row_to_dict(row: Any) -> Dict[str, Any]:
+    return {
+        "id": str(_row_value(row, "id") or ""),
+        "org_id": str(_row_value(row, "org_id") or ""),
+        "workspace_id": str(_row_value(row, "workspace_id") or ""),
+        "project_id": str(_row_value(row, "project_id") or ""),
+        "session_id": str(_row_value(row, "session_id") or ""),
+        "scope_type": str(_row_value(row, "scope_type") or ""),
+        "scope_ref": _json_loads(_row_value(row, "scope_ref_json"), {}),
+        "status": str(_row_value(row, "status") or "open"),
+        "created_by": str(_row_value(row, "created_by") or ""),
+        "created_at": int(_row_value(row, "created_at") or 0),
+        "updated_at": int(_row_value(row, "updated_at") or 0),
+        "resolved_by": str(_row_value(row, "resolved_by") or ""),
+        "resolved_at": int(_row_value(row, "resolved_at") or 0),
+    }
+
+
+def _note_comment_row_to_dict(row: Any) -> Dict[str, Any]:
+    return {
+        "id": str(_row_value(row, "id") or ""),
+        "thread_id": str(_row_value(row, "thread_id") or ""),
+        "author_user_id": str(_row_value(row, "author_user_id") or ""),
+        "body": str(_row_value(row, "body") or ""),
+        "created_at": int(_row_value(row, "created_at") or 0),
+        "updated_at": int(_row_value(row, "updated_at") or 0),
+    }
+
+
+def _project_workspace_id_for_session(con: Any, sess: Session, org_id: str) -> str:
+    project_id = str(getattr(sess, "project_id", "") or "").strip()
+    if not project_id:
+        return ""
+    row = con.execute(
+        "SELECT workspace_id FROM projects WHERE id = ? AND org_id = ? LIMIT 1",
+        [project_id, str(org_id or "").strip() or _default_org_id()],
+    ).fetchone()
+    if not row:
+        return ""
+    return str(_row_value(row, "workspace_id") or "").strip()
 
 
 def _opt_text(value: Any) -> Optional[str]:
@@ -513,6 +604,11 @@ def _ensure_schema() -> None:
                   ai_llm_state_json TEXT NOT NULL DEFAULT '{}',
                   bpmn_xml TEXT NOT NULL DEFAULT '',
                   bpmn_xml_version INTEGER NOT NULL DEFAULT 0,
+                  diagram_state_version INTEGER NOT NULL DEFAULT 0,
+                  diagram_last_write_actor_user_id TEXT NOT NULL DEFAULT '',
+                  diagram_last_write_actor_label TEXT NOT NULL DEFAULT '',
+                  diagram_last_write_at INTEGER NOT NULL DEFAULT 0,
+                  diagram_last_write_changed_keys_json TEXT NOT NULL DEFAULT '[]',
                   bpmn_graph_fingerprint TEXT NOT NULL DEFAULT '',
                   git_mirror_version_number INTEGER NOT NULL DEFAULT 0,
                   bpmn_meta_json TEXT NOT NULL DEFAULT '{}',
@@ -535,6 +631,7 @@ def _ensure_schema() -> None:
                   session_id TEXT NOT NULL,
                   org_id TEXT NOT NULL DEFAULT 'org_default',
                   version_number INTEGER NOT NULL,
+                  diagram_state_version INTEGER NOT NULL DEFAULT 0,
                   bpmn_xml TEXT NOT NULL DEFAULT '',
                   source_action TEXT NOT NULL DEFAULT '',
                   import_note TEXT NOT NULL DEFAULT '',
@@ -549,6 +646,62 @@ def _ensure_schema() -> None:
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_bpmn_versions_session_created ON bpmn_versions(session_id, org_id, created_at DESC)"
             )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS session_state_versions (
+                  id TEXT PRIMARY KEY,
+                  session_id TEXT NOT NULL,
+                  org_id TEXT NOT NULL DEFAULT 'org_default',
+                  diagram_state_version INTEGER NOT NULL,
+                  parent_diagram_state_version INTEGER NOT NULL DEFAULT 0,
+                  changed_keys_json TEXT NOT NULL DEFAULT '[]',
+                  payload_hash TEXT NOT NULL DEFAULT '',
+                  actor_user_id TEXT NOT NULL DEFAULT '',
+                  actor_label TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_state_versions_session_diagram_state ON session_state_versions(session_id, org_id, diagram_state_version)"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_session_state_versions_session_created ON session_state_versions(session_id, org_id, created_at DESC)"
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS note_threads (
+                  id TEXT PRIMARY KEY,
+                  org_id TEXT NOT NULL DEFAULT 'org_default',
+                  workspace_id TEXT NOT NULL DEFAULT '',
+                  project_id TEXT NOT NULL DEFAULT '',
+                  session_id TEXT NOT NULL,
+                  scope_type TEXT NOT NULL,
+                  scope_ref_json TEXT NOT NULL DEFAULT '{}',
+                  status TEXT NOT NULL DEFAULT 'open',
+                  created_by TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  resolved_by TEXT NOT NULL DEFAULT '',
+                  resolved_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_threads_session_status ON note_threads(session_id, org_id, status, updated_at DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_threads_project_status ON note_threads(project_id, org_id, status)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS note_comments (
+                  id TEXT PRIMARY KEY,
+                  thread_id TEXT NOT NULL,
+                  author_user_id TEXT NOT NULL DEFAULT '',
+                  body TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_comments_thread_created ON note_comments(thread_id, created_at ASC)")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS orgs (
@@ -772,6 +925,42 @@ def _ensure_schema() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_audit_org_action ON audit_log(org_id, action)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_audit_project ON audit_log(project_id)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_audit_session ON audit_log(session_id)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS error_events (
+                  id TEXT PRIMARY KEY,
+                  schema_version INTEGER NOT NULL DEFAULT 1,
+                  occurred_at INTEGER NOT NULL DEFAULT 0,
+                  ingested_at INTEGER NOT NULL DEFAULT 0,
+                  source TEXT NOT NULL DEFAULT '',
+                  event_type TEXT NOT NULL DEFAULT '',
+                  severity TEXT NOT NULL DEFAULT 'error',
+                  message TEXT NOT NULL DEFAULT '',
+                  user_id TEXT,
+                  org_id TEXT,
+                  session_id TEXT,
+                  project_id TEXT,
+                  route TEXT,
+                  runtime_id TEXT,
+                  tab_id TEXT,
+                  request_id TEXT,
+                  correlation_id TEXT,
+                  app_version TEXT,
+                  git_sha TEXT,
+                  fingerprint TEXT NOT NULL DEFAULT '',
+                  context_json TEXT NOT NULL DEFAULT '{}'
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_occurred_at ON error_events(occurred_at DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_user ON error_events(user_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_org ON error_events(org_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_session ON error_events(session_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_project ON error_events(project_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_request ON error_events(request_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_runtime ON error_events(runtime_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_correlation ON error_events(correlation_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_fingerprint ON error_events(fingerprint)")
             if not _column_exists(con, "projects", "org_id"):
                 con.execute("ALTER TABLE projects ADD COLUMN org_id TEXT NOT NULL DEFAULT 'org_default'")
             if not _column_exists(con, "orgs", "git_mirror_enabled"):
@@ -811,6 +1000,77 @@ def _ensure_schema() -> None:
                 con.execute("ALTER TABLE sessions ADD COLUMN updated_by TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "sessions", "git_mirror_version_number"):
                 con.execute("ALTER TABLE sessions ADD COLUMN git_mirror_version_number INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "sessions", "diagram_state_version"):
+                con.execute("ALTER TABLE sessions ADD COLUMN diagram_state_version INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "sessions", "diagram_last_write_actor_user_id"):
+                con.execute("ALTER TABLE sessions ADD COLUMN diagram_last_write_actor_user_id TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "sessions", "diagram_last_write_actor_label"):
+                con.execute("ALTER TABLE sessions ADD COLUMN diagram_last_write_actor_label TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "sessions", "diagram_last_write_at"):
+                con.execute("ALTER TABLE sessions ADD COLUMN diagram_last_write_at INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "sessions", "diagram_last_write_changed_keys_json"):
+                con.execute("ALTER TABLE sessions ADD COLUMN diagram_last_write_changed_keys_json TEXT NOT NULL DEFAULT '[]'")
+            if not _column_exists(con, "bpmn_versions", "diagram_state_version"):
+                con.execute("ALTER TABLE bpmn_versions ADD COLUMN diagram_state_version INTEGER NOT NULL DEFAULT 0")
+            con.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_bpmn_versions_session_diagram_state ON bpmn_versions(session_id, org_id, diagram_state_version) WHERE diagram_state_version > 0"
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS session_state_versions (
+                  id TEXT PRIMARY KEY,
+                  session_id TEXT NOT NULL,
+                  org_id TEXT NOT NULL DEFAULT 'org_default',
+                  diagram_state_version INTEGER NOT NULL,
+                  parent_diagram_state_version INTEGER NOT NULL DEFAULT 0,
+                  changed_keys_json TEXT NOT NULL DEFAULT '[]',
+                  payload_hash TEXT NOT NULL DEFAULT '',
+                  actor_user_id TEXT NOT NULL DEFAULT '',
+                  actor_label TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_state_versions_session_diagram_state ON session_state_versions(session_id, org_id, diagram_state_version)"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_session_state_versions_session_created ON session_state_versions(session_id, org_id, created_at DESC)"
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS note_threads (
+                  id TEXT PRIMARY KEY,
+                  org_id TEXT NOT NULL DEFAULT 'org_default',
+                  workspace_id TEXT NOT NULL DEFAULT '',
+                  project_id TEXT NOT NULL DEFAULT '',
+                  session_id TEXT NOT NULL,
+                  scope_type TEXT NOT NULL,
+                  scope_ref_json TEXT NOT NULL DEFAULT '{}',
+                  status TEXT NOT NULL DEFAULT 'open',
+                  created_by TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  resolved_by TEXT NOT NULL DEFAULT '',
+                  resolved_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_threads_session_status ON note_threads(session_id, org_id, status, updated_at DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_threads_project_status ON note_threads(project_id, org_id, status)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS note_comments (
+                  id TEXT PRIMARY KEY,
+                  thread_id TEXT NOT NULL,
+                  author_user_id TEXT NOT NULL DEFAULT '',
+                  body TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_comments_thread_created ON note_comments(thread_id, created_at ASC)")
             if not _column_exists(con, "org_invites", "team_name"):
                 con.execute("ALTER TABLE org_invites ADD COLUMN team_name TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "org_invites", "subgroup_name"):
@@ -1359,6 +1619,14 @@ def _session_row_to_model(row: sqlite3.Row) -> Session:
         "ai_llm_state": _json_loads(row["ai_llm_state_json"], {}),
         "bpmn_xml": str(row["bpmn_xml"] or ""),
         "bpmn_xml_version": int(row["bpmn_xml_version"] or 0),
+        "diagram_state_version": int((row["diagram_state_version"] if "diagram_state_version" in keys else 0) or 0),
+        "diagram_last_write_actor_user_id": str((row["diagram_last_write_actor_user_id"] if "diagram_last_write_actor_user_id" in keys else "") or ""),
+        "diagram_last_write_actor_label": str((row["diagram_last_write_actor_label"] if "diagram_last_write_actor_label" in keys else "") or ""),
+        "diagram_last_write_at": int((row["diagram_last_write_at"] if "diagram_last_write_at" in keys else 0) or 0),
+        "diagram_last_write_changed_keys": _json_loads(
+            (row["diagram_last_write_changed_keys_json"] if "diagram_last_write_changed_keys_json" in keys else "[]"),
+            [],
+        ),
         "bpmn_graph_fingerprint": str(row["bpmn_graph_fingerprint"] or ""),
         "bpmn_meta": _json_loads(row["bpmn_meta_json"], {}),
         "version": int(row["version"] or 0),
@@ -1446,6 +1714,7 @@ class Storage:
             ai_llm_state={},
             bpmn_xml="",
             bpmn_xml_version=0,
+            diagram_state_version=0,
             version=2,
             owner_user_id=owner,
             org_id=org,
@@ -1500,10 +1769,20 @@ class Storage:
             raise ValueError("session id is required")
         now = _now_ts()
         with _connect() as con:
-            existing = con.execute("SELECT owner_user_id, created_at, org_id, created_by FROM sessions WHERE id = ? LIMIT 1", [sid]).fetchone()
+            existing = con.execute(
+                """
+                SELECT owner_user_id, created_at, org_id, created_by, bpmn_xml, diagram_state_version
+                  FROM sessions
+                 WHERE id = ?
+                 LIMIT 1
+                """,
+                [sid],
+            ).fetchone()
             existing_owner = str(existing["owner_user_id"] or "") if existing else ""
             existing_org = str(existing["org_id"] or "") if existing else ""
             existing_created_by = str(existing["created_by"] or "") if existing else ""
+            existing_bpmn_xml = str(existing["bpmn_xml"] or "") if existing else ""
+            existing_diagram_state_version = int(existing["diagram_state_version"] or 0) if existing else 0
             if existing and not admin and owner_scope and existing_owner and existing_owner != owner_scope:
                 raise PermissionError("session belongs to another user")
             if existing and existing_org and org_scope and existing_org != org_scope:
@@ -1538,6 +1817,11 @@ class Storage:
                 "ai_llm_state_json": _json_dumps(getattr(s, "ai_llm_state", {}), {}),
                 "bpmn_xml": str(getattr(s, "bpmn_xml", "") or ""),
                 "bpmn_xml_version": int(getattr(s, "bpmn_xml_version", 0) or 0),
+                "diagram_state_version": int(getattr(s, "diagram_state_version", 0) or 0),
+                "diagram_last_write_actor_user_id": str(getattr(s, "diagram_last_write_actor_user_id", "") or ""),
+                "diagram_last_write_actor_label": str(getattr(s, "diagram_last_write_actor_label", "") or ""),
+                "diagram_last_write_at": int(getattr(s, "diagram_last_write_at", 0) or 0),
+                "diagram_last_write_changed_keys_json": _json_dumps(getattr(s, "diagram_last_write_changed_keys", []), []),
                 "bpmn_graph_fingerprint": str(getattr(s, "bpmn_graph_fingerprint", "") or ""),
                 "bpmn_meta_json": _json_dumps(getattr(s, "bpmn_meta", {}), {}),
                 "version": int(getattr(s, "version", 0) or 0),
@@ -1554,13 +1838,17 @@ class Storage:
                   id, title, roles_json, start_role, project_id, mode, notes, notes_by_element_json,
                   interview_json, nodes_json, edges_json, questions_json, mermaid, mermaid_simple, mermaid_lanes,
                   normalized_json, resources_json, analytics_json, ai_llm_state_json,
-                  bpmn_xml, bpmn_xml_version, bpmn_graph_fingerprint, bpmn_meta_json, version,
+                  bpmn_xml, bpmn_xml_version, diagram_state_version,
+                  diagram_last_write_actor_user_id, diagram_last_write_actor_label, diagram_last_write_at,
+                  diagram_last_write_changed_keys_json, bpmn_graph_fingerprint, bpmn_meta_json, version,
                   owner_user_id, org_id, created_by, updated_by, created_at, updated_at
                 ) VALUES (
                   :id, :title, :roles_json, :start_role, :project_id, :mode, :notes, :notes_by_element_json,
                   :interview_json, :nodes_json, :edges_json, :questions_json, :mermaid, :mermaid_simple, :mermaid_lanes,
                   :normalized_json, :resources_json, :analytics_json, :ai_llm_state_json,
-                  :bpmn_xml, :bpmn_xml_version, :bpmn_graph_fingerprint, :bpmn_meta_json, :version,
+                  :bpmn_xml, :bpmn_xml_version, :diagram_state_version,
+                  :diagram_last_write_actor_user_id, :diagram_last_write_actor_label, :diagram_last_write_at,
+                  :diagram_last_write_changed_keys_json, :bpmn_graph_fingerprint, :bpmn_meta_json, :version,
                   :owner_user_id, :org_id, :created_by, :updated_by, :created_at, :updated_at
                 )
                 ON CONFLICT(id) DO UPDATE SET
@@ -1584,6 +1872,11 @@ class Storage:
                   ai_llm_state_json=excluded.ai_llm_state_json,
                   bpmn_xml=excluded.bpmn_xml,
                   bpmn_xml_version=excluded.bpmn_xml_version,
+                  diagram_state_version=excluded.diagram_state_version,
+                  diagram_last_write_actor_user_id=excluded.diagram_last_write_actor_user_id,
+                  diagram_last_write_actor_label=excluded.diagram_last_write_actor_label,
+                  diagram_last_write_at=excluded.diagram_last_write_at,
+                  diagram_last_write_changed_keys_json=excluded.diagram_last_write_changed_keys_json,
                   bpmn_graph_fingerprint=excluded.bpmn_graph_fingerprint,
                   bpmn_meta_json=excluded.bpmn_meta_json,
                   version=excluded.version,
@@ -1596,6 +1889,43 @@ class Storage:
                 """,
                 values,
             )
+            next_diagram_state_version = int(values.get("diagram_state_version") or 0)
+            accepted_diagram_write = bool(existing) and next_diagram_state_version > existing_diagram_state_version
+            bpmn_xml_changed = str(values.get("bpmn_xml") or "") != existing_bpmn_xml
+            if accepted_diagram_write and not bpmn_xml_changed:
+                trace_id = uuid.uuid4().hex[:12]
+                payload_hash = _diagram_truth_payload_hash(s)
+                changed_keys_raw = getattr(s, "diagram_last_write_changed_keys", [])
+                changed_keys = []
+                if isinstance(changed_keys_raw, list):
+                    for key in changed_keys_raw:
+                        txt = str(key or "").strip()
+                        if txt:
+                            changed_keys.append(txt)
+                changed_keys = sorted(set(changed_keys))
+                created_at_ts = int(getattr(s, "diagram_last_write_at", 0) or 0) or now
+                actor_user_id = str(getattr(s, "diagram_last_write_actor_user_id", "") or "")
+                actor_label = str(getattr(s, "diagram_last_write_actor_label", "") or "")
+                con.execute(
+                    """
+                    INSERT INTO session_state_versions (
+                      id, session_id, org_id, diagram_state_version, parent_diagram_state_version,
+                      changed_keys_json, payload_hash, actor_user_id, actor_label, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        trace_id,
+                        sid,
+                        str(values.get("org_id") or _default_org_id()),
+                        next_diagram_state_version,
+                        existing_diagram_state_version,
+                        _json_dumps(changed_keys, []),
+                        payload_hash,
+                        actor_user_id,
+                        actor_label,
+                        created_at_ts,
+                    ],
+                )
             con.commit()
 
     def delete(
@@ -1692,6 +2022,7 @@ class Storage:
         *,
         bpmn_xml: str,
         source_action: str,
+        diagram_state_version: Optional[int] = None,
         created_by: Optional[str] = None,
         org_id: Optional[str] = None,
         import_note: Optional[str] = None,
@@ -1708,6 +2039,9 @@ class Storage:
             raise ValueError("source_action required")
         actor = str(created_by or "").strip()
         note = str(import_note or "").strip()
+        diagram_version: int = int(diagram_state_version or 0)
+        if diagram_version < 0:
+            diagram_version = 0
         now = _now_ts()
 
         with _connect() as con:
@@ -1736,11 +2070,11 @@ class Storage:
             con.execute(
                 """
                 INSERT INTO bpmn_versions (
-                  id, session_id, org_id, version_number, bpmn_xml,
+                  id, session_id, org_id, version_number, diagram_state_version, bpmn_xml,
                   source_action, import_note, created_at, created_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                [snapshot_id, sid, scope_org, next_version, xml, action, note, now, actor],
+                [snapshot_id, sid, scope_org, next_version, diagram_version, xml, action, note, now, actor],
             )
             con.commit()
 
@@ -1749,6 +2083,7 @@ class Storage:
             "session_id": sid,
             "org_id": scope_org,
             "version_number": next_version,
+            "diagram_state_version": diagram_version,
             "source_action": action,
             "created_at": now,
             "created_by": actor,
@@ -1783,9 +2118,9 @@ class Storage:
             if oid != session_org:
                 return []
             columns = (
-                "id, session_id, org_id, version_number, bpmn_xml, source_action, import_note, created_at, created_by"
+                "id, session_id, org_id, version_number, diagram_state_version, bpmn_xml, source_action, import_note, created_at, created_by"
                 if include_xml
-                else "id, session_id, org_id, version_number, source_action, import_note, created_at, created_by"
+                else "id, session_id, org_id, version_number, diagram_state_version, source_action, import_note, created_at, created_by"
             )
             rows = con.execute(
                 f"""
@@ -1806,6 +2141,7 @@ class Storage:
                 "session_id": str(row["session_id"] or ""),
                 "org_id": str(row["org_id"] or ""),
                 "version_number": int(row["version_number"] or 0),
+                "diagram_state_version": int(row["diagram_state_version"] or 0),
                 "source_action": str(row["source_action"] or ""),
                 "import_note": str(row["import_note"] or ""),
                 "created_at": int(row["created_at"] or 0),
@@ -1840,7 +2176,7 @@ class Storage:
                 return None
             row = con.execute(
                 """
-                SELECT id, session_id, org_id, version_number, bpmn_xml, source_action, import_note, created_at, created_by
+                SELECT id, session_id, org_id, version_number, diagram_state_version, bpmn_xml, source_action, import_note, created_at, created_by
                   FROM bpmn_versions
                  WHERE session_id = ?
                    AND org_id = ?
@@ -1857,12 +2193,70 @@ class Storage:
             "session_id": str(row["session_id"] or ""),
             "org_id": str(row["org_id"] or ""),
             "version_number": int(row["version_number"] or 0),
+            "diagram_state_version": int(row["diagram_state_version"] or 0),
             "bpmn_xml": str(row["bpmn_xml"] or ""),
             "source_action": str(row["source_action"] or ""),
             "import_note": str(row["import_note"] or ""),
             "created_at": int(row["created_at"] or 0),
             "created_by": str(row["created_by"] or ""),
         }
+
+    def list_session_state_versions(
+        self,
+        session_id: str,
+        *,
+        org_id: Optional[str] = None,
+        limit: int = 200,
+    ) -> List[Dict[str, Any]]:
+        _ensure_schema()
+        sid = str(session_id or "").strip()
+        if not sid:
+            return []
+        scope_org = str(org_id or "").strip()
+        try:
+            lim = int(limit)
+        except Exception:
+            lim = 200
+        lim = min(max(lim, 1), 1000)
+
+        with _connect() as con:
+            sess_row = con.execute("SELECT org_id FROM sessions WHERE id = ? LIMIT 1", [sid]).fetchone()
+            if not sess_row:
+                return []
+            session_org = str(sess_row["org_id"] or "").strip() or _default_org_id()
+            oid = scope_org or session_org
+            if oid != session_org:
+                return []
+            rows = con.execute(
+                """
+                SELECT id, session_id, org_id, diagram_state_version, parent_diagram_state_version,
+                       changed_keys_json, payload_hash, actor_user_id, actor_label, created_at
+                  FROM session_state_versions
+                 WHERE session_id = ?
+                   AND org_id = ?
+                 ORDER BY diagram_state_version DESC
+                 LIMIT ?
+                """,
+                [sid, oid, lim],
+            ).fetchall()
+
+        out: List[Dict[str, Any]] = []
+        for row in rows:
+            out.append(
+                {
+                    "id": str(row["id"] or ""),
+                    "session_id": str(row["session_id"] or ""),
+                    "org_id": str(row["org_id"] or ""),
+                    "diagram_state_version": int(row["diagram_state_version"] or 0),
+                    "parent_diagram_state_version": int(row["parent_diagram_state_version"] or 0),
+                    "changed_keys": _json_loads(row["changed_keys_json"], []),
+                    "payload_hash": str(row["payload_hash"] or ""),
+                    "actor_user_id": str(row["actor_user_id"] or ""),
+                    "actor_label": str(row["actor_label"] or ""),
+                    "created_at": int(row["created_at"] or 0),
+                }
+            )
+        return out
 
 
 def gen_project_id() -> str:
@@ -2832,6 +3226,32 @@ def _audit_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
         "entity_id": str(row["entity_id"] or ""),
         "status": str(row["status"] or "ok"),
         "meta": _json_loads(row["meta_json"], {}),
+    }
+
+
+def _error_event_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    return {
+        "id": str(row["id"] or ""),
+        "schema_version": int(row["schema_version"] or 1),
+        "occurred_at": int(row["occurred_at"] or 0),
+        "ingested_at": int(row["ingested_at"] or 0),
+        "source": str(row["source"] or ""),
+        "event_type": str(row["event_type"] or ""),
+        "severity": str(row["severity"] or "error"),
+        "message": str(row["message"] or ""),
+        "user_id": str(row["user_id"] or "") if row["user_id"] is not None else "",
+        "org_id": str(row["org_id"] or "") if row["org_id"] is not None else "",
+        "session_id": str(row["session_id"] or "") if row["session_id"] is not None else "",
+        "project_id": str(row["project_id"] or "") if row["project_id"] is not None else "",
+        "route": str(row["route"] or "") if row["route"] is not None else "",
+        "runtime_id": str(row["runtime_id"] or "") if row["runtime_id"] is not None else "",
+        "tab_id": str(row["tab_id"] or "") if row["tab_id"] is not None else "",
+        "request_id": str(row["request_id"] or "") if row["request_id"] is not None else "",
+        "correlation_id": str(row["correlation_id"] or "") if row["correlation_id"] is not None else "",
+        "app_version": str(row["app_version"] or "") if row["app_version"] is not None else "",
+        "git_sha": str(row["git_sha"] or "") if row["git_sha"] is not None else "",
+        "fingerprint": str(row["fingerprint"] or ""),
+        "context_json": _json_loads(row["context_json"], {}),
     }
 
 
@@ -4704,6 +5124,289 @@ def cleanup_audit_log(org_id: str, *, retention_days: int = 90, now_ts: Optional
         return int(cur.rowcount or 0)
 
 
+def append_error_event(
+    *,
+    id: str,
+    schema_version: int,
+    occurred_at: int,
+    ingested_at: int,
+    source: str,
+    event_type: str,
+    severity: str,
+    message: str,
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+    route: Optional[str] = None,
+    runtime_id: Optional[str] = None,
+    tab_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    correlation_id: Optional[str] = None,
+    app_version: Optional[str] = None,
+    git_sha: Optional[str] = None,
+    fingerprint: str = "",
+    context_json: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    event_id = str(id or "").strip()
+    src = str(source or "").strip()
+    etype = str(event_type or "").strip()
+    sev = str(severity or "").strip().lower() or "error"
+    text = str(message or "").strip()
+    fp = str(fingerprint or "").strip()
+    if not event_id or not src or not etype or not text or not fp:
+        raise ValueError("id, source, event_type, message and fingerprint are required")
+    payload = _json_dumps(context_json if isinstance(context_json, dict) else {}, {})
+    _ensure_schema()
+    with _connect() as con:
+        con.execute(
+            """
+            INSERT INTO error_events (
+              id, schema_version, occurred_at, ingested_at, source, event_type, severity, message,
+              user_id, org_id, session_id, project_id, route, runtime_id, tab_id, request_id,
+              correlation_id, app_version, git_sha, fingerprint, context_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                event_id,
+                int(schema_version or 1),
+                int(occurred_at or 0),
+                int(ingested_at or 0),
+                src,
+                etype,
+                sev,
+                text,
+                str(user_id or "").strip() or None,
+                str(org_id or "").strip() or None,
+                str(session_id or "").strip() or None,
+                str(project_id or "").strip() or None,
+                str(route or "").strip() or None,
+                str(runtime_id or "").strip() or None,
+                str(tab_id or "").strip() or None,
+                str(request_id or "").strip() or None,
+                str(correlation_id or "").strip() or None,
+                str(app_version or "").strip() or None,
+                str(git_sha or "").strip() or None,
+                fp,
+                payload,
+            ],
+        )
+        con.commit()
+        row = con.execute(
+            """
+            SELECT id, schema_version, occurred_at, ingested_at, source, event_type, severity, message,
+                   user_id, org_id, session_id, project_id, route, runtime_id, tab_id, request_id,
+                   correlation_id, app_version, git_sha, fingerprint, context_json
+              FROM error_events
+             WHERE id = ?
+             LIMIT 1
+            """,
+            [event_id],
+        ).fetchone()
+    if not row:
+        return {
+            "id": event_id,
+            "schema_version": int(schema_version or 1),
+            "occurred_at": int(occurred_at or 0),
+            "ingested_at": int(ingested_at or 0),
+            "source": src,
+            "event_type": etype,
+            "severity": sev,
+            "message": text,
+            "user_id": str(user_id or ""),
+            "org_id": str(org_id or ""),
+            "session_id": str(session_id or ""),
+            "project_id": str(project_id or ""),
+            "route": str(route or ""),
+            "runtime_id": str(runtime_id or ""),
+            "tab_id": str(tab_id or ""),
+            "request_id": str(request_id or ""),
+            "correlation_id": str(correlation_id or ""),
+            "app_version": str(app_version or ""),
+            "git_sha": str(git_sha or ""),
+            "fingerprint": fp,
+            "context_json": context_json if isinstance(context_json, dict) else {},
+        }
+    return _error_event_row_to_dict(row)
+
+
+def get_error_event(event_id: str) -> Optional[Dict[str, Any]]:
+    eid = str(event_id or "").strip()
+    if not eid:
+        return None
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT id, schema_version, occurred_at, ingested_at, source, event_type, severity, message,
+                   user_id, org_id, session_id, project_id, route, runtime_id, tab_id, request_id,
+                   correlation_id, app_version, git_sha, fingerprint, context_json
+              FROM error_events
+             WHERE id = ?
+             LIMIT 1
+            """,
+            [eid],
+        ).fetchone()
+    if not row:
+        return None
+    return _error_event_row_to_dict(row)
+
+
+def _build_error_events_where(
+    *,
+    session_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    correlation_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    runtime_id: Optional[str] = None,
+    event_type: Optional[str] = None,
+    source: Optional[str] = None,
+    severity: Optional[str] = None,
+    occurred_from: Optional[int] = None,
+    occurred_to: Optional[int] = None,
+) -> Tuple[str, List[Any]]:
+    clauses: List[str] = ["1 = 1"]
+    params: List[Any] = []
+
+    def _eq(column: str, value: Optional[str]) -> None:
+        text = str(value or "").strip()
+        if not text:
+            return
+        clauses.append(f"{column} = ?")
+        params.append(text)
+
+    _eq("session_id", session_id)
+    _eq("request_id", request_id)
+    _eq("correlation_id", correlation_id)
+    _eq("user_id", user_id)
+    _eq("org_id", org_id)
+    _eq("runtime_id", runtime_id)
+    _eq("event_type", event_type)
+    _eq("source", source)
+    _eq("severity", severity)
+    if occurred_from is not None and int(occurred_from or 0) > 0:
+        clauses.append("occurred_at >= ?")
+        params.append(int(occurred_from or 0))
+    if occurred_to is not None and int(occurred_to or 0) > 0:
+        clauses.append("occurred_at <= ?")
+        params.append(int(occurred_to or 0))
+    return " AND ".join(clauses), params
+
+
+def list_error_events(
+    *,
+    session_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    correlation_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    runtime_id: Optional[str] = None,
+    event_type: Optional[str] = None,
+    source: Optional[str] = None,
+    severity: Optional[str] = None,
+    occurred_from: Optional[int] = None,
+    occurred_to: Optional[int] = None,
+    limit: int = 50,
+    offset: int = 0,
+    order: str = "asc",
+) -> List[Dict[str, Any]]:
+    lim = max(1, min(int(limit or 50), 100))
+    off = max(0, int(offset or 0))
+    direction = "DESC" if str(order or "").strip().lower() == "desc" else "ASC"
+    where, params = _build_error_events_where(
+        session_id=session_id,
+        request_id=request_id,
+        correlation_id=correlation_id,
+        user_id=user_id,
+        org_id=org_id,
+        runtime_id=runtime_id,
+        event_type=event_type,
+        source=source,
+        severity=severity,
+        occurred_from=occurred_from,
+        occurred_to=occurred_to,
+    )
+    _ensure_schema()
+    with _connect() as con:
+        rows = con.execute(
+            f"""
+            SELECT id, schema_version, occurred_at, ingested_at, source, event_type, severity, message,
+                   user_id, org_id, session_id, project_id, route, runtime_id, tab_id, request_id,
+                   correlation_id, app_version, git_sha, fingerprint, context_json
+              FROM error_events
+             WHERE {where}
+             ORDER BY occurred_at {direction}, ingested_at {direction}, id {direction}
+             LIMIT ?
+            OFFSET ?
+            """,
+            [*params, lim, off],
+        ).fetchall()
+    return [_error_event_row_to_dict(row) for row in rows]
+
+
+def count_error_events(
+    *,
+    session_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    correlation_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    runtime_id: Optional[str] = None,
+    event_type: Optional[str] = None,
+    source: Optional[str] = None,
+    severity: Optional[str] = None,
+    occurred_from: Optional[int] = None,
+    occurred_to: Optional[int] = None,
+) -> int:
+    where, params = _build_error_events_where(
+        session_id=session_id,
+        request_id=request_id,
+        correlation_id=correlation_id,
+        user_id=user_id,
+        org_id=org_id,
+        runtime_id=runtime_id,
+        event_type=event_type,
+        source=source,
+        severity=severity,
+        occurred_from=occurred_from,
+        occurred_to=occurred_to,
+    )
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            f"""
+            SELECT COUNT(*)
+              FROM error_events
+             WHERE {where}
+            """,
+            params,
+        ).fetchone()
+    if not row:
+        return 0
+    try:
+        return int(row[0] or 0)
+    except Exception:
+        return 0
+
+
+def cleanup_error_events(*, retention_days: int = 30, now_ts: Optional[int] = None) -> int:
+    retention = max(1, int(retention_days or 30))
+    now = int(now_ts or 0) or _now_ts()
+    threshold = now - retention * 24 * 60 * 60
+    _ensure_schema()
+    with _connect() as con:
+        cur = con.execute(
+            """
+            DELETE FROM error_events
+             WHERE ingested_at > 0 AND ingested_at < ?
+            """,
+            [threshold],
+        )
+        con.commit()
+        return int(cur.rowcount or 0)
+
+
 def get_effective_project_scope(
     user_id: str,
     org_id: str,
@@ -4915,6 +5618,346 @@ def startup_db_check() -> Dict[str, Any]:
 
 def get_storage() -> Storage:
     return Storage(base_dir=_db_base_dir())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Notes MVP-1 truth storage
+# ─────────────────────────────────────────────────────────────────────────────
+
+def create_note_thread(
+    sess: Session,
+    *,
+    scope_type: Any,
+    scope_ref: Any,
+    body: Any,
+    actor_user_id: str,
+    org_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    _ensure_schema()
+    text = str(body or "").strip()
+    if not text:
+        raise ValueError("body required")
+    normalized_scope_type, normalized_scope_ref = _normalize_note_scope(scope_type, scope_ref)
+    sid = str(getattr(sess, "id", "") or "").strip()
+    if not sid:
+        raise ValueError("session_id required")
+    oid = str(org_id or getattr(sess, "org_id", "") or "").strip() or _default_org_id()
+    project_id = str(getattr(sess, "project_id", "") or "").strip()
+    actor = str(actor_user_id or "").strip()
+    now = _now_ts()
+    thread_id = uuid.uuid4().hex[:12]
+    comment_id = uuid.uuid4().hex[:12]
+    with _connect() as con:
+        workspace_id = _project_workspace_id_for_session(con, sess, oid)
+        con.execute(
+            """
+            INSERT INTO note_threads (
+              id, org_id, workspace_id, project_id, session_id, scope_type, scope_ref_json,
+              status, created_by, created_at, updated_at, resolved_by, resolved_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, '', 0)
+            """,
+            [
+                thread_id,
+                oid,
+                workspace_id,
+                project_id,
+                sid,
+                normalized_scope_type,
+                _json_dumps(normalized_scope_ref, {}),
+                actor,
+                now,
+                now,
+            ],
+        )
+        con.execute(
+            """
+            INSERT INTO note_comments (id, thread_id, author_user_id, body, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [comment_id, thread_id, actor, text, now, now],
+        )
+        con.commit()
+    thread = get_note_thread(thread_id, org_id=oid)
+    if not thread:
+        raise RuntimeError("note thread was not persisted")
+    return thread
+
+
+def get_note_thread(thread_id: str, *, org_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    _ensure_schema()
+    tid = str(thread_id or "").strip()
+    if not tid:
+        return None
+    oid = str(org_id or "").strip()
+    filters = ["id = ?"]
+    params: List[Any] = [tid]
+    if oid:
+        filters.append("org_id = ?")
+        params.append(oid)
+    with _connect() as con:
+        thread_row = con.execute(
+            f"SELECT * FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
+            params,
+        ).fetchone()
+        if not thread_row:
+            return None
+        comment_rows = con.execute(
+            "SELECT * FROM note_comments WHERE thread_id = ? ORDER BY created_at ASC, id ASC",
+            [tid],
+        ).fetchall()
+    thread = _note_thread_row_to_dict(thread_row)
+    thread["comments"] = [_note_comment_row_to_dict(row) for row in comment_rows]
+    return thread
+
+
+def list_note_threads(
+    session_id: str,
+    *,
+    org_id: Optional[str] = None,
+    status: Optional[str] = None,
+    scope_type: Optional[str] = None,
+    element_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    _ensure_schema()
+    sid = str(session_id or "").strip()
+    if not sid:
+        return []
+    normalized_status = _normalize_note_status(status) if status is not None and str(status or "").strip() else None
+    normalized_scope_type = None
+    if scope_type is not None and str(scope_type or "").strip():
+        normalized_scope_type, _ = _normalize_note_scope(scope_type, {"element_id": "__filter__"} if str(scope_type or "").strip().lower() == "diagram_element" else {})
+    filters = ["session_id = ?"]
+    params: List[Any] = [sid]
+    oid = str(org_id or "").strip()
+    if oid:
+        filters.append("org_id = ?")
+        params.append(oid)
+    if normalized_status:
+        filters.append("status = ?")
+        params.append(normalized_status)
+    if normalized_scope_type:
+        filters.append("scope_type = ?")
+        params.append(normalized_scope_type)
+    with _connect() as con:
+        thread_rows = con.execute(
+            f"SELECT * FROM note_threads WHERE {' AND '.join(filters)} ORDER BY updated_at DESC, created_at DESC",
+            params,
+        ).fetchall()
+        thread_ids = [str(_row_value(row, "id") or "") for row in thread_rows]
+        comment_rows: Dict[str, List[Dict[str, Any]]] = {tid: [] for tid in thread_ids if tid}
+        if thread_ids:
+            placeholders = ", ".join(["?"] * len(thread_ids))
+            for row in con.execute(
+                f"SELECT * FROM note_comments WHERE thread_id IN ({placeholders}) ORDER BY created_at ASC, id ASC",
+                thread_ids,
+            ).fetchall():
+                comment = _note_comment_row_to_dict(row)
+                comment_rows.setdefault(str(comment.get("thread_id") or ""), []).append(comment)
+    element_filter = str(element_id or "").strip()
+    out: List[Dict[str, Any]] = []
+    for row in thread_rows:
+        thread = _note_thread_row_to_dict(row)
+        if element_filter:
+            if thread.get("scope_type") != "diagram_element":
+                continue
+            scope_ref = thread.get("scope_ref") if isinstance(thread.get("scope_ref"), dict) else {}
+            if str(scope_ref.get("element_id") or "").strip() != element_filter:
+                continue
+        thread["comments"] = comment_rows.get(str(thread.get("id") or ""), [])
+        out.append(thread)
+    return out
+
+
+def add_note_comment(
+    thread_id: str,
+    *,
+    body: Any,
+    actor_user_id: str,
+    org_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    _ensure_schema()
+    text = str(body or "").strip()
+    if not text:
+        raise ValueError("body required")
+    tid = str(thread_id or "").strip()
+    if not tid:
+        return None
+    oid = str(org_id or "").strip()
+    filters = ["id = ?"]
+    params: List[Any] = [tid]
+    if oid:
+        filters.append("org_id = ?")
+        params.append(oid)
+    actor = str(actor_user_id or "").strip()
+    now = _now_ts()
+    comment_id = uuid.uuid4().hex[:12]
+    with _connect() as con:
+        thread_row = con.execute(
+            f"SELECT id FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
+            params,
+        ).fetchone()
+        if not thread_row:
+            return None
+        con.execute(
+            """
+            INSERT INTO note_comments (id, thread_id, author_user_id, body, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [comment_id, tid, actor, text, now, now],
+        )
+        con.execute("UPDATE note_threads SET updated_at = ? WHERE id = ?", [now, tid])
+        con.commit()
+    return get_note_thread(tid, org_id=oid or None)
+
+
+def patch_note_thread_status(
+    thread_id: str,
+    *,
+    status: Any,
+    actor_user_id: str,
+    org_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    _ensure_schema()
+    next_status = _normalize_note_status(status)
+    tid = str(thread_id or "").strip()
+    if not tid:
+        return None
+    oid = str(org_id or "").strip()
+    filters = ["id = ?"]
+    params: List[Any] = [tid]
+    if oid:
+        filters.append("org_id = ?")
+        params.append(oid)
+    actor = str(actor_user_id or "").strip()
+    now = _now_ts()
+    resolved_by = actor if next_status == "resolved" else ""
+    resolved_at = now if next_status == "resolved" else 0
+    with _connect() as con:
+        thread_row = con.execute(
+            f"SELECT id FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
+            params,
+        ).fetchone()
+        if not thread_row:
+            return None
+        con.execute(
+            """
+            UPDATE note_threads
+               SET status = ?, updated_at = ?, resolved_by = ?, resolved_at = ?
+             WHERE id = ?
+            """,
+            [next_status, now, resolved_by, resolved_at, tid],
+        )
+        con.commit()
+    return get_note_thread(tid, org_id=oid or None)
+
+
+def _notes_aggregate_payload(count: Any) -> Dict[str, Any]:
+    try:
+        value = int(count or 0)
+    except Exception:
+        value = 0
+    if value < 0:
+        value = 0
+    return {"open_notes_count": value, "has_open_notes": value > 0}
+
+
+def get_session_open_notes_aggregate(session_id: str, *, org_id: Optional[str] = None) -> Dict[str, Any]:
+    """Read-time Notes MVP-1 aggregate for a single session."""
+    _ensure_schema()
+    sid = str(session_id or "").strip()
+    if not sid:
+        return _notes_aggregate_payload(0)
+    oid = str(org_id or "").strip()
+    filters = ["session_id = ?", "status = 'open'"]
+    params: List[Any] = [sid]
+    if oid:
+        filters.append("org_id = ?")
+        params.append(oid)
+    with _connect() as con:
+        row = con.execute(
+            f"SELECT COUNT(*) AS open_notes_count FROM note_threads WHERE {' AND '.join(filters)}",
+            params,
+        ).fetchone()
+    return _notes_aggregate_payload(_row_value(row, "open_notes_count", 0))
+
+
+def get_project_open_notes_aggregate(project_id: str, *, org_id: Optional[str] = None) -> Dict[str, Any]:
+    """Read-time Notes MVP-1 aggregate for all sessions in a project."""
+    _ensure_schema()
+    pid = str(project_id or "").strip()
+    if not pid:
+        return _notes_aggregate_payload(0)
+    oid = str(org_id or "").strip()
+    filters = ["s.project_id = ?", "nt.status = 'open'"]
+    params: List[Any] = [pid]
+    if oid:
+        filters.append("s.org_id = ?")
+        filters.append("nt.org_id = ?")
+        params.extend([oid, oid])
+    with _connect() as con:
+        row = con.execute(
+            f"""
+            SELECT COUNT(*) AS open_notes_count
+            FROM note_threads nt
+            JOIN sessions s ON s.id = nt.session_id
+            WHERE {' AND '.join(filters)}
+            """,
+            params,
+        ).fetchone()
+    return _notes_aggregate_payload(_row_value(row, "open_notes_count", 0))
+
+
+def get_folder_open_notes_aggregate(
+    folder_id: str,
+    *,
+    org_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    allowed_project_ids: Optional[Iterable[str]] = None,
+) -> Dict[str, Any]:
+    """Read-time Notes MVP-1 aggregate for projects in a folder subtree."""
+    _ensure_schema()
+    fid = str(folder_id or "").strip()
+    oid = str(org_id or "").strip()
+    wid = str(workspace_id or "").strip()
+    if not fid or not oid or not wid:
+        return _notes_aggregate_payload(0)
+    allowed_projects = None
+    if allowed_project_ids is not None:
+        allowed_projects = [str(item or "").strip() for item in allowed_project_ids if str(item or "").strip()]
+        if not allowed_projects:
+            return _notes_aggregate_payload(0)
+    project_scope_sql = ""
+    params: List[Any] = [fid, oid, wid, oid, wid, oid, wid]
+    if allowed_projects is not None:
+        placeholders = ", ".join(["?"] * len(allowed_projects))
+        project_scope_sql = f" AND p.id IN ({placeholders})"
+        params.extend(allowed_projects)
+    with _connect() as con:
+        row = con.execute(
+            f"""
+            WITH RECURSIVE folder_tree(id) AS (
+              SELECT id
+              FROM workspace_folders
+              WHERE id = ? AND org_id = ? AND workspace_id = ? AND archived_at IS NULL
+              UNION ALL
+              SELECT wf.id
+              FROM workspace_folders wf
+              JOIN folder_tree ft ON wf.parent_id = ft.id
+              WHERE wf.org_id = ? AND wf.workspace_id = ? AND wf.archived_at IS NULL
+            )
+            SELECT COUNT(*) AS open_notes_count
+            FROM note_threads nt
+            JOIN sessions s ON s.id = nt.session_id AND s.org_id = nt.org_id
+            JOIN projects p ON p.id = s.project_id AND p.org_id = s.org_id
+            WHERE nt.status = 'open'
+              AND nt.org_id = ?
+              AND p.workspace_id = ?
+              AND p.folder_id IN (SELECT id FROM folder_tree)
+              {project_scope_sql}
+            """,
+            params,
+        ).fetchone()
+    return _notes_aggregate_payload(_row_value(row, "open_notes_count", 0))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -316,7 +316,7 @@ export default function ProcessPanels({ section = "top", view = {} }) {
                   type="button"
                   className="secondaryBtn h-7 px-2 text-[11px]"
                   onClick={() => {
-                    onOpenElementNotes?.(selectedBpmnElement, "header_open_notes");
+                    onOpenElementNotes?.(selectedBpmnElement, "selected_element_notes_open");
                     closeToolbarMenu();
                   }}
                   title="Открыть заметки выбранного элемента"

@@ -54,9 +54,11 @@ export default function ElementNotesAccordionContent({
   }
 
   return (
-    <div className="sidebarControlStack">
+    <div className="sidebarControlStack gap-3">
       {list.length ? (
-        <div className="sidebarMiniList">
+        <div className="rounded-xl border border-border bg-panel/70 p-2">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Последние заметки</div>
+          <div className="sidebarMiniList">
           {list.map((item, idx) => (
             <div key={item?.id || `node_note_${idx + 1}`} className="sidebarMiniItem">
               <div className="sidebarMiniItemText">{noteText(item)}</div>
@@ -69,40 +71,51 @@ export default function ElementNotesAccordionContent({
               </div>
             </div>
           ))}
+          </div>
         </div>
       ) : (
         <div className="sidebarEmptyHint">Пока нет заметок для выбранного узла.</div>
       )}
 
-      {elementErr ? <div className="selectedNodeFieldError">{elementErr}</div> : null}
-      <textarea
-        ref={(node) => onNodeEditorRef?.(node)}
-        className="input min-w-0"
-        placeholder="Заметка для выбранного узла..."
-        value={elementText}
-        onChange={(event) => onElementTextChange?.(event.target.value)}
-        rows={3}
-        style={{ resize: "vertical" }}
-        onKeyDown={(event) => {
-          if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-            event.preventDefault();
-            void onSendElementNote?.();
-          }
-        }}
-        disabled={!!disabled || !!elementBusy}
-      />
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] text-muted">Ctrl/Cmd + Enter</span>
-        <button
-          type="button"
-          className="primaryBtn h-8 px-3 text-[11px]"
-          onClick={() => {
-            void onSendElementNote?.();
+      <div className="rounded-xl border border-border bg-panel p-3 shadow-sm">
+        <div className="mb-2 flex items-start justify-between gap-3">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Новая заметка</div>
+            <div className="mt-1 text-xs leading-relaxed text-muted">
+              Коротко зафиксируйте наблюдение, вопрос или договорённость по выбранному узлу.
+            </div>
+          </div>
+          <div className="shrink-0 text-[11px] text-muted">Ctrl/Cmd + Enter</div>
+        </div>
+        {elementErr ? <div className="selectedNodeFieldError mb-2">{elementErr}</div> : null}
+        <textarea
+          ref={(node) => onNodeEditorRef?.(node)}
+          className="input min-h-[112px] w-full min-w-0 rounded-xl px-3 py-2 text-sm leading-relaxed"
+          placeholder="Опишите наблюдение по выбранному узлу"
+          value={elementText}
+          onChange={(event) => onElementTextChange?.(event.target.value)}
+          rows={4}
+          style={{ resize: "vertical" }}
+          onKeyDown={(event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+              event.preventDefault();
+              void onSendElementNote?.();
+            }
           }}
           disabled={!!disabled || !!elementBusy}
-        >
-          {elementBusy ? "Сохраняю..." : "Сохранить заметку"}
-        </button>
+        />
+        <div className="mt-3 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            className="primaryBtn h-9 px-3 text-[12px]"
+            onClick={() => {
+              void onSendElementNote?.();
+            }}
+            disabled={!!disabled || !!elementBusy}
+          >
+            {elementBusy ? "Сохраняю..." : "Добавить заметку"}
+          </button>
+        </div>
       </div>
     </div>
   );

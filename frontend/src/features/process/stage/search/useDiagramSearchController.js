@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import useDiagramSearchModel from "./useDiagramSearchModel.js";
+import useDiagramPropertySearchModel from "./useDiagramPropertySearchModel.js";
+
+const PROPERTY_REFRESH_RETRY_LIMIT = 5;
+const PROPERTY_REFRESH_RETRY_DELAY_MS = 80;
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -16,6 +20,10 @@ function toSearchIdList(resultsRaw) {
     .filter(Boolean);
 }
 
+function normalizeSearchMode(modeRaw) {
+  return toText(modeRaw).toLowerCase() === "properties" ? "properties" : "elements";
+}
+
 export default function useDiagramSearchController({
   bpmnRef,
   requestDiagramFocus,
@@ -28,6 +36,8 @@ export default function useDiagramSearchController({
   isEnabled = true,
 } = {}) {
   const [elements, setElements] = useState([]);
+  const [properties, setProperties] = useState([]);
+  const [mode, setModeState] = useState("elements");
   const lastSessionIdRef = useRef(toText(sessionId));
 
   const refreshElements = useCallback(() => {
@@ -40,11 +50,31 @@ export default function useDiagramSearchController({
     return rows;
   }, [bpmnRef, isEnabled]);
 
-  const model = useDiagramSearchModel({
+  const refreshProperties = useCallback(() => {
+    if (!isEnabled) {
+      setProperties([]);
+      return [];
+    }
+    const rows = asArray(bpmnRef?.current?.listSearchableProperties?.());
+    setProperties(rows);
+    return rows;
+  }, [bpmnRef, isEnabled]);
+
+  const elementModel = useDiagramSearchModel({
     elements,
     isOpen,
     onOpenChange: setOpen,
   });
+  const propertyModel = useDiagramPropertySearchModel({
+    entries: properties,
+    isOpen,
+    onOpenChange: setOpen,
+  });
+  const activeModel = mode === "properties" ? propertyModel : elementModel;
+
+  const setMode = useCallback((nextMode) => {
+    setModeState(normalizeSearchMode(nextMode));
+  }, []);
 
   const focusResult = useCallback((result, source = "search") => {
     const elementId = toText(result?.elementId);
@@ -57,78 +87,152 @@ export default function useDiagramSearchController({
   }, [requestDiagramFocus]);
 
   const next = useCallback(() => {
-    if (!model.results.length) return null;
-    const nextIndex = model.activeIndex >= 0
-      ? (model.activeIndex + 1) % model.results.length
+    if (!activeModel.results.length) return null;
+    const nextIndex = activeModel.activeIndex >= 0
+      ? (activeModel.activeIndex + 1) % activeModel.results.length
       : 0;
-    const result = model.selectIndex(nextIndex);
+    const result = activeModel.selectIndex(nextIndex);
     if (result) focusResult(result, "next");
     return result;
-  }, [focusResult, model]);
+  }, [activeModel, focusResult]);
 
   const prev = useCallback(() => {
-    if (!model.results.length) return null;
-    const nextIndex = model.activeIndex >= 0
-      ? (model.activeIndex - 1 + model.results.length) % model.results.length
-      : Math.max(model.results.length - 1, 0);
-    const result = model.selectIndex(nextIndex);
+    if (!activeModel.results.length) return null;
+    const nextIndex = activeModel.activeIndex >= 0
+      ? (activeModel.activeIndex - 1 + activeModel.results.length) % activeModel.results.length
+      : Math.max(activeModel.results.length - 1, 0);
+    const result = activeModel.selectIndex(nextIndex);
     if (result) focusResult(result, "prev");
     return result;
-  }, [focusResult, model]);
+  }, [activeModel, focusResult]);
 
   const selectIndex = useCallback((indexRaw) => {
-    const result = model.selectIndex(indexRaw);
+    const result = activeModel.selectIndex(indexRaw);
     if (result) focusResult(result, "row");
     return result;
-  }, [focusResult, model]);
+  }, [activeModel, focusResult]);
 
   useEffect(() => {
     if (!isEnabled || !isOpen) return;
+    if (mode === "properties") {
+      refreshProperties();
+      return;
+    }
     refreshElements();
-  }, [isEnabled, isOpen, refreshElements, mutationVersion, diagramXml, reloadKey]);
+  }, [
+    isEnabled,
+    isOpen,
+    mode,
+    refreshElements,
+    refreshProperties,
+    mutationVersion,
+    diagramXml,
+    reloadKey,
+  ]);
+
+  useEffect(() => {
+    if (!isEnabled || !isOpen || mode !== "properties" || !propertyModel.hasQuery) return;
+    let cancelled = false;
+    let timer = 0;
+    let attempts = 0;
+    const retryRefresh = () => {
+      if (cancelled) return;
+      const rows = refreshProperties();
+      attempts += 1;
+      if (rows.length || attempts >= PROPERTY_REFRESH_RETRY_LIMIT) return;
+      timer = globalThis.setTimeout(retryRefresh, PROPERTY_REFRESH_RETRY_DELAY_MS);
+    };
+    retryRefresh();
+    return () => {
+      cancelled = true;
+      if (timer) globalThis.clearTimeout(timer);
+    };
+  }, [
+    isEnabled,
+    isOpen,
+    mode,
+    propertyModel.hasQuery,
+    propertyModel.query,
+    refreshProperties,
+  ]);
 
   useEffect(() => {
     const normalizedSessionId = toText(sessionId);
     if (lastSessionIdRef.current === normalizedSessionId) return;
     lastSessionIdRef.current = normalizedSessionId;
     setElements([]);
-    model.reset();
+    setProperties([]);
+    setModeState("elements");
+    elementModel.reset();
+    propertyModel.reset();
     if (typeof setOpen === "function") setOpen(false);
     bpmnRef?.current?.clearSearchHighlights?.();
-  }, [bpmnRef, model, sessionId, setOpen]);
+  }, [bpmnRef, elementModel, propertyModel, sessionId, setOpen]);
 
   const searchIds = useMemo(
-    () => toSearchIdList(model.results),
-    [model.results],
+    () => toSearchIdList(elementModel.results),
+    [elementModel.results],
   );
 
   useEffect(() => {
-    if (!isEnabled || !isOpen || !model.hasQuery || !searchIds.length) {
+    const activeElementId = toText(activeModel.activeResult?.elementId);
+    if (!isEnabled || !isOpen || !activeModel.hasQuery || !activeModel.results.length || !activeElementId) {
+      bpmnRef?.current?.clearSearchHighlights?.();
+      return;
+    }
+    if (mode === "properties") {
+      bpmnRef?.current?.setSearchHighlights?.({
+        matchElementIds: [],
+        activeElementId,
+      });
+      return;
+    }
+    if (!searchIds.length) {
       bpmnRef?.current?.clearSearchHighlights?.();
       return;
     }
     bpmnRef?.current?.setSearchHighlights?.({
       matchElementIds: searchIds,
-      activeElementId: toText(model.activeResult?.elementId),
+      activeElementId,
     });
   }, [
+    activeModel.activeResult?.elementId,
+    activeModel.hasQuery,
+    activeModel.results.length,
     bpmnRef,
     isEnabled,
     isOpen,
-    model.activeResult?.elementId,
-    model.hasQuery,
+    mode,
     searchIds,
   ]);
+
+  useEffect(() => {
+    if (isOpen) return;
+    setModeState("elements");
+  }, [isOpen]);
 
   useEffect(() => () => {
     bpmnRef?.current?.clearSearchHighlights?.();
   }, [bpmnRef]);
 
   return {
-    ...model,
+    isOpen: activeModel.isOpen,
+    setOpen: activeModel.setOpen,
+    open: activeModel.open,
+    close: activeModel.close,
+    toggle: activeModel.toggle,
+    query: activeModel.query,
+    setQuery: activeModel.setQuery,
+    hasQuery: activeModel.hasQuery,
+    results: activeModel.results,
+    activeIndex: activeModel.activeIndex,
+    activeResult: activeModel.activeResult,
+    mode,
+    setMode,
     next,
     prev,
     selectIndex,
     refreshElements,
+    refreshProperties,
   };
 }

@@ -13,6 +13,8 @@ export default function useProcessOrchestrator({
   processBodyRef,
   bpmnSync,
   projectionHelpers,
+  getBaseDiagramStateVersion,
+  rememberDiagramStateVersion,
   onSessionSync,
   onError,
 }) {
@@ -39,6 +41,7 @@ export default function useProcessOrchestrator({
     processBodyRef,
     bpmnSync,
     projectionHelpers,
+    getBaseDiagramStateVersion,
     onSessionSync,
     flushInterviewBeforeTabSwitch: (currentTab, targetTab) =>
       flushBeforeSwitchRef.current?.(currentTab, targetTab),
@@ -63,12 +66,14 @@ export default function useProcessOrchestrator({
     onSessionSync,
     bpmnSync,
     projectionHelpers,
+    getBaseDiagramStateVersion,
     onError,
   });
 
   const {
     queueDiagramMutation,
     flushDiagramBeforeTabSwitch,
+    cancelPendingDiagramAutosave,
   } = useDiagramMutationLifecycle({
     sid,
     isLocal,
@@ -76,6 +81,8 @@ export default function useProcessOrchestrator({
     bpmnSync,
     coordinator,
     projectionHelpers,
+    getBaseDiagramStateVersion,
+    rememberDiagramStateVersion,
     onSessionSync,
     onError,
   });
@@ -101,5 +108,6 @@ export default function useProcessOrchestrator({
     markInterviewAsSaved,
     handleInterviewChange,
     queueDiagramMutation,
+    cancelPendingDiagramAutosave,
   };
 }

@@ -65,6 +65,40 @@ test("flushSave keeps backend persist when xml changed", async () => {
   assert.equal(saveCalls, 1);
 });
 
+test("publish_manual_save bypasses unchanged skip and still persists", async () => {
+  const store = createBpmnStore({
+    xml: "<bpmn:definitions id=\"same\"/>",
+    rev: 7,
+    dirty: false,
+    lastSavedRev: 7,
+  });
+  let saveCalls = 0;
+  const reasons = [];
+  const coordinator = createBpmnCoordinator({
+    store,
+    getSessionId: () => "sid_publish_same_payload",
+    getRuntime: () => ({
+      getStatus: () => ({ ready: true, defs: true, token: 79 }),
+      getXml: async () => ({ ok: true, xml: "<bpmn:definitions id=\"same\"/>", token: 79 }),
+    }),
+    persistence: {
+      saveRaw: async (_sid, _xml, _rev, reason) => {
+        saveCalls += 1;
+        reasons.push(String(reason || ""));
+        return { ok: true, status: 200, storedRev: 8 };
+      },
+    },
+  });
+
+  const result = await coordinator.flushSave("publish_manual_save");
+
+  assert.equal(result.ok, true);
+  assert.equal(result.skipped, undefined);
+  assert.equal(result.unchanged, undefined);
+  assert.equal(saveCalls, 1);
+  assert.deepEqual(reasons, ["publish_manual_save"]);
+});
+
 test("flushSave persists transformed xml in a single write", async () => {
   const store = createBpmnStore({
     xml: "<bpmn:definitions id=\"old\"/>",
@@ -97,4 +131,84 @@ test("flushSave persists transformed xml in a single write", async () => {
   assert.equal(result.xml, "<bpmn:definitions id=\"finalized\"/>");
   assert.equal(result.xmlAlreadyTransformed, true);
   assert.equal(store.getState().xml, "<bpmn:definitions id=\"finalized\"/>");
+});
+
+test("flushSave uses xmlOverride as primary manual-save source when provided", async () => {
+  const store = createBpmnStore({
+    xml: "<bpmn:definitions id=\"stale_store\"/>",
+    rev: 0,
+    dirty: true,
+    lastSavedRev: 0,
+  });
+  let runtimeGetXmlCalls = 0;
+  const persisted = [];
+  const coordinator = createBpmnCoordinator({
+    store,
+    getSessionId: () => "sid_manual_canonical_primary",
+    getRuntime: () => ({
+      getStatus: () => ({ ready: true, defs: true, token: 80 }),
+      getXml: async () => {
+        runtimeGetXmlCalls += 1;
+        return { ok: true, xml: "<bpmn:definitions id=\"stale_runtime\"/>", token: 80 };
+      },
+    }),
+    transformPersistedXml: (xmlText) => String(xmlText || "").replace("id=\"canonical\"", "id=\"canonical_final\""),
+    persistence: {
+      saveRaw: async (_sid, xml, rev) => {
+        persisted.push({ xml: String(xml || ""), rev: Number(rev || 0) });
+        return { ok: true, status: 200, storedRev: 2 };
+      },
+    },
+  });
+
+  const result = await coordinator.flushSave("publish_manual_save", {
+    xmlOverride: "<bpmn:definitions id=\"canonical\"/>",
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(runtimeGetXmlCalls, 0);
+  assert.equal(persisted.length, 1);
+  assert.equal(persisted[0].xml, "<bpmn:definitions id=\"canonical_final\"/>");
+  assert.equal(result.xml, "<bpmn:definitions id=\"canonical_final\"/>");
+  assert.equal(store.getState().xml, "<bpmn:definitions id=\"canonical_final\"/>");
+});
+
+test("flushSave lifecycle override prevents fallback to stale runtime source", async () => {
+  const store = createBpmnStore({
+    xml: "<bpmn:definitions id=\"saved\"/>",
+    rev: 2,
+    dirty: true,
+    lastSavedRev: 2,
+  });
+  let runtimeGetXmlCalls = 0;
+  const persisted = [];
+  const coordinator = createBpmnCoordinator({
+    store,
+    getSessionId: () => "sid_lifecycle_override",
+    getRuntime: () => ({
+      getStatus: () => ({ ready: true, defs: true, token: 81 }),
+      getXml: async () => {
+        runtimeGetXmlCalls += 1;
+        return { ok: true, xml: "<bpmn:definitions id=\"stale_runtime\"/>", token: 81 };
+      },
+    }),
+    persistence: {
+      saveRaw: async (_sid, xml, rev, reason) => {
+        persisted.push({ xml: String(xml || ""), rev: Number(rev || 0), reason: String(reason || "") });
+        return { ok: true, status: 200, storedRev: 3 };
+      },
+    },
+  });
+
+  const result = await coordinator.flushSave("beforeunload", {
+    xmlOverride: "<bpmn:definitions id=\"fresh_runtime_delta\"/>",
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(runtimeGetXmlCalls, 0);
+  assert.equal(persisted.length, 1);
+  assert.equal(persisted[0].reason, "beforeunload");
+  assert.equal(persisted[0].xml, "<bpmn:definitions id=\"fresh_runtime_delta\"/>");
+  assert.equal(result.xml, "<bpmn:definitions id=\"fresh_runtime_delta\"/>");
+  assert.equal(store.getState().xml, "<bpmn:definitions id=\"fresh_runtime_delta\"/>");
 });

@@ -25,7 +25,7 @@ import {
   apiGetProjectPage,
   apiCreateSession,
 } from "./explorerApi.js";
-import { apiDeleteProject, apiDeleteSession, apiPatchProject, apiPatchSession } from "../../lib/api";
+import { apiDeleteProject, apiDeleteSession, apiGetSession, apiGetSessionNoteAggregate, apiPatchProject, apiPatchSession } from "../../lib/api";
 import {
   MANUAL_SESSION_STATUSES,
   getManualSessionStatusMeta,
@@ -34,7 +34,8 @@ import { useAuth } from "../auth/AuthProvider.jsx";
 import { buildVisibleRows, hasFolderChildren } from "./work3TreeState.js";
 import { useWorkspaceExplorerController } from "./useWorkspaceExplorerController.js";
 import AppRouteLink from "../../components/navigation/AppRouteLink.jsx";
-import { buildAppWorkspaceHref } from "../navigation/appLinkBehavior.js";
+import NotesAggregateBadge from "../../components/NotesAggregateBadge.jsx";
+import { buildAppWorkspaceHref, shouldHandleClientNavigation } from "../navigation/appLinkBehavior.js";
 
 // ─── Icons (inline SVG to avoid external deps) ────────────────────────────────
 function IcoFolder({ open = false, className = "" }) {
@@ -154,6 +155,108 @@ function normalizeDodPercent(percentRaw) {
   return rounded;
 }
 
+function formatSessionPatchError(resp, fallback = "Не удалось сменить статус") {
+  const detail = resp?.data?.detail;
+  if (detail && typeof detail === "object") {
+    const code = String(detail.code || "").trim();
+    if (code === "DIAGRAM_STATE_BASE_VERSION_REQUIRED") {
+      return "Не удалось сменить статус: требуется актуальная версия диаграммы. Обновите страницу и повторите.";
+    }
+    if (code === "DIAGRAM_STATE_CONFLICT") {
+      return "Не удалось сменить статус: обнаружен конфликт версии диаграммы. Обновите страницу и повторите.";
+    }
+    try {
+      const packed = JSON.stringify(detail);
+      if (packed && packed !== "{}") return `${fallback}: ${packed}`;
+    } catch {
+      // ignore serialization errors
+    }
+  }
+
+  const err = String(resp?.error || "").trim();
+  if (err && err !== "[object Object]") return err;
+
+  if (Number(resp?.status || 0) === 409) {
+    return "Не удалось сменить статус: конфликт версии диаграммы. Обновите страницу и повторите.";
+  }
+  return fallback;
+}
+
+const EXPLORER_COLUMN_PROFILES = {
+  tree: {
+    showSignalColumns: false,
+  },
+  sessions: {
+    showSignalColumns: true,
+  },
+};
+
+const noteAggregateCache = new Map();
+
+function sessionNoteAggregateCacheKey(sessionId) {
+  return `session:${String(sessionId || "").trim()}`;
+}
+
+function useSessionNoteAggregate(sessionId) {
+  const sid = String(sessionId || "").trim();
+  const cacheKey = sessionNoteAggregateCacheKey(sid);
+  const [aggregate, setAggregate] = useState(() => noteAggregateCache.get(cacheKey) || null);
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!sid) {
+      setAggregate(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+    const cached = noteAggregateCache.get(cacheKey) || null;
+    if (cached) {
+      setAggregate(cached);
+    }
+    void apiGetSessionNoteAggregate(sid).then((result) => {
+      if (cancelled || !result?.ok) return;
+      const nextAggregate = result.aggregate || null;
+      noteAggregateCache.set(cacheKey, nextAggregate);
+      setAggregate(nextAggregate);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [cacheKey, refreshTick, sid]);
+
+  useEffect(() => {
+    if (!sid || typeof window === "undefined") return undefined;
+    const handleChanged = (event) => {
+      const changedSessionId = String(event?.detail?.sessionId || "").trim();
+      if (changedSessionId !== sid) return;
+      noteAggregateCache.delete(cacheKey);
+      setRefreshTick((value) => value + 1);
+    };
+    window.addEventListener("processmap:notes-aggregate-changed", handleChanged);
+    return () => {
+      window.removeEventListener("processmap:notes-aggregate-changed", handleChanged);
+    };
+  }, [cacheKey, sid]);
+
+  return aggregate;
+}
+
+function EntityTypePill({ type }) {
+  const normalized = String(type || "").trim().toLowerCase();
+  if (normalized === "folder") {
+    return <span className="inline-flex items-center rounded-full border border-sky-300/65 bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-fg/85">Папка</span>;
+  }
+  if (normalized === "project") {
+    return <span className="inline-flex items-center rounded-full border border-violet-300/65 bg-violet-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-fg/85">Проект</span>;
+  }
+  if (normalized === "session") {
+    return <span className="inline-flex items-center rounded-full border border-emerald-300/65 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-fg/85">Сессия</span>;
+  }
+  return <span className="inline-flex items-center rounded-full border border-border/80 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-fg/70">—</span>;
+}
+
 function StatusBadge({ status }) {
   const normalized = String(status || "").trim().toLowerCase();
   if (["draft", "in_progress", "review", "ready", "archived"].includes(normalized)) {
@@ -191,7 +294,7 @@ function DodBar({ percent }) {
 }
 
 function MetricCell({ label, value, warn = false }) {
-  if (!value) return <span className="text-muted text-xs">—</span>;
+  if (!value) return <span className="text-[10px] text-muted/50"> </span>;
   return (
     <span className={`text-xs font-medium ${warn && value > 0 ? "text-warning" : "text-muted"}`}>
       {value}
@@ -199,11 +302,11 @@ function MetricCell({ label, value, warn = false }) {
   );
 }
 
-function LastActivityCell({ node }) {
+function LastActivityCell({ node, maxWidthClass = "max-w-[220px]", quiet = false }) {
   const label = activitySourceLabel(node);
   return (
-    <td className="px-2 py-2.5 text-xs text-muted">
-      <div className="w-full max-w-[168px] truncate" title={label}>
+    <td className={`px-2 py-2.5 text-xs ${quiet ? "text-fg/65" : "text-muted"}`}>
+      <div className={`w-full ${maxWidthClass} truncate`} title={label}>
         {label}
       </div>
     </td>
@@ -222,6 +325,24 @@ function SummaryPill({ label, value, tone = "default" }) {
       <span className="uppercase tracking-[0.14em] text-[10px] opacity-60">{label}</span>
       <span className="font-medium whitespace-nowrap">{value}</span>
     </div>
+  );
+}
+
+function BreadcrumbChip({ children, active = false, onClick }) {
+  const className = active
+    ? "inline-flex max-w-[180px] items-center truncate rounded-full border border-accent/35 bg-accent/10 px-2.5 py-1 text-xs font-medium text-fg"
+    : "inline-flex max-w-[180px] items-center truncate rounded-full border border-border bg-panelAlt/50 px-2.5 py-1 text-xs text-muted transition-colors hover:border-border/80 hover:bg-panelAlt hover:text-fg";
+  if (typeof onClick === "function") {
+    return (
+      <button type="button" onClick={onClick} className={className}>
+        <span className="truncate">{children}</span>
+      </button>
+    );
+  }
+  return (
+    <span className={className}>
+      <span className="truncate">{children}</span>
+    </span>
   );
 }
 
@@ -481,12 +602,14 @@ function FolderRow({
   onReload,
   canEdit = false,
   canDelete = false,
+  showSignalColumns = false,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const expandable = hasFolderChildren(folder);
   const leftPadding = 8 + depth * 18;
+  const dodPercent = normalizeDodPercent(folder.rollup_dod_percent);
 
   const menuItems = [
     { label: "Открыть", icon: <IcoChevron right />, action: () => onNavigate(folder) },
@@ -506,8 +629,9 @@ function FolderRow({
                 onClick={() => onToggleExpand(folder)}
                 className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border bg-panelAlt/70 text-muted shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${loading ? "cursor-wait border-border/70" : "border-border/70 hover:border-border hover:bg-bg hover:text-fg active:bg-panelAlt"}`}
                 disabled={loading}
-                title={expanded ? "Свернуть" : "Развернуть"}
-                aria-label={expanded ? "Свернуть папку" : "Развернуть папку"}
+                title={expanded ? "Скрыть вложенные папки и проекты" : "Показать вложенные папки и проекты"}
+                aria-label={expanded ? `Скрыть вложенные элементы папки ${folder.name}` : `Показать вложенные элементы папки ${folder.name}`}
+                aria-expanded={expanded ? "true" : "false"}
               >
                 {loading ? (
                   <IcoSpinner className="animate-spin" />
@@ -524,23 +648,27 @@ function FolderRow({
             </button>
           </div>
         </td>
-        <td className="px-2 py-2.5 text-xs text-muted">Папка</td>
+        <td className="px-2 py-2.5 text-xs text-muted"><EntityTypePill type="folder" /></td>
         <td className="px-2 py-2.5 text-xs text-muted text-center">
           {folder.child_folder_count ?? 0} / {folder.descendant_sessions_count ?? 0}
         </td>
         <td className="px-2 py-2.5 text-xs text-muted text-center">
-          {folder.descendant_projects_count ?? 0}
+          <span className="text-[11px] text-fg/60">Проектов: {folder.descendant_projects_count ?? 0}</span>
         </td>
-        <td className="px-2 py-2.5"><DodBar percent={folder.rollup_dod_percent} /></td>
-        <td className="px-2 py-2.5 text-xs text-muted text-center">—</td>
-        <td className="px-2 py-2.5 text-xs text-muted text-center">—</td>
-        <td className="px-2 py-2.5 text-xs text-muted">—</td>
-        <td className="px-2 py-2.5 text-xs text-muted text-right">{ts(folder.rollup_activity_at || folder.updated_at) || "—"}</td>
-        <LastActivityCell node={folder} />
+        <td className="px-2 py-2.5">
+          {dodPercent && dodPercent > 0 ? <DodBar percent={dodPercent} /> : <span className="text-xs text-muted/70">—</span>}
+        </td>
+        {showSignalColumns ? <td className="px-2 py-2.5 text-xs text-muted text-center">—</td> : null}
+        {showSignalColumns ? <td className="px-2 py-2.5 text-xs text-muted text-center">—</td> : null}
+        <td className="px-2 py-2.5 text-xs text-muted/70">—</td>
+        <td className="px-2 py-2.5 text-xs text-fg/60 text-right">{ts(folder.rollup_activity_at || folder.updated_at) || "—"}</td>
+        <LastActivityCell node={folder} maxWidthClass="max-w-[180px]" quiet />
         <td className="px-2 py-2.5 w-8 text-right relative" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={() => setMenuOpen((v) => !v)}
-            className="opacity-0 group-hover:opacity-100 text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
+            className="opacity-45 group-hover:opacity-100 text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
+            title="Действия с папкой"
+            aria-label="Действия с папкой"
           >
             ···
           </button>
@@ -588,11 +716,13 @@ function FolderRow({
 
 // ─── Project Row in Explorer ───────────────────────────────────────────────────
 
-function ProjectRow({ project, depth = 0, onClick, onReload, canRename = false, canDelete = false }) {
+function ProjectRow({ project, depth = 0, onClick, onReload, canRename = false, canDelete = false, showSignalColumns = false }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const leftPadding = 8 + depth * 18;
+  const dodPercent = normalizeDodPercent(project.dod_percent);
+  const normalizedStatus = String(project.status || "").trim().toLowerCase();
   const projectHref = buildAppWorkspaceHref({ projectId: project?.id || project?.project_id });
   const menuItems = [
     { label: "Открыть", icon: <IcoChevron right />, action: () => onClick(project) },
@@ -616,25 +746,33 @@ function ProjectRow({ project, depth = 0, onClick, onReload, canRename = false, 
             </AppRouteLink>
           </div>
         </td>
-        <td className="px-2 py-2.5 text-xs text-muted">Проект</td>
+        <td className="px-2 py-2.5 text-xs text-muted"><EntityTypePill type="project" /></td>
         <td className="px-2 py-2.5 text-center">
           <span className="text-xs text-muted">{project.descendant_sessions_count ?? project.sessions_count ?? 0} сессий</span>
         </td>
         <td className="px-2 py-2.5">
           {project.owner
-            ? <span className="text-xs text-muted truncate block max-w-[100px]">{project.owner.name || project.owner.id}</span>
-            : <span className="text-xs text-muted">—</span>}
+            ? <span className="text-[11px] text-fg/60 truncate block max-w-[120px]" title={project.owner.name || project.owner.id}>Owner: {project.owner.name || project.owner.id}</span>
+            : <span className="text-xs text-muted/70">—</span>}
         </td>
-        <td className="px-2 py-2.5"><DodBar percent={project.dod_percent} /></td>
-        <td className="px-2 py-2.5 text-center"><MetricCell value={project.attention_count} warn /></td>
-        <td className="px-2 py-2.5 text-center"><MetricCell value={project.reports_count} /></td>
-        <td className="px-2 py-2.5"><StatusBadge status={project.status} /></td>
-        <td className="px-2 py-2.5 text-xs text-muted text-right">{ts(project.rollup_activity_at || project.updated_at) || "—"}</td>
-        <LastActivityCell node={project} />
+        <td className="px-2 py-2.5">
+          {dodPercent && dodPercent > 0 ? <DodBar percent={dodPercent} /> : <span className="text-xs text-muted/70">—</span>}
+        </td>
+        {showSignalColumns ? <td className="px-2 py-2.5 text-center"><MetricCell value={project.attention_count} warn /></td> : null}
+        {showSignalColumns ? <td className="px-2 py-2.5 text-center"><MetricCell value={project.reports_count} /></td> : null}
+        <td className="px-2 py-2.5">
+          {!normalizedStatus || normalizedStatus === "active"
+            ? <span className="text-xs text-muted/70">—</span>
+            : <StatusBadge status={project.status} />}
+        </td>
+        <td className="px-2 py-2.5 text-xs text-fg/60 text-right">{ts(project.rollup_activity_at || project.updated_at) || "—"}</td>
+        <LastActivityCell node={project} maxWidthClass="max-w-[180px]" quiet />
         <td className="px-2 py-2.5 w-8 text-right relative" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={() => setMenuOpen((v) => !v)}
-            className="opacity-0 group-hover:opacity-100 text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
+            className="opacity-45 group-hover:opacity-100 text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
+            title="Действия с проектом"
+            aria-label="Действия с проектом"
           >···</button>
           {menuOpen && <ContextMenu items={menuItems} onClose={() => setMenuOpen(false)} />}
         </td>
@@ -670,7 +808,7 @@ function ProjectRow({ project, depth = 0, onClick, onReload, canRename = false, 
   );
 }
 
-function InlineLoadingRow({ depth = 0 }) {
+function InlineLoadingRow({ depth = 0, colSpan = 8 }) {
   const leftPadding = 8 + depth * 18;
   return (
     <tr>
@@ -683,12 +821,12 @@ function InlineLoadingRow({ depth = 0 }) {
           <div className="h-5 w-full max-w-[220px] animate-pulse rounded bg-border/40" />
         </div>
       </td>
-      <td colSpan={10} className="px-2 py-2.5" />
+      <td colSpan={colSpan} className="px-2 py-2.5" />
     </tr>
   );
 }
 
-function InlineEmptyRow({ depth = 0 }) {
+function InlineEmptyRow({ depth = 0, colSpan = 8 }) {
   const leftPadding = 8 + depth * 18;
   return (
     <tr>
@@ -699,12 +837,12 @@ function InlineEmptyRow({ depth = 0 }) {
           <span className="truncate">В папке нет вложенных папок или проектов</span>
         </div>
       </td>
-      <td colSpan={10} className="px-2 py-2.5" />
+      <td colSpan={colSpan} className="px-2 py-2.5" />
     </tr>
   );
 }
 
-function InlineErrorRow({ depth = 0, message = "" }) {
+function InlineErrorRow({ depth = 0, message = "", colSpan = 8 }) {
   const leftPadding = 8 + depth * 18;
   const text = String(message || "").trim() || "Не удалось загрузить вложенные элементы.";
   return (
@@ -716,7 +854,7 @@ function InlineErrorRow({ depth = 0, message = "" }) {
           <span className="truncate">{text}</span>
         </div>
       </td>
-      <td colSpan={10} className="px-2 py-2.5" />
+      <td colSpan={colSpan} className="px-2 py-2.5" />
     </tr>
   );
 }
@@ -788,6 +926,8 @@ function ExplorerPane({
 
   const rootItems = useMemo(() => (Array.isArray(page?.items) ? page.items : []), [page]);
   const isEmpty = !loading && !error && rootItems.length === 0;
+  const treeColumnProfile = EXPLORER_COLUMN_PROFILES.tree;
+  const inlineColSpan = treeColumnProfile.showSignalColumns ? 10 : 8;
 
   const visibleRows = useMemo(
     () => buildVisibleRows({
@@ -915,42 +1055,42 @@ function ExplorerPane({
           <table className="w-full table-fixed text-left border-collapse">
             <colgroup>
               <col />
-              <col className="w-[72px]" />
+              <col className="w-[88px]" />
+              <col className="w-[108px]" />
+              <col className="w-[112px]" />
               <col className="w-[92px]" />
-              <col className="w-[100px]" />
-              <col className="w-[76px]" />
-              <col className="w-[36px]" />
-              <col className="w-[36px]" />
-              <col className="w-[92px]" />
-              <col className="w-[84px]" />
-              <col className="w-[144px]" />
+              {treeColumnProfile.showSignalColumns ? <col className="w-[36px]" /> : null}
+              {treeColumnProfile.showSignalColumns ? <col className="w-[36px]" /> : null}
+              <col className="w-[88px]" />
+              <col className="w-[96px]" />
+              <col className="w-[180px]" />
               <col className="w-8" />
             </colgroup>
             <thead>
-              <tr className="text-[11px] uppercase tracking-wide text-muted border-b border-border">
+              <tr className="border-b border-border/80 bg-panelAlt/25 text-[11px] uppercase tracking-wide text-fg/65">
                 <th className="px-2 py-2">Название</th>
                 <th className="px-2 py-2">Тип</th>
                 <th className="px-2 py-2 text-center">Папки / Сессии</th>
-                <th className="px-2 py-2">Owner / Проекты</th>
+                <th className="px-2 py-2" title="Для папок: количество проектов, для проектов: владелец">Контекст</th>
                 <th className="px-2 py-2">DoD</th>
-                <th className="px-2 py-2 text-center">⚠</th>
-                <th className="px-2 py-2 text-center">📋</th>
+                {treeColumnProfile.showSignalColumns ? <th className="px-2 py-2 text-center">⚠</th> : null}
+                {treeColumnProfile.showSignalColumns ? <th className="px-2 py-2 text-center">📋</th> : null}
                 <th className="px-2 py-2">Статус</th>
                 <th className="px-2 py-2 text-right">Обновлён</th>
                 <th className="px-2 py-2">Последнее изменение</th>
                 <th className="px-2 py-2 w-8" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-border/50">
+            <tbody className="divide-y divide-border/65">
               {visibleRows.map((row, index) => {
                 if (row.rowType === "loading") {
-                  return <InlineLoadingRow key={`loading-${row.parentId}-${index}`} depth={row.depth} />;
+                  return <InlineLoadingRow key={`loading-${row.parentId}-${index}`} depth={row.depth} colSpan={inlineColSpan} />;
                 }
                 if (row.rowType === "empty") {
-                  return <InlineEmptyRow key={`empty-${row.parentId}-${index}`} depth={row.depth} />;
+                  return <InlineEmptyRow key={`empty-${row.parentId}-${index}`} depth={row.depth} colSpan={inlineColSpan} />;
                 }
                 if (row.rowType === "error") {
-                  return <InlineErrorRow key={`error-${row.parentId}-${index}`} depth={row.depth} message={row.message} />;
+                  return <InlineErrorRow key={`error-${row.parentId}-${index}`} depth={row.depth} message={row.message} colSpan={inlineColSpan} />;
                 }
                 if (row.rowType === "folder") {
                   const folder = row.node;
@@ -967,6 +1107,7 @@ function ExplorerPane({
                       onReload={() => load({ resetInlineChildren: true })}
                       canEdit={!!permissions?.canRenameFolder}
                       canDelete={!!permissions?.canDeleteFolder}
+                      showSignalColumns={treeColumnProfile.showSignalColumns}
                     />
                   );
                 }
@@ -980,6 +1121,7 @@ function ExplorerPane({
                     onReload={() => load({ resetInlineChildren: true })}
                     canRename={!!permissions?.canRenameProject}
                     canDelete={!!permissions?.canDeleteProject}
+                    showSignalColumns={treeColumnProfile.showSignalColumns}
                   />
                 );
               })}
@@ -1063,11 +1205,13 @@ function SessionRow({
   canRename = false,
   canDelete = false,
   canChangeStatus = false,
+  showSignalColumns = true,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [pendingStatus, setPendingStatus] = useState(String(session.status || "draft"));
   const sessionStatusMeta = getManualSessionStatusMeta(pendingStatus);
+  const notesAggregate = useSessionNoteAggregate(session?.id || session?.session_id);
 
   useEffect(() => {
     setPendingStatus(String(session.status || "draft"));
@@ -1095,20 +1239,29 @@ function SessionRow({
       >
         <td className="px-3 py-2.5 w-5"><IcoSession className="text-muted" /></td>
         <td className="px-2 py-2.5 text-sm font-medium text-fg">
-          <AppRouteLink
-            className={`block min-w-0 truncate ${isOpening ? "cursor-progress text-muted" : "hover:underline"}`}
-            href={sessionHref}
-            onNavigate={() => onOpen(session)}
-            title={session.name}
-            aria-busy={isOpening ? "true" : undefined}
-          >
-            {session.name}
-          </AppRouteLink>
+          <div className="min-w-0">
+            <AppRouteLink
+              className={`block min-w-0 truncate ${isOpening ? "cursor-progress text-muted" : "hover:underline"}`}
+              href={sessionHref}
+              onNavigate={() => onOpen(session)}
+              title={session.name}
+              aria-busy={isOpening ? "true" : undefined}
+            >
+              {session.name}
+            </AppRouteLink>
+            <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5">
+              <span className="inline-flex items-center gap-1 text-[11px] font-normal text-accent/75">
+                <span>{isOpening ? "Открываем сессию" : "Открыть сессию"}</span>
+                <IcoChevron right className="text-[10px]" />
+              </span>
+              <NotesAggregateBadge aggregate={notesAggregate} compact />
+            </div>
+          </div>
         </td>
         <td className="px-2 py-2.5">
           {canChangeStatus ? (
             <select
-              className={`h-8 min-h-0 w-[150px] rounded-full border px-3 text-xs font-medium outline-none transition-colors ${sessionStatusMeta.selectClass}`}
+              className={`h-8 min-h-0 w-[138px] rounded-full border px-3 text-xs font-medium outline-none transition-colors ${sessionStatusMeta.selectClass}`}
               value={String(session.status || "draft")}
               onPointerDown={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
@@ -1121,13 +1274,28 @@ function SessionRow({
                 const next = String(e.target.value || "").trim();
                 if (!next || next === String(session.status || "draft")) return;
                 setPendingStatus(next);
-                const resp = await apiPatchSession(session.id, { status: next });
-                if (!resp?.ok) {
+
+                const sessionSnapshot = await apiGetSession(session.id);
+                const baseVersion = Number(sessionSnapshot?.session?.diagram_state_version);
+                if (!sessionSnapshot?.ok || !Number.isFinite(baseVersion) || baseVersion < 0) {
                   setPendingStatus(String(session.status || "draft"));
-                  window.alert(String(resp?.error || "Не удалось сменить статус"));
+                  window.alert(formatSessionPatchError(sessionSnapshot, "Не удалось получить актуальную версию сессии"));
                   return;
                 }
-                onSessionPatched?.(session.id, { status: next, updated_at: Math.floor(Date.now() / 1000) });
+
+                const resp = await apiPatchSession(session.id, {
+                  status: next,
+                  base_diagram_state_version: baseVersion,
+                });
+                if (!resp?.ok) {
+                  setPendingStatus(String(session.status || "draft"));
+                  window.alert(formatSessionPatchError(resp));
+                  return;
+                }
+                onSessionPatched?.(session.id, {
+                  status: String(resp?.session?.interview?.status || next),
+                  updated_at: Number(resp?.session?.updated_at || Math.floor(Date.now() / 1000)),
+                });
                 onReload?.();
               }}
             >
@@ -1139,20 +1307,28 @@ function SessionRow({
             <StatusBadge status={session.status} />
           )}
         </td>
-        <td className="px-2 py-2.5 text-xs text-muted">{session.stage || "—"}</td>
+        <td className="px-2 py-2.5 text-[11px] text-fg/65">{session.stage || "—"}</td>
         <td className="px-2 py-2.5">
           {session.owner
-            ? <span className="text-xs text-muted truncate block max-w-[100px]">{session.owner.name || session.owner.id}</span>
-            : <span className="text-xs text-muted">—</span>}
+            ? <span className="text-[11px] text-fg/65 truncate block max-w-[88px]" title={session.owner.name || session.owner.id}>{session.owner.name || session.owner.id}</span>
+            : <span className="text-[11px] text-muted/65">—</span>}
         </td>
         <td className="px-2 py-2.5"><DodBar percent={session.dod_percent} /></td>
-        <td className="px-2 py-2.5 text-center"><MetricCell value={session.attention_count} warn /></td>
-        <td className="px-2 py-2.5 text-center"><MetricCell value={session.reports_count} /></td>
-        <td className="px-2 py-2.5 text-xs text-muted text-right">{ts(session.updated_at)}</td>
+        {showSignalColumns ? (
+          <td className="px-2 py-2.5 text-center" title="Требует внимания">
+            <MetricCell value={session.attention_count} warn />
+          </td>
+        ) : null}
+        {showSignalColumns ? (
+          <td className="px-2 py-2.5 text-center" title="Заметки и отчёты">
+            <MetricCell value={session.reports_count} />
+          </td>
+        ) : null}
+        <td className="px-2 py-2.5 text-[11px] text-fg/65 text-right">{ts(session.updated_at)}</td>
         <td className="px-2 py-2.5 text-right">
           <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
             <AppRouteLink
-              className={`primaryBtn h-7 px-3 text-xs transition-opacity ${isOpening ? "opacity-100 cursor-progress" : "opacity-0 group-hover:opacity-100"}`}
+              className={`secondaryBtn h-7 min-h-0 px-3 text-xs whitespace-nowrap transition-colors ${isOpening ? "cursor-progress" : "hover:border-accent/40 hover:text-fg"}`}
               href={sessionHref}
               onNavigate={() => onOpen(session)}
               aria-busy={isOpening ? "true" : undefined}
@@ -1163,15 +1339,17 @@ function SessionRow({
                   Открывается...
                 </span>
               ) : (
-                "Открыть →"
+                "Открыть"
               )}
             </AppRouteLink>
             {(canRename || canDelete) ? (
               <div className="relative">
                 <button
                   type="button"
-                  className="opacity-0 group-hover:opacity-100 text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded border border-transparent text-muted transition-colors hover:border-border hover:bg-panelAlt hover:text-fg"
                   onClick={() => setMenuOpen((v) => !v)}
+                  title="Действия сессии"
+                  aria-label="Действия сессии"
                 >
                   ···
                 </button>
@@ -1279,6 +1457,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   const proj = page?.project;
   const sessions = page?.sessions || [];
   const isEmpty = !loading && !error && sessions.length === 0;
+  const sessionColumnProfile = EXPLORER_COLUMN_PROFILES.sessions;
   const handleOpenSessionRequest = useCallback(async (sessionLike) => {
     const row = sessionLike && typeof sessionLike === "object" ? sessionLike : {};
     const sid = String(row?.id || row?.session_id || "").trim();
@@ -1297,6 +1476,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   }, [onOpenSession]);
 
   const backCrumbs = breadcrumbBase || [];
+  const parentCrumb = backCrumbs.length ? backCrumbs[backCrumbs.length - 1] : null;
 
   if (loading) {
     return (
@@ -1316,15 +1496,32 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       {/* Header */}
       <div className="px-4 pt-3 pb-2 border-b border-border flex-shrink-0">
-        {/* Breadcrumb */}
-        <nav className="flex items-center gap-1 text-sm text-muted mb-2">
-          {backCrumbs.map((c, i) => (
-            <React.Fragment key={`${c.type}-${c.id}`}>
-              {i > 0 && <IcoChevron right className="text-muted/50 shrink-0" />}
-              <button onClick={() => onBack(c)} className="hover:text-fg hover:underline truncate max-w-[140px]">{c.name}</button>
-            </React.Fragment>
-          ))}
-        </nav>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          {parentCrumb ? (
+            <button
+              type="button"
+              onClick={() => onBack(parentCrumb)}
+              className="secondaryBtn h-8 min-h-0 px-3 text-xs font-medium"
+            >
+              ← Назад к разделу
+            </button>
+          ) : null}
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted/70">Навигация</span>
+            {backCrumbs.map((c, i) => (
+              <React.Fragment key={`${c.type}-${c.id}`}>
+                {i > 0 && <IcoChevron right className="shrink-0 text-muted/35" />}
+                <BreadcrumbChip onClick={() => onBack(c)}>{c.name}</BreadcrumbChip>
+              </React.Fragment>
+            ))}
+            {proj ? (
+              <>
+                {backCrumbs.length ? <IcoChevron right className="shrink-0 text-muted/35" /> : null}
+                <BreadcrumbChip active>{proj.name}</BreadcrumbChip>
+              </>
+            ) : null}
+          </div>
+        </div>
 
         {/* Project info strip */}
         {proj && (
@@ -1380,21 +1577,41 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
       ) : (
         <div className="flex-1 overflow-y-auto">
           <table className="w-full text-left border-collapse">
+            <colgroup>
+              <col className="w-5" />
+              <col />
+              <col className="w-[154px]" />
+              <col className="w-[92px]" />
+              <col className="w-[96px]" />
+              <col className="w-[90px]" />
+              {sessionColumnProfile.showSignalColumns ? <col className="w-[42px]" /> : null}
+              {sessionColumnProfile.showSignalColumns ? <col className="w-[42px]" /> : null}
+              <col className="w-[104px]" />
+              <col className="w-[124px]" />
+            </colgroup>
             <thead>
-              <tr className="text-[11px] uppercase tracking-wide text-muted border-b border-border">
+              <tr className="border-b border-border/80 bg-panelAlt/25 text-[11px] uppercase tracking-wide text-fg/65">
                 <th className="px-3 py-2 w-5" />
                 <th className="px-2 py-2">Название</th>
                 <th className="px-2 py-2">Статус</th>
                 <th className="px-2 py-2">Стадия</th>
                 <th className="px-2 py-2">Owner</th>
                 <th className="px-2 py-2">DoD</th>
-                <th className="px-2 py-2 text-center">⚠</th>
-                <th className="px-2 py-2 text-center">📋</th>
+                {sessionColumnProfile.showSignalColumns ? (
+                  <th className="px-2 py-2 text-center" title="Требует внимания" aria-label="Колонка Требует внимания">
+                    <span aria-hidden>⚠</span>
+                  </th>
+                ) : null}
+                {sessionColumnProfile.showSignalColumns ? (
+                  <th className="px-2 py-2 text-center" title="Заметки и отчёты" aria-label="Колонка заметок и отчётов">
+                    <span aria-hidden>📋</span>
+                  </th>
+                ) : null}
                 <th className="px-2 py-2 text-right">Обновлена</th>
                 <th className="px-2 py-2" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-border/50">
+            <tbody className="divide-y divide-border/65">
               {sessions.map((s) => (
                 <SessionRow
                   key={s.id}
@@ -1410,6 +1627,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                   canRename={!!permissions?.canRenameSession}
                   canDelete={!!permissions?.canDeleteSession}
                   canChangeStatus={!!permissions?.canChangeStatus}
+                  showSignalColumns={sessionColumnProfile.showSignalColumns}
                 />
               ))}
             </tbody>

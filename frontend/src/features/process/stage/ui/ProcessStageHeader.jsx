@@ -1,7 +1,6 @@
 import ProcessPanels from "./ProcessPanels";
 import { getFirstPickedFile } from "./fileInputEvent.js";
 import { resolvePublishedRevisionBadgeView } from "./revisionBadgePolicy.js";
-import { getPublishGitMirrorMeta } from "../../../../shared/publishGitMirrorStatus";
 
 function toText(value) {
   return String(value || "").trim();
@@ -9,14 +8,17 @@ function toText(value) {
 
 export default function ProcessStageHeader({ view = {} }) {
   const {
-    canSaveNow,
-    saveDirtyHint,
-    showSaveActionButton,
+    canCreateRevisionNow,
+    createRevisionNoDiffHintVisible,
+    createRevisionNoDiffHintText,
     saveActionText,
+    createRevisionActionText,
     saveSmartText,
     saveUploadStatus,
+    saveConflictActions,
     sessionRevisionHistorySnapshot,
     handleSaveCurrentTab,
+    handleCreateRevisionAction,
     handleUndoAction,
     handleRedoAction,
     canUndo,
@@ -43,39 +45,73 @@ export default function ProcessStageHeader({ view = {} }) {
     drawioFileInputRef,
     handleDrawioImportFile,
     topPanelsView,
-    publishGitMirrorSnapshot,
+    sessionPresenceView,
+    remoteSaveHighlightView,
   } = view;
-  const latestRevisionNumber = Number(sessionRevisionHistorySnapshot?.latestRevisionNumber || 0);
-  const hasPublishedRevision = latestRevisionNumber > 0;
   const publishedRevisionBadge = resolvePublishedRevisionBadgeView(sessionRevisionHistorySnapshot);
-  const draftAheadOfLatest = sessionRevisionHistorySnapshot?.draftState?.isDraftAheadOfLatestRevision === true;
-  const draftStatusLabel = !hasPublishedRevision
-    ? "Ревизий нет"
-    : (draftAheadOfLatest ? "Черновик" : "Опубликовано");
-  const draftStatusTone = !hasPublishedRevision || draftAheadOfLatest ? "warn" : "ok";
-  const mirrorSnapshot = (
-    publishGitMirrorSnapshot && typeof publishGitMirrorSnapshot === "object"
-      ? publishGitMirrorSnapshot
-      : {}
-  );
-  const mirrorMeta = getPublishGitMirrorMeta(mirrorSnapshot.state);
-  const mirrorVersionNumberRaw = Number(mirrorSnapshot.versionNumber);
-  const mirrorVersionNumber = Number.isFinite(mirrorVersionNumberRaw)
-    ? Math.max(0, Math.trunc(mirrorVersionNumberRaw))
-    : 0;
-  const mirrorVersionId = String(mirrorSnapshot.versionId || "").trim();
-  const mirrorLastError = String(mirrorSnapshot.lastError || "").trim();
-  const mirrorVersionLabel = mirrorVersionNumber > 0
-    ? `v${String(mirrorVersionNumber)}`
-    : mirrorVersionId;
-  const mirrorBadgeLabel = mirrorVersionLabel
-    ? `${mirrorMeta.label} · ${mirrorVersionLabel}`
-    : mirrorMeta.label;
-  const showSaveStatusBadge = canSaveNow && !showSaveActionButton;
+  const latestPublishedRevisionNumber = Number(sessionRevisionHistorySnapshot?.latestPublishedRevisionNumber || 0);
+  const latestRevisionNumber = Number(sessionRevisionHistorySnapshot?.latestRevisionNumber || 0);
+  const resolvedVersionNumber = latestPublishedRevisionNumber > 0
+    ? latestPublishedRevisionNumber
+    : (latestRevisionNumber > 0 ? latestRevisionNumber : 0);
+  const versionChipLabel = resolvedVersionNumber > 0 ? `V. ${resolvedVersionNumber}` : "V. —";
+  const versionChipTitle = resolvedVersionNumber > 0
+    ? `Текущая версия: ${resolvedVersionNumber}`
+    : (publishedRevisionBadge.title || "Версия пока не создана.");
+  const resolvedSaveActionText = toText(saveActionText) || "Сохранить сессию";
+  const resolvedCreateRevisionActionText = toText(createRevisionActionText) || "Создать новую версию";
+  const saveStatusText = toText(saveSmartText);
+  const showSaveStatusBadge = hasSession && !!saveStatusText && saveStatusText !== "Сохранить сессию";
+  const isConflictState = toText(saveUploadStatus?.state) === "conflict";
+  const hasDominantConflictState = isConflictState;
+  const showConflictModalActive = isConflictState && saveConflictActions?.visible === true;
+  const showSaveStatusBadgeResolved = showSaveStatusBadge && !hasDominantConflictState;
+  const uploadStatusState = toText(saveUploadStatus?.state);
+  const showUploadStatusBadge = saveUploadStatus?.visible
+    && !showConflictModalActive
+    && (uploadStatusState === "save_failed" || uploadStatusState === "conflict");
+  const showSessionPresenceBadge = hasSession && sessionPresenceView?.visible === true && !showConflictModalActive;
+  const showRemoteSaveHighlightBadge = remoteSaveHighlightView?.visible === true && !showConflictModalActive;
+  const showRemoteSaveRefreshAction = showRemoteSaveHighlightBadge && typeof remoteSaveHighlightView?.onRefreshSession === "function";
   const toolbarMessage = toText(toolbarInlineMessage);
-  const suppressDraftSavedBadge = /^Опубликовано как версия R\d+\.$/.test(toolbarMessage)
-    && toText(saveSmartText) === "Черновик сохранён";
-  const showGenericSaveStatusBadge = showSaveStatusBadge && !suppressDraftSavedBadge;
+  const toolbarMessageNormalized = toolbarMessage.replace(/[.!]+$/g, "").trim().toLowerCase();
+  const saveSmartTextNormalized = toText(saveSmartText).replace(/[.!]+$/g, "").trim().toLowerCase();
+  const isDraftSavedToolbarMessage = (
+    toolbarMessageNormalized === "черновик сохранён"
+    || toolbarMessageNormalized === "сохранено внутри версии"
+    || toolbarMessageNormalized === "черновик синхронизирован"
+  );
+  const isSaveVersionToolbarMessage = (
+    isDraftSavedToolbarMessage
+    || toolbarMessageNormalized === "создана новая версия bpmn"
+    || toolbarMessageNormalized === "новая версия не создана: нет изменений"
+  );
+  const hasPrimaryDraftStatusSurface = showSaveStatusBadgeResolved;
+  const toolbarMessageLooksLikeConflict = /(?:конфликт|conflict|http\s*409|stale|верси)/i.test(toolbarMessage);
+  const showToolbarInlineBadge = !!toolbarInlineMessage
+    && !isSaveVersionToolbarMessage
+    && !hasDominantConflictState
+    && !(showConflictModalActive && toolbarMessageLooksLikeConflict)
+    && !(
+      isDraftSavedToolbarMessage
+      && hasPrimaryDraftStatusSurface
+      && (
+        !saveSmartTextNormalized
+        || toolbarMessageNormalized === saveSmartTextNormalized
+        || saveSmartTextNormalized === "черновик сохранён"
+        || saveSmartTextNormalized === "сохранено внутри версии"
+      )
+    );
+  const showGenericSaveStatusBadge = showSaveStatusBadgeResolved;
+  const canCreateRevisionFromCurrentState = canCreateRevisionNow !== false
+    && typeof handleCreateRevisionAction === "function";
+  const showCreateRevisionNoDiffHint = hasSession
+    && createRevisionNoDiffHintVisible === true;
+  const revisionActionTitle = showCreateRevisionNoDiffHint
+    ? "Новая версия не будет создана: нет новых изменений с последней версии."
+    : (!canCreateRevisionFromCurrentState
+      ? "Создание новой версии временно недоступно."
+      : "Создать новую версию из текущего состояния сессии");
   const canRunUndo = tab === "diagram" && canUndo === true;
   const canRunRedo = tab === "diagram" && canRedo === true;
 
@@ -83,18 +119,48 @@ export default function ProcessStageHeader({ view = {} }) {
     <div className="processHeader diagramToolbarHeader">
       <div className="diagramToolbarSlot diagramToolbarSlot--left">
         <div className="flex items-center gap-2">
-          {canSaveNow ? (
-            showSaveActionButton ? (
+          {hasSession ? (
+            <span
+              className="badge text-[11px] info"
+              data-testid="diagram-toolbar-version-chip"
+              title={versionChipTitle}
+            >
+              {versionChipLabel}
+            </span>
+          ) : null}
+          {hasSession ? (
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                className="primaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
-                onClick={handleSaveCurrentTab}
-                title={workbench.saveTooltip}
-                data-testid="diagram-toolbar-save"
+                className="secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
+                onClick={handleCreateRevisionAction}
+                disabled={!canCreateRevisionFromCurrentState}
+                title={revisionActionTitle}
+                data-testid="diagram-toolbar-create-revision"
               >
-                {saveActionText || saveSmartText}
+                {resolvedCreateRevisionActionText}
               </button>
-            ) : null
+              {showCreateRevisionNoDiffHint ? (
+                <span
+                  className="badge text-[11px] text-muted"
+                  title={revisionActionTitle}
+                  data-testid="diagram-toolbar-create-revision-no-diff-hint"
+                >
+                  {toText(createRevisionNoDiffHintText) || "Нет новых изменений для новой версии"}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+          {hasSession ? (
+            <button
+              type="button"
+              className="primaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
+              onClick={handleSaveCurrentTab}
+              title={workbench.saveTooltip}
+              data-testid="diagram-toolbar-save"
+            >
+              {resolvedSaveActionText}
+            </button>
           ) : (
               <button
                 type="button"
@@ -102,26 +168,9 @@ export default function ProcessStageHeader({ view = {} }) {
                 disabled
                 title={workbench.saveTooltip}
               >
-                {saveSmartText || workbench.labels.save}
+                {workbench.labels.save}
               </button>
             )}
-          {hasSession ? (
-            <>
-              <span
-                className="badge text-[11px] text-muted"
-                data-testid={publishedRevisionBadge.testId}
-                title={publishedRevisionBadge.title || undefined}
-              >
-                {publishedRevisionBadge.text}
-              </span>
-              <span
-                className={`badge text-[11px] ${draftStatusTone}`}
-                data-testid="diagram-toolbar-draft-vs-latest"
-              >
-                {draftStatusLabel}
-              </span>
-            </>
-          ) : null}
         </div>
       </div>
 
@@ -154,12 +203,46 @@ export default function ProcessStageHeader({ view = {} }) {
 
       <div className="diagramToolbarSlot diagramToolbarSlot--right">
         <div className="diagramToolbarRightStatus">
-          {showGenericSaveStatusBadge ? (
-            <span className="badge text-[11px] text-muted" data-testid="diagram-toolbar-save-status" title={saveSmartText}>
-              {saveSmartText}
+          <span
+            className="diagramToolbarNotificationAnchor"
+            data-testid="diagram-toolbar-notification-anchor"
+            aria-hidden="true"
+          />
+          {showSessionPresenceBadge ? (
+            <span
+              className="badge text-[11px] text-muted"
+              data-testid="diagram-toolbar-session-presence"
+              title={String(sessionPresenceView?.title || "")}
+            >
+              {String(sessionPresenceView?.label || "")}
             </span>
           ) : null}
-          {saveUploadStatus?.visible ? (
+          {showRemoteSaveHighlightBadge ? (
+            <>
+              <span
+                className="badge text-[11px] info"
+                data-testid="diagram-toolbar-remote-save-highlight"
+                title={String(remoteSaveHighlightView?.title || remoteSaveHighlightView?.label || "")}
+              >
+                {String(remoteSaveHighlightView?.label || "")}
+              </span>
+              {showRemoteSaveRefreshAction ? (
+                <button
+                  type="button"
+                  className="secondaryBtn h-7 whitespace-nowrap px-2 text-[11px]"
+                  onClick={() => void remoteSaveHighlightView?.onRefreshSession?.()}
+                  disabled={remoteSaveHighlightView?.busy === true}
+                  title={String(remoteSaveHighlightView?.refreshHint || "")}
+                  data-testid="diagram-toolbar-remote-save-refresh"
+                >
+                  {remoteSaveHighlightView?.busy === true
+                    ? "Обновляем..."
+                    : String(remoteSaveHighlightView?.refreshLabel || "Обновить сессию")}
+                </button>
+              ) : null}
+            </>
+          ) : null}
+          {showUploadStatusBadge ? (
             <span
               className={`badge text-[11px] ${String(saveUploadStatus?.tone || "").trim()}`}
               data-testid="diagram-toolbar-save-upload-status"
@@ -168,17 +251,8 @@ export default function ProcessStageHeader({ view = {} }) {
               {String(saveUploadStatus?.label || "")}
             </span>
           ) : null}
-          {hasSession ? (
-            <span
-              className={`badge text-[11px] ${mirrorMeta.processTone}`}
-              data-testid="diagram-toolbar-publish-git-mirror-status"
-              title={mirrorLastError || "Статус синхронизации Git-зеркала"}
-            >
-              Git-зеркало: {mirrorBadgeLabel}
-            </span>
-          ) : null}
         </div>
-        {toolbarInlineMessage ? (
+        {showToolbarInlineBadge ? (
           <span
             className={`badge hidden max-w-[36ch] truncate lg:inline-flex ${toolbarInlineTone ? toolbarInlineTone : ""}`}
             title={toolbarInlineMessage}

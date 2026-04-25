@@ -1,0 +1,22 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+function readSource() {
+  return fs.readFileSync(path.join(__dirname, "useProcessStageRuntimeGlue.js"), "utf8");
+}
+
+test("execution-plan save session patch propagates base_diagram_state_version", () => {
+  const source = readSource();
+  assert.equal(source.includes("getBaseDiagramStateVersion,"), true);
+  assert.equal(
+    source.includes("syncPatchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);"),
+    true,
+  );
+  assert.equal(source.includes("const syncRes = await apiPatchSession(sid, syncPatchPayload);"), true);
+});

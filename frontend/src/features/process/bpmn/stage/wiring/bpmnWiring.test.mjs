@@ -217,3 +217,36 @@ test("ensureBpmnStore guards redundant setter fanout for identical snapshots", (
   });
   assert.deepEqual(calls, [["dirty", false]]);
 });
+
+test("ensureBpmnPersistence forwards external diagram state version hooks", () => {
+  const ctx = createCtx();
+  const getBaseDiagramStateVersion = () => 7;
+  const rememberDiagramStateVersion = () => 8;
+  ctx.readOnly.getBaseDiagramStateVersion = getBaseDiagramStateVersion;
+  ctx.readOnly.rememberDiagramStateVersion = rememberDiagramStateVersion;
+
+  let capturedOptions = null;
+  const deps = {
+    createBpmnStore: () => ({
+      subscribe: () => () => {},
+      getState: () => ({ xml: "", dirty: false, rev: 0 }),
+    }),
+    createBpmnPersistence: (options) => {
+      capturedOptions = options;
+      return {
+        saveRaw: async () => ({ ok: true }),
+        loadRaw: async () => ({ ok: true }),
+        cacheRaw: () => ({ ok: true }),
+      };
+    },
+    createBpmnCoordinator: () => ({ bindRuntime() {} }),
+  };
+
+  const wiring = createBpmnWiring(() => ctx, deps);
+  const persistence = wiring.ensureBpmnPersistence();
+  assert.ok(persistence);
+  assert.equal(typeof capturedOptions?.getBaseDiagramStateVersion, "function");
+  assert.equal(typeof capturedOptions?.rememberDiagramStateVersion, "function");
+  assert.equal(capturedOptions.getBaseDiagramStateVersion(), 7);
+  assert.equal(capturedOptions.rememberDiagramStateVersion(9, { sessionId: "sid_1" }), 8);
+});
