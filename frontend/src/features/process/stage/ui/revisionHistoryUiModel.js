@@ -12,6 +12,16 @@ function asObject(value) {
   return value && typeof value === "object" ? value : {};
 }
 
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+import {
+  classifyRevisionEventAction,
+  localizeRevisionEventAction,
+  normalizeRevisionEventAction,
+} from "./revisionEventClassifier.js";
+
 function normalizePublishedRevisionStatus(value) {
   const text = toText(value).toLowerCase();
   if (text === "loading") return "loading";
@@ -58,12 +68,90 @@ export function formatRevisionTimestampRu(value) {
 }
 
 export function localizeRevisionSourceAction(actionRaw) {
-  const action = toText(actionRaw).toLowerCase();
-  if (action === "import_bpmn") return "Импорт BPMN";
-  if (action === "restore_bpmn" || action === "session.bpmn_restore") return "Восстановление BPMN";
-  if (action === "manual_publish" || action === "publish_manual_save") return "Ручная публикация";
-  if (action === "autosave") return "Автосохранение";
-  return action || "Импорт BPMN";
+  return localizeRevisionEventAction(actionRaw);
+}
+
+export function classifyRevisionSourceAction(actionRaw) {
+  return classifyRevisionEventAction(actionRaw);
+}
+
+export function splitMeaningfulAndTechnicalRevisions(entriesRaw = []) {
+  const all = asArray(entriesRaw);
+  const meaningful = [];
+  const technical = [];
+  const unknown = [];
+  all.forEach((entryRaw) => {
+    const entry = asObject(entryRaw);
+    const sourceAction = entry.source_action || entry.sourceAction || entry.reason;
+    const classification = classifyRevisionSourceAction(sourceAction);
+    if (classification.allowInRevisionHistory === true) {
+      meaningful.push(entryRaw);
+      return;
+    }
+    if (classification.isTechnical) {
+      technical.push(entryRaw);
+      return;
+    }
+    unknown.push(entryRaw);
+  });
+  return {
+    all,
+    meaningful,
+    technical,
+    unknown,
+    nonMeaningful: [...technical, ...unknown],
+  };
+}
+
+export function applyUserFacingRevisionNumbers({
+  meaningfulRevisionsRaw = [],
+  revisionHistorySnapshotRaw = null,
+} = {}) {
+  const meaningful = asArray(meaningfulRevisionsRaw);
+  if (meaningful.length === 0) return [];
+  const revisionHistorySnapshot = asObject(revisionHistorySnapshotRaw);
+  const ledgerTotalCount = Math.max(0, toInt(revisionHistorySnapshot.totalCount, 0));
+  const ledgerDisplayNumber = Math.max(
+    0,
+    toInt(
+      revisionHistorySnapshot.latestRevisionDisplayNumber
+      || revisionHistorySnapshot.latestUserFacingRevisionNumber
+      || revisionHistorySnapshot.latestRevisionNumber,
+      0,
+    ),
+  );
+  const headDisplayNumber = Math.max(
+    0,
+    toInt(
+      asObject(meaningful[0]).userFacingRevisionNumber
+      || asObject(meaningful[0]).revisionDisplayNumber,
+      0,
+    ),
+  );
+  const displayHead = Math.max(meaningful.length, ledgerTotalCount, ledgerDisplayNumber, headDisplayNumber);
+  return meaningful.map((entryRaw, index) => {
+    const entry = asObject(entryRaw);
+    const technicalRevisionNumber = Math.max(
+      0,
+      toInt(
+        entry.technicalRevisionNumber
+        || entry.version_number
+        || entry.versionNumber
+        || entry.revisionNumber
+        || entry.rev,
+        0,
+      ),
+    );
+    const userFacingRevisionNumber = Math.max(1, displayHead - index);
+    return {
+      ...entry,
+      technicalRevisionNumber,
+      userFacingRevisionNumber,
+      revisionDisplayNumber: userFacingRevisionNumber,
+      revisionNumber: userFacingRevisionNumber,
+      rev: userFacingRevisionNumber,
+    };
+  });
 }
 
 export function formatRevisionAuthor(authorRaw = null) {
@@ -101,7 +189,7 @@ export function formatRevisionAuthor(authorRaw = null) {
   }
 
   return {
-    label: "неизвестно",
+    label: "Автор не указан",
     authorId: "",
     authorName: "",
     authorEmail: "",
@@ -116,17 +204,61 @@ export function resolveRevisionHistoryUiSnapshot({
   const revisionHistorySnapshot = asObject(revisionHistorySnapshotRaw);
   const latestVersionItem = asObject(latestVersionItemRaw);
   const latestPublishedRevisionStatus = normalizePublishedRevisionStatus(latestVersionStatusRaw);
-  const latestPublishedRevisionNumber = Math.max(
-    0,
-    toInt(latestVersionItem.revisionNumber || latestVersionItem.rev || latestVersionItem.version_number, 0),
+  const latestVersionAction = normalizeRevisionEventAction(
+    latestVersionItem.source_action || latestVersionItem.sourceAction || latestVersionItem.reason,
   );
-  const latestPublishedRevisionId = toText(
-    latestVersionItem.id
-    || latestVersionItem.revisionId,
+  const latestVersionClassification = classifyRevisionSourceAction(latestVersionAction);
+  const latestPublishedRevisionAllowed = latestVersionClassification.allowInPublishedBadge === true;
+  const latestPublishedRevisionTechnicalNumber = Math.max(
+    0,
+    toInt(
+      latestVersionItem.technicalRevisionNumber
+      || latestVersionItem.version_number
+      || latestVersionItem.versionNumber
+      || latestVersionItem.revisionNumber
+      || latestVersionItem.rev,
+      0,
+    ),
+  );
+  const latestPublishedRevisionDisplayNumber = Math.max(
+    0,
+    toInt(
+      latestVersionItem.userFacingRevisionNumber
+      || latestVersionItem.revisionDisplayNumber,
+      0,
+    ),
+  );
+  const latestLedgerRevisionTechnicalNumber = Math.max(
+    0,
+    toInt(revisionHistorySnapshot.latestRevisionNumber, 0),
   );
   const latestLedgerRevisionNumber = Math.max(
     0,
-    toInt(revisionHistorySnapshot.latestRevisionNumber, 0),
+    toInt(
+      revisionHistorySnapshot.latestRevisionDisplayNumber
+      || revisionHistorySnapshot.latestUserFacingRevisionNumber
+      || revisionHistorySnapshot.totalCount
+      || revisionHistorySnapshot.latestRevisionNumber,
+      0,
+    ),
+  );
+  const latestPublishedRevisionNumber = Math.max(
+    0,
+    latestPublishedRevisionAllowed
+      ? (
+        latestLedgerRevisionNumber
+        || latestPublishedRevisionDisplayNumber
+        || (latestPublishedRevisionTechnicalNumber > 0 ? 1 : 0)
+      )
+      : 0,
+  );
+  const latestPublishedRevisionId = toText(
+    latestPublishedRevisionAllowed
+      ? (
+        latestVersionItem.id
+        || latestVersionItem.revisionId
+      )
+      : "",
   );
   const latestLedgerRevisionId = toText(revisionHistorySnapshot.latestRevisionId);
   const latestRevisionNumber = Math.max(
@@ -142,10 +274,51 @@ export function resolveRevisionHistoryUiSnapshot({
     latestRevisionNumber,
     latestRevisionId,
     latestPublishedRevisionNumber,
+    latestPublishedRevisionTechnicalNumber,
     latestPublishedRevisionId,
+    latestPublishedRevisionAllowed,
+    latestPublishedRevisionAction: latestVersionAction,
+    latestPublishedRevisionBucket: latestVersionClassification.bucket || "unknown",
+    latestPublishedRevisionKnown: latestVersionClassification.known === true,
     latestPublishedRevisionStatus,
     latestPublishedRevisionResolved: latestPublishedRevisionStatus === "ready" || latestPublishedRevisionStatus === "failed",
     latestLedgerRevisionNumber,
+    latestLedgerRevisionTechnicalNumber,
     latestLedgerRevisionId,
+  };
+}
+
+export function resolveRevisionHistoryEmptyState({
+  versionsLoadStateRaw = "idle",
+  meaningfulCountRaw = 0,
+  technicalCountRaw = 0,
+  serverEntriesCountRaw = 0,
+} = {}) {
+  const versionsLoadState = toText(versionsLoadStateRaw).toLowerCase();
+  const meaningfulCount = Math.max(0, toInt(meaningfulCountRaw, 0));
+  const technicalCount = Math.max(0, toInt(technicalCountRaw, 0));
+  const serverEntriesCount = Math.max(0, toInt(serverEntriesCountRaw, 0));
+  const isEmptySurface = versionsLoadState === "empty" || (versionsLoadState === "ready" && meaningfulCount === 0);
+  if (!isEmptySurface) {
+    return {
+      kind: "none",
+      message: "",
+    };
+  }
+  if (meaningfulCount === 0 && technicalCount > 0 && serverEntriesCount > 0) {
+    return {
+      kind: "technical_filtered",
+      message: "Пользовательских версий пока нет. Технические сохранения скрыты; черновик хранится отдельно.",
+    };
+  }
+  if (meaningfulCount === 0 && serverEntriesCount > 0) {
+    return {
+      kind: "filtered",
+      message: "История получена, но пользовательские версии пока недоступны. Черновик хранится отдельно.",
+    };
+  }
+  return {
+    kind: "true_empty",
+    message: "Версий пока нет. Текущий BPMN может быть сохранён как черновик; новая версия создаётся отдельным действием.",
   };
 }

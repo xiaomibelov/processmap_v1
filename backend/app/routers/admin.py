@@ -12,13 +12,17 @@ from starlette.responses import Response
 from .. import _legacy_main
 from ..auto_pass_jobs import redis_queue_enabled
 from ..auth import AuthError, create_user, list_users as list_auth_users, update_user
+from ..error_events import redact_context_json
 from ..redis_client import get_client, runtime_status
 from ..storage import (
     count_audit_log,
+    count_error_events,
     delete_org_membership,
+    get_error_event,
     get_project_storage,
     get_storage,
     list_audit_log,
+    list_error_events,
     list_org_invites,
     list_org_memberships,
     list_org_records,
@@ -30,6 +34,7 @@ from ..storage import (
 router = APIRouter()
 
 _ADMIN_ALLOWED_ROLES = {"org_owner", "org_admin", "project_manager", "auditor"}
+_TELEMETRY_READ_ROLES = {"org_owner", "org_admin", "auditor"}
 _ADMIN_USER_ROLE_ALIASES = {
     "admin": "org_admin",
     "editor": "editor",
@@ -198,6 +203,17 @@ def _platform_admin_context(request: Request) -> Tuple[Optional[str], Optional[s
     return uid, oid, None
 
 
+def _telemetry_read_context(
+    request: Request,
+) -> Tuple[Optional[str], bool, Optional[str], Optional[str], Optional[Response]]:
+    uid, is_admin, oid, role, _scope, err = _admin_context(request)
+    if err is not None:
+        return None, False, None, None, err
+    if not (bool(is_admin) or _legacy_main._is_role_allowed(role, _TELEMETRY_READ_ROLES)):
+        return None, False, None, None, _legacy_main._enterprise_error(403, "forbidden", "insufficient_permissions")
+    return uid, bool(is_admin), oid, role, None
+
+
 def _normalize_admin_membership_role(raw: Any) -> str:
     key = _as_text(raw).lower()
     normalized = _ADMIN_USER_ROLE_ALIASES.get(key, "")
@@ -263,6 +279,34 @@ def _user_payload(row: Dict[str, Any], *, org_name_by_id: Dict[str, str]) -> Dic
         "is_admin": bool(user.get("is_admin", False)),
         "created_at": _as_int(user.get("created_at"), 0),
         "memberships": memberships,
+    }
+
+
+def _error_event_admin_item(row_raw: Dict[str, Any]) -> Dict[str, Any]:
+    row = _as_dict(row_raw)
+    context = redact_context_json(_as_dict(row.get("context_json")))
+    return {
+        "id": _as_text(row.get("id")),
+        "schema_version": _as_int(row.get("schema_version"), 1),
+        "occurred_at": _as_int(row.get("occurred_at"), 0),
+        "ingested_at": _as_int(row.get("ingested_at"), 0),
+        "source": _as_text(row.get("source")),
+        "event_type": _as_text(row.get("event_type")),
+        "severity": _as_text(row.get("severity") or "error").lower() or "error",
+        "message": _as_text(row.get("message")),
+        "user_id": _as_text(row.get("user_id")),
+        "org_id": _as_text(row.get("org_id")),
+        "session_id": _as_text(row.get("session_id")),
+        "project_id": _as_text(row.get("project_id")),
+        "route": _as_text(row.get("route")),
+        "runtime_id": _as_text(row.get("runtime_id")),
+        "tab_id": _as_text(row.get("tab_id")),
+        "request_id": _as_text(row.get("request_id")),
+        "correlation_id": _as_text(row.get("correlation_id")),
+        "app_version": _as_text(row.get("app_version")),
+        "git_sha": _as_text(row.get("git_sha")),
+        "fingerprint": _as_text(row.get("fingerprint")),
+        "context_json": context,
     }
 
 
@@ -1130,6 +1174,86 @@ def admin_jobs(request: Request) -> Any:
         },
         "items": items,
         "count": len(items),
+    }
+
+
+@router.get("/api/admin/error-events")
+def admin_error_events(
+    request: Request,
+    session_id: str = Query(default=""),
+    request_id: str = Query(default=""),
+    correlation_id: str = Query(default=""),
+    user_id: str = Query(default=""),
+    org_id: str = Query(default=""),
+    runtime_id: str = Query(default=""),
+    event_type: str = Query(default=""),
+    source: str = Query(default=""),
+    severity: str = Query(default=""),
+    occurred_from: int = Query(default=0),
+    occurred_to: int = Query(default=0),
+    limit: int = Query(default=50),
+    offset: int = Query(default=0),
+    order: str = Query(default="asc"),
+) -> Any:
+    _uid, is_admin, active_org_id, _role, err = _telemetry_read_context(request)
+    if err is not None:
+        return err
+    requested_org_id = _as_text(org_id)
+    effective_org_id = requested_org_id or _as_text(active_org_id)
+    if requested_org_id and requested_org_id != _as_text(active_org_id) and not bool(is_admin):
+        return _legacy_main._enterprise_error(403, "forbidden", "insufficient_permissions")
+    if not effective_org_id:
+        return _legacy_main._enterprise_error(422, "validation_error", "org_id is required")
+
+    lim = max(1, min(_as_int(limit, 50), 100))
+    off = max(0, _as_int(offset, 0))
+    sort_order = "desc" if _as_text(order).lower() == "desc" else "asc"
+    from_ts_raw = _as_int(occurred_from, 0)
+    to_ts_raw = _as_int(occurred_to, 0)
+    filters = {
+        "session_id": _as_text(session_id) or None,
+        "request_id": _as_text(request_id) or None,
+        "correlation_id": _as_text(correlation_id) or None,
+        "user_id": _as_text(user_id) or None,
+        "org_id": effective_org_id,
+        "runtime_id": _as_text(runtime_id) or None,
+        "event_type": _as_text(event_type).lower() or None,
+        "source": _as_text(source).lower() or None,
+        "severity": _as_text(severity).lower() or None,
+        "occurred_from": from_ts_raw if from_ts_raw > 0 else None,
+        "occurred_to": to_ts_raw if to_ts_raw > 0 else None,
+    }
+    total = count_error_events(**filters)
+    rows = list_error_events(
+        **filters,
+        limit=lim,
+        offset=off,
+        order=sort_order,
+    )
+    return {
+        "ok": True,
+        "items": [_error_event_admin_item(row) for row in rows],
+        "count": int(total),
+        "page": {"limit": lim, "offset": off, "total": int(total), "order": sort_order},
+        "filters": filters,
+        "timeline": {"deduped": False, "order": sort_order},
+    }
+
+
+@router.get("/api/admin/error-events/{event_id}")
+def admin_error_event_detail(event_id: str, request: Request) -> Any:
+    _uid, is_admin, active_org_id, _role, err = _telemetry_read_context(request)
+    if err is not None:
+        return err
+    row = get_error_event(event_id)
+    if not row:
+        return _legacy_main._enterprise_error(404, "not_found", "not_found")
+    event_org_id = _as_text(row.get("org_id"))
+    if not bool(is_admin) and event_org_id != _as_text(active_org_id):
+        return _legacy_main._enterprise_error(404, "not_found", "not_found")
+    return {
+        "ok": True,
+        "item": _error_event_admin_item(row),
     }
 
 

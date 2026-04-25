@@ -75,6 +75,7 @@ export default function useProcessStageRuntimeGlue({
   apiAiQuestions,
   apiGetBpmnXml,
   apiPatchSession,
+  getBaseDiagramStateVersion,
   buildExecutionPlan,
   appendExecutionPlanVersionEntry,
   copyText,
@@ -283,7 +284,7 @@ export default function useProcessStageRuntimeGlue({
 
   function openSelectedElementNotes() {
     if (!selectedElementContext) return;
-    onOpenElementNotes?.(selectedElementContext, "header_open_notes");
+    onOpenElementNotes?.(selectedElementContext, "selected_element_notes_open");
     setDiagramActionOverflowOpen(false);
   }
 
@@ -438,7 +439,12 @@ export default function useProcessStageRuntimeGlue({
 
     setExecutionPlanSaveBusy(true);
     try {
-      const syncRes = await apiPatchSession(sid, { bpmn_meta: optimisticMeta });
+      const syncPatchPayload = { bpmn_meta: optimisticMeta };
+      const baseDiagramStateVersion = Number(getBaseDiagramStateVersion?.());
+      if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
+        syncPatchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);
+      }
+      const syncRes = await apiPatchSession(sid, syncPatchPayload);
       if (!syncRes?.ok) {
         onSessionSync?.({
           id: sid,

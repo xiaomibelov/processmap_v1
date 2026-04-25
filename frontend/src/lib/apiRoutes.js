@@ -103,6 +103,12 @@ export const apiRoutes = {
     node: (sessionId, nodeId) => `/api/sessions/${encode(sessionId)}/nodes/${encode(nodeId)}`,
     edges: (sessionId) => `/api/sessions/${encode(sessionId)}/edges`,
     notes: (sessionId) => `/api/sessions/${encode(sessionId)}/notes`,
+    noteAggregate: (sessionId) => `/api/sessions/${encode(sessionId)}/note-aggregate`,
+    noteThreads: (sessionId, filters = {}) => withQuery(`/api/sessions/${encode(sessionId)}/note-threads`, {
+      status: String(filters?.status || "").trim(),
+      scope_type: String(filters?.scopeType || filters?.scope_type || "").trim(),
+      element_id: String(filters?.elementId || filters?.element_id || "").trim(),
+    }),
     answer: (sessionId) => `/api/sessions/${encode(sessionId)}/answer`,
     answers: (sessionId) => `/api/sessions/${encode(sessionId)}/answers`,
     aiQuestions: (sessionId) => `/api/sessions/${encode(sessionId)}/ai/questions`,
@@ -140,6 +146,16 @@ export const apiRoutes = {
   reports: {
     item: (reportId) => `/api/reports/${encode(reportId)}`,
   },
+  noteThreads: {
+    item: (threadId) => `/api/note-threads/${encode(threadId)}`,
+    comments: (threadId) => `/api/note-threads/${encode(threadId)}/comments`,
+  },
+  noteAggregates: {
+    project: (projectId) => `/api/projects/${encode(projectId)}/note-aggregate`,
+    folder: (folderId, workspaceId) => withQuery(`/api/folders/${encode(folderId)}/note-aggregate`, {
+      workspace_id: String(workspaceId || "").trim(),
+    }),
+  },
   llm: {
     sessionTitleQuestions: () => "/api/llm/session-title/questions",
     settings: () => "/api/settings/llm",
@@ -160,11 +176,14 @@ export const apiRoutes = {
     session: (sessionId) => `/api/admin/sessions/${encode(sessionId)}`,
     jobs: () => "/api/admin/jobs",
     audit: (params = {}) => withQuery("/api/admin/audit", params),
+    errorEvents: (params = {}) => withQuery("/api/admin/error-events", params),
+    errorEvent: (eventId) => `/api/admin/error-events/${encode(eventId)}`,
   },
   misc: {
     meta: () => "/api/meta",
     glossaryAdd: () => "/api/glossary/add",
     inviteAccept: () => "/api/invites/accept",
+    telemetryErrorEvents: () => "/api/telemetry/error-events",
   },
 };
 

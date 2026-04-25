@@ -3,6 +3,8 @@ import LayersPopover from "../components/LayersPopover";
 import TemplatesBottomMenu from "../../../templates/ui/TemplatesBottomMenu";
 import GatewaysPanel from "../../playback/ui/GatewaysPanel";
 import DiagramSearchPopover from "./DiagramSearchPopover";
+import { apiGetSessionNoteAggregate } from "../../../../lib/api";
+import NotesAggregateBadge from "../../../../components/NotesAggregateBadge.jsx";
 
 function ensureObject(value) {
   return value && typeof value === "object" ? value : {};
@@ -50,6 +52,12 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     diagramActionQualityOpen,
     diagramActionOverflowOpen,
   } = topbarSection;
+  const discussionsSessionId = toText(legacyView.sessionId);
+  const latestOpenNotesDiscussionsRef = useRef(null);
+  latestOpenNotesDiscussionsRef.current = typeof legacyView.openNotesDiscussions === "function"
+    ? legacyView.openNotesDiscussions
+    : null;
+  const [notesAggregate, setNotesAggregate] = useState(null);
 
   const {
     templatesMenuOpen,
@@ -246,6 +254,8 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     diagramActionSearchOpen,
     setDiagramActionSearchOpen,
     diagramSearchPopoverRef,
+    diagramSearchMode,
+    setDiagramSearchMode,
     diagramSearchQuery,
     setDiagramSearchQuery,
     diagramSearchResults,
@@ -393,6 +403,31 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     shouldShowCurrentStep,
   ]);
 
+  useEffect(() => {
+    if (!hasSession || !discussionsSessionId) {
+      setNotesAggregate(null);
+      return undefined;
+    }
+    let cancelled = false;
+    async function refreshNotesAggregate() {
+      const result = await apiGetSessionNoteAggregate(discussionsSessionId);
+      if (cancelled) return;
+      setNotesAggregate(result?.ok ? (result.aggregate || null) : null);
+    }
+    void refreshNotesAggregate();
+    function handleNotesAggregateChanged(event) {
+      const detail = ensureObject(event?.detail);
+      const detailSessionId = toText(detail.sessionId);
+      if (detailSessionId && detailSessionId !== discussionsSessionId) return;
+      void refreshNotesAggregate();
+    }
+    window.addEventListener("processmap:notes-aggregate-changed", handleNotesAggregateChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("processmap:notes-aggregate-changed", handleNotesAggregateChanged);
+    };
+  }, [discussionsSessionId, hasSession, toText]);
+
   const handlePlaybackTogglePlayWithUiMode = () => {
     const shouldCollapseAfterStart = !playbackRuntimeCollapsed
       && !playbackIsPlayingResolved
@@ -441,9 +476,19 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     setDiagramActionOverflowOpen(false);
   };
 
+  const handleOpenNotesDiscussions = () => {
+    if (!hasSession) return;
+    closeDiagramPopovers();
+    latestOpenNotesDiscussionsRef.current?.();
+  };
+
   return (
     <>
-      <div className="bpmnCanvasTools diagramActionBar" ref={diagramActionBarRef}>
+      <div
+        className="bpmnCanvasTools diagramActionBar z-[92] pointer-events-auto"
+        ref={diagramActionBarRef}
+        style={{ zIndex: 92, pointerEvents: "auto" }}
+      >
         <div className="diagramActionToolbarGroup">
           <button
             type="button"
@@ -494,16 +539,22 @@ export default function ProcessStageDiagramControls({ view = {} }) {
           </button>
           <button
             type="button"
-            className={`secondaryBtn diagramActionBtn ${activeQualityOverlayCount > 0 ? "ring-1 ring-accent/60" : ""}`}
-            onClick={() => {
-              const next = !diagramActionQualityOpen;
-              closeDiagramPopovers();
-              setDiagramActionQualityOpen(next);
-            }}
-            title="Проблемы на диаграмме"
-            data-testid="diagram-action-quality"
+            className="primaryBtn diagramActionBtn relative z-[1]"
+            onClick={handleOpenNotesDiscussions}
+            disabled={!hasSession}
+            title="Открыть обсуждения"
+            data-testid="diagram-action-notes"
+            data-notes-panel-trigger="true"
           >
-            Проблемы {activeQualityOverlayCount > 0 ? `(${activeQualityOverlayCount})` : ""}
+            <span aria-hidden="true">✎</span>
+            <span>Обсуждения</span>
+            <NotesAggregateBadge
+              aggregate={notesAggregate}
+              compact
+              compactNumericOnly
+              label="Обсуждения"
+              className="border-sky-200/80 bg-white/85 px-1.5 py-0 text-[10px] text-sky-950"
+            />
           </button>
         </div>
         <div className="diagramActionToolbarGroup">
@@ -518,6 +569,17 @@ export default function ProcessStageDiagramControls({ view = {} }) {
             title="Поиск элементов диаграммы"
             data-testid="diagram-action-search"
           >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              className="h-3.5 w-3.5 shrink-0"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            >
+              <circle cx="7" cy="7" r="4.5" />
+              <path d="M10.5 10.5L14 14" strokeLinecap="round" />
+            </svg>
             Поиск
           </button>
           <button
@@ -827,6 +889,8 @@ export default function ProcessStageDiagramControls({ view = {} }) {
       <DiagramSearchPopover
         open={diagramActionSearchOpen}
         popoverRef={diagramSearchPopoverRef}
+        mode={diagramSearchMode}
+        onModeChange={setDiagramSearchMode}
         query={diagramSearchQuery}
         onQueryChange={setDiagramSearchQuery}
         results={diagramSearchResults}
@@ -1692,6 +1756,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
                 openSelectedElementNotes();
               }}
               disabled={!canUseElementContextActions}
+              title="Открыть заметки по выбранному узлу"
             >
               Заметки
             </button>

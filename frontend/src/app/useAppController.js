@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useProjects from "../features/projects/hooks/useProjects";
 import useSessions from "../features/sessions/hooks/useSessions";
 import useDraft from "../features/draft/hooks/useDraft";
@@ -19,7 +19,18 @@ function projectIdFrom(obj) {
   return (obj && (obj.id || obj.project_id || obj.slug)) || "";
 }
 
+function shouldTraceSessionsFallback() {
+  if (typeof window === "undefined") return false;
+  if (window.__FPC_TRACE_SESSIONS_FALLBACK__ === true) return true;
+  try {
+    return window.localStorage?.getItem("fpc:trace-sessions-fallback") === "1";
+  } catch {
+    return false;
+  }
+}
+
 export default function useAppController() {
+  const legacyMountLoggedRef = useRef(false);
   const ui = useUiPrefs({
     key: UI_KEY,
     defaults: { project_id: "", mode_filter: "" },
@@ -40,6 +51,18 @@ export default function useAppController() {
     onOk: apiStatus.markOk,
     onFail: apiStatus.markFail,
   });
+
+  useEffect(() => {
+    if (!shouldTraceSessionsFallback()) return;
+    if (legacyMountLoggedRef.current) return;
+    legacyMountLoggedRef.current = true;
+    // eslint-disable-next-line no-console
+    console.info("[TRACE_SESSIONS_FALLBACK]", {
+      label: "useAppController.mount",
+      timestamp: Date.now(),
+      note: "legacy caller path mounted",
+    });
+  }, []);
 
   const draftCtl = useDraft({
     onOk: apiStatus.markOk,

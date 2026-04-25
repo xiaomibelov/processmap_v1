@@ -10,12 +10,14 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.routing import Match
 
 from ..auth import AuthError, user_from_bearer_header
+from ..error_events import build_backend_exception_event, get_or_create_backend_request_id
 from ..legacy.request_context import (
     extract_org_from_headers,
     extract_org_from_path,
     request_client_ip,
 )
 from ..storage import (
+    append_error_event,
     get_default_org_id,
     list_user_org_memberships,
     pop_storage_request_scope,
@@ -91,6 +93,7 @@ def register_cors(app: FastAPI, *, cors_origins: Iterable[str]) -> None:
             "X-Requested-With",
             "X-Org-Id",
             "X-Active-Org-Id",
+            "X-Client-Request-Id",
         ],
     )
 
@@ -222,3 +225,36 @@ def register_deprecated_alias_middleware(app: FastAPI) -> None:
         response = await call_next(request)
         _apply_deprecation_headers(response, canonical_path)
         return response
+
+
+def register_backend_exception_capture(app: FastAPI) -> None:
+    @app.middleware("http")
+    async def backend_exception_telemetry_middleware(request: Request, call_next):
+        try:
+            return await call_next(request)
+        except Exception as exc:
+            request_id = ""
+            try:
+                stored = build_backend_exception_event(request, exc)
+                append_error_event(**stored.model_dump())
+                request_id = str(stored.request_id or "")
+            except Exception as telemetry_exc:
+                request_id, _ = get_or_create_backend_request_id(request)
+                _logger.error(
+                    "Backend exception telemetry append failed: type=%s request_id=%s",
+                    type(telemetry_exc).__name__,
+                    request_id,
+                )
+            _logger.error(
+                "Unhandled backend exception captured: type=%s request_id=%s method=%s path=%s",
+                type(exc).__name__,
+                request_id,
+                str(request.method or ""),
+                str(request.url.path or ""),
+            )
+            headers = {"X-Request-Id": request_id} if request_id else None
+            return JSONResponse(
+                status_code=500,
+                content={"detail": "internal_server_error", "request_id": request_id},
+                headers=headers,
+            )

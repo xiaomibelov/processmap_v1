@@ -9,6 +9,29 @@ import {
   shouldLogBpmnTrace,
 } from "./apiCore.js";
 
+function shouldTraceSessionsFallback() {
+  if (typeof window === "undefined") return false;
+  if (window.__FPC_TRACE_SESSIONS_FALLBACK__ === true) return true;
+  try {
+    return window.localStorage?.getItem("fpc:trace-sessions-fallback") === "1";
+  } catch {
+    return false;
+  }
+}
+
+function compactStackMarker(limit = 3) {
+  try {
+    const raw = String(new Error().stack || "");
+    const lines = raw
+      .split("\n")
+      .slice(2, 2 + Number(limit || 3))
+      .map((line) => line.trim().replace(/^at\s+/, ""));
+    return lines.join(" <- ");
+  } catch {
+    return "";
+  }
+}
+
 export {
   apiAuthInviteActivate,
   apiAuthInvitePreview,
@@ -190,6 +213,14 @@ export async function apiDeleteOrgProjectMember(orgId, projectId, userId) {
 
 // ------- Sessions (legacy / fallback) -------
 export async function apiListSessions() {
+  if (shouldTraceSessionsFallback()) {
+    // eslint-disable-next-line no-console
+    console.info("[TRACE_SESSIONS_FALLBACK]", {
+      label: "apiListSessions",
+      timestamp: Date.now(),
+      stack: compactStackMarker(),
+    });
+  }
   const r = okOrError(await request(apiRoutes.sessions.list()));
   // backend returns {items, count}
   const list = Array.isArray(r.data) ? r.data : Array.isArray(r.data?.items) ? r.data.items : [];
@@ -328,6 +359,84 @@ export async function apiPostNote(sessionId, payload) {
     session.notes = normalizeNotes(session.notes);
   }
   return { ok: true, status: r.status, session, result: session };
+}
+
+export async function apiListNoteThreads(sessionId, filters = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.sessions.noteThreads(sid, filters)));
+  if (!r.ok) return r;
+  const items = Array.isArray(r.data?.items) ? r.data.items : [];
+  return {
+    ok: true,
+    status: r.status,
+    items,
+    threads: items,
+    count: Number(r.data?.count || items.length || 0),
+  };
+}
+
+function normalizeNoteAggregate(data, fallback = {}) {
+  const count = Math.max(0, Number(data?.open_notes_count || 0) || 0);
+  return {
+    ...fallback,
+    ...(isPlainObject(data) ? data : {}),
+    open_notes_count: count,
+    has_open_notes: Boolean(data?.has_open_notes || count > 0),
+  };
+}
+
+export async function apiGetSessionNoteAggregate(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.sessions.noteAggregate(sid)));
+  return r.ok
+    ? { ok: true, status: r.status, aggregate: normalizeNoteAggregate(r.data, { scope_type: "session", session_id: sid }) }
+    : r;
+}
+
+export async function apiGetProjectNoteAggregate(projectId) {
+  const pid = String(projectId || "").trim();
+  if (!pid) return { ok: false, status: 0, error: "missing project_id" };
+  const r = okOrError(await request(apiRoutes.noteAggregates.project(pid)));
+  return r.ok
+    ? { ok: true, status: r.status, aggregate: normalizeNoteAggregate(r.data, { scope_type: "project", project_id: pid }) }
+    : r;
+}
+
+export async function apiGetFolderNoteAggregate(folderId, workspaceId) {
+  const fid = String(folderId || "").trim();
+  const wid = String(workspaceId || "").trim();
+  if (!fid) return { ok: false, status: 0, error: "missing folder_id" };
+  if (!wid) return { ok: false, status: 0, error: "missing workspace_id" };
+  const r = okOrError(await request(apiRoutes.noteAggregates.folder(fid, wid)));
+  return r.ok
+    ? { ok: true, status: r.status, aggregate: normalizeNoteAggregate(r.data, { scope_type: "folder", folder_id: fid, workspace_id: wid }) }
+    : r;
+}
+
+export async function apiCreateNoteThread(sessionId, payload = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const body = isPlainObject(payload) ? payload : {};
+  const r = okOrError(await request(apiRoutes.sessions.noteThreads(sid), { method: "POST", body }));
+  return r.ok ? { ok: true, status: r.status, thread: r.data?.thread || null } : r;
+}
+
+export async function apiAddNoteThreadComment(threadId, payload = {}) {
+  const tid = String(threadId || "").trim();
+  if (!tid) return { ok: false, status: 0, error: "missing thread_id" };
+  const body = isPlainObject(payload) ? payload : {};
+  const r = okOrError(await request(apiRoutes.noteThreads.comments(tid), { method: "POST", body }));
+  return r.ok ? { ok: true, status: r.status, thread: r.data?.thread || null } : r;
+}
+
+export async function apiPatchNoteThread(threadId, patch = {}) {
+  const tid = String(threadId || "").trim();
+  if (!tid) return { ok: false, status: 0, error: "missing thread_id" };
+  const body = isPlainObject(patch) ? patch : {};
+  const r = okOrError(await request(apiRoutes.noteThreads.item(tid), { method: "PATCH", body }));
+  return r.ok ? { ok: true, status: r.status, thread: r.data?.thread || null } : r;
 }
 
 export async function apiPostAnswer(sessionId, payload) {
@@ -760,6 +869,13 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
   if (Number.isFinite(rev) && rev >= 0) {
     body.rev = rev;
   }
+  const baseDiagramStateVersion = Number(
+    options?.baseDiagramStateVersion
+    ?? options?.base_diagram_state_version,
+  );
+  if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
+    body.base_diagram_state_version = Math.round(baseDiagramStateVersion);
+  }
   const reason = String(options?.reason || "").trim().toLowerCase();
   let sourceAction = "";
   if (reason === "import_bpmn") {
@@ -776,6 +892,10 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
     const importNote = String(options?.importNote || "").trim();
     if (importNote) body.import_note = importNote;
   }
+  const bpmnMeta = options?.bpmnMeta ?? options?.bpmn_meta;
+  if (isPlainObject(bpmnMeta)) {
+    body.bpmn_meta = bpmnMeta;
+  }
   const headers = {};
   if (options?.ifMatch !== undefined && options?.ifMatch !== null) {
     headers["If-Match"] = String(options.ifMatch);
@@ -783,6 +903,7 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
   const r = okOrError(await request(apiRoutes.sessions.bpmn(sid), { method: "PUT", body, headers }));
   if (!r.ok) return r;
   const storedRev = Number(r?.data?.version);
+  const diagramStateVersion = Number(r?.data?.diagram_state_version);
   const bpmnVersionSnapshot = r?.data?.bpmn_version_snapshot && typeof r.data.bpmn_version_snapshot === "object"
     ? r.data.bpmn_version_snapshot
     : null;
@@ -791,6 +912,7 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
     status: r.status,
     result: r.data,
     storedRev: Number.isFinite(storedRev) ? storedRev : (Number.isFinite(rev) ? rev : 0),
+    diagramStateVersion: Number.isFinite(diagramStateVersion) ? Math.round(diagramStateVersion) : 0,
     bpmnVersionSnapshot,
   };
 }

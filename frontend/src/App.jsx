@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AppShell from "./components/AppShell";
 import NotesPanel from "./components/NotesPanel";
+import NotesMvpPanel from "./components/NotesMvpPanel";
 import NoSession from "./components/stages/NoSession";
 import ProjectWizardModal from "./components/ProjectWizardModal";
 import SessionFlowModal from "./components/SessionFlowModal";
 import OrgSettingsModal from "./components/org/OrgSettingsModal";
 import Modal from "./shared/ui/Modal";
+import DerivedContextSurface from "./features/tldr/ui/DerivedContextSurface";
 import useSessionStore from "./features/sessions/hooks/useSessionStore";
 import {
   normalizeElementNotesMap,
@@ -58,6 +60,7 @@ import {
   removeCamundaExtensionStateByElementId,
   upsertCamundaExtensionStateByElementId,
 } from "./features/process/camunda/camundaExtensions";
+import { persistCamundaExtensionsViaCanonicalXmlBoundary } from "./features/process/camunda/camundaExtensionsSaveBoundary";
 import {
   normalizeCamundaPresentationMap,
   removeCamundaPresentationByElementId,
@@ -74,6 +77,10 @@ import useSessionMetaWriteGateway from "./features/session-meta/write/useSession
 import { buildSessionMetaWriteEnvelope } from "./features/session-meta/write/sessionMetaMergePolicy";
 import { normalizeSessionCompanion } from "./features/process/session-companion/sessionCompanionContracts.js";
 import { requestProcessStageFlushBeforeLeave } from "./features/process/navigation/processLeaveFlush";
+import {
+  buildLeaveNavigationConfirmText,
+  deriveLeaveNavigationRisk,
+} from "./features/process/navigation/leaveNavigationGuardModel";
 import { useAuth } from "./features/auth/AuthProvider";
 import { canCreateOrgTemplateForRole } from "./features/templates/model/templatesRbac";
 import { buildWorkspacePermissions } from "./features/workspace/workspacePermissions";
@@ -836,6 +843,9 @@ export default function App() {
   const [deleteDialog, setDeleteDialog] = useState({ open: false, scope: "", error: "", busy: false });
   const [showPropertiesOverlayAlways, setShowPropertiesOverlayAlways] = useState(false);
   const [elementNotesFocusKey, setElementNotesFocusKey] = useState(0);
+  const [notesPanelOpenRequest, setNotesPanelOpenRequest] = useState(null);
+  const [notesDiscussionsOpen, setNotesDiscussionsOpen] = useState(false);
+  const notesPanelRef = useRef(null);
   const [llmHasApiKey, setLlmHasApiKey] = useState(false);
   const [llmBaseUrl, setLlmBaseUrl] = useState("https://api.deepseek.com");
   const [llmSaving, setLlmSaving] = useState(false);
@@ -1031,16 +1041,6 @@ export default function App() {
     activationState,
   } = sessionActivation;
 
-  const openWorkspaceSession = useCallback(async (sessionLike, options = {}) => {
-    const row = ensureObject(sessionLike);
-    const sid = String(row?.id || row?.session_id || sessionLike || "").trim();
-    const openTab = String(options?.openTab || "").trim().toLowerCase();
-    await openWorkspaceSessionBase(sessionLike, options);
-    if (sid && (openTab === "diagram" || openTab === "interview" || openTab === "xml" || openTab === "doc" || openTab === "dod")) {
-      setProcessTabIntent({ sid, tab: openTab, nonce: Date.now() });
-    }
-  }, [openWorkspaceSessionBase]);
-
   const {
     shellSessionId,
     shellTransitionReason,
@@ -1063,6 +1063,66 @@ export default function App() {
     draftSessionId: draft?.session_id,
     activationState,
   });
+
+  const leaveNavigationRisk = useMemo(() => {
+    const direct = processUiState?.leaveNavigationRisk;
+    if (direct && typeof direct === "object" && typeof direct.unsafe === "boolean") {
+      return direct;
+    }
+    return deriveLeaveNavigationRisk({
+      hasSession: !!String(draft?.session_id || "").trim(),
+      saveSnapshotRaw: processUiState?.sessionSaveReadSnapshot,
+      saveUploadStatusRaw: processUiState?.saveUploadStatus,
+    });
+  }, [draft?.session_id, processUiState?.leaveNavigationRisk, processUiState?.saveUploadStatus, processUiState?.sessionSaveReadSnapshot]);
+
+  const confirmLeaveIfUnsafe = useCallback((source = "leave_navigation") => {
+    if (typeof window === "undefined") return true;
+    if (leaveNavigationRisk?.unsafe !== true) return true;
+    const message = buildLeaveNavigationConfirmText({
+      ...leaveNavigationRisk,
+      source,
+    });
+    return window.confirm(message);
+  }, [leaveNavigationRisk]);
+
+  const openSessionWithLeaveGuard = useCallback(async (sessionIdRaw, options = {}) => {
+    const targetSid = String(sessionIdRaw || "").trim();
+    const activeSid = String(draft?.session_id || "").trim();
+    const bypassLeaveGuard = options?.bypassLeaveGuard === true;
+    if (
+      !bypassLeaveGuard
+      && targetSid
+      && activeSid
+      && targetSid !== activeSid
+      && !confirmLeaveIfUnsafe("open_session")
+    ) {
+      return { ok: false, cancelled: true, error: "leave_guard_cancelled" };
+    }
+    return openSession(targetSid, options);
+  }, [confirmLeaveIfUnsafe, draft?.session_id, openSession]);
+
+  const openWorkspaceSession = useCallback(async (sessionLike, options = {}) => {
+    const row = ensureObject(sessionLike);
+    const sid = String(row?.id || row?.session_id || sessionLike || "").trim();
+    const openTab = String(options?.openTab || "").trim().toLowerCase();
+    const activeSid = String(draft?.session_id || "").trim();
+    const bypassLeaveGuard = options?.bypassLeaveGuard === true;
+    if (
+      !bypassLeaveGuard
+      && sid
+      && activeSid
+      && sid !== activeSid
+      && !confirmLeaveIfUnsafe("open_workspace_session")
+    ) {
+      return { ok: false, cancelled: true, error: "leave_guard_cancelled" };
+    }
+    await openWorkspaceSessionBase(sessionLike, options);
+    if (sid && (openTab === "diagram" || openTab === "interview" || openTab === "xml" || openTab === "doc" || openTab === "dod")) {
+      setProcessTabIntent({ sid, tab: openTab, nonce: Date.now() });
+    }
+    return { ok: true };
+  }, [confirmLeaveIfUnsafe, draft?.session_id, openWorkspaceSessionBase]);
 
   const {
     orgSettingsOpen,
@@ -1175,7 +1235,6 @@ export default function App() {
     const actorsCount = Array.isArray(draft?.actors_derived) && draft.actors_derived.length
       ? draft.actors_derived.length
       : (Array.isArray(draft?.roles) ? draft.roles.length : 0);
-    const hasSummary = !!String(notesMap?.[selectedElementId]?.summary || notesMap?.[selectedElementId]?.meta?.summary || "").trim();
     return [
       {
         id: "selected",
@@ -1200,8 +1259,8 @@ export default function App() {
       },
       {
         id: "templates",
-        title: "Шаблоны / TL;DR",
-        count: hasSummary ? 1 : 0,
+        title: "Шаблоны",
+        count: selectedElementId ? 1 : 0,
         active: sidebarActiveSection === "templates",
         muted: !hasActiveSession,
       },
@@ -1209,8 +1268,6 @@ export default function App() {
   }, [
     shellSessionId,
     selectedBpmnElement?.id,
-    draft?.notes_by_element,
-    draft?.notesByElementId,
     draft?.interview?.ai_questions_by_element,
     draft?.interview?.aiQuestionsByElementId,
     draft?.actors_derived,
@@ -1677,6 +1734,10 @@ export default function App() {
       return;
     }
     setSelectedBpmnElement(next);
+    const shouldOpenNotesPanel = (
+      source === "notes_marker_open"
+      || source === "selected_element_notes_open"
+    );
     const shouldOpenSidebar = (
       options?.openSidebar === true
       || source === "header_open_notes"
@@ -1694,14 +1755,40 @@ export default function App() {
     }
     if (source === "header_open_ai") {
       setSidebarActiveSection("ai");
+    } else if (source === "header_open_notes") {
+      setSidebarActiveSection("notes");
+      setSidebarShortcutRequest("notes");
     } else {
       setSidebarActiveSection("selected");
+    }
+    if (shouldOpenNotesPanel) {
+      setNotesPanelOpenRequest({
+        requestKey: `${Date.now()}:${next.id}:${source}`,
+        scopeFilter: "selected_element",
+      });
     }
     setElementNotesFocusKey((x) => x + 1);
     if (shouldLogDraftTrace()) {
       // eslint-disable-next-line no-console
       console.debug(`[UI] element_notes.focus sid=${String(draft?.session_id || "-")} elementId=${next.id} source=${source}`);
     }
+  }
+
+  function openNotesDiscussions(options = {}) {
+    const scopeRaw = String(options?.scopeFilter || "all").trim();
+    const scopeFilter = (
+      scopeRaw === "session"
+      || scopeRaw === "diagram"
+      || scopeRaw === "selected_element"
+      || scopeRaw === "all"
+    ) ? scopeRaw : "all";
+    const source = String(options?.source || "toolbar_open_discussions").trim() || "toolbar_open_discussions";
+    const request = {
+      requestKey: `${Date.now()}:${scopeFilter}:${source}`,
+      scopeFilter,
+    };
+    notesPanelRef.current?.openFromExternalRequest?.(request);
+    setNotesPanelOpenRequest(request);
   }
 
   function handleBpmnElementSelect(element) {
@@ -1750,6 +1837,9 @@ export default function App() {
         && prev.canGenerateAiQuestions === next.canGenerateAiQuestions
         && prev.aiGenerateBlockReason === next.aiGenerateBlockReason
         && prev.aiGenerateBlockReasonCode === next.aiGenerateBlockReasonCode
+        && prev.leaveNavigationRisk?.unsafe === next.leaveNavigationRisk?.unsafe
+        && prev.leaveNavigationRisk?.reason === next.leaveNavigationRisk?.reason
+        && prev.leaveNavigationRisk?.message === next.leaveNavigationRisk?.message
       ) {
         return prev;
       }
@@ -2263,16 +2353,30 @@ export default function App() {
       drawio: currentMeta.drawio,
       execution_plans: currentExecutionPlans,
     };
-    const persistResult = await persistSessionMetaBoundary(optimisticMeta, {
-      source: "camunda_extensions_save",
-      successHint: sid && !isLocalSessionId(sid)
-        ? (shouldRemove ? "Properties удалены." : "Properties сохранены.")
-        : (shouldRemove ? "Properties удалены локально." : "Properties сохранены локально."),
-      failureHint: "Не удалось сохранить Properties.",
+    const baseDiagramStateVersion = Number(
+      draft?.diagram_state_version
+      ?? draft?.bpmn_xml_version
+      ?? draft?.version
+      ?? 0,
+    );
+    const persistResult = await persistCamundaExtensionsViaCanonicalXmlBoundary({
+      sessionIdRaw: sid,
+      isLocal: isLocalSessionId(sid),
+      currentXmlRaw: draft?.bpmn_xml,
+      nextMetaRaw: optimisticMeta,
+      nextCamundaExtensionsByElementIdRaw: nextCamundaExtensionsByElementId,
+      baseDiagramStateVersionRaw: baseDiagramStateVersion,
+      apiPutBpmnXml,
+      apiGetSession,
+      onSessionSync,
+      syncSource: "camunda_extensions_xml_boundary_save",
     });
     if (!persistResult?.ok) {
       return { ok: false, error: String(persistResult?.error || "Не удалось сохранить Properties.") };
     }
+    markOk(sid && !isLocalSessionId(sid)
+      ? (shouldRemove ? "Properties удалены." : "Properties сохранены.")
+      : (shouldRemove ? "Properties удалены локально." : "Properties сохранены локально."));
     return { ok: true };
   }
 
@@ -2644,7 +2748,11 @@ export default function App() {
 
   async function returnToSessionList(reason = "manual_return", options = {}) {
     const shouldFlushBeforeLeave = options?.flushBeforeLeave !== false;
+    const shouldRunLeaveGuard = options?.skipLeaveGuard !== true;
     const sid = String(draft?.session_id || "").trim();
+    if (sid && shouldRunLeaveGuard && !confirmLeaveIfUnsafe(reason)) {
+      return { ok: false, cancelled: true, error: "leave_guard_cancelled" };
+    }
     if (shouldFlushBeforeLeave && sid && !isLocalSessionId(sid)) {
       const flushResult = await requestProcessStageFlushBeforeLeave({
         sessionId: sid,
@@ -2691,7 +2799,7 @@ export default function App() {
     setProjects((prev) => ensureArray(prev).filter((item) => projectIdOf(item) !== pid));
     setProjectId("");
     setSessions([]);
-    await returnToSessionList("project_deleted", { flushBeforeLeave: false });
+    await returnToSessionList("project_deleted", { flushBeforeLeave: false, skipLeaveGuard: true });
     await refreshProjects();
     markOk("API OK");
     return { ok: true };
@@ -2701,7 +2809,7 @@ export default function App() {
     if (!workspacePermissions.canDeleteSession) return { ok: false, error: "forbidden" };
     const sid = String(draft?.session_id || "");
     if (!sid || isLocalSessionId(sid)) {
-      await returnToSessionList("local_session_clear", { flushBeforeLeave: false });
+      await returnToSessionList("local_session_clear", { flushBeforeLeave: false, skipLeaveGuard: true });
       return { ok: true };
     }
     const skipConfirm = !!options?.skipConfirm;
@@ -2720,7 +2828,7 @@ export default function App() {
       return { ok: false, error: String(r.error || "delete_session_failed") };
     }
 
-    await returnToSessionList("session_deleted", { flushBeforeLeave: false });
+    await returnToSessionList("session_deleted", { flushBeforeLeave: false, skipLeaveGuard: true });
     await refreshSessions(projectId);
     markOk("API OK");
     return { ok: true };
@@ -2912,7 +3020,7 @@ export default function App() {
         onSessionBreadcrumbClick={() => {
           const sid = String(draft?.session_id || "").trim();
           if (!sid) return;
-          void openSession(sid, { source: "breadcrumb_session" });
+          void openSessionWithLeaveGuard(sid, { source: "breadcrumb_session" });
         }}
         sidebarHidden={leftHidden}
         sidebarCompact={leftCompact}
@@ -3006,6 +3114,24 @@ export default function App() {
         projectId: fromUrl.projectId || "-",
         sessionId: fromUrl.sessionId || "-",
       });
+      const currentProjectId = String(projectId || "").trim();
+      const currentSessionId = String(draft?.session_id || "").trim();
+      const nextProjectId = String(fromUrl.projectId || "").trim();
+      const nextSessionId = String(fromUrl.sessionId || "").trim();
+      const leavesCurrentSession = !!currentSessionId && nextSessionId !== currentSessionId;
+      const changesProject = !!nextProjectId && nextProjectId !== currentProjectId;
+      const clearsProjectSelection = !!currentProjectId && !nextProjectId && !orgOpen;
+      if (
+        (leavesCurrentSession || changesProject || clearsProjectSelection)
+        && !confirmLeaveIfUnsafe("popstate_navigation")
+      ) {
+        writeSelectionToUrl({ projectId: currentProjectId, sessionId: currentSessionId });
+        logNav("popstate_leave_guard_cancelled", {
+          projectId: currentProjectId || "-",
+          sessionId: currentSessionId || "-",
+        });
+        return;
+      }
       if (fromUrl.projectId && fromUrl.projectId !== String(projectId || "").trim()) {
         setProjectId(fromUrl.projectId);
       }
@@ -3015,8 +3141,20 @@ export default function App() {
     }
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
+  }, [confirmLeaveIfUnsafe, draft?.session_id, projectId, setRequestedSessionId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onBeforeUnload = (event) => {
+      if (leaveNavigationRisk?.unsafe !== true) return undefined;
+      event.preventDefault();
+      // Browser-defined static string; custom text is ignored in modern browsers.
+      event.returnValue = "";
+      return "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [leaveNavigationRisk?.unsafe]);
 
   useEffect(() => {
     const pid = String(projectId || "").trim();
@@ -3085,6 +3223,8 @@ export default function App() {
         projectWorkspaceId={currentProjectWorkspaceId}
         onProjectChange={async (pid) => {
           const next = String(pid || "");
+          const activeSid = String(draft?.session_id || "").trim();
+          if (activeSid && !confirmLeaveIfUnsafe("project_change")) return;
           logNav("project_change", { projectId: next || "-" });
           if (!next.trim()) {
             suppressProjectAutoselectRef.current = true;
@@ -3100,7 +3240,7 @@ export default function App() {
         sessions={sessions}
         sessionId={String(draft?.session_id || "")}
         sessionStatus={resolveSessionStatusFromDraft(draft, "draft")}
-        onOpenSession={openSession}
+        onOpenSession={openSessionWithLeaveGuard}
         onOpenWorkspaceSession={openWorkspaceSession}
         onDeleteSession={workspacePermissions.canDeleteSession ? deleteCurrentSession : undefined}
         onChangeSessionStatus={workspacePermissions.canChangeStatus ? changeCurrentSessionStatus : undefined}
@@ -3124,6 +3264,7 @@ export default function App() {
         selectedBpmnElement={selectedBpmnElement}
         onBpmnElementSelect={handleBpmnElementSelect}
         onOpenElementNotes={focusElementNotes}
+        onOpenNotesDiscussions={openNotesDiscussions}
         onElementNotesRemap={remapElementNotes}
         onSessionSync={onSessionSync}
         onRecalculateRtiers={recalculateRtiers}
@@ -3136,6 +3277,24 @@ export default function App() {
         sessionNavNotice={sessionNavNotice}
         onDismissSessionNavNotice={() => setSessionNavNotice(null)}
         onReturnToSessionList={() => returnToSessionList("banner_action")}
+      />
+
+      <NotesMvpPanel
+        ref={notesPanelRef}
+        sessionId={String(draft?.session_id || "")}
+        sessionTitle={currentSessionTitle}
+        selectedElement={selectedBpmnElement}
+        legacyElementNotesMap={draft?.notes_by_element || draft?.notesByElementId || null}
+        onAddLegacyElementNote={addElementNote}
+        disabled={locked || isSessionLocalMode}
+        externalOpenRequest={notesPanelOpenRequest}
+        onOpenChange={setNotesDiscussionsOpen}
+      />
+
+      <DerivedContextSurface
+        draft={draft}
+        sessionTitle={currentSessionTitle}
+        hidden={notesDiscussionsOpen || processUiState?.tab === "diagram"}
       />
 
       <OrgSettingsModal

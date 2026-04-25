@@ -223,6 +223,8 @@ export function buildDialogsView({
   versionsList,
   versionsLoadState,
   versionsLoadError,
+  versionsServerEntriesCount,
+  versionsTechnicalEntriesCount,
   revisionHistorySnapshot,
   setGenErr,
   setDiffTargetSnapshotId,
@@ -290,6 +292,8 @@ export function buildDialogsView({
     versionsList,
     versionsLoadState,
     versionsLoadError,
+    versionsServerEntriesCount,
+    versionsTechnicalEntriesCount,
     revisionHistorySnapshot,
     setGenErr,
     setDiffTargetSnapshotId,
@@ -321,6 +325,7 @@ export function buildDiagramHeaderView({
   sid,
   saveDirtyHint,
   handleSaveCurrentTab,
+  handleCreateRevisionAction,
   handleUndoAction,
   handleRedoAction,
   canUndo = false,
@@ -349,6 +354,8 @@ export function buildDiagramHeaderView({
   handleDrawioImportFile,
   topPanelsView,
   publishGitMirrorSnapshot,
+  sessionPresenceView,
+  remoteSaveHighlightView,
   asArray,
 } = {}) {
   return {
@@ -356,6 +363,7 @@ export function buildDiagramHeaderView({
     sessionId: sid,
     saveDirtyHint,
     handleSaveCurrentTab,
+    handleCreateRevisionAction,
     handleUndoAction,
     handleRedoAction,
     canUndo: canUndo === true,
@@ -384,6 +392,8 @@ export function buildDiagramHeaderView({
     handleDrawioImportFile,
     topPanelsView,
     publishGitMirrorSnapshot,
+    sessionPresenceView,
+    remoteSaveHighlightView,
     asArray,
   };
 }

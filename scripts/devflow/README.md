@@ -13,6 +13,7 @@ The script packages bounded work from a local terminal with these guarantees:
   - the repo root is dirty
   - `git worktree` creation is blocked
   - `.git/worktrees` is not usable in the current environment
+- reuses an existing clean worktree or clone path when one is already present
 - runs `git diff --check` by default plus any contour-specific validation commands
 - stages only declared paths unless `--add-all` is explicitly requested
 - stops on validation failure before commit

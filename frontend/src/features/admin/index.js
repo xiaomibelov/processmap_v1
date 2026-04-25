@@ -13,4 +13,4 @@ export { default as useAdminJobsList } from "./hooks/useAdminJobsList";
 export { default as useAdminOrgsList } from "./hooks/useAdminOrgsList";
 export { default as useAdminProjectsList } from "./hooks/useAdminProjectsList";
 export { default as useAdminAuditList } from "./hooks/useAdminAuditList";
-
+export * from "./hooks/useAdminTelemetryData";

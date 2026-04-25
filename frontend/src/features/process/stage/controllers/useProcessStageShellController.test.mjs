@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { buildSaveUiState } from "./useProcessStageShellController.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 test("dirty save snapshot keeps save action button visible", () => {
   const ui = buildSaveUiState({
@@ -17,10 +23,12 @@ test("dirty save snapshot keeps save action button visible", () => {
   });
   assert.equal(ui.showSaveActionButton, true);
   assert.equal(ui.publishActionRequired, false);
-  assert.equal(ui.saveActionText, "Сохранить");
+  assert.equal(ui.createRevisionNoDiff, true);
+  assert.equal(ui.saveActionText, "Сохранить сессию");
+  assert.equal(ui.saveSmartText, "Сохранить сессию");
 });
 
-test("draft ahead keeps publish action visible even when save dirty flag is false", () => {
+test("draft ahead keeps save action visible and keeps publish requirement for revision action", () => {
   const ui = buildSaveUiState({
     saveSnapshotRaw: { isDirty: false, status: "stale" },
     revisionSnapshotRaw: {
@@ -34,10 +42,11 @@ test("draft ahead keeps publish action visible even when save dirty flag is fals
   });
   assert.equal(ui.showSaveActionButton, true);
   assert.equal(ui.publishActionRequired, true);
-  assert.equal(ui.saveActionText, "Сохранить версию");
+  assert.equal(ui.createRevisionNoDiff, false);
+  assert.equal(ui.saveActionText, "Сохранить сессию");
 });
 
-test("first publish is available when no revisions exist yet and live draft exists", () => {
+test("first publish requirement does not hide session-save reassurance button", () => {
   const ui = buildSaveUiState({
     saveSnapshotRaw: { isDirty: false, status: "saved" },
     revisionSnapshotRaw: {
@@ -51,10 +60,12 @@ test("first publish is available when no revisions exist yet and live draft exis
   });
   assert.equal(ui.showSaveActionButton, true);
   assert.equal(ui.publishActionRequired, true);
-  assert.equal(ui.saveActionText, "Сохранить версию");
+  assert.equal(ui.createRevisionNoDiff, false);
+  assert.equal(ui.saveActionText, "Сохранить сессию");
+  assert.equal(ui.saveSmartText, "Сохранено внутри версии");
 });
 
-test("clean published state without draft-ahead hides save action button", () => {
+test("clean published state keeps session-save reassurance button visible", () => {
   const ui = buildSaveUiState({
     saveSnapshotRaw: { isDirty: false, status: "saved" },
     revisionSnapshotRaw: {
@@ -66,7 +77,134 @@ test("clean published state without draft-ahead hides save action button", () =>
     },
     fallbackLabel: "Save",
   });
-  assert.equal(ui.showSaveActionButton, false);
+  assert.equal(ui.showSaveActionButton, true);
   assert.equal(ui.publishActionRequired, false);
-  assert.equal(ui.saveActionText, "Черновик сохранён");
+  assert.equal(ui.createRevisionNoDiff, true);
+  assert.equal(ui.saveActionText, "Сохранить сессию");
+  assert.equal(ui.saveSmartText, "Сохранено внутри версии");
+});
+
+test("save action label no longer uses revision semantics", () => {
+  const ui = buildSaveUiState({
+    saveSnapshotRaw: { isDirty: false, status: "stale" },
+    revisionSnapshotRaw: {
+      latestRevisionNumber: 2,
+      draftState: {
+        hasLiveDraft: true,
+        isDraftAheadOfLatestRevision: true,
+      },
+    },
+    fallbackLabel: "Save",
+  });
+  assert.equal(ui.saveActionText, "Сохранить сессию");
+  assert.equal(ui.saveActionText.toLowerCase().includes("верси"), false);
+});
+
+test("session-save button visibility remains decoupled from publish requirement", () => {
+  const ui = buildSaveUiState({
+    saveSnapshotRaw: { isDirty: false, status: "saved" },
+    revisionSnapshotRaw: {
+      latestRevisionNumber: 5,
+      draftState: {
+        hasLiveDraft: true,
+        isDraftAheadOfLatestRevision: true,
+      },
+    },
+    fallbackLabel: "Save",
+  });
+  assert.equal(ui.publishActionRequired, true);
+  assert.equal(ui.createRevisionNoDiff, false);
+  assert.equal(ui.showSaveActionButton, true);
+});
+
+test("save smart text transitions through dirty -> saving -> saved within version", () => {
+  const dirty = buildSaveUiState({
+    saveSnapshotRaw: { isDirty: true, status: "dirty" },
+    revisionSnapshotRaw: { latestRevisionNumber: 3, draftState: { hasLiveDraft: true } },
+    fallbackLabel: "Save",
+  });
+  const saving = buildSaveUiState({
+    saveSnapshotRaw: { isSaving: true, status: "saving" },
+    revisionSnapshotRaw: { latestRevisionNumber: 3, draftState: { hasLiveDraft: true } },
+    fallbackLabel: "Save",
+  });
+  const saved = buildSaveUiState({
+    saveSnapshotRaw: { isSaved: true, status: "saved" },
+    revisionSnapshotRaw: { latestRevisionNumber: 3, draftState: { hasLiveDraft: true } },
+    fallbackLabel: "Save",
+  });
+  assert.equal(dirty.saveSmartText, "Сохранить сессию");
+  assert.equal(saving.saveSmartText, "Сохранение...");
+  assert.equal(saved.saveSmartText, "Сохранено внутри версии");
+});
+
+test("save smart text returns to dirty state after next xml mutation", () => {
+  const saved = buildSaveUiState({
+    saveSnapshotRaw: { isSaved: true, status: "saved", isDirty: false },
+    revisionSnapshotRaw: { latestRevisionNumber: 7, draftState: { hasLiveDraft: true } },
+    fallbackLabel: "Save",
+  });
+  const dirtyAgain = buildSaveUiState({
+    saveSnapshotRaw: { isSaved: false, isDirty: true, status: "dirty" },
+    revisionSnapshotRaw: { latestRevisionNumber: 7, draftState: { hasLiveDraft: true } },
+    fallbackLabel: "Save",
+  });
+  assert.equal(saved.saveSmartText, "Сохранено внутри версии");
+  assert.equal(dirtyAgain.saveSmartText, "Сохранить сессию");
+});
+
+test("create-version availability requires publishActionRequired and respects saving guard", () => {
+  const source = fs.readFileSync(path.join(__dirname, "useProcessStageShellController.js"), "utf8");
+  assert.equal(source.includes("const canSaveNow = ("), true);
+  assert.equal(source.includes("&& saveSnapshot.isSaving !== true"), true);
+  assert.equal(source.includes("const canCreateRevisionNow = ("), true);
+  assert.equal(source.includes("&& saveUi.publishActionRequired === true"), true);
+  assert.equal(source.includes("const showCreateRevisionNoDiffHint = ("), true);
+  assert.equal(source.includes("&& saveUi.createRevisionNoDiff === true"), true);
+  assert.equal(source.includes("createRevisionNoDiffHintVisible: showCreateRevisionNoDiffHint"), true);
+  assert.equal(source.includes("canCreateRevisionNow,"), true);
+});
+
+test("manual save busy state exposes explicit transitional labels", () => {
+  const saveBusy = buildSaveUiState({
+    saveSnapshotRaw: { isSaving: true, status: "saving" },
+    revisionSnapshotRaw: { latestRevisionNumber: 4, draftState: { hasLiveDraft: true } },
+    isManualSaveBusy: true,
+    manualSaveIntent: "save_session",
+  });
+  const createBusy = buildSaveUiState({
+    saveSnapshotRaw: { isSaving: true, status: "saving" },
+    revisionSnapshotRaw: { latestRevisionNumber: 4, draftState: { hasLiveDraft: true } },
+    isManualSaveBusy: true,
+    manualSaveIntent: "create_revision",
+  });
+  assert.equal(saveBusy.saveActionText, "Сохранение...");
+  assert.equal(saveBusy.createRevisionActionText, "Создать новую версию");
+  assert.equal(createBusy.saveActionText, "Сохранить сессию");
+  assert.equal(createBusy.createRevisionActionText, "Сохранение...");
+});
+
+test("create-version no-diff flag is explicit in clean state", () => {
+  const noDiff = buildSaveUiState({
+    saveSnapshotRaw: { isDirty: false, status: "saved" },
+    revisionSnapshotRaw: {
+      latestRevisionNumber: 9,
+      draftState: {
+        hasLiveDraft: true,
+        isDraftAheadOfLatestRevision: false,
+      },
+    },
+  });
+  const hasDiff = buildSaveUiState({
+    saveSnapshotRaw: { isDirty: true, status: "dirty" },
+    revisionSnapshotRaw: {
+      latestRevisionNumber: 9,
+      draftState: {
+        hasLiveDraft: true,
+        isDraftAheadOfLatestRevision: true,
+      },
+    },
+  });
+  assert.equal(noDiff.createRevisionNoDiff, true);
+  assert.equal(hasDiff.createRevisionNoDiff, false);
 });

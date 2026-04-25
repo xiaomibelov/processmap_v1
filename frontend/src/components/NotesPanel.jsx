@@ -52,7 +52,6 @@ import {
   deriveNodePathSyncState,
   hasNodePathLocalChanges,
 } from "./sidebar/nodePathSyncState";
-import { useTldr } from "../features/tldr/hooks/useTldr";
 import {
   getNodePathJazzPeer,
   getNodePathLocalFirstAdapterMode,
@@ -1164,7 +1163,6 @@ export default function NotesPanel({
   const elementSyncState = elementBusy
     ? "syncing"
     : (elementSaveFailed ? "error" : (elementHasLocalChanges ? "local" : "saved"));
-  const sessionTldr = useTldr(draft);
   const aiQuestionsByElement = useMemo(
     () => normalizeAiQuestionsByElementMap(draft?.interview?.ai_questions_by_element || draft?.interview?.aiQuestionsByElementId),
     [draft?.interview?.ai_questions_by_element, draft?.interview?.aiQuestionsByElementId],
@@ -2788,8 +2786,8 @@ export default function NotesPanel({
     },
     {
       id: "advanced",
-      title: "Advanced",
-      count: Number(roles.length || 0) + (!sessionTldr?.empty ? 1 : 0),
+      title: "Шаблоны и акторы",
+      count: undefined,
       active: !!sectionsOpen.advanced || String(activeSectionId || "") === "advanced",
       muted: false,
     },
@@ -3072,13 +3070,13 @@ export default function NotesPanel({
               <div ref={advancedSectionRef}>
                 <SidebarAccordion
                   sectionKey="advanced"
-                  title="Advanced / Debug"
-                  badge={String(roles.length || 0)}
+                  title="Шаблоны и акторы"
+                  badge=""
                   open={!!sectionsOpen.advanced}
                   onToggle={toggleSection}
                 >
                   <details className="sidebarAdvanced" data-testid="sidebar-advanced-templates">
-                    <summary className="sidebarAdvancedSummary">Templates / TL;DR</summary>
+                    <summary className="sidebarAdvancedSummary">Шаблон заметки</summary>
                     <div className="mt-2">
                       <TemplatesAndTldrSection
                         contentOnly
@@ -3086,17 +3084,15 @@ export default function NotesPanel({
                         onToggle={undefined}
                         selectedElementId={isElementMode ? selectedElementId : ""}
                         selectedTemplate={selectedTemplate}
-                        tldr={sessionTldr}
                         disabled={!isElementMode || disabled}
                         elementBusy={isElementMode ? elementBusy : false}
                         onInsertTemplate={insertTemplateNote}
-                        onRefreshTldr={undefined}
                         templateErr={isElementMode ? templateErr : ""}
                       />
                     </div>
                   </details>
                   <details className="sidebarAdvanced mt-2" data-testid="sidebar-advanced-actors">
-                    <summary className="sidebarAdvancedSummary">Actors</summary>
+                    <summary className="sidebarAdvancedSummary">Акторы</summary>
                     <div className="mt-2">
                       <ActorsSection
                         contentOnly

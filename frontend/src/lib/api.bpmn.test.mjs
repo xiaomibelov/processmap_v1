@@ -89,6 +89,75 @@ test("apiPutBpmnXml exposes backend bpmn version snapshot as canonical publish t
   }
 });
 
+test("apiPutBpmnXml sends base_diagram_state_version and returns diagramStateVersion from backend ack", async () => {
+  const prevFetch = globalThis.fetch;
+  const calls = [];
+  try {
+    globalThis.fetch = async (input, init) => {
+      calls.push({ url: String(input || ""), init });
+      return new Response(JSON.stringify({
+        ok: true,
+        version: 5,
+        diagram_state_version: 9,
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    const out = await apiPutBpmnXml("sess_1", "<bpmn:definitions/>", {
+      rev: 5,
+      baseDiagramStateVersion: 8,
+      reason: "manual_save",
+    });
+
+    assert.equal(out.ok, true);
+    assert.equal(out.diagramStateVersion, 9);
+    const body = JSON.parse(String(calls[0]?.init?.body || "{}"));
+    assert.equal(body.base_diagram_state_version, 8);
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
+});
+
+test("apiPutBpmnXml forwards optional bpmn_meta payload through canonical XML boundary", async () => {
+  const prevFetch = globalThis.fetch;
+  const calls = [];
+  try {
+    globalThis.fetch = async (input, init) => {
+      calls.push({ url: String(input || ""), init });
+      return new Response(JSON.stringify({
+        ok: true,
+        version: 6,
+        diagram_state_version: 10,
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    const out = await apiPutBpmnXml("sess_1", "<bpmn:definitions/>", {
+      reason: "manual_save:camunda_extensions",
+      baseDiagramStateVersion: 9,
+      bpmnMeta: {
+        version: 1,
+        camunda_extensions_by_element_id: {
+          Task_1: { properties: { extensionProperties: [{ id: "p1", name: "foo", value: "bar" }] } },
+        },
+      },
+    });
+
+    assert.equal(out.ok, true);
+    const body = JSON.parse(String(calls[0]?.init?.body || "{}"));
+    assert.equal(body.base_diagram_state_version, 9);
+    assert.equal(body.source_action, "manual_save");
+    assert.equal(typeof body.bpmn_meta, "object");
+    assert.equal(body.bpmn_meta.camunda_extensions_by_element_id.Task_1.properties.extensionProperties[0].name, "foo");
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
+});
+
 test("apiPutBpmnXml normalizes publish/manual save reason prefixes into canonical source_action", async () => {
   const prevFetch = globalThis.fetch;
   const calls = [];
@@ -109,13 +178,41 @@ test("apiPutBpmnXml normalizes publish/manual save reason prefixes into canonica
       rev: 10,
       reason: "manual_save:camunda_finalize",
     });
+    const publishQueuedOut = await apiPutBpmnXml("sess_1", "<bpmn:definitions/>", {
+      rev: 11,
+      reason: "publish_manual_save:queued",
+    });
+    const manualQueuedOut = await apiPutBpmnXml("sess_1", "<bpmn:definitions/>", {
+      rev: 12,
+      reason: "manual_save:queued",
+    });
+    const publishConflictReplayOut = await apiPutBpmnXml("sess_1", "<bpmn:definitions/>", {
+      rev: 13,
+      reason: "publish_manual_save:conflict_replay",
+    });
+    const manualConflictReplayOut = await apiPutBpmnXml("sess_1", "<bpmn:definitions/>", {
+      rev: 14,
+      reason: "manual_save:conflict_replay",
+    });
 
     assert.equal(publishOut.ok, true);
     assert.equal(manualOut.ok, true);
+    assert.equal(publishQueuedOut.ok, true);
+    assert.equal(manualQueuedOut.ok, true);
+    assert.equal(publishConflictReplayOut.ok, true);
+    assert.equal(manualConflictReplayOut.ok, true);
     const publishBody = JSON.parse(String(calls[0]?.init?.body || "{}"));
     const manualBody = JSON.parse(String(calls[1]?.init?.body || "{}"));
+    const publishQueuedBody = JSON.parse(String(calls[2]?.init?.body || "{}"));
+    const manualQueuedBody = JSON.parse(String(calls[3]?.init?.body || "{}"));
+    const publishConflictReplayBody = JSON.parse(String(calls[4]?.init?.body || "{}"));
+    const manualConflictReplayBody = JSON.parse(String(calls[5]?.init?.body || "{}"));
     assert.equal(publishBody.source_action, "publish_manual_save");
     assert.equal(manualBody.source_action, "manual_save");
+    assert.equal(publishQueuedBody.source_action, "publish_manual_save");
+    assert.equal(manualQueuedBody.source_action, "manual_save");
+    assert.equal(publishConflictReplayBody.source_action, "publish_manual_save");
+    assert.equal(manualConflictReplayBody.source_action, "manual_save");
   } finally {
     globalThis.fetch = prevFetch;
   }

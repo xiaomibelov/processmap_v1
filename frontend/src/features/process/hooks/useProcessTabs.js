@@ -4,11 +4,10 @@ import { parseAndProjectBpmnToInterview } from "./useInterviewProjection";
 import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
 import { traceProcess } from "../lib/processDebugTrace";
 import { buildBpmnSaveFailureDiagnostics } from "../bpmn/save/saveBeforeSwitchDiagnostics.js";
+import { shortUserFacingError } from "../lib/userFacingErrorText";
 
 function shortErr(x) {
-  const s = String(x || "").trim();
-  if (!s) return "";
-  return s.length > 160 ? s.slice(0, 160) + "…" : s;
+  return shortUserFacingError(x, 160);
 }
 
 function publishTabSwitchSaveDiagnostics(diagnostics = {}) {
@@ -142,6 +141,7 @@ export default function useProcessTabs({
   flushDiagramBeforeTabSwitch,
   invalidateHydrateForSession,
   markHydrateDoneForSession,
+  getBaseDiagramStateVersion,
   onError,
 }) {
   const [tab, setTabState] = useState(() => defaultTabForSession(draft));
@@ -837,6 +837,10 @@ export default function useProcessTabs({
                     const syncPatch = {
                       interview: projected.nextInterview,
                     };
+                    const baseDiagramStateVersion = Number(getBaseDiagramStateVersion?.());
+                    if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
+                      syncPatch.base_diagram_state_version = Math.round(baseDiagramStateVersion);
+                    }
                     const syncRes = await apiPatchSession(sid, syncPatch);
                     if (isStaleSwitch()) return;
                     traceProcess("tabs.sync_interview_from_bpmn", {
@@ -974,6 +978,7 @@ export default function useProcessTabs({
       onError,
       schedulePendingTabReplay,
       clearPendingTabReplay,
+      getBaseDiagramStateVersion,
     ],
   );
 

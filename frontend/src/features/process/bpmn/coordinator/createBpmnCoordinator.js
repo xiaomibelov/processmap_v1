@@ -9,6 +9,83 @@ function asNumber(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function asObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function normalizeErrorDetails(value) {
+  const details = asObject(value);
+  return Object.keys(details).length ? details : null;
+}
+
+function isDiagramStateConflictResult(result) {
+  const status = asNumber(result?.status, 0);
+  if (status !== 409) return false;
+  const details = asObject(result?.errorDetails);
+  const code = asText(result?.errorCode || details?.code).trim().toUpperCase();
+  if (!code) return true;
+  return (
+    code === "HTTP_409"
+    || code.includes("DIAGRAM_STATE_CONFLICT")
+    || code.includes("BASE_VERSION_REQUIRED")
+    || code.includes("CONFLICT")
+  );
+}
+
+function isIntentPreservingReason(reasonRaw) {
+  const reason = asText(reasonRaw).trim().toLowerCase();
+  if (!reason) return false;
+  return reason.startsWith("manual_save") || reason.startsWith("publish_manual_save");
+}
+
+function isPublishManualSaveReason(reasonRaw) {
+  const reason = asText(reasonRaw).trim().toLowerCase();
+  if (!reason) return false;
+  return reason.startsWith("publish_manual_save");
+}
+
+function buildConflictReplayReason(reasonRaw) {
+  const reason = asText(reasonRaw).trim();
+  if (!isIntentPreservingReason(reason)) return "";
+  if (reason.endsWith(":conflict_replay")) return reason;
+  return `${reason}:conflict_replay`;
+}
+
+function buildQueuedReplayReason(reasonRaw) {
+  const reason = asText(reasonRaw).trim();
+  if (!reason || reason === "queued") return "queued";
+  if (reason.endsWith(":queued")) return reason;
+  return `${reason}:queued`;
+}
+
+function normalizeErrorCode(value) {
+  return asText(value).trim().toUpperCase();
+}
+
+function classifySaveTrigger(reasonRaw = "", options = {}) {
+  const reason = asText(reasonRaw).trim().toLowerCase();
+  if (options?.fromPending === true || reason.includes("pending_replay")) return "pending_replay";
+  if (reason.includes("beforeunload") || reason.includes("pagehide") || reason.includes("visibility_hidden")) {
+    return "beforeunload_reload_flush";
+  }
+  if (reason.includes("reload")) return "hydration_reload";
+  if (reason.includes("autosave")) return "autosave";
+  if (reason.includes("manual")) return "manual_save";
+  return "other";
+}
+
+function isStaleConflictFailure(saved = null) {
+  const value = saved && typeof saved === "object" ? saved : {};
+  const status = asNumber(value?.status, 0);
+  const errorCode = normalizeErrorCode(value?.errorCode);
+  const errorDetails = normalizeErrorDetails(value?.errorDetails);
+  const detailsCode = normalizeErrorCode(errorDetails?.code);
+  return (
+    status === 409
+    || errorCode === "DIAGRAM_STATE_CONFLICT"
+    || detailsCode === "DIAGRAM_STATE_CONFLICT"
+  );
+}
 function fnv1aHex(input) {
   const src = asText(input);
   let hash = 0x811c9dc5;
@@ -41,6 +118,7 @@ export default function createBpmnCoordinator(options = {}) {
   let pendingSave = null;
   let saveInFlight = false;
   let saveQueuedRev = 0;
+  let conflictReplayReason = "";
   let flushPromise = null;
   let singleWriterOwner = "";
   let singleWriterExpiresAt = 0;
@@ -81,6 +159,10 @@ export default function createBpmnCoordinator(options = {}) {
   function clearPendingSave() {
     pendingSave = null;
     clearPendingReplayTimer();
+  }
+
+  function clearConflictReplayReason() {
+    conflictReplayReason = "";
   }
 
   function currentSid() {
@@ -273,6 +355,14 @@ export default function createBpmnCoordinator(options = {}) {
     emit("SAVE_REQUESTED", {
       sid,
       reason,
+      trigger_class: classifySaveTrigger(reason, options),
+      from_pending: options?.fromPending ? 1 : 0,
+      force: options?.force ? 1 : 0,
+      trigger: asText(options?.trigger || ""),
+      save_owner: resolveSaveOwner(options),
+      xml_override: asText(options?.xmlOverride).trim() ? 1 : 0,
+      save_in_flight: saveInFlight ? 1 : 0,
+      queued_rev: saveQueuedRev,
       rev,
       dirty: state?.dirty ? 1 : 0,
       runtime_ready: status?.ready ? 1 : 0,
@@ -299,6 +389,9 @@ export default function createBpmnCoordinator(options = {}) {
         emit("SAVE_PERSIST_STARTED", {
           sid,
           reason: `${reason}:fallback`,
+          trigger_class: classifySaveTrigger(reason, options),
+          save_path: "not_ready_fallback",
+          from_pending: options?.fromPending ? 1 : 0,
           rev,
           xml_len: fallbackXml.length,
         });
@@ -314,60 +407,81 @@ export default function createBpmnCoordinator(options = {}) {
           });
           // Keep dirty=true to force true runtime save when ready.
         } else {
+          const status = asNumber(persisted?.status, 0);
+          const errorCode = asText(
+            persisted?.errorCode
+            || (status > 0 ? `http_${status}` : "persist_failed"),
+          );
+          const errorDetails = normalizeErrorDetails(persisted?.errorDetails);
           emit("SAVE_PERSIST_FAIL", {
             sid,
             reason: `${reason}:fallback`,
             rev,
-            status: asNumber(persisted?.status, 0),
+            status,
+            error_code: errorCode,
             error: asText(persisted?.error || "persist fallback failed"),
+            error_details: errorDetails,
           });
         }
       }
       return { ok: true, pending: true, rev };
     }
 
-    const xmlRes = await runtime.getXml({ format: true });
-    if (!xmlRes?.ok) {
-      if (xmlRes?.reason === "not_ready" || xmlRes?.reason === "stale") {
-        setPendingSave({
-          sessionId: sid,
-          runtimeToken: asNumber(runtime.getStatus?.()?.token, 0),
-          targetRev: rev,
-          reason,
-        });
-        emit("SAVE_SKIPPED_NOT_READY", {
-          sid,
-          reason,
+    const xmlOverride = asText(options?.xmlOverride);
+    let runtimeToken = 0;
+    let rawXml = xmlOverride;
+    if (!rawXml.trim()) {
+      const xmlRes = await runtime.getXml({ format: true });
+      if (!xmlRes?.ok) {
+        if (xmlRes?.reason === "not_ready" || xmlRes?.reason === "stale") {
+          setPendingSave({
+            sessionId: sid,
+            runtimeToken: asNumber(runtime.getStatus?.()?.token, 0),
+            targetRev: rev,
+            reason,
+          });
+          emit("SAVE_SKIPPED_NOT_READY", {
+            sid,
+            reason,
+            rev,
+            runtime_ready: runtime.getStatus?.()?.ready ? 1 : 0,
+            runtime_defs: runtime.getStatus?.()?.defs ? 1 : 0,
+            save_reason: asText(xmlRes?.reason),
+          });
+          return { ok: true, pending: true, rev };
+        }
+        return {
+          ok: false,
           rev,
-          runtime_ready: runtime.getStatus?.()?.ready ? 1 : 0,
-          runtime_defs: runtime.getStatus?.()?.defs ? 1 : 0,
-          save_reason: asText(xmlRes?.reason),
-        });
-        return { ok: true, pending: true, rev };
+          status: asNumber(xmlRes?.status, 0),
+          errorCode: asText(xmlRes?.reason || "runtime_get_xml_failed"),
+          error: asText(xmlRes?.error || xmlRes?.reason || "getXml failed"),
+        };
       }
-      return {
-        ok: false,
-        rev,
-        status: asNumber(xmlRes?.status, 0),
-        errorCode: asText(xmlRes?.reason || "runtime_get_xml_failed"),
-        error: asText(xmlRes?.error || xmlRes?.reason || "getXml failed"),
-      };
+      rawXml = asText(xmlRes?.xml);
+      runtimeToken = asNumber(xmlRes?.token, 0);
     }
-
-    const rawXml = asText(xmlRes?.xml);
     const prepared = preparePersistedXml(rawXml, {
       sid,
       reason,
       rev,
-      runtimeToken: asNumber(xmlRes?.token, 0),
-      source: "flush_save",
+      runtimeToken,
+      source: xmlOverride.trim() ? "flush_save_override" : "flush_save",
     });
     const xml = prepared.xml;
     const currentXmlHash = fnv1aHex(xml);
     const localHash = asText(state?.lastHash || state?.hash || "");
     const localDirty = state?.dirty === true;
     const localLastSavedRev = asNumber(state?.lastSavedRev, 0);
-    if (!localDirty && currentXmlHash && localHash && currentXmlHash === localHash && localLastSavedRev >= rev) {
+    const explicitPublishManualSave = isPublishManualSaveReason(reason);
+    if (
+      !explicitPublishManualSave
+      && !localDirty
+      && currentXmlHash
+      && localHash
+      && currentXmlHash === localHash
+      && localLastSavedRev >= rev
+    ) {
       emit("SAVE_PERSIST_SKIPPED_UNCHANGED", {
         sid,
         reason,
@@ -391,33 +505,70 @@ export default function createBpmnCoordinator(options = {}) {
     emit("SAVE_EXECUTED", {
       sid,
       reason,
+      trigger_class: classifySaveTrigger(reason, options),
+      from_pending: options?.fromPending ? 1 : 0,
+      save_owner: resolveSaveOwner(options),
       rev: targetRev,
-      runtime_token: asNumber(xmlRes?.token, 0),
+      runtime_token: runtimeToken,
       xml_len: xml.length,
     });
     emit("SAVE_PERSIST_STARTED", {
       sid,
       reason,
+      trigger_class: classifySaveTrigger(reason, options),
+      save_path: "runtime_flush",
+      from_pending: options?.fromPending ? 1 : 0,
       rev: targetRev,
       xml_len: xml.length,
     });
     const startedAt = Date.now();
-    const persisted = await persistRaw(sid, xml, targetRev, reason);
+    const staleConflictRetryEnabled = options?.staleConflictRetryEnabled !== false;
+    const staleConflictRetryMaxAttempts = Math.max(0, asNumber(options?.staleConflictRetryMaxAttempts, 1));
+    let staleRetryAttempts = 0;
+    let persisted = await persistRaw(sid, xml, targetRev, reason);
+    while (
+      !persisted?.ok
+      && staleConflictRetryEnabled
+      && staleRetryAttempts < staleConflictRetryMaxAttempts
+      && isStaleConflictFailure(persisted)
+    ) {
+      staleRetryAttempts += 1;
+      emit("SAVE_STALE_CONFLICT_RETRY", {
+        sid,
+        reason,
+        rev: targetRev,
+        retry_attempt: staleRetryAttempts,
+        status: asNumber(persisted?.status, 0),
+        error_code: normalizeErrorCode(persisted?.errorCode),
+        error_details: normalizeErrorDetails(persisted?.errorDetails),
+      });
+      persisted = await persistRaw(sid, xml, targetRev, reason);
+    }
     if (!persisted?.ok) {
       const status = asNumber(persisted?.status, 0);
+      const errorCode = asText(
+        persisted?.errorCode
+        || (status > 0 ? `http_${status}` : "persist_failed"),
+      );
+      const errorDetails = normalizeErrorDetails(persisted?.errorDetails);
       emit("SAVE_PERSIST_FAIL", {
         sid,
         reason,
         rev: targetRev,
         status,
+        error_code: errorCode,
         error: asText(persisted?.error || "persist failed"),
+        error_details: errorDetails,
+        stale_retry_attempts: staleRetryAttempts,
       });
       return {
         ok: false,
         rev: targetRev,
         status,
-        errorCode: asText(persisted?.errorCode || (status > 0 ? `http_${status}` : "persist_failed")),
+        errorCode,
         error: asText(persisted?.error || "persist failed"),
+        errorDetails,
+        staleRetryAttempts,
       };
     }
     const storedRev = asNumber(persisted?.storedRev, targetRev);
@@ -432,14 +583,20 @@ export default function createBpmnCoordinator(options = {}) {
       reason,
       rev: storedRev,
       status: asNumber(persisted?.status, 200),
+      diagram_state_version: asNumber(persisted?.diagramStateVersion, 0),
       ms: Date.now() - startedAt,
+      stale_retry_applied: staleRetryAttempts > 0 ? 1 : 0,
+      stale_retry_attempts: staleRetryAttempts,
     });
     return {
       ok: true,
       rev: storedRev,
       storedRev,
+      diagramStateVersion: asNumber(persisted?.diagramStateVersion, 0),
       xml,
       xmlAlreadyTransformed: prepared.transformed,
+      staleRetryApplied: staleRetryAttempts > 0,
+      staleRetryAttempts,
       bpmnVersionSnapshot: persisted?.bpmnVersionSnapshot && typeof persisted.bpmnVersionSnapshot === "object"
         ? persisted.bpmnVersionSnapshot
         : null,
@@ -475,6 +632,15 @@ export default function createBpmnCoordinator(options = {}) {
     }
     const state = store.getState();
     saveQueuedRev = Math.max(saveQueuedRev, asNumber(state?.rev, 0));
+    emit("SAVE_SCHEDULED", {
+      sid: currentSid(),
+      reason: asText(reason || "autosave"),
+      trigger_class: classifySaveTrigger(reason),
+      rev: asNumber(state?.rev, 0),
+      dirty: state?.dirty ? 1 : 0,
+      queued_rev: saveQueuedRev,
+      save_in_flight: saveInFlight ? 1 : 0,
+    });
     clearSaveTimer();
     saveTimer = window.setTimeout(() => {
       saveTimer = 0;
@@ -505,13 +671,51 @@ export default function createBpmnCoordinator(options = {}) {
     const run = (async () => {
       saveInFlight = true;
       try {
-        const result = await doFlush(reason, options);
+        const incomingReason = asText(reason || "manual");
+        let effectiveReason = incomingReason;
+        if (conflictReplayReason && !isIntentPreservingReason(incomingReason)) {
+          effectiveReason = conflictReplayReason;
+          emit("SAVE_CONFLICT_INTENT_REPLAY", {
+            sid: currentSid(),
+            incoming_reason: incomingReason,
+            replay_reason: effectiveReason,
+          });
+          clearConflictReplayReason();
+        }
+        const result = await doFlush(effectiveReason, options);
         const state = store.getState();
         const localRev = asNumber(state?.rev, 0);
+        if (isDiagramStateConflictResult(result) && !result?.pending) {
+          const lastSavedRev = asNumber(state?.lastSavedRev, 0);
+          saveQueuedRev = Math.max(lastSavedRev, 0);
+          if (isIntentPreservingReason(effectiveReason)) {
+            conflictReplayReason = buildConflictReplayReason(effectiveReason);
+            emit("SAVE_CONFLICT_INTENT_ARMED", {
+              sid: currentSid(),
+              reason: conflictReplayReason,
+              status: asNumber(result?.status, 409),
+              error_code: asText(result?.errorCode || asObject(result?.errorDetails)?.code || "http_409"),
+            });
+          } else {
+            clearConflictReplayReason();
+          }
+          emit("SAVE_QUEUE_ABORTED_ON_CONFLICT", {
+            sid: currentSid(),
+            reason: asText(effectiveReason || "manual"),
+            local_rev: localRev,
+            last_saved_rev: lastSavedRev,
+            status: asNumber(result?.status, 409),
+            error_code: asText(result?.errorCode || asObject(result?.errorDetails)?.code || "http_409"),
+          });
+          return result;
+        }
+        if (result?.ok && !result?.pending) {
+          clearConflictReplayReason();
+        }
         if (saveQueuedRev > asNumber(state?.lastSavedRev, 0) && !result?.pending) {
           saveQueuedRev = Math.max(saveQueuedRev, localRev);
           if (localRev > asNumber(state?.lastSavedRev, 0)) {
-            return await doFlush("queued", options);
+            return await doFlush(buildQueuedReplayReason(effectiveReason), options);
           }
         }
         return result;
@@ -565,6 +769,7 @@ export default function createBpmnCoordinator(options = {}) {
         emit("SAVE_EXECUTED", {
           sid,
           reason,
+          trigger_class: classifySaveTrigger(reason, options),
           rev,
           runtime_token: 0,
           xml_len: xml.length,
@@ -573,6 +778,8 @@ export default function createBpmnCoordinator(options = {}) {
         emit("SAVE_PERSIST_STARTED", {
           sid,
           reason,
+          trigger_class: classifySaveTrigger(reason, options),
+          save_path: "explicit_persist",
           rev,
           xml_len: xml.length,
         });
@@ -580,19 +787,27 @@ export default function createBpmnCoordinator(options = {}) {
         const persisted = await persistRaw(sid, xml, rev, reason);
         if (!persisted?.ok) {
           const status = asNumber(persisted?.status, 0);
+          const errorCode = asText(
+            persisted?.errorCode
+            || (status > 0 ? `http_${status}` : "persist_failed"),
+          );
+          const errorDetails = normalizeErrorDetails(persisted?.errorDetails);
           emit("SAVE_PERSIST_FAIL", {
             sid,
             reason,
             rev,
             status,
+            error_code: errorCode,
             error: asText(persisted?.error || "persist failed"),
+            error_details: errorDetails,
           });
           return {
             ok: false,
             rev,
             status,
-            errorCode: asText(persisted?.errorCode || (status > 0 ? `http_${status}` : "persist_failed")),
+            errorCode,
             error: asText(persisted?.error || "persist failed"),
+            errorDetails,
           };
         }
         const storedRev = asNumber(persisted?.storedRev, rev);
@@ -604,12 +819,14 @@ export default function createBpmnCoordinator(options = {}) {
           reason,
           rev: storedRev,
           status: asNumber(persisted?.status, 200),
+          diagram_state_version: asNumber(persisted?.diagramStateVersion, 0),
           ms: Date.now() - startedAt,
         });
         return {
           ok: true,
           rev: storedRev,
           storedRev,
+          diagramStateVersion: asNumber(persisted?.diagramStateVersion, 0),
           bpmnVersionSnapshot: persisted?.bpmnVersionSnapshot && typeof persisted.bpmnVersionSnapshot === "object"
             ? persisted.bpmnVersionSnapshot
             : null,
@@ -800,6 +1017,7 @@ export default function createBpmnCoordinator(options = {}) {
       pendingSave: pendingSave ? { ...pendingSave } : null,
       saveInFlight,
       saveQueuedRev,
+      conflictReplayReason,
       singleWriterOwner: readSingleWriterOwner(),
       singleWriterExpiresAt,
       store: store?.getState?.() || null,
@@ -814,6 +1032,7 @@ export default function createBpmnCoordinator(options = {}) {
     clearSaveTimer();
     clearPendingReplayTimer();
     clearPendingSave();
+    clearConflictReplayReason();
     const lastSavedRev = asNumber(store?.getState?.()?.lastSavedRev, 0);
     saveQueuedRev = Math.max(saveQueuedRev, lastSavedRev);
     emit("SAVE_QUEUE_CLEARED", {
@@ -828,6 +1047,7 @@ export default function createBpmnCoordinator(options = {}) {
     flushPromise = null;
     saveInFlight = false;
     saveQueuedRev = 0;
+    clearConflictReplayReason();
     clearSingleWriter("destroy");
   }
 

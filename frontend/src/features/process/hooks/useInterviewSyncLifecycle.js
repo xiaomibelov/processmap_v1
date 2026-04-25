@@ -5,6 +5,7 @@ import useAutosaveQueue from "./useAutosaveQueue";
 import { parseAndProjectBpmnToInterview } from "./useInterviewProjection";
 import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
 import { traceProcess } from "../lib/processDebugTrace";
+import { shortUserFacingError } from "../lib/userFacingErrorText";
 import {
   asArray,
   asObject,
@@ -22,9 +23,7 @@ import {
 } from "../lib/processStageDomain";
 
 function shortErr(x) {
-  const s = String(x || "").trim();
-  if (!s) return "";
-  return s.length > 160 ? s.slice(0, 160) + "…" : s;
+  return shortUserFacingError(x, 160);
 }
 
 function shouldLogInterviewTrace() {
@@ -90,6 +89,39 @@ function logAiPersist(tag, payload = {}) {
   console.debug(`[AI_PERSIST] ${String(tag || "trace")} ${suffix}`.trim());
 }
 
+function isAllowedNonSemanticInterviewPatchKey(keyRaw = "") {
+  const key = String(keyRaw || "").trim();
+  return key === "ai_questions_by_element" || key === "aiQuestionsByElementId" || key === "report_build_debug";
+}
+
+export function isNonSemanticInterviewAllowlistPatch({
+  patchRaw = null,
+  mutationTypeRaw = "",
+} = {}) {
+  const patch = asObject(patchRaw);
+  const patchKeys = Object.keys(patch);
+  const mutationType = String(mutationTypeRaw || "").trim().toLowerCase();
+  if (mutationType === "diagram.ai_questions_by_element.update") return true;
+  if (mutationType === "paths.report_build_debug.update") return true;
+  if (patchKeys.length !== 1 || patchKeys[0] !== "interview") return false;
+  const interviewPatch = asObject(patch.interview);
+  const interviewPatchKeys = Object.keys(interviewPatch);
+  if (!interviewPatchKeys.length) return false;
+  return interviewPatchKeys.every((key) => isAllowedNonSemanticInterviewPatchKey(key));
+}
+
+export function shouldBlockInterviewSemanticPrimaryWrite({
+  patchRaw = null,
+  mutationTypeRaw = "",
+} = {}) {
+  const patch = asObject(patchRaw);
+  if (!Object.keys(patch).length) return false;
+  return !isNonSemanticInterviewAllowlistPatch({
+    patchRaw: patch,
+    mutationTypeRaw,
+  });
+}
+
 export default function useInterviewSyncLifecycle({
   sid,
   isLocal,
@@ -98,6 +130,7 @@ export default function useInterviewSyncLifecycle({
   onSessionSync,
   bpmnSync,
   projectionHelpers,
+  getBaseDiagramStateVersion,
   onError,
 }) {
   const interviewLastSavedRef = useRef("{}");
@@ -131,16 +164,27 @@ export default function useInterviewSyncLifecycle({
       const patch = asObject(job?.patch);
       const optimisticSession = asObject(job?.optimisticSession);
       const editSeq = Number(job?.editSeq || 0);
+      const mutationType = String(job?.mutation?.type || "").trim().toLowerCase();
+      const patchKeys = Object.keys(patch);
       const patchInterview = asObject(patch?.interview);
       const hasAiQuestionsByElement =
         Object.prototype.hasOwnProperty.call(patchInterview, "ai_questions_by_element")
         || Object.prototype.hasOwnProperty.call(patchInterview, "aiQuestionsByElementId");
+      const hasReportBuildDebugPatch = Object.prototype.hasOwnProperty.call(patchInterview, "report_build_debug");
       const aiMapFromPatch = patchInterview.ai_questions_by_element || patchInterview.aiQuestionsByElementId;
       const aiPatchStats = summarizeAiQuestionsByElement(aiMapFromPatch);
+      const nonSemanticAllowlistPatch = isNonSemanticInterviewAllowlistPatch({
+        patchRaw: patch,
+        mutationTypeRaw: mutationType,
+      });
+      const semanticPrimaryWriteBlocked = shouldBlockInterviewSemanticPrimaryWrite({
+        patchRaw: patch,
+        mutationTypeRaw: mutationType,
+      });
       traceProcess("interview.autosave_start", {
         sid,
         edit_seq: editSeq,
-        patch_keys: Object.keys(patch),
+        patch_keys: patchKeys,
       });
       if (hasAiQuestionsByElement) {
         logAiPersist("patch_start", {
@@ -150,8 +194,28 @@ export default function useInterviewSyncLifecycle({
           size: aiPatchStats.itemCount,
         });
       }
+      if (semanticPrimaryWriteBlocked) {
+        logInterviewTrace("save", {
+          sid,
+          phase: "semantic_primary_write_blocked",
+          mutation: mutationType || "unknown",
+          patchKeys: patchKeys.join(",") || "-",
+        });
+        traceProcess("interview.autosave_semantic_primary_write_blocked", {
+          sid,
+          edit_seq: editSeq,
+          mutation_type: mutationType,
+          patch_keys: patchKeys,
+        });
+        return true;
+      }
 
-      const patchRes = await apiPatchSession(sid, patch);
+      const patchPayload = { ...patch };
+      const baseDiagramStateVersion = Number(getBaseDiagramStateVersion?.());
+      if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
+        patchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);
+      }
+      const patchRes = await apiPatchSession(sid, patchPayload);
       if (isSessionStale()) return true;
       if (hasAiQuestionsByElement) {
         const sessionInterview = asObject(patchRes?.session?.interview);
@@ -176,7 +240,7 @@ export default function useInterviewSyncLifecycle({
         sid,
         edit_seq: editSeq,
         ok: !!patchRes.ok,
-        patch_keys: Object.keys(patch),
+        patch_keys: Object.keys(patchPayload),
       });
       if (!patchRes.ok) {
         onError?.(shortErr(patchRes.error || "Не удалось сохранить Interview"));
@@ -191,22 +255,17 @@ export default function useInterviewSyncLifecycle({
       if (isStale?.() || isSessionStale()) return true;
       if (editSeq && editSeq !== interviewEditSeqRef.current) return true;
 
-      const mutationType = String(job?.mutation?.type || "").trim().toLowerCase();
-      const patchKeys = Object.keys(patch);
-      const interviewPatchKeys = Object.keys(patchInterview);
-      const onlyAiQuestionsByElementPatch =
-        patchKeys.length === 1
-        && patchKeys[0] === "interview"
-        && interviewPatchKeys.length > 0
-        && interviewPatchKeys.every((key) => key === "ai_questions_by_element" || key === "aiQuestionsByElementId");
-      const skipRecomputeForAiQuestions =
-        mutationType === "diagram.ai_questions_by_element.update"
-        || onlyAiQuestionsByElementPatch;
-      const skipRecomputeForReportBuildDebug = mutationType === "paths.report_build_debug.update";
-      if (skipRecomputeForAiQuestions || skipRecomputeForReportBuildDebug) {
+      if (nonSemanticAllowlistPatch) {
+        const nonSemanticSkipReason = hasReportBuildDebugPatch || mutationType === "paths.report_build_debug.update"
+          ? "report_build_debug"
+          : hasAiQuestionsByElement
+            ? "ai_questions_by_element"
+            : "allowlist_non_semantic";
         logInterviewTrace("save", {
           sid,
-          phase: skipRecomputeForReportBuildDebug ? "recompute_skip_report_build_debug" : "recompute_skip_ai_questions",
+          phase: nonSemanticSkipReason === "report_build_debug"
+            ? "recompute_skip_report_build_debug"
+            : "recompute_skip_allowlist_non_semantic",
           mutation: mutationType || "unknown",
           patchKeys: patchKeys.join(",") || "-",
         });
@@ -214,7 +273,7 @@ export default function useInterviewSyncLifecycle({
           sid,
           edit_seq: editSeq,
           mutation_type: mutationType,
-          reason: skipRecomputeForReportBuildDebug ? "report_build_debug" : "ai_questions_by_element",
+          reason: nonSemanticSkipReason,
         });
         return true;
       }
@@ -296,7 +355,7 @@ export default function useInterviewSyncLifecycle({
       });
       return true;
     },
-    [sid, isLocal, onSessionSync, bpmnSync, onError],
+    [sid, isLocal, onSessionSync, bpmnSync, getBaseDiagramStateVersion, onError],
   );
 
   const {
@@ -524,7 +583,12 @@ export default function useInterviewSyncLifecycle({
         interviewHashAfter: fnv1aHex(nextHash),
         xmlHash: fnv1aHex(xml),
       });
-      const r = await apiPatchSession(sid, savePlan.patch);
+      const hydratePatchPayload = { ...savePlan.patch };
+      const baseDiagramStateVersion = Number(getBaseDiagramStateVersion?.());
+      if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
+        hydratePatchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);
+      }
+      const r = await apiPatchSession(sid, hydratePatchPayload);
       if (isHydrateStale()) return;
       if (!r.ok && !cancelled) {
         onError?.(shortErr(r.error || "Не удалось заполнить Interview из BPMN"));
@@ -549,7 +613,7 @@ export default function useInterviewSyncLifecycle({
     return () => {
       cancelled = true;
     };
-  }, [sid, isLocal, isInterview, draft, onSessionSync, bpmnSync, projectionHelpers, onError]);
+  }, [sid, isLocal, isInterview, draft, onSessionSync, bpmnSync, projectionHelpers, getBaseDiagramStateVersion, onError]);
 
   const handleInterviewChange = useCallback(
     (nextInterview, mutationMeta = null) => {
