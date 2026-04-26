@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import AiToolsModal from "./AiToolsModal";
+import NotesAggregateBadge from "./NotesAggregateBadge.jsx";
 import { useAuth } from "../features/auth/AuthProvider";
 import { getManualSessionStatusMeta, MANUAL_SESSION_STATUSES } from "../features/workspace/workspacePermissions";
+import { apiGetSessionNoteAggregate } from "../lib/api";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -93,6 +95,7 @@ export default function TopBar({
   llmVerifyBusy,
   onSaveLlmSettings,
   onVerifyLlmSettings,
+  onOpenDiscussionNotifications,
   draft,
 }) {
   const { logout, user } = useAuth();
@@ -112,6 +115,8 @@ export default function TopBar({
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
+  const [notesAggregate, setNotesAggregate] = useState(null);
+  const [notesAggregateTick, setNotesAggregateTick] = useState(0);
   const accountMenuRef = useRef(null);
   const accountButtonRef = useRef(null);
   const projectMenuRef = useRef(null);
@@ -214,6 +219,36 @@ export default function TopBar({
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [statusMenuOpen]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!effectiveSessionId) {
+      setNotesAggregate(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+    void apiGetSessionNoteAggregate(effectiveSessionId).then((result) => {
+      if (cancelled || !result?.ok) return;
+      setNotesAggregate(result.aggregate || null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeOrgId, effectiveSessionId, notesAggregateTick]);
+
+  useEffect(() => {
+    if (!effectiveSessionId || typeof window === "undefined") return undefined;
+    const handleChanged = (event) => {
+      const changedSessionId = String(event?.detail?.sessionId || "").trim();
+      if (changedSessionId !== effectiveSessionId) return;
+      setNotesAggregateTick((value) => value + 1);
+    };
+    window.addEventListener("processmap:notes-aggregate-changed", handleChanged);
+    return () => {
+      window.removeEventListener("processmap:notes-aggregate-changed", handleChanged);
+    };
+  }, [effectiveSessionId]);
 
   function toggleTheme() {
     const next = uiTheme === "dark" ? "light" : "dark";
@@ -522,6 +557,26 @@ export default function TopBar({
               title="Открыть admin dashboard"
             >
               Админ-панель
+            </button>
+          ) : null}
+          {hasActiveSession ? (
+            <button
+              type="button"
+              className="secondaryBtn relative h-9 min-h-0 whitespace-nowrap px-2.5 py-0 text-sm font-semibold"
+              onClick={() => onOpenDiscussionNotifications?.()}
+              title="Discussion notifications"
+              data-testid="topbar-discussion-notifications"
+              data-notes-panel-trigger="true"
+            >
+              @
+              <NotesAggregateBadge
+                aggregate={notesAggregate}
+                count={notesAggregate?.attention_discussions_count}
+                compact
+                compactNumericOnly
+                label="Обсуждения"
+                className="ml-1 border-border bg-white/85 px-1.5 py-0 text-[10px]"
+              />
             </button>
           ) : null}
           <button
