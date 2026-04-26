@@ -23,7 +23,12 @@ test("Discussions surface uses unified discussions labeling and hides the floati
   assert.match(notesMvpPanelSource, /data-testid="notes-summary-line"/);
   assert.doesNotMatch(notesMvpPanelSource, /text-lg font-black text-fg">Обсуждения</);
   assert.match(diagramControlsSource, /NotesAggregateBadge[\s\S]*compactNumericOnly[\s\S]*label="Обсуждения"/);
-  assert.match(workspaceExplorerSource, /<NotesAggregateBadge aggregate=\{notesAggregate\} compact \/>/);
+  assert.doesNotMatch(workspaceExplorerSource, /<NotesAggregateBadge aggregate=\{notesAggregate\} compact \/>/);
+  assert.match(workspaceExplorerSource, /showDiscussionColumn: true/);
+  assert.match(workspaceExplorerSource, /aria-label="Колонка открытых обсуждений"/);
+  assert.match(workspaceExplorerSource, /title="Открытые обсуждения"/);
+  assert.match(workspaceExplorerSource, /NotesAggregateBadge[\s\S]*aggregate=\{notesAggregate\}[\s\S]*compactNumericOnly[\s\S]*label="Обсуждения"/);
+  assert.match(workspaceExplorerSource, /<th className="px-2 py-2 text-center"[\s\S]*Обс\.[\s\S]*<\/th>/);
 });
 
 test("Derived context is hidden in the active diagram discussions workflow", () => {
