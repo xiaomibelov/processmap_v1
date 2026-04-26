@@ -15,8 +15,9 @@ test("Discussions surface uses unified discussions labeling and hides the floati
   assert.match(badgeSource, /compactNumericOnly \? "pointer-events-none shrink-0" : ""/);
   assert.match(badgeSource, /\{compact && compactNumericOnly \? null : <span>\{chipLabel\}<\/span>\}/);
   assert.match(notesMvpPanelSource, /NotesAggregateBadge aggregate=\{aggregate\} compact compactNumericOnly label="Обсуждения"/);
-  assert.match(notesMvpPanelSource, /NotesAggregateBadge aggregate=\{aggregate\} compact compactNumericOnly label="Обсуждения" className="bg-white\/85"/);
   assert.match(notesMvpPanelSource, /className="fixed bottom-5 right-5 z-\[86\] hidden[\s\S]*max-lg:flex lg:hidden"/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-summary-line"/);
+  assert.doesNotMatch(notesMvpPanelSource, /text-lg font-black text-fg">Обсуждения</);
   assert.match(diagramControlsSource, /NotesAggregateBadge[\s\S]*compactNumericOnly[\s\S]*label="Обсуждения"/);
   assert.match(workspaceExplorerSource, /<NotesAggregateBadge aggregate=\{notesAggregate\} compact \/>/);
 });
@@ -32,6 +33,16 @@ test("Derived context is hidden in the active diagram discussions workflow", () 
 test("Legacy bridge copy no longer claims TL;DR is inside the discussions viewport", () => {
   assert.doesNotMatch(notesMvpPanelSource, /История и TL;DR видны здесь/);
   assert.doesNotMatch(notesMvpPanelSource, /TL;DR остаётся видимым выше/);
+});
+
+test("Discussions sidebar collapses heavy labels into a compact filters control", () => {
+  assert.match(notesMvpPanelSource, /data-testid="notes-sidebar-search"/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-filters-toggle"/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-filters-panel"/);
+  assert.doesNotMatch(notesMvpPanelSource, /Навигация по обсуждениям/);
+  assert.doesNotMatch(notesMvpPanelSource, /text-\[10px\] font-semibold uppercase tracking-\[0\.08em\] text-muted">Статус<\/span>/);
+  assert.doesNotMatch(notesMvpPanelSource, /text-\[10px\] font-semibold uppercase tracking-\[0\.08em\] text-muted">Контекст<\/span>/);
+  assert.doesNotMatch(notesMvpPanelSource, /text-\[10px\] font-semibold uppercase tracking-\[0\.08em\] text-muted">Порядок<\/span>/);
 });
 
 test("Top toolbar keeps discussions as the primary entry and removes conflicting actions", () => {
@@ -55,4 +66,11 @@ test("Discussions toolbar uses an explicit App to NotesMvpPanel open bridge", ()
   assert.match(notesMvpPanelSource, /useImperativeHandle\(ref, \(\) => \(\{/);
   assert.match(notesMvpPanelSource, /openFromExternalRequest\(request\) \{/);
   assert.match(notesMvpPanelSource, /applyExternalOpenRequest\(externalOpenRequest\);/);
+});
+
+test("Current discussion header uses a denser metadata line instead of technical labels", () => {
+  assert.match(notesMvpPanelSource, /data-testid="notes-thread-header-meta"/);
+  assert.doesNotMatch(notesMvpPanelSource, /Относится к:/);
+  assert.doesNotMatch(notesMvpPanelSource, /Последняя активность:/);
+  assert.doesNotMatch(notesMvpPanelSource, /Сообщений:/);
 });
